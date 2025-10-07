@@ -42,60 +42,82 @@ python tools/batch/batch_planner.py --start-date 2025-09-01 --end-date 2025-09-3
 ### アーキテクチャ
 
 ```
-analyze-activityコマンド
+/analyze-activity {activity_id} {date}
     ↓
-1. GarminIngestWorker.process_activity()
-    ├─ collect_data() → Garmin MCP呼び出し
-    ├─ create_parquet_dataset() → lapDTOs → DataFrame
-    ├─ _calculate_split_metrics() → performance.json生成
-    └─ save_data() → 3ファイル出力
+【Main Claude Code Agent】
+
+Step 1: データ収集
+    GarminIngestWorker.process_activity()
+        ├─ collect_data() → Garmin MCP呼び出し
+        ├─ create_parquet_dataset() → lapDTOs → DataFrame
+        ├─ _calculate_split_metrics() → performance.json生成
+        └─ save_data() → 3ファイル出力
     ↓
-2. ValidationWorker.validate()
-    └─ データ品質チェック
+    ValidationWorker.validate() (オプション)
+        └─ データ品質チェック
     ↓
-3. PerformanceDataInserter.insert()
-    └─ performance.json → DuckDB
-    ↓
-4. AgentExecutor.run_parallel()
-    ├─ efficiency-section-analyst
-    ├─ environment-section-analyst
-    ├─ phase-section-analyst
-    ├─ split-section-analyst
-    └─ summary-section-analyst
-    ↓
-5. SectionAnalysisInserter.insert()
-    └─ 各エージェント結果 → DuckDB
-    ↓
-6. ReportGeneratorWorker.generate_report()
-    └─ DuckDB → Jinja2 → final_report.md
+    PerformanceDataInserter.insert()
+        └─ performance.json → DuckDB
+
+Step 2: セクション分析（並列実行）
+    【Main AgentがTaskツールで5エージェント起動】
+    ├─ Task: efficiency-section-analyst
+    │   └─ mcp__garmin-db__get_performance_section() → 分析 → DuckDB
+    ├─ Task: environment-section-analyst
+    │   └─ mcp__garmin-db__get_performance_section() → 分析 → DuckDB
+    ├─ Task: phase-section-analyst
+    │   └─ mcp__garmin-db__get_performance_section() → 分析 → DuckDB
+    ├─ Task: split-section-analyst
+    │   └─ mcp__garmin-db__get_splits_complete() → 分析 → DuckDB
+    └─ Task: summary-section-analyst
+        └─ mcp__garmin-db__get_section_analysis() × 4 → 統合 → DuckDB
+
+Step 3: レポート生成
+    【Main AgentがTaskツールでreport-generatorエージェント起動】
+    Task: report-generator
+        ├─ mcp__report-generator__create_report_structure()
+        ├─ mcp__garmin-db__get_section_analysis() × 5
+        ├─ 13プレースホルダー置換
+        └─ mcp__report-generator__finalize_report()
+            → result/individual/{YEAR}/{MONTH}/{DATE}_activity_{ID}.md
 ```
+
+**重要**:
+- エージェント起動はClaude CodeのTaskツールが行う（Pythonコード不要）
+- 各エージェントは独立して動作し、結果をDuckDBに保存
+- Main Agentはワークフロー全体をオーケストレーション
 
 ### 復元優先度
 
-**Phase 1: 最重要（analyze-activity必須）**
+**Phase 1: 最重要（analyze-activity必須コンポーネント）**
 1. ✅ `tools/database/db_reader.py` - 既に復元済み
 2. ✅ `tools/database/db_writer.py` - 既に復元済み
-3. ⚠️ `tools/ingest/garmin_worker.py` - データ収集の中核
-4. ⚠️ `tools/database/inserters/performance.py` - DuckDB挿入
-5. ⚠️ `tools/database/inserters/section_analyses.py` - DuckDB挿入
-6. ⚠️ `tools/validation/validation_worker.py` - データ検証
+3. ✅ `tools/reporting/report_generator_worker.py` - 既に復元済み
+4. ✅ `tools/reporting/report_template_renderer.py` - 既に復元済み
+5. ⚠️ `tools/ingest/garmin_worker.py` - データ収集の中核
+6. ⚠️ `tools/database/inserters/performance.py` - DuckDB挿入
+7. ⚠️ `tools/database/inserters/section_analyses.py` - DuckDB挿入
+8. ⚠️ `tools/validation/validation_worker.py` - データ検証（オプション）
 
-**Phase 2: 重要（workflow実行）**
-7. ⚠️ `tools/planner/agent_executor.py` - エージェント並列実行
-8. ⚠️ `tools/planner/activity_date_cache.py` - 日付解決キャッシュ
-9. ⚠️ `tools/planner/main.py` - CLI エントリポイント
+**注意**: エージェント並列実行はClaude CodeのTaskツールが行うため、AgentExecutorクラスは不要
 
-**Phase 3: バッチ処理**
-10. ⚠️ `tools/batch/batch_planner.py` - バッチ処理
+**Phase 2: バッチ処理・ユーティリティ**
+9. ⚠️ `tools/batch/batch_planner.py` - バッチ処理
+10. ⚠️ `tools/database/analysis_helpers.py` - 分析補助関数
 
-**Phase 4: RAG機能（Phase 3実装済み）**
+**Phase 3: RAG機能（サーバー実装済み、Pythonツール未実装）**
 11. ⚠️ `tools/rag/queries/comparison.py` - 類似ワークアウト比較
 12. ⚠️ `tools/rag/queries/trends.py` - パフォーマンストレンド
 13. ⚠️ `tools/rag/queries/insights.py` - 洞察抽出
 14. ⚠️ `tools/rag/utils/activity_classifier.py` - アクティビティ分類
 
-**Phase 5: ユーティリティ**
-15. ⚠️ `tools/database/analysis_helpers.py` - 分析補助関数
+**Phase 4: Workflow Planner（削除済み機能）**
+- ~~`tools/planner/agent_executor.py`~~ - 削除（Claude CodeのTaskツールが代替）
+- ~~`tools/planner/activity_date_cache.py`~~ - 削除（DuckDBで代替）
+- ~~`tools/planner/main.py`~~ - 削除（analyze-activityコマンドで代替）
+- ~~`tools/planner/cache_manager.py`~~ - 削除（不要）
+- ~~`tools/planner/metrics_collector.py`~~ - 削除（不要）
+- ~~`tools/planner/worker_adapters.py`~~ - 削除（不要）
 
 ### データフロー
 
@@ -301,36 +323,33 @@ def insert_section_analysis(
     """
 ```
 
-### 5. AgentExecutor
+### 5. エージェント実行（Claude Code Taskツール）
 
-**ファイル**: `tools/planner/agent_executor.py`
+**実行方法**: Main AgentがTaskツールを使用
 
-**主要クラス**:
-```python
-class AgentExecutor:
-    def run_parallel(
-        self,
-        agents: list[str],
-        prompts: list[str]
-    ) -> dict[str, Any]:
-        """
-        複数エージェントを並列実行。
+**analyze-activityコマンドの実装**:
+```markdown
+### Step 2: セクション分析（並列実行）
 
-        Args:
-            agents: ["efficiency-section-analyst", "environment-section-analyst", ...]
-            prompts: 各エージェント用のプロンプト
+5つのエージェントを並列で呼び出してください：
 
-        Uses:
-            Task tool with parallel execution
+Task: efficiency-section-analyst
+prompt: "Activity ID {{arg1}} ({{arg2}}) のフォーム効率と心拍効率を分析してください。"
 
-        Returns:
-            {
-                "efficiency": {...},
-                "environment": {...},
-                ...
-            }
-        """
+Task: environment-section-analyst
+prompt: "Activity ID {{arg1}} ({{arg2}}) の環境要因を分析してください。"
+
+Task: phase-section-analyst
+prompt: "Activity ID {{arg1}} ({{arg2}}) の3フェーズを評価してください。"
+
+Task: split-section-analyst
+prompt: "Activity ID {{arg1}} ({{arg2}}) の全スプリットを分析してください。"
+
+Task: summary-section-analyst
+prompt: "Activity ID {{arg1}} ({{arg2}}) の総合評価を生成してください。"
 ```
+
+**重要**: Pythonコードではなく、Claude CodeのTaskツールを使用するため、`AgentExecutor`クラスは不要
 
 ---
 
@@ -419,14 +438,14 @@ grep -E "def |class |import |from " garmin_worker_strings.txt
 ## 推定工数
 
 - **Phase 1**: 4時間（GarminIngestWorker, Inserters, ValidationWorker）
-- **Phase 2**: 2時間（AgentExecutor, workflow関連）
-- **Phase 3**: 1時間（Batch処理）
-- **Phase 4**: 1時間（RAG queries）
-- **Phase 5**: 1時間（ユーティリティ）
-- **テスト作成**: 3時間
+- **Phase 2**: 1時間（Batch処理、ユーティリティ）
+- **Phase 3**: 2時間（RAG queries）
+- **テスト作成**: 2時間
 - **ドキュメント**: 1時間
 
-**合計**: 約13時間
+**合計**: 約10時間
+
+**削減理由**: AgentExecutor等のworkflow plannerコンポーネントは不要（Claude CodeのTaskツールが代替）
 
 ---
 
