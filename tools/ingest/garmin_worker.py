@@ -11,10 +11,13 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pandas as pd
 from garminconnect import Garmin
+
+if TYPE_CHECKING:
+    from tools.database.db_reader import GarminDBReader
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +28,12 @@ class GarminIngestWorker:
     # Singleton Garmin client (reuse authentication)
     _garmin_client: Garmin | None = None
 
-    def __init__(self):
-        """Initialize GarminIngestWorker."""
+    def __init__(self, db_path: str | None = None):
+        """Initialize GarminIngestWorker.
+
+        Args:
+            db_path: Optional DuckDB path for activity date lookup
+        """
         self.project_root = Path(__file__).parent.parent.parent
         self.raw_dir = self.project_root / "data" / "raw"
         self.parquet_dir = self.project_root / "data" / "parquet"
@@ -41,6 +48,10 @@ class GarminIngestWorker:
             self.precheck_dir,
         ]:
             directory.mkdir(parents=True, exist_ok=True)
+
+        # DB reader for activity date lookup
+        self._db_reader: GarminDBReader | None = None
+        self._db_path = db_path
 
     @classmethod
     def get_garmin_client(cls) -> Garmin:
@@ -74,6 +85,26 @@ class GarminIngestWorker:
 
         return cls._garmin_client
 
+    def get_activity_date(self, activity_id: int) -> str | None:
+        """
+        Get activity date from DuckDB.
+
+        Args:
+            activity_id: Activity ID
+
+        Returns:
+            Activity date (YYYY-MM-DD) or None if not found
+        """
+        if self._db_reader is None:
+            from tools.database.db_reader import GarminDBReader
+
+            self._db_reader = GarminDBReader(
+                db_path=self._db_path or "data/database/garmin_performance.duckdb"
+            )
+
+        result = self._db_reader.get_activity_date(activity_id)
+        return cast(str | None, result) if result else None
+
     def collect_data(self, activity_id: int) -> dict[str, Any]:
         """
         Collect activity data with cache-first strategy.
@@ -100,13 +131,40 @@ class GarminIngestWorker:
         client = self.get_garmin_client()
 
         # Collect all data components
+        activity_data = client.get_activity_data(activity_id)
+
         raw_data = {
-            "activity": client.get_activity_data(activity_id),
+            "activity": activity_data,
             "splits": client.get_activity_splits(activity_id),
             "weather": client.get_activity_weather(activity_id),
             "gear": client.get_activity_gear(activity_id),
             "hr_zones": client.get_activity_hr_in_timezones(activity_id),
         }
+
+        # Add optional fields from activity data if available
+        # Extract training effect from activity data
+        if activity_data:
+            raw_data["training_effect"] = {
+                "aerobicTrainingEffect": activity_data.get("aerobicTrainingEffect"),
+                "anaerobicTrainingEffect": activity_data.get("anaerobicTrainingEffect"),
+                "aerobicTrainingEffectMessage": activity_data.get(
+                    "aerobicTrainingEffectMessage"
+                ),
+                "anaerobicTrainingEffectMessage": activity_data.get(
+                    "anaerobicTrainingEffectMessage"
+                ),
+                "trainingEffectLabel": activity_data.get("trainingEffectLabel"),
+            }
+
+            raw_data["vo2_max"] = activity_data.get("vO2MaxValue")
+            raw_data["lactate_threshold"] = {
+                "speed_and_heart_rate": None,  # Need separate API call
+                "power": None,  # Need separate API call
+            }
+
+        # Weight data (requires separate weight cache manager)
+        # For now, set to None - will be populated by weight_cache_manager if available
+        raw_data["weight"] = None
 
         # Save to cache
         with open(raw_file, "w", encoding="utf-8") as f:

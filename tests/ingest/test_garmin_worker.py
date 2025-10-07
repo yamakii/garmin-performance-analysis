@@ -100,6 +100,59 @@ class TestGarminIngestWorker:
         }
 
     @pytest.mark.unit
+    def test_get_activity_date_from_db(self, tmp_path):
+        """Test get_activity_date retrieves date from DuckDB."""
+        import duckdb
+
+        # Setup: Create temporary DuckDB with activity
+        db_path = tmp_path / "test.duckdb"
+        conn = duckdb.connect(str(db_path))
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS activities (
+                activity_id BIGINT PRIMARY KEY,
+                activity_date DATE NOT NULL
+            )
+        """
+        )
+        conn.execute(
+            "INSERT INTO activities (activity_id, activity_date) VALUES (12345, '2025-09-22')"
+        )
+        conn.close()
+
+        # Execute
+        worker = GarminIngestWorker(db_path=str(db_path))
+        result = worker.get_activity_date(12345)
+
+        # Verify
+        assert result == "2025-09-22"
+
+    @pytest.mark.unit
+    def test_get_activity_date_not_found(self, tmp_path):
+        """Test get_activity_date returns None for missing activity."""
+        import duckdb
+
+        # Setup: Create empty DuckDB
+        db_path = tmp_path / "test.duckdb"
+        conn = duckdb.connect(str(db_path))
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS activities (
+                activity_id BIGINT PRIMARY KEY,
+                activity_date DATE NOT NULL
+            )
+        """
+        )
+        conn.close()
+
+        # Execute
+        worker = GarminIngestWorker(db_path=str(db_path))
+        result = worker.get_activity_date(99999)
+
+        # Verify
+        assert result is None
+
+    @pytest.mark.unit
     def test_collect_data_uses_cache_when_available(self, worker, tmp_path):
         """Test collect_data prioritizes cache over API calls."""
         # Setup: Create cached file
