@@ -98,11 +98,17 @@ GarminIngestWorker: [API calls → raw_data.json → create_parquet_dataset() �
 │   ├── performance/  # Pre-processed analysis-ready data
 │   ├── parquet/      # Columnar data for efficient querying
 │   ├── precheck/     # Data validation results
+│   ├── database/     # DuckDB database files
 │   └── individual/   # Section analysis intermediate data (organized by activity_id/)
 ├── result/           # Final analysis reports
 │   └── individual/   # Individual activity reports (YEAR/MONTH/YYYY-MM-DD_activity_ID.md)
 ├── tools/            # Data processing and utility scripts
-│   └── ingest/       # Core data ingestion pipeline
+│   ├── ingest/       # Core data ingestion pipeline
+│   ├── database/     # Database operations (reader, writer, inserters)
+│   └── reporting/    # Report generation (worker, renderer, templates)
+├── docs/             # Documentation and specifications
+│   └── project/      # Project planning and progress tracking
+│       └── {DATE}_project_name/  # Individual project directories
 ├── daily/            # Daily reflection notes
 └── .claude/          # Claude Code configuration
 ```
@@ -339,6 +345,55 @@ mcp__serena__list_memories
 - Simple file existence checks
 - Direct data file operations (parquet, JSON data files)
 - MCP function calls for Garmin data
+
+## Project Management
+
+### Project Directory Structure
+
+Development projects are organized under `docs/project/`:
+
+```
+docs/project/
+└── {YYYY-MM-DD}_{project_name}/
+    ├── project_plan.md              # Project overview, goals, and implementation phases
+    ├── {specification_files}.md     # Technical specifications
+    └── implementation_progress.md   # Implementation progress tracking
+```
+
+### Active Projects
+
+- **2025-10-07_core_system_restoration**: Body composition data specification fix and DuckDB schema documentation
+- **2025-10-07_report_generation_update**: Worker-based report generation system implementation
+
+### Project Workflow
+
+1. **Planning Phase**
+   - Create project directory under `docs/project/`
+   - Write project plan document with goals and phases
+   - Move/create specification documents
+   - Set up implementation progress tracking
+
+2. **Development Phase**
+   - Follow implementation phases defined in project plan
+   - Update progress regularly in implementation_progress.md
+   - Commit changes with logical separation
+   - Run tests and quality checks
+
+3. **Completion Phase**
+   - Write completion report
+   - Update relevant documentation (CLAUDE.md, etc.)
+   - Archive project artifacts
+   - Document lessons learned
+
+### Project Plan Template
+
+Each project should have:
+- **Overview**: Project summary and background
+- **Goals**: Clear, measurable objectives
+- **Architecture**: System design and data flow
+- **Implementation Phases**: Step-by-step breakdown
+- **Success Criteria**: Measurable completion criteria
+- **References**: Related files and documentation
 
 ## Important Notes
 
