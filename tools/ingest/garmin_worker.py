@@ -854,3 +854,47 @@ class GarminIngestWorker:
             "weight_kg": weight_kg,
             "status": "success",
         }
+
+    def process_activity_by_date(self, date: str) -> dict[str, Any]:
+        """
+        Process activity by date (resolve activity_id from Garmin API).
+
+        Args:
+            date: Activity date (YYYY-MM-DD)
+
+        Returns:
+            Result dict with activity_id and file paths
+
+        Raises:
+            ValueError: If no activity found for date
+            ValueError: If multiple activities found (user must specify activity_id)
+        """
+        logger.info(f"Resolving activity for date {date}")
+
+        # Get activities for date from Garmin API
+        client = self.get_garmin_client()
+        api_response = client.get_activities_fordate(date)
+
+        # Extract activities from nested structure
+        activities_data = api_response.get("ActivitiesForDay", {}).get("payload", [])
+
+        if len(activities_data) == 0:
+            raise ValueError(f"No activities found for {date}")
+        elif len(activities_data) > 1:
+            activity_list = ", ".join(
+                [
+                    f"{act.get('activityId')} ({act.get('activityName')})"
+                    for act in activities_data
+                ]
+            )
+            raise ValueError(
+                f"Multiple activities found for {date}. "
+                f"Please specify activity_id. Found: {activity_list}"
+            )
+
+        # Single activity found
+        activity_id = activities_data[0].get("activityId")
+        logger.info(f"Found single activity for {date}: {activity_id}")
+
+        # Process the activity
+        return self.process_activity(activity_id, date)
