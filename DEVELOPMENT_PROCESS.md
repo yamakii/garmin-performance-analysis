@@ -20,14 +20,25 @@
 
 新機能開発やバグ修正を開始する前に、必ず計画を立てます。
 
+**プロジェクトディレクトリ作成:**
+```bash
+# プロジェクトディレクトリ作成
+PROJECT_NAME="duckdb_section_analysis"
+PROJECT_DIR="docs/project/$(date +%Y-%m-%d)_${PROJECT_NAME}"
+mkdir -p "${PROJECT_DIR}"
+
+# planning.md作成
+touch "${PROJECT_DIR}/planning.md"
+```
+
 ### 1.1 要件定義
 
-**成果物:**
+**成果物:** `planning.md` に記述
 - 実装する機能の明確な説明
 - 解決する問題の特定
 - ユースケースの記述
 
-**例:**
+**例:** `docs/project/2025-09-30_duckdb_section_analysis/planning.md`
 ```markdown
 ## 要件: DuckDB Section Analysis統合
 
@@ -370,14 +381,30 @@ TOTAL                          91%
 - Related Issues: #38, #40
 ```
 
-### 3.2 完了レポート保存場所
+### 3.2 プロジェクトディレクトリ構造
+
+各プロジェクトは `docs/project/` 配下に専用ディレクトリを作成します。
 
 ```
-docs/
-└── completion_reports/
-    ├── 2025-09-30_duckdb_section_analysis.md
-    ├── 2025-10-02_report_generator_jinja2.md
-    └── ...
+docs/project/
+└── {YYYY-MM-DD}_{feature_name}/
+    ├── planning.md          # Phase 1: 計画フェーズの成果物
+    ├── implementation.md    # Phase 2: 実装ログ（オプション）
+    └── completion_report.md # Phase 3: 完了レポート
+```
+
+**例:**
+```
+docs/project/
+├── 2025-09-30_duckdb_section_analysis/
+│   ├── planning.md
+│   ├── implementation.md
+│   └── completion_report.md
+├── 2025-10-02_report_generator_jinja2/
+│   ├── planning.md
+│   └── completion_report.md
+└── 2025-10-07_recovery_from_git_filter_repo/
+    └── completion_report.md
 ```
 
 ---
@@ -403,26 +430,32 @@ mkdir -p data/database
 ### 日常的な開発フロー
 
 ```bash
-# 1. ブランチ作成（必要に応じて）
+# 1. プロジェクトディレクトリ作成
+mkdir -p docs/project/$(date +%Y-%m-%d)_new_feature
+
+# 2. 計画フェーズ（planning.md作成）
+vim docs/project/$(date +%Y-%m-%d)_new_feature/planning.md
+
+# 3. ブランチ作成（必要に応じて）
 git checkout -b feat/new-feature
 
-# 2. テスト作成（TDD Red）
+# 4. テスト作成（TDD Red）
 vim tests/test_new_feature.py
 uv run pytest tests/test_new_feature.py  # ❌ Failed
 
-# 3. 実装（TDD Green）
+# 5. 実装（TDD Green）
 vim tools/new_feature.py
 uv run pytest tests/test_new_feature.py  # ✅ Passed
 
-# 4. リファクタリング（TDD Refactor）
+# 6. リファクタリング（TDD Refactor）
 uv run pytest  # ✅ All Passed
 
-# 5. コミット
+# 7. コミット
 git add .
 git commit -m "feat: implement new feature"  # Pre-commit hooks自動実行
 
-# 6. 完了レポート作成
-vim docs/completion_reports/YYYY-MM-DD_new_feature.md
+# 8. 完了レポート作成
+vim docs/project/$(date +%Y-%m-%d)_new_feature/completion_report.md
 ```
 
 ---

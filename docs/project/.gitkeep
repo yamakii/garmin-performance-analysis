@@ -1,0 +1,17 @@
+# Project Documentation
+
+各プロジェクトのディレクトリ構造:
+
+```
+docs/project/
+└── {project_name}/
+    ├── planning.md          # Phase 1: 計画
+    ├── implementation.md    # Phase 2: 実装ログ（オプション）
+    └── completion_report.md # Phase 3: 完了レポート
+```
+
+プロジェクト命名規則: `YYYY-MM-DD_{feature_name}`
+
+例:
+- `2025-10-07_duckdb_section_analysis/`
+- `2025-10-02_report_generator_jinja2/`
