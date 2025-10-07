@@ -177,25 +177,27 @@ class GarminIngestWorker:
         }
 
         # Add optional fields from activity data if available
-        # Extract training effect from activity data
-        if activity_data:
+        # Extract training effect from activity.summaryDTO
+        summary = activity_data.get("summaryDTO", {}) if activity_data else {}
+        if summary:
             raw_data["training_effect"] = {
-                "aerobicTrainingEffect": activity_data.get("aerobicTrainingEffect"),
-                "anaerobicTrainingEffect": activity_data.get("anaerobicTrainingEffect"),
-                "aerobicTrainingEffectMessage": activity_data.get(
+                "aerobicTrainingEffect": summary.get("trainingEffect"),
+                "anaerobicTrainingEffect": summary.get("anaerobicTrainingEffect"),
+                "aerobicTrainingEffectMessage": summary.get(
                     "aerobicTrainingEffectMessage"
                 ),
-                "anaerobicTrainingEffectMessage": activity_data.get(
+                "anaerobicTrainingEffectMessage": summary.get(
                     "anaerobicTrainingEffectMessage"
                 ),
-                "trainingEffectLabel": activity_data.get("trainingEffectLabel"),
+                "trainingEffectLabel": summary.get("trainingEffectLabel"),
             }
 
-            raw_data["vo2_max"] = activity_data.get("vO2MaxValue")
-            raw_data["lactate_threshold"] = {
-                "speed_and_heart_rate": None,  # Need separate API call
-                "power": None,  # Need separate API call
-            }
+        # VO2 Max and Lactate Threshold require separate API calls
+        raw_data["vo2_max"] = []  # Placeholder for future implementation
+        raw_data["lactate_threshold"] = {
+            "speed_and_heart_rate": None,  # Need separate API call
+            "power": None,  # Need separate API call
+        }
 
         # Weight data (requires separate weight cache manager)
         # For now, set to None - will be populated by weight_cache_manager if available
