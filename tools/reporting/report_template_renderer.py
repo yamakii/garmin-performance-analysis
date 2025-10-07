@@ -39,64 +39,6 @@ class ReportTemplateRenderer:
         """
         return self.env.get_template(template_name)
 
-    def create_report_structure(self, activity_id: str, date: str) -> str:
-        """
-        テンプレートからレポート構造を生成（プレースホルダー付き）。
-
-        Args:
-            activity_id: Activity ID
-            date: Date in YYYY-MM-DD format
-
-        Returns:
-            Report structure with placeholders
-        """
-        template = f"""# アクティビティ詳細分析レポート
-
-**Activity ID**: {activity_id}
-**実施日**: {date}
-
----
-
-## 📊 概要
-
-<!-- LLM_INSIGHTS_OVERVIEW -->
-
----
-
-## 🎯 効率分析 (Efficiency Section)
-
-<!-- LLM_INSIGHTS_EFFICIENCY_ANALYSIS -->
-
----
-
-## 🌍 環境・コンディション分析 (Environment Section)
-
-<!-- LLM_INSIGHTS_ENVIRONMENT_ANALYSIS -->
-
----
-
-## 📈 フェーズ評価 (Phase Section)
-
-<!-- LLM_INSIGHTS_PHASE_ANALYSIS -->
-
----
-
-## 🔍 スプリット詳細分析 (Split Section)
-
-<!-- LLM_INSIGHTS_SPLIT_ANALYSIS -->
-
----
-
-## ✅ 総合評価 (Summary Section)
-
-<!-- LLM_INSIGHTS_SUMMARY_ANALYSIS -->
-
----
-
-*🤖 Generated with Garmin Performance Analysis System*
-"""
-        return template
-
     def render_report(
         self,
         activity_id: str,
@@ -139,42 +81,6 @@ class ReportTemplateRenderer:
                 summary=section_analyses.get("summary", {}),
             ),
         )
-
-    def get_placeholders(self) -> list[str]:
-        """
-        レポートテンプレートのプレースホルダー一覧を取得。
-
-        Returns:
-            List of placeholder names
-        """
-        return [
-            "LLM_INSIGHTS_OVERVIEW",
-            "LLM_INSIGHTS_EFFICIENCY_ANALYSIS",
-            "LLM_INSIGHTS_ENVIRONMENT_ANALYSIS",
-            "LLM_INSIGHTS_PHASE_ANALYSIS",
-            "LLM_INSIGHTS_SPLIT_ANALYSIS",
-            "LLM_INSIGHTS_SUMMARY_ANALYSIS",
-        ]
-
-    def validate_report(self, report_content: str) -> dict[str, Any]:
-        """
-        レポート内容を検証（プレースホルダーが全て置換されているか）。
-
-        Args:
-            report_content: Report content
-
-        Returns:
-            Validation result with missing placeholders
-        """
-        missing_placeholders = []
-        for placeholder in self.get_placeholders():
-            if f"<!-- {placeholder} -->" in report_content:
-                missing_placeholders.append(placeholder)
-
-        return {
-            "valid": len(missing_placeholders) == 0,
-            "missing_placeholders": missing_placeholders,
-        }
 
     def get_final_report_path(self, activity_id: str, date: str) -> Path:
         """
