@@ -33,8 +33,8 @@ repos:
   - repo: local
     hooks:
       - id: pytest
-        name: pytest (all tests)
-        entry: uv run pytest --tb=short -q
+        name: pytest (unit tests only)
+        entry: uv run pytest -m "not integration" --tb=short -q
         language: system
         pass_filenames: false
         always_run: true

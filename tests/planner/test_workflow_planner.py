@@ -83,6 +83,7 @@ def temp_db():
 class TestWorkflowPlannerDateResolution:
     """Test WorkflowPlanner orchestration functionality."""
 
+    @pytest.mark.unit
     def test_execute_full_workflow_with_date(self, temp_db):
         """Test executing workflow with date (activity_id resolved internally)."""
         from unittest.mock import MagicMock, patch
