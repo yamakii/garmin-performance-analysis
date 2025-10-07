@@ -21,30 +21,32 @@
 - パフォーマンステスト
 - 実行時間の測定やベンチマーク
 
-## Pre-commit Behavior
+## Default Behavior
 
 ```bash
-# Pre-commit hookで実行されるテスト
-pytest -m "not garmin_api"  # garmin_apiマーカー以外のすべてのテスト
+# 通常のpytest実行（デフォルトでgarmin_api除外）
+pytest  # garmin_apiマーカー以外のすべてのテスト
 ```
+
+**重要**: `pyproject.toml` の `addopts` でデフォルトで `garmin_api` を除外しています。
 
 ## Test Execution Examples
 
 ```bash
+# デフォルト（garmin_api除外）
+pytest
+
 # Unit testsのみ
 pytest -m unit
 
 # Integration testsのみ
 pytest -m integration
 
-# Garmin API testsのみ（手動実行）
+# Garmin API testsのみ（手動実行、デフォルト除外を上書き）
 pytest -m garmin_api
 
-# Garmin API tests以外すべて（pre-commitと同じ）
-pytest -m "not garmin_api"
-
-# すべてのテスト
-pytest
+# すべてのテスト（garmin_api含む）
+pytest -m ""
 ```
 
 ## Best Practices

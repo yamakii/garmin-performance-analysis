@@ -94,7 +94,7 @@ ignore_errors = false
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-addopts = "-ra -q --strict-markers"
+addopts = "-ra -q --strict-markers -m 'not garmin_api'"
 testpaths = ["tests"]
 markers = [
     "unit: Unit tests",
