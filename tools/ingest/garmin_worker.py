@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+import numpy as np
 import pandas as pd
 from garminconnect import Garmin
 
@@ -20,6 +21,39 @@ if TYPE_CHECKING:
     from tools.database.db_reader import GarminDBReader
 
 logger = logging.getLogger(__name__)
+
+
+def convert_numpy_types(obj: Any) -> Any:
+    """
+    Convert numpy types to Python native types for JSON serialization.
+
+    Preserves NaN for compatibility with existing data.
+
+    Args:
+        obj: Object to convert (can be dict, list, numpy type, etc.)
+
+    Returns:
+        Object with numpy types converted to Python types
+    """
+    if isinstance(obj, dict):
+        return {key: convert_numpy_types(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy_types(item) for item in obj]
+    elif isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        # Preserve NaN as float('nan') for compatibility
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif obj is None:
+        # Explicit None → None
+        return None
+    elif pd.isna(obj):
+        # pandas NaN → float('nan') to preserve NaN in JSON
+        return float("nan")
+    else:
+        return obj
 
 
 class GarminIngestWorker:
@@ -39,6 +73,7 @@ class GarminIngestWorker:
         self.parquet_dir = self.project_root / "data" / "parquet"
         self.performance_dir = self.project_root / "data" / "performance"
         self.precheck_dir = self.project_root / "data" / "precheck"
+        self.weight_cache_dir = self.project_root / "data" / "weight_cache" / "raw"
 
         # Create directories
         for directory in [
@@ -213,7 +248,7 @@ class GarminIngestWorker:
                 "avg_pace_seconds_per_km": avg_pace,
                 "avg_heart_rate": lap.get("averageHR"),
                 "avg_cadence": lap.get("averageRunCadence"),
-                "avg_power": lap.get("avgPower"),
+                "avg_power": lap.get("averagePower"),  # Fixed: avgPower → averagePower
                 "ground_contact_time_ms": lap.get("groundContactTime"),
                 "vertical_oscillation_cm": lap.get("verticalOscillation"),
                 "vertical_ratio_percent": lap.get("verticalRatio"),
@@ -325,7 +360,7 @@ class GarminIngestWorker:
         # 11. Performance trends (Phase 2)
         performance_trends = self._calculate_performance_trends(df)
 
-        return {
+        performance_data = {
             "basic_metrics": basic_metrics,
             "heart_rate_zones": heart_rate_zones,
             "split_metrics": split_metrics,
@@ -338,6 +373,9 @@ class GarminIngestWorker:
             "hr_efficiency_analysis": hr_efficiency_analysis,
             "performance_trends": performance_trends,
         }
+
+        # Convert numpy types to Python types for JSON serialization
+        return convert_numpy_types(performance_data)
 
     def _calculate_form_efficiency_summary(self, df: pd.DataFrame) -> dict[str, Any]:
         """
@@ -572,6 +610,181 @@ class GarminIngestWorker:
             "precheck_file": str(precheck_file),
         }
 
+    def collect_body_composition_data(self, date: str) -> dict[str, Any] | None:
+        """
+        Collect body composition data with cache-first strategy.
+
+        Cache priority:
+        1. Check data/weight_cache/raw/weight_{date}_raw.json
+        2. If missing, fetch from Garmin Connect API
+
+        Args:
+            date: Date in YYYY-MM-DD format
+
+        Returns:
+            Raw weight data dict or None if no data available
+        """
+        # Check cache first
+        weight_file = self.weight_cache_dir / f"weight_{date}_raw.json"
+        if weight_file.exists():
+            logger.info(f"Using cached body composition data for {date}")
+            with open(weight_file, encoding="utf-8") as f:
+                return cast(dict[str, Any], json.load(f))
+
+        # Fetch from Garmin Connect API
+        logger.info(
+            f"Fetching body composition data for {date} from Garmin Connect API"
+        )
+        try:
+            client = self.get_garmin_client()
+            # Use get_daily_weigh_ins for single date
+            weight_data = client.get_daily_weigh_ins(date)
+
+            if not weight_data or not weight_data.get("dateWeightList"):
+                logger.warning(f"No body composition data found for {date}")
+                return None
+
+            # Save to cache
+            weight_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(weight_file, "w", encoding="utf-8") as f:
+                json.dump(weight_data, f, indent=2, ensure_ascii=False)
+
+            logger.info(f"Cached body composition data to {weight_file}")
+            return weight_data
+
+        except Exception as e:
+            logger.error(f"Error fetching body composition data for {date}: {e}")
+            return None
+
+    def _calculate_median_weight(self, date: str) -> dict[str, Any] | None:
+        """
+        Calculate median weight from past 7 days including target date.
+
+        Args:
+            date: Date in YYYY-MM-DD format
+
+        Returns:
+            Dict with median weight data or None
+        """
+        from datetime import datetime, timedelta
+
+        import numpy as np
+
+        target_date = datetime.strptime(date, "%Y-%m-%d")
+        weights = []
+        bmi_values = []
+        body_fat_values = []
+        body_water_values = []
+        bone_mass_values = []
+        muscle_mass_values = []
+
+        # Collect data from past 7 days (including target date)
+        for i in range(7):
+            check_date = target_date - timedelta(days=i)
+            check_date_str = check_date.strftime("%Y-%m-%d")
+
+            raw_data = self.collect_body_composition_data(check_date_str)
+            if raw_data and raw_data.get("dateWeightList"):
+                data = raw_data["dateWeightList"][0]
+
+                # Collect weight (convert to kg)
+                if data.get("weight"):
+                    weights.append(data["weight"] / 1000.0)
+                if data.get("bmi"):
+                    bmi_values.append(data["bmi"])
+                if data.get("bodyFat"):
+                    body_fat_values.append(data["bodyFat"])
+                if data.get("bodyWater"):
+                    body_water_values.append(data["bodyWater"])
+                if data.get("boneMass"):
+                    bone_mass_values.append(data["boneMass"] / 1000.0)
+                if data.get("muscleMass"):
+                    muscle_mass_values.append(data["muscleMass"] / 1000.0)
+
+        if not weights:
+            logger.warning(f"No weight data found in past 7 days for {date}")
+            return None
+
+        # Calculate medians
+        return {
+            "date": date,
+            "weight_kg": float(np.median(weights)),
+            "bmi": float(np.median(bmi_values)) if bmi_values else None,
+            "body_fat_percentage": (
+                float(np.median(body_fat_values)) if body_fat_values else None
+            ),
+            "muscle_mass_kg": (
+                float(np.median(muscle_mass_values)) if muscle_mass_values else None
+            ),
+            "bone_mass_kg": (
+                float(np.median(bone_mass_values)) if bone_mass_values else None
+            ),
+            "hydration_percentage": (
+                float(np.median(body_water_values)) if body_water_values else None
+            ),
+            "source": "7DAY_MEDIAN",
+            "sample_count": len(weights),
+        }
+
+    def process_body_composition(self, date: str) -> dict[str, Any]:
+        """
+        Process body composition data - save direct measurements only.
+
+        Pipeline:
+        1. Collect body composition data (cache-first)
+        2. Insert direct measurements into body_composition table
+
+        Note: Weight median calculation (for W/kg) is done during activity processing
+        and stored in activities table, NOT in body_composition table.
+
+        Args:
+            date: Date in YYYY-MM-DD format
+
+        Returns:
+            Result dict with status
+        """
+        logger.info(f"Processing body composition data for {date}")
+
+        # Step 1: Collect body composition data (cache-first)
+        raw_data = self.collect_body_composition_data(date)
+
+        if not raw_data or not raw_data.get("dateWeightList"):
+            logger.warning(f"No body composition data found for {date}")
+            return {
+                "date": date,
+                "status": "no_data",
+                "message": f"No body composition data found for {date}",
+            }
+
+        # Step 2: Insert direct measurements into DuckDB
+        from tools.database.db_writer import GarminDBWriter
+
+        writer = (
+            GarminDBWriter(db_path=self._db_path) if self._db_path else GarminDBWriter()
+        )
+        success = writer.insert_body_composition(date=date, weight_data=raw_data)
+
+        if success:
+            # Extract weight for return value
+            weight_kg = raw_data["dateWeightList"][0].get("weight", 0) / 1000.0
+            logger.info(
+                f"Successfully processed body composition data for {date}: {weight_kg:.3f} kg"
+            )
+            return {
+                "date": date,
+                "status": "success",
+                "message": f"Body composition data inserted for {date} (direct measurement)",
+                "weight_kg": weight_kg,
+                "source": "direct_measurement",
+            }
+        else:
+            logger.error(f"Failed to insert body composition data for {date}")
+            return {
+                "date": date,
+                "status": "error",
+                "message": f"Failed to insert body composition data for {date}",
+            }
+
     def process_activity(self, activity_id: int, date: str) -> dict[str, Any]:
         """
         Process activity through full pipeline.
@@ -580,7 +793,9 @@ class GarminIngestWorker:
         1. collect_data() - Cache-first data collection
         2. create_parquet_dataset() - Transform to DataFrame
         3. _calculate_split_metrics() - Generate performance.json
-        4. save_data() - Save all outputs
+        4. Calculate 7-day median weight for W/kg
+        5. save_data() - Save all outputs
+        6. Insert into DuckDB with weight data
 
         Args:
             activity_id: Activity ID
@@ -600,12 +815,38 @@ class GarminIngestWorker:
         # Step 3: Calculate metrics
         performance_data = self._calculate_split_metrics(df, raw_data)
 
-        # Step 4: Save data
+        # Step 4: Calculate 7-day median weight for W/kg
+        median_weight_data = self._calculate_median_weight(date)
+        weight_kg = median_weight_data["weight_kg"] if median_weight_data else None
+
+        # Step 5: Save data
         file_paths = self.save_data(activity_id, raw_data, df, performance_data)
+
+        # Step 6: Insert into DuckDB activities table with weight data
+        from tools.database.db_writer import GarminDBWriter
+
+        writer = (
+            GarminDBWriter(db_path=self._db_path) if self._db_path else GarminDBWriter()
+        )
+        basic_metrics = performance_data.get("basic_metrics", {})
+
+        writer.insert_activity(
+            activity_id=activity_id,
+            activity_date=date,
+            activity_name=raw_data.get("activityName"),
+            weight_kg=weight_kg,
+            weight_source="statistical_7d_median" if weight_kg else None,
+            weight_method="median" if weight_kg else None,
+            distance_km=basic_metrics.get("distance_km"),
+            duration_seconds=basic_metrics.get("duration_seconds"),
+            avg_pace_seconds_per_km=basic_metrics.get("avg_pace_seconds_per_km"),
+            avg_heart_rate=basic_metrics.get("avg_heart_rate"),
+        )
 
         return {
             "activity_id": activity_id,
             "date": date,
             "files": file_paths,
+            "weight_kg": weight_kg,
             "status": "success",
         }

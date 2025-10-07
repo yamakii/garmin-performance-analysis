@@ -69,16 +69,15 @@ class GarminDBWriter:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS section_analyses (
-                id INTEGER PRIMARY KEY,
+                analysis_id INTEGER PRIMARY KEY,
                 activity_id BIGINT NOT NULL,
                 activity_date DATE NOT NULL,
                 section_type VARCHAR NOT NULL,
-                analysis_data JSON NOT NULL,
-                analyst VARCHAR,
-                version VARCHAR,
+                analysis_data VARCHAR,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (activity_id) REFERENCES activities(activity_id),
-                UNIQUE (activity_id, section_type)
+                agent_name VARCHAR,
+                agent_version VARCHAR,
+                FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
             )
         """
         )
@@ -92,6 +91,9 @@ class GarminDBWriter:
         activity_name: str | None = None,
         location_name: str | None = None,
         activity_type: str | None = None,
+        weight_kg: float | None = None,
+        weight_source: str | None = None,
+        weight_method: str | None = None,
         **kwargs,
     ) -> bool:
         """
@@ -103,6 +105,9 @@ class GarminDBWriter:
             activity_name: Activity name
             location_name: Location name
             activity_type: Activity type
+            weight_kg: Weight in kg (7-day median for W/kg calculation)
+            weight_source: Weight data source (e.g., "statistical_7d_median")
+            weight_method: Weight calculation method (e.g., "median")
             **kwargs: Additional metrics
 
         Returns:
@@ -114,25 +119,32 @@ class GarminDBWriter:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO activities
-                (activity_id, activity_date, activity_name, location_name, activity_type,
-                 distance_km, duration_seconds, avg_pace_seconds_per_km, avg_heart_rate)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (activity_id, date, activity_name, location_name,
+                 total_distance_km, total_time_seconds, avg_pace_seconds_per_km, avg_heart_rate,
+                 weight_kg, weight_source, weight_method)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 [
                     activity_id,
                     activity_date,
                     activity_name,
                     location_name,
-                    activity_type,
                     kwargs.get("distance_km"),
                     kwargs.get("duration_seconds"),
                     kwargs.get("avg_pace_seconds_per_km"),
                     kwargs.get("avg_heart_rate"),
+                    weight_kg,
+                    weight_source,
+                    weight_method,
                 ],
             )
 
             conn.close()
-            logger.info(f"Inserted activity {activity_id} metadata")
+            logger.info(
+                f"Inserted activity {activity_id} metadata (weight: {weight_kg:.3f} kg)"
+                if weight_kg
+                else f"Inserted activity {activity_id} metadata"
+            )
             return True
         except Exception as e:
             logger.error(f"Error inserting activity: {e}")
@@ -231,24 +243,33 @@ class GarminDBWriter:
         try:
             conn = duckdb.connect(str(self.db_path))
 
+            # Get next analysis_id
+            max_id_result = conn.execute(
+                "SELECT COALESCE(MAX(analysis_id), 0) FROM section_analyses"
+            ).fetchone()
+            next_analysis_id = max_id_result[0] + 1 if max_id_result else 1
+
             # Extract metadata
             metadata = analysis_data.get("metadata", {})
-            analyst = metadata.get("analyst")
-            version = metadata.get("version")
+            agent_name = metadata.get("analyst")  # 'analyst' field maps to 'agent_name'
+            agent_version = metadata.get(
+                "version"
+            )  # 'version' field maps to 'agent_version'
 
             conn.execute(
                 """
-                INSERT OR REPLACE INTO section_analyses
-                (activity_id, activity_date, section_type, analysis_data, analyst, version)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO section_analyses
+                (analysis_id, activity_id, activity_date, section_type, analysis_data, agent_name, agent_version)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
                 [
+                    next_analysis_id,
                     activity_id,
                     activity_date,
                     section_type,
                     json.dumps(analysis_data),
-                    analyst,
-                    version,
+                    agent_name,
+                    agent_version,
                 ],
             )
 
@@ -257,4 +278,75 @@ class GarminDBWriter:
             return True
         except Exception as e:
             logger.error(f"Error inserting section analysis: {e}")
+            return False
+
+    def insert_body_composition(self, date: str, weight_data: dict) -> bool:
+        """
+        Insert body composition data from weight_cache raw data.
+
+        Args:
+            date: Date in YYYY-MM-DD format
+            weight_data: Raw weight data dict from Garmin API
+
+        Returns:
+            True if successful
+        """
+        try:
+            conn = duckdb.connect(str(self.db_path))
+
+            # Extract data from dateWeightList (first entry)
+            date_weight_list = weight_data.get("dateWeightList", [])
+            if not date_weight_list:
+                logger.warning(f"No weight data found for {date}")
+                return False
+
+            data = date_weight_list[0]
+
+            # Get next measurement_id
+            max_id_result = conn.execute(
+                "SELECT COALESCE(MAX(measurement_id), 0) FROM body_composition"
+            ).fetchone()
+            next_measurement_id = max_id_result[0] + 1 if max_id_result else 1
+
+            # Convert grams to kg for consistency
+            weight_kg = data.get("weight", 0) / 1000.0 if data.get("weight") else None
+            muscle_mass_kg = (
+                data.get("muscleMass", 0) / 1000.0 if data.get("muscleMass") else None
+            )
+            bone_mass_kg = (
+                data.get("boneMass", 0) / 1000.0 if data.get("boneMass") else None
+            )
+
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO body_composition
+                (measurement_id, date, weight_kg, body_fat_percentage, muscle_mass_kg,
+                 bone_mass_kg, bmi, hydration_percentage, basal_metabolic_rate,
+                 active_metabolic_rate, metabolic_age, visceral_fat_rating,
+                 physique_rating, measurement_source)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+                [
+                    next_measurement_id,
+                    date,
+                    weight_kg,
+                    data.get("bodyFat"),
+                    muscle_mass_kg,
+                    bone_mass_kg,
+                    data.get("bmi"),
+                    data.get("bodyWater"),
+                    None,  # basal_metabolic_rate not in raw data
+                    None,  # active_metabolic_rate not in raw data
+                    data.get("metabolicAge"),
+                    data.get("visceralFat"),
+                    data.get("physiqueRating"),
+                    data.get("sourceType", "INDEX_SCALE"),
+                ],
+            )
+
+            conn.close()
+            logger.info(f"Inserted body composition data for {date}")
+            return True
+        except Exception as e:
+            logger.error(f"Error inserting body composition data: {e}")
             return False
