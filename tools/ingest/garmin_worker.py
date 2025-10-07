@@ -370,11 +370,8 @@ class GarminIngestWorker:
         # 7. VO2 max (from raw activity data)
         vo2_max = {"vo2_max": activity.get("vO2MaxValue")}
 
-        # 8. Lactate threshold (from raw activity data)
-        lactate_threshold = {
-            "lactate_threshold_hr": activity.get("lactateThresholdHeartRate"),
-            "lactate_threshold_speed": activity.get("lactateThresholdSpeed"),
-        }
+        # 8. Lactate threshold (from raw data)
+        lactate_threshold = raw_data.get("lactate_threshold", {})
 
         # 9. Form efficiency summary (Phase 1)
         form_efficiency_summary = self._calculate_form_efficiency_summary(df)
