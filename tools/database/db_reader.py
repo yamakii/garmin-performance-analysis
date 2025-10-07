@@ -103,3 +103,152 @@ class GarminDBReader:
         except Exception as e:
             logger.error(f"Error querying section analysis: {e}")
             return None
+
+    def get_splits_pace_hr(self, activity_id: int) -> dict[str, list[dict]]:
+        """
+        Get pace and heart rate data for all splits from splits table.
+
+        Args:
+            activity_id: Activity ID
+
+        Returns:
+            Dict with 'splits' key containing list of split data with pace and HR
+        """
+        try:
+            conn = duckdb.connect(str(self.db_path), read_only=True)
+
+            result = conn.execute(
+                """
+                SELECT
+                    split_index,
+                    distance,
+                    pace_seconds_per_km,
+                    heart_rate
+                FROM splits
+                WHERE activity_id = ?
+                ORDER BY split_index
+                """,
+                [activity_id],
+            ).fetchall()
+
+            conn.close()
+
+            if not result:
+                return {"splits": []}
+
+            splits = []
+            for row in result:
+                splits.append(
+                    {
+                        "split_number": row[0],
+                        "distance_km": row[1],
+                        "avg_pace_seconds_per_km": row[2],
+                        "avg_heart_rate": row[3],
+                    }
+                )
+
+            return {"splits": splits}
+
+        except Exception as e:
+            logger.error(f"Error getting splits pace/HR data: {e}")
+            return {"splits": []}
+
+    def get_splits_form_metrics(self, activity_id: int) -> dict[str, list[dict]]:
+        """
+        Get form metrics (GCT, VO, VR) for all splits from splits table.
+
+        Args:
+            activity_id: Activity ID
+
+        Returns:
+            Dict with 'splits' key containing list of split data with form metrics
+        """
+        try:
+            conn = duckdb.connect(str(self.db_path), read_only=True)
+
+            result = conn.execute(
+                """
+                SELECT
+                    split_index,
+                    ground_contact_time,
+                    vertical_oscillation,
+                    vertical_ratio
+                FROM splits
+                WHERE activity_id = ?
+                ORDER BY split_index
+                """,
+                [activity_id],
+            ).fetchall()
+
+            conn.close()
+
+            if not result:
+                return {"splits": []}
+
+            splits = []
+            for row in result:
+                splits.append(
+                    {
+                        "split_number": row[0],
+                        "ground_contact_time_ms": row[1],
+                        "vertical_oscillation_cm": row[2],
+                        "vertical_ratio_percent": row[3],
+                    }
+                )
+
+            return {"splits": splits}
+
+        except Exception as e:
+            logger.error(f"Error getting splits form metrics: {e}")
+            return {"splits": []}
+
+    def get_splits_elevation(self, activity_id: int) -> dict[str, list[dict]]:
+        """
+        Get elevation data for all splits from splits table.
+
+        Args:
+            activity_id: Activity ID
+
+        Returns:
+            Dict with 'splits' key containing list of split data with elevation
+        """
+        try:
+            conn = duckdb.connect(str(self.db_path), read_only=True)
+
+            result = conn.execute(
+                """
+                SELECT
+                    split_index,
+                    elevation_gain,
+                    elevation_loss,
+                    terrain_type
+                FROM splits
+                WHERE activity_id = ?
+                ORDER BY split_index
+                """,
+                [activity_id],
+            ).fetchall()
+
+            conn.close()
+
+            if not result:
+                return {"splits": []}
+
+            splits = []
+            for row in result:
+                splits.append(
+                    {
+                        "split_number": row[0],
+                        "elevation_gain_m": row[1],
+                        "elevation_loss_m": row[2],
+                        "max_elevation_m": None,  # Not available in splits table
+                        "min_elevation_m": None,  # Not available in splits table
+                        "terrain_type": row[3],
+                    }
+                )
+
+            return {"splits": splits}
+
+        except Exception as e:
+            logger.error(f"Error getting splits elevation data: {e}")
+            return {"splits": []}

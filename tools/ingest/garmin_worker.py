@@ -629,6 +629,114 @@ class GarminIngestWorker:
             json.dump(precheck_data, f, ensure_ascii=False, indent=2)
         logger.info(f"Saved precheck data to {precheck_file}")
 
+        # Insert splits into DuckDB
+        from tools.database.inserters.splits import insert_splits
+
+        splits_success = insert_splits(
+            performance_file=str(performance_file),
+            activity_id=activity_id,
+        )
+        if splits_success:
+            logger.info(f"Inserted splits to DuckDB for activity {activity_id}")
+        else:
+            logger.warning(
+                f"Failed to insert splits to DuckDB for activity {activity_id}"
+            )
+
+        # Insert form_efficiency into DuckDB
+        from tools.database.inserters.form_efficiency import insert_form_efficiency
+
+        form_eff_success = insert_form_efficiency(
+            performance_file=str(performance_file),
+            activity_id=activity_id,
+        )
+        if form_eff_success:
+            logger.info(
+                f"Inserted form_efficiency to DuckDB for activity {activity_id}"
+            )
+        else:
+            logger.warning(
+                f"Failed to insert form_efficiency to DuckDB for activity {activity_id}"
+            )
+
+        # Insert heart_rate_zones into DuckDB
+        from tools.database.inserters.heart_rate_zones import insert_heart_rate_zones
+
+        hr_zones_success = insert_heart_rate_zones(
+            performance_file=str(performance_file),
+            activity_id=activity_id,
+        )
+        if hr_zones_success:
+            logger.info(
+                f"Inserted heart_rate_zones to DuckDB for activity {activity_id}"
+            )
+        else:
+            logger.warning(
+                f"Failed to insert heart_rate_zones to DuckDB for activity {activity_id}"
+            )
+
+        # Insert hr_efficiency into DuckDB
+        from tools.database.inserters.hr_efficiency import insert_hr_efficiency
+
+        hr_eff_success = insert_hr_efficiency(
+            performance_file=str(performance_file),
+            activity_id=activity_id,
+        )
+        if hr_eff_success:
+            logger.info(f"Inserted hr_efficiency to DuckDB for activity {activity_id}")
+        else:
+            logger.warning(
+                f"Failed to insert hr_efficiency to DuckDB for activity {activity_id}"
+            )
+
+        # Insert performance_trends into DuckDB
+        from tools.database.inserters.performance_trends import (
+            insert_performance_trends,
+        )
+
+        perf_trends_success = insert_performance_trends(
+            performance_file=str(performance_file),
+            activity_id=activity_id,
+        )
+        if perf_trends_success:
+            logger.info(
+                f"Inserted performance_trends to DuckDB for activity {activity_id}"
+            )
+        else:
+            logger.warning(
+                f"Failed to insert performance_trends to DuckDB for activity {activity_id}"
+            )
+
+        # Insert lactate_threshold into DuckDB
+        from tools.database.inserters.lactate_threshold import insert_lactate_threshold
+
+        lt_success = insert_lactate_threshold(
+            performance_file=str(performance_file),
+            activity_id=activity_id,
+        )
+        if lt_success:
+            logger.info(
+                f"Inserted lactate_threshold to DuckDB for activity {activity_id}"
+            )
+        else:
+            logger.warning(
+                f"Failed to insert lactate_threshold to DuckDB for activity {activity_id}"
+            )
+
+        # Insert vo2_max into DuckDB
+        from tools.database.inserters.vo2_max import insert_vo2_max
+
+        vo2_success = insert_vo2_max(
+            performance_file=str(performance_file),
+            activity_id=activity_id,
+        )
+        if vo2_success:
+            logger.info(f"Inserted vo2_max to DuckDB for activity {activity_id}")
+        else:
+            logger.warning(
+                f"Failed to insert vo2_max to DuckDB for activity {activity_id}"
+            )
+
         return {
             "raw_file": str(self.raw_dir / f"{activity_id}_raw.json"),
             "parquet_file": str(parquet_file),
