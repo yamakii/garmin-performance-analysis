@@ -166,7 +166,7 @@ class GarminIngestWorker:
         client = self.get_garmin_client()
 
         # Collect all data components
-        activity_data = client.get_activity_data(activity_id)
+        activity_data = client.get_activity_details(activity_id)
 
         raw_data = {
             "activity": activity_data,
