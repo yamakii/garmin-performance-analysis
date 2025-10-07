@@ -36,7 +36,7 @@ class GarminDBReader:
         try:
             conn = duckdb.connect(str(self.db_path), read_only=True)
             result = conn.execute(
-                "SELECT activity_date FROM activities WHERE activity_id = ?",
+                "SELECT date FROM activities WHERE activity_id = ?",
                 [activity_id],
             ).fetchone()
             conn.close()

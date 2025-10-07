@@ -111,8 +111,43 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
     elif name == "get_activity_by_date":
         date = arguments["date"]
-        # TODO: Implement get_activity_by_date
-        result = {"error": "Not implemented"}
+        from tools.planner.workflow_planner import WorkflowPlanner
+
+        planner = WorkflowPlanner()
+
+        try:
+            # Get all activities for date
+            activities = planner._get_activities_from_duckdb(date)
+
+            if len(activities) == 0:
+                # Try API
+                activities = planner._get_activities_from_api(date)
+
+            if len(activities) == 0:
+                result = {
+                    "success": False,
+                    "error": f"No activities found for {date}",
+                    "activities": [],
+                }
+            elif len(activities) == 1:
+                result = {
+                    "success": True,
+                    "activity_id": activities[0]["activity_id"],
+                    "activity_name": activities[0]["activity_name"],
+                    "start_time": activities[0]["start_time"],
+                    "distance_km": activities[0]["distance_km"],
+                    "duration_seconds": activities[0]["duration_seconds"],
+                }
+            else:
+                result = {
+                    "success": False,
+                    "error": f"Multiple activities found for {date}. Please specify activity_id.",
+                    "activities": activities,
+                }
+
+        except Exception as e:
+            result = {"success": False, "error": str(e), "activities": []}
+
         return [
             TextContent(
                 type="text", text=json.dumps(result, indent=2, ensure_ascii=False)

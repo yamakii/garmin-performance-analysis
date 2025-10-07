@@ -34,7 +34,7 @@ class WorkflowPlanner:
 
     def execute_full_workflow(
         self,
-        activity_id: int,
+        activity_id: int | None = None,
         date: str | None = None,
         force_regenerate: bool = False,
     ) -> dict[str, Any]:
@@ -42,22 +42,35 @@ class WorkflowPlanner:
         Execute the full analysis workflow.
 
         Args:
-            activity_id: Garmin activity ID
-            date: Activity date (YYYY-MM-DD format)
+            activity_id: Garmin activity ID (optional if date is provided)
+            date: Activity date YYYY-MM-DD format (optional if activity_id is provided)
             force_regenerate: Force regeneration of all data
 
         Returns:
             Workflow result with validation status and quality score
-        """
-        logger.info(f"Starting workflow for activity {activity_id}")
 
-        # Resolve activity date if not provided
+        Raises:
+            ValueError: If neither activity_id nor date is provided
+            ValueError: If date has multiple activities and activity_id not specified
+        """
+        # Validate inputs
+        if not activity_id and not date:
+            raise ValueError("Either activity_id or date must be provided")
+
+        # Resolve activity_id from date if needed
+        if not activity_id:
+            assert date is not None, "date must be provided when activity_id is None"
+            logger.info(f"Resolving activity_id from date: {date}")
+            activity_id = self.resolve_activity_id(date)
+
+        # Resolve date from activity_id if needed
         if not date:
+            logger.info(f"Resolving date from activity_id: {activity_id}")
             date = self._get_activity_date(activity_id)
             if not date:
                 raise ValueError(f"Could not resolve date for activity {activity_id}")
 
-        logger.info(f"Activity date: {date}")
+        logger.info(f"Starting workflow for activity {activity_id} ({date})")
 
         # Execute workflow steps
         result = {
@@ -117,6 +130,150 @@ class WorkflowPlanner:
         # Try Garmin API as last resort
         logger.warning(f"Activity {activity_id} not found in DuckDB or Parquet")
         return None
+
+    def _get_activities_from_duckdb(self, date: str) -> list[dict[str, Any]]:
+        """
+        Get activities from DuckDB by date (start_time_local).
+
+        Args:
+            date: YYYY-MM-DD format
+
+        Returns:
+            List of activity dicts with activity_id, activity_name, start_time, etc.
+        """
+        import duckdb
+
+        try:
+            conn = duckdb.connect(str(self.db_path), read_only=True)
+            result = conn.execute(
+                """
+                SELECT
+                    activity_id,
+                    activity_name,
+                    start_time_local,
+                    total_distance_km,
+                    total_time_seconds
+                FROM activities
+                WHERE DATE(start_time_local) = ?
+                ORDER BY start_time_local
+                """,
+                [date],
+            ).fetchall()
+            conn.close()
+
+            activities = []
+            for row in result:
+                activities.append(
+                    {
+                        "activity_id": row[0],
+                        "activity_name": row[1],
+                        "start_time": str(row[2]) if row[2] else None,
+                        "distance_km": row[3],
+                        "duration_seconds": row[4],
+                    }
+                )
+
+            return activities
+
+        except Exception as e:
+            logger.warning(f"DuckDB query failed: {e}")
+            return []
+
+    def _get_activities_from_api(self, date: str) -> list[dict[str, Any]]:
+        """
+        Get activities from Garmin API by date.
+
+        Args:
+            date: YYYY-MM-DD format
+
+        Returns:
+            List of activity dicts with activity_id, activity_name, etc.
+        """
+        from tools.ingest.garmin_worker import GarminIngestWorker
+
+        try:
+            worker = GarminIngestWorker()
+            client = worker.get_garmin_client()
+
+            # Get activities for date
+            activities_data = client.get_activities_fordate(date)
+
+            activities = []
+            for activity in activities_data:
+                activities.append(
+                    {
+                        "activity_id": activity.get("activityId"),
+                        "activity_name": activity.get("activityName"),
+                        "start_time": activity.get("startTimeLocal"),
+                        "distance_km": (
+                            (activity.get("distance", 0) / 1000)
+                            if activity.get("distance")
+                            else None
+                        ),
+                        "duration_seconds": activity.get("duration"),
+                    }
+                )
+
+            return activities
+
+        except Exception as e:
+            logger.error(f"Garmin API query failed: {e}")
+            return []
+
+    def resolve_activity_id(self, date: str) -> int:
+        """
+        Resolve Activity ID from date.
+
+        Priority:
+        1. DuckDB activities.start_time_local
+        2. Garmin API (via GarminIngestWorker)
+
+        Args:
+            date: Activity date (YYYY-MM-DD)
+
+        Returns:
+            Activity ID
+
+        Raises:
+            ValueError: If no activity found for date
+            ValueError: If multiple activities found (user must specify activity_id)
+        """
+        # Try DuckDB first
+        activities = self._get_activities_from_duckdb(date)
+
+        if len(activities) == 1:
+            logger.info(
+                f"Found single activity in DuckDB for {date}: {activities[0]['activity_id']}"
+            )
+            return activities[0]["activity_id"]  # type: ignore[no-any-return]
+        elif len(activities) > 1:
+            activity_list = ", ".join(
+                [f"{act['activity_id']} ({act['activity_name']})" for act in activities]
+            )
+            raise ValueError(
+                f"Multiple activities found for {date}. "
+                f"Please specify activity_id. Found: {activity_list}"
+            )
+
+        # Try Garmin API
+        logger.info(f"No activities found in DuckDB for {date}, trying Garmin API")
+        activities = self._get_activities_from_api(date)
+
+        if len(activities) == 0:
+            raise ValueError(f"No activities found for {date}")
+        elif len(activities) == 1:
+            logger.info(
+                f"Found single activity in Garmin API for {date}: {activities[0]['activity_id']}"
+            )
+            return activities[0]["activity_id"]  # type: ignore[no-any-return]
+        else:
+            activity_list = ", ".join(
+                [f"{act['activity_id']} ({act['activity_name']})" for act in activities]
+            )
+            raise ValueError(
+                f"Multiple activities found for {date} in Garmin API. "
+                f"Please specify activity_id. Found: {activity_list}"
+            )
 
 
 def main():

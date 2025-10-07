@@ -111,12 +111,12 @@ class TestGarminIngestWorker:
             """
             CREATE TABLE IF NOT EXISTS activities (
                 activity_id BIGINT PRIMARY KEY,
-                activity_date DATE NOT NULL
+                date DATE NOT NULL
             )
         """
         )
         conn.execute(
-            "INSERT INTO activities (activity_id, activity_date) VALUES (12345, '2025-09-22')"
+            "INSERT INTO activities (activity_id, date) VALUES (12345, '2025-09-22')"
         )
         conn.close()
 
@@ -139,7 +139,7 @@ class TestGarminIngestWorker:
             """
             CREATE TABLE IF NOT EXISTS activities (
                 activity_id BIGINT PRIMARY KEY,
-                activity_date DATE NOT NULL
+                date DATE NOT NULL
             )
         """
         )
