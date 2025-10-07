@@ -64,9 +64,11 @@ result/individual/{YEAR}/{MONTH}/{YYYY-MM-DD}_activity_{ACTIVITY_ID}.md
 docs/project/2025-10-07_report_generation_update/
 ├── project_plan.md              # This file
 ├── report_specification.md      # Report generation specification
-├── duckdb_schema_mapping.md     # DuckDB schema documentation
 └── implementation_progress.md   # Implementation progress tracking (to be created)
 ```
+
+**Related System-wide Specifications:**
+- `docs/spec/duckdb_schema_mapping.md`: DuckDB schema documentation (not project-specific)
 
 ## Implementation Phases
 
@@ -107,8 +109,8 @@ docs/project/2025-10-07_report_generation_update/
 
 ## References
 
-- `report_specification.md`: Detailed report generation specification
-- `duckdb_schema_mapping.md`: DuckDB schema documentation
+- `report_specification.md`: Detailed report generation specification (this project)
+- `docs/spec/duckdb_schema_mapping.md`: DuckDB schema documentation (system-wide spec)
 - `tools/reporting/report_generator_worker.py`: Worker implementation
 - `tools/reporting/report_template_renderer.py`: Template renderer
 - `tools/reporting/templates/detailed_report.j2`: Jinja2 template
@@ -116,8 +118,8 @@ docs/project/2025-10-07_report_generation_update/
 ## Related Files
 
 ### Specifications
-- `report_specification.md`: Report structure and data sources
-- `duckdb_schema_mapping.md`: Database schema and relationships
+- `report_specification.md`: Report structure and data sources (this project)
+- `docs/spec/duckdb_schema_mapping.md`: Database schema and relationships (system-wide spec)
 
 ### Implementation
 - `tools/reporting/report_generator_worker.py`: Main worker class
