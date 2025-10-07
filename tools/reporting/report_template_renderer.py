@@ -50,57 +50,50 @@ class ReportTemplateRenderer:
         Returns:
             Report structure with placeholders
         """
-        template = f"""# Running Performance Analysis - Activity {activity_id}
+        template = f"""# アクティビティ詳細分析レポート
 
-## Basic Information
-- **Activity ID**: {activity_id}
-- **Date**: {date}
-- **Activity Type**: <!-- LLM_INSIGHTS_ACTIVITY_TYPE -->
-- **Overall Rating**: <!-- LLM_INSIGHTS_OVERALL_RATING -->
-
-## Performance Summary
-
-### Key Strengths
-<!-- LLM_INSIGHTS_STRENGTHS -->
-
-### Areas for Improvement
-<!-- LLM_INSIGHTS_IMPROVEMENTS -->
-
-## Phase Analysis
-
-### Warmup Phase
-<!-- LLM_INSIGHTS_WARMUP -->
-
-### Main Phase
-<!-- LLM_INSIGHTS_MAIN -->
-
-### Finish Phase
-<!-- LLM_INSIGHTS_FINISH -->
-
-## Efficiency Analysis
-
-### Form Efficiency
-<!-- LLM_INSIGHTS_FORM_EFFICIENCY -->
-
-### HR Efficiency
-<!-- LLM_INSIGHTS_HR_EFFICIENCY -->
-
-## Environmental Factors
-
-### Weather Conditions
-<!-- LLM_INSIGHTS_WEATHER -->
-
-### Terrain Impact
-<!-- LLM_INSIGHTS_TERRAIN -->
-
-## Split-by-Split Analysis
-<!-- LLM_INSIGHTS_SPLITS -->
-
-## Recommendations
-<!-- LLM_INSIGHTS_RECOMMENDATIONS -->
+**Activity ID**: {activity_id}
+**実施日**: {date}
 
 ---
-*Generated with Garmin Performance Analysis System*
+
+## 📊 概要
+
+<!-- LLM_INSIGHTS_OVERVIEW -->
+
+---
+
+## 🎯 効率分析 (Efficiency Section)
+
+<!-- LLM_INSIGHTS_EFFICIENCY_ANALYSIS -->
+
+---
+
+## 🌍 環境・コンディション分析 (Environment Section)
+
+<!-- LLM_INSIGHTS_ENVIRONMENT_ANALYSIS -->
+
+---
+
+## 📈 フェーズ評価 (Phase Section)
+
+<!-- LLM_INSIGHTS_PHASE_ANALYSIS -->
+
+---
+
+## 🔍 スプリット詳細分析 (Split Section)
+
+<!-- LLM_INSIGHTS_SPLIT_ANALYSIS -->
+
+---
+
+## ✅ 総合評価 (Summary Section)
+
+<!-- LLM_INSIGHTS_SUMMARY_ANALYSIS -->
+
+---
+
+*🤖 Generated with Garmin Performance Analysis System*
 """
         return template
 
@@ -108,19 +101,12 @@ class ReportTemplateRenderer:
         self,
         activity_id: str,
         date: str,
-        activity_type: str,
-        overall_rating: str,
-        strengths: str,
-        improvements: str,
-        warmup_phase: str,
-        main_phase: str,
-        finish_phase: str,
-        form_efficiency: str,
-        hr_efficiency: str,
-        weather_conditions: str,
-        terrain_impact: str,
+        overview: str,
+        efficiency_analysis: str,
+        environment_analysis: str,
+        phase_analysis: str,
         split_analysis: str,
-        recommendations: str,
+        summary_analysis: str,
     ) -> str:
         """
         Jinja2テンプレートを使用してレポートをレンダリング。
@@ -128,19 +114,12 @@ class ReportTemplateRenderer:
         Args:
             activity_id: Activity ID
             date: Date
-            activity_type: Activity type
-            overall_rating: Overall rating
-            strengths: Key strengths
-            improvements: Areas for improvement
-            warmup_phase: Warmup phase analysis
-            main_phase: Main phase analysis
-            finish_phase: Finish phase analysis
-            form_efficiency: Form efficiency analysis
-            hr_efficiency: HR efficiency analysis
-            weather_conditions: Weather conditions
-            terrain_impact: Terrain impact
-            split_analysis: Split-by-split analysis
-            recommendations: Recommendations
+            overview: Overview section (key metrics + training summary)
+            efficiency_analysis: Efficiency section analysis (from DuckDB)
+            environment_analysis: Environment section analysis (from DuckDB)
+            phase_analysis: Phase section analysis (from DuckDB)
+            split_analysis: Split section analysis (from DuckDB)
+            summary_analysis: Summary section analysis (from DuckDB)
 
         Returns:
             Rendered report content
@@ -151,19 +130,12 @@ class ReportTemplateRenderer:
             template.render(
                 activity_id=activity_id,
                 date=date,
-                activity_type=activity_type,
-                overall_rating=overall_rating,
-                strengths=strengths,
-                improvements=improvements,
-                warmup_phase=warmup_phase,
-                main_phase=main_phase,
-                finish_phase=finish_phase,
-                form_efficiency=form_efficiency,
-                hr_efficiency=hr_efficiency,
-                weather_conditions=weather_conditions,
-                terrain_impact=terrain_impact,
+                overview=overview,
+                efficiency_analysis=efficiency_analysis,
+                environment_analysis=environment_analysis,
+                phase_analysis=phase_analysis,
                 split_analysis=split_analysis,
-                recommendations=recommendations,
+                summary_analysis=summary_analysis,
             ),
         )
 
@@ -175,19 +147,12 @@ class ReportTemplateRenderer:
             List of placeholder names
         """
         return [
-            "LLM_INSIGHTS_ACTIVITY_TYPE",
-            "LLM_INSIGHTS_OVERALL_RATING",
-            "LLM_INSIGHTS_STRENGTHS",
-            "LLM_INSIGHTS_IMPROVEMENTS",
-            "LLM_INSIGHTS_WARMUP",
-            "LLM_INSIGHTS_MAIN",
-            "LLM_INSIGHTS_FINISH",
-            "LLM_INSIGHTS_FORM_EFFICIENCY",
-            "LLM_INSIGHTS_HR_EFFICIENCY",
-            "LLM_INSIGHTS_WEATHER",
-            "LLM_INSIGHTS_TERRAIN",
-            "LLM_INSIGHTS_SPLITS",
-            "LLM_INSIGHTS_RECOMMENDATIONS",
+            "LLM_INSIGHTS_OVERVIEW",
+            "LLM_INSIGHTS_EFFICIENCY_ANALYSIS",
+            "LLM_INSIGHTS_ENVIRONMENT_ANALYSIS",
+            "LLM_INSIGHTS_PHASE_ANALYSIS",
+            "LLM_INSIGHTS_SPLIT_ANALYSIS",
+            "LLM_INSIGHTS_SUMMARY_ANALYSIS",
         ]
 
     def validate_report(self, report_content: str) -> dict[str, Any]:

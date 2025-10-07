@@ -41,7 +41,7 @@ class ReportGeneratorWorker:
         """
         logger.info("[1/4] Loading performance data from DuckDB...")
 
-        # Load basic metrics
+        # Load basic metrics for overview section
         basic_metrics = self.db_reader.get_performance_section(
             activity_id, "basic_metrics"
         )
@@ -52,20 +52,20 @@ class ReportGeneratorWorker:
             )
             return None
 
-        return basic_metrics
+        return {"basic_metrics": basic_metrics}
 
     def load_section_analyses(
         self, activity_id: int
     ) -> dict[str, dict[str, Any]] | None:
         """
-        Load section analyses from DuckDB (Standard Structure).
+        Load section analyses from DuckDB matching agent output structures.
 
-        Expected structure:
-        - Split: analyses.split_1, analyses.split_2, ... (dict keys)
-        - Efficiency: efficiency (top-level string)
-        - Environment: environmental (top-level string)
-        - Phase: phase (top-level string)
-        - Summary: activity_type, summary, recommendations (top-level keys)
+        Expected structure (from agent definitions):
+        - Efficiency: {"efficiency": {"form_efficiency": {}, "hr_efficiency": {}}}
+        - Environment: {"environment_analysis": {"weather_conditions": {}, ...}}
+        - Phase: {"phase_evaluation": {"warmup": {}, "main": {}, "finish": {}, "overall": {}}}
+        - Split: {"split_analysis": {"splits": [], "patterns": {}}}
+        - Summary: {"summary": {"activity_type": {}, "overall_rating": {}, ...}}
 
         Args:
             activity_id: Activity ID
@@ -80,7 +80,7 @@ class ReportGeneratorWorker:
         # Load efficiency analysis
         efficiency_data = self.db_reader.get_section_analysis(activity_id, "efficiency")
         if efficiency_data:
-            analyses["efficiency"] = efficiency_data.get("efficiency", "")
+            analyses["efficiency"] = efficiency_data.get("efficiency", {})
         else:
             logger.warning("Warning: efficiency section analysis missing")
 
@@ -89,38 +89,30 @@ class ReportGeneratorWorker:
             activity_id, "environment"
         )
         if environment_data:
-            analyses["environmental"] = environment_data.get("environmental", "")
+            analyses["environment_analysis"] = environment_data.get(
+                "environment_analysis", {}
+            )
         else:
             logger.warning("Warning: environment section analysis missing")
 
         # Load phase analysis
         phase_data = self.db_reader.get_section_analysis(activity_id, "phase")
         if phase_data:
-            # Extract phase details
-            for phase_key, phase_value in phase_data.items():
-                if phase_key in ["warmup_phase", "main_phase", "finish_phase"]:
-                    analyses[phase_key] = phase_value
+            analyses["phase_evaluation"] = phase_data.get("phase_evaluation", {})
         else:
             logger.warning("Warning: phase section analysis missing")
 
         # Load split analysis
         split_data = self.db_reader.get_section_analysis(activity_id, "split")
         if split_data:
-            # Extract split analyses (split_1, split_2, ...)
-            split_analyses = {}
-            for key, value in split_data.items():
-                if key.startswith("split_"):
-                    split_analyses[key] = value
-            analyses["split_analyses"] = split_analyses
+            analyses["split_analysis"] = split_data.get("split_analysis", {})
         else:
             logger.warning("Warning: split section analysis missing or empty")
 
         # Load summary analysis
         summary_data = self.db_reader.get_section_analysis(activity_id, "summary")
         if summary_data:
-            analyses["activity_type"] = summary_data.get("activity_type", "")
-            analyses["summary"] = summary_data.get("summary", "")
-            analyses["recommendations"] = summary_data.get("recommendations", "")
+            analyses["summary"] = summary_data.get("summary", {})
         else:
             logger.warning("Warning: summary section analysis missing")
 
@@ -129,6 +121,70 @@ class ReportGeneratorWorker:
             return None
 
         return analyses
+
+    def _format_overview(self, performance_data: dict[str, Any]) -> str:
+        """
+        Format overview section from performance data.
+
+        Args:
+            performance_data: Performance data from DuckDB
+
+        Returns:
+            Formatted overview markdown
+        """
+        basic = performance_data.get("basic_metrics", {})
+
+        # Key metrics table
+        distance_km = basic.get("distance_km", 0)
+        duration_sec = basic.get("duration_seconds", 0)
+        avg_pace_sec = basic.get("avg_pace_seconds_per_km", 0)
+        avg_hr = basic.get("avg_heart_rate", 0)
+        avg_cadence = basic.get("avg_cadence", 0)
+        avg_power = basic.get("avg_power", 0)
+
+        # Format duration
+        duration_min = int(duration_sec / 60)
+        duration_sec_remainder = int(duration_sec % 60)
+
+        # Format pace
+        pace_min = int(avg_pace_sec / 60)
+        pace_sec = int(avg_pace_sec % 60)
+
+        overview = f"""### キーメトリクス
+
+| 指標 | 値 |
+|------|-----|
+| 距離 | {distance_km:.2f} km |
+| 時間 | {duration_min}分{duration_sec_remainder}秒 |
+| 平均ペース | {pace_min}'{pace_sec:02d}"/km |
+| 平均心拍 | {avg_hr:.0f} bpm |
+| 平均ケイデンス | {avg_cadence:.0f} spm |
+| 平均パワー | {avg_power:.0f} W |
+
+### トレーニング概要
+
+距離 {distance_km:.2f}km を {duration_min}分{duration_sec_remainder}秒で実施。平均ペース {pace_min}'{pace_sec:02d}"/km、平均心拍 {avg_hr:.0f} bpm。
+"""
+        return overview
+
+    def _format_section_analysis(
+        self, section_data: dict[str, Any], section_name: str
+    ) -> str:
+        """
+        Format section analysis as markdown.
+
+        Args:
+            section_data: Section analysis data
+            section_name: Section name for logging
+
+        Returns:
+            Formatted markdown
+        """
+        if not section_data:
+            return f"{section_name} セクションの分析データがありません。"
+
+        # Convert dict to readable markdown
+        return json.dumps(section_data, ensure_ascii=False, indent=2)
 
     def generate_report(
         self, activity_id: int, date: str | None = None
@@ -150,7 +206,10 @@ class ReportGeneratorWorker:
                 raise ValueError(f"Could not resolve date for activity {activity_id}")
 
         # Load data
-        self.load_performance_data(activity_id)  # Validate data exists
+        performance_data = self.load_performance_data(activity_id)
+        if not performance_data:
+            raise ValueError(f"No performance data found for activity {activity_id}")
+
         section_analyses = self.load_section_analyses(activity_id)
 
         if not section_analyses:
@@ -160,55 +219,36 @@ class ReportGeneratorWorker:
 
         logger.info("[3/4] Generating report from section analyses...")
 
-        # Extract section content
-        activity_type = str(section_analyses.get("activity_type", "未分類"))
-        overall_rating = "★★★★☆"  # Default rating
+        # Format overview from performance data
+        overview = self._format_overview(performance_data)
 
-        # Phase analyses
-        warmup_phase = str(section_analyses.get("warmup_phase", "分析データなし"))
-        main_phase = str(section_analyses.get("main_phase", "分析データなし"))
-        finish_phase = str(section_analyses.get("finish_phase", "分析データなし"))
-
-        # Efficiency analyses
-        efficiency = str(section_analyses.get("efficiency", "分析データなし"))
-        form_efficiency = efficiency  # Use efficiency as form_efficiency
-        hr_efficiency = efficiency  # Use efficiency as hr_efficiency
-
-        # Environmental analyses
-        environmental = str(section_analyses.get("environmental", "分析データなし"))
-        weather_conditions = environmental
-        terrain_impact = environmental
-
-        # Split analyses
-        split_analyses_dict = section_analyses.get("split_analyses", {})
-        split_analysis = "\n\n".join(
-            [f"### {key}\n{value}" for key, value in split_analyses_dict.items()]
+        # Format each section analysis
+        efficiency_analysis = self._format_section_analysis(
+            section_analyses.get("efficiency", {}), "efficiency"
         )
-        if not split_analysis:
-            split_analysis = "分析データなし"
-
-        # Summary analyses
-        strengths = str(section_analyses.get("summary", "分析データなし"))
-        improvements = "継続的な改善が必要"
-        recommendations = str(section_analyses.get("recommendations", "特になし"))
+        environment_analysis = self._format_section_analysis(
+            section_analyses.get("environment_analysis", {}), "environment"
+        )
+        phase_analysis = self._format_section_analysis(
+            section_analyses.get("phase_evaluation", {}), "phase"
+        )
+        split_analysis = self._format_section_analysis(
+            section_analyses.get("split_analysis", {}), "split"
+        )
+        summary_analysis = self._format_section_analysis(
+            section_analyses.get("summary", {}), "summary"
+        )
 
         # Render report using Jinja2 template
         report_content = self.renderer.render_report(
             activity_id=str(activity_id),
             date=date,
-            activity_type=activity_type,
-            overall_rating=overall_rating,
-            strengths=strengths,
-            improvements=improvements,
-            warmup_phase=warmup_phase,
-            main_phase=main_phase,
-            finish_phase=finish_phase,
-            form_efficiency=form_efficiency,
-            hr_efficiency=hr_efficiency,
-            weather_conditions=weather_conditions,
-            terrain_impact=terrain_impact,
+            overview=overview,
+            efficiency_analysis=efficiency_analysis,
+            environment_analysis=environment_analysis,
+            phase_analysis=phase_analysis,
             split_analysis=split_analysis,
-            recommendations=recommendations,
+            summary_analysis=summary_analysis,
         )
 
         logger.info("[4/4] Saving report to result/individual/...")

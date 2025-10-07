@@ -33,18 +33,12 @@
         "servers/markdown_server.py"
       ]
     },
-    "report-generator": {
-      "command": "uv",
-      "args": [
-        "run",
-        "python",
-        "servers/report_generator_core.py"
-      ]
-    },
     "serena": {
-      "command": "node",
+      "command": "uvx",
       "args": [
-        "/home/yamakii/.serena/mcp/dist/index.js"
+        "--from",
+        "git+https://github.com/oraios/serena",
+        "serena-mcp-server"
       ]
     }
   }
