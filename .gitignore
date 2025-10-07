@@ -78,5 +78,8 @@ build/
 *.egg-info/
 .eggs/
 
-# Serena cache
-.serena/cache/
+# Serena MCP
+.serena/
+
+# UV lock file
+uv.lock
