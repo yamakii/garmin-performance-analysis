@@ -286,6 +286,7 @@ class TestGarminIngestWorker:
             assert result["date"] == "2025-09-22"
 
     @pytest.mark.integration
+    @pytest.mark.garmin_api
     def test_collect_data_with_real_garmin_api(self, worker):
         """Test collect_data with real Garmin MCP connection."""
         # Use existing activity with cache to avoid API rate limit
@@ -317,6 +318,7 @@ class TestGarminIngestWorker:
         assert len(splits["lapDTOs"]) > 0
 
     @pytest.mark.integration
+    @pytest.mark.garmin_api
     def test_process_activity_full_integration(self, worker):
         """Test full process_activity pipeline with real data."""
         # Use existing cached activity
