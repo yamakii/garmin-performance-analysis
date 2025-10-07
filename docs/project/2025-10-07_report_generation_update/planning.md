@@ -80,36 +80,42 @@ DuckDBに保存されたセクション分析データから、効率的かつ�
     └── section_analyses table (5 section types)
           ↓
 [ReportGeneratorWorker]
-    ├── load_performance_data(activity_id) → basic_metrics
-    ├── load_section_analyses(activity_id) → 5 sections dict
-    ├── _format_overview(performance_data) → markdown
-    ├── _format_section_analysis(section_data, section_name) → markdown
+    ├── load_performance_data(activity_id) → basic_metrics (JSON)
+    ├── load_section_analyses(activity_id) → 5 sections dict (JSON)
     └── generate_report(activity_id, date) → report_content
           ↓
 [ReportTemplateRenderer]
     ├── load_template("detailed_report.j2")
-    ├── render_report(activity_id, date, overview, 5 sections) → markdown
+    ├── render_report(activity_id, date, basic_metrics, 5 sections JSON) → markdown
+    │   └── Template内でJSON dataをmarkdown形式にフォーマット
     └── save_report(activity_id, date, report_content) → file path
           ↓
 [result/individual/{YEAR}/{MONTH}/{YYYY-MM-DD}_activity_{ACTIVITY_ID}.md]
 ```
 
+**設計原則**: ロジックとプレゼンテーションの完全分離
+- Worker層: データ取得のみ（フォーマット処理なし）
+- Template層: JSON dataから柔軟にmarkdown生成
+
 #### コンポーネント設計
 
 **1. ReportGeneratorWorker** (`tools/reporting/report_generator_worker.py`)
-- **責務**: DuckDBからデータを取得し、レポート生成を調整
+- **責務**: DuckDBからJSON dataを取得し、レポート生成を調整（フォーマット処理なし）
 - **主要メソッド**:
   - `load_performance_data(activity_id: int) -> dict[str, Any] | None`
+    - 返り値: `{"basic_metrics": {...}}`
   - `load_section_analyses(activity_id: int) -> dict[str, dict[str, Any]] | None`
-  - `_format_overview(performance_data: dict[str, Any]) -> str`
-  - `_format_section_analysis(section_data: dict[str, Any], section_name: str) -> str`
+    - 返り値: `{"efficiency": {...}, "environment_analysis": {...}, ...}`
   - `generate_report(activity_id: int, date: str | None = None) -> dict[str, Any]`
+    - JSON dataをRendererに渡してレポート生成
 
 **2. ReportTemplateRenderer** (`tools/reporting/report_template_renderer.py`)
-- **責務**: Jinja2テンプレートベースのレンダリングとファイル保存
+- **責務**: Jinja2テンプレートでJSON dataからmarkdownを生成、ファイル保存
 - **主要メソッド**:
   - `load_template(template_name: str = "detailed_report.j2")`
-  - `render_report(activity_id: str, date: str, overview: str, efficiency_analysis: str, ...) -> str`
+  - `render_report(activity_id: str, date: str, basic_metrics: dict, section_analyses: dict) -> str`
+    - **変更点**: markdown文字列ではなくJSON dictを受け取る
+    - Template側でJSON dataをmarkdown形式にフォーマット
   - `save_report(activity_id: str, date: str, report_content: str) -> dict[str, Any]`
   - `validate_report(report_content: str) -> dict[str, Any]`
   - `get_final_report_path(activity_id: str, date: str) -> Path`
@@ -149,7 +155,11 @@ DuckDBから取得されるセクション分析のJSON構造:
   "environment_analysis": {
     "weather_conditions": "気温18.0°C、快適な条件",
     "terrain_impact": "平坦コース (標高変化+2m/-2m)",
-    "evaluation": "理想的な環境条件"
+    "gear": {
+      "shoes": "Nike Vaporfly Next% 2 (走行距離: 245km)",
+      "notes": "理想的なシューズ選択"
+    },
+    "evaluation": "理想的な環境条件、適切な機材選択"
   }
 }
 
@@ -195,20 +205,25 @@ DuckDBから取得されるセクション分析のJSON構造:
 
 #### Report Template Variables
 
-Jinja2テンプレートに渡される変数:
+Jinja2テンプレートに渡される変数（JSON data形式）:
 
 ```python
 {
   "activity_id": str,
   "date": str,  # YYYY-MM-DD
-  "overview": str,  # キーメトリクス表 + トレーニング概要
-  "efficiency_analysis": str,  # Efficiency section formatted
-  "environment_analysis": str,  # Environment section formatted
-  "phase_analysis": str,  # Phase section formatted
-  "split_analysis": str,  # Split section formatted
-  "summary_analysis": str,  # Summary section formatted
+  "basic_metrics": dict,  # Performance data (distance, time, pace, HR, etc.)
+  "efficiency": dict,  # Efficiency section (form_efficiency, hr_efficiency, evaluation)
+  "environment_analysis": dict,  # Environment section (weather, terrain, gear, evaluation)
+  "phase_evaluation": dict,  # Phase section (warmup, main, finish, overall)
+  "split_analysis": dict,  # Split section (splits list, patterns)
+  "summary": dict,  # Summary section (activity_type, rating, strengths, areas, recommendations)
 }
 ```
+
+**Template側の責務**:
+- `basic_metrics`からキーメトリクス表とトレーニング概要を生成
+- 各sectionのJSON dataを適切なmarkdown形式にフォーマット
+- 日本語テキストの整形（箇条書き、表、見出しなど）
 
 ### API/インターフェース設計
 
@@ -246,28 +261,29 @@ def render_report(
     self,
     activity_id: str,
     date: str,
-    overview: str,
-    efficiency_analysis: str,
-    environment_analysis: str,
-    phase_analysis: str,
-    split_analysis: str,
-    summary_analysis: str,
+    basic_metrics: dict[str, Any],
+    section_analyses: dict[str, dict[str, Any]],
 ) -> str:
     """
-    Render report using Jinja2 template.
+    Render report using Jinja2 template with JSON data.
 
     Args:
         activity_id: Activity ID
-        date: Date
-        overview: Overview section (key metrics + training summary)
-        efficiency_analysis: Efficiency section analysis (from DuckDB)
-        environment_analysis: Environment section analysis (from DuckDB)
-        phase_analysis: Phase section analysis (from DuckDB)
-        split_analysis: Split section analysis (from DuckDB)
-        summary_analysis: Summary section analysis (from DuckDB)
+        date: Date (YYYY-MM-DD)
+        basic_metrics: Performance data (distance, time, pace, HR, cadence, power)
+        section_analyses: Section analyses dict with keys:
+            - "efficiency": Form & HR efficiency analysis
+            - "environment_analysis": Weather, terrain, gear analysis
+            - "phase_evaluation": Warmup, main, finish phase analysis
+            - "split_analysis": Split-by-split detailed analysis
+            - "summary": Overall rating and recommendations
 
     Returns:
         Rendered report content (markdown)
+
+    Note:
+        Template側でJSON dataをmarkdown形式にフォーマット。
+        Worker側ではフォーマット処理を行わない（ロジックとプレゼンテーションの分離）。
     """
 ```
 
@@ -308,53 +324,68 @@ def test_load_section_analyses_all_sections():
     assert "summary" in analyses
 ```
 
-**テストケース3: _format_overview() - マークダウン生成**
+**テストケース3: load_section_analyses() - environment分析にgear情報含む**
 ```python
-def test_format_overview():
-    """Performance dataから概要セクションを生成できることを確認"""
+def test_load_section_analyses_includes_gear():
+    """Environment分析にgear情報が含まれることを確認"""
     worker = ReportGeneratorWorker(":memory:")
-    performance_data = {
-        "basic_metrics": {
-            "distance_km": 5.0,
-            "duration_seconds": 1800,
-            "avg_pace_seconds_per_km": 360,
-            "avg_heart_rate": 155,
-        }
-    }
+    # Setup: Insert environment section with gear info
+    analyses = worker.load_section_analyses(12345)
 
-    overview = worker._format_overview(performance_data)
-
-    assert "5.00 km" in overview
-    assert "30分0秒" in overview
-    assert "6'00\"" in overview
-    assert "155 bpm" in overview
+    assert analyses is not None
+    assert "environment_analysis" in analyses
+    env = analyses["environment_analysis"]
+    assert "gear" in env
+    assert "shoes" in env["gear"]
 ```
 
-**テストケース4: _format_section_analysis() - セクションフォーマット**
+**テストケース4: ReportTemplateRenderer - JSON dataをテンプレートに渡す**
 ```python
-def test_format_section_analysis_with_data():
-    """セクション分析をマークダウンにフォーマットできることを確認"""
-    worker = ReportGeneratorWorker(":memory:")
-    section_data = {
-        "form_efficiency": "GCT: 262ms",
-        "hr_efficiency": "Zone 1優位"
+def test_renderer_accepts_json_data():
+    """RendererがJSON dataを受け取ってレンダリングできることを確認"""
+    renderer = ReportTemplateRenderer()
+
+    basic_metrics = {
+        "distance_km": 5.0,
+        "duration_seconds": 1800,
+        "avg_pace_seconds_per_km": 360,
+        "avg_heart_rate": 155,
     }
 
-    result = worker._format_section_analysis(section_data, "efficiency")
+    section_analyses = {
+        "efficiency": {"form_efficiency": "GCT: 262ms", "hr_efficiency": "Zone 1優位"},
+        "environment_analysis": {"weather_conditions": "気温18.0°C", "gear": {"shoes": "Nike Vaporfly"}},
+        "phase_evaluation": {},
+        "split_analysis": {},
+        "summary": {}
+    }
 
-    assert "GCT: 262ms" in result
-    assert "Zone 1優位" in result
+    report = renderer.render_report("12345", "2025-09-22", basic_metrics, section_analyses)
+
+    assert "5.0" in report or "5.00" in report  # Template側でフォーマット
+    assert "GCT: 262ms" in report
+    assert "Nike Vaporfly" in report
 ```
 
-**テストケース5: _format_section_analysis() - 空データ**
+**テストケース5: ReportTemplateRenderer - 空セクションの扱い**
 ```python
-def test_format_section_analysis_empty():
-    """空のセクションデータに対してメッセージを返すことを確認"""
-    worker = ReportGeneratorWorker(":memory:")
+def test_renderer_handles_missing_sections():
+    """空のセクションに対してTemplate側で適切に処理されることを確認"""
+    renderer = ReportTemplateRenderer()
 
-    result = worker._format_section_analysis({}, "efficiency")
+    basic_metrics = {"distance_km": 5.0, "duration_seconds": 1800}
+    section_analyses = {
+        "efficiency": {"form_efficiency": "GCT: 262ms"},
+        "environment_analysis": {},  # 空セクション
+        "phase_evaluation": {},
+        "split_analysis": {},
+        "summary": {}
+    }
 
-    assert "データがありません" in result
+    report = renderer.render_report("12345", "2025-09-22", basic_metrics, section_analyses)
+
+    assert report is not None
+    # Template側で空セクションの扱いを実装（例: 「データなし」メッセージ、またはセクション非表示）
 ```
 
 ### Integration Tests
@@ -458,9 +489,10 @@ def test_report_generation_speed(tmp_path):
 
 ✅ **機能要件**:
 1. 全5セクション分析を含むレポートが生成できる
-2. 一部セクション欠落時も部分的レポートが生成できる
-3. 日本語テキストが正しくUTF-8でエンコードされる
-4. レポートが正しいディレクトリ構造に保存される
+2. Environment分析にgear情報（シューズなど）が含まれる
+3. 一部セクション欠落時も部分的レポートが生成できる
+4. 日本語テキストが正しくUTF-8でエンコードされる
+5. レポートが正しいディレクトリ構造に保存される
 
 ✅ **非機能要件**:
 1. レポート生成が3秒以内に完了する
@@ -481,13 +513,19 @@ def test_report_generation_speed(tmp_path):
 ### Phase 2-1: Unit Tests実装（Red）
 - [ ] `tests/reporting/test_report_generator_worker.py` 作成
 - [ ] 5つのunit testケースを実装（全て失敗する状態）
+  - test_load_performance_data_success
+  - test_load_section_analyses_all_sections
+  - test_load_section_analyses_includes_gear
+  - test_renderer_accepts_json_data
+  - test_renderer_handles_missing_sections
 - [ ] テスト実行: `uv run pytest tests/reporting/test_report_generator_worker.py -v`
 
-### Phase 2-2: Worker実装（Green）
+### Phase 2-2: Worker & Renderer実装（Green）
 - [ ] `load_performance_data()` 実装
-- [ ] `load_section_analyses()` 実装
-- [ ] `_format_overview()` 実装
-- [ ] `_format_section_analysis()` 実装
+- [ ] `load_section_analyses()` 実装（gear情報含む）
+- [ ] `ReportTemplateRenderer.render_report()` 更新
+  - 引数をJSON dataに変更（markdown文字列ではなく）
+  - Template側でmarkdown生成ロジックを実装
 - [ ] テスト実行: `uv run pytest tests/reporting/test_report_generator_worker.py -v` (全てパス)
 
 ### Phase 2-3: Integration Tests実装（Red）
