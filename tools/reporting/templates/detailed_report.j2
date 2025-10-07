@@ -7,37 +7,145 @@
 
 ## 📊 概要
 
-{{ overview }}
+{% if basic_metrics %}
+### キーメトリクス
+
+| 指標 | 値 |
+|------|-----|
+| 距離 | {{ "%.2f"|format(basic_metrics.distance_km|default(0)) }} km |
+| 時間 | {{ (basic_metrics.duration_seconds|default(0) / 60)|int }}分{{ (basic_metrics.duration_seconds|default(0) % 60)|int }}秒 |
+| 平均ペース | {{ (basic_metrics.avg_pace_seconds_per_km|default(0) / 60)|int }}'{{ "%02d"|format((basic_metrics.avg_pace_seconds_per_km|default(0) % 60)|int) }}"/km |
+| 平均心拍 | {{ basic_metrics.avg_heart_rate|default(0)|int }} bpm |
+| 平均ケイデンス | {{ basic_metrics.avg_cadence|default(0)|int }} spm |
+| 平均パワー | {{ basic_metrics.avg_power|default(0)|int }} W |
+
+### トレーニング概要
+
+距離 {{ "%.2f"|format(basic_metrics.distance_km|default(0)) }}km を {{ (basic_metrics.duration_seconds|default(0) / 60)|int }}分{{ (basic_metrics.duration_seconds|default(0) % 60)|int }}秒で実施。平均ペース {{ (basic_metrics.avg_pace_seconds_per_km|default(0) / 60)|int }}'{{ "%02d"|format((basic_metrics.avg_pace_seconds_per_km|default(0) % 60)|int) }}"/km、平均心拍 {{ basic_metrics.avg_heart_rate|default(0)|int }} bpm。
+{% else %}
+データがありません。
+{% endif %}
 
 ---
 
 ## 🎯 効率分析 (Efficiency Section)
 
-{{ efficiency_analysis }}
+{% if efficiency %}
+{% if efficiency.form_efficiency %}
+**フォーム効率**: {{ efficiency.form_efficiency }}
+{% endif %}
+{% if efficiency.hr_efficiency %}
+**心拍効率**: {{ efficiency.hr_efficiency }}
+{% endif %}
+{% if efficiency.evaluation %}
+**評価**: {{ efficiency.evaluation }}
+{% endif %}
+{% else %}
+データがありません。
+{% endif %}
 
 ---
 
 ## 🌍 環境・コンディション分析 (Environment Section)
 
-{{ environment_analysis }}
+{% if environment_analysis %}
+{% if environment_analysis.weather_conditions %}
+**気象条件**: {{ environment_analysis.weather_conditions }}
+{% endif %}
+{% if environment_analysis.terrain_impact %}
+**地形影響**: {{ environment_analysis.terrain_impact }}
+{% endif %}
+{% if environment_analysis.gear %}
+**使用機材**:
+{% if environment_analysis.gear.shoes %}
+- シューズ: {{ environment_analysis.gear.shoes }}
+{% endif %}
+{% if environment_analysis.gear.notes %}
+- 備考: {{ environment_analysis.gear.notes }}
+{% endif %}
+{% endif %}
+{% if environment_analysis.evaluation %}
+**評価**: {{ environment_analysis.evaluation }}
+{% endif %}
+{% else %}
+データがありません。
+{% endif %}
 
 ---
 
 ## 📈 フェーズ評価 (Phase Section)
 
-{{ phase_analysis }}
+{% if phase_evaluation %}
+{% if phase_evaluation.warmup %}
+**ウォームアップフェーズ**: {{ phase_evaluation.warmup.evaluation|default('N/A') }}
+{% endif %}
+{% if phase_evaluation.main %}
+**メインフェーズ**: {{ phase_evaluation.main.evaluation|default('N/A') }}
+{% endif %}
+{% if phase_evaluation.finish %}
+**フィニッシュフェーズ**: {{ phase_evaluation.finish.evaluation|default('N/A') }}
+{% endif %}
+{% if phase_evaluation.overall %}
+**総合**: {{ phase_evaluation.overall }}
+{% endif %}
+{% else %}
+データがありません。
+{% endif %}
 
 ---
 
 ## 🔍 スプリット詳細分析 (Split Section)
 
-{{ split_analysis }}
+{% if split_analysis and split_analysis.splits %}
+{% for split in split_analysis.splits %}
+**{{ split.km }}km**: ペース {{ split.pace }}, 心拍 {{ split.hr }}bpm
+{% endfor %}
+
+{% if split_analysis.patterns %}
+**パターン分析**:
+{% if split_analysis.patterns.pace_trend %}
+- ペーストレンド: {{ split_analysis.patterns.pace_trend }}
+{% endif %}
+{% if split_analysis.patterns.hr_trend %}
+- 心拍トレンド: {{ split_analysis.patterns.hr_trend }}
+{% endif %}
+{% if split_analysis.patterns.form_consistency %}
+- フォーム一貫性: {{ split_analysis.patterns.form_consistency }}
+{% endif %}
+{% endif %}
+{% else %}
+データがありません。
+{% endif %}
 
 ---
 
 ## ✅ 総合評価 (Summary Section)
 
-{{ summary_analysis }}
+{% if summary %}
+{% if summary.activity_type %}
+**アクティビティタイプ**: {{ summary.activity_type.classification|default('N/A') }}
+{% endif %}
+{% if summary.overall_rating %}
+**総合評価**: {{ summary.overall_rating.stars|default('N/A') }}
+{% endif %}
+{% if summary.key_strengths %}
+**強み**:
+{% for strength in summary.key_strengths %}
+- {{ strength }}
+{% endfor %}
+{% endif %}
+{% if summary.improvement_areas %}
+**改善点**:
+{% for area in summary.improvement_areas %}
+- {{ area }}
+{% endfor %}
+{% endif %}
+{% if summary.recommendations %}
+**推奨事項**: {{ summary.recommendations }}
+{% endif %}
+{% else %}
+データがありません。
+{% endif %}
 
 ---
 

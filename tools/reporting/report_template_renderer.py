@@ -101,28 +101,29 @@ class ReportTemplateRenderer:
         self,
         activity_id: str,
         date: str,
-        overview: str,
-        efficiency_analysis: str,
-        environment_analysis: str,
-        phase_analysis: str,
-        split_analysis: str,
-        summary_analysis: str,
+        basic_metrics: dict[str, Any],
+        section_analyses: dict[str, dict[str, Any]],
     ) -> str:
         """
-        Jinja2テンプレートを使用してレポートをレンダリング。
+        Jinja2テンプレートでJSON dataからmarkdownを生成。
 
         Args:
             activity_id: Activity ID
-            date: Date
-            overview: Overview section (key metrics + training summary)
-            efficiency_analysis: Efficiency section analysis (from DuckDB)
-            environment_analysis: Environment section analysis (from DuckDB)
-            phase_analysis: Phase section analysis (from DuckDB)
-            split_analysis: Split section analysis (from DuckDB)
-            summary_analysis: Summary section analysis (from DuckDB)
+            date: Date (YYYY-MM-DD)
+            basic_metrics: Performance data (distance, time, pace, HR, cadence, power)
+            section_analyses: Section analyses dict with keys:
+                - "efficiency": Form & HR efficiency analysis
+                - "environment_analysis": Weather, terrain, gear analysis
+                - "phase_evaluation": Warmup, main, finish phase analysis
+                - "split_analysis": Split-by-split detailed analysis
+                - "summary": Overall rating and recommendations
 
         Returns:
-            Rendered report content
+            Rendered report content (markdown)
+
+        Note:
+            Template側でJSON dataをmarkdown形式にフォーマット。
+            Worker側ではフォーマット処理を行わない（ロジックとプレゼンテーションの分離）。
         """
         template = self.load_template()
         return cast(
@@ -130,12 +131,12 @@ class ReportTemplateRenderer:
             template.render(
                 activity_id=activity_id,
                 date=date,
-                overview=overview,
-                efficiency_analysis=efficiency_analysis,
-                environment_analysis=environment_analysis,
-                phase_analysis=phase_analysis,
-                split_analysis=split_analysis,
-                summary_analysis=summary_analysis,
+                basic_metrics=basic_metrics,
+                efficiency=section_analyses.get("efficiency", {}),
+                environment_analysis=section_analyses.get("environment_analysis", {}),
+                phase_evaluation=section_analyses.get("phase_evaluation", {}),
+                split_analysis=section_analyses.get("split_analysis", {}),
+                summary=section_analyses.get("summary", {}),
             ),
         )
 

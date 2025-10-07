@@ -122,70 +122,6 @@ class ReportGeneratorWorker:
 
         return analyses
 
-    def _format_overview(self, performance_data: dict[str, Any]) -> str:
-        """
-        Format overview section from performance data.
-
-        Args:
-            performance_data: Performance data from DuckDB
-
-        Returns:
-            Formatted overview markdown
-        """
-        basic = performance_data.get("basic_metrics", {})
-
-        # Key metrics table
-        distance_km = basic.get("distance_km", 0)
-        duration_sec = basic.get("duration_seconds", 0)
-        avg_pace_sec = basic.get("avg_pace_seconds_per_km", 0)
-        avg_hr = basic.get("avg_heart_rate", 0)
-        avg_cadence = basic.get("avg_cadence", 0)
-        avg_power = basic.get("avg_power", 0)
-
-        # Format duration
-        duration_min = int(duration_sec / 60)
-        duration_sec_remainder = int(duration_sec % 60)
-
-        # Format pace
-        pace_min = int(avg_pace_sec / 60)
-        pace_sec = int(avg_pace_sec % 60)
-
-        overview = f"""### キーメトリクス
-
-| 指標 | 値 |
-|------|-----|
-| 距離 | {distance_km:.2f} km |
-| 時間 | {duration_min}分{duration_sec_remainder}秒 |
-| 平均ペース | {pace_min}'{pace_sec:02d}"/km |
-| 平均心拍 | {avg_hr:.0f} bpm |
-| 平均ケイデンス | {avg_cadence:.0f} spm |
-| 平均パワー | {avg_power:.0f} W |
-
-### トレーニング概要
-
-距離 {distance_km:.2f}km を {duration_min}分{duration_sec_remainder}秒で実施。平均ペース {pace_min}'{pace_sec:02d}"/km、平均心拍 {avg_hr:.0f} bpm。
-"""
-        return overview
-
-    def _format_section_analysis(
-        self, section_data: dict[str, Any], section_name: str
-    ) -> str:
-        """
-        Format section analysis as markdown.
-
-        Args:
-            section_data: Section analysis data
-            section_name: Section name for logging
-
-        Returns:
-            Formatted markdown
-        """
-        if not section_data:
-            return f"{section_name} セクションの分析データがありません。"
-
-        # Convert dict to readable markdown
-        return json.dumps(section_data, ensure_ascii=False, indent=2)
-
     def generate_report(
         self, activity_id: int, date: str | None = None
     ) -> dict[str, Any]:
@@ -219,36 +155,15 @@ class ReportGeneratorWorker:
 
         logger.info("[3/4] Generating report from section analyses...")
 
-        # Format overview from performance data
-        overview = self._format_overview(performance_data)
+        # Extract basic_metrics from performance_data
+        basic_metrics = performance_data.get("basic_metrics", {})
 
-        # Format each section analysis
-        efficiency_analysis = self._format_section_analysis(
-            section_analyses.get("efficiency", {}), "efficiency"
-        )
-        environment_analysis = self._format_section_analysis(
-            section_analyses.get("environment_analysis", {}), "environment"
-        )
-        phase_analysis = self._format_section_analysis(
-            section_analyses.get("phase_evaluation", {}), "phase"
-        )
-        split_analysis = self._format_section_analysis(
-            section_analyses.get("split_analysis", {}), "split"
-        )
-        summary_analysis = self._format_section_analysis(
-            section_analyses.get("summary", {}), "summary"
-        )
-
-        # Render report using Jinja2 template
+        # Render report using Jinja2 template with JSON data
         report_content = self.renderer.render_report(
             activity_id=str(activity_id),
             date=date,
-            overview=overview,
-            efficiency_analysis=efficiency_analysis,
-            environment_analysis=environment_analysis,
-            phase_analysis=phase_analysis,
-            split_analysis=split_analysis,
-            summary_analysis=summary_analysis,
+            basic_metrics=basic_metrics,
+            section_analyses=section_analyses,
         )
 
         logger.info("[4/4] Saving report to result/individual/...")
