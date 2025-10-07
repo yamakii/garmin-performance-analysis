@@ -27,8 +27,24 @@ PROJECT_NAME="duckdb_section_analysis"
 PROJECT_DIR="docs/project/$(date +%Y-%m-%d)_${PROJECT_NAME}"
 mkdir -p "${PROJECT_DIR}"
 
-# planning.md作成
-touch "${PROJECT_DIR}/planning.md"
+# テンプレートからplanning.md作成（UTF-8エンコーディング保証）
+cp docs/templates/planning.md "${PROJECT_DIR}/planning.md"
+# または
+cat docs/templates/planning.md | sed "s/\[プロジェクト名\]/${PROJECT_NAME}/g" > "${PROJECT_DIR}/planning.md"
+```
+
+**テンプレートを使わない場合:**
+```bash
+# 直接ヒアドキュメントで作成
+cat > "${PROJECT_DIR}/planning.md" <<'EOF'
+# 計画: プロジェクト名
+
+## 要件定義
+
+## 設計
+
+## テスト計画
+EOF
 ```
 
 ### 1.1 要件定義
@@ -431,10 +447,13 @@ mkdir -p data/database
 
 ```bash
 # 1. プロジェクトディレクトリ作成
-mkdir -p docs/project/$(date +%Y-%m-%d)_new_feature
+PROJECT_NAME="new_feature"
+PROJECT_DIR="docs/project/$(date +%Y-%m-%d)_${PROJECT_NAME}"
+mkdir -p "${PROJECT_DIR}"
 
-# 2. 計画フェーズ（planning.md作成）
-vim docs/project/$(date +%Y-%m-%d)_new_feature/planning.md
+# 2. 計画フェーズ（テンプレートからplanning.md作成）
+cp docs/templates/planning.md "${PROJECT_DIR}/planning.md"
+vim "${PROJECT_DIR}/planning.md"
 
 # 3. ブランチ作成（必要に応じて）
 git checkout -b feat/new-feature
@@ -454,8 +473,9 @@ uv run pytest  # ✅ All Passed
 git add .
 git commit -m "feat: implement new feature"  # Pre-commit hooks自動実行
 
-# 8. 完了レポート作成
-vim docs/project/$(date +%Y-%m-%d)_new_feature/completion_report.md
+# 8. 完了レポート作成（テンプレートから作成）
+cp docs/templates/completion_report.md "${PROJECT_DIR}/completion_report.md"
+vim "${PROJECT_DIR}/completion_report.md"
 ```
 
 ---
