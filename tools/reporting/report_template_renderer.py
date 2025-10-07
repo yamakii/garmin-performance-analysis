@@ -44,7 +44,24 @@ class ReportTemplateRenderer:
         activity_id: str,
         date: str,
         basic_metrics: dict[str, Any],
-        section_analyses: dict[str, dict[str, Any]],
+        section_analyses: dict[str, dict[str, Any]] | None = None,
+        activity_name: str | None = None,
+        location_name: str | None = None,
+        weight_kg: float | None = None,
+        weather_data: dict[str, Any] | None = None,
+        gear_name: str | None = None,
+        form_efficiency: dict[str, Any] | None = None,
+        performance_metrics: dict[str, Any] | None = None,
+        training_type: str | None = None,
+        warmup_metrics: dict[str, Any] | None = None,
+        main_metrics: dict[str, Any] | None = None,
+        finish_metrics: dict[str, Any] | None = None,
+        splits: list[dict[str, Any]] | None = None,
+        efficiency: dict[str, Any] | str | None = None,
+        environment_analysis: dict[str, Any] | str | None = None,
+        phase_evaluation: dict[str, Any] | None = None,
+        split_analysis: dict[str, Any] | None = None,
+        summary: dict[str, Any] | None = None,
     ) -> str:
         """
         Jinja2テンプレートでJSON dataからmarkdownを生成。
@@ -53,12 +70,24 @@ class ReportTemplateRenderer:
             activity_id: Activity ID
             date: Date (YYYY-MM-DD)
             basic_metrics: Performance data (distance, time, pace, HR, cadence, power)
-            section_analyses: Section analyses dict with keys:
-                - "efficiency": Form & HR efficiency analysis
-                - "environment_analysis": Weather, terrain, gear analysis
-                - "phase_evaluation": Warmup, main, finish phase analysis
-                - "split_analysis": Split-by-split detailed analysis
-                - "summary": Overall rating and recommendations
+            section_analyses: (Legacy) Section analyses dict - deprecated, use individual params
+            activity_name: Activity name
+            location_name: Location name
+            weight_kg: Body weight in kg
+            weather_data: Weather conditions (temp, humidity, wind)
+            gear_name: Gear/shoe name
+            form_efficiency: Form efficiency statistics (GCT, VO, VR)
+            performance_metrics: Performance metrics (pace consistency, HR drift, etc.)
+            training_type: Training type classification
+            warmup_metrics: Warmup phase metrics
+            main_metrics: Main phase metrics
+            finish_metrics: Finish phase metrics
+            splits: List of split data with metrics
+            efficiency: Form & HR efficiency analysis
+            environment_analysis: Weather, terrain, gear analysis
+            phase_evaluation: Warmup, main, finish phase analysis
+            split_analysis: Split-by-split detailed analysis
+            summary: Overall rating and recommendations
 
         Returns:
             Rendered report content (markdown)
@@ -67,18 +96,44 @@ class ReportTemplateRenderer:
             Template側でJSON dataをmarkdown形式にフォーマット。
             Worker側ではフォーマット処理を行わない（ロジックとプレゼンテーションの分離）。
         """
+        # Support legacy section_analyses parameter
+        if section_analyses:
+            efficiency = efficiency or section_analyses.get("efficiency", {})
+            environment_analysis = environment_analysis or section_analyses.get(
+                "environment_analysis", {}
+            )
+            phase_evaluation = phase_evaluation or section_analyses.get(
+                "phase_evaluation", {}
+            )
+            split_analysis = split_analysis or section_analyses.get(
+                "split_analysis", {}
+            )
+            summary = summary or section_analyses.get("summary", {})
+
         template = self.load_template()
         return cast(
             str,
             template.render(
                 activity_id=activity_id,
                 date=date,
+                activity_name=activity_name,
+                location_name=location_name,
                 basic_metrics=basic_metrics,
-                efficiency=section_analyses.get("efficiency", {}),
-                environment_analysis=section_analyses.get("environment_analysis", {}),
-                phase_evaluation=section_analyses.get("phase_evaluation", {}),
-                split_analysis=section_analyses.get("split_analysis", {}),
-                summary=section_analyses.get("summary", {}),
+                weight_kg=weight_kg,
+                weather_data=weather_data or {},
+                gear_name=gear_name,
+                form_efficiency=form_efficiency,
+                performance_metrics=performance_metrics,
+                training_type=training_type,
+                warmup_metrics=warmup_metrics,
+                main_metrics=main_metrics,
+                finish_metrics=finish_metrics,
+                splits=splits or [],
+                efficiency=efficiency or {},
+                environment_analysis=environment_analysis or {},
+                phase_evaluation=phase_evaluation or {},
+                split_analysis=split_analysis or {},
+                summary=summary or {},
             ),
         )
 

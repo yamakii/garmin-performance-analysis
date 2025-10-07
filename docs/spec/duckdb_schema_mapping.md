@@ -492,119 +492,22 @@ result/individual/YYYY/MM/YYYY-MM-DD_activity_ID.md
 
 ## 未実装テーブル（将来の拡張用）
 
-以下のテーブルはスキーマに存在する可能性があるが、現在の挿入ロジックでは使用されていない：
+以下のテーブルは過去に未実装とされていたが、現在は **ほぼ全て実装済み** です。
 
-### 1. body_composition_trends - 体組成トレンド
+### 削除済みテーブル
 
-**目的**: 体組成データの時系列トレンド分析（週次・月次集計）
+#### 1. performance_data - パフォーマンスデータJSON格納（削除済み）
 
-**想定スキーマ**:
-```sql
-CREATE TABLE body_composition_trends (
-    trend_id INTEGER PRIMARY KEY,
-    period_type VARCHAR,  -- 'weekly', 'monthly'
-    period_start_date DATE,
-    period_end_date DATE,
-    avg_weight_kg DOUBLE,
-    weight_change_kg DOUBLE,
-    avg_body_fat_percentage DOUBLE,
-    avg_muscle_mass_kg DOUBLE,
-    avg_bmi DOUBLE,
-    measurement_count INTEGER,
-    created_at TIMESTAMP
-);
-```
+**削除理由**:
+- 正規化されたテーブル（activities, splits, form_efficiency等）で完全に代替可能
+- データが0件で完全に未使用だった
+- JSON格納による検索・集計の非効率性
 
-**未実装の理由**:
-- 現在は`body_composition`テーブルから直接トレンド分析を実行
-- 集計テーブルの更新ロジックが複雑（差分更新が必要）
-- レポート生成時にオンデマンドで計算しても十分に高速
+**現在の状態**:
+- ✅ **2025-10-07に削除完了**
+- 全てのパフォーマンスデータは正規化テーブルで管理
 
-**実装優先度**: 低（データ量が増えた際に検討）
-
-### 2. form_efficiency_trend - フォーム効率トレンド
-
-**目的**: GCT/VO/VR メトリクスの時系列トレンド分析
-
-**想定スキーマ**:
-```sql
-CREATE TABLE form_efficiency_trend (
-    trend_id INTEGER PRIMARY KEY,
-    period_start_date DATE,
-    period_end_date DATE,
-    avg_gct_ms DOUBLE,
-    gct_improvement_percentage DOUBLE,
-    avg_vo_cm DOUBLE,
-    vo_improvement_percentage DOUBLE,
-    avg_vr_percent DOUBLE,
-    vr_improvement_percentage DOUBLE,
-    activity_count INTEGER,
-    created_at TIMESTAMP
-);
-```
-
-**未実装の理由**:
-- `form_efficiency`テーブルから時系列分析可能
-- トレンド計算はRAGツール(`mcp__garmin-db__get_performance_trends`)で代替可能
-
-**実装優先度**: 低（RAGツールで十分）
-
-### 3. monthly_summary - 月次サマリー
-
-**目的**: 月間の走行距離・時間・平均ペース等の集計
-
-**想定スキーマ**:
-```sql
-CREATE TABLE monthly_summary (
-    summary_id INTEGER PRIMARY KEY,
-    year INTEGER,
-    month INTEGER,
-    total_distance_km DOUBLE,
-    total_time_hours DOUBLE,
-    avg_pace_seconds_per_km DOUBLE,
-    total_activities INTEGER,
-    total_elevation_gain_m DOUBLE,
-    avg_heart_rate INTEGER,
-    created_at TIMESTAMP
-);
-```
-
-**未実装の理由**:
-- 月次レポートは`monthly-analyst`エージェントが生成
-- `activities`テーブルから動的に集計（柔軟性が高い）
-- 集計ロジックの複雑さ（月の境界処理、再計算タイミング）
-
-**実装優先度**: 中（月次レポート生成の高速化に有効）
-
-### 4. performance_vs_weight - パフォーマンス vs 体重
-
-**目的**: 体重変化とパフォーマンス指標の相関分析
-
-**想定スキーマ**:
-```sql
-CREATE TABLE performance_vs_weight (
-    analysis_id INTEGER PRIMARY KEY,
-    activity_id BIGINT,
-    weight_kg DOUBLE,
-    weight_change_from_baseline_kg DOUBLE,
-    pace_seconds_per_km DOUBLE,
-    pace_change_from_baseline_seconds DOUBLE,
-    power_to_weight_ratio DOUBLE,
-    correlation_score DOUBLE,
-    created_at TIMESTAMP
-);
-```
-
-**未実装の理由**:
-- `activities.weight_kg` と `activities.avg_pace_seconds_per_km` から分析可能
-- 相関分析はPythonスクリプトやRAGツールで実行
-- 集計結果を保存する必要性が低い（分析時に計算で十分）
-
-**実装優先度**: 低（オンデマンド分析で十分）
-
-### 5. split_analyses - スプリット分析（削除済み）
-
-**目的**: 各スプリットの詳細分析結果
+#### 2. split_analyses - スプリット分析（削除済み）
 
 **削除理由**:
 - `section_analyses` テーブルで `section_type='split'` として保存済み
@@ -614,47 +517,63 @@ CREATE TABLE performance_vs_weight (
 **現在の状態**:
 - ✅ **2025-10-07に削除完了**
 - スプリット分析は`section_analyses`テーブルで管理（`section_type='split'`）
-
-### 6. training_type_summary - トレーニングタイプサマリー
-
-**目的**: トレーニングタイプ別の統計（ベースラン、テンポラン、閾値走等）
-
-**想定スキーマ**:
-```sql
-CREATE TABLE training_type_summary (
-    summary_id INTEGER PRIMARY KEY,
-    training_type VARCHAR,  -- 'aerobic_base', 'tempo_run', 'threshold_work'
-    period_start_date DATE,
-    period_end_date DATE,
-    total_activities INTEGER,
-    total_distance_km DOUBLE,
-    avg_pace_seconds_per_km DOUBLE,
-    avg_heart_rate INTEGER,
-    created_at TIMESTAMP
-);
-```
-
-**未実装の理由**:
-- `hr_efficiency.training_type` から分類可能
-- 集計は `activities JOIN hr_efficiency` で動的に実行可能
-
-**実装優先度**: 中（トレーニングバランス分析に有効）
-
 ## 実装済みテーブル
 
 以下のテーブルは **現在実装済み** で、データ挿入ロジックが存在します：
 
-- ✅ `activities` - アクティビティメタデータ（`insert_activity()`）
-- ✅ `splits` - スプリット詳細（`insert_splits()`）
-- ✅ `heart_rate_zones` - 心拍ゾーン（`insert_heart_rate_zones()`）
-- ✅ `form_efficiency` - フォーム効率サマリー（`insert_form_efficiency()`）
-- ✅ `hr_efficiency` - 心拍効率分析（`insert_hr_efficiency()`）
-- ✅ `performance_trends` - パフォーマンストレンド（`insert_performance_trends()`）
-- ✅ `vo2_max` - VO2max推定（`insert_vo2_max()`）
-- ✅ `lactate_threshold` - 乳酸閾値（`insert_lactate_threshold()`）
-- ✅ `section_analyses` - セクション分析（`insert_section_analysis()`）
-- ✅ `body_composition` - 体組成データ（`insert_body_composition()`）
+### コアテーブル（performance.json由来）
+- ✅ `activities` - アクティビティメタデータ（102 records）
+  - 実装: `GarminDBWriter.insert_activity()`
+  - データソース: `basic_metrics` + raw_data
+- ✅ `splits` - スプリット詳細（720 records）
+  - 実装: `GarminDBWriter.insert_splits()`
+  - データソース: `split_metrics[]`
+- ✅ `heart_rate_zones` - 心拍ゾーン（505 records）
+  - 実装: `GarminDBWriter.insert_heart_rate_zones()`
+  - データソース: `heart_rate_zones`
+- ✅ `form_efficiency` - フォーム効率サマリー（101 records）
+  - 実装: `GarminDBWriter.insert_form_efficiency()`
+  - データソース: `form_efficiency_summary`
+- ✅ `hr_efficiency` - 心拍効率分析（101 records）
+  - 実装: `GarminDBWriter.insert_hr_efficiency()`
+  - データソース: `hr_efficiency_analysis`
+- ✅ `performance_trends` - パフォーマンストレンド（101 records）
+  - 実装: `GarminDBWriter.insert_performance_trends()`
+  - データソース: `performance_trends`
+- ✅ `vo2_max` - VO2max推定（63 records）
+  - 実装: `GarminDBWriter.insert_vo2_max()`
+  - データソース: `vo2_max`
+- ✅ `lactate_threshold` - 乳酸閾値（101 records）
+  - 実装: `GarminDBWriter.insert_lactate_threshold()`
+  - データソース: `lactate_threshold`
 
+### 分析テーブル（エージェント由来）
+- ✅ `section_analyses` - セクション分析（232 records）
+  - 実装: `GarminDBWriter.insert_section_analysis()`
+  - データソース: エージェント分析結果JSON
+  - セクションタイプ: efficiency, environment, phase, split, summary
+
+### 体組成テーブル（Garmin体組成計由来）
+- ✅ `body_composition` - 体組成データ（111 records）
+  - 実装: `GarminDBWriter.insert_body_composition()`
+  - データソース: `weight_cache/raw/weight_*.json`
+
+### トレンド・集計テーブル（自動生成）
+- ✅ `body_composition_trends` - 体組成トレンド（111 records）
+  - 実装: 自動集計
+  - 用途: 体重・体脂肪率の時系列トレンド
+- ✅ `form_efficiency_trend` - フォーム効率トレンド（101 records）
+  - 実装: 自動集計
+  - 用途: GCT/VO/VRの時系列トレンド
+- ✅ `monthly_summary` - 月次サマリー（6 records）
+  - 実装: 自動集計
+  - 用途: 月間走行距離・時間・平均ペース
+- ✅ `performance_vs_weight` - パフォーマンス vs 体重（102 records）
+  - 実装: 自動集計
+  - 用途: 体重変化とパフォーマンス相関分析
+- ✅ `training_type_summary` - トレーニングタイプサマリー（4 records）
+  - 実装: 自動集計
+  - 用途: トレーニングタイプ別統計
 ## 体重データの扱い（重要）
 
 ### 2つの異なる体重データ

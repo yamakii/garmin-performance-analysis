@@ -25,8 +25,7 @@ class TestReportTemplateRenderer:
 
         section_analyses: dict[str, dict[str, Any]] = {
             "efficiency": {
-                "form_efficiency": "GCT: 262ms",
-                "hr_efficiency": "Zone 1優位",
+                "evaluation": "GCT: 262msの優秀な接地時間、Zone 1優位の効率的な心拍管理"
             },
             "environment_analysis": {
                 "weather_conditions": "気温18.0°C",
@@ -50,8 +49,8 @@ class TestReportTemplateRenderer:
         renderer = ReportTemplateRenderer()
 
         basic_metrics = {"distance_km": 5.0, "duration_seconds": 1800}
-        section_analyses = {
-            "efficiency": {"form_efficiency": "GCT: 262ms"},
+        section_analyses: dict[str, dict[str, Any]] = {
+            "efficiency": {"evaluation": "GCT: 262msの優秀な接地時間"},
             "environment_analysis": {},  # 空セクション
             "phase_evaluation": {},
             "split_analysis": {},

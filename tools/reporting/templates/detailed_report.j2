@@ -1,44 +1,54 @@
-# アクティビティ詳細分析レポート
+# ランニングパフォーマンス分析レポート
 
-**Activity ID**: {{ activity_id }}
-**実施日**: {{ date }}
+## 基本情報
 
----
-
-## 📊 概要
-
-{% if basic_metrics %}
-### キーメトリクス
-
-| 指標 | 値 |
+| 項目 | 値 |
 |------|-----|
-| 距離 | {{ "%.2f"|format(basic_metrics.distance_km|default(0)) }} km |
-| 時間 | {{ (basic_metrics.duration_seconds|default(0) / 60)|int }}分{{ (basic_metrics.duration_seconds|default(0) % 60)|int }}秒 |
-| 平均ペース | {{ (basic_metrics.avg_pace_seconds_per_km|default(0) / 60)|int }}'{{ "%02d"|format((basic_metrics.avg_pace_seconds_per_km|default(0) % 60)|int) }}"/km |
-| 平均心拍 | {{ basic_metrics.avg_heart_rate|default(0)|int }} bpm |
-| 平均ケイデンス | {{ basic_metrics.avg_cadence|default(0)|int }} spm |
-| 平均パワー | {{ basic_metrics.avg_power|default(0)|int }} W |
-
-### トレーニング概要
-
-距離 {{ "%.2f"|format(basic_metrics.distance_km|default(0)) }}km を {{ (basic_metrics.duration_seconds|default(0) / 60)|int }}分{{ (basic_metrics.duration_seconds|default(0) % 60)|int }}秒で実施。平均ペース {{ (basic_metrics.avg_pace_seconds_per_km|default(0) / 60)|int }}'{{ "%02d"|format((basic_metrics.avg_pace_seconds_per_km|default(0) % 60)|int) }}"/km、平均心拍 {{ basic_metrics.avg_heart_rate|default(0)|int }} bpm。
-{% else %}
-データがありません。
-{% endif %}
+| アクティビティID | {{ activity_id }} |
+| 実施日 | {{ date }} |{% if activity_name %}
+| 活動名 | {{ activity_name }} |{% endif %}{% if location_name %}
+| 場所 | {{ location_name }} |{% endif %}{% if training_type %}
+| トレーニングタイプ | {{ training_type }} |{% endif %}{% if basic_metrics %}
+| 総距離 | {{ "%.2f"|format(basic_metrics.distance_km|default(0)) }} km |
+| 総時間 | {{ (basic_metrics.duration_seconds|default(0) // 60)|int }}:{{ "%02d"|format((basic_metrics.duration_seconds|default(0) % 60)|int) }} |
+| 平均ペース | {{ (basic_metrics.avg_pace_seconds_per_km|default(0) / 60)|int }}:{{ "%02d"|format((basic_metrics.avg_pace_seconds_per_km|default(0) % 60)|int) }}/km |
+| 平均心拍数 | {{ basic_metrics.avg_heart_rate|default(0)|int }} bpm |
+| 平均ケイデンス | {{ basic_metrics.avg_cadence|default(0)|int }} spm |{% endif %}{% if weight_kg %}
+| 体重 | {{ "%.1f"|format(weight_kg) }} kg |{% endif %}
 
 ---
 
-## 🎯 効率分析 (Efficiency Section)
+## 1. 🎯 フォーム効率
+{% if performance_metrics %}
 
+**主要指標**:
+{% if performance_metrics.pace_consistency %}
+- ペース一貫性: {{ "%.1f"|format(performance_metrics.pace_consistency * 100) }}% {% if performance_metrics.pace_consistency < 0.05 %}(優秀){% elif performance_metrics.pace_consistency < 0.10 %}(良好){% endif %}
+{% endif %}
+{% if performance_metrics.hr_drift_percentage %}
+- 心拍ドリフト: {{ "%.1f"|format(performance_metrics.hr_drift_percentage) }}% {% if performance_metrics.hr_drift_percentage < 5 %}(理想的){% elif performance_metrics.hr_drift_percentage < 10 %}(良好){% endif %}
+{% endif %}
+{% if performance_metrics.fatigue_pattern %}
+- 疲労パターン: {{ performance_metrics.fatigue_pattern }}
+{% endif %}
+{% endif %}
+{% if form_efficiency %}
+
+**フォーム効率統計**:
+
+| 指標 | 平均 | 標準偏差 | 評価 |
+|------|------|----------|------|
+| 接地時間 (GCT) | {{ "%.0f"|format(form_efficiency.gct_average) }}ms | {{ "%.0f"|format(form_efficiency.gct_std) }}ms | {{ form_efficiency.gct_rating }} |
+| 垂直振動 (VO) | {{ "%.2f"|format(form_efficiency.vo_average) }}cm | {{ "%.2f"|format(form_efficiency.vo_std) }}cm | {{ form_efficiency.vo_rating }} |
+| 垂直比率 (VR) | {{ "%.2f"|format(form_efficiency.vr_average) }}% | {{ "%.2f"|format(form_efficiency.vr_std) }}% | {{ form_efficiency.vr_rating }} |
+{% endif %}
 {% if efficiency %}
-{% if efficiency.form_efficiency %}
-**フォーム効率**: {{ efficiency.form_efficiency }}
-{% endif %}
-{% if efficiency.hr_efficiency %}
-**心拍効率**: {{ efficiency.hr_efficiency }}
-{% endif %}
+{% if efficiency is string %}
+{{ efficiency }}
+{% else %}
 {% if efficiency.evaluation %}
-**評価**: {{ efficiency.evaluation }}
+{{ efficiency.evaluation }}
+{% endif %}
 {% endif %}
 {% else %}
 データがありません。
@@ -46,14 +56,37 @@
 
 ---
 
-## 🌍 環境・コンディション分析 (Environment Section)
+## 2. 🌍 環境条件の影響
 
+{% if weather_data or gear_name %}
+### 環境データ
+{% if weather_data.external_temp_c %}
+- 外気温: {{ "%.1f"|format(weather_data.external_temp_c) }}°C
+{% endif %}
+{% if weather_data.humidity %}
+- 湿度: {{ weather_data.humidity }}%
+{% endif %}
+{% if weather_data.wind_speed_ms %}
+- 風速: {{ "%.1f"|format(weather_data.wind_speed_ms) }} m/s
+{% endif %}
+{% if gear_name %}
+- 使用シューズ: {{ gear_name }}
+{% endif %}
+
+{% endif %}
 {% if environment_analysis %}
+### 環境影響評価
+
+{% if environment_analysis is string %}
+{{ environment_analysis }}
+{% else %}
 {% if environment_analysis.weather_conditions %}
-**気象条件**: {{ environment_analysis.weather_conditions }}
+**気温**: {{ environment_analysis.weather_conditions }}
+
 {% endif %}
 {% if environment_analysis.terrain_impact %}
-**地形影響**: {{ environment_analysis.terrain_impact }}
+**地形**: {{ environment_analysis.terrain_impact }}
+
 {% endif %}
 {% if environment_analysis.gear %}
 **使用機材**:
@@ -63,9 +96,11 @@
 {% if environment_analysis.gear.notes %}
 - 備考: {{ environment_analysis.gear.notes }}
 {% endif %}
+
 {% endif %}
 {% if environment_analysis.evaluation %}
-**評価**: {{ environment_analysis.evaluation }}
+{{ environment_analysis.evaluation }}
+{% endif %}
 {% endif %}
 {% else %}
 データがありません。
@@ -73,20 +108,49 @@
 
 ---
 
-## 📈 フェーズ評価 (Phase Section)
+## 3. 📈 フェーズ別評価
 
 {% if phase_evaluation %}
 {% if phase_evaluation.warmup %}
-**ウォームアップフェーズ**: {{ phase_evaluation.warmup.evaluation|default('N/A') }}
+### ウォームアップフェーズ
+{% if warmup_metrics %}
+
+| 項目 | 値 |
+|------|-----|
+| 平均ペース | {{ warmup_metrics.avg_pace_formatted }}/km |
+| 平均心拍 | {{ warmup_metrics.avg_hr|int }} bpm |
+{% endif %}
+
+{{ phase_evaluation.warmup.evaluation|default('N/A') }}
+
 {% endif %}
 {% if phase_evaluation.main %}
-**メインフェーズ**: {{ phase_evaluation.main.evaluation|default('N/A') }}
+### メインフェーズ
+{% if main_metrics %}
+
+| 項目 | 値 |
+|------|-----|
+| 平均ペース | {{ main_metrics.avg_pace_formatted }}/km |
+| 平均心拍 | {{ main_metrics.avg_hr|int }} bpm |{% if main_metrics.pace_consistency %}
+| ペース一貫性 | {{ "%.1f"|format(main_metrics.pace_consistency * 100) }}% ({% if main_metrics.pace_consistency < 0.05 %}優秀{% elif main_metrics.pace_consistency < 0.10 %}良好{% else %}変動あり{% endif %}) |{% endif %}
+{% endif %}
+
+{{ phase_evaluation.main.evaluation|default('N/A') }}
+
 {% endif %}
 {% if phase_evaluation.finish %}
-**フィニッシュフェーズ**: {{ phase_evaluation.finish.evaluation|default('N/A') }}
+### フィニッシュフェーズ
+{% if finish_metrics %}
+
+| 項目 | 値 |
+|------|-----|
+| 平均ペース | {{ finish_metrics.avg_pace_formatted }}/km |
+| 平均心拍 | {{ finish_metrics.avg_hr|int }} bpm |{% if finish_metrics.fatigue_pattern %}
+| 疲労パターン | {{ finish_metrics.fatigue_pattern }} |{% endif %}
 {% endif %}
-{% if phase_evaluation.overall %}
-**総合**: {{ phase_evaluation.overall }}
+
+{{ phase_evaluation.finish.evaluation|default('N/A') }}
+
 {% endif %}
 {% else %}
 データがありません。
@@ -94,24 +158,33 @@
 
 ---
 
-## 🔍 スプリット詳細分析 (Split Section)
+## 4. 🔍 スプリット分析
+{% if splits %}
 
-{% if split_analysis and split_analysis.splits %}
-{% for split in split_analysis.splits %}
-**{{ split.km }}km**: ペース {{ split.pace }}, 心拍 {{ split.hr }}bpm
+| # | ペース | 心拍 | ケイデンス | パワー | GCT | VO | VR | 標高 |
+|---|--------|------|------------|--------|-----|----|----|------|{% for split in splits %}
+| {{ split.index }} | {{ split.pace_formatted }}/km | {{ split.heart_rate|int }} bpm | {{ split.cadence|int if split.cadence else "-" }} spm | {{ split.power|int if split.power else "-" }} W | {{ split.ground_contact_time|int if split.ground_contact_time else "-" }} ms | {{ "%.1f"|format(split.vertical_oscillation) if split.vertical_oscillation else "-" }} cm | {{ "%.1f"|format(split.vertical_ratio) if split.vertical_ratio else "-" }}% | +{{ split.elevation_gain|int if split.elevation_gain else 0 }}/-{{ split.elevation_loss|int if split.elevation_loss else 0 }}m |{% endfor %}
+
+{% if split_analysis %}
+{% if split_analysis is mapping %}
+{% for key, value in split_analysis.items() | sort %}
+
+### {{ key }}
+
+{{ value }}
 {% endfor %}
+{% endif %}
+{% endif %}
+{% elif split_analysis %}
+{% if split_analysis is mapping %}
+{% for key, value in split_analysis.items() | sort %}
 
-{% if split_analysis.patterns %}
-**パターン分析**:
-{% if split_analysis.patterns.pace_trend %}
-- ペーストレンド: {{ split_analysis.patterns.pace_trend }}
-{% endif %}
-{% if split_analysis.patterns.hr_trend %}
-- 心拍トレンド: {{ split_analysis.patterns.hr_trend }}
-{% endif %}
-{% if split_analysis.patterns.form_consistency %}
-- フォーム一貫性: {{ split_analysis.patterns.form_consistency }}
-{% endif %}
+### {{ key }}
+
+{{ value }}
+{% endfor %}
+{% else %}
+データがありません。
 {% endif %}
 {% else %}
 データがありません。
@@ -119,29 +192,40 @@
 
 ---
 
-## ✅ 総合評価 (Summary Section)
+## 5. ✅ 総合評価と推奨事項
 
 {% if summary %}
 {% if summary.activity_type %}
-**アクティビティタイプ**: {{ summary.activity_type.classification|default('N/A') }}
+### トレーニングタイプ
+{% if summary.activity_type is string %}{{ summary.activity_type }}{% else %}{{ summary.activity_type.classification|default('N/A') }}{% endif %}
+
 {% endif %}
 {% if summary.overall_rating %}
-**総合評価**: {{ summary.overall_rating.stars|default('N/A') }}
+### 総合評価
+{% if summary.overall_rating is string %}{{ summary.overall_rating }}{% else %}{{ summary.overall_rating.stars|default('N/A') }}{% endif %}
+
 {% endif %}
 {% if summary.key_strengths %}
 **強み**:
 {% for strength in summary.key_strengths %}
 - {{ strength }}
 {% endfor %}
+
 {% endif %}
 {% if summary.improvement_areas %}
-**改善点**:
+**改善ポイント**:
 {% for area in summary.improvement_areas %}
 - {{ area }}
 {% endfor %}
+
+{% endif %}
+{% if summary.summary %}
+{{ summary.summary }}
+
 {% endif %}
 {% if summary.recommendations %}
-**推奨事項**: {{ summary.recommendations }}
+### 次回への推奨事項
+{{ summary.recommendations }}
 {% endif %}
 {% else %}
 データがありません。

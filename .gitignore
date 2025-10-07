@@ -50,6 +50,9 @@ data/weight_cache/parquet/*
 data/individual/*/
 data/archive/*
 
+# Project specific - Generated reports
+result/
+
 # Keep directory structure
 !data/raw/.gitkeep
 !data/parquet/.gitkeep

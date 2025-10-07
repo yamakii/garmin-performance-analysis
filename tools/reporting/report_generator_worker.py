@@ -31,41 +31,176 @@ class ReportGeneratorWorker:
 
     def load_performance_data(self, activity_id: int) -> dict[str, Any] | None:
         """
-        Load performance data from DuckDB.
+        Load all performance data from DuckDB.
 
         Args:
             activity_id: Activity ID
 
         Returns:
-            Performance data dict or None
+            Complete performance data dict or None
         """
         logger.info("[1/4] Loading performance data from DuckDB...")
 
-        # Load basic metrics for overview section
-        basic_metrics = self.db_reader.get_performance_section(
-            activity_id, "basic_metrics"
-        )
+        import duckdb
 
-        if not basic_metrics:
-            logger.warning(
-                f"Warning: No performance data found in DuckDB for activity {activity_id}"
-            )
+        try:
+            conn = duckdb.connect(str(self.db_reader.db_path), read_only=True)
+
+            # Load basic info and metrics from activities table
+            result = conn.execute(
+                """
+                SELECT
+                    activity_name,
+                    location_name,
+                    total_distance_km,
+                    total_time_seconds,
+                    avg_pace_seconds_per_km,
+                    avg_heart_rate,
+                    avg_cadence,
+                    avg_power,
+                    weight_kg,
+                    external_temp_c,
+                    humidity,
+                    wind_speed_ms,
+                    gear_name
+                FROM activities
+                WHERE activity_id = ?
+                """,
+                [activity_id],
+            ).fetchone()
+
+            if not result:
+                conn.close()
+                logger.warning(
+                    f"Warning: No performance data found in DuckDB for activity {activity_id}"
+                )
+                return None
+
+            # Load form efficiency statistics
+            form_eff = conn.execute(
+                """
+                SELECT
+                    gct_average, gct_std, gct_rating,
+                    vo_average, vo_std, vo_rating,
+                    vr_average, vr_std, vr_rating
+                FROM form_efficiency
+                WHERE activity_id = ?
+                """,
+                [activity_id],
+            ).fetchone()
+
+            # Load performance trends
+            perf_trends = conn.execute(
+                """
+                SELECT
+                    pace_consistency,
+                    hr_drift_percentage,
+                    cadence_consistency,
+                    fatigue_pattern,
+                    warmup_avg_pace_seconds_per_km,
+                    warmup_avg_hr,
+                    main_avg_pace_seconds_per_km,
+                    main_avg_hr,
+                    finish_avg_pace_seconds_per_km,
+                    finish_avg_hr
+                FROM performance_trends
+                WHERE activity_id = ?
+                """,
+                [activity_id],
+            ).fetchone()
+
+            # Load HR efficiency (for training type)
+            hr_eff = conn.execute(
+                """
+                SELECT training_type
+                FROM hr_efficiency
+                WHERE activity_id = ?
+                """,
+                [activity_id],
+            ).fetchone()
+
+            conn.close()
+
+            # Construct data structure
+            data = {
+                "activity_name": result[0],
+                "location_name": result[1],
+                "basic_metrics": {
+                    "distance_km": result[2],
+                    "duration_seconds": result[3],
+                    "avg_pace_seconds_per_km": result[4],
+                    "avg_heart_rate": result[5],
+                    "avg_cadence": result[6] if result[6] is not None else 0,
+                    "avg_power": result[7] if result[7] is not None else 0,
+                },
+                "weight_kg": result[8],
+                "weather_data": {
+                    "external_temp_c": result[9],
+                    "humidity": result[10],
+                    "wind_speed_ms": result[11],
+                },
+                "gear_name": result[12],
+            }
+
+            # Add form efficiency if available
+            if form_eff:
+                data["form_efficiency"] = {
+                    "gct_average": form_eff[0],
+                    "gct_std": form_eff[1],
+                    "gct_rating": form_eff[2],
+                    "vo_average": form_eff[3],
+                    "vo_std": form_eff[4],
+                    "vo_rating": form_eff[5],
+                    "vr_average": form_eff[6],
+                    "vr_std": form_eff[7],
+                    "vr_rating": form_eff[8],
+                }
+
+            # Add performance metrics if available
+            if perf_trends:
+                data["performance_metrics"] = {
+                    "pace_consistency": perf_trends[0],
+                    "hr_drift_percentage": perf_trends[1],
+                    "cadence_consistency": perf_trends[2],
+                    "fatigue_pattern": perf_trends[3],
+                }
+                data["warmup_metrics"] = {
+                    "avg_pace_seconds_per_km": perf_trends[4],
+                    "avg_hr": perf_trends[5],
+                }
+                data["main_metrics"] = {
+                    "avg_pace_seconds_per_km": perf_trends[6],
+                    "avg_hr": perf_trends[7],
+                    "pace_consistency": perf_trends[0],
+                }
+                data["finish_metrics"] = {
+                    "avg_pace_seconds_per_km": perf_trends[8],
+                    "avg_hr": perf_trends[9],
+                    "fatigue_pattern": perf_trends[3],
+                }
+
+            # Add training type if available
+            if hr_eff:
+                data["training_type"] = hr_eff[0]
+
+            return data
+
+        except Exception as e:
+            logger.error(f"Error loading performance data: {e}")
             return None
-
-        return {"basic_metrics": basic_metrics}
 
     def load_section_analyses(
         self, activity_id: int
     ) -> dict[str, dict[str, Any]] | None:
         """
-        Load section analyses from DuckDB matching agent output structures.
+        Load section analyses from DuckDB matching actual data structures.
 
-        Expected structure (from agent definitions):
-        - Efficiency: {"efficiency": {"form_efficiency": {}, "hr_efficiency": {}}}
-        - Environment: {"environment_analysis": {"weather_conditions": {}, ...}}
-        - Phase: {"phase_evaluation": {"warmup": {}, "main": {}, "finish": {}, "overall": {}}}
-        - Split: {"split_analysis": {"splits": [], "patterns": {}}}
-        - Summary: {"summary": {"activity_type": {}, "overall_rating": {}, ...}}
+        Actual structure in DuckDB:
+        - efficiency: {"efficiency": "..."}
+        - environment: {"environmental": "..."}
+        - phase: {"warmup_evaluation": "...", "main_evaluation": "...", "finish_evaluation": "..."}
+        - split: {"analyses": {...}}
+        - summary: {"activity_type": "...", "summary": "...", "recommendations": "..."}
 
         Args:
             activity_id: Activity ID
@@ -84,35 +219,37 @@ class ReportGeneratorWorker:
         else:
             logger.warning("Warning: efficiency section analysis missing")
 
-        # Load environment analysis
+        # Load environment analysis (key is "environmental" not "environment_analysis")
         environment_data = self.db_reader.get_section_analysis(
             activity_id, "environment"
         )
         if environment_data:
-            analyses["environment_analysis"] = environment_data.get(
-                "environment_analysis", {}
-            )
+            analyses["environment_analysis"] = environment_data.get("environmental", {})
         else:
             logger.warning("Warning: environment section analysis missing")
 
-        # Load phase analysis
+        # Load phase analysis (flatten structure)
         phase_data = self.db_reader.get_section_analysis(activity_id, "phase")
         if phase_data:
-            analyses["phase_evaluation"] = phase_data.get("phase_evaluation", {})
+            analyses["phase_evaluation"] = {
+                "warmup": {"evaluation": phase_data.get("warmup_evaluation", "")},
+                "main": {"evaluation": phase_data.get("main_evaluation", "")},
+                "finish": {"evaluation": phase_data.get("finish_evaluation", "")},
+            }
         else:
             logger.warning("Warning: phase section analysis missing")
 
-        # Load split analysis
+        # Load split analysis (key is "analyses" not "split_analysis")
         split_data = self.db_reader.get_section_analysis(activity_id, "split")
         if split_data:
-            analyses["split_analysis"] = split_data.get("split_analysis", {})
+            analyses["split_analysis"] = split_data.get("analyses", {})
         else:
             logger.warning("Warning: split section analysis missing or empty")
 
         # Load summary analysis
         summary_data = self.db_reader.get_section_analysis(activity_id, "summary")
         if summary_data:
-            analyses["summary"] = summary_data.get("summary", {})
+            analyses["summary"] = summary_data
         else:
             logger.warning("Warning: summary section analysis missing")
 
@@ -121,6 +258,87 @@ class ReportGeneratorWorker:
             return None
 
         return analyses
+
+    def load_splits_data(self, activity_id: int) -> list[dict[str, Any]] | None:
+        """
+        Load splits data from DuckDB for split analysis基本データ表示.
+
+        Args:
+            activity_id: Activity ID
+
+        Returns:
+            List of split dictionaries or None
+        """
+        logger.info("[2.5/4] Loading splits data from DuckDB...")
+
+        import duckdb
+
+        try:
+            conn = duckdb.connect(str(self.db_reader.db_path), read_only=True)
+
+            # Load splits data
+            result = conn.execute(
+                """
+                SELECT
+                    split_index,
+                    distance,
+                    pace_seconds_per_km,
+                    heart_rate,
+                    cadence,
+                    power,
+                    ground_contact_time,
+                    vertical_oscillation,
+                    vertical_ratio,
+                    elevation_gain,
+                    elevation_loss
+                FROM splits
+                WHERE activity_id = ?
+                ORDER BY split_index
+                """,
+                [activity_id],
+            ).fetchall()
+
+            conn.close()
+
+            if not result:
+                logger.warning(
+                    f"Warning: No splits data found in DuckDB for activity {activity_id}"
+                )
+                return None
+
+            splits = []
+            for row in result:
+                # Format pace
+                pace_seconds = row[2]
+                if pace_seconds and pace_seconds > 0:
+                    minutes = int(pace_seconds // 60)
+                    seconds = int(pace_seconds % 60)
+                    pace_formatted = f"{minutes}:{seconds:02d}"
+                else:
+                    pace_formatted = "N/A"
+
+                splits.append(
+                    {
+                        "index": row[0],
+                        "distance": row[1],
+                        "pace_seconds_per_km": row[2],
+                        "pace_formatted": pace_formatted,
+                        "heart_rate": row[3],
+                        "cadence": row[4],
+                        "power": row[5],
+                        "ground_contact_time": row[6],
+                        "vertical_oscillation": row[7],
+                        "vertical_ratio": row[8],
+                        "elevation_gain": row[9],
+                        "elevation_loss": row[10],
+                    }
+                )
+
+            return splits
+
+        except Exception as e:
+            logger.error(f"Error loading splits data: {e}")
+            return None
 
     def generate_report(
         self, activity_id: int, date: str | None = None
@@ -153,18 +371,59 @@ class ReportGeneratorWorker:
                 f"No section analyses found for activity {activity_id}. Cannot generate report."
             )
 
+        # Load splits data for split analysis基本データ表示
+        splits_data = self.load_splits_data(activity_id)
+
         logger.info("[3/4] Generating report from section analyses...")
 
-        # Extract basic_metrics from performance_data
-        basic_metrics = performance_data.get("basic_metrics", {})
+        # Format pace values for display
+        def format_pace(pace_seconds_per_km):
+            if pace_seconds_per_km is None or pace_seconds_per_km == 0:
+                return "N/A"
+            minutes = int(pace_seconds_per_km // 60)
+            seconds = int(pace_seconds_per_km % 60)
+            return f"{minutes}:{seconds:02d}"
 
-        # Render report using Jinja2 template with JSON data
-        report_content = self.renderer.render_report(
-            activity_id=str(activity_id),
-            date=date,
-            basic_metrics=basic_metrics,
-            section_analyses=section_analyses,
-        )
+        # Add formatted pace values
+        if "warmup_metrics" in performance_data:
+            performance_data["warmup_metrics"]["avg_pace_formatted"] = format_pace(
+                performance_data["warmup_metrics"].get("avg_pace_seconds_per_km")
+            )
+        if "main_metrics" in performance_data:
+            performance_data["main_metrics"]["avg_pace_formatted"] = format_pace(
+                performance_data["main_metrics"].get("avg_pace_seconds_per_km")
+            )
+        if "finish_metrics" in performance_data:
+            performance_data["finish_metrics"]["avg_pace_formatted"] = format_pace(
+                performance_data["finish_metrics"].get("avg_pace_seconds_per_km")
+            )
+
+        # Prepare template context
+        context = {
+            "activity_id": str(activity_id),
+            "date": date,
+            "activity_name": performance_data.get("activity_name"),
+            "location_name": performance_data.get("location_name"),
+            "basic_metrics": performance_data.get("basic_metrics", {}),
+            "weight_kg": performance_data.get("weight_kg"),
+            "weather_data": performance_data.get("weather_data", {}),
+            "gear_name": performance_data.get("gear_name"),
+            "form_efficiency": performance_data.get("form_efficiency"),
+            "performance_metrics": performance_data.get("performance_metrics"),
+            "training_type": performance_data.get("training_type"),
+            "warmup_metrics": performance_data.get("warmup_metrics"),
+            "main_metrics": performance_data.get("main_metrics"),
+            "finish_metrics": performance_data.get("finish_metrics"),
+            "splits": splits_data,
+            "efficiency": section_analyses.get("efficiency"),
+            "environment_analysis": section_analyses.get("environment_analysis"),
+            "phase_evaluation": section_analyses.get("phase_evaluation"),
+            "split_analysis": section_analyses.get("split_analysis"),
+            "summary": section_analyses.get("summary"),
+        }
+
+        # Render report using Jinja2 template with all data
+        report_content = self.renderer.render_report(**context)
 
         logger.info("[4/4] Saving report to result/individual/...")
 

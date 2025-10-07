@@ -8,15 +8,109 @@ from pathlib import Path
 
 import pytest
 
-from tools.database.db_writer import GarminDBWriter
 from tools.reporting.report_generator_worker import ReportGeneratorWorker
 
 
 @pytest.fixture
 def test_db(tmp_path):
-    """Create test database with schema."""
+    """Create test database with production schema."""
+    import duckdb
+
     db_path = tmp_path / "test.duckdb"
-    _writer = GarminDBWriter(str(db_path))  # Tables created by __init__
+    conn = duckdb.connect(str(db_path))
+
+    # Create activities table with complete production schema
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS activities (
+            activity_id BIGINT PRIMARY KEY,
+            date DATE,
+            activity_name VARCHAR,
+            location_name VARCHAR,
+            total_distance_km DOUBLE,
+            total_time_seconds DOUBLE,
+            avg_pace_seconds_per_km DOUBLE,
+            avg_heart_rate INTEGER,
+            avg_cadence DOUBLE,
+            avg_power DOUBLE,
+            weight_kg DOUBLE,
+            external_temp_c DOUBLE,
+            humidity INTEGER,
+            wind_speed_ms DOUBLE,
+            gear_name VARCHAR,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """
+    )
+
+    # Create form_efficiency table
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS form_efficiency (
+            activity_id BIGINT PRIMARY KEY,
+            gct_average DOUBLE,
+            gct_std DOUBLE,
+            gct_rating VARCHAR,
+            vo_average DOUBLE,
+            vo_std DOUBLE,
+            vo_rating VARCHAR,
+            vr_average DOUBLE,
+            vr_std DOUBLE,
+            vr_rating VARCHAR,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """
+    )
+
+    # Create performance_trends table
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS performance_trends (
+            activity_id BIGINT PRIMARY KEY,
+            pace_consistency DOUBLE,
+            hr_drift_percentage DOUBLE,
+            cadence_consistency VARCHAR,
+            fatigue_pattern VARCHAR,
+            warmup_avg_pace_seconds_per_km DOUBLE,
+            warmup_avg_hr DOUBLE,
+            main_avg_pace_seconds_per_km DOUBLE,
+            main_avg_hr DOUBLE,
+            finish_avg_pace_seconds_per_km DOUBLE,
+            finish_avg_hr DOUBLE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """
+    )
+
+    # Create hr_efficiency table
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS hr_efficiency (
+            activity_id BIGINT PRIMARY KEY,
+            training_type VARCHAR,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """
+    )
+
+    # Create section_analyses table
+    conn.execute(
+        """
+        CREATE SEQUENCE IF NOT EXISTS section_analyses_seq START 1;
+        CREATE TABLE IF NOT EXISTS section_analyses (
+            analysis_id INTEGER PRIMARY KEY DEFAULT nextval('section_analyses_seq'),
+            activity_id BIGINT NOT NULL,
+            activity_date DATE NOT NULL,
+            section_type VARCHAR NOT NULL,
+            analysis_data VARCHAR,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            agent_name VARCHAR,
+            agent_version VARCHAR
+        )
+    """
+    )
+
+    conn.close()
     return str(db_path)
 
 
@@ -60,7 +154,7 @@ def test_section_analyses():
                 "analyst": "environment-section-analyst",
                 "version": "1.0",
             },
-            "environment_analysis": {
+            "environmental": {
                 "weather_conditions": "気温18.0°C、快適な条件",
                 "terrain_impact": "平坦コース (標高変化+2m/-2m)",
                 "gear": {
@@ -77,24 +171,9 @@ def test_section_analyses():
                 "analyst": "phase-section-analyst",
                 "version": "1.0",
             },
-            "phase_evaluation": {
-                "warmup": {
-                    "splits": [1],
-                    "avg_pace": "6'15\"",
-                    "evaluation": "適切なウォームアップ",
-                },
-                "main": {
-                    "splits": [2, 3, 4],
-                    "pace_stability": "高い安定性",
-                    "evaluation": "一貫したペース維持",
-                },
-                "finish": {
-                    "splits": [5],
-                    "fatigue_level": "軽度",
-                    "evaluation": "適切なペース配分",
-                },
-                "overall": "優れたペース配分",
-            },
+            "warmup_evaluation": "適切なウォームアップ",
+            "main_evaluation": "一貫したペース維持",
+            "finish_evaluation": "適切なペース配分",
         },
         "split": {
             "metadata": {
@@ -103,12 +182,9 @@ def test_section_analyses():
                 "analyst": "split-section-analyst",
                 "version": "1.0",
             },
-            "split_analysis": {
-                "splits": [
-                    {"km": 1, "pace": "6'15\"", "hr": 152},
-                    {"km": 2, "pace": "6'00\"", "hr": 158},
-                ],
-                "patterns": {"pace_trend": "安定", "hr_trend": "漸増"},
+            "analyses": {
+                "split_1": "1km目: ペース6'15\", 心拍152",
+                "split_2": "2km目: ペース6'00\", 心拍158",
             },
         },
         "summary": {
@@ -134,37 +210,121 @@ def test_generate_report_full_workflow(
     test_db, test_activity_data, test_section_analyses, tmp_path
 ):
     """DuckDBからレポート生成までの完全なフローを確認."""
-    # Setup: Insert test data
-    writer = GarminDBWriter(test_db)
+    import json
 
-    # Insert activity
-    writer.insert_activity(
-        activity_id=test_activity_data["activity_id"],
-        activity_date=test_activity_data["activity_date"],
-        activity_name=test_activity_data["activity_name"],
-        activity_type="running",
-        distance_km=test_activity_data["distance_km"],
-        duration_seconds=test_activity_data["duration_seconds"],
-        avg_pace_seconds_per_km=test_activity_data["avg_pace_seconds_per_km"],
-        avg_heart_rate=test_activity_data["avg_heart_rate"],
+    import duckdb
+
+    # Setup: Insert test data using production schema
+    conn = duckdb.connect(test_db)
+
+    # Insert activity with complete production schema
+    conn.execute(
+        """
+        INSERT INTO activities (
+            activity_id, date, activity_name, location_name,
+            total_distance_km, total_time_seconds, avg_pace_seconds_per_km,
+            avg_heart_rate, avg_cadence, avg_power,
+            weight_kg, external_temp_c, humidity, wind_speed_ms, gear_name
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """,
+        [
+            test_activity_data["activity_id"],
+            test_activity_data["activity_date"],
+            test_activity_data["activity_name"],
+            "",  # location_name
+            test_activity_data["distance_km"],
+            test_activity_data["duration_seconds"],
+            test_activity_data["avg_pace_seconds_per_km"],
+            test_activity_data["avg_heart_rate"],
+            test_activity_data["avg_cadence"],
+            test_activity_data["avg_power"],
+            70.0,  # weight_kg
+            18.0,  # external_temp_c
+            65,  # humidity
+            2.5,  # wind_speed_ms
+            "Nike Vaporfly Next% 2",  # gear_name
+        ],
     )
 
-    # Insert performance data
-    performance_data = {"basic_metrics": test_activity_data}
-    writer.insert_performance_data(
-        activity_id=test_activity_data["activity_id"],
-        activity_date=test_activity_data["activity_date"],
-        performance_data=performance_data,
+    # Insert form efficiency data
+    conn.execute(
+        """
+        INSERT INTO form_efficiency (
+            activity_id, gct_average, gct_std, gct_rating,
+            vo_average, vo_std, vo_rating,
+            vr_average, vr_std, vr_rating
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """,
+        [
+            test_activity_data["activity_id"],
+            262.0,
+            5.0,
+            "★★★★★",
+            7.2,
+            0.3,
+            "★★★★☆",
+            9.3,
+            0.4,
+            "★★★★★",
+        ],
+    )
+
+    # Insert performance trends data
+    conn.execute(
+        """
+        INSERT INTO performance_trends (
+            activity_id, pace_consistency, hr_drift_percentage,
+            cadence_consistency, fatigue_pattern,
+            warmup_avg_pace_seconds_per_km, warmup_avg_hr,
+            main_avg_pace_seconds_per_km, main_avg_hr,
+            finish_avg_pace_seconds_per_km, finish_avg_hr
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """,
+        [
+            test_activity_data["activity_id"],
+            0.05,
+            3.5,
+            "高い安定性",
+            "適切な疲労管理",
+            365,
+            145,
+            355,
+            152,
+            350,
+            158,
+        ],
+    )
+
+    # Insert HR efficiency data
+    conn.execute(
+        """
+        INSERT INTO hr_efficiency (
+            activity_id, training_type
+        ) VALUES (?, ?)
+    """,
+        [
+            test_activity_data["activity_id"],
+            "aerobic_base",
+        ],
     )
 
     # Insert section analyses
     for section_type, analysis_data in test_section_analyses.items():
-        writer.insert_section_analysis(
-            activity_id=test_activity_data["activity_id"],
-            activity_date=test_activity_data["activity_date"],
-            section_type=section_type,
-            analysis_data=analysis_data,
+        conn.execute(
+            """
+            INSERT INTO section_analyses (
+                activity_id, activity_date, section_type, analysis_data
+            ) VALUES (?, ?, ?, ?)
+        """,
+            [
+                test_activity_data["activity_id"],
+                test_activity_data["activity_date"],
+                section_type,
+                json.dumps(analysis_data, ensure_ascii=False),
+            ],
         )
+
+    conn.close()
 
     # Generate report
     worker = ReportGeneratorWorker(test_db)
@@ -179,47 +339,72 @@ def test_generate_report_full_workflow(
 
     # Verify report content
     report_content = Path(result["report_path"]).read_text(encoding="utf-8")
-    assert "# アクティビティ詳細分析レポート" in report_content
-    assert "## 🎯 効率分析" in report_content
-    assert "## ✅ 総合評価" in report_content
+    assert "# ランニングパフォーマンス分析レポート" in report_content
+    assert "## 基本情報" in report_content
+    assert "## 1. 🎯 フォーム効率" in report_content
+    assert "## 5. ✅ 総合評価と推奨事項" in report_content
     assert "Nike Vaporfly" in report_content  # Gear info
 
 
 @pytest.mark.integration
 def test_generate_report_partial_sections(test_db, test_activity_data, tmp_path):
     """一部のセクション分析のみでもレポート生成できることを確認."""
-    # Setup: Insert only efficiency and summary sections
-    writer = GarminDBWriter(test_db)
+    import json
 
-    writer.insert_activity(
-        activity_id=test_activity_data["activity_id"],
-        activity_date=test_activity_data["activity_date"],
-        activity_name=test_activity_data["activity_name"],
-        activity_type="running",
-        distance_km=test_activity_data["distance_km"],
-        duration_seconds=test_activity_data["duration_seconds"],
-        avg_pace_seconds_per_km=test_activity_data["avg_pace_seconds_per_km"],
-        avg_heart_rate=test_activity_data["avg_heart_rate"],
-    )
+    import duckdb
 
-    performance_data = {"basic_metrics": test_activity_data}
-    writer.insert_performance_data(
-        activity_id=test_activity_data["activity_id"],
-        activity_date=test_activity_data["activity_date"],
-        performance_data=performance_data,
+    # Setup: Insert only efficiency section
+    conn = duckdb.connect(test_db)
+
+    # Insert activity with minimal required data
+    conn.execute(
+        """
+        INSERT INTO activities (
+            activity_id, date, activity_name, location_name,
+            total_distance_km, total_time_seconds, avg_pace_seconds_per_km,
+            avg_heart_rate, avg_cadence, avg_power,
+            weight_kg, external_temp_c, humidity, wind_speed_ms, gear_name
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """,
+        [
+            test_activity_data["activity_id"],
+            test_activity_data["activity_date"],
+            test_activity_data["activity_name"],
+            "",
+            test_activity_data["distance_km"],
+            test_activity_data["duration_seconds"],
+            test_activity_data["avg_pace_seconds_per_km"],
+            test_activity_data["avg_heart_rate"],
+            test_activity_data["avg_cadence"],
+            test_activity_data["avg_power"],
+            None,  # weight_kg (optional)
+            None,  # external_temp_c (optional)
+            None,  # humidity (optional)
+            None,  # wind_speed_ms (optional)
+            None,  # gear_name (optional)
+        ],
     )
 
     # Insert only efficiency section
     efficiency_data = {
         "metadata": {"analyst": "efficiency-section-analyst"},
-        "efficiency": {"form_efficiency": "GCT: 262ms"},
+        "efficiency": "GCT: 262msの優秀な接地時間を維持できています。",
     }
-    writer.insert_section_analysis(
-        activity_id=test_activity_data["activity_id"],
-        activity_date=test_activity_data["activity_date"],
-        section_type="efficiency",
-        analysis_data=efficiency_data,
+    conn.execute(
+        """
+        INSERT INTO section_analyses (
+            activity_id, activity_date, section_type, analysis_data
+        ) VALUES (?, ?, ?, ?)
+    """,
+        [
+            test_activity_data["activity_id"],
+            test_activity_data["activity_date"],
+            "efficiency",
+            json.dumps(efficiency_data, ensure_ascii=False),
+        ],
     )
+
+    conn.close()
 
     # Generate report
     worker = ReportGeneratorWorker(test_db)
@@ -247,34 +432,121 @@ def test_report_japanese_encoding(
     test_db, test_activity_data, test_section_analyses, tmp_path
 ):
     """日本語テキストが正しくUTF-8でエンコードされることを確認."""
+    import json
+
+    import duckdb
+
     # Setup
-    writer = GarminDBWriter(test_db)
+    conn = duckdb.connect(test_db)
 
-    writer.insert_activity(
-        activity_id=test_activity_data["activity_id"],
-        activity_date=test_activity_data["activity_date"],
-        activity_name=test_activity_data["activity_name"],
-        activity_type="running",
-        distance_km=test_activity_data["distance_km"],
-        duration_seconds=test_activity_data["duration_seconds"],
-        avg_pace_seconds_per_km=test_activity_data["avg_pace_seconds_per_km"],
-        avg_heart_rate=test_activity_data["avg_heart_rate"],
+    # Insert activity with complete data
+    conn.execute(
+        """
+        INSERT INTO activities (
+            activity_id, date, activity_name, location_name,
+            total_distance_km, total_time_seconds, avg_pace_seconds_per_km,
+            avg_heart_rate, avg_cadence, avg_power,
+            weight_kg, external_temp_c, humidity, wind_speed_ms, gear_name
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """,
+        [
+            test_activity_data["activity_id"],
+            test_activity_data["activity_date"],
+            test_activity_data["activity_name"],
+            "",
+            test_activity_data["distance_km"],
+            test_activity_data["duration_seconds"],
+            test_activity_data["avg_pace_seconds_per_km"],
+            test_activity_data["avg_heart_rate"],
+            test_activity_data["avg_cadence"],
+            test_activity_data["avg_power"],
+            70.0,  # weight_kg
+            18.0,  # external_temp_c
+            65,  # humidity
+            2.5,  # wind_speed_ms
+            "Nike Vaporfly Next% 2",  # gear_name
+        ],
     )
 
-    performance_data = {"basic_metrics": test_activity_data}
-    writer.insert_performance_data(
-        activity_id=test_activity_data["activity_id"],
-        activity_date=test_activity_data["activity_date"],
-        performance_data=performance_data,
+    # Insert form efficiency data
+    conn.execute(
+        """
+        INSERT INTO form_efficiency (
+            activity_id, gct_average, gct_std, gct_rating,
+            vo_average, vo_std, vo_rating,
+            vr_average, vr_std, vr_rating
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """,
+        [
+            test_activity_data["activity_id"],
+            262.0,
+            5.0,
+            "★★★★★",
+            7.2,
+            0.3,
+            "★★★★☆",
+            9.3,
+            0.4,
+            "★★★★★",
+        ],
     )
 
+    # Insert performance trends data
+    conn.execute(
+        """
+        INSERT INTO performance_trends (
+            activity_id, pace_consistency, hr_drift_percentage,
+            cadence_consistency, fatigue_pattern,
+            warmup_avg_pace_seconds_per_km, warmup_avg_hr,
+            main_avg_pace_seconds_per_km, main_avg_hr,
+            finish_avg_pace_seconds_per_km, finish_avg_hr
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """,
+        [
+            test_activity_data["activity_id"],
+            0.05,
+            3.5,
+            "高い安定性",
+            "適切な疲労管理",
+            365,
+            145,
+            355,
+            152,
+            350,
+            158,
+        ],
+    )
+
+    # Insert HR efficiency data
+    conn.execute(
+        """
+        INSERT INTO hr_efficiency (
+            activity_id, training_type
+        ) VALUES (?, ?)
+    """,
+        [
+            test_activity_data["activity_id"],
+            "aerobic_base",
+        ],
+    )
+
+    # Insert section analyses
     for section_type, analysis_data in test_section_analyses.items():
-        writer.insert_section_analysis(
-            activity_id=test_activity_data["activity_id"],
-            activity_date=test_activity_data["activity_date"],
-            section_type=section_type,
-            analysis_data=analysis_data,
+        conn.execute(
+            """
+            INSERT INTO section_analyses (
+                activity_id, activity_date, section_type, analysis_data
+            ) VALUES (?, ?, ?, ?)
+        """,
+            [
+                test_activity_data["activity_id"],
+                test_activity_data["activity_date"],
+                section_type,
+                json.dumps(analysis_data, ensure_ascii=False),
+            ],
         )
+
+    conn.close()
 
     # Generate report
     worker = ReportGeneratorWorker(test_db)

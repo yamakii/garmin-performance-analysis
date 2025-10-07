@@ -375,7 +375,7 @@ class GarminIngestWorker:
         }
 
         # Convert numpy types to Python types for JSON serialization
-        return convert_numpy_types(performance_data)
+        return convert_numpy_types(performance_data)  # type: ignore[no-any-return]
 
     def _calculate_form_efficiency_summary(self, df: pd.DataFrame) -> dict[str, Any]:
         """
@@ -650,7 +650,7 @@ class GarminIngestWorker:
                 json.dump(weight_data, f, indent=2, ensure_ascii=False)
 
             logger.info(f"Cached body composition data to {weight_file}")
-            return weight_data
+            return weight_data  # type: ignore[no-any-return]
 
         except Exception as e:
             logger.error(f"Error fetching body composition data for {date}: {e}")
@@ -830,10 +830,14 @@ class GarminIngestWorker:
         )
         basic_metrics = performance_data.get("basic_metrics", {})
 
+        # Extract activity metadata from nested structure
+        activity_dict = raw_data.get("activity", {})
+
         writer.insert_activity(
             activity_id=activity_id,
             activity_date=date,
-            activity_name=raw_data.get("activityName"),
+            activity_name=activity_dict.get("activityName"),
+            location_name=activity_dict.get("locationName"),
             weight_kg=weight_kg,
             weight_source="statistical_7d_median" if weight_kg else None,
             weight_method="median" if weight_kg else None,
