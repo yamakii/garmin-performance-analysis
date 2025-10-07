@@ -250,7 +250,6 @@ Provides efficient section-based access to DuckDB performance data, plus write c
 - `mcp__garmin-db__insert_performance_data`: Insert performance.json into DuckDB
 - `mcp__garmin-db__insert_section_analysis`: Insert section analysis JSON file into DuckDB (legacy)
 - `mcp__garmin-db__insert_section_analysis_dict`: **[RECOMMENDED]** Insert section analysis dict directly into DuckDB (no file creation)
-- `mcp__garmin-db__insert_body_composition`: Insert body composition raw data into DuckDB
 
 **RAG Query Tools (Phase 3: Trend Analysis & Comparison):**
 - `mcp__garmin-db__compare_similar_workouts`: Find and compare similar past activities
