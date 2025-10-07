@@ -22,23 +22,49 @@ class GarminDBWriter:
         self._ensure_tables()
 
     def _ensure_tables(self):
-        """Ensure required tables exist."""
+        """Ensure required tables exist with production schema (36 columns)."""
         conn = duckdb.connect(str(self.db_path))
 
-        # Create activities table
+        # Create activities table with production schema (36 columns)
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS activities (
                 activity_id BIGINT PRIMARY KEY,
-                activity_date DATE NOT NULL,
+                date DATE NOT NULL,
                 activity_name VARCHAR,
-                location_name VARCHAR,
-                activity_type VARCHAR,
-                distance_km DOUBLE,
-                duration_seconds DOUBLE,
+                start_time_local TIMESTAMP,
+                start_time_gmt TIMESTAMP,
+                total_time_seconds INTEGER,
+                total_distance_km DOUBLE,
                 avg_pace_seconds_per_km DOUBLE,
-                avg_heart_rate DOUBLE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                avg_heart_rate INTEGER,
+                max_heart_rate INTEGER,
+                avg_cadence INTEGER,
+                avg_power INTEGER,
+                normalized_power INTEGER,
+                cadence_stability DOUBLE,
+                power_efficiency DOUBLE,
+                pace_variability DOUBLE,
+                aerobic_te DOUBLE,
+                anaerobic_te DOUBLE,
+                training_effect_source VARCHAR,
+                power_to_weight DOUBLE,
+                weight_kg DOUBLE,
+                weight_source VARCHAR,
+                weight_method VARCHAR,
+                stability_score DOUBLE,
+                external_temp_c DOUBLE,
+                external_temp_f DOUBLE,
+                humidity INTEGER,
+                wind_speed_ms DOUBLE,
+                wind_direction_compass VARCHAR,
+                gear_name VARCHAR,
+                gear_type VARCHAR,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                total_elevation_gain DOUBLE,
+                total_elevation_loss DOUBLE,
+                location_name VARCHAR
             )
         """
         )
@@ -97,7 +123,7 @@ class GarminDBWriter:
         **kwargs,
     ) -> bool:
         """
-        Insert activity metadata.
+        Insert activity metadata into production schema (36 columns).
 
         Args:
             activity_id: Activity ID
@@ -108,7 +134,7 @@ class GarminDBWriter:
             weight_kg: Weight in kg (7-day median for W/kg calculation)
             weight_source: Weight data source (e.g., "statistical_7d_median")
             weight_method: Weight calculation method (e.g., "median")
-            **kwargs: Additional metrics
+            **kwargs: Additional metrics (distance_km, duration_seconds, etc.)
 
         Returns:
             True if successful
@@ -119,20 +145,23 @@ class GarminDBWriter:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO activities
-                (activity_id, activity_date, activity_name, location_name, activity_type,
-                 distance_km, duration_seconds, avg_pace_seconds_per_km, avg_heart_rate)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (activity_id, date, activity_name, location_name,
+                 total_distance_km, total_time_seconds, avg_pace_seconds_per_km, avg_heart_rate,
+                 weight_kg, weight_source, weight_method)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 [
                     activity_id,
                     activity_date,
                     activity_name,
                     location_name,
-                    activity_type,
                     kwargs.get("distance_km"),
                     kwargs.get("duration_seconds"),
                     kwargs.get("avg_pace_seconds_per_km"),
                     kwargs.get("avg_heart_rate"),
+                    weight_kg,
+                    weight_source,
+                    weight_method,
                 ],
             )
 
