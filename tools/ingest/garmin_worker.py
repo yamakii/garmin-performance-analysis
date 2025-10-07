@@ -3,22 +3,27 @@ GarminIngestWorker - Data collection and processing pipeline
 
 Implements cache-first strategy:
 1. Check raw file cache (data/raw/)
-2. If missing, call Garmin MCP API
+2. If missing, fetch from Garmin Connect API
 3. Transform to performance.json and parquet
 """
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any, cast
 
 import pandas as pd
+from garminconnect import Garmin
 
 logger = logging.getLogger(__name__)
 
 
 class GarminIngestWorker:
     """Data ingestion worker with cache-first strategy."""
+
+    # Singleton Garmin client (reuse authentication)
+    _garmin_client: Garmin | None = None
 
     def __init__(self):
         """Initialize GarminIngestWorker."""
@@ -37,19 +42,51 @@ class GarminIngestWorker:
         ]:
             directory.mkdir(parents=True, exist_ok=True)
 
+    @classmethod
+    def get_garmin_client(cls) -> Garmin:
+        """
+        Get singleton Garmin client (reuse authentication).
+
+        Reads credentials from environment variables:
+        - GARMIN_EMAIL
+        - GARMIN_PASSWORD
+
+        Returns:
+            Authenticated Garmin client
+
+        Raises:
+            ValueError: If credentials not found in environment
+        """
+        if cls._garmin_client is None:
+            email = os.getenv("GARMIN_EMAIL")
+            password = os.getenv("GARMIN_PASSWORD")
+
+            if not email or not password:
+                raise ValueError(
+                    "Garmin credentials not found. "
+                    "Set GARMIN_EMAIL and GARMIN_PASSWORD environment variables."
+                )
+
+            logger.info(f"Authenticating with Garmin Connect as {email}")
+            cls._garmin_client = Garmin(email, password)
+            cls._garmin_client.login()
+            logger.info("Garmin authentication successful")
+
+        return cls._garmin_client
+
     def collect_data(self, activity_id: int) -> dict[str, Any]:
         """
         Collect activity data with cache-first strategy.
 
         Cache priority:
         1. Check data/raw/{activity_id}_raw.json
-        2. If missing, call Garmin MCP API
+        2. If missing, fetch from Garmin Connect API
 
         Args:
             activity_id: Activity ID
 
         Returns:
-            Raw data dict with keys: activity, splits, weather, gear, hr_zones
+            Raw data dict with keys: activity, splits, weather, gear, hr_zones, etc.
         """
         # Check cache first
         raw_file = self.raw_dir / f"{activity_id}_raw.json"
@@ -58,21 +95,17 @@ class GarminIngestWorker:
             with open(raw_file, encoding="utf-8") as f:
                 return cast(dict[str, Any], json.load(f))
 
-        # Import MCP client dynamically to avoid import errors in tests
-        try:
-            from tools.mcp import mcp_client
-        except ImportError:
-            logger.error("MCP client not available - cannot fetch new data")
-            raise
+        # Fetch from Garmin Connect API
+        logger.info(f"Fetching activity {activity_id} from Garmin Connect API")
+        client = self.get_garmin_client()
 
-        # Fetch from Garmin API
-        logger.info(f"Fetching activity {activity_id} from Garmin API")
+        # Collect all data components
         raw_data = {
-            "activity": mcp_client.get_activity(activity_id),
-            "splits": mcp_client.get_activity_splits(activity_id),
-            "weather": mcp_client.get_activity_weather(activity_id),
-            "gear": mcp_client.get_activity_gear(activity_id),
-            "hr_zones": mcp_client.get_activity_hr_in_timezones(activity_id),
+            "activity": client.get_activity_data(activity_id),
+            "splits": client.get_activity_splits(activity_id),
+            "weather": client.get_activity_weather(activity_id),
+            "gear": client.get_activity_gear(activity_id),
+            "hr_zones": client.get_activity_hr_in_timezones(activity_id),
         }
 
         # Save to cache
@@ -179,28 +212,15 @@ class GarminIngestWorker:
         }
 
         # 2. Heart rate zones (from raw data)
-        heart_rate_zones = {
-            "zone1": {
-                "low": hr_zones.get("zone1Low"),
-                "high": hr_zones.get("zone1High"),
-            },
-            "zone2": {
-                "low": hr_zones.get("zone2Low"),
-                "high": hr_zones.get("zone2High"),
-            },
-            "zone3": {
-                "low": hr_zones.get("zone3Low"),
-                "high": hr_zones.get("zone3High"),
-            },
-            "zone4": {
-                "low": hr_zones.get("zone4Low"),
-                "high": hr_zones.get("zone4High"),
-            },
-            "zone5": {
-                "low": hr_zones.get("zone5Low"),
-                "high": hr_zones.get("zone5High"),
-            },
-        }
+        # hr_zones format: list of {zoneNumber, secsInZone, zoneLowBoundary}
+        heart_rate_zones = {}
+        for zone in hr_zones:
+            zone_num = zone.get("zoneNumber")
+            if zone_num:
+                heart_rate_zones[f"zone{zone_num}"] = {
+                    "low": zone.get("zoneLowBoundary"),
+                    "secs_in_zone": zone.get("secsInZone"),
+                }
 
         # 3. Split metrics (full DataFrame as list of dicts)
         split_metrics = df.to_dict(orient="records")
@@ -308,10 +328,14 @@ class GarminIngestWorker:
         }
 
     def _calculate_hr_efficiency_analysis(
-        self, df: pd.DataFrame, hr_zones: dict[str, Any]
+        self, df: pd.DataFrame, hr_zones: list[dict[str, Any]]
     ) -> dict[str, Any]:
         """
         Calculate HR efficiency analysis (Phase 1 optimization).
+
+        Args:
+            df: Performance DataFrame
+            hr_zones: List of {zoneNumber, secsInZone, zoneLowBoundary}
 
         Returns:
             HR zone distribution and training type classification
@@ -322,10 +346,17 @@ class GarminIngestWorker:
         # Simplified zone distribution (would need time in zones data)
         avg_hr = df["avg_heart_rate"].mean()
 
-        # Classify training type based on average HR
-        z1_high = hr_zones.get("zone1High", 120)
-        z2_high = hr_zones.get("zone2High", 140)
-        z3_high = hr_zones.get("zone3High", 160)
+        # Extract zone boundaries from hr_zones list
+        zone_boundaries = {}
+        for zone in hr_zones:
+            zone_num = zone.get("zoneNumber")
+            if zone_num:
+                zone_boundaries[zone_num] = zone.get("zoneLowBoundary", 0)
+
+        # Default thresholds if zones not available
+        z1_high = zone_boundaries.get(2, 120)
+        z2_high = zone_boundaries.get(3, 140)
+        z3_high = zone_boundaries.get(4, 160)
 
         if avg_hr <= z1_high:
             training_type = "aerobic_base"
@@ -457,15 +488,15 @@ class GarminIngestWorker:
         precheck_data = {
             "activity_id": activity_id,
             "total_splits": len(df),
-            "has_hr_data": (
+            "has_hr_data": bool(
                 df["avg_heart_rate"].notna().all()
                 if "avg_heart_rate" in df.columns
                 else False
             ),
-            "has_power_data": (
+            "has_power_data": bool(
                 df["avg_power"].notna().all() if "avg_power" in df.columns else False
             ),
-            "has_form_data": (
+            "has_form_data": bool(
                 df["ground_contact_time_ms"].notna().all()
                 if "ground_contact_time_ms" in df.columns
                 else False

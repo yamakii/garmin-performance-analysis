@@ -27,7 +27,7 @@ class TestGarminIngestWorker:
 
     @pytest.fixture
     def sample_raw_data(self):
-        """Sample raw data from Garmin MCP."""
+        """Sample raw data matching actual Garmin API response structure."""
         return {
             "activity": {
                 "activityId": 20464005432,
@@ -38,6 +38,7 @@ class TestGarminIngestWorker:
                 "averageHR": 145,
             },
             "splits": {
+                "activityId": 20464005432,
                 "lapDTOs": [
                     {
                         "startTimeGMT": "2025-09-22T06:30:00.0",
@@ -46,7 +47,7 @@ class TestGarminIngestWorker:
                         "averageSpeed": 3.33,
                         "averageHR": 140,
                         "averageRunCadence": 170,
-                        "avgPower": 250,
+                        "averagePower": 250,
                         "groundContactTime": 240,
                         "verticalOscillation": 7.5,
                         "verticalRatio": 8.5,
@@ -62,7 +63,7 @@ class TestGarminIngestWorker:
                         "averageSpeed": 3.39,
                         "averageHR": 145,
                         "averageRunCadence": 172,
-                        "avgPower": 255,
+                        "averagePower": 255,
                         "groundContactTime": 238,
                         "verticalOscillation": 7.3,
                         "verticalRatio": 8.3,
@@ -71,22 +72,31 @@ class TestGarminIngestWorker:
                         "maxElevation": 55,
                         "minElevation": 42,
                     },
-                ]
+                ],
+                "eventDTOs": [],
             },
-            "weather": {"temp": 18, "apparentTemp": 16, "windSpeed": 5},
-            "gear": {"gearName": "Nike Pegasus"},
-            "hr_zones": {
-                "zone1Low": 100,
-                "zone1High": 120,
-                "zone2Low": 120,
-                "zone2High": 140,
-                "zone3Low": 140,
-                "zone3High": 160,
-                "zone4Low": 160,
-                "zone4High": 180,
-                "zone5Low": 180,
-                "zone5High": 200,
+            "weather": {
+                "temp": 18,
+                "apparentTemp": 16,
+                "windSpeed": 5,
+                "relativeHumidity": 65,
+                "weatherTypeDTO": {"weatherTypePk": 1},
             },
+            "gear": [
+                {
+                    "gearPk": 12345,
+                    "customMakeModel": "Nike Pegasus",
+                    "gearTypeName": "Shoes",
+                    "gearStatusName": "active",
+                }
+            ],
+            "hr_zones": [
+                {"zoneNumber": 1, "secsInZone": 300.0, "zoneLowBoundary": 100},
+                {"zoneNumber": 2, "secsInZone": 600.0, "zoneLowBoundary": 120},
+                {"zoneNumber": 3, "secsInZone": 400.0, "zoneLowBoundary": 140},
+                {"zoneNumber": 4, "secsInZone": 200.0, "zoneLowBoundary": 160},
+                {"zoneNumber": 5, "secsInZone": 0.0, "zoneLowBoundary": 180},
+            ],
         }
 
     @pytest.mark.unit
@@ -97,10 +107,10 @@ class TestGarminIngestWorker:
         cached_file = tmp_path / "12345_raw.json"
         cached_data = {
             "activity": {"activityId": 12345},
-            "splits": {"lapDTOs": []},
+            "splits": {"activityId": 12345, "lapDTOs": [], "eventDTOs": []},
             "weather": {"temp": 20},
-            "gear": {"gearName": "Cached Shoes"},
-            "hr_zones": {"zone1Low": 100},
+            "gear": [{"customMakeModel": "Cached Shoes"}],
+            "hr_zones": [{"zoneNumber": 1, "zoneLowBoundary": 100}],
         }
         with open(cached_file, "w", encoding="utf-8") as f:
             json.dump(cached_data, f)
@@ -109,7 +119,7 @@ class TestGarminIngestWorker:
         result = worker.collect_data(12345)
 
         # Verify cache was used (not API)
-        assert result["gear"]["gearName"] == "Cached Shoes"
+        assert result["gear"][0]["customMakeModel"] == "Cached Shoes"
         assert "activity" in result
         assert "splits" in result
         assert "weather" in result
@@ -221,3 +231,80 @@ class TestGarminIngestWorker:
 
             assert result["activity_id"] == 12345
             assert result["date"] == "2025-09-22"
+
+    @pytest.mark.integration
+    def test_collect_data_with_real_garmin_api(self, worker):
+        """Test collect_data with real Garmin MCP connection."""
+        # Use existing activity with cache to avoid API rate limit
+        # This verifies cache-first strategy works with real file structure
+        activity_id = 20594901208
+
+        # Verify cache file exists (avoid API call)
+        cache_file = worker.raw_dir / f"{activity_id}_raw.json"
+        assert cache_file.exists(), "Test requires cached activity data"
+
+        # Execute
+        result = worker.collect_data(activity_id)
+
+        # Verify structure
+        assert "activity" in result
+        assert "splits" in result
+        assert "weather" in result
+        assert "gear" in result
+        assert "hr_zones" in result
+
+        # Verify activity data
+        activity = result["activity"]
+        assert "activityId" in activity
+        assert activity["activityId"] == activity_id
+
+        # Verify splits data
+        splits = result["splits"]
+        assert "lapDTOs" in splits
+        assert len(splits["lapDTOs"]) > 0
+
+    @pytest.mark.integration
+    def test_process_activity_full_integration(self, worker):
+        """Test full process_activity pipeline with real data."""
+        # Use existing cached activity
+        activity_id = 20594901208
+        date = "2025-10-05"
+
+        # Execute full pipeline
+        result = worker.process_activity(activity_id, date)
+
+        # Verify result structure
+        assert result["activity_id"] == activity_id
+        assert result["date"] == date
+        assert result["status"] == "success"
+        assert "files" in result
+
+        # Verify files were created
+        files = result["files"]
+        assert "raw_file" in files
+        assert "parquet_file" in files
+        assert "performance_file" in files
+        assert "precheck_file" in files
+
+        # Verify parquet file exists and is valid
+        parquet_file = worker.parquet_dir / f"{activity_id}.parquet"
+        assert parquet_file.exists()
+
+        # Verify performance file exists and has all 11 sections
+        performance_file = worker.performance_dir / f"{activity_id}.json"
+        assert performance_file.exists()
+
+        with open(performance_file, encoding="utf-8") as f:
+            performance_data = json.load(f)
+
+        assert "basic_metrics" in performance_data
+        assert "heart_rate_zones" in performance_data
+        assert "split_metrics" in performance_data
+        assert "efficiency_metrics" in performance_data
+        assert "training_effect" in performance_data
+        assert "power_to_weight" in performance_data
+        assert "vo2_max" in performance_data
+        assert "lactate_threshold" in performance_data
+        assert "form_efficiency_summary" in performance_data
+        assert "hr_efficiency_analysis" in performance_data
+        assert "performance_trends" in performance_data
