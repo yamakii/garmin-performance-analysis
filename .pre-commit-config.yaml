@@ -33,8 +33,8 @@ repos:
   - repo: local
     hooks:
       - id: pytest
-        name: pytest (unit tests only)
-        entry: uv run pytest -m "not integration" --tb=short -q
+        name: pytest (exclude garmin_api tests)
+        entry: uv run pytest -m "not garmin_api" --tb=short -q
         language: system
         pass_filenames: false
         always_run: true
