@@ -215,12 +215,16 @@ class GarminIngestWorker:
         else:
             raw_data["vo2_max"] = []
 
-        # Lactate Threshold: No dedicated API found in garminconnect library
-        # Keep as placeholder for future implementation
-        raw_data["lactate_threshold"] = {
-            "speed_and_heart_rate": None,  # Need separate API call
-            "power": None,  # Need separate API call
-        }
+        # Fetch lactate threshold data from get_lactate_threshold(latest=True)
+        try:
+            lactate_threshold_data = client.get_lactate_threshold(latest=True)
+            raw_data["lactate_threshold"] = lactate_threshold_data
+        except Exception as e:
+            logger.warning(f"Failed to fetch lactate threshold data: {e}")
+            raw_data["lactate_threshold"] = {
+                "speed_and_heart_rate": None,
+                "power": None,
+            }
 
         # Weight data (requires separate weight cache manager)
         # For now, set to None - will be populated by weight_cache_manager if available
