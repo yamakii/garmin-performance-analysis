@@ -119,23 +119,20 @@ class GarminDBWriter:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO activities
-                (activity_id, date, activity_name, location_name,
-                 total_distance_km, total_time_seconds, avg_pace_seconds_per_km, avg_heart_rate,
-                 weight_kg, weight_source, weight_method)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (activity_id, activity_date, activity_name, location_name, activity_type,
+                 distance_km, duration_seconds, avg_pace_seconds_per_km, avg_heart_rate)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 [
                     activity_id,
                     activity_date,
                     activity_name,
                     location_name,
+                    activity_type,
                     kwargs.get("distance_km"),
                     kwargs.get("duration_seconds"),
                     kwargs.get("avg_pace_seconds_per_km"),
                     kwargs.get("avg_heart_rate"),
-                    weight_kg,
-                    weight_source,
-                    weight_method,
                 ],
             )
 
