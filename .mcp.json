@@ -1,0 +1,51 @@
+{
+  "mcpServers": {
+    "garmin": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/home/yamakii/workspace/claude_workspace/garmin_mcp",
+        "run",
+        "garmin-mcp"
+      ]
+    },
+    "garmin-db": {
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "servers/garmin_db_server.py"
+      ]
+    },
+    "json-utils": {
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "servers/json_server.py"
+      ]
+    },
+    "markdown-utils": {
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "servers/markdown_server.py"
+      ]
+    },
+    "report-generator": {
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "servers/report_generator_core.py"
+      ]
+    },
+    "serena": {
+      "command": "node",
+      "args": [
+        "/home/yamakii/.serena/mcp/dist/index.js"
+      ]
+    }
+  }
+}

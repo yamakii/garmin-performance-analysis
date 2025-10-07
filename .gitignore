@@ -1,0 +1,82 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+.hypothesis/
+
+# Type checking and linting
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+dmypy.json
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment variables
+.env
+.env.local
+
+# Project specific - Data directories
+data/raw/*
+data/parquet/*
+data/performance/*
+data/precheck/*
+data/cache/*
+data/database/*.duckdb
+data/database/*.duckdb.wal
+data/logs/*
+data/weight_cache/raw/*
+data/weight_cache/parquet/*
+data/individual/*/
+data/archive/*
+
+# Keep directory structure
+!data/raw/.gitkeep
+!data/parquet/.gitkeep
+!data/performance/.gitkeep
+!data/precheck/.gitkeep
+!data/cache/.gitkeep
+!data/database/.gitkeep
+!data/logs/.gitkeep
+!data/weight_cache/raw/.gitkeep
+!data/weight_cache/parquet/.gitkeep
+!data/archive/.gitkeep
+
+# Keep weight_index.json
+!data/weight_cache/weight_index.json
+
+# Project specific - Temporary files
+tmp/*
+!tmp/.gitkeep
+
+# Project specific - Local settings
+.claude/settings.local.json
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# Serena cache
+.serena/cache/
