@@ -192,8 +192,31 @@ class GarminIngestWorker:
                 "trainingEffectLabel": summary.get("trainingEffectLabel"),
             }
 
-        # VO2 Max and Lactate Threshold require separate API calls
-        raw_data["vo2_max"] = []  # Placeholder for future implementation
+            # Extract activity date for VO2 max API call
+            start_time_local = summary.get("startTimeLocal", "")
+            if start_time_local:
+                # Extract date from "2025-10-05T19:05:50.0" -> "2025-10-05"
+                activity_date = start_time_local.split("T")[0]
+
+                # Fetch VO2 max data from get_max_metrics(date)
+                try:
+                    max_metrics = client.get_max_metrics(activity_date)
+                    generic_metrics = max_metrics.get("generic", {})
+                    raw_data["vo2_max"] = {
+                        "vo2MaxValue": generic_metrics.get("vo2MaxValue"),
+                        "vo2MaxPreciseValue": generic_metrics.get("vo2MaxPreciseValue"),
+                        "calendarDate": generic_metrics.get("calendarDate"),
+                    }
+                except Exception as e:
+                    logger.warning(f"Failed to fetch VO2 max data: {e}")
+                    raw_data["vo2_max"] = []
+            else:
+                raw_data["vo2_max"] = []
+        else:
+            raw_data["vo2_max"] = []
+
+        # Lactate Threshold: No dedicated API found in garminconnect library
+        # Keep as placeholder for future implementation
         raw_data["lactate_threshold"] = {
             "speed_and_heart_rate": None,  # Need separate API call
             "power": None,  # Need separate API call
