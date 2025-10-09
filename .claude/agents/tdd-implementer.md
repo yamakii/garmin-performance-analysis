@@ -122,14 +122,24 @@ DEVELOPMENT_PROCESS.md の Phase 2（実装フェーズ）を支援する専門�
    # PASSED ✅
    ```
 
-3. **型チェック（即座に実行）** ⚠️ IMPORTANT
+3. **コード品質チェック（即座に実行）** ⚠️ IMPORTANT
    ```bash
-   # 実装直後に型エラーをチェック（コミット前に検出）
+   # 実装直後にコード品質をチェック（コミット前に検出）
+
+   # (1) フォーマット（自動修正）
+   uv run black tools/path/feature.py tests/path/test_feature.py
+
+   # (2) Lint（自動修正可能なものは修正）
+   uv run ruff check --fix tools/path/feature.py tests/path/test_feature.py
+
+   # (3) 型チェック（エラーがあれば即座に修正）
    uv run mypy tools/path/feature.py tests/path/test_feature.py
 
-   # 型エラーがあれば即座に修正
-   # エラー例: error: Function is missing a return type annotation
-   # 修正: def new_feature() -> bool:
+   # エラー例と修正:
+   # - Black: 自動フォーマット済み
+   # - Ruff: Unused import removed
+   # - Mypy: error: Function is missing a return type annotation
+   #   → 修正: def new_feature() -> bool:
    ```
 
 ### Phase 3: Refactor（リファクタリング）
