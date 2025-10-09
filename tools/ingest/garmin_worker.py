@@ -1090,6 +1090,7 @@ class GarminIngestWorker:
         splits_success = insert_splits(
             performance_file=str(performance_file),
             activity_id=activity_id,
+            db_path=self._db_path,
         )
         if splits_success:
             logger.info(f"Inserted splits to DuckDB for activity {activity_id}")
@@ -1104,6 +1105,7 @@ class GarminIngestWorker:
         form_eff_success = insert_form_efficiency(
             performance_file=str(performance_file),
             activity_id=activity_id,
+            db_path=self._db_path,
         )
         if form_eff_success:
             logger.info(
@@ -1120,6 +1122,7 @@ class GarminIngestWorker:
         hr_zones_success = insert_heart_rate_zones(
             performance_file=str(performance_file),
             activity_id=activity_id,
+            db_path=self._db_path,
         )
         if hr_zones_success:
             logger.info(
@@ -1136,6 +1139,7 @@ class GarminIngestWorker:
         hr_eff_success = insert_hr_efficiency(
             performance_file=str(performance_file),
             activity_id=activity_id,
+            db_path=self._db_path,
         )
         if hr_eff_success:
             logger.info(f"Inserted hr_efficiency to DuckDB for activity {activity_id}")
@@ -1152,6 +1156,7 @@ class GarminIngestWorker:
         perf_trends_success = insert_performance_trends(
             performance_file=str(performance_file),
             activity_id=activity_id,
+            db_path=self._db_path,
         )
         if perf_trends_success:
             logger.info(
@@ -1168,6 +1173,7 @@ class GarminIngestWorker:
         lt_success = insert_lactate_threshold(
             performance_file=str(performance_file),
             activity_id=activity_id,
+            db_path=self._db_path,
         )
         if lt_success:
             logger.info(
@@ -1184,6 +1190,7 @@ class GarminIngestWorker:
         vo2_success = insert_vo2_max(
             performance_file=str(performance_file),
             activity_id=activity_id,
+            db_path=self._db_path,
         )
         if vo2_success:
             logger.info(f"Inserted vo2_max to DuckDB for activity {activity_id}")
@@ -1266,8 +1273,31 @@ class GarminIngestWorker:
         bone_mass_values = []
         muscle_mass_values = []
 
-        # Collect data from past 7 days (including target date)
-        for i in range(7):
+        # First, try to get data for the target date
+        target_raw_data = self.collect_body_composition_data(date)
+        if not target_raw_data or not target_raw_data.get("dateWeightList"):
+            logger.warning(
+                f"No body composition data found for {date}, skipping past 7 days lookup"
+            )
+            return None
+
+        # Target date has data, collect from it
+        target_data = target_raw_data["dateWeightList"][0]
+        if target_data.get("weight"):
+            weights.append(target_data["weight"] / 1000.0)
+        if target_data.get("bmi"):
+            bmi_values.append(target_data["bmi"])
+        if target_data.get("bodyFat"):
+            body_fat_values.append(target_data["bodyFat"])
+        if target_data.get("bodyWater"):
+            body_water_values.append(target_data["bodyWater"])
+        if target_data.get("boneMass"):
+            bone_mass_values.append(target_data["boneMass"] / 1000.0)
+        if target_data.get("muscleMass"):
+            muscle_mass_values.append(target_data["muscleMass"] / 1000.0)
+
+        # Now collect from past 6 days (total 7 days with target date)
+        for i in range(1, 7):
             check_date = target_date - timedelta(days=i)
             check_date_str = check_date.strftime("%Y-%m-%d")
 

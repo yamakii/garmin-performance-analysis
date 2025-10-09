@@ -55,9 +55,9 @@ class WorkflowPlanner:
 
         logger.info(f"Starting workflow for date: {date}")
 
-        worker = GarminIngestWorker()
+        worker = GarminIngestWorker(db_path=self.db_path)
 
-        # Step 1: Data collection (GarminIngestWorker resolves activity_id internally)
+        # Step 1: Data collection and DuckDB insertion (via save_data)
         logger.info(f"Processing activity by date: {date}")
         ingest_result = worker.process_activity_by_date(date)
         activity_id = ingest_result["activity_id"]
@@ -68,15 +68,7 @@ class WorkflowPlanner:
                 f"Data collection failed: {ingest_result.get('error', 'Unknown error')}"
             )
 
-        # Step 2: Insert into DuckDB
-        from tools.database.inserters.performance import insert_performance_data
-
-        logger.info("Inserting performance data into DuckDB")
-        insert_performance_data(
-            ingest_result["files"]["performance_file"], activity_id, date
-        )
-
-        # Step 3: Data validation (check precheck.json)
+        # Step 2: Data validation (check precheck.json)
         import json
 
         precheck_file = Path(ingest_result["files"]["precheck_file"])

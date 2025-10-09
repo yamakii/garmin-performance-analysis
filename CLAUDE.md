@@ -45,10 +45,18 @@ The system follows a three-tier data transformation pipeline:
 ```
 GarminIngestWorker: [API calls → raw_data.json → create_parquet_dataset() → {performance.json, precheck.json}]
                     ↓
-         Section Analysis Agents (5 parallel) → DuckDB
+           save_data() → 7 DuckDB inserters → Normalized tables (splits, form_efficiency, etc.)
+                    ↓
+         Section Analysis Agents (5 parallel) → DuckDB (section_analyses table)
                     ↓
               Report Generation → result/
 ```
+
+**DuckDB Schema (2025-10-10 Update):**
+- **Normalized tables**: `splits`, `form_efficiency`, `heart_rate_zones`, `hr_efficiency`, `performance_trends`, `vo2_max`, `lactate_threshold`
+- **Metadata table**: `activities` (activity metadata with foreign key relationships)
+- **Analysis table**: `section_analyses` (section analysis results from agents)
+- **Note**: `performance_data` (JSON storage) table was removed in favor of normalized schema
 
 ### Directory Structure
 
@@ -285,14 +293,13 @@ See "Development Process Agents" section below for detailed usage instructions.
 
 **Standard Individual Activity Analysis:**
 
-1. **Data Collection & Validation** (Python direct execution):
+1. **Data Collection & DuckDB Insertion** (Python direct execution):
    ```python
    from tools.ingest.garmin_worker import GarminIngestWorker
-   from tools.database.inserters.performance import insert_performance_data
 
    worker = GarminIngestWorker()
    result = worker.process_activity(activity_id, "YYYY-MM-DD")
-   insert_performance_data(result["performance_file"], activity_id, "YYYY-MM-DD")
+   # Note: save_data() automatically inserts into DuckDB normalized tables
    ```
 
 2. **Section Analysis** (5 agents in parallel):
@@ -470,6 +477,11 @@ uv run python tools/bulk_fetch_activity_details.py --dry-run
 # Force re-fetch even if files exist
 uv run python tools/bulk_fetch_activity_details.py --force
 
+# Re-ingest all activities into DuckDB (from raw data)
+uv run python tools/scripts/reingest_duckdb_data.py
+
+# Keep old database (don't delete before re-ingestion)
+uv run python tools/scripts/reingest_duckdb_data.py --keep-old
 ```
 
 ### Code Quality
@@ -633,6 +645,7 @@ docs/project/
 
 ### Active Projects
 
+- **2025-10-10_duckdb_inserter_cleanup**: Added 7 missing normalized table schemas to db_writer._ensure_tables(), body composition optimization, deprecated code removal (Phases 1-4 completed)
 - **2025-10-09_garmin_ingest_refactoring**: GarminIngestWorker refactoring for cache-first approach and process_activity unification (Phases 0-5 completed)
 - **2025-10-07_core_system_restoration**: Body composition data specification fix and DuckDB schema documentation
 - **2025-10-07_report_generation_update**: Worker-based report generation system implementation

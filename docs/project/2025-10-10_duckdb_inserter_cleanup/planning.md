@@ -379,10 +379,69 @@ CREATE TABLE IF NOT EXISTS lactate_threshold (
 - ✅ Pre-commit hooksがパスする (Black, Ruff, Mypy)
 - 🔲 ドキュメント（CLAUDE.md）が更新されている → 次のステップ
 
+### Phase 4: DuckDBデータ再投入（追加要件） ✅ **完了**
+
+**目的**: 正規化テーブルスキーマ追加後、既存の`data/raw/activity/`から全データを再投入
+
+**実装内容:**
+
+1. **Body composition最適化** ✅
+   - `_calculate_median_weight()` を修正し、ターゲット日付にデータがない場合は過去7日間のルックアップをスキップ
+   - APIコール回数を大幅削減（体組成データのない日付では7回 → 1回）
+
+2. **db_path伝播の修正** ✅
+   - `GarminIngestWorker.__init__()`: `db_path`パラメータをサポート
+   - `save_data()`: 全inserterに`db_path`を渡すように修正
+   - `WorkflowPlanner.execute_full_workflow()`: workerに`db_path`を渡すように修正
+
+3. **重複挿入の削除** ✅
+   - `reingest_duckdb_data.py`: `insert_performance_data()` 呼び出しを削除（`save_data()`内のinserterで完結）
+   - `workflow_planner.py`: `insert_performance_data()` 呼び出しを削除
+   - `insert_performance_data()` 関数とテストファイルを完全削除（deprecated）
+
+4. **再投入スクリプト作成** ✅
+   - `tools/scripts/reingest_duckdb_data.py` を作成
+   - `GarminIngestWorker.process_activity()` を直接呼び出し（activity_idベース）
+   - 同一日付の複数アクティビティも全て処理
+
+**実行結果:**
+```
+============================================================
+Re-ingestion Summary:
+  Total activities: 103
+  Successful: 103
+  Failed: 0
+============================================================
+```
+
+**DuckDB検証結果:**
+```
+activities          :    103 rows
+splits              :    749 rows (平均7.3スプリット/アクティビティ)
+form_efficiency     :    103 rows
+heart_rate_zones    :    515 rows (5ゾーン × 103)
+hr_efficiency       :    103 rows
+performance_trends  :    103 rows
+vo2_max             :    103 rows
+lactate_threshold   :    103 rows
+```
+
+**受け入れ基準:**
+- ✅ 古いDuckDBファイルが削除されている
+- ✅ 全アクティビティ（103件）が正規化テーブルに挿入されている
+- ✅ 外部キー制約エラーが発生していない
+- ✅ `splits`, `form_efficiency`等のテーブルにデータが存在する
+- ✅ Body composition最適化により、APIコール回数が削減されている
+- ✅ Deprecated `insert_performance_data()` が削除されている
+
+---
+
 ### 次のステップ
 
-1. **コミット**: Feature branchに変更をコミット
-2. **completion-reporter agent**: 完了レポート作成
-3. **ドキュメント更新**: CLAUDE.md に変更内容を反映
-4. **マージ**: Feature branch → main
-5. **クリーンアップ**: Git worktree削除
+1. ✅ **Phase 4実装**: DuckDBデータ再投入スクリプト作成
+2. ✅ **データ再投入実行**: 全アクティビティを再処理（103/103成功）
+3. ✅ **検証**: 正規化テーブルのデータ件数確認
+4. 🔲 **completion-reporter agent**: 完了レポート作成
+5. 🔲 **ドキュメント更新**: CLAUDE.md に変更内容を反映
+6. 🔲 **マージ**: Feature branch → main
+7. 🔲 **クリーンアップ**: Git worktree削除
