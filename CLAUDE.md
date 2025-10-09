@@ -416,6 +416,32 @@ uv sync --extra dev
 uv sync --extra performance
 ```
 
+**⚠️ IMPORTANT: Git Worktree Setup**
+
+When creating a new git worktree for isolated development:
+
+```bash
+# Create worktree
+git worktree add -b <branch-name> <path> <base-branch>
+
+# ALWAYS run uv sync immediately after
+cd <path>
+uv sync
+```
+
+**Why this is required:**
+- Git worktrees create separate working directories
+- Virtual environment and dependencies are not shared between worktrees
+- `uv sync` must be run in each worktree to set up the Python environment
+- Failure to run `uv sync` will result in missing dependencies and import errors
+
+**Example:**
+```bash
+git worktree add -b feature/new-analysis ../garmin-feature new_master
+cd ../garmin-feature
+uv sync  # <- MANDATORY
+```
+
 ### Data Processing
 ```bash
 # Regenerate all performance data from raw_data
