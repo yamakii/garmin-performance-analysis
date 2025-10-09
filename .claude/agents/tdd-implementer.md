@@ -122,6 +122,16 @@ DEVELOPMENT_PROCESS.md の Phase 2（実装フェーズ）を支援する専門�
    # PASSED ✅
    ```
 
+3. **型チェック（即座に実行）** ⚠️ IMPORTANT
+   ```bash
+   # 実装直後に型エラーをチェック（コミット前に検出）
+   uv run mypy tools/path/feature.py tests/path/test_feature.py
+
+   # 型エラーがあれば即座に修正
+   # エラー例: error: Function is missing a return type annotation
+   # 修正: def new_feature() -> bool:
+   ```
+
 ### Phase 3: Refactor（リファクタリング）
 
 1. **コード改善**
