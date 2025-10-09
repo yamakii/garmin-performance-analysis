@@ -163,7 +163,6 @@ class TestProcessActivityByDateDelegation:
         expected_result = {
             "activity_id": activity_id,
             "performance_file": "/path/to/performance.json",
-            "parquet_file": "/path/to/data.parquet",
         }
 
         # Mock the resolver and process_activity

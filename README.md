@@ -85,7 +85,6 @@ pre-commit run --all-files
 
 - `data/raw/`: Immutable Garmin API responses
 - `data/performance/`: Pre-processed performance metrics
-- `data/parquet/`: Columnar data for efficient querying
 - `data/database/`: DuckDB database files
 - `result/`: Final analysis reports
 

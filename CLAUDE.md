@@ -28,7 +28,7 @@ This is a Garmin running performance analysis system that uses the Garmin MCP se
 The system follows a three-tier data transformation pipeline:
 
 1. **Raw Data Layer** (`data/raw/`): Complete Garmin API responses collected and cached
-2. **Performance Data Layer** (`data/performance/`, `data/parquet/`): Pre-processed metrics for analysis
+2. **Performance Data Layer** (`data/performance/`): Pre-processed metrics for analysis
 3. **Analysis Layer** (`result/`, DuckDB): Section analyses and final reports
 
 #### Key Processing Classes
@@ -38,12 +38,12 @@ The system follows a three-tier data transformation pipeline:
   - `process_activity()`: Orchestrates the full pipeline from API to analysis-ready data
   - `create_parquet_dataset()`: Transforms raw lapDTOs into structured DataFrames
   - `_calculate_split_metrics()`: Pre-calculates performance metrics including elevation data
-  - `save_data()`: Outputs parquet, performance.json, and precheck files
+  - `save_data()`: Outputs performance.json and precheck files
 
 #### Data Flow
 
 ```
-GarminIngestWorker: [API calls → raw_data.json → create_parquet_dataset() → {performance.json, .parquet, precheck.json}]
+GarminIngestWorker: [API calls → raw_data.json → create_parquet_dataset() → {performance.json, precheck.json}]
                     ↓
          Section Analysis Agents (5 parallel) → DuckDB
                     ↓
@@ -56,7 +56,6 @@ GarminIngestWorker: [API calls → raw_data.json → create_parquet_dataset() �
 ├── data/              # Multi-tier data storage
 │   ├── raw/          # Immutable Garmin API responses
 │   ├── performance/  # Pre-processed analysis-ready data (performance.json)
-│   ├── parquet/      # Columnar data for efficient querying
 │   ├── precheck/     # Data validation results
 │   ├── database/     # DuckDB database files (primary storage for section analysis)
 │   └── individual/   # [LEGACY] Section analysis JSON files (migrating to DuckDB)
@@ -89,7 +88,6 @@ GarminIngestWorker: [API calls → raw_data.json → create_parquet_dataset() �
 
 **Processed Data:**
 - **Performance data**: `{activity_id}.json` (pre-processed metrics with Phase 1, 2 optimizations)
-- **Parquet data**: `{activity_id}.parquet` (columnar format)
 - **Precheck data**: `{activity_id}.json` (validation results)
 - **Monthly activities**: `activities_{YYYY-MM}.json`
 

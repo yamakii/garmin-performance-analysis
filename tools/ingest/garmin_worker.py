@@ -120,7 +120,6 @@ class GarminIngestWorker:
         """
         self.project_root = Path(__file__).parent.parent.parent
         self.raw_dir = self.project_root / "data" / "raw"
-        self.parquet_dir = self.project_root / "data" / "parquet"
         self.performance_dir = self.project_root / "data" / "performance"
         self.precheck_dir = self.project_root / "data" / "precheck"
         self.weight_cache_dir = self.project_root / "data" / "weight_cache" / "raw"
@@ -128,7 +127,6 @@ class GarminIngestWorker:
         # Create directories
         for directory in [
             self.raw_dir,
-            self.parquet_dir,
             self.performance_dir,
             self.precheck_dir,
         ]:
@@ -1042,23 +1040,19 @@ class GarminIngestWorker:
 
         Files created:
         - data/raw/{activity_id}_raw.json (already created in collect_data)
-        - data/parquet/{activity_id}.parquet
         - data/performance/{activity_id}.json
         - data/precheck/{activity_id}.json
 
         Args:
             activity_id: Activity ID
             raw_data: Raw data dict
-            df: Parquet DataFrame
+            df: Parquet DataFrame (used for precheck validation, not saved)
             performance_data: Performance metrics
 
         Returns:
             File paths dict
         """
-        # Save parquet
-        parquet_file = self.parquet_dir / f"{activity_id}.parquet"
-        df.to_parquet(parquet_file, index=False)
-        logger.info(f"Saved parquet to {parquet_file}")
+        # Parquet generation removed - DuckDB is primary storage
 
         # Save performance.json
         performance_file = self.performance_dir / f"{activity_id}.json"
@@ -1199,7 +1193,6 @@ class GarminIngestWorker:
 
         return {
             "raw_file": str(self.raw_dir / f"{activity_id}_raw.json"),
-            "parquet_file": str(parquet_file),
             "performance_file": str(performance_file),
             "precheck_file": str(precheck_file),
         }

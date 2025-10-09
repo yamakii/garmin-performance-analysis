@@ -1,0 +1,75 @@
+================================================================================
+PROJECT PLANNING COMPLETE: Cleanup Unused Parquet Files
+================================================================================
+
+PROJECT DIRECTORY: docs/project/2025-10-09_cleanup_unused_parquet/
+
+FILES CREATED:
+  ✓ planning.md (15KB) - Complete project plan with 4 phases
+  ✓ README.md (1.5KB) - Project overview and quick reference
+  ✓ SUMMARY.txt - This file
+
+================================================================================
+PLANNING HIGHLIGHTS
+================================================================================
+
+SCOPE:
+  - Remove 210 unused parquet files (~2MB)
+  - Keep Precheck JSON files (actively used)
+  - Maintain DuckDB as primary storage
+  - Fix 5+ test files
+
+PHASES:
+  Phase 0: Discovery & Validation
+  Phase 1: Code Removal (TDD Cycles)
+  Phase 2: File Cleanup
+  Phase 3: Documentation Update
+  Phase 4: Verification & Completion
+
+TEST PLAN:
+  - 6 Unit Test Suites
+  - 2 Integration Test Suites
+  - 1 Regression Test Suite
+  - 1 Performance Test Suite
+
+ACCEPTANCE CRITERIA:
+  ✓ All tests pass
+  ✓ Code quality checks pass
+  ✓ ~2MB disk space saved
+  ✓ Documentation updated
+  ✓ Precheck files preserved
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+1. Review planning.md for complete details
+
+2. Start implementation with tdd-implementer agent:
+
+   Task: tdd-implementer
+   prompt: "docs/project/2025-10-09_cleanup_unused_parquet/planning.md に基づいて、
+           TDDサイクルで実装してください。Phase 0のDiscovery & Validationから開始してください。"
+
+3. After implementation, generate completion report:
+
+   Task: completion-reporter
+   prompt: "docs/project/2025-10-09_cleanup_unused_parquet/ の完了レポートを作成してください。"
+
+================================================================================
+KEY RISK MITIGATION
+================================================================================
+
+HIGH RISK: Precheck file deletion
+  - Mitigation: Explicitly preserve in code
+  - Test: WorkflowPlanner integration test
+
+MEDIUM RISK: Hidden parquet dependencies
+  - Mitigation: Phase 0 exhaustive grep search
+  - Test: Full test suite execution
+
+LOW RISK: Backup restoration failure
+  - Mitigation: Create backups before deletion
+  - Rollback: tar -xzf backup_*.tar.gz
+
+================================================================================

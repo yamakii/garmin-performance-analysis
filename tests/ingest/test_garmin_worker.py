@@ -231,7 +231,7 @@ class TestGarminIngestWorker:
 
     @pytest.mark.unit
     def test_save_data_creates_files(self, worker, sample_raw_data, tmp_path):
-        """Test save_data creates all required files."""
+        """Test save_data creates required files (without parquet)."""
         df = pd.DataFrame(
             {
                 "split_number": [1, 2],
@@ -248,9 +248,9 @@ class TestGarminIngestWorker:
                 20464005432, sample_raw_data, df, performance_data
             )
 
-            # Verify result contains file paths
+            # Verify result contains file paths (parquet_file should NOT be present)
             assert "raw_file" in result
-            assert "parquet_file" in result
+            assert "parquet_file" not in result  # Parquet generation removed
             assert "performance_file" in result
             assert "precheck_file" in result
 
@@ -335,16 +335,12 @@ class TestGarminIngestWorker:
         assert result["status"] == "success"
         assert "files" in result
 
-        # Verify files were created
+        # Verify files were created (parquet_file removed)
         files = result["files"]
         assert "raw_file" in files
-        assert "parquet_file" in files
+        assert "parquet_file" not in files  # Parquet generation removed
         assert "performance_file" in files
         assert "precheck_file" in files
-
-        # Verify parquet file exists and is valid
-        parquet_file = worker.parquet_dir / f"{activity_id}.parquet"
-        assert parquet_file.exists()
 
         # Verify performance file exists and has all 11 sections
         performance_file = worker.performance_dir / f"{activity_id}.json"

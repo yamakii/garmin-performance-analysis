@@ -38,7 +38,6 @@ dmypy.json
 
 # Project specific - Data directories
 data/raw/*
-data/parquet/*
 data/performance/*
 data/precheck/*
 data/cache/*
@@ -46,7 +45,6 @@ data/database/*.duckdb
 data/database/*.duckdb.wal
 data/logs/*
 data/weight_cache/raw/*
-data/weight_cache/parquet/*
 data/individual/*/
 data/archive/*
 
@@ -59,14 +57,12 @@ result/
 
 # Keep directory structure
 !data/raw/.gitkeep
-!data/parquet/.gitkeep
 !data/performance/.gitkeep
 !data/precheck/.gitkeep
 !data/cache/.gitkeep
 !data/database/.gitkeep
 !data/logs/.gitkeep
 !data/weight_cache/raw/.gitkeep
-!data/weight_cache/parquet/.gitkeep
 !data/archive/.gitkeep
 
 # Keep weight_index.json
