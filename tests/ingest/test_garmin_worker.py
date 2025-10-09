@@ -9,6 +9,7 @@ Test coverage:
 """
 
 import json
+from typing import Any
 from unittest.mock import patch
 
 import pandas as pd
@@ -363,3 +364,269 @@ class TestGarminIngestWorker:
         assert "form_efficiency_summary" in performance_data
         assert "hr_efficiency_analysis" in performance_data
         assert "performance_trends" in performance_data
+
+    # =============================================
+    # New tests for get_activity() API integration
+    # =============================================
+
+    @pytest.mark.unit
+    def test_load_from_cache_with_activity_json(self, worker, tmp_path):
+        """Test load_from_cache with activity.json (new format) present."""
+        # Setup: Create activity directory with activity.json
+        activity_id = 12345
+        activity_dir = tmp_path / "activity" / str(activity_id)
+        activity_dir.mkdir(parents=True)
+
+        worker.raw_dir = tmp_path
+
+        # Create activity.json (basic info with summaryDTO)
+        activity_basic_data = {
+            "activityId": activity_id,
+            "activityName": "Morning Run",
+            "summaryDTO": {
+                "trainingEffect": 3.5,
+                "anaerobicTrainingEffect": 2.0,
+                "aerobicTrainingEffectMessage": "Improving",
+                "anaerobicTrainingEffectMessage": "Maintaining",
+                "trainingEffectLabel": "Improving",
+            },
+        }
+        with open(activity_dir / "activity.json", "w", encoding="utf-8") as f:
+            json.dump(activity_basic_data, f)
+
+        # Create activity_details.json (chart data)
+        activity_details_data = {"activityId": activity_id, "metricDescriptors": []}
+        with open(activity_dir / "activity_details.json", "w", encoding="utf-8") as f:
+            json.dump(activity_details_data, f)
+
+        # Create other required files
+        for file_name, data in [
+            (
+                "splits.json",
+                {"activityId": activity_id, "lapDTOs": [], "eventDTOs": []},
+            ),
+            ("weather.json", {"temp": 20}),
+            ("gear.json", [{"customMakeModel": "Test Shoes"}]),
+            ("hr_zones.json", [{"zoneNumber": 1, "zoneLowBoundary": 100}]),
+            ("vo2_max.json", {"generic": {"vo2MaxValue": 50}}),
+            ("lactate_threshold.json", {"lactateThresholdBPM": 160}),
+        ]:
+            with open(activity_dir / file_name, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+
+        # Execute
+        result = worker.load_from_cache(activity_id)
+
+        # Verify
+        assert result is not None
+        assert "activity_basic" in result
+        assert "activity" in result
+        assert result["activity_basic"]["summaryDTO"]["trainingEffect"] == 3.5
+        assert "training_effect" in result
+        assert result["training_effect"]["aerobicTrainingEffect"] == 3.5
+
+    @pytest.mark.unit
+    def test_load_from_cache_backward_compatibility(self, worker, tmp_path):
+        """Test load_from_cache with only activity_details.json (old format)."""
+        # Setup: Create activity directory without activity.json
+        activity_id = 12345
+        activity_dir = tmp_path / "activity" / str(activity_id)
+        activity_dir.mkdir(parents=True)
+
+        worker.raw_dir = tmp_path
+
+        # Create only activity_details.json (old format)
+        activity_details_data = {
+            "activityId": activity_id,
+            "summaryDTO": {"trainingEffect": 3.0, "anaerobicTrainingEffect": 1.5},
+        }
+        with open(activity_dir / "activity_details.json", "w", encoding="utf-8") as f:
+            json.dump(activity_details_data, f)
+
+        # Create other required files
+        for file_name, data in [
+            (
+                "splits.json",
+                {"activityId": activity_id, "lapDTOs": [], "eventDTOs": []},
+            ),
+            ("weather.json", {"temp": 20}),
+            ("gear.json", []),
+            ("hr_zones.json", []),
+            ("vo2_max.json", {}),
+            ("lactate_threshold.json", {}),
+        ]:
+            with open(activity_dir / file_name, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+
+        # Execute
+        result = worker.load_from_cache(activity_id)
+
+        # Verify: activity_basic should be populated from activity_details (backward compatibility)
+        assert result is not None
+        assert "activity_basic" in result
+        assert "activity" in result
+        assert result["activity_basic"]["activityId"] == activity_id
+
+    @pytest.mark.unit
+    def test_collect_data_calls_get_activity(self, worker, tmp_path):
+        """Test collect_data calls get_activity() API when activity.json is missing."""
+        activity_id = 12345
+
+        worker.raw_dir = tmp_path
+
+        # DO NOT create activity directory - force complete cache miss
+        # This will trigger API calls
+
+        # Mock ALL API calls
+        mock_activity_basic = {
+            "activityId": activity_id,
+            "activityName": "Test Run",
+            "summaryDTO": {"trainingEffect": 4.0, "anaerobicTrainingEffect": 2.5},
+        }
+
+        mock_splits = {"activityId": activity_id, "lapDTOs": [], "eventDTOs": []}
+        mock_weather = {"temp": 20}
+        mock_gear: list[dict] = []
+        mock_hr_zones: list[dict] = []
+        mock_vo2_max: dict[str, Any] = {}
+        mock_lactate: dict[str, Any] = {}
+        mock_activity_details = {"activityId": activity_id}
+
+        with patch.object(worker, "get_garmin_client") as mock_client:
+            # Setup all API mocks
+            mock_client.return_value.get_activity.return_value = mock_activity_basic
+            mock_client.return_value.get_activity_details.return_value = (
+                mock_activity_details
+            )
+            mock_client.return_value.get_activity_splits.return_value = mock_splits
+            mock_client.return_value.get_activity_weather.return_value = mock_weather
+            mock_client.return_value.get_activity_gear.return_value = mock_gear
+            mock_client.return_value.get_activity_hr_in_timezones.return_value = (
+                mock_hr_zones
+            )
+            mock_client.return_value.get_activity_vo2_max.return_value = mock_vo2_max
+            mock_client.return_value.get_activity_lactate_threshold.return_value = (
+                mock_lactate
+            )
+            mock_client.return_value.get_activity_evaluation.return_value = {}
+
+            # Execute
+            result = worker.collect_data(activity_id)
+
+            # Verify get_activity() was called
+            mock_client.return_value.get_activity.assert_called_once_with(
+                str(activity_id)
+            )
+
+            # Verify result
+            assert "activity_basic" in result
+            assert result["activity_basic"]["activityName"] == "Test Run"
+
+            # Verify activity.json was created
+            activity_dir = tmp_path / "activity" / str(activity_id)
+            activity_json = activity_dir / "activity.json"
+            assert activity_json.exists()
+
+    @pytest.mark.unit
+    def test_training_effect_extraction_from_activity_basic(self, worker, tmp_path):
+        """Test training_effect extraction from activity_basic.summaryDTO."""
+        activity_id = 12345
+        activity_dir = tmp_path / "activity" / str(activity_id)
+        activity_dir.mkdir(parents=True)
+
+        worker.raw_dir = tmp_path
+
+        # Create activity.json with full summaryDTO
+        activity_basic_data = {
+            "activityId": activity_id,
+            "summaryDTO": {
+                "trainingEffect": 3.8,
+                "anaerobicTrainingEffect": 2.2,
+                "aerobicTrainingEffectMessage": "Highly Improving",
+                "anaerobicTrainingEffectMessage": "Improving",
+                "trainingEffectLabel": "Highly Improving",
+            },
+        }
+        with open(activity_dir / "activity.json", "w", encoding="utf-8") as f:
+            json.dump(activity_basic_data, f)
+
+        # Create minimal other files
+        for file_name, data in [
+            ("activity_details.json", {"activityId": activity_id}),
+            (
+                "splits.json",
+                {"activityId": activity_id, "lapDTOs": [], "eventDTOs": []},
+            ),
+            ("weather.json", {}),
+            ("gear.json", []),
+            ("hr_zones.json", []),
+            ("vo2_max.json", {}),
+            ("lactate_threshold.json", {}),
+        ]:
+            with open(activity_dir / file_name, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+
+        # Execute
+        result = worker.load_from_cache(activity_id)
+
+        # Verify training_effect extraction
+        assert result is not None
+        assert "training_effect" in result
+        training_effect = result["training_effect"]
+        assert training_effect["aerobicTrainingEffect"] == 3.8
+        assert training_effect["anaerobicTrainingEffect"] == 2.2
+        assert training_effect["aerobicTrainingEffectMessage"] == "Highly Improving"
+        assert training_effect["anaerobicTrainingEffectMessage"] == "Improving"
+        assert training_effect["trainingEffectLabel"] == "Highly Improving"
+
+    @pytest.mark.integration
+    @pytest.mark.garmin_api
+    def test_collect_data_with_get_activity_api(self, worker):
+        """Test collect_data with real get_activity() API call.
+
+        IMPORTANT:
+        - Uses existing cached activity to avoid API rate limit
+        - Verifies activity.json is created if missing
+        - Run explicitly with: uv run pytest -m garmin_api
+        """
+        # Use existing cached activity
+        activity_id = 20594901208
+
+        # Delete activity.json to force API call (but keep other files for efficiency)
+        activity_dir = worker.raw_dir / "activity" / str(activity_id)
+        activity_json = activity_dir / "activity.json"
+
+        # Backup if exists
+        backup_path = None
+        if activity_json.exists():
+            backup_path = activity_json.with_suffix(".json.backup")
+            activity_json.rename(backup_path)
+
+        try:
+            # Execute (should call get_activity() API)
+            result = worker.collect_data(activity_id)
+
+            # Verify structure
+            assert "activity_basic" in result
+            assert "activity" in result
+            assert "training_effect" in result
+
+            # Verify activity_basic content
+            activity_basic = result["activity_basic"]
+            assert activity_basic["activityId"] == activity_id
+            assert "summaryDTO" in activity_basic
+
+            # Verify training_effect extraction
+            training_effect = result["training_effect"]
+            assert "aerobicTrainingEffect" in training_effect
+            assert "anaerobicTrainingEffect" in training_effect
+
+            # Verify activity.json was created
+            assert activity_json.exists()
+
+        finally:
+            # Restore backup
+            if backup_path and backup_path.exists():
+                if activity_json.exists():
+                    activity_json.unlink()
+                backup_path.rename(activity_json)
