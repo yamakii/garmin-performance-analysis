@@ -208,3 +208,127 @@ class TestSectionAnalysisInserter:
         assert analysis_json is not None
 
         conn.close()
+
+    @pytest.mark.unit
+    def test_insert_section_analysis_auto_metadata(self, tmp_path):
+        """Test insert_section_analysis auto-generates metadata when not provided."""
+        import duckdb
+
+        db_path = tmp_path / "test.duckdb"
+
+        # Setup: Insert activity first (FK constraint)
+        from tools.database.db_writer import GarminDBWriter
+
+        writer = GarminDBWriter(db_path=str(db_path))
+        writer.insert_activity(
+            activity_id=20464005432,
+            activity_date="2025-09-22",
+            distance_km=5.0,
+            duration_seconds=1500,
+        )
+
+        # Analysis data WITHOUT metadata
+        analysis_data_no_metadata = {
+            "efficiency": "GCT平均: 262ms (★★★☆☆), VO平均: 7.2cm (★★★★★)"
+        }
+
+        result = insert_section_analysis(
+            analysis_data=analysis_data_no_metadata,
+            activity_id=20464005432,
+            activity_date="2025-09-22",
+            section_type="efficiency",
+            db_path=str(db_path),
+        )
+
+        assert result is True
+
+        # Verify metadata was auto-generated
+        conn = duckdb.connect(str(db_path))
+
+        analyses = conn.execute(
+            """
+            SELECT analysis_data, agent_name, agent_version
+            FROM section_analyses
+            WHERE activity_id = 20464005432 AND section_type = 'efficiency'
+            """
+        ).fetchall()
+
+        assert len(analyses) == 1
+
+        # Parse analysis_data JSON
+        analysis_json = json.loads(analyses[0][0])
+
+        # Verify metadata exists and has correct structure
+        assert "metadata" in analysis_json
+        assert analysis_json["metadata"]["activity_id"] == "20464005432"
+        assert analysis_json["metadata"]["date"] == "2025-09-22"
+        assert analysis_json["metadata"]["analyst"] == "efficiency-section-analyst"
+        assert analysis_json["metadata"]["version"] == "1.0"
+        assert "timestamp" in analysis_json["metadata"]
+
+        # Verify agent_name and agent_version columns
+        assert analyses[0][1] == "efficiency-section-analyst"  # agent_name
+        assert analyses[0][2] == "1.0"  # agent_version
+
+        # Verify original analysis data is preserved
+        assert "efficiency" in analysis_json
+        assert "GCT平均" in analysis_json["efficiency"]
+
+        conn.close()
+
+    @pytest.mark.unit
+    def test_insert_section_analysis_custom_agent_name(self, tmp_path):
+        """Test insert_section_analysis with custom agent_name."""
+        import duckdb
+
+        db_path = tmp_path / "test.duckdb"
+
+        # Setup: Insert activity first (FK constraint)
+        from tools.database.db_writer import GarminDBWriter
+
+        writer = GarminDBWriter(db_path=str(db_path))
+        writer.insert_activity(
+            activity_id=20464005432,
+            activity_date="2025-09-22",
+            distance_km=5.0,
+            duration_seconds=1500,
+        )
+
+        # Analysis data WITHOUT metadata
+        analysis_data = {"summary": "Overall performance evaluation"}
+
+        result = insert_section_analysis(
+            analysis_data=analysis_data,
+            activity_id=20464005432,
+            activity_date="2025-09-22",
+            section_type="summary",
+            agent_name="custom-analyst-v2",
+            agent_version="2.1.0",
+            db_path=str(db_path),
+        )
+
+        assert result is True
+
+        # Verify custom agent_name was used
+        conn = duckdb.connect(str(db_path))
+
+        analyses = conn.execute(
+            """
+            SELECT analysis_data, agent_name, agent_version
+            FROM section_analyses
+            WHERE activity_id = 20464005432 AND section_type = 'summary'
+            """
+        ).fetchall()
+
+        assert len(analyses) == 1
+
+        # Parse analysis_data JSON
+        analysis_json = json.loads(analyses[0][0])
+
+        # Verify custom agent name and version
+        assert analysis_json["metadata"]["analyst"] == "custom-analyst-v2"
+        assert analysis_json["metadata"]["version"] == "2.1.0"
+        assert analyses[0][1] == "custom-analyst-v2"  # agent_name column
+        assert analyses[0][2] == "2.1.0"  # agent_version column
+
+        conn.close()

@@ -81,6 +81,58 @@ async def list_tools() -> list[Tool]:
                 "required": ["activity_id"],
             },
         ),
+        Tool(
+            name="get_splits_pace_hr",
+            description="Get pace and heart rate data from splits (lightweight: ~3 fields/split)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "activity_id": {"type": "integer"},
+                },
+                "required": ["activity_id"],
+            },
+        ),
+        Tool(
+            name="get_splits_form_metrics",
+            description="Get form efficiency metrics from splits (lightweight: ~4 fields/split)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "activity_id": {"type": "integer"},
+                },
+                "required": ["activity_id"],
+            },
+        ),
+        Tool(
+            name="get_splits_elevation",
+            description="Get elevation and terrain data from splits (lightweight: ~5 fields/split)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "activity_id": {"type": "integer"},
+                },
+                "required": ["activity_id"],
+            },
+        ),
+        Tool(
+            name="insert_section_analysis_dict",
+            description="Insert section analysis dict directly into DuckDB (no file creation)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "activity_id": {"type": "integer"},
+                    "activity_date": {"type": "string"},
+                    "section_type": {"type": "string"},
+                    "analysis_data": {"type": "object"},
+                },
+                "required": [
+                    "activity_id",
+                    "activity_date",
+                    "section_type",
+                    "analysis_data",
+                ],
+            },
+        ),
     ]
 
 
@@ -111,17 +163,37 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
     elif name == "get_activity_by_date":
         date = arguments["date"]
-        from tools.planner.workflow_planner import WorkflowPlanner
-
-        planner = WorkflowPlanner()
+        import duckdb
 
         try:
-            # Get all activities for date
-            activities = planner._get_activities_from_duckdb(date)
+            # Query activities table for given date
+            conn = duckdb.connect(str(db_reader.db_path), read_only=True)
+            activities_result = conn.execute(
+                """
+                SELECT
+                    activity_id,
+                    activity_name,
+                    start_time_local,
+                    total_distance_km,
+                    total_time_seconds
+                FROM activities
+                WHERE date = ?
+                ORDER BY start_time_local
+                """,
+                [date],
+            ).fetchall()
+            conn.close()
 
-            if len(activities) == 0:
-                # Try API
-                activities = planner._get_activities_from_api(date)
+            activities = [
+                {
+                    "activity_id": row[0],
+                    "activity_name": row[1],
+                    "start_time": str(row[2]) if row[2] else None,
+                    "distance_km": row[3],
+                    "duration_seconds": row[4],
+                }
+                for row in activities_result
+            ]
 
             if len(activities) == 0:
                 result = {
@@ -158,6 +230,60 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         activity_id = arguments["activity_id"]
         date = db_reader.get_activity_date(activity_id)
         result = {"activity_id": activity_id, "date": date}
+        return [
+            TextContent(
+                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+            )
+        ]
+
+    elif name == "get_splits_pace_hr":
+        activity_id = arguments["activity_id"]
+        result = db_reader.get_splits_pace_hr(activity_id)
+        return [
+            TextContent(
+                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+            )
+        ]
+
+    elif name == "get_splits_form_metrics":
+        activity_id = arguments["activity_id"]
+        result = db_reader.get_splits_form_metrics(activity_id)
+        return [
+            TextContent(
+                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+            )
+        ]
+
+    elif name == "get_splits_elevation":
+        activity_id = arguments["activity_id"]
+        result = db_reader.get_splits_elevation(activity_id)
+        return [
+            TextContent(
+                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+            )
+        ]
+
+    elif name == "insert_section_analysis_dict":
+        from tools.database.inserters.section_analyses import insert_section_analysis
+
+        activity_id = arguments["activity_id"]
+        activity_date = arguments["activity_date"]
+        section_type = arguments["section_type"]
+        analysis_data = arguments["analysis_data"]
+
+        success = insert_section_analysis(
+            activity_id=activity_id,
+            activity_date=activity_date,
+            section_type=section_type,
+            analysis_data=analysis_data,
+        )
+
+        result = {
+            "success": success,
+            "activity_id": activity_id,
+            "section_type": section_type,
+        }
+
         return [
             TextContent(
                 type="text", text=json.dumps(result, indent=2, ensure_ascii=False)

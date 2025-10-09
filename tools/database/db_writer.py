@@ -6,6 +6,7 @@ Provides write operations to DuckDB for inserting performance data.
 
 import json
 import logging
+from datetime import UTC
 from pathlib import Path
 
 import duckdb
@@ -253,20 +254,26 @@ class GarminDBWriter:
         activity_date: str,
         section_type: str,
         analysis_data: dict,
+        agent_name: str | None = None,
+        agent_version: str = "1.0",
     ) -> bool:
         """
-        Insert section analysis data.
+        Insert section analysis data with auto-generated metadata.
 
         Args:
             activity_id: Activity ID
             activity_date: Activity date (YYYY-MM-DD)
             section_type: Section type (efficiency, environment, phase, split, summary)
-            analysis_data: Analysis data dict
+            analysis_data: Analysis data dict (metadata will be auto-added if not present)
+            agent_name: Optional agent name (defaults to {section_type}-section-analyst)
+            agent_version: Agent version (defaults to "1.0")
 
         Returns:
             True if successful
         """
         try:
+            from datetime import datetime
+
             conn = duckdb.connect(str(self.db_path))
 
             # Get next analysis_id
@@ -275,12 +282,29 @@ class GarminDBWriter:
             ).fetchone()
             next_analysis_id = max_id_result[0] + 1 if max_id_result else 1
 
-            # Extract metadata
-            metadata = analysis_data.get("metadata", {})
-            agent_name = metadata.get("analyst")  # 'analyst' field maps to 'agent_name'
-            agent_version = metadata.get(
-                "version"
-            )  # 'version' field maps to 'agent_version'
+            # Auto-generate metadata if not present
+            if "metadata" not in analysis_data:
+                # Determine agent name from section_type
+                if agent_name is None:
+                    agent_name = f"{section_type}-section-analyst"
+
+                # Generate metadata
+                metadata = {
+                    "activity_id": str(activity_id),
+                    "date": activity_date,
+                    "analyst": agent_name,
+                    "version": agent_version,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+
+                # Add metadata to analysis_data
+                analysis_data_with_metadata = {"metadata": metadata, **analysis_data}
+            else:
+                # Use existing metadata
+                analysis_data_with_metadata = analysis_data
+                metadata = analysis_data["metadata"]
+                agent_name = metadata.get("analyst", agent_name)
+                agent_version = metadata.get("version", agent_version)
 
             conn.execute(
                 """
@@ -293,7 +317,7 @@ class GarminDBWriter:
                     activity_id,
                     activity_date,
                     section_type,
-                    json.dumps(analysis_data),
+                    json.dumps(analysis_data_with_metadata),
                     agent_name,
                     agent_version,
                 ],

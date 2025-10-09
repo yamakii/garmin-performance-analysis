@@ -270,6 +270,18 @@ class GarminIngestWorker:
             else:
                 terrain_type = "山岳"
 
+            # Map intensityType to role_phase
+            intensity_type = lap.get("intensityType", "ACTIVE")
+            role_phase_map = {
+                "WARMUP": "warmup",
+                "INTERVAL": "run",
+                "ACTIVE": "run",
+                "RECOVERY": "recovery",
+                "REST": "recovery",
+                "COOLDOWN": "cooldown",
+            }
+            role_phase = role_phase_map.get(intensity_type, "run")
+
             record = {
                 "split_number": idx,
                 "distance_km": distance_km,
@@ -286,6 +298,7 @@ class GarminIngestWorker:
                 "max_elevation_m": lap.get("maxElevation"),
                 "min_elevation_m": lap.get("minElevation"),
                 "terrain_type": terrain_type,
+                "role_phase": role_phase,
             }
             records.append(record)
 
@@ -498,7 +511,13 @@ class GarminIngestWorker:
 
     def _calculate_performance_trends(self, df: pd.DataFrame) -> dict[str, Any]:
         """
-        Calculate performance trends (Phase 2 optimization).
+        Calculate performance trends with 4-phase support (Phase 3 optimization).
+
+        Phases:
+        - warmup: ウォームアップ
+        - run: メイン走行（高強度）
+        - recovery: 回復ジョグ（インターバル休憩）
+        - cooldown: クールダウン
 
         Returns:
             Phase-based analysis and consistency metrics
@@ -506,7 +525,122 @@ class GarminIngestWorker:
         if df.empty or len(df) < 3:
             return {}
 
-        # Split into phases (warmup: first 20%, main: middle 60%, finish: last 20%)
+        # Check if role_phase column exists
+        if "role_phase" not in df.columns:
+            # Fallback to old 3-phase logic
+            return self._calculate_performance_trends_legacy(df)
+
+        # Split into 4 phases based on role_phase
+        warmup_df = df[df["role_phase"] == "warmup"]
+        run_df = df[df["role_phase"] == "run"]
+        recovery_df = df[df["role_phase"] == "recovery"]
+        cooldown_df = df[df["role_phase"] == "cooldown"]
+
+        # Calculate phase metrics
+        warmup_phase = {
+            "splits": warmup_df["split_number"].tolist() if not warmup_df.empty else [],
+            "avg_pace": (
+                warmup_df["avg_pace_seconds_per_km"].mean()
+                if not warmup_df.empty
+                else None
+            ),
+            "avg_hr": (
+                warmup_df["avg_heart_rate"].mean() if not warmup_df.empty else None
+            ),
+        }
+
+        run_phase = {
+            "splits": run_df["split_number"].tolist() if not run_df.empty else [],
+            "avg_pace": (
+                run_df["avg_pace_seconds_per_km"].mean() if not run_df.empty else None
+            ),
+            "avg_hr": run_df["avg_heart_rate"].mean() if not run_df.empty else None,
+        }
+
+        recovery_phase = {
+            "splits": (
+                recovery_df["split_number"].tolist() if not recovery_df.empty else []
+            ),
+            "avg_pace": (
+                recovery_df["avg_pace_seconds_per_km"].mean()
+                if not recovery_df.empty
+                else None
+            ),
+            "avg_hr": (
+                recovery_df["avg_heart_rate"].mean() if not recovery_df.empty else None
+            ),
+        }
+
+        cooldown_phase = {
+            "splits": (
+                cooldown_df["split_number"].tolist() if not cooldown_df.empty else []
+            ),
+            "avg_pace": (
+                cooldown_df["avg_pace_seconds_per_km"].mean()
+                if not cooldown_df.empty
+                else None
+            ),
+            "avg_hr": (
+                cooldown_df["avg_heart_rate"].mean() if not cooldown_df.empty else None
+            ),
+        }
+
+        # Pace consistency for run phase only (excluding recovery)
+        if not run_df.empty:
+            pace_consistency = (
+                run_df["avg_pace_seconds_per_km"].std()
+                / run_df["avg_pace_seconds_per_km"].mean()
+                if run_df["avg_pace_seconds_per_km"].mean() > 0
+                else 0
+            )
+        else:
+            pace_consistency = 0
+
+        # HR drift (warmup to cooldown)
+        warmup_hr_val = warmup_phase.get("avg_hr")
+        cooldown_hr_val = cooldown_phase.get("avg_hr")
+        if (
+            warmup_hr_val is not None
+            and cooldown_hr_val is not None
+            and isinstance(warmup_hr_val, int | float)
+            and isinstance(cooldown_hr_val, int | float)
+        ):
+            hr_drift_percentage = (
+                (float(cooldown_hr_val) - float(warmup_hr_val))
+                / float(warmup_hr_val)
+                * 100
+            )
+        else:
+            hr_drift_percentage = 0
+
+        # Fatigue pattern
+        if hr_drift_percentage < 5:
+            fatigue_pattern = "適切な疲労管理"
+        elif hr_drift_percentage < 10:
+            fatigue_pattern = "軽度の疲労蓄積"
+        else:
+            fatigue_pattern = "顕著な疲労蓄積"
+
+        return {
+            "warmup_phase": warmup_phase,
+            "run_phase": run_phase,
+            "recovery_phase": recovery_phase,
+            "cooldown_phase": cooldown_phase,
+            "pace_consistency": pace_consistency,
+            "hr_drift_percentage": hr_drift_percentage,
+            "cadence_consistency": (
+                "高い安定性" if df["avg_cadence"].std() < 5 else "変動あり"
+            ),
+            "fatigue_pattern": fatigue_pattern,
+        }
+
+    def _calculate_performance_trends_legacy(self, df: pd.DataFrame) -> dict[str, Any]:
+        """
+        Legacy 3-phase calculation for backward compatibility.
+
+        Returns:
+            Phase-based analysis with warmup/main/finish
+        """
         total_splits = len(df)
         warmup_end = max(1, int(total_splits * 0.2))
         finish_start = max(warmup_end + 1, int(total_splits * 0.8))
@@ -515,7 +649,6 @@ class GarminIngestWorker:
         main_df = df.iloc[warmup_end:finish_start]
         finish_df = df.iloc[finish_start:]
 
-        # Calculate phase metrics
         warmup_phase = {
             "splits": list(range(1, warmup_end + 1)),
             "avg_pace": warmup_df["avg_pace_seconds_per_km"].mean(),
@@ -534,14 +667,12 @@ class GarminIngestWorker:
             "avg_hr": finish_df["avg_heart_rate"].mean(),
         }
 
-        # Pace consistency (coefficient of variation)
         pace_consistency = (
             df["avg_pace_seconds_per_km"].std() / df["avg_pace_seconds_per_km"].mean()
             if df["avg_pace_seconds_per_km"].mean() > 0
             else 0
         )
 
-        # HR drift (warmup to finish)
         hr_drift_percentage = (
             (finish_phase["avg_hr"] - warmup_phase["avg_hr"])
             / warmup_phase["avg_hr"]
@@ -550,7 +681,6 @@ class GarminIngestWorker:
             else 0
         )
 
-        # Fatigue pattern
         if hr_drift_percentage < 5:
             fatigue_pattern = "適切な疲労管理"
         elif hr_drift_percentage < 10:

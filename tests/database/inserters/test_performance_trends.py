@@ -140,3 +140,105 @@ class TestPerformanceTrendsInserter:
         assert abs(row[8] - 144.5) < 0.1  # warmup_avg_hr
 
         conn.close()
+
+    @pytest.fixture
+    def sample_4phase_performance_file(self, tmp_path):
+        """Create sample performance.json with 4-phase structure (interval training)."""
+        performance_data = {
+            "basic_metrics": {
+                "distance_km": 7.0,
+                "duration_seconds": 2700,
+            },
+            "performance_trends": {
+                "warmup_phase": {
+                    "splits": [1, 2],
+                    "avg_pace": 390.0,
+                    "avg_hr": 130.0,
+                },
+                "run_phase": {
+                    "splits": [3, 5, 7],
+                    "avg_pace": 280.0,
+                    "avg_hr": 155.0,
+                },
+                "recovery_phase": {
+                    "splits": [4, 6],
+                    "avg_pace": 600.0,
+                    "avg_hr": 145.0,
+                },
+                "cooldown_phase": {
+                    "splits": [8, 9],
+                    "avg_pace": 420.0,
+                    "avg_hr": 135.0,
+                },
+                "pace_consistency": 0.02,
+                "hr_drift_percentage": 1.5,
+                "cadence_consistency": "高い安定性",
+                "fatigue_pattern": "適切な疲労管理",
+            },
+        }
+
+        performance_file = tmp_path / "interval_activity.json"
+        with open(performance_file, "w", encoding="utf-8") as f:
+            json.dump(performance_data, f, ensure_ascii=False, indent=2)
+
+        return performance_file
+
+    @pytest.mark.integration
+    def test_insert_4phase_performance_trends(
+        self, sample_4phase_performance_file, tmp_path
+    ):
+        """Test insert_performance_trends writes 4-phase interval training data correctly."""
+        import duckdb
+
+        db_path = tmp_path / "test.duckdb"
+
+        result = insert_performance_trends(
+            performance_file=str(sample_4phase_performance_file),
+            activity_id=20615445009,
+            db_path=str(db_path),
+        )
+
+        assert result is True
+
+        conn = duckdb.connect(str(db_path))
+
+        # Check 4-phase data
+        data = conn.execute(
+            """
+            SELECT
+                warmup_splits,
+                warmup_avg_pace_seconds_per_km,
+                warmup_avg_hr,
+                run_splits,
+                run_avg_pace_seconds_per_km,
+                run_avg_hr,
+                recovery_splits,
+                recovery_avg_pace_seconds_per_km,
+                recovery_avg_hr,
+                cooldown_splits,
+                cooldown_avg_pace_seconds_per_km,
+                cooldown_avg_hr,
+                pace_consistency,
+                hr_drift_percentage
+            FROM performance_trends
+            WHERE activity_id = 20615445009
+            """
+        ).fetchone()
+
+        assert data is not None
+        assert data[0] == "1,2"  # warmup splits
+        assert data[1] == 390.0  # warmup pace
+        assert data[2] == 130.0  # warmup HR
+        assert data[3] == "3,5,7"  # run splits
+        assert data[4] == 280.0  # run pace
+        assert data[5] == 155.0  # run HR
+        assert data[6] == "4,6"  # recovery splits
+        assert data[7] == 600.0  # recovery pace
+        assert data[8] == 145.0  # recovery HR
+        assert data[9] == "8,9"  # cooldown splits
+        assert data[10] == 420.0  # cooldown pace
+        assert data[11] == 135.0  # cooldown HR
+        assert data[12] == 0.02  # pace consistency
+        assert data[13] == 1.5  # HR drift
+
+        conn.close()

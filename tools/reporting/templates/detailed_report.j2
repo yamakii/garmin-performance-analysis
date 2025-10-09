@@ -124,6 +124,49 @@
 {{ phase_evaluation.warmup.evaluation|default('N/A') }}
 
 {% endif %}
+{% if phase_evaluation.run %}
+### {% if phase_evaluation.recovery %}インターバル走フェーズ{% else %}メイン走行フェーズ{% endif %}
+{% if run_metrics or main_metrics %}
+{% set metrics = run_metrics or main_metrics %}
+
+| 項目 | 値 |
+|------|-----|
+| 平均ペース | {{ metrics.avg_pace_formatted }}/km |
+| 平均心拍 | {{ metrics.avg_hr|int }} bpm |{% if metrics.pace_consistency %}
+| ペース一貫性 | {{ "%.1f"|format(metrics.pace_consistency * 100) }}% ({% if metrics.pace_consistency < 0.05 %}優秀{% elif metrics.pace_consistency < 0.10 %}良好{% else %}変動あり{% endif %}) |{% endif %}
+{% endif %}
+
+{{ phase_evaluation.run.evaluation|default('N/A') }}
+
+{% endif %}
+{% if phase_evaluation.recovery %}
+### リカバリーフェーズ
+{% if recovery_metrics %}
+
+| 項目 | 値 |
+|------|-----|
+| 平均ペース | {{ recovery_metrics.avg_pace_formatted }}/km |
+| 平均心拍 | {{ recovery_metrics.avg_hr|int }} bpm |
+{% endif %}
+
+{{ phase_evaluation.recovery.evaluation|default('N/A') }}
+
+{% endif %}
+{% if phase_evaluation.cooldown %}
+### クールダウンフェーズ
+{% if cooldown_metrics or finish_metrics %}
+{% set metrics = cooldown_metrics or finish_metrics %}
+
+| 項目 | 値 |
+|------|-----|
+| 平均ペース | {{ metrics.avg_pace_formatted }}/km |
+| 平均心拍 | {{ metrics.avg_hr|int }} bpm |{% if metrics.fatigue_pattern %}
+| 疲労パターン | {{ metrics.fatigue_pattern }} |{% endif %}
+{% endif %}
+
+{{ phase_evaluation.cooldown.evaluation|default('N/A') }}
+
+{% endif %}
 {% if phase_evaluation.main %}
 ### メインフェーズ
 {% if main_metrics %}
@@ -167,7 +210,7 @@
 
 {% if split_analysis %}
 {% if split_analysis is mapping %}
-{% for key, value in split_analysis.items() | sort %}
+{% for key, value in split_analysis.items() | sort_splits %}
 
 ### {{ key }}
 
@@ -177,7 +220,7 @@
 {% endif %}
 {% elif split_analysis %}
 {% if split_analysis is mapping %}
-{% for key, value in split_analysis.items() | sort %}
+{% for key, value in split_analysis.items() | sort_splits %}
 
 ### {{ key }}
 

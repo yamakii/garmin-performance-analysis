@@ -27,6 +27,24 @@ class ReportTemplateRenderer:
 
         self.env = Environment(loader=FileSystemLoader(template_dir))
 
+        # Add custom filter for split sorting
+        self.env.filters["sort_splits"] = self._sort_splits_filter
+
+    def _sort_splits_filter(self, items):
+        """Sort split analysis items by numeric split number."""
+
+        def extract_split_num(item):
+            key = item[0]  # Get key from (key, value) tuple
+            # Extract number from "split_1", "split_2", etc.
+            if isinstance(key, str) and key.startswith("split_"):
+                try:
+                    return int(key.split("_")[1])
+                except (IndexError, ValueError):
+                    return 0
+            return 0
+
+        return sorted(items, key=extract_split_num)
+
     def load_template(self, template_name: str = "detailed_report.j2"):
         """
         Jinja2テンプレートを読み込む。
@@ -54,6 +72,9 @@ class ReportTemplateRenderer:
         performance_metrics: dict[str, Any] | None = None,
         training_type: str | None = None,
         warmup_metrics: dict[str, Any] | None = None,
+        run_metrics: dict[str, Any] | None = None,
+        recovery_metrics: dict[str, Any] | None = None,
+        cooldown_metrics: dict[str, Any] | None = None,
         main_metrics: dict[str, Any] | None = None,
         finish_metrics: dict[str, Any] | None = None,
         splits: list[dict[str, Any]] | None = None,
@@ -80,12 +101,15 @@ class ReportTemplateRenderer:
             performance_metrics: Performance metrics (pace consistency, HR drift, etc.)
             training_type: Training type classification
             warmup_metrics: Warmup phase metrics
-            main_metrics: Main phase metrics
-            finish_metrics: Finish phase metrics
+            run_metrics: Run/main phase metrics (new naming)
+            recovery_metrics: Recovery phase metrics (4-phase interval training only)
+            cooldown_metrics: Cooldown phase metrics (new naming, was finish)
+            main_metrics: (Legacy) Main phase metrics - deprecated, use run_metrics
+            finish_metrics: (Legacy) Finish phase metrics - deprecated, use cooldown_metrics
             splits: List of split data with metrics
             efficiency: Form & HR efficiency analysis
             environment_analysis: Weather, terrain, gear analysis
-            phase_evaluation: Warmup, main, finish phase analysis
+            phase_evaluation: Phase analysis (supports 3-phase and 4-phase)
             split_analysis: Split-by-split detailed analysis
             summary: Overall rating and recommendations
 
@@ -110,6 +134,12 @@ class ReportTemplateRenderer:
             )
             summary = summary or section_analyses.get("summary", {})
 
+        # Support legacy main_metrics/finish_metrics naming
+        if main_metrics and not run_metrics:
+            run_metrics = main_metrics
+        if finish_metrics and not cooldown_metrics:
+            cooldown_metrics = finish_metrics
+
         template = self.load_template()
         return cast(
             str,
@@ -126,8 +156,11 @@ class ReportTemplateRenderer:
                 performance_metrics=performance_metrics,
                 training_type=training_type,
                 warmup_metrics=warmup_metrics,
-                main_metrics=main_metrics,
-                finish_metrics=finish_metrics,
+                run_metrics=run_metrics,
+                recovery_metrics=recovery_metrics,
+                cooldown_metrics=cooldown_metrics,
+                main_metrics=main_metrics,  # Keep for backward compatibility
+                finish_metrics=finish_metrics,  # Keep for backward compatibility
                 splits=splits or [],
                 efficiency=efficiency or {},
                 environment_analysis=environment_analysis or {},

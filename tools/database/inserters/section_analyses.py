@@ -21,14 +21,18 @@ def insert_section_analysis(
     section_type: str,
     analysis_file: str | None = None,
     analysis_data: dict[str, Any] | None = None,
+    agent_name: str | None = None,
+    agent_version: str = "1.0",
     db_path: str | None = None,
 ) -> bool:
     """
-    Insert section analysis data into DuckDB.
+    Insert section analysis data into DuckDB with auto-generated metadata.
 
     Supports two modes:
     1. File-based: Load from analysis_file JSON
     2. Dict-based: Use analysis_data directly (RECOMMENDED - no file creation)
+
+    Metadata will be auto-generated if not present in the data.
 
     Args:
         activity_id: Activity ID
@@ -36,6 +40,8 @@ def insert_section_analysis(
         section_type: Section type (efficiency/environment/phase/split/summary)
         analysis_file: Optional path to section analysis JSON file
         analysis_data: Optional dict containing analysis data
+        agent_name: Optional agent name (defaults to {section_type}-section-analyst)
+        agent_version: Agent version (defaults to "1.0")
         db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
 
     Returns:
@@ -68,12 +74,14 @@ def insert_section_analysis(
         # Initialize DB writer
         writer = GarminDBWriter(db_path=db_path) if db_path else GarminDBWriter()
 
-        # Insert section analysis
+        # Insert section analysis (metadata will be auto-generated)
         success = writer.insert_section_analysis(
             activity_id=activity_id,
             activity_date=activity_date,
             section_type=section_type,
             analysis_data=data,
+            agent_name=agent_name,
+            agent_version=agent_version,
         )
 
         if not success:
