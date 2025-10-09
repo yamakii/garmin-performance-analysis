@@ -122,13 +122,14 @@ class GarminIngestWorker:
         self.raw_dir = self.project_root / "data" / "raw"
         self.performance_dir = self.project_root / "data" / "performance"
         self.precheck_dir = self.project_root / "data" / "precheck"
-        self.weight_cache_dir = self.project_root / "data" / "weight_cache" / "raw"
+        self.weight_raw_dir = self.project_root / "data" / "raw" / "weight"  # NEW
 
         # Create directories
         for directory in [
             self.raw_dir,
             self.performance_dir,
             self.precheck_dir,
+            self.weight_raw_dir,  # NEW
         ]:
             directory.mkdir(parents=True, exist_ok=True)
 
@@ -1202,7 +1203,7 @@ class GarminIngestWorker:
         Collect body composition data with cache-first strategy.
 
         Cache priority:
-        1. Check data/weight_cache/raw/weight_{date}_raw.json
+        1. Check data/raw/weight/{date}.json (NEW path)
         2. If missing, fetch from Garmin Connect API
 
         Args:
@@ -1211,8 +1212,8 @@ class GarminIngestWorker:
         Returns:
             Raw weight data dict or None if no data available
         """
-        # Check cache first
-        weight_file = self.weight_cache_dir / f"weight_{date}_raw.json"
+        # Check NEW path cache first
+        weight_file = self.weight_raw_dir / f"{date}.json"
         if weight_file.exists():
             logger.info(f"Using cached body composition data for {date}")
             with open(weight_file, encoding="utf-8") as f:
@@ -1231,7 +1232,7 @@ class GarminIngestWorker:
                 logger.warning(f"No body composition data found for {date}")
                 return None
 
-            # Save to cache
+            # Save to NEW path cache
             weight_file.parent.mkdir(parents=True, exist_ok=True)
             with open(weight_file, "w", encoding="utf-8") as f:
                 json.dump(weight_data, f, indent=2, ensure_ascii=False)

@@ -1,7 +1,7 @@
 """
-BodyCompositionInserter - Insert weight_cache raw data to DuckDB
+BodyCompositionInserter - Insert weight raw data to DuckDB
 
-Inserts body composition data from weight_cache/raw/ into body_composition table.
+Inserts body composition data from data/raw/weight/ into body_composition table.
 """
 
 import json
@@ -19,10 +19,10 @@ def insert_body_composition_data(
     db_path: str | None = None,
 ) -> bool:
     """
-    Insert body composition data from weight_cache raw file into DuckDB.
+    Insert body composition data from weight raw file into DuckDB.
 
     Args:
-        raw_file: Path to weight_YYYY-MM-DD_raw.json
+        raw_file: Path to data/raw/weight/YYYY-MM-DD.json
         date: Date in YYYY-MM-DD format
         db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
 
@@ -66,7 +66,7 @@ def main() -> None:
             "Usage: python -m tools.database.inserters.body_composition <raw_file> <date>"
         )
         print(
-            "Example: python -m tools.database.inserters.body_composition data/weight_cache/raw/weight_2025-10-03_raw.json 2025-10-03"
+            "Example: python -m tools.database.inserters.body_composition data/raw/weight/2025-10-03.json 2025-10-03"
         )
         sys.exit(1)
 

@@ -274,14 +274,14 @@ class BodyCompositionInserter:
 - [x] 旧構造 `data/weight_cache/` を削除
 
 ### Phase 3: 既存コードの更新（TDD）
-- [ ] `GarminIngestWorker` のパス更新
-  - [ ] `get_body_composition_data()` を新パス構造に対応
-  - [ ] テスト: `test_get_body_composition_new_structure`
-- [ ] `BodyCompositionInserter` のパス更新
-  - [ ] `weight_index_file` パスを更新
-  - [ ] テスト: 既存テストの実行
-- [ ] その他の影響を受けるコードの更新
-- [ ] 既存テストスイートを実行（regression test）
+- [x] `GarminIngestWorker` のパス更新
+  - [x] `get_body_composition_data()` を新パス構造に対応
+  - [x] テスト: `test_get_body_composition_new_structure`
+- [x] `BodyCompositionInserter` のパス更新
+  - [x] `weight_index_file` パスを更新
+  - [x] テスト: 既存テストの実行
+- [x] その他の影響を受けるコードの更新
+- [x] 既存テストスイートを実行（regression test）
 
 ### Phase 4: ドキュメント更新とクリーンアップ
 - [ ] CLAUDE.md の "Data Files Naming Convention" セクションを更新
