@@ -57,71 +57,23 @@ def convert_numpy_types(obj: Any) -> Any:
 
 
 class RawDataExtractor:
-    """Extract data from new/old raw_data formats.
+    """Extract data from raw_data formats.
 
-    Supports both:
-    - Old format: Per-API cache files (activity.json, activity_details.json, etc.)
-    - New format: Unified raw_data with separate API responses
+    Based on Phase 1 investigation:
+    - Both old and new formats have activity.summaryDTO.trainingEffect
+    - Format detection and legacy support are unnecessary
     """
-
-    def detect_format(self, raw_data: dict) -> str:
-        """Detect raw_data format.
-
-        The key difference between old and new formats is in activity_details:
-        - Old format: activity_details.json is a duplicate of activity.json (9KB)
-        - New format: activity_details.json has metricDescriptors and chart data (2MB+)
-
-        Args:
-            raw_data: Raw data dictionary (can have activity_details key)
-
-        Returns:
-            "old" if activity_details is small/duplicate
-            "new" if activity_details has metricDescriptors
-            "unknown" otherwise
-        """
-        # Check activity_details first (most reliable indicator)
-        activity_details = raw_data.get("activity_details", {})
-        if activity_details and "metricDescriptors" in activity_details:
-            return "new"
-
-        # Fallback: Check activity for direct format indicators
-        activity = (
-            raw_data if "activityId" in raw_data else raw_data.get("activity", {})
-        )
-
-        # If activity has metricDescriptors, it's new format
-        if "metricDescriptors" in activity:
-            return "new"
-
-        # If we have activity with summaryDTO but no metricDescriptors, it's old
-        if "summaryDTO" in activity:
-            return "old"
-
-        return "unknown"
 
     def extract_training_effect(self, activity_data: dict) -> dict:
         """Extract training effect from activity data.
 
-        Priority (based on Phase 1 investigation):
-        1. Top-level training_effect key (old format legacy)
-        2. activity.summaryDTO (new/old format - always exists)
-
         Args:
-            activity_data: Activity data dict (can be top-level or nested)
+            activity_data: Activity data dict with summaryDTO
 
         Returns:
             Dict with aerobicTrainingEffect and anaerobicTrainingEffect
             Empty dict if not found
         """
-        # Priority 1: Top-level training_effect key (old format)
-        if "training_effect" in activity_data:
-            te = activity_data["training_effect"]
-            return {
-                "aerobicTrainingEffect": te.get("aerobicTrainingEffect"),
-                "anaerobicTrainingEffect": te.get("anaerobicTrainingEffect"),
-            }
-
-        # Priority 2: summaryDTO (new/old format common)
         summary = activity_data.get("summaryDTO", {})
         if summary:
             result = {}
@@ -137,17 +89,12 @@ class RawDataExtractor:
         """Extract all data from raw_data dict.
 
         Args:
-            raw_data: Raw data with activity, activity_details, etc.
+            raw_data: Raw data with activity key
 
         Returns:
             Dict with extracted data sections
         """
         result = {}
-
-        # Check top-level training_effect first (old format)
-        if "training_effect" in raw_data:
-            result["training_effect"] = self.extract_training_effect(raw_data)
-            return result
 
         # Extract from activity key
         activity = raw_data.get("activity", {})
