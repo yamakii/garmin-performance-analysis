@@ -268,10 +268,10 @@ class BodyCompositionInserter:
   - [x] `--dry-run`, `--date`, `--all`, `--verify`, `--cleanup` オプション
 
 ### Phase 2: マイグレーション実行とバリデーション
-- [ ] Dry-run モードで全ファイルをテスト
-- [ ] 実際のマイグレーションを実行（raw + index）
-- [ ] データ検証スクリプトを実行
-- [ ] 旧構造 `data/weight_cache/` を削除
+- [x] Dry-run モードで全ファイルをテスト
+- [x] 実際のマイグレーションを実行（raw + index）
+- [x] データ検証スクリプトを実行
+- [x] 旧構造 `data/weight_cache/` を削除
 
 ### Phase 3: 既存コードの更新（TDD）
 - [ ] `GarminIngestWorker` のパス更新
