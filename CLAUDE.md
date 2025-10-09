@@ -427,19 +427,28 @@ git worktree add -b <branch-name> <path> <base-branch>
 # ALWAYS run uv sync immediately after
 cd <path>
 uv sync
+
+# MANDATORY: Activate Serena MCP for the worktree (for agents)
+# Agents must activate Serena with the worktree's absolute path
+mcp__serena__activate_project("<absolute-path-to-worktree>")
 ```
 
 **Why this is required:**
 - Git worktrees create separate working directories
 - Virtual environment and dependencies are not shared between worktrees
 - `uv sync` must be run in each worktree to set up the Python environment
+- **Serena MCP must be activated with the worktree path for code operations**
 - Failure to run `uv sync` will result in missing dependencies and import errors
+- Failure to activate Serena will prevent agents from using symbol-aware code editing tools
 
 **Example:**
 ```bash
 git worktree add -b feature/new-analysis ../garmin-feature main
 cd ../garmin-feature
 uv sync  # <- MANDATORY
+
+# For agents working in this worktree
+mcp__serena__activate_project("/home/user/workspace/garmin-feature")  # <- MANDATORY for agents
 ```
 
 ### Data Processing

@@ -53,7 +53,20 @@ DEVELOPMENT_PROCESS.md の Phase 2（実装フェーズ）を支援する専門�
    # Branch: feature/{project_name}
    ```
 
-2. **Worktree 存在確認**
+2. **Serena MCP Activation** ⚠️ CRITICAL
+   ```python
+   # MANDATORY: Activate Serena with worktree absolute path
+   # This enables symbol-aware code operations (find_symbol, replace_symbol_body, etc.)
+
+   import os
+   worktree_abs_path = os.path.abspath("../garmin-{project_name}")
+   mcp__serena__activate_project(worktree_abs_path)
+
+   # Example:
+   # mcp__serena__activate_project("/home/yamakii/workspace/claude_workspace/garmin-bulk_activity_details_fetch")
+   ```
+
+3. **Worktree 存在確認**
    ```bash
    # Worktree が存在することを確認
    ls ../garmin-{project_name}/
@@ -63,9 +76,10 @@ DEVELOPMENT_PROCESS.md の Phase 2（実装フェーズ）を支援する専門�
    git branch --show-current  # feature/{project_name} が表示されるべき
    ```
 
-3. **以降の全作業はworktree内で実行**
+4. **以降の全作業はworktree内で実行**
    - 全ファイル操作: `../garmin-{project_name}/` 内
    - 全コミット: feature branchに
+   - Serena MCP: worktree のパスで activate 済み
 
 ### Phase 1: Red（失敗するテストを書く）
 

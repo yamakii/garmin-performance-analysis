@@ -59,28 +59,42 @@ DEVELOPMENT_PROCESS.md の Phase 1（計画フェーズ）を支援する専門�
 
    # Create worktree with new feature branch
    git worktree add -b "${BRANCH_NAME}" "${WORKTREE_DIR}"
+
+   # MANDATORY: Activate Serena MCP for the worktree
+   # This enables symbol-aware code operations in the worktree
+   # Use absolute path (not relative path)
    ```
 
-3. **プロジェクトディレクトリ作成** (inside worktree)
+3. **Serena MCP Activation** ⚠️ MANDATORY SECOND STEP
+   ```python
+   # Get absolute path of worktree
+   import os
+   worktree_abs_path = os.path.abspath("../garmin-${PROJECT_NAME}")
+
+   # Activate Serena with worktree path
+   mcp__serena__activate_project(worktree_abs_path)
+   ```
+
+4. **プロジェクトディレクトリ作成** (inside worktree)
    ```bash
    PROJECT_DIR="${WORKTREE_DIR}/docs/project/$(date +%Y-%m-%d)_${PROJECT_NAME}"
    mkdir -p "${PROJECT_DIR}"
    ```
 
-4. **planning.md生成** (inside worktree)
+5. **planning.md生成** (inside worktree)
    - `docs/templates/planning.md` を読み込み（main repoから）
    - プロジェクト固有情報で置換
    - `${PROJECT_DIR}/planning.md` に保存
    - Worktreeパスを明記
 
-5. **対話的な計画立案**
+6. **対話的な計画立案**
    - 要件定義セクション完成
    - 設計セクション完成
    - テスト計画セクション完成
    - 受け入れ基準確認
    - Git worktree使用の明記
 
-6. **初回コミット** (in worktree)
+7. **初回コミット** (in worktree)
    ```bash
    cd "${WORKTREE_DIR}"
    git add docs/project/*/planning.md
