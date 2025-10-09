@@ -437,7 +437,7 @@ uv sync
 
 **Example:**
 ```bash
-git worktree add -b feature/new-analysis ../garmin-feature new_master
+git worktree add -b feature/new-analysis ../garmin-feature main
 cd ../garmin-feature
 uv sync  # <- MANDATORY
 ```
