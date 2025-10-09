@@ -398,3 +398,69 @@ uv run python tools/bulk_fetch_activity_details.py --dry-run
 - [ ] Phase 3: CLI Interface
 - [ ] Phase 4: Testing
 - [ ] Phase 5: Documentation & Deployment
+
+---
+
+## 実装進捗（更新: 2025-10-10）
+
+### Phase 1: Core Implementation ✅ 完了
+- [x] ActivityDetailsFetcherクラスの実装
+- [x] scan_activities()メソッド: ディレクトリ走査とフィルタリング
+- [x] fetch_single_activity()メソッド: 単一アクティビティ取得
+- [x] エラーハンドリングとロギング
+- [x] 型アノテーション修正（Mypy対応）
+
+### Phase 2: Bulk Processing ✅ 完了
+- [x] fetch_all()メソッド: バルク取得実行
+- [x] tqdmによる進捗表示
+- [x] Rate limit保護（delay_seconds）
+- [x] サマリー生成
+
+### Phase 3: CLI Interface ✅ 完了
+- [x] argparse設定（--force, --delay, --dry-run）
+- [x] main()関数: エントリーポイント
+- [x] ヘルプメッセージとドキュメント
+- [x] CLIテスト追加（dry-run, execute modes）
+
+### Phase 4: Testing ✅ 完了
+- [x] Unit tests実装（pytest）
+  - scan_activities: 3 tests
+  - fetch_single_activity: 4 tests
+  - CLI: 2 tests
+- [x] Integration tests実装（モックAPI使用）
+  - bulk_fetch_with_mock_api
+  - partial_failure_recovery
+- [x] Real API test実装（@pytest.mark.garmin_api）
+  - test_fetch_real_activity
+- [x] **テスト結果**: 11/11 passed (1 skipped garmin_api test)
+- [x] **カバレッジ**: 89% (target: 80%)
+
+### Phase 5: Documentation & Deployment 🔄 進行中
+- [x] 実装完了（コミット: 9eeeb69a）
+- [ ] README更新（Usage sectionに追記）
+- [ ] CLAUDE.md更新（Common Development Commands）
+- [ ] 実環境での実行とバリデーション（101アクティビティ）
+- [ ] completion_report.md作成
+
+### コード品質チェック ✅ 完了
+- [x] Black フォーマット済み
+- [x] Ruff Lint エラーなし（import ordering fixed）
+- [x] Mypy 型エラーなし（type annotation fixed）
+- [x] pytest 全テストパス（11/11, 89% coverage）
+- [x] Pre-commit hooks パス（pytest skip due to worktree data files）
+
+### 実装ファイル
+- **実装**: `tools/bulk_fetch_activity_details.py` (274 lines)
+- **テスト**: `tests/tools/test_bulk_fetch_activity_details.py` (391 lines)
+- **依存関係**: `tqdm>=4.67.1` added to pyproject.toml
+
+### Git情報
+- **Commit**: `9eeeb69a8d51c45bb4f718f9d2203f77dd87c34f`
+- **Branch**: `feature/bulk_activity_details_fetch`
+- **Message**: `feat(ingest): add bulk activity_details.json fetcher with TDD`
+
+### 次のステップ
+1. 実環境での動作確認（101アクティビティの一括取得）
+2. README.md, CLAUDE.md の更新
+3. completion_report.md の作成
+4. メインブランチへのマージ
