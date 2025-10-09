@@ -140,13 +140,108 @@ class GarminIngestWorker:
         result = self._db_reader.get_activity_date(activity_id)
         return cast(str | None, result) if result else None
 
+    def load_from_cache(self, activity_id: int) -> dict[str, Any] | None:
+        """
+        Load cached raw_data from directory structure.
+
+        Returns:
+            Complete raw_data dict if all required files exist, None otherwise
+        """
+        activity_dir = self.raw_dir / "activity" / str(activity_id)
+
+        if not activity_dir.exists():
+            return None
+
+        # Required API files
+        required_files = [
+            "activity_details.json",
+            "splits.json",
+            "weather.json",
+            "gear.json",
+            "hr_zones.json",
+            "vo2_max.json",
+            "lactate_threshold.json",
+        ]
+
+        # Check all required files exist
+        for file_name in required_files:
+            if not (activity_dir / file_name).exists():
+                logger.warning(f"Missing required file: {file_name}")
+                return None
+
+        # Load all files
+        raw_data: dict[str, Any] = {}
+
+        try:
+            with open(activity_dir / "activity_details.json", encoding="utf-8") as f:
+                raw_data["activity"] = json.load(f)
+
+            with open(activity_dir / "splits.json", encoding="utf-8") as f:
+                raw_data["splits"] = json.load(f)
+
+            with open(activity_dir / "weather.json", encoding="utf-8") as f:
+                raw_data["weather"] = json.load(f)
+
+            with open(activity_dir / "gear.json", encoding="utf-8") as f:
+                raw_data["gear"] = json.load(f)
+
+            with open(activity_dir / "hr_zones.json", encoding="utf-8") as f:
+                raw_data["hr_zones"] = json.load(f)
+
+            with open(activity_dir / "vo2_max.json", encoding="utf-8") as f:
+                raw_data["vo2_max"] = json.load(f)
+
+            with open(activity_dir / "lactate_threshold.json", encoding="utf-8") as f:
+                raw_data["lactate_threshold"] = json.load(f)
+
+            # Extract training_effect from activity.summaryDTO if available
+            activity_data = raw_data.get("activity", {})
+            summary = activity_data.get("summaryDTO", {}) if activity_data else {}
+            if summary:
+                raw_data["training_effect"] = {
+                    "aerobicTrainingEffect": summary.get("trainingEffect"),
+                    "anaerobicTrainingEffect": summary.get("anaerobicTrainingEffect"),
+                    "aerobicTrainingEffectMessage": summary.get(
+                        "aerobicTrainingEffectMessage"
+                    ),
+                    "anaerobicTrainingEffectMessage": summary.get(
+                        "anaerobicTrainingEffectMessage"
+                    ),
+                    "trainingEffectLabel": summary.get("trainingEffectLabel"),
+                }
+
+            # Weight data (not stored in cache)
+            raw_data["weight"] = None
+
+            logger.info(f"Loaded cached data for activity {activity_id}")
+            return raw_data
+
+        except Exception as e:
+            logger.error(f"Failed to load cached data for activity {activity_id}: {e}")
+            return None
+
     def collect_data(self, activity_id: int) -> dict[str, Any]:
         """
-        Collect activity data with cache-first strategy.
+        Collect activity data with per-API cache-first strategy.
+
+        **IMPORTANT**: This method ONLY handles raw_data caching, NOT DuckDB caching.
+        DuckDB caching is handled in process_activity().
+
+        New structure: data/raw/activity/{activity_id}/{api_name}.json
 
         Cache priority:
-        1. Check data/raw/{activity_id}_raw.json
-        2. If missing, fetch from Garmin Connect API
+        1. Check old format: data/raw/{activity_id}_raw.json (backward compatibility)
+        2. Check new format: data/raw/activity/{activity_id}/{api_name}.json
+        3. If missing, fetch from Garmin Connect API and save to new format
+
+        API files (new format):
+        - activity_details.json (maxchart=2000)
+        - splits.json
+        - weather.json
+        - gear.json
+        - hr_zones.json
+        - vo2_max.json
+        - lactate_threshold.json
 
         Args:
             activity_id: Activity ID
@@ -154,30 +249,175 @@ class GarminIngestWorker:
         Returns:
             Raw data dict with keys: activity, splits, weather, gear, hr_zones, etc.
         """
-        # Check cache first
-        raw_file = self.raw_dir / f"{activity_id}_raw.json"
-        if raw_file.exists():
-            logger.info(f"Using cached data for activity {activity_id}")
-            with open(raw_file, encoding="utf-8") as f:
+        # Backward compatibility: Check old format cache first
+        old_cache_file = self.raw_dir / f"{activity_id}_raw.json"
+        if old_cache_file.exists():
+            logger.info(f"Using old format cached data for activity {activity_id}")
+            with open(old_cache_file, encoding="utf-8") as f:
                 return cast(dict[str, Any], json.load(f))
 
-        # Fetch from Garmin Connect API
+        # Try to load from new cache format
+        cached_data = self.load_from_cache(activity_id)
+        if cached_data is not None:
+            return cached_data
+
+        # Cache miss - fetch from API
         logger.info(f"Fetching activity {activity_id} from Garmin Connect API")
         client = self.get_garmin_client()
 
-        # Collect all data components
-        activity_data = client.get_activity_details(activity_id)
+        # Create activity directory
+        activity_dir = self.raw_dir / "activity" / str(activity_id)
+        activity_dir.mkdir(parents=True, exist_ok=True)
 
-        raw_data = {
-            "activity": activity_data,
-            "splits": client.get_activity_splits(activity_id),
-            "weather": client.get_activity_weather(activity_id),
-            "gear": client.get_activity_gear(activity_id),
-            "hr_zones": client.get_activity_hr_in_timezones(activity_id),
-        }
+        raw_data: dict[str, Any] = {}
 
-        # Add optional fields from activity data if available
-        # Extract training effect from activity.summaryDTO
+        # Fetch and cache each API individually
+        # 1. Activity details (with reduced polyline data)
+        activity_file = activity_dir / "activity_details.json"
+        if activity_file.exists():
+            logger.info(f"Using cached activity_details for {activity_id}")
+            with open(activity_file, encoding="utf-8") as f:
+                raw_data["activity"] = json.load(f)
+        else:
+            try:
+                activity_data = client.get_activity_details(activity_id, maxchart=2000)
+                raw_data["activity"] = activity_data
+                with open(activity_file, "w", encoding="utf-8") as f:
+                    json.dump(activity_data, f, ensure_ascii=False, indent=2)
+                logger.info(f"Cached activity_details to {activity_file}")
+            except Exception as e:
+                logger.error(f"Failed to fetch activity_details: {e}")
+                raw_data["activity"] = None
+
+        # 2. Splits
+        splits_file = activity_dir / "splits.json"
+        if splits_file.exists():
+            logger.info(f"Using cached splits for {activity_id}")
+            with open(splits_file, encoding="utf-8") as f:
+                raw_data["splits"] = json.load(f)
+        else:
+            try:
+                splits_data = client.get_activity_splits(activity_id)
+                raw_data["splits"] = splits_data
+                with open(splits_file, "w", encoding="utf-8") as f:
+                    json.dump(splits_data, f, ensure_ascii=False, indent=2)
+                logger.info(f"Cached splits to {splits_file}")
+            except Exception as e:
+                logger.error(f"Failed to fetch splits: {e}")
+                raw_data["splits"] = None
+
+        # 3. Weather
+        weather_file = activity_dir / "weather.json"
+        if weather_file.exists():
+            logger.info(f"Using cached weather for {activity_id}")
+            with open(weather_file, encoding="utf-8") as f:
+                raw_data["weather"] = json.load(f)
+        else:
+            try:
+                weather_data = client.get_activity_weather(activity_id)
+                raw_data["weather"] = weather_data
+                with open(weather_file, "w", encoding="utf-8") as f:
+                    json.dump(weather_data, f, ensure_ascii=False, indent=2)
+                logger.info(f"Cached weather to {weather_file}")
+            except Exception as e:
+                logger.error(f"Failed to fetch weather: {e}")
+                raw_data["weather"] = None
+
+        # 4. Gear
+        gear_file = activity_dir / "gear.json"
+        if gear_file.exists():
+            logger.info(f"Using cached gear for {activity_id}")
+            with open(gear_file, encoding="utf-8") as f:
+                raw_data["gear"] = json.load(f)
+        else:
+            try:
+                gear_data = client.get_activity_gear(activity_id)
+                raw_data["gear"] = gear_data
+                with open(gear_file, "w", encoding="utf-8") as f:
+                    json.dump(gear_data, f, ensure_ascii=False, indent=2)
+                logger.info(f"Cached gear to {gear_file}")
+            except Exception as e:
+                logger.error(f"Failed to fetch gear: {e}")
+                raw_data["gear"] = None
+
+        # 5. HR zones
+        hr_zones_file = activity_dir / "hr_zones.json"
+        if hr_zones_file.exists():
+            logger.info(f"Using cached hr_zones for {activity_id}")
+            with open(hr_zones_file, encoding="utf-8") as f:
+                raw_data["hr_zones"] = json.load(f)
+        else:
+            try:
+                hr_zones_data = client.get_activity_hr_in_timezones(activity_id)
+                raw_data["hr_zones"] = hr_zones_data
+                with open(hr_zones_file, "w", encoding="utf-8") as f:
+                    json.dump(hr_zones_data, f, ensure_ascii=False, indent=2)
+                logger.info(f"Cached hr_zones to {hr_zones_file}")
+            except Exception as e:
+                logger.error(f"Failed to fetch hr_zones: {e}")
+                raw_data["hr_zones"] = None
+
+        # 6. VO2 max (requires activity date)
+        vo2_max_file = activity_dir / "vo2_max.json"
+        if vo2_max_file.exists():
+            logger.info(f"Using cached vo2_max for {activity_id}")
+            with open(vo2_max_file, encoding="utf-8") as f:
+                raw_data["vo2_max"] = json.load(f)
+        else:
+            # Extract activity date from activity.summaryDTO
+            activity_data = raw_data.get("activity", {})
+            summary = activity_data.get("summaryDTO", {}) if activity_data else {}
+            start_time_local = summary.get("startTimeLocal", "")
+
+            if start_time_local:
+                activity_date = start_time_local.split("T")[0]
+                try:
+                    max_metrics = client.get_max_metrics(activity_date)
+                    generic_metrics = max_metrics.get("generic", {})
+                    vo2_max_data = {
+                        "vo2MaxValue": generic_metrics.get("vo2MaxValue"),
+                        "vo2MaxPreciseValue": generic_metrics.get("vo2MaxPreciseValue"),
+                        "calendarDate": generic_metrics.get("calendarDate"),
+                    }
+                    raw_data["vo2_max"] = vo2_max_data
+                    with open(vo2_max_file, "w", encoding="utf-8") as f:
+                        json.dump(vo2_max_data, f, ensure_ascii=False, indent=2)
+                    logger.info(f"Cached vo2_max to {vo2_max_file}")
+                except Exception as e:
+                    logger.warning(f"Failed to fetch VO2 max data: {e}")
+                    raw_data["vo2_max"] = {}
+                    with open(vo2_max_file, "w", encoding="utf-8") as f:
+                        json.dump({}, f, ensure_ascii=False, indent=2)
+            else:
+                raw_data["vo2_max"] = {}
+                with open(vo2_max_file, "w", encoding="utf-8") as f:
+                    json.dump({}, f, ensure_ascii=False, indent=2)
+
+        # 7. Lactate threshold
+        lactate_file = activity_dir / "lactate_threshold.json"
+        if lactate_file.exists():
+            logger.info(f"Using cached lactate_threshold for {activity_id}")
+            with open(lactate_file, encoding="utf-8") as f:
+                raw_data["lactate_threshold"] = json.load(f)
+        else:
+            try:
+                lactate_threshold_data = client.get_lactate_threshold(latest=True)
+                raw_data["lactate_threshold"] = lactate_threshold_data
+                with open(lactate_file, "w", encoding="utf-8") as f:
+                    json.dump(lactate_threshold_data, f, ensure_ascii=False, indent=2)
+                logger.info(f"Cached lactate_threshold to {lactate_file}")
+            except Exception as e:
+                logger.warning(f"Failed to fetch lactate threshold data: {e}")
+                default_lactate = {
+                    "speed_and_heart_rate": None,
+                    "power": None,
+                }
+                raw_data["lactate_threshold"] = default_lactate
+                with open(lactate_file, "w", encoding="utf-8") as f:
+                    json.dump(default_lactate, f, ensure_ascii=False, indent=2)
+
+        # Extract training_effect from activity.summaryDTO if available
+        activity_data = raw_data.get("activity", {})
         summary = activity_data.get("summaryDTO", {}) if activity_data else {}
         if summary:
             raw_data["training_effect"] = {
@@ -192,49 +432,10 @@ class GarminIngestWorker:
                 "trainingEffectLabel": summary.get("trainingEffectLabel"),
             }
 
-            # Extract activity date for VO2 max API call
-            start_time_local = summary.get("startTimeLocal", "")
-            if start_time_local:
-                # Extract date from "2025-10-05T19:05:50.0" -> "2025-10-05"
-                activity_date = start_time_local.split("T")[0]
-
-                # Fetch VO2 max data from get_max_metrics(date)
-                try:
-                    max_metrics = client.get_max_metrics(activity_date)
-                    generic_metrics = max_metrics.get("generic", {})
-                    raw_data["vo2_max"] = {
-                        "vo2MaxValue": generic_metrics.get("vo2MaxValue"),
-                        "vo2MaxPreciseValue": generic_metrics.get("vo2MaxPreciseValue"),
-                        "calendarDate": generic_metrics.get("calendarDate"),
-                    }
-                except Exception as e:
-                    logger.warning(f"Failed to fetch VO2 max data: {e}")
-                    raw_data["vo2_max"] = []
-            else:
-                raw_data["vo2_max"] = []
-        else:
-            raw_data["vo2_max"] = []
-
-        # Fetch lactate threshold data from get_lactate_threshold(latest=True)
-        try:
-            lactate_threshold_data = client.get_lactate_threshold(latest=True)
-            raw_data["lactate_threshold"] = lactate_threshold_data
-        except Exception as e:
-            logger.warning(f"Failed to fetch lactate threshold data: {e}")
-            raw_data["lactate_threshold"] = {
-                "speed_and_heart_rate": None,
-                "power": None,
-            }
-
         # Weight data (requires separate weight cache manager)
-        # For now, set to None - will be populated by weight_cache_manager if available
         raw_data["weight"] = None
 
-        # Save to cache
-        with open(raw_file, "w", encoding="utf-8") as f:
-            json.dump(raw_data, f, ensure_ascii=False, indent=2)
-
-        logger.info(f"Cached raw data to {raw_file}")
+        logger.info(f"Completed data collection for activity {activity_id}")
         return raw_data
 
     def create_parquet_dataset(self, raw_data: dict[str, Any]) -> pd.DataFrame:
