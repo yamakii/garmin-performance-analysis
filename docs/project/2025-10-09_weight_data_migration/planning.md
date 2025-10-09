@@ -284,9 +284,9 @@ class BodyCompositionInserter:
 - [x] 既存テストスイートを実行（regression test）
 
 ### Phase 4: ドキュメント更新とクリーンアップ
-- [ ] CLAUDE.md の "Data Files Naming Convention" セクションを更新
-- [ ] `tools/migrate_weight_data.py` の README.md を作成
-- [ ] Completion Report を作成
+- [x] CLAUDE.md の "Data Files Naming Convention" セクションを更新
+- [x] `tools/migrate_weight_data.py` の README.md を作成
+- [x] Completion Report を作成
 
 ---
 
