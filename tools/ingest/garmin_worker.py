@@ -140,6 +140,59 @@ class GarminIngestWorker:
         result = self._db_reader.get_activity_date(activity_id)
         return cast(str | None, result) if result else None
 
+    def _check_duckdb_cache(self, activity_id: int) -> dict[str, Any] | None:
+        """
+        Check if activity data exists in DuckDB.
+
+        Validates that all 11 required sections exist in DuckDB.
+        If any section is missing, returns None to trigger reprocessing.
+
+        Args:
+            activity_id: Activity ID to check
+
+        Returns:
+            Complete performance data dict if all sections exist, None otherwise
+        """
+        # Return None if DB reader not initialized
+        if self._db_reader is None:
+            return None
+
+        # Define all 11 required sections from performance.json
+        required_sections = [
+            "basic_metrics",
+            "heart_rate_zones",
+            "efficiency_metrics",
+            "training_effect",
+            "power_to_weight",
+            "split_metrics",
+            "vo2_max",
+            "lactate_threshold",
+            "form_efficiency_summary",
+            "hr_efficiency_analysis",
+            "performance_trends",
+        ]
+
+        # Try to fetch all sections from DuckDB
+        performance_data: dict[str, Any] = {}
+
+        for section in required_sections:
+            section_data = self._db_reader.get_performance_section(activity_id, section)
+
+            if section_data is None:
+                # Missing section - return None to trigger reprocessing
+                logger.debug(
+                    f"Activity {activity_id}: Missing section '{section}' in DuckDB cache"
+                )
+                return None
+
+            performance_data[section] = section_data
+
+        # All sections found - return complete performance data
+        logger.info(
+            f"Activity {activity_id}: Complete performance data found in DuckDB cache"
+        )
+        return performance_data
+
     def load_from_cache(self, activity_id: int) -> dict[str, Any] | None:
         """
         Load cached raw_data from directory structure.
@@ -1278,15 +1331,14 @@ class GarminIngestWorker:
 
     def process_activity(self, activity_id: int, date: str) -> dict[str, Any]:
         """
-        Process activity through full pipeline.
+        Process activity through cache-first pipeline.
 
         Pipeline:
-        1. collect_data() - Cache-first data collection
-        2. create_parquet_dataset() - Transform to DataFrame
-        3. _calculate_split_metrics() - Generate performance.json
+        1. Check DuckDB cache → return if complete
+        2. Check raw_data cache → extract_from_raw_data() + save_data()
+        3. Fetch from API → collect_data() + extract_from_raw_data() + save_data()
         4. Calculate 7-day median weight for W/kg
-        5. save_data() - Save all outputs
-        6. Insert into DuckDB with weight data
+        5. Insert into DuckDB with weight data
 
         Args:
             activity_id: Activity ID
@@ -1296,6 +1348,22 @@ class GarminIngestWorker:
             Result dict with file paths
         """
         logger.info(f"Processing activity {activity_id} ({date})")
+
+        # Step 0: Check DuckDB cache first
+        performance_data = self._check_duckdb_cache(activity_id)
+
+        if performance_data is not None:
+            logger.info(
+                f"Activity {activity_id}: Using complete data from DuckDB cache"
+            )
+            # Return cached data without file paths (data already in DB)
+            return {
+                "activity_id": activity_id,
+                "date": date,
+                "status": "success",
+                "source": "duckdb_cache",
+                "performance_data": performance_data,
+            }
 
         # Step 1: Collect data (cache-first)
         raw_data = self.collect_data(activity_id)
