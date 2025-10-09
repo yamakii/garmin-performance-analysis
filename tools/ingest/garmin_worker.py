@@ -1464,23 +1464,35 @@ class GarminIngestWorker:
             "status": "success",
         }
 
-    def process_activity_by_date(self, date: str) -> dict[str, Any]:
+    def _resolve_activity_id_from_duckdb(self, date: str) -> int | None:
         """
-        Process activity by date (resolve activity_id from Garmin API).
+        Resolve activity ID from DuckDB by date.
 
         Args:
             date: Activity date (YYYY-MM-DD)
 
         Returns:
-            Result dict with activity_id and file paths
+            Activity ID if found in DuckDB, None otherwise
+        """
+        if self._db_reader is None:
+            return None
+
+        return self._db_reader.query_activity_by_date(date)
+
+    def _resolve_activity_id_from_api(self, date: str) -> int:
+        """
+        Resolve activity ID from Garmin API by date.
+
+        Args:
+            date: Activity date (YYYY-MM-DD)
+
+        Returns:
+            Activity ID from API
 
         Raises:
             ValueError: If no activity found for date
-            ValueError: If multiple activities found (user must specify activity_id)
+            ValueError: If multiple activities found
         """
-        logger.info(f"Resolving activity for date {date}")
-
-        # Get activities for date from Garmin API
         client = self.get_garmin_client()
         api_response = client.get_activities_fordate(date)
 
@@ -1502,8 +1514,39 @@ class GarminIngestWorker:
             )
 
         # Single activity found
-        activity_id = activities_data[0].get("activityId")
+        activity_id = int(activities_data[0].get("activityId", 0))
         logger.info(f"Found single activity for {date}: {activity_id}")
+        return activity_id
+
+    def process_activity_by_date(self, date: str) -> dict[str, Any]:
+        """
+        Process activity by date (resolve activity_id from DuckDB or API).
+
+        Resolution strategy:
+        1. Try DuckDB first (cache-first)
+        2. Fall back to Garmin API if not found
+
+        Args:
+            date: Activity date (YYYY-MM-DD)
+
+        Returns:
+            Result dict with activity_id and file paths
+
+        Raises:
+            ValueError: If no activity found for date
+            ValueError: If multiple activities found (user must specify activity_id)
+        """
+        logger.info(f"Resolving activity for date {date}")
+
+        # Try DuckDB first (cache-first strategy)
+        activity_id = self._resolve_activity_id_from_duckdb(date)
+
+        if activity_id is not None:
+            logger.info(f"Found activity in DuckDB for {date}: {activity_id}")
+        else:
+            # Fall back to API
+            logger.info(f"Activity not found in DuckDB, querying API for {date}")
+            activity_id = self._resolve_activity_id_from_api(date)
 
         # Process the activity
         return self.process_activity(activity_id, date)

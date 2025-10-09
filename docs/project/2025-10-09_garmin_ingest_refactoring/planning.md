@@ -502,23 +502,46 @@ def load_from_cache(self, activity_id: int) -> dict[str, Any] | None:
    - `test_load_from_cache_partial`: 一部ファイル欠損時
    - `test_migrate_raw_data_structure`: マイグレーション動作
 
-### Phase 1: 調査・準備
-1. 新フォーマット（20615445009_raw.json）のtraining_effect格納場所調査
-2. DuckDB reader/writerの既存実装確認
-3. テストデータ準備（旧フォーマット・新フォーマット各1件）
+### Phase 1: 調査・準備 ✅ 完了
+1. ✅ 新フォーマット（20615445009_raw.json）のtraining_effect格納場所調査
+   - 結論: 新フォーマットでも `activity.summaryDTO.trainingEffect` は必ず存在
+2. ✅ DuckDB reader/writerの既存実装確認
+3. ✅ テストデータ準備（旧フォーマット・新フォーマット各1件）
 
-### Phase 2: DuckDBキャッシュ機能実装
-1. `_check_duckdb_cache()` 実装
-2. `process_activity()` にDuckDBキャッシュチェック追加
-3. Unit Tests作成・実行
+### Phase 2: DuckDBキャッシュ機能実装 ✅ 完了 (Commit: fde7984)
+1. ✅ `_check_duckdb_cache()` 実装 (`garmin_worker.py` 142-193行目)
+2. ✅ `process_activity()` にDuckDBキャッシュチェック追加 (1331-1414行目)
+3. ✅ Unit Tests作成・実行
+   - `tests/unit/test_garmin_worker_duckdb_cache.py`: 4テスト
+   - `tests/integration/test_garmin_worker_duckdb_integration.py`: 2テスト
+   - 全6テストPASSED
 
-### Phase 3: 新旧フォーマット対応
-1. `RawDataExtractor` クラス実装
-2. `extract_training_effect()` 実装（新旧フォーマット対応）
-3. `extract_from_raw_data()` 実装（チャートデータから集約計算）
-4. Unit Tests作成・実行
+### Phase 3: 新旧フォーマット対応 ✅ 完了
+**初回実装** (Commit: 390f750)
+1. ✅ `RawDataExtractor` クラス実装 (`garmin_worker.py` 58-158行目)
+   - `detect_format()`: activity_details.json構造から新旧判定
+   - `extract_training_effect()`: 統一的な抽出ロジック
+   - `extract_from_raw_data()`: 新旧フォーマット対応抽出インターフェース
+2. ✅ `extract_training_effect()` 実装（新旧フォーマット対応）
+   - Phase 1調査結果: 新旧両方で `summaryDTO.trainingEffect` 使用可能
+3. ✅ `extract_from_raw_data()` 実装
+4. ✅ Unit Tests作成・実行
+   - `tests/unit/test_raw_data_extractor.py`: 9テスト (フォーマット検出、抽出ロジック)
+   - `tests/integration/test_raw_data_extractor_integration.py`: 3テスト (実データ検証)
+   - 全12テストPASSED
 
-### Phase 4: process_activity_by_date統合
+**簡素化リファクタリング** (Commit: e4b97b2)
+- Phase 1調査結果に基づき不要なロジックを削除:
+  - ❌ `detect_format()` メソッド削除（新旧判定不要）
+  - ❌ トップレベル `training_effect` キー対応削除（レガシー）
+  - ✅ `extract_training_effect()` を `summaryDTO` のみに簡素化
+  - ✅ `extract_from_raw_data()` を簡素化
+- 不要なテスト削除: 12テスト → 7テスト（全てパス）
+  - 削除: detect_format 3テスト、top-level key 2テスト
+- コード削減: 165行削減
+- 結論: 新旧フォーマットで統一的な抽出ロジックを実現
+
+## Phase 4: process_activity_by_date統合 ✅
 1. `_resolve_activity_id_from_duckdb()` 実装
 2. `_resolve_activity_id_from_api()` 実装
 3. `process_activity_by_date()` リファクタリング（委譲実装）

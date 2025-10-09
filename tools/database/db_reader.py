@@ -48,6 +48,31 @@ class GarminDBReader:
             logger.error(f"Error querying activity date: {e}")
             return None
 
+    def query_activity_by_date(self, date: str) -> int | None:
+        """
+        Query activity ID by date from DuckDB.
+
+        Args:
+            date: Activity date in YYYY-MM-DD format
+
+        Returns:
+            Activity ID if found, None otherwise
+        """
+        try:
+            conn = duckdb.connect(str(self.db_path), read_only=True)
+            result = conn.execute(
+                "SELECT activity_id FROM activities WHERE date = ?",
+                [date],
+            ).fetchone()
+            conn.close()
+
+            if result:
+                return int(result[0])
+            return None
+        except Exception as e:
+            logger.error(f"Error querying activity by date: {e}")
+            return None
+
     def get_performance_section(
         self, activity_id: int, section: str
     ) -> dict[str, Any] | None:
