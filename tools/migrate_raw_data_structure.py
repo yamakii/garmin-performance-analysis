@@ -181,8 +181,8 @@ def main():
     parser.add_argument(
         "--source-dir",
         type=Path,
-        default=Path("data/raw/archived"),
-        help="Source directory with old format files (default: data/raw/archived)",
+        default=Path("data/archive/raw"),
+        help="Source directory with old format files (default: data/archive/raw)",
     )
     parser.add_argument(
         "--output-dir",

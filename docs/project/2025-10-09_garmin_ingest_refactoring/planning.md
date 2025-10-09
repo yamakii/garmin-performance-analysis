@@ -483,7 +483,7 @@ def load_from_cache(self, activity_id: int) -> dict[str, Any] | None:
 2. **マイグレーションスクリプト実装**
    - `tools/migrate_raw_data_structure.py` 作成
    - 既存`{activity_id}_raw.json`を新構造に分割
-   - 旧ファイルを`data/raw/archived/`にアーカイブ
+   - 旧ファイルを`data/archive/raw/`にアーカイブ
 
 3. **GarminIngestWorker.collect_data() リファクタリング**
    - API毎のキャッシュチェック実装
