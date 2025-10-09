@@ -53,6 +53,24 @@ uv sync --extra dev
 uv run python tools/batch/batch_planner.py
 ```
 
+### Bulk Fetch Activity Details
+
+Fetch detailed activity data (maxchart=2000) for all activities missing `activity_details.json`:
+
+```bash
+# Show what would be fetched (dry run)
+uv run python tools/bulk_fetch_activity_details.py --dry-run
+
+# Fetch missing activity_details.json files
+uv run python tools/bulk_fetch_activity_details.py
+
+# Force re-fetch even if files exist
+uv run python tools/bulk_fetch_activity_details.py --force
+
+# Adjust API rate limit delay (default: 1.0 seconds)
+uv run python tools/bulk_fetch_activity_details.py --delay 2.0
+```
+
 ## Development
 
 ### Code Quality

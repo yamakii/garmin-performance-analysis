@@ -452,6 +452,15 @@ uv run python tools/create_activity_date_mapping.py
 
 # Fix directory date inconsistencies
 uv run python tools/fix_directory_dates.py
+# Bulk fetch activity_details.json for all activities
+uv run python tools/bulk_fetch_activity_details.py
+
+# Dry run (show what would be fetched)
+uv run python tools/bulk_fetch_activity_details.py --dry-run
+
+# Force re-fetch even if files exist
+uv run python tools/bulk_fetch_activity_details.py --force
+
 ```
 
 ### Code Quality
