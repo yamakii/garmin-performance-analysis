@@ -8,11 +8,13 @@ import pytest
 
 
 @pytest.fixture
-def temp_raw_dir(tmp_path):
-    """Create temporary raw data directory."""
-    raw_dir = tmp_path / "raw"
-    raw_dir.mkdir()
-    return raw_dir
+def temp_dirs(tmp_path):
+    """Create temporary source and output directories."""
+    source_dir = tmp_path / "source"
+    output_dir = tmp_path / "output"
+    source_dir.mkdir()
+    output_dir.mkdir()
+    return {"source": source_dir, "output": output_dir}
 
 
 @pytest.fixture
@@ -44,23 +46,24 @@ def sample_old_format_data():
 class TestMigrateRawDataStructure:
     """Test cases for migrate_raw_data_structure script."""
 
-    def test_split_raw_data_to_new_structure(
-        self, temp_raw_dir, sample_old_format_data
-    ):
+    def test_split_raw_data_to_new_structure(self, temp_dirs, sample_old_format_data):
         """Test splitting old format raw_data into new directory structure."""
         from tools.migrate_raw_data_structure import split_raw_data_to_new_structure
 
         activity_id = 20594901208
+        source_dir = temp_dirs["source"]
+        output_dir = temp_dirs["output"]
 
-        # Create old format file
-        old_file = temp_raw_dir / f"{activity_id}_raw.json"
+        # Create old format file in source
+        old_file = source_dir / f"{activity_id}_raw.json"
         with open(old_file, "w", encoding="utf-8") as f:
             json.dump(sample_old_format_data, f)
 
         # Execute migration
         result = split_raw_data_to_new_structure(
             activity_id=activity_id,
-            raw_dir=temp_raw_dir,
+            source_dir=source_dir,
+            output_dir=output_dir,
             dry_run=False,
         )
 
@@ -69,13 +72,13 @@ class TestMigrateRawDataStructure:
         assert result["activity_id"] == activity_id
         assert "files_created" in result
 
-        # Verify new directory structure
-        activity_dir = temp_raw_dir / "activity" / str(activity_id)
+        # Verify new directory structure in output
+        activity_dir = output_dir / "activity" / str(activity_id)
         assert activity_dir.exists()
 
         # Verify individual files
         expected_files = [
-            "activity_details.json",
+            "activity.json",
             "splits.json",
             "weather.json",
             "gear.json",
@@ -89,7 +92,7 @@ class TestMigrateRawDataStructure:
             assert file_path.exists(), f"{file_name} should exist"
 
         # Verify file contents
-        with open(activity_dir / "activity_details.json", encoding="utf-8") as f:
+        with open(activity_dir / "activity.json", encoding="utf-8") as f:
             activity_data = json.load(f)
             assert activity_data["summaryDTO"]["activityId"] == activity_id
 
@@ -97,21 +100,24 @@ class TestMigrateRawDataStructure:
             splits_data = json.load(f)
             assert "lapDTOs" in splits_data
 
-    def test_split_raw_data_dry_run(self, temp_raw_dir, sample_old_format_data):
+    def test_split_raw_data_dry_run(self, temp_dirs, sample_old_format_data):
         """Test dry-run mode (should not create files)."""
         from tools.migrate_raw_data_structure import split_raw_data_to_new_structure
 
         activity_id = 20594901208
+        source_dir = temp_dirs["source"]
+        output_dir = temp_dirs["output"]
 
         # Create old format file
-        old_file = temp_raw_dir / f"{activity_id}_raw.json"
+        old_file = source_dir / f"{activity_id}_raw.json"
         with open(old_file, "w", encoding="utf-8") as f:
             json.dump(sample_old_format_data, f)
 
         # Execute dry-run
         result = split_raw_data_to_new_structure(
             activity_id=activity_id,
-            raw_dir=temp_raw_dir,
+            source_dir=source_dir,
+            output_dir=output_dir,
             dry_run=True,
         )
 
@@ -119,43 +125,17 @@ class TestMigrateRawDataStructure:
         assert result["success"] is True
         assert result["dry_run"] is True
 
-        # Verify no files were created
-        activity_dir = temp_raw_dir / "activity" / str(activity_id)
+        # Verify no files were created in output
+        activity_dir = output_dir / "activity" / str(activity_id)
         assert not activity_dir.exists()
 
-    def test_split_raw_data_archive_old_file(
-        self, temp_raw_dir, sample_old_format_data
-    ):
-        """Test archiving old format file after migration."""
-        from tools.migrate_raw_data_structure import split_raw_data_to_new_structure
-
-        activity_id = 20594901208
-
-        # Create old format file
-        old_file = temp_raw_dir / f"{activity_id}_raw.json"
-        with open(old_file, "w", encoding="utf-8") as f:
-            json.dump(sample_old_format_data, f)
-
-        # Execute migration with archiving
-        result = split_raw_data_to_new_structure(
-            activity_id=activity_id,
-            raw_dir=temp_raw_dir,
-            dry_run=False,
-            archive_old=True,
-        )
-
-        assert result["success"] is True
-        # Verify old file was archived
-        assert not old_file.exists(), "Old file should be moved"
-
-        archived_file = temp_raw_dir / "archived" / f"{activity_id}_raw.json"
-        assert archived_file.exists(), "Old file should be archived"
-
-    def test_split_raw_data_missing_optional_fields(self, temp_raw_dir):
+    def test_split_raw_data_missing_optional_fields(self, temp_dirs):
         """Test migration with missing optional fields."""
         from tools.migrate_raw_data_structure import split_raw_data_to_new_structure
 
         activity_id = 20594901208
+        source_dir = temp_dirs["source"]
+        output_dir = temp_dirs["output"]
 
         # Create minimal raw_data (missing vo2_max, lactate_threshold)
         minimal_data = {
@@ -166,14 +146,15 @@ class TestMigrateRawDataStructure:
             "hr_zones": [],
         }
 
-        old_file = temp_raw_dir / f"{activity_id}_raw.json"
+        old_file = source_dir / f"{activity_id}_raw.json"
         with open(old_file, "w", encoding="utf-8") as f:
             json.dump(minimal_data, f)
 
         # Execute migration
         result = split_raw_data_to_new_structure(
             activity_id=activity_id,
-            raw_dir=temp_raw_dir,
+            source_dir=source_dir,
+            output_dir=output_dir,
             dry_run=False,
         )
 
@@ -181,48 +162,54 @@ class TestMigrateRawDataStructure:
         assert result["success"] is True
 
         # Verify optional files are created with default values
-        activity_dir = temp_raw_dir / "activity" / str(activity_id)
+        activity_dir = output_dir / "activity" / str(activity_id)
 
         with open(activity_dir / "vo2_max.json", encoding="utf-8") as f:
             vo2_data = json.load(f)
             # Should be empty dict or null
             assert vo2_data is None or vo2_data == {}
 
-    def test_split_raw_data_already_exists(self, temp_raw_dir, sample_old_format_data):
+    def test_split_raw_data_already_exists(self, temp_dirs, sample_old_format_data):
         """Test behavior when new structure already exists."""
         from tools.migrate_raw_data_structure import split_raw_data_to_new_structure
 
         activity_id = 20594901208
+        source_dir = temp_dirs["source"]
+        output_dir = temp_dirs["output"]
 
         # Create old format file
-        old_file = temp_raw_dir / f"{activity_id}_raw.json"
+        old_file = source_dir / f"{activity_id}_raw.json"
         with open(old_file, "w", encoding="utf-8") as f:
             json.dump(sample_old_format_data, f)
 
-        # Create new structure manually
-        activity_dir = temp_raw_dir / "activity" / str(activity_id)
+        # Create new structure manually in output
+        activity_dir = output_dir / "activity" / str(activity_id)
         activity_dir.mkdir(parents=True)
 
         # Execute migration
         result = split_raw_data_to_new_structure(
             activity_id=activity_id,
-            raw_dir=temp_raw_dir,
+            source_dir=source_dir,
+            output_dir=output_dir,
             dry_run=False,
             overwrite=False,
         )
 
-        # Should skip or fail gracefully
+        # Should fail gracefully
         assert result["success"] is False
         assert "already exists" in result.get("error", "").lower()
 
-    def test_migrate_all_raw_data_files(self, temp_raw_dir, sample_old_format_data):
+    def test_migrate_all_raw_data_files(self, temp_dirs, sample_old_format_data):
         """Test migrating all old format files in directory."""
         from tools.migrate_raw_data_structure import migrate_all_raw_data_files
 
-        # Create multiple old format files
+        source_dir = temp_dirs["source"]
+        output_dir = temp_dirs["output"]
+
+        # Create multiple old format files in source
         activity_ids = [20594901208, 20615445009, 20700000000]
         for activity_id in activity_ids:
-            old_file = temp_raw_dir / f"{activity_id}_raw.json"
+            old_file = source_dir / f"{activity_id}_raw.json"
             data = sample_old_format_data.copy()
             data["activity"]["summaryDTO"]["activityId"] = activity_id
             with open(old_file, "w", encoding="utf-8") as f:
@@ -230,7 +217,8 @@ class TestMigrateRawDataStructure:
 
         # Execute bulk migration
         results = migrate_all_raw_data_files(
-            raw_dir=temp_raw_dir,
+            source_dir=source_dir,
+            output_dir=output_dir,
             dry_run=False,
         )
 
@@ -238,7 +226,7 @@ class TestMigrateRawDataStructure:
         assert len(results) == 3
         assert all(r["success"] for r in results)
 
-        # Verify new directories created
+        # Verify new directories created in output
         for activity_id in activity_ids:
-            activity_dir = temp_raw_dir / "activity" / str(activity_id)
+            activity_dir = output_dir / "activity" / str(activity_id)
             assert activity_dir.exists()

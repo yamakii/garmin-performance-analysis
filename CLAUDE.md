@@ -77,11 +77,20 @@ GarminIngestWorker: [API calls → raw_data.json → create_parquet_dataset() �
 
 ### Data Files Naming Convention
 
-- **Raw data**: `{activity_id}_raw.json` (complete Garmin API response)
+**Raw Data Structure (Phase 0 Refactoring):**
+- **New format** (preferred): `data/raw/activity/{activity_id}/{api_name}.json`
+  - Per-API caching for granular cache control
+  - API files: `activity.json`, `activity_details.json`, `splits.json`, `weather.json`, `gear.json`, `hr_zones.json`, `vo2_max.json`, `lactate_threshold.json`
+  - Allows partial re-fetching (e.g., weather data only)
+  - Migration tool: `tools/migrate_raw_data_structure.py`
+- **Legacy format** (backward compatible): `{activity_id}_raw.json`
+  - Single-file format with all API responses
+  - Automatically detected by `collect_data()` for backward compatibility
+
+**Processed Data:**
 - **Performance data**: `{activity_id}.json` (pre-processed metrics with Phase 1, 2 optimizations)
 - **Parquet data**: `{activity_id}.parquet` (columnar format)
 - **Precheck data**: `{activity_id}.json` (validation results)
-- **Legacy formats**: `activity_{activity_id}_*.json` (splits, weather, gear, hr_zones)
 - **Monthly activities**: `activities_{YYYY-MM}.json`
 
 **Note**: Section analysis data is stored in DuckDB (`data/database/`) and accessed via `mcp__garmin-db__get_section_analysis`. Intermediate JSON files in `data/individual/` are legacy files for migration purposes.
@@ -466,6 +475,7 @@ docs/project/
 
 ### Active Projects
 
+- **2025-10-09_garmin_ingest_refactoring**: GarminIngestWorker refactoring for cache-first approach and process_activity unification (Phases 0-5 completed)
 - **2025-10-07_core_system_restoration**: Body composition data specification fix and DuckDB schema documentation
 - **2025-10-07_report_generation_update**: Worker-based report generation system implementation
 

@@ -8,7 +8,6 @@ New format: data/raw/activity/{activity_id}/{api_name}.json (directory with mult
 
 import json
 import logging
-import shutil
 from pathlib import Path
 from typing import Any
 
@@ -17,9 +16,9 @@ logger = logging.getLogger(__name__)
 
 def split_raw_data_to_new_structure(
     activity_id: int,
-    raw_dir: Path,
+    source_dir: Path,
+    output_dir: Path,
     dry_run: bool = False,
-    archive_old: bool = False,
     overwrite: bool = False,
 ) -> dict[str, Any]:
     """
@@ -27,16 +26,16 @@ def split_raw_data_to_new_structure(
 
     Args:
         activity_id: Activity ID
-        raw_dir: Raw data directory path
+        source_dir: Source directory containing {activity_id}_raw.json files
+        output_dir: Output directory for new structure (will create activity/ subdirectory)
         dry_run: If True, only show what would be done
-        archive_old: If True, move old file to archived/ directory
         overwrite: If True, overwrite existing new structure
 
     Returns:
         Result dict with success status and details
     """
-    # Check old file exists
-    old_file = raw_dir / f"{activity_id}_raw.json"
+    # Check old file exists in source
+    old_file = source_dir / f"{activity_id}_raw.json"
     if not old_file.exists():
         return {
             "success": False,
@@ -44,8 +43,8 @@ def split_raw_data_to_new_structure(
             "error": f"Old file not found: {old_file}",
         }
 
-    # Check new directory
-    new_dir = raw_dir / "activity" / str(activity_id)
+    # Check new directory in output
+    new_dir = output_dir / "activity" / str(activity_id)
     if new_dir.exists() and not overwrite:
         return {
             "success": False,
@@ -76,9 +75,30 @@ def split_raw_data_to_new_structure(
     # Create new directory structure
     new_dir.mkdir(parents=True, exist_ok=True)
 
-    # Split data into individual files
-    api_files = {
-        "activity_details.json": raw_data.get("activity"),
+    # Determine activity data type and save appropriately
+    activity_data = raw_data.get("activity")
+    files_created = []
+
+    if activity_data:
+        has_summary_dto = "summaryDTO" in activity_data
+        has_chart_data = "metricDescriptors" in activity_data
+
+        if has_summary_dto:
+            # Basic info with summaryDTO -> activity.json
+            activity_file = new_dir / "activity.json"
+            with open(activity_file, "w", encoding="utf-8") as f:
+                json.dump(activity_data, f, ensure_ascii=False, indent=2)
+            files_created.append(str(activity_file))
+
+        if has_chart_data:
+            # Chart data with metricDescriptors -> activity_details.json
+            activity_details_file = new_dir / "activity_details.json"
+            with open(activity_details_file, "w", encoding="utf-8") as f:
+                json.dump(activity_data, f, ensure_ascii=False, indent=2)
+            files_created.append(str(activity_details_file))
+
+    # Save other API files
+    other_files = {
         "splits.json": raw_data.get("splits"),
         "weather.json": raw_data.get("weather"),
         "gear.json": raw_data.get("gear"),
@@ -87,8 +107,7 @@ def split_raw_data_to_new_structure(
         "lactate_threshold.json": raw_data.get("lactate_threshold"),
     }
 
-    files_created = []
-    for file_name, data in api_files.items():
+    for file_name, data in other_files.items():
         file_path = new_dir / file_name
         try:
             with open(file_path, "w", encoding="utf-8") as f:
@@ -97,41 +116,33 @@ def split_raw_data_to_new_structure(
         except Exception as e:
             logger.warning(f"Failed to write {file_name}: {e}")
 
-    # Archive old file if requested
-    if archive_old:
-        archive_dir = raw_dir / "archived"
-        archive_dir.mkdir(exist_ok=True)
-        archive_file = archive_dir / f"{activity_id}_raw.json"
-        shutil.move(str(old_file), str(archive_file))
-
     return {
         "success": True,
         "activity_id": activity_id,
         "old_file": str(old_file),
         "new_dir": str(new_dir),
         "files_created": files_created,
-        "archived": archive_old,
     }
 
 
 def migrate_all_raw_data_files(
-    raw_dir: Path,
+    source_dir: Path,
+    output_dir: Path,
     dry_run: bool = False,
-    archive_old: bool = False,
 ) -> list[dict[str, Any]]:
     """
     Migrate all old format raw_data files in directory.
 
     Args:
-        raw_dir: Raw data directory path
+        source_dir: Source directory containing {activity_id}_raw.json files
+        output_dir: Output directory for new structure
         dry_run: If True, only show what would be done
-        archive_old: If True, move old files to archived/ directory
 
     Returns:
         List of migration results
     """
-    # Find all old format files
-    old_files = list(raw_dir.glob("*_raw.json"))
+    # Find all old format files in source directory
+    old_files = list(source_dir.glob("*_raw.json"))
 
     results = []
     for old_file in old_files:
@@ -146,9 +157,9 @@ def migrate_all_raw_data_files(
         # Migrate
         result = split_raw_data_to_new_structure(
             activity_id=activity_id,
-            raw_dir=raw_dir,
+            source_dir=source_dir,
+            output_dir=output_dir,
             dry_run=dry_run,
-            archive_old=archive_old,
         )
         results.append(result)
 
@@ -168,10 +179,16 @@ def main():
 
     parser = argparse.ArgumentParser(description="Migrate raw_data to new structure")
     parser.add_argument(
-        "--raw-dir",
+        "--source-dir",
+        type=Path,
+        default=Path("data/raw/archived"),
+        help="Source directory with old format files (default: data/raw/archived)",
+    )
+    parser.add_argument(
+        "--output-dir",
         type=Path,
         default=Path("data/raw"),
-        help="Raw data directory (default: data/raw)",
+        help="Output directory for new structure (default: data/raw)",
     )
     parser.add_argument(
         "--activity-id",
@@ -182,11 +199,6 @@ def main():
         "--dry-run",
         action="store_true",
         help="Dry run mode (don't create files)",
-    )
-    parser.add_argument(
-        "--archive-old",
-        action="store_true",
-        help="Archive old files to archived/ directory",
     )
 
     args = parser.parse_args()
@@ -200,17 +212,17 @@ def main():
         # Migrate specific activity
         result = split_raw_data_to_new_structure(
             activity_id=args.activity_id,
-            raw_dir=args.raw_dir,
+            source_dir=args.source_dir,
+            output_dir=args.output_dir,
             dry_run=args.dry_run,
-            archive_old=args.archive_old,
         )
         print(json.dumps(result, indent=2))
     else:
         # Migrate all
         results = migrate_all_raw_data_files(
-            raw_dir=args.raw_dir,
+            source_dir=args.source_dir,
+            output_dir=args.output_dir,
             dry_run=args.dry_run,
-            archive_old=args.archive_old,
         )
         print(json.dumps(results, indent=2))
 
