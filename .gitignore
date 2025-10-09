@@ -44,7 +44,8 @@ data/cache/*
 data/database/*.duckdb
 data/database/*.duckdb.wal
 data/logs/*
-data/weight_cache/raw/*
+# Old weight_cache structure (migrated to data/raw/weight/ on 2025-10-09)
+data/weight_cache/
 data/individual/*/
 data/archive/*
 
@@ -62,11 +63,7 @@ result/
 !data/cache/.gitkeep
 !data/database/.gitkeep
 !data/logs/.gitkeep
-!data/weight_cache/raw/.gitkeep
 !data/archive/.gitkeep
-
-# Keep weight_index.json
-!data/weight_cache/weight_index.json
 
 # Project specific - Temporary files
 tmp/*
