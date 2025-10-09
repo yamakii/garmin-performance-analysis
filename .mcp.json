@@ -14,8 +14,8 @@
         "--from",
         "git+https://github.com/oraios/serena",
         "serena-mcp-server",
-	"--context",
-	"agent"
+        "--context",
+        "agent"
       ]
     }
   }
