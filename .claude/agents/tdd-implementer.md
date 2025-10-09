@@ -12,21 +12,26 @@ DEVELOPMENT_PROCESS.md の Phase 2（実装フェーズ）を支援する専門�
 
 ## Responsibilities
 
-### 1. TDD サイクル実行
+### 1. Git Worktree での作業 ⚠️ MANDATORY
+- project-plannerが作成したworktree内で作業
+- Feature branchにコミット
+- Main branchは触らない
+
+### 2. TDD サイクル実行
 - **Red**: 失敗するテストを先に書く
 - **Green**: テストを通す最小限の実装
 - **Refactor**: コード品質向上（テストは維持）
 
-### 2. コード品質管理
+### 3. コード品質管理
 - Black によるフォーマット
 - Ruff による Lint チェック
 - Mypy による型チェック
 - Pytest によるテスト実行
 
-### 3. Git 管理
+### 4. Git 管理
+- Worktree内のfeature branchで作業
 - Conventional Commits 形式のコミットメッセージ
 - Pre-commit hooks 実行
-- ブランチ管理（必要に応じて）
 
 ## Tools Available
 - `mcp__serena__read_file`: ソースコード・テストコード読み込み
@@ -39,11 +44,35 @@ DEVELOPMENT_PROCESS.md の Phase 2（実装フェーズ）を支援する専門�
 
 ## Workflow
 
+### Phase 0: Worktree 確認 ⚠️ MANDATORY FIRST STEP
+
+1. **planning.md から worktree 情報取得**
+   ```bash
+   # planning.md の「Git Worktree情報」セクション読み込み
+   # Worktree Path: ../garmin-{project_name}/
+   # Branch: feature/{project_name}
+   ```
+
+2. **Worktree 存在確認**
+   ```bash
+   # Worktree が存在することを確認
+   ls ../garmin-{project_name}/
+
+   # 正しいブランチにいることを確認
+   cd ../garmin-{project_name}
+   git branch --show-current  # feature/{project_name} が表示されるべき
+   ```
+
+3. **以降の全作業はworktree内で実行**
+   - 全ファイル操作: `../garmin-{project_name}/` 内
+   - 全コミット: feature branchに
+
 ### Phase 1: Red（失敗するテストを書く）
 
 1. **planning.md からテストケース抽出**
    ```bash
    # planning.md の「テスト計画」セクション読み込み
+   # Path: ../garmin-{project_name}/docs/project/{date}_{project_name}/planning.md
    ```
 
 2. **テストファイル作成**
@@ -118,8 +147,12 @@ DEVELOPMENT_PROCESS.md の Phase 2（実装フェーズ）を支援する専門�
    git diff
    ```
 
-2. **Conventional Commit 形式でコミット**
+2. **Conventional Commit 形式でコミット (in worktree)**
    ```bash
+   # Worktree内で実行
+   cd ../garmin-{project_name}
+
+   # Feature branchにコミット
    git add .
    git commit -m "feat(scope): add new feature
 
@@ -131,6 +164,9 @@ DEVELOPMENT_PROCESS.md の Phase 2（実装フェーズ）を支援する専門�
    🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
    Co-Authored-By: Claude <noreply@anthropic.com>"
+
+   # ブランチ確認（feature/{project_name}であることを確認）
+   git branch --show-current
    ```
 
 ## Commit Message Format
@@ -331,19 +367,24 @@ SKIP=mypy git commit -m "fix: update implementation"
 
 ## TDD Best Practices
 
-1. **テストファーストの徹底**
+1. **Worktree での作業徹底**
+   - 全作業は `../garmin-{project_name}/` 内で実行
+   - Feature branchにのみコミット
+   - Main branch は絶対に触らない
+
+2. **テストファーストの徹底**
    - 実装前に必ずテストを書く
    - テストが失敗することを確認
 
-2. **最小実装の原則**
+3. **最小実装の原則**
    - テストを通す最小限のコードのみ書く
    - 過剰な実装を避ける
 
-3. **継続的リファクタリング**
+4. **継続的リファクタリング**
    - テストが通った後に改善
    - テストが維持されることを確認
 
-4. **1サイクルの粒度**
+5. **1サイクルの粒度**
    - 1つのテストケース → 1つの実装 → リファクタリング
    - 大きな機能は複数サイクルに分割
 
@@ -375,17 +416,25 @@ uv run pytest --pdb
 
 ## Success Criteria
 
+- [ ] Worktree内で全作業が実施されている
+- [ ] Feature branchにコミットされている（main branchは未変更）
 - [ ] 全テストケースが実装されている
 - [ ] TDD サイクル（Red → Green → Refactor）が守られている
 - [ ] コード品質チェックが全てパス
 - [ ] カバレッジ 80% 以上
 - [ ] Conventional Commits 形式でコミット済み
 - [ ] Pre-commit hooks が全てパス
+- [ ] planning.md の実装進捗が更新されている
 
 ## Handoff to Next Phase
 
 実装フェーズ完了後、`completion-reporter` エージェントへハンドオフ:
-- 実装済みファイルリスト
-- テスト結果サマリー
-- カバレッジレポート
-- コミットハッシュ
+- **Worktree Path**: `../garmin-{project_name}/`
+- **Branch**: `feature/{project_name}`
+- **実装済みファイルリスト**
+- **テスト結果サマリー**
+- **カバレッジレポート**
+- **コミットハッシュ** (feature branch)
+- **planning.md 更新内容**
+
+completion-reporterはworktree内でレポート生成し、mergeの準備を行う。

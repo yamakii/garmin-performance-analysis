@@ -480,6 +480,109 @@ uv run pytest -m performance
 uv run python tools/test_performance_optimization.py
 ```
 
+### Git Worktree Workflow
+
+**⚠️ MANDATORY: All project development MUST use git worktree for isolation**
+
+Git worktree allows multiple working directories from a single repository, enabling parallel development without branch switching conflicts.
+
+#### Benefits
+- **Isolation**: Each project works in its own directory
+- **No branch switching**: Main branch stays clean for analysis work
+- **Parallel development**: Multiple projects can progress simultaneously
+- **Clean separation**: Easy to review changes per project
+
+#### Basic Worktree Operations
+
+```bash
+# Create new worktree with new branch
+git worktree add -b feature/project-name ../garmin-project-name
+
+# Create worktree from existing branch
+git worktree add ../garmin-project-name feature/project-name
+
+# List all worktrees
+git worktree list
+
+# Remove worktree (after merging)
+git worktree remove ../garmin-project-name
+
+# Cleanup stale worktrees
+git worktree prune
+```
+
+#### Project Development Workflow
+
+**1. Planning Phase** (project-planner agent):
+```bash
+# Agent creates worktree automatically
+# Location: ../garmin-{project_name}/
+# Branch: feature/{project_name}
+# Agent creates planning.md in worktree
+```
+
+**2. Implementation Phase** (tdd-implementer agent):
+```bash
+# Agent works within worktree directory
+# All file operations use worktree paths
+# Commits are made to feature branch
+# Main branch remains untouched
+```
+
+**3. Completion Phase**:
+```bash
+# Review changes in worktree
+git diff main..feature/project-name
+
+# Merge to main (from main repo directory)
+git checkout main
+git merge feature/project-name
+
+# Remove worktree after successful merge
+git worktree remove ../garmin-project-name
+```
+
+#### Worktree Directory Structure
+
+```
+claude_workspace/
+├── garmin/                                    # Main worktree (main branch)
+│   ├── data/                                  # Shared data (not project-specific)
+│   ├── docs/project/                          # Planning documents
+│   └── ...
+├── garmin-rag-interval-analysis/              # Project worktree
+│   ├── tools/rag/queries/                     # New code
+│   ├── tests/rag/                             # New tests
+│   └── docs/project/.../planning.md           # Planning doc (symlinked or copied)
+└── garmin-split-stability/                    # Another project worktree
+    └── ...
+```
+
+#### Best Practices
+
+**DO:**
+- ✅ Create worktree for every project (planning.md → worktree)
+- ✅ Use descriptive branch names: `feature/split-stability-precalc`
+- ✅ Commit regularly within worktree
+- ✅ Merge to main only after all tests pass
+- ✅ Remove worktree after successful merge
+
+**DON'T:**
+- ❌ Edit main branch directly for project work
+- ❌ Create worktree without branch name
+- ❌ Leave stale worktrees after project completion
+- ❌ Share data/ directory modifications across worktrees
+
+#### Agent Integration
+
+Both `project-planner` and `tdd-implementer` agents automatically:
+1. Create git worktree at project start
+2. Work within worktree directory
+3. Create commits in feature branch
+4. Reference worktree paths in planning.md
+
+See agent definitions (`.claude/agents/`) for implementation details.
+
 ## Critical Data Source Requirements
 
 ### Split Analysis Data Sources
