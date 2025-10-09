@@ -50,6 +50,10 @@ data/weight_cache/parquet/*
 data/individual/*/
 data/archive/*
 
+# Backup files
+data_raw_backup_*.tar.gz
+*.backup
+
 # Project specific - Generated reports
 result/
 

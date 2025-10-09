@@ -154,7 +154,7 @@ class GarminIngestWorker:
 
         # Required API files
         required_files = [
-            "activity_details.json",
+            "activity.json",
             "splits.json",
             "weather.json",
             "gear.json",
@@ -173,8 +173,16 @@ class GarminIngestWorker:
         raw_data: dict[str, Any] = {}
 
         try:
-            with open(activity_dir / "activity_details.json", encoding="utf-8") as f:
-                raw_data["activity"] = json.load(f)
+            # Load activity.json (basic info with summaryDTO)
+            with open(activity_dir / "activity.json", encoding="utf-8") as f:
+                raw_data["activity_basic"] = json.load(f)
+
+            # Load activity_details.json (chart data) if exists
+            if (activity_dir / "activity_details.json").exists():
+                with open(
+                    activity_dir / "activity_details.json", encoding="utf-8"
+                ) as f:
+                    raw_data["activity"] = json.load(f)
 
             with open(activity_dir / "splits.json", encoding="utf-8") as f:
                 raw_data["splits"] = json.load(f)
@@ -194,9 +202,10 @@ class GarminIngestWorker:
             with open(activity_dir / "lactate_threshold.json", encoding="utf-8") as f:
                 raw_data["lactate_threshold"] = json.load(f)
 
-            # Extract training_effect from activity.summaryDTO if available
-            activity_data = raw_data.get("activity", {})
-            summary = activity_data.get("summaryDTO", {}) if activity_data else {}
+            # Extract training_effect from activity_basic.summaryDTO
+            activity_basic = raw_data.get("activity_basic", {})
+            summary = activity_basic.get("summaryDTO", {})
+
             if summary:
                 raw_data["training_effect"] = {
                     "aerobicTrainingEffect": summary.get("trainingEffect"),
@@ -272,7 +281,24 @@ class GarminIngestWorker:
         raw_data: dict[str, Any] = {}
 
         # Fetch and cache each API individually
-        # 1. Activity details (with reduced polyline data)
+        # 0. Activity basic info (summaryDTO with training_effect, ~10KB)
+        activity_basic_file = activity_dir / "activity.json"
+        if activity_basic_file.exists():
+            logger.info(f"Using cached activity basic info for {activity_id}")
+            with open(activity_basic_file, encoding="utf-8") as f:
+                raw_data["activity_basic"] = json.load(f)
+        else:
+            try:
+                activity_basic = client.get_activity(str(activity_id))
+                raw_data["activity_basic"] = activity_basic
+                with open(activity_basic_file, "w", encoding="utf-8") as f:
+                    json.dump(activity_basic, f, ensure_ascii=False, indent=2)
+                logger.info(f"Cached activity basic info to {activity_basic_file}")
+            except Exception as e:
+                logger.error(f"Failed to fetch activity basic info: {e}")
+                raw_data["activity_basic"] = None
+
+        # 1. Activity details (chart data with maxchart=2000, ~2MB)
         activity_file = activity_dir / "activity_details.json"
         if activity_file.exists():
             logger.info(f"Using cached activity_details for {activity_id}")
@@ -416,9 +442,9 @@ class GarminIngestWorker:
                 with open(lactate_file, "w", encoding="utf-8") as f:
                     json.dump(default_lactate, f, ensure_ascii=False, indent=2)
 
-        # Extract training_effect from activity.summaryDTO if available
-        activity_data = raw_data.get("activity", {})
-        summary = activity_data.get("summaryDTO", {}) if activity_data else {}
+        # Extract training_effect from activity_basic.summaryDTO if available
+        activity_basic = raw_data.get("activity_basic", {})
+        summary = activity_basic.get("summaryDTO", {}) if activity_basic else {}
         if summary:
             raw_data["training_effect"] = {
                 "aerobicTrainingEffect": summary.get("trainingEffect"),

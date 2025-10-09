@@ -196,6 +196,88 @@ Task: split-analyst
 prompt: "Activity ID 20464005432 (2025-09-22) のスプリット分析を実行してください。splits.jsonのlapDTOs配列使用、weather.json気温データ使用必須。"
 ```
 
+### Development Process Agents
+
+**⚠️ PROACTIVE USAGE: Use these agents automatically when user intent matches the trigger conditions**
+
+The system provides three specialized agents that enforce the DEVELOPMENT_PROCESS.md workflow (Planning → Implementation → Completion Report):
+
+#### project-planner Agent
+
+**Auto-invoke when:**
+- User mentions: "新しいプロジェクト", "新機能", "機能追加", "planning", "計画"
+- User wants to start new feature development
+- User asks to create planning.md
+- User expresses intent to begin development work
+
+**Responsibilities:**
+- Create project directory: `docs/project/{YYYY-MM-DD}_{project_name}/`
+- Generate `planning.md` from template
+- Guide requirement definition, design, and test planning
+- Define acceptance criteria
+
+**Example invocation:**
+```bash
+Task: project-planner
+prompt: "DuckDBにセクション分析結果を保存する機能を追加したい。プロジェクト名は 'duckdb_section_analysis' で計画を立ててください。"
+```
+
+#### tdd-implementer Agent
+
+**Auto-invoke when:**
+- `planning.md` exists and is complete
+- User mentions: "実装", "implement", "TDD", "テスト書いて"
+- User wants to start coding after planning
+- Planning phase is confirmed complete
+
+**Responsibilities:**
+- Execute TDD cycle: Red (failing test) → Green (minimal implementation) → Refactor
+- Run code quality checks (Black, Ruff, Mypy, pytest)
+- Create Conventional Commits
+- Manage Pre-commit hooks
+
+**Example invocation:**
+```bash
+Task: tdd-implementer
+prompt: "docs/project/2025-10-09_duckdb_section_analysis/planning.md に基づいて、TDDサイクルで実装してください。"
+```
+
+#### completion-reporter Agent
+
+**Auto-invoke when:**
+- Implementation is complete (all tests passing)
+- User mentions: "完了", "レポート", "completion", "完了レポート"
+- User asks for summary of what was implemented
+- All acceptance criteria appear to be met
+
+**Responsibilities:**
+- Collect test results (Unit, Integration, Performance)
+- Generate coverage report
+- Verify code quality checks
+- Create `completion_report.md` with all metrics
+- Compare against acceptance criteria
+
+**Example invocation:**
+```bash
+Task: completion-reporter
+prompt: "docs/project/2025-10-09_duckdb_section_analysis/ の完了レポートを作成してください。"
+```
+
+#### Workflow Sequence
+
+**IMPORTANT: Always follow this sequence, do not skip phases**
+
+1. **Planning** → Use `project-planner` → Output: `planning.md`
+2. **Implementation** → Use `tdd-implementer` → Output: Code + Tests + Commits
+3. **Completion** → Use `completion-reporter` → Output: `completion_report.md`
+
+**Proactive behavior:**
+- When user says "新しい機能を追加したい", immediately suggest: "project-planner エージェントで計画を立てましょうか？"
+- After planning.md is complete, suggest: "tdd-implementer エージェントで実装を始めますか？"
+- After implementation is done, suggest: "completion-reporter エージェントで完了レポートを作成しますか？"
+
+**Reference:** See `docs/AGENT_WORKFLOW.md` for detailed usage examples and troubleshooting.
+
 ## Critical Data Source Requirements
 
 ### Split Analysis Data Sources

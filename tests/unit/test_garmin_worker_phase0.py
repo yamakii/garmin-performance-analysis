@@ -45,6 +45,16 @@ def worker_with_temp_dirs(tmp_path, monkeypatch):
 def sample_api_responses():
     """Sample API responses for each endpoint."""
     return {
+        "activity": {
+            "activityId": 20594901208,
+            "activityName": "Morning Run",
+            "summaryDTO": {
+                "activityId": 20594901208,
+                "trainingEffect": 2.4,
+                "anaerobicTrainingEffect": 0.0,
+                "startTimeLocal": "2025-09-22T06:00:00.0",
+            },
+        },
         "activity_details": {
             "summaryDTO": {
                 "activityId": 20594901208,
@@ -78,6 +88,7 @@ class TestCollectDataPerAPICache:
         activity_dir.mkdir(parents=True)
 
         api_files = {
+            "activity.json": sample_api_responses["activity"],
             "activity_details.json": sample_api_responses["activity_details"],
             "splits.json": sample_api_responses["splits"],
             "weather.json": sample_api_responses["weather"],
@@ -98,6 +109,7 @@ class TestCollectDataPerAPICache:
         mock_get_client.assert_not_called()
 
         # Verify returned data structure
+        assert raw_data["activity_basic"] == sample_api_responses["activity"]
         assert raw_data["activity"] == sample_api_responses["activity_details"]
         assert raw_data["splits"] == sample_api_responses["splits"]
         assert raw_data["weather"] == sample_api_responses["weather"]
@@ -252,6 +264,7 @@ class TestLoadFromCache:
         activity_dir.mkdir(parents=True)
 
         api_files = {
+            "activity.json": sample_api_responses["activity"],
             "activity_details.json": sample_api_responses["activity_details"],
             "splits.json": sample_api_responses["splits"],
             "weather.json": sample_api_responses["weather"],
@@ -270,6 +283,7 @@ class TestLoadFromCache:
 
         # Verify complete data loaded
         assert raw_data is not None
+        assert raw_data["activity_basic"] == sample_api_responses["activity"]
         assert raw_data["activity"] == sample_api_responses["activity_details"]
         assert raw_data["splits"] == sample_api_responses["splits"]
         assert raw_data["weather"] == sample_api_responses["weather"]
@@ -317,6 +331,7 @@ class TestLoadFromCache:
         activity_dir.mkdir(parents=True)
 
         api_files = {
+            "activity.json": sample_api_responses["activity"],
             "activity_details.json": sample_api_responses["activity_details"],
             "splits.json": sample_api_responses["splits"],
             "weather.json": sample_api_responses["weather"],
@@ -333,6 +348,6 @@ class TestLoadFromCache:
         # Execute load_from_cache
         raw_data = worker.load_from_cache(activity_id)
 
-        # Verify training_effect was extracted from summaryDTO
+        # Verify training_effect was extracted from activity_basic.summaryDTO
         assert "training_effect" in raw_data
         assert raw_data["training_effect"]["aerobicTrainingEffect"] == 2.4

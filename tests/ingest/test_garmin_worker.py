@@ -426,48 +426,6 @@ class TestGarminIngestWorker:
         assert result["training_effect"]["aerobicTrainingEffect"] == 3.5
 
     @pytest.mark.unit
-    def test_load_from_cache_backward_compatibility(self, worker, tmp_path):
-        """Test load_from_cache with only activity_details.json (old format)."""
-        # Setup: Create activity directory without activity.json
-        activity_id = 12345
-        activity_dir = tmp_path / "activity" / str(activity_id)
-        activity_dir.mkdir(parents=True)
-
-        worker.raw_dir = tmp_path
-
-        # Create only activity_details.json (old format)
-        activity_details_data = {
-            "activityId": activity_id,
-            "summaryDTO": {"trainingEffect": 3.0, "anaerobicTrainingEffect": 1.5},
-        }
-        with open(activity_dir / "activity_details.json", "w", encoding="utf-8") as f:
-            json.dump(activity_details_data, f)
-
-        # Create other required files
-        for file_name, data in [
-            (
-                "splits.json",
-                {"activityId": activity_id, "lapDTOs": [], "eventDTOs": []},
-            ),
-            ("weather.json", {"temp": 20}),
-            ("gear.json", []),
-            ("hr_zones.json", []),
-            ("vo2_max.json", {}),
-            ("lactate_threshold.json", {}),
-        ]:
-            with open(activity_dir / file_name, "w", encoding="utf-8") as f:
-                json.dump(data, f)
-
-        # Execute
-        result = worker.load_from_cache(activity_id)
-
-        # Verify: activity_basic should be populated from activity_details (backward compatibility)
-        assert result is not None
-        assert "activity_basic" in result
-        assert "activity" in result
-        assert result["activity_basic"]["activityId"] == activity_id
-
-    @pytest.mark.unit
     def test_collect_data_calls_get_activity(self, worker, tmp_path):
         """Test collect_data calls get_activity() API when activity.json is missing."""
         activity_id = 12345

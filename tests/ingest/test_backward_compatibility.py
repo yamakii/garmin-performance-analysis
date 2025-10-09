@@ -23,8 +23,8 @@ class TestBackwardCompatibility:
 
     @pytest.fixture
     def existing_raw_file(self):
-        """Path to existing raw data file."""
-        return Path("data/raw/20594901208_raw.json")
+        """Path to existing raw data file (archived old format)."""
+        return Path("data/raw/archived/20594901208_raw.json")
 
     @pytest.fixture
     def existing_performance_file(self):
