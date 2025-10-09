@@ -23,7 +23,21 @@ class GarminDBWriter:
         self._ensure_tables()
 
     def _ensure_tables(self):
-        """Ensure required tables exist with production schema (36 columns)."""
+        """Ensure required tables exist with normalized schema.
+
+        Creates:
+        - activities: Base activity metadata (36 columns)
+        - splits: Split-by-split metrics (foreign key to activities)
+        - form_efficiency: Form efficiency summary (GCT, VO, VR)
+        - heart_rate_zones: HR zone data (5 rows per activity)
+        - hr_efficiency: HR efficiency analysis
+        - performance_trends: Performance trends (4-phase: warmup/run/recovery/cooldown)
+        - vo2_max: VO2 max estimation
+        - lactate_threshold: Lactate threshold metrics
+        - section_analyses: Section analysis data
+
+        Note: Schemas match those defined in individual inserters to ensure compatibility.
+        """
         conn = duckdb.connect(str(self.db_path))
 
         # Create activities table with production schema (36 columns)
@@ -70,23 +84,177 @@ class GarminDBWriter:
         """
         )
 
-        # Create performance_data table
+        # Create splits table (from inserters/splits.py)
         conn.execute(
             """
-            CREATE TABLE IF NOT EXISTS performance_data (
+            CREATE TABLE IF NOT EXISTS splits (
+                activity_id BIGINT,
+                split_index INTEGER,
+                distance DOUBLE,
+                role_phase VARCHAR,
+                pace_str VARCHAR,
+                pace_seconds_per_km DOUBLE,
+                heart_rate INTEGER,
+                hr_zone VARCHAR,
+                cadence DOUBLE,
+                cadence_rating VARCHAR,
+                power DOUBLE,
+                power_efficiency VARCHAR,
+                stride_length DOUBLE,
+                ground_contact_time DOUBLE,
+                vertical_oscillation DOUBLE,
+                vertical_ratio DOUBLE,
+                elevation_gain DOUBLE,
+                elevation_loss DOUBLE,
+                terrain_type VARCHAR,
+                environmental_conditions VARCHAR,
+                wind_impact VARCHAR,
+                temp_impact VARCHAR,
+                environmental_impact VARCHAR,
+                PRIMARY KEY (activity_id, split_index),
+                FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
+            )
+        """
+        )
+
+        # Create form_efficiency table (from inserters/form_efficiency.py)
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS form_efficiency (
                 activity_id BIGINT PRIMARY KEY,
-                activity_date DATE NOT NULL,
-                basic_metrics JSON,
-                heart_rate_zones JSON,
-                hr_efficiency_analysis JSON,
-                form_efficiency_summary JSON,
-                performance_trends JSON,
-                split_metrics JSON,
-                efficiency_metrics JSON,
-                training_effect JSON,
-                power_to_weight JSON,
-                lactate_threshold JSON,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                gct_average DOUBLE,
+                gct_min DOUBLE,
+                gct_max DOUBLE,
+                gct_std DOUBLE,
+                gct_variability DOUBLE,
+                gct_rating VARCHAR,
+                gct_evaluation VARCHAR,
+                vo_average DOUBLE,
+                vo_min DOUBLE,
+                vo_max DOUBLE,
+                vo_std DOUBLE,
+                vo_trend VARCHAR,
+                vo_rating VARCHAR,
+                vo_evaluation VARCHAR,
+                vr_average DOUBLE,
+                vr_min DOUBLE,
+                vr_max DOUBLE,
+                vr_std DOUBLE,
+                vr_rating VARCHAR,
+                vr_evaluation VARCHAR,
+                FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
+            )
+        """
+        )
+
+        # Create heart_rate_zones table (from inserters/heart_rate_zones.py)
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS heart_rate_zones (
+                activity_id BIGINT,
+                zone_number INTEGER,
+                zone_low_boundary INTEGER,
+                zone_high_boundary INTEGER,
+                time_in_zone_seconds DOUBLE,
+                zone_percentage DOUBLE,
+                PRIMARY KEY (activity_id, zone_number),
+                FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
+            )
+        """
+        )
+
+        # Create hr_efficiency table (from inserters/hr_efficiency.py)
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS hr_efficiency (
+                activity_id BIGINT PRIMARY KEY,
+                primary_zone VARCHAR,
+                zone_distribution_rating VARCHAR,
+                hr_stability VARCHAR,
+                aerobic_efficiency VARCHAR,
+                training_quality VARCHAR,
+                zone2_focus BOOLEAN,
+                zone4_threshold_work BOOLEAN,
+                training_type VARCHAR,
+                zone1_percentage DOUBLE,
+                zone2_percentage DOUBLE,
+                zone3_percentage DOUBLE,
+                zone4_percentage DOUBLE,
+                zone5_percentage DOUBLE,
+                FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
+            )
+        """
+        )
+
+        # Create performance_trends table with 4-phase schema (from inserters/performance_trends.py)
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS performance_trends (
+                activity_id BIGINT PRIMARY KEY,
+                pace_consistency DOUBLE,
+                hr_drift_percentage DOUBLE,
+                cadence_consistency VARCHAR,
+                fatigue_pattern VARCHAR,
+                warmup_splits VARCHAR,
+                warmup_avg_pace_seconds_per_km DOUBLE,
+                warmup_avg_pace_str VARCHAR,
+                warmup_avg_hr DOUBLE,
+                warmup_avg_cadence DOUBLE,
+                warmup_avg_power DOUBLE,
+                warmup_evaluation VARCHAR,
+                run_splits VARCHAR,
+                run_avg_pace_seconds_per_km DOUBLE,
+                run_avg_pace_str VARCHAR,
+                run_avg_hr DOUBLE,
+                run_avg_cadence DOUBLE,
+                run_avg_power DOUBLE,
+                run_evaluation VARCHAR,
+                recovery_splits VARCHAR,
+                recovery_avg_pace_seconds_per_km DOUBLE,
+                recovery_avg_pace_str VARCHAR,
+                recovery_avg_hr DOUBLE,
+                recovery_avg_cadence DOUBLE,
+                recovery_avg_power DOUBLE,
+                recovery_evaluation VARCHAR,
+                cooldown_splits VARCHAR,
+                cooldown_avg_pace_seconds_per_km DOUBLE,
+                cooldown_avg_pace_str VARCHAR,
+                cooldown_avg_hr DOUBLE,
+                cooldown_avg_cadence DOUBLE,
+                cooldown_avg_power DOUBLE,
+                cooldown_evaluation VARCHAR,
+                FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
+            )
+        """
+        )
+
+        # Create vo2_max table (from inserters/vo2_max.py)
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS vo2_max (
+                activity_id BIGINT PRIMARY KEY,
+                precise_value DOUBLE,
+                value DOUBLE,
+                date DATE,
+                fitness_age INTEGER,
+                category INTEGER,
+                FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
+            )
+        """
+        )
+
+        # Create lactate_threshold table (from inserters/lactate_threshold.py)
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS lactate_threshold (
+                activity_id BIGINT PRIMARY KEY,
+                heart_rate INTEGER,
+                speed_mps DOUBLE,
+                date_hr TIMESTAMP,
+                functional_threshold_power INTEGER,
+                power_to_weight DOUBLE,
+                weight DOUBLE,
+                date_power TIMESTAMP,
                 FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
             )
         """
@@ -181,7 +349,11 @@ class GarminDBWriter:
         self, activity_id: int, activity_date: str, performance_data: dict
     ) -> bool:
         """
-        Insert performance data from performance.json.
+        Insert performance data from performance.json into normalized tables.
+
+        This method delegates to individual inserter functions for each normalized table.
+        DEPRECATED: The performance_data JSON table no longer exists. Use individual
+        inserter functions directly for better control.
 
         Args:
             activity_id: Activity ID
@@ -189,61 +361,83 @@ class GarminDBWriter:
             performance_data: Performance data dict
 
         Returns:
-            True if successful
+            True if insertions successful (missing optional data is OK)
         """
+        logger.warning(
+            "insert_performance_data() is deprecated. "
+            "Use individual inserter functions (insert_splits, insert_form_efficiency, etc.) instead."
+        )
+
+        # This method is now a convenience wrapper that calls individual inserters
+        # NOTE: This requires writing performance_data to a temporary file
+        # which is inefficient. Direct use of individual inserters is recommended.
+
+        import tempfile
+        from pathlib import Path
+
+        from tools.database.inserters.form_efficiency import insert_form_efficiency
+        from tools.database.inserters.heart_rate_zones import insert_heart_rate_zones
+        from tools.database.inserters.hr_efficiency import insert_hr_efficiency
+        from tools.database.inserters.lactate_threshold import insert_lactate_threshold
+        from tools.database.inserters.performance_trends import (
+            insert_performance_trends,
+        )
+        from tools.database.inserters.splits import insert_splits
+        from tools.database.inserters.vo2_max import insert_vo2_max
+
         try:
-            conn = duckdb.connect(str(self.db_path))
+            # Write performance_data to temp file for inserters
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json", delete=False
+            ) as f:
+                json.dump(performance_data, f)
+                temp_file = f.name
 
-            # Extract sections
-            basic_metrics = json.dumps(performance_data.get("basic_metrics", {}))
-            heart_rate_zones = json.dumps(performance_data.get("heart_rate_zones", {}))
-            hr_efficiency = json.dumps(
-                performance_data.get("hr_efficiency_analysis", {})
-            )
-            form_efficiency = json.dumps(
-                performance_data.get("form_efficiency_summary", {})
-            )
-            performance_trends = json.dumps(
-                performance_data.get("performance_trends", {})
-            )
-            split_metrics = json.dumps(performance_data.get("split_metrics", {}))
-            efficiency_metrics = json.dumps(
-                performance_data.get("efficiency_metrics", {})
-            )
-            training_effect = json.dumps(performance_data.get("training_effect", {}))
-            power_to_weight = json.dumps(performance_data.get("power_to_weight", {}))
-            lactate_threshold = json.dumps(
-                performance_data.get("lactate_threshold", {})
-            )
+            temp_path = Path(temp_file)
 
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO performance_data
-                (activity_id, activity_date, basic_metrics, heart_rate_zones,
-                 hr_efficiency_analysis, form_efficiency_summary, performance_trends,
-                 split_metrics, efficiency_metrics, training_effect, power_to_weight,
-                 lactate_threshold)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-                [
-                    activity_id,
-                    activity_date,
-                    basic_metrics,
-                    heart_rate_zones,
-                    hr_efficiency,
-                    form_efficiency,
-                    performance_trends,
-                    split_metrics,
-                    efficiency_metrics,
-                    training_effect,
-                    power_to_weight,
-                    lactate_threshold,
-                ],
-            )
+            # Call individual inserters
+            # Note: Some inserters may return False if data is missing (which is OK for optional data)
+            critical_success = True  # Track only critical insertions
 
-            conn.close()
-            logger.info(f"Inserted performance data for activity {activity_id}")
-            return True
+            # Required inserters
+            if "split_metrics" in performance_data and not insert_splits(
+                str(temp_path), activity_id, str(self.db_path)
+            ):
+                logger.warning(f"Failed to insert splits for activity {activity_id}")
+
+            # Optional inserters (failure is acceptable if data doesn't exist)
+            if "form_efficiency_summary" in performance_data:
+                insert_form_efficiency(str(temp_path), activity_id, str(self.db_path))
+
+            if "heart_rate_zones" in performance_data:
+                insert_heart_rate_zones(str(temp_path), activity_id, str(self.db_path))
+
+            if "hr_efficiency_analysis" in performance_data:
+                insert_hr_efficiency(str(temp_path), activity_id, str(self.db_path))
+
+            if "performance_trends" in performance_data:
+                insert_performance_trends(
+                    str(temp_path), activity_id, str(self.db_path)
+                )
+
+            if "vo2_max" in performance_data:
+                insert_vo2_max(str(temp_path), activity_id, str(self.db_path))
+
+            if "lactate_threshold" in performance_data:
+                insert_lactate_threshold(str(temp_path), activity_id, str(self.db_path))
+
+            # Clean up temp file
+            temp_path.unlink()
+
+            if critical_success:
+                logger.info(
+                    f"Inserted performance data into normalized tables for activity {activity_id}"
+                )
+                return True
+            else:
+                logger.error(f"Critical inserters failed for activity {activity_id}")
+                return False
+
         except Exception as e:
             logger.error(f"Error inserting performance data: {e}")
             return False

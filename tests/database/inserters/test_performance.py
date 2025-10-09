@@ -86,7 +86,7 @@ class TestPerformanceDataInserter:
     def test_insert_performance_data_db_integration(
         self, sample_performance_file, tmp_path
     ):
-        """Test insert_performance_data actually writes to DuckDB."""
+        """Test insert_performance_data actually writes to DuckDB normalized tables."""
         import duckdb
 
         db_path = tmp_path / "test.duckdb"
@@ -113,10 +113,21 @@ class TestPerformanceDataInserter:
             str(activities[0][1]) == "2025-09-22"
         )  # activity_date (datetime.date → str)
 
-        # Check performance_data table
-        performance = conn.execute(
-            "SELECT * FROM performance_data WHERE activity_id = 20464005432"
+        # Check normalized tables instead of old performance_data table
+        # Note: Only check tables that have data based on sample_performance_file content
+
+        # Check form_efficiency table (should have data)
+        form_eff = conn.execute(
+            "SELECT * FROM form_efficiency WHERE activity_id = 20464005432"
         ).fetchall()
-        assert len(performance) == 1
+        assert len(form_eff) == 1, "form_efficiency table should have 1 row"
+
+        # Check heart_rate_zones table (should have 5 rows)
+        hr_zones = conn.execute(
+            "SELECT * FROM heart_rate_zones WHERE activity_id = 20464005432"
+        ).fetchall()
+        assert (
+            len(hr_zones) == 5
+        ), "heart_rate_zones table should have 5 rows (one per zone)"
 
         conn.close()
