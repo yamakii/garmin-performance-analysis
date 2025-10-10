@@ -11,15 +11,14 @@ from tools.rag.loaders.activity_details_loader import ActivityDetailsLoader
 class TestActivityDetailsLoader:
     """Test suite for ActivityDetailsLoader class."""
 
-    def test_load_activity_details_success(self):
+    def test_load_activity_details_success(self, fixture_base_path, dummy_activity_id):
         """Test successful loading of activity_details.json."""
-        loader = ActivityDetailsLoader()
-        activity_id = 19079559780
+        loader = ActivityDetailsLoader(base_path=fixture_base_path)
 
-        result = loader.load_activity_details(activity_id)
+        result = loader.load_activity_details(dummy_activity_id)
 
         assert result is not None
-        assert result["activityId"] == activity_id
+        assert result["activityId"] == dummy_activity_id
         assert "metricDescriptors" in result
         assert "activityDetailMetrics" in result
 
@@ -46,88 +45,88 @@ class TestActivityDetailsLoader:
         with pytest.raises(json.JSONDecodeError):
             loader.load_activity_details(activity_id)
 
-    def test_parse_metric_descriptors(self):
+    def test_parse_metric_descriptors(self, fixture_base_path, dummy_activity_id):
         """Test parsing of metric descriptors into a mapping."""
-        loader = ActivityDetailsLoader()
-        activity_id = 19079559780
+        loader = ActivityDetailsLoader(base_path=fixture_base_path)
 
-        result = loader.load_activity_details(activity_id)
+        result = loader.load_activity_details(dummy_activity_id)
         metric_map = loader.parse_metric_descriptors(result["metricDescriptors"])
 
-        assert "sumElapsedDuration" in metric_map
-        assert metric_map["sumElapsedDuration"]["index"] == 0
-        assert metric_map["sumElapsedDuration"]["unit"] == "second"
-        assert metric_map["sumElapsedDuration"]["factor"] == 1000.0
+        # Check metrics from fixture data
+        assert "directHeartRate" in metric_map
+        assert metric_map["directHeartRate"]["index"] == 0
+        assert metric_map["directHeartRate"]["unit"] == "bpm"
+        assert metric_map["directHeartRate"]["factor"] == 1.0
 
-        assert "directDoubleCadence" in metric_map
-        assert metric_map["directDoubleCadence"]["index"] == 1
-        assert metric_map["directDoubleCadence"]["factor"] == 1.0
+        assert "directSpeed" in metric_map
+        assert metric_map["directSpeed"]["index"] == 1
+        assert metric_map["directSpeed"]["factor"] == 0.1
 
-    def test_extract_time_series_full_range(self):
+    def test_extract_time_series_full_range(self, fixture_base_path, dummy_activity_id):
         """Test time series extraction for full activity."""
-        loader = ActivityDetailsLoader()
-        activity_id = 19079559780
+        loader = ActivityDetailsLoader(base_path=fixture_base_path)
 
-        result = loader.load_activity_details(activity_id)
+        result = loader.load_activity_details(dummy_activity_id)
         metrics = result["activityDetailMetrics"]
 
-        # Extract cadence metric (index 1)
+        # Extract speed metric (index 1) - 10 measurements in fixture
         time_series = loader.extract_time_series(
             metrics=metrics, metric_index=1, start_index=0, end_index=None
         )
 
-        assert len(time_series) == 3
-        assert time_series == [170.0, 175.0, 180.0]
+        assert len(time_series) == 10
+        assert time_series[0] == 30  # First speed value from fixture
 
-    def test_extract_time_series_partial_range(self):
+    def test_extract_time_series_partial_range(
+        self, fixture_base_path, dummy_activity_id
+    ):
         """Test time series extraction for a specific range."""
-        loader = ActivityDetailsLoader()
-        activity_id = 19079559780
+        loader = ActivityDetailsLoader(base_path=fixture_base_path)
 
-        result = loader.load_activity_details(activity_id)
+        result = loader.load_activity_details(dummy_activity_id)
         metrics = result["activityDetailMetrics"]
 
-        # Extract heart rate metric (index 2) for measurements 1-2
+        # Extract heart rate metric (index 0) for measurements 1-3
         time_series = loader.extract_time_series(
-            metrics=metrics, metric_index=2, start_index=1, end_index=3
+            metrics=metrics, metric_index=0, start_index=1, end_index=3
         )
 
         assert len(time_series) == 2
-        assert time_series == [135.0, 140.0]
+        assert time_series == [125, 130]  # HR values from fixture
 
-    def test_apply_unit_conversion(self):
+    def test_apply_unit_conversion(self, fixture_base_path, dummy_activity_id):
         """Test unit conversion with factor application."""
-        loader = ActivityDetailsLoader()
-        activity_id = 19079559780
+        loader = ActivityDetailsLoader(base_path=fixture_base_path)
 
-        result = loader.load_activity_details(activity_id)
+        result = loader.load_activity_details(dummy_activity_id)
         metric_map = loader.parse_metric_descriptors(result["metricDescriptors"])
 
-        # Test conversion for sumElapsedDuration (factor 1000.0)
-        raw_value = 1000.0
+        # Test conversion for directSpeed (factor 0.1)
+        raw_value = 30.0
         converted = loader.apply_unit_conversion(
-            metric_info=metric_map["sumElapsedDuration"], value=raw_value
+            metric_info=metric_map["directSpeed"], value=raw_value
         )
 
-        # 1000.0 / 1000.0 = 1.0 second
-        assert converted == 1.0
+        # 30.0 / 0.1 = 300.0 m/s
+        assert converted == 300.0
 
-    def test_apply_unit_conversion_no_factor(self):
+    def test_apply_unit_conversion_no_factor(
+        self, fixture_base_path, dummy_activity_id
+    ):
         """Test unit conversion when factor is 1.0."""
-        loader = ActivityDetailsLoader()
-        activity_id = 19079559780
+        loader = ActivityDetailsLoader(base_path=fixture_base_path)
 
-        result = loader.load_activity_details(activity_id)
+        result = loader.load_activity_details(dummy_activity_id)
         metric_map = loader.parse_metric_descriptors(result["metricDescriptors"])
 
-        # Test conversion for directDoubleCadence (factor 1.0)
-        raw_value = 170.0
+        # Test conversion for directHeartRate (factor 1.0)
+        raw_value = 120.0
         converted = loader.apply_unit_conversion(
-            metric_info=metric_map["directDoubleCadence"], value=raw_value
+            metric_info=metric_map["directHeartRate"], value=raw_value
         )
 
         # No conversion needed
-        assert converted == 170.0
+        assert converted == 120.0
 
     def test_handle_null_values_in_metrics(self):
         """Test handling of null values in metric arrays."""

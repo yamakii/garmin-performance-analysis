@@ -31,6 +31,15 @@ class TestBackwardCompatibility:
         """Path to existing performance data file."""
         return Path("data/performance/20594901208.json")
 
+    @pytest.fixture(autouse=True)
+    def skip_if_data_missing(self, existing_raw_file, existing_performance_file):
+        """Skip tests if archive data doesn't exist (not in fixtures)."""
+        if not existing_raw_file.exists() or not existing_performance_file.exists():
+            pytest.skip(
+                "Archive data not available (backward compatibility tests "
+                "require real data files not included in fixtures)"
+            )
+
     @pytest.mark.integration
     def test_generate_identical_performance_data(
         self, worker, existing_raw_file, existing_performance_file

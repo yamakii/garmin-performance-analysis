@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 
 class TestRawDataExtractorIntegration:
     """Test RawDataExtractor with real old/new format files."""
@@ -13,7 +15,8 @@ class TestRawDataExtractorIntegration:
 
         # Old format: activity.json in 20594901208
         old_file = Path("data/raw/activity/20594901208/activity.json")
-        assert old_file.exists(), "Old format test file not found"
+        if not old_file.exists():
+            pytest.skip("Real activity data not available in fixtures")
 
         with open(old_file) as f:
             activity_data = json.load(f)
@@ -31,7 +34,8 @@ class TestRawDataExtractorIntegration:
 
         # New format: activity.json in 20615445009
         activity_file = Path("data/raw/activity/20615445009/activity.json")
-        assert activity_file.exists(), "New format activity file not found"
+        if not activity_file.exists():
+            pytest.skip("Real activity data not available in fixtures")
 
         with open(activity_file) as f:
             activity_data = json.load(f)
@@ -49,6 +53,9 @@ class TestRawDataExtractorIntegration:
         from tools.ingest.garmin_worker import RawDataExtractor
 
         old_file = Path("data/raw/activity/20594901208/activity.json")
+        if not old_file.exists():
+            pytest.skip("Real activity data not available in fixtures")
+
         with open(old_file) as f:
             activity_data = json.load(f)
 
