@@ -1,0 +1,58 @@
+{
+  "basic_metrics": {
+    "distance_km": 3.0,
+    "duration_seconds": 745.0,
+    "avg_hr": 145,
+    "max_hr": 165
+  },
+  "split_metrics": [
+    {
+      "lap_index": 1,
+      "distance_km": 1.0,
+      "duration_seconds": 240.0,
+      "start_time_s": 0,
+      "end_time_s": 240,
+      "avg_hr": 135,
+      "avg_speed_mps": 4.17,
+      "avg_cadence": 182,
+      "avg_gct_ms": 240,
+      "avg_vo_cm": 8.5,
+      "avg_vr_percent": 8.8
+    },
+    {
+      "lap_index": 2,
+      "distance_km": 1.0,
+      "duration_seconds": 250.0,
+      "start_time_s": 240,
+      "end_time_s": 490,
+      "avg_hr": 145,
+      "avg_speed_mps": 4.0,
+      "avg_cadence": 187,
+      "avg_gct_ms": 236,
+      "avg_vo_cm": 8.3,
+      "avg_vr_percent": 8.6
+    },
+    {
+      "lap_index": 3,
+      "distance_km": 1.0,
+      "duration_seconds": 255.0,
+      "start_time_s": 490,
+      "end_time_s": 745,
+      "avg_hr": 155,
+      "avg_speed_mps": 3.92,
+      "avg_cadence": 191,
+      "avg_gct_ms": 232,
+      "avg_vo_cm": 8.1,
+      "avg_vr_percent": 8.4
+    }
+  ],
+  "heart_rate_zones": {},
+  "efficiency_metrics": {},
+  "training_effect": {},
+  "power_to_weight": {},
+  "vo2_max": {},
+  "lactate_threshold": {},
+  "form_efficiency_summary": {},
+  "hr_efficiency_analysis": {},
+  "performance_trends": {}
+}
