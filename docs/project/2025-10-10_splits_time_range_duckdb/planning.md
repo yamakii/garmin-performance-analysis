@@ -346,9 +346,18 @@ def get_split_time_ranges(self, activity_id: int) -> list[dict[str, Any]]:
 
 ## 実装進捗
 
-### Phase 1: DuckDB Schema Update & Verification
-- [ ] Schema確認
-- [ ] Unit test作成・実行
+### Phase 1: DuckDB Schema Update & Verification ✅ COMPLETED
+- [x] Schema確認: db_writer.pyのsplitsテーブルに5カラム追加（duration_seconds, start_time_gmt, start_time_s, end_time_s, intensity_type）
+- [x] inserters/splits.py実装: raw splits.json（lapDTOs）から時間範囲データ抽出
+- [x] Unit test作成・実行: test_insert_splits_with_time_range_columns（6テスト全パス）
+- [x] Code quality: Black, Ruff, Mypy全パス
+- [x] Commit: `8f90db5 feat(db): add time range columns to splits table`
+
+**Phase 1結果:**
+- 5つの新カラムをsplitsテーブルに追加（duration_seconds, start_time_gmt, start_time_s, end_time_s, intensity_type）
+- round()による四捨五入でstart_time_s/end_time_sを整数値化
+- 累積時間計算により各splitの時間範囲を正確に算出
+- 全6テストがパス、pre-commit hooksもクリア
 
 ### Phase 2: SplitsInserter Enhancement
 - [ ] Red: Failing test作成
