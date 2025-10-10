@@ -1042,20 +1042,26 @@ class GarminIngestWorker:
         raw_data: dict[str, Any],
         df: pd.DataFrame,
         performance_data: dict[str, Any],
+        activity_date: str | None = None,
     ) -> dict[str, Any]:
         """
-        Save all processed data to files.
+        Save all processed data to files and DuckDB.
 
         Files created:
         - data/raw/{activity_id}_raw.json (already created in collect_data)
         - data/performance/{activity_id}.json
         - data/precheck/{activity_id}.json
 
+        DuckDB insertion order (foreign key constraints):
+        1. activities (parent table)
+        2. splits, form_efficiency, heart_rate_zones, etc. (child tables)
+
         Args:
             activity_id: Activity ID
             raw_data: Raw data dict
             df: Parquet DataFrame (used for precheck validation, not saved)
             performance_data: Performance metrics
+            activity_date: Activity date (YYYY-MM-DD format), required for DuckDB insertion
 
         Returns:
             File paths dict
@@ -1091,6 +1097,63 @@ class GarminIngestWorker:
             json.dump(precheck_data, f, ensure_ascii=False, indent=2)
         logger.info(f"Saved precheck data to {precheck_file}")
 
+        # ===== DuckDB Insertion (respects foreign key order) =====
+
+        # STEP 1: Insert activities (parent table) - MUST be first
+        from tools.database.inserters.activities import insert_activities
+
+        # Determine raw data file paths
+        activity_dir = self.raw_dir / "activity" / str(activity_id)
+        raw_activity_file: Path | None = activity_dir / "activity.json"
+        raw_weather_file: Path | None = activity_dir / "weather.json"
+        raw_gear_file: Path | None = activity_dir / "gear.json"
+
+        # Fallback: check if using old structure
+        if raw_activity_file and not raw_activity_file.exists():
+            legacy_raw_file = self.raw_dir / f"{activity_id}_raw.json"
+            if legacy_raw_file.exists():
+                # Extract from legacy format
+                raw_activity_file = None
+                raw_weather_file = None
+                raw_gear_file = None
+                logger.warning(
+                    f"Using legacy raw data format for activity {activity_id}"
+                )
+
+        activities_success = insert_activities(
+            performance_file=str(performance_file),
+            activity_id=activity_id,
+            date=activity_date or "1970-01-01",  # Fallback date if not provided
+            db_path=self._db_path,
+            raw_activity_file=(
+                str(raw_activity_file)
+                if raw_activity_file and raw_activity_file.exists()
+                else None
+            ),
+            raw_weather_file=(
+                str(raw_weather_file)
+                if raw_weather_file and raw_weather_file.exists()
+                else None
+            ),
+            raw_gear_file=(
+                str(raw_gear_file) if raw_gear_file and raw_gear_file.exists() else None
+            ),
+        )
+        if activities_success:
+            logger.info(f"Inserted activities to DuckDB for activity {activity_id}")
+        else:
+            logger.warning(
+                f"Failed to insert activities to DuckDB for activity {activity_id}"
+            )
+
+        # STEP 2: Insert child tables (splits, form_efficiency, etc.)
+
+        # Determine raw splits file path
+        raw_splits_file: Path | None = activity_dir / "splits.json"
+        if raw_splits_file and not raw_splits_file.exists():
+            # Fallback: old structure has splits in {id}_raw.json
+            raw_splits_file = None
+
         # Insert splits into DuckDB
         from tools.database.inserters.splits import insert_splits
 
@@ -1098,6 +1161,7 @@ class GarminIngestWorker:
             performance_file=str(performance_file),
             activity_id=activity_id,
             db_path=self._db_path,
+            raw_splits_file=str(raw_splits_file) if raw_splits_file else None,
         )
         if splits_success:
             logger.info(f"Inserted splits to DuckDB for activity {activity_id}")
@@ -1419,7 +1483,7 @@ class GarminIngestWorker:
         2. Check raw_data cache → extract_from_raw_data() + save_data()
         3. Fetch from API → collect_data() + extract_from_raw_data() + save_data()
         4. Calculate 7-day median weight for W/kg
-        5. Insert into DuckDB with weight data
+        5. Insert into DuckDB via save_data() (activities + all child tables)
 
         Args:
             activity_id: Activity ID
@@ -1459,32 +1523,10 @@ class GarminIngestWorker:
         median_weight_data = self._calculate_median_weight(date)
         weight_kg = median_weight_data["weight_kg"] if median_weight_data else None
 
-        # Step 5: Save data
-        file_paths = self.save_data(activity_id, raw_data, df, performance_data)
-
-        # Step 6: Insert into DuckDB activities table with weight data
-        from tools.database.db_writer import GarminDBWriter
-
-        writer = (
-            GarminDBWriter(db_path=self._db_path) if self._db_path else GarminDBWriter()
-        )
-        basic_metrics = performance_data.get("basic_metrics", {})
-
-        # Extract activity metadata from nested structure
-        activity_dict = raw_data.get("activity", {})
-
-        writer.insert_activity(
-            activity_id=activity_id,
-            activity_date=date,
-            activity_name=activity_dict.get("activityName"),
-            location_name=activity_dict.get("locationName"),
-            weight_kg=weight_kg,
-            weight_source="statistical_7d_median" if weight_kg else None,
-            weight_method="median" if weight_kg else None,
-            distance_km=basic_metrics.get("distance_km"),
-            duration_seconds=basic_metrics.get("duration_seconds"),
-            avg_pace_seconds_per_km=basic_metrics.get("avg_pace_seconds_per_km"),
-            avg_heart_rate=basic_metrics.get("avg_heart_rate"),
+        # Step 5: Save data and insert into DuckDB
+        # Note: save_data() now handles all DuckDB insertions (activities + child tables)
+        file_paths = self.save_data(
+            activity_id, raw_data, df, performance_data, activity_date=date
         )
 
         return {

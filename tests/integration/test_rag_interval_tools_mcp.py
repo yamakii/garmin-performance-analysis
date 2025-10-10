@@ -139,38 +139,39 @@ class TestRagIntervalToolsMcp:
         assert response_data["activity_id"] == fixture_activity_id
 
     @pytest.mark.asyncio
-    async def test_call_interval_analysis_with_all_args(self, fixture_activity_id: int):
-        """Test calling get_interval_analysis with all optional arguments."""
+    async def test_call_interval_analysis_returns_valid_response(
+        self, fixture_activity_id: int
+    ):
+        """Test calling get_interval_analysis returns valid response structure."""
         with patch(
             "tools.rag.queries.interval_analysis.IntervalAnalyzer.get_interval_analysis"
         ) as mock_analyze:
             mock_analyze.return_value = {
                 "activity_id": fixture_activity_id,
                 "segments": [],
+                "work_recovery_comparison": {},
+                "fatigue_indicators": {},
             }
 
             result = await call_tool(
                 name="get_interval_analysis",
                 arguments={
                     "activity_id": fixture_activity_id,
-                    "pace_threshold_factor": 1.5,
-                    "min_work_duration": 120,
-                    "min_recovery_duration": 90,
                 },
             )
 
-            # Verify mock was called with correct arguments
+            # Verify mock was called with only activity_id (no obsolete parameters)
             mock_analyze.assert_called_once_with(
                 activity_id=fixture_activity_id,
-                pace_threshold_factor=1.5,
-                min_work_duration=120,
-                min_recovery_duration=90,
             )
 
             # Verify response structure
             assert len(result) == 1
             response_data = json.loads(result[0].text)
             assert response_data["activity_id"] == fixture_activity_id
+            assert "segments" in response_data
+            assert "work_recovery_comparison" in response_data
+            assert "fatigue_indicators" in response_data
 
     @pytest.mark.asyncio
     async def test_call_split_time_series_detail_with_minimal_args(
