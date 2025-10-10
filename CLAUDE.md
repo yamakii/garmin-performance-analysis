@@ -220,6 +220,11 @@ Provides efficient section-based access to DuckDB performance data, write capabi
 - `mcp__garmin-db__insert_section_analysis_dict`: **[RECOMMENDED]** Insert section analysis dict directly into DuckDB (no file creation)
 - `mcp__garmin-db__insert_section_analysis`: Insert section analysis JSON file into DuckDB (legacy)
 
+**RAG Query Tools (Phase 2.5: Interval Analysis & Time Series Detail):**
+- `mcp__garmin-db__get_interval_analysis`: Analyze interval training Work/Recovery segments with fatigue detection
+- `mcp__garmin-db__get_split_time_series_detail`: Get second-by-second detailed metrics for a specific 1km split
+- `mcp__garmin-db__detect_form_anomalies`: Detect form metric anomalies and identify causes (elevation/pace/fatigue)
+
 **RAG Query Tools (Phase 3: Trend Analysis & Comparison):**
 - `mcp__garmin-db__compare_similar_workouts`: Find and compare similar past activities
 - `mcp__garmin-db__get_performance_trends`: Analyze performance trends for specific metrics over time
@@ -655,6 +660,7 @@ docs/project/
 ### Active Projects
 
 - **2025-10-10_duckdb_inserter_cleanup**: Added 7 missing normalized table schemas to db_writer._ensure_tables(), body composition optimization, deprecated code removal (Phases 1-4 completed)
+- **2025-10-09_rag_interval_analysis_tools**: RAG interval analysis tools implementation with activity_details.json integration - ActivityDetailsLoader, IntervalAnalyzer, TimeSeriesDetailExtractor, FormAnomalyDetector, MCP server integration (Phases 1-6 completed)
 - **2025-10-09_garmin_ingest_refactoring**: GarminIngestWorker refactoring for cache-first approach and process_activity unification (Phases 0-5 completed)
 - **2025-10-07_core_system_restoration**: Body composition data specification fix and DuckDB schema documentation
 - **2025-10-07_report_generation_update**: Worker-based report generation system implementation
