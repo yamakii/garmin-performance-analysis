@@ -447,3 +447,139 @@ GARMIN_RESULT_DIR=/home/user/private/garmin_results
 ### エラーハンドリング
 - カスタムパスが無効な場合（書き込み権限がない等）は明確なエラーメッセージを表示
 - ただし、Phase 1では基本的なパス取得のみを実装し、詳細なバリデーションは将来のフェーズで検討
+
+---
+
+
+---
+
+## 実装進捗
+
+### Phase 1: パスユーティリティモジュール作成 ✅ **完了** (2025-10-11)
+
+**実装内容:**
+- ✅ `tools/utils/paths.py` を作成
+- ✅ `get_data_base_dir()`, `get_result_dir()` 関数実装
+- ✅ ヘルパー関数（`get_raw_dir()`, `get_performance_dir()`, etc.）実装
+- ✅ `.env.example` を作成
+
+**テスト結果:**
+- ✅ 12 unit tests 全てパス
+- ✅ Black, Ruff, Mypy 全てパス
+- ✅ Pre-commit hooks 全てパス
+
+**コミット:**
+- Commit: `5613e9b` - "feat(config): add configurable data paths with environment variables"
+- Files: `tools/utils/paths.py`, `tests/utils/test_paths.py`, `.env.example`
+
+### Phase 2: GarminIngestWorker修正 ✅ **完了** (2025-10-11)
+
+**実装内容:**
+- ✅ `GarminIngestWorker.__init__()` を修正
+- ✅ ハードコードされたパスを `get_*_dir()` 呼び出しに置き換え
+- ✅ Unit tests 作成 (5 tests)
+- ✅ Backward compatibility 確認
+
+**テスト結果:**
+- ✅ 5 unit tests 全てパス (default paths, custom paths, backward compatibility)
+- ✅ Black, Ruff, Mypy 全てパス
+- ✅ Pre-commit hooks 全てパス
+
+**コミット:**
+- Commit: `3938e2f` - "feat(config): update GarminIngestWorker to use configurable paths"
+- Files: `tools/ingest/garmin_worker.py`, `tests/ingest/test_garmin_worker_paths.py`
+
+### Phase 3: ReportGeneratorWorker修正 ✅ **完了** (2025-10-11)
+
+**実装内容:**
+- ✅ `ReportTemplateRenderer.get_final_report_path()` を修正
+- ✅ `get_result_dir()` 呼び出しに置き換え
+- ✅ Unit tests 作成 (2 tests)
+- ✅ TDD cycle (Red → Green → Refactor) 実行
+
+**テスト結果:**
+- ✅ 2 unit tests 全てパス (default path, custom path)
+- ✅ Black, Ruff, Mypy 全てパス
+- ✅ Pre-commit hooks 全てパス
+
+**コミット:**
+- Commit: `e0968fb` - "feat(config): update ReportTemplateRenderer to use configurable result path"
+- Files: `tools/reporting/report_template_renderer.py`, `tests/reporting/test_report_generator_paths.py`
+
+### Phase 4: Database修正 ✅ **完了** (2025-10-11)
+
+**実装内容:**
+- ✅ `GarminDBReader.__init__()` を修正
+- ✅ `GarminDBWriter.__init__()` を修正
+- ✅ `db_path=None` 時に `get_database_dir()` を使用
+- ✅ Unit tests 作成 (5 tests)
+- ✅ TDD cycle (Red → Green → Refactor) 実行
+
+**テスト結果:**
+- ✅ 5 unit tests 全てパス (default, custom, explicit override paths)
+- ✅ Black, Ruff, Mypy 全てパス
+- ✅ Pre-commit hooks 全てパス
+
+**コミット:**
+- Commit: `03cfd56` - "feat(config): update Database classes to use configurable paths"
+- Files: `tools/database/db_reader.py`, `tools/database/db_writer.py`, `tests/database/test_database_paths.py`
+
+### Phase 5: Migration/Bulk scripts修正 ✅ **完了** (2025-10-11)
+
+**実装内容:**
+- ✅ `tools/scripts/reingest_duckdb_data.py` - `get_database_dir()`, `get_raw_dir()` 使用
+- ✅ `tools/migrate_raw_data_structure.py` - `get_raw_dir()` 使用
+- ✅ `tools/bulk_fetch_activity_details.py` - `ActivityDetailsFetcher` で `get_raw_dir()` 使用
+- ✅ 全スクリプトで明示的な引数は環境変数をオーバーライド可能
+
+**テスト結果:**
+- ✅ Black, Ruff, Mypy 全てパス
+- ✅ Pre-commit hooks 全てパス
+
+**コミット:**
+- Commit: `a61fac3` - "feat(config): update migration/bulk scripts to use configurable paths"
+- Files: 3 migration/bulk scripts
+
+### Phase 6: ドキュメント更新 ✅ **完了** (2025-10-11)
+
+**実装内容:**
+- ✅ `CLAUDE.md` に「Configurable Data Paths」セクション追加
+- ✅ 環境変数設定方法を記載
+- ✅ 影響を受けるコンポーネントをリスト化
+- ✅ プライバシー保護のメリットを明記
+- ✅ `.env.example` の使い方を説明
+
+**コミット:**
+- Commit: `aa0af7e` - "docs: add configurable data paths section to CLAUDE.md"
+- Files: `CLAUDE.md`
+
+---
+
+## 全体サマリー (2025-10-11)
+
+**実装完了:**
+- ✅ Phase 1: パスユーティリティモジュール作成
+- ✅ Phase 2: GarminIngestWorker修正
+- ✅ Phase 3: ReportGeneratorWorker修正
+- ✅ Phase 4: Database修正
+- ✅ Phase 5: Migration/Bulk scripts修正
+- ✅ Phase 6: ドキュメント更新
+
+**テスト結果:**
+- Total Unit Tests: 24 (Phase 1: 12, Phase 2: 5, Phase 3: 2, Phase 4: 5)
+- All tests passing ✅
+- Code quality: Black, Ruff, Mypy all passed ✅
+- Pre-commit hooks: All passed ✅
+
+**コミット履歴:**
+1. `5613e9b` - Phase 1: パスユーティリティ作成
+2. `3938e2f` - Phase 2: GarminIngestWorker修正
+3. `e0968fb` - Phase 3: ReportTemplateRenderer修正
+4. `03cfd56` - Phase 4: Database classes修正
+5. `a61fac3` - Phase 5: Migration/Bulk scripts修正
+6. `aa0af7e` - Phase 6: CLAUDE.md ドキュメント更新
+
+**次のステップ:**
+- Completion reporter エージェントで完了レポート作成
+- Feature branchをmainにマージ
+- Git worktreeを削除
