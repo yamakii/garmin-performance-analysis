@@ -349,98 +349,25 @@ class GarminDBWriter:
         self, activity_id: int, activity_date: str, performance_data: dict
     ) -> bool:
         """
-        Insert performance data from performance.json into normalized tables.
+        REMOVED: This method is deprecated and no longer needed.
 
-        This method delegates to individual inserter functions for each normalized table.
-        DEPRECATED: The performance_data JSON table no longer exists. Use individual
-        inserter functions directly for better control.
+        The performance_data JSON table has been replaced with normalized tables.
+        Use individual inserter functions directly:
+        - insert_splits()
+        - insert_form_efficiency()
+        - insert_heart_rate_zones()
+        - insert_hr_efficiency()
+        - insert_performance_trends()
+        - insert_vo2_max()
+        - insert_lactate_threshold()
 
-        Args:
-            activity_id: Activity ID
-            activity_date: Activity date (YYYY-MM-DD)
-            performance_data: Performance data dict
-
-        Returns:
-            True if insertions successful (missing optional data is OK)
+        These are called automatically by GarminIngestWorker.save_data().
         """
-        logger.warning(
-            "insert_performance_data() is deprecated. "
-            "Use individual inserter functions (insert_splits, insert_form_efficiency, etc.) instead."
+        raise NotImplementedError(
+            "insert_performance_data() has been removed. "
+            "Use individual inserter functions (insert_splits, insert_form_efficiency, etc.) "
+            "which are called automatically by GarminIngestWorker.save_data()."
         )
-
-        # This method is now a convenience wrapper that calls individual inserters
-        # NOTE: This requires writing performance_data to a temporary file
-        # which is inefficient. Direct use of individual inserters is recommended.
-
-        import tempfile
-        from pathlib import Path
-
-        from tools.database.inserters.form_efficiency import insert_form_efficiency
-        from tools.database.inserters.heart_rate_zones import insert_heart_rate_zones
-        from tools.database.inserters.hr_efficiency import insert_hr_efficiency
-        from tools.database.inserters.lactate_threshold import insert_lactate_threshold
-        from tools.database.inserters.performance_trends import (
-            insert_performance_trends,
-        )
-        from tools.database.inserters.splits import insert_splits
-        from tools.database.inserters.vo2_max import insert_vo2_max
-
-        try:
-            # Write performance_data to temp file for inserters
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".json", delete=False
-            ) as f:
-                json.dump(performance_data, f)
-                temp_file = f.name
-
-            temp_path = Path(temp_file)
-
-            # Call individual inserters
-            # Note: Some inserters may return False if data is missing (which is OK for optional data)
-            critical_success = True  # Track only critical insertions
-
-            # Required inserters
-            if "split_metrics" in performance_data and not insert_splits(
-                str(temp_path), activity_id, str(self.db_path)
-            ):
-                logger.warning(f"Failed to insert splits for activity {activity_id}")
-
-            # Optional inserters (failure is acceptable if data doesn't exist)
-            if "form_efficiency_summary" in performance_data:
-                insert_form_efficiency(str(temp_path), activity_id, str(self.db_path))
-
-            if "heart_rate_zones" in performance_data:
-                insert_heart_rate_zones(str(temp_path), activity_id, str(self.db_path))
-
-            if "hr_efficiency_analysis" in performance_data:
-                insert_hr_efficiency(str(temp_path), activity_id, str(self.db_path))
-
-            if "performance_trends" in performance_data:
-                insert_performance_trends(
-                    str(temp_path), activity_id, str(self.db_path)
-                )
-
-            if "vo2_max" in performance_data:
-                insert_vo2_max(str(temp_path), activity_id, str(self.db_path))
-
-            if "lactate_threshold" in performance_data:
-                insert_lactate_threshold(str(temp_path), activity_id, str(self.db_path))
-
-            # Clean up temp file
-            temp_path.unlink()
-
-            if critical_success:
-                logger.info(
-                    f"Inserted performance data into normalized tables for activity {activity_id}"
-                )
-                return True
-            else:
-                logger.error(f"Critical inserters failed for activity {activity_id}")
-                return False
-
-        except Exception as e:
-            logger.error(f"Error inserting performance data: {e}")
-            return False
 
     def insert_section_analysis(
         self,

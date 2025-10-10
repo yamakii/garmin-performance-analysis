@@ -104,9 +104,6 @@ class TestWorkflowPlannerDateResolution:
 
         with (
             patch("tools.ingest.garmin_worker.GarminIngestWorker") as mock_worker_class,
-            patch(
-                "tools.database.inserters.performance.insert_performance_data"
-            ) as mock_insert,
             patch("pathlib.Path.exists", return_value=False),
         ):
             mock_worker_instance = MagicMock()
@@ -123,4 +120,3 @@ class TestWorkflowPlannerDateResolution:
             mock_worker_instance.process_activity_by_date.assert_called_once_with(
                 "2025-10-05"
             )
-            mock_insert.assert_called_once()
