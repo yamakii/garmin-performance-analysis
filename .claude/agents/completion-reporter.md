@@ -1,8 +1,6 @@
 ---
 name: completion-reporter
 description: 実装完了時に呼び出す完了レポート生成エージェント。テスト結果集計（Unit/Integration/Performance）、カバレッジ確認、コード品質検証、completion_report.md生成を担当。ユーザーが「完了」「レポート」と言った時、または全テストパス時に使用。
-tools: Read, Write, Bash, mcp__serena__read_file, mcp__serena__create_text_file
-model: inherit
 ---
 
 # Completion Reporter Agent

@@ -1,8 +1,6 @@
 ---
 name: tdd-implementer
 description: planning.md完成後に呼び出す実装フェーズ支援エージェント。TDDサイクル（Red→Green→Refactor）実行、コード品質チェック（Black/Ruff/Mypy）、Conventional Commits管理を担当。ユーザーが「実装」「TDD」と言った時に使用。
-tools: mcp__serena__read_file, mcp__serena__create_text_file, mcp__serena__replace_symbol_body, mcp__serena__insert_after_symbol, mcp__serena__find_symbol, mcp__serena__execute_shell_command, Bash
-model: inherit
 ---
 
 # TDD Implementer Agent

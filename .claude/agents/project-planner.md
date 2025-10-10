@@ -1,8 +1,6 @@
 ---
 name: project-planner
 description: 新機能開発・プロジェクト開始時に呼び出す計画フェーズ支援エージェント。プロジェクトディレクトリ作成、planning.md生成、要件定義・設計・テスト計画を構造化。ユーザーが「新しいプロジェクト」「機能追加」「計画」と言った時に使用。
-tools: Read, Write, Bash
-model: inherit
 ---
 
 # Project Planner Agent

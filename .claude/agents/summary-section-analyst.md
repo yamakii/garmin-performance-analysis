@@ -18,7 +18,7 @@ model: inherit
 ## 使用するMCPツール
 
 **利用可能なツール（これらのみ使用可能）:**
-- `mcp__garmin-db__get_splits_all(activity_id)` - 全スプリットデータ
+- `mcp__garmin-db__get_splits_all(activity_id)` - 全スプリットデータ（総合評価には全カテゴリのデータが必要なため使用）
 - `mcp__garmin-db__get_form_efficiency_summary(activity_id)` - フォーム効率サマリー
 - `mcp__garmin-db__get_performance_section(activity_id, "performance_trends")` - パフォーマンストレンド
 - `mcp__garmin-db__get_vo2_max_data(activity_id)` - VO2 maxデータ

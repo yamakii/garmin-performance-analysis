@@ -209,10 +209,12 @@ Provides efficient section-based access to DuckDB performance data, write capabi
 - `mcp__garmin-db__get_lactate_threshold_data`: Lactate threshold metrics
 - `mcp__garmin-db__get_splits_all`: All split data (all 22 fields per split)
 
-*Splits Data Access (Lightweight - Deprecated, use get_splits_all instead):*
-- `mcp__garmin-db__get_splits_pace_hr`: Pace & HR progression (~9 fields/split)
-- `mcp__garmin-db__get_splits_form_metrics`: Form efficiency GCT/VO/VR (~6 fields/split)
-- `mcp__garmin-db__get_splits_elevation`: Elevation & terrain data (~7 fields/split)
+*Splits Data Access (Lightweight - Token-efficient targeted queries):*
+- `mcp__garmin-db__get_splits_pace_hr`: Pace & HR progression (~9 fields/split) - **Use for split/phase analysis**
+- `mcp__garmin-db__get_splits_form_metrics`: Form efficiency GCT/VO/VR (~6 fields/split) - **Use for form analysis**
+- `mcp__garmin-db__get_splits_elevation`: Elevation & terrain data (~7 fields/split) - **Use for environment analysis**
+
+*Note: Only use `get_splits_all` when multiple data categories are needed (e.g., summary analysis). For targeted analysis, always prefer lightweight APIs to reduce token usage.*
 
 **Write Tools (DuckDB data insertion):**
 - `mcp__garmin-db__insert_section_analysis_dict`: **[RECOMMENDED]** Insert section analysis dict directly into DuckDB (no file creation)
