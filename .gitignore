@@ -43,6 +43,7 @@ data/precheck/*
 data/cache/*
 data/database/*.duckdb
 data/database/*.duckdb.wal
+data/database/*.db
 data/logs/*
 # Old weight_cache structure (migrated to data/raw/weight/ on 2025-10-09)
 data/weight_cache/
