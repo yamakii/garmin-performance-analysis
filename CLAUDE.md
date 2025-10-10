@@ -82,6 +82,43 @@ GarminIngestWorker: [API calls → raw_data.json → create_parquet_dataset() �
 └── .claude/          # Claude Code configuration (agents, commands)
 ```
 
+### Configurable Data Paths
+
+**NEW (2025-10-11): Data and result directories can now be configured via environment variables for privacy and data separation.**
+
+The system supports custom data directory locations to enable secure code publishing while keeping personal health data separate from the codebase.
+
+**Environment Variables:**
+- `GARMIN_DATA_DIR`: Base data directory (default: `./data`)
+- `GARMIN_RESULT_DIR`: Result directory (default: `./result`)
+
+**Configuration Setup:**
+```bash
+# 1. Copy .env.example to .env
+cp .env.example .env
+
+# 2. Set custom paths in .env
+GARMIN_DATA_DIR=/home/user/private/garmin_data
+GARMIN_RESULT_DIR=/home/user/private/garmin_results
+
+# 3. Paths are automatically loaded by all components
+```
+
+**Affected Components:**
+- `GarminIngestWorker`: Uses `get_raw_dir()`, `get_performance_dir()`, `get_precheck_dir()`, `get_weight_raw_dir()`
+- `GarminDBReader/Writer`: Uses `get_database_dir()` for default db_path
+- `ReportTemplateRenderer`: Uses `get_result_dir()` for report output
+- Migration/bulk scripts: Use path utilities for default arguments
+
+**Benefits:**
+- **Privacy Protection**: Keep personal health data outside the Git repository
+- **Flexible Deployment**: Different paths for development/production environments
+- **Backward Compatible**: Existing code works without configuration (uses defaults)
+
+**Path Utility Module:**
+- Module: `tools/utils/paths.py`
+- Functions: `get_data_base_dir()`, `get_result_dir()`, `get_raw_dir()`, `get_performance_dir()`, `get_precheck_dir()`, `get_database_dir()`, `get_weight_raw_dir()`
+
 ### Data Files Naming Convention
 
 **Raw Data Structure (Phase 0 Refactoring):**
