@@ -479,13 +479,14 @@ elif name == "get_interval_analysis":
 - [ ] **test_edge_case_warmup_cooldown**: ウォームアップ/クールダウン区間の正しい分類
 
 #### test_time_series_detail.py
-- [ ] **test_split_range_extraction**: Split番号から正しい時間範囲を抽出
-- [ ] **test_metric_descriptor_parsing**: 26メトリクスの正しい解析
-- [ ] **test_unit_conversion**: Factor適用と単位変換の正確性
-- [ ] **test_statistics_calculation**: 平均・標準偏差・最大最小計算
-- [ ] **test_anomaly_detection_in_split**: Split内異常値の検出
-- [ ] **test_missing_metrics_handling**: 欠損メトリクスの適切な処理
-- [ ] **test_edge_case_split_out_of_range**: 存在しないsplit番号のエラー処理
+- [x] **test_split_range_extraction**: Split番号から正しい時間範囲を抽出
+- [x] **test_metric_descriptor_parsing**: 26メトリクスの正しい解析
+- [x] **test_unit_conversion**: Factor適用と単位変換の正確性
+- [x] **test_statistics_calculation**: 平均・標準偏差・最大最小計算
+- [x] **test_anomaly_detection_in_split**: Split内異常値の検出
+- [x] **test_missing_metrics_handling**: 欠損メトリクスの適切な処理
+- [x] **test_edge_case_split_out_of_range**: 存在しないsplit番号のエラー処理
+- [x] **test_get_split_time_series_detail_integration**: 統合テスト（full pipeline）
 
 #### test_form_anomaly_detector.py
 - [ ] **test_z_score_anomaly_detection**: Z-scoreベース異常検出の精度
@@ -564,82 +565,107 @@ elif name == "get_interval_analysis":
 
 ## 実装フェーズ
 
-### Phase 1: データローダー実装（2日）
+### Phase 1: データローダー実装（2日）✅ **完了 (2025-10-10)**
 
 **目標**: activity_details.jsonを効率的に読み込み、メトリクスを変換する基盤を構築
 
 **タスク**:
-1. **ActivityDetailsLoader クラス実装**
-   - `load_activity_details(activity_id)`: JSON読み込み
-   - `parse_metric_descriptors()`: 26メトリクスのマッピング生成
-   - `extract_time_series(metric_names, start_time, end_time)`: 時系列抽出
-   - `apply_unit_conversion(metric_index, raw_value)`: 単位変換
+1. ✅ **ActivityDetailsLoader クラス実装**
+   - ✅ `load_activity_details(activity_id)`: JSON読み込み
+   - ✅ `parse_metric_descriptors()`: 26メトリクスのマッピング生成
+   - ✅ `extract_time_series(metric_names, start_time, end_time)`: 時系列抽出
+   - ✅ `apply_unit_conversion(metric_index, raw_value)`: 単位変換
 
-2. **ユニットテスト**
-   - test_loader_basic.py: 基本読み込み機能
-   - test_metric_parsing.py: メトリクス解析精度
-   - test_unit_conversion.py: 全26メトリクスの変換検証
+2. ✅ **ユニットテスト**
+   - ✅ test_activity_details_loader.py: 10テスト実装
+   - ✅ 基本読み込み、メトリクス解析、単位変換、エラー処理
+   - ✅ カバレッジ: 97% (目標85%を超過)
 
-3. **サンプルデータ検証**
-   - 実アクティビティ（20615445009）でローダー動作確認
-   - performance.jsonとの整合性検証
+3. ✅ **サンプルデータ検証**
+   - ✅ フィクスチャデータ作成（tests/fixtures/）
+   - ✅ 公開リポジトリ対応（実データ依存なし）
 
 **成果物**:
-- `tools/rag/loaders/activity_details_loader.py`
-- `tests/rag/loaders/test_activity_details_loader.py`
+- ✅ `tools/rag/loaders/activity_details_loader.py` (184行)
+- ✅ `tests/rag/loaders/test_activity_details_loader.py` (172行)
+- ✅ `tests/fixtures/data/raw/activity/12345678901/activity_details.json`
+
+**テスト結果**:
+- 10 passed, 0 failed, 0 skipped
+- Coverage: 97%
+- コード品質: Black ✅, Ruff ✅, Mypy ✅
 
 ---
 
-### Phase 2: インターバル分析実装（3日）
+### Phase 2: インターバル分析実装（3日）✅ **Phase 2.1完了 (2025-10-10)**
 
 **目標**: get_interval_analysis ツールを完成させる
 
 **タスク**:
-1. **IntervalAnalyzer クラス実装**
-   - `_detect_segments()`: ペースベース区間検出
-   - `_classify_segment_type()`: Work/Recovery/Warmup/Cooldown分類
-   - `_calculate_segment_metrics()`: 各区間のメトリクス集計
-   - `_calculate_work_recovery_comparison()`: 比較分析
-   - `_detect_fatigue_indicators()`: 疲労検出
+1. ✅ **IntervalAnalyzer クラス実装**
+   - ✅ `detect_intervals()`: Work/Recovery区間自動検出
+   - ✅ `analyze_interval_metrics()`: 各区間のメトリクス集計
+   - ✅ `detect_fatigue()`: 疲労蓄積検出
+   - ✅ `calculate_recovery_speed()`: HR回復速度計算
 
-2. **ユニットテスト**
-   - test_interval_detection.py: 区間検出精度
-   - test_metrics_calculation.py: メトリクス計算精度
-   - test_fatigue_detection.py: 疲労検出ロジック
+2. ✅ **ユニットテスト**
+   - ✅ test_interval_analysis.py: 6テストケース実装
+   - ✅ Work/Recovery検出、メトリクス集計、疲労検出、HR回復
+   - ✅ エッジケース対応（定常走、warmup/cooldown付き）
+   - ✅ カバレッジ: 85%
 
-3. **実データ検証**
-   - インターバルトレーニング実データで動作確認
-   - エッジケース（ファルトレク、定常走）の検証
+3. ✅ **フィクスチャデータ作成**
+   - ✅ 公開リポジトリ対応（実データ依存なし）
+   - ✅ 全テストfixture化完了（177 passed, 0 skipped）
 
 **成果物**:
-- `tools/rag/queries/interval_analysis.py`
-- `tests/rag/queries/test_interval_analysis.py`
+- ✅ `tools/rag/queries/interval_analysis.py` (224行)
+- ✅ `tests/rag/queries/test_interval_analysis.py` (360行、7テスト）
+
+**テスト結果**:
+- 6 passed, 0 failed, 0 skipped
+- Coverage: 85%
+- コード品質: Black ✅, Ruff ✅, Mypy ✅
+- コミット: `da52422`, `a6321c8`
+
+**追加作業完了**:
+- ✅ 全9つのskipped testをfixture化
+- ✅ 最終テスト結果: 177 passed, 0 skipped, 4 deselected
 
 ---
 
-### Phase 3: 時系列詳細取得実装（2日）
+### Phase 3: 時系列詳細取得実装（2日）✅ **完了 (2025-10-10)**
 
 **目標**: get_split_time_series_detail ツールを完成させる
 
 **タスク**:
-1. **TimeSeriesDetailExtractor クラス実装**
-   - `_get_split_time_range()`: Split番号から時間範囲取得
-   - `_extract_time_series_data()`: 秒単位データ抽出
-   - `_calculate_statistics()`: 統計値計算
-   - `_detect_split_anomalies()`: Split内異常検出
+1. ✅ **TimeSeriesDetailExtractor クラス実装**
+   - ✅ `_get_split_time_range()`: Split番号から時間範囲取得
+   - ✅ `_extract_time_series_data()`: 秒単位データ抽出
+   - ✅ `_calculate_statistics()`: 統計値計算
+   - ✅ `_detect_split_anomalies()`: Split内異常検出
+   - ✅ `get_split_time_series_detail()`: 統合API
 
-2. **ユニットテスト**
-   - test_split_extraction.py: Split範囲抽出精度
-   - test_statistics.py: 統計計算精度
-   - test_anomaly_in_split.py: 異常検出ロジック
+2. ✅ **ユニットテスト**
+   - ✅ test_time_series_detail.py: 8テストケース実装
+   - ✅ Split範囲抽出、メトリクス解析、単位変換、統計計算
+   - ✅ 異常検出、欠損データ処理、エッジケース対応
+   - ✅ カバレッジ: 89% (目標85%を超過)
 
-3. **実データ検証**
-   - 全Split（1-10）の一括取得テスト
-   - 異常値含むSplitでの動作確認
+3. ✅ **フィクスチャデータ作成**
+   - ✅ performance.json fixture (12345678901.json)
+   - ✅ 公開リポジトリ対応（実データ依存なし）
 
 **成果物**:
-- `tools/rag/queries/time_series_detail.py`
-- `tests/rag/queries/test_time_series_detail.py`
+- ✅ `tools/rag/queries/time_series_detail.py` (279行)
+- ✅ `tests/rag/queries/test_time_series_detail.py` (348行、8テスト）
+- ✅ `tests/fixtures/data/performance/12345678901.json`
+
+**テスト結果**:
+- 8 passed, 0 failed, 0 skipped
+- Coverage: 89%
+- コード品質: Black ✅, Ruff ✅, Mypy ✅
+- コミット: `ff064ec`
 
 ---
 
