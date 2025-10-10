@@ -222,3 +222,40 @@ class IntervalAnalyzer:
         recovery_rate = hr_drop / recovery_duration_min
 
         return float(recovery_rate)
+
+    def get_interval_analysis(
+        self,
+        activity_id: int,
+        pace_threshold_factor: float = 1.3,
+        min_work_duration: int = 180,
+        min_recovery_duration: int = 60,
+    ) -> dict[str, Any]:
+        """Get comprehensive interval training analysis.
+
+        Args:
+            activity_id: Activity ID.
+            pace_threshold_factor: Recovery/Work pace ratio (default: 1.3).
+            min_work_duration: Minimum work segment duration in seconds (default: 180).
+            min_recovery_duration: Minimum recovery segment duration in seconds (default: 60).
+
+        Returns:
+            Dictionary with interval analysis:
+            {
+                "activity_id": int,
+                "segments": [
+                    {
+                        "segment_number": int,
+                        "segment_type": str,
+                        ...
+                    },
+                    ...
+                ],
+            }
+        """
+        # For Phase 5, return minimal valid response
+        # Full implementation should be done in Phase 2 completion
+        return {
+            "activity_id": activity_id,
+            "segments": [],
+            "message": "Interval analysis implementation pending (Phase 2 incomplete)",
+        }

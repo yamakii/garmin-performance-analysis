@@ -199,6 +199,73 @@ async def list_tools() -> list[Tool]:
                 "required": ["activity_id"],
             },
         ),
+        Tool(
+            name="get_interval_analysis",
+            description="Analyze interval training Work/Recovery segments with fatigue detection",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "activity_id": {"type": "integer"},
+                    "pace_threshold_factor": {
+                        "type": "number",
+                        "description": "Recovery/Work pace ratio (default: 1.3)",
+                    },
+                    "min_work_duration": {
+                        "type": "integer",
+                        "description": "Minimum work segment duration in seconds (default: 180)",
+                    },
+                    "min_recovery_duration": {
+                        "type": "integer",
+                        "description": "Minimum recovery segment duration in seconds (default: 60)",
+                    },
+                },
+                "required": ["activity_id"],
+            },
+        ),
+        Tool(
+            name="get_split_time_series_detail",
+            description="Get second-by-second detailed metrics for a specific 1km split",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "activity_id": {"type": "integer"},
+                    "split_number": {
+                        "type": "integer",
+                        "description": "Split number (1-based)",
+                    },
+                    "metrics": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of metric names to extract (optional)",
+                    },
+                },
+                "required": ["activity_id", "split_number"],
+            },
+        ),
+        Tool(
+            name="detect_form_anomalies",
+            description="Detect form metric anomalies and identify causes (elevation/pace/fatigue)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "activity_id": {"type": "integer"},
+                    "metrics": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Metrics to analyze (default: GCT, VO, VR)",
+                    },
+                    "z_threshold": {
+                        "type": "number",
+                        "description": "Z-score threshold for anomaly detection (default: 2.0)",
+                    },
+                    "context_window": {
+                        "type": "integer",
+                        "description": "Context window size in seconds (default: 30)",
+                    },
+                },
+                "required": ["activity_id"],
+            },
+        ),
     ]
 
 
@@ -404,6 +471,53 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     elif name == "get_splits_all":
         activity_id = arguments["activity_id"]
         result = db_reader.get_splits_all(activity_id)
+        return [
+            TextContent(
+                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+            )
+        ]
+
+    elif name == "get_interval_analysis":
+        from tools.rag.queries.interval_analysis import IntervalAnalyzer
+
+        analyzer = IntervalAnalyzer()
+        result = analyzer.get_interval_analysis(
+            activity_id=arguments["activity_id"],
+            pace_threshold_factor=arguments.get("pace_threshold_factor", 1.3),
+            min_work_duration=arguments.get("min_work_duration", 180),
+            min_recovery_duration=arguments.get("min_recovery_duration", 60),
+        )
+        return [
+            TextContent(
+                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+            )
+        ]
+
+    elif name == "get_split_time_series_detail":
+        from tools.rag.queries.time_series_detail import TimeSeriesDetailExtractor
+
+        extractor = TimeSeriesDetailExtractor()
+        result = extractor.get_split_time_series_detail(
+            activity_id=arguments["activity_id"],
+            split_number=arguments["split_number"],
+            metrics=arguments.get("metrics"),
+        )
+        return [
+            TextContent(
+                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+            )
+        ]
+
+    elif name == "detect_form_anomalies":
+        from tools.rag.queries.form_anomaly_detector import FormAnomalyDetector
+
+        detector = FormAnomalyDetector()
+        result = detector.detect_form_anomalies(
+            activity_id=arguments["activity_id"],
+            metrics=arguments.get("metrics"),
+            z_threshold=arguments.get("z_threshold", 2.0),
+            context_window=arguments.get("context_window", 30),
+        )
         return [
             TextContent(
                 type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
