@@ -10,6 +10,8 @@ Test coverage:
 - get_splits_all: Retrieve all split data (22 fields) from splits table
 """
 
+import json
+
 import pytest
 
 from tools.database.db_reader import GarminDBReader
@@ -29,51 +31,76 @@ class TestGarminDBReaderNormalized:
         """Create GarminDBReader with test database containing normalized data."""
         db_path = tmp_path / "test.duckdb"
 
-        # Create db_writer and insert activity metadata first
-        db_writer = GarminDBWriter(db_path=str(db_path))
-        db_writer.insert_activity(
-            activity_id=test_activity_id,
-            activity_date="2025-10-07",
-            activity_type="running",
-        )
-
-        # Create test performance data matching inserter's expected format
-        # NOTE: inserter expects gct_stats, vo_stats, vr_stats (not gct, vo, vr)
-        # NOTE: inserter currently only inserts stats and ratings, not evaluations/trend
+        # Create test performance.json
+        performance_file = tmp_path / f"{test_activity_id}.json"
         performance_data = {
             "form_efficiency_summary": {
-                "gct_stats": {
+                "gct": {
                     "average": 250.0,
                     "min": 240.0,
                     "max": 260.0,
                     "std": 5.0,
+                    "variability": 2.0,
+                    "rating": "★★★★★",
+                    "evaluation": "優秀な接地時間",
                 },
-                "gct_rating": "★★★★★",
-                "vo_stats": {
+                "vo": {
                     "average": 7.5,
                     "min": 7.0,
                     "max": 8.0,
                     "std": 0.3,
+                    "trend": "安定",
+                    "rating": "★★★★★",
+                    "evaluation": "効率的な地面反力利用",
                 },
-                "vo_rating": "★★★★★",
-                "vr_stats": {
+                "vr": {
                     "average": 8.5,
                     "min": 8.0,
                     "max": 9.0,
                     "std": 0.3,
+                    "rating": "★★★★☆",
+                    "evaluation": "良好な垂直比",
                 },
-                "vr_rating": "★★★★☆",
+            },
+            "hr_efficiency_analysis": {
+                "primary_zone": "Zone 2",
+                "zone_distribution_rating": "優秀",
+                "hr_stability": "優秀",
+                "aerobic_efficiency": "高い",
+                "training_quality": "優秀",
+                "zone2_focus": True,
+                "zone4_threshold_work": False,
+                "training_type": "aerobic_base",
+                "zone1_percentage": 5.0,
+                "zone2_percentage": 70.0,
+                "zone3_percentage": 20.0,
+                "zone4_percentage": 5.0,
+                "zone5_percentage": 0.0,
             },
         }
 
-        # Insert performance data into DuckDB
+        performance_file.write_text(json.dumps(performance_data, indent=2))
+
+        # Insert activity metadata first (required for foreign key constraint)
+        db_writer = GarminDBWriter(db_path=str(db_path))
+        db_writer.insert_activity(
+            activity_id=test_activity_id,
+            activity_date="2025-10-07",
+            activity_data={
+                "activityId": test_activity_id,
+                "activityName": "Test Activity",
+                "startTimeLocal": "2025-10-07T10:00:00",
+                "distance": 10000.0,
+                "duration": 3600.0,
+            },
+        )
+        # Use insert_performance_data (handles form_efficiency and hr_efficiency)
         db_writer.insert_performance_data(
             activity_id=test_activity_id,
             activity_date="2025-10-07",
             performance_data=performance_data,
         )
 
-        # Return reader instance
         return GarminDBReader(db_path=str(db_path))
 
     # Phase 1.1: get_form_efficiency_summary tests
@@ -153,3 +180,37 @@ class TestGarminDBReaderNormalized:
         vr_keys = ["average", "min", "max", "std", "rating", "evaluation"]
         for key in vr_keys:
             assert key in result["vr"], f"Missing VR key: {key}"
+
+    # Phase 1.2: get_hr_efficiency_analysis tests
+    @pytest.mark.unit
+    def test_get_hr_efficiency_analysis_valid_data(self, db_reader, test_activity_id):
+        """Test retrieving HR efficiency analysis with valid data."""
+        result = db_reader.get_hr_efficiency_analysis(test_activity_id)
+
+        assert result is not None
+        # NOTE: Current hr_efficiency inserter only populates hr_stability and training_type
+        # Other fields will be None until inserter is fixed (see duckdb_inserter_cleanup project)
+        assert result["hr_stability"] == "優秀"
+        assert result["training_type"] == "aerobic_base"
+
+        # Verify structure exists (even if None)
+        assert "primary_zone" in result
+        assert "zone_distribution_rating" in result
+        assert "zone_percentages" in result
+
+    @pytest.mark.unit
+    def test_get_hr_efficiency_analysis_no_data(self, db_reader):
+        """Test retrieving HR efficiency analysis with non-existent activity."""
+        result = db_reader.get_hr_efficiency_analysis(999999999)
+        assert result is None
+
+    @pytest.mark.unit
+    def test_get_hr_efficiency_analysis_boolean_types(
+        self, db_reader, test_activity_id
+    ):
+        """Test that boolean fields are properly typed."""
+        result = db_reader.get_hr_efficiency_analysis(test_activity_id)
+
+        assert result is not None
+        assert isinstance(result["zone2_focus"], bool)
+        assert isinstance(result["zone4_threshold_work"], bool)

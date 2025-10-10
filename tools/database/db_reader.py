@@ -436,3 +436,80 @@ class GarminDBReader:
         except Exception as e:
             logger.error(f"Error getting form efficiency summary: {e}")
             return None
+
+    def get_hr_efficiency_analysis(self, activity_id: int) -> dict[str, Any] | None:
+        """
+        Get HR efficiency analysis from hr_efficiency table.
+
+        Args:
+            activity_id: Activity ID
+
+        Returns:
+            HR efficiency data with zone distribution and training type.
+            Format: {
+                "primary_zone": str,
+                "zone_distribution_rating": str,
+                "hr_stability": str,
+                "aerobic_efficiency": str,
+                "training_quality": str,
+                "zone2_focus": bool,
+                "zone4_threshold_work": bool,
+                "training_type": str,
+                "zone_percentages": {
+                    "zone1": float, "zone2": float, "zone3": float,
+                    "zone4": float, "zone5": float
+                }
+            }
+            None if activity not found.
+        """
+        try:
+            conn = duckdb.connect(str(self.db_path), read_only=True)
+
+            result = conn.execute(
+                """
+                SELECT
+                    primary_zone,
+                    zone_distribution_rating,
+                    hr_stability,
+                    aerobic_efficiency,
+                    training_quality,
+                    zone2_focus,
+                    zone4_threshold_work,
+                    training_type,
+                    zone1_percentage,
+                    zone2_percentage,
+                    zone3_percentage,
+                    zone4_percentage,
+                    zone5_percentage
+                FROM hr_efficiency
+                WHERE activity_id = ?
+                """,
+                [activity_id],
+            ).fetchone()
+
+            conn.close()
+
+            if not result:
+                return None
+
+            return {
+                "primary_zone": result[0],
+                "zone_distribution_rating": result[1],
+                "hr_stability": result[2],
+                "aerobic_efficiency": result[3],
+                "training_quality": result[4],
+                "zone2_focus": bool(result[5]),
+                "zone4_threshold_work": bool(result[6]),
+                "training_type": result[7],
+                "zone_percentages": {
+                    "zone1": result[8],
+                    "zone2": result[9],
+                    "zone3": result[10],
+                    "zone4": result[11],
+                    "zone5": result[12],
+                },
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting HR efficiency analysis: {e}")
+            return None
