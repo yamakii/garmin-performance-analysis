@@ -118,18 +118,25 @@ class GarminIngestWorker:
         Args:
             db_path: Optional DuckDB path for activity date lookup
         """
+        from tools.utils.paths import (
+            get_performance_dir,
+            get_precheck_dir,
+            get_raw_dir,
+            get_weight_raw_dir,
+        )
+
         self.project_root = Path(__file__).parent.parent.parent
-        self.raw_dir = self.project_root / "data" / "raw"
-        self.performance_dir = self.project_root / "data" / "performance"
-        self.precheck_dir = self.project_root / "data" / "precheck"
-        self.weight_raw_dir = self.project_root / "data" / "raw" / "weight"  # NEW
+        self.raw_dir = get_raw_dir()
+        self.performance_dir = get_performance_dir()
+        self.precheck_dir = get_precheck_dir()
+        self.weight_raw_dir = get_weight_raw_dir()
 
         # Create directories
         for directory in [
             self.raw_dir,
             self.performance_dir,
             self.precheck_dir,
-            self.weight_raw_dir,  # NEW
+            self.weight_raw_dir,
         ]:
             directory.mkdir(parents=True, exist_ok=True)
 
