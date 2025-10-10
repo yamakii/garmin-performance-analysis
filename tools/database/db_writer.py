@@ -17,8 +17,13 @@ logger = logging.getLogger(__name__)
 class GarminDBWriter:
     """Write operations to DuckDB for Garmin performance data."""
 
-    def __init__(self, db_path: str = "data/database/garmin_performance.duckdb"):
+    def __init__(self, db_path: str | None = None):
         """Initialize DuckDB writer with database path."""
+        if db_path is None:
+            from tools.utils.paths import get_database_dir
+
+            db_path = str(get_database_dir() / "garmin_performance.duckdb")
+
         self.db_path = Path(db_path)
         self._ensure_tables()
 
