@@ -1,0 +1,150 @@
+{
+  "activity": {
+    "activityId": 20594901208,
+    "summaryDTO": {
+      "trainingEffect": 3.2,
+      "anaerobicTrainingEffect": 1.8,
+      "distance": 10000.0,
+      "duration": 3600.0
+    }
+  },
+  "splits": {
+    "lapDTOs": [
+      {
+        "lapIndex": 1,
+        "distance": 1000.0,
+        "duration": 360.0,
+        "avgHr": 150,
+        "maxHr": 155,
+        "avgRunCadence": 180,
+        "avgSpeed": 2.78,
+        "avgGroundContactTime": 250,
+        "avgVerticalOscillation": 80,
+        "avgVerticalRatio": 8.5,
+        "avgStrideLength": 1.54
+      },
+      {
+        "lapIndex": 2,
+        "distance": 1000.0,
+        "duration": 360.0,
+        "avgHr": 150,
+        "maxHr": 155,
+        "avgRunCadence": 180,
+        "avgSpeed": 2.78,
+        "avgGroundContactTime": 250,
+        "avgVerticalOscillation": 80,
+        "avgVerticalRatio": 8.5,
+        "avgStrideLength": 1.54
+      },
+      {
+        "lapIndex": 3,
+        "distance": 1000.0,
+        "duration": 360.0,
+        "avgHr": 150,
+        "maxHr": 155,
+        "avgRunCadence": 180,
+        "avgSpeed": 2.78,
+        "avgGroundContactTime": 250,
+        "avgVerticalOscillation": 80,
+        "avgVerticalRatio": 8.5,
+        "avgStrideLength": 1.54
+      },
+      {
+        "lapIndex": 4,
+        "distance": 1000.0,
+        "duration": 360.0,
+        "avgHr": 150,
+        "maxHr": 155,
+        "avgRunCadence": 180,
+        "avgSpeed": 2.78,
+        "avgGroundContactTime": 250,
+        "avgVerticalOscillation": 80,
+        "avgVerticalRatio": 8.5,
+        "avgStrideLength": 1.54
+      },
+      {
+        "lapIndex": 5,
+        "distance": 1000.0,
+        "duration": 360.0,
+        "avgHr": 150,
+        "maxHr": 155,
+        "avgRunCadence": 180,
+        "avgSpeed": 2.78,
+        "avgGroundContactTime": 250,
+        "avgVerticalOscillation": 80,
+        "avgVerticalRatio": 8.5,
+        "avgStrideLength": 1.54
+      },
+      {
+        "lapIndex": 6,
+        "distance": 1000.0,
+        "duration": 360.0,
+        "avgHr": 150,
+        "maxHr": 155,
+        "avgRunCadence": 180,
+        "avgSpeed": 2.78,
+        "avgGroundContactTime": 250,
+        "avgVerticalOscillation": 80,
+        "avgVerticalRatio": 8.5,
+        "avgStrideLength": 1.54
+      },
+      {
+        "lapIndex": 7,
+        "distance": 1000.0,
+        "duration": 360.0,
+        "avgHr": 150,
+        "maxHr": 155,
+        "avgRunCadence": 180,
+        "avgSpeed": 2.78,
+        "avgGroundContactTime": 250,
+        "avgVerticalOscillation": 80,
+        "avgVerticalRatio": 8.5,
+        "avgStrideLength": 1.54
+      },
+      {
+        "lapIndex": 8,
+        "distance": 1000.0,
+        "duration": 360.0,
+        "avgHr": 150,
+        "maxHr": 155,
+        "avgRunCadence": 180,
+        "avgSpeed": 2.78,
+        "avgGroundContactTime": 250,
+        "avgVerticalOscillation": 80,
+        "avgVerticalRatio": 8.5,
+        "avgStrideLength": 1.54
+      },
+      {
+        "lapIndex": 9,
+        "distance": 1000.0,
+        "duration": 360.0,
+        "avgHr": 150,
+        "maxHr": 155,
+        "avgRunCadence": 180,
+        "avgSpeed": 2.78,
+        "avgGroundContactTime": 250,
+        "avgVerticalOscillation": 80,
+        "avgVerticalRatio": 8.5,
+        "avgStrideLength": 1.54
+      },
+      {
+        "lapIndex": 10,
+        "distance": 1000.0,
+        "duration": 360.0,
+        "avgHr": 150,
+        "maxHr": 155,
+        "avgRunCadence": 180,
+        "avgSpeed": 2.78,
+        "avgGroundContactTime": 250,
+        "avgVerticalOscillation": 80,
+        "avgVerticalRatio": 8.5,
+        "avgStrideLength": 1.54
+      }
+    ]
+  },
+  "weather": {
+    "temp": 20,
+    "humidity": 65,
+    "windSpeed": 5
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "basic_metrics": {
+    "distance_km": 10.0,
+    "duration_seconds": 3600.0,
+    "avg_hr": 150,
+    "max_hr": 155
+  },
+  "heart_rate_zones": {},
+  "split_metrics": [
+    {"lap_index": 1, "distance_km": 1.0, "duration_seconds": 360.0, "avg_hr": 150, "max_hr": 155, "avg_cadence": 180, "avg_speed_mps": 2.78, "avg_gct_ms": 250, "avg_vo_cm": 80, "avg_vr_percent": 8.5, "avg_stride_length_m": 1.54},
+    {"lap_index": 2, "distance_km": 1.0, "duration_seconds": 360.0, "avg_hr": 150, "max_hr": 155, "avg_cadence": 180, "avg_speed_mps": 2.78, "avg_gct_ms": 250, "avg_vo_cm": 80, "avg_vr_percent": 8.5, "avg_stride_length_m": 1.54},
+    {"lap_index": 3, "distance_km": 1.0, "duration_seconds": 360.0, "avg_hr": 150, "max_hr": 155, "avg_cadence": 180, "avg_speed_mps": 2.78, "avg_gct_ms": 250, "avg_vo_cm": 80, "avg_vr_percent": 8.5, "avg_stride_length_m": 1.54},
+    {"lap_index": 4, "distance_km": 1.0, "duration_seconds": 360.0, "avg_hr": 150, "max_hr": 155, "avg_cadence": 180, "avg_speed_mps": 2.78, "avg_gct_ms": 250, "avg_vo_cm": 80, "avg_vr_percent": 8.5, "avg_stride_length_m": 1.54},
+    {"lap_index": 5, "distance_km": 1.0, "duration_seconds": 360.0, "avg_hr": 150, "max_hr": 155, "avg_cadence": 180, "avg_speed_mps": 2.78, "avg_gct_ms": 250, "avg_vo_cm": 80, "avg_vr_percent": 8.5, "avg_stride_length_m": 1.54},
+    {"lap_index": 6, "distance_km": 1.0, "duration_seconds": 360.0, "avg_hr": 150, "max_hr": 155, "avg_cadence": 180, "avg_speed_mps": 2.78, "avg_gct_ms": 250, "avg_vo_cm": 80, "avg_vr_percent": 8.5, "avg_stride_length_m": 1.54},
+    {"lap_index": 7, "distance_km": 1.0, "duration_seconds": 360.0, "avg_hr": 150, "max_hr": 155, "avg_cadence": 180, "avg_speed_mps": 2.78, "avg_gct_ms": 250, "avg_vo_cm": 80, "avg_vr_percent": 8.5, "avg_stride_length_m": 1.54},
+    {"lap_index": 8, "distance_km": 1.0, "duration_seconds": 360.0, "avg_hr": 150, "max_hr": 155, "avg_cadence": 180, "avg_speed_mps": 2.78, "avg_gct_ms": 250, "avg_vo_cm": 80, "avg_vr_percent": 8.5, "avg_stride_length_m": 1.54},
+    {"lap_index": 9, "distance_km": 1.0, "duration_seconds": 360.0, "avg_hr": 150, "max_hr": 155, "avg_cadence": 180, "avg_speed_mps": 2.78, "avg_gct_ms": 250, "avg_vo_cm": 80, "avg_vr_percent": 8.5, "avg_stride_length_m": 1.54},
+    {"lap_index": 10, "distance_km": 1.0, "duration_seconds": 360.0, "avg_hr": 150, "max_hr": 155, "avg_cadence": 180, "avg_speed_mps": 2.78, "avg_gct_ms": 250, "avg_vo_cm": 80, "avg_vr_percent": 8.5, "avg_stride_length_m": 1.54}
+  ],
+  "efficiency_metrics": {},
+  "training_effect": {
+    "aerobicTrainingEffect": 3.2,
+    "anaerobicTrainingEffect": 1.8
+  },
+  "power_to_weight": {},
+  "vo2_max": {},
+  "lactate_threshold": {},
+  "form_efficiency_summary": {},
+  "hr_efficiency_analysis": {},
+  "performance_trends": {}
+}

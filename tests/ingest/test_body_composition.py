@@ -314,33 +314,40 @@ class TestCollectBodyCompositionData:
 class TestBackwardCompatibility:
     """Tests for backward compatibility with existing data."""
 
-    def test_process_existing_raw_data_new_structure(self):
+    def test_process_existing_raw_data_new_structure(
+        self, worker, sample_weight_data, test_date
+    ):
         """
-        Test that existing raw data in new structure can be processed.
+        Test that weight data in new structure can be processed.
 
-        This test uses real production data to ensure the new logic works
-        with migrated files.
+        Uses fixture data to ensure the new logic works without
+        requiring real production data.
         """
-        # Use production worker with real paths
-        worker = GarminIngestWorker()
+        target_date = test_date
 
-        # Test with a known date that has migrated data
-        test_date = "2025-10-03"
-        raw_file = worker.weight_raw_dir / f"{test_date}.json"  # NEW path
+        # Create weight data files for 7 days (for median calculation)
+        from datetime import datetime, timedelta
 
-        # Skip test if raw data doesn't exist
-        if not raw_file.exists():
-            pytest.skip(f"Raw data not found for {test_date}")
+        for i in range(7):
+            date_obj = datetime.strptime(target_date, "%Y-%m-%d") - timedelta(days=i)
+            date_str = date_obj.strftime("%Y-%m-%d")
+
+            # Vary weights slightly for median calculation
+            weight_data = sample_weight_data.copy()
+            weight_data["dateWeightList"][0]["weight"] = 65000 + (i * 100)
+            weight_data["dateWeightList"][0]["calendarDate"] = date_str
+
+            create_weight_cache_file(worker.weight_raw_dir, date_str, weight_data)
 
         # Calculate median using new logic
-        median_data = worker._calculate_median_weight(test_date)
+        median_data = worker._calculate_median_weight(target_date)
 
         # Verify median calculation succeeded
         assert (
             median_data is not None
-        ), "Median calculation should succeed with existing data"
+        ), "Median calculation should succeed with fixture data"
         assert "weight_kg" in median_data
-        assert median_data["sample_count"] > 0
+        assert median_data["sample_count"] == 7
 
         # Verify data structure
         expected_fields = [
@@ -362,39 +369,36 @@ class TestBackwardCompatibility:
             40 <= median_data["weight_kg"] <= 150
         ), f"Weight {median_data['weight_kg']}kg is unreasonable"
 
-        print(f"\nNew structure validation passed for {test_date}")
-        print(f"  Raw file: {raw_file}")
-        print(f"  Weight: {median_data['weight_kg']:.3f} kg")
-        print(f"  Sample count: {median_data['sample_count']}")
-
-    def test_median_calculation_with_new_structure(self):
+    def test_median_calculation_with_new_structure(
+        self, worker, sample_weight_data, test_date
+    ):
         """
         Test that median calculation works with new file structure.
 
         Verifies that the median calculation produces consistent results
-        with the new path structure.
+        with the new path structure using fixture data.
         """
-        worker = GarminIngestWorker()
+        target_date = test_date
 
-        # Use a date with existing raw data
-        test_date = "2025-10-03"
-        raw_file = worker.weight_raw_dir / f"{test_date}.json"
+        # Create weight data files for median calculation
+        from datetime import datetime, timedelta
 
-        # Skip if no raw data
-        if not raw_file.exists():
-            pytest.skip(f"Raw data not found for {test_date}")
+        for i in range(5):
+            date_obj = datetime.strptime(target_date, "%Y-%m-%d") - timedelta(days=i)
+            date_str = date_obj.strftime("%Y-%m-%d")
+
+            weight_data = sample_weight_data.copy()
+            weight_data["dateWeightList"][0]["weight"] = 65000 + (i * 50)
+            weight_data["dateWeightList"][0]["calendarDate"] = date_str
+
+            create_weight_cache_file(worker.weight_raw_dir, date_str, weight_data)
 
         # Calculate median
-        median_data = worker._calculate_median_weight(test_date)
+        median_data = worker._calculate_median_weight(target_date)
         assert median_data is not None
 
         # Verify median data structure
-        assert median_data["date"] == test_date
+        assert median_data["date"] == target_date
         assert median_data["source"] == "7DAY_MEDIAN"
-        assert median_data["sample_count"] > 0
+        assert median_data["sample_count"] == 5
         assert median_data["weight_kg"] > 0
-
-        print(f"\nMedian calculation validation passed for {test_date}")
-        print(f"  Weight: {median_data['weight_kg']:.3f} kg")
-        print(f"  Source: {median_data['source']}")
-        print(f"  Sample count: {median_data['sample_count']}")

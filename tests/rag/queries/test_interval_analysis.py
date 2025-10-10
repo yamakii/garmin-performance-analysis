@@ -318,10 +318,115 @@ def test_interval_analysis_with_warmup_cooldown(interval_analyzer: IntervalAnaly
 
 @pytest.mark.integration
 def test_interval_analysis_real_activity(interval_analyzer: IntervalAnalyzer):
-    """Integration test with real activity data.
+    """Integration test with fixture activity data.
 
-    Note: This test uses real activity data if available.
-    Skipped if data is not present.
+    Uses fixture interval training data to test the full analysis pipeline.
     """
-    # This will be implemented when we have real interval training data
-    pytest.skip("Requires real interval training activity data")
+    # Create realistic interval training splits (warmup + 3x work/recovery + cooldown)
+    interval_training_splits = [
+        # Warmup
+        {
+            "split_number": 1,
+            "avg_pace_min_per_km": 6.0,
+            "avg_hr_bpm": 130,
+            "avg_gct_ms": 240,
+            "avg_vo_cm": 8.5,
+            "avg_vr_percent": 9.2,
+            "start_time_s": 0,
+            "end_time_s": 300,
+        },
+        # Work 1
+        {
+            "split_number": 2,
+            "avg_pace_min_per_km": 4.0,
+            "avg_hr_bpm": 175,
+            "avg_gct_ms": 210,
+            "avg_vo_cm": 7.8,
+            "avg_vr_percent": 8.5,
+            "start_time_s": 300,
+            "end_time_s": 540,
+        },
+        # Recovery 1
+        {
+            "split_number": 3,
+            "avg_pace_min_per_km": 5.5,
+            "avg_hr_bpm": 145,
+            "avg_gct_ms": 225,
+            "avg_vo_cm": 8.2,
+            "avg_vr_percent": 9.0,
+            "start_time_s": 540,
+            "end_time_s": 720,
+        },
+        # Work 2
+        {
+            "split_number": 4,
+            "avg_pace_min_per_km": 4.1,
+            "avg_hr_bpm": 177,
+            "avg_gct_ms": 212,
+            "avg_vo_cm": 7.9,
+            "avg_vr_percent": 8.6,
+            "start_time_s": 720,
+            "end_time_s": 960,
+        },
+        # Recovery 2
+        {
+            "split_number": 5,
+            "avg_pace_min_per_km": 5.6,
+            "avg_hr_bpm": 143,
+            "avg_gct_ms": 227,
+            "avg_vo_cm": 8.3,
+            "avg_vr_percent": 9.1,
+            "start_time_s": 960,
+            "end_time_s": 1140,
+        },
+        # Work 3
+        {
+            "split_number": 6,
+            "avg_pace_min_per_km": 4.2,
+            "avg_hr_bpm": 180,
+            "avg_gct_ms": 215,
+            "avg_vo_cm": 8.0,
+            "avg_vr_percent": 8.7,
+            "start_time_s": 1140,
+            "end_time_s": 1380,
+        },
+        # Recovery 3
+        {
+            "split_number": 7,
+            "avg_pace_min_per_km": 5.7,
+            "avg_hr_bpm": 140,
+            "avg_gct_ms": 230,
+            "avg_vo_cm": 8.4,
+            "avg_vr_percent": 9.2,
+            "start_time_s": 1380,
+            "end_time_s": 1560,
+        },
+        # Cooldown
+        {
+            "split_number": 8,
+            "avg_pace_min_per_km": 6.5,
+            "avg_hr_bpm": 125,
+            "avg_gct_ms": 245,
+            "avg_vo_cm": 8.8,
+            "avg_vr_percent": 9.5,
+            "start_time_s": 1560,
+            "end_time_s": 1860,
+        },
+    ]
+
+    # Test full interval analysis pipeline
+    intervals = interval_analyzer.detect_intervals(interval_training_splits)
+
+    # Should detect multiple intervals
+    assert len(intervals) >= 7  # warmup + 3 work + 3 recovery + cooldown
+
+    # Should have work and recovery intervals
+    segment_types = [interval["segment_type"] for interval in intervals]
+    assert "work" in segment_types
+    assert "recovery" in segment_types
+
+    # Should detect fatigue (if implemented)
+    work_intervals = [i for i in intervals if i.get("segment_type") == "work"]
+    if len(work_intervals) >= 2:
+        fatigue = interval_analyzer.detect_fatigue(work_intervals)
+        assert fatigue is not None

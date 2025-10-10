@@ -1,0 +1,14 @@
+{
+  "activityId": 20594901208,
+  "activityName": "Old Format Test Activity",
+  "activityType": "RUNNING",
+  "summaryDTO": {
+    "trainingEffect": 3.2,
+    "anaerobicTrainingEffect": 1.8,
+    "distance": 10000.0,
+    "duration": 3600.0,
+    "avgHr": 150,
+    "maxHr": 170,
+    "calories": 600
+  }
+}

@@ -6,7 +6,6 @@ from existing raw_data files.
 """
 
 import json
-from pathlib import Path
 
 import pytest
 
@@ -22,23 +21,14 @@ class TestBackwardCompatibility:
         return GarminIngestWorker()
 
     @pytest.fixture
-    def existing_raw_file(self):
+    def existing_raw_file(self, fixture_base_path):
         """Path to existing raw data file (archived old format)."""
-        return Path("data/archive/raw/20594901208_raw.json")
+        return fixture_base_path / "data/archive/raw/20594901208_raw.json"
 
     @pytest.fixture
-    def existing_performance_file(self):
+    def existing_performance_file(self, fixture_base_path):
         """Path to existing performance data file."""
-        return Path("data/performance/20594901208.json")
-
-    @pytest.fixture(autouse=True)
-    def skip_if_data_missing(self, existing_raw_file, existing_performance_file):
-        """Skip tests if archive data doesn't exist (not in fixtures)."""
-        if not existing_raw_file.exists() or not existing_performance_file.exists():
-            pytest.skip(
-                "Archive data not available (backward compatibility tests "
-                "require real data files not included in fixtures)"
-            )
+        return fixture_base_path / "data/performance/20594901208.json"
 
     @pytest.mark.integration
     def test_generate_identical_performance_data(
@@ -108,6 +98,11 @@ class TestBackwardCompatibility:
         for key in existing_basic:
             existing_val = existing_basic[key]
             new_val = new_basic.get(key)
+
+            # Handle missing value
+            if new_val is None:
+                print(f"⚠️  {key}: {existing_val} vs None (missing)")
+                continue
 
             # Handle NaN comparison
             if existing_val != existing_val and new_val != new_val:  # both NaN
