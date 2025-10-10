@@ -361,3 +361,78 @@ class GarminDBReader:
         except Exception as e:
             logger.error(f"Error getting splits elevation data: {e}")
             return {"splits": []}
+
+    def get_form_efficiency_summary(self, activity_id: int) -> dict[str, Any] | None:
+        """
+        Get form efficiency summary from form_efficiency table.
+
+        Args:
+            activity_id: Activity ID
+
+        Returns:
+            Form efficiency data with GCT, VO, VR metrics and ratings.
+            Format: {
+                "gct": {"average": float, "min": float, "max": float, "std": float,
+                        "variability": float, "rating": str, "evaluation": str},
+                "vo": {"average": float, "min": float, "max": float, "std": float,
+                       "trend": str, "rating": str, "evaluation": str},
+                "vr": {"average": float, "min": float, "max": float, "std": float,
+                       "rating": str, "evaluation": str}
+            }
+            None if activity not found.
+        """
+        try:
+            conn = duckdb.connect(str(self.db_path), read_only=True)
+
+            result = conn.execute(
+                """
+                SELECT
+                    gct_average, gct_min, gct_max, gct_std, gct_variability,
+                    gct_rating, gct_evaluation,
+                    vo_average, vo_min, vo_max, vo_std, vo_trend,
+                    vo_rating, vo_evaluation,
+                    vr_average, vr_min, vr_max, vr_std,
+                    vr_rating, vr_evaluation
+                FROM form_efficiency
+                WHERE activity_id = ?
+                """,
+                [activity_id],
+            ).fetchone()
+
+            conn.close()
+
+            if not result:
+                return None
+
+            return {
+                "gct": {
+                    "average": result[0],
+                    "min": result[1],
+                    "max": result[2],
+                    "std": result[3],
+                    "variability": result[4],
+                    "rating": result[5],
+                    "evaluation": result[6],
+                },
+                "vo": {
+                    "average": result[7],
+                    "min": result[8],
+                    "max": result[9],
+                    "std": result[10],
+                    "trend": result[11],
+                    "rating": result[12],
+                    "evaluation": result[13],
+                },
+                "vr": {
+                    "average": result[14],
+                    "min": result[15],
+                    "max": result[16],
+                    "std": result[17],
+                    "rating": result[18],
+                    "evaluation": result[19],
+                },
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting form efficiency summary: {e}")
+            return None
