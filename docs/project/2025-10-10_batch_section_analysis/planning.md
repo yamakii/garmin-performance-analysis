@@ -10,22 +10,30 @@
 ## 要件定義
 
 ### 目的
-5つのセクション分析エージェント（split, phase, summary, efficiency, environment）を並列実行するバッチ処理システムを実装し、複数アクティビティの分析を効率的に処理する。パフォーマンスデータは既にDuckDBに格納されており、レポート生成は別プロセスで行う。
+DuckDBに格納された複数アクティビティに対して、5つのセクション分析エージェント（split, phase, summary, efficiency, environment）を効率的に実行するための**プロンプト生成システム**を実装する。
+
+**重要な設計方針:**
+- Python workerは**プロンプト生成のみ**を行う（エージェント自動実行はしない）
+- 生成されたプロンプトをユーザーがClaude Codeにコピペして実行
+- 1エージェント = 10活動処理（エージェント起動オーバーヘッドを90%削減）
+- パフォーマンスデータは既にDuckDBに格納済み
+- レポート生成は別プロセスで行う
 
 ### 解決する問題
 
 **現状の課題:**
 - 現在は手動で各アクティビティに対して5つのエージェントを逐次的に呼び出す必要がある
 - 50アクティビティの場合、50 × 5 = 250回のエージェント呼び出しが必要
+- **エージェント起動オーバーヘッド**が深刻：各起動に5-10秒 = 20-40分のオーバーヘッド
 - 逐次処理では1アクティビティあたり約5分 × 50 = 250分（4.2時間）かかる
-- 進捗の追跡やエラー処理が手動管理で非効率
-- 処理が中断した場合、どこから再開すべきか不明
+- どのアクティビティを分析すべきか手動で確認が必要
+- プロンプトを毎回手動で作成する必要がある
 
 **影響:**
-- 大量のアクティビティ分析に時間がかかりすぎる
-- 処理中断時のリカバリーが困難
-- エラーの一元管理ができない
-- リソースの非効率的な利用（並列化できるのに逐次処理）
+- 大量のアクティビティ分析に時間がかかりすぎる（4時間以上）
+- エージェント起動オーバーヘッドが実分析時間の15-20%を占める
+- DuckDBからの対象抽出が手動で非効率
+- プロンプト作成の手間とミス
 
 ### ユースケース
 
@@ -51,30 +59,24 @@
 ### アーキテクチャ
 
 **設計方針:**
-1. **並列化**: 複数アクティビティ × 5エージェント = 10-15並列タスク
-2. **進捗管理**: JSON形式で進捗を記録し、中断時に再開可能
-3. **エラーハンドリング**: 個別タスクのエラーでバッチ全体が停止しない
-4. **DuckDB統合**: activities テーブルと section_analyses テーブルを活用
-5. **Claude Code Task API**: エージェント呼び出しには Task API を使用（想定）
+1. **プロンプト生成**: Pythonで実行プロンプトを自動生成
+2. **エージェント最適化**: 1エージェント = 10活動処理（起動オーバーヘッド90%削減）
+3. **DuckDB統合**: activities テーブルから対象抽出、section_analyses テーブルで完了確認
+4. **セミオートメーション**: ユーザーが生成プロンプトをClaude Codeにコピペ実行
+5. **進捗管理**: 完了状況をDuckDBで管理（別途進捗ファイル不要）
 
 **コンポーネント構成:**
 ```
-BatchSectionAnalyzer (メインクラス)
+BatchPromptGenerator (メインクラス)
   ├─ ActivityQuery
   │   ├─ query_all_activities(): 全アクティビティ取得
   │   ├─ query_missing_analyses(): 未分析アクティビティ取得
   │   └─ filter_by_date_range(): 日付範囲フィルター
   │
-  ├─ ProgressTracker
-  │   ├─ load_progress(): 進捗JSONを読み込み
-  │   ├─ save_progress(): 進捗を保存
-  │   ├─ mark_completed(): タスク完了マーク
-  │   └─ get_pending_tasks(): 未完了タスクを取得
-  │
-  ├─ BatchExecutor
-  │   ├─ launch_agents_parallel(): 並列エージェント起動
-  │   ├─ wait_for_completion(): 完了待機
-  │   └─ collect_results(): 結果収集
+  ├─ PromptGenerator
+  │   ├─ generate_agent_prompt(): 単一エージェント用プロンプト生成
+  │   ├─ generate_batch_prompts(): 全5エージェント用プロンプト生成
+  │   └─ format_activity_list(): アクティビティリストのフォーマット
   │
   └─ ResultVerifier
       ├─ verify_completion(): DuckDBで完了確認
@@ -85,105 +87,153 @@ BatchSectionAnalyzer (メインクラス)
 **処理フロー:**
 ```
 1. ActivityQuery: DuckDBから対象アクティビティ取得
+   - 全件 or 日付範囲 or 未分析のみ
    ↓
-2. ProgressTracker: 既存進捗を読み込み（再開時）
+2. Grouping: 10活動ずつのグループに分割
+   - 50活動 → 5グループ
    ↓
-3. BatchExecutor: バッチ実行
-   For each batch (2-3 activities):
-     For each activity:
-       Launch 5 agents in parallel:
-         - split-section-analyst
-         - phase-section-analyst
-         - summary-section-analyst
-         - efficiency-section-analyst
-         - environment-section-analyst
-     Wait for batch completion
-     Save progress
+3. PromptGenerator: 各エージェント用プロンプト生成
+   For each agent (split, phase, summary, efficiency, environment):
+     Generate prompt with 10 activities list
    ↓
-4. ResultVerifier: DuckDBで完了確認
+4. Output: プロンプトをファイル/コンソールに出力
+   - 例: batch_prompts.txt
    ↓
-5. Summary: 実行結果サマリー表示
+5. [Manual Step] ユーザーがClaude Codeにコピペ実行
+   - 5エージェントが並列実行
+   - 各エージェントは10活動を順次処理
+   ↓
+6. Verification: DuckDBで完了確認（次回実行前）
+   - 未完了アクティビティを特定
+   - 再実行が必要かチェック
 ```
 
-**並列化戦略:**
-```
-Sequential (現状):
-Activity 1 → Agent 1,2,3,4,5 (5分)
-Activity 2 → Agent 1,2,3,4,5 (5分)
-...
-Total: 50 activities × 5min = 250min (4.2h)
+**最適化戦略:**
 
-Parallel (提案):
-Batch 1: Activity 1-3 × 5 agents = 15 parallel tasks (5分)
-Batch 2: Activity 4-6 × 5 agents = 15 parallel tasks (5分)
-...
-Total: 17 batches × 5min = 85min (1.4h)
+**問題: エージェント起動オーバーヘッド**
+```
+現状 (1 activity = 5 agents):
+50 activities × 5 agents = 250 agent invocations
+各起動 5-10秒 = 20-40分のオーバーヘッド（総時間の15-20%）
 ```
 
-**並列度の制限:**
-- バッチサイズ: 2-3 activities（デフォルト: 3）
-- 並列タスク数: 10-15（Claude Code Task API制限を考慮）
-- リトライ: エラー発生時に最大3回リトライ
+**解決策: 1 agent = 複数 activities**
+```
+改善案 (1 agent = 10 activities):
+50 activities / 10 per agent = 5 groups
+5 groups × 5 agents = 25 agent invocations
+各起動 5-10秒 = 2-4分のオーバーヘッド（10分の1！）
+```
+
+**実行時間の比較:**
+
+| 方式 | Agent起動数 | オーバーヘッド | 並列度 | 総実行時間（50活動） |
+|------|------------|--------------|--------|---------------------|
+| 現行 (1活動=5エージェント) | 250 | 20-40分 | 5-15 | 2.5-3時間 |
+| **改善案 (1エージェント=10活動)** | **25** | **2-4分** | **5** | **1.5-2時間** |
+
+**期待される効果:**
+- エージェント起動回数: 90%削減（250 → 25）
+- オーバーヘッド時間: 90%削減（20-40分 → 2-4分）
+- 総実行時間: 30-40%高速化
+- 並列実行: 5エージェント同時実行で効率化
 
 ### データモデル
 
-**Input:**
+**Input (DuckDB activities table):**
 ```sql
--- DuckDB activities table
+-- 全アクティビティ取得
 SELECT activity_id, date
 FROM activities
-WHERE date >= '2025-01-01'
+ORDER BY date DESC;
+
+-- 未分析アクティビティ取得
+SELECT a.activity_id, a.date
+FROM activities a
+LEFT JOIN (
+  SELECT activity_id, COUNT(DISTINCT section_type) as section_count
+  FROM section_analyses
+  GROUP BY activity_id
+) s ON a.activity_id = s.activity_id
+WHERE s.section_count IS NULL OR s.section_count < 5
+ORDER BY a.date DESC;
+
+-- 日付範囲フィルター
+SELECT activity_id, date
+FROM activities
+WHERE date BETWEEN '2025-01-01' AND '2025-12-31'
 ORDER BY date DESC;
 ```
 
-**Progress JSON:**
-```json
-{
-  "version": "1.0",
-  "start_time": "2025-10-10T10:00:00Z",
-  "last_update": "2025-10-10T10:15:00Z",
-  "total_activities": 50,
-  "completed_activities": 15,
-  "failed_activities": 2,
-  "tasks": [
-    {
-      "activity_id": 20615445009,
-      "date": "2025-10-07",
-      "status": "completed",
-      "sections": {
-        "split": {"status": "success", "completed_at": "2025-10-10T10:05:00Z"},
-        "phase": {"status": "success", "completed_at": "2025-10-10T10:05:30Z"},
-        "summary": {"status": "success", "completed_at": "2025-10-10T10:06:00Z"},
-        "efficiency": {"status": "success", "completed_at": "2025-10-10T10:06:30Z"},
-        "environment": {"status": "success", "completed_at": "2025-10-10T10:07:00Z"}
-      }
-    },
-    {
-      "activity_id": 20612340123,
-      "date": "2025-10-06",
-      "status": "failed",
-      "sections": {
-        "split": {"status": "success", "completed_at": "2025-10-10T10:08:00Z"},
-        "phase": {"status": "error", "error": "Timeout", "retry_count": 3}
-      }
-    }
-  ]
-}
+**Output (Generated Prompts):**
+```text
+=== Batch Section Analysis Prompts ===
+Target Activities: 50 (5 groups of 10 activities each)
+Agent Overhead Reduction: 90% (250 → 25 invocations)
+Expected Time: 1.5-2 hours
+
+Copy and paste the following prompts into Claude Code:
+
+---
+
+Task: split-section-analyst
+prompt: """
+以下のアクティビティを順次分析してください:
+
+1. Activity ID 20615445009 (2025-10-07)
+2. Activity ID 20612340123 (2025-10-06)
+3. Activity ID 20609870456 (2025-10-05)
+...
+10. Activity ID 20580123789 (2025-09-26)
+
+各アクティビティについて:
+- get_splits_pace_hr() でペース・心拍データ取得
+- get_splits_form_metrics() でフォームデータ取得
+- 全スプリットを分析
+- insert_section_analysis_dict() で保存
+
+処理状況を報告してください:
+✅ Activity {id} ({date}) - 完了
+"""
+
+Task: phase-section-analyst
+prompt: """
+以下のアクティビティのフェーズ評価を実行してください:
+...
+"""
+
+Task: summary-section-analyst
+prompt: """
+以下のアクティビティのタイプ判定と総合評価を生成してください:
+...
+"""
+
+Task: efficiency-section-analyst
+prompt: """
+以下のアクティビティのフォーム効率と心拊効率を分析してください:
+...
+"""
+
+Task: environment-section-analyst
+prompt: """
+以下のアクティビティの環境要因の影響を分析してください:
+...
+"""
 ```
 
-**Output (DuckDB section_analyses table):**
+**Verification (DuckDB section_analyses table):**
 ```sql
--- 各アクティビティで5レコード挿入される
-SELECT activity_id, section_type, created_at
+-- 完了確認: 各アクティビティで5セクション存在するか
+SELECT
+  activity_id,
+  COUNT(DISTINCT section_type) as completed_sections,
+  STRING_AGG(section_type, ', ') as sections
 FROM section_analyses
-WHERE activity_id = 20615445009;
+WHERE activity_id IN (20615445009, 20612340123, ...)
+GROUP BY activity_id
+HAVING COUNT(DISTINCT section_type) < 5;
 
--- Expected result:
--- 20615445009 | split      | 2025-10-10 10:05:00
--- 20615445009 | phase      | 2025-10-10 10:05:30
--- 20615445009 | summary    | 2025-10-10 10:06:00
--- 20615445009 | efficiency | 2025-10-10 10:06:30
--- 20615445009 | environment| 2025-10-10 10:07:00
+-- 期待される結果: 空（全て完了している場合）
 ```
 
 ### API/インターフェース設計
@@ -197,24 +247,20 @@ import duckdb
 
 SectionType = Literal["split", "phase", "summary", "efficiency", "environment"]
 
-class BatchSectionAnalyzer:
-    """Batch processing system for section analysis agents."""
+class BatchPromptGenerator:
+    """Batch prompt generator for section analysis agents."""
 
     def __init__(
         self,
         db_path: Path | None = None,
-        progress_file: Path | None = None,
-        batch_size: int = 3,
-        max_retries: int = 3,
+        activities_per_agent: int = 10,
     ):
         """
-        Initialize batch analyzer.
+        Initialize prompt generator.
 
         Args:
             db_path: DuckDB database path (default: data/database/garmin.db)
-            progress_file: Progress tracking JSON file (default: data/progress/batch_analysis.json)
-            batch_size: Number of activities per batch (default: 3)
-            max_retries: Maximum retry count for failed tasks (default: 3)
+            activities_per_agent: Number of activities per agent (default: 10)
         """
 
     def query_target_activities(
@@ -235,76 +281,64 @@ class BatchSectionAnalyzer:
             List of (activity_id, date) tuples
         """
 
-    def execute_batch(
+    def generate_agent_prompt(
+        self,
+        agent_type: SectionType,
+        activities: list[tuple[int, str]],
+    ) -> str:
+        """
+        Generate prompt for a single agent type.
+
+        Args:
+            agent_type: Agent type (split, phase, summary, efficiency, environment)
+            activities: List of (activity_id, date) tuples to process
+
+        Returns:
+            Formatted prompt string for Claude Code
+        """
+
+    def generate_all_prompts(
         self,
         activities: list[tuple[int, str]],
-        dry_run: bool = False,
-    ) -> dict[str, Any]:
+    ) -> dict[SectionType, str]:
         """
-        Execute batch analysis.
+        Generate prompts for all 5 agent types.
 
         Args:
-            activities: List of (activity_id, date) tuples
-            dry_run: If True, only show execution plan without actual execution
+            activities: List of (activity_id, date) tuples to process
 
         Returns:
-            Execution summary with success/failure counts
+            Dict mapping agent type to prompt string
         """
 
-    def launch_agent(
+    def format_output(
         self,
-        agent_name: str,
-        activity_id: int,
-        date: str,
-    ) -> AgentTask:
+        prompts: dict[SectionType, str],
+        output_file: Path | None = None,
+    ) -> str:
         """
-        Launch a single agent task.
+        Format prompts for output.
 
         Args:
-            agent_name: Agent name (e.g., "split-section-analyst")
-            activity_id: Activity ID
-            date: Activity date (YYYY-MM-DD)
+            prompts: Dict of agent prompts
+            output_file: Optional file to write prompts to
 
         Returns:
-            AgentTask object for tracking
-        """
-
-    def wait_for_batch_completion(
-        self,
-        tasks: list[AgentTask],
-        timeout: int = 600,
-    ) -> dict[str, int]:
-        """
-        Wait for all tasks in a batch to complete.
-
-        Args:
-            tasks: List of AgentTask objects
-            timeout: Timeout in seconds (default: 10 minutes)
-
-        Returns:
-            Summary with success/failure/timeout counts
+            Formatted prompt text
         """
 
     def verify_completion(
         self,
-        activity_id: int,
-    ) -> dict[SectionType, bool]:
+        activity_ids: list[int],
+    ) -> dict[int, list[SectionType]]:
         """
-        Verify that all 5 sections are completed in DuckDB.
+        Verify which sections are completed for given activities.
 
         Args:
-            activity_id: Activity ID to verify
+            activity_ids: List of activity IDs to check
 
         Returns:
-            Dict mapping section_type to completion status
-        """
-
-    def generate_summary_report(self) -> str:
-        """
-        Generate execution summary report.
-
-        Returns:
-            Formatted summary string
+            Dict mapping activity_id to list of missing section types
         """
 
 
@@ -314,74 +348,116 @@ def main():
     CLI entry point.
 
     Usage:
-        # Analyze all activities missing section analysis
+        # Generate prompts for all missing analyses
         python tools/batch_section_analysis.py --all
 
-        # Analyze specific date range
+        # Generate prompts for specific date range
         python tools/batch_section_analysis.py --start 2025-01-01 --end 2025-12-31
 
-        # Dry run (show execution plan)
-        python tools/batch_section_analysis.py --all --dry-run
+        # Output to file
+        python tools/batch_section_analysis.py --all --output batch_prompts.txt
 
-        # Configure batch size
-        python tools/batch_section_analysis.py --all --batch-size 3
+        # Verify completion status
+        python tools/batch_section_analysis.py --verify
 
-        # Resume from previous progress
-        python tools/batch_section_analysis.py --resume
+        # Configure activities per agent
+        python tools/batch_section_analysis.py --all --activities-per-agent 10
 
     Options:
-        --all: Analyze all activities with missing section analyses
+        --all: Generate prompts for all activities with missing analyses
         --start: Start date (YYYY-MM-DD)
         --end: End date (YYYY-MM-DD)
-        --batch-size: Number of activities per batch (default: 3)
-        --dry-run: Show execution plan without running
-        --resume: Resume from previous progress file
-        --force: Force re-analysis even if sections exist
+        --activities-per-agent: Activities per agent (default: 10)
+        --output: Output file path (default: print to console)
+        --verify: Verify completion status only (no prompt generation)
+        --force: Include already-analyzed activities
     """
 ```
 
 **実行例:**
 ```bash
-# 全アクティビティ分析（未分析のみ）
+# 全アクティビティのプロンプト生成（未分析のみ）
 uv run python tools/batch_section_analysis.py --all
 
 # 特定期間のみ
 uv run python tools/batch_section_analysis.py --start 2025-10-01 --end 2025-10-31
 
-# Dry run（実行計画確認）
-uv run python tools/batch_section_analysis.py --all --dry-run
+# ファイルに出力
+uv run python tools/batch_section_analysis.py --all --output batch_prompts.txt
 
-# バッチサイズ調整
-uv run python tools/batch_section_analysis.py --all --batch-size 2
+# 活動数を調整（1エージェント = 5活動）
+uv run python tools/batch_section_analysis.py --all --activities-per-agent 5
 
-# 中断から再開
-uv run python tools/batch_section_analysis.py --resume
+# 完了状況確認のみ
+uv run python tools/batch_section_analysis.py --verify
+
+# 既に分析済みの活動も含める
+uv run python tools/batch_section_analysis.py --all --force
 ```
 
 **出力例:**
 ```
-=== Batch Section Analysis ===
+=== Batch Section Analysis Prompt Generator ===
 
-Target Activities: 50
-Batch Size: 3 activities/batch
-Expected Batches: 17
-Estimated Time: 85 minutes (1.4 hours)
+📊 Target Analysis:
+  Total Activities: 50
+  Activities per Agent: 10
+  Number of Groups: 5
+  Agents per Group: 5
+  Total Agent Invocations: 25
 
-Progress: [###########···············] 40% (20/50)
-Current Batch: 7/17
-Completed: 20 activities
-Failed: 2 activities
-Remaining: 28 activities
+⚡ Performance Optimization:
+  Old Method: 250 agent invocations (50 activities × 5 agents)
+  New Method: 25 agent invocations (5 groups × 5 agents)
+  Overhead Reduction: 90% (20-40min → 2-4min)
+  Estimated Time: 1.5-2 hours
 
-=== Summary ===
-Total Activities: 50
-Successful: 48 (96%)
-Failed: 2 (4%)
-Total Time: 92 minutes
+📝 Generated Prompts:
+  Output: batch_prompts.txt (or printed below)
 
-Failed Activities:
-- 20612340123 (2025-10-06): phase section timeout
-- 20609870456 (2025-10-03): environment section API error
+---
+
+=== COPY AND PASTE INTO CLAUDE CODE ===
+
+Task: split-section-analyst
+prompt: """
+以下のアクティビティを順次分析してください:
+
+1. Activity ID 20615445009 (2025-10-07)
+2. Activity ID 20612340123 (2025-10-06)
+...
+10. Activity ID 20580123789 (2025-09-26)
+
+各アクティビティについて:
+- get_splits_pace_hr() でデータ取得
+- get_splits_form_metrics() でフォームデータ取得
+- 全スプリット分析
+- insert_section_analysis_dict() で保存
+
+✅ 処理完了時に報告してください
+"""
+
+Task: phase-section-analyst
+prompt: """..."""
+
+Task: summary-section-analyst
+prompt: """..."""
+
+Task: efficiency-section-analyst
+prompt: """..."""
+
+Task: environment-section-analyst
+prompt: """..."""
+
+---
+
+✅ Next Steps:
+1. Copy the prompts above
+2. Paste into Claude Code
+3. 5 agents will run in parallel
+4. Each agent processes 10 activities sequentially
+5. Run verification after completion:
+   uv run python tools/batch_section_analysis.py --verify
 ```
 
 ---
@@ -393,130 +469,153 @@ Failed Activities:
 - [ ] **test_query_target_activities**: DuckDB クエリが正しく動作
   - 全アクティビティ取得
   - 日付範囲フィルター
-  - 未分析アクティビティのみフィルター
+  - 未分析アクティビティのみフィルター（LEFT JOIN with section_analyses）
   - 空の結果を適切に処理
 
-- [ ] **test_progress_tracker_save_load**: 進捗管理が正しく動作
-  - 新規進捗ファイル作成
-  - 既存進捗ファイル読み込み
-  - タスク完了マーク
-  - 進捗保存
+- [ ] **test_generate_agent_prompt**: プロンプト生成が正しく動作
+  - 単一エージェントタイプのプロンプト生成
+  - アクティビティリストのフォーマット
+  - エージェントタイプ別の指示文
+  - 10活動のリスト形式が正確
+
+- [ ] **test_generate_all_prompts**: 全エージェント用プロンプト生成
+  - 5エージェント分のプロンプト生成
+  - 各プロンプトに同じアクティビティリスト
+  - エージェント固有の指示が含まれる
 
 - [ ] **test_verify_completion**: 完了確認が正しく動作
   - 5セクション全て存在する場合
   - 一部セクションが欠落している場合
+  - 欠落セクションのリスト生成
   - DuckDBへのクエリが正確
 
-- [ ] **test_generate_summary_report**: サマリー生成が正しく動作
-  - 成功率計算
-  - 失敗アクティビティリスト
-  - 実行時間計測
+- [ ] **test_format_output**: 出力フォーマットが正しい
+  - コンソール出力フォーマット
+  - ファイル出力（オプション）
+  - ヘッダー情報（統計、最適化効果）
 
 ### Integration Tests
 
-- [ ] **test_batch_execution_with_mock_agents**: モックエージェントでバッチ実行
-  - 複数バッチの並列処理
-  - 進捗ファイル更新
-  - DuckDB挿入確認（モック）
+- [ ] **test_end_to_end_prompt_generation**: エンドツーエンドテスト
+  - DuckDB接続 → クエリ → プロンプト生成 → 出力
+  - 実際のデータベーススキーマを使用
+  - テストデータでの完全なフロー
 
-- [ ] **test_error_handling_and_retry**: エラーハンドリングとリトライ
-  - 個別タスク失敗時にバッチ継続
-  - 最大リトライ回数到達
-  - エラーログ記録
+- [ ] **test_missing_only_filter**: 未分析フィルターの動作確認
+  - 一部完了したアクティビティの扱い
+  - 完全に完了したアクティビティは除外
+  - 未分析アクティビティのみ抽出
 
-- [ ] **test_resume_from_progress**: 中断からの再開
-  - 既存進捗ファイルを読み込み
-  - 未完了タスクのみ実行
-  - 完了タスクはスキップ
+- [ ] **test_grouping_logic**: グループ化ロジックの確認
+  - 50活動 → 5グループ（10活動ずつ）
+  - 端数の処理（48活動 → 5グループ、最後は8活動）
+  - 空のグループが生成されない
 
-- [ ] **test_dry_run_mode**: Dry runモードが正しく動作
-  - エージェント起動なし
-  - 実行計画のみ表示
-  - DuckDBへの書き込みなし
+- [ ] **test_verification_after_manual_execution**: 手動実行後の検証
+  - エージェント実行後のDuckDB状態確認
+  - 未完了アクティビティの特定
+  - 再実行用プロンプト生成
 
-### Performance Tests
+### Acceptance Tests
 
-- [ ] **test_performance_50_activities**: 50アクティビティの処理時間
-  - 目標: 逐次処理の50-66%の時間（2.1-2.8時間以内）
-  - バッチサイズ3の場合: 17バッチ × 5分 = 85分 ≈ 1.4時間
-  - バッチサイズ2の場合: 25バッチ × 5分 = 125分 ≈ 2.1時間
-
-- [ ] **test_memory_usage**: メモリ使用量が適切
-  - 大量のアクティビティ処理中もメモリリークなし
-  - ピークメモリ使用量 < 1GB
-
-- [ ] **test_parallel_efficiency**: 並列化の効率
-  - バッチ内の5エージェントが真に並列実行されている
-  - 待機時間が最小化されている
-  - CPU使用率が適切
+- [ ] **test_real_world_scenario**: 実世界シナリオテスト
+  - 実際のデータベースで10アクティビティ
+  - プロンプト生成 → 手動実行 → 検証
+  - 全5エージェントが正常動作
+  - DuckDBに正しく保存される
 
 ---
 
 ## 実装フェーズ
 
 ### Phase 1: Core Classes（優先度: 高）
+**Goal: DuckDB統合とデータ取得**
+
 1. `ActivityQuery` クラス実装
-   - DuckDB接続と基本クエリ
+   - DuckDB接続管理
+   - 全アクティビティ取得クエリ
+   - 未分析アクティビティ検出（LEFT JOIN with section_analyses）
    - 日付範囲フィルター
-   - 未分析アクティビティ検出
+   - エラーハンドリング
 
-2. `ProgressTracker` クラス実装
-   - JSON形式の進捗管理
-   - load/save/mark_completed メソッド
-   - ファイルロック機構（並列実行時の競合回避）
-
-3. `ResultVerifier` クラス実装
-   - DuckDBでの完了確認
+2. `ResultVerifier` クラス実装
+   - DuckDBでの完了確認クエリ
    - 5セクション全存在チェック
-   - サマリーレポート生成
+   - 欠落セクションのリスト生成
+   - サマリー統計生成
 
-### Phase 2: Agent Integration（優先度: 高）
-1. `AgentTask` クラス実装
-   - エージェント起動インターフェース
-   - タスクステータス管理
-   - タイムアウト処理
+### Phase 2: Prompt Generation（優先度: 高）
+**Goal: エージェント用プロンプト生成**
 
-2. `BatchExecutor` クラス実装
-   - 並列エージェント起動
-   - バッチ完了待機
-   - エラーハンドリングとリトライ
+1. `PromptGenerator` クラス実装
+   - エージェント別プロンプトテンプレート定義
+   - アクティビティリストのフォーマット（番号付きリスト）
+   - 単一エージェント用プロンプト生成
+   - 全5エージェント用プロンプト一括生成
 
-3. Claude Code Task API 統合
-   - エージェント呼び出し実装
-   - 非同期実行管理
-   - 結果収集
+2. グループ化ロジック実装
+   - N活動を指定サイズでグループ分割
+   - 端数処理（最後のグループが小さくなる場合）
+   - 空グループの防止
+
+3. 出力フォーマット実装
+   - ヘッダー情報（統計、最適化効果）
+   - Claude Code用フォーマット（Task: ... prompt: ...）
+   - ファイル出力サポート
 
 ### Phase 3: CLI Interface（優先度: 中）
+**Goal: コマンドラインツール完成**
+
 1. argparse設定
-   - --all, --start, --end, --batch-size オプション
-   - --dry-run, --resume, --force オプション
+   - `--all`: 全未分析アクティビティ
+   - `--start`, `--end`: 日付範囲フィルター
+   - `--activities-per-agent`: グループサイズ（デフォルト: 10）
+   - `--output`: 出力ファイルパス
+   - `--verify`: 検証モード（プロンプト生成なし）
+   - `--force`: 既分析活動も含める
 
 2. main() 関数実装
    - エントリーポイント
-   - 進捗表示（tqdm使用）
-   - サマリー出力
+   - コマンドライン引数パース
+   - モード分岐（生成 vs 検証）
+   - 結果出力
 
-3. ヘルプメッセージとドキュメント
+3. ヘルプメッセージとエラーメッセージ
 
 ### Phase 4: Testing（優先度: 高）
+**Goal: 品質保証**
+
 1. Unit tests実装（pytest）
-   - ActivityQuery tests
-   - ProgressTracker tests
-   - ResultVerifier tests
+   - ActivityQuery tests（4テスト）
+   - PromptGenerator tests（3テスト）
+   - ResultVerifier tests（1テスト）
+   - 出力フォーマット tests（1テスト）
 
-2. Integration tests実装（モックAPI使用）
-   - Batch execution tests
-   - Error handling tests
-   - Resume tests
+2. Integration tests実装
+   - エンドツーエンドフロー（1テスト）
+   - 未分析フィルター動作（1テスト）
+   - グループ化ロジック（1テスト）
+   - 検証後再実行（1テスト）
 
-3. Performance tests実装
-   - 50 activities benchmark
-   - Memory usage monitoring
+3. Acceptance tests実装
+   - 実データベースで10アクティビティテスト（1テスト）
 
 ### Phase 5: Documentation & Deployment（優先度: 中）
-1. README更新（Usage section追記）
-2. CLAUDE.md更新（Common Development Commands）
-3. 実環境でのテスト実行（10アクティビティ程度）
+**Goal: ドキュメント整備とリリース**
+
+1. CLAUDE.md更新
+   - Common Development Commandsセクションに追記
+   - 使用例とワークフロー説明
+
+2. コード内docstring整備
+   - 全クラス・メソッドにGoogle-styleドキュメント
+   - 使用例コメント
+
+3. 実環境での検証
+   - 10アクティビティでテスト実行
+   - プロンプト生成 → 手動実行 → 検証
+   - 問題があれば修正
+
 4. completion_report.md作成
 
 ---
@@ -525,21 +624,39 @@ Failed Activities:
 
 ### 機能要件
 - [ ] DuckDBから未分析アクティビティを自動検出できる
-- [ ] 複数アクティビティ × 5エージェントを並列実行できる
-- [ ] 進捗をJSON形式で記録し、中断時に再開できる
-- [ ] エラーが発生しても処理が継続し、最後にサマリーが表示される
-- [ ] Dry runモードで実行計画を事前確認できる
-- [ ] 日付範囲を指定して対象アクティビティをフィルターできる
+  - LEFT JOIN with section_analyses table
+  - 5セクション未満のアクティビティを抽出
+- [ ] 全5エージェント用のプロンプトを一括生成できる
+  - split, phase, summary, efficiency, environment
+  - 各エージェントに同じアクティビティリスト
+- [ ] 活動をグループ化してプロンプトを生成できる
+  - デフォルト: 10活動/エージェント
+  - カスタマイズ可能（--activities-per-agent）
+- [ ] 完了状況を検証できる
+  - DuckDBで5セクション存在確認
+  - 欠落セクションのリスト表示
+- [ ] 日付範囲を指定して対象をフィルターできる
+  - --start, --end オプション
+- [ ] ファイルまたはコンソールに出力できる
+  - --output オプションでファイル保存
+  - デフォルトはコンソール出力
 
 ### 非機能要件
-- [ ] 50アクティビティの処理時間が逐次処理の50-66%（2.1-2.8時間以内）
-- [ ] メモリ使用量が1GB以下
-- [ ] 並列化効率が70%以上（理想的な並列化時間の1.4倍以内）
+- [ ] エージェント起動オーバーヘッドが90%削減される
+  - 50活動: 250回起動 → 25回起動
+  - オーバーヘッド: 20-40分 → 2-4分
+- [ ] プロンプト生成が高速である
+  - 50活動で1秒以内
+- [ ] メモリ使用量が最小限である
+  - プロンプト生成時 < 100MB
 
 ### コード品質
 - [ ] 全Unit testsがパスする（カバレッジ80%以上）
+  - ActivityQuery, PromptGenerator, ResultVerifier
 - [ ] 全Integration testsがパスする
-- [ ] Performance testsがパスする
+  - エンドツーエンド、フィルター、グループ化
+- [ ] Acceptance testsがパスする
+  - 実データベースでの10活動テスト
 - [ ] Black, Ruff, Mypyのチェックがパスする
 - [ ] Pre-commit hooksがパスする
 
@@ -547,7 +664,8 @@ Failed Activities:
 - [ ] planning.mdが完成している
 - [ ] completion_report.mdが作成されている
 - [ ] CLAUDE.mdに使用方法が追記されている
-- [ ] コード内にdocstringが適切に記述されている
+- [ ] コード内にGoogle-style docstringが記述されている
+- [ ] 使用例が明確に記載されている
 
 ---
 
@@ -555,130 +673,219 @@ Failed Activities:
 
 ### 想定されるリスク
 
-1. **Claude Code Task API の制限**
-   - 影響: 並列タスク数に制限がある可能性
-   - 対策: バッチサイズを調整可能にする（--batch-sizeオプション）
-   - 緩和策: エラー時に自動的にバッチサイズを減少
+1. **エージェントの手動実行ミス**
+   - 影響: プロンプトのコピペミス、一部エージェントの実行忘れ
+   - 対策: 明確なフォーマットとチェックリスト提供
+   - 緩和策: --verify オプションで実行後の完了確認
 
 2. **エージェント実行時間の変動**
-   - 影響: 一部のエージェントが想定より長時間かかる可能性
-   - 対策: タイムアウト設定（デフォルト10分/バッチ）
-   - 緩和策: タイムアウト時にリトライ、それでも失敗なら次へ進む
+   - 影響: 10活動処理に想定以上の時間がかかる可能性
+   - 対策: --activities-per-agent オプションで調整可能
+   - 緩和策: 小さいグループサイズから開始（5活動など）
 
 3. **DuckDB ロック競合**
-   - 影響: 並列書き込みでロック待機が発生
-   - 対策: エージェント側で insert_section_analysis_dict を使用（DuckDB側で排他制御）
-   - 緩和策: リトライロジック実装
+   - 影響: 5エージェント並列書き込みでロック待機が発生
+   - 対策: エージェントが insert_section_analysis_dict を使用（DuckDB側で排他制御）
+   - 緩和策: エージェント側でリトライロジック実装済み
 
-4. **進捗ファイルの破損**
-   - 影響: 中断時に進捗ファイルが不完全な状態になる可能性
-   - 対策: アトミックな書き込み（一時ファイル→rename）
-   - 緩和策: 破損時は既存進捗を無視して最初から実行
+4. **未完了活動の見落とし**
+   - 影響: 一部エージェントが失敗しても気づかない
+   - 対策: --verify オプションで明示的に確認
+   - 緩和策: 欠落セクションリストを表示
 
-5. **メモリ不足**
-   - 影響: 大量の並列タスクでメモリ使用量が増加
-   - 対策: バッチサイズを制限（デフォルト3 activities）
-   - 緩和策: メモリ監視とバッチサイズの動的調整
+5. **プロンプトサイズの制限**
+   - 影響: 活動数が多すぎるとプロンプトが長すぎる可能性
+   - 対策: デフォルト10活動で制限
+   - 緩和策: 大量の活動は複数回に分けて実行
 
 ---
 
 ## 実装ノート
 
-### Claude Code Task API 想定仕様
+### プロンプトテンプレート
 
-**注**: 実際のAPI仕様は実装時に確認が必要。以下は想定仕様。
-
-```python
-# Hypothetical API (to be confirmed)
-from claude_code import Task
-
-task = Task.create(
-    agent="split-section-analyst",
-    prompt=f"Activity ID {activity_id} ({date}) の全スプリットを詳細分析してください。",
-)
-
-# Wait for completion
-result = task.wait(timeout=600)
-
-# Or poll status
-while task.status == "running":
-    time.sleep(5)
-
-if task.status == "completed":
-    # Success
-elif task.status == "failed":
-    # Handle error
-```
-
-### 5つのエージェント名
-
-**エージェント定義ファイル（`.claude/agents/`）:**
-1. `split-section-analyst.md` - スプリット詳細分析
-2. `phase-section-analyst.md` - フェーズ評価（warmup/main/cooldown）
-3. `summary-section-analyst.md` - アクティビティタイプ判定と総合評価
-4. `efficiency-section-analyst.md` - フォーム効率と心拍効率
-5. `environment-section-analyst.md` - 環境要因分析
-
-### エージェントプロンプトテンプレート
+**エージェント別プロンプトテンプレート:**
 
 ```python
 AGENT_PROMPTS = {
-    "split": "Activity ID {activity_id} ({date}) の全スプリットを詳細分析してください。",
-    "phase": "Activity ID {activity_id} ({date}) のフェーズ評価を実行してください。",
-    "summary": "Activity ID {activity_id} ({date}) のアクティビティタイプ判定と総合評価を生成してください。",
-    "efficiency": "Activity ID {activity_id} ({date}) のフォーム効率と心拍効率を分析してください。",
-    "environment": "Activity ID {activity_id} ({date}) の環境要因（気温、風速、地形）の影響を分析してください。",
+    "split": """
+以下のアクティビティを順次分析してください:
+
+{activity_list}
+
+各アクティビティについて:
+- get_splits_pace_hr() でペース・心拍データ取得
+- get_splits_form_metrics() でフォームデータ取得
+- 全スプリットを分析
+- insert_section_analysis_dict() で保存
+
+✅ 各アクティビティ完了時に報告してください
+""",
+    "phase": """
+以下のアクティビティのフェーズ評価を実行してください:
+
+{activity_list}
+
+各アクティビティについて:
+- get_performance_section("performance_trends") でフェーズデータ取得
+- ウォームアップ/メイン/クールダウンを評価
+- insert_section_analysis_dict() で保存
+
+✅ 各アクティビティ完了時に報告してください
+""",
+    "summary": """
+以下のアクティビティのタイプ判定と総合評価を生成してください:
+
+{activity_list}
+
+各アクティビティについて:
+- get_splits_all() で全データ取得
+- get_vo2_max_data(), get_lactate_threshold_data() で生理学的データ取得
+- アクティビティタイプ判定
+- 総合評価と改善提案
+- insert_section_analysis_dict() で保存
+
+✅ 各アクティビティ完了時に報告してください
+""",
+    "efficiency": """
+以下のアクティビティのフォーム効率と心拍効率を分析してください:
+
+{activity_list}
+
+各アクティビティについて:
+- get_form_efficiency_summary() でフォーム効率データ取得
+- get_hr_efficiency_analysis() で心拍効率データ取得
+- get_heart_rate_zones_detail() でゾーン詳細取得
+- insert_section_analysis_dict() で保存
+
+✅ 各アクティビティ完了時に報告してください
+""",
+    "environment": """
+以下のアクティビティの環境要因（気温、風速、地形）の影響を分析してください:
+
+{activity_list}
+
+各アクティビティについて:
+- get_splits_elevation() で標高データ取得
+- 気温・湿度・風速の影響評価
+- 地形の影響評価
+- insert_section_analysis_dict() で保存
+
+✅ 各アクティビティ完了時に報告してください
+""",
 }
 ```
 
-### ベストプラクティス
+**アクティビティリストフォーマット:**
+```python
+def format_activity_list(activities: list[tuple[int, str]]) -> str:
+    """
+    Format activity list for prompt.
 
-1. **進捗ファイルのアトミック書き込み**
-   ```python
-   import tempfile
-   import os
+    Args:
+        activities: List of (activity_id, date) tuples
 
-   with tempfile.NamedTemporaryFile(mode='w', delete=False) as tmp:
-       json.dump(progress_data, tmp)
-       tmp_path = tmp.name
+    Returns:
+        Formatted string like:
+        1. Activity ID 20615445009 (2025-10-07)
+        2. Activity ID 20612340123 (2025-10-06)
+        ...
+    """
+    return "
+".join(
+        f"{i+1}. Activity ID {aid} ({date})"
+        for i, (aid, date) in enumerate(activities)
+    )
+```
 
-   os.replace(tmp_path, progress_file)  # Atomic on Unix
-   ```
+### エージェント名とタスクフォーマット
 
-2. **DuckDB接続管理**
-   ```python
-   # Read-only connection for queries
-   conn_ro = duckdb.connect(db_path, read_only=True)
+**5つのエージェント（`.claude/agents/` ディレクトリ）:**
+1. `split-section-analyst` - スプリット詳細分析
+2. `phase-section-analyst` - フェーズ評価（warmup/main/cooldown）
+3. `summary-section-analyst` - アクティビティタイプ判定と総合評価
+4. `efficiency-section-analyst` - フォーム効率と心拍効率
+5. `environment-section-analyst` - 環境要因分析
 
-   # Write connection (managed by agents via MCP)
-   # エージェントが insert_section_analysis_dict を使用
-   ```
+**Claude Code Taskフォーマット:**
+```
+Task: {agent-name}
+prompt: """
+{multi-line prompt}
+"""
+```
 
-3. **タイムアウトと Graceful Shutdown**
-   ```python
-   import signal
+**重要:** プロンプトは必ず3つのダブルクォートで囲む（複数行対応）
 
-   def signal_handler(sig, frame):
-       print("Interrupted! Saving progress...")
-       save_progress()
-       sys.exit(0)
+### DuckDB接続管理
 
-   signal.signal(signal.SIGINT, signal_handler)
-   ```
+**Read-only接続でクエリ実行:**
+```python
+import duckdb
+from pathlib import Path
 
-4. **ログ記録**
-   ```python
-   import logging
+def get_db_connection(db_path: Path) -> duckdb.DuckDBPyConnection:
+    """Get read-only DuckDB connection for queries."""
+    return duckdb.connect(str(db_path), read_only=True)
 
-   logging.basicConfig(
-       level=logging.INFO,
-       format='%(asctime)s [%(levelname)s] %(message)s',
-       handlers=[
-           logging.FileHandler('data/logs/batch_analysis.log'),
-           logging.StreamHandler(),
-       ]
-   )
-   ```
+# 使用例
+conn = get_db_connection(Path("data/database/garmin.db"))
+result = conn.execute("""
+    SELECT a.activity_id, a.date
+    FROM activities a
+    LEFT JOIN (
+        SELECT activity_id, COUNT(DISTINCT section_type) as section_count
+        FROM section_analyses
+        GROUP BY activity_id
+    ) s ON a.activity_id = s.activity_id
+    WHERE s.section_count IS NULL OR s.section_count < 5
+    ORDER BY a.date DESC
+""").fetchall()
+conn.close()
+```
+
+**書き込みはエージェントが実行:**
+- エージェントが `mcp__garmin-db__insert_section_analysis_dict()` を使用
+- DuckDB側で排他制御を実装済み
+- Pythonツールは書き込み不要（検証のみ）
+
+### 出力フォーマット設計
+
+**コンソール出力:**
+```python
+def format_console_output(prompts: dict, stats: dict) -> str:
+    """Format prompts for console display."""
+    output = []
+    output.append("=" * 60)
+    output.append("Batch Section Analysis Prompt Generator")
+    output.append("=" * 60)
+    output.append("")
+    output.append(f"📊 Statistics:")
+    output.append(f"  Total Activities: {stats['total_activities']}")
+    output.append(f"  Activities per Agent: {stats['activities_per_agent']}")
+    output.append(f"  Number of Groups: {stats['num_groups']}")
+    output.append(f"  Total Agent Invocations: {stats['total_invocations']}")
+    output.append("")
+    output.append(f"⚡ Optimization:")
+    output.append(f"  Old: {stats['old_invocations']} invocations")
+    output.append(f"  New: {stats['total_invocations']} invocations")
+    output.append(f"  Reduction: {stats['reduction_percent']}%")
+    output.append("")
+    output.append("=" * 60)
+    output.append("COPY AND PASTE INTO CLAUDE CODE")
+    output.append("=" * 60)
+    output.append("")
+
+    for agent_type, prompt in prompts.items():
+        output.append(f"Task: {agent_type}-section-analyst")
+        output.append(f'prompt: """')
+        output.append(prompt.strip())
+        output.append('"""')
+        output.append("")
+
+    return "
+".join(output)
+```
 
 ---
 
