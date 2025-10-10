@@ -14,7 +14,8 @@ DuckDBに格納された複数アクティビティに対して、5つのセク�
 
 **重要な設計方針:**
 - Python workerは**プロンプト生成のみ**を行う（エージェント自動実行はしない）
-- 生成されたプロンプトをユーザーがClaude Codeにコピペして実行
+- 生成されたプロンプトをファイルに出力
+- **メインのClaude CodeがファイルからプロンプトをパースしてTaskツールで各エージェントに指示**
 - 1エージェント = 10活動処理（エージェント起動オーバーヘッドを90%削減）
 - パフォーマンスデータは既にDuckDBに格納済み
 - レポート生成は別プロセスで行う
@@ -38,19 +39,22 @@ DuckDBに格納された複数アクティビティに対して、5つのセク�
 ### ユースケース
 
 1. **データアナリスト（一括分析）**
-   - 全アクティビティのセクション分析を一括実行
-   - 進捗状況をリアルタイムで確認
-   - 完了後にサマリーレポートを確認
+   - ユーザー: "全アクティビティの分析を実行して"
+   - メインClaude Code: Python worker実行 → JSON読み込み → 5エージェント並列起動
+   - 各エージェントが自動的に10活動ずつ処理
+   - 完了後に検証実行で未分析活動をチェック
 
 2. **システム運用者（差分更新）**
-   - 新規追加されたアクティビティのみを分析
-   - DuckDBを検索して未分析アクティビティを特定
-   - バッチサイズを調整してリソース利用を最適化
+   - 定期的に新規追加アクティビティのみを分析
+   - Python workerが自動的にDuckDBで未分析活動を特定
+   - メインClaude Codeが未分析分のみをエージェント実行
+   - 活動数に応じて--activities-per-agentで調整
 
 3. **開発者（デバッグ・検証）**
-   - Dry runで実行計画を確認
-   - 特定期間のアクティビティのみを対象に実行
-   - エラー発生時の詳細ログを確認
+   - 特定期間のアクティビティのみを対象に実行（--start, --end）
+   - 小規模テスト: --activities-per-agent 2で少数の活動で動作確認
+   - 完了確認: --verifyで未分析活動を特定
+   - エージェントログでエラー箇所を特定
 
 ---
 
@@ -86,26 +90,48 @@ BatchPromptGenerator (メインクラス)
 
 **処理フロー:**
 ```
-1. ActivityQuery: DuckDBから対象アクティビティ取得
-   - 全件 or 日付範囲 or 未分析のみ
+[Phase 1: Python Worker - Prompt Generation]
+1. ユーザー: "50活動の分析を実行して"
    ↓
-2. Grouping: 10活動ずつのグループに分割
-   - 50活動 → 5グループ
+2. メインClaude Code: Python worker実行
+   uv run python tools/batch_section_analysis.py --all
    ↓
-3. PromptGenerator: 各エージェント用プロンプト生成
-   For each agent (split, phase, summary, efficiency, environment):
-     Generate prompt with 10 activities list
+3. Python Worker:
+   - ActivityQuery: DuckDBから対象取得
+   - Grouping: 10活動ずつグループ化
+   - PromptGenerator: 5エージェント用プロンプト生成
+   - Output: JSON形式でファイル出力（batch_prompts.json）
    ↓
-4. Output: プロンプトをファイル/コンソールに出力
-   - 例: batch_prompts.txt
+4. ファイル出力: data/batch/batch_prompts.json
+   {
+     "split": "以下のアクティビティを順次分析...",
+     "phase": "以下のアクティビティのフェーズ評価...",
+     ...
+   }
+
+[Phase 2: Main Claude Code - Agent Orchestration]
+5. メインClaude Code: batch_prompts.jsonを読み取り
    ↓
-5. [Manual Step] ユーザーがClaude Codeにコピペ実行
-   - 5エージェントが並列実行
-   - 各エージェントは10活動を順次処理
+6. メインClaude Code: Taskツールで5エージェントに並列指示
+   Task(split-section-analyst, prompts["split"])
+   Task(phase-section-analyst, prompts["phase"])
+   Task(summary-section-analyst, prompts["summary"])
+   Task(efficiency-section-analyst, prompts["efficiency"])
+   Task(environment-section-analyst, prompts["environment"])
    ↓
-6. Verification: DuckDBで完了確認（次回実行前）
-   - 未完了アクティビティを特定
-   - 再実行が必要かチェック
+7. 5エージェント並列実行:
+   各エージェントが10活動を順次処理
+   insert_section_analysis_dict() でDuckDBに保存
+   ↓
+8. 完了報告: 各エージェントが完了を報告
+
+[Phase 3: Verification]
+9. メインClaude Code: Python worker実行（検証）
+   uv run python tools/batch_section_analysis.py --verify
+   ↓
+10. Python Worker:
+    - DuckDBで完了確認
+    - 未完了アクティビティがあれば報告
 ```
 
 **最適化戦略:**
@@ -165,24 +191,24 @@ WHERE date BETWEEN '2025-01-01' AND '2025-12-31'
 ORDER BY date DESC;
 ```
 
-**Output (Generated Prompts):**
-```text
-=== Batch Section Analysis Prompts ===
-Target Activities: 50 (5 groups of 10 activities each)
-Agent Overhead Reduction: 90% (250 → 25 invocations)
-Expected Time: 1.5-2 hours
-
-Copy and paste the following prompts into Claude Code:
-
----
-
-Task: split-section-analyst
-prompt: """
-以下のアクティビティを順次分析してください:
+**Output (Generated Prompts - JSON format):**
+```json
+{
+  "metadata": {
+    "generated_at": "2025-10-10T10:00:00Z",
+    "total_activities": 50,
+    "activities_per_agent": 10,
+    "num_groups": 5,
+    "agent_invocations": 25,
+    "old_invocations": 250,
+    "reduction_percent": 90,
+    "estimated_time_hours": 1.75
+  },
+  "prompts": {
+    "split": "以下のアクティビティを順次分析してください:
 
 1. Activity ID 20615445009 (2025-10-07)
 2. Activity ID 20612340123 (2025-10-06)
-3. Activity ID 20609870456 (2025-10-05)
 ...
 10. Activity ID 20580123789 (2025-09-26)
 
@@ -192,34 +218,32 @@ prompt: """
 - 全スプリットを分析
 - insert_section_analysis_dict() で保存
 
-処理状況を報告してください:
-✅ Activity {id} ({date}) - 完了
-"""
+✅ 各アクティビティ完了時に報告してください",
+    "phase": "以下のアクティビティのフェーズ評価を実行してください:
 
-Task: phase-section-analyst
-prompt: """
-以下のアクティビティのフェーズ評価を実行してください:
-...
-"""
+...",
+    "summary": "以下のアクティビティのタイプ判定と総合評価を生成してください:
 
-Task: summary-section-analyst
-prompt: """
-以下のアクティビティのタイプ判定と総合評価を生成してください:
-...
-"""
+...",
+    "efficiency": "以下のアクティビティのフォーム効率と心拍効率を分析してください:
 
-Task: efficiency-section-analyst
-prompt: """
-以下のアクティビティのフォーム効率と心拊効率を分析してください:
-...
-"""
+...",
+    "environment": "以下のアクティビティの環境要因の影響を分析してください:
 
-Task: environment-section-analyst
-prompt: """
-以下のアクティビティの環境要因の影響を分析してください:
-...
-"""
+..."
+  },
+  "activities": [
+    {"activity_id": 20615445009, "date": "2025-10-07"},
+    {"activity_id": 20612340123, "date": "2025-10-06"},
+    ...
+  ]
+}
 ```
+
+**ファイル出力先:**
+- `data/batch/batch_prompts_{timestamp}.json`
+- メインClaude CodeがこのファイルをReadして解析
+- `prompts`オブジェクトの各キーをTaskツールに渡す
 
 **Verification (DuckDB section_analyses table):**
 ```sql
@@ -314,17 +338,19 @@ class BatchPromptGenerator:
     def format_output(
         self,
         prompts: dict[SectionType, str],
-        output_file: Path | None = None,
-    ) -> str:
+        activities: list[tuple[int, str]],
+        output_file: Path,
+    ) -> dict:
         """
-        Format prompts for output.
+        Format prompts as JSON and write to file.
 
         Args:
             prompts: Dict of agent prompts
-            output_file: Optional file to write prompts to
+            activities: List of (activity_id, date) tuples
+            output_file: File path to write JSON prompts
 
         Returns:
-            Formatted prompt text
+            JSON structure with metadata and prompts
         """
 
     def verify_completion(
@@ -348,16 +374,16 @@ def main():
     CLI entry point.
 
     Usage:
-        # Generate prompts for all missing analyses
+        # Generate prompts for all missing analyses (default output to data/batch/)
         python tools/batch_section_analysis.py --all
 
         # Generate prompts for specific date range
         python tools/batch_section_analysis.py --start 2025-01-01 --end 2025-12-31
 
-        # Output to file
-        python tools/batch_section_analysis.py --all --output batch_prompts.txt
+        # Custom output location
+        python tools/batch_section_analysis.py --all --output /path/to/prompts.json
 
-        # Verify completion status
+        # Verify completion status (after agent execution)
         python tools/batch_section_analysis.py --verify
 
         # Configure activities per agent
@@ -368,34 +394,50 @@ def main():
         --start: Start date (YYYY-MM-DD)
         --end: End date (YYYY-MM-DD)
         --activities-per-agent: Activities per agent (default: 10)
-        --output: Output file path (default: print to console)
+        --output: Output JSON file path (default: data/batch/batch_prompts_{timestamp}.json)
         --verify: Verify completion status only (no prompt generation)
         --force: Include already-analyzed activities
     """
 ```
 
 **実行例:**
+
+**シナリオ1: 全活動の分析実行（標準的な使い方）**
 ```bash
-# 全アクティビティのプロンプト生成（未分析のみ）
+# ユーザー: "50活動の分析を実行して"
+
+# Step 1: メインClaude CodeがPython worker実行
 uv run python tools/batch_section_analysis.py --all
 
-# 特定期間のみ
-uv run python tools/batch_section_analysis.py --start 2025-10-01 --end 2025-10-31
+# Step 2: メインClaude CodeがJSON読み込み
+# data/batch/batch_prompts_20251010_100000.json
 
-# ファイルに出力
-uv run python tools/batch_section_analysis.py --all --output batch_prompts.txt
+# Step 3: メインClaude CodeがTaskツールで5エージェントに並列指示
+# (自動実行)
 
-# 活動数を調整（1エージェント = 5活動）
-uv run python tools/batch_section_analysis.py --all --activities-per-agent 5
-
-# 完了状況確認のみ
+# Step 4: 完了後、検証実行
 uv run python tools/batch_section_analysis.py --verify
+```
 
-# 既に分析済みの活動も含める
-uv run python tools/batch_section_analysis.py --all --force
+**シナリオ2: 特定期間のみ分析**
+```bash
+uv run python tools/batch_section_analysis.py --start 2025-10-01 --end 2025-10-31
+```
+
+**シナリオ3: 活動数を調整（保守的実行）**
+```bash
+# 1エージェント = 5活動（より短時間で完了）
+uv run python tools/batch_section_analysis.py --all --activities-per-agent 5
+```
+
+**シナリオ4: 完了状況確認のみ**
+```bash
+uv run python tools/batch_section_analysis.py --verify
 ```
 
 **出力例:**
+
+**コンソール出力（Python worker）:**
 ```
 === Batch Section Analysis Prompt Generator ===
 
@@ -413,15 +455,24 @@ uv run python tools/batch_section_analysis.py --all --force
   Estimated Time: 1.5-2 hours
 
 📝 Generated Prompts:
-  Output: batch_prompts.txt (or printed below)
+  Output: data/batch/batch_prompts_20251010_100000.json
 
----
+✅ Ready for Main Claude Code to execute agents
+```
 
-=== COPY AND PASTE INTO CLAUDE CODE ===
-
-Task: split-section-analyst
-prompt: """
-以下のアクティビティを順次分析してください:
+**生成されたJSONファイル (data/batch/batch_prompts_20251010_100000.json):**
+```json
+{
+  "metadata": {
+    "generated_at": "2025-10-10T10:00:00Z",
+    "total_activities": 50,
+    "activities_per_agent": 10,
+    "num_groups": 5,
+    "agent_invocations": 25,
+    "estimated_time_hours": 1.75
+  },
+  "prompts": {
+    "split": "以下のアクティビティを順次分析してください:
 
 1. Activity ID 20615445009 (2025-10-07)
 2. Activity ID 20612340123 (2025-10-06)
@@ -431,33 +482,43 @@ prompt: """
 各アクティビティについて:
 - get_splits_pace_hr() でデータ取得
 - get_splits_form_metrics() でフォームデータ取得
-- 全スプリット分析
+- 全スプリットを分析
 - insert_section_analysis_dict() で保存
 
-✅ 処理完了時に報告してください
-"""
+✅ 各アクティビティ完了時に報告してください",
+    "phase": "...",
+    "summary": "...",
+    "efficiency": "...",
+    "environment": "..."
+  },
+  "activities": [
+    {"activity_id": 20615445009, "date": "2025-10-07"},
+    ...
+  ]
+}
+```
 
+**メインClaude Codeの実行ログ（想定）:**
+```
+📖 Reading prompts from: data/batch/batch_prompts_20251010_100000.json
+
+🚀 Launching 5 section analysis agents in parallel...
+
+Task: split-section-analyst
 Task: phase-section-analyst
-prompt: """..."""
-
 Task: summary-section-analyst
-prompt: """..."""
-
 Task: efficiency-section-analyst
-prompt: """..."""
-
 Task: environment-section-analyst
-prompt: """..."""
 
----
+⏳ Waiting for agents to complete (estimated: 1.5-2 hours)...
 
-✅ Next Steps:
-1. Copy the prompts above
-2. Paste into Claude Code
-3. 5 agents will run in parallel
-4. Each agent processes 10 activities sequentially
-5. Run verification after completion:
-   uv run python tools/batch_section_analysis.py --verify
+✅ All agents completed successfully
+
+🔍 Verifying completion...
+  - Completed: 50/50 activities (100%)
+  - Missing sections: 0
+
+✨ Batch analysis complete!
 ```
 
 ---
