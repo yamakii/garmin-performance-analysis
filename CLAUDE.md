@@ -201,15 +201,22 @@ Provides efficient section-based access to DuckDB performance data, write capabi
 - `mcp__garmin-db__get_performance_section`: Get specific sections (basic_metrics, heart_rate_zones, etc.)
 - `mcp__garmin-db__get_section_analysis`: Get pre-calculated section analysis from DuckDB
 
-*Splits Data Access (Lightweight):*
+*Normalized Table Access (2025-10-10 added - Direct DuckDB table queries):*
+- `mcp__garmin-db__get_form_efficiency_summary`: Form efficiency (GCT/VO/VR) summary with ratings
+- `mcp__garmin-db__get_hr_efficiency_analysis`: HR efficiency analysis with zone distribution
+- `mcp__garmin-db__get_heart_rate_zones_detail`: Heart rate zone boundaries and time distribution
+- `mcp__garmin-db__get_vo2_max_data`: VO2 max estimation data
+- `mcp__garmin-db__get_lactate_threshold_data`: Lactate threshold metrics
+- `mcp__garmin-db__get_splits_all`: All split data (all 22 fields per split)
+
+*Splits Data Access (Lightweight - Deprecated, use get_splits_all instead):*
 - `mcp__garmin-db__get_splits_pace_hr`: Pace & HR progression (~9 fields/split)
 - `mcp__garmin-db__get_splits_form_metrics`: Form efficiency GCT/VO/VR (~6 fields/split)
 - `mcp__garmin-db__get_splits_elevation`: Elevation & terrain data (~7 fields/split)
 
 **Write Tools (DuckDB data insertion):**
-- `mcp__garmin-db__insert_performance_data`: Insert performance.json into DuckDB
-- `mcp__garmin-db__insert_section_analysis`: Insert section analysis JSON file into DuckDB (legacy)
 - `mcp__garmin-db__insert_section_analysis_dict`: **[RECOMMENDED]** Insert section analysis dict directly into DuckDB (no file creation)
+- `mcp__garmin-db__insert_section_analysis`: Insert section analysis JSON file into DuckDB (legacy)
 
 **RAG Query Tools (Phase 3: Trend Analysis & Comparison):**
 - `mcp__garmin-db__compare_similar_workouts`: Find and compare similar past activities
