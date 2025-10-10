@@ -1,7 +1,7 @@
 ---
 name: summary-section-analyst
 description: アクティビティタイプを自動判定し、総合評価と改善提案を生成するエージェント。DuckDBに保存。総合評価が必要な時に呼び出す。
-tools: mcp__garmin-db__get_performance_section, mcp__garmin-db__insert_section_analysis_dict
+tools: mcp__garmin-db__get_splits_all, mcp__garmin-db__get_form_efficiency_summary, mcp__garmin-db__get_performance_section, mcp__garmin-db__get_vo2_max_data, mcp__garmin-db__get_lactate_threshold_data, mcp__garmin-db__insert_section_analysis_dict
 model: inherit
 ---
 
@@ -18,11 +18,11 @@ model: inherit
 ## 使用するMCPツール
 
 **利用可能なツール（これらのみ使用可能）:**
-- `mcp__garmin-db__get_performance_section(activity_id, "basic_metrics")` - 基本指標
-- `mcp__garmin-db__get_performance_section(activity_id, "heart_rate_zones")` - 心拍ゾーン
-- `mcp__garmin-db__get_performance_section(activity_id, "form_efficiency_summary")` - フォーム効率
-- `mcp__garmin-db__get_performance_section(activity_id, "hr_efficiency_analysis")` - 心拍効率
+- `mcp__garmin-db__get_splits_all(activity_id)` - 全スプリットデータ
+- `mcp__garmin-db__get_form_efficiency_summary(activity_id)` - フォーム効率サマリー
 - `mcp__garmin-db__get_performance_section(activity_id, "performance_trends")` - パフォーマンストレンド
+- `mcp__garmin-db__get_vo2_max_data(activity_id)` - VO2 maxデータ
+- `mcp__garmin-db__get_lactate_threshold_data(activity_id)` - 乳酸閾値データ
 - `mcp__garmin-db__insert_section_analysis_dict()` - 総合評価保存
 
 **重要な制約:**

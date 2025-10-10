@@ -1,7 +1,7 @@
 ---
 name: efficiency-section-analyst
 description: フォーム効率（GCT/VO/VR）と心拍効率（ゾーン分布）を分析し、DuckDBに保存するエージェント。アクティビティの効率指標評価が必要な時に呼び出す。
-tools: mcp__garmin-db__get_performance_section, mcp__garmin-db__insert_section_analysis_dict
+tools: mcp__garmin-db__get_form_efficiency_summary, mcp__garmin-db__get_hr_efficiency_analysis, mcp__garmin-db__get_heart_rate_zones_detail, mcp__garmin-db__insert_section_analysis_dict
 model: inherit
 ---
 
@@ -18,8 +18,9 @@ model: inherit
 ## 使用するMCPツール
 
 **利用可能なツール（これらのみ使用可能）:**
-- `mcp__garmin-db__get_performance_section(activity_id, "form_efficiency_summary")`
-- `mcp__garmin-db__get_performance_section(activity_id, "hr_efficiency_analysis")`
+- `mcp__garmin-db__get_form_efficiency_summary(activity_id)` - フォーム効率データ取得
+- `mcp__garmin-db__get_hr_efficiency_analysis(activity_id)` - 心拍効率データ取得
+- `mcp__garmin-db__get_heart_rate_zones_detail(activity_id)` - 心拍ゾーン詳細取得
 - `mcp__garmin-db__insert_section_analysis_dict()` - 分析結果をDuckDBに保存
 
 **重要な制約:**

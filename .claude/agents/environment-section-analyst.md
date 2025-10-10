@@ -1,7 +1,7 @@
 ---
 name: environment-section-analyst
 description: 気温・湿度・風速・地形の環境要因がパフォーマンスに与えた影響を分析し、DuckDBに保存するエージェント。環境条件の影響評価が必要な時に呼び出す。
-tools: mcp__garmin-db__get_performance_section, mcp__garmin-db__insert_section_analysis_dict
+tools: mcp__garmin-db__get_splits_all, mcp__garmin-db__get_splits_elevation, mcp__garmin-db__insert_section_analysis_dict
 model: inherit
 ---
 
@@ -18,8 +18,8 @@ model: inherit
 ## 使用するMCPツール
 
 **利用可能なツール（これらのみ使用可能）:**
-- `mcp__garmin-db__get_performance_section(activity_id, "split_metrics")` - 環境データ取得
-- `mcp__garmin-db__get_performance_section(activity_id, "basic_metrics")` - 基本指標
+- `mcp__garmin-db__get_splits_all(activity_id)` - 全スプリットデータ（環境条件含む）
+- `mcp__garmin-db__get_splits_elevation(activity_id)` - 標高・地形データ
 - `mcp__garmin-db__insert_section_analysis_dict()` - 分析結果保存
 
 **重要な制約:**
