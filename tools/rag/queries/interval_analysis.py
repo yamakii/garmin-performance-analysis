@@ -250,12 +250,102 @@ class IntervalAnalyzer:
                     },
                     ...
                 ],
+                "work_recovery_comparison": {...},
+                "fatigue_indicators": {...}
             }
         """
-        # For Phase 5, return minimal valid response
-        # Full implementation should be done in Phase 2 completion
+        from tools.database.db_reader import GarminDBReader
+
+        # Load splits data from DuckDB
+        db_reader = GarminDBReader()
+        splits_pace_hr_data = db_reader.get_splits_pace_hr(activity_id)
+        splits_form_data = db_reader.get_splits_form_metrics(activity_id)
+
+        if not splits_pace_hr_data or "splits" not in splits_pace_hr_data:
+            return {
+                "activity_id": activity_id,
+                "segments": [],
+                "error": f"No splits data found in DuckDB for activity {activity_id}",
+            }
+
+        # Extract splits lists
+        splits_pace_hr = splits_pace_hr_data.get("splits", [])
+        splits_form = splits_form_data.get("splits", []) if splits_form_data else []
+
+        # Merge pace/HR and form metrics
+        splits = []
+        for i, pace_hr in enumerate(splits_pace_hr):
+            split_data = pace_hr.copy()
+            # Add form metrics if available
+            if i < len(splits_form):
+                form = splits_form[i]
+                split_data.update(
+                    {
+                        "avg_gct_ms": form.get("avg_gct_ms", 0),
+                        "avg_vo_cm": form.get("avg_vo_cm", 0),
+                        "avg_vr_percent": form.get("avg_vr_percent", 0),
+                    }
+                )
+            splits.append(split_data)
+
+        if not splits:
+            return {
+                "activity_id": activity_id,
+                "segments": [],
+                "message": "No splits data available for interval analysis",
+            }
+
+        # Detect intervals
+        intervals = self.detect_intervals(
+            splits, pace_threshold_factor, min_work_duration, min_recovery_duration
+        )
+
+        # Calculate fatigue indicators
+        fatigue = self.detect_fatigue(intervals)
+
+        # Calculate work/recovery comparison
+        work_intervals = [i for i in intervals if i.get("segment_type") == "work"]
+        recovery_intervals = [
+            i for i in intervals if i.get("segment_type") == "recovery"
+        ]
+
+        work_recovery_comparison = {}
+        if work_intervals and recovery_intervals:
+            work_recovery_comparison = {
+                "work_count": len(work_intervals),
+                "recovery_count": len(recovery_intervals),
+                "avg_work_pace": statistics.mean(
+                    [w.get("avg_pace_min_per_km", 0) for w in work_intervals]
+                ),
+                "avg_recovery_pace": statistics.mean(
+                    [r.get("avg_pace_min_per_km", 0) for r in recovery_intervals]
+                ),
+                "avg_work_hr": statistics.mean(
+                    [w.get("avg_hr_bpm", 0) for w in work_intervals]
+                ),
+                "avg_recovery_hr": statistics.mean(
+                    [r.get("avg_hr_bpm", 0) for r in recovery_intervals]
+                ),
+            }
+
+            # Calculate HR recovery rates
+            recovery_rates = []
+            for i in range(len(work_intervals)):
+                if i < len(recovery_intervals):
+                    rate = self.calculate_recovery_speed(
+                        work_intervals[i], recovery_intervals[i]
+                    )
+                    if rate is not None:
+                        recovery_rates.append(rate)
+
+            if recovery_rates:
+                work_recovery_comparison["avg_hr_recovery_rate_bpm_per_min"] = (
+                    statistics.mean(recovery_rates)
+                )
+
         return {
             "activity_id": activity_id,
-            "segments": [],
-            "message": "Interval analysis implementation pending (Phase 2 incomplete)",
+            "segments": intervals,
+            "work_recovery_comparison": work_recovery_comparison,
+            "fatigue_indicators": fatigue,
         }
