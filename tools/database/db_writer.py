@@ -84,13 +84,18 @@ class GarminDBWriter:
         """
         )
 
-        # Create splits table (from inserters/splits.py)
+        # Create splits table (from inserters/splits.py) with time range columns
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS splits (
                 activity_id BIGINT,
                 split_index INTEGER,
                 distance DOUBLE,
+                duration_seconds DOUBLE,
+                start_time_gmt VARCHAR,
+                start_time_s INTEGER,
+                end_time_s INTEGER,
+                intensity_type VARCHAR,
                 role_phase VARCHAR,
                 pace_str VARCHAR,
                 pace_seconds_per_km DOUBLE,
