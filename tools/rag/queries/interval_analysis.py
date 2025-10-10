@@ -25,17 +25,11 @@ class IntervalAnalyzer:
     def detect_intervals(
         self,
         splits: list[dict],
-        pace_threshold_factor: float = 1.3,
-        min_work_duration: int = 180,
-        min_recovery_duration: int = 60,
     ) -> list[dict[str, Any]]:
-        """Detect Work/Recovery intervals from pace changes.
+        """Detect Work/Recovery intervals from intensity_type in DuckDB.
 
         Args:
-            splits: List of split data with pace and HR information
-            pace_threshold_factor: Recovery/Work pace ratio (default 1.3)
-            min_work_duration: Minimum work interval duration in seconds
-            min_recovery_duration: Minimum recovery interval duration in seconds
+            splits: List of split data with intensity_type and metrics
 
         Returns:
             List of detected intervals with segment type and metrics
@@ -45,68 +39,33 @@ class IntervalAnalyzer:
 
         intervals = []
 
-        # Calculate overall pace statistics to determine thresholds
-        paces = [
-            split["avg_pace_min_per_km"]
-            for split in splits
-            if "avg_pace_min_per_km" in split
-        ]
-
-        if not paces:
-            return []
-
-        avg_pace = statistics.mean(paces)
-        pace_std = statistics.stdev(paces) if len(paces) > 1 else 0
-
-        # Threshold for detecting work vs recovery
-        # Work: faster than average - 0.5 std
-        # Recovery: slower than average + 0.3 std (adjusted for better detection)
-        work_threshold = avg_pace - 0.5 * pace_std
-        recovery_threshold = avg_pace + 0.3 * pace_std
-
-        # Detect intervals based on pace
+        # Process each split using intensity_type
         for i, split in enumerate(splits):
-            pace = split.get("avg_pace_min_per_km", avg_pace)
+            intensity_type = split.get("intensity_type")
             duration = split.get("end_time_s", 0) - split.get("start_time_s", 0)
             split_number = split.get("split_number", i + 1)
 
-            # Classify segment type
-            # First check for warmup/cooldown based on position and pace
-            if split_number == 1 and pace > 5.5:
-                segment_type = "warmup"
-            elif split_number == len(splits) and pace > 6.0:
-                segment_type = "cooldown"
-            # Then check pace thresholds for work/recovery
-            elif pace < work_threshold:
+            # Map intensity_type to segment_type
+            if intensity_type == "INTERVAL":
                 segment_type = "work"
-            elif pace > recovery_threshold:
+            elif intensity_type == "RECOVERY":
                 segment_type = "recovery"
-            # Handle edge cases based on absolute pace values
-            elif pace < 4.5:
-                # Very fast pace - definitely work
-                segment_type = "work"
-            elif pace > 5.3:
-                # Moderate-slow pace - likely recovery if not first/last
-                if split_number == 1:
-                    segment_type = "warmup"
-                elif split_number == len(splits):
-                    segment_type = "cooldown"
-                else:
-                    segment_type = "recovery"
-            elif pace < 5.0:
-                # Fast but not work - could be warmup or tempo
-                segment_type = "warmup" if split_number == 1 else "work"
+            elif intensity_type == "WARMUP":
+                segment_type = "warmup"
+            elif intensity_type == "COOLDOWN":
+                segment_type = "cooldown"
             else:
+                # For None or unknown intensity types, use "steady"
                 segment_type = "steady"
 
-            # Add interval
+            # Create interval
             interval = {
                 "segment_number": split_number,
                 "segment_type": segment_type,
                 "start_time": split.get("start_time_s", 0),
                 "end_time": split.get("end_time_s", 0),
                 "duration_seconds": duration,
-                "avg_pace_min_per_km": pace,
+                "avg_pace_min_per_km": split.get("avg_pace_min_per_km", 0),
                 "avg_hr_bpm": split.get("avg_hr_bpm", 0),
                 "avg_gct_ms": split.get("avg_gct_ms", 0),
                 "avg_vo_cm": split.get("avg_vo_cm", 0),
@@ -226,17 +185,11 @@ class IntervalAnalyzer:
     def get_interval_analysis(
         self,
         activity_id: int,
-        pace_threshold_factor: float = 1.3,
-        min_work_duration: int = 180,
-        min_recovery_duration: int = 60,
     ) -> dict[str, Any]:
         """Get comprehensive interval training analysis.
 
         Args:
             activity_id: Activity ID.
-            pace_threshold_factor: Recovery/Work pace ratio (default: 1.3).
-            min_work_duration: Minimum work segment duration in seconds (default: 180).
-            min_recovery_duration: Minimum recovery segment duration in seconds (default: 60).
 
         Returns:
             Dictionary with interval analysis:
@@ -254,50 +207,70 @@ class IntervalAnalyzer:
                 "fatigue_indicators": {...}
             }
         """
+        import duckdb
+
         from tools.database.db_reader import GarminDBReader
 
-        # Load splits data from DuckDB
+        # Query DuckDB directly for splits with intensity_type and time ranges
         db_reader = GarminDBReader()
-        splits_pace_hr_data = db_reader.get_splits_pace_hr(activity_id)
-        splits_form_data = db_reader.get_splits_form_metrics(activity_id)
 
-        if not splits_pace_hr_data or "splits" not in splits_pace_hr_data:
+        try:
+            conn = duckdb.connect(str(db_reader.db_path), read_only=True)
+
+            result = conn.execute(
+                """
+                SELECT
+                    split_index,
+                    distance,
+                    start_time_s,
+                    end_time_s,
+                    intensity_type,
+                    pace_seconds_per_km,
+                    heart_rate,
+                    ground_contact_time,
+                    vertical_oscillation,
+                    vertical_ratio
+                FROM splits
+                WHERE activity_id = ?
+                ORDER BY split_index
+                """,
+                [activity_id],
+            ).fetchall()
+
+            conn.close()
+
+            if not result:
+                return {
+                    "activity_id": activity_id,
+                    "segments": [],
+                    "error": f"No splits data found in DuckDB for activity {activity_id}",
+                }
+
+            # Convert to splits format
+            splits = []
+            for row in result:
+                split_data = {
+                    "split_number": row[0],
+                    "distance_km": row[1],
+                    "start_time_s": row[2],
+                    "end_time_s": row[3],
+                    "intensity_type": row[4],
+                    "avg_pace_min_per_km": (
+                        row[5] / 60.0 if row[5] else 0
+                    ),  # Convert seconds/km to minutes/km
+                    "avg_hr_bpm": row[6] if row[6] else 0,
+                    "avg_gct_ms": row[7] if row[7] else 0,
+                    "avg_vo_cm": row[8] if row[8] else 0,
+                    "avg_vr_percent": row[9] if row[9] else 0,
+                }
+                splits.append(split_data)
+
+        except Exception as e:
             return {
                 "activity_id": activity_id,
                 "segments": [],
-                "error": f"No splits data found in DuckDB for activity {activity_id}",
+                "error": f"Error querying DuckDB: {e}",
             }
-
-        # Extract splits lists
-        splits_pace_hr = splits_pace_hr_data.get("splits", [])
-        splits_form = splits_form_data.get("splits", []) if splits_form_data else []
-
-        # Merge pace/HR and form metrics and convert to expected format
-        splits = []
-        for i, pace_hr in enumerate(splits_pace_hr):
-            split_data = pace_hr.copy()
-
-            # Convert pace from seconds/km to minutes/km
-            if "avg_pace_seconds_per_km" in split_data:
-                split_data["avg_pace_min_per_km"] = (
-                    split_data["avg_pace_seconds_per_km"] / 60.0
-                )
-
-            # Rename heart rate key if needed
-            if "avg_heart_rate" in split_data:
-                split_data["avg_hr_bpm"] = split_data["avg_heart_rate"]
-
-            # Add form metrics if available
-            if i < len(splits_form):
-                form = splits_form[i]
-                split_data.update(
-                    {
-                        "avg_gct_ms": form.get("avg_gct_ms", 0),
-                        "avg_vo_cm": form.get("avg_vo_cm", 0),
-                        "avg_vr_percent": form.get("avg_vr_percent", 0),
-                    }
-                )
-            splits.append(split_data)
 
         if not splits:
             return {
@@ -306,10 +279,8 @@ class IntervalAnalyzer:
                 "message": "No splits data available for interval analysis",
             }
 
-        # Detect intervals
-        intervals = self.detect_intervals(
-            splits, pace_threshold_factor, min_work_duration, min_recovery_duration
-        )
+        # Detect intervals using intensity_type
+        intervals = self.detect_intervals(splits)
 
         # Calculate fatigue indicators
         fatigue = self.detect_fatigue(intervals)

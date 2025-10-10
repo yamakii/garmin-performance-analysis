@@ -22,10 +22,11 @@ def interval_analyzer():
 
 @pytest.fixture
 def mock_work_splits() -> list[dict]:
-    """Mock splits data representing Work intervals (fast pace)."""
+    """Mock splits data representing Work intervals (INTERVAL intensity)."""
     return [
         {
             "split_number": 1,
+            "intensity_type": "INTERVAL",
             "avg_pace_min_per_km": 4.0,
             "avg_hr_bpm": 175,
             "avg_gct_ms": 210,
@@ -36,6 +37,7 @@ def mock_work_splits() -> list[dict]:
         },
         {
             "split_number": 2,
+            "intensity_type": "INTERVAL",
             "avg_pace_min_per_km": 4.1,
             "avg_hr_bpm": 176,
             "avg_gct_ms": 212,
@@ -49,10 +51,11 @@ def mock_work_splits() -> list[dict]:
 
 @pytest.fixture
 def mock_recovery_splits() -> list[dict]:
-    """Mock splits data representing Recovery intervals (slow pace)."""
+    """Mock splits data representing Recovery intervals (RECOVERY intensity)."""
     return [
         {
             "split_number": 3,
+            "intensity_type": "RECOVERY",
             "avg_pace_min_per_km": 5.5,
             "avg_hr_bpm": 145,
             "avg_gct_ms": 225,
@@ -63,6 +66,7 @@ def mock_recovery_splits() -> list[dict]:
         },
         {
             "split_number": 4,
+            "intensity_type": "RECOVERY",
             "avg_pace_min_per_km": 5.6,
             "avg_hr_bpm": 143,
             "avg_gct_ms": 227,
@@ -86,23 +90,23 @@ def mock_interval_splits(
 def test_detect_intervals_work_recovery(
     interval_analyzer: IntervalAnalyzer, mock_interval_splits: list[dict]
 ):
-    """Test Work/Recovery interval detection from pace changes.
+    """Test Work/Recovery interval detection using intensity_type.
 
     Expected behavior:
-    - Fast pace (< 4.5 min/km) should be classified as Work
-    - Slow pace (> 5.0 min/km) should be classified as Recovery
+    - INTERVAL intensity_type should be classified as Work
+    - RECOVERY intensity_type should be classified as Recovery
     - Intervals should be properly segmented
     """
     intervals = interval_analyzer.detect_intervals(mock_interval_splits)
 
-    # Should detect at least 2 work and 2 recovery intervals
-    assert len(intervals) >= 4
+    # Should detect exactly 4 intervals
+    assert len(intervals) == 4
 
-    # First two should be work intervals
+    # First two should be work intervals (INTERVAL intensity)
     assert intervals[0]["segment_type"] == "work"
     assert intervals[1]["segment_type"] == "work"
 
-    # Next two should be recovery intervals
+    # Next two should be recovery intervals (RECOVERY intensity)
     assert intervals[2]["segment_type"] == "recovery"
     assert intervals[3]["segment_type"] == "recovery"
 
@@ -216,17 +220,18 @@ def test_calculate_hr_recovery_speed(interval_analyzer: IntervalAnalyzer):
 
 @pytest.mark.unit
 def test_interval_analysis_no_intervals(interval_analyzer: IntervalAnalyzer):
-    """Test behavior when no intervals are detected (normal run).
+    """Test behavior when no intensity_type is set (normal run).
 
     Expected behavior:
-    - Should return empty intervals list or classify as steady-state
+    - Should return intervals with "steady" segment type
     - Should not crash or raise exceptions
     - Should provide meaningful feedback
     """
-    # Mock steady-state run (consistent pace)
+    # Mock steady-state run (no intensity_type)
     steady_splits = [
         {
             "split_number": i,
+            "intensity_type": None,
             "avg_pace_min_per_km": 5.0,
             "avg_hr_bpm": 155,
             "avg_gct_ms": 220,
@@ -240,21 +245,24 @@ def test_interval_analysis_no_intervals(interval_analyzer: IntervalAnalyzer):
 
     result = interval_analyzer.detect_intervals(steady_splits)
 
-    # Should handle gracefully - either empty or single steady segment
+    # Should handle gracefully - return 5 steady intervals
     assert isinstance(result, list)
-    # If there's a result, it should be classified as steady/tempo
-    if len(result) > 0:
-        assert result[0]["segment_type"] in ["steady", "tempo", "warmup"]
+    assert len(result) == 5
+
+    # All should be classified as steady (None intensity_type)
+    for interval in result:
+        assert interval["segment_type"] == "steady"
 
 
 @pytest.mark.unit
 def test_interval_analysis_with_warmup_cooldown(interval_analyzer: IntervalAnalyzer):
-    """Test interval detection with warmup and cooldown phases.
+    """Test interval detection with warmup and cooldown phases using intensity_type.
 
     Expected behavior:
-    - Detect warmup (gradual pace increase)
-    - Detect main work intervals
-    - Detect cooldown (gradual pace decrease)
+    - Detect warmup (WARMUP intensity_type)
+    - Detect main work intervals (INTERVAL intensity_type)
+    - Detect recovery (RECOVERY intensity_type)
+    - Detect cooldown (COOLDOWN intensity_type)
     - Properly classify each phase
     """
     # Mock splits with warmup, work, recovery, cooldown
@@ -262,6 +270,7 @@ def test_interval_analysis_with_warmup_cooldown(interval_analyzer: IntervalAnaly
         # Warmup
         {
             "split_number": 1,
+            "intensity_type": "WARMUP",
             "avg_pace_min_per_km": 6.0,
             "avg_hr_bpm": 130,
             "start_time_s": 0,
@@ -270,6 +279,7 @@ def test_interval_analysis_with_warmup_cooldown(interval_analyzer: IntervalAnaly
         # Work
         {
             "split_number": 2,
+            "intensity_type": "INTERVAL",
             "avg_pace_min_per_km": 4.0,
             "avg_hr_bpm": 175,
             "start_time_s": 300,
@@ -278,6 +288,7 @@ def test_interval_analysis_with_warmup_cooldown(interval_analyzer: IntervalAnaly
         # Recovery
         {
             "split_number": 3,
+            "intensity_type": "RECOVERY",
             "avg_pace_min_per_km": 5.5,
             "avg_hr_bpm": 145,
             "start_time_s": 540,
@@ -286,6 +297,7 @@ def test_interval_analysis_with_warmup_cooldown(interval_analyzer: IntervalAnaly
         # Cooldown
         {
             "split_number": 4,
+            "intensity_type": "COOLDOWN",
             "avg_pace_min_per_km": 6.5,
             "avg_hr_bpm": 125,
             "start_time_s": 720,
@@ -295,38 +307,28 @@ def test_interval_analysis_with_warmup_cooldown(interval_analyzer: IntervalAnaly
 
     intervals = interval_analyzer.detect_intervals(splits)
 
-    # Should detect at least 4 segments
-    assert len(intervals) >= 4
+    # Should detect exactly 4 segments
+    assert len(intervals) == 4
 
-    # Check segment types
-    segment_types = [interval["segment_type"] for interval in intervals]
-
-    # Should have warmup and cooldown
-    assert "warmup" in segment_types or segment_types[0] in [
-        "warmup",
-        "easy",
-    ]
-    assert "cooldown" in segment_types or segment_types[-1] in [
-        "cooldown",
-        "easy",
-    ]
-
-    # Should have work and recovery
-    assert "work" in segment_types
-    assert "recovery" in segment_types
+    # Check segment types match intensity_type mapping
+    assert intervals[0]["segment_type"] == "warmup"
+    assert intervals[1]["segment_type"] == "work"
+    assert intervals[2]["segment_type"] == "recovery"
+    assert intervals[3]["segment_type"] == "cooldown"
 
 
 @pytest.mark.integration
 def test_interval_analysis_real_activity(interval_analyzer: IntervalAnalyzer):
-    """Integration test with fixture activity data.
+    """Integration test with fixture interval training data using intensity_type.
 
-    Uses fixture interval training data to test the full analysis pipeline.
+    Uses realistic interval training data to test the full analysis pipeline.
     """
     # Create realistic interval training splits (warmup + 3x work/recovery + cooldown)
     interval_training_splits = [
         # Warmup
         {
             "split_number": 1,
+            "intensity_type": "WARMUP",
             "avg_pace_min_per_km": 6.0,
             "avg_hr_bpm": 130,
             "avg_gct_ms": 240,
@@ -338,6 +340,7 @@ def test_interval_analysis_real_activity(interval_analyzer: IntervalAnalyzer):
         # Work 1
         {
             "split_number": 2,
+            "intensity_type": "INTERVAL",
             "avg_pace_min_per_km": 4.0,
             "avg_hr_bpm": 175,
             "avg_gct_ms": 210,
@@ -349,6 +352,7 @@ def test_interval_analysis_real_activity(interval_analyzer: IntervalAnalyzer):
         # Recovery 1
         {
             "split_number": 3,
+            "intensity_type": "RECOVERY",
             "avg_pace_min_per_km": 5.5,
             "avg_hr_bpm": 145,
             "avg_gct_ms": 225,
@@ -360,6 +364,7 @@ def test_interval_analysis_real_activity(interval_analyzer: IntervalAnalyzer):
         # Work 2
         {
             "split_number": 4,
+            "intensity_type": "INTERVAL",
             "avg_pace_min_per_km": 4.1,
             "avg_hr_bpm": 177,
             "avg_gct_ms": 212,
@@ -371,6 +376,7 @@ def test_interval_analysis_real_activity(interval_analyzer: IntervalAnalyzer):
         # Recovery 2
         {
             "split_number": 5,
+            "intensity_type": "RECOVERY",
             "avg_pace_min_per_km": 5.6,
             "avg_hr_bpm": 143,
             "avg_gct_ms": 227,
@@ -382,6 +388,7 @@ def test_interval_analysis_real_activity(interval_analyzer: IntervalAnalyzer):
         # Work 3
         {
             "split_number": 6,
+            "intensity_type": "INTERVAL",
             "avg_pace_min_per_km": 4.2,
             "avg_hr_bpm": 180,
             "avg_gct_ms": 215,
@@ -393,6 +400,7 @@ def test_interval_analysis_real_activity(interval_analyzer: IntervalAnalyzer):
         # Recovery 3
         {
             "split_number": 7,
+            "intensity_type": "RECOVERY",
             "avg_pace_min_per_km": 5.7,
             "avg_hr_bpm": 140,
             "avg_gct_ms": 230,
@@ -404,6 +412,7 @@ def test_interval_analysis_real_activity(interval_analyzer: IntervalAnalyzer):
         # Cooldown
         {
             "split_number": 8,
+            "intensity_type": "COOLDOWN",
             "avg_pace_min_per_km": 6.5,
             "avg_hr_bpm": 125,
             "avg_gct_ms": 245,
@@ -417,16 +426,19 @@ def test_interval_analysis_real_activity(interval_analyzer: IntervalAnalyzer):
     # Test full interval analysis pipeline
     intervals = interval_analyzer.detect_intervals(interval_training_splits)
 
-    # Should detect multiple intervals
-    assert len(intervals) >= 7  # warmup + 3 work + 3 recovery + cooldown
+    # Should detect exactly 8 intervals
+    assert len(intervals) == 8
 
-    # Should have work and recovery intervals
+    # Verify correct segment type distribution
     segment_types = [interval["segment_type"] for interval in intervals]
-    assert "work" in segment_types
-    assert "recovery" in segment_types
+    assert segment_types.count("work") == 3
+    assert segment_types.count("recovery") == 3
+    assert segment_types.count("warmup") == 1
+    assert segment_types.count("cooldown") == 1
 
-    # Should detect fatigue (if implemented)
+    # Should detect fatigue
     work_intervals = [i for i in intervals if i.get("segment_type") == "work"]
-    if len(work_intervals) >= 2:
-        fatigue = interval_analyzer.detect_fatigue(work_intervals)
-        assert fatigue is not None
+    fatigue = interval_analyzer.detect_fatigue(work_intervals)
+    assert fatigue is not None
+    assert "hr_increase_bpm" in fatigue
+    assert "pace_degradation_sec_per_km" in fatigue
