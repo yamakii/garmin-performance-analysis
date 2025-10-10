@@ -272,10 +272,21 @@ class IntervalAnalyzer:
         splits_pace_hr = splits_pace_hr_data.get("splits", [])
         splits_form = splits_form_data.get("splits", []) if splits_form_data else []
 
-        # Merge pace/HR and form metrics
+        # Merge pace/HR and form metrics and convert to expected format
         splits = []
         for i, pace_hr in enumerate(splits_pace_hr):
             split_data = pace_hr.copy()
+
+            # Convert pace from seconds/km to minutes/km
+            if "avg_pace_seconds_per_km" in split_data:
+                split_data["avg_pace_min_per_km"] = (
+                    split_data["avg_pace_seconds_per_km"] / 60.0
+                )
+
+            # Rename heart rate key if needed
+            if "avg_heart_rate" in split_data:
+                split_data["avg_hr_bpm"] = split_data["avg_heart_rate"]
+
             # Add form metrics if available
             if i < len(splits_form):
                 form = splits_form[i]
