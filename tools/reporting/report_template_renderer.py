@@ -181,8 +181,10 @@ class ReportTemplateRenderer:
         Returns:
             Final report path
         """
+        from tools.utils.paths import get_result_dir
+
         year, month, _ = date.split("-")
-        final_dir = self.project_root / "result" / "individual" / year / month
+        final_dir = get_result_dir() / "individual" / year / month
         return final_dir / f"{date}_activity_{activity_id}.md"
 
     def save_report(
