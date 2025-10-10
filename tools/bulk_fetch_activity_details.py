@@ -35,7 +35,9 @@ class ActivityDetailsFetcher:
             force: Force re-fetch even if file exists
         """
         if raw_dir is None:
-            raw_dir = Path("data/raw")
+            from tools.utils.paths import get_raw_dir
+
+            raw_dir = get_raw_dir()
         self.raw_dir = Path(raw_dir)
         self.activity_dir = self.raw_dir / "activity"
         self.delay_seconds = delay_seconds

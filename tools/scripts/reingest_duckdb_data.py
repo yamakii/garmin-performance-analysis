@@ -129,17 +129,19 @@ def main():
     """Main entry point."""
     import argparse
 
+    from tools.utils.paths import get_database_dir, get_raw_dir
+
     parser = argparse.ArgumentParser(
         description="Re-ingest DuckDB data from raw activities"
     )
     parser.add_argument(
         "--db-path",
-        default="data/database/garmin_performance.duckdb",
+        default=str(get_database_dir() / "garmin_performance.duckdb"),
         help="Path to DuckDB database",
     )
     parser.add_argument(
         "--raw-dir",
-        default="data/raw/activity",
+        default=str(get_raw_dir() / "activity"),
         help="Path to raw activity directory",
     )
     parser.add_argument(

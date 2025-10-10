@@ -177,17 +177,19 @@ def main():
     """CLI entry point for migration script."""
     import argparse
 
+    from tools.utils.paths import get_raw_dir
+
     parser = argparse.ArgumentParser(description="Migrate raw_data to new structure")
     parser.add_argument(
         "--source-dir",
         type=Path,
-        default=Path("data/archive/raw"),
+        default=get_raw_dir().parent / "archive" / "raw",
         help="Source directory with old format files (default: data/archive/raw)",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("data/raw"),
+        default=get_raw_dir(),
         help="Output directory for new structure (default: data/raw)",
     )
     parser.add_argument(
