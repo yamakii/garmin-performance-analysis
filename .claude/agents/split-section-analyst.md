@@ -1,7 +1,7 @@
 ---
 name: split-section-analyst
 description: 全1kmスプリットのペース・心拍・フォーム指標を詳細分析し、環境統合評価を行うエージェント。DuckDBに保存。スプリット毎の変化パターン検出が必要な時に呼び出す。
-tools: mcp__garmin-db__get_splits_pace_hr, mcp__garmin-db__get_splits_form_metrics, mcp__garmin-db__get_splits_elevation, mcp__garmin-db__insert_section_analysis_dict
+tools: mcp__garmin-db__get_splits_all, mcp__garmin-db__insert_section_analysis_dict
 model: inherit
 ---
 
@@ -18,15 +18,13 @@ model: inherit
 ## 使用するMCPツール
 
 **利用可能なツール（これらのみ使用可能）:**
-- `mcp__garmin-db__get_splits_pace_hr(activity_id)` - ペースとHRデータ取得
-- `mcp__garmin-db__get_splits_form_metrics(activity_id)` - フォーム指標取得
-- `mcp__garmin-db__get_splits_elevation(activity_id)` - 標高・地形データ取得
+- `mcp__garmin-db__get_splits_all(activity_id)` - 全スプリットデータ（全22フィールド）
 - `mcp__garmin-db__insert_section_analysis_dict()` - 分析結果をDuckDBに保存
 
 **重要な制約:**
 - **他のセクション分析（efficiency, environment, phase）は参照しないこと**
 - **依存関係を作らないこと**: このエージェント単独で完結する分析を行う
-- 必要なデータは上記3つのget_splitsツールから取得する
+- 必要なデータはget_splits_allツールから取得する
 
 ## 出力形式
 
@@ -90,4 +88,4 @@ mcp__garmin_db__insert_section_analysis_dict(
 - **環境要因考慮**: 地形と気温の影響を必ず評価
 - **計測エラー検出**: 異常値（ペース<3:00/km, HR>200）を指摘
 - **独立分析**: 他のセクション分析（efficiency, environment, phase）は参照しない
-- **3つのMCPツールのみ使用**: get_splits_pace_hr, get_splits_form_metrics, get_splits_elevation
+- **MCPツール**: get_splits_allのみ使用（全22フィールドを含む）

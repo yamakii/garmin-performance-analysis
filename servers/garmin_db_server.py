@@ -133,6 +133,72 @@ async def list_tools() -> list[Tool]:
                 ],
             },
         ),
+        Tool(
+            name="get_form_efficiency_summary",
+            description="Get form efficiency summary (GCT, VO, VR metrics) from form_efficiency table",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "activity_id": {"type": "integer"},
+                },
+                "required": ["activity_id"],
+            },
+        ),
+        Tool(
+            name="get_hr_efficiency_analysis",
+            description="Get HR efficiency analysis (zone distribution, training type) from hr_efficiency table",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "activity_id": {"type": "integer"},
+                },
+                "required": ["activity_id"],
+            },
+        ),
+        Tool(
+            name="get_heart_rate_zones_detail",
+            description="Get heart rate zones detail (boundaries, time distribution) from heart_rate_zones table",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "activity_id": {"type": "integer"},
+                },
+                "required": ["activity_id"],
+            },
+        ),
+        Tool(
+            name="get_vo2_max_data",
+            description="Get VO2 max data (precise value, fitness age, category) from vo2_max table",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "activity_id": {"type": "integer"},
+                },
+                "required": ["activity_id"],
+            },
+        ),
+        Tool(
+            name="get_lactate_threshold_data",
+            description="Get lactate threshold data (HR, speed, power) from lactate_threshold table",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "activity_id": {"type": "integer"},
+                },
+                "required": ["activity_id"],
+            },
+        ),
+        Tool(
+            name="get_splits_all",
+            description="Get all split data (all 22 fields) from splits table",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "activity_id": {"type": "integer"},
+                },
+                "required": ["activity_id"],
+            },
+        ),
     ]
 
 
@@ -284,6 +350,60 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             "section_type": section_type,
         }
 
+        return [
+            TextContent(
+                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+            )
+        ]
+
+    elif name == "get_form_efficiency_summary":
+        activity_id = arguments["activity_id"]
+        result = db_reader.get_form_efficiency_summary(activity_id)
+        return [
+            TextContent(
+                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+            )
+        ]
+
+    elif name == "get_hr_efficiency_analysis":
+        activity_id = arguments["activity_id"]
+        result = db_reader.get_hr_efficiency_analysis(activity_id)
+        return [
+            TextContent(
+                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+            )
+        ]
+
+    elif name == "get_heart_rate_zones_detail":
+        activity_id = arguments["activity_id"]
+        result = db_reader.get_heart_rate_zones_detail(activity_id)
+        return [
+            TextContent(
+                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+            )
+        ]
+
+    elif name == "get_vo2_max_data":
+        activity_id = arguments["activity_id"]
+        result = db_reader.get_vo2_max_data(activity_id)
+        return [
+            TextContent(
+                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+            )
+        ]
+
+    elif name == "get_lactate_threshold_data":
+        activity_id = arguments["activity_id"]
+        result = db_reader.get_lactate_threshold_data(activity_id)
+        return [
+            TextContent(
+                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+            )
+        ]
+
+    elif name == "get_splits_all":
+        activity_id = arguments["activity_id"]
+        result = db_reader.get_splits_all(activity_id)
         return [
             TextContent(
                 type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
