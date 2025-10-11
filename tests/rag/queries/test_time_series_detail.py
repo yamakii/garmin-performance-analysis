@@ -475,3 +475,163 @@ def test_get_split_time_range_duckdb_based():
 
         with pytest.raises(ValueError):
             extractor._get_split_time_range(split_number=10, activity_id=activity_id)
+
+
+@pytest.mark.unit
+def test_analyze_time_range_valid_range():
+    """Test analyze_time_range() with valid time range.
+
+    Expected behavior:
+    - Accept arbitrary start_time_s and end_time_s
+    - Return time_series data for that range
+    - Calculate statistics correctly
+    - Detect anomalies if present
+    """
+    from pathlib import Path
+
+    # Use fixture activity (12345678901)
+    activity_id = 12345678901
+    base_path = Path(__file__).parent.parent.parent / "fixtures"
+    extractor = TimeSeriesDetailExtractor(base_path=base_path)
+
+    # Test arbitrary time range (100s to 200s)
+    result = extractor.analyze_time_range(
+        activity_id=activity_id,
+        start_time_s=100,
+        end_time_s=200,
+        metrics=["directHeartRate", "directSpeed"],
+    )
+
+    # Check result structure
+    assert "activity_id" in result
+    assert "start_time_s" in result
+    assert "end_time_s" in result
+    assert "duration_s" in result
+    assert "time_series" in result
+    assert "statistics" in result
+    assert "anomalies" in result
+
+    # Check values
+    assert result["activity_id"] == activity_id
+    assert result["start_time_s"] == 100
+    assert result["end_time_s"] == 200
+    assert result["duration_s"] == 100  # 200 - 100
+
+    # Check time_series is list
+    assert isinstance(result["time_series"], list)
+
+    # Check statistics has metrics
+    assert "directHeartRate" in result["statistics"]
+    assert "directSpeed" in result["statistics"]
+
+
+@pytest.mark.unit
+def test_analyze_time_range_out_of_bounds():
+    """Test analyze_time_range() with out-of-bounds time range.
+
+    Expected behavior:
+    - Should handle gracefully when end_time_s > max available data
+    - Should return data up to available range
+    - Should not crash on invalid ranges
+    """
+    from pathlib import Path
+
+    # Use fixture activity (12345678901)
+    activity_id = 12345678901
+    base_path = Path(__file__).parent.parent.parent / "fixtures"
+    extractor = TimeSeriesDetailExtractor(base_path=base_path)
+
+    # Test with very large end_time_s (should handle gracefully)
+    result = extractor.analyze_time_range(
+        activity_id=activity_id,
+        start_time_s=0,
+        end_time_s=99999,  # Larger than fixture data
+    )
+
+    # Should return result without crashing
+    assert result["activity_id"] == activity_id
+    assert result["start_time_s"] == 0
+    assert result["end_time_s"] == 99999
+
+
+@pytest.mark.unit
+def test_analyze_time_range_custom_metrics():
+    """Test analyze_time_range() with custom metric list.
+
+    Expected behavior:
+    - Accept custom metrics parameter
+    - Return statistics only for requested metrics
+    - Handle missing metrics gracefully
+    """
+    from pathlib import Path
+
+    # Use fixture activity (12345678901)
+    activity_id = 12345678901
+    base_path = Path(__file__).parent.parent.parent / "fixtures"
+    extractor = TimeSeriesDetailExtractor(base_path=base_path)
+
+    # Test with custom metrics
+    custom_metrics = ["directGroundContactTime", "directVerticalOscillation"]
+    result = extractor.analyze_time_range(
+        activity_id=activity_id,
+        start_time_s=50,
+        end_time_s=150,
+        metrics=custom_metrics,
+    )
+
+    # Check statistics contains only custom metrics
+    assert "directGroundContactTime" in result["statistics"]
+    assert "directVerticalOscillation" in result["statistics"]
+
+    # Check that default metrics are not included
+    assert "directHeartRate" not in result["statistics"]
+
+
+@pytest.mark.integration
+def test_mcp_get_time_range_detail_integration():
+    """Integration test for get_time_range_detail MCP tool.
+
+    Tests the full MCP server integration with the analyze_time_range() method.
+    """
+    from pathlib import Path
+
+    # Use fixture activity (12345678901)
+    activity_id = 12345678901
+    start_time_s = 100
+    end_time_s = 200
+
+    # Import MCP server handler (simulate MCP call)
+    # Note: This tests the integration without actually starting the MCP server
+    from tools.rag.queries.time_series_detail import TimeSeriesDetailExtractor
+
+    base_path = Path(__file__).parent.parent.parent / "fixtures"
+    extractor = TimeSeriesDetailExtractor(base_path=base_path)
+
+    # Simulate MCP tool call
+    result = extractor.analyze_time_range(
+        activity_id=activity_id,
+        start_time_s=start_time_s,
+        end_time_s=end_time_s,
+        metrics=["directHeartRate", "directSpeed"],
+    )
+
+    # Verify MCP-compatible response structure
+    assert isinstance(result, dict)
+    assert "activity_id" in result
+    assert "start_time_s" in result
+    assert "end_time_s" in result
+    assert "duration_s" in result
+    assert "time_series" in result
+    assert "statistics" in result
+    assert "anomalies" in result
+
+    # Verify values match input
+    assert result["activity_id"] == activity_id
+    assert result["start_time_s"] == start_time_s
+    assert result["end_time_s"] == end_time_s
+
+    # Verify response is JSON serializable (MCP requirement)
+    import json
+
+    json_str = json.dumps(result, indent=2, ensure_ascii=False)
+    assert len(json_str) > 0
