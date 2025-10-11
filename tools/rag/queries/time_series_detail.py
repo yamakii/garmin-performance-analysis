@@ -333,3 +333,83 @@ class TimeSeriesDetailExtractor:
             "statistics": statistics_dict,
             "anomalies": all_anomalies,
         }
+
+    def analyze_time_range(
+        self,
+        activity_id: int,
+        start_time_s: int,
+        end_time_s: int,
+        metrics: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Analyze arbitrary time range with second-by-second metrics.
+
+        Args:
+            activity_id: Activity ID.
+            start_time_s: Start time in seconds.
+            end_time_s: End time in seconds.
+            metrics: List of metric names to extract (None = common metrics).
+
+        Returns:
+            Dictionary with time range analysis:
+            {
+                "activity_id": int,
+                "start_time_s": int,
+                "end_time_s": int,
+                "duration_s": int,
+                "time_series": [
+                    {"timestamp": 0, "metric1": value1, ...},
+                    ...
+                ],
+                "statistics": {
+                    "metric1": {"avg": ..., "std": ..., "min": ..., "max": ...},
+                    ...
+                },
+                "anomalies": [
+                    {"index": ..., "metric": ..., "value": ..., "z_score": ...},
+                    ...
+                ]
+            }
+        """
+        # Default metrics if not specified
+        if metrics is None:
+            metrics = [
+                "directHeartRate",
+                "directSpeed",
+                "directDoubleCadence",
+                "directGroundContactTime",
+                "directVerticalOscillation",
+            ]
+
+        # Load activity_details.json
+        activity_details = self.loader.load_activity_details(activity_id)
+
+        # Extract time series data
+        time_series = self._extract_time_series_data(
+            activity_details, metrics, start_time_s, end_time_s
+        )
+
+        # Calculate statistics for each metric
+        statistics_dict = {}
+        all_anomalies = []
+
+        for metric_name in metrics:
+            # Extract metric values
+            metric_values = [tp.get(metric_name) for tp in time_series]
+
+            # Calculate statistics
+            stats = self._calculate_statistics(metric_values)
+            statistics_dict[metric_name] = stats
+
+            # Detect anomalies
+            anomalies = self._detect_split_anomalies(metric_name, metric_values)
+            all_anomalies.extend(anomalies)
+
+        return {
+            "activity_id": activity_id,
+            "start_time_s": start_time_s,
+            "end_time_s": end_time_s,
+            "duration_s": end_time_s - start_time_s,
+            "time_series": time_series,
+            "statistics": statistics_dict,
+            "anomalies": all_anomalies,
+        }
