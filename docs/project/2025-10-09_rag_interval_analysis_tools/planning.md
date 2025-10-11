@@ -669,7 +669,196 @@ elif name == "get_interval_analysis":
 
 ---
 
-### Phase 4: フォーム異常検出実装（3日）
+### Phase 2: GarminDBReader Enhancement (1日) - 時間範囲クエリ機能追加
+
+**目標**: DuckDBから効率的に時間範囲データを取得する機能を追加
+
+**背景**:
+- Phase 1でsplitsテーブルに`start_time_s`, `end_time_s`カラムが追加済み（2025-10-10_splits_time_range_duckdb/Phase 1完了）
+- 現在はperformance.jsonから読み込んでいるが、DuckDBからの取得に移行する
+
+**実装内容**:
+1. **GarminDBReader.get_split_time_ranges()メソッド追加**
+   ```python
+   def get_split_time_ranges(self, activity_id: int) -> list[dict[str, Any]]:
+       """Get time ranges for all splits of an activity.
+
+       Returns:
+           [
+               {
+                   "split_index": 1,
+                   "duration_seconds": 387.504,
+                   "start_time_s": 0,
+                   "end_time_s": 387
+               },
+               ...
+           ]
+       """
+   ```
+
+2. **DuckDBクエリ実装**
+   - `SELECT split_index, duration_seconds, start_time_s, end_time_s FROM splits WHERE activity_id = ? ORDER BY split_index`
+   - 存在しないactivity_idでは空リストを返す
+
+**テスト内容**:
+- [ ] Unit test: 正しいactivity_idで全splitsを取得
+- [ ] Unit test: 返り値の構造が正しい（split_index, duration_seconds, start_time_s, end_time_s）
+- [ ] Unit test: 存在しないactivity_idで空リストを返す
+- [ ] Unit test: split_indexでソートされていることを確認
+
+**受け入れ基準**:
+- [ ] 全Unit Testsがパスする
+- [ ] カバレッジ85%以上
+- [ ] Pre-commit hooks（Black, Ruff, Mypy）がパスする
+- [ ] クエリ実行時間が10ms以内（10 splits）
+
+**成果物**:
+- `tools/database/db_reader.py` (get_split_time_ranges()メソッド追加)
+- `tests/database/test_db_reader_split_time_ranges.py`
+
+---
+
+### Phase 3: TimeSeriesDetailExtractor Refactoring (1日) - DuckDBベースへの移行
+
+**目標**: `_get_split_time_range()`をperformance.jsonベースからDuckDBベースに書き換え
+
+**背景**:
+- 現在は`performance.json`から`split_metrics[i]["start_time_s"]`を読み込んでいるが、このフィールドが存在しない
+- Phase 2で追加した`GarminDBReader.get_split_time_ranges()`を使用してDuckDBから取得する
+
+**実装内容**:
+1. **`_get_split_time_range()`シグネチャ変更**
+   ```python
+   # Before (performance_data依存)
+   def _get_split_time_range(
+       self, split_number: int, performance_data: dict[str, Any]
+   ) -> tuple[int, int]:
+
+   # After (activity_id依存、DuckDB経由)
+   def _get_split_time_range(
+       self, split_number: int, activity_id: int
+   ) -> tuple[int, int]:
+       """Get time range (start_time_s, end_time_s) for a specific split.
+
+       NEW: Queries DuckDB splits table via GarminDBReader.
+
+       Args:
+           split_number: Split number (1-based index).
+           activity_id: Activity ID.
+
+       Returns:
+           Tuple of (start_time_s, end_time_s).
+       """
+   ```
+
+2. **実装ロジック**
+   - GarminDBReader.get_split_time_ranges()を呼び出し
+   - split_numberに対応する(start_time_s, end_time_s)を返す
+   - 不正なsplit_number（< 1 or > max_splits）でValueErrorを発生
+
+3. **`get_split_time_series_detail()`の修正**
+   - performance.json読み込みを削除（DuckDBから取得するため不要）
+   - `_get_split_time_range(split_number, activity_id)`を呼び出し
+
+**テスト内容**:
+- [ ] Unit test: 正しいsplit_numberで時間範囲を取得
+- [ ] Unit test: split_number < 1 でValueError
+- [ ] Unit test: split_number > max_splits でValueError
+- [ ] Integration test: get_split_time_series_detail()が正しく動作（performance.json依存なし）
+
+**受け入れ基準**:
+- [ ] 全Unit Testsがパスする
+- [ ] 全Integration Testsがパスする
+- [ ] カバレッジ85%以上
+- [ ] Pre-commit hooks（Black, Ruff, Mypy）がパスする
+- [ ] performance.jsonへの依存が完全に削除される
+- [ ] split時間範囲取得が5ms以内に完了
+
+**成果物**:
+- `tools/rag/queries/time_series_detail.py` (リファクタリング)
+- `tests/rag/queries/test_time_series_detail.py` (テスト更新)
+
+---
+
+### Phase 4: 任意時間範囲分析機能追加 (2日) - TimeSeriesDetailExtractor拡張
+
+**目標**: split番号指定だけでなく、任意の時間範囲（start_s, end_s）を直接指定できる機能を追加
+
+**背景**:
+- 現在はsplit番号（1km単位）でしか分析できない
+- インターバルトレーニングのWork区間内の細かな分析（例: 0-40秒、40-80秒）ができない
+- IntervalAnalyzerが検出したWork/Recovery区間の任意時間範囲を分析する必要がある
+
+**実装内容**:
+1. **`analyze_time_range()`メソッド追加**
+   ```python
+   def analyze_time_range(
+       self,
+       activity_id: int,
+       start_time_s: int,
+       end_time_s: int,
+       metrics: list[str] | None = None,
+   ) -> dict[str, Any]:
+       """Analyze arbitrary time range with second-by-second detail.
+
+       Args:
+           activity_id: Activity ID.
+           start_time_s: Start time in seconds (0-based).
+           end_time_s: End time in seconds (0-based).
+           metrics: List of metric names to extract (None = common metrics).
+
+       Returns:
+           Dictionary with time range analysis:
+           {
+               "activity_id": int,
+               "start_time_s": int,
+               "end_time_s": int,
+               "duration_s": int,
+               "time_series": [...],
+               "statistics": {...},
+               "anomalies": [...]
+           }
+       """
+   ```
+
+2. **`_extract_time_series_data()`の再利用**
+   - 既存のメソッドをそのまま使用（start_time_s, end_time_sを直接渡す）
+   - 統計計算・異常検出も既存ロジックを再利用
+
+3. **バリデーション追加**
+   - start_time_s < 0 でValueError
+   - end_time_s <= start_time_s でValueError
+   - end_time_s > activity総時間 でValueError
+
+4. **MCP Server統合**
+   - `get_time_range_detail`ツールをgarmin_db_server.pyに追加
+   - split番号指定（get_split_time_series_detail）と時間範囲指定（get_time_range_detail）の2つのツールを提供
+
+**テスト内容**:
+- [ ] Unit test: 任意の時間範囲（600-900秒）で正しくデータ抽出
+- [ ] Unit test: start_time_s < 0 でValueError
+- [ ] Unit test: end_time_s <= start_time_s でValueError
+- [ ] Unit test: end_time_s > 総時間 でValueError
+- [ ] Integration test: IntervalAnalyzerで検出したWork区間（例: 600-900秒）を分析
+- [ ] Integration test: MCP Server経由でget_time_range_detail呼び出し
+
+**受け入れ基準**:
+- [ ] 全Unit Testsがパスする
+- [ ] 全Integration Testsがパスする
+- [ ] カバレッジ85%以上
+- [ ] Pre-commit hooks（Black, Ruff, Mypy）がパスする
+- [ ] MCPツールがCLAUDE.mdに追加されている
+- [ ] 任意時間範囲（300秒）の分析が2秒以内に完了
+
+**成果物**:
+- `tools/rag/queries/time_series_detail.py` (analyze_time_range()追加)
+- `servers/garmin_db_server.py` (get_time_range_detail追加)
+- `tests/rag/queries/test_time_range_analysis.py`
+- `tests/integration/test_time_range_mcp.py`
+
+---
+
+### Phase 5: フォーム異常検出実装（3日）
 
 **目標**: detect_form_anomalies ツールを完成させる
 
@@ -701,7 +890,7 @@ elif name == "get_interval_analysis":
 
 ---
 
-### Phase 5: MCPサーバー統合（1日）✅ **完了 (2025-10-10)**
+### Phase 6: MCPサーバー統合（1日）✅ **完了 (2025-10-10)**
 
 **目標**: 3ツールをGarmin DB MCPサーバーに統合
 
@@ -735,7 +924,7 @@ elif name == "get_interval_analysis":
 
 ---
 
-### Phase 6: ドキュメント・完了報告（1日）
+### Phase 7: ドキュメント・完了報告（1日）
 
 **目標**: プロジェクト完了と知識の記録
 
@@ -809,37 +998,67 @@ elif name == "get_interval_analysis":
 - **Phase 2**: トレンド分析フィルタリング（完了）
 - **Phase 3**: 多変量相関分析（計画済み、wellness_metrics統合）
 
+### DuckDB Splits Time Range Enhancement（2025-10-10_splits_time_range_duckdb）
+- **Phase 1**: DuckDB Schema Update & SplitsInserter Enhancement（✅ 完了）
+  - splitsテーブルに`start_time_s`, `end_time_s`カラム追加
+  - 本プロジェクトのPhase 2-3の前提条件
+- **Phase 2-6**: 未実装（本プロジェクトに統合）
+  - GarminDBReader Enhancement
+  - TimeSeriesDetailExtractor Refactoring
+  - GarminIngestWorker Integration
+  - Database Migration
+
 ### 本プロジェクトの位置づけ
 - **Phase 2.5相当**: activity_details.json活用による内部変化分析
 - **Phase 3との違い**:
   - Phase 3 = 外部要因（睡眠、ストレス、体重） → 「なぜ」
   - Phase 2.5 = 内部変化（秒単位フォーム、インターバル） → 「何が」
 - **統合の方向性**: Phase 4で両者を統合した総合分析
+- **splits_time_range_duckdbとの統合**:
+  - Phase 1（DuckDBスキーマ）は完了済み
+  - 本プロジェクトPhase 2-3でTimeSeriesDetailExtractorをDuckDBベースに移行
+  - Phase 4で任意時間範囲分析機能を追加（IntervalAnalyzer対応）
 
 ---
 
 ## 次のステップ
 
-1. **tdd-implementer エージェント起動**
-   ```bash
-   Task: tdd-implementer
-   prompt: "docs/project/2025-10-09_rag_interval_analysis_tools/planning.md に基づいて、Phase 1から順にTDDサイクルで実装してください。"
-   ```
+1. **Phase 2開始: GarminDBReader Enhancement**
+   - tdd-implementerエージェントで`get_split_time_ranges()`メソッド実装
+   - DuckDBクエリテスト実行
+   - カバレッジ85%以上確認
 
-2. **Phase 1開始前の準備**
-   - activity_details.json サンプルデータ確認
-   - 26メトリクスの単位・factor一覧作成
-   - performance.json との整合性確認用スクリプト作成
+2. **Phase 3: TimeSeriesDetailExtractor Refactoring**
+   - performance.json依存を削除
+   - DuckDBベースの`_get_split_time_range()`に書き換え
+   - 既存テスト全パスを確認
 
-3. **実装優先順位**
-   1. ActivityDetailsLoader（基盤）
-   2. TimeSeriesDetailExtractor（単純、依存少ない）
-   3. IntervalAnalyzer（中程度複雑）
-   4. FormAnomalyDetector（最複雑）
-   5. MCPサーバー統合
+3. **Phase 4: 任意時間範囲分析機能追加**
+   - `analyze_time_range()`メソッド実装
+   - IntervalAnalyzerとの統合テスト
+   - MCPサーバーに`get_time_range_detail`追加
+
+4. **Phase 5: FormAnomalyDetector実装**
+   - 相関分析ロジック実装
+   - 異常検出精度検証
+
+5. **Phase 7: 完了報告**
+   - completion-reporterエージェント起動
+   - CLAUDE.md更新
+   - 受け入れ基準チェック
 
 ---
 
-**最終更新**: 2025-10-09
+**最終更新**: 2025-10-11
 **作成者**: Claude Code (project-planner agent)
-**ステータス**: 計画完了、実装待ち
+**ステータス**: Phase 1-3完了、Phase 2-4計画追加、Phase 2実装待ち
+
+**Phase完了状況**:
+- ✅ Phase 0: ActivityDetailsLoader（完了）
+- ✅ Phase 1: IntervalAnalyzer, TimeSeriesDetailExtractor, FormAnomalyDetector（完了）
+- ✅ Phase 6: MCP Server統合（完了）
+- ⏸ Phase 2: GarminDBReader Enhancement（未実装、splits_time_range_duckdb Phase 3統合）
+- ⏸ Phase 3: TimeSeriesDetailExtractor Refactoring（未実装、splits_time_range_duckdb Phase 4統合）
+- ⏸ Phase 4: 任意時間範囲分析機能追加（新規、IntervalAnalyzer対応）
+- ⏸ Phase 5: FormAnomalyDetector完全実装（未実装）
+- ⏸ Phase 7: ドキュメント・完了報告（未実装）

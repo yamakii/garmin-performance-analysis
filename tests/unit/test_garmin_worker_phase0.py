@@ -53,6 +53,7 @@ def sample_api_responses():
                 "trainingEffect": 2.4,
                 "anaerobicTrainingEffect": 0.0,
                 "startTimeLocal": "2025-09-22T06:00:00.0",
+                "duration": 1200,  # 20 minutes = 1200 seconds
             },
         },
         "activity_details": {
@@ -171,6 +172,7 @@ class TestCollectDataPerAPICache:
 
         # Mock Garmin client
         mock_client = MagicMock()
+        mock_client.get_activity.return_value = sample_api_responses["activity"]
         mock_client.get_activity_details.return_value = sample_api_responses[
             "activity_details"
         ]
@@ -192,6 +194,7 @@ class TestCollectDataPerAPICache:
         raw_data = worker.collect_data(activity_id)
 
         # Verify all API calls were made
+        # maxchart should be calculated as: int(1200 * 1.5) = 1800, constrained to [2000, 10000] = 2000
         mock_client.get_activity_details.assert_called_once_with(
             activity_id, maxchart=2000
         )
@@ -216,6 +219,7 @@ class TestCollectDataPerAPICache:
 
         # Mock Garmin client with one failing API
         mock_client = MagicMock()
+        mock_client.get_activity.return_value = sample_api_responses["activity"]
         mock_client.get_activity_details.return_value = sample_api_responses[
             "activity_details"
         ]

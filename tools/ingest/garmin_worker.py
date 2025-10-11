@@ -407,7 +407,7 @@ class GarminIngestWorker:
                 logger.error(f"Failed to fetch activity basic info: {e}")
                 raw_data["activity_basic"] = None
 
-        # 1. Activity details (chart data with maxchart=2000, ~2MB)
+        # 1. Activity details (chart data with dynamic maxchart based on duration)
         activity_file = activity_dir / "activity_details.json"
         if activity_file.exists():
             logger.info(f"Using cached activity_details for {activity_id}")
@@ -415,7 +415,22 @@ class GarminIngestWorker:
                 raw_data["activity"] = json.load(f)
         else:
             try:
-                activity_data = client.get_activity_details(activity_id, maxchart=2000)
+                # Calculate maxchart dynamically from activity duration
+                activity_basic = raw_data.get("activity_basic", {})
+                summary = activity_basic.get("summaryDTO", {})
+                duration_seconds = summary.get("duration", 0)
+
+                # maxchart = duration * 1.5 (buffer), constrained to [2000, 10000]
+                calculated_maxchart = int(duration_seconds * 1.5)
+                maxchart = max(2000, min(calculated_maxchart, 10000))
+
+                logger.info(
+                    f"Activity duration: {duration_seconds}s ({duration_seconds/60:.1f}min), using maxchart={maxchart}"
+                )
+
+                activity_data = client.get_activity_details(
+                    activity_id, maxchart=maxchart
+                )
                 raw_data["activity"] = activity_data
                 with open(activity_file, "w", encoding="utf-8") as f:
                     json.dump(activity_data, f, ensure_ascii=False, indent=2)
