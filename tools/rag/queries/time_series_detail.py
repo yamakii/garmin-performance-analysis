@@ -11,7 +11,6 @@ Key features:
 - Support for all 26+ metrics from activity_details.json
 """
 
-import json
 import statistics
 from pathlib import Path
 from typing import Any
@@ -33,45 +32,57 @@ class TimeSeriesDetailExtractor:
         loader: ActivityDetailsLoader instance for loading activity data
     """
 
-    def __init__(self, base_path: Path | None = None) -> None:
+    def __init__(
+        self, base_path: Path | None = None, db_path: str | None = None
+    ) -> None:
         """Initialize TimeSeriesDetailExtractor.
 
         Args:
             base_path: Base directory path for data files.
                       Defaults to current directory if not provided.
+            db_path: Optional path to DuckDB database file.
+                    If not provided, uses default from paths utility.
         """
         self.base_path = base_path or Path(".")
         self.loader = ActivityDetailsLoader(base_path=self.base_path)
+        self.db_path = db_path
 
     def _get_split_time_range(
-        self, split_number: int, performance_data: dict[str, Any]
+        self, split_number: int, activity_id: int
     ) -> tuple[int, int]:
         """Get time range (start_time_s, end_time_s) for a specific split.
 
+        NEW (Phase 3): Queries DuckDB splits table via GarminDBReader.
+
         Args:
             split_number: Split number (1-based index).
-            performance_data: Performance data dictionary containing split_metrics.
+            activity_id: Activity ID.
 
         Returns:
             Tuple of (start_time_s, end_time_s).
 
         Raises:
             ValueError: If split_number is invalid (< 1 or > max_splits).
-            KeyError: If split_metrics not found in performance_data.
         """
-        if "split_metrics" not in performance_data:
-            raise KeyError("split_metrics not found in performance_data")
+        from tools.database.db_reader import GarminDBReader
 
-        splits = performance_data["split_metrics"]
+        # Create reader with optional db_path override
+        reader = GarminDBReader(db_path=self.db_path)
 
-        if split_number < 1 or split_number > len(splits):
+        # Get all split time ranges for this activity
+        split_ranges = reader.get_split_time_ranges(activity_id)
+
+        if not split_ranges:
+            raise ValueError(f"No splits found for activity_id: {activity_id}")
+
+        if split_number < 1 or split_number > len(split_ranges):
             raise ValueError(
                 f"Invalid split_number: {split_number}. "
-                f"Valid range: 1-{len(splits)}"
+                f"Valid range: 1-{len(split_ranges)}"
             )
 
-        # Get split (1-based to 0-based index)
-        split = splits[split_number - 1]
+        # Get split by index (1-based to 0-based)
+        split = split_ranges[split_number - 1]
 
         return split["start_time_s"], split["end_time_s"]
 
@@ -285,15 +296,8 @@ class TimeSeriesDetailExtractor:
                 "directVerticalOscillation",
             ]
 
-        # Load performance.json
-        perf_path = self.base_path / "data" / "performance" / f"{activity_id}.json"
-        with open(perf_path, encoding="utf-8") as f:
-            performance_data = json.load(f)
-
-        # Get split time range
-        start_time, end_time = self._get_split_time_range(
-            split_number, performance_data
-        )
+        # Get split time range from DuckDB (NEW: no performance.json dependency)
+        start_time, end_time = self._get_split_time_range(split_number, activity_id)
 
         # Load activity_details.json
         activity_details = self.loader.load_activity_details(activity_id)

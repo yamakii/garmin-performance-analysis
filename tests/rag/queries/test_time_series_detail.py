@@ -106,36 +106,15 @@ def mock_activity_details() -> dict[str, Any]:
 
 
 @pytest.mark.unit
-def test_split_range_extraction(
-    time_series_extractor: TimeSeriesDetailExtractor, mock_performance_data: dict
-):
-    """Test split number to time range extraction.
+def test_split_range_extraction():
+    """Test split number to time range extraction (DuckDB-based).
 
-    Expected behavior:
-    - Split 1 should map to start_time_s=0, end_time_s=240
-    - Split 2 should map to start_time_s=240, end_time_s=490
-    - Split 3 should map to start_time_s=490, end_time_s=745
+    NOTE: This test is now covered by test_get_split_time_range_duckdb_based().
+    Kept for backward compatibility but implementation moved to DuckDB.
     """
-    # Test split 1
-    start, end = time_series_extractor._get_split_time_range(
-        split_number=1, performance_data=mock_performance_data
-    )
-    assert start == 0
-    assert end == 240
-
-    # Test split 2
-    start, end = time_series_extractor._get_split_time_range(
-        split_number=2, performance_data=mock_performance_data
-    )
-    assert start == 240
-    assert end == 490
-
-    # Test split 3
-    start, end = time_series_extractor._get_split_time_range(
-        split_number=3, performance_data=mock_performance_data
-    )
-    assert start == 490
-    assert end == 745
+    # This test is superseded by test_get_split_time_range_duckdb_based
+    # which tests the same functionality with the new DuckDB implementation
+    pass
 
 
 @pytest.mark.unit
@@ -302,68 +281,197 @@ def test_missing_metrics_handling(time_series_extractor: TimeSeriesDetailExtract
 
 
 @pytest.mark.unit
-def test_edge_case_split_out_of_range(
-    time_series_extractor: TimeSeriesDetailExtractor, mock_performance_data: dict
-):
+def test_edge_case_split_out_of_range():
     """Test error handling for out-of-range split numbers.
 
-    Expected behavior:
-    - Split 0 should raise ValueError
-    - Split > max_split should raise ValueError
-    - Error message should be clear
+    NOTE: This test is now covered by test_get_split_time_range_duckdb_based().
+    Kept for backward compatibility but implementation moved to DuckDB.
     """
-    # Test split 0 (invalid)
-    with pytest.raises((ValueError, IndexError)):
-        time_series_extractor._get_split_time_range(
-            split_number=0, performance_data=mock_performance_data
-        )
-
-    # Test split beyond max (only 3 splits in mock data)
-    with pytest.raises((ValueError, IndexError)):
-        time_series_extractor._get_split_time_range(
-            split_number=10, performance_data=mock_performance_data
-        )
+    # This test is superseded by test_get_split_time_range_duckdb_based
+    # which tests error handling with the new DuckDB implementation
+    pass
 
 
 @pytest.mark.integration
-def test_get_split_time_series_detail_integration(
-    time_series_extractor: TimeSeriesDetailExtractor,
-):
+def test_get_split_time_series_detail_integration():
     """Integration test for full split time series detail extraction.
 
-    Uses fixture activity data (12345678901) to test the full pipeline.
+    Uses fixture activity data (12345678901) to test the full pipeline with DuckDB.
     """
+    import tempfile
+
+    import duckdb
+
+    from tools.database.db_writer import GarminDBWriter
+
     # Test with fixture activity
     activity_id = 12345678901
     split_number = 1
 
-    # Get split time series detail
-    result = time_series_extractor.get_split_time_series_detail(
-        activity_id=activity_id, split_number=split_number
-    )
+    # Create temporary database with test data
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        db_path = Path(tmp_dir) / "test_integration.duckdb"
+        base_path = Path(__file__).parent.parent.parent / "fixtures"
 
-    # Check result structure
-    assert "activity_id" in result
-    assert "split_number" in result
-    assert "start_time_s" in result
-    assert "end_time_s" in result
-    assert "time_series" in result
-    assert "statistics" in result
+        # Create database schema
+        writer = GarminDBWriter(str(db_path))
+        writer._ensure_tables()
 
-    # Check activity ID matches
-    assert result["activity_id"] == activity_id
-    assert result["split_number"] == split_number
+        # Insert test activity
+        activity_date = "2025-10-11"
 
-    # Check time series data
-    assert isinstance(result["time_series"], list)
-    assert len(result["time_series"]) > 0
+        conn = duckdb.connect(str(db_path))
+        conn.execute(
+            """
+            INSERT INTO activities (activity_id, date, activity_name)
+            VALUES (?, ?, ?)
+            """,
+            (activity_id, activity_date, "Test Run"),
+        )
 
-    # Check statistics (keyed by metric name)
-    stats = result["statistics"]
-    assert len(stats) > 0
-    # Check structure of first metric's statistics
-    first_metric_stats = next(iter(stats.values()))
-    assert "avg" in first_metric_stats
-    assert "std" in first_metric_stats
-    assert "min" in first_metric_stats
-    assert "max" in first_metric_stats
+        # Insert splits with time ranges (matching fixture data)
+        splits_data = [
+            (activity_id, 1, 1.0, 240.0, 0, 240, 250.0, 160),
+            (activity_id, 2, 1.0, 250.0, 240, 490, 260.0, 165),
+            (activity_id, 3, 1.0, 255.0, 490, 745, 270.0, 168),
+        ]
+
+        for split in splits_data:
+            conn.execute(
+                """
+                INSERT INTO splits (
+                    activity_id, split_index, distance, duration_seconds,
+                    start_time_s, end_time_s, pace_seconds_per_km, heart_rate
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                split,
+            )
+
+        conn.close()
+
+        # Create extractor with db_path
+        extractor = TimeSeriesDetailExtractor(base_path=base_path, db_path=str(db_path))
+
+        # Get split time series detail
+        result = extractor.get_split_time_series_detail(
+            activity_id=activity_id, split_number=split_number
+        )
+
+        # Check result structure
+        assert "activity_id" in result
+        assert "split_number" in result
+        assert "start_time_s" in result
+        assert "end_time_s" in result
+        assert "time_series" in result
+        assert "statistics" in result
+
+        # Check activity ID matches
+        assert result["activity_id"] == activity_id
+        assert result["split_number"] == split_number
+
+        # Check time series data
+        assert isinstance(result["time_series"], list)
+        assert len(result["time_series"]) > 0
+
+        # Check statistics (keyed by metric name)
+        stats = result["statistics"]
+        assert len(stats) > 0
+        # Check structure of first metric's statistics
+        first_metric_stats = next(iter(stats.values()))
+        assert "avg" in first_metric_stats
+        assert "std" in first_metric_stats
+        assert "min" in first_metric_stats
+        assert "max" in first_metric_stats
+
+
+@pytest.mark.unit
+def test_get_split_time_range_duckdb_based():
+    """Test _get_split_time_range() with new DuckDB-based implementation.
+
+    Phase 3: NEW signature takes activity_id instead of performance_data.
+    Should query DuckDB splits table via GarminDBReader.
+
+    Expected behavior:
+    - Accepts activity_id instead of performance_data dict
+    - Queries DuckDB for split time ranges
+    - Returns (start_time_s, end_time_s) tuple
+    - Raises ValueError for invalid split numbers
+    """
+    import tempfile
+    from pathlib import Path
+
+    import duckdb
+
+    from tools.database.db_writer import GarminDBWriter
+
+    # Create temporary database with test data
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        db_path = Path(tmp_dir) / "test_duckdb_based.duckdb"
+
+        # Create database schema
+        writer = GarminDBWriter(str(db_path))
+        writer._ensure_tables()
+
+        # Insert test activity
+        activity_id = 99999999
+        activity_date = "2025-10-11"
+
+        conn = duckdb.connect(str(db_path))
+        conn.execute(
+            """
+            INSERT INTO activities (activity_id, date, activity_name)
+            VALUES (?, ?, ?)
+            """,
+            (activity_id, activity_date, "Test Run"),
+        )
+
+        # Insert splits with time ranges
+        splits_data = [
+            (activity_id, 1, 1.0, 240.0, 0, 240, 250.0, 160),
+            (activity_id, 2, 1.0, 250.0, 240, 490, 260.0, 165),
+            (activity_id, 3, 1.0, 255.0, 490, 745, 270.0, 168),
+        ]
+
+        for split in splits_data:
+            conn.execute(
+                """
+                INSERT INTO splits (
+                    activity_id, split_index, distance, duration_seconds,
+                    start_time_s, end_time_s, pace_seconds_per_km, heart_rate
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                split,
+            )
+
+        conn.close()
+
+        # Create extractor with db_path
+        extractor = TimeSeriesDetailExtractor(
+            base_path=Path(tmp_dir), db_path=str(db_path)
+        )
+
+        # Test NEW signature: _get_split_time_range(split_number, activity_id)
+        start, end = extractor._get_split_time_range(
+            split_number=1, activity_id=activity_id
+        )
+        assert start == 0
+        assert end == 240
+
+        start, end = extractor._get_split_time_range(
+            split_number=2, activity_id=activity_id
+        )
+        assert start == 240
+        assert end == 490
+
+        start, end = extractor._get_split_time_range(
+            split_number=3, activity_id=activity_id
+        )
+        assert start == 490
+        assert end == 745
+
+        # Test invalid split numbers
+        with pytest.raises(ValueError):
+            extractor._get_split_time_range(split_number=0, activity_id=activity_id)
+
+        with pytest.raises(ValueError):
+            extractor._get_split_time_range(split_number=10, activity_id=activity_id)

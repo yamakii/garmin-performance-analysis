@@ -177,23 +177,32 @@ class TestRagIntervalToolsMcp:
     async def test_call_split_time_series_detail_with_minimal_args(
         self, fixture_activity_id: int, fixture_base_path: Path
     ):
-        """Test calling get_split_time_series_detail with minimal arguments."""
-        # Create fixture performance.json
-        performance_path = (
-            fixture_base_path / "data" / "performance" / f"{fixture_activity_id}.json"
+        """Test calling get_split_time_series_detail with minimal arguments (Phase 3: DuckDB-based)."""
+        import duckdb
+
+        from tools.database.db_writer import GarminDBWriter
+
+        # Create DuckDB with test data (Phase 3: Required for _get_split_time_range())
+        db_path = fixture_base_path / "test_mcp.duckdb"
+        writer = GarminDBWriter(str(db_path))
+        writer._ensure_tables()
+
+        # Insert test activity and splits
+        conn = duckdb.connect(str(db_path))
+        conn.execute(
+            "INSERT INTO activities (activity_id, date, activity_name) VALUES (?, ?, ?)",
+            (fixture_activity_id, "2025-10-11", "Test Run"),
         )
-        performance_path.parent.mkdir(parents=True, exist_ok=True)
-        performance_data = {
-            "split_metrics": [
-                {
-                    "split_number": 1,
-                    "start_time_s": 0,
-                    "end_time_s": 250,
-                    "distance": 1000,
-                }
-            ]
-        }
-        performance_path.write_text(json.dumps(performance_data))
+        conn.execute(
+            """
+            INSERT INTO splits (
+                activity_id, split_index, distance, duration_seconds,
+                start_time_s, end_time_s, pace_seconds_per_km, heart_rate
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (fixture_activity_id, 1, 1.0, 250.0, 0, 250, 250.0, 160),
+        )
+        conn.close()
 
         # Create fixture activity_details.json
         activity_details_path = (
@@ -218,9 +227,15 @@ class TestRagIntervalToolsMcp:
         }
         activity_details_path.write_text(json.dumps(activity_details_data))
 
-        # Patch TimeSeriesDetailExtractor to use fixture base path
-        def mock_init_detail(self_obj: object, base_path: object = None) -> None:
+        # Store db_path for closure
+        test_db_path = str(db_path)
+
+        # Patch TimeSeriesDetailExtractor to use fixture base path and db_path
+        def mock_init_detail(
+            self_obj: object, base_path: object = None, db_path: object = None
+        ) -> None:
             self_obj.base_path = fixture_base_path  # type: ignore[attr-defined]
+            self_obj.db_path = test_db_path  # type: ignore[attr-defined] # Phase 3: Use test DuckDB
             self_obj.loader = type(  # type: ignore[attr-defined]
                 "MockLoader",
                 (),
