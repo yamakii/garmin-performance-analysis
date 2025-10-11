@@ -201,23 +201,11 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="get_interval_analysis",
-            description="Analyze interval training Work/Recovery segments with fatigue detection",
+            description="Analyze interval training Work/Recovery segments using intensity_type from DuckDB",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "activity_id": {"type": "integer"},
-                    "pace_threshold_factor": {
-                        "type": "number",
-                        "description": "Recovery/Work pace ratio (default: 1.3)",
-                    },
-                    "min_work_duration": {
-                        "type": "integer",
-                        "description": "Minimum work segment duration in seconds (default: 180)",
-                    },
-                    "min_recovery_duration": {
-                        "type": "integer",
-                        "description": "Minimum recovery segment duration in seconds (default: 60)",
-                    },
                 },
                 "required": ["activity_id"],
             },
@@ -483,9 +471,6 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         analyzer = IntervalAnalyzer()
         result = analyzer.get_interval_analysis(
             activity_id=arguments["activity_id"],
-            pace_threshold_factor=arguments.get("pace_threshold_factor", 1.3),
-            min_work_duration=arguments.get("min_work_duration", 180),
-            min_recovery_duration=arguments.get("min_recovery_duration", 60),
         )
         return [
             TextContent(

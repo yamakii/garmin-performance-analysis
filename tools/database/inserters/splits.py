@@ -17,6 +17,7 @@ def insert_splits(
     performance_file: str,
     activity_id: int,
     db_path: str | None = None,
+    raw_splits_file: str | None = None,
 ) -> bool:
     """
     Insert split_metrics from performance.json into DuckDB splits table.
@@ -24,12 +25,16 @@ def insert_splits(
     Steps:
     1. Load performance.json
     2. Extract split_metrics array
-    3. Insert each split into splits table
+    3. Load raw splits.json (if provided) for time range data
+    4. Match lapDTOs with split_metrics by lapIndex/split_number
+    5. Calculate cumulative time for start_time_s/end_time_s
+    6. Insert each split into splits table
 
     Args:
         performance_file: Path to performance.json
         activity_id: Activity ID
         db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
+        raw_splits_file: Optional path to raw splits.json for time range data
 
     Returns:
         True if successful, False otherwise
@@ -50,6 +55,20 @@ def insert_splits(
             logger.error(f"No split_metrics found in {performance_file}")
             return False
 
+        # Load raw splits.json if provided
+        lap_dtos = []
+        if raw_splits_file:
+            raw_splits_path = Path(raw_splits_file)
+            if raw_splits_path.exists():
+                with open(raw_splits_path, encoding="utf-8") as f:
+                    raw_splits_data = json.load(f)
+                    lap_dtos = raw_splits_data.get("lapDTOs", [])
+            else:
+                logger.warning(f"Raw splits file not found: {raw_splits_file}")
+
+        # Create lapIndex -> lapDTO mapping
+        lap_dto_map = {lap.get("lapIndex"): lap for lap in lap_dtos}
+
         # Set default DB path
         if db_path is None:
             db_path = "data/database/garmin_performance.duckdb"
@@ -57,13 +76,18 @@ def insert_splits(
         # Connect to DuckDB
         conn = duckdb.connect(str(db_path))
 
-        # Ensure splits table exists
+        # Ensure splits table exists with new columns
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS splits (
                 activity_id BIGINT,
                 split_index INTEGER,
                 distance DOUBLE,
+                duration_seconds DOUBLE,
+                start_time_gmt VARCHAR,
+                start_time_s INTEGER,
+                end_time_s INTEGER,
+                intensity_type VARCHAR,
                 role_phase VARCHAR,
                 pace_str VARCHAR,
                 pace_seconds_per_km DOUBLE,
@@ -92,6 +116,9 @@ def insert_splits(
         # Delete existing splits for this activity (for re-insertion)
         conn.execute("DELETE FROM splits WHERE activity_id = ?", [activity_id])
 
+        # Calculate cumulative time for each split
+        cumulative_time = 0
+
         # Insert each split
         for split in split_metrics:
             split_number = split.get("split_number")
@@ -107,19 +134,45 @@ def insert_splits(
             else:
                 pace_str = None
 
+            # Get time range data from raw splits.json (if available)
+            lap_dto = lap_dto_map.get(split_number)
+            duration_seconds = None
+            start_time_gmt = None
+            intensity_type = None
+
+            if lap_dto:
+                duration_seconds = lap_dto.get("duration")
+                start_time_gmt = lap_dto.get("startTimeGMT")
+                intensity_type = lap_dto.get("intensityType")
+
+            # Calculate start_time_s and end_time_s
+            start_time_s = cumulative_time
+            if duration_seconds:
+                end_time_s = cumulative_time + round(duration_seconds)
+                cumulative_time = end_time_s
+            else:
+                end_time_s = None
+
             conn.execute(
                 """
                 INSERT INTO splits (
-                    activity_id, split_index, distance, role_phase, pace_str, pace_seconds_per_km,
+                    activity_id, split_index, distance,
+                    duration_seconds, start_time_gmt, start_time_s, end_time_s, intensity_type,
+                    role_phase, pace_str, pace_seconds_per_km,
                     heart_rate, cadence, power, ground_contact_time,
                     vertical_oscillation, vertical_ratio, elevation_gain,
                     elevation_loss, terrain_type
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     activity_id,
                     split_number,
                     split.get("distance_km"),
+                    duration_seconds,
+                    start_time_gmt,
+                    start_time_s,
+                    end_time_s,
+                    intensity_type,
                     split.get("role_phase"),
                     pace_str,
                     pace_seconds,
