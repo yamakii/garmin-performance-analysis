@@ -278,7 +278,7 @@ class TestGarminIngestWorker:
             result = worker.process_activity(12345, "2025-09-22")
 
             # Verify all steps were called
-            mock_collect.assert_called_once_with(12345)
+            mock_collect.assert_called_once_with(12345, force_refetch=None)
             mock_parquet.assert_called_once()
             mock_calc.assert_called_once()
             mock_save.assert_called_once()
@@ -584,3 +584,344 @@ class TestGarminIngestWorker:
                 if activity_json.exists():
                     activity_json.unlink()
                 backup_path.rename(activity_json)
+
+    # =============================================
+    # Tests for force_refetch functionality
+    # =============================================
+
+    @pytest.mark.unit
+    def test_collect_data_force_refetch_single_file(self, worker, tmp_path):
+        """Test force_refetch=['activity_details'] refetches only activity_details.json."""
+        activity_id = 12345
+        activity_dir = tmp_path / "activity" / str(activity_id)
+        activity_dir.mkdir(parents=True)
+
+        worker.raw_dir = tmp_path
+
+        # Create full cache with OLD activity_details.json
+        old_activity_details = {"activityId": activity_id, "maxchart": 2000}
+        with open(activity_dir / "activity_details.json", "w", encoding="utf-8") as f:
+            json.dump(old_activity_details, f)
+
+        # Create activity.json (required)
+        activity_basic = {
+            "activityId": activity_id,
+            "summaryDTO": {"duration": 3000, "trainingEffect": 3.5},
+        }
+        with open(activity_dir / "activity.json", "w", encoding="utf-8") as f:
+            json.dump(activity_basic, f)
+
+        # Create other files
+        for file_name, data in [
+            (
+                "splits.json",
+                {"activityId": activity_id, "lapDTOs": [], "eventDTOs": []},
+            ),
+            ("weather.json", {"temp": 20}),
+            ("gear.json", [{"customMakeModel": "Cached Shoes"}]),
+            ("hr_zones.json", [{"zoneNumber": 1}]),
+            ("vo2_max.json", {}),
+            ("lactate_threshold.json", {}),
+        ]:
+            with open(activity_dir / file_name, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+
+        # Mock get_activity_details to return NEW data
+        new_activity_details = {"activityId": activity_id, "maxchart": 3000}
+
+        with patch.object(worker, "get_garmin_client") as mock_client:
+            mock_client.return_value.get_activity_details.return_value = (
+                new_activity_details
+            )
+
+            # Execute with force_refetch
+            result = worker.collect_data(
+                activity_id, force_refetch=["activity_details"]
+            )
+
+            # Verify API was called ONLY for activity_details
+            mock_client.return_value.get_activity_details.assert_called_once()
+
+            # Verify result contains NEW activity_details
+            assert result["activity"]["maxchart"] == 3000
+
+            # Verify other files were loaded from cache (NOT refetched)
+            assert result["gear"][0]["customMakeModel"] == "Cached Shoes"
+
+    @pytest.mark.unit
+    def test_collect_data_force_refetch_multiple_files(self, worker, tmp_path):
+        """Test force_refetch=['weather', 'vo2_max'] refetches multiple files."""
+        activity_id = 12345
+        activity_dir = tmp_path / "activity" / str(activity_id)
+        activity_dir.mkdir(parents=True)
+
+        worker.raw_dir = tmp_path
+
+        # Create full cache with OLD weather and vo2_max
+        old_weather = {"temp": 15, "windSpeed": 5}
+        old_vo2_max = {"vo2MaxValue": 45}
+
+        with open(activity_dir / "weather.json", "w", encoding="utf-8") as f:
+            json.dump(old_weather, f)
+        with open(activity_dir / "vo2_max.json", "w", encoding="utf-8") as f:
+            json.dump(old_vo2_max, f)
+
+        # Create required files
+        activity_basic = {
+            "activityId": activity_id,
+            "summaryDTO": {
+                "duration": 3000,
+                "startTimeLocal": "2025-10-10T06:00:00.0",
+            },
+        }
+        with open(activity_dir / "activity.json", "w", encoding="utf-8") as f:
+            json.dump(activity_basic, f)
+
+        for file_name, data in [
+            ("activity_details.json", {"activityId": activity_id}),
+            (
+                "splits.json",
+                {"activityId": activity_id, "lapDTOs": [], "eventDTOs": []},
+            ),
+            ("gear.json", []),
+            ("hr_zones.json", []),
+            ("lactate_threshold.json", {}),
+        ]:
+            with open(activity_dir / file_name, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+
+        # Mock APIs to return NEW data
+        new_weather = {"temp": 20, "windSpeed": 10}
+        new_vo2_max = {"generic": {"vo2MaxValue": 50}}
+
+        with patch.object(worker, "get_garmin_client") as mock_client:
+            mock_client.return_value.get_activity_weather.return_value = new_weather
+            mock_client.return_value.get_max_metrics.return_value = new_vo2_max
+
+            # Execute with force_refetch for multiple files
+            result = worker.collect_data(
+                activity_id, force_refetch=["weather", "vo2_max"]
+            )
+
+            # Verify APIs were called ONLY for weather and vo2_max
+            mock_client.return_value.get_activity_weather.assert_called_once()
+            mock_client.return_value.get_max_metrics.assert_called_once()
+
+            # Verify results contain NEW data
+            assert result["weather"]["temp"] == 20
+            assert result["weather"]["windSpeed"] == 10
+
+            # Verify vo2_max.json file was updated (refetched from API)
+            # Note: VO2 max processing may transform the data
+            vo2_max_file = activity_dir / "vo2_max.json"
+            assert vo2_max_file.exists()
+
+            # The key test: API was called to refetch (not loaded from old cache)
+            # Old cache had {"vo2MaxValue": 45}, API called means refetch succeeded
+
+    @pytest.mark.unit
+    def test_collect_data_default_behavior(self, worker, tmp_path):
+        """Test force_refetch=None uses cache-first (no API calls)."""
+        activity_id = 12345
+        activity_dir = tmp_path / "activity" / str(activity_id)
+        activity_dir.mkdir(parents=True)
+
+        worker.raw_dir = tmp_path
+
+        # Create full cache
+        activity_basic = {
+            "activityId": activity_id,
+            "summaryDTO": {"trainingEffect": 3.5},
+        }
+        with open(activity_dir / "activity.json", "w", encoding="utf-8") as f:
+            json.dump(activity_basic, f)
+
+        for file_name, data in [
+            ("activity_details.json", {"activityId": activity_id}),
+            (
+                "splits.json",
+                {"activityId": activity_id, "lapDTOs": [], "eventDTOs": []},
+            ),
+            ("weather.json", {"temp": 20}),
+            ("gear.json", [{"customMakeModel": "Cached Shoes"}]),
+            ("hr_zones.json", []),
+            ("vo2_max.json", {}),
+            ("lactate_threshold.json", {}),
+        ]:
+            with open(activity_dir / file_name, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+
+        with patch.object(worker, "get_garmin_client") as mock_client:
+            # Execute with default force_refetch=None
+            result = worker.collect_data(activity_id)
+
+            # Verify NO API calls were made
+            mock_client.return_value.get_activity_details.assert_not_called()
+            mock_client.return_value.get_activity_weather.assert_not_called()
+            mock_client.return_value.get_max_metrics.assert_not_called()
+
+            # Verify cache was used
+            assert result["gear"][0]["customMakeModel"] == "Cached Shoes"
+
+    @pytest.mark.unit
+    def test_load_from_cache_with_skip_files(self, worker, tmp_path):
+        """Test load_from_cache with skip_files allows partial cache."""
+        activity_id = 12345
+        activity_dir = tmp_path / "activity" / str(activity_id)
+        activity_dir.mkdir(parents=True)
+
+        worker.raw_dir = tmp_path
+
+        # Create partial cache (missing activity_details.json intentionally)
+        activity_basic = {"activityId": activity_id, "summaryDTO": {}}
+        with open(activity_dir / "activity.json", "w", encoding="utf-8") as f:
+            json.dump(activity_basic, f)
+
+        # DO NOT create activity_details.json
+
+        # Create other required files
+        for file_name, data in [
+            (
+                "splits.json",
+                {"activityId": activity_id, "lapDTOs": [], "eventDTOs": []},
+            ),
+            ("weather.json", {"temp": 20}),
+            ("gear.json", []),
+            ("hr_zones.json", []),
+            ("vo2_max.json", {}),
+            ("lactate_threshold.json", {}),
+        ]:
+            with open(activity_dir / file_name, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+
+        # Execute with skip_files={'activity_details'}
+        result = worker.load_from_cache(activity_id, skip_files={"activity_details"})
+
+        # Verify partial data returned (no activity_details key)
+        assert result is not None
+        assert "activity_basic" in result
+        assert "activity" not in result  # activity_details was skipped
+        assert "splits" in result
+        assert "weather" in result
+
+    @pytest.mark.unit
+    def test_load_from_cache_missing_required_file(self, worker, tmp_path):
+        """Test load_from_cache returns None if required file is missing (not in skip_files)."""
+        activity_id = 12345
+        activity_dir = tmp_path / "activity" / str(activity_id)
+        activity_dir.mkdir(parents=True)
+
+        worker.raw_dir = tmp_path
+
+        # Create partial cache (missing activity.json - REQUIRED file)
+        for file_name, data in [
+            ("activity_details.json", {"activityId": activity_id}),
+            (
+                "splits.json",
+                {"activityId": activity_id, "lapDTOs": [], "eventDTOs": []},
+            ),
+            ("weather.json", {}),
+            ("gear.json", []),
+            ("hr_zones.json", []),
+            ("vo2_max.json", {}),
+            ("lactate_threshold.json", {}),
+        ]:
+            with open(activity_dir / file_name, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+
+        # Execute with skip_files=set() (no files skipped)
+        result = worker.load_from_cache(activity_id, skip_files=set())
+
+        # Verify None returned (required activity.json missing)
+        assert result is None
+
+    @pytest.mark.unit
+    def test_force_refetch_validation(self, worker):
+        """Test force_refetch validation raises ValueError for invalid file names."""
+        activity_id = 12345
+
+        # Execute with invalid force_refetch value
+        with pytest.raises(ValueError, match="Unsupported force_refetch files"):
+            worker.collect_data(activity_id, force_refetch=["invalid_file"])
+
+        # Execute with mix of valid and invalid
+        with pytest.raises(ValueError, match="Unsupported force_refetch files"):
+            worker.collect_data(
+                activity_id, force_refetch=["weather", "invalid_file", "unknown"]
+            )
+
+    @pytest.mark.integration
+    def test_process_activity_force_refetch_integration(self, worker, tmp_path):
+        """Test process_activity passes force_refetch to collect_data."""
+        activity_id = 12345
+        date = "2025-10-10"
+
+        # Mock collect_data to verify force_refetch is passed
+        with patch.object(worker, "collect_data") as mock_collect:
+            mock_collect.return_value = {
+                "activity": {"activityId": activity_id},
+                "activity_basic": {"summaryDTO": {}},
+                "splits": {"lapDTOs": []},
+                "weather": {},
+                "gear": [],
+                "hr_zones": [],
+                "vo2_max": {},
+                "lactate_threshold": {},
+                "training_effect": {},
+                "weight": None,
+            }
+
+            with (
+                patch.object(worker, "create_parquet_dataset") as mock_parquet,
+                patch.object(worker, "_calculate_split_metrics") as mock_calc,
+                patch.object(worker, "save_data") as mock_save,
+            ):
+                mock_parquet.return_value = pd.DataFrame()
+                mock_calc.return_value = {}
+                mock_save.return_value = {"activity_id": activity_id}
+
+                # Execute with force_refetch
+                worker.process_activity(
+                    activity_id, date, force_refetch=["activity_details"]
+                )
+
+                # Verify collect_data was called with force_refetch
+                mock_collect.assert_called_once_with(
+                    activity_id, force_refetch=["activity_details"]
+                )
+
+    @pytest.mark.integration
+    def test_force_refetch_with_duckdb_cache(self, worker, tmp_path):
+        """Test DuckDB cache bypasses force_refetch (DuckDB has priority)."""
+        activity_id = 12345
+        date = "2025-10-10"
+
+        # Mock _check_duckdb_cache to return complete performance data
+        complete_performance_data = {
+            "basic_metrics": {"distance_km": 5.0},
+            "heart_rate_zones": {},
+            "efficiency_metrics": {},
+            "training_effect": {},
+            "power_to_weight": {},
+            "split_metrics": [],
+            "vo2_max": {},
+            "lactate_threshold": {},
+            "form_efficiency_summary": {},
+            "hr_efficiency_analysis": {},
+            "performance_trends": {},
+        }
+
+        with patch.object(worker, "_check_duckdb_cache") as mock_duckdb_check:
+            mock_duckdb_check.return_value = complete_performance_data
+
+            with patch.object(worker, "collect_data") as mock_collect:
+                # Execute with force_refetch
+                result = worker.process_activity(
+                    activity_id, date, force_refetch=["weather"]
+                )
+
+                # Verify collect_data was NOT called (DuckDB cache hit)
+                mock_collect.assert_not_called()
+
+                # Verify DuckDB cache was used
+                assert result["source"] == "duckdb_cache"

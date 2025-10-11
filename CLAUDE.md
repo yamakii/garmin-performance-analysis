@@ -34,8 +34,14 @@ The system follows a three-tier data transformation pipeline:
 #### Key Processing Classes
 
 - **GarminIngestWorker** (`tools/ingest/garmin_worker.py`): Complete data pipeline manager
-  - `collect_data()`: Calls Garmin MCP functions to fetch activity data from API
-  - `process_activity()`: Orchestrates the full pipeline from API to analysis-ready data
+  - `collect_data(activity_id, force_refetch=None)`: Calls Garmin MCP functions to fetch activity data from API
+    - Cache-first strategy: Loads from cache when available
+    - **Partial refetch support**: `force_refetch` parameter allows selective API refetching of specific files
+    - Supported files: `['activity_details', 'splits', 'weather', 'gear', 'hr_zones', 'vo2_max', 'lactate_threshold']`
+    - Example: `collect_data(12345, force_refetch=['weather'])` refetches only weather data, preserving other cached files
+  - `process_activity(activity_id, date, force_refetch=None)`: Orchestrates the full pipeline from API to analysis-ready data
+    - DuckDB cache has priority: If complete performance data exists in DuckDB, `force_refetch` is ignored
+    - Raw cache refetch: When DuckDB cache is incomplete, `force_refetch` controls which raw API files to update
   - `create_parquet_dataset()`: Transforms raw lapDTOs into structured DataFrames
   - `_calculate_split_metrics()`: Pre-calculates performance metrics including elevation data
   - `save_data()`: Outputs performance.json and precheck files
@@ -349,8 +355,19 @@ See "Development Process Agents" section below for detailed usage instructions.
    from tools.ingest.garmin_worker import GarminIngestWorker
 
    worker = GarminIngestWorker()
+
+   # Basic usage (cache-first)
    result = worker.process_activity(activity_id, "YYYY-MM-DD")
+
+   # Partial refetch: Update only specific cached files (e.g., weather data)
+   result = worker.process_activity(
+       activity_id,
+       "YYYY-MM-DD",
+       force_refetch=['weather', 'vo2_max']
+   )
+
    # Note: save_data() automatically inserts into DuckDB normalized tables
+   # Note: DuckDB cache has priority - force_refetch only applies when DuckDB cache is incomplete
    ```
 
 2. **Section Analysis** (5 agents in parallel):
@@ -696,6 +713,7 @@ docs/project/
 
 ### Active Projects
 
+- **2025-10-11_cache_partial_refetch**: Cache partial refetch feature with `force_refetch` parameter for selective API data updates (Phases 1-5 completed)
 - **2025-10-10_duckdb_inserter_cleanup**: Added 7 missing normalized table schemas to db_writer._ensure_tables(), body composition optimization, deprecated code removal (Phases 1-4 completed)
 - **2025-10-09_rag_interval_analysis_tools**: RAG interval analysis tools implementation with activity_details.json integration - ActivityDetailsLoader, IntervalAnalyzer, TimeSeriesDetailExtractor, FormAnomalyDetector, MCP server integration (Phases 1-6 completed)
 - **2025-10-09_garmin_ingest_refactoring**: GarminIngestWorker refactoring for cache-first approach and process_activity unification (Phases 0-5 completed)

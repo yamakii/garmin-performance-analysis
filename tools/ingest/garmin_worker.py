@@ -249,67 +249,104 @@ class GarminIngestWorker:
         )
         return performance_data
 
-    def load_from_cache(self, activity_id: int) -> dict[str, Any] | None:
+    def load_from_cache(
+        self, activity_id: int, skip_files: set[str] | None = None
+    ) -> dict[str, Any] | None:
         """
         Load cached raw_data from directory structure.
 
+        Args:
+            activity_id: Activity ID
+            skip_files: Set of file names to skip loading (for force refetch).
+                       Example: {'activity_details', 'weather'}
+
         Returns:
-            Complete raw_data dict if all required files exist, None otherwise
+            Partial or complete raw_data dict. Returns None only if required files are missing
+            (and not in skip_files).
+
+        Behavior:
+            - If skip_files is None: require ALL files (backward compatible)
+            - If skip_files is provided: allow missing files in skip_files
+            - Returns partial data if some files are missing but in skip_files
         """
         activity_dir = self.raw_dir / "activity" / str(activity_id)
 
         if not activity_dir.exists():
             return None
 
+        skip_files = skip_files or set()
+
         # Required API files
         required_files = [
-            "activity.json",
-            "splits.json",
-            "weather.json",
-            "gear.json",
-            "hr_zones.json",
-            "vo2_max.json",
-            "lactate_threshold.json",
+            ("activity.json", "activity_basic"),
+            ("splits.json", "splits"),
+            ("weather.json", "weather"),
+            ("gear.json", "gear"),
+            ("hr_zones.json", "hr_zones"),
+            ("vo2_max.json", "vo2_max"),
+            ("lactate_threshold.json", "lactate_threshold"),
         ]
 
-        # Check all required files exist
-        for file_name in required_files:
-            if not (activity_dir / file_name).exists():
+        # Check all required files exist (except skipped ones)
+        for file_name, _ in required_files:
+            # Map file name to skip_files key
+            skip_key = file_name.replace(".json", "").replace("_", "_")
+
+            if skip_key not in skip_files and not (activity_dir / file_name).exists():
                 logger.warning(f"Missing required file: {file_name}")
                 return None
 
-        # Load all files
+        # Load all files (except skipped ones)
         raw_data: dict[str, Any] = {}
 
         try:
             # Load activity.json (basic info with summaryDTO)
-            with open(activity_dir / "activity.json", encoding="utf-8") as f:
-                raw_data["activity_basic"] = json.load(f)
+            if (activity_dir / "activity.json").exists():
+                with open(activity_dir / "activity.json", encoding="utf-8") as f:
+                    raw_data["activity_basic"] = json.load(f)
 
-            # Load activity_details.json (chart data) if exists
-            if (activity_dir / "activity_details.json").exists():
+            # Load activity_details.json (chart data) if exists and not skipped
+            if (
+                "activity_details" not in skip_files
+                and (activity_dir / "activity_details.json").exists()
+            ):
                 with open(
                     activity_dir / "activity_details.json", encoding="utf-8"
                 ) as f:
                     raw_data["activity"] = json.load(f)
 
-            with open(activity_dir / "splits.json", encoding="utf-8") as f:
-                raw_data["splits"] = json.load(f)
+            # Load other files (skip if in skip_files)
+            if "splits" not in skip_files and (activity_dir / "splits.json").exists():
+                with open(activity_dir / "splits.json", encoding="utf-8") as f:
+                    raw_data["splits"] = json.load(f)
 
-            with open(activity_dir / "weather.json", encoding="utf-8") as f:
-                raw_data["weather"] = json.load(f)
+            if "weather" not in skip_files and (activity_dir / "weather.json").exists():
+                with open(activity_dir / "weather.json", encoding="utf-8") as f:
+                    raw_data["weather"] = json.load(f)
 
-            with open(activity_dir / "gear.json", encoding="utf-8") as f:
-                raw_data["gear"] = json.load(f)
+            if "gear" not in skip_files and (activity_dir / "gear.json").exists():
+                with open(activity_dir / "gear.json", encoding="utf-8") as f:
+                    raw_data["gear"] = json.load(f)
 
-            with open(activity_dir / "hr_zones.json", encoding="utf-8") as f:
-                raw_data["hr_zones"] = json.load(f)
+            if (
+                "hr_zones" not in skip_files
+                and (activity_dir / "hr_zones.json").exists()
+            ):
+                with open(activity_dir / "hr_zones.json", encoding="utf-8") as f:
+                    raw_data["hr_zones"] = json.load(f)
 
-            with open(activity_dir / "vo2_max.json", encoding="utf-8") as f:
-                raw_data["vo2_max"] = json.load(f)
+            if "vo2_max" not in skip_files and (activity_dir / "vo2_max.json").exists():
+                with open(activity_dir / "vo2_max.json", encoding="utf-8") as f:
+                    raw_data["vo2_max"] = json.load(f)
 
-            with open(activity_dir / "lactate_threshold.json", encoding="utf-8") as f:
-                raw_data["lactate_threshold"] = json.load(f)
+            if (
+                "lactate_threshold" not in skip_files
+                and (activity_dir / "lactate_threshold.json").exists()
+            ):
+                with open(
+                    activity_dir / "lactate_threshold.json", encoding="utf-8"
+                ) as f:
+                    raw_data["lactate_threshold"] = json.load(f)
 
             # Extract training_effect from activity_basic.summaryDTO
             activity_basic = raw_data.get("activity_basic", {})
@@ -338,7 +375,9 @@ class GarminIngestWorker:
             logger.error(f"Failed to load cached data for activity {activity_id}: {e}")
             return None
 
-    def collect_data(self, activity_id: int) -> dict[str, Any]:
+    def collect_data(
+        self, activity_id: int, force_refetch: list[str] | None = None
+    ) -> dict[str, Any]:
         """
         Collect activity data with per-API cache-first strategy.
 
@@ -363,9 +402,23 @@ class GarminIngestWorker:
 
         Args:
             activity_id: Activity ID
+            force_refetch: List of API file names to force refetch.
+                          Supported values: ['activity_details', 'splits', 'weather',
+                                            'gear', 'hr_zones', 'vo2_max', 'lactate_threshold']
+                          If None, use cache-first strategy (default behavior).
 
         Returns:
             Raw data dict with keys: activity, splits, weather, gear, hr_zones, etc.
+
+        Examples:
+            # Force refetch activity_details.json only
+            worker.collect_data(12345, force_refetch=['activity_details'])
+
+            # Force refetch multiple files
+            worker.collect_data(12345, force_refetch=['weather', 'vo2_max'])
+
+            # Default behavior (cache-first)
+            worker.collect_data(12345)
         """
         # Backward compatibility: Check old format cache first
         old_cache_file = self.raw_dir / f"{activity_id}_raw.json"
@@ -374,10 +427,35 @@ class GarminIngestWorker:
             with open(old_cache_file, encoding="utf-8") as f:
                 return cast(dict[str, Any], json.load(f))
 
+        # Normalize force_refetch parameter
+        force_refetch_set = set(force_refetch) if force_refetch else set()
+
+        # Validate force_refetch parameter
+        if force_refetch_set:
+            supported_files = {
+                "activity_details",
+                "splits",
+                "weather",
+                "gear",
+                "hr_zones",
+                "vo2_max",
+                "lactate_threshold",
+            }
+            unsupported = force_refetch_set - supported_files
+            if unsupported:
+                raise ValueError(
+                    f"Unsupported force_refetch files: {unsupported}. "
+                    f"Supported values: {sorted(supported_files)}"
+                )
+
         # Try to load from new cache format
-        cached_data = self.load_from_cache(activity_id)
-        if cached_data is not None:
+        cached_data = self.load_from_cache(activity_id, skip_files=force_refetch_set)
+        if cached_data is not None and not force_refetch_set:
+            # Full cache hit (no force refetch)
             return cached_data
+
+        # Partial cache hit or force refetch - start with cached data
+        raw_data = cached_data if cached_data else {}
 
         # Cache miss - fetch from API
         logger.info(f"Fetching activity {activity_id} from Garmin Connect API")
@@ -387,16 +465,14 @@ class GarminIngestWorker:
         activity_dir = self.raw_dir / "activity" / str(activity_id)
         activity_dir.mkdir(parents=True, exist_ok=True)
 
-        raw_data: dict[str, Any] = {}
-
         # Fetch and cache each API individually
         # 0. Activity basic info (summaryDTO with training_effect, ~10KB)
         activity_basic_file = activity_dir / "activity.json"
-        if activity_basic_file.exists():
+        if activity_basic_file.exists() and "activity_basic" not in raw_data:
             logger.info(f"Using cached activity basic info for {activity_id}")
             with open(activity_basic_file, encoding="utf-8") as f:
                 raw_data["activity_basic"] = json.load(f)
-        else:
+        elif "activity_basic" not in raw_data:
             try:
                 activity_basic = client.get_activity(str(activity_id))
                 raw_data["activity_basic"] = activity_basic
@@ -409,11 +485,15 @@ class GarminIngestWorker:
 
         # 1. Activity details (chart data with dynamic maxchart based on duration)
         activity_file = activity_dir / "activity_details.json"
-        if activity_file.exists():
+        if (
+            activity_file.exists()
+            and "activity_details" not in force_refetch_set
+            and "activity" not in raw_data
+        ):
             logger.info(f"Using cached activity_details for {activity_id}")
             with open(activity_file, encoding="utf-8") as f:
                 raw_data["activity"] = json.load(f)
-        else:
+        elif "activity" not in raw_data or "activity_details" in force_refetch_set:
             try:
                 # Calculate maxchart dynamically from activity duration
                 activity_basic = raw_data.get("activity_basic", {})
@@ -441,11 +521,15 @@ class GarminIngestWorker:
 
         # 2. Splits
         splits_file = activity_dir / "splits.json"
-        if splits_file.exists():
+        if (
+            splits_file.exists()
+            and "splits" not in force_refetch_set
+            and "splits" not in raw_data
+        ):
             logger.info(f"Using cached splits for {activity_id}")
             with open(splits_file, encoding="utf-8") as f:
                 raw_data["splits"] = json.load(f)
-        else:
+        elif "splits" not in raw_data or "splits" in force_refetch_set:
             try:
                 splits_data = client.get_activity_splits(activity_id)
                 raw_data["splits"] = splits_data
@@ -458,11 +542,15 @@ class GarminIngestWorker:
 
         # 3. Weather
         weather_file = activity_dir / "weather.json"
-        if weather_file.exists():
+        if (
+            weather_file.exists()
+            and "weather" not in force_refetch_set
+            and "weather" not in raw_data
+        ):
             logger.info(f"Using cached weather for {activity_id}")
             with open(weather_file, encoding="utf-8") as f:
                 raw_data["weather"] = json.load(f)
-        else:
+        elif "weather" not in raw_data or "weather" in force_refetch_set:
             try:
                 weather_data = client.get_activity_weather(activity_id)
                 raw_data["weather"] = weather_data
@@ -475,11 +563,15 @@ class GarminIngestWorker:
 
         # 4. Gear
         gear_file = activity_dir / "gear.json"
-        if gear_file.exists():
+        if (
+            gear_file.exists()
+            and "gear" not in force_refetch_set
+            and "gear" not in raw_data
+        ):
             logger.info(f"Using cached gear for {activity_id}")
             with open(gear_file, encoding="utf-8") as f:
                 raw_data["gear"] = json.load(f)
-        else:
+        elif "gear" not in raw_data or "gear" in force_refetch_set:
             try:
                 gear_data = client.get_activity_gear(activity_id)
                 raw_data["gear"] = gear_data
@@ -492,11 +584,15 @@ class GarminIngestWorker:
 
         # 5. HR zones
         hr_zones_file = activity_dir / "hr_zones.json"
-        if hr_zones_file.exists():
+        if (
+            hr_zones_file.exists()
+            and "hr_zones" not in force_refetch_set
+            and "hr_zones" not in raw_data
+        ):
             logger.info(f"Using cached hr_zones for {activity_id}")
             with open(hr_zones_file, encoding="utf-8") as f:
                 raw_data["hr_zones"] = json.load(f)
-        else:
+        elif "hr_zones" not in raw_data or "hr_zones" in force_refetch_set:
             try:
                 hr_zones_data = client.get_activity_hr_in_timezones(activity_id)
                 raw_data["hr_zones"] = hr_zones_data
@@ -509,15 +605,25 @@ class GarminIngestWorker:
 
         # 6. VO2 max (requires activity date)
         vo2_max_file = activity_dir / "vo2_max.json"
-        if vo2_max_file.exists():
+        if (
+            vo2_max_file.exists()
+            and "vo2_max" not in force_refetch_set
+            and "vo2_max" not in raw_data
+        ):
             logger.info(f"Using cached vo2_max for {activity_id}")
             with open(vo2_max_file, encoding="utf-8") as f:
                 raw_data["vo2_max"] = json.load(f)
-        else:
+        elif "vo2_max" not in raw_data or "vo2_max" in force_refetch_set:
             # Extract activity date from activity.summaryDTO
             activity_data = raw_data.get("activity", {})
             summary = activity_data.get("summaryDTO", {}) if activity_data else {}
             start_time_local = summary.get("startTimeLocal", "")
+
+            # Fallback to activity_basic if activity not available
+            if not start_time_local:
+                activity_basic = raw_data.get("activity_basic", {})
+                summary = activity_basic.get("summaryDTO", {}) if activity_basic else {}
+                start_time_local = summary.get("startTimeLocal", "")
 
             if start_time_local:
                 activity_date = start_time_local.split("T")[0]
@@ -545,11 +651,18 @@ class GarminIngestWorker:
 
         # 7. Lactate threshold
         lactate_file = activity_dir / "lactate_threshold.json"
-        if lactate_file.exists():
+        if (
+            lactate_file.exists()
+            and "lactate_threshold" not in force_refetch_set
+            and "lactate_threshold" not in raw_data
+        ):
             logger.info(f"Using cached lactate_threshold for {activity_id}")
             with open(lactate_file, encoding="utf-8") as f:
                 raw_data["lactate_threshold"] = json.load(f)
-        else:
+        elif (
+            "lactate_threshold" not in raw_data
+            or "lactate_threshold" in force_refetch_set
+        ):
             try:
                 lactate_threshold_data = client.get_lactate_threshold(latest=True)
                 raw_data["lactate_threshold"] = lactate_threshold_data
@@ -1489,7 +1602,9 @@ class GarminIngestWorker:
                 "message": f"Failed to insert body composition data for {date}",
             }
 
-    def process_activity(self, activity_id: int, date: str) -> dict[str, Any]:
+    def process_activity(
+        self, activity_id: int, date: str, force_refetch: list[str] | None = None
+    ) -> dict[str, Any]:
         """
         Process activity through cache-first pipeline.
 
@@ -1503,6 +1618,10 @@ class GarminIngestWorker:
         Args:
             activity_id: Activity ID
             date: Activity date (YYYY-MM-DD)
+            force_refetch: List of API file names to force refetch from Garmin Connect.
+                          Ignored if DuckDB cache exists (DuckDB has priority).
+                          Supported values: ['activity_details', 'splits', 'weather',
+                                            'gear', 'hr_zones', 'vo2_max', 'lactate_threshold']
 
         Returns:
             Result dict with file paths
@@ -1525,8 +1644,8 @@ class GarminIngestWorker:
                 "performance_data": performance_data,
             }
 
-        # Step 1: Collect data (cache-first)
-        raw_data = self.collect_data(activity_id)
+        # Step 1: Collect data (cache-first with optional force_refetch)
+        raw_data = self.collect_data(activity_id, force_refetch=force_refetch)
 
         # Step 2: Create parquet dataset
         df = self.create_parquet_dataset(raw_data)
