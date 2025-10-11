@@ -78,4 +78,4 @@ class TestProcessActivityDuckDBIntegration:
                 worker.process_activity(activity_id, date)
 
             # Verify collect_data was called (fallback happened)
-            mock_collect_data.assert_called_once_with(activity_id)
+            mock_collect_data.assert_called_once_with(activity_id, force_refetch=None)

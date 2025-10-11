@@ -806,3 +806,61 @@ class GarminDBReader:
         except Exception as e:
             logger.error(f"Error getting all splits data: {e}")
             return {"splits": []}
+
+    def get_split_time_ranges(self, activity_id: int) -> list[dict[str, Any]]:
+        """Get time ranges for all splits of an activity.
+
+        Args:
+            activity_id: Activity ID
+
+        Returns:
+            List of dictionaries with split time range data:
+            [
+                {
+                    "split_index": 1,
+                    "duration_seconds": 387.504,
+                    "start_time_s": 0,
+                    "end_time_s": 387
+                },
+                ...
+            ]
+            Empty list if activity not found.
+        """
+        try:
+            conn = duckdb.connect(str(self.db_path), read_only=True)
+
+            result = conn.execute(
+                """
+                SELECT
+                    split_index,
+                    duration_seconds,
+                    start_time_s,
+                    end_time_s
+                FROM splits
+                WHERE activity_id = ?
+                ORDER BY split_index
+                """,
+                [activity_id],
+            ).fetchall()
+
+            conn.close()
+
+            if not result:
+                return []
+
+            splits = []
+            for row in result:
+                splits.append(
+                    {
+                        "split_index": row[0],
+                        "duration_seconds": row[1],
+                        "start_time_s": row[2],
+                        "end_time_s": row[3],
+                    }
+                )
+
+            return splits
+
+        except Exception as e:
+            logger.error(f"Error getting split time ranges: {e}")
+            return []
