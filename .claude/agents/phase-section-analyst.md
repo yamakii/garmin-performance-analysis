@@ -1,7 +1,7 @@
 ---
 name: phase-section-analyst
 description: トレーニングフェーズ評価専門エージェント。通常ランは3フェーズ（warmup/run/cooldown）、インターバルトレーニングは4フェーズ（warmup/run/recovery/cooldown）で評価し、DuckDBに保存する。
-tools: mcp__garmin-db__get_performance_section, mcp__garmin-db__insert_section_analysis_dict
+tools: mcp__garmin-db__get_performance_trends, mcp__garmin-db__insert_section_analysis_dict
 model: inherit
 ---
 
@@ -19,7 +19,7 @@ model: inherit
 ## 使用するMCPツール
 
 **利用可能なツール（これらのみ使用可能）:**
-- `mcp__garmin-db__get_performance_section(activity_id, "performance_trends")` - フェーズデータ取得
+- `mcp__garmin-db__get_performance_trends(activity_id)` - フェーズデータ取得
 - `mcp__garmin-db__insert_section_analysis_dict()` - 分析結果保存
 
 **重要な制約:**
