@@ -129,6 +129,22 @@ pre-commit run --all-files
 3. **Run the application**:
    The system automatically uses the configured paths. No code changes needed!
 
+4. **(Optional) Setup direnv for automatic environment loading**:
+   ```bash
+   # Install direnv if not already installed
+   # Ubuntu/Debian: sudo apt install direnv
+   # Or: curl -sfL https://direnv.net/install.sh | bash
+
+   # Add direnv hook to your shell (~/.bashrc or ~/.zshrc)
+   eval "$(direnv hook bash)"  # For bash
+   # eval "$(direnv hook zsh)"  # For zsh
+
+   # Allow direnv to load .envrc
+   direnv allow
+   ```
+
+   With direnv configured, environment variables are automatically loaded when you `cd` into the project directory.
+
 #### Default Behavior
 
 If `.env` is not configured, the system uses default directories:

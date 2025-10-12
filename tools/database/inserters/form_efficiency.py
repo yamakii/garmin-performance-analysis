@@ -52,7 +52,9 @@ def insert_form_efficiency(
 
         # Set default DB path
         if db_path is None:
-            db_path = "data/database/garmin_performance.duckdb"
+            from tools.utils.paths import get_default_db_path
+
+            db_path = get_default_db_path()
 
         # Connect to DuckDB
         conn = duckdb.connect(str(db_path))

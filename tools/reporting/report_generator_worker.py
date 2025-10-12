@@ -19,13 +19,18 @@ logger = logging.getLogger(__name__)
 class ReportGeneratorWorker:
     """Python Worker for report generation from section analyses."""
 
-    def __init__(self, db_path: str = "data/database/garmin_performance.duckdb"):
+    def __init__(self, db_path: str | None = None):
         """
         Initialize report generator worker.
 
         Args:
-            db_path: DuckDB database path
+            db_path: DuckDB database path (default: uses environment variable)
         """
+        if db_path is None:
+            from tools.utils.paths import get_default_db_path
+
+            db_path = get_default_db_path()
+
         self.db_reader = GarminDBReader(db_path)
         self.renderer = ReportTemplateRenderer()
 

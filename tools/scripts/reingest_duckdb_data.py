@@ -12,8 +12,8 @@ logger = logging.getLogger(__name__)
 
 
 def reingest_all_activities(
-    db_path: str = "data/database/garmin_performance.duckdb",
-    raw_activity_dir: str = "data/raw/activity",
+    db_path: str | None = None,
+    raw_activity_dir: str | None = None,
     delete_old_db: bool = True,
 ) -> dict[str, int | list[tuple[int, str]]]:
     """
@@ -28,6 +28,13 @@ def reingest_all_activities(
         Summary dict with success/failure counts
     """
     from tools.ingest.garmin_worker import GarminIngestWorker
+    from tools.utils.paths import get_default_db_path, get_raw_dir
+
+    # Resolve default paths
+    if db_path is None:
+        db_path = get_default_db_path()
+    if raw_activity_dir is None:
+        raw_activity_dir = str(get_raw_dir() / "activity")
 
     # 1. Delete old database if requested
     db_file = Path(db_path)

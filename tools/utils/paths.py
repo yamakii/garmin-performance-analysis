@@ -62,6 +62,18 @@ def get_database_dir() -> Path:
     return get_data_base_dir() / "database"
 
 
+def get_default_db_path() -> str:
+    """Get the default DuckDB database file path.
+
+    Returns:
+        str: Default database path (database_dir/garmin_performance.duckdb)
+
+    This function centralizes the default database path logic,
+    used by GarminIngestWorker, inserters, and other components.
+    """
+    return str(get_database_dir() / "garmin_performance.duckdb")
+
+
 def get_weight_raw_dir() -> Path:
     """Get the weight raw data directory."""
     return get_data_base_dir() / "raw" / "weight"

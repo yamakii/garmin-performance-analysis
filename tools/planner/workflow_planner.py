@@ -29,7 +29,12 @@ class WorkflowPlanner:
 
     def __init__(self, db_path: str | None = None):
         """Initialize workflow planner with optional DuckDB path."""
-        self.db_path = db_path or "data/database/garmin_performance.duckdb"
+        if db_path is None:
+            from tools.utils.paths import get_default_db_path
+
+            db_path = get_default_db_path()
+
+        self.db_path = db_path
         self.db_reader = GarminDBReader(self.db_path)
 
     def execute_full_workflow(

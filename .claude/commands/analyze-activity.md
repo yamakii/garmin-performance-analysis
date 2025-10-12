@@ -1,10 +1,10 @@
 # Analyze Activity Command
 
-Activity ID {{arg1}} ({{arg2}}) の完全な分析を実行してください。
+日付 {{arg1}} のアクティビティの完全な分析を実行してください。
 
 ## ワークフロー
 
-1. **データ収集**: GarminIngestWorkerでデータ取得
+1. **データ収集**: WorkflowPlannerで日付からアクティビティを取得・処理
 2. **データ検証**: ValidationWorkerで品質チェック
 3. **セクション分析**: 5つのエージェントを並列実行
    - efficiency-section-analyst
@@ -18,36 +18,39 @@ Activity ID {{arg1}} ({{arg2}}) の完全な分析を実行してください。
 
 ### Step 1: データ収集と検証
 
-まず、Activity ID {{arg1}} のGarminデータを収集し、DuckDBに格納してください。
+`tools/planner/workflow_planner.py` を使用して、日付からアクティビティを取得し、データを収集してDuckDBに格納してください。
 
-```python
-from tools.ingest.garmin_worker import GarminIngestWorker
-from tools.database.inserters.performance import insert_performance_data
-
-worker = GarminIngestWorker()
-result = worker.process_activity({{arg1}}, "{{arg2}}")
-insert_performance_data(result["performance_file"], {{arg1}}, "{{arg2}}")
+```bash
+uv run python -m tools.planner.workflow_planner {{arg1}}
 ```
+
+このコマンドは以下を実行します：
+- 日付 {{arg1}} からアクティビティIDを解決
+- GarminIngestWorkerでデータ収集
+- DuckDBへの自動挿入
+- データ検証 (precheck.json)
+
+実行後、出力されたJSONから `activity_id` と `date` を取得してください。
 
 ### Step 2: セクション分析（並列実行）
 
-5つのエージェントを並列で呼び出してください：
+WorkflowPlannerの結果から取得した `activity_id` と `date` を使用して、5つのエージェントを並列で呼び出してください：
 
 ```
 Task: efficiency-section-analyst
-prompt: "Activity ID {{arg1}} ({{arg2}}) のフォーム効率と心拍効率を分析してください。mcp__garmin-db__get_performance_section使用。"
+prompt: "Activity ID {activity_id} ({date}) のフォーム効率と心拍効率を分析してください。"
 
 Task: environment-section-analyst
-prompt: "Activity ID {{arg1}} ({{arg2}}) の環境要因（気温、風速、地形）の影響を分析してください。"
+prompt: "Activity ID {activity_id} ({date}) の環境要因（気温、風速、地形）の影響を分析してください。"
 
 Task: phase-section-analyst
-prompt: "Activity ID {{arg1}} ({{arg2}}) のウォームアップ・メイン・フィニッシュの3フェーズを評価してください。"
+prompt: "Activity ID {activity_id} ({date}) のフェーズ評価を実行してください。"
 
 Task: split-section-analyst
-prompt: "Activity ID {{arg1}} ({{arg2}}) の全スプリットを詳細分析してください。mcp__garmin-db__get_splits_complete使用。"
+prompt: "Activity ID {activity_id} ({date}) の全スプリットを詳細分析してください。"
 
 Task: summary-section-analyst
-prompt: "Activity ID {{arg1}} ({{arg2}}) のアクティビティタイプ判定と総合評価を生成してください。"
+prompt: "Activity ID {activity_id} ({date}) のアクティビティタイプ判定と総合評価を生成してください。"
 ```
 
 ### Step 3: レポート生成
@@ -56,7 +59,7 @@ prompt: "Activity ID {{arg1}} ({{arg2}}) のアクティビティタイプ判定
 
 ```
 Task: report-generator
-prompt: "Activity ID {{arg1}} ({{arg2}}) の最終レポートを生成してください。DuckDBからセクション分析を取得し、mcp__report-generator__create_report_structure使用。"
+prompt: "Activity ID {activity_id} ({date}) の最終レポートを生成してください。DuckDBからセクション分析を取得してください。"
 ```
 
 ## 重要事項

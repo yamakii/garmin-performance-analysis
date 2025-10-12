@@ -109,7 +109,25 @@ GARMIN_RESULT_DIR=/home/user/private/garmin_results
 
 # 3. Verify configuration
 uv run python -c "from tools.utils.paths import get_data_base_dir, get_result_dir; print('Data:', get_data_base_dir()); print('Result:', get_result_dir())"
+
+# 4. (Optional) Setup direnv for automatic environment loading
+# Install direnv if not already installed
+# Ubuntu/Debian: sudo apt install direnv
+# Or: curl -sfL https://direnv.net/install.sh | bash
+
+# Add direnv hook to your shell (~/.bashrc or ~/.zshrc)
+eval "$(direnv hook bash)"  # For bash
+# eval "$(direnv hook zsh)"  # For zsh
+
+# Allow direnv to load .envrc (already created in repository)
+direnv allow
 ```
+
+**direnv Integration:**
+- A `.envrc` file is provided in the repository that automatically loads `.env` when you `cd` into the project directory
+- With direnv configured, environment variables are available to all shell commands (not just `uv run python`)
+- This eliminates the need to manually source `.env` or prefix commands with environment variables
+- Worktree-compatible: Each worktree can have its own `.envrc` pointing to the same or different `.env` files
 
 **How It Works:**
 - `.env` file is automatically loaded by `tools/__init__.py` when any `tools` module is imported

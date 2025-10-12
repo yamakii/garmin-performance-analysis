@@ -119,6 +119,7 @@ class GarminIngestWorker:
             db_path: Optional DuckDB path for activity date lookup
         """
         from tools.utils.paths import (
+            get_default_db_path,
             get_performance_dir,
             get_precheck_dir,
             get_raw_dir,
@@ -140,9 +141,13 @@ class GarminIngestWorker:
         ]:
             directory.mkdir(parents=True, exist_ok=True)
 
+        # DB path: Resolve to concrete path if None
+        if db_path is None:
+            db_path = get_default_db_path()
+        self._db_path = db_path
+
         # DB reader for activity date lookup
         self._db_reader: GarminDBReader | None = None
-        self._db_path = db_path
 
     @classmethod
     def get_garmin_client(cls) -> Garmin:
@@ -189,9 +194,7 @@ class GarminIngestWorker:
         if self._db_reader is None:
             from tools.database.db_reader import GarminDBReader
 
-            self._db_reader = GarminDBReader(
-                db_path=self._db_path or "data/database/garmin_performance.duckdb"
-            )
+            self._db_reader = GarminDBReader(db_path=self._db_path)
 
         result = self._db_reader.get_activity_date(activity_id)
         return cast(str | None, result) if result else None
