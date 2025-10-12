@@ -197,25 +197,36 @@ def insert_hr_efficiency(
 - ✅ DuckDB スキーマの確認
 - ✅ `performance.json` のデータ構造確認
 
-### Phase 1: _calculate_hr_efficiency_analysis メソッドの修正
+### Phase 1: _calculate_hr_efficiency_analysis メソッドの修正 ✅
 **実装内容:**
-- ゾーンパーセンテージ計算ロジックの追加
-- `hr_zones` から `secsInZone` を取得し、総時間に対する割合を計算
-- 戻り値に `zone1_percentage` ~ `zone5_percentage` を追加
+- ✅ ゾーンパーセンテージ計算ロジックの追加
+- ✅ `hr_zones` から `secsInZone` を取得し、総時間に対する割合を計算
+- ✅ 戻り値に `zone1_percentage` ~ `zone5_percentage` を追加
+- ✅ 総時間が0またはhr_zonesが空の場合は zone_percentages を含めない
 
 **テスト内容:**
-- Unit test: ゾーンパーセンテージ計算の正確性
-- Edge case: `hr_zones` が空の場合の処理
-- Edge case: 総時間が0の場合の処理
+- ✅ Unit test: ゾーンパーセンテージ計算の正確性 (test_calculate_hr_efficiency_analysis_with_zone_percentages)
+- ✅ Edge case: `hr_zones` が空の場合の処理 (test_calculate_hr_efficiency_analysis_empty_zones)
+- ✅ Edge case: 総時間が0の場合の処理 (test_calculate_hr_efficiency_analysis_zero_total_time)
+- ✅ Edge case: zoneNumber が欠けている場合の処理 (test_calculate_hr_efficiency_analysis_missing_zone_number)
+- ✅ Validation: 2桁精度への丸め処理 (test_calculate_hr_efficiency_analysis_rounding)
+- ✅ Validation: 全ゾーンパーセンテージの合計が100%に近い (test_zone_percentage_sum_equals_100)
 
-### Phase 2: hr_efficiency inserter の修正
+**Commit:** `a17e2ea` - feat(ingest): add HR zone percentage calculation to _calculate_hr_efficiency_analysis
+
+### Phase 2: hr_efficiency inserter の修正 ✅
 **実装内容:**
-- `insert_hr_efficiency()` の INSERT 文にゾーンパーセンテージカラムを追加
-- `performance.json` からゾーンパーセンテージを抽出
+- ✅ `insert_hr_efficiency()` の INSERT 文にゾーンパーセンテージカラムを追加
+- ✅ `performance.json` からゾーンパーセンテージを抽出 (`.get()` で NULL を許容)
+- ✅ 既存レコードの削除後に再挿入（UPDATE ではなく DELETE + INSERT）
 
 **テスト内容:**
-- Unit test: ゾーンパーセンテージの正しい挿入
-- Integration test: performance.json → DuckDB の完全なデータフロー
+- ✅ Unit test: ゾーンパーセンテージの正しい挿入 (test_insert_hr_efficiency_with_zone_percentages)
+- ✅ Unit test: ゾーンパーセンテージがない場合の NULL 挿入 (test_insert_hr_efficiency_missing_zone_percentages)
+- ✅ Unit test: 既存レコードの再挿入 (test_insert_hr_efficiency_reinsertion)
+- ✅ Unit test: 部分的なゾーンパーセンテージの挿入 (test_insert_hr_efficiency_partial_zone_percentages)
+
+**Commit:** `e45c380` - feat(database): add zone percentage insertion to hr_efficiency inserter
 
 ### Phase 3: テストとバリデーション
 **実装内容:**
