@@ -216,7 +216,7 @@ The `data/performance/{activity_id}.json` file contains 11 main sections:
 
 **3. Performance Data Access**
    - ✅ **MANDATORY:** Use Garmin DB MCP
-   - Tools: `get_performance_section`, `get_splits_*`, `insert_section_analysis_dict`
+   - Tools: `get_performance_trends`, `get_weather_data`, `get_splits_*`, `insert_section_analysis_dict`
    - Reason: Efficient DuckDB access, 70-80% token reduction
 
 **4. Other Files** (logs, binary, CSV, parquet)
@@ -241,7 +241,8 @@ Provides efficient section-based access to DuckDB performance data, write capabi
 **Read Tools (70-80% token reduction):**
 
 *Performance Data Access:*
-- `mcp__garmin-db__get_performance_section`: Get specific sections (basic_metrics, heart_rate_zones, etc.)
+- `mcp__garmin-db__get_performance_trends`: Get performance trends data (pace consistency, HR drift, phase analysis)
+- `mcp__garmin-db__get_weather_data`: Get weather data (temperature, humidity, wind) from activity
 - `mcp__garmin-db__get_section_analysis`: Get pre-calculated section analysis from DuckDB
 
 *Normalized Table Access (2025-10-10 added - Direct DuckDB table queries):*

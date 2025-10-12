@@ -78,116 +78,164 @@ class GarminDBReader:
             logger.error(f"Error querying activity by date: {e}")
             return None
 
-    def get_performance_section(
-        self, activity_id: int, section: str
-    ) -> dict[str, Any] | None:
+    def get_performance_trends(self, activity_id: int) -> dict[str, Any] | None:
         """
-        Get specific section from performance data.
-
-        For normalized tables (performance_trends), reads from dedicated table.
-        For other sections, reads from performance_data JSON column.
+        Get performance trends data from performance_trends table.
 
         Args:
             activity_id: Activity ID
-            section: Section name (basic_metrics, heart_rate_zones, performance_trends, etc.)
 
         Returns:
-            Section data as dict, or None if not found
+            Performance trends data with phase breakdowns.
+            Format: {
+                "pace_consistency": float,
+                "hr_drift_percentage": float,
+                "cadence_consistency": str,
+                "fatigue_pattern": str,
+                "warmup_phase": {
+                    "splits": [1, 2],
+                    "avg_pace": float,
+                    "avg_hr": float
+                },
+                "run_phase": {
+                    "splits": [3, 4, 5],
+                    "avg_pace": float,
+                    "avg_hr": float
+                },
+                "recovery_phase": {  # Only for 4-phase interval training
+                    "splits": [6, 7],
+                    "avg_pace": float,
+                    "avg_hr": float
+                },
+                "cooldown_phase": {
+                    "splits": [8],
+                    "avg_pace": float,
+                    "avg_hr": float
+                }
+            }
+            None if activity not found.
         """
         try:
             conn = duckdb.connect(str(self.db_path), read_only=True)
 
-            # Special handling for performance_trends: read from normalized table
-            if section == "performance_trends":
-                result = conn.execute(
-                    """
-                    SELECT
-                        pace_consistency,
-                        hr_drift_percentage,
-                        cadence_consistency,
-                        fatigue_pattern,
-                        warmup_splits,
-                        warmup_avg_pace_seconds_per_km,
-                        warmup_avg_hr,
-                        run_splits,
-                        run_avg_pace_seconds_per_km,
-                        run_avg_hr,
-                        recovery_splits,
-                        recovery_avg_pace_seconds_per_km,
-                        recovery_avg_hr,
-                        cooldown_splits,
-                        cooldown_avg_pace_seconds_per_km,
-                        cooldown_avg_hr
-                    FROM performance_trends
-                    WHERE activity_id = ?
-                    """,
-                    [activity_id],
-                ).fetchone()
+            result = conn.execute(
+                """
+                SELECT
+                    pace_consistency,
+                    hr_drift_percentage,
+                    cadence_consistency,
+                    fatigue_pattern,
+                    warmup_splits,
+                    warmup_avg_pace_seconds_per_km,
+                    warmup_avg_hr,
+                    run_splits,
+                    run_avg_pace_seconds_per_km,
+                    run_avg_hr,
+                    recovery_splits,
+                    recovery_avg_pace_seconds_per_km,
+                    recovery_avg_hr,
+                    cooldown_splits,
+                    cooldown_avg_pace_seconds_per_km,
+                    cooldown_avg_hr
+                FROM performance_trends
+                WHERE activity_id = ?
+                """,
+                [activity_id],
+            ).fetchone()
 
-                if not result:
-                    conn.close()
-                    return None
+            conn.close()
 
-                # Convert to dict format
-                def parse_splits(splits_str):
-                    return [int(s) for s in splits_str.split(",")] if splits_str else []
-
-                data = {
-                    "pace_consistency": result[0],
-                    "hr_drift_percentage": result[1],
-                    "cadence_consistency": result[2],
-                    "fatigue_pattern": result[3],
-                }
-
-                # Add warmup_phase
-                if result[4]:  # warmup_splits exists
-                    data["warmup_phase"] = {
-                        "splits": parse_splits(result[4]),
-                        "avg_pace": result[5],
-                        "avg_hr": result[6],
-                    }
-
-                # Add run_phase
-                if result[7]:  # run_splits exists
-                    data["run_phase"] = {
-                        "splits": parse_splits(result[7]),
-                        "avg_pace": result[8],
-                        "avg_hr": result[9],
-                    }
-
-                # Add recovery_phase (4-phase interval training)
-                if result[10]:  # recovery_splits exists
-                    data["recovery_phase"] = {
-                        "splits": parse_splits(result[10]),
-                        "avg_pace": result[11],
-                        "avg_hr": result[12],
-                    }
-
-                # Add cooldown_phase
-                if result[13]:  # cooldown_splits exists
-                    data["cooldown_phase"] = {
-                        "splits": parse_splits(result[13]),
-                        "avg_pace": result[14],
-                        "avg_hr": result[15],
-                    }
-
-                conn.close()
-                return data
-
-            else:
-                # Default behavior: read from performance_data JSON column
-                result = conn.execute(
-                    f"SELECT {section} FROM performance_data WHERE activity_id = ?",
-                    [activity_id],
-                ).fetchone()
-                conn.close()
-
-                if result and result[0]:
-                    return cast(dict[str, Any], json.loads(result[0]))
+            if not result:
                 return None
 
+            import json
+
+            trends_data = {
+                "pace_consistency": result[0],
+                "hr_drift_percentage": result[1],
+                "cadence_consistency": result[2],
+                "fatigue_pattern": result[3],
+                "warmup_phase": {
+                    "splits": json.loads(result[4]) if result[4] else [],
+                    "avg_pace": result[5],
+                    "avg_hr": result[6],
+                },
+                "run_phase": {
+                    "splits": json.loads(result[7]) if result[7] else [],
+                    "avg_pace": result[8],
+                    "avg_hr": result[9],
+                },
+                "cooldown_phase": {
+                    "splits": json.loads(result[13]) if result[13] else [],
+                    "avg_pace": result[14],
+                    "avg_hr": result[15],
+                },
+            }
+
+            # Add recovery_phase only if it exists (4-phase interval training)
+            if result[10] is not None:
+                trends_data["recovery_phase"] = {
+                    "splits": json.loads(result[10]),
+                    "avg_pace": result[11],
+                    "avg_hr": result[12],
+                }
+
+            return trends_data
+
         except Exception as e:
-            logger.error(f"Error querying performance section: {e}")
+            logger.error(f"Error getting performance trends: {e}")
+            return None
+
+    def get_weather_data(self, activity_id: int) -> dict[str, Any] | None:
+        """
+        Get weather data from activities table.
+
+        Args:
+            activity_id: Activity ID
+
+        Returns:
+            Weather data from activity.
+            Format: {
+                "temperature_c": float,  # External temperature in Celsius
+                "temperature_f": float,  # External temperature in Fahrenheit
+                "humidity": int,         # Relative humidity percentage
+                "wind_speed_ms": float,  # Wind speed in meters per second
+                "wind_direction": str    # Compass direction (e.g., "N", "NE", "SW")
+            }
+            None if activity not found or weather data unavailable.
+        """
+        try:
+            conn = duckdb.connect(str(self.db_path), read_only=True)
+
+            result = conn.execute(
+                """
+                SELECT
+                    external_temp_c,
+                    external_temp_f,
+                    humidity,
+                    wind_speed_ms,
+                    wind_direction_compass
+                FROM activities
+                WHERE activity_id = ?
+                """,
+                [activity_id],
+            ).fetchone()
+
+            conn.close()
+
+            if not result:
+                return None
+
+            return {
+                "temperature_c": result[0],
+                "temperature_f": result[1],
+                "humidity": result[2],
+                "wind_speed_ms": result[3],
+                "wind_direction": result[4],
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting weather data: {e}")
             return None
 
     def get_section_analysis(
