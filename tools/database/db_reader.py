@@ -148,22 +148,10 @@ class GarminDBReader:
             if not result:
                 return None
 
-            import json
-
-            # Helper function to parse splits (supports both CSV and JSON formats)
+            # Helper function to parse splits (CSV format: '1,2,3')
             def parse_splits(splits_str: str | None) -> list[int]:
                 if not splits_str:
                     return []
-
-                # Try JSON format first (e.g., '[1, 2, 3]')
-                if splits_str.strip().startswith("["):
-                    try:
-                        parsed = json.loads(splits_str)
-                        return cast(list[int], parsed)
-                    except json.JSONDecodeError:
-                        pass
-
-                # Fall back to CSV format (e.g., '1,2,3')
                 return [int(s.strip()) for s in splits_str.split(",")]
 
             trends_data = {
