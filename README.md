@@ -1,5 +1,7 @@
 # Garmin Performance Analysis System
 
+> **⚠️ Unofficial Tool**: This is a community-developed project for personal use, not affiliated with Garmin Ltd.
+
 A comprehensive running performance analysis system that integrates with Garmin Connect to provide detailed split-by-split analysis with environmental integration.
 
 ## Features
@@ -152,6 +154,21 @@ This project uses the following MCP servers (configured in `.mcp.json`):
 
 See `CLAUDE.md` for detailed configuration and usage guidelines.
 
+## Disclaimer
+
+**This is an unofficial, community-developed tool and is not affiliated with, endorsed by, or supported by Garmin Ltd. or its affiliates.**
+
+- This project uses the third-party Python library [`garminconnect`](https://github.com/cyberjunky/python-garminconnect) (MIT License) to access personal Garmin Connect data
+- This tool is intended for **personal use only** to analyze your own fitness data
+- Users are responsible for complying with Garmin's Terms of Service
+- Use at your own risk - the authors assume no liability for any issues arising from the use of this software
+
+**Privacy Note:** This tool processes your personal health data locally. Ensure you keep your data directories (configured via `.env`) secure and never commit personal data to version control.
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+The project uses the following third-party libraries:
+- [`garminconnect`](https://github.com/cyberjunky/python-garminconnect) - MIT License
+- Other dependencies are listed in `pyproject.toml` with their respective licenses
