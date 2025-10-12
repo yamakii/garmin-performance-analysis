@@ -290,14 +290,127 @@ Provides efficient section-based access to DuckDB performance data, write capabi
 - `mcp__garmin-db__insert_section_analysis`: Insert section analysis JSON file into DuckDB (legacy)
 
 **RAG Query Tools (Phase 2.5: Interval Analysis & Time Series Detail):**
-- `mcp__garmin-db__get_interval_analysis`: Analyze interval training Work/Recovery segments with fatigue detection
-- `mcp__garmin-db__get_split_time_series_detail`: Get second-by-second detailed metrics for a specific 1km split
-- `mcp__garmin-db__detect_form_anomalies`: Detect form metric anomalies and identify causes (elevation/pace/fatigue)
 
-**RAG Query Tools (Phase 3: Trend Analysis & Comparison):**
-- `mcp__garmin-db__compare_similar_workouts`: Find and compare similar past activities
-- `mcp__garmin-db__get_performance_trends`: Analyze performance trends for specific metrics over time
-- `mcp__garmin-db__extract_insights`: Extract insights from section analyses using keyword-based search
+*Interval Analysis:*
+- `mcp__garmin-db__get_interval_analysis`: Analyze interval training Work/Recovery segments
+  - Auto-detects Work/Recovery intervals from pace changes
+  - Calculates fatigue indicators (HR increase, pace degradation, GCT degradation)
+  - Computes HR recovery rate (bpm/min)
+  - Supports custom thresholds (pace_threshold_factor, min_work_duration, min_recovery_duration)
+  - Use for: Interval training analysis, recovery efficiency assessment
+
+*Time Series Detail:*
+- `mcp__garmin-db__get_split_time_series_detail`: Get second-by-second metrics for a specific 1km split
+  - Extracts 26 metrics × 1000+ seconds from activity_details.json
+  - Returns time series with statistics (avg, std, min, max)
+  - Detects anomalies using z-score thresholding
+  - Use for: Split-level detailed analysis, anomaly investigation
+
+- `mcp__garmin-db__get_time_range_detail`: Get second-by-second metrics for arbitrary time range
+  - Supports custom start_time_s and end_time_s specification
+  - More flexible than split-based analysis
+  - Use for: Work/Recovery interval analysis, warmup/cooldown analysis
+
+*Form Anomaly Detection:*
+- `mcp__garmin-db__detect_form_anomalies`: Detect GCT/VO/VR anomalies and identify causes
+  - Z-score based anomaly detection (customizable threshold)
+  - Correlates anomalies with elevation changes, pace changes, and fatigue
+  - Provides context (before/after 30s window)
+  - Generates improvement recommendations
+  - Use for: Form efficiency issues, terrain impact analysis
+
+**RAG Query Tools (Phase 3: Trend Analysis & Performance Insights):**
+
+*Trend Analysis:*
+- `mcp__garmin-db__analyze_performance_trends`: Analyze long-term trends for 10 performance metrics
+  - Metrics: pace, HR, cadence, power, GCT, VO, VR, distance, time, elevation
+  - Linear regression analysis with trend direction detection
+  - Filtering: activity_type, temperature_range, distance_range
+  - Returns: slope, R², data points, trend evaluation
+  - Use for: Training progress tracking, seasonal patterns
+
+*Insight Extraction:*
+- `mcp__garmin-db__extract_insights`: Extract improvement suggestions, concerns, patterns from section analyses
+  - Keyword-based search (improvements, concerns, patterns)
+  - Pagination support (limit, offset)
+  - Filtering: activity_type, date_range
+  - Use for: Finding recurring themes, identifying problem areas
+
+*Activity Classification:*
+- `mcp__garmin-db__classify_activity_type`: Classify activities into 6 training types
+  - Types: Base Endurance, Threshold Run, Sprint Intervals, Anaerobic Capacity, Long Run, Recovery Run
+  - Classification based on pace zones, distance, and activity name keywords
+  - Supports both Japanese and English keywords
+  - Use for: Training type distribution analysis, workout filtering
+
+**activity_details.json Metrics:**
+
+The system uses 26 second-by-second metrics from activity_details.json:
+
+| Index | Metric Key | Unit | Description |
+|-------|-----------|------|-------------|
+| 0 | sumDuration | seconds | Cumulative duration |
+| 1 | directVerticalOscillation | cm | Vertical oscillation (form) |
+| 3 | directHeartRate | bpm | Heart rate |
+| 4 | directRunCadence | spm | Running cadence |
+| 5 | directSpeed | m/s | Running speed |
+| 7 | directVerticalRatio | % | Vertical ratio (form) |
+| 12 | directElevation | m | Elevation |
+| 19 | directGroundContactTime | ms | Ground contact time (form) |
+| ... | (18 more metrics) | | Power, stride length, etc. |
+
+**Usage Examples:**
+
+```python
+# Example 1: Interval analysis
+result = mcp__garmin-db__get_interval_analysis(
+    activity_id=20615445009,
+    pace_threshold_factor=1.3,  # Recovery pace ≥ 1.3× Work pace
+    min_work_duration=180,       # Work intervals ≥ 3 minutes
+    min_recovery_duration=60     # Recovery intervals ≥ 1 minute
+)
+# Returns: Work/Recovery segments with fatigue indicators
+
+# Example 2: Split time series detail
+result = mcp__garmin-db__get_split_time_series_detail(
+    activity_id=20615445009,
+    split_number=3,  # 3rd km
+    metrics=["HR", "speed", "GCT", "VO", "VR", "elevation"]
+)
+# Returns: ~1000 data points with statistics and anomalies
+
+# Example 3: Form anomaly detection
+result = mcp__garmin-db__detect_form_anomalies(
+    activity_id=20615445009,
+    metrics=["GCT", "VO", "VR"],
+    z_threshold=2.0,      # Detect deviations > 2σ
+    context_window=30     # 30 seconds context
+)
+# Returns: Anomalies with probable causes (elevation/pace/fatigue)
+
+# Example 4: Performance trend analysis
+result = mcp__garmin-db__analyze_performance_trends(
+    start_date="2025-01-01",
+    end_date="2025-03-31",
+    metric="pace_min_per_km",
+    activity_type_filter="Threshold Run",
+    temperature_range=[15, 25]
+)
+# Returns: Linear regression with trend direction
+
+# Example 5: Extract insights
+result = mcp__garmin-db__extract_insights(
+    keywords=["improvements", "concerns"],
+    activity_type_filter="Base Endurance",
+    date_range=["2025-01-01", "2025-03-31"],
+    limit=20
+)
+# Returns: Relevant insights from section analyses
+
+# Example 6: Activity classification
+result = mcp__garmin-db__classify_activity_type(activity_id=20615445009)
+# Returns: Training type (e.g., "Threshold Run") with confidence
+```
 
 ### Serena MCP Integration
 
@@ -565,12 +678,42 @@ The system has two distinct operations that MUST NOT be mixed:
 - Data regeneration is fast and local (reads from cached raw data)
 - Mixing them causes unnecessary API load and delays
 
-#### Regeneration from Raw Data (Preferred Method)
+#### DuckDB Regeneration from Raw Data
 
-**Use `GarminIngestWorker` directly for regeneration:**
+**✅ RECOMMENDED: Use `regenerate_duckdb.py` script**
 
+Regenerates DuckDB from existing raw data (performance.json is automatically generated as intermediate file):
+
+```bash
+# Regenerate all activities
+uv run python tools/scripts/regenerate_duckdb.py
+
+# Regenerate by date range
+uv run python tools/scripts/regenerate_duckdb.py --start-date 2025-01-01 --end-date 2025-01-31
+
+# Regenerate specific activity IDs
+uv run python tools/scripts/regenerate_duckdb.py --activity-ids 12345 67890
+
+# Delete old DuckDB before regeneration (complete reset)
+uv run python tools/scripts/regenerate_duckdb.py --delete-db
+
+# Dry run (show what would be regenerated)
+uv run python tools/scripts/regenerate_duckdb.py --dry-run
+```
+
+**When to use:**
+- After modifying performance.json or DuckDB schema
+- After data corruption or inconsistency
+- After adding new fields to normalized tables
+
+**What it does:**
+- Reads from `data/raw/activity/`
+- Automatically generates performance.json (intermediate file)
+- Inserts into DuckDB normalized tables
+- **No API calls**: Only processes existing cached raw data
+
+**Single Activity Regeneration:**
 ```python
-# Regenerate single activity from existing raw data
 from tools.ingest.garmin_worker import GarminIngestWorker
 
 worker = GarminIngestWorker()
@@ -581,45 +724,47 @@ worker = GarminIngestWorker()
 result = worker.process_activity(activity_id, "YYYY-MM-DD")
 ```
 
-**Bulk regeneration pattern:**
-```python
-# Example: Regenerate all activities after schema change
-from tools.ingest.garmin_worker import GarminIngestWorker
-from pathlib import Path
-import json
+#### API Fetching Scripts
 
-worker = GarminIngestWorker()
+**✅ RECOMMENDED: Use `bulk_fetch_raw_data.py` for comprehensive raw data fetching**
 
-# Get all activity IDs from raw data
-raw_dir = Path("data/raw/activity")
-for activity_dir in sorted(raw_dir.iterdir()):
-    if activity_dir.is_dir():
-        activity_id = int(activity_dir.name)
-        # Load date from activity.json
-        activity_file = activity_dir / "activity.json"
-        if activity_file.exists():
-            with open(activity_file) as f:
-                data = json.load(f)
-                date = data.get("startTimeLocal", "").split()[0]
+Fetch missing raw data from Garmin API (skips existing files by default):
 
-            # Process activity (will regenerate if DuckDB cache missing)
-            worker.process_activity(activity_id, date)
+```bash
+# Fetch by date range (missing files only)
+uv run python tools/scripts/bulk_fetch_raw_data.py --start-date 2025-01-01 --end-date 2025-01-31
+
+# Fetch specific API types only
+uv run python tools/scripts/bulk_fetch_raw_data.py --start-date 2025-01-01 --end-date 2025-01-31 --api-types weather vo2_max
+
+# Fetch specific activity IDs
+uv run python tools/scripts/bulk_fetch_raw_data.py --activity-ids 12345 67890 11111
+
+# Force re-fetch even if files exist
+uv run python tools/scripts/bulk_fetch_raw_data.py --start-date 2025-01-01 --end-date 2025-01-31 --force
+
+# Dry run (show what would be fetched)
+uv run python tools/scripts/bulk_fetch_raw_data.py --start-date 2025-01-01 --end-date 2025-01-31 --dry-run
 ```
 
-#### API Fetching Scripts
+**Legacy: `bulk_fetch_activity_details.py`** (specific to activity_details.json)
 
 ```bash
 # Fetch activity_details.json for all activities
 uv run python tools/scripts/bulk_fetch_activity_details.py
 
-# Dry run (show what would be fetched)
+# Dry run
 uv run python tools/scripts/bulk_fetch_activity_details.py --dry-run
 
-# Force re-fetch even if files exist
+# Force re-fetch
 uv run python tools/scripts/bulk_fetch_activity_details.py --force
 ```
 
-**Purpose:** Fetch specific missing data from Garmin API (e.g., activity_details.json for interval analysis)
+**When to use:**
+- Adding new raw data to the system
+- Fetching missing API data for specific activities
+- Updating specific API data that has changed
+- **Note**: Only fetches files that don't exist (unless `--force` is used)
 
 #### Data Migration Scripts
 
@@ -638,33 +783,6 @@ uv run python tools/scripts/migrate_weight_data.py --verify
 ```
 
 **Purpose:** Migrate data between different storage formats
-
-#### ⚠️ PROHIBITED Scripts
-
-**DO NOT USE: `tools/scripts/reingest_duckdb_data.py`**
-
-**Why prohibited:**
-- **Violates separation principle**: Mixes API fetching with regeneration
-- **Deletes DuckDB database** then re-fetches ALL data from Garmin API
-- Makes 1,300+ unnecessary API calls (824 activity + 500+ body composition)
-- Should only re-fetch if raw data is missing
-
-**What it does wrong:**
-1. Deletes existing DuckDB
-2. For each activity: Calls `process_activity()` without checking raw data cache first
-3. `collect_data()` re-fetches from API even when raw data exists
-
-**Correct approach instead:**
-1. Delete DuckDB if needed
-2. Use `GarminIngestWorker.process_activity()` which checks raw data cache first
-3. Only fetches from API if raw data is missing
-
-**Exception:** Only use if you need to completely rebuild from fresh API data (rare case)
-
-```bash
-# ONLY use if you need fresh API data (will make 1,300+ API calls!)
-uv run python tools/scripts/reingest_duckdb_data.py --keep-old
-```
 
 ### Code Quality
 ```bash
@@ -859,12 +977,33 @@ docs/project/
 
 ### Active Projects
 
-- **2025-10-11_cache_partial_refetch**: Cache partial refetch feature with `force_refetch` parameter for selective API data updates (Phases 1-5 completed)
-- **2025-10-10_duckdb_inserter_cleanup**: Added 7 missing normalized table schemas to db_writer._ensure_tables(), body composition optimization, deprecated code removal (Phases 1-4 completed)
-- **2025-10-09_rag_interval_analysis_tools**: RAG interval analysis tools implementation with activity_details.json integration - ActivityDetailsLoader, IntervalAnalyzer, TimeSeriesDetailExtractor, FormAnomalyDetector, MCP server integration (Phases 1-6 completed)
-- **2025-10-09_garmin_ingest_refactoring**: GarminIngestWorker refactoring for cache-first approach and process_activity unification (Phases 0-5 completed)
-- **2025-10-07_core_system_restoration**: Body composition data specification fix and DuckDB schema documentation
-- **2025-10-07_report_generation_update**: Worker-based report generation system implementation
+Current active projects in development (no completion report):
+
+- **2025-10-12_mcp_tool_refactoring**: MCP server tool refactoring and optimization
+- **2025-10-12_hr_zone_percentage_precalc**: Heart rate zone percentage pre-calculation optimization
+- **2025-10-11_cache_partial_refetch**: Cache partial refetch feature with `force_refetch` parameter
+- **2025-10-10_rag_unified_plan**: RAG system unified planning and architecture
+- **2025-10-10_batch_section_analysis**: Batch section analysis implementation
+- **2025-10-09_split_stability_precalculation**: Split stability metrics pre-calculation
+- **2025-10-09_rag_interval_analysis_tools**: RAG interval analysis tools with activity_details.json
+- **2025-10-07_restore_core_system**: Core system restoration and fixes
+- **2025-10-07_report_generation_update**: Worker-based report generation system
+- **2025-10-05_rag_system**: RAG system foundation and architecture
+
+### Archived Projects
+
+Completed projects are moved to `docs/project/_archived/` and contain `completion_report.md`:
+
+- 2025-10-10_splits_time_range_duckdb
+- 2025-10-10_section_analyst_normalized_access
+- 2025-10-10_duckdb_inserter_cleanup
+- 2025-10-10_configurable_data_paths
+- 2025-10-09_weight_data_migration
+- 2025-10-09_garmin_ingest_refactoring
+- 2025-10-09_cleanup_unused_parquet
+- 2025-10-09_bulk_activity_details_fetch
+- 2025-10-07_planner_date_resolution
+- 2025-10-07_db_writer_schema_sync
 
 ### Project Workflow
 

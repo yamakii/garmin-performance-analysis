@@ -240,15 +240,97 @@ def insert_hr_efficiency(
 - Integration test: 完全なデータ取り込みフロー
 
 ### Phase 4: 既存データの再生成
-**実装内容:**
-- `bulk_regenerate.py` を実行して全 performance.json を再生成
-- `reingest_duckdb_data.py` を実行して DuckDB データを再挿入
-- 既存データとの互換性確認
+
+**⚠️ CRITICAL: API Fetching vs Data Regeneration の分離**
+
+このプロジェクトでは、既存の raw data から performance.json と DuckDB を再生成します。
+**Garmin API からの新規データ取得は不要です**（raw data は既に存在）。
+
+#### Phase 4a: raw data から performance.json の再生成（API呼び出しなし）
+
+**実装方法:**
+```python
+# 既存の raw data から performance.json を再生成
+from tools.ingest.garmin_worker import GarminIngestWorker
+from pathlib import Path
+import json
+
+worker = GarminIngestWorker()
+raw_dir = Path("data/raw/activity")
+
+for activity_dir in sorted(raw_dir.iterdir()):
+    if activity_dir.is_dir():
+        activity_id = int(activity_dir.name)
+        # Load date from activity.json
+        activity_file = activity_dir / "activity.json"
+        if activity_file.exists():
+            with open(activity_file) as f:
+                data = json.load(f)
+                date = data.get("startTimeLocal", "").split()[0]
+
+            # Regenerate performance.json from cached raw data
+            # DuckDB cache will be checked first; if missing, regenerates from raw data
+            worker.process_activity(activity_id, date)
+```
+
+**注意:**
+- `GarminIngestWorker.process_activity()` はキャッシュ優先で動作
+- DuckDB キャッシュが存在すれば、それを返す（再生成しない）
+- DuckDB キャッシュがなく、raw data が存在すれば、raw data から再生成
+- raw data もない場合のみ、API から取得（今回は不要）
+
+#### Phase 4b: performance.json から DuckDB への再挿入（API呼び出しなし）
+
+**実装方法:**
+```python
+# DuckDB を削除して、既存の performance.json から再挿入
+from tools.ingest.garmin_worker import GarminIngestWorker
+from pathlib import Path
+import json
+
+# 1. DuckDB を削除（オプション、完全な再構築が必要な場合のみ）
+db_path = Path("data/database/garmin_performance.duckdb")
+if db_path.exists():
+    db_path.unlink()
+
+# 2. 全アクティビティを再処理
+worker = GarminIngestWorker()
+raw_dir = Path("data/raw/activity")
+
+for activity_dir in sorted(raw_dir.iterdir()):
+    if activity_dir.is_dir():
+        activity_id = int(activity_dir.name)
+        activity_file = activity_dir / "activity.json"
+        if activity_file.exists():
+            with open(activity_file) as f:
+                data = json.load(f)
+                date = data.get("startTimeLocal", "").split()[0]
+
+            # Process activity (will insert into fresh DuckDB)
+            worker.process_activity(activity_id, date)
+```
 
 **テスト内容:**
-- Performance test: 再生成の速度測定
+- Performance test: 再生成の速度測定（目標: 既存処理から +5% 以内）
 - Validation: サンプルデータのゾーンパーセンテージ検証
 - Validation: DuckDB のゾーンパーセンテージデータ確認
+
+**✅ RECOMMENDED: 統一スクリプトの使用**
+
+Phase 4a/4b を実行するには、新しい統一スクリプトを使用してください:
+
+```bash
+# Phase 4a + 4b: 両方実行
+uv run python tools/scripts/regenerate_from_raw_data.py
+
+# Phase 4a のみ: performance.json 再生成
+uv run python tools/scripts/regenerate_from_raw_data.py --phase a
+
+# Phase 4b のみ: DuckDB 再挿入（古いDBを削除して新規作成）
+uv run python tools/scripts/regenerate_from_raw_data.py --phase b --delete-db
+```
+
+このスクリプトは API 呼び出しを一切行わず、既存の raw data から再生成します。
 
 ### Phase 5: ドキュメント更新
 **実装内容:**
