@@ -541,7 +541,7 @@ uv run python tools/bulk_fetch_activity_details.py --dry-run
 
 1. **メインブランチへのマージ** （推奨）
    ```bash
-   cd /home/yamakii/workspace/claude_workspace/garmin
+   cd /home/user/workspace/claude_workspace/garmin
    git checkout new_master
    git merge feature/bulk_activity_details_fetch
    git worktree remove ../garmin-bulk_activity_details_fetch

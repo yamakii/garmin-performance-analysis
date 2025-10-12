@@ -96,7 +96,7 @@
 $ uv run pytest tests/database/test_db_writer_schema.py -v
 ============================= test session starts ==============================
 platform linux -- Python 3.12.3, pytest-8.4.2, pluggy-1.6.0
-rootdir: /home/yamakii/workspace/claude_workspace/garmin-duckdb_inserter_cleanup
+rootdir: /home/user/workspace/claude_workspace/garmin-duckdb_inserter_cleanup
 configfile: pyproject.toml
 plugins: cov-7.0.0, asyncio-1.2.0, anyio-4.11.0
 asyncio: mode=Mode.AUTO, debug=False
@@ -119,7 +119,7 @@ tests/database/test_db_writer_schema.py ....                             [100%]
 $ uv run pytest tests/integration/test_process_activity_integration.py -v
 ============================= test session starts ==============================
 platform linux -- Python 3.12.3, pytest-8.4.2, pluggy-1.6.0
-rootdir: /home/yamakii/workspace/claude_workspace/garmin-duckdb_inserter_cleanup
+rootdir: /home/user/workspace/claude_workspace/garmin-duckdb_inserter_cleanup
 configfile: pyproject.toml
 plugins: cov-7.0.0, asyncio-1.2.0, anyio-4.11.0
 asyncio: mode=Mode.AUTO, debug=False
@@ -229,7 +229,7 @@ Success: no issues found in 2 source files
 
 - **Commit**: `9a39fbb`
 - **Branch**: `feature/duckdb_inserter_cleanup`
-- **Worktree**: `/home/yamakii/workspace/claude_workspace/garmin-duckdb_inserter_cleanup/`
+- **Worktree**: `/home/user/workspace/claude_workspace/garmin-duckdb_inserter_cleanup/`
 - **Related Planning**: `docs/project/2025-10-10_duckdb_inserter_cleanup/planning.md`
 - **Related Spec**: `docs/spec/duckdb_schema_mapping.md`
 

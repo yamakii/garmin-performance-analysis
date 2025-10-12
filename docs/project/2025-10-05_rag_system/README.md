@@ -19,7 +19,7 @@ The RAG system enables efficient querying and analysis of Garmin running data th
 
 ### Target Users
 
-- Primary: Yamakii (runner using Garmin data for training optimization)
+- Primary: User (runner using Garmin data for training optimization)
 - Secondary: Claude Code (AI assistant for ongoing development)
 
 ---
@@ -104,7 +104,7 @@ The RAG system enables efficient querying and analysis of Garmin running data th
 
 ### By Role
 
-**If you are the user (Yamakii)**:
+**If you are the user (User)**:
 1. Start with [implementation_progress.md](./implementation_progress.md) for current status
 2. Review [phase0-2_implementation_status.md](./phase0-2_implementation_status.md) to see what's been built
 3. Check [phase3_specifications.md](./phase3_specifications.md) to understand next steps
@@ -219,7 +219,7 @@ Answer "why" questions about performance variations through multivariate correla
 ## Contact & Support
 
 **Project Lead**: Claude (AI Assistant)
-**Stakeholder**: Yamakii
+**Stakeholder**: User
 **Status Updates**: After each phase completion
 
 **How to Get Help**:

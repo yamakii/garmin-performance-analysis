@@ -317,7 +317,7 @@ data/archive/backup_weight_parquet_20251009.tar.gz (28KB)
 **ロールバック手順** (planning.md より):
 ```bash
 # Activity Parquetをリストア
-cd /home/yamakii/workspace/claude_workspace/garmin
+cd /home/user/workspace/claude_workspace/garmin
 tar -xzf data/archive/backup_activity_parquet_20251009.tar.gz
 
 # Weight Parquetをリストア

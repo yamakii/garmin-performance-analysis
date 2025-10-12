@@ -56,7 +56,7 @@ ls -la result/   # 空であることを確認
 **コマンド:**
 ```bash
 # プロジェクトルートに移動
-cd /home/yamakii/workspace/claude_workspace/garmin
+cd /home/user/workspace/claude_workspace/garmin
 
 # .env.exampleをコピー
 cp .env.example .env
@@ -67,10 +67,10 @@ cat > .env << 'EOF'
 # Copy this file to .env and customize the paths below
 
 # Base data directory (absolute path recommended for safety)
-GARMIN_DATA_DIR=/home/yamakii/garmin_data/data
+GARMIN_DATA_DIR=/home/user/garmin_data/data
 
 # Result directory (absolute path recommended for safety)
-GARMIN_RESULT_DIR=/home/yamakii/garmin_data/results
+GARMIN_RESULT_DIR=/home/user/garmin_data/results
 EOF
 
 # .envが正しく作成されたか確認
@@ -122,8 +122,8 @@ uv run pytest
 ```json
 {
   "2025-09-29": {
-    "weight": 76.599,
-    "bmi": 27.5,
+    "weight": 70.5,
+    "bmi": 25.3,
     ...
   }
 }
@@ -146,7 +146,7 @@ alias bfg='java -jar bfg-1.14.0.jar'
 
 ```bash
 # リポジトリ全体をバックアップ
-cd /home/yamakii/workspace/claude_workspace/
+cd /home/user/workspace/claude_workspace/
 tar -czf garmin-backup-$(date +%Y%m%d).tar.gz garmin/
 
 # バックアップが作成されたことを確認
@@ -159,7 +159,7 @@ ls -lh garmin-backup-*.tar.gz
 
 ```bash
 # プロジェクトルートに移動
-cd /home/yamakii/workspace/claude_workspace/garmin
+cd /home/user/workspace/claude_workspace/garmin
 
 # 現在のworktreeを確認
 git worktree list

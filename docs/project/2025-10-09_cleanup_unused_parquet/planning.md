@@ -392,7 +392,7 @@ data/weight_cache/parquet/weight_{date}.parquet → 削除
 
 ```bash
 # 1. Activity Parquetをリストア
-cd /home/yamakii/workspace/claude_workspace/garmin
+cd /home/user/workspace/claude_workspace/garmin
 tar -xzf backup_activity_parquet_YYYYMMDD.tar.gz
 
 # 2. Weight Parquetをリストア

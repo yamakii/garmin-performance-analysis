@@ -1,7 +1,7 @@
 # 計画: Cache Partial Refetch
 
 ## Git Worktree情報
-- **Worktree Path**: `/home/yamakii/workspace/claude_workspace/garmin-cache_partial_refetch/`
+- **Worktree Path**: `/home/user/workspace/claude_workspace/garmin-cache_partial_refetch/`
 - **Branch**: `feature/cache_partial_refetch`
 - **Base Branch**: `main`
 

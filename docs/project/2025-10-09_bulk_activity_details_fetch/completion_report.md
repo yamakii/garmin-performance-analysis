@@ -82,7 +82,7 @@ $ uv run pytest tests/tools/test_bulk_fetch_activity_details.py -v
 
 ============================= test session starts ==============================
 platform linux -- Python 3.12.3, pytest-8.4.2, pluggy-1.6.0
-rootdir: /home/yamakii/workspace/claude_workspace/garmin
+rootdir: /home/user/workspace/claude_workspace/garmin
 configfile: pyproject.toml
 plugins: cov-7.0.0, asyncio-1.2.0, anyio-4.11.0
 collected 12 items / 1 deselected / 11 selected
@@ -343,7 +343,7 @@ TOTAL                                    105     12    89%
 
 3. **メインブランチへのマージ**: 実環境テスト完了後
    ```bash
-   cd /home/yamakii/workspace/claude_workspace/garmin
+   cd /home/user/workspace/claude_workspace/garmin
    git checkout main
    git merge feature/bulk_activity_details_fetch
    git worktree remove ../garmin-bulk_activity_details_fetch
