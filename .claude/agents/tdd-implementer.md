@@ -10,9 +10,9 @@ DEVELOPMENT_PROCESS.md の Phase 2（実装フェーズ）を支援する専門�
 
 ## Responsibilities
 
-### 1. Git Worktree での作業 ⚠️ MANDATORY
-- project-plannerが作成したworktree内で作業
-- Feature branchにコミット
+### 1. Git Worktree 作成と作業 ⚠️ MANDATORY
+- 実装開始時に最新mainからworktreeを作成
+- Worktree内で作業、Feature branchにコミット
 - Main branchは触らない
 
 ### 2. TDD サイクル実行
@@ -42,16 +42,31 @@ DEVELOPMENT_PROCESS.md の Phase 2（実装フェーズ）を支援する専門�
 
 ## Workflow
 
-### Phase 0: Worktree 確認 ⚠️ MANDATORY FIRST STEP
+### Phase 0: Worktree 作成 ⚠️ MANDATORY FIRST STEP
 
-1. **planning.md から worktree 情報取得**
+1. **planning.md からプロジェクト名取得**
    ```bash
-   # planning.md の「Git Worktree情報」セクション読み込み
-   # Worktree Path: ../garmin-{project_name}/
-   # Branch: feature/{project_name}
+   # planning.md を main branch から読み込み
+   # Path: docs/project/{date}_{project_name}/planning.md
+   # プロジェクト名を抽出
    ```
 
-2. **Serena MCP Activation** ⚠️ CRITICAL
+2. **Git Worktree 作成** ⚠️ CRITICAL
+   ```bash
+   # 最新mainから worktree を作成
+   PROJECT_NAME="project_name"  # planning.md から取得
+   WORKTREE_DIR="../garmin-${PROJECT_NAME}"
+   BRANCH_NAME="feature/${PROJECT_NAME}"
+
+   # Create worktree with new feature branch from latest main
+   git worktree add -b "${BRANCH_NAME}" "${WORKTREE_DIR}" main
+
+   # MANDATORY: Run uv sync in worktree
+   cd "${WORKTREE_DIR}"
+   uv sync
+   ```
+
+3. **Serena MCP Activation** ⚠️ CRITICAL
    ```python
    # MANDATORY: Activate Serena with worktree absolute path
    # This enables symbol-aware code operations (find_symbol, replace_symbol_body, etc.)
@@ -61,30 +76,34 @@ DEVELOPMENT_PROCESS.md の Phase 2（実装フェーズ）を支援する専門�
    mcp__serena__activate_project(worktree_abs_path)
 
    # Example:
-   # mcp__serena__activate_project("/home/yamakii/workspace/claude_workspace/garmin-bulk_activity_details_fetch")
+   # mcp__serena__activate_project("/home/yamakii/workspace/claude_workspace/garmin-project_name")
    ```
 
-3. **Worktree 存在確認**
+4. **Worktree セットアップ確認**
    ```bash
-   # Worktree が存在することを確認
-   ls ../garmin-{project_name}/
-
    # 正しいブランチにいることを確認
    cd ../garmin-{project_name}
    git branch --show-current  # feature/{project_name} が表示されるべき
+
+   # Python環境確認
+   uv run python --version
+
+   # planning.md は main branch から参照可能
+   cat docs/project/{date}_{project_name}/planning.md
    ```
 
-4. **以降の全作業はworktree内で実行**
+5. **以降の全作業はworktree内で実行**
    - 全ファイル操作: `../garmin-{project_name}/` 内
    - 全コミット: feature branchに
    - Serena MCP: worktree のパスで activate 済み
+   - planning.md: main branch の `docs/project/` から参照
 
 ### Phase 1: Red（失敗するテストを書く）
 
 1. **planning.md からテストケース抽出**
    ```bash
    # planning.md の「テスト計画」セクション読み込み
-   # Path: ../garmin-{project_name}/docs/project/{date}_{project_name}/planning.md
+   # Path: docs/project/{date}_{project_name}/planning.md (main branchから参照)
    ```
 
 2. **テストファイル作成**
@@ -399,10 +418,11 @@ SKIP=mypy git commit -m "fix: update implementation"
 
 ## TDD Best Practices
 
-1. **Worktree での作業徹底**
+1. **Worktree 作成と作業徹底**
+   - 実装開始時に最新mainからworktree作成
    - 全作業は `../garmin-{project_name}/` 内で実行
    - Feature branchにのみコミット
-   - Main branch は絶対に触らない
+   - Main branch は絶対に触らない（planning.md参照のみ）
 
 2. **テストファーストの徹底**
    - 実装前に必ずテストを書く
@@ -448,8 +468,10 @@ uv run pytest --pdb
 
 ## Success Criteria
 
+- [ ] 最新mainからworktreeが作成されている
 - [ ] Worktree内で全作業が実施されている
 - [ ] Feature branchにコミットされている（main branchは未変更）
+- [ ] `uv sync` がworktreeで実行済み
 - [ ] 全テストケースが実装されている
 - [ ] TDD サイクル（Red → Green → Refactor）が守られている
 - [ ] コード品質チェックが全てパス
@@ -463,10 +485,10 @@ uv run pytest --pdb
 実装フェーズ完了後、`completion-reporter` エージェントへハンドオフ:
 - **Worktree Path**: `../garmin-{project_name}/`
 - **Branch**: `feature/{project_name}`
+- **planning.md Path**: `docs/project/{date}_{project_name}/planning.md` (on main)
 - **実装済みファイルリスト**
 - **テスト結果サマリー**
 - **カバレッジレポート**
 - **コミットハッシュ** (feature branch)
-- **planning.md 更新内容**
 
-completion-reporterはworktree内でレポート生成し、mergeの準備を行う。
+completion-reporterはworktree内でレポート生成し、mainへマージ後にworktreeを削除する。

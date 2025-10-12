@@ -613,18 +613,34 @@ git worktree prune
 
 **1. Planning Phase** (project-planner agent):
 ```bash
-# Agent creates worktree automatically
-# Location: ../garmin-{project_name}/
-# Branch: feature/{project_name}
-# Agent creates planning.md in worktree
+# Agent works on main branch directly
+# Creates planning.md in docs/project/{YYYY-MM-DD}_{project_name}/
+# Commits planning.md to main branch
+# No worktree created at this stage
+
+# Benefits:
+# - Planning document immediately visible to all
+# - Easy review and approval process
+# - Main branch history includes planning
 ```
 
 **2. Implementation Phase** (tdd-implementer agent):
 ```bash
+# Agent creates worktree from latest main
+git worktree add -b feature/{project_name} ../garmin-{project_name} main
+cd ../garmin-{project_name}
+uv sync  # MANDATORY
+
 # Agent works within worktree directory
 # All file operations use worktree paths
 # Commits are made to feature branch
-# Main branch remains untouched
+# planning.md is referenced from main branch
+# Main branch code remains untouched
+
+# Benefits:
+# - Fresh start from latest main (no stale code)
+# - Isolated development environment
+# - Planning changes don't conflict with implementation
 ```
 
 **3. Completion Phase**:
@@ -659,25 +675,41 @@ claude_workspace/
 #### Best Practices
 
 **DO:**
-- ✅ Create worktree for every project (planning.md → worktree)
+- ✅ Planning on main: Commit planning.md to main directly
+- ✅ Implementation in worktree: Create worktree when starting implementation
 - ✅ Use descriptive branch names: `feature/split-stability-precalc`
+- ✅ Run `uv sync` immediately after worktree creation
 - ✅ Commit regularly within worktree
 - ✅ Merge to main only after all tests pass
 - ✅ Remove worktree after successful merge
 
 **DON'T:**
-- ❌ Edit main branch directly for project work
+- ❌ Create worktree during planning phase
+- ❌ Edit main branch directly for implementation work
 - ❌ Create worktree without branch name
 - ❌ Leave stale worktrees after project completion
 - ❌ Share data/ directory modifications across worktrees
 
 #### Agent Integration
 
-Both `project-planner` and `tdd-implementer` agents automatically:
-1. Create git worktree at project start
-2. Work within worktree directory
-3. Create commits in feature branch
-4. Reference worktree paths in planning.md
+**project-planner Agent:**
+1. Works on main branch directly
+2. Creates `docs/project/{YYYY-MM-DD}_{project_name}/planning.md`
+3. Commits planning.md to main
+4. **Does NOT create worktree**
+
+**tdd-implementer Agent:**
+1. Reads planning.md from main branch
+2. Creates git worktree from latest main
+3. Runs `uv sync` in worktree
+4. Works within worktree directory
+5. Creates commits in feature branch
+6. After completion, merges to main and removes worktree
+
+**Why this separation:**
+- Planning can be reviewed/modified without worktree overhead
+- Implementation starts from latest main (avoids stale code issues)
+- Reduces worktree lifetime (only during active implementation)
 
 See agent definitions (`.claude/agents/`) for implementation details.
 
