@@ -183,7 +183,7 @@ activity_details.jsonを効率的に処理する基盤を構築
 - ✅ コード品質: Black/Ruff/Mypy パス
 - ✅ コミット: `da52422` (feature/rag_interval_tools)
 
-#### 2.2 時系列詳細取得（2日）
+#### 2.2 時系列詳細取得（2日） ✅ **完了**
 
 **実装**: `tools/rag/queries/time_series_detail.py`
 
@@ -192,11 +192,20 @@ activity_details.jsonを効率的に処理する基盤を構築
 **機能**:
 - 特定split（1km）の秒単位データ抽出
 - 統計値計算（平均、標準偏差、最大最小）
-- Split内異常検出
+- Split内異常検出（z-score閾値設定可能）
+- デフォルトメトリクス対応（HR, speed, cadence, power, VO, GCT, VR）
 
 **MCPツール**: `get_split_time_series_detail`
 
 **テスト**: `tests/rag/queries/test_time_series_detail.py`
+
+**実装結果** (2025-10-12 完了):
+- ✅ TimeSeriesDetailExtractor クラス実装 (330行)
+- ✅ 9テストケース実装 (312行)
+- ✅ テストカバレッジ: 100% (9/9 tests passed)
+- ✅ コード品質: Black/Ruff/Mypy パス
+- ✅ コミット: `ffddd49` (feature/rag_interval_tools)
+- ✅ MCP統合: servers/garmin_db_server.py にハンドラ実装済み
 
 #### 2.3 フォーム異常検出（2日）
 
@@ -229,11 +238,11 @@ activity_details.jsonを効率的に処理する基盤を構築
 
 #### 受け入れ基準
 - [x] **Phase 2.1 完了**: IntervalAnalyzer 実装・テスト完了 (6/6 tests passed)
-- [ ] **Phase 2.2**: TimeSeriesDetailExtractor 実装
+- [x] **Phase 2.2 完了**: TimeSeriesDetailExtractor 実装・テスト完了 (9/9 tests passed)
 - [ ] **Phase 2.3**: FormAnomalyDetector 実装
-- [ ] インターバル検出精度90%以上（Phase 2.1で実装済み）
+- [x] インターバル検出精度90%以上（Phase 2.1で実装済み）
 - [ ] 異常検出の誤検知率10%以下（Phase 2.3完了後に検証）
-- [x] 全テストパス（177 passed, 0 skipped, 4 deselected）
+- [x] 全テストパス（186 passed, 0 skipped, 4 deselected）
 
 ---
 
