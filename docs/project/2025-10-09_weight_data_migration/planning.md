@@ -103,8 +103,8 @@ data/
 {
   "2025-09-21": {
     "date": "2025-09-21",
-    "weight": 76.599,
-    "bmi": 27.5,
+    "weight": 70.5,
+    "bmi": 25.3,
     "raw_file": "data/raw/weight/2025-09-21.json",  // 新パス（フラット構造）
     "cached_at": "2025-09-29T17:53:20.486801",
     "source": "INDEX_SCALE"

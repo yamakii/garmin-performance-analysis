@@ -49,8 +49,8 @@ def temp_project_root(tmp_path):
     old_index_data = {
         "2025-05-15": {
             "date": "2025-05-15",
-            "weight": 76.599,
-            "bmi": 27.5,
+            "weight": 70.5,
+            "bmi": 25.3,
             "raw_file": "data/weight_cache/raw/weight_2025-05-15_raw.json",
             "parquet_file": "data/weight_cache/weight_2025-05-15.parquet",
             "cached_at": "2025-09-29T17:53:20.486801",
@@ -58,8 +58,8 @@ def temp_project_root(tmp_path):
         },
         "2025-05-16": {
             "date": "2025-05-16",
-            "weight": 76.599,
-            "bmi": 27.5,
+            "weight": 70.5,
+            "bmi": 25.3,
             "raw_file": "data/weight_cache/raw/weight_2025-05-16_raw.json",
             "parquet_file": "data/weight_cache/weight_2025-05-16.parquet",
             "cached_at": "2025-09-29T17:53:20.486801",
