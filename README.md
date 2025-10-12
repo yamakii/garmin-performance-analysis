@@ -143,12 +143,10 @@ For more details, see `docs/GITHUB_PUBLISHING_CHECKLIST.md`.
 
 ## MCP Servers
 
-- **garmin-mcp**: Garmin Connect data access
-- **garmin-db**: DuckDB performance data queries
-- **json-utils**: Safe JSON operations
-- **markdown-utils**: Markdown file operations
-- **report-generator**: Template-based report generation
-- **serena**: Code navigation and editing
+This project uses the following MCP servers (configured in `.mcp.json`):
+
+- **garmin-db**: DuckDB-based performance data queries and section analysis storage
+- **serena**: Symbol-aware code navigation and editing operations
 
 ## Configuration
 
