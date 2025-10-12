@@ -33,18 +33,6 @@ async def list_tools() -> list[Tool]:
     """List available DuckDB query tools."""
     return [
         Tool(
-            name="get_performance_section",
-            description="Get specific section from performance data",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "activity_id": {"type": "integer"},
-                    "section": {"type": "string"},
-                },
-                "required": ["activity_id", "section"],
-            },
-        ),
-        Tool(
             name="get_section_analysis",
             description="Get section analysis data from DuckDB",
             inputSchema={
@@ -308,17 +296,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """Handle tool calls."""
     import json
 
-    if name == "get_performance_section":
-        activity_id = arguments["activity_id"]
-        section = arguments["section"]
-        result = db_reader.get_performance_section(activity_id, section)
-        return [
-            TextContent(
-                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
-            )
-        ]
-
-    elif name == "get_section_analysis":
+    if name == "get_section_analysis":
         activity_id = arguments["activity_id"]
         section_type = arguments["section_type"]
         result = db_reader.get_section_analysis(activity_id, section_type)
