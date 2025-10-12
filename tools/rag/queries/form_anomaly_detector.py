@@ -39,9 +39,13 @@ class FormAnomalyDetector:
 
         Args:
             base_path: Base directory path for data files.
-                      Defaults to current directory if not provided.
+                      Defaults to GARMIN_DATA_DIR from environment if not provided.
         """
-        self.base_path = base_path or Path(".")
+        if base_path is None:
+            from tools.utils.paths import get_data_base_dir
+
+            base_path = get_data_base_dir()
+        self.base_path = base_path
         self.loader = ActivityDetailsLoader(base_path=self.base_path)
 
     def _calculate_rolling_stats(
