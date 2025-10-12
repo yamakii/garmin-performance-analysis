@@ -966,11 +966,27 @@ class GarminIngestWorker:
         else:
             training_type = "mixed_effort"
 
+        # Calculate zone percentages
+        total_time = sum(zone.get("secsInZone", 0) for zone in hr_zones)
+        zone_percentages = {}
+
+        if total_time > 0:
+            for zone in hr_zones:
+                zone_num = zone.get("zoneNumber")
+                secs_in_zone = zone.get("secsInZone", 0)
+
+                if zone_num:
+                    percentage = (secs_in_zone / total_time) * 100
+                    zone_percentages[f"zone{zone_num}_percentage"] = round(
+                        percentage, 2
+                    )
+
         return {
             "avg_heart_rate": avg_hr,
             "training_type": training_type,
             "hr_stability": "優秀" if df["avg_heart_rate"].std() < 5 else "変動あり",
             "description": "適切な心拍ゾーンで実施",
+            **zone_percentages,
         }
 
     def _calculate_performance_trends(self, df: pd.DataFrame) -> dict[str, Any]:
