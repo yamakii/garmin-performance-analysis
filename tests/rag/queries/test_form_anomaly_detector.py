@@ -20,7 +20,7 @@ from tools.rag.queries.form_anomaly_detector import FormAnomalyDetector
 @pytest.fixture
 def base_path() -> Path:
     """Provide base path to test fixtures."""
-    return Path(__file__).parent.parent.parent / "fixtures"
+    return Path(__file__).parent.parent.parent / "fixtures" / "data"
 
 
 @pytest.fixture

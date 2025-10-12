@@ -40,7 +40,7 @@ class TestActivityDetailsLoader:
         invalid_json_file = activity_dir / "activity_details.json"
         invalid_json_file.write_text("{ invalid json }")
 
-        loader = ActivityDetailsLoader(base_path=tmp_path)
+        loader = ActivityDetailsLoader(base_path=tmp_path / "data")
 
         with pytest.raises(json.JSONDecodeError):
             loader.load_activity_details(activity_id)
@@ -165,7 +165,7 @@ class TestActivityDetailsLoader:
         json_file = activity_dir / "activity_details.json"
         json_file.write_text(json.dumps(test_data))
 
-        loader = ActivityDetailsLoader(base_path=tmp_path)
+        loader = ActivityDetailsLoader(base_path=tmp_path / "data")
         result = loader.load_activity_details(activity_id)
 
         assert result["activityId"] == activity_id

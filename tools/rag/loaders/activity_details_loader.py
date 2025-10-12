@@ -37,7 +37,7 @@ class ActivityDetailsLoader:
         self.base_path = base_path
 
     def load_activity_details(self, activity_id: int) -> dict[str, Any]:
-        """Load activity_details.json from data/raw/activity/{activity_id}/.
+        """Load activity_details.json from raw/activity/{activity_id}/.
 
         Args:
             activity_id: The Garmin activity ID.
@@ -49,9 +49,10 @@ class ActivityDetailsLoader:
             FileNotFoundError: If the activity_details.json file doesn't exist.
             json.JSONDecodeError: If the JSON file is malformed.
         """
+        # base_path from get_data_base_dir() already includes "data/"
+        # For test fixtures, base_path is tmp_path which also includes "data/"
         file_path = (
             self.base_path
-            / "data"
             / "raw"
             / "activity"
             / str(activity_id)

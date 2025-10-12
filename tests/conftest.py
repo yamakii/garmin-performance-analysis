@@ -10,9 +10,9 @@ def fixture_base_path() -> Path:
     """Return the base path for test fixtures.
 
     Returns:
-        Path to tests/fixtures directory.
+        Path to tests/fixtures/data directory (matches get_data_base_dir() behavior).
     """
-    return Path(__file__).parent / "fixtures"
+    return Path(__file__).parent / "fixtures" / "data"
 
 
 @pytest.fixture

@@ -11,7 +11,7 @@ class TestRawDataExtractorIntegration:
         from tools.ingest.garmin_worker import RawDataExtractor
 
         # Old format: activity.json in 20594901208
-        old_file = fixture_base_path / "data/raw/activity/20594901208/activity.json"
+        old_file = fixture_base_path / "raw/activity/20594901208/activity.json"
         assert old_file.exists(), "Fixture data should be available"
 
         with open(old_file) as f:
@@ -29,9 +29,7 @@ class TestRawDataExtractorIntegration:
         from tools.ingest.garmin_worker import RawDataExtractor
 
         # New format: activity.json in 20615445009
-        activity_file = (
-            fixture_base_path / "data/raw/activity/20615445009/activity.json"
-        )
+        activity_file = fixture_base_path / "raw/activity/20615445009/activity.json"
         assert activity_file.exists(), "Fixture data should be available"
 
         with open(activity_file) as f:
@@ -49,7 +47,7 @@ class TestRawDataExtractorIntegration:
         """Test extraction from wrapped raw_data structure."""
         from tools.ingest.garmin_worker import RawDataExtractor
 
-        old_file = fixture_base_path / "data/raw/activity/20594901208/activity.json"
+        old_file = fixture_base_path / "raw/activity/20594901208/activity.json"
         assert old_file.exists(), "Fixture data should be available"
 
         with open(old_file) as f:
