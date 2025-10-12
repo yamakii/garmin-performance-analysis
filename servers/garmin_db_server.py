@@ -189,6 +189,28 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="get_performance_trends",
+            description="Get performance trends data (pace consistency, HR drift, phase analysis)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "activity_id": {"type": "integer"},
+                },
+                "required": ["activity_id"],
+            },
+        ),
+        Tool(
+            name="get_weather_data",
+            description="Get weather data (temperature, humidity, wind) from activity",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "activity_id": {"type": "integer"},
+                },
+                "required": ["activity_id"],
+            },
+        ),
+        Tool(
             name="get_splits_all",
             description="Get all split data (all 22 fields) from splits table",
             inputSchema={
@@ -279,10 +301,6 @@ async def list_tools() -> list[Tool]:
             },
         ),
     ]
-
-
-# Note: Insert new tool definition after get_split_time_series_detail tool
-# Finding the exact location in the tools list...
 
 
 @mcp.call_tool()
@@ -478,6 +496,24 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     elif name == "get_lactate_threshold_data":
         activity_id = arguments["activity_id"]
         result = db_reader.get_lactate_threshold_data(activity_id)
+        return [
+            TextContent(
+                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+            )
+        ]
+
+    elif name == "get_performance_trends":
+        activity_id = arguments["activity_id"]
+        result = db_reader.get_performance_trends(activity_id)
+        return [
+            TextContent(
+                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+            )
+        ]
+
+    elif name == "get_weather_data":
+        activity_id = arguments["activity_id"]
+        result = db_reader.get_weather_data(activity_id)
         return [
             TextContent(
                 type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
