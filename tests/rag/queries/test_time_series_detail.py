@@ -2,636 +2,346 @@
 
 This module tests the time series detail extraction functionality including:
 - Split number to time range conversion
-- Metric descriptor parsing
-- Unit conversion with factor application
-- Statistics calculation
+- Second-by-second metric extraction
+- Statistical calculations (mean, std, min, max)
 - Anomaly detection within splits
-- Missing metrics handling
-- Edge case handling
 """
-
-from pathlib import Path
-from typing import Any
 
 import pytest
 
-from tools.rag.loaders.activity_details_loader import ActivityDetailsLoader
 from tools.rag.queries.time_series_detail import TimeSeriesDetailExtractor
 
 
 @pytest.fixture
-def time_series_extractor():
+def extractor():
     """Create TimeSeriesDetailExtractor instance for testing."""
-    base_path = Path(__file__).parent.parent.parent / "fixtures"
-    return TimeSeriesDetailExtractor(base_path=base_path)
-
-
-@pytest.fixture
-def mock_performance_data() -> dict[str, Any]:
-    """Mock performance.json data with split metrics."""
-    return {
-        "split_metrics": [
-            {
-                "lap_index": 1,
-                "distance_km": 1.0,
-                "duration_seconds": 240.0,
-                "start_time_s": 0,
-                "end_time_s": 240,
-            },
-            {
-                "lap_index": 2,
-                "distance_km": 1.0,
-                "duration_seconds": 250.0,
-                "start_time_s": 240,
-                "end_time_s": 490,
-            },
-            {
-                "lap_index": 3,
-                "distance_km": 1.0,
-                "duration_seconds": 255.0,
-                "start_time_s": 490,
-                "end_time_s": 745,
-            },
-        ]
-    }
-
-
-@pytest.fixture
-def mock_activity_details() -> dict[str, Any]:
-    """Mock activity_details.json data with metric descriptors and time series."""
-    return {
-        "activityId": 12345678901,
-        "measurementCount": 10,
-        "metricsCount": 10,
-        "metricDescriptors": [
-            {
-                "metricsIndex": 0,
-                "key": "directHeartRate",
-                "unit": {"id": 100, "key": "bpm", "factor": 1.0},
-            },
-            {
-                "metricsIndex": 1,
-                "key": "directSpeed",
-                "unit": {"id": 20, "key": "mps", "factor": 0.1},
-            },
-            {
-                "metricsIndex": 2,
-                "key": "directDoubleCadence",
-                "unit": {"id": 92, "key": "stepsPerMinute", "factor": 1.0},
-            },
-            {
-                "metricsIndex": 3,
-                "key": "directGroundContactTime",
-                "unit": {"id": 40, "key": "ms", "factor": 1.0},
-            },
-            {
-                "metricsIndex": 4,
-                "key": "directVerticalOscillation",
-                "unit": {"id": 200, "key": "cm", "factor": 10.0},
-            },
-        ],
-        "activityDetailMetrics": [
-            {"metrics": [120, 30, 180, 250, 80]},
-            {"metrics": [125, 32, 180, 245, 82]},
-            {"metrics": [130, 34, 182, 240, 85]},
-            {"metrics": [135, 36, 184, 238, 87]},
-            {"metrics": [140, 38, 186, 235, 90]},
-            {"metrics": [145, 40, 188, 230, 92]},
-            {"metrics": [150, 42, 190, 228, 95]},
-            {"metrics": [155, 44, 192, 225, 98]},
-            {"metrics": [160, 46, 194, 220, 100]},
-            {"metrics": [165, 48, 196, 218, 102]},
-        ],
-    }
+    return TimeSeriesDetailExtractor()
 
 
 @pytest.mark.unit
-def test_split_range_extraction():
-    """Test split number to time range extraction (DuckDB-based).
-
-    NOTE: This test is now covered by test_get_split_time_range_duckdb_based().
-    Kept for backward compatibility but implementation moved to DuckDB.
-    """
-    # This test is superseded by test_get_split_time_range_duckdb_based
-    # which tests the same functionality with the new DuckDB implementation
-    pass
-
-
-@pytest.mark.unit
-def test_metric_descriptor_parsing(
-    time_series_extractor: TimeSeriesDetailExtractor, mock_activity_details: dict
-):
-    """Test metric descriptor parsing for all 26+ metrics.
+def test_split_to_time_range_conversion(extractor: TimeSeriesDetailExtractor):
+    """Test converting split number (1-based) to time range.
 
     Expected behavior:
-    - Should parse all metric descriptors correctly
-    - Should map metric names to indices
-    - Should extract unit information and factors
+    - Split 1 should map to start_time_s=0, end_time_s from DuckDB
+    - Split N should use start/end times from DuckDB splits table
+    - Invalid split numbers should raise ValueError
     """
-    loader = ActivityDetailsLoader()
-    metric_map = loader.parse_metric_descriptors(
-        mock_activity_details["metricDescriptors"]
-    )
-
-    # Check essential metrics are parsed
-    assert "directHeartRate" in metric_map
-    assert "directSpeed" in metric_map
-    assert "directGroundContactTime" in metric_map
-    assert "directVerticalOscillation" in metric_map
-
-    # Check metric indices
-    assert metric_map["directHeartRate"]["index"] == 0
-    assert metric_map["directSpeed"]["index"] == 1
-    assert metric_map["directGroundContactTime"]["index"] == 3
-
-    # Check unit information
-    assert metric_map["directHeartRate"]["unit"] == "bpm"
-    assert metric_map["directSpeed"]["unit"] == "mps"
-    assert metric_map["directGroundContactTime"]["unit"] == "ms"
-
-
-@pytest.mark.unit
-def test_unit_conversion(time_series_extractor: TimeSeriesDetailExtractor):
-    """Test unit conversion with factor application.
-
-    Expected behavior:
-    - directSpeed with factor 0.1: 30 raw -> 3.0 m/s
-    - directVerticalOscillation with factor 10.0: 80 raw -> 8.0 cm
-    - directHeartRate with factor 1.0: 120 raw -> 120 bpm
-    """
-    loader = ActivityDetailsLoader()
-
-    # Test speed conversion (factor 0.1)
-    speed_metric = {"index": 1, "unit": "mps", "factor": 0.1}
-    converted_speed = loader.apply_unit_conversion(speed_metric, 30)
-    assert converted_speed == 300.0  # 30 / 0.1 = 300
-
-    # Test VO conversion (factor 10.0)
-    vo_metric = {"index": 4, "unit": "cm", "factor": 10.0}
-    converted_vo = loader.apply_unit_conversion(vo_metric, 80)
-    assert converted_vo == 8.0  # 80 / 10.0 = 8.0
-
-    # Test HR conversion (factor 1.0)
-    hr_metric = {"index": 0, "unit": "bpm", "factor": 1.0}
-    converted_hr = loader.apply_unit_conversion(hr_metric, 120)
-    assert converted_hr == 120.0  # 120 / 1.0 = 120
-
-
-@pytest.mark.unit
-def test_statistics_calculation(
-    time_series_extractor: TimeSeriesDetailExtractor, mock_activity_details: dict
-):
-    """Test statistics calculation (avg, std, min, max).
-
-    Expected behavior:
-    - Calculate average correctly
-    - Calculate standard deviation correctly
-    - Calculate min and max correctly
-    """
-    loader = ActivityDetailsLoader()
-
-    # Extract HR time series (index 0)
-    hr_values = loader.extract_time_series(
-        mock_activity_details["activityDetailMetrics"], metric_index=0
-    )
-
-    # Calculate statistics
-    stats = time_series_extractor._calculate_statistics(hr_values)
-
-    # Check statistics (HR values: 120, 125, 130, 135, 140, 145, 150, 155, 160, 165)
-    assert stats["avg"] == 142.5  # Average
-    assert stats["min"] == 120
-    assert stats["max"] == 165
-    assert stats["std"] > 0  # Standard deviation should be positive
-
-
-@pytest.mark.unit
-def test_anomaly_detection_in_split(
-    time_series_extractor: TimeSeriesDetailExtractor, mock_activity_details: dict
-):
-    """Test anomaly detection within a split using z-score.
-
-    Expected behavior:
-    - Detect values with z-score > threshold (default 2.0)
-    - Return anomaly details including timestamp and value
-    """
-    # Create test data with an outlier
-    test_data: list[float | None] = [
-        120.0,
-        125.0,
-        130.0,
-        135.0,
-        200.0,
-        145.0,
-        150.0,
-        155.0,
-        160.0,
-        165.0,
-    ]  # 200 is outlier
-
-    # Detect anomalies
-    anomalies = time_series_extractor._detect_split_anomalies(
-        metric_name="HR", time_series=test_data, z_threshold=2.0
-    )
-
-    # Should detect at least one anomaly (value 200)
-    assert len(anomalies) > 0
-
-    # Check anomaly structure
-    anomaly = anomalies[0]
-    assert "timestamp" in anomaly or "index" in anomaly
-    assert "metric" in anomaly
-    assert "value" in anomaly
-    assert "z_score" in anomaly
-
-    # The outlier should have high z-score
-    assert anomaly["z_score"] > 2.0
-
-
-@pytest.mark.unit
-def test_missing_metrics_handling(time_series_extractor: TimeSeriesDetailExtractor):
-    """Test handling of missing metrics in activity_details.json.
-
-    Expected behavior:
-    - Should handle None values gracefully
-    - Should skip missing data points in statistics
-    - Should not crash on incomplete data
-    """
-    # Create test data with None values
-    test_data: list[float | None] = [
-        120.0,
-        None,
-        130.0,
-        None,
-        140.0,
-        145.0,
-        None,
-        155.0,
-        160.0,
-        165.0,
+    # Mock DuckDB splits data
+    splits_data = [
+        {"split_index": 0, "start_time_s": 0, "end_time_s": 280},
+        {"split_index": 1, "start_time_s": 280, "end_time_s": 560},
+        {"split_index": 2, "start_time_s": 560, "end_time_s": 840},
     ]
 
-    # Calculate statistics (should skip None values)
-    stats = time_series_extractor._calculate_statistics(test_data)
+    # Test split 1 (index 0)
+    start, end = extractor._split_to_time_range(1, splits_data)
+    assert start == 0
+    assert end == 280
 
-    # Should calculate statistics on non-None values only
-    assert stats["avg"] > 0
-    assert stats["min"] > 0
-    assert stats["max"] > 0
+    # Test split 2 (index 1)
+    start, end = extractor._split_to_time_range(2, splits_data)
+    assert start == 280
+    assert end == 560
 
+    # Test invalid split number
+    with pytest.raises(ValueError):
+        extractor._split_to_time_range(0, splits_data)  # Split numbers are 1-based
 
-@pytest.mark.unit
-def test_edge_case_split_out_of_range():
-    """Test error handling for out-of-range split numbers.
-
-    NOTE: This test is now covered by test_get_split_time_range_duckdb_based().
-    Kept for backward compatibility but implementation moved to DuckDB.
-    """
-    # This test is superseded by test_get_split_time_range_duckdb_based
-    # which tests error handling with the new DuckDB implementation
-    pass
-
-
-@pytest.mark.integration
-def test_get_split_time_series_detail_integration():
-    """Integration test for full split time series detail extraction.
-
-    Uses fixture activity data (12345678901) to test the full pipeline with DuckDB.
-    """
-    import tempfile
-
-    import duckdb
-
-    from tools.database.db_writer import GarminDBWriter
-
-    # Test with fixture activity
-    activity_id = 12345678901
-    split_number = 1
-
-    # Create temporary database with test data
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        db_path = Path(tmp_dir) / "test_integration.duckdb"
-        base_path = Path(__file__).parent.parent.parent / "fixtures"
-
-        # Create database schema
-        writer = GarminDBWriter(str(db_path))
-        writer._ensure_tables()
-
-        # Insert test activity
-        activity_date = "2025-10-11"
-
-        conn = duckdb.connect(str(db_path))
-        conn.execute(
-            """
-            INSERT INTO activities (activity_id, date, activity_name)
-            VALUES (?, ?, ?)
-            """,
-            (activity_id, activity_date, "Test Run"),
-        )
-
-        # Insert splits with time ranges (matching fixture data)
-        splits_data = [
-            (activity_id, 1, 1.0, 240.0, 0, 240, 250.0, 160),
-            (activity_id, 2, 1.0, 250.0, 240, 490, 260.0, 165),
-            (activity_id, 3, 1.0, 255.0, 490, 745, 270.0, 168),
-        ]
-
-        for split in splits_data:
-            conn.execute(
-                """
-                INSERT INTO splits (
-                    activity_id, split_index, distance, duration_seconds,
-                    start_time_s, end_time_s, pace_seconds_per_km, heart_rate
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                split,
-            )
-
-        conn.close()
-
-        # Create extractor with db_path
-        extractor = TimeSeriesDetailExtractor(base_path=base_path, db_path=str(db_path))
-
-        # Get split time series detail
-        result = extractor.get_split_time_series_detail(
-            activity_id=activity_id, split_number=split_number
-        )
-
-        # Check result structure
-        assert "activity_id" in result
-        assert "split_number" in result
-        assert "start_time_s" in result
-        assert "end_time_s" in result
-        assert "time_series" in result
-        assert "statistics" in result
-
-        # Check activity ID matches
-        assert result["activity_id"] == activity_id
-        assert result["split_number"] == split_number
-
-        # Check time series data
-        assert isinstance(result["time_series"], list)
-        assert len(result["time_series"]) > 0
-
-        # Check statistics (keyed by metric name)
-        stats = result["statistics"]
-        assert len(stats) > 0
-        # Check structure of first metric's statistics
-        first_metric_stats = next(iter(stats.values()))
-        assert "avg" in first_metric_stats
-        assert "std" in first_metric_stats
-        assert "min" in first_metric_stats
-        assert "max" in first_metric_stats
+    with pytest.raises(ValueError):
+        extractor._split_to_time_range(10, splits_data)  # Out of range
 
 
 @pytest.mark.unit
-def test_get_split_time_range_duckdb_based():
-    """Test _get_split_time_range() with new DuckDB-based implementation.
-
-    Phase 3: NEW signature takes activity_id instead of performance_data.
-    Should query DuckDB splits table via GarminDBReader.
+def test_extract_metrics_from_time_range(
+    extractor: TimeSeriesDetailExtractor, fixture_base_path, dummy_activity_id
+):
+    """Test extracting second-by-second metrics for specified time range.
 
     Expected behavior:
-    - Accepts activity_id instead of performance_data dict
-    - Queries DuckDB for split time ranges
-    - Returns (start_time_s, end_time_s) tuple
-    - Raises ValueError for invalid split numbers
+    - Should extract metrics for each second in the time range
+    - Should apply unit conversions correctly
+    - Should handle missing metrics gracefully
+    - Should return structured data with timestamps
     """
-    import tempfile
-    from pathlib import Path
+    # Use fixture-based extractor
+    extractor_with_fixture = TimeSeriesDetailExtractor(base_path=fixture_base_path)
 
-    import duckdb
+    start_time = 0
+    end_time = 60  # First 60 seconds
+    metrics = ["heart_rate", "speed", "cadence"]
 
-    from tools.database.db_writer import GarminDBWriter
-
-    # Create temporary database with test data
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        db_path = Path(tmp_dir) / "test_duckdb_based.duckdb"
-
-        # Create database schema
-        writer = GarminDBWriter(str(db_path))
-        writer._ensure_tables()
-
-        # Insert test activity
-        activity_id = 99999999
-        activity_date = "2025-10-11"
-
-        conn = duckdb.connect(str(db_path))
-        conn.execute(
-            """
-            INSERT INTO activities (activity_id, date, activity_name)
-            VALUES (?, ?, ?)
-            """,
-            (activity_id, activity_date, "Test Run"),
-        )
-
-        # Insert splits with time ranges
-        splits_data = [
-            (activity_id, 1, 1.0, 240.0, 0, 240, 250.0, 160),
-            (activity_id, 2, 1.0, 250.0, 240, 490, 260.0, 165),
-            (activity_id, 3, 1.0, 255.0, 490, 745, 270.0, 168),
-        ]
-
-        for split in splits_data:
-            conn.execute(
-                """
-                INSERT INTO splits (
-                    activity_id, split_index, distance, duration_seconds,
-                    start_time_s, end_time_s, pace_seconds_per_km, heart_rate
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                split,
-            )
-
-        conn.close()
-
-        # Create extractor with db_path
-        extractor = TimeSeriesDetailExtractor(
-            base_path=Path(tmp_dir), db_path=str(db_path)
-        )
-
-        # Test NEW signature: _get_split_time_range(split_number, activity_id)
-        start, end = extractor._get_split_time_range(
-            split_number=1, activity_id=activity_id
-        )
-        assert start == 0
-        assert end == 240
-
-        start, end = extractor._get_split_time_range(
-            split_number=2, activity_id=activity_id
-        )
-        assert start == 240
-        assert end == 490
-
-        start, end = extractor._get_split_time_range(
-            split_number=3, activity_id=activity_id
-        )
-        assert start == 490
-        assert end == 745
-
-        # Test invalid split numbers
-        with pytest.raises(ValueError):
-            extractor._get_split_time_range(split_number=0, activity_id=activity_id)
-
-        with pytest.raises(ValueError):
-            extractor._get_split_time_range(split_number=10, activity_id=activity_id)
-
-
-@pytest.mark.unit
-def test_analyze_time_range_valid_range():
-    """Test analyze_time_range() with valid time range.
-
-    Expected behavior:
-    - Accept arbitrary start_time_s and end_time_s
-    - Return time_series data for that range
-    - Calculate statistics correctly
-    - Detect anomalies if present
-    """
-    from pathlib import Path
-
-    # Use fixture activity (12345678901)
-    activity_id = 12345678901
-    base_path = Path(__file__).parent.parent.parent / "fixtures"
-    extractor = TimeSeriesDetailExtractor(base_path=base_path)
-
-    # Test arbitrary time range (100s to 200s)
-    result = extractor.analyze_time_range(
-        activity_id=activity_id,
-        start_time_s=100,
-        end_time_s=200,
-        metrics=["directHeartRate", "directSpeed"],
+    result = extractor_with_fixture.extract_metrics(
+        dummy_activity_id, start_time, end_time, metrics
     )
 
     # Check result structure
     assert "activity_id" in result
-    assert "start_time_s" in result
-    assert "end_time_s" in result
-    assert "duration_s" in result
+    assert "time_range" in result
+    assert "metrics" in result
     assert "time_series" in result
-    assert "statistics" in result
-    assert "anomalies" in result
 
-    # Check values
-    assert result["activity_id"] == activity_id
-    assert result["start_time_s"] == 100
-    assert result["end_time_s"] == 200
-    assert result["duration_s"] == 100  # 200 - 100
+    # Check time range
+    assert result["time_range"]["start_time_s"] == start_time
+    assert result["time_range"]["end_time_s"] == end_time
 
-    # Check time_series is list
-    assert isinstance(result["time_series"], list)
+    # Check metrics list
+    assert set(result["metrics"]) == set(metrics)
 
-    # Check statistics has metrics
-    assert "directHeartRate" in result["statistics"]
-    assert "directSpeed" in result["statistics"]
+    # Check time series data
+    assert len(result["time_series"]) > 0  # Should have data points
+    for data_point in result["time_series"]:
+        assert "timestamp_s" in data_point
+        # Metrics might be None if not available in fixture
 
 
 @pytest.mark.unit
-def test_analyze_time_range_out_of_bounds():
-    """Test analyze_time_range() with out-of-bounds time range.
+def test_calculate_statistics(extractor: TimeSeriesDetailExtractor):
+    """Test statistical calculations on time series data.
 
     Expected behavior:
-    - Should handle gracefully when end_time_s > max available data
-    - Should return data up to available range
-    - Should not crash on invalid ranges
+    - Calculate mean, std, min, max for each metric
+    - Handle missing values (None) gracefully
+    - Return statistics in structured format
     """
-    from pathlib import Path
+    time_series_data = [
+        {"timestamp_s": 0, "heart_rate": 150, "speed": 3.5, "cadence": 180},
+        {"timestamp_s": 1, "heart_rate": 152, "speed": 3.6, "cadence": 182},
+        {"timestamp_s": 2, "heart_rate": 154, "speed": 3.7, "cadence": 184},
+        {"timestamp_s": 3, "heart_rate": 156, "speed": 3.8, "cadence": 186},
+        {"timestamp_s": 4, "heart_rate": 158, "speed": 3.9, "cadence": 188},
+    ]
 
-    # Use fixture activity (12345678901)
-    activity_id = 12345678901
-    base_path = Path(__file__).parent.parent.parent / "fixtures"
-    extractor = TimeSeriesDetailExtractor(base_path=base_path)
+    metrics = ["heart_rate", "speed", "cadence"]
+    stats = extractor.calculate_statistics(time_series_data, metrics)
 
-    # Test with very large end_time_s (should handle gracefully)
-    result = extractor.analyze_time_range(
-        activity_id=activity_id,
-        start_time_s=0,
-        end_time_s=99999,  # Larger than fixture data
-    )
+    # Check structure
+    assert "heart_rate" in stats
+    assert "speed" in stats
+    assert "cadence" in stats
 
-    # Should return result without crashing
-    assert result["activity_id"] == activity_id
-    assert result["start_time_s"] == 0
-    assert result["end_time_s"] == 99999
+    # Check HR statistics
+    hr_stats = stats["heart_rate"]
+    assert "mean" in hr_stats
+    assert "std" in hr_stats
+    assert "min" in hr_stats
+    assert "max" in hr_stats
+
+    # Verify values
+    assert hr_stats["mean"] == pytest.approx(154.0)  # (150+152+154+156+158)/5
+    assert hr_stats["min"] == 150
+    assert hr_stats["max"] == 158
+    assert hr_stats["std"] > 0
 
 
 @pytest.mark.unit
-def test_analyze_time_range_custom_metrics():
-    """Test analyze_time_range() with custom metric list.
+def test_detect_anomalies_within_split(extractor: TimeSeriesDetailExtractor):
+    """Test anomaly detection within a split using z-score.
 
     Expected behavior:
-    - Accept custom metrics parameter
-    - Return statistics only for requested metrics
-    - Handle missing metrics gracefully
+    - Detect data points that deviate significantly from mean
+    - Use configurable z-score threshold (default: 2.0)
+    - Return anomaly timestamps and values
+    - Identify which metrics are anomalous
     """
-    from pathlib import Path
+    # Create time series with one clear anomaly
+    time_series_data = [
+        {"timestamp_s": i, "heart_rate": 150 + i}
+        for i in range(20)  # HR: 150-169 (normal progression)
+    ]
+    # Add anomaly at timestamp 10
+    time_series_data[10]["heart_rate"] = 200  # Sudden spike
 
-    # Use fixture activity (12345678901)
-    activity_id = 12345678901
-    base_path = Path(__file__).parent.parent.parent / "fixtures"
-    extractor = TimeSeriesDetailExtractor(base_path=base_path)
-
-    # Test with custom metrics
-    custom_metrics = ["directGroundContactTime", "directVerticalOscillation"]
-    result = extractor.analyze_time_range(
-        activity_id=activity_id,
-        start_time_s=50,
-        end_time_s=150,
-        metrics=custom_metrics,
+    anomalies = extractor.detect_anomalies(
+        time_series_data, metrics=["heart_rate"], z_threshold=2.0
     )
 
-    # Check statistics contains only custom metrics
-    assert "directGroundContactTime" in result["statistics"]
-    assert "directVerticalOscillation" in result["statistics"]
+    # Should detect anomaly
+    assert len(anomalies) > 0
 
-    # Check that default metrics are not included
-    assert "directHeartRate" not in result["statistics"]
+    # Check anomaly structure
+    first_anomaly = anomalies[0]
+    assert "timestamp_s" in first_anomaly
+    assert "metric" in first_anomaly
+    assert "value" in first_anomaly
+    assert "z_score" in first_anomaly
+
+    # Verify anomaly detection
+    assert first_anomaly["timestamp_s"] == 10
+    assert first_anomaly["metric"] == "heart_rate"
+    assert first_anomaly["value"] == 200
+    assert abs(first_anomaly["z_score"]) > 2.0
+
+
+@pytest.mark.unit
+def test_default_metrics_selection(
+    extractor: TimeSeriesDetailExtractor, fixture_base_path, dummy_activity_id
+):
+    """Test default metrics selection when none specified.
+
+    Expected behavior:
+    - If metrics parameter is None/empty, use default set
+    - Default set should include: heart_rate, speed, cadence, power,
+      vertical_oscillation, ground_contact_time, vertical_ratio
+    """
+    # Use fixture-based extractor
+    extractor_with_fixture = TimeSeriesDetailExtractor(base_path=fixture_base_path)
+
+    start_time = 0
+    end_time = 10
+
+    result = extractor_with_fixture.extract_metrics(
+        dummy_activity_id, start_time, end_time, metrics=None
+    )
+
+    # Should have default metrics
+    expected_defaults = [
+        "heart_rate",
+        "speed",
+        "cadence",
+        "power",
+        "vertical_oscillation",
+        "ground_contact_time",
+        "vertical_ratio",
+    ]
+
+    assert "metrics" in result
+    for metric in expected_defaults:
+        assert metric in result["metrics"]
 
 
 @pytest.mark.integration
-def test_mcp_get_time_range_detail_integration():
-    """Integration test for get_time_range_detail MCP tool.
+def test_split_time_series_detail_full_workflow(
+    extractor: TimeSeriesDetailExtractor, fixture_base_path, dummy_activity_id
+):
+    """Integration test: Extract time series detail for a specific split.
 
-    Tests the full MCP server integration with the analyze_time_range() method.
+    Tests the full workflow:
+    1. Convert split number to time range (using mock data)
+    2. Extract second-by-second metrics
+    3. Calculate statistics
+    4. Detect anomalies (optional)
+
+    Note: This test uses manual time range instead of DuckDB lookup
+    since we're testing with fixture data.
     """
-    from pathlib import Path
+    # Use fixture-based extractor
+    extractor_with_fixture = TimeSeriesDetailExtractor(base_path=fixture_base_path)
 
-    # Use fixture activity (12345678901)
-    activity_id = 12345678901
-    start_time_s = 100
-    end_time_s = 200
+    metrics = ["heart_rate", "speed", "cadence"]
 
-    # Import MCP server handler (simulate MCP call)
-    # Note: This tests the integration without actually starting the MCP server
-    from tools.rag.queries.time_series_detail import TimeSeriesDetailExtractor
+    # Manually specify time range (simulating split 1)
+    start_time = 0
+    end_time = 60
 
-    base_path = Path(__file__).parent.parent.parent / "fixtures"
-    extractor = TimeSeriesDetailExtractor(base_path=base_path)
-
-    # Simulate MCP tool call
-    result = extractor.analyze_time_range(
-        activity_id=activity_id,
-        start_time_s=start_time_s,
-        end_time_s=end_time_s,
-        metrics=["directHeartRate", "directSpeed"],
+    # Extract metrics manually
+    result = extractor_with_fixture.extract_metrics(
+        dummy_activity_id, start_time, end_time, metrics
     )
 
-    # Verify MCP-compatible response structure
-    assert isinstance(result, dict)
-    assert "activity_id" in result
-    assert "start_time_s" in result
-    assert "end_time_s" in result
-    assert "duration_s" in result
-    assert "time_series" in result
-    assert "statistics" in result
-    assert "anomalies" in result
+    # Calculate statistics
+    stats = extractor_with_fixture.calculate_statistics(result["time_series"], metrics)
 
-    # Verify values match input
-    assert result["activity_id"] == activity_id
-    assert result["start_time_s"] == start_time_s
-    assert result["end_time_s"] == end_time_s
+    # Detect anomalies
+    anomalies = extractor_with_fixture.detect_anomalies(
+        result["time_series"], metrics, z_threshold=2.0
+    )
 
-    # Verify response is JSON serializable (MCP requirement)
-    import json
+    # Build response manually (simulating get_split_time_series_detail)
+    response = {
+        "activity_id": dummy_activity_id,
+        "split_number": 1,
+        "time_range": result["time_range"],
+        "metrics": result["metrics"],
+        "statistics": stats,
+        "time_series": result["time_series"],
+        "anomalies": anomalies,
+    }
 
-    json_str = json.dumps(result, indent=2, ensure_ascii=False)
-    assert len(json_str) > 0
+    # Check top-level structure
+    assert "activity_id" in response
+    assert "split_number" in response
+    assert "time_range" in response
+    assert "metrics" in response
+    assert "statistics" in response
+    assert "time_series" in response
+
+    # Verify split number
+    assert response["split_number"] == 1
+
+    # Verify metrics
+    assert set(response["metrics"]) == set(metrics)
+
+    # Verify statistics are calculated
+    for metric in metrics:
+        assert metric in response["statistics"]
+        assert "mean" in response["statistics"][metric]
+        assert "std" in response["statistics"][metric]
+
+    # Verify time series data exists
+    assert len(response["time_series"]) > 0
+
+
+@pytest.mark.unit
+def test_handle_missing_activity_details(extractor: TimeSeriesDetailExtractor):
+    """Test error handling when activity_details.json doesn't exist.
+
+    Expected behavior:
+    - Should return error message
+    - Should not crash
+    - Should indicate file not found
+    """
+    activity_id = 99999999999  # Non-existent activity
+
+    result = extractor.get_split_time_series_detail(
+        activity_id=activity_id, split_number=1
+    )
+
+    # Should have error field
+    assert "error" in result
+    assert "not found" in result["error"].lower()
+
+
+@pytest.mark.unit
+def test_handle_invalid_split_number(extractor: TimeSeriesDetailExtractor):
+    """Test error handling for invalid split numbers.
+
+    Expected behavior:
+    - Should return error for split number 0 (1-based indexing)
+    - Should return error for split number exceeding total splits
+    - Should provide meaningful error messages
+    """
+    activity_id = 12345678901
+
+    # Test split number 0
+    result = extractor.get_split_time_series_detail(
+        activity_id=activity_id, split_number=0
+    )
+    assert "error" in result
+    assert "split" in result["error"].lower()
+
+    # Test split number too large
+    result = extractor.get_split_time_series_detail(
+        activity_id=activity_id, split_number=999
+    )
+    assert "error" in result
+
+
+@pytest.mark.unit
+def test_metric_name_validation(extractor: TimeSeriesDetailExtractor):
+    """Test validation of metric names.
+
+    Expected behavior:
+    - Should accept valid metric names from activity_details.json
+    - Should reject invalid metric names with clear error
+    - Should provide list of available metrics in error message
+    """
+    activity_id = 12345678901
+
+    # Test with invalid metric name
+    result = extractor.get_split_time_series_detail(
+        activity_id=activity_id, split_number=1, metrics=["invalid_metric_name"]
+    )
+
+    # Should have error or warning about invalid metrics
+    assert "error" in result or "invalid_metrics" in result

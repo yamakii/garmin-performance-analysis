@@ -1,14 +1,10 @@
-"""Time series detail extraction for individual splits.
+"""Time series detail extraction for specific splits.
 
-This module provides functionality to extract second-by-second detailed metrics
-for specific 1km splits from activity_details.json data.
-
-Key features:
-- Split number to time range conversion
-- Second-by-second metric extraction
-- Statistics calculation (avg, std, min, max)
-- Anomaly detection within splits using z-score
-- Support for all 26+ metrics from activity_details.json
+This module provides functionality to:
+- Extract second-by-second metrics for specific 1km splits
+- Calculate statistics (mean, std, min, max)
+- Detect anomalies within splits
+- Convert split numbers to time ranges
 """
 
 import statistics
@@ -19,235 +15,310 @@ from tools.rag.loaders.activity_details_loader import ActivityDetailsLoader
 
 
 class TimeSeriesDetailExtractor:
-    """Extract second-by-second time series details for specific splits.
+    """Extractor for detailed time series data within splits.
 
-    This class provides methods to:
-    - Convert split numbers to time ranges using performance.json
-    - Extract time series data for specific metrics
-    - Calculate statistics on time series data
-    - Detect anomalies within splits using z-score method
-
-    Attributes:
-        base_path: Base directory path for data files
-        loader: ActivityDetailsLoader instance for loading activity data
+    Provides methods to extract second-by-second metrics for specific
+    1km splits, calculate statistics, and detect anomalies.
     """
 
-    def __init__(
-        self, base_path: Path | None = None, db_path: str | None = None
-    ) -> None:
+    def __init__(self, base_path: Path | None = None) -> None:
         """Initialize TimeSeriesDetailExtractor.
 
         Args:
             base_path: Base directory path for data files.
                       Defaults to current directory if not provided.
-            db_path: Optional path to DuckDB database file.
-                    If not provided, uses default from paths utility.
         """
         self.base_path = base_path or Path(".")
         self.loader = ActivityDetailsLoader(base_path=self.base_path)
-        self.db_path = db_path
 
-    def _get_split_time_range(
-        self, split_number: int, activity_id: int
+    def _split_to_time_range(
+        self, split_number: int, splits_data: list[dict[str, Any]]
     ) -> tuple[int, int]:
-        """Get time range (start_time_s, end_time_s) for a specific split.
-
-        NEW (Phase 3): Queries DuckDB splits table via GarminDBReader.
+        """Convert split number (1-based) to time range (start_time_s, end_time_s).
 
         Args:
-            split_number: Split number (1-based index).
-            activity_id: Activity ID.
+            split_number: Split number (1-based indexing).
+            splits_data: List of split data dictionaries with start_time_s and end_time_s.
 
         Returns:
             Tuple of (start_time_s, end_time_s).
 
         Raises:
-            ValueError: If split_number is invalid (< 1 or > max_splits).
+            ValueError: If split_number is invalid (0, negative, or exceeds total splits).
         """
-        from tools.database.db_reader import GarminDBReader
+        if split_number < 1:
+            raise ValueError(f"Split number must be >= 1, got {split_number}")
 
-        # Create reader with optional db_path override
-        reader = GarminDBReader(db_path=self.db_path)
-
-        # Get all split time ranges for this activity
-        split_ranges = reader.get_split_time_ranges(activity_id)
-
-        if not split_ranges:
-            raise ValueError(f"No splits found for activity_id: {activity_id}")
-
-        if split_number < 1 or split_number > len(split_ranges):
+        if split_number > len(splits_data):
             raise ValueError(
-                f"Invalid split_number: {split_number}. "
-                f"Valid range: 1-{len(split_ranges)}"
+                f"Split number {split_number} exceeds total splits {len(splits_data)}"
             )
 
-        # Get split by index (1-based to 0-based)
-        split = split_ranges[split_number - 1]
+        # Convert 1-based split number to 0-based index
+        split_index = split_number - 1
+        split_data = splits_data[split_index]
 
-        return split["start_time_s"], split["end_time_s"]
+        return split_data["start_time_s"], split_data["end_time_s"]
 
-    def _extract_time_series_data(
-        self,
-        activity_details: dict[str, Any],
-        metric_names: list[str],
-        start_time_s: int,
-        end_time_s: int,
-    ) -> list[dict[str, Any]]:
-        """Extract time series data for specific metrics within time range.
+    def _get_split_time_range(
+        self, activity_id: int, split_number: int
+    ) -> tuple[int, int]:
+        """Get time range for a split from DuckDB.
 
         Args:
-            activity_details: Activity details data from activity_details.json.
-            metric_names: List of metric names to extract.
-            start_time_s: Start time in seconds.
-            end_time_s: End time in seconds.
+            activity_id: Activity ID.
+            split_number: Split number (1-based).
 
         Returns:
-            List of dictionaries with time series data:
-            [
-                {"timestamp": 0, "metric1": value1, "metric2": value2, ...},
-                {"timestamp": 1, "metric1": value1, "metric2": value2, ...},
-                ...
-            ]
+            Tuple of (start_time_s, end_time_s).
+
+        Raises:
+            ValueError: If split not found or invalid.
         """
-        # Parse metric descriptors
-        metric_map = self.loader.parse_metric_descriptors(
-            activity_details["metricDescriptors"]
-        )
+        import duckdb
 
-        # Get metrics data
-        metrics_data = activity_details["activityDetailMetrics"]
+        from tools.database.db_reader import GarminDBReader
 
-        # Extract time series for requested metrics
-        time_series: list[dict[str, Any]] = []
+        db_reader = GarminDBReader()
 
-        for timestamp_idx in range(start_time_s, min(end_time_s, len(metrics_data))):
-            data_point: dict[str, Any] = {"timestamp": timestamp_idx}
+        try:
+            conn = duckdb.connect(str(db_reader.db_path), read_only=True)
 
-            for metric_name in metric_names:
-                if metric_name not in metric_map:
-                    # Metric not available, set to None
-                    data_point[metric_name] = None
-                    continue
+            result = conn.execute(
+                """
+                SELECT start_time_s, end_time_s
+                FROM splits
+                WHERE activity_id = ? AND split_index = ?
+                """,
+                [activity_id, split_number - 1],  # Convert to 0-based index
+            ).fetchone()
 
-                metric_info = metric_map[metric_name]
-                metric_idx = metric_info["index"]
+            conn.close()
 
-                # Extract raw value
-                measurement = metrics_data[timestamp_idx]
-                raw_values = measurement["metrics"]
+            if not result:
+                raise ValueError(
+                    f"Split {split_number} not found for activity {activity_id}"
+                )
 
-                if metric_idx < len(raw_values):
-                    raw_value = raw_values[metric_idx]
-                    if raw_value is not None:
-                        # Apply unit conversion
-                        converted_value = self.loader.apply_unit_conversion(
-                            metric_info, raw_value
-                        )
-                        data_point[metric_name] = converted_value
+            return result[0], result[1]
+
+        except Exception as e:
+            raise ValueError(f"Error querying DuckDB: {e}") from e
+
+    def extract_metrics(
+        self,
+        activity_id: int,
+        start_time: int,
+        end_time: int,
+        metrics: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Extract second-by-second metrics for specified time range.
+
+        Args:
+            activity_id: Activity ID.
+            start_time: Start time in seconds.
+            end_time: End time in seconds.
+            metrics: List of metric names to extract. If None, uses default set.
+
+        Returns:
+            Dictionary with extracted metrics:
+            {
+                "activity_id": int,
+                "time_range": {"start_time_s": int, "end_time_s": int},
+                "metrics": [str],
+                "time_series": [{"timestamp_s": int, "metric1": float, ...}]
+            }
+        """
+        # Default metrics if not specified
+        if metrics is None:
+            metrics = [
+                "heart_rate",
+                "speed",
+                "cadence",
+                "power",
+                "vertical_oscillation",
+                "ground_contact_time",
+                "vertical_ratio",
+            ]
+
+        try:
+            # Load activity details
+            activity_details = self.loader.load_activity_details(activity_id)
+
+            # Parse metric descriptors
+            metric_descriptors = activity_details["metricDescriptors"]
+            metric_map = self.loader.parse_metric_descriptors(metric_descriptors)
+
+            # Get time series data
+            metrics_data = activity_details["activityDetailMetrics"]
+
+            # Map metric names to metric keys in activity_details
+            metric_key_map = {
+                "heart_rate": "directHeartRate",
+                "speed": "directSpeed",
+                "cadence": "directRunCadence",
+                "power": "directPower",
+                "vertical_oscillation": "directVerticalOscillation",
+                "ground_contact_time": "directGroundContactTime",
+                "vertical_ratio": "directVerticalRatio",
+            }
+
+            # Extract time series for requested metrics
+            time_series: list[dict[str, Any]] = []
+            for timestamp_idx in range(start_time, end_time):
+                if timestamp_idx >= len(metrics_data):
+                    break
+
+                data_point: dict[str, Any] = {"timestamp_s": timestamp_idx}
+
+                for metric_name in metrics:
+                    metric_key = metric_key_map.get(metric_name)
+                    if metric_key and metric_key in metric_map:
+                        metric_info = metric_map[metric_key]
+                        metric_index = metric_info["index"]
+
+                        # Get raw value
+                        measurement = metrics_data[timestamp_idx]
+                        metric_values = measurement["metrics"]
+
+                        if metric_index < len(metric_values):
+                            raw_value = metric_values[metric_index]
+                            if raw_value is not None:
+                                # Apply unit conversion
+                                converted_value = self.loader.apply_unit_conversion(
+                                    metric_info, raw_value
+                                )
+                                data_point[metric_name] = converted_value
+                            else:
+                                data_point[metric_name] = None
+                        else:
+                            data_point[metric_name] = None
                     else:
                         data_point[metric_name] = None
-                else:
-                    data_point[metric_name] = None
 
-            time_series.append(data_point)
+                time_series.append(data_point)
 
-        return time_series
+            return {
+                "activity_id": activity_id,
+                "time_range": {"start_time_s": start_time, "end_time_s": end_time},
+                "metrics": metrics,
+                "time_series": time_series,
+            }
 
-    def _calculate_statistics(
-        self, time_series: list[float | None] | tuple[float | None, ...]
-    ) -> dict[str, float | int]:
-        """Calculate statistics on time series data.
+        except FileNotFoundError as e:
+            return {
+                "activity_id": activity_id,
+                "error": f"Activity details not found: {e}",
+            }
+        except Exception as e:
+            return {
+                "activity_id": activity_id,
+                "error": f"Error extracting metrics: {e}",
+            }
+
+    def calculate_statistics(
+        self, time_series_data: list[dict[str, Any]], metrics: list[str]
+    ) -> dict[str, dict[str, float]]:
+        """Calculate statistics for each metric in time series data.
 
         Args:
-            time_series: List of metric values (may contain None).
+            time_series_data: List of data points with timestamps and metric values.
+            metrics: List of metric names to calculate statistics for.
 
         Returns:
-            Dictionary with statistics:
+            Dictionary mapping metric names to their statistics:
             {
-                "avg": float,
-                "std": float,
-                "min": float,
-                "max": float,
-                "count": int  # Number of non-None values
+                "metric_name": {
+                    "mean": float,
+                    "std": float,
+                    "min": float,
+                    "max": float
+                }
             }
         """
-        # Filter out None values
-        valid_values = [v for v in time_series if v is not None]
+        stats: dict[str, dict[str, float]] = {}
 
-        if not valid_values:
-            return {
-                "avg": 0.0,
-                "std": 0.0,
-                "min": 0.0,
-                "max": 0.0,
-                "count": 0,
-            }
+        for metric in metrics:
+            # Extract non-None values for this metric
+            values = [
+                point[metric]
+                for point in time_series_data
+                if point.get(metric) is not None
+            ]
 
-        return {
-            "avg": statistics.mean(valid_values),
-            "std": statistics.stdev(valid_values) if len(valid_values) > 1 else 0.0,
-            "min": min(valid_values),
-            "max": max(valid_values),
-            "count": len(valid_values),
-        }
+            if values:
+                stats[metric] = {
+                    "mean": float(statistics.mean(values)),
+                    "std": float(statistics.stdev(values) if len(values) > 1 else 0.0),
+                    "min": float(min(values)),
+                    "max": float(max(values)),
+                }
+            else:
+                stats[metric] = {"mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0}
 
-    def _detect_split_anomalies(
+        return stats
+
+    def detect_anomalies(
         self,
-        metric_name: str,
-        time_series: list[float | None] | tuple[float | None, ...],
+        time_series_data: list[dict[str, Any]],
+        metrics: list[str],
         z_threshold: float = 2.0,
     ) -> list[dict[str, Any]]:
-        """Detect anomalies in time series using z-score method.
+        """Detect anomalies in time series data using z-score.
 
         Args:
-            metric_name: Name of the metric being analyzed.
-            time_series: List of metric values.
+            time_series_data: List of data points with timestamps and metric values.
+            metrics: List of metric names to check for anomalies.
             z_threshold: Z-score threshold for anomaly detection (default: 2.0).
 
         Returns:
-            List of anomaly dictionaries:
+            List of anomalies:
             [
                 {
-                    "index": int,
+                    "timestamp_s": int,
                     "metric": str,
                     "value": float,
                     "z_score": float
-                },
-                ...
+                }
             ]
         """
-        # Filter out None values for statistics
-        valid_values = [v for v in time_series if v is not None]
-
-        if len(valid_values) < 2:
-            # Not enough data for anomaly detection
-            return []
-
-        # Calculate mean and std
-        mean_val = statistics.mean(valid_values)
-        std_val = statistics.stdev(valid_values)
-
-        if std_val == 0:
-            # No variation, no anomalies
-            return []
-
-        # Detect anomalies
         anomalies = []
-        for idx, value in enumerate(time_series):
-            if value is None:
+
+        for metric in metrics:
+            # Extract non-None values
+            values = [
+                point[metric]
+                for point in time_series_data
+                if point.get(metric) is not None
+            ]
+
+            if len(values) <= 1:
                 continue
 
-            z_score = abs((value - mean_val) / std_val)
+            # Calculate mean and std
+            mean = statistics.mean(values)
+            std = statistics.stdev(values)
 
-            if z_score > z_threshold:
-                anomalies.append(
-                    {
-                        "index": idx,
-                        "metric": metric_name,
-                        "value": value,
-                        "z_score": z_score,
-                    }
-                )
+            if std == 0:
+                continue
+
+            # Check each data point for anomalies
+            for point in time_series_data:
+                value = point.get(metric)
+                if value is None:
+                    continue
+
+                z_score = (value - mean) / std
+
+                if abs(z_score) > z_threshold:
+                    anomalies.append(
+                        {
+                            "timestamp_s": point["timestamp_s"],
+                            "metric": metric,
+                            "value": value,
+                            "z_score": z_score,
+                        }
+                    )
 
         return anomalies
 
@@ -256,160 +327,77 @@ class TimeSeriesDetailExtractor:
         activity_id: int,
         split_number: int,
         metrics: list[str] | None = None,
+        detect_anomalies: bool = False,
+        z_threshold: float = 2.0,
     ) -> dict[str, Any]:
-        """Get second-by-second time series detail for a specific split.
+        """Get detailed time series data for a specific split.
 
         Args:
             activity_id: Activity ID.
-            split_number: Split number (1-based).
-            metrics: List of metric names to extract (None = common metrics).
+            split_number: Split number (1-based indexing).
+            metrics: List of metric names to extract. If None, uses default set.
+            detect_anomalies: Whether to detect anomalies in the data.
+            z_threshold: Z-score threshold for anomaly detection (default: 2.0).
 
         Returns:
             Dictionary with split time series detail:
             {
                 "activity_id": int,
                 "split_number": int,
-                "start_time_s": int,
-                "end_time_s": int,
-                "duration_s": int,
-                "time_series": [
-                    {"timestamp": 0, "metric1": value1, ...},
-                    ...
-                ],
-                "statistics": {
-                    "metric1": {"avg": ..., "std": ..., "min": ..., "max": ...},
-                    ...
-                },
-                "anomalies": [
-                    {"index": ..., "metric": ..., "value": ..., "z_score": ...},
-                    ...
-                ]
+                "time_range": {"start_time_s": int, "end_time_s": int},
+                "metrics": [str],
+                "statistics": {metric: {mean, std, min, max}},
+                "time_series": [{"timestamp_s": int, "metric1": float, ...}],
+                "anomalies": [...] (if detect_anomalies=True)
             }
         """
-        # Default metrics if not specified
-        if metrics is None:
-            metrics = [
-                "directHeartRate",
-                "directSpeed",
-                "directDoubleCadence",
-                "directGroundContactTime",
-                "directVerticalOscillation",
-            ]
+        try:
+            # Get time range from DuckDB
+            start_time, end_time = self._get_split_time_range(activity_id, split_number)
 
-        # Get split time range from DuckDB (NEW: no performance.json dependency)
-        start_time, end_time = self._get_split_time_range(split_number, activity_id)
+            # Extract metrics
+            result = self.extract_metrics(activity_id, start_time, end_time, metrics)
 
-        # Load activity_details.json
-        activity_details = self.loader.load_activity_details(activity_id)
-
-        # Extract time series data
-        time_series = self._extract_time_series_data(
-            activity_details, metrics, start_time, end_time
-        )
-
-        # Calculate statistics for each metric
-        statistics_dict = {}
-        all_anomalies = []
-
-        for metric_name in metrics:
-            # Extract metric values
-            metric_values = [tp.get(metric_name) for tp in time_series]
+            if "error" in result:
+                return result
 
             # Calculate statistics
-            stats = self._calculate_statistics(metric_values)
-            statistics_dict[metric_name] = stats
+            stats = self.calculate_statistics(result["time_series"], result["metrics"])
 
-            # Detect anomalies
-            anomalies = self._detect_split_anomalies(metric_name, metric_values)
-            all_anomalies.extend(anomalies)
-
-        return {
-            "activity_id": activity_id,
-            "split_number": split_number,
-            "start_time_s": start_time,
-            "end_time_s": end_time,
-            "duration_s": end_time - start_time,
-            "time_series": time_series,
-            "statistics": statistics_dict,
-            "anomalies": all_anomalies,
-        }
-
-    def analyze_time_range(
-        self,
-        activity_id: int,
-        start_time_s: int,
-        end_time_s: int,
-        metrics: list[str] | None = None,
-    ) -> dict[str, Any]:
-        """Analyze arbitrary time range with second-by-second metrics.
-
-        Args:
-            activity_id: Activity ID.
-            start_time_s: Start time in seconds.
-            end_time_s: End time in seconds.
-            metrics: List of metric names to extract (None = common metrics).
-
-        Returns:
-            Dictionary with time range analysis:
-            {
-                "activity_id": int,
-                "start_time_s": int,
-                "end_time_s": int,
-                "duration_s": int,
-                "time_series": [
-                    {"timestamp": 0, "metric1": value1, ...},
-                    ...
-                ],
-                "statistics": {
-                    "metric1": {"avg": ..., "std": ..., "min": ..., "max": ...},
-                    ...
-                },
-                "anomalies": [
-                    {"index": ..., "metric": ..., "value": ..., "z_score": ...},
-                    ...
-                ]
+            # Build response
+            response = {
+                "activity_id": activity_id,
+                "split_number": split_number,
+                "time_range": result["time_range"],
+                "metrics": result["metrics"],
+                "statistics": stats,
+                "time_series": result["time_series"],
             }
-        """
-        # Default metrics if not specified
-        if metrics is None:
-            metrics = [
-                "directHeartRate",
-                "directSpeed",
-                "directDoubleCadence",
-                "directGroundContactTime",
-                "directVerticalOscillation",
-            ]
 
-        # Load activity_details.json
-        activity_details = self.loader.load_activity_details(activity_id)
+            # Detect anomalies if requested
+            if detect_anomalies:
+                anomalies = self.detect_anomalies(
+                    result["time_series"], result["metrics"], z_threshold
+                )
+                response["anomalies"] = anomalies
 
-        # Extract time series data
-        time_series = self._extract_time_series_data(
-            activity_details, metrics, start_time_s, end_time_s
-        )
+            return response
 
-        # Calculate statistics for each metric
-        statistics_dict = {}
-        all_anomalies = []
-
-        for metric_name in metrics:
-            # Extract metric values
-            metric_values = [tp.get(metric_name) for tp in time_series]
-
-            # Calculate statistics
-            stats = self._calculate_statistics(metric_values)
-            statistics_dict[metric_name] = stats
-
-            # Detect anomalies
-            anomalies = self._detect_split_anomalies(metric_name, metric_values)
-            all_anomalies.extend(anomalies)
-
-        return {
-            "activity_id": activity_id,
-            "start_time_s": start_time_s,
-            "end_time_s": end_time_s,
-            "duration_s": end_time_s - start_time_s,
-            "time_series": time_series,
-            "statistics": statistics_dict,
-            "anomalies": all_anomalies,
-        }
+        except ValueError as e:
+            return {
+                "activity_id": activity_id,
+                "split_number": split_number,
+                "error": str(e),
+            }
+        except FileNotFoundError:
+            return {
+                "activity_id": activity_id,
+                "split_number": split_number,
+                "error": f"Activity details not found for activity {activity_id}",
+            }
+        except Exception as e:
+            return {
+                "activity_id": activity_id,
+                "split_number": split_number,
+                "error": f"Error extracting split time series: {e}",
+            }
