@@ -213,41 +213,13 @@ class GarminIngestWorker:
         if self._db_reader is None:
             return None
 
-        # Define all 11 required sections from performance.json
-        required_sections = [
-            "basic_metrics",
-            "heart_rate_zones",
-            "efficiency_metrics",
-            "training_effect",
-            "power_to_weight",
-            "split_metrics",
-            "vo2_max",
-            "lactate_threshold",
-            "form_efficiency_summary",
-            "hr_efficiency_analysis",
-            "performance_trends",
-        ]
-
-        # Try to fetch all sections from DuckDB
-        performance_data: dict[str, Any] = {}
-
-        for section in required_sections:
-            section_data = self._db_reader.get_performance_section(activity_id, section)
-
-            if section_data is None:
-                # Missing section - return None to trigger reprocessing
-                logger.debug(
-                    f"Activity {activity_id}: Missing section '{section}' in DuckDB cache"
-                )
-                return None
-
-            performance_data[section] = section_data
-
-        # All sections found - return complete performance data
-        logger.info(
-            f"Activity {activity_id}: Complete performance data found in DuckDB cache"
+        # TODO: Implement DuckDB cache checking with normalized schema
+        # Current normalized schema requires querying multiple tables
+        # For now, always trigger reprocessing (return None)
+        logger.debug(
+            f"Activity {activity_id}: DuckDB cache checking not implemented for normalized schema"
         )
-        return performance_data
+        return None
 
     def load_from_cache(
         self, activity_id: int, skip_files: set[str] | None = None

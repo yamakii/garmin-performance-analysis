@@ -139,7 +139,7 @@ uv run python -c "from tools.utils.paths import get_data_base_dir, get_result_di
   - Per-API caching for granular cache control
   - API files: `activity.json`, `activity_details.json`, `splits.json`, `weather.json`, `gear.json`, `hr_zones.json`, `vo2_max.json`, `lactate_threshold.json`
   - Allows partial re-fetching (e.g., weather data only)
-  - Migration tool: `tools/migrate_raw_data_structure.py`
+  - Migration tool: `tools/scripts/migrate_raw_data_structure.py`
 - **Activity data** (legacy, backward compatible): `{activity_id}_raw.json`
   - Single-file format with all API responses
   - Automatically detected by `collect_data()` for backward compatibility
@@ -153,7 +153,7 @@ uv run python -c "from tools.utils.paths import get_data_base_dir, get_result_di
   - Metadata index for quick date lookups
   - Maps dates to raw file paths and summary stats
   - Replaces old `data/weight_cache/weight_index.json`
-- **Migration tool**: `tools/migrate_weight_data.py`
+- **Migration tool**: `tools/scripts/migrate_weight_data.py`
   - Options: `--dry-run`, `--all`, `--date`, `--verify`, `--cleanup`
   - Full migration completed on 2025-10-09 (111 files)
 
@@ -592,13 +592,13 @@ for activity_dir in sorted(raw_dir.iterdir()):
 
 ```bash
 # Fetch activity_details.json for all activities
-uv run python tools/bulk_fetch_activity_details.py
+uv run python tools/scripts/bulk_fetch_activity_details.py
 
 # Dry run (show what would be fetched)
-uv run python tools/bulk_fetch_activity_details.py --dry-run
+uv run python tools/scripts/bulk_fetch_activity_details.py --dry-run
 
 # Force re-fetch even if files exist
-uv run python tools/bulk_fetch_activity_details.py --force
+uv run python tools/scripts/bulk_fetch_activity_details.py --force
 ```
 
 **Purpose:** Fetch specific missing data from Garmin API (e.g., activity_details.json for interval analysis)
@@ -607,16 +607,16 @@ uv run python tools/bulk_fetch_activity_details.py --force
 
 ```bash
 # Migrate raw data structure (legacy → per-API format)
-uv run python tools/migrate_raw_data_structure.py
+uv run python tools/scripts/migrate_raw_data_structure.py
 
 # Migrate weight data structure
-uv run python tools/migrate_weight_data.py --all
+uv run python tools/scripts/migrate_weight_data.py --all
 
 # Dry run (show what would be migrated)
-uv run python tools/migrate_weight_data.py --dry-run --all
+uv run python tools/scripts/migrate_weight_data.py --dry-run --all
 
 # Verify migration
-uv run python tools/migrate_weight_data.py --verify
+uv run python tools/scripts/migrate_weight_data.py --verify
 ```
 
 **Purpose:** Migrate data between different storage formats

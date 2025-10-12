@@ -40,7 +40,7 @@ class TestActivityDetailsFetcher:
 
     def test_scan_activities_finds_missing_files(self, temp_raw_dir):
         """Test scan_activities finds activities missing activity_details.json."""
-        from tools.bulk_fetch_activity_details import ActivityDetailsFetcher
+        from tools.scripts.bulk_fetch_activity_details import ActivityDetailsFetcher
 
         fetcher = ActivityDetailsFetcher(raw_dir=temp_raw_dir.parent)
         missing = fetcher.scan_activities()
@@ -52,7 +52,7 @@ class TestActivityDetailsFetcher:
 
     def test_scan_activities_skips_existing_files(self, temp_raw_dir):
         """Test scan_activities skips activities with existing activity_details.json."""
-        from tools.bulk_fetch_activity_details import ActivityDetailsFetcher
+        from tools.scripts.bulk_fetch_activity_details import ActivityDetailsFetcher
 
         fetcher = ActivityDetailsFetcher(raw_dir=temp_raw_dir.parent)
         missing = fetcher.scan_activities()
@@ -63,7 +63,7 @@ class TestActivityDetailsFetcher:
 
     def test_scan_activities_skips_invalid_directories(self, temp_raw_dir):
         """Test scan_activities ignores directories without activity.json."""
-        from tools.bulk_fetch_activity_details import ActivityDetailsFetcher
+        from tools.scripts.bulk_fetch_activity_details import ActivityDetailsFetcher
 
         fetcher = ActivityDetailsFetcher(raw_dir=temp_raw_dir.parent)
         missing = fetcher.scan_activities()
@@ -72,10 +72,10 @@ class TestActivityDetailsFetcher:
         activity_dirs = [str(activity_dir) for _, activity_dir in missing]
         assert not any("invalid" in path for path in activity_dirs)
 
-    @patch("tools.bulk_fetch_activity_details.GarminIngestWorker")
+    @patch("tools.scripts.bulk_fetch_activity_details.GarminIngestWorker")
     def test_fetch_single_activity_success(self, mock_worker_class, temp_raw_dir):
         """Test fetch_single_activity successfully fetches and saves data."""
-        from tools.bulk_fetch_activity_details import ActivityDetailsFetcher
+        from tools.scripts.bulk_fetch_activity_details import ActivityDetailsFetcher
 
         # Setup mock
         mock_client = Mock()
@@ -106,7 +106,7 @@ class TestActivityDetailsFetcher:
 
     def test_fetch_single_activity_skip_existing(self, temp_raw_dir):
         """Test fetch_single_activity skips when file exists (force=False)."""
-        from tools.bulk_fetch_activity_details import ActivityDetailsFetcher
+        from tools.scripts.bulk_fetch_activity_details import ActivityDetailsFetcher
 
         fetcher = ActivityDetailsFetcher(raw_dir=temp_raw_dir.parent, force=False)
         activity_dir = temp_raw_dir / "12345"
@@ -116,12 +116,12 @@ class TestActivityDetailsFetcher:
         assert result["status"] == "skipped"
         assert result["activity_id"] == 12345
 
-    @patch("tools.bulk_fetch_activity_details.GarminIngestWorker")
+    @patch("tools.scripts.bulk_fetch_activity_details.GarminIngestWorker")
     def test_fetch_single_activity_force_overwrite(
         self, mock_worker_class, temp_raw_dir
     ):
         """Test fetch_single_activity overwrites when force=True."""
-        from tools.bulk_fetch_activity_details import ActivityDetailsFetcher
+        from tools.scripts.bulk_fetch_activity_details import ActivityDetailsFetcher
 
         # Setup mock
         mock_client = Mock()
@@ -146,10 +146,10 @@ class TestActivityDetailsFetcher:
             saved_data = json.load(f)
         assert saved_data["activityName"] == "Updated Run"
 
-    @patch("tools.bulk_fetch_activity_details.GarminIngestWorker")
+    @patch("tools.scripts.bulk_fetch_activity_details.GarminIngestWorker")
     def test_fetch_single_activity_api_error(self, mock_worker_class, temp_raw_dir):
         """Test fetch_single_activity handles API errors gracefully."""
-        from tools.bulk_fetch_activity_details import ActivityDetailsFetcher
+        from tools.scripts.bulk_fetch_activity_details import ActivityDetailsFetcher
 
         # Setup mock to raise error
         mock_client = Mock()
@@ -193,13 +193,13 @@ class TestActivityDetailsFetcherIntegration:
 
         return raw_dir
 
-    @patch("tools.bulk_fetch_activity_details.GarminIngestWorker")
-    @patch("tools.bulk_fetch_activity_details.tqdm")
+    @patch("tools.scripts.bulk_fetch_activity_details.GarminIngestWorker")
+    @patch("tools.scripts.bulk_fetch_activity_details.tqdm")
     def test_bulk_fetch_with_mock_api(
         self, mock_tqdm, mock_worker_class, temp_raw_dir_multi
     ):
         """Test bulk fetch with mocked API."""
-        from tools.bulk_fetch_activity_details import ActivityDetailsFetcher
+        from tools.scripts.bulk_fetch_activity_details import ActivityDetailsFetcher
 
         # Setup mock
         mock_client = Mock()
@@ -237,10 +237,10 @@ class TestActivityDetailsFetcherIntegration:
             )
             assert details_file.exists()
 
-    @patch("tools.bulk_fetch_activity_details.GarminIngestWorker")
+    @patch("tools.scripts.bulk_fetch_activity_details.GarminIngestWorker")
     def test_partial_failure_recovery(self, mock_worker_class, temp_raw_dir_multi):
         """Test that bulk fetch continues after partial failures."""
-        from tools.bulk_fetch_activity_details import ActivityDetailsFetcher
+        from tools.scripts.bulk_fetch_activity_details import ActivityDetailsFetcher
 
         # Setup mock: 22222 will fail, others succeed
         mock_client = Mock()
@@ -285,7 +285,7 @@ class TestActivityDetailsFetcherRealAPI:
 
     def test_fetch_real_activity(self):
         """Test fetching activity_details for a real cached activity."""
-        from tools.bulk_fetch_activity_details import ActivityDetailsFetcher
+        from tools.scripts.bulk_fetch_activity_details import ActivityDetailsFetcher
 
         # Use existing cached activity
         activity_id = 20594901208
@@ -329,12 +329,12 @@ class TestActivityDetailsFetcherRealAPI:
 class TestCLI:
     """Unit tests for CLI interface."""
 
-    @patch("tools.bulk_fetch_activity_details.ActivityDetailsFetcher")
+    @patch("tools.scripts.bulk_fetch_activity_details.ActivityDetailsFetcher")
     def test_main_dry_run(self, mock_fetcher_class, capsys):
         """Test main function with --dry-run option."""
         import sys
 
-        from tools.bulk_fetch_activity_details import main
+        from tools.scripts.bulk_fetch_activity_details import main
 
         # Setup mock
         mock_fetcher = Mock()
@@ -356,12 +356,12 @@ class TestCLI:
         assert "Activity 11111" in captured.out
         assert "Activity 22222" in captured.out
 
-    @patch("tools.bulk_fetch_activity_details.ActivityDetailsFetcher")
+    @patch("tools.scripts.bulk_fetch_activity_details.ActivityDetailsFetcher")
     def test_main_execute(self, mock_fetcher_class, capsys):
         """Test main function execution."""
         import sys
 
-        from tools.bulk_fetch_activity_details import main
+        from tools.scripts.bulk_fetch_activity_details import main
 
         # Setup mock
         mock_fetcher = Mock()

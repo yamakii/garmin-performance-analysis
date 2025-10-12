@@ -48,7 +48,9 @@ class TestMigrateRawDataStructure:
 
     def test_split_raw_data_to_new_structure(self, temp_dirs, sample_old_format_data):
         """Test splitting old format raw_data into new directory structure."""
-        from tools.migrate_raw_data_structure import split_raw_data_to_new_structure
+        from tools.scripts.migrate_raw_data_structure import (
+            split_raw_data_to_new_structure,
+        )
 
         activity_id = 20594901208
         source_dir = temp_dirs["source"]
@@ -102,7 +104,9 @@ class TestMigrateRawDataStructure:
 
     def test_split_raw_data_dry_run(self, temp_dirs, sample_old_format_data):
         """Test dry-run mode (should not create files)."""
-        from tools.migrate_raw_data_structure import split_raw_data_to_new_structure
+        from tools.scripts.migrate_raw_data_structure import (
+            split_raw_data_to_new_structure,
+        )
 
         activity_id = 20594901208
         source_dir = temp_dirs["source"]
@@ -131,7 +135,9 @@ class TestMigrateRawDataStructure:
 
     def test_split_raw_data_missing_optional_fields(self, temp_dirs):
         """Test migration with missing optional fields."""
-        from tools.migrate_raw_data_structure import split_raw_data_to_new_structure
+        from tools.scripts.migrate_raw_data_structure import (
+            split_raw_data_to_new_structure,
+        )
 
         activity_id = 20594901208
         source_dir = temp_dirs["source"]
@@ -171,7 +177,9 @@ class TestMigrateRawDataStructure:
 
     def test_split_raw_data_already_exists(self, temp_dirs, sample_old_format_data):
         """Test behavior when new structure already exists."""
-        from tools.migrate_raw_data_structure import split_raw_data_to_new_structure
+        from tools.scripts.migrate_raw_data_structure import (
+            split_raw_data_to_new_structure,
+        )
 
         activity_id = 20594901208
         source_dir = temp_dirs["source"]
@@ -201,7 +209,7 @@ class TestMigrateRawDataStructure:
 
     def test_migrate_all_raw_data_files(self, temp_dirs, sample_old_format_data):
         """Test migrating all old format files in directory."""
-        from tools.migrate_raw_data_structure import migrate_all_raw_data_files
+        from tools.scripts.migrate_raw_data_structure import migrate_all_raw_data_files
 
         source_dir = temp_dirs["source"]
         output_dir = temp_dirs["output"]

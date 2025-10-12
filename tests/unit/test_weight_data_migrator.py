@@ -5,7 +5,7 @@ import shutil
 
 import pytest
 
-from tools.weight_data_migrator import WeightDataMigrator
+from tools.batch.weight_data_migrator import WeightDataMigrator
 
 
 @pytest.fixture

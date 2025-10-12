@@ -22,7 +22,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from weight_data_migrator import WeightDataMigrator
+from tools.batch.weight_data_migrator import WeightDataMigrator
 
 
 def main() -> int:
@@ -63,7 +63,7 @@ def main() -> int:
         parser.error("Must specify one of: --date, --all, --verify, or --cleanup")
 
     # Initialize migrator
-    project_root = Path(__file__).parent.parent
+    project_root = Path(__file__).parent.parent.parent
     migrator = WeightDataMigrator(project_root, dry_run=args.dry_run)
 
     try:
@@ -106,14 +106,17 @@ def main() -> int:
 
         elif args.verify:
             print("Verifying migration integrity...")
-            report = migrator.verify_migration()
+            verify_report = migrator.verify_migration()
             print("\nVerification Report:")
-            print(f"  Total verified: {report['total_verified']}")
-            print(f"  Discrepancies: {report['discrepancies']}")
+            print(f"  Total verified: {verify_report['total_verified']}")
+            print(f"  Discrepancies: {verify_report['discrepancies']}")
 
-            if report["discrepancies"] > 0:
+            discrepancies = verify_report["discrepancies"]
+            if isinstance(discrepancies, int) and discrepancies > 0:
                 print("\n✗ Verification failed:")
-                for error in report["errors"]:
+                errors = verify_report["errors"]
+                assert isinstance(errors, list)
+                for error in errors:
                     print(f"    - {error}")
                 return 1
 
