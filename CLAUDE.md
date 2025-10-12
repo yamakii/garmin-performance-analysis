@@ -527,17 +527,64 @@ uv sync  # <- MANDATORY
 mcp__serena__activate_project("/home/user/workspace/garmin-feature")  # <- MANDATORY for agents
 ```
 
-### Data Processing
+### Data Processing Scripts
+
+**⚠️ CRITICAL PRINCIPLE: Always separate API fetching from data regeneration**
+
+The system has two distinct operations that MUST NOT be mixed:
+1. **API Fetching**: Fetching new data from Garmin Connect API (slow, rate-limited)
+2. **Data Regeneration**: Regenerating performance.json and DuckDB from existing raw data (fast, no API calls)
+
+**Why this matters:**
+- API fetching is expensive and slow (824 activity calls + 500+ body composition calls for 103 activities)
+- Data regeneration is fast and local (reads from cached raw data)
+- Mixing them causes unnecessary API load and delays
+
+#### Regeneration from Raw Data (Preferred Method)
+
+**Use `GarminIngestWorker` directly for regeneration:**
+
+```python
+# Regenerate single activity from existing raw data
+from tools.ingest.garmin_worker import GarminIngestWorker
+
+worker = GarminIngestWorker()
+
+# If DuckDB cache exists: Returns cached data (no regeneration)
+# If DuckDB cache missing but raw data exists: Regenerates from raw data
+# If raw data missing: Fetches from API
+result = worker.process_activity(activity_id, "YYYY-MM-DD")
+```
+
+**Bulk regeneration pattern:**
+```python
+# Example: Regenerate all activities after schema change
+from tools.ingest.garmin_worker import GarminIngestWorker
+from pathlib import Path
+import json
+
+worker = GarminIngestWorker()
+
+# Get all activity IDs from raw data
+raw_dir = Path("data/raw/activity")
+for activity_dir in sorted(raw_dir.iterdir()):
+    if activity_dir.is_dir():
+        activity_id = int(activity_dir.name)
+        # Load date from activity.json
+        activity_file = activity_dir / "activity.json"
+        if activity_file.exists():
+            with open(activity_file) as f:
+                data = json.load(f)
+                date = data.get("startTimeLocal", "").split()[0]
+
+            # Process activity (will regenerate if DuckDB cache missing)
+            worker.process_activity(activity_id, date)
+```
+
+#### API Fetching Scripts
+
 ```bash
-# Regenerate all performance data from raw_data
-uv run python tools/bulk_regenerate.py
-
-# Create activity date mapping
-uv run python tools/create_activity_date_mapping.py
-
-# Fix directory date inconsistencies
-uv run python tools/fix_directory_dates.py
-# Bulk fetch activity_details.json for all activities
+# Fetch activity_details.json for all activities
 uv run python tools/bulk_fetch_activity_details.py
 
 # Dry run (show what would be fetched)
@@ -545,11 +592,52 @@ uv run python tools/bulk_fetch_activity_details.py --dry-run
 
 # Force re-fetch even if files exist
 uv run python tools/bulk_fetch_activity_details.py --force
+```
 
-# Re-ingest all activities into DuckDB (from raw data)
-uv run python tools/scripts/reingest_duckdb_data.py
+**Purpose:** Fetch specific missing data from Garmin API (e.g., activity_details.json for interval analysis)
 
-# Keep old database (don't delete before re-ingestion)
+#### Data Migration Scripts
+
+```bash
+# Migrate raw data structure (legacy → per-API format)
+uv run python tools/migrate_raw_data_structure.py
+
+# Migrate weight data structure
+uv run python tools/migrate_weight_data.py --all
+
+# Dry run (show what would be migrated)
+uv run python tools/migrate_weight_data.py --dry-run --all
+
+# Verify migration
+uv run python tools/migrate_weight_data.py --verify
+```
+
+**Purpose:** Migrate data between different storage formats
+
+#### ⚠️ PROHIBITED Scripts
+
+**DO NOT USE: `tools/scripts/reingest_duckdb_data.py`**
+
+**Why prohibited:**
+- **Violates separation principle**: Mixes API fetching with regeneration
+- **Deletes DuckDB database** then re-fetches ALL data from Garmin API
+- Makes 1,300+ unnecessary API calls (824 activity + 500+ body composition)
+- Should only re-fetch if raw data is missing
+
+**What it does wrong:**
+1. Deletes existing DuckDB
+2. For each activity: Calls `process_activity()` without checking raw data cache first
+3. `collect_data()` re-fetches from API even when raw data exists
+
+**Correct approach instead:**
+1. Delete DuckDB if needed
+2. Use `GarminIngestWorker.process_activity()` which checks raw data cache first
+3. Only fetches from API if raw data is missing
+
+**Exception:** Only use if you need to completely rebuild from fresh API data (rare case)
+
+```bash
+# ONLY use if you need fresh API data (will make 1,300+ API calls!)
 uv run python tools/scripts/reingest_duckdb_data.py --keep-old
 ```
 
