@@ -150,23 +150,39 @@ class GarminDBReader:
 
             import json
 
+            # Helper function to parse splits (supports both CSV and JSON formats)
+            def parse_splits(splits_str: str | None) -> list[int]:
+                if not splits_str:
+                    return []
+
+                # Try JSON format first (e.g., '[1, 2, 3]')
+                if splits_str.strip().startswith("["):
+                    try:
+                        parsed = json.loads(splits_str)
+                        return cast(list[int], parsed)
+                    except json.JSONDecodeError:
+                        pass
+
+                # Fall back to CSV format (e.g., '1,2,3')
+                return [int(s.strip()) for s in splits_str.split(",")]
+
             trends_data = {
                 "pace_consistency": result[0],
                 "hr_drift_percentage": result[1],
                 "cadence_consistency": result[2],
                 "fatigue_pattern": result[3],
                 "warmup_phase": {
-                    "splits": json.loads(result[4]) if result[4] else [],
+                    "splits": parse_splits(result[4]),
                     "avg_pace": result[5],
                     "avg_hr": result[6],
                 },
                 "run_phase": {
-                    "splits": json.loads(result[7]) if result[7] else [],
+                    "splits": parse_splits(result[7]),
                     "avg_pace": result[8],
                     "avg_hr": result[9],
                 },
                 "cooldown_phase": {
-                    "splits": json.loads(result[13]) if result[13] else [],
+                    "splits": parse_splits(result[13]),
                     "avg_pace": result[14],
                     "avg_hr": result[15],
                 },
@@ -175,7 +191,7 @@ class GarminDBReader:
             # Add recovery_phase only if it exists (4-phase interval training)
             if result[10] is not None:
                 trends_data["recovery_phase"] = {
-                    "splits": json.loads(result[10]),
+                    "splits": parse_splits(result[10]),
                     "avg_pace": result[11],
                     "avg_hr": result[12],
                 }
