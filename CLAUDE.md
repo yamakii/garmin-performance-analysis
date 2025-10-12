@@ -107,8 +107,15 @@ cp .env.example .env
 GARMIN_DATA_DIR=/home/user/private/garmin_data
 GARMIN_RESULT_DIR=/home/user/private/garmin_results
 
-# 3. Paths are automatically loaded by all components
+# 3. Verify configuration
+uv run python -c "from tools.utils.paths import get_data_base_dir, get_result_dir; print('Data:', get_data_base_dir()); print('Result:', get_result_dir())"
 ```
+
+**How It Works:**
+- `.env` file is automatically loaded by `tools/__init__.py` when any `tools` module is imported
+- All scripts (GarminIngestWorker, ReportGeneratorWorker, etc.) inherit the environment variables
+- No manual `load_dotenv()` calls needed in individual scripts
+- Works seamlessly with `uv run python` commands and MCP server execution
 
 **Affected Components:**
 - `GarminIngestWorker`: Uses `get_raw_dir()`, `get_performance_dir()`, `get_precheck_dir()`, `get_weight_raw_dir()`
