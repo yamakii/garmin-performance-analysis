@@ -24,7 +24,7 @@ def insert_hr_efficiency(
     Steps:
     1. Load performance.json
     2. Extract hr_efficiency_analysis
-    3. Insert into hr_efficiency table
+    3. Insert into hr_efficiency table (including zone percentages)
 
     Args:
         performance_file: Path to performance.json
@@ -82,20 +82,29 @@ def insert_hr_efficiency(
         # Delete existing record for this activity (for re-insertion)
         conn.execute("DELETE FROM hr_efficiency WHERE activity_id = ?", [activity_id])
 
-        # Insert hr_efficiency data
-        # Note: Current performance.json only has basic fields, others are NULL
+        # Insert hr_efficiency data with zone percentages
         conn.execute(
             """
             INSERT INTO hr_efficiency (
                 activity_id,
                 hr_stability,
-                training_type
-            ) VALUES (?, ?, ?)
+                training_type,
+                zone1_percentage,
+                zone2_percentage,
+                zone3_percentage,
+                zone4_percentage,
+                zone5_percentage
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 activity_id,
                 hr_eff.get("hr_stability"),
                 hr_eff.get("training_type"),
+                hr_eff.get("zone1_percentage"),
+                hr_eff.get("zone2_percentage"),
+                hr_eff.get("zone3_percentage"),
+                hr_eff.get("zone4_percentage"),
+                hr_eff.get("zone5_percentage"),
             ],
         )
 
