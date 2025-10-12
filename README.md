@@ -106,6 +106,41 @@ pre-commit run --all-files
 - `data/database/`: DuckDB database files
 - `result/`: Final analysis reports
 
+### Configurable Data Paths
+
+**Privacy Protection**: Keep your personal health data separate from the codebase by configuring custom data directories.
+
+#### Setup
+
+1. **Copy the example configuration**:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. **Edit `.env` with your preferred paths**:
+   ```bash
+   # Use absolute paths for safety
+   GARMIN_DATA_DIR=/home/user/garmin_data/data
+   GARMIN_RESULT_DIR=/home/user/garmin_data/results
+   ```
+
+3. **Run the application**:
+   The system automatically uses the configured paths. No code changes needed!
+
+#### Default Behavior
+
+If `.env` is not configured, the system uses default directories:
+- Data: `./data`
+- Results: `./result`
+
+#### Benefits
+
+- **Privacy**: Personal health data stored outside the Git repository
+- **Flexible Storage**: Use external drives or NAS for large datasets
+- **Environment Separation**: Different paths for development/production
+
+For more details, see `docs/GITHUB_PUBLISHING_CHECKLIST.md`.
+
 ## MCP Servers
 
 - **garmin-mcp**: Garmin Connect data access
@@ -121,4 +156,4 @@ See `CLAUDE.md` for detailed configuration and usage guidelines.
 
 ## License
 
-Private project - All rights reserved
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
