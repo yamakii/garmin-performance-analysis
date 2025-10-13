@@ -429,17 +429,6 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
-            name="classify_activity_type",
-            description="Classify activity type based on HR zones, distance, and power (Phase 3.3)",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "activity_id": {"type": "integer"},
-                },
-                "required": ["activity_id"],
-            },
-        ),
-        Tool(
             name="compare_similar_workouts",
             description="Find and compare similar past workouts based on pace and distance (Phase 4.5)",
             inputSchema={
@@ -848,62 +837,6 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 limit=arguments.get("limit", 10),
                 offset=arguments.get("offset", 0),
             )
-
-        return [
-            TextContent(
-                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
-            )
-        ]
-
-    elif name == "classify_activity_type":
-        from tools.rag.utils.activity_classifier import ActivityClassifier
-
-        classifier = ActivityClassifier()
-        activity_id = arguments["activity_id"]
-
-        # Get HR zones data and activity metadata
-        hr_zones_data = db_reader.get_heart_rate_zones_detail(activity_id)
-
-        # Get distance from activities table
-        import duckdb
-
-        try:
-            conn = duckdb.connect(str(db_reader.db_path), read_only=True)
-            activity_result = conn.execute(
-                """
-                SELECT total_distance_km
-                FROM activities
-                WHERE activity_id = ?
-                """,
-                [activity_id],
-            ).fetchone()
-            conn.close()
-
-            distance_km = activity_result[0] if activity_result else 0.0
-        except Exception:
-            distance_km = 0.0
-
-        # Get average power from splits (optional)
-        splits = db_reader.get_splits_all(activity_id)
-        avg_power = None
-        if splits and splits.get("splits"):
-            power_values = [s.get("power") for s in splits["splits"] if s.get("power")]
-            if power_values:
-                import numpy as np
-
-                # Filter out None values and convert to float list
-                power_floats = [float(p) for p in power_values if p is not None]
-                avg_power = float(np.mean(power_floats)) if power_floats else None
-
-        # Classify activity
-        result = classifier.classify(
-            hr_zones_data=hr_zones_data,
-            distance_km=distance_km,
-            avg_power=avg_power,
-        )
-
-        # Add activity_id to result
-        result["activity_id"] = activity_id
 
         return [
             TextContent(

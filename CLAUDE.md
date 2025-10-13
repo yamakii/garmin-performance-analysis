@@ -80,7 +80,7 @@ Raw Data (API) → Performance Data (pre-processed) → Analysis (DuckDB) → Re
 - **Normalized Tables**: `get_form_efficiency_summary`, `get_hr_efficiency_analysis`, `get_heart_rate_zones_detail`, `get_vo2_max_data`, `get_lactate_threshold_data`
 - **Splits Data** (lightweight): `get_splits_pace_hr` (split/phase), `get_splits_form_metrics` (form), `get_splits_elevation` (environment), `get_splits_all` (summary only)
 - **Write**: `insert_section_analysis_dict` (recommended), `insert_section_analysis` (legacy)
-- **RAG Queries**: `get_interval_analysis`, `get_split_time_series_detail` (DuckDB-based, 98.8% token reduction), `get_time_range_detail`, `detect_form_anomalies_summary` (lightweight, ~700 tokens, 95% reduction), `get_form_anomaly_details` (filtered details, variable size), `analyze_performance_trends`, `extract_insights`, `classify_activity_type`, `compare_similar_workouts`
+- **RAG Queries**: `get_interval_analysis`, `get_split_time_series_detail` (DuckDB-based, 98.8% token reduction), `get_time_range_detail`, `detect_form_anomalies_summary` (lightweight, ~700 tokens, 95% reduction), `get_form_anomaly_details` (filtered details, variable size), `analyze_performance_trends`, `extract_insights`, `compare_similar_workouts`
 
 **Note:** Prefer lightweight splits APIs for targeted analysis. Time series tools use DuckDB for 98.8% token reduction. activity_details.json provides 26 second-by-second metrics.
 
