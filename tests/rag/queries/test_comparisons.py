@@ -16,6 +16,9 @@ class TestWorkoutComparator:
         with patch("tools.rag.queries.comparisons.GarminDBReader") as mock_reader:
             comparator = WorkoutComparator()
             comparator.db_reader = mock_reader.return_value
+            # Mock new methods to avoid errors in old tests
+            comparator.db_reader.get_heart_rate_zones_detail.return_value = None  # type: ignore
+            comparator.db_reader.get_weather_data.return_value = None  # type: ignore
             return comparator
 
     def test_initialization(self):
@@ -367,3 +370,361 @@ class TestWorkoutComparator:
         assert (
             "類似するワークアウトが見つかりませんでした" in result["comparison_summary"]
         )
+
+
+class TestTrainingTypeSimilarity:
+    """Test training type similarity matrix."""
+
+    @pytest.fixture
+    def comparator(self):
+        """Create comparator instance."""
+        return WorkoutComparator()
+
+    def test_training_type_similarity_same_type(self, comparator):
+        """Same training type should have similarity 1.0."""
+        assert comparator._get_training_type_similarity("tempo", "tempo") == 1.0
+        assert comparator._get_training_type_similarity("base", "base") == 1.0
+        assert comparator._get_training_type_similarity("recovery", "recovery") == 1.0
+        assert comparator._get_training_type_similarity("sprint", "sprint") == 1.0
+
+    def test_training_type_similarity_same_category(self, comparator):
+        """Same category types should have similarity 0.7-0.9."""
+        # Mid-intensity: Tempo-Threshold
+        similarity = comparator._get_training_type_similarity("tempo", "threshold")
+        assert 0.7 <= similarity <= 0.9
+
+        # Low-intensity: Base-Long Run
+        similarity = comparator._get_training_type_similarity("base", "long_run")
+        assert 0.7 <= similarity <= 0.9
+
+        # High-intensity: VO2 Max-Anaerobic
+        similarity = comparator._get_training_type_similarity("vo2_max", "anaerobic")
+        assert 0.7 <= similarity <= 0.9
+
+        # High-intensity: Anaerobic-Interval
+        similarity = comparator._get_training_type_similarity("anaerobic", "interval")
+        assert 0.7 <= similarity <= 0.9
+
+    def test_training_type_similarity_adjacent_category(self, comparator):
+        """Adjacent category types should have similarity 0.4-0.6."""
+        # Recovery-Base
+        similarity = comparator._get_training_type_similarity("recovery", "base")
+        assert 0.4 <= similarity <= 0.6
+
+        # Base-Tempo
+        similarity = comparator._get_training_type_similarity("base", "tempo")
+        assert 0.4 <= similarity <= 0.6
+
+        # Threshold-VO2 Max
+        similarity = comparator._get_training_type_similarity("threshold", "vo2_max")
+        assert 0.4 <= similarity <= 0.6
+
+    def test_training_type_similarity_different_category(self, comparator):
+        """Different category types should have similarity 0.2-0.3."""
+        # Recovery-Sprint
+        similarity = comparator._get_training_type_similarity("recovery", "sprint")
+        assert 0.2 <= similarity <= 0.3
+
+        # Base-Anaerobic
+        similarity = comparator._get_training_type_similarity("base", "anaerobic")
+        assert 0.2 <= similarity <= 0.3
+
+        # Tempo-Sprint
+        similarity = comparator._get_training_type_similarity("tempo", "sprint")
+        assert 0.2 <= similarity <= 0.3
+
+    def test_training_type_similarity_symmetry(self, comparator):
+        """Similarity should be symmetric: (A,B) == (B,A)."""
+        assert comparator._get_training_type_similarity(
+            "tempo", "base"
+        ) == comparator._get_training_type_similarity("base", "tempo")
+
+        assert comparator._get_training_type_similarity(
+            "threshold", "vo2_max"
+        ) == comparator._get_training_type_similarity("vo2_max", "threshold")
+
+        assert comparator._get_training_type_similarity(
+            "recovery", "sprint"
+        ) == comparator._get_training_type_similarity("sprint", "recovery")
+
+    def test_training_type_similarity_unknown(self, comparator):
+        """Unknown training types should have default similarity 0.3."""
+        assert comparator._get_training_type_similarity("unknown", "tempo") == 0.3
+        assert comparator._get_training_type_similarity("tempo", "unknown") == 0.3
+        assert comparator._get_training_type_similarity("unknown", "unknown") == 1.0
+        assert comparator._get_training_type_similarity("invalid_type", "base") == 0.3
+
+    def test_training_type_similarity_matrix_completeness(self, comparator):
+        """All training type combinations should be defined."""
+        training_types = [
+            "recovery",
+            "base",
+            "long_run",
+            "tempo",
+            "threshold",
+            "vo2_max",
+            "anaerobic",
+            "interval",
+            "sprint",
+        ]
+
+        # Check all combinations
+        for type1 in training_types:
+            for type2 in training_types:
+                similarity = comparator._get_training_type_similarity(type1, type2)
+                assert 0.0 <= similarity <= 1.0
+                assert isinstance(similarity, float)
+
+
+class TestWeatherDataRetrieval:
+    """Test weather data retrieval functionality."""
+
+    @pytest.fixture
+    def comparator(self):
+        """Create comparator instance."""
+        return WorkoutComparator()
+
+    @pytest.mark.unit
+    def test_get_activity_temperature_exists(self, comparator):
+        """Test temperature retrieval when weather data exists."""
+        mock_weather = {"temperature_c": 22.5, "temperature_f": 72.5}
+
+        with patch.object(
+            comparator.db_reader, "get_weather_data", return_value=mock_weather
+        ):
+            temp = comparator._get_activity_temperature(12345)
+            assert temp == 22.5
+
+    @pytest.mark.unit
+    def test_get_activity_temperature_not_exists(self, comparator):
+        """Test temperature retrieval when weather data doesn't exist."""
+        with patch.object(comparator.db_reader, "get_weather_data", return_value=None):
+            temp = comparator._get_activity_temperature(99999999)
+            assert temp is None
+
+    @pytest.mark.unit
+    def test_get_activity_temperature_no_temperature_field(self, comparator):
+        """Test temperature retrieval when weather data has no temperature."""
+        mock_weather = {"humidity": 60, "wind_speed_ms": 3.0}
+
+        with patch.object(
+            comparator.db_reader, "get_weather_data", return_value=mock_weather
+        ):
+            temp = comparator._get_activity_temperature(12345)
+            assert temp is None
+
+    @pytest.mark.unit
+    def test_temperature_difference_calculation(self, comparator):
+        """Test temperature difference calculation accuracy."""
+        temp1 = 25.3
+        temp2 = 19.7
+        diff = temp1 - temp2
+        assert abs(diff - 5.6) < 0.1
+
+
+class TestSimilarityCalculationImproved:
+    """Test improved similarity calculation with training type."""
+
+    @pytest.fixture
+    def comparator(self):
+        """Create comparator instance."""
+        return WorkoutComparator()
+
+    @pytest.mark.unit
+    def test_similarity_same_type_same_pace_distance(self, comparator):
+        """Same type, same pace and distance should be 100% similar."""
+        target = {
+            "avg_pace": 300.0,
+            "distance_km": 10.0,
+            "training_type": "tempo",
+        }
+        candidate = {
+            "avg_pace": 300.0,
+            "distance_km": 10.0,
+            "training_type": "tempo",
+        }
+
+        score = comparator._calculate_similarity_score(target, candidate)
+        assert score == 100.0
+
+    @pytest.mark.unit
+    def test_similarity_same_type_pace_diff_10_percent(self, comparator):
+        """Same type with 10% pace difference should be ~95.5% similar."""
+        target = {
+            "avg_pace": 300.0,
+            "distance_km": 10.0,
+            "training_type": "tempo",
+        }
+        candidate = {
+            "avg_pace": 330.0,  # 10% slower
+            "distance_km": 10.0,
+            "training_type": "tempo",
+        }
+
+        score = comparator._calculate_similarity_score(target, candidate)
+        # 45% * 0.9 + 35% * 1.0 + 20% * 1.0 = 95.5%
+        assert 95.0 <= score <= 96.0
+
+    @pytest.mark.unit
+    def test_similarity_different_type_same_pace_distance(self, comparator):
+        """Different type but same pace/distance should reflect type similarity."""
+        target = {
+            "avg_pace": 300.0,
+            "distance_km": 10.0,
+            "training_type": "tempo",
+        }
+        # Tempo-Threshold similarity: 0.8
+        candidate = {
+            "avg_pace": 300.0,
+            "distance_km": 10.0,
+            "training_type": "threshold",
+        }
+
+        score = comparator._calculate_similarity_score(target, candidate)
+        # 45% * 1.0 + 35% * 1.0 + 20% * 0.8 = 96.0%
+        assert 95.0 <= score <= 97.0
+
+    @pytest.mark.unit
+    def test_similarity_very_different_type(self, comparator):
+        """Very different training types should lower similarity significantly."""
+        target = {
+            "avg_pace": 300.0,
+            "distance_km": 10.0,
+            "training_type": "recovery",
+        }
+        # Recovery-Sprint similarity: 0.2
+        candidate = {
+            "avg_pace": 300.0,
+            "distance_km": 10.0,
+            "training_type": "sprint",
+        }
+
+        score = comparator._calculate_similarity_score(target, candidate)
+        # 45% * 1.0 + 35% * 1.0 + 20% * 0.2 = 84.0%
+        assert 83.0 <= score <= 85.0
+
+    @pytest.mark.unit
+    def test_similarity_clamp_to_100(self, comparator):
+        """Similarity should be clamped to maximum 100%."""
+        target = {
+            "avg_pace": 300.0,
+            "distance_km": 10.0,
+            "training_type": "tempo",
+        }
+        candidate = {
+            "avg_pace": 300.0,
+            "distance_km": 10.0,
+            "training_type": "tempo",
+        }
+
+        score = comparator._calculate_similarity_score(target, candidate)
+        assert score <= 100.0
+
+    @pytest.mark.unit
+    def test_similarity_clamp_to_0(self, comparator):
+        """Similarity should be clamped to minimum 0%."""
+        target = {
+            "avg_pace": 300.0,
+            "distance_km": 10.0,
+            "training_type": "tempo",
+        }
+        candidate = {
+            "avg_pace": 600.0,  # 2x slower
+            "distance_km": 5.0,  # Half distance
+            "training_type": "sprint",  # Very different type
+        }
+
+        score = comparator._calculate_similarity_score(target, candidate)
+        assert score >= 0.0
+
+    @pytest.mark.unit
+    def test_similarity_missing_training_type(self, comparator):
+        """Missing training type should use default 0.3 similarity."""
+        target = {
+            "avg_pace": 300.0,
+            "distance_km": 10.0,
+            "training_type": "tempo",
+        }
+        candidate = {
+            "avg_pace": 300.0,
+            "distance_km": 10.0,
+            "training_type": "unknown",
+        }
+
+        score = comparator._calculate_similarity_score(target, candidate)
+        # 45% * 1.0 + 35% * 1.0 + 20% * 0.3 = 86.0%
+        assert 85.0 <= score <= 87.0
+
+
+class TestInterpretationWithTemperature:
+    """Test interpretation generation with temperature context."""
+
+    @pytest.fixture
+    def comparator(self):
+        """Create comparator instance."""
+        return WorkoutComparator()
+
+    @pytest.mark.unit
+    def test_interpretation_with_temp_increase(self, comparator):
+        """Interpretation should include temperature increase context."""
+        pace_diff = -3.2  # 3.2 seconds faster
+        hr_diff = 12.0  # 12 bpm higher
+        temp_diff = 6.0  # 6°C hotter
+
+        result = comparator._generate_interpretation(pace_diff, hr_diff, temp_diff)
+
+        assert "3.2秒/km速い" in result
+        assert "12bpm高い" in result
+        assert "気温+6°C影響" in result or "気温+6°C" in result
+
+    @pytest.mark.unit
+    def test_interpretation_with_temp_decrease(self, comparator):
+        """Interpretation should include temperature decrease context."""
+        pace_diff = 2.1  # 2.1 seconds slower
+        hr_diff = -5.0  # 5 bpm lower
+        temp_diff = -2.0  # 2°C cooler
+
+        result = comparator._generate_interpretation(pace_diff, hr_diff, temp_diff)
+
+        assert "2.1秒/km遅い" in result
+        assert "5bpm低い" in result
+        assert "気温-2°C影響" in result or "気温-2°C" in result
+
+    @pytest.mark.unit
+    def test_interpretation_no_temp_data(self, comparator):
+        """Interpretation without temperature data should work."""
+        pace_diff = -1.0  # 1.0 second faster (negative = faster)
+        hr_diff = 3.0  # 3 bpm higher
+        temp_diff = None  # No temperature data
+
+        result = comparator._generate_interpretation(pace_diff, hr_diff, temp_diff)
+
+        assert "1.0秒/km速い" in result
+        assert "3bpm高い" in result
+        assert "気温" not in result
+
+    @pytest.mark.unit
+    def test_interpretation_small_temp_diff(self, comparator):
+        """Small temperature differences (<1°C) should not show temperature context."""
+        pace_diff = -0.5  # 0.5 seconds faster (negative = faster)
+        hr_diff = 2.0  # 2 bpm higher
+        temp_diff = 0.8  # Only 0.8°C difference
+
+        result = comparator._generate_interpretation(pace_diff, hr_diff, temp_diff)
+
+        assert "0.5秒/km速い" in result
+        assert "2bpm高い" in result
+        assert "気温" not in result  # Should not show for small differences
+
+    @pytest.mark.unit
+    def test_interpretation_large_temp_diff(self, comparator):
+        """Large temperature differences should be prominent."""
+        pace_diff = -1.5  # 1.5 seconds faster
+        hr_diff = 18.0  # 18 bpm higher
+        temp_diff = 15.0  # 15°C hotter (summer vs winter)
+
+        result = comparator._generate_interpretation(pace_diff, hr_diff, temp_diff)
+
+        assert "1.5秒/km速い" in result
+        assert "18bpm高い" in result
+        assert "気温+15°C" in result

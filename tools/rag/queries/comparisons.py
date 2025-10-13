@@ -34,6 +34,115 @@ class WorkoutComparator:
         """
         self.db_reader = GarminDBReader(db_path)
 
+    # Training type hierarchical similarity matrix
+    # Based on training intensity and purpose
+    # All keys are sorted tuples for symmetric lookup
+    TRAINING_TYPE_SIMILARITY = {
+        # Recovery - very low intensity
+        ("recovery", "recovery"): 1.0,
+        ("base", "recovery"): 0.6,
+        ("long_run", "recovery"): 0.5,
+        ("recovery", "tempo"): 0.3,
+        ("recovery", "threshold"): 0.2,
+        ("recovery", "vo2_max"): 0.2,
+        ("anaerobic", "recovery"): 0.2,
+        ("interval", "recovery"): 0.2,
+        ("recovery", "sprint"): 0.2,
+        # Base - low intensity
+        ("base", "base"): 1.0,
+        ("base", "long_run"): 0.9,
+        ("base", "tempo"): 0.4,
+        ("base", "threshold"): 0.3,
+        ("base", "vo2_max"): 0.2,
+        ("anaerobic", "base"): 0.2,
+        ("base", "interval"): 0.2,
+        ("base", "sprint"): 0.2,
+        # Long Run - low intensity
+        ("long_run", "long_run"): 1.0,
+        ("long_run", "tempo"): 0.4,
+        ("long_run", "threshold"): 0.3,
+        ("long_run", "vo2_max"): 0.2,
+        ("anaerobic", "long_run"): 0.2,
+        ("interval", "long_run"): 0.2,
+        ("long_run", "sprint"): 0.2,
+        # Tempo - mid intensity
+        ("tempo", "tempo"): 1.0,
+        ("tempo", "threshold"): 0.8,
+        ("tempo", "vo2_max"): 0.3,
+        ("anaerobic", "tempo"): 0.3,
+        ("interval", "tempo"): 0.3,
+        ("sprint", "tempo"): 0.2,
+        # Threshold - mid-high intensity
+        ("threshold", "threshold"): 1.0,
+        ("threshold", "vo2_max"): 0.4,
+        ("anaerobic", "threshold"): 0.3,
+        ("interval", "threshold"): 0.3,
+        ("sprint", "threshold"): 0.2,
+        # VO2 Max - high intensity
+        ("vo2_max", "vo2_max"): 1.0,
+        ("anaerobic", "vo2_max"): 0.7,
+        ("interval", "vo2_max"): 0.6,
+        ("sprint", "vo2_max"): 0.3,
+        # Anaerobic - high intensity
+        ("anaerobic", "anaerobic"): 1.0,
+        ("anaerobic", "interval"): 0.8,
+        ("anaerobic", "sprint"): 0.4,
+        # Interval - very high intensity
+        ("interval", "interval"): 1.0,
+        ("interval", "sprint"): 0.7,
+        # Sprint - maximum intensity
+        ("sprint", "sprint"): 1.0,
+        # Unknown - default similarity
+        ("unknown", "unknown"): 1.0,
+    }
+
+    def _get_training_type_similarity(self, type1: str, type2: str) -> float:
+        """Get training type similarity score from matrix.
+
+        Returns similarity based on hierarchical training type relationships:
+        - Same type: 1.0
+        - Same category (e.g., Tempo-Threshold): 0.7-0.9
+        - Adjacent category (e.g., Base-Tempo): 0.4-0.6
+        - Different category (e.g., Recovery-Sprint): 0.2-0.3
+
+        Args:
+            type1: First training type (e.g., "tempo")
+            type2: Second training type (e.g., "threshold")
+
+        Returns:
+            Similarity score (0.0-1.0)
+        """
+        # Normalize to lowercase
+        type1 = type1.lower()
+        type2 = type2.lower()
+
+        # Create sorted key for symmetric lookup
+        sorted_types = sorted([type1, type2])
+        key = (sorted_types[0], sorted_types[1])
+
+        # Return similarity from matrix, default to 0.3 for unknown combinations
+        return self.TRAINING_TYPE_SIMILARITY.get(key, 0.3)
+
+    def _get_activity_temperature(self, activity_id: int) -> float | None:
+        """Get temperature for activity from database.
+
+        Args:
+            activity_id: Activity ID
+
+        Returns:
+            Temperature in Celsius, or None if not available
+        """
+        try:
+            weather_data = self.db_reader.get_weather_data(activity_id)
+            if not weather_data:
+                return None
+
+            return weather_data.get("temperature_c")
+
+        except Exception as e:
+            logger.error(f"Error getting temperature for activity {activity_id}: {e}")
+            return None
+
     def _execute_query(self, query: str, params: list[Any]):
         """Execute a database query.
 
@@ -148,7 +257,7 @@ class WorkoutComparator:
         try:
             results = self._execute_query(query, params).fetchall()
 
-            # Convert to dict format
+            # Convert to dict format and classify each candidate
             similar_activities = []
             for row in results:
                 candidate = {
@@ -164,6 +273,36 @@ class WorkoutComparator:
                     "avg_power": row[9],
                 }
 
+                # Add training type classification for candidate
+                try:
+                    from tools.rag.utils.activity_classifier import ActivityClassifier
+
+                    classifier = ActivityClassifier()
+                    hr_zones = self.db_reader.get_heart_rate_zones_detail(
+                        candidate["activity_id"]
+                    )
+                    if hr_zones:
+                        classification = classifier.classify(
+                            hr_zones_data=hr_zones,
+                            distance_km=candidate["distance_km"],
+                            avg_power=candidate["avg_power"],
+                        )
+                        candidate["training_type"] = (
+                            classification["type_en"].lower().replace(" ", "_")
+                        )
+                    else:
+                        candidate["training_type"] = "unknown"
+                except Exception as e:
+                    logger.warning(
+                        f"Could not classify training type for activity {candidate['activity_id']}: {e}"
+                    )
+                    candidate["training_type"] = "unknown"
+
+                # Add temperature for candidate
+                candidate["temperature"] = self._get_activity_temperature(
+                    candidate["activity_id"]
+                )
+
                 # Calculate similarity metrics
                 similarity_score = self._calculate_similarity_score(target, candidate)
                 pace_diff = candidate["avg_pace"] - target["avg_pace"]
@@ -173,16 +312,27 @@ class WorkoutComparator:
                     else 0.0
                 )
 
+                # Calculate temperature difference
+                temp_diff = None
+                if (
+                    target["temperature"] is not None
+                    and candidate["temperature"] is not None
+                ):
+                    temp_diff = candidate["temperature"] - target["temperature"]
+
                 similar_activities.append(
                     {
                         "activity_id": candidate["activity_id"],
                         "activity_date": candidate["activity_date"],
                         "activity_name": candidate["activity_name"],
+                        "training_type": candidate["training_type"],
+                        "temperature": candidate["temperature"],
+                        "temperature_diff": temp_diff,
                         "similarity_score": round(similarity_score, 1),
                         "pace_diff": round(pace_diff, 1),
                         "hr_diff": round(hr_diff, 1),
                         "interpretation": self._generate_interpretation(
-                            pace_diff, hr_diff
+                            pace_diff, hr_diff, temp_diff
                         ),
                     }
                 )
@@ -217,7 +367,7 @@ class WorkoutComparator:
             activity_id: Activity ID
 
         Returns:
-            Activity data dict or None if not found
+            Activity data dict with training_type and temperature, or None if not found
         """
         try:
             query = """
@@ -240,7 +390,7 @@ class WorkoutComparator:
             if not row:
                 return None
 
-            return {
+            activity_data = {
                 "activity_id": row[0],
                 "activity_date": row[1],
                 "activity_name": row[2],
@@ -253,6 +403,34 @@ class WorkoutComparator:
                 "avg_power": row[9],
             }
 
+            # Add training type classification
+            try:
+                from tools.rag.utils.activity_classifier import ActivityClassifier
+
+                classifier = ActivityClassifier()
+                hr_zones = self.db_reader.get_heart_rate_zones_detail(activity_id)
+                if hr_zones:
+                    classification = classifier.classify(
+                        hr_zones_data=hr_zones,
+                        distance_km=activity_data["distance_km"],
+                        avg_power=activity_data["avg_power"],
+                    )
+                    activity_data["training_type"] = (
+                        classification["type_en"].lower().replace(" ", "_")
+                    )
+                else:
+                    activity_data["training_type"] = "unknown"
+            except Exception as e:
+                logger.warning(
+                    f"Could not classify training type for activity {activity_id}: {e}"
+                )
+                activity_data["training_type"] = "unknown"
+
+            # Add temperature data
+            activity_data["temperature"] = self._get_activity_temperature(activity_id)
+
+            return activity_data
+
         except Exception as e:
             logger.error(f"Error getting target activity {activity_id}: {e}")
             return None
@@ -263,8 +441,9 @@ class WorkoutComparator:
         """Calculate similarity score between target and candidate workouts.
 
         Similarity is based on:
-        - Pace similarity (60% weight)
-        - Distance similarity (40% weight)
+        - Pace similarity (45% weight)
+        - Distance similarity (35% weight)
+        - Training type similarity (20% weight)
 
         Args:
             target: Target activity data
@@ -285,24 +464,49 @@ class WorkoutComparator:
             / target["distance_km"]
         )
 
-        # Weighted average (pace 60%, distance 40%)
-        similarity = (pace_similarity * 0.6 + distance_similarity * 0.4) * 100
+        # Training type similarity
+        target_type = target.get("training_type", "unknown")
+        candidate_type = candidate.get("training_type", "unknown")
+        type_similarity = self._get_training_type_similarity(
+            target_type, candidate_type
+        )
+
+        # Weighted average (pace 45%, distance 35%, training type 20%)
+        similarity = (
+            pace_similarity * 0.45 + distance_similarity * 0.35 + type_similarity * 0.20
+        ) * 100
 
         return float(
             max(0.0, min(100.0, similarity))
-        )  # Clamp to 0-100%  # Clamp to 0-100%
+        )  # Clamp to 0-100%  # Clamp to 0-100%  # Clamp to 0-100%
 
-    def _generate_interpretation(self, pace_diff: float, hr_diff: float) -> str:
+    def _generate_interpretation(
+        self, pace_diff: float, hr_diff: float, temp_diff: float | None = None
+    ) -> str:
         """Generate human-readable interpretation of performance difference.
 
         Args:
             pace_diff: Pace difference in seconds/km (negative = faster)
             hr_diff: Heart rate difference in bpm (negative = lower)
+            temp_diff: Temperature difference in Celsius (None if unavailable)
 
         Returns:
-            Japanese interpretation string
+            Japanese interpretation string with temperature context when applicable
+
+        Examples:
+            - "ペース: 3.2秒/km速い, 心拍: 12bpm高い（気温+6°C影響）"
+            - "ペース: 2.1秒/km遅い, 心拍: 5bpm低い（気温-2°C影響）"
+            - "ペース: 1.0秒/km速い, 心拍: 3bpm高い"  # No temp data
         """
         pace_text = f"{abs(pace_diff):.1f}秒/km{'速い' if pace_diff < 0 else '遅い'}"
+
         hr_text = f"{abs(hr_diff):.0f}bpm{'低い' if hr_diff < 0 else '高い'}"
 
-        return f"ペース: {pace_text}, 心拍数: {hr_text}"
+        # Add temperature context if difference is significant (>1°C)
+        if temp_diff is not None and abs(temp_diff) > 1.0:
+            temp_context = (
+                f"（気温{'+' if temp_diff > 0 else ''}{temp_diff:.0f}°C影響）"
+            )
+            hr_text += temp_context
+
+        return f"ペース: {pace_text}, 心拍: {hr_text}"
