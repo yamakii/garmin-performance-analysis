@@ -34,6 +34,95 @@ class WorkoutComparator:
         """
         self.db_reader = GarminDBReader(db_path)
 
+    # Training type hierarchical similarity matrix
+    # Based on training intensity and purpose
+    # All keys are sorted tuples for symmetric lookup
+    TRAINING_TYPE_SIMILARITY = {
+        # Recovery - very low intensity
+        ("recovery", "recovery"): 1.0,
+        ("base", "recovery"): 0.6,
+        ("long_run", "recovery"): 0.5,
+        ("recovery", "tempo"): 0.3,
+        ("recovery", "threshold"): 0.2,
+        ("recovery", "vo2_max"): 0.2,
+        ("anaerobic", "recovery"): 0.2,
+        ("interval", "recovery"): 0.2,
+        ("recovery", "sprint"): 0.2,
+        # Base - low intensity
+        ("base", "base"): 1.0,
+        ("base", "long_run"): 0.9,
+        ("base", "tempo"): 0.4,
+        ("base", "threshold"): 0.3,
+        ("base", "vo2_max"): 0.2,
+        ("anaerobic", "base"): 0.2,
+        ("base", "interval"): 0.2,
+        ("base", "sprint"): 0.2,
+        # Long Run - low intensity
+        ("long_run", "long_run"): 1.0,
+        ("long_run", "tempo"): 0.4,
+        ("long_run", "threshold"): 0.3,
+        ("long_run", "vo2_max"): 0.2,
+        ("anaerobic", "long_run"): 0.2,
+        ("interval", "long_run"): 0.2,
+        ("long_run", "sprint"): 0.2,
+        # Tempo - mid intensity
+        ("tempo", "tempo"): 1.0,
+        ("tempo", "threshold"): 0.8,
+        ("tempo", "vo2_max"): 0.3,
+        ("anaerobic", "tempo"): 0.3,
+        ("interval", "tempo"): 0.3,
+        ("sprint", "tempo"): 0.2,
+        # Threshold - mid-high intensity
+        ("threshold", "threshold"): 1.0,
+        ("threshold", "vo2_max"): 0.4,
+        ("anaerobic", "threshold"): 0.3,
+        ("interval", "threshold"): 0.3,
+        ("sprint", "threshold"): 0.2,
+        # VO2 Max - high intensity
+        ("vo2_max", "vo2_max"): 1.0,
+        ("anaerobic", "vo2_max"): 0.7,
+        ("interval", "vo2_max"): 0.6,
+        ("sprint", "vo2_max"): 0.3,
+        # Anaerobic - high intensity
+        ("anaerobic", "anaerobic"): 1.0,
+        ("anaerobic", "interval"): 0.8,
+        ("anaerobic", "sprint"): 0.4,
+        # Interval - very high intensity
+        ("interval", "interval"): 1.0,
+        ("interval", "sprint"): 0.7,
+        # Sprint - maximum intensity
+        ("sprint", "sprint"): 1.0,
+        # Unknown - default similarity
+        ("unknown", "unknown"): 1.0,
+    }
+
+    def _get_training_type_similarity(self, type1: str, type2: str) -> float:
+        """Get training type similarity score from matrix.
+
+        Returns similarity based on hierarchical training type relationships:
+        - Same type: 1.0
+        - Same category (e.g., Tempo-Threshold): 0.7-0.9
+        - Adjacent category (e.g., Base-Tempo): 0.4-0.6
+        - Different category (e.g., Recovery-Sprint): 0.2-0.3
+
+        Args:
+            type1: First training type (e.g., "tempo")
+            type2: Second training type (e.g., "threshold")
+
+        Returns:
+            Similarity score (0.0-1.0)
+        """
+        # Normalize to lowercase
+        type1 = type1.lower()
+        type2 = type2.lower()
+
+        # Create sorted key for symmetric lookup
+        sorted_types = sorted([type1, type2])
+        key = (sorted_types[0], sorted_types[1])
+
+        # Return similarity from matrix, default to 0.3 for unknown combinations
+        return self.TRAINING_TYPE_SIMILARITY.get(key, 0.3)
+
     def _execute_query(self, query: str, params: list[Any]):
         """Execute a database query.
 

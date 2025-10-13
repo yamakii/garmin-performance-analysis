@@ -367,3 +367,107 @@ class TestWorkoutComparator:
         assert (
             "類似するワークアウトが見つかりませんでした" in result["comparison_summary"]
         )
+
+
+class TestTrainingTypeSimilarity:
+    """Test training type similarity matrix."""
+
+    @pytest.fixture
+    def comparator(self):
+        """Create comparator instance."""
+        return WorkoutComparator()
+
+    def test_training_type_similarity_same_type(self, comparator):
+        """Same training type should have similarity 1.0."""
+        assert comparator._get_training_type_similarity("tempo", "tempo") == 1.0
+        assert comparator._get_training_type_similarity("base", "base") == 1.0
+        assert comparator._get_training_type_similarity("recovery", "recovery") == 1.0
+        assert comparator._get_training_type_similarity("sprint", "sprint") == 1.0
+
+    def test_training_type_similarity_same_category(self, comparator):
+        """Same category types should have similarity 0.7-0.9."""
+        # Mid-intensity: Tempo-Threshold
+        similarity = comparator._get_training_type_similarity("tempo", "threshold")
+        assert 0.7 <= similarity <= 0.9
+
+        # Low-intensity: Base-Long Run
+        similarity = comparator._get_training_type_similarity("base", "long_run")
+        assert 0.7 <= similarity <= 0.9
+
+        # High-intensity: VO2 Max-Anaerobic
+        similarity = comparator._get_training_type_similarity("vo2_max", "anaerobic")
+        assert 0.7 <= similarity <= 0.9
+
+        # High-intensity: Anaerobic-Interval
+        similarity = comparator._get_training_type_similarity("anaerobic", "interval")
+        assert 0.7 <= similarity <= 0.9
+
+    def test_training_type_similarity_adjacent_category(self, comparator):
+        """Adjacent category types should have similarity 0.4-0.6."""
+        # Recovery-Base
+        similarity = comparator._get_training_type_similarity("recovery", "base")
+        assert 0.4 <= similarity <= 0.6
+
+        # Base-Tempo
+        similarity = comparator._get_training_type_similarity("base", "tempo")
+        assert 0.4 <= similarity <= 0.6
+
+        # Threshold-VO2 Max
+        similarity = comparator._get_training_type_similarity("threshold", "vo2_max")
+        assert 0.4 <= similarity <= 0.6
+
+    def test_training_type_similarity_different_category(self, comparator):
+        """Different category types should have similarity 0.2-0.3."""
+        # Recovery-Sprint
+        similarity = comparator._get_training_type_similarity("recovery", "sprint")
+        assert 0.2 <= similarity <= 0.3
+
+        # Base-Anaerobic
+        similarity = comparator._get_training_type_similarity("base", "anaerobic")
+        assert 0.2 <= similarity <= 0.3
+
+        # Tempo-Sprint
+        similarity = comparator._get_training_type_similarity("tempo", "sprint")
+        assert 0.2 <= similarity <= 0.3
+
+    def test_training_type_similarity_symmetry(self, comparator):
+        """Similarity should be symmetric: (A,B) == (B,A)."""
+        assert comparator._get_training_type_similarity(
+            "tempo", "base"
+        ) == comparator._get_training_type_similarity("base", "tempo")
+
+        assert comparator._get_training_type_similarity(
+            "threshold", "vo2_max"
+        ) == comparator._get_training_type_similarity("vo2_max", "threshold")
+
+        assert comparator._get_training_type_similarity(
+            "recovery", "sprint"
+        ) == comparator._get_training_type_similarity("sprint", "recovery")
+
+    def test_training_type_similarity_unknown(self, comparator):
+        """Unknown training types should have default similarity 0.3."""
+        assert comparator._get_training_type_similarity("unknown", "tempo") == 0.3
+        assert comparator._get_training_type_similarity("tempo", "unknown") == 0.3
+        assert comparator._get_training_type_similarity("unknown", "unknown") == 1.0
+        assert comparator._get_training_type_similarity("invalid_type", "base") == 0.3
+
+    def test_training_type_similarity_matrix_completeness(self, comparator):
+        """All training type combinations should be defined."""
+        training_types = [
+            "recovery",
+            "base",
+            "long_run",
+            "tempo",
+            "threshold",
+            "vo2_max",
+            "anaerobic",
+            "interval",
+            "sprint",
+        ]
+
+        # Check all combinations
+        for type1 in training_types:
+            for type2 in training_types:
+                similarity = comparator._get_training_type_similarity(type1, type2)
+                assert 0.0 <= similarity <= 1.0
+                assert isinstance(similarity, float)
