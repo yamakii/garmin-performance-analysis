@@ -481,6 +481,7 @@ async def list_tools() -> list[Tool]:
     ]
 
 
+@mcp.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """Handle tool calls."""
     import json
