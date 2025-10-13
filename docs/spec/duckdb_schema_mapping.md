@@ -16,6 +16,7 @@ erDiagram
     activities ||--|| vo2_max : "has one"
     activities ||--|| lactate_threshold : "has one"
     activities ||--o{ section_analyses : "has many"
+    activities ||--o{ time_series_metrics : "has many"
     body_composition }o..o{ activities : "used for median calculation"
 
     activities {
@@ -117,6 +118,21 @@ erDiagram
         VARCHAR agent_version
     }
 
+    time_series_metrics {
+        BIGINT activity_id FK
+        INTEGER seq_no
+        INTEGER timestamp_s
+        DOUBLE heart_rate
+        DOUBLE speed
+        DOUBLE cadence
+        DOUBLE power
+        DOUBLE ground_contact_time
+        DOUBLE vertical_oscillation
+        DOUBLE vertical_ratio
+        DOUBLE elevation
+        DOUBLE air_temperature
+    }
+
     body_composition {
         INTEGER measurement_id PK
         DATE date UK
@@ -142,6 +158,7 @@ erDiagram
 **2. 1対多の関係**
 - `activities → splits`: 1つのアクティビティに複数のスプリット（通常1km毎）
 - `activities → section_analyses`: 1つのアクティビティに複数の分析セクション（efficiency/environment/phase/split/summary）
+- `activities → time_series_metrics`: 1つのアクティビティに複数の秒単位時系列データ（平均1,500-2,000レコード/アクティビティ）
 
 **3. 1対1の関係**
 - `activities → heart_rate_zones`: 心拍ゾーン情報（ゾーン1-5を1レコードに格納）
@@ -448,7 +465,61 @@ result/individual/YYYY/MM/YYYY-MM-DD_activity_ID.md
 3. **バージョン管理**: `agent_version`でエージェントのバージョンを記録（分析ロジック変更時のトレーサビリティ）
 4. **レポート生成**: 最終的にMarkdownレポートの各セクションとして使用される
 
-### 10. body_composition テーブル
+### 10. time_series_metrics テーブル
+**格納元:** `raw/activity/{activity_id}/activity_details.json`
+
+| DuckDB Column | activity_details.json Path | 型 | 説明 |
+|--------------|---------------------------|-----|------|
+| activity_id | - | BIGINT | アクティビティID |
+| seq_no | - | INTEGER | シーケンス番号（0-indexed, PRIMARY KEY） |
+| timestamp_s | metricDescriptors["sumDuration"] (÷1000) | INTEGER | 開始からの経過秒数 |
+| sum_moving_duration | metricDescriptors["sumMovingDuration"] (÷1000) | DOUBLE | 累計移動時間（秒） |
+| sum_duration | metricDescriptors["sumDuration"] (÷1000) | DOUBLE | 累計経過時間（秒） |
+| sum_elapsed_duration | metricDescriptors["sumElapsedDuration"] (÷1000) | DOUBLE | 累計実時間（秒） |
+| sum_distance | metricDescriptors["sumDistance"] (÷100) | DOUBLE | 累計距離（m） |
+| sum_accumulated_power | metricDescriptors["sumAccumulatedPower"] | DOUBLE | 累計パワー（W） |
+| heart_rate | metricDescriptors["directHeartRate"] | DOUBLE | 心拍数（bpm） |
+| speed | metricDescriptors["directSpeed"] (×0.1) | DOUBLE | 速度（m/s） |
+| grade_adjusted_speed | metricDescriptors["directGradeAdjustedSpeed"] (×0.1) | DOUBLE | 勾配調整速度（m/s） |
+| cadence | metricDescriptors["directRunCadence"] | DOUBLE | ケイデンス（spm） |
+| power | metricDescriptors["directPower"] | DOUBLE | パワー（W） |
+| ground_contact_time | metricDescriptors["directGroundContactTime"] | DOUBLE | 接地時間（ms） |
+| vertical_oscillation | metricDescriptors["directVerticalOscillation"] | DOUBLE | 垂直振動（cm） |
+| vertical_ratio | metricDescriptors["directVerticalRatio"] | DOUBLE | 垂直比率（無次元） |
+| stride_length | metricDescriptors["directStrideLength"] | DOUBLE | ストライド長（cm） |
+| vertical_speed | metricDescriptors["directVerticalSpeed"] (×0.1) | DOUBLE | 垂直速度（m/s） |
+| elevation | metricDescriptors["directElevation"] (÷100) | DOUBLE | 標高（m） |
+| air_temperature | metricDescriptors["directAirTemperature"] | DOUBLE | 気温（℃） |
+| latitude | metricDescriptors["directLatitude"] | DOUBLE | 緯度（度） |
+| longitude | metricDescriptors["directLongitude"] | DOUBLE | 経度（度） |
+| available_stamina | metricDescriptors["directAvailableStamina"] | DOUBLE | 利用可能スタミナ |
+| potential_stamina | metricDescriptors["directPotentialStamina"] | DOUBLE | 潜在スタミナ |
+| body_battery | metricDescriptors["directBodyBattery"] | DOUBLE | ボディバッテリー |
+| performance_condition | metricDescriptors["directPerformanceCondition"] | DOUBLE | パフォーマンスコンディション |
+| fractional_cadence | metricDescriptors["directFractionalCadence"] | DOUBLE | 小数部ケイデンス |
+| double_cadence | metricDescriptors["directDoubleCadence"] | DOUBLE | 倍ケイデンス |
+
+**PRIMARY KEY**: `(activity_id, seq_no)`
+**INDEX**: `(activity_id)`, `(activity_id, timestamp_s)` で時間範囲クエリを最適化
+
+**データ構造:**
+- **行数**: 1アクティビティあたり平均1,500-2,000行（秒単位データ）
+- **トークン効率**: 98.8%削減（18,895 → 222 tokens/split analysis）
+- **データソース**: `activity_details.json` の `activityDetailMetrics[]` 配列
+- **メトリクス解析**: `metricDescriptors[]` でメトリクス名とインデックスをマッピング
+- **Unit conversion**: `factor` を適用（例: speed × 0.1, elevation ÷ 100.0, sumDuration ÷ 1000.0）
+
+**実装:**
+- 挿入: `tools/database/inserters/time_series_metrics.py::insert_time_series_metrics()`
+- 自動統合: `GarminIngestWorker.save_data()` で自動的に挿入
+- マイグレーション: `tools/scripts/migrate_time_series_to_duckdb.py` で既存データを一括移行
+
+**MCP Tool最適化:**
+- `get_split_time_series_detail`: DuckDB SQL統計計算で98.8%トークン削減
+- `get_time_range_detail`: SQL WHERE timestamp_s BETWEEN で効率的な範囲クエリ
+- `detect_form_anomalies`: SQL Window functionsでz-score計算
+
+### 11. body_composition テーブル
 **格納元:** `weight_cache/raw/weight_YYYY-MM-DD_raw.json`
 
 | DuckDB Column | weight_cache Path | 型 | 説明 |
@@ -552,6 +623,14 @@ result/individual/YYYY/MM/YYYY-MM-DD_activity_ID.md
   - 実装: `GarminDBWriter.insert_section_analysis()`
   - データソース: エージェント分析結果JSON
   - セクションタイプ: efficiency, environment, phase, split, summary
+
+### 時系列データテーブル（activity_details.json由来）
+- ✅ `time_series_metrics` - 秒単位時系列データ（163,163 records）
+  - 実装: `tools/database/inserters/time_series_metrics.py::insert_time_series_metrics()`
+  - データソース: `raw/activity/{activity_id}/activity_details.json`
+  - 26メトリクス: HR, speed, cadence, power, GCT, VO, VR, elevation, temperature, GPS, stamina等
+  - トークン効率: 98.8%削減（18,895 → 222 tokens/split analysis）
+  - 平均行数: 1,568.9行/アクティビティ（最小131, 最大2,771）
 
 ### 体組成テーブル（Garmin体組成計由来）
 - ✅ `body_composition` - 体組成データ（111 records）
