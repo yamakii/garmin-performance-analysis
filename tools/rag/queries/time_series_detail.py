@@ -94,7 +94,7 @@ class TimeSeriesDetailExtractor:
                 FROM splits
                 WHERE activity_id = ? AND split_index = ?
                 """,
-                [activity_id, split_number - 1],  # Convert to 0-based index
+                [activity_id, split_number],  # split_index is 1-based in DuckDB
             ).fetchone()
 
             conn.close()
