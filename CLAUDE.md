@@ -90,141 +90,35 @@ GarminIngestWorker: [API calls → raw_data.json → create_parquet_dataset() �
 
 ### Configurable Data Paths
 
-**NEW (2025-10-11): Data and result directories can now be configured via environment variables for privacy and data separation.**
-
-The system supports custom data directory locations to enable secure code publishing while keeping personal health data separate from the codebase.
+Data and result directories can be configured via environment variables for privacy protection.
 
 **Environment Variables:**
 - `GARMIN_DATA_DIR`: Base data directory (default: `./data`)
 - `GARMIN_RESULT_DIR`: Result directory (default: `./result`)
 
-**Configuration Setup:**
-```bash
-# 1. Copy .env.example to .env
-cp .env.example .env
+**Setup:** Copy `.env.example` to `.env` and set paths. The `.env` file is automatically loaded by `tools/__init__.py`. Optional: Use `direnv` for automatic environment loading (`.envrc` provided).
 
-# 2. Set custom paths in .env
-GARMIN_DATA_DIR=/home/user/private/garmin_data
-GARMIN_RESULT_DIR=/home/user/private/garmin_results
-
-# 3. Verify configuration
-uv run python -c "from tools.utils.paths import get_data_base_dir, get_result_dir; print('Data:', get_data_base_dir()); print('Result:', get_result_dir())"
-
-# 4. (Optional) Setup direnv for automatic environment loading
-# Install direnv if not already installed
-# Ubuntu/Debian: sudo apt install direnv
-# Or: curl -sfL https://direnv.net/install.sh | bash
-
-# Add direnv hook to your shell (~/.bashrc or ~/.zshrc)
-eval "$(direnv hook bash)"  # For bash
-# eval "$(direnv hook zsh)"  # For zsh
-
-# Allow direnv to load .envrc (already created in repository)
-direnv allow
-```
-
-**direnv Integration:**
-- A `.envrc` file is provided in the repository that automatically loads `.env` when you `cd` into the project directory
-- With direnv configured, environment variables are available to all shell commands (not just `uv run python`)
-- This eliminates the need to manually source `.env` or prefix commands with environment variables
-- Worktree-compatible: Each worktree can have its own `.envrc` pointing to the same or different `.env` files
-
-**How It Works:**
-- `.env` file is automatically loaded by `tools/__init__.py` when any `tools` module is imported
-- All scripts (GarminIngestWorker, ReportGeneratorWorker, etc.) inherit the environment variables
-- No manual `load_dotenv()` calls needed in individual scripts
-- Works seamlessly with `uv run python` commands and MCP server execution
-
-**Affected Components:**
-- `GarminIngestWorker`: Uses `get_raw_dir()`, `get_performance_dir()`, `get_precheck_dir()`, `get_weight_raw_dir()`
-- `GarminDBReader/Writer`: Uses `get_database_dir()` for default db_path
-- `ReportTemplateRenderer`: Uses `get_result_dir()` for report output
-- Migration/bulk scripts: Use path utilities for default arguments
-
-**Benefits:**
-- **Privacy Protection**: Keep personal health data outside the Git repository
-- **Flexible Deployment**: Different paths for development/production environments
-- **Backward Compatible**: Existing code works without configuration (uses defaults)
-
-**Path Utility Module:**
-- Module: `tools/utils/paths.py`
-- Functions: `get_data_base_dir()`, `get_result_dir()`, `get_raw_dir()`, `get_performance_dir()`, `get_precheck_dir()`, `get_database_dir()`, `get_weight_raw_dir()`
+**Path Utility Module:** `tools/utils/paths.py` provides `get_data_base_dir()`, `get_result_dir()`, `get_raw_dir()`, `get_performance_dir()`, `get_precheck_dir()`, `get_database_dir()`, `get_weight_raw_dir()`
 
 ### Data Files Naming Convention
 
-**Raw Data Structure (Phase 0 Refactoring):**
-- **Activity data** (preferred): `data/raw/activity/{activity_id}/{api_name}.json`
-  - Per-API caching for granular cache control
-  - API files: `activity.json`, `activity_details.json`, `splits.json`, `weather.json`, `gear.json`, `hr_zones.json`, `vo2_max.json`, `lactate_threshold.json`
-  - Allows partial re-fetching (e.g., weather data only)
-  - Migration tool: `tools/scripts/migrate_raw_data_structure.py`
-- **Activity data** (legacy, backward compatible): `{activity_id}_raw.json`
-  - Single-file format with all API responses
-  - Automatically detected by `collect_data()` for backward compatibility
-
-**Weight Data Structure (2025-10-09 Migration):**
-- **Current format**: `data/raw/weight/{YYYY-MM-DD}.json`
-  - Flat file structure (one file per date)
-  - Contains daily weigh-ins with full body composition metrics
-  - Replaces old `data/weight_cache/raw/weight_{date}_raw.json` structure
-- **Weight index**: `data/weight/index.json`
-  - Metadata index for quick date lookups
-  - Maps dates to raw file paths and summary stats
-  - Replaces old `data/weight_cache/weight_index.json`
-- **Migration tool**: `tools/scripts/migrate_weight_data.py`
-  - Options: `--dry-run`, `--all`, `--date`, `--verify`, `--cleanup`
-  - Full migration completed on 2025-10-09 (111 files)
+**Raw Data:**
+- Activity: `data/raw/activity/{activity_id}/{api_name}.json` (per-API caching, 8 API files)
+- Weight: `data/raw/weight/{YYYY-MM-DD}.json` (daily weigh-ins)
+- Legacy activity: `{activity_id}_raw.json` (backward compatible)
 
 **Processed Data:**
-- **Performance data**: `{activity_id}.json` (pre-processed metrics with Phase 1, 2 optimizations)
-- **Precheck data**: `{activity_id}.json` (validation results)
-- **Monthly activities**: `activities_{YYYY-MM}.json`
+- Performance: `data/performance/{activity_id}.json`
+- Precheck: `data/precheck/{activity_id}.json`
+- Section analysis: DuckDB `data/database/` (primary storage)
 
-**Note**: Section analysis data is stored in DuckDB (`data/database/`) and accessed via `mcp__garmin-db__get_section_analysis`. Intermediate JSON files in `data/individual/` are legacy files for migration purposes.
+Migration tools: `migrate_raw_data_structure.py`, `migrate_weight_data.py`
 
-### Performance.json Structure (Phase 1, 2 Enhanced)
+### Performance.json Structure
 
-The `data/performance/{activity_id}.json` file contains 11 main sections:
+Contains 11 sections: (1-8) Base metrics (basic, HR zones, efficiency, training effect, power/weight, splits, VO2 max, lactate threshold), (9-10) Phase 1 optimizations (form efficiency, HR efficiency with ★-ratings), (11) Phase 2 optimization (performance trends with phase analysis).
 
-**Base Sections (1-8):**
-1. `basic_metrics`: Distance, time, pace, HR, cadence, power
-2. `heart_rate_zones`: Zone boundaries, time in zones, percentages
-3. `efficiency_metrics`: Cadence stability, power efficiency, pace variability
-4. `training_effect`: Aerobic/anaerobic training effect values
-5. `power_to_weight`: W/kg ratio with statistical weight calculation
-6. `split_metrics`: Per-split detailed metrics (22 fields per split)
-7. `vo2_max`: VO2 max estimation data
-8. `lactate_threshold`: Lactate threshold metrics
-
-**Phase 1 Additions (9-10):**
-9. `form_efficiency_summary`: Pre-calculated GCT/VO/VR statistics
-   - Average, min, max, std, variability for each metric
-   - ★-rating evaluation (★★★★★ to ★★★☆☆)
-   - Textual evaluation (e.g., "優秀な接地時間、効率的な地面反力利用")
-
-10. `hr_efficiency_analysis`: Pre-calculated HR zone analysis
-    - Zone distribution summary with percentages
-    - Primary zone identification
-    - Training type classification (aerobic_base/tempo_run/threshold_work/mixed_effort)
-    - HR stability assessment (優秀/良好/変動あり)
-
-**Phase 2 Additions (11):**
-11. `performance_trends`: Pre-calculated phase-based analysis
-    - `warmup_phase`: Splits, avg metrics, evaluation
-    - `main_phase`: Splits, avg metrics, pace stability
-    - `finish_phase`: Splits, avg metrics, fatigue assessment
-    - `pace_consistency`: Coefficient of variation (lower = more consistent)
-    - `hr_drift_percentage`: HR drift from warmup to finish (< 5% ideal)
-    - `cadence_consistency`: "高い安定性" or "変動あり"
-    - `fatigue_pattern`: "適切な疲労管理" / "軽度の疲労蓄積" / "顕著な疲労蓄積"
-
-**Performance Optimization Impact:**
-- **Phase 1** (performance.json): Form & HR efficiency pre-calculation (~1,100 tokens saved/activity)
-- **Phase 2** (performance.json): Performance trends pre-calculation (~1,000 tokens saved/activity)
-- **Phase 3** (Garmin DB MCP): RAG query tools for trend analysis & workout comparison
-- **Total Impact**: ~2,100 tokens saved per activity (~40% reduction in analysis token usage)
-
-**Current Status:** Phases 1-3 implemented and operational.
+**Token Optimization:** Phases 1-3 reduce analysis token usage by ~40% (~2,100 tokens/activity).
 
 ## Tools & Integration Guide
 
@@ -321,96 +215,12 @@ Provides efficient section-based access to DuckDB performance data, write capabi
 
 **RAG Query Tools (Phase 3: Trend Analysis & Performance Insights):**
 
-*Trend Analysis:*
-- `mcp__garmin-db__analyze_performance_trends`: Analyze long-term trends for 10 performance metrics
-  - Metrics: pace, HR, cadence, power, GCT, VO, VR, distance, time, elevation
-  - Linear regression analysis with trend direction detection
-  - Filtering: activity_type, temperature_range, distance_range
-  - Returns: slope, R², data points, trend evaluation
-  - Use for: Training progress tracking, seasonal patterns
+- `analyze_performance_trends`: Long-term trend analysis for 10 metrics (linear regression, filtering by activity_type/temperature/distance)
+- `extract_insights`: Keyword-based search in section analyses (improvements, concerns, patterns)
+- `classify_activity_type`: Auto-classify into 6 training types (Base Endurance, Threshold Run, Sprint Intervals, etc.)
+- `compare_similar_workouts`: Find and compare similar past workouts (Phase 4.5)
 
-*Insight Extraction:*
-- `mcp__garmin-db__extract_insights`: Extract improvement suggestions, concerns, patterns from section analyses
-  - Keyword-based search (improvements, concerns, patterns)
-  - Pagination support (limit, offset)
-  - Filtering: activity_type, date_range
-  - Use for: Finding recurring themes, identifying problem areas
-
-*Activity Classification:*
-- `mcp__garmin-db__classify_activity_type`: Classify activities into 6 training types
-  - Types: Base Endurance, Threshold Run, Sprint Intervals, Anaerobic Capacity, Long Run, Recovery Run
-  - Classification based on pace zones, distance, and activity name keywords
-  - Supports both Japanese and English keywords
-  - Use for: Training type distribution analysis, workout filtering
-
-**activity_details.json Metrics:**
-
-The system uses 26 second-by-second metrics from activity_details.json:
-
-| Index | Metric Key | Unit | Description |
-|-------|-----------|------|-------------|
-| 0 | sumDuration | seconds | Cumulative duration |
-| 1 | directVerticalOscillation | cm | Vertical oscillation (form) |
-| 3 | directHeartRate | bpm | Heart rate |
-| 4 | directRunCadence | spm | Running cadence |
-| 5 | directSpeed | m/s | Running speed |
-| 7 | directVerticalRatio | % | Vertical ratio (form) |
-| 12 | directElevation | m | Elevation |
-| 19 | directGroundContactTime | ms | Ground contact time (form) |
-| ... | (18 more metrics) | | Power, stride length, etc. |
-
-**Usage Examples:**
-
-```python
-# Example 1: Interval analysis
-result = mcp__garmin-db__get_interval_analysis(
-    activity_id=20615445009,
-    pace_threshold_factor=1.3,  # Recovery pace ≥ 1.3× Work pace
-    min_work_duration=180,       # Work intervals ≥ 3 minutes
-    min_recovery_duration=60     # Recovery intervals ≥ 1 minute
-)
-# Returns: Work/Recovery segments with fatigue indicators
-
-# Example 2: Split time series detail
-result = mcp__garmin-db__get_split_time_series_detail(
-    activity_id=20615445009,
-    split_number=3,  # 3rd km
-    metrics=["HR", "speed", "GCT", "VO", "VR", "elevation"]
-)
-# Returns: ~1000 data points with statistics and anomalies
-
-# Example 3: Form anomaly detection
-result = mcp__garmin-db__detect_form_anomalies(
-    activity_id=20615445009,
-    metrics=["GCT", "VO", "VR"],
-    z_threshold=2.0,      # Detect deviations > 2σ
-    context_window=30     # 30 seconds context
-)
-# Returns: Anomalies with probable causes (elevation/pace/fatigue)
-
-# Example 4: Performance trend analysis
-result = mcp__garmin-db__analyze_performance_trends(
-    start_date="2025-01-01",
-    end_date="2025-03-31",
-    metric="pace_min_per_km",
-    activity_type_filter="Threshold Run",
-    temperature_range=[15, 25]
-)
-# Returns: Linear regression with trend direction
-
-# Example 5: Extract insights
-result = mcp__garmin-db__extract_insights(
-    keywords=["improvements", "concerns"],
-    activity_type_filter="Base Endurance",
-    date_range=["2025-01-01", "2025-03-31"],
-    limit=20
-)
-# Returns: Relevant insights from section analyses
-
-# Example 6: Activity classification
-result = mcp__garmin-db__classify_activity_type(activity_id=20615445009)
-# Returns: Training type (e.g., "Threshold Run") with confidence
-```
+**Note:** activity_details.json provides 26 second-by-second metrics (HR, speed, cadence, GCT, VO, VR, elevation, power, etc.)
 
 ### Serena MCP Integration
 
@@ -532,89 +342,6 @@ See "Development Process Agents" section below for detailed usage instructions.
    - Generate final report using templates
 
 **Quick Command:** Use the `/analyze-activity {activity_id} {date}` slash command for automated workflow execution.
-
-### Development Process Agents
-
-**⚠️ PROACTIVE USAGE: Use these agents automatically when user intent matches the trigger conditions**
-
-The system provides three specialized agents that enforce the DEVELOPMENT_PROCESS.md workflow (Planning → Implementation → Completion Report):
-
-#### project-planner Agent
-
-**Auto-invoke when:**
-- User mentions: "新しいプロジェクト", "新機能", "機能追加", "planning", "計画"
-- User wants to start new feature development
-- User asks to create planning.md
-- User expresses intent to begin development work
-
-**Responsibilities:**
-- Create project directory: `docs/project/{YYYY-MM-DD}_{project_name}/`
-- Generate `planning.md` from template
-- Guide requirement definition, design, and test planning
-- Define acceptance criteria
-
-**Example invocation:**
-```bash
-Task: project-planner
-prompt: "DuckDBにセクション分析結果を保存する機能を追加したい。プロジェクト名は 'duckdb_section_analysis' で計画を立ててください。"
-```
-
-#### tdd-implementer Agent
-
-**Auto-invoke when:**
-- `planning.md` exists and is complete
-- User mentions: "実装", "implement", "TDD", "テスト書いて"
-- User wants to start coding after planning
-- Planning phase is confirmed complete
-
-**Responsibilities:**
-- Execute TDD cycle: Red (failing test) → Green (minimal implementation) → Refactor
-- Run code quality checks (Black, Ruff, Mypy, pytest)
-- Create Conventional Commits
-- Manage Pre-commit hooks
-- **Update `planning.md` with implementation progress and results**
-
-**Example invocation:**
-```bash
-Task: tdd-implementer
-prompt: "docs/project/2025-10-09_duckdb_section_analysis/planning.md に基づいて、TDDサイクルで実装してください。"
-```
-
-#### completion-reporter Agent
-
-**Auto-invoke when:**
-- Implementation is complete (all tests passing)
-- User mentions: "完了", "レポート", "completion", "完了レポート"
-- User asks for summary of what was implemented
-- All acceptance criteria appear to be met
-
-**Responsibilities:**
-- Collect test results (Unit, Integration, Performance)
-- Generate coverage report
-- Verify code quality checks
-- Create `completion_report.md` with all metrics
-- Compare against acceptance criteria
-
-**Example invocation:**
-```bash
-Task: completion-reporter
-prompt: "docs/project/2025-10-09_duckdb_section_analysis/ の完了レポートを作成してください。"
-```
-
-#### Workflow Sequence
-
-**IMPORTANT: Always follow this sequence, do not skip phases**
-
-1. **Planning** → Use `project-planner` → Output: `planning.md`
-2. **Implementation** → Use `tdd-implementer` → Output: Code + Tests + Commits
-3. **Completion** → Use `completion-reporter` → Output: `completion_report.md`
-
-**Proactive behavior:**
-- When user says "新しい機能を追加したい", immediately suggest: "project-planner エージェントで計画を立てましょうか？"
-- After planning.md is complete, suggest: "tdd-implementer エージェントで実装を始めますか？"
-- After implementation is done, suggest: "completion-reporter エージェントで完了レポートを作成しますか？"
-
-**Reference:** See `docs/AGENT_WORKFLOW.md` for detailed usage examples and troubleshooting.
 
 ## Common Development Commands
 
@@ -814,136 +541,14 @@ uv run python tools/test_performance_optimization.py
 
 **⚠️ MANDATORY: All project development MUST use git worktree for isolation**
 
-Git worktree allows multiple working directories from a single repository, enabling parallel development without branch switching conflicts.
+Basic commands: `git worktree add -b feature/name ../path`, `git worktree list`, `git worktree remove ../path`
 
-#### Benefits
-- **Isolation**: Each project works in its own directory
-- **No branch switching**: Main branch stays clean for analysis work
-- **Parallel development**: Multiple projects can progress simultaneously
-- **Clean separation**: Easy to review changes per project
+**Project Workflow:**
+1. **Planning**: On main branch, commit planning.md (no worktree)
+2. **Implementation**: Create worktree from main, run `uv sync`, activate Serena MCP
+3. **Completion**: Merge to main, remove worktree
 
-#### Basic Worktree Operations
-
-```bash
-# Create new worktree with new branch
-git worktree add -b feature/project-name ../garmin-project-name
-
-# Create worktree from existing branch
-git worktree add ../garmin-project-name feature/project-name
-
-# List all worktrees
-git worktree list
-
-# Remove worktree (after merging)
-git worktree remove ../garmin-project-name
-
-# Cleanup stale worktrees
-git worktree prune
-```
-
-#### Project Development Workflow
-
-**1. Planning Phase** (project-planner agent):
-```bash
-# Agent works on main branch directly
-# Creates planning.md in docs/project/{YYYY-MM-DD}_{project_name}/
-# Commits planning.md to main branch
-# No worktree created at this stage
-
-# Benefits:
-# - Planning document immediately visible to all
-# - Easy review and approval process
-# - Main branch history includes planning
-```
-
-**2. Implementation Phase** (tdd-implementer agent):
-```bash
-# Agent creates worktree from latest main
-git worktree add -b feature/{project_name} ../garmin-{project_name} main
-cd ../garmin-{project_name}
-uv sync  # MANDATORY
-
-# Agent works within worktree directory
-# All file operations use worktree paths
-# Commits are made to feature branch
-# planning.md is referenced from main branch
-# Main branch code remains untouched
-
-# Benefits:
-# - Fresh start from latest main (no stale code)
-# - Isolated development environment
-# - Planning changes don't conflict with implementation
-```
-
-**3. Completion Phase**:
-```bash
-# Review changes in worktree
-git diff main..feature/project-name
-
-# Merge to main (from main repo directory)
-git checkout main
-git merge feature/project-name
-
-# Remove worktree after successful merge
-git worktree remove ../garmin-project-name
-```
-
-#### Worktree Directory Structure
-
-```
-claude_workspace/
-├── garmin/                                    # Main worktree (main branch)
-│   ├── data/                                  # Shared data (not project-specific)
-│   ├── docs/project/                          # Planning documents
-│   └── ...
-├── garmin-rag-interval-analysis/              # Project worktree
-│   ├── tools/rag/queries/                     # New code
-│   ├── tests/rag/                             # New tests
-│   └── docs/project/.../planning.md           # Planning doc (symlinked or copied)
-└── garmin-split-stability/                    # Another project worktree
-    └── ...
-```
-
-#### Best Practices
-
-**DO:**
-- ✅ Planning on main: Commit planning.md to main directly
-- ✅ Implementation in worktree: Create worktree when starting implementation
-- ✅ Use descriptive branch names: `feature/split-stability-precalc`
-- ✅ Run `uv sync` immediately after worktree creation
-- ✅ Commit regularly within worktree
-- ✅ Merge to main only after all tests pass
-- ✅ Remove worktree after successful merge
-
-**DON'T:**
-- ❌ Create worktree during planning phase
-- ❌ Edit main branch directly for implementation work
-- ❌ Create worktree without branch name
-- ❌ Leave stale worktrees after project completion
-- ❌ Share data/ directory modifications across worktrees
-
-#### Agent Integration
-
-**project-planner Agent:**
-1. Works on main branch directly
-2. Creates `docs/project/{YYYY-MM-DD}_{project_name}/planning.md`
-3. Commits planning.md to main
-4. **Does NOT create worktree**
-
-**tdd-implementer Agent:**
-1. Reads planning.md from main branch
-2. Creates git worktree from latest main
-3. Runs `uv sync` in worktree
-4. Works within worktree directory
-5. Creates commits in feature branch
-6. After completion, merges to main and removes worktree
-
-**Why this separation:**
-- Planning can be reviewed/modified without worktree overhead
-- Implementation starts from latest main (avoids stale code issues)
-- Reduces worktree lifetime (only during active implementation)
-
-See agent definitions (`.claude/agents/`) for implementation details.
+**Key points:** Run `uv sync` after worktree creation, activate Serena with worktree path, planning on main/implementation in worktree.
 
 ## Critical Data Source Requirements
 
