@@ -372,8 +372,9 @@ class WorkoutComparator:
         """Calculate similarity score between target and candidate workouts.
 
         Similarity is based on:
-        - Pace similarity (60% weight)
-        - Distance similarity (40% weight)
+        - Pace similarity (45% weight)
+        - Distance similarity (35% weight)
+        - Training type similarity (20% weight)
 
         Args:
             target: Target activity data
@@ -394,12 +395,21 @@ class WorkoutComparator:
             / target["distance_km"]
         )
 
-        # Weighted average (pace 60%, distance 40%)
-        similarity = (pace_similarity * 0.6 + distance_similarity * 0.4) * 100
+        # Training type similarity
+        target_type = target.get("training_type", "unknown")
+        candidate_type = candidate.get("training_type", "unknown")
+        type_similarity = self._get_training_type_similarity(
+            target_type, candidate_type
+        )
+
+        # Weighted average (pace 45%, distance 35%, training type 20%)
+        similarity = (
+            pace_similarity * 0.45 + distance_similarity * 0.35 + type_similarity * 0.20
+        ) * 100
 
         return float(
             max(0.0, min(100.0, similarity))
-        )  # Clamp to 0-100%  # Clamp to 0-100%
+        )  # Clamp to 0-100%  # Clamp to 0-100%  # Clamp to 0-100%
 
     def _generate_interpretation(self, pace_diff: float, hr_diff: float) -> str:
         """Generate human-readable interpretation of performance difference.

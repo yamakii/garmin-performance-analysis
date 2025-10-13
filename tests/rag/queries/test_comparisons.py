@@ -517,3 +517,137 @@ class TestWeatherDataRetrieval:
         temp2 = 19.7
         diff = temp1 - temp2
         assert abs(diff - 5.6) < 0.1
+
+
+class TestSimilarityCalculationImproved:
+    """Test improved similarity calculation with training type."""
+
+    @pytest.fixture
+    def comparator(self):
+        """Create comparator instance."""
+        return WorkoutComparator()
+
+    @pytest.mark.unit
+    def test_similarity_same_type_same_pace_distance(self, comparator):
+        """Same type, same pace and distance should be 100% similar."""
+        target = {
+            "avg_pace": 300.0,
+            "distance_km": 10.0,
+            "training_type": "tempo",
+        }
+        candidate = {
+            "avg_pace": 300.0,
+            "distance_km": 10.0,
+            "training_type": "tempo",
+        }
+
+        score = comparator._calculate_similarity_score(target, candidate)
+        assert score == 100.0
+
+    @pytest.mark.unit
+    def test_similarity_same_type_pace_diff_10_percent(self, comparator):
+        """Same type with 10% pace difference should be ~95.5% similar."""
+        target = {
+            "avg_pace": 300.0,
+            "distance_km": 10.0,
+            "training_type": "tempo",
+        }
+        candidate = {
+            "avg_pace": 330.0,  # 10% slower
+            "distance_km": 10.0,
+            "training_type": "tempo",
+        }
+
+        score = comparator._calculate_similarity_score(target, candidate)
+        # 45% * 0.9 + 35% * 1.0 + 20% * 1.0 = 95.5%
+        assert 95.0 <= score <= 96.0
+
+    @pytest.mark.unit
+    def test_similarity_different_type_same_pace_distance(self, comparator):
+        """Different type but same pace/distance should reflect type similarity."""
+        target = {
+            "avg_pace": 300.0,
+            "distance_km": 10.0,
+            "training_type": "tempo",
+        }
+        # Tempo-Threshold similarity: 0.8
+        candidate = {
+            "avg_pace": 300.0,
+            "distance_km": 10.0,
+            "training_type": "threshold",
+        }
+
+        score = comparator._calculate_similarity_score(target, candidate)
+        # 45% * 1.0 + 35% * 1.0 + 20% * 0.8 = 96.0%
+        assert 95.0 <= score <= 97.0
+
+    @pytest.mark.unit
+    def test_similarity_very_different_type(self, comparator):
+        """Very different training types should lower similarity significantly."""
+        target = {
+            "avg_pace": 300.0,
+            "distance_km": 10.0,
+            "training_type": "recovery",
+        }
+        # Recovery-Sprint similarity: 0.2
+        candidate = {
+            "avg_pace": 300.0,
+            "distance_km": 10.0,
+            "training_type": "sprint",
+        }
+
+        score = comparator._calculate_similarity_score(target, candidate)
+        # 45% * 1.0 + 35% * 1.0 + 20% * 0.2 = 84.0%
+        assert 83.0 <= score <= 85.0
+
+    @pytest.mark.unit
+    def test_similarity_clamp_to_100(self, comparator):
+        """Similarity should be clamped to maximum 100%."""
+        target = {
+            "avg_pace": 300.0,
+            "distance_km": 10.0,
+            "training_type": "tempo",
+        }
+        candidate = {
+            "avg_pace": 300.0,
+            "distance_km": 10.0,
+            "training_type": "tempo",
+        }
+
+        score = comparator._calculate_similarity_score(target, candidate)
+        assert score <= 100.0
+
+    @pytest.mark.unit
+    def test_similarity_clamp_to_0(self, comparator):
+        """Similarity should be clamped to minimum 0%."""
+        target = {
+            "avg_pace": 300.0,
+            "distance_km": 10.0,
+            "training_type": "tempo",
+        }
+        candidate = {
+            "avg_pace": 600.0,  # 2x slower
+            "distance_km": 5.0,  # Half distance
+            "training_type": "sprint",  # Very different type
+        }
+
+        score = comparator._calculate_similarity_score(target, candidate)
+        assert score >= 0.0
+
+    @pytest.mark.unit
+    def test_similarity_missing_training_type(self, comparator):
+        """Missing training type should use default 0.3 similarity."""
+        target = {
+            "avg_pace": 300.0,
+            "distance_km": 10.0,
+            "training_type": "tempo",
+        }
+        candidate = {
+            "avg_pace": 300.0,
+            "distance_km": 10.0,
+            "training_type": "unknown",
+        }
+
+        score = comparator._calculate_similarity_score(target, candidate)
+        # 45% * 1.0 + 35% * 1.0 + 20% * 0.3 = 86.0%
+        assert 85.0 <= score <= 87.0
