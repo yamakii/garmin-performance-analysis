@@ -167,3 +167,120 @@ class TestTablesParameter:
         regenerator = DuckDBRegenerator()
 
         assert regenerator.tables is None
+
+
+class TestDeleteActivityRecords:
+    """Test delete_activity_records method for selective deletion."""
+
+    def test_delete_activity_records_single_table(self):
+        """Test deletion from a single table with single activity."""
+        from unittest.mock import MagicMock, patch
+
+        # Arrange
+        regenerator = DuckDBRegenerator(tables=["splits"], force=True)
+        activity_ids = [12345]
+
+        # Mock DuckDB connection with context manager support
+        mock_cursor = MagicMock()
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=None)
+
+        with patch("duckdb.connect", return_value=mock_conn):
+            # Act
+            regenerator.delete_activity_records(activity_ids)
+
+            # Assert
+            # Verify DELETE was called once for splits table
+            calls = mock_cursor.execute.call_args_list
+            assert len(calls) == 1
+            sql, params = calls[0][0]
+            assert "DELETE FROM splits" in sql
+            assert "WHERE activity_id IN" in sql
+            assert params == (12345,)
+
+    def test_delete_activity_records_multiple_tables(self):
+        """Test deletion from multiple tables with single activity."""
+        from unittest.mock import MagicMock, patch
+
+        # Arrange
+        regenerator = DuckDBRegenerator(
+            tables=["splits", "form_efficiency"], force=True
+        )
+        activity_ids = [12345]
+
+        # Mock DuckDB connection with context manager support
+        mock_cursor = MagicMock()
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=None)
+
+        with patch("duckdb.connect", return_value=mock_conn):
+            # Act
+            regenerator.delete_activity_records(activity_ids)
+
+            # Assert
+            # Verify DELETE was called for both tables
+            calls = mock_cursor.execute.call_args_list
+            assert len(calls) == 2
+
+            # Check first call (splits)
+            sql1, params1 = calls[0][0]
+            assert "DELETE FROM splits" in sql1
+            assert params1 == (12345,)
+
+            # Check second call (form_efficiency)
+            sql2, params2 = calls[1][0]
+            assert "DELETE FROM form_efficiency" in sql2
+            assert params2 == (12345,)
+
+    def test_delete_activity_records_skip_body_composition(self):
+        """Test that body_composition table deletion is skipped (no activity_id)."""
+        from unittest.mock import MagicMock, patch
+
+        # Arrange
+        regenerator = DuckDBRegenerator(tables=["body_composition"], force=True)
+        activity_ids = [12345]
+
+        # Mock DuckDB connection
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+
+        with patch("duckdb.connect", return_value=mock_conn):
+            # Act
+            regenerator.delete_activity_records(activity_ids)
+
+            # Assert
+            # Verify NO DELETE was called (body_composition has no activity_id)
+            mock_cursor.execute.assert_not_called()
+
+    def test_delete_activity_records_multiple_activities(self):
+        """Test deletion with multiple activities."""
+        from unittest.mock import MagicMock, patch
+
+        # Arrange
+        regenerator = DuckDBRegenerator(tables=["splits"], force=True)
+        activity_ids = [12345, 67890]
+
+        # Mock DuckDB connection with context manager support
+        mock_cursor = MagicMock()
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=None)
+
+        with patch("duckdb.connect", return_value=mock_conn):
+            # Act
+            regenerator.delete_activity_records(activity_ids)
+
+            # Assert
+            calls = mock_cursor.execute.call_args_list
+            assert len(calls) == 1
+            sql, params = calls[0][0]
+            assert "DELETE FROM splits" in sql
+            assert "WHERE activity_id IN" in sql
+            # Should handle multiple IDs
+            assert params == (12345, 67890)

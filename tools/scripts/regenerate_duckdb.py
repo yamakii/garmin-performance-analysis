@@ -271,6 +271,62 @@ class DuckDBRegenerator:
         activity_path = self.activity_dir / str(activity_id)
         return activity_path.exists()
 
+    def delete_activity_records(self, activity_ids: list[int]) -> None:
+        """
+        Delete existing records for specified activities from filtered tables.
+
+        This method is called when force=True to remove existing records
+        before re-insertion. Deletion is atomic (uses transaction).
+
+        Args:
+            activity_ids: List of activity IDs to delete
+
+        Notes:
+            - body_composition table is skipped (no activity_id column)
+            - Deletion is performed in transaction (all or nothing)
+            - Only deletes from tables specified in self.tables
+        """
+        if not self.tables:
+            return
+
+        # Filter tables that support activity_id (exclude body_composition)
+        tables_to_delete = [t for t in self.tables if t != "body_composition"]
+
+        if not tables_to_delete:
+            logger.debug("No tables to delete (body_composition only)")
+            return
+
+        # Connect to DuckDB
+        with duckdb.connect(str(self.db_path)) as conn:
+            cursor = conn.cursor()
+
+            try:
+                # Delete from each table (within transaction)
+                for table in tables_to_delete:
+                    # Skip activities table if it's in the list
+                    # (we don't delete activities, only related data)
+                    if table == "activities":
+                        continue
+
+                    # Build DELETE query
+                    placeholders = ",".join("?" * len(activity_ids))
+                    sql = f"DELETE FROM {table} WHERE activity_id IN ({placeholders})"
+
+                    logger.debug(f"Deleting {len(activity_ids)} records from {table}")
+                    cursor.execute(sql, tuple(activity_ids))
+
+                # Commit transaction
+                conn.commit()
+                logger.info(
+                    f"Deleted records for {len(activity_ids)} activities "
+                    f"from {len(tables_to_delete)} tables"
+                )
+
+            except Exception as e:
+                conn.rollback()
+                logger.error(f"Error deleting records: {e}")
+                raise
+
     def regenerate_single_activity(
         self,
         activity_id: int,
@@ -281,9 +337,10 @@ class DuckDBRegenerator:
 
         Process:
         1. Check if raw data exists
-        2. Check DuckDB cache (skip if exists and delete_old_db=False)
-        3. Use GarminIngestWorker.process_activity() to generate performance.json
-        4. Automatically insert into DuckDB via save_data()
+        2. If force=True, delete existing records from specified tables
+        3. Check DuckDB cache (skip if exists and force=False and delete_old_db=False)
+        4. Use GarminIngestWorker.process_activity() to generate performance.json
+        5. Automatically insert into DuckDB via save_data()
 
         Args:
             activity_id: Activity ID
@@ -302,8 +359,19 @@ class DuckDBRegenerator:
                 "error": "Raw data not found",
             }
 
-        # Check DuckDB cache (skip if exists and delete_old_db=False)
-        if not self.delete_old_db and self.check_duckdb_cache(activity_id):
+        # If force=True, delete existing records before re-insertion
+        if self.force:
+            logger.info(
+                f"Force mode: deleting existing records for activity {activity_id}"
+            )
+            self.delete_activity_records([activity_id])
+
+        # Check DuckDB cache (skip if exists and no force/delete_old_db)
+        if (
+            not self.force
+            and not self.delete_old_db
+            and self.check_duckdb_cache(activity_id)
+        ):
             logger.debug(f"Skipping {activity_id}: DuckDB cache exists")
             return {
                 "status": "skipped",
