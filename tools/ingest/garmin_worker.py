@@ -1173,6 +1173,21 @@ class GarminIngestWorker:
             "fatigue_pattern": fatigue_pattern,
         }
 
+    def _should_insert_table(self, table_name: str, tables: list[str] | None) -> bool:
+        """
+        Check if a table should be inserted into DuckDB.
+
+        Args:
+            table_name: Name of the table to check
+            tables: List of tables to insert (None = insert all)
+
+        Returns:
+            True if the table should be inserted, False otherwise
+        """
+        if tables is None:
+            return True
+        return table_name in tables
+
     def save_data(
         self,
         activity_id: int,
@@ -1180,6 +1195,7 @@ class GarminIngestWorker:
         df: pd.DataFrame,
         performance_data: dict[str, Any],
         activity_date: str | None = None,
+        tables: list[str] | None = None,  # NEW: Phase 3 parameter
     ) -> dict[str, Any]:
         """
         Save all processed data to files and DuckDB.
@@ -1200,6 +1216,9 @@ class GarminIngestWorker:
             df: Parquet DataFrame (used for precheck validation, not saved)
             performance_data: Performance metrics
             activity_date: Activity date (YYYY-MM-DD format), required for DuckDB insertion
+            tables: List of tables to insert. If None, all tables are inserted.
+                   If specified, only the listed tables are inserted.
+                   Note: All tables (including 'activities') respect this filter.
 
         Returns:
             File paths dict
@@ -1236,53 +1255,60 @@ class GarminIngestWorker:
         logger.info(f"Saved precheck data to {precheck_file}")
 
         # ===== DuckDB Insertion (respects foreign key order) =====
+        # Phase 4: Table filtering implemented via _should_insert_table()
+        # All tables (including activities) respect the tables parameter
 
-        # STEP 1: Insert activities (parent table) - MUST be first
-        from tools.database.inserters.activities import insert_activities
+        # STEP 1: Insert activities (parent table) - conditionally insert
+        # Note: activities uses DELETE-then-INSERT (UPSERT), so only insert if requested
+        # to avoid foreign key violations when child tables exist
+        if self._should_insert_table("activities", tables):
+            from tools.database.inserters.activities import insert_activities
 
-        # Determine raw data file paths
-        activity_dir = self.raw_dir / "activity" / str(activity_id)
-        raw_activity_file: Path | None = activity_dir / "activity.json"
-        raw_weather_file: Path | None = activity_dir / "weather.json"
-        raw_gear_file: Path | None = activity_dir / "gear.json"
+            # Determine raw data file paths
+            activity_dir = self.raw_dir / "activity" / str(activity_id)
+            raw_activity_file: Path | None = activity_dir / "activity.json"
+            raw_weather_file: Path | None = activity_dir / "weather.json"
+            raw_gear_file: Path | None = activity_dir / "gear.json"
 
-        # Fallback: check if using old structure
-        if raw_activity_file and not raw_activity_file.exists():
-            legacy_raw_file = self.raw_dir / f"{activity_id}_raw.json"
-            if legacy_raw_file.exists():
-                # Extract from legacy format
-                raw_activity_file = None
-                raw_weather_file = None
-                raw_gear_file = None
-                logger.warning(
-                    f"Using legacy raw data format for activity {activity_id}"
-                )
+            # Fallback: check if using old structure
+            if raw_activity_file and not raw_activity_file.exists():
+                legacy_raw_file = self.raw_dir / f"{activity_id}_raw.json"
+                if legacy_raw_file.exists():
+                    # Extract from legacy format
+                    raw_activity_file = None
+                    raw_weather_file = None
+                    raw_gear_file = None
+                    logger.warning(
+                        f"Using legacy raw data format for activity {activity_id}"
+                    )
 
-        activities_success = insert_activities(
-            performance_file=str(performance_file),
-            activity_id=activity_id,
-            date=activity_date or "1970-01-01",  # Fallback date if not provided
-            db_path=self._db_path,
-            raw_activity_file=(
-                str(raw_activity_file)
-                if raw_activity_file and raw_activity_file.exists()
-                else None
-            ),
-            raw_weather_file=(
-                str(raw_weather_file)
-                if raw_weather_file and raw_weather_file.exists()
-                else None
-            ),
-            raw_gear_file=(
-                str(raw_gear_file) if raw_gear_file and raw_gear_file.exists() else None
-            ),
-        )
-        if activities_success:
-            logger.info(f"Inserted activities to DuckDB for activity {activity_id}")
-        else:
-            logger.warning(
-                f"Failed to insert activities to DuckDB for activity {activity_id}"
+            activities_success = insert_activities(
+                performance_file=str(performance_file),
+                activity_id=activity_id,
+                date=activity_date or "1970-01-01",  # Fallback date if not provided
+                db_path=self._db_path,
+                raw_activity_file=(
+                    str(raw_activity_file)
+                    if raw_activity_file and raw_activity_file.exists()
+                    else None
+                ),
+                raw_weather_file=(
+                    str(raw_weather_file)
+                    if raw_weather_file and raw_weather_file.exists()
+                    else None
+                ),
+                raw_gear_file=(
+                    str(raw_gear_file)
+                    if raw_gear_file and raw_gear_file.exists()
+                    else None
+                ),
             )
+            if activities_success:
+                logger.info(f"Inserted activities to DuckDB for activity {activity_id}")
+            else:
+                logger.warning(
+                    f"Failed to insert activities to DuckDB for activity {activity_id}"
+                )
 
         # STEP 2: Insert child tables (splits, form_efficiency, etc.)
 
@@ -1293,145 +1319,159 @@ class GarminIngestWorker:
             raw_splits_file = None
 
         # Insert splits into DuckDB
-        from tools.database.inserters.splits import insert_splits
+        if self._should_insert_table("splits", tables):
+            from tools.database.inserters.splits import insert_splits
 
-        splits_success = insert_splits(
-            performance_file=str(performance_file),
-            activity_id=activity_id,
-            db_path=self._db_path,
-            raw_splits_file=str(raw_splits_file) if raw_splits_file else None,
-        )
-        if splits_success:
-            logger.info(f"Inserted splits to DuckDB for activity {activity_id}")
-        else:
-            logger.warning(
-                f"Failed to insert splits to DuckDB for activity {activity_id}"
+            splits_success = insert_splits(
+                performance_file=str(performance_file),
+                activity_id=activity_id,
+                db_path=self._db_path,
+                raw_splits_file=str(raw_splits_file) if raw_splits_file else None,
             )
+            if splits_success:
+                logger.info(f"Inserted splits to DuckDB for activity {activity_id}")
+            else:
+                logger.warning(
+                    f"Failed to insert splits to DuckDB for activity {activity_id}"
+                )
 
         # Insert form_efficiency into DuckDB
-        from tools.database.inserters.form_efficiency import insert_form_efficiency
+        if self._should_insert_table("form_efficiency", tables):
+            from tools.database.inserters.form_efficiency import insert_form_efficiency
 
-        form_eff_success = insert_form_efficiency(
-            performance_file=str(performance_file),
-            activity_id=activity_id,
-            db_path=self._db_path,
-        )
-        if form_eff_success:
-            logger.info(
-                f"Inserted form_efficiency to DuckDB for activity {activity_id}"
-            )
-        else:
-            logger.warning(
-                f"Failed to insert form_efficiency to DuckDB for activity {activity_id}"
-            )
-
-        # Insert heart_rate_zones into DuckDB
-        from tools.database.inserters.heart_rate_zones import insert_heart_rate_zones
-
-        hr_zones_success = insert_heart_rate_zones(
-            performance_file=str(performance_file),
-            activity_id=activity_id,
-            db_path=self._db_path,
-        )
-        if hr_zones_success:
-            logger.info(
-                f"Inserted heart_rate_zones to DuckDB for activity {activity_id}"
-            )
-        else:
-            logger.warning(
-                f"Failed to insert heart_rate_zones to DuckDB for activity {activity_id}"
-            )
-
-        # Insert hr_efficiency into DuckDB
-        from tools.database.inserters.hr_efficiency import insert_hr_efficiency
-
-        hr_eff_success = insert_hr_efficiency(
-            performance_file=str(performance_file),
-            activity_id=activity_id,
-            db_path=self._db_path,
-        )
-        if hr_eff_success:
-            logger.info(f"Inserted hr_efficiency to DuckDB for activity {activity_id}")
-        else:
-            logger.warning(
-                f"Failed to insert hr_efficiency to DuckDB for activity {activity_id}"
-            )
-
-        # Insert performance_trends into DuckDB
-        from tools.database.inserters.performance_trends import (
-            insert_performance_trends,
-        )
-
-        perf_trends_success = insert_performance_trends(
-            performance_file=str(performance_file),
-            activity_id=activity_id,
-            db_path=self._db_path,
-        )
-        if perf_trends_success:
-            logger.info(
-                f"Inserted performance_trends to DuckDB for activity {activity_id}"
-            )
-        else:
-            logger.warning(
-                f"Failed to insert performance_trends to DuckDB for activity {activity_id}"
-            )
-
-        # Insert lactate_threshold into DuckDB
-        from tools.database.inserters.lactate_threshold import insert_lactate_threshold
-
-        lt_success = insert_lactate_threshold(
-            performance_file=str(performance_file),
-            activity_id=activity_id,
-            db_path=self._db_path,
-        )
-        if lt_success:
-            logger.info(
-                f"Inserted lactate_threshold to DuckDB for activity {activity_id}"
-            )
-        else:
-            logger.warning(
-                f"Failed to insert lactate_threshold to DuckDB for activity {activity_id}"
-            )
-
-        # Insert vo2_max into DuckDB
-        from tools.database.inserters.vo2_max import insert_vo2_max
-
-        vo2_success = insert_vo2_max(
-            performance_file=str(performance_file),
-            activity_id=activity_id,
-            db_path=self._db_path,
-        )
-        if vo2_success:
-            logger.info(f"Inserted vo2_max to DuckDB for activity {activity_id}")
-        else:
-            logger.warning(
-                f"Failed to insert vo2_max to DuckDB for activity {activity_id}"
-            )
-
-        # Insert time_series_metrics into DuckDB (optional - requires activity_details.json)
-        from tools.database.inserters.time_series_metrics import (
-            insert_time_series_metrics,
-        )
-
-        activity_details_file = activity_dir / "activity_details.json"
-        if activity_details_file.exists():
-            ts_success = insert_time_series_metrics(
-                activity_details_file=str(activity_details_file),
+            form_eff_success = insert_form_efficiency(
+                performance_file=str(performance_file),
                 activity_id=activity_id,
                 db_path=self._db_path,
             )
-            if ts_success:
+            if form_eff_success:
                 logger.info(
-                    f"Inserted time_series_metrics to DuckDB for activity {activity_id}"
+                    f"Inserted form_efficiency to DuckDB for activity {activity_id}"
                 )
             else:
-                logger.error(
-                    f"Failed to insert time_series_metrics to DuckDB for activity {activity_id}"
+                logger.warning(
+                    f"Failed to insert form_efficiency to DuckDB for activity {activity_id}"
                 )
-        else:
-            logger.warning(
-                f"activity_details.json not found for activity {activity_id}, skipping time_series_metrics insertion"
+
+        # Insert heart_rate_zones into DuckDB
+        if self._should_insert_table("heart_rate_zones", tables):
+            from tools.database.inserters.heart_rate_zones import (
+                insert_heart_rate_zones,
             )
+
+            hr_zones_success = insert_heart_rate_zones(
+                performance_file=str(performance_file),
+                activity_id=activity_id,
+                db_path=self._db_path,
+            )
+            if hr_zones_success:
+                logger.info(
+                    f"Inserted heart_rate_zones to DuckDB for activity {activity_id}"
+                )
+            else:
+                logger.warning(
+                    f"Failed to insert heart_rate_zones to DuckDB for activity {activity_id}"
+                )
+
+        # Insert hr_efficiency into DuckDB
+        if self._should_insert_table("hr_efficiency", tables):
+            from tools.database.inserters.hr_efficiency import insert_hr_efficiency
+
+            hr_eff_success = insert_hr_efficiency(
+                performance_file=str(performance_file),
+                activity_id=activity_id,
+                db_path=self._db_path,
+            )
+            if hr_eff_success:
+                logger.info(
+                    f"Inserted hr_efficiency to DuckDB for activity {activity_id}"
+                )
+            else:
+                logger.warning(
+                    f"Failed to insert hr_efficiency to DuckDB for activity {activity_id}"
+                )
+
+        # Insert performance_trends into DuckDB
+        if self._should_insert_table("performance_trends", tables):
+            from tools.database.inserters.performance_trends import (
+                insert_performance_trends,
+            )
+
+            perf_trends_success = insert_performance_trends(
+                performance_file=str(performance_file),
+                activity_id=activity_id,
+                db_path=self._db_path,
+            )
+            if perf_trends_success:
+                logger.info(
+                    f"Inserted performance_trends to DuckDB for activity {activity_id}"
+                )
+            else:
+                logger.warning(
+                    f"Failed to insert performance_trends to DuckDB for activity {activity_id}"
+                )
+
+        # Insert lactate_threshold into DuckDB
+        if self._should_insert_table("lactate_threshold", tables):
+            from tools.database.inserters.lactate_threshold import (
+                insert_lactate_threshold,
+            )
+
+            lt_success = insert_lactate_threshold(
+                performance_file=str(performance_file),
+                activity_id=activity_id,
+                db_path=self._db_path,
+            )
+            if lt_success:
+                logger.info(
+                    f"Inserted lactate_threshold to DuckDB for activity {activity_id}"
+                )
+            else:
+                logger.warning(
+                    f"Failed to insert lactate_threshold to DuckDB for activity {activity_id}"
+                )
+
+        # Insert vo2_max into DuckDB
+        if self._should_insert_table("vo2_max", tables):
+            from tools.database.inserters.vo2_max import insert_vo2_max
+
+            vo2_success = insert_vo2_max(
+                performance_file=str(performance_file),
+                activity_id=activity_id,
+                db_path=self._db_path,
+            )
+            if vo2_success:
+                logger.info(f"Inserted vo2_max to DuckDB for activity {activity_id}")
+            else:
+                logger.warning(
+                    f"Failed to insert vo2_max to DuckDB for activity {activity_id}"
+                )
+
+        # Insert time_series_metrics into DuckDB (optional - requires activity_details.json)
+        if self._should_insert_table("time_series_metrics", tables):
+            from tools.database.inserters.time_series_metrics import (
+                insert_time_series_metrics,
+            )
+
+            activity_details_file = activity_dir / "activity_details.json"
+            if activity_details_file.exists():
+                ts_success = insert_time_series_metrics(
+                    activity_details_file=str(activity_details_file),
+                    activity_id=activity_id,
+                    db_path=self._db_path,
+                )
+                if ts_success:
+                    logger.info(
+                        f"Inserted time_series_metrics to DuckDB for activity {activity_id}"
+                    )
+                else:
+                    logger.error(
+                        f"Failed to insert time_series_metrics to DuckDB for activity {activity_id}"
+                    )
+            else:
+                logger.warning(
+                    f"activity_details.json not found for activity {activity_id}, skipping time_series_metrics insertion"
+                )
 
         return {
             "raw_file": str(self.raw_dir / f"{activity_id}_raw.json"),
@@ -1638,7 +1678,11 @@ class GarminIngestWorker:
             }
 
     def process_activity(
-        self, activity_id: int, date: str, force_refetch: list[str] | None = None
+        self,
+        activity_id: int,
+        date: str,
+        force_refetch: list[str] | None = None,
+        tables: list[str] | None = None,  # NEW: Phase 3 parameter
     ) -> dict[str, Any]:
         """
         Process activity through cache-first pipeline.
@@ -1657,6 +1701,9 @@ class GarminIngestWorker:
                           Ignored if DuckDB cache exists (DuckDB has priority).
                           Supported values: ['activity_details', 'splits', 'weather',
                                             'gear', 'hr_zones', 'vo2_max', 'lactate_threshold']
+            tables: List of tables to regenerate (Phase 3 orchestration parameter).
+                   NOTE: Actual table filtering will be implemented in Phase 4.
+                   For Phase 3, this parameter is passed through for preparation.
 
         Returns:
             Result dict with file paths
@@ -1693,9 +1740,15 @@ class GarminIngestWorker:
         weight_kg = median_weight_data["weight_kg"] if median_weight_data else None
 
         # Step 5: Save data and insert into DuckDB
-        # Note: save_data() now handles all DuckDB insertions (activities + child tables)
+        # NOTE: Phase 3 passes tables parameter for preparation
+        # Actual table filtering will be implemented in Phase 4
         file_paths = self.save_data(
-            activity_id, raw_data, df, performance_data, activity_date=date
+            activity_id,
+            raw_data,
+            df,
+            performance_data,
+            activity_date=date,
+            tables=tables,  # NEW: Pass tables parameter (Phase 3 preparation)
         )
 
         return {

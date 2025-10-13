@@ -291,11 +291,21 @@ def test_handle_missing_activity_details(extractor: TimeSeriesDetailExtractor):
     - Should not crash
     - Should indicate file not found
     """
+    from unittest.mock import patch
+
     activity_id = 99999999999  # Non-existent activity
 
-    result = extractor.get_split_time_series_detail(
-        activity_id=activity_id, split_number=1
-    )
+    # Mock _get_split_time_range to raise ValueError (simulating missing activity)
+    with patch.object(
+        extractor,
+        "_get_split_time_range",
+        side_effect=ValueError(
+            f"Activity details not found for activity {activity_id}"
+        ),
+    ):
+        result = extractor.get_split_time_series_detail(
+            activity_id=activity_id, split_number=1
+        )
 
     # Should have error field
     assert "error" in result
