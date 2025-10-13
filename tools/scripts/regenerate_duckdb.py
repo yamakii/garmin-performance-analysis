@@ -338,9 +338,11 @@ class DuckDBRegenerator:
         Process:
         1. Check if raw data exists
         2. If force=True, delete existing records from specified tables
-        3. Check DuckDB cache (skip if exists and force=False and delete_old_db=False)
-        4. Use GarminIngestWorker.process_activity() to generate performance.json
-        5. Automatically insert into DuckDB via save_data()
+        3. Check DuckDB cache with table-awareness:
+           - If tables specified: check only activities table (lenient)
+           - If all tables: check full data completeness (strict)
+        4. Use GarminIngestWorker.process_activity() with tables parameter
+        5. Automatically insert specified tables into DuckDB via save_data()
 
         Args:
             activity_id: Activity ID
@@ -366,37 +368,53 @@ class DuckDBRegenerator:
             )
             self.delete_activity_records([activity_id])
 
-        # Check DuckDB cache (skip if exists and no force/delete_old_db)
-        if (
-            not self.force
-            and not self.delete_old_db
-            and self.check_duckdb_cache(activity_id)
-        ):
-            logger.debug(f"Skipping {activity_id}: DuckDB cache exists")
-            return {
-                "status": "skipped",
-                "activity_id": activity_id,
-                "activity_date": activity_date,
-            }
+        # Check DuckDB cache with table-awareness
+        # When tables is specified: only check if activity exists in activities table (lenient)
+        # When tables is None (full regeneration): check full data completeness (strict)
+        if not self.force and not self.delete_old_db:
+            if self.tables is not None:
+                # Table-selective regeneration: only check activities table
+                # (we'll regenerate the specified tables even if they exist)
+                cache_exists = self.check_duckdb_cache(activity_id)
+                if not cache_exists:
+                    logger.debug(
+                        f"Activity {activity_id} not in DuckDB, will regenerate activities + {self.tables}"
+                    )
+            else:
+                # Full regeneration: check complete data
+                cache_exists = self.check_duckdb_cache(activity_id)
+                if cache_exists:
+                    logger.debug(f"Skipping {activity_id}: DuckDB cache exists")
+                    return {
+                        "status": "skipped",
+                        "activity_id": activity_id,
+                        "activity_date": activity_date,
+                    }
 
         try:
             # Use GarminIngestWorker to regenerate
             worker = GarminIngestWorker()
 
-            # process_activity() will:
-            # 1. Load from cache (raw data)
-            # 2. Generate performance.json
-            # 3. Insert into DuckDB (via save_data())
-            result = worker.process_activity(activity_id, activity_date or "")
+            # PHASE 3: Pass tables parameter to process_activity()
+            # NOTE: tables parameter will be used in Phase 4 for actual filtering
+            # For now, we pass it for preparation, but filtering is not yet implemented
+            result = worker.process_activity(
+                activity_id,
+                activity_date or "",
+                tables=self.tables,  # NEW: Pass tables parameter
+            )
 
+            # Extract regenerated tables info from result
+            tables_info = f" (tables: {', '.join(self.tables)})" if self.tables else ""
             logger.info(
-                f"Successfully regenerated DuckDB data for activity {activity_id}"
+                f"Successfully regenerated DuckDB data for activity {activity_id}{tables_info}"
             )
             return {
                 "status": "success",
                 "activity_id": activity_id,
                 "activity_date": activity_date,
                 "files": result,
+                "tables": self.tables,  # NEW: Include tables info in result
             }
 
         except Exception as e:
@@ -423,7 +441,7 @@ class DuckDBRegenerator:
             activity_ids: List of activity IDs - mutually exclusive with date range
 
         Returns:
-            Summary dict with success/skip/error counts and details
+            Summary dict with success/skip/error counts, details, and tables info
         """
         # Validate arguments
         if activity_ids and (start_date or end_date):
@@ -457,6 +475,7 @@ class DuckDBRegenerator:
                 "skipped": 0,
                 "error": 0,
                 "errors": [],
+                "tables": self.tables,  # NEW: Include tables info in summary
             }
 
         # Initialize counters
@@ -464,6 +483,12 @@ class DuckDBRegenerator:
         skip_count = 0
         error_count = 0
         errors = []
+
+        # Log table filtering info
+        tables_info = (
+            f" (tables: {', '.join(self.tables)})" if self.tables else " (all tables)"
+        )
+        logger.info(f"Regenerating{tables_info}")
 
         # Regenerate with progress bar
         for activity_id, activity_date in tqdm(
@@ -479,17 +504,19 @@ class DuckDBRegenerator:
                 error_count += 1
                 errors.append(result)
 
-        # Generate summary
+        # Generate summary with tables info
         summary = {
             "total": len(activities),
             "success": success_count,
             "skipped": skip_count,
             "error": error_count,
             "errors": errors,
+            "tables": self.tables,  # NEW: Include which tables were regenerated
         }
 
+        # Enhanced logging with tables info
         logger.info(
-            f"Regeneration completed: {success_count} success, "
+            f"Regeneration completed{tables_info}: {success_count} success, "
             f"{skip_count} skipped, {error_count} errors"
         )
 

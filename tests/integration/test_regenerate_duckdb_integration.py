@@ -203,7 +203,10 @@ class TestForceOptionIntegration:
 
             # Assert
             assert api_result["status"] == "success"
-            mock_worker.process_activity.assert_called_once_with(12345, "2025-01-01")
+            # PHASE 3: Updated to expect tables parameter
+            mock_worker.process_activity.assert_called_once_with(
+                12345, "2025-01-01", tables=["splits"]
+            )
 
         # Verify deletion occurred (splits should be deleted before process_activity)
         # Note: In real scenario, process_activity would re-insert data
@@ -226,7 +229,12 @@ class TestForceOptionIntegration:
     def test_force_option_without_force_skips_existing(
         self, temp_db, temp_raw_data_dir, tmp_path
     ):
-        """Test that without --force, existing records are skipped."""
+        """Test that without --force, full regeneration (no --tables) skips existing records.
+
+        PHASE 3 Note: When --tables is specified, regeneration proceeds even without --force
+        (table-selective regeneration is designed to update specified tables).
+        This test now verifies full regeneration (tables=None) skip behavior.
+        """
         # Arrange: Create a persistent DB file
         db_path = tmp_path / "test.duckdb"
 
@@ -285,17 +293,17 @@ class TestForceOptionIntegration:
             mock_worker = MagicMock()
             mock_worker_class.return_value = mock_worker
 
-            # Act: Regenerate WITHOUT force (should skip)
+            # Act: Full regeneration (tables=None) WITHOUT force should skip
             regenerator = DuckDBRegenerator(
                 raw_dir=temp_raw_data_dir,
                 db_path=db_path,
-                tables=["splits"],
+                tables=None,  # PHASE 3: Full regeneration (not table-selective)
                 force=False,  # No force
             )
 
             api_result = regenerator.regenerate_single_activity(12345, "2025-01-01")
 
-            # Assert: Should be skipped
+            # Assert: Should be skipped for full regeneration
             assert api_result["status"] == "skipped"
             assert (
                 "DuckDB cache exists" in api_result or api_result["status"] == "skipped"

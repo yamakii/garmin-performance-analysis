@@ -1180,6 +1180,7 @@ class GarminIngestWorker:
         df: pd.DataFrame,
         performance_data: dict[str, Any],
         activity_date: str | None = None,
+        tables: list[str] | None = None,  # NEW: Phase 3 parameter
     ) -> dict[str, Any]:
         """
         Save all processed data to files and DuckDB.
@@ -1200,6 +1201,9 @@ class GarminIngestWorker:
             df: Parquet DataFrame (used for precheck validation, not saved)
             performance_data: Performance metrics
             activity_date: Activity date (YYYY-MM-DD format), required for DuckDB insertion
+            tables: List of tables to insert (Phase 3 orchestration parameter).
+                   NOTE: Actual table filtering will be implemented in Phase 4.
+                   For Phase 3, this parameter is accepted but not yet used.
 
         Returns:
             File paths dict
@@ -1236,6 +1240,8 @@ class GarminIngestWorker:
         logger.info(f"Saved precheck data to {precheck_file}")
 
         # ===== DuckDB Insertion (respects foreign key order) =====
+        # NOTE: Phase 3 accepts tables parameter but doesn't filter yet
+        # Actual table filtering will be implemented in Phase 4
 
         # STEP 1: Insert activities (parent table) - MUST be first
         from tools.database.inserters.activities import insert_activities
@@ -1638,7 +1644,11 @@ class GarminIngestWorker:
             }
 
     def process_activity(
-        self, activity_id: int, date: str, force_refetch: list[str] | None = None
+        self,
+        activity_id: int,
+        date: str,
+        force_refetch: list[str] | None = None,
+        tables: list[str] | None = None,  # NEW: Phase 3 parameter
     ) -> dict[str, Any]:
         """
         Process activity through cache-first pipeline.
@@ -1657,6 +1667,9 @@ class GarminIngestWorker:
                           Ignored if DuckDB cache exists (DuckDB has priority).
                           Supported values: ['activity_details', 'splits', 'weather',
                                             'gear', 'hr_zones', 'vo2_max', 'lactate_threshold']
+            tables: List of tables to regenerate (Phase 3 orchestration parameter).
+                   NOTE: Actual table filtering will be implemented in Phase 4.
+                   For Phase 3, this parameter is passed through for preparation.
 
         Returns:
             Result dict with file paths
@@ -1693,9 +1706,15 @@ class GarminIngestWorker:
         weight_kg = median_weight_data["weight_kg"] if median_weight_data else None
 
         # Step 5: Save data and insert into DuckDB
-        # Note: save_data() now handles all DuckDB insertions (activities + child tables)
+        # NOTE: Phase 3 passes tables parameter for preparation
+        # Actual table filtering will be implemented in Phase 4
         file_paths = self.save_data(
-            activity_id, raw_data, df, performance_data, activity_date=date
+            activity_id,
+            raw_data,
+            df,
+            performance_data,
+            activity_date=date,
+            tables=tables,  # NEW: Pass tables parameter (Phase 3 preparation)
         )
 
         return {
