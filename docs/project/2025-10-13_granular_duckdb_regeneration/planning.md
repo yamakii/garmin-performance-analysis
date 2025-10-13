@@ -4,7 +4,7 @@
 - **プロジェクト名**: `granular_duckdb_regeneration`
 - **作成日**: `2025-10-13`
 - **ステータス**: 計画中
-- **GitHub Issue**: (To be created)
+- **GitHub Issue**: https://github.com/yamakii/garmin-performance-analysis/issues/23
 
 ## 要件定義
 
