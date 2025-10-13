@@ -669,10 +669,10 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         from tools.rag.queries.time_series_detail import TimeSeriesDetailExtractor
 
         extractor = TimeSeriesDetailExtractor()
-        result = extractor.analyze_time_range(
+        result = extractor.extract_metrics(
             activity_id=arguments["activity_id"],
-            start_time_s=arguments["start_time_s"],
-            end_time_s=arguments["end_time_s"],
+            start_time=arguments["start_time_s"],
+            end_time=arguments["end_time_s"],
             metrics=arguments.get("metrics"),
         )
         return [
