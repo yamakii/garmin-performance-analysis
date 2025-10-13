@@ -4,7 +4,7 @@
 - **プロジェクト名**: `form_anomaly_api_refactoring`
 - **作成日**: `2025-10-13`
 - **ステータス**: 計画中
-- **GitHub Issue**: TBD (to be created after planning approval)
+- **GitHub Issue**: [#22](https://github.com/yamakii/garmin-performance-analysis/issues/22)
 
 ## 要件定義
 
