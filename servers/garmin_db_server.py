@@ -272,6 +272,10 @@ async def list_tools() -> list[Tool]:
                         "items": {"type": "string"},
                         "description": "List of metric names to extract (optional)",
                     },
+                    "statistics_only": {
+                        "type": "boolean",
+                        "description": "If true, only return statistics (mean, std, min, max) without time series data. Default: false",
+                    },
                 },
                 "required": ["activity_id", "start_time_s", "end_time_s"],
             },
@@ -689,6 +693,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             start_time=arguments["start_time_s"],
             end_time=arguments["end_time_s"],
             metrics=arguments.get("metrics"),
+            statistics_only=arguments.get("statistics_only", False),
         )
         return [
             TextContent(

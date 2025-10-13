@@ -116,6 +116,7 @@ class TimeSeriesDetailExtractor:
         end_time: int,
         metrics: list[str] | None = None,
         use_duckdb: bool | None = None,
+        statistics_only: bool = False,
     ) -> dict[str, Any]:
         """Extract second-by-second metrics for specified time range.
 
@@ -128,6 +129,8 @@ class TimeSeriesDetailExtractor:
                        None (default): Auto-detect - use DuckDB if data exists, else JSON.
                        True: Force DuckDB (raises error if data not in DuckDB).
                        False: Force JSON-based extraction.
+            statistics_only: If True, only return statistics (not full time series).
+                            Provides maximum token reduction (~99.8%).
 
         Returns:
             Dictionary with extracted metrics:
@@ -135,7 +138,8 @@ class TimeSeriesDetailExtractor:
                 "activity_id": int,
                 "time_range": {"start_time_s": int, "end_time_s": int},
                 "metrics": [str],
-                "time_series": [{\"timestamp_s\": int, "metric1": float, ...}]
+                "statistics": {metric: {mean, std, min, max}},
+                "time_series": [{"timestamp_s": int, "metric1": float, ...}]  # Only if statistics_only=False
             }
         """
         # Default metrics if not specified
@@ -159,18 +163,49 @@ class TimeSeriesDetailExtractor:
             from tools.database.db_reader import GarminDBReader
 
             db_reader = GarminDBReader()
-            result = db_reader.get_time_series_raw(
+
+            # Get statistics (always needed for statistics_only)
+            stats_result = db_reader.get_time_series_statistics(
                 activity_id=activity_id,
                 start_time_s=start_time,
                 end_time_s=end_time,
                 metrics=metrics,
             )
 
-            # Add metrics field for compatibility
-            if "metrics" not in result:
-                result["metrics"] = metrics
+            if "error" in stats_result:
+                return {
+                    "activity_id": activity_id,
+                    "error": stats_result["error"],
+                }
 
-            return result
+            # Convert 'avg' to 'mean' for compatibility
+            stats = {}
+            for metric, stat_dict in stats_result["statistics"].items():
+                stats[metric] = {
+                    "mean": stat_dict["avg"],
+                    "std": stat_dict["std"],
+                    "min": stat_dict["min"],
+                    "max": stat_dict["max"],
+                }
+
+            response = {
+                "activity_id": activity_id,
+                "time_range": {"start_time_s": start_time, "end_time_s": end_time},
+                "metrics": metrics,
+                "statistics": stats,
+            }
+
+            # Only include time series if not statistics_only
+            if not statistics_only:
+                raw_result = db_reader.get_time_series_raw(
+                    activity_id=activity_id,
+                    start_time_s=start_time,
+                    end_time_s=end_time,
+                    metrics=metrics,
+                )
+                response["time_series"] = raw_result.get("time_series", [])
+
+            return response
 
         # Legacy JSON-based extraction
         try:
@@ -230,12 +265,25 @@ class TimeSeriesDetailExtractor:
 
                 time_series.append(data_point)
 
-            return {
+            # Calculate statistics
+            stats = self.calculate_statistics(
+                time_series,
+                metrics,
+                use_duckdb=False,
+            )
+
+            response = {
                 "activity_id": activity_id,
                 "time_range": {"start_time_s": start_time, "end_time_s": end_time},
                 "metrics": metrics,
-                "time_series": time_series,
+                "statistics": stats,
             }
+
+            # Only include time series if not statistics_only
+            if not statistics_only:
+                response["time_series"] = time_series
+
+            return response
 
         except FileNotFoundError as e:
             return {
