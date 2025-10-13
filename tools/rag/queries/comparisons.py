@@ -113,19 +113,19 @@ class WorkoutComparator:
         query = """
             SELECT
                 a.activity_id,
-                a.activity_date,
+                a.date,
                 a.activity_name,
-                a.avg_pace,
+                a.avg_pace_seconds_per_km,
                 a.avg_heart_rate,
-                a.distance_km,
+                a.total_distance_km,
                 a.aerobic_te,
                 a.anaerobic_te,
                 a.avg_cadence,
                 a.avg_power
             FROM activities a
             WHERE a.activity_id != ?
-              AND a.avg_pace BETWEEN ? AND ?
-              AND a.distance_km BETWEEN ? AND ?
+              AND a.avg_pace_seconds_per_km BETWEEN ? AND ?
+              AND a.total_distance_km BETWEEN ? AND ?
         """
 
         params = [activity_id, pace_min, pace_max, distance_min, distance_max]
@@ -137,11 +137,11 @@ class WorkoutComparator:
 
         # Add date range filter
         if date_range:
-            query += " AND a.activity_date BETWEEN ? AND ?"
+            query += " AND a.date BETWEEN ? AND ?"
             params.extend(date_range)
 
         # Order by pace similarity and limit results
-        query += " ORDER BY ABS(a.avg_pace - ?) ASC LIMIT ?"
+        query += " ORDER BY ABS(a.avg_pace_seconds_per_km - ?) ASC LIMIT ?"
         params.extend([target["avg_pace"], limit])
 
         # Execute query
@@ -223,11 +223,11 @@ class WorkoutComparator:
             query = """
                 SELECT
                     activity_id,
-                    activity_date,
+                    date,
                     activity_name,
-                    avg_pace,
+                    avg_pace_seconds_per_km,
                     avg_heart_rate,
-                    distance_km,
+                    total_distance_km,
                     aerobic_te,
                     anaerobic_te,
                     avg_cadence,
