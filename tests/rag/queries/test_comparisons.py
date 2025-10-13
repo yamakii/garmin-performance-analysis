@@ -651,3 +651,77 @@ class TestSimilarityCalculationImproved:
         score = comparator._calculate_similarity_score(target, candidate)
         # 45% * 1.0 + 35% * 1.0 + 20% * 0.3 = 86.0%
         assert 85.0 <= score <= 87.0
+
+
+class TestInterpretationWithTemperature:
+    """Test interpretation generation with temperature context."""
+
+    @pytest.fixture
+    def comparator(self):
+        """Create comparator instance."""
+        return WorkoutComparator()
+
+    @pytest.mark.unit
+    def test_interpretation_with_temp_increase(self, comparator):
+        """Interpretation should include temperature increase context."""
+        pace_diff = -3.2  # 3.2 seconds faster
+        hr_diff = 12.0  # 12 bpm higher
+        temp_diff = 6.0  # 6°C hotter
+
+        result = comparator._generate_interpretation(pace_diff, hr_diff, temp_diff)
+
+        assert "3.2秒/km速い" in result
+        assert "12bpm高い" in result
+        assert "気温+6°C影響" in result or "気温+6°C" in result
+
+    @pytest.mark.unit
+    def test_interpretation_with_temp_decrease(self, comparator):
+        """Interpretation should include temperature decrease context."""
+        pace_diff = 2.1  # 2.1 seconds slower
+        hr_diff = -5.0  # 5 bpm lower
+        temp_diff = -2.0  # 2°C cooler
+
+        result = comparator._generate_interpretation(pace_diff, hr_diff, temp_diff)
+
+        assert "2.1秒/km遅い" in result
+        assert "5bpm低い" in result
+        assert "気温-2°C影響" in result or "気温-2°C" in result
+
+    @pytest.mark.unit
+    def test_interpretation_no_temp_data(self, comparator):
+        """Interpretation without temperature data should work."""
+        pace_diff = -1.0  # 1.0 second faster (negative = faster)
+        hr_diff = 3.0  # 3 bpm higher
+        temp_diff = None  # No temperature data
+
+        result = comparator._generate_interpretation(pace_diff, hr_diff, temp_diff)
+
+        assert "1.0秒/km速い" in result
+        assert "3bpm高い" in result
+        assert "気温" not in result
+
+    @pytest.mark.unit
+    def test_interpretation_small_temp_diff(self, comparator):
+        """Small temperature differences (<1°C) should not show temperature context."""
+        pace_diff = -0.5  # 0.5 seconds faster (negative = faster)
+        hr_diff = 2.0  # 2 bpm higher
+        temp_diff = 0.8  # Only 0.8°C difference
+
+        result = comparator._generate_interpretation(pace_diff, hr_diff, temp_diff)
+
+        assert "0.5秒/km速い" in result
+        assert "2bpm高い" in result
+        assert "気温" not in result  # Should not show for small differences
+
+    @pytest.mark.unit
+    def test_interpretation_large_temp_diff(self, comparator):
+        """Large temperature differences should be prominent."""
+        pace_diff = -1.5  # 1.5 seconds faster
+        hr_diff = 18.0  # 18 bpm higher
+        temp_diff = 15.0  # 15°C hotter (summer vs winter)
+
+        result = comparator._generate_interpretation(pace_diff, hr_diff, temp_diff)
+
+        assert "1.5秒/km速い" in result
+        assert "18bpm高い" in result
+        assert "気温+15°C" in result

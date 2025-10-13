@@ -411,17 +411,33 @@ class WorkoutComparator:
             max(0.0, min(100.0, similarity))
         )  # Clamp to 0-100%  # Clamp to 0-100%  # Clamp to 0-100%
 
-    def _generate_interpretation(self, pace_diff: float, hr_diff: float) -> str:
+    def _generate_interpretation(
+        self, pace_diff: float, hr_diff: float, temp_diff: float | None = None
+    ) -> str:
         """Generate human-readable interpretation of performance difference.
 
         Args:
             pace_diff: Pace difference in seconds/km (negative = faster)
             hr_diff: Heart rate difference in bpm (negative = lower)
+            temp_diff: Temperature difference in Celsius (None if unavailable)
 
         Returns:
-            Japanese interpretation string
+            Japanese interpretation string with temperature context when applicable
+
+        Examples:
+            - "ペース: 3.2秒/km速い, 心拍: 12bpm高い（気温+6°C影響）"
+            - "ペース: 2.1秒/km遅い, 心拍: 5bpm低い（気温-2°C影響）"
+            - "ペース: 1.0秒/km速い, 心拍: 3bpm高い"  # No temp data
         """
         pace_text = f"{abs(pace_diff):.1f}秒/km{'速い' if pace_diff < 0 else '遅い'}"
+
         hr_text = f"{abs(hr_diff):.0f}bpm{'低い' if hr_diff < 0 else '高い'}"
 
-        return f"ペース: {pace_text}, 心拍数: {hr_text}"
+        # Add temperature context if difference is significant (>1°C)
+        if temp_diff is not None and abs(temp_diff) > 1.0:
+            temp_context = (
+                f"（気温{'+' if temp_diff > 0 else ''}{temp_diff:.0f}°C影響）"
+            )
+            hr_text += temp_context
+
+        return f"ペース: {pace_text}, 心拍: {hr_text}"
