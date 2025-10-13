@@ -1,0 +1,438 @@
+2025-10-13 14:39:28,227 - __main__ - INFO - Found 104 activities in raw data directory
+Migrating time series data:   0%|          | 0/104 [00:00<?, ?it/s]2025-10-13 14:39:28,515 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20636804823, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:   1%|          | 1/104 [00:00<00:40,  2.53it/s]2025-10-13 14:39:28,675 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19920823235, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:   2%|▏         | 2/104 [00:00<00:27,  3.67it/s]2025-10-13 14:39:28,874 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20485112887, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:   3%|▎         | 3/104 [00:00<00:23,  4.26it/s]2025-10-13 14:39:29,057 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20254604231, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:   4%|▍         | 4/104 [00:00<00:21,  4.72it/s]2025-10-13 14:39:29,228 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19356201884, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:   5%|▍         | 5/104 [00:01<00:19,  5.18it/s]2025-10-13 14:39:29,396 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19848563295, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:   6%|▌         | 6/104 [00:01<00:18,  5.34it/s]2025-10-13 14:39:29,563 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20033160908, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:   7%|▋         | 7/104 [00:01<00:17,  5.54it/s]2025-10-13 14:39:29,730 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20056629602, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:   8%|▊         | 8/104 [00:01<00:17,  5.61it/s]2025-10-13 14:39:29,910 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19216362774, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:   9%|▊         | 9/104 [00:01<00:16,  5.65it/s]2025-10-13 14:39:30,057 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19127812969, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  10%|▉         | 10/104 [00:01<00:15,  6.05it/s]2025-10-13 14:39:30,235 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19574628923, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  11%|█         | 11/104 [00:02<00:15,  5.88it/s]2025-10-13 14:39:30,402 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19244823143, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  12%|█▏        | 12/104 [00:02<00:15,  5.80it/s]2025-10-13 14:39:30,594 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20157286414, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  12%|█▎        | 13/104 [00:02<00:16,  5.65it/s]2025-10-13 14:39:30,767 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19654178352, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  13%|█▎        | 14/104 [00:02<00:15,  5.71it/s]2025-10-13 14:39:30,944 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19465019245, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  14%|█▍        | 15/104 [00:02<00:15,  5.72it/s]2025-10-13 14:39:31,114 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19821667130, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  15%|█▌        | 16/104 [00:03<00:15,  5.69it/s]2025-10-13 14:39:31,293 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20092719698, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  16%|█▋        | 17/104 [00:03<00:15,  5.71it/s]2025-10-13 14:39:31,469 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20545039092, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  17%|█▋        | 18/104 [00:03<00:14,  5.75it/s]2025-10-13 14:39:31,632 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20318952215, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  18%|█▊        | 19/104 [00:03<00:14,  5.73it/s]2025-10-13 14:39:31,802 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20402354389, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  19%|█▉        | 20/104 [00:03<00:14,  5.77it/s]2025-10-13 14:39:31,981 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19210218765, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  20%|██        | 21/104 [00:03<00:14,  5.77it/s]2025-10-13 14:39:32,148 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19169636322, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  21%|██        | 22/104 [00:04<00:13,  5.91it/s]2025-10-13 14:39:32,309 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19318982227, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  22%|██▏       | 23/104 [00:04<00:13,  5.91it/s]2025-10-13 14:39:32,492 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20330778984, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  23%|██▎       | 24/104 [00:04<00:13,  5.79it/s]2025-10-13 14:39:32,667 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20082602070, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  24%|██▍       | 25/104 [00:04<00:13,  5.74it/s]2025-10-13 14:39:32,846 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20107340187, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  25%|██▌       | 26/104 [00:04<00:13,  5.72it/s]2025-10-13 14:39:33,013 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20193574746, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  26%|██▌       | 27/104 [00:04<00:13,  5.73it/s]2025-10-13 14:39:33,190 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19274719879, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  27%|██▋       | 28/104 [00:05<00:13,  5.77it/s]2025-10-13 14:39:33,365 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19777597169, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  28%|██▊       | 29/104 [00:05<00:13,  5.75it/s]2025-10-13 14:39:33,539 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19663165246, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  29%|██▉       | 30/104 [00:05<00:12,  5.76it/s]2025-10-13 14:39:33,719 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20215411720, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  30%|██▉       | 31/104 [00:05<00:12,  5.69it/s]2025-10-13 14:39:33,907 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19604407320, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  31%|███       | 32/104 [00:05<00:12,  5.56it/s]2025-10-13 14:39:34,073 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19345544989, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  32%|███▏      | 33/104 [00:05<00:12,  5.73it/s]2025-10-13 14:39:34,254 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19157616205, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  33%|███▎      | 34/104 [00:06<00:12,  5.63it/s]2025-10-13 14:39:34,430 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19137590648, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  34%|███▎      | 35/104 [00:06<00:12,  5.66it/s]2025-10-13 14:39:34,609 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19239305143, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  35%|███▍      | 36/104 [00:06<00:11,  5.69it/s]2025-10-13 14:39:34,789 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19505511603, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  36%|███▌      | 37/104 [00:06<00:11,  5.62it/s]2025-10-13 14:39:34,959 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20340502763, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  37%|███▋      | 38/104 [00:06<00:11,  5.68it/s]2025-10-13 14:39:35,132 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20074594096, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  38%|███▊      | 39/104 [00:07<00:11,  5.63it/s]2025-10-13 14:39:35,315 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19518725366, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  38%|███▊      | 40/104 [00:07<00:11,  5.56it/s]2025-10-13 14:39:35,498 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19567541642, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  39%|███▉      | 41/104 [00:07<00:11,  5.64it/s]2025-10-13 14:39:35,669 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19914912442, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  40%|████      | 42/104 [00:07<00:10,  5.66it/s]2025-10-13 14:39:35,837 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20451586493, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  41%|████▏     | 43/104 [00:07<00:10,  5.70it/s]2025-10-13 14:39:36,020 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19677583028, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  42%|████▏     | 44/104 [00:07<00:10,  5.68it/s]2025-10-13 14:39:36,166 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19106276265, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  43%|████▎     | 45/104 [00:08<00:09,  6.05it/s]2025-10-13 14:39:36,351 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20383167483, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  44%|████▍     | 46/104 [00:08<00:10,  5.78it/s]2025-10-13 14:39:36,525 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20582614304, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  45%|████▌     | 47/104 [00:08<00:09,  5.83it/s]2025-10-13 14:39:36,690 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19698229748, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  46%|████▌     | 48/104 [00:08<00:09,  5.82it/s]2025-10-13 14:39:36,862 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19415706351, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  47%|████▋     | 49/104 [00:08<00:09,  5.81it/s]2025-10-13 14:39:37,052 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19786614948, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  48%|████▊     | 50/104 [00:08<00:09,  5.55it/s]2025-10-13 14:39:37,237 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20564459323, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  49%|████▉     | 51/104 [00:09<00:09,  5.47it/s]2025-10-13 14:39:37,443 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20505186133, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  50%|█████     | 52/104 [00:09<00:09,  5.38it/s]2025-10-13 14:39:37,623 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20065200551, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  51%|█████     | 53/104 [00:09<00:09,  5.43it/s]2025-10-13 14:39:37,802 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19584547373, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  52%|█████▏    | 54/104 [00:09<00:09,  5.41it/s]2025-10-13 14:39:38,001 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19226751272, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  53%|█████▎    | 55/104 [00:09<00:09,  5.35it/s]2025-10-13 14:39:38,182 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20262037723, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  54%|█████▍    | 56/104 [00:10<00:08,  5.40it/s]2025-10-13 14:39:38,361 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19842850677, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  55%|█████▍    | 57/104 [00:10<00:08,  5.35it/s]2025-10-13 14:39:38,550 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19749324953, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  56%|█████▌    | 58/104 [00:10<00:08,  5.49it/s]2025-10-13 14:39:38,716 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20531530764, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  57%|█████▋    | 59/104 [00:10<00:08,  5.58it/s]2025-10-13 14:39:38,886 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19387693633, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  58%|█████▊    | 60/104 [00:10<00:07,  5.63it/s]2025-10-13 14:39:39,060 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19872227493, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  59%|█████▊    | 61/104 [00:10<00:07,  5.63it/s]2025-10-13 14:39:39,248 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19634223197, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  60%|█████▉    | 62/104 [00:11<00:07,  5.49it/s]2025-10-13 14:39:39,435 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20511483270, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  61%|██████    | 63/104 [00:11<00:07,  5.55it/s]2025-10-13 14:39:39,614 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20471654907, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  62%|██████▏   | 64/104 [00:11<00:07,  5.47it/s]2025-10-13 14:39:39,812 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19435867456, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  62%|██████▎   | 65/104 [00:11<00:07,  5.41it/s]2025-10-13 14:39:39,985 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20118272342, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  63%|██████▎   | 66/104 [00:11<00:06,  5.48it/s]2025-10-13 14:39:40,175 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19893800964, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  64%|██████▍   | 67/104 [00:12<00:06,  5.46it/s]2025-10-13 14:39:40,370 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20388920581, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  65%|██████▌   | 68/104 [00:12<00:06,  5.26it/s]2025-10-13 14:39:40,556 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19454250792, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  66%|██████▋   | 69/104 [00:12<00:06,  5.40it/s]2025-10-13 14:39:40,736 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19445080463, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  67%|██████▋   | 70/104 [00:12<00:06,  5.40it/s]2025-10-13 14:39:40,918 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19197321541, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  68%|██████▊   | 71/104 [00:12<00:06,  5.47it/s]2025-10-13 14:39:41,095 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20243965939, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  69%|██████▉   | 72/104 [00:12<00:05,  5.43it/s]2025-10-13 14:39:41,285 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20277372383, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  70%|███████   | 73/104 [00:13<00:05,  5.47it/s]2025-10-13 14:39:41,464 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20440732182, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  71%|███████   | 74/104 [00:13<00:05,  5.40it/s]2025-10-13 14:39:41,656 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20464005432, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  72%|███████▏  | 75/104 [00:13<00:05,  5.37it/s]2025-10-13 14:39:41,845 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19614511452, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  73%|███████▎  | 76/104 [00:13<00:05,  5.26it/s]2025-10-13 14:39:42,040 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20368230451, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  74%|███████▍  | 77/104 [00:13<00:05,  5.34it/s]2025-10-13 14:39:42,222 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19424826578, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  75%|███████▌  | 78/104 [00:14<00:04,  5.40it/s]2025-10-13 14:39:42,375 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19079559780, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  76%|███████▌  | 79/104 [00:14<00:04,  5.65it/s]2025-10-13 14:39:42,573 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19643978409, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  77%|███████▋  | 80/104 [00:14<00:04,  5.49it/s]2025-10-13 14:39:42,758 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20594901208, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  78%|███████▊  | 81/104 [00:14<00:04,  5.46it/s]2025-10-13 14:39:42,944 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19729134076, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  79%|███████▉  | 82/104 [00:14<00:04,  5.45it/s]2025-10-13 14:39:43,125 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19325165494, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  80%|███████▉  | 83/104 [00:15<00:03,  5.40it/s]2025-10-13 14:39:43,307 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20223101701, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  81%|████████  | 84/104 [00:15<00:03,  5.40it/s]2025-10-13 14:39:43,500 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19525361290, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  82%|████████▏ | 85/104 [00:15<00:03,  5.36it/s]2025-10-13 14:39:43,692 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19756689912, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  83%|████████▎ | 86/104 [00:15<00:03,  5.30it/s]2025-10-13 14:39:43,882 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20306085739, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  84%|████████▎ | 87/104 [00:15<00:03,  5.40it/s]2025-10-13 14:39:44,058 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20521907905, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  85%|████████▍ | 88/104 [00:15<00:02,  5.43it/s]2025-10-13 14:39:44,252 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19364094067, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  86%|████████▌ | 89/104 [00:16<00:02,  5.27it/s]2025-10-13 14:39:44,440 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20230767415, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  87%|████████▋ | 90/104 [00:16<00:02,  5.42it/s]2025-10-13 14:39:44,620 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19335576935, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  88%|████████▊ | 91/104 [00:16<00:02,  5.40it/s]2025-10-13 14:39:44,800 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20361363796, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  88%|████████▊ | 92/104 [00:16<00:02,  5.51it/s]2025-10-13 14:39:44,979 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20011030083, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  89%|████████▉ | 93/104 [00:16<00:02,  5.48it/s]2025-10-13 14:39:45,158 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20139599243, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  90%|█████████ | 94/104 [00:17<00:01,  5.48it/s]2025-10-13 14:39:45,343 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19594083208, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  91%|█████████▏| 95/104 [00:17<00:01,  5.48it/s]2025-10-13 14:39:45,520 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19475648137, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  92%|█████████▏| 96/104 [00:17<00:01,  5.47it/s]2025-10-13 14:39:45,734 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20615445009, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  93%|█████████▎| 97/104 [00:17<00:01,  5.25it/s]2025-10-13 14:39:45,896 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19086934834, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  94%|█████████▍| 98/104 [00:17<00:01,  5.51it/s]2025-10-13 14:39:46,075 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20434342498, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  95%|█████████▌| 99/104 [00:17<00:00,  5.57it/s]2025-10-13 14:39:46,259 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20297356518, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  96%|█████████▌| 100/104 [00:18<00:00,  5.43it/s]2025-10-13 14:39:46,452 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19405535849, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  97%|█████████▋| 101/104 [00:18<00:00,  5.33it/s]2025-10-13 14:39:46,646 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19496482492, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  98%|█████████▊| 102/104 [00:18<00:00,  5.34it/s]2025-10-13 14:39:46,859 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20652528219, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  99%|█████████▉| 103/104 [00:18<00:00,  5.06it/s]2025-10-13 14:39:47,051 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20149548446, timestamp_s: 0" violates primary key constraint.
+Migrating time series data: 100%|██████████| 104/104 [00:18<00:00,  5.12it/s]Migrating time series data: 100%|██████████| 104/104 [00:18<00:00,  5.49it/s]
+2025-10-13 14:39:47,190 - __main__ - INFO - Migration completed: 0 success, 0 skipped, 104 errors
+
+=== Migration Summary ===
+Total activities: 104
+Success: 0
+Skipped: 0
+Errors: 104
+
+=== Error Details ===
+  - Activity 20636804823: insert_time_series_metrics returned False
+  - Activity 19920823235: insert_time_series_metrics returned False
+  - Activity 20485112887: insert_time_series_metrics returned False
+  - Activity 20254604231: insert_time_series_metrics returned False
+  - Activity 19356201884: insert_time_series_metrics returned False
+  - Activity 19848563295: insert_time_series_metrics returned False
+  - Activity 20033160908: insert_time_series_metrics returned False
+  - Activity 20056629602: insert_time_series_metrics returned False
+  - Activity 19216362774: insert_time_series_metrics returned False
+  - Activity 19127812969: insert_time_series_metrics returned False
+  - Activity 19574628923: insert_time_series_metrics returned False
+  - Activity 19244823143: insert_time_series_metrics returned False
+  - Activity 20157286414: insert_time_series_metrics returned False
+  - Activity 19654178352: insert_time_series_metrics returned False
+  - Activity 19465019245: insert_time_series_metrics returned False
+  - Activity 19821667130: insert_time_series_metrics returned False
+  - Activity 20092719698: insert_time_series_metrics returned False
+  - Activity 20545039092: insert_time_series_metrics returned False
+  - Activity 20318952215: insert_time_series_metrics returned False
+  - Activity 20402354389: insert_time_series_metrics returned False
+  - Activity 19210218765: insert_time_series_metrics returned False
+  - Activity 19169636322: insert_time_series_metrics returned False
+  - Activity 19318982227: insert_time_series_metrics returned False
+  - Activity 20330778984: insert_time_series_metrics returned False
+  - Activity 20082602070: insert_time_series_metrics returned False
+  - Activity 20107340187: insert_time_series_metrics returned False
+  - Activity 20193574746: insert_time_series_metrics returned False
+  - Activity 19274719879: insert_time_series_metrics returned False
+  - Activity 19777597169: insert_time_series_metrics returned False
+  - Activity 19663165246: insert_time_series_metrics returned False
+  - Activity 20215411720: insert_time_series_metrics returned False
+  - Activity 19604407320: insert_time_series_metrics returned False
+  - Activity 19345544989: insert_time_series_metrics returned False
+  - Activity 19157616205: insert_time_series_metrics returned False
+  - Activity 19137590648: insert_time_series_metrics returned False
+  - Activity 19239305143: insert_time_series_metrics returned False
+  - Activity 19505511603: insert_time_series_metrics returned False
+  - Activity 20340502763: insert_time_series_metrics returned False
+  - Activity 20074594096: insert_time_series_metrics returned False
+  - Activity 19518725366: insert_time_series_metrics returned False
+  - Activity 19567541642: insert_time_series_metrics returned False
+  - Activity 19914912442: insert_time_series_metrics returned False
+  - Activity 20451586493: insert_time_series_metrics returned False
+  - Activity 19677583028: insert_time_series_metrics returned False
+  - Activity 19106276265: insert_time_series_metrics returned False
+  - Activity 20383167483: insert_time_series_metrics returned False
+  - Activity 20582614304: insert_time_series_metrics returned False
+  - Activity 19698229748: insert_time_series_metrics returned False
+  - Activity 19415706351: insert_time_series_metrics returned False
+  - Activity 19786614948: insert_time_series_metrics returned False
+  - Activity 20564459323: insert_time_series_metrics returned False
+  - Activity 20505186133: insert_time_series_metrics returned False
+  - Activity 20065200551: insert_time_series_metrics returned False
+  - Activity 19584547373: insert_time_series_metrics returned False
+  - Activity 19226751272: insert_time_series_metrics returned False
+  - Activity 20262037723: insert_time_series_metrics returned False
+  - Activity 19842850677: insert_time_series_metrics returned False
+  - Activity 19749324953: insert_time_series_metrics returned False
+  - Activity 20531530764: insert_time_series_metrics returned False
+  - Activity 19387693633: insert_time_series_metrics returned False
+  - Activity 19872227493: insert_time_series_metrics returned False
+  - Activity 19634223197: insert_time_series_metrics returned False
+  - Activity 20511483270: insert_time_series_metrics returned False
+  - Activity 20471654907: insert_time_series_metrics returned False
+  - Activity 19435867456: insert_time_series_metrics returned False
+  - Activity 20118272342: insert_time_series_metrics returned False
+  - Activity 19893800964: insert_time_series_metrics returned False
+  - Activity 20388920581: insert_time_series_metrics returned False
+  - Activity 19454250792: insert_time_series_metrics returned False
+  - Activity 19445080463: insert_time_series_metrics returned False
+  - Activity 19197321541: insert_time_series_metrics returned False
+  - Activity 20243965939: insert_time_series_metrics returned False
+  - Activity 20277372383: insert_time_series_metrics returned False
+  - Activity 20440732182: insert_time_series_metrics returned False
+  - Activity 20464005432: insert_time_series_metrics returned False
+  - Activity 19614511452: insert_time_series_metrics returned False
+  - Activity 20368230451: insert_time_series_metrics returned False
+  - Activity 19424826578: insert_time_series_metrics returned False
+  - Activity 19079559780: insert_time_series_metrics returned False
+  - Activity 19643978409: insert_time_series_metrics returned False
+  - Activity 20594901208: insert_time_series_metrics returned False
+  - Activity 19729134076: insert_time_series_metrics returned False
+  - Activity 19325165494: insert_time_series_metrics returned False
+  - Activity 20223101701: insert_time_series_metrics returned False
+  - Activity 19525361290: insert_time_series_metrics returned False
+  - Activity 19756689912: insert_time_series_metrics returned False
+  - Activity 20306085739: insert_time_series_metrics returned False
+  - Activity 20521907905: insert_time_series_metrics returned False
+  - Activity 19364094067: insert_time_series_metrics returned False
+  - Activity 20230767415: insert_time_series_metrics returned False
+  - Activity 19335576935: insert_time_series_metrics returned False
+  - Activity 20361363796: insert_time_series_metrics returned False
+  - Activity 20011030083: insert_time_series_metrics returned False
+  - Activity 20139599243: insert_time_series_metrics returned False
+  - Activity 19594083208: insert_time_series_metrics returned False
+  - Activity 19475648137: insert_time_series_metrics returned False
+  - Activity 20615445009: insert_time_series_metrics returned False
+  - Activity 19086934834: insert_time_series_metrics returned False
+  - Activity 20434342498: insert_time_series_metrics returned False
+  - Activity 20297356518: insert_time_series_metrics returned False
+  - Activity 19405535849: insert_time_series_metrics returned False
+  - Activity 19496482492: insert_time_series_metrics returned False
+  - Activity 20652528219: insert_time_series_metrics returned False
+  - Activity 20149548446: insert_time_series_metrics returned False
+2025-10-13 14:40:17,227 - __main__ - INFO - Found 104 activities in raw data directory
+Migrating time series data:   0%|          | 0/104 [00:00<?, ?it/s]2025-10-13 14:40:17,520 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20636804823, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:   1%|          | 1/104 [00:00<00:42,  2.42it/s]2025-10-13 14:40:17,692 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19920823235, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:   2%|▏         | 2/104 [00:00<00:28,  3.64it/s]2025-10-13 14:40:17,884 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20485112887, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:   3%|▎         | 3/104 [00:00<00:24,  4.13it/s]2025-10-13 14:40:18,077 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20254604231, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:   4%|▍         | 4/104 [00:00<00:21,  4.55it/s]2025-10-13 14:40:18,261 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19356201884, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:   5%|▍         | 5/104 [00:01<00:20,  4.77it/s]2025-10-13 14:40:18,461 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19848563295, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:   6%|▌         | 6/104 [00:01<00:20,  4.87it/s]2025-10-13 14:40:18,648 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20033160908, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:   7%|▋         | 7/104 [00:01<00:19,  4.98it/s]2025-10-13 14:40:18,838 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20056629602, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:   8%|▊         | 8/104 [00:01<00:18,  5.15it/s]2025-10-13 14:40:19,027 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19216362774, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:   9%|▊         | 9/104 [00:01<00:18,  5.10it/s]2025-10-13 14:40:19,198 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19127812969, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  10%|▉         | 10/104 [00:02<00:17,  5.47it/s]2025-10-13 14:40:19,388 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19574628923, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  11%|█         | 11/104 [00:02<00:17,  5.36it/s]2025-10-13 14:40:19,571 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19244823143, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  12%|█▏        | 12/104 [00:02<00:17,  5.30it/s]2025-10-13 14:40:19,780 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20157286414, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  12%|█▎        | 13/104 [00:02<00:17,  5.23it/s]2025-10-13 14:40:19,965 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19654178352, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  13%|█▎        | 14/104 [00:02<00:17,  5.14it/s]2025-10-13 14:40:20,170 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19465019245, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  14%|█▍        | 15/104 [00:03<00:17,  5.22it/s]2025-10-13 14:40:20,354 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19821667130, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  15%|█▌        | 16/104 [00:03<00:16,  5.24it/s]2025-10-13 14:40:20,541 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20092719698, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  16%|█▋        | 17/104 [00:03<00:16,  5.16it/s]2025-10-13 14:40:20,745 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20545039092, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  17%|█▋        | 18/104 [00:03<00:16,  5.17it/s]2025-10-13 14:40:20,928 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20318952215, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  18%|█▊        | 19/104 [00:03<00:16,  5.19it/s]2025-10-13 14:40:21,116 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20402354389, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  19%|█▉        | 20/104 [00:04<00:15,  5.26it/s]2025-10-13 14:40:21,305 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19210218765, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  20%|██        | 21/104 [00:04<00:15,  5.22it/s]2025-10-13 14:40:21,496 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19169636322, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  21%|██        | 22/104 [00:04<00:15,  5.21it/s]2025-10-13 14:40:21,689 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19318982227, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  22%|██▏       | 23/104 [00:04<00:15,  5.21it/s]2025-10-13 14:40:21,897 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20330778984, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  23%|██▎       | 24/104 [00:04<00:15,  5.08it/s]2025-10-13 14:40:22,100 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20082602070, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  24%|██▍       | 25/104 [00:05<00:15,  5.13it/s]2025-10-13 14:40:22,292 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20107340187, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  25%|██▌       | 26/104 [00:05<00:15,  5.12it/s]2025-10-13 14:40:22,477 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20193574746, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  26%|██▌       | 27/104 [00:05<00:14,  5.25it/s]2025-10-13 14:40:22,658 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19274719879, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  27%|██▋       | 28/104 [00:05<00:15,  4.78it/s]2025-10-13 14:40:22,916 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19777597169, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  28%|██▊       | 29/104 [00:05<00:15,  4.91it/s]2025-10-13 14:40:23,108 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19663165246, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  29%|██▉       | 30/104 [00:06<00:14,  4.94it/s]2025-10-13 14:40:23,313 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20215411720, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  30%|██▉       | 31/104 [00:06<00:14,  4.92it/s]2025-10-13 14:40:23,523 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19604407320, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  31%|███       | 32/104 [00:06<00:14,  4.95it/s]2025-10-13 14:40:23,704 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19345544989, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  32%|███▏      | 33/104 [00:06<00:13,  5.09it/s]2025-10-13 14:40:23,904 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19157616205, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  33%|███▎      | 34/104 [00:06<00:13,  5.08it/s]2025-10-13 14:40:24,093 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19137590648, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  34%|███▎      | 35/104 [00:07<00:13,  5.03it/s]2025-10-13 14:40:24,299 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19239305143, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  35%|███▍      | 36/104 [00:07<00:13,  5.02it/s]2025-10-13 14:40:24,503 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19505511603, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  36%|███▌      | 37/104 [00:07<00:13,  4.94it/s]2025-10-13 14:40:24,704 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20340502763, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  37%|███▋      | 38/104 [00:07<00:13,  5.02it/s]2025-10-13 14:40:24,899 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20074594096, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  38%|███▊      | 39/104 [00:07<00:12,  5.10it/s]2025-10-13 14:40:25,085 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19518725366, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  38%|███▊      | 40/104 [00:07<00:12,  5.11it/s]2025-10-13 14:40:25,283 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19567541642, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  39%|███▉      | 41/104 [00:08<00:12,  4.97it/s]2025-10-13 14:40:25,494 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19914912442, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  40%|████      | 42/104 [00:08<00:12,  4.97it/s]2025-10-13 14:40:25,685 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20451586493, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  41%|████▏     | 43/104 [00:08<00:12,  5.07it/s]2025-10-13 14:40:25,885 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19677583028, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  42%|████▏     | 44/104 [00:08<00:11,  5.09it/s]2025-10-13 14:40:26,052 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19106276265, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  43%|████▎     | 45/104 [00:08<00:11,  5.27it/s]2025-10-13 14:40:26,267 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20383167483, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  44%|████▍     | 46/104 [00:09<00:11,  5.03it/s]2025-10-13 14:40:26,474 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20582614304, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  45%|████▌     | 47/104 [00:09<00:11,  5.12it/s]2025-10-13 14:40:26,657 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19698229748, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  46%|████▌     | 48/104 [00:09<00:11,  5.08it/s]2025-10-13 14:40:26,857 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19415706351, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  47%|████▋     | 49/104 [00:09<00:10,  5.17it/s]2025-10-13 14:40:27,059 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19786614948, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  48%|████▊     | 50/104 [00:09<00:10,  5.05it/s]2025-10-13 14:40:27,253 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20564459323, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  49%|████▉     | 51/104 [00:10<00:10,  5.02it/s]2025-10-13 14:40:27,473 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20505186133, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  50%|█████     | 52/104 [00:10<00:10,  4.87it/s]2025-10-13 14:40:27,680 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20065200551, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  51%|█████     | 53/104 [00:10<00:10,  4.92it/s]2025-10-13 14:40:27,876 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19584547373, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  52%|█████▏    | 54/104 [00:10<00:10,  4.93it/s]2025-10-13 14:40:28,091 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19226751272, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  53%|█████▎    | 55/104 [00:11<00:10,  4.83it/s]2025-10-13 14:40:28,297 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20262037723, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  54%|█████▍    | 56/104 [00:11<00:09,  4.85it/s]2025-10-13 14:40:28,501 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19842850677, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  55%|█████▍    | 57/104 [00:11<00:09,  4.92it/s]2025-10-13 14:40:28,693 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19749324953, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  56%|█████▌    | 58/104 [00:11<00:09,  4.91it/s]2025-10-13 14:40:28,893 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20531530764, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  57%|█████▋    | 59/104 [00:11<00:08,  5.00it/s]2025-10-13 14:40:29,079 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19387693633, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  58%|█████▊    | 60/104 [00:12<00:08,  5.01it/s]2025-10-13 14:40:29,280 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19872227493, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  59%|█████▊    | 61/104 [00:12<00:08,  5.04it/s]2025-10-13 14:40:29,488 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19634223197, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  60%|█████▉    | 62/104 [00:12<00:08,  5.04it/s]2025-10-13 14:40:29,679 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20511483270, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  61%|██████    | 63/104 [00:12<00:08,  5.03it/s]2025-10-13 14:40:29,884 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20471654907, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  62%|██████▏   | 64/104 [00:12<00:08,  4.96it/s]2025-10-13 14:40:30,099 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19435867456, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  62%|██████▎   | 65/104 [00:13<00:07,  4.96it/s]2025-10-13 14:40:30,286 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20118272342, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  63%|██████▎   | 66/104 [00:13<00:07,  4.95it/s]2025-10-13 14:40:30,502 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19893800964, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  64%|██████▍   | 67/104 [00:13<00:07,  4.95it/s]2025-10-13 14:40:30,706 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20388920581, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  65%|██████▌   | 68/104 [00:13<00:07,  4.83it/s]2025-10-13 14:40:30,910 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19454250792, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  66%|██████▋   | 69/104 [00:13<00:07,  4.87it/s]2025-10-13 14:40:31,117 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19445080463, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  67%|██████▋   | 70/104 [00:14<00:06,  4.95it/s]2025-10-13 14:40:31,313 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19197321541, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  68%|██████▊   | 71/104 [00:14<00:06,  4.98it/s]2025-10-13 14:40:31,510 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20243965939, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  69%|██████▉   | 72/104 [00:14<00:06,  4.97it/s]2025-10-13 14:40:31,711 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20277372383, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  70%|███████   | 73/104 [00:14<00:06,  4.92it/s]2025-10-13 14:40:31,918 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20440732182, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  71%|███████   | 74/104 [00:14<00:06,  4.89it/s]2025-10-13 14:40:32,123 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20464005432, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  72%|███████▏  | 75/104 [00:15<00:05,  5.00it/s]2025-10-13 14:40:32,321 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19614511452, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  73%|███████▎  | 76/104 [00:15<00:05,  4.96it/s]2025-10-13 14:40:32,520 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20368230451, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  74%|███████▍  | 77/104 [00:15<00:05,  5.00it/s]2025-10-13 14:40:32,720 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19424826578, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  75%|███████▌  | 78/104 [00:15<00:05,  4.98it/s]2025-10-13 14:40:32,893 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19079559780, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  76%|███████▌  | 79/104 [00:15<00:04,  5.24it/s]2025-10-13 14:40:33,096 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19643978409, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  77%|███████▋  | 80/104 [00:16<00:04,  5.08it/s]2025-10-13 14:40:33,301 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20594901208, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  78%|███████▊  | 81/104 [00:16<00:04,  4.96it/s]2025-10-13 14:40:33,514 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19729134076, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  79%|███████▉  | 82/104 [00:16<00:04,  4.94it/s]2025-10-13 14:40:33,720 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19325165494, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  80%|███████▉  | 83/104 [00:16<00:04,  4.98it/s]2025-10-13 14:40:33,909 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20223101701, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  81%|████████  | 84/104 [00:16<00:03,  5.06it/s]2025-10-13 14:40:34,106 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19525361290, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  82%|████████▏ | 85/104 [00:17<00:03,  5.02it/s]2025-10-13 14:40:34,311 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19756689912, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  83%|████████▎ | 86/104 [00:17<00:03,  4.89it/s]2025-10-13 14:40:34,523 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20306085739, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  84%|████████▎ | 87/104 [00:17<00:03,  4.86it/s]2025-10-13 14:40:34,726 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20521907905, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  85%|████████▍ | 88/104 [00:17<00:03,  4.86it/s]2025-10-13 14:40:34,949 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19364094067, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  86%|████████▌ | 89/104 [00:17<00:03,  4.75it/s]2025-10-13 14:40:35,156 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20230767415, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  87%|████████▋ | 90/104 [00:18<00:02,  4.84it/s]2025-10-13 14:40:35,361 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19335576935, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  88%|████████▊ | 91/104 [00:18<00:02,  4.80it/s]2025-10-13 14:40:35,564 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20361363796, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  88%|████████▊ | 92/104 [00:18<00:02,  4.83it/s]2025-10-13 14:40:35,775 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20011030083, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  89%|████████▉ | 93/104 [00:18<00:02,  4.86it/s]2025-10-13 14:40:35,975 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20139599243, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  90%|█████████ | 94/104 [00:18<00:02,  4.89it/s]2025-10-13 14:40:36,180 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19594083208, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  91%|█████████▏| 95/104 [00:19<00:01,  4.89it/s]2025-10-13 14:40:36,377 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19475648137, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  92%|█████████▏| 96/104 [00:19<00:01,  4.94it/s]2025-10-13 14:40:36,601 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20615445009, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  93%|█████████▎| 97/104 [00:19<00:01,  4.73it/s]2025-10-13 14:40:36,796 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19086934834, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  94%|█████████▍| 98/104 [00:19<00:01,  4.83it/s]2025-10-13 14:40:37,005 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20434342498, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  95%|█████████▌| 99/104 [00:19<00:01,  4.82it/s]2025-10-13 14:40:37,223 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20297356518, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  96%|█████████▌| 100/104 [00:20<00:00,  4.79it/s]2025-10-13 14:40:37,434 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19405535849, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  97%|█████████▋| 101/104 [00:20<00:00,  4.84it/s]2025-10-13 14:40:37,631 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 19496482492, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  98%|█████████▊| 102/104 [00:20<00:00,  4.85it/s]2025-10-13 14:40:37,864 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20652528219, timestamp_s: 0" violates primary key constraint.
+Migrating time series data:  99%|█████████▉| 103/104 [00:20<00:00,  4.60it/s]2025-10-13 14:40:38,080 - tools.database.inserters.time_series_metrics - ERROR - Error inserting time series metrics: Constraint Error: Duplicate key "activity_id: 20149548446, timestamp_s: 0" violates primary key constraint.
+Migrating time series data: 100%|██████████| 104/104 [00:20<00:00,  4.73it/s]Migrating time series data: 100%|██████████| 104/104 [00:20<00:00,  4.95it/s]
+2025-10-13 14:40:38,225 - __main__ - INFO - Migration completed: 0 success, 0 skipped, 104 errors
+
+=== Migration Summary ===
+Total activities: 104
+Success: 0
+Skipped: 0
+Errors: 104
+
+=== Error Details ===
+  - Activity 20636804823: insert_time_series_metrics returned False
+  - Activity 19920823235: insert_time_series_metrics returned False
+  - Activity 20485112887: insert_time_series_metrics returned False
+  - Activity 20254604231: insert_time_series_metrics returned False
+  - Activity 19356201884: insert_time_series_metrics returned False
+  - Activity 19848563295: insert_time_series_metrics returned False
+  - Activity 20033160908: insert_time_series_metrics returned False
+  - Activity 20056629602: insert_time_series_metrics returned False
+  - Activity 19216362774: insert_time_series_metrics returned False
+  - Activity 19127812969: insert_time_series_metrics returned False
+  - Activity 19574628923: insert_time_series_metrics returned False
+  - Activity 19244823143: insert_time_series_metrics returned False
+  - Activity 20157286414: insert_time_series_metrics returned False
+  - Activity 19654178352: insert_time_series_metrics returned False
+  - Activity 19465019245: insert_time_series_metrics returned False
+  - Activity 19821667130: insert_time_series_metrics returned False
+  - Activity 20092719698: insert_time_series_metrics returned False
+  - Activity 20545039092: insert_time_series_metrics returned False
+  - Activity 20318952215: insert_time_series_metrics returned False
+  - Activity 20402354389: insert_time_series_metrics returned False
+  - Activity 19210218765: insert_time_series_metrics returned False
+  - Activity 19169636322: insert_time_series_metrics returned False
+  - Activity 19318982227: insert_time_series_metrics returned False
+  - Activity 20330778984: insert_time_series_metrics returned False
+  - Activity 20082602070: insert_time_series_metrics returned False
+  - Activity 20107340187: insert_time_series_metrics returned False
+  - Activity 20193574746: insert_time_series_metrics returned False
+  - Activity 19274719879: insert_time_series_metrics returned False
+  - Activity 19777597169: insert_time_series_metrics returned False
+  - Activity 19663165246: insert_time_series_metrics returned False
+  - Activity 20215411720: insert_time_series_metrics returned False
+  - Activity 19604407320: insert_time_series_metrics returned False
+  - Activity 19345544989: insert_time_series_metrics returned False
+  - Activity 19157616205: insert_time_series_metrics returned False
+  - Activity 19137590648: insert_time_series_metrics returned False
+  - Activity 19239305143: insert_time_series_metrics returned False
+  - Activity 19505511603: insert_time_series_metrics returned False
+  - Activity 20340502763: insert_time_series_metrics returned False
+  - Activity 20074594096: insert_time_series_metrics returned False
+  - Activity 19518725366: insert_time_series_metrics returned False
+  - Activity 19567541642: insert_time_series_metrics returned False
+  - Activity 19914912442: insert_time_series_metrics returned False
+  - Activity 20451586493: insert_time_series_metrics returned False
+  - Activity 19677583028: insert_time_series_metrics returned False
+  - Activity 19106276265: insert_time_series_metrics returned False
+  - Activity 20383167483: insert_time_series_metrics returned False
+  - Activity 20582614304: insert_time_series_metrics returned False
+  - Activity 19698229748: insert_time_series_metrics returned False
+  - Activity 19415706351: insert_time_series_metrics returned False
+  - Activity 19786614948: insert_time_series_metrics returned False
+  - Activity 20564459323: insert_time_series_metrics returned False
+  - Activity 20505186133: insert_time_series_metrics returned False
+  - Activity 20065200551: insert_time_series_metrics returned False
+  - Activity 19584547373: insert_time_series_metrics returned False
+  - Activity 19226751272: insert_time_series_metrics returned False
+  - Activity 20262037723: insert_time_series_metrics returned False
+  - Activity 19842850677: insert_time_series_metrics returned False
+  - Activity 19749324953: insert_time_series_metrics returned False
+  - Activity 20531530764: insert_time_series_metrics returned False
+  - Activity 19387693633: insert_time_series_metrics returned False
+  - Activity 19872227493: insert_time_series_metrics returned False
+  - Activity 19634223197: insert_time_series_metrics returned False
+  - Activity 20511483270: insert_time_series_metrics returned False
+  - Activity 20471654907: insert_time_series_metrics returned False
+  - Activity 19435867456: insert_time_series_metrics returned False
+  - Activity 20118272342: insert_time_series_metrics returned False
+  - Activity 19893800964: insert_time_series_metrics returned False
+  - Activity 20388920581: insert_time_series_metrics returned False
+  - Activity 19454250792: insert_time_series_metrics returned False
+  - Activity 19445080463: insert_time_series_metrics returned False
+  - Activity 19197321541: insert_time_series_metrics returned False
+  - Activity 20243965939: insert_time_series_metrics returned False
+  - Activity 20277372383: insert_time_series_metrics returned False
+  - Activity 20440732182: insert_time_series_metrics returned False
+  - Activity 20464005432: insert_time_series_metrics returned False
+  - Activity 19614511452: insert_time_series_metrics returned False
+  - Activity 20368230451: insert_time_series_metrics returned False
+  - Activity 19424826578: insert_time_series_metrics returned False
+  - Activity 19079559780: insert_time_series_metrics returned False
+  - Activity 19643978409: insert_time_series_metrics returned False
+  - Activity 20594901208: insert_time_series_metrics returned False
+  - Activity 19729134076: insert_time_series_metrics returned False
+  - Activity 19325165494: insert_time_series_metrics returned False
+  - Activity 20223101701: insert_time_series_metrics returned False
+  - Activity 19525361290: insert_time_series_metrics returned False
+  - Activity 19756689912: insert_time_series_metrics returned False
+  - Activity 20306085739: insert_time_series_metrics returned False
+  - Activity 20521907905: insert_time_series_metrics returned False
+  - Activity 19364094067: insert_time_series_metrics returned False
+  - Activity 20230767415: insert_time_series_metrics returned False
+  - Activity 19335576935: insert_time_series_metrics returned False
+  - Activity 20361363796: insert_time_series_metrics returned False
+  - Activity 20011030083: insert_time_series_metrics returned False
+  - Activity 20139599243: insert_time_series_metrics returned False
+  - Activity 19594083208: insert_time_series_metrics returned False
+  - Activity 19475648137: insert_time_series_metrics returned False
+  - Activity 20615445009: insert_time_series_metrics returned False
+  - Activity 19086934834: insert_time_series_metrics returned False
+  - Activity 20434342498: insert_time_series_metrics returned False
+  - Activity 20297356518: insert_time_series_metrics returned False
+  - Activity 19405535849: insert_time_series_metrics returned False
+  - Activity 19496482492: insert_time_series_metrics returned False
+  - Activity 20652528219: insert_time_series_metrics returned False
+  - Activity 20149548446: insert_time_series_metrics returned False

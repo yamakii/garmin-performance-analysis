@@ -1174,6 +1174,7 @@ class GarminIngestWorker:
         DuckDB insertion order (foreign key constraints):
         1. activities (parent table)
         2. splits, form_efficiency, heart_rate_zones, etc. (child tables)
+        3. time_series_metrics (child table, optional)
 
         Args:
             activity_id: Activity ID
@@ -1387,6 +1388,31 @@ class GarminIngestWorker:
         else:
             logger.warning(
                 f"Failed to insert vo2_max to DuckDB for activity {activity_id}"
+            )
+
+        # Insert time_series_metrics into DuckDB (optional - requires activity_details.json)
+        from tools.database.inserters.time_series_metrics import (
+            insert_time_series_metrics,
+        )
+
+        activity_details_file = activity_dir / "activity_details.json"
+        if activity_details_file.exists():
+            ts_success = insert_time_series_metrics(
+                activity_details_file=str(activity_details_file),
+                activity_id=activity_id,
+                db_path=self._db_path,
+            )
+            if ts_success:
+                logger.info(
+                    f"Inserted time_series_metrics to DuckDB for activity {activity_id}"
+                )
+            else:
+                logger.error(
+                    f"Failed to insert time_series_metrics to DuckDB for activity {activity_id}"
+                )
+        else:
+            logger.warning(
+                f"activity_details.json not found for activity {activity_id}, skipping time_series_metrics insertion"
             )
 
         return {

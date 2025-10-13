@@ -30,11 +30,12 @@ Raw Data (API) → Performance Data (pre-processed) → Analysis (DuckDB) → Re
 - `GarminIngestWorker`: API → raw → performance → DuckDB pipeline
   - `collect_data(activity_id, force_refetch=None)`: Fetch from API with selective cache refresh
   - `process_activity(activity_id, date, force_refetch=None)`: Full pipeline orchestration
-- `GarminDBWriter`: DuckDB insertion (7 normalized tables)
+- `GarminDBWriter`: DuckDB insertion (8 normalized tables including time_series_metrics)
 - `ReportGeneratorWorker`: Template-based report generation
 
 **DuckDB Schema:**
 - Normalized tables: `splits`, `form_efficiency`, `heart_rate_zones`, `hr_efficiency`, `performance_trends`, `vo2_max`, `lactate_threshold`
+- **Time series table**: `time_series_metrics` (26 metrics × 1000-2000 rows/activity, 98.8% token reduction)
 - Metadata: `activities` (foreign key relationships)
 - Analysis: `section_analyses` (agent results)
 
@@ -79,9 +80,9 @@ Raw Data (API) → Performance Data (pre-processed) → Analysis (DuckDB) → Re
 - **Normalized Tables**: `get_form_efficiency_summary`, `get_hr_efficiency_analysis`, `get_heart_rate_zones_detail`, `get_vo2_max_data`, `get_lactate_threshold_data`
 - **Splits Data** (lightweight): `get_splits_pace_hr` (split/phase), `get_splits_form_metrics` (form), `get_splits_elevation` (environment), `get_splits_all` (summary only)
 - **Write**: `insert_section_analysis_dict` (recommended), `insert_section_analysis` (legacy)
-- **RAG Queries**: `get_interval_analysis`, `get_split_time_series_detail`, `get_time_range_detail`, `detect_form_anomalies`, `analyze_performance_trends`, `extract_insights`, `classify_activity_type`, `compare_similar_workouts`
+- **RAG Queries**: `get_interval_analysis`, `get_split_time_series_detail` (DuckDB-based, 98.8% token reduction), `get_time_range_detail`, `detect_form_anomalies`, `analyze_performance_trends`, `extract_insights`, `classify_activity_type`, `compare_similar_workouts`
 
-**Note:** Prefer lightweight splits APIs for targeted analysis. activity_details.json provides 26 second-by-second metrics.
+**Note:** Prefer lightweight splits APIs for targeted analysis. Time series tools use DuckDB for 98.8% token reduction. activity_details.json provides 26 second-by-second metrics.
 
 ### Serena MCP Integration
 
