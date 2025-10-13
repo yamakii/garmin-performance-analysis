@@ -448,7 +448,6 @@ class TestRagIntervalToolsMcp:
         # Verify all Phase 3 tools are present
         assert "analyze_performance_trends" in tool_names
         assert "extract_insights" in tool_names
-        assert "classify_activity_type" in tool_names
 
     @pytest.mark.asyncio
     async def test_call_analyze_performance_trends_with_minimal_args(
@@ -603,121 +602,6 @@ class TestRagIntervalToolsMcp:
             # Note: Current implementation doesn't support activity_id parameter
             # This test documents the expected behavior for future enhancement
             assert len(result) == 1
-
-    @pytest.mark.asyncio
-    async def test_call_classify_activity_type(
-        self, fixture_activity_id: int, fixture_base_path: Path
-    ):
-        """Test calling classify_activity_type."""
-        import duckdb
-
-        from tools.database.db_writer import GarminDBWriter
-
-        # Create DuckDB with test data
-        db_path = fixture_base_path / "test_classify.duckdb"
-        writer = GarminDBWriter(str(db_path))
-        writer._ensure_tables()
-
-        # Insert test activity with HR zones (normalized schema: 5 rows, one per zone)
-        conn = duckdb.connect(str(db_path))
-        conn.execute(
-            """
-            INSERT INTO activities (
-                activity_id, date, activity_name, total_distance_km
-            ) VALUES (?, ?, ?, ?)
-            """,
-            (fixture_activity_id, "2025-10-11", "Test Base Run", 10.5),
-        )
-
-        # Insert 5 rows (one per zone)
-        zones_data = [
-            (1, 1200.0, 42.86),  # Zone 1: 1200s, 42.86%
-            (2, 1000.0, 35.71),  # Zone 2: 1000s, 35.71%
-            (3, 400.0, 14.29),  # Zone 3: 400s, 14.29%
-            (4, 200.0, 7.14),  # Zone 4: 200s, 7.14%
-            (5, 0.0, 0.0),  # Zone 5: 0s, 0.0%
-        ]
-        for zone_num, time_in_zone, percentage in zones_data:
-            conn.execute(
-                """
-                INSERT INTO heart_rate_zones (
-                    activity_id, zone_number, zone_low_boundary, zone_high_boundary,
-                    time_in_zone_seconds, zone_percentage
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    fixture_activity_id,
-                    zone_num,
-                    100 + zone_num * 10,
-                    110 + zone_num * 10,
-                    time_in_zone,
-                    percentage,
-                ),
-            )
-        conn.close()
-
-        # Mock db_reader to use test database
-        with patch("servers.garmin_db_server.db_reader") as mock_reader:
-            mock_reader.db_path = db_path
-            mock_reader.get_heart_rate_zones_detail.return_value = {
-                "zones": [
-                    {"zone_number": 1, "zone_percentage": 42.86},
-                    {"zone_number": 2, "zone_percentage": 35.71},
-                    {"zone_number": 3, "zone_percentage": 14.29},
-                    {"zone_number": 4, "zone_percentage": 7.14},
-                    {"zone_number": 5, "zone_percentage": 0.0},
-                ]
-            }
-            mock_reader.get_splits_all.return_value = {"splits": []}
-
-            result = await call_tool(
-                name="classify_activity_type",
-                arguments={"activity_id": fixture_activity_id},
-            )
-
-        # Verify response structure
-        assert len(result) == 1
-        response_data = json.loads(result[0].text)
-        assert "activity_id" in response_data
-        assert "type_en" in response_data
-        assert "type_ja" in response_data
-        assert "confidence" in response_data
-        assert response_data["activity_id"] == fixture_activity_id
-
-    @pytest.mark.asyncio
-    async def test_call_classify_activity_type_with_power(
-        self, fixture_activity_id: int
-    ):
-        """Test classify_activity_type with power data."""
-        with patch("servers.garmin_db_server.db_reader") as mock_reader:
-            mock_reader.get_heart_rate_zones_detail.return_value = {
-                "zones": [
-                    {"zone_number": 5, "zone_percentage": 55.0},
-                ]
-            }
-            mock_reader.get_splits_all.return_value = {
-                "splits": [
-                    {"power": 320},
-                    {"power": 330},
-                    {"power": 315},
-                ]
-            }
-            mock_reader.db_path = Path("/tmp/test.duckdb")
-
-            with patch("duckdb.connect") as mock_connect:
-                mock_conn = MagicMock()
-                mock_conn.execute.return_value.fetchone.return_value = (12.5,)
-                mock_connect.return_value = mock_conn
-
-                result = await call_tool(
-                    name="classify_activity_type",
-                    arguments={"activity_id": fixture_activity_id},
-                )
-
-        # Verify response structure
-        assert len(result) == 1
-        response_data = json.loads(result[0].text)
-        assert response_data["type_en"] == "Anaerobic"  # Power > 300W
 
     # ============================================================
     # Phase 4.5: compare_similar_workouts tests
