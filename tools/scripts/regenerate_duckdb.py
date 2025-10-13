@@ -119,15 +119,19 @@ class DuckDBRegenerator:
                 logger.debug(f"Skipping {activity_path.name}: invalid activity ID")
                 continue
 
-            # Try to read activity date from activity.json
+            # Try to read activity date from activity.json (summaryDTO)
             activity_json = activity_path / "activity.json"
             activity_date = None
             if activity_json.exists():
                 try:
                     with open(activity_json, encoding="utf-8") as f:
                         activity_data = json.load(f)
-                        # Extract date from startTimeLocal or beginTimestamp
-                        if "startTimeLocal" in activity_data:
+                        # Extract date from summaryDTO (new structure)
+                        summary = activity_data.get("summaryDTO", {})
+                        if summary and "startTimeLocal" in summary:
+                            activity_date = summary["startTimeLocal"].split("T")[0]
+                        elif "startTimeLocal" in activity_data:
+                            # Fallback to top-level (old structure)
                             activity_date = activity_data["startTimeLocal"].split(" ")[
                                 0
                             ]

@@ -34,64 +34,46 @@ class WorkoutComparator:
         """
         self.db_reader = GarminDBReader(db_path)
 
-    # Training type hierarchical similarity matrix
-    # Based on training intensity and purpose
+    # Training type hierarchical similarity matrix (Garmin official labels)
+    # Based on training intensity progression: recovery → aerobic_base → tempo
+    # → lactate_threshold → vo2max → anaerobic_capacity → speed
     # All keys are sorted tuples for symmetric lookup
     TRAINING_TYPE_SIMILARITY = {
         # Recovery - very low intensity
         ("recovery", "recovery"): 1.0,
-        ("base", "recovery"): 0.6,
-        ("long_run", "recovery"): 0.5,
+        ("aerobic_base", "recovery"): 0.6,
         ("recovery", "tempo"): 0.3,
-        ("recovery", "threshold"): 0.2,
-        ("recovery", "vo2_max"): 0.2,
-        ("anaerobic", "recovery"): 0.2,
-        ("interval", "recovery"): 0.2,
-        ("recovery", "sprint"): 0.2,
-        # Base - low intensity
-        ("base", "base"): 1.0,
-        ("base", "long_run"): 0.9,
-        ("base", "tempo"): 0.4,
-        ("base", "threshold"): 0.3,
-        ("base", "vo2_max"): 0.2,
-        ("anaerobic", "base"): 0.2,
-        ("base", "interval"): 0.2,
-        ("base", "sprint"): 0.2,
-        # Long Run - low intensity
-        ("long_run", "long_run"): 1.0,
-        ("long_run", "tempo"): 0.4,
-        ("long_run", "threshold"): 0.3,
-        ("long_run", "vo2_max"): 0.2,
-        ("anaerobic", "long_run"): 0.2,
-        ("interval", "long_run"): 0.2,
-        ("long_run", "sprint"): 0.2,
+        ("lactate_threshold", "recovery"): 0.2,
+        ("recovery", "vo2max"): 0.2,
+        ("anaerobic_capacity", "recovery"): 0.2,
+        ("recovery", "speed"): 0.2,
+        # Aerobic Base - low intensity
+        ("aerobic_base", "aerobic_base"): 1.0,
+        ("aerobic_base", "tempo"): 0.5,
+        ("aerobic_base", "lactate_threshold"): 0.3,
+        ("aerobic_base", "vo2max"): 0.2,
+        ("aerobic_base", "anaerobic_capacity"): 0.2,
+        ("aerobic_base", "speed"): 0.2,
         # Tempo - mid intensity
         ("tempo", "tempo"): 1.0,
-        ("tempo", "threshold"): 0.8,
-        ("tempo", "vo2_max"): 0.3,
-        ("anaerobic", "tempo"): 0.3,
-        ("interval", "tempo"): 0.3,
-        ("sprint", "tempo"): 0.2,
-        # Threshold - mid-high intensity
-        ("threshold", "threshold"): 1.0,
-        ("threshold", "vo2_max"): 0.4,
-        ("anaerobic", "threshold"): 0.3,
-        ("interval", "threshold"): 0.3,
-        ("sprint", "threshold"): 0.2,
+        ("lactate_threshold", "tempo"): 0.8,
+        ("tempo", "vo2max"): 0.4,
+        ("anaerobic_capacity", "tempo"): 0.3,
+        ("speed", "tempo"): 0.2,
+        # Lactate Threshold - mid-high intensity
+        ("lactate_threshold", "lactate_threshold"): 1.0,
+        ("lactate_threshold", "vo2max"): 0.6,
+        ("anaerobic_capacity", "lactate_threshold"): 0.4,
+        ("lactate_threshold", "speed"): 0.3,
         # VO2 Max - high intensity
-        ("vo2_max", "vo2_max"): 1.0,
-        ("anaerobic", "vo2_max"): 0.7,
-        ("interval", "vo2_max"): 0.6,
-        ("sprint", "vo2_max"): 0.3,
-        # Anaerobic - high intensity
-        ("anaerobic", "anaerobic"): 1.0,
-        ("anaerobic", "interval"): 0.8,
-        ("anaerobic", "sprint"): 0.4,
-        # Interval - very high intensity
-        ("interval", "interval"): 1.0,
-        ("interval", "sprint"): 0.7,
-        # Sprint - maximum intensity
-        ("sprint", "sprint"): 1.0,
+        ("vo2max", "vo2max"): 1.0,
+        ("anaerobic_capacity", "vo2max"): 0.8,
+        ("speed", "vo2max"): 0.5,
+        # Anaerobic Capacity - very high intensity
+        ("anaerobic_capacity", "anaerobic_capacity"): 1.0,
+        ("anaerobic_capacity", "speed"): 0.7,
+        # Speed - maximum intensity
+        ("speed", "speed"): 1.0,
         # Unknown - default similarity
         ("unknown", "unknown"): 1.0,
     }
@@ -273,28 +255,17 @@ class WorkoutComparator:
                     "avg_power": row[9],
                 }
 
-                # Add training type classification for candidate
+                # Get training type from hr_efficiency table
                 try:
-                    from tools.rag.utils.activity_classifier import ActivityClassifier
-
-                    classifier = ActivityClassifier()
-                    hr_zones = self.db_reader.get_heart_rate_zones_detail(
+                    hr_eff = self.db_reader.get_hr_efficiency_analysis(
                         candidate["activity_id"]
                     )
-                    if hr_zones:
-                        classification = classifier.classify(
-                            hr_zones_data=hr_zones,
-                            distance_km=candidate["distance_km"],
-                            avg_power=candidate["avg_power"],
-                        )
-                        candidate["training_type"] = (
-                            classification["type_en"].lower().replace(" ", "_")
-                        )
-                    else:
-                        candidate["training_type"] = "unknown"
+                    candidate["training_type"] = (
+                        hr_eff.get("training_type", "unknown") if hr_eff else "unknown"
+                    )
                 except Exception as e:
                     logger.warning(
-                        f"Could not classify training type for activity {candidate['activity_id']}: {e}"
+                        f"Could not get training type for activity {candidate['activity_id']}: {e}"
                     )
                     candidate["training_type"] = "unknown"
 
@@ -403,26 +374,15 @@ class WorkoutComparator:
                 "avg_power": row[9],
             }
 
-            # Add training type classification
+            # Get training type from hr_efficiency table
             try:
-                from tools.rag.utils.activity_classifier import ActivityClassifier
-
-                classifier = ActivityClassifier()
-                hr_zones = self.db_reader.get_heart_rate_zones_detail(activity_id)
-                if hr_zones:
-                    classification = classifier.classify(
-                        hr_zones_data=hr_zones,
-                        distance_km=activity_data["distance_km"],
-                        avg_power=activity_data["avg_power"],
-                    )
-                    activity_data["training_type"] = (
-                        classification["type_en"].lower().replace(" ", "_")
-                    )
-                else:
-                    activity_data["training_type"] = "unknown"
+                hr_eff = self.db_reader.get_hr_efficiency_analysis(activity_id)
+                activity_data["training_type"] = (
+                    hr_eff.get("training_type", "unknown") if hr_eff else "unknown"
+                )
             except Exception as e:
                 logger.warning(
-                    f"Could not classify training type for activity {activity_id}: {e}"
+                    f"Could not get training type for activity {activity_id}: {e}"
                 )
                 activity_data["training_type"] = "unknown"
 

@@ -833,7 +833,13 @@ class GarminIngestWorker:
         form_efficiency_summary = self._calculate_form_efficiency_summary(df)
 
         # 10. HR efficiency analysis (Phase 1)
-        hr_efficiency_analysis = self._calculate_hr_efficiency_analysis(df, hr_zones)
+        # Extract trainingEffectLabel from raw_data
+        training_effect_label = raw_data.get("training_effect", {}).get(
+            "trainingEffectLabel"
+        )
+        hr_efficiency_analysis = self._calculate_hr_efficiency_analysis(
+            df, hr_zones, training_effect_label=training_effect_label
+        )
 
         # 11. Performance trends (Phase 2)
         performance_trends = self._calculate_performance_trends(df)
@@ -902,7 +908,10 @@ class GarminIngestWorker:
         }
 
     def _calculate_hr_efficiency_analysis(
-        self, df: pd.DataFrame, hr_zones: list[dict[str, Any]]
+        self,
+        df: pd.DataFrame,
+        hr_zones: list[dict[str, Any]],
+        training_effect_label: str | None = None,
     ) -> dict[str, Any]:
         """
         Calculate HR efficiency analysis (Phase 1 optimization).
@@ -910,6 +919,7 @@ class GarminIngestWorker:
         Args:
             df: Performance DataFrame
             hr_zones: List of {zoneNumber, secsInZone, zoneLowBoundary}
+            training_effect_label: Garmin's trainingEffectLabel (e.g., "TEMPO")
 
         Returns:
             HR zone distribution and training type classification
@@ -920,26 +930,34 @@ class GarminIngestWorker:
         # Simplified zone distribution (would need time in zones data)
         avg_hr = df["avg_heart_rate"].mean()
 
-        # Extract zone boundaries from hr_zones list
-        zone_boundaries = {}
-        for zone in hr_zones:
-            zone_num = zone.get("zoneNumber")
-            if zone_num:
-                zone_boundaries[zone_num] = zone.get("zoneLowBoundary", 0)
+        # Primary: Use Garmin's trainingEffectLabel
+        training_type = None
+        if training_effect_label:
+            # Convert to lowercase (e.g., "TEMPO" → "tempo")
+            training_type = training_effect_label.lower()
 
-        # Default thresholds if zones not available
-        z1_high = zone_boundaries.get(2, 120)
-        z2_high = zone_boundaries.get(3, 140)
-        z3_high = zone_boundaries.get(4, 160)
+        # Fallback: HR threshold-based classification
+        if not training_type:
+            # Extract zone boundaries from hr_zones list
+            zone_boundaries = {}
+            for zone in hr_zones:
+                zone_num = zone.get("zoneNumber")
+                if zone_num:
+                    zone_boundaries[zone_num] = zone.get("zoneLowBoundary", 0)
 
-        if avg_hr <= z1_high:
-            training_type = "aerobic_base"
-        elif avg_hr <= z2_high:
-            training_type = "tempo_run"
-        elif avg_hr <= z3_high:
-            training_type = "threshold_work"
-        else:
-            training_type = "mixed_effort"
+            # Default thresholds if zones not available
+            z1_high = zone_boundaries.get(2, 120)
+            z2_high = zone_boundaries.get(3, 140)
+            z3_high = zone_boundaries.get(4, 160)
+
+            if avg_hr <= z1_high:
+                training_type = "aerobic_base"
+            elif avg_hr <= z2_high:
+                training_type = "tempo_run"
+            elif avg_hr <= z3_high:
+                training_type = "threshold_work"
+            else:
+                training_type = "mixed_effort"
 
         # Calculate zone percentages
         total_time = sum(zone.get("secsInZone", 0) for zone in hr_zones)
