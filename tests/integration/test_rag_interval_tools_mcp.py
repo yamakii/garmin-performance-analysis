@@ -297,6 +297,9 @@ class TestRagIntervalToolsMcp:
                 activity_id=fixture_activity_id,
                 split_number=2,
                 metrics=["directHeartRate", "directSpeed"],
+                statistics_only=False,
+                detect_anomalies=False,
+                z_threshold=2.0,
             )
 
             # Verify response structure

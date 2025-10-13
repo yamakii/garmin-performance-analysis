@@ -222,7 +222,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="get_split_time_series_detail",
-            description="Get second-by-second detailed metrics for a specific 1km split",
+            description="Get second-by-second detailed metrics for a specific 1km split (DuckDB-based, 98.8% token reduction)",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -235,6 +235,18 @@ async def list_tools() -> list[Tool]:
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "List of metric names to extract (optional)",
+                    },
+                    "statistics_only": {
+                        "type": "boolean",
+                        "description": "If true, only return statistics (98.8% token reduction). Default: false",
+                    },
+                    "detect_anomalies": {
+                        "type": "boolean",
+                        "description": "Whether to detect anomalies in the data. Default: false",
+                    },
+                    "z_threshold": {
+                        "type": "number",
+                        "description": "Z-score threshold for anomaly detection. Default: 2.0",
                     },
                 },
                 "required": ["activity_id", "split_number"],
@@ -658,6 +670,9 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             activity_id=arguments["activity_id"],
             split_number=arguments["split_number"],
             metrics=arguments.get("metrics"),
+            statistics_only=arguments.get("statistics_only", False),
+            detect_anomalies=arguments.get("detect_anomalies", False),
+            z_threshold=arguments.get("z_threshold", 2.0),
         )
         return [
             TextContent(
