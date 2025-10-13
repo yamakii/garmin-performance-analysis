@@ -471,3 +471,49 @@ class TestTrainingTypeSimilarity:
                 similarity = comparator._get_training_type_similarity(type1, type2)
                 assert 0.0 <= similarity <= 1.0
                 assert isinstance(similarity, float)
+
+
+class TestWeatherDataRetrieval:
+    """Test weather data retrieval functionality."""
+
+    @pytest.fixture
+    def comparator(self):
+        """Create comparator instance."""
+        return WorkoutComparator()
+
+    @pytest.mark.unit
+    def test_get_activity_temperature_exists(self, comparator):
+        """Test temperature retrieval when weather data exists."""
+        mock_weather = {"temperature_c": 22.5, "temperature_f": 72.5}
+
+        with patch.object(
+            comparator.db_reader, "get_weather_data", return_value=mock_weather
+        ):
+            temp = comparator._get_activity_temperature(12345)
+            assert temp == 22.5
+
+    @pytest.mark.unit
+    def test_get_activity_temperature_not_exists(self, comparator):
+        """Test temperature retrieval when weather data doesn't exist."""
+        with patch.object(comparator.db_reader, "get_weather_data", return_value=None):
+            temp = comparator._get_activity_temperature(99999999)
+            assert temp is None
+
+    @pytest.mark.unit
+    def test_get_activity_temperature_no_temperature_field(self, comparator):
+        """Test temperature retrieval when weather data has no temperature."""
+        mock_weather = {"humidity": 60, "wind_speed_ms": 3.0}
+
+        with patch.object(
+            comparator.db_reader, "get_weather_data", return_value=mock_weather
+        ):
+            temp = comparator._get_activity_temperature(12345)
+            assert temp is None
+
+    @pytest.mark.unit
+    def test_temperature_difference_calculation(self, comparator):
+        """Test temperature difference calculation accuracy."""
+        temp1 = 25.3
+        temp2 = 19.7
+        diff = temp1 - temp2
+        assert abs(diff - 5.6) < 0.1

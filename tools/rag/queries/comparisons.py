@@ -123,6 +123,26 @@ class WorkoutComparator:
         # Return similarity from matrix, default to 0.3 for unknown combinations
         return self.TRAINING_TYPE_SIMILARITY.get(key, 0.3)
 
+    def _get_activity_temperature(self, activity_id: int) -> float | None:
+        """Get temperature for activity from database.
+
+        Args:
+            activity_id: Activity ID
+
+        Returns:
+            Temperature in Celsius, or None if not available
+        """
+        try:
+            weather_data = self.db_reader.get_weather_data(activity_id)
+            if not weather_data:
+                return None
+
+            return weather_data.get("temperature_c")
+
+        except Exception as e:
+            logger.error(f"Error getting temperature for activity {activity_id}: {e}")
+            return None
+
     def _execute_query(self, query: str, params: list[Any]):
         """Execute a database query.
 
