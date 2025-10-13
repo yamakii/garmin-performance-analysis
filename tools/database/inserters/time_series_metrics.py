@@ -35,6 +35,7 @@ def insert_time_series_metrics(
         2. Parse metricDescriptors for name->index mapping
         3. Extract activityDetailMetrics array
         4. Convert each data point:
+           - Extract seq_no from enumerate() index (0-indexed)
            - Extract timestamp_s from sumDuration
            - Apply unit conversions (factors)
            - Map metric names to normalized column names
@@ -114,11 +115,12 @@ def insert_time_series_metrics(
         # Connect to DuckDB
         conn = duckdb.connect(str(db_path))
 
-        # Ensure time_series_metrics table exists
+        # Ensure time_series_metrics table exists with seq_no
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS time_series_metrics (
                 activity_id BIGINT NOT NULL,
+                seq_no INTEGER NOT NULL,
                 timestamp_s INTEGER NOT NULL,
                 sum_moving_duration DOUBLE,
                 sum_duration DOUBLE,
@@ -145,7 +147,7 @@ def insert_time_series_metrics(
                 performance_condition DOUBLE,
                 fractional_cadence DOUBLE,
                 double_cadence DOUBLE,
-                PRIMARY KEY (activity_id, timestamp_s)
+                PRIMARY KEY (activity_id, seq_no)
             )
             """
         )
@@ -188,7 +190,7 @@ def insert_time_series_metrics(
 
         # Prepare batch insert data (direct tuple building for performance)
         value_tuples = []
-        for data_point in activity_detail_metrics:
+        for seq_no, data_point in enumerate(activity_detail_metrics):
             metrics = data_point.get("metrics")
             if not metrics or not isinstance(metrics, list):
                 continue
@@ -201,7 +203,8 @@ def insert_time_series_metrics(
             timestamp_s = int(sum_duration_value / sum_duration_factor)
 
             # Build row tuple directly (avoid dict overhead)
-            row_values: list[int | float | None] = [activity_id, timestamp_s]
+            # Order: activity_id, seq_no, timestamp_s, ...metrics
+            row_values: list[int | float | None] = [activity_id, seq_no, timestamp_s]
 
             for extract_info in metric_extract_info:
                 if extract_info is None:
@@ -237,7 +240,7 @@ def insert_time_series_metrics(
         # Batch insert
         if value_tuples:
             # Build INSERT statement
-            columns = ["activity_id", "timestamp_s"] + [
+            columns = ["activity_id", "seq_no", "timestamp_s"] + [
                 col_name for _, col_name in column_spec
             ]
             placeholders = ", ".join(["?" for _ in columns])

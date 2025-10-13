@@ -169,6 +169,7 @@ class TestTimeSeriesMetricsInserter:
         conn.close()
 
         # Original: 30, Expected after conversion: 30 × 0.1 = 3.0
+        assert row is not None
         assert row[0] == 3.0
 
     @pytest.mark.unit
@@ -193,6 +194,7 @@ class TestTimeSeriesMetricsInserter:
         conn.close()
 
         # Original: 50000, Expected after conversion: 50000 / 100.0 = 500.0
+        assert row is not None
         assert row[0] == 500.0
 
     @pytest.mark.unit
@@ -242,6 +244,7 @@ class TestTimeSeriesMetricsInserter:
         ).fetchone()
         conn.close()
 
+        assert row is not None
         assert row[0] is None  # Speed is NULL
 
     @pytest.mark.unit
@@ -273,6 +276,7 @@ class TestTimeSeriesMetricsInserter:
         ).fetchone()
         conn.close()
 
+        assert rows is not None
         assert rows[0] == 3
 
     @pytest.mark.unit
@@ -390,4 +394,84 @@ class TestTimeSeriesMetricsInserter:
         ).fetchone()
         conn.close()
 
+        assert rows is not None
         assert rows[0] == 2000
+
+    @pytest.mark.unit
+    def test_timestamp_s_uniqueness_with_seq_no(self, tmp_path):
+        """Test seq_no prevents PRIMARY KEY violation when timestamp_s duplicates.
+
+        Real scenario: 1115 data points with only 3 unique timestamp_s values (0, 1, 2).
+        - sumDuration: 0-999ms → timestamp_s=0 (hundreds of rows)
+        - sumDuration: 1000-1999ms → timestamp_s=1 (hundreds of rows)
+        - sumDuration: 2000-2999ms → timestamp_s=2 (hundreds of rows)
+
+        Without seq_no: PRIMARY KEY (activity_id, timestamp_s) would fail.
+        With seq_no: PRIMARY KEY (activity_id, seq_no) succeeds.
+        """
+        # Create dataset with duplicate timestamp_s (realistic scenario)
+        activity_details_data = {
+            "activityId": 88888,
+            "measurementCount": 2,
+            "metricsCount": 6,
+            "metricDescriptors": [
+                {
+                    "metricsIndex": 0,
+                    "key": "sumDuration",
+                    "unit": {"id": 40, "key": "second", "factor": 1000.0},
+                },
+                {
+                    "metricsIndex": 1,
+                    "key": "directHeartRate",
+                    "unit": {"id": 3, "key": "bpm", "factor": 1.0},
+                },
+            ],
+            "activityDetailMetrics": [
+                {"metrics": [100, 140]},  # timestamp_s=0, seq_no=0
+                {"metrics": [500, 142]},  # timestamp_s=0, seq_no=1
+                {"metrics": [900, 145]},  # timestamp_s=0, seq_no=2
+                {"metrics": [1100, 148]},  # timestamp_s=1, seq_no=3
+                {"metrics": [1500, 150]},  # timestamp_s=1, seq_no=4
+                {"metrics": [1900, 152]},  # timestamp_s=1, seq_no=5
+            ],
+        }
+
+        activity_details_file = tmp_path / "duplicate_ts.json"
+        with open(activity_details_file, "w", encoding="utf-8") as f:
+            json.dump(activity_details_data, f)
+
+        db_path = tmp_path / "test.duckdb"
+
+        # Execute insertion
+        result = insert_time_series_metrics(
+            activity_details_file=str(activity_details_file),
+            activity_id=88888,
+            db_path=str(db_path),
+        )
+
+        # Verify insertion succeeded
+        assert result is True
+
+        # Verify all 6 rows inserted (not just 2 unique timestamp_s)
+        conn = duckdb.connect(str(db_path), read_only=True)
+        rows = conn.execute(
+            "SELECT COUNT(*) FROM time_series_metrics WHERE activity_id = ?",
+            [88888],
+        ).fetchone()
+        assert rows is not None
+        assert rows[0] == 6, "All 6 data points should be inserted"
+
+        # Verify seq_no column exists and is sequential
+        seq_rows = conn.execute(
+            "SELECT seq_no, timestamp_s FROM time_series_metrics WHERE activity_id = ? ORDER BY seq_no",
+            [88888],
+        ).fetchall()
+        conn.close()
+
+        # Verify seq_no is 0-indexed and sequential
+        assert seq_rows[0] == (0, 0)  # seq_no=0, timestamp_s=0
+        assert seq_rows[1] == (1, 0)  # seq_no=1, timestamp_s=0
+        assert seq_rows[2] == (2, 0)  # seq_no=2, timestamp_s=0
+        assert seq_rows[3] == (3, 1)  # seq_no=3, timestamp_s=1
+        assert seq_rows[4] == (4, 1)  # seq_no=4, timestamp_s=1
+        assert seq_rows[5] == (5, 1)  # seq_no=5, timestamp_s=1
