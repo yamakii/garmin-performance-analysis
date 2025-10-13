@@ -199,12 +199,36 @@ git worktree prune               # Cleanup stale worktrees
 
 | Operation | Script | Use Case |
 |-----------|--------|----------|
-| **Regenerate DuckDB** | `regenerate_duckdb.py` | After schema changes, data corruption |
+| **Regenerate DuckDB** | `regenerate_duckdb.py` | After schema changes, data corruption, table-specific regeneration |
 | **Fetch raw data** | `bulk_fetch_raw_data.py` | Add missing API data |
 | **Fetch activity details** | `bulk_fetch_activity_details.py` | Specific to activity_details.json |
 | **Migrate data** | `migrate_raw_data_structure.py`, `migrate_weight_data.py` | Format migrations |
 
-**Options:** `--dry-run`, `--start-date`, `--end-date`, `--activity-ids`, `--force`, `--delete-db`
+**DuckDB Regeneration Options:**
+- `--tables <table1> <table2> ...`: Regenerate specific tables only (11 available: activities, splits, form_efficiency, hr_efficiency, heart_rate_zones, performance_trends, vo2_max, lactate_threshold, time_series_metrics, section_analyses, body_composition)
+- `--force`: Delete existing records before re-insertion (requires `--tables`)
+- `--delete-db`: Delete database file before full regeneration (cannot be used with `--tables`)
+- `--start-date`, `--end-date`: Filter by date range
+- `--activity-ids`: Filter by specific activity IDs
+- `--dry-run`: Preview changes without execution
+
+**Usage Examples:**
+```bash
+# Single table regeneration after schema change
+python tools/scripts/regenerate_duckdb.py --tables splits --start-date 2025-01-01 --end-date 2025-01-31
+
+# Multiple tables for specific activities
+python tools/scripts/regenerate_duckdb.py --tables splits form_efficiency --activity-ids 12345 67890
+
+# Force re-insertion (delete + insert)
+python tools/scripts/regenerate_duckdb.py --tables splits --activity-ids 12345 --force
+
+# Full database regeneration
+python tools/scripts/regenerate_duckdb.py --delete-db
+
+# Dry run to preview
+python tools/scripts/regenerate_duckdb.py --tables splits --dry-run
+```
 
 **Critical Principle:** Separate API fetching (slow) from DuckDB regeneration (fast, local).
 
