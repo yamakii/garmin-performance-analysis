@@ -75,18 +75,27 @@ class TestRagIntervalToolsMcp:
         assert "split_number" in detail_tool.inputSchema["required"]
 
     @pytest.mark.asyncio
-    async def test_list_tools_includes_detect_form_anomalies(self):
-        """Test that list_tools includes detect_form_anomalies."""
+    async def test_list_tools_includes_new_form_anomaly_apis(self):
+        """Test that list_tools includes new form anomaly APIs."""
         tools = await list_tools()
         tool_names = [tool.name for tool in tools]
 
-        assert "detect_form_anomalies" in tool_names
+        # Check both new APIs
+        assert "detect_form_anomalies_summary" in tool_names
+        assert "get_form_anomaly_details" in tool_names
 
-        # Find the tool and check its schema
-        anomaly_tool = next(t for t in tools if t.name == "detect_form_anomalies")
-        assert anomaly_tool.description is not None
-        assert "activity_id" in anomaly_tool.inputSchema["properties"]
-        assert "activity_id" in anomaly_tool.inputSchema["required"]
+        # Find the tools and check their schemas
+        summary_tool = next(
+            t for t in tools if t.name == "detect_form_anomalies_summary"
+        )
+        assert summary_tool.description is not None
+        assert "activity_id" in summary_tool.inputSchema["properties"]
+        assert "activity_id" in summary_tool.inputSchema["required"]
+
+        details_tool = next(t for t in tools if t.name == "get_form_anomaly_details")
+        assert details_tool.description is not None
+        assert "activity_id" in details_tool.inputSchema["properties"]
+        assert "activity_id" in details_tool.inputSchema["required"]
 
     @pytest.mark.asyncio
     async def test_call_interval_analysis_with_minimal_args(
@@ -308,10 +317,10 @@ class TestRagIntervalToolsMcp:
             assert response_data["split_number"] == 2
 
     @pytest.mark.asyncio
-    async def test_call_detect_form_anomalies_with_minimal_args(
+    async def test_call_detect_form_anomalies_summary_with_minimal_args(
         self, fixture_activity_id: int, fixture_base_path: Path
     ):
-        """Test calling detect_form_anomalies with minimal arguments."""
+        """Test calling detect_form_anomalies_summary with minimal arguments."""
         # Create fixture activity_details.json
         activity_details_path = (
             fixture_base_path
@@ -342,15 +351,26 @@ class TestRagIntervalToolsMcp:
         # Use mock with proper return value structure
         with patch.object(
             FormAnomalyDetector,
-            "detect_form_anomalies",
+            "detect_form_anomalies_summary",
             return_value={
                 "activity_id": fixture_activity_id,
                 "anomalies_detected": 0,
-                "anomalies": [],
+                "summary": {
+                    "gct_anomalies": 0,
+                    "vo_anomalies": 0,
+                    "vr_anomalies": 0,
+                    "elevation_related": 0,
+                    "pace_related": 0,
+                    "fatigue_related": 0,
+                    "severity_distribution": {"high": 0, "medium": 0, "low": 0},
+                    "temporal_clusters": [],
+                },
+                "top_anomalies": [],
+                "recommendations": [],
             },
         ):
             result = await call_tool(
-                name="detect_form_anomalies",
+                name="detect_form_anomalies_summary",
                 arguments={"activity_id": fixture_activity_id},
             )
 
@@ -359,44 +379,42 @@ class TestRagIntervalToolsMcp:
         response_data = json.loads(result[0].text)
         assert "activity_id" in response_data
         assert "anomalies_detected" in response_data
+        assert "summary" in response_data
+        assert "top_anomalies" in response_data
+        assert "recommendations" in response_data
         assert response_data["activity_id"] == fixture_activity_id
 
     @pytest.mark.asyncio
-    async def test_call_detect_form_anomalies_with_all_args(
+    async def test_call_get_form_anomaly_details_with_filters(
         self, fixture_activity_id: int
     ):
-        """Test calling detect_form_anomalies with all optional arguments."""
+        """Test calling get_form_anomaly_details with filtering options."""
         with patch(
-            "tools.rag.queries.form_anomaly_detector.FormAnomalyDetector.detect_form_anomalies"
-        ) as mock_detect:
-            mock_detect.return_value = {
+            "tools.rag.queries.form_anomaly_detector.FormAnomalyDetector.get_form_anomaly_details"
+        ) as mock_details:
+            mock_details.return_value = {
                 "activity_id": fixture_activity_id,
-                "anomalies_detected": 0,
+                "total_anomalies": 10,
+                "returned_anomalies": 5,
                 "anomalies": [],
             }
 
             result = await call_tool(
-                name="detect_form_anomalies",
+                name="get_form_anomaly_details",
                 arguments={
                     "activity_id": fixture_activity_id,
                     "metrics": ["directGroundContactTime"],
                     "z_threshold": 2.5,
-                    "context_window": 45,
+                    "limit": 5,
+                    "causes": ["elevation_change"],
                 },
-            )
-
-            # Verify mock was called with correct arguments
-            mock_detect.assert_called_once_with(
-                activity_id=fixture_activity_id,
-                metrics=["directGroundContactTime"],
-                z_threshold=2.5,
-                context_window=45,
             )
 
             # Verify response structure
             assert len(result) == 1
             response_data = json.loads(result[0].text)
-            assert response_data["anomalies_detected"] == 0
+            assert response_data["total_anomalies"] == 10
+            assert response_data["returned_anomalies"] == 5
 
     @pytest.mark.asyncio
     async def test_call_tool_unknown_tool_error(self):

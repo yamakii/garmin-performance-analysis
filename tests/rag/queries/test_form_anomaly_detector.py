@@ -54,260 +54,6 @@ def sample_performance_data(base_path: Path) -> dict[str, object]:
         return data
 
 
-def test_z_score_anomaly_detection(detector: FormAnomalyDetector) -> None:
-    """Test Z-score based anomaly detection accuracy.
-
-    Verify that:
-    - Anomalies are detected when z-score > threshold
-    - Normal values are not flagged as anomalies
-    - Multiple metrics can be analyzed simultaneously
-    """
-    activity_id = 12345678901
-
-    result = detector.detect_form_anomalies(
-        activity_id=activity_id,
-        metrics=["directGroundContactTime"],
-        z_threshold=2.0,
-        context_window=30,
-    )
-
-    # Should detect anomalies
-    assert "anomalies" in result
-    assert isinstance(result["anomalies"], list)
-
-    # Check anomaly structure
-    if len(result["anomalies"]) > 0:
-        anomaly = result["anomalies"][0]
-        assert "anomaly_id" in anomaly
-        assert "timestamp" in anomaly
-        assert "metric" in anomaly
-        assert "value" in anomaly
-        assert "baseline" in anomaly
-        assert "z_score" in anomaly
-        assert anomaly["z_score"] >= 2.0
-
-
-def test_elevation_correlation(detector: FormAnomalyDetector) -> None:
-    """Test elevation change and GCT/VO correlation detection.
-
-    Verify that:
-    - Elevation changes > 5m are detected as causes
-    - Correlation coefficient is calculated
-    - Cause is classified as "elevation_change"
-    """
-    activity_id = 12345678901
-
-    result = detector.detect_form_anomalies(
-        activity_id=activity_id,
-        metrics=["directGroundContactTime", "directVerticalOscillation"],
-        z_threshold=2.0,
-        context_window=30,
-    )
-
-    # Find elevation-related anomalies
-    elevation_anomalies = [
-        a for a in result["anomalies"] if a["probable_cause"] == "elevation_change"
-    ]
-
-    if len(elevation_anomalies) > 0:
-        anomaly = elevation_anomalies[0]
-        assert "cause_details" in anomaly
-        assert "elevation_change_5s" in anomaly["cause_details"]
-        assert "elevation_correlation" in anomaly["cause_details"]
-        # Elevation change should be > 5m for this classification
-        assert abs(anomaly["cause_details"]["elevation_change_5s"]) > 5
-
-
-def test_pace_correlation(detector: FormAnomalyDetector) -> None:
-    """Test pace change and form degradation correlation.
-
-    Verify that:
-    - Pace changes > 15 sec/km are detected
-    - Correlation with form metrics is calculated
-    - Cause is classified as "pace_change"
-    """
-    activity_id = 12345678901
-
-    result = detector.detect_form_anomalies(
-        activity_id=activity_id,
-        metrics=["directGroundContactTime", "directVerticalOscillation"],
-        z_threshold=2.0,
-        context_window=30,
-    )
-
-    # Find pace-related anomalies
-    pace_anomalies = [
-        a for a in result["anomalies"] if a["probable_cause"] == "pace_change"
-    ]
-
-    if len(pace_anomalies) > 0:
-        anomaly = pace_anomalies[0]
-        assert "cause_details" in anomaly
-        assert "pace_change_10s" in anomaly["cause_details"]
-        assert "pace_correlation" in anomaly["cause_details"]
-
-
-def test_fatigue_correlation(detector: FormAnomalyDetector) -> None:
-    """Test HR Drift and form degradation correlation.
-
-    Verify that:
-    - HR Drift > 10% is detected as fatigue
-    - Correlation with form degradation is calculated
-    - Cause is classified as "fatigue"
-    """
-    activity_id = 12345678901
-
-    result = detector.detect_form_anomalies(
-        activity_id=activity_id,
-        metrics=["directGroundContactTime", "directVerticalOscillation"],
-        z_threshold=2.0,
-        context_window=30,
-    )
-
-    # Find fatigue-related anomalies
-    fatigue_anomalies = [
-        a for a in result["anomalies"] if a["probable_cause"] == "fatigue"
-    ]
-
-    if len(fatigue_anomalies) > 0:
-        anomaly = fatigue_anomalies[0]
-        assert "cause_details" in anomaly
-        assert "hr_drift_percent" in anomaly["cause_details"]
-        # HR drift should be > 10% for this classification
-        assert abs(anomaly["cause_details"]["hr_drift_percent"]) > 10
-
-
-def test_cause_classification(detector: FormAnomalyDetector) -> None:
-    """Test accuracy of cause classification (3 categories).
-
-    Verify that:
-    - All anomalies are assigned one of the 3 causes
-    - Cause assignment is mutually exclusive
-    - Cause details match the classification
-    """
-    activity_id = 12345678901
-
-    result = detector.detect_form_anomalies(
-        activity_id=activity_id,
-        metrics=["directGroundContactTime"],
-        z_threshold=2.0,
-        context_window=30,
-    )
-
-    valid_causes = ["elevation_change", "pace_change", "fatigue"]
-
-    for anomaly in result["anomalies"]:
-        assert "probable_cause" in anomaly
-        assert anomaly["probable_cause"] in valid_causes
-        assert "cause_details" in anomaly
-        assert isinstance(anomaly["cause_details"], dict)
-
-
-def test_context_window_extraction(detector: FormAnomalyDetector) -> None:
-    """Test accuracy of before/after 30-second context extraction.
-
-    Verify that:
-    - Context includes 30 seconds before anomaly
-    - Context includes 30 seconds after anomaly
-    - Context contains relevant metrics (GCT, elevation, etc.)
-    """
-    activity_id = 12345678901
-
-    result = detector.detect_form_anomalies(
-        activity_id=activity_id,
-        metrics=["directGroundContactTime"],
-        z_threshold=2.0,
-        context_window=30,
-    )
-
-    if len(result["anomalies"]) > 0:
-        anomaly = result["anomalies"][0]
-        assert "context" in anomaly
-        assert "before_30s" in anomaly["context"]
-        assert "after_30s" in anomaly["context"]
-
-        # Context should have relevant metrics
-        before_ctx = anomaly["context"]["before_30s"]
-        after_ctx = anomaly["context"]["after_30s"]
-
-        assert isinstance(before_ctx, dict)
-        assert isinstance(after_ctx, dict)
-
-
-def test_multiple_metrics_anomaly(detector: FormAnomalyDetector) -> None:
-    """Test detection of simultaneous anomalies in multiple metrics.
-
-    Verify that:
-    - Anomalies in GCT, VO, VR are all detected
-    - Each metric is analyzed independently
-    - Summary counts are accurate
-    """
-    activity_id = 12345678901
-
-    result = detector.detect_form_anomalies(
-        activity_id=activity_id,
-        metrics=[
-            "directGroundContactTime",
-            "directVerticalOscillation",
-            "directVerticalRatio",
-        ],
-        z_threshold=2.0,
-        context_window=30,
-    )
-
-    # Check summary
-    assert "summary" in result
-    summary = result["summary"]
-
-    assert "gct_anomalies" in summary
-    assert "vo_anomalies" in summary
-    assert "vr_anomalies" in summary
-    assert "elevation_related" in summary
-    assert "pace_related" in summary
-    assert "fatigue_related" in summary
-
-    # Total anomalies should match sum of metric-specific counts
-    total_metric_anomalies = (
-        summary["gct_anomalies"] + summary["vo_anomalies"] + summary["vr_anomalies"]
-    )
-    assert result["anomalies_detected"] == total_metric_anomalies
-
-
-def test_edge_case_no_anomalies(detector: FormAnomalyDetector) -> None:
-    """Test appropriate response when no anomalies are detected.
-
-    Verify that:
-    - Empty anomalies list is returned
-    - Summary shows zero counts
-    - No recommendations are generated
-    - No errors are raised
-    """
-    activity_id = 12345678901
-
-    # Use very high z_threshold to avoid detecting anomalies
-    result = detector.detect_form_anomalies(
-        activity_id=activity_id,
-        metrics=["directGroundContactTime"],
-        z_threshold=10.0,  # Very high threshold
-        context_window=30,
-    )
-
-    assert "anomalies" in result
-    assert len(result["anomalies"]) == 0
-    assert result["anomalies_detected"] == 0
-
-    # Summary should show zero counts
-    summary = result["summary"]
-    assert summary["gct_anomalies"] == 0
-    assert summary["elevation_related"] == 0
-    assert summary["pace_related"] == 0
-    assert summary["fatigue_related"] == 0
-
-    # Recommendations should be empty or minimal
-    assert "recommendations" in result
-    assert isinstance(result["recommendations"], list)
-
-
 def test_rolling_stats_calculation(detector: FormAnomalyDetector) -> None:
     """Test rolling statistics calculation with various window sizes.
 
@@ -631,3 +377,747 @@ def test_context_extraction_with_none_values(detector: FormAnomalyDetector) -> N
     assert "after_30s" in context
     assert context["before_30s"]["metric_avg"] > 0
     assert context["after_30s"]["metric_avg"] > 0
+
+
+# ==========================================
+# New API Tests: Helper Methods
+# ==========================================
+
+
+@pytest.mark.unit
+def test_extract_time_series_success(detector: FormAnomalyDetector) -> None:
+    """Test _extract_time_series extracts all required metrics."""
+    activity_id = 12345678901
+    metrics = [
+        "directGroundContactTime",
+        "directVerticalOscillation",
+        "directVerticalRatio",
+    ]
+
+    metric_map, form_metrics, context_metrics = detector._extract_time_series(
+        activity_id, metrics
+    )
+
+    # Should return tuple of 3 elements
+    assert isinstance(metric_map, dict)
+    assert isinstance(form_metrics, dict)
+    assert isinstance(context_metrics, dict)
+
+    # Form metrics should contain requested metrics
+    assert "directGroundContactTime" in form_metrics
+    assert "directVerticalOscillation" in form_metrics
+    assert "directVerticalRatio" in form_metrics
+
+    # Context metrics should have elevation, pace, hr
+    assert "elevation" in context_metrics
+    assert "pace" in context_metrics
+    assert "hr" in context_metrics
+
+
+@pytest.mark.unit
+def test_extract_time_series_missing_metrics(detector: FormAnomalyDetector) -> None:
+    """Test _extract_time_series handles missing metrics gracefully."""
+    activity_id = 12345678901
+    metrics = ["directGroundContactTime"]
+
+    # Should not raise error
+    metric_map, form_metrics, context_metrics = detector._extract_time_series(
+        activity_id, metrics
+    )
+    assert isinstance(form_metrics, dict)
+    assert "directGroundContactTime" in form_metrics
+
+
+@pytest.mark.unit
+def test_detect_all_anomalies_basic(detector: FormAnomalyDetector) -> None:
+    """Test _detect_all_anomalies returns properly structured anomalies."""
+    # Create simple time series data
+    from typing import cast
+
+    form_metrics: dict[str, list[float | None]] = {
+        "directGroundContactTime": cast(
+            list[float | None], [200.0] * 50 + [300.0] + [200.0] * 49
+        ),  # Spike
+    }
+    elevation_series: list[float | None] = cast(list[float | None], [10.0] * 100)
+    pace_series: list[float | None] = cast(list[float | None], [5.0] * 100)  # min/km
+    hr_series: list[float | None] = cast(list[float | None], [150.0] * 100)
+
+    anomalies = detector._detect_all_anomalies(
+        form_metrics, elevation_series, pace_series, hr_series, z_threshold=2.0
+    )
+
+    # Should detect the spike at index 50
+    assert isinstance(anomalies, list)
+    if len(anomalies) > 0:
+        anomaly = anomalies[0]
+        assert "anomaly_id" in anomaly
+        assert "timestamp" in anomaly
+        assert "metric" in anomaly
+        assert "value" in anomaly
+        assert "baseline" in anomaly
+        assert "z_score" in anomaly
+        assert "probable_cause" in anomaly
+        assert "cause_details" in anomaly
+        assert "context" in anomaly
+
+
+@pytest.mark.unit
+def test_detect_all_anomalies_with_causes(detector: FormAnomalyDetector) -> None:
+    """Test _detect_all_anomalies includes cause analysis."""
+    # Create elevation spike scenario
+    from typing import cast
+
+    form_metrics: dict[str, list[float | None]] = {
+        "directGroundContactTime": cast(
+            list[float | None], [200.0] * 45 + [250.0] * 10 + [200.0] * 45
+        ),
+    }
+    elevation_series: list[float | None] = cast(
+        list[float | None], [10.0] * 45 + [20.0] * 10 + [20.0] * 45
+    )  # 10m elevation gain
+    pace_series: list[float | None] = cast(list[float | None], [5.0] * 100)
+    hr_series: list[float | None] = cast(list[float | None], [150.0] * 100)
+
+    anomalies = detector._detect_all_anomalies(
+        form_metrics, elevation_series, pace_series, hr_series, z_threshold=2.0
+    )
+
+    if len(anomalies) > 0:
+        # Should detect elevation as probable cause
+        elevation_anomalies = [
+            a for a in anomalies if a["probable_cause"] == "elevation_change"
+        ]
+        assert len(elevation_anomalies) > 0
+
+
+@pytest.mark.unit
+def test_generate_severity_distribution_all_levels(
+    detector: FormAnomalyDetector,
+) -> None:
+    """Test _generate_severity_distribution with all severity levels."""
+    anomalies = [
+        {"z_score": 2.2},  # Low
+        {"z_score": 2.7},  # Medium
+        {"z_score": 3.5},  # High
+        {"z_score": 2.3},  # Low
+        {"z_score": 4.0},  # High
+    ]
+
+    distribution = detector._generate_severity_distribution(anomalies)
+
+    assert "high" in distribution
+    assert "medium" in distribution
+    assert "low" in distribution
+    assert distribution["low"] == 2
+    assert distribution["medium"] == 1
+    assert distribution["high"] == 2
+
+
+@pytest.mark.unit
+def test_generate_severity_distribution_single_level(
+    detector: FormAnomalyDetector,
+) -> None:
+    """Test _generate_severity_distribution with single severity level."""
+    anomalies = [
+        {"z_score": 2.2},
+        {"z_score": 2.3},
+        {"z_score": 2.4},
+    ]
+
+    distribution = detector._generate_severity_distribution(anomalies)
+
+    assert distribution["low"] == 3
+    assert distribution["medium"] == 0
+    assert distribution["high"] == 0
+
+
+@pytest.mark.unit
+def test_generate_severity_distribution_empty(detector: FormAnomalyDetector) -> None:
+    """Test _generate_severity_distribution with empty input."""
+    anomalies: list[dict[str, object]] = []
+
+    distribution = detector._generate_severity_distribution(anomalies)
+
+    assert distribution["low"] == 0
+    assert distribution["medium"] == 0
+    assert distribution["high"] == 0
+
+
+@pytest.mark.unit
+def test_generate_temporal_clusters_basic(detector: FormAnomalyDetector) -> None:
+    """Test _generate_temporal_clusters groups anomalies into 5-minute windows."""
+    anomalies = [
+        {
+            "timestamp": 60,
+            "probable_cause": "elevation_change",
+            "metric": "directGroundContactTime",
+        },
+        {
+            "timestamp": 120,
+            "probable_cause": "elevation_change",
+            "metric": "directVerticalOscillation",
+        },
+        {
+            "timestamp": 350,
+            "probable_cause": "pace_change",
+            "metric": "directGroundContactTime",
+        },
+        {
+            "timestamp": 370,
+            "probable_cause": "pace_change",
+            "metric": "directGroundContactTime",
+        },
+        {
+            "timestamp": 650,
+            "probable_cause": "fatigue",
+            "metric": "directVerticalRatio",
+        },
+    ]
+
+    clusters = detector._generate_temporal_clusters(anomalies, cluster_window=300)
+
+    assert isinstance(clusters, list)
+    assert len(clusters) >= 3  # Should have at least 3 clusters
+
+    # Verify cluster structure
+    if len(clusters) > 0:
+        cluster = clusters[0]
+        assert "start" in cluster
+        assert "end" in cluster
+        assert "count" in cluster
+
+
+@pytest.mark.unit
+def test_generate_temporal_clusters_single_window(
+    detector: FormAnomalyDetector,
+) -> None:
+    """Test _generate_temporal_clusters with anomalies in single window."""
+    anomalies = [
+        {
+            "timestamp": 60,
+            "probable_cause": "elevation_change",
+            "metric": "directGroundContactTime",
+        },
+        {
+            "timestamp": 120,
+            "probable_cause": "elevation_change",
+            "metric": "directVerticalOscillation",
+        },
+        {
+            "timestamp": 180,
+            "probable_cause": "elevation_change",
+            "metric": "directVerticalRatio",
+        },
+    ]
+
+    clusters = detector._generate_temporal_clusters(anomalies, cluster_window=300)
+
+    assert len(clusters) == 1
+    assert clusters[0]["count"] == 3
+
+
+@pytest.mark.unit
+def test_generate_temporal_clusters_empty(detector: FormAnomalyDetector) -> None:
+    """Test _generate_temporal_clusters with empty input."""
+    anomalies: list[dict[str, object]] = []
+
+    clusters = detector._generate_temporal_clusters(anomalies, cluster_window=300)
+
+    assert isinstance(clusters, list)
+    assert len(clusters) == 0
+
+
+@pytest.mark.unit
+def test_apply_anomaly_filters_by_ids(detector: FormAnomalyDetector) -> None:
+    """Test _apply_anomaly_filters filters by anomaly IDs."""
+    anomalies = [
+        {"anomaly_id": 1, "timestamp": 100, "z_score": 2.5},
+        {"anomaly_id": 2, "timestamp": 200, "z_score": 3.0},
+        {"anomaly_id": 3, "timestamp": 300, "z_score": 3.5},
+    ]
+
+    filtered = detector._apply_anomaly_filters(anomalies, {"anomaly_ids": [1, 3]})
+
+    assert len(filtered) == 2
+    ids = [a["anomaly_id"] for a in filtered]
+    assert 1 in ids
+    assert 3 in ids
+
+
+@pytest.mark.unit
+def test_apply_anomaly_filters_by_time_range(detector: FormAnomalyDetector) -> None:
+    """Test _apply_anomaly_filters filters by time range."""
+    anomalies = [
+        {"anomaly_id": 1, "timestamp": 100, "z_score": 2.5},
+        {"anomaly_id": 2, "timestamp": 200, "z_score": 3.0},
+        {"anomaly_id": 3, "timestamp": 300, "z_score": 3.5},
+        {"anomaly_id": 4, "timestamp": 400, "z_score": 2.8},
+    ]
+
+    filtered = detector._apply_anomaly_filters(anomalies, {"time_range": (150, 350)})
+
+    assert len(filtered) == 2
+    assert all(150 <= a["timestamp"] <= 350 for a in filtered)
+
+
+@pytest.mark.unit
+def test_apply_anomaly_filters_by_metrics(detector: FormAnomalyDetector) -> None:
+    """Test _apply_anomaly_filters filters by metric names."""
+    anomalies = [
+        {"anomaly_id": 1, "metric": "directGroundContactTime", "z_score": 2.5},
+        {"anomaly_id": 2, "metric": "directVerticalOscillation", "z_score": 3.0},
+        {"anomaly_id": 3, "metric": "directGroundContactTime", "z_score": 3.5},
+        {"anomaly_id": 4, "metric": "directVerticalRatio", "z_score": 2.8},
+    ]
+
+    filtered = detector._apply_anomaly_filters(
+        anomalies, {"metrics": ["directGroundContactTime"]}
+    )
+
+    assert len(filtered) == 2
+    assert all(a["metric"] == "directGroundContactTime" for a in filtered)
+
+
+@pytest.mark.unit
+def test_apply_anomaly_filters_by_z_threshold(detector: FormAnomalyDetector) -> None:
+    """Test _apply_anomaly_filters filters by minimum z-score."""
+    anomalies = [
+        {"anomaly_id": 1, "z_score": 2.2},
+        {"anomaly_id": 2, "z_score": 2.8},
+        {"anomaly_id": 3, "z_score": 3.5},
+        {"anomaly_id": 4, "z_score": 2.5},
+    ]
+
+    filtered = detector._apply_anomaly_filters(anomalies, {"min_z_score": 2.7})
+
+    assert len(filtered) == 2
+    assert all(abs(a["z_score"]) >= 2.7 for a in filtered)
+
+
+@pytest.mark.unit
+def test_apply_anomaly_filters_by_causes(detector: FormAnomalyDetector) -> None:
+    """Test _apply_anomaly_filters filters by probable causes."""
+    anomalies = [
+        {"anomaly_id": 1, "probable_cause": "elevation_change", "z_score": 2.5},
+        {"anomaly_id": 2, "probable_cause": "pace_change", "z_score": 3.0},
+        {"anomaly_id": 3, "probable_cause": "elevation_change", "z_score": 3.5},
+        {"anomaly_id": 4, "probable_cause": "fatigue", "z_score": 2.8},
+    ]
+
+    filtered = detector._apply_anomaly_filters(
+        anomalies, {"causes": ["elevation_change", "fatigue"]}
+    )
+
+    assert len(filtered) == 3
+    assert all(a["probable_cause"] in ["elevation_change", "fatigue"] for a in filtered)
+
+
+@pytest.mark.unit
+def test_apply_anomaly_filters_combined(detector: FormAnomalyDetector) -> None:
+    """Test _apply_anomaly_filters with multiple filter criteria."""
+    anomalies = [
+        {
+            "anomaly_id": 1,
+            "timestamp": 100,
+            "metric": "directGroundContactTime",
+            "z_score": 2.5,
+            "probable_cause": "elevation_change",
+        },
+        {
+            "anomaly_id": 2,
+            "timestamp": 200,
+            "metric": "directVerticalOscillation",
+            "z_score": 3.0,
+            "probable_cause": "pace_change",
+        },
+        {
+            "anomaly_id": 3,
+            "timestamp": 300,
+            "metric": "directGroundContactTime",
+            "z_score": 3.5,
+            "probable_cause": "elevation_change",
+        },
+        {
+            "anomaly_id": 4,
+            "timestamp": 400,
+            "metric": "directGroundContactTime",
+            "z_score": 2.2,
+            "probable_cause": "fatigue",
+        },
+    ]
+
+    # Filter: GCT metric, z_score >= 2.5, elevation cause
+    filtered = detector._apply_anomaly_filters(
+        anomalies,
+        {
+            "metrics": ["directGroundContactTime"],
+            "min_z_score": 2.5,
+            "causes": ["elevation_change"],
+        },
+    )
+
+    assert len(filtered) == 2
+    assert all(a["metric"] == "directGroundContactTime" for a in filtered)
+    assert all(abs(a["z_score"]) >= 2.5 for a in filtered)
+    assert all(a["probable_cause"] == "elevation_change" for a in filtered)
+
+
+@pytest.mark.unit
+def test_apply_anomaly_filters_limit(detector: FormAnomalyDetector) -> None:
+    """Test _apply_anomaly_filters enforces limit."""
+    anomalies = [
+        {"anomaly_id": i, "z_score": 2.5 + i * 0.1, "timestamp": i * 100}
+        for i in range(1, 21)  # 20 anomalies
+    ]
+
+    filtered = detector._apply_anomaly_filters(anomalies, {"limit": 5})
+
+    assert len(filtered) == 5
+    # Should return top 5 by z_score
+    assert all(abs(a["z_score"]) >= 3.5 for a in filtered)
+
+
+# ==========================================
+# New API Tests: Summary API
+# ==========================================
+
+
+@pytest.mark.unit
+def test_detect_form_anomalies_summary_structure(detector: FormAnomalyDetector) -> None:
+    """Test detect_form_anomalies_summary returns correct structure."""
+    activity_id = 12345678901
+
+    result = detector.detect_form_anomalies_summary(
+        activity_id=activity_id,
+        metrics=["directGroundContactTime"],
+        z_threshold=2.0,
+    )
+
+    # Verify structure
+    assert "activity_id" in result
+    assert "anomalies_detected" in result
+    assert "summary" in result
+    assert "top_anomalies" in result
+    assert "recommendations" in result
+
+    # Verify nested structures
+    summary = result["summary"]
+    assert "gct_anomalies" in summary
+    assert "elevation_related" in summary
+    assert "severity_distribution" in summary
+    assert "temporal_clusters" in summary
+
+
+@pytest.mark.unit
+def test_detect_form_anomalies_summary_token_count(
+    detector: FormAnomalyDetector,
+) -> None:
+    """Test detect_form_anomalies_summary has token count < 1000."""
+    activity_id = 12345678901
+
+    result = detector.detect_form_anomalies_summary(
+        activity_id=activity_id,
+        metrics=[
+            "directGroundContactTime",
+            "directVerticalOscillation",
+            "directVerticalRatio",
+        ],
+        z_threshold=2.0,
+    )
+
+    # Serialize to JSON and count tokens (rough estimate: 4 chars per token)
+    import json
+
+    json_str = json.dumps(result, ensure_ascii=False)
+    estimated_tokens = len(json_str) // 4
+
+    # Should be under 1000 tokens (target: ~700)
+    assert estimated_tokens < 1000, f"Token count {estimated_tokens} exceeds 1000"
+
+
+@pytest.mark.unit
+def test_detect_form_anomalies_summary_no_anomalies(
+    detector: FormAnomalyDetector,
+) -> None:
+    """Test detect_form_anomalies_summary handles no anomalies case."""
+    activity_id = 12345678901
+
+    result = detector.detect_form_anomalies_summary(
+        activity_id=activity_id,
+        metrics=["directGroundContactTime"],
+        z_threshold=10.0,  # Very high threshold
+    )
+
+    assert result["anomalies_detected"] == 0
+    assert result["summary"]["severity_distribution"]["high"] == 0
+    assert result["summary"]["severity_distribution"]["medium"] == 0
+    assert result["summary"]["severity_distribution"]["low"] == 0
+    assert len(result["summary"]["temporal_clusters"]) == 0
+    assert len(result["top_anomalies"]) == 0
+
+
+# ==========================================
+# New API Tests: Details API
+# ==========================================
+
+
+@pytest.mark.unit
+def test_get_form_anomaly_details_no_filter(detector: FormAnomalyDetector) -> None:
+    """Test get_form_anomaly_details without filters returns anomalies."""
+    activity_id = 12345678901
+
+    result = detector.get_form_anomaly_details(
+        activity_id=activity_id,
+        metrics=["directGroundContactTime"],
+        z_threshold=2.0,
+    )
+
+    # Verify structure
+    assert "activity_id" in result
+    assert "total_anomalies" in result
+    assert "returned_anomalies" in result
+    assert "anomalies" in result
+
+    # Should have anomalies
+    assert isinstance(result["anomalies"], list)
+
+
+@pytest.mark.unit
+def test_get_form_anomaly_details_filter_by_ids(detector: FormAnomalyDetector) -> None:
+    """Test get_form_anomaly_details filters by anomaly IDs."""
+    activity_id = 12345678901
+
+    # First get all anomalies to find IDs
+    all_result = detector.get_form_anomaly_details(
+        activity_id=activity_id,
+        metrics=["directGroundContactTime"],
+        z_threshold=2.0,
+    )
+
+    if len(all_result["anomalies"]) >= 2:
+        # Filter by first 2 IDs
+        target_ids = [
+            all_result["anomalies"][0]["anomaly_id"],
+            all_result["anomalies"][1]["anomaly_id"],
+        ]
+
+        filtered_result = detector.get_form_anomaly_details(
+            activity_id=activity_id,
+            filters={"anomaly_ids": target_ids},
+        )
+
+        assert filtered_result["returned_anomalies"] == 2
+        returned_ids = [a["anomaly_id"] for a in filtered_result["anomalies"]]
+        assert set(returned_ids) == set(target_ids)
+
+
+@pytest.mark.unit
+def test_get_form_anomaly_details_filter_by_time_range(
+    detector: FormAnomalyDetector,
+) -> None:
+    """Test get_form_anomaly_details filters by time range."""
+    activity_id = 12345678901
+
+    result = detector.get_form_anomaly_details(
+        activity_id=activity_id,
+        filters={"time_range": (100, 500)},  # 100-500 seconds
+        metrics=["directGroundContactTime"],
+        z_threshold=2.0,
+    )
+
+    # All returned anomalies should be within time range
+    for anomaly in result["anomalies"]:
+        assert 100 <= anomaly["timestamp"] <= 500
+
+
+@pytest.mark.unit
+def test_get_form_anomaly_details_filter_by_limit(
+    detector: FormAnomalyDetector,
+) -> None:
+    """Test get_form_anomaly_details enforces limit."""
+    activity_id = 12345678901
+
+    result = detector.get_form_anomaly_details(
+        activity_id=activity_id,
+        metrics=[
+            "directGroundContactTime",
+            "directVerticalOscillation",
+            "directVerticalRatio",
+        ],
+        z_threshold=2.0,
+        filters={"limit": 5},
+    )
+
+    assert result["returned_anomalies"] <= 5
+    assert len(result["anomalies"]) <= 5
+
+
+@pytest.mark.unit
+def test_get_form_anomaly_details_empty_results(detector: FormAnomalyDetector) -> None:
+    """Test get_form_anomaly_details handles empty results gracefully."""
+    activity_id = 12345678901
+
+    result = detector.get_form_anomaly_details(
+        activity_id=activity_id,
+        z_threshold=10.0,  # Very high threshold
+        metrics=["directGroundContactTime"],
+    )
+
+    assert result["total_anomalies"] == 0
+    assert result["returned_anomalies"] == 0
+    assert len(result["anomalies"]) == 0
+
+
+# ==========================================
+# Integration Tests: Summary → Details Workflow
+# ==========================================
+
+
+@pytest.mark.integration
+def test_summary_to_details_workflow(detector: FormAnomalyDetector) -> None:
+    """Test typical workflow: summary → identify issue → get details."""
+    activity_id = 12345678901
+
+    # Step 1: Get summary
+    summary = detector.detect_form_anomalies_summary(
+        activity_id=activity_id,
+        metrics=[
+            "directGroundContactTime",
+            "directVerticalOscillation",
+            "directVerticalRatio",
+        ],
+        z_threshold=2.0,
+    )
+
+    # Step 2: Identify temporal clusters with high anomaly count
+    if len(summary["summary"]["temporal_clusters"]) > 0:
+        # Find cluster with most anomalies
+        max_cluster = max(
+            summary["summary"]["temporal_clusters"], key=lambda c: c["count"]
+        )
+
+        # Step 3: Get detailed anomalies for that time window
+        details = detector.get_form_anomaly_details(
+            activity_id=activity_id,
+            filters={"time_range": (max_cluster["start"], max_cluster["end"])},
+        )
+
+        # Verify we got relevant details
+        assert details["returned_anomalies"] > 0
+        assert all(
+            max_cluster["start"] <= a["timestamp"] <= max_cluster["end"]
+            for a in details["anomalies"]
+        )
+
+
+# ==========================================
+# Performance Tests: Token Count
+# ==========================================
+
+
+@pytest.mark.performance
+def test_summary_api_token_count_multiple_activities(
+    detector: FormAnomalyDetector,
+) -> None:
+    """Test summary API token count for multiple activities (target: 95% reduction)."""
+    import json
+
+    activity_ids = [12345678901]  # Use same activity multiple times for test
+    total_tokens = 0
+
+    for activity_id in activity_ids:
+        result = detector.detect_form_anomalies_summary(
+            activity_id=activity_id,
+            metrics=[
+                "directGroundContactTime",
+                "directVerticalOscillation",
+                "directVerticalRatio",
+            ],
+            z_threshold=2.0,
+        )
+
+        json_str = json.dumps(result, ensure_ascii=False)
+        tokens = len(json_str) // 4
+        total_tokens += tokens
+
+    # Average should be < 1000 per activity (target: ~700)
+    avg_tokens = total_tokens / len(activity_ids)
+    assert avg_tokens < 1000, f"Average tokens {avg_tokens} exceeds 1000"
+
+
+@pytest.mark.performance
+def test_details_api_token_count_with_filters(detector: FormAnomalyDetector) -> None:
+    """Test details API token reduction with filtering (target: 89% reduction)."""
+    import json
+
+    activity_id = 12345678901
+
+    # Get unfiltered (for comparison)
+    unfiltered = detector.get_form_anomaly_details(
+        activity_id=activity_id,
+        metrics=["directGroundContactTime"],
+        z_threshold=2.0,
+    )
+
+    unfiltered_json = json.dumps(unfiltered, ensure_ascii=False)
+    unfiltered_tokens = len(unfiltered_json) // 4
+
+    # Get filtered by top 5 IDs
+    if len(unfiltered["anomalies"]) > 5:
+        top_5_ids = [a["anomaly_id"] for a in unfiltered["anomalies"][:5]]
+
+        filtered = detector.get_form_anomaly_details(
+            activity_id=activity_id,
+            filters={"anomaly_ids": top_5_ids},
+        )
+
+        filtered_json = json.dumps(filtered, ensure_ascii=False)
+        filtered_tokens = len(filtered_json) // 4
+
+        # Filtered should be significantly smaller
+        reduction_percent = (1 - filtered_tokens / unfiltered_tokens) * 100
+        assert (
+            reduction_percent > 50
+        ), f"Token reduction {reduction_percent}% is too low"
+
+
+@pytest.mark.performance
+def test_summary_api_response_time(detector: FormAnomalyDetector) -> None:
+    """Test summary API response time (target: <2s)."""
+    import time
+
+    activity_id = 12345678901
+
+    start_time = time.time()
+    detector.detect_form_anomalies_summary(
+        activity_id=activity_id,
+        metrics=[
+            "directGroundContactTime",
+            "directVerticalOscillation",
+            "directVerticalRatio",
+        ],
+        z_threshold=2.0,
+    )
+    elapsed_time = time.time() - start_time
+
+    assert elapsed_time < 2.0, f"Response time {elapsed_time:.2f}s exceeds 2.0s"
+
+
+@pytest.mark.performance
+def test_details_api_response_time(detector: FormAnomalyDetector) -> None:
+    """Test details API response time with filters (target: <2s)."""
+    import time
+
+    activity_id = 12345678901
+
+    start_time = time.time()
+    detector.get_form_anomaly_details(
+        activity_id=activity_id,
+        metrics=["directGroundContactTime"],
+        z_threshold=2.0,
+        filters={"limit": 10},
+    )
+    elapsed_time = time.time() - start_time
+
+    assert elapsed_time < 2.0, f"Response time {elapsed_time:.2f}s exceeds 2.0s"

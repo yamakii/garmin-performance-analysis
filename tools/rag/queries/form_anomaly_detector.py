@@ -284,53 +284,24 @@ class FormAnomalyDetector:
 
         return recommendations
 
-    def detect_form_anomalies(
+    def _extract_time_series(
         self,
         activity_id: int,
         metrics: list[str] | None = None,
-        z_threshold: float = 2.0,
-        context_window: int = 30,
-    ) -> dict[str, Any]:
-        """Detect form metric anomalies and identify probable causes.
+    ) -> tuple[
+        dict[str, Any], dict[str, list[float | None]], dict[str, list[float | None]]
+    ]:
+        """Extract time series data for form metrics and contextual metrics.
 
         Args:
             activity_id: Activity ID.
-            metrics: List of metric names to analyze
-                    (default: ["directGroundContactTime",
-                               "directVerticalOscillation",
-                               "directVerticalRatio"]).
-            z_threshold: Z-score threshold for anomaly detection (default: 2.0).
-            context_window: Context window size in seconds (default: 30).
+            metrics: List of form metric names to analyze.
 
         Returns:
-            Dictionary with anomaly detection results:
-            {
-                "activity_id": int,
-                "anomalies_detected": int,
-                "anomalies": [
-                    {
-                        "anomaly_id": int,
-                        "timestamp": int,
-                        "metric": str,
-                        "value": float,
-                        "baseline": float,
-                        "z_score": float,
-                        "probable_cause": str,
-                        "cause_details": dict,
-                        "context": dict
-                    },
-                    ...
-                ],
-                "summary": {
-                    "gct_anomalies": int,
-                    "vo_anomalies": int,
-                    "vr_anomalies": int,
-                    "elevation_related": int,
-                    "pace_related": int,
-                    "fatigue_related": int
-                },
-                "recommendations": [str, ...]
-            }
+            Tuple of:
+            - metric_map: Metric descriptor map
+            - form_metrics: Dict of form metric time series
+            - context_metrics: Dict with elevation, pace, hr time series
         """
         # Default metrics if not specified
         if metrics is None:
@@ -351,13 +322,32 @@ class FormAnomalyDetector:
         # Extract time series for form metrics
         metrics_data = activity_details["activityDetailMetrics"]
 
-        # Extract contextual metrics (elevation, pace, HR)
-        elevation_series = []
-        pace_series = []
-        hr_series = []
+        # Initialize storage
+        form_metrics: dict[str, list[float | None]] = {m: [] for m in metrics}
+        elevation_series: list[float | None] = []
+        pace_series: list[float | None] = []
+        hr_series: list[float | None] = []
 
+        # Extract all time series
         for measurement in metrics_data:
             values = measurement["metrics"]
+
+            # Extract form metrics
+            for metric_name in metrics:
+                if metric_name in metric_map:
+                    metric_info = metric_map[metric_name]
+                    metric_idx = metric_info["index"]
+                    if metric_idx < len(values):
+                        raw_val = values[metric_idx]
+                        if raw_val is not None:
+                            converted_val = self.loader.apply_unit_conversion(
+                                metric_info, raw_val
+                            )
+                            form_metrics[metric_name].append(converted_val)
+                        else:
+                            form_metrics[metric_name].append(None)
+                    else:
+                        form_metrics[metric_name].append(None)
 
             # Elevation
             if "directElevation" in metric_map:
@@ -399,32 +389,42 @@ class FormAnomalyDetector:
             else:
                 hr_series.append(None)
 
-        # Detect anomalies for each requested metric
+        context_metrics = {
+            "elevation": elevation_series,
+            "pace": pace_series,
+            "hr": hr_series,
+        }
+
+        return metric_map, form_metrics, context_metrics
+
+    def _detect_all_anomalies(
+        self,
+        form_metrics: dict[str, list[float | None]],
+        elevation_series: list[float | None],
+        pace_series: list[float | None],
+        hr_series: list[float | None],
+        z_threshold: float = 2.0,
+        context_window: int = 30,
+    ) -> list[dict[str, Any]]:
+        """Detect anomalies for all form metrics.
+
+        Args:
+            form_metrics: Dict of form metric time series.
+            elevation_series: Elevation time series.
+            pace_series: Pace time series.
+            hr_series: Heart rate time series.
+            z_threshold: Z-score threshold.
+            context_window: Context window size in seconds.
+
+        Returns:
+            List of anomaly records with full details.
+        """
         all_anomalies = []
         anomaly_counter = 1
 
-        for metric_name in metrics:
-            if metric_name not in metric_map:
+        for metric_name, metric_series in form_metrics.items():
+            if not metric_series:
                 continue
-
-            # Extract metric time series
-            metric_info = metric_map[metric_name]
-            metric_idx = metric_info["index"]
-
-            metric_series: list[float | None] = []
-            for measurement in metrics_data:
-                values = measurement["metrics"]
-                if metric_idx < len(values):
-                    raw_val = values[metric_idx]
-                    if raw_val is not None:
-                        converted_val = self.loader.apply_unit_conversion(
-                            metric_info, raw_val
-                        )
-                        metric_series.append(converted_val)
-                    else:
-                        metric_series.append(None)
-                else:
-                    metric_series.append(None)
 
             # Calculate rolling statistics
             rolling_means, rolling_stds = self._calculate_rolling_stats(
@@ -471,7 +471,201 @@ class FormAnomalyDetector:
                 all_anomalies.append(anomaly_record)
                 anomaly_counter += 1
 
-        # Generate summary
+        return all_anomalies
+
+    def _generate_severity_distribution(
+        self, anomalies: list[dict[str, Any]]
+    ) -> dict[str, int]:
+        """Generate severity distribution based on z-scores.
+
+        Args:
+            anomalies: List of anomaly records.
+
+        Returns:
+            Dict with high/medium/low severity counts.
+        """
+        high = sum(1 for a in anomalies if abs(a["z_score"]) > 3.0)
+        medium = sum(1 for a in anomalies if 2.5 < abs(a["z_score"]) <= 3.0)
+        low = sum(1 for a in anomalies if abs(a["z_score"]) <= 2.5)
+
+        return {"high": high, "medium": medium, "low": low}
+
+    def _generate_temporal_clusters(
+        self, anomalies: list[dict[str, Any]], cluster_window: int = 300
+    ) -> list[dict[str, int]]:
+        """Generate temporal clusters (5-minute windows by default).
+
+        Args:
+            anomalies: List of anomaly records.
+            cluster_window: Cluster window size in seconds (default: 300 = 5min).
+
+        Returns:
+            List of cluster dicts with start, end, count.
+        """
+        if not anomalies:
+            return []
+
+        # Sort by timestamp
+        sorted_anomalies = sorted(anomalies, key=lambda a: a["timestamp"])
+
+        # Group into clusters
+        clusters = []
+        current_start = (
+            sorted_anomalies[0]["timestamp"] // cluster_window
+        ) * cluster_window
+        current_count = 0
+
+        for anomaly in sorted_anomalies:
+            anomaly_window = (anomaly["timestamp"] // cluster_window) * cluster_window
+            if anomaly_window == current_start:
+                current_count += 1
+            else:
+                if current_count > 0:
+                    clusters.append(
+                        {
+                            "start": current_start,
+                            "end": current_start + cluster_window,
+                            "count": current_count,
+                        }
+                    )
+                current_start = anomaly_window
+                current_count = 1
+
+        # Add last cluster
+        if current_count > 0:
+            clusters.append(
+                {
+                    "start": current_start,
+                    "end": current_start + cluster_window,
+                    "count": current_count,
+                }
+            )
+
+        return clusters
+
+    def _apply_anomaly_filters(
+        self, anomalies: list[dict[str, Any]], filters: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        """Apply filters to anomaly list.
+
+        Args:
+            anomalies: List of anomaly records.
+            filters: Filter criteria dict with optional keys:
+                - "anomaly_ids": [int, ...] - Specific anomaly IDs
+                - "time_range": (start, end) - Timestamp range
+                - "metrics": [str, ...] - Metric names
+                - "min_z_score": float - Minimum z-score
+                - "causes": [str, ...] - Probable causes
+                - "limit": int - Max results
+
+        Returns:
+            Filtered anomaly list.
+        """
+        filtered = anomalies.copy()
+
+        # Filter by anomaly IDs
+        if "anomaly_ids" in filters:
+            ids = set(filters["anomaly_ids"])
+            filtered = [a for a in filtered if a["anomaly_id"] in ids]
+
+        # Filter by time range
+        if "time_range" in filters:
+            start, end = filters["time_range"]
+            filtered = [a for a in filtered if start <= a["timestamp"] <= end]
+
+        # Filter by metrics
+        if "metrics" in filters:
+            metrics = set(filters["metrics"])
+            filtered = [a for a in filtered if a["metric"] in metrics]
+
+        # Filter by min z-score
+        if "min_z_score" in filters:
+            min_z = filters["min_z_score"]
+            filtered = [a for a in filtered if abs(a["z_score"]) >= min_z]
+
+        # Filter by causes
+        if "causes" in filters:
+            causes = set(filters["causes"])
+            filtered = [a for a in filtered if a["probable_cause"] in causes]
+
+        # Limit results (after sorting by z-score descending)
+        if "limit" in filters:
+            # Sort by z-score (descending) for importance
+            filtered.sort(key=lambda a: abs(a["z_score"]), reverse=True)
+            filtered = filtered[: filters["limit"]]
+
+        return filtered
+
+    def detect_form_anomalies_summary(
+        self,
+        activity_id: int,
+        metrics: list[str] | None = None,
+        z_threshold: float = 2.0,
+    ) -> dict[str, Any]:
+        """Detect form metric anomalies and return summary only (lightweight).
+
+        This method provides a high-level overview of detected anomalies without
+        detailed context information, significantly reducing token consumption
+        (~90% reduction compared to full detail API).
+
+        Args:
+            activity_id: Activity ID.
+            metrics: List of metric names to analyze
+                    (default: ["directGroundContactTime",
+                               "directVerticalOscillation",
+                               "directVerticalRatio"]).
+            z_threshold: Z-score threshold for anomaly detection (default: 2.0).
+
+        Returns:
+            Dictionary with anomaly summary:
+            {
+                "activity_id": int,
+                "anomalies_detected": int,
+                "summary": {
+                    "gct_anomalies": int,
+                    "vo_anomalies": int,
+                    "vr_anomalies": int,
+                    "elevation_related": int,
+                    "pace_related": int,
+                    "fatigue_related": int,
+                    "severity_distribution": {
+                        "high": int,    # z > 3.0
+                        "medium": int,  # 2.5 < z <= 3.0
+                        "low": int      # z <= 2.5
+                    },
+                    "temporal_clusters": [
+                        {"start": int, "end": int, "count": int},
+                        ...
+                    ]
+                },
+                "top_anomalies": [  # Top 5 most severe
+                    {
+                        "timestamp": int,
+                        "metric": str,
+                        "z_score": float,
+                        "probable_cause": str
+                    },
+                    ...
+                ],
+                "recommendations": [str, ...]
+            }
+        """
+        # Extract time series
+        metric_map, form_metrics, context_metrics = self._extract_time_series(
+            activity_id, metrics
+        )
+
+        # Detect all anomalies
+        all_anomalies = self._detect_all_anomalies(
+            form_metrics,
+            context_metrics["elevation"],
+            context_metrics["pace"],
+            context_metrics["hr"],
+            z_threshold,
+            context_window=30,  # Not used in summary, but needed for full detection
+        )
+
+        # Generate summary statistics
         summary = {
             "gct_anomalies": sum(
                 1 for a in all_anomalies if a["metric"] == "directGroundContactTime"
@@ -491,15 +685,137 @@ class FormAnomalyDetector:
             "fatigue_related": sum(
                 1 for a in all_anomalies if a["probable_cause"] == "fatigue"
             ),
+            "severity_distribution": self._generate_severity_distribution(
+                all_anomalies
+            ),
+            "temporal_clusters": self._generate_temporal_clusters(all_anomalies),
         }
 
+        # Get top 5 anomalies (by z-score)
+        top_anomalies = sorted(
+            all_anomalies, key=lambda a: abs(a["z_score"]), reverse=True
+        )[:5]
+        top_anomalies_summary = [
+            {
+                "timestamp": a["timestamp"],
+                "metric": a["metric"],
+                "z_score": round(a["z_score"], 2),
+                "probable_cause": a["probable_cause"],
+            }
+            for a in top_anomalies
+        ]
+
         # Generate recommendations
-        recommendations = self._generate_recommendations(summary)
+        from typing import cast
+
+        summary_for_recs = cast(dict[str, int], summary)
+        recommendations = self._generate_recommendations(summary_for_recs)
 
         return {
             "activity_id": activity_id,
             "anomalies_detected": len(all_anomalies),
-            "anomalies": all_anomalies,
             "summary": summary,
+            "top_anomalies": top_anomalies_summary,
             "recommendations": recommendations,
+        }
+
+    def get_form_anomaly_details(
+        self,
+        activity_id: int,
+        metrics: list[str] | None = None,
+        z_threshold: float = 2.0,
+        context_window: int = 30,
+        filters: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Get detailed anomaly information with optional filtering.
+
+        This method returns full anomaly details including context and cause analysis.
+        Use filters to reduce token consumption by retrieving only relevant anomalies.
+
+        Args:
+            activity_id: Activity ID.
+            metrics: List of metric names to analyze
+                    (default: ["directGroundContactTime",
+                               "directVerticalOscillation",
+                               "directVerticalRatio"]).
+            z_threshold: Z-score threshold for anomaly detection (default: 2.0).
+            context_window: Context window size in seconds (default: 30).
+            filters: Optional filters dict with keys:
+                - "anomaly_ids": [int, ...] - Specific anomaly IDs
+                - "time_range": (start, end) - Timestamp range in seconds
+                - "metrics": [str, ...] - Metric names to include
+                - "min_z_score": float - Minimum z-score threshold
+                - "causes": [str, ...] - Probable causes ("elevation_change",
+                                          "pace_change", "fatigue")
+                - "limit": int - Max results (default: 50)
+
+        Returns:
+            Dictionary with detailed anomaly information:
+            {
+                "activity_id": int,
+                "total_anomalies": int,
+                "returned_anomalies": int,
+                "anomalies": [
+                    {
+                        "anomaly_id": int,
+                        "timestamp": int,
+                        "metric": str,
+                        "value": float,
+                        "baseline": float,
+                        "z_score": float,
+                        "probable_cause": str,
+                        "cause_details": dict,
+                        "context": dict
+                    },
+                    ...
+                ]
+            }
+
+        Examples:
+            # Get elevation-related anomalies only
+            details = get_form_anomaly_details(
+                activity_id=12345,
+                filters={"causes": ["elevation_change"], "limit": 10}
+            )
+
+            # Get anomalies in specific time range (15-20 minutes)
+            details = get_form_anomaly_details(
+                activity_id=12345,
+                filters={"time_range": (900, 1200)}
+            )
+
+            # Get severe anomalies only (z > 3.0)
+            details = get_form_anomaly_details(
+                activity_id=12345,
+                filters={"min_z_score": 3.0}
+            )
+        """
+        # Extract time series
+        metric_map, form_metrics, context_metrics = self._extract_time_series(
+            activity_id, metrics
+        )
+
+        # Detect all anomalies
+        all_anomalies = self._detect_all_anomalies(
+            form_metrics,
+            context_metrics["elevation"],
+            context_metrics["pace"],
+            context_metrics["hr"],
+            z_threshold,
+            context_window,
+        )
+
+        # Apply filters if provided
+        if filters is None:
+            filters = {"limit": 50}  # Default limit
+        elif "limit" not in filters:
+            filters["limit"] = 50
+
+        filtered_anomalies = self._apply_anomaly_filters(all_anomalies, filters)
+
+        return {
+            "activity_id": activity_id,
+            "total_anomalies": len(all_anomalies),
+            "returned_anomalies": len(filtered_anomalies),
+            "anomalies": filtered_anomalies,
         }
