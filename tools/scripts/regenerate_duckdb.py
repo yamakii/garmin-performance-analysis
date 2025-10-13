@@ -648,12 +648,37 @@ def main():
 
         print("\n=== Dry Run ===")
         print(f"Delete old DuckDB: {args.delete_db}")
+
+        # Enhanced table filtering info
         if args.tables:
             print(f"Tables to regenerate: {', '.join(args.tables)}")
+            print(f"  → {len(args.tables)} table(s) selected")
+            all_tables = [
+                "activities",
+                "splits",
+                "form_efficiency",
+                "hr_efficiency",
+                "heart_rate_zones",
+                "performance_trends",
+                "vo2_max",
+                "lactate_threshold",
+                "time_series_metrics",
+                "section_analyses",
+                "body_composition",
+            ]
+            skipped_tables = [t for t in all_tables if t not in args.tables]
+            if skipped_tables:
+                print(
+                    f"  → {len(skipped_tables)} table(s) will be skipped: {', '.join(skipped_tables)}"
+                )
         else:
-            print("Tables to regenerate: all")
+            print("Tables to regenerate: all (11 tables)")
+
         print(f"Force delete existing records: {args.force}")
-        print(f"Found {len(activities)} activities:")
+        if args.force:
+            print("  ⚠️  Existing records will be DELETED before re-insertion")
+
+        print(f"\nFound {len(activities)} activities:")
 
         for activity_id, activity_date in activities[:10]:  # Show first 10
             # Check status
@@ -685,12 +710,19 @@ def main():
         activity_ids=args.activity_ids,
     )
 
-    # Display summary
+    # Display summary with enhanced table info
     print("\n=== Regeneration Summary ===")
     print(f"Total activities: {summary['total']}")
     print(f"Success: {summary['success']}")
     print(f"Skipped: {summary['skipped']}")
     print(f"Errors: {summary['error']}")
+
+    # Display table-specific info
+    if summary.get("tables"):
+        print(f"\nTables regenerated: {', '.join(summary['tables'])}")
+        print(f"  → {len(summary['tables'])} table(s) updated")
+    else:
+        print("\nTables regenerated: all (11 tables)")
 
     if summary["errors"]:
         print("\n=== Error Details ===")
