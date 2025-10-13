@@ -281,8 +281,8 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
-            name="detect_form_anomalies",
-            description="Detect form metric anomalies and identify causes (elevation/pace/fatigue)",
+            name="detect_form_anomalies_summary",
+            description="Detect form anomalies and return lightweight summary (~700 tokens, 95% reduction)",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -296,9 +296,53 @@ async def list_tools() -> list[Tool]:
                         "type": "number",
                         "description": "Z-score threshold for anomaly detection (default: 2.0)",
                     },
-                    "context_window": {
+                },
+                "required": ["activity_id"],
+            },
+        ),
+        Tool(
+            name="get_form_anomaly_details",
+            description="Get detailed anomaly information with flexible filtering (variable token size)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "activity_id": {"type": "integer"},
+                    "anomaly_ids": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "Optional specific anomaly IDs to retrieve",
+                    },
+                    "time_range": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "minItems": 2,
+                        "maxItems": 2,
+                        "description": "Optional [start_sec, end_sec] time range",
+                    },
+                    "metrics": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional metric names to filter",
+                    },
+                    "z_threshold": {
+                        "type": "number",
+                        "description": "Optional minimum z-score threshold",
+                    },
+                    "causes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional causes to filter (elevation_change, pace_change, fatigue)",
+                    },
+                    "limit": {
                         "type": "integer",
-                        "description": "Context window size in seconds (default: 30)",
+                        "description": "Maximum number of results (default: 50)",
+                        "default": 50,
+                    },
+                    "sort_by": {
+                        "type": "string",
+                        "description": "Sort order: z_score (desc) or timestamp (asc)",
+                        "enum": ["z_score", "timestamp"],
+                        "default": "z_score",
                     },
                 },
                 "required": ["activity_id"],
@@ -437,7 +481,6 @@ async def list_tools() -> list[Tool]:
     ]
 
 
-@mcp.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """Handle tool calls."""
     import json
@@ -701,15 +744,52 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             )
         ]
 
-    elif name == "detect_form_anomalies":
+    elif name == "detect_form_anomalies_summary":
         from tools.rag.queries.form_anomaly_detector import FormAnomalyDetector
 
         detector = FormAnomalyDetector()
-        result = detector.detect_form_anomalies(
+        result = detector.detect_form_anomalies_summary(
             activity_id=arguments["activity_id"],
             metrics=arguments.get("metrics"),
             z_threshold=arguments.get("z_threshold", 2.0),
-            context_window=arguments.get("context_window", 30),
+        )
+        return [
+            TextContent(
+                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+            )
+        ]
+
+    elif name == "get_form_anomaly_details":
+        from tools.rag.queries.form_anomaly_detector import FormAnomalyDetector
+
+        detector = FormAnomalyDetector()
+
+        # Build filters dict from MCP arguments
+        filters: dict[str, Any] = {}
+
+        if "anomaly_ids" in arguments:
+            filters["anomaly_ids"] = arguments["anomaly_ids"]
+
+        if "time_range" in arguments:
+            filters["time_range"] = tuple(arguments["time_range"])
+
+        if "metrics" in arguments:
+            filters["metrics"] = arguments["metrics"]
+
+        if "z_threshold" in arguments:
+            filters["min_z_score"] = arguments["z_threshold"]
+
+        if "causes" in arguments:
+            filters["causes"] = arguments["causes"]
+
+        # Always set limit (default: 50)
+        filters["limit"] = arguments.get("limit", 50)
+
+        result = detector.get_form_anomaly_details(
+            activity_id=arguments["activity_id"],
+            metrics=arguments.get("metrics"),
+            z_threshold=arguments.get("z_threshold", 2.0),
+            filters=filters if filters else None,
         )
         return [
             TextContent(
