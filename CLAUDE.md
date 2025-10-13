@@ -80,9 +80,47 @@ Raw Data (API) → Performance Data (pre-processed) → Analysis (DuckDB) → Re
 - **Normalized Tables**: `get_form_efficiency_summary`, `get_hr_efficiency_analysis`, `get_heart_rate_zones_detail`, `get_vo2_max_data`, `get_lactate_threshold_data`
 - **Splits Data** (lightweight): `get_splits_pace_hr` (split/phase), `get_splits_form_metrics` (form), `get_splits_elevation` (environment), `get_splits_all` (summary only)
 - **Write**: `insert_section_analysis_dict` (recommended), `insert_section_analysis` (legacy)
-- **RAG Queries**: `get_interval_analysis`, `get_split_time_series_detail` (DuckDB-based, 98.8% token reduction), `get_time_range_detail`, `detect_form_anomalies`, `analyze_performance_trends`, `extract_insights`, `classify_activity_type`, `compare_similar_workouts`
+- **RAG Queries**: `get_interval_analysis`, `get_split_time_series_detail` (DuckDB-based, 98.8% token reduction), `get_time_range_detail`, `detect_form_anomalies_summary` (lightweight, ~700 tokens, 95% reduction), `get_form_anomaly_details` (filtered details, variable size), `analyze_performance_trends`, `extract_insights`, `classify_activity_type`, `compare_similar_workouts`
 
 **Note:** Prefer lightweight splits APIs for targeted analysis. Time series tools use DuckDB for 98.8% token reduction. activity_details.json provides 26 second-by-second metrics.
+
+**Form Anomaly Detection (v2 - 95% Token Reduction):**
+- **Summary First**: Always start with `detect_form_anomalies_summary()` for multi-activity overview (~700 tokens)
+- **Details On Demand**: Use `get_form_anomaly_details()` with filters for specific analysis (variable size)
+- **Migration**: Old `detect_form_anomalies()` API removed (breaking change) - see examples below
+
+```python
+# Before (14.3k tokens per activity):
+detect_form_anomalies(activity_id=12345)
+
+# After - Summary for overview (700 tokens):
+summary = detect_form_anomalies_summary(activity_id=12345)
+# Returns: total count, severity distribution, temporal clusters, top 5 anomalies, recommendations
+
+# After - Details with filtering (e.g., 1.5k tokens for 5 IDs):
+details = get_form_anomaly_details(
+    activity_id=12345,
+    filters={"anomaly_ids": [1, 3, 5, 12, 15], "limit": 5}  # Specific anomalies only
+)
+
+# Filter by time range (15-20 minutes):
+details = get_form_anomaly_details(
+    activity_id=12345,
+    filters={"time_range": (900, 1200)}
+)
+
+# Filter by cause (elevation-related only):
+details = get_form_anomaly_details(
+    activity_id=12345,
+    filters={"causes": ["elevation_change"], "limit": 10}
+)
+
+# Filter by severity (z_score > 3.0):
+details = get_form_anomaly_details(
+    activity_id=12345,
+    filters={"min_z_score": 3.0}
+)
+```
 
 ### Serena MCP Integration
 
