@@ -51,18 +51,35 @@ The system follows a three-tier data transformation pipeline:
 ```
 GarminIngestWorker: [API calls → raw_data.json → create_parquet_dataset() → {performance.json, precheck.json}]
                     ↓
-           save_data() → 7 DuckDB inserters → Normalized tables (splits, form_efficiency, etc.)
+           save_data() → 8 DuckDB inserters → Normalized tables (splits, form_efficiency, time_series_metrics, etc.)
                     ↓
          Section Analysis Agents (5 parallel) → DuckDB (section_analyses table)
                     ↓
               Report Generation → result/
 ```
 
-**DuckDB Schema (2025-10-10 Update):**
+**8 DuckDB Inserters:**
+1. `insert_splits_data()`: Split metrics (pace, HR, cadence, elevation)
+2. `insert_form_efficiency()`: Form metrics with ratings (GCT, VO, VR)
+3. `insert_heart_rate_zones()`: HR zone boundaries and time distribution
+4. `insert_hr_efficiency()`: HR efficiency analysis with zone distribution
+5. `insert_performance_trends()`: Performance trends with phase analysis
+6. `insert_vo2_max()`: VO2 max estimation data
+7. `insert_lactate_threshold()`: Lactate threshold metrics
+8. `insert_time_series_metrics()`: **[NEW]** Second-by-second time series data (26 metrics × 1000-2000 rows/activity)
+
+**DuckDB Schema (2025-10-13 Update):**
 - **Normalized tables**: `splits`, `form_efficiency`, `heart_rate_zones`, `hr_efficiency`, `performance_trends`, `vo2_max`, `lactate_threshold`
+- **Time series table**: `time_series_metrics` (second-by-second data: 26 metrics × 1000-2000 rows/activity, 163k+ rows total)
 - **Metadata table**: `activities` (activity metadata with foreign key relationships)
 - **Analysis table**: `section_analyses` (section analysis results from agents)
 - **Note**: `performance_data` (JSON storage) table was removed in favor of normalized schema
+
+**Time Series Metrics Table Schema:**
+- PRIMARY KEY: `(activity_id, seq_no)` - seq_no is 0-indexed sequential ID
+- Indexed: `timestamp_s` (INTEGER) for time range queries
+- 26 metrics: heart_rate, speed, cadence, power, GCT, VO, VR, elevation, temperature, GPS, stamina, etc.
+- Token Optimization: 98.8% reduction (18.9k → 222 tokens for split analysis)
 
 ### Directory Structure
 
@@ -193,14 +210,17 @@ Provides efficient section-based access to DuckDB performance data, write capabi
   - Supports custom thresholds (pace_threshold_factor, min_work_duration, min_recovery_duration)
   - Use for: Interval training analysis, recovery efficiency assessment
 
-*Time Series Detail:*
+*Time Series Detail (DuckDB-based - 98.8% token reduction):*
 - `mcp__garmin-db__get_split_time_series_detail`: Get second-by-second metrics for a specific 1km split
-  - Extracts 26 metrics × 1000+ seconds from activity_details.json
-  - Returns time series with statistics (avg, std, min, max)
-  - Detects anomalies using z-score thresholding
+  - **NEW**: DuckDB-based with auto-detection (falls back to JSON if DuckDB unavailable)
+  - SQL-based statistics calculation (AVG, STDDEV, MIN, MAX)
+  - **Token reduction**: 98.8% (18.9k → 222 tokens with full data, 8.5k → 103 tokens statistics-only)
+  - Supports `statistics_only=true` parameter for maximum efficiency
+  - Z-score based anomaly detection
   - Use for: Split-level detailed analysis, anomaly investigation
 
 - `mcp__garmin-db__get_time_range_detail`: Get second-by-second metrics for arbitrary time range
+  - **NEW**: DuckDB-based with SQL WHERE timestamp_s BETWEEN start AND end
   - Supports custom start_time_s and end_time_s specification
   - More flexible than split-based analysis
   - Use for: Work/Recovery interval analysis, warmup/cooldown analysis
@@ -496,6 +516,18 @@ uv run python tools/scripts/bulk_fetch_activity_details.py --force
 #### Data Migration Scripts
 
 ```bash
+# Migrate time series data from JSON to DuckDB
+uv run python tools/scripts/migrate_time_series_to_duckdb.py
+
+# Migrate specific activities
+uv run python tools/scripts/migrate_time_series_to_duckdb.py --activity-ids 12345 67890
+
+# Dry run (show what would be migrated)
+uv run python tools/scripts/migrate_time_series_to_duckdb.py --dry-run
+
+# Verify integrity after migration
+uv run python tools/scripts/migrate_time_series_to_duckdb.py --verify
+
 # Migrate raw data structure (legacy → per-API format)
 uv run python tools/scripts/migrate_raw_data_structure.py
 
