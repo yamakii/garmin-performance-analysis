@@ -936,7 +936,8 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
         return [
             TextContent(
-                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+                type="text",
+                text=json.dumps(result, indent=2, ensure_ascii=False, default=str),
             )
         ]
 
