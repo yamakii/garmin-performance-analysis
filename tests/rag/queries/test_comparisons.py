@@ -16,6 +16,9 @@ class TestWorkoutComparator:
         with patch("tools.rag.queries.comparisons.GarminDBReader") as mock_reader:
             comparator = WorkoutComparator()
             comparator.db_reader = mock_reader.return_value
+            # Mock new methods to avoid errors in old tests
+            comparator.db_reader.get_heart_rate_zones_detail.return_value = None  # type: ignore
+            comparator.db_reader.get_weather_data.return_value = None  # type: ignore
             return comparator
 
     def test_initialization(self):

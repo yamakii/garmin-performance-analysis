@@ -257,7 +257,7 @@ class WorkoutComparator:
         try:
             results = self._execute_query(query, params).fetchall()
 
-            # Convert to dict format
+            # Convert to dict format and classify each candidate
             similar_activities = []
             for row in results:
                 candidate = {
@@ -273,6 +273,36 @@ class WorkoutComparator:
                     "avg_power": row[9],
                 }
 
+                # Add training type classification for candidate
+                try:
+                    from tools.rag.utils.activity_classifier import ActivityClassifier
+
+                    classifier = ActivityClassifier()
+                    hr_zones = self.db_reader.get_heart_rate_zones_detail(
+                        candidate["activity_id"]
+                    )
+                    if hr_zones:
+                        classification = classifier.classify(
+                            hr_zones_data=hr_zones,
+                            distance_km=candidate["distance_km"],
+                            avg_power=candidate["avg_power"],
+                        )
+                        candidate["training_type"] = (
+                            classification["type_en"].lower().replace(" ", "_")
+                        )
+                    else:
+                        candidate["training_type"] = "unknown"
+                except Exception as e:
+                    logger.warning(
+                        f"Could not classify training type for activity {candidate['activity_id']}: {e}"
+                    )
+                    candidate["training_type"] = "unknown"
+
+                # Add temperature for candidate
+                candidate["temperature"] = self._get_activity_temperature(
+                    candidate["activity_id"]
+                )
+
                 # Calculate similarity metrics
                 similarity_score = self._calculate_similarity_score(target, candidate)
                 pace_diff = candidate["avg_pace"] - target["avg_pace"]
@@ -282,16 +312,27 @@ class WorkoutComparator:
                     else 0.0
                 )
 
+                # Calculate temperature difference
+                temp_diff = None
+                if (
+                    target["temperature"] is not None
+                    and candidate["temperature"] is not None
+                ):
+                    temp_diff = candidate["temperature"] - target["temperature"]
+
                 similar_activities.append(
                     {
                         "activity_id": candidate["activity_id"],
                         "activity_date": candidate["activity_date"],
                         "activity_name": candidate["activity_name"],
+                        "training_type": candidate["training_type"],
+                        "temperature": candidate["temperature"],
+                        "temperature_diff": temp_diff,
                         "similarity_score": round(similarity_score, 1),
                         "pace_diff": round(pace_diff, 1),
                         "hr_diff": round(hr_diff, 1),
                         "interpretation": self._generate_interpretation(
-                            pace_diff, hr_diff
+                            pace_diff, hr_diff, temp_diff
                         ),
                     }
                 )
@@ -326,7 +367,7 @@ class WorkoutComparator:
             activity_id: Activity ID
 
         Returns:
-            Activity data dict or None if not found
+            Activity data dict with training_type and temperature, or None if not found
         """
         try:
             query = """
@@ -349,7 +390,7 @@ class WorkoutComparator:
             if not row:
                 return None
 
-            return {
+            activity_data = {
                 "activity_id": row[0],
                 "activity_date": row[1],
                 "activity_name": row[2],
@@ -361,6 +402,34 @@ class WorkoutComparator:
                 "avg_cadence": row[8],
                 "avg_power": row[9],
             }
+
+            # Add training type classification
+            try:
+                from tools.rag.utils.activity_classifier import ActivityClassifier
+
+                classifier = ActivityClassifier()
+                hr_zones = self.db_reader.get_heart_rate_zones_detail(activity_id)
+                if hr_zones:
+                    classification = classifier.classify(
+                        hr_zones_data=hr_zones,
+                        distance_km=activity_data["distance_km"],
+                        avg_power=activity_data["avg_power"],
+                    )
+                    activity_data["training_type"] = (
+                        classification["type_en"].lower().replace(" ", "_")
+                    )
+                else:
+                    activity_data["training_type"] = "unknown"
+            except Exception as e:
+                logger.warning(
+                    f"Could not classify training type for activity {activity_id}: {e}"
+                )
+                activity_data["training_type"] = "unknown"
+
+            # Add temperature data
+            activity_data["temperature"] = self._get_activity_temperature(activity_id)
+
+            return activity_data
 
         except Exception as e:
             logger.error(f"Error getting target activity {activity_id}: {e}")
