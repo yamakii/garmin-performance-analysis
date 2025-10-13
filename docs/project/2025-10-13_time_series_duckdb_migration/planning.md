@@ -1,5 +1,7 @@
 # 計画: time_series_duckdb_migration
 
+**GitHub Issue**: #6
+
 ## プロジェクト情報
 - **プロジェクト名**: `time_series_duckdb_migration`
 - **作成日**: `2025-10-13`
