@@ -58,7 +58,7 @@ class TestTimeSeriesMetricsInserter:
             "activityDetailMetrics": [
                 {
                     "metrics": [
-                        1000,  # sumDuration = 1000ms = 1.0s
+                        1,  # sumDuration = 1s (API sends seconds despite factor=1000)
                         140,  # heart_rate = 140 bpm
                         30,  # speed = 30 × 0.1 = 3.0 m/s
                         50000,  # elevation = 50000 / 100.0 = 500.0 m
@@ -67,7 +67,7 @@ class TestTimeSeriesMetricsInserter:
                 },
                 {
                     "metrics": [
-                        2000,  # sumDuration = 2000ms = 2.0s
+                        2,  # sumDuration = 2s (API sends seconds despite factor=1000)
                         145,  # heart_rate = 145 bpm
                         32,  # speed = 32 × 0.1 = 3.2 m/s
                         50100,  # elevation = 50100 / 100.0 = 501.0 m
@@ -76,7 +76,7 @@ class TestTimeSeriesMetricsInserter:
                 },
                 {
                     "metrics": [
-                        3000,  # sumDuration = 3000ms = 3.0s
+                        3,  # sumDuration = 3s (API sends seconds despite factor=1000)
                         150,  # heart_rate = 150 bpm
                         None,  # speed = None (missing data)
                         50200,  # elevation = 50200 / 100.0 = 502.0 m
@@ -199,7 +199,7 @@ class TestTimeSeriesMetricsInserter:
 
     @pytest.mark.unit
     def test_timestamp_calculation(self, sample_activity_details_file, tmp_path):
-        """Test timestamp_s calculation from sumDuration / 1000.0."""
+        """Test timestamp_s calculation from sumDuration (already in seconds)."""
         db_path = tmp_path / "test.duckdb"
 
         result = insert_time_series_metrics(
@@ -218,7 +218,7 @@ class TestTimeSeriesMetricsInserter:
         ).fetchall()
         conn.close()
 
-        # sumDuration: [1000, 2000, 3000] → timestamp_s: [1, 2, 3]
+        # sumDuration: [1, 2, 3] → timestamp_s: [1, 2, 3]
         assert rows[0][0] == 1
         assert rows[1][0] == 2
         assert rows[2][0] == 3
@@ -361,8 +361,7 @@ class TestTimeSeriesMetricsInserter:
                 },
             ],
             "activityDetailMetrics": [
-                {"metrics": [i * 1000, 140 + (i % 20), 30 + (i % 5)]}
-                for i in range(1, 2001)
+                {"metrics": [i, 140 + (i % 20), 30 + (i % 5)]} for i in range(1, 2001)
             ],
         }
 
@@ -401,10 +400,9 @@ class TestTimeSeriesMetricsInserter:
     def test_timestamp_s_uniqueness_with_seq_no(self, tmp_path):
         """Test seq_no prevents PRIMARY KEY violation when timestamp_s duplicates.
 
-        Real scenario: 1115 data points with only 3 unique timestamp_s values (0, 1, 2).
-        - sumDuration: 0-999ms → timestamp_s=0 (hundreds of rows)
-        - sumDuration: 1000-1999ms → timestamp_s=1 (hundreds of rows)
-        - sumDuration: 2000-2999ms → timestamp_s=2 (hundreds of rows)
+        Scenario: Multiple data points within same second (sub-second sampling).
+        - sumDuration: 0s (multiple samples) → timestamp_s=0
+        - sumDuration: 1s (multiple samples) → timestamp_s=1
 
         Without seq_no: PRIMARY KEY (activity_id, timestamp_s) would fail.
         With seq_no: PRIMARY KEY (activity_id, seq_no) succeeds.
@@ -427,12 +425,12 @@ class TestTimeSeriesMetricsInserter:
                 },
             ],
             "activityDetailMetrics": [
-                {"metrics": [100, 140]},  # timestamp_s=0, seq_no=0
-                {"metrics": [500, 142]},  # timestamp_s=0, seq_no=1
-                {"metrics": [900, 145]},  # timestamp_s=0, seq_no=2
-                {"metrics": [1100, 148]},  # timestamp_s=1, seq_no=3
-                {"metrics": [1500, 150]},  # timestamp_s=1, seq_no=4
-                {"metrics": [1900, 152]},  # timestamp_s=1, seq_no=5
+                {"metrics": [0, 140]},  # timestamp_s=0, seq_no=0
+                {"metrics": [0, 142]},  # timestamp_s=0, seq_no=1
+                {"metrics": [0, 145]},  # timestamp_s=0, seq_no=2
+                {"metrics": [1, 148]},  # timestamp_s=1, seq_no=3
+                {"metrics": [1, 150]},  # timestamp_s=1, seq_no=4
+                {"metrics": [1, 152]},  # timestamp_s=1, seq_no=5
             ],
         }
 

@@ -59,9 +59,9 @@ def temp_raw_dir(tmp_path):
                 {"key": "directSpeed", "metricsIndex": 2, "unit": {"factor": 0.1}},
             ],
             "activityDetailMetrics": [
-                {"metrics": [1000, 120, 30]},  # 1s, 120bpm, 3.0m/s
-                {"metrics": [2000, 125, 32]},  # 2s, 125bpm, 3.2m/s
-                {"metrics": [3000, 130, 35]},  # 3s, 130bpm, 3.5m/s
+                {"metrics": [1, 120, 30]},  # 1s, 120bpm, 3.0m/s
+                {"metrics": [2, 125, 32]},  # 2s, 125bpm, 3.2m/s
+                {"metrics": [3, 130, 35]},  # 3s, 130bpm, 3.5m/s
             ],
         }
         with open(act_dir / "activity_details.json", "w", encoding="utf-8") as f:

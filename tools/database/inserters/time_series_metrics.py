@@ -175,7 +175,6 @@ def insert_time_series_metrics(
             return False
 
         sum_duration_index = sum_duration_info["index"]
-        sum_duration_factor = sum_duration_info["factor"]
 
         # Pre-compute metric extraction info (index, factor) for each column
         metric_extract_info: list[tuple[int, float] | None] = []
@@ -196,17 +195,22 @@ def insert_time_series_metrics(
                 continue
 
             # Calculate timestamp_s from sumDuration
+            # NOTE: Garmin API inconsistency - sumDuration values are already in seconds
+            # despite factor=1000.0 (which would indicate milliseconds). Verified across
+            # multiple activities that raw values match activity duration in seconds.
             sum_duration_value = metrics[sum_duration_index]
             if sum_duration_value is None:
                 continue
 
-            timestamp_s = int(sum_duration_value / sum_duration_factor)
+            timestamp_s = int(
+                sum_duration_value
+            )  # Already in seconds, don't apply factor
 
             # Build row tuple directly (avoid dict overhead)
             # Order: activity_id, seq_no, timestamp_s, ...metrics
             row_values: list[int | float | None] = [activity_id, seq_no, timestamp_s]
 
-            for extract_info in metric_extract_info:
+            for col_idx, extract_info in enumerate(metric_extract_info):
                 if extract_info is None:
                     row_values.append(None)
                     continue
@@ -224,7 +228,17 @@ def insert_time_series_metrics(
                     continue
 
                 # Apply unit conversion
-                if factor == 1.0:
+                # NOTE: Garmin API inconsistency - duration fields (sumDuration, sumMovingDuration,
+                # sumElapsedDuration) have factor=1000.0 but are already in seconds, not milliseconds
+                api_key = column_spec[col_idx][0]
+                if api_key in (
+                    "sumDuration",
+                    "sumMovingDuration",
+                    "sumElapsedDuration",
+                ):
+                    # Duration fields are already in seconds despite factor
+                    converted_value = float(raw_value)
+                elif factor == 1.0:
                     converted_value = float(raw_value)
                 elif factor > 1.0:
                     # Division (e.g., elevation: 50000 / 100.0 = 500.0)
