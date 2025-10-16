@@ -1,9 +1,8 @@
 """
 SplitsInserter - Insert split_metrics to DuckDB splits table
 
-Supports both legacy (performance.json) and raw data modes (splits.json)
-
-Inserts split-by-split data into splits table for efficient querying and report generation.
+Extracts split-by-split data from raw splits.json and inserts into splits table
+for efficient querying and report generation.
 """
 
 import json
@@ -178,100 +177,36 @@ def _extract_splits_from_raw(raw_splits_file: str) -> list[dict] | None:
 
 
 def insert_splits(
-    performance_file: str | None,
     activity_id: int,
     db_path: str | None = None,
     raw_splits_file: str | None = None,
 ) -> bool:
     """
-    Insert split_metrics from performance.json or raw splits.json into DuckDB splits table.
+    Insert split_metrics from raw splits.json into DuckDB splits table.
 
     Steps:
-    1. Load performance.json (legacy) or raw splits.json
-    2. Extract or calculate split_metrics
+    1. Load raw splits.json
+    2. Extract and calculate split_metrics
     3. Insert each split into splits table
 
     Args:
-        performance_file: Path to performance.json (legacy, optional)
         activity_id: Activity ID
         db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
-        raw_splits_file: Path to raw splits.json (for raw mode)
+        raw_splits_file: Path to raw splits.json
 
     Returns:
         True if successful, False otherwise
     """
     try:
-        use_raw_data = performance_file is None
+        # Extract from raw data
+        if not raw_splits_file:
+            logger.error("raw_splits_file required")
+            return False
 
-        if use_raw_data:
-            # Extract from raw data
-            if not raw_splits_file:
-                logger.error("raw_splits_file required for raw data mode")
-                return False
-
-            split_metrics = _extract_splits_from_raw(raw_splits_file)
-            if not split_metrics:
-                logger.error("Failed to extract splits from raw data")
-                return False
-        else:
-            # Legacy: Load performance.json
-            # Type narrowing for mypy
-            assert performance_file is not None
-            performance_path = Path(performance_file)
-            if not performance_path.exists():
-                logger.error(f"Performance file not found: {performance_file}")
-                return False
-
-            with open(performance_path, encoding="utf-8") as f:
-                performance_data = json.load(f)
-
-            # Extract split_metrics
-            split_metrics = performance_data.get("split_metrics")
-            if not split_metrics or not isinstance(split_metrics, list):
-                logger.error(f"No split_metrics found in {performance_file}")
-                return False
-
-            # Load raw splits.json if provided (for time range data)
-            lap_dtos = []
-            if raw_splits_file:
-                raw_splits_path = Path(raw_splits_file)
-                if raw_splits_path.exists():
-                    with open(raw_splits_path, encoding="utf-8") as f:
-                        raw_splits_data = json.load(f)
-                        lap_dtos = raw_splits_data.get("lapDTOs", [])
-                else:
-                    logger.warning(f"Raw splits file not found: {raw_splits_file}")
-
-            # Create lapIndex -> lapDTO mapping
-            lap_dto_map = {lap.get("lapIndex"): lap for lap in lap_dtos}
-
-            # Enrich split_metrics with time range data from raw splits
-            cumulative_time = 0
-            for split in split_metrics:
-                split_number = split.get("split_number")
-                if split_number is None:
-                    continue
-
-                # Calculate pace_str if not already present
-                if not split.get("pace_str"):
-                    pace_seconds = split.get("avg_pace_seconds_per_km")
-                    if pace_seconds and pace_seconds > 0:
-                        minutes = int(pace_seconds // 60)
-                        seconds = int(pace_seconds % 60)
-                        split["pace_str"] = f"{minutes}:{seconds:02d}"
-
-                lap_dto = lap_dto_map.get(split_number)
-                if lap_dto:
-                    split["duration_seconds"] = lap_dto.get("duration")
-                    split["start_time_gmt"] = lap_dto.get("startTimeGMT")
-                    split["intensity_type"] = lap_dto.get("intensityType")
-
-                    # Calculate cumulative time
-                    duration_seconds = split.get("duration_seconds")
-                    split["start_time_s"] = cumulative_time
-                    if duration_seconds:
-                        split["end_time_s"] = cumulative_time + round(duration_seconds)
-                        cumulative_time = split["end_time_s"]
+        split_metrics = _extract_splits_from_raw(raw_splits_file)
+        if not split_metrics:
+            logger.error("Failed to extract splits from raw data")
+            return False
 
         # Set default DB path
         if db_path is None:
