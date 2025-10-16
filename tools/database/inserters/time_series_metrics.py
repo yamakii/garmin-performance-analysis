@@ -8,6 +8,7 @@ time_series_metrics table for efficient querying and token-optimized access.
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 import duckdb
 
@@ -18,6 +19,7 @@ def insert_time_series_metrics(
     activity_details_file: str,
     activity_id: int,
     db_path: str | None = None,
+    conn: Any | None = None,
 ) -> bool:
     """
     Insert time series metrics from activity_details.json to DuckDB.
@@ -26,6 +28,7 @@ def insert_time_series_metrics(
         activity_details_file: Path to raw/activity/{activity_id}/activity_details.json
         activity_id: Activity ID
         db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
+        conn: Optional DuckDB connection (for connection reuse, Phase 5 optimization)
 
     Returns:
         True if successful, False otherwise
@@ -112,8 +115,11 @@ def insert_time_series_metrics(
 
             db_path = get_default_db_path()
 
-        # Connect to DuckDB
-        conn = duckdb.connect(str(db_path))
+        # Phase 5 optimization: Reuse connection if provided
+        should_close_conn = False
+        if conn is None:
+            conn = duckdb.connect(str(db_path))
+            should_close_conn = True
 
         # Ensure time_series_metrics table exists with seq_no
         conn.execute(
@@ -171,7 +177,8 @@ def insert_time_series_metrics(
         sum_duration_info = metric_map.get("sumDuration")
         if not sum_duration_info:
             logger.error("sumDuration metric not found in metricDescriptors")
-            conn.close()
+            if should_close_conn:
+                conn.close()
             return False
 
         sum_duration_index = sum_duration_info["index"]
@@ -264,7 +271,9 @@ def insert_time_series_metrics(
             # Execute batch insert
             conn.executemany(insert_sql, value_tuples)
 
-        conn.close()
+        # Only close if we opened it
+        if should_close_conn:
+            conn.close()
 
         logger.info(
             f"Successfully inserted {len(value_tuples)} time series metrics for activity {activity_id}"

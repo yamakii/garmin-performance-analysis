@@ -1275,6 +1275,7 @@ class GarminIngestWorker:
                         raw_vo2_max_file=(
                             str(raw_vo2_max_file) if raw_vo2_max_file else None
                         ),
+                        conn=conn,  # Phase 5: Pass connection for reuse
                     )
                     if vo2_success:
                         logger.info(
@@ -1297,6 +1298,7 @@ class GarminIngestWorker:
                             activity_details_file=str(activity_details_file),
                             activity_id=activity_id,
                             db_path=self._db_path,
+                            conn=conn,  # Phase 5: Pass connection for reuse
                         )
                         if ts_success:
                             logger.info(

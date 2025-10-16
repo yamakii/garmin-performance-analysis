@@ -13,9 +13,10 @@ from tools.scripts.regenerate_duckdb import DuckDBRegenerator
 class TestFilterTables:
     """Test filter_tables method for table validation and filtering."""
 
-    def test_filter_tables_none_returns_all(self):
+    def test_filter_tables_none_returns_all(self, tmp_path):
         """Test that None returns all 11 tables."""
-        regenerator = DuckDBRegenerator()
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(db_path=db_path)
 
         result = regenerator.filter_tables(None)
 
@@ -35,9 +36,10 @@ class TestFilterTables:
         assert result == expected
         assert len(result) == 11
 
-    def test_filter_tables_single_table_no_auto_add(self):
+    def test_filter_tables_single_table_no_auto_add(self, tmp_path):
         """Test that single table does NOT automatically add activities table."""
-        regenerator = DuckDBRegenerator()
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(db_path=db_path)
 
         result = regenerator.filter_tables(["splits"])
 
@@ -46,9 +48,10 @@ class TestFilterTables:
         assert "activities" not in result
         assert len(result) == 1
 
-    def test_filter_tables_multiple_tables_no_auto_add(self):
+    def test_filter_tables_multiple_tables_no_auto_add(self, tmp_path):
         """Test that multiple tables do NOT automatically add activities table."""
-        regenerator = DuckDBRegenerator()
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(db_path=db_path)
 
         result = regenerator.filter_tables(["splits", "form_efficiency"])
 
@@ -57,9 +60,10 @@ class TestFilterTables:
         assert "activities" not in result
         assert len(result) == 2
 
-    def test_filter_tables_body_composition_only_no_activities(self):
+    def test_filter_tables_body_composition_only_no_activities(self, tmp_path):
         """Test that body_composition alone does NOT add activities table."""
-        regenerator = DuckDBRegenerator()
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(db_path=db_path)
 
         result = regenerator.filter_tables(["body_composition"])
 
@@ -67,9 +71,10 @@ class TestFilterTables:
         assert "activities" not in result
         assert len(result) == 1
 
-    def test_filter_tables_invalid_table_name_raises_error(self):
+    def test_filter_tables_invalid_table_name_raises_error(self, tmp_path):
         """Test that invalid table name raises ValueError."""
-        regenerator = DuckDBRegenerator()
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(db_path=db_path)
 
         with pytest.raises(ValueError) as exc_info:
             regenerator.filter_tables(["invalid_table"])
@@ -77,9 +82,10 @@ class TestFilterTables:
         assert "Invalid table names" in str(exc_info.value)
         assert "invalid_table" in str(exc_info.value)
 
-    def test_filter_tables_mixed_valid_invalid_raises_error(self):
+    def test_filter_tables_mixed_valid_invalid_raises_error(self, tmp_path):
         """Test that mix of valid and invalid tables raises ValueError."""
-        regenerator = DuckDBRegenerator()
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(db_path=db_path)
 
         with pytest.raises(ValueError) as exc_info:
             regenerator.filter_tables(["splits", "invalid_table", "wrong_table"])
@@ -89,9 +95,10 @@ class TestFilterTables:
         assert "invalid_table" in str(exc_info.value)
         assert "wrong_table" in str(exc_info.value)
 
-    def test_filter_tables_with_activities_explicit(self):
+    def test_filter_tables_with_activities_explicit(self, tmp_path):
         """Test that activities can be explicitly included without duplication."""
-        regenerator = DuckDBRegenerator()
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(db_path=db_path)
 
         result = regenerator.filter_tables(["activities", "splits"])
 
@@ -104,10 +111,11 @@ class TestFilterTables:
 class TestValidateArguments:
     """Test CLI argument validation."""
 
-    def test_init_with_delete_db_and_tables_raises_error(self):
+    def test_init_with_delete_db_and_tables_raises_error(self, tmp_path):
         """Test that --delete-db and --tables are mutually exclusive."""
+        db_path = tmp_path / "test.db"
         with pytest.raises(ValueError) as exc_info:
-            DuckDBRegenerator(delete_old_db=True, tables=["splits"])
+            DuckDBRegenerator(db_path=db_path, delete_old_db=True, tables=["splits"])
 
         assert "--delete-db cannot be used with --tables" in str(exc_info.value)
         # Phase 1 change: No mention of --force
@@ -115,41 +123,48 @@ class TestValidateArguments:
             exc_info.value
         )
 
-    def test_init_without_force_parameter(self):
+    def test_init_without_force_parameter(self, tmp_path):
         """Test that __init__ works without force parameter (Phase 1)."""
         # Phase 1: force parameter removed
-        regenerator = DuckDBRegenerator(tables=["splits"])
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(db_path=db_path, tables=["splits"])
 
         # Should not have force attribute
         assert not hasattr(regenerator, "force")
         assert regenerator.tables == ["splits"]
 
-    def test_init_with_delete_db_no_tables_succeeds(self):
+    def test_init_with_delete_db_no_tables_succeeds(self, tmp_path):
         """Test that --delete-db alone is valid (full regeneration)."""
         # Should not raise
-        regenerator = DuckDBRegenerator(delete_old_db=True, tables=None)
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(
+            db_path=db_path, delete_old_db=True, tables=None
+        )
         assert regenerator.delete_old_db is True
         assert regenerator.tables is None
 
-    def test_init_with_tables_succeeds(self):
+    def test_init_with_tables_succeeds(self, tmp_path):
         """Test that --tables alone is valid (Phase 1)."""
         # Phase 1: force parameter removed
-        regenerator = DuckDBRegenerator(tables=["splits"])
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(db_path=db_path, tables=["splits"])
 
         assert regenerator.tables == ["splits"]
         # force parameter no longer exists
         assert not hasattr(regenerator, "force")
 
-    def test_init_stores_tables_parameter(self):
+    def test_init_stores_tables_parameter(self, tmp_path):
         """Test that tables parameter is stored in instance."""
+        db_path = tmp_path / "test.db"
         tables = ["splits", "form_efficiency"]
-        regenerator = DuckDBRegenerator(tables=tables)
+        regenerator = DuckDBRegenerator(db_path=db_path, tables=tables)
 
         assert regenerator.tables == tables
 
-    def test_init_default_tables_is_none(self):
+    def test_init_default_tables_is_none(self, tmp_path):
         """Test that tables defaults to None (all tables)."""
-        regenerator = DuckDBRegenerator()
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(db_path=db_path)
 
         assert regenerator.tables is None
 
