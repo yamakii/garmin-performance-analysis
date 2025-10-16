@@ -15,6 +15,7 @@ import pandas as pd
 import polars as pl
 import pytest
 
+from tools.utils.error_handling import DataSizeError, OutputSizeError
 from tools.utils.llm_safe_data import (
     MAX_JSON_SIZE,
     safe_json_output,
@@ -55,14 +56,16 @@ class TestSafeLoadExport:
         parquet_path = tmp_path / "large_export.parquet"
         df.write_parquet(parquet_path)
 
-        # Act & Assert: Should raise ValueError with helpful message
-        with pytest.raises(ValueError) as exc_info:
+        # Act & Assert: Should raise DataSizeError with helpful message
+        with pytest.raises(DataSizeError) as exc_info:
             safe_load_export(str(parquet_path), max_rows=10000)
 
         error_msg = str(exc_info.value)
         assert "100,000" in error_msg
         assert "10,000" in error_msg
-        assert "aggregation" in error_msg.lower()
+        # Check for suggestion and retry_guidance attributes
+        assert hasattr(exc_info.value, "suggestion")
+        assert hasattr(exc_info.value, "retry_guidance")
 
     def test_load_csv_file(self, tmp_path: Path) -> None:
         """Test loading CSV file."""
@@ -227,14 +230,15 @@ class TestSafeJsonOutput:
         # Arrange: Create large dictionary (>1KB)
         data = {f"metric_{i}": i * 1.5 for i in range(100)}
 
-        # Act & Assert: Should raise ValueError with suggestions
-        with pytest.raises(ValueError) as exc_info:
+        # Act & Assert: Should raise OutputSizeError with suggestions
+        with pytest.raises(OutputSizeError) as exc_info:
             safe_json_output(data)
 
         error_msg = str(exc_info.value)
-        assert "exceeds max_size" in error_msg
-        assert "Reduce number of fields" in error_msg
-        assert "Aggregate data" in error_msg
+        assert "limit exceeded" in error_msg.lower() or "exceeds" in error_msg.lower()
+        # Check for suggestion attributes
+        assert hasattr(exc_info.value, "suggestion")
+        assert hasattr(exc_info.value, "retry_guidance")
 
     def test_japanese_characters(self) -> None:
         """Test JSON with Japanese characters."""

@@ -48,7 +48,7 @@ def safe_load_export(handle: str, max_rows: int = MAX_LOAD_ROWS) -> pl.DataFrame
         Polars DataFrame
 
     Raises:
-        ValueError: If file exceeds max_rows
+        DataSizeError: If file exceeds max_rows
         FileNotFoundError: If file doesn't exist
 
     Example:
@@ -56,6 +56,8 @@ def safe_load_export(handle: str, max_rows: int = MAX_LOAD_ROWS) -> pl.DataFrame
         >>> df = safe_load_export(handle)
         >>> print(len(df))  # Will error if > 10,000 rows
     """
+    from tools.utils.error_handling import raise_export_size_error
+
     path = Path(handle)
 
     if not path.exists():
@@ -77,11 +79,7 @@ def safe_load_export(handle: str, max_rows: int = MAX_LOAD_ROWS) -> pl.DataFrame
     row_count = df.select(pl.len()).collect().item()
 
     if row_count > max_rows:
-        raise ValueError(
-            f"Export exceeds max_rows: {row_count:,} > {max_rows:,}. "
-            f"Consider using aggregation, filtering, or increase max_rows. "
-            f"For large datasets, process in chunks or use DuckDB directly."
-        )
+        raise_export_size_error(row_count, max_rows)
 
     return df.collect()
 
@@ -146,25 +144,20 @@ def safe_json_output(data: dict, max_size: int = MAX_JSON_SIZE) -> str:
         JSON string
 
     Raises:
-        ValueError: If JSON exceeds max_size
+        OutputSizeError: If JSON exceeds max_size
 
     Example:
         >>> data = {"pace": 305.2, "hr": 162}
         >>> json_str = safe_json_output(data)
         >>> print(len(json_str.encode('utf-8')))  # Will error if > 1KB
     """
+    from tools.utils.error_handling import raise_json_size_error
+
     json_str = json.dumps(data, ensure_ascii=False, indent=2)
     byte_size = len(json_str.encode("utf-8"))
 
     if byte_size > max_size:
-        raise ValueError(
-            f"JSON output exceeds max_size: {byte_size:,} bytes > {max_size:,} bytes. "
-            f"Suggestions:\n"
-            f"  - Reduce number of fields\n"
-            f"  - Aggregate data (e.g., mean, median instead of all values)\n"
-            f"  - Use safe_summary_table() for tabular data\n"
-            f"  - Save to file and return path instead"
-        )
+        raise_json_size_error(byte_size, max_size)
 
     return json_str
 
