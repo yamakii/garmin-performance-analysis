@@ -8,6 +8,7 @@ and inserts into form_efficiency table.
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 import duckdb
 
@@ -175,6 +176,7 @@ def insert_form_efficiency(
     db_path: str | None = None,
     raw_splits_file: str | None = None,
     raw_activity_details_file: str | None = None,
+    conn: Any | None = None,
 ) -> bool:
     """
     Insert form_efficiency_summary from raw data into DuckDB form_efficiency table.
@@ -189,6 +191,7 @@ def insert_form_efficiency(
         db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
         raw_splits_file: Path to splits.json (for raw mode)
         raw_activity_details_file: Path to activity_details.json (for raw mode, optional)
+        conn: Optional DuckDB connection (for connection reuse, Phase 5 optimization)
 
     Returns:
         True if successful, False otherwise
@@ -209,83 +212,19 @@ def insert_form_efficiency(
 
             db_path = get_default_db_path()
 
-        # Connect to DuckDB
-        conn = duckdb.connect(str(db_path))
-
-        # Ensure form_efficiency table exists
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS form_efficiency (
-                activity_id BIGINT PRIMARY KEY,
-                gct_average DOUBLE,
-                gct_min DOUBLE,
-                gct_max DOUBLE,
-                gct_std DOUBLE,
-                gct_variability DOUBLE,
-                gct_rating VARCHAR,
-                gct_evaluation VARCHAR,
-                vo_average DOUBLE,
-                vo_min DOUBLE,
-                vo_max DOUBLE,
-                vo_std DOUBLE,
-                vo_trend VARCHAR,
-                vo_rating VARCHAR,
-                vo_evaluation VARCHAR,
-                vr_average DOUBLE,
-                vr_min DOUBLE,
-                vr_max DOUBLE,
-                vr_std DOUBLE,
-                vr_rating VARCHAR,
-                vr_evaluation VARCHAR
-            )
-            """
-        )
-
-        # Delete existing record for this activity (for re-insertion)
-        conn.execute("DELETE FROM form_efficiency WHERE activity_id = ?", [activity_id])
-
-        # Extract values from nested dicts
-        gct_stats = form_eff_summary.get("gct_stats", {})
-        vo_stats = form_eff_summary.get("vo_stats", {})
-        vr_stats = form_eff_summary.get("vr_stats", {})
-
-        # Calculate variability if data exists
-        gct_avg = gct_stats.get("average")
-        gct_std = gct_stats.get("std")
-        gct_variability = (gct_std / gct_avg * 100) if gct_avg and gct_std else None
-
-        # Insert form efficiency data
-        conn.execute(
-            """
-            INSERT INTO form_efficiency (
-                activity_id,
-                gct_average, gct_min, gct_max, gct_std, gct_variability, gct_rating,
-                vo_average, vo_min, vo_max, vo_std, vo_rating,
-                vr_average, vr_min, vr_max, vr_std, vr_rating
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                activity_id,
-                gct_stats.get("average"),
-                gct_stats.get("min"),
-                gct_stats.get("max"),
-                gct_stats.get("std"),
-                gct_variability,
-                form_eff_summary.get("gct_rating"),
-                vo_stats.get("average"),
-                vo_stats.get("min"),
-                vo_stats.get("max"),
-                vo_stats.get("std"),
-                form_eff_summary.get("vo_rating"),
-                vr_stats.get("average"),
-                vr_stats.get("min"),
-                vr_stats.get("max"),
-                vr_stats.get("std"),
-                form_eff_summary.get("vr_rating"),
-            ],
-        )
-
-        conn.close()
+        # Phase 5 optimization: Reuse connection if provided
+        if conn is not None:
+            # Use provided connection (no close needed)
+            _insert_form_efficiency_with_connection(conn, activity_id, form_eff_summary)
+        else:
+            # Open new connection (backward compatible)
+            connection = duckdb.connect(str(db_path))
+            try:
+                _insert_form_efficiency_with_connection(
+                    connection, activity_id, form_eff_summary
+                )
+            finally:
+                connection.close()
 
         logger.info(
             f"Successfully inserted form efficiency data for activity {activity_id}"
@@ -295,3 +234,81 @@ def insert_form_efficiency(
     except Exception as e:
         logger.error(f"Error inserting form efficiency: {e}")
         return False
+
+
+def _insert_form_efficiency_with_connection(
+    conn: Any, activity_id: int, form_eff_summary: dict
+) -> None:
+    """Helper function to insert form efficiency with a given connection."""
+    # Ensure form_efficiency table exists
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS form_efficiency (
+            activity_id BIGINT PRIMARY KEY,
+            gct_average DOUBLE,
+            gct_min DOUBLE,
+            gct_max DOUBLE,
+            gct_std DOUBLE,
+            gct_variability DOUBLE,
+            gct_rating VARCHAR,
+            gct_evaluation VARCHAR,
+            vo_average DOUBLE,
+            vo_min DOUBLE,
+            vo_max DOUBLE,
+            vo_std DOUBLE,
+            vo_trend VARCHAR,
+            vo_rating VARCHAR,
+            vo_evaluation VARCHAR,
+            vr_average DOUBLE,
+            vr_min DOUBLE,
+            vr_max DOUBLE,
+            vr_std DOUBLE,
+            vr_rating VARCHAR,
+            vr_evaluation VARCHAR
+        )
+        """
+    )
+
+    # Delete existing record for this activity (for re-insertion)
+    conn.execute("DELETE FROM form_efficiency WHERE activity_id = ?", [activity_id])
+
+    # Extract values from nested dicts
+    gct_stats = form_eff_summary.get("gct_stats", {})
+    vo_stats = form_eff_summary.get("vo_stats", {})
+    vr_stats = form_eff_summary.get("vr_stats", {})
+
+    # Calculate variability if data exists
+    gct_avg = gct_stats.get("average")
+    gct_std = gct_stats.get("std")
+    gct_variability = (gct_std / gct_avg * 100) if gct_avg and gct_std else None
+
+    # Insert form efficiency data
+    conn.execute(
+        """
+        INSERT INTO form_efficiency (
+            activity_id,
+            gct_average, gct_min, gct_max, gct_std, gct_variability, gct_rating,
+            vo_average, vo_min, vo_max, vo_std, vo_rating,
+            vr_average, vr_min, vr_max, vr_std, vr_rating
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            activity_id,
+            gct_stats.get("average"),
+            gct_stats.get("min"),
+            gct_stats.get("max"),
+            gct_stats.get("std"),
+            gct_variability,
+            form_eff_summary.get("gct_rating"),
+            vo_stats.get("average"),
+            vo_stats.get("min"),
+            vo_stats.get("max"),
+            vo_stats.get("std"),
+            form_eff_summary.get("vo_rating"),
+            vr_stats.get("average"),
+            vr_stats.get("min"),
+            vr_stats.get("max"),
+            vr_stats.get("std"),
+            form_eff_summary.get("vr_rating"),
+        ],
+    )

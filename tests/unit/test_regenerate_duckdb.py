@@ -178,8 +178,8 @@ class TestDeleteActivityRecords:
         # Call delete_activity_records
         regenerator.delete_activity_records([12345, 67890])
 
-        # Verify activities table was NOT skipped
-        execute_calls = mock_cursor.execute.call_args_list
+        # Phase 5: Verify activities table was NOT skipped (uses conn.execute not cursor)
+        execute_calls = mock_conn.execute.call_args_list
         executed_sqls = [call[0][0] for call in execute_calls]
 
         # Should have DELETE for both activities and splits
@@ -194,8 +194,6 @@ class TestDeleteActivityRecords:
     def test_delete_activity_records_skips_body_composition(self, tmp_path, mocker):
         """Test that body_composition is skipped (no activity_id column)."""
         mock_conn = mocker.MagicMock()
-        mock_cursor = mocker.MagicMock()
-        mock_conn.cursor.return_value = mock_cursor
         mock_conn.__enter__ = mocker.MagicMock(return_value=mock_conn)
         mock_conn.__exit__ = mocker.MagicMock(return_value=False)
         mocker.patch(
@@ -209,7 +207,7 @@ class TestDeleteActivityRecords:
 
         regenerator.delete_activity_records([12345])
 
-        execute_calls = mock_cursor.execute.call_args_list
+        execute_calls = mock_conn.execute.call_args_list
         executed_sqls = [call[0][0] for call in execute_calls]
 
         # Should NOT have DELETE for body_composition
@@ -218,9 +216,17 @@ class TestDeleteActivityRecords:
         ]
         assert len(body_comp_deletes) == 0, "body_composition should be skipped"
 
-        # Should have DELETE for splits
+        # Should have DELETE for splits (Phase 5: within transaction)
         splits_deletes = [sql for sql in executed_sqls if "DELETE FROM splits" in sql]
         assert len(splits_deletes) == 1, "splits table should be deleted"
+
+        # Phase 5: Should have BEGIN and COMMIT for transaction
+        assert any(
+            "BEGIN TRANSACTION" in sql for sql in executed_sqls
+        ), "Should start transaction"
+        assert any(
+            "COMMIT" in sql for sql in executed_sqls
+        ), "Should commit transaction"
 
 
 class TestDeleteTableAllRecords:

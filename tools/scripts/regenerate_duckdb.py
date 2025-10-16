@@ -236,10 +236,18 @@ class DuckDBRegenerator:
         Returns:
             True if activity data exists in DuckDB
         """
-        with duckdb.connect(str(self.db_reader.db_path), read_only=True) as conn:
-            query = "SELECT COUNT(*) FROM activities WHERE activity_id = ?"
-            result = conn.execute(query, (activity_id,)).fetchone()
-            return result[0] > 0 if result else False
+        # Check if database file exists first
+        if not self.db_path.exists():
+            return False
+
+        try:
+            with duckdb.connect(str(self.db_reader.db_path), read_only=True) as conn:
+                query = "SELECT COUNT(*) FROM activities WHERE activity_id = ?"
+                result = conn.execute(query, (activity_id,)).fetchone()
+                return result[0] > 0 if result else False
+        except Exception:
+            # Database doesn't exist or activities table doesn't exist
+            return False
 
     def check_raw_data_exists(self, activity_id: int) -> bool:
         """
@@ -268,6 +276,7 @@ class DuckDBRegenerator:
             - body_composition table is skipped (no activity_id column)
             - Deletion is performed in transaction (all or nothing)
             - Only deletes from tables specified in self.tables
+            - Gracefully handles missing tables (tables may not exist yet)
         """
         if not self.tables:
             return
@@ -281,27 +290,45 @@ class DuckDBRegenerator:
 
         # Connect to DuckDB
         with duckdb.connect(str(self.db_path)) as conn:
-            cursor = conn.cursor()
-
             try:
+                # Begin explicit transaction
+                conn.execute("BEGIN TRANSACTION")
+
                 # Delete from each table (within transaction)
                 for table in tables_to_delete:
-                    # Build DELETE query
-                    placeholders = ",".join("?" * len(activity_ids))
-                    sql = f"DELETE FROM {table} WHERE activity_id IN ({placeholders})"
+                    try:
+                        # Build DELETE query
+                        placeholders = ",".join("?" * len(activity_ids))
+                        sql = (
+                            f"DELETE FROM {table} WHERE activity_id IN ({placeholders})"
+                        )
 
-                    logger.debug(f"Deleting {len(activity_ids)} records from {table}")
-                    cursor.execute(sql, tuple(activity_ids))
+                        logger.debug(
+                            f"Deleting {len(activity_ids)} records from {table}"
+                        )
+                        conn.execute(sql, tuple(activity_ids))
+                    except Exception as table_error:
+                        # Gracefully handle missing tables (they may not exist yet)
+                        if "does not exist" in str(table_error):
+                            logger.debug(
+                                f"Table {table} does not exist yet, skipping deletion"
+                            )
+                        else:
+                            raise
 
                 # Commit transaction
-                conn.commit()
+                conn.execute("COMMIT")
                 logger.info(
                     f"Deleted records for {len(activity_ids)} activities "
                     f"from {len(tables_to_delete)} tables"
                 )
 
             except Exception as e:
-                conn.rollback()
+                # Rollback only if transaction is active
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception:
+                    pass  # Transaction may not be active
                 logger.error(f"Error deleting records: {e}")
                 raise
 
@@ -331,6 +358,9 @@ class DuckDBRegenerator:
         # Connect to DuckDB
         with duckdb.connect(str(self.db_path)) as conn:
             try:
+                # Begin explicit transaction
+                conn.execute("BEGIN TRANSACTION")
+
                 # Delete all records from each table
                 for table in tables_to_delete:
                     sql = f"DELETE FROM {table}"
@@ -338,11 +368,15 @@ class DuckDBRegenerator:
                     conn.execute(sql)
 
                 # Commit transaction
-                conn.commit()
+                conn.execute("COMMIT")
                 logger.info(f"Deleted all records from {len(tables_to_delete)} tables")
 
             except Exception as e:
-                conn.rollback()
+                # Rollback only if transaction is active
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception:
+                    pass  # Transaction may not be active
                 logger.error(f"Error deleting table records: {e}")
                 raise
 
@@ -362,13 +396,19 @@ class DuckDBRegenerator:
         3. Use GarminIngestWorker.process_activity() with tables parameter
         4. Automatically insert specified tables into DuckDB via save_data()
 
+        Phase 5: Added timing information to progress logs.
+
         Args:
             activity_id: Activity ID
             activity_date: Activity date (optional, for logging)
 
         Returns:
-            Result dict with status and details
+            Result dict with status, details, and timing
         """
+        import time
+
+        start_time = time.time()
+
         # Check if raw data exists
         if not self.check_raw_data_exists(activity_id):
             logger.warning(f"Raw data not found for activity {activity_id}")
@@ -377,6 +417,7 @@ class DuckDBRegenerator:
                 "activity_id": activity_id,
                 "activity_date": activity_date,
                 "error": "Raw data not found",
+                "elapsed_time": 0.0,
             }
 
         # Check DuckDB cache with table-awareness
@@ -395,11 +436,15 @@ class DuckDBRegenerator:
                 # Full regeneration: check complete data
                 cache_exists = self.check_duckdb_cache(activity_id)
                 if cache_exists:
-                    logger.debug(f"Skipping {activity_id}: DuckDB cache exists")
+                    elapsed = time.time() - start_time
+                    logger.debug(
+                        f"Skipping {activity_id}: DuckDB cache exists ({elapsed:.2f}s)"
+                    )
                     return {
                         "status": "skipped",
                         "activity_id": activity_id,
                         "activity_date": activity_date,
+                        "elapsed_time": elapsed,
                     }
 
         try:
@@ -415,10 +460,13 @@ class DuckDBRegenerator:
                 tables=self.tables,  # NEW: Pass tables parameter
             )
 
+            # Calculate elapsed time (Phase 5)
+            elapsed = time.time() - start_time
+
             # Extract regenerated tables info from result
             tables_info = f" (tables: {', '.join(self.tables)})" if self.tables else ""
             logger.info(
-                f"Successfully regenerated DuckDB data for activity {activity_id}{tables_info}"
+                f"Processed activity {activity_id} in {elapsed:.2f}s{tables_info}"
             )
             return {
                 "status": "success",
@@ -426,15 +474,20 @@ class DuckDBRegenerator:
                 "activity_date": activity_date,
                 "files": result,
                 "tables": self.tables,  # NEW: Include tables info in result
+                "elapsed_time": elapsed,  # Phase 5: timing info
             }
 
         except Exception as e:
-            logger.error(f"Error regenerating data for activity {activity_id}: {e}")
+            elapsed = time.time() - start_time
+            logger.error(
+                f"Error regenerating data for activity {activity_id} ({elapsed:.2f}s): {e}"
+            )
             return {
                 "status": "error",
                 "activity_id": activity_id,
                 "activity_date": activity_date,
                 "error": str(e),
+                "elapsed_time": elapsed,
             }
 
     def regenerate_all(
@@ -463,9 +516,14 @@ class DuckDBRegenerator:
 
         # Get activity list
         if activity_ids:
-            activities: list[tuple[int, str | None]] = [
-                (aid, None) for aid in activity_ids
-            ]
+            # Extract dates from raw data for each activity ID (optimize: single scan)
+            all_activities_dict = {
+                a[0]: a[1] for a in self.get_all_activities_from_raw()
+            }
+            activities: list[tuple[int, str | None]] = []
+            for aid in activity_ids:
+                activity_date = all_activities_dict.get(aid)
+                activities.append((aid, activity_date))
             logger.info(f"Regenerating data for {len(activities)} specified activities")
         elif start_date and end_date:
             activities_from_db = self.get_activities_by_date_range(start_date, end_date)

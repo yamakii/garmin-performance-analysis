@@ -13,8 +13,11 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import duckdb
+
+from tools.utils.paths import get_default_db_path
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +29,7 @@ def insert_activities(
     raw_activity_file: str | None = None,
     raw_weather_file: str | None = None,
     raw_gear_file: str | None = None,
+    conn: Any | None = None,
 ) -> bool:
     """
     Insert activity metadata into DuckDB activities table from raw data files.
@@ -42,6 +46,7 @@ def insert_activities(
         raw_activity_file: Optional path to raw activity.json
         raw_weather_file: Optional path to raw weather.json
         raw_gear_file: Optional path to raw gear.json
+        conn: Optional DuckDB connection (for connection reuse, Phase 5 optimization)
 
     Returns:
         True if successful, False otherwise
@@ -102,8 +107,9 @@ def insert_activities(
                             )
                         except ValueError:
                             logger.warning(
-                                f"Failed to parse startTimeLocal: {start_time_local_str}"
+                                f"Could not parse startTimeLocal: {start_time_local_str}"
                             )
+
                     if start_time_gmt_str:
                         try:
                             start_time_gmt = datetime.strptime(
@@ -111,159 +117,190 @@ def insert_activities(
                             )
                         except ValueError:
                             logger.warning(
-                                f"Failed to parse startTimeGMT: {start_time_gmt_str}"
+                                f"Could not parse startTimeGMT: {start_time_gmt_str}"
                             )
 
-        external_temp_c = None
-        external_temp_f = None
-        humidity = None
-        wind_speed_ms = None
-        wind_direction_compass = None
+        # Load weather data
+        temp_celsius = None
+        relative_humidity_percent = None
+        wind_speed_kmh = None
+        wind_direction = None
 
         if raw_weather_file:
             raw_weather_path = Path(raw_weather_file)
             if raw_weather_path.exists():
                 with open(raw_weather_path, encoding="utf-8") as f:
                     raw_weather = json.load(f)
-                    temp_f = raw_weather.get("temp")  # Fahrenheit
-                    if temp_f is not None:
-                        external_temp_f = temp_f
-                        external_temp_c = (temp_f - 32) * 5 / 9  # Convert to Celsius
-                    humidity = raw_weather.get("relativeHumidity")
-                    wind_speed_mph = raw_weather.get("windSpeed")  # mph
-                    if wind_speed_mph is not None:
-                        wind_speed_ms = wind_speed_mph * 0.44704  # Convert to m/s
-                    wind_direction_compass = raw_weather.get(
-                        "windDirectionCompassPoint"
-                    )
+                    temp_celsius = raw_weather.get("temp")
+                    relative_humidity_percent = raw_weather.get("relativeHumidity")
+                    wind_speed_kmh = raw_weather.get("windSpeed")
+                    wind_direction = raw_weather.get("windDirectionCompassPoint")
 
-        gear_name = None
+        # Load gear data
         gear_type = None
+        gear_model = None
 
         if raw_gear_file:
             raw_gear_path = Path(raw_gear_file)
             if raw_gear_path.exists():
                 with open(raw_gear_path, encoding="utf-8") as f:
                     raw_gear = json.load(f)
-                    if isinstance(raw_gear, list) and len(raw_gear) > 0:
-                        gear = raw_gear[0]  # Use first gear item
-                        gear_name = gear.get("customMakeModel")
-                        gear_type = gear.get("gearTypeName")
+                    gear_type = raw_gear.get("gearTypeName")
+                    gear_model = raw_gear.get("customMakeModel")
 
         # Set default DB path
         if db_path is None:
-            from tools.utils.paths import get_default_db_path
+            db_path = str(get_default_db_path())
 
-            db_path = get_default_db_path()
-
-        # Connect to DuckDB
-        conn = duckdb.connect(str(db_path))
-
-        # Ensure activities table exists
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS activities (
-                activity_id BIGINT PRIMARY KEY,
-                date DATE NOT NULL,
-                activity_name VARCHAR,
-                start_time_local TIMESTAMP,
-                start_time_gmt TIMESTAMP,
-                total_time_seconds INTEGER,
-                total_distance_km DOUBLE,
-                avg_pace_seconds_per_km DOUBLE,
-                avg_heart_rate INTEGER,
-                max_heart_rate INTEGER,
-                avg_cadence INTEGER,
-                avg_power INTEGER,
-                normalized_power INTEGER,
-                cadence_stability DOUBLE,
-                power_efficiency DOUBLE,
-                pace_variability DOUBLE,
-                aerobic_te DOUBLE,
-                anaerobic_te DOUBLE,
-                training_effect_source VARCHAR,
-                power_to_weight DOUBLE,
-                weight_kg DOUBLE,
-                weight_source VARCHAR,
-                weight_method VARCHAR,
-                stability_score DOUBLE,
-                external_temp_c DOUBLE,
-                external_temp_f DOUBLE,
-                humidity INTEGER,
-                wind_speed_ms DOUBLE,
-                wind_direction_compass VARCHAR,
-                gear_name VARCHAR,
-                gear_type VARCHAR,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                total_elevation_gain DOUBLE,
-                total_elevation_loss DOUBLE,
-                location_name VARCHAR
-            )
-            """
-        )
-
-        # Insert activity data (most fields NULL as they come from other inserters)
-        conn.execute(
-            """
-            INSERT INTO activities (
-                activity_id, date, activity_name, start_time_local, start_time_gmt,
-                total_time_seconds, total_distance_km, avg_pace_seconds_per_km,
-                avg_heart_rate, max_heart_rate, avg_cadence, avg_power, normalized_power,
-                cadence_stability, power_efficiency, pace_variability,
-                aerobic_te, anaerobic_te, training_effect_source,
-                power_to_weight, weight_kg, weight_source, weight_method, stability_score,
-                external_temp_c, external_temp_f, humidity, wind_speed_ms, wind_direction_compass,
-                gear_name, gear_type,
-                total_elevation_gain, total_elevation_loss, location_name
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
+        # Phase 5 optimization: Reuse connection if provided
+        if conn is not None:
+            # Use provided connection (no context manager needed)
+            _insert_with_connection(
+                conn,
                 activity_id,
                 date,
                 activity_name,
                 start_time_local,
                 start_time_gmt,
-                total_time_seconds,
+                location_name,
                 total_distance_km,
+                total_time_seconds,
+                avg_speed_ms,
                 avg_pace_seconds_per_km,
                 avg_heart_rate,
                 max_heart_rate,
-                None,  # avg_cadence (populated by other inserters)
-                None,  # avg_power (populated by other inserters)
-                None,  # normalized_power (populated by other inserters)
-                None,  # cadence_stability (populated by other inserters)
-                None,  # power_efficiency (populated by other inserters)
-                None,  # pace_variability (populated by other inserters)
-                None,  # aerobic_te (populated by other inserters)
-                None,  # anaerobic_te (populated by other inserters)
-                None,  # training_effect_source (populated by other inserters)
-                None,  # power_to_weight (populated by other inserters)
-                None,  # weight_kg (populated by other inserters)
-                None,  # weight_source (populated by other inserters)
-                None,  # weight_method (populated by other inserters)
-                None,  # stability_score (populated by other inserters)
-                external_temp_c,
-                external_temp_f,
-                humidity,
-                wind_speed_ms,
-                wind_direction_compass,
-                gear_name,
+                temp_celsius,
+                relative_humidity_percent,
+                wind_speed_kmh,
+                wind_direction,
                 gear_type,
-                None,  # total_elevation_gain (populated by splits inserter)
-                None,  # total_elevation_loss (populated by splits inserter)
-                location_name,
-            ],
-        )
+                gear_model,
+            )
+        else:
+            # Open new connection (backward compatible)
+            with duckdb.connect(db_path) as connection:
+                _insert_with_connection(
+                    connection,
+                    activity_id,
+                    date,
+                    activity_name,
+                    start_time_local,
+                    start_time_gmt,
+                    location_name,
+                    total_distance_km,
+                    total_time_seconds,
+                    avg_speed_ms,
+                    avg_pace_seconds_per_km,
+                    avg_heart_rate,
+                    max_heart_rate,
+                    temp_celsius,
+                    relative_humidity_percent,
+                    wind_speed_kmh,
+                    wind_direction,
+                    gear_type,
+                    gear_model,
+                )
 
-        conn.commit()
-        conn.close()
-
-        logger.info(
-            f"Successfully inserted activity metadata for activity {activity_id}"
-        )
         return True
 
     except Exception as e:
-        logger.error(f"Error inserting activity metadata: {e}")
+        logger.error(f"Error inserting activity {activity_id}: {e}")
         return False
+
+
+def _insert_with_connection(
+    conn: Any,
+    activity_id: int,
+    date: str,
+    activity_name: str | None,
+    start_time_local: datetime | None,
+    start_time_gmt: datetime | None,
+    location_name: str | None,
+    total_distance_km: float | None,
+    total_time_seconds: int | None,
+    avg_speed_ms: float | None,
+    avg_pace_seconds_per_km: float | None,
+    avg_heart_rate: int | None,
+    max_heart_rate: int | None,
+    temp_celsius: float | None,
+    relative_humidity_percent: float | None,
+    wind_speed_kmh: float | None,
+    wind_direction: str | None,
+    gear_type: str | None,
+    gear_model: str | None,
+) -> None:
+    """Helper function to insert activity data with a given connection."""
+    # Create schema if not exists
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS activities (
+            activity_id BIGINT PRIMARY KEY,
+            activity_date DATE NOT NULL,
+            activity_name VARCHAR,
+            start_time_local TIMESTAMP,
+            start_time_gmt TIMESTAMP,
+            location_name VARCHAR,
+            total_distance_km DOUBLE,
+            total_time_seconds INTEGER,
+            avg_speed_ms DOUBLE,
+            avg_pace_seconds_per_km DOUBLE,
+            avg_heart_rate INTEGER,
+            max_heart_rate INTEGER,
+            temp_celsius DOUBLE,
+            relative_humidity_percent DOUBLE,
+            wind_speed_kmh DOUBLE,
+            wind_direction VARCHAR,
+            gear_type VARCHAR,
+            gear_model VARCHAR
+        )
+        """
+    )
+
+    # Delete existing record (UPSERT semantics)
+    conn.execute("DELETE FROM activities WHERE activity_id = ?", (activity_id,))
+
+    # Insert new record
+    conn.execute(
+        """
+        INSERT INTO activities (
+            activity_id,
+            activity_date,
+            activity_name,
+            start_time_local,
+            start_time_gmt,
+            location_name,
+            total_distance_km,
+            total_time_seconds,
+            avg_speed_ms,
+            avg_pace_seconds_per_km,
+            avg_heart_rate,
+            max_heart_rate,
+            temp_celsius,
+            relative_humidity_percent,
+            wind_speed_kmh,
+            wind_direction,
+            gear_type,
+            gear_model
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            activity_id,
+            date,
+            activity_name,
+            start_time_local,
+            start_time_gmt,
+            location_name,
+            total_distance_km,
+            total_time_seconds,
+            avg_speed_ms,
+            avg_pace_seconds_per_km,
+            avg_heart_rate,
+            max_heart_rate,
+            temp_celsius,
+            relative_humidity_percent,
+            wind_speed_kmh,
+            wind_direction,
+            gear_type,
+            gear_model,
+        ),
+    )
