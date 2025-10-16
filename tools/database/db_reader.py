@@ -307,20 +307,93 @@ class GarminDBReader:
             logger.error(f"Error querying section analysis: {e}")
             return None
 
-    def get_splits_pace_hr(self, activity_id: int) -> dict[str, list[dict]]:
+    def get_splits_pace_hr(
+        self, activity_id: int, statistics_only: bool = False
+    ) -> dict[str, list[dict]] | dict[str, Any]:
         """
         Get pace and heart rate data for all splits from splits table.
 
         Args:
             activity_id: Activity ID
+            statistics_only: If True, return only aggregated statistics (mean, median, std, min, max)
+                           instead of per-split data. Significantly reduces output size (~80% reduction).
+                           Default: False (backward compatible)
 
         Returns:
-            Dict with 'splits' key containing list of split data with pace and HR
+            Full mode (statistics_only=False):
+                Dict with 'splits' key containing list of split data with pace and HR
+            Statistics mode (statistics_only=True):
+                Dict with aggregated statistics:
+                {
+                    "activity_id": int,
+                    "statistics_only": True,
+                    "metrics": {
+                        "pace": {"mean": float, "median": float, "std": float, "min": float, "max": float},
+                        "heart_rate": {"mean": float, "median": float, "std": float, "min": float, "max": float}
+                    }
+                }
         """
         try:
             conn = duckdb.connect(str(self.db_path), read_only=True)
 
-            result = conn.execute(
+            if statistics_only:
+                # Statistics mode: Use DuckDB aggregate functions
+                result = conn.execute(
+                    """
+                    SELECT
+                        AVG(pace_seconds_per_km) as pace_mean,
+                        MEDIAN(pace_seconds_per_km) as pace_median,
+                        STDDEV(pace_seconds_per_km) as pace_std,
+                        MIN(pace_seconds_per_km) as pace_min,
+                        MAX(pace_seconds_per_km) as pace_max,
+                        AVG(heart_rate) as hr_mean,
+                        MEDIAN(heart_rate) as hr_median,
+                        STDDEV(heart_rate) as hr_std,
+                        MIN(heart_rate) as hr_min,
+                        MAX(heart_rate) as hr_max
+                    FROM splits
+                    WHERE activity_id = ?
+                    """,
+                    [activity_id],
+                ).fetchone()
+
+                conn.close()
+
+                if not result or result[0] is None:
+                    # No data found
+                    return {
+                        "activity_id": activity_id,
+                        "statistics_only": True,
+                        "metrics": {},
+                    }
+
+                return {
+                    "activity_id": activity_id,
+                    "statistics_only": True,
+                    "metrics": {
+                        "pace": {
+                            "mean": float(result[0]) if result[0] is not None else 0.0,
+                            "median": (
+                                float(result[1]) if result[1] is not None else 0.0
+                            ),
+                            "std": float(result[2]) if result[2] is not None else 0.0,
+                            "min": float(result[3]) if result[3] is not None else 0.0,
+                            "max": float(result[4]) if result[4] is not None else 0.0,
+                        },
+                        "heart_rate": {
+                            "mean": float(result[5]) if result[5] is not None else 0.0,
+                            "median": (
+                                float(result[6]) if result[6] is not None else 0.0
+                            ),
+                            "std": float(result[7]) if result[7] is not None else 0.0,
+                            "min": float(result[8]) if result[8] is not None else 0.0,
+                            "max": float(result[9]) if result[9] is not None else 0.0,
+                        },
+                    },
+                }
+
+            # Full mode: Return all split data
+            splits_result = conn.execute(
                 """
                 SELECT
                     split_index,
@@ -336,11 +409,11 @@ class GarminDBReader:
 
             conn.close()
 
-            if not result:
+            if not splits_result:
                 return {"splits": []}
 
             splits = []
-            for row in result:
+            for row in splits_result:
                 splits.append(
                     {
                         "split_number": row[0],
@@ -354,22 +427,124 @@ class GarminDBReader:
 
         except Exception as e:
             logger.error(f"Error getting splits pace/HR data: {e}")
+            if statistics_only:
+                return {
+                    "activity_id": activity_id,
+                    "statistics_only": True,
+                    "metrics": {},
+                }
             return {"splits": []}
 
-    def get_splits_form_metrics(self, activity_id: int) -> dict[str, list[dict]]:
+    def get_splits_form_metrics(
+        self, activity_id: int, statistics_only: bool = False
+    ) -> dict[str, list[dict]] | dict[str, Any]:
         """
         Get form metrics (GCT, VO, VR) for all splits from splits table.
 
         Args:
             activity_id: Activity ID
+            statistics_only: If True, return only aggregated statistics (mean, median, std, min, max)
+                           instead of per-split data. Significantly reduces output size (~80% reduction).
+                           Default: False (backward compatible)
 
         Returns:
-            Dict with 'splits' key containing list of split data with form metrics
+            Full mode (statistics_only=False):
+                Dict with 'splits' key containing list of split data with form metrics
+            Statistics mode (statistics_only=True):
+                Dict with aggregated statistics:
+                {
+                    "activity_id": int,
+                    "statistics_only": True,
+                    "metrics": {
+                        "ground_contact_time": {"mean": float, "median": float, "std": float, "min": float, "max": float},
+                        "vertical_oscillation": {"mean": float, "median": float, "std": float, "min": float, "max": float},
+                        "vertical_ratio": {"mean": float, "median": float, "std": float, "min": float, "max": float}
+                    }
+                }
         """
         try:
             conn = duckdb.connect(str(self.db_path), read_only=True)
 
-            result = conn.execute(
+            if statistics_only:
+                # Statistics mode: Use DuckDB aggregate functions
+                result = conn.execute(
+                    """
+                    SELECT
+                        AVG(ground_contact_time) as gct_mean,
+                        MEDIAN(ground_contact_time) as gct_median,
+                        STDDEV(ground_contact_time) as gct_std,
+                        MIN(ground_contact_time) as gct_min,
+                        MAX(ground_contact_time) as gct_max,
+                        AVG(vertical_oscillation) as vo_mean,
+                        MEDIAN(vertical_oscillation) as vo_median,
+                        STDDEV(vertical_oscillation) as vo_std,
+                        MIN(vertical_oscillation) as vo_min,
+                        MAX(vertical_oscillation) as vo_max,
+                        AVG(vertical_ratio) as vr_mean,
+                        MEDIAN(vertical_ratio) as vr_median,
+                        STDDEV(vertical_ratio) as vr_std,
+                        MIN(vertical_ratio) as vr_min,
+                        MAX(vertical_ratio) as vr_max
+                    FROM splits
+                    WHERE activity_id = ?
+                    """,
+                    [activity_id],
+                ).fetchone()
+
+                conn.close()
+
+                if not result or result[0] is None:
+                    # No data found
+                    return {
+                        "activity_id": activity_id,
+                        "statistics_only": True,
+                        "metrics": {},
+                    }
+
+                return {
+                    "activity_id": activity_id,
+                    "statistics_only": True,
+                    "metrics": {
+                        "ground_contact_time": {
+                            "mean": float(result[0]) if result[0] is not None else 0.0,
+                            "median": (
+                                float(result[1]) if result[1] is not None else 0.0
+                            ),
+                            "std": float(result[2]) if result[2] is not None else 0.0,
+                            "min": float(result[3]) if result[3] is not None else 0.0,
+                            "max": float(result[4]) if result[4] is not None else 0.0,
+                        },
+                        "vertical_oscillation": {
+                            "mean": float(result[5]) if result[5] is not None else 0.0,
+                            "median": (
+                                float(result[6]) if result[6] is not None else 0.0
+                            ),
+                            "std": float(result[7]) if result[7] is not None else 0.0,
+                            "min": float(result[8]) if result[8] is not None else 0.0,
+                            "max": float(result[9]) if result[9] is not None else 0.0,
+                        },
+                        "vertical_ratio": {
+                            "mean": (
+                                float(result[10]) if result[10] is not None else 0.0
+                            ),
+                            "median": (
+                                float(result[11]) if result[11] is not None else 0.0
+                            ),
+                            "std": (
+                                float(result[12]) if result[12] is not None else 0.0
+                            ),
+                            "min": (
+                                float(result[13]) if result[13] is not None else 0.0
+                            ),
+                            "max": (
+                                float(result[14]) if result[14] is not None else 0.0
+                            ),
+                        },
+                    },
+                }
+
+            # Full mode: Return all split data
+            splits_result = conn.execute(
                 """
                 SELECT
                     split_index,
@@ -385,11 +560,11 @@ class GarminDBReader:
 
             conn.close()
 
-            if not result:
+            if not splits_result:
                 return {"splits": []}
 
             splits = []
-            for row in result:
+            for row in splits_result:
                 splits.append(
                     {
                         "split_number": row[0],
@@ -403,22 +578,101 @@ class GarminDBReader:
 
         except Exception as e:
             logger.error(f"Error getting splits form metrics: {e}")
+            if statistics_only:
+                return {
+                    "activity_id": activity_id,
+                    "statistics_only": True,
+                    "metrics": {},
+                }
             return {"splits": []}
 
-    def get_splits_elevation(self, activity_id: int) -> dict[str, list[dict]]:
+    def get_splits_elevation(
+        self, activity_id: int, statistics_only: bool = False
+    ) -> dict[str, list[dict]] | dict[str, Any]:
         """
         Get elevation data for all splits from splits table.
 
         Args:
             activity_id: Activity ID
+            statistics_only: If True, return only aggregated statistics (mean, median, std, min, max)
+                           instead of per-split data. Significantly reduces output size (~80% reduction).
+                           Default: False (backward compatible)
 
         Returns:
-            Dict with 'splits' key containing list of split data with elevation
+            Full mode (statistics_only=False):
+                Dict with 'splits' key containing list of split data with elevation
+            Statistics mode (statistics_only=True):
+                Dict with aggregated statistics:
+                {
+                    "activity_id": int,
+                    "statistics_only": True,
+                    "metrics": {
+                        "elevation_gain": {"mean": float, "median": float, "std": float, "min": float, "max": float},
+                        "elevation_loss": {"mean": float, "median": float, "std": float, "min": float, "max": float}
+                    }
+                }
         """
         try:
             conn = duckdb.connect(str(self.db_path), read_only=True)
 
-            result = conn.execute(
+            if statistics_only:
+                # Statistics mode: Use DuckDB aggregate functions
+                result = conn.execute(
+                    """
+                    SELECT
+                        AVG(elevation_gain) as gain_mean,
+                        MEDIAN(elevation_gain) as gain_median,
+                        STDDEV(elevation_gain) as gain_std,
+                        MIN(elevation_gain) as gain_min,
+                        MAX(elevation_gain) as gain_max,
+                        AVG(elevation_loss) as loss_mean,
+                        MEDIAN(elevation_loss) as loss_median,
+                        STDDEV(elevation_loss) as loss_std,
+                        MIN(elevation_loss) as loss_min,
+                        MAX(elevation_loss) as loss_max
+                    FROM splits
+                    WHERE activity_id = ?
+                    """,
+                    [activity_id],
+                ).fetchone()
+
+                conn.close()
+
+                if not result or result[0] is None:
+                    # No data found
+                    return {
+                        "activity_id": activity_id,
+                        "statistics_only": True,
+                        "metrics": {},
+                    }
+
+                return {
+                    "activity_id": activity_id,
+                    "statistics_only": True,
+                    "metrics": {
+                        "elevation_gain": {
+                            "mean": float(result[0]) if result[0] is not None else 0.0,
+                            "median": (
+                                float(result[1]) if result[1] is not None else 0.0
+                            ),
+                            "std": float(result[2]) if result[2] is not None else 0.0,
+                            "min": float(result[3]) if result[3] is not None else 0.0,
+                            "max": float(result[4]) if result[4] is not None else 0.0,
+                        },
+                        "elevation_loss": {
+                            "mean": float(result[5]) if result[5] is not None else 0.0,
+                            "median": (
+                                float(result[6]) if result[6] is not None else 0.0
+                            ),
+                            "std": float(result[7]) if result[7] is not None else 0.0,
+                            "min": float(result[8]) if result[8] is not None else 0.0,
+                            "max": float(result[9]) if result[9] is not None else 0.0,
+                        },
+                    },
+                }
+
+            # Full mode: Return all split data
+            splits_result = conn.execute(
                 """
                 SELECT
                     split_index,
@@ -434,11 +688,11 @@ class GarminDBReader:
 
             conn.close()
 
-            if not result:
+            if not splits_result:
                 return {"splits": []}
 
             splits = []
-            for row in result:
+            for row in splits_result:
                 splits.append(
                     {
                         "split_number": row[0],
@@ -454,6 +708,12 @@ class GarminDBReader:
 
         except Exception as e:
             logger.error(f"Error getting splits elevation data: {e}")
+            if statistics_only:
+                return {
+                    "activity_id": activity_id,
+                    "statistics_only": True,
+                    "metrics": {},
+                }
             return {"splits": []}
 
     def get_form_efficiency_summary(self, activity_id: int) -> dict[str, Any] | None:

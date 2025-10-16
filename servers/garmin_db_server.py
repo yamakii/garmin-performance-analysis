@@ -76,33 +76,48 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="get_splits_pace_hr",
-            description="Get pace and heart rate data from splits (lightweight: ~3 fields/split)",
+            description="Get pace and heart rate data from splits (lightweight: ~3 fields/split, or ~200 bytes with statistics_only=True)",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "activity_id": {"type": "integer"},
+                    "statistics_only": {
+                        "type": "boolean",
+                        "description": "If true, return only aggregated statistics (mean, median, std, min, max) instead of per-split data. Reduces output size by ~80%. Default: false",
+                        "default": False,
+                    },
                 },
                 "required": ["activity_id"],
             },
         ),
         Tool(
             name="get_splits_form_metrics",
-            description="Get form efficiency metrics from splits (lightweight: ~4 fields/split)",
+            description="Get form efficiency metrics from splits (lightweight: ~4 fields/split, or ~300 bytes with statistics_only=True)",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "activity_id": {"type": "integer"},
+                    "statistics_only": {
+                        "type": "boolean",
+                        "description": "If true, return only aggregated statistics (mean, median, std, min, max) for GCT, VO, VR instead of per-split data. Reduces output size by ~80%. Default: false",
+                        "default": False,
+                    },
                 },
                 "required": ["activity_id"],
             },
         ),
         Tool(
             name="get_splits_elevation",
-            description="Get elevation and terrain data from splits (lightweight: ~5 fields/split)",
+            description="Get elevation and terrain data from splits (lightweight: ~5 fields/split, or ~250 bytes with statistics_only=True)",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "activity_id": {"type": "integer"},
+                    "statistics_only": {
+                        "type": "boolean",
+                        "description": "If true, return only aggregated statistics (mean, median, std, min, max) for elevation gain/loss instead of per-split data. Reduces output size by ~80%. Default: false",
+                        "default": False,
+                    },
                 },
                 "required": ["activity_id"],
             },
@@ -575,7 +590,10 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
     elif name == "get_splits_pace_hr":
         activity_id = arguments["activity_id"]
-        result = db_reader.get_splits_pace_hr(activity_id)
+        statistics_only = arguments.get("statistics_only", False)
+        result = db_reader.get_splits_pace_hr(
+            activity_id, statistics_only=statistics_only
+        )
         return [
             TextContent(
                 type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
@@ -584,7 +602,10 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
     elif name == "get_splits_form_metrics":
         activity_id = arguments["activity_id"]
-        result = db_reader.get_splits_form_metrics(activity_id)
+        statistics_only = arguments.get("statistics_only", False)
+        result = db_reader.get_splits_form_metrics(
+            activity_id, statistics_only=statistics_only
+        )
         return [
             TextContent(
                 type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
@@ -593,7 +614,10 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
     elif name == "get_splits_elevation":
         activity_id = arguments["activity_id"]
-        result = db_reader.get_splits_elevation(activity_id)
+        statistics_only = arguments.get("statistics_only", False)
+        result = db_reader.get_splits_elevation(
+            activity_id, statistics_only=statistics_only
+        )
         return [
             TextContent(
                 type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
