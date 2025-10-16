@@ -136,6 +136,13 @@ def _extract_vo2_max_from_raw(raw_vo2_max_file: str) -> dict | None:
         with open(raw_path, encoding="utf-8") as f:
             raw_data = json.load(f)
 
+        # Handle array format from API (e.g., [{...}])
+        if isinstance(raw_data, list):
+            if not raw_data:
+                logger.warning(f"Empty vo2_max data in {raw_vo2_max_file}")
+                return None
+            raw_data = raw_data[0]  # Get first element
+
         # Extract from "generic" section
         generic = raw_data.get("generic", {})
         if not generic:

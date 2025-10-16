@@ -55,6 +55,12 @@ def insert_activities(
         start_time_local = None
         start_time_gmt = None
         location_name = None
+        total_distance_km = None
+        total_time_seconds = None
+        avg_speed_ms = None
+        avg_pace_seconds_per_km = None
+        avg_heart_rate = None
+        max_heart_rate = None
 
         if raw_activity_file:
             raw_activity_path = Path(raw_activity_file)
@@ -66,6 +72,27 @@ def insert_activities(
                     start_time_local_str = summary_dto.get("startTimeLocal")
                     start_time_gmt_str = summary_dto.get("startTimeGMT")
                     location_name = raw_activity.get("locationName")
+
+                    # Extract basic metrics from summaryDTO
+                    distance_meters = summary_dto.get("distance")
+                    if distance_meters is not None:
+                        total_distance_km = distance_meters / 1000
+
+                    duration_seconds = summary_dto.get("duration")
+                    if duration_seconds is not None:
+                        total_time_seconds = int(duration_seconds)
+
+                    avg_speed_ms = summary_dto.get("averageSpeed")
+                    if avg_speed_ms is not None and avg_speed_ms > 0:
+                        avg_pace_seconds_per_km = 1000 / avg_speed_ms
+
+                    avg_heart_rate = summary_dto.get("averageHR")
+                    if avg_heart_rate is not None:
+                        avg_heart_rate = int(avg_heart_rate)
+
+                    max_heart_rate = summary_dto.get("maxHR")
+                    if max_heart_rate is not None:
+                        max_heart_rate = int(max_heart_rate)
 
                     # Parse timestamps (format: "2025-10-09T21:50:00.0")
                     if start_time_local_str:
@@ -176,13 +203,11 @@ def insert_activities(
             """
         )
 
-        # Delete existing row (upsert behavior)
-        conn.execute("DELETE FROM activities WHERE activity_id = ?", [activity_id])
-
+        # Use INSERT OR REPLACE for upsert behavior (avoids foreign key constraint issues)
         # Insert activity data (most fields NULL as they come from other inserters)
         conn.execute(
             """
-            INSERT INTO activities (
+            INSERT OR REPLACE INTO activities (
                 activity_id, date, activity_name, start_time_local, start_time_gmt,
                 total_time_seconds, total_distance_km, avg_pace_seconds_per_km,
                 avg_heart_rate, max_heart_rate, avg_cadence, avg_power, normalized_power,
@@ -200,11 +225,11 @@ def insert_activities(
                 activity_name,
                 start_time_local,
                 start_time_gmt,
-                None,  # total_time_seconds (populated by other inserters)
-                None,  # total_distance_km (populated by other inserters)
-                None,  # avg_pace_seconds_per_km (populated by other inserters)
-                None,  # avg_heart_rate (populated by other inserters)
-                None,  # max_heart_rate (populated by other inserters)
+                total_time_seconds,
+                total_distance_km,
+                avg_pace_seconds_per_km,
+                avg_heart_rate,
+                max_heart_rate,
                 None,  # avg_cadence (populated by other inserters)
                 None,  # avg_power (populated by other inserters)
                 None,  # normalized_power (populated by other inserters)
