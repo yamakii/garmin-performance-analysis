@@ -23,10 +23,8 @@ class TestGarminWorkerTimeSeriesIntegration:
         worker = GarminIngestWorker(db_path=str(tmp_path / "test.duckdb"))
         worker.raw_dir = tmp_path / "raw"
         worker.performance_dir = tmp_path / "performance"
-        worker.precheck_dir = tmp_path / "precheck"
         worker.raw_dir.mkdir(parents=True)
         worker.performance_dir.mkdir(parents=True)
-        worker.precheck_dir.mkdir(parents=True)
         return worker
 
     @pytest.fixture
@@ -112,13 +110,10 @@ class TestGarminWorkerTimeSeriesIntegration:
             mock_time_series.return_value = True
 
             # Prepare sample data
-            import pandas as pd
-
-            df = pd.DataFrame({"split_number": [1], "avg_heart_rate": [120]})
             raw_data: dict[str, Any] = {"activity": {}}
 
             # Execute
-            worker.save_data(activity_id, raw_data, df, activity_date="2025-10-13")
+            worker.save_data(activity_id, raw_data, activity_date="2025-10-13")
 
             # Verify: insert_time_series_metrics was called
             mock_time_series.assert_called_once()
@@ -177,15 +172,10 @@ class TestGarminWorkerTimeSeriesIntegration:
             mock_vo2.return_value = True
 
             # Prepare sample data
-            import pandas as pd
-
-            df = pd.DataFrame({"split_number": [1], "avg_heart_rate": [120]})
             raw_data: dict[str, Any] = {"activity": {}}
 
             # Execute - should NOT raise exception
-            result = worker.save_data(
-                activity_id, raw_data, df, activity_date="2025-10-13"
-            )
+            result = worker.save_data(activity_id, raw_data, activity_date="2025-10-13")
 
             # Verify: insert_time_series_metrics was NOT called
             mock_time_series.assert_not_called()
@@ -200,8 +190,8 @@ class TestGarminWorkerTimeSeriesIntegration:
                 len(warning_calls) > 0
             ), "Expected WARNING log for missing activity_details.json"
 
-            # Verify: save_data still returns file paths (pipeline continues)
-            assert "precheck_file" in result
+            # Verify: save_data still returns raw_dir (pipeline continues)
+            assert "raw_dir" in result
 
     @pytest.mark.unit
     def test_save_data_time_series_insertion_failure(
@@ -263,15 +253,10 @@ class TestGarminWorkerTimeSeriesIntegration:
             mock_time_series.return_value = False
 
             # Prepare sample data
-            import pandas as pd
-
-            df = pd.DataFrame({"split_number": [1], "avg_heart_rate": [120]})
             raw_data: dict[str, Any] = {"activity": {}}
 
             # Execute - should NOT raise exception
-            result = worker.save_data(
-                activity_id, raw_data, df, activity_date="2025-10-13"
-            )
+            result = worker.save_data(activity_id, raw_data, activity_date="2025-10-13")
 
             # Verify: insert_time_series_metrics was called
             mock_time_series.assert_called_once()
@@ -284,8 +269,8 @@ class TestGarminWorkerTimeSeriesIntegration:
             ]
             assert len(error_calls) > 0, "Expected ERROR log for insertion failure"
 
-            # Verify: save_data still returns file paths (pipeline continues)
-            assert "precheck_file" in result
+            # Verify: save_data still returns raw_dir (pipeline continues)
+            assert "raw_dir" in result
 
     @pytest.mark.integration
     def test_save_data_with_real_fixture(self, worker):
@@ -338,16 +323,13 @@ class TestGarminWorkerTimeSeriesIntegration:
             mock_time_series.return_value = True
 
             # Prepare minimal data
-            import pandas as pd
-
-            df = pd.DataFrame({"split_number": [1], "avg_heart_rate": [120]})
             raw_data: dict[str, Any] = {"activity": {}}
 
             # Update worker paths to use fixture
             worker.raw_dir = Path("tests/fixtures/data/raw")
 
             # Execute
-            worker.save_data(activity_id, raw_data, df, activity_date="2025-10-13")
+            worker.save_data(activity_id, raw_data, activity_date="2025-10-13")
 
             # Verify: insert_time_series_metrics was called with real fixture
             mock_time_series.assert_called_once()

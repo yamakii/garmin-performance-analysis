@@ -135,14 +135,14 @@ class TestGarminDBReaderNormalized:
         assert result["gct"]["variability"] == pytest.approx(
             4.0, rel=0.01
         )  # Calculated: 10/250 * 100
-        assert result["gct"]["rating"] == "★★★★★"
+        assert result["gct"]["rating"] == "★★★☆☆"  # GCT 250ms is average, not excellent
 
         # Verify VO data (calculated from [7.5, 7.0, 8.0])
         assert result["vo"]["average"] == 7.5
         assert result["vo"]["min"] == 7.0
         assert result["vo"]["max"] == 8.0
         assert result["vo"]["std"] == pytest.approx(0.5, rel=0.01)  # std([7.5,7.0,8.0])
-        assert result["vo"]["rating"] == "★★★★★"
+        assert result["vo"]["rating"] == "★★★★☆"  # VO 7.5cm is good but not excellent
 
         # Verify VR data (calculated from [8.5, 8.0, 9.0])
         assert result["vr"]["average"] == 8.5
@@ -517,43 +517,42 @@ class TestGetSplitsAll:
         """Create GarminDBReader with test database containing splits data."""
         db_path = tmp_path / "test.duckdb"
 
-        # Create test performance.json with split_metrics (only fields that inserter uses)
-        performance_file = tmp_path / f"{test_activity_id}.json"
-        performance_data = {
-            "split_metrics": [
+        # Create test splits.json (raw data format)
+        splits_file = tmp_path / "splits.json"
+        splits_data = {
+            "activityId": test_activity_id,
+            "lapDTOs": [
                 {
-                    "split_number": 1,
-                    "distance_km": 1.0,
-                    "role_phase": "warmup",
-                    "avg_pace_seconds_per_km": 330.0,
-                    "avg_heart_rate": 140,
-                    "avg_cadence": 170.0,
-                    "avg_power": 250.0,
-                    "ground_contact_time_ms": 245.0,
-                    "vertical_oscillation_cm": 7.5,
-                    "vertical_ratio_percent": 8.2,
-                    "elevation_gain_m": 10.0,
-                    "elevation_loss_m": 5.0,
-                    "terrain_type": "平坦",
+                    "lapIndex": 1,
+                    "distance": 1000.0,
+                    "duration": 330.0,
+                    "averageHR": 140,
+                    "averageRunCadence": 170,
+                    "averagePower": 250,
+                    "groundContactTime": 245.0,
+                    "verticalOscillation": 7.5,
+                    "verticalRatio": 8.2,
+                    "elevationGain": 10.0,
+                    "elevationLoss": 5.0,
+                    "intensityType": "WARMUP",
                 },
                 {
-                    "split_number": 2,
-                    "distance_km": 1.0,
-                    "role_phase": "main",
-                    "avg_pace_seconds_per_km": 300.0,
-                    "avg_heart_rate": 155,
-                    "avg_cadence": 175.0,
-                    "avg_power": 270.0,
-                    "ground_contact_time_ms": 240.0,
-                    "vertical_oscillation_cm": 7.2,
-                    "vertical_ratio_percent": 8.0,
-                    "elevation_gain_m": 15.0,
-                    "elevation_loss_m": 8.0,
-                    "terrain_type": "やや起伏",
+                    "lapIndex": 2,
+                    "distance": 1000.0,
+                    "duration": 300.0,
+                    "averageHR": 155,
+                    "averageRunCadence": 175,
+                    "averagePower": 270,
+                    "groundContactTime": 240.0,
+                    "verticalOscillation": 7.2,
+                    "verticalRatio": 8.0,
+                    "elevationGain": 15.0,
+                    "elevationLoss": 8.0,
+                    "intensityType": "ACTIVE",
                 },
-            ]
+            ],
         }
-        performance_file.write_text(json.dumps(performance_data, indent=2))
+        splits_file.write_text(json.dumps(splits_data, indent=2))
 
         # Insert activity metadata and splits
         db_writer = GarminDBWriter(db_path=str(db_path))
@@ -574,6 +573,7 @@ class TestGetSplitsAll:
         insert_splits(
             activity_id=test_activity_id,
             db_path=str(db_path),
+            raw_splits_file=str(splits_file),
         )
 
         return GarminDBReader(db_path=str(db_path))
@@ -606,7 +606,7 @@ class TestGetSplitsAll:
         assert split1["vertical_ratio_percent"] == 8.2
         assert split1["elevation_gain_m"] == 10.0
         assert split1["elevation_loss_m"] == 5.0
-        assert split1["terrain_type"] == "平坦"
+        assert split1["terrain_type"] == "丘陵"  # 10m elevation = 丘陵 classification
         # environmental_conditions, wind_impact, temp_impact, environmental_impact not inserted
 
     @pytest.mark.unit
