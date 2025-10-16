@@ -24,17 +24,14 @@ class TestGarminWorkerDefaultPaths:
 
             # Should use project_root/data
             assert worker.raw_dir.parent.name == "data"
-            assert worker.performance_dir.parent.name == "data"
             assert worker.weight_raw_dir.parent.parent.name == "data"
 
             # Check subdirectory names
             assert worker.raw_dir.name == "raw"
-            assert worker.performance_dir.name == "performance"
             assert worker.weight_raw_dir.name == "weight"
 
             # All paths should be absolute
             assert worker.raw_dir.is_absolute()
-            assert worker.performance_dir.is_absolute()
             assert worker.weight_raw_dir.is_absolute()
 
 
@@ -49,11 +46,9 @@ class TestGarminWorkerCustomPaths:
 
             # Should use custom data dir
             expected_raw = Path(custom_data_dir) / "raw"
-            expected_performance = Path(custom_data_dir) / "performance"
             expected_weight = Path(custom_data_dir) / "raw" / "weight"
 
             assert worker.raw_dir == expected_raw
-            assert worker.performance_dir == expected_performance
             assert worker.weight_raw_dir == expected_weight
 
     def test_garmin_worker_paths_are_absolute(self) -> None:
@@ -64,7 +59,6 @@ class TestGarminWorkerCustomPaths:
 
             # All paths should be absolute even if env var is relative
             assert worker.raw_dir.is_absolute()
-            assert worker.performance_dir.is_absolute()
             assert worker.weight_raw_dir.is_absolute()
 
 
@@ -83,7 +77,6 @@ class TestGarminWorkerBackwardCompatibility:
 
             # Should match the old hardcoded paths
             assert worker.raw_dir == project_root / "data" / "raw"
-            assert worker.performance_dir == project_root / "data" / "performance"
             assert worker.weight_raw_dir == project_root / "data" / "raw" / "weight"
 
     def test_directory_creation_still_works(self) -> None:
@@ -100,7 +93,6 @@ class TestGarminWorkerBackwardCompatibility:
 
             # Directories should be created
             assert worker.raw_dir.exists()
-            assert worker.performance_dir.exists()
             assert worker.weight_raw_dir.exists()
 
             # Clean up

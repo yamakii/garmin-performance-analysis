@@ -122,20 +122,17 @@ class GarminIngestWorker:
         """
         from tools.utils.paths import (
             get_default_db_path,
-            get_performance_dir,
             get_raw_dir,
             get_weight_raw_dir,
         )
 
         self.project_root = Path(__file__).parent.parent.parent
         self.raw_dir = get_raw_dir()
-        self.performance_dir = get_performance_dir()
         self.weight_raw_dir = get_weight_raw_dir()
 
         # Create directories
         for directory in [
             self.raw_dir,
-            self.performance_dir,
             self.weight_raw_dir,
         ]:
             directory.mkdir(parents=True, exist_ok=True)
