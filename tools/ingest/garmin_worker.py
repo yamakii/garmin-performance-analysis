@@ -1060,7 +1060,6 @@ class GarminIngestWorker:
                     )
 
             activities_success = insert_activities(
-                performance_file=None,  # Use raw data mode
                 activity_id=activity_id,
                 date=activity_date or "1970-01-01",  # Fallback date if not provided
                 db_path=self._db_path,

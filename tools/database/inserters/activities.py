@@ -1,11 +1,12 @@
 """
 ActivitiesInserter - Insert activity metadata to DuckDB activities table
 
-Supports both legacy (performance.json) and raw data modes.
-Populates the activities table with 36 columns of metadata for each activity.
+Populates the activities table with metadata from raw API files.
 This inserter must be called FIRST before other inserters due to foreign key constraints.
-
-Migration Status: DuckDB-first architecture (performance.json optional)
+Most fields are populated by other inserters; this inserter only handles:
+- Activity metadata (name, timestamps, location) from activity.json
+- Weather data (temperature, humidity, wind) from weather.json
+- Gear data (name, type) from gear.json
 """
 
 import json
@@ -19,7 +20,6 @@ logger = logging.getLogger(__name__)
 
 
 def insert_activities(
-    performance_file: str | None,
     activity_id: int,
     date: str,
     db_path: str | None = None,
@@ -28,20 +28,14 @@ def insert_activities(
     raw_gear_file: str | None = None,
 ) -> bool:
     """
-    Insert activity metadata into DuckDB activities table.
+    Insert activity metadata into DuckDB activities table from raw data files.
 
-    Supports two modes:
-    1. Legacy mode (performance_file provided): Extract from performance.json + optional raw files
-    2. Raw data mode (performance_file=None): Extract only from raw files (DuckDB-first)
-
-    Extracts 36 columns from:
-    - performance.json (legacy): basic_metrics, efficiency_metrics, training_effect, power_to_weight, split_metrics
-    - activity.json (optional): activityName, startTimeLocal, startTimeGMT, locationName
-    - weather.json (optional): temp, relativeHumidity, windSpeed, windDirectionCompassPoint
-    - gear.json (optional): gearTypeName, customMakeModel
+    Extracts 36 columns from raw API files:
+    - activity.json: activityName, startTimeLocal, startTimeGMT, locationName
+    - weather.json: temp, relativeHumidity, windSpeed, windDirectionCompassPoint
+    - gear.json: gearTypeName, customMakeModel
 
     Args:
-        performance_file: Path to performance.json (None for raw data mode)
         activity_id: Activity ID
         date: Activity date (YYYY-MM-DD format)
         db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
@@ -53,51 +47,8 @@ def insert_activities(
         True if successful, False otherwise
     """
     try:
-        # Load performance.json (if using legacy mode)
-        if performance_file is None:
-            # Raw data mode: performance.json not used, extract from raw files only
-            logger.debug(f"Using raw data mode for activity {activity_id}")
-            performance_data = {}
-            basic_metrics = {}
-            efficiency_metrics = {}
-            training_effect = {}
-            power_to_weight = {}
-            split_metrics = []
-        else:
-            # Legacy mode: Load from performance.json
-            performance_path = Path(performance_file)
-            if not performance_path.exists():
-                logger.error(f"Performance file not found: {performance_file}")
-                return False
-
-            with open(performance_path, encoding="utf-8") as f:
-                performance_data = json.load(f)
-
-            # Extract basic_metrics (required)
-            basic_metrics = performance_data.get("basic_metrics", {})
-            if not basic_metrics:
-                logger.error(f"No basic_metrics found in {performance_file}")
-                return False
-
-            # Extract efficiency_metrics (optional)
-            efficiency_metrics = performance_data.get("efficiency_metrics", {})
-
-            # Extract training_effect (optional)
-            training_effect = performance_data.get("training_effect", {})
-
-            # Extract power_to_weight (optional)
-            power_to_weight = performance_data.get("power_to_weight", {})
-
-            # Extract elevation from split_metrics (sum of all splits)
-            split_metrics = performance_data.get("split_metrics", [])
-
-        # Calculate total elevation (from split_metrics or raw splits)
-        total_elevation_gain = sum(
-            split.get("elevation_gain_m", 0) for split in split_metrics
-        )
-        total_elevation_loss = sum(
-            split.get("elevation_loss_m", 0) for split in split_metrics
-        )
+        # Raw data mode: Extract from raw files only
+        logger.debug(f"Inserting activity {activity_id} from raw data")
 
         # Load optional raw data files
         activity_name = None
@@ -172,11 +123,6 @@ def insert_activities(
                         gear_name = gear.get("customMakeModel")
                         gear_type = gear.get("gearTypeName")
 
-        # Determine training_effect_source
-        training_effect_source = None
-        if training_effect.get("aerobic_te") is not None:
-            training_effect_source = "performance_json"
-
         # Set default DB path
         if db_path is None:
             from tools.utils.paths import get_default_db_path
@@ -233,7 +179,7 @@ def insert_activities(
         # Delete existing row (upsert behavior)
         conn.execute("DELETE FROM activities WHERE activity_id = ?", [activity_id])
 
-        # Insert activity data
+        # Insert activity data (most fields NULL as they come from other inserters)
         conn.execute(
             """
             INSERT INTO activities (
@@ -254,25 +200,25 @@ def insert_activities(
                 activity_name,
                 start_time_local,
                 start_time_gmt,
-                basic_metrics.get("duration_seconds"),
-                basic_metrics.get("distance_km"),
-                basic_metrics.get("avg_pace_seconds_per_km"),
-                basic_metrics.get("avg_heart_rate"),
-                basic_metrics.get("max_heart_rate"),
-                basic_metrics.get("avg_cadence"),
-                basic_metrics.get("avg_power"),
-                basic_metrics.get("normalized_power"),
-                efficiency_metrics.get("cadence_stability"),
-                efficiency_metrics.get("power_efficiency"),
-                efficiency_metrics.get("pace_variability"),
-                training_effect.get("aerobic_te"),
-                training_effect.get("anaerobic_te"),
-                training_effect_source,
-                power_to_weight.get("watts_per_kg"),
-                power_to_weight.get("weight_kg"),
-                power_to_weight.get("weight_source"),
-                power_to_weight.get("weight_method"),
-                power_to_weight.get("stability_score"),
+                None,  # total_time_seconds (populated by other inserters)
+                None,  # total_distance_km (populated by other inserters)
+                None,  # avg_pace_seconds_per_km (populated by other inserters)
+                None,  # avg_heart_rate (populated by other inserters)
+                None,  # max_heart_rate (populated by other inserters)
+                None,  # avg_cadence (populated by other inserters)
+                None,  # avg_power (populated by other inserters)
+                None,  # normalized_power (populated by other inserters)
+                None,  # cadence_stability (populated by other inserters)
+                None,  # power_efficiency (populated by other inserters)
+                None,  # pace_variability (populated by other inserters)
+                None,  # aerobic_te (populated by other inserters)
+                None,  # anaerobic_te (populated by other inserters)
+                None,  # training_effect_source (populated by other inserters)
+                None,  # power_to_weight (populated by other inserters)
+                None,  # weight_kg (populated by other inserters)
+                None,  # weight_source (populated by other inserters)
+                None,  # weight_method (populated by other inserters)
+                None,  # stability_score (populated by other inserters)
                 external_temp_c,
                 external_temp_f,
                 humidity,
@@ -280,8 +226,8 @@ def insert_activities(
                 wind_direction_compass,
                 gear_name,
                 gear_type,
-                total_elevation_gain,
-                total_elevation_loss,
+                None,  # total_elevation_gain (populated by splits inserter)
+                None,  # total_elevation_loss (populated by splits inserter)
                 location_name,
             ],
         )
