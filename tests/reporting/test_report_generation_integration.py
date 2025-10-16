@@ -24,21 +24,23 @@ def test_db(tmp_path):
         """
         CREATE TABLE IF NOT EXISTS activities (
             activity_id BIGINT PRIMARY KEY,
-            date DATE,
+            activity_date DATE,
             activity_name VARCHAR,
+            start_time_local TIMESTAMP,
+            start_time_gmt TIMESTAMP,
             location_name VARCHAR,
             total_distance_km DOUBLE,
-            total_time_seconds DOUBLE,
+            total_time_seconds INTEGER,
+            avg_speed_ms DOUBLE,
             avg_pace_seconds_per_km DOUBLE,
             avg_heart_rate INTEGER,
-            avg_cadence DOUBLE,
-            avg_power DOUBLE,
-            weight_kg DOUBLE,
-            external_temp_c DOUBLE,
-            humidity INTEGER,
-            wind_speed_ms DOUBLE,
-            gear_name VARCHAR,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            max_heart_rate INTEGER,
+            temp_celsius DOUBLE,
+            relative_humidity_percent DOUBLE,
+            wind_speed_kmh DOUBLE,
+            wind_direction VARCHAR,
+            gear_type VARCHAR,
+            gear_model VARCHAR
         )
     """
     )
@@ -125,8 +127,6 @@ def test_activity_data():
         "duration_seconds": 1800,
         "avg_pace_seconds_per_km": 360,
         "avg_heart_rate": 155,
-        "avg_cadence": 168,
-        "avg_power": 250,
     }
 
 
@@ -221,11 +221,11 @@ def test_generate_report_full_workflow(
     conn.execute(
         """
         INSERT INTO activities (
-            activity_id, date, activity_name, location_name,
+            activity_id, activity_date, activity_name, location_name,
             total_distance_km, total_time_seconds, avg_pace_seconds_per_km,
-            avg_heart_rate, avg_cadence, avg_power,
-            weight_kg, external_temp_c, humidity, wind_speed_ms, gear_name
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            avg_heart_rate, temp_celsius, relative_humidity_percent,
+            wind_speed_kmh, gear_type, gear_model
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """,
         [
             test_activity_data["activity_id"],
@@ -236,13 +236,11 @@ def test_generate_report_full_workflow(
             test_activity_data["duration_seconds"],
             test_activity_data["avg_pace_seconds_per_km"],
             test_activity_data["avg_heart_rate"],
-            test_activity_data["avg_cadence"],
-            test_activity_data["avg_power"],
-            70.0,  # weight_kg
-            18.0,  # external_temp_c
-            65,  # humidity
-            2.5,  # wind_speed_ms
-            "Nike Vaporfly Next% 2",  # gear_name
+            18.0,  # temp_celsius
+            65.0,  # relative_humidity_percent
+            9.0,  # wind_speed_kmh (2.5 m/s * 3.6)
+            "Nike",  # gear_type
+            "Vaporfly Next% 2",  # gear_model
         ],
     )
 
@@ -360,11 +358,11 @@ def test_generate_report_partial_sections(test_db, test_activity_data, tmp_path)
     conn.execute(
         """
         INSERT INTO activities (
-            activity_id, date, activity_name, location_name,
+            activity_id, activity_date, activity_name, location_name,
             total_distance_km, total_time_seconds, avg_pace_seconds_per_km,
-            avg_heart_rate, avg_cadence, avg_power,
-            weight_kg, external_temp_c, humidity, wind_speed_ms, gear_name
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            avg_heart_rate, temp_celsius, relative_humidity_percent,
+            wind_speed_kmh, gear_type, gear_model
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """,
         [
             test_activity_data["activity_id"],
@@ -375,13 +373,11 @@ def test_generate_report_partial_sections(test_db, test_activity_data, tmp_path)
             test_activity_data["duration_seconds"],
             test_activity_data["avg_pace_seconds_per_km"],
             test_activity_data["avg_heart_rate"],
-            test_activity_data["avg_cadence"],
-            test_activity_data["avg_power"],
-            None,  # weight_kg (optional)
-            None,  # external_temp_c (optional)
-            None,  # humidity (optional)
-            None,  # wind_speed_ms (optional)
-            None,  # gear_name (optional)
+            None,  # temp_celsius (optional)
+            None,  # relative_humidity_percent (optional)
+            None,  # wind_speed_kmh (optional)
+            None,  # gear_type (optional)
+            None,  # gear_model (optional)
         ],
     )
 
@@ -443,11 +439,11 @@ def test_report_japanese_encoding(
     conn.execute(
         """
         INSERT INTO activities (
-            activity_id, date, activity_name, location_name,
+            activity_id, activity_date, activity_name, location_name,
             total_distance_km, total_time_seconds, avg_pace_seconds_per_km,
-            avg_heart_rate, avg_cadence, avg_power,
-            weight_kg, external_temp_c, humidity, wind_speed_ms, gear_name
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            avg_heart_rate, temp_celsius, relative_humidity_percent,
+            wind_speed_kmh, gear_type, gear_model
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """,
         [
             test_activity_data["activity_id"],
@@ -458,13 +454,11 @@ def test_report_japanese_encoding(
             test_activity_data["duration_seconds"],
             test_activity_data["avg_pace_seconds_per_km"],
             test_activity_data["avg_heart_rate"],
-            test_activity_data["avg_cadence"],
-            test_activity_data["avg_power"],
-            70.0,  # weight_kg
-            18.0,  # external_temp_c
-            65,  # humidity
-            2.5,  # wind_speed_ms
-            "Nike Vaporfly Next% 2",  # gear_name
+            18.0,  # temp_celsius
+            65.0,  # relative_humidity_percent
+            9.0,  # wind_speed_kmh (2.5 m/s * 3.6)
+            "Nike",  # gear_type
+            "Vaporfly Next% 2",  # gear_model
         ],
     )
 

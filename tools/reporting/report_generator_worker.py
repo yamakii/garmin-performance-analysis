@@ -61,13 +61,11 @@ class ReportGeneratorWorker:
                     total_time_seconds,
                     avg_pace_seconds_per_km,
                     avg_heart_rate,
-                    avg_cadence,
-                    avg_power,
-                    weight_kg,
-                    external_temp_c,
-                    humidity,
-                    wind_speed_ms,
-                    gear_name
+                    temp_celsius,
+                    relative_humidity_percent,
+                    wind_speed_kmh,
+                    gear_type,
+                    gear_model
                 FROM activities
                 WHERE activity_id = ?
                 """,
@@ -171,16 +169,14 @@ class ReportGeneratorWorker:
                     "duration_seconds": result[3],
                     "avg_pace_seconds_per_km": result[4],
                     "avg_heart_rate": result[5],
-                    "avg_cadence": result[6] if result[6] is not None else 0,
-                    "avg_power": result[7] if result[7] is not None else 0,
                 },
-                "weight_kg": result[8],
                 "weather_data": {
-                    "external_temp_c": result[9],
-                    "humidity": result[10],
-                    "wind_speed_ms": result[11],
+                    "temp_celsius": result[6],
+                    "relative_humidity_percent": result[7],
+                    "wind_speed_kmh": result[8],
                 },
-                "gear_name": result[12],
+                "gear_type": result[9],
+                "gear_model": result[10],
             }
 
             # Add form efficiency if available

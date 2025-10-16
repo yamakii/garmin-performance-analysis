@@ -21,9 +21,12 @@ class TestGarminIngestWorker:
     """Test suite for GarminIngestWorker."""
 
     @pytest.fixture
-    def worker(self):
-        """Create GarminIngestWorker instance."""
-        return GarminIngestWorker()
+    def worker(self, tmp_path):
+        """Create GarminIngestWorker instance with isolated tmp database."""
+        worker = GarminIngestWorker()
+        # Use tmp_path for isolated database to avoid interference
+        worker._db_path = tmp_path / "test_garmin.duckdb"
+        return worker
 
     @pytest.fixture
     def sample_raw_data(self):
