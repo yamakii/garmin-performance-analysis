@@ -203,11 +203,10 @@ def insert_activities(
             """
         )
 
-        # Use INSERT OR REPLACE for upsert behavior (avoids foreign key constraint issues)
         # Insert activity data (most fields NULL as they come from other inserters)
         conn.execute(
             """
-            INSERT OR REPLACE INTO activities (
+            INSERT INTO activities (
                 activity_id, date, activity_name, start_time_local, start_time_gmt,
                 total_time_seconds, total_distance_km, avg_pace_seconds_per_km,
                 avg_heart_rate, max_heart_rate, avg_cadence, avg_power, normalized_power,

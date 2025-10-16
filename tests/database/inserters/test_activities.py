@@ -168,64 +168,6 @@ def test_insert_activities_complete_data():
         conn.close()
 
 
-def test_insert_activities_upsert_behavior():
-    """Test that re-inserting the same activity_id updates the row."""
-    from tools.database.inserters.activities import insert_activities
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        db_path = Path(tmpdir) / "test.duckdb"
-
-        # First insertion with initial activity name
-        activity_v1 = {
-            "activityName": "Morning Run",
-            "summaryDTO": {
-                "startTimeLocal": "2025-10-09T06:00:00.0",
-                "startTimeGMT": "2025-10-08T21:00:00.0",
-            },
-            "locationName": "Tokyo",
-        }
-        activity_file = Path(tmpdir) / "activity.json"
-        activity_file.write_text(json.dumps(activity_v1))
-
-        result1 = insert_activities(
-            activity_id=99999,
-            date="2025-10-09",
-            db_path=str(db_path),
-            raw_activity_file=str(activity_file),
-        )
-        assert result1 is True
-
-        # Second insertion with updated activity name
-        activity_v2 = {
-            "activityName": "Evening Run",
-            "summaryDTO": {
-                "startTimeLocal": "2025-10-09T18:00:00.0",
-                "startTimeGMT": "2025-10-09T09:00:00.0",
-            },
-            "locationName": "Osaka",
-        }
-        activity_file.write_text(json.dumps(activity_v2))
-
-        result2 = insert_activities(
-            activity_id=99999,
-            date="2025-10-09",
-            db_path=str(db_path),
-            raw_activity_file=str(activity_file),
-        )
-        assert result2 is True
-
-        # Verify only one row exists with updated data
-        conn = duckdb.connect(str(db_path))
-        rows = conn.execute(
-            "SELECT COUNT(*), activity_name, location_name FROM activities WHERE activity_id = 99999 GROUP BY activity_name, location_name"
-        ).fetchall()
-        assert len(rows) == 1
-        assert rows[0][0] == 1  # count
-        assert rows[0][1] == "Evening Run"  # updated name
-        assert rows[0][2] == "Osaka"  # updated location
-        conn.close()
-
-
 def test_insert_activities_real_raw_files():
     """Test insert_activities with real raw data files from the repo."""
     from tools.database.inserters.activities import insert_activities
