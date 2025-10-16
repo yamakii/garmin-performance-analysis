@@ -462,11 +462,10 @@ class AggregateReader(BaseDBReader):
                 result = conn.execute(
                     """
                     SELECT
-                        external_temp_c,
-                        external_temp_f,
-                        humidity,
-                        wind_speed_ms,
-                        wind_direction_compass
+                        temp_celsius,
+                        relative_humidity_percent,
+                        wind_speed_kmh,
+                        wind_direction
                     FROM activities
                     WHERE activity_id = ?
                     """,
@@ -476,12 +475,20 @@ class AggregateReader(BaseDBReader):
                 if not result:
                     return None
 
+                # Convert wind speed from km/h to m/s
+                wind_speed_ms = result[2] / 3.6 if result[2] else None
+
+                # Convert temperature from Fahrenheit to Celsius
+                # (Currently stored as Fahrenheit in temp_celsius column)
+                temp_f = result[0]
+                temp_c = (temp_f - 32) * 5 / 9 if temp_f else None
+
                 return {
-                    "temperature_c": result[0],
-                    "temperature_f": result[1],
-                    "humidity": result[2],
-                    "wind_speed_ms": result[3],
-                    "wind_direction": result[4],
+                    "temperature_c": temp_c,
+                    "temperature_f": temp_f,
+                    "humidity": result[1],
+                    "wind_speed_ms": wind_speed_ms,
+                    "wind_direction": result[3],
                 }
 
         except Exception as e:
@@ -599,13 +606,13 @@ class AggregateReader(BaseDBReader):
                         # Wrap query and add WHERE clause
                         base_query = (
                             f"(SELECT * FROM ({table_or_query}) AS inner_query "
-                            f"WHERE activity_date BETWEEN '{start_date}' AND '{end_date}') AS subquery"
+                            f"WHERE date BETWEEN '{start_date}' AND '{end_date}') AS subquery"
                         )
                     else:
                         # Add WHERE clause to table
                         base_query = (
                             f"(SELECT * FROM {table_or_query} "
-                            f"WHERE activity_date BETWEEN '{start_date}' AND '{end_date}') AS subquery"
+                            f"WHERE date BETWEEN '{start_date}' AND '{end_date}') AS subquery"
                         )
 
                 # Get row count
@@ -759,12 +766,12 @@ class AggregateReader(BaseDBReader):
                     if is_query:
                         base_query = (
                             f"(SELECT * FROM ({table_or_query}) AS inner_query "
-                            f"WHERE activity_date BETWEEN '{start_date}' AND '{end_date}') AS subquery"
+                            f"WHERE date BETWEEN '{start_date}' AND '{end_date}') AS subquery"
                         )
                     else:
                         base_query = (
                             f"(SELECT * FROM {table_or_query} "
-                            f"WHERE activity_date BETWEEN '{start_date}' AND '{end_date}') AS subquery"
+                            f"WHERE date BETWEEN '{start_date}' AND '{end_date}') AS subquery"
                         )
 
                 # Get total count (excluding NULLs)

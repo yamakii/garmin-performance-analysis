@@ -380,16 +380,15 @@ class TestGarminDBReader:
                 name VARCHAR,
                 distance DOUBLE,
                 duration DOUBLE,
-                external_temp_c DOUBLE,
-                external_temp_f DOUBLE,
-                humidity INTEGER,
-                wind_speed_ms DOUBLE,
-                wind_direction_compass VARCHAR
+                temp_celsius DOUBLE,
+                relative_humidity_percent DOUBLE,
+                wind_speed_kmh DOUBLE,
+                wind_direction VARCHAR
             )
         """
         )
 
-        # Insert activity with weather data
+        # Insert activity with weather data (temp in Fahrenheit as stored in DB)
         conn.execute(
             """
             INSERT INTO activities VALUES (
@@ -398,10 +397,9 @@ class TestGarminDBReader:
                 'Morning Run',
                 10.0,
                 3600.0,
-                18.5,
                 65.3,
-                75,
-                2.5,
+                75.0,
+                9.0,
                 'NE'
             )
         """
@@ -413,10 +411,10 @@ class TestGarminDBReader:
         result = reader.get_weather_data(12345678901)
 
         assert result is not None
-        assert result["temperature_c"] == 18.5
+        assert abs(result["temperature_c"] - 18.5) < 0.1  # 65.3°F → 18.5°C
         assert result["temperature_f"] == 65.3
-        assert result["humidity"] == 75
-        assert result["wind_speed_ms"] == 2.5
+        assert result["humidity"] == 75.0
+        assert abs(result["wind_speed_ms"] - 2.5) < 0.1  # 9.0 km/h → 2.5 m/s
         assert result["wind_direction"] == "NE"
 
     @pytest.mark.unit
@@ -436,11 +434,10 @@ class TestGarminDBReader:
                 name VARCHAR,
                 distance DOUBLE,
                 duration DOUBLE,
-                external_temp_c DOUBLE,
-                external_temp_f DOUBLE,
-                humidity INTEGER,
-                wind_speed_ms DOUBLE,
-                wind_direction_compass VARCHAR
+                temp_celsius DOUBLE,
+                relative_humidity_percent DOUBLE,
+                wind_speed_kmh DOUBLE,
+                wind_direction VARCHAR
             )
         """
         )
