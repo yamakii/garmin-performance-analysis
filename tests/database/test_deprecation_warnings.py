@@ -19,7 +19,8 @@ class TestDeprecationWarnings:
     @pytest.fixture
     def db_reader(self):
         """Create a GarminDBReader instance with mocked database."""
-        with patch("tools.database.db_reader.duckdb") as mock_duckdb:
+        # Patch duckdb in the base reader module where it's actually imported
+        with patch("tools.database.readers.base.duckdb") as mock_duckdb:
             reader = GarminDBReader()
             # Mock database connection
             mock_conn = MagicMock()

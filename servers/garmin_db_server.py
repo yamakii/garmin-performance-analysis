@@ -33,6 +33,31 @@ async def list_tools() -> list[Tool]:
     """List available DuckDB query tools."""
     return [
         Tool(
+            name="export",
+            description="Export query results to file (returns handle only, not data). Use for large datasets that need processing in Python.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "DuckDB SQL query to execute",
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["parquet", "csv"],
+                        "description": "Output format (parquet recommended for efficiency)",
+                        "default": "parquet",
+                    },
+                    "max_rows": {
+                        "type": "integer",
+                        "description": "Safety limit for export size (default: 100000)",
+                        "default": 100000,
+                    },
+                },
+                "required": ["query"],
+            },
+        ),
+        Tool(
             name="get_section_analysis",
             description="Get section analysis data from DuckDB (DEPRECATED: Use extract_insights() for summarized data)",
             inputSchema={
@@ -500,11 +525,72 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """Handle tool calls."""
     import json
 
-    if name == "get_section_analysis":
+    if name == "export":
+        from datetime import datetime
+
+        from tools.mcp_server.export_manager import get_export_manager
+
+        query = arguments["query"]
+        export_format = arguments.get("format", "parquet")
+        max_rows = arguments.get("max_rows", 100000)
+
+        try:
+            # Get export manager
+            export_manager = get_export_manager()
+
+            # Create export handle
+            file_path, handle, expires_at = export_manager.create_export_handle(
+                export_format=export_format
+            )
+
+            # Export query result
+            metadata = db_reader.export_query_result(
+                query=query,
+                output_path=file_path,
+                export_format=export_format,
+                max_rows=max_rows,
+            )
+
+            # Build result
+            result = {
+                "handle": handle,
+                "rows": metadata["rows"],
+                "size_mb": metadata["size_mb"],
+                "columns": metadata["columns"],
+                "expires_at": datetime.fromtimestamp(expires_at).isoformat() + "Z",
+            }
+
+            return [
+                TextContent(
+                    type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+                )
+            ]
+
+        except ValueError as e:
+            # Size limit exceeded
+            result = {
+                "error": str(e),
+                "suggestion": "Refine your query with WHERE clauses, LIMIT, or aggregation functions.",
+            }
+            return [
+                TextContent(
+                    type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+                )
+            ]
+        except Exception as e:
+            # Other errors
+            result = {"error": f"Export failed: {str(e)}"}
+            return [
+                TextContent(
+                    type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+                )
+            ]
+
+    elif name == "get_section_analysis":
         activity_id = arguments["activity_id"]
         section_type = arguments["section_type"]
         max_output_size = arguments.get("max_output_size", 10240)
-        result = db_reader.get_section_analysis(
+        result = db_reader.get_section_analysis(  # type: ignore[assignment]
             activity_id, section_type, max_output_size
         )
         return [
@@ -653,7 +739,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
     elif name == "get_form_efficiency_summary":
         activity_id = arguments["activity_id"]
-        result = db_reader.get_form_efficiency_summary(activity_id)
+        result = db_reader.get_form_efficiency_summary(activity_id)  # type: ignore[assignment]
         return [
             TextContent(
                 type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
@@ -662,7 +748,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
     elif name == "get_hr_efficiency_analysis":
         activity_id = arguments["activity_id"]
-        result = db_reader.get_hr_efficiency_analysis(activity_id)
+        result = db_reader.get_hr_efficiency_analysis(activity_id)  # type: ignore[assignment]
         return [
             TextContent(
                 type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
@@ -671,7 +757,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
     elif name == "get_heart_rate_zones_detail":
         activity_id = arguments["activity_id"]
-        result = db_reader.get_heart_rate_zones_detail(activity_id)
+        result = db_reader.get_heart_rate_zones_detail(activity_id)  # type: ignore[assignment]
         return [
             TextContent(
                 type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
@@ -680,7 +766,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
     elif name == "get_vo2_max_data":
         activity_id = arguments["activity_id"]
-        result = db_reader.get_vo2_max_data(activity_id)
+        result = db_reader.get_vo2_max_data(activity_id)  # type: ignore[assignment]
         return [
             TextContent(
                 type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
@@ -689,7 +775,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
     elif name == "get_lactate_threshold_data":
         activity_id = arguments["activity_id"]
-        result = db_reader.get_lactate_threshold_data(activity_id)
+        result = db_reader.get_lactate_threshold_data(activity_id)  # type: ignore[assignment]
         return [
             TextContent(
                 type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
@@ -698,7 +784,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
     elif name == "get_performance_trends":
         activity_id = arguments["activity_id"]
-        result = db_reader.get_performance_trends(activity_id)
+        result = db_reader.get_performance_trends(activity_id)  # type: ignore[assignment]
         return [
             TextContent(
                 type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
@@ -707,7 +793,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
     elif name == "get_weather_data":
         activity_id = arguments["activity_id"]
-        result = db_reader.get_weather_data(activity_id)
+        result = db_reader.get_weather_data(activity_id)  # type: ignore[assignment]
         return [
             TextContent(
                 type="text", text=json.dumps(result, indent=2, ensure_ascii=False)

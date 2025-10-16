@@ -106,9 +106,9 @@ class InsightExtractor:
             results = conn.execute(query).fetchall()
             conn.close()
         except Exception as e:
-            from tools.database.db_reader import logger
+            import logging
 
-            logger.error(f"Error searching by keywords: {e}")
+            logging.getLogger(__name__).error(f"Error searching by keywords: {e}")
             return []
 
         # Parse JSON analysis_data
@@ -191,9 +191,9 @@ class InsightExtractor:
             results = conn.execute(query).fetchall()
             conn.close()
         except Exception as e:
-            from tools.database.db_reader import logger
+            import logging
 
-            logger.error(f"Error extracting insights: {e}")
+            logging.getLogger(__name__).error(f"Error extracting insights: {e}")
             return {"insights": [], "total_tokens": 0, "truncated": False}
 
         # Parse JSON analysis_data
