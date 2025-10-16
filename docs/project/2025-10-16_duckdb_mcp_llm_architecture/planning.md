@@ -6,10 +6,10 @@
 
 - **プロジェクト名**: `duckdb_mcp_llm_architecture`
 - **作成日**: `2025-10-16`
-- **ステータス**: 計画中
+- **ステータス**: 実装中（Phase 0完了、Phase 1進行中）
 - **優先度**: 高（基盤アーキテクチャ）
-- **推定期間**: 4週間
-- **スコープ**: 新規実装（4関数）+ 既存リファクタリング（23関数）+ エージェント更新（2エージェント）
+- **推定期間**: 4-5週間
+- **スコープ**: 新規実装（4 MCP関数）+ 既存リファクタリング（23 MCP関数）+ クラス分割（GarminDBReader）+ エージェント更新（2エージェント）
 
 ## 要件定義
 
@@ -583,6 +583,123 @@ def validate_output(output: str) -> tuple[bool, Optional[str]]:
 - [ ] Unit tests カバレッジ90%以上
 - [ ] 既存関数との統合テスト完了
 
+### Phase 1.5: GarminDBReaderリファクタリング (Week 2)
+
+**目標:** 肥大化したGarminDBReaderクラス（1639行、21メソッド）を責務別に分割・整理
+
+**現状の問題:**
+- **単一クラスの肥大化**: GarminDBReaderが1639行、21メソッド
+- **責務の混在**: 要約統計、splits取得、時系列処理、異常検出、エクスポートが同一クラス
+- **メンテナンス性の低下**: メソッド追加時の影響範囲が不明確
+- **テストの複雑化**: 巨大クラスのモック作成が困難
+
+**リファクタリング方針:**
+
+責務別に5つのReaderクラスに分割:
+
+1. **BaseDBReader** (基底クラス)
+   - DuckDB接続管理
+   - 共通ユーティリティメソッド
+   - `__init__`, `db_path`, 基本クエリメソッド
+
+2. **MetadataReader** (メタデータ取得)
+   - `get_activity_date()`
+   - `query_activity_by_date()`
+   - アクティビティメタ情報取得
+
+3. **SplitsReader** (Splits データ取得)
+   - `get_splits_pace_hr(statistics_only=False)`
+   - `get_splits_form_metrics(statistics_only=False)`
+   - `get_splits_elevation(statistics_only=False)`
+   - `get_splits_all(max_output_size=10240)` ← 非推奨
+   - `get_split_time_ranges()`
+
+4. **AggregateReader** (集計・要約統計)
+   - `get_form_efficiency_summary()`
+   - `get_hr_efficiency_analysis()`
+   - `get_heart_rate_zones_detail()`
+   - `get_vo2_max_data()`
+   - `get_lactate_threshold_data()`
+   - `get_performance_trends()`
+   - `get_weather_data()`
+   - `get_section_analysis(max_output_size=10240)` ← 非推奨
+
+5. **TimeSeriesReader** (時系列データ処理)
+   - `get_time_series_statistics()`
+   - `get_time_series_raw()`
+   - `detect_anomalies_sql()`
+
+6. **ExportReader** (データエクスポート)
+   - `export_query_result()` (Phase 1で実装済み)
+
+**統合アクセスクラス:**
+
+```python
+# tools/database/db_reader.py (新設計)
+
+class GarminDBReader:
+    """統合アクセスクラス（後方互換性維持）"""
+
+    def __init__(self, db_path: Optional[Path] = None):
+        self.metadata = MetadataReader(db_path)
+        self.splits = SplitsReader(db_path)
+        self.aggregate = AggregateReader(db_path)
+        self.time_series = TimeSeriesReader(db_path)
+        self.export = ExportReader(db_path)
+
+    # 既存メソッドは各Readerに委譲（後方互換性）
+    def get_activity_date(self, activity_id: int) -> str:
+        return self.metadata.get_activity_date(activity_id)
+
+    def get_splits_pace_hr(self, activity_id: int, statistics_only: bool = False):
+        return self.splits.get_splits_pace_hr(activity_id, statistics_only)
+
+    # ... 他のメソッドも同様に委譲
+```
+
+**Tasks:**
+
+1. **基底クラス設計（Day 1）**
+   - BaseDBReader実装
+   - DuckDB接続管理の共通化
+   - 共通ユーティリティメソッド抽出
+
+2. **Readerクラス分割（Day 2-3）**
+   - MetadataReader実装（2メソッド）
+   - SplitsReader実装（5メソッド）
+   - AggregateReader実装（8メソッド）
+   - TimeSeriesReader実装（3メソッド）
+   - ExportReader実装（1メソッド、Phase 1から移動）
+
+3. **統合クラス実装（Day 4）**
+   - GarminDBReader（委譲パターン）
+   - 後方互換性テスト
+   - 既存コードの動作確認
+
+4. **テスト更新（Day 5）**
+   - 各Readerクラスの単体テスト
+   - 統合クラスの結合テスト
+   - 既存テストの回帰テスト（470件全て）
+
+5. **ドキュメント更新（Day 5）**
+   - アーキテクチャ図更新
+   - 各Readerクラスの責務明記
+   - 使用例追加
+
+**受け入れ基準:**
+- [ ] 6つのクラスに分割完了（BaseDBReader + 5 Readers）
+- [ ] 各クラスが単一責務原則に準拠（平均300行以下）
+- [ ] 既存テスト470件が全てパス（後方互換性維持）
+- [ ] 新規テスト追加（各Readerクラス単体テスト）
+- [ ] Unit testsカバレッジ90%以上維持
+- [ ] Type hints完全（mypy strict mode）
+
+**期待される効果:**
+- コード可読性向上（1639行 → 平均300行/クラス）
+- メンテナンス性向上（変更影響範囲の明確化）
+- テスト容易性向上（小規模クラスのモック作成）
+- 新機能追加の容易化（適切なReaderクラスに追加）
+
 ### Phase 2: Python Helper Functions (Week 2-3)
 
 **目標:** Python実行環境で安全にデータをロード・処理・出力するヘルパー関数群
@@ -892,6 +1009,16 @@ def validate_output(output: str) -> tuple[bool, Optional[str]]:
   - ユースケース別の推奨ツール選択ガイド作成
 - 軽減策: Phase 0で既存関数を段階的に更新、Phase 5でツール選択ガイドをCLAUDE.mdに追加
 
+**R8: GarminDBReaderリファクタリングの影響範囲**
+- 影響度: 中
+- 発生確率: 中
+- 対策:
+  - Phase 1.5で委譲パターン採用（後方互換性維持）
+  - 既存テスト470件を全て回帰テスト
+  - 段階的移行（統合クラス → 個別Readerへの直接アクセス推奨）
+  - 既存コードは統合クラス経由で動作継続
+- 軽減策: Phase 1.5で後方互換性を最優先、段階的な移行パス提供
+
 ### 低リスク
 
 **R6: DuckDBのメモリ使用量増加（materialize利用時）**
@@ -944,8 +1071,9 @@ def validate_output(output: str) -> tuple[bool, Optional[str]]:
 
 **計画作成日**: 2025-10-16
 **最終更新日**: 2025-10-16
-**ステータス**: 計画完了、実装待機
-**推定期間**: 4週間
+**ステータス**: 実装中（Phase 0完了、Phase 1進行中）
+**推定期間**: 4-5週間
 **変更履歴**:
 - 2025-10-16: 初版作成
 - 2025-10-16: Phase 0追加（既存MCP関数リファクタリング）、依存エージェント更新追加、リスク評価更新
+- 2025-10-16: Phase 1.5追加（GarminDBReaderクラス分割・整理）、スコープ更新、リスク評価追加（R8）
