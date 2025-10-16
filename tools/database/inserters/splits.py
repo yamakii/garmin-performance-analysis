@@ -13,61 +13,263 @@ import duckdb
 logger = logging.getLogger(__name__)
 
 
+def _classify_terrain(elevation_gain: float, elevation_loss: float) -> str:
+    """
+    Classify terrain type based on elevation changes.
+
+    Args:
+        elevation_gain: Elevation gain in meters
+        elevation_loss: Elevation loss in meters
+
+    Returns:
+        Terrain type classification
+    """
+    total_elevation_change = abs(elevation_gain) + abs(elevation_loss)
+
+    if total_elevation_change < 5:
+        return "平坦"
+    elif total_elevation_change < 15:
+        return "起伏"
+    elif total_elevation_change < 30:
+        return "丘陵"
+    else:
+        return "山岳"
+
+
+def _map_intensity_to_phase(intensity_type: str | None) -> str | None:
+    """
+    Map Garmin intensityType to role_phase.
+
+    Args:
+        intensity_type: Garmin intensityType (e.g., "WARMUP", "INTERVAL", "RECOVERY", "COOLDOWN")
+
+    Returns:
+        role_phase string or None
+    """
+    if not intensity_type:
+        return None
+
+    intensity_upper = intensity_type.upper()
+
+    # Phase mapping
+    if intensity_upper == "WARMUP":
+        return "warmup"
+    elif intensity_upper in ("INTERVAL", "ACTIVE"):
+        return "run"
+    elif intensity_upper == "RECOVERY":
+        return "recovery"
+    elif intensity_upper == "COOLDOWN":
+        return "cooldown"
+    else:
+        return None
+
+
+def _extract_splits_from_raw(raw_splits_file: str) -> list[dict] | None:
+    """
+    Extract split metrics from raw splits.json.
+
+    Args:
+        raw_splits_file: Path to splits.json
+
+    Returns:
+        List of split dictionaries matching performance.json split_metrics structure
+    """
+    splits_path = Path(raw_splits_file)
+    if not splits_path.exists():
+        logger.error(f"Splits file not found: {raw_splits_file}")
+        return None
+
+    with open(splits_path, encoding="utf-8") as f:
+        splits_data = json.load(f)
+
+    lap_dtos = splits_data.get("lapDTOs", [])
+    if not lap_dtos:
+        logger.error("No lapDTOs found in splits.json")
+        return None
+
+    splits = []
+    cumulative_time = 0
+
+    for lap in lap_dtos:
+        lap_index = lap.get("lapIndex")
+        if lap_index is None:
+            continue
+
+        # Distance (convert m to km)
+        distance_m = lap.get("distance", 0)
+        distance_km = distance_m / 1000.0 if distance_m else None
+
+        # Duration
+        duration_seconds = lap.get("duration")
+
+        # Time range
+        start_time_gmt = lap.get("startTimeGMT")
+        start_time_s = cumulative_time
+        if duration_seconds:
+            end_time_s = cumulative_time + round(duration_seconds)
+            cumulative_time = end_time_s
+        else:
+            end_time_s = None
+
+        # Pace (seconds per km)
+        if distance_km and distance_km > 0 and duration_seconds:
+            pace_seconds_per_km = duration_seconds / distance_km
+        else:
+            pace_seconds_per_km = None
+
+        # Format pace string
+        if pace_seconds_per_km:
+            minutes = int(pace_seconds_per_km // 60)
+            seconds = int(pace_seconds_per_km % 60)
+            pace_str = f"{minutes}:{seconds:02d}"
+        else:
+            pace_str = None
+
+        # Intensity type and role phase
+        intensity_type = lap.get("intensityType")
+        role_phase = _map_intensity_to_phase(intensity_type)
+
+        # HR
+        avg_hr = lap.get("averageHR")
+
+        # Cadence
+        avg_cadence = lap.get("averageRunCadence")
+
+        # Power
+        avg_power = lap.get("averagePower")
+
+        # Form metrics
+        gct = lap.get("groundContactTime")
+        vo = lap.get("verticalOscillation")
+        vr = lap.get("verticalRatio")
+
+        # Elevation
+        elevation_gain = lap.get("elevationGain", 0)
+        elevation_loss = lap.get("elevationLoss", 0)
+        terrain_type = _classify_terrain(elevation_gain, elevation_loss)
+
+        split_dict = {
+            "split_number": lap_index,
+            "distance_km": distance_km,
+            "duration_seconds": duration_seconds,
+            "start_time_gmt": start_time_gmt,
+            "start_time_s": start_time_s,
+            "end_time_s": end_time_s,
+            "intensity_type": intensity_type,
+            "role_phase": role_phase,
+            "pace_str": pace_str,
+            "pace_seconds_per_km": pace_seconds_per_km,
+            "avg_heart_rate": avg_hr,
+            "avg_cadence": avg_cadence,
+            "avg_power": avg_power,
+            "ground_contact_time_ms": gct,
+            "vertical_oscillation_cm": vo,
+            "vertical_ratio_percent": vr,
+            "elevation_gain_m": elevation_gain,
+            "elevation_loss_m": elevation_loss,
+            "terrain_type": terrain_type,
+        }
+
+        splits.append(split_dict)
+
+    return splits
+
+
 def insert_splits(
-    performance_file: str,
+    performance_file: str | None,
     activity_id: int,
     db_path: str | None = None,
     raw_splits_file: str | None = None,
 ) -> bool:
     """
-    Insert split_metrics from performance.json into DuckDB splits table.
+    Insert split_metrics from performance.json or raw splits.json into DuckDB splits table.
 
     Steps:
-    1. Load performance.json
-    2. Extract split_metrics array
-    3. Load raw splits.json (if provided) for time range data
-    4. Match lapDTOs with split_metrics by lapIndex/split_number
-    5. Calculate cumulative time for start_time_s/end_time_s
-    6. Insert each split into splits table
+    1. Load performance.json (legacy) or raw splits.json
+    2. Extract or calculate split_metrics
+    3. Insert each split into splits table
 
     Args:
-        performance_file: Path to performance.json
+        performance_file: Path to performance.json (legacy, optional)
         activity_id: Activity ID
         db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
-        raw_splits_file: Optional path to raw splits.json for time range data
+        raw_splits_file: Path to raw splits.json (for raw mode)
 
     Returns:
         True if successful, False otherwise
     """
     try:
-        # Load performance.json
-        performance_path = Path(performance_file)
-        if not performance_path.exists():
-            logger.error(f"Performance file not found: {performance_file}")
-            return False
+        use_raw_data = performance_file is None
 
-        with open(performance_path, encoding="utf-8") as f:
-            performance_data = json.load(f)
+        if use_raw_data:
+            # Extract from raw data
+            if not raw_splits_file:
+                logger.error("raw_splits_file required for raw data mode")
+                return False
 
-        # Extract split_metrics
-        split_metrics = performance_data.get("split_metrics")
-        if not split_metrics or not isinstance(split_metrics, list):
-            logger.error(f"No split_metrics found in {performance_file}")
-            return False
+            split_metrics = _extract_splits_from_raw(raw_splits_file)
+            if not split_metrics:
+                logger.error("Failed to extract splits from raw data")
+                return False
+        else:
+            # Legacy: Load performance.json
+            # Type narrowing for mypy
+            assert performance_file is not None
+            performance_path = Path(performance_file)
+            if not performance_path.exists():
+                logger.error(f"Performance file not found: {performance_file}")
+                return False
 
-        # Load raw splits.json if provided
-        lap_dtos = []
-        if raw_splits_file:
-            raw_splits_path = Path(raw_splits_file)
-            if raw_splits_path.exists():
-                with open(raw_splits_path, encoding="utf-8") as f:
-                    raw_splits_data = json.load(f)
-                    lap_dtos = raw_splits_data.get("lapDTOs", [])
-            else:
-                logger.warning(f"Raw splits file not found: {raw_splits_file}")
+            with open(performance_path, encoding="utf-8") as f:
+                performance_data = json.load(f)
 
-        # Create lapIndex -> lapDTO mapping
-        lap_dto_map = {lap.get("lapIndex"): lap for lap in lap_dtos}
+            # Extract split_metrics
+            split_metrics = performance_data.get("split_metrics")
+            if not split_metrics or not isinstance(split_metrics, list):
+                logger.error(f"No split_metrics found in {performance_file}")
+                return False
+
+            # Load raw splits.json if provided (for time range data)
+            lap_dtos = []
+            if raw_splits_file:
+                raw_splits_path = Path(raw_splits_file)
+                if raw_splits_path.exists():
+                    with open(raw_splits_path, encoding="utf-8") as f:
+                        raw_splits_data = json.load(f)
+                        lap_dtos = raw_splits_data.get("lapDTOs", [])
+                else:
+                    logger.warning(f"Raw splits file not found: {raw_splits_file}")
+
+            # Create lapIndex -> lapDTO mapping
+            lap_dto_map = {lap.get("lapIndex"): lap for lap in lap_dtos}
+
+            # Enrich split_metrics with time range data from raw splits
+            cumulative_time = 0
+            for split in split_metrics:
+                split_number = split.get("split_number")
+                if split_number is None:
+                    continue
+
+                # Calculate pace_str if not already present
+                if not split.get("pace_str"):
+                    pace_seconds = split.get("avg_pace_seconds_per_km")
+                    if pace_seconds and pace_seconds > 0:
+                        minutes = int(pace_seconds // 60)
+                        seconds = int(pace_seconds % 60)
+                        split["pace_str"] = f"{minutes}:{seconds:02d}"
+
+                lap_dto = lap_dto_map.get(split_number)
+                if lap_dto:
+                    split["duration_seconds"] = lap_dto.get("duration")
+                    split["start_time_gmt"] = lap_dto.get("startTimeGMT")
+                    split["intensity_type"] = lap_dto.get("intensityType")
+
+                    # Calculate cumulative time
+                    duration_seconds = split.get("duration_seconds")
+                    split["start_time_s"] = cumulative_time
+                    if duration_seconds:
+                        split["end_time_s"] = cumulative_time + round(duration_seconds)
+                        cumulative_time = split["end_time_s"]
 
         # Set default DB path
         if db_path is None:
@@ -118,42 +320,11 @@ def insert_splits(
         # Delete existing splits for this activity (for re-insertion)
         conn.execute("DELETE FROM splits WHERE activity_id = ?", [activity_id])
 
-        # Calculate cumulative time for each split
-        cumulative_time = 0
-
         # Insert each split
         for split in split_metrics:
             split_number = split.get("split_number")
             if split_number is None:
                 continue
-
-            # Format pace string
-            pace_seconds = split.get("avg_pace_seconds_per_km")
-            if pace_seconds and pace_seconds > 0:
-                minutes = int(pace_seconds // 60)
-                seconds = int(pace_seconds % 60)
-                pace_str = f"{minutes}:{seconds:02d}"
-            else:
-                pace_str = None
-
-            # Get time range data from raw splits.json (if available)
-            lap_dto = lap_dto_map.get(split_number)
-            duration_seconds = None
-            start_time_gmt = None
-            intensity_type = None
-
-            if lap_dto:
-                duration_seconds = lap_dto.get("duration")
-                start_time_gmt = lap_dto.get("startTimeGMT")
-                intensity_type = lap_dto.get("intensityType")
-
-            # Calculate start_time_s and end_time_s
-            start_time_s = cumulative_time
-            if duration_seconds:
-                end_time_s = cumulative_time + round(duration_seconds)
-                cumulative_time = end_time_s
-            else:
-                end_time_s = None
 
             conn.execute(
                 """
@@ -170,14 +341,15 @@ def insert_splits(
                     activity_id,
                     split_number,
                     split.get("distance_km"),
-                    duration_seconds,
-                    start_time_gmt,
-                    start_time_s,
-                    end_time_s,
-                    intensity_type,
+                    split.get("duration_seconds"),
+                    split.get("start_time_gmt"),
+                    split.get("start_time_s"),
+                    split.get("end_time_s"),
+                    split.get("intensity_type"),
                     split.get("role_phase"),
-                    pace_str,
-                    pace_seconds,
+                    split.get("pace_str"),
+                    split.get("pace_seconds_per_km")
+                    or split.get("avg_pace_seconds_per_km"),
                     split.get("avg_heart_rate"),
                     split.get("avg_cadence"),
                     split.get("avg_power"),

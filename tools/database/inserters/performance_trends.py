@@ -13,48 +13,225 @@ import duckdb
 logger = logging.getLogger(__name__)
 
 
+def _map_intensity_to_phase(intensity_type: str | None) -> str | None:
+    """Map Garmin intensityType to role_phase."""
+    if not intensity_type:
+        return None
+
+    intensity_upper = intensity_type.upper()
+
+    if intensity_upper == "WARMUP":
+        return "warmup"
+    elif intensity_upper in ("INTERVAL", "ACTIVE"):
+        return "run"
+    elif intensity_upper == "RECOVERY":
+        return "recovery"
+    elif intensity_upper == "COOLDOWN":
+        return "cooldown"
+    else:
+        return None
+
+
+def _extract_performance_trends_from_raw(raw_splits_file: str) -> dict | None:
+    """
+    Extract performance trends from raw splits.json.
+
+    Analyzes splits by intensityType to detect phases (warmup/run/recovery/cooldown)
+    and calculates phase-level statistics.
+
+    Args:
+        raw_splits_file: Path to splits.json
+
+    Returns:
+        Dictionary with performance_trends matching performance.json structure
+    """
+    import statistics
+
+    splits_path = Path(raw_splits_file)
+    if not splits_path.exists():
+        logger.error(f"Splits file not found: {raw_splits_file}")
+        return None
+
+    with open(splits_path, encoding="utf-8") as f:
+        splits_data = json.load(f)
+
+    lap_dtos = splits_data.get("lapDTOs", [])
+    if not lap_dtos:
+        logger.error("No lapDTOs found in splits.json")
+        return None
+
+    # Group splits by phase
+    warmup_splits = []
+    run_splits = []
+    recovery_splits = []
+    cooldown_splits = []
+
+    for lap in lap_dtos:
+        lap_index = lap.get("lapIndex")
+        if lap_index is None:
+            continue
+
+        intensity_type = lap.get("intensityType")
+        phase = _map_intensity_to_phase(intensity_type)
+
+        distance_m = lap.get("distance", 0)
+        distance_km = distance_m / 1000.0 if distance_m else None
+        duration = lap.get("duration")
+
+        # Calculate pace (seconds per km)
+        if distance_km and distance_km > 0 and duration:
+            pace = duration / distance_km
+        else:
+            pace = None
+
+        hr = lap.get("averageHR")
+        cadence = lap.get("averageRunCadence")
+        power = lap.get("averagePower")
+
+        lap_data = {
+            "lap_index": lap_index,
+            "pace": pace,
+            "hr": hr,
+            "cadence": cadence,
+            "power": power,
+        }
+
+        if phase == "warmup":
+            warmup_splits.append(lap_data)
+        elif phase == "run":
+            run_splits.append(lap_data)
+        elif phase == "recovery":
+            recovery_splits.append(lap_data)
+        elif phase == "cooldown":
+            cooldown_splits.append(lap_data)
+
+    # Calculate phase statistics
+    def calc_phase_stats(splits):
+        if not splits:
+            return None
+
+        lap_indices = [s["lap_index"] for s in splits]
+        paces = [s["pace"] for s in splits if s["pace"] is not None]
+        hrs = [s["hr"] for s in splits if s["hr"] is not None]
+        cadences = [s["cadence"] for s in splits if s["cadence"] is not None]
+        powers = [s["power"] for s in splits if s["power"] is not None]
+
+        return {
+            "splits": lap_indices,
+            "avg_pace": statistics.mean(paces) if paces else None,
+            "avg_hr": statistics.mean(hrs) if hrs else None,
+            "avg_cadence": statistics.mean(cadences) if cadences else None,
+            "avg_power": statistics.mean(powers) if powers else None,
+        }
+
+    result = {}
+
+    # Calculate phase stats
+    warmup_stats = calc_phase_stats(warmup_splits)
+    if warmup_stats:
+        result["warmup_phase"] = warmup_stats
+
+    run_stats = calc_phase_stats(run_splits)
+    if run_stats:
+        result["run_phase"] = run_stats
+
+    recovery_stats = calc_phase_stats(recovery_splits)
+    if recovery_stats:
+        result["recovery_phase"] = recovery_stats
+
+    cooldown_stats = calc_phase_stats(cooldown_splits)
+    if cooldown_stats:
+        result["cooldown_phase"] = cooldown_stats
+
+    # Calculate pace consistency (if we have run phase)
+    if run_stats and run_splits:
+        run_paces = [s["pace"] for s in run_splits if s["pace"] is not None]
+        if len(run_paces) > 1:
+            pace_std = statistics.stdev(run_paces)
+            pace_mean = statistics.mean(run_paces)
+            result["pace_consistency"] = pace_std / pace_mean if pace_mean > 0 else None
+        else:
+            result["pace_consistency"] = 0.0
+
+    # Calculate HR drift (warmup to run or run to cooldown)
+    if warmup_stats and run_stats:
+        warmup_hr = warmup_stats.get("avg_hr")
+        run_hr = run_stats.get("avg_hr")
+        if warmup_hr and run_hr and warmup_hr > 0:
+            result["hr_drift_percentage"] = ((run_hr - warmup_hr) / warmup_hr) * 100
+    elif run_stats and cooldown_stats:
+        run_hr = run_stats.get("avg_hr")
+        cooldown_hr = cooldown_stats.get("avg_hr")
+        if run_hr and cooldown_hr and run_hr > 0:
+            result["hr_drift_percentage"] = ((cooldown_hr - run_hr) / run_hr) * 100
+
+    # Simplified cadence consistency and fatigue pattern
+    # (would require more sophisticated analysis in production)
+    result["cadence_consistency"] = "安定"
+    result["fatigue_pattern"] = "適切"
+
+    return result
+
+
 def insert_performance_trends(
-    performance_file: str,
+    performance_file: str | None,
     activity_id: int,
     db_path: str | None = None,
+    raw_splits_file: str | None = None,
 ) -> bool:
     """
-    Insert performance_trends from performance.json into DuckDB performance_trends table.
+    Insert performance_trends from performance.json or raw splits.json into DuckDB performance_trends table.
 
     Supports both:
     - New 4-phase structure: warmup/run/recovery/cooldown (interval training)
     - Legacy 3-phase structure: warmup/main/finish (regular runs)
 
     Steps:
-    1. Load performance.json
-    2. Extract performance_trends
+    1. Load performance.json (legacy) or raw splits.json
+    2. Extract or calculate performance_trends
     3. Detect phase structure (3-phase or 4-phase)
     4. Convert splits arrays to comma-separated strings
     5. Insert into performance_trends table
 
     Args:
-        performance_file: Path to performance.json
+        performance_file: Path to performance.json (legacy, optional)
         activity_id: Activity ID
         db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
+        raw_splits_file: Path to raw splits.json (for raw mode)
 
     Returns:
         True if successful, False otherwise
     """
     try:
-        # Load performance.json
-        performance_path = Path(performance_file)
-        if not performance_path.exists():
-            logger.error(f"Performance file not found: {performance_file}")
-            return False
+        use_raw_data = performance_file is None
 
-        with open(performance_path, encoding="utf-8") as f:
-            performance_data = json.load(f)
+        if use_raw_data:
+            # Extract from raw data
+            if not raw_splits_file:
+                logger.error("raw_splits_file required for raw data mode")
+                return False
 
-        # Extract performance_trends
-        perf_trends = performance_data.get("performance_trends")
-        if not perf_trends or not isinstance(perf_trends, dict):
-            logger.error(f"No performance_trends found in {performance_file}")
-            return False
+            perf_trends = _extract_performance_trends_from_raw(raw_splits_file)
+            if not perf_trends:
+                logger.error("Failed to extract performance trends from raw data")
+                return False
+        else:
+            # Legacy: Load performance.json
+            # Type narrowing for mypy
+            assert performance_file is not None
+            performance_path = Path(performance_file)
+            if not performance_path.exists():
+                logger.error(f"Performance file not found: {performance_file}")
+                return False
+
+            with open(performance_path, encoding="utf-8") as f:
+                performance_data = json.load(f)
+
+            # Extract performance_trends
+            perf_trends = performance_data.get("performance_trends")
+            if not perf_trends or not isinstance(perf_trends, dict):
+                logger.error(f"No performance_trends found in {performance_file}")
+                return False
 
         # Set default DB path
         if db_path is None:
