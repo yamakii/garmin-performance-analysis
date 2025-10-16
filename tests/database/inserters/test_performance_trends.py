@@ -16,51 +16,15 @@ from tools.database.inserters.performance_trends import insert_performance_trend
 class TestPerformanceTrendsInserter:
     """Test suite for Performance Trends Inserter."""
 
-    @pytest.fixture
-    def sample_performance_file(self, tmp_path):
-        """Create sample performance.json file with performance_trends."""
-        performance_data = {
-            "basic_metrics": {
-                "distance_km": 22.0,
-            },
-            "performance_trends": {
-                "warmup_phase": {
-                    "splits": [1, 2, 3, 4],
-                    "avg_pace": 406.67,
-                    "avg_hr": 144.5,
-                },
-                "main_phase": {
-                    "splits": [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
-                    "avg_pace": 469.23,
-                    "avg_hr": 151.77,
-                },
-                "finish_phase": {
-                    "splits": [18, 19, 20, 21, 22],
-                    "avg_pace": 529.69,
-                    "avg_hr": 141.2,
-                },
-                "pace_consistency": 0.086,
-                "hr_drift_percentage": -2.28,
-                "cadence_consistency": "高い安定性",
-                "fatigue_pattern": "適切な疲労管理",
-            },
-        }
-
-        performance_file = tmp_path / "20615445009.json"
-        with open(performance_file, "w", encoding="utf-8") as f:
-            json.dump(performance_data, f, ensure_ascii=False, indent=2)
-
-        return performance_file
-
     @pytest.mark.unit
-    def test_insert_performance_trends_success(self, sample_performance_file, tmp_path):
+    def test_insert_performance_trends_success(self, sample_raw_splits_file, tmp_path):
         """Test insert_performance_trends inserts data successfully."""
         db_path = tmp_path / "test.duckdb"
 
         result = insert_performance_trends(
-            performance_file=str(sample_performance_file),
-            activity_id=20615445009,
+            activity_id=20636804823,
             db_path=str(db_path),
+            raw_splits_file=str(sample_raw_splits_file),
         )
 
         assert result is True
@@ -72,9 +36,9 @@ class TestPerformanceTrendsInserter:
         db_path = tmp_path / "test.duckdb"
 
         result = insert_performance_trends(
-            performance_file="/nonexistent/file.json",
             activity_id=12345,
             db_path=str(db_path),
+            raw_splits_file="/nonexistent/splits.json",
         )
 
         assert result is False
@@ -90,7 +54,6 @@ class TestPerformanceTrendsInserter:
         db_path = tmp_path / "test.duckdb"
 
         result = insert_performance_trends(
-            performance_file=str(performance_file),
             activity_id=12345,
             db_path=str(db_path),
         )
@@ -107,7 +70,6 @@ class TestPerformanceTrendsInserter:
         db_path = tmp_path / "test.duckdb"
 
         result = insert_performance_trends(
-            performance_file=str(sample_performance_file),
             activity_id=20615445009,
             db_path=str(db_path),
         )
@@ -141,48 +103,6 @@ class TestPerformanceTrendsInserter:
 
         conn.close()
 
-    @pytest.fixture
-    def sample_4phase_performance_file(self, tmp_path):
-        """Create sample performance.json with 4-phase structure (interval training)."""
-        performance_data = {
-            "basic_metrics": {
-                "distance_km": 7.0,
-                "duration_seconds": 2700,
-            },
-            "performance_trends": {
-                "warmup_phase": {
-                    "splits": [1, 2],
-                    "avg_pace": 390.0,
-                    "avg_hr": 130.0,
-                },
-                "run_phase": {
-                    "splits": [3, 5, 7],
-                    "avg_pace": 280.0,
-                    "avg_hr": 155.0,
-                },
-                "recovery_phase": {
-                    "splits": [4, 6],
-                    "avg_pace": 600.0,
-                    "avg_hr": 145.0,
-                },
-                "cooldown_phase": {
-                    "splits": [8, 9],
-                    "avg_pace": 420.0,
-                    "avg_hr": 135.0,
-                },
-                "pace_consistency": 0.02,
-                "hr_drift_percentage": 1.5,
-                "cadence_consistency": "高い安定性",
-                "fatigue_pattern": "適切な疲労管理",
-            },
-        }
-
-        performance_file = tmp_path / "interval_activity.json"
-        with open(performance_file, "w", encoding="utf-8") as f:
-            json.dump(performance_data, f, ensure_ascii=False, indent=2)
-
-        return performance_file
-
     @pytest.mark.integration
     def test_insert_4phase_performance_trends(
         self, sample_4phase_performance_file, tmp_path
@@ -193,7 +113,6 @@ class TestPerformanceTrendsInserter:
         db_path = tmp_path / "test.duckdb"
 
         result = insert_performance_trends(
-            performance_file=str(sample_4phase_performance_file),
             activity_id=20615445009,
             db_path=str(db_path),
         )
@@ -320,7 +239,6 @@ class TestPerformanceTrendsInserter:
         db_path = tmp_path / "test.duckdb"
 
         result = insert_performance_trends(
-            performance_file=None,
             activity_id=20636804823,
             db_path=str(db_path),
             raw_splits_file=str(sample_raw_splits_file),
@@ -339,7 +257,6 @@ class TestPerformanceTrendsInserter:
         db_path = tmp_path / "test.duckdb"
 
         result = insert_performance_trends(
-            performance_file=None,
             activity_id=20636804823,
             db_path=str(db_path),
             raw_splits_file=str(sample_raw_splits_file),
@@ -396,7 +313,6 @@ class TestPerformanceTrendsInserter:
         db_path = tmp_path / "test.duckdb"
 
         result = insert_performance_trends(
-            performance_file=None,
             activity_id=12345,
             db_path=str(db_path),
             raw_splits_file="/nonexistent/splits.json",

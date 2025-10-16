@@ -1183,7 +1183,6 @@ class GarminIngestWorker:
             )
 
             perf_trends_success = insert_performance_trends(
-                performance_file=None,  # Use raw data mode
                 activity_id=activity_id,
                 db_path=self._db_path,
                 raw_splits_file=str(raw_splits_file) if raw_splits_file else None,
