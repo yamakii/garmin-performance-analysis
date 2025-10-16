@@ -572,7 +572,6 @@ class TestGetSplitsAll:
         from tools.database.inserters.splits import insert_splits
 
         insert_splits(
-            performance_file=str(performance_file),
             activity_id=test_activity_id,
             db_path=str(db_path),
         )

@@ -62,7 +62,7 @@ class TestPerformanceTrendsInserter:
 
     @pytest.mark.integration
     def test_insert_performance_trends_db_integration(
-        self, sample_performance_file, tmp_path
+        self, sample_raw_splits_file, tmp_path
     ):
         """Test insert_performance_trends actually writes to DuckDB."""
         import duckdb
@@ -70,8 +70,9 @@ class TestPerformanceTrendsInserter:
         db_path = tmp_path / "test.duckdb"
 
         result = insert_performance_trends(
-            activity_id=20615445009,
+            activity_id=20636804823,
             db_path=str(db_path),
+            raw_splits_file=str(sample_raw_splits_file),
         )
 
         assert result is True
@@ -105,7 +106,7 @@ class TestPerformanceTrendsInserter:
 
     @pytest.mark.integration
     def test_insert_4phase_performance_trends(
-        self, sample_4phase_performance_file, tmp_path
+        self, sample_raw_4phase_splits_file, tmp_path
     ):
         """Test insert_performance_trends writes 4-phase interval training data correctly."""
         import duckdb
@@ -113,8 +114,9 @@ class TestPerformanceTrendsInserter:
         db_path = tmp_path / "test.duckdb"
 
         result = insert_performance_trends(
-            activity_id=20615445009,
+            activity_id=20636804823,
             db_path=str(db_path),
+            raw_splits_file=str(sample_raw_4phase_splits_file),
         )
 
         assert result is True

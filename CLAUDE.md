@@ -102,7 +102,6 @@ Raw Data (API) → DuckDB (Direct Insertion) → Analysis → Reports
 **Token Optimization Strategy:**
 - Use `statistics_only=True` for trend analysis and overview queries
 - Use full data mode only when individual split details are needed
-- Use deprecated functions only for backward compatibility (will be removed in future)
 
 **Function Categories:**
 
@@ -320,7 +319,7 @@ uv run pytest -m performance     # Performance only
 - ❌ NEVER: `splits.json` temperature (device temperature, +5-8°C body heat)
 
 **Elevation:**
-- Source: `lapDTOs` → `create_parquet_dataset()` → DuckDB
+- Source: `lapDTOs` → DuckDB (via inserters)
 - Classification: 平坦/起伏/丘陵/山岳
 
 ## Project Management
