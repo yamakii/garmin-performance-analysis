@@ -1032,14 +1032,16 @@ class GarminIngestWorker:
         # Phase 4: Table filtering implemented via _should_insert_table()
         # All tables (including activities) respect the tables parameter
 
+        # Determine raw data file paths (needed for all tables)
+        activity_dir = self.raw_dir / "activity" / str(activity_id)
+
         # STEP 1: Insert activities (parent table) - conditionally insert
         # Note: activities uses DELETE-then-INSERT (UPSERT), so only insert if requested
         # to avoid foreign key violations when child tables exist
         if self._should_insert_table("activities", tables):
             from tools.database.inserters.activities import insert_activities
 
-            # Determine raw data file paths
-            activity_dir = self.raw_dir / "activity" / str(activity_id)
+            # Determine activities-specific file paths
             raw_activity_file: Path | None = activity_dir / "activity.json"
             raw_weather_file: Path | None = activity_dir / "weather.json"
             raw_gear_file: Path | None = activity_dir / "gear.json"
