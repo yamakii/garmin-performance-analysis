@@ -2,6 +2,7 @@
 Unit tests for DuckDB regeneration script.
 
 Tests for table filtering, validation, and selective deletion features.
+Phase 1: Core Infrastructure (Table Filtering & Validation)
 """
 
 import pytest
@@ -34,28 +35,27 @@ class TestFilterTables:
         assert result == expected
         assert len(result) == 11
 
-    def test_filter_tables_single_table_adds_activities(self):
-        """Test that single table automatically adds activities table."""
+    def test_filter_tables_single_table_no_auto_add(self):
+        """Test that single table does NOT automatically add activities table."""
         regenerator = DuckDBRegenerator()
 
         result = regenerator.filter_tables(["splits"])
 
-        assert "activities" in result
-        assert "splits" in result
-        assert len(result) == 2
-        assert result == ["activities", "splits"]
+        # Phase 1 change: NO auto-add activities
+        assert result == ["splits"]
+        assert "activities" not in result
+        assert len(result) == 1
 
-    def test_filter_tables_multiple_tables_adds_activities(self):
-        """Test that multiple tables automatically add activities table."""
+    def test_filter_tables_multiple_tables_no_auto_add(self):
+        """Test that multiple tables do NOT automatically add activities table."""
         regenerator = DuckDBRegenerator()
 
         result = regenerator.filter_tables(["splits", "form_efficiency"])
 
-        assert "activities" in result
-        assert "splits" in result
-        assert "form_efficiency" in result
-        assert len(result) == 3
-        assert result == ["activities", "splits", "form_efficiency"]
+        # Phase 1 change: NO auto-add activities
+        assert result == ["splits", "form_efficiency"]
+        assert "activities" not in result
+        assert len(result) == 2
 
     def test_filter_tables_body_composition_only_no_activities(self):
         """Test that body_composition alone does NOT add activities table."""
@@ -89,14 +89,15 @@ class TestFilterTables:
         assert "invalid_table" in str(exc_info.value)
         assert "wrong_table" in str(exc_info.value)
 
-    def test_filter_tables_already_includes_activities(self):
-        """Test that activities is not duplicated if already in list."""
+    def test_filter_tables_with_activities_explicit(self):
+        """Test that activities can be explicitly included without duplication."""
         regenerator = DuckDBRegenerator()
 
         result = regenerator.filter_tables(["activities", "splits"])
 
+        # Should preserve order and not duplicate
+        assert result == ["activities", "splits"]
         assert result.count("activities") == 1
-        assert "splits" in result
         assert len(result) == 2
 
 
@@ -109,14 +110,19 @@ class TestValidateArguments:
             DuckDBRegenerator(delete_old_db=True, tables=["splits"])
 
         assert "--delete-db cannot be used with --tables" in str(exc_info.value)
-        assert "Use --force to delete existing records" in str(exc_info.value)
+        # Phase 1 change: No mention of --force
+        assert "Database file deletion is only allowed for full regeneration" in str(
+            exc_info.value
+        )
 
-    def test_init_with_force_without_tables_raises_error(self):
-        """Test that --force requires --tables."""
-        with pytest.raises(ValueError) as exc_info:
-            DuckDBRegenerator(force=True, tables=None)
+    def test_init_without_force_parameter(self):
+        """Test that __init__ works without force parameter (Phase 1)."""
+        # Phase 1: force parameter removed
+        regenerator = DuckDBRegenerator(tables=["splits"])
 
-        assert "--force requires --tables" in str(exc_info.value)
+        # Should not have force attribute
+        assert not hasattr(regenerator, "force")
+        assert regenerator.tables == ["splits"]
 
     def test_init_with_delete_db_no_tables_succeeds(self):
         """Test that --delete-db alone is valid (full regeneration)."""
@@ -125,23 +131,14 @@ class TestValidateArguments:
         assert regenerator.delete_old_db is True
         assert regenerator.tables is None
 
-    def test_init_with_tables_and_force_succeeds(self):
-        """Test that --tables and --force together is valid."""
-        # Should not raise
-        regenerator = DuckDBRegenerator(tables=["splits"], force=True)
+    def test_init_with_tables_succeeds(self):
+        """Test that --tables alone is valid (Phase 1)."""
+        # Phase 1: force parameter removed
+        regenerator = DuckDBRegenerator(tables=["splits"])
+
         assert regenerator.tables == ["splits"]
-        assert regenerator.force is True
-
-    def test_init_with_tables_no_force_succeeds(self):
-        """Test that --tables alone is valid."""
-        # Should not raise
-        regenerator = DuckDBRegenerator(tables=["splits"], force=False)
-        assert regenerator.tables == ["splits"]
-        assert regenerator.force is False
-
-
-class TestTablesParameter:
-    """Test that tables parameter is stored correctly."""
+        # force parameter no longer exists
+        assert not hasattr(regenerator, "force")
 
     def test_init_stores_tables_parameter(self):
         """Test that tables parameter is stored in instance."""
@@ -149,18 +146,6 @@ class TestTablesParameter:
         regenerator = DuckDBRegenerator(tables=tables)
 
         assert regenerator.tables == tables
-
-    def test_init_stores_force_parameter(self):
-        """Test that force parameter is stored in instance."""
-        regenerator = DuckDBRegenerator(tables=["splits"], force=True)
-
-        assert regenerator.force is True
-
-    def test_init_default_force_is_false(self):
-        """Test that force defaults to False."""
-        regenerator = DuckDBRegenerator(tables=["splits"])
-
-        assert regenerator.force is False
 
     def test_init_default_tables_is_none(self):
         """Test that tables defaults to None (all tables)."""
@@ -170,117 +155,297 @@ class TestTablesParameter:
 
 
 class TestDeleteActivityRecords:
-    """Test delete_activity_records method for selective deletion."""
+    """Test delete_activity_records method (Phase 2: Deletion Logic Fix)."""
 
-    def test_delete_activity_records_single_table(self):
-        """Test deletion from a single table with single activity."""
-        from unittest.mock import MagicMock, patch
-
-        # Arrange
-        regenerator = DuckDBRegenerator(tables=["splits"], force=True)
-        activity_ids = [12345]
-
-        # Mock DuckDB connection with context manager support
-        mock_cursor = MagicMock()
-        mock_conn = MagicMock()
+    def test_delete_activity_records_includes_activities(self, tmp_path, mocker):
+        """Test that activities table is NOT skipped in delete_activity_records."""
+        # Create mock DuckDB connection (context manager support)
+        mock_conn = mocker.MagicMock()
+        mock_cursor = mocker.MagicMock()
         mock_conn.cursor.return_value = mock_cursor
-        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
-        mock_conn.__exit__ = MagicMock(return_value=None)
-
-        with patch("duckdb.connect", return_value=mock_conn):
-            # Act
-            regenerator.delete_activity_records(activity_ids)
-
-            # Assert
-            # Verify DELETE was called once for splits table
-            calls = mock_cursor.execute.call_args_list
-            assert len(calls) == 1
-            sql, params = calls[0][0]
-            assert "DELETE FROM splits" in sql
-            assert "WHERE activity_id IN" in sql
-            assert params == (12345,)
-
-    def test_delete_activity_records_multiple_tables(self):
-        """Test deletion from multiple tables with single activity."""
-        from unittest.mock import MagicMock, patch
-
-        # Arrange
-        regenerator = DuckDBRegenerator(
-            tables=["splits", "form_efficiency"], force=True
+        mock_conn.__enter__ = mocker.MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = mocker.MagicMock(return_value=False)
+        mocker.patch(
+            "tools.scripts.regenerate_duckdb.duckdb.connect", return_value=mock_conn
         )
-        activity_ids = [12345]
 
-        # Mock DuckDB connection with context manager support
-        mock_cursor = MagicMock()
-        mock_conn = MagicMock()
-        mock_conn.cursor.return_value = mock_cursor
-        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
-        mock_conn.__exit__ = MagicMock(return_value=None)
+        # Create regenerator with activities in tables
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(
+            db_path=db_path, tables=["activities", "splits"]
+        )
 
-        with patch("duckdb.connect", return_value=mock_conn):
-            # Act
-            regenerator.delete_activity_records(activity_ids)
+        # Call delete_activity_records
+        regenerator.delete_activity_records([12345, 67890])
 
-            # Assert
-            # Verify DELETE was called for both tables
-            calls = mock_cursor.execute.call_args_list
-            assert len(calls) == 2
+        # Phase 5: Verify activities table was NOT skipped (uses conn.execute not cursor)
+        execute_calls = mock_conn.execute.call_args_list
+        executed_sqls = [call[0][0] for call in execute_calls]
 
-            # Check first call (splits)
-            sql1, params1 = calls[0][0]
-            assert "DELETE FROM splits" in sql1
-            assert params1 == (12345,)
+        # Should have DELETE for both activities and splits
+        activities_deletes = [
+            sql for sql in executed_sqls if "DELETE FROM activities" in sql
+        ]
+        splits_deletes = [sql for sql in executed_sqls if "DELETE FROM splits" in sql]
 
-            # Check second call (form_efficiency)
-            sql2, params2 = calls[1][0]
-            assert "DELETE FROM form_efficiency" in sql2
-            assert params2 == (12345,)
+        assert len(activities_deletes) == 1, "activities table should be deleted"
+        assert len(splits_deletes) == 1, "splits table should be deleted"
 
-    def test_delete_activity_records_skip_body_composition(self):
-        """Test that body_composition table deletion is skipped (no activity_id)."""
-        from unittest.mock import MagicMock, patch
+    def test_delete_activity_records_skips_body_composition(self, tmp_path, mocker):
+        """Test that body_composition is skipped (no activity_id column)."""
+        mock_conn = mocker.MagicMock()
+        mock_conn.__enter__ = mocker.MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = mocker.MagicMock(return_value=False)
+        mocker.patch(
+            "tools.scripts.regenerate_duckdb.duckdb.connect", return_value=mock_conn
+        )
 
-        # Arrange
-        regenerator = DuckDBRegenerator(tables=["body_composition"], force=True)
-        activity_ids = [12345]
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(
+            db_path=db_path, tables=["body_composition", "splits"]
+        )
 
-        # Mock DuckDB connection
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_conn.cursor.return_value = mock_cursor
+        regenerator.delete_activity_records([12345])
 
-        with patch("duckdb.connect", return_value=mock_conn):
-            # Act
-            regenerator.delete_activity_records(activity_ids)
+        execute_calls = mock_conn.execute.call_args_list
+        executed_sqls = [call[0][0] for call in execute_calls]
 
-            # Assert
-            # Verify NO DELETE was called (body_composition has no activity_id)
-            mock_cursor.execute.assert_not_called()
+        # Should NOT have DELETE for body_composition
+        body_comp_deletes = [
+            sql for sql in executed_sqls if "DELETE FROM body_composition" in sql
+        ]
+        assert len(body_comp_deletes) == 0, "body_composition should be skipped"
 
-    def test_delete_activity_records_multiple_activities(self):
-        """Test deletion with multiple activities."""
-        from unittest.mock import MagicMock, patch
+        # Should have DELETE for splits (Phase 5: within transaction)
+        splits_deletes = [sql for sql in executed_sqls if "DELETE FROM splits" in sql]
+        assert len(splits_deletes) == 1, "splits table should be deleted"
 
-        # Arrange
-        regenerator = DuckDBRegenerator(tables=["splits"], force=True)
-        activity_ids = [12345, 67890]
+        # Phase 5: Should have BEGIN and COMMIT for transaction
+        assert any(
+            "BEGIN TRANSACTION" in sql for sql in executed_sqls
+        ), "Should start transaction"
+        assert any(
+            "COMMIT" in sql for sql in executed_sqls
+        ), "Should commit transaction"
 
-        # Mock DuckDB connection with context manager support
-        mock_cursor = MagicMock()
-        mock_conn = MagicMock()
-        mock_conn.cursor.return_value = mock_cursor
-        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
-        mock_conn.__exit__ = MagicMock(return_value=None)
 
-        with patch("duckdb.connect", return_value=mock_conn):
-            # Act
-            regenerator.delete_activity_records(activity_ids)
+class TestDeleteTableAllRecords:
+    """Test delete_table_all_records method (Phase 2: Table-Wide Deletion)."""
 
-            # Assert
-            calls = mock_cursor.execute.call_args_list
-            assert len(calls) == 1
-            sql, params = calls[0][0]
-            assert "DELETE FROM splits" in sql
-            assert "WHERE activity_id IN" in sql
-            # Should handle multiple IDs
-            assert params == (12345, 67890)
+    def test_delete_table_all_records_deletes_entire_table(self, tmp_path, mocker):
+        """Test that delete_table_all_records deletes all records from table."""
+        mock_conn = mocker.MagicMock()
+        mock_conn.__enter__ = mocker.MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = mocker.MagicMock(return_value=False)
+        mocker.patch(
+            "tools.scripts.regenerate_duckdb.duckdb.connect", return_value=mock_conn
+        )
+
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(db_path=db_path, tables=["splits"])
+
+        # Call delete_table_all_records
+        regenerator.delete_table_all_records(["splits"])
+
+        # Verify DELETE without WHERE clause
+        execute_calls = mock_conn.execute.call_args_list
+        executed_sqls = [call[0][0] for call in execute_calls]
+
+        # Should have "DELETE FROM splits" without WHERE clause
+        assert any("DELETE FROM splits" in sql for sql in executed_sqls)
+        # Should NOT have WHERE clause
+        splits_deletes = [sql for sql in executed_sqls if "DELETE FROM splits" in sql]
+        assert len(splits_deletes) == 1
+        assert "WHERE" not in splits_deletes[0], "Should not have WHERE clause"
+
+    def test_delete_table_all_records_skips_body_composition(self, tmp_path, mocker):
+        """Test that body_composition is skipped in table-wide deletion."""
+        mock_conn = mocker.MagicMock()
+        mock_conn.__enter__ = mocker.MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = mocker.MagicMock(return_value=False)
+        mocker.patch(
+            "tools.scripts.regenerate_duckdb.duckdb.connect", return_value=mock_conn
+        )
+
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(
+            db_path=db_path, tables=["body_composition", "splits"]
+        )
+
+        regenerator.delete_table_all_records(["body_composition", "splits"])
+
+        execute_calls = mock_conn.execute.call_args_list
+        executed_sqls = [call[0][0] for call in execute_calls]
+
+        # Should NOT have DELETE for body_composition
+        body_comp_deletes = [sql for sql in executed_sqls if "body_composition" in sql]
+        assert len(body_comp_deletes) == 0, "body_composition should be skipped"
+
+        # Should have DELETE for splits
+        splits_deletes = [sql for sql in executed_sqls if "DELETE FROM splits" in sql]
+        assert len(splits_deletes) == 1
+
+    def test_delete_table_all_records_multiple_tables(self, tmp_path, mocker):
+        """Test that delete_table_all_records handles multiple tables."""
+        mock_conn = mocker.MagicMock()
+        mock_conn.__enter__ = mocker.MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = mocker.MagicMock(return_value=False)
+        mocker.patch(
+            "tools.scripts.regenerate_duckdb.duckdb.connect", return_value=mock_conn
+        )
+
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(
+            db_path=db_path, tables=["splits", "form_efficiency"]
+        )
+
+        regenerator.delete_table_all_records(["splits", "form_efficiency"])
+
+        execute_calls = mock_conn.execute.call_args_list
+        executed_sqls = [call[0][0] for call in execute_calls]
+
+        # Should have DELETE for both tables
+        splits_deletes = [sql for sql in executed_sqls if "DELETE FROM splits" in sql]
+        form_deletes = [
+            sql for sql in executed_sqls if "DELETE FROM form_efficiency" in sql
+        ]
+
+        assert len(splits_deletes) == 1
+        assert len(form_deletes) == 1
+
+    def test_delete_table_all_records_handles_missing_tables(self, tmp_path, mocker):
+        """Test that delete_table_all_records handles missing tables gracefully."""
+        # Setup mock connection
+        mock_conn = mocker.MagicMock()
+        mock_conn.__enter__ = mocker.MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = mocker.MagicMock(return_value=False)
+
+        # Mock execute to raise CatalogException for non_existent_table
+        def execute_side_effect(sql):
+            if "non_existent_table" in sql:
+                import duckdb
+
+                raise duckdb.CatalogException(
+                    "Catalog Error: Table with name non_existent_table does not exist!"
+                )
+            return None
+
+        mock_conn.execute = mocker.MagicMock(side_effect=execute_side_effect)
+
+        mocker.patch(
+            "tools.scripts.regenerate_duckdb.duckdb.connect", return_value=mock_conn
+        )
+
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(
+            db_path=db_path, tables=["splits", "non_existent_table"]
+        )
+
+        # Should not raise error, just log warnings
+        regenerator.delete_table_all_records(["splits", "non_existent_table"])
+
+        # Verify both tables were attempted
+        execute_calls = mock_conn.execute.call_args_list
+        executed_sqls = [call[0][0] for call in execute_calls]
+
+        # Should attempt DELETE for both tables
+        splits_deletes = [sql for sql in executed_sqls if "DELETE FROM splits" in sql]
+        non_existent_deletes = [
+            sql for sql in executed_sqls if "DELETE FROM non_existent_table" in sql
+        ]
+
+        assert len(splits_deletes) == 1, "Should attempt to delete from splits"
+        assert (
+            len(non_existent_deletes) == 1
+        ), "Should attempt to delete from non_existent_table"
+
+
+class TestRegenerateAllDeletionLogic:
+    """Test regenerate_all deletion strategy (Phase 2: Logic Fix)."""
+
+    def test_regenerate_all_uses_table_wide_deletion_without_activity_ids(
+        self, tmp_path, mocker
+    ):
+        """Test that regenerate_all uses delete_table_all_records when no activity_ids."""
+        # Mock delete methods
+        mock_delete_table_all = mocker.patch.object(
+            DuckDBRegenerator, "delete_table_all_records"
+        )
+        mock_delete_activity = mocker.patch.object(
+            DuckDBRegenerator, "delete_activity_records"
+        )
+
+        # Mock other methods - return at least one activity to reach deletion logic
+        mocker.patch.object(
+            DuckDBRegenerator,
+            "get_all_activities_from_raw",
+            return_value=[(12345, "2025-01-01")],
+        )
+        mocker.patch.object(
+            DuckDBRegenerator,
+            "regenerate_single_activity",
+            return_value={"status": "success"},
+        )
+
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(db_path=db_path, tables=["splits"])
+
+        # Call regenerate_all without activity_ids (table-wide mode)
+        regenerator.regenerate_all()
+
+        # Should use delete_table_all_records, NOT delete_activity_records
+        mock_delete_table_all.assert_called_once_with(["splits"])
+        mock_delete_activity.assert_not_called()
+
+    def test_regenerate_all_uses_id_specific_deletion_with_activity_ids(
+        self, tmp_path, mocker
+    ):
+        """Test that regenerate_all uses delete_activity_records when activity_ids provided."""
+        # Mock delete methods
+        mock_delete_table_all = mocker.patch.object(
+            DuckDBRegenerator, "delete_table_all_records"
+        )
+        mock_delete_activity = mocker.patch.object(
+            DuckDBRegenerator, "delete_activity_records"
+        )
+
+        # Mock regenerate_single_activity
+        mocker.patch.object(
+            DuckDBRegenerator,
+            "regenerate_single_activity",
+            return_value={"status": "success"},
+        )
+
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(db_path=db_path, tables=["splits"])
+
+        # Call regenerate_all with activity_ids (ID-specific mode)
+        regenerator.regenerate_all(activity_ids=[12345, 67890])
+
+        # Should use delete_activity_records, NOT delete_table_all_records
+        mock_delete_activity.assert_called_once_with([12345, 67890])
+        mock_delete_table_all.assert_not_called()
+
+    def test_regenerate_all_no_deletion_without_tables_filter(self, tmp_path, mocker):
+        """Test that no deletion occurs when tables=None (full regeneration)."""
+        mock_delete_table_all = mocker.patch.object(
+            DuckDBRegenerator, "delete_table_all_records"
+        )
+        mock_delete_activity = mocker.patch.object(
+            DuckDBRegenerator, "delete_activity_records"
+        )
+        mocker.patch.object(
+            DuckDBRegenerator, "get_all_activities_from_raw", return_value=[]
+        )
+
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(db_path=db_path, tables=None)
+
+        regenerator.regenerate_all()
+
+        # No deletion should occur without tables filter
+        mock_delete_table_all.assert_not_called()
+        mock_delete_activity.assert_not_called()
+
+
+# Phase 2 tests (deletion logic) will be added later

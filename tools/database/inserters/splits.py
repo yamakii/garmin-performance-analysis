@@ -8,6 +8,7 @@ for efficient querying and report generation.
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 import duckdb
 
@@ -180,6 +181,7 @@ def insert_splits(
     activity_id: int,
     db_path: str | None = None,
     raw_splits_file: str | None = None,
+    conn: Any | None = None,
 ) -> bool:
     """
     Insert split_metrics from raw splits.json into DuckDB splits table.
@@ -193,6 +195,7 @@ def insert_splits(
         activity_id: Activity ID
         db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
         raw_splits_file: Path to raw splits.json
+        conn: Optional DuckDB connection (for connection reuse, Phase 5 optimization)
 
     Returns:
         True if successful, False otherwise
@@ -214,92 +217,17 @@ def insert_splits(
 
             db_path = get_default_db_path()
 
-        # Connect to DuckDB
-        conn = duckdb.connect(str(db_path))
-
-        # Ensure splits table exists with new columns
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS splits (
-                activity_id BIGINT,
-                split_index INTEGER,
-                distance DOUBLE,
-                duration_seconds DOUBLE,
-                start_time_gmt VARCHAR,
-                start_time_s INTEGER,
-                end_time_s INTEGER,
-                intensity_type VARCHAR,
-                role_phase VARCHAR,
-                pace_str VARCHAR,
-                pace_seconds_per_km DOUBLE,
-                heart_rate INTEGER,
-                hr_zone VARCHAR,
-                cadence DOUBLE,
-                cadence_rating VARCHAR,
-                power DOUBLE,
-                power_efficiency VARCHAR,
-                stride_length DOUBLE,
-                ground_contact_time DOUBLE,
-                vertical_oscillation DOUBLE,
-                vertical_ratio DOUBLE,
-                elevation_gain DOUBLE,
-                elevation_loss DOUBLE,
-                terrain_type VARCHAR,
-                environmental_conditions VARCHAR,
-                wind_impact VARCHAR,
-                temp_impact VARCHAR,
-                environmental_impact VARCHAR,
-                PRIMARY KEY (activity_id, split_index)
-            )
-            """
-        )
-
-        # Delete existing splits for this activity (for re-insertion)
-        conn.execute("DELETE FROM splits WHERE activity_id = ?", [activity_id])
-
-        # Insert each split
-        for split in split_metrics:
-            split_number = split.get("split_number")
-            if split_number is None:
-                continue
-
-            conn.execute(
-                """
-                INSERT INTO splits (
-                    activity_id, split_index, distance,
-                    duration_seconds, start_time_gmt, start_time_s, end_time_s, intensity_type,
-                    role_phase, pace_str, pace_seconds_per_km,
-                    heart_rate, cadence, power, ground_contact_time,
-                    vertical_oscillation, vertical_ratio, elevation_gain,
-                    elevation_loss, terrain_type
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                [
-                    activity_id,
-                    split_number,
-                    split.get("distance_km"),
-                    split.get("duration_seconds"),
-                    split.get("start_time_gmt"),
-                    split.get("start_time_s"),
-                    split.get("end_time_s"),
-                    split.get("intensity_type"),
-                    split.get("role_phase"),
-                    split.get("pace_str"),
-                    split.get("pace_seconds_per_km")
-                    or split.get("avg_pace_seconds_per_km"),
-                    split.get("avg_heart_rate"),
-                    split.get("avg_cadence"),
-                    split.get("avg_power"),
-                    split.get("ground_contact_time_ms"),
-                    split.get("vertical_oscillation_cm"),
-                    split.get("vertical_ratio_percent"),
-                    split.get("elevation_gain_m"),
-                    split.get("elevation_loss_m"),
-                    split.get("terrain_type"),
-                ],
-            )
-
-        conn.close()
+        # Phase 5 optimization: Reuse connection if provided
+        if conn is not None:
+            # Use provided connection (no close needed)
+            _insert_splits_with_connection(conn, activity_id, split_metrics)
+        else:
+            # Open new connection (backward compatible)
+            connection = duckdb.connect(str(db_path))
+            try:
+                _insert_splits_with_connection(connection, activity_id, split_metrics)
+            finally:
+                connection.close()
 
         logger.info(
             f"Successfully inserted {len(split_metrics)} splits for activity {activity_id}"
@@ -309,3 +237,90 @@ def insert_splits(
     except Exception as e:
         logger.error(f"Error inserting splits: {e}")
         return False
+
+
+def _insert_splits_with_connection(
+    conn: Any, activity_id: int, split_metrics: list[dict]
+) -> None:
+    """Helper function to insert splits with a given connection."""
+    # Ensure splits table exists with new columns
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS splits (
+            activity_id BIGINT,
+            split_index INTEGER,
+            distance DOUBLE,
+            duration_seconds DOUBLE,
+            start_time_gmt VARCHAR,
+            start_time_s INTEGER,
+            end_time_s INTEGER,
+            intensity_type VARCHAR,
+            role_phase VARCHAR,
+            pace_str VARCHAR,
+            pace_seconds_per_km DOUBLE,
+            heart_rate INTEGER,
+            hr_zone VARCHAR,
+            cadence DOUBLE,
+            cadence_rating VARCHAR,
+            power DOUBLE,
+            power_efficiency VARCHAR,
+            stride_length DOUBLE,
+            ground_contact_time DOUBLE,
+            vertical_oscillation DOUBLE,
+            vertical_ratio DOUBLE,
+            elevation_gain DOUBLE,
+            elevation_loss DOUBLE,
+            terrain_type VARCHAR,
+            environmental_conditions VARCHAR,
+            wind_impact VARCHAR,
+            temp_impact VARCHAR,
+            environmental_impact VARCHAR,
+            PRIMARY KEY (activity_id, split_index)
+        )
+        """
+    )
+
+    # Delete existing splits for this activity (for re-insertion)
+    conn.execute("DELETE FROM splits WHERE activity_id = ?", [activity_id])
+
+    # Insert each split
+    for split in split_metrics:
+        split_number = split.get("split_number")
+        if split_number is None:
+            continue
+
+        conn.execute(
+            """
+            INSERT INTO splits (
+                activity_id, split_index, distance,
+                duration_seconds, start_time_gmt, start_time_s, end_time_s, intensity_type,
+                role_phase, pace_str, pace_seconds_per_km,
+                heart_rate, cadence, power, ground_contact_time,
+                vertical_oscillation, vertical_ratio, elevation_gain,
+                elevation_loss, terrain_type
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                activity_id,
+                split_number,
+                split.get("distance_km"),
+                split.get("duration_seconds"),
+                split.get("start_time_gmt"),
+                split.get("start_time_s"),
+                split.get("end_time_s"),
+                split.get("intensity_type"),
+                split.get("role_phase"),
+                split.get("pace_str"),
+                split.get("pace_seconds_per_km")
+                or split.get("avg_pace_seconds_per_km"),
+                split.get("avg_heart_rate"),
+                split.get("avg_cadence"),
+                split.get("avg_power"),
+                split.get("ground_contact_time_ms"),
+                split.get("vertical_oscillation_cm"),
+                split.get("vertical_ratio_percent"),
+                split.get("elevation_gain_m"),
+                split.get("elevation_loss_m"),
+                split.get("terrain_type"),
+            ],
+        )
