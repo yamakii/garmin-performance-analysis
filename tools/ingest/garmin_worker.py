@@ -27,7 +27,7 @@ def convert_numpy_types(obj: Any) -> Any:
     """
     Convert numpy types to Python native types for JSON serialization.
 
-    Preserves NaN for compatibility with existing data.
+    NaN values are converted to None (null in JSON) to comply with JSON spec.
 
     Args:
         obj: Object to convert (can be dict, list, numpy type, etc.)
@@ -42,7 +42,9 @@ def convert_numpy_types(obj: Any) -> Any:
     elif isinstance(obj, np.integer):
         return int(obj)
     elif isinstance(obj, np.floating):
-        # Preserve NaN as float('nan') for compatibility
+        # Convert NaN to None (null in JSON) - JSON spec doesn't allow NaN literals
+        if np.isnan(obj):
+            return None
         return float(obj)
     elif isinstance(obj, np.ndarray):
         return obj.tolist()
@@ -50,8 +52,8 @@ def convert_numpy_types(obj: Any) -> Any:
         # Explicit None → None
         return None
     elif pd.isna(obj):
-        # pandas NaN → float('nan') to preserve NaN in JSON
-        return float("nan")
+        # pandas NaN → None (null in JSON)
+        return None
     else:
         return obj
 

@@ -266,6 +266,7 @@ def insert_activities(
             ],
         )
 
+        conn.commit()
         conn.close()
 
         logger.info(
