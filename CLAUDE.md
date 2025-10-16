@@ -4,12 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## System Overview
 
-Garmin running performance analysis system with three-tier data pipeline (raw → performance → analysis), multi-agent analysis, DuckDB storage, and token optimization (~40% reduction).
+Garmin running performance analysis system with **DuckDB-first architecture** (raw → DuckDB → analysis), multi-agent analysis, normalized storage, and token optimization (~40% reduction).
 
 **Key Features:**
 - 5 specialized section analysis agents (split/phase/summary/efficiency/environment)
-- DuckDB-backed storage with normalized tables
-- Token-optimized performance data (Phases 1-3: form efficiency, HR efficiency, performance trends)
+- DuckDB-backed storage with normalized tables (single source of truth)
+- Direct raw data insertion (no intermediate performance.json)
+- Token-optimized queries (70-98.8% reduction via MCP tools)
 - Environment variable support for configurable data/result paths
 - Japanese analysis reports (code/docs in English)
 
@@ -18,16 +19,20 @@ Garmin running performance analysis system with three-tier data pipeline (raw �
 ### Data Processing Pipeline
 
 ```
-Raw Data (API) → Performance Data (pre-processed) → Analysis (DuckDB) → Reports
+Raw Data (API) → DuckDB (Direct Insertion) → Analysis → Reports
 ```
 
-**Three-tier transformation:**
+**Two-tier transformation:**
 1. **Raw Layer** (`data/raw/`): Garmin API responses (per-API caching: 8 API files/activity)
-2. **Performance Layer** (`data/performance/`): Pre-processed metrics (11 sections including Phase 1-3 optimizations)
-3. **Analysis Layer** (`data/database/`, `result/`): Section analyses (DuckDB) + final reports (Markdown)
+2. **Storage & Analysis Layer** (`data/database/`, `result/`): DuckDB normalized tables + section analyses → final reports (Markdown)
+
+**Key Changes (DuckDB-First Migration):**
+- ~~Performance Layer removed~~ - data flows directly: Raw → DuckDB
+- No intermediate `performance.json` generation
+- All inserters support raw data mode (`performance_file=None`)
 
 **Key Classes:**
-- `GarminIngestWorker`: API → raw → performance → DuckDB pipeline
+- `GarminIngestWorker`: API → raw → DuckDB pipeline
   - `collect_data(activity_id, force_refetch=None)`: Fetch from API with selective cache refresh
   - `process_activity(activity_id, date, force_refetch=None)`: Full pipeline orchestration
 - `GarminDBWriter`: DuckDB insertion (8 normalized tables including time_series_metrics)
@@ -44,8 +49,7 @@ Raw Data (API) → Performance Data (pre-processed) → Analysis (DuckDB) → Re
 ```
 ├── data/              # Configurable via GARMIN_DATA_DIR (default: ./data)
 │   ├── raw/          # API responses (activity/{id}/{api}.json, weight/{date}.json)
-│   ├── performance/  # Pre-processed metrics ({id}.json)
-│   ├── database/     # DuckDB files
+│   ├── database/     # DuckDB files (primary storage)
 │   └── precheck/     # Validation results
 ├── result/           # Configurable via GARMIN_RESULT_DIR (default: ./result)
 │   ├── individual/   # Activity reports (YEAR/MONTH/YYYY-MM-DD_id.md)
@@ -54,6 +58,8 @@ Raw Data (API) → Performance Data (pre-processed) → Analysis (DuckDB) → Re
 ├── docs/project/     # Project planning (active: 2025-*, archived: _archived/)
 └── .claude/          # Agent definitions and slash commands
 ```
+
+**Note:** `data/performance/` directory removed - all data now stored in DuckDB.
 
 **Environment Configuration:**
 - Copy `.env.example` → `.env`, set `GARMIN_DATA_DIR`/`GARMIN_RESULT_DIR`
@@ -314,7 +320,7 @@ uv run pytest -m performance     # Performance only
 - ❌ NEVER: `splits.json` temperature (device temperature, +5-8°C body heat)
 
 **Elevation:**
-- Source: `lapDTOs` → `create_parquet_dataset()` → performance.json
+- Source: `lapDTOs` → `create_parquet_dataset()` → DuckDB
 - Classification: 平坦/起伏/丘陵/山岳
 
 ## Project Management
