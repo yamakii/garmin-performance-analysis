@@ -22,28 +22,29 @@ class TestGarminDBReaderStatistics:
         """Create GarminDBReader with test database containing multiple splits."""
         db_path = tmp_path / "test.duckdb"
 
-        # Create test performance.json file with 10 splits for meaningful statistics
-        performance_file = tmp_path / "20615445009.json"
-        performance_data = {
-            "split_metrics": [
+        # Create test splits.json file (raw data format) with 10 splits
+        splits_file = tmp_path / "splits.json"
+        splits_data = {
+            "activityId": 20615445009,
+            "lapDTOs": [
                 {
-                    "split_number": i,
-                    "distance_km": 1.0,
-                    "avg_pace_seconds_per_km": 300 + i * 10,  # 300, 310, 320, ...
-                    "avg_heart_rate": 150 + i * 2,  # 150, 152, 154, ...
-                    "ground_contact_time_ms": 240 + i * 2,  # 240, 242, 244, ...
-                    "vertical_oscillation_cm": 7.0 + i * 0.2,  # 7.0, 7.2, 7.4, ...
-                    "vertical_ratio_percent": 8.0 + i * 0.1,  # 8.0, 8.1, 8.2, ...
-                    "elevation_gain_m": 5 + i,  # 5, 6, 7, ...
-                    "elevation_loss_m": 2 + i * 0.5,  # 2, 2.5, 3, ...
-                    "terrain_type": "平坦" if i % 2 == 0 else "起伏",
+                    "lapIndex": i,
+                    "distance": 1000.0,  # meters
+                    "duration": 300 + i * 10,  # seconds: 310, 320, 330, ...
+                    "averageHR": 150 + i * 2,  # 152, 154, 156, ...
+                    "averageRunCadence": 170,
+                    "groundContactTime": 240 + i * 2,  # 242, 244, 246, ...
+                    "verticalOscillation": 7.0 + i * 0.2,  # cm: 7.2, 7.4, 7.6, ...
+                    "verticalRatio": 8.0 + i * 0.1,  # %: 8.1, 8.2, 8.3, ...
+                    "elevationGain": 5 + i,  # 6, 7, 8, ...
+                    "elevationLoss": 2 + i * 0.5,  # 2.5, 3.0, 3.5, ...
                 }
                 for i in range(1, 11)
-            ]
+            ],
         }
 
-        with open(performance_file, "w") as f:
-            json.dump(performance_data, f)
+        with open(splits_file, "w") as f:
+            json.dump(splits_data, f)
 
         # Insert splits into DuckDB
         from tools.database.inserters.splits import insert_splits
@@ -51,6 +52,7 @@ class TestGarminDBReaderStatistics:
         insert_splits(
             activity_id=20615445009,
             db_path=str(db_path),
+            raw_splits_file=str(splits_file),
         )
 
         return GarminDBReader(db_path=str(db_path))
