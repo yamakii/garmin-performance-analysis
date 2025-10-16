@@ -18,37 +18,33 @@ class TestLactateThresholdInserter:
 
     @pytest.fixture
     def sample_performance_file(self, tmp_path):
-        """Create sample performance.json file with lactate_threshold."""
-        performance_data = {
-            "basic_metrics": {
-                "distance_km": 22.0,
+        """Create sample lactate_threshold.json file (raw API response)."""
+        # Raw API format has speed_and_heart_rate and power at top level
+        lactate_threshold_data = {
+            "speed_and_heart_rate": {
+                "userProfilePK": 91627893,
+                "version": 1757675098963,
+                "calendarDate": "2025-09-12T20:04:58.947",
+                "sequence": 1757675098963,
+                "speed": 0.31388801000000005,
+                "heartRate": 168,
             },
-            "lactate_threshold": {
-                "speed_and_heart_rate": {
-                    "userProfilePK": 91627893,
-                    "version": 1757675098963,
-                    "calendarDate": "2025-09-12T20:04:58.947",
-                    "sequence": 1757675098963,
-                    "speed": 0.31388801000000005,
-                    "heartRate": 168,
-                },
-                "power": {
-                    "userProfilePk": 91627893,
-                    "calendarDate": "2025-10-07T22:05:01.0",
-                    "origin": "weight",
-                    "sport": "RUNNING",
-                    "functionalThresholdPower": 345,
-                    "powerToWeight": 5.0,
-                    "weight": 69.0,
-                },
+            "power": {
+                "userProfilePk": 91627893,
+                "calendarDate": "2025-10-07T22:05:01.0",
+                "origin": "weight",
+                "sport": "RUNNING",
+                "functionalThresholdPower": 345,
+                "powerToWeight": 5.0,
+                "weight": 69.0,
             },
         }
 
-        performance_file = tmp_path / "20615445009.json"
-        with open(performance_file, "w", encoding="utf-8") as f:
-            json.dump(performance_data, f, ensure_ascii=False, indent=2)
+        lt_file = tmp_path / "20615445009.json"
+        with open(lt_file, "w", encoding="utf-8") as f:
+            json.dump(lactate_threshold_data, f, ensure_ascii=False, indent=2)
 
-        return performance_file
+        return lt_file
 
     @pytest.mark.unit
     def test_insert_lactate_threshold_success(self, sample_performance_file, tmp_path):
@@ -56,7 +52,7 @@ class TestLactateThresholdInserter:
         db_path = tmp_path / "test.duckdb"
 
         result = insert_lactate_threshold(
-            performance_file=str(sample_performance_file),
+            raw_lactate_threshold_file=str(sample_performance_file),
             activity_id=20615445009,
             db_path=str(db_path),
         )
@@ -66,34 +62,36 @@ class TestLactateThresholdInserter:
 
     @pytest.mark.unit
     def test_insert_lactate_threshold_missing_file(self, tmp_path):
-        """Test insert_lactate_threshold handles missing file."""
+        """Test insert_lactate_threshold handles missing file gracefully."""
         db_path = tmp_path / "test.duckdb"
 
         result = insert_lactate_threshold(
-            performance_file="/nonexistent/file.json",
+            raw_lactate_threshold_file="/nonexistent/file.json",
             activity_id=12345,
             db_path=str(db_path),
         )
 
-        assert result is False
+        # Should return True (not an error, lactate threshold is optional)
+        assert result is True
 
     @pytest.mark.unit
     def test_insert_lactate_threshold_no_data(self, tmp_path):
-        """Test insert_lactate_threshold handles missing lactate_threshold."""
-        performance_data = {"basic_metrics": {"distance_km": 5.0}}
-        performance_file = tmp_path / "test.json"
-        with open(performance_file, "w", encoding="utf-8") as f:
-            json.dump(performance_data, f)
+        """Test insert_lactate_threshold handles missing lactate_threshold data."""
+        lt_data: dict = {}  # Empty file
+        lt_file = tmp_path / "lactate_threshold.json"
+        with open(lt_file, "w", encoding="utf-8") as f:
+            json.dump(lt_data, f)
 
         db_path = tmp_path / "test.duckdb"
 
         result = insert_lactate_threshold(
-            performance_file=str(performance_file),
+            raw_lactate_threshold_file=str(lt_file),
             activity_id=12345,
             db_path=str(db_path),
         )
 
-        assert result is False
+        # Should return True (skips gracefully)
+        assert result is True
 
     @pytest.mark.integration
     def test_insert_lactate_threshold_db_integration(
@@ -105,7 +103,7 @@ class TestLactateThresholdInserter:
         db_path = tmp_path / "test.duckdb"
 
         result = insert_lactate_threshold(
-            performance_file=str(sample_performance_file),
+            raw_lactate_threshold_file=str(sample_performance_file),
             activity_id=20615445009,
             db_path=str(db_path),
         )

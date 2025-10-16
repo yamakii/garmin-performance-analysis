@@ -29,7 +29,7 @@ Raw Data (API) → DuckDB (Direct Insertion) → Analysis → Reports
 **Key Changes (DuckDB-First Migration):**
 - ~~Performance Layer removed~~ - data flows directly: Raw → DuckDB
 - No intermediate `performance.json` generation
-- All inserters support raw data mode (`performance_file=None`)
+- All inserters use single-mode raw data pipeline (no backward compatibility)
 
 **Key Classes:**
 - `GarminIngestWorker`: API → raw → DuckDB pipeline
@@ -49,8 +49,7 @@ Raw Data (API) → DuckDB (Direct Insertion) → Analysis → Reports
 ```
 ├── data/              # Configurable via GARMIN_DATA_DIR (default: ./data)
 │   ├── raw/          # API responses (activity/{id}/{api}.json, weight/{date}.json)
-│   ├── database/     # DuckDB files (primary storage)
-│   └── precheck/     # Validation results
+│   └── database/     # DuckDB files (primary storage)
 ├── result/           # Configurable via GARMIN_RESULT_DIR (default: ./result)
 │   ├── individual/   # Activity reports (YEAR/MONTH/YYYY-MM-DD_id.md)
 │   └── monthly/      # Trend analysis
@@ -102,7 +101,6 @@ Raw Data (API) → DuckDB (Direct Insertion) → Analysis → Reports
 **Token Optimization Strategy:**
 - Use `statistics_only=True` for trend analysis and overview queries
 - Use full data mode only when individual split details are needed
-- Use deprecated functions only for backward compatibility (will be removed in future)
 
 **Function Categories:**
 
@@ -320,7 +318,7 @@ uv run pytest -m performance     # Performance only
 - ❌ NEVER: `splits.json` temperature (device temperature, +5-8°C body heat)
 
 **Elevation:**
-- Source: `lapDTOs` → `create_parquet_dataset()` → DuckDB
+- Source: `lapDTOs` → DuckDB (via inserters)
 - Classification: 平坦/起伏/丘陵/山岳
 
 ## Project Management

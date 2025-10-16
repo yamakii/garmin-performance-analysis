@@ -31,50 +31,57 @@ class TestGarminDBReaderNormalized:
         """Create GarminDBReader with test database containing normalized data."""
         db_path = tmp_path / "test.duckdb"
 
-        # Create test performance.json
-        performance_file = tmp_path / f"{test_activity_id}.json"
-        performance_data = {
-            "form_efficiency_summary": {
-                "gct_stats": {
-                    "average": 250.0,
-                    "min": 240.0,
-                    "max": 260.0,
-                    "std": 5.0,
+        # Create test splits.json for form_efficiency
+        splits_file = tmp_path / "splits.json"
+        splits_data = {
+            "activityId": test_activity_id,
+            "lapDTOs": [
+                {
+                    "lapIndex": 1,
+                    "distance": 1000.0,
+                    "groundContactTime": 250.0,
+                    "verticalOscillation": 7.5,
+                    "verticalRatio": 8.5,
                 },
-                "gct_rating": "★★★★★",
-                "vo_stats": {
-                    "average": 7.5,
-                    "min": 7.0,
-                    "max": 8.0,
-                    "std": 0.3,
+                {
+                    "lapIndex": 2,
+                    "distance": 1000.0,
+                    "groundContactTime": 240.0,
+                    "verticalOscillation": 7.0,
+                    "verticalRatio": 8.0,
                 },
-                "vo_rating": "★★★★★",
-                "vr_stats": {
-                    "average": 8.5,
-                    "min": 8.0,
-                    "max": 9.0,
-                    "std": 0.3,
+                {
+                    "lapIndex": 3,
+                    "distance": 1000.0,
+                    "groundContactTime": 260.0,
+                    "verticalOscillation": 8.0,
+                    "verticalRatio": 9.0,
                 },
-                "vr_rating": "★★★★☆",
-            },
-            "hr_efficiency_analysis": {
-                "primary_zone": "Zone 2",
-                "zone_distribution_rating": "優秀",
-                "hr_stability": "優秀",
-                "aerobic_efficiency": "高い",
-                "training_quality": "優秀",
-                "zone2_focus": True,
-                "zone4_threshold_work": False,
-                "training_type": "aerobic_base",
-                "zone1_percentage": 5.0,
-                "zone2_percentage": 70.0,
-                "zone3_percentage": 20.0,
-                "zone4_percentage": 5.0,
-                "zone5_percentage": 0.0,
-            },
+            ],
         }
+        splits_file.write_text(json.dumps(splits_data, indent=2))
 
-        performance_file.write_text(json.dumps(performance_data, indent=2))
+        # Create raw data files for hr_efficiency
+        hr_zones_file = tmp_path / "hr_zones.json"
+        hr_zones_data = [
+            {"zoneNumber": 1, "zoneLowBoundary": 117, "secsInZone": 180.0},  # 5%
+            {"zoneNumber": 2, "zoneLowBoundary": 131, "secsInZone": 2520.0},  # 70%
+            {"zoneNumber": 3, "zoneLowBoundary": 146, "secsInZone": 720.0},  # 20%
+            {"zoneNumber": 4, "zoneLowBoundary": 160, "secsInZone": 180.0},  # 5%
+            {"zoneNumber": 5, "zoneLowBoundary": 175, "secsInZone": 0.0},  # 0%
+        ]
+        hr_zones_file.write_text(json.dumps(hr_zones_data, indent=2))
+
+        activity_file = tmp_path / "activity.json"
+        activity_data = {
+            "summaryDTO": {
+                "averageHR": 140,  # Zone 2 range
+                "maxHR": 155,  # Range: 155-128=27, 27/140=0.19 < 0.3 (優秀)
+                "minHR": 128,
+                "trainingEffectLabel": "AEROBIC_BASE",
+            }
+        }
+        activity_file.write_text(json.dumps(activity_data, indent=2))
 
         # Insert activity metadata first (required for foreign key constraint)
         db_writer = GarminDBWriter(db_path=str(db_path))
@@ -94,14 +101,15 @@ class TestGarminDBReaderNormalized:
         from tools.database.inserters.hr_efficiency import insert_hr_efficiency
 
         insert_form_efficiency(
-            performance_file=str(performance_file),
             activity_id=test_activity_id,
             db_path=str(db_path),
+            raw_splits_file=str(splits_file),
         )
         insert_hr_efficiency(
-            performance_file=str(performance_file),
             activity_id=test_activity_id,
             db_path=str(db_path),
+            raw_hr_zones_file=str(hr_zones_file),
+            raw_activity_file=str(activity_file),
         )
 
         return GarminDBReader(db_path=str(db_path))
@@ -117,28 +125,30 @@ class TestGarminDBReaderNormalized:
         assert "vo" in result
         assert "vr" in result
 
-        # Verify GCT data (only fields inserted by current inserter)
+        # Verify GCT data (calculated from [250, 240, 260])
         assert result["gct"]["average"] == 250.0
         assert result["gct"]["min"] == 240.0
         assert result["gct"]["max"] == 260.0
-        assert result["gct"]["std"] == 5.0
+        assert result["gct"]["std"] == pytest.approx(
+            10.0, rel=0.01
+        )  # std([250,240,260])
         assert result["gct"]["variability"] == pytest.approx(
-            2.0, rel=0.01
-        )  # Calculated: 5/250 * 100
-        assert result["gct"]["rating"] == "★★★★★"
+            4.0, rel=0.01
+        )  # Calculated: 10/250 * 100
+        assert result["gct"]["rating"] == "★★★☆☆"  # GCT 250ms is average, not excellent
 
-        # Verify VO data
+        # Verify VO data (calculated from [7.5, 7.0, 8.0])
         assert result["vo"]["average"] == 7.5
         assert result["vo"]["min"] == 7.0
         assert result["vo"]["max"] == 8.0
-        assert result["vo"]["std"] == 0.3
-        assert result["vo"]["rating"] == "★★★★★"
+        assert result["vo"]["std"] == pytest.approx(0.5, rel=0.01)  # std([7.5,7.0,8.0])
+        assert result["vo"]["rating"] == "★★★★☆"  # VO 7.5cm is good but not excellent
 
-        # Verify VR data
+        # Verify VR data (calculated from [8.5, 8.0, 9.0])
         assert result["vr"]["average"] == 8.5
         assert result["vr"]["min"] == 8.0
         assert result["vr"]["max"] == 9.0
-        assert result["vr"]["std"] == 0.3
+        assert result["vr"]["std"] == pytest.approx(0.5, rel=0.01)  # std([8.5,8.0,9.0])
         assert result["vr"]["rating"] == "★★★★☆"
 
     @pytest.mark.unit
@@ -227,21 +237,16 @@ class TestGetHeartRateZonesDetail:
         """Create GarminDBReader with test database containing HR zones data."""
         db_path = tmp_path / "test.duckdb"
 
-        # Create test performance.json with heart_rate_zones
-        performance_file = tmp_path / f"{test_activity_id}.json"
-        performance_data = {
-            "basic_metrics": {
-                "duration_seconds": 3720.0,  # Required for zone percentage calculation
-            },
-            "heart_rate_zones": {
-                "zone1": {"low": 0, "secs_in_zone": 300.0},
-                "zone2": {"low": 130, "secs_in_zone": 2520.0},
-                "zone3": {"low": 150, "secs_in_zone": 720.0},
-                "zone4": {"low": 165, "secs_in_zone": 180.0},
-                "zone5": {"low": 180, "secs_in_zone": 0.0},
-            },
-        }
-        performance_file.write_text(json.dumps(performance_data, indent=2))
+        # Create test hr_zones.json with raw data
+        hr_zones_file = tmp_path / "hr_zones.json"
+        hr_zones_data = [
+            {"zoneNumber": 1, "zoneLowBoundary": 0, "secsInZone": 300.0},
+            {"zoneNumber": 2, "zoneLowBoundary": 130, "secsInZone": 2520.0},
+            {"zoneNumber": 3, "zoneLowBoundary": 150, "secsInZone": 720.0},
+            {"zoneNumber": 4, "zoneLowBoundary": 165, "secsInZone": 180.0},
+            {"zoneNumber": 5, "zoneLowBoundary": 180, "secsInZone": 0.0},
+        ]
+        hr_zones_file.write_text(json.dumps(hr_zones_data, indent=2))
 
         # Insert activity metadata and heart_rate_zones
         db_writer = GarminDBWriter(db_path=str(db_path))
@@ -260,9 +265,9 @@ class TestGetHeartRateZonesDetail:
         from tools.database.inserters.heart_rate_zones import insert_heart_rate_zones
 
         insert_heart_rate_zones(
-            performance_file=str(performance_file),
             activity_id=test_activity_id,
             db_path=str(db_path),
+            raw_hr_zones_file=str(hr_zones_file),
         )
 
         return GarminDBReader(db_path=str(db_path))
@@ -339,18 +344,17 @@ class TestGetVO2MaxData:
         """Create GarminDBReader with test database containing VO2 max data."""
         db_path = tmp_path / "test.duckdb"
 
-        # Create test performance.json with vo2_max
-        performance_file = tmp_path / f"{test_activity_id}.json"
-        performance_data = {
-            "vo2_max": {
-                "precise_value": 52.3,
-                "value": 52.0,
-                "date": "2025-10-07",
-                "fitness_age": 25,
-                "category": 5,
+        # Create test vo2_max.json with raw data
+        vo2_max_file = tmp_path / "vo2_max.json"
+        vo2_max_data = {
+            "generic": {
+                "vo2MaxValue": 52,
+                "vo2MaxPreciseValue": 52.3,
+                "calendarDate": "2025-10-07",
+                "fitnessAge": 25,
             }
         }
-        performance_file.write_text(json.dumps(performance_data, indent=2))
+        vo2_max_file.write_text(json.dumps(vo2_max_data, indent=2))
 
         # Insert activity metadata and vo2_max
         db_writer = GarminDBWriter(db_path=str(db_path))
@@ -369,9 +373,9 @@ class TestGetVO2MaxData:
         from tools.database.inserters.vo2_max import insert_vo2_max
 
         insert_vo2_max(
-            performance_file=str(performance_file),
             activity_id=test_activity_id,
             db_path=str(db_path),
+            raw_vo2_max_file=str(vo2_max_file),
         )
 
         return GarminDBReader(db_path=str(db_path))
@@ -386,7 +390,7 @@ class TestGetVO2MaxData:
         assert result["value"] == 52.0
         assert result["date"] == "2025-10-07"
         assert result["fitness_age"] == 25
-        assert result["category"] == 5
+        assert result["category"] == 0  # Default (not in raw data)
 
     @pytest.mark.unit
     def test_get_vo2_max_data_no_data(self, db_reader_with_vo2max):
@@ -424,24 +428,22 @@ class TestGetLactateThresholdData:
         """Create GarminDBReader with test database containing lactate threshold data."""
         db_path = tmp_path / "test.duckdb"
 
-        # Create test performance.json with lactate_threshold
-        performance_file = tmp_path / f"{test_activity_id}.json"
-        performance_data = {
-            "lactate_threshold": {
-                "speed_and_heart_rate": {
-                    "heartRate": 165,
-                    "speed": 3.5,
-                    "calendarDate": "2025-10-07T10:30:00.000",
-                },
-                "power": {
-                    "functionalThresholdPower": 250,
-                    "powerToWeight": 3.5,
-                    "weight": 71.4,
-                    "calendarDate": "2025-10-07T10:30:00.000",
-                },
-            }
+        # Create test lactate_threshold.json with raw data
+        lactate_threshold_file = tmp_path / "lactate_threshold.json"
+        lactate_threshold_data = {
+            "speed_and_heart_rate": {
+                "heartRate": 165,
+                "speed": 3.5,
+                "calendarDate": "2025-10-07T10:30:00.000",
+            },
+            "power": {
+                "functionalThresholdPower": 250,
+                "powerToWeight": 3.5,
+                "weight": 71.4,
+                "calendarDate": "2025-10-07T10:30:00.000",
+            },
         }
-        performance_file.write_text(json.dumps(performance_data, indent=2))
+        lactate_threshold_file.write_text(json.dumps(lactate_threshold_data, indent=2))
 
         # Insert activity metadata and lactate_threshold
         db_writer = GarminDBWriter(db_path=str(db_path))
@@ -460,9 +462,9 @@ class TestGetLactateThresholdData:
         from tools.database.inserters.lactate_threshold import insert_lactate_threshold
 
         insert_lactate_threshold(
-            performance_file=str(performance_file),
             activity_id=test_activity_id,
             db_path=str(db_path),
+            raw_lactate_threshold_file=str(lactate_threshold_file),
         )
 
         return GarminDBReader(db_path=str(db_path))
@@ -515,43 +517,42 @@ class TestGetSplitsAll:
         """Create GarminDBReader with test database containing splits data."""
         db_path = tmp_path / "test.duckdb"
 
-        # Create test performance.json with split_metrics (only fields that inserter uses)
-        performance_file = tmp_path / f"{test_activity_id}.json"
-        performance_data = {
-            "split_metrics": [
+        # Create test splits.json (raw data format)
+        splits_file = tmp_path / "splits.json"
+        splits_data = {
+            "activityId": test_activity_id,
+            "lapDTOs": [
                 {
-                    "split_number": 1,
-                    "distance_km": 1.0,
-                    "role_phase": "warmup",
-                    "avg_pace_seconds_per_km": 330.0,
-                    "avg_heart_rate": 140,
-                    "avg_cadence": 170.0,
-                    "avg_power": 250.0,
-                    "ground_contact_time_ms": 245.0,
-                    "vertical_oscillation_cm": 7.5,
-                    "vertical_ratio_percent": 8.2,
-                    "elevation_gain_m": 10.0,
-                    "elevation_loss_m": 5.0,
-                    "terrain_type": "平坦",
+                    "lapIndex": 1,
+                    "distance": 1000.0,
+                    "duration": 330.0,
+                    "averageHR": 140,
+                    "averageRunCadence": 170,
+                    "averagePower": 250,
+                    "groundContactTime": 245.0,
+                    "verticalOscillation": 7.5,
+                    "verticalRatio": 8.2,
+                    "elevationGain": 10.0,
+                    "elevationLoss": 5.0,
+                    "intensityType": "WARMUP",
                 },
                 {
-                    "split_number": 2,
-                    "distance_km": 1.0,
-                    "role_phase": "main",
-                    "avg_pace_seconds_per_km": 300.0,
-                    "avg_heart_rate": 155,
-                    "avg_cadence": 175.0,
-                    "avg_power": 270.0,
-                    "ground_contact_time_ms": 240.0,
-                    "vertical_oscillation_cm": 7.2,
-                    "vertical_ratio_percent": 8.0,
-                    "elevation_gain_m": 15.0,
-                    "elevation_loss_m": 8.0,
-                    "terrain_type": "やや起伏",
+                    "lapIndex": 2,
+                    "distance": 1000.0,
+                    "duration": 300.0,
+                    "averageHR": 155,
+                    "averageRunCadence": 175,
+                    "averagePower": 270,
+                    "groundContactTime": 240.0,
+                    "verticalOscillation": 7.2,
+                    "verticalRatio": 8.0,
+                    "elevationGain": 15.0,
+                    "elevationLoss": 8.0,
+                    "intensityType": "ACTIVE",
                 },
-            ]
+            ],
         }
-        performance_file.write_text(json.dumps(performance_data, indent=2))
+        splits_file.write_text(json.dumps(splits_data, indent=2))
 
         # Insert activity metadata and splits
         db_writer = GarminDBWriter(db_path=str(db_path))
@@ -570,9 +571,9 @@ class TestGetSplitsAll:
         from tools.database.inserters.splits import insert_splits
 
         insert_splits(
-            performance_file=str(performance_file),
             activity_id=test_activity_id,
             db_path=str(db_path),
+            raw_splits_file=str(splits_file),
         )
 
         return GarminDBReader(db_path=str(db_path))
@@ -605,7 +606,7 @@ class TestGetSplitsAll:
         assert split1["vertical_ratio_percent"] == 8.2
         assert split1["elevation_gain_m"] == 10.0
         assert split1["elevation_loss_m"] == 5.0
-        assert split1["terrain_type"] == "平坦"
+        assert split1["terrain_type"] == "丘陵"  # 10m elevation = 丘陵 classification
         # environmental_conditions, wind_impact, temp_impact, environmental_impact not inserted
 
     @pytest.mark.unit

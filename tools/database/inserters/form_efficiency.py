@@ -1,9 +1,8 @@
 """
 FormEfficiencyInserter - Insert form_efficiency_summary to DuckDB
 
-Supports both legacy (performance.json) and raw data modes (splits.json)
-
-Inserts form efficiency statistics (GCT, VO, VR) into form_efficiency table.
+Extracts form efficiency statistics (GCT, VO, VR) from raw data (splits.json)
+and inserts into form_efficiency table.
 """
 
 import json
@@ -172,22 +171,20 @@ def _extract_form_efficiency_from_raw(
 
 
 def insert_form_efficiency(
-    performance_file: str | None,
     activity_id: int,
     db_path: str | None = None,
     raw_splits_file: str | None = None,
     raw_activity_details_file: str | None = None,
 ) -> bool:
     """
-    Insert form_efficiency_summary from performance.json or raw data into DuckDB form_efficiency table.
+    Insert form_efficiency_summary from raw data into DuckDB form_efficiency table.
 
     Steps:
-    1. Load performance.json (legacy) or raw data files (splits.json or activity_details.json)
-    2. Extract or calculate form_efficiency_summary
+    1. Load raw data files (splits.json or activity_details.json)
+    2. Calculate form_efficiency_summary
     3. Insert into form_efficiency table
 
     Args:
-        performance_file: Path to performance.json (legacy, optional)
         activity_id: Activity ID
         db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
         raw_splits_file: Path to splits.json (for raw mode)
@@ -197,34 +194,14 @@ def insert_form_efficiency(
         True if successful, False otherwise
     """
     try:
-        use_raw_data = performance_file is None
-
-        if use_raw_data:
-            # Extract from raw data
-            form_eff_summary = _extract_form_efficiency_from_raw(
-                raw_splits_file, raw_activity_details_file
-            )
-            # Check if extraction failed
-            if not form_eff_summary:
-                logger.error("Failed to extract form efficiency data from raw files")
-                return False
-        else:
-            # Legacy: Load performance.json
-            # Type narrowing for mypy
-            assert performance_file is not None
-            performance_path = Path(performance_file)
-            if not performance_path.exists():
-                logger.error(f"Performance file not found: {performance_file}")
-                return False
-
-            with open(performance_path, encoding="utf-8") as f:
-                performance_data = json.load(f)
-
-            # Extract form_efficiency_summary
-            form_eff_summary = performance_data.get("form_efficiency_summary")
-            if not form_eff_summary or not isinstance(form_eff_summary, dict):
-                logger.error(f"No form_efficiency_summary found in {performance_file}")
-                return False
+        # Extract from raw data
+        form_eff_summary = _extract_form_efficiency_from_raw(
+            raw_splits_file, raw_activity_details_file
+        )
+        # Check if extraction failed
+        if not form_eff_summary:
+            logger.error("Failed to extract form efficiency data from raw files")
+            return False
 
         # Set default DB path
         if db_path is None:

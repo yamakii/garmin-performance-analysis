@@ -122,23 +122,17 @@ class GarminIngestWorker:
         """
         from tools.utils.paths import (
             get_default_db_path,
-            get_performance_dir,
-            get_precheck_dir,
             get_raw_dir,
             get_weight_raw_dir,
         )
 
         self.project_root = Path(__file__).parent.parent.parent
         self.raw_dir = get_raw_dir()
-        self.performance_dir = get_performance_dir()
-        self.precheck_dir = get_precheck_dir()
         self.weight_raw_dir = get_weight_raw_dir()
 
         # Create directories
         for directory in [
             self.raw_dir,
-            self.performance_dir,
-            self.precheck_dir,
             self.weight_raw_dir,
         ]:
             directory.mkdir(parents=True, exist_ok=True)
@@ -678,191 +672,6 @@ class GarminIngestWorker:
         logger.info(f"Completed data collection for activity {activity_id}")
         return raw_data
 
-    def create_parquet_dataset(self, raw_data: dict[str, Any]) -> pd.DataFrame:
-        """
-        Create parquet-ready DataFrame from raw lapDTOs.
-
-        Args:
-            raw_data: Raw data dict with 'splits' key containing lapDTOs
-
-        Returns:
-            DataFrame with 15 columns per split
-        """
-        lap_dtos = raw_data.get("splits", {}).get("lapDTOs", [])
-        if not lap_dtos:
-            logger.warning("No lapDTOs found in splits data")
-            return pd.DataFrame()
-
-        records = []
-        for idx, lap in enumerate(lap_dtos, start=1):
-            # Calculate pace (seconds per km)
-            distance_km = lap.get("distance", 0) / 1000
-            duration_seconds = lap.get("duration", 0)
-            avg_pace = duration_seconds / distance_km if distance_km > 0 else 0
-
-            # Classify terrain based on elevation gain
-            elevation_gain = lap.get("elevationGain", 0)
-            if elevation_gain < 5:
-                terrain_type = "平坦"
-            elif elevation_gain < 15:
-                terrain_type = "起伏"
-            elif elevation_gain < 30:
-                terrain_type = "丘陵"
-            else:
-                terrain_type = "山岳"
-
-            # Map intensityType to role_phase
-            intensity_type = lap.get("intensityType", "ACTIVE")
-            role_phase_map = {
-                "WARMUP": "warmup",
-                "INTERVAL": "run",
-                "ACTIVE": "run",
-                "RECOVERY": "recovery",
-                "REST": "recovery",
-                "COOLDOWN": "cooldown",
-            }
-            role_phase = role_phase_map.get(intensity_type, "run")
-
-            record = {
-                "split_number": idx,
-                "distance_km": distance_km,
-                "duration_seconds": duration_seconds,
-                "avg_pace_seconds_per_km": avg_pace,
-                "avg_heart_rate": lap.get("averageHR"),
-                "avg_cadence": lap.get("averageRunCadence"),
-                "avg_power": lap.get("averagePower"),  # Fixed: avgPower → averagePower
-                "ground_contact_time_ms": lap.get("groundContactTime"),
-                "vertical_oscillation_cm": lap.get("verticalOscillation"),
-                "vertical_ratio_percent": lap.get("verticalRatio"),
-                "elevation_gain_m": elevation_gain,
-                "elevation_loss_m": lap.get("elevationLoss", 0),
-                "max_elevation_m": lap.get("maxElevation"),
-                "min_elevation_m": lap.get("minElevation"),
-                "terrain_type": terrain_type,
-                "role_phase": role_phase,
-            }
-            records.append(record)
-
-        return pd.DataFrame(records)
-
-    def _calculate_split_metrics(
-        self, df: pd.DataFrame, raw_data: dict[str, Any]
-    ) -> dict[str, Any]:
-        """
-        Calculate 11 performance.json sections from DataFrame.
-
-        Sections:
-        1. basic_metrics
-        2. heart_rate_zones
-        3. split_metrics
-        4. efficiency_metrics
-        5. training_effect
-        6. power_to_weight
-        7. vo2_max
-        8. lactate_threshold
-        9. form_efficiency_summary (Phase 1)
-        10. hr_efficiency_analysis (Phase 1)
-        11. performance_trends (Phase 2)
-
-        Args:
-            df: Parquet DataFrame
-            raw_data: Raw data dict
-
-        Returns:
-            Performance metrics dict
-        """
-        if df.empty:
-            return {}
-
-        activity = raw_data.get("activity", {})
-        hr_zones = raw_data.get("hr_zones", {})
-
-        # 1. Basic metrics
-        basic_metrics = {
-            "distance_km": df["distance_km"].sum(),
-            "duration_seconds": df["duration_seconds"].sum(),
-            "avg_pace_seconds_per_km": df["avg_pace_seconds_per_km"].mean(),
-            "avg_heart_rate": df["avg_heart_rate"].mean(),
-            "avg_cadence": df["avg_cadence"].mean(),
-            "avg_power": df["avg_power"].mean(),
-        }
-
-        # 2. Heart rate zones (from raw data)
-        # hr_zones format: list of {zoneNumber, secsInZone, zoneLowBoundary}
-        heart_rate_zones = {}
-        for zone in hr_zones:
-            zone_num = zone.get("zoneNumber")
-            if zone_num:
-                heart_rate_zones[f"zone{zone_num}"] = {
-                    "low": zone.get("zoneLowBoundary"),
-                    "secs_in_zone": zone.get("secsInZone"),
-                }
-
-        # 3. Split metrics (full DataFrame as list of dicts)
-        split_metrics = df.to_dict(orient="records")
-
-        # 4. Efficiency metrics
-        efficiency_metrics = {
-            "cadence_stability": df["avg_cadence"].std(),
-            "pace_variability": df["avg_pace_seconds_per_km"].std(),
-            "power_efficiency": (
-                df["avg_power"].mean() / basic_metrics["avg_heart_rate"]
-                if basic_metrics["avg_heart_rate"] > 0
-                else 0
-            ),
-        }
-
-        # 5. Training effect (from raw activity data)
-        training_effect = {
-            "aerobic_te": activity.get("aerobicTrainingEffect"),
-            "anaerobic_te": activity.get("anaerobicTrainingEffect"),
-        }
-
-        # 6. Power to weight (assume 70kg default)
-        power_to_weight = {
-            "watts_per_kg": (
-                basic_metrics["avg_power"] / 70 if basic_metrics["avg_power"] else 0
-            )
-        }
-
-        # 7. VO2 max (from raw activity data)
-        vo2_max = {"vo2_max": activity.get("vO2MaxValue")}
-
-        # 8. Lactate threshold (from raw data)
-        lactate_threshold = raw_data.get("lactate_threshold", {})
-
-        # 9. Form efficiency summary (Phase 1)
-        form_efficiency_summary = self._calculate_form_efficiency_summary(df)
-
-        # 10. HR efficiency analysis (Phase 1)
-        # Extract trainingEffectLabel from raw_data
-        training_effect_label = raw_data.get("training_effect", {}).get(
-            "trainingEffectLabel"
-        )
-        hr_efficiency_analysis = self._calculate_hr_efficiency_analysis(
-            df, hr_zones, training_effect_label=training_effect_label
-        )
-
-        # 11. Performance trends (Phase 2)
-        performance_trends = self._calculate_performance_trends(df)
-
-        performance_data = {
-            "basic_metrics": basic_metrics,
-            "heart_rate_zones": heart_rate_zones,
-            "split_metrics": split_metrics,
-            "efficiency_metrics": efficiency_metrics,
-            "training_effect": training_effect,
-            "power_to_weight": power_to_weight,
-            "vo2_max": vo2_max,
-            "lactate_threshold": lactate_threshold,
-            "form_efficiency_summary": form_efficiency_summary,
-            "hr_efficiency_analysis": hr_efficiency_analysis,
-            "performance_trends": performance_trends,
-        }
-
-        # Convert numpy types to Python types for JSON serialization
-        return convert_numpy_types(performance_data)  # type: ignore[no-any-return]
-
     def _calculate_form_efficiency_summary(self, df: pd.DataFrame) -> dict[str, Any]:
         """
         Calculate form efficiency summary (Phase 1 optimization).
@@ -1194,16 +1003,11 @@ class GarminIngestWorker:
         self,
         activity_id: int,
         raw_data: dict[str, Any],
-        df: pd.DataFrame,
         activity_date: str | None = None,
-        tables: list[str] | None = None,  # NEW: Phase 3 parameter
+        tables: list[str] | None = None,
     ) -> dict[str, Any]:
         """
-        Save all processed data to files and DuckDB.
-
-        Files created:
-        - data/raw/activity/{activity_id}/*.json (already created in collect_data)
-        - data/precheck/{activity_id}.json
+        Save all processed data to DuckDB.
 
         DuckDB insertion order (foreign key constraints):
         1. activities (parent table)
@@ -1213,8 +1017,6 @@ class GarminIngestWorker:
         Args:
             activity_id: Activity ID
             raw_data: Raw data dict
-            df: Parquet DataFrame (used for precheck validation, not saved)
-            performance_data: Performance metrics
             activity_date: Activity date (YYYY-MM-DD format), required for DuckDB insertion
             tables: List of tables to insert. If None, all tables are inserted.
                    If specified, only the listed tables are inserted.
@@ -1225,29 +1027,6 @@ class GarminIngestWorker:
         """
         # Parquet generation removed - DuckDB is primary storage
         # Performance.json generation removed - DuckDB is primary storage
-
-        # Save precheck.json (basic validation data)
-        precheck_data = {
-            "activity_id": activity_id,
-            "total_splits": len(df),
-            "has_hr_data": bool(
-                df["avg_heart_rate"].notna().all()
-                if "avg_heart_rate" in df.columns
-                else False
-            ),
-            "has_power_data": bool(
-                df["avg_power"].notna().all() if "avg_power" in df.columns else False
-            ),
-            "has_form_data": bool(
-                df["ground_contact_time_ms"].notna().all()
-                if "ground_contact_time_ms" in df.columns
-                else False
-            ),
-        }
-        precheck_file = self.precheck_dir / f"{activity_id}.json"
-        with open(precheck_file, "w", encoding="utf-8") as f:
-            json.dump(precheck_data, f, ensure_ascii=False, indent=2)
-        logger.info(f"Saved precheck data to {precheck_file}")
 
         # ===== DuckDB Insertion (respects foreign key order) =====
         # Phase 4: Table filtering implemented via _should_insert_table()
@@ -1278,7 +1057,6 @@ class GarminIngestWorker:
                     )
 
             activities_success = insert_activities(
-                performance_file=None,  # Use raw data mode
                 activity_id=activity_id,
                 date=activity_date or "1970-01-01",  # Fallback date if not provided
                 db_path=self._db_path,
@@ -1318,7 +1096,6 @@ class GarminIngestWorker:
             from tools.database.inserters.splits import insert_splits
 
             splits_success = insert_splits(
-                performance_file=None,  # Use raw data mode
                 activity_id=activity_id,
                 db_path=self._db_path,
                 raw_splits_file=str(raw_splits_file) if raw_splits_file else None,
@@ -1335,7 +1112,6 @@ class GarminIngestWorker:
             from tools.database.inserters.form_efficiency import insert_form_efficiency
 
             form_eff_success = insert_form_efficiency(
-                performance_file=None,  # Use raw data mode
                 activity_id=activity_id,
                 db_path=self._db_path,
                 raw_splits_file=str(raw_splits_file) if raw_splits_file else None,
@@ -1361,7 +1137,6 @@ class GarminIngestWorker:
                 raw_hr_zones_file = None
 
             hr_zones_success = insert_heart_rate_zones(
-                performance_file=None,  # Use raw data mode
                 activity_id=activity_id,
                 db_path=self._db_path,
                 raw_hr_zones_file=str(raw_hr_zones_file) if raw_hr_zones_file else None,
@@ -1380,7 +1155,6 @@ class GarminIngestWorker:
             from tools.database.inserters.hr_efficiency import insert_hr_efficiency
 
             hr_eff_success = insert_hr_efficiency(
-                performance_file=None,  # Use raw data mode
                 activity_id=activity_id,
                 db_path=self._db_path,
                 raw_hr_zones_file=str(raw_hr_zones_file) if raw_hr_zones_file else None,
@@ -1406,7 +1180,6 @@ class GarminIngestWorker:
             )
 
             perf_trends_success = insert_performance_trends(
-                performance_file=None,  # Use raw data mode
                 activity_id=activity_id,
                 db_path=self._db_path,
                 raw_splits_file=str(raw_splits_file) if raw_splits_file else None,
@@ -1434,7 +1207,6 @@ class GarminIngestWorker:
                 raw_lactate_threshold_file = None
 
             lt_success = insert_lactate_threshold(
-                performance_file=None,  # Use raw data mode
                 activity_id=activity_id,
                 db_path=self._db_path,
                 raw_lactate_threshold_file=(
@@ -1462,7 +1234,6 @@ class GarminIngestWorker:
                 raw_vo2_max_file = None
 
             vo2_success = insert_vo2_max(
-                performance_file=None,  # Use raw data mode
                 activity_id=activity_id,
                 db_path=self._db_path,
                 raw_vo2_max_file=str(raw_vo2_max_file) if raw_vo2_max_file else None,
@@ -1502,7 +1273,6 @@ class GarminIngestWorker:
 
         return {
             "raw_dir": str(activity_dir),
-            "precheck_file": str(precheck_file),
         }
 
     def collect_body_composition_data(self, date: str) -> dict[str, Any] | None:
@@ -1715,10 +1485,9 @@ class GarminIngestWorker:
 
         Pipeline:
         1. Check DuckDB cache → return if complete
-        2. Check raw_data cache → extract_from_raw_data() + save_data()
-        3. Fetch from API → collect_data() + extract_from_raw_data() + save_data()
-        4. Calculate 7-day median weight for W/kg
-        5. Insert into DuckDB via save_data() (activities + all child tables)
+        2. Collect data (cache-first with optional force_refetch)
+        3. Calculate 7-day median weight for W/kg
+        4. Insert into DuckDB via save_data() (activities + all child tables)
 
         Args:
             activity_id: Activity ID
@@ -1754,18 +1523,14 @@ class GarminIngestWorker:
         # Step 1: Collect data (cache-first with optional force_refetch)
         raw_data = self.collect_data(activity_id, force_refetch=force_refetch)
 
-        # Step 2: Create parquet dataset
-        df = self.create_parquet_dataset(raw_data)
-
-        # Step 3: Calculate 7-day median weight for W/kg
+        # Step 2: Calculate 7-day median weight for W/kg
         median_weight_data = self._calculate_median_weight(date)
         weight_kg = median_weight_data["weight_kg"] if median_weight_data else None
 
-        # Step 4: Save data and insert into DuckDB
+        # Step 3: Save data and insert into DuckDB
         file_paths = self.save_data(
             activity_id,
             raw_data,
-            df,
             activity_date=date,
             tables=tables,
         )

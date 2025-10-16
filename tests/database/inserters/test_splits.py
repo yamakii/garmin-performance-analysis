@@ -16,65 +16,17 @@ from tools.database.inserters.splits import insert_splits
 class TestSplitsInserter:
     """Test suite for Splits Inserter."""
 
-    @pytest.fixture
-    def sample_performance_file(self, tmp_path):
-        """Create sample performance.json file with split_metrics."""
-        performance_data = {
-            "basic_metrics": {
-                "distance_km": 5.0,
-                "duration_seconds": 1500,
-            },
-            "split_metrics": [
-                {
-                    "split_number": 1,
-                    "distance_km": 1.0,
-                    "avg_pace_seconds_per_km": 300,
-                    "avg_heart_rate": 140,
-                    "avg_cadence": 170,
-                    "avg_power": 250,
-                    "ground_contact_time_ms": 240,
-                    "vertical_oscillation_cm": 7.5,
-                    "vertical_ratio_percent": 8.5,
-                    "elevation_gain_m": 5,
-                    "elevation_loss_m": 2,
-                    "terrain_type": "平坦",
-                    "role_phase": "warmup",
-                },
-                {
-                    "split_number": 2,
-                    "distance_km": 1.0,
-                    "avg_pace_seconds_per_km": 295,
-                    "avg_heart_rate": 145,
-                    "avg_cadence": 172,
-                    "avg_power": 255,
-                    "ground_contact_time_ms": 238,
-                    "vertical_oscillation_cm": 7.3,
-                    "vertical_ratio_percent": 8.3,
-                    "elevation_gain_m": 3,
-                    "elevation_loss_m": 4,
-                    "terrain_type": "平坦",
-                    "role_phase": "run",
-                },
-            ],
-        }
-
-        performance_file = tmp_path / "20464005432.json"
-        with open(performance_file, "w", encoding="utf-8") as f:
-            json.dump(performance_data, f, ensure_ascii=False, indent=2)
-
-        return performance_file
-
     @pytest.mark.unit
-    def test_insert_splits_success(self, sample_performance_file, tmp_path):
+    def test_insert_splits_success(self, sample_raw_splits_file, tmp_path):
         """Test insert_splits inserts data successfully."""
         # Setup: Create temporary DuckDB
         db_path = tmp_path / "test.duckdb"
 
         # Execute
         result = insert_splits(
-            performance_file=str(sample_performance_file),
-            activity_id=20464005432,
+            activity_id=20636804823,
             db_path=str(db_path),
+            raw_splits_file=str(sample_raw_splits_file),
         )
 
         # Verify
@@ -87,34 +39,34 @@ class TestSplitsInserter:
         db_path = tmp_path / "test.duckdb"
 
         result = insert_splits(
-            performance_file="/nonexistent/file.json",
             activity_id=12345,
             db_path=str(db_path),
+            raw_splits_file="/nonexistent/splits.json",
         )
 
         assert result is False
 
     @pytest.mark.unit
     def test_insert_splits_no_split_metrics(self, tmp_path):
-        """Test insert_splits handles missing split_metrics."""
-        # Create performance file without split_metrics
-        performance_data = {"basic_metrics": {"distance_km": 5.0}}
-        performance_file = tmp_path / "test.json"
-        with open(performance_file, "w", encoding="utf-8") as f:
-            json.dump(performance_data, f)
+        """Test insert_splits handles missing lapDTOs."""
+        # Create splits file without lapDTOs
+        splits_data = {"activityId": 12345}
+        splits_file = tmp_path / "splits.json"
+        with open(splits_file, "w", encoding="utf-8") as f:
+            json.dump(splits_data, f)
 
         db_path = tmp_path / "test.duckdb"
 
         result = insert_splits(
-            performance_file=str(performance_file),
             activity_id=12345,
             db_path=str(db_path),
+            raw_splits_file=str(splits_file),
         )
 
         assert result is False
 
     @pytest.mark.integration
-    def test_insert_splits_db_integration(self, sample_performance_file, tmp_path):
+    def test_insert_splits_db_integration(self, sample_raw_splits_file, tmp_path):
         """Test insert_splits actually writes to DuckDB."""
         import duckdb
 
@@ -122,9 +74,9 @@ class TestSplitsInserter:
 
         # Execute
         result = insert_splits(
-            performance_file=str(sample_performance_file),
-            activity_id=20464005432,
+            activity_id=20636804823,
             db_path=str(db_path),
+            raw_splits_file=str(sample_raw_splits_file),
         )
 
         assert result is True
@@ -139,7 +91,7 @@ class TestSplitsInserter:
 
         # Check splits data
         splits = conn.execute(
-            "SELECT * FROM splits WHERE activity_id = 20464005432 ORDER BY split_index"
+            "SELECT * FROM splits WHERE activity_id = 20636804823 ORDER BY split_index"
         ).fetchall()
         assert len(splits) == 2
 
@@ -148,29 +100,29 @@ class TestSplitsInserter:
             """
             SELECT split_index, distance, pace_seconds_per_km, heart_rate
             FROM splits
-            WHERE activity_id = 20464005432
+            WHERE activity_id = 20636804823
             ORDER BY split_index
             """
         ).fetchall()
 
-        # Verify first split
+        # Verify first split (fixture data)
         split1 = split_data[0]
         assert split1[0] == 1  # split_index
-        assert split1[1] == 1.0  # distance
-        assert split1[2] == 300  # pace_seconds_per_km
-        assert split1[3] == 140  # heart_rate
+        assert split1[1] == 1.0  # distance (km)
+        assert abs(split1[2] - 387.504) < 1.0  # pace_seconds_per_km
+        assert split1[3] == 127  # heart_rate
 
-        # Verify second split
+        # Verify second split (fixture data)
         split2 = split_data[1]
         assert split2[0] == 2  # split_index
-        assert split2[1] == 1.0  # distance
-        assert split2[2] == 295  # pace_seconds_per_km
-        assert split2[3] == 145  # heart_rate
+        assert split2[1] == 1.0  # distance (km)
+        assert abs(split2[2] - 390.841) < 1.0  # pace_seconds_per_km
+        assert split2[3] == 144  # heart_rate
 
         conn.close()
 
     @pytest.mark.integration
-    def test_insert_splits_with_role_phase(self, sample_performance_file, tmp_path):
+    def test_insert_splits_with_role_phase(self, sample_raw_splits_file, tmp_path):
         """Test insert_splits correctly inserts role_phase data (4-phase support)."""
         import duckdb
 
@@ -178,9 +130,9 @@ class TestSplitsInserter:
 
         # Execute
         result = insert_splits(
-            performance_file=str(sample_performance_file),
-            activity_id=20464005432,
+            activity_id=20636804823,
             db_path=str(db_path),
+            raw_splits_file=str(sample_raw_splits_file),
         )
 
         assert result is True
@@ -192,16 +144,17 @@ class TestSplitsInserter:
             """
             SELECT split_index, role_phase
             FROM splits
-            WHERE activity_id = 20464005432
+            WHERE activity_id = 20636804823
             ORDER BY split_index
             """
         ).fetchall()
 
         assert len(splits) == 2
 
-        # Verify role_phase values
-        assert splits[0][1] == "warmup"  # split 1
-        assert splits[1][1] == "run"  # split 2
+        # Verify role_phase values (fixture has INTERVAL intensityType for both splits)
+        # INTERVAL maps to "run" phase
+        assert splits[0][1] == "run"  # split 1 - INTERVAL
+        assert splits[1][1] == "run"  # split 2 - INTERVAL
 
         conn.close()
 
@@ -217,29 +170,6 @@ class TestSplitsInserter:
         - intensity_type
         """
         import duckdb
-
-        # Setup: Create performance.json with split_metrics
-        performance_data = {
-            "split_metrics": [
-                {
-                    "split_number": 1,
-                    "distance_km": 1.0,
-                    "avg_pace_seconds_per_km": 387,
-                    "avg_heart_rate": 127,
-                    "role_phase": "warmup",
-                },
-                {
-                    "split_number": 2,
-                    "distance_km": 1.0,
-                    "avg_pace_seconds_per_km": 390,
-                    "avg_heart_rate": 144,
-                    "role_phase": "run",
-                },
-            ]
-        }
-        performance_file = tmp_path / "test_perf.json"
-        with open(performance_file, "w", encoding="utf-8") as f:
-            json.dump(performance_data, f)
 
         # Setup: Create raw splits.json with lapDTOs
         raw_splits_data = {
@@ -267,7 +197,6 @@ class TestSplitsInserter:
 
         # Execute
         result = insert_splits(
-            performance_file=str(performance_file),
             activity_id=20636804823,
             db_path=str(db_path),
             raw_splits_file=str(raw_splits_file),
@@ -369,7 +298,6 @@ class TestSplitsInserter:
         db_path = tmp_path / "test.duckdb"
 
         result = insert_splits(
-            performance_file=None,
             activity_id=20636804823,
             db_path=str(db_path),
             raw_splits_file=str(sample_raw_splits_file),
@@ -388,7 +316,6 @@ class TestSplitsInserter:
         db_path = tmp_path / "test.duckdb"
 
         result = insert_splits(
-            performance_file=None,
             activity_id=20636804823,
             db_path=str(db_path),
             raw_splits_file=str(sample_raw_splits_file),
@@ -450,7 +377,6 @@ class TestSplitsInserter:
         db_path = tmp_path / "test.duckdb"
 
         result = insert_splits(
-            performance_file=None,
             activity_id=12345,
             db_path=str(db_path),
             raw_splits_file="/nonexistent/splits.json",

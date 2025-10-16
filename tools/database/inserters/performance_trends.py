@@ -1,9 +1,9 @@
 """
 PerformanceTrendsInserter - Insert performance_trends to DuckDB
 
-Supports both legacy (performance.json) and raw data modes (splits.json)
-
-Inserts phase-based performance analysis (warmup/main/finish) into performance_trends table.
+Extracts phase-based performance analysis from raw splits.json and inserts into
+performance_trends table. Supports both 4-phase (warmup/run/recovery/cooldown)
+and legacy 3-phase (warmup/main/finish) structures.
 """
 
 import json
@@ -176,64 +176,42 @@ def _extract_performance_trends_from_raw(raw_splits_file: str) -> dict | None:
 
 
 def insert_performance_trends(
-    performance_file: str | None,
     activity_id: int,
     db_path: str | None = None,
     raw_splits_file: str | None = None,
 ) -> bool:
     """
-    Insert performance_trends from performance.json or raw splits.json into DuckDB performance_trends table.
+    Insert performance_trends from raw splits.json into DuckDB performance_trends table.
 
     Supports both:
     - New 4-phase structure: warmup/run/recovery/cooldown (interval training)
     - Legacy 3-phase structure: warmup/main/finish (regular runs)
 
     Steps:
-    1. Load performance.json (legacy) or raw splits.json
-    2. Extract or calculate performance_trends
+    1. Load raw splits.json
+    2. Extract and calculate performance_trends
     3. Detect phase structure (3-phase or 4-phase)
     4. Convert splits arrays to comma-separated strings
     5. Insert into performance_trends table
 
     Args:
-        performance_file: Path to performance.json (legacy, optional)
         activity_id: Activity ID
         db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
-        raw_splits_file: Path to raw splits.json (for raw mode)
+        raw_splits_file: Path to raw splits.json
 
     Returns:
         True if successful, False otherwise
     """
     try:
-        use_raw_data = performance_file is None
+        # Extract from raw data
+        if not raw_splits_file:
+            logger.error("raw_splits_file required")
+            return False
 
-        if use_raw_data:
-            # Extract from raw data
-            if not raw_splits_file:
-                logger.error("raw_splits_file required for raw data mode")
-                return False
-
-            perf_trends = _extract_performance_trends_from_raw(raw_splits_file)
-            if not perf_trends:
-                logger.error("Failed to extract performance trends from raw data")
-                return False
-        else:
-            # Legacy: Load performance.json
-            # Type narrowing for mypy
-            assert performance_file is not None
-            performance_path = Path(performance_file)
-            if not performance_path.exists():
-                logger.error(f"Performance file not found: {performance_file}")
-                return False
-
-            with open(performance_path, encoding="utf-8") as f:
-                performance_data = json.load(f)
-
-            # Extract performance_trends
-            perf_trends = performance_data.get("performance_trends")
-            if not perf_trends or not isinstance(perf_trends, dict):
-                logger.error(f"No performance_trends found in {performance_file}")
-                return False
+        perf_trends = _extract_performance_trends_from_raw(raw_splits_file)
+        if not perf_trends:
+            logger.error("Failed to extract performance trends from raw data")
+            return False
 
         # Set default DB path
         if db_path is None:
