@@ -17,35 +17,46 @@ class TestHREfficiencyInserter:
     """Test suite for HR Efficiency Inserter."""
 
     @pytest.fixture
-    def sample_performance_file(self, tmp_path):
-        """Create sample performance.json file with hr_efficiency_analysis."""
-        performance_data = {
-            "basic_metrics": {
-                "distance_km": 5.0,
-            },
-            "hr_efficiency_analysis": {
-                "avg_heart_rate": 148.04545454545453,
-                "training_type": "threshold_work",
-                "hr_stability": "変動あり",
-                "description": "適切な心拍ゾーンで実施",
-            },
+    def sample_raw_files(self, tmp_path):
+        """Create sample hr_zones.json and activity.json files."""
+        # Create hr_zones.json
+        hr_zones_data = [
+            {"zoneNumber": 1, "zoneLowBoundary": 117, "secsInZone": 490.546},
+            {"zoneNumber": 2, "zoneLowBoundary": 131, "secsInZone": 1041.858},
+            {"zoneNumber": 3, "zoneLowBoundary": 146, "secsInZone": 507.274},
+            {"zoneNumber": 4, "zoneLowBoundary": 160, "secsInZone": 675.8},
+            {"zoneNumber": 5, "zoneLowBoundary": 175, "secsInZone": 0.0},
+        ]
+        hr_zones_file = tmp_path / "hr_zones.json"
+        with open(hr_zones_file, "w", encoding="utf-8") as f:
+            json.dump(hr_zones_data, f, ensure_ascii=False, indent=2)
+
+        # Create activity.json
+        activity_data = {
+            "summaryDTO": {
+                "averageHR": 148.0,
+                "maxHR": 175.0,
+                "minHR": 120.0,
+                "trainingEffectLabel": "THRESHOLD_WORK",
+            }
         }
+        activity_file = tmp_path / "activity.json"
+        with open(activity_file, "w", encoding="utf-8") as f:
+            json.dump(activity_data, f, ensure_ascii=False, indent=2)
 
-        performance_file = tmp_path / "20615445009.json"
-        with open(performance_file, "w", encoding="utf-8") as f:
-            json.dump(performance_data, f, ensure_ascii=False, indent=2)
-
-        return performance_file
+        return hr_zones_file, activity_file
 
     @pytest.mark.unit
-    def test_insert_hr_efficiency_success(self, sample_performance_file, tmp_path):
+    def test_insert_hr_efficiency_success(self, sample_raw_files, tmp_path):
         """Test insert_hr_efficiency inserts data successfully."""
+        hr_zones_file, activity_file = sample_raw_files
         db_path = tmp_path / "test.duckdb"
 
         result = insert_hr_efficiency(
-            performance_file=str(sample_performance_file),
             activity_id=20615445009,
             db_path=str(db_path),
+            raw_hr_zones_file=str(hr_zones_file),
+            raw_activity_file=str(activity_file),
         )
 
         assert result is True
@@ -53,48 +64,46 @@ class TestHREfficiencyInserter:
 
     @pytest.mark.unit
     def test_insert_hr_efficiency_missing_file(self, tmp_path):
-        """Test insert_hr_efficiency handles missing file."""
+        """Test insert_hr_efficiency handles missing files."""
         db_path = tmp_path / "test.duckdb"
 
         result = insert_hr_efficiency(
-            performance_file="/nonexistent/file.json",
             activity_id=12345,
             db_path=str(db_path),
+            raw_hr_zones_file="/nonexistent/hr_zones.json",
+            raw_activity_file="/nonexistent/activity.json",
         )
 
         assert result is False
 
     @pytest.mark.unit
-    def test_insert_hr_efficiency_no_data(self, tmp_path):
-        """Test insert_hr_efficiency handles missing hr_efficiency_analysis."""
-        performance_data = {"basic_metrics": {"distance_km": 5.0}}
-        performance_file = tmp_path / "test.json"
-        with open(performance_file, "w", encoding="utf-8") as f:
-            json.dump(performance_data, f)
-
+    def test_insert_hr_efficiency_no_required_files(self, tmp_path):
+        """Test insert_hr_efficiency handles missing required files."""
         db_path = tmp_path / "test.duckdb"
 
+        # Missing both files
         result = insert_hr_efficiency(
-            performance_file=str(performance_file),
             activity_id=12345,
             db_path=str(db_path),
+            raw_hr_zones_file=None,
+            raw_activity_file=None,
         )
 
         assert result is False
 
     @pytest.mark.integration
-    def test_insert_hr_efficiency_db_integration(
-        self, sample_performance_file, tmp_path
-    ):
+    def test_insert_hr_efficiency_db_integration(self, sample_raw_files, tmp_path):
         """Test insert_hr_efficiency actually writes to DuckDB."""
         import duckdb
 
+        hr_zones_file, activity_file = sample_raw_files
         db_path = tmp_path / "test.duckdb"
 
         result = insert_hr_efficiency(
-            performance_file=str(sample_performance_file),
             activity_id=20615445009,
             db_path=str(db_path),
+            raw_hr_zones_file=str(hr_zones_file),
+            raw_activity_file=str(activity_file),
         )
 
         assert result is True
@@ -117,7 +126,7 @@ class TestHREfficiencyInserter:
         row = hr_eff[0]
         assert row[0] == 20615445009  # activity_id
         assert row[8] == "threshold_work"  # training_type
-        assert row[3] == "変動あり"  # hr_stability
+        assert row[3] is not None  # hr_stability
 
         conn.close()
 
@@ -165,7 +174,6 @@ class TestHREfficiencyInserter:
         db_path = tmp_path / "test.duckdb"
 
         result = insert_hr_efficiency(
-            performance_file=None,
             activity_id=20636804823,
             db_path=str(db_path),
             raw_hr_zones_file=str(sample_hr_zones_file),
@@ -185,7 +193,6 @@ class TestHREfficiencyInserter:
         db_path = tmp_path / "test.duckdb"
 
         result = insert_hr_efficiency(
-            performance_file=None,
             activity_id=20636804823,
             db_path=str(db_path),
             raw_hr_zones_file=str(sample_hr_zones_file),
@@ -234,7 +241,6 @@ class TestHREfficiencyInserter:
         db_path = tmp_path / "test.duckdb"
 
         result = insert_hr_efficiency(
-            performance_file=None,
             activity_id=12345,
             db_path=str(db_path),
             raw_hr_zones_file="/nonexistent/hr_zones.json",

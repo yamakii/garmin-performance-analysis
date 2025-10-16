@@ -1160,7 +1160,6 @@ class GarminIngestWorker:
             from tools.database.inserters.hr_efficiency import insert_hr_efficiency
 
             hr_eff_success = insert_hr_efficiency(
-                performance_file=None,  # Use raw data mode
                 activity_id=activity_id,
                 db_path=self._db_path,
                 raw_hr_zones_file=str(raw_hr_zones_file) if raw_hr_zones_file else None,

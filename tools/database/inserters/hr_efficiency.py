@@ -1,9 +1,8 @@
 """
 HREfficiencyInserter - Insert hr_efficiency_analysis to DuckDB
 
-Supports both legacy (performance.json) and raw data modes (hr_zones.json + activity.json)
-
-Inserts heart rate efficiency analysis into hr_efficiency table.
+Inserts heart rate efficiency analysis from raw data (hr_zones.json + activity.json)
+into hr_efficiency table.
 """
 
 import json
@@ -121,59 +120,33 @@ def _extract_hr_efficiency_from_raw(
 
 
 def insert_hr_efficiency(
-    performance_file: str | None,
     activity_id: int,
     db_path: str | None = None,
     raw_hr_zones_file: str | None = None,
     raw_activity_file: str | None = None,
 ) -> bool:
     """
-    Insert hr_efficiency_analysis from performance.json or raw data into DuckDB hr_efficiency table.
+    Insert hr_efficiency_analysis from raw data into DuckDB hr_efficiency table.
 
-    Steps:
-    1. Load performance.json (legacy) or raw data files (hr_zones.json + activity.json)
-    2. Extract or calculate hr_efficiency_analysis
-    3. Insert into hr_efficiency table (including zone percentages)
+    Extracts HR efficiency data from raw hr_zones.json and activity.json files
+    and inserts into hr_efficiency table (including zone percentages).
 
     Args:
-        performance_file: Path to performance.json (legacy, optional)
         activity_id: Activity ID
         db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
-        raw_hr_zones_file: Path to hr_zones.json (for raw mode)
-        raw_activity_file: Path to activity.json (for raw mode)
+        raw_hr_zones_file: Path to hr_zones.json
+        raw_activity_file: Path to activity.json
 
     Returns:
         True if successful, False otherwise
     """
     try:
-        use_raw_data = performance_file is None
-
-        if use_raw_data:
-            # Extract from raw data
-            hr_eff = _extract_hr_efficiency_from_raw(
-                raw_hr_zones_file, raw_activity_file
-            )
-            # Check if extraction failed (empty dict)
-            if not hr_eff:
-                logger.error("Failed to extract HR efficiency data from raw files")
-                return False
-        else:
-            # Legacy: Load performance.json
-            # Type narrowing for mypy
-            assert performance_file is not None
-            performance_path = Path(performance_file)
-            if not performance_path.exists():
-                logger.error(f"Performance file not found: {performance_file}")
-                return False
-
-            with open(performance_path, encoding="utf-8") as f:
-                performance_data = json.load(f)
-
-            # Extract hr_efficiency_analysis
-            hr_eff = performance_data.get("hr_efficiency_analysis")
-            if not hr_eff or not isinstance(hr_eff, dict):
-                logger.error(f"No hr_efficiency_analysis found in {performance_file}")
-                return False
+        # Extract from raw data
+        hr_eff = _extract_hr_efficiency_from_raw(raw_hr_zones_file, raw_activity_file)
+        # Check if extraction failed (empty dict)
+        if not hr_eff:
+            logger.error("Failed to extract HR efficiency data from raw files")
+            return False
 
         # Set default DB path
         if db_path is None:

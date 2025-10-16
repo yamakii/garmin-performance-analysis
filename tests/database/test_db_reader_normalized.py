@@ -31,7 +31,7 @@ class TestGarminDBReaderNormalized:
         """Create GarminDBReader with test database containing normalized data."""
         db_path = tmp_path / "test.duckdb"
 
-        # Create test performance.json
+        # Create test performance.json for form_efficiency (still uses performance.json)
         performance_file = tmp_path / f"{test_activity_id}.json"
         performance_data = {
             "form_efficiency_summary": {
@@ -57,24 +57,30 @@ class TestGarminDBReaderNormalized:
                 },
                 "vr_rating": "★★★★☆",
             },
-            "hr_efficiency_analysis": {
-                "primary_zone": "Zone 2",
-                "zone_distribution_rating": "優秀",
-                "hr_stability": "優秀",
-                "aerobic_efficiency": "高い",
-                "training_quality": "優秀",
-                "zone2_focus": True,
-                "zone4_threshold_work": False,
-                "training_type": "aerobic_base",
-                "zone1_percentage": 5.0,
-                "zone2_percentage": 70.0,
-                "zone3_percentage": 20.0,
-                "zone4_percentage": 5.0,
-                "zone5_percentage": 0.0,
-            },
         }
-
         performance_file.write_text(json.dumps(performance_data, indent=2))
+
+        # Create raw data files for hr_efficiency
+        hr_zones_file = tmp_path / "hr_zones.json"
+        hr_zones_data = [
+            {"zoneNumber": 1, "zoneLowBoundary": 117, "secsInZone": 180.0},  # 5%
+            {"zoneNumber": 2, "zoneLowBoundary": 131, "secsInZone": 2520.0},  # 70%
+            {"zoneNumber": 3, "zoneLowBoundary": 146, "secsInZone": 720.0},  # 20%
+            {"zoneNumber": 4, "zoneLowBoundary": 160, "secsInZone": 180.0},  # 5%
+            {"zoneNumber": 5, "zoneLowBoundary": 175, "secsInZone": 0.0},  # 0%
+        ]
+        hr_zones_file.write_text(json.dumps(hr_zones_data, indent=2))
+
+        activity_file = tmp_path / "activity.json"
+        activity_data = {
+            "summaryDTO": {
+                "averageHR": 140,  # Zone 2 range
+                "maxHR": 155,  # Range: 155-128=27, 27/140=0.19 < 0.3 (優秀)
+                "minHR": 128,
+                "trainingEffectLabel": "AEROBIC_BASE",
+            }
+        }
+        activity_file.write_text(json.dumps(activity_data, indent=2))
 
         # Insert activity metadata first (required for foreign key constraint)
         db_writer = GarminDBWriter(db_path=str(db_path))
@@ -99,9 +105,10 @@ class TestGarminDBReaderNormalized:
             db_path=str(db_path),
         )
         insert_hr_efficiency(
-            performance_file=str(performance_file),
             activity_id=test_activity_id,
             db_path=str(db_path),
+            raw_hr_zones_file=str(hr_zones_file),
+            raw_activity_file=str(activity_file),
         )
 
         return GarminDBReader(db_path=str(db_path))
