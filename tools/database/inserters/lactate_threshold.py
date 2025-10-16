@@ -14,41 +14,69 @@ logger = logging.getLogger(__name__)
 
 
 def insert_lactate_threshold(
-    performance_file: str,
+    performance_file: str | None,
     activity_id: int,
     db_path: str | None = None,
+    raw_lactate_threshold_file: str | None = None,
 ) -> bool:
     """
-    Insert lactate_threshold from performance.json into DuckDB lactate_threshold table.
+    Insert lactate_threshold into DuckDB lactate_threshold table.
+
+    Supports two modes:
+    1. Legacy mode: Read from performance.json (performance_file provided)
+    2. Raw data mode: Read from lactate_threshold.json (performance_file=None, raw_lactate_threshold_file provided)
 
     Steps:
-    1. Load performance.json
-    2. Extract lactate_threshold (speed_and_heart_rate and power)
+    1. Load data (from performance.json OR raw lactate_threshold.json)
+    2. Extract lactate_threshold data
     3. Insert into lactate_threshold table
 
     Args:
-        performance_file: Path to performance.json
+        performance_file: Path to performance.json (legacy mode) or None (raw data mode)
         activity_id: Activity ID
         db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
+        raw_lactate_threshold_file: Path to raw lactate_threshold.json (raw data mode only)
 
     Returns:
         True if successful, False otherwise
     """
     try:
-        # Load performance.json
-        performance_path = Path(performance_file)
-        if not performance_path.exists():
-            logger.error(f"Performance file not found: {performance_file}")
-            return False
+        # Determine mode
+        use_raw_data = performance_file is None
 
-        with open(performance_path, encoding="utf-8") as f:
-            performance_data = json.load(f)
+        if use_raw_data:
+            # NEW: Extract from raw data
+            if not raw_lactate_threshold_file:
+                logger.error(
+                    "raw_lactate_threshold_file required when performance_file is None"
+                )
+                return False
 
-        # Extract lactate_threshold
-        lt_data = performance_data.get("lactate_threshold")
-        if not lt_data or not isinstance(lt_data, dict):
-            logger.error(f"No lactate_threshold found in {performance_file}")
-            return False
+            lt_data = _extract_lactate_threshold_from_raw(raw_lactate_threshold_file)
+            if not lt_data:
+                logger.error(
+                    f"Failed to extract lactate_threshold from {raw_lactate_threshold_file}"
+                )
+                return False
+        else:
+            # LEGACY: Read from performance.json
+            if not performance_file:
+                logger.error("performance_file required when not using raw data mode")
+                return False
+
+            performance_path = Path(performance_file)
+            if not performance_path.exists():
+                logger.error(f"Performance file not found: {performance_file}")
+                return False
+
+            with open(performance_path, encoding="utf-8") as f:
+                performance_data = json.load(f)
+
+            # Extract lactate_threshold
+            lt_data = performance_data.get("lactate_threshold")
+            if not lt_data or not isinstance(lt_data, dict):
+                logger.error(f"No lactate_threshold found in {performance_file}")
+                return False
 
         # Set default DB path
         if db_path is None:
@@ -124,3 +152,41 @@ def insert_lactate_threshold(
     except Exception as e:
         logger.error(f"Error inserting lactate threshold: {e}")
         return False
+
+
+def _extract_lactate_threshold_from_raw(raw_lactate_threshold_file: str) -> dict | None:
+    """
+    Extract lactate threshold data from raw lactate_threshold.json.
+
+    Args:
+        raw_lactate_threshold_file: Path to raw lactate_threshold.json
+
+    Returns:
+        Dict with speed_and_heart_rate and power data, or None if extraction fails
+    """
+    try:
+        raw_path = Path(raw_lactate_threshold_file)
+        if not raw_path.exists():
+            logger.error(
+                f"Raw lactate threshold file not found: {raw_lactate_threshold_file}"
+            )
+            return None
+
+        with open(raw_path, encoding="utf-8") as f:
+            raw_data = json.load(f)
+
+        # Validate structure
+        if not isinstance(raw_data, dict):
+            logger.error("Invalid lactate threshold data structure")
+            return None
+
+        # Extract speed_and_heart_rate and power
+        # Raw data already has the correct structure
+        return {
+            "speed_and_heart_rate": raw_data.get("speed_and_heart_rate"),
+            "power": raw_data.get("power"),
+        }
+
+    except Exception as e:
+        logger.error(f"Error extracting lactate threshold from raw data: {e}")
+        return None
