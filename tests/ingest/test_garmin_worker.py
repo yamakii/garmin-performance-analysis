@@ -12,7 +12,6 @@ import json
 from typing import Any
 from unittest.mock import patch
 
-import pandas as pd
 import pytest
 
 from tools.ingest.garmin_worker import GarminIngestWorker
@@ -182,28 +181,18 @@ class TestGarminIngestWorker:
 
     @pytest.mark.unit
     def test_save_data_creates_files(self, worker, sample_raw_data, tmp_path):
-        """Test save_data creates required files (without parquet or performance.json)."""
-        df = pd.DataFrame(
-            {
-                "split_number": [1, 2],
-                "distance_km": [1.0, 1.0],
-                "avg_pace_seconds_per_km": [300, 295],
-            }
-        )
-
+        """Test save_data creates required files (DuckDB insertion only)."""
         worker.raw_dir = tmp_path
-        worker.precheck_dir = tmp_path / "precheck"
-        worker.precheck_dir.mkdir(exist_ok=True)
 
         result = worker.save_data(
-            20464005432, sample_raw_data, df, activity_date="2025-09-22"
+            20464005432, sample_raw_data, activity_date="2025-09-22"
         )
 
-        # Verify result contains file paths (performance.json removed)
+        # Verify result contains file paths (performance.json and precheck.json removed)
         assert "raw_dir" in result
         assert "parquet_file" not in result  # Parquet generation removed
         assert "performance_file" not in result  # Performance.json generation removed
-        assert "precheck_file" in result
+        assert "precheck_file" not in result  # Precheck.json generation removed
 
     @pytest.mark.unit
     def test_process_activity_full_pipeline(self, worker):

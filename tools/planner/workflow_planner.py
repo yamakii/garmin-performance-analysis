@@ -8,7 +8,6 @@ to report generation, with DuckDB integration for activity date resolution.
 import json
 import logging
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 from tools.database.db_reader import GarminDBReader
@@ -73,20 +72,9 @@ class WorkflowPlanner:
                 f"Data collection failed: {ingest_result.get('error', 'Unknown error')}"
             )
 
-        # Step 2: Data validation (check precheck.json)
-        import json
-
-        precheck_file = Path(ingest_result["files"]["precheck_file"])
+        # Step 2: Data validation (precheck.json removed - using defaults)
         validation_status = "passed"
         quality_score = 1.0
-
-        if precheck_file.exists():
-            with open(precheck_file, encoding="utf-8") as f:
-                precheck_data = json.load(f)
-                validation_status = (
-                    "passed" if precheck_data.get("valid", True) else "failed"
-                )
-                quality_score = precheck_data.get("quality_score", 1.0)
 
         result = {
             "activity_id": activity_id,

@@ -28,7 +28,6 @@ uv run python -m tools.planner.workflow_planner {{arg1}}
 - 日付 {{arg1}} からアクティビティIDを解決
 - GarminIngestWorkerでデータ収集
 - DuckDBへの自動挿入
-- データ検証 (precheck.json)
 
 実行後、出力されたJSONから `activity_id` と `date` を取得してください。
 
@@ -67,4 +66,4 @@ prompt: "Activity ID {activity_id} ({date}) の最終レポートを生成して
 - **並列実行必須**: セクション分析は必ず並列で実行（トークン効率）
 - **DuckDB優先**: mcp__garmin-db__*ツールを使用してトークン削減
 - **日本語出力**: 全ての分析は日本語で
-- **データソース**: performance.jsonとDuckDBのみ使用
+- **データソース**: DuckDBのみ使用（raw JSONから直接抽出）

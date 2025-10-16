@@ -123,7 +123,6 @@ class GarminIngestWorker:
         from tools.utils.paths import (
             get_default_db_path,
             get_performance_dir,
-            get_precheck_dir,
             get_raw_dir,
             get_weight_raw_dir,
         )
@@ -131,14 +130,12 @@ class GarminIngestWorker:
         self.project_root = Path(__file__).parent.parent.parent
         self.raw_dir = get_raw_dir()
         self.performance_dir = get_performance_dir()
-        self.precheck_dir = get_precheck_dir()
         self.weight_raw_dir = get_weight_raw_dir()
 
         # Create directories
         for directory in [
             self.raw_dir,
             self.performance_dir,
-            self.precheck_dir,
             self.weight_raw_dir,
         ]:
             directory.mkdir(parents=True, exist_ok=True)
@@ -1009,16 +1006,11 @@ class GarminIngestWorker:
         self,
         activity_id: int,
         raw_data: dict[str, Any],
-        df: pd.DataFrame,
         activity_date: str | None = None,
-        tables: list[str] | None = None,  # NEW: Phase 3 parameter
+        tables: list[str] | None = None,
     ) -> dict[str, Any]:
         """
-        Save all processed data to files and DuckDB.
-
-        Files created:
-        - data/raw/activity/{activity_id}/*.json (already created in collect_data)
-        - data/precheck/{activity_id}.json
+        Save all processed data to DuckDB.
 
         DuckDB insertion order (foreign key constraints):
         1. activities (parent table)
@@ -1028,8 +1020,6 @@ class GarminIngestWorker:
         Args:
             activity_id: Activity ID
             raw_data: Raw data dict
-            df: Parquet DataFrame (used for precheck validation, not saved)
-            performance_data: Performance metrics
             activity_date: Activity date (YYYY-MM-DD format), required for DuckDB insertion
             tables: List of tables to insert. If None, all tables are inserted.
                    If specified, only the listed tables are inserted.
@@ -1040,29 +1030,6 @@ class GarminIngestWorker:
         """
         # Parquet generation removed - DuckDB is primary storage
         # Performance.json generation removed - DuckDB is primary storage
-
-        # Save precheck.json (basic validation data)
-        precheck_data = {
-            "activity_id": activity_id,
-            "total_splits": len(df),
-            "has_hr_data": bool(
-                df["avg_heart_rate"].notna().all()
-                if "avg_heart_rate" in df.columns
-                else False
-            ),
-            "has_power_data": bool(
-                df["avg_power"].notna().all() if "avg_power" in df.columns else False
-            ),
-            "has_form_data": bool(
-                df["ground_contact_time_ms"].notna().all()
-                if "ground_contact_time_ms" in df.columns
-                else False
-            ),
-        }
-        precheck_file = self.precheck_dir / f"{activity_id}.json"
-        with open(precheck_file, "w", encoding="utf-8") as f:
-            json.dump(precheck_data, f, ensure_ascii=False, indent=2)
-        logger.info(f"Saved precheck data to {precheck_file}")
 
         # ===== DuckDB Insertion (respects foreign key order) =====
         # Phase 4: Table filtering implemented via _should_insert_table()
@@ -1317,7 +1284,6 @@ class GarminIngestWorker:
 
         return {
             "raw_dir": str(activity_dir),
-            "precheck_file": str(precheck_file),
         }
 
     def collect_body_composition_data(self, date: str) -> dict[str, Any] | None:
@@ -1568,18 +1534,14 @@ class GarminIngestWorker:
         # Step 1: Collect data (cache-first with optional force_refetch)
         raw_data = self.collect_data(activity_id, force_refetch=force_refetch)
 
-        # Step 2: Placeholder DataFrame (precheck will be removed in Phase 3)
-        df = pd.DataFrame()
-
-        # Step 3: Calculate 7-day median weight for W/kg
+        # Step 2: Calculate 7-day median weight for W/kg
         median_weight_data = self._calculate_median_weight(date)
         weight_kg = median_weight_data["weight_kg"] if median_weight_data else None
 
-        # Step 4: Save data and insert into DuckDB
+        # Step 3: Save data and insert into DuckDB
         file_paths = self.save_data(
             activity_id,
             raw_data,
-            df,
             activity_date=date,
             tables=tables,
         )
