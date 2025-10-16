@@ -18,9 +18,16 @@ model: inherit
 ## 使用するMCPツール
 
 **利用可能なツール（これらのみ使用可能）:**
-- `mcp__garmin-db__get_splits_pace_hr(activity_id)` - ペース・心拍データ（~9フィールド/スプリット）
-- `mcp__garmin-db__get_splits_form_metrics(activity_id)` - フォーム効率データ（GCT, VO, cadence等 ~6フィールド/スプリット）
+- `mcp__garmin-db__get_splits_pace_hr(activity_id, statistics_only=False)` - ペース・心拍データ（~9フィールド/スプリット）
+- `mcp__garmin-db__get_splits_form_metrics(activity_id, statistics_only=False)` - フォーム効率データ（GCT, VO, cadence等 ~6フィールド/スプリット）
 - `mcp__garmin-db__insert_section_analysis_dict()` - 分析結果をDuckDBに保存
+
+**Phase 0 Token Optimization (statistics_only Parameter):**
+- Use `statistics_only=True` by default for trend analysis and overview (80% token reduction):
+  - `get_splits_pace_hr(activity_id, statistics_only=True)` - Returns mean, std, min, max per metric
+  - `get_splits_form_metrics(activity_id, statistics_only=True)` - Returns aggregated statistics
+- Use `statistics_only=False` only when comparing individual split performance
+- Example: "Overall pace trend" → statistics_only=True, "Split 3 vs Split 5" → statistics_only=False
 
 **重要な制約:**
 - **他のセクション分析（efficiency, environment, phase）は参照しないこと**
