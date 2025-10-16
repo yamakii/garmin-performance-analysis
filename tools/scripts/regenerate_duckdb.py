@@ -337,13 +337,15 @@ class DuckDBRegenerator:
         Delete all records from specified tables (table-wide deletion).
 
         Used when regenerating entire tables without --activity-ids filter.
+        Gracefully handles missing tables (skips them with warning).
 
         Args:
             tables: List of table names to delete all records from
 
         Note:
             - Skips body_composition (no activity_id column)
-            - Uses DELETE FROM table without WHERE clause
+            - Uses explicit transaction (BEGIN/COMMIT/ROLLBACK)
+            - Skips tables that don't exist yet (logs warning)
         """
         if not tables:
             return
@@ -357,27 +359,30 @@ class DuckDBRegenerator:
 
         # Connect to DuckDB
         with duckdb.connect(str(self.db_path)) as conn:
+            conn.execute("BEGIN TRANSACTION")
+            deleted_tables = []
             try:
-                # Begin explicit transaction
-                conn.execute("BEGIN TRANSACTION")
-
-                # Delete all records from each table
                 for table in tables_to_delete:
-                    sql = f"DELETE FROM {table}"
-                    logger.debug(f"Deleting all records from {table}")
-                    conn.execute(sql)
+                    try:
+                        sql = f"DELETE FROM {table}"
+                        logger.debug(f"Deleting all records from {table}")
+                        conn.execute(sql)
+                        deleted_tables.append(table)
+                        logger.info(f"Deleted all records from {table}")
+                    except duckdb.CatalogException as e:
+                        # Table doesn't exist yet - skip with warning
+                        logger.warning(
+                            f"Table {table} does not exist, skipping deletion: {e}"
+                        )
+                        continue
 
-                # Commit transaction
                 conn.execute("COMMIT")
-                logger.info(f"Deleted all records from {len(tables_to_delete)} tables")
-
+                logger.info(
+                    f"Successfully deleted records from {len(deleted_tables)} tables"
+                )
             except Exception as e:
-                # Rollback only if transaction is active
-                try:
-                    conn.execute("ROLLBACK")
-                except Exception:
-                    pass  # Transaction may not be active
-                logger.error(f"Error deleting table records: {e}")
+                conn.execute("ROLLBACK")
+                logger.error(f"Error during table deletion, rolled back: {e}")
                 raise
 
     def regenerate_single_activity(

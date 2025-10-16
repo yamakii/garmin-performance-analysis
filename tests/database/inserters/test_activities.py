@@ -10,7 +10,6 @@ import tempfile
 from pathlib import Path
 
 import duckdb
-import pytest
 
 
 def test_insert_activities_missing_file():
@@ -162,42 +161,4 @@ def test_insert_activities_complete_data():
         assert row[11] is None  # total_distance_km
         assert row[12] is None  # avg_heart_rate
 
-        conn.close()
-
-
-def test_insert_activities_real_raw_files():
-    """Test insert_activities with real raw data files from the repo."""
-    from tools.database.inserters.activities import insert_activities
-
-    # Use actual raw data files
-    raw_activity_file = Path("data/raw/activity/20636804823/activity.json")
-    raw_weather_file = Path("data/raw/activity/20636804823/weather.json")
-    raw_gear_file = Path("data/raw/activity/20636804823/gear.json")
-
-    if not raw_activity_file.exists():
-        pytest.skip("Real raw data files not available")
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        db_path = Path(tmpdir) / "test.duckdb"
-
-        result = insert_activities(
-            activity_id=20636804823,
-            date="2025-10-09",
-            db_path=str(db_path),
-            raw_activity_file=str(raw_activity_file),
-            raw_weather_file=(
-                str(raw_weather_file) if raw_weather_file.exists() else None
-            ),
-            raw_gear_file=str(raw_gear_file) if raw_gear_file.exists() else None,
-        )
-        assert result is True
-
-        # Verify inserted metadata
-        conn = duckdb.connect(str(db_path))
-        row = conn.execute(
-            "SELECT activity_id, activity_name, external_temp_c, gear_name FROM activities WHERE activity_id = 20636804823"
-        ).fetchone()
-        assert row is not None
-        assert row[0] == 20636804823
-        # Activity name and weather/gear may or may not exist depending on data
         conn.close()

@@ -313,6 +313,52 @@ class TestDeleteTableAllRecords:
         assert len(splits_deletes) == 1
         assert len(form_deletes) == 1
 
+    def test_delete_table_all_records_handles_missing_tables(self, tmp_path, mocker):
+        """Test that delete_table_all_records handles missing tables gracefully."""
+        # Setup mock connection
+        mock_conn = mocker.MagicMock()
+        mock_conn.__enter__ = mocker.MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = mocker.MagicMock(return_value=False)
+
+        # Mock execute to raise CatalogException for non_existent_table
+        def execute_side_effect(sql):
+            if "non_existent_table" in sql:
+                import duckdb
+
+                raise duckdb.CatalogException(
+                    "Catalog Error: Table with name non_existent_table does not exist!"
+                )
+            return None
+
+        mock_conn.execute = mocker.MagicMock(side_effect=execute_side_effect)
+
+        mocker.patch(
+            "tools.scripts.regenerate_duckdb.duckdb.connect", return_value=mock_conn
+        )
+
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(
+            db_path=db_path, tables=["splits", "non_existent_table"]
+        )
+
+        # Should not raise error, just log warnings
+        regenerator.delete_table_all_records(["splits", "non_existent_table"])
+
+        # Verify both tables were attempted
+        execute_calls = mock_conn.execute.call_args_list
+        executed_sqls = [call[0][0] for call in execute_calls]
+
+        # Should attempt DELETE for both tables
+        splits_deletes = [sql for sql in executed_sqls if "DELETE FROM splits" in sql]
+        non_existent_deletes = [
+            sql for sql in executed_sqls if "DELETE FROM non_existent_table" in sql
+        ]
+
+        assert len(splits_deletes) == 1, "Should attempt to delete from splits"
+        assert (
+            len(non_existent_deletes) == 1
+        ), "Should attempt to delete from non_existent_table"
+
 
 class TestRegenerateAllDeletionLogic:
     """Test regenerate_all deletion strategy (Phase 2: Logic Fix)."""
