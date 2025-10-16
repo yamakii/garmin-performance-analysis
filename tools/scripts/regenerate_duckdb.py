@@ -286,11 +286,6 @@ class DuckDBRegenerator:
             try:
                 # Delete from each table (within transaction)
                 for table in tables_to_delete:
-                    # Skip activities table if it's in the list
-                    # (we don't delete activities, only related data)
-                    if table == "activities":
-                        continue
-
                     # Build DELETE query
                     placeholders = ",".join("?" * len(activity_ids))
                     sql = f"DELETE FROM {table} WHERE activity_id IN ({placeholders})"
@@ -308,6 +303,47 @@ class DuckDBRegenerator:
             except Exception as e:
                 conn.rollback()
                 logger.error(f"Error deleting records: {e}")
+                raise
+
+    def delete_table_all_records(self, tables: list[str]) -> None:
+        """
+        Delete all records from specified tables (table-wide deletion).
+
+        Used when regenerating entire tables without --activity-ids filter.
+
+        Args:
+            tables: List of table names to delete all records from
+
+        Note:
+            - Skips body_composition (no activity_id column)
+            - Uses DELETE FROM table without WHERE clause
+        """
+        if not tables:
+            return
+
+        # Filter out body_composition (no activity_id column)
+        tables_to_delete = [t for t in tables if t != "body_composition"]
+
+        if not tables_to_delete:
+            logger.debug("No tables to delete (body_composition only)")
+            return
+
+        # Connect to DuckDB
+        with duckdb.connect(str(self.db_path)) as conn:
+            try:
+                # Delete all records from each table
+                for table in tables_to_delete:
+                    sql = f"DELETE FROM {table}"
+                    logger.debug(f"Deleting all records from {table}")
+                    conn.execute(sql)
+
+                # Commit transaction
+                conn.commit()
+                logger.info(f"Deleted all records from {len(tables_to_delete)} tables")
+
+            except Exception as e:
+                conn.rollback()
+                logger.error(f"Error deleting table records: {e}")
                 raise
 
     def regenerate_single_activity(
@@ -464,6 +500,13 @@ class DuckDBRegenerator:
             f" (tables: {', '.join(self.tables)})" if self.tables else " (all tables)"
         )
         logger.info(f"Regenerating{tables_info}")
+
+        # Phase 2: Deletion strategy based on activity_ids
+        if self.tables:
+            if activity_ids:  # ID-specific mode
+                self.delete_activity_records(activity_ids)
+            else:  # Table-wide mode
+                self.delete_table_all_records(self.tables)
 
         # Regenerate with progress bar
         for activity_id, activity_date in tqdm(
