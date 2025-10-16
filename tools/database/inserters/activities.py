@@ -145,8 +145,17 @@ def insert_activities(
             if raw_gear_path.exists():
                 with open(raw_gear_path, encoding="utf-8") as f:
                     raw_gear = json.load(f)
-                    gear_type = raw_gear.get("gearTypeName")
-                    gear_model = raw_gear.get("customMakeModel")
+                    # Handle both list and dict formats
+                    if isinstance(raw_gear, list) and len(raw_gear) > 0:
+                        gear_data = raw_gear[0]  # First item in list
+                    elif isinstance(raw_gear, dict):
+                        gear_data = raw_gear
+                    else:
+                        gear_data = None
+
+                    if gear_data:
+                        gear_type = gear_data.get("gearTypeName")
+                        gear_model = gear_data.get("customMakeModel")
 
         # Set default DB path
         if db_path is None:
