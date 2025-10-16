@@ -109,6 +109,7 @@ def temp_raw_data_dir():
 class TestForceOptionIntegration:
     """Integration tests for --force option with real DuckDB."""
 
+    @pytest.mark.skip(reason="Phase 2 feature: force parameter removed in Phase 1")
     def test_force_option_deletes_and_reinserts(
         self, temp_db, temp_raw_data_dir, tmp_path
     ):
@@ -191,12 +192,11 @@ class TestForceOptionIntegration:
             mock_worker.process_activity.return_value = mock_result
             mock_worker_class.return_value = mock_worker
 
-            # Act: Regenerate with force=True
+            # Act: Regenerate with force=True (Phase 2 - removed)
             regenerator = DuckDBRegenerator(
                 raw_dir=temp_raw_data_dir,
                 db_path=db_path,
                 tables=["splits"],
-                force=True,
             )
 
             api_result = regenerator.regenerate_single_activity(12345, "2025-01-01")
@@ -226,6 +226,7 @@ class TestForceOptionIntegration:
             assert result is not None
             assert result[0] == 1, "Other activities should not be affected"
 
+    @pytest.mark.skip(reason="Phase 2 feature: force parameter removed in Phase 1")
     def test_force_option_without_force_skips_existing(
         self, temp_db, temp_raw_data_dir, tmp_path
     ):
@@ -298,7 +299,6 @@ class TestForceOptionIntegration:
                 raw_dir=temp_raw_data_dir,
                 db_path=db_path,
                 tables=None,  # PHASE 3: Full regeneration (not table-selective)
-                force=False,  # No force
             )
 
             api_result = regenerator.regenerate_single_activity(12345, "2025-01-01")
@@ -318,6 +318,7 @@ class TestForceOptionIntegration:
             assert result is not None
             assert result[0] == initial_count, "Data should be unchanged when skipped"
 
+    @pytest.mark.skip(reason="Phase 2 feature: force parameter removed in Phase 1")
     def test_force_deletes_multiple_tables(self, temp_db, temp_raw_data_dir, tmp_path):
         """Test that --force deletes from multiple specified tables."""
         # Arrange: Create a persistent DB file
@@ -403,12 +404,11 @@ class TestForceOptionIntegration:
             mock_worker.process_activity.return_value = {}
             mock_worker_class.return_value = mock_worker
 
-            # Act: Regenerate with force=True for multiple tables
+            # Act: Regenerate with force=True for multiple tables (Phase 2 - removed)
             regenerator = DuckDBRegenerator(
                 raw_dir=temp_raw_data_dir,
                 db_path=db_path,
                 tables=["splits", "form_efficiency"],
-                force=True,
             )
 
             api_result = regenerator.regenerate_single_activity(12345, "2025-01-01")
