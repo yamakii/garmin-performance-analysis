@@ -22,9 +22,7 @@ class TestGarminWorkerTimeSeriesIntegration:
         """Create GarminIngestWorker instance with temporary paths."""
         worker = GarminIngestWorker(db_path=str(tmp_path / "test.duckdb"))
         worker.raw_dir = tmp_path / "raw"
-        worker.performance_dir = tmp_path / "performance"
         worker.raw_dir.mkdir(parents=True)
-        worker.performance_dir.mkdir(parents=True)
         return worker
 
     @pytest.fixture

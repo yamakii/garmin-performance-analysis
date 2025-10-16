@@ -25,16 +25,12 @@ def worker():
         worker = GarminIngestWorker()
         worker.project_root = tmppath
         worker.raw_dir = tmppath / "data" / "raw"
-        worker.performance_dir = tmppath / "data" / "performance"
-        worker.precheck_dir = tmppath / "data" / "precheck"
         worker.weight_raw_dir = tmppath / "data" / "raw" / "weight"  # New path
         worker._db_path = str(tmppath / "test.duckdb")
 
         # Create directories
         for directory in [
             worker.raw_dir,
-            worker.performance_dir,
-            worker.precheck_dir,
             worker.weight_raw_dir,
         ]:
             directory.mkdir(parents=True, exist_ok=True)
