@@ -122,3 +122,84 @@ class TestVO2MaxInserter:
         assert row[5] == 0  # category
 
         conn.close()
+
+    @pytest.fixture
+    def sample_raw_vo2_max_file(self, tmp_path):
+        """Create sample vo2_max.json file (raw API response)."""
+        raw_vo2_max = {
+            "generic": {
+                "vo2MaxValue": 45,
+                "vo2MaxPreciseValue": 44.7,
+                "calendarDate": "2025-08-19",
+                "fitnessAge": None,
+            }
+        }
+
+        raw_file = tmp_path / "vo2_max.json"
+        with open(raw_file, "w", encoding="utf-8") as f:
+            json.dump(raw_vo2_max, f, ensure_ascii=False, indent=2)
+
+        return raw_file
+
+    @pytest.mark.unit
+    def test_extract_vo2_max_from_raw_success(self, sample_raw_vo2_max_file):
+        """Test _extract_vo2_max_from_raw extracts data correctly."""
+        from tools.database.inserters.vo2_max import _extract_vo2_max_from_raw
+
+        result = _extract_vo2_max_from_raw(str(sample_raw_vo2_max_file))
+
+        assert result is not None
+        assert result["precise_value"] == 44.7
+        assert result["value"] == 45.0
+        assert result["date"] == "2025-08-19"
+        assert result["fitness_age"] is None
+        assert result["category"] == 0
+
+    @pytest.mark.unit
+    def test_insert_vo2_max_from_raw_data(self, sample_raw_vo2_max_file, tmp_path):
+        """Test insert_vo2_max with raw data (performance_file=None)."""
+        db_path = tmp_path / "test.duckdb"
+
+        result = insert_vo2_max(
+            performance_file=None,
+            activity_id=20107340187,
+            db_path=str(db_path),
+            raw_vo2_max_file=str(sample_raw_vo2_max_file),
+        )
+
+        assert result is True
+        assert db_path.exists()
+
+    @pytest.mark.integration
+    def test_insert_vo2_max_raw_data_integrity(self, sample_raw_vo2_max_file, tmp_path):
+        """Test raw data mode produces same result as performance.json mode."""
+        import duckdb
+
+        db_path = tmp_path / "test.duckdb"
+
+        # Insert from raw data
+        result = insert_vo2_max(
+            performance_file=None,
+            activity_id=20107340187,
+            db_path=str(db_path),
+            raw_vo2_max_file=str(sample_raw_vo2_max_file),
+        )
+
+        assert result is True
+
+        # Verify data in DuckDB matches expected values
+        conn = duckdb.connect(str(db_path))
+        vo2_data = conn.execute(
+            "SELECT * FROM vo2_max WHERE activity_id = 20107340187"
+        ).fetchall()
+        assert len(vo2_data) == 1
+
+        row = vo2_data[0]
+        assert row[0] == 20107340187  # activity_id
+        assert abs(row[1] - 44.7) < 0.1  # precise_value (from vo2MaxPreciseValue)
+        assert abs(row[2] - 45.0) < 0.1  # value (from vo2MaxValue)
+        assert str(row[3]) == "2025-08-19"  # date (from calendarDate)
+        assert row[4] is None  # fitness_age
+        assert row[5] == 0  # category (default)
+
+        conn.close()

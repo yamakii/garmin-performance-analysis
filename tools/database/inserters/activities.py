@@ -1,8 +1,11 @@
 """
-ActivitiesInserter - Insert activity metadata from performance.json to DuckDB activities table
+ActivitiesInserter - Insert activity metadata to DuckDB activities table
 
+Supports both legacy (performance.json) and raw data modes.
 Populates the activities table with 36 columns of metadata for each activity.
 This inserter must be called FIRST before other inserters due to foreign key constraints.
+
+Migration Status: DuckDB-first architecture (performance.json optional)
 """
 
 import json
@@ -16,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 def insert_activities(
-    performance_file: str,
+    performance_file: str | None,
     activity_id: int,
     date: str,
     db_path: str | None = None,
@@ -27,14 +30,18 @@ def insert_activities(
     """
     Insert activity metadata into DuckDB activities table.
 
+    Supports two modes:
+    1. Legacy mode (performance_file provided): Extract from performance.json + optional raw files
+    2. Raw data mode (performance_file=None): Extract only from raw files (DuckDB-first)
+
     Extracts 36 columns from:
-    - performance.json: basic_metrics, efficiency_metrics, training_effect, power_to_weight, split_metrics
+    - performance.json (legacy): basic_metrics, efficiency_metrics, training_effect, power_to_weight, split_metrics
     - activity.json (optional): activityName, startTimeLocal, startTimeGMT, locationName
     - weather.json (optional): temp, relativeHumidity, windSpeed, windDirectionCompassPoint
     - gear.json (optional): gearTypeName, customMakeModel
 
     Args:
-        performance_file: Path to performance.json
+        performance_file: Path to performance.json (None for raw data mode)
         activity_id: Activity ID
         date: Activity date (YYYY-MM-DD format)
         db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
@@ -46,32 +53,45 @@ def insert_activities(
         True if successful, False otherwise
     """
     try:
-        # Load performance.json
-        performance_path = Path(performance_file)
-        if not performance_path.exists():
-            logger.error(f"Performance file not found: {performance_file}")
-            return False
+        # Load performance.json (if using legacy mode)
+        if performance_file is None:
+            # Raw data mode: performance.json not used, extract from raw files only
+            logger.debug(f"Using raw data mode for activity {activity_id}")
+            performance_data = {}
+            basic_metrics = {}
+            efficiency_metrics = {}
+            training_effect = {}
+            power_to_weight = {}
+            split_metrics = []
+        else:
+            # Legacy mode: Load from performance.json
+            performance_path = Path(performance_file)
+            if not performance_path.exists():
+                logger.error(f"Performance file not found: {performance_file}")
+                return False
 
-        with open(performance_path, encoding="utf-8") as f:
-            performance_data = json.load(f)
+            with open(performance_path, encoding="utf-8") as f:
+                performance_data = json.load(f)
 
-        # Extract basic_metrics (required)
-        basic_metrics = performance_data.get("basic_metrics", {})
-        if not basic_metrics:
-            logger.error(f"No basic_metrics found in {performance_file}")
-            return False
+            # Extract basic_metrics (required)
+            basic_metrics = performance_data.get("basic_metrics", {})
+            if not basic_metrics:
+                logger.error(f"No basic_metrics found in {performance_file}")
+                return False
 
-        # Extract efficiency_metrics (optional)
-        efficiency_metrics = performance_data.get("efficiency_metrics", {})
+            # Extract efficiency_metrics (optional)
+            efficiency_metrics = performance_data.get("efficiency_metrics", {})
 
-        # Extract training_effect (optional)
-        training_effect = performance_data.get("training_effect", {})
+            # Extract training_effect (optional)
+            training_effect = performance_data.get("training_effect", {})
 
-        # Extract power_to_weight (optional)
-        power_to_weight = performance_data.get("power_to_weight", {})
+            # Extract power_to_weight (optional)
+            power_to_weight = performance_data.get("power_to_weight", {})
 
-        # Extract elevation from split_metrics (sum of all splits)
-        split_metrics = performance_data.get("split_metrics", [])
+            # Extract elevation from split_metrics (sum of all splits)
+            split_metrics = performance_data.get("split_metrics", [])
+
+        # Calculate total elevation (from split_metrics or raw splits)
         total_elevation_gain = sum(
             split.get("elevation_gain_m", 0) for split in split_metrics
         )

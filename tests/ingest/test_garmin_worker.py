@@ -231,7 +231,7 @@ class TestGarminIngestWorker:
 
     @pytest.mark.unit
     def test_save_data_creates_files(self, worker, sample_raw_data, tmp_path):
-        """Test save_data creates required files (without parquet)."""
+        """Test save_data creates required files (without parquet or performance.json)."""
         df = pd.DataFrame(
             {
                 "split_number": [1, 2],
@@ -239,20 +239,20 @@ class TestGarminIngestWorker:
                 "avg_pace_seconds_per_km": [300, 295],
             }
         )
-        performance_data: dict[str, dict[str, int]] = {"basic_metrics": {}}
 
-        with patch("tools.ingest.garmin_worker.Path") as mock_path:
-            mock_path.return_value = tmp_path
+        worker.raw_dir = tmp_path
+        worker.precheck_dir = tmp_path / "precheck"
+        worker.precheck_dir.mkdir(exist_ok=True)
 
-            result = worker.save_data(
-                20464005432, sample_raw_data, df, performance_data
-            )
+        result = worker.save_data(
+            20464005432, sample_raw_data, df, activity_date="2025-09-22"
+        )
 
-            # Verify result contains file paths (parquet_file should NOT be present)
-            assert "raw_file" in result
-            assert "parquet_file" not in result  # Parquet generation removed
-            assert "performance_file" in result
-            assert "precheck_file" in result
+        # Verify result contains file paths (performance.json removed)
+        assert "raw_dir" in result
+        assert "parquet_file" not in result  # Parquet generation removed
+        assert "performance_file" not in result  # Performance.json generation removed
+        assert "precheck_file" in result
 
     @pytest.mark.unit
     def test_process_activity_full_pipeline(self, worker):
@@ -260,7 +260,6 @@ class TestGarminIngestWorker:
         with (
             patch.object(worker, "collect_data") as mock_collect,
             patch.object(worker, "create_parquet_dataset") as mock_parquet,
-            patch.object(worker, "_calculate_split_metrics") as mock_calc,
             patch.object(worker, "save_data") as mock_save,
         ):
             # Setup mocks
@@ -269,7 +268,6 @@ class TestGarminIngestWorker:
                 "splits": {"lapDTOs": []},
             }
             mock_parquet.return_value = pd.DataFrame()
-            mock_calc.return_value = {}
             mock_save.return_value = {
                 "activity_id": 12345,
                 "date": "2025-09-22",
@@ -277,10 +275,9 @@ class TestGarminIngestWorker:
 
             result = worker.process_activity(12345, "2025-09-22")
 
-            # Verify all steps were called
+            # Verify all steps were called (excluding removed _calculate_split_metrics)
             mock_collect.assert_called_once_with(12345, force_refetch=None)
             mock_parquet.assert_called_once()
-            mock_calc.assert_called_once()
             mock_save.assert_called_once()
 
             assert result["activity_id"] == 12345

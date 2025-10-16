@@ -120,3 +120,125 @@ class TestHREfficiencyInserter:
         assert row[3] == "変動あり"  # hr_stability
 
         conn.close()
+
+    @pytest.fixture
+    def sample_hr_zones_file(self, tmp_path):
+        """Create sample hr_zones.json file."""
+        hr_zones = [
+            {"zoneNumber": 1, "secsInZone": 88.001, "zoneLowBoundary": 116},
+            {"zoneNumber": 2, "secsInZone": 576.894, "zoneLowBoundary": 130},
+            {"zoneNumber": 3, "secsInZone": 1488.727, "zoneLowBoundary": 145},
+            {"zoneNumber": 4, "secsInZone": 0.0, "zoneLowBoundary": 159},
+            {"zoneNumber": 5, "secsInZone": 0.0, "zoneLowBoundary": 174},
+        ]
+
+        hr_zones_file = tmp_path / "hr_zones.json"
+        with open(hr_zones_file, "w", encoding="utf-8") as f:
+            json.dump(hr_zones, f, ensure_ascii=False, indent=2)
+
+        return hr_zones_file
+
+    @pytest.fixture
+    def sample_activity_file(self, tmp_path):
+        """Create sample activity.json file."""
+        activity_data = {
+            "activityId": 20636804823,
+            "summaryDTO": {
+                "averageHR": 143.0,
+                "maxHR": 156.0,
+                "minHR": 70.0,
+                "trainingEffectLabel": "AEROBIC_BASE",
+            },
+        }
+
+        activity_file = tmp_path / "activity.json"
+        with open(activity_file, "w", encoding="utf-8") as f:
+            json.dump(activity_data, f, ensure_ascii=False, indent=2)
+
+        return activity_file
+
+    @pytest.mark.unit
+    def test_insert_hr_efficiency_raw_data_success(
+        self, sample_hr_zones_file, sample_activity_file, tmp_path
+    ):
+        """Test insert_hr_efficiency with raw data mode."""
+        db_path = tmp_path / "test.duckdb"
+
+        result = insert_hr_efficiency(
+            performance_file=None,
+            activity_id=20636804823,
+            db_path=str(db_path),
+            raw_hr_zones_file=str(sample_hr_zones_file),
+            raw_activity_file=str(sample_activity_file),
+        )
+
+        assert result is True
+        assert db_path.exists()
+
+    @pytest.mark.integration
+    def test_insert_hr_efficiency_raw_data_db_integration(
+        self, sample_hr_zones_file, sample_activity_file, tmp_path
+    ):
+        """Test insert_hr_efficiency with raw data actually writes to DuckDB."""
+        import duckdb
+
+        db_path = tmp_path / "test.duckdb"
+
+        result = insert_hr_efficiency(
+            performance_file=None,
+            activity_id=20636804823,
+            db_path=str(db_path),
+            raw_hr_zones_file=str(sample_hr_zones_file),
+            raw_activity_file=str(sample_activity_file),
+        )
+
+        assert result is True
+
+        # Verify data in DuckDB
+        conn = duckdb.connect(str(db_path))
+
+        # Check hr_efficiency table exists
+        tables = conn.execute("SHOW TABLES").fetchall()
+        table_names = [t[0] for t in tables]
+        assert "hr_efficiency" in table_names
+
+        # Check hr_efficiency data
+        hr_eff = conn.execute(
+            "SELECT * FROM hr_efficiency WHERE activity_id = 20636804823"
+        ).fetchall()
+        assert len(hr_eff) == 1
+
+        # Verify data values
+        row = hr_eff[0]
+        assert row[0] == 20636804823  # activity_id
+        assert row[8] == "aerobic_base"  # training_type (from trainingEffectLabel)
+        assert row[3] is not None  # hr_stability
+
+        # Verify zone percentages
+        total_time = 88.001 + 576.894 + 1488.727
+        expected_zone1_pct = round((88.001 / total_time) * 100, 2)
+        expected_zone2_pct = round((576.894 / total_time) * 100, 2)
+        expected_zone3_pct = round((1488.727 / total_time) * 100, 2)
+
+        assert row[9] == expected_zone1_pct  # zone1_percentage
+        assert row[10] == expected_zone2_pct  # zone2_percentage
+        assert row[11] == expected_zone3_pct  # zone3_percentage
+        assert row[12] == 0.0  # zone4_percentage
+        assert row[13] == 0.0  # zone5_percentage
+
+        conn.close()
+
+    @pytest.mark.unit
+    def test_insert_hr_efficiency_raw_data_missing_files(self, tmp_path):
+        """Test insert_hr_efficiency raw mode handles missing files."""
+        db_path = tmp_path / "test.duckdb"
+
+        result = insert_hr_efficiency(
+            performance_file=None,
+            activity_id=12345,
+            db_path=str(db_path),
+            raw_hr_zones_file="/nonexistent/hr_zones.json",
+            raw_activity_file="/nonexistent/activity.json",
+        )
+
+        assert result is False

@@ -53,7 +53,7 @@ class TestProcessActivityDuckDBIntegration:
             assert result["source"] == "duckdb_cache"
             assert result["activity_id"] == activity_id
             assert result["date"] == date
-            assert result["performance_data"] == cached_performance_data
+            # performance_data no longer returned (removed in Phase 3)
 
     @pytest.mark.integration
     def test_process_activity_falls_back_to_raw_data(self, worker):
