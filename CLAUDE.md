@@ -78,11 +78,67 @@ Raw Data (API) → Performance Data (pre-processed) → Analysis (DuckDB) → Re
 **Categories:**
 - **Performance Data**: `get_performance_trends`, `get_weather_data`, `get_section_analysis`
 - **Normalized Tables**: `get_form_efficiency_summary`, `get_hr_efficiency_analysis`, `get_heart_rate_zones_detail`, `get_vo2_max_data`, `get_lactate_threshold_data`
-- **Splits Data** (lightweight): `get_splits_pace_hr` (split/phase), `get_splits_form_metrics` (form), `get_splits_elevation` (environment), `get_splits_all` (summary only)
+- **Splits Data** (lightweight, with statistics mode):
+  - `get_splits_pace_hr(activity_id, statistics_only=False)` (split/phase)
+  - `get_splits_form_metrics(activity_id, statistics_only=False)` (form)
+  - `get_splits_elevation(activity_id, statistics_only=False)` (environment)
+  - Set `statistics_only=True` for 80% token reduction (summary only)
+- **Deprecated** ⚠️:
+  - `get_splits_all` → Use `export()` (Phase 1) or lightweight splits + statistics mode
+  - `get_section_analysis` → Use `extract_insights()`
 - **Write**: `insert_section_analysis_dict` (recommended), `insert_section_analysis` (legacy)
 - **RAG Queries**: `get_interval_analysis`, `get_split_time_series_detail` (DuckDB-based, 98.8% token reduction), `get_time_range_detail`, `detect_form_anomalies_summary` (lightweight, ~700 tokens, 95% reduction), `get_form_anomaly_details` (filtered details, variable size), `analyze_performance_trends`, `extract_insights`, `compare_similar_workouts`
 
 **Note:** Prefer lightweight splits APIs for targeted analysis. Time series tools use DuckDB for 98.8% token reduction. activity_details.json provides 26 second-by-second metrics.
+
+### MCP Function Selection Guidelines (Phase 0 Architecture)
+
+**Token Optimization Strategy:**
+- Use `statistics_only=True` for trend analysis and overview queries
+- Use full data mode only when individual split details are needed
+- Use deprecated functions only for backward compatibility (will be removed in future)
+
+**Function Categories:**
+
+1. **Statistical Queries (Recommended)** - ~200-300 bytes
+   - `get_splits_pace_hr(activity_id, statistics_only=True)`
+   - `get_splits_form_metrics(activity_id, statistics_only=True)`
+   - `get_splits_elevation(activity_id, statistics_only=True)`
+   - Returns: mean, median, std, min, max for each metric
+
+2. **Full Data Queries** - ~500-1000 bytes
+   - `get_splits_pace_hr(activity_id, statistics_only=False)` (default)
+   - `get_splits_form_metrics(activity_id, statistics_only=False)` (default)
+   - `get_splits_elevation(activity_id, statistics_only=False)` (default)
+   - Returns: per-split data (10-20 splits)
+
+3. **Deprecated Functions** ⚠️ - Use alternatives
+   - `get_splits_all(activity_id)` → Use `export()` (Phase 1) or lightweight splits + `statistics_only=True`
+   - `get_section_analysis(activity_id, section_type)` → Use `extract_insights()`
+   - Both have `max_output_size` limits (default 10KB)
+
+#### Statistics Mode Examples
+
+**Use Case 1: Trend Analysis (statistics_only=True)**
+```python
+# Get pace statistics across all splits (200 bytes vs 1KB)
+stats = get_splits_pace_hr(activity_id=12345, statistics_only=True)
+# Returns: {"pace": {"mean": 305.2, "median": 303.1, ...}}
+```
+
+**Use Case 2: Individual Split Analysis (statistics_only=False)**
+```python
+# Get pace for each 1km split (default behavior)
+splits = get_splits_pace_hr(activity_id=12345, statistics_only=False)
+# Returns: [{"split": 1, "pace": 303.5, "hr": 162}, ...]
+```
+
+**Use Case 3: Agent Usage**
+```markdown
+# In agent prompts (.claude/agents/*.md):
+Use `get_splits_pace_hr(activity_id, statistics_only=True)` for overview analysis.
+Use `statistics_only=False` only when individual split comparison is needed.
+```
 
 **Form Anomaly Detection (v2 - 95% Token Reduction):**
 - **Summary First**: Always start with `detect_form_anomalies_summary()` for multi-activity overview (~700 tokens)
