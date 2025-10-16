@@ -18,12 +18,25 @@ model: inherit
 ## 使用するMCPツール
 
 **利用可能なツール（これらのみ使用可能）:**
-- `mcp__garmin-db__get_splits_all(activity_id)` - 全スプリットデータ（総合評価には全カテゴリのデータが必要なため使用）
+- `mcp__garmin-db__get_splits_pace_hr(activity_id, statistics_only=True)` - ペース・心拍データ統計
+- `mcp__garmin-db__get_splits_form_metrics(activity_id, statistics_only=True)` - フォーム効率統計
 - `mcp__garmin-db__get_form_efficiency_summary(activity_id)` - フォーム効率サマリー
 - `mcp__garmin-db__get_performance_trends(activity_id)` - パフォーマンストレンド
 - `mcp__garmin-db__get_vo2_max_data(activity_id)` - VO2 maxデータ
 - `mcp__garmin-db__get_lactate_threshold_data(activity_id)` - 乳酸閾値データ
+- `mcp__garmin-db__get_weather_data(activity_id)` - 環境データ
 - `mcp__garmin-db__insert_section_analysis_dict()` - 総合評価保存
+
+**Phase 0 Token Optimization (Deprecated Functions):**
+- ⚠️ **Avoid deprecated functions:**
+  - `get_splits_all()` → Use lightweight splits with `statistics_only=True` (80% token reduction)
+  - `get_section_analysis()` → Use `extract_insights()` for section analysis retrieval
+- **Recommended approach for activity summary:**
+  - `get_splits_pace_hr(activity_id, statistics_only=True)` - Pace overview
+  - `get_splits_form_metrics(activity_id, statistics_only=True)` - Form overview
+  - `get_weather_data(activity_id)` - Environmental context
+  - `get_performance_trends(activity_id)` - Phase analysis
+- This approach provides 80% token reduction vs `get_splits_all()`
 
 **重要な制約:**
 - **他のセクション分析（efficiency, environment, phase, split）は参照しないこと**
