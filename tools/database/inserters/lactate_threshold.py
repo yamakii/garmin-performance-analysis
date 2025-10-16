@@ -1,9 +1,8 @@
 """
 LactateThresholdInserter - Insert lactate_threshold to DuckDB
 
-Supports both legacy (performance.json) and raw data modes (lactate_threshold.json)
-
-Inserts lactate threshold data (HR, speed, power) into lactate_threshold table.
+Inserts lactate threshold data (HR, speed, power) from raw API file
+(lactate_threshold.json) into lactate_threshold table.
 """
 
 import json
@@ -16,69 +15,38 @@ logger = logging.getLogger(__name__)
 
 
 def insert_lactate_threshold(
-    performance_file: str | None,
     activity_id: int,
     db_path: str | None = None,
     raw_lactate_threshold_file: str | None = None,
 ) -> bool:
     """
-    Insert lactate_threshold into DuckDB lactate_threshold table.
+    Insert lactate_threshold into DuckDB lactate_threshold table from raw API file.
 
-    Supports two modes:
-    1. Legacy mode: Read from performance.json (performance_file provided)
-    2. Raw data mode: Read from lactate_threshold.json (performance_file=None, raw_lactate_threshold_file provided)
-
-    Steps:
-    1. Load data (from performance.json OR raw lactate_threshold.json)
-    2. Extract lactate_threshold data
-    3. Insert into lactate_threshold table
+    Extracts lactate threshold data (HR, speed, power) from lactate_threshold.json
+    and inserts into lactate_threshold table.
 
     Args:
-        performance_file: Path to performance.json (legacy mode) or None (raw data mode)
         activity_id: Activity ID
         db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
-        raw_lactate_threshold_file: Path to raw lactate_threshold.json (raw data mode only)
+        raw_lactate_threshold_file: Path to raw lactate_threshold.json
 
     Returns:
         True if successful, False otherwise
     """
     try:
-        # Determine mode
-        use_raw_data = performance_file is None
+        # Extract from raw data
+        if not raw_lactate_threshold_file:
+            logger.warning(
+                f"No raw_lactate_threshold_file provided for activity {activity_id}, skipping"
+            )
+            return True  # Not an error, lactate threshold is optional
 
-        if use_raw_data:
-            # NEW: Extract from raw data
-            if not raw_lactate_threshold_file:
-                logger.error(
-                    "raw_lactate_threshold_file required when performance_file is None"
-                )
-                return False
-
-            lt_data = _extract_lactate_threshold_from_raw(raw_lactate_threshold_file)
-            if not lt_data:
-                logger.error(
-                    f"Failed to extract lactate_threshold from {raw_lactate_threshold_file}"
-                )
-                return False
-        else:
-            # LEGACY: Read from performance.json
-            if not performance_file:
-                logger.error("performance_file required when not using raw data mode")
-                return False
-
-            performance_path = Path(performance_file)
-            if not performance_path.exists():
-                logger.error(f"Performance file not found: {performance_file}")
-                return False
-
-            with open(performance_path, encoding="utf-8") as f:
-                performance_data = json.load(f)
-
-            # Extract lactate_threshold
-            lt_data = performance_data.get("lactate_threshold")
-            if not lt_data or not isinstance(lt_data, dict):
-                logger.error(f"No lactate_threshold found in {performance_file}")
-                return False
+        lt_data = _extract_lactate_threshold_from_raw(raw_lactate_threshold_file)
+        if not lt_data:
+            logger.warning(
+                f"Failed to extract lactate_threshold from {raw_lactate_threshold_file}, skipping"
+            )
+            return True  # Not an error, lactate threshold is optional
 
         # Set default DB path
         if db_path is None:

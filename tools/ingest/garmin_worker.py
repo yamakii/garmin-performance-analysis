@@ -1142,7 +1142,6 @@ class GarminIngestWorker:
                 raw_hr_zones_file = None
 
             hr_zones_success = insert_heart_rate_zones(
-                performance_file=None,  # Use raw data mode
                 activity_id=activity_id,
                 db_path=self._db_path,
                 raw_hr_zones_file=str(raw_hr_zones_file) if raw_hr_zones_file else None,
@@ -1215,7 +1214,6 @@ class GarminIngestWorker:
                 raw_lactate_threshold_file = None
 
             lt_success = insert_lactate_threshold(
-                performance_file=None,  # Use raw data mode
                 activity_id=activity_id,
                 db_path=self._db_path,
                 raw_lactate_threshold_file=(

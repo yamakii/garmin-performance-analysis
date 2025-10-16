@@ -17,52 +17,31 @@ class TestHeartRateZonesInserter:
     """Test suite for Heart Rate Zones Inserter."""
 
     @pytest.fixture
-    def sample_performance_file(self, tmp_path):
-        """Create sample performance.json file with heart_rate_zones."""
-        performance_data = {
-            "basic_metrics": {
-                "distance_km": 5.0,
-                "duration_seconds": 2715.478,
-            },
-            "heart_rate_zones": {
-                "zone1": {
-                    "low": 117,
-                    "secs_in_zone": 490.546,
-                },
-                "zone2": {
-                    "low": 131,
-                    "secs_in_zone": 1041.858,
-                },
-                "zone3": {
-                    "low": 146,
-                    "secs_in_zone": 507.274,
-                },
-                "zone4": {
-                    "low": 160,
-                    "secs_in_zone": 675.8,
-                },
-                "zone5": {
-                    "low": 175,
-                    "secs_in_zone": 0.0,
-                },
-            },
-        }
+    def sample_hr_zones_file(self, tmp_path):
+        """Create sample hr_zones.json file."""
+        hr_zones_data = [
+            {"zoneNumber": 1, "zoneLowBoundary": 117, "secsInZone": 490.546},
+            {"zoneNumber": 2, "zoneLowBoundary": 131, "secsInZone": 1041.858},
+            {"zoneNumber": 3, "zoneLowBoundary": 146, "secsInZone": 507.274},
+            {"zoneNumber": 4, "zoneLowBoundary": 160, "secsInZone": 675.8},
+            {"zoneNumber": 5, "zoneLowBoundary": 175, "secsInZone": 0.0},
+        ]
 
-        performance_file = tmp_path / "20615445009.json"
-        with open(performance_file, "w", encoding="utf-8") as f:
-            json.dump(performance_data, f, ensure_ascii=False, indent=2)
+        hr_zones_file = tmp_path / "hr_zones.json"
+        with open(hr_zones_file, "w", encoding="utf-8") as f:
+            json.dump(hr_zones_data, f, ensure_ascii=False, indent=2)
 
-        return performance_file
+        return hr_zones_file
 
     @pytest.mark.unit
-    def test_insert_heart_rate_zones_success(self, sample_performance_file, tmp_path):
+    def test_insert_heart_rate_zones_success(self, sample_hr_zones_file, tmp_path):
         """Test insert_heart_rate_zones inserts data successfully."""
         db_path = tmp_path / "test.duckdb"
 
         result = insert_heart_rate_zones(
-            performance_file=str(sample_performance_file),
             activity_id=20615445009,
             db_path=str(db_path),
+            raw_hr_zones_file=str(sample_hr_zones_file),
         )
 
         assert result is True
@@ -74,34 +53,29 @@ class TestHeartRateZonesInserter:
         db_path = tmp_path / "test.duckdb"
 
         result = insert_heart_rate_zones(
-            performance_file="/nonexistent/file.json",
             activity_id=12345,
             db_path=str(db_path),
+            raw_hr_zones_file="/nonexistent/file.json",
         )
 
         assert result is False
 
     @pytest.mark.unit
-    def test_insert_heart_rate_zones_no_data(self, tmp_path):
-        """Test insert_heart_rate_zones handles missing heart_rate_zones."""
-        performance_data = {"basic_metrics": {"distance_km": 5.0}}
-        performance_file = tmp_path / "test.json"
-        with open(performance_file, "w", encoding="utf-8") as f:
-            json.dump(performance_data, f)
-
+    def test_insert_heart_rate_zones_no_file_provided(self, tmp_path):
+        """Test insert_heart_rate_zones handles missing hr_zones file."""
         db_path = tmp_path / "test.duckdb"
 
         result = insert_heart_rate_zones(
-            performance_file=str(performance_file),
             activity_id=12345,
             db_path=str(db_path),
+            raw_hr_zones_file=None,
         )
 
         assert result is False
 
     @pytest.mark.integration
     def test_insert_heart_rate_zones_db_integration(
-        self, sample_performance_file, tmp_path
+        self, sample_hr_zones_file, tmp_path
     ):
         """Test insert_heart_rate_zones actually writes to DuckDB."""
         import duckdb
@@ -109,9 +83,9 @@ class TestHeartRateZonesInserter:
         db_path = tmp_path / "test.duckdb"
 
         result = insert_heart_rate_zones(
-            performance_file=str(sample_performance_file),
             activity_id=20615445009,
             db_path=str(db_path),
+            raw_hr_zones_file=str(sample_hr_zones_file),
         )
 
         assert result is True

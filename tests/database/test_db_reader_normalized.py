@@ -227,21 +227,16 @@ class TestGetHeartRateZonesDetail:
         """Create GarminDBReader with test database containing HR zones data."""
         db_path = tmp_path / "test.duckdb"
 
-        # Create test performance.json with heart_rate_zones
-        performance_file = tmp_path / f"{test_activity_id}.json"
-        performance_data = {
-            "basic_metrics": {
-                "duration_seconds": 3720.0,  # Required for zone percentage calculation
-            },
-            "heart_rate_zones": {
-                "zone1": {"low": 0, "secs_in_zone": 300.0},
-                "zone2": {"low": 130, "secs_in_zone": 2520.0},
-                "zone3": {"low": 150, "secs_in_zone": 720.0},
-                "zone4": {"low": 165, "secs_in_zone": 180.0},
-                "zone5": {"low": 180, "secs_in_zone": 0.0},
-            },
-        }
-        performance_file.write_text(json.dumps(performance_data, indent=2))
+        # Create test hr_zones.json with raw data
+        hr_zones_file = tmp_path / "hr_zones.json"
+        hr_zones_data = [
+            {"zoneNumber": 1, "zoneLowBoundary": 0, "secsInZone": 300.0},
+            {"zoneNumber": 2, "zoneLowBoundary": 130, "secsInZone": 2520.0},
+            {"zoneNumber": 3, "zoneLowBoundary": 150, "secsInZone": 720.0},
+            {"zoneNumber": 4, "zoneLowBoundary": 165, "secsInZone": 180.0},
+            {"zoneNumber": 5, "zoneLowBoundary": 180, "secsInZone": 0.0},
+        ]
+        hr_zones_file.write_text(json.dumps(hr_zones_data, indent=2))
 
         # Insert activity metadata and heart_rate_zones
         db_writer = GarminDBWriter(db_path=str(db_path))
@@ -260,9 +255,9 @@ class TestGetHeartRateZonesDetail:
         from tools.database.inserters.heart_rate_zones import insert_heart_rate_zones
 
         insert_heart_rate_zones(
-            performance_file=str(performance_file),
             activity_id=test_activity_id,
             db_path=str(db_path),
+            raw_hr_zones_file=str(hr_zones_file),
         )
 
         return GarminDBReader(db_path=str(db_path))
@@ -339,18 +334,17 @@ class TestGetVO2MaxData:
         """Create GarminDBReader with test database containing VO2 max data."""
         db_path = tmp_path / "test.duckdb"
 
-        # Create test performance.json with vo2_max
-        performance_file = tmp_path / f"{test_activity_id}.json"
-        performance_data = {
-            "vo2_max": {
-                "precise_value": 52.3,
-                "value": 52.0,
-                "date": "2025-10-07",
-                "fitness_age": 25,
-                "category": 5,
+        # Create test vo2_max.json with raw data
+        vo2_max_file = tmp_path / "vo2_max.json"
+        vo2_max_data = {
+            "generic": {
+                "vo2MaxValue": 52,
+                "vo2MaxPreciseValue": 52.3,
+                "calendarDate": "2025-10-07",
+                "fitnessAge": 25,
             }
         }
-        performance_file.write_text(json.dumps(performance_data, indent=2))
+        vo2_max_file.write_text(json.dumps(vo2_max_data, indent=2))
 
         # Insert activity metadata and vo2_max
         db_writer = GarminDBWriter(db_path=str(db_path))
@@ -369,9 +363,9 @@ class TestGetVO2MaxData:
         from tools.database.inserters.vo2_max import insert_vo2_max
 
         insert_vo2_max(
-            performance_file=str(performance_file),
             activity_id=test_activity_id,
             db_path=str(db_path),
+            raw_vo2_max_file=str(vo2_max_file),
         )
 
         return GarminDBReader(db_path=str(db_path))
@@ -386,7 +380,7 @@ class TestGetVO2MaxData:
         assert result["value"] == 52.0
         assert result["date"] == "2025-10-07"
         assert result["fitness_age"] == 25
-        assert result["category"] == 5
+        assert result["category"] == 0  # Default (not in raw data)
 
     @pytest.mark.unit
     def test_get_vo2_max_data_no_data(self, db_reader_with_vo2max):
@@ -424,24 +418,22 @@ class TestGetLactateThresholdData:
         """Create GarminDBReader with test database containing lactate threshold data."""
         db_path = tmp_path / "test.duckdb"
 
-        # Create test performance.json with lactate_threshold
-        performance_file = tmp_path / f"{test_activity_id}.json"
-        performance_data = {
-            "lactate_threshold": {
-                "speed_and_heart_rate": {
-                    "heartRate": 165,
-                    "speed": 3.5,
-                    "calendarDate": "2025-10-07T10:30:00.000",
-                },
-                "power": {
-                    "functionalThresholdPower": 250,
-                    "powerToWeight": 3.5,
-                    "weight": 71.4,
-                    "calendarDate": "2025-10-07T10:30:00.000",
-                },
-            }
+        # Create test lactate_threshold.json with raw data
+        lactate_threshold_file = tmp_path / "lactate_threshold.json"
+        lactate_threshold_data = {
+            "speed_and_heart_rate": {
+                "heartRate": 165,
+                "speed": 3.5,
+                "calendarDate": "2025-10-07T10:30:00.000",
+            },
+            "power": {
+                "functionalThresholdPower": 250,
+                "powerToWeight": 3.5,
+                "weight": 71.4,
+                "calendarDate": "2025-10-07T10:30:00.000",
+            },
         }
-        performance_file.write_text(json.dumps(performance_data, indent=2))
+        lactate_threshold_file.write_text(json.dumps(lactate_threshold_data, indent=2))
 
         # Insert activity metadata and lactate_threshold
         db_writer = GarminDBWriter(db_path=str(db_path))
@@ -460,9 +452,9 @@ class TestGetLactateThresholdData:
         from tools.database.inserters.lactate_threshold import insert_lactate_threshold
 
         insert_lactate_threshold(
-            performance_file=str(performance_file),
             activity_id=test_activity_id,
             db_path=str(db_path),
+            raw_lactate_threshold_file=str(lactate_threshold_file),
         )
 
         return GarminDBReader(db_path=str(db_path))
