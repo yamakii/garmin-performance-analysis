@@ -1,0 +1,105 @@
+{
+  "timestamp": "2025-10-16 19:57:33",
+  "export_results": [
+    {
+      "n_rows": 10000,
+      "format": "parquet",
+      "export_time_s": 0.866,
+      "load_time_s": 0.006,
+      "total_time_s": 0.872,
+      "file_size_mb": 0.498,
+      "rows_per_second": 11548,
+      "throughput_mb_per_s": 0.58
+    },
+    {
+      "n_rows": 10000,
+      "format": "csv",
+      "export_time_s": 0.013,
+      "load_time_s": 0.002,
+      "total_time_s": 0.015,
+      "file_size_mb": 1.153,
+      "rows_per_second": 753241,
+      "throughput_mb_per_s": 86.88
+    },
+    {
+      "n_rows": 100000,
+      "format": "parquet",
+      "export_time_s": 0.024,
+      "load_time_s": 0.006,
+      "total_time_s": 0.03,
+      "file_size_mb": 4.962,
+      "rows_per_second": 4119676,
+      "throughput_mb_per_s": 204.4
+    },
+    {
+      "n_rows": 100000,
+      "format": "csv",
+      "export_time_s": 0.11,
+      "load_time_s": 0.004,
+      "total_time_s": 0.114,
+      "file_size_mb": 11.629,
+      "rows_per_second": 909124,
+      "throughput_mb_per_s": 105.72
+    },
+    {
+      "n_rows": 1000000,
+      "format": "parquet",
+      "export_time_s": 0.119,
+      "load_time_s": 0.012,
+      "total_time_s": 0.131,
+      "file_size_mb": 49.606,
+      "rows_per_second": 8399014,
+      "throughput_mb_per_s": 416.64
+    },
+    {
+      "n_rows": 1000000,
+      "format": "csv",
+      "export_time_s": 0.232,
+      "load_time_s": 0.028,
+      "total_time_s": 0.26,
+      "file_size_mb": 117.234,
+      "rows_per_second": 4315647,
+      "throughput_mb_per_s": 505.94
+    }
+  ],
+  "query_performance": {
+    "full_scan": {
+      "time_s": 0.0719,
+      "result_rows": 100000
+    },
+    "filtered": {
+      "time_s": 0.0105,
+      "result_rows": 1001
+    },
+    "aggregated": {
+      "time_s": 0.0019,
+      "result_rows": 1
+    },
+    "grouped": {
+      "time_s": 0.0039,
+      "result_rows": 1
+    }
+  },
+  "acceptance_criteria": {
+    "10k_rows": {
+      "target": 1.0,
+      "actual": 0.866,
+      "pass": true
+    },
+    "100k_rows": {
+      "target": 5.0,
+      "actual": 0.024,
+      "pass": true
+    },
+    "1m_rows": {
+      "target": 30.0,
+      "actual": 0.119,
+      "pass": true
+    },
+    "parquet_speedup": {
+      "target": 3.0,
+      "actual": 3.8000000000000003,
+      "pass": true
+    }
+  }
+}
