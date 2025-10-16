@@ -707,3 +707,188 @@ class AggregateReader(BaseDBReader):
         except Exception as e:
             logger.error(f"Error profiling table/query: {e}")
             raise
+
+    def histogram_column(
+        self,
+        table_or_query: str,
+        column: str,
+        bins: int = 20,
+        date_range: tuple[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Get histogram distribution for a column (aggregated, no raw data).
+
+        Args:
+            table_or_query: Table name or SQL query
+            column: Column name to analyze
+            bins: Number of histogram bins (default 20)
+            date_range: Optional date filter (start_date, end_date) in YYYY-MM-DD format
+
+        Returns:
+            {
+                "column": "pace",
+                "bins": [
+                    {"min": 240.0, "max": 250.0, "count": 123},
+                    {"min": 250.0, "max": 260.0, "count": 456},
+                    ...
+                ],
+                "total_count": 12345,
+                "statistics": {
+                    "min": 240.0,
+                    "max": 360.0,
+                    "mean": 270.5,
+                    "median": 265.0
+                }
+            }
+
+        Context Cost: ~1KB (20 bins × 50 bytes)
+        """
+        try:
+            with self._get_connection() as conn:
+                # Detect if input is table name or SQL query
+                is_query = "SELECT" in table_or_query.upper()
+
+                # Build base query
+                if is_query:
+                    base_query = f"({table_or_query}) AS subquery"
+                else:
+                    base_query = table_or_query
+
+                # Apply date_range filter if provided
+                if date_range:
+                    start_date, end_date = date_range
+                    if is_query:
+                        base_query = (
+                            f"(SELECT * FROM ({table_or_query}) AS inner_query "
+                            f"WHERE date BETWEEN '{start_date}' AND '{end_date}') AS subquery"
+                        )
+                    else:
+                        base_query = (
+                            f"(SELECT * FROM {table_or_query} "
+                            f"WHERE date BETWEEN '{start_date}' AND '{end_date}') AS subquery"
+                        )
+
+                # Get total count (excluding NULLs)
+                count_query = (
+                    f"SELECT COUNT(*) FROM {base_query} WHERE {column} IS NOT NULL"
+                )
+                count_result = conn.execute(count_query).fetchone()
+                total_count = count_result[0] if count_result else 0
+
+                # If empty, return early
+                if total_count == 0:
+                    return {
+                        "column": column,
+                        "bins": [],
+                        "total_count": 0,
+                        "statistics": {},
+                    }
+
+                # Get min/max for binning
+                minmax_query = (
+                    f"SELECT MIN({column}), MAX({column}) FROM {base_query} "
+                    f"WHERE {column} IS NOT NULL"
+                )
+                minmax_result = conn.execute(minmax_query).fetchone()
+                if not minmax_result or minmax_result[0] is None:
+                    return {
+                        "column": column,
+                        "bins": [],
+                        "total_count": 0,
+                        "statistics": {},
+                    }
+
+                min_val = minmax_result[0]
+                max_val = minmax_result[1]
+
+                # Handle single value case
+                if min_val == max_val:
+                    # All values are the same
+                    return {
+                        "column": column,
+                        "bins": [
+                            {"min": min_val, "max": max_val, "count": total_count}
+                        ],
+                        "total_count": total_count,
+                        "statistics": {
+                            "min": min_val,
+                            "max": max_val,
+                            "mean": min_val,
+                            "median": min_val,
+                        },
+                    }
+
+                # Calculate bin width and use FLOOR to assign buckets manually
+                bin_width = (max_val - min_val) / bins
+                histogram_query = f"""
+                    SELECT
+                        FLOOR(({column} - {min_val}) / {bin_width}) AS bucket,
+                        COUNT(*) as count,
+                        MIN({column}) as bin_min,
+                        MAX({column}) as bin_max
+                    FROM {base_query}
+                    WHERE {column} IS NOT NULL
+                    GROUP BY bucket
+                    ORDER BY bucket
+                """
+
+                histogram_result = conn.execute(histogram_query).fetchall()
+
+                # Build bins list
+                bins_list = []
+                for row in histogram_result:
+                    bucket_num, count, bin_min, bin_max = row
+                    bins_list.append(
+                        {
+                            "min": round(bin_min, 2),
+                            "max": round(bin_max, 2),
+                            "count": count,
+                        }
+                    )
+
+                # Get statistics
+                stats_query = f"""
+                    SELECT
+                        MIN({column}),
+                        MAX({column}),
+                        AVG({column}),
+                        MEDIAN({column})
+                    FROM {base_query}
+                    WHERE {column} IS NOT NULL
+                """
+                stats_result = conn.execute(stats_query).fetchone()
+
+                statistics = {}
+                if stats_result:
+                    statistics = {
+                        "min": (
+                            round(stats_result[0], 2)
+                            if stats_result[0] is not None
+                            else None
+                        ),
+                        "max": (
+                            round(stats_result[1], 2)
+                            if stats_result[1] is not None
+                            else None
+                        ),
+                        "mean": (
+                            round(stats_result[2], 2)
+                            if stats_result[2] is not None
+                            else None
+                        ),
+                        "median": (
+                            round(stats_result[3], 2)
+                            if stats_result[3] is not None
+                            else None
+                        ),
+                    }
+
+                return {
+                    "column": column,
+                    "bins": bins_list,
+                    "total_count": total_count,
+                    "statistics": statistics,
+                }
+
+        except Exception as e:
+            logger.error(f"Error generating histogram: {e}")
+            raise
