@@ -1,9 +1,8 @@
 """
 VO2MaxInserter - Insert vo2_max to DuckDB
 
-Supports both legacy (performance.json) and raw data modes (vo2_max.json)
-
-Inserts VO2 max data (precise value, rounded value, date, fitness age, category) into vo2_max table.
+Inserts VO2 max data (precise value, rounded value, date, fitness age, category)
+from raw API file (vo2_max.json) into vo2_max table.
 """
 
 import json
@@ -16,65 +15,38 @@ logger = logging.getLogger(__name__)
 
 
 def insert_vo2_max(
-    performance_file: str | None,
     activity_id: int,
     db_path: str | None = None,
     raw_vo2_max_file: str | None = None,
 ) -> bool:
     """
-    Insert vo2_max into DuckDB vo2_max table.
+    Insert vo2_max into DuckDB vo2_max table from raw API file.
 
-    Supports two modes:
-    1. Legacy mode: Read from performance.json (performance_file provided)
-    2. Raw data mode: Read from vo2_max.json (performance_file=None, raw_vo2_max_file provided)
-
-    Steps:
-    1. Load data (from performance.json OR raw vo2_max.json)
-    2. Extract vo2_max data
-    3. Insert into vo2_max table
+    Extracts VO2 max data (precise value, rounded value, date, fitness age, category)
+    from vo2_max.json and inserts into vo2_max table.
 
     Args:
-        performance_file: Path to performance.json (legacy mode) or None (raw data mode)
         activity_id: Activity ID
         db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
-        raw_vo2_max_file: Path to raw vo2_max.json (raw data mode only)
+        raw_vo2_max_file: Path to raw vo2_max.json
 
     Returns:
         True if successful, False otherwise
     """
     try:
-        # Determine mode
-        use_raw_data = performance_file is None
+        # Extract from raw data
+        if not raw_vo2_max_file:
+            logger.warning(
+                f"No raw_vo2_max_file provided for activity {activity_id}, skipping"
+            )
+            return True  # Not an error, vo2_max is optional
 
-        if use_raw_data:
-            # NEW: Extract from raw data
-            if not raw_vo2_max_file:
-                logger.error("raw_vo2_max_file required when performance_file is None")
-                return False
-
-            vo2_data = _extract_vo2_max_from_raw(raw_vo2_max_file)
-            if not vo2_data:
-                logger.error(f"Failed to extract vo2_max from {raw_vo2_max_file}")
-                return False
-        else:
-            # LEGACY: Read from performance.json
-            if not performance_file:
-                logger.error("performance_file required when not using raw data mode")
-                return False
-
-            performance_path = Path(performance_file)
-            if not performance_path.exists():
-                logger.error(f"Performance file not found: {performance_file}")
-                return False
-
-            with open(performance_path, encoding="utf-8") as f:
-                performance_data = json.load(f)
-
-            # Extract vo2_max
-            vo2_data = performance_data.get("vo2_max")
-            if not vo2_data or not isinstance(vo2_data, dict):
-                logger.error(f"No vo2_max found in {performance_file}")
-                return False
+        vo2_data = _extract_vo2_max_from_raw(raw_vo2_max_file)
+        if not vo2_data:
+            logger.warning(
+                f"Failed to extract vo2_max from {raw_vo2_max_file}, skipping"
+            )
+            return True  # Not an error, vo2_max is optional
 
         # Set default DB path
         if db_path is None:

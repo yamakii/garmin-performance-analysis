@@ -2,7 +2,7 @@
 Tests for VO2 Max Inserter
 
 Test coverage:
-- Unit tests for insert_vo2_max function
+- Unit tests for insert_vo2_max function with raw data
 - Integration tests with DuckDB
 """
 
@@ -16,84 +16,60 @@ from tools.database.inserters.vo2_max import insert_vo2_max
 class TestVO2MaxInserter:
     """Test suite for VO2 Max Inserter."""
 
-    @pytest.fixture
-    def sample_performance_file(self, tmp_path):
-        """Create sample performance.json file with vo2_max."""
-        performance_data = {
-            "basic_metrics": {
-                "distance_km": 22.0,
-            },
-            "vo2_max": {
-                "precise_value": 44.7,
-                "value": 45.0,
-                "date": "2025-08-19",
-                "fitness_age": None,
-                "category": 0,
-            },
-        }
-
-        performance_file = tmp_path / "20107340187.json"
-        with open(performance_file, "w", encoding="utf-8") as f:
-            json.dump(performance_data, f, ensure_ascii=False, indent=2)
-
-        return performance_file
-
-    @pytest.mark.unit
-    def test_insert_vo2_max_success(self, sample_performance_file, tmp_path):
+    def test_insert_vo2_max_success(self, sample_raw_vo2_max_file, tmp_path):
         """Test insert_vo2_max inserts data successfully."""
         db_path = tmp_path / "test.duckdb"
 
         result = insert_vo2_max(
-            performance_file=str(sample_performance_file),
             activity_id=20107340187,
             db_path=str(db_path),
+            raw_vo2_max_file=str(sample_raw_vo2_max_file),
         )
 
         assert result is True
         assert db_path.exists()
 
-    @pytest.mark.unit
     def test_insert_vo2_max_missing_file(self, tmp_path):
-        """Test insert_vo2_max handles missing file."""
+        """Test insert_vo2_max handles missing file gracefully (returns True, skips)."""
         db_path = tmp_path / "test.duckdb"
 
         result = insert_vo2_max(
-            performance_file="/nonexistent/file.json",
             activity_id=12345,
             db_path=str(db_path),
+            raw_vo2_max_file="/nonexistent/file.json",
         )
 
-        assert result is False
+        # Should return True (not an error, vo2_max is optional)
+        assert result is True
 
-    @pytest.mark.unit
     def test_insert_vo2_max_no_data(self, tmp_path):
-        """Test insert_vo2_max handles missing vo2_max."""
-        performance_data = {"basic_metrics": {"distance_km": 5.0}}
-        performance_file = tmp_path / "test.json"
-        with open(performance_file, "w", encoding="utf-8") as f:
-            json.dump(performance_data, f)
+        """Test insert_vo2_max handles missing vo2_max data in file."""
+        vo2_data: dict = {"generic": {}}  # Empty generic section
+        vo2_file = tmp_path / "vo2_max.json"
+        with open(vo2_file, "w", encoding="utf-8") as f:
+            json.dump(vo2_data, f)
 
         db_path = tmp_path / "test.duckdb"
 
         result = insert_vo2_max(
-            performance_file=str(performance_file),
             activity_id=12345,
             db_path=str(db_path),
+            raw_vo2_max_file=str(vo2_file),
         )
 
-        assert result is False
+        # Should return True (skips gracefully)
+        assert result is True
 
-    @pytest.mark.integration
-    def test_insert_vo2_max_db_integration(self, sample_performance_file, tmp_path):
+    def test_insert_vo2_max_db_integration(self, sample_raw_vo2_max_file, tmp_path):
         """Test insert_vo2_max actually writes to DuckDB."""
         import duckdb
 
         db_path = tmp_path / "test.duckdb"
 
         result = insert_vo2_max(
-            performance_file=str(sample_performance_file),
             activity_id=20107340187,
             db_path=str(db_path),
+            raw_vo2_max_file=str(sample_raw_vo2_max_file),
         )
 
         assert result is True
@@ -155,13 +131,11 @@ class TestVO2MaxInserter:
         assert result["fitness_age"] is None
         assert result["category"] == 0
 
-    @pytest.mark.unit
     def test_insert_vo2_max_from_raw_data(self, sample_raw_vo2_max_file, tmp_path):
-        """Test insert_vo2_max with raw data (performance_file=None)."""
+        """Test insert_vo2_max with raw data file."""
         db_path = tmp_path / "test.duckdb"
 
         result = insert_vo2_max(
-            performance_file=None,
             activity_id=20107340187,
             db_path=str(db_path),
             raw_vo2_max_file=str(sample_raw_vo2_max_file),
@@ -170,16 +144,14 @@ class TestVO2MaxInserter:
         assert result is True
         assert db_path.exists()
 
-    @pytest.mark.integration
     def test_insert_vo2_max_raw_data_integrity(self, sample_raw_vo2_max_file, tmp_path):
-        """Test raw data mode produces same result as performance.json mode."""
+        """Test raw data insertion produces correct database values."""
         import duckdb
 
         db_path = tmp_path / "test.duckdb"
 
         # Insert from raw data
         result = insert_vo2_max(
-            performance_file=None,
             activity_id=20107340187,
             db_path=str(db_path),
             raw_vo2_max_file=str(sample_raw_vo2_max_file),
@@ -199,7 +171,5 @@ class TestVO2MaxInserter:
         assert abs(row[1] - 44.7) < 0.1  # precise_value (from vo2MaxPreciseValue)
         assert abs(row[2] - 45.0) < 0.1  # value (from vo2MaxValue)
         assert str(row[3]) == "2025-08-19"  # date (from calendarDate)
-        assert row[4] is None  # fitness_age
-        assert row[5] == 0  # category (default)
 
         conn.close()

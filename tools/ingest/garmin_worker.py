@@ -1243,7 +1243,6 @@ class GarminIngestWorker:
                 raw_vo2_max_file = None
 
             vo2_success = insert_vo2_max(
-                performance_file=None,  # Use raw data mode
                 activity_id=activity_id,
                 db_path=self._db_path,
                 raw_vo2_max_file=str(raw_vo2_max_file) if raw_vo2_max_file else None,
