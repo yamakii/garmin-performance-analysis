@@ -1195,7 +1195,6 @@ class GarminIngestWorker:
         activity_id: int,
         raw_data: dict[str, Any],
         df: pd.DataFrame,
-        performance_data: dict[str, Any],
         activity_date: str | None = None,
         tables: list[str] | None = None,  # NEW: Phase 3 parameter
     ) -> dict[str, Any]:
@@ -1203,8 +1202,7 @@ class GarminIngestWorker:
         Save all processed data to files and DuckDB.
 
         Files created:
-        - data/raw/{activity_id}_raw.json (already created in collect_data)
-        - data/performance/{activity_id}.json
+        - data/raw/activity/{activity_id}/*.json (already created in collect_data)
         - data/precheck/{activity_id}.json
 
         DuckDB insertion order (foreign key constraints):
@@ -1226,12 +1224,7 @@ class GarminIngestWorker:
             File paths dict
         """
         # Parquet generation removed - DuckDB is primary storage
-
-        # Save performance.json
-        performance_file = self.performance_dir / f"{activity_id}.json"
-        with open(performance_file, "w", encoding="utf-8") as f:
-            json.dump(performance_data, f, ensure_ascii=False, indent=2)
-        logger.info(f"Saved performance data to {performance_file}")
+        # Performance.json generation removed - DuckDB is primary storage
 
         # Save precheck.json (basic validation data)
         precheck_data = {
@@ -1285,7 +1278,7 @@ class GarminIngestWorker:
                     )
 
             activities_success = insert_activities(
-                performance_file=str(performance_file),
+                performance_file=None,  # Use raw data mode
                 activity_id=activity_id,
                 date=activity_date or "1970-01-01",  # Fallback date if not provided
                 db_path=self._db_path,
@@ -1325,7 +1318,7 @@ class GarminIngestWorker:
             from tools.database.inserters.splits import insert_splits
 
             splits_success = insert_splits(
-                performance_file=str(performance_file),
+                performance_file=None,  # Use raw data mode
                 activity_id=activity_id,
                 db_path=self._db_path,
                 raw_splits_file=str(raw_splits_file) if raw_splits_file else None,
@@ -1342,9 +1335,10 @@ class GarminIngestWorker:
             from tools.database.inserters.form_efficiency import insert_form_efficiency
 
             form_eff_success = insert_form_efficiency(
-                performance_file=str(performance_file),
+                performance_file=None,  # Use raw data mode
                 activity_id=activity_id,
                 db_path=self._db_path,
+                raw_splits_file=str(raw_splits_file) if raw_splits_file else None,
             )
             if form_eff_success:
                 logger.info(
@@ -1361,10 +1355,16 @@ class GarminIngestWorker:
                 insert_heart_rate_zones,
             )
 
+            # Determine raw HR zones file path
+            raw_hr_zones_file: Path | None = activity_dir / "hr_zones.json"
+            if raw_hr_zones_file and not raw_hr_zones_file.exists():
+                raw_hr_zones_file = None
+
             hr_zones_success = insert_heart_rate_zones(
-                performance_file=str(performance_file),
+                performance_file=None,  # Use raw data mode
                 activity_id=activity_id,
                 db_path=self._db_path,
+                raw_hr_zones_file=str(raw_hr_zones_file) if raw_hr_zones_file else None,
             )
             if hr_zones_success:
                 logger.info(
@@ -1380,9 +1380,15 @@ class GarminIngestWorker:
             from tools.database.inserters.hr_efficiency import insert_hr_efficiency
 
             hr_eff_success = insert_hr_efficiency(
-                performance_file=str(performance_file),
+                performance_file=None,  # Use raw data mode
                 activity_id=activity_id,
                 db_path=self._db_path,
+                raw_hr_zones_file=str(raw_hr_zones_file) if raw_hr_zones_file else None,
+                raw_activity_file=(
+                    str(raw_activity_file)
+                    if raw_activity_file and raw_activity_file.exists()
+                    else None
+                ),
             )
             if hr_eff_success:
                 logger.info(
@@ -1400,9 +1406,10 @@ class GarminIngestWorker:
             )
 
             perf_trends_success = insert_performance_trends(
-                performance_file=str(performance_file),
+                performance_file=None,  # Use raw data mode
                 activity_id=activity_id,
                 db_path=self._db_path,
+                raw_splits_file=str(raw_splits_file) if raw_splits_file else None,
             )
             if perf_trends_success:
                 logger.info(
@@ -1419,10 +1426,22 @@ class GarminIngestWorker:
                 insert_lactate_threshold,
             )
 
+            # Determine raw lactate threshold file path
+            raw_lactate_threshold_file: Path | None = (
+                activity_dir / "lactate_threshold.json"
+            )
+            if raw_lactate_threshold_file and not raw_lactate_threshold_file.exists():
+                raw_lactate_threshold_file = None
+
             lt_success = insert_lactate_threshold(
-                performance_file=str(performance_file),
+                performance_file=None,  # Use raw data mode
                 activity_id=activity_id,
                 db_path=self._db_path,
+                raw_lactate_threshold_file=(
+                    str(raw_lactate_threshold_file)
+                    if raw_lactate_threshold_file
+                    else None
+                ),
             )
             if lt_success:
                 logger.info(
@@ -1437,10 +1456,16 @@ class GarminIngestWorker:
         if self._should_insert_table("vo2_max", tables):
             from tools.database.inserters.vo2_max import insert_vo2_max
 
+            # Determine raw VO2 max file path
+            raw_vo2_max_file: Path | None = activity_dir / "vo2_max.json"
+            if raw_vo2_max_file and not raw_vo2_max_file.exists():
+                raw_vo2_max_file = None
+
             vo2_success = insert_vo2_max(
-                performance_file=str(performance_file),
+                performance_file=None,  # Use raw data mode
                 activity_id=activity_id,
                 db_path=self._db_path,
+                raw_vo2_max_file=str(raw_vo2_max_file) if raw_vo2_max_file else None,
             )
             if vo2_success:
                 logger.info(f"Inserted vo2_max to DuckDB for activity {activity_id}")
@@ -1476,8 +1501,7 @@ class GarminIngestWorker:
                 )
 
         return {
-            "raw_file": str(self.raw_dir / f"{activity_id}_raw.json"),
-            "performance_file": str(performance_file),
+            "raw_dir": str(activity_dir),
             "precheck_file": str(precheck_file),
         }
 
@@ -1713,9 +1737,9 @@ class GarminIngestWorker:
         logger.info(f"Processing activity {activity_id} ({date})")
 
         # Step 0: Check DuckDB cache first
-        performance_data = self._check_duckdb_cache(activity_id)
+        cache_exists = self._check_duckdb_cache(activity_id)
 
-        if performance_data is not None:
+        if cache_exists is not None:
             logger.info(
                 f"Activity {activity_id}: Using complete data from DuckDB cache"
             )
@@ -1725,7 +1749,6 @@ class GarminIngestWorker:
                 "date": date,
                 "status": "success",
                 "source": "duckdb_cache",
-                "performance_data": performance_data,
             }
 
         # Step 1: Collect data (cache-first with optional force_refetch)
@@ -1734,23 +1757,17 @@ class GarminIngestWorker:
         # Step 2: Create parquet dataset
         df = self.create_parquet_dataset(raw_data)
 
-        # Step 3: Calculate metrics
-        performance_data = self._calculate_split_metrics(df, raw_data)
-
-        # Step 4: Calculate 7-day median weight for W/kg
+        # Step 3: Calculate 7-day median weight for W/kg
         median_weight_data = self._calculate_median_weight(date)
         weight_kg = median_weight_data["weight_kg"] if median_weight_data else None
 
-        # Step 5: Save data and insert into DuckDB
-        # NOTE: Phase 3 passes tables parameter for preparation
-        # Actual table filtering will be implemented in Phase 4
+        # Step 4: Save data and insert into DuckDB
         file_paths = self.save_data(
             activity_id,
             raw_data,
             df,
-            performance_data,
             activity_date=date,
-            tables=tables,  # NEW: Pass tables parameter (Phase 3 preparation)
+            tables=tables,
         )
 
         return {

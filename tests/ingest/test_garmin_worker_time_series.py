@@ -116,12 +116,9 @@ class TestGarminWorkerTimeSeriesIntegration:
 
             df = pd.DataFrame({"split_number": [1], "avg_heart_rate": [120]})
             raw_data: dict[str, Any] = {"activity": {}}
-            performance_data: dict[str, Any] = {"basic_metrics": {}}
 
             # Execute
-            worker.save_data(
-                activity_id, raw_data, df, performance_data, activity_date="2025-10-13"
-            )
+            worker.save_data(activity_id, raw_data, df, activity_date="2025-10-13")
 
             # Verify: insert_time_series_metrics was called
             mock_time_series.assert_called_once()
@@ -184,11 +181,10 @@ class TestGarminWorkerTimeSeriesIntegration:
 
             df = pd.DataFrame({"split_number": [1], "avg_heart_rate": [120]})
             raw_data: dict[str, Any] = {"activity": {}}
-            performance_data: dict[str, Any] = {"basic_metrics": {}}
 
             # Execute - should NOT raise exception
             result = worker.save_data(
-                activity_id, raw_data, df, performance_data, activity_date="2025-10-13"
+                activity_id, raw_data, df, activity_date="2025-10-13"
             )
 
             # Verify: insert_time_series_metrics was NOT called
@@ -205,7 +201,6 @@ class TestGarminWorkerTimeSeriesIntegration:
             ), "Expected WARNING log for missing activity_details.json"
 
             # Verify: save_data still returns file paths (pipeline continues)
-            assert "performance_file" in result
             assert "precheck_file" in result
 
     @pytest.mark.unit
@@ -272,11 +267,10 @@ class TestGarminWorkerTimeSeriesIntegration:
 
             df = pd.DataFrame({"split_number": [1], "avg_heart_rate": [120]})
             raw_data: dict[str, Any] = {"activity": {}}
-            performance_data: dict[str, Any] = {"basic_metrics": {}}
 
             # Execute - should NOT raise exception
             result = worker.save_data(
-                activity_id, raw_data, df, performance_data, activity_date="2025-10-13"
+                activity_id, raw_data, df, activity_date="2025-10-13"
             )
 
             # Verify: insert_time_series_metrics was called
@@ -291,7 +285,6 @@ class TestGarminWorkerTimeSeriesIntegration:
             assert len(error_calls) > 0, "Expected ERROR log for insertion failure"
 
             # Verify: save_data still returns file paths (pipeline continues)
-            assert "performance_file" in result
             assert "precheck_file" in result
 
     @pytest.mark.integration
@@ -349,15 +342,12 @@ class TestGarminWorkerTimeSeriesIntegration:
 
             df = pd.DataFrame({"split_number": [1], "avg_heart_rate": [120]})
             raw_data: dict[str, Any] = {"activity": {}}
-            performance_data: dict[str, Any] = {"basic_metrics": {}}
 
             # Update worker paths to use fixture
             worker.raw_dir = Path("tests/fixtures/data/raw")
 
             # Execute
-            worker.save_data(
-                activity_id, raw_data, df, performance_data, activity_date="2025-10-13"
-            )
+            worker.save_data(activity_id, raw_data, df, activity_date="2025-10-13")
 
             # Verify: insert_time_series_metrics was called with real fixture
             mock_time_series.assert_called_once()
