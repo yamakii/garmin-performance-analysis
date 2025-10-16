@@ -29,7 +29,7 @@ Raw Data (API) → DuckDB (Direct Insertion) → Analysis → Reports
 **Key Changes (DuckDB-First Migration):**
 - ~~Performance Layer removed~~ - data flows directly: Raw → DuckDB
 - No intermediate `performance.json` generation
-- All inserters support raw data mode (`performance_file=None`)
+- All inserters use single-mode raw data pipeline (no backward compatibility)
 
 **Key Classes:**
 - `GarminIngestWorker`: API → raw → DuckDB pipeline
@@ -49,8 +49,7 @@ Raw Data (API) → DuckDB (Direct Insertion) → Analysis → Reports
 ```
 ├── data/              # Configurable via GARMIN_DATA_DIR (default: ./data)
 │   ├── raw/          # API responses (activity/{id}/{api}.json, weight/{date}.json)
-│   ├── database/     # DuckDB files (primary storage)
-│   └── precheck/     # Validation results
+│   └── database/     # DuckDB files (primary storage)
 ├── result/           # Configurable via GARMIN_RESULT_DIR (default: ./result)
 │   ├── individual/   # Activity reports (YEAR/MONTH/YYYY-MM-DD_id.md)
 │   └── monthly/      # Trend analysis
