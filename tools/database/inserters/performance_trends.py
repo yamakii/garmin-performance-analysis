@@ -1,5 +1,7 @@
 """
-PerformanceTrendsInserter - Insert performance_trends from performance.json to DuckDB
+PerformanceTrendsInserter - Insert performance_trends to DuckDB
+
+Supports both legacy (performance.json) and raw data modes (splits.json)
 
 Inserts phase-based performance analysis (warmup/main/finish) into performance_trends table.
 """

@@ -1,8 +1,11 @@
 """
-ActivitiesInserter - Insert activity metadata from performance.json to DuckDB activities table
+ActivitiesInserter - Insert activity metadata to DuckDB activities table
 
+Supports both legacy (performance.json) and raw data modes.
 Populates the activities table with 36 columns of metadata for each activity.
 This inserter must be called FIRST before other inserters due to foreign key constraints.
+
+Migration Status: DuckDB-first architecture (performance.json optional)
 """
 
 import json
@@ -27,14 +30,18 @@ def insert_activities(
     """
     Insert activity metadata into DuckDB activities table.
 
+    Supports two modes:
+    1. Legacy mode (performance_file provided): Extract from performance.json + optional raw files
+    2. Raw data mode (performance_file=None): Extract only from raw files (DuckDB-first)
+
     Extracts 36 columns from:
-    - performance.json: basic_metrics, efficiency_metrics, training_effect, power_to_weight, split_metrics
+    - performance.json (legacy): basic_metrics, efficiency_metrics, training_effect, power_to_weight, split_metrics
     - activity.json (optional): activityName, startTimeLocal, startTimeGMT, locationName
     - weather.json (optional): temp, relativeHumidity, windSpeed, windDirectionCompassPoint
     - gear.json (optional): gearTypeName, customMakeModel
 
     Args:
-        performance_file: Path to performance.json
+        performance_file: Path to performance.json (None for raw data mode)
         activity_id: Activity ID
         date: Activity date (YYYY-MM-DD format)
         db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)

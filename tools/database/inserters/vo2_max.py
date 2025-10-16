@@ -1,5 +1,7 @@
 """
-VO2MaxInserter - Insert vo2_max from performance.json to DuckDB
+VO2MaxInserter - Insert vo2_max to DuckDB
+
+Supports both legacy (performance.json) and raw data modes (vo2_max.json)
 
 Inserts VO2 max data (precise value, rounded value, date, fitness age, category) into vo2_max table.
 """

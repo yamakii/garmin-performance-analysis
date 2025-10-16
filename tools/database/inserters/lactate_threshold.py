@@ -1,5 +1,7 @@
 """
-LactateThresholdInserter - Insert lactate_threshold from performance.json to DuckDB
+LactateThresholdInserter - Insert lactate_threshold to DuckDB
+
+Supports both legacy (performance.json) and raw data modes (lactate_threshold.json)
 
 Inserts lactate threshold data (HR, speed, power) into lactate_threshold table.
 """

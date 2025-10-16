@@ -1,5 +1,7 @@
 """
-FormEfficiencyInserter - Insert form_efficiency_summary from performance.json to DuckDB
+FormEfficiencyInserter - Insert form_efficiency_summary to DuckDB
+
+Supports both legacy (performance.json) and raw data modes (splits.json)
 
 Inserts form efficiency statistics (GCT, VO, VR) into form_efficiency table.
 """

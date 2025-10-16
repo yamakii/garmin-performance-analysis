@@ -1,5 +1,7 @@
 """
-HeartRateZonesInserter - Insert heart_rate_zones from performance.json to DuckDB
+HeartRateZonesInserter - Insert heart_rate_zones to DuckDB
+
+Supports both legacy (performance.json) and raw data modes (hr_zones.json)
 
 Inserts heart rate zone data into heart_rate_zones table.
 """

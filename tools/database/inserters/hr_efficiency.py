@@ -1,5 +1,7 @@
 """
-HREfficiencyInserter - Insert hr_efficiency_analysis from performance.json to DuckDB
+HREfficiencyInserter - Insert hr_efficiency_analysis to DuckDB
+
+Supports both legacy (performance.json) and raw data modes (hr_zones.json + activity.json)
 
 Inserts heart rate efficiency analysis into hr_efficiency table.
 """

@@ -1,5 +1,7 @@
 """
-SplitsInserter - Insert split_metrics from performance.json to DuckDB splits table
+SplitsInserter - Insert split_metrics to DuckDB splits table
+
+Supports both legacy (performance.json) and raw data modes (splits.json)
 
 Inserts split-by-split data into splits table for efficient querying and report generation.
 """
