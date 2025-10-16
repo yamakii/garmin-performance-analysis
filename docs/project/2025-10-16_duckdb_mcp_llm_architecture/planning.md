@@ -8,6 +8,8 @@
 - **作成日**: `2025-10-16`
 - **ステータス**: 計画中
 - **優先度**: 高（基盤アーキテクチャ）
+- **推定期間**: 4週間
+- **スコープ**: 新規実装（4関数）+ 既存リファクタリング（23関数）+ エージェント更新（2エージェント）
 
 ## 要件定義
 
@@ -441,43 +443,147 @@ def validate_output(output: str) -> tuple[bool, Optional[str]]:
 
 ## 実装フェーズ
 
-### Phase 1: MCP Server Functions (Week 1)
+### Phase 0: 既存MCP関数のリファクタリング・統合・改廃 (Week 1)
+
+**目標:** 既存の23個のMCP関数を新アーキテクチャに準拠させ、統合・改廃により最適化
+
+**現状分析:**
+
+**既存MCP関数（23個）の分類:**
+
+1. **要約統計系（そのまま維持 - 7個）**
+   - `get_form_efficiency_summary` - フォーム効率要約（~500バイト）
+   - `get_hr_efficiency_analysis` - HR効率分析（~800バイト）
+   - `get_heart_rate_zones_detail` - HR ゾーン詳細（~1KB）
+   - `get_vo2_max_data` - VO2 max データ（~200バイト）
+   - `get_lactate_threshold_data` - 乳酸閾値データ（~300バイト）
+   - `get_performance_trends` - パフォーマンストレンド（~1KB）
+   - `get_weather_data` - 天候データ（~400バイト）
+   - **判定:** ✅ すでにアーキテクチャ準拠（要約データのみ返却）
+
+2. **軽量splits系（statistics_onlyモード追加 - 3個）**
+   - `get_splits_pace_hr` - ペース・HR（~3フィールド/split）
+   - `get_splits_form_metrics` - フォームメトリクス（~4フィールド/split）
+   - `get_splits_elevation` - 標高データ（~5フィールド/split）
+   - **判定:** ⚠️ 10-20 splitsで500-1000バイト → `statistics_only=True`オプション追加
+
+3. **大量データ系（export()へ移行推奨 - 2個）**
+   - `get_splits_all` - 全splitsデータ（22フィールド/split）
+   - `get_section_analysis` - セクション分析（数KB〜数十KB）
+   - **判定:** 🔴 大量データ返却 → `export()`推奨、または`summary_only`モード追加
+
+4. **時系列詳細系（すでに最適化済み - 2個）**
+   - `get_split_time_series_detail` - split詳細（`statistics_only`対応済み、98.8%削減）
+   - `get_time_range_detail` - 時間範囲詳細（`statistics_only`対応済み）
+   - **判定:** ✅ すでに最適化済み（statistics_onlyモード実装済み）
+
+5. **異常検出系（すでに最適化済み - 2個）**
+   - `detect_form_anomalies_summary` - 異常サマリー（~700トークン、95%削減）
+   - `get_form_anomaly_details` - 異常詳細（フィルタ対応、可変サイズ）
+   - **判定:** ✅ すでに最適化済み（summary-firstアプローチ実装済み）
+
+6. **RAG分析系（そのまま維持 - 4個）**
+   - `get_interval_analysis` - インターバル分析（DuckDB集計済み）
+   - `analyze_performance_trends` - トレンド分析（複数アクティビティ集計）
+   - `extract_insights` - インサイト抽出（キーワード検索）
+   - `compare_similar_workouts` - 類似ワークアウト比較
+   - **判定:** ✅ すでに集計済みデータのみ返却
+
+7. **メタデータ系（そのまま維持 - 2個）**
+   - `get_activity_by_date` - 日付からアクティビティ検索
+   - `get_date_by_activity_id` - アクティビティIDから日付取得
+   - **判定:** ✅ メタデータのみ返却（軽量）
+
+8. **書き込み系（そのまま維持 - 1個）**
+   - `insert_section_analysis_dict` - セクション分析挿入
+   - **判定:** ✅ 書き込み専用（返却データなし）
+
+**リファクタリング方針:**
+
+| カテゴリ | 関数数 | 対策 | 優先度 |
+|---------|--------|------|--------|
+| そのまま維持 | 14個 | なし（すでに準拠） | - |
+| オプション追加 | 3個 | `statistics_only`パラメータ追加 | 中 |
+| 非推奨化 | 2個 | `export()`への移行推奨、警告追加 | 高 |
+| 新規実装 | 4個 | `export()`/`profile()`/`histogram()`/`materialize()` | 高 |
+
+**Tasks:**
+
+1. **大量データ系の非推奨化（Week 1, Day 1-2）**
+   - `get_splits_all()` → 警告追加: "Large data export. Consider using `export()` with `statistics_only=True`"
+   - `get_section_analysis()` → 警告追加: "Consider using `extract_insights()` for summary"
+   - 両関数に`max_output_size`パラメータ追加（デフォルト10KB）
+   - 超過時はエラー + `export()`使用推奨メッセージ
+
+2. **軽量splits系のオプション追加（Week 1, Day 3-4）**
+   - `get_splits_pace_hr(activity_id, statistics_only=False)` 追加
+   - `get_splits_form_metrics(activity_id, statistics_only=False)` 追加
+   - `get_splits_elevation(activity_id, statistics_only=False)` 追加
+   - `statistics_only=True` 時: 平均・中央値・標準偏差のみ返却（~200バイト）
+
+3. **CLAUDE.mdの更新（Week 1, Day 5）**
+   - 新アーキテクチャガイド追加
+   - MCP関数選択マトリックス更新
+   - 非推奨関数の代替案明記
+   - エージェント向けガイドライン追加
+
+4. **依存エージェントの更新（Week 1, Day 5-7）**
+   - **split-section-analyst**: `get_splits_*`呼び出し → `statistics_only=True`使用
+   - **summary-section-analyst**: `get_splits_all`呼び出し → `export()` + Python集計に変更
+   - **efficiency-section-analyst**: すでに最適化済み（変更不要）
+   - **environment-section-analyst**: すでに最適化済み（変更不要）
+   - **phase-section-analyst**: `get_performance_trends`使用（変更不要）
+
+**受け入れ基準:**
+- [ ] 非推奨関数に警告メッセージ追加
+- [ ] 軽量splits系に`statistics_only`オプション追加
+- [ ] CLAUDE.mdに新アーキテクチャガイド追加
+- [ ] 依存エージェント更新完了
+- [ ] 後方互換性維持（既存コードが動作）
+- [ ] Unit tests カバレッジ90%以上
+
+### Phase 1: 新規MCP Server Functions実装 (Week 2)
 
 **目標:** MCPサーバーに4つの新規関数を実装し、ハンドルベースの安全なデータ抽出を実現
 
 **Tasks:**
 
-1. **`export()` 関数実装**
-   - DuckDB query → Parquet/CSV出力
-   - 一時ファイル管理（自動クリーンアップ）
+1. **`export()` 関数実装（Week 2, Day 1-3）**
+   - DuckDB query → Parquet/CSV出力（`/tmp/garmin_exports/` ディレクトリ）
+   - 一時ファイル管理（TTL 1時間、自動クリーンアップ）
    - 返却: ハンドル＋メタデータ（行数、サイズ、カラム情報）
+   - エクスポートID: `export_<timestamp>_<uuid>.parquet`
    - テスト: 1000行、10,000行、100,000行の出力
 
-2. **`profile()` 関数実装**
+2. **`profile()` 関数実装（Week 2, Day 3-4）**
    - テーブル/クエリの要約統計算出
-   - カラム別の min/max/mean/null_rate
-   - 期間情報（date_range）
+   - カラム別の min/max/mean/median/null_rate/distinct_count
+   - 期間情報（date_range: 最初/最後のタイムスタンプ）
+   - 返却サイズ: ~500-1000バイト
    - テスト: splits, time_series_metrics, form_efficiency テーブル
 
-3. **`histogram()` 関数実装**
-   - カラムの分布集計（ビン数可変）
+3. **`histogram()` 関数実装（Week 2, Day 4-5）**
+   - カラムの分布集計（ビン数可変、デフォルト20）
    - DuckDB `histogram()` 関数活用
    - 返却: ビン境界＋カウント（生データなし）
+   - 返却サイズ: ~1KB（20ビン × 50バイト）
    - テスト: pace, heart_rate, cadence の分布
 
-4. **`materialize()` 関数実装**
+4. **`materialize()` 関数実装（Week 2, Day 5-7）**
    - 一時ビュー作成（`CREATE TEMP VIEW`）
-   - TTLベースの自動削除
-   - ビュー名衝突回避（UUID生成）
-   - テスト: 複雑なJOINクエリの物質化
+   - TTLベースの自動削除（デフォルト1時間）
+   - ビュー名衝突回避（UUID生成: `temp_view_<uuid>`）
+   - ビュー数制限（最大10個、超過時は古いものから削除）
+   - テスト: 複雑なJOINクエリの物質化、性能改善検証
 
 **受け入れ基準:**
 - [ ] 各関数が500バイト以内のレスポンス（`export()`はハンドルのみ）
 - [ ] エラーハンドリング（不正SQL、サイズ超過）
-- [ ] 一時ファイル自動クリーンアップ
+- [ ] 一時ファイル/ビューの自動クリーンアップ
 - [ ] Unit tests カバレッジ90%以上
+- [ ] 既存関数との統合テスト完了
 
-### Phase 2: Python Helper Functions (Week 1-2)
+### Phase 2: Python Helper Functions (Week 2-3)
 
 **目標:** Python実行環境で安全にデータをロード・処理・出力するヘルパー関数群
 
@@ -513,7 +619,7 @@ def validate_output(output: str) -> tuple[bool, Optional[str]]:
 - [ ] Polars/Pandas両対応
 - [ ] Unit tests カバレッジ90%以上
 
-### Phase 3: Output Validation & Guard (Week 2)
+### Phase 3: Output Validation & Guard (Week 3)
 
 **目標:** LLM実行環境に出力ガードレールを統合し、意図しない大量出力を防止
 
@@ -549,7 +655,7 @@ def validate_output(output: str) -> tuple[bool, Optional[str]]:
 - [ ] LLM Behavior Rulesが文書化
 - [ ] Integration tests カバレッジ80%以上
 
-### Phase 4: Example Analysis Flow (Week 3)
+### Phase 4: Example Analysis Flow (Week 3-4)
 
 **目標:** 実際のユースケースを実装し、アーキテクチャの実用性を検証
 
@@ -588,7 +694,7 @@ def validate_output(output: str) -> tuple[bool, Optional[str]]:
 - [ ] Jupyter Notebook実行可能
 - [ ] End-to-end tests カバレッジ80%以上
 
-### Phase 5: Documentation & Testing (Week 3-4)
+### Phase 5: Documentation & Testing (Week 4)
 
 **目標:** ドキュメント整備とテスト完全性確保
 
@@ -736,7 +842,17 @@ def validate_output(output: str) -> tuple[bool, Optional[str]]:
 
 ### 高リスク
 
-**R1: LLMが生データ読み取りを試行し続ける**
+**R1: 既存エージェントのリファクタリング影響範囲**
+- 影響度: 高（5エージェント中2エージェントが影響）
+- 発生確率: 高
+- 対策:
+  - Phase 0で既存関数に後方互換性を維持
+  - `statistics_only`はオプションパラメータ（デフォルト`False`）
+  - 段階的移行: 警告 → 推奨 → 非推奨
+  - エージェント更新前に既存動作の回帰テスト
+- 軽減策: Phase 0でまず既存関数を更新、Phase 1で新規関数追加、Phase 4でエージェント更新
+
+**R2: LLMが生データ読み取りを試行し続ける**
 - 影響度: 高（アーキテクチャの根幹）
 - 発生確率: 中
 - 対策:
@@ -746,7 +862,7 @@ def validate_output(output: str) -> tuple[bool, Optional[str]]:
   - エラーメッセージで正しいフローを指示
 - 軽減策: Phase 3で警告システム実装、Phase 4で正しい使用例を多数提供
 
-**R2: 出力サイズ制限が厳しすぎて実用性が低下**
+**R3: 出力サイズ制限が厳しすぎて実用性が低下**
 - 影響度: 中
 - 発生確率: 中
 - 対策:
@@ -757,7 +873,7 @@ def validate_output(output: str) -> tuple[bool, Optional[str]]:
 
 ### 中リスク
 
-**R3: Parquetエクスポートがディスク容量を圧迫**
+**R4: Parquetエクスポートがディスク容量を圧迫**
 - 影響度: 中
 - 発生確率: 低
 - 対策:
@@ -766,18 +882,19 @@ def validate_output(output: str) -> tuple[bool, Optional[str]]:
   - 古いエクスポートの定期クリーンアップ
 - 軽減策: Phase 1で自動クリーンアップを実装
 
-**R4: 既存のMCPツール（get_split_time_series_detail等）との統合**
+**R5: 既存のMCPツール（get_split_time_series_detail等）との統合**
 - 影響度: 中
 - 発生確率: 中
 - 対策:
   - 既存ツールは維持（後方互換性）
+  - Phase 0で既存ツールを新アーキテクチャに適合
   - 新アーキテクチャは追加機能として提供
   - ユースケース別の推奨ツール選択ガイド作成
-- 軽減策: Phase 5でツール選択ガイドをCLAUDE.mdに追加
+- 軽減策: Phase 0で既存関数を段階的に更新、Phase 5でツール選択ガイドをCLAUDE.mdに追加
 
 ### 低リスク
 
-**R5: DuckDBのメモリ使用量増加（materialize利用時）**
+**R6: DuckDBのメモリ使用量増加（materialize利用時）**
 - 影響度: 低
 - 発生確率: 低
 - 対策:
@@ -786,7 +903,7 @@ def validate_output(output: str) -> tuple[bool, Optional[str]]:
   - メモリ使用量監視
 - 軽減策: Phase 1でTTL実装、Phase 3でメモリ監視追加
 
-**R6: Polars/Pandasの互換性問題**
+**R7: Polars/Pandasの互換性問題**
 - 影響度: 低
 - 発生確率: 低
 - 対策:
@@ -799,21 +916,27 @@ def validate_output(output: str) -> tuple[bool, Optional[str]]:
 
 ## 次のステップ
 
-1. **GitHub Issue #25にこの計画をリンク**
-   - planning.md URLを Issue descriptionに追加
+1. **GitHub Issue #25の更新**
+   - planning.md URLを Issue descriptionに追加（完了）
 
 2. **Git worktree作成 (tdd-implementer phase)**
    ```bash
    git worktree add -b feature/duckdb_mcp_llm_architecture ../duckdb_mcp_llm_arch main
    cd ../duckdb_mcp_llm_arch
    uv sync
+   mcp__serena__activate_project("/absolute/path/to/duckdb_mcp_llm_arch")
    ```
 
-3. **Phase 1開始**
-   - MCP Server Functions実装
+3. **Phase 0開始（Week 1）**
+   - 既存MCP関数のリファクタリング・統合・改廃
+   - 後方互換性を維持しつつ段階的に更新
+   - 依存エージェントの更新
+
+4. **Phase 1開始（Week 2）**
+   - 新規MCP Server Functions実装
    - TDDサイクルで進行
 
-4. **定期レビュー**
+5. **定期レビュー**
    - 各Phase完了時にユーザーレビュー
    - 必要に応じて計画調整
 
@@ -822,4 +945,7 @@ def validate_output(output: str) -> tuple[bool, Optional[str]]:
 **計画作成日**: 2025-10-16
 **最終更新日**: 2025-10-16
 **ステータス**: 計画完了、実装待機
-**推定期間**: 3-4週間
+**推定期間**: 4週間
+**変更履歴**:
+- 2025-10-16: 初版作成
+- 2025-10-16: Phase 0追加（既存MCP関数リファクタリング）、依存エージェント更新追加、リスク評価更新
