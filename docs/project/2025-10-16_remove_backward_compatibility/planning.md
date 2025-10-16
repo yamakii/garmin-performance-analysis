@@ -3,8 +3,8 @@
 ## プロジェクト情報
 - **プロジェクト名**: `remove_backward_compatibility`
 - **作成日**: `2025-10-16`
-- **ステータス**: 計画中
-- **GitHub Issue**: TBD (create after planning approval)
+- **ステータス**: 実装中
+- **GitHub Issue**: [#26](https://github.com/yamakii/garmin-performance-analysis/issues/26)
 
 ## 要件定義
 
