@@ -615,7 +615,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                     total_distance_km,
                     total_time_seconds
                 FROM activities
-                WHERE date = ?
+                WHERE activity_date = ?
                 ORDER BY start_time_local
                 """,
                 [date],

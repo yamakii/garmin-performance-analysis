@@ -599,13 +599,13 @@ class AggregateReader(BaseDBReader):
                         # Wrap query and add WHERE clause
                         base_query = (
                             f"(SELECT * FROM ({table_or_query}) AS inner_query "
-                            f"WHERE date BETWEEN '{start_date}' AND '{end_date}') AS subquery"
+                            f"WHERE activity_date BETWEEN '{start_date}' AND '{end_date}') AS subquery"
                         )
                     else:
                         # Add WHERE clause to table
                         base_query = (
                             f"(SELECT * FROM {table_or_query} "
-                            f"WHERE date BETWEEN '{start_date}' AND '{end_date}') AS subquery"
+                            f"WHERE activity_date BETWEEN '{start_date}' AND '{end_date}') AS subquery"
                         )
 
                 # Get row count
@@ -759,12 +759,12 @@ class AggregateReader(BaseDBReader):
                     if is_query:
                         base_query = (
                             f"(SELECT * FROM ({table_or_query}) AS inner_query "
-                            f"WHERE date BETWEEN '{start_date}' AND '{end_date}') AS subquery"
+                            f"WHERE activity_date BETWEEN '{start_date}' AND '{end_date}') AS subquery"
                         )
                     else:
                         base_query = (
                             f"(SELECT * FROM {table_or_query} "
-                            f"WHERE date BETWEEN '{start_date}' AND '{end_date}') AS subquery"
+                            f"WHERE activity_date BETWEEN '{start_date}' AND '{end_date}') AS subquery"
                         )
 
                 # Get total count (excluding NULLs)

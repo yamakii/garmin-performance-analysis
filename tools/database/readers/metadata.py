@@ -27,7 +27,7 @@ class MetadataReader(BaseDBReader):
         try:
             with self._get_connection() as conn:
                 result = conn.execute(
-                    "SELECT date FROM activities WHERE activity_id = ?",
+                    "SELECT activity_date FROM activities WHERE activity_id = ?",
                     [activity_id],
                 ).fetchone()
 
@@ -51,7 +51,7 @@ class MetadataReader(BaseDBReader):
         try:
             with self._get_connection() as conn:
                 result = conn.execute(
-                    "SELECT activity_id FROM activities WHERE date = ?",
+                    "SELECT activity_id FROM activities WHERE activity_date = ?",
                     [date],
                 ).fetchone()
 
