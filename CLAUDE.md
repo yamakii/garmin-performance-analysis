@@ -248,6 +248,17 @@ mcp__serena__activate_project("/absolute/path")  # MANDATORY for agents
 git worktree list                # List all worktrees
 git worktree remove ../path      # Remove after merge
 git worktree prune               # Cleanup stale worktrees
+
+# Worktree Safety Rules (CRITICAL)
+# Before removing ANY worktree:
+# 1. cd /path/to/worktree && git status
+# 2. If uncommitted changes exist, report to user and ask for confirmation
+# 3. NEVER use --force without explicit user approval
+
+# Example:
+# ❌ NEVER: git worktree remove ../some-worktree --force
+# ✅ ALWAYS: cd ../some-worktree && git status  # Check first!
+#           # If clean, then: git worktree remove ../some-worktree
 ```
 
 **Worktree Workflow:**
