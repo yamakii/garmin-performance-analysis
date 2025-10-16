@@ -34,12 +34,17 @@ async def list_tools() -> list[Tool]:
     return [
         Tool(
             name="get_section_analysis",
-            description="Get section analysis data from DuckDB",
+            description="Get section analysis data from DuckDB (DEPRECATED: Use extract_insights() for summarized data)",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "activity_id": {"type": "integer"},
                     "section_type": {"type": "string"},
+                    "max_output_size": {
+                        "type": "integer",
+                        "description": "Maximum output size in bytes (default: 10240). Set to null for no limit.",
+                        "default": 10240,
+                    },
                 },
                 "required": ["activity_id", "section_type"],
             },
@@ -200,11 +205,16 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="get_splits_all",
-            description="Get all split data (all 22 fields) from splits table",
+            description="Get all split data (all 22 fields) from splits table (DEPRECATED: Use export() or lightweight splits functions)",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "activity_id": {"type": "integer"},
+                    "max_output_size": {
+                        "type": "integer",
+                        "description": "Maximum output size in bytes (default: 10240). Set to null for no limit.",
+                        "default": 10240,
+                    },
                 },
                 "required": ["activity_id"],
             },
@@ -478,7 +488,10 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     if name == "get_section_analysis":
         activity_id = arguments["activity_id"]
         section_type = arguments["section_type"]
-        result = db_reader.get_section_analysis(activity_id, section_type)
+        max_output_size = arguments.get("max_output_size", 10240)
+        result = db_reader.get_section_analysis(
+            activity_id, section_type, max_output_size
+        )
         return [
             TextContent(
                 type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
@@ -679,7 +692,8 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
     elif name == "get_splits_all":
         activity_id = arguments["activity_id"]
-        result = db_reader.get_splits_all(activity_id)
+        max_output_size = arguments.get("max_output_size", 10240)
+        result = db_reader.get_splits_all(activity_id, max_output_size)
         return [
             TextContent(
                 type="text", text=json.dumps(result, indent=2, ensure_ascii=False)

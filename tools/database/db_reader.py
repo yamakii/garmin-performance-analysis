@@ -243,18 +243,38 @@ class GarminDBReader:
             return None
 
     def get_section_analysis(
-        self, activity_id: int, section_type: str
+        self, activity_id: int, section_type: str, max_output_size: int = 10240
     ) -> dict[str, Any] | None:
         """
         Get section analysis from DuckDB.
 
+        DEPRECATED: This function may return large amounts of data.
+        Consider using extract_insights() MCP function for keyword-based
+        summarized insights instead.
+
         Args:
             activity_id: Activity ID
             section_type: Section type (efficiency, environment, phase, split, summary)
+            max_output_size: Maximum output size in bytes (default: 10KB).
+                           Set to None to disable limit (backward compatibility).
 
         Returns:
             Section analysis data as dict, or None if not found
+
+        Raises:
+            ValueError: If output size exceeds max_output_size
         """
+        import warnings
+
+        # Show deprecation warning
+        warnings.warn(
+            "get_section_analysis() may return large amounts of data. "
+            "Consider using extract_insights() MCP function for "
+            "keyword-based summarized insights instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
         try:
             conn = duckdb.connect(str(self.db_path), read_only=True)
             result = conn.execute(
@@ -263,10 +283,27 @@ class GarminDBReader:
             ).fetchone()
             conn.close()
 
-            if result and result[0]:
-                return cast(dict[str, Any], json.loads(result[0]))
-            return None
+            if not result or not result[0]:
+                return None
+
+            output = cast(dict[str, Any], json.loads(result[0]))
+
+            # Check output size if limit is set
+            if max_output_size is not None:
+                output_json = json.dumps(output, ensure_ascii=False)
+                output_size = len(output_json.encode("utf-8"))
+
+                if output_size > max_output_size:
+                    raise ValueError(
+                        f"Output size ({output_size} bytes) exceeds max_output_size ({max_output_size} bytes). "
+                        f"Consider using extract_insights() MCP function for summarized data instead."
+                    )
+
+            return output
+
         except Exception as e:
+            if isinstance(e, ValueError):
+                raise
             logger.error(f"Error querying section analysis: {e}")
             return None
 
@@ -745,12 +782,20 @@ class GarminDBReader:
             logger.error(f"Error getting lactate threshold data: {e}")
             return None
 
-    def get_splits_all(self, activity_id: int) -> dict[str, list[dict]]:
+    def get_splits_all(
+        self, activity_id: int, max_output_size: int = 10240
+    ) -> dict[str, list[dict]]:
         """
         Get all split data from splits table (全22フィールド).
 
+        DEPRECATED: This function returns large amounts of data.
+        Consider using `export()` MCP function for large datasets,
+        or use lightweight splits functions with `statistics_only=True`.
+
         Args:
             activity_id: Activity ID
+            max_output_size: Maximum output size in bytes (default: 10KB).
+                           Set to None to disable limit (backward compatibility).
 
         Returns:
             Complete split data with all metrics.
@@ -783,7 +828,22 @@ class GarminDBReader:
                     ...
                 ]
             }
+
+        Raises:
+            ValueError: If output size exceeds max_output_size
         """
+        import warnings
+
+        # Show deprecation warning
+        warnings.warn(
+            "get_splits_all() returns large amounts of data. "
+            "Consider using export() MCP function for large datasets, "
+            "or use lightweight splits functions (get_splits_pace_hr, etc.) "
+            "with statistics_only=True parameter.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
         try:
             conn = duckdb.connect(str(self.db_path), read_only=True)
 
@@ -853,9 +913,26 @@ class GarminDBReader:
                     }
                 )
 
-            return {"splits": splits}
+            output = {"splits": splits}
+
+            # Check output size if limit is set
+            if max_output_size is not None:
+                import json
+
+                output_json = json.dumps(output, ensure_ascii=False)
+                output_size = len(output_json.encode("utf-8"))
+
+                if output_size > max_output_size:
+                    raise ValueError(
+                        f"Output size ({output_size} bytes) exceeds max_output_size ({max_output_size} bytes). "
+                        f"Consider using export() MCP function to save data to a file instead."
+                    )
+
+            return output
 
         except Exception as e:
+            if isinstance(e, ValueError):
+                raise
             logger.error(f"Error getting all splits data: {e}")
             return {"splits": []}
 
