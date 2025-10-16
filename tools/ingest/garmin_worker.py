@@ -1116,7 +1116,6 @@ class GarminIngestWorker:
             from tools.database.inserters.form_efficiency import insert_form_efficiency
 
             form_eff_success = insert_form_efficiency(
-                performance_file=None,  # Use raw data mode
                 activity_id=activity_id,
                 db_path=self._db_path,
                 raw_splits_file=str(raw_splits_file) if raw_splits_file else None,

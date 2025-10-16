@@ -31,34 +31,35 @@ class TestGarminDBReaderNormalized:
         """Create GarminDBReader with test database containing normalized data."""
         db_path = tmp_path / "test.duckdb"
 
-        # Create test performance.json for form_efficiency (still uses performance.json)
-        performance_file = tmp_path / f"{test_activity_id}.json"
-        performance_data = {
-            "form_efficiency_summary": {
-                "gct_stats": {
-                    "average": 250.0,
-                    "min": 240.0,
-                    "max": 260.0,
-                    "std": 5.0,
+        # Create test splits.json for form_efficiency
+        splits_file = tmp_path / "splits.json"
+        splits_data = {
+            "activityId": test_activity_id,
+            "lapDTOs": [
+                {
+                    "lapIndex": 1,
+                    "distance": 1000.0,
+                    "groundContactTime": 250.0,
+                    "verticalOscillation": 7.5,
+                    "verticalRatio": 8.5,
                 },
-                "gct_rating": "★★★★★",
-                "vo_stats": {
-                    "average": 7.5,
-                    "min": 7.0,
-                    "max": 8.0,
-                    "std": 0.3,
+                {
+                    "lapIndex": 2,
+                    "distance": 1000.0,
+                    "groundContactTime": 240.0,
+                    "verticalOscillation": 7.0,
+                    "verticalRatio": 8.0,
                 },
-                "vo_rating": "★★★★★",
-                "vr_stats": {
-                    "average": 8.5,
-                    "min": 8.0,
-                    "max": 9.0,
-                    "std": 0.3,
+                {
+                    "lapIndex": 3,
+                    "distance": 1000.0,
+                    "groundContactTime": 260.0,
+                    "verticalOscillation": 8.0,
+                    "verticalRatio": 9.0,
                 },
-                "vr_rating": "★★★★☆",
-            },
+            ],
         }
-        performance_file.write_text(json.dumps(performance_data, indent=2))
+        splits_file.write_text(json.dumps(splits_data, indent=2))
 
         # Create raw data files for hr_efficiency
         hr_zones_file = tmp_path / "hr_zones.json"
@@ -100,9 +101,9 @@ class TestGarminDBReaderNormalized:
         from tools.database.inserters.hr_efficiency import insert_hr_efficiency
 
         insert_form_efficiency(
-            performance_file=str(performance_file),
             activity_id=test_activity_id,
             db_path=str(db_path),
+            raw_splits_file=str(splits_file),
         )
         insert_hr_efficiency(
             activity_id=test_activity_id,
@@ -124,28 +125,30 @@ class TestGarminDBReaderNormalized:
         assert "vo" in result
         assert "vr" in result
 
-        # Verify GCT data (only fields inserted by current inserter)
+        # Verify GCT data (calculated from [250, 240, 260])
         assert result["gct"]["average"] == 250.0
         assert result["gct"]["min"] == 240.0
         assert result["gct"]["max"] == 260.0
-        assert result["gct"]["std"] == 5.0
+        assert result["gct"]["std"] == pytest.approx(
+            10.0, rel=0.01
+        )  # std([250,240,260])
         assert result["gct"]["variability"] == pytest.approx(
-            2.0, rel=0.01
-        )  # Calculated: 5/250 * 100
+            4.0, rel=0.01
+        )  # Calculated: 10/250 * 100
         assert result["gct"]["rating"] == "★★★★★"
 
-        # Verify VO data
+        # Verify VO data (calculated from [7.5, 7.0, 8.0])
         assert result["vo"]["average"] == 7.5
         assert result["vo"]["min"] == 7.0
         assert result["vo"]["max"] == 8.0
-        assert result["vo"]["std"] == 0.3
+        assert result["vo"]["std"] == pytest.approx(0.5, rel=0.01)  # std([7.5,7.0,8.0])
         assert result["vo"]["rating"] == "★★★★★"
 
-        # Verify VR data
+        # Verify VR data (calculated from [8.5, 8.0, 9.0])
         assert result["vr"]["average"] == 8.5
         assert result["vr"]["min"] == 8.0
         assert result["vr"]["max"] == 9.0
-        assert result["vr"]["std"] == 0.3
+        assert result["vr"]["std"] == pytest.approx(0.5, rel=0.01)  # std([8.5,8.0,9.0])
         assert result["vr"]["rating"] == "★★★★☆"
 
     @pytest.mark.unit
