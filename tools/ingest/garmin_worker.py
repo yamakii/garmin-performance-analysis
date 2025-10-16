@@ -1344,9 +1344,16 @@ class GarminIngestWorker:
         # Check NEW path cache first
         weight_file = self.weight_raw_dir / f"{date}.json"
         if weight_file.exists():
-            logger.info(f"Using cached body composition data for {date}")
             with open(weight_file, encoding="utf-8") as f:
-                return cast(dict[str, Any], json.load(f))
+                cached_data = json.load(f)
+                # Empty dict indicates no data available (marker file)
+                if not cached_data:
+                    logger.debug(
+                        f"Empty marker file found for {date}, skipping API call"
+                    )
+                    return None
+                logger.info(f"Using cached body composition data for {date}")
+                return cast(dict[str, Any], cached_data)
 
         # Fetch from Garmin Connect API
         logger.info(
@@ -1359,6 +1366,11 @@ class GarminIngestWorker:
 
             if not weight_data or not weight_data.get("dateWeightList"):
                 logger.warning(f"No body composition data found for {date}")
+                # Create empty marker file to avoid repeated API calls
+                weight_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(weight_file, "w", encoding="utf-8") as f:
+                    json.dump({}, f)
+                logger.info(f"Created empty marker file: {weight_file}")
                 return None
 
             # Save to NEW path cache
@@ -1371,6 +1383,11 @@ class GarminIngestWorker:
 
         except Exception as e:
             logger.error(f"Error fetching body composition data for {date}: {e}")
+            # Create empty marker file to avoid repeated API calls
+            weight_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(weight_file, "w", encoding="utf-8") as f:
+                json.dump({}, f)
+            logger.info(f"Created empty marker file after error: {weight_file}")
             return None
 
     def _calculate_median_weight(self, date: str) -> dict[str, Any] | None:
