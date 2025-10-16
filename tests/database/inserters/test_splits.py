@@ -91,7 +91,7 @@ class TestSplitsInserter:
 
         # Check splits data
         splits = conn.execute(
-            "SELECT * FROM splits WHERE activity_id = 20464005432 ORDER BY split_index"
+            "SELECT * FROM splits WHERE activity_id = 20636804823 ORDER BY split_index"
         ).fetchall()
         assert len(splits) == 2
 
@@ -100,24 +100,24 @@ class TestSplitsInserter:
             """
             SELECT split_index, distance, pace_seconds_per_km, heart_rate
             FROM splits
-            WHERE activity_id = 20464005432
+            WHERE activity_id = 20636804823
             ORDER BY split_index
             """
         ).fetchall()
 
-        # Verify first split
+        # Verify first split (fixture data)
         split1 = split_data[0]
         assert split1[0] == 1  # split_index
-        assert split1[1] == 1.0  # distance
-        assert split1[2] == 300  # pace_seconds_per_km
-        assert split1[3] == 140  # heart_rate
+        assert split1[1] == 1.0  # distance (km)
+        assert abs(split1[2] - 387.504) < 1.0  # pace_seconds_per_km
+        assert split1[3] == 127  # heart_rate
 
-        # Verify second split
+        # Verify second split (fixture data)
         split2 = split_data[1]
         assert split2[0] == 2  # split_index
-        assert split2[1] == 1.0  # distance
-        assert split2[2] == 295  # pace_seconds_per_km
-        assert split2[3] == 145  # heart_rate
+        assert split2[1] == 1.0  # distance (km)
+        assert abs(split2[2] - 390.841) < 1.0  # pace_seconds_per_km
+        assert split2[3] == 144  # heart_rate
 
         conn.close()
 
@@ -144,16 +144,17 @@ class TestSplitsInserter:
             """
             SELECT split_index, role_phase
             FROM splits
-            WHERE activity_id = 20464005432
+            WHERE activity_id = 20636804823
             ORDER BY split_index
             """
         ).fetchall()
 
         assert len(splits) == 2
 
-        # Verify role_phase values
-        assert splits[0][1] == "warmup"  # split 1
-        assert splits[1][1] == "run"  # split 2
+        # Verify role_phase values (fixture has INTERVAL intensityType for both splits)
+        # INTERVAL maps to "run" phase
+        assert splits[0][1] == "run"  # split 1 - INTERVAL
+        assert splits[1][1] == "run"  # split 2 - INTERVAL
 
         conn.close()
 

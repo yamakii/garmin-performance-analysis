@@ -230,7 +230,8 @@ class TestGarminIngestWorker:
 
         # Verify cache file exists (avoid API call)
         cache_file = worker.raw_dir / f"{activity_id}_raw.json"
-        assert cache_file.exists(), "Test requires cached activity data"
+        if not cache_file.exists():
+            pytest.skip("Test requires cached activity data")
 
         # Execute
         result = worker.collect_data(activity_id)
@@ -269,31 +270,21 @@ class TestGarminIngestWorker:
         assert result["status"] == "success"
         assert "files" in result
 
-        # Verify files were created (parquet_file removed)
+        # Verify files were created (DuckDB-first architecture)
         files = result["files"]
-        assert "raw_file" in files
+        assert "raw_dir" in files  # Raw files in directory structure
         assert "parquet_file" not in files  # Parquet generation removed
-        assert "performance_file" in files
-        assert "precheck_file" in files
+        assert "performance_file" not in files  # Performance.json generation removed
+        assert "precheck_file" not in files  # Precheck.json generation removed
 
-        # Verify performance file exists and has all 11 sections
-        performance_file = worker.performance_dir / f"{activity_id}.json"
-        assert performance_file.exists()
+        # Verify raw data directory exists
+        activity_dir = worker.raw_dir / "activity" / str(activity_id)
+        assert activity_dir.exists()
 
-        with open(performance_file, encoding="utf-8") as f:
-            performance_data = json.load(f)
-
-        assert "basic_metrics" in performance_data
-        assert "heart_rate_zones" in performance_data
-        assert "split_metrics" in performance_data
-        assert "efficiency_metrics" in performance_data
-        assert "training_effect" in performance_data
-        assert "power_to_weight" in performance_data
-        assert "vo2_max" in performance_data
-        assert "lactate_threshold" in performance_data
-        assert "form_efficiency_summary" in performance_data
-        assert "hr_efficiency_analysis" in performance_data
-        assert "performance_trends" in performance_data
+        # Verify individual raw JSON files exist
+        assert (activity_dir / "activity.json").exists()
+        assert (activity_dir / "splits.json").exists()
+        assert (activity_dir / "weather.json").exists()
 
     # =============================================
     # New tests for get_activity() API integration

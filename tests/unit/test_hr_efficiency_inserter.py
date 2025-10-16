@@ -20,31 +20,38 @@ class TestHREfficiencyInserter:
         """Test that zone percentages are correctly inserted into DuckDB."""
         # Arrange
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Create performance.json with zone percentages
-            performance_data = {
-                "hr_efficiency_analysis": {
-                    "avg_heart_rate": 150.5,
-                    "training_type": "tempo_run",
-                    "hr_stability": "優秀",
-                    "description": "適切な心拍ゾーンで実施",
-                    "zone1_percentage": 15.0,
-                    "zone2_percentage": 30.0,
-                    "zone3_percentage": 40.0,
-                    "zone4_percentage": 12.5,
-                    "zone5_percentage": 2.5,
-                }
+            # Create raw hr_zones.json with zone data
+            hr_zones_data = [
+                {"zoneNumber": 1, "zoneLowBoundary": 100, "secsInZone": 450.0},
+                {"zoneNumber": 2, "zoneLowBoundary": 120, "secsInZone": 900.0},
+                {"zoneNumber": 3, "zoneLowBoundary": 140, "secsInZone": 1200.0},
+                {"zoneNumber": 4, "zoneLowBoundary": 160, "secsInZone": 375.0},
+                {"zoneNumber": 5, "zoneLowBoundary": 180, "secsInZone": 75.0},
+            ]
+
+            hr_zones_file = Path(tmpdir) / "hr_zones.json"
+            with open(hr_zones_file, "w", encoding="utf-8") as f:
+                json.dump(hr_zones_data, f)
+
+            # Create raw activity.json
+            activity_data = {
+                "activityId": 12345,
+                "summaryDTO": {"duration": 3000.0},
             }
 
-            performance_file = Path(tmpdir) / "performance.json"
-            with open(performance_file, "w", encoding="utf-8") as f:
-                json.dump(performance_data, f)
+            activity_file = Path(tmpdir) / "activity.json"
+            with open(activity_file, "w", encoding="utf-8") as f:
+                json.dump(activity_data, f)
 
             db_path = Path(tmpdir) / "test.duckdb"
             activity_id = 12345
 
             # Act
             result = insert_hr_efficiency(
-                str(performance_file), activity_id, str(db_path)
+                activity_id=activity_id,
+                db_path=str(db_path),
+                raw_hr_zones_file=str(hr_zones_file),
+                raw_activity_file=str(activity_file),
             )
 
             # Assert
@@ -71,26 +78,38 @@ class TestHREfficiencyInserter:
         """Test that missing zone percentages result in NULL values."""
         # Arrange
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Create performance.json WITHOUT zone percentages
-            performance_data = {
-                "hr_efficiency_analysis": {
-                    "avg_heart_rate": 145.0,
-                    "training_type": "aerobic_base",
-                    "hr_stability": "良好",
-                    "description": "適切な心拍ゾーンで実施",
-                }
+            # Create raw hr_zones.json with NO secsInZone data
+            hr_zones_data = [
+                {"zoneNumber": 1, "zoneLowBoundary": 100},
+                {"zoneNumber": 2, "zoneLowBoundary": 120},
+                {"zoneNumber": 3, "zoneLowBoundary": 140},
+                {"zoneNumber": 4, "zoneLowBoundary": 160},
+                {"zoneNumber": 5, "zoneLowBoundary": 180},
+            ]
+
+            hr_zones_file = Path(tmpdir) / "hr_zones.json"
+            with open(hr_zones_file, "w", encoding="utf-8") as f:
+                json.dump(hr_zones_data, f)
+
+            # Create raw activity.json
+            activity_data = {
+                "activityId": 67890,
+                "summaryDTO": {"duration": 3000.0},
             }
 
-            performance_file = Path(tmpdir) / "performance.json"
-            with open(performance_file, "w", encoding="utf-8") as f:
-                json.dump(performance_data, f)
+            activity_file = Path(tmpdir) / "activity.json"
+            with open(activity_file, "w", encoding="utf-8") as f:
+                json.dump(activity_data, f)
 
             db_path = Path(tmpdir) / "test.duckdb"
             activity_id = 67890
 
             # Act
             result = insert_hr_efficiency(
-                str(performance_file), activity_id, str(db_path)
+                activity_id=activity_id,
+                db_path=str(db_path),
+                raw_hr_zones_file=str(hr_zones_file),
+                raw_activity_file=str(activity_file),
             )
 
             # Assert
@@ -118,53 +137,58 @@ class TestHREfficiencyInserter:
         """Test that re-insertion updates existing records correctly."""
         # Arrange
         with tempfile.TemporaryDirectory() as tmpdir:
-            # First insertion
-            performance_data_v1 = {
-                "hr_efficiency_analysis": {
-                    "avg_heart_rate": 150.0,
-                    "training_type": "tempo_run",
-                    "hr_stability": "優秀",
-                    "zone1_percentage": 10.0,
-                    "zone2_percentage": 20.0,
-                    "zone3_percentage": 50.0,
-                    "zone4_percentage": 15.0,
-                    "zone5_percentage": 5.0,
-                }
+            # First insertion - create raw files
+            hr_zones_data_v1 = [
+                {"zoneNumber": 1, "zoneLowBoundary": 100, "secsInZone": 300.0},
+                {"zoneNumber": 2, "zoneLowBoundary": 120, "secsInZone": 600.0},
+                {"zoneNumber": 3, "zoneLowBoundary": 140, "secsInZone": 1500.0},
+                {"zoneNumber": 4, "zoneLowBoundary": 160, "secsInZone": 450.0},
+                {"zoneNumber": 5, "zoneLowBoundary": 180, "secsInZone": 150.0},
+            ]
+
+            hr_zones_file = Path(tmpdir) / "hr_zones.json"
+            with open(hr_zones_file, "w", encoding="utf-8") as f:
+                json.dump(hr_zones_data_v1, f)
+
+            activity_data = {
+                "activityId": 11111,
+                "summaryDTO": {"duration": 3000.0},
             }
 
-            performance_file = Path(tmpdir) / "performance.json"
-            with open(performance_file, "w", encoding="utf-8") as f:
-                json.dump(performance_data_v1, f)
+            activity_file = Path(tmpdir) / "activity.json"
+            with open(activity_file, "w", encoding="utf-8") as f:
+                json.dump(activity_data, f)
 
             db_path = Path(tmpdir) / "test.duckdb"
             activity_id = 11111
 
             # Act - First insertion
             result1 = insert_hr_efficiency(
-                str(performance_file), activity_id, str(db_path)
+                activity_id=activity_id,
+                db_path=str(db_path),
+                raw_hr_zones_file=str(hr_zones_file),
+                raw_activity_file=str(activity_file),
             )
             assert result1 is True
 
-            # Update performance.json with new zone percentages
-            performance_data_v2 = {
-                "hr_efficiency_analysis": {
-                    "avg_heart_rate": 155.0,
-                    "training_type": "threshold_work",
-                    "hr_stability": "変動あり",
-                    "zone1_percentage": 5.0,
-                    "zone2_percentage": 15.0,
-                    "zone3_percentage": 45.0,
-                    "zone4_percentage": 25.0,
-                    "zone5_percentage": 10.0,
-                }
-            }
+            # Update hr_zones.json with new zone data
+            hr_zones_data_v2 = [
+                {"zoneNumber": 1, "zoneLowBoundary": 100, "secsInZone": 150.0},
+                {"zoneNumber": 2, "zoneLowBoundary": 120, "secsInZone": 450.0},
+                {"zoneNumber": 3, "zoneLowBoundary": 140, "secsInZone": 1350.0},
+                {"zoneNumber": 4, "zoneLowBoundary": 160, "secsInZone": 750.0},
+                {"zoneNumber": 5, "zoneLowBoundary": 180, "secsInZone": 300.0},
+            ]
 
-            with open(performance_file, "w", encoding="utf-8") as f:
-                json.dump(performance_data_v2, f)
+            with open(hr_zones_file, "w", encoding="utf-8") as f:
+                json.dump(hr_zones_data_v2, f)
 
             # Act - Second insertion (re-insertion)
             result2 = insert_hr_efficiency(
-                str(performance_file), activity_id, str(db_path)
+                activity_id=activity_id,
+                db_path=str(db_path),
+                raw_hr_zones_file=str(hr_zones_file),
+                raw_activity_file=str(activity_file),
             )
 
             # Assert
@@ -192,29 +216,37 @@ class TestHREfficiencyInserter:
         """Test that partial zone percentages are handled correctly."""
         # Arrange
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Only zones 1-3 have percentages
-            performance_data = {
-                "hr_efficiency_analysis": {
-                    "avg_heart_rate": 140.0,
-                    "training_type": "aerobic_base",
-                    "hr_stability": "優秀",
-                    "zone1_percentage": 50.0,
-                    "zone2_percentage": 40.0,
-                    "zone3_percentage": 10.0,
-                    # zone4_percentage and zone5_percentage are missing
-                }
+            # Only zones 1-3 have secsInZone data
+            hr_zones_data = [
+                {"zoneNumber": 1, "zoneLowBoundary": 100, "secsInZone": 1500.0},
+                {"zoneNumber": 2, "zoneLowBoundary": 120, "secsInZone": 1200.0},
+                {"zoneNumber": 3, "zoneLowBoundary": 140, "secsInZone": 300.0},
+                {"zoneNumber": 4, "zoneLowBoundary": 160, "secsInZone": 0.0},
+                {"zoneNumber": 5, "zoneLowBoundary": 180, "secsInZone": 0.0},
+            ]
+
+            hr_zones_file = Path(tmpdir) / "hr_zones.json"
+            with open(hr_zones_file, "w", encoding="utf-8") as f:
+                json.dump(hr_zones_data, f)
+
+            activity_data = {
+                "activityId": 22222,
+                "summaryDTO": {"duration": 3000.0},
             }
 
-            performance_file = Path(tmpdir) / "performance.json"
-            with open(performance_file, "w", encoding="utf-8") as f:
-                json.dump(performance_data, f)
+            activity_file = Path(tmpdir) / "activity.json"
+            with open(activity_file, "w", encoding="utf-8") as f:
+                json.dump(activity_data, f)
 
             db_path = Path(tmpdir) / "test.duckdb"
             activity_id = 22222
 
             # Act
             result = insert_hr_efficiency(
-                str(performance_file), activity_id, str(db_path)
+                activity_id=activity_id,
+                db_path=str(db_path),
+                raw_hr_zones_file=str(hr_zones_file),
+                raw_activity_file=str(activity_file),
             )
 
             # Assert
@@ -235,6 +267,6 @@ class TestHREfficiencyInserter:
             assert row[0] == 50.0
             assert row[1] == 40.0
             assert row[2] == 10.0
-            # Zones 4-5 should be NULL
-            assert row[3] is None
-            assert row[4] is None
+            # Zones 4-5 have 0 seconds, so percentage is 0.0 (not NULL)
+            assert row[3] == 0.0
+            assert row[4] == 0.0

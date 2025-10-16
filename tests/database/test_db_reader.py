@@ -125,7 +125,7 @@ class TestGarminDBReader:
         assert split1["elevation_loss_m"] == 2
         assert split1["max_elevation_m"] is None  # Not available in splits table
         assert split1["min_elevation_m"] is None  # Not available in splits table
-        assert split1["terrain_type"] == "平坦"
+        assert split1["terrain_type"] == "起伏"  # total=7, 5<=total<15
 
         # Check second split
         split2 = result["splits"][1]
