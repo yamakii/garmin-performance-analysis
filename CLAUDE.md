@@ -363,6 +363,34 @@ uv run pytest -m performance     # Performance only
 - Source: `lapDTOs` → DuckDB (via inserters)
 - Classification: 平坦/起伏/丘陵/山岳
 
+## DuckDB Database Safety Rules
+
+**CRITICAL: Database contains valuable activity data (100+ activities). Follow these rules strictly:**
+
+1. **NEVER delete database without explicit user approval**
+   - ❌ Do NOT propose `rm database.duckdb` or `--delete-db` as first solution
+   - ✅ Always check data integrity first with read-only connection
+
+2. **Error diagnosis protocol:**
+   ```python
+   # ALWAYS start with read-only check
+   conn = duckdb.connect(db_path, read_only=True)
+   count = conn.execute('SELECT COUNT(*) FROM activities').fetchone()[0]
+   # If successful → data is intact, find alternative solution
+   ```
+
+3. **When database deletion is acceptable:**
+   - User explicitly requests full regeneration
+   - Read-only check confirms data corruption (not just write errors)
+   - User confirms after seeing data loss impact
+
+4. **Alternative solutions (try first):**
+   - Delete specific records: `DELETE FROM section_analyses WHERE activity_id = X`
+   - Regenerate specific tables: `--tables splits --activity-ids X`
+   - Use new Python process (errors are often process-specific, not data corruption)
+
+**Remember:** DuckDB errors during INSERT/UPDATE do not always mean data corruption. Check data first, delete last.
+
 ## Project Management
 
 **Structure:** `docs/project/{YYYY-MM-DD}_{project_name}/` (active) or `docs/project/_archived/` (completed)
