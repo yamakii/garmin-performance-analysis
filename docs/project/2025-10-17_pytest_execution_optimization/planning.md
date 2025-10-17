@@ -3,8 +3,8 @@
 ## プロジェクト情報
 - **プロジェクト名**: `pytest_execution_optimization`
 - **作成日**: `2025-10-17`
-- **ステータス**: 計画中
-- **GitHub Issue**: (To be created)
+- **ステータス**: 実装中
+- **GitHub Issue**: https://github.com/yamakii/garmin-performance-analysis/issues/27
 
 ## 要件定義
 
