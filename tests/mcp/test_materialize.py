@@ -2,7 +2,7 @@
 Tests for materialize() function - query result caching with temporary views.
 """
 
-import time
+from unittest.mock import patch
 
 import duckdb
 import pytest
@@ -103,24 +103,28 @@ class TestViewManager:
 
     def test_ttl_expiration(self, test_db):
         """Test TTL-based view expiration."""
-        manager = ViewManager(db_path=str(test_db))
-        query = "SELECT * FROM splits"
+        with patch("time.time") as mock_time:
+            # Start time at 1000.0
+            mock_time.return_value = 1000.0
 
-        # Create view with 1 second TTL
-        result = manager.create_view(query, ttl_seconds=1)
-        view_name = result["view"]
+            manager = ViewManager(db_path=str(test_db))
+            query = "SELECT * FROM splits"
 
-        # View should exist immediately
-        assert manager.view_exists(view_name)
+            # Create view with 1 second TTL
+            result = manager.create_view(query, ttl_seconds=1)
+            view_name = result["view"]
 
-        # Wait for TTL to expire
-        time.sleep(1.5)
+            # View should exist immediately
+            assert manager.view_exists(view_name)
 
-        # Cleanup expired views
-        manager.cleanup_expired_views()
+            # Advance time past TTL expiration (1.5 seconds later)
+            mock_time.return_value = 1001.5
 
-        # View should no longer exist
-        assert not manager.view_exists(view_name)
+            # Cleanup expired views
+            manager.cleanup_expired_views()
+
+            # View should no longer exist
+            assert not manager.view_exists(view_name)
 
     def test_max_views_limit(self, test_db):
         """Test maximum views limit enforcement."""
@@ -147,25 +151,32 @@ class TestViewManager:
 
     def test_cleanup_oldest_views(self, test_db):
         """Test that oldest views are cleaned up first."""
-        manager = ViewManager(db_path=str(test_db), max_views=3)
-        query = "SELECT * FROM splits"
+        with patch("time.time") as mock_time:
+            # Start time at 1000.0
+            current_time = 1000.0
+            mock_time.return_value = current_time
 
-        # Create 4 views with delays
-        view_names = []
-        for _ in range(4):
-            result = manager.create_view(query, ttl_seconds=3600)
-            view_names.append(result["view"])
-            time.sleep(0.1)  # Small delay to ensure different timestamps
+            manager = ViewManager(db_path=str(test_db), max_views=3)
+            query = "SELECT * FROM splits"
 
-        # First view should be removed, others should exist
-        assert not manager.view_exists(view_names[0])
-        for view_name in view_names[1:]:
-            assert manager.view_exists(view_name)
+            # Create 4 views with incrementing timestamps
+            view_names = []
+            for _ in range(4):
+                result = manager.create_view(query, ttl_seconds=3600)
+                view_names.append(result["view"])
+                # Advance time by 0.1 seconds for next view
+                current_time += 0.1
+                mock_time.return_value = current_time
 
-        # Cleanup
-        for view_name in view_names[1:]:
-            if manager.view_exists(view_name):
-                manager.cleanup_view(view_name)
+            # First view should be removed, others should exist
+            assert not manager.view_exists(view_names[0])
+            for view_name in view_names[1:]:
+                assert manager.view_exists(view_name)
+
+            # Cleanup
+            for view_name in view_names[1:]:
+                if manager.view_exists(view_name):
+                    manager.cleanup_view(view_name)
 
     def test_manual_cleanup(self, test_db):
         """Test manual view cleanup."""
