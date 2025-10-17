@@ -1046,14 +1046,14 @@ class GarminIngestWorker:
                 # Begin explicit transaction (Phase 5 optimization)
                 conn.execute("BEGIN TRANSACTION")
 
+                # Initialize raw file paths (needed by multiple inserters)
+                raw_activity_file: Path | None = activity_dir / "activity.json"
+                raw_weather_file: Path | None = activity_dir / "weather.json"
+                raw_gear_file: Path | None = activity_dir / "gear.json"
+
                 # STEP 1: Insert activities (parent table) - conditionally insert
                 if self._should_insert_table("activities", tables):
                     from tools.database.inserters.activities import insert_activities
-
-                    # Determine activities-specific file paths
-                    raw_activity_file: Path | None = activity_dir / "activity.json"
-                    raw_weather_file: Path | None = activity_dir / "weather.json"
-                    raw_gear_file: Path | None = activity_dir / "gear.json"
 
                     # Fallback: check if using old structure
                     if raw_activity_file and not raw_activity_file.exists():
