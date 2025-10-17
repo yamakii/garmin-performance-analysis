@@ -389,7 +389,10 @@ class GarminDBWriter:
         agent_version: str = "1.0",
     ) -> bool:
         """
-        Insert section analysis data with auto-generated metadata.
+        Insert or replace section analysis data with auto-generated metadata.
+
+        UPSERT logic: Deletes existing record for (activity_id, section_type)
+        before inserting new data to maintain 1:1 relationship.
 
         Args:
             activity_id: Activity ID
@@ -407,58 +410,86 @@ class GarminDBWriter:
 
             conn = duckdb.connect(str(self.db_path))
 
-            # Get next analysis_id
-            max_id_result = conn.execute(
-                "SELECT COALESCE(MAX(analysis_id), 0) FROM section_analyses"
-            ).fetchone()
-            next_analysis_id = max_id_result[0] + 1 if max_id_result else 1
+            # Start transaction
+            conn.begin()
 
-            # Auto-generate metadata if not present
-            if "metadata" not in analysis_data:
-                # Determine agent name from section_type
-                if agent_name is None:
-                    agent_name = f"{section_type}-section-analyst"
+            try:
+                # UPSERT Step 1: Delete existing record for this (activity_id, section_type)
+                conn.execute(
+                    """
+                    DELETE FROM section_analyses
+                    WHERE activity_id = ? AND section_type = ?
+                """,
+                    [activity_id, section_type],
+                )
 
-                # Generate metadata
-                metadata = {
-                    "activity_id": str(activity_id),
-                    "date": activity_date,
-                    "analyst": agent_name,
-                    "version": agent_version,
-                    "timestamp": datetime.now(UTC).isoformat(),
-                }
+                # UPSERT Step 2: Get next analysis_id
+                max_id_result = conn.execute(
+                    "SELECT COALESCE(MAX(analysis_id), 0) FROM section_analyses"
+                ).fetchone()
+                next_analysis_id = max_id_result[0] + 1 if max_id_result else 1
 
-                # Add metadata to analysis_data
-                analysis_data_with_metadata = {"metadata": metadata, **analysis_data}
-            else:
-                # Use existing metadata
-                analysis_data_with_metadata = analysis_data
-                metadata = analysis_data["metadata"]
-                agent_name = metadata.get("analyst", agent_name)
-                agent_version = metadata.get("version", agent_version)
+                # Auto-generate metadata if not present
+                if "metadata" not in analysis_data:
+                    # Determine agent name from section_type
+                    if agent_name is None:
+                        agent_name = f"{section_type}-section-analyst"
 
-            conn.execute(
-                """
-                INSERT INTO section_analyses
-                (analysis_id, activity_id, activity_date, section_type, analysis_data, agent_name, agent_version)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-                [
-                    next_analysis_id,
-                    activity_id,
-                    activity_date,
-                    section_type,
-                    json.dumps(analysis_data_with_metadata),
-                    agent_name,
-                    agent_version,
-                ],
-            )
+                    # Generate metadata
+                    metadata = {
+                        "activity_id": str(activity_id),
+                        "date": activity_date,
+                        "analyst": agent_name,
+                        "version": agent_version,
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    }
 
-            conn.close()
-            logger.info(f"Inserted {section_type} analysis for activity {activity_id}")
-            return True
+                    # Add metadata to analysis_data
+                    analysis_data_with_metadata = {
+                        "metadata": metadata,
+                        **analysis_data,
+                    }
+                else:
+                    # Use existing metadata
+                    analysis_data_with_metadata = analysis_data
+                    metadata = analysis_data["metadata"]
+                    agent_name = metadata.get("analyst", agent_name)
+                    agent_version = metadata.get("version", agent_version)
+
+                # UPSERT Step 3: Insert new record
+                conn.execute(
+                    """
+                    INSERT INTO section_analyses
+                    (analysis_id, activity_id, activity_date, section_type, analysis_data, agent_name, agent_version)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                    [
+                        next_analysis_id,
+                        activity_id,
+                        activity_date,
+                        section_type,
+                        json.dumps(analysis_data_with_metadata),
+                        agent_name,
+                        agent_version,
+                    ],
+                )
+
+                # Commit transaction
+                conn.commit()
+                conn.close()
+                logger.info(
+                    f"Upserted {section_type} analysis for activity {activity_id} (replaced existing if any)"
+                )
+                return True
+
+            except Exception as e:
+                # Rollback on error
+                conn.rollback()
+                conn.close()
+                raise e
+
         except Exception as e:
-            logger.error(f"Error inserting section analysis: {e}")
+            logger.error(f"Error upserting section analysis: {e}")
             return False
 
     def insert_body_composition(self, date: str, weight_data: dict) -> bool:

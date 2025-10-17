@@ -529,7 +529,7 @@ class AggregateReader(BaseDBReader):
         try:
             with self._get_connection() as conn:
                 result = conn.execute(
-                    "SELECT analysis_data FROM section_analyses WHERE activity_id = ? AND section_type = ?",
+                    "SELECT analysis_data FROM section_analyses WHERE activity_id = ? AND section_type = ? ORDER BY created_at DESC LIMIT 1",
                     [activity_id, section_type],
                 ).fetchone()
 
