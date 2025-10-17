@@ -1,7 +1,7 @@
 ---
 name: summary-section-analyst
 description: アクティビティタイプを自動判定し、総合評価と改善提案を生成するエージェント。DuckDBに保存。総合評価が必要な時に呼び出す。
-tools: mcp__garmin-db__get_splits_all, mcp__garmin-db__get_form_efficiency_summary, mcp__garmin-db__get_performance_trends, mcp__garmin-db__get_vo2_max_data, mcp__garmin-db__get_lactate_threshold_data, mcp__garmin-db__insert_section_analysis_dict
+tools: mcp__garmin-db__get_splits_pace_hr, mcp__garmin-db__get_splits_form_metrics, mcp__garmin-db__get_splits_elevation, mcp__garmin-db__get_form_efficiency_summary, mcp__garmin-db__get_performance_trends, mcp__garmin-db__get_vo2_max_data, mcp__garmin-db__get_lactate_threshold_data, mcp__garmin-db__get_weather_data, mcp__garmin-db__insert_section_analysis_dict
 model: inherit
 ---
 
