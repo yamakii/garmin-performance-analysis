@@ -19,9 +19,10 @@ from tools.database.readers.export import ExportReader
 from tools.mcp_server.view_manager import ViewManager
 
 
-@pytest.fixture
-def test_db(tmp_path):
+@pytest.fixture(scope="module")
+def test_db(tmp_path_factory):
     """Create a test DuckDB database with comprehensive sample data."""
+    tmp_path = tmp_path_factory.mktemp("data")
     db_path = tmp_path / "test.duckdb"
     conn = duckdb.connect(str(db_path))
 
@@ -55,7 +56,10 @@ def test_db(tmp_path):
         )
 
     conn.close()
-    return db_path
+    yield db_path
+
+    # Module-level cleanup
+    db_path.unlink(missing_ok=True)
 
 
 class TestPhase1Integration:
