@@ -11,7 +11,7 @@ Garmin running performance analysis system with **DuckDB-first architecture** an
 **Key Features:**
 - DuckDB normalized storage (11 tables, 100+ activities)
 - Token-optimized MCP tools (70-98.8% reduction)
-- 5 specialized analysis agents
+- 8 specialized agents (5 analysis + 3 development)
 - Japanese reports (code/docs in English)
 
 **Two Use Cases:**
@@ -109,48 +109,81 @@ mcp__garmin-db__compare_similar_workouts(
 
 ## For Data Analysis
 
-**When:** Statistical analysis, multi-month trends, race prediction, adhoc queries.
+**When:** Statistical analysis, multi-month trends, race prediction, adhoc queries involving 10+ activities.
 
-### MANDATORY: Hand Over to Data Analyst Agent
+### Workflow: DuckDB × MCP × Python Architecture
 
-**DO NOT perform bulk analysis yourself. Hand over to the data-analyst agent immediately.**
+**For bulk analysis (10+ activities), use the optimized workflow documented in `docs/data-analysis-guide.md`.**
 
-```python
-# For ANY of these requests, invoke the agent:
-Task("data-analyst", "<user's analysis request>")
+**Key Principles:**
+1. **Token Efficiency**: 99.7% reduction (175 tokens vs 55,000 tokens)
+2. **Schema Validation**: Always check column names before queries
+3. **Single Export**: Use `mcp__garmin-db__export()` with CTEs, NOT individual calls
+4. **Summary Output**: Return <1KB JSON, NOT raw DataFrames
+5. **Statistical Rigor**: Include p-values + effect sizes
+
+**5-Step Workflow:**
+```
+STEP 1: PLAN
+  → Extract requirements (date range, metrics, analysis type)
+  → Check schema with export() to avoid column errors
+  → Design single SQL query with CTEs
+
+STEP 2: EXPORT
+  → Call mcp__garmin-db__export(query, format="parquet")
+  → Receive handle only (~25 tokens), NOT raw data
+
+STEP 3: CODE
+  → Write Python analysis to /tmp/analyze.py
+  → Load parquet, calculate stats, return summary JSON
+
+STEP 4: RESULT
+  → Execute with: uv run python /tmp/analyze.py
+  → Validate output <1KB
+
+STEP 5: INTERPRET
+  → Receive summary JSON (~125 tokens)
+  → Explain in natural language with actionable insights
 ```
 
-**Trigger Conditions (hand over when you see these):**
-- ✅ "Analyze 5-month progression" → Hand over
-- ✅ "Predict my race time" → Hand over
-- ✅ "Compare two periods" → Hand over
-- ✅ "10+ activities" mentioned → Hand over
-- ✅ "Correlation between X and Y" → Hand over
-- ✅ "Growth rate / trend analysis" → Hand over
-- ✅ Any statistical analysis request → Hand over
+**Example (5-Month Progression):**
+```python
+# STEP 1: Plan
+query = """
+WITH splits_agg AS (
+  SELECT activity_id, AVG(pace_seconds_per_km) as avg_pace
+  FROM splits GROUP BY activity_id
+)
+SELECT a.activity_date, a.total_distance_km, s.avg_pace
+FROM activities a
+LEFT JOIN splits_agg s ON a.activity_id = s.activity_id
+WHERE a.activity_date >= '2025-05-01'
+ORDER BY a.activity_date
+"""
 
-**DO NOT:**
-- ❌ Try to write SQL queries yourself for bulk analysis
-- ❌ Try to call `export()` yourself
-- ❌ Try to write Python analysis code yourself
-- ❌ Loop through activities with individual MCP calls
+# STEP 2: Export
+handle = mcp__garmin-db__export(query=query, format="parquet")
 
-**Your Role:**
-1. Recognize the request is for bulk/statistical analysis
-2. Immediately invoke: `Task("data-analyst", "<user's request>")`
-3. Let the agent handle everything (schema, export, analysis, interpretation)
+# STEP 3: Code + Execute
+# (Write /tmp/analyze.py with regression analysis)
+# uv run python /tmp/analyze.py
 
-**Why hand over:**
-- Agent has 99.7% token efficiency (175 vs 55,000 tokens)
-- Agent prevents column name errors (schema validation)
-- Agent uses optimized workflow (profile → export → analyze)
-- Agent handles statistical analysis (regression, t-tests, VDOT)
+# STEP 5: Interpret
+# "Improving by 3.2 sec/km/week (p<0.01), reach goal in 8 weeks"
+```
 
-**The agent will handle:** Schema validation, data profiling, efficient export, Python analysis, natural language interpretation
+**Common Patterns:**
+- Growth rate: Linear regression on pace over time
+- Race prediction: VDOT calculation + Riegel formula
+- Period comparison: t-test + Cohen's d effect size
+- Injury risk: Training load analysis + consecutive hard runs
 
-### Exception: Manual Approach
+**Helper Tools:**
+- `mcp__garmin-db__profile()` - Check data size before export
+- `mcp__garmin-db__histogram()` - Analyze distribution patterns
+- `mcp__garmin-db__materialize()` - Cache complex queries
 
-Only if the user explicitly requests manual control, you may assist. Otherwise, **always hand over to data-analyst agent**.
+**See `docs/data-analysis-guide.md` for detailed examples, code templates, and best practices.**
 
 ---
 
@@ -371,14 +404,6 @@ garmin-performance-analysis/
 - **low_moderate**: No warmup/cooldown required, positive tone
 - **tempo_threshold**: Warmup/cooldown recommended, educational tone
 - **interval_sprint**: Warmup/cooldown required, injury warnings
-
-**1 Data Analysis Agent (HAND OVER FOR BULK ANALYSIS):**
-- **data-analyst**: Adhoc analysis, multi-month trends, statistical analysis (99.7% token reduction)
-  - **MANDATORY**: Hand over ALL bulk/statistical analysis requests to this agent
-  - Time series analysis (progression, growth rate, correlation)
-  - Race prediction (VDOT, Riegel formula, confidence intervals)
-  - Comparative analysis (t-test, effect size, period comparison)
-  - Handles: Schema validation, data profiling, export, Python analysis, interpretation
 
 **3 Development Agents:**
 - **project-planner**: Creates planning.md, GitHub Issue

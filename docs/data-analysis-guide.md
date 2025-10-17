@@ -1,23 +1,16 @@
----
-name: data-analyst
-description: DuckDB × MCP × LLMアーキテクチャを使用した大量パフォーマンスデータ分析エージェント。10+アクティビティ、複数月トレンド、レース予測、統計分析に対応。Adhoc分析全般をサポート。99.7%トークン削減。
-tools: mcp__garmin-db__export, mcp__garmin-db__profile, mcp__garmin-db__histogram, mcp__garmin-db__materialize, mcp__garmin-db__get_activity_by_date, mcp__garmin-db__get_date_by_activity_id, mcp__garmin-db__get_performance_trends, mcp__garmin-db__get_splits_pace_hr, mcp__garmin-db__get_splits_form_metrics, mcp__garmin-db__get_splits_elevation, mcp__garmin-db__get_form_efficiency_summary, mcp__garmin-db__get_hr_efficiency_analysis, mcp__garmin-db__get_weather_data, mcp__garmin-db__analyze_performance_trends, mcp__garmin-db__compare_similar_workouts, mcp__garmin-db__extract_insights, mcp__garmin-db__detect_form_anomalies_summary, mcp__garmin-db__get_split_time_series_detail, Bash
-model: inherit
----
+# Data Analysis Guide
 
-# Data Analyst Agent
+This guide describes the **DuckDB × MCP × Python Architecture** for bulk performance data analysis. Use this workflow when analyzing 10+ activities, multi-month trends, race predictions, and statistical comparisons with **99.7% token efficiency**.
 
-You are a specialized agent for bulk performance data analysis using the **DuckDB × MCP × LLM Architecture**. Your role is to analyze 10+ activities, multi-month trends, race predictions, and statistical comparisons with **99%+ token efficiency**.
+## When to Use This Workflow
 
-## When to Use This Agent
-
-**✅ CALL THIS AGENT when:**
+**✅ USE THIS WORKFLOW when:**
 - Analyzing **10+ activities** (multi-month trends, growth rate, correlation)
 - **Race prediction** (VDOT calculation, Riegel formula, time estimation)
 - **Statistical comparison** (t-test, effect size, period comparison)
 - **Bulk queries** requiring 50+ rows of data
 
-**❌ DON'T CALL when:**
+**❌ DON'T USE when:**
 - Single activity analysis → Use `get_performance_trends(activity_id)`
 - <10 activities → Individual MCP calls more efficient
 - Report generation → Use section analysis agents
@@ -742,4 +735,28 @@ After completing analysis, verify:
 
 ---
 
-**Remember:** Your role is PLAN (Step 1) + INTERPRET (Step 5). Let MCP handle EXPORT (Step 2) and Python handle CODE (Step 3-4). Never request raw data - work with summaries only.
+## Quick Reference
+
+**Complete Workflow Example:**
+```
+User: "Analyze 2021 injury risk"
+
+STEP 1 (PLAN):
+  → Design query for training load, consecutive hard runs, form metrics
+
+STEP 2 (EXPORT):
+  → Call mcp__garmin-db__export(query, format="parquet")
+
+STEP 3 (CODE):
+  → Write /tmp/analyze.py with risk scoring algorithm
+  → Execute with: uv run python /tmp/analyze.py
+
+STEP 4 (RESULT):
+  → Capture JSON output (monthly risk scores, patterns, recommendations)
+
+STEP 5 (INTERPRET):
+  → "Based on 121 activities, highest risk was February (58% hard training)...
+     Recommendations: 10% rule, mandatory rest days, GCT monitoring"
+```
+
+**Remember:** Always work with summaries (<1KB JSON), never request raw data.
