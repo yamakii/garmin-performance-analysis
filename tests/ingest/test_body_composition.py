@@ -14,25 +14,11 @@ from tools.ingest.garmin_worker import GarminIngestWorker
 @pytest.fixture
 def test_date():
     """
-    Generate a unique test date that won't conflict with production data.
+    Fixed future date for test isolation.
 
-    Uses year 2099 to ensure no conflict with real data, and adds randomness
-    for test isolation.
+    Using 2099-06-15 ensures no conflict with production data.
     """
-    import hashlib
-    import random
-    import time
-
-    # Generate a deterministic but unique date based on test run
-    # Use a combination of time and random for uniqueness
-    seed = int(time.time() * 1000) + random.randint(1, 1000)
-    hash_val = hashlib.md5(str(seed).encode()).hexdigest()
-
-    # Use hash to generate month (1-12) and day (1-28)
-    month = int(hash_val[:2], 16) % 12 + 1
-    day = int(hash_val[2:4], 16) % 28 + 1
-
-    return f"2099-{month:02d}-{day:02d}"
+    return "2099-06-15"
 
 
 @pytest.fixture
