@@ -349,6 +349,58 @@ uv run pytest -m integration     # Integration only
 uv run pytest -m performance     # Performance only
 ```
 
+### Test Data Strategy
+
+**CRITICAL: Automated tests must NEVER depend on real production data.**
+
+**Test Type Guidelines:**
+
+1. **Unit Tests** - Self-contained fixtures
+   - Use `@pytest.fixture` for test data
+   - No external dependencies (no database, no files)
+   - Fast execution (<100ms per test)
+
+2. **Integration Tests** - Mocks and fixtures only
+   - ✅ USE: `pytest-mock` (`mocker.Mock()`, `mocker.patch()`)
+   - ✅ USE: Factory fixtures (e.g., `mock_reader_factory`)
+   - ❌ NEVER: Real DuckDB data queries
+   - ❌ NEVER: Dependencies on section_analyses cache existence
+   - Mock DuckDB connections for database integration tests
+
+3. **Performance Tests** - Real data acceptable with safeguards
+   - May use real data but must handle missing data gracefully
+   - Skip test if required data unavailable (not fail)
+   - Document data requirements in test docstrings
+
+**Rationale:**
+- Eliminates test flakiness from data modifications
+- Tests pass regardless of production data state
+- Clear test intent through explicit mock data
+- Faster test execution (no I/O)
+
+**Example (Integration Test):**
+```python
+@pytest.fixture
+def mock_analysis_data():
+    """Mock section analysis data for testing."""
+    return {"evaluation": "テスト評価", "rating": "★★★★☆"}
+
+@pytest.fixture
+def mock_reader_factory(mocker):
+    """Factory for creating mocked readers."""
+    def _create_reader(analysis_data):
+        reader = mocker.Mock()
+        reader.get_section_analysis.return_value = analysis_data
+        return reader
+    return _create_reader
+
+def test_evaluation_logic(mock_reader_factory, mock_analysis_data):
+    """Test evaluation with mocked data (no real data dependency)."""
+    reader = mock_reader_factory(mock_analysis_data)
+    analysis = reader.get_section_analysis(12345, "phase")
+    assert analysis["evaluation"] == "テスト評価"
+```
+
 ## Critical Data Source Requirements
 
 **Split Analysis:**
