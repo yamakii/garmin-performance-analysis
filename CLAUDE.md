@@ -265,14 +265,14 @@ This enables adaptive evaluation where missing phases are treated as critical fo
 
 ```bash
 # Install dependencies
-uv sync                          # Basic
-uv sync --extra dev              # With dev tools
-uv sync --extra performance      # With performance monitoring
+uv sync                          # Basic (runtime only)
+uv sync --extra dev              # With dev tools (REQUIRED for development: pytest-xdist, black, ruff, mypy, pre-commit)
+uv sync --extra performance      # With performance monitoring (rich, pygments)
 
 # Git Worktree (MANDATORY for project development)
 git worktree add -b feature/name ../path main
 cd ../path
-uv sync  # MANDATORY: Setup Python environment
+uv sync --extra dev  # MANDATORY: Setup dev environment (includes pytest-xdist for pre-commit hooks)
 mcp__serena__activate_project("/absolute/path")  # MANDATORY for agents
 
 # Worktree management
