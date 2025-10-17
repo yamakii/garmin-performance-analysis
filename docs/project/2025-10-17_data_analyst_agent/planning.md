@@ -1,6 +1,6 @@
 # 計画: Data Analyst Agent Implementation
 
-**GitHub Issue:** [#TBD](https://github.com/yamakii/garmin-performance-analysis/issues/TBD)
+**GitHub Issue:** [#28](https://github.com/yamakii/garmin-performance-analysis/issues/28)
 
 ## プロジェクト情報
 
