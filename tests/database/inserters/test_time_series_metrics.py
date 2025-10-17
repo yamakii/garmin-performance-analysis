@@ -334,6 +334,7 @@ class TestTimeSeriesMetricsInserter:
         assert result is False
 
     @pytest.mark.performance
+    @pytest.mark.slow
     def test_batch_insert_performance(self, tmp_path):
         """Test batch insert performance: 2000 rows in reasonable time (<5s)."""
         import time

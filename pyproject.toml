@@ -98,12 +98,13 @@ ignore_errors = false
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-addopts = "-ra -q --strict-markers -m 'not garmin_api'"
+addopts = "-ra -q --strict-markers -m 'not garmin_api and not slow'"
 testpaths = ["tests"]
 markers = [
     "unit: Unit tests",
     "integration: Integration tests",
     "performance: Performance tests",
+    "slow: Slow tests (deselected by default)",
     "garmin_api: Tests that require Garmin API authentication (rate limited)",
 ]
 asyncio_mode = "auto"
