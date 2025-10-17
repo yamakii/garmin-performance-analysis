@@ -107,6 +107,191 @@ mcp__garmin-db__compare_similar_workouts(
 
 ---
 
+## For Data Analysis
+
+**When:** Statistical analysis over multiple months, performance trends, growth rate calculation, race time prediction.
+
+### Critical Rules
+
+**MANDATORY: Use export + parquet + Python for bulk data analysis.**
+
+- ✅ USE: `mcp__garmin-db__export()` with parquet format
+- ✅ THEN: Python (pandas/numpy/scipy) for analysis
+- ✅ OR: Use **data-analyst agent** for automated workflow
+- ❌ NEVER: Multiple individual MCP calls for same data
+- ❌ NEVER: CSV format for 50+ rows (use parquet)
+
+**Why:** Single export is 10-100x more efficient than multiple MCP calls.
+
+### Data Analyst Agent
+
+**For 10+ activities, use the data-analyst agent:**
+
+```bash
+# Invoke the agent for bulk analysis
+Task("data-analyst", "Analyze my 5-month progression")
+```
+
+**The agent handles:**
+1. **STEP 1: PLAN** - Extract date range, check schema, design SQL
+2. **STEP 2: EXPORT** - Single parquet export (~25 tokens)
+3. **STEP 3: CODE** - Python analysis with pandas/scipy
+4. **STEP 4: RESULT** - Validate output (<1KB JSON)
+5. **STEP 5: INTERPRET** - Natural language explanation
+
+**Token Efficiency:**
+- Old approach: 107 activities × 2 calls = 214 MCP calls = **~55,000 tokens**
+- New approach: 1 schema check + 1 export + 1 analysis = **~175 tokens**
+- **99.7% token reduction**
+
+**Use Cases:**
+- **Time Series Analysis**: "Analyze my 5-month progression" → Linear regression, growth rate
+- **Race Prediction**: "Predict my half-marathon time in 3 months" → VDOT, Riegel formula
+- **Comparative Analysis**: "Compare August vs October performance" → t-test, effect size
+
+### Standard Workflow (Manual)
+
+**1. Schema Confirmation** (once per session):
+```sql
+-- Check available columns
+SELECT table_name, column_name, data_type
+FROM information_schema.columns
+WHERE table_name IN ('activities', 'splits', 'form_efficiency')
+ORDER BY table_name, ordinal_position
+```
+
+**2. Export to Parquet**:
+```python
+# Single query with JOINs
+handle = mcp__garmin-db__export(
+    query="""
+    WITH splits_agg AS (
+      SELECT activity_id, AVG(pace_seconds_per_km) as avg_pace
+      FROM splits GROUP BY activity_id
+    )
+    SELECT a.*, s.avg_pace, fe.gct_average, he.training_type
+    FROM activities a
+    LEFT JOIN splits_agg s ON a.activity_id = s.activity_id
+    LEFT JOIN form_efficiency fe ON a.activity_id = fe.activity_id
+    LEFT JOIN hr_efficiency he ON a.activity_id = he.activity_id
+    WHERE a.activity_date >= '2025-05-01'
+      AND a.total_distance_km > 1.0
+    ORDER BY a.activity_date
+    """,
+    format="parquet",
+    max_rows=1000
+)
+```
+
+**3. Python Analysis**:
+```python
+import pandas as pd
+import numpy as np
+from scipy import stats
+
+# Read parquet
+df = pd.read_parquet(handle)
+
+# Time series analysis
+df['activity_date'] = pd.to_datetime(df['activity_date'])
+df = df.sort_values('activity_date')
+
+# Calculate growth rate
+slope, intercept, r_value, p_value, std_err = stats.linregress(
+    range(len(df)), df['avg_pace']
+)
+
+# Project future performance
+# ... analysis continues
+```
+
+### Anti-Patterns (DON'T DO THIS)
+
+❌ **Multiple individual calls**:
+```python
+# BAD: 100 activities = 100+ MCP calls
+for date in date_range:
+    activity = get_activity_by_date(date)  # ❌ Token-heavy
+    performance = get_performance_trends(activity_id)  # ❌ Slow
+    splits = get_splits_pace_hr(activity_id)  # ❌ Error-prone
+```
+
+❌ **Trial-and-error with column names**:
+```python
+# BAD: Multiple failed queries
+export(query="SELECT avg_hr FROM activities...")  # ❌ Error
+export(query="SELECT hr FROM activities...")      # ❌ Error
+export(query="SELECT avg_heart_rate FROM...")    # ✅ Finally works
+```
+
+❌ **CSV for large datasets**:
+```python
+# BAD: CSV is inefficient for 100+ rows
+export(query="...", format="csv")  # ❌ Slow parsing
+```
+
+### Best Practices
+
+✅ **Use data-analyst agent for 10+ activities**:
+```python
+# Agent handles schema check, export, analysis, interpretation
+Task("data-analyst", "Analyze my 5-month progression")
+```
+
+✅ **Check schema first** (manual approach):
+```sql
+-- Always verify column names before writing query
+SELECT column_name FROM information_schema.columns
+WHERE table_name = 'activities'
+```
+
+✅ **Use CTEs for aggregation**:
+```sql
+-- Aggregate in SQL, not in Python
+WITH splits_agg AS (
+  SELECT activity_id, AVG(pace_seconds_per_km) as avg_pace
+  FROM splits GROUP BY activity_id
+)
+SELECT a.*, s.avg_pace FROM activities a
+LEFT JOIN splits_agg s ON a.activity_id = s.activity_id
+```
+
+✅ **Parquet for efficiency**:
+```python
+# Fast, compact, preserves data types
+export(query="...", format="parquet", max_rows=1000)
+```
+
+### Common Patterns
+
+**Time Series Analysis** (5+ months progression):
+1. Export: activities + splits + form + HR efficiency
+2. Calculate: linear regression, growth rate, correlation
+3. Visualize: matplotlib/seaborn (optional)
+4. Predict: extrapolate to race date
+
+**Performance Prediction** (race time estimation):
+1. Export: performance_trends + vo2_max + lactate_threshold
+2. Model: VDOT calculation, Riegel formula
+3. Adjust: for weather, terrain, training load
+4. Output: predicted pace/time with confidence intervals
+
+**Comparative Analysis** (before/after training block):
+1. Export: Two date ranges
+2. Calculate: mean, median, std for key metrics
+3. Test: t-test or Mann-Whitney U for significance
+4. Report: effect size, practical significance
+
+### Prohibited Practices
+
+❌ **NEVER do these:**
+- Multiple get_activity_by_date() in loop (use export once)
+- CSV format for 50+ rows (use parquet)
+- Skip schema check and guess column names
+- Read exported CSV immediately (defeats purpose of export)
+
+---
+
 ## For Tool Development
 
 **When:** Modifying code, adding features, fixing bugs, running tests, managing projects.
@@ -324,6 +509,12 @@ garmin-performance-analysis/
 - **low_moderate**: No warmup/cooldown required, positive tone
 - **tempo_threshold**: Warmup/cooldown recommended, educational tone
 - **interval_sprint**: Warmup/cooldown required, injury warnings
+
+**1 Data Analysis Agent:**
+- **data-analyst**: Bulk analysis for 10+ activities (99.7% token reduction)
+  - Time series analysis (5-month progression, growth rate)
+  - Race prediction (VDOT, Riegel formula, confidence intervals)
+  - Comparative analysis (t-test, effect size, period comparison)
 
 **3 Development Agents:**
 - **project-planner**: Creates planning.md, GitHub Issue
