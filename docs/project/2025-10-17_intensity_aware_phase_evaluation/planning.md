@@ -10,43 +10,57 @@
 
 ### 目的
 
-アクティビティの強度（intensity）に基づいてフェーズ評価ロジックを適応させ、低～中強度走で不適切な警告が出るのを防ぐ。
+トレーニングタイプ（`hr_efficiency.training_type`）に基づいてフェーズ評価ロジックとレポート出力を適応させ、低～中強度走で不適切な警告が出るのを防ぐ。
 
 ### 解決する問題
 
 **現状の問題:**
 - phase-section-analystは全てのランニングで3フェーズ（warmup/run/cooldown）または4フェーズ（warmup/run/recovery/cooldown）を想定
-- 低～中強度走（ジョグ、リカバリー走）では：
+- 低～中強度走（リカバリー、ベースラン）では：
   - ウォームアップなしで始まることが一般的
   - クールダウンなしで終わることが一般的
   - 全体が1つのメインフェーズのみで構成される
-- 現在の実装では、これらのケースで不適切な警告（「ウォームアップがないため怪我リスクが高まる」等）を出している可能性がある
+- 現在の実装では、これらのケースで不適切な警告（「ウォームアップがないため怪我リスクが高まる」等）を出している
+- レポート出力も一律同じで、トレーニングタイプに応じた表現になっていない
 
 **影響:**
 - ユーザーが低強度走でも「ウォームアップ不足」の警告を受け取る
 - フェーズ評価の信頼性が低下
-- トレーニング強度に応じた適切なフィードバックができない
+- トレーニングタイプに応じた適切なフィードバックができない
+- レポート出力が画一的で、トレーニング目的に沿わない
 
 ### ユースケース
 
-1. **低強度走（Easy/Recovery Run）**
-   - 平均ペース > 5:30/km または 平均心拍 < 閾値の70%
-   - ウォームアップ・クールダウンなしでも警告を出さない
-   - フェーズ評価: "低強度走のため、ウォームアップ・クールダウンはオプショナル"
+**トレーニングタイプ分類（hr_efficiency.training_typeを使用）:**
 
-2. **中強度走（Tempo/Base Run）**
-   - 平均ペース 4:30-5:30/km または 平均心拍 70-85%
-   - ウォームアップ・クールダウンがあれば推奨、なければ軽い注意
-   - フェーズ評価: "テンポ走では適切なウォームアップが推奨されます"
+1. **低～中強度走カテゴリ**
+   - **training_type**: `recovery`, `aerobic_base`
+   - **フェーズ要件**: ウォームアップ・クールダウン**不要**
+   - **フェーズ評価例**:
+     - ウォームアップなし: "リカバリー走のため、ウォームアップなしでも問題ありません"
+     - クールダウンなし: "低強度走のため、クールダウンなしでも問題ありません"
+   - **レポート出力**: 警告なし、リラックスしたトーンで評価
 
-3. **高強度走（Threshold/Interval）**
-   - 平均ペース < 4:30/km または 平均心拍 > 85%
-   - ウォームアップ・クールダウンを強く推奨、なければ警告
-   - フェーズ評価: "高強度トレーニングではウォームアップが必須です"
+2. **テンポ・閾値カテゴリ**
+   - **training_type**: `tempo`, `lactate_threshold`
+   - **フェーズ要件**: ウォームアップ・クールダウン**推奨**（なければ軽い注意）
+   - **フェーズ評価例**:
+     - ウォームアップなし: "テンポ走では軽いウォームアップが推奨されます"
+     - クールダウンなし: "クールダウンがあるとより良いでしょう"
+   - **レポート出力**: 推奨レベルの注意、改善提案のトーン
 
-4. **インターバルトレーニング（4フェーズ）**
-   - recovery_splitsが存在する場合
-   - 常に高強度扱い（既存の評価ロジックを維持）
+3. **インターバル・スプリントカテゴリ**
+   - **training_type**: `vo2max`, `anaerobic_capacity`, `speed`
+   - **フェーズ要件**: ウォームアップ・クールダウン**必須**（なければ警告）
+   - **フェーズ評価例**:
+     - ウォームアップなし: "高強度走ではウォームアップが必須です。怪我リスクが高まります"
+     - クールダウンなし: "高強度走後はクールダウンが重要です。疲労回復が遅れる可能性があります"
+   - **レポート出力**: 明確な警告、安全性重視のトーン
+
+4. **4フェーズ構造（インターバルトレーニング）**
+   - **判定基準**: recovery_splitsが存在する場合
+   - **扱い**: 常にインターバル・スプリントカテゴリ（既存ロジック維持）
+   - **レポート出力**: インターバル特有の詳細評価
 
 ---
 
@@ -59,25 +73,31 @@ User Request
     ↓
 phase-section-analyst (updated)
     ↓
-1. Intensity Determination Logic (NEW)
-   - Input: performance_trends data (avg_pace, avg_hr)
-   - Output: intensity_level ("easy", "moderate", "high")
+1. Training Type Determination (NEW)
+   - Input: hr_efficiency.training_type
+   - Output: training_category ("low_moderate", "tempo_threshold", "interval_sprint")
     ↓
 2. Phase Structure Detection (existing)
    - Input: performance_trends.recovery_splits
    - Output: phase_count (3 or 4)
+   - Note: 4フェーズの場合は常に"interval_sprint"扱い
     ↓
-3. Phase Evaluation with Intensity Context (updated)
-   - Input: intensity_level, phase_data
+3. Phase Evaluation with Training Type Context (updated)
+   - Input: training_category, phase_data
    - Output: context-aware evaluation text
     ↓
 4. Insert to DuckDB (existing)
    - section_type: "phase"
    - analysis_data: {warmup_evaluation, run_evaluation, [recovery_evaluation], cooldown_evaluation}
+    ↓
+5. Report Generation with Training Type Context (NEW)
+   - Input: training_category, phase evaluation
+   - Output: Training type-aware report text (tone, severity, recommendations)
 ```
 
 **変更箇所:**
-- phase-section-analyst エージェント定義のみを更新
+- `.claude/agents/phase-section-analyst.md` - トレーニングタイプ判定と評価ガイドライン更新
+- `tools/reporting/templates/detailed_report.j2` - フェーズ評価セクションのトーン調整（オプション）
 - DuckDBスキーマは変更なし
 - 他のエージェント（split/summary/efficiency/environment）には影響なし
 
@@ -86,11 +106,21 @@ phase-section-analyst (updated)
 **既存のDuckDBスキーマ（変更なし）:**
 
 ```sql
--- performance_trends テーブル (使用フィールド)
+-- hr_efficiency テーブル (トレーニングタイプ取得に使用)
+CREATE TABLE hr_efficiency (
+    activity_id BIGINT PRIMARY KEY,
+    training_type VARCHAR,                    -- カテゴリ判定に使用
+    zone1_percentage DOUBLE,
+    zone2_percentage DOUBLE,
+    zone3_percentage DOUBLE,
+    zone4_percentage DOUBLE,
+    zone5_percentage DOUBLE,
+    -- ... other fields
+);
+
+-- performance_trends テーブル (フェーズデータ取得に使用)
 CREATE TABLE performance_trends (
     activity_id BIGINT PRIMARY KEY,
-    avg_pace_seconds_per_km DOUBLE,           -- 強度判定に使用
-    avg_heart_rate INTEGER,                   -- 強度判定に使用
     warmup_splits VARCHAR,                    -- JSON array
     main_splits VARCHAR,                      -- JSON array
     recovery_splits VARCHAR,                  -- JSON array (4フェーズ判定)
@@ -109,42 +139,47 @@ CREATE TABLE section_analyses (
 );
 ```
 
-**新規ロジック（コード内のみ、DBスキーマ変更なし）:**
+**トレーニングタイプカテゴリマッピング（agent prompt内で定義）:**
 
 ```python
-# Intensity Level Enumeration (agent prompt内で定義)
-intensity_levels = {
-    "easy": {
-        "pace_threshold": 330,  # 5:30/km in seconds
-        "hr_threshold_percent": 0.70,
+# Training Type Category Mapping
+training_type_categories = {
+    "low_moderate": {
+        "types": ["recovery", "aerobic_base"],
         "warmup_required": False,
         "cooldown_required": False,
-        "warning_level": "none"
+        "warning_level": "none",
+        "tone": "relaxed"
     },
-    "moderate": {
-        "pace_range": (270, 330),  # 4:30-5:30/km
-        "hr_range_percent": (0.70, 0.85),
+    "tempo_threshold": {
+        "types": ["tempo", "lactate_threshold"],
         "warmup_required": "recommended",
         "cooldown_required": "recommended",
-        "warning_level": "light"
+        "warning_level": "light",
+        "tone": "suggestive"
     },
-    "high": {
-        "pace_threshold": 270,  # < 4:30/km
-        "hr_threshold_percent": 0.85,
+    "interval_sprint": {
+        "types": ["vo2max", "anaerobic_capacity", "speed"],
         "warmup_required": True,
         "cooldown_required": True,
-        "warning_level": "strong"
+        "warning_level": "strong",
+        "tone": "assertive"
     }
 }
 ```
 
 ### API/インターフェース設計
 
-**既存MCPツール（変更なし）:**
+**使用MCPツール:**
 
 ```python
 # phase-section-analyst で使用
+mcp__garmin_db__get_hr_efficiency_analysis(activity_id: int) -> dict
+  # Returns: {..., "training_type": "recovery" | "aerobic_base" | "tempo" | etc.}
+
 mcp__garmin_db__get_performance_trends(activity_id: int) -> dict
+  # Returns: {..., "warmup_splits": [...], "recovery_splits": [...], ...}
+
 mcp__garmin_db__insert_section_analysis_dict(
     activity_id: int,
     activity_date: str,
@@ -158,40 +193,45 @@ mcp__garmin_db__insert_section_analysis_dict(
 ```markdown
 # Phase Section Analyst (Updated)
 
-## 新機能: 強度判定ロジック
+## 新機能: トレーニングタイプ判定ロジック
 
-1. performance_trendsから avg_pace_seconds_per_km, avg_heart_rate を取得
-2. 以下の基準で強度レベルを判定:
-   - **Easy/Recovery**: avg_pace > 330 sec/km (5:30/km) OR avg_hr < 70% threshold
-   - **Moderate (Tempo/Base)**: avg_pace 270-330 sec/km (4:30-5:30/km) OR avg_hr 70-85%
-   - **High (Threshold/Interval)**: avg_pace < 270 sec/km (4:30/km) OR avg_hr > 85%
-3. フェーズ評価に強度コンテキストを含める
+**実行手順:**
+1. `get_hr_efficiency_analysis(activity_id)`で`training_type`を取得
+2. トレーニングタイプカテゴリにマッピング:
+   - **低～中強度**: `recovery`, `aerobic_base` → フェーズ不要
+   - **テンポ・閾値**: `tempo`, `lactate_threshold` → フェーズ推奨
+   - **インターバル・スプリント**: `vo2max`, `anaerobic_capacity`, `speed` → フェーズ必須
+3. `get_performance_trends(activity_id)`でフェーズ構造を確認
+4. カテゴリに応じたフェーズ評価を実施
 
-## 評価ガイドライン（強度別）
+## 評価ガイドライン（トレーニングタイプ別）
 
-### Easy/Recovery (低強度)
-- ウォームアップ評価:
-  - **存在する場合**: 「低強度走ではオプショナルですが、適切なウォームアップができています」
-  - **存在しない場合**: 「低強度走のため、ウォームアップなしでも問題ありません」（警告なし）
-- クールダウン評価:
-  - **存在する場合**: 「丁寧なクールダウンができています」
-  - **存在しない場合**: 「低強度走のため、クールダウンなしでも問題ありません」（警告なし）
+### 低～中強度走 (recovery, aerobic_base)
+- **トーン**: リラックス、肯定的
+- **ウォームアップ評価**:
+  - 存在する: 「リカバリー走ではオプショナルですが、丁寧な準備ができています」
+  - 存在しない: 「低強度走のため、ウォームアップなしでも問題ありません」（★★★★★ 警告なし）
+- **クールダウン評価**:
+  - 存在する: 「丁寧なクールダウンで身体をケアできています」
+  - 存在しない: 「低強度走のため、クールダウンなしでも問題ありません」（★★★★★ 警告なし）
 
-### Moderate (中強度)
-- ウォームアップ評価:
-  - **存在する場合**: 「テンポ走に適したウォームアップができています」
-  - **存在しない場合**: 「テンポ走では軽いウォームアップが推奨されます」（軽い注意）
-- クールダウン評価:
-  - **存在する場合**: 「適切なクールダウンができています」
-  - **存在しない場合**: 「クールダウンがあるとより良いでしょう」（軽い注意）
+### テンポ・閾値走 (tempo, lactate_threshold)
+- **トーン**: 改善提案、教育的
+- **ウォームアップ評価**:
+  - 存在する: 「テンポ走に適したウォームアップができています」（★★★★★）
+  - 存在しない: 「テンポ走では軽いウォームアップが推奨されます（★★★☆☆ 推奨）
+- **クールダウン評価**:
+  - 存在する: 「適切なクールダウンができています」（★★★★★）
+  - 存在しない: 「クールダウンがあると疲労回復がより効果的になります」（★★★☆☆ 推奨）
 
-### High (高強度)
-- ウォームアップ評価:
-  - **存在する場合**: 「高強度トレーニングに必要なウォームアップができています」（詳細評価）
-  - **存在しない場合**: 「高強度走ではウォームアップが必須です。怪我リスクが高まります」（警告）
-- クールダウン評価:
-  - **存在する場合**: 「高強度後の適切なクールダウンができています」（詳細評価）
-  - **存在しない場合**: 「高強度走後はクールダウンが重要です。疲労回復が遅れる可能性があります」（警告）
+### インターバル・スプリント (vo2max, anaerobic_capacity, speed)
+- **トーン**: 安全重視、明確な指示
+- **ウォームアップ評価**:
+  - 存在する: 「高強度トレーニングに必要なウォームアップができています」（詳細評価）
+  - 存在しない: 「⚠️ 高強度走ではウォームアップが必須です。怪我リスクが高まります」（★☆☆☆☆ 警告）
+- **クールダウン評価**:
+  - 存在する: 「高強度後の適切なクールダウンができています」（詳細評価）
+  - 存在しない: 「⚠️ 高強度走後はクールダウンが重要です。疲労回復が遅れる可能性があります」（★☆☆☆☆ 警告）
 ```
 
 ---
@@ -202,19 +242,19 @@ mcp__garmin_db__insert_section_analysis_dict(
 
 **実装順序: TDD cycle (Red → Green → Refactor)**
 
-#### 1.1 強度判定ロジック追加
-- **Test**: 強度判定の単体テスト（easy/moderate/high の境界値）
-- **Implementation**: `.claude/agents/phase-section-analyst.md` に強度判定セクション追加
-- **Refactor**: 判定基準の明確化、境界値の文書化
+#### 1.1 トレーニングタイプ判定ロジック追加
+- **Test**: カテゴリマッピングのテスト（7種類のtraining_type → 3カテゴリ）
+- **Implementation**: `.claude/agents/phase-section-analyst.md` にカテゴリマッピングセクション追加
+- **Refactor**: マッピングロジックの明確化、未知のtraining_typeの処理
 
 #### 1.2 フェーズ評価ガイドライン更新
-- **Test**: 強度別フェーズ評価のテスト（ウォームアップあり/なし × 3強度 = 6パターン）
-- **Implementation**: 評価ガイドラインに強度別の記述を追加
-- **Refactor**: 評価テキストのトーン統一
+- **Test**: カテゴリ別フェーズ評価のテスト（ウォームアップあり/なし × 3カテゴリ = 6パターン）
+- **Implementation**: 評価ガイドラインにカテゴリ別の記述を追加
+- **Refactor**: 評価テキストのトーン統一（relaxed/suggestive/assertive）
 
-#### 1.3 出力形式の更新
-- **Test**: 出力JSONにintensity_contextが含まれることを確認
-- **Implementation**: analysis_dataに強度コンテキストを含める
+#### 1.3 レポート出力の調整（オプション）
+- **Test**: トレーニングタイプ別のレポート出力テスト
+- **Implementation**: `tools/reporting/templates/detailed_report.j2` のフェーズセクション更新（必要に応じて）
 - **Refactor**: 後方互換性の確保（既存レポートも表示可能）
 
 ### Phase 2: 実データでの検証
@@ -330,12 +370,13 @@ mcp__garmin_db__insert_section_analysis_dict(
 ## 受け入れ基準
 
 ### 機能要件
-- [ ] phase-section-analystが強度判定を実行できる
-- [ ] 低強度走でウォームアップ・クールダウンなしでも警告が出ない
-- [ ] 中強度走でウォームアップ・クールダウンがない場合、軽い注意が出る
-- [ ] 高強度走でウォームアップ・クールダウンがない場合、警告が出る
+- [ ] phase-section-analystがhr_efficiency.training_typeから判定を実行できる
+- [ ] 低～中強度走（recovery, aerobic_base）でフェーズなしでも警告が出ない
+- [ ] テンポ・閾値走（tempo, lactate_threshold）でフェーズがない場合、推奨レベルの注意が出る
+- [ ] インターバル・スプリント（vo2max, anaerobic_capacity, speed）でフェーズがない場合、明確な警告が出る
 - [ ] インターバルトレーニング（4フェーズ）の既存評価ロジックが維持されている
-- [ ] section_analysesテーブルに強度コンテキストが保存される
+- [ ] section_analysesテーブルにトレーニングタイプコンテキストが保存される
+- [ ] レポート出力がトレーニングタイプに応じたトーン（relaxed/suggestive/assertive）で表示される
 
 ### テスト要件
 - [ ] 全Unit Testsがパスする（18テスト）
@@ -355,45 +396,47 @@ mcp__garmin_db__insert_section_analysis_dict(
 - [ ] completion_report.md 作成（実装完了後）
 
 ### 検証要件
-- [ ] 実データ（低強度走）でフェーズなしのケースが正しく評価される
-- [ ] 実データ（中強度走）でフェーズありのケースが正しく評価される
-- [ ] 実データ（高強度走）でフェーズありのケースが正しく評価される
+- [ ] 実データ（recovery/aerobic_base）でフェーズなしのケースが正しく評価される（警告なし）
+- [ ] 実データ（tempo/lactate_threshold）でフェーズありのケースが正しく評価される（推奨注意）
+- [ ] 実データ（vo2max/anaerobic_capacity/speed）でフェーズありのケースが正しく評価される（警告）
 - [ ] 既存のレポート生成が正常に動作する（後方互換性）
+- [ ] レポート出力のトーンがトレーニングタイプに応じて変化する
 
 ---
 
 ## リスク & 対策
 
-### リスク1: 強度判定の閾値が不適切
-- **対策**: 実データで複数のアクティビティをテストし、閾値を調整
-- **Mitigation**: Phase 2で実データ検証を実施し、必要に応じて閾値を微調整
+### リスク1: training_typeがNULLまたは未知の値
+- **対策**: training_typeがNULLの場合はデフォルトで中カテゴリ（tempo_threshold）扱い
+- **Mitigation**: 未知のtraining_type値が出現した場合のフォールバックロジックを実装
 
-### リスク2: 心拍閾値の個人差
-- **対策**: 現時点では固定値（70%, 85%）を使用、将来的には個人の閾値を考慮
-- **Mitigation**: 心拍閾値が不明な場合はペースベースの判定を優先
+### リスク2: hr_efficiencyデータが存在しない
+- **対策**: hr_efficiency_analysisが取得できない場合はperformance_trendsから推定
+- **Mitigation**: エラーハンドリングとログ記録で問題を検出
 
 ### リスク3: 既存のレポート表示への影響
-- **対策**: analysis_dataのフォーマットを変更せず、強度コンテキストは評価テキスト内に含める
+- **対策**: analysis_dataのフォーマットを変更せず、トレーニングタイプコンテキストは評価テキスト内に含める
 - **Mitigation**: 後方互換性テストで既存レポート生成を確認
 
-### リスク4: インターバルトレーニングの判定
-- **対策**: recovery_splitsが存在する場合は常に高強度扱い（既存ロジック維持）
-- **Mitigation**: 4フェーズ判定を強度判定より優先
+### リスク4: レポート出力のトーン変更の影響
+- **対策**: レポートテンプレート変更は最小限にし、主にエージェント評価テキストで対応
+- **Mitigation**: Phase 2の実データ検証でレポート出力を確認
 
 ---
 
 ## 実装後のメンテナンス
 
 ### 定期的な確認事項
-1. 強度判定の閾値が実データに適合しているか確認
-2. 新しいトレーニングタイプ追加時の強度判定ロジック更新
-3. ユーザーフィードバックに基づく評価テキストの改善
+1. 新しいtraining_type値が出現していないか確認（hr_efficiencyテーブル）
+2. カテゴリマッピングが適切かユーザーフィードバックで検証
+3. レポート出力のトーンが適切かレビュー
+4. 後方互換性の維持（既存レポートが正常に表示されるか）
 
 ### 今後の改善案
-1. 個人の心拍閾値データ（lactate_threshold, vo2_maxテーブル）を活用した動的閾値
-2. 強度レベルを3段階から5段階に拡張（very_easy, easy, moderate, hard, very_hard）
-3. 強度レベルを分析結果のmetadataに明示的に含める（現在は評価テキスト内のみ）
-4. トレーニング履歴に基づく適応的な閾値調整
+1. training_typeの細分化（例: easy_recovery, base_building, threshold_maintainなど）
+2. 個人の履歴に基づく適応的なフェーズ評価（頻繁にウォームアップなしで走る人は警告を減らす）
+3. training_typeカテゴリを分析結果のmetadataに明示的に含める（現在は評価テキスト内のみ）
+4. レポートテンプレートの完全なトレーニングタイプ対応（現在はオプション）
 
 ---
 
