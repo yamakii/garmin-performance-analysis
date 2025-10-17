@@ -117,12 +117,39 @@ mcp__garmin-db__compare_similar_workouts(
 
 - ✅ USE: `mcp__garmin-db__export()` with parquet format
 - ✅ THEN: Python (pandas/numpy/scipy) for analysis
+- ✅ OR: Use **data-analyst agent** for automated workflow
 - ❌ NEVER: Multiple individual MCP calls for same data
 - ❌ NEVER: CSV format for 50+ rows (use parquet)
 
 **Why:** Single export is 10-100x more efficient than multiple MCP calls.
 
-### Standard Workflow
+### Data Analyst Agent
+
+**For 10+ activities, use the data-analyst agent:**
+
+```bash
+# Invoke the agent for bulk analysis
+Task("data-analyst", "Analyze my 5-month progression")
+```
+
+**The agent handles:**
+1. **STEP 1: PLAN** - Extract date range, check schema, design SQL
+2. **STEP 2: EXPORT** - Single parquet export (~25 tokens)
+3. **STEP 3: CODE** - Python analysis with pandas/scipy
+4. **STEP 4: RESULT** - Validate output (<1KB JSON)
+5. **STEP 5: INTERPRET** - Natural language explanation
+
+**Token Efficiency:**
+- Old approach: 107 activities × 2 calls = 214 MCP calls = **~55,000 tokens**
+- New approach: 1 schema check + 1 export + 1 analysis = **~175 tokens**
+- **99.7% token reduction**
+
+**Use Cases:**
+- **Time Series Analysis**: "Analyze my 5-month progression" → Linear regression, growth rate
+- **Race Prediction**: "Predict my half-marathon time in 3 months" → VDOT, Riegel formula
+- **Comparative Analysis**: "Compare August vs October performance" → t-test, effect size
+
+### Standard Workflow (Manual)
 
 **1. Schema Confirmation** (once per session):
 ```sql
@@ -205,7 +232,13 @@ export(query="...", format="csv")  # ❌ Slow parsing
 
 ### Best Practices
 
-✅ **Check schema first**:
+✅ **Use data-analyst agent for 10+ activities**:
+```python
+# Agent handles schema check, export, analysis, interpretation
+Task("data-analyst", "Analyze my 5-month progression")
+```
+
+✅ **Check schema first** (manual approach):
 ```sql
 -- Always verify column names before writing query
 SELECT column_name FROM information_schema.columns
@@ -249,7 +282,7 @@ export(query="...", format="parquet", max_rows=1000)
 3. Test: t-test or Mann-Whitney U for significance
 4. Report: effect size, practical significance
 
-### Example: 5-Month Progression Analysis
+### Example: 5-Month Progression Analysis (Manual)
 
 ```python
 # 1. Export with schema verification
@@ -531,6 +564,12 @@ garmin-performance-analysis/
 - **low_moderate**: No warmup/cooldown required, positive tone
 - **tempo_threshold**: Warmup/cooldown recommended, educational tone
 - **interval_sprint**: Warmup/cooldown required, injury warnings
+
+**1 Data Analysis Agent:**
+- **data-analyst**: Bulk analysis for 10+ activities (99.7% token reduction)
+  - Time series analysis (5-month progression, growth rate)
+  - Race prediction (VDOT, Riegel formula, confidence intervals)
+  - Comparative analysis (t-test, effect size, period comparison)
 
 **3 Development Agents:**
 - **project-planner**: Creates planning.md, GitHub Issue
