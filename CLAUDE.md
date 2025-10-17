@@ -82,7 +82,12 @@ Raw Data (API) → DuckDB (Direct Insertion) → Analysis → Reports
 
 **Categories:**
 - **Performance Data**: `get_performance_trends`, `get_weather_data`, `get_section_analysis`
-- **Normalized Tables**: `get_form_efficiency_summary`, `get_hr_efficiency_analysis`, `get_heart_rate_zones_detail`, `get_vo2_max_data`, `get_lactate_threshold_data`
+- **Normalized Tables**:
+  - `get_form_efficiency_summary`: Form metrics (GCT, VO, VR)
+  - `get_hr_efficiency_analysis`: HR efficiency + **training type** (used by phase-section-analyst for adaptive evaluation)
+  - `get_heart_rate_zones_detail`: HR zone boundaries and time distribution
+  - `get_vo2_max_data`: VO2 max estimation
+  - `get_lactate_threshold_data`: Lactate threshold metrics
 - **Splits Data** (lightweight, with statistics mode):
   - `get_splits_pace_hr(activity_id, statistics_only=False)` (split/phase)
   - `get_splits_form_metrics(activity_id, statistics_only=False)` (form)
@@ -204,6 +209,32 @@ details = get_form_anomaly_details(
 - **environment-section-analyst**: Environmental impact (temperature, humidity, wind, terrain)
 
 **Usage:** Run all 5 in parallel via Task tool, results stored in DuckDB.
+
+#### Training Type-Aware Phase Evaluation
+
+The **phase-section-analyst** uses training type categorization for adaptive phase evaluation:
+
+**Training Type Categories** (retrieved via `get_hr_efficiency_analysis()`):
+
+1. **low_moderate** (recovery, aerobic_base):
+   - Warmup/cooldown not required
+   - No warnings for missing phases
+   - Relaxed, positive tone
+   - 3-phase structure (warmup/run/cooldown)
+
+2. **tempo_threshold** (tempo, lactate_threshold):
+   - Warmup/cooldown recommended
+   - Suggestive/educational tone ("推奨", "お勧め")
+   - Moderate ratings if missing (★★★☆☆)
+   - 3-phase structure (warmup/run/cooldown)
+
+3. **interval_sprint** (vo2max, anaerobic_capacity, speed):
+   - Warmup/cooldown required
+   - Assertive tone with injury warnings ("⚠️", "怪我リスク")
+   - Lower ratings if missing (★★☆☆☆)
+   - 4-phase structure (warmup/run/recovery/cooldown)
+
+This enables adaptive evaluation where missing phases are treated as critical for high-intensity workouts but acceptable for recovery runs, providing contextually appropriate feedback.
 
 ### Development Process Agents
 
