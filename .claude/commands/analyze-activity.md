@@ -57,12 +57,7 @@ prompt: "Activity ID {activity_id} ({date}) のアクティビティタイプ判
 全てのセクション分析が完了したら、最終レポートを生成してください：
 
 ```bash
-uv run python -c "
-from tools.reporting.report_generator_worker import ReportGeneratorWorker
-worker = ReportGeneratorWorker()
-result = worker.generate_report({activity_id}, '{date}')
-print(f'Report generated at: {result[\"report_path\"]}')
-"
+uv run python -m tools.reporting.report_generator_worker {activity_id} {date}
 ```
 
 ## 重要事項
