@@ -9,7 +9,7 @@ Garmin running performance analysis system with **DuckDB-first architecture** an
 **System Pipeline:** Raw Data (API) → DuckDB → MCP Tools → Analysis → Reports
 
 **Key Features:**
-- DuckDB normalized storage (11 tables, 100+ activities)
+- DuckDB normalized storage (12 tables, 100+ activities)
 - Token-optimized MCP tools (70-98.8% reduction)
 - 8 specialized agents (5 analysis + 3 development)
 - Japanese reports (code/docs in English)
@@ -361,10 +361,10 @@ docs/project/
 
 **Key Classes:**
 - `GarminIngestWorker`: API fetching + raw data → DuckDB insertion
-- `GarminDBWriter`: DuckDB insertion (11 normalized tables)
+- `GarminDBWriter`: DuckDB insertion (12 normalized tables)
 - `ReportGeneratorWorker`: Template-based report generation
 
-**DuckDB Schema (11 tables):**
+**DuckDB Schema (12 tables):**
 - Metadata: `activities`, `body_composition`
 - Performance: `splits`, `performance_trends`, `time_series_metrics` (26 metrics × 1000-2000 rows)
 - Physiology: `form_efficiency`, `hr_efficiency`, `heart_rate_zones`, `vo2_max`, `lactate_threshold`
