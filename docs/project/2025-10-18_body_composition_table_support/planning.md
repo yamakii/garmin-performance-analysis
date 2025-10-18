@@ -4,7 +4,7 @@
 - **プロジェクト名**: `body_composition_table_support`
 - **作成日**: `2025-10-18`
 - **ステータス**: 計画中
-- **GitHub Issue**: #TBD (to be created)
+- **GitHub Issue**: [#29](https://github.com/yamakii/garmin-performance-analysis/issues/29)
 - **優先度**: Medium
 - **推定工数**: 1.5時間
 
