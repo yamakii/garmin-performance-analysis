@@ -39,6 +39,7 @@ class GarminDBWriter:
         - performance_trends: Performance trends (4-phase: warmup/run/recovery/cooldown)
         - vo2_max: VO2 max estimation
         - lactate_threshold: Lactate threshold metrics
+        - body_composition: Body composition measurements (weight, BMI, body fat %)
         - section_analyses: Section analysis data
 
         Note: Schemas match those defined in individual inserters to ensure compatibility.
@@ -266,6 +267,28 @@ class GarminDBWriter:
                 weight DOUBLE,
                 date_power TIMESTAMP,
                 FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
+            )
+        """
+        )
+
+        # Create body_composition table (from inserters/body_composition.py)
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS body_composition (
+                measurement_id INTEGER PRIMARY KEY,
+                date DATE NOT NULL,
+                weight_kg DOUBLE,
+                body_fat_percentage DOUBLE,
+                muscle_mass_kg DOUBLE,
+                bone_mass_kg DOUBLE,
+                bmi DOUBLE,
+                hydration_percentage DOUBLE,
+                basal_metabolic_rate INTEGER,
+                active_metabolic_rate INTEGER,
+                metabolic_age INTEGER,
+                visceral_fat_rating INTEGER,
+                physique_rating INTEGER,
+                measurement_source VARCHAR
             )
         """
         )

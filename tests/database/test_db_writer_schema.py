@@ -144,3 +144,72 @@ class TestDBWriterSchema:
                 ), f"{table} should have foreign key constraint on activity_id"
 
             conn.close()
+
+    @pytest.mark.unit
+    def test_body_composition_table_exists(self):
+        """Test body_composition table creation and schema."""
+        # Arrange
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test.duckdb"
+            writer = GarminDBWriter(db_path=str(db_path))
+
+            # Act
+            writer._ensure_tables()
+
+            # Assert
+            conn = duckdb.connect(str(db_path))
+            tables = conn.execute(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
+            ).fetchall()
+            table_names = [t[0] for t in tables]
+            conn.close()
+
+            # body_composition table should exist
+            assert (
+                "body_composition" in table_names
+            ), "body_composition table should be created"
+
+    @pytest.mark.unit
+    def test_body_composition_schema(self):
+        """Test body_composition table has correct columns and types."""
+        # Arrange
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test.duckdb"
+            writer = GarminDBWriter(db_path=str(db_path))
+            writer._ensure_tables()
+
+            # Act
+            conn = duckdb.connect(str(db_path))
+            columns = conn.execute(
+                "SELECT column_name, data_type, is_nullable FROM information_schema.columns "
+                "WHERE table_name='body_composition' ORDER BY column_name"
+            ).fetchall()
+            conn.close()
+
+            # Assert
+            column_names = [col[0] for col in columns]
+
+            # Expected columns
+            expected_columns = [
+                "active_metabolic_rate",
+                "basal_metabolic_rate",
+                "bmi",
+                "body_fat_percentage",
+                "bone_mass_kg",
+                "date",
+                "hydration_percentage",
+                "measurement_id",
+                "measurement_source",
+                "metabolic_age",
+                "muscle_mass_kg",
+                "physique_rating",
+                "visceral_fat_rating",
+                "weight_kg",
+            ]
+
+            for col in expected_columns:
+                assert col in column_names, f"Column {col} missing from schema"
+
+            # Verify date is NOT NULL
+            date_col = [c for c in columns if c[0] == "date"][0]
+            assert date_col[2] == "NO", "date column should be NOT NULL"
