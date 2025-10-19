@@ -3,8 +3,8 @@
 ## プロジェクト情報
 - **プロジェクト名**: `splits_table_enhancement`
 - **作成日**: `2025-10-20`
-- **ステータス**: 計画中
-- **GitHub Issue**: TBD (will be created after planning approval)
+- **ステータス**: 実装中
+- **GitHub Issue**: #33
 - **優先度**: Medium
 - **見積もり工数**: 4-6 hours
 
