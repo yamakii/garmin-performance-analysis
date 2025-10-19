@@ -6,7 +6,7 @@ Provides write operations to DuckDB for inserting performance data.
 
 import json
 import logging
-from datetime import UTC
+from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
@@ -429,8 +429,6 @@ class GarminDBWriter:
             True if successful
         """
         try:
-            from datetime import datetime
-
             conn = duckdb.connect(str(self.db_path))
 
             # Start transaction

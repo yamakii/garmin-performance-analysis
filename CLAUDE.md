@@ -420,6 +420,13 @@ garmin-performance-analysis/
 - ✅ `weather.json` - External weather station
 - ❌ `splits.json` temperature - Device temp (+5-8°C body heat)
 
+**Temperature Evaluation (Training-Type-Aware):**
+- **Recovery**: 15-22°C = Good (tolerance wider due to low heat production)
+- **Base Run**: 10-18°C = Ideal, 18-23°C = Acceptable
+- **Tempo/Threshold**: 8-15°C = Ideal, 15-20°C = Good, 20-25°C = Slightly hot
+- **Interval/Sprint**: 8-15°C = Ideal, 20-23°C = Slightly hot, >23°C = Dangerous
+- Note: environment-section-analyst uses `get_hr_efficiency_analysis()` to get training_type
+
 **Elevation:**
 - Source: `lapDTOs` → DuckDB
 - Classification: 平坦/起伏/丘陵/山岳
