@@ -267,11 +267,11 @@ MCP tools don't currently expose time_series_metrics cadence directly:
 
 **Manual Migration Command:**
 ```bash
-# Option 1: Complete regeneration (recommended)
-uv run python tools/scripts/regenerate_duckdb.py --delete-db
-
-# Option 2: Selective table regeneration (if implemented)
+# Recommended: Table-level regeneration (fast, isolated)
 uv run python tools/scripts/regenerate_duckdb.py --tables time_series_metrics --force
+
+# Alternative: Complete regeneration (only if other tables also need update)
+uv run python tools/scripts/regenerate_duckdb.py --delete-db
 ```
 
 ---
@@ -397,20 +397,30 @@ uv run python tools/scripts/regenerate_duckdb.py --tables time_series_metrics --
    ```
 
 2. **Document Migration Options**
-   - **Option A:** Complete database regeneration (`--delete-db`)
-     - Pros: Clean, no manual SQL
-     - Cons: Time-consuming (100+ activities)
-     - Recommended for: Development environment
+   - **Option A (Recommended):** Table-level regeneration
+     - Pros: Fast (5-10 min), clean, no impact on other tables
+     - Cons: None
+     - Command: `uv run python tools/scripts/regenerate_duckdb.py --tables time_series_metrics --force`
+     - Recommended for: All environments
 
-   - **Option B:** Manual SQL migration
+   - **Option B:** Complete database regeneration (`--delete-db`)
+     - Pros: Clean, regenerates all tables
+     - Cons: Time-consuming (15-20 minutes), affects all tables
+     - Command: `uv run python tools/scripts/regenerate_duckdb.py --delete-db`
+     - Recommended for: Only if multiple tables need regeneration
+
+   - **Option C:** Manual SQL migration
      - Pros: Fast, preserves existing data
-     - Cons: Requires SQL expertise
-     - Recommended for: Production (if needed)
+     - Cons: Requires SQL expertise, doesn't benefit from new inserter logic
+     - Recommended for: Not recommended (use Option A instead)
 
 3. **Execute Migration**
    ```bash
-   # Recommended: Complete regeneration
-   uv run python tools/scripts/regenerate_duckdb.py --delete-db
+   # Recommended: Table-level regeneration (fast, clean, isolated)
+   uv run python tools/scripts/regenerate_duckdb.py --tables time_series_metrics --force
+
+   # Alternative: Complete regeneration (if needed)
+   # uv run python tools/scripts/regenerate_duckdb.py --delete-db
    ```
 
 4. **Verify Migration Success**
