@@ -150,6 +150,15 @@ def _extract_splits_from_raw(raw_splits_file: str) -> list[dict] | None:
         elevation_loss = lap.get("elevationLoss", 0)
         terrain_type = _classify_terrain(elevation_gain, elevation_loss)
 
+        # NEW FIELDS (Phase 1): Add 7 missing performance metrics
+        stride_length = lap.get("strideLength")  # cm
+        max_hr = lap.get("maxHR")  # bpm
+        max_cadence = lap.get("maxRunCadence")  # spm
+        max_power = lap.get("maxPower")  # W
+        normalized_power = lap.get("normalizedPower")  # W
+        average_speed = lap.get("averageSpeed")  # m/s
+        grade_adjusted_speed = lap.get("avgGradeAdjustedSpeed")  # m/s
+
         split_dict = {
             "split_number": lap_index,
             "distance_km": distance_km,
@@ -170,6 +179,14 @@ def _extract_splits_from_raw(raw_splits_file: str) -> list[dict] | None:
             "elevation_gain_m": elevation_gain,
             "elevation_loss_m": elevation_loss,
             "terrain_type": terrain_type,
+            # NEW FIELDS (Phase 1): 7 missing performance metrics
+            "stride_length_cm": stride_length,
+            "max_heart_rate": max_hr,
+            "max_cadence": max_cadence,
+            "max_power": max_power,
+            "normalized_power": normalized_power,
+            "average_speed_mps": average_speed,
+            "grade_adjusted_speed_mps": grade_adjusted_speed,
         }
 
         splits.append(split_dict)
@@ -280,10 +297,48 @@ def _insert_splits_with_connection(
         """
     )
 
+    # Add 6 new columns (Phase 1 - stride_length already exists in schema)
+    # Use IF NOT EXISTS for idempotency
+    try:
+        conn.execute(
+            "ALTER TABLE splits ADD COLUMN IF NOT EXISTS max_heart_rate INTEGER"
+        )
+    except Exception:
+        pass  # Column may already exist
+
+    try:
+        conn.execute("ALTER TABLE splits ADD COLUMN IF NOT EXISTS max_cadence DOUBLE")
+    except Exception:
+        pass
+
+    try:
+        conn.execute("ALTER TABLE splits ADD COLUMN IF NOT EXISTS max_power DOUBLE")
+    except Exception:
+        pass
+
+    try:
+        conn.execute(
+            "ALTER TABLE splits ADD COLUMN IF NOT EXISTS normalized_power DOUBLE"
+        )
+    except Exception:
+        pass
+
+    try:
+        conn.execute("ALTER TABLE splits ADD COLUMN IF NOT EXISTS average_speed DOUBLE")
+    except Exception:
+        pass
+
+    try:
+        conn.execute(
+            "ALTER TABLE splits ADD COLUMN IF NOT EXISTS grade_adjusted_speed DOUBLE"
+        )
+    except Exception:
+        pass
+
     # Delete existing splits for this activity (for re-insertion)
     conn.execute("DELETE FROM splits WHERE activity_id = ?", [activity_id])
 
-    # Insert each split
+    # Insert each split with 7 new fields
     for split in split_metrics:
         split_number = split.get("split_number")
         if split_number is None:
@@ -297,8 +352,10 @@ def _insert_splits_with_connection(
                 role_phase, pace_str, pace_seconds_per_km,
                 heart_rate, cadence, power, ground_contact_time,
                 vertical_oscillation, vertical_ratio, elevation_gain,
-                elevation_loss, terrain_type
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                elevation_loss, terrain_type,
+                stride_length, max_heart_rate, max_cadence, max_power,
+                normalized_power, average_speed, grade_adjusted_speed
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 activity_id,
@@ -322,5 +379,13 @@ def _insert_splits_with_connection(
                 split.get("elevation_gain_m"),
                 split.get("elevation_loss_m"),
                 split.get("terrain_type"),
+                # NEW FIELDS (Phase 1): 7 missing performance metrics
+                split.get("stride_length_cm"),
+                split.get("max_heart_rate"),
+                split.get("max_cadence"),
+                split.get("max_power"),
+                split.get("normalized_power"),
+                split.get("average_speed_mps"),
+                split.get("grade_adjusted_speed_mps"),
             ],
         )
