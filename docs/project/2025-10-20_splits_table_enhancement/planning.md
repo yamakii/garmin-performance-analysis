@@ -3,8 +3,8 @@
 ## プロジェクト情報
 - **プロジェクト名**: `splits_table_enhancement`
 - **作成日**: `2025-10-20`
-- **ステータス**: 実装中
-- **GitHub Issue**: #33
+- **ステータス**: 計画中
+- **GitHub Issue**: TBD (will be created after planning approval)
 - **優先度**: Medium
 - **見積もり工数**: 4-6 hours
 
@@ -13,18 +13,18 @@
 ## 要件定義
 
 ### 目的
-DuckDB splits table に欠損している7個のパフォーマンスメトリクスを追加し、split単位での詳細な分析を可能にする。
+DuckDB splits table に欠損している10個のパフォーマンスメトリクスを追加し、split単位での詳細な分析を可能にする。
 
 ### 解決する問題
 
 **Current State:**
 - Raw data (splits.json lapDTOs) contains 45+ performance fields
 - splits table only extracts basic metrics (distance, pace, HR, cadence, power, form metrics)
-- Missing: stride_length, max metrics, normalized power, speed metrics
+- Missing: stride_length, temperature metrics, max metrics, normalized power, speed metrics
 - stride_length column exists in schema but **ALL 2016 rows are NULL** (data not inserted)
 
 **Problems:**
-1. **Incomplete split-level analysis**: Missing advanced performance metrics per split
+1. **Incomplete split-level analysis**: Cannot analyze temperature impact per split
 2. **Missing sprint/interval insights**: No max_heart_rate, max_cadence, max_power for intensity analysis
 3. **Terrain adjustment impossible**: No grade_adjusted_speed for uphill/downhill pace comparison
 4. **Training load calculation limited**: No normalized_power (more accurate than avg_power)
@@ -37,21 +37,26 @@ DuckDB splits table に欠損している7個のパフォーマンスメトリ�
 
 ### ユースケース
 
-1. **Interval Intensity Detection (split-section-analyst)**
+1. **Environmental Impact Analysis (environment-section-analyst)**
+   - Compare `average_temperature` across splits to detect heat buildup
+   - Correlate `temperature` with `pace_seconds_per_km` slowdown
+   - Example: "Split 3-5: Temperature rose from 27°C to 31°C, pace slowed by 15 sec/km"
+
+2. **Interval Intensity Detection (split-section-analyst)**
    - Identify sprint peaks using `max_heart_rate`, `max_cadence`, `max_power`
    - Compare `normalized_power` vs `avg_power` for effort consistency
    - Example: "Split 2: max_cadence=190spm (sprint burst), normalized_power=280W vs avg=230W"
 
-2. **Terrain-Adjusted Pace (efficiency-section-analyst)**
+3. **Terrain-Adjusted Pace (efficiency-section-analyst)**
    - Use `grade_adjusted_speed` to normalize pace on hills
    - Compare `average_speed` (raw) vs `grade_adjusted_speed` (adjusted)
    - Example: "Uphill split: raw pace 6:30/km → adjusted 5:45/km (equivalent flat pace)"
 
-3. **Form Efficiency Trends (form efficiency analysis)**
+4. **Form Efficiency Trends (form efficiency analysis)**
    - Correlate `stride_length` with pace efficiency
    - Detect form degradation: "Stride length decreased from 91cm → 82cm in final splits"
 
-4. **Training Load Calculation (future: performance trends)**
+5. **Training Load Calculation (future: performance trends)**
    - Use `normalized_power` for accurate TSS (Training Stress Score)
    - Example: "Interval workout: 280W normalized power = 1.2x threshold = High intensity"
 
@@ -64,7 +69,11 @@ DuckDB splits table に欠損している7個のパフォーマンスメトリ�
 **Schema Changes:**
 
 ```sql
--- ALTER TABLE splits ADD COLUMN ... (6 new columns, stride_length already exists)
+-- ALTER TABLE splits ADD COLUMN ... (9 new columns, stride_length already exists)
+
+ALTER TABLE splits ADD COLUMN average_temperature DOUBLE;      -- Device temp (°C)
+ALTER TABLE splits ADD COLUMN max_temperature DOUBLE;          -- Max temp in split
+ALTER TABLE splits ADD COLUMN min_temperature DOUBLE;          -- Min temp in split
 
 ALTER TABLE splits ADD COLUMN max_heart_rate INTEGER;          -- Peak HR (bpm)
 ALTER TABLE splits ADD COLUMN max_cadence DOUBLE;              -- Peak cadence (spm)
@@ -95,7 +104,7 @@ ALTER TABLE splits ADD COLUMN grade_adjusted_speed DOUBLE;     -- Terrain-adjust
 | `grade_adjusted_speed` | `avgGradeAdjustedSpeed` | DOUBLE | m/s | ⚠️ Newer activities only |
 
 **Data Availability Analysis (from sample check):**
-- ✅ **Always available**: stride_length, max_hr, max_cadence, average_speed
+- ✅ **Always available**: stride_length, temperature (3 fields), max_hr, average_speed
 - ⚠️ **Newer activities only**: max_power, normalized_power, grade_adjusted_speed (requires power meter/advanced metrics)
 - **NULL handling**: Fields will be NULL for older activities or non-running activities (acceptable)
 
@@ -104,8 +113,8 @@ ALTER TABLE splits ADD COLUMN grade_adjusted_speed DOUBLE;     -- Terrain-adjust
 **Modified Components:**
 
 1. **tools/database/inserters/splits.py**
-   - `_extract_splits_from_raw()`: Add 7 field extractions (lines 69-177)
-   - `_insert_splits_with_connection()`: Add ALTER TABLE + 7 columns to INSERT (lines 242-326)
+   - `_extract_splits_from_raw()`: Add 10 field extractions (lines 69-177)
+   - `_insert_splits_with_connection()`: Add ALTER TABLE + 10 columns to INSERT (lines 242-326)
 
 2. **tests/database/inserters/test_splits.py**
    - Add unit tests for new field extraction
@@ -122,11 +131,11 @@ ALTER TABLE splits ADD COLUMN grade_adjusted_speed DOUBLE;     -- Terrain-adjust
 ```
 Raw API Data (splits.json)
   ↓
-_extract_splits_from_raw()  [ADD 7 FIELD EXTRACTIONS]
+_extract_splits_from_raw()  [ADD 10 FIELD EXTRACTIONS]
   ↓
 split_metrics (list[dict])
   ↓
-_insert_splits_with_connection()  [ADD 6 ALTER TABLE + 7 INSERT COLUMNS]
+_insert_splits_with_connection()  [ADD 9 ALTER TABLE + 10 INSERT COLUMNS]
   ↓
 DuckDB splits table
   ↓
@@ -144,19 +153,23 @@ def _extract_splits_from_raw(raw_splits_file: str) -> list[dict] | None:
     """
     Extract split metrics from raw splits.json.
 
-    MODIFIED: Add 7 new fields to returned dict:
+    MODIFIED: Add 10 new fields to returned dict:
     - stride_length (cm)
+    - average_temperature, max_temperature, min_temperature (°C)
     - max_heart_rate (bpm), max_cadence (spm), max_power (W)
     - normalized_power (W)
     - average_speed, grade_adjusted_speed (m/s)
 
     Returns:
-        List of split dictionaries with 26 fields (was 19)
+        List of split dictionaries with 29 fields (was 19)
     """
     # ... existing code ...
 
     # NEW EXTRACTIONS (add to split_dict):
     stride_length = lap.get("strideLength")  # cm
+    avg_temp = lap.get("averageTemperature")  # °C
+    max_temp = lap.get("maxTemperature")
+    min_temp = lap.get("minTemperature")
     max_hr = lap.get("maxHR")  # bpm
     max_cad = lap.get("maxRunCadence")  # spm
     max_pow = lap.get("maxPower")  # W
@@ -167,6 +180,9 @@ def _extract_splits_from_raw(raw_splits_file: str) -> list[dict] | None:
     split_dict = {
         # ... existing 19 fields ...
         "stride_length_cm": stride_length,
+        "average_temperature_c": avg_temp,
+        "max_temperature_c": max_temp,
+        "min_temperature_c": min_temp,
         "max_heart_rate": max_hr,
         "max_cadence": max_cad,
         "max_power": max_pow,
@@ -181,24 +197,24 @@ def _insert_splits_with_connection(
     conn: Any, activity_id: int, split_metrics: list[dict]
 ) -> None:
     """
-    MODIFIED: Add 6 new columns to CREATE TABLE and INSERT statement.
+    MODIFIED: Add 9 new columns to CREATE TABLE and INSERT statement.
     stride_length already exists in schema (line 267), just add to INSERT.
     """
-    # ALTER TABLE (add 6 new columns)
-    conn.execute("ALTER TABLE splits ADD COLUMN IF NOT EXISTS max_heart_rate INTEGER")
-    # ... (5 more ALTER TABLE statements)
+    # ALTER TABLE (add 9 new columns)
+    conn.execute("ALTER TABLE splits ADD COLUMN IF NOT EXISTS average_temperature DOUBLE")
+    # ... (8 more ALTER TABLE statements)
 
-    # INSERT (add 7 columns)
+    # INSERT (add 10 columns)
     conn.execute(
         """
         INSERT INTO splits (
-            ..., stride_length, max_heart_rate, ..., grade_adjusted_speed
+            ..., stride_length, average_temperature, ..., grade_adjusted_speed
         ) VALUES (?, ?, ..., ?)
         """,
         [
             ...,
             split.get("stride_length_cm"),
-            split.get("max_heart_rate"),
+            split.get("average_temperature_c"),
             ...,
             split.get("grade_adjusted_speed_mps"),
         ],
@@ -217,6 +233,7 @@ def _insert_splits_with_connection(
             "avg_heart_rate": 142,
             # NEW FIELDS (automatically included by SELECT *):
             "stride_length": 91.3,
+            "average_temperature": 27.0,
             "max_heart_rate": 148,
             "max_cadence": 184.0,
             "average_speed": 2.69
@@ -248,8 +265,8 @@ def _insert_splits_with_connection(
    - `test_insert_splits_creates_new_columns()`
    - `test_insert_splits_populates_new_fields()`
 2. **GREEN**: Modify `_insert_splits_with_connection()` to:
-   - Add 6 ALTER TABLE statements (stride_length already exists)
-   - Add 7 columns to INSERT statement
+   - Add 9 ALTER TABLE statements (stride_length already exists)
+   - Add 10 columns to INSERT statement
 3. **REFACTOR**: Use IF NOT EXISTS for ALTER TABLE
 
 **Implementation:**
@@ -339,6 +356,10 @@ def _insert_splits_with_connection(
   - Verify stride_length extracted from lapDTOs
   - Assert value matches raw data (e.g., 91.28 cm)
 
+- [x] `test_extract_splits_includes_temperature_metrics()`
+  - Verify average_temperature, max_temperature, min_temperature
+  - Assert values match raw data (27°C, 28°C, 26°C)
+
 - [x] `test_extract_splits_includes_max_metrics()`
   - Verify max_heart_rate, max_cadence, max_power
   - Assert values match raw data (148 bpm, 184 spm, 413 W)
@@ -364,11 +385,11 @@ def _insert_splits_with_connection(
 **Test Cases:**
 - [x] `test_insert_splits_creates_new_columns()`
   - Insert splits with new fields
-  - Query INFORMATION_SCHEMA to verify 6 new columns exist
+  - Query INFORMATION_SCHEMA to verify 9 new columns exist
   - Verify stride_length column already exists
 
 - [x] `test_insert_splits_populates_new_fields()`
-  - Insert splits with all 7 new fields
+  - Insert splits with all 10 new fields
   - SELECT and verify values match input
   - Check data types (DOUBLE, INTEGER)
 
@@ -379,7 +400,7 @@ def _insert_splits_with_connection(
 
 - [x] `test_insert_splits_with_real_activity_data()` (uses real raw data)
   - Use sample_raw_splits_file fixture (activity 20636804823)
-  - Verify all 7 fields extracted and inserted
+  - Verify all 10 fields extracted and inserted
   - Compare with raw JSON values
 
 - [x] `test_insert_splits_multiple_activities()`
@@ -408,15 +429,20 @@ def _insert_splits_with_connection(
   SELECT
     COUNT(*) as total,
     COUNT(stride_length) * 100.0 / COUNT(*) as stride_pct,
-    COUNT(max_heart_rate) * 100.0 / COUNT(*) as max_hr_pct,
+    COUNT(average_temperature) * 100.0 / COUNT(*) as temp_pct,
     COUNT(max_power) * 100.0 / COUNT(*) as power_pct,
     COUNT(grade_adjusted_speed) * 100.0 / COUNT(*) as grade_adj_pct
   FROM splits;
   ```
   - Assert stride_pct >= 95% (was 0%, should be ~100%)
-  - Assert max_hr_pct >= 80%
+  - Assert temp_pct >= 80%
   - Assert power_pct >= 30% (newer activities only)
   - Assert grade_adj_pct >= 30%
+
+- [x] `test_temperature_range_validity()`
+  - Assert average_temperature BETWEEN -10 AND 50 (realistic range)
+  - Assert max_temperature >= average_temperature
+  - Assert min_temperature <= average_temperature
 
 - [x] `test_max_metrics_validity()`
   - Assert max_heart_rate >= avg_heart_rate (existing field)
@@ -428,16 +454,18 @@ def _insert_splits_with_connection(
 ## 受け入れ基準
 
 ### Functional Criteria
-- [x] All 7 new fields extracted from raw splits.json
-  - stride_length, max_heart_rate, max_cadence, max_power
+- [x] All 10 new fields extracted from raw splits.json
+  - stride_length, average_temperature, max_temperature, min_temperature
+  - max_heart_rate, max_cadence, max_power
   - normalized_power, average_speed, grade_adjusted_speed
 
-- [x] All 6 new columns created in DuckDB splits table
+- [x] All 9 new columns created in DuckDB splits table
   - ALTER TABLE statements successful
   - stride_length column already exists (no ALTER needed)
 
 - [x] Data population rates meet expectations
   - stride_length: 100% (was 0%) ← **Key Success Metric**
+  - temperature metrics: ≥80%
   - max metrics: ≥80%
   - power/speed metrics: ≥30% (newer activities)
 
@@ -452,11 +480,11 @@ def _insert_splits_with_connection(
 
 ### Technical Criteria
 - [x] All tests passing
-  - Unit: 6 tests
+  - Unit: 7 tests
   - Integration: 5 tests
   - Performance: 2 tests
-  - Data validation: 2 tests
-  - **Total: 15 tests**
+  - Data validation: 3 tests
+  - **Total: 17 tests**
 
 - [x] Code coverage ≥80% for modified functions
   - `_extract_splits_from_raw()`: 100%
@@ -494,6 +522,7 @@ FROM splits;
 SELECT
   activity_id, split_index,
   stride_length,
+  average_temperature, max_temperature, min_temperature,
   max_heart_rate, max_cadence, max_power,
   normalized_power,
   average_speed, grade_adjusted_speed
@@ -706,7 +735,7 @@ ORDER BY power_variability DESC;
 ## メモ
 
 - **stride_length column already exists**: Don't need ALTER TABLE for this field, just populate
-- **Temperature fields excluded**: Device temperature deemed unreliable (body heat影響), not included in this phase
+- **Temperature source**: Device temperature (27-31°C range), not weather.json (15-22°C)
 - **Power metrics availability**: Requires power meter, only newer activities have data
 - **Grade adjusted speed**: Requires elevation data + advanced metrics (Garmin algorithm)
 - **NULL vs 0**: Use NULL for missing data, not 0 (0 is valid for some metrics like elevation_gain)
