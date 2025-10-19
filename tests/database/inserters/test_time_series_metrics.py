@@ -144,12 +144,12 @@ class TestTimeSeriesMetricsInserter:
 
         assert row is not None
         assert row[0] == 140.0  # heart_rate
-        assert row[1] == 3.0  # speed (converted)
+        assert row[1] == 30.0  # speed (raw value, no conversion)
         assert row[2] == 170.0  # cadence
 
     @pytest.mark.unit
     def test_unit_conversion_speed(self, sample_activity_details_file, tmp_path):
-        """Test unit conversion: speed × 0.1."""
+        """Test that speed raw value is used as-is (no factor conversion)."""
         db_path = tmp_path / "test.duckdb"
 
         result = insert_time_series_metrics(
@@ -160,7 +160,7 @@ class TestTimeSeriesMetricsInserter:
 
         assert result is True
 
-        # Verify speed conversion
+        # Verify speed is raw value
         conn = duckdb.connect(str(db_path), read_only=True)
         row = conn.execute(
             "SELECT speed FROM time_series_metrics WHERE activity_id = ? AND timestamp_s = ?",
@@ -168,13 +168,13 @@ class TestTimeSeriesMetricsInserter:
         ).fetchone()
         conn.close()
 
-        # Original: 30, Expected after conversion: 30 × 0.1 = 3.0
+        # Raw value: 30 (already in m/s, no factor conversion needed)
         assert row is not None
-        assert row[0] == 3.0
+        assert row[0] == 30.0
 
     @pytest.mark.unit
     def test_unit_conversion_elevation(self, sample_activity_details_file, tmp_path):
-        """Test unit conversion: elevation ÷ 100.0."""
+        """Test that elevation raw value is used as-is (no factor conversion)."""
         db_path = tmp_path / "test.duckdb"
 
         result = insert_time_series_metrics(
@@ -185,7 +185,7 @@ class TestTimeSeriesMetricsInserter:
 
         assert result is True
 
-        # Verify elevation conversion
+        # Verify elevation is raw value
         conn = duckdb.connect(str(db_path), read_only=True)
         row = conn.execute(
             "SELECT elevation FROM time_series_metrics WHERE activity_id = ? AND timestamp_s = ?",
@@ -193,9 +193,9 @@ class TestTimeSeriesMetricsInserter:
         ).fetchone()
         conn.close()
 
-        # Original: 50000, Expected after conversion: 50000 / 100.0 = 500.0
+        # Raw value: 50000 (already in meters, no factor conversion needed)
         assert row is not None
-        assert row[0] == 500.0
+        assert row[0] == 50000.0
 
     @pytest.mark.unit
     def test_timestamp_calculation(self, sample_activity_details_file, tmp_path):
