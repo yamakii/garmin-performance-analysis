@@ -6,9 +6,12 @@ Tests JSON data rendering in templates.
 
 from typing import Any
 
+import pytest
+
 from tools.reporting.report_template_renderer import ReportTemplateRenderer
 
 
+@pytest.mark.unit
 class TestReportTemplateRenderer:
     """Test ReportTemplateRenderer JSON data handling."""
 

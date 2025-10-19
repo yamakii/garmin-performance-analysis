@@ -12,6 +12,7 @@ from tools.utils.display_settings import (
 )
 
 
+@pytest.mark.unit
 class TestPandasDisplaySettings:
     """Test Pandas display configuration."""
 
@@ -53,6 +54,7 @@ class TestPandasDisplaySettings:
         assert default_max_rows != 5  # Should be reset
 
 
+@pytest.mark.unit
 class TestPolarsDisplaySettings:
     """Test Polars display configuration."""
 
@@ -89,6 +91,7 @@ class TestPolarsDisplaySettings:
         assert True  # Reset succeeded
 
 
+@pytest.mark.unit
 class TestAllDisplaySettings:
     """Test configuring all display settings at once."""
 
@@ -149,6 +152,7 @@ class TestAllDisplaySettings:
         assert True
 
 
+@pytest.mark.unit
 class TestDisplaySettingsBehavior:
     """Test actual display behavior with configured settings."""
 
@@ -195,6 +199,7 @@ class TestDisplaySettingsBehavior:
         assert len(lines) < 20  # Much less than 100
 
 
+@pytest.mark.unit
 class TestMissingLibraries:
     """Test behavior when libraries are not installed."""
 

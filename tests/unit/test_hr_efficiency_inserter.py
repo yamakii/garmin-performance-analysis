@@ -9,10 +9,12 @@ import tempfile
 from pathlib import Path
 
 import duckdb
+import pytest
 
 from tools.database.inserters.hr_efficiency import insert_hr_efficiency
 
 
+@pytest.mark.unit
 class TestHREfficiencyInserter:
     """Test HR efficiency inserter with zone percentage support."""
 

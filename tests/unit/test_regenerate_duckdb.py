@@ -10,6 +10,7 @@ import pytest
 from tools.scripts.regenerate_duckdb import DuckDBRegenerator
 
 
+@pytest.mark.unit
 class TestFilterTables:
     """Test filter_tables method for table validation and filtering."""
 
@@ -108,6 +109,7 @@ class TestFilterTables:
         assert len(result) == 2
 
 
+@pytest.mark.unit
 class TestValidateArguments:
     """Test CLI argument validation."""
 
@@ -169,6 +171,7 @@ class TestValidateArguments:
         assert regenerator.tables is None
 
 
+@pytest.mark.unit
 class TestDeleteActivityRecords:
     """Test delete_activity_records method (Phase 2: Deletion Logic Fix)."""
 
@@ -244,6 +247,7 @@ class TestDeleteActivityRecords:
         ), "Should commit transaction"
 
 
+@pytest.mark.unit
 class TestDeleteTableAllRecords:
     """Test delete_table_all_records method (Phase 2: Table-Wide Deletion)."""
 
@@ -375,6 +379,7 @@ class TestDeleteTableAllRecords:
         ), "Should attempt to delete from non_existent_table"
 
 
+@pytest.mark.unit
 class TestRegenerateAllDeletionLogic:
     """Test regenerate_all deletion strategy (Phase 2: Logic Fix)."""
 

@@ -79,6 +79,7 @@ def test_db(tmp_path):
     return db_path
 
 
+@pytest.mark.integration
 class TestProfileTableOrQuery:
     """Test profile_table_or_query method."""
 

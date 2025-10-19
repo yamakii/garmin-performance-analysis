@@ -3,7 +3,10 @@
 import os
 from unittest.mock import patch
 
+import pytest
 
+
+@pytest.mark.unit
 class TestReportGeneratorWorkerPaths:
     """Test ReportGeneratorWorker path configuration."""
 

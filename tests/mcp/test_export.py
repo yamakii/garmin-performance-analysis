@@ -14,6 +14,7 @@ from tools.database.db_reader import GarminDBReader
 from tools.mcp_server.export_manager import ExportManager, get_export_manager
 
 
+@pytest.mark.integration
 class TestExportManager:
     """Test ExportManager class for TTL-based file management."""
 
@@ -159,6 +160,7 @@ class TestExportManager:
                 assert not file_path.exists()
 
 
+@pytest.mark.integration
 class TestGarminDBReaderExport:
     """Test GarminDBReader.export_query_result() method."""
 
@@ -309,6 +311,7 @@ class TestGarminDBReaderExport:
                 )
 
 
+@pytest.mark.integration
 class TestExportMCPIntegration:
     """Test export() MCP function end-to-end."""
 
@@ -354,6 +357,7 @@ class TestExportMCPIntegration:
         # This would be tested in integration tests with real MCP server
 
 
+@pytest.mark.integration
 class TestExportManagerSingleton:
     """Test get_export_manager() singleton behavior."""
 

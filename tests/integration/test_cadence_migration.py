@@ -22,6 +22,7 @@ class TestCadenceMigration:
     """Integration tests for cadence column refactoring."""
 
     @pytest.mark.integration
+    @pytest.mark.slow
     def test_real_activity_insertion(self, tmp_path):
         """Test insertion with real activity 20721683500.
 
@@ -96,6 +97,7 @@ class TestCadenceMigration:
         ), f"Average total cadence should be 160-200 spm, got {stats[3]:.1f}"
 
     @pytest.mark.integration
+    @pytest.mark.slow
     def test_cadence_calculation_consistency(self, tmp_path):
         """Test cadence_total = cadence_single_foot × 2 across all rows.
 
@@ -153,6 +155,7 @@ class TestCadenceMigration:
         ), f"Avg ratio should be 2.0, got {ratio_stats[2]:.3f}"
 
     @pytest.mark.integration
+    @pytest.mark.slow
     def test_backward_compatibility_real_data(self, tmp_path):
         """Test backward compatibility: old cadence column equals cadence_single_foot.
 
@@ -208,6 +211,7 @@ class TestCadenceMigration:
         ), f"Average cadence ({comparison[2]:.2f}) should equal average cadence_single_foot ({comparison[3]:.2f})"
 
     @pytest.mark.integration
+    @pytest.mark.slow
     def test_null_handling_real_data(self, tmp_path):
         """Test NULL handling with real activity data.
 
@@ -256,6 +260,7 @@ class TestCadenceMigration:
         ), "When cadence_single_foot is NULL, cadence_total should also be NULL"
 
     @pytest.mark.integration
+    @pytest.mark.slow
     def test_database_migration_verification(self):
         """Verify migration on actual database (if available).
 

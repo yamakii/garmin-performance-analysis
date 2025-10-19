@@ -54,6 +54,7 @@ def db_reader(tmp_path):
     return GarminDBReader(str(db_path))
 
 
+@pytest.mark.unit
 def test_get_split_time_ranges_success(db_reader):
     """Test successful retrieval of split time ranges."""
     activity_id = 12345678901
@@ -82,6 +83,7 @@ def test_get_split_time_ranges_success(db_reader):
     assert result[2]["end_time_s"] == 1163
 
 
+@pytest.mark.unit
 def test_get_split_time_ranges_structure(db_reader):
     """Test that returned data has correct structure."""
     activity_id = 12345678901
@@ -101,6 +103,7 @@ def test_get_split_time_ranges_structure(db_reader):
         assert isinstance(split_data["end_time_s"], int)
 
 
+@pytest.mark.unit
 def test_get_split_time_ranges_nonexistent_activity(db_reader):
     """Test behavior with nonexistent activity ID."""
     activity_id = 99999999999
@@ -111,6 +114,7 @@ def test_get_split_time_ranges_nonexistent_activity(db_reader):
     assert len(result) == 0
 
 
+@pytest.mark.unit
 def test_get_split_time_ranges_sorted_by_index(db_reader):
     """Test that results are sorted by split_index."""
     activity_id = 12345678901

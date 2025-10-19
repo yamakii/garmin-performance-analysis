@@ -8,6 +8,7 @@ import pytest
 from tools.rag.loaders.activity_details_loader import ActivityDetailsLoader
 
 
+@pytest.mark.integration
 class TestActivityDetailsLoader:
     """Test suite for ActivityDetailsLoader class."""
 

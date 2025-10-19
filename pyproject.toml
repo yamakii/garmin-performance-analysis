@@ -115,7 +115,7 @@ markers = [
 
 # Optimized addopts (parallel execution with -n 4 for stability)
 addopts = """
-    -m 'not garmin_api and not slow'
+    -m 'not garmin_api and not slow and not performance'
     --strict-markers
     --tb=short
     --disable-warnings

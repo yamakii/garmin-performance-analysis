@@ -1,6 +1,9 @@
 """Unit tests for RawDataExtractor class."""
 
+import pytest
 
+
+@pytest.mark.unit
 class TestRawDataExtractor:
     """Test RawDataExtractor for old/new format compatibility."""
 

@@ -24,6 +24,7 @@ def agent_definition_content(agent_definition_path):
         return f.read()
 
 
+@pytest.mark.unit
 class TestAgentDefinitionStructure:
     """Test that agent definition has required structure."""
 
@@ -47,6 +48,7 @@ class TestAgentDefinitionStructure:
         )
 
 
+@pytest.mark.unit
 class TestTrainingTypeCategorization:
     """Test that training type categorization is properly defined."""
 
@@ -79,6 +81,7 @@ class TestTrainingTypeCategorization:
         assert "speed" in agent_definition_content
 
 
+@pytest.mark.unit
 class TestPhaseRequirements:
     """Test that phase requirements are defined per training type category."""
 
@@ -99,6 +102,7 @@ class TestPhaseRequirements:
         assert "必須" in agent_definition_content or "警告" in agent_definition_content
 
 
+@pytest.mark.unit
 class TestEvaluationGuidelines:
     """Test that evaluation guidelines are defined for each category."""
 
@@ -119,6 +123,7 @@ class TestEvaluationGuidelines:
         )
 
 
+@pytest.mark.unit
 class TestSpecialCases:
     """Test that special cases are handled."""
 

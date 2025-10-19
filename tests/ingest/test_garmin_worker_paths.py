@@ -7,9 +7,12 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from tools.ingest.garmin_worker import GarminIngestWorker
 
 
+@pytest.mark.unit
 class TestGarminWorkerDefaultPaths:
     """Tests for GarminIngestWorker with default paths."""
 
@@ -35,6 +38,7 @@ class TestGarminWorkerDefaultPaths:
             assert worker.weight_raw_dir.is_absolute()
 
 
+@pytest.mark.unit
 class TestGarminWorkerCustomPaths:
     """Tests for GarminIngestWorker with custom paths."""
 
@@ -62,6 +66,7 @@ class TestGarminWorkerCustomPaths:
             assert worker.weight_raw_dir.is_absolute()
 
 
+@pytest.mark.unit
 class TestGarminWorkerBackwardCompatibility:
     """Tests for backward compatibility of path configuration."""
 

@@ -108,6 +108,7 @@ def extractor(db_path: Path) -> InsightExtractor:
     return InsightExtractor(str(db_path))
 
 
+@pytest.mark.integration
 class TestInsightExtractorBasics:
     """Test basic functionality of InsightExtractor."""
 
@@ -156,6 +157,7 @@ class TestInsightExtractorBasics:
         assert any("patterns" in r["analysis_data"] for r in results)
 
 
+@pytest.mark.integration
 class TestInsightExtractorFiltering:
     """Test filtering capabilities of InsightExtractor."""
 
@@ -188,6 +190,7 @@ class TestInsightExtractorFiltering:
         assert all(r["section_type"] in ["efficiency", "phase"] for r in results)
 
 
+@pytest.mark.integration
 class TestInsightExtractorPagination:
     """Test pagination functionality of InsightExtractor."""
 
@@ -228,6 +231,7 @@ class TestInsightExtractorPagination:
             )
 
 
+@pytest.mark.integration
 class TestInsightExtractorTokenLimit:
     """Test token limiting functionality of InsightExtractor."""
 
@@ -272,6 +276,7 @@ class TestInsightExtractorTokenLimit:
         assert token_count <= len(text)
 
 
+@pytest.mark.integration
 class TestInsightExtractorEdgeCases:
     """Test edge cases and error handling."""
 

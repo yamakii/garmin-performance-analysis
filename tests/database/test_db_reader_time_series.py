@@ -6,6 +6,7 @@ import pytest
 from tools.database.db_reader import GarminDBReader
 
 
+@pytest.mark.unit
 class TestGarminDBReaderTimeSeries:
     """Test time series query methods in GarminDBReader."""
 

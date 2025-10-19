@@ -62,6 +62,7 @@ def test_db(tmp_path_factory):
     db_path.unlink(missing_ok=True)
 
 
+@pytest.mark.integration
 class TestPhase1Integration:
     """Integration tests for all Phase 1 functions."""
 

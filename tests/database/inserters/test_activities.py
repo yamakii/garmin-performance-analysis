@@ -10,8 +10,10 @@ import tempfile
 from pathlib import Path
 
 import duckdb
+import pytest
 
 
+@pytest.mark.unit
 def test_insert_activities_missing_file():
     """Test that insert_activities succeeds even without raw files (creates minimal record)."""
     from tools.database.inserters.activities import insert_activities
@@ -37,6 +39,7 @@ def test_insert_activities_missing_file():
         conn.close()
 
 
+@pytest.mark.unit
 def test_insert_activities_invalid_json():
     """Test that insert_activities fails with invalid JSON in raw files."""
     from tools.database.inserters.activities import insert_activities
@@ -57,6 +60,7 @@ def test_insert_activities_invalid_json():
         assert result is False
 
 
+@pytest.mark.unit
 def test_insert_activities_minimal_data():
     """Test insert_activities with minimal required fields (just activity_id and date)."""
     from tools.database.inserters.activities import insert_activities
@@ -84,6 +88,7 @@ def test_insert_activities_minimal_data():
         conn.close()
 
 
+@pytest.mark.unit
 def test_insert_activities_complete_data():
     """Test insert_activities with all raw data files (activity, weather, gear)."""
     from tools.database.inserters.activities import insert_activities

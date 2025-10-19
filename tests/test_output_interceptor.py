@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from tools.utils.output_interceptor import (
     OutputInterceptor,
     get_interceptor,
@@ -10,6 +12,7 @@ from tools.utils.output_interceptor import (
 )
 
 
+@pytest.mark.unit
 class TestOutputInterceptor:
     """Test OutputInterceptor class."""
 
@@ -178,6 +181,7 @@ class TestOutputInterceptor:
         assert warning is None
 
 
+@pytest.mark.unit
 class TestOutputInterceptorEdgeCases:
     """Test edge cases for OutputInterceptor."""
 

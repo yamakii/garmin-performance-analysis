@@ -13,6 +13,7 @@ import pytest
 from tools.database.db_reader import GarminDBReader
 
 
+@pytest.mark.unit
 class TestDeprecationWarnings:
     """Test deprecation warnings for large data functions."""
 
