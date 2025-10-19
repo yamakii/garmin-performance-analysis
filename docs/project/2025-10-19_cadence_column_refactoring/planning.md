@@ -4,7 +4,7 @@
 - **プロジェクト名**: `cadence_column_refactoring`
 - **作成日**: `2025-10-19`
 - **ステータス**: 計画中
-- **GitHub Issue**: TBD
+- **GitHub Issue**: [#31](https://github.com/yamakii/garmin-performance-analysis/issues/31)
 - **優先度**: Medium
 - **推定工数**: 2.5時間
 
