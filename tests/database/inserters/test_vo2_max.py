@@ -88,14 +88,13 @@ class TestVO2MaxInserter:
         ).fetchall()
         assert len(vo2_data) == 1
 
-        # Verify data values
+        # Verify data values (schema: activity_id, precise_value, value, date, category)
         row = vo2_data[0]
         assert row[0] == 20107340187  # activity_id
         assert abs(row[1] - 44.7) < 0.1  # precise_value
         assert abs(row[2] - 45.0) < 0.1  # value
         assert str(row[3]) == "2025-08-19"  # date
-        assert row[4] is None  # fitness_age
-        assert row[5] == 0  # category
+        assert row[4] == 0  # category
 
         conn.close()
 
@@ -128,7 +127,6 @@ class TestVO2MaxInserter:
         assert result["precise_value"] == 44.7
         assert result["value"] == 45.0
         assert result["date"] == "2025-08-19"
-        assert result["fitness_age"] is None
         assert result["category"] == 0
 
     def test_insert_vo2_max_from_raw_data(self, sample_raw_vo2_max_file, tmp_path):

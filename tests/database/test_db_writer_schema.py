@@ -189,10 +189,8 @@ class TestDBWriterSchema:
             # Assert
             column_names = [col[0] for col in columns]
 
-            # Expected columns
+            # Expected columns (removed 5 device-unprovided metabolic fields)
             expected_columns = [
-                "active_metabolic_rate",
-                "basal_metabolic_rate",
                 "bmi",
                 "body_fat_percentage",
                 "bone_mass_kg",
@@ -200,10 +198,7 @@ class TestDBWriterSchema:
                 "hydration_percentage",
                 "measurement_id",
                 "measurement_source",
-                "metabolic_age",
                 "muscle_mass_kg",
-                "physique_rating",
-                "visceral_fat_rating",
                 "weight_kg",
             ]
 

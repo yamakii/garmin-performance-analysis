@@ -88,11 +88,16 @@ def _insert_vo2_max_with_connection(
             precise_value DOUBLE,
             value DOUBLE,
             date DATE,
-            fitness_age INTEGER,
             category INTEGER
         )
         """
     )
+
+    # Remove fitness_age column if it exists (schema cleanup)
+    try:
+        conn.execute("ALTER TABLE vo2_max DROP COLUMN fitness_age")
+    except Exception:
+        pass  # Column already removed or never existed
 
     # Delete existing record for this activity (for re-insertion)
     conn.execute("DELETE FROM vo2_max WHERE activity_id = ?", [activity_id])
@@ -105,16 +110,14 @@ def _insert_vo2_max_with_connection(
             precise_value,
             value,
             date,
-            fitness_age,
             category
-        ) VALUES (?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?)
         """,
         [
             activity_id,
             vo2_data.get("precise_value"),
             vo2_data.get("value"),
             vo2_data.get("date"),
-            vo2_data.get("fitness_age"),
             vo2_data.get("category"),
         ],
     )
@@ -138,7 +141,7 @@ def _extract_vo2_max_from_raw(raw_vo2_max_file: str) -> dict | None:
         raw_vo2_max_file: Path to raw vo2_max.json file
 
     Returns:
-        Dict with vo2_max data (keys: precise_value, value, date, fitness_age, category)
+        Dict with vo2_max data (keys: precise_value, value, date, category)
         None if file not found or no data
     """
     try:
@@ -164,6 +167,7 @@ def _extract_vo2_max_from_raw(raw_vo2_max_file: str) -> dict | None:
             return None
 
         # Map raw API fields to performance.json format
+        # Note: fitness_age removed (device does not provide this data)
         return {
             "precise_value": generic.get("vo2MaxPreciseValue"),
             "value": (
@@ -172,7 +176,6 @@ def _extract_vo2_max_from_raw(raw_vo2_max_file: str) -> dict | None:
                 else None
             ),
             "date": generic.get("calendarDate"),
-            "fitness_age": generic.get("fitnessAge"),
             "category": 0,  # Default category (not provided in raw data)
         }
 
