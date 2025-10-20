@@ -1150,16 +1150,16 @@ class GarminIngestWorker:
                             f"Failed to insert form_efficiency to DuckDB for activity {activity_id}"
                         )
 
+                # Determine raw HR zones file path (needed by hr_efficiency too)
+                raw_hr_zones_file: Path | None = activity_dir / "hr_zones.json"
+                if raw_hr_zones_file and not raw_hr_zones_file.exists():
+                    raw_hr_zones_file = None
+
                 # Insert heart_rate_zones into DuckDB
                 if self._should_insert_table("heart_rate_zones", tables):
                     from tools.database.inserters.heart_rate_zones import (
                         insert_heart_rate_zones,
                     )
-
-                    # Determine raw HR zones file path
-                    raw_hr_zones_file: Path | None = activity_dir / "hr_zones.json"
-                    if raw_hr_zones_file and not raw_hr_zones_file.exists():
-                        raw_hr_zones_file = None
 
                     hr_zones_success = insert_heart_rate_zones(
                         activity_id=activity_id,
