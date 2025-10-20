@@ -73,8 +73,9 @@ mcp__garmin-db__compare_similar_workouts(
 
 **Performance Metrics:**
 - `get_performance_trends(activity_id)` - Pace consistency, HR drift, phases
-- `get_splits_pace_hr(activity_id, statistics_only=True/False)` - Pace/HR data
-- `get_splits_form_metrics(activity_id, statistics_only=True/False)` - GCT/VO/VR
+- `get_splits_comprehensive(activity_id, statistics_only=True/False)` - **NEW:** All split data (12 fields: pace, HR, form, power, cadence, elevation)
+- `get_splits_pace_hr(activity_id, statistics_only=True/False)` - Pace/HR data (lightweight, backward compatible)
+- `get_splits_form_metrics(activity_id, statistics_only=True/False)` - GCT/VO/VR (lightweight, backward compatible)
 - `get_splits_elevation(activity_id, statistics_only=True/False)` - Terrain data
 
 **Physiological Data:**
@@ -93,8 +94,9 @@ mcp__garmin-db__compare_similar_workouts(
 - `get_split_time_series_detail(activity_id, split_number)` - Second-by-second data (98.8% reduction)
 
 **Token Optimization:**
-- Use `statistics_only=True` for overview/trends (80% reduction)
+- Use `statistics_only=True` for overview/trends (67-80% reduction)
 - Use `statistics_only=False` only when per-split details needed
+- NEW: `get_splits_comprehensive()` provides all 12 fields in one call (recommended for split-section-analyst)
 - Use `detect_form_anomalies_summary()` before `get_form_anomaly_details()`
 
 ### Prohibited Practices

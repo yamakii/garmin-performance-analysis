@@ -277,4 +277,137 @@ class TestGarminDBReaderStatistics:
         assert "statistics_only" in result
         assert result["statistics_only"] is True
         assert "metrics" in result
+
+    # ========== get_splits_comprehensive tests ==========
+
+    @pytest.mark.unit
+    def test_get_splits_comprehensive_default_full_mode(self, db_reader):
+        """Test get_splits_comprehensive returns full split data by default."""
+        result = db_reader.get_splits_comprehensive(20615445009)
+
+        assert "splits" in result
+        assert len(result["splits"]) == 10
+        assert "statistics_only" not in result
+
+        # Verify first split has all 12 comprehensive fields
+        split1 = result["splits"][0]
+        assert split1["split_number"] == 1
+        assert split1["distance_km"] == 1.0
+        # Pace & HR fields
+        assert split1["avg_pace_seconds_per_km"] == 310
+        assert split1["avg_heart_rate"] == 152
+        # max_heart_rate may be None if not in raw data
+        assert "max_heart_rate_bpm" in split1
+        # Form fields
+        assert split1["ground_contact_time_ms"] == 242
+        assert split1["vertical_oscillation_cm"] == 7.2
+        assert split1["vertical_ratio_percent"] == 8.1
+        # Power & rhythm fields (some may be None/0)
+        assert "power_watts" in split1
+        assert "stride_length_cm" in split1
+        assert "cadence_spm" in split1
+        assert "max_cadence_spm" in split1
+        # Elevation fields
+        assert split1["elevation_gain_m"] == 6
+        assert split1["elevation_loss_m"] == 2.5
+
+    @pytest.mark.unit
+    def test_get_splits_comprehensive_statistics_only_mode(self, db_reader):
+        """Test get_splits_comprehensive with statistics_only=True returns aggregated stats."""
+        result = db_reader.get_splits_comprehensive(20615445009, statistics_only=True)
+
+        # Check structure
+        assert "activity_id" in result
+        assert result["activity_id"] == 20615445009
+        assert "statistics_only" in result
+        assert result["statistics_only"] is True
+        assert "metrics" in result
+
+        # Check all 12 metrics are present
+        expected_metrics = [
+            "pace",
+            "heart_rate",
+            "ground_contact_time",
+            "vertical_oscillation",
+            "vertical_ratio",
+            "power",
+            "stride_length",
+            "cadence",
+            "elevation_gain",
+            "elevation_loss",
+            "max_heart_rate",
+            "max_cadence",
+        ]
+
+        for metric in expected_metrics:
+            assert metric in result["metrics"], f"Missing metric: {metric}"
+            stats = result["metrics"][metric]
+            assert "mean" in stats
+            assert "median" in stats
+            assert "std" in stats
+            assert "min" in stats
+            assert "max" in stats
+
+        # Check specific values for pace (310, 320, 330, ..., 400)
+        pace_stats = result["metrics"]["pace"]
+        assert 350 <= pace_stats["mean"] <= 360
+        assert pace_stats["min"] == 310
+        assert pace_stats["max"] == 400
+
+        # Check heart_rate statistics (152, 154, 156, ..., 170)
+        hr_stats = result["metrics"]["heart_rate"]
+        assert 158 <= hr_stats["mean"] <= 164
+        assert hr_stats["min"] == 152
+        assert hr_stats["max"] == 170
+
+    @pytest.mark.unit
+    def test_get_splits_comprehensive_statistics_only_size_reduction(self, db_reader):
+        """Test that statistics_only mode significantly reduces output size (~80%)."""
+        full_result = db_reader.get_splits_comprehensive(
+            20615445009, statistics_only=False
+        )
+        stats_result = db_reader.get_splits_comprehensive(
+            20615445009, statistics_only=True
+        )
+
+        full_size = len(json.dumps(full_result))
+        stats_size = len(json.dumps(stats_result))
+
+        # Statistics mode should be at least 60% smaller (40% of original or less)
+        # With 12 fields, expect ~67% reduction (33% of original size)
+        assert stats_size < full_size * 0.4
+        # Statistics output should be < 1500 bytes (12 metrics * 5 stats * ~25 bytes)
+        assert stats_size < 1500
+
+    @pytest.mark.unit
+    def test_get_splits_comprehensive_backward_compatibility(self, db_reader):
+        """Test that statistics_only defaults to False for backward compatibility."""
+        result1 = db_reader.get_splits_comprehensive(20615445009)
+        result2 = db_reader.get_splits_comprehensive(20615445009, statistics_only=False)
+
+        # Both should return full data
+        assert result1 == result2
+        assert "splits" in result1
+        assert len(result1["splits"]) == 10
+
+    @pytest.mark.unit
+    def test_get_splits_comprehensive_empty_activity(self, db_reader):
+        """Test get_splits_comprehensive with non-existent activity."""
+        # Full mode
+        result_full = db_reader.get_splits_comprehensive(
+            99999999, statistics_only=False
+        )
+        assert "splits" in result_full
+        assert result_full["splits"] == []
+
+        # Statistics mode
+        result_stats = db_reader.get_splits_comprehensive(
+            99999999, statistics_only=True
+        )
+        assert "activity_id" in result_stats
+        assert result_stats["activity_id"] == 99999999
+        assert "statistics_only" in result_stats
+        assert result_stats["statistics_only"] is True
+        assert "metrics" in result_stats
+        assert result_stats["metrics"] == {}
         # Metrics should be empty or have null values

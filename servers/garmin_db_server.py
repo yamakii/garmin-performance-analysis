@@ -148,6 +148,22 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="get_splits_comprehensive",
+            description="Get comprehensive split data (12 fields: pace, HR, form, power, cadence, elevation). Supports statistics_only mode for 67% token reduction.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "activity_id": {"type": "integer"},
+                    "statistics_only": {
+                        "type": "boolean",
+                        "description": "If true, return only aggregated statistics (mean, median, std, min, max) instead of per-split data. Reduces output size by ~67%. Default: false",
+                        "default": False,
+                    },
+                },
+                "required": ["activity_id"],
+            },
+        ),
+        Tool(
             name="insert_section_analysis_dict",
             description="Insert section analysis dict directly into DuckDB (no file creation)",
             inputSchema={
@@ -702,6 +718,18 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         activity_id = arguments["activity_id"]
         statistics_only = arguments.get("statistics_only", False)
         result = db_reader.get_splits_elevation(
+            activity_id, statistics_only=statistics_only
+        )
+        return [
+            TextContent(
+                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+            )
+        ]
+
+    elif name == "get_splits_comprehensive":
+        activity_id = arguments["activity_id"]
+        statistics_only = arguments.get("statistics_only", False)
+        result = db_reader.get_splits_comprehensive(
             activity_id, statistics_only=statistics_only
         )
         return [
