@@ -18,6 +18,7 @@ from tools.utils.error_handling import (
 )
 
 
+@pytest.mark.unit
 class TestLLMSafeError:
     """Test LLMSafeError base class."""
 
@@ -62,6 +63,7 @@ class TestLLMSafeError:
         assert "🔄 Retry: Retry like this" in error_str
 
 
+@pytest.mark.unit
 class TestErrorFormatting:
     """Test error message formatting functions."""
 
@@ -91,6 +93,7 @@ class TestErrorFormatting:
         assert "10,000 rows" in message
 
 
+@pytest.mark.unit
 class TestSuggestions:
     """Test suggestion and retry guidance functions."""
 
@@ -143,6 +146,7 @@ class TestSuggestions:
         assert "max_rows" in guidance
 
 
+@pytest.mark.unit
 class TestRaiseErrors:
     """Test error raising functions."""
 
@@ -180,6 +184,7 @@ class TestRaiseErrors:
         assert hasattr(error, "retry_guidance")
 
 
+@pytest.mark.unit
 class TestLogging:
     """Test logging functions."""
 
@@ -236,6 +241,7 @@ class TestLogging:
         assert "Context: Processing activity 12345" in caplog.text
 
 
+@pytest.mark.unit
 class TestErrorAttributes:
     """Test that raised errors have correct attributes."""
 

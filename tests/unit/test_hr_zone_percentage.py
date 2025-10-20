@@ -12,6 +12,7 @@ import pytest
 from tools.ingest.garmin_worker import GarminIngestWorker
 
 
+@pytest.mark.unit
 class TestHRZonePercentageCalculation:
     """Test HR zone percentage calculation in _calculate_hr_efficiency_analysis."""
 

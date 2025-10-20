@@ -25,6 +25,7 @@ from tools.utils.llm_safe_data import (
 )
 
 
+@pytest.mark.unit
 class TestSafeLoadExport:
     """Tests for safe_load_export() function."""
 
@@ -121,6 +122,7 @@ class TestSafeLoadExport:
         assert ".json" in str(exc_info.value)
 
 
+@pytest.mark.unit
 class TestSafeSummaryTable:
     """Tests for safe_summary_table() function."""
 
@@ -195,6 +197,7 @@ class TestSafeSummaryTable:
         assert result == ""
 
 
+@pytest.mark.unit
 class TestSafeJsonOutput:
     """Tests for safe_json_output() function."""
 
@@ -270,6 +273,7 @@ class TestSafeJsonOutput:
         assert len(parsed["splits"]) == 2
 
 
+@pytest.mark.unit
 class TestValidateOutput:
     """Tests for validate_output() function."""
 

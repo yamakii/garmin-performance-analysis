@@ -43,6 +43,7 @@ def sample_old_format_data():
     }
 
 
+@pytest.mark.unit
 class TestMigrateRawDataStructure:
     """Test cases for migrate_raw_data_structure script."""
 

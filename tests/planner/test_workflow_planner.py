@@ -80,6 +80,7 @@ def temp_db():
         yield str(db_path)
 
 
+@pytest.mark.unit
 class TestWorkflowPlannerDateResolution:
     """Test WorkflowPlanner orchestration functionality."""
 

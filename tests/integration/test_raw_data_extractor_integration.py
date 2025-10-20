@@ -2,7 +2,10 @@
 
 import json
 
+import pytest
 
+
+@pytest.mark.integration
 class TestRawDataExtractorIntegration:
     """Test RawDataExtractor with real old/new format files."""
 

@@ -211,6 +211,7 @@ class TestBackwardCompatibilityRemoval:
 class TestCalculateMedianWeightNewPath:
     """Tests for _calculate_median_weight using new path structure."""
 
+    @pytest.mark.slow
     def test_median_with_no_data_new_path(self, worker):
         """Test that median calculation returns None when no data in new path."""
         test_date = "2099-12-31"  # Use future date to avoid production data collision

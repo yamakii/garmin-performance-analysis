@@ -73,6 +73,7 @@ def create_weight_cache_file(cache_dir: Path, date: str, weight_data: dict):
         json.dump(weight_data, f, indent=2, ensure_ascii=False)
 
 
+@pytest.mark.unit
 class TestCalculateMedianWeight:
     """Tests for _calculate_median_weight method."""
 
@@ -113,6 +114,7 @@ class TestCalculateMedianWeight:
         # Expected median body fat: [15.0, 15.2, 15.4, 15.6, 15.8, 16.0, 16.2] → 15.6
         assert abs(result["body_fat_percentage"] - 15.6) < 0.01
 
+    @pytest.mark.slow
     def test_median_with_partial_data(self, worker, sample_weight_data, test_date):
         """Test median calculation with only 3 days of data."""
         target_date = test_date
@@ -195,6 +197,7 @@ class TestCalculateMedianWeight:
         assert abs(result["bone_mass_kg"] - 3.25) < 0.001
 
 
+@pytest.mark.unit
 class TestProcessBodyComposition:
     """Tests for process_body_composition method."""
 
@@ -243,6 +246,7 @@ class TestProcessBodyComposition:
         assert "No body composition data" in result["message"]
 
 
+@pytest.mark.unit
 class TestCollectBodyCompositionData:
     """Tests for collect_body_composition_data method."""
 
@@ -295,6 +299,7 @@ class TestCollectBodyCompositionData:
         assert cached_data["dateWeightList"][0]["weight"] == 65000
 
 
+@pytest.mark.unit
 class TestBackwardCompatibility:
     """Tests for backward compatibility with existing data."""
 
@@ -353,6 +358,7 @@ class TestBackwardCompatibility:
             40 <= median_data["weight_kg"] <= 150
         ), f"Weight {median_data['weight_kg']}kg is unreasonable"
 
+    @pytest.mark.slow
     def test_median_calculation_with_new_structure(
         self, worker, sample_weight_data, test_date
     ):

@@ -52,6 +52,7 @@ def test_db(tmp_path):
     return db_path
 
 
+@pytest.mark.integration
 class TestHistogramColumn:
     """Test histogram_column method."""
 

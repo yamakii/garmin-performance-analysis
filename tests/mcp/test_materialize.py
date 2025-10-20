@@ -42,6 +42,7 @@ def test_db(tmp_path):
     return db_path
 
 
+@pytest.mark.integration
 class TestViewManager:
     """Test ViewManager class for temporary view management."""
 
@@ -204,6 +205,7 @@ class TestViewManager:
         assert manager1 is manager2
 
 
+@pytest.mark.integration
 class TestViewManagerIntegration:
     """Integration tests for view manager with real queries."""
 

@@ -220,7 +220,7 @@ def insert_time_series_metrics(
             # Order: activity_id, seq_no, timestamp_s, ...metrics
             row_values: list[int | float | None] = [activity_id, seq_no, timestamp_s]
 
-            for col_idx, extract_info in enumerate(metric_extract_info):
+            for _col_idx, extract_info in enumerate(metric_extract_info):
                 if extract_info is None:
                     row_values.append(None)
                     continue
@@ -238,24 +238,18 @@ def insert_time_series_metrics(
                     continue
 
                 # Apply unit conversion
-                # NOTE: Garmin API inconsistency - duration fields (sumDuration, sumMovingDuration,
-                # sumElapsedDuration) have factor=1000.0 but are already in seconds, not milliseconds
-                api_key = column_spec[col_idx][0]
-                if api_key in (
-                    "sumDuration",
-                    "sumMovingDuration",
-                    "sumElapsedDuration",
-                ):
-                    # Duration fields are already in seconds despite factor
-                    converted_value = float(raw_value)
-                elif factor == 1.0:
-                    converted_value = float(raw_value)
-                elif factor > 1.0:
-                    # Division (e.g., elevation: 50000 / 100.0 = 500.0)
-                    converted_value = float(raw_value) / factor
-                else:
-                    # Multiplication (e.g., speed: 30 × 0.1 = 3.0)
-                    converted_value = float(raw_value) * factor
+                # NOTE: Garmin API factor inconsistency - All metricDescriptors have 'factor' values,
+                # but empirical testing shows that raw metric values are already in correct SI units.
+                # The 'factor' field appears to be for UI display purposes only.
+                #
+                # Evidence (activity 20721683500, record 1000):
+                # - sumDistance: factor=100.0, but raw 2552.4 is already meters (not centimeters)
+                # - directElevation: factor=100.0, but raw 4.8 is already meters (not centimeters)
+                # - directSpeed: factor=0.1, but raw 2.52 is already m/s (not 10× m/s)
+                # - sumDuration: factor=1000.0, but raw values are already seconds (not milliseconds)
+                #
+                # Therefore, we use raw values as-is without applying factor conversion.
+                converted_value = float(raw_value)
 
                 row_values.append(converted_value)
 

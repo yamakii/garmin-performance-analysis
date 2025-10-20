@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from tools.utils.paths import (
     get_data_base_dir,
     get_database_dir,
@@ -19,6 +21,7 @@ from tools.utils.paths import (
 )
 
 
+@pytest.mark.unit
 class TestGetDataBaseDir:
     """Tests for get_data_base_dir() function."""
 
@@ -66,6 +69,7 @@ class TestGetDataBaseDir:
             assert data_dir.name == "my_data"
 
 
+@pytest.mark.unit
 class TestGetResultDir:
     """Tests for get_result_dir() function."""
 
@@ -95,6 +99,7 @@ class TestGetResultDir:
             assert result_dir.is_absolute()
 
 
+@pytest.mark.unit
 class TestHelperFunctions:
     """Tests for helper functions that return subdirectories."""
 

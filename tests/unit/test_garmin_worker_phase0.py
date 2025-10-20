@@ -73,6 +73,7 @@ def sample_api_responses():
     }
 
 
+@pytest.mark.unit
 class TestCollectDataPerAPICache:
     """Test per-API caching in collect_data method."""
 
@@ -253,6 +254,7 @@ class TestCollectDataPerAPICache:
         assert raw_data["weather"] is None  # Failed
 
 
+@pytest.mark.unit
 class TestLoadFromCache:
     """Test load_from_cache method."""
 

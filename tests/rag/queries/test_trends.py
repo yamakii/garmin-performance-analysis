@@ -7,6 +7,7 @@ import pytest
 from tools.rag.queries.trends import PerformanceTrendAnalyzer
 
 
+@pytest.mark.integration
 class TestPerformanceTrendAnalyzer:
     """Test PerformanceTrendAnalyzer functionality."""
 
