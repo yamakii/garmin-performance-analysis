@@ -66,6 +66,335 @@ def _map_intensity_to_phase(intensity_type: str | None) -> str | None:
         return None
 
 
+def _calculate_hr_zone(heart_rate: float | None, hr_zones: list[dict]) -> str | None:
+    """
+    Map heart_rate to zone name using zone boundaries.
+
+    Args:
+        heart_rate: Heart rate in bpm
+        hr_zones: List of zone dicts with zone_number, lower_bpm, upper_bpm
+
+    Returns:
+        Zone name (e.g., "Zone 2") or None
+
+    Examples:
+        >>> zones = [{"zone_number": 1, "lower_bpm": 100, "upper_bpm": 120},
+        ...          {"zone_number": 2, "lower_bpm": 120, "upper_bpm": 150}]
+        >>> _calculate_hr_zone(110, zones)
+        'Zone 1'
+        >>> _calculate_hr_zone(145, zones)
+        'Zone 2'
+    """
+    if heart_rate is None:
+        return None
+
+    if not hr_zones:
+        return None
+
+    # Find matching zone
+    for zone in hr_zones:
+        zone_num = zone.get("zone_number")
+        lower = zone.get("lower_bpm")
+        upper = zone.get("upper_bpm")
+
+        if lower is None or upper is None:
+            continue
+
+        if lower <= heart_rate <= upper:
+            return f"Zone {zone_num}"
+
+    # Fallback for values outside all zones
+    first_zone_lower = hr_zones[0].get("lower_bpm")
+    last_zone_upper = hr_zones[-1].get("upper_bpm")
+
+    if first_zone_lower and heart_rate < first_zone_lower:
+        return "Zone 0 (Recovery)"
+    elif last_zone_upper and heart_rate > last_zone_upper:
+        return "Zone 5+ (Max)"
+
+    return None
+
+
+def _calculate_cadence_rating(cadence: float | None) -> str | None:
+    """
+    Evaluate cadence quality based on running science.
+
+    Thresholds:
+    - <170: Low (target 180+)
+    - 170-180: Good
+    - 180-190: Excellent
+    - 190+: Elite
+
+    Args:
+        cadence: Cadence in steps per minute (spm)
+
+    Returns:
+        Cadence rating string or None
+
+    Examples:
+        >>> _calculate_cadence_rating(175)
+        'Good (175 spm)'
+        >>> _calculate_cadence_rating(185)
+        'Excellent (185 spm)'
+    """
+    if cadence is None:
+        return None
+
+    cadence_int = int(cadence)
+
+    if cadence < 170:
+        return f"Low ({cadence_int} spm, target 180+)"
+    elif 170 <= cadence < 180:
+        return f"Good ({cadence_int} spm)"
+    elif 180 <= cadence < 190:
+        return f"Excellent ({cadence_int} spm)"
+    else:  # 190+
+        return f"Elite ({cadence_int} spm)"
+
+
+def _calculate_power_efficiency(
+    power: float | None, weight_kg: float | None
+) -> str | None:
+    """
+    Calculate power-to-weight ratio (W/kg).
+
+    Args:
+        power: Power in watts
+        weight_kg: Body weight in kg
+
+    Returns:
+        Power efficiency rating or None
+
+    Examples:
+        >>> _calculate_power_efficiency(250, 70)
+        'Moderate (3.6 W/kg)'
+    """
+    if power is None or weight_kg is None:
+        return None
+
+    w_per_kg = power / weight_kg
+
+    if w_per_kg < 2.5:
+        return f"Low ({w_per_kg:.1f} W/kg)"
+    elif 2.5 <= w_per_kg < 3.5:
+        return f"Moderate ({w_per_kg:.1f} W/kg)"
+    elif 3.5 <= w_per_kg < 4.5:
+        return f"Good ({w_per_kg:.1f} W/kg)"
+    else:  # 4.5+
+        return f"Excellent ({w_per_kg:.1f} W/kg)"
+
+
+def _calculate_environmental_conditions(
+    temp: float | None, wind: float | None, humidity: float | None
+) -> str | None:
+    """
+    Summarize environmental conditions.
+
+    Args:
+        temp: Temperature in Celsius
+        wind: Wind speed in km/h
+        humidity: Humidity percentage
+
+    Returns:
+        Environmental conditions summary or None
+
+    Examples:
+        >>> _calculate_environmental_conditions(15, 2, 65)
+        'Cool (15°C), Calm'
+    """
+    if temp is None:
+        return None
+
+    parts = []
+
+    # Temperature descriptor
+    if temp < 10:
+        parts.append(f"Cold ({int(temp)}°C)")
+    elif 10 <= temp < 18:
+        parts.append(f"Cool ({int(temp)}°C)")
+    elif 18 <= temp < 25:
+        parts.append(f"Mild ({int(temp)}°C)")
+    else:  # 25+
+        parts.append(f"Hot ({int(temp)}°C)")
+
+    # Wind descriptor (if available)
+    if wind is not None:
+        if wind < 5:
+            parts.append("Calm")
+        elif 5 <= wind < 15:
+            parts.append(f"Breezy ({int(wind)} km/h)")
+        else:  # 15+
+            parts.append(f"Windy ({int(wind)} km/h)")
+
+    # Humidity descriptor (if available)
+    if humidity is not None:
+        if humidity > 80:
+            parts.append(f"Humid ({int(humidity)}%)")
+        elif humidity < 30:
+            parts.append(f"Dry ({int(humidity)}%)")
+
+    return ", ".join(parts)
+
+
+def _calculate_wind_impact(
+    wind_speed: float | None, wind_dir: float | None = None
+) -> str | None:
+    """
+    Evaluate wind impact on performance.
+
+    Args:
+        wind_speed: Wind speed in km/h
+        wind_dir: Wind direction in degrees (0=N, 90=E, 180=S, 270=W)
+
+    Returns:
+        Wind impact evaluation or None
+
+    Examples:
+        >>> _calculate_wind_impact(3)
+        'Minimal (<5 km/h)'
+        >>> _calculate_wind_impact(12, 30)
+        'Moderate headwind (12 km/h)'
+    """
+    if wind_speed is None:
+        return None
+
+    if wind_speed < 5:
+        return "Minimal (<5 km/h)"
+    elif 5 <= wind_speed < 15:
+        # Enhance with direction if available
+        if wind_dir is not None:
+            # 0° = headwind, 90° = crosswind, 180° = tailwind
+            if wind_dir < 45 or wind_dir > 315:
+                return f"Moderate headwind ({int(wind_speed)} km/h)"
+            elif 135 < wind_dir < 225:
+                return f"Moderate tailwind ({int(wind_speed)} km/h)"
+            else:
+                return f"Moderate crosswind ({int(wind_speed)} km/h)"
+        else:
+            return f"Moderate ({int(wind_speed)} km/h)"
+    else:  # 15+
+        return f"Significant ({int(wind_speed)} km/h, pace impact expected)"
+
+
+def _calculate_temp_impact(temp: float | None, training_type: str) -> str | None:
+    """
+    Evaluate temperature impact based on training intensity.
+
+    Args:
+        temp: Temperature in Celsius
+        training_type: Training type (recovery, low_moderate, base, tempo_threshold, interval_sprint)
+
+    Returns:
+        Temperature impact evaluation or None
+
+    Examples:
+        >>> _calculate_temp_impact(15, "tempo_threshold")
+        'Ideal (15°C)'
+        >>> _calculate_temp_impact(28, "interval_sprint")
+        'Too hot (28°C, consider rescheduling)'
+    """
+    if temp is None:
+        return None
+
+    temp_int = int(temp)
+
+    # Ideal ranges vary by training intensity
+    if training_type in ["recovery", "low_moderate"]:
+        # Wider tolerance for low-intensity
+        if 15 <= temp <= 22:
+            return f"Good ({temp_int}°C)"
+        elif 10 <= temp < 15 or 22 < temp <= 25:
+            return f"Acceptable ({temp_int}°C)"
+        elif temp < 10:
+            return f"Cold ({temp_int}°C)"
+        else:  # >25
+            return f"Hot ({temp_int}°C)"
+
+    elif training_type in ["base", "tempo_threshold"]:
+        # Moderate tolerance
+        if 10 <= temp <= 18:
+            return f"Ideal ({temp_int}°C)"
+        elif 18 < temp <= 23:
+            return f"Acceptable ({temp_int}°C)"
+        elif temp < 10:
+            return f"Cool ({temp_int}°C)"
+        else:  # >23
+            return f"Hot ({temp_int}°C, hydration important)"
+
+    else:  # interval_sprint
+        # Narrow tolerance for high-intensity
+        if 8 <= temp <= 15:
+            return f"Ideal ({temp_int}°C)"
+        elif 15 < temp <= 20:
+            return f"Good ({temp_int}°C)"
+        elif 20 < temp <= 25:
+            return f"Warm ({temp_int}°C, performance may decrease)"
+        elif temp < 8:
+            return f"Cold ({temp_int}°C, longer warmup needed)"
+        else:  # >25
+            return f"Too hot ({temp_int}°C, consider rescheduling)"
+
+
+def _calculate_environmental_impact(
+    temp_impact: str | None,
+    wind_impact: str | None,
+    elevation_gain: float | None,
+    elevation_loss: float | None,
+) -> str:
+    """
+    Calculate overall environmental impact rating.
+
+    Args:
+        temp_impact: Temperature impact string
+        wind_impact: Wind impact string
+        elevation_gain: Elevation gain in meters
+        elevation_loss: Elevation loss in meters
+
+    Returns:
+        Overall environmental impact rating
+
+    Examples:
+        >>> _calculate_environmental_impact("Ideal (15°C)", "Minimal (<5 km/h)", 3, 2)
+        'Ideal conditions'
+    """
+    challenge_score = 0
+
+    # Temperature challenge (0-3 points)
+    if temp_impact:
+        if "Too hot" in temp_impact or "Cold" in temp_impact:
+            challenge_score += 3
+        elif "Hot" in temp_impact or "Cool" in temp_impact:
+            challenge_score += 2
+        elif "Warm" in temp_impact:
+            challenge_score += 1
+
+    # Wind challenge (0-2 points)
+    if wind_impact:
+        if "Significant" in wind_impact:
+            challenge_score += 2
+        elif "Moderate" in wind_impact:
+            challenge_score += 1
+
+    # Terrain challenge (0-2 points)
+    total_elevation = abs(elevation_gain or 0) + abs(elevation_loss or 0)
+    if total_elevation > 100:  # Significant elevation change
+        challenge_score += 2
+    elif total_elevation > 50:
+        challenge_score += 1
+
+    # Rating based on total score (0-7 possible)
+    if challenge_score == 0:
+        return "Ideal conditions"
+    elif challenge_score <= 2:
+        return "Good conditions"
+    elif challenge_score <= 4:
+        return "Moderate challenge"
+    elif challenge_score <= 5:
+        return "Challenging conditions"
+    else:  # 6-7
+        return "Extreme conditions"
+
+
 def _extract_splits_from_raw(raw_splits_file: str) -> list[dict] | None:
     """
     Extract split metrics from raw splits.json.

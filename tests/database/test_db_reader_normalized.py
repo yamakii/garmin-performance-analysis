@@ -389,7 +389,6 @@ class TestGetVO2MaxData:
         assert result["precise_value"] == 52.3
         assert result["value"] == 52.0
         assert result["date"] == "2025-10-07"
-        assert result["fitness_age"] == 25
         assert result["category"] == 0  # Default (not in raw data)
 
     @pytest.mark.unit
@@ -408,7 +407,6 @@ class TestGetVO2MaxData:
             "precise_value",
             "value",
             "date",
-            "fitness_age",
             "category",
         ]
         for key in required_keys:

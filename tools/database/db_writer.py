@@ -247,7 +247,6 @@ class GarminDBWriter:
                 precise_value DOUBLE,
                 value DOUBLE,
                 date DATE,
-                fitness_age INTEGER,
                 category INTEGER,
                 FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
             )
@@ -283,11 +282,6 @@ class GarminDBWriter:
                 bone_mass_kg DOUBLE,
                 bmi DOUBLE,
                 hydration_percentage DOUBLE,
-                basal_metabolic_rate INTEGER,
-                active_metabolic_rate INTEGER,
-                metabolic_age INTEGER,
-                visceral_fat_rating INTEGER,
-                physique_rating INTEGER,
                 measurement_source VARCHAR
             )
         """
@@ -527,6 +521,19 @@ class GarminDBWriter:
         try:
             conn = duckdb.connect(str(self.db_path))
 
+            # Schema cleanup: Remove device-unprovided metabolic fields
+            for column in [
+                "basal_metabolic_rate",
+                "active_metabolic_rate",
+                "metabolic_age",
+                "visceral_fat_rating",
+                "physique_rating",
+            ]:
+                try:
+                    conn.execute(f"ALTER TABLE body_composition DROP COLUMN {column}")
+                except Exception:
+                    pass  # Column already removed or never existed
+
             # Extract data from dateWeightList (first entry)
             date_weight_list = weight_data.get("dateWeightList", [])
             if not date_weight_list:
@@ -554,10 +561,8 @@ class GarminDBWriter:
                 """
                 INSERT OR REPLACE INTO body_composition
                 (measurement_id, date, weight_kg, body_fat_percentage, muscle_mass_kg,
-                 bone_mass_kg, bmi, hydration_percentage, basal_metabolic_rate,
-                 active_metabolic_rate, metabolic_age, visceral_fat_rating,
-                 physique_rating, measurement_source)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 bone_mass_kg, bmi, hydration_percentage, measurement_source)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 [
                     next_measurement_id,
@@ -568,11 +573,6 @@ class GarminDBWriter:
                     bone_mass_kg,
                     data.get("bmi"),
                     data.get("bodyWater"),
-                    None,  # basal_metabolic_rate not in raw data
-                    None,  # active_metabolic_rate not in raw data
-                    data.get("metabolicAge"),
-                    data.get("visceralFat"),
-                    data.get("physiqueRating"),
                     data.get("sourceType", "INDEX_SCALE"),
                 ],
             )

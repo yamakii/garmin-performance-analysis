@@ -234,12 +234,11 @@ class AggregateReader(BaseDBReader):
             activity_id: Activity ID
 
         Returns:
-            VO2 max data with precise value, fitness age, and category.
+            VO2 max data with precise value and category.
             Format: {
                 "precise_value": float,
                 "value": float,
                 "date": str,
-                "fitness_age": int,
                 "category": int
             }
             None if activity not found.
@@ -252,7 +251,6 @@ class AggregateReader(BaseDBReader):
                         precise_value,
                         value,
                         date,
-                        fitness_age,
                         category
                     FROM vo2_max
                     WHERE activity_id = ?
@@ -267,8 +265,7 @@ class AggregateReader(BaseDBReader):
                     "precise_value": result[0],
                     "value": result[1],
                     "date": str(result[2]) if result[2] else None,
-                    "fitness_age": result[3],
-                    "category": result[4],
+                    "category": result[3],
                 }
 
         except Exception as e:
