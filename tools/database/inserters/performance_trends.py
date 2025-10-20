@@ -167,6 +167,93 @@ def _extract_performance_trends_from_raw(raw_splits_file: str) -> dict | None:
         if run_hr and cooldown_hr and run_hr > 0:
             result["hr_drift_percentage"] = ((cooldown_hr - run_hr) / run_hr) * 100
 
+    # Calculate phase evaluations
+    # 1. Warmup evaluation
+    if warmup_stats:
+        warmup_hr = warmup_stats.get("avg_hr")
+        warmup_pace = warmup_stats.get("avg_pace")
+
+        if warmup_hr and warmup_pace:
+            # Good warmup: gradual start, HR in zone 1-2
+            if warmup_hr < 140:  # Zone 1-2
+                result["warmup_evaluation"] = "Good warmup"
+            elif warmup_hr < 150:
+                result["warmup_evaluation"] = "Minimal warmup"
+            else:
+                result["warmup_evaluation"] = "Minimal warmup"
+        else:
+            result["warmup_evaluation"] = "Minimal warmup"
+    else:
+        result["warmup_evaluation"] = "No warmup"
+
+    # 2. Run evaluation
+    if run_stats:
+        run_hr = run_stats.get("avg_hr")
+        run_pace = run_stats.get("avg_pace")
+
+        if run_hr and run_pace:
+            # Good run: steady pace and appropriate HR for effort
+            pace_consistency_val = result.get("pace_consistency", 0)
+            if pace_consistency_val is not None and pace_consistency_val < 0.05:
+                # Very consistent pace
+                if run_hr >= 145:  # Zone 3+
+                    result["run_evaluation"] = "Excellent"
+                else:
+                    result["run_evaluation"] = "Good"
+            elif pace_consistency_val is not None and pace_consistency_val < 0.10:
+                result["run_evaluation"] = "Good"
+            else:
+                result["run_evaluation"] = "Fair"
+        else:
+            result["run_evaluation"] = "Fair"
+    else:
+        result["run_evaluation"] = "Poor"
+
+    # 3. Recovery evaluation
+    if recovery_stats and run_stats:
+        recovery_hr = recovery_stats.get("avg_hr")
+        recovery_cadence = recovery_stats.get("avg_cadence")
+        run_hr = run_stats.get("avg_hr")
+        run_cadence = run_stats.get("avg_cadence")
+
+        if recovery_hr and run_hr:
+            hr_drop = run_hr - recovery_hr
+            cadence_drop = 0
+            if recovery_cadence and run_cadence:
+                cadence_drop = run_cadence - recovery_cadence
+
+            # Good recovery: HR drops significantly, cadence drops ≥10 spm
+            if hr_drop >= 10 and cadence_drop >= 10:
+                result["recovery_evaluation"] = "Excellent recovery"
+            elif hr_drop >= 5:
+                result["recovery_evaluation"] = "Good recovery"
+            else:
+                result["recovery_evaluation"] = "Insufficient recovery"
+        else:
+            result["recovery_evaluation"] = "Insufficient recovery"
+    elif not recovery_stats:
+        result["recovery_evaluation"] = "No recovery"
+    else:
+        result["recovery_evaluation"] = "Insufficient recovery"
+
+    # 4. Cooldown evaluation
+    if cooldown_stats:
+        cooldown_hr = cooldown_stats.get("avg_hr")
+        cooldown_pace = cooldown_stats.get("avg_pace")
+
+        if cooldown_hr and cooldown_pace:
+            # Good cooldown: gradual decrease, HR in zone 1-2
+            if cooldown_hr < 140:  # Zone 1-2
+                result["cooldown_evaluation"] = "Good cooldown"
+            elif cooldown_hr < 150:
+                result["cooldown_evaluation"] = "Minimal cooldown"
+            else:
+                result["cooldown_evaluation"] = "Minimal cooldown"
+        else:
+            result["cooldown_evaluation"] = "Minimal cooldown"
+    else:
+        result["cooldown_evaluation"] = "No cooldown"
+
     # Simplified cadence consistency and fatigue pattern
     # (would require more sophisticated analysis in production)
     result["cadence_consistency"] = "安定"
@@ -293,7 +380,7 @@ def insert_performance_trends(
             recovery_splits = ",".join(str(s) for s in recovery_phase.get("splits", []))
             cooldown_splits = ",".join(str(s) for s in cooldown_phase.get("splits", []))
 
-            # Insert with 4-phase data
+            # Insert with 4-phase data (including cadence, power, evaluation)
             conn.execute(
                 """
                 INSERT INTO performance_trends (
@@ -306,19 +393,31 @@ def insert_performance_trends(
                     warmup_avg_pace_seconds_per_km,
                     warmup_avg_pace_str,
                     warmup_avg_hr,
+                    warmup_avg_cadence,
+                    warmup_avg_power,
+                    warmup_evaluation,
                     run_splits,
                     run_avg_pace_seconds_per_km,
                     run_avg_pace_str,
                     run_avg_hr,
+                    run_avg_cadence,
+                    run_avg_power,
+                    run_evaluation,
                     recovery_splits,
                     recovery_avg_pace_seconds_per_km,
                     recovery_avg_pace_str,
                     recovery_avg_hr,
+                    recovery_avg_cadence,
+                    recovery_avg_power,
+                    recovery_evaluation,
                     cooldown_splits,
                     cooldown_avg_pace_seconds_per_km,
                     cooldown_avg_pace_str,
-                    cooldown_avg_hr
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    cooldown_avg_hr,
+                    cooldown_avg_cadence,
+                    cooldown_avg_power,
+                    cooldown_evaluation
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     activity_id,
@@ -330,18 +429,30 @@ def insert_performance_trends(
                     warmup_phase.get("avg_pace"),
                     format_pace(warmup_phase.get("avg_pace")),
                     warmup_phase.get("avg_hr"),
+                    warmup_phase.get("avg_cadence"),
+                    warmup_phase.get("avg_power"),
+                    perf_trends.get("warmup_evaluation"),
                     run_splits,
                     run_phase.get("avg_pace"),
                     format_pace(run_phase.get("avg_pace")),
                     run_phase.get("avg_hr"),
+                    run_phase.get("avg_cadence"),
+                    run_phase.get("avg_power"),
+                    perf_trends.get("run_evaluation"),
                     recovery_splits,
                     recovery_phase.get("avg_pace"),
                     format_pace(recovery_phase.get("avg_pace")),
                     recovery_phase.get("avg_hr"),
+                    recovery_phase.get("avg_cadence"),
+                    recovery_phase.get("avg_power"),
+                    perf_trends.get("recovery_evaluation"),
                     cooldown_splits,
                     cooldown_phase.get("avg_pace"),
                     format_pace(cooldown_phase.get("avg_pace")),
                     cooldown_phase.get("avg_hr"),
+                    cooldown_phase.get("avg_cadence"),
+                    cooldown_phase.get("avg_power"),
+                    perf_trends.get("cooldown_evaluation"),
                 ],
             )
             logger.info(
