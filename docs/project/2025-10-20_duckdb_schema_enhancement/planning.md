@@ -3,8 +3,8 @@
 ## プロジェクト情報
 - **プロジェクト名**: `duckdb_schema_enhancement`
 - **作成日**: `2025-10-20`
-- **ステータス**: 計画中
-- **GitHub Issue**: TBD (create after planning approval)
+- **ステータス**: 実装中
+- **GitHub Issue**: #35
 - **優先度**: High
 - **推定工数**: 28-31 hours
 
