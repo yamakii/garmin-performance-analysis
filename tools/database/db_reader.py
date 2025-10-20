@@ -117,6 +117,28 @@ class GarminDBReader:
         """
         return self.splits.get_splits_elevation(activity_id, statistics_only)
 
+    def get_splits_comprehensive(
+        self, activity_id: int, statistics_only: bool = False
+    ) -> dict[str, list[dict]] | dict[str, Any]:
+        """
+        Get comprehensive split data (12 fields) from splits table.
+
+        Proxy to SplitsReader.get_splits_comprehensive().
+
+        Args:
+            activity_id: Activity ID
+            statistics_only: If True, return only aggregated statistics (mean, median, std, min, max)
+                           instead of per-split data. Reduces output size by ~80%.
+                           Default: False (backward compatible)
+
+        Returns:
+            Full mode (statistics_only=False):
+                Dict with 'splits' key containing list of split data with all 12 fields
+            Statistics mode (statistics_only=True):
+                Dict with aggregated statistics for 12 metrics
+        """
+        return self.splits.get_splits_comprehensive(activity_id, statistics_only)
+
     def get_splits_all(
         self, activity_id: int, max_output_size: int = 10240
     ) -> dict[str, list[dict]]:

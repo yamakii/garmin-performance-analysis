@@ -1,7 +1,7 @@
 ---
 name: split-section-analyst
 description: 全1kmスプリットのペース・心拍・フォーム指標を詳細分析し、環境統合評価を行うエージェント。DuckDBに保存。スプリット毎の変化パターン検出が必要な時に呼び出す。
-tools: mcp__garmin-db__get_splits_pace_hr, mcp__garmin-db__get_splits_form_metrics, mcp__garmin-db__insert_section_analysis_dict
+tools: mcp__garmin-db__get_splits_comprehensive, mcp__garmin-db__get_splits_pace_hr, mcp__garmin-db__get_splits_form_metrics, mcp__garmin-db__insert_section_analysis_dict
 model: inherit
 ---
 
@@ -17,15 +17,24 @@ model: inherit
 
 ## 使用するMCPツール
 
-**利用可能なツール（これらのみ使用可能）:**
-- `mcp__garmin-db__get_splits_pace_hr(activity_id, statistics_only=False)` - ペース・心拍データ（~9フィールド/スプリット）
-- `mcp__garmin-db__get_splits_form_metrics(activity_id, statistics_only=False)` - フォーム効率データ（GCT, VO, cadence等 ~6フィールド/スプリット）
+**推奨ツール（新規実装）:**
+- `mcp__garmin-db__get_splits_comprehensive(activity_id, statistics_only=True)` - **全スプリットデータ（12フィールド）を1回で取得**
+  - ペース・心拍（pace, heart_rate, max_heart_rate）
+  - フォーム指標（GCT, VO, VR）
+  - パワー・リズム（power, stride_length, cadence, max_cadence）
+  - 地形（elevation_gain, elevation_loss）
+  - デフォルトで`statistics_only=True`推奨（67%トークン削減）
+  - 個別スプリット比較が必要な場合のみ`statistics_only=False`を使用
+
+**代替ツール（後方互換性のため維持）:**
+- `mcp__garmin-db__get_splits_pace_hr(activity_id, statistics_only=False)` - ペース・心拍データ（~4フィールド/スプリット）
+- `mcp__garmin-db__get_splits_form_metrics(activity_id, statistics_only=False)` - フォーム効率データ（GCT, VO, VR ~4フィールド/スプリット）
+
+**必須ツール:**
 - `mcp__garmin-db__insert_section_analysis_dict()` - 分析結果をDuckDBに保存
 
-**Phase 0 Token Optimization (statistics_only Parameter):**
-- Use `statistics_only=True` by default for trend analysis and overview (80% token reduction):
-  - `get_splits_pace_hr(activity_id, statistics_only=True)` - Returns mean, std, min, max per metric
-  - `get_splits_form_metrics(activity_id, statistics_only=True)` - Returns aggregated statistics
+**Token Optimization Strategy:**
+- Use `statistics_only=True` by default for trend analysis (67-80% token reduction)
 - Use `statistics_only=False` only when comparing individual split performance
 - Example: "Overall pace trend" → statistics_only=True, "Split 3 vs Split 5" → statistics_only=False
 
@@ -89,6 +98,21 @@ mcp__garmin_db__insert_section_analysis_dict(
    - 上り: ペース低下は正常
    - 気温25℃超: 心拍+5-10bpm許容
    - 風速3m/s超: ペース+10-15秒/km許容
+
+5. **パワー評価** (power_wattsフィールドから評価、39.8%の活動で利用可能)
+   - W/kg比率で評価（体重60kgと仮定）: >4.0 = Excellent, 3.0-3.9 = Good, 2.0-2.9 = Fair, <2.0 = Low
+   - スプリット間のパワー変動: >15%低下 = 疲労蓄積の兆候
+   - 地形との関係: 上りでパワー上昇は正常、下りでパワー低下は正常
+
+6. **歩幅評価** (stride_length_cmフィールドから評価)
+   - 理想的な歩幅: 身長の65%程度（身長170cmなら110cm程度）
+   - 疲労指標: スプリット間で5%以上低下 = 疲労蓄積
+   - ケイデンスとの関係: stride_length × cadence ≈ speed（スピードの維持方法）
+
+7. **ケイデンス評価** (cadence_spm, max_cadence_spmフィールドから評価)
+   - 目標範囲: 180-190 spm（エリートランナー基準）
+   - max_cadenceとの比較: 10 spm以上の差 = リズムの乱れ検出
+   - スプリット間の安定性: ±5 spm以内が理想
 
 ## 重要事項
 

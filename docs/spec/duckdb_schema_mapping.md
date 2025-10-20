@@ -182,6 +182,19 @@ Combines wind + temperature impacts:
 
 **Population**: 100% for core fields, 99.75% for stride_length, 100% for max metrics, 39.8% for power metrics
 
+### MCP Tools for Splits Data
+
+**Comprehensive Tool (Recommended):**
+- `mcp__garmin-db__get_splits_comprehensive(activity_id, statistics_only=True/False)`
+  - **Fields**: 12 fields (pace, HR, GCT, VO, VR, power, stride_length, cadence, elevation_gain/loss, max_HR, max_cadence)
+  - **Token Optimization**: 67% reduction with `statistics_only=True`
+  - **Use Case**: Complete split analysis in one call
+
+**Lightweight Tools (Backward Compatible):**
+- `mcp__garmin-db__get_splits_pace_hr()` - 4 fields (pace, HR, max_HR, distance)
+- `mcp__garmin-db__get_splits_form_metrics()` - 4 fields (GCT, VO, VR, split_index)
+- `mcp__garmin-db__get_splits_elevation()` - 5 fields (elevation_gain/loss, terrain_type, split_index, distance)
+
 ---
 
 ## 3. time_series_metrics
