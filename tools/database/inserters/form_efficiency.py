@@ -67,6 +67,181 @@ def _calculate_rating(metric: str, value: float) -> str:
         return "★★★☆☆"  # Default
 
 
+def _calculate_gct_evaluation(avg_gct: float | None) -> str | None:
+    """
+    Evaluate ground contact time quality.
+
+    Thresholds:
+    - Optimal: 200-250ms
+    - Good: 180-200ms or 250-280ms
+    - Too short: <180ms (may indicate overstriding)
+    - Too long: >280ms
+
+    Args:
+        avg_gct: Average ground contact time in ms
+
+    Returns:
+        GCT evaluation string or None
+
+    Examples:
+        >>> _calculate_gct_evaluation(220)
+        'Excellent (220ms, optimal range)'
+    """
+    if avg_gct is None:
+        return None
+
+    gct_int = int(avg_gct)
+
+    if 200 <= avg_gct <= 250:
+        return f"Excellent ({gct_int}ms, optimal range)"
+    elif 180 <= avg_gct < 200 or 250 < avg_gct <= 280:
+        return f"Good ({gct_int}ms)"
+    elif avg_gct < 180:
+        return f"Too short ({gct_int}ms, may indicate overstriding)"
+    else:  # >280
+        return f"Too long ({gct_int}ms, target <250ms)"
+
+
+def _calculate_vo_evaluation(avg_vo: float | None) -> str | None:
+    """
+    Evaluate vertical oscillation quality.
+
+    Thresholds:
+    - Excellent: <8cm (minimal bounce)
+    - Good: 8-10cm
+    - Acceptable: 10-12cm
+    - Poor: >12cm (excessive vertical movement)
+
+    Args:
+        avg_vo: Average vertical oscillation in cm
+
+    Returns:
+        VO evaluation string or None
+
+    Examples:
+        >>> _calculate_vo_evaluation(8.2)
+        'Good (8.2cm, target <8cm for optimal efficiency)'
+    """
+    if avg_vo is None:
+        return None
+
+    if avg_vo < 8:
+        return f"Excellent ({avg_vo:.1f}cm, minimal bounce)"
+    elif 8 <= avg_vo < 10:
+        return f"Good ({avg_vo:.1f}cm, target <8cm for optimal efficiency)"
+    elif 10 <= avg_vo < 12:
+        return f"Acceptable ({avg_vo:.1f}cm, reduce bounce)"
+    else:  # 12+
+        return f"Poor ({avg_vo:.1f}cm, excessive vertical movement)"
+
+
+def _calculate_vr_evaluation(avg_vr: float | None) -> str | None:
+    """
+    Evaluate vertical ratio quality.
+
+    Thresholds:
+    - Excellent: <6% (optimal efficiency)
+    - Good: 6-8%
+    - Acceptable: 8-10% (room for improvement)
+    - Poor: >10% (high energy waste)
+
+    Args:
+        avg_vr: Average vertical ratio in %
+
+    Returns:
+        VR evaluation string or None
+
+    Examples:
+        >>> _calculate_vr_evaluation(6.8)
+        'Good (6.8%)'
+    """
+    if avg_vr is None:
+        return None
+
+    if avg_vr < 6:
+        return f"Excellent ({avg_vr:.1f}%, optimal efficiency)"
+    elif 6 <= avg_vr < 8:
+        return f"Good ({avg_vr:.1f}%)"
+    elif 8 <= avg_vr < 10:
+        return f"Acceptable ({avg_vr:.1f}%, room for improvement)"
+    else:  # 10+
+        return f"Poor ({avg_vr:.1f}%, high energy waste)"
+
+
+def _calculate_vo_trend(
+    activity_id: int, avg_vo: float | None, db_conn: Any
+) -> str | None:
+    """
+    Analyze vertical oscillation trend over splits.
+
+    Analyzes:
+    - Coefficient of variation (CV) for consistency
+    - First half vs second half trend
+    - Fatigue indicators
+
+    Args:
+        activity_id: Activity ID
+        avg_vo: Average VO (for validation)
+        db_conn: DuckDB connection
+
+    Returns:
+        VO trend string or None
+
+    Examples:
+        >>> # Mock example
+        >>> _calculate_vo_trend(12345, 8.5, mock_conn)
+        'Stable (8.5cm avg, CV=6%, consistent)'
+    """
+    if avg_vo is None:
+        return None
+
+    # Get all split VOs from splits table
+    vos = db_conn.execute(
+        """
+        SELECT vertical_oscillation
+        FROM splits
+        WHERE activity_id = ? AND vertical_oscillation IS NOT NULL
+        ORDER BY split_index
+        """,
+        [activity_id],
+    ).fetchall()
+
+    if len(vos) < 3:
+        return f"Insufficient data ({len(vos)} splits)"
+
+    # Extract VO values
+    vo_values = [v[0] for v in vos]
+
+    # Calculate statistics
+    avg = sum(vo_values) / len(vo_values)
+    std = (sum((v - avg) ** 2 for v in vo_values) / len(vo_values)) ** 0.5
+    cv = (std / avg) * 100  # Coefficient of variation
+
+    # Check trend (first half vs second half)
+    mid = len(vo_values) // 2
+    first_half_avg = sum(vo_values[:mid]) / mid
+    second_half_avg = sum(vo_values[mid:]) / (len(vo_values) - mid)
+    change_pct = ((second_half_avg - first_half_avg) / first_half_avg) * 100
+
+    # Consistency rating
+    if cv < 5:
+        consistency = "Very stable"
+    elif cv < 10:
+        consistency = "Stable"
+    else:
+        consistency = "Variable"
+
+    # Trend description
+    if abs(change_pct) < 3:
+        trend = "consistent"
+    elif change_pct > 0:
+        trend = f"increasing (+{change_pct:.1f}%, fatigue indicator)"
+    else:
+        trend = f"decreasing ({change_pct:.1f}%)"
+
+    return f"{consistency} ({avg:.1f}cm avg, CV={cv:.0f}%, {trend})"
+
+
 def _extract_form_efficiency_from_raw(
     raw_splits_file: str | None = None,
     raw_activity_details_file: str | None = None,
