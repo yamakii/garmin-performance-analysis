@@ -304,6 +304,28 @@ class GarminDBWriter:
         """
         )
 
+        # Create sequence for section_analyses if it doesn't exist
+        try:
+            conn.execute("SELECT nextval('seq_section_analyses_id')")
+        except Exception:
+            # Sequence doesn't exist, create it
+            # Get max existing analysis_id to start sequence from there
+            max_id_result = conn.execute(
+                "SELECT COALESCE(MAX(analysis_id), 0) FROM section_analyses"
+            ).fetchone()
+            start_value = max_id_result[0] + 1 if max_id_result else 1
+            conn.execute(
+                f"CREATE SEQUENCE IF NOT EXISTS seq_section_analyses_id START {start_value}"
+            )
+
+        # Create UNIQUE index on (activity_id, section_type) if it doesn't exist
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_activity_section
+            ON section_analyses(activity_id, section_type)
+        """
+        )
+
         conn.close()
 
     def insert_activity(
@@ -429,20 +451,11 @@ class GarminDBWriter:
             conn.begin()
 
             try:
-                # UPSERT Step 1: Delete existing record for this (activity_id, section_type)
-                conn.execute(
-                    """
-                    DELETE FROM section_analyses
-                    WHERE activity_id = ? AND section_type = ?
-                """,
-                    [activity_id, section_type],
-                )
-
-                # UPSERT Step 2: Get next analysis_id
-                max_id_result = conn.execute(
-                    "SELECT COALESCE(MAX(analysis_id), 0) FROM section_analyses"
-                ).fetchone()
-                next_analysis_id = max_id_result[0] + 1 if max_id_result else 1
+                # UPSERT Step 1: Get next analysis_id from sequence (thread-safe)
+                # Note: ON CONFLICT時は使用されず、既存のanalysis_idが保持される
+                next_analysis_id = conn.execute(
+                    "SELECT nextval('seq_section_analyses_id')"
+                ).fetchone()[0]
 
                 # Auto-generate metadata if not present
                 if "metadata" not in analysis_data:
@@ -471,12 +484,17 @@ class GarminDBWriter:
                     agent_name = metadata.get("analyst", agent_name)
                     agent_version = metadata.get("version", agent_version)
 
-                # UPSERT Step 3: Insert new record
+                # UPSERT Step 2: Insert or Update using ON CONFLICT
                 conn.execute(
                     """
                     INSERT INTO section_analyses
                     (analysis_id, activity_id, activity_date, section_type, analysis_data, agent_name, agent_version)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (activity_id, section_type)
+                    DO UPDATE SET
+                        analysis_data = EXCLUDED.analysis_data,
+                        agent_name = EXCLUDED.agent_name,
+                        agent_version = EXCLUDED.agent_version
                 """,
                     [
                         next_analysis_id,
