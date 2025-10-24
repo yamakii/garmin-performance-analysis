@@ -1,13 +1,20 @@
 # DuckDB Schema Mapping Specification
 
-**Version**: 2.0
-**Last Updated**: 2025-10-20
+**Version**: 2.1
+**Last Updated**: 2025-10-24
 **Database**: `garmin_performance.duckdb`
 **Total Tables**: 11
 
 This document provides comprehensive schema documentation for all DuckDB tables in the Garmin performance analysis system.
 
 ## Change History
+
+### Version 2.1 (2025-10-24)
+- **Cadence Column Cleanup**: Simplified time_series_metrics cadence columns
+  - Removed 4 redundant cadence columns: `cadence` (old single-foot), `cadence_single_foot`, `cadence_total`, `fractional_cadence`
+  - Kept single `cadence` column containing `directDoubleCadence` (both feet, directly from Garmin API)
+  - Migration: 260,304 rows updated, backward-incompatible change
+  - Reason: Eliminated confusion between single-foot (90 spm) and both-feet (180 spm) cadence values
 
 ### Version 2.0 (2025-10-20)
 - **Schema Cleanup**: Removed 6 device-unprovided NULL fields
@@ -201,8 +208,8 @@ Combines wind + temperature impacts:
 
 **Purpose**: Second-by-second detailed metrics (26 fields)
 
-**Primary Key**: `(activity_id, timestamp_s)`
-**Row Count**: ~250,186 rows (~1,083 rows/activity)
+**Primary Key**: `(activity_id, seq_no)`
+**Row Count**: ~260,304 rows (~1,126 rows/activity)
 **Source**: `data/raw/activity/{activity_id}/metrics.json`
 
 ### Schema
@@ -220,7 +227,7 @@ Combines wind + temperature impacts:
 | heart_rate | DOUBLE | YES | Instantaneous HR (bpm) |
 | speed | DOUBLE | YES | Instantaneous speed (m/s) |
 | grade_adjusted_speed | DOUBLE | YES | Grade-adjusted speed (m/s) |
-| cadence | DOUBLE | YES | DEPRECATED (use cadence_single_foot) |
+| cadence | DOUBLE | YES | Both feet cadence from directDoubleCadence (~180 spm, raw from Garmin API) |
 | power | DOUBLE | YES | Instantaneous power (W) |
 | ground_contact_time | DOUBLE | YES | GCT (ms) |
 | vertical_oscillation | DOUBLE | YES | VO (cm) |
@@ -235,12 +242,6 @@ Combines wind + temperature impacts:
 | potential_stamina | DOUBLE | YES | Potential stamina |
 | body_battery | DOUBLE | YES | Body battery level |
 | performance_condition | DOUBLE | YES | Performance condition |
-| fractional_cadence | DOUBLE | YES | Fractional cadence component |
-| double_cadence | DOUBLE | YES | Double cadence value |
-| **cadence_single_foot** | DOUBLE | YES | **Single-foot cadence (90 spm, raw API)** |
-| **cadence_total** | DOUBLE | YES | **Total cadence both feet (180 spm, calculated × 2)** |
-
-**Note**: `cadence` column deprecated in favor of explicit `cadence_single_foot` (raw) and `cadence_total` (calculated). See Issue #31.
 
 **Population**: 100% for timestamp/distance, 95-99% for HR/speed/cadence, 30-40% for power metrics
 

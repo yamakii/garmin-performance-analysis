@@ -90,8 +90,10 @@ def insert_time_series_metrics(
             ("directHeartRate", "heart_rate"),
             ("directSpeed", "speed"),
             ("directGradeAdjustedSpeed", "grade_adjusted_speed"),
-            ("directRunCadence", "cadence"),  # DEPRECATED: Backward compatibility
-            ("directRunCadence", "cadence_single_foot"),  # Raw single-foot cadence
+            (
+                "directDoubleCadence",
+                "cadence",
+            ),  # Both feet cadence (corrected from raw data)
             ("directPower", "power"),
             ("directGroundContactTime", "ground_contact_time"),
             ("directVerticalOscillation", "vertical_oscillation"),
@@ -106,8 +108,6 @@ def insert_time_series_metrics(
             ("directPotentialStamina", "potential_stamina"),
             ("directBodyBattery", "body_battery"),
             ("directPerformanceCondition", "performance_condition"),
-            ("directFractionalCadence", "fractional_cadence"),
-            ("directDoubleCadence", "double_cadence"),
         ]
 
         # Set default DB path
@@ -137,7 +137,7 @@ def insert_time_series_metrics(
                 heart_rate DOUBLE,
                 speed DOUBLE,
                 grade_adjusted_speed DOUBLE,
-                cadence DOUBLE,
+                cadence DOUBLE,  -- Both feet cadence from directDoubleCadence
                 power DOUBLE,
                 ground_contact_time DOUBLE,
                 vertical_oscillation DOUBLE,
@@ -152,10 +152,6 @@ def insert_time_series_metrics(
                 potential_stamina DOUBLE,
                 body_battery DOUBLE,
                 performance_condition DOUBLE,
-                fractional_cadence DOUBLE,
-                double_cadence DOUBLE,
-                cadence_single_foot DOUBLE,  -- Explicit single-foot cadence (90 spm)
-                cadence_total DOUBLE,        -- Total cadence both feet (180 spm)
                 PRIMARY KEY (activity_id, seq_no)
             )
             """
@@ -253,33 +249,14 @@ def insert_time_series_metrics(
 
                 row_values.append(converted_value)
 
-            # Calculate cadence_total from cadence_single_foot
-            # cadence_single_foot is at index 9 in column_spec (after cadence at index 8)
-            # row_values structure: [activity_id, seq_no, timestamp_s, ...26 metrics from column_spec]
-            # cadence_single_foot is at position: 3 (fixed) + 9 (column_spec index) = 12
-            cadence_single_foot_idx = (
-                3 + 9
-            )  # activity_id, seq_no, timestamp_s + column_spec[9]
-            cadence_single_foot = (
-                row_values[cadence_single_foot_idx]
-                if len(row_values) > cadence_single_foot_idx
-                else None
-            )
-            cadence_total = (
-                cadence_single_foot * 2 if cadence_single_foot is not None else None
-            )
-            row_values.append(cadence_total)
-
             value_tuples.append(tuple(row_values))
 
         # Batch insert
         if value_tuples:
             # Build INSERT statement
-            columns = (
-                ["activity_id", "seq_no", "timestamp_s"]
-                + [col_name for _, col_name in column_spec]
-                + ["cadence_total"]
-            )  # Add calculated column
+            columns = ["activity_id", "seq_no", "timestamp_s"] + [
+                col_name for _, col_name in column_spec
+            ]
             placeholders = ", ".join(["?" for _ in columns])
             column_names = ", ".join(columns)
             insert_sql = f"INSERT INTO time_series_metrics ({column_names}) VALUES ({placeholders})"
