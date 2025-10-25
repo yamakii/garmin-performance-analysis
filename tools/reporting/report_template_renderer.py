@@ -79,6 +79,8 @@ class ReportTemplateRenderer:
         finish_metrics: dict[str, Any] | None = None,
         splits: list[dict[str, Any]] | None = None,
         mermaid_data: dict[str, Any] | None = None,
+        heart_rate_zone_pie_data: str | None = None,
+        highlights_list: str | None = None,
         similar_workouts: dict[str, Any] | None = None,
         efficiency: dict[str, Any] | str | None = None,
         environment_analysis: dict[str, Any] | str | None = None,
@@ -166,6 +168,8 @@ class ReportTemplateRenderer:
                 finish_metrics=finish_metrics,  # Keep for backward compatibility
                 splits=splits or [],
                 mermaid_data=mermaid_data,
+                heart_rate_zone_pie_data=heart_rate_zone_pie_data,
+                highlights_list=highlights_list,
                 similar_workouts=similar_workouts,
                 efficiency=efficiency or {},
                 environment_analysis=environment_analysis or {},
