@@ -261,6 +261,10 @@ class ReportGeneratorWorker:
                     )
                 )
 
+            # Load splits and generate Mermaid graph data
+            data["splits"] = self._load_splits(activity_id)
+            data["mermaid_data"] = self._generate_mermaid_data(data.get("splits"))
+
             return data
 
         except Exception as e:
@@ -311,6 +315,76 @@ class ReportGeneratorWorker:
             "hr_min": round(hr_min, 1),
             "hr_max": round(hr_max, 1),
         }
+
+    def _load_splits(self, activity_id: int) -> list[dict[str, Any]]:
+        """
+        Load splits from DuckDB.
+
+        Args:
+            activity_id: Activity ID
+
+        Returns:
+            List of split dictionaries with index, pace, HR, etc.
+        """
+        import duckdb
+
+        try:
+            conn = duckdb.connect(str(self.db_reader.db_path), read_only=True)
+
+            result = conn.execute(
+                """
+                SELECT
+                    split_index AS index,
+                    pace_seconds_per_km,
+                    heart_rate,
+                    cadence,
+                    power,
+                    stride_length,
+                    ground_contact_time,
+                    vertical_oscillation,
+                    vertical_ratio,
+                    elevation_gain,
+                    elevation_loss,
+                    intensity_type
+                FROM splits
+                WHERE activity_id = ?
+                ORDER BY split_index
+                """,
+                [activity_id],
+            ).fetchall()
+
+            conn.close()
+
+            if not result:
+                logger.warning(f"No splits found for activity {activity_id}")
+                return []
+
+            # Convert to dict format expected by template
+            splits = []
+            for row in result:
+                splits.append(
+                    {
+                        "index": row[0],
+                        "pace_seconds_per_km": row[1],
+                        "heart_rate": row[2],
+                        "cadence": row[3],
+                        "power": row[4],
+                        "stride_length": row[5],
+                        "ground_contact_time": row[6],
+                        "vertical_oscillation": row[7],
+                        "vertical_ratio": row[8],
+                        "elevation_gain": row[9],
+                        "elevation_loss": row[10],
+                        "intensity_type": row[11],
+                    }
+                )
+
+            logger.info(f"Loaded {len(splits)} splits for activity {activity_id}")
+            return splits
+
+        except Exception as e:
+            logger.error(f"Error loading splits: {e}", exc_info=True)
+            return []
 
     def _format_pace(self, pace_seconds_per_km: float) -> str:
         """Format pace as MM:SS/km.
@@ -776,6 +850,8 @@ class ReportGeneratorWorker:
             "summary": section_analyses.get("summary"),
             # Phase 3: Similar workouts comparison (from performance_data)
             "similar_workouts": performance_data.get("similar_workouts"),
+            # Mermaid graph data
+            "mermaid_data": performance_data.get("mermaid_data"),
         }
 
         # Render report using Jinja2 template with all data
