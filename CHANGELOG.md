@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.3] - 2025-10-25
+
+### Enhanced - Training-Type-Aware Pace Comparison
+
+#### Pace Comparison Logic Improvement
+- **Added intelligent pace selection**: Structured workouts (tempo, threshold, interval) now use main set pace for similarity comparison
+- **Backward compatible**: Recovery/base runs continue using overall average pace
+- **User-visible indication**: Template shows "**メインセットペース比較**" label for structured workouts
+
+#### Implementation Details
+
+**New Method**: `_get_comparison_pace()` (35 lines)
+```python
+# Logic:
+# - Structured types (tempo, lactate_threshold, vo2max, anaerobic_capacity, speed):
+#   → Use run_metrics.avg_pace_seconds_per_km (main set pace)
+# - Recovery/base/unknown types:
+#   → Use basic_metrics.avg_pace_seconds_per_km (overall pace)
+```
+
+**Files Modified:**
+- `tools/reporting/report_generator_worker.py`:
+  - Added `_get_comparison_pace()` helper method (lines 328-361)
+  - Updated `load_performance_data()` to use training-type-aware pace (lines 247-254)
+  - Added `pace_source` to `_load_similar_workouts()` return (line 424)
+- `tools/reporting/templates/detailed_report.j2`:
+  - Added conditional label for main set pace comparison (lines 48-53)
+- `tests/reporting/test_report_generator_worker.py`:
+  - Added `TestPaceComparisonLogic` class with 11 tests (5 unique + 8 parameterized)
+
+#### Impact
+
+**Example - Threshold Run (Activity 20783281578):**
+
+| Metric | Before (v4.0.2) | After (v4.0.3) |
+|--------|----------------|----------------|
+| Comparison Pace | 6:06/km (overall) | 5:04/km (main set) ✨ |
+| Similar Workouts | Mixed intensities | True threshold runs |
+| Label | "ペース類似" | "**メインセットペース比較**" |
+
+**Accuracy Improvement:**
+- **Structured workouts**: Now compare apples-to-apples (main set vs main set)
+- **Recovery runs**: Unchanged behavior (overall vs overall)
+- **Unknown types**: Safe fallback to overall pace
+
+#### Technical Details
+- **Changes**: +142 lines added, -3 lines removed (net: +139 lines)
+- **Commits**: 1 feature commit (40322d6)
+- **Testing**: 37 total tests (31 unit + 6 integration), all passing
+- **Code Quality**: Black, Ruff, Mypy all passing
+
+#### Test Coverage
+
+| Test Type | Count | Details |
+|-----------|-------|---------|
+| **New Unit Tests** | 11 | All training types + edge cases |
+| **Existing Unit Tests** | 26 | Unchanged, all passing |
+| **Integration Tests** | 6 | Full workflow + encoding |
+| **Real Data Verification** | ✅ | Activity 20783281578 (threshold run) |
+
+#### Training Type Mapping
+
+| Training Type | Pace Source | Notes |
+|---------------|-------------|-------|
+| `tempo` | main_set | Structured workout |
+| `lactate_threshold` | main_set | Structured workout |
+| `vo2max` | main_set | Structured workout |
+| `anaerobic_capacity` | main_set | Structured workout |
+| `speed` | main_set | Structured workout |
+| `recovery` | overall | Low-intensity |
+| `aerobic_base` | overall | Low-intensity |
+| `unknown` | overall | Safe fallback |
+
+### References
+- Planning Document: `/docs/project/2025-10-25_pace_comparison_improvement/planning.md`
+- Commit: 40322d6
+- Resolves: v4.0.2 Known Limitation #1
+
+---
+
 ## [4.0.2] - 2025-10-25
 
 ### Fixed - Similar Workouts Data Extraction
