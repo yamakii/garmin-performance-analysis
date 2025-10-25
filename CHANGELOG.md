@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.1] - 2025-10-25
+
+### Fixed - MCP Tool Import Error
+
+#### Similar Workouts Comparison Fix
+- **Fixed import error**: `No module named 'servers.garmin_db_mcp'` → `tools.rag.queries.comparisons.WorkoutComparator`
+- **Fixed SQL schema issues** in `WorkoutComparator`:
+  - Corrected column name: `date` → `activity_date` (3 locations)
+  - Removed non-existent columns: `aerobic_te`, `anaerobic_te`, `avg_cadence`, `avg_power`
+  - Updated row parsing to match actual schema (6 columns instead of 10)
+- **Files Modified**:
+  - `tools/reporting/report_generator_worker.py`: Import path and method call
+  - `tools/rag/queries/comparisons.py`: SQL schema corrections
+- **Impact**: Similar workouts table now populates with real data (when ≥3 matches found)
+- **Testing**: All 26 tests passing, integration test verified with real data
+
+#### Technical Details
+- **Changes**: +12 lines added, -24 lines removed (net reduction: 12 lines)
+- **Commits**: 1 fix commit (7784269)
+- **Resolves**: Known Limitation #1 from v4.0.0
+
+### References
+- Planning Document: `/docs/project/_archived/2025-10-25_mcp_tool_refactoring/planning.md`
+- Completion Report: `/docs/project/_archived/2025-10-25_mcp_tool_refactoring/completion_report.md`
+- Related Issue: BALANCED Report V2 Known Limitation #1
+
+---
+
 ## [4.0.0] - 2025-10-25
 
 ### Added - BALANCED Report V2 Complete Rewrite
