@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.2] - 2025-10-25
+
+### Fixed - Similar Workouts Data Extraction
+
+#### Data Structure Mismatch Fix
+- **Fixed key name error**: `result.get("workouts")` → `result.get("similar_activities")`
+- **Fixed data structure usage**: Use pre-calculated `pace_diff`/`hr_diff` from `WorkoutComparator`
+- **Added template parameter**: `similar_workouts` to `ReportTemplateRenderer.render_report()`
+- **Added context data**: `similar_workouts` to `generate_report()` template context
+
+#### Files Modified
+- `tools/reporting/report_generator_worker.py`:
+  - Fixed data extraction in `_load_similar_workouts()` (lines 357, 367-373)
+  - Added `similar_workouts` to context (line 778)
+- `tools/reporting/report_template_renderer.py`:
+  - Added `similar_workouts` parameter to `render_report()` (line 82)
+  - Added `similar_workouts` to template.render() (line 169)
+
+#### Impact
+- Similar workouts section now displays comparison table correctly
+- Shows pace and HR differences vs. average of 3 similar workouts
+- Graceful fallback when <3 workouts found
+
+#### Technical Details
+- **Changes**: +25 lines added, -11 lines removed (net: +14 lines)
+- **Commits**: 1 fix commit (7c0a040)
+- **Testing**: All 26 tests passing
+- **Verified**: Real report generation (Activity 20783281578)
+
+### Known Limitations
+
+1. **Pace Comparison Accuracy for Threshold/Interval Runs**
+   - Current: Uses overall average pace (warmup + main + cooldown)
+   - Issue: Inaccurate for structured workouts (threshold, intervals)
+   - Recommendation: Use main set pace (`run_metrics.avg_pace`) for threshold/interval, overall average for recovery/base
+   - Priority: Medium (affects comparison accuracy for high-intensity workouts)
+   - Estimated: 2-3 hours to implement filtering logic in `WorkoutComparator`
+
+### References
+- Commit: 7c0a040
+- Related: v4.0.1 MCP Tool Import Fix
+
+---
+
 ## [4.0.1] - 2025-10-25
 
 ### Fixed - MCP Tool Import Error

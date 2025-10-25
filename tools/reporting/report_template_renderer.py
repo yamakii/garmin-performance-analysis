@@ -79,6 +79,7 @@ class ReportTemplateRenderer:
         finish_metrics: dict[str, Any] | None = None,
         splits: list[dict[str, Any]] | None = None,
         mermaid_data: dict[str, Any] | None = None,
+        similar_workouts: dict[str, Any] | None = None,
         efficiency: dict[str, Any] | str | None = None,
         environment_analysis: dict[str, Any] | str | None = None,
         phase_evaluation: dict[str, Any] | None = None,
@@ -165,6 +166,7 @@ class ReportTemplateRenderer:
                 finish_metrics=finish_metrics,  # Keep for backward compatibility
                 splits=splits or [],
                 mermaid_data=mermaid_data,
+                similar_workouts=similar_workouts,
                 efficiency=efficiency or {},
                 environment_analysis=environment_analysis or {},
                 phase_evaluation=phase_evaluation or {},
