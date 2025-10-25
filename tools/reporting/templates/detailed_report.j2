@@ -50,9 +50,9 @@
 
 | 指標 | 今回 | 類似{{ similar_workouts.count }}回平均 | 変化 | トレンド |
 |------|------|------------|------|----------|
-{% for comp in similar_workouts.comparisons %}
+{%- for comp in similar_workouts.comparisons %}
 | {{ comp.metric }} | {{ comp.current }} | {{ comp.average }} | {{ comp.change }} | {{ comp.trend }} |
-{% endfor %}
+{%- endfor %}
 
 **💡 インサイト**: {{ similar_workouts.insight }}
 {% else %}
@@ -76,6 +76,8 @@
 
 {{ activity_type.description }}
 {% else %}N/A{% endif %}
+
+### 総合所見
 
 {% set rating = summary.summary|extract_star_rating %}
 ### 総合所見{% if rating.score > 0 %} ({{ rating.stars }} {{ rating.score }}/5.0){% endif %}
@@ -139,9 +141,9 @@ xychart-beta
 {% if splits and splits|length > 0 %}
 | # | {% if is_interval %}タイプ | {% endif %}ペース | 心拍 | ケイデンス | パワー | ストライド | GCT | VO | VR | 標高 |
 |---|{% if is_interval %}-------|{% endif %}--------|------|------------|--------|------------|-----|----|----|------|
-{% for split in splits %}
+{%- for split in splits %}
 | {{ split.index }} | {% if is_interval %}{{ split.intensity_type|default("N/A") }} | {% endif %}{{ split.pace_formatted }}/km | {{ split.heart_rate|int }} bpm | {{ split.cadence|int if split.cadence else "-" }} spm | {{ split.power|int if split.power else "-" }} W | {{ "%.2f"|format(split.stride_length) if split.stride_length else "-" }} m | {{ split.ground_contact_time|int if split.ground_contact_time else "-" }} ms | {{ "%.1f"|format(split.vertical_oscillation) if split.vertical_oscillation else "-" }} cm | {{ "%.1f"|format(split.vertical_ratio) if split.vertical_ratio else "-" }}% | +{{ split.elevation_gain|int if split.elevation_gain else 0 }}/-{{ split.elevation_loss|int if split.elevation_loss else 0 }}m |
-{% endfor %}
+{%- endfor %}
 
 **📈 {% if is_interval %}Workセグメント {% endif %}ハイライト:**
 {{ highlights_list|default("N/A") }}
@@ -151,7 +153,8 @@ xychart-beta
 
 {% if split_analysis %}
 {% if split_analysis is mapping %}
-{% for key, value in split_analysis.items() | sort_splits %}
+{%- set analyses_dict = split_analysis.get("analyses", split_analysis) %}
+{% for key, value in analyses_dict.items() | sort_splits %}
 ### {{ key }}
 {{ value }}
 

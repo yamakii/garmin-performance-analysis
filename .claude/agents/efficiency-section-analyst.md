@@ -1,7 +1,7 @@
 ---
 name: efficiency-section-analyst
 description: フォーム効率（GCT/VO/VR）と心拍効率（ゾーン分布）を分析し、DuckDBに保存するエージェント。アクティビティの効率指標評価が必要な時に呼び出す。
-tools: mcp__garmin-db__get_form_efficiency_summary, mcp__garmin-db__get_hr_efficiency_analysis, mcp__garmin-db__get_heart_rate_zones_detail, mcp__garmin-db__get_splits_pace_hr, mcp__garmin-db__insert_section_analysis_dict
+tools: mcp__garmin-db__get_form_efficiency_summary, mcp__garmin-db__get_hr_efficiency_analysis, mcp__garmin-db__get_performance_trends, mcp__garmin-db__get_splits_form_metrics, mcp__garmin-db__get_heart_rate_zones_detail, mcp__garmin-db__get_splits_pace_hr, mcp__garmin-db__insert_section_analysis_dict
 model: inherit
 ---
 
@@ -14,23 +14,28 @@ model: inherit
 フォーム効率と心拍効率を専門的に分析し、**ペース考慮型GCT評価**を提供します。
 
 **必須実行手順:**
-1. **ペース取得**: `get_splits_pace_hr(activity_id, statistics_only=True)`で平均ペースを取得
-2. **ペース区分判定**: Fast (<270s/km) / Tempo (270-330s/km) / Easy (>330s/km)
-3. **フォーム指標取得**: `get_form_efficiency_summary(activity_id)`でGCT/VO/VRを取得
-4. **ペース考慮型GCT評価**: ペース区分に応じた基準値で評価（分析ガイドライン参照）
-5. **心拍効率取得**: `get_hr_efficiency_analysis(activity_id)`でゾーン分布を取得
-6. **評価生成**: ペース区分とペース値を明記した日本語評価を生成（例: "Easyペース（6:45/km、405秒/km）において253msは優秀..."）
-7. **DuckDB保存**: `insert_section_analysis_dict()`で結果を保存
+1. **Training Type取得**: `get_hr_efficiency_analysis(activity_id)`でtraining_typeを取得
+2. **ペース取得**:
+   - 閾値/インターバル系 → `get_performance_trends(activity_id)`からrun_metricsを取得
+   - ベース/リカバリー → `get_splits_pace_hr(activity_id, statistics_only=True)`で平均ペースを取得
+3. **ペース区分判定**: Fast (<270s/km) / Tempo (270-330s/km) / Easy (>330s/km)
+4. **フォーム指標取得**: `get_form_efficiency_summary(activity_id)`でGCT/VO/VRを取得
+5. **ペース考慮型GCT評価**: ペース区分に応じた基準値で評価（Training Type別評価ルール参照）
+6. **心拍効率取得**: `get_hr_efficiency_analysis(activity_id)`でゾーン分布を取得
+7. **評価生成**: ペース区分とペース値を明記した日本語評価を生成（例: "メイン区間（5:04/km、304秒/km）において233msは優秀..."）
+8. **DuckDB保存**: `insert_section_analysis_dict()`で結果を保存
 
-**重要**: ペース取得と区分判定を**必ず最初に実行**し、評価テキストに必ずペース情報を含めること。
+**重要**: Training Type取得とペース取得を**必ず最初に実行**し、評価テキストに必ずペース情報を含めること。
 
 ## 使用するMCPツール
 
 **利用可能なツール（これらのみ使用可能）:**
-- `mcp__garmin-db__get_form_efficiency_summary(activity_id)` - フォーム効率データ取得
-- `mcp__garmin-db__get_hr_efficiency_analysis(activity_id)` - 心拍効率データ取得
+- `mcp__garmin-db__get_form_efficiency_summary(activity_id)` - フォーム効率データ取得（全体平均）
+- `mcp__garmin-db__get_hr_efficiency_analysis(activity_id)` - 心拍効率データ取得（training_type含む）
+- `mcp__garmin-db__get_performance_trends(activity_id)` - フェーズ別データ取得（run_phase["splits"]含む）
+- `mcp__garmin-db__get_splits_form_metrics(activity_id, statistics_only)` - Split別フォーム指標取得（GCT/VO/VR）
 - `mcp__garmin-db__get_heart_rate_zones_detail(activity_id)` - 心拍ゾーン詳細取得
-- `mcp__garmin-db__get_splits_pace_hr(activity_id, statistics_only)` - ペースと心拍データ取得（statistics_only=Trueで統計値のみ）
+- `mcp__garmin-db__get_splits_pace_hr(activity_id, statistics_only)` - ペースと心拍データ取得
 - `mcp__garmin-db__insert_section_analysis_dict()` - 分析結果をDuckDBに保存
 
 **重要な制約:**
@@ -91,6 +96,55 @@ Tempoペース（5:00/km、300秒/km）において、接地時間は平均245ms
 2. **心拍効率** (40%):
    - ゾーン配分 (25%): トレーニングタイプとの整合性
    - HR drift (15%): 疲労管理の適切性
+
+## Training Type別評価ルール
+
+**必須**: `mcp__garmin-db__get_hr_efficiency_analysis(activity_id)` で training_type を取得し、以下のルールに従うこと。
+
+### 閾値トレーニング/インターバル系 (lactate_threshold, vo2max, anaerobic_capacity, speed)
+
+**構造**: 3フェーズまたは4フェーズ構成（warmup-run-cooldown or warmup-run-recovery-cooldown）
+
+**重要**: メイン区間（run）のみを評価すること！
+
+**評価手順（必須）:**
+1. ✅ `mcp__garmin-db__get_performance_trends(activity_id)` で run_phase を取得
+   - run_phase["splits"] でメイン区間のsplit番号を取得（例: [3, 4, 5, 6]）
+   - run_phase["avg_pace_seconds_per_km"] をペース評価に使用
+2. ✅ `mcp__garmin-db__get_splits_form_metrics(activity_id, statistics_only=False)` で全splitのフォーム指標を取得
+3. ✅ run_phaseのsplitのみをフィルタリングして平均を計算
+   - 例: Split 3-6のGCTの平均を計算
+4. ✅ その平均値でGCT/VO/VRを評価
+5. ❌ **get_form_efficiency_summary() は使わない** - 全体平均を返すため無意味
+6. ❌ **statistics_only=True は使わない** - ウォームアップ/クールダウンが混ざるため無意味
+
+**計算例（Activity 20783281578）:**
+- run_phase["splits"] = [3, 4, 5, 6]
+- Split 3: 233.1ms, Split 4: 231.4ms, Split 5: 232.6ms, Split 6: 233.9ms
+- メイン区間平均GCT = (233.1 + 231.4 + 232.6 + 233.9) / 4 = 232.75ms
+- （全体平均248.9msは使わない - ウォームアップ/クールダウンが混ざっている）
+
+**理由**:
+- ウォームアップ: 6:22/km → リラックスフォーム（GCT 250-251ms）
+- メイン: 5:04/km → 高強度フォーム（GCT 231-234ms）
+- クールダウン: 7:56/km → リラックスフォーム（GCT 264-275ms）
+- 全体平均（248.9ms）を使うと、異なるフォームが混ざって意味のない評価になる
+
+**評価テキストの例:**
+```
+メイン区間（5:04/km、304秒/km）において、接地時間は平均233msと優秀な範囲にあります。
+Tempoペース基準（230-250ms = 優秀）に対して理想的な数値を記録しており...
+```
+
+### ベースラン/リカバリーラン (aerobic_base, recovery)
+
+**構造**: 単一ペースまたは緩やかなペース変化
+
+**評価手順:**
+1. ✅ `get_splits_pace_hr(activity_id, statistics_only=True)` で全体平均ペースを取得
+2. ✅ 全体のフォーム指標を評価（statistics_only=True使用可）
+
+**理由**: ペースが一定なので全体統計で問題ない
 
 ## 分析ガイドライン
 

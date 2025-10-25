@@ -322,6 +322,54 @@ class ReportGeneratorWorker:
             "hr_max": round(hr_max, 1),
         }
 
+    def _generate_hr_zone_pie_data(self, activity_id: int) -> str | None:
+        """
+        Generate Mermaid pie chart data for heart rate zones.
+
+        Args:
+            activity_id: Activity ID
+
+        Returns:
+            Mermaid pie chart data string or None if no data available
+        """
+        try:
+            # Query heart rate zone data from DuckDB
+            import duckdb
+
+            conn = duckdb.connect(str(self.db_reader.db_path), read_only=True)
+
+            result = conn.execute(
+                """
+                SELECT
+                    zone_number,
+                    zone_percentage
+                FROM heart_rate_zones
+                WHERE activity_id = ?
+                AND zone_percentage > 0
+                ORDER BY zone_number
+                """,
+                [activity_id],
+            ).fetchall()
+
+            conn.close()
+
+            if not result:
+                return None
+
+            # Format as Mermaid pie chart data
+            pie_lines = []
+            for zone_number, percentage in result:
+                pie_lines.append(f'    "Zone {zone_number}" : {percentage:.2f}')
+
+            if not pie_lines:
+                return None
+
+            return "\n".join(pie_lines)
+
+        except Exception as e:
+            logger.warning(f"Failed to generate HR zone pie data: {e}")
+            return None
+
     def _load_splits(self, activity_id: int) -> list[dict[str, Any]]:
         """
         Load splits from DuckDB.
@@ -759,10 +807,10 @@ class ReportGeneratorWorker:
         else:
             logger.warning("Warning: phase section analysis missing")
 
-        # Load split analysis (key is "analyses" not "split_analysis")
+        # Load split analysis (includes both "analyses" and "highlights")
         split_data = self.db_reader.get_section_analysis(activity_id, "split")
         if split_data:
-            analyses["split_analysis"] = split_data.get("analyses", {})
+            analyses["split_analysis"] = split_data
         else:
             logger.warning("Warning: split section analysis missing or empty")
 
@@ -806,6 +854,7 @@ class ReportGeneratorWorker:
                     heart_rate,
                     cadence,
                     power,
+                    stride_length,
                     ground_contact_time,
                     vertical_oscillation,
                     vertical_ratio,
@@ -835,16 +884,19 @@ class ReportGeneratorWorker:
                         "distance": row[1],
                         "pace_seconds_per_km": row[2],
                         "pace_formatted": (
-                            row[11] if row[11] else "N/A"
+                            row[12] if row[12] else "N/A"
                         ),  # Use pace_str from DB
                         "heart_rate": row[3],
                         "cadence": row[4],
                         "power": row[5],
-                        "ground_contact_time": row[6],
-                        "vertical_oscillation": row[7],
-                        "vertical_ratio": row[8],
-                        "elevation_gain": row[9],
-                        "elevation_loss": row[10],
+                        "stride_length": (
+                            row[6] / 100 if row[6] else None
+                        ),  # Convert cm to m
+                        "ground_contact_time": row[7],
+                        "vertical_oscillation": row[8],
+                        "vertical_ratio": row[9],
+                        "elevation_gain": row[10],
+                        "elevation_loss": row[11],
                     }
                 )
 
@@ -925,6 +977,13 @@ class ReportGeneratorWorker:
                 performance_data["finish_metrics"].get("avg_pace_seconds_per_km")
             )
 
+        # Generate heart rate zone pie chart data
+        hr_zone_pie_data = self._generate_hr_zone_pie_data(activity_id)
+
+        # Extract split highlights
+        split_analysis_data = section_analyses.get("split_analysis", {})
+        highlights_list = split_analysis_data.get("highlights", "N/A")
+
         # Prepare template context
         training_type = performance_data.get("training_type", "")
         activity_type_display = self._get_activity_type_display(training_type)
@@ -958,6 +1017,10 @@ class ReportGeneratorWorker:
             "similar_workouts": performance_data.get("similar_workouts"),
             # Mermaid graph data
             "mermaid_data": performance_data.get("mermaid_data"),
+            # Heart rate zone pie chart data
+            "heart_rate_zone_pie_data": hr_zone_pie_data,
+            # Split highlights
+            "highlights_list": highlights_list,
         }
 
         # Render report using Jinja2 template with all data
