@@ -99,57 +99,40 @@ class ReportGeneratorWorker:
                 "PRAGMA table_info('performance_trends')"
             ).fetchall()
             column_names = [row[1] for row in schema_check]
-            has_new_schema = "run_avg_pace_seconds_per_km" in column_names
-            has_old_schema = "main_avg_pace_seconds_per_km" in column_names
 
-            if has_new_schema:
-                # Use new schema (run/cooldown)
+            # Build query based on available columns
+            if "recovery_avg_pace_seconds_per_km" in column_names:
+                # 4-phase structure exists
                 perf_trends = conn.execute(
                     """
                     SELECT
-                        pace_consistency,
-                        hr_drift_percentage,
-                        cadence_consistency,
-                        fatigue_pattern,
-                        warmup_avg_pace_seconds_per_km,
-                        warmup_avg_hr,
-                        run_avg_pace_seconds_per_km,
-                        run_avg_hr,
-                        recovery_avg_pace_seconds_per_km,
-                        recovery_avg_hr,
-                        cooldown_avg_pace_seconds_per_km,
-                        cooldown_avg_hr
-                    FROM performance_trends
-                    WHERE activity_id = ?
-                    """,
-                    [activity_id],
-                ).fetchone()
-            elif has_old_schema:
-                # Use old schema (main/finish) - map to new naming
-                perf_trends = conn.execute(
-                    """
-                    SELECT
-                        pace_consistency,
-                        hr_drift_percentage,
-                        cadence_consistency,
-                        fatigue_pattern,
-                        warmup_avg_pace_seconds_per_km,
-                        warmup_avg_hr,
-                        main_avg_pace_seconds_per_km,
-                        main_avg_hr,
-                        NULL,
-                        NULL,
-                        finish_avg_pace_seconds_per_km,
-                        finish_avg_hr
+                        pace_consistency, hr_drift_percentage, cadence_consistency, fatigue_pattern,
+                        warmup_avg_pace_seconds_per_km, warmup_avg_hr,
+                        run_avg_pace_seconds_per_km, run_avg_hr, run_avg_power,
+                        recovery_avg_pace_seconds_per_km, recovery_avg_hr,
+                        cooldown_avg_pace_seconds_per_km, cooldown_avg_hr
                     FROM performance_trends
                     WHERE activity_id = ?
                     """,
                     [activity_id],
                 ).fetchone()
             else:
-                perf_trends = None
+                # Legacy 3-phase structure
+                perf_trends = conn.execute(
+                    """
+                    SELECT
+                        pace_consistency, hr_drift_percentage, cadence_consistency, fatigue_pattern,
+                        warmup_avg_pace_seconds_per_km, warmup_avg_hr,
+                        main_avg_pace_seconds_per_km, main_avg_hr, NULL,
+                        NULL, NULL,
+                        finish_avg_pace_seconds_per_km, finish_avg_hr
+                    FROM performance_trends
+                    WHERE activity_id = ?
+                    """,
+                    [activity_id],
+                ).fetchone()
 
-            # Load HR efficiency (for training type)
+            # Load HR efficiency (includes training_type)
             hr_eff = conn.execute(
                 """
                 SELECT training_type
@@ -159,58 +142,52 @@ class ReportGeneratorWorker:
                 [activity_id],
             ).fetchone()
 
-            # Load VO2 Max data (optional table)
+            # Load heart rate zone times (if table exists)
             try:
-                vo2_max = conn.execute(
+                hr_zone_times = conn.execute(
                     """
-                    SELECT value, precise_value, category, fitness_age
-                    FROM vo2_max
+                    SELECT zone_number, time_in_zone_seconds
+                    FROM heart_rate_zones
                     WHERE activity_id = ?
+                    ORDER BY zone_number
                     """,
                     [activity_id],
-                ).fetchone()
+                ).fetchall()
             except Exception:
-                vo2_max = None
-
-            # Load lactate threshold data (optional table)
-            try:
-                lactate_threshold = conn.execute(
-                    """
-                    SELECT
-                        heart_rate,
-                        speed_mps,
-                        functional_threshold_power
-                    FROM lactate_threshold
-                    WHERE activity_id = ?
-                    """,
-                    [activity_id],
-                ).fetchone()
-            except Exception:
-                lactate_threshold = None
+                # Table may not exist in test databases
+                hr_zone_times = []
 
             conn.close()
 
-            # Construct data structure
-            data = {
+            # Load VO2 Max data (uses fallback to most recent data)
+            vo2_max_dict = self.db_reader.get_vo2_max_data(activity_id)
+
+            # Load lactate threshold data
+            lactate_threshold_dict = self.db_reader.get_lactate_threshold_data(
+                activity_id
+            )
+
+            # Build response data
+            data: dict[str, Any] = {
                 "activity_name": result[0],
                 "location_name": result[1],
                 "basic_metrics": {
-                    "start_time": str(result[2]) if result[2] else None,
+                    "start_time": result[2],
                     "distance_km": result[3],
                     "duration_seconds": result[4],
                     "avg_pace_seconds_per_km": result[5],
                     "avg_heart_rate": result[6],
                 },
+                "weight_kg": None,  # Not stored in activities table
                 "weather_data": {
                     "temp_celsius": result[7],
                     "relative_humidity_percent": result[8],
                     "wind_speed_kmh": result[9],
                 },
-                "gear_type": result[10],
-                "gear_model": result[11],
+                "gear_name": f"{result[10]} {result[11]}" if result[10] else None,
             }
 
-            # Add form efficiency if available
+            # Add form efficiency data if available
             if form_eff:
                 data["form_efficiency"] = {
                     "gct_average": form_eff[0],
@@ -237,20 +214,21 @@ class ReportGeneratorWorker:
                     "avg_hr": perf_trends[5],
                 }
                 # Check if recovery data exists (4-phase) or not (3-phase)
-                if perf_trends[8] is not None:
+                if perf_trends[9] is not None:
                     # 4-phase structure (interval training)
                     data["run_metrics"] = {
                         "avg_pace_seconds_per_km": perf_trends[6],
                         "avg_hr": perf_trends[7],
+                        "avg_power": perf_trends[8],
                         "pace_consistency": perf_trends[0],
                     }
                     data["recovery_metrics"] = {
-                        "avg_pace_seconds_per_km": perf_trends[8],
-                        "avg_hr": perf_trends[9],
+                        "avg_pace_seconds_per_km": perf_trends[9],
+                        "avg_hr": perf_trends[10],
                     }
                     data["cooldown_metrics"] = {
-                        "avg_pace_seconds_per_km": perf_trends[10],
-                        "avg_hr": perf_trends[11],
+                        "avg_pace_seconds_per_km": perf_trends[11],
+                        "avg_hr": perf_trends[12],
                         "fatigue_pattern": perf_trends[3],
                     }
                 else:
@@ -259,11 +237,12 @@ class ReportGeneratorWorker:
                     data["run_metrics"] = {
                         "avg_pace_seconds_per_km": perf_trends[6],
                         "avg_hr": perf_trends[7],
+                        "avg_power": perf_trends[8],
                         "pace_consistency": perf_trends[0],
                     }
                     data["cooldown_metrics"] = {
-                        "avg_pace_seconds_per_km": perf_trends[10],
-                        "avg_hr": perf_trends[11],
+                        "avg_pace_seconds_per_km": perf_trends[11],
+                        "avg_hr": perf_trends[12],
                         "fatigue_pattern": perf_trends[3],
                     }
                     # Legacy naming for backward compatibility
@@ -275,21 +254,12 @@ class ReportGeneratorWorker:
                 data["training_type"] = hr_eff[0]
 
             # Add VO2 Max data if available
-            if vo2_max:
-                data["vo2_max_data"] = {
-                    "value": vo2_max[0],
-                    "precise_value": vo2_max[1],
-                    "category": vo2_max[2],
-                    "fitness_age": vo2_max[3],
-                }
+            if vo2_max_dict:
+                data["vo2_max_data"] = vo2_max_dict
 
             # Add lactate threshold data if available
-            if lactate_threshold:
-                data["lactate_threshold_data"] = {
-                    "heart_rate": lactate_threshold[0],
-                    "speed_mps": lactate_threshold[1],
-                    "functional_threshold_power": lactate_threshold[2],
-                }
+            if lactate_threshold_dict:
+                data["lactate_threshold_data"] = lactate_threshold_dict
 
             # Add similar workouts comparison (Phase 3)
             # Determine comparison pace based on training type
@@ -327,6 +297,35 @@ class ReportGeneratorWorker:
             # Load splits and generate Mermaid graph data
             data["splits"] = self._load_splits(activity_id)
             data["mermaid_data"] = self._generate_mermaid_data(data.get("splits"))
+
+            # ========== NEW: Phase 2 Enhancements ==========
+
+            # 1. Calculate training type category
+            training_type = data.get("training_type", "")
+            training_type_category = self._get_training_type_category(training_type)
+            data["training_type_category"] = training_type_category
+
+            # 2. Calculate physiological indicators (for tempo/threshold and interval)
+            if training_type_category in ["tempo_threshold", "interval_sprint"]:
+                physiological_indicators = self._calculate_physiological_indicators(
+                    training_type_category,
+                    data.get("vo2_max_data"),
+                    data.get("lactate_threshold_data"),
+                    data.get("run_metrics", {}),
+                    hr_zone_times,
+                )
+                data.update(physiological_indicators)
+
+            # 3. Generate evaluation target text
+            data["target_segments_description"] = self._get_evaluation_target_text(
+                training_type_category
+            )
+
+            # 4. Generate interval graph analysis (for interval only)
+            if training_type_category == "interval_sprint" and data.get("splits"):
+                data["interval_graph_analysis"] = self._generate_mermaid_analysis(
+                    data["splits"], training_type_category
+                )
 
             return data
 
@@ -378,6 +377,122 @@ class ReportGeneratorWorker:
             "hr_min": round(hr_min, 1),
             "hr_max": round(hr_max, 1),
         }
+
+    def _generate_mermaid_analysis(
+        self, splits: list[dict[str, Any]], training_type_category: str
+    ) -> str | None:
+        """
+        Generate Work/Recovery transition analysis for interval workouts.
+
+        Args:
+            splits: List of split dictionaries with intensity_type
+            training_type_category: Training type category
+
+        Returns:
+            3-4 bullet point analysis text (Japanese) or None for non-interval
+
+        Examples:
+            >>> splits = [
+            ...     {"index": 1, "intensity_type": "warmup", "pace_seconds_per_km": 420, "heart_rate": 135},
+            ...     {"index": 2, "intensity_type": "active", "pace_seconds_per_km": 250, "heart_rate": 175, "power": 320},
+            ...     {"index": 3, "intensity_type": "rest", "pace_seconds_per_km": 450, "heart_rate": 140, "power": 180},
+            ...     {"index": 4, "intensity_type": "active", "pace_seconds_per_km": 248, "heart_rate": 178, "power": 325},
+            ... ]
+            >>> worker = ReportGeneratorWorker()
+            >>> analysis = worker._generate_mermaid_analysis(splits, "interval_sprint")
+            >>> "Work区間" in analysis
+            True
+        """
+        if training_type_category != "interval_sprint":
+            return None
+
+        # Extract Work and Recovery segments
+        work_splits = [s for s in splits if s.get("intensity_type") == "active"]
+        recovery_splits = [s for s in splits if s.get("intensity_type") == "rest"]
+
+        if not work_splits:
+            return None
+
+        # Calculate Work metrics
+        work_pace_avg = sum(s["pace_seconds_per_km"] for s in work_splits) / len(
+            work_splits
+        )
+        work_hr_avg = sum(s["heart_rate"] for s in work_splits) / len(work_splits)
+        work_power_avg = (
+            sum(s.get("power", 0) or 0 for s in work_splits) / len(work_splits)
+            if any(s.get("power") for s in work_splits)
+            else None
+        )
+
+        # Calculate Recovery metrics (if exist)
+        if recovery_splits:
+            recovery_pace_avg = sum(
+                s["pace_seconds_per_km"] for s in recovery_splits
+            ) / len(recovery_splits)
+            recovery_hr_avg = sum(s["heart_rate"] for s in recovery_splits) / len(
+                recovery_splits
+            )
+        else:
+            recovery_pace_avg = None
+            recovery_hr_avg = None
+
+        # Format pace
+        work_pace_min = int(work_pace_avg // 60)
+        work_pace_sec = int(work_pace_avg % 60)
+        work_pace_str = f"{work_pace_min}:{work_pace_sec:02d}/km"
+
+        # Build analysis bullets
+        bullets = []
+
+        # Bullet 1: Work segments overview
+        bullets.append(
+            f"- Work区間{len(work_splits)}本: 平均ペース{work_pace_str}、"
+            f"平均心拍{work_hr_avg:.0f}bpm"
+            + (f"、平均パワー{work_power_avg:.0f}W" if work_power_avg else "")
+        )
+
+        # Bullet 2: Recovery segments (if exist)
+        if recovery_splits and recovery_pace_avg and recovery_hr_avg:
+            recovery_pace_min = int(recovery_pace_avg // 60)
+            recovery_pace_sec = int(recovery_pace_avg % 60)
+            recovery_pace_str = f"{recovery_pace_min}:{recovery_pace_sec:02d}/km"
+            bullets.append(
+                f"- Recovery区間{len(recovery_splits)}本: 平均ペース{recovery_pace_str}、"
+                f"平均心拍{recovery_hr_avg:.0f}bpm（十分な回復）"
+            )
+
+        # Bullet 3: Work consistency
+        if len(work_splits) > 1:
+            work_pace_std = (
+                sum(
+                    (s["pace_seconds_per_km"] - work_pace_avg) ** 2 for s in work_splits
+                )
+                / len(work_splits)
+            ) ** 0.5
+            pace_cv = (work_pace_std / work_pace_avg) * 100  # Coefficient of variation
+
+            if pace_cv < 2.0:
+                consistency = "非常に安定"
+            elif pace_cv < 4.0:
+                consistency = "安定"
+            else:
+                consistency = "やや不安定"
+
+            bullets.append(f"- Workペース変動係数: {pace_cv:.1f}% ({consistency})")
+
+        # Bullet 4: Transition quality (if recovery exists)
+        if recovery_splits and recovery_hr_avg:
+            hr_drop = work_hr_avg - recovery_hr_avg
+            if hr_drop > 30:
+                transition = "優秀な心拍リカバリー"
+            elif hr_drop > 20:
+                transition = "良好な心拍リカバリー"
+            else:
+                transition = "心拍リカバリーやや不十分"
+
+            bullets.append(f"- Work→Recovery心拍低下: {hr_drop:.0f}bpm ({transition})")
+
+        return "\n".join(bullets)
 
     def _generate_hr_zone_pie_data(self, activity_id: int) -> str | None:
         """
@@ -473,20 +588,45 @@ class ReportGeneratorWorker:
             # Convert to dict format expected by template
             splits = []
             for row in result:
+                pace_seconds = row[1]
+                if pace_seconds and pace_seconds > 0:
+                    pace_formatted = self._format_pace(pace_seconds)
+                else:
+                    pace_formatted = "N/A"
+
+                # Normalize intensity_type (Garmin uses uppercase)
+                raw_intensity_type = row[11]
+                intensity_type = None
+                if raw_intensity_type:
+                    intensity_upper = raw_intensity_type.upper()
+                    if intensity_upper == "WARMUP":
+                        intensity_type = "warmup"
+                    elif intensity_upper == "INTERVAL":
+                        intensity_type = "active"
+                    elif intensity_upper == "RECOVERY":
+                        intensity_type = "rest"
+                    elif intensity_upper == "COOLDOWN":
+                        intensity_type = "cooldown"
+                    else:
+                        intensity_type = raw_intensity_type.lower()
+
                 splits.append(
                     {
                         "index": row[0],
-                        "pace_seconds_per_km": row[1],
+                        "pace_seconds_per_km": pace_seconds,
+                        "pace_formatted": pace_formatted,
                         "heart_rate": row[2],
                         "cadence": row[3],
                         "power": row[4],
-                        "stride_length": row[5],
+                        "stride_length": (
+                            row[5] / 100 if row[5] else None
+                        ),  # Convert cm to m
                         "ground_contact_time": row[6],
                         "vertical_oscillation": row[7],
                         "vertical_ratio": row[8],
                         "elevation_gain": row[9],
                         "elevation_loss": row[10],
-                        "intensity_type": row[11],
+                        "intensity_type": intensity_type,
                     }
                 )
 
@@ -609,7 +749,8 @@ class ReportGeneratorWorker:
         vo2_max_data: dict | None,
         lactate_threshold_data: dict | None,
         run_metrics: dict,
-    ) -> dict | None:
+        hr_zone_times: list[tuple] | None = None,
+    ) -> dict:
         """Calculate physiological indicators for tempo/threshold/interval workouts.
 
         Args:
@@ -617,65 +758,101 @@ class ReportGeneratorWorker:
             vo2_max_data: VO2 Max data from database
             lactate_threshold_data: Lactate threshold data from database
             run_metrics: Run/main phase metrics
+            hr_zone_times: List of (zone_number, time_in_zone_seconds) tuples from heart_rate_zones table
 
         Returns:
-            Dictionary with physiological indicators or None if:
-            - training_type_category is "low_moderate"
-            - Required data is missing
+            Dictionary with physiological indicators (empty dict if low_moderate or missing data)
 
         Indicators:
             - vo2_max_utilization: Percentage of VO2 Max being utilized (0-100%)
+            - vo2_max_utilization_eval: Evaluation text
             - threshold_pace_formatted: Threshold pace in MM:SS/km format
+            - threshold_pace_comparison: Comparison text vs actual pace
             - ftp_percentage: Percentage of FTP (Functional Threshold Power)
+            - work_avg_power: Average power during Work segments
+            - zone_4_ratio: Percentage of time in Zone 4 (for threshold only)
         """
         # Only calculate for tempo_threshold and interval_sprint
         if training_type_category == "low_moderate":
-            return None
+            return {}
 
-        # Check required data
-        if not vo2_max_data or not lactate_threshold_data or not run_metrics:
-            return None
+        # Check that at least run_metrics is available
+        if not run_metrics:
+            return {}
+
+        result = {}
 
         # Extract values with None checks
-        vo2_max_value = vo2_max_data.get("precise_value")
-        threshold_speed = lactate_threshold_data.get("speed_mps")
-        ftp = lactate_threshold_data.get("functional_threshold_power")
+        vo2_max_value = vo2_max_data.get("precise_value") if vo2_max_data else None
+        threshold_speed = (
+            lactate_threshold_data.get("speed_mps") if lactate_threshold_data else None
+        )
+        ftp = (
+            lactate_threshold_data.get("functional_threshold_power")
+            if lactate_threshold_data
+            else None
+        )
         target_pace = run_metrics.get("avg_pace_seconds_per_km")
         work_avg_power = run_metrics.get("avg_power", 0)
 
-        if not all([vo2_max_value, threshold_speed, target_pace]):
-            return None
-
-        # Type guards - now mypy knows these are not None
-        assert isinstance(vo2_max_value, int | float)
-        assert isinstance(threshold_speed, int | float)
-        assert isinstance(target_pace, int | float)
-
         # Calculate VO2 Max utilization
-        # Empirical formula: vVO2max (km/h) ≈ VO2max / 3.5
-        # This gives running speed at VO2 Max intensity
-        # For VO2max 52.3 → vVO2max ≈ 14.9 km/h ≈ 4:01/km
-        vo2_max_speed_kmh = vo2_max_value / 3.5
-        vo2_max_pace_seconds_per_km = 3600 / vo2_max_speed_kmh
+        if vo2_max_value and target_pace:
+            # Empirical formula: vVO2max (km/h) ≈ VO2max / 3.5
+            vo2_max_speed_kmh = vo2_max_value / 3.5
+            vo2_max_pace_seconds_per_km = 3600 / vo2_max_speed_kmh
 
-        # Utilization = VO2max pace / current pace * 100
-        # Example: VO2max pace 241s/km, current 304s/km → 241/304 = 79%
-        vo2_max_utilization = (vo2_max_pace_seconds_per_km / target_pace) * 100
+            # Utilization = VO2max pace / current pace * 100
+            vo2_max_utilization = (vo2_max_pace_seconds_per_km / target_pace) * 100
+            result["vo2_max_utilization"] = round(vo2_max_utilization, 1)
 
-        # Format threshold pace
-        threshold_pace_seconds_per_km = 1000 / threshold_speed
-        threshold_pace_formatted = self._format_pace(threshold_pace_seconds_per_km)
+            # Evaluation text
+            if vo2_max_utilization >= 90:
+                result["vo2_max_utilization_eval"] = "非常に高強度"
+            elif vo2_max_utilization >= 80:
+                result["vo2_max_utilization_eval"] = "高強度（閾値〜VO2max）"
+            elif vo2_max_utilization >= 70:
+                result["vo2_max_utilization_eval"] = "中高強度（テンポ〜閾値）"
+            else:
+                result["vo2_max_utilization_eval"] = "中強度"
 
-        # Calculate FTP percentage
-        ftp_percentage = 0.0
-        if ftp and isinstance(ftp, int | float) and ftp > 0 and work_avg_power:
-            ftp_percentage = (work_avg_power / ftp) * 100
+        # Format threshold pace and comparison
+        if threshold_speed and target_pace:
+            threshold_pace_seconds_per_km = 1000 / threshold_speed
+            result["threshold_pace_formatted"] = self._format_pace(
+                threshold_pace_seconds_per_km
+            )
 
-        return {
-            "vo2_max_utilization": round(vo2_max_utilization, 1),
-            "threshold_pace_formatted": threshold_pace_formatted,
-            "ftp_percentage": round(ftp_percentage, 1),
-        }
+            # Comparison
+            pace_diff = target_pace - threshold_pace_seconds_per_km
+            if abs(pace_diff) < 5:
+                result["threshold_pace_comparison"] = "閾値ペースと同等"
+            elif pace_diff > 0:
+                result["threshold_pace_comparison"] = (
+                    f"閾値より{abs(pace_diff):.0f}秒/km遅い"
+                )
+            else:
+                result["threshold_pace_comparison"] = (
+                    f"閾値より{abs(pace_diff):.0f}秒/km速い"
+                )
+
+        # Calculate FTP percentage and work power
+        if ftp and ftp > 0 and work_avg_power:
+            result["ftp_percentage"] = round((work_avg_power / ftp) * 100, 1)
+            result["work_avg_power"] = round(work_avg_power, 0)
+
+        # Calculate Zone 4 ratio (for threshold training)
+        if training_type_category == "tempo_threshold" and hr_zone_times:
+            # hr_zone_times is a list of (zone_number, time_in_zone_seconds) tuples
+            zone_dict = dict(hr_zone_times)
+
+            total_time = sum(zone_dict.values())
+            zone_4_time = zone_dict.get(4, 0)
+
+            if total_time > 0:
+                zone_4_ratio = (zone_4_time / total_time) * 100
+                result["zone_4_ratio"] = round(zone_4_ratio, 1)
+
+        return result
 
     def _get_comparison_pace(self, performance_data: dict) -> tuple[float, str]:
         """
@@ -711,6 +888,31 @@ class ReportGeneratorWorker:
 
         # Fallback: use overall average pace
         return (performance_data["basic_metrics"]["avg_pace_seconds_per_km"], "overall")
+
+    def _get_evaluation_target_text(self, training_type_category: str) -> str:
+        """
+        Get evaluation target description text based on training type.
+
+        Args:
+            training_type_category: "low_moderate" | "tempo_threshold" | "interval_sprint"
+
+        Returns:
+            Japanese description of evaluation target segments
+
+        Examples:
+            >>> worker = ReportGeneratorWorker()
+            >>> worker._get_evaluation_target_text("interval_sprint")
+            "Workセグメント5本のみ（インターバル走は高強度区間のパフォーマンスを重視）"
+            >>> worker._get_evaluation_target_text("tempo_threshold")
+            "メイン区間（Split 3-6）のみ（閾値走は高強度区間のパフォーマンスを重視）"
+        """
+        if training_type_category == "interval_sprint":
+            return "Workセグメント5本のみ（インターバル走は高強度区間のパフォーマンスを重視）"
+        elif training_type_category == "tempo_threshold":
+            return "メイン区間（Split 3-6）のみ（閾値走は高強度区間のパフォーマンスを重視）"
+        else:
+            # For low_moderate, no specific target (all splits evaluated)
+            return ""
 
     def _load_similar_workouts(
         self, activity_id: int, current_metrics: dict
@@ -1197,7 +1399,8 @@ class ReportGeneratorWorker:
                     vertical_ratio,
                     elevation_gain,
                     elevation_loss,
-                    pace_str
+                    pace_str,
+                    intensity_type
                 FROM splits
                 WHERE activity_id = ?
                 ORDER BY split_index
@@ -1215,6 +1418,22 @@ class ReportGeneratorWorker:
 
             splits = []
             for row in result:
+                # Normalize intensity_type (Garmin uses uppercase)
+                raw_intensity_type = row[13]
+                intensity_type = None
+                if raw_intensity_type:
+                    intensity_upper = raw_intensity_type.upper()
+                    if intensity_upper == "WARMUP":
+                        intensity_type = "warmup"
+                    elif intensity_upper == "INTERVAL":
+                        intensity_type = "active"
+                    elif intensity_upper == "RECOVERY":
+                        intensity_type = "rest"
+                    elif intensity_upper == "COOLDOWN":
+                        intensity_type = "cooldown"
+                    else:
+                        intensity_type = raw_intensity_type.lower()
+
                 splits.append(
                     {
                         "index": row[0],
@@ -1234,6 +1453,7 @@ class ReportGeneratorWorker:
                         "vertical_ratio": row[9],
                         "elevation_gain": row[10],
                         "elevation_loss": row[11],
+                        "intensity_type": intensity_type,
                     }
                 )
 
@@ -1358,6 +1578,34 @@ class ReportGeneratorWorker:
             "heart_rate_zone_pie_data": hr_zone_pie_data,
             # Split highlights
             "highlights_list": highlights_list,
+            # ========== Phase 2: Training Type Categorization & Physiological Indicators ==========
+            "training_type_category": performance_data.get(
+                "training_type_category", "low_moderate"
+            ),
+            # Physiological indicators (for tempo/threshold and interval)
+            "vo2_max_data": performance_data.get("vo2_max_data"),
+            "lactate_threshold_data": performance_data.get("lactate_threshold_data"),
+            "vo2_max_utilization": performance_data.get("vo2_max_utilization"),
+            "vo2_max_utilization_eval": performance_data.get(
+                "vo2_max_utilization_eval"
+            ),
+            "threshold_pace_formatted": performance_data.get(
+                "threshold_pace_formatted"
+            ),
+            "threshold_pace_comparison": performance_data.get(
+                "threshold_pace_comparison"
+            ),
+            "ftp_percentage": performance_data.get("ftp_percentage"),
+            "work_avg_power": performance_data.get("work_avg_power"),
+            # Evaluation target text
+            "target_segments_description": performance_data.get(
+                "target_segments_description", ""
+            ),
+            # Interval-specific: Mermaid graph analysis
+            "interval_graph_analysis": performance_data.get("interval_graph_analysis"),
+            # Interval flag for template conditionals
+            "is_interval": performance_data.get("training_type_category")
+            == "interval_sprint",
         }
 
         # Render report using Jinja2 template with all data

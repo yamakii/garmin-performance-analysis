@@ -230,6 +230,8 @@ class AggregateReader(BaseDBReader):
         """
         Get VO2 max data from vo2_max table.
 
+        Falls back to most recent VO2 max data before activity date if not found for specific activity.
+
         Args:
             activity_id: Activity ID
 
@@ -241,10 +243,11 @@ class AggregateReader(BaseDBReader):
                 "date": str,
                 "category": int
             }
-            None if activity not found.
+            None if no data found.
         """
         try:
             with self._get_connection() as conn:
+                # First try: Get VO2 max for this specific activity
                 result = conn.execute(
                     """
                     SELECT
@@ -256,6 +259,42 @@ class AggregateReader(BaseDBReader):
                     WHERE activity_id = ?
                     """,
                     [activity_id],
+                ).fetchone()
+
+                if result:
+                    return {
+                        "precise_value": result[0],
+                        "value": result[1],
+                        "date": str(result[2]) if result[2] else None,
+                        "category": result[3],
+                    }
+
+                # Fallback: Get most recent VO2 max before or on activity date
+                activity_date = conn.execute(
+                    """
+                    SELECT start_time_local::DATE
+                    FROM activities
+                    WHERE activity_id = ?
+                    """,
+                    [activity_id],
+                ).fetchone()
+
+                if not activity_date:
+                    return None
+
+                result = conn.execute(
+                    """
+                    SELECT
+                        precise_value,
+                        value,
+                        date,
+                        category
+                    FROM vo2_max
+                    WHERE date <= ?
+                    ORDER BY date DESC
+                    LIMIT 1
+                    """,
+                    [activity_date[0]],
                 ).fetchone()
 
                 if not result:

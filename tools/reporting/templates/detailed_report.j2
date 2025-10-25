@@ -35,7 +35,7 @@
 | **VO2 Max** | {{ vo2_max_data.precise_value|default(vo2_max_data.value)|default(0) }} ml/kg/min | カテゴリ: {{ vo2_max_data.category|default("N/A") }} |
 | **VO2 Max利用率** | {{ vo2_max_utilization|default("N/A") }}% | {{ vo2_max_utilization_eval|default("N/A") }} |
 | **閾値ペース** | {{ threshold_pace_formatted|default("N/A") }}/km | {{ threshold_pace_comparison|default("N/A") }} |
-| **FTP(パワー)** | {{ lactate_threshold_data.functional_threshold_power|default(0)|int }} W | Work平均{{ work_avg_power|default("N/A") }}W = FTPの{{ ftp_percentage|default("N/A") }}% |
+| **FTP(パワー)** | {{ lactate_threshold_data.functional_threshold_power|default(0)|int }} W | Work平均{{ work_avg_power|int if work_avg_power else "N/A" }}W = FTPの{{ ftp_percentage|default("N/A") }}% |
 
 {% endif %}
 
@@ -142,7 +142,7 @@ xychart-beta
 | # | {% if is_interval %}タイプ | {% endif %}ペース | 心拍 | ケイデンス | パワー | ストライド | GCT | VO | VR | 標高 |
 |---|{% if is_interval %}-------|{% endif %}--------|------|------------|--------|------------|-----|----|----|------|
 {%- for split in splits %}
-| {{ split.index }} | {% if is_interval %}{{ split.intensity_type|default("N/A") }} | {% endif %}{{ split.pace_formatted }}/km | {{ split.heart_rate|int }} bpm | {{ split.cadence|int if split.cadence else "-" }} spm | {{ split.power|int if split.power else "-" }} W | {{ "%.2f"|format(split.stride_length) if split.stride_length else "-" }} m | {{ split.ground_contact_time|int if split.ground_contact_time else "-" }} ms | {{ "%.1f"|format(split.vertical_oscillation) if split.vertical_oscillation else "-" }} cm | {{ "%.1f"|format(split.vertical_ratio) if split.vertical_ratio else "-" }}% | +{{ split.elevation_gain|int if split.elevation_gain else 0 }}/-{{ split.elevation_loss|int if split.elevation_loss else 0 }}m |
+| {{ split.index }} | {% if is_interval %}{{ splits|format_intensity_type(split.index) }} | {% endif %}{{ split.pace_formatted }}/km | {{ split.heart_rate|int }} bpm | {{ split.cadence|int if split.cadence else "-" }} spm | {{ split.power|int if split.power else "-" }} W | {{ "%.2f"|format(split.stride_length) if split.stride_length else "-" }} m | {{ split.ground_contact_time|int if split.ground_contact_time else "-" }} ms | {{ "%.1f"|format(split.vertical_oscillation) if split.vertical_oscillation else "-" }} cm | {{ "%.1f"|format(split.vertical_ratio) if split.vertical_ratio else "-" }}% | +{{ split.elevation_gain|int if split.elevation_gain else 0 }}/-{{ split.elevation_loss|int if split.elevation_loss else 0 }}m |
 {%- endfor %}
 
 **📈 {% if is_interval %}Workセグメント {% endif %}ハイライト:**
@@ -207,7 +207,7 @@ pie title "心拍ゾーン分布"
 
 {% if vo2_max_data %}
 - **現在のVO2 Max**: {{ vo2_max_data.precise_value|default(vo2_max_data.value)|default(0) }} ml/kg/min({{ vo2_max_data.category|default("N/A") }})
-- **{% if is_interval %}Work{% else %}メイン区間{% endif %}平均心拍**: {{ target_avg_hr|default("N/A") }} bpm
+- **{% if is_interval %}Work{% else %}メイン区間{% endif %}平均心拍**: {{ run_metrics.avg_hr|default("N/A")|int if run_metrics.avg_hr else "N/A" }} bpm
 - **VO2 Max利用率**: 約{{ vo2_max_utilization|default("N/A") }}%({{ vo2_max_utilization_eval|default("N/A") }})
 
 **期待効果**: {{ vo2_max_expected_effect|default("N/A") }}
@@ -219,9 +219,9 @@ VO2 Maxデータがありません。
 
 {% if lactate_threshold_data %}
 - **閾値心拍**: {{ lactate_threshold_data.heart_rate|default(0)|int }} bpm
-- **{% if is_interval %}Work{% else %}メイン区間{% endif %}平均心拍**: {{ target_avg_hr|default("N/A") }} bpm
+- **{% if is_interval %}Work{% else %}メイン区間{% endif %}平均心拍**: {{ run_metrics.avg_hr|default("N/A")|int if run_metrics.avg_hr else "N/A" }} bpm
 - **閾値パワー(FTP)**: {{ lactate_threshold_data.functional_threshold_power|default(0)|int }} W
-- **{% if is_interval %}Work{% else %}メイン区間{% endif %}平均パワー**: {{ target_avg_power|default("N/A") }} W(FTPの{{ ftp_percentage|default("N/A") }}%) → {{ power_zone_name|default("N/A") }} ✅
+- **{% if is_interval %}Work{% else %}メイン区間{% endif %}平均パワー**: {{ work_avg_power|default("N/A")|int if work_avg_power else "N/A" }} W(FTPの{{ ftp_percentage|default("N/A") }}%) → {{ power_zone_name|default("N/A") }} ✅
 
 **期待効果**: {{ threshold_expected_effect|default("N/A") }}
 {% else %}

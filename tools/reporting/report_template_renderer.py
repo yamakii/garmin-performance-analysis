@@ -30,6 +30,66 @@ class ReportTemplateRenderer:
         # Add custom filters
         self.env.filters["sort_splits"] = self._sort_splits_filter
         self.env.filters["extract_star_rating"] = self._extract_star_rating_filter
+        self.env.filters["format_intensity_type"] = self._format_intensity_type_filter
+
+    def _format_intensity_type_filter(
+        self, splits: list[dict], current_index: int
+    ) -> str:
+        """
+        Format intensity_type for interval display with counters.
+
+        Args:
+            splits: Full list of split dictionaries
+            current_index: Current split index (1-based)
+
+        Returns:
+            Formatted type: "W-up" | "W1" | "R1" | "C-down"
+
+        Examples:
+            >>> _format_intensity_type_filter([{"index": 1, "intensity_type": "warmup"}], 1)
+            "W-up"
+            >>> _format_intensity_type_filter([
+            ...     {"index": 1, "intensity_type": "warmup"},
+            ...     {"index": 2, "intensity_type": "active"}
+            ... ], 2)
+            "W1"
+        """
+        # Find current split
+        current_split = None
+        for split in splits:
+            if split.get("index") == current_index:
+                current_split = split
+                break
+
+        if not current_split:
+            return "N/A"
+
+        intensity_type = current_split.get("intensity_type", "")
+
+        if intensity_type == "warmup":
+            return "W-up"
+        elif intensity_type == "cooldown":
+            return "C-down"
+        elif intensity_type == "active":
+            # Count active splits before current index
+            work_count = sum(
+                1
+                for s in splits
+                if s.get("intensity_type") == "active"
+                and s.get("index", 0) <= current_index
+            )
+            return f"W{work_count}"
+        elif intensity_type == "rest":
+            # Count rest splits before current index
+            recovery_count = sum(
+                1
+                for s in splits
+                if s.get("intensity_type") == "rest"
+                and s.get("index", 0) <= current_index
+            )
+            return f"R{recovery_count}"
+
+        return intensity_type or "N/A"
 
     def _sort_splits_filter(self, items):
         """Sort split analysis items by numeric split number."""
@@ -142,6 +202,20 @@ class ReportTemplateRenderer:
         phase_evaluation: dict[str, Any] | None = None,
         split_analysis: dict[str, Any] | None = None,
         summary: dict[str, Any] | None = None,
+        # Phase 2: Training Type Categorization & Physiological Indicators
+        training_type_category: str | None = None,
+        vo2_max_data: dict[str, Any] | None = None,
+        lactate_threshold_data: dict[str, Any] | None = None,
+        vo2_max_utilization: float | None = None,
+        vo2_max_utilization_eval: str | None = None,
+        threshold_pace_formatted: str | None = None,
+        threshold_pace_comparison: str | None = None,
+        ftp_percentage: float | None = None,
+        work_avg_power: float | None = None,
+        target_segments_description: str | None = None,
+        interval_graph_analysis: str | None = None,
+        zone_4_ratio: float | None = None,
+        is_interval: bool | None = None,
     ) -> str:
         """
         Jinja2テンプレートでJSON dataからmarkdownを生成。
@@ -233,6 +307,20 @@ class ReportTemplateRenderer:
                 phase_evaluation=phase_evaluation or {},
                 split_analysis=split_analysis or {},
                 summary=summary or {},
+                # Phase 2: Training Type Categorization & Physiological Indicators
+                training_type_category=training_type_category,
+                vo2_max_data=vo2_max_data,
+                lactate_threshold_data=lactate_threshold_data,
+                vo2_max_utilization=vo2_max_utilization,
+                vo2_max_utilization_eval=vo2_max_utilization_eval,
+                threshold_pace_formatted=threshold_pace_formatted,
+                threshold_pace_comparison=threshold_pace_comparison,
+                ftp_percentage=ftp_percentage,
+                work_avg_power=work_avg_power,
+                target_segments_description=target_segments_description,
+                interval_graph_analysis=interval_graph_analysis,
+                zone_4_ratio=zone_4_ratio,
+                is_interval=is_interval,
             ),
         )
 

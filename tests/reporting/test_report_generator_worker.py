@@ -860,33 +860,43 @@ class TestPhysiologicalIndicators:
             run_metrics={"avg_pace_seconds_per_km": 400},
         )
 
-        assert result is None
+        assert result == {}
 
     def test_handles_missing_data_gracefully(self, mocker):
-        """Returns None when required data is missing."""
+        """Returns partial results when some data is missing."""
         from tools.reporting.report_generator_worker import ReportGeneratorWorker
 
         mock_reader = mocker.Mock()
         worker = ReportGeneratorWorker()
         worker.db_reader = mock_reader
 
-        # Missing VO2 Max data
+        # Missing VO2 Max data - should still return threshold-based indicators
         result = worker._calculate_physiological_indicators(
             training_type_category="tempo_threshold",
             vo2_max_data=None,
-            lactate_threshold_data={"functional_threshold_power": 285},
-            run_metrics={"avg_pace_seconds_per_km": 304},
+            lactate_threshold_data={
+                "functional_threshold_power": 285,
+                "speed_mps": 3.3,  # ~5:03/km
+            },
+            run_metrics={"avg_pace_seconds_per_km": 304, "avg_power": 260},
         )
-        assert result is None
+        assert "threshold_pace_formatted" in result
+        assert "threshold_pace_comparison" in result
+        assert "ftp_percentage" in result
+        assert result["ftp_percentage"] == 91.2  # 260/285 * 100
+        assert "vo2_max_utilization" not in result  # Should not be calculated
 
-        # Missing lactate threshold data
+        # Missing lactate threshold data - should still return VO2 Max utilization
         result = worker._calculate_physiological_indicators(
             training_type_category="tempo_threshold",
             vo2_max_data={"precise_value": 52.3},
             lactate_threshold_data=None,
             run_metrics={"avg_pace_seconds_per_km": 304},
         )
-        assert result is None
+        assert "vo2_max_utilization" in result
+        assert "vo2_max_utilization_eval" in result
+        assert "threshold_pace_formatted" not in result  # Should not be calculated
+        assert "ftp_percentage" not in result  # Should not be calculated
         # Note: Actual Mermaid rendering in template is tested in integration tests
 
 
