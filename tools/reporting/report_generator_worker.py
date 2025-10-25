@@ -353,8 +353,8 @@ class ReportGeneratorWorker:
                 limit=10,
             )
 
-            # Extract workouts list from result
-            similar = result.get("workouts", [])
+            # Extract workouts list from result (correct key name)
+            similar = result.get("similar_activities", [])
 
             if not similar or len(similar) < 3:
                 logger.warning(
@@ -362,21 +362,28 @@ class ReportGeneratorWorker:
                 )
                 return None
 
-            # Calculate averages from top 3
+            # Calculate average differences from top 3
+            # Note: WorkoutComparator already calculates pace_diff and hr_diff
             top_3 = similar[:3]
-            avg_pace = sum([w["avg_pace"] for w in top_3]) / 3
-            avg_hr = sum([w["avg_hr"] for w in top_3]) / 3
+            avg_pace_diff = sum([w["pace_diff"] for w in top_3]) / 3
+            avg_hr_diff = sum([w["hr_diff"] for w in top_3]) / 3
 
-            # Calculate differences
-            pace_diff = current_metrics["avg_pace"] - avg_pace
-            hr_diff = current_metrics["avg_hr"] - avg_hr
+            # Use the average differences (negative means current is faster)
+            pace_diff = avg_pace_diff
+            hr_diff = avg_hr_diff
+
+            # Calculate average values from differences
+            # Note: pace_diff = candidate_pace - target_pace
+            # So: avg_similar_pace = current_pace - avg_pace_diff (negative diff means current is faster)
+            avg_similar_pace = current_metrics["avg_pace"] - avg_pace_diff
+            avg_similar_hr = current_metrics["avg_hr"] - avg_hr_diff
 
             # Format comparison table
             comparisons = [
                 {
                     "metric": "平均ペース",
                     "current": self._format_pace(current_metrics["avg_pace"]),
-                    "average": self._format_pace(avg_pace),
+                    "average": self._format_pace(avg_similar_pace),
                     "change": (
                         f"+{abs(int(pace_diff))}秒速い"
                         if pace_diff < 0
@@ -391,7 +398,7 @@ class ReportGeneratorWorker:
                 {
                     "metric": "平均心拍",
                     "current": f"{int(current_metrics['avg_hr'])} bpm",
-                    "average": f"{int(avg_hr)} bpm",
+                    "average": f"{int(avg_similar_hr)} bpm",
                     "change": (
                         f"+{int(hr_diff)} bpm" if hr_diff > 0 else f"{int(hr_diff)} bpm"
                     ),
@@ -406,8 +413,11 @@ class ReportGeneratorWorker:
             # Generate insight
             insight = f"過去の類似ワークアウト{len(top_3)}回と比較して分析しました。"
 
+            # Get distance range from similar activities (using target as reference)
+            target_distance = result.get("target_activity", {}).get("distance_km", 0)
+
             return {
-                "conditions": f"距離{similar[0]['distance']:.1f}-{similar[-1]['distance']:.1f}km、ペース類似",
+                "conditions": f"距離約{target_distance:.1f}km、ペース類似",
                 "count": len(top_3),
                 "comparisons": comparisons,
                 "insight": insight,
@@ -764,6 +774,8 @@ class ReportGeneratorWorker:
             "phase_evaluation": section_analyses.get("phase_evaluation"),
             "split_analysis": section_analyses.get("split_analysis"),
             "summary": section_analyses.get("summary"),
+            # Phase 3: Similar workouts comparison (from performance_data)
+            "similar_workouts": performance_data.get("similar_workouts"),
         }
 
         # Render report using Jinja2 template with all data
