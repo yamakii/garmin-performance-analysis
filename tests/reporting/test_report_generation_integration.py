@@ -339,8 +339,8 @@ def test_generate_report_full_workflow(
     report_content = Path(result["report_path"]).read_text(encoding="utf-8")
     assert "# ランニングパフォーマンス分析レポート" in report_content
     assert "## 基本情報" in report_content
-    assert "## 1. 🎯 フォーム効率" in report_content
-    assert "## 5. ✅ 総合評価と推奨事項" in report_content
+    assert "## パフォーマンス指標" in report_content
+    assert "## 総合評価" in report_content
     assert "Nike Vaporfly" in report_content  # Gear info
 
 

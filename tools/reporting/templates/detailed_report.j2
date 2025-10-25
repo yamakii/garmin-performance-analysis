@@ -1,279 +1,370 @@
 # ランニングパフォーマンス分析レポート
 
+{# ========================================================================= #}
+{# Phase 0: Training type category mapping & derived variables #}
+{# ========================================================================= #}
+{% set training_type_category = training_type_category|default("low_moderate") %}
+{% set show_physiological = training_type_category in ["tempo_threshold", "interval_sprint"] %}
+{% set is_interval = training_type_category == "interval_sprint" %}
+
+{# =================================================================== #}
+{# SECTION 1: 基本情報 #}
+{# =================================================================== #}
 ## 基本情報
 
 | 項目 | 値 |
 |------|-----|
 | アクティビティID | {{ activity_id }} |
-| 実施日 | {{ date }} |{% if activity_name %}
-| 活動名 | {{ activity_name }} |{% endif %}{% if location_name %}
-| 場所 | {{ location_name }} |{% endif %}{% if training_type %}
-| トレーニングタイプ | {{ training_type }} |{% endif %}{% if basic_metrics %}
-| 総距離 | {{ "%.2f"|format(basic_metrics.distance_km|default(0)) }} km |
+| 実施日 | {{ date }} |
+{% if activity_name %}| 活動名 | {{ activity_name }} |{% endif %}
+{% if location_name %}| 場所 | {{ location_name }} |{% endif %}
+{% if training_type %}| トレーニングタイプ | {{ training_type }} |{% endif %}
+{% if basic_metrics %}| 総距離 | {{ "%.2f"|format(basic_metrics.distance_km|default(0)) }} km |
 | 総時間 | {{ (basic_metrics.duration_seconds|default(0) // 60)|int }}:{{ "%02d"|format((basic_metrics.duration_seconds|default(0) % 60)|int) }} |
 | 平均ペース | {{ (basic_metrics.avg_pace_seconds_per_km|default(0) / 60)|int }}:{{ "%02d"|format((basic_metrics.avg_pace_seconds_per_km|default(0) % 60)|int) }}/km |
 | 平均心拍数 | {{ basic_metrics.avg_heart_rate|default(0)|int }} bpm |
-| 平均ケイデンス | {{ basic_metrics.avg_cadence|default(0)|int }} spm |{% endif %}{% if weight_kg %}
-| 体重 | {{ "%.1f"|format(weight_kg) }} kg |{% endif %}
+| 平均ケイデンス | {{ basic_metrics.avg_cadence|default(0)|int }} spm |{% endif %}
+{% if weight_kg %}| 体重 | {{ "%.1f"|format(weight_kg) }} kg |{% endif %}
 
 ---
 
-## 1. 🎯 フォーム効率
-{% if performance_metrics %}
+{# =================================================================== #}
+{# SECTION 2: 📊 パフォーマンスサマリー #}
+{# =================================================================== #}
+## 📊 パフォーマンスサマリー
 
-**主要指標**:
-{% if performance_metrics.pace_consistency %}
-- ペース一貫性: {{ "%.1f"|format(performance_metrics.pace_consistency * 100) }}% {% if performance_metrics.pace_consistency < 0.05 %}(優秀){% elif performance_metrics.pace_consistency < 0.10 %}(良好){% endif %}
-{% endif %}
-{% if performance_metrics.hr_drift_percentage %}
-- 心拍ドリフト: {{ "%.1f"|format(performance_metrics.hr_drift_percentage) }}% {% if performance_metrics.hr_drift_percentage < 5 %}(理想的){% elif performance_metrics.hr_drift_percentage < 10 %}(良好){% endif %}
-{% endif %}
-{% if performance_metrics.fatigue_pattern %}
-- 疲労パターン: {{ performance_metrics.fatigue_pattern }}
-{% endif %}
-{% endif %}
-{% if form_efficiency %}
+{% if show_physiological and vo2_max_data and lactate_threshold_data %}
+### 生理学的指標サマリー
 
-**フォーム効率統計**:
+| 指標 | 現在値 | 評価 |
+|------|--------|------|
+| **VO2 Max** | {{ vo2_max_data.precise_value|default(vo2_max_data.value)|default(0) }} ml/kg/min | カテゴリ: {{ vo2_max_data.category|default("N/A") }} |
+| **VO2 Max利用率** | {{ vo2_max_utilization|default("N/A") }}% | {{ vo2_max_utilization_eval|default("N/A") }} |
+| **閾値ペース** | {{ threshold_pace_formatted|default("N/A") }}/km | {{ threshold_pace_comparison|default("N/A") }} |
+| **FTP(パワー)** | {{ lactate_threshold_data.functional_threshold_power|default(0)|int }} W | Work平均{{ work_avg_power|default("N/A") }}W = FTPの{{ ftp_percentage|default("N/A") }}% |
 
-| 指標 | 平均 | 標準偏差 | 評価 |
-|------|------|----------|------|
-| 接地時間 (GCT) | {{ "%.0f"|format(form_efficiency.gct_average) }}ms | {{ "%.0f"|format(form_efficiency.gct_std) }}ms | {{ form_efficiency.gct_rating }} |
-| 垂直振動 (VO) | {{ "%.2f"|format(form_efficiency.vo_average) }}cm | {{ "%.2f"|format(form_efficiency.vo_std) }}cm | {{ form_efficiency.vo_rating }} |
-| 垂直比率 (VR) | {{ "%.2f"|format(form_efficiency.vr_average) }}% | {{ "%.2f"|format(form_efficiency.vr_std) }}% | {{ form_efficiency.vr_rating }} |
 {% endif %}
-{% if efficiency %}
-{% if efficiency is string %}
-{{ efficiency }}
+
+### 類似ワークアウトとの比較
+
+{% if similar_workouts %}
+過去の同条件ワークアウト({{ similar_workouts.conditions }})との比較:
+
+| 指標 | 今回 | 類似{{ similar_workouts.count }}回平均 | 変化 | トレンド |
+|------|------|------------|------|----------|
+{% for comp in similar_workouts.comparisons %}
+| {{ comp.metric }} | {{ comp.current }} | {{ comp.average }} | {{ comp.change }} | {{ comp.trend }} |
+{% endfor %}
+
+**💡 インサイト**: {{ similar_workouts.insight }}
 {% else %}
-{% if efficiency.evaluation %}
-{{ efficiency.evaluation }}
-{% endif %}
-{% endif %}
-{% else %}
-データがありません。
+類似ワークアウトが見つかりませんでした。
 {% endif %}
 
----
-
-## 2. 🌍 環境条件の影響
-
-{% if weather_data or gear_name %}
-### 環境データ
-{% if weather_data.external_temp_c %}
-- 外気温: {{ "%.1f"|format(weather_data.external_temp_c) }}°C
-{% endif %}
-{% if weather_data.humidity %}
-- 湿度: {{ weather_data.humidity }}%
-{% endif %}
-{% if weather_data.wind_speed_ms %}
-- 風速: {{ "%.1f"|format(weather_data.wind_speed_ms) }} m/s
-{% endif %}
-{% if gear_name %}
-- 使用シューズ: {{ gear_name }}
-{% endif %}
-
-{% endif %}
-{% if environment_analysis %}
-### 環境影響評価
-
-{% if environment_analysis is string %}
-{{ environment_analysis }}
-{% else %}
-{% if environment_analysis.weather_conditions %}
-**気温**: {{ environment_analysis.weather_conditions }}
-
-{% endif %}
-{% if environment_analysis.terrain_impact %}
-**地形**: {{ environment_analysis.terrain_impact }}
-
-{% endif %}
-{% if environment_analysis.gear %}
-**使用機材**:
-{% if environment_analysis.gear.shoes %}
-- シューズ: {{ environment_analysis.gear.shoes }}
-{% endif %}
-{% if environment_analysis.gear.notes %}
-- 備考: {{ environment_analysis.gear.notes }}
-{% endif %}
-
-{% endif %}
-{% if environment_analysis.evaluation %}
-{{ environment_analysis.evaluation }}
-{% endif %}
-{% endif %}
-{% else %}
-データがありません。
+{% if not show_physiological and vo2_max_data %}
+> **参考**: VO2 Max {{ vo2_max_data.precise_value|default(vo2_max_data.value)|default(0) }} ml/kg/min({{ vo2_max_data.category|default("N/A") }}){% if lactate_threshold_data %}、閾値ペース {{ threshold_pace_formatted|default("N/A") }}/km{% endif %}
 {% endif %}
 
 ---
 
-## 3. 📈 フェーズ別評価
+{# =================================================================== #}
+{# SECTION 3: 総合評価 #}
+{# =================================================================== #}
+## 総合評価
 
-{% if phase_evaluation %}
-{% if phase_evaluation.warmup %}
-### ウォームアップフェーズ
-{% if warmup_metrics %}
+{% if summary %}
+### アクティビティタイプ
+{{ summary.activity_type|default('N/A') }}
 
-| 項目 | 値 |
-|------|-----|
-| 平均ペース | {{ warmup_metrics.avg_pace_formatted }}/km |
-| 平均心拍 | {{ warmup_metrics.avg_hr|int }} bpm |
+### 総合所見
+
+{{ summary.summary if summary.summary else "評価データがありません。" }}
+
+{% if summary.key_strengths %}
+**✅ 優れている点:**
+{% for strength in summary.key_strengths %}
+- {{ strength }}
+{% endfor %}
 {% endif %}
 
-{{ phase_evaluation.warmup.evaluation|default('N/A') }}
-
+{% if summary.improvement_areas %}
+**⚠️ 改善可能な点:**
+{% for area in summary.improvement_areas %}
+- {{ area }}
+{% endfor %}
 {% endif %}
-{% if phase_evaluation.run %}
-### {% if phase_evaluation.recovery %}インターバル走フェーズ{% else %}メイン走行フェーズ{% endif %}
-{% if run_metrics or main_metrics %}
-{% set metrics = run_metrics or main_metrics %}
-
-| 項目 | 値 |
-|------|-----|
-| 平均ペース | {{ metrics.avg_pace_formatted }}/km |
-| 平均心拍 | {{ metrics.avg_hr|int }} bpm |{% if metrics.pace_consistency %}
-| ペース一貫性 | {{ "%.1f"|format(metrics.pace_consistency * 100) }}% ({% if metrics.pace_consistency < 0.05 %}優秀{% elif metrics.pace_consistency < 0.10 %}良好{% else %}変動あり{% endif %}) |{% endif %}
 {% endif %}
 
-{{ phase_evaluation.run.evaluation|default('N/A') }}
+### ペース・心拍{% if show_physiological %}・パワー{% endif %}推移{% if is_interval %}(Work/Recoveryハイライト){% endif %}
 
-{% endif %}
-{% if phase_evaluation.recovery %}
-### リカバリーフェーズ
-{% if recovery_metrics %}
+{% if mermaid_data %}
+```mermaid
+xychart-beta
+    title "スプリット別 ペース・心拍{% if show_physiological %}・パワー{% endif %}推移"
+    x-axis {{ mermaid_data.x_axis_labels | tojson }}
+    y-axis "ペース(秒/km)" {{ mermaid_data.pace_min }} --> {{ mermaid_data.pace_max }}
+    y-axis "心拍(bpm)" {{ mermaid_data.hr_min }} --> {{ mermaid_data.hr_max }}
+    line {{ mermaid_data.pace_data | tojson }}
+    line {{ mermaid_data.heart_rate_data | tojson }}
+    {% if show_physiological and mermaid_data.power_data %}
+    line {{ mermaid_data.power_data | tojson }}
+    {% endif %}
+```
 
-| 項目 | 値 |
-|------|-----|
-| 平均ペース | {{ recovery_metrics.avg_pace_formatted }}/km |
-| 平均心拍 | {{ recovery_metrics.avg_hr|int }} bpm |
-{% endif %}
+{% if is_interval %}
+**凡例**: 青=ペース(秒/km)、橙=心拍(bpm)、緑=パワー(W)
 
-{{ phase_evaluation.recovery.evaluation|default('N/A') }}
-
-{% endif %}
-{% if phase_evaluation.cooldown %}
-### クールダウンフェーズ
-{% if cooldown_metrics or finish_metrics %}
-{% set metrics = cooldown_metrics or finish_metrics %}
-
-| 項目 | 値 |
-|------|-----|
-| 平均ペース | {{ metrics.avg_pace_formatted }}/km |
-| 平均心拍 | {{ metrics.avg_hr|int }} bpm |{% if metrics.fatigue_pattern %}
-| 疲労パターン | {{ metrics.fatigue_pattern }} |{% endif %}
-{% endif %}
-
-{{ phase_evaluation.cooldown.evaluation|default('N/A') }}
-
-{% endif %}
-{% if phase_evaluation.main %}
-### メインフェーズ
-{% if main_metrics %}
-
-| 項目 | 値 |
-|------|-----|
-| 平均ペース | {{ main_metrics.avg_pace_formatted }}/km |
-| 平均心拍 | {{ main_metrics.avg_hr|int }} bpm |{% if main_metrics.pace_consistency %}
-| ペース一貫性 | {{ "%.1f"|format(main_metrics.pace_consistency * 100) }}% ({% if main_metrics.pace_consistency < 0.05 %}優秀{% elif main_metrics.pace_consistency < 0.10 %}良好{% else %}変動あり{% endif %}) |{% endif %}
-{% endif %}
-
-{{ phase_evaluation.main.evaluation|default('N/A') }}
-
-{% endif %}
-{% if phase_evaluation.finish %}
-### フィニッシュフェーズ
-{% if finish_metrics %}
-
-| 項目 | 値 |
-|------|-----|
-| 平均ペース | {{ finish_metrics.avg_pace_formatted }}/km |
-| 平均心拍 | {{ finish_metrics.avg_hr|int }} bpm |{% if finish_metrics.fatigue_pattern %}
-| 疲労パターン | {{ finish_metrics.fatigue_pattern }} |{% endif %}
-{% endif %}
-
-{{ phase_evaluation.finish.evaluation|default('N/A') }}
-
+**分析**:
+{{ interval_graph_analysis|default("N/A") }}
 {% endif %}
 {% else %}
-データがありません。
+グラフデータがありません。
 {% endif %}
 
 ---
 
-## 4. 🔍 スプリット分析
-{% if splits %}
+{# =================================================================== #}
+{# SECTION 4: パフォーマンス指標 #}
+{# =================================================================== #}
+## パフォーマンス指標
 
-| # | ペース | 心拍 | ケイデンス | パワー | GCT | VO | VR | 標高 |
-|---|--------|------|------------|--------|-----|----|----|------|{% for split in splits %}
-| {{ split.index }} | {{ split.pace_formatted }}/km | {{ split.heart_rate|int }} bpm | {{ split.cadence|int if split.cadence else "-" }} spm | {{ split.power|int if split.power else "-" }} W | {{ split.ground_contact_time|int if split.ground_contact_time else "-" }} ms | {{ "%.1f"|format(split.vertical_oscillation) if split.vertical_oscillation else "-" }} cm | {{ "%.1f"|format(split.vertical_ratio) if split.vertical_ratio else "-" }}% | +{{ split.elevation_gain|int if split.elevation_gain else 0 }}/-{{ split.elevation_loss|int if split.elevation_loss else 0 }}m |{% endfor %}
+{% if is_interval %}
+> **評価対象**: {{ target_segments_description|default("Workセグメント") }}(インターバル走は高強度区間のパフォーマンスを重視)
+{% endif %}
+
+### スプリット概要{% if is_interval %}(全区間){% endif %}
+
+{% if splits and splits|length > 0 %}
+| # | {% if is_interval %}タイプ | {% endif %}ペース | 心拍 | ケイデンス | パワー | ストライド | GCT | VO | VR | 標高 |
+|---|{% if is_interval %}-------|{% endif %}--------|------|------------|--------|------------|-----|----|----|------|
+{% for split in splits %}
+| {{ split.index }} | {% if is_interval %}{{ split.intensity_type|default("N/A") }} | {% endif %}{{ split.pace_formatted }}/km | {{ split.heart_rate|int }} bpm | {{ split.cadence|int if split.cadence else "-" }} spm | {{ split.power|int if split.power else "-" }} W | {{ "%.2f"|format(split.stride_length) if split.stride_length else "-" }} m | {{ split.ground_contact_time|int if split.ground_contact_time else "-" }} ms | {{ "%.1f"|format(split.vertical_oscillation) if split.vertical_oscillation else "-" }} cm | {{ "%.1f"|format(split.vertical_ratio) if split.vertical_ratio else "-" }}% | +{{ split.elevation_gain|int if split.elevation_gain else 0 }}/-{{ split.elevation_loss|int if split.elevation_loss else 0 }}m |
+{% endfor %}
+
+**📈 {% if is_interval %}Workセグメント {% endif %}ハイライト:**
+{{ highlights_list|default("N/A") }}
+
+<details>
+<summary>📋 {% if is_interval %}Work/Recovery{% else %}スプリット{% endif %}詳細分析(クリックで展開)</summary>
 
 {% if split_analysis %}
 {% if split_analysis is mapping %}
 {% for key, value in split_analysis.items() | sort_splits %}
-
 ### {{ key }}
-
 {{ value }}
-{% endfor %}
-{% endif %}
-{% endif %}
-{% elif split_analysis %}
-{% if split_analysis is mapping %}
-{% for key, value in split_analysis.items() | sort_splits %}
 
-### {{ key }}
-
-{{ value }}
 {% endfor %}
 {% else %}
-データがありません。
+{{ split_analysis }}
 {% endif %}
 {% else %}
-データがありません。
+詳細分析データがありません。
+{% endif %}
+
+</details>
+{% else %}
+スプリットデータがありません。
 {% endif %}
 
 ---
 
-## 5. ✅ 総合評価と推奨事項
+### フォーム効率({% if is_interval %}Workセグメント {% endif %}ペース補正評価){% if form_efficiency_rating_stars %} ({{ form_efficiency_rating_stars }} {{ form_efficiency_rating_score }}/5.0){% endif %}
 
-{% if summary %}
-{% if summary.activity_type %}
-### トレーニングタイプ
-{% if summary.activity_type is string %}{{ summary.activity_type }}{% else %}{{ summary.activity_type.classification|default('N/A') }}{% endif %}
+{% if efficiency %}
+{% if is_interval %}
+```mermaid
+pie title "心拍ゾーン分布(全体)"
+{{ heart_rate_zone_pie_data|default("") }}
+```
+{% else %}
+```mermaid
+pie title "心拍ゾーン分布"
+{{ heart_rate_zone_pie_data|default("") }}
+```
+{% endif %}
+
+{{ efficiency.evaluation if efficiency.evaluation else efficiency if efficiency is string else "フォーム効率データがありません。" }}
+{% else %}
+フォーム効率データがありません。
+{% endif %}
+
+---
+
+{% if show_physiological %}
+{# =================================================================== #}
+{# SECTION 5: 生理学的指標との関連 (Tempo/Interval only) #}
+{# =================================================================== #}
+## 生理学的指標との関連
+
+### VO2 Max活用度
+
+{% if vo2_max_data %}
+- **現在のVO2 Max**: {{ vo2_max_data.precise_value|default(vo2_max_data.value)|default(0) }} ml/kg/min({{ vo2_max_data.category|default("N/A") }})
+- **{% if is_interval %}Work{% else %}メイン区間{% endif %}平均心拍**: {{ target_avg_hr|default("N/A") }} bpm
+- **VO2 Max利用率**: 約{{ vo2_max_utilization|default("N/A") }}%({{ vo2_max_utilization_eval|default("N/A") }})
+
+**期待効果**: {{ vo2_max_expected_effect|default("N/A") }}
+{% else %}
+VO2 Maxデータがありません。
+{% endif %}
+
+### 閾値超過度
+
+{% if lactate_threshold_data %}
+- **閾値心拍**: {{ lactate_threshold_data.heart_rate|default(0)|int }} bpm
+- **{% if is_interval %}Work{% else %}メイン区間{% endif %}平均心拍**: {{ target_avg_hr|default("N/A") }} bpm
+- **閾値パワー(FTP)**: {{ lactate_threshold_data.functional_threshold_power|default(0)|int }} W
+- **{% if is_interval %}Work{% else %}メイン区間{% endif %}平均パワー**: {{ target_avg_power|default("N/A") }} W(FTPの{{ ftp_percentage|default("N/A") }}%) → {{ power_zone_name|default("N/A") }} ✅
+
+**期待効果**: {{ threshold_expected_effect|default("N/A") }}
+{% else %}
+閾値データがありません。
+{% endif %}
+
+---
 
 {% endif %}
-{% if summary.overall_rating %}
-### 総合評価
-{% if summary.overall_rating is string %}{{ summary.overall_rating }}{% else %}{{ summary.overall_rating.stars|default('N/A') }}{% endif %}
 
-{% endif %}
-{% if summary.key_strengths %}
-**強み**:
-{% for strength in summary.key_strengths %}
-- {{ strength }}
-{% endfor %}
+{# =================================================================== #}
+{# SECTION 6 (or 5): フェーズ評価 #}
+{# =================================================================== #}
+## フェーズ評価
 
-{% endif %}
-{% if summary.improvement_areas %}
-**改善ポイント**:
-{% for area in summary.improvement_areas %}
-- {{ area }}
-{% endfor %}
+{% if phase_evaluation %}
+{% if phase_evaluation.get('warmup') or training_type_category == "recovery" %}
+### ウォームアップフェーズ{% if warmup_rating_stars %} ({{ warmup_rating_stars }} {{ warmup_rating_score }}/5.0){% endif %}
 
-{% endif %}
-{% if summary.summary %}
-{{ summary.summary }}
+{{ phase_evaluation.get('warmup', {}).get('evaluation', 'データがありません。') }}
 
+{% if training_type_category == "recovery" %}
+{# Recovery run - only 1 phase, end here #}
+---
 {% endif %}
-{% if summary.recommendations %}
-### 次回への推奨事項
+{% endif %}
+
+{% if training_type_category != "recovery" %}
+{% if phase_evaluation.get('run') or phase_evaluation.get('main') %}
+### {% if is_interval %}Workフェーズ{% else %}メイン走行フェーズ{% endif %}{% if main_rating_stars %} ({{ main_rating_stars }} {{ main_rating_score }}/5.0){% endif %}
+
+{{ phase_evaluation.get('run', {}).get('evaluation', phase_evaluation.get('main', {}).get('evaluation', 'データがありません。')) }}
+
+---
+{% endif %}
+
+{% if is_interval and phase_evaluation.get('recovery') %}
+### Recoveryフェーズ{% if recovery_rating_stars %} ({{ recovery_rating_stars }} {{ recovery_rating_score }}/5.0){% endif %}
+
+{{ phase_evaluation.get('recovery', {}).get('evaluation', 'データがありません。') }}
+
+---
+{% endif %}
+
+{% if phase_evaluation.get('cooldown') or phase_evaluation.get('finish') %}
+### クールダウンフェーズ{% if cooldown_rating_stars %} ({{ cooldown_rating_stars }} {{ cooldown_rating_score }}/5.0){% endif %}
+
+{{ phase_evaluation.get('cooldown', {}).get('evaluation', phase_evaluation.get('finish', {}).get('evaluation', 'データがありません。')) }}
+
+---
+{% endif %}
+{% endif %}
+{% else %}
+フェーズ評価データがありません。
+{% endif %}
+
+{# =================================================================== #}
+{# SECTION 7 (or 6 or 5): 環境要因 #}
+{# =================================================================== #}
+## 環境要因
+
+{% if weather_data or environment_analysis %}
+### 気象条件・環境インパクト
+
+{% if weather_data %}
+- **気温**: {{ weather_data.external_temp_c|default(weather_data.temp_celsius)|default("N/A") }}°C
+- **湿度**: {{ weather_data.humidity|default(weather_data.relative_humidity_percent)|default("N/A") }}%
+- **風速**: {{ weather_data.wind_speed_ms|default((weather_data.wind_speed_kmh|default(0)) / 3.6 if weather_data.wind_speed_kmh else 0) }} m/s
+{% endif %}
+{% if gear_name %}- **使用シューズ**: {{ gear_name }}
+{% elif gear_type or gear_model %}- **使用シューズ**: {{ gear_type|default("") }} {{ gear_model|default("") }}
+{% elif environment_analysis is mapping and environment_analysis.get('gear', {}).get('shoes') %}- **使用シューズ**: {{ environment_analysis.gear.shoes }}
+{% elif environment_analysis is mapping and environment_analysis.get('environmental', {}).get('gear', {}).get('shoes') %}- **使用シューズ**: {{ environment_analysis.environmental.gear.shoes }}
+{% endif %}
+
+{% if environment_analysis %}
+{% if environment_analysis is string %}
+{{ environment_analysis }}
+{% elif environment_analysis is mapping %}
+{{ environment_analysis.get('evaluation', environment_analysis.get('environmental', {}).get('evaluation', 'N/A')) }}
+{% endif %}
+{% endif %}
+{% else %}
+環境データがありません。
+{% endif %}
+
+---
+
+{# =================================================================== #}
+{# SECTION 8 (or 7 or 6): 💡 改善ポイント #}
+{# =================================================================== #}
+## 💡 改善ポイント
+
+{% if summary and summary.recommendations %}
 {{ summary.recommendations }}
-{% endif %}
 {% else %}
-データがありません。
+改善ポイントデータがありません。
 {% endif %}
 
 ---
 
-*🤖 Generated with Garmin Performance Analysis System*
+{# =================================================================== #}
+{# SECTION 9 (or 8 or 7): 技術的詳細 #}
+{# =================================================================== #}
+## 技術的詳細
+
+<details>
+<summary>クリックで展開</summary>
+
+### データソース
+- スプリットデータ: DuckDB (splits table - power, stride_length含む)
+{% if is_interval %}- インターバル区間: DuckDB (splits.intensity_type = 'active'/'rest'){% endif %}
+- フォーム指標: DuckDB (form_efficiency table)
+- 心拍データ: DuckDB (hr_efficiency, heart_rate_zones tables)
+{% if show_physiological %}- 生理学的指標: DuckDB (vo2_max, lactate_threshold tables){% endif %}
+- 環境データ: DuckDB (weather table)
+- 類似ワークアウト: `mcp__garmin-db__compare_similar_workouts()`
+
+### 分析バージョン
+- 生成日時: {{ generation_timestamp|default("N/A") }}
+- システムバージョン: v4.0 (BALANCED - 情報最適化版)
+- 改善項目: 構成最適化/セクション統合/アドバイス形式への変更
+
+</details>
+
+---
+
+{# =================================================================== #}
+{# SECTION 10 (or 9 or 8): 📚 用語解説 #}
+{# =================================================================== #}
+## 📚 用語解説
+
+<details>
+<summary>クリックで展開</summary>
+
+{% if is_interval %}- **Work**: インターバル走の高強度区間
+- **Recovery**: Work間の回復区間{% endif %}
+- **GCT (Ground Contact Time)**: 接地時間。ペースが速いほど短くなる
+- **VO (Vertical Oscillation)**: 垂直振幅。走行中の上下動(目標: 6-8cm)
+- **VR (Vertical Ratio)**: 垂直比率。VO÷ストライド長(目標: 8-10%)
+- **パワー**: ランニングパワー(W)
+{% if show_physiological %}- **FTP (Functional Threshold Power)**: 機能的閾値パワー。1時間維持可能な最大パワー
+- **VO2 Max**: 最大酸素摂取量。有酸素能力の指標
+- **VO2 Max利用率**: VO2 Maxペースに対する実際のペースの比率
+- **閾値ペース**: 乳酸閾値ペース。約60分維持可能な最速ペース{% endif %}
+- **ストライド長**: 1歩あたりの距離(m)。スピード = ケイデンス × ストライド長
+- **ペース補正評価**: そのペースに対する相対評価(同じペースのランナーと比較)
+
+</details>
+
+---
+
+*このレポートは、Garmin Performance Analysis System により自動生成されました。*
