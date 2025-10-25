@@ -230,26 +230,36 @@
 #### 5. Agent出力形式の差異
 
 **summary-section-analyst の出力:**
+
+**重要**: `activity_type`判定は**summary-section-analystの役割ではない**。DuckDBの`training_type`から直接マッピングする（上記参照）。
+
 ```python
 # サンプルレポートで期待される形式
 {
-    "summary": "今日のランは質の高い...",  # ★評価含む
-    "key_strengths": ["...", "..."],         # 箇条書きリスト
-    "improvement_areas": ["...", "..."],     # 箇条書きリスト
+    # activity_type: 削除済み（training_typeから直接マッピング）
+    "summary": "今日のランは質の高い... (★★★★☆ 4.2/5.0)",  # ★評価含む
     "recommendations": """
 ### 1. ウォームアップの導入 ⭐ 重要度: 高
 **現状**: なし
 **推奨アクション:**
 - 最初の1-1.5kmをゆっくり開始
 **期待効果**: 怪我リスク低減
+---
+### 2. クールダウンの追加 ⭐ 重要度: 高
+...
 """
 }
 ```
 
 **現状の実装:**
-- ✅ `summary`, `key_strengths`, `improvement_areas` は実装済み
+- ✅ `activity_type` 判定は削除済み（2025-10-25）
 - ❌ `summary` に★評価が含まれていない
 - ❌ `recommendations` が構造化されていない（マークダウン形式でない）
+
+**変更点（2025-10-25）:**
+- `activity_type`フィールドを削除
+- アクティビティタイプ表示は`get_activity_type_display(training_type)`で決定
+- summary-section-analystは総合所見と改善ポイントに専念
 
 ## 設計
 
@@ -270,11 +280,83 @@ Jinja2 Template
 Final Report
 ```
 
-**Training Type Categorization:**
+**Activity Type Display Mapping (表示用):**
+
+**重要**: アクティビティタイプの判定・表示は、LLM（summary-section-analyst）ではなく、DuckDBの`training_type`から直接マッピングする。
+
+```python
+def get_activity_type_display(training_type: str) -> dict[str, str]:
+    """
+    Map training_type to Japanese display name and English subtitle.
+
+    Args:
+        training_type: DuckDB training_type value
+
+    Returns:
+        {"ja": "日本語名", "en": "English Name", "description": "説明"}
+    """
+    mapping = {
+        "recovery": {
+            "ja": "リカバリーラン",
+            "en": "Recovery Run",
+            "description": "軽い有酸素運動で疲労回復を促進"
+        },
+        "aerobic_base": {
+            "ja": "有酸素ベース走",
+            "en": "Aerobic Base",
+            "description": "心拍ゾーン2-3中心の中強度トレーニング。有酸素能力の基盤構築に最適な強度です。"
+        },
+        "tempo": {
+            "ja": "テンポラン",
+            "en": "Tempo Run",
+            "description": "心拍ゾーン3-4の中高強度。閾値走より少し楽なペースで持久力を強化"
+        },
+        "lactate_threshold": {
+            "ja": "乳酸閾値トレーニング",
+            "en": "Lactate Threshold",
+            "description": "3フェーズ構成（ウォームアップ-メイン-クールダウン）で、閾値ペースを維持する持久力強化トレーニング。Zone 4中心で乳酸処理能力を向上させることが目的です。"
+        },
+        "vo2max": {
+            "ja": "VO2 Maxトレーニング",
+            "en": "VO2 Max Training",
+            "description": "最大酸素摂取量向上を目的とした高強度インターバル"
+        },
+        "anaerobic_capacity": {
+            "ja": "無酸素容量トレーニング",
+            "en": "Anaerobic Capacity",
+            "description": "短時間高強度で無酸素能力を強化"
+        },
+        "speed": {
+            "ja": "スピードトレーニング",
+            "en": "Speed Training",
+            "description": "短距離スプリントでスピードとパワーを強化"
+        },
+        "interval_training": {  # For samples compatibility
+            "ja": "インターバルトレーニング",
+            "en": "Interval Training",
+            "description": "1km×5本のWorkセグメントをZone 4-5（閾値〜最大心拍）で実施し、400mのRecoveryで回復する高強度トレーニング。VO2 max向上とスピード持久力の強化が目的です。"
+        }
+    }
+    return mapping.get(training_type, {
+        "ja": "その他のトレーニング",
+        "en": "Other Training",
+        "description": "分類不明のトレーニング"
+    })
+```
+
+**Template Usage:**
+```jinja2
+### アクティビティタイプ
+**{{ activity_type.ja }}** ({{ activity_type.en }})
+
+{{ activity_type.description }}
+```
+
+**Training Type Categorization (内部処理用):**
 ```python
 def get_training_type_category(training_type: str) -> str:
     """
-    Map training_type to template category.
+    Map training_type to template category for conditional logic.
 
     Returns:
         - "low_moderate": recovery, aerobic_base, aerobic_endurance
@@ -646,7 +728,14 @@ def format_intensity_type(intensity_type: str, index: int) -> str:
 **目的**: サンプルと同じセクション構造を実現し、★評価を全セクションに追加
 
 **タスク:**
-1. **テンプレート構造修正**
+1. **Activity Type表示ロジック実装** ⚠️ **重要変更**
+   - [ ] `ReportGeneratorWorker._get_activity_type_display()` 実装
+   - [ ] training_type → 日本語表示名マッピング（8種類）
+   - [ ] テンプレートで `activity_type` 変数設定（dict with ja/en/description）
+   - [ ] アクティビティタイプセクションの表示形式修正
+   - [ ] ⚠️ summary-section-analystからactivity_type判定を削除（既に完了）
+
+2. **テンプレート構造修正**
    - [ ] 生理学的指標サマリーの配置確認（Tempo/Interval only）
    - [ ] 類似ワークアウト比較の注釈追加（pace_source表示）
    - [ ] 総合所見の★評価表示
@@ -654,18 +743,19 @@ def format_intensity_type(intensity_type: str, index: int) -> str:
    - [ ] 環境インパクトの★評価表示
    - [ ] フォーム効率の★評価表示
 
-2. **Agent Prompt更新 (summary-section-analyst)**
+3. **Agent Prompt更新 (summary-section-analyst)**
    - [ ] 総合所見に★評価を含める指示追加
    - [ ] 評価基準明示（5段階）
    - [ ] recommendationsの構造化ルール追加（⭐重要度）
    - [ ] 改善ポイントテンプレート提供
+   - [ ] ⚠️ activity_type判定の削除を確認（既に完了）
 
-3. **Agent Prompt更新 (phase-section-analyst)**
+4. **Agent Prompt更新 (phase-section-analyst)**
    - [ ] 各フェーズ評価に★評価を含める指示追加
    - [ ] Training type別評価基準の明確化
    - [ ] フェーズ別評価基準（5段階）
 
-4. **Agent Prompt更新 (efficiency/environment)**
+5. **Agent Prompt更新 (efficiency/environment)**
    - [ ] ★評価を含める指示追加
    - [ ] 評価基準明示
 
