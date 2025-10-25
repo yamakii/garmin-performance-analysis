@@ -244,9 +244,13 @@ class ReportGeneratorWorker:
                 data["training_type"] = hr_eff[0]
 
             # Add similar workouts comparison (Phase 3)
+            # Determine comparison pace based on training type
+            comparison_pace, pace_source = self._get_comparison_pace(data)
+
             current_metrics = {
-                "avg_pace": data["basic_metrics"]["avg_pace_seconds_per_km"],
+                "avg_pace": comparison_pace,
                 "avg_hr": data["basic_metrics"]["avg_heart_rate"],
+                "pace_source": pace_source,
             }
             data["similar_workouts"] = self._load_similar_workouts(
                 activity_id, current_metrics
@@ -324,6 +328,41 @@ class ReportGeneratorWorker:
         minutes = int(pace_seconds_per_km / 60)
         seconds = int(pace_seconds_per_km % 60)
         return f"{minutes}:{seconds:02d}/km"
+
+    def _get_comparison_pace(self, performance_data: dict) -> tuple[float, str]:
+        """
+        Determine which pace to use for similarity comparison.
+
+        Args:
+            performance_data: Performance data dict with training_type, run_metrics, basic_metrics
+
+        Returns:
+            tuple: (pace_seconds_per_km, pace_source)
+            - pace_source: "main_set" | "overall"
+
+        Logic:
+            - Structured workouts (tempo, lactate_threshold, vo2max, anaerobic_capacity, speed):
+              → Use run_metrics.avg_pace_seconds_per_km (if available)
+            - Recovery/base/unknown:
+              → Use basic_metrics.avg_pace_seconds_per_km
+        """
+        training_type = performance_data.get("training_type", "unknown")
+        structured_types = {
+            "tempo",
+            "lactate_threshold",
+            "vo2max",
+            "anaerobic_capacity",
+            "speed",
+        }
+
+        # Use main set pace for structured workouts (if available)
+        if training_type in structured_types:
+            run_metrics = performance_data.get("run_metrics")
+            if run_metrics and run_metrics.get("avg_pace_seconds_per_km"):
+                return (run_metrics["avg_pace_seconds_per_km"], "main_set")
+
+        # Fallback: use overall average pace
+        return (performance_data["basic_metrics"]["avg_pace_seconds_per_km"], "overall")
 
     def _load_similar_workouts(
         self, activity_id: int, current_metrics: dict
@@ -421,6 +460,7 @@ class ReportGeneratorWorker:
                 "count": len(top_3),
                 "comparisons": comparisons,
                 "insight": insight,
+                "pace_source": current_metrics.get("pace_source", "overall"),
             }
 
         except Exception as e:

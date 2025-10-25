@@ -377,4 +377,97 @@ class TestPaceCorrectedFormEfficiency:
 
         assert result["vr"]["label"] == "要改善"
         assert result["vr"]["rating_score"] == 3.5
+
+
+@pytest.mark.unit
+class TestPaceComparisonLogic:
+    """Test training-type-aware pace selection."""
+
+    def test_structured_workout_uses_main_set_pace(self, mocker):
+        """Threshold/interval workouts use main set pace."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        data = {
+            "training_type": "lactate_threshold",
+            "basic_metrics": {"avg_pace_seconds_per_km": 380.0},
+            "run_metrics": {"avg_pace_seconds_per_km": 330.0},
+        }
+
+        pace, pace_source = worker._get_comparison_pace(data)
+
+        assert pace == 330.0
+        assert pace_source == "main_set"
+
+    def test_recovery_uses_overall_pace(self, mocker):
+        """Recovery runs use overall average pace."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        data = {
+            "training_type": "recovery",
+            "basic_metrics": {"avg_pace_seconds_per_km": 420.0},
+            "run_metrics": {"avg_pace_seconds_per_km": 410.0},
+        }
+
+        pace, pace_source = worker._get_comparison_pace(data)
+
+        assert pace == 420.0
+        assert pace_source == "overall"
+
+    @pytest.mark.parametrize(
+        "training_type,expected_source",
+        [
+            ("tempo", "main_set"),
+            ("lactate_threshold", "main_set"),
+            ("vo2max", "main_set"),
+            ("anaerobic_capacity", "main_set"),
+            ("speed", "main_set"),
+            ("recovery", "overall"),
+            ("aerobic_base", "overall"),
+            ("unknown", "overall"),
+        ],
+    )
+    def test_pace_source_by_training_type(self, training_type, expected_source, mocker):
+        """All training types map to correct pace source."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        data = {
+            "training_type": training_type,
+            "basic_metrics": {"avg_pace_seconds_per_km": 400.0},
+            "run_metrics": {"avg_pace_seconds_per_km": 350.0},
+        }
+
+        _, pace_source = worker._get_comparison_pace(data)
+
+        assert pace_source == expected_source
+
+    def test_fallback_when_run_metrics_missing(self, mocker):
+        """Falls back to overall pace when run_metrics unavailable."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        data = {
+            "training_type": "lactate_threshold",  # Structured
+            "basic_metrics": {"avg_pace_seconds_per_km": 380.0},
+            "run_metrics": None,  # Missing
+        }
+
+        pace, pace_source = worker._get_comparison_pace(data)
+
+        assert pace == 380.0
+        assert pace_source == "overall"
         # Note: Actual Mermaid rendering in template is tested in integration tests

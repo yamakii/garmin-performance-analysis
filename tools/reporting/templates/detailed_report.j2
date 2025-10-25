@@ -48,7 +48,11 @@
 ### 類似ワークアウトとの比較
 
 {% if similar_workouts %}
+{% if similar_workouts.pace_source == "main_set" %}
+過去の同条件ワークアウト({{ similar_workouts.conditions }}、**メインセットペース比較**)との比較:
+{% else %}
 過去の同条件ワークアウト({{ similar_workouts.conditions }})との比較:
+{% endif %}
 
 | 指標 | 今回 | 類似{{ similar_workouts.count }}回平均 | 変化 | トレンド |
 |------|------|------------|------|----------|
