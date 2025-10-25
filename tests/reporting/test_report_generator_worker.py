@@ -697,4 +697,194 @@ class TestActivityTypeDisplay:
 
         assert "Work" in result["description"] or "Recovery" in result["description"]
         assert "VO2" in result["description"] or "高強度" in result["description"]
+
+
+@pytest.mark.unit
+class TestTrainingTypeCategory:
+    """Test _get_training_type_category method for Phase 2."""
+
+    @pytest.mark.parametrize(
+        "training_type,expected_category",
+        [
+            # Low to moderate intensity
+            ("recovery", "low_moderate"),
+            ("aerobic_base", "low_moderate"),
+            ("aerobic_endurance", "low_moderate"),
+            ("unknown", "low_moderate"),
+            # Tempo/Threshold
+            ("tempo", "tempo_threshold"),
+            ("lactate_threshold", "tempo_threshold"),
+            # Interval/Sprint
+            ("vo2max", "interval_sprint"),
+            ("anaerobic_capacity", "interval_sprint"),
+            ("speed", "interval_sprint"),
+            ("interval_training", "interval_sprint"),
+        ],
+    )
+    def test_training_type_category_mapping(
+        self, training_type, expected_category, mocker
+    ):
+        """All training types map to correct internal category."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        category = worker._get_training_type_category(training_type)
+
+        assert category == expected_category
+
+    def test_category_mapping_is_consistent_with_display(self, mocker):
+        """Category mapping should work for all display-mapped types."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        # All 8 display types should have valid category mapping
+        display_types = [
+            "recovery",
+            "aerobic_base",
+            "tempo",
+            "lactate_threshold",
+            "vo2max",
+            "anaerobic_capacity",
+            "speed",
+            "interval_training",
+        ]
+
+        for training_type in display_types:
+            category = worker._get_training_type_category(training_type)
+            assert category in ["low_moderate", "tempo_threshold", "interval_sprint"]
+
+
+@pytest.mark.unit
+class TestPhysiologicalIndicators:
+    """Test _calculate_physiological_indicators method for Phase 2."""
+
+    def test_calculate_vo2_max_utilization(self, mocker):
+        """Calculate VO2 Max utilization percentage."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        vo2_max_data = {"precise_value": 52.3}
+        lactate_threshold_data = {
+            "functional_threshold_power": 285,
+            "speed_mps": 3.63,  # ~4:35/km
+        }
+        run_metrics = {
+            "avg_pace_seconds_per_km": 304,  # 5:04/km
+            "avg_power": 250,
+        }
+
+        result = worker._calculate_physiological_indicators(
+            training_type_category="tempo_threshold",
+            vo2_max_data=vo2_max_data,
+            lactate_threshold_data=lactate_threshold_data,
+            run_metrics=run_metrics,
+        )
+
+        assert result is not None
+        assert "vo2_max_utilization" in result
+        assert "threshold_pace_formatted" in result
+        assert "ftp_percentage" in result
+
+        # VO2 Max utilization should be < 100% (running slower than VO2 Max pace)
+        assert 0 < result["vo2_max_utilization"] < 100
+
+    def test_ftp_percentage_calculation(self, mocker):
+        """Calculate FTP percentage correctly."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        vo2_max_data = {"precise_value": 52.3}
+        lactate_threshold_data = {"functional_threshold_power": 285, "speed_mps": 3.63}
+        run_metrics = {"avg_pace_seconds_per_km": 275, "avg_power": 342}
+
+        result = worker._calculate_physiological_indicators(
+            training_type_category="interval_sprint",
+            vo2_max_data=vo2_max_data,
+            lactate_threshold_data=lactate_threshold_data,
+            run_metrics=run_metrics,
+        )
+
+        assert result is not None
+        # 342W / 285W ≈ 120%
+        assert result["ftp_percentage"] == pytest.approx(120.0, rel=0.1)
+
+    def test_threshold_pace_formatting(self, mocker):
+        """Format threshold pace as MM:SS/km."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        vo2_max_data = {"precise_value": 52.3}
+        lactate_threshold_data = {
+            "functional_threshold_power": 285,
+            "speed_mps": 3.63,  # 1000/3.63 ≈ 275.5s/km ≈ 4:35/km
+        }
+        run_metrics = {"avg_pace_seconds_per_km": 304, "avg_power": 250}
+
+        result = worker._calculate_physiological_indicators(
+            training_type_category="tempo_threshold",
+            vo2_max_data=vo2_max_data,
+            lactate_threshold_data=lactate_threshold_data,
+            run_metrics=run_metrics,
+        )
+
+        assert result is not None
+        assert result["threshold_pace_formatted"] in ["4:35/km", "4:36/km"]
+
+    def test_returns_none_for_low_moderate(self, mocker):
+        """Returns None for low_moderate training types."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        result = worker._calculate_physiological_indicators(
+            training_type_category="low_moderate",
+            vo2_max_data={"precise_value": 52.3},
+            lactate_threshold_data={"functional_threshold_power": 285},
+            run_metrics={"avg_pace_seconds_per_km": 400},
+        )
+
+        assert result is None
+
+    def test_handles_missing_data_gracefully(self, mocker):
+        """Returns None when required data is missing."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        # Missing VO2 Max data
+        result = worker._calculate_physiological_indicators(
+            training_type_category="tempo_threshold",
+            vo2_max_data=None,
+            lactate_threshold_data={"functional_threshold_power": 285},
+            run_metrics={"avg_pace_seconds_per_km": 304},
+        )
+        assert result is None
+
+        # Missing lactate threshold data
+        result = worker._calculate_physiological_indicators(
+            training_type_category="tempo_threshold",
+            vo2_max_data={"precise_value": 52.3},
+            lactate_threshold_data=None,
+            run_metrics={"avg_pace_seconds_per_km": 304},
+        )
+        assert result is None
         # Note: Actual Mermaid rendering in template is tested in integration tests

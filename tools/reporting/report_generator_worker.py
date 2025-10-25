@@ -570,6 +570,113 @@ class ReportGeneratorWorker:
             },
         )
 
+    def _get_training_type_category(self, training_type: str) -> str:
+        """Map training_type to template category for conditional logic.
+
+        Args:
+            training_type: DuckDB training_type value
+
+        Returns:
+            Category string:
+            - "low_moderate": recovery, aerobic_base, aerobic_endurance, unknown
+            - "tempo_threshold": tempo, lactate_threshold
+            - "interval_sprint": vo2max, anaerobic_capacity, speed, interval_training
+
+        This categorization is used for:
+        - Showing/hiding physiological indicators summary
+        - Selecting appropriate comparison pace (main_set vs overall)
+        - Determining evaluation focus (overall vs specific phases)
+        """
+        interval_sprint = {
+            "vo2max",
+            "anaerobic_capacity",
+            "speed",
+            "interval_training",
+        }
+        tempo_threshold = {"tempo", "lactate_threshold"}
+
+        if training_type in interval_sprint:
+            return "interval_sprint"
+        elif training_type in tempo_threshold:
+            return "tempo_threshold"
+        else:
+            # Default to low_moderate for recovery, aerobic_base, and unknown types
+            return "low_moderate"
+
+    def _calculate_physiological_indicators(
+        self,
+        training_type_category: str,
+        vo2_max_data: dict | None,
+        lactate_threshold_data: dict | None,
+        run_metrics: dict,
+    ) -> dict | None:
+        """Calculate physiological indicators for tempo/threshold/interval workouts.
+
+        Args:
+            training_type_category: Training type category from _get_training_type_category
+            vo2_max_data: VO2 Max data from database
+            lactate_threshold_data: Lactate threshold data from database
+            run_metrics: Run/main phase metrics
+
+        Returns:
+            Dictionary with physiological indicators or None if:
+            - training_type_category is "low_moderate"
+            - Required data is missing
+
+        Indicators:
+            - vo2_max_utilization: Percentage of VO2 Max being utilized (0-100%)
+            - threshold_pace_formatted: Threshold pace in MM:SS/km format
+            - ftp_percentage: Percentage of FTP (Functional Threshold Power)
+        """
+        # Only calculate for tempo_threshold and interval_sprint
+        if training_type_category == "low_moderate":
+            return None
+
+        # Check required data
+        if not vo2_max_data or not lactate_threshold_data or not run_metrics:
+            return None
+
+        # Extract values with None checks
+        vo2_max_value = vo2_max_data.get("precise_value")
+        threshold_speed = lactate_threshold_data.get("speed_mps")
+        ftp = lactate_threshold_data.get("functional_threshold_power")
+        target_pace = run_metrics.get("avg_pace_seconds_per_km")
+        work_avg_power = run_metrics.get("avg_power", 0)
+
+        if not all([vo2_max_value, threshold_speed, target_pace]):
+            return None
+
+        # Type guards - now mypy knows these are not None
+        assert isinstance(vo2_max_value, int | float)
+        assert isinstance(threshold_speed, int | float)
+        assert isinstance(target_pace, int | float)
+
+        # Calculate VO2 Max utilization
+        # Empirical formula: vVO2max (km/h) ≈ VO2max / 3.5
+        # This gives running speed at VO2 Max intensity
+        # For VO2max 52.3 → vVO2max ≈ 14.9 km/h ≈ 4:01/km
+        vo2_max_speed_kmh = vo2_max_value / 3.5
+        vo2_max_pace_seconds_per_km = 3600 / vo2_max_speed_kmh
+
+        # Utilization = VO2max pace / current pace * 100
+        # Example: VO2max pace 241s/km, current 304s/km → 241/304 = 79%
+        vo2_max_utilization = (vo2_max_pace_seconds_per_km / target_pace) * 100
+
+        # Format threshold pace
+        threshold_pace_seconds_per_km = 1000 / threshold_speed
+        threshold_pace_formatted = self._format_pace(threshold_pace_seconds_per_km)
+
+        # Calculate FTP percentage
+        ftp_percentage = 0.0
+        if ftp and isinstance(ftp, int | float) and ftp > 0 and work_avg_power:
+            ftp_percentage = (work_avg_power / ftp) * 100
+
+        return {
+            "vo2_max_utilization": round(vo2_max_utilization, 1),
+            "threshold_pace_formatted": threshold_pace_formatted,
+            "ftp_percentage": round(ftp_percentage, 1),
+        }
+
     def _get_comparison_pace(self, performance_data: dict) -> tuple[float, str]:
         """
         Determine which pace to use for similarity comparison.
