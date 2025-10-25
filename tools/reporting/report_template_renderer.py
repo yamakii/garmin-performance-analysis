@@ -78,6 +78,7 @@ class ReportTemplateRenderer:
         main_metrics: dict[str, Any] | None = None,
         finish_metrics: dict[str, Any] | None = None,
         splits: list[dict[str, Any]] | None = None,
+        mermaid_data: dict[str, Any] | None = None,
         efficiency: dict[str, Any] | str | None = None,
         environment_analysis: dict[str, Any] | str | None = None,
         phase_evaluation: dict[str, Any] | None = None,
@@ -107,6 +108,7 @@ class ReportTemplateRenderer:
             main_metrics: (Legacy) Main phase metrics - deprecated, use run_metrics
             finish_metrics: (Legacy) Finish phase metrics - deprecated, use cooldown_metrics
             splits: List of split data with metrics
+            mermaid_data: Mermaid graph data for visualization
             efficiency: Form & HR efficiency analysis
             environment_analysis: Weather, terrain, gear analysis
             phase_evaluation: Phase analysis (supports 3-phase and 4-phase)
@@ -162,6 +164,7 @@ class ReportTemplateRenderer:
                 main_metrics=main_metrics,  # Keep for backward compatibility
                 finish_metrics=finish_metrics,  # Keep for backward compatibility
                 splits=splits or [],
+                mermaid_data=mermaid_data,
                 efficiency=efficiency or {},
                 environment_analysis=environment_analysis or {},
                 phase_evaluation=phase_evaluation or {},

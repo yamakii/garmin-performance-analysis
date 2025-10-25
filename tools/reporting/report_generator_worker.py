@@ -249,6 +249,51 @@ class ReportGeneratorWorker:
             logger.error(f"Error loading performance data: {e}")
             return None
 
+    def _generate_mermaid_data(
+        self, splits: list[dict[str, Any]] | None
+    ) -> dict[str, Any] | None:
+        """
+        Generate Mermaid graph data from splits.
+
+        Args:
+            splits: List of split dictionaries
+
+        Returns:
+            Dictionary with Mermaid graph data or None if no splits
+        """
+        if not splits:
+            return None
+
+        # Extract data from splits
+        x_axis_labels = [f"{s['index']}" for s in splits]
+        pace_data = [s["pace_seconds_per_km"] for s in splits]
+        heart_rate_data = [s["heart_rate"] for s in splits]
+        power_data = [s.get("power", 0) or 0 for s in splits]  # Handle None values
+
+        # Calculate dynamic Y-axis ranges with 10% padding
+        if pace_data:
+            pace_min = min(pace_data) * 0.9
+            pace_max = max(pace_data) * 1.1
+        else:
+            pace_min = pace_max = 0
+
+        if heart_rate_data:
+            hr_min = min(heart_rate_data) * 0.9
+            hr_max = max(heart_rate_data) * 1.1
+        else:
+            hr_min = hr_max = 0
+
+        return {
+            "x_axis_labels": x_axis_labels,
+            "pace_data": pace_data,
+            "heart_rate_data": heart_rate_data,
+            "power_data": power_data,
+            "pace_min": round(pace_min, 1),
+            "pace_max": round(pace_max, 1),
+            "hr_min": round(hr_min, 1),
+            "hr_max": round(hr_max, 1),
+        }
+
     def load_section_analyses(
         self, activity_id: int
     ) -> dict[str, dict[str, Any]] | None:
