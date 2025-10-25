@@ -59,8 +59,8 @@
 類似ワークアウトが見つかりませんでした。
 {% endif %}
 
-{% if not show_physiological and vo2_max_data %}
-> **参考**: VO2 Max {{ vo2_max_data.precise_value|default(vo2_max_data.value)|default(0) }} ml/kg/min({{ vo2_max_data.category|default("N/A") }}){% if lactate_threshold_data %}、閾値ペース {{ threshold_pace_formatted|default("N/A") }}/km{% endif %}
+{% if reference_info %}
+{{ reference_info }}
 {% endif %}
 
 ---
