@@ -68,6 +68,145 @@ class TestReportTemplateRenderer:
 
 
 @pytest.mark.unit
+class TestExtractStarRating:
+    """Test extract_star_rating template filter."""
+
+    def test_extract_star_rating_with_stars(self):
+        """Extract star rating from text with rating."""
+        from tools.reporting.report_template_renderer import ReportTemplateRenderer
+
+        renderer = ReportTemplateRenderer()
+
+        # Get the filter function
+        extract_star_rating = renderer.env.filters.get("extract_star_rating")
+        assert (
+            extract_star_rating is not None
+        ), "extract_star_rating filter not registered"
+
+        text = "今日のランは質の高い有酸素ベース走でした。(★★★★☆ 4.2/5.0)"
+        result = extract_star_rating(text)
+
+        assert result["stars"] == "★★★★☆"
+        assert result["score"] == 4.2
+        assert (
+            result["text_without_rating"]
+            == "今日のランは質の高い有酸素ベース走でした。"
+        )
+
+    def test_extract_star_rating_with_perfect_score(self):
+        """Extract star rating with 5.0 score."""
+        from tools.reporting.report_template_renderer import ReportTemplateRenderer
+
+        renderer = ReportTemplateRenderer()
+        extract_star_rating = renderer.env.filters["extract_star_rating"]
+
+        text = "完璧なウォームアップです。(★★★★★ 5.0/5.0)"
+        result = extract_star_rating(text)
+
+        assert result["stars"] == "★★★★★"
+        assert result["score"] == 5.0
+        assert result["text_without_rating"] == "完璧なウォームアップです。"
+
+    def test_extract_star_rating_with_low_score(self):
+        """Extract star rating with low score."""
+        from tools.reporting.report_template_renderer import ReportTemplateRenderer
+
+        renderer = ReportTemplateRenderer()
+        extract_star_rating = renderer.env.filters["extract_star_rating"]
+
+        text = "改善が必要です。(★★★☆☆ 3.5/5.0)"
+        result = extract_star_rating(text)
+
+        assert result["stars"] == "★★★☆☆"
+        assert result["score"] == 3.5
+        assert result["text_without_rating"] == "改善が必要です。"
+
+    def test_extract_star_rating_without_stars(self):
+        """Return empty stars when no rating in text."""
+        from tools.reporting.report_template_renderer import ReportTemplateRenderer
+
+        renderer = ReportTemplateRenderer()
+        extract_star_rating = renderer.env.filters["extract_star_rating"]
+
+        text = "普通のランニングでした。"
+        result = extract_star_rating(text)
+
+        assert result["stars"] == ""
+        assert result["score"] == 0.0
+        assert result["text_without_rating"] == "普通のランニングでした。"
+
+    def test_extract_star_rating_at_beginning(self):
+        """Extract star rating when it appears at the beginning."""
+        from tools.reporting.report_template_renderer import ReportTemplateRenderer
+
+        renderer = ReportTemplateRenderer()
+        extract_star_rating = renderer.env.filters["extract_star_rating"]
+
+        text = "(★★★★☆ 4.0/5.0) 良好な結果です。"
+        result = extract_star_rating(text)
+
+        assert result["stars"] == "★★★★☆"
+        assert result["score"] == 4.0
+        assert result["text_without_rating"] == "良好な結果です。"
+
+    def test_extract_star_rating_multiple_occurrences(self):
+        """Extract first star rating when multiple ratings exist."""
+        from tools.reporting.report_template_renderer import ReportTemplateRenderer
+
+        renderer = ReportTemplateRenderer()
+        extract_star_rating = renderer.env.filters["extract_star_rating"]
+
+        text = "前半 (★★★★☆ 4.0/5.0) 後半 (★★★☆☆ 3.0/5.0)"
+        result = extract_star_rating(text)
+
+        # Should extract first occurrence
+        assert result["stars"] == "★★★★☆"
+        assert result["score"] == 4.0
+        # Should remove only the first rating
+        assert "(★★★☆☆ 3.0/5.0)" in result["text_without_rating"]
+
+    def test_extract_star_rating_edge_case_decimal(self):
+        """Handle edge case with single decimal place."""
+        from tools.reporting.report_template_renderer import ReportTemplateRenderer
+
+        renderer = ReportTemplateRenderer()
+        extract_star_rating = renderer.env.filters["extract_star_rating"]
+
+        text = "まあまあです。(★★★★☆ 4.5/5.0)"
+        result = extract_star_rating(text)
+
+        assert result["stars"] == "★★★★☆"
+        assert result["score"] == 4.5
+        assert result["text_without_rating"] == "まあまあです。"
+
+    def test_extract_star_rating_with_dict_input(self):
+        """Handle dict input gracefully."""
+        from tools.reporting.report_template_renderer import ReportTemplateRenderer
+
+        renderer = ReportTemplateRenderer()
+        extract_star_rating = renderer.env.filters["extract_star_rating"]
+
+        result = extract_star_rating({"key": "value"})
+
+        assert result["stars"] == ""
+        assert result["score"] == 0.0
+        assert result["text_without_rating"] == ""
+
+    def test_extract_star_rating_with_none_input(self):
+        """Handle None input gracefully."""
+        from tools.reporting.report_template_renderer import ReportTemplateRenderer
+
+        renderer = ReportTemplateRenderer()
+        extract_star_rating = renderer.env.filters["extract_star_rating"]
+
+        result = extract_star_rating(None)
+
+        assert result["stars"] == ""
+        assert result["score"] == 0.0
+        assert result["text_without_rating"] == ""
+
+
+@pytest.mark.unit
 class TestMermaidGraphGeneration:
     """Test Mermaid graph data generation."""
 
