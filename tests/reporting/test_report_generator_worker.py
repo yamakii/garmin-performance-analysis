@@ -470,4 +470,92 @@ class TestPaceComparisonLogic:
 
         assert pace == 380.0
         assert pace_source == "overall"
+
+
+@pytest.mark.unit
+class TestActivityTypeDisplay:
+    """Test _get_activity_type_display method."""
+
+    @pytest.mark.parametrize(
+        "training_type,expected_ja,expected_en",
+        [
+            ("recovery", "リカバリーラン", "Recovery Run"),
+            ("aerobic_base", "有酸素ベース走", "Aerobic Base"),
+            ("tempo", "テンポラン", "Tempo Run"),
+            ("lactate_threshold", "乳酸閾値トレーニング", "Lactate Threshold"),
+            ("vo2max", "VO2 Maxトレーニング", "VO2 Max Training"),
+            ("anaerobic_capacity", "無酸素容量トレーニング", "Anaerobic Capacity"),
+            ("speed", "スピードトレーニング", "Speed Training"),
+            ("interval_training", "インターバルトレーニング", "Interval Training"),
+        ],
+    )
+    def test_activity_type_mapping(
+        self, training_type, expected_ja, expected_en, mocker
+    ):
+        """All 8 training types map to correct display names."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        result = worker._get_activity_type_display(training_type)
+
+        assert result["ja"] == expected_ja
+        assert result["en"] == expected_en
+        assert "description" in result
+        assert len(result["description"]) > 0
+
+    def test_unknown_training_type_fallback(self, mocker):
+        """Unknown training types return fallback display."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        result = worker._get_activity_type_display("unknown_type")
+
+        assert result["ja"] == "その他のトレーニング"
+        assert result["en"] == "Other Training"
+        assert "description" in result
+
+    def test_aerobic_base_description_content(self, mocker):
+        """Aerobic base description mentions heart rate zones."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        result = worker._get_activity_type_display("aerobic_base")
+
+        assert "心拍ゾーン" in result["description"] or "Zone" in result["description"]
+        assert "有酸素" in result["description"]
+
+    def test_lactate_threshold_description_structure(self, mocker):
+        """Lactate threshold description mentions 3-phase structure."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        result = worker._get_activity_type_display("lactate_threshold")
+
+        assert "3" in result["description"] or "フェーズ" in result["description"]
+        assert "閾値" in result["description"]
+
+    def test_interval_training_description_details(self, mocker):
+        """Interval training description includes workout structure details."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        result = worker._get_activity_type_display("interval_training")
+
+        assert "Work" in result["description"] or "Recovery" in result["description"]
+        assert "VO2" in result["description"] or "高強度" in result["description"]
         # Note: Actual Mermaid rendering in template is tested in integration tests

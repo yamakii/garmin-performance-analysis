@@ -71,6 +71,7 @@ class ReportTemplateRenderer:
         form_efficiency: dict[str, Any] | None = None,
         performance_metrics: dict[str, Any] | None = None,
         training_type: str | None = None,
+        activity_type: dict[str, str] | None = None,
         warmup_metrics: dict[str, Any] | None = None,
         run_metrics: dict[str, Any] | None = None,
         recovery_metrics: dict[str, Any] | None = None,
@@ -102,6 +103,7 @@ class ReportTemplateRenderer:
             form_efficiency: Form efficiency statistics (GCT, VO, VR)
             performance_metrics: Performance metrics (pace consistency, HR drift, etc.)
             training_type: Training type classification
+            activity_type: Activity type display info (ja/en/description)
             warmup_metrics: Warmup phase metrics
             run_metrics: Run/main phase metrics (new naming)
             recovery_metrics: Recovery phase metrics (4-phase interval training only)
@@ -158,6 +160,7 @@ class ReportTemplateRenderer:
                 form_efficiency=form_efficiency,
                 performance_metrics=performance_metrics,
                 training_type=training_type,
+                activity_type=activity_type,
                 warmup_metrics=warmup_metrics,
                 run_metrics=run_metrics,
                 recovery_metrics=recovery_metrics,

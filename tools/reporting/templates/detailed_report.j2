@@ -11,20 +11,14 @@
 {# SECTION 1: 基本情報 #}
 {# =================================================================== #}
 ## 基本情報
-
-| 項目 | 値 |
-|------|-----|
-| アクティビティID | {{ activity_id }} |
-| 実施日 | {{ date }} |
-{% if activity_name %}| 活動名 | {{ activity_name }} |{% endif %}
-{% if location_name %}| 場所 | {{ location_name }} |{% endif %}
-{% if training_type %}| トレーニングタイプ | {{ training_type }} |{% endif %}
-{% if basic_metrics %}| 総距離 | {{ "%.2f"|format(basic_metrics.distance_km|default(0)) }} km |
-| 総時間 | {{ (basic_metrics.duration_seconds|default(0) // 60)|int }}:{{ "%02d"|format((basic_metrics.duration_seconds|default(0) % 60)|int) }} |
-| 平均ペース | {{ (basic_metrics.avg_pace_seconds_per_km|default(0) / 60)|int }}:{{ "%02d"|format((basic_metrics.avg_pace_seconds_per_km|default(0) % 60)|int) }}/km |
-| 平均心拍数 | {{ basic_metrics.avg_heart_rate|default(0)|int }} bpm |
-| 平均ケイデンス | {{ basic_metrics.avg_cadence|default(0)|int }} spm |{% endif %}
-{% if weight_kg %}| 体重 | {{ "%.1f"|format(weight_kg) }} kg |{% endif %}
+- **日付**: {{ date }}
+- **アクティビティID**: {{ activity_id }}
+{% if activity_name %}- **アクティビティ名**: {{ activity_name }}{% endif %}
+{% if basic_metrics.start_time %}- **開始時刻**: {{ basic_metrics.start_time }}{% endif %}
+{% if basic_metrics.distance_km %}- **距離**: {{ "%.2f"|format(basic_metrics.distance_km) }} km{% endif %}
+{% if basic_metrics.duration_seconds %}- **所要時間**: {{ (basic_metrics.duration_seconds // 60)|int }}分{{ "%02d"|format((basic_metrics.duration_seconds % 60)|int) }}秒 ({{ basic_metrics.duration_seconds|int }}秒){% endif %}
+{% if basic_metrics.avg_pace_seconds_per_km %}- **平均ペース**: {{ (basic_metrics.avg_pace_seconds_per_km / 60)|int }}:{{ "%02d"|format((basic_metrics.avg_pace_seconds_per_km % 60)|int) }}/km{% endif %}
+- **[Garmin Connectで見る](https://connect.garmin.com/modern/activity/{{ activity_id }})**
 
 ---
 
@@ -78,7 +72,10 @@
 
 {% if summary %}
 ### アクティビティタイプ
-{{ summary.activity_type|default('N/A') }}
+{% if activity_type %}**{{ activity_type.ja }}** ({{ activity_type.en }})
+
+{{ activity_type.description }}
+{% else %}N/A{% endif %}
 
 ### 総合所見
 
