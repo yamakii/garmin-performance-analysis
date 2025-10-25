@@ -888,3 +888,68 @@ class TestPhysiologicalIndicators:
         )
         assert result is None
         # Note: Actual Mermaid rendering in template is tested in integration tests
+
+
+@pytest.mark.unit
+class TestComparisonPaceAnnotation:
+    """Test pace_source annotation for Task 3 (Phase 2)."""
+
+    def test_pace_source_is_main_set_for_interval(self, mocker):
+        """pace_source is 'main_set' for Interval workouts (using run_metrics)."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        # Interval workout with run_metrics pace
+        performance_data = {
+            "training_type": "vo2max",
+            "basic_metrics": {"avg_pace_seconds_per_km": 290},
+            "run_metrics": {"avg_pace_seconds_per_km": 275},  # Work pace
+        }
+
+        pace, pace_source = worker._get_comparison_pace(performance_data)
+
+        assert pace == 275
+        assert pace_source == "main_set"
+
+    def test_pace_source_is_main_set_for_threshold(self, mocker):
+        """pace_source is 'main_set' for Threshold workouts (using run_metrics)."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        # Threshold workout with run_metrics pace
+        performance_data = {
+            "training_type": "lactate_threshold",
+            "basic_metrics": {"avg_pace_seconds_per_km": 300},
+            "run_metrics": {"avg_pace_seconds_per_km": 285},  # Main phase pace
+        }
+
+        pace, pace_source = worker._get_comparison_pace(performance_data)
+
+        assert pace == 285
+        assert pace_source == "main_set"
+
+    def test_pace_source_is_overall_for_base_run(self, mocker):
+        """pace_source is 'overall' for Base runs (using basic_metrics)."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        # Base run without run_metrics
+        performance_data = {
+            "training_type": "aerobic_base",
+            "basic_metrics": {"avg_pace_seconds_per_km": 360},
+            "run_metrics": None,
+        }
+
+        pace, pace_source = worker._get_comparison_pace(performance_data)
+
+        assert pace == 360
+        assert pace_source == "overall"
