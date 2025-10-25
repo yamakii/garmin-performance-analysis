@@ -341,16 +341,20 @@ class ReportGeneratorWorker:
             Dictionary with comparison data or None
         """
         try:
-            # Try to import and use MCP tool
-            from servers.garmin_db_mcp.tools.comparison import compare_similar_workouts
+            # Import WorkoutComparator from correct location
+            from tools.rag.queries.comparisons import WorkoutComparator
 
-            similar = compare_similar_workouts(
+            comparator = WorkoutComparator()
+            result = comparator.find_similar_workouts(
                 activity_id=activity_id,
                 distance_tolerance=0.10,
                 pace_tolerance=0.10,
                 terrain_match=True,
                 limit=10,
             )
+
+            # Extract workouts list from result
+            similar = result.get("workouts", [])
 
             if not similar or len(similar) < 3:
                 logger.warning(

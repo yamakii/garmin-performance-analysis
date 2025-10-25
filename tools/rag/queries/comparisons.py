@@ -204,15 +204,11 @@ class WorkoutComparator:
         query = """
             SELECT
                 a.activity_id,
-                a.date,
+                a.activity_date,
                 a.activity_name,
                 a.avg_pace_seconds_per_km,
                 a.avg_heart_rate,
-                a.total_distance_km,
-                a.aerobic_te,
-                a.anaerobic_te,
-                a.avg_cadence,
-                a.avg_power
+                a.total_distance_km
             FROM activities a
             WHERE a.activity_id != ?
               AND a.avg_pace_seconds_per_km BETWEEN ? AND ?
@@ -228,7 +224,7 @@ class WorkoutComparator:
 
         # Add date range filter
         if date_range:
-            query += " AND a.date BETWEEN ? AND ?"
+            query += " AND a.activity_date BETWEEN ? AND ?"
             params.extend(date_range)
 
         # Order by pace similarity and limit results
@@ -249,10 +245,6 @@ class WorkoutComparator:
                     "avg_pace": row[3],
                     "avg_heart_rate": row[4],
                     "distance_km": row[5],
-                    "aerobic_te": row[6],
-                    "anaerobic_te": row[7],
-                    "avg_cadence": row[8],
-                    "avg_power": row[9],
                 }
 
                 # Get training type from hr_efficiency table
@@ -344,15 +336,11 @@ class WorkoutComparator:
             query = """
                 SELECT
                     activity_id,
-                    date,
+                    activity_date,
                     activity_name,
                     avg_pace_seconds_per_km,
                     avg_heart_rate,
-                    total_distance_km,
-                    aerobic_te,
-                    anaerobic_te,
-                    avg_cadence,
-                    avg_power
+                    total_distance_km
                 FROM activities
                 WHERE activity_id = ?
             """
@@ -368,10 +356,6 @@ class WorkoutComparator:
                 "avg_pace": row[3],
                 "avg_heart_rate": row[4],
                 "distance_km": row[5],
-                "aerobic_te": row[6],
-                "anaerobic_te": row[7],
-                "avg_cadence": row[8],
-                "avg_power": row[9],
             }
 
             # Get training type from hr_efficiency table
