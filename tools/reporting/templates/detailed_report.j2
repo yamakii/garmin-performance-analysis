@@ -80,9 +80,10 @@
 ### アクティビティタイプ
 {{ summary.activity_type|default('N/A') }}
 
-### 総合所見
+{% set rating = summary.summary|extract_star_rating %}
+### 総合所見{% if rating.score > 0 %} ({{ rating.stars }} {{ rating.score }}/5.0){% endif %}
 
-{{ summary.summary if summary.summary else "評価データがありません。" }}
+{{ rating.text_without_rating if rating.score > 0 else summary.summary if summary.summary else "評価データがありません。" }}
 
 {% if summary.key_strengths %}
 **✅ 優れている点:**
@@ -172,7 +173,9 @@ xychart-beta
 
 ---
 
-### フォーム効率({% if is_interval %}Workセグメント {% endif %}ペース補正評価){% if form_efficiency_rating_stars %} ({{ form_efficiency_rating_stars }} {{ form_efficiency_rating_score }}/5.0){% endif %}
+{% set efficiency_text = efficiency.evaluation if efficiency.evaluation else efficiency if efficiency is string else "フォーム効率データがありません。" %}
+{% set efficiency_rating = efficiency_text|extract_star_rating %}
+### フォーム効率({% if is_interval %}Workセグメント {% endif %}ペース補正評価){% if efficiency_rating.score > 0 %} ({{ efficiency_rating.stars }} {{ efficiency_rating.score }}/5.0){% endif %}
 
 {% if efficiency %}
 {% if is_interval %}
@@ -187,7 +190,7 @@ pie title "心拍ゾーン分布"
 ```
 {% endif %}
 
-{{ efficiency.evaluation if efficiency.evaluation else efficiency if efficiency is string else "フォーム効率データがありません。" }}
+{{ efficiency_rating.text_without_rating if efficiency_rating.score > 0 else efficiency_text }}
 {% else %}
 フォーム効率データがありません。
 {% endif %}
@@ -235,10 +238,12 @@ VO2 Maxデータがありません。
 ## フェーズ評価
 
 {% if phase_evaluation %}
-{% if phase_evaluation.get('warmup') or training_type_category == "recovery" %}
-### ウォームアップフェーズ{% if warmup_rating_stars %} ({{ warmup_rating_stars }} {{ warmup_rating_score }}/5.0){% endif %}
+{% if phase_evaluation.get('warmup_evaluation') or phase_evaluation.get('warmup') or training_type_category == "recovery" %}
+{% set warmup_text = phase_evaluation.get('warmup_evaluation', phase_evaluation.get('warmup', {}).get('evaluation', 'データがありません。')) %}
+{% set warmup_rating = warmup_text|extract_star_rating %}
+### ウォームアップフェーズ{% if warmup_rating.score > 0 %} ({{ warmup_rating.stars }} {{ warmup_rating.score }}/5.0){% endif %}
 
-{{ phase_evaluation.get('warmup', {}).get('evaluation', 'データがありません。') }}
+{{ warmup_rating.text_without_rating if warmup_rating.score > 0 else warmup_text }}
 
 {% if training_type_category == "recovery" %}
 {# Recovery run - only 1 phase, end here #}
@@ -247,26 +252,32 @@ VO2 Maxデータがありません。
 {% endif %}
 
 {% if training_type_category != "recovery" %}
-{% if phase_evaluation.get('run') or phase_evaluation.get('main') %}
-### {% if is_interval %}Workフェーズ{% else %}メイン走行フェーズ{% endif %}{% if main_rating_stars %} ({{ main_rating_stars }} {{ main_rating_score }}/5.0){% endif %}
+{% if phase_evaluation.get('run_evaluation') or phase_evaluation.get('run') or phase_evaluation.get('main') %}
+{% set run_text = phase_evaluation.get('run_evaluation', phase_evaluation.get('run', {}).get('evaluation', phase_evaluation.get('main', {}).get('evaluation', 'データがありません。'))) %}
+{% set run_rating = run_text|extract_star_rating %}
+### {% if is_interval %}Workフェーズ{% else %}メイン走行フェーズ{% endif %}{% if run_rating.score > 0 %} ({{ run_rating.stars }} {{ run_rating.score }}/5.0){% endif %}
 
-{{ phase_evaluation.get('run', {}).get('evaluation', phase_evaluation.get('main', {}).get('evaluation', 'データがありません。')) }}
-
----
-{% endif %}
-
-{% if is_interval and phase_evaluation.get('recovery') %}
-### Recoveryフェーズ{% if recovery_rating_stars %} ({{ recovery_rating_stars }} {{ recovery_rating_score }}/5.0){% endif %}
-
-{{ phase_evaluation.get('recovery', {}).get('evaluation', 'データがありません。') }}
+{{ run_rating.text_without_rating if run_rating.score > 0 else run_text }}
 
 ---
 {% endif %}
 
-{% if phase_evaluation.get('cooldown') or phase_evaluation.get('finish') %}
-### クールダウンフェーズ{% if cooldown_rating_stars %} ({{ cooldown_rating_stars }} {{ cooldown_rating_score }}/5.0){% endif %}
+{% if is_interval and (phase_evaluation.get('recovery_evaluation') or phase_evaluation.get('recovery')) %}
+{% set recovery_text = phase_evaluation.get('recovery_evaluation', phase_evaluation.get('recovery', {}).get('evaluation', 'データがありません。')) %}
+{% set recovery_rating = recovery_text|extract_star_rating %}
+### Recoveryフェーズ{% if recovery_rating.score > 0 %} ({{ recovery_rating.stars }} {{ recovery_rating.score }}/5.0){% endif %}
 
-{{ phase_evaluation.get('cooldown', {}).get('evaluation', phase_evaluation.get('finish', {}).get('evaluation', 'データがありません。')) }}
+{{ recovery_rating.text_without_rating if recovery_rating.score > 0 else recovery_text }}
+
+---
+{% endif %}
+
+{% if phase_evaluation.get('cooldown_evaluation') or phase_evaluation.get('cooldown') or phase_evaluation.get('finish') %}
+{% set cooldown_text = phase_evaluation.get('cooldown_evaluation', phase_evaluation.get('cooldown', {}).get('evaluation', phase_evaluation.get('finish', {}).get('evaluation', 'データがありません。'))) %}
+{% set cooldown_rating = cooldown_text|extract_star_rating %}
+### クールダウンフェーズ{% if cooldown_rating.score > 0 %} ({{ cooldown_rating.stars }} {{ cooldown_rating.score }}/5.0){% endif %}
+
+{{ cooldown_rating.text_without_rating if cooldown_rating.score > 0 else cooldown_text }}
 
 ---
 {% endif %}
@@ -278,7 +289,13 @@ VO2 Maxデータがありません。
 {# =================================================================== #}
 {# SECTION 7 (or 6 or 5): 環境要因 #}
 {# =================================================================== #}
+{% if environment_analysis %}
+{% set env_text = environment_analysis if environment_analysis is string else environment_analysis.get('evaluation', environment_analysis.get('environmental', 'N/A')) %}
+{% set env_rating = env_text|extract_star_rating %}
+## 環境要因{% if env_rating.score > 0 %} ({{ env_rating.stars }} {{ env_rating.score }}/5.0){% endif %}
+{% else %}
 ## 環境要因
+{% endif %}
 
 {% if weather_data or environment_analysis %}
 ### 気象条件・環境インパクト
@@ -295,11 +312,7 @@ VO2 Maxデータがありません。
 {% endif %}
 
 {% if environment_analysis %}
-{% if environment_analysis is string %}
-{{ environment_analysis }}
-{% elif environment_analysis is mapping %}
-{{ environment_analysis.get('evaluation', environment_analysis.get('environmental', {}).get('evaluation', 'N/A')) }}
-{% endif %}
+{{ env_rating.text_without_rating if env_rating.score > 0 else env_text }}
 {% endif %}
 {% else %}
 環境データがありません。

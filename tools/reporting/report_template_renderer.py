@@ -27,8 +27,9 @@ class ReportTemplateRenderer:
 
         self.env = Environment(loader=FileSystemLoader(template_dir))
 
-        # Add custom filter for split sorting
+        # Add custom filters
         self.env.filters["sort_splits"] = self._sort_splits_filter
+        self.env.filters["extract_star_rating"] = self._extract_star_rating_filter
 
     def _sort_splits_filter(self, items):
         """Sort split analysis items by numeric split number."""
@@ -44,6 +45,59 @@ class ReportTemplateRenderer:
             return 0
 
         return sorted(items, key=extract_split_num)
+
+    def _extract_star_rating_filter(self, text: str | dict | None) -> dict[str, Any]:
+        """
+        Extract star rating from text.
+
+        Args:
+            text: Text containing star rating pattern "(★★★★☆ 4.2/5.0)", or dict/None
+
+        Returns:
+            Dictionary with keys:
+                - stars: Star string (e.g., "★★★★☆")
+                - score: Numeric score (e.g., 4.2)
+                - text_without_rating: Text with rating pattern removed
+
+        Examples:
+            >>> _extract_star_rating_filter("良好です (★★★★☆ 4.2/5.0)")
+            {"stars": "★★★★☆", "score": 4.2, "text_without_rating": "良好です"}
+
+            >>> _extract_star_rating_filter("普通です")
+            {"stars": "", "score": 0.0, "text_without_rating": "普通です"}
+
+            >>> _extract_star_rating_filter({"key": "value"})
+            {"stars": "", "score": 0.0, "text_without_rating": ""}
+        """
+        import re
+
+        # Handle non-string inputs
+        if not isinstance(text, str):
+            return {
+                "stars": "",
+                "score": 0.0,
+                "text_without_rating": "",
+            }
+
+        pattern = r"\(([★☆]+) (\d+\.\d+)/5\.0\)"
+        match = re.search(pattern, text)
+
+        if match:
+            stars = match.group(1)
+            score = float(match.group(2))
+            text_without_rating = re.sub(pattern, "", text, count=1).strip()
+
+            return {
+                "stars": stars,
+                "score": score,
+                "text_without_rating": text_without_rating,
+            }
+
+        return {
+            "stars": "",
+            "score": 0.0,
+            "text_without_rating": text,
+        }
 
     def load_template(self, template_name: str = "detailed_report.j2"):
         """
