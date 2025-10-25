@@ -94,8 +94,14 @@ class TestSaveDataTableFiltering:
         activity_date = "2025-01-01"
         tables = None
 
+        # Mock DuckDB connection (CRITICAL: prevent production DB access)
+        from unittest.mock import MagicMock
+
+        mock_conn = MagicMock()
+
         # Mock all inserter functions (they're imported inside save_data)
         with (
+            patch("duckdb.connect") as mock_duckdb_connect,
             patch(
                 "tools.database.inserters.activities.insert_activities"
             ) as mock_activities,
@@ -117,6 +123,9 @@ class TestSaveDataTableFiltering:
             ) as mock_lactate,
             patch("tools.database.inserters.vo2_max.insert_vo2_max") as mock_vo2,
         ):
+            # Configure DuckDB connection mock
+            mock_duckdb_connect.return_value.__enter__.return_value = mock_conn
+
             # Configure all mocks to return True
             for mock in [
                 mock_activities,
@@ -155,8 +164,14 @@ class TestSaveDataTableFiltering:
         activity_date = "2025-01-01"
         tables = ["splits"]
 
+        # Mock DuckDB connection (CRITICAL: prevent production DB access)
+        from unittest.mock import MagicMock
+
+        mock_conn = MagicMock()
+
         # Mock all inserter functions
         with (
+            patch("duckdb.connect") as mock_duckdb_connect,
             patch(
                 "tools.database.inserters.activities.insert_activities"
             ) as mock_activities,
@@ -178,6 +193,9 @@ class TestSaveDataTableFiltering:
             ) as mock_lactate,
             patch("tools.database.inserters.vo2_max.insert_vo2_max") as mock_vo2,
         ):
+            # Configure DuckDB connection mock
+            mock_duckdb_connect.return_value.__enter__.return_value = mock_conn
+
             mock_splits.return_value = True
 
             # Act
@@ -203,8 +221,14 @@ class TestSaveDataTableFiltering:
         activity_date = "2025-01-01"
         tables = ["splits", "form_efficiency", "vo2_max"]
 
+        # Mock DuckDB connection (CRITICAL: prevent production DB access)
+        from unittest.mock import MagicMock
+
+        mock_conn = MagicMock()
+
         # Mock all inserter functions
         with (
+            patch("duckdb.connect") as mock_duckdb_connect,
             patch(
                 "tools.database.inserters.activities.insert_activities"
             ) as mock_activities,
@@ -226,6 +250,9 @@ class TestSaveDataTableFiltering:
             ) as mock_lactate,
             patch("tools.database.inserters.vo2_max.insert_vo2_max") as mock_vo2,
         ):
+            # Configure DuckDB connection mock
+            mock_duckdb_connect.return_value.__enter__.return_value = mock_conn
+
             # Configure specified mocks to return True
             mock_splits.return_value = True
             mock_form_eff.return_value = True
@@ -252,8 +279,14 @@ class TestSaveDataTableFiltering:
         activity_date = "2025-01-01"
         tables = ["activities"]
 
+        # Mock DuckDB connection (CRITICAL: prevent production DB access)
+        from unittest.mock import MagicMock
+
+        mock_conn = MagicMock()
+
         # Mock inserter functions
         with (
+            patch("duckdb.connect") as mock_duckdb_connect,
             patch(
                 "tools.database.inserters.activities.insert_activities"
             ) as mock_activities,
@@ -262,6 +295,9 @@ class TestSaveDataTableFiltering:
                 "tools.database.inserters.form_efficiency.insert_form_efficiency"
             ) as mock_form_eff,
         ):
+            # Configure DuckDB connection mock
+            mock_duckdb_connect.return_value.__enter__.return_value = mock_conn
+
             mock_activities.return_value = True
 
             # Act
