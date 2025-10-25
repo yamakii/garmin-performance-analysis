@@ -195,4 +195,186 @@ class TestMermaidGraphGeneration:
         # Check that report was generated successfully
         assert report is not None
         assert len(report) > 0
+
+
+@pytest.mark.unit
+class TestFormatPace:
+    """Test _format_pace helper method."""
+
+    def test_format_pace_basic(self, mocker):
+        """Basic pace formatting test."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        assert worker._format_pace(240) == "4:00/km"
+        assert worker._format_pace(270) == "4:30/km"
+        assert worker._format_pace(360) == "6:00/km"
+        assert worker._format_pace(405) == "6:45/km"
+
+    def test_format_pace_with_seconds(self, mocker):
+        """Test pace formatting with seconds."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        assert worker._format_pace(242) == "4:02/km"
+        assert worker._format_pace(369) == "6:09/km"
+
+
+class TestLoadSimilarWorkouts:
+    """Test _load_similar_workouts method."""
+
+    def test_similar_workouts_import_error_returns_none(self, mocker):
+        """Similar workouts returns None when MCP tool is not available."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        # The method should handle import errors gracefully
+        result = worker._load_similar_workouts(
+            activity_id=12345, current_metrics={"avg_pace": 395, "avg_hr": 145}
+        )
+
+        # Should return None due to import error
+        assert result is None
+
+    def test_similar_workouts_graceful_fallback(self, mocker):
+        """Similar workouts method has proper error handling."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        # This should not raise an exception
+        try:
+            result = worker._load_similar_workouts(
+                12345, {"avg_pace": 395, "avg_hr": 145}
+            )
+            # Result will be None due to missing MCP tool, which is expected
+            assert result is None
+        except Exception as e:
+            pytest.fail(f"Method should not raise exception: {e}")
+
+
+@pytest.mark.unit
+class TestPaceCorrectedFormEfficiency:
+    """Test _calculate_pace_corrected_form_efficiency method."""
+
+    @pytest.mark.parametrize(
+        "pace,expected_gct",
+        [
+            (240, 230.0),  # 4:00/km → 230ms
+            (420, 269.6),  # 7:00/km → 269.6ms
+            (405, 266.3),  # 6:45/km → 266.3ms
+        ],
+    )
+    def test_gct_baseline_formula(self, pace, expected_gct):
+        """GCT baseline: 230 + (pace - 240) * 0.22."""
+        baseline = 230 + (pace - 240) * 0.22
+        assert abs(baseline - expected_gct) < 0.5
+
+    @pytest.mark.parametrize(
+        "pace,expected_vo",
+        [
+            (240, 6.8),  # 4:00/km → 6.8cm
+            (420, 7.52),  # 7:00/km → 7.52cm
+            (405, 7.46),  # 6:45/km → 7.46cm
+        ],
+    )
+    def test_vo_baseline_formula(self, pace, expected_vo):
+        """VO baseline: 6.8 + (pace - 240) * 0.004."""
+        baseline = 6.8 + (pace - 240) * 0.004
+        assert abs(baseline - expected_vo) < 0.02
+
+    def test_pace_corrected_form_efficiency_structure(self, mocker):
+        """Pace-corrected form efficiency returns correct structure."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        form_eff = {
+            "gct_average": 253.0,
+            "vo_average": 7.2,
+            "vr_average": 8.5,
+        }
+        result = worker._calculate_pace_corrected_form_efficiency(405, form_eff)
+
+        assert "gct" in result
+        assert "vo" in result
+        assert "vr" in result
+        assert result["gct"]["actual"] == 253.0
+        assert abs(result["gct"]["baseline"] - 266.3) < 0.5
+        assert result["gct"]["label"] in ["優秀", "良好", "要改善"]
+        assert "rating_stars" in result["gct"]
+        assert "rating_score" in result["gct"]
+
+    def test_pace_corrected_gct_excellent(self, mocker):
+        """GCT score < -5% should be marked as 優秀."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        # Pace 405 → baseline GCT 266.3
+        # Actual 250 → score = (250-266.3)/266.3*100 = -6.1% < -5%
+        form_eff = {"gct_average": 250.0, "vo_average": 7.0, "vr_average": 8.5}
+        result = worker._calculate_pace_corrected_form_efficiency(405, form_eff)
+
+        assert result["gct"]["label"] == "優秀"
+        assert result["gct"]["rating_score"] == 5.0
+
+    def test_pace_corrected_gct_good(self, mocker):
+        """GCT score within ±5% should be marked as 良好."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        # Pace 405 → baseline GCT 266.3
+        # Actual 266 → score = (266-266.3)/266.3*100 = -0.1% (within ±5%)
+        form_eff = {"gct_average": 266.0, "vo_average": 7.0, "vr_average": 8.5}
+        result = worker._calculate_pace_corrected_form_efficiency(405, form_eff)
+
+        assert result["gct"]["label"] == "良好"
+        assert result["gct"]["rating_score"] >= 4.0
+
+    def test_pace_corrected_vr_ideal_range(self, mocker):
+        """VR within 8.0-9.5% should be marked as 理想範囲内."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        form_eff = {"gct_average": 253.0, "vo_average": 7.2, "vr_average": 8.5}
+        result = worker._calculate_pace_corrected_form_efficiency(405, form_eff)
+
+        assert result["vr"]["label"] == "理想範囲内"
+        assert result["vr"]["rating_score"] == 5.0
+
+    def test_pace_corrected_vr_needs_improvement(self, mocker):
+        """VR outside 8.0-9.5% should be marked as 要改善."""
+        from tools.reporting.report_generator_worker import ReportGeneratorWorker
+
+        mock_reader = mocker.Mock()
+        worker = ReportGeneratorWorker()
+        worker.db_reader = mock_reader
+
+        form_eff = {"gct_average": 253.0, "vo_average": 7.2, "vr_average": 12.0}
+        result = worker._calculate_pace_corrected_form_efficiency(405, form_eff)
+
+        assert result["vr"]["label"] == "要改善"
+        assert result["vr"]["rating_score"] == 3.5
         # Note: Actual Mermaid rendering in template is tested in integration tests

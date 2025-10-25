@@ -243,6 +243,24 @@ class ReportGeneratorWorker:
             if hr_eff:
                 data["training_type"] = hr_eff[0]
 
+            # Add similar workouts comparison (Phase 3)
+            current_metrics = {
+                "avg_pace": data["basic_metrics"]["avg_pace_seconds_per_km"],
+                "avg_hr": data["basic_metrics"]["avg_heart_rate"],
+            }
+            data["similar_workouts"] = self._load_similar_workouts(
+                activity_id, current_metrics
+            )
+
+            # Add pace-corrected form efficiency (Phase 4)
+            if form_eff:
+                data["form_efficiency_pace_corrected"] = (
+                    self._calculate_pace_corrected_form_efficiency(
+                        data["basic_metrics"]["avg_pace_seconds_per_km"],
+                        data["form_efficiency"],
+                    )
+                )
+
             return data
 
         except Exception as e:
@@ -292,6 +310,189 @@ class ReportGeneratorWorker:
             "pace_max": round(pace_max, 1),
             "hr_min": round(hr_min, 1),
             "hr_max": round(hr_max, 1),
+        }
+
+    def _format_pace(self, pace_seconds_per_km: float) -> str:
+        """Format pace as MM:SS/km.
+
+        Args:
+            pace_seconds_per_km: Pace in seconds per kilometer
+
+        Returns:
+            Formatted pace string (e.g., "4:30/km")
+        """
+        minutes = int(pace_seconds_per_km / 60)
+        seconds = int(pace_seconds_per_km % 60)
+        return f"{minutes}:{seconds:02d}/km"
+
+    def _load_similar_workouts(
+        self, activity_id: int, current_metrics: dict
+    ) -> dict | None:
+        """Load similar workouts comparison using MCP tool.
+
+        Returns None if insufficient data or error occurs.
+        Template will gracefully handle None with "類似ワークアウトが見つかりませんでした。"
+
+        Args:
+            activity_id: Activity ID to find similar workouts for
+            current_metrics: Dictionary with 'avg_pace' and 'avg_hr' keys
+
+        Returns:
+            Dictionary with comparison data or None
+        """
+        try:
+            # Try to import and use MCP tool
+            from servers.garmin_db_mcp.tools.comparison import compare_similar_workouts
+
+            similar = compare_similar_workouts(
+                activity_id=activity_id,
+                distance_tolerance=0.10,
+                pace_tolerance=0.10,
+                terrain_match=True,
+                limit=10,
+            )
+
+            if not similar or len(similar) < 3:
+                logger.warning(
+                    f"Insufficient similar workouts for activity {activity_id}"
+                )
+                return None
+
+            # Calculate averages from top 3
+            top_3 = similar[:3]
+            avg_pace = sum([w["avg_pace"] for w in top_3]) / 3
+            avg_hr = sum([w["avg_hr"] for w in top_3]) / 3
+
+            # Calculate differences
+            pace_diff = current_metrics["avg_pace"] - avg_pace
+            hr_diff = current_metrics["avg_hr"] - avg_hr
+
+            # Format comparison table
+            comparisons = [
+                {
+                    "metric": "平均ペース",
+                    "current": self._format_pace(current_metrics["avg_pace"]),
+                    "average": self._format_pace(avg_pace),
+                    "change": (
+                        f"+{abs(int(pace_diff))}秒速い"
+                        if pace_diff < 0
+                        else f"-{int(pace_diff)}秒遅い"
+                    ),
+                    "trend": (
+                        "↗️ 改善"
+                        if pace_diff < 0
+                        else ("↘️ 悪化" if pace_diff > 5 else "➡️ 同等")
+                    ),
+                },
+                {
+                    "metric": "平均心拍",
+                    "current": f"{int(current_metrics['avg_hr'])} bpm",
+                    "average": f"{int(avg_hr)} bpm",
+                    "change": (
+                        f"+{int(hr_diff)} bpm" if hr_diff > 0 else f"{int(hr_diff)} bpm"
+                    ),
+                    "trend": (
+                        "➡️ 同等"
+                        if abs(hr_diff) < 5
+                        else ("⚠️ 高い" if hr_diff > 0 else "✅ 低い")
+                    ),
+                },
+            ]
+
+            # Generate insight
+            insight = f"過去の類似ワークアウト{len(top_3)}回と比較して分析しました。"
+
+            return {
+                "conditions": f"距離{similar[0]['distance']:.1f}-{similar[-1]['distance']:.1f}km、ペース類似",
+                "count": len(top_3),
+                "comparisons": comparisons,
+                "insight": insight,
+            }
+
+        except Exception as e:
+            logger.warning(f"Could not load similar workouts: {e}")
+            return None
+
+    def _calculate_pace_corrected_form_efficiency(
+        self, avg_pace_seconds_per_km: float, form_eff: dict
+    ) -> dict:
+        """Calculate pace-corrected form efficiency scores.
+
+        Formulas from planning.md Appendix C:
+        - GCT baseline: 230 + (pace - 240) * 0.22 ms
+        - VO baseline: 6.8 + (pace - 240) * 0.004 cm
+        - VR: No correction, absolute threshold 8.0-9.5%
+
+        Args:
+            avg_pace_seconds_per_km: Average pace in seconds per km
+            form_eff: Form efficiency dictionary with gct_average, vo_average, vr_average
+
+        Returns:
+            Dictionary with pace-corrected form efficiency data
+        """
+        # Baseline calculations
+        baseline_gct = 230 + (avg_pace_seconds_per_km - 240) * 0.22
+        baseline_vo = 6.8 + (avg_pace_seconds_per_km - 240) * 0.004
+
+        # GCT efficiency
+        gct_actual = form_eff.get("gct_average", 0)
+        gct_score = (
+            ((gct_actual - baseline_gct) / baseline_gct) * 100
+            if baseline_gct > 0
+            else 0
+        )
+        gct_label = (
+            "優秀" if gct_score < -5 else ("良好" if abs(gct_score) <= 5 else "要改善")
+        )
+        gct_rating = (
+            5.0
+            if gct_score < -5
+            else (4.5 if gct_score < -2 else (4.0 if abs(gct_score) <= 5 else 3.0))
+        )
+
+        # VO efficiency
+        vo_actual = form_eff.get("vo_average", 0)
+        vo_score = (
+            ((vo_actual - baseline_vo) / baseline_vo) * 100 if baseline_vo > 0 else 0
+        )
+        vo_label = (
+            "優秀" if vo_score < -5 else ("良好" if abs(vo_score) <= 5 else "要改善")
+        )
+        vo_rating = (
+            5.0
+            if vo_score < -5
+            else (4.5 if vo_score < -2 else (4.0 if abs(vo_score) <= 5 else 3.0))
+        )
+
+        # VR (no pace correction)
+        vr_actual = form_eff.get("vr_average", 0)
+        vr_label = "理想範囲内" if 8.0 <= vr_actual <= 9.5 else "要改善"
+        vr_rating = 5.0 if 8.0 <= vr_actual <= 9.5 else 3.5
+
+        return {
+            "avg_pace_seconds": int(avg_pace_seconds_per_km),
+            "gct": {
+                "actual": round(gct_actual, 1),
+                "baseline": round(baseline_gct, 1),
+                "score": round(gct_score, 1),
+                "label": gct_label,
+                "rating_stars": "★" * int(gct_rating) + "☆" * (5 - int(gct_rating)),
+                "rating_score": gct_rating,
+            },
+            "vo": {
+                "actual": round(vo_actual, 2),
+                "baseline": round(baseline_vo, 2),
+                "score": round(vo_score, 1),
+                "label": vo_label,
+                "rating_stars": "★" * int(vo_rating) + "☆" * (5 - int(vo_rating)),
+                "rating_score": vo_rating,
+            },
+            "vr": {
+                "actual": round(vr_actual, 2),
+                "label": vr_label,
+                "rating_stars": "★" * int(vr_rating) + "☆" * (5 - int(vr_rating)),
+                "rating_score": vr_rating,
+            },
         }
 
     def load_section_analyses(
