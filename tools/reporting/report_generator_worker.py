@@ -1048,9 +1048,11 @@ class ReportGeneratorWorker:
             # Calculate average differences from top 3
             top_3 = similar[:3]
 
+            # Import duckdb for later use
+            import duckdb
+
             # For main_set comparison, recalculate pace_diff from actual main set paces
             if current_metrics.get("pace_source") == "main_set":
-                import duckdb
 
                 conn = duckdb.connect(self.db_reader.db_path, read_only=True)
 
