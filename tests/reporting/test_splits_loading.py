@@ -3,9 +3,12 @@
 Tests the _load_splits() method and its integration with _generate_mermaid_data().
 """
 
+import pytest
+
 from tools.reporting.report_generator_worker import ReportGeneratorWorker
 
 
+@pytest.mark.performance
 class TestSplitsLoading:
     """Test suite for splits loading functionality."""
 

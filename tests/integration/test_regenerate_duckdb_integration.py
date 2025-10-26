@@ -103,5 +103,6 @@ def temp_raw_data_dir():
         yield Path(tmpdir)
 
 
+@pytest.mark.integration
 class TestForceOptionIntegration:
     """Integration tests for --force option with real DuckDB."""
