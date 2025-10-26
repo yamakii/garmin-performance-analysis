@@ -148,6 +148,7 @@ class WorkoutComparator:
         activity_type_filter: str | None = None,
         date_range: tuple[str, str] | None = None,
         limit: int = 10,
+        target_pace_override: float | None = None,
     ) -> dict[str, Any]:
         """Find similar past workouts based on pace and distance.
 
@@ -159,6 +160,7 @@ class WorkoutComparator:
             activity_type_filter: Optional activity type keyword filter
             date_range: Optional (start_date, end_date) tuple in YYYY-MM-DD format
             limit: Maximum number of results to return
+            target_pace_override: Optional pace override (for main-set/work pace comparison)
 
         Returns:
             Dict with similar workouts:
@@ -195,41 +197,77 @@ class WorkoutComparator:
             }
 
         # Calculate pace and distance ranges
-        pace_min = target["avg_pace"] * (1 - pace_tolerance)
-        pace_max = target["avg_pace"] * (1 + pace_tolerance)
+        # Use override pace if provided (for main-set/work pace comparison)
+        target_pace = (
+            target_pace_override if target_pace_override else target["avg_pace"]
+        )
+        pace_min = target_pace * (1 - pace_tolerance)
+        pace_max = target_pace * (1 + pace_tolerance)
         distance_min = target["distance_km"] * (1 - distance_tolerance)
         distance_max = target["distance_km"] * (1 + distance_tolerance)
 
-        # Build SQL query
-        query = """
-            SELECT
-                a.activity_id,
-                a.activity_date,
-                a.activity_name,
-                a.avg_pace_seconds_per_km,
-                a.avg_heart_rate,
-                a.total_distance_km
-            FROM activities a
-            WHERE a.activity_id != ?
-              AND a.avg_pace_seconds_per_km BETWEEN ? AND ?
-              AND a.total_distance_km BETWEEN ? AND ?
-        """
-
-        params = [activity_id, pace_min, pace_max, distance_min, distance_max]
+        # Build SQL query - different logic for main-set pace comparison
+        if target_pace_override:
+            # For structured workouts, compare main-set/work paces
+            query = """
+                WITH main_paces AS (
+                    SELECT
+                        activity_id,
+                        AVG(pace_seconds_per_km) as main_pace
+                    FROM splits
+                    WHERE intensity_type IN ('ACTIVE', 'INTERVAL')
+                    GROUP BY activity_id
+                )
+                SELECT
+                    a.activity_id,
+                    a.activity_date,
+                    a.activity_name,
+                    a.avg_pace_seconds_per_km,
+                    a.avg_heart_rate,
+                    a.total_distance_km
+                FROM activities a
+                JOIN main_paces m ON a.activity_id = m.activity_id
+                WHERE a.activity_id != ?
+                  AND m.main_pace BETWEEN ? AND ?
+                  AND a.total_distance_km BETWEEN ? AND ?
+            """
+            params = [activity_id, pace_min, pace_max, distance_min, distance_max]
+        else:
+            # For base runs, compare overall average paces
+            query = """
+                SELECT
+                    a.activity_id,
+                    a.activity_date,
+                    a.activity_name,
+                    a.avg_pace_seconds_per_km,
+                    a.avg_heart_rate,
+                    a.total_distance_km
+                FROM activities a
+                WHERE a.activity_id != ?
+                  AND a.avg_pace_seconds_per_km BETWEEN ? AND ?
+                  AND a.total_distance_km BETWEEN ? AND ?
+            """
+            params = [activity_id, pace_min, pace_max, distance_min, distance_max]
 
         # Add activity type filter
         if activity_type_filter:
             query += " AND a.activity_name LIKE ?"
             params.append(f"%{activity_type_filter}%")
 
-        # Add date range filter
+        # Add date range filter (optional)
         if date_range:
             query += " AND a.activity_date BETWEEN ? AND ?"
             params.extend(date_range)
 
-        # Order by pace similarity and limit results
-        query += " ORDER BY ABS(a.avg_pace_seconds_per_km - ?) ASC LIMIT ?"
-        params.extend([target["avg_pace"], limit])
+        # Order by pace similarity (primary) and recency (secondary)
+        # This prioritizes recent activities with complete data (e.g., power)
+        if target_pace_override:
+            # For structured workouts, sort by main-set pace similarity
+            query += " ORDER BY ABS(m.main_pace - ?) ASC, a.activity_date DESC LIMIT ?"
+        else:
+            # For base runs, sort by overall pace similarity
+            query += " ORDER BY ABS(a.avg_pace_seconds_per_km - ?) ASC, a.activity_date DESC LIMIT ?"
+        params.extend([target_pace, limit])
 
         # Execute query
         try:

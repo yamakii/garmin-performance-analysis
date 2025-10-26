@@ -10,6 +10,8 @@ import logging
 from datetime import datetime
 from typing import Any
 
+import duckdb
+
 from tools.database.db_reader import GarminDBReader
 from tools.reporting.report_template_renderer import ReportTemplateRenderer
 
@@ -280,9 +282,11 @@ class ReportGeneratorWorker:
                     data["similar_workouts"], data.get("training_type", "aerobic_base")
                 )
 
-            # Generate reference info (VO2 Max + Threshold pace)
+            # Generate reference info (VO2 Max + Threshold pace + FTP for Interval)
             data["reference_info"] = self._generate_reference_info(
-                data.get("vo2_max_data"), data.get("lactate_threshold_data")
+                data.get("vo2_max_data"),
+                data.get("lactate_threshold_data"),
+                data.get("training_type", "aerobic_base"),
             )
 
             # Add pace-corrected form efficiency (Phase 4)
@@ -866,7 +870,7 @@ class ReportGeneratorWorker:
             - pace_source: "main_set" | "overall"
 
         Logic:
-            - Structured workouts (tempo, lactate_threshold, vo2max, anaerobic_capacity, speed):
+            - Structured workouts (tempo, lactate_threshold, vo2max, anaerobic_capacity, speed, interval_training):
               → Use run_metrics.avg_pace_seconds_per_km (if available)
             - Recovery/base/unknown:
               → Use basic_metrics.avg_pace_seconds_per_km
@@ -878,6 +882,7 @@ class ReportGeneratorWorker:
             "vo2max",
             "anaerobic_capacity",
             "speed",
+            "interval_training",  # Added for Work-only comparison
         }
 
         # Use main set pace for structured workouts (if available)
@@ -924,7 +929,7 @@ class ReportGeneratorWorker:
 
         Args:
             activity_id: Activity ID to find similar workouts for
-            current_metrics: Dictionary with 'avg_pace' and 'avg_hr' keys
+            current_metrics: Dictionary with 'avg_pace', 'avg_hr', and 'pace_source' keys
 
         Returns:
             Dictionary with comparison data or None
@@ -952,20 +957,56 @@ class ReportGeneratorWorker:
                 return None
 
             # Calculate average differences from top 3
-            # Note: WorkoutComparator already calculates pace_diff and hr_diff
             top_3 = similar[:3]
             avg_pace_diff = sum([w["pace_diff"] for w in top_3]) / 3
             avg_hr_diff = sum([w["hr_diff"] for w in top_3]) / 3
 
-            # Use the average differences (negative means current is faster)
             pace_diff = avg_pace_diff
             hr_diff = avg_hr_diff
 
-            # Calculate average values from differences
-            # Note: pace_diff = candidate_pace - target_pace
-            # So: avg_similar_pace = current_pace - avg_pace_diff (negative diff means current is faster)
             avg_similar_pace = current_metrics["avg_pace"] - avg_pace_diff
             avg_similar_hr = current_metrics["avg_hr"] - avg_hr_diff
+
+            # Determine which pace to use for comparison
+            pace_source = current_metrics.get("pace_source", "overall")
+
+            # For main_set comparison, filter by intensity_type
+            if pace_source == "main_set":
+                intensity_filter = "AND intensity_type IN ('ACTIVE', 'INTERVAL')"
+            else:
+                intensity_filter = ""
+
+            # Get additional metrics from splits table
+            conn = duckdb.connect(str(self.db_reader.db_path), read_only=True)
+
+            # Get current activity metrics (filtered by intensity_type if main_set)
+            current_additional = conn.execute(
+                f"""
+                SELECT
+                    AVG(power) as avg_power,
+                    AVG(stride_length) as avg_stride_cm,
+                    AVG(ground_contact_time) as avg_gct,
+                    AVG(vertical_oscillation) as avg_vo
+                FROM splits
+                WHERE activity_id = ? {intensity_filter}
+                """,
+                [activity_id],
+            ).fetchone()
+
+            # Get similar activities metrics (same filtering)
+            similar_ids = [w["activity_id"] for w in top_3]
+            similar_additional = conn.execute(
+                f"""
+                SELECT
+                    AVG(power) as avg_power,
+                    AVG(stride_length) as avg_stride_cm,
+                    AVG(ground_contact_time) as avg_gct,
+                    AVG(vertical_oscillation) as avg_vo
+                FROM splits
+                WHERE activity_id IN ({",".join("?" * len(similar_ids))}) {intensity_filter}
+                """,
+                similar_ids,
+            ).fetchone()
 
             # Format comparison table
             comparisons = [
@@ -999,8 +1040,280 @@ class ReportGeneratorWorker:
                 },
             ]
 
-            # Generate insight
+            # Add additional metrics if available (Option A: show N/A if missing)
+            if current_additional:
+                # Power - show for all training types
+                if current_additional[0]:
+                    if similar_additional and similar_additional[0]:
+                        power_diff = current_additional[0] - similar_additional[0]
+                        comparisons.append(
+                            {
+                                "metric": "平均パワー",
+                                "current": f"{int(current_additional[0])} W",
+                                "average": f"{int(similar_additional[0])} W",
+                                "change": f"{int(power_diff):+} W",
+                                "trend": (
+                                    "↗️ 効率向上"
+                                    if power_diff < 0
+                                    else "➡️ 安定" if abs(power_diff) < 10 else "↗️ 改善"
+                                ),
+                            }
+                        )
+                    else:
+                        # Option A: Show N/A if similar activities lack data
+                        comparisons.append(
+                            {
+                                "metric": "平均パワー",
+                                "current": f"{int(current_additional[0])} W",
+                                "average": "N/A",
+                                "change": "N/A",
+                                "trend": "N/A",
+                            }
+                        )
+
+                # Stride (convert cm to m)
+                if current_additional[1]:
+                    current_stride_m = current_additional[1] / 100
+                    if similar_additional and similar_additional[1]:
+                        similar_stride_m = similar_additional[1] / 100
+                        stride_diff = current_stride_m - similar_stride_m
+                        comparisons.append(
+                            {
+                                "metric": "平均ストライド",
+                                "current": f"{current_stride_m:.2f} m",
+                                "average": f"{similar_stride_m:.2f} m",
+                                "change": f"{stride_diff:+.2f} m",
+                                "trend": "↗️ 改善" if stride_diff > 0 else "➡️ 維持",
+                            }
+                        )
+                    else:
+                        comparisons.append(
+                            {
+                                "metric": "平均ストライド",
+                                "current": f"{current_stride_m:.2f} m",
+                                "average": "N/A",
+                                "change": "N/A",
+                                "trend": "N/A",
+                            }
+                        )
+
+                # GCT
+                if current_additional[2]:
+                    if similar_additional and similar_additional[2]:
+                        gct_diff = current_additional[2] - similar_additional[2]
+                        comparisons.append(
+                            {
+                                "metric": "接地時間",
+                                "current": f"{int(current_additional[2])} ms",
+                                "average": f"{int(similar_additional[2])} ms",
+                                "change": f"{int(gct_diff):+} ms",
+                                "trend": "↗️ 改善" if gct_diff < 0 else "➡️ 維持",
+                            }
+                        )
+                    else:
+                        comparisons.append(
+                            {
+                                "metric": "接地時間",
+                                "current": f"{int(current_additional[2])} ms",
+                                "average": "N/A",
+                                "change": "N/A",
+                                "trend": "N/A",
+                            }
+                        )
+
+                # VO
+                if current_additional[3]:
+                    if similar_additional and similar_additional[3]:
+                        vo_diff = current_additional[3] - similar_additional[3]
+                        comparisons.append(
+                            {
+                                "metric": "垂直振幅",
+                                "current": f"{current_additional[3]:.2f} cm",
+                                "average": f"{similar_additional[3]:.2f} cm",
+                                "change": f"{vo_diff:+.2f} cm",
+                                "trend": "↗️ 改善" if vo_diff < 0 else "➡️ 維持",
+                            }
+                        )
+                    else:
+                        comparisons.append(
+                            {
+                                "metric": "垂直振幅",
+                                "current": f"{current_additional[3]:.2f} cm",
+                                "average": "N/A",
+                                "change": "N/A",
+                                "trend": "N/A",
+                            }
+                        )
+
+            # Add training-type-specific metrics
+            try:
+                hr_data = self.db_reader.get_hr_efficiency_analysis(activity_id)
+                training_type = hr_data.get("training_type") if hr_data else None
+
+                # Pace variability coefficient - now for ALL training types
+                current_pace_cv = conn.execute(
+                    f"""
+                    SELECT STDDEV(pace_seconds_per_km) / AVG(pace_seconds_per_km) as pace_cv
+                    FROM splits
+                    WHERE activity_id = ? {intensity_filter}
+                    """,
+                    [activity_id],
+                ).fetchone()[0]
+
+                # Calculate average pace CV for similar activities
+                similar_pace_cvs = []
+                for sim_id in similar_ids:
+                    sim_cv = conn.execute(
+                        f"""
+                        SELECT STDDEV(pace_seconds_per_km) / AVG(pace_seconds_per_km) as pace_cv
+                        FROM splits
+                        WHERE activity_id = ? {intensity_filter}
+                        """,
+                        [sim_id],
+                    ).fetchone()[0]
+
+                    if sim_cv:
+                        similar_pace_cvs.append(sim_cv)
+
+                if current_pace_cv:
+                    if similar_pace_cvs:
+                        avg_similar_cv = sum(similar_pace_cvs) / len(similar_pace_cvs)
+                        pace_cv_diff = current_pace_cv - avg_similar_cv
+                        comparisons.append(
+                            {
+                                "metric": "ペース変動係数",
+                                "current": f"{current_pace_cv:.3f}",
+                                "average": f"{avg_similar_cv:.3f}",
+                                "change": f"{pace_cv_diff:+.3f}",
+                                "trend": (
+                                    "↗️ 安定性向上"
+                                    if pace_cv_diff < 0
+                                    else (
+                                        "➡️ 維持"
+                                        if abs(pace_cv_diff) < 0.01
+                                        else "↘️ ばらつき増"
+                                    )
+                                ),
+                            }
+                        )
+                    else:
+                        comparisons.append(
+                            {
+                                "metric": "ペース変動係数",
+                                "current": f"{current_pace_cv:.3f}",
+                                "average": "N/A",
+                                "change": "N/A",
+                                "trend": "N/A",
+                            }
+                        )
+
+                # Recovery rate for Interval activities only
+                if training_type in [
+                    "interval_training",
+                    "high_intensity",
+                    "vo2max",
+                    "anaerobic_capacity",
+                ]:
+                    # Get Work and Recovery segments from splits (using intensity_type)
+                    # Recovery rate = Average Recovery HR / Average Work HR * 100
+                    current_recovery = conn.execute(
+                        """
+                        SELECT
+                            AVG(CASE WHEN intensity_type IN ('ACTIVE', 'INTERVAL') THEN heart_rate END) as work_hr,
+                            AVG(CASE WHEN intensity_type IN ('REST', 'RECOVERY') THEN heart_rate END) as recovery_hr
+                        FROM splits
+                        WHERE activity_id = ?
+                        """,
+                        [activity_id],
+                    ).fetchone()
+
+                    if current_recovery and current_recovery[0] and current_recovery[1]:
+                        current_recovery_rate = (
+                            current_recovery[1] / current_recovery[0]
+                        ) * 100
+
+                        # Calculate for similar activities
+                        similar_recovery_rates = []
+                        for sim_id in similar_ids:
+                            sim_recovery = conn.execute(
+                                """
+                                SELECT
+                                    AVG(CASE WHEN intensity_type IN ('ACTIVE', 'INTERVAL') THEN heart_rate END) as work_hr,
+                                    AVG(CASE WHEN intensity_type IN ('REST', 'RECOVERY') THEN heart_rate END) as recovery_hr
+                                FROM splits
+                                WHERE activity_id = ?
+                                """,
+                                [sim_id],
+                            ).fetchone()
+
+                            if sim_recovery and sim_recovery[0] and sim_recovery[1]:
+                                similar_recovery_rates.append(
+                                    (sim_recovery[1] / sim_recovery[0]) * 100
+                                )
+
+                        if similar_recovery_rates:
+                            avg_similar_recovery = sum(similar_recovery_rates) / len(
+                                similar_recovery_rates
+                            )
+                            recovery_diff = current_recovery_rate - avg_similar_recovery
+                            comparisons.append(
+                                {
+                                    "metric": "Recovery回復率",
+                                    "current": f"{int(current_recovery_rate)}%",
+                                    "average": f"{int(avg_similar_recovery)}%",
+                                    "change": f"{int(recovery_diff):+}%",
+                                    "trend": (
+                                        "↗️ 改善"
+                                        if recovery_diff > 0
+                                        else (
+                                            "➡️ 維持"
+                                            if abs(recovery_diff) < 3
+                                            else "↘️ 要改善"
+                                        )
+                                    ),
+                                }
+                            )
+                        else:
+                            comparisons.append(
+                                {
+                                    "metric": "Recovery回復率",
+                                    "current": f"{int(current_recovery_rate)}%",
+                                    "average": "N/A",
+                                    "change": "N/A",
+                                    "trend": "N/A",
+                                }
+                            )
+
+            except Exception as e:
+                logger.warning(
+                    f"Could not calculate training-type-specific metrics: {e}"
+                )
+
+            conn.close()
+
+            # Generate insight with efficiency calculation if applicable
             insight = f"過去の類似ワークアウト{len(top_3)}回と比較して分析しました。"
+
+            # Add detailed efficiency insight if pace improved and power decreased
+            if (
+                current_additional
+                and similar_additional
+                and current_additional[0]
+                and similar_additional[0]
+            ):
+                power_diff = current_additional[0] - similar_additional[0]
+
+                # If pace is faster (pace_diff < 0) and power is lower (power_diff < 0)
+                if pace_diff < 0 and power_diff < 0:
+                    efficiency_improvement = (
+                        abs(power_diff / similar_additional[0]) * 100
+                    )
+                    pace_improvement = abs(int(pace_diff))
+                    power_reduction = abs(int(power_diff))
+
+                    insight = f"ペース{pace_improvement}秒速いのにパワー{power_reduction}W低下＝**効率が{efficiency_improvement:.1f}%向上** ✅"
+                elif len([c for c in comparisons if "改善" in c.get("trend", "")]) >= 3:
+                    insight = "複数指標で改善が見られます"
 
             # Get distance range from similar activities (using target as reference)
             target_distance = result.get("target_activity", {}).get("distance_km", 0)
@@ -1152,17 +1465,22 @@ class ReportGeneratorWorker:
         return None
 
     def _generate_reference_info(
-        self, vo2_max_data: dict | None, lactate_threshold_data: dict | None
+        self,
+        vo2_max_data: dict | None,
+        lactate_threshold_data: dict | None,
+        training_type: str = "aerobic_base",
     ) -> str:
         """
         Generate reference information text for VO2 Max and lactate threshold.
 
         Example output:
             "> **参考**: VO2 Max 52.3 ml/kg/min（優秀）、閾値ペース 4:35/km"
+            "> **参考**: VO2 Max 52.3 ml/kg/min（優秀）、閾値ペース 4:35/km、FTP 285W" (for Interval)
 
         Args:
             vo2_max_data: VO2 Max data from database
             lactate_threshold_data: Lactate threshold data from database
+            training_type: Training type (used to determine if FTP should be shown)
 
         Returns:
             Formatted reference info text
@@ -1172,9 +1490,13 @@ class ReportGeneratorWorker:
         # VO2 Max
         if vo2_max_data:
             vo2_value = vo2_max_data.get("precise_value") or vo2_max_data.get("value")
-            vo2_category = vo2_max_data.get("category", "N/A")
+            vo2_category = vo2_max_data.get("category")
             if vo2_value:
-                parts.append(f"VO2 Max {vo2_value} ml/kg/min（{vo2_category}）")
+                # Only include category if it's not 0 or None
+                if vo2_category and vo2_category != 0 and vo2_category != "N/A":
+                    parts.append(f"VO2 Max {vo2_value} ml/kg/min（{vo2_category}）")
+                else:
+                    parts.append(f"VO2 Max {vo2_value} ml/kg/min")
 
         # Lactate threshold pace
         if lactate_threshold_data:
@@ -1185,6 +1507,12 @@ class ReportGeneratorWorker:
                 pace_min = int(pace_seconds_per_km // 60)
                 pace_sec = int(pace_seconds_per_km % 60)
                 parts.append(f"閾値ペース {pace_min}:{pace_sec:02d}/km")
+
+            # Add FTP for Interval/High Intensity activities
+            if training_type in ["interval_training", "high_intensity"]:
+                ftp = lactate_threshold_data.get("functional_threshold_power")
+                if ftp:
+                    parts.append(f"FTP {int(ftp)}W")
 
         if parts:
             return "> **参考**: " + "、".join(parts)
@@ -1272,14 +1600,74 @@ class ReportGeneratorWorker:
             },
         }
 
+    def _build_form_efficiency_table(self, pace_corrected_data: dict) -> dict[str, Any]:
+        """Build form efficiency table structure for template rendering.
+
+        Transforms pace-corrected form efficiency data into table format
+        compatible with BALANCED template requirements.
+
+        Args:
+            pace_corrected_data: Output from _calculate_pace_corrected_form_efficiency()
+
+        Returns:
+            Dictionary with overall_form_score and form_efficiency_table array
+        """
+        table = []
+
+        # GCT row
+        gct = pace_corrected_data["gct"]
+        table.append(
+            {
+                "metric_name": "接地時間",
+                "actual_value": f"{gct['actual']}ms",
+                "baseline_value": f"{gct['baseline']}ms",
+                "adjusted_score": f"**{gct['score']:+.1f}%** {gct['label']}",
+                "rating": f"{gct['rating_stars']} {gct['rating_score']}",
+            }
+        )
+
+        # VO row
+        vo = pace_corrected_data["vo"]
+        table.append(
+            {
+                "metric_name": "垂直振幅",
+                "actual_value": f"{vo['actual']:.2f}cm",
+                "baseline_value": f"{vo['baseline']:.2f}cm",
+                "adjusted_score": f"**{vo['score']:+.1f}%** {vo['label']}",
+                "rating": f"{vo['rating_stars']} {vo['rating_score']}",
+            }
+        )
+
+        # VR row (no baseline, uses range)
+        vr = pace_corrected_data["vr"]
+        table.append(
+            {
+                "metric_name": "垂直比率",
+                "actual_value": f"{vr['actual']:.2f}%",
+                "baseline_value": "8.0-9.5%",
+                "adjusted_score": vr["label"],
+                "rating": f"{vr['rating_stars']} {vr['rating_score']}",
+            }
+        )
+
+        # Calculate overall form score (average of ratings)
+        avg_rating = (gct["rating_score"] + vo["rating_score"] + vr["rating_score"]) / 3
+        rating_stars = "★" * int(avg_rating) + "☆" * (5 - int(avg_rating))
+        overall_form_score = f"{rating_stars} {avg_rating:.1f}/5.0"
+
+        return {
+            "overall_form_score": overall_form_score,
+            "form_efficiency_table": table,
+        }
+
     def load_section_analyses(
-        self, activity_id: int
+        self, activity_id: int, performance_data: dict[str, Any] | None = None
     ) -> dict[str, dict[str, Any]] | None:
         """
         Load section analyses from DuckDB matching actual data structures.
 
         Actual structure in DuckDB:
-        - efficiency: {"efficiency": "..."}
+        - efficiency: {"efficiency": "...", "evaluation": "..."}  (Agent text only in new format)
         - environment: {"environmental": "..."}
         - phase: {"warmup_evaluation": "...", "main_evaluation": "...", "finish_evaluation": "..."}
         - split: {"analyses": {...}}
@@ -1287,6 +1675,7 @@ class ReportGeneratorWorker:
 
         Args:
             activity_id: Activity ID
+            performance_data: Optional performance data containing pace_corrected calculations
 
         Returns:
             Section analyses dict or None
@@ -1298,7 +1687,33 @@ class ReportGeneratorWorker:
         # Load efficiency analysis
         efficiency_data = self.db_reader.get_section_analysis(activity_id, "efficiency")
         if efficiency_data:
-            analyses["efficiency"] = efficiency_data.get("efficiency", {})
+            # Check if we have pace-corrected data to build the table
+            if (
+                performance_data
+                and "form_efficiency_pace_corrected" in performance_data
+            ):
+                # Build table structure from pace-corrected data
+                table_data = self._build_form_efficiency_table(
+                    performance_data["form_efficiency_pace_corrected"]
+                )
+
+                # Merge table with agent text (efficiency_text, hr_efficiency_text)
+                analyses["efficiency"] = {
+                    **table_data,  # overall_form_score, form_efficiency_table
+                    "efficiency_text": efficiency_data.get("efficiency", ""),
+                    "hr_efficiency_text": efficiency_data.get(
+                        "evaluation", efficiency_data.get("hr_efficiency_text", "")
+                    ),
+                }
+            elif "form_efficiency_table" in efficiency_data:
+                # Legacy: Agent provided full structured format
+                analyses["efficiency"] = efficiency_data
+            elif "efficiency" in efficiency_data:
+                # New format: Agent text only, but no performance data to build table
+                analyses["efficiency"] = efficiency_data
+            else:
+                # Unknown format - use as-is
+                analyses["efficiency"] = efficiency_data
         else:
             logger.warning("Warning: efficiency section analysis missing")
 
@@ -1487,7 +1902,7 @@ class ReportGeneratorWorker:
         if not performance_data:
             raise ValueError(f"No performance data found for activity {activity_id}")
 
-        section_analyses = self.load_section_analyses(activity_id)
+        section_analyses = self.load_section_analyses(activity_id, performance_data)
 
         if not section_analyses:
             raise ValueError(
@@ -1572,6 +1987,7 @@ class ReportGeneratorWorker:
             "summary": section_analyses.get("summary"),
             # Phase 3: Similar workouts comparison (from performance_data)
             "similar_workouts": performance_data.get("similar_workouts"),
+            "reference_info": performance_data.get("reference_info"),
             # Mermaid graph data
             "mermaid_data": performance_data.get("mermaid_data"),
             # Heart rate zone pie chart data

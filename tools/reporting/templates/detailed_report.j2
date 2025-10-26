@@ -77,12 +77,9 @@
 {{ activity_type.description }}
 {% else %}N/A{% endif %}
 
-### 総合所見
+### 総合所見{% if summary.star_rating %} ({{ summary.star_rating }}){% endif %}
 
-{% set rating = summary.summary|extract_star_rating %}
-### 総合所見{% if rating.score > 0 %} ({{ rating.stars }} {{ rating.score }}/5.0){% endif %}
-
-{{ rating.text_without_rating if rating.score > 0 else summary.summary if summary.summary else "評価データがありません。" }}
+{{ summary.summary if summary.summary else "評価データがありません。" }}
 
 {% if summary.key_strengths %}
 **✅ 優れている点:**
@@ -175,9 +172,26 @@ xychart-beta
 
 {% set efficiency_text = efficiency.evaluation if efficiency.evaluation else efficiency if efficiency is string else "フォーム効率データがありません。" %}
 {% set efficiency_rating = efficiency_text|extract_star_rating %}
-### フォーム効率({% if is_interval %}Workセグメント {% endif %}ペース補正評価){% if efficiency_rating.score > 0 %} ({{ efficiency_rating.stars }} {{ efficiency_rating.score }}/5.0){% endif %}
+### フォーム効率({% if is_interval %}Workセグメント {% endif %}ペース補正評価){% if efficiency.overall_form_score %} ({{ efficiency.overall_form_score }}){% elif efficiency_rating.score > 0 %} ({{ efficiency_rating.stars }} {{ efficiency_rating.score }}/5.0){% endif %}
 
 {% if efficiency %}
+{% if efficiency.form_efficiency_table or efficiency.form_indicators %}
+{# New structured format #}
+{% set form_table = efficiency.form_efficiency_table or efficiency.form_indicators %}
+| 指標 | 実測値 | ペース基準値 | 補正スコア | 評価 |
+|------|--------|------------|-----------|------|
+{%- for item in form_table %}
+| **{{ item.metric_name }}** | {{ item.actual_value }} | {{ item.baseline_value }} | {{ item.adjusted_score }} | {{ item.rating }} |
+{%- endfor %}
+
+{% if efficiency.overall_form_score %}**総合フォーム効率: {{ efficiency.overall_form_score }}**{% endif %}
+
+{% if efficiency.efficiency_text %}{{ efficiency.efficiency_text }}{% endif %}
+
+{% if efficiency.hr_efficiency_text %}**心拍効率:**
+{{ efficiency.hr_efficiency_text }}{% endif %}
+{% else %}
+{# Legacy format #}
 {% if is_interval %}
 ```mermaid
 pie title "心拍ゾーン分布(全体)"
@@ -191,6 +205,7 @@ pie title "心拍ゾーン分布"
 {% endif %}
 
 {{ efficiency_rating.text_without_rating if efficiency_rating.score > 0 else efficiency_text }}
+{% endif %}
 {% else %}
 フォーム効率データがありません。
 {% endif %}

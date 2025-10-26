@@ -6,6 +6,36 @@
 - **ステータス**: 計画中
 - **目的**: 3つのBALANCEDサンプルレポート（Base/Interval/Threshold）の形式を可能な限り忠実に再現する
 
+## ⚠️ 重要: 正しいサンプルファイルパス
+
+**これらのファイルを必ず参照すること:**
+1. **Base run サンプル**: `docs/project/2025-10-25_balanced_sample_reproduction/samples/2025-10-08_20625808856_SAMPLE_BALANCED.md`
+2. **Interval サンプル**: `docs/project/2025-10-25_balanced_sample_reproduction/samples/2025-10-15_interval_SAMPLE_BALANCED.md`
+3. **Threshold サンプル**: `docs/project/2025-10-25_balanced_sample_reproduction/samples/2025-10-24_threshold_SAMPLE_BALANCED.md`
+
+**注意**:
+- これらはworktreeディレクトリ（garmin-balanced_sample_reproduction/）からの相対パス
+- samples/ ディレクトリはプロジェクト管理用（result/ 配下と混同しない）
+- _SAMPLE_BALANCED.md がファイル名に含まれる
+
+## 📊 実際のテストデータ
+
+**Phase 3検証用の実アクティビティ:**
+1. **Base run**: `20625808856` (2025-10-08)
+   - Training type: `aerobic_base`
+   - 類似ワークアウト比較の全指標（pace, HR, power, stride, GCT, VO）をテスト
+   - reference_info表示確認（category=0の場合の非表示）
+
+2. **Threshold run**: `20783281578` (2025-10-24)
+   - Training type: `lactate_threshold`
+   - ペース変動係数の追加確認
+   - reference_info表示（FTP非表示）
+
+3. **Interval**: `20615445009` (2025-10-07)
+   - Training type: `interval_training`
+   - Recovery回復率の追加確認
+   - reference_infoにFTP追加確認
+
 ## 要件定義
 
 ### 目的
