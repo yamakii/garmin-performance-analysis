@@ -131,7 +131,13 @@ def insert_activities(
             if raw_weather_path.exists():
                 with open(raw_weather_path, encoding="utf-8") as f:
                     raw_weather = json.load(f)
-                    temp_celsius = raw_weather.get("temp")
+                    # Convert Fahrenheit to Celsius
+                    temp_fahrenheit = raw_weather.get("temp")
+                    temp_celsius = (
+                        (temp_fahrenheit - 32) * 5 / 9
+                        if temp_fahrenheit is not None
+                        else None
+                    )
                     relative_humidity_percent = raw_weather.get("relativeHumidity")
                     wind_speed_kmh = raw_weather.get("windSpeed")
                     wind_direction = raw_weather.get("windDirectionCompassPoint")
