@@ -155,7 +155,7 @@ def test_insert_activities_complete_data():
         assert str(row[1]) == "2025-10-09"  # activity_date
         assert row[2] == "Morning Run"  # activity_name
         assert row[3] == "Tokyo"  # location_name
-        assert row[4] == 68  # temp_celsius (stored as-is from API)
+        assert row[4] == 20.0  # temp_celsius (converted from 68°F)
         assert row[5] == 65  # relative_humidity_percent
         assert row[6] == 5  # wind_speed_kmh (stored as-is from API)
         assert row[7] == "NE"  # wind_direction

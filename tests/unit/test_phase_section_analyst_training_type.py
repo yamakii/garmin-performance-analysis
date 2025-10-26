@@ -108,11 +108,11 @@ class TestEvaluationGuidelines:
 
     def test_warmup_evaluation_guidelines_exist(self, agent_definition_content):
         """Warmup evaluation guidelines exist for all categories."""
-        assert "ウォームアップ評価" in agent_definition_content
+        assert "### ウォームアップ" in agent_definition_content
 
     def test_cooldown_evaluation_guidelines_exist(self, agent_definition_content):
         """Cooldown evaluation guidelines exist for all categories."""
-        assert "クールダウン評価" in agent_definition_content
+        assert "### Cooldown" in agent_definition_content
 
     def test_tone_guidance_exists(self, agent_definition_content):
         """Tone guidance exists for different categories."""

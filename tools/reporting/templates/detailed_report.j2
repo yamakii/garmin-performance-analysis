@@ -334,9 +334,9 @@ VO2 Maxデータがありません。
 ### 気象条件・環境インパクト
 
 {% if weather_data %}
-- **気温**: {{ (weather_data.external_temp_c|default(weather_data.temp_celsius))|round(1) }}°C
-- **湿度**: {{ (weather_data.humidity|default(weather_data.relative_humidity_percent))|round(1) }}%
-- **風速**: {{ (weather_data.wind_speed_ms|default((weather_data.wind_speed_kmh|default(0)) / 3.6 if weather_data.wind_speed_kmh else 0))|round(1) }} m/s
+- **気温**: {{ (weather_data.external_temp_c|default(weather_data.temp_celsius)|default("N/A")) if (weather_data.external_temp_c or weather_data.temp_celsius) else "N/A" }}{{ "°C" if (weather_data.external_temp_c or weather_data.temp_celsius) else "" }}
+- **湿度**: {{ ((weather_data.humidity|default(weather_data.relative_humidity_percent))|round(1)) if (weather_data.humidity or weather_data.relative_humidity_percent) else "N/A" }}{{ "%" if (weather_data.humidity or weather_data.relative_humidity_percent) else "" }}
+- **風速**: {{ ((weather_data.wind_speed_ms|default((weather_data.wind_speed_kmh / 3.6) if weather_data.wind_speed_kmh else 0))|round(1)) if (weather_data.wind_speed_ms or weather_data.wind_speed_kmh) else "N/A" }}{{ " m/s" if (weather_data.wind_speed_ms or weather_data.wind_speed_kmh) else "" }}
 {% endif %}
 {% if gear_name %}- **使用シューズ**: {{ gear_name }}
 {% elif gear_type or gear_model %}- **使用シューズ**: {{ gear_type|default("") }} {{ gear_model|default("") }}
