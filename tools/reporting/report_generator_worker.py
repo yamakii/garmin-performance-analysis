@@ -1303,6 +1303,29 @@ class ReportGeneratorWorker:
                     f"Could not calculate training-type-specific metrics: {e}"
                 )
 
+            # Get training type and terrain BEFORE closing connection
+            hr_data_for_conditions = self.db_reader.get_hr_efficiency_analysis(
+                activity_id
+            )
+            training_type_raw = (
+                hr_data_for_conditions.get("training_type")
+                if hr_data_for_conditions
+                else None
+            )
+
+            # Get elevation gain for terrain description from splits
+            elevation_data = conn.execute(
+                """
+                SELECT SUM(elevation_gain) as total_gain
+                FROM splits
+                WHERE activity_id = ?
+                """,
+                [activity_id],
+            ).fetchone()
+            elevation_gain = (
+                elevation_data[0] if elevation_data and elevation_data[0] else 0
+            )
+
             conn.close()
 
             # Generate insight with efficiency calculation if applicable
@@ -1329,11 +1352,40 @@ class ReportGeneratorWorker:
                 elif len([c for c in comparisons if "改善" in c.get("trend", "")]) >= 3:
                     insight = "複数指標で改善が見られます"
 
-            # Get distance range from similar activities (using target as reference)
+            # Format conditions description with training type and terrain
             target_distance = result.get("target_activity", {}).get("distance_km", 0)
 
+            # Distance description (round to nearest km)
+            distance_rounded = round(target_distance)
+            distance_desc = f"{distance_rounded}km前後"
+
+            # Pace description based on training type
+            training_type_map = {
+                "low_intensity": "イージーペース",
+                "moderate_intensity": "ジョグペース",
+                "lactate_threshold": "閾値ペース",
+                "tempo": "テンポペース",
+                "interval_training": "インターバルペース",
+                "high_intensity": "高強度ペース",
+                "vo2max": "VO2 Maxペース",
+                "anaerobic_capacity": "無酸素ペース",
+            }
+            pace_desc = training_type_map.get(training_type_raw or "", "ペース類似")
+
+            # Terrain description based on elevation gain
+            if elevation_gain < 100:
+                terrain_desc = "平坦コース"
+            elif elevation_gain < 300:
+                terrain_desc = "起伏コース"
+            elif elevation_gain < 600:
+                terrain_desc = "丘陵コース"
+            else:
+                terrain_desc = "山岳コース"
+
+            conditions_text = f"距離{distance_desc}、{pace_desc}、{terrain_desc}"
+
             return {
-                "conditions": f"距離約{target_distance:.1f}km、ペース類似",
+                "conditions": conditions_text,
                 "count": len(top_3),
                 "comparisons": comparisons,
                 "insight": insight,
