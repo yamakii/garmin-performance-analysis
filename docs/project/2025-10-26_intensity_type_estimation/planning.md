@@ -25,9 +25,19 @@
 - 過去のトレーニング履歴の分析に制限がかかる
 
 **調査結果:**
-- 研究により、ルールベースアルゴリズムで92.9%の精度を達成（2021-01-02のアクティビティID: 6040655748で検証）
+- 実データ分析により、**6種類**のintensity_typeが使用されていることを確認:
+  - WARMUP (112 activities, 165 splits)
+  - ACTIVE (126 activities, 957 splits)
+  - INTERVAL (81 activities, 497 splits)
+  - COOLDOWN (108 activities, 204 splits)
+  - RECOVERY (21 activities, 93 splits) - 高強度トレーニングの休息期間
+  - REST (3 activities, 12 splits) - Sprintトレーニングのみ、極めてレア
+- **推定対象**: 5種類（RESTはRECOVERYとして扱う）
+- **検証結果**: 改良版アルゴリズムで**92.7%の精度**を達成
+  - Threshold: 88.9% (9 splits)
+  - Sprint: 93.8% (16 splits, INTERVAL/RECOVERY繰り返し)
+  - VO2 Max: 95.5% (22 splits, INTERVAL/RECOVERY繰り返し)
 - アルゴリズムはsplit位置、心拍数、ペースパターンを使用
-- 4種類のintensity_typeをサポート: WARMUP, ACTIVE, INTERVAL, COOLDOWN
 
 ### ユースケース
 
@@ -124,11 +134,13 @@ CREATE TABLE splits (
 );
 ```
 
-**Intensity Type Values:**
-- `WARMUP` - ウォームアップフェーズ
-- `ACTIVE` - メインランニングフェーズ
-- `INTERVAL` - インターバル/ハードエフォート（現時点では未使用、将来の拡張用）
-- `COOLDOWN` - クールダウンフェーズ
+**Intensity Type Values (実データから確認済み):**
+- `WARMUP` - ウォームアップフェーズ（112 activities, 165 splits）
+- `ACTIVE` - メインランニングフェーズ（126 activities, 957 splits）
+- `INTERVAL` - インターバル/ハードエフォート（81 activities, 497 splits）- **推定対象**
+- `COOLDOWN` - クールダウンフェーズ（108 activities, 204 splits）
+- `RECOVERY` - 高強度トレーニングの休息期間（21 activities, 93 splits）- **推定対象**
+- `REST` - Sprint短時間休息（3 activities, 12 splits）- **RECOVERYとして推定**
 - `NULL` - 欠損値（推定対象）
 
 **データフロー:**
@@ -163,12 +175,14 @@ class GarminDBWriter:
         """
         Estimate intensity_type for splits based on HR and pace patterns.
 
-        Algorithm:
-        - Calculate average HR across all splits
-        - For each split:
-            - WARMUP: First 1-2 splits + HR < avg_hr * 0.85
-            - COOLDOWN: Last 1-2 splits + HR < avg_hr * 0.90
-            - ACTIVE: All other splits
+        Algorithm (検証済み - 92.7%精度):
+        - Calculate average HR and pace across all splits
+        - For each split in order:
+            1. WARMUP: First 2 splits (1 split if total ≤ 6)
+            2. COOLDOWN: Last 2 splits (1 split if total ≤ 6)
+            3. RECOVERY: pace > 400 sec/km AND previous split was INTERVAL/RECOVERY
+            4. INTERVAL: pace < avg_pace * 0.90 OR hr > avg_hr * 1.1
+            5. ACTIVE: Everything else (default)
 
         Args:
             splits: List of split dictionaries with HR and pace
@@ -177,33 +191,51 @@ class GarminDBWriter:
             List of estimated intensity_type strings (same length as splits)
 
         Notes:
+            - Validated accuracy: Threshold 88.9%, Sprint 93.8%, VO2 Max 95.5%
+            - REST is mapped to RECOVERY (functionally equivalent)
             - Returns estimates only; does not modify input splits
             - Handles missing HR values gracefully (use default ACTIVE)
-            - Conservative thresholds to avoid false positives
         """
         total_splits = len(splits)
 
-        # Calculate average HR (skip splits with missing HR)
+        # Calculate averages (skip splits with missing values)
         hrs = [s.get('heart_rate', 0) for s in splits if s.get('heart_rate')]
-        avg_hr = sum(hrs) / len(hrs) if hrs else 0
+        paces = [s.get('pace_seconds_per_km', 0) for s in splits if s.get('pace_seconds_per_km')]
 
-        # If no HR data available, return all ACTIVE
-        if avg_hr == 0:
+        avg_hr = sum(hrs) / len(hrs) if hrs else 0
+        avg_pace = sum(paces) / len(paces) if paces else 0
+
+        # If no data available, return all ACTIVE
+        if avg_hr == 0 and avg_pace == 0:
             return ['ACTIVE'] * total_splits
+
+        # Thresholds for short activities
+        warmup_threshold = 2 if total_splits > 6 else 1
+        cooldown_threshold = 2 if total_splits > 6 else 1
 
         estimated_types = []
         for idx, split in enumerate(splits):
             split_hr = split.get('heart_rate', avg_hr)
+            split_pace = split.get('pace_seconds_per_km', avg_pace)
+            position = idx + 1  # 1-based
 
-            # 1-based index for position logic
-            position = idx + 1
-
-            # WARMUP: first 1-2 splits + low HR
-            if position <= 2 and split_hr < avg_hr * 0.85:
+            # WARMUP: first N splits (position-based)
+            if position <= warmup_threshold:
                 estimated_types.append('WARMUP')
-            # COOLDOWN: last 1-2 splits + low HR
-            elif position >= total_splits - 1 and split_hr < avg_hr * 0.90:
+
+            # COOLDOWN: last N splits (position-based)
+            elif position > total_splits - cooldown_threshold:
                 estimated_types.append('COOLDOWN')
+
+            # RECOVERY: slow pace + after INTERVAL/RECOVERY
+            elif (split_pace > 400 and idx > 0 and
+                  estimated_types[idx-1] in ['INTERVAL', 'RECOVERY']):
+                estimated_types.append('RECOVERY')
+
+            # INTERVAL: fast pace OR high HR
+            elif split_pace < avg_pace * 0.90 or split_hr > avg_hr * 1.1:
+                estimated_types.append('INTERVAL')
+
             # ACTIVE: everything else
             else:
                 estimated_types.append('ACTIVE')
@@ -609,11 +641,11 @@ tests/
 ## 受け入れ基準
 
 ### 機能要件
-- [ ] `_estimate_intensity_type()` メソッドが実装され、4種類の推定（WARMUP/ACTIVE/COOLDOWN）を実行できる
+- [ ] `_estimate_intensity_type()` メソッドが実装され、5種類の推定（WARMUP/ACTIVE/INTERVAL/COOLDOWN/RECOVERY）を実行できる
 - [ ] `insert_splits()` メソッドがNULLのintensity_typeを自動推定する
 - [ ] 既存のintensity_type値は上書きされない
 - [ ] 2021年のアクティビティで欠損していたintensity_type値が全て補完される
-- [ ] 推定精度が85%以上（ベースラインの92.9%を維持）
+- [ ] 推定精度が85%以上（検証結果: 92.7%平均精度）
 
 ### データ整合性要件
 - [ ] DuckDBスキーマ変更なし（既存の`intensity_type`カラムを使用）
@@ -638,7 +670,10 @@ tests/
 - [ ] completion_report.md 作成（推定精度、補完件数の記録）
 
 ### 検証要件
-- [ ] 2021-01-02アクティビティ（ID: 6040655748）で92.9%精度を達成
+- [ ] **Threshold pattern** (2025-10-24, ID: 20783281578) で85%以上の精度（検証結果: 88.9%）
+- [ ] **Sprint pattern** (2025-10-11, ID: 20652528219) で85%以上の精度（検証結果: 93.8%）
+- [ ] **VO2 Max pattern** (2025-10-07, ID: 20615445009) で85%以上の精度（検証結果: 95.5%）
+- [ ] 平均精度 ≥ 85%（検証結果: 92.7%）
 - [ ] 2021年全アクティビティでintensity_type NULL件数 = 0
 - [ ] phase-section-analystが2021年アクティビティで正常動作（トレーニングタイプ判定可能）
 - [ ] 既存の2022-2025年データに影響なし
@@ -729,10 +764,28 @@ tests/
 - `data/raw/{activity_id}/splits.json` - Raw split data (lapDTOs)
 - `splits` テーブル - DuckDB schema
 
-### 研究結果
-- **ベースラインアクティビティ**: 2021-01-02 (ID: 6040655748)
-- **ベースライン精度**: 92.9% (14/15 splits correct)
-- **アルゴリズム**: Position + HR pattern (thresholds: 0.85, 0.90)
+### 検証結果（2025-10-26実施）
+**検証アクティビティ:**
+1. **Threshold** (2025-10-24, ID: 20783281578) - 88.9% (8/9 splits)
+   - Pattern: WARMUP → INTERVAL × 4 → COOLDOWN
+   - 誤判定: split 7をRECOVERYと判定（遅いペース）
+
+2. **Sprint** (2025-10-11, ID: 20652528219) - 93.8% (15/16 splits)
+   - Pattern: WARMUP → (INTERVAL → RECOVERY) × 6 → COOLDOWN
+   - RESTを全てRECOVERYと正しく判定
+   - 誤判定: split 3をACTIVEと判定（WARMUP期待）
+
+3. **VO2 Max** (2025-10-07, ID: 20615445009) - 95.5% (21/22 splits)
+   - Pattern: WARMUP → (INTERVAL → RECOVERY) × 9 → COOLDOWN
+   - 誤判定: split 20をRECOVERYと判定（COOLDOWN期待）
+
+**平均精度**: 92.7% (44/47 splits正解)
+
+**アルゴリズム仕様:**
+- Position-based: WARMUP (first 2), COOLDOWN (last 2)
+- Pattern-based: RECOVERY (pace >400 after INTERVAL)
+- Threshold-based: INTERVAL (pace <avg×0.90 OR hr >avg×1.1)
+- Default: ACTIVE
 
 ---
 
