@@ -1669,7 +1669,7 @@ class ReportGeneratorWorker:
         Actual structure in DuckDB:
         - efficiency: {"efficiency": "...", "evaluation": "..."}  (Agent text only in new format)
         - environment: {"environmental": "..."}
-        - phase: {"warmup_evaluation": "...", "main_evaluation": "...", "finish_evaluation": "..."}
+        - phase: {"warmup_evaluation": "...", "run_evaluation": "...", "cooldown_evaluation": "..."}
         - split: {"analyses": {...}}
         - summary: {"activity_type": "...", "summary": "...", "recommendations": "..."}
 
@@ -1726,38 +1726,12 @@ class ReportGeneratorWorker:
         else:
             logger.warning("Warning: environment section analysis missing")
 
-        # Load phase analysis (support both 3-phase and 4-phase structures)
+        # Load phase analysis - pass through as-is (flat structure)
         phase_data = self.db_reader.get_section_analysis(activity_id, "phase")
         if phase_data:
-            # Detect structure: 4-phase (interval) or 3-phase (regular)
-            if "recovery_evaluation" in phase_data:
-                # 4-phase structure (warmup/run/recovery/cooldown)
-                analyses["phase_evaluation"] = {
-                    "warmup": {"evaluation": phase_data.get("warmup_evaluation", "")},
-                    "run": {"evaluation": phase_data.get("run_evaluation", "")},
-                    "recovery": {
-                        "evaluation": phase_data.get("recovery_evaluation", "")
-                    },
-                    "cooldown": {
-                        "evaluation": phase_data.get("cooldown_evaluation", "")
-                    },
-                }
-            elif "run_evaluation" in phase_data:
-                # 3-phase structure with new naming (warmup/run/cooldown)
-                analyses["phase_evaluation"] = {
-                    "warmup": {"evaluation": phase_data.get("warmup_evaluation", "")},
-                    "run": {"evaluation": phase_data.get("run_evaluation", "")},
-                    "cooldown": {
-                        "evaluation": phase_data.get("cooldown_evaluation", "")
-                    },
-                }
-            else:
-                # Legacy 3-phase structure (warmup/main/finish)
-                analyses["phase_evaluation"] = {
-                    "warmup": {"evaluation": phase_data.get("warmup_evaluation", "")},
-                    "main": {"evaluation": phase_data.get("main_evaluation", "")},
-                    "finish": {"evaluation": phase_data.get("finish_evaluation", "")},
-                }
+            # Pass through the flat structure from DuckDB directly
+            # Template expects: warmup_evaluation, run_evaluation, recovery_evaluation, cooldown_evaluation
+            analyses["phase_evaluation"] = phase_data
         else:
             logger.warning("Warning: phase section analysis missing")
 

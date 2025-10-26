@@ -252,51 +252,56 @@ VO2 Maxデータがありません。
 {# =================================================================== #}
 ## フェーズ評価
 
-{% if phase_evaluation %}
-{% if phase_evaluation.get('warmup_evaluation') or phase_evaluation.get('warmup') or training_type_category == "recovery" %}
-{% set warmup_text = phase_evaluation.get('warmup_evaluation', phase_evaluation.get('warmup', {}).get('evaluation', 'データがありません。')) %}
-{% set warmup_rating = warmup_text|extract_star_rating %}
+{%- if phase_evaluation %}
+{%- if phase_evaluation.get('warmup_evaluation') or phase_evaluation.get('warmup') or training_type_category == "recovery" %}
+{%- set warmup_text = phase_evaluation.get('warmup_evaluation', phase_evaluation.get('warmup', {}).get('evaluation', 'データがありません。')) %}
+{%- set warmup_rating = warmup_text|extract_star_rating %}
 ### ウォームアップフェーズ{% if warmup_rating.score > 0 %} ({{ warmup_rating.stars }} {{ warmup_rating.score }}/5.0){% endif %}
 
 {{ warmup_rating.text_without_rating if warmup_rating.score > 0 else warmup_text }}
 
-{% if training_type_category == "recovery" %}
+{%- if training_type_category == "recovery" %}
 {# Recovery run - only 1 phase, end here #}
 ---
-{% endif %}
-{% endif %}
+{%- endif %}
+{%- endif %}
 
-{% if training_type_category != "recovery" %}
-{% if phase_evaluation.get('run_evaluation') or phase_evaluation.get('run') or phase_evaluation.get('main') %}
-{% set run_text = phase_evaluation.get('run_evaluation', phase_evaluation.get('run', {}).get('evaluation', phase_evaluation.get('main', {}).get('evaluation', 'データがありません。'))) %}
-{% set run_rating = run_text|extract_star_rating %}
+{%- if training_type_category != "recovery" %}
+{%- if phase_evaluation.get('run_evaluation') or phase_evaluation.get('run') or phase_evaluation.get('main') %}
+{%- set run_text = phase_evaluation.get('run_evaluation', phase_evaluation.get('run', {}).get('evaluation', phase_evaluation.get('main', {}).get('evaluation', 'データがありません。'))) %}
+{%- set run_rating = run_text|extract_star_rating %}
+
+---
+
 ### {% if is_interval %}Workフェーズ{% else %}メイン走行フェーズ{% endif %}{% if run_rating.score > 0 %} ({{ run_rating.stars }} {{ run_rating.score }}/5.0){% endif %}
 
 {{ run_rating.text_without_rating if run_rating.score > 0 else run_text }}
+{%- endif %}
+
+{%- if is_interval and (phase_evaluation.get('recovery_evaluation') or phase_evaluation.get('recovery')) %}
+{%- set recovery_text = phase_evaluation.get('recovery_evaluation', phase_evaluation.get('recovery', {}).get('evaluation', 'データがありません。')) %}
+{%- set recovery_rating = recovery_text|extract_star_rating %}
 
 ---
-{% endif %}
 
-{% if is_interval and (phase_evaluation.get('recovery_evaluation') or phase_evaluation.get('recovery')) %}
-{% set recovery_text = phase_evaluation.get('recovery_evaluation', phase_evaluation.get('recovery', {}).get('evaluation', 'データがありません。')) %}
-{% set recovery_rating = recovery_text|extract_star_rating %}
 ### Recoveryフェーズ{% if recovery_rating.score > 0 %} ({{ recovery_rating.stars }} {{ recovery_rating.score }}/5.0){% endif %}
 
 {{ recovery_rating.text_without_rating if recovery_rating.score > 0 else recovery_text }}
+{%- endif %}
+
+{%- if phase_evaluation.get('cooldown_evaluation') or phase_evaluation.get('cooldown') or phase_evaluation.get('finish') %}
+{%- set cooldown_text = phase_evaluation.get('cooldown_evaluation', phase_evaluation.get('cooldown', {}).get('evaluation', phase_evaluation.get('finish', {}).get('evaluation', 'データがありません。'))) %}
+{%- set cooldown_rating = cooldown_text|extract_star_rating %}
 
 ---
-{% endif %}
 
-{% if phase_evaluation.get('cooldown_evaluation') or phase_evaluation.get('cooldown') or phase_evaluation.get('finish') %}
-{% set cooldown_text = phase_evaluation.get('cooldown_evaluation', phase_evaluation.get('cooldown', {}).get('evaluation', phase_evaluation.get('finish', {}).get('evaluation', 'データがありません。'))) %}
-{% set cooldown_rating = cooldown_text|extract_star_rating %}
 ### クールダウンフェーズ{% if cooldown_rating.score > 0 %} ({{ cooldown_rating.stars }} {{ cooldown_rating.score }}/5.0){% endif %}
 
 {{ cooldown_rating.text_without_rating if cooldown_rating.score > 0 else cooldown_text }}
 
 ---
-{% endif %}
-{% endif %}
+{%- endif %}
+{%- endif %}
 {% else %}
 フェーズ評価データがありません。
 {% endif %}
