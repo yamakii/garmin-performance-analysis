@@ -226,6 +226,35 @@ class AggregateReader(BaseDBReader):
             logger.error(f"Error getting heart rate zones detail: {e}")
             return None
 
+    @staticmethod
+    def _get_vo2_max_category(vo2_max_value: float | None) -> str:
+        """
+        Convert VO2 max value to Japanese category label.
+
+        Based on ACSM (American College of Sports Medicine) guidelines
+        for adult males. Categories are approximate as we don't have
+        age/gender information.
+
+        Args:
+            vo2_max_value: VO2 max value in ml/kg/min
+
+        Returns:
+            Japanese category label: 優秀, 良好, 平均, やや低い, 低い
+        """
+        if vo2_max_value is None:
+            return "不明"
+
+        if vo2_max_value >= 47:
+            return "優秀"
+        elif vo2_max_value >= 42:
+            return "良好"
+        elif vo2_max_value >= 38:
+            return "平均"
+        elif vo2_max_value >= 34:
+            return "やや低い"
+        else:
+            return "低い"
+
     def get_vo2_max_data(self, activity_id: int) -> dict[str, Any] | None:
         """
         Get VO2 max data from vo2_max table.
@@ -241,7 +270,7 @@ class AggregateReader(BaseDBReader):
                 "precise_value": float,
                 "value": float,
                 "date": str,
-                "category": int
+                "category": str (優秀, 良好, 平均, やや低い, 低い, 不明)
             }
             None if no data found.
         """
@@ -266,7 +295,7 @@ class AggregateReader(BaseDBReader):
                         "precise_value": result[0],
                         "value": result[1],
                         "date": str(result[2]) if result[2] else None,
-                        "category": result[3],
+                        "category": self._get_vo2_max_category(result[0]),
                     }
 
                 # Fallback: Get most recent VO2 max before or on activity date
@@ -304,7 +333,7 @@ class AggregateReader(BaseDBReader):
                     "precise_value": result[0],
                     "value": result[1],
                     "date": str(result[2]) if result[2] else None,
-                    "category": result[3],
+                    "category": self._get_vo2_max_category(result[0]),
                 }
 
         except Exception as e:
@@ -514,10 +543,10 @@ class AggregateReader(BaseDBReader):
                 # Convert wind speed from km/h to m/s
                 wind_speed_ms = result[2] / 3.6 if result[2] else None
 
-                # Convert temperature from Fahrenheit to Celsius
-                # (Currently stored as Fahrenheit in temp_celsius column)
-                temp_f = result[0]
-                temp_c = (temp_f - 32) * 5 / 9 if temp_f else None
+                # temp_celsius is already stored in Celsius, no conversion needed
+                temp_c = result[0]
+                # Convert Celsius to Fahrenheit
+                temp_f = (temp_c * 9 / 5) + 32 if temp_c is not None else None
 
                 return {
                     "temperature_c": temp_c,

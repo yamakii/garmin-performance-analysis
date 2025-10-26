@@ -111,7 +111,7 @@ class ReportTemplateRenderer:
         Extract star rating from text.
 
         Args:
-            text: Text containing star rating pattern "(★★★★☆ 4.2/5.0)", or dict/None
+            text: Text containing star rating pattern "(★★★★☆ 4.2/5.0)" or "(★★★★☆)", or dict/None
 
         Returns:
             Dictionary with keys:
@@ -122,6 +122,9 @@ class ReportTemplateRenderer:
         Examples:
             >>> _extract_star_rating_filter("良好です (★★★★☆ 4.2/5.0)")
             {"stars": "★★★★☆", "score": 4.2, "text_without_rating": "良好です"}
+
+            >>> _extract_star_rating_filter("良好です (★★★★☆)")
+            {"stars": "★★★★☆", "score": 4.0, "text_without_rating": "良好です"}
 
             >>> _extract_star_rating_filter("普通です")
             {"stars": "", "score": 0.0, "text_without_rating": "普通です"}
@@ -139,17 +142,35 @@ class ReportTemplateRenderer:
                 "text_without_rating": "",
             }
 
-        pattern = r"\(([★☆]+) (\d+\.\d+)/5\.0\)"
-        match = re.search(pattern, text)
+        # Try pattern with score first: (★★★★☆ 4.2/5.0)
+        pattern_with_score = r"\(([★☆]+) (\d+\.\d+)/5\.0\)"
+        match = re.search(pattern_with_score, text)
 
         if match:
             stars = match.group(1)
             score = float(match.group(2))
-            text_without_rating = re.sub(pattern, "", text, count=1).strip()
+            text_without_rating = re.sub(pattern_with_score, "", text, count=1).strip()
 
             return {
                 "stars": stars,
                 "score": score,
+                "text_without_rating": text_without_rating,
+            }
+
+        # Try pattern without score: (★★★★☆)
+        pattern_without_score = r"\(([★☆]+)\)"
+        match = re.search(pattern_without_score, text)
+
+        if match:
+            stars = match.group(1)
+            full_stars = stars.count("★")
+            text_without_rating = re.sub(
+                pattern_without_score, "", text, count=1
+            ).strip()
+
+            return {
+                "stars": stars,
+                "score": float(full_stars),
                 "text_without_rating": text_without_rating,
             }
 
@@ -218,6 +239,11 @@ class ReportTemplateRenderer:
         zone_4_ratio: float | None = None,
         is_interval: bool | None = None,
         show_physiological: bool | None = None,
+        # Phase evaluation ratings
+        warmup_rating: dict | None = None,
+        run_rating: dict | None = None,
+        recovery_rating: dict | None = None,
+        cooldown_rating: dict | None = None,
     ) -> str:
         """
         Jinja2テンプレートでJSON dataからmarkdownを生成。
@@ -325,6 +351,11 @@ class ReportTemplateRenderer:
                 zone_4_ratio=zone_4_ratio,
                 is_interval=is_interval,
                 show_physiological=show_physiological,
+                # Phase evaluation ratings for headers
+                warmup_rating=warmup_rating or {"score": 0, "stars": ""},
+                run_rating=run_rating or {"score": 0, "stars": ""},
+                recovery_rating=recovery_rating or {"score": 0, "stars": ""},
+                cooldown_rating=cooldown_rating or {"score": 0, "stars": ""},
             ),
         )
 

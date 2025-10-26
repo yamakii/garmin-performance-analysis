@@ -1,12 +1,8 @@
 # ランニング分析レポート
-
-{%- set training_type_category = training_type_category|default("low_moderate") -%}
+{% set training_type_category = training_type_category|default("low_moderate") -%}
 {%- set show_physiological = training_type_category in ["tempo_threshold", "interval_sprint"] -%}
-{%- set is_interval = training_type_category == "interval_sprint" -%}
+{%- set is_interval = training_type_category == "interval_sprint" %}
 
-{# =================================================================== #}
-{# SECTION 1: 基本情報 #}
-{# =================================================================== #}
 ## 基本情報
 - **日付**: {{ date }}
 - **アクティビティID**: {{ activity_id }}
@@ -32,7 +28,7 @@
 {%- if vo2_max_utilization %}
 | **VO2 Max利用率** | {{ vo2_max_utilization }}% | {{ vo2_max_utilization_eval|default("N/A") }} |
 {%- endif %}
-| **閾値ペース** | {{ threshold_pace_formatted|default("N/A") }}/km | {{ threshold_pace_comparison|default("N/A") }} |
+| **閾値ペース** | {{ threshold_pace_formatted|default("N/A") }} | {{ threshold_pace_comparison|default("N/A") }} |
 | **FTP(パワー)** | {{ lactate_threshold_data.functional_threshold_power|default(0)|int }} W | Work平均{{ work_avg_power|int if work_avg_power else "N/A" }}W = FTPの{{ ftp_percentage|default("N/A") }}% |
 
 {% endif %}
@@ -170,12 +166,20 @@ xychart-beta
 
 {% set efficiency_text = efficiency.evaluation if efficiency.evaluation else efficiency if efficiency is string else "フォーム効率データがありません。" %}
 {% set efficiency_rating = efficiency_text|extract_star_rating %}
-### フォーム効率({% if is_interval %}Workセグメント {% endif %}ペース補正評価){% if efficiency.overall_form_score %} ({{ efficiency.overall_form_score }}){% elif efficiency_rating.score > 0 %} ({{ efficiency_rating.stars }} {{ efficiency_rating.score }}/5.0){% endif %}
+### フォーム効率（{% if is_interval %}Workセグメント {% endif %}ペース補正評価）{% if efficiency.overall_form_score %} ({{ efficiency.overall_form_score }}){% elif efficiency_rating.score > 0 %} ({{ efficiency_rating.stars }} {{ efficiency_rating.score }}/5.0){% endif %}
 
 {% if efficiency %}
 {% if efficiency.form_efficiency_table or efficiency.form_indicators %}
 {# New structured format #}
 {% set form_table = efficiency.form_efficiency_table or efficiency.form_indicators %}
+
+{% if heart_rate_zone_pie_data %}
+```mermaid
+pie title "心拍ゾーン分布"
+{{ heart_rate_zone_pie_data }}
+```
+{% endif %}
+
 | 指標 | 実測値 | ペース基準値 | 補正スコア | 評価 |
 |------|--------|------------|-----------|------|
 {%- for item in form_table %}
@@ -185,13 +189,6 @@ xychart-beta
 {% if efficiency.overall_form_score %}**総合フォーム効率: {{ efficiency.overall_form_score }}**{% endif %}
 
 {% if efficiency.efficiency_text %}{{ efficiency.efficiency_text }}{% endif %}
-
-{% if heart_rate_zone_pie_data and show_physiological %}
-```mermaid
-pie title "心拍ゾーン分布"
-{{ heart_rate_zone_pie_data }}
-```
-{% endif %}
 
 {% if efficiency.hr_efficiency_text %}**心拍効率:**
 {{ efficiency.hr_efficiency_text }}{% endif %}
@@ -257,13 +254,11 @@ VO2 Maxデータがありません。
 {# =================================================================== #}
 ## フェーズ評価
 
-{%- if phase_evaluation %}
-{%- if phase_evaluation.get('warmup_evaluation') or phase_evaluation.get('warmup') or training_type_category == "recovery" %}
+{% if phase_evaluation %}
+{% if phase_evaluation.get('warmup_evaluation') or phase_evaluation.get('warmup') or training_type_category == "recovery" %}
 {%- set warmup_text = phase_evaluation.get('warmup_evaluation', phase_evaluation.get('warmup', {}).get('evaluation', 'データがありません。')) %}
-{%- set warmup_rating = warmup_text|extract_star_rating %}
 ### ウォームアップフェーズ{% if warmup_rating.score > 0 %} ({{ warmup_rating.stars }} {{ warmup_rating.score }}/5.0){% endif %}
-
-{{ warmup_rating.text_without_rating if warmup_rating.score > 0 else warmup_text }}
+{{ (warmup_text|extract_star_rating).text_without_rating }}
 
 {%- if training_type_category == "recovery" %}
 {# Recovery run - only 1 phase, end here #}
@@ -274,35 +269,29 @@ VO2 Maxデータがありません。
 {%- if training_type_category != "recovery" %}
 {%- if phase_evaluation.get('run_evaluation') or phase_evaluation.get('run') or phase_evaluation.get('main') %}
 {%- set run_text = phase_evaluation.get('run_evaluation', phase_evaluation.get('run', {}).get('evaluation', phase_evaluation.get('main', {}).get('evaluation', 'データがありません。'))) %}
-{%- set run_rating = run_text|extract_star_rating %}
 
 ---
 
 ### {% if is_interval %}Workフェーズ{% else %}メイン走行フェーズ{% endif %}{% if run_rating.score > 0 %} ({{ run_rating.stars }} {{ run_rating.score }}/5.0){% endif %}
-
-{{ run_rating.text_without_rating if run_rating.score > 0 else run_text }}
+{{ (run_text|extract_star_rating).text_without_rating }}
 {%- endif %}
 
 {%- if is_interval and (phase_evaluation.get('recovery_evaluation') or phase_evaluation.get('recovery')) %}
 {%- set recovery_text = phase_evaluation.get('recovery_evaluation', phase_evaluation.get('recovery', {}).get('evaluation', 'データがありません。')) %}
-{%- set recovery_rating = recovery_text|extract_star_rating %}
 
 ---
 
 ### Recoveryフェーズ{% if recovery_rating.score > 0 %} ({{ recovery_rating.stars }} {{ recovery_rating.score }}/5.0){% endif %}
-
-{{ recovery_rating.text_without_rating if recovery_rating.score > 0 else recovery_text }}
+{{ (recovery_text|extract_star_rating).text_without_rating }}
 {%- endif %}
 
 {%- if phase_evaluation.get('cooldown_evaluation') or phase_evaluation.get('cooldown') or phase_evaluation.get('finish') %}
 {%- set cooldown_text = phase_evaluation.get('cooldown_evaluation', phase_evaluation.get('cooldown', {}).get('evaluation', phase_evaluation.get('finish', {}).get('evaluation', 'データがありません。'))) %}
-{%- set cooldown_rating = cooldown_text|extract_star_rating %}
 
 ---
 
 ### クールダウンフェーズ{% if cooldown_rating.score > 0 %} ({{ cooldown_rating.stars }} {{ cooldown_rating.score }}/5.0){% endif %}
-
-{{ cooldown_rating.text_without_rating if cooldown_rating.score > 0 else cooldown_text }}
+{{ (cooldown_text|extract_star_rating).text_without_rating }}
 
 ---
 {%- endif %}
@@ -334,7 +323,7 @@ VO2 Maxデータがありません。
 ### 気象条件・環境インパクト
 
 {% if weather_data %}
-- **気温**: {{ (weather_data.external_temp_c|default(weather_data.temp_celsius)|default("N/A")) if (weather_data.external_temp_c or weather_data.temp_celsius) else "N/A" }}{{ "°C" if (weather_data.external_temp_c or weather_data.temp_celsius) else "" }}
+- **気温**: {{ ((weather_data.external_temp_c|default(weather_data.temp_celsius))|round(1)) if (weather_data.external_temp_c or weather_data.temp_celsius) else "N/A" }}{{ "°C" if (weather_data.external_temp_c or weather_data.temp_celsius) else "" }}
 - **湿度**: {{ ((weather_data.humidity|default(weather_data.relative_humidity_percent))|round(1)) if (weather_data.humidity or weather_data.relative_humidity_percent) else "N/A" }}{{ "%" if (weather_data.humidity or weather_data.relative_humidity_percent) else "" }}
 - **風速**: {{ ((weather_data.wind_speed_ms|default((weather_data.wind_speed_kmh / 3.6) if weather_data.wind_speed_kmh else 0))|round(1)) if (weather_data.wind_speed_ms or weather_data.wind_speed_kmh) else "N/A" }}{{ " m/s" if (weather_data.wind_speed_ms or weather_data.wind_speed_kmh) else "" }}
 {% endif %}
@@ -359,6 +348,14 @@ VO2 Maxデータがありません。
 ## 💡 改善ポイント
 
 {% if summary and summary.recommendations %}
+{% if training_type_category == "low_moderate" %}
+今回のベース走（有酸素ゾーン中心）を次回実施する際の改善点：
+{% elif training_type_category == "tempo_threshold" %}
+今回の閾値トレーニングを次回実施する際の改善点：
+{% elif training_type_category == "interval_sprint" %}
+今回のインターバルトレーニングを次回実施する際の改善点：
+{% endif %}
+
 {{ summary.recommendations }}
 {% else %}
 改善ポイントデータがありません。

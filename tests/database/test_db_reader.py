@@ -388,7 +388,7 @@ class TestGarminDBReader:
         """
         )
 
-        # Insert activity with weather data (temp in Fahrenheit as stored in DB)
+        # Insert activity with weather data (temp_celsius stored in DB)
         conn.execute(
             """
             INSERT INTO activities VALUES (
@@ -397,12 +397,12 @@ class TestGarminDBReader:
                 'Morning Run',
                 10.0,
                 3600.0,
-                65.3,
+                18.5,
                 75.0,
                 9.0,
                 'NE'
             )
-        """
+            """
         )
 
         conn.close()

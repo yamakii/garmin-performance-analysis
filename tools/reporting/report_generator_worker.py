@@ -48,8 +48,6 @@ class ReportGeneratorWorker:
         """
         logger.info("[1/4] Loading performance data from DuckDB...")
 
-        import duckdb
-
         try:
             conn = duckdb.connect(str(self.db_reader.db_path), read_only=True)
 
@@ -296,7 +294,7 @@ class ReportGeneratorWorker:
 
                 # Calculate baselines from similar workouts
                 baselines = self._calculate_power_stride_baselines(
-                    activity_id, data.get("similar_workouts")
+                    activity_id, data.get("similar_workouts"), data.get("training_type")
                 )
 
                 data["form_efficiency_pace_corrected"] = (
@@ -572,6 +570,65 @@ class ReportGeneratorWorker:
             logger.warning(f"Failed to generate HR zone pie data: {e}")
             return None
 
+    def _extract_phase_ratings(self, section_analyses: dict) -> dict:
+        """Extract phase evaluation ratings from section analyses.
+
+        Parses star ratings from phase evaluation texts like "(★★★★★)".
+
+        Args:
+            section_analyses: Section analyses dictionary containing phase evaluations
+
+        Returns:
+            Dictionary with warmup_rating, run_rating, recovery_rating, cooldown_rating.
+            Each rating contains 'score' (float) and 'stars' (str).
+        """
+        import re
+
+        def parse_rating(text: str | None) -> dict:
+            """Parse star rating from text."""
+            if not text:
+                return {"score": 0, "stars": ""}
+
+            # Extract (★...) pattern
+            match = re.search(r"\(([★☆]+)\)", text)
+            if not match:
+                return {"score": 0, "stars": ""}
+
+            stars_text = match.group(1)
+            full_stars = stars_text.count("★")
+            empty_stars = stars_text.count("☆")
+
+            score = float(full_stars)
+            stars = "★" * full_stars + "☆" * empty_stars
+
+            return {"score": score, "stars": stars}
+
+        # Get phase data from section_analyses
+        phase_data = section_analyses.get("phase_evaluation") or section_analyses.get(
+            "phase", {}
+        )
+
+        if not phase_data:
+            return {
+                "warmup_rating": {"score": 0, "stars": ""},
+                "run_rating": {"score": 0, "stars": ""},
+                "recovery_rating": {"score": 0, "stars": ""},
+                "cooldown_rating": {"score": 0, "stars": ""},
+            }
+
+        # Extract ratings from evaluation texts
+        warmup_text = phase_data.get("warmup_evaluation", "")
+        run_text = phase_data.get("run_evaluation", "")
+        recovery_text = phase_data.get("recovery_evaluation", "")
+        cooldown_text = phase_data.get("cooldown_evaluation", "")
+
+        return {
+            "warmup_rating": parse_rating(warmup_text),
+            "run_rating": parse_rating(run_text),
+            "recovery_rating": parse_rating(recovery_text),
+            "cooldown_rating": parse_rating(cooldown_text),
+        }
+
     def _load_splits(self, activity_id: int) -> list[dict[str, Any]]:
         """
         Load splits from DuckDB.
@@ -582,7 +639,6 @@ class ReportGeneratorWorker:
         Returns:
             List of split dictionaries with index, pace, HR, etc.
         """
-        import duckdb
 
         try:
             conn = duckdb.connect(str(self.db_reader.db_path), read_only=True)
@@ -965,12 +1021,19 @@ class ReportGeneratorWorker:
             from tools.rag.queries.comparisons import WorkoutComparator
 
             comparator = WorkoutComparator()
+
+            # Pass target_pace_override for structured workouts (main-set pace comparison)
+            target_pace_override = None
+            if current_metrics.get("pace_source") == "main_set":
+                target_pace_override = current_metrics["avg_pace"]
+
             result = comparator.find_similar_workouts(
                 activity_id=activity_id,
                 distance_tolerance=0.10,
                 pace_tolerance=0.10,
                 terrain_match=True,
                 limit=10,
+                target_pace_override=target_pace_override,
             )
 
             # Extract workouts list from result (correct key name)
@@ -984,13 +1047,55 @@ class ReportGeneratorWorker:
 
             # Calculate average differences from top 3
             top_3 = similar[:3]
+
+            # For main_set comparison, recalculate pace_diff from actual main set paces
+            if current_metrics.get("pace_source") == "main_set":
+                import duckdb
+
+                conn = duckdb.connect(self.db_reader.db_path, read_only=True)
+
+                base_pace = current_metrics[
+                    "avg_pace"
+                ]  # Current activity's main set pace
+
+                for workout in top_3:
+                    # Query similar activity's main set pace
+                    query_result = conn.execute(
+                        """
+                        SELECT AVG(pace_seconds_per_km) as main_pace
+                        FROM splits
+                        WHERE activity_id = ?
+                          AND intensity_type IN ('ACTIVE', 'INTERVAL')
+                    """,
+                        [workout["activity_id"]],
+                    ).fetchone()
+
+                    if query_result and query_result[0]:
+                        similar_main_pace = query_result[0]
+                        # Recalculate pace_diff relative to current main set pace
+                        workout["pace_diff"] = base_pace - similar_main_pace
+                    else:
+                        # Fallback: if no main set data, use overall pace diff
+                        logger.warning(
+                            f"No main set data for activity {workout['activity_id']}, "
+                            f"using overall pace diff"
+                        )
+
+                conn.close()
+
             avg_pace_diff = sum([w["pace_diff"] for w in top_3]) / 3
             avg_hr_diff = sum([w["hr_diff"] for w in top_3]) / 3
 
             pace_diff = avg_pace_diff
             hr_diff = avg_hr_diff
 
-            avg_similar_pace = current_metrics["avg_pace"] - avg_pace_diff
+            # Use target_pace_override for main-set comparison, otherwise use overall avg_pace
+            base_pace = (
+                target_pace_override
+                if target_pace_override
+                else current_metrics["avg_pace"]
+            )
+            avg_similar_pace = base_pace - avg_pace_diff
             avg_similar_hr = current_metrics["avg_hr"] - avg_hr_diff
 
             # Determine which pace to use for comparison
@@ -1038,7 +1143,7 @@ class ReportGeneratorWorker:
             comparisons = [
                 {
                     "metric": "平均ペース",
-                    "current": self._format_pace(current_metrics["avg_pace"]),
+                    "current": self._format_pace(base_pace),
                     "average": self._format_pace(avg_similar_pace),
                     "change": (
                         f"+{abs(int(pace_diff))}秒速い"
@@ -1371,18 +1476,46 @@ class ReportGeneratorWorker:
             distance_rounded = round(target_distance)
             distance_desc = f"{distance_rounded}km前後"
 
-            # Pace description based on training type
-            training_type_map = {
-                "low_intensity": "イージーペース",
-                "moderate_intensity": "ジョグペース",
-                "lactate_threshold": "閾値ペース",
-                "tempo": "テンポペース",
-                "interval_training": "インターバルペース",
-                "high_intensity": "高強度ペース",
-                "vo2max": "VO2 Maxペース",
-                "anaerobic_capacity": "無酸素ペース",
-            }
-            pace_desc = training_type_map.get(training_type_raw or "", "ペース類似")
+            # Pace description with concrete range from similar activities
+            if similar and len(similar) >= 3:
+                # Calculate pace range from top 3 similar activities
+                # Similar activities have 'pace_diff', not 'avg_pace'
+                target_pace = result.get("target_activity", {}).get(
+                    "avg_pace", current_metrics["avg_pace"]
+                )
+                pace_values = [target_pace - sw["pace_diff"] for sw in similar[:3]]
+                min_pace = min(pace_values)
+                max_pace = max(pace_values)
+
+                # Format pace range as MM:SS/km
+                min_pace_str = self._format_pace(min_pace)
+                max_pace_str = self._format_pace(max_pace)
+
+                # Use training type if available, otherwise use pace range
+                training_type_map = {
+                    "low_intensity": "イージーペース",
+                    "moderate_intensity": "ジョグペース",
+                    "lactate_threshold": "閾値ペース",
+                    "tempo": "テンポペース",
+                    "interval_training": "インターバルペース",
+                    "high_intensity": "高強度ペース",
+                    "vo2max": "VO2 Maxペース",
+                    "anaerobic_capacity": "無酸素ペース",
+                }
+                training_type_label = training_type_map.get(
+                    training_type_raw or "", None
+                )
+
+                if training_type_label:
+                    pace_desc = training_type_label
+                else:
+                    # Show concrete pace range (remove /km from individual paces)
+                    min_pace_base = min_pace_str.replace("/km", "")
+                    max_pace_base = max_pace_str.replace("/km", "")
+                    pace_desc = f"ペース{min_pace_base}-{max_pace_base}/km"
+            else:
+                # Fallback
+                pace_desc = "ペース類似"
 
             # Terrain description based on elevation gain
             if elevation_gain < 100:
@@ -1402,6 +1535,7 @@ class ReportGeneratorWorker:
                 "comparisons": comparisons,
                 "insight": insight,
                 "pace_source": current_metrics.get("pace_source", "overall"),
+                "similar_activities": similar,  # Add for baseline calculation
             }
 
         except Exception as e:
@@ -1640,13 +1774,17 @@ class ReportGeneratorWorker:
             return {"avg_power": None, "avg_stride": None}
 
     def _calculate_power_stride_baselines(
-        self, activity_id: int, similar_workouts: dict | None = None
+        self,
+        activity_id: int,
+        similar_workouts: dict | None = None,
+        training_type: str | None = None,
     ) -> dict[str, float | None]:
         """Calculate baseline power and stride from similar workouts.
 
         Args:
             activity_id: Current activity ID
-            similar_workouts: Similar workouts data (optional, will query DB if not provided)
+            similar_workouts: Similar workouts data from WorkoutComparator
+            training_type: Training type for role_phase filtering
 
         Returns:
             Dictionary with baseline_power and baseline_stride (None if insufficient data)
@@ -1656,75 +1794,107 @@ class ReportGeneratorWorker:
 
             conn = duckdb.connect(str(self.db_reader.db_path), read_only=True)
 
-            # Get current activity data for similarity matching
-            current_activity = conn.execute(
-                """
-                SELECT
-                    total_distance_km,
-                    avg_pace_seconds_per_km
-                FROM activities
-                WHERE activity_id = ?
-                """,
-                [activity_id],
-            ).fetchone()
+            # Use similar workouts from WorkoutComparator if available
+            if similar_workouts and "similar_activities" in similar_workouts:
+                similar_ids = [
+                    sw["activity_id"]
+                    for sw in similar_workouts["similar_activities"][:5]
+                ]
+            else:
+                # Fallback: query by distance/pace (legacy behavior)
+                current_activity = conn.execute(
+                    """
+                    SELECT total_distance_km, avg_pace_seconds_per_km
+                    FROM activities
+                    WHERE activity_id = ?
+                    """,
+                    [activity_id],
+                ).fetchone()
 
-            if not current_activity:
-                conn.close()
-                return {"baseline_power": None, "baseline_stride": None}
+                if not current_activity:
+                    conn.close()
+                    return {"baseline_power": None, "baseline_stride": None}
 
-            target_distance, target_pace = current_activity
+                target_distance, target_pace = current_activity
+                distance_min = target_distance * 0.9
+                distance_max = target_distance * 1.1
+                pace_min = target_pace * 0.9
+                pace_max = target_pace * 1.1
 
-            # Find similar activities (within ±10% distance and ±10% pace)
-            distance_min = target_distance * 0.9
-            distance_max = target_distance * 1.1
-            pace_min = target_pace * 0.9
-            pace_max = target_pace * 1.1
+                similar_activities = conn.execute(
+                    """
+                    SELECT activity_id
+                    FROM activities
+                    WHERE activity_id != ?
+                      AND total_distance_km BETWEEN ? AND ?
+                      AND avg_pace_seconds_per_km BETWEEN ? AND ?
+                    ORDER BY
+                        ABS(total_distance_km - ?) +
+                        ABS(avg_pace_seconds_per_km - ?)
+                    LIMIT 5
+                    """,
+                    [
+                        activity_id,
+                        distance_min,
+                        distance_max,
+                        pace_min,
+                        pace_max,
+                        target_distance,
+                        target_pace,
+                    ],
+                ).fetchall()
 
-            similar_activities = conn.execute(
-                """
-                SELECT activity_id
-                FROM activities
-                WHERE activity_id != ?
-                  AND total_distance_km BETWEEN ? AND ?
-                  AND avg_pace_seconds_per_km BETWEEN ? AND ?
-                ORDER BY
-                    ABS(total_distance_km - ?) +
-                    ABS(avg_pace_seconds_per_km - ?)
-                LIMIT 10
-                """,
-                [
-                    activity_id,
-                    distance_min,
-                    distance_max,
-                    pace_min,
-                    pace_max,
-                    target_distance,
-                    target_pace,
-                ],
-            ).fetchall()
+                similar_ids = [row[0] for row in similar_activities]
 
-            if len(similar_activities) < 3:
+            if len(similar_ids) < 1:
                 conn.close()
                 return {"baseline_power": None, "baseline_stride": None}
 
             power_values = []
             stride_values = []
 
-            for (sim_activity_id,) in similar_activities[:5]:  # Top 5 similar
-                # Query run-phase power and stride for each similar workout
-                result = conn.execute(
-                    """
-                    SELECT
-                        AVG(power) as avg_power,
-                        AVG(stride_length) as avg_stride
-                    FROM splits
-                    WHERE activity_id = ?
-                      AND role_phase = 'run'
-                      AND power IS NOT NULL
-                      AND stride_length IS NOT NULL
-                    """,
-                    [sim_activity_id],
-                ).fetchone()
+            # Determine role_phase filter based on training type
+            structured_types = {
+                "tempo",
+                "lactate_threshold",
+                "vo2max",
+                "anaerobic_capacity",
+                "speed",
+                "interval_training",
+            }
+            use_run_phase_only = training_type in structured_types
+
+            for sim_activity_id in similar_ids:
+                # Query power and stride for each similar workout
+                if use_run_phase_only:
+                    # For structured workouts, only use run phase
+                    result = conn.execute(
+                        """
+                        SELECT
+                            AVG(power) as avg_power,
+                            AVG(stride_length) as avg_stride
+                        FROM splits
+                        WHERE activity_id = ?
+                          AND role_phase = 'run'
+                          AND power IS NOT NULL
+                          AND stride_length IS NOT NULL
+                        """,
+                        [sim_activity_id],
+                    ).fetchone()
+                else:
+                    # For base/recovery runs, use all splits
+                    result = conn.execute(
+                        """
+                        SELECT
+                            AVG(power) as avg_power,
+                            AVG(stride_length) as avg_stride
+                        FROM splits
+                        WHERE activity_id = ?
+                          AND power IS NOT NULL
+                          AND stride_length IS NOT NULL
+                        """,
+                        [sim_activity_id],
+                    ).fetchone()
 
                 if result and result[0] is not None:
                     power_values.append(result[0])
@@ -1733,7 +1903,7 @@ class ReportGeneratorWorker:
 
             conn.close()
 
-            # Require at least 1 similar workout with data (lowered from 3 due to limited historical data)
+            # Require at least 1 similar workout with data
             baseline_power = (
                 round(sum(power_values) / len(power_values), 1)
                 if len(power_values) >= 1
@@ -2124,8 +2294,6 @@ class ReportGeneratorWorker:
         """
         logger.info("[2.5/4] Loading splits data from DuckDB...")
 
-        import duckdb
-
         try:
             conn = duckdb.connect(str(self.db_reader.db_path), read_only=True)
 
@@ -2338,6 +2506,9 @@ class ReportGeneratorWorker:
         # Load splits data for split analysis基本データ表示
         splits_data = self.load_splits_data(activity_id)
 
+        # Extract phase evaluation ratings for header display
+        phase_ratings = self._extract_phase_ratings(section_analyses)
+
         # Generate workout comparison insights if summary exists
         if "summary" in section_analyses and section_analyses["summary"]:
             try:
@@ -2466,6 +2637,8 @@ class ReportGeneratorWorker:
             ),
             "ftp_percentage": performance_data.get("ftp_percentage"),
             "work_avg_power": performance_data.get("work_avg_power"),
+            # Phase evaluation ratings for headers
+            **phase_ratings,
         }
 
         # Render report using Jinja2 template with all data
