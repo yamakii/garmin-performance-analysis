@@ -411,8 +411,12 @@ class ReportGeneratorWorker:
             return None
 
         # Extract Work and Recovery segments
-        work_splits = [s for s in splits if s.get("intensity_type") == "active"]
-        recovery_splits = [s for s in splits if s.get("intensity_type") == "rest"]
+        work_splits = [
+            s for s in splits if s.get("intensity_type") in ["INTERVAL", "active"]
+        ]
+        recovery_splits = [
+            s for s in splits if s.get("intensity_type") in ["RECOVERY", "rest"]
+        ]
 
         if not work_splits:
             return None
@@ -1745,6 +1749,26 @@ class ReportGeneratorWorker:
         # Load summary analysis
         summary_data = self.db_reader.get_section_analysis(activity_id, "summary")
         if summary_data:
+            # Parse key_strengths and improvement_areas if they are strings
+            # (Agent may save them as newline-separated strings instead of lists)
+            if "key_strengths" in summary_data and isinstance(
+                summary_data["key_strengths"], str
+            ):
+                summary_data["key_strengths"] = [
+                    line.strip()
+                    for line in summary_data["key_strengths"].split("\n\n")
+                    if line.strip()
+                ]
+
+            if "improvement_areas" in summary_data and isinstance(
+                summary_data["improvement_areas"], str
+            ):
+                summary_data["improvement_areas"] = [
+                    line.strip()
+                    for line in summary_data["improvement_areas"].split("\n\n")
+                    if line.strip()
+                ]
+
             analyses["summary"] = summary_data
         else:
             logger.warning("Warning: summary section analysis missing")
@@ -1807,22 +1831,6 @@ class ReportGeneratorWorker:
 
             splits = []
             for row in result:
-                # Normalize intensity_type (Garmin uses uppercase)
-                raw_intensity_type = row[13]
-                intensity_type = None
-                if raw_intensity_type:
-                    intensity_upper = raw_intensity_type.upper()
-                    if intensity_upper == "WARMUP":
-                        intensity_type = "warmup"
-                    elif intensity_upper == "INTERVAL":
-                        intensity_type = "active"
-                    elif intensity_upper == "RECOVERY":
-                        intensity_type = "rest"
-                    elif intensity_upper == "COOLDOWN":
-                        intensity_type = "cooldown"
-                    else:
-                        intensity_type = raw_intensity_type.lower()
-
                 splits.append(
                     {
                         "index": row[0],
@@ -1842,7 +1850,7 @@ class ReportGeneratorWorker:
                         "vertical_ratio": row[9],
                         "elevation_gain": row[10],
                         "elevation_loss": row[11],
-                        "intensity_type": intensity_type,
+                        "intensity_type": row[13],
                     }
                 )
 
@@ -1851,6 +1859,117 @@ class ReportGeneratorWorker:
         except Exception as e:
             logger.error(f"Error loading splits data: {e}")
             return None
+
+    def _generate_comparison_insights(
+        self, activity_id: int, performance_data: dict[str, Any]
+    ) -> list[str]:
+        """
+        Generate insights by comparing with previous similar workout.
+
+        Args:
+            activity_id: Current activity ID
+            performance_data: Current activity performance data
+
+        Returns:
+            List of insight strings to add to key_strengths
+        """
+        insights: list[str] = []
+
+        try:
+            import duckdb
+
+            conn = duckdb.connect(str(self.db_reader.db_path), read_only=True)
+
+            # Get current activity metrics
+            current = conn.execute(
+                """
+                SELECT
+                    a.activity_date,
+                    a.avg_heart_rate,
+                    a.avg_pace_seconds_per_km,
+                    a.total_distance_km,
+                    f.gct_average
+                FROM activities a
+                LEFT JOIN form_efficiency f ON a.activity_id = f.activity_id
+                WHERE a.activity_id = ?
+                """,
+                [activity_id],
+            ).fetchone()
+
+            if not current:
+                conn.close()
+                return insights
+
+            current_date, current_hr, current_pace, current_dist, current_gct = current
+
+            # Find most recent similar workout (within ±10% pace and distance)
+            previous = conn.execute(
+                """
+                SELECT
+                    a.activity_id,
+                    a.activity_date,
+                    a.avg_heart_rate,
+                    a.avg_pace_seconds_per_km,
+                    f.gct_average
+                FROM activities a
+                LEFT JOIN form_efficiency f ON a.activity_id = f.activity_id
+                WHERE a.activity_id != ?
+                    AND a.activity_date < ?
+                    AND a.avg_pace_seconds_per_km BETWEEN ? * 0.9 AND ? * 1.1
+                    AND a.total_distance_km BETWEEN ? * 0.9 AND ? * 1.1
+                ORDER BY a.activity_date DESC
+                LIMIT 1
+                """,
+                [
+                    activity_id,
+                    current_date,
+                    current_pace,
+                    current_pace,
+                    current_dist,
+                    current_dist,
+                ],
+            ).fetchone()
+
+            conn.close()
+
+            if not previous:
+                return insights
+
+            prev_id, prev_date, prev_hr, prev_pace, prev_gct = previous
+
+            # Compare heart rate (lower is better at same pace)
+            if current_hr and prev_hr:
+                hr_diff = current_hr - prev_hr
+                if hr_diff <= -1:  # At least 1 bpm improvement
+                    insights.append(
+                        f"**心拍効率向上**: 同ペースで前回比{hr_diff}bpm（有酸素能力向上）✅"
+                    )
+
+            # Compare GCT (lower is better)
+            if current_gct and prev_gct:
+                gct_diff = current_gct - prev_gct
+                gct_pct = (gct_diff / prev_gct) * 100 if prev_gct > 0 else 0
+                if gct_diff <= -1:  # At least 1ms improvement
+                    insights.append(
+                        f"**GCT改善**: 前回比{gct_diff:.1f}ms（効率{abs(gct_pct):.1f}%向上）✅"
+                    )
+
+            # Compare pace (faster is better at same HR)
+            if current_pace and prev_pace:
+                pace_diff = current_pace - prev_pace
+                if pace_diff < -2 and abs(hr_diff) <= 2:  # Faster with same HR
+                    insights.append(
+                        f"**ペース向上**: 前回比{abs(pace_diff):.1f}秒/km速く、心拍効率も改善✅"
+                    )
+
+            # Add general comparison note
+            if insights:
+                insights.append(f"類似ワークアウト比較: 前回({prev_date})から改善傾向")
+
+        except Exception as e:
+            logger.warning(f"Error generating comparison insights: {e}")
+
+        return insights
 
     def generate_report(
         self, activity_id: int, date: str | None = None
@@ -1885,6 +2004,23 @@ class ReportGeneratorWorker:
 
         # Load splits data for split analysis基本データ表示
         splits_data = self.load_splits_data(activity_id)
+
+        # Generate workout comparison insights if summary exists
+        if "summary" in section_analyses and section_analyses["summary"]:
+            try:
+                # Get comparison data from previous similar workout
+                insights = self._generate_comparison_insights(
+                    activity_id, performance_data
+                )
+
+                # Add insights to key_strengths
+                if insights and "key_strengths" in section_analyses["summary"]:
+                    # Insert insights at the beginning of key_strengths
+                    section_analyses["summary"]["key_strengths"] = (
+                        insights + section_analyses["summary"]["key_strengths"]
+                    )
+            except Exception as e:
+                logger.warning(f"Could not generate workout insights: {e}")
 
         logger.info("[3/4] Generating report from section analyses...")
 
@@ -1930,10 +2066,16 @@ class ReportGeneratorWorker:
         split_analysis_data = section_analyses.get("split_analysis", {})
         highlights_list = split_analysis_data.get("highlights", "N/A")
 
-        # Prepare template context
-        training_type = performance_data.get("training_type", "")
-        activity_type_display = self._get_activity_type_display(training_type)
+        # Generate interval graph analysis (for interval workouts only)
+        training_type = performance_data.get("training_type", "aerobic_base")
+        training_type_category = self._get_training_type_category(training_type)
+        interval_graph_analysis = None
+        if training_type_category == "interval_sprint" and splits_data:
+            interval_graph_analysis = self._generate_mermaid_analysis(
+                splits_data, training_type_category
+            )
 
+        # Prepare template context
         context = {
             "activity_id": str(activity_id),
             "date": date,
@@ -1945,8 +2087,11 @@ class ReportGeneratorWorker:
             "gear_name": performance_data.get("gear_name"),
             "form_efficiency": performance_data.get("form_efficiency"),
             "performance_metrics": performance_data.get("performance_metrics"),
-            "training_type": training_type,
-            "activity_type": activity_type_display,
+            "training_type": performance_data.get("training_type"),
+            "training_type_category": training_type_category,
+            "activity_type": self._get_activity_type_display(
+                performance_data.get("training_type", "aerobic_base")
+            ),
             "warmup_metrics": performance_data.get("warmup_metrics"),
             "run_metrics": performance_data.get("run_metrics"),
             "recovery_metrics": performance_data.get("recovery_metrics"),
@@ -1961,20 +2106,21 @@ class ReportGeneratorWorker:
             "summary": section_analyses.get("summary"),
             # Phase 3: Similar workouts comparison (from performance_data)
             "similar_workouts": performance_data.get("similar_workouts"),
-            "reference_info": performance_data.get("reference_info"),
             # Mermaid graph data
             "mermaid_data": performance_data.get("mermaid_data"),
+            # Interval graph analysis
+            "interval_graph_analysis": interval_graph_analysis,
             # Heart rate zone pie chart data
             "heart_rate_zone_pie_data": hr_zone_pie_data,
             # Split highlights
             "highlights_list": highlights_list,
-            # ========== Phase 2: Training Type Categorization & Physiological Indicators ==========
-            "training_type_category": performance_data.get(
-                "training_type_category", "low_moderate"
-            ),
-            # Physiological indicators (for tempo/threshold and interval)
+            # Phase 2: Physiological data (VO2 Max, Lactate Threshold)
+            "reference_info": performance_data.get("reference_info"),
             "vo2_max_data": performance_data.get("vo2_max_data"),
             "lactate_threshold_data": performance_data.get("lactate_threshold_data"),
+            "show_physiological": training_type_category
+            in ["tempo_threshold", "interval_sprint"],
+            # Physiological indicators (calculated in _calculate_physiological_indicators)
             "vo2_max_utilization": performance_data.get("vo2_max_utilization"),
             "vo2_max_utilization_eval": performance_data.get(
                 "vo2_max_utilization_eval"
@@ -1987,15 +2133,6 @@ class ReportGeneratorWorker:
             ),
             "ftp_percentage": performance_data.get("ftp_percentage"),
             "work_avg_power": performance_data.get("work_avg_power"),
-            # Evaluation target text
-            "target_segments_description": performance_data.get(
-                "target_segments_description", ""
-            ),
-            # Interval-specific: Mermaid graph analysis
-            "interval_graph_analysis": performance_data.get("interval_graph_analysis"),
-            # Interval flag for template conditionals
-            "is_interval": performance_data.get("training_type_category")
-            == "interval_sprint",
         }
 
         # Render report using Jinja2 template with all data

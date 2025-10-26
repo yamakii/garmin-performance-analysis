@@ -217,6 +217,7 @@ class ReportTemplateRenderer:
         interval_graph_analysis: str | None = None,
         zone_4_ratio: float | None = None,
         is_interval: bool | None = None,
+        show_physiological: bool | None = None,
     ) -> str:
         """
         Jinja2テンプレートでJSON dataからmarkdownを生成。
@@ -323,6 +324,7 @@ class ReportTemplateRenderer:
                 interval_graph_analysis=interval_graph_analysis,
                 zone_4_ratio=zone_4_ratio,
                 is_interval=is_interval,
+                show_physiological=show_physiological,
             ),
         )
 

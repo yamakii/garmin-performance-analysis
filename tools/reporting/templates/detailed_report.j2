@@ -1,11 +1,8 @@
-# ランニングパフォーマンス分析レポート
+# ランニング分析レポート
 
-{# ========================================================================= #}
-{# Phase 0: Training type category mapping & derived variables #}
-{# ========================================================================= #}
-{% set training_type_category = training_type_category|default("low_moderate") %}
-{% set show_physiological = training_type_category in ["tempo_threshold", "interval_sprint"] %}
-{% set is_interval = training_type_category == "interval_sprint" %}
+{%- set training_type_category = training_type_category|default("low_moderate") -%}
+{%- set show_physiological = training_type_category in ["tempo_threshold", "interval_sprint"] -%}
+{%- set is_interval = training_type_category == "interval_sprint" -%}
 
 {# =================================================================== #}
 {# SECTION 1: 基本情報 #}
@@ -22,18 +19,19 @@
 
 ---
 
-{# =================================================================== #}
-{# SECTION 2: 📊 パフォーマンスサマリー #}
-{# =================================================================== #}
 ## 📊 パフォーマンスサマリー
+{%- if show_physiological and lactate_threshold_data %}
 
-{% if show_physiological and vo2_max_data and lactate_threshold_data %}
 ### 生理学的指標サマリー
 
 | 指標 | 現在値 | 評価 |
 |------|--------|------|
+{%- if vo2_max_data %}
 | **VO2 Max** | {{ vo2_max_data.precise_value|default(vo2_max_data.value)|default(0) }} ml/kg/min | カテゴリ: {{ vo2_max_data.category|default("N/A") }} |
-| **VO2 Max利用率** | {{ vo2_max_utilization|default("N/A") }}% | {{ vo2_max_utilization_eval|default("N/A") }} |
+{%- endif %}
+{%- if vo2_max_utilization %}
+| **VO2 Max利用率** | {{ vo2_max_utilization }}% | {{ vo2_max_utilization_eval|default("N/A") }} |
+{%- endif %}
 | **閾値ペース** | {{ threshold_pace_formatted|default("N/A") }}/km | {{ threshold_pace_comparison|default("N/A") }} |
 | **FTP(パワー)** | {{ lactate_threshold_data.functional_threshold_power|default(0)|int }} W | Work平均{{ work_avg_power|int if work_avg_power else "N/A" }}W = FTPの{{ ftp_percentage|default("N/A") }}% |
 
@@ -41,12 +39,12 @@
 
 ### 類似ワークアウトとの比較
 
-{% if similar_workouts %}
-{% if similar_workouts.pace_source == "main_set" %}
+{%- if similar_workouts %}
+{%- if similar_workouts.pace_source == "main_set" %}
 過去の同条件ワークアウト({{ similar_workouts.conditions }}、**メインセットペース比較**)との比較:
-{% else %}
+{%- else %}
 過去の同条件ワークアウト({{ similar_workouts.conditions }})との比較:
-{% endif %}
+{%- endif %}
 
 | 指標 | 今回 | 類似{{ similar_workouts.count }}回平均 | 変化 | トレンド |
 |------|------|------------|------|----------|
@@ -55,27 +53,27 @@
 {%- endfor %}
 
 **💡 インサイト**: {{ similar_workouts.insight }}
-{% else %}
+{%- else %}
 類似ワークアウトが見つかりませんでした。
-{% endif %}
+{%- endif %}
+{%- if reference_info %}
 
-{% if reference_info %}
 {{ reference_info }}
-{% endif %}
+{%- endif %}
 
 ---
 
-{# =================================================================== #}
-{# SECTION 3: 総合評価 #}
-{# =================================================================== #}
 ## 総合評価
+{%- if summary %}
 
-{% if summary %}
 ### アクティビティタイプ
-{% if activity_type %}**{{ activity_type.ja }}** ({{ activity_type.en }})
+{%- if activity_type %}
+**{{ activity_type.ja }}** ({{ activity_type.en }})
 
 {{ activity_type.description }}
-{% else %}N/A{% endif %}
+{%- else %}
+N/A
+{%- endif %}
 
 ### 総合所見{% if summary.star_rating %} ({{ summary.star_rating }}){% endif %}
 
@@ -83,14 +81,14 @@
 
 {% if summary.key_strengths %}
 **✅ 優れている点:**
-{% for strength in summary.key_strengths %}
+{% for strength in summary.key_strengths -%}
 - {{ strength }}
 {% endfor %}
 {% endif %}
 
 {% if summary.improvement_areas %}
 **⚠️ 改善可能な点:**
-{% for area in summary.improvement_areas %}
+{% for area in summary.improvement_areas -%}
 - {{ area }}
 {% endfor %}
 {% endif %}
@@ -321,9 +319,9 @@ VO2 Maxデータがありません。
 ### 気象条件・環境インパクト
 
 {% if weather_data %}
-- **気温**: {{ weather_data.external_temp_c|default(weather_data.temp_celsius)|default("N/A") }}°C
-- **湿度**: {{ weather_data.humidity|default(weather_data.relative_humidity_percent)|default("N/A") }}%
-- **風速**: {{ weather_data.wind_speed_ms|default((weather_data.wind_speed_kmh|default(0)) / 3.6 if weather_data.wind_speed_kmh else 0) }} m/s
+- **気温**: {{ (weather_data.external_temp_c|default(weather_data.temp_celsius))|round(1) }}°C
+- **湿度**: {{ (weather_data.humidity|default(weather_data.relative_humidity_percent))|round(1) }}%
+- **風速**: {{ (weather_data.wind_speed_ms|default((weather_data.wind_speed_kmh|default(0)) / 3.6 if weather_data.wind_speed_kmh else 0))|round(1) }} m/s
 {% endif %}
 {% if gear_name %}- **使用シューズ**: {{ gear_name }}
 {% elif gear_type or gear_model %}- **使用シューズ**: {{ gear_type|default("") }} {{ gear_model|default("") }}
