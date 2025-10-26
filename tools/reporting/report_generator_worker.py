@@ -291,10 +291,22 @@ class ReportGeneratorWorker:
 
             # Add pace-corrected form efficiency (Phase 4)
             if form_eff:
+                # Calculate run-phase power and stride
+                run_metrics = self._calculate_run_phase_power_stride(activity_id)
+
+                # Calculate baselines from similar workouts
+                baselines = self._calculate_power_stride_baselines(
+                    activity_id, data.get("similar_workouts")
+                )
+
                 data["form_efficiency_pace_corrected"] = (
                     self._calculate_pace_corrected_form_efficiency(
                         data["basic_metrics"]["avg_pace_seconds_per_km"],
                         data["form_efficiency"],
+                        run_power=run_metrics.get("avg_power"),
+                        run_stride=run_metrics.get("avg_stride"),
+                        baseline_power=baselines.get("baseline_power"),
+                        baseline_stride=baselines.get("baseline_stride"),
                     )
                 )
 
@@ -1584,8 +1596,172 @@ class ReportGeneratorWorker:
             return "> **参考**: " + "、".join(parts)
         return ""
 
+    def _calculate_run_phase_power_stride(
+        self, activity_id: int
+    ) -> dict[str, float | None]:
+        """Calculate average power and stride length for run phase.
+
+        Args:
+            activity_id: Activity ID
+
+        Returns:
+            Dictionary with avg_power and avg_stride (None if no data)
+        """
+        try:
+            import duckdb
+
+            conn = duckdb.connect(str(self.db_reader.db_path), read_only=True)
+            result = conn.execute(
+                """
+                SELECT
+                    AVG(power) as avg_power,
+                    AVG(stride_length) as avg_stride
+                FROM splits
+                WHERE activity_id = ?
+                  AND role_phase = 'run'
+                  AND power IS NOT NULL
+                  AND stride_length IS NOT NULL
+                """,
+                [activity_id],
+            ).fetchone()
+            conn.close()
+
+            if result and result[0] is not None and result[1] is not None:
+                return {
+                    "avg_power": round(result[0], 1),
+                    "avg_stride": round(result[1], 2),
+                }
+            return {"avg_power": None, "avg_stride": None}
+
+        except Exception as e:
+            logger.error(
+                f"Error calculating run phase power/stride for activity {activity_id}: {e}"
+            )
+            return {"avg_power": None, "avg_stride": None}
+
+    def _calculate_power_stride_baselines(
+        self, activity_id: int, similar_workouts: dict | None = None
+    ) -> dict[str, float | None]:
+        """Calculate baseline power and stride from similar workouts.
+
+        Args:
+            activity_id: Current activity ID
+            similar_workouts: Similar workouts data (optional, will query DB if not provided)
+
+        Returns:
+            Dictionary with baseline_power and baseline_stride (None if insufficient data)
+        """
+        try:
+            import duckdb
+
+            conn = duckdb.connect(str(self.db_reader.db_path), read_only=True)
+
+            # Get current activity data for similarity matching
+            current_activity = conn.execute(
+                """
+                SELECT
+                    total_distance_km,
+                    avg_pace_seconds_per_km
+                FROM activities
+                WHERE activity_id = ?
+                """,
+                [activity_id],
+            ).fetchone()
+
+            if not current_activity:
+                conn.close()
+                return {"baseline_power": None, "baseline_stride": None}
+
+            target_distance, target_pace = current_activity
+
+            # Find similar activities (within ±10% distance and ±10% pace)
+            distance_min = target_distance * 0.9
+            distance_max = target_distance * 1.1
+            pace_min = target_pace * 0.9
+            pace_max = target_pace * 1.1
+
+            similar_activities = conn.execute(
+                """
+                SELECT activity_id
+                FROM activities
+                WHERE activity_id != ?
+                  AND total_distance_km BETWEEN ? AND ?
+                  AND avg_pace_seconds_per_km BETWEEN ? AND ?
+                ORDER BY
+                    ABS(total_distance_km - ?) +
+                    ABS(avg_pace_seconds_per_km - ?)
+                LIMIT 10
+                """,
+                [
+                    activity_id,
+                    distance_min,
+                    distance_max,
+                    pace_min,
+                    pace_max,
+                    target_distance,
+                    target_pace,
+                ],
+            ).fetchall()
+
+            if len(similar_activities) < 3:
+                conn.close()
+                return {"baseline_power": None, "baseline_stride": None}
+
+            power_values = []
+            stride_values = []
+
+            for (sim_activity_id,) in similar_activities[:5]:  # Top 5 similar
+                # Query run-phase power and stride for each similar workout
+                result = conn.execute(
+                    """
+                    SELECT
+                        AVG(power) as avg_power,
+                        AVG(stride_length) as avg_stride
+                    FROM splits
+                    WHERE activity_id = ?
+                      AND role_phase = 'run'
+                      AND power IS NOT NULL
+                      AND stride_length IS NOT NULL
+                    """,
+                    [sim_activity_id],
+                ).fetchone()
+
+                if result and result[0] is not None:
+                    power_values.append(result[0])
+                if result and result[1] is not None:
+                    stride_values.append(result[1])
+
+            conn.close()
+
+            # Require at least 1 similar workout with data (lowered from 3 due to limited historical data)
+            baseline_power = (
+                round(sum(power_values) / len(power_values), 1)
+                if len(power_values) >= 1
+                else None
+            )
+            baseline_stride = (
+                round(sum(stride_values) / len(stride_values), 2)
+                if len(stride_values) >= 1
+                else None
+            )
+
+            return {
+                "baseline_power": baseline_power,
+                "baseline_stride": baseline_stride,
+            }
+
+        except Exception as e:
+            logger.error(f"Error calculating power/stride baselines: {e}")
+            return {"baseline_power": None, "baseline_stride": None}
+
     def _calculate_pace_corrected_form_efficiency(
-        self, avg_pace_seconds_per_km: float, form_eff: dict
+        self,
+        avg_pace_seconds_per_km: float,
+        form_eff: dict,
+        run_power: float | None = None,
+        run_stride: float | None = None,
+        baseline_power: float | None = None,
+        baseline_stride: float | None = None,
     ) -> dict:
         """Calculate pace-corrected form efficiency scores.
 
@@ -1593,10 +1769,16 @@ class ReportGeneratorWorker:
         - GCT baseline: 230 + (pace - 240) * 0.22 ms
         - VO baseline: 6.8 + (pace - 240) * 0.004 cm
         - VR: No correction, absolute threshold 8.0-9.5%
+        - Power: Baseline from similar workout average
+        - Stride: Baseline from similar workout average
 
         Args:
             avg_pace_seconds_per_km: Average pace in seconds per km
             form_eff: Form efficiency dictionary with gct_average, vo_average, vr_average
+            run_power: Average power during run phase (W)
+            run_stride: Average stride length during run phase (cm)
+            baseline_power: Baseline power from similar workouts (W)
+            baseline_stride: Baseline stride from similar workouts (cm)
 
         Returns:
             Dictionary with pace-corrected form efficiency data
@@ -1640,7 +1822,7 @@ class ReportGeneratorWorker:
         vr_label = "理想範囲内" if 8.0 <= vr_actual <= 9.5 else "要改善"
         vr_rating = 5.0 if 8.0 <= vr_actual <= 9.5 else 3.5
 
-        return {
+        result = {
             "avg_pace_seconds": int(avg_pace_seconds_per_km),
             "gct": {
                 "actual": round(gct_actual, 1),
@@ -1666,6 +1848,63 @@ class ReportGeneratorWorker:
             },
         }
 
+        # Power efficiency (if data available)
+        if run_power is not None and baseline_power is not None and baseline_power > 0:
+            power_score = ((run_power - baseline_power) / baseline_power) * 100
+            # Positive score (higher power) is slightly negative for endurance
+            # But within ±3% is acceptable
+            if abs(power_score) <= 3:
+                power_label = "安定"
+                power_rating = 4.5
+            elif power_score > 3:
+                power_label = "上昇"
+                power_rating = 4.0
+            else:
+                power_label = "効率向上"
+                power_rating = 5.0
+
+            result["power"] = {
+                "actual": round(run_power, 1),
+                "baseline": round(baseline_power, 1),
+                "score": round(power_score, 1),
+                "label": power_label,
+                "rating_stars": "★" * int(power_rating) + "☆" * (5 - int(power_rating)),
+                "rating_score": power_rating,
+            }
+
+        # Stride efficiency (if data available)
+        if (
+            run_stride is not None
+            and baseline_stride is not None
+            and baseline_stride > 0
+        ):
+            stride_score = ((run_stride - baseline_stride) / baseline_stride) * 100
+            # Positive score (longer stride) is generally good within reason
+            if 0 <= stride_score <= 5:
+                stride_label = "拡大"
+                stride_rating = 4.5
+            elif abs(stride_score) <= 2:
+                stride_label = "安定"
+                stride_rating = 4.5
+            elif stride_score < -2:
+                stride_label = "短縮"
+                stride_rating = 4.0
+            else:
+                stride_label = "大幅拡大"
+                stride_rating = 4.0
+
+            result["stride"] = {
+                "actual": round(run_stride / 100, 2),  # Convert cm to m
+                "baseline": round(baseline_stride / 100, 2),  # Convert cm to m
+                "score": round(stride_score, 1),
+                "label": stride_label,
+                "rating_stars": "★" * int(stride_rating)
+                + "☆" * (5 - int(stride_rating)),
+                "rating_score": stride_rating,
+            }
+
+        return result
+
     def _build_form_efficiency_table(self, pace_corrected_data: dict) -> dict[str, Any]:
         """Build form efficiency table structure for template rendering.
 
@@ -1679,6 +1918,7 @@ class ReportGeneratorWorker:
             Dictionary with overall_form_score and form_efficiency_table array
         """
         table = []
+        rating_scores = []
 
         # GCT row
         gct = pace_corrected_data["gct"]
@@ -1691,6 +1931,7 @@ class ReportGeneratorWorker:
                 "rating": f"{gct['rating_stars']} {gct['rating_score']}",
             }
         )
+        rating_scores.append(gct["rating_score"])
 
         # VO row
         vo = pace_corrected_data["vo"]
@@ -1703,6 +1944,7 @@ class ReportGeneratorWorker:
                 "rating": f"{vo['rating_stars']} {vo['rating_score']}",
             }
         )
+        rating_scores.append(vo["rating_score"])
 
         # VR row (no baseline, uses range)
         vr = pace_corrected_data["vr"]
@@ -1715,9 +1957,38 @@ class ReportGeneratorWorker:
                 "rating": f"{vr['rating_stars']} {vr['rating_score']}",
             }
         )
+        rating_scores.append(vr["rating_score"])
 
-        # Calculate overall form score (average of ratings)
-        avg_rating = (gct["rating_score"] + vo["rating_score"] + vr["rating_score"]) / 3
+        # Power row (if available)
+        if "power" in pace_corrected_data:
+            power = pace_corrected_data["power"]
+            table.append(
+                {
+                    "metric_name": "パワー",
+                    "actual_value": f"{int(power['actual'])}W",
+                    "baseline_value": f"{int(power['baseline'])}W（類似平均）",
+                    "adjusted_score": f"**{power['score']:+.1f}%** {power['label']}",
+                    "rating": f"{power['rating_stars']} {power['rating_score']}",
+                }
+            )
+            rating_scores.append(power["rating_score"])
+
+        # Stride row (if available)
+        if "stride" in pace_corrected_data:
+            stride = pace_corrected_data["stride"]
+            table.append(
+                {
+                    "metric_name": "ストライド長",
+                    "actual_value": f"{stride['actual']:.2f}m",
+                    "baseline_value": f"{stride['baseline']:.2f}m（類似平均）",
+                    "adjusted_score": f"**{stride['score']:+.1f}%** {stride['label']}",
+                    "rating": f"{stride['rating_stars']} {stride['rating_score']}",
+                }
+            )
+            rating_scores.append(stride["rating_score"])
+
+        # Calculate overall form score (average of all available ratings)
+        avg_rating = sum(rating_scores) / len(rating_scores)
         rating_stars = "★" * int(avg_rating) + "☆" * (5 - int(avg_rating))
         overall_form_score = f"{rating_stars} {avg_rating:.1f}/5.0"
 
