@@ -1570,3 +1570,255 @@ class TestSplitsInserter:
         result = _estimate_intensity_type(splits)
 
         assert result == []
+
+    # ===========================================================================
+    # Integration tests for intensity_type estimation with insert_splits()
+    # ===========================================================================
+
+    @pytest.mark.integration
+    def test_insert_splits_estimates_missing_intensity(self, tmp_path):
+        """Test insert_splits applies estimation when intensity_type is NULL."""
+        import json
+
+        import duckdb
+
+        # Create splits file with NULL intensity_type
+        splits_data = {
+            "lapDTOs": [
+                {
+                    "lapIndex": 0,
+                    "distance": 1000,
+                    "duration": 300,
+                    "averageHR": 140,
+                    "averageRunCadence": 170,
+                    "groundContactTime": 250,
+                    "verticalOscillation": 8.5,
+                    "verticalRatio": 8.0,
+                    "elevationGain": 5,
+                    "elevationLoss": 2,
+                    "intensityType": None,  # NULL - should be estimated
+                },
+                {
+                    "lapIndex": 1,
+                    "distance": 1000,
+                    "duration": 240,
+                    "averageHR": 175,
+                    "averageRunCadence": 180,
+                    "groundContactTime": 240,
+                    "verticalOscillation": 8.0,
+                    "verticalRatio": 7.5,
+                    "elevationGain": 3,
+                    "elevationLoss": 4,
+                    "intensityType": None,  # NULL - should be estimated
+                },
+                {
+                    "lapIndex": 2,
+                    "distance": 1000,
+                    "duration": 310,
+                    "averageHR": 130,
+                    "averageRunCadence": 165,
+                    "groundContactTime": 255,
+                    "verticalOscillation": 8.7,
+                    "verticalRatio": 8.2,
+                    "elevationGain": 2,
+                    "elevationLoss": 5,
+                    "intensityType": None,  # NULL - should be estimated
+                },
+            ]
+        }
+
+        splits_file = tmp_path / "splits.json"
+        with open(splits_file, "w", encoding="utf-8") as f:
+            json.dump(splits_data, f)
+
+        db_path = tmp_path / "test.duckdb"
+
+        # Execute
+        result = insert_splits(
+            activity_id=12345,
+            db_path=str(db_path),
+            raw_splits_file=str(splits_file),
+        )
+
+        assert result is True
+
+        # Verify estimation was applied
+        conn = duckdb.connect(str(db_path))
+        splits = conn.execute(
+            """
+            SELECT split_index, intensity_type
+            FROM splits
+            WHERE activity_id = 12345
+            ORDER BY split_index
+            """
+        ).fetchall()
+
+        assert len(splits) == 3
+
+        # Expected: WARMUP (position), INTERVAL (fast pace), COOLDOWN (position)
+        # Paces: 300, 240, 310 sec/km → avg = 283.3
+        # Threshold (×0.9): 255 sec/km → split 1 (240) is INTERVAL
+        assert splits[0][1] == "WARMUP"  # First split
+        assert splits[1][1] == "INTERVAL"  # Fast pace (240 < 255)
+        assert splits[2][1] == "COOLDOWN"  # Last split
+
+        conn.close()
+
+    @pytest.mark.integration
+    def test_insert_splits_preserves_existing_intensity(self, tmp_path):
+        """Test insert_splits does NOT overwrite existing intensity_type values."""
+        import json
+
+        import duckdb
+
+        # Create splits file with existing intensity_type values
+        splits_data = {
+            "lapDTOs": [
+                {
+                    "lapIndex": 0,
+                    "distance": 1000,
+                    "duration": 300,
+                    "averageHR": 140,
+                    "averageRunCadence": 170,
+                    "groundContactTime": 250,
+                    "verticalOscillation": 8.5,
+                    "verticalRatio": 8.0,
+                    "elevationGain": 5,
+                    "elevationLoss": 2,
+                    "intensityType": "ACTIVE",  # Existing value
+                },
+                {
+                    "lapIndex": 1,
+                    "distance": 1000,
+                    "duration": 240,
+                    "averageHR": 175,
+                    "averageRunCadence": 180,
+                    "groundContactTime": 240,
+                    "verticalOscillation": 8.0,
+                    "verticalRatio": 7.5,
+                    "elevationGain": 3,
+                    "elevationLoss": 4,
+                    "intensityType": "ACTIVE",  # Existing value
+                },
+                {
+                    "lapIndex": 2,
+                    "distance": 1000,
+                    "duration": 310,
+                    "averageHR": 130,
+                    "averageRunCadence": 165,
+                    "groundContactTime": 255,
+                    "verticalOscillation": 8.7,
+                    "verticalRatio": 8.2,
+                    "elevationGain": 2,
+                    "elevationLoss": 5,
+                    "intensityType": "ACTIVE",  # Existing value
+                },
+            ]
+        }
+
+        splits_file = tmp_path / "splits.json"
+        with open(splits_file, "w", encoding="utf-8") as f:
+            json.dump(splits_data, f)
+
+        db_path = tmp_path / "test.duckdb"
+
+        # Execute
+        result = insert_splits(
+            activity_id=12345,
+            db_path=str(db_path),
+            raw_splits_file=str(splits_file),
+        )
+
+        assert result is True
+
+        # Verify existing values are preserved
+        conn = duckdb.connect(str(db_path))
+        splits = conn.execute(
+            """
+            SELECT split_index, intensity_type
+            FROM splits
+            WHERE activity_id = 12345
+            ORDER BY split_index
+            """
+        ).fetchall()
+
+        assert len(splits) == 3
+
+        # All should remain ACTIVE (existing values preserved)
+        assert splits[0][1] == "ACTIVE"
+        assert splits[1][1] == "ACTIVE"
+        assert splits[2][1] == "ACTIVE"
+
+        conn.close()
+
+    @pytest.mark.integration
+    def test_insert_splits_mixed_null_and_existing(self, tmp_path):
+        """Test insert_splits handles mix of NULL and existing intensity_type."""
+        import json
+
+        import duckdb
+
+        # Create splits file with mix of NULL and existing values
+        splits_data = {
+            "lapDTOs": [
+                {
+                    "lapIndex": 0,
+                    "distance": 1000,
+                    "duration": 300,
+                    "averageHR": 140,
+                    "averageRunCadence": 170,
+                    "intensityType": None,  # NULL - should estimate WARMUP
+                },
+                {
+                    "lapIndex": 1,
+                    "distance": 1000,
+                    "duration": 240,
+                    "averageHR": 175,
+                    "averageRunCadence": 180,
+                    "intensityType": "INTERVAL",  # Existing - preserve
+                },
+                {
+                    "lapIndex": 2,
+                    "distance": 1000,
+                    "duration": 310,
+                    "averageHR": 130,
+                    "averageRunCadence": 165,
+                    "intensityType": None,  # NULL - should estimate COOLDOWN
+                },
+            ]
+        }
+
+        splits_file = tmp_path / "splits.json"
+        with open(splits_file, "w", encoding="utf-8") as f:
+            json.dump(splits_data, f)
+
+        db_path = tmp_path / "test.duckdb"
+
+        # Execute
+        result = insert_splits(
+            activity_id=12345,
+            db_path=str(db_path),
+            raw_splits_file=str(splits_file),
+        )
+
+        assert result is True
+
+        # Verify estimation applied only to NULL values
+        conn = duckdb.connect(str(db_path))
+        splits = conn.execute(
+            """
+            SELECT split_index, intensity_type
+            FROM splits
+            WHERE activity_id = 12345
+            ORDER BY split_index
+            """
+        ).fetchall()
+
+        assert len(splits) == 3
+
+        # Expected: WARMUP (estimated), INTERVAL (preserved), COOLDOWN (estimated)
+        assert splits[0][1] == "WARMUP"  # Estimated from NULL
+        assert splits[1][1] == "INTERVAL"  # Preserved existing
+        assert splits[2][1] == "COOLDOWN"  # Estimated from NULL
+
+        conn.close()

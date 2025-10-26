@@ -769,6 +769,29 @@ def _insert_splits_with_connection(
     # Delete existing splits for this activity (for re-insertion)
     conn.execute("DELETE FROM splits WHERE activity_id = ?", [activity_id])
 
+    # Apply intensity_type estimation for NULL values (Feature: #40)
+    # Check if any splits have NULL intensity_type
+    has_null_intensity = any(
+        split.get("intensity_type") is None for split in split_metrics
+    )
+
+    if has_null_intensity:
+        logger.info(
+            f"Estimating intensity_type for activity {activity_id} (found NULL values)"
+        )
+
+        # Get estimated intensity types for all splits
+        estimated_types = _estimate_intensity_type(split_metrics)
+
+        # Apply estimation only to splits with NULL intensity_type
+        for split, estimated_type in zip(split_metrics, estimated_types, strict=True):
+            if split.get("intensity_type") is None:
+                split["intensity_type"] = estimated_type
+
+        logger.info(
+            f"Applied intensity_type estimation for activity {activity_id}: {estimated_types}"
+        )
+
     # Insert each split with 7 new fields
     for split in split_metrics:
         split_number = split.get("split_number")
