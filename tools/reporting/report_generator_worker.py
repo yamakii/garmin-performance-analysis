@@ -536,10 +536,20 @@ class ReportGeneratorWorker:
             if not result:
                 return None
 
+            # Japanese zone name mapping
+            zone_names = {
+                1: "Zone 1 (回復)",
+                2: "Zone 2 (有酸素)",
+                3: "Zone 3 (テンポ)",
+                4: "Zone 4 (閾値)",
+                5: "Zone 5 (最大)",
+            }
+
             # Format as Mermaid pie chart data
             pie_lines = []
             for zone_number, percentage in result:
-                pie_lines.append(f'    "Zone {zone_number}" : {percentage:.2f}')
+                zone_label = zone_names.get(zone_number, f"Zone {zone_number}")
+                pie_lines.append(f'    "{zone_label}" : {percentage:.2f}')
 
             if not pie_lines:
                 return None

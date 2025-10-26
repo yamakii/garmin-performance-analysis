@@ -186,6 +186,13 @@ xychart-beta
 
 {% if efficiency.efficiency_text %}{{ efficiency.efficiency_text }}{% endif %}
 
+{% if heart_rate_zone_pie_data and show_physiological %}
+```mermaid
+pie title "心拍ゾーン分布"
+{{ heart_rate_zone_pie_data }}
+```
+{% endif %}
+
 {% if efficiency.hr_efficiency_text %}**心拍効率:**
 {{ efficiency.hr_efficiency_text }}{% endif %}
 {% else %}
