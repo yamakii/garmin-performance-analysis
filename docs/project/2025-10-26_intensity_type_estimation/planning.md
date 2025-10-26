@@ -4,7 +4,7 @@
 - **プロジェクト名**: `intensity_type_estimation`
 - **作成日**: `2025-10-26`
 - **ステータス**: 計画中
-- **関連Issue**: (作成後にリンクを追加)
+- **関連Issue**: [#40](https://github.com/yamakii/garmin-performance-analysis/issues/40)
 
 ## 要件定義
 
