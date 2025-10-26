@@ -306,6 +306,14 @@ VO2 Maxデータがありません。
 
 ---
 {%- endif %}
+
+{%- if phase_evaluation.get('evaluation_criteria') %}
+### 評価基準
+
+{{ phase_evaluation.evaluation_criteria }}
+
+---
+{%- endif %}
 {%- endif %}
 {% else %}
 フェーズ評価データがありません。
