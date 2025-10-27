@@ -124,8 +124,12 @@ def main() -> int:
     # Add derived columns
     df_clean["speed_mps"] = df_clean["pace_seconds_per_km"].apply(utils.to_speed)
     df_clean["gct_ms"] = df_clean["ground_contact_time"]
-    df_clean["vo_cm"] = df_clean["vertical_oscillation"]
-    df_clean["vr_pct"] = df_clean["vertical_ratio"]
+    df_clean["vo_value"] = df_clean[
+        "vertical_oscillation"
+    ]  # Changed to match trainer.py expectation
+    df_clean["vr_value"] = df_clean[
+        "vertical_ratio"
+    ]  # Changed to match trainer.py expectation
 
     # Train models
     if args.verbose:
