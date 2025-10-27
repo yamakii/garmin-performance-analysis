@@ -793,6 +793,104 @@ async def get_form_evaluations(activity_id: int) -> dict:
 
 ## 実装フェーズ
 
+**実装順序**: Phase 1 → Phase 2 → **Phase 3** → **Phase 0** → **Phase 4** → Phase 5 → Phase 6
+
+**理由**:
+- Phase 1-2: 基本機能（統計モデル・評価ロジック）は完成済み
+- **Phase 3**: MCP拡張は独立しており、Phase 0（履歴データ）不要
+- **Phase 0**: 履歴データ準備（遡及訓練に時間がかかる）
+- **Phase 4**: トレンド分析はPhase 0完了後に実装（form_baseline_history読込）
+- Phase 5-6: レポート生成・最終テスト
+
+---
+
+### Phase 0: Data Preparation (2-3時間)
+
+**目標**: フォームトレンド分析用の履歴データ準備
+
+#### 背景
+フォームトレンド分析（Phase 4）では、過去3ヶ月のモデル係数と比較するため、月次訓練結果の履歴が必要。`form_baselines`テーブルは最新係数のみ保存するため、`form_baseline_history`テーブルを追加。
+
+#### Tasks
+- [ ] `tools/database/db_writer.py` 修正
+  - [ ] `_ensure_tables()` に `form_baseline_history` テーブル追加
+  - [ ] スキーマ: period_start, period_end列を追加
+  - [ ] UNIQUE制約: (user_id, condition_group, metric, period_start, period_end)
+- [ ] `tools/scripts/train_form_baselines_monthly.py` 実装
+  - [ ] CLI: `--year-month` パラメータ（例: "2025-10"）
+  - [ ] 指定月のデータで訓練（month_start ~ month_end）
+  - [ ] `form_baseline_history` に保存
+  - [ ] `form_baselines` も更新（最新月のみ）
+- [ ] `tools/scripts/backfill_baseline_history.py` 実装
+  - [ ] 2023年以降の全月を遡及訓練
+  - [ ] 各月に十分なデータがあるかチェック（最低50サンプル）
+  - [ ] エラーハンドリング（データ不足月はスキップ）
+
+#### form_baseline_history スキーマ
+
+```sql
+CREATE TABLE form_baseline_history (
+    history_id INTEGER PRIMARY KEY,
+    user_id VARCHAR DEFAULT 'default',
+    condition_group VARCHAR DEFAULT 'flat_road',
+    metric VARCHAR,           -- 'gct', 'vo', 'vr'
+    model_type VARCHAR,       -- 'power', 'linear'
+
+    -- 係数（form_baselinesと同じ）
+    coef_alpha FLOAT,
+    coef_d FLOAT,
+    coef_a FLOAT,
+    coef_b FLOAT,
+
+    -- 期間情報（NEW）
+    period_start DATE NOT NULL,
+    period_end DATE NOT NULL,
+    trained_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    -- メタデータ
+    n_samples INTEGER,
+    rmse FLOAT,
+    speed_range_min FLOAT,
+    speed_range_max FLOAT,
+
+    UNIQUE(user_id, condition_group, metric, period_start, period_end)
+);
+```
+
+#### Tests
+- [ ] `tests/scripts/test_train_form_baselines_monthly.py`
+  - [ ] 月次訓練の動作確認
+  - [ ] period_start/period_endの正確性
+  - [ ] form_baseline_history保存検証
+- [ ] `tests/scripts/test_backfill_baseline_history.py`
+  - [ ] 遡及訓練の動作確認
+  - [ ] データ不足月のスキップ確認
+  - [ ] エラーハンドリング
+
+#### 実行手順
+
+```bash
+# 1. テーブル作成（自動: db_writer.py実行時）
+uv run python -c "from tools.database.db_writer import GarminDBWriter; GarminDBWriter('/path/to/db').connect()"
+
+# 2. 遡及訓練（初回のみ）
+uv run python tools/scripts/backfill_baseline_history.py --start-year-month 2023-01
+
+# 3. 確認
+uv run python -c "
+import duckdb
+conn = duckdb.connect('data/database/garmin_performance.duckdb', read_only=True)
+print(conn.execute('SELECT period_start, period_end, metric, n_samples FROM form_baseline_history ORDER BY period_start DESC LIMIT 10').df())
+"
+```
+
+#### 完了条件
+- [ ] form_baseline_historyテーブル作成確認
+- [ ] 2023年以降の全月（50サンプル以上/月）訓練済み
+- [ ] 最新月の係数がform_baselinesと一致
+
+---
+
 ### Phase 1: Form Baseline System Core (4-5時間)
 
 **目標**: 統計モデル訓練・予測・スコアリング機能の実装
@@ -883,14 +981,23 @@ async def get_form_evaluations(activity_id: int) -> dict:
 
 ### Phase 4: Agent Integration (2-3時間)
 
-**目標**: エージェントプロンプト簡素化・トークン削減
+**目標**: エージェントプロンプト簡素化・トークン削減・フォームトレンド分析追加
 
 #### Tasks
+- [ ] `tools/form_baseline/trend_analyzer.py` 実装
+  - [ ] `analyze_form_trend()` - 2期間のモデル係数比較
+  - [ ] `train_models_for_period()` - 期間指定モデル訓練
+  - [ ] 改善判定ロジック（GCT d < -0.1, VO b < -0.05, VR b < -0.1）
+  - [ ] 日本語解釈文生成（"3ヶ月前と比較して接地時間が5%短縮"）
 - [ ] `.claude/agents/efficiency-section-analyst.md` 修正
   - [ ] プロンプト簡素化（表データ削除）
   - [ ] `get_form_evaluations()` 使用指示追加
   - [ ] 評価文のみ生成（JSON出力禁止）
   - [ ] 例文更新（ペース補正評価の説明）
+  - [ ] **NEW**: フォームトレンド分析セクション追加
+    - [ ] `analyze_form_trend()` を使用して3ヶ月前と比較
+    - [ ] モデル係数の変化から"期待値そのものの進化"を評価
+    - [ ] 「フォーム進化度」セクションを出力に追加
 - [ ] `.claude/agents/summary-section-analyst.md` 修正
   - [ ] `get_form_evaluations()` 使用指示追加
   - [ ] `needs_improvement=true` のみ改善提案
@@ -898,11 +1005,94 @@ async def get_form_evaluations(activity_id: int) -> dict:
   - [ ] 矛盾防止ガイドライン
 
 #### Tests
+- [ ] `tests/form_baseline/test_trend_analyzer.py`
+  - [ ] 係数変化計算の正確性
+  - [ ] 改善判定ロジック（閾値テスト）
+  - [ ] 期間指定モデル訓練の動作
 - [ ] エージェント出力の検証（実活動で実行）
   - [ ] efficiency: 評価文のみ生成（表なし）
+  - [ ] efficiency: フォームトレンド分析セクション含む
   - [ ] summary: needs_improvement判定の正確性
   - [ ] 矛盾チェック（GCT優秀 ≠ GCT改善必要）
   - [ ] トークン削減率測定（目標: 70%）
+
+#### 設計ノート: フォームトレンド分析
+**設計思想**: 「期待値からのズレ = 不安定」（単一活動評価）vs「期待値そのものの変化 = フォーム進化」（期間比較）
+
+**例**:
+```
+2025年7月モデル: GCT d=-2.83 (同ペースで平均258ms)
+2025年10月モデル: GCT d=-3.12 (同ペースで平均250ms)
+→ 解釈: "3ヶ月で接地時間が3%短縮。フォームが進化しています。"
+```
+
+**実装**:
+```python
+# tools/form_baseline/trend_analyzer.py
+
+def analyze_form_trend(
+    db_path: str,
+    activity_date: str  # "2025-10-25"
+) -> Dict[str, Any]:
+    """
+    3ヶ月前とのモデル係数比較（form_baseline_historyから取得）
+
+    Args:
+        db_path: DuckDB path
+        activity_date: 分析対象日
+
+    Returns:
+        {
+            "gct_improvement": bool,
+            "vo_improvement": bool,
+            "vr_improvement": bool,
+            "gct_delta_d": float,
+            "vo_delta_b": float,
+            "vr_delta_b": float,
+            "interpretation_text": str  # Japanese
+        }
+    """
+    conn = duckdb.connect(db_path, read_only=True)
+
+    # 3ヶ月前の月初を計算
+    target_month = datetime.strptime(activity_date, "%Y-%m-%d").replace(day=1)
+    past_month = (target_month - timedelta(days=90)).replace(day=1)
+
+    # form_baseline_historyから係数取得
+    current_gct = conn.execute("""
+        SELECT coef_d FROM form_baseline_history
+        WHERE metric = 'gct' AND period_start >= ? AND period_end < ?
+        ORDER BY period_start DESC LIMIT 1
+    """, [target_month, target_month + relativedelta(months=1)]).fetchone()
+
+    past_gct = conn.execute("""
+        SELECT coef_d FROM form_baseline_history
+        WHERE metric = 'gct' AND period_start >= ? AND period_end < ?
+        ORDER BY period_start DESC LIMIT 1
+    """, [past_month, past_month + relativedelta(months=1)]).fetchone()
+
+    # 係数変化を計算
+    gct_delta_d = current_gct[0] - past_gct[0]
+    gct_improved = gct_delta_d < -0.1  # より負（急な傾き）= 改善
+
+    # VO, VRも同様...
+
+    # 日本語解釈文生成
+    interpretation = _generate_trend_interpretation(
+        gct_improved, gct_delta_d,
+        vo_improved, vo_delta_b,
+        vr_improved, vr_delta_b
+    )
+
+    return {
+        "gct_improvement": gct_improved,
+        "gct_delta_d": gct_delta_d,
+        "interpretation_text": interpretation
+    }
+```
+
+- efficiency-section-analystが自動で過去3ヶ月と比較
+- form_baseline_historyから履歴係数を取得（Phase 0で準備）
 
 ### Phase 5: Report Generation Extension (2-3時間)
 
