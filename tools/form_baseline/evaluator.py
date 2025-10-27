@@ -200,7 +200,7 @@ def evaluate_and_store(
     )
     vo_rating = compute_star_rating(
         penalty=score_result["vo_penalty"],
-        delta_pct=(score_result["vo_delta_cm"] / score_result["vo_cm_exp"]) * 100.0,
+        delta_pct=score_result["vo_delta_pct"],
     )
     vr_rating = compute_star_rating(
         penalty=score_result["vr_penalty"],
@@ -222,7 +222,7 @@ def evaluate_and_store(
         metric="vo",
         actual=score_result["vo_cm_actual"],
         expected=score_result["vo_cm_exp"],
-        delta_pct=(score_result["vo_delta_cm"] / score_result["vo_cm_exp"]) * 100.0,
+        delta_pct=score_result["vo_delta_pct"],
         pace_s_per_km=splits_data["pace_s_per_km"],
         star_rating=vo_rating["star_rating"],
         score=vo_rating["score"],

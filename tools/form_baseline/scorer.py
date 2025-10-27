@@ -31,6 +31,7 @@ def score_observation(
             - gct_delta_pct: Percentage difference from expected
             - gct_penalty: Penalty score for GCT
             - vo_delta_cm: Absolute difference from expected (cm)
+            - vo_delta_pct: Percentage difference from expected
             - vo_penalty: Penalty score for VO
             - vr_delta_pct: Percentage difference from expected
             - vr_penalty: Penalty score for VR
@@ -59,17 +60,19 @@ def score_observation(
     ) * 100.0
 
     vo_delta_cm = obs["vo_cm"] - expectations["vo_cm_exp"]
+    vo_delta_pct = (vo_delta_cm / expectations["vo_cm_exp"]) * 100.0
 
     vr_delta_pct = (
         (obs["vr_pct"] - expectations["vr_pct_exp"]) / expectations["vr_pct_exp"]
     ) * 100.0
 
     # Calculate penalties (higher delta = higher penalty)
+    # All metrics use percentage-based penalty calculation for consistency
     # GCT: exceeding by >5% is concerning
     gct_penalty = max(0.0, min(100.0, abs(gct_delta_pct) * 10.0))
 
-    # VO: exceeding by >0.5cm is concerning
-    vo_penalty = max(0.0, min(100.0, abs(vo_delta_cm) * 20.0))
+    # VO: exceeding by >5% is concerning (now percentage-based like GCT/VR)
+    vo_penalty = max(0.0, min(100.0, abs(vo_delta_pct) * 10.0))
 
     # VR: exceeding by >5% is concerning
     vr_penalty = max(0.0, min(100.0, abs(vr_delta_pct) * 10.0))
@@ -91,6 +94,7 @@ def score_observation(
         "gct_delta_pct": gct_delta_pct,
         "gct_penalty": gct_penalty,
         "vo_delta_cm": vo_delta_cm,
+        "vo_delta_pct": vo_delta_pct,
         "vo_penalty": vo_penalty,
         "vr_delta_pct": vr_delta_pct,
         "vr_penalty": vr_penalty,
