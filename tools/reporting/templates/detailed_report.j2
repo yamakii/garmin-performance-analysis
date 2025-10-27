@@ -191,7 +191,19 @@ pie title "心拍ゾーン分布"
 
 #### 評価コメント
 
-{{ efficiency_text }}
+{{ efficiency.efficiency if efficiency and efficiency.efficiency else efficiency_text }}
+
+{% if efficiency and efficiency.evaluation %}
+#### 心拍効率
+
+{{ efficiency.evaluation }}
+{% endif %}
+
+{% if efficiency and efficiency.form_trend %}
+#### フォームトレンド
+
+{{ efficiency.form_trend }}
+{% endif %}
 
 {% elif efficiency %}
 {% if efficiency.form_efficiency_table or efficiency.form_indicators %}

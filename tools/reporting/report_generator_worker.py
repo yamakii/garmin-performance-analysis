@@ -2263,9 +2263,13 @@ class ReportGeneratorWorker:
                     performance_data["form_efficiency_pace_corrected"]
                 )
 
-                # Merge table with agent text (efficiency_text, hr_efficiency_text)
+                # Merge table with agent text (efficiency_text, hr_efficiency_text, form_trend)
                 analyses["efficiency"] = {
                     **table_data,  # overall_form_score, form_efficiency_table
+                    "efficiency": efficiency_data.get("efficiency", ""),
+                    "evaluation": efficiency_data.get("evaluation", ""),
+                    "form_trend": efficiency_data.get("form_trend", ""),
+                    # Legacy field names for backward compatibility
                     "efficiency_text": efficiency_data.get("efficiency", ""),
                     "hr_efficiency_text": efficiency_data.get(
                         "evaluation", efficiency_data.get("hr_efficiency_text", "")
