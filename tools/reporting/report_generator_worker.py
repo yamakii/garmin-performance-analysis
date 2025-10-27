@@ -894,12 +894,28 @@ class ReportGeneratorWorker:
             # Evaluation text
             if vo2_max_utilization >= 90:
                 result["vo2_max_utilization_eval"] = "非常に高強度"
+                result["vo2_max_expected_effect"] = (
+                    "VO2 max（最大酸素摂取量）の大幅向上が期待できます。"
+                    "心肺機能が強化され、高強度での持久力が向上します。"
+                )
             elif vo2_max_utilization >= 80:
                 result["vo2_max_utilization_eval"] = "高強度（閾値〜VO2max）"
+                result["vo2_max_expected_effect"] = (
+                    "乳酸閾値とVO2 maxの両方が向上します。"
+                    "閾値ペースでの持久力と高強度での走力が同時に強化されます。"
+                )
             elif vo2_max_utilization >= 70:
                 result["vo2_max_utilization_eval"] = "中高強度（テンポ〜閾値）"
+                result["vo2_max_expected_effect"] = (
+                    "主に乳酸閾値の向上が期待できます。"
+                    "閾値ペースでの持久力が強化され、レースペースの維持能力が向上します。"
+                )
             else:
                 result["vo2_max_utilization_eval"] = "中強度"
+                result["vo2_max_expected_effect"] = (
+                    "有酸素基礎の強化が主な効果です。"
+                    "持久力の土台が構築され、長距離を走る能力が向上します。"
+                )
 
         # Format threshold pace and comparison
         if threshold_speed and target_pace:
@@ -925,6 +941,30 @@ class ReportGeneratorWorker:
         if ftp and ftp > 0 and work_avg_power:
             result["ftp_percentage"] = round((work_avg_power / ftp) * 100, 1)
             result["work_avg_power"] = round(work_avg_power, 0)
+
+        # Calculate threshold expected effect based on heart rate
+        if lactate_threshold_data and run_metrics:
+            threshold_hr = lactate_threshold_data.get("heart_rate")
+            work_avg_hr = run_metrics.get("avg_hr")
+
+            if threshold_hr and work_avg_hr:
+                hr_diff = work_avg_hr - threshold_hr
+
+                if hr_diff > 5:
+                    result["threshold_expected_effect"] = (
+                        "閾値心拍を超える強度により、VO2 maxの向上効果が高まります。"
+                        "最大酸素摂取量が発達し、高強度での走力が強化されます。"
+                    )
+                elif hr_diff >= -5:
+                    result["threshold_expected_effect"] = (
+                        "乳酸閾値の向上に最適な強度です。"
+                        "閾値ペースでの持久力が向上し、レースペースの維持能力が強化されます。"
+                    )
+                else:
+                    result["threshold_expected_effect"] = (
+                        "閾値ペース感覚の習得と有酸素持久力の向上が期待できます。"
+                        "閾値走の基礎が構築され、徐々に強度を上げる準備が整います。"
+                    )
 
         # Calculate Zone 4 ratio (for threshold training)
         if training_type_category == "tempo_threshold" and hr_zone_times:
@@ -2639,6 +2679,10 @@ class ReportGeneratorWorker:
             ),
             "ftp_percentage": performance_data.get("ftp_percentage"),
             "work_avg_power": performance_data.get("work_avg_power"),
+            "vo2_max_expected_effect": performance_data.get("vo2_max_expected_effect"),
+            "threshold_expected_effect": performance_data.get(
+                "threshold_expected_effect"
+            ),
             # Phase evaluation ratings for headers
             **phase_ratings,
         }
