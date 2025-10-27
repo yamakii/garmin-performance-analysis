@@ -205,6 +205,31 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="get_form_baseline_trend",
+            description="Get form baseline trend (1-month coefficient comparison for form_trend analysis)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "activity_id": {"type": "integer"},
+                    "activity_date": {
+                        "type": "string",
+                        "description": "Activity date in YYYY-MM-DD format",
+                    },
+                    "user_id": {
+                        "type": "string",
+                        "description": "User ID (default: 'default')",
+                        "default": "default",
+                    },
+                    "condition_group": {
+                        "type": "string",
+                        "description": "Condition group (default: 'flat_road')",
+                        "default": "flat_road",
+                    },
+                },
+                "required": ["activity_id", "activity_date"],
+            },
+        ),
+        Tool(
             name="get_hr_efficiency_analysis",
             description="Get HR efficiency analysis (zone distribution, training type) from hr_efficiency table",
             inputSchema={
@@ -793,6 +818,139 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
             )
         ]
+
+    elif name == "get_form_baseline_trend":
+        from datetime import datetime
+
+        import duckdb
+        from dateutil.relativedelta import relativedelta
+
+        activity_id = arguments["activity_id"]
+        activity_date = arguments["activity_date"]
+        user_id = arguments.get("user_id", "default")
+        condition_group = arguments.get("condition_group", "flat_road")
+
+        try:
+            conn = duckdb.connect(str(db_reader.db_path), read_only=True)
+
+            # Get current period baseline
+            current_baselines = conn.execute(
+                """
+                SELECT metric, coef_d, coef_b, period_start, period_end
+                FROM form_baseline_history
+                WHERE user_id = ?
+                  AND condition_group = ?
+                  AND period_start <= ?
+                  AND period_end >= ?
+                ORDER BY metric
+                """,
+                [user_id, condition_group, activity_date, activity_date],
+            ).fetchall()
+
+            if not current_baselines:
+                conn.close()
+                result = {
+                    "success": False,
+                    "error": f"No baseline found for {activity_date}",
+                }
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(result, indent=2, ensure_ascii=False),
+                    )
+                ]
+
+            # Calculate 1 month before the current period start
+            current_period_start = datetime.strptime(
+                str(current_baselines[0][3]), "%Y-%m-%d"
+            )
+            one_month_before = current_period_start - relativedelta(months=1)
+            target_date = one_month_before.strftime("%Y-%m-%d")
+
+            # Get previous period baseline (1 month before)
+            previous_baselines = conn.execute(
+                """
+                SELECT metric, coef_d, coef_b, period_start, period_end
+                FROM form_baseline_history
+                WHERE user_id = ?
+                  AND condition_group = ?
+                  AND period_start <= ?
+                  AND period_end >= ?
+                ORDER BY metric
+                """,
+                [user_id, condition_group, target_date, target_date],
+            ).fetchall()
+
+            conn.close()
+
+            if not previous_baselines:
+                result = {
+                    "success": False,
+                    "error": f"No previous baseline found for comparison (target: {target_date})",
+                }
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(result, indent=2, ensure_ascii=False),
+                    )
+                ]
+
+            # Build result with current and previous coefficients
+            metrics_data = {}
+            for curr in current_baselines:
+                metric = curr[0]
+                metrics_data[metric] = {
+                    "current": {
+                        "coef_d": curr[1],
+                        "coef_b": curr[2],
+                        "period": f"{curr[3]} to {curr[4]}",
+                    }
+                }
+
+            for prev in previous_baselines:
+                metric = prev[0]
+                if metric in metrics_data:
+                    metrics_data[metric]["previous"] = {
+                        "coef_d": prev[1],
+                        "coef_b": prev[2],
+                        "period": f"{prev[3]} to {prev[4]}",
+                    }
+                    # Calculate deltas
+                    if (
+                        metrics_data[metric]["current"]["coef_d"] is not None
+                        and prev[1] is not None
+                    ):
+                        metrics_data[metric]["delta_d"] = (
+                            metrics_data[metric]["current"]["coef_d"] - prev[1]
+                        )
+                    if (
+                        metrics_data[metric]["current"]["coef_b"] is not None
+                        and prev[2] is not None
+                    ):
+                        metrics_data[metric]["delta_b"] = (
+                            metrics_data[metric]["current"]["coef_b"] - prev[2]
+                        )
+
+            result = {
+                "success": True,
+                "activity_id": activity_id,
+                "activity_date": activity_date,
+                "metrics": metrics_data,
+            }
+
+            return [
+                TextContent(
+                    type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+                )
+            ]
+
+        except Exception as e:
+            result = {"success": False, "error": str(e)}
+            return [
+                TextContent(
+                    type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+                )
+            ]
 
     elif name == "get_hr_efficiency_analysis":
         activity_id = arguments["activity_id"]
