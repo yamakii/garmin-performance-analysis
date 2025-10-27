@@ -964,3 +964,109 @@ class AggregateReader(BaseDBReader):
         except Exception as e:
             logger.error(f"Error generating histogram: {e}")
             raise
+
+    def get_form_evaluations(self, activity_id: int) -> dict[str, Any] | None:
+        """
+        Get form evaluation results from form_evaluations table.
+
+        Args:
+            activity_id: Activity ID
+
+        Returns:
+            Form evaluation data with expected values, actual values, scores,
+            and evaluation texts for GCT, VO, VR, and overall.
+            Format: {
+                "activity_id": int,
+                "gct": {
+                    "actual": float,
+                    "expected": float,
+                    "delta_pct": float,
+                    "star_rating": str,
+                    "score": float,
+                    "needs_improvement": bool,
+                    "evaluation_text": str
+                },
+                "vo": {...},
+                "vr": {...},
+                "cadence": {
+                    "actual": float,
+                    "minimum": int,
+                    "achieved": bool
+                },
+                "overall_score": float,
+                "overall_star_rating": str
+            }
+            None if activity not found or not evaluated.
+        """
+        try:
+            with self._get_connection() as conn:
+                result = conn.execute(
+                    """
+                    SELECT
+                        gct_ms_expected, gct_ms_actual, gct_delta_pct,
+                        gct_star_rating, gct_score, gct_needs_improvement,
+                        gct_evaluation_text,
+                        vo_cm_expected, vo_cm_actual, vo_delta_cm,
+                        vo_star_rating, vo_score, vo_needs_improvement,
+                        vo_evaluation_text,
+                        vr_pct_expected, vr_pct_actual, vr_delta_pct,
+                        vr_star_rating, vr_score, vr_needs_improvement,
+                        vr_evaluation_text,
+                        cadence_actual, cadence_minimum, cadence_achieved,
+                        overall_score, overall_star_rating
+                    FROM form_evaluations
+                    WHERE activity_id = ?
+                    """,
+                    [activity_id],
+                ).fetchone()
+
+                if not result:
+                    return None
+
+                # Calculate vo_delta_pct from vo_delta_cm and vo_cm_expected
+                vo_delta_pct = (
+                    (result[9] / result[7]) * 100.0 if result[7] != 0 else 0.0
+                )
+
+                return {
+                    "activity_id": activity_id,
+                    "gct": {
+                        "actual": result[1],
+                        "expected": result[0],
+                        "delta_pct": result[2],
+                        "star_rating": result[3],
+                        "score": result[4],
+                        "needs_improvement": result[5],
+                        "evaluation_text": result[6],
+                    },
+                    "vo": {
+                        "actual": result[8],
+                        "expected": result[7],
+                        "delta_cm": result[9],
+                        "delta_pct": vo_delta_pct,
+                        "star_rating": result[10],
+                        "score": result[11],
+                        "needs_improvement": result[12],
+                        "evaluation_text": result[13],
+                    },
+                    "vr": {
+                        "actual": result[15],
+                        "expected": result[14],
+                        "delta_pct": result[16],
+                        "star_rating": result[17],
+                        "score": result[18],
+                        "needs_improvement": result[19],
+                        "evaluation_text": result[20],
+                    },
+                    "cadence": {
+                        "actual": result[21],
+                        "minimum": result[22],
+                        "achieved": result[23],
+                    },
+                    "overall_score": result[24],
+                    "overall_star_rating": result[25],
+                }
+
+        except Exception as e:
+            logger.error(f"Error getting form evaluations: {e}")
+            raise

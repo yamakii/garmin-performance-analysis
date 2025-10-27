@@ -334,16 +334,19 @@ class GarminDBWriter:
                 gct_star_rating VARCHAR,
                 gct_score FLOAT,
                 gct_needs_improvement BOOLEAN,
+                gct_evaluation_text TEXT,
 
                 vo_penalty FLOAT,
                 vo_star_rating VARCHAR,
                 vo_score FLOAT,
                 vo_needs_improvement BOOLEAN,
+                vo_evaluation_text TEXT,
 
                 vr_penalty FLOAT,
                 vr_star_rating VARCHAR,
                 vr_score FLOAT,
                 vr_needs_improvement BOOLEAN,
+                vr_evaluation_text TEXT,
 
                 cadence_actual FLOAT,
                 cadence_minimum INTEGER DEFAULT 180,

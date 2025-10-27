@@ -194,6 +194,17 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="get_form_evaluations",
+            description="Get pace-corrected form evaluation results (expected values, actual values, scores, star ratings, evaluation texts)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "activity_id": {"type": "integer"},
+                },
+                "required": ["activity_id"],
+            },
+        ),
+        Tool(
             name="get_hr_efficiency_analysis",
             description="Get HR efficiency analysis (zone distribution, training type) from hr_efficiency table",
             inputSchema={
@@ -768,6 +779,15 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     elif name == "get_form_efficiency_summary":
         activity_id = arguments["activity_id"]
         result = db_reader.get_form_efficiency_summary(activity_id)  # type: ignore[assignment]
+        return [
+            TextContent(
+                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
+            )
+        ]
+
+    elif name == "get_form_evaluations":
+        activity_id = arguments["activity_id"]
+        result = db_reader.get_form_evaluations(activity_id)  # type: ignore[assignment]
         return [
             TextContent(
                 type="text", text=json.dumps(result, indent=2, ensure_ascii=False)

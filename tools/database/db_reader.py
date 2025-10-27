@@ -183,6 +183,18 @@ class GarminDBReader:
         """
         return self.aggregate.get_form_efficiency_summary(activity_id)
 
+    def get_form_evaluations(self, activity_id: int) -> dict[str, Any] | None:
+        """Get pace-corrected form evaluation results.
+
+        Args:
+            activity_id: Activity ID
+
+        Returns:
+            Form evaluation data with expected values, actual values, scores,
+            star ratings, and evaluation texts, or None if not found
+        """
+        return self.aggregate.get_form_evaluations(activity_id)
+
     def get_hr_efficiency_analysis(self, activity_id: int) -> dict[str, Any] | None:
         """Get HR efficiency analysis (zone distribution, training type).
 

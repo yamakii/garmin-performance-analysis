@@ -101,7 +101,7 @@ def _get_splits_data(
                 AVG(ground_contact_time) as gct_ms,
                 AVG(vertical_oscillation) as vo_cm,
                 AVG(vertical_ratio) as vr_pct,
-                AVG(avg_running_cadence_spm) as cadence
+                AVG(cadence) as cadence
             FROM splits
             WHERE activity_id = ?
               AND ground_contact_time IS NOT NULL
@@ -293,5 +293,104 @@ def evaluate_and_store(
     # Generate overall text
     overall_text = generate_overall_text(evaluation)
     evaluation["overall_text"] = overall_text
+
+    # Store evaluation results in DuckDB
+    import duckdb
+
+    conn = duckdb.connect(db_path)
+    try:
+        conn.execute(
+            """
+            INSERT INTO form_evaluations (
+                eval_id, activity_id,
+                gct_ms_expected, vo_cm_expected, vr_pct_expected,
+                gct_ms_actual, vo_cm_actual, vr_pct_actual,
+                gct_delta_pct, vo_delta_cm, vr_delta_pct,
+                gct_penalty, gct_star_rating, gct_score, gct_needs_improvement, gct_evaluation_text,
+                vo_penalty, vo_star_rating, vo_score, vo_needs_improvement, vo_evaluation_text,
+                vr_penalty, vr_star_rating, vr_score, vr_needs_improvement, vr_evaluation_text,
+                cadence_actual, cadence_minimum, cadence_achieved,
+                overall_score, overall_star_rating
+            ) VALUES (
+                nextval('form_evaluations_seq'),
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
+            ON CONFLICT (activity_id) DO UPDATE SET
+                gct_ms_expected = EXCLUDED.gct_ms_expected,
+                vo_cm_expected = EXCLUDED.vo_cm_expected,
+                vr_pct_expected = EXCLUDED.vr_pct_expected,
+                gct_ms_actual = EXCLUDED.gct_ms_actual,
+                vo_cm_actual = EXCLUDED.vo_cm_actual,
+                vr_pct_actual = EXCLUDED.vr_pct_actual,
+                gct_delta_pct = EXCLUDED.gct_delta_pct,
+                vo_delta_cm = EXCLUDED.vo_delta_cm,
+                vr_delta_pct = EXCLUDED.vr_delta_pct,
+                gct_penalty = EXCLUDED.gct_penalty,
+                gct_star_rating = EXCLUDED.gct_star_rating,
+                gct_score = EXCLUDED.gct_score,
+                gct_needs_improvement = EXCLUDED.gct_needs_improvement,
+                gct_evaluation_text = EXCLUDED.gct_evaluation_text,
+                vo_penalty = EXCLUDED.vo_penalty,
+                vo_star_rating = EXCLUDED.vo_star_rating,
+                vo_score = EXCLUDED.vo_score,
+                vo_needs_improvement = EXCLUDED.vo_needs_improvement,
+                vo_evaluation_text = EXCLUDED.vo_evaluation_text,
+                vr_penalty = EXCLUDED.vr_penalty,
+                vr_star_rating = EXCLUDED.vr_star_rating,
+                vr_score = EXCLUDED.vr_score,
+                vr_needs_improvement = EXCLUDED.vr_needs_improvement,
+                vr_evaluation_text = EXCLUDED.vr_evaluation_text,
+                cadence_actual = EXCLUDED.cadence_actual,
+                cadence_minimum = EXCLUDED.cadence_minimum,
+                cadence_achieved = EXCLUDED.cadence_achieved,
+                overall_score = EXCLUDED.overall_score,
+                overall_star_rating = EXCLUDED.overall_star_rating,
+                evaluated_at = now()
+            """,
+            [
+                activity_id,
+                # Expected values
+                evaluation["gct"]["expected"],
+                evaluation["vo"]["expected"],
+                evaluation["vr"]["expected"],
+                # Actual values
+                evaluation["gct"]["actual"],
+                evaluation["vo"]["actual"],
+                evaluation["vr"]["actual"],
+                # Deltas
+                evaluation["gct"]["delta_pct"],
+                evaluation["vo"]["delta_cm"],
+                evaluation["vr"]["delta_pct"],
+                # GCT evaluation
+                score_result["gct_penalty"],
+                evaluation["gct"]["star_rating"],
+                evaluation["gct"]["score"],
+                evaluation["gct"]["needs_improvement"],
+                evaluation["gct"]["evaluation_text"],
+                # VO evaluation
+                score_result["vo_penalty"],
+                evaluation["vo"]["star_rating"],
+                evaluation["vo"]["score"],
+                evaluation["vo"]["needs_improvement"],
+                evaluation["vo"]["evaluation_text"],
+                # VR evaluation
+                score_result["vr_penalty"],
+                evaluation["vr"]["star_rating"],
+                evaluation["vr"]["score"],
+                evaluation["vr"]["needs_improvement"],
+                evaluation["vr"]["evaluation_text"],
+                # Cadence
+                evaluation["cadence"]["actual"],
+                evaluation["cadence"]["minimum"],
+                evaluation["cadence"]["achieved"],
+                # Overall
+                evaluation["overall_score"],
+                evaluation["overall_star_rating"],
+            ],
+        )
+        conn.close()
+    except Exception as e:
+        conn.close()
+        raise RuntimeError(f"Failed to store evaluation results: {e}") from e
 
     return evaluation

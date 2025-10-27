@@ -79,6 +79,10 @@ class TestEvaluateAndStore:
         )
         mock_overall.return_value = "(総合評価: ★★★★★ 5.0/5.0)"
 
+        # Mock DuckDB connection to skip INSERT
+        mock_conn = mocker.MagicMock()
+        mocker.patch("duckdb.connect", return_value=mock_conn)
+
         # Call evaluate_and_store
         result = evaluate_and_store(
             activity_id=20790040925,
@@ -188,6 +192,9 @@ class TestEvaluateAndStore:
             "tools.form_baseline.evaluator.generate_overall_text",
             return_value="Overall text",
         )
+        # Mock DuckDB connection to skip INSERT
+        mock_conn = mocker.MagicMock()
+        mocker.patch("duckdb.connect", return_value=mock_conn)
 
         result = evaluate_and_store(
             activity_id=20790040925,
@@ -258,6 +265,9 @@ class TestEvaluateAndStore:
             "tools.form_baseline.evaluator.generate_overall_text",
             return_value="Overall text",
         )
+        # Mock DuckDB connection to skip INSERT
+        mock_conn = mocker.MagicMock()
+        mocker.patch("duckdb.connect", return_value=mock_conn)
 
         result = evaluate_and_store(
             activity_id=20790040925,
