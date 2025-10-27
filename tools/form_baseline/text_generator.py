@@ -4,8 +4,6 @@ This module generates natural Japanese evaluation text for GCT, VO, and VR metri
 based on the deviation from expected values.
 """
 
-from typing import Literal
-
 
 def _format_pace(pace_s_per_km: float) -> str:
     """Format pace in seconds per km to MM:SS format.
@@ -22,7 +20,7 @@ def _format_pace(pace_s_per_km: float) -> str:
 
 
 def generate_evaluation_text(
-    metric: Literal["gct", "vo", "vr"],
+    metric: str,
     actual: float,
     expected: float,
     delta_pct: float,
@@ -30,97 +28,85 @@ def generate_evaluation_text(
     star_rating: str,
     score: float,
 ) -> str:
-    """Generate Japanese evaluation text for a form metric.
+    """Generate Japanese evaluation text for a single metric.
+
+    Symmetric evaluation philosophy: Deviation from expected (in either direction) = instability.
 
     Args:
-        metric: Metric type ('gct', 'vo', 'vr')
+        metric: 'gct', 'vo', or 'vr'
         actual: Actual measured value
-        expected: Expected value based on pace
-        delta_pct: Percentage deviation from expected
-        pace_s_per_km: Pace in seconds per kilometer
-        star_rating: Star rating string (e.g., "★★★★★")
+        expected: Expected value from baseline model
+        delta_pct: Delta percentage ((actual - expected) / expected * 100)
+        pace_s_per_km: Pace in seconds per km (for context)
+        star_rating: Star rating string (e.g., '★★★★★')
         score: Numeric score (0-5.0)
 
     Returns:
-        Natural Japanese evaluation text
+        Japanese evaluation text
 
-    Examples:
-        >>> generate_evaluation_text("gct", 258, 261, -1.3, 431, "★★★★★", 5.0)
-        '258msは期待値261msより1.3%優秀で、非常に効率的な接地時間です。...'
+    Example:
+        >>> generate_evaluation_text('gct', 258.0, 261.0, -1.1, 431.0, '★★★★★', 5.0)
+        '258msは期待値261ms±2%の理想範囲内です。適切な接地時間を維持できています。★★★★★'
     """
-    pace_str = _format_pace(pace_s_per_km)
-
     # Metric-specific labels
-    metric_labels = {
+    labels = {
         "gct": {
-            "unit": "ms",
             "name": "接地時間",
-            "better": "短縮",
-            "worse": "長め",
-            "improvement_action": "接地時間の短縮トレーニング",
+            "unit": "ms",
+            "direction_low": "短く",
+            "direction_high": "長く",
+            "improvement_action": "接地時間の安定化",
         },
         "vo": {
-            "unit": "cm",
             "name": "上下動",
-            "better": "低減",
-            "worse": "高め",
-            "improvement_action": "上下動の抑制トレーニング",
+            "unit": "cm",
+            "direction_low": "小さく",
+            "direction_high": "大きく",
+            "improvement_action": "上下動の安定化トレーニング",
         },
         "vr": {
-            "unit": "%",
             "name": "上下動比",
-            "better": "低減",
-            "worse": "高め",
-            "improvement_action": "上下動比の改善トレーニング",
+            "unit": "%",
+            "direction_low": "低く",
+            "direction_high": "高く",
+            "improvement_action": "フォームバランスの改善",
         },
     }
 
-    label = metric_labels[metric]
-    unit = label["unit"]
+    label = labels[metric]
     name = label["name"]
+    unit = label["unit"]
 
-    # Format values based on metric type
+    # Format values: GCT=integer, VO/VR=1 decimal place
     if metric == "gct":
         actual_str = f"{actual:.0f}"
         expected_str = f"{expected:.0f}"
-    else:
+    else:  # vo or vr
         actual_str = f"{actual:.1f}"
         expected_str = f"{expected:.1f}"
 
-    # Generate evaluation text based on delta_pct thresholds
-    if delta_pct < -5:
-        # Excellent (delta < -5%)
-        text = (
-            f"{actual_str}{unit}は期待値{expected_str}{unit}より"
-            f"{abs(delta_pct):.1f}%優秀で、非常に効率的な{name}です。"
-            f"このペース（{pace_str}/km）において理想的なフォームを実現しています。{star_rating}"
-        )
-    elif delta_pct < -2:
-        # Good (-5% < delta < -2%)
-        text = (
-            f"{actual_str}{unit}は期待値{expected_str}{unit}より"
-            f"{abs(delta_pct):.1f}%優秀です。このペースでの標準的な"
-            f"ランナーより効率的な走りができています。{star_rating}"
-        )
-    elif abs(delta_pct) <= 2:
+    # Symmetric evaluation: deviation in BOTH directions is considered unstable
+    if abs(delta_pct) <= 2:
         # Ideal (abs(delta) <= 2%)
         text = (
             f"{actual_str}{unit}は期待値{expected_str}{unit}±2%の理想範囲内です。"
             f"適切な{name}を維持できています。{star_rating}"
         )
-    elif delta_pct <= 5:
-        # Slightly suboptimal (2% < delta <= 5%)
+    elif abs(delta_pct) <= 5:
+        # Slightly off (2% < abs(delta) <= 5%)
+        direction = label["direction_low"] if delta_pct < 0 else label["direction_high"]
         text = (
             f"{actual_str}{unit}は期待値{expected_str}{unit}より"
-            f"{delta_pct:.1f}%{label['worse']}です。軽度の改善余地が"
-            f"ありますが、許容範囲内です。{star_rating}"
+            f"{abs(delta_pct):.1f}%{direction}、やや外れています。"
+            f"通常のフォームから軽度のズレが見られます。{star_rating}"
         )
     else:
-        # Needs improvement (delta > 5%)
+        # Significantly off (abs(delta) > 5%)
+        direction = label["direction_low"] if delta_pct < 0 else label["direction_high"]
         text = (
             f"{actual_str}{unit}は期待値{expected_str}{unit}より"
-            f"{delta_pct:.0f}%{label['worse']}く、改善の余地があります。"
-            f"{label['improvement_action']}を推奨します。{star_rating}"
+            f"{abs(delta_pct):.0f}%{direction}、大きく外れています。"
+            f"フォームの不安定さが見られます。{label['improvement_action']}を推奨します。{star_rating}"
         )
 
     return text

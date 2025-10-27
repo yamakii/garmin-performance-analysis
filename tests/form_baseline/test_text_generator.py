@@ -13,38 +13,37 @@ class TestGenerateEvaluationText:
     """Test cases for generate_evaluation_text function."""
 
     # GCT Tests
-    def test_gct_excellent_negative_5pct(self):
-        """GCT delta < -5% should generate excellent evaluation."""
+    def test_gct_significantly_low_over_5pct(self):
+        """GCT delta < -5% should generate significantly low evaluation."""
         text = generate_evaluation_text(
             metric="gct",
             actual=258.0,
             expected=275.0,
             delta_pct=-6.2,
             pace_s_per_km=431.0,
-            star_rating="★★★★★",
-            score=5.0,
+            star_rating="★★☆☆☆",
+            score=2.0,
         )
         assert "258" in text or "258.0" in text
         assert "275" in text or "275.0" in text
-        assert "優秀" in text or "理想的" in text
-        assert "★★★★★" in text
-        assert "7:11" in text  # pace formatted
+        assert "外れ" in text or "短く" in text
+        assert "★★☆☆☆" in text
 
-    def test_gct_good_negative_2_to_5pct(self):
-        """GCT -5% < delta < -2% should generate good evaluation."""
+    def test_gct_slightly_low_2_to_5pct(self):
+        """GCT -5% < delta < -2% should generate slightly low evaluation."""
         text = generate_evaluation_text(
             metric="gct",
             actual=258.0,
             expected=264.0,
             delta_pct=-2.3,
             pace_s_per_km=431.0,
-            star_rating="★★★★☆",
-            score=4.0,
+            star_rating="★★★☆☆",
+            score=3.0,
         )
         assert "258" in text
         assert "264" in text
-        assert "優秀" in text or "効率的" in text
-        assert "★★★★☆" in text
+        assert "やや外れ" in text or "短く" in text or "ズレ" in text
+        assert "★★★☆☆" in text
 
     def test_gct_ideal_within_2pct(self):
         """GCT abs(delta) <= 2% should generate ideal evaluation."""
@@ -75,7 +74,7 @@ class TestGenerateEvaluationText:
         )
         assert "264" in text
         assert "258" in text
-        assert "長め" in text or "改善余地" in text
+        assert "やや外れ" in text or "ズレ" in text
         assert "★★★☆☆" in text
 
     def test_gct_needs_improvement_over_5pct(self):
@@ -91,40 +90,41 @@ class TestGenerateEvaluationText:
         )
         assert "280" in text
         assert "258" in text
-        assert "改善" in text
+        assert "外れ" in text or "不安定" in text
         assert "★★☆☆☆" in text
 
     # VO Tests
-    def test_vo_excellent_negative_5pct(self):
-        """VO delta < -5% should generate excellent evaluation."""
+    def test_vo_significantly_low_over_5pct(self):
+        """VO delta < -5% should generate significantly low evaluation."""
         text = generate_evaluation_text(
             metric="vo",
             actual=6.5,
             expected=7.0,
             delta_pct=-7.1,
             pace_s_per_km=431.0,
-            star_rating="★★★★★",
-            score=5.0,
+            star_rating="★★☆☆☆",
+            score=2.0,
         )
         assert "6.5" in text
         assert "7.0" in text or "7" in text
-        assert "優秀" in text or "効率的" in text
-        assert "★★★★★" in text
+        assert "外れ" in text or "小さく" in text
+        assert "★★☆☆☆" in text
 
-    def test_vo_good_negative_2_to_5pct(self):
-        """VO -5% < delta < -2% should generate good evaluation."""
+    def test_vo_slightly_low_2_to_5pct(self):
+        """VO -5% < delta < -2% should generate slightly low evaluation."""
         text = generate_evaluation_text(
             metric="vo",
             actual=6.8,
             expected=7.0,
             delta_pct=-2.9,
             pace_s_per_km=431.0,
-            star_rating="★★★★☆",
-            score=4.0,
+            star_rating="★★★☆☆",
+            score=3.0,
         )
         assert "6.8" in text
         assert "7.0" in text or "7" in text
-        assert "★★★★☆" in text
+        assert "やや外れ" in text or "小さく" in text or "ズレ" in text
+        assert "★★★☆☆" in text
 
     def test_vo_ideal_within_2pct(self):
         """VO abs(delta) <= 2% should generate ideal evaluation."""
@@ -146,16 +146,16 @@ class TestGenerateEvaluationText:
         """VO 2% < delta <= 5% should generate slightly high evaluation."""
         text = generate_evaluation_text(
             metric="vo",
-            actual=7.5,
+            actual=7.3,
             expected=7.0,
-            delta_pct=7.1,
+            delta_pct=4.3,
             pace_s_per_km=431.0,
             star_rating="★★★☆☆",
             score=3.0,
         )
-        assert "7.5" in text
+        assert "7.3" in text
         assert "7.0" in text or "7" in text
-        assert "高め" in text or "改善" in text
+        assert "やや外れ" in text or "ズレ" in text
         assert "★★★☆☆" in text
 
     def test_vo_needs_improvement_over_5pct(self):
@@ -171,40 +171,41 @@ class TestGenerateEvaluationText:
         )
         assert "9.5" in text
         assert "7.0" in text or "7" in text
-        assert "改善" in text or "高め" in text
+        assert "外れ" in text or "不安定" in text
         assert "★★☆☆☆" in text
 
     # VR Tests
-    def test_vr_excellent_negative_5pct(self):
-        """VR delta < -5% should generate excellent evaluation."""
+    def test_vr_significantly_low_over_5pct(self):
+        """VR delta < -5% should generate significantly low evaluation."""
         text = generate_evaluation_text(
             metric="vr",
             actual=6.5,
             expected=7.0,
             delta_pct=-7.1,
             pace_s_per_km=431.0,
-            star_rating="★★★★★",
-            score=5.0,
+            star_rating="★★☆☆☆",
+            score=2.0,
         )
         assert "6.5" in text
         assert "7.0" in text or "7" in text
-        assert "優秀" in text or "効率的" in text
-        assert "★★★★★" in text
+        assert "外れ" in text or "低く" in text
+        assert "★★☆☆☆" in text
 
-    def test_vr_good_negative_2_to_5pct(self):
-        """VR -5% < delta < -2% should generate good evaluation."""
+    def test_vr_slightly_low_2_to_5pct(self):
+        """VR -5% < delta < -2% should generate slightly low evaluation."""
         text = generate_evaluation_text(
             metric="vr",
             actual=6.8,
             expected=7.0,
             delta_pct=-2.9,
             pace_s_per_km=431.0,
-            star_rating="★★★★☆",
-            score=4.0,
+            star_rating="★★★☆☆",
+            score=3.0,
         )
         assert "6.8" in text
         assert "7.0" in text or "7" in text
-        assert "★★★★☆" in text
+        assert "やや外れ" in text or "低く" in text or "ズレ" in text
+        assert "★★★☆☆" in text
 
     def test_vr_ideal_within_2pct(self):
         """VR abs(delta) <= 2% should generate ideal evaluation."""
@@ -226,16 +227,16 @@ class TestGenerateEvaluationText:
         """VR 2% < delta <= 5% should generate slightly high evaluation."""
         text = generate_evaluation_text(
             metric="vr",
-            actual=7.5,
+            actual=7.3,
             expected=7.0,
-            delta_pct=7.1,
+            delta_pct=4.3,
             pace_s_per_km=431.0,
             star_rating="★★★☆☆",
             score=3.0,
         )
-        assert "7.5" in text
+        assert "7.3" in text
         assert "7.0" in text or "7" in text
-        assert "高め" in text or "改善" in text
+        assert "やや外れ" in text or "ズレ" in text
         assert "★★★☆☆" in text
 
     def test_vr_needs_improvement_over_5pct(self):
@@ -251,7 +252,7 @@ class TestGenerateEvaluationText:
         )
         assert "9.5" in text
         assert "7.0" in text or "7" in text
-        assert "改善" in text or "高め" in text
+        assert "外れ" in text or "不安定" in text
         assert "★★☆☆☆" in text
 
 
