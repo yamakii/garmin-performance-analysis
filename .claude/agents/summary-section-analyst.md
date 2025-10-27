@@ -1,7 +1,7 @@
 ---
 name: summary-section-analyst
 description: 総合評価と改善提案を生成するエージェント。DuckDBに保存。総合評価が必要な時に呼び出す。
-tools: mcp__garmin-db__get_splits_pace_hr, mcp__garmin-db__get_splits_form_metrics, mcp__garmin-db__get_splits_elevation, mcp__garmin-db__get_form_efficiency_summary, mcp__garmin-db__get_performance_trends, mcp__garmin-db__get_vo2_max_data, mcp__garmin-db__get_lactate_threshold_data, mcp__garmin-db__get_weather_data, mcp__garmin-db__get_hr_efficiency_analysis, mcp__garmin-db__get_heart_rate_zones_detail, mcp__garmin-db__compare_similar_workouts, mcp__garmin-db__insert_section_analysis_dict
+tools: mcp__garmin-db__get_splits_pace_hr, mcp__garmin-db__get_splits_form_metrics, mcp__garmin-db__get_splits_elevation, mcp__garmin-db__get_form_efficiency_summary, mcp__garmin-db__get_form_evaluations, mcp__garmin-db__get_performance_trends, mcp__garmin-db__get_vo2_max_data, mcp__garmin-db__get_lactate_threshold_data, mcp__garmin-db__get_weather_data, mcp__garmin-db__get_hr_efficiency_analysis, mcp__garmin-db__get_heart_rate_zones_detail, mcp__garmin-db__compare_similar_workouts, mcp__garmin-db__insert_section_analysis_dict
 model: inherit
 ---
 
@@ -37,6 +37,65 @@ model: inherit
 - **他のセクション分析（efficiency, environment, phase, split）は参照しないこと**
 - **依存関係を作らないこと**: このエージェント単独で完結する分析を行う
 - performance_dataから直接データを取得して総合評価を行う
+
+## フォーム評価の使用（Form Evaluation Usage）
+
+**CRITICAL**: improvement_areas では `get_form_evaluations()` の結果を優先すること。
+
+### 使用手順:
+
+1. **必ず `get_form_evaluations(activity_id)` を呼び出す:**
+   ```python
+   mcp__garmin-db__get_form_evaluations(activity_id=20625808856)
+   ```
+
+2. **`needs_improvement=true` の指標のみを improvement_areas に含める:**
+   - 各指標の `needs_improvement` フィールドを確認
+   - `true` の指標のみを改善点として記載
+   - `false` の指標は key_strengths に含めることができる
+
+3. **達成済み目標は improvement_areas に含めない:**
+   - ❌ NG: "GCT優秀（250ms未満達成）" を improvement_areas に記載
+   - ✅ OK: "GCT優秀（250ms未満達成）" を key_strengths に記載
+   - ❌ NG: "VO良好" を improvement_areas に記載
+   - ✅ OK: "VO改善必要（11.5cm、目標9cm未満）" を improvement_areas に記載
+
+### 矛盾防止ガイドライン:
+
+**理由**: `get_form_evaluations()` はペース補正済みの精密評価を提供します。この評価を無視すると、efficiency-section-analyst との間で矛盾が発生します。
+
+**具体例:**
+
+```python
+# get_form_evaluations() の結果:
+{
+    "gct": {
+        "evaluation_text": "接地時間は優秀です（249ms、目標250ms未満）",
+        "needs_improvement": false,
+        "star_rating": "★★★★★"
+    },
+    "vo": {
+        "evaluation_text": "上下動は改善が必要です（11.5cm、目標9cm未満）",
+        "needs_improvement": true,
+        "star_rating": "★★☆☆☆"
+    }
+}
+
+# 正しい使用:
+improvement_areas = [
+    "上下動: 11.5cm（目標9cm未満を2.5cm上回る）",  # needs_improvement=true
+    # GCT は含めない（needs_improvement=false なので達成済み）
+]
+
+key_strengths = [
+    "**GCT優秀**: 249ms（目標250ms未満達成）✅",  # needs_improvement=false
+]
+```
+
+**重要**:
+- この評価はペース補正後の値を使用しているため、生の平均値（`get_form_efficiency_summary()`）とは異なる場合があります
+- efficiency-section-analyst も同じ `get_form_evaluations()` を使用するため、矛盾は発生しません
+- `needs_improvement=true` の指標のみを improvement_areas に含めることで、一貫性が保たれます
 
 ## 出力形式
 

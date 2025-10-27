@@ -204,6 +204,9 @@ class ReportTemplateRenderer:
         weather_data: dict[str, Any] | None = None,
         gear_name: str | None = None,
         form_efficiency: dict[str, Any] | None = None,
+        form_evaluation: (
+            dict[str, Any] | None
+        ) = None,  # Phase 5: Unified Form Evaluation
         performance_metrics: dict[str, Any] | None = None,
         training_type: str | None = None,
         activity_type: dict[str, str] | None = None,
@@ -319,6 +322,7 @@ class ReportTemplateRenderer:
                 weather_data=weather_data or {},
                 gear_name=gear_name,
                 form_efficiency=form_efficiency,
+                form_evaluation=form_evaluation,  # Phase 5: Unified Form Evaluation
                 performance_metrics=performance_metrics,
                 training_type=training_type,
                 activity_type=activity_type,

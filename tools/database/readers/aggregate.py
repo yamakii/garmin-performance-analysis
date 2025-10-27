@@ -1068,5 +1068,5 @@ class AggregateReader(BaseDBReader):
                 }
 
         except Exception as e:
-            logger.error(f"Error getting form evaluations: {e}")
-            raise
+            logger.debug(f"Form evaluations not available: {e}")
+            return None

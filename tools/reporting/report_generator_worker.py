@@ -2557,6 +2557,9 @@ class ReportGeneratorWorker:
 
         section_analyses = self.load_section_analyses(activity_id, performance_data)
 
+        # Load form evaluations (Phase 5: Unified Form Evaluation System)
+        form_evaluation = self.db_reader.get_form_evaluations(activity_id)
+
         if not section_analyses:
             raise ValueError(
                 f"No section analyses found for activity {activity_id}. Cannot generate report."
@@ -2649,6 +2652,7 @@ class ReportGeneratorWorker:
             "weather_data": performance_data.get("weather_data", {}),
             "gear_name": performance_data.get("gear_name"),
             "form_efficiency": performance_data.get("form_efficiency"),
+            "form_evaluation": form_evaluation,  # Phase 5: Pace-corrected evaluation
             "performance_metrics": performance_data.get("performance_metrics"),
             "training_type": performance_data.get("training_type"),
             "training_type_category": training_type_category,
