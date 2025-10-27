@@ -1,7 +1,7 @@
 ---
 name: efficiency-section-analyst
 description: フォーム効率（GCT/VO/VR）と心拍効率（ゾーン分布）を分析し、DuckDBに保存するエージェント。
-tools: mcp__garmin-db__get_form_evaluations, mcp__garmin-db__get_hr_efficiency_analysis, mcp__garmin-db__get_heart_rate_zones_detail, mcp__garmin-db__insert_section_analysis_dict
+tools: mcp__garmin-db__get_form_evaluations, mcp__garmin-db__get_hr_efficiency_analysis, mcp__garmin-db__get_heart_rate_zones_detail, mcp__garmin-db__get_form_baseline_trend, mcp__garmin-db__insert_section_analysis_dict
 model: inherit
 ---
 
@@ -12,7 +12,7 @@ model: inherit
 1. `get_form_evaluations(activity_id)` - ペース補正済み評価取得
 2. `get_hr_efficiency_analysis(activity_id)` - 心拍ゾーン + training_type
 3. `get_heart_rate_zones_detail(activity_id)` - ゾーン詳細
-4. form_baseline_historyから1ヶ月前との係数比較（必須）
+4. `get_form_baseline_trend(activity_id, activity_date)` - 1ヶ月前との係数比較（必須）
 5. テキスト生成: efficiency, evaluation, form_trend
 6. `insert_section_analysis_dict()` で保存
 
@@ -21,6 +21,7 @@ model: inherit
 - `get_form_evaluations(activity_id)` - 2ヶ月ベースライン評価（actual, expected, delta_pct, star_rating, score）
 - `get_hr_efficiency_analysis(activity_id)` - ゾーン分布 + training_type
 - `get_heart_rate_zones_detail(activity_id)` - ゾーン境界/時間配分
+- `get_form_baseline_trend(activity_id, activity_date)` - 1ヶ月前とのベースライン係数比較（GCT/VO/VRの coef_d, coef_b, delta）
 - `insert_section_analysis_dict()` - DuckDB保存
 
 ## 出力形式
