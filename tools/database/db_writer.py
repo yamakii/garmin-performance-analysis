@@ -287,6 +287,77 @@ class GarminDBWriter:
         """
         )
 
+        # Create form_baselines table
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS form_baselines (
+                baseline_id INTEGER PRIMARY KEY,
+                user_id VARCHAR DEFAULT 'default',
+                condition_group VARCHAR,
+                metric VARCHAR,
+                model_type VARCHAR,
+
+                coef_alpha FLOAT,
+                coef_d FLOAT,
+                coef_a FLOAT,
+                coef_b FLOAT,
+
+                n_samples INTEGER,
+                rmse FLOAT,
+                trained_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                speed_range_min FLOAT,
+                speed_range_max FLOAT
+            )
+        """
+        )
+
+        # Create form_evaluations table
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS form_evaluations (
+                eval_id INTEGER PRIMARY KEY,
+                activity_id BIGINT UNIQUE,
+
+                gct_ms_expected FLOAT,
+                vo_cm_expected FLOAT,
+                vr_pct_expected FLOAT,
+
+                gct_ms_actual FLOAT,
+                vo_cm_actual FLOAT,
+                vr_pct_actual FLOAT,
+
+                gct_delta_pct FLOAT,
+                vo_delta_cm FLOAT,
+                vr_delta_pct FLOAT,
+
+                gct_penalty FLOAT,
+                gct_star_rating VARCHAR,
+                gct_score FLOAT,
+                gct_needs_improvement BOOLEAN,
+
+                vo_penalty FLOAT,
+                vo_star_rating VARCHAR,
+                vo_score FLOAT,
+                vo_needs_improvement BOOLEAN,
+
+                vr_penalty FLOAT,
+                vr_star_rating VARCHAR,
+                vr_score FLOAT,
+                vr_needs_improvement BOOLEAN,
+
+                cadence_actual FLOAT,
+                cadence_minimum INTEGER DEFAULT 180,
+                cadence_achieved BOOLEAN,
+
+                overall_score FLOAT,
+                overall_star_rating VARCHAR,
+
+                evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
+            )
+        """
+        )
+
         # Create section_analyses table
         conn.execute(
             """
