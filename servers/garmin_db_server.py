@@ -506,11 +506,11 @@ async def list_tools() -> list[Tool]:
                     },
                     "pace_tolerance": {
                         "type": "number",
-                        "description": "Pace tolerance as fraction (default 0.1 = ±10%)",
+                        "description": "Pace tolerance as fraction (default 0.2 = ±20%)",
                     },
                     "distance_tolerance": {
                         "type": "number",
-                        "description": "Distance tolerance as fraction (default 0.1 = ±10%)",
+                        "description": "Distance tolerance as fraction (default 0.2 = ±20%)",
                     },
                     "terrain_match": {
                         "type": "boolean",
@@ -1001,8 +1001,8 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
         comparator = WorkoutComparator()
         activity_id = arguments["activity_id"]
-        pace_tolerance = arguments.get("pace_tolerance", 0.1)
-        distance_tolerance = arguments.get("distance_tolerance", 0.1)
+        pace_tolerance = arguments.get("pace_tolerance", 0.2)
+        distance_tolerance = arguments.get("distance_tolerance", 0.2)
         terrain_match = arguments.get("terrain_match", False)
         activity_type_filter = arguments.get("activity_type_filter")
         date_range_list = arguments.get("date_range")

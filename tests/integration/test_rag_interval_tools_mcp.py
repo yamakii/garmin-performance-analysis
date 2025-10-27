@@ -654,8 +654,8 @@ class TestRagIntervalToolsMcp:
             mock_find.assert_called_once()
             call_args = mock_find.call_args[1]
             assert call_args["activity_id"] == fixture_activity_id
-            assert call_args["pace_tolerance"] == 0.1  # default
-            assert call_args["distance_tolerance"] == 0.1  # default
+            assert call_args["pace_tolerance"] == 0.2  # default (updated from 0.1)
+            assert call_args["distance_tolerance"] == 0.2  # default (updated from 0.1)
 
             # Verify response structure
             assert len(result) == 1

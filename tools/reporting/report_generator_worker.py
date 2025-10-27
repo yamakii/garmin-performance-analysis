@@ -1086,8 +1086,8 @@ class ReportGeneratorWorker:
 
             result = comparator.find_similar_workouts(
                 activity_id=activity_id,
-                distance_tolerance=0.10,
-                pace_tolerance=0.10,
+                distance_tolerance=0.20,
+                pace_tolerance=0.20,
                 terrain_match=True,
                 limit=10,
                 target_pace_override=target_pace_override,

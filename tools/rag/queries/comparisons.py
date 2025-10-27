@@ -142,8 +142,8 @@ class WorkoutComparator:
     def find_similar_workouts(
         self,
         activity_id: int,
-        pace_tolerance: float = 0.1,
-        distance_tolerance: float = 0.1,
+        pace_tolerance: float = 0.2,
+        distance_tolerance: float = 0.2,
         terrain_match: bool = False,
         activity_type_filter: str | None = None,
         date_range: tuple[str, str] | None = None,
@@ -154,8 +154,8 @@ class WorkoutComparator:
 
         Args:
             activity_id: Target activity ID to find similar workouts for
-            pace_tolerance: Pace tolerance as fraction (0.1 = ±10%)
-            distance_tolerance: Distance tolerance as fraction (0.1 = ±10%)
+            pace_tolerance: Pace tolerance as fraction (0.2 = ±20%)
+            distance_tolerance: Distance tolerance as fraction (0.2 = ±20%)
             terrain_match: Whether to match terrain characteristics
             activity_type_filter: Optional activity type keyword filter
             date_range: Optional (start_date, end_date) tuple in YYYY-MM-DD format
