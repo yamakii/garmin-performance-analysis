@@ -939,8 +939,25 @@ class ReportGeneratorWorker:
 
         # Calculate FTP percentage and work power
         if ftp and ftp > 0 and work_avg_power:
-            result["ftp_percentage"] = round((work_avg_power / ftp) * 100, 1)
+            ftp_pct = round((work_avg_power / ftp) * 100, 1)
+            result["ftp_percentage"] = ftp_pct
             result["work_avg_power"] = round(work_avg_power, 0)
+
+            # Determine power zone name based on FTP percentage
+            if ftp_pct < 55:
+                result["power_zone_name"] = "Zone 1 (リカバリー)"
+            elif ftp_pct < 75:
+                result["power_zone_name"] = "Zone 2 (持久力)"
+            elif ftp_pct < 90:
+                result["power_zone_name"] = "Zone 3 (テンポ)"
+            elif ftp_pct < 105:
+                result["power_zone_name"] = "Zone 4 (閾値)"
+            elif ftp_pct < 120:
+                result["power_zone_name"] = "Zone 5 (VO2 Max)"
+            elif ftp_pct < 150:
+                result["power_zone_name"] = "Zone 6 (無酸素)"
+            else:
+                result["power_zone_name"] = "Zone 7 (神経筋)"
 
         # Calculate threshold expected effect based on heart rate
         if lactate_threshold_data and run_metrics:
@@ -2679,6 +2696,7 @@ class ReportGeneratorWorker:
             ),
             "ftp_percentage": performance_data.get("ftp_percentage"),
             "work_avg_power": performance_data.get("work_avg_power"),
+            "power_zone_name": performance_data.get("power_zone_name"),
             "vo2_max_expected_effect": performance_data.get("vo2_max_expected_effect"),
             "threshold_expected_effect": performance_data.get(
                 "threshold_expected_effect"
