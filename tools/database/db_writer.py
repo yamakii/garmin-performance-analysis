@@ -311,6 +311,35 @@ class GarminDBWriter:
         """
         )
 
+        # Create form_baseline_history table (for trend analysis)
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS form_baseline_history (
+                history_id INTEGER PRIMARY KEY,
+                user_id VARCHAR DEFAULT 'default',
+                condition_group VARCHAR DEFAULT 'flat_road',
+                metric VARCHAR,
+                model_type VARCHAR,
+
+                coef_alpha FLOAT,
+                coef_d FLOAT,
+                coef_a FLOAT,
+                coef_b FLOAT,
+
+                period_start DATE NOT NULL,
+                period_end DATE NOT NULL,
+                trained_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+                n_samples INTEGER,
+                rmse FLOAT,
+                speed_range_min FLOAT,
+                speed_range_max FLOAT,
+
+                UNIQUE(user_id, condition_group, metric, period_start, period_end)
+            )
+        """
+        )
+
         # Create form_evaluations table
         conn.execute(
             """
@@ -377,6 +406,32 @@ class GarminDBWriter:
             )
         """
         )
+
+        # Create sequence for form_evaluations if it doesn't exist
+        try:
+            conn.execute("SELECT nextval('form_evaluations_seq')")
+        except Exception:
+            # Sequence doesn't exist, create it
+            max_id_result = conn.execute(
+                "SELECT COALESCE(MAX(eval_id), 0) FROM form_evaluations"
+            ).fetchone()
+            start_value = max_id_result[0] + 1 if max_id_result else 1
+            conn.execute(
+                f"CREATE SEQUENCE IF NOT EXISTS form_evaluations_seq START {start_value}"
+            )
+
+        # Create sequence for form_baseline_history if it doesn't exist
+        try:
+            conn.execute("SELECT nextval('form_baseline_history_seq')")
+        except Exception:
+            # Sequence doesn't exist, create it
+            max_id_result = conn.execute(
+                "SELECT COALESCE(MAX(history_id), 0) FROM form_baseline_history"
+            ).fetchone()
+            start_value = max_id_result[0] + 1 if max_id_result else 1
+            conn.execute(
+                f"CREATE SEQUENCE IF NOT EXISTS form_baseline_history_seq START {start_value}"
+            )
 
         # Create sequence for section_analyses if it doesn't exist
         try:

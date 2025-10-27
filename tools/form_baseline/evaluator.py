@@ -70,6 +70,94 @@ def _load_models_from_file(model_file: Path) -> dict[str, GCTPowerModel | Linear
     }
 
 
+def _load_models_from_db(
+    db_path: str,
+    activity_date: str,
+    user_id: str = "default",
+    condition_group: str = "flat_road",
+) -> dict[str, GCTPowerModel | LinearModel]:
+    """Load trained models from DuckDB form_baseline_history.
+
+    Selects the baseline period that covers the activity_date
+    (where period_start <= activity_date <= period_end).
+
+    Args:
+        db_path: Path to DuckDB database
+        activity_date: Activity date in YYYY-MM-DD format
+        user_id: User identifier (default: 'default')
+        condition_group: Condition group name (default: 'flat_road')
+
+    Returns:
+        Dictionary of models: {'gct': GCTPowerModel, 'vo': LinearModel, 'vr': LinearModel}
+
+    Raises:
+        ValueError: If no baseline found for the activity date
+    """
+    conn = duckdb.connect(db_path, read_only=True)
+
+    try:
+        # Query baseline history for period covering activity_date
+        baselines = conn.execute(
+            """
+            SELECT metric, coef_alpha, coef_d, coef_a, coef_b,
+                   n_samples, rmse, speed_range_min, speed_range_max
+            FROM form_baseline_history
+            WHERE user_id = ?
+              AND condition_group = ?
+              AND period_start <= ?
+              AND period_end >= ?
+            """,
+            [user_id, condition_group, activity_date, activity_date],
+        ).fetchall()
+
+        if not baselines:
+            raise ValueError(
+                f"No baseline found for activity_date={activity_date}, "
+                f"user_id={user_id}, condition_group={condition_group}"
+            )
+
+        # Parse baselines by metric
+        models: dict[str, GCTPowerModel | LinearModel] = {}
+        for row in baselines:
+            metric, alpha, d, a, b, n_samples, rmse, speed_min, speed_max = row
+
+            if metric == "gct":
+                models["gct"] = GCTPowerModel(
+                    alpha=float(alpha),
+                    d=float(d),
+                    rmse=float(rmse),
+                    n_samples=int(n_samples),
+                    speed_range=(float(speed_min), float(speed_max)),
+                )
+            elif metric == "vo":
+                models["vo"] = LinearModel(
+                    a=float(a),
+                    b=float(b),
+                    rmse=float(rmse),
+                    n_samples=int(n_samples),
+                    speed_range=(float(speed_min), float(speed_max)),
+                )
+            elif metric == "vr":
+                models["vr"] = LinearModel(
+                    a=float(a),
+                    b=float(b),
+                    rmse=float(rmse),
+                    n_samples=int(n_samples),
+                    speed_range=(float(speed_min), float(speed_max)),
+                )
+
+        # Validate all metrics present
+        if len(models) != 3 or not all(m in models for m in ["gct", "vo", "vr"]):
+            raise ValueError(
+                f"Incomplete baseline data. Found metrics: {list(models.keys())}"
+            )
+
+        return models
+
+    finally:
+        conn.close()
+
+
 def _get_splits_data(
     db_path: str,
     activity_id: int,
@@ -174,10 +262,16 @@ def evaluate_and_store(
     """
     # Load models
     if model_file is None:
-        # Default location: tools/form_baseline/models/flat_road.json
-        model_file = Path(__file__).parent / "models" / f"{condition_group}.json"
-
-    models = _load_models_from_file(model_file)
+        # Default: Load from DuckDB form_baseline_history
+        models = _load_models_from_db(
+            db_path=db_path,
+            activity_date=activity_date,
+            user_id="default",
+            condition_group=condition_group,
+        )
+    else:
+        # Legacy: Load from static JSON file
+        models = _load_models_from_file(model_file)
 
     # Get actual data from splits
     splits_data = _get_splits_data(db_path, activity_id)
