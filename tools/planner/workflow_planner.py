@@ -55,6 +55,7 @@ class WorkflowPlanner:
             ValueError: If no activity found for date
             ValueError: If multiple activities found (user must specify activity_id)
         """
+        from tools.form_baseline.evaluator import evaluate_and_store
         from tools.ingest.garmin_worker import GarminIngestWorker
 
         logger.info(f"Starting workflow for date: {date}")
@@ -72,7 +73,33 @@ class WorkflowPlanner:
                 f"Data collection failed: {ingest_result.get('error', 'Unknown error')}"
             )
 
-        # Step 2: Data validation (precheck.json removed - using defaults)
+        # Step 2: Form evaluation (NEW)
+        logger.info(f"Evaluating form metrics for activity {activity_id}")
+        form_evaluation_status = "not_evaluated"
+        try:
+            evaluation_result = evaluate_and_store(
+                activity_id=activity_id,
+                activity_date=date,
+                db_path=str(self.db_path),
+            )
+            form_evaluation_status = "success"
+            logger.info(
+                f"Form evaluation complete: overall_score={evaluation_result['overall_score']:.1f}/5.0"
+            )
+        except FileNotFoundError as e:
+            # Model file not found - expected during Phase 1 development
+            logger.warning(f"Form evaluation skipped: {e}")
+            form_evaluation_status = "model_not_found"
+        except ValueError as e:
+            # Missing splits data or other data issues
+            logger.error(f"Form evaluation failed: {e}")
+            form_evaluation_status = "failed"
+        except Exception as e:
+            # Unexpected errors should not break the workflow
+            logger.error(f"Form evaluation unexpected error: {e}", exc_info=True)
+            form_evaluation_status = "error"
+
+        # Step 3: Data validation (precheck.json removed - using defaults)
         validation_status = "passed"
         quality_score = 1.0
 
@@ -81,12 +108,14 @@ class WorkflowPlanner:
             "date": date,
             "validation_status": validation_status,
             "quality_score": quality_score,
+            "form_evaluation_status": form_evaluation_status,  # NEW
             "files": ingest_result["files"],
             "timestamp": datetime.now().isoformat(),
         }
 
         logger.info(
-            f"Workflow completed: validation={validation_status}, quality={quality_score}"
+            f"Workflow completed: validation={validation_status}, "
+            f"quality={quality_score}, form_evaluation={form_evaluation_status}"
         )
         return result
 
