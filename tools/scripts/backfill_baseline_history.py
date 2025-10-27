@@ -49,24 +49,26 @@ def parse_year_month(year_month_str: str) -> datetime:
 
 
 def generate_month_range(start_date: datetime, end_date: datetime) -> list[str]:
-    """Generate list of YYYY-MM strings for all months in range.
+    """Generate list of YYYY-MM strings for months in range (2021 and 2025 only).
 
     Args:
         start_date: Start month (inclusive)
         end_date: End month (inclusive)
 
     Returns:
-        List of month strings in YYYY-MM format
+        List of month strings in YYYY-MM format (filtered to 2021 and 2025)
 
     Example:
-        >>> generate_month_range(datetime(2024, 10, 1), datetime(2024, 12, 1))
-        ['2024-10', '2024-11', '2024-12']
+        >>> generate_month_range(datetime(2024, 10, 1), datetime(2025, 12, 1))
+        ['2025-10', '2025-11', '2025-12']  # Only 2025 months
     """
     months = []
     current = start_date
 
     while current <= end_date:
-        months.append(current.strftime("%Y-%m"))
+        # Only include months from 2021 or 2025
+        if current.year in (2021, 2025):
+            months.append(current.strftime("%Y-%m"))
         current += relativedelta(months=1)
 
     return months

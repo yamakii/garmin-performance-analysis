@@ -14,7 +14,7 @@ from dateutil.relativedelta import relativedelta
 def analyze_form_trend(
     db_path: str,
     activity_date: str,
-    comparison_months_back: int = 3,
+    comparison_months_back: int = 1,
 ) -> dict[str, Any]:
     """Analyze form trend by comparing model coefficients with past period.
 
@@ -33,7 +33,7 @@ def analyze_form_trend(
     Args:
         db_path: Path to DuckDB database
         activity_date: Activity date in YYYY-MM-DD format
-        comparison_months_back: Number of months to look back (default: 3)
+        comparison_months_back: Number of months to look back (default: 1)
 
     Returns:
         Dictionary containing:
@@ -55,10 +55,10 @@ def analyze_form_trend(
         >>> result = analyze_form_trend(
         ...     db_path="data/database/garmin_performance.duckdb",
         ...     activity_date="2025-10-25",
-        ...     comparison_months_back=3
+        ...     comparison_months_back=1
         ... )
         >>> print(result['interpretation_text'])
-        3ヶ月前と比較して接地時間が5%短縮しました。フォームが進化しています。
+        1ヶ月前と比較して接地時間が5%短縮しました。フォームが進化しています。
     """
     try:
         activity_dt = datetime.strptime(activity_date, "%Y-%m-%d")

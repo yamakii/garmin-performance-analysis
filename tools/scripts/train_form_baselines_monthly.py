@@ -27,7 +27,7 @@ from tools.form_baseline.trainer import GCTPowerModel, LinearModel
 
 
 def parse_year_month(year_month_str: str) -> tuple[datetime, datetime]:
-    """Parse YYYY-MM string and calculate 6-month rolling window.
+    """Parse YYYY-MM string and calculate 2-month rolling window.
 
     Args:
         year_month_str: Year-month string (e.g., "2025-10")
@@ -37,14 +37,14 @@ def parse_year_month(year_month_str: str) -> tuple[datetime, datetime]:
 
     Example:
         >>> parse_year_month("2025-10")
-        (datetime(2025, 5, 1), datetime(2025, 10, 31))
+        (datetime(2025, 9, 1), datetime(2025, 10, 31))
     """
     try:
         # Parse target year-month
         target_date = datetime.strptime(year_month_str, "%Y-%m")
 
-        # Calculate period_start: 6 months before target month
-        period_start = target_date - relativedelta(months=5)
+        # Calculate period_start: 2 months before target month (1 month back)
+        period_start = target_date - relativedelta(months=1)
 
         # Calculate period_end: last day of target month
         if target_date.month == 12:
@@ -64,7 +64,7 @@ def parse_year_month(year_month_str: str) -> tuple[datetime, datetime]:
 def main() -> int:
     """Main entry point for monthly training."""
     parser = argparse.ArgumentParser(
-        description="Train form baseline models using 6-month rolling window"
+        description="Train form baseline models using 2-month rolling window"
     )
     parser.add_argument(
         "--year-month",
@@ -95,7 +95,7 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    # Parse year-month and calculate 6-month window
+    # Parse year-month and calculate 2-month window
     try:
         period_start, period_end = parse_year_month(args.year_month)
     except ValueError as e:
@@ -104,7 +104,7 @@ def main() -> int:
 
     if args.verbose:
         print(
-            f"Training period: {period_start.date()} to {period_end.date()} (6 months)",
+            f"Training period: {period_start.date()} to {period_end.date()} (2 months)",
             file=sys.stderr,
         )
 
@@ -118,7 +118,7 @@ def main() -> int:
     try:
         conn = duckdb.connect(str(db_path), read_only=False)
 
-        # Query with date filter for 6-month window
+        # Query with date filter for 2-month window (2021 and 2025 data only)
         query = f"""
             SELECT
                 s.pace_seconds_per_km,
@@ -136,6 +136,7 @@ def main() -> int:
               AND s.pace_seconds_per_km < 600
               AND a.activity_date >= '{period_start.date()}'
               AND a.activity_date <= '{period_end.date()}'
+              AND (EXTRACT(YEAR FROM a.activity_date) = 2021 OR EXTRACT(YEAR FROM a.activity_date) = 2025)
         """
 
         df = conn.execute(query).df()
