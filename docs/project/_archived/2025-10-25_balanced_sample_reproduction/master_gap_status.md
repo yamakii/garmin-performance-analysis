@@ -1,9 +1,10 @@
 # BALANCED SAMPLE Reproduction - GAP統合ステータス（検証済み）
 
-**最終更新**: 2025-10-27 08:10 (Gap 11完全実装完了)
+**最終更新**: 2025-10-27 10:20 (アーカイブ完了)
 **プロジェクト**: `balanced_sample_reproduction`
-**GitHub Issue**: #[番号未割当]
+**GitHub Issue**: #41 (Closed)
 **完成度**: ✅ **100% (15/15 GAPs)**
+**ステータス**: ✅ アーカイブ済み
 
 ---
 
@@ -259,12 +260,13 @@ uv run python /tmp/verify_gaps.py
 - Threshold/Interval レポート - 厳密な構造で再生成
 - `master_gap_status.md` - 完了記録
 
-**次のアクション**:
-- [ ] GitHub Issue クローズ（Issue番号未割当）
-- [ ] プロジェクトディレクトリを `docs/project/_archived/` へ移動（オプション）
+**完了アクション**:
+- [x] GitHub Issue #41 作成・クローズ（2025-10-27 10:20）
+- [x] プロジェクトディレクトリを `docs/project/_archived/` へ移動（2025-10-27 10:20）
 
 ---
 
-**最終更新**: 2025-10-27 08:10
-**プロジェクトステータス**: ✅ 完了
+**最終更新**: 2025-10-27 10:20
+**プロジェクトステータス**: ✅ 完了・アーカイブ済み
+**GitHub Issue**: #41 (Closed)
 **完成度**: 100% (15/15 GAPs)
