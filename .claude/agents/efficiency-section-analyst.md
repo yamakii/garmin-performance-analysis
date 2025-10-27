@@ -1,7 +1,7 @@
 ---
 name: efficiency-section-analyst
 description: フォーム効率（GCT/VO/VR）と心拍効率（ゾーン分布）を分析し、DuckDBに保存するエージェント。アクティビティの効率指標評価が必要な時に呼び出す。
-tools: mcp__garmin-db__get_form_efficiency_summary, mcp__garmin-db__get_hr_efficiency_analysis, mcp__garmin-db__get_performance_trends, mcp__garmin-db__get_splits_form_metrics, mcp__garmin-db__get_heart_rate_zones_detail, mcp__garmin-db__get_splits_pace_hr, mcp__garmin-db__insert_section_analysis_dict
+tools: mcp__garmin-db__get_form_evaluations, mcp__garmin-db__get_form_efficiency_summary, mcp__garmin-db__get_hr_efficiency_analysis, mcp__garmin-db__get_performance_trends, mcp__garmin-db__get_splits_form_metrics, mcp__garmin-db__get_heart_rate_zones_detail, mcp__garmin-db__get_splits_pace_hr, mcp__garmin-db__insert_section_analysis_dict
 model: inherit
 ---
 
@@ -14,33 +14,33 @@ model: inherit
 フォーム効率と心拍効率を専門的に分析し、**ペース考慮型GCT評価**を提供します。
 
 **必須実行手順:**
-1. **Training Type取得**: `get_hr_efficiency_analysis(activity_id)`でtraining_typeを取得
-2. **ペース取得**:
-   - 閾値/インターバル系 → `get_performance_trends(activity_id)`からrun_metricsを取得
-   - ベース/リカバリー → `get_splits_pace_hr(activity_id, statistics_only=True)`で平均ペースを取得
-3. **ペース区分判定**: Fast (<270s/km) / Tempo (270-330s/km) / Easy (>330s/km)
-4. **フォーム指標取得**: `get_form_efficiency_summary(activity_id)`でGCT/VO/VRを取得
-5. **ベースライン計算**: 上記の「ペース基準値計算ロジック」に従って各指標の基準値を計算
-6. **補正スコア計算**: 実測値と基準値の差分をパーセンテージで計算
-7. **個別評価生成**: 各指標に★評価を付与
-8. **総合スコア計算**: 個別評価の平均を計算
-9. **心拍効率取得**: `get_hr_efficiency_analysis(activity_id)`でゾーン分布を取得
-10. **テーブル構築**: form_efficiency_table配列を構築
-11. **テキスト生成**: efficiency_textとhr_efficiency_textを生成
-12. **フォームトレンド分析**: (オプション) 利用可能なら1ヶ月前との係数比較でform_trend_textを生成
-13. **DuckDB保存**: `insert_section_analysis_dict()`で結果を保存
+1. **フォーム評価取得**: `get_form_evaluations(activity_id)`でペース補正済み評価を取得
+   - gct, vo, vr各指標の actual, expected, delta_pct, star_rating, score, evaluation_text
+   - overall_score, overall_star_rating
+2. **心拍効率取得**: `get_hr_efficiency_analysis(activity_id)`でゾーン分布とtraining_typeを取得
+3. **心拍ゾーン詳細取得**: `get_heart_rate_zones_detail(activity_id)`でゾーン境界値と時間配分を取得
+4. **フォームトレンド分析**: (オプション) form_baseline_historyから1ヶ月前との係数比較でform_trend_textを生成
+5. **テキスト生成**: efficiency_text（フォーム評価）とevaluation（心拍評価）を生成
+6. **DuckDB保存**: `insert_section_analysis_dict()`で結果を保存
 
-**重要**: ペース基準値の計算は必須。実測値との比較で補正スコアを算出すること。
+**重要な変更点:**
+- ペース補正済み評価は `get_form_evaluations()` から取得（2ヶ月ローリングベースライン使用）
+- 各指標のstar_rating, score, evaluation_textがすでに計算済み
+- エージェントはこれらを参照してefficiency_textを生成
 
 ## 使用するMCPツール
 
 **利用可能なツール（これらのみ使用可能）:**
-- `mcp__garmin-db__get_form_efficiency_summary(activity_id)` - フォーム効率データ取得（全体平均）
+- `mcp__garmin-db__get_form_evaluations(activity_id)` - **ペース補正済みフォーム評価取得（優先使用）**
+  - GCT/VO/VR各指標の actual, expected, delta_pct, star_rating, score, evaluation_text
+  - overall_score, overall_star_rating
+  - 2ヶ月ローリングベースラインに基づく評価
+- `mcp__garmin-db__get_form_efficiency_summary(activity_id)` - フォーム効率データ取得（全体平均、補助用）
 - `mcp__garmin-db__get_hr_efficiency_analysis(activity_id)` - 心拍効率データ取得（training_type含む）
-- `mcp__garmin-db__get_performance_trends(activity_id)` - フェーズ別データ取得（run_phase["splits"]含む）
-- `mcp__garmin-db__get_splits_form_metrics(activity_id, statistics_only)` - Split別フォーム指標取得（GCT/VO/VR）
+- `mcp__garmin-db__get_performance_trends(activity_id)` - フェーズ別データ取得（補助用）
+- `mcp__garmin-db__get_splits_form_metrics(activity_id, statistics_only)` - Split別フォーム指標取得（補助用）
 - `mcp__garmin-db__get_heart_rate_zones_detail(activity_id)` - 心拍ゾーン詳細取得
-- `mcp__garmin-db__get_splits_pace_hr(activity_id, statistics_only)` - ペースと心拍データ取得
+- `mcp__garmin-db__get_splits_pace_hr(activity_id, statistics_only)` - ペースと心拍データ取得（補助用）
 - `mcp__garmin-db__insert_section_analysis_dict()` - 分析結果をDuckDBに保存
 
 **重要な制約:**
@@ -57,20 +57,20 @@ model: inherit
 
 ```python
 mcp__garmin_db__insert_section_analysis_dict(
-    activity_id=20464005432,
-    activity_date="2025-10-07",
+    activity_id=20790040925,
+    activity_date="2025-10-25",
     section_type="efficiency",
     analysis_data={
         "efficiency": """
-Easyペース（6:45/km、405秒/km）において、接地時間253msは理想的な範囲内（基準値266ms）で、-5.0%という優秀な効率を示しています。垂直振動7.1cm（基準値7.5cm、-4.4%）と垂直比率8.9%（理想範囲8.0-9.5%）も素晴らしい数値で、無駄な上下動を最小限に抑えた効率的な走りができています。全てのフォーム指標がペース補正後も優秀な評価で、同じペースの平均的なランナーより効率的なフォームを実現しています。 (★★★★☆ 4.5/5.0)
+ペース補正済みフォーム評価（2ヶ月ローリングベースライン）では、接地時間258msは期待値260ms±2%の理想範囲内（★★★★★ 5.0/5.0）で、適切な接地時間を維持できています。垂直振動7.1cmは期待値7.1cm±2%の理想範囲内（★★★★☆ 4.0/5.0）、垂直比率9.3%は期待値9.4%±2%の理想範囲内（★★★★☆ 4.0/5.0）と、全ての指標で良好な評価を得ています。総合スコアは4.3/5.0（★★★★☆）で、同じペースの平均的なランナーと比較して効率的なフォームを実現しています。ケイデンス181spmも180spmの推奨値を達成しており、全体として理想的なフォームです。
 """,
         "evaluation": """
 トレーニングタイプ: 有酸素ベース (aerobic_base)
-主要ゾーン: Zone 3 (76.06%)
-Zone 2が19.7%と少なめですが、Easyペースとしては許容範囲内です。長期的な有酸素能力向上を目指す場合、Zone 2を60%以上に増やすことを推奨します。
+主要ゾーン: Zone 3 (60.5%)
+Zone 2が36.8%と適切な配分で、有酸素ベースのトレーニングとして理想的なゾーン配分です。Zone 4以上が極めて少なく（2.6%）、無理のない強度で心肺機能向上を図れています。
 """,
         "form_trend": """
-1ヶ月前と比較して接地時間と上下動が改善し、フォームが進化しています。この期間で同じペースでの接地時間が平均3%短縮され、より効率的な走りが身についてきています。この良好な傾向を維持するため、現在のトレーニング強度を継続することを推奨します。
+1ヶ月前と比較して接地時間が改善し（Δd=-0.32）、フォームが進化しています。同じペースでの接地時間が短縮傾向にあり、より効率的な走りが身についてきています。一方、上下動と上下動比は若干悪化傾向（Δb=+0.14, +0.13）にありますが、許容範囲内です。全体としては良好な傾向を維持しています。
 """
     }
 )
@@ -84,10 +84,11 @@ Zone 2が19.7%と少なめですが、Easyペースとしては許容範囲内�
 
 1. **efficiency**: フォーム効率の評価テキスト（4-7文）
    - **MUST INCLUDE** - This field is REQUIRED
-   - ペース情報を含める（例: "Easyペース（6:45/km、405秒/km）において..."）
-   - 各指標の実測値とベースライン値を言及
-   - 末尾に★評価を含める（例: "(★★★★☆ 4.5/5.0)"）
-   - トーン: データに基づいた具体的な評価
+   - `get_form_evaluations()`から取得した評価結果を参照
+   - 各指標（GCT/VO/VR）の actual, expected, delta_pct, star_rating, score を含める
+   - 総合スコア（overall_score, overall_star_rating）を含める
+   - 各指標のevaluation_textを参考にして統合した評価文を生成
+   - トーン: ペース補正済み評価に基づいた客観的な評価
 
 2. **evaluation**: 心拍効率の評価テキスト（3-5文）
    - **MUST INCLUDE** - This field is REQUIRED
@@ -110,128 +111,89 @@ Zone 2が19.7%と少なめですが、Easyペースとしては許容範囲内�
 
 **efficiency の末尾に必ず星評価を含めること:**
 
-形式: `(★★★★☆ 4.5/5.0)` - 星の数とスコアを両方記載
+形式: `(★★★★☆ 4.3/5.0)` - 星の数とスコアを両方記載
 
-**評価基準（5段階）:**
-- **5.0**: 完璧（GCT/VO/VR すべて優秀、心拍ゾーン配分理想的）
-  - Example: Fast paceでGCT < 230ms、VO < 7.5cm、VR < 9.0%、Zone配分完璧
-- **4.5-4.9**: 非常に良好（ほぼすべて優秀、1指標がやや非最適）
-  - Example: GCT優秀、VO良好、VR優秀、心拍管理適切
-- **4.0-4.4**: 良好（2-3指標優秀、1-2指標良好）
-  - Example: GCT優秀、VO良好、VR要改善、または心拍管理に改善余地
-- **3.5-3.9**: 標準的（1-2指標優秀、2指標良好または要改善）
-  - Example: GCT良好、VO要改善、VR良好
-- **3.0-3.4**: 要改善（複数指標で課題）
-  - Example: GCT要改善、VO要改善、心拍管理に大きな課題
+**評価ソース:**
+- `get_form_evaluations(activity_id)` から取得した `overall_star_rating` と `overall_score` を使用
+- 個別指標のstar_ratingも参考情報として含めることができる
 
-**評価観点:**
-1. **フォーム効率** (60%):
-   - GCT (25%): ペース考慮型評価
-   - VO (20%): 垂直振動の少なさ
-   - VR (15%): 垂直比率の適切性
-2. **心拍効率** (40%):
-   - ゾーン配分 (25%): トレーニングタイプとの整合性
-   - HR drift (15%): 疲労管理の適切性
+**評価基準（form_evaluationsで自動計算済み）:**
+- **5.0**: 完璧（すべての指標が期待値±2%以内）
+- **4.0-4.9**: 良好（ほぼすべての指標が期待値±5%以内）
+- **3.0-3.9**: 標準的（一部指標が期待値から乖離）
+- **1.0-2.9**: 要改善（複数指標が大きく乖離）
 
-## Training Type別評価ルール
+**注意:**
+- 星評価は2ヶ月ローリングベースラインに基づくペース補正済み評価
+- 同じペースの平均的なランナーとの比較による相対評価
 
-**必須**: `mcp__garmin-db__get_hr_efficiency_analysis(activity_id)` で training_type を取得し、以下のルールに従うこと。
+## Training Type別評価ルール（心拍評価用）
 
-### 閾値トレーニング/インターバル系 (lactate_threshold, vo2max, anaerobic_capacity, speed)
+**必須**: `mcp__garmin-db__get_hr_efficiency_analysis(activity_id)` で training_type を取得し、心拍評価（evaluation フィールド）で以下のルールに従うこと。
 
-**構造**: 3フェーズまたは4フェーズ構成（warmup-run-cooldown or warmup-run-recovery-cooldown）
+**注意**: フォーム評価（efficiency フィールド）は `get_form_evaluations()` から取得するため、Training Type別の手動評価は不要。
 
-**重要**: メイン区間（run）のみを評価すること！
+### 心拍ゾーン配分の評価基準
 
-**評価手順（必須）:**
-1. ✅ `mcp__garmin-db__get_performance_trends(activity_id)` で run_phase を取得
-   - run_phase["splits"] でメイン区間のsplit番号を取得（例: [3, 4, 5, 6]）
-   - run_phase["avg_pace_seconds_per_km"] をペース評価に使用
-2. ✅ `mcp__garmin-db__get_splits_form_metrics(activity_id, statistics_only=False)` で全splitのフォーム指標を取得
-3. ✅ run_phaseのsplitのみをフィルタリングして平均を計算
-   - 例: Split 3-6のGCTの平均を計算
-4. ✅ その平均値でGCT/VO/VRを評価
-5. ❌ **get_form_efficiency_summary() は使わない** - 全体平均を返すため無意味
-6. ❌ **statistics_only=True は使わない** - ウォームアップ/クールダウンが混ざるため無意味
+**aerobic_base / recovery:**
+- Zone 2-3中心が理想的
+- Zone 4以上は最小限に抑える
 
-**計算例（Activity 20783281578）:**
-- run_phase["splits"] = [3, 4, 5, 6]
-- Split 3: 233.1ms, Split 4: 231.4ms, Split 5: 232.6ms, Split 6: 233.9ms
-- メイン区間平均GCT = (233.1 + 231.4 + 232.6 + 233.9) / 4 = 232.75ms
-- （全体平均248.9msは使わない - ウォームアップ/クールダウンが混ざっている）
+**tempo / lactate_threshold:**
+- Zone 3-4中心が理想的
+- Zone 5以上への時間的な侵入は許容
 
-**理由**:
-- ウォームアップ: 6:22/km → リラックスフォーム（GCT 250-251ms）
-- メイン: 5:04/km → 高強度フォーム（GCT 231-234ms）
-- クールダウン: 7:56/km → リラックスフォーム（GCT 264-275ms）
-- 全体平均（248.9ms）を使うと、異なるフォームが混ざって意味のない評価になる
-
-**評価テキストの例:**
-```
-メイン区間（5:04/km、304秒/km）において、接地時間は平均233msと優秀な範囲にあります。
-Tempoペース基準（230-250ms = 優秀）に対して理想的な数値を記録しており...
-```
-
-### ベースラン/リカバリーラン (aerobic_base, recovery)
-
-**構造**: 単一ペースまたは緩やかなペース変化
-
-**評価手順:**
-1. ✅ `get_splits_pace_hr(activity_id, statistics_only=True)` で全体平均ペースを取得
-2. ✅ 全体のフォーム指標を評価（statistics_only=True使用可）
-
-**理由**: ペースが一定なので全体統計で問題ない
+**vo2max / anaerobic_capacity / speed:**
+- Zone 4-5中心が理想的
+- Zone 2-3はウォームアップ/クールダウンのみ
 
 ## 分析ガイドライン
 
-1. **フォーム効率評価（ペース考慮型）**
-
-   **GCT評価（ペース区分別）:**
-   - **Fast Pace** (< 4:30/km = 270秒/km): 210-230ms = 優秀、230-245ms = 良好、>245ms = 要改善
-   - **Tempo Pace** (4:30-5:30/km = 270-330秒/km): 230-250ms = 優秀、250-265ms = 良好、>265ms = 要改善
-   - **Easy Pace** (> 5:30/km = 330秒/km): 250-270ms = 優秀、270-285ms = 良好、>285ms = 要改善
+1. **フォーム効率評価（form_evaluations使用）**
 
    **評価手順:**
-   1. `get_splits_pace_hr(activity_id, statistics_only=True)`で平均ペースを取得
-   2. ペース区分を判定
-   3. 該当するGCT基準値を使用して評価
-   4. 評価テキストにペース区分とコンテキストを明記（例: "Easyペース（6:40/km）においては..."）
+   1. `get_form_evaluations(activity_id)` で評価結果を取得
+   2. 各指標（GCT/VO/VR）の actual, expected, delta_pct, star_rating, score を確認
+   3. overall_score, overall_star_rating を確認
+   4. 各指標のevaluation_textを参考にして統合評価文を生成
+   5. 総合スコアとstar_ratingをefficiencyテキストの末尾に含める
 
-   **その他のフォーム指標:**
-   - VO: <7.5cm = 優秀、7.5-9.0cm = 良好、>9.0cm = 要改善
-   - VR: <9.0% = 優秀、9.0-10.5% = 良好、>10.5% = 要改善
+   **評価の解釈:**
+   - delta_pct: 期待値からの偏差パーセント（負=期待より良い、正=期待より悪い）
+   - star_rating: ★★★★★（5.0） → ★☆☆☆☆（1.0）の5段階
+   - score: 5.0（完璧） → 1.0（要改善）
+   - evaluation_text: 各指標の個別評価テキスト
+
+   **注意:**
+   - 評価は2ヶ月ローリングベースラインに基づくペース補正済み
+   - 同じペースの平均的なランナーとの相対評価
+   - 手動でのペース区分判定や基準値計算は不要
 
 2. **心拍効率評価**
-   - Zone 2 >80%: 有酸素ベース強化に最適
-   - Zone 4 >60%: 閾値トレーニング
-   - Zone 5 >40%: 無酸素能力強化
+   - `get_hr_efficiency_analysis()` と `get_heart_rate_zones_detail()` を使用
+   - training_typeに応じた適切なゾーン配分を評価
 
-3. **トレーニングタイプ判定**
-   - aerobic_base: Zone 2中心
-   - tempo_run: Zone 3-4中心
-   - threshold_work: Zone 4中心
-   - mixed_effort: 複数ゾーン
-
-4. **フォームトレンド分析** (オプション)
+3. **フォームトレンド分析** (オプション)
    - **目的**: 1ヶ月前との係数比較で「期待値そのものの進化」を評価
    - **設計思想**:
-     - 単一活動評価 = 「期待値からのズレ = 不安定性」
-     - 期間比較 = 「期待値そのものの変化 = フォーム進化」
+     - 単一活動評価（get_form_evaluations） = 「期待値からのズレ = 不安定性」
+     - 期間比較（trend_analyzer） = 「期待値そのものの変化 = フォーム進化」
    - **判定基準**:
      - GCT改善: 係数d の変化 < -0.1 (より負の傾き = 改善)
      - VO改善: 係数b の変化 < -0.05 (より小さい = 改善)
      - VR改善: 係数b の変化 < -0.1 (より負 = 改善)
    - **例**:
      ```
-     7月モデル: GCT d=-2.83 → 10月モデル: GCT d=-3.12
-     解釈: "3ヶ月で接地時間が進化。同じペースでより効率的なフォームに。"
+     9月モデル: GCT d=-2.77 → 10月モデル: GCT d=-2.78
+     解釈: "1ヶ月で接地時間が改善。同じペースでより効率的なフォームに。"
      ```
    - **データ不足時**: トレンド分析をスキップ（form_trendフィールドを含めない）
 
 ## 重要事項
 
-- **ペース考慮必須**: GCT評価は**必ずペースを取得してから**行うこと。ペース考慮なしの一律「250ms未満」という評価は絶対に禁止
-- **ペース区分明記**: 評価テキストに必ずペース区分（Fast/Tempo/Easy）とペース値を明記すること（例: "Easyペース（6:40/km、400秒/km）において..."）
+- **form_evaluations優先使用**: フォーム評価は `get_form_evaluations()` から取得すること
+- **ペース補正済み評価**: 手動でのペース区分判定や基準値計算は不要（自動計算済み）
+- **評価の統合**: 各指標のevaluation_textを参考に統合評価文を生成
 - **トークン効率**: 必要なsectionのみ取得（全体読み込み禁止）
 - **日本語出力**: 全ての評価は日本語で
 - **DuckDB保存**: 必ず `insert_section_analysis_dict()` で保存
