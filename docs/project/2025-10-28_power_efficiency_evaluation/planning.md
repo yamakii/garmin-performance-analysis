@@ -6,7 +6,11 @@
 - **ステータス**: 計画中
 - **GitHub Issue**: [#43](https://github.com/yamakii/garmin-performance-analysis/issues/43)
 - **優先度**: High
-- **推定工数**: 8-10時間
+- **推定工数**:
+  - Phase 0: 1-2時間
+  - Phase 1: 6-8時間
+  - Phase 2: 2-3時間
+  - **Total**: 9-13時間 (Phase 3除く)
 
 ---
 
@@ -79,153 +83,223 @@ Raw Data (API) → DuckDB (splits.power) → (unused)
                         ↓
                   GCT/VO/VR Baseline Training (速度ベース)
                         ↓
+                  form_baseline_history (gct, vo, vr)
+                        ↓
                   form_evaluations (パワー効率なし)
                         ↓
                   efficiency-section-analyst → Report
 ```
 
-**Target State:**
+**Target State (Phase 1):**
 ```
-Raw Data (API) → DuckDB (splits.power) → Power Efficiency Baseline Training
-                        ↓                          ↓
-                  GCT/VO/VR Baseline          power_efficiency_baselines (or form_baseline_history拡張)
-                        ↓                          ↓
+Raw Data (API) → DuckDB
+                   ├─ splits.power (1km laps)
+                   ├─ body_composition.body_mass_kg
+                   └─ activities.body_mass_kg (NEW)
+                        ↓
+                  W/kg Normalization (power_w / body_mass_kg)
+                        ↓
+                  Power Efficiency Baseline Training
+                  Model: speed = a + b * power_wkg
+                        ↓
+                  form_baseline_history (NEW: metric='power')
+                        ↓
                   Form Evaluation (activity単位)
                         ↓
                   form_evaluations (パワー効率列追加)
                         ↓
-                  MCP Tools (get_power_efficiency_analysis)
+                  MCP Tools (get_form_evaluations)
                         ↓
                   efficiency-section-analyst → Report (パワー効率セクション追加)
 ```
 
 **Components:**
-1. **Baseline Training** (`tools/form_baseline/trainer.py`)
-   - PowerEfficiencyModelクラス追加
-   - 2ヶ月ローリングウィンドウで VO/Power = a + b * speed を学習
 
-2. **Evaluation** (`tools/form_baseline/evaluator.py`)
-   - evaluate_power_efficiency() 関数追加
-   - form_evaluationsにパワー効率データを挿入
+1. **Phase 0: 準備（1-2時間）**
+   - form_baselinesテーブル削除（0レコード、未使用）
+   - 依存コード削除
+   - activitiesテーブルにbody_mass_kg列追加
 
-3. **Database** (`tools/database/writer.py`)
-   - insert_power_efficiency_baseline() 追加
-   - update_form_evaluations_with_power() 追加
+2. **Phase 1: 基本実装（6-8時間）**
+   - Baseline Training: `speed = a + b * power_wkg`モデル
+   - 時間窓: 1km splits使用（既存構造活用）
+   - スコアリング: 個別星評価のみ（既存システムと並列）
+   - モード: 単一評価基準（全アクティビティ共通）
 
-4. **MCP Tools** (`servers/garmin_db_server.py`)
-   - 新規: `get_power_efficiency_analysis(activity_id)`
-   - 既存拡張: `get_form_evaluations()` にパワー効率データ含める
+3. **Phase 2: 統合スコア（2-3時間）**
+   - 100点満点統合スコア導入
+   - トレーニングモード別重み付け（hr_efficiency.training_type活用）
 
-5. **Agent Integration** (`.claude/agents/efficiency-section-analyst.md`)
-   - パワー効率評価ロジック追加
-   - レポートテンプレート更新
+4. **Phase 3: 高精度化（将来拡張）**
+   - 60-120s時間窓実装（time_series_metricsから生成）
+   - モード別重み最適化
 
 **Design Decisions:**
 
-**Decision 1: Database Schema - Option A (form_baseline_history 拡張) vs Option B (新テーブル)**
-- **Option A (推奨)**: 既存 `form_baseline_history` テーブルに列追加
-  - Pros: 統一されたbaseline管理、既存インフラ活用、コード重複なし
-  - Cons: 列数増加（3列追加: power_coef_a, power_coef_b, power_rmse）
-  - Schema:
-    ```sql
-    ALTER TABLE form_baseline_history ADD COLUMN power_coef_a DOUBLE;
-    ALTER TABLE form_baseline_history ADD COLUMN power_coef_b DOUBLE;
-    ALTER TABLE form_baseline_history ADD COLUMN power_rmse DOUBLE;
-    ```
-  - 既存列: metric='vo', coef_a, coef_b (speed係数)
-  - 新規行: metric='vo_per_power', coef_a, coef_b (speed係数)
+**Decision 1: 専門家設計（Option B）ベース + 段階的実装**
+- **採用理由**: W/kg正規化、因果関係明確なモデル、統合スコアの先進性
+- **修正点**: 既存システム（1km splits, form_baseline_history）を活用してコスト削減
 
-- **Option B**: 新テーブル `power_efficiency_baselines` 作成
-  - Pros: スキーマ独立、将来拡張容易
-  - Cons: テーブル管理増加、コード重複（trainer/reader）
-  - Schema:
-    ```sql
-    CREATE TABLE power_efficiency_baselines (
-      baseline_id INTEGER PRIMARY KEY,
-      user_id VARCHAR,
-      condition_group VARCHAR,
-      metric VARCHAR,  -- 'vo_per_power'
-      coef_a DOUBLE,
-      coef_b DOUBLE,
-      period_start DATE,
-      period_end DATE,
-      n_samples INTEGER,
-      rmse DOUBLE
-    );
-    ```
+**Decision 2: 時間窓 - Phase分割アプローチ**
+- **Phase 1**: 1km splits使用（240-420秒窓、実装コスト最小）
+- **Phase 3**: 60-120s窓実装（time_series_metricsから新規作成）
+- **理由**: 早期リリース優先、将来の精度向上も担保
 
-**選択: Option A (form_baseline_history拡張)**
-- 理由: 既存システムとの一貫性、コード重複回避、管理コスト削減
-- 実装: metric='vo_per_power' として新しい行を挿入
+**Decision 3: W/kg正規化 - activitiesテーブル拡張**
+- **Schema**: `ALTER TABLE activities ADD COLUMN body_mass_kg DOUBLE;`
+- **理由**:
+  - 1アクティビティ1体重が自然
+  - splitsへのデータ重複回避
+  - body_compositionからJOINで取得容易
 
-**Decision 2: VO/Power 比の単位**
-- **選択: cm/W** (Vertical Oscillation cm / Power W)
-- 理由: 直感的（小さいほど効率的）、計算簡単
-- 例: VO=10cm, Power=250W → 0.04 cm/W
+**Decision 4: モデル方向 - 専門家設計採用**
+- **Model**: `speed_mps = a + b * power_wkg`
+- **理由**:
+  - 因果関係明確（パワー→速度）
+  - W/kg正規化と整合
+  - efficiency_index = speed / power_wkg が直感的
 
-**Decision 3: 評価基準**
-```python
-# 期待値からの乖離率で評価
-deviation = (actual - expected) / expected
+**Decision 5: スコアリング - 段階的実装**
+- **Phase 1**: 個別星評価（power_efficiency_rating = "★★★★☆"）
+- **Phase 2**: 統合100点スコア + モード別重み
+- **理由**: ベースライン確立後に最適化
 
-# 小さいほど効率的（同じパワーで少ないVO）
-if deviation <= -0.05:     # -5%以下
-    rating = "★★★★★"  # 非常に効率的
-elif deviation <= -0.02:   # -2%～-5%
-    rating = "★★★★☆"  # 効率的
-elif deviation <= 0.02:    # ±2%以内
-    rating = "★★★☆☆"  # 標準
-elif deviation <= 0.05:    # +2%～+5%
-    rating = "★★☆☆☆"  # やや非効率
-else:                       # +5%以上
-    rating = "★☆☆☆☆"  # 非効率
-```
+**Decision 6: form_baselines削除**
+- **Action**: `DROP TABLE form_baselines;`
+- **理由**: 0レコード、未使用、form_baseline_historyが実運用
 
 ### データモデル
 
-**Option A: form_baseline_history 拡張 (推奨)**
-```sql
--- 既存テーブル拡張
-ALTER TABLE form_baseline_history ADD COLUMN power_coef_a DOUBLE;
-ALTER TABLE form_baseline_history ADD COLUMN power_coef_b DOUBLE;
-ALTER TABLE form_baseline_history ADD COLUMN power_rmse DOUBLE;
+**Phase 0: 準備（テーブル削除 + 拡張）**
 
--- 新しい行の挿入例
-INSERT INTO form_baseline_history (
-    user_id, condition_group, metric,
-    coef_a, coef_b, rmse,
-    power_coef_a, power_coef_b, power_rmse,
-    period_start, period_end, n_samples
-) VALUES (
-    'default', 'flat_road', 'vo_per_power',
-    NULL, NULL, NULL,  -- GCT/VO/VR用（使用しない）
-    0.08, -0.005, 0.002,  -- パワー効率用
-    '2025-08-28', '2025-10-28', 45
+```sql
+-- 1. 未使用テーブル削除
+DROP TABLE IF EXISTS form_baselines;  -- 0レコード、未使用
+
+-- 2. activitiesテーブル拡張（体重データ追加）
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS body_mass_kg DOUBLE;
+
+-- 3. body_compositionから体重データをpopulate
+UPDATE activities a
+SET body_mass_kg = (
+  SELECT bc.body_mass_kg
+  FROM body_composition bc
+  WHERE bc.activity_date <= a.activity_date
+  ORDER BY bc.activity_date DESC
+  LIMIT 1
 );
 ```
 
-**form_evaluations 拡張:**
+**Phase 1: form_baseline_history拡張（パワーモデル係数）**
+
 ```sql
-ALTER TABLE form_evaluations ADD COLUMN power_actual DOUBLE;
-ALTER TABLE form_evaluations ADD COLUMN vo_per_power_actual DOUBLE;
-ALTER TABLE form_evaluations ADD COLUMN vo_per_power_expected DOUBLE;
-ALTER TABLE form_evaluations ADD COLUMN power_efficiency_score DOUBLE;  -- (actual - expected) / expected
-ALTER TABLE form_evaluations ADD COLUMN power_efficiency_rating VARCHAR;  -- ★★★☆☆
-ALTER TABLE form_evaluations ADD COLUMN power_efficiency_needs_improvement BOOLEAN;
+-- 既存テーブルにパワーモデル用列を追加
+ALTER TABLE form_baseline_history ADD COLUMN IF NOT EXISTS power_a DOUBLE;
+ALTER TABLE form_baseline_history ADD COLUMN IF NOT EXISTS power_b DOUBLE;
+ALTER TABLE form_baseline_history ADD COLUMN IF NOT EXISTS power_rmse DOUBLE;
+
+-- 新しい行の挿入例（metric='power'）
+INSERT INTO form_baseline_history (
+    user_id, condition_group, metric,
+    coef_alpha, coef_d, coef_a, coef_b,  -- GCT/VO/VR用（NULL）
+    power_a, power_b, power_rmse,        -- パワーモデル用
+    period_start, period_end, n_samples
+) VALUES (
+    'default', 'flat_road', 'power',
+    NULL, NULL, NULL, NULL,  -- GCT/VO/VR用は未使用
+    2.5, 0.8, 0.12,          -- Model: speed = 2.5 + 0.8 * power_wkg
+    '2025-09-01', '2025-10-31', 357
+);
 ```
 
-**Column Definitions:**
-- `power_actual`: 平均パワー（W）、splits.powerから計算
-- `vo_per_power_actual`: 実測VO/パワー比（cm/W）
-- `vo_per_power_expected`: baseline予測値（cm/W）
-- `power_efficiency_score`: 乖離率 (actual - expected) / expected
+**モデル定義:**
+```
+speed_mps = power_a + power_b * power_wkg
+
+Where:
+  - speed_mps: 速度 (m/s)
+  - power_wkg: 体重補正済みパワー (W/kg) = power_w / body_mass_kg
+  - power_a: 切片（ベース速度）
+  - power_b: 傾き（パワー感度、正の値）
+
+Interpretation:
+  - power_b が大きい: パワー増加に対して速度が増えやすい（効率的）
+  - power_a が大きい: 低パワーでも速い（ベース効率が高い）
+
+Efficiency Metrics:
+  - efficiency_index = speed / power_wkg (m/s per W/kg)
+  - cost_per_speed = power_wkg / speed (W/kg per m/s)
+```
+
+**form_evaluations 拡張:**
+
+```sql
+-- Phase 1: 基本パワー効率評価
+ALTER TABLE form_evaluations ADD COLUMN IF NOT EXISTS power_avg_w DOUBLE;
+ALTER TABLE form_evaluations ADD COLUMN IF NOT EXISTS power_wkg DOUBLE;
+ALTER TABLE form_evaluations ADD COLUMN IF NOT EXISTS speed_actual_mps DOUBLE;
+ALTER TABLE form_evaluations ADD COLUMN IF NOT EXISTS speed_expected_mps DOUBLE;
+ALTER TABLE form_evaluations ADD COLUMN IF NOT EXISTS power_efficiency_score DOUBLE;
+ALTER TABLE form_evaluations ADD COLUMN IF NOT EXISTS power_efficiency_rating VARCHAR;
+ALTER TABLE form_evaluations ADD COLUMN IF NOT EXISTS power_efficiency_needs_improvement BOOLEAN;
+
+-- Phase 2: 統合スコア
+ALTER TABLE form_evaluations ADD COLUMN IF NOT EXISTS integrated_score DOUBLE;
+ALTER TABLE form_evaluations ADD COLUMN IF NOT EXISTS training_mode VARCHAR;
+```
+
+**Column Definitions (Phase 1):**
+- `power_avg_w`: 平均パワー（W）、splits.powerから計算
+- `power_wkg`: 体重補正済みパワー（W/kg）= power_avg_w / body_mass_kg
+- `speed_actual_mps`: 実測速度（m/s）、splitsから計算
+- `speed_expected_mps`: baseline予測速度（m/s）= power_a + power_b * power_wkg
+- `power_efficiency_score`: 乖離率 = (actual - expected) / expected
 - `power_efficiency_rating`: 星評価（★☆☆☆☆～★★★★★）
+  - score < -0.05: ★★★★★ (期待より5%以上速い = 非常に効率的)
+  - score < -0.02: ★★★★☆ (期待より2-5%速い = 効率的)
+  - -0.02 <= score <= 0.02: ★★★☆☆ (期待通り = 標準)
+  - score > 0.02: ★★☆☆☆ (期待より2-5%遅い = やや非効率)
+  - score > 0.05: ★☆☆☆☆ (期待より5%以上遅い = 非効率)
 - `power_efficiency_needs_improvement`: 改善必要フラグ（score > 0.05）
 
-**既存データとの関係:**
-- `splits.power`: 1km lap単位の平均パワー（W）
-- `form_evaluations.vo_actual`: 実測VO（cm）
-- 計算: `vo_per_power_actual = vo_actual / (splits.power の平均)`
+**Column Definitions (Phase 2):**
+- `integrated_score`: 統合100点スコア
+  ```python
+  integrated_score = 100 - (
+    w_gct * penalty_gct +
+    w_vo * penalty_vo +
+    w_vr * penalty_vr +
+    w_power * penalty_power
+  )
+  ```
+- `training_mode`: トレーニングモード（hr_efficiency.training_typeから取得）
+  - "interval_sprint": w_power=0.40 (パワー効率重視)
+  - "tempo_threshold": w_power=0.35
+  - "low_moderate": w_power=0.20 (パワー効率軽視)
+
+**データフロー例:**
+```python
+# Phase 1実装時
+1. splitsテーブルから取得:
+   - power_avg = 250W
+   - speed_avg = 3.5 m/s
+
+2. activitiesテーブルから体重取得:
+   - body_mass_kg = 65 kg
+
+3. W/kg計算:
+   - power_wkg = 250 / 65 = 3.85 W/kg
+
+4. baseline予測（form_baseline_historyから取得）:
+   - power_a = 2.5, power_b = 0.8
+   - speed_expected = 2.5 + 0.8 * 3.85 = 5.58 m/s
+
+5. 評価:
+   - speed_actual = 3.5 m/s
+   - score = (3.5 - 5.58) / 5.58 = -0.373 (期待より37%遅い)
+   - rating = "★☆☆☆☆" (非効率)
+   - needs_improvement = True
+```
 
 ### API/インターフェース設計
 
@@ -233,26 +307,53 @@ ALTER TABLE form_evaluations ADD COLUMN power_efficiency_needs_improvement BOOLE
 
 ```python
 class PowerEfficiencyModel:
-    """VO/パワー比を速度で回帰するモデル。
+    """速度をW/kgで回帰するモデル（専門家設計）。
 
-    Model: vo_per_power = a + b * speed
-    - vo_per_power: VO (cm) / Power (W)
-    - speed: m/s
+    Model: speed = a + b * power_wkg
+    - speed: 速度 (m/s)
+    - power_wkg: 体重補正済みパワー (W/kg)
+
+    Interpretation:
+    - b > 0: パワーが増えれば速度も増える（正の相関）
+    - a が大きい: ベース速度が高い（低パワーでも速い = 効率的）
     """
 
     def __init__(self):
-        self.coef_a: float = 0.0
-        self.coef_b: float = 0.0
-        self.rmse: float = 0.0
+        self.power_a: float = 0.0  # 切片
+        self.power_b: float = 0.0  # 傾き
+        self.power_rmse: float = 0.0
 
-    def fit(self, speeds: list[float], vo_per_power_values: list[float]) -> None:
-        """線形回帰で係数を学習。"""
-        # scipy.stats.linregress または sklearn.LinearRegression
-        pass
+    def fit(self, power_wkg_values: list[float], speeds: list[float]) -> None:
+        """線形回帰で係数を学習。
 
-    def predict(self, speed: float) -> float:
-        """速度からVO/パワー比を予測。"""
-        return self.coef_a + self.coef_b * speed
+        Args:
+            power_wkg_values: W/kg値のリスト
+            speeds: 対応する速度 (m/s) のリスト
+        """
+        from scipy.stats import linregress
+
+        slope, intercept, r_value, p_value, std_err = linregress(
+            power_wkg_values, speeds
+        )
+
+        self.power_b = slope
+        self.power_a = intercept
+
+        # RMSE計算
+        predictions = [self.predict(p) for p in power_wkg_values]
+        residuals = [(actual - pred) ** 2 for actual, pred in zip(speeds, predictions)]
+        self.power_rmse = (sum(residuals) / len(residuals)) ** 0.5
+
+    def predict(self, power_wkg: float) -> float:
+        """W/kgから速度を予測。
+
+        Args:
+            power_wkg: 体重補正済みパワー (W/kg)
+
+        Returns:
+            予測速度 (m/s)
+        """
+        return self.power_a + self.power_b * power_wkg
 
 
 def train_power_efficiency_baseline(
@@ -273,19 +374,24 @@ def train_power_efficiency_baseline(
 
     Returns:
         {
-            'coef_a': float,
-            'coef_b': float,
-            'rmse': float,
+            'power_a': float,        # 切片
+            'power_b': float,        # 傾き
+            'power_rmse': float,     # RMSE
             'n_samples': int,
             'period_start': str,
             'period_end': str
         }
+
+    Implementation:
+        1. DuckDB から splits データ取得
+           - splits.average_speed (m/s)
+           - splits.power (W)
+           - activities.body_mass_kg
+        2. 条件フィルタ（condition_group、期間）
+        3. W/kg計算: power_wkg = power / body_mass_kg
+        4. PowerEfficiencyModel で回帰
+        5. form_baseline_history に挿入（metric='power'）
     """
-    # 1. DuckDB から splits データ取得（パワー、VO、速度）
-    # 2. 条件フィルタ（condition_group、期間）
-    # 3. VO/パワー比を計算
-    # 4. PowerEfficiencyModel で回帰
-    # 5. form_baseline_history に挿入
     pass
 ```
 
@@ -310,23 +416,31 @@ def evaluate_power_efficiency(
 
     Returns:
         {
-            'power_actual': float,              # W
-            'vo_per_power_actual': float,       # cm/W
-            'vo_per_power_expected': float,     # cm/W
-            'power_efficiency_score': float,    # deviation ratio
-            'power_efficiency_rating': str,     # ★★★☆☆
-            'power_efficiency_needs_improvement': bool
+            'power_avg_w': float,              # 平均パワー (W)
+            'power_wkg': float,                # W/kg
+            'speed_actual_mps': float,         # 実測速度 (m/s)
+            'speed_expected_mps': float,       # 予測速度 (m/s)
+            'power_efficiency_score': float,   # 乖離率
+            'power_efficiency_rating': str,    # ★★★☆☆
+            'power_efficiency_needs_improvement': bool,
+            'efficiency_index': float,         # speed / power_wkg
+            'cost_per_speed': float            # power_wkg / speed
         }
 
-        パワーデータがない場合: None を返す（エラーにしない）
+        パワーデータがない場合: None を返す（エラーにしない、後方互換性）
+
+    Implementation:
+        1. form_baseline_historyからbaseline取得（metric='power', activity_date時点）
+        2. splitsから平均パワーと速度を取得
+        3. パワーがNoneなら None を返す（2021年などパワーなし）
+        4. activitiesから体重を取得
+        5. W/kg計算: power_wkg = power_avg / body_mass_kg
+        6. 予測速度計算: speed_expected = power_a + power_b * power_wkg
+        7. 乖離率計算: score = (speed_actual - speed_expected) / speed_expected
+        8. 星評価付与（_calculate_power_efficiency_rating）
+        9. efficiency_index, cost_per_speed計算
+        10. form_evaluationsに挿入
     """
-    # 1. Baseline取得（activity_date 時点の最新）
-    # 2. splits からパワー、VO、速度を取得
-    # 3. パワーがNoneなら None を返す（後方互換性）
-    # 4. VO/パワー比計算
-    # 5. 期待値計算（baseline.predict(speed)）
-    # 6. スコア・評価計算
-    # 7. form_evaluations に挿入
     pass
 
 
@@ -495,150 +609,326 @@ async def get_form_evaluations(activity_id: int) -> dict:
 
 ## 実装フェーズ
 
-### Phase 1: Database Schema Migration
+### Phase 0: 準備（1-2時間）
 
-**Branch:** `feature/power-efficiency-evaluation`
-**Files Modified:**
-- `tools/database/schema_migrations/` (新規: migration script)
-- `tools/database/writer.py` (schema定義更新)
+**目的:** 未使用テーブル削除 + 体重データ追加
+
+**Branch:** `feature/power-efficiency-prep`
 
 **Tasks:**
 
-1. **Schema Migration Script作成 (TDD: Red)**
+1. **form_baselinesテーブル削除**
    ```python
-   # tests/database/test_power_efficiency_schema.py
-   def test_form_baseline_history_has_power_columns():
-       """form_baseline_historyにパワー効率列が存在する。"""
-       schema = conn.execute("PRAGMA table_info(form_baseline_history)").fetchall()
+   # Test
+   def test_form_baselines_table_not_exists():
+       """form_baselinesテーブルが存在しない。"""
+       tables = conn.execute("SHOW TABLES").fetchall()
+       table_names = [row[0] for row in tables]
+       assert "form_baselines" not in table_names
+   ```
+
+   ```python
+   # Implementation
+   conn.execute("DROP TABLE IF EXISTS form_baselines")
+   ```
+
+2. **依存コード削除**
+   ```bash
+   # form_baselinesへの参照を検索
+   grep -r "form_baselines" tools/ servers/ --include="*.py"
+
+   # 見つかった場合、削除または form_baseline_history に修正
+   ```
+
+3. **activitiesテーブルにbody_mass_kg追加**
+   ```python
+   # Test
+   def test_activities_has_body_mass_column():
+       """activitiesテーブルにbody_mass_kg列が存在する。"""
+       schema = conn.execute("PRAGMA table_info(activities)").fetchall()
        column_names = [row[1] for row in schema]
-       assert "power_coef_a" in column_names
-       assert "power_coef_b" in column_names
-       assert "power_rmse" in column_names
-
-   def test_form_evaluations_has_power_columns():
-       """form_evaluationsにパワー効率列が存在する。"""
-       schema = conn.execute("PRAGMA table_info(form_evaluations)").fetchall()
-       column_names = [row[1] for row in schema]
-       assert "power_actual" in column_names
-       assert "vo_per_power_actual" in column_names
-       # ... 他の列
+       assert "body_mass_kg" in column_names
    ```
 
-2. **Migration実装 (TDD: Green)**
    ```python
-   # tools/database/schema_migrations/add_power_efficiency_columns.py
-   def migrate(db_path: str):
-       conn = duckdb.connect(db_path)
+   # Migration
+   conn.execute("ALTER TABLE activities ADD COLUMN IF NOT EXISTS body_mass_kg DOUBLE")
 
-       # form_baseline_history拡張
-       conn.execute("ALTER TABLE form_baseline_history ADD COLUMN power_coef_a DOUBLE")
-       conn.execute("ALTER TABLE form_baseline_history ADD COLUMN power_coef_b DOUBLE")
-       conn.execute("ALTER TABLE form_baseline_history ADD COLUMN power_rmse DOUBLE")
-
-       # form_evaluations拡張
-       conn.execute("ALTER TABLE form_evaluations ADD COLUMN power_actual DOUBLE")
-       conn.execute("ALTER TABLE form_evaluations ADD COLUMN vo_per_power_actual DOUBLE")
-       conn.execute("ALTER TABLE form_evaluations ADD COLUMN vo_per_power_expected DOUBLE")
-       conn.execute("ALTER TABLE form_evaluations ADD COLUMN power_efficiency_score DOUBLE")
-       conn.execute("ALTER TABLE form_evaluations ADD COLUMN power_efficiency_rating VARCHAR")
-       conn.execute("ALTER TABLE form_evaluations ADD COLUMN power_efficiency_needs_improvement BOOLEAN")
-
-       conn.close()
+   # body_compositionから体重データをpopulate
+   conn.execute("""
+       UPDATE activities a
+       SET body_mass_kg = (
+         SELECT bc.body_mass_kg
+         FROM body_composition bc
+         WHERE bc.activity_date <= a.activity_date
+         ORDER BY bc.activity_date DESC
+         LIMIT 1
+       )
+   """)
    ```
 
-3. **writer.py Schema更新 (TDD: Refactor)**
-   - CREATE TABLE文にパワー効率列を追加
-   - 既存データベースではALTER TABLEで対応
+**Acceptance Criteria:**
+- [ ] form_baselinesテーブルが削除されている
+- [ ] form_baselinesへの参照がコードベースに存在しない
+- [ ] activitiesテーブルにbody_mass_kg列が追加されている
+- [ ] 全activitiesレコードにbody_mass_kgが設定されている（NULL許容）
 
-### Phase 2: Baseline Training Implementation
+---
 
-**Files:**
-- `tools/form_baseline/trainer.py` (拡張)
-- `tests/form_baseline/test_trainer.py` (拡張)
+### Phase 1: 基本実装（6-8時間）
+
+**目的:** speed = a + b * power_wkg モデルの実装
+
+**Branch:** `feature/power-efficiency-phase1`
 
 **Tasks:**
 
-1. **PowerEfficiencyModelクラス (TDD: Red → Green)**
-   ```python
-   # Test
-   def test_power_efficiency_model_fit():
-       model = PowerEfficiencyModel()
-       speeds = [3.5, 4.0, 4.5]  # m/s
-       vo_per_power = [0.04, 0.038, 0.036]  # cm/W
-       model.fit(speeds, vo_per_power)
-       assert model.coef_b < 0  # 速度増加でVO/パワー比減少
+#### 1-1. Database Schema Migration
 
-   def test_power_efficiency_model_predict():
-       model = PowerEfficiencyModel()
-       model.coef_a = 0.05
-       model.coef_b = -0.005
-       predicted = model.predict(4.0)
-       assert abs(predicted - 0.03) < 0.001
-   ```
+```python
+# Test
+def test_form_baseline_history_has_power_columns():
+    """form_baseline_historyにパワーモデル列が存在する。"""
+    schema = conn.execute("PRAGMA table_info(form_baseline_history)").fetchall()
+    column_names = [row[1] for row in schema]
+    assert "power_a" in column_names
+    assert "power_b" in column_names
+    assert "power_rmse" in column_names
 
-2. **train_power_efficiency_baseline関数 (TDD: Red → Green)**
-   ```python
-   # Test
-   def test_train_power_efficiency_baseline(tmp_db_path):
-       """2ヶ月窓でパワー効率baselineを訓練。"""
-       # Setup: splitsデータ挿入（パワー、VO、速度）
-       result = train_power_efficiency_baseline(
-           end_date="2025-10-28",
-           window_months=2,
-           db_path=tmp_db_path
-       )
-       assert result['coef_a'] > 0
-       assert result['coef_b'] < 0  # 速度増加でVO/パワー比減少
-       assert result['n_samples'] > 0
+def test_form_evaluations_has_power_columns():
+    """form_evaluationsにパワー効率列が存在する。"""
+    schema = conn.execute("PRAGMA table_info(form_evaluations)").fetchall()
+    column_names = [row[1] for row in schema]
+    assert "power_avg_w" in column_names
+    assert "power_wkg" in column_names
+    assert "speed_actual_mps" in column_names
+    assert "speed_expected_mps" in column_names
+    assert "power_efficiency_score" in column_names
+    assert "power_efficiency_rating" in column_names
+```
 
-   def test_train_power_efficiency_baseline_no_power_data(tmp_db_path):
-       """パワーデータなし（2021年など）の場合、エラーにしない。"""
-       result = train_power_efficiency_baseline(
-           end_date="2021-06-01",
-           db_path=tmp_db_path
-       )
-       assert result is None  # パワーデータなしでもエラーなし
-   ```
+```python
+# Migration
+conn.execute("ALTER TABLE form_baseline_history ADD COLUMN IF NOT EXISTS power_a DOUBLE")
+conn.execute("ALTER TABLE form_baseline_history ADD COLUMN IF NOT EXISTS power_b DOUBLE")
+conn.execute("ALTER TABLE form_baseline_history ADD COLUMN IF NOT EXISTS power_rmse DOUBLE")
 
-3. **form_baseline_history挿入 (TDD: Green)**
-   - writer.insert_power_efficiency_baseline() 実装
-   - metric='vo_per_power' として挿入
+conn.execute("ALTER TABLE form_evaluations ADD COLUMN IF NOT EXISTS power_avg_w DOUBLE")
+conn.execute("ALTER TABLE form_evaluations ADD COLUMN IF NOT EXISTS power_wkg DOUBLE")
+conn.execute("ALTER TABLE form_evaluations ADD COLUMN IF NOT EXISTS speed_actual_mps DOUBLE")
+conn.execute("ALTER TABLE form_evaluations ADD COLUMN IF NOT EXISTS speed_expected_mps DOUBLE")
+conn.execute("ALTER TABLE form_evaluations ADD COLUMN IF NOT EXISTS power_efficiency_score DOUBLE")
+conn.execute("ALTER TABLE form_evaluations ADD COLUMN IF NOT EXISTS power_efficiency_rating VARCHAR")
+conn.execute("ALTER TABLE form_evaluations ADD COLUMN IF NOT EXISTS power_efficiency_needs_improvement BOOLEAN")
+```
 
-### Phase 3: Evaluation Implementation
+#### 1-2. PowerEfficiencyModel Implementation
 
-**Files:**
-- `tools/form_baseline/evaluator.py` (拡張)
-- `tests/form_baseline/test_evaluator.py` (拡張)
+```python
+# Test
+def test_power_efficiency_model_fit():
+    """W/kgから速度への線形回帰。"""
+    model = PowerEfficiencyModel()
+    power_wkg_values = [3.5, 4.0, 4.5, 5.0]  # W/kg
+    speeds = [2.8, 3.2, 3.6, 4.0]  # m/s (正の相関)
+
+    model.fit(power_wkg_values, speeds)
+
+    assert model.power_b > 0  # パワー増加で速度増加
+    assert model.power_a > 0  # ベース速度
+    assert model.power_rmse >= 0
+
+def test_power_efficiency_model_predict():
+    """予測速度計算。"""
+    model = PowerEfficiencyModel()
+    model.power_a = 1.0
+    model.power_b = 0.6
+
+    predicted = model.predict(4.0)  # power_wkg = 4.0
+    assert abs(predicted - 3.4) < 0.001  # 1.0 + 0.6 * 4.0 = 3.4
+```
+
+#### 1-3. Baseline Training
+
+```python
+# Test
+def test_train_power_efficiency_baseline(tmp_db_path):
+    """2ヶ月窓でパワー効率baselineを訓練。"""
+    result = train_power_efficiency_baseline(
+        end_date="2025-10-28",
+        window_months=2,
+        db_path=tmp_db_path
+    )
+
+    assert result['power_a'] > 0
+    assert result['power_b'] > 0  # パワー増加で速度増加
+    assert result['n_samples'] > 0
+    assert 'period_start' in result
+    assert 'period_end' in result
+
+def test_train_power_efficiency_baseline_no_power_data(tmp_db_path):
+    """パワーデータなし（2021年など）の場合、エラーにしない。"""
+    result = train_power_efficiency_baseline(
+        end_date="2021-06-01",
+        db_path=tmp_db_path
+    )
+    assert result is None  # パワーデータなしでもエラーなし
+```
+
+#### 1-4. Evaluation
+
+```python
+# Test
+def test_evaluate_power_efficiency(tmp_db_path):
+    """パワー効率を評価し、form_evaluationsに挿入。"""
+    result = evaluate_power_efficiency(
+        activity_id=12345,
+        activity_date="2025-10-28",
+        db_path=tmp_db_path
+    )
+
+    assert result['power_avg_w'] > 0
+    assert result['power_wkg'] > 0
+    assert result['speed_actual_mps'] > 0
+    assert result['speed_expected_mps'] > 0
+    assert -1.0 < result['power_efficiency_score'] < 1.0
+    assert result['power_efficiency_rating'] in ["★☆☆☆☆", "★★☆☆☆", "★★★☆☆", "★★★★☆", "★★★★★"]
+    assert isinstance(result['power_efficiency_needs_improvement'], bool)
+
+def test_evaluate_power_efficiency_no_power(tmp_db_path):
+    """パワーデータなしの場合、Noneを返す。"""
+    result = evaluate_power_efficiency(
+        activity_id=67890,
+        activity_date="2021-06-01",
+        db_path=tmp_db_path
+    )
+    assert result is None  # エラーなし、後方互換性
+
+def test_power_efficiency_rating_calculation():
+    """スコアから星評価を計算。"""
+    assert _calculate_power_efficiency_rating(-0.06) == "★★★★★"
+    assert _calculate_power_efficiency_rating(-0.03) == "★★★★☆"
+    assert _calculate_power_efficiency_rating(0.0) == "★★★☆☆"
+    assert _calculate_power_efficiency_rating(0.03) == "★★☆☆☆"
+    assert _calculate_power_efficiency_rating(0.06) == "★☆☆☆☆"
+```
+
+#### 1-5. MCP Tool Integration
+
+```python
+# servers/garmin_db_server.py に追加
+elif name == "get_power_efficiency_analysis":
+    activity_id = arguments["activity_id"]
+    result = db_reader.get_power_efficiency_analysis(activity_id)
+    return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False))]
+```
+
+**Acceptance Criteria:**
+- [ ] PowerEfficiencyModel が speed = a + b * power_wkg を学習・予測できる
+- [ ] train_power_efficiency_baseline が動作し、form_baseline_historyに挿入される
+- [ ] evaluate_power_efficiency が動作し、form_evaluationsに挿入される
+- [ ] パワーデータなしの場合、エラーなく None を返す（後方互換性）
+- [ ] MCP tool get_power_efficiency_analysis が動作する
+- [ ] 全Unit tests pass (pytest -m unit)
+- [ ] 全Integration tests pass (pytest -m integration)
+
+---
+
+### Phase 2: 統合スコア + モード別重み（2-3時間）
+
+**目的:** 100点満点スコア + トレーニングモード別重み付け
+
+**Branch:** `feature/power-efficiency-phase2`
 
 **Tasks:**
 
-1. **evaluate_power_efficiency関数 (TDD: Red → Green)**
-   ```python
-   # Test
-   def test_evaluate_power_efficiency(tmp_db_path):
-       """パワー効率を評価し、form_evaluationsに挿入。"""
-       # Setup: baseline, splits データ
-       result = evaluate_power_efficiency(
-           activity_id=12345,
-           activity_date="2025-10-28",
-           db_path=tmp_db_path
-       )
-       assert result['power_actual'] > 0
-       assert result['vo_per_power_actual'] > 0
-       assert result['power_efficiency_rating'] in ["★☆☆☆☆", "★★☆☆☆", "★★★☆☆", "★★★★☆", "★★★★★"]
+#### 2-1. Schema Extension
 
-   def test_evaluate_power_efficiency_no_power(tmp_db_path):
-       """パワーデータなしの場合、Noneを返す。"""
-       result = evaluate_power_efficiency(
-           activity_id=67890,
-           activity_date="2021-06-01",
-           db_path=tmp_db_path
-       )
-       assert result is None  # エラーなし
+```python
+# Test
+def test_form_evaluations_has_integrated_score_columns():
+    schema = conn.execute("PRAGMA table_info(form_evaluations)").fetchall()
+    column_names = [row[1] for row in schema]
+    assert "integrated_score" in column_names
+    assert "training_mode" in column_names
+```
 
-   def test_power_efficiency_rating_calculation():
-       """スコアから星評価を計算。"""
-       assert _calculate_power_efficiency_rating(-0.06) == "★★★★★"
+```python
+# Migration
+conn.execute("ALTER TABLE form_evaluations ADD COLUMN IF NOT EXISTS integrated_score DOUBLE")
+conn.execute("ALTER TABLE form_evaluations ADD COLUMN IF NOT EXISTS training_mode VARCHAR")
+```
+
+#### 2-2. Integrated Score Calculation
+
+```python
+# Test
+def test_calculate_integrated_score():
+    """統合スコア計算（100点満点、モード別重み）。"""
+    penalties = {
+        'gct': 0.1,  # 10% 悪化
+        'vo': 0.05,  # 5% 悪化
+        'vr': -0.02,  # 2% 改善
+        'power': 0.08  # 8% 悪化
+    }
+
+    # interval_sprint mode: w_power=0.40
+    score = calculate_integrated_score(penalties, training_mode="interval_sprint")
+    # 100 - (0.25*0.1 + 0.25*0.05 + 0.25*0.02 + 0.40*0.08) = 100 - 0.0695 = 93.05
+    assert 92.0 < score < 94.0
+
+    # low_moderate mode: w_power=0.20
+    score = calculate_integrated_score(penalties, training_mode="low_moderate")
+    assert 94.0 < score < 96.0  # パワーペナルティ軽減
+```
+
+#### 2-3. Training Mode Detection
+
+```python
+# Implementation
+def get_training_mode(activity_id: int) -> str:
+    """hr_efficiency.training_typeからトレーニングモードを取得。"""
+    hr_data = db_reader.get_hr_efficiency_analysis(activity_id)
+    return hr_data.get("training_type", "low_moderate")
+
+# Mode weights
+TRAINING_MODE_WEIGHTS = {
+    "interval_sprint": {"w_gct": 0.30, "w_vo": 0.15, "w_vr": 0.15, "w_power": 0.40},
+    "tempo_threshold": {"w_gct": 0.25, "w_vo": 0.20, "w_vr": 0.20, "w_power": 0.35},
+    "low_moderate": {"w_gct": 0.30, "w_vo": 0.25, "w_vr": 0.25, "w_power": 0.20},
+}
+```
+
+**Acceptance Criteria:**
+- [ ] integrated_score列が追加されている
+- [ ] calculate_integrated_score がモード別重みで動作する
+- [ ] training_modeがhr_efficiencyから取得される
+- [ ] 全tests pass
+
+---
+
+### Phase 3: 高精度化（将来拡張）
+
+**目的:** 60-120s時間窓 + モード別重み最適化
+
+**Status:** 計画のみ（Phase 1-2完了後に実装判断）
+
+**Tasks:**
+
+1. **60-120s時間窓テーブル作成**
+   - time_series_metricsから60-120s windowsを生成
+   - power_wkg, speed, form metrics を集約
+
+2. **Window-based Baseline Training**
+   - 1km splitsの代わりに60-120s windowsで学習
+   - より細かい変化を捉える
+
+3. **モード別重み最適化**
+   - Phase 1-2で蓄積したデータを分析
+   - 最適な重み係数を統計的に決定
+
+**Acceptance Criteria:**
+- TBD（Phase 1-2完了後に決定
        assert _calculate_power_efficiency_rating(-0.03) == "★★★★☆"
        assert _calculate_power_efficiency_rating(0.0) == "★★★☆☆"
        assert _calculate_power_efficiency_rating(0.03) == "★★☆☆☆"
