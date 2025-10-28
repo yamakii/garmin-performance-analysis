@@ -4,7 +4,7 @@
 - **プロジェクト名**: `power_efficiency_evaluation`
 - **作成日**: `2025-10-28`
 - **ステータス**: 計画中
-- **GitHub Issue**: TBD
+- **GitHub Issue**: [#43](https://github.com/yamakii/garmin-performance-analysis/issues/43)
 - **優先度**: High
 - **推定工数**: 8-10時間
 
