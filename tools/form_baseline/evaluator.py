@@ -488,3 +488,153 @@ def evaluate_and_store(
         raise RuntimeError(f"Failed to store evaluation results: {e}") from e
 
     return evaluation
+
+
+def _calculate_power_efficiency_rating(score: float) -> str:
+    """Calculate star rating from power efficiency score.
+
+    Args:
+        score: Power efficiency score (actual - expected) / expected
+
+    Returns:
+        Star rating string
+    """
+    if score >= 0.05:
+        return "★★★★★"
+    elif score >= 0.02:
+        return "★★★★☆"
+    elif -0.02 <= score < 0.02:
+        return "★★★☆☆"
+    elif -0.05 <= score < -0.02:
+        return "★★☆☆☆"
+    else:
+        return "★☆☆☆☆"
+
+
+def evaluate_power_efficiency(
+    activity_id: int,
+    activity_date: str,
+    user_id: str = "default",
+    condition_group: str = "flat_road",
+    db_path: str | None = None,
+) -> dict | None:
+    """Evaluate power efficiency for an activity.
+
+    Args:
+        activity_id: Activity ID
+        activity_date: Activity date (YYYY-MM-DD)
+        user_id: User ID
+        condition_group: Condition group
+        db_path: Database path
+
+    Returns:
+        Dict with power efficiency evaluation or None if no power data
+    """
+    import os
+
+    import duckdb
+
+    # Get database path
+    if db_path is None:
+        data_dir = os.getenv("GARMIN_DATA_DIR", "data")
+        db_path = f"{data_dir}/database/garmin_performance.duckdb"
+
+    conn = duckdb.connect(db_path)
+
+    try:
+        # Get baseline
+        baseline = conn.execute(
+            """
+            SELECT power_a, power_b, power_rmse
+            FROM form_baseline_history
+            WHERE user_id = ?
+              AND condition_group = ?
+              AND metric = 'power'
+              AND period_start <= ?
+              AND period_end >= ?
+            """,
+            [user_id, condition_group, activity_date, activity_date],
+        ).fetchone()
+
+        if not baseline:
+            return None
+
+        power_a, power_b, power_rmse = baseline
+
+        # Get average power and speed from splits
+        splits_data = conn.execute(
+            """
+            SELECT AVG(power) as power_avg, AVG(average_speed) as speed_avg
+            FROM splits
+            WHERE activity_id = ?
+              AND power IS NOT NULL
+            """,
+            [activity_id],
+        ).fetchone()
+
+        if not splits_data or splits_data[0] is None:
+            return None
+
+        power_avg, speed_actual = splits_data
+
+        # Get body mass
+        body_mass_row = conn.execute(
+            "SELECT body_mass_kg FROM activities WHERE activity_id = ?",
+            [activity_id],
+        ).fetchone()
+
+        if not body_mass_row:
+            return None
+
+        body_mass = body_mass_row[0]
+
+        if not body_mass or body_mass <= 0:
+            return None
+
+        # Calculate power efficiency
+        power_wkg = power_avg / body_mass
+        speed_expected = power_a + power_b * power_wkg
+        score = (speed_actual - speed_expected) / speed_expected
+        rating = _calculate_power_efficiency_rating(score)
+        needs_improvement = score < -0.02
+
+        # Insert into form_evaluations
+        conn.execute(
+            """
+            INSERT INTO form_evaluations (
+                activity_id,
+                power_avg_w,
+                power_wkg,
+                speed_actual_mps,
+                speed_expected_mps,
+                power_efficiency_score,
+                power_efficiency_rating,
+                power_efficiency_needs_improvement
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                activity_id,
+                power_avg,
+                power_wkg,
+                speed_actual,
+                speed_expected,
+                score,
+                rating,
+                needs_improvement,
+            ],
+        )
+
+        return {
+            "power_avg_w": power_avg,
+            "power_wkg": power_wkg,
+            "speed_actual_mps": speed_actual,
+            "speed_expected_mps": speed_expected,
+            "power_efficiency_score": score,
+            "power_efficiency_rating": rating,
+            "power_efficiency_needs_improvement": needs_improvement,
+        }
+
+    except Exception:
+        return None
+    finally:
+        conn.close()
