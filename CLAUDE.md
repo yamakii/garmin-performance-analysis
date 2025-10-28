@@ -80,6 +80,8 @@ mcp__garmin-db__compare_similar_workouts(
 
 **Physiological Data:**
 - `get_form_efficiency_summary(activity_id)` - Form metrics summary
+- `get_form_evaluations(activity_id)` - **NEW:** Pace-corrected form evaluation with star ratings
+- `get_form_baseline_trend(activity_id, activity_date)` - **NEW:** 1-month baseline coefficient comparison
 - `get_hr_efficiency_analysis(activity_id)` - HR zones + training type
 - `get_heart_rate_zones_detail(activity_id)` - Zone boundaries/distribution
 - `get_vo2_max_data(activity_id)` - VO2 max estimation

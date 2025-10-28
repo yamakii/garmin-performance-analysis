@@ -1,13 +1,21 @@
 # DuckDB Schema Mapping Specification
 
-**Version**: 2.1
-**Last Updated**: 2025-10-24
+**Version**: 2.2
+**Last Updated**: 2025-10-28
 **Database**: `garmin_performance.duckdb`
-**Total Tables**: 11
+**Total Tables**: 14
 
 This document provides comprehensive schema documentation for all DuckDB tables in the Garmin performance analysis system.
 
 ## Change History
+
+### Version 2.2 (2025-10-28)
+- **Unified Form Evaluation System**: Added 3 new tables for pace-corrected form evaluation
+  - `form_baselines`: Statistical model coefficients (power regression for GCT, linear for VO/VR)
+  - `form_baseline_history`: 2-month rolling window baseline history for trend analysis
+  - `form_evaluations`: Activity-level evaluation results with star ratings and needs_improvement flags
+- **New MCP Tools**: `get_form_evaluations()`, `get_form_baseline_trend()`
+- **Benefit**: Eliminates evaluation contradictions between agents, provides data-driven pace-corrected standards
 
 ### Version 2.1 (2025-10-24)
 - **Cadence Column Cleanup**: Simplified time_series_metrics cadence columns
@@ -34,13 +42,16 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 2. [splits](#2-splits) - 1km lap/split data
 3. [time_series_metrics](#3-time_series_metrics) - Second-by-second metrics
 4. [form_efficiency](#4-form_efficiency) - Running form metrics (GCT/VO/VR)
-5. [hr_efficiency](#5-hr_efficiency) - Heart rate efficiency analysis
-6. [heart_rate_zones](#6-heart_rate_zones) - HR zone boundaries and distribution
-7. [performance_trends](#7-performance_trends) - Performance and fatigue patterns
-8. [vo2_max](#8-vo2_max) - VO2 max estimates
-9. [lactate_threshold](#9-lactate_threshold) - Lactate threshold data
-10. [body_composition](#10-body_composition) - Weight and body metrics
-11. [section_analyses](#11-section_analyses) - Agent analysis results
+5. [form_baselines](#5-form_baselines) - Statistical model coefficients for pace-corrected evaluation
+6. [form_baseline_history](#6-form_baseline_history) - 2-month rolling window baseline history
+7. [form_evaluations](#7-form_evaluations) - Pace-corrected activity evaluation results
+8. [hr_efficiency](#8-hr_efficiency) - Heart rate efficiency analysis
+9. [heart_rate_zones](#9-heart_rate_zones) - HR zone boundaries and distribution
+10. [performance_trends](#10-performance_trends) - Performance and fatigue patterns
+11. [vo2_max](#11-vo2_max) - VO2 max estimates
+12. [lactate_threshold](#12-lactate_threshold) - Lactate threshold data
+13. [body_composition](#13-body_composition) - Weight and body metrics
+14. [section_analyses](#14-section_analyses) - Agent analysis results
 
 ---
 
@@ -314,7 +325,193 @@ Analyzes VO changes across splits:
 
 ---
 
-## 5. hr_efficiency
+## 5. form_baselines
+
+**Purpose**: Statistical model coefficients for pace-corrected form expectations
+
+**Primary Key**: `baseline_id`
+**Unique Key**: `(user_id, condition_group, metric)`
+**Row Count**: 3 rows (GCT, VO, VR)
+**Source**: Trained from splits data using `tools/scripts/train_form_baselines.py`
+
+### Schema
+
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| baseline_id | INTEGER | NO | Unique baseline ID |
+| user_id | VARCHAR | NO | User identifier (default: 'default') |
+| condition_group | VARCHAR | NO | Terrain group (default: 'flat_road') |
+| metric | VARCHAR | NO | Metric name ('gct', 'vo', 'vr') |
+| coef_alpha | DOUBLE | YES | GCT: log(v) intercept (α in v = c * (GCT)^d) |
+| coef_d | DOUBLE | YES | GCT: power exponent (d < 0, monotonic) |
+| coef_a | DOUBLE | YES | VO/VR: intercept (a in y = a + b * v) |
+| coef_b | DOUBLE | YES | VO/VR: slope (b) |
+| rmse | DOUBLE | YES | Root mean squared error |
+| n_samples | INTEGER | YES | Number of training samples |
+| speed_range_min | DOUBLE | YES | Minimum speed (m/s) |
+| speed_range_max | DOUBLE | YES | Maximum speed (m/s) |
+| trained_at | TIMESTAMP | NO | Training timestamp |
+
+### Model Types
+
+**GCT (Ground Contact Time):**
+- Model: Power regression `v = exp((log(GCT) - α) / d)`
+- Constraint: d < 0 (ensures monotonicity: faster pace → shorter GCT)
+- Training: Huber regression with outlier removal (IQR method)
+
+**VO (Vertical Oscillation) and VR (Vertical Ratio):**
+- Model: Linear regression `y = a + b * v`
+- Training: Huber regression with outlier removal (IQR method)
+
+### Training Script
+
+```bash
+# Train baselines from all data
+uv run python tools/scripts/train_form_baselines.py \
+  --db-path /path/to/garmin_performance.duckdb \
+  --verbose
+
+# Train monthly with 2-month rolling window
+uv run python tools/scripts/train_form_baselines_monthly.py \
+  --year-month 2025-10 \
+  --db-path /path/to/garmin_performance.duckdb
+```
+
+**Population**: 100% (3 metrics, manually trained)
+
+---
+
+## 6. form_baseline_history
+
+**Purpose**: 2-month rolling window baseline history for trend analysis
+
+**Primary Key**: `history_id`
+**Unique Key**: `(user_id, condition_group, metric, period_start, period_end)`
+**Row Count**: Variable (weekly updates × 3 metrics)
+**Source**: `tools/scripts/train_form_baselines_monthly.py`
+
+### Schema
+
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| history_id | INTEGER | NO | Unique history ID |
+| user_id | VARCHAR | NO | User identifier |
+| condition_group | VARCHAR | NO | Terrain group |
+| metric | VARCHAR | NO | Metric name ('gct', 'vo', 'vr') |
+| period_start | DATE | NO | Training period start date |
+| period_end | DATE | NO | Training period end date (inclusive) |
+| coef_d | DOUBLE | YES | GCT: power exponent (for trend analysis) |
+| coef_b | DOUBLE | YES | VO/VR: slope (for trend analysis) |
+| n_samples | INTEGER | YES | Number of training samples in window |
+| trained_at | TIMESTAMP | NO | Training timestamp |
+
+### Usage in Trend Analysis
+
+The `get_form_baseline_trend(activity_id, activity_date)` MCP tool:
+1. Retrieves current period baseline (activity_date within period_start/period_end)
+2. Retrieves 1-month-ago baseline (activity_date - 1 month within period_start/period_end)
+3. Calculates deltas: Δd (GCT), Δb (VO/VR)
+4. Interprets trends:
+   - GCT: Negative Δd = improvement (shorter GCT at same pace)
+   - VO/VR: Negative Δb = improvement (less bounce at same pace)
+
+**Population**: Variable (depends on monthly training schedule)
+
+---
+
+## 7. form_evaluations
+
+**Purpose**: Pace-corrected activity evaluation results with star ratings
+
+**Primary Key**: `eval_id`
+**Unique Key**: `activity_id`
+**Row Count**: 224 activities (96.9% of activities)
+**Source**: Generated by `workflow_planner` using `tools/form_baseline/evaluator.py`
+
+### Schema
+
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| eval_id | INTEGER | NO | Unique evaluation ID |
+| activity_id | BIGINT | NO | Activity reference (unique) |
+| gct_ms_expected | DOUBLE | YES | Expected GCT from pace (ms) |
+| vo_cm_expected | DOUBLE | YES | Expected VO from pace (cm) |
+| vr_pct_expected | DOUBLE | YES | Expected VR from pace (%) |
+| gct_ms_actual | DOUBLE | YES | Actual GCT (ms) |
+| vo_cm_actual | DOUBLE | YES | Actual VO (cm) |
+| vr_pct_actual | DOUBLE | YES | Actual VR (%) |
+| gct_delta_pct | DOUBLE | YES | GCT deviation (%) |
+| vo_delta_cm | DOUBLE | YES | VO deviation (cm) |
+| vr_delta_pct | DOUBLE | YES | VR deviation (%) |
+| gct_penalty | DOUBLE | YES | GCT penalty score (0-100) |
+| gct_star_rating | VARCHAR | YES | GCT rating (★★★★★ ~ ★☆☆☆☆) |
+| gct_score | DOUBLE | YES | GCT score (0-5.0) |
+| gct_needs_improvement | BOOLEAN | YES | GCT needs improvement flag |
+| gct_evaluation_text | TEXT | YES | GCT evaluation text (Japanese) |
+| vo_penalty | DOUBLE | YES | VO penalty score (0-100) |
+| vo_star_rating | VARCHAR | YES | VO rating (★★★★★ ~ ★☆☆☆☆) |
+| vo_score | DOUBLE | YES | VO score (0-5.0) |
+| vo_needs_improvement | BOOLEAN | YES | VO needs improvement flag |
+| vo_evaluation_text | TEXT | YES | VO evaluation text (Japanese) |
+| vr_penalty | DOUBLE | YES | VR penalty score (0-100) |
+| vr_star_rating | VARCHAR | YES | VR rating (★★★★★ ~ ★☆☆☆☆) |
+| vr_score | DOUBLE | YES | VR score (0-5.0) |
+| vr_needs_improvement | BOOLEAN | YES | VR needs improvement flag |
+| vr_evaluation_text | TEXT | YES | VR evaluation text (Japanese) |
+| cadence_actual | DOUBLE | YES | Actual cadence (spm) |
+| cadence_minimum | DOUBLE | YES | Minimum cadence threshold (180 spm) |
+| cadence_achieved | BOOLEAN | YES | Cadence achievement flag |
+| overall_score | DOUBLE | YES | Overall form score (0-5.0) |
+| overall_star_rating | VARCHAR | YES | Overall rating (★★★★★ ~ ★☆☆☆☆) |
+| evaluated_at | TIMESTAMP | NO | Evaluation timestamp |
+
+### Evaluation Logic
+
+**Score Calculation:**
+- Base score: 100 (perfect)
+- Penalty: Based on deviation from expected value
+  - Ideal range: ±2% → 0 penalty (★★★★★ 5.0)
+  - Good range: 2-5% → 0-30 penalty (★★★★☆ 4.0)
+  - Fair range: 5-10% → 30-60 penalty (★★★☆☆ 3.0)
+  - Poor range: >10% → 60-90 penalty (★★☆☆☆ 2.0 or ★☆☆☆☆ 1.0)
+- Score: (100 - penalty) / 20
+
+**needs_improvement Flag:**
+- `true` if deviation > 5% from expected value
+- `false` if within ideal/good range
+
+**Overall Score:**
+- Average of GCT, VO, VR scores
+- Weighted slightly toward GCT (most important metric)
+
+### MCP Tool
+
+`get_form_evaluations(activity_id)` returns:
+```json
+{
+  "gct": {
+    "expected_ms": 260.1,
+    "actual_ms": 258.3,
+    "delta_pct": -0.7,
+    "score": 5.0,
+    "star_rating": "★★★★★",
+    "needs_improvement": false,
+    "evaluation_text": "258msは期待値260ms±2%の理想範囲内です..."
+  },
+  "vo": { ... },
+  "vr": { ... },
+  "overall_score": 4.3,
+  "overall_star_rating": "★★★★☆",
+  "cadence_actual": 181.27,
+  "cadence_achieved": true
+}
+```
+
+**Population**: 96.9% (requires form_baselines to be trained)
+
+---
+
+## 8. hr_efficiency
 
 **Purpose**: Heart rate efficiency and training quality analysis
 
@@ -377,7 +574,7 @@ True if (zone4_percentage + zone5_percentage) ≥20%
 
 ---
 
-## 6. heart_rate_zones
+## 9. heart_rate_zones
 
 **Purpose**: HR zone boundaries and time distribution
 
@@ -400,7 +597,7 @@ True if (zone4_percentage + zone5_percentage) ≥20%
 
 ---
 
-## 7. performance_trends
+## 10. performance_trends
 
 **Purpose**: Performance patterns and 4-phase workout analysis
 
@@ -486,7 +683,7 @@ Training-type-aware:
 
 ---
 
-## 8. vo2_max
+## 11. vo2_max
 
 **Purpose**: VO2 max estimates
 
@@ -510,7 +707,7 @@ Training-type-aware:
 
 ---
 
-## 9. lactate_threshold
+## 12. lactate_threshold
 
 **Purpose**: Lactate threshold estimates
 
@@ -535,7 +732,7 @@ Training-type-aware:
 
 ---
 
-## 10. body_composition
+## 13. body_composition
 
 **Purpose**: Weight and body composition measurements
 
@@ -568,7 +765,7 @@ Training-type-aware:
 
 ---
 
-## 11. section_analyses
+## 14. section_analyses
 
 **Purpose**: Agent-generated analysis results (5 types per activity)
 
@@ -609,6 +806,9 @@ Training-type-aware:
 | splits | 2,016 | (activity_id, split_index) | activities | 100% |
 | time_series_metrics | 250,186 | (activity_id, timestamp_s) | activities | 100% |
 | form_efficiency | 231 | activity_id | activities | 100% |
+| form_baselines | 3 | baseline_id | - | 100% (manually trained) |
+| form_baseline_history | Variable | history_id | - | Variable (weekly) |
+| form_evaluations | 224 | eval_id (unique: activity_id) | activities | 96.9% |
 | hr_efficiency | 231 | activity_id | activities | 100% |
 | heart_rate_zones | 1,155 | (activity_id, zone_number) | activities | 100% |
 | performance_trends | 231 | activity_id | activities | 100% |
@@ -617,8 +817,8 @@ Training-type-aware:
 | body_composition | Variable | measurement_id | - | Variable |
 | section_analyses | 1,155 | analysis_id | activities | 100% |
 
-**Total Database Size**: ~659 MB
-**Total Tables**: 11
+**Total Database Size**: ~670 MB
+**Total Tables**: 14
 **Total Activities**: 231
 
 ---
@@ -649,11 +849,22 @@ DuckDB Inserters
     ├── lactate_threshold.py
     └── body_composition.py
     ↓
-garmin_performance.duckdb (11 tables)
+garmin_performance.duckdb (14 tables)
+    ↓
+Form Baseline System (NEW)
+    ├── train_form_baselines.py → form_baselines (3 metrics)
+    ├── train_form_baselines_monthly.py → form_baseline_history (weekly)
+    └── evaluator.py → form_evaluations (per activity)
     ↓
 MCP Tools (70-98.8% token reduction)
+    ├── get_form_evaluations(activity_id)
+    ├── get_form_baseline_trend(activity_id, activity_date)
+    └── ... (existing tools)
     ↓
 Analysis Agents (5 types)
+    ├── efficiency-section-analyst (uses get_form_evaluations, get_form_baseline_trend)
+    ├── summary-section-analyst (uses needs_improvement flags)
+    └── ... (other agents)
     ↓
 Markdown Reports (Japanese)
 ```
