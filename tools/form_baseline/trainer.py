@@ -194,3 +194,143 @@ def fit_linear(df: pd.DataFrame, metric: Literal["vo", "vr"]) -> LinearModel:
             float(df_clean["speed_mps"].max()),
         ),
     )
+
+
+def train_power_efficiency_baseline(
+    user_id: str = "default",
+    condition_group: str = "flat_road",
+    end_date: str | None = None,
+    window_months: int = 2,
+    db_path: str | None = None,
+) -> dict | None:
+    """Train power efficiency baseline model.
+
+    Model: speed_mps = power_a + power_b * power_wkg
+
+    Args:
+        user_id: User identifier
+        condition_group: Condition group (e.g., 'flat_road')
+        end_date: End date (YYYY-MM-DD). If None, uses today
+        window_months: Training window in months (default: 2)
+        db_path: Database path. If None, uses GARMIN_DATA_DIR
+
+    Returns:
+        Dict with trained model or None if insufficient data
+        {
+            'power_a': float,
+            'power_b': float,
+            'power_rmse': float,
+            'n_samples': int,
+        }
+
+    Raises:
+        None - Returns None on errors instead of raising
+    """
+    import os
+    from datetime import datetime, timedelta
+
+    import duckdb
+
+    from tools.form_baseline.power_efficiency_model import PowerEfficiencyModel
+
+    # Get database path
+    if db_path is None:
+        data_dir = os.getenv("GARMIN_DATA_DIR", "data")
+        db_path = f"{data_dir}/database/garmin_performance.duckdb"
+
+    # Parse end_date
+    if end_date is None:
+        end_dt = datetime.now()
+    else:
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+
+    start_dt = end_dt - timedelta(days=window_months * 30)
+    period_start = start_dt.strftime("%Y-%m-%d")
+    period_end = end_dt.strftime("%Y-%m-%d")
+
+    # Connect to database
+    conn = duckdb.connect(db_path)
+
+    try:
+        # Query data
+        query = """
+            SELECT
+                s.average_speed AS speed_mps,
+                s.power AS power_w,
+                a.body_mass_kg
+            FROM splits s
+            JOIN activities a ON s.activity_id = a.activity_id
+            WHERE a.activity_date >= ?
+              AND a.activity_date <= ?
+              AND s.power IS NOT NULL
+              AND a.body_mass_kg IS NOT NULL
+              AND s.average_speed > 1.5
+              AND s.average_speed < 7.0
+        """
+
+        result = conn.execute(query, [period_start, period_end]).fetchall()
+
+        if len(result) < 10:
+            # Insufficient data
+            return None
+
+        # Convert to power_wkg and speeds
+        power_wkg_values = []
+        speeds = []
+
+        for row in result:
+            speed_mps, power_w, body_mass_kg = row
+            if power_w is None or body_mass_kg is None or body_mass_kg <= 0:
+                continue
+            power_wkg = power_w / body_mass_kg
+            power_wkg_values.append(power_wkg)
+            speeds.append(speed_mps)
+
+        if len(power_wkg_values) < 10:
+            # Insufficient valid data
+            return None
+
+        # Fit model
+        model = PowerEfficiencyModel()
+        model.fit(power_wkg_values, speeds)
+
+        # Insert into form_baseline_history
+        conn.execute(
+            """
+            INSERT INTO form_baseline_history (
+                user_id,
+                condition_group,
+                metric,
+                model_type,
+                period_start,
+                period_end,
+                n_samples,
+                power_a,
+                power_b,
+                power_rmse
+            ) VALUES (?, ?, 'power', 'linear', ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                user_id,
+                condition_group,
+                period_start,
+                period_end,
+                len(power_wkg_values),
+                model.power_a,
+                model.power_b,
+                model.power_rmse,
+            ],
+        )
+
+        return {
+            "power_a": model.power_a,
+            "power_b": model.power_b,
+            "power_rmse": model.power_rmse,
+            "n_samples": len(power_wkg_values),
+        }
+
+    except Exception:
+        # Return None on any error (graceful degradation)
+        return None
+    finally:
+        conn.close()
