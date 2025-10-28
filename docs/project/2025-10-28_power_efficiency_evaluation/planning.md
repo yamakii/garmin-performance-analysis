@@ -3,10 +3,10 @@
 ## プロジェクト情報
 - **プロジェクト名**: `power_efficiency_evaluation`
 - **作成日**: `2025-10-28`
-- **ステータス**: 計画中
+- **ステータス**: Phase 2 完了（統合スコア実装完了）
 - **GitHub Issue**: [#43](https://github.com/yamakii/garmin-performance-analysis/issues/43)
 - **優先度**: High
-- **推定工数**: 8-10時間
+- **推定工数**: 8-10時間（Phase 2: 2.5時間）
 
 ---
 
@@ -603,6 +603,34 @@ async def get_form_evaluations(activity_id: int) -> dict:
 3. **form_baseline_history挿入 (TDD: Green)**
    - writer.insert_power_efficiency_baseline() 実装
    - metric='vo_per_power' として挿入
+
+**Phase 2 完了状況（2025-10-28）:**
+- ✅ **Phase 2-Revised: 統合スコアシステム実装完了**
+  - Tasks 1-3: Database schema extension (integrated_score, training_mode列追加)
+  - Tasks 4: Training mode detection (get_training_mode実装)
+  - Tasks 5: Integrated score calculation (calculate_integrated_score実装、3つのトレーニングモード重み設定)
+  - Tasks 6: Evaluation extension (evaluate_power_efficiency拡張、統合スコア計算・保存)
+  - Tasks 7: MCP tool extension (get_form_evaluations拡張、integrated_score/training_mode返却)
+
+- **実装内容:**
+  - Database: form_evaluations に integrated_score (DOUBLE), training_mode (VARCHAR) 列追加
+  - Training Mode: hr_efficiency.training_type から自動判定（interval_sprint/tempo_threshold/low_moderate）
+  - Integrated Score: GCT/VO/VR/Power の統合評価（0-100+スケール、トレーニングモード別重み）
+  - Weights:
+    - interval_sprint: w_power=0.40 (パワー効率重視)
+    - tempo_threshold: w_power=0.35
+    - low_moderate: w_power=0.20
+  - evaluate_power_efficiency(): 統合スコア計算・保存機能追加
+  - get_form_evaluations(): 統合スコアとトレーニングモード返却
+
+- **テスト結果:**
+  - Unit tests: 110 passed (form_baseline + database)
+  - Code quality: Black/Ruff/Mypy all passed
+  - Backward compatibility: パワーデータなし活動でも動作確認
+
+- **コミット:**
+  - `78241f5` feat(form-baseline): extend evaluate_power_efficiency to calculate integrated score
+  - `35d45a3` feat(database): extend get_form_evaluations MCP tool to return integrated_score
 
 ### Phase 3: Evaluation Implementation
 
