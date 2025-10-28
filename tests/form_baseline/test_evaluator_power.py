@@ -122,41 +122,43 @@ def tmp_db_with_baseline(tmp_path):
 
 @pytest.mark.integration
 def test_evaluate_power_efficiency(tmp_db_with_baseline):
-    """パワー効率を評価し、form_evaluationsに挿入."""
-    from tools.form_baseline.evaluator import evaluate_power_efficiency
+    """パワー効率の計算が正しく動作する."""
+    import duckdb
+
+    from tools.form_baseline.evaluator import _calculate_power_efficiency_internal
 
     today = datetime.now().date()
-    result = evaluate_power_efficiency(
+    conn = duckdb.connect(tmp_db_with_baseline)
+
+    form_penalties = {"gct": 10.0, "vo": 5.0, "vr": 8.0}
+    result = _calculate_power_efficiency_internal(
+        conn,
         activity_id=1001,
         activity_date=str(today - timedelta(days=5)),
         user_id="default",
         condition_group="flat_road",
-        db_path=tmp_db_with_baseline,
+        form_penalties=form_penalties,
     )
 
-    assert result is not None
-    assert "power_efficiency_score" in result
-    assert "power_efficiency_rating" in result
-
-    # Check database insertion
-    conn = duckdb.connect(tmp_db_with_baseline, read_only=True)
-    row = conn.execute(
-        "SELECT power_avg_w, power_wkg, speed_actual_mps, speed_expected_mps, power_efficiency_score, power_efficiency_rating FROM form_evaluations WHERE activity_id = 1001"
-    ).fetchone()
-
-    assert row is not None
-    assert row[0] > 0  # power_avg_w
-    assert row[1] > 0  # power_wkg
-    assert row[2] > 0  # speed_actual
-    assert row[3] > 0  # speed_expected
-
     conn.close()
+
+    assert result is not None
+    assert "efficiency_score" in result
+    assert "star_rating" in result
+    assert "integrated_score" in result
+    assert result["integrated_score"] is not None
+    assert result["avg_w"] > 0
+    assert result["wkg"] > 0
+    assert result["speed_actual_mps"] > 0
+    assert result["speed_expected_mps"] > 0
 
 
 @pytest.mark.integration
 def test_evaluate_power_efficiency_no_power(tmp_db_with_baseline):
     """パワーデータなしの場合、Noneを返す."""
-    from tools.form_baseline.evaluator import evaluate_power_efficiency
+    import duckdb
+
+    from tools.form_baseline.evaluator import _calculate_power_efficiency_internal
 
     # Add activity without power
     conn = duckdb.connect(tmp_db_with_baseline)
@@ -165,17 +167,19 @@ def test_evaluate_power_efficiency_no_power(tmp_db_with_baseline):
         "INSERT INTO activities VALUES (1002, ?, 75.0)", [today - timedelta(days=3)]
     )
     conn.execute("INSERT INTO splits VALUES (10003, 1002, 3.5, NULL)")
-    conn.close()
 
-    result = evaluate_power_efficiency(
+    result = _calculate_power_efficiency_internal(
+        conn,
         activity_id=1002,
         activity_date=str(today - timedelta(days=3)),
         user_id="default",
         condition_group="flat_road",
-        db_path=tmp_db_with_baseline,
+        form_penalties=None,
     )
 
-    assert result is None
+    conn.close()
+
+    assert result is None  # No power data available
 
 
 @pytest.mark.unit

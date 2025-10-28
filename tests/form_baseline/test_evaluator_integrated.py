@@ -2,7 +2,7 @@
 
 import pytest
 
-from tools.form_baseline.evaluator import evaluate_power_efficiency
+from tools.form_baseline.evaluator import _calculate_power_efficiency_internal
 
 
 @pytest.fixture
@@ -166,18 +166,30 @@ def tmp_db_with_data(tmp_path):
 
 def test_evaluate_power_efficiency_calculates_integrated_score(tmp_db_with_data):
     """評価時に統合スコアも計算される."""
-    result = evaluate_power_efficiency(
+    import duckdb
+
+    conn = duckdb.connect(tmp_db_with_data)
+
+    # Provide form penalties for integrated score
+    form_penalties = {"gct": 10.0, "vo": 5.0, "vr": 8.0}
+
+    result = _calculate_power_efficiency_internal(
+        conn,
         activity_id=12345,
         activity_date="2025-10-28",
-        db_path=tmp_db_with_data,
+        user_id="default",
+        condition_group="flat_road",
+        form_penalties=form_penalties,
     )
+
+    conn.close()
 
     assert result is not None
 
     # Verify individual evaluations still work
-    assert result["power_efficiency_score"] is not None
-    assert "power_avg_w" in result
-    assert "power_wkg" in result
+    assert result["efficiency_score"] is not None
+    assert "avg_w" in result
+    assert "wkg" in result
 
     # Verify integrated score
     assert "integrated_score" in result
@@ -189,12 +201,21 @@ def test_evaluate_power_efficiency_calculates_integrated_score(tmp_db_with_data)
 
 
 def test_evaluate_no_power_returns_none(tmp_db_with_data):
-    """パワーデータなしの場合、evaluate_power_efficiency()はNoneを返す."""
-    result = evaluate_power_efficiency(
+    """パワーデータなしの場合、_calculate_power_efficiency_internal()はNoneを返す."""
+    import duckdb
+
+    conn = duckdb.connect(tmp_db_with_data)
+
+    result = _calculate_power_efficiency_internal(
+        conn,
         activity_id=67890,
         activity_date="2021-06-01",
-        db_path=tmp_db_with_data,
+        user_id="default",
+        condition_group="flat_road",
+        form_penalties=None,
     )
+
+    conn.close()
 
     # Should return None when no power data
     assert result is None
@@ -202,11 +223,23 @@ def test_evaluate_no_power_returns_none(tmp_db_with_data):
 
 def test_integrated_score_uses_correct_weights(tmp_db_with_data):
     """統合スコアが正しい重みを使用している."""
-    result = evaluate_power_efficiency(
+    import duckdb
+
+    conn = duckdb.connect(tmp_db_with_data)
+
+    # Provide form penalties for integrated score
+    form_penalties = {"gct": 10.0, "vo": 5.0, "vr": 8.0}
+
+    result = _calculate_power_efficiency_internal(
+        conn,
         activity_id=12345,
         activity_date="2025-10-28",
-        db_path=tmp_db_with_data,
+        user_id="default",
+        condition_group="flat_road",
+        form_penalties=form_penalties,
     )
+
+    conn.close()
 
     assert result is not None
 
@@ -219,36 +252,37 @@ def test_integrated_score_uses_correct_weights(tmp_db_with_data):
 
 
 def test_integrated_score_updates_on_conflict(tmp_db_with_data):
-    """既存のレコードがある場合、integrated_scoreが更新される."""
-    # First evaluation
-    result1 = evaluate_power_efficiency(
+    """ペナルティが変わると、integrated_scoreも変わる."""
+    import duckdb
+
+    conn = duckdb.connect(tmp_db_with_data)
+
+    # First evaluation with higher penalties
+    form_penalties1 = {"gct": 10.0, "vo": 5.0, "vr": 8.0}
+    result1 = _calculate_power_efficiency_internal(
+        conn,
         activity_id=12345,
         activity_date="2025-10-28",
-        db_path=tmp_db_with_data,
+        user_id="default",
+        condition_group="flat_road",
+        form_penalties=form_penalties1,
     )
 
     assert result1 is not None
     score1 = result1["integrated_score"]
 
-    # Modify form evaluation penalties in database
-    import duckdb
-
-    conn = duckdb.connect(tmp_db_with_data)
-    conn.execute(
-        """
-        UPDATE form_evaluations
-        SET gct_penalty = 5.0, vo_penalty = 3.0, vr_penalty = 4.0
-        WHERE activity_id = 12345
-    """
-    )
-    conn.close()
-
-    # Second evaluation (should update)
-    result2 = evaluate_power_efficiency(
+    # Second evaluation with lower penalties
+    form_penalties2 = {"gct": 5.0, "vo": 3.0, "vr": 4.0}
+    result2 = _calculate_power_efficiency_internal(
+        conn,
         activity_id=12345,
         activity_date="2025-10-28",
-        db_path=tmp_db_with_data,
+        user_id="default",
+        condition_group="flat_road",
+        form_penalties=form_penalties2,
     )
+
+    conn.close()
 
     assert result2 is not None
     score2 = result2["integrated_score"]
