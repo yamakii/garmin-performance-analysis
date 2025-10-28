@@ -49,9 +49,23 @@ def tmp_db_with_baseline(tmp_path):
             metric VARCHAR,
             period_start DATE,
             period_end DATE,
-            power_a FLOAT,
-            power_b FLOAT,
-            power_rmse FLOAT
+            coef_alpha DOUBLE,
+            coef_d DOUBLE,
+            coef_a DOUBLE,
+            coef_b DOUBLE,
+            n_samples INTEGER,
+            rmse DOUBLE,
+            speed_range_min DOUBLE,
+            speed_range_max DOUBLE
+        )
+    """
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE hr_efficiency (
+            activity_id INTEGER PRIMARY KEY,
+            training_type VARCHAR
         )
     """
     )
@@ -60,14 +74,19 @@ def tmp_db_with_baseline(tmp_path):
         """
         CREATE TABLE form_evaluations (
             eval_id INTEGER PRIMARY KEY DEFAULT nextval('seq_eval_id'),
-            activity_id INTEGER,
+            activity_id INTEGER UNIQUE,
+            gct_penalty DOUBLE,
+            vo_penalty DOUBLE,
+            vr_penalty DOUBLE,
             power_avg_w FLOAT,
             power_wkg FLOAT,
             speed_actual_mps FLOAT,
             speed_expected_mps FLOAT,
             power_efficiency_score FLOAT,
             power_efficiency_rating VARCHAR,
-            power_efficiency_needs_improvement BOOLEAN
+            power_efficiency_needs_improvement BOOLEAN,
+            integrated_score DOUBLE,
+            training_mode VARCHAR
         )
     """
     )
@@ -76,8 +95,8 @@ def tmp_db_with_baseline(tmp_path):
     today = datetime.now().date()
     conn.execute(
         """
-        INSERT INTO form_baseline_history (user_id, condition_group, metric, period_start, period_end, power_a, power_b, power_rmse)
-        VALUES ('default', 'flat_road', 'power', ?, ?, 1.0, 0.7, 0.1)
+        INSERT INTO form_baseline_history (user_id, condition_group, metric, period_start, period_end, coef_a, coef_b, rmse, n_samples, speed_range_min, speed_range_max)
+        VALUES ('default', 'flat_road', 'power', ?, ?, 1.0, 0.7, 0.1, 100, 3.0, 6.0)
         """,
         [today - timedelta(days=60), today],
     )
@@ -86,6 +105,9 @@ def tmp_db_with_baseline(tmp_path):
     conn.execute(
         "INSERT INTO activities VALUES (1001, ?, 75.0)", [today - timedelta(days=5)]
     )
+
+    # Insert hr_efficiency (training type)
+    conn.execute("INSERT INTO hr_efficiency VALUES (1001, 'low_moderate')")
 
     # Insert splits with power
     conn.execute("INSERT INTO splits VALUES (10001, 1001, 3.5, 250.0)")  # 3.33 W/kg

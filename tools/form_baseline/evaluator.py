@@ -529,10 +529,17 @@ def evaluate_power_efficiency(
 
     Returns:
         Dict with power efficiency evaluation or None if no power data
+
+    Notes:
+        - Integrated score requires form_evaluations to exist first
+        - Call evaluate_and_store() before this function to populate form penalties
+        - If form penalties don't exist, integrated_score will be None
     """
     import os
 
     import duckdb
+
+    from .integrated_score import calculate_integrated_score
 
     # Get database path
     if db_path is None:
@@ -542,10 +549,27 @@ def evaluate_power_efficiency(
     conn = duckdb.connect(db_path)
 
     try:
-        # Get baseline
+        # Get training mode from hr_efficiency table
+        training_mode_row = conn.execute(
+            """
+            SELECT training_type
+            FROM hr_efficiency
+            WHERE activity_id = ?
+            """,
+            [activity_id],
+        ).fetchone()
+
+        # Default to low_moderate if not found or NULL
+        training_mode = (
+            training_mode_row[0]
+            if (training_mode_row and training_mode_row[0])
+            else "low_moderate"
+        )
+
+        # Get baseline (note: column names are coef_a, coef_b, not power_a, power_b)
         baseline = conn.execute(
             """
-            SELECT power_a, power_b, power_rmse
+            SELECT coef_a, coef_b, rmse
             FROM form_baseline_history
             WHERE user_id = ?
               AND condition_group = ?
@@ -598,6 +622,40 @@ def evaluate_power_efficiency(
         rating = _calculate_power_efficiency_rating(score)
         needs_improvement = score < -0.02
 
+        # Get form evaluation penalties for integrated score
+        # Note: Power penalty is score itself (negative = better, positive = worse)
+        form_eval = conn.execute(
+            """
+            SELECT gct_penalty, vo_penalty, vr_penalty
+            FROM form_evaluations
+            WHERE activity_id = ?
+            """,
+            [activity_id],
+        ).fetchone()
+
+        # Calculate integrated score
+        integrated_score = None
+        if form_eval and all(p is not None for p in form_eval):
+            # Convert penalties from 0-100 scale to ratio (0-1)
+            gct_penalty_ratio = form_eval[0] / 100.0
+            vo_penalty_ratio = form_eval[1] / 100.0
+            vr_penalty_ratio = form_eval[2] / 100.0
+
+            # Power penalty: negative score means better than expected (penalty is negative)
+            # Positive score means worse than expected (penalty is positive)
+            power_penalty_ratio = (
+                -score
+            )  # Flip sign: negative score = positive improvement
+
+            penalties = {
+                "gct": gct_penalty_ratio,
+                "vo": vo_penalty_ratio,
+                "vr": vr_penalty_ratio,
+                "power": power_penalty_ratio,
+            }
+
+            integrated_score = calculate_integrated_score(penalties, training_mode)
+
         # Insert into form_evaluations
         conn.execute(
             """
@@ -609,8 +667,20 @@ def evaluate_power_efficiency(
                 speed_expected_mps,
                 power_efficiency_score,
                 power_efficiency_rating,
-                power_efficiency_needs_improvement
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                power_efficiency_needs_improvement,
+                integrated_score,
+                training_mode
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (activity_id) DO UPDATE SET
+                power_avg_w = EXCLUDED.power_avg_w,
+                power_wkg = EXCLUDED.power_wkg,
+                speed_actual_mps = EXCLUDED.speed_actual_mps,
+                speed_expected_mps = EXCLUDED.speed_expected_mps,
+                power_efficiency_score = EXCLUDED.power_efficiency_score,
+                power_efficiency_rating = EXCLUDED.power_efficiency_rating,
+                power_efficiency_needs_improvement = EXCLUDED.power_efficiency_needs_improvement,
+                integrated_score = EXCLUDED.integrated_score,
+                training_mode = EXCLUDED.training_mode
             """,
             [
                 activity_id,
@@ -621,6 +691,8 @@ def evaluate_power_efficiency(
                 score,
                 rating,
                 needs_improvement,
+                integrated_score,
+                training_mode,
             ],
         )
 
@@ -632,6 +704,8 @@ def evaluate_power_efficiency(
             "power_efficiency_score": score,
             "power_efficiency_rating": rating,
             "power_efficiency_needs_improvement": needs_improvement,
+            "integrated_score": integrated_score,
+            "training_mode": training_mode,
         }
 
     except Exception:
