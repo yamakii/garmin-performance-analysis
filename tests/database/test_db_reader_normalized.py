@@ -476,7 +476,9 @@ class TestGetLactateThresholdData:
 
         assert result is not None
         assert result["heart_rate"] == 165
-        assert result["speed_mps"] == 3.5
+        assert (
+            abs(result["speed_mps"] - (1.0 / 3.5)) < 0.001
+        )  # Converted from 3.5 s/m to m/s
         assert "2025-10-07" in result["date_hr"]  # TIMESTAMP converted to string
         assert result["functional_threshold_power"] == 250
         assert result["power_to_weight"] == 3.5

@@ -86,6 +86,11 @@ def insert_lactate_threshold(
         date_hr = speed_hr.get("calendarDate") if speed_hr else None
         date_power = power.get("calendarDate") if power else None
 
+        # Convert speed from s/m (seconds per meter) to m/s (meters per second)
+        # Garmin API returns pace (s/m), but we store speed (m/s)
+        raw_speed = speed_hr.get("speed") if speed_hr else None
+        speed_mps = (1.0 / raw_speed) if raw_speed else None
+
         # Insert lactate threshold data
         conn.execute(
             """
@@ -103,7 +108,7 @@ def insert_lactate_threshold(
             [
                 activity_id,
                 speed_hr.get("heartRate") if speed_hr else None,
-                speed_hr.get("speed") if speed_hr else None,
+                speed_mps,
                 date_hr,
                 power.get("functionalThresholdPower") if power else None,
                 power.get("powerToWeight") if power else None,
