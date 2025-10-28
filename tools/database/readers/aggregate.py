@@ -1003,6 +1003,8 @@ class AggregateReader(BaseDBReader):
                     "star_rating": str | None,
                     "needs_improvement": bool | None
                 },
+                "integrated_score": float | None,
+                "training_mode": str | None,
                 "overall_score": float,
                 "overall_star_rating": str
             }
@@ -1026,7 +1028,8 @@ class AggregateReader(BaseDBReader):
                         overall_score, overall_star_rating,
                         power_avg_w, power_wkg, speed_actual_mps, speed_expected_mps,
                         power_efficiency_score, power_efficiency_rating,
-                        power_efficiency_needs_improvement
+                        power_efficiency_needs_improvement,
+                        integrated_score, training_mode
                     FROM form_evaluations
                     WHERE activity_id = ?
                     """,
@@ -1085,6 +1088,8 @@ class AggregateReader(BaseDBReader):
                         "star_rating": result[31],
                         "needs_improvement": result[32],
                     },
+                    "integrated_score": result[33],
+                    "training_mode": result[34],
                     "overall_score": result[24],
                     "overall_star_rating": result[25],
                 }

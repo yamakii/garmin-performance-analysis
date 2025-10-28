@@ -83,6 +83,9 @@ def tmp_db_path(tmp_path: Path) -> str:
             power_efficiency_rating VARCHAR,
             power_efficiency_needs_improvement BOOLEAN,
 
+            integrated_score DOUBLE,
+            training_mode VARCHAR,
+
             evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
         )
