@@ -56,7 +56,10 @@ def tmp_db_with_baseline(tmp_path):
             n_samples INTEGER,
             rmse DOUBLE,
             speed_range_min DOUBLE,
-            speed_range_max DOUBLE
+            speed_range_max DOUBLE,
+            power_a DOUBLE,
+            power_b DOUBLE,
+            power_rmse DOUBLE
         )
     """
     )
@@ -95,7 +98,7 @@ def tmp_db_with_baseline(tmp_path):
     today = datetime.now().date()
     conn.execute(
         """
-        INSERT INTO form_baseline_history (user_id, condition_group, metric, period_start, period_end, coef_a, coef_b, rmse, n_samples, speed_range_min, speed_range_max)
+        INSERT INTO form_baseline_history (user_id, condition_group, metric, period_start, period_end, power_a, power_b, power_rmse, n_samples, speed_range_min, speed_range_max)
         VALUES ('default', 'flat_road', 'power', ?, ?, 1.0, 0.7, 0.1, 100, 3.0, 6.0)
         """,
         [today - timedelta(days=60), today],

@@ -50,7 +50,11 @@ def tmp_db_with_data(tmp_path):
             n_samples INTEGER,
             rmse DOUBLE,
             speed_range_min DOUBLE,
-            speed_range_max DOUBLE
+            speed_range_max DOUBLE,
+            power_a DOUBLE,
+            power_b DOUBLE,
+            power_rmse DOUBLE,
+            UNIQUE (user_id, condition_group, metric, period_start, period_end)
         )
     """
     )
@@ -113,7 +117,7 @@ def tmp_db_with_data(tmp_path):
         INSERT INTO form_baseline_history VALUES
             ('default', 'flat_road', 'power',
              '2025-10-01', '2025-10-31',
-             NULL, NULL, 1.5, 0.8, 100, 0.1, 3.0, 6.0)
+             NULL, NULL, NULL, NULL, 100, 0.1, 3.0, 6.0, 1.5, 0.8, 0.1)
     """
     )
 

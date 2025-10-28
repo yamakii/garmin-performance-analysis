@@ -221,6 +221,8 @@ def train_power_efficiency_baseline(
             'power_b': float,
             'power_rmse': float,
             'n_samples': int,
+            'period_start': str,
+            'period_end': str,
         }
 
     Raises:
@@ -294,10 +296,11 @@ def train_power_efficiency_baseline(
         model = PowerEfficiencyModel()
         model.fit(power_wkg_values, speeds)
 
-        # Insert into form_baseline_history
+        # Insert into form_baseline_history with UPSERT
         conn.execute(
             """
             INSERT INTO form_baseline_history (
+                history_id,
                 user_id,
                 condition_group,
                 metric,
@@ -308,7 +311,14 @@ def train_power_efficiency_baseline(
                 power_a,
                 power_b,
                 power_rmse
-            ) VALUES (?, ?, 'power', 'linear', ?, ?, ?, ?, ?, ?)
+            ) VALUES (nextval('form_baseline_history_seq'), ?, ?, 'power', 'linear', ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (user_id, condition_group, metric, period_start, period_end)
+            DO UPDATE SET
+                model_type = EXCLUDED.model_type,
+                n_samples = EXCLUDED.n_samples,
+                power_a = EXCLUDED.power_a,
+                power_b = EXCLUDED.power_b,
+                power_rmse = EXCLUDED.power_rmse
             """,
             [
                 user_id,
@@ -327,10 +337,16 @@ def train_power_efficiency_baseline(
             "power_b": model.power_b,
             "power_rmse": model.power_rmse,
             "n_samples": len(power_wkg_values),
+            "period_start": period_start,
+            "period_end": period_end,
         }
 
-    except Exception:
+    except Exception as e:
         # Return None on any error (graceful degradation)
+        import traceback
+
+        print(f"Error in train_power_efficiency_baseline: {e}")
+        traceback.print_exc()
         return None
     finally:
         conn.close()

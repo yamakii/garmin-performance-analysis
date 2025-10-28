@@ -566,16 +566,18 @@ def evaluate_power_efficiency(
             else "low_moderate"
         )
 
-        # Get baseline (note: column names are coef_a, coef_b, not power_a, power_b)
+        # Get baseline
         baseline = conn.execute(
             """
-            SELECT coef_a, coef_b, rmse
+            SELECT power_a, power_b, power_rmse
             FROM form_baseline_history
             WHERE user_id = ?
               AND condition_group = ?
               AND metric = 'power'
               AND period_start <= ?
               AND period_end >= ?
+            ORDER BY period_end DESC
+            LIMIT 1
             """,
             [user_id, condition_group, activity_date, activity_date],
         ).fetchone()
@@ -708,7 +710,11 @@ def evaluate_power_efficiency(
             "training_mode": training_mode,
         }
 
-    except Exception:
+    except Exception as e:
+        import traceback
+
+        print(f"Error in evaluate_power_efficiency: {e}")
+        traceback.print_exc()
         return None
     finally:
         conn.close()

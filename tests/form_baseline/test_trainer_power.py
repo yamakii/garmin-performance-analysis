@@ -40,6 +40,7 @@ def tmp_db_path(tmp_path):
 
     # Create sequence for history_id
     conn.execute("CREATE SEQUENCE seq_history_id START 1")
+    conn.execute("CREATE SEQUENCE form_baseline_history_seq START 1")
 
     conn.execute(
         """
@@ -62,7 +63,8 @@ def tmp_db_path(tmp_path):
             speed_range_max FLOAT,
             power_a FLOAT,
             power_b FLOAT,
-            power_rmse FLOAT
+            power_rmse FLOAT,
+            UNIQUE (user_id, condition_group, metric, period_start, period_end)
         )
     """
     )

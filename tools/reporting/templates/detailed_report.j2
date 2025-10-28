@@ -166,7 +166,7 @@ xychart-beta
 
 {% set efficiency_text = efficiency.efficiency_text if efficiency.efficiency_text else efficiency.evaluation if efficiency.evaluation else efficiency if efficiency is string else "フォーム効率データがありません。" %}
 {% set efficiency_rating = efficiency_text|extract_star_rating %}
-### フォーム効率（{% if is_interval %}Workセグメント {% endif %}ペース補正評価）{% if form_evaluation %} ({{ form_evaluation.overall_star_rating }} {{ form_evaluation.overall_score|round(1) }}/5.0){% elif efficiency.overall_form_score %} ({{ efficiency.overall_form_score }}){% elif efficiency_rating.score > 0 %} ({{ efficiency_rating.stars }} {{ efficiency_rating.score }}/5.0){% endif %}
+### フォーム効率{% if is_interval %}（Workセグメント）{% endif %}{% if form_evaluation %}{% if form_evaluation.integrated_score %} ({{ form_evaluation.integrated_score|round(1) }}/100点 {{ form_evaluation.overall_star_rating }}){% else %} ({{ form_evaluation.overall_star_rating }} {{ form_evaluation.overall_score|round(1) }}/5.0){% endif %}{% elif efficiency.overall_form_score %} ({{ efficiency.overall_form_score }}){% elif efficiency_rating.score > 0 %} ({{ efficiency_rating.stars }} {{ efficiency_rating.score }}/5.0){% endif %}
 
 {% if form_evaluation %}
 {# Phase 5: Unified Form Evaluation System - Use form_evaluations table #}
@@ -185,9 +185,16 @@ pie title "心拍ゾーン分布"
 | **接地時間 (GCT)** | {{ form_evaluation.gct.actual|round(1) }}ms | {{ form_evaluation.gct.expected|round(1) }}ms | {{ form_evaluation.gct.delta_pct|round(1) }}% | {{ form_evaluation.gct.star_rating }} {{ form_evaluation.gct.score|round(1) }}/5.0 |
 | **垂直振幅 (VO)** | {{ form_evaluation.vo.actual|round(2) }}cm | {{ form_evaluation.vo.expected|round(2) }}cm | {{ form_evaluation.vo.delta_pct|round(1) }}% | {{ form_evaluation.vo.star_rating }} {{ form_evaluation.vo.score|round(1) }}/5.0 |
 | **垂直比率 (VR)** | {{ form_evaluation.vr.actual|round(2) }}% | {{ form_evaluation.vr.expected|round(2) }}% | {{ form_evaluation.vr.delta_pct|round(1) }}% | {{ form_evaluation.vr.star_rating }} {{ form_evaluation.vr.score|round(1) }}/5.0 |
-| **ケイデンス** | {{ form_evaluation.cadence.actual|round(0) }}spm | {{ form_evaluation.cadence.minimum }}spm以上 | - | {% if form_evaluation.cadence.achieved %}✓ 達成{% else %}要改善{% endif %} |
+{% if form_evaluation.power and form_evaluation.power.avg_w -%}
+| **パワー効率** | {{ form_evaluation.power.avg_w|round(0) }}W ({{ form_evaluation.power.wkg|round(2) }}W/kg) | {{ form_evaluation.power.speed_expected_mps|round(2) }}m/s期待 | {{ (form_evaluation.power.efficiency_score * 100)|round(1) }}% | {{ form_evaluation.power.star_rating }} |
+{% endif -%}
+| **ケイデンス** | {{ form_evaluation.cadence.actual|round(0) }}spm | {{ form_evaluation.cadence.minimum }}spm以上 | - | {% if form_evaluation.cadence.achieved %}✓ 達成{% elif form_evaluation.cadence.actual >= 178 %}ほぼ達成{% elif form_evaluation.cadence.actual >= 175 %}許容範囲{% else %}要改善{% endif %} |
 
+{% if form_evaluation.integrated_score -%}
+**総合評価: {{ form_evaluation.integrated_score|round(1) }}/100点 ({{ form_evaluation.overall_star_rating }})** ※トレーニングモード: {{ form_evaluation.training_mode|default("N/A") }}
+{%- else -%}
 **総合評価: {{ form_evaluation.overall_star_rating }} {{ form_evaluation.overall_score|round(1) }}/5.0**
+{%- endif %}
 
 #### 評価コメント
 
@@ -445,7 +452,6 @@ VO2 Maxデータがありません。
 - **VO2 Max利用率**: VO2 Maxペースに対する実際のペースの比率
 - **閾値ペース**: 乳酸閾値ペース。約60分維持可能な最速ペース{% endif %}
 - **ストライド長**: 1歩あたりの距離(m)。スピード = ケイデンス × ストライド長
-- **ペース補正評価**: そのペースに対する相対評価(同じペースのランナーと比較)
 
 </details>
 
