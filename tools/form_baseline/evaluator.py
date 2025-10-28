@@ -488,3 +488,227 @@ def evaluate_and_store(
         raise RuntimeError(f"Failed to store evaluation results: {e}") from e
 
     return evaluation
+
+
+def _calculate_power_efficiency_rating(score: float) -> str:
+    """Calculate star rating from power efficiency score.
+
+    Args:
+        score: Power efficiency score (actual - expected) / expected
+
+    Returns:
+        Star rating string
+    """
+    if score >= 0.05:
+        return "★★★★★"
+    elif score >= 0.02:
+        return "★★★★☆"
+    elif -0.02 <= score < 0.02:
+        return "★★★☆☆"
+    elif -0.05 <= score < -0.02:
+        return "★★☆☆☆"
+    else:
+        return "★☆☆☆☆"
+
+
+def evaluate_power_efficiency(
+    activity_id: int,
+    activity_date: str,
+    user_id: str = "default",
+    condition_group: str = "flat_road",
+    db_path: str | None = None,
+) -> dict | None:
+    """Evaluate power efficiency for an activity.
+
+    Args:
+        activity_id: Activity ID
+        activity_date: Activity date (YYYY-MM-DD)
+        user_id: User ID
+        condition_group: Condition group
+        db_path: Database path
+
+    Returns:
+        Dict with power efficiency evaluation or None if no power data
+
+    Notes:
+        - Integrated score requires form_evaluations to exist first
+        - Call evaluate_and_store() before this function to populate form penalties
+        - If form penalties don't exist, integrated_score will be None
+    """
+    import os
+
+    import duckdb
+
+    from .integrated_score import calculate_integrated_score
+
+    # Get database path
+    if db_path is None:
+        data_dir = os.getenv("GARMIN_DATA_DIR", "data")
+        db_path = f"{data_dir}/database/garmin_performance.duckdb"
+
+    conn = duckdb.connect(db_path)
+
+    try:
+        # Get training mode from hr_efficiency table
+        training_mode_row = conn.execute(
+            """
+            SELECT training_type
+            FROM hr_efficiency
+            WHERE activity_id = ?
+            """,
+            [activity_id],
+        ).fetchone()
+
+        # Default to low_moderate if not found or NULL
+        training_mode = (
+            training_mode_row[0]
+            if (training_mode_row and training_mode_row[0])
+            else "low_moderate"
+        )
+
+        # Get baseline (note: column names are coef_a, coef_b, not power_a, power_b)
+        baseline = conn.execute(
+            """
+            SELECT coef_a, coef_b, rmse
+            FROM form_baseline_history
+            WHERE user_id = ?
+              AND condition_group = ?
+              AND metric = 'power'
+              AND period_start <= ?
+              AND period_end >= ?
+            """,
+            [user_id, condition_group, activity_date, activity_date],
+        ).fetchone()
+
+        if not baseline:
+            return None
+
+        power_a, power_b, power_rmse = baseline
+
+        # Get average power and speed from splits
+        splits_data = conn.execute(
+            """
+            SELECT AVG(power) as power_avg, AVG(average_speed) as speed_avg
+            FROM splits
+            WHERE activity_id = ?
+              AND power IS NOT NULL
+            """,
+            [activity_id],
+        ).fetchone()
+
+        if not splits_data or splits_data[0] is None:
+            return None
+
+        power_avg, speed_actual = splits_data
+
+        # Get body mass
+        body_mass_row = conn.execute(
+            "SELECT body_mass_kg FROM activities WHERE activity_id = ?",
+            [activity_id],
+        ).fetchone()
+
+        if not body_mass_row:
+            return None
+
+        body_mass = body_mass_row[0]
+
+        if not body_mass or body_mass <= 0:
+            return None
+
+        # Calculate power efficiency
+        power_wkg = power_avg / body_mass
+        speed_expected = power_a + power_b * power_wkg
+        score = (speed_actual - speed_expected) / speed_expected
+        rating = _calculate_power_efficiency_rating(score)
+        needs_improvement = score < -0.02
+
+        # Get form evaluation penalties for integrated score
+        # Note: Power penalty is score itself (negative = better, positive = worse)
+        form_eval = conn.execute(
+            """
+            SELECT gct_penalty, vo_penalty, vr_penalty
+            FROM form_evaluations
+            WHERE activity_id = ?
+            """,
+            [activity_id],
+        ).fetchone()
+
+        # Calculate integrated score
+        integrated_score = None
+        if form_eval and all(p is not None for p in form_eval):
+            # Convert penalties from 0-100 scale to ratio (0-1)
+            gct_penalty_ratio = form_eval[0] / 100.0
+            vo_penalty_ratio = form_eval[1] / 100.0
+            vr_penalty_ratio = form_eval[2] / 100.0
+
+            # Power penalty: negative score means better than expected (penalty is negative)
+            # Positive score means worse than expected (penalty is positive)
+            power_penalty_ratio = (
+                -score
+            )  # Flip sign: negative score = positive improvement
+
+            penalties = {
+                "gct": gct_penalty_ratio,
+                "vo": vo_penalty_ratio,
+                "vr": vr_penalty_ratio,
+                "power": power_penalty_ratio,
+            }
+
+            integrated_score = calculate_integrated_score(penalties, training_mode)
+
+        # Insert into form_evaluations
+        conn.execute(
+            """
+            INSERT INTO form_evaluations (
+                activity_id,
+                power_avg_w,
+                power_wkg,
+                speed_actual_mps,
+                speed_expected_mps,
+                power_efficiency_score,
+                power_efficiency_rating,
+                power_efficiency_needs_improvement,
+                integrated_score,
+                training_mode
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (activity_id) DO UPDATE SET
+                power_avg_w = EXCLUDED.power_avg_w,
+                power_wkg = EXCLUDED.power_wkg,
+                speed_actual_mps = EXCLUDED.speed_actual_mps,
+                speed_expected_mps = EXCLUDED.speed_expected_mps,
+                power_efficiency_score = EXCLUDED.power_efficiency_score,
+                power_efficiency_rating = EXCLUDED.power_efficiency_rating,
+                power_efficiency_needs_improvement = EXCLUDED.power_efficiency_needs_improvement,
+                integrated_score = EXCLUDED.integrated_score,
+                training_mode = EXCLUDED.training_mode
+            """,
+            [
+                activity_id,
+                power_avg,
+                power_wkg,
+                speed_actual,
+                speed_expected,
+                score,
+                rating,
+                needs_improvement,
+                integrated_score,
+                training_mode,
+            ],
+        )
+
+        return {
+            "power_avg_w": power_avg,
+            "power_wkg": power_wkg,
+            "speed_actual_mps": speed_actual,
+            "speed_expected_mps": speed_expected,
+            "power_efficiency_score": score,
+            "power_efficiency_rating": rating,
+            "power_efficiency_needs_improvement": needs_improvement,
+            "integrated_score": integrated_score,
+            "training_mode": training_mode,
+        }
+
+    except Exception:
+        return None
+    finally:
+        conn.close()

@@ -974,7 +974,8 @@ class AggregateReader(BaseDBReader):
 
         Returns:
             Form evaluation data with expected values, actual values, scores,
-            and evaluation texts for GCT, VO, VR, and overall.
+            and evaluation texts for GCT, VO, VR, cadence, power efficiency,
+            and overall.
             Format: {
                 "activity_id": int,
                 "gct": {
@@ -993,6 +994,17 @@ class AggregateReader(BaseDBReader):
                     "minimum": int,
                     "achieved": bool
                 },
+                "power": {
+                    "avg_w": float | None,
+                    "wkg": float | None,
+                    "speed_actual_mps": float | None,
+                    "speed_expected_mps": float | None,
+                    "efficiency_score": float | None,
+                    "star_rating": str | None,
+                    "needs_improvement": bool | None
+                },
+                "integrated_score": float | None,
+                "training_mode": str | None,
                 "overall_score": float,
                 "overall_star_rating": str
             }
@@ -1013,7 +1025,11 @@ class AggregateReader(BaseDBReader):
                         vr_star_rating, vr_score, vr_needs_improvement,
                         vr_evaluation_text,
                         cadence_actual, cadence_minimum, cadence_achieved,
-                        overall_score, overall_star_rating
+                        overall_score, overall_star_rating,
+                        power_avg_w, power_wkg, speed_actual_mps, speed_expected_mps,
+                        power_efficiency_score, power_efficiency_rating,
+                        power_efficiency_needs_improvement,
+                        integrated_score, training_mode
                     FROM form_evaluations
                     WHERE activity_id = ?
                     """,
@@ -1063,6 +1079,17 @@ class AggregateReader(BaseDBReader):
                         "minimum": result[22],
                         "achieved": result[23],
                     },
+                    "power": {
+                        "avg_w": result[26],
+                        "wkg": result[27],
+                        "speed_actual_mps": result[28],
+                        "speed_expected_mps": result[29],
+                        "efficiency_score": result[30],
+                        "star_rating": result[31],
+                        "needs_improvement": result[32],
+                    },
+                    "integrated_score": result[33],
+                    "training_mode": result[34],
                     "overall_score": result[24],
                     "overall_star_rating": result[25],
                 }

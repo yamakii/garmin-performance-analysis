@@ -287,29 +287,7 @@ class GarminDBWriter:
         """
         )
 
-        # Create form_baselines table
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS form_baselines (
-                baseline_id INTEGER PRIMARY KEY,
-                user_id VARCHAR DEFAULT 'default',
-                condition_group VARCHAR,
-                metric VARCHAR,
-                model_type VARCHAR,
-
-                coef_alpha FLOAT,
-                coef_d FLOAT,
-                coef_a FLOAT,
-                coef_b FLOAT,
-
-                n_samples INTEGER,
-                rmse FLOAT,
-                trained_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                speed_range_min FLOAT,
-                speed_range_max FLOAT
-            )
-        """
-        )
+        # form_baselines table removed - replaced by form_baseline_history
 
         # Create form_baseline_history table (for trend analysis)
         conn.execute(
