@@ -12,6 +12,7 @@ class TestMermaidGraphIntegration:
     """Integration test suite for Mermaid graph rendering."""
 
     @pytest.mark.integration
+    @pytest.mark.performance
     def test_mermaid_graph_in_report(self):
         """Test that Mermaid graph appears in generated report."""
         worker = ReportGeneratorWorker()

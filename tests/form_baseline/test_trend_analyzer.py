@@ -10,6 +10,7 @@ from tools.form_baseline.trend_analyzer import analyze_form_trend
 class TestAnalyzeFormTrend:
     """Test cases for analyze_form_trend function."""
 
+    @pytest.mark.performance
     def test_analyze_form_trend_with_real_data(self, tmp_path):
         """Test trend analysis with real database (if available)."""
         db_path = Path.home() / "garmin_data/data/database/garmin_performance.duckdb"
