@@ -29,6 +29,7 @@ def insert_activities(
     raw_activity_file: str | None = None,
     raw_weather_file: str | None = None,
     raw_gear_file: str | None = None,
+    base_weight_kg: float | None = None,
     conn: Any | None = None,
 ) -> bool:
     """
@@ -46,6 +47,7 @@ def insert_activities(
         raw_activity_file: Optional path to raw activity.json
         raw_weather_file: Optional path to raw weather.json
         raw_gear_file: Optional path to raw gear.json
+        base_weight_kg: Optional 7-day median weight for W/kg calculation
         conn: Optional DuckDB connection (for connection reuse, Phase 5 optimization)
 
     Returns:
@@ -190,6 +192,7 @@ def insert_activities(
                 wind_direction,
                 gear_type,
                 gear_model,
+                base_weight_kg,
             )
         else:
             # Open new connection (backward compatible)
@@ -214,6 +217,7 @@ def insert_activities(
                     wind_direction,
                     gear_type,
                     gear_model,
+                    base_weight_kg,
                 )
 
         return True
@@ -243,41 +247,15 @@ def _insert_with_connection(
     wind_direction: str | None,
     gear_type: str | None,
     gear_model: str | None,
+    base_weight_kg: float | None,
 ) -> None:
     """Helper function to insert activity data with a given connection."""
-    # Create schema if not exists
+    # Schema is created by GarminDBWriter.create_schema()
+
+    # Insert or replace record (UPSERT semantics)
     conn.execute(
         """
-        CREATE TABLE IF NOT EXISTS activities (
-            activity_id BIGINT PRIMARY KEY,
-            activity_date DATE NOT NULL,
-            activity_name VARCHAR,
-            start_time_local TIMESTAMP,
-            start_time_gmt TIMESTAMP,
-            location_name VARCHAR,
-            total_distance_km DOUBLE,
-            total_time_seconds INTEGER,
-            avg_speed_ms DOUBLE,
-            avg_pace_seconds_per_km DOUBLE,
-            avg_heart_rate INTEGER,
-            max_heart_rate INTEGER,
-            temp_celsius DOUBLE,
-            relative_humidity_percent DOUBLE,
-            wind_speed_kmh DOUBLE,
-            wind_direction VARCHAR,
-            gear_type VARCHAR,
-            gear_model VARCHAR
-        )
-        """
-    )
-
-    # Delete existing record (UPSERT semantics)
-    conn.execute("DELETE FROM activities WHERE activity_id = ?", (activity_id,))
-
-    # Insert new record
-    conn.execute(
-        """
-        INSERT INTO activities (
+        INSERT OR REPLACE INTO activities (
             activity_id,
             activity_date,
             activity_name,
@@ -295,8 +273,9 @@ def _insert_with_connection(
             wind_speed_kmh,
             wind_direction,
             gear_type,
-            gear_model
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            gear_model,
+            base_weight_kg
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             activity_id,
@@ -317,5 +296,6 @@ def _insert_with_connection(
             wind_direction,
             gear_type,
             gear_model,
+            base_weight_kg,
         ),
     )

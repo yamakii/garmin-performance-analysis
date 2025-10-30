@@ -24,7 +24,7 @@ def tmp_db_with_baseline(tmp_path):
         CREATE TABLE activities (
             activity_id INTEGER PRIMARY KEY,
             activity_date DATE,
-            body_mass_kg FLOAT
+            base_weight_kg FLOAT
         )
     """
     )

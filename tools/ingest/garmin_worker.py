@@ -1005,6 +1005,7 @@ class GarminIngestWorker:
         raw_data: dict[str, Any],
         activity_date: str | None = None,
         tables: list[str] | None = None,
+        base_weight_kg: float | None = None,
     ) -> dict[str, Any]:
         """
         Save all processed data to DuckDB.
@@ -1087,6 +1088,7 @@ class GarminIngestWorker:
                             if raw_gear_file and raw_gear_file.exists()
                             else None
                         ),
+                        base_weight_kg=base_weight_kg,  # 7-day median weight
                         conn=conn,  # Phase 5: Pass connection for reuse
                     )
                     if activities_success:
@@ -1604,6 +1606,7 @@ class GarminIngestWorker:
             raw_data,
             activity_date=date,
             tables=tables,
+            base_weight_kg=weight_kg,
         )
 
         return {

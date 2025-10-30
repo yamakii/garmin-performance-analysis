@@ -674,9 +674,9 @@ def _calculate_power_efficiency_internal(
 
         power_avg, speed_actual = splits_data
 
-        # Get body mass
+        # Get base weight (7-day median)
         body_mass_row = conn.execute(
-            "SELECT body_mass_kg FROM activities WHERE activity_id = ?",
+            "SELECT base_weight_kg FROM activities WHERE activity_id = ?",
             [activity_id],
         ).fetchone()
 

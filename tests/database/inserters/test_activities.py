@@ -16,10 +16,15 @@ import pytest
 @pytest.mark.unit
 def test_insert_activities_missing_file():
     """Test that insert_activities succeeds even without raw files (creates minimal record)."""
+    from tools.database.db_writer import GarminDBWriter
     from tools.database.inserters.activities import insert_activities
 
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "test.duckdb"
+
+        # Initialize database schema
+        GarminDBWriter(db_path=str(db_path))
+
         # Should succeed with minimal data (just activity_id and date)
         result = insert_activities(
             activity_id=12345,
@@ -42,11 +47,15 @@ def test_insert_activities_missing_file():
 @pytest.mark.unit
 def test_insert_activities_invalid_json():
     """Test that insert_activities fails with invalid JSON in raw files."""
+    from tools.database.db_writer import GarminDBWriter
     from tools.database.inserters.activities import insert_activities
 
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "test.duckdb"
         activity_file = Path(tmpdir) / "activity.json"
+
+        # Initialize database schema
+        GarminDBWriter(db_path=str(db_path))
 
         # Create invalid JSON
         activity_file.write_text("not valid json")
@@ -63,10 +72,14 @@ def test_insert_activities_invalid_json():
 @pytest.mark.unit
 def test_insert_activities_minimal_data():
     """Test insert_activities with minimal required fields (just activity_id and date)."""
+    from tools.database.db_writer import GarminDBWriter
     from tools.database.inserters.activities import insert_activities
 
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "test.duckdb"
+
+        # Initialize database schema
+        GarminDBWriter(db_path=str(db_path))
 
         result = insert_activities(
             activity_id=12345,
@@ -91,10 +104,14 @@ def test_insert_activities_minimal_data():
 @pytest.mark.unit
 def test_insert_activities_complete_data():
     """Test insert_activities with all raw data files (activity, weather, gear)."""
+    from tools.database.db_writer import GarminDBWriter
     from tools.database.inserters.activities import insert_activities
 
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "test.duckdb"
+
+        # Initialize database schema
+        GarminDBWriter(db_path=str(db_path))
 
         # Create raw activity.json
         raw_activity = {

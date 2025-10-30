@@ -19,7 +19,7 @@ def tmp_db_with_data(tmp_path):
         CREATE TABLE activities (
             activity_id INTEGER PRIMARY KEY,
             activity_date DATE,
-            body_mass_kg DOUBLE
+            base_weight_kg DOUBLE
         )
     """
     )

@@ -25,7 +25,7 @@ def db_reader(tmp_path):
     # Insert activity first (foreign key requirement)
     conn.execute(
         """
-        INSERT INTO activities (activity_id, date, activity_name)
+        INSERT INTO activities (activity_id, activity_date, activity_name)
         VALUES (?, ?, ?)
         """,
         (activity_id, activity_date, "Test Run"),

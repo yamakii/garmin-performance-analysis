@@ -46,46 +46,29 @@ class GarminDBWriter:
         """
         conn = duckdb.connect(str(self.db_path))
 
-        # Create activities table with production schema (36 columns)
+        # Create activities table (matches inserters/activities.py - 19 columns)
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS activities (
                 activity_id BIGINT PRIMARY KEY,
-                date DATE NOT NULL,
+                activity_date DATE NOT NULL,
                 activity_name VARCHAR,
                 start_time_local TIMESTAMP,
                 start_time_gmt TIMESTAMP,
-                total_time_seconds INTEGER,
+                location_name VARCHAR,
                 total_distance_km DOUBLE,
+                total_time_seconds INTEGER,
+                avg_speed_ms DOUBLE,
                 avg_pace_seconds_per_km DOUBLE,
                 avg_heart_rate INTEGER,
                 max_heart_rate INTEGER,
-                avg_cadence INTEGER,
-                avg_power INTEGER,
-                normalized_power INTEGER,
-                cadence_stability DOUBLE,
-                power_efficiency DOUBLE,
-                pace_variability DOUBLE,
-                aerobic_te DOUBLE,
-                anaerobic_te DOUBLE,
-                training_effect_source VARCHAR,
-                power_to_weight DOUBLE,
-                weight_kg DOUBLE,
-                weight_source VARCHAR,
-                weight_method VARCHAR,
-                stability_score DOUBLE,
-                external_temp_c DOUBLE,
-                external_temp_f DOUBLE,
-                humidity INTEGER,
-                wind_speed_ms DOUBLE,
-                wind_direction_compass VARCHAR,
-                gear_name VARCHAR,
+                temp_celsius DOUBLE,
+                relative_humidity_percent DOUBLE,
+                wind_speed_kmh DOUBLE,
+                wind_direction VARCHAR,
                 gear_type VARCHAR,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                total_elevation_gain DOUBLE,
-                total_elevation_loss DOUBLE,
-                location_name VARCHAR
+                gear_model VARCHAR,
+                base_weight_kg DOUBLE
             )
         """
         )
@@ -434,72 +417,6 @@ class GarminDBWriter:
         )
 
         conn.close()
-
-    def insert_activity(
-        self,
-        activity_id: int,
-        activity_date: str,
-        activity_name: str | None = None,
-        location_name: str | None = None,
-        activity_type: str | None = None,
-        weight_kg: float | None = None,
-        weight_source: str | None = None,
-        weight_method: str | None = None,
-        **kwargs,
-    ) -> bool:
-        """
-        Insert activity metadata into production schema (36 columns).
-
-        Args:
-            activity_id: Activity ID
-            activity_date: Activity date (YYYY-MM-DD)
-            activity_name: Activity name
-            location_name: Location name
-            activity_type: Activity type
-            weight_kg: Weight in kg (7-day median for W/kg calculation)
-            weight_source: Weight data source (e.g., "statistical_7d_median")
-            weight_method: Weight calculation method (e.g., "median")
-            **kwargs: Additional metrics (distance_km, duration_seconds, etc.)
-
-        Returns:
-            True if successful
-        """
-        try:
-            conn = duckdb.connect(str(self.db_path))
-
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO activities
-                (activity_id, date, activity_name, location_name,
-                 total_distance_km, total_time_seconds, avg_pace_seconds_per_km, avg_heart_rate,
-                 weight_kg, weight_source, weight_method)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-                [
-                    activity_id,
-                    activity_date,
-                    activity_name,
-                    location_name,
-                    kwargs.get("distance_km"),
-                    kwargs.get("duration_seconds"),
-                    kwargs.get("avg_pace_seconds_per_km"),
-                    kwargs.get("avg_heart_rate"),
-                    weight_kg,
-                    weight_source,
-                    weight_method,
-                ],
-            )
-
-            conn.close()
-            logger.info(
-                f"Inserted activity {activity_id} metadata (weight: {weight_kg:.3f} kg)"
-                if weight_kg
-                else f"Inserted activity {activity_id} metadata"
-            )
-            return True
-        except Exception as e:
-            logger.error(f"Error inserting activity: {e}")
-            return False
 
     def insert_performance_data(
         self, activity_id: int, activity_date: str, performance_data: dict

@@ -3,8 +3,8 @@
 This test suite ensures:
 1. form_baselines table is removed
 2. No code references to form_baselines remain
-3. activities table has body_mass_kg column
-4. All activities have body_mass_kg populated from body_composition
+3. activities table has base_weight_kg column
+4. All activities have base_weight_kg populated from body_composition
 """
 
 import duckdb
@@ -23,7 +23,7 @@ def setup_test_db(test_db_path):
     """Setup test database with initial state."""
     conn = duckdb.connect(test_db_path)
 
-    # Create activities table (without body_mass_kg initially)
+    # Create activities table (without base_weight_kg initially)
     conn.execute(
         """
         CREATE TABLE activities (
@@ -141,15 +141,15 @@ class TestPhase0FormBaselinesRemoval:
 
 
 class TestPhase0BodyMassColumn:
-    """Tests for body_mass_kg column addition."""
+    """Tests for base_weight_kg column addition."""
 
-    def test_activities_has_body_mass_kg_column(self, setup_test_db):
-        """Test that activities table has body_mass_kg column after adding it."""
+    def test_activities_has_base_weight_kg_column(self, setup_test_db):
+        """Test that activities table has base_weight_kg column after adding it."""
         # This test checks the migration step works correctly
         conn = duckdb.connect(setup_test_db)
 
         # First, add the column (simulating the migration)
-        conn.execute("ALTER TABLE activities ADD COLUMN body_mass_kg DOUBLE")
+        conn.execute("ALTER TABLE activities ADD COLUMN base_weight_kg DOUBLE")
 
         # Now test that it exists
         schema = conn.execute("PRAGMA table_info(activities)").fetchall()
@@ -157,11 +157,11 @@ class TestPhase0BodyMassColumn:
         conn.close()
 
         assert (
-            "body_mass_kg" in column_names
-        ), "activities table should have body_mass_kg column after migration"
+            "base_weight_kg" in column_names
+        ), "activities table should have base_weight_kg column after migration"
 
-    def test_activities_has_body_mass_kg_column_production(self):
-        """Test that activities table has body_mass_kg column in production DB."""
+    def test_activities_has_base_weight_kg_column_production(self):
+        """Test that activities table has base_weight_kg column in production DB."""
         # This will fail initially (RED phase)
         from tools.utils.paths import get_database_dir
 
@@ -173,26 +173,26 @@ class TestPhase0BodyMassColumn:
         conn.close()
 
         assert (
-            "body_mass_kg" in column_names
-        ), "Production activities table should have body_mass_kg column"
+            "base_weight_kg" in column_names
+        ), "Production activities table should have base_weight_kg column"
 
 
 class TestPhase0BodyMassPopulation:
-    """Tests for body_mass_kg population from body_composition."""
+    """Tests for base_weight_kg population from body_composition."""
 
-    def test_all_activities_have_body_mass_kg(self, setup_test_db):
-        """Test that all activities have body_mass_kg populated."""
+    def test_all_activities_have_base_weight_kg(self, setup_test_db):
+        """Test that all activities have base_weight_kg populated."""
         # First, add the column and populate it (this simulates the implementation)
         conn = duckdb.connect(setup_test_db)
 
         # Add column
-        conn.execute("ALTER TABLE activities ADD COLUMN body_mass_kg DOUBLE")
+        conn.execute("ALTER TABLE activities ADD COLUMN base_weight_kg DOUBLE")
 
         # Populate using LEFT JOIN to handle missing dates
         conn.execute(
             """
             UPDATE activities
-            SET body_mass_kg = (
+            SET base_weight_kg = (
                 SELECT weight_kg
                 FROM body_composition
                 WHERE body_composition.date = activities.activity_date
@@ -202,30 +202,30 @@ class TestPhase0BodyMassPopulation:
         """
         )
 
-        # Test: All activities should have body_mass_kg
+        # Test: All activities should have base_weight_kg
         result = conn.execute(
             """
             SELECT COUNT(*)
             FROM activities
-            WHERE body_mass_kg IS NULL
+            WHERE base_weight_kg IS NULL
         """
         ).fetchone()
 
         conn.close()
 
         assert result is not None
-        assert result[0] == 0, f"Found {result[0]} activities without body_mass_kg"
+        assert result[0] == 0, f"Found {result[0]} activities without base_weight_kg"
 
-    def test_body_mass_kg_values_are_reasonable(self, setup_test_db):
-        """Test that body_mass_kg values are within reasonable range (40-120 kg)."""
+    def test_base_weight_kg_values_are_reasonable(self, setup_test_db):
+        """Test that base_weight_kg values are within reasonable range (40-120 kg)."""
         conn = duckdb.connect(setup_test_db)
 
         # Add column and populate
-        conn.execute("ALTER TABLE activities ADD COLUMN body_mass_kg DOUBLE")
+        conn.execute("ALTER TABLE activities ADD COLUMN base_weight_kg DOUBLE")
         conn.execute(
             """
             UPDATE activities
-            SET body_mass_kg = (
+            SET base_weight_kg = (
                 SELECT weight_kg
                 FROM body_composition
                 WHERE body_composition.date = activities.activity_date
@@ -237,26 +237,26 @@ class TestPhase0BodyMassPopulation:
         # Test: Values should be reasonable
         result = conn.execute(
             """
-            SELECT activity_id, body_mass_kg
+            SELECT activity_id, base_weight_kg
             FROM activities
-            WHERE body_mass_kg < 40 OR body_mass_kg > 120
+            WHERE base_weight_kg < 40 OR base_weight_kg > 120
         """
         ).fetchall()
 
         conn.close()
 
-        assert len(result) == 0, f"Found unreasonable body_mass_kg values: {result}"
+        assert len(result) == 0, f"Found unreasonable base_weight_kg values: {result}"
 
-    def test_body_mass_kg_matches_body_composition(self, setup_test_db):
-        """Test that body_mass_kg matches body_composition for same date."""
+    def test_base_weight_kg_matches_body_composition(self, setup_test_db):
+        """Test that base_weight_kg matches body_composition for same date."""
         conn = duckdb.connect(setup_test_db)
 
         # Add column and populate
-        conn.execute("ALTER TABLE activities ADD COLUMN body_mass_kg DOUBLE")
+        conn.execute("ALTER TABLE activities ADD COLUMN base_weight_kg DOUBLE")
         conn.execute(
             """
             UPDATE activities
-            SET body_mass_kg = (
+            SET base_weight_kg = (
                 SELECT weight_kg
                 FROM body_composition
                 WHERE body_composition.date = activities.activity_date
@@ -270,11 +270,11 @@ class TestPhase0BodyMassPopulation:
             """
             SELECT
                 a.activity_id,
-                a.body_mass_kg,
+                a.base_weight_kg,
                 bc.weight_kg
             FROM activities a
             LEFT JOIN body_composition bc ON a.activity_date = bc.date
-            WHERE a.body_mass_kg != bc.weight_kg
+            WHERE a.base_weight_kg != bc.weight_kg
         """
         ).fetchall()
 
@@ -282,14 +282,14 @@ class TestPhase0BodyMassPopulation:
 
         assert (
             len(result) == 0
-        ), f"body_mass_kg mismatch with body_composition: {result}"
+        ), f"base_weight_kg mismatch with body_composition: {result}"
 
 
 class TestPhase0ProductionDB:
     """Tests for production database state."""
 
     def test_production_db_all_activities_have_body_mass(self):
-        """Test that all activities in production have body_mass_kg populated."""
+        """Test that all activities in production have base_weight_kg populated."""
         from tools.utils.paths import get_database_dir
 
         db_path = get_database_dir() / "garmin_performance.duckdb"
@@ -300,16 +300,16 @@ class TestPhase0ProductionDB:
         schema = conn.execute("PRAGMA table_info(activities)").fetchall()
         column_names = [row[1] for row in schema]
 
-        if "body_mass_kg" not in column_names:
+        if "base_weight_kg" not in column_names:
             conn.close()
-            pytest.skip("body_mass_kg column not yet added to production DB")
+            pytest.skip("base_weight_kg column not yet added to production DB")
 
         # Count NULL values
         result = conn.execute(
             """
             SELECT COUNT(*)
             FROM activities
-            WHERE body_mass_kg IS NULL
+            WHERE base_weight_kg IS NULL
         """
         ).fetchone()
 
@@ -320,4 +320,4 @@ class TestPhase0ProductionDB:
         assert total is not None
         assert (
             result[0] == 0
-        ), f"Found {result[0]} out of {total[0]} activities without body_mass_kg"
+        ), f"Found {result[0]} out of {total[0]} activities without base_weight_kg"

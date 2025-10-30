@@ -16,6 +16,7 @@ import pytest
 
 from tools.database.db_reader import GarminDBReader
 from tools.database.db_writer import GarminDBWriter
+from tools.database.inserters.activities import insert_activities
 
 
 class TestGarminDBReaderNormalized:
@@ -84,17 +85,11 @@ class TestGarminDBReaderNormalized:
         activity_file.write_text(json.dumps(activity_data, indent=2))
 
         # Insert activity metadata first (required for foreign key constraint)
-        db_writer = GarminDBWriter(db_path=str(db_path))
-        db_writer.insert_activity(
+        GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        insert_activities(
             activity_id=test_activity_id,
-            activity_date="2025-10-07",
-            activity_data={
-                "activityId": test_activity_id,
-                "activityName": "Test Activity",
-                "startTimeLocal": "2025-10-07T10:00:00",
-                "distance": 10000.0,
-                "duration": 3600.0,
-            },
+            date="2025-10-07",
+            db_path=str(db_path),
         )
         # Use individual inserters directly
         from tools.database.inserters.form_efficiency import insert_form_efficiency
@@ -249,17 +244,11 @@ class TestGetHeartRateZonesDetail:
         hr_zones_file.write_text(json.dumps(hr_zones_data, indent=2))
 
         # Insert activity metadata and heart_rate_zones
-        db_writer = GarminDBWriter(db_path=str(db_path))
-        db_writer.insert_activity(
+        GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        insert_activities(
             activity_id=test_activity_id,
-            activity_date="2025-10-07",
-            activity_data={
-                "activityId": test_activity_id,
-                "activityName": "Test Activity with HR Zones",
-                "startTimeLocal": "2025-10-07T10:00:00",
-                "distance": 10000.0,
-                "duration": 3720.0,
-            },
+            date="2025-10-07",
+            db_path=str(db_path),
         )
         # Use heart_rate_zones inserter directly
         from tools.database.inserters.heart_rate_zones import insert_heart_rate_zones
@@ -357,17 +346,11 @@ class TestGetVO2MaxData:
         vo2_max_file.write_text(json.dumps(vo2_max_data, indent=2))
 
         # Insert activity metadata and vo2_max
-        db_writer = GarminDBWriter(db_path=str(db_path))
-        db_writer.insert_activity(
+        GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        insert_activities(
             activity_id=test_activity_id,
-            activity_date="2025-10-07",
-            activity_data={
-                "activityId": test_activity_id,
-                "activityName": "Test Activity with VO2 Max",
-                "startTimeLocal": "2025-10-07T10:00:00",
-                "distance": 10000.0,
-                "duration": 3600.0,
-            },
+            date="2025-10-07",
+            db_path=str(db_path),
         )
         # Use vo2_max inserter directly
         from tools.database.inserters.vo2_max import insert_vo2_max
@@ -444,17 +427,11 @@ class TestGetLactateThresholdData:
         lactate_threshold_file.write_text(json.dumps(lactate_threshold_data, indent=2))
 
         # Insert activity metadata and lactate_threshold
-        db_writer = GarminDBWriter(db_path=str(db_path))
-        db_writer.insert_activity(
+        GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        insert_activities(
             activity_id=test_activity_id,
-            activity_date="2025-10-07",
-            activity_data={
-                "activityId": test_activity_id,
-                "activityName": "Test Activity with Lactate Threshold",
-                "startTimeLocal": "2025-10-07T10:00:00",
-                "distance": 10000.0,
-                "duration": 3600.0,
-            },
+            date="2025-10-07",
+            db_path=str(db_path),
         )
         # Use lactate_threshold inserter directly
         from tools.database.inserters.lactate_threshold import insert_lactate_threshold
@@ -555,17 +532,11 @@ class TestGetSplitsAll:
         splits_file.write_text(json.dumps(splits_data, indent=2))
 
         # Insert activity metadata and splits
-        db_writer = GarminDBWriter(db_path=str(db_path))
-        db_writer.insert_activity(
+        GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        insert_activities(
             activity_id=test_activity_id,
-            activity_date="2025-10-07",
-            activity_data={
-                "activityId": test_activity_id,
-                "activityName": "Test Activity with Splits",
-                "startTimeLocal": "2025-10-07T10:00:00",
-                "distance": 2000.0,
-                "duration": 630.0,
-            },
+            date="2025-10-07",
+            db_path=str(db_path),
         )
         # Use splits inserter directly
         from tools.database.inserters.splits import insert_splits

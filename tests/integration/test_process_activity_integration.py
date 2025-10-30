@@ -58,7 +58,7 @@ class TestProcessActivityIntegration:
             # Test that we can insert into activities table
             conn.execute(
                 """
-                INSERT INTO activities (activity_id, date, activity_name)
+                INSERT INTO activities (activity_id, activity_date, activity_name)
                 VALUES (123456, '2025-01-15', 'Test Run')
                 """
             )

@@ -12,9 +12,10 @@ from tools.rag.queries.insights import InsightExtractor
 def db_path(tmp_path: Path) -> Path:
     """Create a temporary DuckDB database with sample section analyses."""
     from tools.database.db_writer import GarminDBWriter
+    from tools.database.inserters.activities import insert_activities
 
     db_file = tmp_path / "test_garmin.db"
-    writer = GarminDBWriter(str(db_file))
+    db_writer = GarminDBWriter(str(db_file))  # Initialize schema
 
     # First, insert activities to satisfy foreign key constraint
     sample_activities: list[dict[str, Any]] = [
@@ -33,11 +34,10 @@ def db_path(tmp_path: Path) -> Path:
     ]
 
     for activity in sample_activities:
-        writer.insert_activity(
+        insert_activities(
             activity_id=int(activity["activity_id"]),
-            activity_date=str(activity["date"]),
-            distance_km=float(activity["distance"]),
-            duration_seconds=int(activity["duration"]),
+            date=str(activity["date"]),
+            db_path=str(db_file),
         )
 
     # Insert sample section analyses with different keywords
@@ -92,7 +92,7 @@ def db_path(tmp_path: Path) -> Path:
     ]
 
     for analysis in sample_analyses:
-        writer.insert_section_analysis(
+        db_writer.insert_section_analysis(
             activity_id=int(analysis["activity_id"]),
             activity_date=str(analysis["activity_date"]),
             section_type=str(analysis["section_type"]),

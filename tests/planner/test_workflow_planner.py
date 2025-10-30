@@ -27,7 +27,7 @@ def temp_db():
         conn.execute(
             """
             INSERT INTO activities (
-                activity_id, date, activity_name, start_time_local,
+                activity_id, activity_date, activity_name, start_time_local,
                 total_distance_km, total_time_seconds
             ) VALUES (?, ?, ?, ?, ?, ?)
             """,
@@ -45,7 +45,7 @@ def temp_db():
         conn.execute(
             """
             INSERT INTO activities (
-                activity_id, date, activity_name, start_time_local,
+                activity_id, activity_date, activity_name, start_time_local,
                 total_distance_km, total_time_seconds
             ) VALUES (?, ?, ?, ?, ?, ?)
             """,
@@ -62,7 +62,7 @@ def temp_db():
         conn.execute(
             """
             INSERT INTO activities (
-                activity_id, date, activity_name, start_time_local,
+                activity_id, activity_date, activity_name, start_time_local,
                 total_distance_km, total_time_seconds
             ) VALUES (?, ?, ?, ?, ?, ?)
             """,

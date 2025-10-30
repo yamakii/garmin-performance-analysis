@@ -101,6 +101,13 @@ class DuckDBRegenerator:
             logger.warning(f"Deleting existing DuckDB: {self.db_path}")
             self.db_path.unlink()
 
+        # Initialize all tables when doing full rebuild
+        if self.delete_old_db:
+            from tools.database.db_writer import GarminDBWriter
+
+            logger.info("Initializing database tables...")
+            GarminDBWriter(db_path=str(self.db_path))
+
         self.db_reader = GarminDBReader(str(self.db_path))
 
     def filter_tables(self, tables: list[str] | None) -> list[str]:

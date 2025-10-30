@@ -22,7 +22,7 @@ def tmp_db_path(tmp_path):
         CREATE TABLE activities (
             activity_id INTEGER PRIMARY KEY,
             activity_date DATE,
-            body_mass_kg FLOAT
+            base_weight_kg FLOAT
         )
     """
     )
@@ -76,11 +76,11 @@ def tmp_db_path(tmp_path):
     for i in range(20):
         activity_date = start_date + timedelta(days=i * 3)
         activity_id = 1000 + i
-        body_mass_kg = 75.0
+        base_weight_kg = 75.0
 
         conn.execute(
             "INSERT INTO activities VALUES (?, ?, ?)",
-            [activity_id, activity_date.date(), body_mass_kg],
+            [activity_id, activity_date.date(), base_weight_kg],
         )
 
         # Insert splits with power data (linear relationship)
@@ -88,7 +88,7 @@ def tmp_db_path(tmp_path):
         for j in range(5):
             split_id = activity_id * 10 + j
             power = 200 + j * 20  # 200, 220, 240, 260, 280 W
-            power_wkg = power / body_mass_kg
+            power_wkg = power / base_weight_kg
             speed = 1.0 + 0.7 * power_wkg  # m/s
 
             conn.execute(

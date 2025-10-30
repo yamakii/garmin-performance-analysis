@@ -199,7 +199,7 @@ class TestRagIntervalToolsMcp:
         # Insert test activity and splits
         conn = duckdb.connect(str(db_path))
         conn.execute(
-            "INSERT INTO activities (activity_id, date, activity_name) VALUES (?, ?, ?)",
+            "INSERT INTO activities (activity_id, activity_date, activity_name) VALUES (?, ?, ?)",
             (fixture_activity_id, "2025-10-11", "Test Run"),
         )
         conn.execute(

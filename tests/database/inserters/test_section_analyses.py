@@ -11,6 +11,8 @@ from datetime import datetime
 
 import pytest
 
+from tools.database.db_writer import GarminDBWriter
+from tools.database.inserters.activities import insert_activities
 from tools.database.inserters.section_analyses import insert_section_analysis
 
 
@@ -50,14 +52,11 @@ class TestSectionAnalysisInserter:
         db_path = tmp_path / "test.duckdb"
 
         # Setup: Insert activity first (FK constraint)
-        from tools.database.db_writer import GarminDBWriter
-
-        writer = GarminDBWriter(db_path=str(db_path))
-        writer.insert_activity(
+        GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        insert_activities(
             activity_id=20464005432,
-            activity_date="2025-09-22",
-            distance_km=5.0,
-            duration_seconds=1500,
+            date="2025-09-22",
+            db_path=str(db_path),
         )
 
         result = insert_section_analysis(
@@ -92,14 +91,11 @@ class TestSectionAnalysisInserter:
         db_path = tmp_path / "test.duckdb"
 
         # Setup: Insert activity first (FK constraint)
-        from tools.database.db_writer import GarminDBWriter
-
-        writer = GarminDBWriter(db_path=str(db_path))
-        writer.insert_activity(
+        GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        insert_activities(
             activity_id=20464005432,
-            activity_date="2025-09-22",
-            distance_km=5.0,
-            duration_seconds=1500,
+            date="2025-09-22",
+            db_path=str(db_path),
         )
 
         result = insert_section_analysis(
@@ -123,14 +119,11 @@ class TestSectionAnalysisInserter:
         db_path = tmp_path / "test.duckdb"
 
         # Setup: Insert activity first (FK constraint)
-        from tools.database.db_writer import GarminDBWriter
-
-        writer = GarminDBWriter(db_path=str(db_path))
-        writer.insert_activity(
+        GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        insert_activities(
             activity_id=20464005432,
-            activity_date="2025-09-22",
-            distance_km=5.0,
-            duration_seconds=1500,
+            date="2025-09-22",
+            db_path=str(db_path),
         )
 
         result = insert_section_analysis(
@@ -169,14 +162,11 @@ class TestSectionAnalysisInserter:
         db_path = tmp_path / "test.duckdb"
 
         # Setup: Insert activity first (FK constraint)
-        from tools.database.db_writer import GarminDBWriter
-
-        writer = GarminDBWriter(db_path=str(db_path))
-        writer.insert_activity(
+        GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        insert_activities(
             activity_id=20464005432,
-            activity_date="2025-09-22",
-            distance_km=5.0,
-            duration_seconds=1500,
+            date="2025-09-22",
+            db_path=str(db_path),
         )
 
         result = insert_section_analysis(
@@ -217,14 +207,11 @@ class TestSectionAnalysisInserter:
         db_path = tmp_path / "test.duckdb"
 
         # Setup: Insert activity first (FK constraint)
-        from tools.database.db_writer import GarminDBWriter
-
-        writer = GarminDBWriter(db_path=str(db_path))
-        writer.insert_activity(
+        GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        insert_activities(
             activity_id=20464005432,
-            activity_date="2025-09-22",
-            distance_km=5.0,
-            duration_seconds=1500,
+            date="2025-09-22",
+            db_path=str(db_path),
         )
 
         # Analysis data WITHOUT metadata
@@ -284,14 +271,11 @@ class TestSectionAnalysisInserter:
         db_path = tmp_path / "test.duckdb"
 
         # Setup: Insert activity first (FK constraint)
-        from tools.database.db_writer import GarminDBWriter
-
-        writer = GarminDBWriter(db_path=str(db_path))
-        writer.insert_activity(
+        GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        insert_activities(
             activity_id=20464005432,
-            activity_date="2025-09-22",
-            distance_km=5.0,
-            duration_seconds=1500,
+            date="2025-09-22",
+            db_path=str(db_path),
         )
 
         # Analysis data WITHOUT metadata

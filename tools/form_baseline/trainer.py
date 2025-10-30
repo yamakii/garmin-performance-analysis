@@ -259,13 +259,13 @@ def train_power_efficiency_baseline(
             SELECT
                 s.average_speed AS speed_mps,
                 s.power AS power_w,
-                a.body_mass_kg
+                a.base_weight_kg
             FROM splits s
             JOIN activities a ON s.activity_id = a.activity_id
             WHERE a.activity_date >= ?
               AND a.activity_date <= ?
               AND s.power IS NOT NULL
-              AND a.body_mass_kg IS NOT NULL
+              AND a.base_weight_kg IS NOT NULL
               AND s.average_speed > 1.5
               AND s.average_speed < 7.0
         """
@@ -281,10 +281,10 @@ def train_power_efficiency_baseline(
         speeds = []
 
         for row in result:
-            speed_mps, power_w, body_mass_kg = row
-            if power_w is None or body_mass_kg is None or body_mass_kg <= 0:
+            speed_mps, power_w, base_weight_kg = row
+            if power_w is None or base_weight_kg is None or base_weight_kg <= 0:
                 continue
-            power_wkg = power_w / body_mass_kg
+            power_wkg = power_w / base_weight_kg
             power_wkg_values.append(power_wkg)
             speeds.append(speed_mps)
 
