@@ -393,34 +393,39 @@ def evaluate_and_store(
 
     conn = duckdb.connect(db_path)
 
-    # Check power baseline freshness and auto-retrain if needed
+    # Check baseline freshness and auto-retrain if needed (all metrics)
     from datetime import date, datetime
 
-    from tools.form_baseline.trainer import train_power_efficiency_baseline
+    from tools.form_baseline.trainer import train_form_baselines
 
+    # Get oldest baseline end date across all metrics
     baseline_check = conn.execute(
         """
-        SELECT period_end
+        SELECT MIN(period_end) as oldest_end
         FROM form_baseline_history
         WHERE user_id = 'default'
           AND condition_group = ?
-          AND metric = 'power'
-        ORDER BY period_end DESC
-        LIMIT 1
+          AND metric IN ('gct', 'vo', 'vr', 'power')
         """,
         [condition_group],
     ).fetchone()
 
-    if baseline_check and isinstance(baseline_check[0], date | datetime):
+    if (
+        baseline_check
+        and baseline_check[0]
+        and isinstance(baseline_check[0], date | datetime)
+    ):
         baseline_age_days = (
             datetime.strptime(activity_date, "%Y-%m-%d").date() - baseline_check[0]
         ).days
 
         if baseline_age_days > 7:
-            print(f"Power baseline is {baseline_age_days} days old. Auto-retraining...")
+            print(
+                f"Form baselines are {baseline_age_days} days old. Auto-retraining all metrics..."
+            )
             # Close connection before retraining (trainer opens its own)
             conn.close()
-            retrain_result = train_power_efficiency_baseline(
+            retrain_result = train_form_baselines(
                 db_path=db_path,
                 user_id="default",
                 condition_group=condition_group,
@@ -428,8 +433,21 @@ def evaluate_and_store(
             )
             if retrain_result:
                 print(
-                    f"  ✓ Retrained: {retrain_result['period_start']} ~ {retrain_result['period_end']} ({retrain_result['n_samples']} samples)"
+                    f"  ✓ Retrained baselines: {retrain_result['period_start']} ~ {retrain_result['period_end']}"
                 )
+                print(
+                    f"    GCT: n={retrain_result['gct']['n_samples']}, RMSE={retrain_result['gct']['rmse']:.2f}"
+                )
+                print(
+                    f"    VO:  n={retrain_result['vo']['n_samples']}, RMSE={retrain_result['vo']['rmse']:.2f}"
+                )
+                print(
+                    f"    VR:  n={retrain_result['vr']['n_samples']}, RMSE={retrain_result['vr']['rmse']:.2f}"
+                )
+                if "power" in retrain_result:
+                    print(
+                        f"    Power: n={retrain_result['power']['n_samples']}, RMSE={retrain_result['power']['power_rmse']:.2f}"
+                    )
             # Reconnect
             conn = duckdb.connect(db_path)
 
