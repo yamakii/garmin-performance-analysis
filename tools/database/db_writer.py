@@ -287,6 +287,10 @@ class GarminDBWriter:
                 coef_a FLOAT,
                 coef_b FLOAT,
 
+                power_a FLOAT,
+                power_b FLOAT,
+                power_rmse FLOAT,
+
                 period_start DATE NOT NULL,
                 period_end DATE NOT NULL,
                 trained_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -344,6 +348,16 @@ class GarminDBWriter:
 
                 overall_score FLOAT,
                 overall_star_rating VARCHAR,
+
+                power_avg_w FLOAT,
+                power_wkg FLOAT,
+                speed_actual_mps FLOAT,
+                speed_expected_mps FLOAT,
+                power_efficiency_score FLOAT,
+                power_efficiency_rating VARCHAR,
+                power_efficiency_needs_improvement BOOLEAN,
+                integrated_score FLOAT,
+                training_mode VARCHAR,
 
                 evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
