@@ -87,58 +87,6 @@ class TestPhase0FormBaselinesRemoval:
             "form_baselines" not in table_names
         ), "form_baselines table should be removed"
 
-    @pytest.mark.skip(reason="Test references non-existent garmin-power-prep directory")
-    def test_no_code_references_to_form_baselines(self):
-        """Test that no Python code uses form_baselines table (except migration and test files)."""
-        # Search for form_baselines in code (excluding this test file and migration)
-        import subprocess
-
-        result = subprocess.run(
-            [
-                "grep",
-                "-r",
-                "form_baselines",
-                "tools/",
-                "servers/",
-                "--include=*.py",
-                "--exclude-dir=__pycache__",
-            ],
-            cwd="/home/yamakii/workspace/claude_workspace/garmin-power-prep",
-            capture_output=True,
-            text=True,
-        )
-
-        # Filter out acceptable references:
-        # - Comments
-        # - Migration scripts (phase0_power_prep.py)
-        # - Script filenames (train_form_baselines_*.py as strings)
-        # - This test file
-        lines = result.stdout.strip().split("\n") if result.stdout else []
-        code_references = []
-        for line in lines:
-            # Skip if it's a comment
-            if "#" in line and line.split("#")[0].strip() == "":
-                continue
-            # Skip migration scripts
-            if "migrations/phase0_power_prep.py" in line:
-                continue
-            # Skip test files
-            if "test_phase0_prep.py" in line:
-                continue
-            # Skip script filenames in any context (subprocess.run args, comments, docstrings)
-            if "train_form_baselines" in line:
-                continue
-            # Skip if it's the comment we added in db_writer.py
-            if "# form_baselines table removed" in line:
-                continue
-            # This is a real code reference to the table
-            if line.strip():
-                code_references.append(line)
-
-        assert (
-            len(code_references) == 0
-        ), "Found form_baselines table usage in code:\n" + "\n".join(code_references)
-
 
 class TestPhase0BodyMassColumn:
     """Tests for base_weight_kg column addition."""
