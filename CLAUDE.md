@@ -312,16 +312,15 @@ uv run python tools/scripts/bulk_fetch_activity_details.py --activity-ids 12345 
 
 **Installation:**
 ```bash
-# Download official binary to ~/.local/bin
+# Download official binary to /usr/local/bin
 cd /tmp
 wget https://github.com/duckdb/duckdb/releases/latest/download/duckdb_cli-linux-amd64.zip
 unzip duckdb_cli-linux-amd64.zip
-mkdir -p ~/.local/bin
-mv duckdb ~/.local/bin/
+sudo mv duckdb /usr/local/bin/
 rm duckdb_cli-linux-amd64.zip
 
-# Add to PATH (already in ~/.zshrc if installed)
-export PATH="$HOME/.local/bin:$PATH"
+# Verify installation
+duckdb --version
 ```
 
 **Quick Start (Aliases):**
@@ -376,9 +375,9 @@ duckdb-garmin -c "
 3. **Schema changes**: Verify column names/types before writing migration scripts
 4. **Data validation**: Check data integrity after regeneration scripts
 
-**Full Path Alternative:**
+**Direct Command (without alias):**
 ```bash
-~/.local/bin/duckdb ~/garmin_data/data/database/garmin_performance.duckdb -readonly -c "SHOW TABLES;"
+duckdb ~/garmin_data/data/database/garmin_performance.duckdb -readonly -c "SHOW TABLES;"
 ```
 
 ### Testing Strategy
