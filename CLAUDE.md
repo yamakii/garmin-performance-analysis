@@ -306,6 +306,81 @@ uv run python tools/scripts/bulk_fetch_raw_data.py --start-date 2025-10-01
 uv run python tools/scripts/bulk_fetch_activity_details.py --activity-ids 12345 67890
 ```
 
+### DuckDB CLI Usage
+
+**When:** Schema inspection, query prototyping, data validation, debugging.
+
+**Installation:**
+```bash
+# Download official binary to ~/.local/bin
+cd /tmp
+wget https://github.com/duckdb/duckdb/releases/latest/download/duckdb_cli-linux-amd64.zip
+unzip duckdb_cli-linux-amd64.zip
+mkdir -p ~/.local/bin
+mv duckdb ~/.local/bin/
+rm duckdb_cli-linux-amd64.zip
+
+# Add to PATH (already in ~/.zshrc if installed)
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+**Quick Start (Aliases):**
+```bash
+# Pre-configured aliases in ~/.zshrc
+duckdb-tables       # Show all tables
+duckdb-activities   # Show last 10 activities
+duckdb-garmin       # Open DB in read-only mode
+
+# Custom queries
+duckdb-garmin -c "SELECT * FROM splits WHERE activity_id = 12345 LIMIT 5;"
+```
+
+**Common Commands:**
+```bash
+# Schema inspection
+duckdb-garmin -c "SHOW TABLES;"
+duckdb-garmin -c "DESCRIBE splits;"
+duckdb-garmin -c "PRAGMA table_info('form_efficiency');"
+
+# Data validation
+duckdb-garmin -c "SELECT COUNT(*) FROM splits WHERE activity_id = 12345;"
+duckdb-garmin -c "SELECT activity_date, activity_name FROM activities WHERE activity_date = '2025-10-30';"
+
+# MCP tool verification (compare tool output with actual data)
+duckdb-garmin -c "SELECT split_number, pace_seconds_per_km, avg_heart_rate
+  FROM splits WHERE activity_id = 20783281578 ORDER BY split_number;"
+
+# Query prototyping (before implementing MCP tools)
+duckdb-garmin -c "
+  WITH splits_agg AS (
+    SELECT activity_id, AVG(pace_seconds_per_km) as avg_pace
+    FROM splits GROUP BY activity_id
+  )
+  SELECT a.activity_date, s.avg_pace
+  FROM activities a
+  LEFT JOIN splits_agg s ON a.activity_id = s.activity_id
+  WHERE a.activity_date >= '2025-10-01'
+  ORDER BY a.activity_date LIMIT 5;
+"
+```
+
+**Safety Rules:**
+- ✅ **ALWAYS use `-readonly` flag** (aliases include it by default)
+- ✅ Schema inspection, query prototyping, debugging: OK
+- ❌ **NEVER write queries in application code** (use MCP tools instead)
+- ❌ **NEVER modify data via CLI** (use scripts with proper logging)
+
+**Use Cases:**
+1. **Before implementing MCP tool**: Prototype SQL query in CLI, then convert to tool
+2. **Debugging tool output**: Compare MCP tool result with actual DB content
+3. **Schema changes**: Verify column names/types before writing migration scripts
+4. **Data validation**: Check data integrity after regeneration scripts
+
+**Full Path Alternative:**
+```bash
+~/.local/bin/duckdb ~/garmin_data/data/database/garmin_performance.duckdb -readonly -c "SHOW TABLES;"
+```
+
 ### Testing Strategy
 
 **CRITICAL: Tests must NEVER depend on real production data.**
