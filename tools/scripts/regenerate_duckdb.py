@@ -10,6 +10,24 @@ Key Features:
 - Inserts into DuckDB normalized tables
 - Skip activities with DuckDB cache (--delete-db to force)
 - Dry run mode
+- **NEW (2025-11-01):** Independent table regeneration (FK constraints removed)
+
+Key Benefits (Post-FK-Removal):
+1. **Independent Table Updates**: Update specific tables without touching others
+   - Metadata-only updates (activities table) won't regenerate performance data
+   - Performance recalculation (splits, form_efficiency) won't touch metadata
+
+2. **Surgical Data Fixes**: Target specific tables and activities
+   - Fix calculation errors in one table without full regeneration
+   - Update schema-changed tables incrementally
+
+3. **Faster Iterations**: Skip unchanged tables during development
+   - Test new metrics without waiting for full regeneration
+   - Iterate on analysis algorithms efficiently
+
+4. **Safety**: Validation ensures parent activities exist before child table updates
+   - Prevents orphaned records
+   - Clear error messages with missing activity IDs
 
 Important Design Principles:
 1. API Fetching and Data Regeneration are COMPLETELY SEPARATED
@@ -25,6 +43,56 @@ Important Design Principles:
    - bulk_fetch_raw_data.py skips existing files (unless --force)
    - Avoids API rate limits
 
+Safety Rules (Post-FK-Removal):
+- Child tables (splits, form_efficiency, etc.) require parent activities to exist
+- Validation occurs BEFORE deletion (prevents orphaned records)
+- Use --activity-ids for surgical updates, date range for batch updates
+- Full database deletion (--delete-db) cannot be combined with --tables
+
+Common Use Cases:
+
+1. Metadata Fix (activities table only):
+   Update activity name or date without recalculating performance metrics.
+
+   uv run python tools/scripts/regenerate_duckdb.py \
+     --tables activities \
+     --activity-ids 12345
+
+2. Performance Recalculation (child tables only):
+   Fix calculation errors in splits or form metrics without touching metadata.
+
+   uv run python tools/scripts/regenerate_duckdb.py \
+     --tables splits form_efficiency \
+     --activity-ids 12345
+
+3. Date Range Update (specific tables):
+   Update specific metrics for a month of activities.
+
+   uv run python tools/scripts/regenerate_duckdb.py \
+     --tables splits \
+     --start-date 2025-10-01 \
+     --end-date 2025-10-31
+
+4. Full Table Regeneration (all activities):
+   Regenerate entire table after schema change.
+
+   uv run python tools/scripts/regenerate_duckdb.py \
+     --tables splits form_efficiency
+
+5. Schema Migration:
+   Update multiple tables after adding new columns.
+
+   uv run python tools/scripts/regenerate_duckdb.py \
+     --tables splits performance_trends \
+     --start-date 2025-01-01 \
+     --end-date 2025-12-31
+
+6. Full Database Regeneration:
+   Complete reset (deletes database file, regenerates all tables).
+
+   uv run python tools/scripts/regenerate_duckdb.py \
+     --delete-db
+
 Usage:
     # Regenerate all activities
     python tools/scripts/regenerate_duckdb.py
@@ -34,6 +102,9 @@ Usage:
 
     # Regenerate specific activity IDs
     python tools/scripts/regenerate_duckdb.py --activity-ids 12345 67890
+
+    # Regenerate specific tables only (NEW)
+    python tools/scripts/regenerate_duckdb.py --tables splits form_efficiency --activity-ids 12345
 
     # Delete old DuckDB before regeneration (complete reset)
     python tools/scripts/regenerate_duckdb.py --delete-db
@@ -150,6 +221,93 @@ class DuckDBRegenerator:
 
         # Phase 1: Return tables as-is (NO auto-add activities)
         return tables
+
+    def validate_table_dependencies(
+        self,
+        tables: list[str] | None,
+        activity_ids: list[int],
+    ) -> None:
+        """
+        Validate that parent activities exist before regenerating child tables.
+
+        This validation prevents orphaned records in child tables when FK constraints
+        are removed (2025-11-01). It ensures data integrity by checking parent existence
+        before deletion/insertion.
+
+        Args:
+            tables: List of table names (None = all tables, validation skipped)
+            activity_ids: List of activity IDs to regenerate
+
+        Raises:
+            ValueError: If child tables specified without parent activities existing
+                       Error message includes first 5 missing activity IDs
+
+        Validation Logic:
+            - Skip if tables is None (full regeneration, activities will be created)
+            - Skip if "activities" in tables (parent being regenerated)
+            - For child-only regeneration: check each activity_id exists in DuckDB
+            - Raise ValueError with helpful message listing missing IDs
+        """
+        # Skip validation if regenerating all tables
+        if tables is None:
+            logger.debug(
+                "Validation skipped: Full regeneration (all tables, activities will be created)"
+            )
+            return
+
+        # Skip validation if activities table is being regenerated
+        if "activities" in tables:
+            logger.debug(
+                "Validation skipped: activities table included (parent will be created)"
+            )
+            return
+
+        # Child-only regeneration: validate parent activities exist
+        logger.debug(f"Validating {len(activity_ids)} parent activities exist...")
+
+        # Check if database exists first
+        if not self.db_path.exists():
+            # Database doesn't exist - all IDs are missing
+            missing_ids = activity_ids
+        else:
+            # Check which activities are missing from DuckDB
+            missing_ids = []
+            try:
+                with duckdb.connect(str(self.db_path), read_only=True) as conn:
+                    try:
+                        for activity_id in activity_ids:
+                            query = (
+                                "SELECT COUNT(*) FROM activities WHERE activity_id = ?"
+                            )
+                            result = conn.execute(query, (activity_id,)).fetchone()
+                            if not result or result[0] == 0:
+                                missing_ids.append(activity_id)
+                    except duckdb.CatalogException:
+                        # activities table doesn't exist yet - all IDs are missing
+                        missing_ids = activity_ids
+            except Exception:
+                # Any other error - assume all IDs are missing
+                missing_ids = activity_ids
+
+        # Raise error if any activities are missing
+        if missing_ids:
+            # Show first 5 missing IDs in error message
+            shown_ids = missing_ids[:5]
+            shown_str = ", ".join(map(str, shown_ids))
+            more_str = (
+                f" (and {len(missing_ids) - 5} more)" if len(missing_ids) > 5 else ""
+            )
+
+            raise ValueError(
+                f"Cannot regenerate child tables without parent activities. "
+                f"Missing activity IDs: [{shown_str}]{more_str}. "
+                f"Solution: Either (1) include 'activities' in --tables, "
+                f"or (2) regenerate these activities first without --tables filter."
+            )
+
+        logger.info(
+            f"✅ Validation passed: All {len(activity_ids)} parent activities exist"
+        )
 
     def get_all_activities_from_raw(self) -> list[tuple[int, str | None]]:
         """
@@ -296,6 +454,13 @@ class DuckDBRegenerator:
             logger.debug("No tables to delete (body_composition only)")
             return
 
+        # Enhanced logging: Deletion strategy
+        logger.info(
+            f"🗑️  Deletion strategy: Activity-specific ({len(activity_ids)} activities)"
+        )
+        logger.info(f"   Tables: {', '.join(tables_to_delete)}")
+        logger.info("   Reason: --activity-ids specified with --tables")
+
         # Connect to DuckDB
         with duckdb.connect(str(self.db_path)) as conn:
             try:
@@ -364,6 +529,11 @@ class DuckDBRegenerator:
         if not tables_to_delete:
             logger.debug("No tables to delete (body_composition only)")
             return
+
+        # Enhanced logging: Deletion strategy with warning emoji
+        logger.warning("⚠️  Deletion strategy: Table-wide (all records)")
+        logger.warning(f"   Tables: {', '.join(tables_to_delete)}")
+        logger.warning("   Reason: --tables specified without --activity-ids")
 
         # Connect to DuckDB
         with duckdb.connect(str(self.db_path)) as conn:
@@ -571,6 +741,10 @@ class DuckDBRegenerator:
             f" (tables: {', '.join(self.tables)})" if self.tables else " (all tables)"
         )
         logger.info(f"Regenerating{tables_info}")
+
+        # Phase 2 (NEW): Validate table dependencies before deletion
+        if activity_ids:
+            self.validate_table_dependencies(self.tables, activity_ids)
 
         # Phase 2: Deletion strategy based on activity_ids
         if self.tables:
