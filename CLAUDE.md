@@ -280,22 +280,64 @@ git worktree remove ../garmin-feature-name
 
 ### Data Processing Scripts
 
-**DuckDB Regeneration** (after schema changes):
-```bash
-# Single table
-uv run python tools/scripts/regenerate_duckdb.py --tables splits --activity-ids 12345
+**DuckDB Regeneration (Post-FK-Removal)**
 
-# Multiple tables with date range
-uv run python tools/scripts/regenerate_duckdb.py \
-  --tables splits form_efficiency \
-  --start-date 2025-10-01 --end-date 2025-10-31
+**New Capabilities (2025-11-01):**
+- Independent table regeneration (FK constraints removed)
+- Update metadata without touching performance data
+- Recalculate specific metrics for targeted activities
+- Validation ensures parent activities exist (prevents orphaned records)
 
-# Force re-insertion (delete + insert)
-uv run python tools/scripts/regenerate_duckdb.py --tables splits --force
+**Common Patterns:**
 
-# Full database regeneration (DANGEROUS - requires user approval)
-uv run python tools/scripts/regenerate_duckdb.py --delete-db
-```
+1. **Metadata Fix (activities table only)**
+   ```bash
+   # Update activity name/date without recalculating performance
+   uv run python tools/scripts/regenerate_duckdb.py \
+     --tables activities \
+     --activity-ids 12345
+   ```
+
+2. **Performance Recalculation (child tables only)**
+   ```bash
+   # Fix calculation errors in splits or form metrics
+   uv run python tools/scripts/regenerate_duckdb.py \
+     --tables splits form_efficiency \
+     --activity-ids 12345
+   ```
+
+3. **Date Range Update (specific tables)**
+   ```bash
+   # Update specific metrics for a month of activities
+   uv run python tools/scripts/regenerate_duckdb.py \
+     --tables splits \
+     --start-date 2025-10-01 \
+     --end-date 2025-10-31
+   ```
+
+4. **Full Table Regeneration (all activities)**
+   ```bash
+   # Regenerate entire table after schema change
+   uv run python tools/scripts/regenerate_duckdb.py \
+     --tables splits form_efficiency
+   ```
+
+5. **Full Database Regeneration (DANGEROUS)**
+   ```bash
+   # Complete reset (requires user approval)
+   uv run python tools/scripts/regenerate_duckdb.py --delete-db
+   ```
+
+**Safety Rules:**
+- Child tables (splits, form_efficiency, etc.) require parent activities to exist
+- Validation occurs BEFORE deletion (prevents orphaned records)
+- Use `--activity-ids` for surgical updates, date range for batch updates
+- Full database deletion (--delete-db) cannot be combined with --tables
+
+**Enhanced Logging:**
+- 🗑️ Activity-specific deletion: Logs when deleting specific activity records
+- ⚠️ Table-wide deletion: Warns when deleting all records from tables
+- ✅ Validation messages: Shows which parent activities exist/missing
 
 **Raw Data Fetching:**
 ```bash
