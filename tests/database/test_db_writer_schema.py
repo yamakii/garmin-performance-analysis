@@ -98,7 +98,7 @@ class TestDBWriterSchema:
 
     @pytest.mark.unit
     def test_foreign_key_constraints(self):
-        """Test that normalized tables have proper foreign key constraints"""
+        """Test that normalized tables have NO foreign key constraints (2025-11-01 change)"""
         # Arrange
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.duckdb"
@@ -107,10 +107,10 @@ class TestDBWriterSchema:
             # Act
             writer._ensure_tables()
 
-            # Assert - verify foreign keys exist
+            # Assert - verify NO foreign keys exist (orphaned records should succeed)
             conn = duckdb.connect(str(db_path))
 
-            # Get foreign key constraints for each table
+            # Verify orphaned record insertion succeeds (no FK constraints)
             tables_to_check = [
                 "splits",
                 "form_efficiency",
@@ -119,29 +119,41 @@ class TestDBWriterSchema:
                 "performance_trends",
                 "vo2_max",
                 "lactate_threshold",
+                "form_evaluations",
+                "section_analyses",
             ]
 
             for table in tables_to_check:
-                # Try to insert without parent record - should fail
-                with pytest.raises(Exception) as exc_info:
-                    if table == "splits":
-                        conn.execute(
-                            f"INSERT INTO {table} (activity_id, split_index) VALUES (999999, 1)"
-                        )
-                    elif table == "heart_rate_zones":
-                        conn.execute(
-                            f"INSERT INTO {table} (activity_id, zone_number) VALUES (999999, 1)"
-                        )
-                    else:
-                        conn.execute(
-                            f"INSERT INTO {table} (activity_id) VALUES (999999)"
-                        )
+                # Insert orphaned record (activity_id=999999 doesn't exist)
+                # This should SUCCEED with no FK constraints
+                if table == "splits":
+                    conn.execute(
+                        f"INSERT INTO {table} (activity_id, split_index) VALUES (999999, 1)"
+                    )
+                elif table == "heart_rate_zones":
+                    conn.execute(
+                        f"INSERT INTO {table} (activity_id, zone_number) VALUES (999999, 1)"
+                    )
+                elif table == "form_evaluations":
+                    conn.execute(
+                        f"INSERT INTO {table} (eval_id, activity_id) VALUES (1, 999999)"
+                    )
+                elif table == "section_analyses":
+                    conn.execute(
+                        f"INSERT INTO {table} (analysis_id, activity_id, activity_date, section_type) VALUES (1, 999999, '2025-01-01', 'test')"
+                    )
+                else:
+                    conn.execute(f"INSERT INTO {table} (activity_id) VALUES (999999)")
 
-                # Should fail due to foreign key constraint
+                # Verify insertion succeeded (no FK constraint)
+                count = conn.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE activity_id = 999999"
+                ).fetchone()[
+                    0
+                ]  # type: ignore
                 assert (
-                    "foreign key" in str(exc_info.value).lower()
-                    or "constraint" in str(exc_info.value).lower()
-                ), f"{table} should have foreign key constraint on activity_id"
+                    count == 1
+                ), f"{table} should allow orphaned records (no FK constraint)"
 
             conn.close()
 

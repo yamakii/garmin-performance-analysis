@@ -85,16 +85,22 @@ class TestProcessActivityIntegration:
                 """
             )
 
-            # Test FK constraint - should fail without parent activity
-            with pytest.raises(Exception) as exc_info:
-                conn.execute(
-                    """
-                    INSERT INTO splits (activity_id, split_index)
-                    VALUES (999999, 1)
-                    """
-                )
+            # Test NO FK constraint (2025-11-01 change) - orphaned records should succeed
+            conn.execute(
+                """
+                INSERT INTO splits (activity_id, split_index)
+                VALUES (999999, 1)
+                """
+            )
 
-            error_msg = str(exc_info.value).lower()
-            assert "foreign key" in error_msg or "constraint" in error_msg
+            # Verify orphaned record was inserted (no FK constraint)
+            orphaned_count = conn.execute(
+                "SELECT COUNT(*) FROM splits WHERE activity_id = 999999"
+            ).fetchone()[
+                0
+            ]  # type: ignore
+            assert (
+                orphaned_count == 1
+            ), "Orphaned records should be allowed (no FK constraint)"
 
             conn.close()

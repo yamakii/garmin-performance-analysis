@@ -31,16 +31,23 @@ class GarminDBWriter:
         """Ensure required tables exist with normalized schema.
 
         Creates:
-        - activities: Base activity metadata (36 columns)
-        - splits: Split-by-split metrics (foreign key to activities)
-        - form_efficiency: Form efficiency summary (GCT, VO, VR)
-        - heart_rate_zones: HR zone data (5 rows per activity)
-        - hr_efficiency: HR efficiency analysis
-        - performance_trends: Performance trends (4-phase: warmup/run/recovery/cooldown)
-        - vo2_max: VO2 max estimation
-        - lactate_threshold: Lactate threshold metrics
-        - body_composition: Body composition measurements (weight, BMI, body fat %)
-        - section_analyses: Section analysis data
+        - activities: Base activity metadata (19 columns)
+        - splits: Split-by-split metrics (28 columns, NO FK)
+        - form_efficiency: Form efficiency summary (GCT, VO, VR, NO FK)
+        - heart_rate_zones: HR zone data (5 rows per activity, NO FK)
+        - hr_efficiency: HR efficiency analysis (NO FK)
+        - performance_trends: Performance trends (4-phase, NO FK)
+        - vo2_max: VO2 max estimation (NO FK)
+        - lactate_threshold: Lactate threshold metrics (NO FK)
+        - body_composition: Body composition measurements (independent table)
+        - section_analyses: Section analysis data (NO FK)
+        - form_evaluations: Form evaluation results (NO FK)
+        - form_baseline_history: Baseline trend history (independent table)
+
+        Change Log:
+        - 2025-11-01: Removed FK constraints from 9 child tables
+          Reason: Single data source + bulk writes + LEFT JOINs only
+          Data integrity enforced at application layer
 
         Note: Schemas match those defined in individual inserters to ensure compatibility.
         """
@@ -105,8 +112,8 @@ class GarminDBWriter:
                 wind_impact VARCHAR,
                 temp_impact VARCHAR,
                 environmental_impact VARCHAR,
-                PRIMARY KEY (activity_id, split_index),
-                FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
+                PRIMARY KEY (activity_id, split_index)
+                -- FK constraint removed (2025-11-01): Single data source + bulk writes only
             )
         """
         )
@@ -135,8 +142,8 @@ class GarminDBWriter:
                 vr_max DOUBLE,
                 vr_std DOUBLE,
                 vr_rating VARCHAR,
-                vr_evaluation VARCHAR,
-                FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
+                vr_evaluation VARCHAR
+                -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
             )
         """
         )
@@ -151,8 +158,8 @@ class GarminDBWriter:
                 zone_high_boundary INTEGER,
                 time_in_zone_seconds DOUBLE,
                 zone_percentage DOUBLE,
-                PRIMARY KEY (activity_id, zone_number),
-                FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
+                PRIMARY KEY (activity_id, zone_number)
+                -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
             )
         """
         )
@@ -174,8 +181,8 @@ class GarminDBWriter:
                 zone2_percentage DOUBLE,
                 zone3_percentage DOUBLE,
                 zone4_percentage DOUBLE,
-                zone5_percentage DOUBLE,
-                FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
+                zone5_percentage DOUBLE
+                -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
             )
         """
         )
@@ -216,8 +223,8 @@ class GarminDBWriter:
                 cooldown_avg_hr DOUBLE,
                 cooldown_avg_cadence DOUBLE,
                 cooldown_avg_power DOUBLE,
-                cooldown_evaluation VARCHAR,
-                FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
+                cooldown_evaluation VARCHAR
+                -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
             )
         """
         )
@@ -230,8 +237,8 @@ class GarminDBWriter:
                 precise_value DOUBLE,
                 value DOUBLE,
                 date DATE,
-                category INTEGER,
-                FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
+                category INTEGER
+                -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
             )
         """
         )
@@ -247,8 +254,8 @@ class GarminDBWriter:
                 functional_threshold_power INTEGER,
                 power_to_weight DOUBLE,
                 weight DOUBLE,
-                date_power TIMESTAMP,
-                FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
+                date_power TIMESTAMP
+                -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
             )
         """
         )
@@ -359,8 +366,8 @@ class GarminDBWriter:
                 integrated_score FLOAT,
                 training_mode VARCHAR,
 
-                evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
+                evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
             )
         """
         )
@@ -376,8 +383,8 @@ class GarminDBWriter:
                 analysis_data VARCHAR,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 agent_name VARCHAR,
-                agent_version VARCHAR,
-                FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
+                agent_version VARCHAR
+                -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
             )
         """
         )

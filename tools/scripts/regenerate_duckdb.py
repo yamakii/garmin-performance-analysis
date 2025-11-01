@@ -284,6 +284,7 @@ class DuckDBRegenerator:
             - Deletion is performed in transaction (all or nothing)
             - Only deletes from tables specified in self.tables
             - Gracefully handles missing tables (tables may not exist yet)
+            - FK constraints removed (2025-11-01): Deletion order no longer matters
         """
         if not self.tables:
             return
