@@ -295,7 +295,8 @@ git worktree remove ../garmin-feature-name
    # Update activity name/date without recalculating performance
    uv run python tools/scripts/regenerate_duckdb.py \
      --tables activities \
-     --activity-ids 12345
+     --activity-ids 12345 \
+     --force
    ```
 
 2. **Performance Recalculation (child tables only)**
@@ -303,7 +304,8 @@ git worktree remove ../garmin-feature-name
    # Fix calculation errors in splits or form metrics
    uv run python tools/scripts/regenerate_duckdb.py \
      --tables splits form_efficiency \
-     --activity-ids 12345
+     --activity-ids 12345 \
+     --force
    ```
 
 3. **Date Range Update (specific tables)**
@@ -312,14 +314,16 @@ git worktree remove ../garmin-feature-name
    uv run python tools/scripts/regenerate_duckdb.py \
      --tables splits \
      --start-date 2025-10-01 \
-     --end-date 2025-10-31
+     --end-date 2025-10-31 \
+     --force
    ```
 
 4. **Full Table Regeneration (all activities)**
    ```bash
    # Regenerate entire table after schema change
    uv run python tools/scripts/regenerate_duckdb.py \
-     --tables splits form_efficiency
+     --tables splits form_efficiency \
+     --force
    ```
 
 5. **Full Database Regeneration (DANGEROUS)**
