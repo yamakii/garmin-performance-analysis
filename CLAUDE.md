@@ -282,15 +282,16 @@ git worktree remove ../garmin-feature-name
 
 **DuckDB Regeneration** (after schema changes):
 ```bash
-# Single table
-uv run python tools/scripts/regenerate_duckdb.py --tables splits --activity-ids 12345
+# Single table with specific activity IDs
+uv run python tools/scripts/regenerate_duckdb.py --tables splits --activity-ids 12345 --force
 
 # Multiple tables with date range
 uv run python tools/scripts/regenerate_duckdb.py \
   --tables splits form_efficiency \
-  --start-date 2025-10-01 --end-date 2025-10-31
+  --start-date 2025-10-01 --end-date 2025-10-31 \
+  --force
 
-# Force re-insertion (delete + insert)
+# Force re-insertion for all records in a table
 uv run python tools/scripts/regenerate_duckdb.py --tables splits --force
 
 # Full database regeneration (DANGEROUS - requires user approval)

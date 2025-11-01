@@ -126,13 +126,13 @@ class TestValidateArguments:
         )
 
     def test_init_without_force_parameter(self, tmp_path):
-        """Test that __init__ works without force parameter (Phase 1)."""
-        # Phase 1: force parameter removed
+        """Test that __init__ defaults force=False when not specified (Phase 4)."""
         db_path = tmp_path / "test.db"
         regenerator = DuckDBRegenerator(db_path=db_path, tables=["splits"])
 
-        # Should not have force attribute
-        assert not hasattr(regenerator, "force")
+        # Should have force attribute defaulting to False
+        assert hasattr(regenerator, "force")
+        assert regenerator.force is False
         assert regenerator.tables == ["splits"]
 
     def test_init_with_delete_db_no_tables_succeeds(self, tmp_path):
@@ -146,14 +146,14 @@ class TestValidateArguments:
         assert regenerator.tables is None
 
     def test_init_with_tables_succeeds(self, tmp_path):
-        """Test that --tables alone is valid (Phase 1)."""
-        # Phase 1: force parameter removed
+        """Test that --tables alone is valid with force defaulting to False (Phase 4)."""
         db_path = tmp_path / "test.db"
         regenerator = DuckDBRegenerator(db_path=db_path, tables=["splits"])
 
         assert regenerator.tables == ["splits"]
-        # force parameter no longer exists
-        assert not hasattr(regenerator, "force")
+        # force parameter should exist with default False
+        assert hasattr(regenerator, "force")
+        assert regenerator.force is False
 
     def test_init_stores_tables_parameter(self, tmp_path):
         """Test that tables parameter is stored in instance."""
@@ -386,7 +386,7 @@ class TestRegenerateAllDeletionLogic:
     def test_regenerate_all_uses_table_wide_deletion_without_activity_ids(
         self, tmp_path, mocker
     ):
-        """Test that regenerate_all uses delete_table_all_records when no activity_ids."""
+        """Test that regenerate_all uses delete_table_all_records when no activity_ids (Phase 4: requires force=True)."""
         # Mock delete methods
         mock_delete_table_all = mocker.patch.object(
             DuckDBRegenerator, "delete_table_all_records"
@@ -408,7 +408,7 @@ class TestRegenerateAllDeletionLogic:
         )
 
         db_path = tmp_path / "test.db"
-        regenerator = DuckDBRegenerator(db_path=db_path, tables=["splits"])
+        regenerator = DuckDBRegenerator(db_path=db_path, tables=["splits"], force=True)
 
         # Call regenerate_all without activity_ids (table-wide mode)
         regenerator.regenerate_all()
@@ -420,7 +420,7 @@ class TestRegenerateAllDeletionLogic:
     def test_regenerate_all_uses_id_specific_deletion_with_activity_ids(
         self, tmp_path, mocker
     ):
-        """Test that regenerate_all uses delete_activity_records when activity_ids provided."""
+        """Test that regenerate_all uses delete_activity_records when activity_ids provided (Phase 4: requires force=True)."""
         # Create actual DB file and mock validation to pass
         db_path = tmp_path / "test.db"
         db_path.touch()
@@ -443,7 +443,7 @@ class TestRegenerateAllDeletionLogic:
             return_value={"status": "success"},
         )
 
-        regenerator = DuckDBRegenerator(db_path=db_path, tables=["splits"])
+        regenerator = DuckDBRegenerator(db_path=db_path, tables=["splits"], force=True)
 
         # Call regenerate_all with activity_ids (ID-specific mode)
         regenerator.regenerate_all(activity_ids=[12345, 67890])
@@ -472,6 +472,145 @@ class TestRegenerateAllDeletionLogic:
         # No deletion should occur without tables filter
         mock_delete_table_all.assert_not_called()
         mock_delete_activity.assert_not_called()
+
+
+@pytest.mark.unit
+class TestForceFlag:
+    """Test --force flag behavior (Phase 4)."""
+
+    def test_regenerate_all_without_force_skips_deletion(self, tmp_path, mocker):
+        """Test that without --force, deletion is skipped and message is logged."""
+        # Mock validation to pass
+        mocker.patch.object(DuckDBRegenerator, "validate_table_dependencies")
+
+        # Mock delete methods
+        mock_delete_activity = mocker.patch.object(
+            DuckDBRegenerator, "delete_activity_records"
+        )
+        mock_delete_table = mocker.patch.object(
+            DuckDBRegenerator, "delete_table_all_records"
+        )
+        mock_logger_info = mocker.patch("tools.scripts.regenerate_duckdb.logger.info")
+
+        # Mock other methods to return at least one activity
+        mocker.patch.object(
+            DuckDBRegenerator,
+            "get_all_activities_from_raw",
+            return_value=[(12345, "2025-01-01")],
+        )
+        mocker.patch.object(
+            DuckDBRegenerator,
+            "regenerate_single_activity",
+            return_value={"status": "success"},
+        )
+
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(db_path=db_path, tables=["splits"], force=False)
+
+        # Run regenerate_all (should skip deletion)
+        regenerator.regenerate_all(activity_ids=[12345])
+
+        # Verify deletion methods NOT called
+        mock_delete_activity.assert_not_called()
+        mock_delete_table.assert_not_called()
+
+        # Verify skip message was logged
+        skip_message_calls = [
+            call
+            for call in mock_logger_info.call_args_list
+            if "Skipping deletion" in str(call)
+        ]
+        assert len(skip_message_calls) > 0, "Skip message should be logged"
+
+    def test_regenerate_all_with_force_calls_deletion(self, tmp_path, mocker):
+        """Test that with --force, deletion is executed."""
+        # Create actual DB file
+        db_path = tmp_path / "test.db"
+        db_path.touch()
+
+        # Mock validation to pass
+        mocker.patch.object(DuckDBRegenerator, "validate_table_dependencies")
+
+        # Mock delete methods
+        mock_delete_activity = mocker.patch.object(
+            DuckDBRegenerator, "delete_activity_records"
+        )
+
+        # Mock regenerate_single_activity
+        mocker.patch.object(
+            DuckDBRegenerator,
+            "regenerate_single_activity",
+            return_value={"status": "success"},
+        )
+
+        regenerator = DuckDBRegenerator(db_path=db_path, tables=["splits"], force=True)
+
+        # Run regenerate_all with force=True (should call deletion)
+        regenerator.regenerate_all(activity_ids=[12345])
+
+        # Verify deletion IS called
+        mock_delete_activity.assert_called_once_with([12345])
+
+    def test_regenerate_single_activity_without_force_skips_existing(
+        self, tmp_path, mocker
+    ):
+        """Test that without --force, existing activities are skipped with clear message."""
+        # Mock cache check to return True (activity exists)
+        mocker.patch.object(DuckDBRegenerator, "check_duckdb_cache", return_value=True)
+        mocker.patch.object(
+            DuckDBRegenerator, "check_raw_data_exists", return_value=True
+        )
+        mock_logger_info = mocker.patch("tools.scripts.regenerate_duckdb.logger.info")
+
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(db_path=db_path, tables=["splits"], force=False)
+
+        # Call regenerate_single_activity (should skip)
+        result = regenerator.regenerate_single_activity(12345, "2025-01-01")
+
+        # Verify status is skipped
+        assert result["status"] == "skipped"
+        assert result["reason"] == "existing_in_duckdb_no_force"
+
+        # Verify skip message was logged
+        skip_message_calls = [
+            call
+            for call in mock_logger_info.call_args_list
+            if "use --force to update" in str(call)
+        ]
+        assert (
+            len(skip_message_calls) > 0
+        ), "Skip message with --force hint should be logged"
+
+    def test_regenerate_single_activity_with_force_processes_existing(
+        self, tmp_path, mocker
+    ):
+        """Test that with --force, existing activities are processed."""
+        # Mock cache check to return True (activity exists)
+        mocker.patch.object(DuckDBRegenerator, "check_duckdb_cache", return_value=True)
+        mocker.patch.object(
+            DuckDBRegenerator, "check_raw_data_exists", return_value=True
+        )
+
+        # Mock GarminIngestWorker
+        mock_worker = mocker.Mock()
+        mock_worker.process_activity.return_value = {"activity": "activity.json"}
+        mocker.patch(
+            "tools.scripts.regenerate_duckdb.GarminIngestWorker",
+            return_value=mock_worker,
+        )
+
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(db_path=db_path, tables=["splits"], force=True)
+
+        # Call regenerate_single_activity with force=True
+        result = regenerator.regenerate_single_activity(12345, "2025-01-01")
+
+        # Verify status is success (not skipped)
+        assert result["status"] == "success"
+
+        # Verify process_activity was called
+        mock_worker.process_activity.assert_called_once()
 
 
 @pytest.mark.unit

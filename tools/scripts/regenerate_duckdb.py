@@ -137,6 +137,7 @@ class DuckDBRegenerator:
         db_path: Path | None = None,
         delete_old_db: bool = False,
         tables: list[str] | None = None,
+        force: bool = False,
     ):
         """
         Initialize regenerator.
@@ -146,6 +147,7 @@ class DuckDBRegenerator:
             db_path: DuckDB path (default: from get_database_dir())
             delete_old_db: Delete existing DuckDB before regeneration
             tables: List of tables to regenerate (None = all tables)
+            force: Force re-insertion by deleting existing records first
 
         Raises:
             ValueError: If delete_old_db and tables are both specified
@@ -166,6 +168,7 @@ class DuckDBRegenerator:
         )
         self.delete_old_db = delete_old_db
         self.tables = tables
+        self.force = force
 
         # Delete old DB if requested
         if self.delete_old_db and self.db_path.exists():
@@ -608,13 +611,25 @@ class DuckDBRegenerator:
         # When tables is None (full regeneration): check full data completeness (strict)
         if not self.delete_old_db:
             if self.tables is not None:
-                # Table-selective regeneration: only check activities table
-                # (we'll regenerate the specified tables even if they exist)
+                # Table-selective regeneration: check activities table
                 cache_exists = self.check_duckdb_cache(activity_id)
                 if not cache_exists:
                     logger.debug(
                         f"Activity {activity_id} not in DuckDB, will regenerate activities + {self.tables}"
                     )
+                elif not self.force:
+                    # Cache exists but --force not specified: skip with clear message
+                    elapsed = time.time() - start_time
+                    logger.info(
+                        f"⏭️  Skipping activity {activity_id}: existing in DuckDB (use --force to update)"
+                    )
+                    return {
+                        "status": "skipped",
+                        "activity_id": activity_id,
+                        "activity_date": activity_date,
+                        "reason": "existing_in_duckdb_no_force",
+                        "elapsed_time": elapsed,
+                    }
             else:
                 # Full regeneration: check complete data
                 cache_exists = self.check_duckdb_cache(activity_id)
@@ -746,12 +761,21 @@ class DuckDBRegenerator:
         if activity_ids:
             self.validate_table_dependencies(self.tables, activity_ids)
 
-        # Phase 2: Deletion strategy based on activity_ids
-        if self.tables:
+        # Phase 2: Deletion strategy based on activity_ids AND force flag
+        if self.tables and self.force:
             if activity_ids:  # ID-specific mode
                 self.delete_activity_records(activity_ids)
             else:  # Table-wide mode
                 self.delete_table_all_records(self.tables)
+        elif self.tables and not self.force:
+            # Clear message when skipping deletion
+            tables_info = ", ".join(self.tables)
+            logger.info(
+                "ℹ️  Skipping deletion (existing records will be preserved)\n"
+                f"   Tables: {tables_info}\n"
+                "   Reason: --force flag not specified\n"
+                "   To update existing records, add --force flag to your command"
+            )
 
         # Regenerate with progress bar
         for activity_id, activity_date in tqdm(
@@ -855,6 +879,17 @@ def main():
         help="Delete existing DuckDB before regeneration (complete reset, cannot be used with --tables)",
     )
     parser.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "Force update by deleting existing records before re-insertion. "
+            "Required to update existing data. "
+            "Without --force: existing records are preserved (no updates). "
+            "Deletion scope depends on --activity-ids: "
+            "specific IDs (surgical) or all records (table-wide)."
+        ),
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Show what would be regenerated without actually regenerating",
@@ -879,6 +914,7 @@ def main():
         regenerator = DuckDBRegenerator(
             delete_old_db=args.delete_db,
             tables=args.tables,
+            force=args.force,
         )
     except ValueError as e:
         parser.error(str(e))
@@ -899,6 +935,9 @@ def main():
 
         print("\n=== Dry Run ===")
         print(f"Delete old DuckDB: {args.delete_db}")
+        print(f"Force update: {args.force}")
+        if args.tables and not args.force:
+            print("⚠️  Warning: Without --force, existing records will be skipped")
 
         # Enhanced table filtering info
         if args.tables:
