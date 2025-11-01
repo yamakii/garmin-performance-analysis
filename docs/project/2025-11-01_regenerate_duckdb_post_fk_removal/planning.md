@@ -4,7 +4,7 @@
 - **プロジェクト名**: `regenerate_duckdb_post_fk_removal`
 - **作成日**: `2025-11-01`
 - **ステータス**: 計画中
-- **GitHub Issue**: [To be created]
+- **GitHub Issue**: #45
 
 ## 要件定義
 
