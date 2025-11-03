@@ -128,7 +128,7 @@ class TestLactateThresholdInserter:
         row = lt_data[0]
         assert row[0] == 20615445009  # activity_id
         assert row[1] == 168  # heart_rate
-        assert abs(row[2] - 3.186) < 0.001  # speed_mps (converted from 0.314 s/m)
+        assert abs(row[2] - 3.1389) < 0.001  # speed_mps (0.31388801 × 10 = 3.1389 m/s)
         assert row[4] == 345  # functional_threshold_power
         assert abs(row[5] - 5.0) < 0.1  # power_to_weight
         assert abs(row[6] - 69.0) < 0.1  # weight

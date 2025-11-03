@@ -86,10 +86,10 @@ def insert_lactate_threshold(
         date_hr = speed_hr.get("calendarDate") if speed_hr else None
         date_power = power.get("calendarDate") if power else None
 
-        # Convert speed from s/m (seconds per meter) to m/s (meters per second)
-        # Garmin API returns pace (s/m), but we store speed (m/s)
+        # Convert speed from 0.1 m/s (decimeter per second) to m/s (meters per second)
+        # Garmin API returns speed in 0.1 m/s units, multiply by 10 to get m/s
         raw_speed = speed_hr.get("speed") if speed_hr else None
-        speed_mps = (1.0 / raw_speed) if raw_speed else None
+        speed_mps = (raw_speed * 10) if raw_speed else None
 
         # Insert lactate threshold data
         conn.execute(
