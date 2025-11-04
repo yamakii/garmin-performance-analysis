@@ -96,24 +96,32 @@ def _load_models_from_db(
     conn = duckdb.connect(db_path, read_only=True)
 
     try:
-        # Query baseline history for period covering activity_date
+        # Query baseline history: use most recent baseline trained before activity_date
+        # Baseline models are trained on past data and applied to future activities
         baselines = conn.execute(
             """
+            WITH latest_baseline AS (
+                SELECT MAX(period_end) as max_period_end
+                FROM form_baseline_history
+                WHERE user_id = ?
+                  AND condition_group = ?
+                  AND period_end <= ?
+            )
             SELECT metric, coef_alpha, coef_d, coef_a, coef_b,
                    n_samples, rmse, speed_range_min, speed_range_max
             FROM form_baseline_history
             WHERE user_id = ?
               AND condition_group = ?
-              AND period_start <= ?
-              AND period_end >= ?
+              AND period_end = (SELECT max_period_end FROM latest_baseline)
             """,
-            [user_id, condition_group, activity_date, activity_date],
+            [user_id, condition_group, activity_date, user_id, condition_group],
         ).fetchall()
 
         if not baselines:
             raise ValueError(
                 f"No baseline found for activity_date={activity_date}, "
-                f"user_id={user_id}, condition_group={condition_group}"
+                f"user_id={user_id}, condition_group={condition_group}. "
+                f"Train a baseline model with period_end <= {activity_date}"
             )
 
         # Parse baselines by metric
@@ -164,6 +172,11 @@ def _get_splits_data(
 ) -> dict[str, float]:
     """Get average splits data from DuckDB.
 
+    Uses Work/Run splits only for more accurate evaluation:
+    - Interval training: Extracts Work splits (excludes Recovery/Cooldown)
+    - Tempo/threshold: Extracts Run phase splits (excludes Warmup/Cooldown)
+    - Recovery run: Uses all splits if run_splits covers entire activity
+
     Args:
         db_path: Path to DuckDB database
         activity_id: Activity ID
@@ -182,22 +195,58 @@ def _get_splits_data(
     conn = duckdb.connect(db_path, read_only=True)
 
     try:
-        result = conn.execute(
+        # Get run_splits from performance_trends
+        run_splits_result = conn.execute(
             """
-            SELECT
-                AVG(pace_seconds_per_km) as pace_s_per_km,
-                AVG(ground_contact_time) as gct_ms,
-                AVG(vertical_oscillation) as vo_cm,
-                AVG(vertical_ratio) as vr_pct,
-                AVG(cadence) as cadence
-            FROM splits
+            SELECT run_splits
+            FROM performance_trends
             WHERE activity_id = ?
-              AND ground_contact_time IS NOT NULL
-              AND vertical_oscillation IS NOT NULL
-              AND vertical_ratio IS NOT NULL
-        """,
+            """,
             [activity_id],
         ).fetchone()
+
+        # Build WHERE clause based on run_splits availability
+        if run_splits_result and run_splits_result[0]:
+            # Parse run_splits: "3,4,6,7,9,10,12,13" -> [3,4,6,7,9,10,12,13]
+            run_splits = run_splits_result[0]
+            split_indices = [int(s.strip()) for s in run_splits.split(",")]
+
+            # Use only Work/Run splits for evaluation
+            result = conn.execute(
+                f"""
+                SELECT
+                    AVG(pace_seconds_per_km) as pace_s_per_km,
+                    AVG(ground_contact_time) as gct_ms,
+                    AVG(vertical_oscillation) as vo_cm,
+                    AVG(vertical_ratio) as vr_pct,
+                    AVG(cadence) as cadence
+                FROM splits
+                WHERE activity_id = ?
+                  AND split_index IN ({','.join('?' * len(split_indices))})
+                  AND ground_contact_time IS NOT NULL
+                  AND vertical_oscillation IS NOT NULL
+                  AND vertical_ratio IS NOT NULL
+            """,
+                [activity_id] + split_indices,
+            ).fetchone()
+        else:
+            # Fallback: Use all splits (backward compatibility)
+            result = conn.execute(
+                """
+                SELECT
+                    AVG(pace_seconds_per_km) as pace_s_per_km,
+                    AVG(ground_contact_time) as gct_ms,
+                    AVG(vertical_oscillation) as vo_cm,
+                    AVG(vertical_ratio) as vr_pct,
+                    AVG(cadence) as cadence
+                FROM splits
+                WHERE activity_id = ?
+                  AND ground_contact_time IS NOT NULL
+                  AND vertical_oscillation IS NOT NULL
+                  AND vertical_ratio IS NOT NULL
+            """,
+                [activity_id],
+            ).fetchone()
 
         if not result or result[0] is None:
             raise ValueError(f"No splits found for activity {activity_id}")
@@ -211,6 +260,7 @@ def _get_splits_data(
             "vr_pct": float(vr_pct),
             "cadence": float(cadence) if cadence is not None else 0.0,
         }
+
     finally:
         conn.close()
 
