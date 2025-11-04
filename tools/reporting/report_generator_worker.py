@@ -1096,10 +1096,8 @@ class ReportGeneratorWorker:
             # Extract workouts list from result (correct key name)
             similar = result.get("similar_activities", [])
 
-            if not similar or len(similar) < 3:
-                logger.warning(
-                    f"Insufficient similar workouts for activity {activity_id}"
-                )
+            if not similar or len(similar) < 1:
+                logger.warning(f"No similar workouts found for activity {activity_id}")
                 return None
 
             # Calculate average differences from top 3
@@ -1142,20 +1140,26 @@ class ReportGeneratorWorker:
 
                 conn.close()
 
-            avg_pace_diff = sum([w["pace_diff"] for w in top_3]) / 3
-            avg_hr_diff = sum([w["hr_diff"] for w in top_3]) / 3
-
-            pace_diff = avg_pace_diff
-            hr_diff = avg_hr_diff
-
             # Use target_pace_override for main-set comparison, otherwise use overall avg_pace
             base_pace = (
                 target_pace_override
                 if target_pace_override
                 else current_metrics["avg_pace"]
             )
-            avg_similar_pace = base_pace - avg_pace_diff
-            avg_similar_hr = current_metrics["avg_hr"] - avg_hr_diff
+
+            # Calculate average of similar workouts by computing each workout's actual value first
+            similar_paces = [base_pace + w["pace_diff"] for w in top_3]
+            avg_similar_pace = sum(similar_paces) / len(similar_paces)
+
+            similar_hrs = [current_metrics["avg_hr"] + w["hr_diff"] for w in top_3]
+            avg_similar_hr = sum(similar_hrs) / len(similar_hrs)
+
+            # Calculate average differences for display
+            avg_pace_diff = sum([w["pace_diff"] for w in top_3]) / len(top_3)
+            avg_hr_diff = sum([w["hr_diff"] for w in top_3]) / len(top_3)
+
+            pace_diff = avg_pace_diff
+            hr_diff = avg_hr_diff
 
             # Determine which pace to use for comparison
             pace_source = current_metrics.get("pace_source", "overall")
@@ -1206,13 +1210,13 @@ class ReportGeneratorWorker:
                     "average": self._format_pace(avg_similar_pace),
                     "change": (
                         f"+{abs(int(pace_diff))}秒速い"
-                        if pace_diff < 0
-                        else f"-{int(pace_diff)}秒遅い"
+                        if pace_diff > 0
+                        else f"-{abs(int(pace_diff))}秒遅い"
                     ),
                     "trend": (
                         "↗️ 改善"
-                        if pace_diff < 0
-                        else ("↘️ 悪化" if pace_diff > 5 else "➡️ 同等")
+                        if pace_diff > 0
+                        else ("↘️ 悪化" if pace_diff < -5 else "➡️ 同等")
                     ),
                 },
                 {
@@ -1225,7 +1229,7 @@ class ReportGeneratorWorker:
                     "trend": (
                         "➡️ 同等"
                         if abs(hr_diff) < 5
-                        else ("⚠️ 高い" if hr_diff > 0 else "✅ 低い")
+                        else ("✅ 低い" if hr_diff > 0 else "⚠️ 高い")
                     ),
                 },
             ]
