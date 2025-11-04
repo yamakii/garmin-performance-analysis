@@ -461,7 +461,7 @@ class SplitsReader(BaseDBReader):
         self, activity_id: int, statistics_only: bool = False
     ) -> dict[str, list[dict]] | dict[str, Any]:
         """
-        Get comprehensive split data (12 fields) from splits table.
+        Get comprehensive split data (14 fields) from splits table.
 
         Args:
             activity_id: Activity ID
@@ -471,11 +471,12 @@ class SplitsReader(BaseDBReader):
 
         Returns:
             Full mode (statistics_only=False):
-                Dict with 'splits' key containing list of split data with all 12 fields:
+                Dict with 'splits' key containing list of split data with all 14 fields:
                 - pace_seconds_per_km, heart_rate, max_heart_rate
                 - ground_contact_time, vertical_oscillation, vertical_ratio
                 - power, stride_length, cadence, max_cadence
                 - elevation_gain, elevation_loss
+                - intensity_type, role_phase (NEW: for split classification)
             Statistics mode (statistics_only=True):
                 Dict with aggregated statistics:
                 {
@@ -638,7 +639,7 @@ class SplitsReader(BaseDBReader):
                         },
                     }
 
-                # Full mode: Return all split data with 12 fields
+                # Full mode: Return all split data with 14 fields (added intensity_type, role_phase)
                 splits_result = conn.execute(
                     """
                     SELECT
@@ -655,7 +656,9 @@ class SplitsReader(BaseDBReader):
                         elevation_gain,
                         elevation_loss,
                         max_heart_rate,
-                        max_cadence
+                        max_cadence,
+                        intensity_type,
+                        role_phase
                     FROM splits
                     WHERE activity_id = ?
                     ORDER BY split_index
@@ -684,6 +687,8 @@ class SplitsReader(BaseDBReader):
                             "elevation_loss_m": row[11],
                             "max_heart_rate_bpm": row[12],
                             "max_cadence_spm": row[13],
+                            "intensity_type": row[14] if row[14] is not None else "",
+                            "role_phase": row[15] if row[15] is not None else "",
                         }
                     )
 

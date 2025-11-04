@@ -18,13 +18,14 @@ model: inherit
 ## 使用するMCPツール
 
 **推奨ツール（新規実装）:**
-- `mcp__garmin-db__get_splits_comprehensive(activity_id, statistics_only=True)` - **全スプリットデータ（12フィールド）を1回で取得**
+- `mcp__garmin-db__get_splits_comprehensive(activity_id, statistics_only=False)` - **全スプリットデータ（14フィールド）を1回で取得**
   - ペース・心拍（pace, heart_rate, max_heart_rate）
   - フォーム指標（GCT, VO, VR）
   - パワー・リズム（power, stride_length, cadence, max_cadence）
   - 地形（elevation_gain, elevation_loss）
-  - デフォルトで`statistics_only=True`推奨（67%トークン削減）
-  - 個別スプリット比較が必要な場合のみ`statistics_only=False`を使用
+  - **分類（intensity_type, role_phase）← NEW: これらを必ず使用すること**
+  - このエージェントは個別スプリット分析が必須のため`statistics_only=False`を使用
+  - 各スプリットのintensity_type と role_phaseが必要
 
 **代替ツール（後方互換性のため維持）:**
 - `mcp__garmin-db__get_splits_pace_hr(activity_id, statistics_only=False)` - ペース・心拍データ（~4フィールド/スプリット）
@@ -83,9 +84,23 @@ mcp__garmin_db__insert_section_analysis_dict(
 
 ## 分析ガイドライン
 
+**重要: intensity_type と role_phase を活用**
+
+各スプリットには以下のフィールドが含まれます：
+- **intensity_type**: `WARMUP`, `INTERVAL`, `RECOVERY`, `COOLDOWN` など
+- **role_phase**: `warmup`, `run`, `recovery`, `cooldown`
+
+**これらを使って正確な評価を行うこと:**
+- `intensity_type == "INTERVAL" or role_phase == "run"` → メイン区間（厳しく評価）
+- `intensity_type == "RECOVERY"` → リカバリー区間（ペース遅い/GCT長いは正常）
+- `intensity_type == "WARMUP"` → ウォームアップ（ゆっくりが理想）
+- `intensity_type == "COOLDOWN"` → クールダウン（段階的にペースダウン）
+
+**手動でのパターン認識は禁止**: 必ずこれらのフィールドを参照すること
+
 1. **ペース分析**
-   - ウォームアップ（Split 1）: 遅めでOK
-   - メイン: ±5秒/km以内の安定性が理想
+   - ウォームアップ（intensity_type=="WARMUP"）: 遅めでOK
+   - メイン（role_phase=="run"）: ±5秒/km以内の安定性が理想
    - フィニッシュ: メインより速い = 余力あり
 
 2. **心拍ドリフト評価**
