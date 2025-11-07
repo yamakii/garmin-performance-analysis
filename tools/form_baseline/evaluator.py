@@ -448,10 +448,10 @@ def evaluate_and_store(
 
     from tools.form_baseline.trainer import train_form_baselines
 
-    # Get oldest baseline end date across all metrics
+    # Get newest baseline end date across all metrics
     baseline_check = conn.execute(
         """
-        SELECT MIN(period_end) as oldest_end
+        SELECT MAX(period_end) as newest_end
         FROM form_baseline_history
         WHERE user_id = 'default'
           AND condition_group = ?
