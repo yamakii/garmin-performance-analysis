@@ -1,7 +1,6 @@
 """Tests for AnalysisHandler."""
 
 import json
-import logging
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -20,7 +19,6 @@ class TestHandles:
     @pytest.mark.parametrize(
         "tool_name",
         [
-            "get_section_analysis",
             "insert_section_analysis_dict",
             "get_interval_analysis",
             "detect_form_anomalies_summary",
@@ -43,63 +41,6 @@ class TestHandles:
     def test_does_not_handle_empty_string(self, mock_db_reader: MagicMock) -> None:
         handler = AnalysisHandler(mock_db_reader)
         assert handler.handles("") is False
-
-
-# ---------------------------------------------------------------------------
-# get_section_analysis (DEPRECATED)
-# ---------------------------------------------------------------------------
-
-
-class TestGetSectionAnalysis:
-    """Test _get_section_analysis via handle()."""
-
-    @pytest.mark.asyncio
-    async def test_returns_data(self, mock_db_reader: MagicMock) -> None:
-        expected = {"section_type": "split", "content": "analysis data"}
-        mock_db_reader.get_section_analysis.return_value = expected
-        handler = AnalysisHandler(mock_db_reader)
-
-        result = await handler.handle(
-            "get_section_analysis",
-            {"activity_id": 12345, "section_type": "split"},
-        )
-
-        data = json.loads(result[0].text)
-        assert data == expected
-        mock_db_reader.get_section_analysis.assert_called_once_with(
-            12345, "split", 10240
-        )
-
-    @pytest.mark.asyncio
-    async def test_custom_max_output_size(self, mock_db_reader: MagicMock) -> None:
-        mock_db_reader.get_section_analysis.return_value = {}
-        handler = AnalysisHandler(mock_db_reader)
-
-        await handler.handle(
-            "get_section_analysis",
-            {"activity_id": 12345, "section_type": "split", "max_output_size": 5000},
-        )
-
-        mock_db_reader.get_section_analysis.assert_called_once_with(
-            12345, "split", 5000
-        )
-
-    @pytest.mark.asyncio
-    async def test_logs_deprecation_warning(
-        self, mock_db_reader: MagicMock, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        mock_db_reader.get_section_analysis.return_value = {}
-        handler = AnalysisHandler(mock_db_reader)
-
-        with caplog.at_level(
-            logging.WARNING, logger="garmin_mcp.handlers.analysis_handler"
-        ):
-            await handler.handle(
-                "get_section_analysis",
-                {"activity_id": 12345, "section_type": "split"},
-            )
-
-        assert any("DEPRECATED" in r.message for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------

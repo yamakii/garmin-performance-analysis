@@ -1,13 +1,11 @@
 """Tests for SplitsHandler."""
 
 import json
-import logging
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 
-from garmin_mcp.config import DEFAULT_MAX_OUTPUT_SIZE
 from garmin_mcp.handlers.splits_handler import SplitsHandler
 
 ACTIVITY_ID = 20594901208
@@ -26,7 +24,6 @@ class TestHandles:
             "get_splits_form_metrics",
             "get_splits_elevation",
             "get_splits_comprehensive",
-            "get_splits_all",
         ],
     )
     def test_handles_returns_true_for_known_tools(
@@ -299,66 +296,6 @@ class TestGetSplitsComprehensive:
         mock_db_reader.get_splits_comprehensive.assert_called_once_with(
             ACTIVITY_ID, statistics_only=False
         )
-
-
-# -- get_splits_all (DEPRECATED) tests ----------------------------------------
-
-
-class TestGetSplitsAll:
-    """Test get_splits_all handler (deprecated)."""
-
-    @pytest.mark.asyncio
-    async def test_returns_data(
-        self,
-        mock_db_reader: MagicMock,
-        sample_splits_result: dict[str, Any],
-    ) -> None:
-        mock_db_reader.get_splits_all.return_value = sample_splits_result
-        handler = SplitsHandler(mock_db_reader)
-
-        result = await handler.handle("get_splits_all", {"activity_id": ACTIVITY_ID})
-
-        mock_db_reader.get_splits_all.assert_called_once_with(
-            ACTIVITY_ID, DEFAULT_MAX_OUTPUT_SIZE
-        )
-        parsed = json.loads(result[0].text)
-        assert parsed == sample_splits_result
-
-    @pytest.mark.asyncio
-    async def test_logs_deprecation_warning(
-        self, mock_db_reader: MagicMock, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        mock_db_reader.get_splits_all.return_value = {}
-        handler = SplitsHandler(mock_db_reader)
-
-        with caplog.at_level(
-            logging.WARNING, logger="garmin_mcp.handlers.splits_handler"
-        ):
-            await handler.handle("get_splits_all", {"activity_id": ACTIVITY_ID})
-
-        assert any("DEPRECATED" in record.message for record in caplog.records)
-
-    @pytest.mark.asyncio
-    async def test_custom_max_output_size(self, mock_db_reader: MagicMock) -> None:
-        mock_db_reader.get_splits_all.return_value = {}
-        handler = SplitsHandler(mock_db_reader)
-
-        await handler.handle(
-            "get_splits_all",
-            {"activity_id": ACTIVITY_ID, "max_output_size": 5000},
-        )
-
-        mock_db_reader.get_splits_all.assert_called_once_with(ACTIVITY_ID, 5000)
-
-    @pytest.mark.asyncio
-    async def test_returns_none_as_json_null(self, mock_db_reader: MagicMock) -> None:
-        mock_db_reader.get_splits_all.return_value = None
-        handler = SplitsHandler(mock_db_reader)
-
-        result = await handler.handle("get_splits_all", {"activity_id": ACTIVITY_ID})
-
-        parsed = json.loads(result[0].text)
-        assert parsed is None
 
 
 # -- Error handling tests -----------------------------------------------------

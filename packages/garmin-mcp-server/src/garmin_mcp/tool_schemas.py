@@ -41,23 +41,6 @@ _EXPORT_TOOLS: list[dict] = [
 
 _METADATA_TOOLS: list[dict] = [
     {
-        "name": "get_section_analysis",
-        "description": "Get section analysis data from DuckDB (DEPRECATED: Use extract_insights() for summarized data)",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "activity_id": {"type": "integer"},
-                "section_type": {"type": "string"},
-                "max_output_size": {
-                    "type": "integer",
-                    "description": "Maximum output size in bytes (default: 10240). Set to null for no limit.",
-                    "default": 10240,
-                },
-            },
-            "required": ["activity_id", "section_type"],
-        },
-    },
-    {
         "name": "get_activity_by_date",
         "description": "Get activity ID and metadata from date",
         "inputSchema": {
@@ -144,22 +127,6 @@ _SPLITS_TOOLS: list[dict] = [
                     "type": "boolean",
                     "description": "If true, return only aggregated statistics (mean, median, std, min, max) instead of per-split data. Reduces output size by ~67%. Default: false",
                     "default": False,
-                },
-            },
-            "required": ["activity_id"],
-        },
-    },
-    {
-        "name": "get_splits_all",
-        "description": "Get all split data (all 22 fields) from splits table (DEPRECATED: Use export() or lightweight splits functions)",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "activity_id": {"type": "integer"},
-                "max_output_size": {
-                    "type": "integer",
-                    "description": "Maximum output size in bytes (default: 10240). Set to null for no limit.",
-                    "default": 10240,
                 },
             },
             "required": ["activity_id"],

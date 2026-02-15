@@ -4,7 +4,6 @@
 
 - Direct DuckDB queries: `conn = duckdb.connect(...)`
 - Direct file reads: `Read("/path/to/database/garmin_performance.duckdb")`
-- Using deprecated tools: `get_splits_all()`, old `get_section_analysis()`
 - Querying non-existent columns (check schema if unsure)
 
 ## Development

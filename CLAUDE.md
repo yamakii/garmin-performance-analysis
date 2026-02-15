@@ -10,7 +10,7 @@ Garmin running performance analysis system with **DuckDB-first architecture** an
 
 **Key Features:**
 - DuckDB normalized storage (14 tables, 100+ activities)
-- 32+ token-optimized MCP tools (70-98.8% reduction)
+- 30+ token-optimized MCP tools (70-98.8% reduction)
 - 8 specialized agents (5 analysis + 3 development)
 - Japanese reports (code/docs in English)
 
@@ -181,7 +181,7 @@ garmin-performance-analysis/
 │       │   ├── form_baseline/      # Form baseline training
 │       │   ├── scripts/
 │       │   │   └── regenerate/     # DuckDB regeneration utilities
-│       │   ├── tool_schemas.py     # MCP tool definitions (32 tools)
+│       │   ├── tool_schemas.py     # MCP tool definitions (30 tools)
 │       │   └── validation/         # Data validation
 │       └── tests/
 ├── .claude/

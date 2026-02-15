@@ -6,7 +6,6 @@ from typing import Any
 
 from mcp.types import TextContent
 
-from garmin_mcp.config import DEFAULT_MAX_OUTPUT_SIZE
 from garmin_mcp.database.db_reader import GarminDBReader
 
 logger = logging.getLogger(__name__)
@@ -16,7 +15,6 @@ class AnalysisHandler:
     """Handles analysis-related tool calls."""
 
     _tool_names: set[str] = {
-        "get_section_analysis",
         "insert_section_analysis_dict",
         "get_interval_analysis",
         "detect_form_anomalies_summary",
@@ -33,9 +31,7 @@ class AnalysisHandler:
         return name in self._tool_names
 
     async def handle(self, name: str, arguments: dict[str, Any]) -> list[TextContent]:
-        if name == "get_section_analysis":
-            return await self._get_section_analysis(arguments)
-        elif name == "insert_section_analysis_dict":
+        if name == "insert_section_analysis_dict":
             return await self._insert_section_analysis_dict(arguments)
         elif name == "get_interval_analysis":
             return await self._get_interval_analysis(arguments)
@@ -51,25 +47,6 @@ class AnalysisHandler:
             return await self._compare_similar_workouts(arguments)
         else:
             raise ValueError(f"Unknown tool: {name}")
-
-    async def _get_section_analysis(
-        self, arguments: dict[str, Any]
-    ) -> list[TextContent]:
-        logger.warning(
-            "DEPRECATED: get_section_analysis() is deprecated. "
-            "Use extract_insights() for summarized data instead."
-        )
-        activity_id = arguments["activity_id"]
-        section_type = arguments["section_type"]
-        max_output_size = arguments.get("max_output_size", DEFAULT_MAX_OUTPUT_SIZE)
-        result = self._db_reader.get_section_analysis(  # type: ignore[assignment]
-            activity_id, section_type, max_output_size
-        )
-        return [
-            TextContent(
-                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
-            )
-        ]
 
     async def _insert_section_analysis_dict(
         self, arguments: dict[str, Any]
