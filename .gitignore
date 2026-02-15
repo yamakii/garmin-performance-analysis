@@ -17,6 +17,7 @@ ENV/
 htmlcov/
 *.cover
 .hypothesis/
+test_data/
 
 # Type checking and linting
 .mypy_cache/

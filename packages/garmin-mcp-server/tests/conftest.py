@@ -13,6 +13,15 @@ from unittest.mock import MagicMock
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def isolate_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Redirect GARMIN_DATA_DIR to tmp_path to prevent real directory creation."""
+    monkeypatch.setenv("GARMIN_DATA_DIR", str(tmp_path / "data"))
+    from garmin_mcp.utils.paths import get_project_root
+
+    get_project_root.cache_clear()
+
+
 @pytest.fixture
 def fixture_base_path() -> Path:
     """Return the base path for test fixtures.

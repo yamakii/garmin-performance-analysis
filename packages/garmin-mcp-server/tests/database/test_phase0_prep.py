@@ -63,12 +63,14 @@ def setup_test_db(test_db_path):
 class TestPhase0FormBaselinesRemoval:
     """Tests for form_baselines table removal."""
 
+    @pytest.mark.performance
     def test_form_baselines_table_does_not_exist(self):
         """Test that form_baselines table does not exist in production DB."""
-        # This will fail initially (RED phase)
         from garmin_mcp.utils.paths import get_database_dir
 
         db_path = get_database_dir() / "garmin_performance.duckdb"
+        if not db_path.exists():
+            pytest.skip("Production database not available")
 
         conn = duckdb.connect(str(db_path), read_only=True)
         tables = conn.execute("SHOW TABLES").fetchall()
@@ -100,12 +102,14 @@ class TestPhase0BodyMassColumn:
             "base_weight_kg" in column_names
         ), "activities table should have base_weight_kg column after migration"
 
+    @pytest.mark.performance
     def test_activities_has_base_weight_kg_column_production(self):
         """Test that activities table has base_weight_kg column in production DB."""
-        # This will fail initially (RED phase)
         from garmin_mcp.utils.paths import get_database_dir
 
         db_path = get_database_dir() / "garmin_performance.duckdb"
+        if not db_path.exists():
+            pytest.skip("Production database not available")
 
         conn = duckdb.connect(str(db_path), read_only=True)
         schema = conn.execute("PRAGMA table_info(activities)").fetchall()

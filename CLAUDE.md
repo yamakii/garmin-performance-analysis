@@ -9,8 +9,8 @@ Garmin running performance analysis system with **DuckDB-first architecture** an
 **System Pipeline:** Raw Data (API) → DuckDB → MCP Tools → Analysis → Reports
 
 **Key Features:**
-- DuckDB normalized storage (12 tables, 100+ activities)
-- Token-optimized MCP tools (70-98.8% reduction)
+- DuckDB normalized storage (14 tables, 100+ activities)
+- 32+ token-optimized MCP tools (70-98.8% reduction)
 - 8 specialized agents (5 analysis + 3 development)
 - Japanese reports (code/docs in English)
 
@@ -23,6 +23,8 @@ Garmin running performance analysis system with **DuckDB-first architecture** an
 ## For Activity Analysis
 
 **When:** Analyzing activities, generating reports, finding trends, comparing workouts.
+
+All MCP tools have docstrings describing their parameters. Use `mcp__garmin-db__*` tools directly.
 
 ### Common Analysis Workflows
 
@@ -55,36 +57,6 @@ mcp__garmin-db__compare_similar_workouts(
 )
 ```
 
-### Essential MCP Tools
-
-**Activity Lookup:**
-- `get_activity_by_date(date)` - Get activity ID from date
-- `get_date_by_activity_id(activity_id)` - Get date from ID
-
-**Performance Metrics:**
-- `get_performance_trends(activity_id)` - Pace consistency, HR drift, phases
-- `get_splits_comprehensive(activity_id, statistics_only=True/False)` - All split data (12 fields: pace, HR, form, power, cadence, elevation)
-- `get_splits_pace_hr(activity_id, statistics_only=True/False)` - Pace/HR data (lightweight)
-- `get_splits_form_metrics(activity_id, statistics_only=True/False)` - GCT/VO/VR (lightweight)
-- `get_splits_elevation(activity_id, statistics_only=True/False)` - Terrain data
-
-**Physiological Data:**
-- `get_form_efficiency_summary(activity_id)` - Form metrics summary
-- `get_form_evaluations(activity_id)` - Pace-corrected form evaluation with star ratings
-- `get_form_baseline_trend(activity_id, activity_date)` - 1-month baseline coefficient comparison
-- `get_hr_efficiency_analysis(activity_id)` - HR zones + training type
-- `get_heart_rate_zones_detail(activity_id)` - Zone boundaries/distribution
-- `get_vo2_max_data(activity_id)` - VO2 max estimation
-- `get_lactate_threshold_data(activity_id)` - Lactate threshold
-
-**Advanced Analysis:**
-- `analyze_performance_trends(metric, start_date, end_date, activity_ids)` - Cross-activity trends
-- `compare_similar_workouts(activity_id, ...)` - Find similar past workouts
-- `extract_insights(keywords=["改善", "課題"])` - Search analysis reports
-- `get_interval_analysis(activity_id)` - Work/Recovery segments
-- `detect_form_anomalies_summary(activity_id)` - Form anomalies (95% token reduction)
-- `get_split_time_series_detail(activity_id, split_number)` - Second-by-second data (98.8% reduction)
-
 ---
 
 ## For Data Analysis
@@ -100,14 +72,7 @@ See `.claude/rules/mcp-data-access.md` for workflow details and `docs/data-analy
 
 **When:** Modifying code, adding features, fixing bugs, running tests, managing projects.
 
-### Critical Rules
-
-**MANDATORY MCP Usage:**
-- Code files (`.py`, `.ts`): **Serena MCP only** (symbol-aware editing)
-- Performance data: **Garmin DB MCP only** (token-optimized queries)
-- Text files (`.md`, `.json`, `.txt`): Direct Read/Edit/Write OK
-
-**MANDATORY Git Worktree:** Planning on main → Implementation in worktree → Merge back.
+Rules are auto-loaded from `.claude/rules/` (MCP data access, git workflow, testing, code quality, etc.).
 
 ### Development Workflow
 
@@ -135,20 +100,6 @@ Agents:
 - tdd-implementer: TDD cycle (Red → Green → Refactor)
 - completion-reporter: Generates completion_report.md
 ```
-
-### Serena MCP Tools
-
-**Navigation:**
-- `list_dir(path, recursive)` - List files
-- `get_symbols_overview(file_path)` - File symbol overview
-- `find_symbol(name_path, relative_path)` - Find classes/functions
-- `find_referencing_symbols(name_path, relative_path)` - Find references
-
-**Editing:**
-- `replace_symbol_body(name_path, relative_path, body)` - Replace function/class
-- `insert_after_symbol(name_path, relative_path, body)` - Add after symbol
-- `insert_before_symbol(name_path, relative_path, body)` - Add before symbol
-- `replace_regex(relative_path, regex, repl)` - Regex replacement
 
 ### Data Processing Scripts
 
@@ -187,60 +138,75 @@ docs/project/
 
 ---
 
-## Common Reference
-
-### Architecture
+## Architecture
 
 **Pipeline:** API → Raw JSON → DuckDB → MCP Tools → Analysis → Markdown Reports
 
-**Key Classes:**
-- `GarminIngestWorker`: API fetching + raw data → DuckDB insertion
-- `GarminDBWriter`: DuckDB insertion (12 normalized tables)
-- `ReportGeneratorWorker`: Template-based report generation
+**Key Modules (after Phase 1/2 refactoring):**
 
-**DuckDB Schema (12 tables):**
+| Module | Role |
+|---|---|
+| `GarminIngestWorker` | Thin orchestrator delegating to 3 modules below |
+| `ApiClient` | Garmin Connect API authentication singleton |
+| `RawDataFetcher` | Cache-first raw data collection |
+| `DuckDBSaver` | Transaction-batched DuckDB insertion |
+| `GarminDBWriter` | DuckDB write operations (14 tables, 12 inserters) |
+| `GarminDBReader` | DuckDB read operations (query builders) |
+| `ReportGeneratorWorker` | Template-based report generation |
+| 8 MCP Handlers | MetadataHandler, SplitsHandler, PhysiologyHandler, PerformanceHandler, AnalysisHandler, TimeSeriesHandler, ExportHandler, TrainingPlanHandler |
+
+**DuckDB Schema (14 tables):**
 - Metadata: `activities`, `body_composition`
 - Performance: `splits`, `performance_trends`, `time_series_metrics` (26 metrics x 1000-2000 rows)
-- Physiology: `form_efficiency`, `hr_efficiency`, `heart_rate_zones`, `vo2_max`, `lactate_threshold`
+- Physiology: `form_efficiency`, `form_evaluations`, `form_baseline_history`, `hr_efficiency`, `heart_rate_zones`, `vo2_max`, `lactate_threshold`
+- Training: `training_plans`, `planned_workouts`
 - Analysis: `section_analyses` (5 agent results per activity)
 
 ### Directory Structure
 
 ```
-garmin-performance-analysis/          # Monorepo
+garmin-performance-analysis/
 ├── packages/
-│   └── garmin-mcp-server/            # Deployable MCP server
-│       ├── pyproject.toml            # Package dependencies
-│       ├── src/garmin_mcp/           # Source code
-│       └── tests/                    # All tests
-├── .claude/                          # Claude Code workflow
-│   ├── agents/                       # 5 analysis + 3 dev agents
-│   ├── commands/                     # /analyze-activity, /batch-analyze
-│   ├── rules/                        # Shared rules (auto-loaded)
-│   └── settings.local.json           # MCP settings
-├── data/                             # GARMIN_DATA_DIR (configurable via .env)
-│   ├── raw/                          # API responses (8 files/activity)
-│   └── database/                     # garmin_performance.duckdb
-├── result/                           # GARMIN_RESULT_DIR (configurable via .env)
-│   ├── individual/                   # YEAR/MONTH/YYYY-MM-DD_id.md
-│   └── monthly/                      # Monthly trends
-├── docs/                             # Documentation + project management
-└── CLAUDE.md                         # This file
+│   └── garmin-mcp-server/
+│       ├── pyproject.toml
+│       ├── src/garmin_mcp/
+│       │   ├── ingest/             # API → Raw data (ApiClient, RawDataFetcher, DuckDBSaver)
+│       │   ├── database/
+│       │   │   ├── inserters/      # 12 table-specific inserters
+│       │   │   ├── readers/        # Query builders (SplitsQueryBuilder etc.)
+│       │   │   └── migrations/     # Schema migrations
+│       │   ├── handlers/           # 8 MCP tool handlers
+│       │   ├── reporting/          # Report generation + components
+│       │   ├── training_plan/      # Training plan generation
+│       │   ├── form_baseline/      # Form baseline training
+│       │   ├── scripts/
+│       │   │   └── regenerate/     # DuckDB regeneration utilities
+│       │   ├── tool_schemas.py     # MCP tool definitions (32 tools)
+│       │   └── validation/         # Data validation
+│       └── tests/
+├── .claude/
+│   ├── agents/                     # 5 analysis + 3 dev agents
+│   ├── commands/                   # /analyze-activity, /batch-analyze, /plan-training
+│   ├── rules/                      # Shared rules (auto-loaded)
+│   └── settings.local.json
+├── data/                           # GARMIN_DATA_DIR (configurable via .env)
+│   ├── raw/                        # API responses (8 files/activity)
+│   └── database/                   # garmin_performance.duckdb
+├── result/                         # GARMIN_RESULT_DIR (configurable via .env)
+│   ├── individual/                 # YEAR/MONTH/YYYY-MM-DD_id.md
+│   └── monthly/
+├── docs/
+└── CLAUDE.md
 ```
 
 ### Agent System
 
 **5 Section Analysis Agents (run in parallel via Task tool):**
 1. **split-section-analyst**: 1km split analysis (pace, HR, form)
-2. **phase-section-analyst**: Phase evaluation (warmup/run/cooldown, uses training type)
+2. **phase-section-analyst**: Phase evaluation (warmup/run/cooldown, training-type-aware)
 3. **summary-section-analyst**: Activity type + overall assessment
 4. **efficiency-section-analyst**: Form (GCT/VO/VR) + HR efficiency
 5. **environment-section-analyst**: Environmental impact (weather, terrain)
-
-**Training Type-Aware Evaluation (phase-section-analyst):**
-- **low_moderate**: No warmup/cooldown required, positive tone
-- **tempo_threshold**: Warmup/cooldown recommended, educational tone
-- **interval_sprint**: Warmup/cooldown required, injury warnings
 
 **3 Development Agents:**
 - **project-planner**: Creates planning.md, GitHub Issue
@@ -257,13 +223,6 @@ garmin-performance-analysis/          # Monorepo
 - `weather.json` - External weather station
 - NOT `splits.json` temperature - Device temp (+5-8 C body heat)
 
-**Temperature Evaluation (Training-Type-Aware):**
-- **Recovery**: 15-22 C = Good (tolerance wider due to low heat production)
-- **Base Run**: 10-18 C = Ideal, 18-23 C = Acceptable
-- **Tempo/Threshold**: 8-15 C = Ideal, 15-20 C = Good, 20-25 C = Slightly hot
-- **Interval/Sprint**: 8-15 C = Ideal, 20-23 C = Slightly hot, >23 C = Dangerous
-- Note: environment-section-analyst uses `get_hr_efficiency_analysis()` to get training_type
-
 **Elevation:**
 - Source: `lapDTOs` → DuckDB
 - Classification: flat/undulating/hilly/mountainous
@@ -277,9 +236,3 @@ garmin-performance-analysis/          # Monorepo
 cp .env.example .env  # Configure GARMIN_DATA_DIR, GARMIN_RESULT_DIR
 direnv allow          # Auto-load environment
 ```
-
-**Common Patterns:**
-- Analysis: Use MCP tools only
-- Development: Serena MCP + worktree mandatory
-- Testing: Mock all data dependencies
-- Database: Read-only checks before modifications
