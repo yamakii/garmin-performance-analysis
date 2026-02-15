@@ -77,7 +77,7 @@ def sample_api_responses():
 class TestCollectDataPerAPICache:
     """Test per-API caching in collect_data method."""
 
-    @patch("garmin_mcp.ingest.garmin_worker.GarminIngestWorker.get_garmin_client")
+    @patch("garmin_mcp.ingest.raw_data_fetcher.get_garmin_client")
     def test_collect_data_all_apis_cached(
         self, mock_get_client, worker_with_temp_dirs, sample_api_responses
     ):
@@ -116,7 +116,7 @@ class TestCollectDataPerAPICache:
         assert raw_data["splits"] == sample_api_responses["splits"]
         assert raw_data["weather"] == sample_api_responses["weather"]
 
-    @patch("garmin_mcp.ingest.garmin_worker.GarminIngestWorker.get_garmin_client")
+    @patch("garmin_mcp.ingest.raw_data_fetcher.get_garmin_client")
     def test_collect_data_partial_cache_fetch_missing(
         self, mock_get_client, worker_with_temp_dirs, sample_api_responses
     ):
@@ -163,7 +163,7 @@ class TestCollectDataPerAPICache:
         assert raw_data["weather"] == sample_api_responses["weather"]
         assert (activity_dir / "hr_zones.json").exists()
 
-    @patch("garmin_mcp.ingest.garmin_worker.GarminIngestWorker.get_garmin_client")
+    @patch("garmin_mcp.ingest.raw_data_fetcher.get_garmin_client")
     def test_collect_data_no_cache_fetch_all(
         self, mock_get_client, worker_with_temp_dirs, sample_api_responses
     ):
@@ -210,7 +210,7 @@ class TestCollectDataPerAPICache:
         assert (activity_dir / "splits.json").exists()
         assert (activity_dir / "weather.json").exists()
 
-    @patch("garmin_mcp.ingest.garmin_worker.GarminIngestWorker.get_garmin_client")
+    @patch("garmin_mcp.ingest.raw_data_fetcher.get_garmin_client")
     def test_collect_data_api_error_saves_partial(
         self, mock_get_client, worker_with_temp_dirs, sample_api_responses
     ):

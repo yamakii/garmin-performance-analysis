@@ -276,8 +276,9 @@ class TestCollectBodyCompositionData:
         mock_client = Mock()
         mock_client.get_daily_weigh_ins.return_value = sample_weight_data
 
-        with patch.object(
-            GarminIngestWorker, "get_garmin_client", return_value=mock_client
+        with patch(
+            "garmin_mcp.ingest.raw_data_fetcher.get_garmin_client",
+            return_value=mock_client,
         ):
             # Collect data (should call API)
             result = worker.collect_body_composition_data(target_date)

@@ -1,21 +1,31 @@
 """
 GarminIngestWorker - Data collection and processing pipeline
 
-Implements cache-first strategy:
-1. Check raw file cache (data/raw/)
-2. If missing, fetch from Garmin Connect API
-3. Transform to performance.json and parquet
+Thin orchestrator that delegates to:
+- api_client: Garmin Connect API authentication
+- raw_data_fetcher: Cache-first raw data collection
+- duckdb_saver: DuckDB insertion with transaction batching
 """
 
-import json
 import logging
-import os
-from pathlib import Path
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pandas as pd
 from garminconnect import Garmin
+
+from garmin_mcp.ingest.api_client import get_garmin_client
+from garmin_mcp.ingest.duckdb_saver import save_data as _save_data
+from garmin_mcp.ingest.raw_data_fetcher import (
+    RawDataExtractor,
+    collect_body_composition_data,
+    collect_data,
+    load_from_cache,
+)
+
+# Re-export for backward compatibility
+__all__ = ["GarminIngestWorker", "RawDataExtractor", "convert_numpy_types"]
 
 if TYPE_CHECKING:
     from garmin_mcp.database.db_reader import GarminDBReader
@@ -48,70 +58,21 @@ def convert_numpy_types(obj: Any) -> Any:
         return float(obj)
     elif isinstance(obj, np.ndarray):
         return obj.tolist()
-    elif obj is None:
-        # Explicit None → None
-        return None
-    elif pd.isna(obj):
-        # pandas NaN → None (null in JSON)
+    elif obj is None or pd.isna(obj):
         return None
     else:
         return obj
 
 
-class RawDataExtractor:
-    """Extract data from raw_data formats.
+class GarminIngestWorker:
+    """Orchestrator for Garmin data collection and processing pipeline.
 
-    Based on Phase 1 investigation:
-    - Both old and new formats have activity.summaryDTO.trainingEffect
-    - Format detection and legacy support are unnecessary
+    Delegates to specialized modules:
+    - api_client: Authentication singleton
+    - raw_data_fetcher: Cache-first data collection
+    - duckdb_saver: Transaction-batched DB insertion
     """
 
-    def extract_training_effect(self, activity_data: dict) -> dict:
-        """Extract training effect from activity data.
-
-        Args:
-            activity_data: Activity data dict with summaryDTO
-
-        Returns:
-            Dict with aerobicTrainingEffect and anaerobicTrainingEffect
-            Empty dict if not found
-        """
-        summary = activity_data.get("summaryDTO", {})
-        if summary:
-            result = {}
-            if "trainingEffect" in summary:
-                result["aerobicTrainingEffect"] = summary["trainingEffect"]
-            if "anaerobicTrainingEffect" in summary:
-                result["anaerobicTrainingEffect"] = summary["anaerobicTrainingEffect"]
-            return result
-
-        return {}
-
-    def extract_from_raw_data(self, raw_data: dict) -> dict:
-        """Extract all data from raw_data dict.
-
-        Args:
-            raw_data: Raw data with activity key
-
-        Returns:
-            Dict with extracted data sections
-        """
-        result = {}
-
-        # Extract from activity key
-        activity = raw_data.get("activity", {})
-        if activity:
-            te = self.extract_training_effect(activity)
-            if te:
-                result["training_effect"] = te
-
-        return result
-
-
-class GarminIngestWorker:
-    """Data ingestion worker with cache-first strategy."""
-
-    # Singleton Garmin client (reuse authentication)
     _garmin_client: Garmin | None = None
 
     def __init__(self, db_path: str | None = None):
@@ -148,39 +109,17 @@ class GarminIngestWorker:
 
     @classmethod
     def get_garmin_client(cls) -> Garmin:
-        """
-        Get singleton Garmin client (reuse authentication).
+        """Get singleton Garmin client (reuse authentication).
 
-        Reads credentials from environment variables:
-        - GARMIN_EMAIL
-        - GARMIN_PASSWORD
+        Delegates to api_client module for thread-safe singleton.
 
         Returns:
             Authenticated Garmin client
-
-        Raises:
-            ValueError: If credentials not found in environment
         """
-        if cls._garmin_client is None:
-            email = os.getenv("GARMIN_EMAIL")
-            password = os.getenv("GARMIN_PASSWORD")
-
-            if not email or not password:
-                raise ValueError(
-                    "Garmin credentials not found. "
-                    "Set GARMIN_EMAIL and GARMIN_PASSWORD environment variables."
-                )
-
-            logger.info(f"Authenticating with Garmin Connect as {email}")
-            cls._garmin_client = Garmin(email, password)
-            cls._garmin_client.login()
-            logger.info("Garmin authentication successful")
-
-        return cls._garmin_client
+        return get_garmin_client()
 
     def get_activity_date(self, activity_id: int) -> str | None:
-        """
-        Get activity date from DuckDB.
+        """Get activity date from DuckDB.
 
         Args:
             activity_id: Activity ID
@@ -197,11 +136,7 @@ class GarminIngestWorker:
         return cast(str | None, result) if result else None
 
     def _check_duckdb_cache(self, activity_id: int) -> dict[str, Any] | None:
-        """
-        Check if activity data exists in DuckDB.
-
-        Validates that all 11 required sections exist in DuckDB.
-        If any section is missing, returns None to trigger reprocessing.
+        """Check if activity data exists in DuckDB.
 
         Args:
             activity_id: Activity ID to check
@@ -209,473 +144,43 @@ class GarminIngestWorker:
         Returns:
             Complete performance data dict if all sections exist, None otherwise
         """
-        # Return None if DB reader not initialized
         if self._db_reader is None:
             return None
 
         # TODO: Implement DuckDB cache checking with normalized schema
-        # Current normalized schema requires querying multiple tables
-        # For now, always trigger reprocessing (return None)
         logger.debug(
-            f"Activity {activity_id}: DuckDB cache checking not implemented for normalized schema"
+            f"Activity {activity_id}: DuckDB cache checking not implemented "
+            "for normalized schema"
         )
         return None
 
     def load_from_cache(
         self, activity_id: int, skip_files: set[str] | None = None
     ) -> dict[str, Any] | None:
+        """Load cached raw_data from directory structure.
+
+        Delegates to raw_data_fetcher.load_from_cache().
         """
-        Load cached raw_data from directory structure.
-
-        Args:
-            activity_id: Activity ID
-            skip_files: Set of file names to skip loading (for force refetch).
-                       Example: {'activity_details', 'weather'}
-
-        Returns:
-            Partial or complete raw_data dict. Returns None only if required files are missing
-            (and not in skip_files).
-
-        Behavior:
-            - If skip_files is None: require ALL files (backward compatible)
-            - If skip_files is provided: allow missing files in skip_files
-            - Returns partial data if some files are missing but in skip_files
-        """
-        activity_dir = self.raw_dir / "activity" / str(activity_id)
-
-        if not activity_dir.exists():
-            return None
-
-        skip_files = skip_files or set()
-
-        # Required API files
-        required_files = [
-            ("activity.json", "activity_basic"),
-            ("splits.json", "splits"),
-            ("weather.json", "weather"),
-            ("gear.json", "gear"),
-            ("hr_zones.json", "hr_zones"),
-            ("vo2_max.json", "vo2_max"),
-            ("lactate_threshold.json", "lactate_threshold"),
-        ]
-
-        # Check all required files exist (except skipped ones)
-        for file_name, _ in required_files:
-            # Map file name to skip_files key
-            skip_key = file_name.replace(".json", "").replace("_", "_")
-
-            if skip_key not in skip_files and not (activity_dir / file_name).exists():
-                logger.warning(f"Missing required file: {file_name}")
-                return None
-
-        # Load all files (except skipped ones)
-        raw_data: dict[str, Any] = {}
-
-        try:
-            # Load activity.json (basic info with summaryDTO)
-            if (activity_dir / "activity.json").exists():
-                with open(activity_dir / "activity.json", encoding="utf-8") as f:
-                    raw_data["activity_basic"] = json.load(f)
-
-            # Load activity_details.json (chart data) if exists and not skipped
-            if (
-                "activity_details" not in skip_files
-                and (activity_dir / "activity_details.json").exists()
-            ):
-                with open(
-                    activity_dir / "activity_details.json", encoding="utf-8"
-                ) as f:
-                    raw_data["activity"] = json.load(f)
-
-            # Load other files (skip if in skip_files)
-            if "splits" not in skip_files and (activity_dir / "splits.json").exists():
-                with open(activity_dir / "splits.json", encoding="utf-8") as f:
-                    raw_data["splits"] = json.load(f)
-
-            if "weather" not in skip_files and (activity_dir / "weather.json").exists():
-                with open(activity_dir / "weather.json", encoding="utf-8") as f:
-                    raw_data["weather"] = json.load(f)
-
-            if "gear" not in skip_files and (activity_dir / "gear.json").exists():
-                with open(activity_dir / "gear.json", encoding="utf-8") as f:
-                    raw_data["gear"] = json.load(f)
-
-            if (
-                "hr_zones" not in skip_files
-                and (activity_dir / "hr_zones.json").exists()
-            ):
-                with open(activity_dir / "hr_zones.json", encoding="utf-8") as f:
-                    raw_data["hr_zones"] = json.load(f)
-
-            if "vo2_max" not in skip_files and (activity_dir / "vo2_max.json").exists():
-                with open(activity_dir / "vo2_max.json", encoding="utf-8") as f:
-                    raw_data["vo2_max"] = json.load(f)
-
-            if (
-                "lactate_threshold" not in skip_files
-                and (activity_dir / "lactate_threshold.json").exists()
-            ):
-                with open(
-                    activity_dir / "lactate_threshold.json", encoding="utf-8"
-                ) as f:
-                    raw_data["lactate_threshold"] = json.load(f)
-
-            # Extract training_effect from activity_basic.summaryDTO
-            activity_basic = raw_data.get("activity_basic", {})
-            summary = activity_basic.get("summaryDTO", {})
-
-            if summary:
-                raw_data["training_effect"] = {
-                    "aerobicTrainingEffect": summary.get("trainingEffect"),
-                    "anaerobicTrainingEffect": summary.get("anaerobicTrainingEffect"),
-                    "aerobicTrainingEffectMessage": summary.get(
-                        "aerobicTrainingEffectMessage"
-                    ),
-                    "anaerobicTrainingEffectMessage": summary.get(
-                        "anaerobicTrainingEffectMessage"
-                    ),
-                    "trainingEffectLabel": summary.get("trainingEffectLabel"),
-                }
-
-            # Weight data (not stored in cache)
-            raw_data["weight"] = None
-
-            logger.info(f"Loaded cached data for activity {activity_id}")
-            return raw_data
-
-        except Exception as e:
-            logger.error(f"Failed to load cached data for activity {activity_id}: {e}")
-            return None
+        return load_from_cache(self.raw_dir, activity_id, skip_files)
 
     def collect_data(
         self, activity_id: int, force_refetch: list[str] | None = None
     ) -> dict[str, Any]:
+        """Collect activity data with per-API cache-first strategy.
+
+        Delegates to raw_data_fetcher.collect_data().
         """
-        Collect activity data with per-API cache-first strategy.
+        return collect_data(self.raw_dir, activity_id, force_refetch)
 
-        **IMPORTANT**: This method ONLY handles raw_data caching, NOT DuckDB caching.
-        DuckDB caching is handled in process_activity().
+    def collect_body_composition_data(self, date: str) -> dict[str, Any] | None:
+        """Collect body composition data with cache-first strategy.
 
-        New structure: data/raw/activity/{activity_id}/{api_name}.json
-
-        Cache priority:
-        1. Check old format: data/raw/{activity_id}_raw.json (backward compatibility)
-        2. Check new format: data/raw/activity/{activity_id}/{api_name}.json
-        3. If missing, fetch from Garmin Connect API and save to new format
-
-        API files (new format):
-        - activity_details.json (maxchart=2000)
-        - splits.json
-        - weather.json
-        - gear.json
-        - hr_zones.json
-        - vo2_max.json
-        - lactate_threshold.json
-
-        Args:
-            activity_id: Activity ID
-            force_refetch: List of API file names to force refetch.
-                          Supported values: ['activity_details', 'splits', 'weather',
-                                            'gear', 'hr_zones', 'vo2_max', 'lactate_threshold']
-                          If None, use cache-first strategy (default behavior).
-
-        Returns:
-            Raw data dict with keys: activity, splits, weather, gear, hr_zones, etc.
-
-        Examples:
-            # Force refetch activity_details.json only
-            worker.collect_data(12345, force_refetch=['activity_details'])
-
-            # Force refetch multiple files
-            worker.collect_data(12345, force_refetch=['weather', 'vo2_max'])
-
-            # Default behavior (cache-first)
-            worker.collect_data(12345)
+        Delegates to raw_data_fetcher.collect_body_composition_data().
         """
-        # Backward compatibility: Check old format cache first
-        old_cache_file = self.raw_dir / f"{activity_id}_raw.json"
-        if old_cache_file.exists():
-            logger.info(f"Using old format cached data for activity {activity_id}")
-            with open(old_cache_file, encoding="utf-8") as f:
-                return cast(dict[str, Any], json.load(f))
-
-        # Normalize force_refetch parameter
-        force_refetch_set = set(force_refetch) if force_refetch else set()
-
-        # Validate force_refetch parameter
-        if force_refetch_set:
-            supported_files = {
-                "activity_details",
-                "splits",
-                "weather",
-                "gear",
-                "hr_zones",
-                "vo2_max",
-                "lactate_threshold",
-            }
-            unsupported = force_refetch_set - supported_files
-            if unsupported:
-                raise ValueError(
-                    f"Unsupported force_refetch files: {unsupported}. "
-                    f"Supported values: {sorted(supported_files)}"
-                )
-
-        # Try to load from new cache format
-        cached_data = self.load_from_cache(activity_id, skip_files=force_refetch_set)
-        if cached_data is not None and not force_refetch_set:
-            # Full cache hit (no force refetch)
-            return cached_data
-
-        # Partial cache hit or force refetch - start with cached data
-        raw_data = cached_data if cached_data else {}
-
-        # Cache miss - fetch from API
-        logger.info(f"Fetching activity {activity_id} from Garmin Connect API")
-        client = self.get_garmin_client()
-
-        # Create activity directory
-        activity_dir = self.raw_dir / "activity" / str(activity_id)
-        activity_dir.mkdir(parents=True, exist_ok=True)
-
-        # Fetch and cache each API individually
-        # 0. Activity basic info (summaryDTO with training_effect, ~10KB)
-        activity_basic_file = activity_dir / "activity.json"
-        if activity_basic_file.exists() and "activity_basic" not in raw_data:
-            logger.info(f"Using cached activity basic info for {activity_id}")
-            with open(activity_basic_file, encoding="utf-8") as f:
-                raw_data["activity_basic"] = json.load(f)
-        elif "activity_basic" not in raw_data:
-            try:
-                activity_basic = client.get_activity(str(activity_id))
-                raw_data["activity_basic"] = activity_basic
-                with open(activity_basic_file, "w", encoding="utf-8") as f:
-                    json.dump(activity_basic, f, ensure_ascii=False, indent=2)
-                logger.info(f"Cached activity basic info to {activity_basic_file}")
-            except Exception as e:
-                logger.error(f"Failed to fetch activity basic info: {e}")
-                raw_data["activity_basic"] = None
-
-        # 1. Activity details (chart data with dynamic maxchart based on duration)
-        activity_file = activity_dir / "activity_details.json"
-        if (
-            activity_file.exists()
-            and "activity_details" not in force_refetch_set
-            and "activity" not in raw_data
-        ):
-            logger.info(f"Using cached activity_details for {activity_id}")
-            with open(activity_file, encoding="utf-8") as f:
-                raw_data["activity"] = json.load(f)
-        elif "activity" not in raw_data or "activity_details" in force_refetch_set:
-            try:
-                # Calculate maxchart dynamically from activity duration
-                activity_basic = raw_data.get("activity_basic", {})
-                summary = activity_basic.get("summaryDTO", {})
-                duration_seconds = summary.get("duration", 0)
-
-                # maxchart = duration * 1.5 (buffer), constrained to [2000, 10000]
-                calculated_maxchart = int(duration_seconds * 1.5)
-                maxchart = max(2000, min(calculated_maxchart, 10000))
-
-                logger.info(
-                    f"Activity duration: {duration_seconds}s ({duration_seconds/60:.1f}min), using maxchart={maxchart}"
-                )
-
-                activity_data = client.get_activity_details(
-                    activity_id, maxchart=maxchart
-                )
-                raw_data["activity"] = activity_data
-                with open(activity_file, "w", encoding="utf-8") as f:
-                    json.dump(activity_data, f, ensure_ascii=False, indent=2)
-                logger.info(f"Cached activity_details to {activity_file}")
-            except Exception as e:
-                logger.error(f"Failed to fetch activity_details: {e}")
-                raw_data["activity"] = None
-
-        # 2. Splits
-        splits_file = activity_dir / "splits.json"
-        if (
-            splits_file.exists()
-            and "splits" not in force_refetch_set
-            and "splits" not in raw_data
-        ):
-            logger.info(f"Using cached splits for {activity_id}")
-            with open(splits_file, encoding="utf-8") as f:
-                raw_data["splits"] = json.load(f)
-        elif "splits" not in raw_data or "splits" in force_refetch_set:
-            try:
-                splits_data = client.get_activity_splits(activity_id)
-                raw_data["splits"] = splits_data
-                with open(splits_file, "w", encoding="utf-8") as f:
-                    json.dump(splits_data, f, ensure_ascii=False, indent=2)
-                logger.info(f"Cached splits to {splits_file}")
-            except Exception as e:
-                logger.error(f"Failed to fetch splits: {e}")
-                raw_data["splits"] = None
-
-        # 3. Weather
-        weather_file = activity_dir / "weather.json"
-        if (
-            weather_file.exists()
-            and "weather" not in force_refetch_set
-            and "weather" not in raw_data
-        ):
-            logger.info(f"Using cached weather for {activity_id}")
-            with open(weather_file, encoding="utf-8") as f:
-                raw_data["weather"] = json.load(f)
-        elif "weather" not in raw_data or "weather" in force_refetch_set:
-            try:
-                weather_data = client.get_activity_weather(activity_id)
-                raw_data["weather"] = weather_data
-                with open(weather_file, "w", encoding="utf-8") as f:
-                    json.dump(weather_data, f, ensure_ascii=False, indent=2)
-                logger.info(f"Cached weather to {weather_file}")
-            except Exception as e:
-                logger.error(f"Failed to fetch weather: {e}")
-                raw_data["weather"] = None
-
-        # 4. Gear
-        gear_file = activity_dir / "gear.json"
-        if (
-            gear_file.exists()
-            and "gear" not in force_refetch_set
-            and "gear" not in raw_data
-        ):
-            logger.info(f"Using cached gear for {activity_id}")
-            with open(gear_file, encoding="utf-8") as f:
-                raw_data["gear"] = json.load(f)
-        elif "gear" not in raw_data or "gear" in force_refetch_set:
-            try:
-                gear_data = client.get_activity_gear(activity_id)
-                raw_data["gear"] = gear_data
-                with open(gear_file, "w", encoding="utf-8") as f:
-                    json.dump(gear_data, f, ensure_ascii=False, indent=2)
-                logger.info(f"Cached gear to {gear_file}")
-            except Exception as e:
-                logger.error(f"Failed to fetch gear: {e}")
-                raw_data["gear"] = None
-
-        # 5. HR zones
-        hr_zones_file = activity_dir / "hr_zones.json"
-        if (
-            hr_zones_file.exists()
-            and "hr_zones" not in force_refetch_set
-            and "hr_zones" not in raw_data
-        ):
-            logger.info(f"Using cached hr_zones for {activity_id}")
-            with open(hr_zones_file, encoding="utf-8") as f:
-                raw_data["hr_zones"] = json.load(f)
-        elif "hr_zones" not in raw_data or "hr_zones" in force_refetch_set:
-            try:
-                hr_zones_data = client.get_activity_hr_in_timezones(activity_id)
-                raw_data["hr_zones"] = hr_zones_data
-                with open(hr_zones_file, "w", encoding="utf-8") as f:
-                    json.dump(hr_zones_data, f, ensure_ascii=False, indent=2)
-                logger.info(f"Cached hr_zones to {hr_zones_file}")
-            except Exception as e:
-                logger.error(f"Failed to fetch hr_zones: {e}")
-                raw_data["hr_zones"] = None
-
-        # 6. VO2 max (requires activity date)
-        vo2_max_file = activity_dir / "vo2_max.json"
-        if (
-            vo2_max_file.exists()
-            and "vo2_max" not in force_refetch_set
-            and "vo2_max" not in raw_data
-        ):
-            logger.info(f"Using cached vo2_max for {activity_id}")
-            with open(vo2_max_file, encoding="utf-8") as f:
-                raw_data["vo2_max"] = json.load(f)
-        elif "vo2_max" not in raw_data or "vo2_max" in force_refetch_set:
-            # Extract activity date from activity.summaryDTO
-            activity_data = raw_data.get("activity", {})
-            summary = activity_data.get("summaryDTO", {}) if activity_data else {}
-            start_time_local = summary.get("startTimeLocal", "")
-
-            # Fallback to activity_basic if activity not available
-            if not start_time_local:
-                activity_basic = raw_data.get("activity_basic", {})
-                summary = activity_basic.get("summaryDTO", {}) if activity_basic else {}
-                start_time_local = summary.get("startTimeLocal", "")
-
-            if start_time_local:
-                activity_date = start_time_local.split("T")[0]
-                try:
-                    max_metrics = client.get_max_metrics(activity_date)
-                    generic_metrics = max_metrics.get("generic", {})
-                    vo2_max_data = {
-                        "vo2MaxValue": generic_metrics.get("vo2MaxValue"),
-                        "vo2MaxPreciseValue": generic_metrics.get("vo2MaxPreciseValue"),
-                        "calendarDate": generic_metrics.get("calendarDate"),
-                    }
-                    raw_data["vo2_max"] = vo2_max_data
-                    with open(vo2_max_file, "w", encoding="utf-8") as f:
-                        json.dump(vo2_max_data, f, ensure_ascii=False, indent=2)
-                    logger.info(f"Cached vo2_max to {vo2_max_file}")
-                except Exception as e:
-                    logger.warning(f"Failed to fetch VO2 max data: {e}")
-                    raw_data["vo2_max"] = {}
-                    with open(vo2_max_file, "w", encoding="utf-8") as f:
-                        json.dump({}, f, ensure_ascii=False, indent=2)
-            else:
-                raw_data["vo2_max"] = {}
-                with open(vo2_max_file, "w", encoding="utf-8") as f:
-                    json.dump({}, f, ensure_ascii=False, indent=2)
-
-        # 7. Lactate threshold
-        lactate_file = activity_dir / "lactate_threshold.json"
-        if (
-            lactate_file.exists()
-            and "lactate_threshold" not in force_refetch_set
-            and "lactate_threshold" not in raw_data
-        ):
-            logger.info(f"Using cached lactate_threshold for {activity_id}")
-            with open(lactate_file, encoding="utf-8") as f:
-                raw_data["lactate_threshold"] = json.load(f)
-        elif (
-            "lactate_threshold" not in raw_data
-            or "lactate_threshold" in force_refetch_set
-        ):
-            try:
-                lactate_threshold_data = client.get_lactate_threshold(latest=True)
-                raw_data["lactate_threshold"] = lactate_threshold_data
-                with open(lactate_file, "w", encoding="utf-8") as f:
-                    json.dump(lactate_threshold_data, f, ensure_ascii=False, indent=2)
-                logger.info(f"Cached lactate_threshold to {lactate_file}")
-            except Exception as e:
-                logger.warning(f"Failed to fetch lactate threshold data: {e}")
-                default_lactate = {
-                    "speed_and_heart_rate": None,
-                    "power": None,
-                }
-                raw_data["lactate_threshold"] = default_lactate
-                with open(lactate_file, "w", encoding="utf-8") as f:
-                    json.dump(default_lactate, f, ensure_ascii=False, indent=2)
-
-        # Extract training_effect from activity_basic.summaryDTO if available
-        activity_basic = raw_data.get("activity_basic", {})
-        summary = activity_basic.get("summaryDTO", {}) if activity_basic else {}
-        if summary:
-            raw_data["training_effect"] = {
-                "aerobicTrainingEffect": summary.get("trainingEffect"),
-                "anaerobicTrainingEffect": summary.get("anaerobicTrainingEffect"),
-                "aerobicTrainingEffectMessage": summary.get(
-                    "aerobicTrainingEffectMessage"
-                ),
-                "anaerobicTrainingEffectMessage": summary.get(
-                    "anaerobicTrainingEffectMessage"
-                ),
-                "trainingEffectLabel": summary.get("trainingEffectLabel"),
-            }
-
-        # Weight data (requires separate weight cache manager)
-        raw_data["weight"] = None
-
-        logger.info(f"Completed data collection for activity {activity_id}")
-        return raw_data
+        return collect_body_composition_data(self.weight_raw_dir, date)
 
     def _calculate_form_efficiency_summary(self, df: pd.DataFrame) -> dict[str, Any]:
-        """
-        Calculate form efficiency summary (Phase 1 optimization).
+        """Calculate form efficiency summary (legacy method).
 
         Returns:
             Form metrics with statistics and ratings
@@ -704,7 +209,6 @@ class GarminIngestWorker:
             "std": df["vertical_ratio_percent"].std(),
         }
 
-        # Rating evaluation (simplified)
         gct_rating = "★★★★★" if gct_stats["average"] < 240 else "★★★☆☆"
         vo_rating = "★★★★★" if vo_stats["average"] < 8.0 else "★★★☆☆"
         vr_rating = "★★★★★" if vr_stats["average"] < 8.5 else "★★★☆☆"
@@ -725,13 +229,12 @@ class GarminIngestWorker:
         hr_zones: list[dict[str, Any]],
         training_effect_label: str | None = None,
     ) -> dict[str, Any]:
-        """
-        Calculate HR efficiency analysis (Phase 1 optimization).
+        """Calculate HR efficiency analysis (legacy method).
 
         Args:
             df: Performance DataFrame
             hr_zones: List of {zoneNumber, secsInZone, zoneLowBoundary}
-            training_effect_label: Garmin's trainingEffectLabel (e.g., "TEMPO")
+            training_effect_label: Garmin's trainingEffectLabel
 
         Returns:
             HR zone distribution and training type classification
@@ -739,25 +242,21 @@ class GarminIngestWorker:
         if df.empty:
             return {}
 
-        # Simplified zone distribution (would need time in zones data)
         avg_hr = df["avg_heart_rate"].mean()
 
         # Primary: Use Garmin's trainingEffectLabel
         training_type = None
         if training_effect_label:
-            # Convert to lowercase (e.g., "TEMPO" → "tempo")
             training_type = training_effect_label.lower()
 
         # Fallback: HR threshold-based classification
         if not training_type:
-            # Extract zone boundaries from hr_zones list
             zone_boundaries = {}
             for zone in hr_zones:
                 zone_num = zone.get("zoneNumber")
                 if zone_num:
                     zone_boundaries[zone_num] = zone.get("zoneLowBoundary", 0)
 
-            # Default thresholds if zones not available
             z1_high = zone_boundaries.get(2, 120)
             z2_high = zone_boundaries.get(3, 140)
             z3_high = zone_boundaries.get(4, 160)
@@ -795,14 +294,7 @@ class GarminIngestWorker:
         }
 
     def _calculate_performance_trends(self, df: pd.DataFrame) -> dict[str, Any]:
-        """
-        Calculate performance trends with 4-phase support (Phase 3 optimization).
-
-        Phases:
-        - warmup: ウォームアップ
-        - run: メイン走行（高強度）
-        - recovery: 回復ジョグ（インターバル休憩）
-        - cooldown: クールダウン
+        """Calculate performance trends with 4-phase support (legacy method).
 
         Returns:
             Phase-based analysis and consistency metrics
@@ -810,18 +302,14 @@ class GarminIngestWorker:
         if df.empty or len(df) < 3:
             return {}
 
-        # Check if role_phase column exists
         if "role_phase" not in df.columns:
-            # Fallback to old 3-phase logic
             return self._calculate_performance_trends_legacy(df)
 
-        # Split into 4 phases based on role_phase
         warmup_df = df[df["role_phase"] == "warmup"]
         run_df = df[df["role_phase"] == "run"]
         recovery_df = df[df["role_phase"] == "recovery"]
         cooldown_df = df[df["role_phase"] == "cooldown"]
 
-        # Calculate phase metrics
         warmup_phase = {
             "splits": warmup_df["split_number"].tolist() if not warmup_df.empty else [],
             "avg_pace": (
@@ -870,7 +358,6 @@ class GarminIngestWorker:
             ),
         }
 
-        # Pace consistency for run phase only (excluding recovery)
         if not run_df.empty:
             pace_consistency = (
                 run_df["avg_pace_seconds_per_km"].std()
@@ -881,7 +368,6 @@ class GarminIngestWorker:
         else:
             pace_consistency = 0
 
-        # HR drift (warmup to cooldown)
         warmup_hr_val = warmup_phase.get("avg_hr")
         cooldown_hr_val = cooldown_phase.get("avg_hr")
         if (
@@ -898,7 +384,6 @@ class GarminIngestWorker:
         else:
             hr_drift_percentage = 0
 
-        # Fatigue pattern
         if hr_drift_percentage < 5:
             fatigue_pattern = "適切な疲労管理"
         elif hr_drift_percentage < 10:
@@ -920,8 +405,7 @@ class GarminIngestWorker:
         }
 
     def _calculate_performance_trends_legacy(self, df: pd.DataFrame) -> dict[str, Any]:
-        """
-        Legacy 3-phase calculation for backward compatibility.
+        """Legacy 3-phase calculation for backward compatibility.
 
         Returns:
             Phase-based analysis with warmup/main/finish
@@ -986,19 +470,13 @@ class GarminIngestWorker:
         }
 
     def _should_insert_table(self, table_name: str, tables: list[str] | None) -> bool:
-        """
-        Check if a table should be inserted into DuckDB.
+        """Check if a table should be inserted into DuckDB.
 
-        Args:
-            table_name: Name of the table to check
-            tables: List of tables to insert (None = insert all)
-
-        Returns:
-            True if the table should be inserted, False otherwise
+        Delegates to duckdb_saver.should_insert_table().
         """
-        if tables is None:
-            return True
-        return table_name in tables
+        from garmin_mcp.ingest.duckdb_saver import should_insert_table
+
+        return should_insert_table(table_name, tables)
 
     def save_data(
         self,
@@ -1008,398 +486,22 @@ class GarminIngestWorker:
         tables: list[str] | None = None,
         base_weight_kg: float | None = None,
     ) -> dict[str, Any]:
+        """Save all processed data to DuckDB.
+
+        Delegates to duckdb_saver.save_data().
         """
-        Save all processed data to DuckDB.
-
-        DuckDB insertion order (foreign key constraints):
-        1. activities (parent table)
-        2. splits, form_efficiency, heart_rate_zones, etc. (child tables)
-        3. time_series_metrics (child table, optional)
-
-        Phase 5 optimization: Single connection with explicit transaction batching.
-
-        Args:
-            activity_id: Activity ID
-            raw_data: Raw data dict
-            activity_date: Activity date (YYYY-MM-DD format), required for DuckDB insertion
-            tables: List of tables to insert. If None, all tables are inserted.
-                   If specified, only the listed tables are inserted.
-                   Note: All tables (including 'activities') respect this filter.
-
-        Returns:
-            File paths dict
-        """
-        import duckdb
-
-        # Parquet generation removed - DuckDB is primary storage
-        # Performance.json generation removed - DuckDB is primary storage
-
-        # ===== DuckDB Insertion (respects foreign key order) =====
-        # Phase 4: Table filtering implemented via _should_insert_table()
-        # Phase 5: Single connection + transaction batching for performance
-        # All tables (including activities) respect the tables parameter
-
-        # Determine raw data file paths (needed for all tables)
-        activity_dir = self.raw_dir / "activity" / str(activity_id)
-
-        # Phase 5: Create single connection for all insertions
-        with duckdb.connect(str(self._db_path)) as conn:
-            try:
-                # Begin explicit transaction (Phase 5 optimization)
-                conn.execute("BEGIN TRANSACTION")
-
-                # Initialize raw file paths (needed by multiple inserters)
-                raw_activity_file: Path | None = activity_dir / "activity.json"
-                raw_weather_file: Path | None = activity_dir / "weather.json"
-                raw_gear_file: Path | None = activity_dir / "gear.json"
-
-                # STEP 1: Insert activities (parent table) - conditionally insert
-                if self._should_insert_table("activities", tables):
-                    from garmin_mcp.database.inserters.activities import (
-                        insert_activities,
-                    )
-
-                    # Fallback: check if using old structure
-                    if raw_activity_file and not raw_activity_file.exists():
-                        legacy_raw_file = self.raw_dir / f"{activity_id}_raw.json"
-                        if legacy_raw_file.exists():
-                            # Extract from legacy format
-                            raw_activity_file = None
-                            raw_weather_file = None
-                            raw_gear_file = None
-                            logger.warning(
-                                f"Using legacy raw data format for activity {activity_id}"
-                            )
-
-                    activities_success = insert_activities(
-                        activity_id=activity_id,
-                        date=activity_date
-                        or "1970-01-01",  # Fallback date if not provided
-                        db_path=self._db_path,
-                        raw_activity_file=(
-                            str(raw_activity_file)
-                            if raw_activity_file and raw_activity_file.exists()
-                            else None
-                        ),
-                        raw_weather_file=(
-                            str(raw_weather_file)
-                            if raw_weather_file and raw_weather_file.exists()
-                            else None
-                        ),
-                        raw_gear_file=(
-                            str(raw_gear_file)
-                            if raw_gear_file and raw_gear_file.exists()
-                            else None
-                        ),
-                        base_weight_kg=base_weight_kg,  # 7-day median weight
-                        conn=conn,  # Phase 5: Pass connection for reuse
-                    )
-                    if activities_success:
-                        logger.info(
-                            f"Inserted activities to DuckDB for activity {activity_id}"
-                        )
-                    else:
-                        logger.warning(
-                            f"Failed to insert activities to DuckDB for activity {activity_id}"
-                        )
-
-                # STEP 2: Insert child tables (splits, form_efficiency, etc.)
-
-                # Determine raw splits file path
-                raw_splits_file: Path | None = activity_dir / "splits.json"
-                if raw_splits_file and not raw_splits_file.exists():
-                    # Fallback: old structure has splits in {id}_raw.json
-                    raw_splits_file = None
-
-                # Insert splits into DuckDB
-                if self._should_insert_table("splits", tables):
-                    from garmin_mcp.database.inserters.splits import insert_splits
-
-                    splits_success = insert_splits(
-                        activity_id=activity_id,
-                        db_path=self._db_path,
-                        raw_splits_file=(
-                            str(raw_splits_file) if raw_splits_file else None
-                        ),
-                        conn=conn,  # Phase 5: Pass connection for reuse
-                    )
-                    if splits_success:
-                        logger.info(
-                            f"Inserted splits to DuckDB for activity {activity_id}"
-                        )
-                    else:
-                        logger.warning(
-                            f"Failed to insert splits to DuckDB for activity {activity_id}"
-                        )
-
-                # Insert form_efficiency into DuckDB
-                if self._should_insert_table("form_efficiency", tables):
-                    from garmin_mcp.database.inserters.form_efficiency import (
-                        insert_form_efficiency,
-                    )
-
-                    form_eff_success = insert_form_efficiency(
-                        activity_id=activity_id,
-                        db_path=self._db_path,
-                        raw_splits_file=(
-                            str(raw_splits_file) if raw_splits_file else None
-                        ),
-                        conn=conn,  # Phase 5: Pass connection for reuse
-                    )
-                    if form_eff_success:
-                        logger.info(
-                            f"Inserted form_efficiency to DuckDB for activity {activity_id}"
-                        )
-                    else:
-                        logger.warning(
-                            f"Failed to insert form_efficiency to DuckDB for activity {activity_id}"
-                        )
-
-                # Determine raw HR zones file path (needed by hr_efficiency too)
-                raw_hr_zones_file: Path | None = activity_dir / "hr_zones.json"
-                if raw_hr_zones_file and not raw_hr_zones_file.exists():
-                    raw_hr_zones_file = None
-
-                # Insert heart_rate_zones into DuckDB
-                if self._should_insert_table("heart_rate_zones", tables):
-                    from garmin_mcp.database.inserters.heart_rate_zones import (
-                        insert_heart_rate_zones,
-                    )
-
-                    hr_zones_success = insert_heart_rate_zones(
-                        activity_id=activity_id,
-                        db_path=self._db_path,
-                        raw_hr_zones_file=(
-                            str(raw_hr_zones_file) if raw_hr_zones_file else None
-                        ),
-                    )
-                    if hr_zones_success:
-                        logger.info(
-                            f"Inserted heart_rate_zones to DuckDB for activity {activity_id}"
-                        )
-                    else:
-                        logger.warning(
-                            f"Failed to insert heart_rate_zones to DuckDB for activity {activity_id}"
-                        )
-
-                # Insert hr_efficiency into DuckDB
-                if self._should_insert_table("hr_efficiency", tables):
-                    from garmin_mcp.database.inserters.hr_efficiency import (
-                        insert_hr_efficiency,
-                    )
-
-                    hr_eff_success = insert_hr_efficiency(
-                        activity_id=activity_id,
-                        db_path=self._db_path,
-                        raw_hr_zones_file=(
-                            str(raw_hr_zones_file) if raw_hr_zones_file else None
-                        ),
-                        raw_activity_file=(
-                            str(raw_activity_file)
-                            if raw_activity_file and raw_activity_file.exists()
-                            else None
-                        ),
-                    )
-                    if hr_eff_success:
-                        logger.info(
-                            f"Inserted hr_efficiency to DuckDB for activity {activity_id}"
-                        )
-                    else:
-                        logger.warning(
-                            f"Failed to insert hr_efficiency to DuckDB for activity {activity_id}"
-                        )
-
-                # Insert performance_trends into DuckDB
-                if self._should_insert_table("performance_trends", tables):
-                    from garmin_mcp.database.inserters.performance_trends import (
-                        insert_performance_trends,
-                    )
-
-                    perf_trends_success = insert_performance_trends(
-                        activity_id=activity_id,
-                        db_path=self._db_path,
-                        raw_splits_file=(
-                            str(raw_splits_file) if raw_splits_file else None
-                        ),
-                    )
-                    if perf_trends_success:
-                        logger.info(
-                            f"Inserted performance_trends to DuckDB for activity {activity_id}"
-                        )
-                    else:
-                        logger.warning(
-                            f"Failed to insert performance_trends to DuckDB for activity {activity_id}"
-                        )
-
-                # Insert lactate_threshold into DuckDB
-                if self._should_insert_table("lactate_threshold", tables):
-                    from garmin_mcp.database.inserters.lactate_threshold import (
-                        insert_lactate_threshold,
-                    )
-
-                    # Determine raw lactate threshold file path
-                    raw_lactate_threshold_file: Path | None = (
-                        activity_dir / "lactate_threshold.json"
-                    )
-                    if (
-                        raw_lactate_threshold_file
-                        and not raw_lactate_threshold_file.exists()
-                    ):
-                        raw_lactate_threshold_file = None
-
-                    lt_success = insert_lactate_threshold(
-                        activity_id=activity_id,
-                        db_path=self._db_path,
-                        raw_lactate_threshold_file=(
-                            str(raw_lactate_threshold_file)
-                            if raw_lactate_threshold_file
-                            else None
-                        ),
-                    )
-                    if lt_success:
-                        logger.info(
-                            f"Inserted lactate_threshold to DuckDB for activity {activity_id}"
-                        )
-                    else:
-                        logger.warning(
-                            f"Failed to insert lactate_threshold to DuckDB for activity {activity_id}"
-                        )
-
-                # Insert vo2_max into DuckDB
-                if self._should_insert_table("vo2_max", tables):
-                    from garmin_mcp.database.inserters.vo2_max import insert_vo2_max
-
-                    # Determine raw VO2 max file path
-                    raw_vo2_max_file: Path | None = activity_dir / "vo2_max.json"
-                    if raw_vo2_max_file and not raw_vo2_max_file.exists():
-                        raw_vo2_max_file = None
-
-                    vo2_success = insert_vo2_max(
-                        activity_id=activity_id,
-                        db_path=self._db_path,
-                        raw_vo2_max_file=(
-                            str(raw_vo2_max_file) if raw_vo2_max_file else None
-                        ),
-                        conn=conn,  # Phase 5: Pass connection for reuse
-                    )
-                    if vo2_success:
-                        logger.info(
-                            f"Inserted vo2_max to DuckDB for activity {activity_id}"
-                        )
-                    else:
-                        logger.warning(
-                            f"Failed to insert vo2_max to DuckDB for activity {activity_id}"
-                        )
-
-                # Insert time_series_metrics into DuckDB (optional - requires activity_details.json)
-                if self._should_insert_table("time_series_metrics", tables):
-                    from garmin_mcp.database.inserters.time_series_metrics import (
-                        insert_time_series_metrics,
-                    )
-
-                    activity_details_file = activity_dir / "activity_details.json"
-                    if activity_details_file.exists():
-                        ts_success = insert_time_series_metrics(
-                            activity_details_file=str(activity_details_file),
-                            activity_id=activity_id,
-                            db_path=self._db_path,
-                            conn=conn,  # Phase 5: Pass connection for reuse
-                        )
-                        if ts_success:
-                            logger.info(
-                                f"Inserted time_series_metrics to DuckDB for activity {activity_id}"
-                            )
-                        else:
-                            logger.error(
-                                f"Failed to insert time_series_metrics to DuckDB for activity {activity_id}"
-                            )
-                    else:
-                        logger.warning(
-                            f"activity_details.json not found for activity {activity_id}, skipping time_series_metrics insertion"
-                        )
-
-                # Commit transaction (Phase 5 optimization)
-                conn.execute("COMMIT")
-
-            except Exception as e:
-                # Rollback on error
-                try:
-                    conn.execute("ROLLBACK")
-                except Exception:
-                    pass  # Transaction may not be active
-                logger.error(f"Error saving data for activity {activity_id}: {e}")
-                raise
-
-        return {
-            "raw_dir": str(activity_dir),
-        }
-
-    def collect_body_composition_data(self, date: str) -> dict[str, Any] | None:
-        """
-        Collect body composition data with cache-first strategy.
-
-        Cache priority:
-        1. Check data/raw/weight/{date}.json (NEW path)
-        2. If missing, fetch from Garmin Connect API
-
-        Args:
-            date: Date in YYYY-MM-DD format
-
-        Returns:
-            Raw weight data dict or None if no data available
-        """
-        # Check NEW path cache first
-        weight_file = self.weight_raw_dir / f"{date}.json"
-        if weight_file.exists():
-            with open(weight_file, encoding="utf-8") as f:
-                cached_data = json.load(f)
-                # Empty dict indicates no data available (marker file)
-                if not cached_data:
-                    logger.debug(
-                        f"Empty marker file found for {date}, skipping API call"
-                    )
-                    return None
-                logger.info(f"Using cached body composition data for {date}")
-                return cast(dict[str, Any], cached_data)
-
-        # Fetch from Garmin Connect API
-        logger.info(
-            f"Fetching body composition data for {date} from Garmin Connect API"
+        return _save_data(
+            activity_id=activity_id,
+            raw_data=raw_data,
+            db_path=self._db_path,
+            raw_dir=self.raw_dir,
+            activity_date=activity_date,
+            tables=tables,
+            base_weight_kg=base_weight_kg,
         )
-        try:
-            client = self.get_garmin_client()
-            # Use get_daily_weigh_ins for single date
-            weight_data = client.get_daily_weigh_ins(date)
-
-            if not weight_data or not weight_data.get("dateWeightList"):
-                logger.warning(f"No body composition data found for {date}")
-                # Create empty marker file to avoid repeated API calls
-                weight_file.parent.mkdir(parents=True, exist_ok=True)
-                with open(weight_file, "w", encoding="utf-8") as f:
-                    json.dump({}, f)
-                logger.info(f"Created empty marker file: {weight_file}")
-                return None
-
-            # Save to NEW path cache
-            weight_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(weight_file, "w", encoding="utf-8") as f:
-                json.dump(weight_data, f, indent=2, ensure_ascii=False)
-
-            logger.info(f"Cached body composition data to {weight_file}")
-            return weight_data  # type: ignore[no-any-return]
-
-        except Exception as e:
-            logger.error(f"Error fetching body composition data for {date}: {e}")
-            # Create empty marker file to avoid repeated API calls
-            weight_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(weight_file, "w", encoding="utf-8") as f:
-                json.dump({}, f)
-            logger.info(f"Created empty marker file after error: {weight_file}")
-            return None
 
     def _calculate_median_weight(self, date: str) -> dict[str, Any] | None:
-        """
-        Calculate median weight from past 7 days including target date.
+        """Calculate median weight from past 7 days including target date.
 
         Args:
             date: Date in YYYY-MM-DD format
@@ -1407,23 +509,20 @@ class GarminIngestWorker:
         Returns:
             Dict with median weight data or None
         """
-        from datetime import datetime, timedelta
-
-        import numpy as np
-
         target_date = datetime.strptime(date, "%Y-%m-%d")
-        weights = []
-        bmi_values = []
-        body_fat_values = []
-        body_water_values = []
-        bone_mass_values = []
-        muscle_mass_values = []
+        weights: list[float] = []
+        bmi_values: list[float] = []
+        body_fat_values: list[float] = []
+        body_water_values: list[float] = []
+        bone_mass_values: list[float] = []
+        muscle_mass_values: list[float] = []
 
         # First, try to get data for the target date
         target_raw_data = self.collect_body_composition_data(date)
         if not target_raw_data or not target_raw_data.get("dateWeightList"):
             logger.warning(
-                f"No body composition data found for {date}, skipping past 7 days lookup"
+                f"No body composition data found for {date}, "
+                "skipping past 7 days lookup"
             )
             return None
 
@@ -1451,7 +550,6 @@ class GarminIngestWorker:
             if raw_data and raw_data.get("dateWeightList"):
                 data = raw_data["dateWeightList"][0]
 
-                # Collect weight (convert to kg)
                 if data.get("weight"):
                     weights.append(data["weight"] / 1000.0)
                 if data.get("bmi"):
@@ -1469,7 +567,6 @@ class GarminIngestWorker:
             logger.warning(f"No weight data found in past 7 days for {date}")
             return None
 
-        # Calculate medians
         return {
             "date": date,
             "weight_kg": float(np.median(weights)),
@@ -1491,15 +588,7 @@ class GarminIngestWorker:
         }
 
     def process_body_composition(self, date: str) -> dict[str, Any]:
-        """
-        Process body composition data - save direct measurements only.
-
-        Pipeline:
-        1. Collect body composition data (cache-first)
-        2. Insert direct measurements into body_composition table
-
-        Note: Weight median calculation (for W/kg) is done during activity processing
-        and stored in activities table, NOT in body_composition table.
+        """Process body composition data - save direct measurements only.
 
         Args:
             date: Date in YYYY-MM-DD format
@@ -1509,7 +598,6 @@ class GarminIngestWorker:
         """
         logger.info(f"Processing body composition data for {date}")
 
-        # Step 1: Collect body composition data (cache-first)
         raw_data = self.collect_body_composition_data(date)
 
         if not raw_data or not raw_data.get("dateWeightList"):
@@ -1520,7 +608,6 @@ class GarminIngestWorker:
                 "message": f"No body composition data found for {date}",
             }
 
-        # Step 2: Insert direct measurements into DuckDB
         from garmin_mcp.database.db_writer import GarminDBWriter
 
         writer = (
@@ -1529,10 +616,10 @@ class GarminIngestWorker:
         success = writer.insert_body_composition(date=date, weight_data=raw_data)
 
         if success:
-            # Extract weight for return value
             weight_kg = raw_data["dateWeightList"][0].get("weight", 0) / 1000.0
             logger.info(
-                f"Successfully processed body composition data for {date}: {weight_kg:.3f} kg"
+                f"Successfully processed body composition data for {date}: "
+                f"{weight_kg:.3f} kg"
             )
             return {
                 "date": date,
@@ -1554,27 +641,21 @@ class GarminIngestWorker:
         activity_id: int,
         date: str,
         force_refetch: list[str] | None = None,
-        tables: list[str] | None = None,  # NEW: Phase 3 parameter
+        tables: list[str] | None = None,
     ) -> dict[str, Any]:
-        """
-        Process activity through cache-first pipeline.
+        """Process activity through cache-first pipeline.
 
         Pipeline:
-        1. Check DuckDB cache → return if complete
+        1. Check DuckDB cache -> return if complete
         2. Collect data (cache-first with optional force_refetch)
         3. Calculate 7-day median weight for W/kg
-        4. Insert into DuckDB via save_data() (activities + all child tables)
+        4. Insert into DuckDB via save_data()
 
         Args:
             activity_id: Activity ID
             date: Activity date (YYYY-MM-DD)
-            force_refetch: List of API file names to force refetch from Garmin Connect.
-                          Ignored if DuckDB cache exists (DuckDB has priority).
-                          Supported values: ['activity_details', 'splits', 'weather',
-                                            'gear', 'hr_zones', 'vo2_max', 'lactate_threshold']
-            tables: List of tables to regenerate (Phase 3 orchestration parameter).
-                   NOTE: Actual table filtering will be implemented in Phase 4.
-                   For Phase 3, this parameter is passed through for preparation.
+            force_refetch: List of API file names to force refetch
+            tables: List of tables to regenerate
 
         Returns:
             Result dict with file paths
@@ -1588,7 +669,6 @@ class GarminIngestWorker:
             logger.info(
                 f"Activity {activity_id}: Using complete data from DuckDB cache"
             )
-            # Return cached data without file paths (data already in DB)
             return {
                 "activity_id": activity_id,
                 "date": date,
@@ -1621,8 +701,7 @@ class GarminIngestWorker:
         }
 
     def _resolve_activity_id_from_duckdb(self, date: str) -> int | None:
-        """
-        Resolve activity ID from DuckDB by date.
+        """Resolve activity ID from DuckDB by date.
 
         Args:
             date: Activity date (YYYY-MM-DD)
@@ -1636,8 +715,7 @@ class GarminIngestWorker:
         return self._db_reader.query_activity_by_date(date)
 
     def _resolve_activity_id_from_api(self, date: str) -> int:
-        """
-        Resolve activity ID from Garmin API by date.
+        """Resolve activity ID from Garmin API by date.
 
         Args:
             date: Activity date (YYYY-MM-DD)
@@ -1652,7 +730,6 @@ class GarminIngestWorker:
         client = self.get_garmin_client()
         api_response = client.get_activities_fordate(date)
 
-        # Extract activities from nested structure
         activities_data = api_response.get("ActivitiesForDay", {}).get("payload", [])
 
         if len(activities_data) == 0:
@@ -1669,18 +746,12 @@ class GarminIngestWorker:
                 f"Please specify activity_id. Found: {activity_list}"
             )
 
-        # Single activity found
         activity_id = int(activities_data[0].get("activityId", 0))
         logger.info(f"Found single activity for {date}: {activity_id}")
         return activity_id
 
     def process_activity_by_date(self, date: str) -> dict[str, Any]:
-        """
-        Process activity by date (resolve activity_id from DuckDB or API).
-
-        Resolution strategy:
-        1. Try DuckDB first (cache-first)
-        2. Fall back to Garmin API if not found
+        """Process activity by date (resolve activity_id from DuckDB or API).
 
         Args:
             date: Activity date (YYYY-MM-DD)
@@ -1690,7 +761,7 @@ class GarminIngestWorker:
 
         Raises:
             ValueError: If no activity found for date
-            ValueError: If multiple activities found (user must specify activity_id)
+            ValueError: If multiple activities found
         """
         logger.info(f"Resolving activity for date {date}")
 
@@ -1700,9 +771,7 @@ class GarminIngestWorker:
         if activity_id is not None:
             logger.info(f"Found activity in DuckDB for {date}: {activity_id}")
         else:
-            # Fall back to API
             logger.info(f"Activity not found in DuckDB, querying API for {date}")
             activity_id = self._resolve_activity_id_from_api(date)
 
-        # Process the activity
         return self.process_activity(activity_id, date)

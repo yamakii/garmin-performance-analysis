@@ -184,7 +184,7 @@ class TestDeleteActivityRecords:
         mock_conn.__enter__ = mocker.MagicMock(return_value=mock_conn)
         mock_conn.__exit__ = mocker.MagicMock(return_value=False)
         mocker.patch(
-            "garmin_mcp.scripts.regenerate_duckdb.duckdb.connect",
+            "garmin_mcp.scripts.regenerate.deletion_strategy.duckdb.connect",
             return_value=mock_conn,
         )
 
@@ -216,7 +216,7 @@ class TestDeleteActivityRecords:
         mock_conn.__enter__ = mocker.MagicMock(return_value=mock_conn)
         mock_conn.__exit__ = mocker.MagicMock(return_value=False)
         mocker.patch(
-            "garmin_mcp.scripts.regenerate_duckdb.duckdb.connect",
+            "garmin_mcp.scripts.regenerate.deletion_strategy.duckdb.connect",
             return_value=mock_conn,
         )
 
@@ -259,7 +259,7 @@ class TestDeleteTableAllRecords:
         mock_conn.__enter__ = mocker.MagicMock(return_value=mock_conn)
         mock_conn.__exit__ = mocker.MagicMock(return_value=False)
         mocker.patch(
-            "garmin_mcp.scripts.regenerate_duckdb.duckdb.connect",
+            "garmin_mcp.scripts.regenerate.deletion_strategy.duckdb.connect",
             return_value=mock_conn,
         )
 
@@ -286,7 +286,7 @@ class TestDeleteTableAllRecords:
         mock_conn.__enter__ = mocker.MagicMock(return_value=mock_conn)
         mock_conn.__exit__ = mocker.MagicMock(return_value=False)
         mocker.patch(
-            "garmin_mcp.scripts.regenerate_duckdb.duckdb.connect",
+            "garmin_mcp.scripts.regenerate.deletion_strategy.duckdb.connect",
             return_value=mock_conn,
         )
 
@@ -314,7 +314,7 @@ class TestDeleteTableAllRecords:
         mock_conn.__enter__ = mocker.MagicMock(return_value=mock_conn)
         mock_conn.__exit__ = mocker.MagicMock(return_value=False)
         mocker.patch(
-            "garmin_mcp.scripts.regenerate_duckdb.duckdb.connect",
+            "garmin_mcp.scripts.regenerate.deletion_strategy.duckdb.connect",
             return_value=mock_conn,
         )
 
@@ -357,7 +357,7 @@ class TestDeleteTableAllRecords:
         mock_conn.execute = mocker.MagicMock(side_effect=execute_side_effect)
 
         mocker.patch(
-            "garmin_mcp.scripts.regenerate_duckdb.duckdb.connect",
+            "garmin_mcp.scripts.regenerate.deletion_strategy.duckdb.connect",
             return_value=mock_conn,
         )
 
@@ -661,7 +661,7 @@ class TestValidateTableDependencies:
         mock_conn.__enter__ = mocker.MagicMock(return_value=mock_conn)
         mock_conn.__exit__ = mocker.MagicMock(return_value=False)
         mocker.patch(
-            "garmin_mcp.scripts.regenerate_duckdb.duckdb.connect",
+            "garmin_mcp.scripts.regenerate.validator.duckdb.connect",
             return_value=mock_conn,
         )
 
@@ -682,7 +682,7 @@ class TestValidateTableDependencies:
         mock_conn.__enter__ = mocker.MagicMock(return_value=mock_conn)
         mock_conn.__exit__ = mocker.MagicMock(return_value=False)
         mocker.patch(
-            "garmin_mcp.scripts.regenerate_duckdb.duckdb.connect",
+            "garmin_mcp.scripts.regenerate.validator.duckdb.connect",
             return_value=mock_conn,
         )
 
@@ -710,7 +710,7 @@ class TestValidateTableDependencies:
         mock_conn.__enter__ = mocker.MagicMock(return_value=mock_conn)
         mock_conn.__exit__ = mocker.MagicMock(return_value=False)
         mocker.patch(
-            "garmin_mcp.scripts.regenerate_duckdb.duckdb.connect",
+            "garmin_mcp.scripts.regenerate.validator.duckdb.connect",
             return_value=mock_conn,
         )
 
@@ -759,7 +759,7 @@ class TestValidateTableDependencies:
         mock_conn.__enter__ = mocker.MagicMock(return_value=mock_conn)
         mock_conn.__exit__ = mocker.MagicMock(return_value=False)
         mocker.patch(
-            "garmin_mcp.scripts.regenerate_duckdb.duckdb.connect",
+            "garmin_mcp.scripts.regenerate.validator.duckdb.connect",
             return_value=mock_conn,
         )
 
@@ -798,7 +798,7 @@ class TestValidateTableDependencies:
         mock_conn.__enter__ = mocker.MagicMock(return_value=mock_conn)
         mock_conn.__exit__ = mocker.MagicMock(return_value=False)
         mocker.patch(
-            "garmin_mcp.scripts.regenerate_duckdb.duckdb.connect",
+            "garmin_mcp.scripts.regenerate.validator.duckdb.connect",
             return_value=mock_conn,
         )
 

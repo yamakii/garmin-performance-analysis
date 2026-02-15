@@ -3,8 +3,6 @@
 import logging
 from typing import Any
 
-import duckdb
-
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.reporting.components.formatting import format_pace
 
@@ -46,10 +44,8 @@ class ReportDataLoader:
         logger.info("[1/4] Loading performance data from DuckDB...")
 
         try:
-            conn = duckdb.connect(str(self.db_reader.db_path), read_only=True)
-
             # Load basic info and metrics from activities table
-            result = conn.execute(
+            results = self.db_reader.execute_read_query(
                 """
                 SELECT
                     activity_name,
@@ -67,18 +63,18 @@ class ReportDataLoader:
                 FROM activities
                 WHERE activity_id = ?
                 """,
-                [activity_id],
-            ).fetchone()
+                (activity_id,),
+            )
+            result = results[0] if results else None
 
             if not result:
-                conn.close()
                 logger.warning(
                     f"Warning: No performance data found in DuckDB for activity {activity_id}"
                 )
                 return None
 
             # Load form efficiency statistics
-            form_eff = conn.execute(
+            form_results = self.db_reader.execute_read_query(
                 """
                 SELECT
                     gct_average, gct_std, gct_rating,
@@ -87,17 +83,18 @@ class ReportDataLoader:
                 FROM form_efficiency
                 WHERE activity_id = ?
                 """,
-                [activity_id],
-            ).fetchone()
+                (activity_id,),
+            )
+            form_eff = form_results[0] if form_results else None
 
             # Load performance trends (support both 3-phase and 4-phase)
-            schema_check = conn.execute(
+            schema_check = self.db_reader.execute_read_query(
                 "PRAGMA table_info('performance_trends')"
-            ).fetchall()
+            )
             column_names = [row[1] for row in schema_check]
 
             if "recovery_avg_pace_seconds_per_km" in column_names:
-                perf_trends = conn.execute(
+                perf_results = self.db_reader.execute_read_query(
                     """
                     SELECT
                         pace_consistency, hr_drift_percentage, cadence_consistency, fatigue_pattern,
@@ -108,10 +105,10 @@ class ReportDataLoader:
                     FROM performance_trends
                     WHERE activity_id = ?
                     """,
-                    [activity_id],
-                ).fetchone()
+                    (activity_id,),
+                )
             else:
-                perf_trends = conn.execute(
+                perf_results = self.db_reader.execute_read_query(
                     """
                     SELECT
                         pace_consistency, hr_drift_percentage, cadence_consistency, fatigue_pattern,
@@ -122,34 +119,34 @@ class ReportDataLoader:
                     FROM performance_trends
                     WHERE activity_id = ?
                     """,
-                    [activity_id],
-                ).fetchone()
+                    (activity_id,),
+                )
+            perf_trends = perf_results[0] if perf_results else None
 
             # Load HR efficiency (includes training_type)
-            hr_eff = conn.execute(
+            hr_results = self.db_reader.execute_read_query(
                 """
                 SELECT training_type
                 FROM hr_efficiency
                 WHERE activity_id = ?
                 """,
-                [activity_id],
-            ).fetchone()
+                (activity_id,),
+            )
+            hr_eff = hr_results[0] if hr_results else None
 
             # Load heart rate zone times (if table exists)
             try:
-                hr_zone_times = conn.execute(
+                hr_zone_times = self.db_reader.execute_read_query(
                     """
                     SELECT zone_number, time_in_zone_seconds
                     FROM heart_rate_zones
                     WHERE activity_id = ?
                     ORDER BY zone_number
                     """,
-                    [activity_id],
-                ).fetchall()
+                    (activity_id,),
+                )
             except Exception:
                 hr_zone_times = []
-
-            conn.close()
 
             # Load VO2 Max data (uses fallback to most recent data)
             vo2_max_dict = self.db_reader.get_vo2_max_data(activity_id)
@@ -479,9 +476,7 @@ class ReportDataLoader:
         logger.info("[2.5/4] Loading splits data from DuckDB...")
 
         try:
-            conn = duckdb.connect(str(self.db_reader.db_path), read_only=True)
-
-            result = conn.execute(
+            result = self.db_reader.execute_read_query(
                 """
                 SELECT
                     split_index,
@@ -502,10 +497,8 @@ class ReportDataLoader:
                 WHERE activity_id = ?
                 ORDER BY split_index
                 """,
-                [activity_id],
-            ).fetchall()
-
-            conn.close()
+                (activity_id,),
+            )
 
             if not result:
                 logger.warning(
@@ -551,9 +544,7 @@ class ReportDataLoader:
             List of split dictionaries with index, pace, HR, etc.
         """
         try:
-            conn = duckdb.connect(str(self.db_reader.db_path), read_only=True)
-
-            result = conn.execute(
+            result = self.db_reader.execute_read_query(
                 """
                 SELECT
                     split_index AS index,
@@ -572,10 +563,8 @@ class ReportDataLoader:
                 WHERE activity_id = ?
                 ORDER BY split_index
                 """,
-                [activity_id],
-            ).fetchall()
-
-            conn.close()
+                (activity_id,),
+            )
 
             if not result:
                 logger.warning(f"No splits found for activity {activity_id}")

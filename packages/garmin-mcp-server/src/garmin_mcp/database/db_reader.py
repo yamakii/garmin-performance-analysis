@@ -64,6 +64,43 @@ class GarminDBReader:
         # For backward compatibility, expose db_path
         self.db_path = self.metadata.db_path
 
+    def execute_read_query(
+        self, sql: str, params: tuple[Any, ...] = ()
+    ) -> list[tuple[Any, ...]]:
+        """Execute a read-only SQL query and return all results.
+
+        Centralizes DuckDB connection management so callers don't need
+        to import duckdb or manage connections directly.
+
+        Args:
+            sql: SQL query string
+            params: Query parameters
+
+        Returns:
+            List of result tuples
+        """
+        with self.metadata._get_connection() as conn:
+            result: list[tuple[Any, ...]] = conn.execute(sql, params).fetchall()
+            return result
+
+    def execute_read_query_with_columns(
+        self, sql: str, params: tuple[Any, ...] = ()
+    ) -> tuple[list[tuple[Any, ...]], list[str]]:
+        """Execute a read-only SQL query and return results with column names.
+
+        Args:
+            sql: SQL query string
+            params: Query parameters
+
+        Returns:
+            Tuple of (results, column_names)
+        """
+        with self.metadata._get_connection() as conn:
+            result = conn.execute(sql, params)
+            columns = [desc[0] for desc in result.description]
+            rows = result.fetchall()
+            return rows, columns
+
     # ========== Metadata Methods ==========
 
     def get_activity_date(self, activity_id: int) -> str | None:

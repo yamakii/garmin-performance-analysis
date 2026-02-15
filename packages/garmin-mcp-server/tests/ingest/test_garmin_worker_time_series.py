@@ -158,7 +158,7 @@ class TestGarminWorkerTimeSeriesIntegration:
             patch(
                 "garmin_mcp.database.inserters.time_series_metrics.insert_time_series_metrics"
             ) as mock_time_series,
-            patch("garmin_mcp.ingest.garmin_worker.logger") as mock_logger,
+            patch("garmin_mcp.ingest.duckdb_saver.logger") as mock_logger,
         ):
             mock_activities.return_value = True
             mock_splits.return_value = True
@@ -236,7 +236,7 @@ class TestGarminWorkerTimeSeriesIntegration:
             patch(
                 "garmin_mcp.database.inserters.time_series_metrics.insert_time_series_metrics"
             ) as mock_time_series,
-            patch("garmin_mcp.ingest.garmin_worker.logger") as mock_logger,
+            patch("garmin_mcp.ingest.duckdb_saver.logger") as mock_logger,
         ):
             mock_activities.return_value = True
             mock_splits.return_value = True

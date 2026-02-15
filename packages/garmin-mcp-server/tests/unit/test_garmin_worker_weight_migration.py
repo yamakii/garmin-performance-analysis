@@ -109,8 +109,9 @@ class TestWeightPathMigration:
         mock_client = Mock()
         mock_client.get_daily_weigh_ins.return_value = sample_weight_data
 
-        with patch.object(
-            GarminIngestWorker, "get_garmin_client", return_value=mock_client
+        with patch(
+            "garmin_mcp.ingest.raw_data_fetcher.get_garmin_client",
+            return_value=mock_client,
         ):
             # Collect data (should call API and cache to new path)
             result = worker.collect_body_composition_data(test_date)
@@ -196,7 +197,9 @@ class TestBackwardCompatibilityRemoval:
             json.dump(sample_data, f)
 
         # Try to collect data (should NOT find old file, should return None or fetch from API)
-        with patch.object(GarminIngestWorker, "get_garmin_client") as mock_get_client:
+        with patch(
+            "garmin_mcp.ingest.raw_data_fetcher.get_garmin_client"
+        ) as mock_get_client:
             mock_client = Mock()
             mock_client.get_daily_weigh_ins.return_value = None
             mock_get_client.return_value = mock_client

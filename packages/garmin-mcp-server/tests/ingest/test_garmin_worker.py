@@ -370,31 +370,26 @@ class TestGarminIngestWorker:
         mock_lactate: dict[str, Any] = {}
         mock_activity_details = {"activityId": activity_id}
 
-        with patch.object(worker, "get_garmin_client") as mock_client:
+        with patch(
+            "garmin_mcp.ingest.raw_data_fetcher.get_garmin_client"
+        ) as mock_client_fn:
+            mock_client = mock_client_fn.return_value
             # Setup all API mocks
-            mock_client.return_value.get_activity.return_value = mock_activity_basic
-            mock_client.return_value.get_activity_details.return_value = (
-                mock_activity_details
-            )
-            mock_client.return_value.get_activity_splits.return_value = mock_splits
-            mock_client.return_value.get_activity_weather.return_value = mock_weather
-            mock_client.return_value.get_activity_gear.return_value = mock_gear
-            mock_client.return_value.get_activity_hr_in_timezones.return_value = (
-                mock_hr_zones
-            )
-            mock_client.return_value.get_activity_vo2_max.return_value = mock_vo2_max
-            mock_client.return_value.get_activity_lactate_threshold.return_value = (
-                mock_lactate
-            )
-            mock_client.return_value.get_activity_evaluation.return_value = {}
+            mock_client.get_activity.return_value = mock_activity_basic
+            mock_client.get_activity_details.return_value = mock_activity_details
+            mock_client.get_activity_splits.return_value = mock_splits
+            mock_client.get_activity_weather.return_value = mock_weather
+            mock_client.get_activity_gear.return_value = mock_gear
+            mock_client.get_activity_hr_in_timezones.return_value = mock_hr_zones
+            mock_client.get_activity_vo2_max.return_value = mock_vo2_max
+            mock_client.get_activity_lactate_threshold.return_value = mock_lactate
+            mock_client.get_activity_evaluation.return_value = {}
 
             # Execute
             result = worker.collect_data(activity_id)
 
             # Verify get_activity() was called
-            mock_client.return_value.get_activity.assert_called_once_with(
-                str(activity_id)
-            )
+            mock_client.get_activity.assert_called_once_with(str(activity_id))
 
             # Verify result
             assert "activity_basic" in result
@@ -553,8 +548,10 @@ class TestGarminIngestWorker:
         # Mock get_activity_details to return NEW data
         new_activity_details = {"activityId": activity_id, "maxchart": 3000}
 
-        with patch.object(worker, "get_garmin_client") as mock_client:
-            mock_client.return_value.get_activity_details.return_value = (
+        with patch(
+            "garmin_mcp.ingest.raw_data_fetcher.get_garmin_client"
+        ) as mock_client_fn:
+            mock_client_fn.return_value.get_activity_details.return_value = (
                 new_activity_details
             )
 
@@ -564,7 +561,7 @@ class TestGarminIngestWorker:
             )
 
             # Verify API was called ONLY for activity_details
-            mock_client.return_value.get_activity_details.assert_called_once()
+            mock_client_fn.return_value.get_activity_details.assert_called_once()
 
             # Verify result contains NEW activity_details
             assert result["activity"]["maxchart"] == 3000
@@ -618,9 +615,11 @@ class TestGarminIngestWorker:
         new_weather = {"temp": 20, "windSpeed": 10}
         new_vo2_max = {"generic": {"vo2MaxValue": 50}}
 
-        with patch.object(worker, "get_garmin_client") as mock_client:
-            mock_client.return_value.get_activity_weather.return_value = new_weather
-            mock_client.return_value.get_max_metrics.return_value = new_vo2_max
+        with patch(
+            "garmin_mcp.ingest.raw_data_fetcher.get_garmin_client"
+        ) as mock_client_fn:
+            mock_client_fn.return_value.get_activity_weather.return_value = new_weather
+            mock_client_fn.return_value.get_max_metrics.return_value = new_vo2_max
 
             # Execute with force_refetch for multiple files
             result = worker.collect_data(
@@ -628,8 +627,8 @@ class TestGarminIngestWorker:
             )
 
             # Verify APIs were called ONLY for weather and vo2_max
-            mock_client.return_value.get_activity_weather.assert_called_once()
-            mock_client.return_value.get_max_metrics.assert_called_once()
+            mock_client_fn.return_value.get_activity_weather.assert_called_once()
+            mock_client_fn.return_value.get_max_metrics.assert_called_once()
 
             # Verify results contain NEW data
             assert result["weather"]["temp"] == 20
@@ -675,14 +674,16 @@ class TestGarminIngestWorker:
             with open(activity_dir / file_name, "w", encoding="utf-8") as f:
                 json.dump(data, f)
 
-        with patch.object(worker, "get_garmin_client") as mock_client:
+        with patch(
+            "garmin_mcp.ingest.raw_data_fetcher.get_garmin_client"
+        ) as mock_client_fn:
             # Execute with default force_refetch=None
             result = worker.collect_data(activity_id)
 
             # Verify NO API calls were made
-            mock_client.return_value.get_activity_details.assert_not_called()
-            mock_client.return_value.get_activity_weather.assert_not_called()
-            mock_client.return_value.get_max_metrics.assert_not_called()
+            mock_client_fn.return_value.get_activity_details.assert_not_called()
+            mock_client_fn.return_value.get_activity_weather.assert_not_called()
+            mock_client_fn.return_value.get_max_metrics.assert_not_called()
 
             # Verify cache was used
             assert result["gear"][0]["customMakeModel"] == "Cached Shoes"

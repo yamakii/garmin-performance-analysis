@@ -3,8 +3,6 @@
 import logging
 from typing import Any
 
-import duckdb
-
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.reporting.components.formatting import format_pace
 
@@ -188,8 +186,7 @@ class PhysiologicalCalculator:
             Dictionary with avg_power and avg_stride (None if no data)
         """
         try:
-            conn = duckdb.connect(str(self.db_reader.db_path), read_only=True)
-            result = conn.execute(
+            results = self.db_reader.execute_read_query(
                 """
                 SELECT
                     AVG(power) as avg_power,
@@ -200,9 +197,9 @@ class PhysiologicalCalculator:
                   AND power IS NOT NULL
                   AND stride_length IS NOT NULL
                 """,
-                [activity_id],
-            ).fetchone()
-            conn.close()
+                (activity_id,),
+            )
+            result = results[0] if results else None
 
             if result and result[0] is not None and result[1] is not None:
                 return {
@@ -234,8 +231,6 @@ class PhysiologicalCalculator:
             Dictionary with baseline_power and baseline_stride (None if insufficient data)
         """
         try:
-            conn = duckdb.connect(str(self.db_reader.db_path), read_only=True)
-
             # Use similar workouts from WorkoutComparator if available
             if similar_workouts and "similar_activities" in similar_workouts:
                 similar_ids = [
@@ -244,17 +239,17 @@ class PhysiologicalCalculator:
                 ]
             else:
                 # Fallback: query by distance/pace (legacy behavior)
-                current_activity = conn.execute(
+                current_results = self.db_reader.execute_read_query(
                     """
                     SELECT total_distance_km, avg_pace_seconds_per_km
                     FROM activities
                     WHERE activity_id = ?
                     """,
-                    [activity_id],
-                ).fetchone()
+                    (activity_id,),
+                )
+                current_activity = current_results[0] if current_results else None
 
                 if not current_activity:
-                    conn.close()
                     return {"baseline_power": None, "baseline_stride": None}
 
                 target_distance, target_pace = current_activity
@@ -263,7 +258,7 @@ class PhysiologicalCalculator:
                 pace_min = target_pace * 0.9
                 pace_max = target_pace * 1.1
 
-                similar_activities = conn.execute(
+                similar_activities = self.db_reader.execute_read_query(
                     """
                     SELECT activity_id
                     FROM activities
@@ -275,7 +270,7 @@ class PhysiologicalCalculator:
                         ABS(avg_pace_seconds_per_km - ?)
                     LIMIT 5
                     """,
-                    [
+                    (
                         activity_id,
                         distance_min,
                         distance_max,
@@ -283,13 +278,12 @@ class PhysiologicalCalculator:
                         pace_max,
                         target_distance,
                         target_pace,
-                    ],
-                ).fetchall()
+                    ),
+                )
 
                 similar_ids = [row[0] for row in similar_activities]
 
             if len(similar_ids) < 1:
-                conn.close()
                 return {"baseline_power": None, "baseline_stride": None}
 
             power_values: list[float] = []
@@ -310,7 +304,7 @@ class PhysiologicalCalculator:
                 # Query power and stride for each similar workout
                 if use_run_phase_only:
                     # For structured workouts, only use run phase
-                    result = conn.execute(
+                    results = self.db_reader.execute_read_query(
                         """
                         SELECT
                             AVG(power) as avg_power,
@@ -321,11 +315,11 @@ class PhysiologicalCalculator:
                           AND power IS NOT NULL
                           AND stride_length IS NOT NULL
                         """,
-                        [sim_activity_id],
-                    ).fetchone()
+                        (sim_activity_id,),
+                    )
                 else:
                     # For base/recovery runs, use all splits
-                    result = conn.execute(
+                    results = self.db_reader.execute_read_query(
                         """
                         SELECT
                             AVG(power) as avg_power,
@@ -335,15 +329,14 @@ class PhysiologicalCalculator:
                           AND power IS NOT NULL
                           AND stride_length IS NOT NULL
                         """,
-                        [sim_activity_id],
-                    ).fetchone()
+                        (sim_activity_id,),
+                    )
+                result = results[0] if results else None
 
                 if result and result[0] is not None:
                     power_values.append(result[0])
                 if result and result[1] is not None:
                     stride_values.append(result[1])
-
-            conn.close()
 
             # Require at least 1 similar workout with data
             baseline_power = (

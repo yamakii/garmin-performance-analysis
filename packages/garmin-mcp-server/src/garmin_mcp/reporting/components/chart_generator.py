@@ -3,8 +3,6 @@
 import logging
 from typing import Any
 
-import duckdb
-
 from garmin_mcp.database.db_reader import GarminDBReader
 
 logger = logging.getLogger(__name__)
@@ -180,9 +178,7 @@ class ChartGenerator:
             Mermaid pie chart data string or None if no data available
         """
         try:
-            conn = duckdb.connect(str(self.db_reader.db_path), read_only=True)
-
-            result = conn.execute(
+            result = self.db_reader.execute_read_query(
                 """
                 SELECT
                     zone_number,
@@ -192,10 +188,8 @@ class ChartGenerator:
                 AND zone_percentage > 0
                 ORDER BY zone_number
                 """,
-                [activity_id],
-            ).fetchall()
-
-            conn.close()
+                (activity_id,),
+            )
 
             if not result:
                 return None

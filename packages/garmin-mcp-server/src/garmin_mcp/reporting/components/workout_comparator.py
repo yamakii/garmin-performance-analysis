@@ -3,8 +3,6 @@
 import logging
 from typing import Any
 
-import duckdb
-
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.reporting.components.formatting import format_pace
 
@@ -115,23 +113,22 @@ class WorkoutComparator:
             # For main_set comparison, recalculate pace_diff from actual main set paces
             if current_metrics.get("pace_source") == "main_set":
 
-                conn = duckdb.connect(self.db_reader.db_path, read_only=True)
-
                 base_pace = current_metrics[
                     "avg_pace"
                 ]  # Current activity's main set pace
 
                 for workout in top_3:
                     # Query similar activity's main set pace
-                    query_result = conn.execute(
+                    query_results = self.db_reader.execute_read_query(
                         """
                         SELECT AVG(pace_seconds_per_km) as main_pace
                         FROM splits
                         WHERE activity_id = ?
                           AND intensity_type IN ('ACTIVE', 'INTERVAL')
                     """,
-                        [workout["activity_id"]],
-                    ).fetchone()
+                        (workout["activity_id"],),
+                    )
+                    query_result = query_results[0] if query_results else None
 
                     if query_result and query_result[0]:
                         similar_main_pace = query_result[0]
@@ -143,8 +140,6 @@ class WorkoutComparator:
                             f"No main set data for activity {workout['activity_id']}, "
                             f"using overall pace diff"
                         )
-
-                conn.close()
 
             # Use target_pace_override for main-set comparison, otherwise use overall avg_pace
             base_pace = (
@@ -177,10 +172,9 @@ class WorkoutComparator:
                 intensity_filter = ""
 
             # Get additional metrics from splits table
-            conn = duckdb.connect(str(self.db_reader.db_path), read_only=True)
 
             # Get current activity metrics (filtered by intensity_type if main_set)
-            current_additional = conn.execute(
+            current_additional_results = self.db_reader.execute_read_query(
                 f"""
                 SELECT
                     AVG(power) as avg_power,
@@ -190,12 +184,15 @@ class WorkoutComparator:
                 FROM splits
                 WHERE activity_id = ? {intensity_filter}
                 """,
-                [activity_id],
-            ).fetchone()
+                (activity_id,),
+            )
+            current_additional = (
+                current_additional_results[0] if current_additional_results else None
+            )
 
             # Get similar activities metrics (same filtering)
             similar_ids = [w["activity_id"] for w in top_3]
-            similar_additional = conn.execute(
+            similar_additional_results = self.db_reader.execute_read_query(
                 f"""
                 SELECT
                     AVG(power) as avg_power,
@@ -205,8 +202,11 @@ class WorkoutComparator:
                 FROM splits
                 WHERE activity_id IN ({",".join("?" * len(similar_ids))}) {intensity_filter}
                 """,
-                similar_ids,
-            ).fetchone()
+                tuple(similar_ids),
+            )
+            similar_additional = (
+                similar_additional_results[0] if similar_additional_results else None
+            )
 
             # Format comparison table
             comparisons: list[dict[str, str]] = [
@@ -252,26 +252,28 @@ class WorkoutComparator:
                 training_type = hr_data.get("training_type") if hr_data else None
 
                 # Pace variability coefficient - now for ALL training types
-                current_pace_cv = conn.execute(
+                cv_results = self.db_reader.execute_read_query(
                     f"""
                     SELECT STDDEV(pace_seconds_per_km) / AVG(pace_seconds_per_km) as pace_cv
                     FROM splits
                     WHERE activity_id = ? {intensity_filter}
                     """,
-                    [activity_id],
-                ).fetchone()[0]
+                    (activity_id,),
+                )
+                current_pace_cv = cv_results[0][0] if cv_results else None
 
                 # Calculate average pace CV for similar activities
                 similar_pace_cvs = []
                 for sim_id in similar_ids:
-                    sim_cv = conn.execute(
+                    sim_cv_results = self.db_reader.execute_read_query(
                         f"""
                         SELECT STDDEV(pace_seconds_per_km) / AVG(pace_seconds_per_km) as pace_cv
                         FROM splits
                         WHERE activity_id = ? {intensity_filter}
                         """,
-                        [sim_id],
-                    ).fetchone()[0]
+                        (sim_id,),
+                    )
+                    sim_cv = sim_cv_results[0][0] if sim_cv_results else None
 
                     if sim_cv:
                         similar_pace_cvs.append(sim_cv)
@@ -316,7 +318,7 @@ class WorkoutComparator:
                     "anaerobic_capacity",
                 ]:
                     self._add_recovery_rate_comparison(
-                        comparisons, conn, activity_id, similar_ids
+                        comparisons, activity_id, similar_ids
                     )
 
             except Exception as e:
@@ -335,19 +337,18 @@ class WorkoutComparator:
             )
 
             # Get elevation gain for terrain description from splits
-            elevation_data = conn.execute(
+            elevation_results = self.db_reader.execute_read_query(
                 """
                 SELECT SUM(elevation_gain) as total_gain
                 FROM splits
                 WHERE activity_id = ?
                 """,
-                [activity_id],
-            ).fetchone()
+                (activity_id,),
+            )
+            elevation_data = elevation_results[0] if elevation_results else None
             elevation_gain = (
                 elevation_data[0] if elevation_data and elevation_data[0] else 0
             )
-
-            conn.close()
 
             # Generate insight with efficiency calculation if applicable
             insight = f"過去の類似ワークアウト{len(top_3)}回と比較して分析しました。"
@@ -453,10 +454,8 @@ class WorkoutComparator:
         insights: list[str] = []
 
         try:
-            conn = duckdb.connect(str(self.db_reader.db_path), read_only=True)
-
             # Get current activity metrics
-            current = conn.execute(
+            current_results = self.db_reader.execute_read_query(
                 """
                 SELECT
                     a.activity_date,
@@ -468,17 +467,17 @@ class WorkoutComparator:
                 LEFT JOIN form_efficiency f ON a.activity_id = f.activity_id
                 WHERE a.activity_id = ?
                 """,
-                [activity_id],
-            ).fetchone()
+                (activity_id,),
+            )
+            current = current_results[0] if current_results else None
 
             if not current:
-                conn.close()
                 return insights
 
             current_date, current_hr, current_pace, current_dist, current_gct = current
 
             # Find most recent similar workout (within +/-10% pace and distance)
-            previous = conn.execute(
+            previous_results = self.db_reader.execute_read_query(
                 """
                 SELECT
                     a.activity_id,
@@ -495,17 +494,16 @@ class WorkoutComparator:
                 ORDER BY a.activity_date DESC
                 LIMIT 1
                 """,
-                [
+                (
                     activity_id,
                     current_date,
                     current_pace,
                     current_pace,
                     current_dist,
                     current_dist,
-                ],
-            ).fetchone()
-
-            conn.close()
+                ),
+            )
+            previous = previous_results[0] if previous_results else None
 
             if not previous:
                 return insights
@@ -659,12 +657,11 @@ class WorkoutComparator:
     def _add_recovery_rate_comparison(
         self,
         comparisons: list[dict[str, str]],
-        conn: duckdb.DuckDBPyConnection,
         activity_id: int,
         similar_ids: list[int],
     ) -> None:
         """Add recovery rate comparison for interval activities."""
-        current_recovery = conn.execute(
+        recovery_results = self.db_reader.execute_read_query(
             """
             SELECT
                 AVG(CASE WHEN intensity_type IN ('ACTIVE', 'INTERVAL') THEN heart_rate END) as work_hr,
@@ -672,8 +669,9 @@ class WorkoutComparator:
             FROM splits
             WHERE activity_id = ?
             """,
-            [activity_id],
-        ).fetchone()
+            (activity_id,),
+        )
+        current_recovery = recovery_results[0] if recovery_results else None
 
         if current_recovery and current_recovery[0] and current_recovery[1]:
             current_recovery_rate = (current_recovery[1] / current_recovery[0]) * 100
@@ -681,7 +679,7 @@ class WorkoutComparator:
             # Calculate for similar activities
             similar_recovery_rates = []
             for sim_id in similar_ids:
-                sim_recovery = conn.execute(
+                sim_results = self.db_reader.execute_read_query(
                     """
                     SELECT
                         AVG(CASE WHEN intensity_type IN ('ACTIVE', 'INTERVAL') THEN heart_rate END) as work_hr,
@@ -689,8 +687,9 @@ class WorkoutComparator:
                     FROM splits
                     WHERE activity_id = ?
                     """,
-                    [sim_id],
-                ).fetchone()
+                    (sim_id,),
+                )
+                sim_recovery = sim_results[0] if sim_results else None
 
                 if sim_recovery and sim_recovery[0] and sim_recovery[1]:
                     similar_recovery_rates.append(
