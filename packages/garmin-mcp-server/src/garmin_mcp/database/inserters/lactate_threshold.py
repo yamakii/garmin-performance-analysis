@@ -16,9 +16,8 @@ logger = logging.getLogger(__name__)
 
 def insert_lactate_threshold(
     activity_id: int,
-    db_path: str | None = None,
+    conn: duckdb.DuckDBPyConnection,
     raw_lactate_threshold_file: str | None = None,
-    conn: duckdb.DuckDBPyConnection | None = None,
 ) -> bool:
     """
     Insert lactate_threshold into DuckDB lactate_threshold table from raw API file.
@@ -28,7 +27,7 @@ def insert_lactate_threshold(
 
     Args:
         activity_id: Activity ID
-        db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
+        conn: DuckDB connection
         raw_lactate_threshold_file: Path to raw lactate_threshold.json
 
     Returns:
@@ -48,32 +47,6 @@ def insert_lactate_threshold(
                 f"Failed to extract lactate_threshold from {raw_lactate_threshold_file}, skipping"
             )
             return True  # Not an error, lactate threshold is optional
-
-        # Set default DB path
-        if db_path is None:
-            from garmin_mcp.utils.paths import get_default_db_path
-
-            db_path = get_default_db_path()
-
-        # Connect to DuckDB (use provided connection or create new one)
-        own_conn = conn is None
-        if own_conn:
-            conn = duckdb.connect(str(db_path))
-        assert conn is not None
-
-        # Ensure lactate_threshold table exists
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS lactate_threshold (
-                activity_id BIGINT PRIMARY KEY,
-                heart_rate INTEGER,
-                speed_mps DOUBLE,
-                date_hr TIMESTAMP,
-                functional_threshold_power INTEGER,
-                power_to_weight DOUBLE,
-                weight DOUBLE,
-                date_power TIMESTAMP
-            )
-            """)
 
         # Delete existing record for this activity (for re-insertion)
         conn.execute(
@@ -118,9 +91,6 @@ def insert_lactate_threshold(
                 date_power,
             ],
         )
-
-        if own_conn:
-            conn.close()
 
         logger.info(
             f"Successfully inserted lactate threshold data for activity {activity_id}"

@@ -8,8 +8,10 @@ Test coverage:
 
 import json
 
+import duckdb
 import pytest
 
+from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.form_efficiency import insert_form_efficiency
 
 
@@ -20,12 +22,15 @@ class TestFormEfficiencyInserter:
     def test_insert_form_efficiency_success(self, sample_splits_file, tmp_path):
         """Test insert_form_efficiency inserts data successfully."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_form_efficiency(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_splits_file),
         )
+        conn.close()
 
         assert result is True
         assert db_path.exists()
@@ -33,13 +38,14 @@ class TestFormEfficiencyInserter:
     @pytest.mark.unit
     def test_insert_form_efficiency_missing_file(self, tmp_path):
         """Test insert_form_efficiency handles missing file."""
-        db_path = tmp_path / "test.duckdb"
+        conn = duckdb.connect(":memory:")
 
         result = insert_form_efficiency(
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file="/nonexistent/splits.json",
         )
+        conn.close()
 
         assert result is False
 
@@ -59,33 +65,31 @@ class TestFormEfficiencyInserter:
         with open(splits_file, "w", encoding="utf-8") as f:
             json.dump(splits_data, f)
 
-        db_path = tmp_path / "test.duckdb"
+        conn = duckdb.connect(":memory:")
 
         result = insert_form_efficiency(
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(splits_file),
         )
+        conn.close()
 
         assert result is False
 
     @pytest.mark.integration
     def test_insert_form_efficiency_db_integration(self, sample_splits_file, tmp_path):
         """Test insert_form_efficiency actually writes to DuckDB."""
-        import duckdb
-
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_form_efficiency(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_splits_file),
         )
 
         assert result is True
-
-        # Verify data in DuckDB
-        conn = duckdb.connect(str(db_path))
 
         # Check form_efficiency table exists
         tables = conn.execute("SHOW TABLES").fetchall()
@@ -167,12 +171,15 @@ class TestFormEfficiencyInserter:
     ):
         """Test insert_form_efficiency with raw data."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_form_efficiency(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_splits_file),
         )
+        conn.close()
 
         assert result is True
         assert db_path.exists()
@@ -182,20 +189,17 @@ class TestFormEfficiencyInserter:
         self, sample_splits_file, tmp_path
     ):
         """Test insert_form_efficiency with raw data actually writes to DuckDB."""
-        import duckdb
-
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_form_efficiency(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_splits_file),
         )
 
         assert result is True
-
-        # Verify data in DuckDB
-        conn = duckdb.connect(str(db_path))
 
         # Check form_efficiency data
         form_eff = conn.execute(
@@ -230,13 +234,14 @@ class TestFormEfficiencyInserter:
     @pytest.mark.unit
     def test_insert_form_efficiency_raw_data_missing_file(self, tmp_path):
         """Test insert_form_efficiency handles missing files."""
-        db_path = tmp_path / "test.duckdb"
+        conn = duckdb.connect(":memory:")
 
         result = insert_form_efficiency(
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file="/nonexistent/splits.json",
         )
+        conn.close()
 
         assert result is False
 

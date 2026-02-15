@@ -9,6 +9,7 @@ Test coverage:
 import json
 from datetime import datetime
 
+import duckdb
 import pytest
 
 from garmin_mcp.database.db_writer import GarminDBWriter
@@ -53,11 +54,13 @@ class TestSectionAnalysisInserter:
 
         # Setup: Insert activity first (FK constraint)
         GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        conn = duckdb.connect(str(db_path))
         insert_activities(
             activity_id=20464005432,
             date="2025-09-22",
-            db_path=str(db_path),
+            conn=conn,
         )
+        conn.close()
 
         result = insert_section_analysis(
             analysis_file=str(sample_analysis_file),
@@ -92,11 +95,13 @@ class TestSectionAnalysisInserter:
 
         # Setup: Insert activity first (FK constraint)
         GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        conn = duckdb.connect(str(db_path))
         insert_activities(
             activity_id=20464005432,
             date="2025-09-22",
-            db_path=str(db_path),
+            conn=conn,
         )
+        conn.close()
 
         result = insert_section_analysis(
             analysis_data=sample_analysis_data,
@@ -120,11 +125,13 @@ class TestSectionAnalysisInserter:
 
         # Setup: Insert activity first (FK constraint)
         GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        conn = duckdb.connect(str(db_path))
         insert_activities(
             activity_id=20464005432,
             date="2025-09-22",
-            db_path=str(db_path),
+            conn=conn,
         )
+        conn.close()
 
         result = insert_section_analysis(
             analysis_file=str(sample_analysis_file),
@@ -161,11 +168,13 @@ class TestSectionAnalysisInserter:
 
         # Setup: Insert activity first (FK constraint)
         GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        conn = duckdb.connect(str(db_path))
         insert_activities(
             activity_id=20464005432,
             date="2025-09-22",
-            db_path=str(db_path),
+            conn=conn,
         )
+        conn.close()
 
         result = insert_section_analysis(
             analysis_data=sample_analysis_data,
@@ -204,11 +213,13 @@ class TestSectionAnalysisInserter:
 
         # Setup: Insert activity first (FK constraint)
         GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        conn = duckdb.connect(str(db_path))
         insert_activities(
             activity_id=20464005432,
             date="2025-09-22",
-            db_path=str(db_path),
+            conn=conn,
         )
+        conn.close()
 
         # Analysis data WITHOUT metadata
         analysis_data_no_metadata = {
@@ -266,11 +277,13 @@ class TestSectionAnalysisInserter:
 
         # Setup: Insert activity first (FK constraint)
         GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        conn = duckdb.connect(str(db_path))
         insert_activities(
             activity_id=20464005432,
             date="2025-09-22",
-            db_path=str(db_path),
+            conn=conn,
         )
+        conn.close()
 
         # Analysis data WITHOUT metadata
         analysis_data = {"summary": "Overall performance evaluation"}

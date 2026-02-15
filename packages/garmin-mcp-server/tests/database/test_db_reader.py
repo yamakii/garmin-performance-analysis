@@ -7,9 +7,11 @@ Test coverage:
 - get_splits_elevation: Retrieve elevation data from splits
 """
 
+import duckdb
 import pytest
 
 from garmin_mcp.database.db_reader import GarminDBReader
+from garmin_mcp.database.db_writer import GarminDBWriter
 
 
 class TestGarminDBReader:
@@ -58,11 +60,14 @@ class TestGarminDBReader:
         # Insert splits into DuckDB using splits inserter
         from garmin_mcp.database.inserters.splits import insert_splits
 
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
         insert_splits(
             activity_id=20615445009,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(splits_file),
         )
+        conn.close()
 
         return GarminDBReader(db_path=str(db_path))
 

@@ -8,7 +8,6 @@ time_series_metrics table for efficient querying and token-optimized access.
 import json
 import logging
 from pathlib import Path
-from typing import Any
 
 import duckdb
 
@@ -18,8 +17,7 @@ logger = logging.getLogger(__name__)
 def insert_time_series_metrics(
     activity_details_file: str,
     activity_id: int,
-    db_path: str | None = None,
-    conn: Any | None = None,
+    conn: duckdb.DuckDBPyConnection,
 ) -> bool:
     """
     Insert time series metrics from activity_details.json to DuckDB.
@@ -27,8 +25,7 @@ def insert_time_series_metrics(
     Args:
         activity_details_file: Path to raw/activity/{activity_id}/activity_details.json
         activity_id: Activity ID
-        db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
-        conn: Optional DuckDB connection (for connection reuse, Phase 5 optimization)
+        conn: DuckDB connection
 
     Returns:
         True if successful, False otherwise
@@ -110,61 +107,6 @@ def insert_time_series_metrics(
             ("directPerformanceCondition", "performance_condition"),
         ]
 
-        # Set default DB path
-        if db_path is None:
-            from garmin_mcp.utils.paths import get_default_db_path
-
-            db_path = get_default_db_path()
-
-        # Phase 5 optimization: Reuse connection if provided
-        should_close_conn = False
-        if conn is None:
-            conn = duckdb.connect(str(db_path))
-            should_close_conn = True
-
-        # Ensure time_series_metrics table exists with seq_no
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS time_series_metrics (
-                activity_id BIGINT NOT NULL,
-                seq_no INTEGER NOT NULL,
-                timestamp_s INTEGER NOT NULL,
-                sum_moving_duration DOUBLE,
-                sum_duration DOUBLE,
-                sum_elapsed_duration DOUBLE,
-                sum_distance DOUBLE,
-                sum_accumulated_power DOUBLE,
-                heart_rate DOUBLE,
-                speed DOUBLE,
-                grade_adjusted_speed DOUBLE,
-                cadence DOUBLE,  -- Both feet cadence from directDoubleCadence
-                power DOUBLE,
-                ground_contact_time DOUBLE,
-                vertical_oscillation DOUBLE,
-                vertical_ratio DOUBLE,
-                stride_length DOUBLE,
-                vertical_speed DOUBLE,
-                elevation DOUBLE,
-                air_temperature DOUBLE,
-                latitude DOUBLE,
-                longitude DOUBLE,
-                available_stamina DOUBLE,
-                potential_stamina DOUBLE,
-                body_battery DOUBLE,
-                performance_condition DOUBLE,
-                PRIMARY KEY (activity_id, seq_no)
-            )
-            """)
-
-        # Create indexes
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_time_series_activity "
-            "ON time_series_metrics(activity_id)"
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_time_series_timestamp "
-            "ON time_series_metrics(activity_id, timestamp_s)"
-        )
-
         # Delete existing data for this activity (for re-insertion)
         conn.execute(
             "DELETE FROM time_series_metrics WHERE activity_id = ?", [activity_id]
@@ -174,8 +116,6 @@ def insert_time_series_metrics(
         sum_duration_info = metric_map.get("sumDuration")
         if not sum_duration_info:
             logger.error("sumDuration metric not found in metricDescriptors")
-            if should_close_conn:
-                conn.close()
             return False
 
         sum_duration_index = sum_duration_info["index"]
@@ -261,10 +201,6 @@ def insert_time_series_metrics(
 
             # Execute batch insert
             conn.executemany(insert_sql, value_tuples)
-
-        # Only close if we opened it
-        if should_close_conn:
-            conn.close()
 
         logger.info(
             f"Successfully inserted {len(value_tuples)} time series metrics for activity {activity_id}"

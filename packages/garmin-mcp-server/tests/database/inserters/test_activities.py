@@ -25,16 +25,16 @@ def test_insert_activities_missing_file():
         # Initialize database schema
         GarminDBWriter(db_path=str(db_path))
 
+        conn = duckdb.connect(str(db_path))
         # Should succeed with minimal data (just activity_id and date)
         result = insert_activities(
             activity_id=12345,
             date="2025-10-09",
-            db_path=str(db_path),
+            conn=conn,
         )
         assert result is True
 
         # Verify minimal record was created
-        conn = duckdb.connect(str(db_path))
         row = conn.execute(
             "SELECT activity_id, activity_date FROM activities WHERE activity_id = 12345"
         ).fetchone()
@@ -60,13 +60,15 @@ def test_insert_activities_invalid_json():
         # Create invalid JSON
         activity_file.write_text("not valid json")
 
+        conn = duckdb.connect(str(db_path))
         result = insert_activities(
             activity_id=12345,
             date="2025-10-09",
-            db_path=str(db_path),
+            conn=conn,
             raw_activity_file=str(activity_file),
         )
         assert result is False
+        conn.close()
 
 
 @pytest.mark.unit
@@ -81,15 +83,15 @@ def test_insert_activities_minimal_data():
         # Initialize database schema
         GarminDBWriter(db_path=str(db_path))
 
+        conn = duckdb.connect(str(db_path))
         result = insert_activities(
             activity_id=12345,
             date="2025-10-09",
-            db_path=str(db_path),
+            conn=conn,
         )
         assert result is True
 
         # Verify data was inserted (only metadata fields populated)
-        conn = duckdb.connect(str(db_path))
         row = conn.execute(
             "SELECT activity_id, activity_date, activity_name, temp_celsius FROM activities WHERE activity_id = 12345"
         ).fetchone()
@@ -143,10 +145,11 @@ def test_insert_activities_complete_data():
         raw_gear_file = Path(tmpdir) / "gear.json"
         raw_gear_file.write_text(json.dumps(raw_gear))
 
+        conn = duckdb.connect(str(db_path))
         result = insert_activities(
             activity_id=67890,
             date="2025-10-09",
-            db_path=str(db_path),
+            conn=conn,
             raw_activity_file=str(raw_activity_file),
             raw_weather_file=str(raw_weather_file),
             raw_gear_file=str(raw_gear_file),
@@ -154,7 +157,6 @@ def test_insert_activities_complete_data():
         assert result is True
 
         # Verify metadata fields populated from raw files
-        conn = duckdb.connect(str(db_path))
         row = conn.execute("""
             SELECT
                 activity_id, activity_date, activity_name, location_name,
@@ -170,7 +172,7 @@ def test_insert_activities_complete_data():
         assert str(row[1]) == "2025-10-09"  # activity_date
         assert row[2] == "Morning Run"  # activity_name
         assert row[3] == "Tokyo"  # location_name
-        assert row[4] == 20.0  # temp_celsius (converted from 68°F)
+        assert row[4] == 20.0  # temp_celsius (converted from 68F)
         assert row[5] == 65  # relative_humidity_percent
         assert row[6] == 5  # wind_speed_kmh (stored as-is from API)
         assert row[7] == "NE"  # wind_direction

@@ -14,6 +14,7 @@ from pathlib import Path
 import duckdb
 import pytest
 
+from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.time_series_metrics import insert_time_series_metrics
 from garmin_mcp.utils.paths import get_default_db_path, get_raw_dir
 
@@ -43,18 +44,17 @@ class TestCadenceMigration:
 
         # Create temporary test database using pytest tmp_path fixture
         db_path = str(tmp_path / "test.duckdb")
+        GarminDBWriter(db_path=db_path)
+        conn = duckdb.connect(db_path)
 
         # Insert data
         result = insert_time_series_metrics(
             activity_details_file=str(activity_details_file),
             activity_id=activity_id,
-            db_path=db_path,
+            conn=conn,
         )
 
         assert result is True, "Insertion should succeed"
-
-        # Verify data
-        conn = duckdb.connect(db_path)
 
         # Get statistics
         stats = conn.execute(  # type: ignore[index]
@@ -114,16 +114,16 @@ class TestCadenceMigration:
 
         # Create temporary test database using pytest tmp_path fixture
         db_path = str(tmp_path / "test.duckdb")
+        GarminDBWriter(db_path=db_path)
+        conn = duckdb.connect(db_path)
 
         result = insert_time_series_metrics(
             activity_details_file=str(activity_details_file),
             activity_id=activity_id,
-            db_path=db_path,
+            conn=conn,
         )
 
         assert result is True
-
-        conn = duckdb.connect(db_path)
 
         # Check calculation consistency
         ratio_stats = conn.execute(  # type: ignore[index]  # type: ignore[index]
@@ -172,16 +172,16 @@ class TestCadenceMigration:
 
         # Create temporary test database using pytest tmp_path fixture
         db_path = str(tmp_path / "test.duckdb")
+        GarminDBWriter(db_path=db_path)
+        conn = duckdb.connect(db_path)
 
         result = insert_time_series_metrics(
             activity_details_file=str(activity_details_file),
             activity_id=activity_id,
-            db_path=db_path,
+            conn=conn,
         )
 
         assert result is True
-
-        conn = duckdb.connect(db_path)
 
         # Compare old and new columns
         comparison = conn.execute(  # type: ignore[index]
@@ -228,16 +228,16 @@ class TestCadenceMigration:
 
         # Create temporary test database using pytest tmp_path fixture
         db_path = str(tmp_path / "test.duckdb")
+        GarminDBWriter(db_path=db_path)
+        conn = duckdb.connect(db_path)
 
         result = insert_time_series_metrics(
             activity_details_file=str(activity_details_file),
             activity_id=activity_id,
-            db_path=db_path,
+            conn=conn,
         )
 
         assert result is True
-
-        conn = duckdb.connect(db_path)
 
         # Check NULL consistency
         null_check = conn.execute(  # type: ignore[index]

@@ -8,8 +8,10 @@ Test coverage:
 
 import json
 
+import duckdb
 import pytest
 
+from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.vo2_max import insert_vo2_max
 
 
@@ -19,10 +21,12 @@ class TestVO2MaxInserter:
     def test_insert_vo2_max_success(self, sample_raw_vo2_max_file, tmp_path):
         """Test insert_vo2_max inserts data successfully."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_vo2_max(
             activity_id=20107340187,
-            db_path=str(db_path),
+            conn=conn,
             raw_vo2_max_file=str(sample_raw_vo2_max_file),
         )
 
@@ -32,10 +36,12 @@ class TestVO2MaxInserter:
     def test_insert_vo2_max_missing_file(self, tmp_path):
         """Test insert_vo2_max handles missing file gracefully (returns True, skips)."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_vo2_max(
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
             raw_vo2_max_file="/nonexistent/file.json",
         )
 
@@ -50,10 +56,12 @@ class TestVO2MaxInserter:
             json.dump(vo2_data, f)
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_vo2_max(
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
             raw_vo2_max_file=str(vo2_file),
         )
 
@@ -62,20 +70,18 @@ class TestVO2MaxInserter:
 
     def test_insert_vo2_max_db_integration(self, sample_raw_vo2_max_file, tmp_path):
         """Test insert_vo2_max actually writes to DuckDB."""
-        import duckdb
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_vo2_max(
             activity_id=20107340187,
-            db_path=str(db_path),
+            conn=conn,
             raw_vo2_max_file=str(sample_raw_vo2_max_file),
         )
 
         assert result is True
-
-        # Verify data in DuckDB
-        conn = duckdb.connect(str(db_path))
 
         # Check vo2_max table exists
         tables = conn.execute("SHOW TABLES").fetchall()
@@ -132,10 +138,12 @@ class TestVO2MaxInserter:
     def test_insert_vo2_max_from_raw_data(self, sample_raw_vo2_max_file, tmp_path):
         """Test insert_vo2_max with raw data file."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_vo2_max(
             activity_id=20107340187,
-            db_path=str(db_path),
+            conn=conn,
             raw_vo2_max_file=str(sample_raw_vo2_max_file),
         )
 
@@ -144,14 +152,15 @@ class TestVO2MaxInserter:
 
     def test_insert_vo2_max_raw_data_integrity(self, sample_raw_vo2_max_file, tmp_path):
         """Test raw data insertion produces correct database values."""
-        import duckdb
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         # Insert from raw data
         result = insert_vo2_max(
             activity_id=20107340187,
-            db_path=str(db_path),
+            conn=conn,
             raw_vo2_max_file=str(sample_raw_vo2_max_file),
         )
 

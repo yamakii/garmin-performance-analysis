@@ -264,9 +264,8 @@ def _extract_performance_trends_from_raw(raw_splits_file: str) -> dict | None:
 
 def insert_performance_trends(
     activity_id: int,
-    db_path: str | None = None,
+    conn: duckdb.DuckDBPyConnection,
     raw_splits_file: str | None = None,
-    conn: duckdb.DuckDBPyConnection | None = None,
 ) -> bool:
     """
     Insert performance_trends from raw splits.json into DuckDB performance_trends table.
@@ -284,7 +283,7 @@ def insert_performance_trends(
 
     Args:
         activity_id: Activity ID
-        db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
+        conn: DuckDB connection
         raw_splits_file: Path to raw splits.json
 
     Returns:
@@ -300,57 +299,6 @@ def insert_performance_trends(
         if not perf_trends:
             logger.error("Failed to extract performance trends from raw data")
             return False
-
-        # Set default DB path
-        if db_path is None:
-            from garmin_mcp.utils.paths import get_default_db_path
-
-            db_path = get_default_db_path()
-
-        # Connect to DuckDB (use provided connection or create new one)
-        own_conn = conn is None
-        if own_conn:
-            conn = duckdb.connect(str(db_path))
-        assert conn is not None
-
-        # Ensure performance_trends table exists with 4-phase schema
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS performance_trends (
-                activity_id BIGINT PRIMARY KEY,
-                pace_consistency DOUBLE,
-                hr_drift_percentage DOUBLE,
-                cadence_consistency VARCHAR,
-                fatigue_pattern VARCHAR,
-                warmup_splits VARCHAR,
-                warmup_avg_pace_seconds_per_km DOUBLE,
-                warmup_avg_pace_str VARCHAR,
-                warmup_avg_hr DOUBLE,
-                warmup_avg_cadence DOUBLE,
-                warmup_avg_power DOUBLE,
-                warmup_evaluation VARCHAR,
-                run_splits VARCHAR,
-                run_avg_pace_seconds_per_km DOUBLE,
-                run_avg_pace_str VARCHAR,
-                run_avg_hr DOUBLE,
-                run_avg_cadence DOUBLE,
-                run_avg_power DOUBLE,
-                run_evaluation VARCHAR,
-                recovery_splits VARCHAR,
-                recovery_avg_pace_seconds_per_km DOUBLE,
-                recovery_avg_pace_str VARCHAR,
-                recovery_avg_hr DOUBLE,
-                recovery_avg_cadence DOUBLE,
-                recovery_avg_power DOUBLE,
-                recovery_evaluation VARCHAR,
-                cooldown_splits VARCHAR,
-                cooldown_avg_pace_seconds_per_km DOUBLE,
-                cooldown_avg_pace_str VARCHAR,
-                cooldown_avg_hr DOUBLE,
-                cooldown_avg_cadence DOUBLE,
-                cooldown_avg_power DOUBLE,
-                cooldown_evaluation VARCHAR
-            )
-            """)
 
         # Delete existing record for this activity (for re-insertion)
         conn.execute(
@@ -522,12 +470,8 @@ def insert_performance_trends(
 
         else:
             logger.error("Unknown phase structure in performance_trends")
-            if own_conn:
-                conn.close()
             return False
 
-        if own_conn:
-            conn.close()
         return True
 
     except Exception as e:

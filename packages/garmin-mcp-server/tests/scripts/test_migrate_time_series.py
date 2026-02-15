@@ -132,15 +132,12 @@ def test_migration_dry_run(temp_raw_dir, temp_db_path):
     assert summary["total"] == len(activities)
     assert summary["dry_run"] is True
 
-    # Verify no data was inserted (DuckDB table shouldn't exist yet)
+    # Verify no data was inserted (table exists but should be empty)
     conn = duckdb.connect(str(temp_db_path))
-    tables = conn.execute(
-        "SELECT table_name FROM information_schema.tables "
-        "WHERE table_name = 'time_series_metrics'"
-    ).fetchall()
+    row_count = conn.execute("SELECT COUNT(*) FROM time_series_metrics").fetchone()
     conn.close()
 
-    assert len(tables) == 0  # Table should not exist after dry run
+    assert row_count[0] == 0  # No rows should exist after dry run
 
 
 @pytest.mark.unit

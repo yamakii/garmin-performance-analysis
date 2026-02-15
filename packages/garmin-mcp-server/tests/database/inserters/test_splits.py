@@ -8,8 +8,10 @@ Test coverage:
 
 import json
 
+import duckdb
 import pytest
 
+from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.splits import insert_splits
 
 
@@ -21,13 +23,16 @@ class TestSplitsInserter:
         """Test insert_splits inserts data successfully."""
         # Setup: Create temporary DuckDB
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         # Execute
         result = insert_splits(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_raw_splits_file),
         )
+        conn.close()
 
         # Verify
         assert result is True
@@ -36,13 +41,14 @@ class TestSplitsInserter:
     @pytest.mark.unit
     def test_insert_splits_missing_file(self, tmp_path):
         """Test insert_splits handles missing file."""
-        db_path = tmp_path / "test.duckdb"
+        conn = duckdb.connect(":memory:")
 
         result = insert_splits(
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file="/nonexistent/splits.json",
         )
+        conn.close()
 
         assert result is False
 
@@ -55,34 +61,32 @@ class TestSplitsInserter:
         with open(splits_file, "w", encoding="utf-8") as f:
             json.dump(splits_data, f)
 
-        db_path = tmp_path / "test.duckdb"
+        conn = duckdb.connect(":memory:")
 
         result = insert_splits(
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(splits_file),
         )
+        conn.close()
 
         assert result is False
 
     @pytest.mark.integration
     def test_insert_splits_db_integration(self, sample_raw_splits_file, tmp_path):
         """Test insert_splits actually writes to DuckDB."""
-        import duckdb
-
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         # Execute
         result = insert_splits(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_raw_splits_file),
         )
 
         assert result is True
-
-        # Verify data in DuckDB
-        conn = duckdb.connect(str(db_path))
 
         # Check splits table exists
         tables = conn.execute("SHOW TABLES").fetchall()
@@ -122,21 +126,18 @@ class TestSplitsInserter:
     @pytest.mark.integration
     def test_insert_splits_with_role_phase(self, sample_raw_splits_file, tmp_path):
         """Test insert_splits correctly inserts role_phase data (4-phase support)."""
-        import duckdb
-
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         # Execute
         result = insert_splits(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_raw_splits_file),
         )
 
         assert result is True
-
-        # Verify role_phase data
-        conn = duckdb.connect(str(db_path))
 
         splits = conn.execute("""
             SELECT split_index, role_phase
@@ -165,8 +166,6 @@ class TestSplitsInserter:
         - end_time_s
         - intensity_type
         """
-        import duckdb
-
         # Setup: Create raw splits.json with lapDTOs
         raw_splits_data = {
             "activityId": 20636804823,
@@ -190,18 +189,17 @@ class TestSplitsInserter:
             json.dump(raw_splits_data, f)
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         # Execute
         result = insert_splits(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(raw_splits_file),
         )
 
         assert result is True
-
-        # Verify: Check new columns exist and have correct values
-        conn = duckdb.connect(str(db_path))
 
         # Query with new columns
         splits = conn.execute("""
@@ -304,12 +302,15 @@ class TestSplitsInserter:
     def test_insert_splits_raw_data_success(self, sample_raw_splits_file, tmp_path):
         """Test insert_splits with raw data mode (no performance.json)."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_splits(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_raw_splits_file),
         )
+        conn.close()
 
         assert result is True
         assert db_path.exists()
@@ -319,20 +320,17 @@ class TestSplitsInserter:
         self, sample_raw_splits_file, tmp_path
     ):
         """Test insert_splits with raw data actually writes to DuckDB."""
-        import duckdb
-
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_splits(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_raw_splits_file),
         )
 
         assert result is True
-
-        # Verify data in DuckDB
-        conn = duckdb.connect(str(db_path))
 
         # Check splits data
         splits = conn.execute(
@@ -380,13 +378,14 @@ class TestSplitsInserter:
     @pytest.mark.unit
     def test_insert_splits_raw_data_missing_file(self, tmp_path):
         """Test insert_splits raw mode handles missing files."""
-        db_path = tmp_path / "test.duckdb"
+        conn = duckdb.connect(":memory:")
 
         result = insert_splits(
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file="/nonexistent/splits.json",
         )
+        conn.close()
 
         assert result is False
 
@@ -600,21 +599,18 @@ class TestSplitsInserter:
     @pytest.mark.integration
     def test_insert_splits_creates_new_columns(self, sample_raw_splits_file, tmp_path):
         """Test insert_splits creates 6 new columns in DuckDB (stride_length already exists)."""
-        import duckdb
-
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         # Execute
         result = insert_splits(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_raw_splits_file),
         )
 
         assert result is True
-
-        # Verify new columns exist
-        conn = duckdb.connect(str(db_path))
 
         # Get column names
         columns_query = conn.execute(
@@ -638,21 +634,18 @@ class TestSplitsInserter:
     @pytest.mark.integration
     def test_insert_splits_populates_new_fields(self, sample_raw_splits_file, tmp_path):
         """Test insert_splits populates all 7 new fields with correct values."""
-        import duckdb
-
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         # Execute
         result = insert_splits(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_raw_splits_file),
         )
 
         assert result is True
-
-        # Verify new fields populated correctly
-        conn = duckdb.connect(str(db_path))
 
         split_data = conn.execute("""
             SELECT
@@ -698,8 +691,6 @@ class TestSplitsInserter:
     @pytest.mark.integration
     def test_insert_splits_handles_partial_fields(self, tmp_path):
         """Test insert_splits handles partial fields (some new fields NULL)."""
-        import duckdb
-
         # Create test data with only some new fields
         raw_splits_data = {
             "activityId": 12345,
@@ -721,18 +712,17 @@ class TestSplitsInserter:
             json.dump(raw_splits_data, f)
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         # Execute
         result = insert_splits(
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(splits_file),
         )
 
         assert result is True
-
-        # Verify partial fields
-        conn = duckdb.connect(str(db_path))
 
         split_data = conn.execute("""
             SELECT
@@ -765,21 +755,18 @@ class TestSplitsInserter:
         self, sample_raw_splits_file, tmp_path
     ):
         """Test insert_splits with real-like activity data containing all 7 new fields."""
-        import duckdb
-
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         # Execute
         result = insert_splits(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_raw_splits_file),
         )
 
         assert result is True
-
-        # Verify all fields present
-        conn = duckdb.connect(str(db_path))
 
         # Count non-NULL values for new fields
         stats = conn.execute("""
@@ -811,7 +798,6 @@ class TestSplitsInserter:
     @pytest.mark.integration
     def test_insert_splits_multiple_activities(self, tmp_path):
         """Test insert_splits with 3 activities with different field availability."""
-        import duckdb
 
         # Activity 1: All fields present
         activity1_data = {
@@ -865,6 +851,8 @@ class TestSplitsInserter:
         }
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         # Insert all 3 activities
         for activity_data in [activity1_data, activity2_data, activity3_data]:
@@ -874,13 +862,10 @@ class TestSplitsInserter:
 
             result = insert_splits(
                 activity_id=int(activity_data["activityId"]),  # type: ignore[call-overload]
-                db_path=str(db_path),
+                conn=conn,
                 raw_splits_file=str(activity_file),
             )
             assert result is True
-
-        # Verify data
-        conn = duckdb.connect(str(db_path))
 
         # Activity 1: All fields present
         act1 = conn.execute(
@@ -915,7 +900,6 @@ class TestSplitsInserter:
     @pytest.mark.integration
     def test_field_population_rates(self, tmp_path):
         """Test field population rates for new fields across multiple activities."""
-        import duckdb
 
         # Create 3 activities with different field coverage
         activities = [
@@ -967,6 +951,8 @@ class TestSplitsInserter:
         ]
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         # Insert all activities
         for activity_data in activities:
@@ -976,13 +962,10 @@ class TestSplitsInserter:
 
             result = insert_splits(
                 activity_id=int(activity_data["activityId"]),  # type: ignore[call-overload]
-                db_path=str(db_path),
+                conn=conn,
                 raw_splits_file=str(activity_file),
             )
             assert result is True
-
-        # Check population rates
-        conn = duckdb.connect(str(db_path))
 
         stats = conn.execute("""
             SELECT
@@ -1006,21 +989,18 @@ class TestSplitsInserter:
     @pytest.mark.integration
     def test_max_metrics_validity(self, sample_raw_splits_file, tmp_path):
         """Test that max metrics are >= avg metrics (data integrity check)."""
-        import duckdb
-
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         # Execute
         result = insert_splits(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_raw_splits_file),
         )
 
         assert result is True
-
-        # Verify max >= avg for all splits
-        conn = duckdb.connect(str(db_path))
 
         # Check max_heart_rate >= heart_rate
         hr_checks = conn.execute("""
@@ -1558,9 +1538,6 @@ class TestSplitsInserter:
     @pytest.mark.integration
     def test_insert_splits_estimates_missing_intensity(self, tmp_path):
         """Test insert_splits applies estimation when intensity_type is NULL."""
-        import json
-
-        import duckdb
 
         # Create splits file with NULL intensity_type
         splits_data = {
@@ -1612,18 +1589,19 @@ class TestSplitsInserter:
             json.dump(splits_data, f)
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         # Execute
         result = insert_splits(
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(splits_file),
         )
 
         assert result is True
 
         # Verify estimation was applied
-        conn = duckdb.connect(str(db_path))
         splits = conn.execute("""
             SELECT split_index, intensity_type
             FROM splits
@@ -1645,9 +1623,6 @@ class TestSplitsInserter:
     @pytest.mark.integration
     def test_insert_splits_preserves_existing_intensity(self, tmp_path):
         """Test insert_splits does NOT overwrite existing intensity_type values."""
-        import json
-
-        import duckdb
 
         # Create splits file with existing intensity_type values
         splits_data = {
@@ -1699,18 +1674,19 @@ class TestSplitsInserter:
             json.dump(splits_data, f)
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         # Execute
         result = insert_splits(
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(splits_file),
         )
 
         assert result is True
 
         # Verify existing values are preserved
-        conn = duckdb.connect(str(db_path))
         splits = conn.execute("""
             SELECT split_index, intensity_type
             FROM splits
@@ -1730,9 +1706,6 @@ class TestSplitsInserter:
     @pytest.mark.integration
     def test_insert_splits_mixed_null_and_existing(self, tmp_path):
         """Test insert_splits handles mix of NULL and existing intensity_type."""
-        import json
-
-        import duckdb
 
         # Create splits file with mix of NULL and existing values
         splits_data = {
@@ -1769,18 +1742,19 @@ class TestSplitsInserter:
             json.dump(splits_data, f)
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         # Execute
         result = insert_splits(
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(splits_file),
         )
 
         assert result is True
 
         # Verify estimation applied only to NULL values
-        conn = duckdb.connect(str(db_path))
         splits = conn.execute("""
             SELECT split_index, intensity_type
             FROM splits

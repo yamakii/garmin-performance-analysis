@@ -13,11 +13,8 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 import duckdb
-
-from garmin_mcp.utils.paths import get_default_db_path
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +22,11 @@ logger = logging.getLogger(__name__)
 def insert_activities(
     activity_id: int,
     date: str,
-    db_path: str | None = None,
+    conn: duckdb.DuckDBPyConnection,
     raw_activity_file: str | None = None,
     raw_weather_file: str | None = None,
     raw_gear_file: str | None = None,
     base_weight_kg: float | None = None,
-    conn: Any | None = None,
 ) -> bool:
     """
     Insert activity metadata into DuckDB activities table from raw data files.
@@ -43,12 +39,11 @@ def insert_activities(
     Args:
         activity_id: Activity ID
         date: Activity date (YYYY-MM-DD format)
-        db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
+        conn: DuckDB connection
         raw_activity_file: Optional path to raw activity.json
         raw_weather_file: Optional path to raw weather.json
         raw_gear_file: Optional path to raw gear.json
         base_weight_kg: Optional 7-day median weight for W/kg calculation
-        conn: Optional DuckDB connection (for connection reuse, Phase 5 optimization)
 
     Returns:
         True if successful, False otherwise
@@ -165,60 +160,28 @@ def insert_activities(
                         gear_type = gear_data.get("gearTypeName")
                         gear_model = gear_data.get("customMakeModel")
 
-        # Set default DB path
-        if db_path is None:
-            db_path = str(get_default_db_path())
-
-        # Phase 5 optimization: Reuse connection if provided
-        if conn is not None:
-            # Use provided connection (no context manager needed)
-            _insert_with_connection(
-                conn,
-                activity_id,
-                date,
-                activity_name,
-                start_time_local,
-                start_time_gmt,
-                location_name,
-                total_distance_km,
-                total_time_seconds,
-                avg_speed_ms,
-                avg_pace_seconds_per_km,
-                avg_heart_rate,
-                max_heart_rate,
-                temp_celsius,
-                relative_humidity_percent,
-                wind_speed_kmh,
-                wind_direction,
-                gear_type,
-                gear_model,
-                base_weight_kg,
-            )
-        else:
-            # Open new connection (backward compatible)
-            with duckdb.connect(db_path) as connection:
-                _insert_with_connection(
-                    connection,
-                    activity_id,
-                    date,
-                    activity_name,
-                    start_time_local,
-                    start_time_gmt,
-                    location_name,
-                    total_distance_km,
-                    total_time_seconds,
-                    avg_speed_ms,
-                    avg_pace_seconds_per_km,
-                    avg_heart_rate,
-                    max_heart_rate,
-                    temp_celsius,
-                    relative_humidity_percent,
-                    wind_speed_kmh,
-                    wind_direction,
-                    gear_type,
-                    gear_model,
-                    base_weight_kg,
-                )
+        _insert_with_connection(
+            conn,
+            activity_id,
+            date,
+            activity_name,
+            start_time_local,
+            start_time_gmt,
+            location_name,
+            total_distance_km,
+            total_time_seconds,
+            avg_speed_ms,
+            avg_pace_seconds_per_km,
+            avg_heart_rate,
+            max_heart_rate,
+            temp_celsius,
+            relative_humidity_percent,
+            wind_speed_kmh,
+            wind_direction,
+            gear_type,
+            gear_model,
+            base_weight_kg,
+        )
 
         return True
 
@@ -228,7 +191,7 @@ def insert_activities(
 
 
 def _insert_with_connection(
-    conn: Any,
+    conn: duckdb.DuckDBPyConnection,
     activity_id: int,
     date: str,
     activity_name: str | None,

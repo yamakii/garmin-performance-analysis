@@ -12,6 +12,7 @@ Test coverage:
 
 import json
 
+import duckdb
 import pytest
 
 from garmin_mcp.database.db_reader import GarminDBReader
@@ -86,10 +87,11 @@ class TestGarminDBReaderNormalized:
 
         # Insert activity metadata first (required for foreign key constraint)
         GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        conn = duckdb.connect(str(db_path))
         insert_activities(
             activity_id=test_activity_id,
             date="2025-10-07",
-            db_path=str(db_path),
+            conn=conn,
         )
         # Use individual inserters directly
         from garmin_mcp.database.inserters.form_efficiency import insert_form_efficiency
@@ -97,15 +99,16 @@ class TestGarminDBReaderNormalized:
 
         insert_form_efficiency(
             activity_id=test_activity_id,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(splits_file),
         )
         insert_hr_efficiency(
             activity_id=test_activity_id,
-            db_path=str(db_path),
+            conn=conn,
             raw_hr_zones_file=str(hr_zones_file),
             raw_activity_file=str(activity_file),
         )
+        conn.close()
 
         return GarminDBReader(db_path=str(db_path))
 
@@ -245,10 +248,11 @@ class TestGetHeartRateZonesDetail:
 
         # Insert activity metadata and heart_rate_zones
         GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        conn = duckdb.connect(str(db_path))
         insert_activities(
             activity_id=test_activity_id,
             date="2025-10-07",
-            db_path=str(db_path),
+            conn=conn,
         )
         # Use heart_rate_zones inserter directly
         from garmin_mcp.database.inserters.heart_rate_zones import (
@@ -257,9 +261,10 @@ class TestGetHeartRateZonesDetail:
 
         insert_heart_rate_zones(
             activity_id=test_activity_id,
-            db_path=str(db_path),
+            conn=conn,
             raw_hr_zones_file=str(hr_zones_file),
         )
+        conn.close()
 
         return GarminDBReader(db_path=str(db_path))
 
@@ -349,19 +354,21 @@ class TestGetVO2MaxData:
 
         # Insert activity metadata and vo2_max
         GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        conn = duckdb.connect(str(db_path))
         insert_activities(
             activity_id=test_activity_id,
             date="2025-10-07",
-            db_path=str(db_path),
+            conn=conn,
         )
         # Use vo2_max inserter directly
         from garmin_mcp.database.inserters.vo2_max import insert_vo2_max
 
         insert_vo2_max(
             activity_id=test_activity_id,
-            db_path=str(db_path),
+            conn=conn,
             raw_vo2_max_file=str(vo2_max_file),
         )
+        conn.close()
 
         return GarminDBReader(db_path=str(db_path))
 
@@ -430,10 +437,11 @@ class TestGetLactateThresholdData:
 
         # Insert activity metadata and lactate_threshold
         GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        conn = duckdb.connect(str(db_path))
         insert_activities(
             activity_id=test_activity_id,
             date="2025-10-07",
-            db_path=str(db_path),
+            conn=conn,
         )
         # Use lactate_threshold inserter directly
         from garmin_mcp.database.inserters.lactate_threshold import (
@@ -442,9 +450,10 @@ class TestGetLactateThresholdData:
 
         insert_lactate_threshold(
             activity_id=test_activity_id,
-            db_path=str(db_path),
+            conn=conn,
             raw_lactate_threshold_file=str(lactate_threshold_file),
         )
+        conn.close()
 
         return GarminDBReader(db_path=str(db_path))
 
@@ -535,19 +544,21 @@ class TestGetSplitsAll:
 
         # Insert activity metadata and splits
         GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        conn = duckdb.connect(str(db_path))
         insert_activities(
             activity_id=test_activity_id,
             date="2025-10-07",
-            db_path=str(db_path),
+            conn=conn,
         )
         # Use splits inserter directly
         from garmin_mcp.database.inserters.splits import insert_splits
 
         insert_splits(
             activity_id=test_activity_id,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(splits_file),
         )
+        conn.close()
 
         return GarminDBReader(db_path=str(db_path))
 

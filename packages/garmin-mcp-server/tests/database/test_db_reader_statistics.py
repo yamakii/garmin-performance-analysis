@@ -9,9 +9,11 @@ Test coverage:
 
 import json
 
+import duckdb
 import pytest
 
 from garmin_mcp.database.db_reader import GarminDBReader
+from garmin_mcp.database.db_writer import GarminDBWriter
 
 
 class TestGarminDBReaderStatistics:
@@ -49,11 +51,14 @@ class TestGarminDBReaderStatistics:
         # Insert splits into DuckDB
         from garmin_mcp.database.inserters.splits import insert_splits
 
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
         insert_splits(
             activity_id=20615445009,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(splits_file),
         )
+        conn.close()
 
         return GarminDBReader(db_path=str(db_path))
 

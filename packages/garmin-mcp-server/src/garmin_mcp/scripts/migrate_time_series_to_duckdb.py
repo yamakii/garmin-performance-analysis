@@ -38,6 +38,7 @@ from typing import Any
 import duckdb
 from tqdm import tqdm
 
+from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.time_series_metrics import insert_time_series_metrics
 from garmin_mcp.utils.paths import get_database_dir, get_raw_dir
 
@@ -66,6 +67,8 @@ class TimeSeriesMigrator:
             if db_path
             else get_database_dir() / "garmin_performance.duckdb"
         )
+        # Ensure schema exists (tables created by GarminDBWriter)
+        GarminDBWriter(db_path=str(self.db_path))
 
     def get_all_activities_from_raw(self) -> list[tuple[int, str | None]]:
         """
@@ -227,11 +230,12 @@ class TimeSeriesMigrator:
             data_points = self.count_data_points_in_raw(activity_id)
 
             # Use TimeSeriesMetricsInserter to insert data
-            success = insert_time_series_metrics(
-                activity_details_file=str(activity_details_path),
-                activity_id=activity_id,
-                db_path=str(self.db_path),
-            )
+            with duckdb.connect(str(self.db_path)) as conn:
+                success = insert_time_series_metrics(
+                    activity_details_file=str(activity_details_path),
+                    activity_id=activity_id,
+                    conn=conn,
+                )
 
             if not success:
                 return {

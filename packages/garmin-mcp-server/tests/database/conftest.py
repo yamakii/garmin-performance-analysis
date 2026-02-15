@@ -84,16 +84,20 @@ def db_with_splits(temp_db_path: Path, sample_splits_data: dict, write_json_file
     Returns:
         Tuple of (db_path_str, activity_id).
     """
+    from garmin_mcp.database.db_writer import GarminDBWriter
     from garmin_mcp.database.inserters.splits import insert_splits
 
     splits_file = write_json_file("splits.json", sample_splits_data)
     activity_id = sample_splits_data["activityId"]
 
+    GarminDBWriter(db_path=str(temp_db_path))
+    conn = duckdb.connect(str(temp_db_path))
     insert_splits(
         activity_id=activity_id,
-        db_path=str(temp_db_path),
+        conn=conn,
         raw_splits_file=str(splits_file),
     )
+    conn.close()
 
     return str(temp_db_path), activity_id
 

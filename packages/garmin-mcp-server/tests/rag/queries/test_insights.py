@@ -11,6 +11,8 @@ from garmin_mcp.rag.queries.insights import InsightExtractor
 @pytest.fixture
 def db_path(tmp_path: Path) -> Path:
     """Create a temporary DuckDB database with sample section analyses."""
+    import duckdb
+
     from garmin_mcp.database.db_writer import GarminDBWriter
     from garmin_mcp.database.inserters.activities import insert_activities
 
@@ -33,12 +35,14 @@ def db_path(tmp_path: Path) -> Path:
         },
     ]
 
+    conn = duckdb.connect(str(db_file))
     for activity in sample_activities:
         insert_activities(
             activity_id=int(activity["activity_id"]),
             date=str(activity["date"]),
-            db_path=str(db_file),
+            conn=conn,
         )
+    conn.close()
 
     # Insert sample section analyses with different keywords
     sample_analyses: list[dict[str, Any]] = [

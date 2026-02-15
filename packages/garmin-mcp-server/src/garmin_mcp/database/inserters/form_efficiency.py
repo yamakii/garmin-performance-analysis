@@ -348,10 +348,9 @@ def _extract_form_efficiency_from_raw(
 
 def insert_form_efficiency(
     activity_id: int,
-    db_path: str | None = None,
+    conn: duckdb.DuckDBPyConnection,
     raw_splits_file: str | None = None,
     raw_activity_details_file: str | None = None,
-    conn: Any | None = None,
 ) -> bool:
     """
     Insert form_efficiency_summary from raw data into DuckDB form_efficiency table.
@@ -363,10 +362,9 @@ def insert_form_efficiency(
 
     Args:
         activity_id: Activity ID
-        db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
+        conn: DuckDB connection
         raw_splits_file: Path to splits.json (for raw mode)
         raw_activity_details_file: Path to activity_details.json (for raw mode, optional)
-        conn: Optional DuckDB connection (for connection reuse, Phase 5 optimization)
 
     Returns:
         True if successful, False otherwise
@@ -381,25 +379,7 @@ def insert_form_efficiency(
             logger.error("Failed to extract form efficiency data from raw files")
             return False
 
-        # Set default DB path
-        if db_path is None:
-            from garmin_mcp.utils.paths import get_default_db_path
-
-            db_path = get_default_db_path()
-
-        # Phase 5 optimization: Reuse connection if provided
-        if conn is not None:
-            # Use provided connection (no close needed)
-            _insert_form_efficiency_with_connection(conn, activity_id, form_eff_summary)
-        else:
-            # Open new connection (backward compatible)
-            connection = duckdb.connect(str(db_path))
-            try:
-                _insert_form_efficiency_with_connection(
-                    connection, activity_id, form_eff_summary
-                )
-            finally:
-                connection.close()
+        _insert_form_efficiency_with_connection(conn, activity_id, form_eff_summary)
 
         logger.info(
             f"Successfully inserted form efficiency data for activity {activity_id}"
@@ -412,36 +392,9 @@ def insert_form_efficiency(
 
 
 def _insert_form_efficiency_with_connection(
-    conn: Any, activity_id: int, form_eff_summary: dict
+    conn: duckdb.DuckDBPyConnection, activity_id: int, form_eff_summary: dict
 ) -> None:
     """Helper function to insert form efficiency with a given connection."""
-    # Ensure form_efficiency table exists
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS form_efficiency (
-            activity_id BIGINT PRIMARY KEY,
-            gct_average DOUBLE,
-            gct_min DOUBLE,
-            gct_max DOUBLE,
-            gct_std DOUBLE,
-            gct_variability DOUBLE,
-            gct_rating VARCHAR,
-            gct_evaluation VARCHAR,
-            vo_average DOUBLE,
-            vo_min DOUBLE,
-            vo_max DOUBLE,
-            vo_std DOUBLE,
-            vo_trend VARCHAR,
-            vo_rating VARCHAR,
-            vo_evaluation VARCHAR,
-            vr_average DOUBLE,
-            vr_min DOUBLE,
-            vr_max DOUBLE,
-            vr_std DOUBLE,
-            vr_rating VARCHAR,
-            vr_evaluation VARCHAR
-        )
-        """)
-
     # Delete existing record for this activity (for re-insertion)
     conn.execute("DELETE FROM form_efficiency WHERE activity_id = ?", [activity_id])
 

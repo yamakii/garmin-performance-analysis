@@ -14,7 +14,6 @@ Helper logic has been extracted to splits_helpers/ package:
 """
 
 import logging
-from typing import Any
 
 import duckdb
 
@@ -49,9 +48,8 @@ _extract_splits_from_raw = SplitsExtractor.extract_splits_from_raw
 
 def insert_splits(
     activity_id: int,
-    db_path: str | None = None,
+    conn: duckdb.DuckDBPyConnection,
     raw_splits_file: str | None = None,
-    conn: Any | None = None,
 ) -> bool:
     """
     Insert split_metrics from raw splits.json into DuckDB splits table.
@@ -63,9 +61,8 @@ def insert_splits(
 
     Args:
         activity_id: Activity ID
-        db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
+        conn: DuckDB connection
         raw_splits_file: Path to raw splits.json
-        conn: Optional DuckDB connection (for connection reuse, Phase 5 optimization)
 
     Returns:
         True if successful, False otherwise
@@ -81,23 +78,7 @@ def insert_splits(
             logger.error("Failed to extract splits from raw data")
             return False
 
-        # Set default DB path
-        if db_path is None:
-            from garmin_mcp.utils.paths import get_default_db_path
-
-            db_path = get_default_db_path()
-
-        # Phase 5 optimization: Reuse connection if provided
-        if conn is not None:
-            # Use provided connection (no close needed)
-            _insert_splits_with_connection(conn, activity_id, split_metrics)
-        else:
-            # Open new connection (backward compatible)
-            connection = duckdb.connect(str(db_path))
-            try:
-                _insert_splits_with_connection(connection, activity_id, split_metrics)
-            finally:
-                connection.close()
+        _insert_splits_with_connection(conn, activity_id, split_metrics)
 
         logger.info(
             f"Successfully inserted {len(split_metrics)} splits for activity {activity_id}"
@@ -110,82 +91,9 @@ def insert_splits(
 
 
 def _insert_splits_with_connection(
-    conn: Any, activity_id: int, split_metrics: list[dict]
+    conn: duckdb.DuckDBPyConnection, activity_id: int, split_metrics: list[dict]
 ) -> None:
     """Helper function to insert splits with a given connection."""
-    # Ensure splits table exists with new columns
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS splits (
-            activity_id BIGINT,
-            split_index INTEGER,
-            distance DOUBLE,
-            duration_seconds DOUBLE,
-            start_time_gmt VARCHAR,
-            start_time_s INTEGER,
-            end_time_s INTEGER,
-            intensity_type VARCHAR,
-            role_phase VARCHAR,
-            pace_str VARCHAR,
-            pace_seconds_per_km DOUBLE,
-            heart_rate INTEGER,
-            hr_zone VARCHAR,
-            cadence DOUBLE,
-            cadence_rating VARCHAR,
-            power DOUBLE,
-            power_efficiency VARCHAR,
-            stride_length DOUBLE,
-            ground_contact_time DOUBLE,
-            vertical_oscillation DOUBLE,
-            vertical_ratio DOUBLE,
-            elevation_gain DOUBLE,
-            elevation_loss DOUBLE,
-            terrain_type VARCHAR,
-            environmental_conditions VARCHAR,
-            wind_impact VARCHAR,
-            temp_impact VARCHAR,
-            environmental_impact VARCHAR,
-            PRIMARY KEY (activity_id, split_index)
-        )
-        """)
-
-    # Add 6 new columns (Phase 1 - stride_length already exists in schema)
-    # Use IF NOT EXISTS for idempotency
-    try:
-        conn.execute(
-            "ALTER TABLE splits ADD COLUMN IF NOT EXISTS max_heart_rate INTEGER"
-        )
-    except Exception:
-        pass  # Column may already exist
-
-    try:
-        conn.execute("ALTER TABLE splits ADD COLUMN IF NOT EXISTS max_cadence DOUBLE")
-    except Exception:
-        pass
-
-    try:
-        conn.execute("ALTER TABLE splits ADD COLUMN IF NOT EXISTS max_power DOUBLE")
-    except Exception:
-        pass
-
-    try:
-        conn.execute(
-            "ALTER TABLE splits ADD COLUMN IF NOT EXISTS normalized_power DOUBLE"
-        )
-    except Exception:
-        pass
-
-    try:
-        conn.execute("ALTER TABLE splits ADD COLUMN IF NOT EXISTS average_speed DOUBLE")
-    except Exception:
-        pass
-
-    try:
-        conn.execute(
-            "ALTER TABLE splits ADD COLUMN IF NOT EXISTS grade_adjusted_speed DOUBLE"
-        )
-    except Exception:
-        pass
-
     # Delete existing splits for this activity (for re-insertion)
     conn.execute("DELETE FROM splits WHERE activity_id = ?", [activity_id])
 

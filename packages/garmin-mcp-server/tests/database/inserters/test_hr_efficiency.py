@@ -8,8 +8,10 @@ Test coverage:
 
 import json
 
+import duckdb
 import pytest
 
+from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.hr_efficiency import insert_hr_efficiency
 
 
@@ -51,10 +53,12 @@ class TestHREfficiencyInserter:
         """Test insert_hr_efficiency inserts data successfully."""
         hr_zones_file, activity_file = sample_raw_files
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_hr_efficiency(
             activity_id=20615445009,
-            db_path=str(db_path),
+            conn=conn,
             raw_hr_zones_file=str(hr_zones_file),
             raw_activity_file=str(activity_file),
         )
@@ -65,43 +69,46 @@ class TestHREfficiencyInserter:
     @pytest.mark.unit
     def test_insert_hr_efficiency_missing_file(self, tmp_path):
         """Test insert_hr_efficiency handles missing files."""
-        db_path = tmp_path / "test.duckdb"
+        conn = duckdb.connect(":memory:")
 
         result = insert_hr_efficiency(
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
             raw_hr_zones_file="/nonexistent/hr_zones.json",
             raw_activity_file="/nonexistent/activity.json",
         )
+        conn.close()
 
         assert result is False
 
     @pytest.mark.unit
     def test_insert_hr_efficiency_no_required_files(self, tmp_path):
         """Test insert_hr_efficiency handles missing required files."""
-        db_path = tmp_path / "test.duckdb"
+        conn = duckdb.connect(":memory:")
 
         # Missing both files
         result = insert_hr_efficiency(
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
             raw_hr_zones_file=None,
             raw_activity_file=None,
         )
+        conn.close()
 
         assert result is False
 
     @pytest.mark.integration
     def test_insert_hr_efficiency_db_integration(self, sample_raw_files, tmp_path):
         """Test insert_hr_efficiency actually writes to DuckDB."""
-        import duckdb
 
         hr_zones_file, activity_file = sample_raw_files
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_hr_efficiency(
             activity_id=20615445009,
-            db_path=str(db_path),
+            conn=conn,
             raw_hr_zones_file=str(hr_zones_file),
             raw_activity_file=str(activity_file),
         )
@@ -172,10 +179,12 @@ class TestHREfficiencyInserter:
     ):
         """Test insert_hr_efficiency with raw data mode."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_hr_efficiency(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_hr_zones_file=str(sample_hr_zones_file),
             raw_activity_file=str(sample_activity_file),
         )
@@ -188,13 +197,14 @@ class TestHREfficiencyInserter:
         self, sample_hr_zones_file, sample_activity_file, tmp_path
     ):
         """Test insert_hr_efficiency with raw data actually writes to DuckDB."""
-        import duckdb
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_hr_efficiency(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_hr_zones_file=str(sample_hr_zones_file),
             raw_activity_file=str(sample_activity_file),
         )
@@ -239,10 +249,12 @@ class TestHREfficiencyInserter:
     def test_insert_hr_efficiency_raw_data_missing_files(self, tmp_path):
         """Test insert_hr_efficiency raw mode handles missing files."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_hr_efficiency(
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
             raw_hr_zones_file="/nonexistent/hr_zones.json",
             raw_activity_file="/nonexistent/activity.json",
         )
@@ -254,10 +266,12 @@ class TestHREfficiencyInserter:
         """Test primary_zone field identifies the zone with highest time."""
         hr_zones_file, activity_file = sample_raw_files
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_hr_efficiency(
             activity_id=20615445009,
-            db_path=str(db_path),
+            conn=conn,
             raw_hr_zones_file=str(hr_zones_file),
             raw_activity_file=str(activity_file),
         )
@@ -265,9 +279,7 @@ class TestHREfficiencyInserter:
         assert result is True
 
         # Verify primary_zone in DuckDB
-        import duckdb
 
-        conn = duckdb.connect(str(db_path))
         primary_zone = conn.execute(
             "SELECT primary_zone FROM hr_efficiency WHERE activity_id = 20615445009"
         ).fetchone()[0]
@@ -305,18 +317,17 @@ class TestHREfficiencyInserter:
             json.dump(activity_data, f, ensure_ascii=False, indent=2)
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
         result = insert_hr_efficiency(
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
             raw_hr_zones_file=str(hr_zones_file),
             raw_activity_file=str(activity_file),
         )
 
         assert result is True
 
-        import duckdb
-
-        conn = duckdb.connect(str(db_path))
         rating = conn.execute(
             "SELECT zone_distribution_rating FROM hr_efficiency WHERE activity_id = 12345"
         ).fetchone()[0]
@@ -353,18 +364,17 @@ class TestHREfficiencyInserter:
             json.dump(activity_data, f, ensure_ascii=False, indent=2)
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
         result = insert_hr_efficiency(
             activity_id=12346,
-            db_path=str(db_path),
+            conn=conn,
             raw_hr_zones_file=str(hr_zones_file),
             raw_activity_file=str(activity_file),
         )
 
         assert result is True
 
-        import duckdb
-
-        conn = duckdb.connect(str(db_path))
         rating = conn.execute(
             "SELECT zone_distribution_rating FROM hr_efficiency WHERE activity_id = 12346"
         ).fetchone()[0]
@@ -401,18 +411,17 @@ class TestHREfficiencyInserter:
             json.dump(activity_data, f, ensure_ascii=False, indent=2)
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
         result = insert_hr_efficiency(
             activity_id=12347,
-            db_path=str(db_path),
+            conn=conn,
             raw_hr_zones_file=str(hr_zones_file),
             raw_activity_file=str(activity_file),
         )
 
         assert result is True
 
-        import duckdb
-
-        conn = duckdb.connect(str(db_path))
         efficiency = conn.execute(
             "SELECT aerobic_efficiency FROM hr_efficiency WHERE activity_id = 12347"
         ).fetchone()[0]
@@ -426,19 +435,18 @@ class TestHREfficiencyInserter:
         """Test training_quality calculation for excellent training."""
         hr_zones_file, activity_file = sample_raw_files
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_hr_efficiency(
             activity_id=20615445009,
-            db_path=str(db_path),
+            conn=conn,
             raw_hr_zones_file=str(hr_zones_file),
             raw_activity_file=str(activity_file),
         )
 
         assert result is True
 
-        import duckdb
-
-        conn = duckdb.connect(str(db_path))
         quality = conn.execute(
             "SELECT training_quality FROM hr_efficiency WHERE activity_id = 20615445009"
         ).fetchone()[0]
@@ -475,18 +483,17 @@ class TestHREfficiencyInserter:
             json.dump(activity_data, f, ensure_ascii=False, indent=2)
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
         result = insert_hr_efficiency(
             activity_id=12348,
-            db_path=str(db_path),
+            conn=conn,
             raw_hr_zones_file=str(hr_zones_file),
             raw_activity_file=str(activity_file),
         )
 
         assert result is True
 
-        import duckdb
-
-        conn = duckdb.connect(str(db_path))
         zone2_focus = conn.execute(
             "SELECT zone2_focus FROM hr_efficiency WHERE activity_id = 12348"
         ).fetchone()[0]
@@ -523,18 +530,17 @@ class TestHREfficiencyInserter:
             json.dump(activity_data, f, ensure_ascii=False, indent=2)
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
         result = insert_hr_efficiency(
             activity_id=12349,
-            db_path=str(db_path),
+            conn=conn,
             raw_hr_zones_file=str(hr_zones_file),
             raw_activity_file=str(activity_file),
         )
 
         assert result is True
 
-        import duckdb
-
-        conn = duckdb.connect(str(db_path))
         zone2_focus = conn.execute(
             "SELECT zone2_focus FROM hr_efficiency WHERE activity_id = 12349"
         ).fetchone()[0]
@@ -571,18 +577,17 @@ class TestHREfficiencyInserter:
             json.dump(activity_data, f, ensure_ascii=False, indent=2)
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
         result = insert_hr_efficiency(
             activity_id=12350,
-            db_path=str(db_path),
+            conn=conn,
             raw_hr_zones_file=str(hr_zones_file),
             raw_activity_file=str(activity_file),
         )
 
         assert result is True
 
-        import duckdb
-
-        conn = duckdb.connect(str(db_path))
         threshold_work = conn.execute(
             "SELECT zone4_threshold_work FROM hr_efficiency WHERE activity_id = 12350"
         ).fetchone()[0]
@@ -596,19 +601,18 @@ class TestHREfficiencyInserter:
         """Test zone4_threshold_work flag when <20% in Zone 4-5."""
         hr_zones_file, activity_file = sample_raw_files
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_hr_efficiency(
             activity_id=20615445009,
-            db_path=str(db_path),
+            conn=conn,
             raw_hr_zones_file=str(hr_zones_file),
             raw_activity_file=str(activity_file),
         )
 
         assert result is True
 
-        import duckdb
-
-        conn = duckdb.connect(str(db_path))
         threshold_work = conn.execute(
             "SELECT zone4_threshold_work FROM hr_efficiency WHERE activity_id = 20615445009"
         ).fetchone()[0]

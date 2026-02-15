@@ -8,7 +8,6 @@ from raw API file (vo2_max.json) into vo2_max table.
 import json
 import logging
 from pathlib import Path
-from typing import Any
 
 import duckdb
 
@@ -17,9 +16,8 @@ logger = logging.getLogger(__name__)
 
 def insert_vo2_max(
     activity_id: int,
-    db_path: str | None = None,
+    conn: duckdb.DuckDBPyConnection,
     raw_vo2_max_file: str | None = None,
-    conn: Any | None = None,
 ) -> bool:
     """
     Insert vo2_max into DuckDB vo2_max table from raw API file.
@@ -29,9 +27,8 @@ def insert_vo2_max(
 
     Args:
         activity_id: Activity ID
-        db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
+        conn: DuckDB connection
         raw_vo2_max_file: Path to raw vo2_max.json
-        conn: Optional DuckDB connection (for connection reuse, Phase 5 optimization)
 
     Returns:
         True if successful, False otherwise
@@ -51,22 +48,7 @@ def insert_vo2_max(
             )
             return True  # Not an error, vo2_max is optional
 
-        # Set default DB path
-        if db_path is None:
-            from garmin_mcp.utils.paths import get_default_db_path
-
-            db_path = get_default_db_path()
-
-        # Phase 5 optimization: Reuse connection if provided
-        if conn is not None:
-            _insert_vo2_max_with_connection(conn, activity_id, vo2_data)
-        else:
-            # Open new connection (backward compatible)
-            connection = duckdb.connect(str(db_path))
-            try:
-                _insert_vo2_max_with_connection(connection, activity_id, vo2_data)
-            finally:
-                connection.close()
+        _insert_vo2_max_with_connection(conn, activity_id, vo2_data)
 
         logger.info(f"Successfully inserted vo2_max data for activity {activity_id}")
         return True
@@ -77,26 +59,9 @@ def insert_vo2_max(
 
 
 def _insert_vo2_max_with_connection(
-    conn: Any, activity_id: int, vo2_data: dict
+    conn: duckdb.DuckDBPyConnection, activity_id: int, vo2_data: dict
 ) -> None:
     """Helper function to insert vo2_max data with a given connection."""
-    # Ensure vo2_max table exists
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS vo2_max (
-            activity_id BIGINT PRIMARY KEY,
-            precise_value DOUBLE,
-            value DOUBLE,
-            date DATE,
-            category INTEGER
-        )
-        """)
-
-    # Remove fitness_age column if it exists (schema cleanup)
-    try:
-        conn.execute("ALTER TABLE vo2_max DROP COLUMN fitness_age")
-    except Exception:
-        pass  # Column already removed or never existed
-
     # Delete existing record for this activity (for re-insertion)
     conn.execute("DELETE FROM vo2_max WHERE activity_id = ?", [activity_id])
 

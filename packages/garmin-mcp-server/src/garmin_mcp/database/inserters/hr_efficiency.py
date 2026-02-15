@@ -240,10 +240,9 @@ def _extract_hr_efficiency_from_raw(
 
 def insert_hr_efficiency(
     activity_id: int,
-    db_path: str | None = None,
+    conn: duckdb.DuckDBPyConnection,
     raw_hr_zones_file: str | None = None,
     raw_activity_file: str | None = None,
-    conn: duckdb.DuckDBPyConnection | None = None,
 ) -> bool:
     """
     Insert hr_efficiency_analysis from raw data into DuckDB hr_efficiency table.
@@ -253,7 +252,7 @@ def insert_hr_efficiency(
 
     Args:
         activity_id: Activity ID
-        db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
+        conn: DuckDB connection
         raw_hr_zones_file: Path to hr_zones.json
         raw_activity_file: Path to activity.json
 
@@ -267,38 +266,6 @@ def insert_hr_efficiency(
         if not hr_eff:
             logger.error("Failed to extract HR efficiency data from raw files")
             return False
-
-        # Set default DB path
-        if db_path is None:
-            from garmin_mcp.utils.paths import get_default_db_path
-
-            db_path = get_default_db_path()
-
-        # Connect to DuckDB (use provided connection or create new one)
-        own_conn = conn is None
-        if own_conn:
-            conn = duckdb.connect(str(db_path))
-        assert conn is not None
-
-        # Ensure hr_efficiency table exists
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS hr_efficiency (
-                activity_id BIGINT PRIMARY KEY,
-                primary_zone VARCHAR,
-                zone_distribution_rating VARCHAR,
-                hr_stability VARCHAR,
-                aerobic_efficiency VARCHAR,
-                training_quality VARCHAR,
-                zone2_focus BOOLEAN,
-                zone4_threshold_work BOOLEAN,
-                training_type VARCHAR,
-                zone1_percentage DOUBLE,
-                zone2_percentage DOUBLE,
-                zone3_percentage DOUBLE,
-                zone4_percentage DOUBLE,
-                zone5_percentage DOUBLE
-            )
-            """)
 
         # Delete existing record for this activity (for re-insertion)
         conn.execute("DELETE FROM hr_efficiency WHERE activity_id = ?", [activity_id])
@@ -340,9 +307,6 @@ def insert_hr_efficiency(
                 hr_eff.get("zone5_percentage"),
             ],
         )
-
-        if own_conn:
-            conn.close()
 
         logger.info(
             f"Successfully inserted HR efficiency data for activity {activity_id}"

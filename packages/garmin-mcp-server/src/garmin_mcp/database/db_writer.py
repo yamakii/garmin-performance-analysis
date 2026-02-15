@@ -105,6 +105,12 @@ class GarminDBWriter:
                 wind_impact VARCHAR,
                 temp_impact VARCHAR,
                 environmental_impact VARCHAR,
+                max_heart_rate INTEGER,
+                max_cadence DOUBLE,
+                max_power DOUBLE,
+                normalized_power DOUBLE,
+                average_speed DOUBLE,
+                grade_adjusted_speed DOUBLE,
                 PRIMARY KEY (activity_id, split_index)
                 -- FK constraint removed (2025-11-01): Single data source + bulk writes only
             )
@@ -360,6 +366,51 @@ class GarminDBWriter:
                 -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
             )
         """)
+
+        # Create time_series_metrics table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS time_series_metrics (
+                activity_id BIGINT NOT NULL,
+                seq_no INTEGER NOT NULL,
+                timestamp_s INTEGER NOT NULL,
+                sum_moving_duration DOUBLE,
+                sum_duration DOUBLE,
+                sum_elapsed_duration DOUBLE,
+                sum_distance DOUBLE,
+                sum_accumulated_power DOUBLE,
+                heart_rate DOUBLE,
+                speed DOUBLE,
+                grade_adjusted_speed DOUBLE,
+                cadence DOUBLE,
+                cadence_single_foot DOUBLE,
+                cadence_total DOUBLE,
+                power DOUBLE,
+                ground_contact_time DOUBLE,
+                vertical_oscillation DOUBLE,
+                vertical_ratio DOUBLE,
+                stride_length DOUBLE,
+                vertical_speed DOUBLE,
+                elevation DOUBLE,
+                air_temperature DOUBLE,
+                latitude DOUBLE,
+                longitude DOUBLE,
+                available_stamina DOUBLE,
+                potential_stamina DOUBLE,
+                body_battery DOUBLE,
+                performance_condition DOUBLE,
+                PRIMARY KEY (activity_id, seq_no)
+            )
+        """)
+
+        # Create indexes for time_series_metrics
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_time_series_activity "
+            "ON time_series_metrics(activity_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_time_series_timestamp "
+            "ON time_series_metrics(activity_id, timestamp_s)"
+        )
 
         # Create sequence for form_evaluations if it doesn't exist
         try:

@@ -8,8 +8,10 @@ Test coverage:
 
 import json
 
+import duckdb
 import pytest
 
+from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.performance_trends import insert_performance_trends
 
 
@@ -20,10 +22,12 @@ class TestPerformanceTrendsInserter:
     def test_insert_performance_trends_success(self, sample_raw_splits_file, tmp_path):
         """Test insert_performance_trends inserts data successfully."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_raw_splits_file),
         )
 
@@ -34,10 +38,12 @@ class TestPerformanceTrendsInserter:
     def test_insert_performance_trends_missing_file(self, tmp_path):
         """Test insert_performance_trends handles missing file."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file="/nonexistent/splits.json",
         )
 
@@ -52,10 +58,12 @@ class TestPerformanceTrendsInserter:
             json.dump(performance_data, f)
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
         )
 
         assert result is False
@@ -65,20 +73,18 @@ class TestPerformanceTrendsInserter:
         self, sample_raw_splits_file, tmp_path
     ):
         """Test insert_performance_trends actually writes to DuckDB."""
-        import duckdb
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_raw_splits_file),
         )
 
         assert result is True
-
-        # Verify data in DuckDB
-        conn = duckdb.connect(str(db_path))
 
         # Check performance_trends table exists
         tables = conn.execute("SHOW TABLES").fetchall()
@@ -105,19 +111,18 @@ class TestPerformanceTrendsInserter:
     @pytest.mark.integration
     def test_insert_4phase_performance_trends(self, sample_raw_splits_file, tmp_path):
         """Test insert_performance_trends writes 4-phase interval training data correctly."""
-        import duckdb
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_raw_splits_file),
         )
 
         assert result is True
-
-        conn = duckdb.connect(str(db_path))
 
         # Check 4-phase data
         data = conn.execute("""
@@ -232,10 +237,12 @@ class TestPerformanceTrendsInserter:
     ):
         """Test insert_performance_trends with raw data mode."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_raw_splits_file),
         )
 
@@ -247,20 +254,18 @@ class TestPerformanceTrendsInserter:
         self, sample_raw_splits_file, tmp_path
     ):
         """Test insert_performance_trends with raw data actually writes to DuckDB."""
-        import duckdb
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_raw_splits_file),
         )
 
         assert result is True
-
-        # Verify data in DuckDB
-        conn = duckdb.connect(str(db_path))
 
         # Check 4-phase data
         data = conn.execute("""
@@ -304,10 +309,12 @@ class TestPerformanceTrendsInserter:
     def test_insert_performance_trends_raw_data_missing_file(self, tmp_path):
         """Test insert_performance_trends raw mode handles missing files."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file="/nonexistent/splits.json",
         )
 
@@ -317,16 +324,16 @@ class TestPerformanceTrendsInserter:
     def test_warmup_cadence_power_calculation(self, sample_raw_splits_file, tmp_path):
         """Test warmup_avg_cadence and warmup_avg_power calculation."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_raw_splits_file),
         )
 
         assert result is True
-
-        import duckdb
 
         conn = duckdb.connect(str(db_path))
         data = conn.execute("""
@@ -344,16 +351,16 @@ class TestPerformanceTrendsInserter:
     def test_warmup_evaluation(self, sample_raw_splits_file, tmp_path):
         """Test warmup_evaluation field."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_raw_splits_file),
         )
 
         assert result is True
-
-        import duckdb
 
         conn = duckdb.connect(str(db_path))
         evaluation = conn.execute(
@@ -373,16 +380,16 @@ class TestPerformanceTrendsInserter:
     def test_run_cadence_power_calculation(self, sample_raw_splits_file, tmp_path):
         """Test run_avg_cadence and run_avg_power calculation."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_raw_splits_file),
         )
 
         assert result is True
-
-        import duckdb
 
         conn = duckdb.connect(str(db_path))
         data = conn.execute("""
@@ -402,16 +409,16 @@ class TestPerformanceTrendsInserter:
     def test_run_evaluation(self, sample_raw_splits_file, tmp_path):
         """Test run_evaluation field."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_raw_splits_file),
         )
 
         assert result is True
-
-        import duckdb
 
         conn = duckdb.connect(str(db_path))
         evaluation = conn.execute(
@@ -426,16 +433,16 @@ class TestPerformanceTrendsInserter:
     def test_recovery_cadence_power_calculation(self, sample_raw_splits_file, tmp_path):
         """Test recovery_avg_cadence and recovery_avg_power calculation."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_raw_splits_file),
         )
 
         assert result is True
-
-        import duckdb
 
         conn = duckdb.connect(str(db_path))
         data = conn.execute("""
@@ -453,16 +460,16 @@ class TestPerformanceTrendsInserter:
     def test_recovery_evaluation(self, sample_raw_splits_file, tmp_path):
         """Test recovery_evaluation field."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_raw_splits_file),
         )
 
         assert result is True
-
-        import duckdb
 
         conn = duckdb.connect(str(db_path))
         evaluation = conn.execute(
@@ -482,16 +489,16 @@ class TestPerformanceTrendsInserter:
     def test_cooldown_cadence_power_calculation(self, sample_raw_splits_file, tmp_path):
         """Test cooldown_avg_cadence and cooldown_avg_power calculation."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_raw_splits_file),
         )
 
         assert result is True
-
-        import duckdb
 
         conn = duckdb.connect(str(db_path))
         data = conn.execute("""
@@ -509,16 +516,16 @@ class TestPerformanceTrendsInserter:
     def test_cooldown_evaluation(self, sample_raw_splits_file, tmp_path):
         """Test cooldown_evaluation field."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
             raw_splits_file=str(sample_raw_splits_file),
         )
 
         assert result is True
-
-        import duckdb
 
         conn = duckdb.connect(str(db_path))
         evaluation = conn.execute(

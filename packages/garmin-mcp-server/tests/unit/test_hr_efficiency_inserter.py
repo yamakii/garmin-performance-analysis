@@ -11,6 +11,7 @@ from pathlib import Path
 import duckdb
 import pytest
 
+from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.hr_efficiency import insert_hr_efficiency
 
 
@@ -49,9 +50,11 @@ class TestHREfficiencyInserter:
             activity_id = 12345
 
             # Act
+            GarminDBWriter(db_path=str(db_path))
+            conn = duckdb.connect(str(db_path))
             result = insert_hr_efficiency(
                 activity_id=activity_id,
-                db_path=str(db_path),
+                conn=conn,
                 raw_hr_zones_file=str(hr_zones_file),
                 raw_activity_file=str(activity_file),
             )
@@ -60,7 +63,6 @@ class TestHREfficiencyInserter:
             assert result is True
 
             # Verify data in DuckDB
-            conn = duckdb.connect(str(db_path))
             rows = conn.execute(
                 "SELECT * FROM hr_efficiency WHERE activity_id = ?", [activity_id]
             ).fetchall()
@@ -107,9 +109,11 @@ class TestHREfficiencyInserter:
             activity_id = 67890
 
             # Act
+            GarminDBWriter(db_path=str(db_path))
+            conn = duckdb.connect(str(db_path))
             result = insert_hr_efficiency(
                 activity_id=activity_id,
-                db_path=str(db_path),
+                conn=conn,
                 raw_hr_zones_file=str(hr_zones_file),
                 raw_activity_file=str(activity_file),
             )
@@ -118,7 +122,6 @@ class TestHREfficiencyInserter:
             assert result is True
 
             # Verify NULL values in DuckDB
-            conn = duckdb.connect(str(db_path))
             rows = conn.execute(
                 "SELECT zone1_percentage, zone2_percentage, zone3_percentage, zone4_percentage, zone5_percentage FROM hr_efficiency WHERE activity_id = ?",
                 [activity_id],
@@ -165,9 +168,11 @@ class TestHREfficiencyInserter:
             activity_id = 11111
 
             # Act - First insertion
+            GarminDBWriter(db_path=str(db_path))
+            conn = duckdb.connect(str(db_path))
             result1 = insert_hr_efficiency(
                 activity_id=activity_id,
-                db_path=str(db_path),
+                conn=conn,
                 raw_hr_zones_file=str(hr_zones_file),
                 raw_activity_file=str(activity_file),
             )
@@ -188,7 +193,7 @@ class TestHREfficiencyInserter:
             # Act - Second insertion (re-insertion)
             result2 = insert_hr_efficiency(
                 activity_id=activity_id,
-                db_path=str(db_path),
+                conn=conn,
                 raw_hr_zones_file=str(hr_zones_file),
                 raw_activity_file=str(activity_file),
             )
@@ -197,7 +202,6 @@ class TestHREfficiencyInserter:
             assert result2 is True
 
             # Verify updated data
-            conn = duckdb.connect(str(db_path))
             rows = conn.execute(
                 "SELECT zone1_percentage, zone2_percentage, zone3_percentage, zone4_percentage, zone5_percentage FROM hr_efficiency WHERE activity_id = ?",
                 [activity_id],
@@ -244,9 +248,11 @@ class TestHREfficiencyInserter:
             activity_id = 22222
 
             # Act
+            GarminDBWriter(db_path=str(db_path))
+            conn = duckdb.connect(str(db_path))
             result = insert_hr_efficiency(
                 activity_id=activity_id,
-                db_path=str(db_path),
+                conn=conn,
                 raw_hr_zones_file=str(hr_zones_file),
                 raw_activity_file=str(activity_file),
             )
@@ -255,7 +261,6 @@ class TestHREfficiencyInserter:
             assert result is True
 
             # Verify partial data
-            conn = duckdb.connect(str(db_path))
             rows = conn.execute(
                 "SELECT zone1_percentage, zone2_percentage, zone3_percentage, zone4_percentage, zone5_percentage FROM hr_efficiency WHERE activity_id = ?",
                 [activity_id],

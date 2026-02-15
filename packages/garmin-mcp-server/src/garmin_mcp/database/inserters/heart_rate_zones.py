@@ -15,9 +15,8 @@ logger = logging.getLogger(__name__)
 
 def insert_heart_rate_zones(
     activity_id: int,
-    db_path: str | None = None,
+    conn: duckdb.DuckDBPyConnection,
     raw_hr_zones_file: str | None = None,
-    conn: duckdb.DuckDBPyConnection | None = None,
 ) -> bool:
     """
     Insert heart_rate_zones into DuckDB heart_rate_zones table.
@@ -30,7 +29,7 @@ def insert_heart_rate_zones(
 
     Args:
         activity_id: Activity ID
-        db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
+        conn: DuckDB connection
         raw_hr_zones_file: Path to raw hr_zones.json
 
     Returns:
@@ -46,31 +45,6 @@ def insert_heart_rate_zones(
         if not zones_data:
             logger.error(f"Failed to extract heart_rate_zones from {raw_hr_zones_file}")
             return False
-
-        # Set default DB path
-        if db_path is None:
-            from garmin_mcp.utils.paths import get_default_db_path
-
-            db_path = get_default_db_path()
-
-        # Connect to DuckDB (use provided connection or create new one)
-        own_conn = conn is None
-        if own_conn:
-            conn = duckdb.connect(str(db_path))
-        assert conn is not None
-
-        # Ensure heart_rate_zones table exists
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS heart_rate_zones (
-                activity_id BIGINT,
-                zone_number INTEGER,
-                zone_low_boundary INTEGER,
-                zone_high_boundary INTEGER,
-                time_in_zone_seconds DOUBLE,
-                zone_percentage DOUBLE,
-                PRIMARY KEY (activity_id, zone_number)
-            )
-            """)
 
         # Delete existing records for this activity (for re-insertion)
         conn.execute(
@@ -99,9 +73,6 @@ def insert_heart_rate_zones(
                     zone["percentage"],
                 ],
             )
-
-        if own_conn:
-            conn.close()
 
         logger.info(
             f"Successfully inserted heart rate zones data for activity {activity_id}"

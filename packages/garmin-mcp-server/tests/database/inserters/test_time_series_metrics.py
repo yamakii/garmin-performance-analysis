@@ -15,6 +15,7 @@ import json
 import duckdb
 import pytest
 
+from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.time_series_metrics import insert_time_series_metrics
 
 
@@ -99,12 +100,14 @@ class TestTimeSeriesMetricsInserter:
         """Test insert_time_series_metrics inserts data successfully."""
         # Setup: Create temporary DuckDB
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         # Execute
         result = insert_time_series_metrics(
             activity_details_file=str(sample_activity_details_file),
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
         )
 
         # Verify
@@ -112,7 +115,8 @@ class TestTimeSeriesMetricsInserter:
         assert db_path.exists()
 
         # Verify data was inserted
-        conn = duckdb.connect(str(db_path), read_only=True)
+        conn.close()
+        conn = duckdb.connect(str(db_path))
         rows = conn.execute(
             "SELECT * FROM time_series_metrics WHERE activity_id = ? ORDER BY timestamp_s",
             [20636804823],
@@ -125,17 +129,20 @@ class TestTimeSeriesMetricsInserter:
     def test_metric_name_conversion(self, sample_activity_details_file, tmp_path):
         """Test metric name conversion: directHeartRate -> heart_rate."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_time_series_metrics(
             activity_details_file=str(sample_activity_details_file),
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
         )
 
         assert result is True
 
         # Verify column names are normalized
-        conn = duckdb.connect(str(db_path), read_only=True)
+        conn.close()
+        conn = duckdb.connect(str(db_path))
         row = conn.execute(
             "SELECT heart_rate, speed, cadence FROM time_series_metrics WHERE activity_id = ? AND timestamp_s = ?",
             [20636804823, 1],
@@ -151,17 +158,20 @@ class TestTimeSeriesMetricsInserter:
     def test_unit_conversion_speed(self, sample_activity_details_file, tmp_path):
         """Test that speed raw value is used as-is (no factor conversion)."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_time_series_metrics(
             activity_details_file=str(sample_activity_details_file),
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
         )
 
         assert result is True
 
         # Verify speed is raw value
-        conn = duckdb.connect(str(db_path), read_only=True)
+        conn.close()
+        conn = duckdb.connect(str(db_path))
         row = conn.execute(
             "SELECT speed FROM time_series_metrics WHERE activity_id = ? AND timestamp_s = ?",
             [20636804823, 1],
@@ -176,17 +186,20 @@ class TestTimeSeriesMetricsInserter:
     def test_unit_conversion_elevation(self, sample_activity_details_file, tmp_path):
         """Test that elevation raw value is used as-is (no factor conversion)."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_time_series_metrics(
             activity_details_file=str(sample_activity_details_file),
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
         )
 
         assert result is True
 
         # Verify elevation is raw value
-        conn = duckdb.connect(str(db_path), read_only=True)
+        conn.close()
+        conn = duckdb.connect(str(db_path))
         row = conn.execute(
             "SELECT elevation FROM time_series_metrics WHERE activity_id = ? AND timestamp_s = ?",
             [20636804823, 1],
@@ -201,17 +214,20 @@ class TestTimeSeriesMetricsInserter:
     def test_timestamp_calculation(self, sample_activity_details_file, tmp_path):
         """Test timestamp_s calculation from sumDuration (already in seconds)."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_time_series_metrics(
             activity_details_file=str(sample_activity_details_file),
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
         )
 
         assert result is True
 
         # Verify timestamp_s values
-        conn = duckdb.connect(str(db_path), read_only=True)
+        conn.close()
+        conn = duckdb.connect(str(db_path))
         rows = conn.execute(
             "SELECT timestamp_s FROM time_series_metrics WHERE activity_id = ? ORDER BY timestamp_s",
             [20636804823],
@@ -227,17 +243,20 @@ class TestTimeSeriesMetricsInserter:
     def test_null_handling(self, sample_activity_details_file, tmp_path):
         """Test NULL handling for missing metrics."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_time_series_metrics(
             activity_details_file=str(sample_activity_details_file),
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
         )
 
         assert result is True
 
         # Verify NULL for missing speed at timestamp_s=3
-        conn = duckdb.connect(str(db_path), read_only=True)
+        conn.close()
+        conn = duckdb.connect(str(db_path))
         row = conn.execute(
             "SELECT speed FROM time_series_metrics WHERE activity_id = ? AND timestamp_s = ?",
             [20636804823, 3],
@@ -251,12 +270,14 @@ class TestTimeSeriesMetricsInserter:
     def test_duplicate_handling(self, sample_activity_details_file, tmp_path):
         """Test duplicate handling: DELETE before INSERT."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         # First insertion
         result1 = insert_time_series_metrics(
             activity_details_file=str(sample_activity_details_file),
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
         )
         assert result1 is True
 
@@ -264,12 +285,13 @@ class TestTimeSeriesMetricsInserter:
         result2 = insert_time_series_metrics(
             activity_details_file=str(sample_activity_details_file),
             activity_id=20636804823,
-            db_path=str(db_path),
+            conn=conn,
         )
         assert result2 is True
 
         # Verify still only 3 rows (not 6)
-        conn = duckdb.connect(str(db_path), read_only=True)
+        conn.close()
+        conn = duckdb.connect(str(db_path))
         rows = conn.execute(
             "SELECT COUNT(*) FROM time_series_metrics WHERE activity_id = ?",
             [20636804823],
@@ -283,11 +305,13 @@ class TestTimeSeriesMetricsInserter:
     def test_insert_missing_file(self, tmp_path):
         """Test insert_time_series_metrics handles missing file."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_time_series_metrics(
             activity_details_file="/nonexistent/file.json",
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
         )
 
         assert result is False
@@ -301,11 +325,13 @@ class TestTimeSeriesMetricsInserter:
             f.write("{invalid json")
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_time_series_metrics(
             activity_details_file=str(invalid_file),
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
         )
 
         assert result is False
@@ -324,11 +350,13 @@ class TestTimeSeriesMetricsInserter:
             json.dump(activity_details_data, f)
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_time_series_metrics(
             activity_details_file=str(activity_details_file),
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
         )
 
         assert result is False
@@ -371,13 +399,15 @@ class TestTimeSeriesMetricsInserter:
             json.dump(activity_details_data, f)
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         # Measure insertion time
         start_time = time.time()
         result = insert_time_series_metrics(
             activity_details_file=str(activity_details_file),
             activity_id=99999,
-            db_path=str(db_path),
+            conn=conn,
         )
         elapsed_time = time.time() - start_time
 
@@ -388,7 +418,8 @@ class TestTimeSeriesMetricsInserter:
         ), f"Insertion took {elapsed_time:.2f}s (expected < 5.0s)"
 
         # Verify row count
-        conn = duckdb.connect(str(db_path), read_only=True)
+        conn.close()
+        conn = duckdb.connect(str(db_path))
         rows = conn.execute(
             "SELECT COUNT(*) FROM time_series_metrics WHERE activity_id = ?", [99999]
         ).fetchone()
@@ -440,19 +471,22 @@ class TestTimeSeriesMetricsInserter:
             json.dump(activity_details_data, f)
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         # Execute insertion
         result = insert_time_series_metrics(
             activity_details_file=str(activity_details_file),
             activity_id=88888,
-            db_path=str(db_path),
+            conn=conn,
         )
 
         # Verify insertion succeeded
         assert result is True
 
         # Verify all 6 rows inserted (not just 2 unique timestamp_s)
-        conn = duckdb.connect(str(db_path), read_only=True)
+        conn.close()
+        conn = duckdb.connect(str(db_path))
         rows = conn.execute(
             "SELECT COUNT(*) FROM time_series_metrics WHERE activity_id = ?",
             [88888],

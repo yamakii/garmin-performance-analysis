@@ -8,8 +8,10 @@ Test coverage:
 
 import json
 
+import duckdb
 import pytest
 
+from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.heart_rate_zones import insert_heart_rate_zones
 
 
@@ -37,12 +39,15 @@ class TestHeartRateZonesInserter:
     def test_insert_heart_rate_zones_success(self, sample_hr_zones_file, tmp_path):
         """Test insert_heart_rate_zones inserts data successfully."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_heart_rate_zones(
             activity_id=20615445009,
-            db_path=str(db_path),
+            conn=conn,
             raw_hr_zones_file=str(sample_hr_zones_file),
         )
+        conn.close()
 
         assert result is True
         assert db_path.exists()
@@ -50,26 +55,28 @@ class TestHeartRateZonesInserter:
     @pytest.mark.unit
     def test_insert_heart_rate_zones_missing_file(self, tmp_path):
         """Test insert_heart_rate_zones handles missing file."""
-        db_path = tmp_path / "test.duckdb"
+        conn = duckdb.connect(":memory:")
 
         result = insert_heart_rate_zones(
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
             raw_hr_zones_file="/nonexistent/file.json",
         )
+        conn.close()
 
         assert result is False
 
     @pytest.mark.unit
     def test_insert_heart_rate_zones_no_file_provided(self, tmp_path):
         """Test insert_heart_rate_zones handles missing hr_zones file."""
-        db_path = tmp_path / "test.duckdb"
+        conn = duckdb.connect(":memory:")
 
         result = insert_heart_rate_zones(
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
             raw_hr_zones_file=None,
         )
+        conn.close()
 
         assert result is False
 
@@ -78,20 +85,17 @@ class TestHeartRateZonesInserter:
         self, sample_hr_zones_file, tmp_path
     ):
         """Test insert_heart_rate_zones actually writes to DuckDB."""
-        import duckdb
-
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_heart_rate_zones(
             activity_id=20615445009,
-            db_path=str(db_path),
+            conn=conn,
             raw_hr_zones_file=str(sample_hr_zones_file),
         )
 
         assert result is True
-
-        # Verify data in DuckDB
-        conn = duckdb.connect(str(db_path))
 
         # Check heart_rate_zones table exists
         tables = conn.execute("SHOW TABLES").fetchall()

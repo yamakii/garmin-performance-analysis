@@ -8,8 +8,10 @@ Test coverage:
 
 import json
 
+import duckdb
 import pytest
 
+from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.lactate_threshold import insert_lactate_threshold
 
 
@@ -50,11 +52,13 @@ class TestLactateThresholdInserter:
     def test_insert_lactate_threshold_success(self, sample_performance_file, tmp_path):
         """Test insert_lactate_threshold inserts data successfully."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_lactate_threshold(
             raw_lactate_threshold_file=str(sample_performance_file),
             activity_id=20615445009,
-            db_path=str(db_path),
+            conn=conn,
         )
 
         assert result is True
@@ -64,11 +68,13 @@ class TestLactateThresholdInserter:
     def test_insert_lactate_threshold_missing_file(self, tmp_path):
         """Test insert_lactate_threshold handles missing file gracefully."""
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_lactate_threshold(
             raw_lactate_threshold_file="/nonexistent/file.json",
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
         )
 
         # Should return True (not an error, lactate threshold is optional)
@@ -83,11 +89,13 @@ class TestLactateThresholdInserter:
             json.dump(lt_data, f)
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_lactate_threshold(
             raw_lactate_threshold_file=str(lt_file),
             activity_id=12345,
-            db_path=str(db_path),
+            conn=conn,
         )
 
         # Should return True (skips gracefully)
@@ -98,20 +106,18 @@ class TestLactateThresholdInserter:
         self, sample_performance_file, tmp_path
     ):
         """Test insert_lactate_threshold actually writes to DuckDB."""
-        import duckdb
 
         db_path = tmp_path / "test.duckdb"
+        GarminDBWriter(db_path=str(db_path))
+        conn = duckdb.connect(str(db_path))
 
         result = insert_lactate_threshold(
             raw_lactate_threshold_file=str(sample_performance_file),
             activity_id=20615445009,
-            db_path=str(db_path),
+            conn=conn,
         )
 
         assert result is True
-
-        # Verify data in DuckDB
-        conn = duckdb.connect(str(db_path))
 
         # Check lactate_threshold table exists
         tables = conn.execute("SHOW TABLES").fetchall()
