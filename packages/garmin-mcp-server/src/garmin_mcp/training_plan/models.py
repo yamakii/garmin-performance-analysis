@@ -153,6 +153,10 @@ class TrainingPlan(BaseModel):
     weekly_volume_start_km: float = Field(gt=0)
     weekly_volume_peak_km: float = Field(gt=0)
     runs_per_week: int = Field(ge=3, le=6)
+    frequency_progression: list[int] | None = Field(
+        default=None,
+        description="Per-week run frequency. Length must match total_weeks. Each value 3-6.",
+    )
     phases: list[tuple[PeriodizationPhase, int]] = Field(
         description="List of (phase, weeks) tuples"
     )
@@ -161,6 +165,17 @@ class TrainingPlan(BaseModel):
     personalization_notes: str | None = None
     status: str = Field(default="active")
     created_at: str | None = None
+
+    def get_week_frequency(self, week_number: int) -> int:
+        """Get runs-per-week for a specific week.
+
+        Uses frequency_progression if set, otherwise falls back to runs_per_week.
+        """
+        if self.frequency_progression and 1 <= week_number <= len(
+            self.frequency_progression
+        ):
+            return self.frequency_progression[week_number - 1]
+        return self.runs_per_week
 
     def get_week_workouts(self, week_number: int) -> list[PlannedWorkout]:
         """Get workouts for a specific week."""
@@ -188,6 +203,7 @@ class TrainingPlan(BaseModel):
             "total_weeks": self.total_weeks,
             "start_date": str(self.start_date),
             "runs_per_week": self.runs_per_week,
+            "frequency_progression": self.frequency_progression,
             "weekly_volume_start_km": self.weekly_volume_start_km,
             "weekly_volume_peak_km": self.weekly_volume_peak_km,
             "phases": [(p.value, w) for p, w in self.phases],

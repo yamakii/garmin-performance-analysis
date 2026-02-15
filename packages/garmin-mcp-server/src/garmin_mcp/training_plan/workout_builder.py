@@ -72,6 +72,19 @@ class GarminWorkoutBuilder:
         return target
 
     @staticmethod
+    def _hr_target(hr_low: int, hr_high: int) -> dict[str, object]:
+        """Create heart rate target dict."""
+        return {
+            "targetType": {
+                "workoutTargetTypeId": 4,
+                "workoutTargetTypeKey": "heart.rate.zone",
+                "displayOrder": 4,
+            },
+            "targetValueOne": hr_low,
+            "targetValueTwo": hr_high,
+        }
+
+    @staticmethod
     def _distance_condition(distance_km: float) -> tuple[dict, float]:
         """Create distance end condition. Returns (condition_dict, value)."""
         return (
@@ -112,10 +125,30 @@ class GarminWorkoutBuilder:
 
     @staticmethod
     def _build_simple_workout(workout: PlannedWorkout) -> list[dict]:
-        """Build single-segment workout (easy, recovery, long run)."""
-        end_cond, end_val = GarminWorkoutBuilder._distance_condition(
-            workout.target_distance_km or 5.0
+        """Build single-segment workout (easy, recovery, long run).
+
+        Uses HR target + time condition when target_hr_low/high are set,
+        otherwise uses pace target + distance condition.
+        """
+        use_hr = (
+            workout.target_hr_low is not None and workout.target_hr_high is not None
         )
+
+        if use_hr and workout.target_duration_minutes:
+            end_cond, end_val = GarminWorkoutBuilder._time_condition(
+                workout.target_duration_minutes
+            )
+            target = GarminWorkoutBuilder._hr_target(
+                workout.target_hr_low, workout.target_hr_high  # type: ignore[arg-type]
+            )
+        else:
+            end_cond, end_val = GarminWorkoutBuilder._distance_condition(
+                workout.target_distance_km or 5.0
+            )
+            target = GarminWorkoutBuilder._speed_target(
+                workout.target_pace_low, workout.target_pace_high
+            )
+
         step: dict[str, Any] = {
             "type": "ExecutableStepDTO",
             "stepOrder": 1,
@@ -128,9 +161,7 @@ class GarminWorkoutBuilder:
             "endConditionValue": end_val,
             "category": "RUN",
             "exerciseName": "RUN",
-            **GarminWorkoutBuilder._speed_target(
-                workout.target_pace_low, workout.target_pace_high
-            ),
+            **target,
         }
         return [
             {

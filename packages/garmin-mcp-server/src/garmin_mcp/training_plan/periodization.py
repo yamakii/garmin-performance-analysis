@@ -256,3 +256,32 @@ class PeriodizationEngine:
                     weekly_volumes.append(base_volume * 0.8)
 
         return weekly_volumes
+
+    @staticmethod
+    def frequency_progression(
+        start_frequency: int,
+        target_frequency: int,
+        total_weeks: int,
+    ) -> list[int]:
+        """Generate a gradual frequency increase schedule.
+
+        Uses linear interpolation from start to target, clamped to 3-6.
+
+        Examples:
+            start=3, target=6, weeks=4 → [3, 4, 5, 6]
+            start=4, target=6, weeks=8 → [4, 4, 5, 5, 5, 6, 6, 6]
+            start=5, target=5, weeks=4 → [5, 5, 5, 5]
+        """
+        if total_weeks <= 0:
+            return []
+        if total_weeks == 1:
+            return [max(3, min(6, start_frequency))]
+
+        result = []
+        for i in range(total_weeks):
+            # Linear interpolation
+            t = i / (total_weeks - 1)
+            value = start_frequency + t * (target_frequency - start_frequency)
+            clamped = max(3, min(6, round(value)))
+            result.append(clamped)
+        return result

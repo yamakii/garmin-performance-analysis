@@ -136,3 +136,40 @@ class TestCreateReturnToRunPhases:
             phases = PeriodizationEngine.create_return_to_run_phases(total)
             for _, weeks in phases:
                 assert weeks >= 1
+
+
+@pytest.mark.unit
+class TestFrequencyProgression:
+    def test_linear_4_weeks(self):
+        """start=3, target=6, weeks=4 → [3, 4, 5, 6]."""
+        result = PeriodizationEngine.frequency_progression(3, 6, 4)
+        assert result == [3, 4, 5, 6]
+
+    def test_longer_8_weeks(self):
+        """start=4, target=6, weeks=8 → gradual increase."""
+        result = PeriodizationEngine.frequency_progression(4, 6, 8)
+        assert len(result) == 8
+        assert result[0] == 4
+        assert result[-1] == 6
+        # Monotonically non-decreasing
+        for i in range(1, len(result)):
+            assert result[i] >= result[i - 1]
+
+    def test_same_start_target(self):
+        """start=target → all same value."""
+        result = PeriodizationEngine.frequency_progression(5, 5, 4)
+        assert result == [5, 5, 5, 5]
+
+    def test_clamp_to_valid_range(self):
+        """Values should be clamped to 3-6."""
+        result = PeriodizationEngine.frequency_progression(2, 7, 4)
+        for v in result:
+            assert 3 <= v <= 6
+
+    def test_single_week(self):
+        result = PeriodizationEngine.frequency_progression(3, 6, 1)
+        assert result == [3]
+
+    def test_empty_weeks(self):
+        result = PeriodizationEngine.frequency_progression(3, 6, 0)
+        assert result == []

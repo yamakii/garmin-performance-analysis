@@ -7,7 +7,10 @@
         "--directory",
         "packages/garmin-mcp-server",
         "garmin-mcp-server"
-      ]
+      ],
+      "env": {
+        "MCP_RESTART_TRIGGER": "2026-02-15"
+      }
     },
     "serena": {
       "command": "uvx",

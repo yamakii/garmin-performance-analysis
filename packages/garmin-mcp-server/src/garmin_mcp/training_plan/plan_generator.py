@@ -30,7 +30,9 @@ class TrainingPlanGenerator:
         target_race_date: str | None = None,
         target_time_seconds: int | None = None,
         runs_per_week: int = 4,
+        start_frequency: int | None = None,
         preferred_long_run_day: int = 7,
+        rest_days: list[int] | None = None,
     ) -> TrainingPlan:
         """Generate a complete training plan.
 
@@ -107,7 +109,14 @@ class TrainingPlanGenerator:
                 days_until_monday = 7
             start = today + timedelta(days=days_until_monday)
 
-        # 6. Build plan
+        # 6. Frequency progression
+        freq_prog = None
+        if start_frequency is not None and start_frequency != runs_per_week:
+            freq_prog = PeriodizationEngine.frequency_progression(
+                start_frequency, runs_per_week, total_weeks
+            )
+
+        # 7. Build plan
         plan = TrainingPlan(
             goal_type=goal,
             target_race_date=(
@@ -121,12 +130,13 @@ class TrainingPlanGenerator:
             weekly_volume_start_km=round(start_km, 1),
             weekly_volume_peak_km=round(peak_km, 1),
             runs_per_week=runs_per_week,
+            frequency_progression=freq_prog,
             phases=phases,
             weekly_volumes=[round(v, 1) for v in weekly_volumes],
             workouts=[],
         )
 
-        # 7. Fill workouts for each week
+        # 8. Fill workouts for each week
         week_offset = 0
         for phase, num_weeks in phases:
             for w in range(num_weeks):
@@ -134,9 +144,10 @@ class TrainingPlanGenerator:
                 if week_num > len(weekly_volumes):
                     break
                 vol = weekly_volumes[week_num - 1]
+                week_freq = plan.get_week_frequency(week_num)
 
                 template = WeeklyTemplateEngine.get_weekly_template(
-                    runs_per_week, phase, goal
+                    week_freq, phase, goal
                 )
                 workouts = WeeklyTemplateEngine.fill_workout_details(
                     template,
@@ -146,6 +157,8 @@ class TrainingPlanGenerator:
                     vol,
                     pace_zones,
                     preferred_long_run_day,
+                    hr_zones=fitness.hr_zones,
+                    rest_days=rest_days,
                 )
                 # Assign workout_date based on start_date + week/day
                 for wo in workouts:
@@ -155,7 +168,7 @@ class TrainingPlanGenerator:
                 plan.workouts.extend(workouts)
             week_offset += num_weeks
 
-        # 8. Save to DB
+        # 9. Save to DB
         try:
             from garmin_mcp.database.inserters.training_plans import (
                 insert_training_plan,

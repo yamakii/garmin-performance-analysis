@@ -308,3 +308,68 @@ class TestPlanGenerator:
             assert w.workout_date is not None
             assert w.workout_date >= start_date
             assert w.workout_date < race_date
+
+
+@pytest.mark.unit
+class TestPlanGeneratorFrequencyProgression:
+    def test_generate_with_start_frequency(self, mocker, mock_fitness_summary):
+        """start_frequency generates frequency_progression correctly."""
+        mock_assessor = mocker.MagicMock()
+        mock_assessor.assess.return_value = mock_fitness_summary
+
+        mocker.patch(
+            "garmin_mcp.training_plan.plan_generator.FitnessAssessor",
+            return_value=mock_assessor,
+        )
+        mocker.patch(
+            "garmin_mcp.database.inserters.training_plans.insert_training_plan",
+        )
+
+        from garmin_mcp.training_plan.plan_generator import TrainingPlanGenerator
+
+        generator = TrainingPlanGenerator(db_path=":memory:")
+        plan = generator.generate(
+            goal_type="return_to_run",
+            total_weeks=4,
+            runs_per_week=6,
+            start_frequency=3,
+        )
+
+        assert plan.frequency_progression is not None
+        assert len(plan.frequency_progression) == 4
+        assert plan.frequency_progression[0] == 3
+        assert plan.frequency_progression[-1] == 6
+        # Week 1 should have 3 workouts, week 4 should have 6
+        week1 = plan.get_week_workouts(1)
+        week4 = plan.get_week_workouts(4)
+        assert len(week1) == 3
+        assert len(week4) == 6
+
+    def test_generate_without_start_frequency_backward_compat(
+        self, mocker, mock_fitness_summary
+    ):
+        """Without start_frequency, frequency_progression is None (backward compat)."""
+        mock_assessor = mocker.MagicMock()
+        mock_assessor.assess.return_value = mock_fitness_summary
+
+        mocker.patch(
+            "garmin_mcp.training_plan.plan_generator.FitnessAssessor",
+            return_value=mock_assessor,
+        )
+        mocker.patch(
+            "garmin_mcp.database.inserters.training_plans.insert_training_plan",
+        )
+
+        from garmin_mcp.training_plan.plan_generator import TrainingPlanGenerator
+
+        generator = TrainingPlanGenerator(db_path=":memory:")
+        plan = generator.generate(
+            goal_type="race_10k",
+            total_weeks=12,
+            runs_per_week=4,
+        )
+
+        assert plan.frequency_progression is None
+        # All weeks should have 4 workouts
+        for week_num in range(1, 13):
+            assert plan.get_week_frequency(week_num) == 4

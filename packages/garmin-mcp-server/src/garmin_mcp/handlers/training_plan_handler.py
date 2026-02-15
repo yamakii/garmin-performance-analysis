@@ -75,7 +75,9 @@ class TrainingPlanHandler:
                 target_race_date=arguments.get("target_race_date"),
                 target_time_seconds=arguments.get("target_time_seconds"),
                 runs_per_week=arguments.get("runs_per_week", 4),
+                start_frequency=arguments.get("start_frequency"),
                 preferred_long_run_day=arguments.get("preferred_long_run_day", 7),
+                rest_days=arguments.get("rest_days"),
             )
             result = plan.to_summary()
             result["first_week_workouts"] = [

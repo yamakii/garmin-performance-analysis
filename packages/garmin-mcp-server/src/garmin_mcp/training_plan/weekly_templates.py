@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from garmin_mcp.training_plan.models import (
     GoalType,
+    HRZones,
     IntervalDetail,
     PaceZones,
     PeriodizationPhase,
@@ -44,7 +45,10 @@ class WeeklyTemplateEngine:
             raise ValueError(f"runs_per_week must be 3-6, got {runs_per_week}")
 
         # Determine quality workouts by phase
-        if phase == PeriodizationPhase.BASE:
+        # return_to_run: all easy regardless of phase (no tempo/threshold/interval)
+        if goal_type == GoalType.RETURN_TO_RUN:
+            q1, q2 = WorkoutType.EASY, WorkoutType.EASY
+        elif phase == PeriodizationPhase.BASE:
             q1, q2 = WorkoutType.TEMPO, WorkoutType.TEMPO
         elif phase == PeriodizationPhase.BUILD:
             q1, q2 = WorkoutType.THRESHOLD, WorkoutType.INTERVAL
@@ -80,8 +84,13 @@ class WeeklyTemplateEngine:
         weekly_volume_km: float,
         pace_zones: PaceZones,
         preferred_long_run_day: int = 7,
+        hr_zones: HRZones | None = None,
+        rest_days: list[int] | None = None,
     ) -> list[PlannedWorkout]:
         """Create PlannedWorkout instances with pace targets and distances.
+
+        When hr_zones is provided, easy/long_run workouts use HR targets
+        with time-based end conditions instead of pace targets with distance.
 
         Volume distribution:
         - Long run: 25-30% of weekly volume
@@ -111,39 +120,78 @@ class WeeklyTemplateEngine:
         )
         easy_count = sum(1 for wt in workout_types if wt == WorkoutType.EASY)
         remaining = weekly_volume_km - long_run_km - total_quality
-        easy_km = round(max(remaining / easy_count, 3.0), 1) if easy_count > 0 else 0
+        easy_km = round(max(remaining / easy_count, 2.0), 1) if easy_count > 0 else 0
+
+        # Ensure long run is the longest run of the week
+        if easy_count > 0 and long_run_km < easy_km:
+            # Redistribute: long_run = easy, then recalc easy from remaining
+            long_run_km = easy_km
+            remaining = weekly_volume_km - long_run_km - total_quality
+            easy_km = round(max(remaining / easy_count, 3.0), 1)
 
         # Assign days: spread across week, long run on preferred day
-        day_slots = _assign_days(runs_per_week, preferred_long_run_day)
+        day_slots = _assign_days(runs_per_week, preferred_long_run_day, rest_days)
 
         workouts: list[PlannedWorkout] = []
         for i, wt in enumerate(workout_types):
             day = day_slots[i]
 
             if wt == WorkoutType.EASY:
-                w = PlannedWorkout(
-                    plan_id=plan_id,
-                    week_number=week_number,
-                    day_of_week=day,
-                    workout_type=wt,
-                    target_distance_km=easy_km,
-                    target_pace_low=pace_zones.easy_low,
-                    target_pace_high=pace_zones.easy_high,
-                    phase=phase,
-                    description_ja=f"イージーラン {easy_km}km",
-                )
+                if hr_zones:
+                    easy_pace_mid = (pace_zones.easy_low + pace_zones.easy_high) / 2
+                    duration_min = round(easy_km * easy_pace_mid / 60 / 5) * 5
+                    w = PlannedWorkout(
+                        plan_id=plan_id,
+                        week_number=week_number,
+                        day_of_week=day,
+                        workout_type=wt,
+                        target_distance_km=easy_km,
+                        target_duration_minutes=duration_min,
+                        target_hr_low=hr_zones.easy_low,
+                        target_hr_high=hr_zones.easy_high,
+                        phase=phase,
+                        description_ja=f"イージーラン {int(duration_min)}分",
+                    )
+                else:
+                    w = PlannedWorkout(
+                        plan_id=plan_id,
+                        week_number=week_number,
+                        day_of_week=day,
+                        workout_type=wt,
+                        target_distance_km=easy_km,
+                        target_pace_low=pace_zones.easy_low,
+                        target_pace_high=pace_zones.easy_high,
+                        phase=phase,
+                        description_ja=f"イージーラン {easy_km}km",
+                    )
             elif wt == WorkoutType.LONG_RUN:
-                w = PlannedWorkout(
-                    plan_id=plan_id,
-                    week_number=week_number,
-                    day_of_week=day,
-                    workout_type=wt,
-                    target_distance_km=long_run_km,
-                    target_pace_low=pace_zones.easy_low,
-                    target_pace_high=pace_zones.easy_high,
-                    phase=phase,
-                    description_ja=f"ロングラン {long_run_km}km",
-                )
+                if hr_zones:
+                    easy_pace_mid = (pace_zones.easy_low + pace_zones.easy_high) / 2
+                    duration_min = round(long_run_km * easy_pace_mid / 60 / 5) * 5
+                    w = PlannedWorkout(
+                        plan_id=plan_id,
+                        week_number=week_number,
+                        day_of_week=day,
+                        workout_type=wt,
+                        target_distance_km=long_run_km,
+                        target_duration_minutes=duration_min,
+                        target_hr_low=hr_zones.easy_low,
+                        target_hr_high=hr_zones.easy_high,
+                        phase=phase,
+                        description_ja=f"ロングラン {int(duration_min)}分",
+                    )
+                else:
+                    w = PlannedWorkout(
+                        plan_id=plan_id,
+                        week_number=week_number,
+                        day_of_week=day,
+                        workout_type=wt,
+                        target_distance_km=long_run_km,
+                        target_pace_low=pace_zones.easy_low,
+                        target_pace_high=pace_zones.easy_high,
+                        phase=phase,
+                        description_ja=f"ロングラン {long_run_km}km",
+                    )
             elif wt == WorkoutType.TEMPO:
                 w = PlannedWorkout(
                     plan_id=plan_id,
@@ -224,15 +272,41 @@ class WeeklyTemplateEngine:
         return workouts
 
 
-def _assign_days(runs_per_week: int, preferred_long_run_day: int) -> list[int]:
+def _assign_days(
+    runs_per_week: int,
+    preferred_long_run_day: int,
+    rest_days: list[int] | None = None,
+) -> list[int]:
     """Assign day_of_week for each workout slot.
 
     Distributes runs across the week, with the last slot (long run)
-    on the preferred day.
+    on the preferred day. Avoids rest_days if specified.
+
+    Args:
+        runs_per_week: Number of runs per week (3-6).
+        preferred_long_run_day: Day for long run (1=Mon, 7=Sun).
+        rest_days: Days to avoid (1=Mon, 7=Sun). E.g., [3] for Wednesday off.
 
     Returns:
         List of day_of_week values (1=Mon, 7=Sun).
     """
+    if rest_days:
+        # Build available days excluding rest days and long run day
+        all_days = [d for d in range(1, 8) if d not in rest_days]
+        if preferred_long_run_day in all_days:
+            all_days.remove(preferred_long_run_day)
+        # Need runs_per_week - 1 non-long-run days
+        needed = runs_per_week - 1
+        # Spread evenly across available days
+        if len(all_days) >= needed:
+            step = len(all_days) / needed
+            selected = [all_days[int(i * step)] for i in range(needed)]
+        else:
+            selected = all_days[:needed]
+        selected.append(preferred_long_run_day)
+        selected.sort()
+        return selected
+
     patterns = {
         3: [2, 4, 7],  # Tue, Thu, Sun
         4: [1, 3, 5, 7],  # Mon, Wed, Fri, Sun

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import TYPE_CHECKING
 
@@ -40,6 +41,7 @@ def insert_training_plan(db_path: str | None, plan: TrainingPlan) -> None:
                 weekly_volume_start_km DOUBLE NOT NULL,
                 weekly_volume_peak_km DOUBLE NOT NULL,
                 runs_per_week INTEGER NOT NULL,
+                frequency_progression_json VARCHAR,
                 personalization_notes VARCHAR,
                 status VARCHAR DEFAULT 'active',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -82,8 +84,9 @@ def insert_training_plan(db_path: str | None, plan: TrainingPlan) -> None:
                 plan_id, goal_type, target_race_date, target_time_seconds,
                 vdot, pace_zones_json, total_weeks, start_date,
                 weekly_volume_start_km, weekly_volume_peak_km,
-                runs_per_week, personalization_notes, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                runs_per_week, frequency_progression_json,
+                personalization_notes, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 plan.plan_id,
@@ -97,6 +100,11 @@ def insert_training_plan(db_path: str | None, plan: TrainingPlan) -> None:
                 plan.weekly_volume_start_km,
                 plan.weekly_volume_peak_km,
                 plan.runs_per_week,
+                (
+                    json.dumps(plan.frequency_progression)
+                    if plan.frequency_progression
+                    else None
+                ),
                 plan.personalization_notes,
                 plan.status,
             ],

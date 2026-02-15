@@ -637,9 +637,18 @@ async def list_tools() -> list[Tool]:
                         "type": "integer",
                         "description": "Number of runs per week (3-6, default: 4)",
                     },
+                    "start_frequency": {
+                        "type": "integer",
+                        "description": "Starting runs/week (increases to runs_per_week). E.g., start_frequency=3, runs_per_week=6 → gradually increase",
+                    },
                     "preferred_long_run_day": {
                         "type": "integer",
                         "description": "Preferred long run day (1=Mon, 7=Sun, default: 7)",
+                    },
+                    "rest_days": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "Days to avoid scheduling workouts (1=Mon, 7=Sun). E.g., [3] for Wednesday off",
                     },
                 },
                 "required": ["goal_type", "total_weeks"],

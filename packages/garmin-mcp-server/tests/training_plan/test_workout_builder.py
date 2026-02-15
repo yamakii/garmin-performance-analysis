@@ -136,3 +136,66 @@ class TestGarminWorkoutBuilder:
         steps = result["workoutSegments"][0]["workoutSteps"]
         # Falls back to simple workout (1 step)
         assert len(steps) == 1
+
+    def test_build_hr_target_easy_workout(self, pace_zones):
+        """Easy workout with HR targets should use HR target + time condition."""
+        workout = _make_workout(
+            WorkoutType.EASY,
+            target_hr_low=111,
+            target_hr_high=135,
+            target_duration_minutes=30.0,
+            target_pace_low=None,
+            target_pace_high=None,
+        )
+        result = GarminWorkoutBuilder.build(workout, pace_zones)
+
+        step = result["workoutSegments"][0]["workoutSteps"][0]
+        # HR target
+        assert step["targetType"]["workoutTargetTypeId"] == 4
+        assert step["targetType"]["workoutTargetTypeKey"] == "heart.rate.zone"
+        assert step["targetValueOne"] == 111
+        assert step["targetValueTwo"] == 135
+        # Time-based end condition (30 min = 1800 sec)
+        assert step["endCondition"]["conditionTypeKey"] == "time"
+        assert step["endConditionValue"] == 1800.0
+
+    def test_build_hr_target_long_run(self, pace_zones):
+        """Long run with HR targets should use HR target + time condition."""
+        workout = _make_workout(
+            WorkoutType.LONG_RUN,
+            target_hr_low=111,
+            target_hr_high=135,
+            target_duration_minutes=60.0,
+            target_distance_km=10.0,
+            target_pace_low=None,
+            target_pace_high=None,
+        )
+        result = GarminWorkoutBuilder.build(workout, pace_zones)
+
+        step = result["workoutSegments"][0]["workoutSteps"][0]
+        assert step["targetType"]["workoutTargetTypeKey"] == "heart.rate.zone"
+        assert step["endCondition"]["conditionTypeKey"] == "time"
+        assert step["endConditionValue"] == 3600.0  # 60 min
+
+    def test_no_hr_target_uses_pace(self, pace_zones):
+        """Without HR targets, should use pace target + distance condition."""
+        workout = _make_workout(WorkoutType.EASY)
+        result = GarminWorkoutBuilder.build(workout, pace_zones)
+
+        step = result["workoutSegments"][0]["workoutSteps"][0]
+        assert step["targetType"]["workoutTargetTypeKey"] == "speed.zone"
+        assert step["endCondition"]["conditionTypeKey"] == "distance"
+
+    def test_hr_target_without_duration_falls_back_to_distance(self, pace_zones):
+        """HR target without duration should fallback to distance condition."""
+        workout = _make_workout(
+            WorkoutType.EASY,
+            target_hr_low=111,
+            target_hr_high=135,
+            target_duration_minutes=None,
+        )
+        result = GarminWorkoutBuilder.build(workout, pace_zones)
+
+        step = result["workoutSegments"][0]["workoutSteps"][0]
+        # Falls back to pace + distance
+        assert step["endCondition"]["conditionTypeKey"] == "distance"
