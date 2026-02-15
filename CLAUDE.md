@@ -293,7 +293,7 @@ git worktree remove ../garmin-feature-name
 1. **Metadata Fix (activities table only)**
    ```bash
    # Update activity name/date without recalculating performance
-   uv run python tools/scripts/regenerate_duckdb.py \
+   uv run python -m garmin_mcp.scripts.regenerate_duckdb \
      --tables activities \
      --activity-ids 12345 \
      --force
@@ -302,7 +302,7 @@ git worktree remove ../garmin-feature-name
 2. **Performance Recalculation (child tables only)**
    ```bash
    # Fix calculation errors in splits or form metrics
-   uv run python tools/scripts/regenerate_duckdb.py \
+   uv run python -m garmin_mcp.scripts.regenerate_duckdb \
      --tables splits form_efficiency \
      --activity-ids 12345 \
      --force
@@ -311,7 +311,7 @@ git worktree remove ../garmin-feature-name
 3. **Date Range Update (specific tables)**
    ```bash
    # Update specific metrics for a month of activities
-   uv run python tools/scripts/regenerate_duckdb.py \
+   uv run python -m garmin_mcp.scripts.regenerate_duckdb \
      --tables splits \
      --start-date 2025-10-01 \
      --end-date 2025-10-31 \
@@ -321,7 +321,7 @@ git worktree remove ../garmin-feature-name
 4. **Full Table Regeneration (all activities)**
    ```bash
    # Regenerate entire table after schema change
-   uv run python tools/scripts/regenerate_duckdb.py \
+   uv run python -m garmin_mcp.scripts.regenerate_duckdb \
      --tables splits form_efficiency \
      --force
    ```
@@ -329,7 +329,7 @@ git worktree remove ../garmin-feature-name
 5. **Full Database Regeneration (DANGEROUS)**
    ```bash
    # Complete reset (requires user approval)
-   uv run python tools/scripts/regenerate_duckdb.py --delete-db
+   uv run python -m garmin_mcp.scripts.regenerate_duckdb --delete-db
    ```
 
 **Safety Rules:**
@@ -346,10 +346,10 @@ git worktree remove ../garmin-feature-name
 **Raw Data Fetching:**
 ```bash
 # Fetch missing raw data
-uv run python tools/scripts/bulk_fetch_raw_data.py --start-date 2025-10-01
+uv run python -m garmin_mcp.scripts.bulk_fetch_raw_data --start-date 2025-10-01
 
 # Fetch activity details only
-uv run python tools/scripts/bulk_fetch_activity_details.py --activity-ids 12345 67890
+uv run python -m garmin_mcp.scripts.bulk_fetch_activity_details --activity-ids 12345 67890
 ```
 
 ### DuckDB CLI Usage
@@ -469,7 +469,7 @@ docs/project/
 ### Prohibited Practices
 
 ❌ **NEVER do these:**
-- Edit code without Serena MCP: `Edit("tools/ingest/worker.py", ...)`
+- Edit code without Serena MCP: `Edit("packages/garmin-mcp-server/src/garmin_mcp/ingest/worker.py", ...)`
 - Implement on main branch (use worktree)
 - Delete database without user approval: `rm *.duckdb`, `--delete-db`
 - Tests depending on real data: `conn.execute("SELECT * FROM activities")`
@@ -497,22 +497,33 @@ docs/project/
 ### Directory Structure
 
 ```
-garmin-performance-analysis/
-├── data/                      # GARMIN_DATA_DIR (configurable via .env)
-│   ├── raw/                   # API responses (8 files/activity)
-│   └── database/              # garmin_performance.duckdb
-├── result/                    # GARMIN_RESULT_DIR (configurable via .env)
-│   ├── individual/            # YEAR/MONTH/YYYY-MM-DD_id.md
-│   └── monthly/               # Monthly trends
-├── tools/                     # Processing pipeline
-│   ├── ingest/                # API fetching
-│   ├── database/              # DuckDB operations
-│   ├── reporting/             # Report generation
-│   └── scripts/               # Maintenance scripts
-├── docs/project/              # Project management
-│   ├── 2025-*_*/              # Active projects
-│   └── _archived/             # Completed projects
-└── .claude/                   # Agents + slash commands
+garmin-performance-analysis/          # Monorepo
+├── packages/
+│   └── garmin-mcp-server/            # Deployable MCP server
+│       ├── pyproject.toml            # Package dependencies
+│       ├── src/
+│       │   └── garmin_mcp/
+│       │       ├── server.py         # MCP server entry point
+│       │       ├── database/         # DuckDB operations
+│       │       ├── ingest/           # API fetching
+│       │       ├── reporting/        # Report generation
+│       │       ├── form_baseline/    # Form evaluation
+│       │       ├── rag/              # RAG queries
+│       │       ├── utils/            # Utilities
+│       │       └── scripts/          # Maintenance scripts
+│       └── tests/                    # All tests
+├── .claude/                          # Claude Code workflow
+│   ├── agents/                       # 5 analysis + 3 dev agents
+│   ├── commands/                     # /analyze-activity, /batch-analyze
+│   └── settings.local.json           # MCP settings
+├── data/                             # GARMIN_DATA_DIR (configurable via .env)
+│   ├── raw/                          # API responses (8 files/activity)
+│   └── database/                     # garmin_performance.duckdb
+├── result/                           # GARMIN_RESULT_DIR (configurable via .env)
+│   ├── individual/                   # YEAR/MONTH/YYYY-MM-DD_id.md
+│   └── monthly/                      # Monthly trends
+├── docs/                             # Documentation + project management
+└── CLAUDE.md                         # This file
 ```
 
 ### Agent System

@@ -108,7 +108,7 @@ DEVELOPMENT_PROCESS.md の Phase 2（実装フェーズ）を支援する専門�
 
 2. **テストファイル作成**
    ```python
-   # tests/path/test_feature.py
+   # packages/garmin-mcp-server/tests/path/test_feature.py
    import pytest
 
    def test_new_feature():
@@ -120,7 +120,7 @@ DEVELOPMENT_PROCESS.md の Phase 2（実装フェーズ）を支援する専門�
 
 3. **テスト実行（失敗確認）**
    ```bash
-   uv run pytest tests/path/test_feature.py::test_new_feature -v
+   uv run pytest packages/garmin-mcp-server/tests/path/test_feature.py::test_new_feature -v
    # FAILED ❌ が期待される結果
    ```
 
@@ -128,14 +128,14 @@ DEVELOPMENT_PROCESS.md の Phase 2（実装フェーズ）を支援する専門�
 
 1. **最小実装**
    ```python
-   # tools/path/feature.py
+   # packages/garmin-mcp-server/src/garmin_mcp/path/feature.py
    def new_feature():
        return True  # テストを通す最小限のコード
    ```
 
 2. **テスト再実行（成功確認）**
    ```bash
-   uv run pytest tests/path/test_feature.py::test_new_feature -v
+   uv run pytest packages/garmin-mcp-server/tests/path/test_feature.py::test_new_feature -v
    # PASSED ✅
    ```
 
@@ -144,13 +144,13 @@ DEVELOPMENT_PROCESS.md の Phase 2（実装フェーズ）を支援する専門�
    # 実装直後にコード品質をチェック（コミット前に検出）
 
    # (1) フォーマット（自動修正）
-   uv run black tools/path/feature.py tests/path/test_feature.py
+   uv run black packages/garmin-mcp-server/src/garmin_mcp/path/feature.py packages/garmin-mcp-server/tests/path/test_feature.py
 
    # (2) Lint（自動修正可能なものは修正）
-   uv run ruff check --fix tools/path/feature.py tests/path/test_feature.py
+   uv run ruff check --fix packages/garmin-mcp-server/src/garmin_mcp/path/feature.py packages/garmin-mcp-server/tests/path/test_feature.py
 
    # (3) 型チェック（エラーがあれば即座に修正）
-   uv run mypy tools/path/feature.py tests/path/test_feature.py
+   uv run mypy packages/garmin-mcp-server/src/garmin_mcp/path/feature.py packages/garmin-mcp-server/tests/path/test_feature.py
 
    # エラー例と修正:
    # - Black: 自動フォーマット済み

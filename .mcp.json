@@ -4,8 +4,9 @@
       "command": "uv",
       "args": [
         "run",
-        "python",
-        "servers/garmin_db_server.py"
+        "--directory",
+        "packages/garmin-mcp-server",
+        "garmin-mcp-server"
       ]
     },
     "serena": {

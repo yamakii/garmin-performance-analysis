@@ -10,6 +10,12 @@ resolution-markers = [
     "python_full_version < '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 
+[manifest]
+members = [
+    "garmin-mcp-server",
+    "garmin-performance-analysis",
+]
+
 [[package]]
 name = "annotated-types"
 version = "0.7.0"
@@ -420,9 +426,9 @@ wheels = [
 ]
 
 [[package]]
-name = "garmin-performance-analysis"
+name = "garmin-mcp-server"
 version = "0.1.0"
-source = { editable = "." }
+source = { editable = "packages/garmin-mcp-server" }
 dependencies = [
     { name = "duckdb" },
     { name = "garminconnect" },
@@ -488,6 +494,42 @@ requires-dist = [
     { name = "tqdm", specifier = ">=4.67.1" },
 ]
 provides-extras = ["dev", "performance"]
+
+[[package]]
+name = "garmin-performance-analysis"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "garmin-mcp-server" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "black" },
+    { name = "mypy" },
+    { name = "pre-commit" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "pytest-mock" },
+    { name = "pytest-xdist" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "black", marker = "extra == 'dev'", specifier = ">=26.0.0" },
+    { name = "garmin-mcp-server", editable = "packages/garmin-mcp-server" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11.0" },
+    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.0.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
+    { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.14.0" },
+    { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.5.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15.0" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "garminconnect"

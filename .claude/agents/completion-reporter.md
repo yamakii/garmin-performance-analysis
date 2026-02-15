@@ -250,9 +250,9 @@ Performance Results:
 ```
 Name                            Stmts   Miss  Cover   Missing
 -------------------------------------------------------------
-tools/database/db_writer.py       120      6    95%   45-47, 89
-tools/database/db_reader.py        85      7    92%   23, 56-59
-servers/garmin_db_server.py       230     28    88%   112-125, 201
+garmin_mcp/database/db_writer.py   120      6    95%   45-47, 89
+garmin_mcp/database/db_reader.py    85      7    92%   23, 56-59
+garmin_mcp/server.py              230     28    88%   112-125, 201
 -------------------------------------------------------------
 TOTAL                             435     41    91%
 ```

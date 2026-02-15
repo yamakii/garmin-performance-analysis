@@ -1,26 +1,11 @@
 [project]
 name = "garmin-performance-analysis"
 version = "0.1.0"
-description = "Garmin running performance analysis system with DuckDB and MCP integration"
+description = "Garmin running performance analysis workspace"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "garminconnect>=0.2.0",
-    "duckdb>=1.1.1",
-    "pandas>=3.0.0",
-    "polars>=1.9.0",
-    "pyarrow>=17.0.0",
-    "numpy>=2.1.0",
-    "scipy>=1.11.0",
-    "scikit-learn>=1.5.0",
-    "jinja2>=3.1.0",
-    "python-dotenv>=1.0.0",
-    "mcp>=1.0.0",
-    "pydantic>=2.0.0",
-    "pydantic-settings>=2.0.0",
-
-    "python-multipart>=0.0.12",
-    "tqdm>=4.67.1",
+    "garmin-mcp-server",
 ]
 
 [project.optional-dependencies]
@@ -35,17 +20,22 @@ dev = [
     "mypy>=1.11.0",
     "pre-commit>=4.0.0",
 ]
-performance = [
-    "rich>=13.0.0",
-    "pygments>=2.18.0",
-]
+
+[tool.uv.sources]
+garmin-mcp-server = { workspace = true }
+
+[tool.uv.workspace]
+members = ["packages/garmin-mcp-server"]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build]
+skip-excluded-dirs = true
+
 [tool.hatch.build.targets.wheel]
-packages = ["tools", "servers"]
+packages = ["packages/garmin-mcp-server/src/garmin_mcp"]
 
 [tool.black]
 line-length = 88
@@ -81,9 +71,9 @@ exclude = [
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM"]
 ignore = [
-    "E501",  # Line too long (handled by black)
-    "E402",  # Module level import not at top of file (intentional for sys.path modification in servers)
-    "SIM105",  # try-except-pass is clearer than contextlib.suppress for rollback error handling
+    "E501",
+    "E402",
+    "SIM105",
 ]
 
 [tool.mypy]
@@ -94,18 +84,12 @@ disallow_untyped_defs = false
 check_untyped_defs = true
 ignore_missing_imports = true
 
-[[tool.mypy.overrides]]
-module = "servers.*"
-ignore_errors = false
-
 [tool.pytest.ini_options]
 minversion = "9.0"
-testpaths = ["tests"]
+testpaths = ["packages/garmin-mcp-server/tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-
-# Markers (enhanced documentation)
 markers = [
     "unit: Unit tests (fast, isolated)",
     "integration: Integration tests (moderate speed)",
@@ -113,8 +97,6 @@ markers = [
     "slow: Slow tests (deselected by default)",
     "garmin_api: Tests that require Garmin API authentication (rate limited)",
 ]
-
-# Optimized addopts (parallel execution with -n 4 for stability)
 addopts = """
     -m 'not garmin_api and not slow and not performance'
     --strict-markers
@@ -124,17 +106,13 @@ addopts = """
     --maxfail=5
     --durations=10
 """
-
-# Cache optimization
 cache_dir = ".pytest_cache"
-
-# Asyncio mode
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.coverage.run]
-source = ["tools", "servers"]
-omit = ["tests/*", ".venv/*"]
+source = ["packages/garmin-mcp-server/src/garmin_mcp"]
+omit = ["*/tests/*", ".venv/*"]
 
 [tool.coverage.report]
 exclude_lines = [

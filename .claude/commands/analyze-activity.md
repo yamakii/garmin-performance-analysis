@@ -18,10 +18,10 @@
 
 ### Step 1: データ収集と検証
 
-`tools/planner/workflow_planner.py` を使用して、日付からアクティビティを取得し、データを収集してDuckDBに格納してください。
+`garmin_mcp.planner.workflow_planner` を使用して、日付からアクティビティを取得し、データを収集してDuckDBに格納してください。
 
 ```bash
-uv run python -m tools.planner.workflow_planner {{arg1}}
+uv run python -m garmin_mcp.planner.workflow_planner {{arg1}}
 ```
 
 このコマンドは以下を実行します：
@@ -57,7 +57,7 @@ prompt: "Activity ID {activity_id} ({date}) のアクティビティタイプ判
 全てのセクション分析が完了したら、最終レポートを生成してください：
 
 ```bash
-uv run python -m tools.reporting.report_generator_worker {activity_id} {date}
+uv run python -m garmin_mcp.reporting.report_generator_worker {activity_id} {date}
 ```
 
 ## 重要事項

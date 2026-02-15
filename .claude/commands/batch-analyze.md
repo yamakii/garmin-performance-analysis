@@ -38,7 +38,7 @@ prompt: "Activity ID {activity_id} ({date}) のアクティビティタイプ判
 全エージェント完了後、以下のコマンドを実行：
 
 ```bash
-uv run python -m tools.reporting.report_generator_worker {activity_id} {date}
+uv run python -m garmin_mcp.reporting.report_generator_worker {activity_id} {date}
 ```
 
 ## 注意事項
