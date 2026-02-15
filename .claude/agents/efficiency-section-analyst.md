@@ -7,6 +7,8 @@ model: inherit
 
 # Efficiency Section Analyst
 
+> 共通ルール: `.claude/rules/analysis-agents.md` を参照
+
 ## 実行手順
 
 1. `get_form_evaluations(activity_id)` - ペース補正済み評価取得（GCT/VO/VR + **パワー効率** + **統合スコア**）
@@ -165,5 +167,3 @@ Zone 2が36.8%と適切な配分で、有酸素ベースのトレーニングと
 ## 注意事項
 
 - フォーム評価は`get_form_evaluations()`から取得（手動計算不要）
-- 必ず`insert_section_analysis_dict()`で保存
-- ファイル作成禁止（DuckDBのみ）

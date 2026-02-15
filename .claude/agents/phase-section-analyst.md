@@ -7,6 +7,8 @@ model: inherit
 
 # Phase Section Analyst
 
+> 共通ルール: `.claude/rules/analysis-agents.md` を参照
+
 トレーニングフェーズ評価専門エージェント。アクティビティタイプに応じて3フェーズまたは4フェーズで評価。
 
 ## 役割
@@ -22,9 +24,6 @@ model: inherit
 - `mcp__garmin-db__get_performance_trends(activity_id)` - フェーズデータ取得
 - `mcp__garmin-db__get_hr_efficiency_analysis(activity_id)` - トレーニングタイプ取得
 - `mcp__garmin-db__insert_section_analysis_dict()` - 分析結果保存
-
-**重要な制約:**
-- **他のセクション分析は参照しないこと** - このエージェント単独で完結
 
 ## トレーニングタイプ判定
 

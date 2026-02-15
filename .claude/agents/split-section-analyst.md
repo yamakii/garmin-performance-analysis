@@ -7,6 +7,8 @@ model: inherit
 
 # Split Section Analyst
 
+> 共通ルール: `.claude/rules/analysis-agents.md` を参照
+
 全スプリットの詳細分析を専門的に行うエージェント。
 
 ## 役割
@@ -39,11 +41,6 @@ model: inherit
 - Use `statistics_only=False` only when comparing individual split performance
 - Example: "Overall pace trend" → statistics_only=True, "Split 3 vs Split 5" → statistics_only=False
 
-**重要な制約:**
-- **他のセクション分析（efficiency, environment, phase）は参照しないこと**
-- **依存関係を作らないこと**: このエージェント単独で完結する分析を行う
-- 必要なデータは上記2つの軽量ツールから取得する（token効率化のため）
-
 ## 出力形式
 
 **section_type**: `"split"`
@@ -69,17 +66,10 @@ mcp__garmin_db__insert_section_analysis_dict(
 ```
 
 **重要**:
-- metadataは`insert_section_analysis_dict`が自動生成するため、エージェントが含める必要はない
 - **highlights**: 全スプリットを通じて特に重要な3-5個のポイントを1文で要約（例: "Split 4でペース5:01/km到達、Split 5-6でGCT 232ms安定維持"）
 - `analyses`オブジェクトのキーは`split_1`, `split_2`, ..., `split_N`
-- 各キーの値は**日本語マークダウン形式のテキスト**（JSON構造ではない）
-- **データ整形不要**: データはレポートで別途表示されるため、データの羅列や整形は不要
-- **コメント量**:
-  - highlights: 1文（60-120文字程度）
-  - 各スプリット: 1-2文程度で簡潔に記述する
-- **文体**: 体言止めを避け、自然な日本語の文章で記述する
-- **トーン**: コーチのように、良い点は褒め、改善点は前向きに提案する
-- **数値の使用**: 文章中でデータに言及するのは問題なし
+- 各キーの値は日本語マークダウン形式のテキスト
+- highlights: 1文（60-120文字）、各スプリット: 1-2文
 - 全スプリットを例外なく分析すること
 
 ## 分析ガイドライン
@@ -138,5 +128,3 @@ mcp__garmin_db__insert_section_analysis_dict(
 - **例外なく全スプリット分析**: 1つも飛ばさない
 - **環境要因考慮**: 地形と気温の影響を必ず評価（splits_pace_hrから取得可能）
 - **計測エラー検出**: 異常値（ペース<3:00/km, HR>200）を指摘
-- **独立分析**: 他のセクション分析（efficiency, environment, phase）は参照しない
-- **MCPツール**: get_splits_pace_hr + get_splits_form_metricsを使用（token効率化）

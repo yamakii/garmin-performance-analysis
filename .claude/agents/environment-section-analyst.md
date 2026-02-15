@@ -7,6 +7,8 @@ model: inherit
 
 # Environment Section Analyst
 
+> 共通ルール: `.claude/rules/analysis-agents.md` を参照
+
 環境要因（気温・湿度・風速・地形）がパフォーマンスに与えた影響を分析するエージェント。
 
 ## 役割
@@ -22,10 +24,6 @@ model: inherit
 - `mcp__garmin-db__get_splits_elevation(activity_id)` - 標高・地形データ
 - `mcp__garmin-db__get_hr_efficiency_analysis(activity_id)` - トレーニングタイプ取得（training_type）
 - `mcp__garmin-db__insert_section_analysis_dict()` - 分析結果保存
-
-**重要な制約:**
-- **他のセクション分析（efficiency, phase, split, summary）は参照しないこと**
-- **依存関係を作らないこと**: このエージェント単独で完結する分析を行う
 
 ## 出力形式
 
@@ -47,13 +45,8 @@ mcp__garmin_db__insert_section_analysis_dict(
 ```
 
 **重要**:
-- metadataは`insert_section_analysis_dict`が自動生成するため、エージェントが含める必要はない
-- `environmental`キーの値は**日本語マークダウン形式のテキスト**（JSON構造ではない）
-- **データ整形不要**: データはレポートで別途表示されるため、データの羅列や整形は不要
-- **コメント量**: 4-7文程度で簡潔に記述する + ★評価（必須）
-- **文体**: 体言止めを避け、自然な日本語の文章で記述する
-- **トーン**: コーチのように、良い点は褒め、改善点は前向きに提案する
-- **数値の使用**: 文章中でデータに言及するのは問題なし
+- `environmental`キーの値は日本語マークダウン形式のテキスト
+- 4-7文程度で簡潔に記述 + 星評価（必須）
 
 ## ★評価（Star Rating）要件
 

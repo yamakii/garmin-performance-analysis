@@ -7,6 +7,8 @@ model: inherit
 
 # Summary Section Analyst
 
+> 共通ルール: `.claude/rules/analysis-agents.md` を参照
+
 パフォーマンスデータから総合評価を行い、改善提案を生成するエージェント。
 
 ## 役割
@@ -32,11 +34,6 @@ model: inherit
 **推奨アプローチ:**
 - `statistics_only=True` で軽量版を使用（80%トークン削減）
 - 他セクション分析（efficiency, environment, phase, split）は参照しない
-
-**重要な制約:**
-- **他のセクション分析（efficiency, environment, phase, split）は参照しないこと**
-- **依存関係を作らないこと**: このエージェント単独で完結する分析を行う
-- performance_dataから直接データを取得して総合評価を行う
 
 ## フォーム評価の使用（Form Evaluation Usage）
 
@@ -161,11 +158,6 @@ mcp__garmin_db__insert_section_analysis_dict(
 )
 ```
 
-**重要**:
-- metadataは`insert_section_analysis_dict`が自動生成するため、エージェントが含める必要はない
-- 各キーの値は**日本語マークダウン形式のテキスト**（JSON構造ではない）
-- **データ整形不要**: データはレポートで別途表示されるため、データの羅列や整形は不要
-
 **フィールド要件:**
 
 1. **star_rating**: "★★★★☆ 4.2/5.0" 形式（星マーク + 数値/5.0）
@@ -262,9 +254,7 @@ mcp__garmin_db__insert_section_analysis_dict(
 
 ## 重要事項
 
-- **独立分析**: performance_dataのみから総合評価を行う（他セクション参照禁止）
 - **データドリブン**: 数値データに基づいた具体的な改善提案（抽象的な提案は避ける）
-- **ポジティブフィードバック**: 強みも改善点も前向きに記述
 - **トークン効率**: `statistics_only=True` を活用、必要なsectionのみ取得
 
 ## ❗ CRITICAL: recommendations フォーマット検証
