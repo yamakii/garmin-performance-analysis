@@ -11,9 +11,13 @@ from typing import Any, Literal
 from garmin_mcp.database.readers import (
     AggregateReader,
     ExportReader,
+    FormReader,
     MetadataReader,
+    PerformanceReader,
+    PhysiologyReader,
     SplitsReader,
     TimeSeriesReader,
+    UtilityReader,
 )
 
 
@@ -39,9 +43,23 @@ class GarminDBReader:
         # Initialize all specialized readers
         self.metadata = MetadataReader(db_path)
         self.splits = SplitsReader(db_path)
-        self.aggregate = AggregateReader(db_path)
         self.time_series = TimeSeriesReader(db_path)
         self.export = ExportReader(db_path)
+
+        # Specialized readers (split from AggregateReader)
+        self.form = FormReader(db_path)
+        self.physiology = PhysiologyReader(db_path)
+        self.performance = PerformanceReader(db_path)
+        self.utility = UtilityReader(db_path)
+
+        # Backward compatibility: aggregate delegates to specialized readers
+        self.aggregate = AggregateReader(
+            db_path,
+            form=self.form,
+            physiology=self.physiology,
+            performance=self.performance,
+            utility=self.utility,
+        )
 
         # For backward compatibility, expose db_path
         self.db_path = self.metadata.db_path
@@ -170,7 +188,7 @@ class GarminDBReader:
         """
         return self.splits.get_split_time_ranges(activity_id)
 
-    # ========== Aggregate Methods ==========
+    # ========== Form Methods ==========
 
     def get_form_efficiency_summary(self, activity_id: int) -> dict[str, Any] | None:
         """Get form efficiency summary (GCT, VO, VR metrics).
@@ -181,7 +199,7 @@ class GarminDBReader:
         Returns:
             Form efficiency data with ratings, or None if not found
         """
-        return self.aggregate.get_form_efficiency_summary(activity_id)
+        return self.form.get_form_efficiency_summary(activity_id)
 
     def get_form_evaluations(self, activity_id: int) -> dict[str, Any] | None:
         """Get pace-corrected form evaluation results.
@@ -193,7 +211,9 @@ class GarminDBReader:
             Form evaluation data with expected values, actual values, scores,
             star ratings, and evaluation texts, or None if not found
         """
-        return self.aggregate.get_form_evaluations(activity_id)
+        return self.form.get_form_evaluations(activity_id)
+
+    # ========== Physiology Methods ==========
 
     def get_hr_efficiency_analysis(self, activity_id: int) -> dict[str, Any] | None:
         """Get HR efficiency analysis (zone distribution, training type).
@@ -204,7 +224,7 @@ class GarminDBReader:
         Returns:
             HR efficiency data, or None if not found
         """
-        return self.aggregate.get_hr_efficiency_analysis(activity_id)
+        return self.physiology.get_hr_efficiency_analysis(activity_id)
 
     def get_heart_rate_zones_detail(self, activity_id: int) -> dict[str, Any] | None:
         """Get heart rate zones detail (boundaries, time distribution).
@@ -215,7 +235,7 @@ class GarminDBReader:
         Returns:
             Heart rate zones data, or None if not found
         """
-        return self.aggregate.get_heart_rate_zones_detail(activity_id)
+        return self.physiology.get_heart_rate_zones_detail(activity_id)
 
     def get_vo2_max_data(self, activity_id: int) -> dict[str, Any] | None:
         """Get VO2 max data (precise value, fitness age, category).
@@ -226,7 +246,7 @@ class GarminDBReader:
         Returns:
             VO2 max data, or None if not found
         """
-        return self.aggregate.get_vo2_max_data(activity_id)
+        return self.physiology.get_vo2_max_data(activity_id)
 
     def get_lactate_threshold_data(self, activity_id: int) -> dict[str, Any] | None:
         """Get lactate threshold data (HR, speed, power).
@@ -237,7 +257,9 @@ class GarminDBReader:
         Returns:
             Lactate threshold data, or None if not found
         """
-        return self.aggregate.get_lactate_threshold_data(activity_id)
+        return self.physiology.get_lactate_threshold_data(activity_id)
+
+    # ========== Performance Methods ==========
 
     def get_performance_trends(self, activity_id: int) -> dict[str, Any] | None:
         """Get performance trends data (pace consistency, HR drift, phase analysis).
@@ -248,7 +270,7 @@ class GarminDBReader:
         Returns:
             Performance trends data with phase breakdowns, or None if not found
         """
-        return self.aggregate.get_performance_trends(activity_id)
+        return self.performance.get_performance_trends(activity_id)
 
     def get_weather_data(self, activity_id: int) -> dict[str, Any] | None:
         """Get weather data (temperature, humidity, wind).
@@ -259,7 +281,7 @@ class GarminDBReader:
         Returns:
             Weather data, or None if not found
         """
-        return self.aggregate.get_weather_data(activity_id)
+        return self.performance.get_weather_data(activity_id)
 
     def get_section_analysis(
         self, activity_id: int, section_type: str, max_output_size: int = 10240
@@ -280,7 +302,7 @@ class GarminDBReader:
         Raises:
             ValueError: If output size exceeds max_output_size
         """
-        return self.aggregate.get_section_analysis(
+        return self.performance.get_section_analysis(
             activity_id, section_type, max_output_size
         )
 
