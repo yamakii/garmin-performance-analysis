@@ -1,0 +1,1 @@
+"""Training plan generation module."""

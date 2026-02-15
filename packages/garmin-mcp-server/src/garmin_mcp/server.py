@@ -21,6 +21,7 @@ from garmin_mcp.handlers.performance_handler import PerformanceHandler
 from garmin_mcp.handlers.physiology_handler import PhysiologyHandler
 from garmin_mcp.handlers.splits_handler import SplitsHandler
 from garmin_mcp.handlers.time_series_handler import TimeSeriesHandler
+from garmin_mcp.handlers.training_plan_handler import TrainingPlanHandler
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,7 @@ def _init_handlers() -> None:
         AnalysisHandler(db_reader),
         TimeSeriesHandler(db_reader),
         ExportHandler(db_reader),
+        TrainingPlanHandler(db_reader),
     ]
 
 
@@ -585,6 +587,104 @@ async def list_tools() -> list[Tool]:
                     },
                 },
                 "required": ["activity_id"],
+            },
+        ),
+        # --- Training Plan Tools ---
+        Tool(
+            name="get_current_fitness_summary",
+            description="Get current fitness level assessment (VDOT, pace zones, weekly volume, training type distribution)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "lookback_weeks": {
+                        "type": "integer",
+                        "description": "Number of weeks to analyze (default: 8)",
+                    },
+                },
+            },
+        ),
+        Tool(
+            name="generate_training_plan",
+            description="Generate a personalized training plan with periodization and pace targets",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "goal_type": {
+                        "type": "string",
+                        "enum": [
+                            "race_5k",
+                            "race_10k",
+                            "race_half",
+                            "race_full",
+                            "fitness",
+                        ],
+                        "description": "Training goal type",
+                    },
+                    "total_weeks": {
+                        "type": "integer",
+                        "description": "Plan duration in weeks (4-24)",
+                    },
+                    "target_race_date": {
+                        "type": "string",
+                        "description": "Race date in YYYY-MM-DD format (for race goals)",
+                    },
+                    "target_time_seconds": {
+                        "type": "integer",
+                        "description": "Target race time in seconds (optional)",
+                    },
+                    "runs_per_week": {
+                        "type": "integer",
+                        "description": "Number of runs per week (3-6, default: 4)",
+                    },
+                    "preferred_long_run_day": {
+                        "type": "integer",
+                        "description": "Preferred long run day (1=Mon, 7=Sun, default: 7)",
+                    },
+                },
+                "required": ["goal_type", "total_weeks"],
+            },
+        ),
+        Tool(
+            name="get_training_plan",
+            description="Get a previously generated training plan",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "plan_id": {
+                        "type": "string",
+                        "description": "Plan identifier",
+                    },
+                    "week_number": {
+                        "type": "integer",
+                        "description": "Specific week to retrieve (optional)",
+                    },
+                    "summary_only": {
+                        "type": "boolean",
+                        "description": "If true, exclude individual workouts (default: false)",
+                    },
+                },
+                "required": ["plan_id"],
+            },
+        ),
+        Tool(
+            name="upload_workout_to_garmin",
+            description="Upload workout(s) to Garmin Connect",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "workout_id": {
+                        "type": "string",
+                        "description": "Single workout ID to upload",
+                    },
+                    "plan_id": {
+                        "type": "string",
+                        "description": "Plan ID to upload all workouts from",
+                    },
+                    "week_number": {
+                        "type": "integer",
+                        "description": "Specific week to upload (with plan_id)",
+                    },
+                },
             },
         ),
     ]
