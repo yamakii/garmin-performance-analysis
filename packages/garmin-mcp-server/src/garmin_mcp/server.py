@@ -617,6 +617,7 @@ async def list_tools() -> list[Tool]:
                             "race_half",
                             "race_full",
                             "fitness",
+                            "return_to_run",
                         ],
                         "description": "Training goal type",
                     },
@@ -688,6 +689,27 @@ async def list_tools() -> list[Tool]:
                         "type": "boolean",
                         "description": "Schedule workouts on Garmin Connect calendar (default: true)",
                         "default": True,
+                    },
+                },
+            },
+        ),
+        Tool(
+            name="delete_workout_from_garmin",
+            description="Delete workout(s) from Garmin Connect",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "workout_id": {
+                        "type": "string",
+                        "description": "Single workout ID to delete",
+                    },
+                    "plan_id": {
+                        "type": "string",
+                        "description": "Plan ID to delete all workouts from",
+                    },
+                    "week_number": {
+                        "type": "integer",
+                        "description": "Specific week to delete (with plan_id)",
                     },
                 },
             },

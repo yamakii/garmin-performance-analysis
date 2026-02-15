@@ -146,3 +146,45 @@ class TestFillWorkoutDetails:
         for w in workouts:
             assert w.plan_id == "plan-xyz"
             assert w.week_number == 5
+
+    def test_low_volume_long_run_gte_quality(self, pace_zones):
+        """At low volumes, long run should be >= quality workout distance."""
+        types = [WorkoutType.EASY, WorkoutType.TEMPO, WorkoutType.LONG_RUN]
+        workouts = WeeklyTemplateEngine.fill_workout_details(
+            types, 1, "plan-1", PeriodizationPhase.BASE, 15.0, pace_zones
+        )
+        long_run = next(w for w in workouts if w.workout_type == WorkoutType.LONG_RUN)
+        tempo = next(w for w in workouts if w.workout_type == WorkoutType.TEMPO)
+        assert long_run.target_distance_km is not None
+        assert tempo.target_distance_km is not None
+        assert long_run.target_distance_km >= tempo.target_distance_km
+
+    def test_quality_distance_scales_with_volume(self, pace_zones):
+        """Quality distance should scale with weekly volume."""
+        types_low = [WorkoutType.EASY, WorkoutType.TEMPO, WorkoutType.LONG_RUN]
+        types_high = [WorkoutType.EASY, WorkoutType.TEMPO, WorkoutType.LONG_RUN]
+
+        low_workouts = WeeklyTemplateEngine.fill_workout_details(
+            types_low, 1, "plan-1", PeriodizationPhase.BASE, 15.0, pace_zones
+        )
+        high_workouts = WeeklyTemplateEngine.fill_workout_details(
+            types_high, 1, "plan-1", PeriodizationPhase.BASE, 50.0, pace_zones
+        )
+
+        low_tempo = next(w for w in low_workouts if w.workout_type == WorkoutType.TEMPO)
+        high_tempo = next(
+            w for w in high_workouts if w.workout_type == WorkoutType.TEMPO
+        )
+        assert high_tempo.target_distance_km is not None
+        assert low_tempo.target_distance_km is not None
+        assert high_tempo.target_distance_km > low_tempo.target_distance_km
+
+    def test_quality_distance_has_minimum(self, pace_zones):
+        """Quality distance should not go below 3km even at very low volume."""
+        types = [WorkoutType.EASY, WorkoutType.THRESHOLD, WorkoutType.LONG_RUN]
+        workouts = WeeklyTemplateEngine.fill_workout_details(
+            types, 1, "plan-1", PeriodizationPhase.BUILD, 10.0, pace_zones
+        )
+        threshold = next(w for w in workouts if w.workout_type == WorkoutType.THRESHOLD)
+        assert threshold.target_distance_km is not None
+        assert threshold.target_distance_km >= 3.0

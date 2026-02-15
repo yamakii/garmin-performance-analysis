@@ -18,6 +18,7 @@ class GoalType(StrEnum):
     RACE_HALF = "race_half"
     RACE_FULL = "race_full"
     FITNESS = "fitness"
+    RETURN_TO_RUN = "return_to_run"
 
 
 class PeriodizationPhase(StrEnum):

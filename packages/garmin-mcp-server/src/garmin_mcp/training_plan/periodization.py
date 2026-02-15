@@ -112,6 +112,67 @@ class PeriodizationEngine:
         return phases
 
     @staticmethod
+    def create_return_to_run_phases(
+        total_weeks: int,
+    ) -> list[tuple[PeriodizationPhase, int]]:
+        """Create phase structure for return-to-run plans.
+
+        Conservative approach: RECOVERY first, then BASE. No threshold/intervals.
+
+        Phase distribution:
+        - 4 weeks:  [(RECOVERY, 2), (BASE, 2)]
+        - 8 weeks:  [(RECOVERY, 3), (RECOVERY, 1), (BASE, 3), (RECOVERY, 1)]
+        - 12 weeks: [(RECOVERY, 3), (RECOVERY, 1), (BASE, 3), (RECOVERY, 1),
+                      (BUILD, 3), (RECOVERY, 1)]
+
+        Args:
+            total_weeks: Total number of weeks in the plan
+
+        Returns:
+            List of (phase, weeks) tuples
+        """
+        if total_weeks <= 4:
+            # Short plan: split evenly between RECOVERY and BASE
+            recovery_weeks = total_weeks // 2
+            base_weeks = total_weeks - recovery_weeks
+            return [
+                (PeriodizationPhase.RECOVERY, recovery_weeks),
+                (PeriodizationPhase.BASE, base_weeks),
+            ]
+        elif total_weeks <= 8:
+            # Medium plan: RECOVERY block + recovery week + BASE block + recovery week
+            recovery_block = 3
+            base_block = total_weeks - recovery_block - 2  # 2 recovery weeks
+            return [
+                (PeriodizationPhase.RECOVERY, recovery_block),
+                (PeriodizationPhase.RECOVERY, 1),
+                (PeriodizationPhase.BASE, base_block),
+                (PeriodizationPhase.RECOVERY, 1),
+            ]
+        else:
+            # Long plan: RECOVERY + BASE + BUILD with recovery weeks
+            recovery_block = 3
+            base_block = 3
+            remaining = (
+                total_weeks - recovery_block - base_block - 3
+            )  # 3 recovery weeks
+            build_block = max(1, remaining)
+            # Adjust if total doesn't match
+            allocated = recovery_block + 1 + base_block + 1 + build_block + 1
+            if allocated < total_weeks:
+                build_block += total_weeks - allocated
+            elif allocated > total_weeks:
+                build_block -= allocated - total_weeks
+            return [
+                (PeriodizationPhase.RECOVERY, recovery_block),
+                (PeriodizationPhase.RECOVERY, 1),
+                (PeriodizationPhase.BASE, base_block),
+                (PeriodizationPhase.RECOVERY, 1),
+                (PeriodizationPhase.BUILD, build_block),
+                (PeriodizationPhase.RECOVERY, 1),
+            ]
+
+    @staticmethod
     def weekly_volume_progression(
         start_km: float,
         peak_km: float,

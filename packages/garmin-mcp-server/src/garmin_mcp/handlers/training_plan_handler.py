@@ -19,6 +19,7 @@ class TrainingPlanHandler:
         "generate_training_plan",
         "get_training_plan",
         "upload_workout_to_garmin",
+        "delete_workout_from_garmin",
     }
 
     def __init__(self, db_reader: GarminDBReader) -> None:
@@ -36,6 +37,8 @@ class TrainingPlanHandler:
             return await self._get_training_plan(arguments)
         elif name == "upload_workout_to_garmin":
             return await self._upload_workout_to_garmin(arguments)
+        elif name == "delete_workout_from_garmin":
+            return await self._delete_workout_from_garmin(arguments)
         else:
             raise ValueError(f"Unknown tool: {name}")
 
@@ -138,6 +141,35 @@ class TrainingPlanHandler:
                 result = {"error": "Either workout_id or plan_id is required"}
         except Exception as e:
             logger.error(f"Garmin upload failed: {e}")
+            result = {"error": str(e)}
+
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(result, indent=2, ensure_ascii=False, default=str),
+            )
+        ]
+
+    async def _delete_workout_from_garmin(
+        self, arguments: dict[str, Any]
+    ) -> list[TextContent]:
+        from garmin_mcp.training_plan.garmin_uploader import GarminWorkoutUploader
+
+        try:
+            uploader = GarminWorkoutUploader(db_path=str(self._db_reader.db_path))
+
+            if "workout_id" in arguments:
+                result = uploader.delete_workout(arguments["workout_id"])
+            elif "plan_id" in arguments:
+                week_number = arguments.get("week_number")
+                result = uploader.delete_plan_workouts(
+                    arguments["plan_id"],
+                    week_number=week_number,
+                )
+            else:
+                result = {"error": "Either workout_id or plan_id is required"}
+        except Exception as e:
+            logger.error(f"Garmin delete failed: {e}")
             result = {"error": str(e)}
 
         return [

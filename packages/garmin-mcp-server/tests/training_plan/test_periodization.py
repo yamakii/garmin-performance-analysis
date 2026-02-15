@@ -87,3 +87,52 @@ class TestWeeklyVolumeProgression:
 
     def test_empty_phases_returns_empty(self):
         assert PeriodizationEngine.weekly_volume_progression(20.0, 50.0, []) == []
+
+
+@pytest.mark.unit
+class TestCreateReturnToRunPhases:
+    @pytest.mark.parametrize("total_weeks", [4, 6, 8, 10, 12])
+    def test_phases_sum_to_total_weeks(self, total_weeks):
+        phases = PeriodizationEngine.create_return_to_run_phases(total_weeks)
+        actual = sum(w for _, w in phases)
+        assert actual == total_weeks
+
+    def test_4_weeks_recovery_then_base(self):
+        phases = PeriodizationEngine.create_return_to_run_phases(4)
+        phase_types = [p for p, _ in phases]
+        # First phase should be RECOVERY
+        assert phase_types[0] == PeriodizationPhase.RECOVERY
+        # Should contain BASE
+        assert PeriodizationPhase.BASE in phase_types
+        # Should NOT contain BUILD, PEAK, or TAPER
+        assert PeriodizationPhase.PEAK not in phase_types
+        assert PeriodizationPhase.TAPER not in phase_types
+
+    def test_4_weeks_no_threshold_or_interval_phases(self):
+        """Short return-to-run plan should only have RECOVERY and BASE."""
+        phases = PeriodizationEngine.create_return_to_run_phases(4)
+        phase_types = {p for p, _ in phases}
+        assert phase_types <= {PeriodizationPhase.RECOVERY, PeriodizationPhase.BASE}
+
+    def test_8_weeks_starts_with_recovery(self):
+        phases = PeriodizationEngine.create_return_to_run_phases(8)
+        assert phases[0][0] == PeriodizationPhase.RECOVERY
+
+    def test_8_weeks_has_base_phase(self):
+        phases = PeriodizationEngine.create_return_to_run_phases(8)
+        phase_types = [p for p, _ in phases]
+        assert PeriodizationPhase.BASE in phase_types
+
+    def test_12_weeks_has_build_phase(self):
+        """Long return-to-run allows BUILD but no PEAK/TAPER."""
+        phases = PeriodizationEngine.create_return_to_run_phases(12)
+        phase_types = [p for p, _ in phases]
+        assert PeriodizationPhase.BUILD in phase_types
+        assert PeriodizationPhase.PEAK not in phase_types
+        assert PeriodizationPhase.TAPER not in phase_types
+
+    def test_all_weeks_positive(self):
+        for total in [4, 6, 8, 10, 12]:
+            phases = PeriodizationEngine.create_return_to_run_phases(total)
+            for _, weeks in phases:
+                assert weeks >= 1

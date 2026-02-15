@@ -85,7 +85,7 @@ class WeeklyTemplateEngine:
 
         Volume distribution:
         - Long run: 25-30% of weekly volume
-        - Quality: time-based (tempo ~22min, threshold ~20min, intervals defined)
+        - Quality: 20% of weekly volume (min 3km), 15% for repetition (min 2km)
         - Easy runs: Split remaining volume equally
         """
         runs_per_week = len(workout_types)
@@ -94,12 +94,13 @@ class WeeklyTemplateEngine:
         long_run_pct = 0.25 if runs_per_week >= 5 else 0.30
         long_run_km = round(weekly_volume_km * long_run_pct, 1)
 
-        # Quality workout distances (time-based estimates)
+        # Quality workout distances: volume-proportional with minimums
+        # Prevents long_run < quality inversion at low volumes
         quality_km = {
-            WorkoutType.TEMPO: 5.0,  # ~22min at tempo pace
-            WorkoutType.THRESHOLD: 5.0,  # ~20min at threshold pace
-            WorkoutType.INTERVAL: 5.0,  # 5x1km with recovery
-            WorkoutType.REPETITION: 3.0,  # 8x400m with recovery
+            WorkoutType.TEMPO: max(3.0, round(weekly_volume_km * 0.20, 1)),
+            WorkoutType.THRESHOLD: max(3.0, round(weekly_volume_km * 0.20, 1)),
+            WorkoutType.INTERVAL: max(3.0, round(weekly_volume_km * 0.20, 1)),
+            WorkoutType.REPETITION: max(2.0, round(weekly_volume_km * 0.15, 1)),
         }
 
         # Calculate easy run distance

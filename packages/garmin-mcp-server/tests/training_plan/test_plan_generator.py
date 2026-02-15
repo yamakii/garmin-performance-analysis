@@ -7,6 +7,7 @@ from garmin_mcp.training_plan.models import (
     PaceZones,
     PeriodizationPhase,
     TrainingPlan,
+    WorkoutType,
 )
 
 
@@ -209,6 +210,72 @@ class TestPlanGenerator:
                 f"Week {w.week_number}, day {w.day_of_week}: "
                 f"expected {expected}, got {w.workout_date}"
             )
+
+    def test_generate_return_to_run_plan(self, mocker, mock_fitness_summary):
+        """Return-to-run plan should use conservative phases."""
+        mock_assessor = mocker.MagicMock()
+        mock_assessor.assess.return_value = mock_fitness_summary
+
+        mocker.patch(
+            "garmin_mcp.training_plan.plan_generator.FitnessAssessor",
+            return_value=mock_assessor,
+        )
+        mocker.patch(
+            "garmin_mcp.database.inserters.training_plans.insert_training_plan",
+        )
+
+        from garmin_mcp.training_plan.plan_generator import TrainingPlanGenerator
+
+        generator = TrainingPlanGenerator(db_path=":memory:")
+        plan = generator.generate(
+            goal_type="return_to_run",
+            total_weeks=8,
+            runs_per_week=3,
+        )
+
+        assert plan.goal_type == GoalType.RETURN_TO_RUN
+        assert plan.total_weeks == 8
+        assert len(plan.workouts) > 0
+
+        # First phase should be RECOVERY
+        assert plan.phases[0][0] == PeriodizationPhase.RECOVERY
+
+        # No threshold or interval workouts in first half
+        first_half_workouts = [w for w in plan.workouts if w.week_number <= 4]
+        for w in first_half_workouts:
+            assert w.workout_type not in (
+                WorkoutType.THRESHOLD,
+                WorkoutType.INTERVAL,
+                WorkoutType.REPETITION,
+            ), f"Week {w.week_number} has {w.workout_type} in RECOVERY phase"
+
+    def test_return_to_run_conservative_peak_volume(self, mocker, mock_fitness_summary):
+        """Return-to-run peak volume should be conservative (1.3x start)."""
+        mock_assessor = mocker.MagicMock()
+        mock_assessor.assess.return_value = mock_fitness_summary
+
+        mocker.patch(
+            "garmin_mcp.training_plan.plan_generator.FitnessAssessor",
+            return_value=mock_assessor,
+        )
+        mocker.patch(
+            "garmin_mcp.database.inserters.training_plans.insert_training_plan",
+        )
+
+        from garmin_mcp.training_plan.plan_generator import TrainingPlanGenerator
+
+        generator = TrainingPlanGenerator(db_path=":memory:")
+        plan = generator.generate(
+            goal_type="return_to_run",
+            total_weeks=8,
+            runs_per_week=3,
+        )
+
+        # Peak should be ~1.3x start, not 1.5x
+        ratio = plan.weekly_volume_peak_km / plan.weekly_volume_start_km
+        assert (
+            ratio <= 1.35
+        ), f"Peak/start ratio {ratio:.2f} is too aggressive for return_to_run"
 
     def test_workout_dates_within_plan_range(self, mocker, mock_fitness_summary):
         """All workout dates should fall within the plan's date range."""

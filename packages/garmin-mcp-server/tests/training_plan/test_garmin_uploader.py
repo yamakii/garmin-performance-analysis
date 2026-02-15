@@ -258,3 +258,96 @@ class TestGarminWorkoutUploader:
 
         assert result["success"] is True
         assert result["scheduled"] is False
+
+    def test_delete_workout_success(self, mocker):
+        """Should delete workout from Garmin and reset DB fields."""
+        mock_conn = mocker.MagicMock()
+        mock_ctx = mocker.MagicMock()
+        mock_ctx.__enter__ = mocker.Mock(return_value=mock_conn)
+        mock_ctx.__exit__ = mocker.Mock(return_value=False)
+
+        mock_conn.execute.return_value.fetchone.return_value = ("w1", 99999)
+
+        mock_client = mocker.MagicMock()
+        mock_client.connectapi.return_value = None
+
+        mock_duckdb_conn = mocker.MagicMock()
+        mocker.patch("duckdb.connect", return_value=mock_duckdb_conn)
+
+        uploader = GarminWorkoutUploader.__new__(GarminWorkoutUploader)
+        uploader._db_path = ":memory:"
+        mock_reader: Any = mocker.MagicMock()
+        mock_reader._get_connection.return_value = mock_ctx
+        uploader._reader = mock_reader
+
+        mocker.patch.object(uploader, "_get_garmin_client", return_value=mock_client)
+
+        result = uploader.delete_workout("w1")
+
+        assert result["success"] is True
+        assert result["deleted"] is True
+        assert result["garmin_workout_id"] == 99999
+        mock_client.connectapi.assert_called_once_with(
+            "/workout-service/workout/99999", method="DELETE"
+        )
+        mock_duckdb_conn.execute.assert_called_once()
+        mock_duckdb_conn.close.assert_called_once()
+
+    def test_delete_workout_not_uploaded(self, mocker):
+        """Should skip deletion when garmin_workout_id is NULL."""
+        mock_conn = mocker.MagicMock()
+        mock_ctx = mocker.MagicMock()
+        mock_ctx.__enter__ = mocker.Mock(return_value=mock_conn)
+        mock_ctx.__exit__ = mocker.Mock(return_value=False)
+
+        mock_conn.execute.return_value.fetchone.return_value = ("w1", None)
+
+        uploader = GarminWorkoutUploader.__new__(GarminWorkoutUploader)
+        uploader._db_path = ":memory:"
+        mock_reader: Any = mocker.MagicMock()
+        mock_reader._get_connection.return_value = mock_ctx
+        uploader._reader = mock_reader
+
+        result = uploader.delete_workout("w1")
+
+        assert result["skipped"] is True
+        assert result["reason"] == "Not uploaded to Garmin"
+
+    def test_delete_plan_workouts(self, mocker):
+        """Should delete all uploaded workouts for a plan."""
+        uploader = GarminWorkoutUploader.__new__(GarminWorkoutUploader)
+        uploader._db_path = ":memory:"
+        mock_reader: Any = mocker.MagicMock()
+        mock_reader.get_training_plan.return_value = {
+            "workouts": [
+                {"workout_id": "w1", "garmin_workout_id": 11111},
+                {"workout_id": "w2", "garmin_workout_id": None},
+                {"workout_id": "w3", "garmin_workout_id": 33333},
+            ]
+        }
+        uploader._reader = mock_reader
+
+        mocker.patch.object(
+            uploader,
+            "delete_workout",
+            side_effect=[
+                {
+                    "success": True,
+                    "workout_id": "w1",
+                    "garmin_workout_id": 11111,
+                    "deleted": True,
+                },
+                {
+                    "success": True,
+                    "workout_id": "w3",
+                    "garmin_workout_id": 33333,
+                    "deleted": True,
+                },
+            ],
+        )
+
+        result = uploader.delete_plan_workouts("plan-1")
+
+        assert result["deleted"] == 2
+        assert result["skipped"] == 1
+        assert result["total"] == 3

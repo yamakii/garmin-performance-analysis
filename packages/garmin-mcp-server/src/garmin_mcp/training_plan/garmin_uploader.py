@@ -196,3 +196,103 @@ class GarminWorkoutUploader:
             "failed": sum(1 for r in results if r.get("error")),
             "results": results,
         }
+
+    def delete_workout(self, workout_id: str) -> dict[str, Any]:
+        """Delete a single workout from Garmin Connect.
+
+        Args:
+            workout_id: Workout ID from planned_workouts table
+
+        Returns:
+            Dict with deletion status
+        """
+        with self._reader._get_connection() as conn:
+            row = conn.execute(
+                "SELECT workout_id, garmin_workout_id FROM planned_workouts WHERE workout_id = ?",
+                [workout_id],
+            ).fetchone()
+
+            if row is None:
+                return {"error": f"Workout {workout_id} not found"}
+
+            garmin_workout_id = row[1]
+
+            if garmin_workout_id is None:
+                return {
+                    "workout_id": workout_id,
+                    "skipped": True,
+                    "reason": "Not uploaded to Garmin",
+                }
+
+        try:
+            client = self._get_garmin_client()
+            client.connectapi(
+                f"/workout-service/workout/{garmin_workout_id}", method="DELETE"
+            )
+
+            # Reset DB fields
+            import duckdb
+
+            db_path = self._db_path or str(self._reader.db_path)
+            update_conn = duckdb.connect(db_path)
+            update_conn.execute(
+                "UPDATE planned_workouts SET garmin_workout_id = NULL, uploaded_at = NULL WHERE workout_id = ?",
+                [workout_id],
+            )
+            update_conn.close()
+
+            return {
+                "success": True,
+                "workout_id": workout_id,
+                "garmin_workout_id": garmin_workout_id,
+                "deleted": True,
+            }
+        except Exception as e:
+            logger.error(f"Delete failed for {workout_id}: {e}")
+            return {"error": str(e), "workout_id": workout_id}
+
+    def delete_plan_workouts(
+        self,
+        plan_id: str,
+        week_number: int | None = None,
+    ) -> dict[str, Any]:
+        """Delete all uploaded workouts for a plan (or specific week) from Garmin Connect.
+
+        Args:
+            plan_id: Plan ID
+            week_number: Optional specific week to delete
+
+        Returns:
+            Dict with results for each workout
+        """
+        plan_data = self._reader.get_training_plan(plan_id, week_number=week_number)
+
+        if "error" in plan_data:
+            return plan_data
+
+        workouts = plan_data.get("workouts", [])
+        results = []
+
+        for w in workouts:
+            if not w.get("garmin_workout_id"):
+                results.append(
+                    {
+                        "workout_id": w["workout_id"],
+                        "skipped": True,
+                        "reason": "Not uploaded to Garmin",
+                    }
+                )
+                continue
+
+            result = self.delete_workout(w["workout_id"])
+            results.append(result)
+
+        return {
+            "plan_id": plan_id,
+            "week_number": week_number,
+            "total": len(workouts),
+            "deleted": sum(1 for r in results if r.get("success")),
+            "skipped": sum(1 for r in results if r.get("skipped")),
+            "failed": sum(1 for r in results if r.get("error")),
+            "results": results,
+        }

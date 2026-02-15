@@ -53,7 +53,10 @@ class TrainingPlanGenerator:
         pace_zones = fitness.pace_zones
 
         # If target time given, recalculate VDOT from target
-        if target_time_seconds and goal != GoalType.FITNESS:
+        if target_time_seconds and goal not in (
+            GoalType.FITNESS,
+            GoalType.RETURN_TO_RUN,
+        ):
             distances = {
                 GoalType.RACE_5K: 5.0,
                 GoalType.RACE_10K: 10.0,
@@ -69,19 +72,24 @@ class TrainingPlanGenerator:
                 pace_zones = VDOTCalculator.pace_zones(vdot)
 
         # 3. Create phases
-        if goal == GoalType.FITNESS:
+        if goal == GoalType.RETURN_TO_RUN:
+            phases = PeriodizationEngine.create_return_to_run_phases(total_weeks)
+        elif goal == GoalType.FITNESS:
             phases = PeriodizationEngine.create_fitness_phases(total_weeks)
         else:
             phases = PeriodizationEngine.create_race_phases(total_weeks, goal)
 
         # 4. Volume progression
         start_km = fitness.weekly_volume_km
-        peak_km = start_km * 1.5  # 50% increase as target
+        # Conservative 30% increase for return_to_run, 50% for others
+        peak_km = start_km * 1.3 if goal == GoalType.RETURN_TO_RUN else start_km * 1.5
         # Ensure minimum values
         if start_km < 15:
             start_km = 15.0
         if peak_km < start_km * 1.3:
-            peak_km = start_km * 1.5
+            peak_km = (
+                start_km * 1.3 if goal == GoalType.RETURN_TO_RUN else start_km * 1.5
+            )
 
         weekly_volumes = PeriodizationEngine.weekly_volume_progression(
             start_km, peak_km, phases
