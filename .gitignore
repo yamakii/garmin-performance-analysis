@@ -82,6 +82,3 @@ build/
 
 # Serena MCP
 .serena/
-
-# UV lock file
-uv.lock
