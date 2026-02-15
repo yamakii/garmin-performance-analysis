@@ -17,8 +17,7 @@ def test_db(tmp_path):
     conn = duckdb.connect(str(db_path))
 
     # Create splits table with sample data
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE splits (
             activity_id INTEGER,
             date DATE,
@@ -28,12 +27,10 @@ def test_db(tmp_path):
             cadence INTEGER,
             distance DOUBLE
         )
-    """
-    )
+    """)
 
     # Insert sample data
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO splits VALUES
         (1, '2025-01-15', 1, 270.5, 145, 180, 1.0),
         (1, '2025-01-15', 2, 265.0, 150, 182, 1.0),
@@ -41,12 +38,10 @@ def test_db(tmp_path):
         (2, '2025-02-20', 1, 280.0, 140, 175, 1.0),
         (2, '2025-02-20', 2, 285.0, 145, 176, 1.0),
         (3, '2025-03-10', 1, NULL, 150, 180, 1.0)
-    """
-    )
+    """)
 
     # Create time_series_metrics table with many columns
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE time_series_metrics (
             activity_id INTEGER,
             date DATE,
@@ -63,17 +58,14 @@ def test_db(tmp_path):
             vertical_ratio DOUBLE,
             stride_length DOUBLE
         )
-    """
-    )
+    """)
 
     # Insert sample data
     for i in range(100):
-        conn.execute(
-            f"""
+        conn.execute(f"""
             INSERT INTO time_series_metrics VALUES
             (1, '2025-01-15', {i}, 270.0, 145, 180, {i * 0.01}, 100.0, 3.7, 250, 8.5, 245, 7.5, 1.2)
-        """
-        )
+        """)
 
     conn.close()
     return db_path

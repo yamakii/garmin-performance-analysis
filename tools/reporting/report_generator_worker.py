@@ -1249,7 +1249,9 @@ class ReportGeneratorWorker:
                                 "trend": (
                                     "↗️ 効率向上"
                                     if power_diff < 0
-                                    else "➡️ 安定" if abs(power_diff) < 10 else "↗️ 改善"
+                                    else (
+                                        "➡️ 安定" if abs(power_diff) < 10 else "↗️ 改善"
+                                    )
                                 ),
                             }
                         )
@@ -1565,9 +1567,7 @@ class ReportGeneratorWorker:
                     "vo2max": "VO2 Maxペース",
                     "anaerobic_capacity": "無酸素ペース",
                 }
-                training_type_label = training_type_map.get(
-                    training_type_raw or "", None
-                )
+                training_type_label = training_type_map.get(training_type_raw or "")
 
                 if training_type_label:
                     pace_desc = training_type_label

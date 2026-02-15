@@ -172,16 +172,14 @@ class TestGarminDBReaderExport:
             conn = duckdb.connect(str(db_path))
 
             # Create test table
-            conn.execute(
-                """
+            conn.execute("""
                 CREATE TABLE test_splits (
                     split_index INTEGER,
                     pace_seconds_per_km FLOAT,
                     heart_rate INTEGER,
                     distance FLOAT
                 )
-            """
-            )
+            """)
 
             # Insert test data (100 rows)
             for i in range(100):
@@ -323,15 +321,13 @@ class TestExportMCPIntegration:
             conn = duckdb.connect(str(db_path))
 
             # Create test table
-            conn.execute(
-                """
+            conn.execute("""
                 CREATE TABLE activities (
                     activity_id INTEGER,
                     date TEXT,
                     distance_km FLOAT
                 )
-            """
-            )
+            """)
 
             # Insert test data
             for i in range(50):

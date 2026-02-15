@@ -27,8 +27,7 @@ def test_db(tmp_path_factory):
     conn = duckdb.connect(str(db_path))
 
     # Create splits table with varied data
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE splits (
             activity_id INTEGER,
             date DATE,
@@ -38,8 +37,7 @@ def test_db(tmp_path_factory):
             cadence INTEGER,
             distance DOUBLE
         )
-    """
-    )
+    """)
 
     # Insert 500 rows of varied data
     for i in range(500):
@@ -48,12 +46,10 @@ def test_db(tmp_path_factory):
         pace = 240 + (i % 60)
         heart_rate = 140 + (i % 40)
         cadence = 170 + (i % 20)
-        conn.execute(
-            f"""
+        conn.execute(f"""
             INSERT INTO splits VALUES
             ({activity_id}, '{date}', {i+1}, {pace}, {heart_rate}, {cadence}, 1.0)
-        """
-        )
+        """)
 
     conn.close()
     yield db_path

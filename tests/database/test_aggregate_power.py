@@ -22,18 +22,15 @@ def tmp_db_path(tmp_path: Path) -> str:
     conn = duckdb.connect(db_path)
 
     # Create activities table (referenced by form_evaluations FK)
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE activities (
             activity_id BIGINT PRIMARY KEY,
             date DATE NOT NULL
         )
-        """
-    )
+        """)
 
     # Create form_evaluations table with power efficiency columns
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE form_evaluations (
             eval_id INTEGER PRIMARY KEY,
             activity_id BIGINT UNIQUE,
@@ -89,8 +86,7 @@ def tmp_db_path(tmp_path: Path) -> str:
             evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
         )
-        """
-    )
+        """)
 
     conn.close()
 
@@ -104,16 +100,13 @@ def test_get_form_evaluations_includes_power_data(tmp_db_path: str):
     conn = duckdb.connect(tmp_db_path)
 
     # Insert activity
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO activities (activity_id, date)
         VALUES (20594901208, '2025-10-05')
-        """
-    )
+        """)
 
     # Insert form_evaluations with power data
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO form_evaluations (
             eval_id, activity_id,
             gct_ms_expected, gct_ms_actual, gct_delta_pct,
@@ -146,8 +139,7 @@ def test_get_form_evaluations_includes_power_data(tmp_db_path: str):
             280.0, 4.3, 3.5, 3.6,
             -0.027, '★★★★☆', TRUE
         )
-        """
-    )
+        """)
 
     conn.close()
 
@@ -180,16 +172,13 @@ def test_get_form_evaluations_no_power_data(tmp_db_path: str):
     conn = duckdb.connect(tmp_db_path)
 
     # Insert activity
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO activities (activity_id, date)
         VALUES (12345678901, '2021-06-15')
-        """
-    )
+        """)
 
     # Insert form_evaluations without power data (NULLs)
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO form_evaluations (
             eval_id, activity_id,
             gct_ms_expected, gct_ms_actual, gct_delta_pct,
@@ -222,8 +211,7 @@ def test_get_form_evaluations_no_power_data(tmp_db_path: str):
             NULL, NULL, NULL, NULL,
             NULL, NULL, NULL
         )
-        """
-    )
+        """)
 
     conn.close()
 

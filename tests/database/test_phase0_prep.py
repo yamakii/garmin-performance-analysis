@@ -24,45 +24,37 @@ def setup_test_db(test_db_path):
     conn = duckdb.connect(test_db_path)
 
     # Create activities table (without base_weight_kg initially)
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE activities (
             activity_id BIGINT PRIMARY KEY,
             activity_date DATE,
             activity_name VARCHAR
         )
-    """
-    )
+    """)
 
     # Create body_composition table
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE body_composition (
             measurement_id INTEGER PRIMARY KEY,
             date DATE,
             weight_kg DOUBLE
         )
-    """
-    )
+    """)
 
     # Insert test data
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO activities VALUES
         (1, '2025-10-01', 'Morning Run'),
         (2, '2025-10-02', 'Evening Run'),
         (3, '2025-10-03', 'Recovery Run')
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO body_composition VALUES
         (1, '2025-10-01', 65.5),
         (2, '2025-10-02', 65.3),
         (3, '2025-10-03', 65.4)
-    """
-    )
+    """)
 
     conn.close()
     return test_db_path
@@ -137,8 +129,7 @@ class TestPhase0BodyMassPopulation:
         conn.execute("ALTER TABLE activities ADD COLUMN base_weight_kg DOUBLE")
 
         # Populate using LEFT JOIN to handle missing dates
-        conn.execute(
-            """
+        conn.execute("""
             UPDATE activities
             SET base_weight_kg = (
                 SELECT weight_kg
@@ -147,17 +138,14 @@ class TestPhase0BodyMassPopulation:
                 ORDER BY body_composition.date DESC
                 LIMIT 1
             )
-        """
-        )
+        """)
 
         # Test: All activities should have base_weight_kg
-        result = conn.execute(
-            """
+        result = conn.execute("""
             SELECT COUNT(*)
             FROM activities
             WHERE base_weight_kg IS NULL
-        """
-        ).fetchone()
+        """).fetchone()
 
         conn.close()
 
@@ -170,8 +158,7 @@ class TestPhase0BodyMassPopulation:
 
         # Add column and populate
         conn.execute("ALTER TABLE activities ADD COLUMN base_weight_kg DOUBLE")
-        conn.execute(
-            """
+        conn.execute("""
             UPDATE activities
             SET base_weight_kg = (
                 SELECT weight_kg
@@ -179,17 +166,14 @@ class TestPhase0BodyMassPopulation:
                 WHERE body_composition.date = activities.activity_date
                 LIMIT 1
             )
-        """
-        )
+        """)
 
         # Test: Values should be reasonable
-        result = conn.execute(
-            """
+        result = conn.execute("""
             SELECT activity_id, base_weight_kg
             FROM activities
             WHERE base_weight_kg < 40 OR base_weight_kg > 120
-        """
-        ).fetchall()
+        """).fetchall()
 
         conn.close()
 
@@ -201,8 +185,7 @@ class TestPhase0BodyMassPopulation:
 
         # Add column and populate
         conn.execute("ALTER TABLE activities ADD COLUMN base_weight_kg DOUBLE")
-        conn.execute(
-            """
+        conn.execute("""
             UPDATE activities
             SET base_weight_kg = (
                 SELECT weight_kg
@@ -210,12 +193,10 @@ class TestPhase0BodyMassPopulation:
                 WHERE body_composition.date = activities.activity_date
                 LIMIT 1
             )
-        """
-        )
+        """)
 
         # Test: Values should match
-        result = conn.execute(
-            """
+        result = conn.execute("""
             SELECT
                 a.activity_id,
                 a.base_weight_kg,
@@ -223,8 +204,7 @@ class TestPhase0BodyMassPopulation:
             FROM activities a
             LEFT JOIN body_composition bc ON a.activity_date = bc.date
             WHERE a.base_weight_kg != bc.weight_kg
-        """
-        ).fetchall()
+        """).fetchall()
 
         conn.close()
 

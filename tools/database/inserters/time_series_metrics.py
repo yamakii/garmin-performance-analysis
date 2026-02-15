@@ -123,8 +123,7 @@ def insert_time_series_metrics(
             should_close_conn = True
 
         # Ensure time_series_metrics table exists with seq_no
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS time_series_metrics (
                 activity_id BIGINT NOT NULL,
                 seq_no INTEGER NOT NULL,
@@ -154,8 +153,7 @@ def insert_time_series_metrics(
                 performance_condition DOUBLE,
                 PRIMARY KEY (activity_id, seq_no)
             )
-            """
-        )
+            """)
 
         # Create indexes
         conn.execute(

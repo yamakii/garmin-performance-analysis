@@ -120,8 +120,7 @@ class TestPerformanceTrendsInserter:
         conn = duckdb.connect(str(db_path))
 
         # Check 4-phase data
-        data = conn.execute(
-            """
+        data = conn.execute("""
             SELECT
                 warmup_splits,
                 warmup_avg_pace_seconds_per_km,
@@ -139,8 +138,7 @@ class TestPerformanceTrendsInserter:
                 hr_drift_percentage
             FROM performance_trends
             WHERE activity_id = 20636804823
-            """
-        ).fetchone()
+            """).fetchone()
 
         assert data is not None
         assert data[0] == "1"  # warmup splits
@@ -265,8 +263,7 @@ class TestPerformanceTrendsInserter:
         conn = duckdb.connect(str(db_path))
 
         # Check 4-phase data
-        data = conn.execute(
-            """
+        data = conn.execute("""
             SELECT
                 warmup_splits,
                 warmup_avg_pace_seconds_per_km,
@@ -284,8 +281,7 @@ class TestPerformanceTrendsInserter:
                 hr_drift_percentage
             FROM performance_trends
             WHERE activity_id = 20636804823
-            """
-        ).fetchone()
+            """).fetchone()
 
         assert data is not None
         assert data[0] == "1"  # warmup splits
@@ -333,13 +329,11 @@ class TestPerformanceTrendsInserter:
         import duckdb
 
         conn = duckdb.connect(str(db_path))
-        data = conn.execute(
-            """
+        data = conn.execute("""
             SELECT warmup_avg_cadence, warmup_avg_power
             FROM performance_trends
             WHERE activity_id = 20636804823
-            """
-        ).fetchone()
+            """).fetchone()
 
         # Sample has warmup split with cadence=183.6, power=268
         assert data[0] == 183.6  # warmup_avg_cadence
@@ -391,13 +385,11 @@ class TestPerformanceTrendsInserter:
         import duckdb
 
         conn = duckdb.connect(str(db_path))
-        data = conn.execute(
-            """
+        data = conn.execute("""
             SELECT run_avg_cadence, run_avg_power
             FROM performance_trends
             WHERE activity_id = 20636804823
-            """
-        ).fetchone()
+            """).fetchone()
 
         # Sample has run splits with cadence=187.0 and 186.2, power=262 and 267
         expected_cadence = (187.0 + 186.2) / 2
@@ -446,13 +438,11 @@ class TestPerformanceTrendsInserter:
         import duckdb
 
         conn = duckdb.connect(str(db_path))
-        data = conn.execute(
-            """
+        data = conn.execute("""
             SELECT recovery_avg_cadence, recovery_avg_power
             FROM performance_trends
             WHERE activity_id = 20636804823
-            """
-        ).fetchone()
+            """).fetchone()
 
         # Sample has recovery split with cadence=170.0, power=200
         assert data[0] == 170.0  # recovery_avg_cadence
@@ -504,13 +494,11 @@ class TestPerformanceTrendsInserter:
         import duckdb
 
         conn = duckdb.connect(str(db_path))
-        data = conn.execute(
-            """
+        data = conn.execute("""
             SELECT cooldown_avg_cadence, cooldown_avg_power
             FROM performance_trends
             WHERE activity_id = 20636804823
-            """
-        ).fetchone()
+            """).fetchone()
 
         # Sample has cooldown split with cadence=175.0, power=220
         assert data[0] == 175.0  # cooldown_avg_cadence

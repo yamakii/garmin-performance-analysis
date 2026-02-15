@@ -23,8 +23,7 @@ def production_like_db(tmp_path):
     conn = duckdb.connect(str(db_path))
 
     # Create activities table (parent)
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE activities (
             activity_id BIGINT PRIMARY KEY,
             activity_date DATE NOT NULL,
@@ -46,12 +45,10 @@ def production_like_db(tmp_path):
             avg_speed_ms DOUBLE,
             max_heart_rate INTEGER
         )
-    """
-    )
+    """)
 
     # Create splits table with FK
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE splits (
             activity_id BIGINT,
             split_index INTEGER,
@@ -84,8 +81,7 @@ def production_like_db(tmp_path):
             PRIMARY KEY (activity_id, split_index),
             FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
         )
-    """
-    )
+    """)
 
     # Create other tables with FK constraints (simplified for testing)
     for table in [
@@ -99,8 +95,7 @@ def production_like_db(tmp_path):
         "section_analyses",
     ]:
         if table == "heart_rate_zones":
-            conn.execute(
-                f"""
+            conn.execute(f"""
                 CREATE TABLE {table} (
                     activity_id BIGINT,
                     zone_number INTEGER,
@@ -108,29 +103,24 @@ def production_like_db(tmp_path):
                     PRIMARY KEY (activity_id, zone_number),
                     FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
                 )
-            """
-            )
+            """)
         elif table in ["form_evaluations", "section_analyses"]:
-            conn.execute(
-                f"""
+            conn.execute(f"""
                 CREATE TABLE {table} (
                     {"eval_id" if table == "form_evaluations" else "analysis_id"} INTEGER PRIMARY KEY,
                     activity_id BIGINT UNIQUE,
                     data VARCHAR,
                     FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
                 )
-            """
-            )
+            """)
         else:
-            conn.execute(
-                f"""
+            conn.execute(f"""
                 CREATE TABLE {table} (
                     activity_id BIGINT PRIMARY KEY,
                     data VARCHAR,
                     FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
                 )
-            """
-            )
+            """)
 
     # Insert sample data
     conn.execute(
@@ -234,15 +224,13 @@ class TestEndToEndMigration:
         conn = duckdb.connect(str(production_like_db))
 
         # Test LEFT JOIN (should work with or without FK)
-        result = conn.execute(
-            """
+        result = conn.execute("""
             SELECT a.activity_id, a.activity_name, COUNT(s.split_index) as split_count
             FROM activities a
             LEFT JOIN splits s ON a.activity_id = s.activity_id
             GROUP BY a.activity_id, a.activity_name
             ORDER BY a.activity_id
-        """
-        ).fetchall()
+        """).fetchall()
 
         assert len(result) == 2
         assert result[0] == (12345, "Morning Run", 2)
@@ -376,14 +364,12 @@ class TestRegenerateCompatibility:
         conn = duckdb.connect(str(production_like_db))
 
         # Check for orphaned splits (splits without matching activity)
-        orphaned_splits = conn.execute(
-            """
+        orphaned_splits = conn.execute("""
             SELECT s.activity_id
             FROM splits s
             LEFT JOIN activities a ON s.activity_id = a.activity_id
             WHERE a.activity_id IS NULL
-        """
-        ).fetchall()
+        """).fetchall()
 
         assert len(orphaned_splits) == 0
 

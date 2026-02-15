@@ -110,14 +110,12 @@ class TestGarminIngestWorker:
         # Setup: Create temporary DuckDB with activity
         db_path = tmp_path / "test.duckdb"
         conn = duckdb.connect(str(db_path))
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS activities (
                 activity_id BIGINT PRIMARY KEY,
                 activity_date DATE NOT NULL
             )
-        """
-        )
+        """)
         conn.execute(
             "INSERT INTO activities (activity_id, activity_date) VALUES (12345, '2025-09-22')"
         )
@@ -138,14 +136,12 @@ class TestGarminIngestWorker:
         # Setup: Create empty DuckDB
         db_path = tmp_path / "test.duckdb"
         conn = duckdb.connect(str(db_path))
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS activities (
                 activity_id BIGINT PRIMARY KEY,
                 activity_date DATE NOT NULL
             )
-        """
-        )
+        """)
         conn.close()
 
         # Execute

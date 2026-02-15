@@ -277,8 +277,7 @@ def insert_hr_efficiency(
         conn = duckdb.connect(str(db_path))
 
         # Ensure hr_efficiency table exists
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS hr_efficiency (
                 activity_id BIGINT PRIMARY KEY,
                 primary_zone VARCHAR,
@@ -295,8 +294,7 @@ def insert_hr_efficiency(
                 zone4_percentage DOUBLE,
                 zone5_percentage DOUBLE
             )
-            """
-        )
+            """)
 
         # Delete existing record for this activity (for re-insertion)
         conn.execute("DELETE FROM hr_efficiency WHERE activity_id = ?", [activity_id])

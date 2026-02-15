@@ -56,42 +56,32 @@ class TestProcessActivityIntegration:
             assert "performance_data" not in table_names
 
             # Test that we can insert into activities table
-            conn.execute(
-                """
+            conn.execute("""
                 INSERT INTO activities (activity_id, activity_date, activity_name)
                 VALUES (123456, '2025-01-15', 'Test Run')
-                """
-            )
+                """)
 
             # Test that we can insert into normalized tables with FK
-            conn.execute(
-                """
+            conn.execute("""
                 INSERT INTO splits (activity_id, split_index, distance)
                 VALUES (123456, 1, 1.0)
-                """
-            )
+                """)
 
-            conn.execute(
-                """
+            conn.execute("""
                 INSERT INTO form_efficiency (activity_id, gct_average)
                 VALUES (123456, 240.0)
-                """
-            )
+                """)
 
-            conn.execute(
-                """
+            conn.execute("""
                 INSERT INTO heart_rate_zones (activity_id, zone_number, zone_low_boundary)
                 VALUES (123456, 1, 100)
-                """
-            )
+                """)
 
             # Test NO FK constraint (2025-11-01 change) - orphaned records should succeed
-            conn.execute(
-                """
+            conn.execute("""
                 INSERT INTO splits (activity_id, split_index)
                 VALUES (999999, 1)
-                """
-            )
+                """)
 
             # Verify orphaned record was inserted (no FK constraint)
             orphaned_count = conn.execute(

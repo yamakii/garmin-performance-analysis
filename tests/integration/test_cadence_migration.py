@@ -293,8 +293,7 @@ class TestCadenceMigration:
             assert "cadence_total" in column_names, "Missing cadence_total"
 
             # Verify data quality
-            stats = conn.execute(  # type: ignore[index]
-                """
+            stats = conn.execute("""
                 SELECT
                     AVG(cadence_single_foot) as avg_single,
                     AVG(cadence_total) as avg_total,
@@ -303,8 +302,7 @@ class TestCadenceMigration:
                 WHERE activity_id = 20721683500
                   AND cadence_single_foot IS NOT NULL
                   AND cadence_single_foot > 0
-            """
-            ).fetchone()
+            """).fetchone()  # type: ignore[index]
 
             conn.close()
 

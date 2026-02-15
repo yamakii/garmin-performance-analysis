@@ -38,19 +38,16 @@ def populated_db(test_db_path):
     conn = duckdb.connect(str(test_db_path))
 
     # Create activities table (parent)
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE activities (
             activity_id BIGINT PRIMARY KEY,
             activity_date DATE NOT NULL,
             activity_name VARCHAR
         )
-    """
-    )
+    """)
 
     # Create splits table with FK constraint
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE splits (
             activity_id BIGINT,
             split_index INTEGER,
@@ -59,8 +56,7 @@ def populated_db(test_db_path):
             PRIMARY KEY (activity_id, split_index),
             FOREIGN KEY (activity_id) REFERENCES activities(activity_id)
         )
-    """
-    )
+    """)
 
     # Insert sample data
     conn.execute("INSERT INTO activities VALUES (12345, '2025-10-15', 'Morning Run')")
@@ -147,15 +143,13 @@ class TestCreateNewTables:
         conn = duckdb.connect(str(test_db_path))
 
         # Create activities table (parent - needed for FK check)
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE activities (
                 activity_id BIGINT PRIMARY KEY,
                 activity_date DATE NOT NULL,
                 activity_name VARCHAR
             )
-        """
-        )
+        """)
 
         # Create new splits table without FK
         _create_new_tables(conn, ["splits"])
@@ -168,12 +162,10 @@ class TestCreateNewTables:
 
         # Verify NO foreign key constraints by inserting orphaned record
         # If FK exists, this would fail; if no FK, it succeeds
-        conn.execute(
-            """
+        conn.execute("""
             INSERT INTO splits (activity_id, split_index, distance, pace_seconds_per_km)
             VALUES (99999, 1, 1.0, 300.0)
-        """
-        )
+        """)
         count = conn.execute("SELECT COUNT(*) FROM splits").fetchone()[0]
         assert count == 1  # Orphaned record inserted successfully (no FK constraint)
 
@@ -229,8 +221,7 @@ class TestVerifyDataIntegrity:
         conn = duckdb.connect(str(test_db_path))
 
         # Setup: Create tables with mismatched counts
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE splits (
                 activity_id BIGINT,
                 split_index INTEGER,
@@ -238,18 +229,15 @@ class TestVerifyDataIntegrity:
                 pace_seconds_per_km DOUBLE,
                 PRIMARY KEY (activity_id, split_index)
             )
-        """
-        )
-        conn.execute(
-            """
+        """)
+        conn.execute("""
             CREATE TABLE splits_backup_fk (
                 activity_id BIGINT,
                 split_index INTEGER,
                 distance DOUBLE,
                 pace_seconds_per_km DOUBLE
             )
-        """
-        )
+        """)
 
         # Insert different counts
         conn.execute("INSERT INTO splits VALUES (12345, 1, 1.0, 300.0)")
@@ -281,15 +269,13 @@ class TestCleanupBackupTables:
         conn = duckdb.connect(str(test_db_path))
 
         # Setup: Create table and backup
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE splits (
                 activity_id BIGINT,
                 split_index INTEGER,
                 PRIMARY KEY (activity_id, split_index)
             )
-        """
-        )
+        """)
         conn.execute("INSERT INTO splits VALUES (12345, 1)")
 
         _backup_tables(conn, ["splits"])
@@ -330,15 +316,13 @@ class TestMigrationRollback:
         conn = duckdb.connect(str(test_db_path))
 
         # Setup: Create minimal schema (only activities, no splits)
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE activities (
                 activity_id BIGINT PRIMARY KEY,
                 activity_date DATE NOT NULL,
                 activity_name VARCHAR
             )
-        """
-        )
+        """)
         conn.execute("INSERT INTO activities VALUES (12345, '2025-10-15', 'Run')")
 
         # Note: splits table doesn't exist, so migration should fail
@@ -356,12 +340,10 @@ class TestMigrationRollback:
         assert activities_count == 1
 
         # No backup tables should exist
-        backup_tables = conn.execute(
-            """
+        backup_tables = conn.execute("""
             SELECT table_name FROM information_schema.tables
             WHERE table_name LIKE '%_backup_fk'
-        """
-        ).fetchall()
+        """).fetchall()
         assert len(backup_tables) == 0
 
         conn.close()

@@ -11,27 +11,23 @@ def tmp_db_with_hr_efficiency(tmp_path):
     conn = duckdb.connect(str(db_path))
 
     # Create hr_efficiency table
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS hr_efficiency (
             activity_id INTEGER PRIMARY KEY,
             activity_date VARCHAR,
             training_type VARCHAR,
             hr_zone_distribution_pct VARCHAR
         )
-    """
-    )
+    """)
 
     # Insert test data
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO hr_efficiency VALUES
             (12345, '2025-10-28', 'interval_sprint', '{}'),
             (12346, '2025-10-27', 'tempo_threshold', '{}'),
             (12347, '2025-10-26', 'low_moderate', '{}'),
             (12348, '2025-10-25', NULL, '{}')
-    """
-    )
+    """)
 
     conn.close()
     return str(db_path)

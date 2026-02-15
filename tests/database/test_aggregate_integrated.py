@@ -14,8 +14,7 @@ def tmp_db_with_integrated_score(tmp_path):
     conn = duckdb.connect(db_path)
 
     # Create form_evaluations table with integrated_score
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE form_evaluations (
             activity_id INTEGER PRIMARY KEY,
             gct_ms_expected DOUBLE,
@@ -54,12 +53,10 @@ def tmp_db_with_integrated_score(tmp_path):
             integrated_score DOUBLE,
             training_mode VARCHAR
         )
-    """
-    )
+    """)
 
     # Insert test data with interval_sprint mode
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO form_evaluations VALUES (
             12345,
             220.0, 225.0, 2.27,
@@ -73,12 +70,10 @@ def tmp_db_with_integrated_score(tmp_path):
             280.0, 4.0, 4.5, 4.3, 0.05, '★★★★☆', FALSE,
             92.5, 'interval_sprint'
         )
-    """
-    )
+    """)
 
     # Insert test data with low_moderate mode
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO form_evaluations VALUES (
             67890,
             215.0, 220.0, 2.33,
@@ -92,12 +87,10 @@ def tmp_db_with_integrated_score(tmp_path):
             NULL, NULL, NULL, NULL, NULL, NULL, NULL,
             88.0, 'low_moderate'
         )
-    """
-    )
+    """)
 
     # Insert test data without integrated_score (old format)
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO form_evaluations VALUES (
             11111,
             210.0, 215.0, 2.38,
@@ -111,8 +104,7 @@ def tmp_db_with_integrated_score(tmp_path):
             NULL, NULL, NULL, NULL, NULL, NULL, NULL,
             NULL, NULL
         )
-    """
-    )
+    """)
 
     conn.close()
     return db_path

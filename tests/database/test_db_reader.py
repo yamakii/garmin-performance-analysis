@@ -170,8 +170,7 @@ class TestGarminDBReader:
 
         conn = duckdb.connect(str(db_path))
 
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE performance_trends (
                 activity_id BIGINT PRIMARY KEY,
                 pace_consistency DOUBLE,
@@ -191,12 +190,10 @@ class TestGarminDBReader:
                 cooldown_avg_pace_seconds_per_km DOUBLE,
                 cooldown_avg_hr DOUBLE
             )
-        """
-        )
+        """)
 
         # Insert 3-phase run data (no recovery phase)
-        conn.execute(
-            """
+        conn.execute("""
             INSERT INTO performance_trends VALUES (
                 12345678901,
                 5.2,
@@ -216,8 +213,7 @@ class TestGarminDBReader:
                 390.0,
                 150.0
             )
-        """
-        )
+        """)
 
         conn.close()
 
@@ -261,8 +257,7 @@ class TestGarminDBReader:
 
         conn = duckdb.connect(str(db_path))
 
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE performance_trends (
                 activity_id BIGINT PRIMARY KEY,
                 pace_consistency DOUBLE,
@@ -282,12 +277,10 @@ class TestGarminDBReader:
                 cooldown_avg_pace_seconds_per_km DOUBLE,
                 cooldown_avg_hr DOUBLE
             )
-        """
-        )
+        """)
 
         # Insert 4-phase interval training data
-        conn.execute(
-            """
+        conn.execute("""
             INSERT INTO performance_trends VALUES (
                 20615445009,
                 8.5,
@@ -307,8 +300,7 @@ class TestGarminDBReader:
                 450.0,
                 145.0
             )
-        """
-        )
+        """)
 
         conn.close()
 
@@ -332,8 +324,7 @@ class TestGarminDBReader:
         import duckdb
 
         conn = duckdb.connect(str(db_path))
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE performance_trends (
                 activity_id BIGINT PRIMARY KEY,
                 pace_consistency DOUBLE,
@@ -353,8 +344,7 @@ class TestGarminDBReader:
                 cooldown_avg_pace_seconds_per_km DOUBLE,
                 cooldown_avg_hr DOUBLE
             )
-        """
-        )
+        """)
         conn.close()
 
         reader = GarminDBReader(db_path=str(db_path))
@@ -372,8 +362,7 @@ class TestGarminDBReader:
 
         conn = duckdb.connect(str(db_path))
 
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE activities (
                 activity_id BIGINT PRIMARY KEY,
                 date DATE,
@@ -385,12 +374,10 @@ class TestGarminDBReader:
                 wind_speed_kmh DOUBLE,
                 wind_direction VARCHAR
             )
-        """
-        )
+        """)
 
         # Insert activity with weather data (temp_celsius stored in DB)
-        conn.execute(
-            """
+        conn.execute("""
             INSERT INTO activities VALUES (
                 12345678901,
                 '2025-10-12',
@@ -402,8 +389,7 @@ class TestGarminDBReader:
                 9.0,
                 'NE'
             )
-            """
-        )
+            """)
 
         conn.close()
 
@@ -426,8 +412,7 @@ class TestGarminDBReader:
         import duckdb
 
         conn = duckdb.connect(str(db_path))
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE activities (
                 activity_id BIGINT PRIMARY KEY,
                 date DATE,
@@ -439,8 +424,7 @@ class TestGarminDBReader:
                 wind_speed_kmh DOUBLE,
                 wind_direction VARCHAR
             )
-        """
-        )
+        """)
         conn.close()
 
         reader = GarminDBReader(db_path=str(db_path))

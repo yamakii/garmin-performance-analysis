@@ -81,8 +81,7 @@ def _insert_vo2_max_with_connection(
 ) -> None:
     """Helper function to insert vo2_max data with a given connection."""
     # Ensure vo2_max table exists
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS vo2_max (
             activity_id BIGINT PRIMARY KEY,
             precise_value DOUBLE,
@@ -90,8 +89,7 @@ def _insert_vo2_max_with_connection(
             date DATE,
             category INTEGER
         )
-        """
-    )
+        """)
 
     # Remove fitness_age column if it exists (schema cleanup)
     try:

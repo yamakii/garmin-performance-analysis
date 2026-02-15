@@ -17,8 +17,7 @@ def test_db(tmp_path):
     conn = duckdb.connect(str(db_path))
 
     # Create splits table with sample data
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE splits (
             activity_id INTEGER,
             date DATE,
@@ -26,17 +25,14 @@ def test_db(tmp_path):
             pace DOUBLE,
             heart_rate INTEGER
         )
-    """
-    )
+    """)
 
     # Insert sample data
     for i in range(100):
-        conn.execute(
-            f"""
+        conn.execute(f"""
             INSERT INTO splits VALUES
             ({i % 3 + 1}, '2025-01-15', {i+1}, {270.0 + i % 30}, {145 + i % 20})
-        """
-        )
+        """)
 
     conn.close()
     return db_path

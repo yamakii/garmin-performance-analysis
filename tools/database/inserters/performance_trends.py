@@ -310,8 +310,7 @@ def insert_performance_trends(
         conn = duckdb.connect(str(db_path))
 
         # Ensure performance_trends table exists with 4-phase schema
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS performance_trends (
                 activity_id BIGINT PRIMARY KEY,
                 pace_consistency DOUBLE,
@@ -347,8 +346,7 @@ def insert_performance_trends(
                 cooldown_avg_power DOUBLE,
                 cooldown_evaluation VARCHAR
             )
-            """
-        )
+            """)
 
         # Delete existing record for this activity (for re-insertion)
         conn.execute(

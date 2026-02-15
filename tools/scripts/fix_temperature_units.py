@@ -25,8 +25,7 @@ def fix_temperature_units(db_path: str, dry_run: bool = True) -> None:
     conn = duckdb.connect(db_path, read_only=dry_run)
 
     # Find activities with Fahrenheit values (>40°C is unrealistic)
-    anomalies = conn.execute(
-        """
+    anomalies = conn.execute("""
         SELECT
             activity_id,
             activity_date,
@@ -36,8 +35,7 @@ def fix_temperature_units(db_path: str, dry_run: bool = True) -> None:
         FROM activities
         WHERE temp_celsius > 40
         ORDER BY activity_date DESC
-        """
-    ).fetchall()
+        """).fetchall()
 
     if not anomalies:
         logger.info("No temperature anomalies found. Database is clean.")
@@ -60,13 +58,11 @@ def fix_temperature_units(db_path: str, dry_run: bool = True) -> None:
     # Apply corrections
     logger.info(f"\nApplying corrections to {len(anomalies)} activities...")
 
-    conn.execute(
-        """
+    conn.execute("""
         UPDATE activities
         SET temp_celsius = ROUND((temp_celsius - 32) * 5 / 9, 2)
         WHERE temp_celsius > 40
-        """
-    )
+        """)
 
     logger.info("✅ Temperature units fixed successfully!")
 

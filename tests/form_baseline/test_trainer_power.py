@@ -17,33 +17,28 @@ def tmp_db_path(tmp_path):
     conn = duckdb.connect(db_path)
 
     # Create tables
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE activities (
             activity_id INTEGER PRIMARY KEY,
             activity_date DATE,
             base_weight_kg FLOAT
         )
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE splits (
             split_id INTEGER PRIMARY KEY,
             activity_id INTEGER,
             average_speed FLOAT,
             power FLOAT
         )
-    """
-    )
+    """)
 
     # Create sequence for history_id
     conn.execute("CREATE SEQUENCE seq_history_id START 1")
     conn.execute("CREATE SEQUENCE form_baseline_history_seq START 1")
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE form_baseline_history (
             history_id INTEGER PRIMARY KEY DEFAULT nextval('seq_history_id'),
             user_id VARCHAR DEFAULT 'default',
@@ -66,8 +61,7 @@ def tmp_db_path(tmp_path):
             power_rmse FLOAT,
             UNIQUE (user_id, condition_group, metric, period_start, period_end)
         )
-    """
-    )
+    """)
 
     # Insert test data (2 months of activities)
     end_date = datetime.now()
@@ -137,13 +131,11 @@ def test_train_power_efficiency_baseline(tmp_db_path):
 
     # Check database insertion
     conn = duckdb.connect(tmp_db_path, read_only=True)
-    row = conn.execute(
-        """
+    row = conn.execute("""
         SELECT power_a, power_b, power_rmse, n_samples, metric
         FROM form_baseline_history
         WHERE metric = 'power'
-    """
-    ).fetchone()
+    """).fetchone()
 
     assert row is not None, "Should insert into form_baseline_history"
     # Use approximate equality for floating point comparison

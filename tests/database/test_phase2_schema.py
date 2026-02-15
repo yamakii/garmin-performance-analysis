@@ -11,8 +11,7 @@ def tmp_db_path(tmp_path):
     conn = duckdb.connect(str(db_path))
 
     # Create form_evaluations table with Phase 1 columns
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS form_evaluations (
             activity_id INTEGER PRIMARY KEY,
             activity_date VARCHAR,
@@ -26,8 +25,7 @@ def tmp_db_path(tmp_path):
             power_efficiency_rating VARCHAR,
             power_efficiency_needs_improvement BOOLEAN
         )
-    """
-    )
+    """)
 
     conn.close()
 

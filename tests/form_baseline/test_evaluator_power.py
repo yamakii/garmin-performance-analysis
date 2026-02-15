@@ -19,29 +19,24 @@ def tmp_db_with_baseline(tmp_path):
     conn.execute("CREATE SEQUENCE seq_history_id START 1")
     conn.execute("CREATE SEQUENCE seq_eval_id START 1")
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE activities (
             activity_id INTEGER PRIMARY KEY,
             activity_date DATE,
             base_weight_kg FLOAT
         )
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE splits (
             split_id INTEGER PRIMARY KEY,
             activity_id INTEGER,
             average_speed FLOAT,
             power FLOAT
         )
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE form_baseline_history (
             history_id INTEGER PRIMARY KEY DEFAULT nextval('seq_history_id'),
             user_id VARCHAR DEFAULT 'default',
@@ -61,20 +56,16 @@ def tmp_db_with_baseline(tmp_path):
             power_b DOUBLE,
             power_rmse DOUBLE
         )
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE hr_efficiency (
             activity_id INTEGER PRIMARY KEY,
             training_type VARCHAR
         )
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE form_evaluations (
             eval_id INTEGER PRIMARY KEY DEFAULT nextval('seq_eval_id'),
             activity_id INTEGER UNIQUE,
@@ -91,8 +82,7 @@ def tmp_db_with_baseline(tmp_path):
             integrated_score DOUBLE,
             training_mode VARCHAR
         )
-    """
-    )
+    """)
 
     # Insert baseline (speed = 1.0 + 0.7 * power_wkg)
     today = datetime.now().date()

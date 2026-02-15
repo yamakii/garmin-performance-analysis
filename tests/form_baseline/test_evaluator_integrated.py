@@ -14,29 +14,24 @@ def tmp_db_with_data(tmp_path):
     conn = duckdb.connect(db_path)
 
     # Create tables
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE activities (
             activity_id INTEGER PRIMARY KEY,
             activity_date DATE,
             base_weight_kg DOUBLE
         )
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE splits (
             split_id INTEGER,
             activity_id INTEGER,
             power DOUBLE,
             average_speed DOUBLE
         )
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE form_baseline_history (
             user_id VARCHAR,
             condition_group VARCHAR,
@@ -56,20 +51,16 @@ def tmp_db_with_data(tmp_path):
             power_rmse DOUBLE,
             UNIQUE (user_id, condition_group, metric, period_start, period_end)
         )
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE hr_efficiency (
             activity_id INTEGER PRIMARY KEY,
             training_type VARCHAR
         )
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE form_evaluations (
             activity_id INTEGER PRIMARY KEY,
             gct_penalty DOUBLE,
@@ -85,79 +76,60 @@ def tmp_db_with_data(tmp_path):
             integrated_score DOUBLE,
             training_mode VARCHAR
         )
-    """
-    )
+    """)
 
     # Insert test data
     # Activity with interval_sprint training type
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO activities VALUES (12345, '2025-10-28', 70.0)
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO splits VALUES
             (1, 12345, 280.0, 4.5),
             (2, 12345, 290.0, 4.6),
             (3, 12345, 285.0, 4.55)
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO hr_efficiency VALUES (12345, 'interval_sprint')
-    """
-    )
+    """)
 
     # Baseline for power
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO form_baseline_history VALUES
             ('default', 'flat_road', 'power',
              '2025-10-01', '2025-10-31',
              NULL, NULL, NULL, NULL, 100, 0.1, 3.0, 6.0, 1.5, 0.8, 0.1)
-    """
-    )
+    """)
 
     # Form evaluation with penalties
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO form_evaluations (
             activity_id, gct_penalty, vo_penalty, vr_penalty
         ) VALUES (12345, 10.0, 5.0, 8.0)
-    """
-    )
+    """)
 
     # Activity without power data (old activity from 2021)
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO activities VALUES (67890, '2021-06-01', 68.0)
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO splits VALUES
             (1, 67890, NULL, 4.0),
             (2, 67890, NULL, 4.1)
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO hr_efficiency VALUES (67890, 'low_moderate')
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO form_evaluations (
             activity_id, gct_penalty, vo_penalty, vr_penalty
         ) VALUES (67890, 15.0, 12.0, 10.0)
-    """
-    )
+    """)
 
     conn.close()
 

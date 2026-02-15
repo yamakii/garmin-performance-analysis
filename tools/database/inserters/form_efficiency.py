@@ -416,8 +416,7 @@ def _insert_form_efficiency_with_connection(
 ) -> None:
     """Helper function to insert form efficiency with a given connection."""
     # Ensure form_efficiency table exists
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS form_efficiency (
             activity_id BIGINT PRIMARY KEY,
             gct_average DOUBLE,
@@ -441,8 +440,7 @@ def _insert_form_efficiency_with_connection(
             vr_rating VARCHAR,
             vr_evaluation VARCHAR
         )
-        """
-    )
+        """)
 
     # Delete existing record for this activity (for re-insertion)
     conn.execute("DELETE FROM form_efficiency WHERE activity_id = ?", [activity_id])

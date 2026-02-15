@@ -692,8 +692,7 @@ def _insert_splits_with_connection(
 ) -> None:
     """Helper function to insert splits with a given connection."""
     # Ensure splits table exists with new columns
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS splits (
             activity_id BIGINT,
             split_index INTEGER,
@@ -725,8 +724,7 @@ def _insert_splits_with_connection(
             environmental_impact VARCHAR,
             PRIMARY KEY (activity_id, split_index)
         )
-        """
-    )
+        """)
 
     # Add 6 new columns (Phase 1 - stride_length already exists in schema)
     # Use IF NOT EXISTS for idempotency

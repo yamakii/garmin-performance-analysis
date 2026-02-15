@@ -20,18 +20,15 @@ def temp_db():
     conn = duckdb.connect(":memory:")
 
     # Create minimal schema (just activities and splits tables)
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE activities (
             activity_id INTEGER PRIMARY KEY,
             activity_date DATE,
             activity_name VARCHAR
         )
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE splits (
             activity_id INTEGER,
             split_number INTEGER,
@@ -39,44 +36,35 @@ def temp_db():
             duration FLOAT,
             PRIMARY KEY (activity_id, split_number)
         )
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE form_efficiency (
             activity_id INTEGER PRIMARY KEY,
             avg_gct FLOAT,
             avg_vo FLOAT
         )
-    """
-    )
+    """)
 
     # Insert test data
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO activities VALUES
         (12345, '2025-01-01', 'Test Run 1'),
         (67890, '2025-01-02', 'Test Run 2')
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO splits VALUES
         (12345, 1, 1.0, 300.0),
         (12345, 2, 1.0, 310.0),
         (67890, 1, 1.0, 320.0)
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO form_efficiency VALUES
         (12345, 250.0, 8.5),
         (67890, 255.0, 8.8)
-    """
-    )
+    """)
 
     conn.commit()
     yield conn

@@ -20,8 +20,7 @@ def test_db(tmp_path):
     conn = duckdb.connect(str(db_path))
 
     # Create activities table with complete production schema
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS activities (
             activity_id BIGINT PRIMARY KEY,
             activity_date DATE,
@@ -42,12 +41,10 @@ def test_db(tmp_path):
             gear_type VARCHAR,
             gear_model VARCHAR
         )
-    """
-    )
+    """)
 
     # Create form_efficiency table
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS form_efficiency (
             activity_id BIGINT PRIMARY KEY,
             gct_average DOUBLE,
@@ -61,12 +58,10 @@ def test_db(tmp_path):
             vr_rating VARCHAR,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-    """
-    )
+    """)
 
     # Create performance_trends table
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS performance_trends (
             activity_id BIGINT PRIMARY KEY,
             pace_consistency DOUBLE,
@@ -81,23 +76,19 @@ def test_db(tmp_path):
             finish_avg_hr DOUBLE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-    """
-    )
+    """)
 
     # Create hr_efficiency table
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS hr_efficiency (
             activity_id BIGINT PRIMARY KEY,
             training_type VARCHAR,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-    """
-    )
+    """)
 
     # Create section_analyses table
-    conn.execute(
-        """
+    conn.execute("""
         CREATE SEQUENCE IF NOT EXISTS section_analyses_seq START 1;
         CREATE TABLE IF NOT EXISTS section_analyses (
             analysis_id INTEGER PRIMARY KEY DEFAULT nextval('section_analyses_seq'),
@@ -109,8 +100,7 @@ def test_db(tmp_path):
             agent_name VARCHAR,
             agent_version VARCHAR
         )
-    """
-    )
+    """)
 
     conn.close()
     return str(db_path)

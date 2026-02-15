@@ -56,8 +56,7 @@ def insert_heart_rate_zones(
         conn = duckdb.connect(str(db_path))
 
         # Ensure heart_rate_zones table exists
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS heart_rate_zones (
                 activity_id BIGINT,
                 zone_number INTEGER,
@@ -67,8 +66,7 @@ def insert_heart_rate_zones(
                 zone_percentage DOUBLE,
                 PRIMARY KEY (activity_id, zone_number)
             )
-            """
-        )
+            """)
 
         # Delete existing records for this activity (for re-insertion)
         conn.execute(

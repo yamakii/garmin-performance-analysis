@@ -139,12 +139,10 @@ class TestSectionAnalysisInserter:
         # Verify data in DuckDB
         conn = duckdb.connect(str(db_path))
 
-        analyses = conn.execute(
-            """
+        analyses = conn.execute("""
             SELECT * FROM section_analyses
             WHERE activity_id = 20464005432 AND section_type = 'efficiency'
-            """
-        ).fetchall()
+            """).fetchall()
 
         assert len(analyses) == 1
         assert str(analyses[0][2]) == "2025-09-22"  # activity_date (column index 2)
@@ -182,12 +180,10 @@ class TestSectionAnalysisInserter:
         # Verify data in DuckDB
         conn = duckdb.connect(str(db_path))
 
-        analyses = conn.execute(
-            """
+        analyses = conn.execute("""
             SELECT * FROM section_analyses
             WHERE activity_id = 20464005432 AND section_type = 'efficiency'
-            """
-        ).fetchall()
+            """).fetchall()
 
         assert len(analyses) == 1
         assert str(analyses[0][2]) == "2025-09-22"  # activity_date (column index 2)
@@ -232,13 +228,11 @@ class TestSectionAnalysisInserter:
         # Verify metadata was auto-generated
         conn = duckdb.connect(str(db_path))
 
-        analyses = conn.execute(
-            """
+        analyses = conn.execute("""
             SELECT analysis_data, agent_name, agent_version
             FROM section_analyses
             WHERE activity_id = 20464005432 AND section_type = 'efficiency'
-            """
-        ).fetchall()
+            """).fetchall()
 
         assert len(analyses) == 1
 
@@ -296,13 +290,11 @@ class TestSectionAnalysisInserter:
         # Verify custom agent_name was used
         conn = duckdb.connect(str(db_path))
 
-        analyses = conn.execute(
-            """
+        analyses = conn.execute("""
             SELECT analysis_data, agent_name, agent_version
             FROM section_analyses
             WHERE activity_id = 20464005432 AND section_type = 'summary'
-            """
-        ).fetchall()
+            """).fetchall()
 
         assert len(analyses) == 1
 

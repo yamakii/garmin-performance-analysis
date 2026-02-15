@@ -91,8 +91,7 @@ def migrate_phase0_populate_body_mass_kg(db_path: str | None = None) -> None:
 
     # Strategy: For each activity, find the most recent body_composition measurement
     # on or before the activity date
-    conn.execute(
-        """
+    conn.execute("""
         UPDATE activities
         SET body_mass_kg = (
             SELECT weight_kg
@@ -102,27 +101,22 @@ def migrate_phase0_populate_body_mass_kg(db_path: str | None = None) -> None:
             LIMIT 1
         )
         WHERE body_mass_kg IS NULL
-    """
-    )
+    """)
 
     # Check results
     total_result = conn.execute("SELECT COUNT(*) FROM activities").fetchone()
     assert total_result is not None
     total = total_result[0]
 
-    populated_result = conn.execute(
-        """
+    populated_result = conn.execute("""
         SELECT COUNT(*) FROM activities WHERE body_mass_kg IS NOT NULL
-    """
-    ).fetchone()
+    """).fetchone()
     assert populated_result is not None
     populated = populated_result[0]
 
-    missing_result = conn.execute(
-        """
+    missing_result = conn.execute("""
         SELECT COUNT(*) FROM activities WHERE body_mass_kg IS NULL
-    """
-    ).fetchone()
+    """).fetchone()
     assert missing_result is not None
     missing = missing_result[0]
 

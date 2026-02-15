@@ -26,20 +26,16 @@ def migrate_phase2_schema(db_path: str | None = None) -> None:
 
     try:
         # Add integrated_score column (DOUBLE)
-        conn.execute(
-            """
+        conn.execute("""
             ALTER TABLE form_evaluations
             ADD COLUMN IF NOT EXISTS integrated_score DOUBLE
-        """
-        )
+        """)
 
         # Add training_mode column (VARCHAR)
-        conn.execute(
-            """
+        conn.execute("""
             ALTER TABLE form_evaluations
             ADD COLUMN IF NOT EXISTS training_mode VARCHAR
-        """
-        )
+        """)
 
         print("✅ Phase 2 migration completed successfully")
         print("   - Added integrated_score (DOUBLE) to form_evaluations")

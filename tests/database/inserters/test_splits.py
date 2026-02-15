@@ -96,14 +96,12 @@ class TestSplitsInserter:
         assert len(splits) == 2
 
         # Verify split data using named columns
-        split_data = conn.execute(
-            """
+        split_data = conn.execute("""
             SELECT split_index, distance, pace_seconds_per_km, heart_rate
             FROM splits
             WHERE activity_id = 20636804823
             ORDER BY split_index
-            """
-        ).fetchall()
+            """).fetchall()
 
         # Verify first split (fixture data)
         split1 = split_data[0]
@@ -140,14 +138,12 @@ class TestSplitsInserter:
         # Verify role_phase data
         conn = duckdb.connect(str(db_path))
 
-        splits = conn.execute(
-            """
+        splits = conn.execute("""
             SELECT split_index, role_phase
             FROM splits
             WHERE activity_id = 20636804823
             ORDER BY split_index
-            """
-        ).fetchall()
+            """).fetchall()
 
         assert len(splits) == 2
 
@@ -208,8 +204,7 @@ class TestSplitsInserter:
         conn = duckdb.connect(str(db_path))
 
         # Query with new columns
-        splits = conn.execute(
-            """
+        splits = conn.execute("""
             SELECT
                 split_index,
                 duration_seconds,
@@ -220,8 +215,7 @@ class TestSplitsInserter:
             FROM splits
             WHERE activity_id = 20636804823
             ORDER BY split_index
-            """
-        ).fetchall()
+            """).fetchall()
 
         assert len(splits) == 2
 
@@ -347,8 +341,7 @@ class TestSplitsInserter:
         assert len(splits) == 2
 
         # Verify first split data using named columns
-        split_data = conn.execute(
-            """
+        split_data = conn.execute("""
             SELECT
                 activity_id, split_index, distance, duration_seconds,
                 start_time_gmt, start_time_s, end_time_s, intensity_type,
@@ -358,8 +351,7 @@ class TestSplitsInserter:
             FROM splits
             WHERE activity_id = 20636804823
             ORDER BY split_index
-            """
-        ).fetchall()
+            """).fetchall()
 
         split1 = split_data[0]
         assert split1[0] == 20636804823  # activity_id
@@ -662,8 +654,7 @@ class TestSplitsInserter:
         # Verify new fields populated correctly
         conn = duckdb.connect(str(db_path))
 
-        split_data = conn.execute(
-            """
+        split_data = conn.execute("""
             SELECT
                 split_index,
                 stride_length,
@@ -676,8 +667,7 @@ class TestSplitsInserter:
             FROM splits
             WHERE activity_id = 20636804823
             ORDER BY split_index
-            """
-        ).fetchall()
+            """).fetchall()
 
         assert len(split_data) == 2
 
@@ -744,8 +734,7 @@ class TestSplitsInserter:
         # Verify partial fields
         conn = duckdb.connect(str(db_path))
 
-        split_data = conn.execute(
-            """
+        split_data = conn.execute("""
             SELECT
                 stride_length,
                 max_heart_rate,
@@ -756,8 +745,7 @@ class TestSplitsInserter:
                 grade_adjusted_speed
             FROM splits
             WHERE activity_id = 12345
-            """
-        ).fetchone()
+            """).fetchone()
 
         # Present fields should have values
         assert split_data[0] == pytest.approx(90.0)  # stride_length
@@ -794,8 +782,7 @@ class TestSplitsInserter:
         conn = duckdb.connect(str(db_path))
 
         # Count non-NULL values for new fields
-        stats = conn.execute(
-            """
+        stats = conn.execute("""
             SELECT
                 COUNT(*) as total_splits,
                 COUNT(stride_length) as stride_populated,
@@ -807,8 +794,7 @@ class TestSplitsInserter:
                 COUNT(grade_adjusted_speed) as grade_adj_populated
             FROM splits
             WHERE activity_id = 20636804823
-            """
-        ).fetchone()
+            """).fetchone()
 
         # All 2 splits should have all 7 new fields
         assert stats[0] == 2  # total_splits
@@ -998,8 +984,7 @@ class TestSplitsInserter:
         # Check population rates
         conn = duckdb.connect(str(db_path))
 
-        stats = conn.execute(
-            """
+        stats = conn.execute("""
             SELECT
                 COUNT(*) as total,
                 COUNT(stride_length) * 100.0 / COUNT(*) as stride_pct,
@@ -1007,8 +992,7 @@ class TestSplitsInserter:
                 COUNT(max_power) * 100.0 / COUNT(*) as power_pct,
                 COUNT(grade_adjusted_speed) * 100.0 / COUNT(*) as grade_adj_pct
             FROM splits
-            """
-        ).fetchone()
+            """).fetchone()
 
         # Verify population rates
         assert stats[0] == 3  # total_splits
@@ -1039,8 +1023,7 @@ class TestSplitsInserter:
         conn = duckdb.connect(str(db_path))
 
         # Check max_heart_rate >= heart_rate
-        hr_checks = conn.execute(
-            """
+        hr_checks = conn.execute("""
             SELECT
                 split_index,
                 heart_rate,
@@ -1050,8 +1033,7 @@ class TestSplitsInserter:
             WHERE activity_id = 20636804823
               AND heart_rate IS NOT NULL
               AND max_heart_rate IS NOT NULL
-            """
-        ).fetchall()
+            """).fetchall()
 
         for split_index, avg_hr, max_hr, hr_valid in hr_checks:
             assert (
@@ -1059,8 +1041,7 @@ class TestSplitsInserter:
             ), f"Split {split_index}: max_hr ({max_hr}) < avg_hr ({avg_hr})"
 
         # Check max_cadence >= cadence
-        cadence_checks = conn.execute(
-            """
+        cadence_checks = conn.execute("""
             SELECT
                 split_index,
                 cadence,
@@ -1070,8 +1051,7 @@ class TestSplitsInserter:
             WHERE activity_id = 20636804823
               AND cadence IS NOT NULL
               AND max_cadence IS NOT NULL
-            """
-        ).fetchall()
+            """).fetchall()
 
         for split_index, avg_cad, max_cad, cad_valid in cadence_checks:
             assert (
@@ -1079,8 +1059,7 @@ class TestSplitsInserter:
             ), f"Split {split_index}: max_cad ({max_cad}) < avg_cad ({avg_cad})"
 
         # Check max_power >= power (if both present)
-        power_checks = conn.execute(
-            """
+        power_checks = conn.execute("""
             SELECT
                 split_index,
                 power,
@@ -1090,8 +1069,7 @@ class TestSplitsInserter:
             WHERE activity_id = 20636804823
               AND power IS NOT NULL
               AND max_power IS NOT NULL
-            """
-        ).fetchall()
+            """).fetchall()
 
         for split_index, avg_pow, max_pow, pow_valid in power_checks:
             assert (
@@ -1644,14 +1622,12 @@ class TestSplitsInserter:
 
         # Verify estimation was applied
         conn = duckdb.connect(str(db_path))
-        splits = conn.execute(
-            """
+        splits = conn.execute("""
             SELECT split_index, intensity_type
             FROM splits
             WHERE activity_id = 12345
             ORDER BY split_index
-            """
-        ).fetchall()
+            """).fetchall()
 
         assert len(splits) == 3
 
@@ -1733,14 +1709,12 @@ class TestSplitsInserter:
 
         # Verify existing values are preserved
         conn = duckdb.connect(str(db_path))
-        splits = conn.execute(
-            """
+        splits = conn.execute("""
             SELECT split_index, intensity_type
             FROM splits
             WHERE activity_id = 12345
             ORDER BY split_index
-            """
-        ).fetchall()
+            """).fetchall()
 
         assert len(splits) == 3
 
@@ -1805,14 +1779,12 @@ class TestSplitsInserter:
 
         # Verify estimation applied only to NULL values
         conn = duckdb.connect(str(db_path))
-        splits = conn.execute(
-            """
+        splits = conn.execute("""
             SELECT split_index, intensity_type
             FROM splits
             WHERE activity_id = 12345
             ORDER BY split_index
-            """
-        ).fetchall()
+            """).fetchall()
 
         assert len(splits) == 3
 

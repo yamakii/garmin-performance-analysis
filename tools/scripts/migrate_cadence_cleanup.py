@@ -43,15 +43,13 @@ def backup_database(db_path: Path) -> Path:
 
 def verify_columns_exist(conn: duckdb.DuckDBPyConnection) -> bool:
     """Verify expected columns exist."""
-    result = conn.execute(
-        """
+    result = conn.execute("""
         SELECT column_name
         FROM information_schema.columns
         WHERE table_name = 'time_series_metrics'
         AND column_name IN ('cadence', 'double_cadence', 'cadence_single_foot', 'cadence_total', 'fractional_cadence')
         ORDER BY column_name
-    """
-    ).fetchall()
+    """).fetchall()
 
     columns = [row[0] for row in result]
     expected = [
@@ -76,8 +74,7 @@ def verify_columns_exist(conn: duckdb.DuckDBPyConnection) -> bool:
 
 def check_data_consistency(conn: duckdb.DuckDBPyConnection):
     """Check that double_cadence has data."""
-    result = conn.execute(
-        """
+    result = conn.execute("""
         SELECT
             COUNT(*) as total_rows,
             COUNT(double_cadence) as non_null_double_cadence,
@@ -85,8 +82,7 @@ def check_data_consistency(conn: duckdb.DuckDBPyConnection):
             MIN(double_cadence) as min_double_cadence,
             MAX(double_cadence) as max_double_cadence
         FROM time_series_metrics
-    """
-    ).fetchone()
+    """).fetchone()
 
     print("\nData consistency check:")
     print(f"  Total rows: {result[0]:,}")
@@ -179,15 +175,13 @@ def perform_migration(conn: duckdb.DuckDBPyConnection, dry_run: bool = False):
 def verify_migration(conn: duckdb.DuckDBPyConnection):
     """Verify migration succeeded."""
     # Check new schema
-    result = conn.execute(
-        """
+    result = conn.execute("""
         SELECT column_name
         FROM information_schema.columns
         WHERE table_name = 'time_series_metrics'
         AND column_name LIKE '%cadence%'
         ORDER BY column_name
-    """
-    ).fetchall()
+    """).fetchall()
 
     columns = [row[0] for row in result]
 
@@ -203,8 +197,7 @@ def verify_migration(conn: duckdb.DuckDBPyConnection):
         return False
 
     # Check data
-    result = conn.execute(
-        """
+    result = conn.execute("""
         SELECT
             COUNT(*) as total_rows,
             COUNT(cadence) as non_null_cadence,
@@ -212,8 +205,7 @@ def verify_migration(conn: duckdb.DuckDBPyConnection):
             MIN(cadence) as min_cadence,
             MAX(cadence) as max_cadence
         FROM time_series_metrics
-    """
-    ).fetchone()
+    """).fetchone()
 
     print("\nData verification:")
     print(f"  Total rows: {result[0]:,}")

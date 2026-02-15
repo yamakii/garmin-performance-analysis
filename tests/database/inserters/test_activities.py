@@ -155,8 +155,7 @@ def test_insert_activities_complete_data():
 
         # Verify metadata fields populated from raw files
         conn = duckdb.connect(str(db_path))
-        row = conn.execute(
-            """
+        row = conn.execute("""
             SELECT
                 activity_id, activity_date, activity_name, location_name,
                 temp_celsius, relative_humidity_percent,
@@ -164,8 +163,7 @@ def test_insert_activities_complete_data():
                 gear_model, gear_type,
                 total_time_seconds, total_distance_km, avg_heart_rate
             FROM activities WHERE activity_id = 67890
-            """
-        ).fetchone()
+            """).fetchone()
 
         assert row is not None
         assert row[0] == 67890  # activity_id

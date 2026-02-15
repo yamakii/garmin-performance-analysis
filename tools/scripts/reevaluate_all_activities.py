@@ -38,8 +38,7 @@ def get_activities_to_reevaluate(db_path: str) -> list[tuple[int, str]]:
     conn = duckdb.connect(db_path, read_only=True)
 
     try:
-        result = conn.execute(
-            """
+        result = conn.execute("""
             WITH activities_with_form AS (
                 SELECT DISTINCT a.activity_id, a.activity_date
                 FROM activities a
@@ -61,8 +60,7 @@ def get_activities_to_reevaluate(db_path: str) -> list[tuple[int, str]]:
                   AND fbh.condition_group = 'flat_road'
             )
             ORDER BY awf.activity_date
-        """
-        ).fetchall()
+        """).fetchall()
 
         return [(int(row[0]), str(row[1])) for row in result]
 

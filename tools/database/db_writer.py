@@ -54,8 +54,7 @@ class GarminDBWriter:
         conn = duckdb.connect(str(self.db_path))
 
         # Create activities table (matches inserters/activities.py - 19 columns)
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS activities (
                 activity_id BIGINT PRIMARY KEY,
                 activity_date DATE NOT NULL,
@@ -77,12 +76,10 @@ class GarminDBWriter:
                 gear_model VARCHAR,
                 base_weight_kg DOUBLE
             )
-        """
-        )
+        """)
 
         # Create splits table (from inserters/splits.py) with time range columns
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS splits (
                 activity_id BIGINT,
                 split_index INTEGER,
@@ -115,12 +112,10 @@ class GarminDBWriter:
                 PRIMARY KEY (activity_id, split_index)
                 -- FK constraint removed (2025-11-01): Single data source + bulk writes only
             )
-        """
-        )
+        """)
 
         # Create form_efficiency table (from inserters/form_efficiency.py)
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS form_efficiency (
                 activity_id BIGINT PRIMARY KEY,
                 gct_average DOUBLE,
@@ -145,12 +140,10 @@ class GarminDBWriter:
                 vr_evaluation VARCHAR
                 -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
             )
-        """
-        )
+        """)
 
         # Create heart_rate_zones table (from inserters/heart_rate_zones.py)
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS heart_rate_zones (
                 activity_id BIGINT,
                 zone_number INTEGER,
@@ -161,12 +154,10 @@ class GarminDBWriter:
                 PRIMARY KEY (activity_id, zone_number)
                 -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
             )
-        """
-        )
+        """)
 
         # Create hr_efficiency table (from inserters/hr_efficiency.py)
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS hr_efficiency (
                 activity_id BIGINT PRIMARY KEY,
                 primary_zone VARCHAR,
@@ -184,12 +175,10 @@ class GarminDBWriter:
                 zone5_percentage DOUBLE
                 -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
             )
-        """
-        )
+        """)
 
         # Create performance_trends table with 4-phase schema (from inserters/performance_trends.py)
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS performance_trends (
                 activity_id BIGINT PRIMARY KEY,
                 pace_consistency DOUBLE,
@@ -226,12 +215,10 @@ class GarminDBWriter:
                 cooldown_evaluation VARCHAR
                 -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
             )
-        """
-        )
+        """)
 
         # Create vo2_max table (from inserters/vo2_max.py)
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS vo2_max (
                 activity_id BIGINT PRIMARY KEY,
                 precise_value DOUBLE,
@@ -240,12 +227,10 @@ class GarminDBWriter:
                 category INTEGER
                 -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
             )
-        """
-        )
+        """)
 
         # Create lactate_threshold table (from inserters/lactate_threshold.py)
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS lactate_threshold (
                 activity_id BIGINT PRIMARY KEY,
                 heart_rate INTEGER,
@@ -257,12 +242,10 @@ class GarminDBWriter:
                 date_power TIMESTAMP
                 -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
             )
-        """
-        )
+        """)
 
         # Create body_composition table (from inserters/body_composition.py)
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS body_composition (
                 measurement_id INTEGER PRIMARY KEY,
                 date DATE NOT NULL,
@@ -274,14 +257,12 @@ class GarminDBWriter:
                 hydration_percentage DOUBLE,
                 measurement_source VARCHAR
             )
-        """
-        )
+        """)
 
         # form_baselines table removed - replaced by form_baseline_history
 
         # Create form_baseline_history table (for trend analysis)
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS form_baseline_history (
                 history_id INTEGER PRIMARY KEY,
                 user_id VARCHAR DEFAULT 'default',
@@ -309,12 +290,10 @@ class GarminDBWriter:
 
                 UNIQUE(user_id, condition_group, metric, period_start, period_end)
             )
-        """
-        )
+        """)
 
         # Create form_evaluations table
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS form_evaluations (
                 eval_id INTEGER PRIMARY KEY,
                 activity_id BIGINT UNIQUE,
@@ -369,12 +348,10 @@ class GarminDBWriter:
                 evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
             )
-        """
-        )
+        """)
 
         # Create section_analyses table
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS section_analyses (
                 analysis_id INTEGER PRIMARY KEY,
                 activity_id BIGINT NOT NULL,
@@ -386,8 +363,7 @@ class GarminDBWriter:
                 agent_version VARCHAR
                 -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
             )
-        """
-        )
+        """)
 
         # Create sequence for form_evaluations if it doesn't exist
         try:
@@ -430,12 +406,10 @@ class GarminDBWriter:
             )
 
         # Create UNIQUE index on (activity_id, section_type) if it doesn't exist
-        conn.execute(
-            """
+        conn.execute("""
             CREATE UNIQUE INDEX IF NOT EXISTS idx_activity_section
             ON section_analyses(activity_id, section_type)
-        """
-        )
+        """)
 
         conn.close()
 

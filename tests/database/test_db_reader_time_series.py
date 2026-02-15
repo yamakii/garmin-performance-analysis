@@ -19,8 +19,7 @@ class TestGarminDBReaderTimeSeries:
         conn = duckdb.connect(str(db_path))
 
         # Create schema
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS time_series_metrics (
                 activity_id BIGINT NOT NULL,
                 timestamp_s INTEGER NOT NULL,
@@ -34,8 +33,7 @@ class TestGarminDBReaderTimeSeries:
                 elevation DOUBLE,
                 PRIMARY KEY (activity_id, timestamp_s)
             );
-        """
-        )
+        """)
 
         # Insert test data for activity 12345 (100 seconds)
         test_data = []

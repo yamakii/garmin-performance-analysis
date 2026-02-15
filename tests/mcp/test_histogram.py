@@ -17,8 +17,7 @@ def test_db(tmp_path):
     conn = duckdb.connect(str(db_path))
 
     # Create splits table with sample data for histogram
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE splits (
             activity_id INTEGER,
             date DATE,
@@ -27,26 +26,21 @@ def test_db(tmp_path):
             heart_rate INTEGER,
             cadence INTEGER
         )
-    """
-    )
+    """)
 
     # Insert sample data with varied pace values for histogram
     pace_values = [240, 245, 250, 255, 260, 265, 270, 275, 280, 285, 290, 295, 300]
     for i, pace in enumerate(pace_values * 5):  # 65 total rows
-        conn.execute(
-            f"""
+        conn.execute(f"""
             INSERT INTO splits VALUES
             (1, '2025-01-15', {i+1}, {pace}, 150, 180)
-        """
-        )
+        """)
 
     # Add some NULL values
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO splits VALUES
         (1, '2025-01-15', 100, NULL, 150, 180)
-    """
-    )
+    """)
 
     conn.close()
     return db_path

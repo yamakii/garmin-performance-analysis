@@ -58,8 +58,7 @@ def insert_lactate_threshold(
         conn = duckdb.connect(str(db_path))
 
         # Ensure lactate_threshold table exists
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS lactate_threshold (
                 activity_id BIGINT PRIMARY KEY,
                 heart_rate INTEGER,
@@ -70,8 +69,7 @@ def insert_lactate_threshold(
                 weight DOUBLE,
                 date_power TIMESTAMP
             )
-            """
-        )
+            """)
 
         # Delete existing record for this activity (for re-insertion)
         conn.execute(
