@@ -18,6 +18,7 @@ def insert_lactate_threshold(
     activity_id: int,
     db_path: str | None = None,
     raw_lactate_threshold_file: str | None = None,
+    conn: duckdb.DuckDBPyConnection | None = None,
 ) -> bool:
     """
     Insert lactate_threshold into DuckDB lactate_threshold table from raw API file.
@@ -54,8 +55,11 @@ def insert_lactate_threshold(
 
             db_path = get_default_db_path()
 
-        # Connect to DuckDB
-        conn = duckdb.connect(str(db_path))
+        # Connect to DuckDB (use provided connection or create new one)
+        own_conn = conn is None
+        if own_conn:
+            conn = duckdb.connect(str(db_path))
+        assert conn is not None
 
         # Ensure lactate_threshold table exists
         conn.execute("""
@@ -115,7 +119,8 @@ def insert_lactate_threshold(
             ],
         )
 
-        conn.close()
+        if own_conn:
+            conn.close()
 
         logger.info(
             f"Successfully inserted lactate threshold data for activity {activity_id}"

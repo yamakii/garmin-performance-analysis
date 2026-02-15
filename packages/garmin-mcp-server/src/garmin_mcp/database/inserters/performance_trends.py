@@ -266,6 +266,7 @@ def insert_performance_trends(
     activity_id: int,
     db_path: str | None = None,
     raw_splits_file: str | None = None,
+    conn: duckdb.DuckDBPyConnection | None = None,
 ) -> bool:
     """
     Insert performance_trends from raw splits.json into DuckDB performance_trends table.
@@ -306,8 +307,11 @@ def insert_performance_trends(
 
             db_path = get_default_db_path()
 
-        # Connect to DuckDB
-        conn = duckdb.connect(str(db_path))
+        # Connect to DuckDB (use provided connection or create new one)
+        own_conn = conn is None
+        if own_conn:
+            conn = duckdb.connect(str(db_path))
+        assert conn is not None
 
         # Ensure performance_trends table exists with 4-phase schema
         conn.execute("""
@@ -518,10 +522,12 @@ def insert_performance_trends(
 
         else:
             logger.error("Unknown phase structure in performance_trends")
-            conn.close()
+            if own_conn:
+                conn.close()
             return False
 
-        conn.close()
+        if own_conn:
+            conn.close()
         return True
 
     except Exception as e:

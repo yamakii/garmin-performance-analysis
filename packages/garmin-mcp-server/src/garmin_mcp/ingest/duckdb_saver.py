@@ -111,7 +111,9 @@ def save_data(
                 raw_hr_zones_file = None
 
             if should_insert_table("heart_rate_zones", tables):
-                _insert_heart_rate_zones(activity_id, db_path, raw_hr_zones_file)
+                _insert_heart_rate_zones(
+                    activity_id, db_path, raw_hr_zones_file, conn=conn
+                )
 
             if should_insert_table("hr_efficiency", tables):
                 _insert_hr_efficiency(
@@ -119,13 +121,16 @@ def save_data(
                     db_path,
                     raw_hr_zones_file,
                     raw_activity_file,
+                    conn=conn,
                 )
 
             if should_insert_table("performance_trends", tables):
-                _insert_performance_trends(activity_id, db_path, raw_splits_file)
+                _insert_performance_trends(
+                    activity_id, db_path, raw_splits_file, conn=conn
+                )
 
             if should_insert_table("lactate_threshold", tables):
-                _insert_lactate_threshold(activity_id, db_path, activity_dir)
+                _insert_lactate_threshold(activity_id, db_path, activity_dir, conn=conn)
 
             if should_insert_table("vo2_max", tables):
                 _insert_vo2_max(activity_id, db_path, activity_dir, conn)
@@ -238,7 +243,10 @@ def _insert_table(
 
 
 def _insert_heart_rate_zones(
-    activity_id: int, db_path: str, raw_hr_zones_file: Path | None
+    activity_id: int,
+    db_path: str,
+    raw_hr_zones_file: Path | None,
+    conn: Any = None,
 ) -> None:
     """Insert heart_rate_zones table."""
     from garmin_mcp.database.inserters.heart_rate_zones import (
@@ -249,6 +257,7 @@ def _insert_heart_rate_zones(
         activity_id=activity_id,
         db_path=db_path,
         raw_hr_zones_file=str(raw_hr_zones_file) if raw_hr_zones_file else None,
+        conn=conn,
     )
     if success:
         logger.info(f"Inserted heart_rate_zones to DuckDB for activity {activity_id}")
@@ -263,6 +272,7 @@ def _insert_hr_efficiency(
     db_path: str,
     raw_hr_zones_file: Path | None,
     raw_activity_file: Path | None,
+    conn: Any = None,
 ) -> None:
     """Insert hr_efficiency table."""
     from garmin_mcp.database.inserters.hr_efficiency import insert_hr_efficiency
@@ -276,6 +286,7 @@ def _insert_hr_efficiency(
             if raw_activity_file and raw_activity_file.exists()
             else None
         ),
+        conn=conn,
     )
     if success:
         logger.info(f"Inserted hr_efficiency to DuckDB for activity {activity_id}")
@@ -286,7 +297,10 @@ def _insert_hr_efficiency(
 
 
 def _insert_performance_trends(
-    activity_id: int, db_path: str, raw_splits_file: Path | None
+    activity_id: int,
+    db_path: str,
+    raw_splits_file: Path | None,
+    conn: Any = None,
 ) -> None:
     """Insert performance_trends table."""
     from garmin_mcp.database.inserters.performance_trends import (
@@ -297,6 +311,7 @@ def _insert_performance_trends(
         activity_id=activity_id,
         db_path=db_path,
         raw_splits_file=str(raw_splits_file) if raw_splits_file else None,
+        conn=conn,
     )
     if success:
         logger.info(f"Inserted performance_trends to DuckDB for activity {activity_id}")
@@ -307,7 +322,10 @@ def _insert_performance_trends(
 
 
 def _insert_lactate_threshold(
-    activity_id: int, db_path: str, activity_dir: Path
+    activity_id: int,
+    db_path: str,
+    activity_dir: Path,
+    conn: Any = None,
 ) -> None:
     """Insert lactate_threshold table."""
     from garmin_mcp.database.inserters.lactate_threshold import (
@@ -322,6 +340,7 @@ def _insert_lactate_threshold(
         activity_id=activity_id,
         db_path=db_path,
         raw_lactate_threshold_file=str(raw_file) if raw_file else None,
+        conn=conn,
     )
     if success:
         logger.info(f"Inserted lactate_threshold to DuckDB for activity {activity_id}")

@@ -243,6 +243,7 @@ def insert_hr_efficiency(
     db_path: str | None = None,
     raw_hr_zones_file: str | None = None,
     raw_activity_file: str | None = None,
+    conn: duckdb.DuckDBPyConnection | None = None,
 ) -> bool:
     """
     Insert hr_efficiency_analysis from raw data into DuckDB hr_efficiency table.
@@ -273,8 +274,11 @@ def insert_hr_efficiency(
 
             db_path = get_default_db_path()
 
-        # Connect to DuckDB
-        conn = duckdb.connect(str(db_path))
+        # Connect to DuckDB (use provided connection or create new one)
+        own_conn = conn is None
+        if own_conn:
+            conn = duckdb.connect(str(db_path))
+        assert conn is not None
 
         # Ensure hr_efficiency table exists
         conn.execute("""
@@ -337,7 +341,8 @@ def insert_hr_efficiency(
             ],
         )
 
-        conn.close()
+        if own_conn:
+            conn.close()
 
         logger.info(
             f"Successfully inserted HR efficiency data for activity {activity_id}"
