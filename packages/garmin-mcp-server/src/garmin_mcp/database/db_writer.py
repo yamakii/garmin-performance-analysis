@@ -472,9 +472,11 @@ class GarminDBWriter:
             try:
                 # UPSERT Step 1: Get next analysis_id from sequence (thread-safe)
                 # Note: ON CONFLICT時は使用されず、既存のanalysis_idが保持される
-                next_analysis_id = conn.execute(
+                row = conn.execute(
                     "SELECT nextval('seq_section_analyses_id')"
-                ).fetchone()[0]
+                ).fetchone()
+                assert row is not None
+                next_analysis_id = row[0]
 
                 # Auto-generate metadata if not present
                 if "metadata" not in analysis_data:

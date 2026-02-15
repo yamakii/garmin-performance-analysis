@@ -139,6 +139,11 @@ class TrainingPlanGenerator:
                     pace_zones,
                     preferred_long_run_day,
                 )
+                # Assign workout_date based on start_date + week/day
+                for wo in workouts:
+                    wo.workout_date = start + timedelta(
+                        weeks=wo.week_number - 1, days=wo.day_of_week - 1
+                    )
                 plan.workouts.extend(workouts)
             week_offset += num_weeks
 

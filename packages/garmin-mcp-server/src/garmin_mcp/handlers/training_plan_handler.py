@@ -121,13 +121,18 @@ class TrainingPlanHandler:
 
         try:
             uploader = GarminWorkoutUploader(db_path=str(self._db_reader.db_path))
+            schedule = arguments.get("schedule", True)
 
             if "workout_id" in arguments:
-                result = uploader.upload_workout(arguments["workout_id"])
+                result = uploader.upload_workout(
+                    arguments["workout_id"], schedule=schedule
+                )
             elif "plan_id" in arguments:
                 week_number = arguments.get("week_number")
                 result = uploader.upload_plan_workouts(
-                    arguments["plan_id"], week_number=week_number
+                    arguments["plan_id"],
+                    week_number=week_number,
+                    schedule=schedule,
                 )
             else:
                 result = {"error": "Either workout_id or plan_id is required"}

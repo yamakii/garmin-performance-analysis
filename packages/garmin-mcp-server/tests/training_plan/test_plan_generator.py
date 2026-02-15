@@ -170,3 +170,74 @@ class TestPlanGenerator:
         )
 
         assert len(plan.weekly_volumes) == 12
+
+    def test_workout_dates_are_calculated(self, mocker, mock_fitness_summary):
+        """Workouts should have workout_date calculated from start_date."""
+        from datetime import date, timedelta
+
+        mock_assessor = mocker.MagicMock()
+        mock_assessor.assess.return_value = mock_fitness_summary
+
+        mocker.patch(
+            "garmin_mcp.training_plan.plan_generator.FitnessAssessor",
+            return_value=mock_assessor,
+        )
+        mocker.patch(
+            "garmin_mcp.database.inserters.training_plans.insert_training_plan",
+        )
+
+        from garmin_mcp.training_plan.plan_generator import TrainingPlanGenerator
+
+        generator = TrainingPlanGenerator(db_path=":memory:")
+        plan = generator.generate(
+            goal_type="race_5k",
+            total_weeks=4,
+            target_race_date="2026-04-01",
+        )
+
+        # All workouts should have dates assigned
+        for w in plan.workouts:
+            assert w.workout_date is not None, f"Workout {w.workout_id} has no date"
+
+        # Verify date calculation: start_date + (week-1)*7 + (day-1)
+        start_date = date.fromisoformat("2026-04-01") - timedelta(weeks=4)
+        for w in plan.workouts:
+            expected = start_date + timedelta(
+                weeks=w.week_number - 1, days=w.day_of_week - 1
+            )
+            assert w.workout_date == expected, (
+                f"Week {w.week_number}, day {w.day_of_week}: "
+                f"expected {expected}, got {w.workout_date}"
+            )
+
+    def test_workout_dates_within_plan_range(self, mocker, mock_fitness_summary):
+        """All workout dates should fall within the plan's date range."""
+        from datetime import date, timedelta
+
+        mock_assessor = mocker.MagicMock()
+        mock_assessor.assess.return_value = mock_fitness_summary
+
+        mocker.patch(
+            "garmin_mcp.training_plan.plan_generator.FitnessAssessor",
+            return_value=mock_assessor,
+        )
+        mocker.patch(
+            "garmin_mcp.database.inserters.training_plans.insert_training_plan",
+        )
+
+        from garmin_mcp.training_plan.plan_generator import TrainingPlanGenerator
+
+        generator = TrainingPlanGenerator(db_path=":memory:")
+        plan = generator.generate(
+            goal_type="race_10k",
+            total_weeks=8,
+            target_race_date="2026-05-01",
+        )
+
+        race_date = date.fromisoformat("2026-05-01")
+        start_date = race_date - timedelta(weeks=8)
+
+        for w in plan.workouts:
+            assert w.workout_date is not None
+            assert w.workout_date >= start_date
+            assert w.workout_date < race_date

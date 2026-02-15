@@ -26,11 +26,12 @@ class GarminWorkoutUploader:
         worker = GarminIngestWorker()
         return worker.get_garmin_client()
 
-    def upload_workout(self, workout_id: str) -> dict[str, Any]:
+    def upload_workout(self, workout_id: str, schedule: bool = True) -> dict[str, Any]:
         """Upload a single workout to Garmin Connect.
 
         Args:
             workout_id: Workout ID from planned_workouts table
+            schedule: If True and workout_date is set, schedule on Garmin calendar
 
         Returns:
             Dict with upload status and Garmin workout ID
@@ -73,6 +74,7 @@ class GarminWorkoutUploader:
             week_number=workout_data["week_number"],
             day_of_week=workout_data["day_of_week"],
             workout_type=WorkoutType(workout_data["workout_type"]),
+            workout_date=workout_data.get("workout_date"),
             description_ja=workout_data.get("description_ja"),
             target_distance_km=workout_data.get("target_distance_km"),
             target_duration_minutes=workout_data.get("target_duration_minutes"),
@@ -103,20 +105,62 @@ class GarminWorkoutUploader:
                 )
                 update_conn.close()
 
+            # Schedule on calendar if requested
+            scheduled = False
+            if schedule and garmin_id and planned.workout_date:
+                scheduled = self._schedule_workout(
+                    client, garmin_id, str(planned.workout_date)
+                )
+
             return {
                 "success": True,
                 "workout_id": workout_id,
                 "garmin_workout_id": garmin_id,
                 "workout_name": garmin_workout["workoutName"],
+                "scheduled": scheduled,
+                "scheduled_date": str(planned.workout_date) if scheduled else None,
             }
         except Exception as e:
             logger.error(f"Upload failed for {workout_id}: {e}")
             return {"error": str(e), "workout_id": workout_id}
 
+    def _schedule_workout(
+        self, client: Any, garmin_workout_id: int, scheduled_date: str
+    ) -> bool:
+        """Schedule a workout on Garmin Connect calendar.
+
+        Args:
+            client: Authenticated Garmin Connect client
+            garmin_workout_id: Garmin workout ID (from upload)
+            scheduled_date: Date in YYYY-MM-DD format
+
+        Returns:
+            True if scheduling succeeded
+        """
+        try:
+            url = f"/workout-service/schedule/{garmin_workout_id}"
+            payload = {"date": scheduled_date}
+            client.garth.post("connectapi", url, json=payload, api=True)
+            logger.info(f"Scheduled workout {garmin_workout_id} on {scheduled_date}")
+            return True
+        except Exception as e:
+            logger.warning(
+                f"Failed to schedule workout {garmin_workout_id} on {scheduled_date}: {e}"
+            )
+            return False
+
     def upload_plan_workouts(
-        self, plan_id: str, week_number: int | None = None
+        self,
+        plan_id: str,
+        week_number: int | None = None,
+        schedule: bool = True,
     ) -> dict[str, Any]:
         """Upload all workouts for a plan (or specific week).
+
+        Args:
+            plan_id: Plan ID
+            week_number: Optional specific week to upload
+            schedule: If True, schedule workouts on Garmin calendar
 
         Returns:
             Dict with results for each workout
@@ -140,7 +184,7 @@ class GarminWorkoutUploader:
                 )
                 continue
 
-            result = self.upload_workout(w["workout_id"])
+            result = self.upload_workout(w["workout_id"], schedule=schedule)
             results.append(result)
 
         return {

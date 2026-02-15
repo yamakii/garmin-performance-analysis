@@ -684,6 +684,11 @@ async def list_tools() -> list[Tool]:
                         "type": "integer",
                         "description": "Specific week to upload (with plan_id)",
                     },
+                    "schedule": {
+                        "type": "boolean",
+                        "description": "Schedule workouts on Garmin Connect calendar (default: true)",
+                        "default": True,
+                    },
                 },
             },
         ),
