@@ -1,8 +1,5 @@
 """Training mode detection from hr_efficiency table."""
 
-import os
-from pathlib import Path
-
 import duckdb
 
 
@@ -21,8 +18,9 @@ def get_training_mode(activity_id: int, db_path: str | None = None) -> str:
         - Maps hr_efficiency.training_type directly to training mode
     """
     if db_path is None:
-        data_dir = os.getenv("GARMIN_DATA_DIR", "data")
-        db_path = str(Path(data_dir) / "database" / "garmin_performance.duckdb")
+        from garmin_mcp.utils.paths import get_default_db_path
+
+        db_path = get_default_db_path()
 
     conn = duckdb.connect(db_path, read_only=True)
 

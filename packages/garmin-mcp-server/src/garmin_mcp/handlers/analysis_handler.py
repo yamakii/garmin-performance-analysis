@@ -1,11 +1,15 @@
 """Handler for analysis tools."""
 
 import json
+import logging
 from typing import Any
 
 from mcp.types import TextContent
 
+from garmin_mcp.config import DEFAULT_MAX_OUTPUT_SIZE
 from garmin_mcp.database.db_reader import GarminDBReader
+
+logger = logging.getLogger(__name__)
 
 
 class AnalysisHandler:
@@ -51,9 +55,13 @@ class AnalysisHandler:
     async def _get_section_analysis(
         self, arguments: dict[str, Any]
     ) -> list[TextContent]:
+        logger.warning(
+            "DEPRECATED: get_section_analysis() is deprecated. "
+            "Use extract_insights() for summarized data instead."
+        )
         activity_id = arguments["activity_id"]
         section_type = arguments["section_type"]
-        max_output_size = arguments.get("max_output_size", 10240)
+        max_output_size = arguments.get("max_output_size", DEFAULT_MAX_OUTPUT_SIZE)
         result = self._db_reader.get_section_analysis(  # type: ignore[assignment]
             activity_id, section_type, max_output_size
         )

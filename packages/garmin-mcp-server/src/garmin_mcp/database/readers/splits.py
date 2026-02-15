@@ -7,6 +7,7 @@ Handles all splits table queries with optional statistics-only mode.
 import logging
 from typing import Any
 
+from garmin_mcp.database.readers import splits_query_builder as qb
 from garmin_mcp.database.readers.base import BaseDBReader
 
 logger = logging.getLogger(__name__)
@@ -31,127 +32,25 @@ class SplitsReader(BaseDBReader):
             Full mode (statistics_only=False):
                 Dict with 'splits' key containing list of split data with pace and HR
             Statistics mode (statistics_only=True):
-                Dict with aggregated statistics:
-                {
-                    "activity_id": int,
-                    "statistics_only": True,
-                    "metrics": {
-                        "pace": {"mean": float, "median": float, "std": float, "min": float, "max": float},
-                        "heart_rate": {"mean": float, "median": float, "std": float, "min": float, "max": float}
-                    }
-                }
+                Dict with aggregated statistics
         """
         try:
             with self._get_connection() as conn:
                 if statistics_only:
-                    # Statistics mode: Use DuckDB aggregate functions
-                    result = conn.execute(
-                        """
-                        SELECT
-                            AVG(pace_seconds_per_km) as pace_mean,
-                            MEDIAN(pace_seconds_per_km) as pace_median,
-                            STDDEV(pace_seconds_per_km) as pace_std,
-                            MIN(pace_seconds_per_km) as pace_min,
-                            MAX(pace_seconds_per_km) as pace_max,
-                            AVG(heart_rate) as hr_mean,
-                            MEDIAN(heart_rate) as hr_median,
-                            STDDEV(heart_rate) as hr_std,
-                            MIN(heart_rate) as hr_min,
-                            MAX(heart_rate) as hr_max
-                        FROM splits
-                        WHERE activity_id = ?
-                        """,
-                        [activity_id],
-                    ).fetchone()
-
-                    if not result or result[0] is None:
-                        # No data found
-                        return {
-                            "activity_id": activity_id,
-                            "statistics_only": True,
-                            "metrics": {},
-                        }
-
-                    return {
-                        "activity_id": activity_id,
-                        "statistics_only": True,
-                        "metrics": {
-                            "pace": {
-                                "mean": (
-                                    float(result[0]) if result[0] is not None else 0.0
-                                ),
-                                "median": (
-                                    float(result[1]) if result[1] is not None else 0.0
-                                ),
-                                "std": (
-                                    float(result[2]) if result[2] is not None else 0.0
-                                ),
-                                "min": (
-                                    float(result[3]) if result[3] is not None else 0.0
-                                ),
-                                "max": (
-                                    float(result[4]) if result[4] is not None else 0.0
-                                ),
-                            },
-                            "heart_rate": {
-                                "mean": (
-                                    float(result[5]) if result[5] is not None else 0.0
-                                ),
-                                "median": (
-                                    float(result[6]) if result[6] is not None else 0.0
-                                ),
-                                "std": (
-                                    float(result[7]) if result[7] is not None else 0.0
-                                ),
-                                "min": (
-                                    float(result[8]) if result[8] is not None else 0.0
-                                ),
-                                "max": (
-                                    float(result[9]) if result[9] is not None else 0.0
-                                ),
-                            },
-                        },
-                    }
-
-                # Full mode: Return all split data
-                splits_result = conn.execute(
-                    """
-                    SELECT
-                        split_index,
-                        distance,
-                        pace_seconds_per_km,
-                        heart_rate
-                    FROM splits
-                    WHERE activity_id = ?
-                    ORDER BY split_index
-                    """,
-                    [activity_id],
-                ).fetchall()
-
-                if not splits_result:
-                    return {"splits": []}
-
-                splits = []
-                for row in splits_result:
-                    splits.append(
-                        {
-                            "split_number": row[0],
-                            "distance_km": row[1],
-                            "avg_pace_seconds_per_km": row[2],
-                            "avg_heart_rate": row[3],
-                        }
+                    sql = qb.build_statistics_sql(qb.PACE_HR_FIELDS)
+                    result = conn.execute(sql, [activity_id]).fetchone()
+                    return qb.parse_statistics_result(
+                        result, qb.PACE_HR_FIELDS, activity_id
                     )
 
-                return {"splits": splits}
+                sql = qb.build_full_sql(qb.PACE_HR_FULL_COLUMNS)
+                rows = conn.execute(sql, [activity_id]).fetchall()
+                return qb.parse_full_result(rows, qb.PACE_HR_FULL_KEYS)
 
         except Exception as e:
             logger.error(f"Error getting splits pace/HR data: {e}")
             if statistics_only:
-                return {
-                    "activity_id": activity_id,
-                    "statistics_only": True,
-                    "metrics": {},
-                }
+                return qb.empty_stats_result(activity_id)
             return {"splits": []}
 
     def get_splits_form_metrics(
@@ -170,150 +69,25 @@ class SplitsReader(BaseDBReader):
             Full mode (statistics_only=False):
                 Dict with 'splits' key containing list of split data with form metrics
             Statistics mode (statistics_only=True):
-                Dict with aggregated statistics:
-                {
-                    "activity_id": int,
-                    "statistics_only": True,
-                    "metrics": {
-                        "ground_contact_time": {"mean": float, "median": float, "std": float, "min": float, "max": float},
-                        "vertical_oscillation": {"mean": float, "median": float, "std": float, "min": float, "max": float},
-                        "vertical_ratio": {"mean": float, "median": float, "std": float, "min": float, "max": float}
-                    }
-                }
+                Dict with aggregated statistics
         """
         try:
             with self._get_connection() as conn:
                 if statistics_only:
-                    # Statistics mode: Use DuckDB aggregate functions
-                    result = conn.execute(
-                        """
-                        SELECT
-                            AVG(ground_contact_time) as gct_mean,
-                            MEDIAN(ground_contact_time) as gct_median,
-                            STDDEV(ground_contact_time) as gct_std,
-                            MIN(ground_contact_time) as gct_min,
-                            MAX(ground_contact_time) as gct_max,
-                            AVG(vertical_oscillation) as vo_mean,
-                            MEDIAN(vertical_oscillation) as vo_median,
-                            STDDEV(vertical_oscillation) as vo_std,
-                            MIN(vertical_oscillation) as vo_min,
-                            MAX(vertical_oscillation) as vo_max,
-                            AVG(vertical_ratio) as vr_mean,
-                            MEDIAN(vertical_ratio) as vr_median,
-                            STDDEV(vertical_ratio) as vr_std,
-                            MIN(vertical_ratio) as vr_min,
-                            MAX(vertical_ratio) as vr_max
-                        FROM splits
-                        WHERE activity_id = ?
-                        """,
-                        [activity_id],
-                    ).fetchone()
-
-                    if not result or result[0] is None:
-                        # No data found
-                        return {
-                            "activity_id": activity_id,
-                            "statistics_only": True,
-                            "metrics": {},
-                        }
-
-                    return {
-                        "activity_id": activity_id,
-                        "statistics_only": True,
-                        "metrics": {
-                            "ground_contact_time": {
-                                "mean": (
-                                    float(result[0]) if result[0] is not None else 0.0
-                                ),
-                                "median": (
-                                    float(result[1]) if result[1] is not None else 0.0
-                                ),
-                                "std": (
-                                    float(result[2]) if result[2] is not None else 0.0
-                                ),
-                                "min": (
-                                    float(result[3]) if result[3] is not None else 0.0
-                                ),
-                                "max": (
-                                    float(result[4]) if result[4] is not None else 0.0
-                                ),
-                            },
-                            "vertical_oscillation": {
-                                "mean": (
-                                    float(result[5]) if result[5] is not None else 0.0
-                                ),
-                                "median": (
-                                    float(result[6]) if result[6] is not None else 0.0
-                                ),
-                                "std": (
-                                    float(result[7]) if result[7] is not None else 0.0
-                                ),
-                                "min": (
-                                    float(result[8]) if result[8] is not None else 0.0
-                                ),
-                                "max": (
-                                    float(result[9]) if result[9] is not None else 0.0
-                                ),
-                            },
-                            "vertical_ratio": {
-                                "mean": (
-                                    float(result[10]) if result[10] is not None else 0.0
-                                ),
-                                "median": (
-                                    float(result[11]) if result[11] is not None else 0.0
-                                ),
-                                "std": (
-                                    float(result[12]) if result[12] is not None else 0.0
-                                ),
-                                "min": (
-                                    float(result[13]) if result[13] is not None else 0.0
-                                ),
-                                "max": (
-                                    float(result[14]) if result[14] is not None else 0.0
-                                ),
-                            },
-                        },
-                    }
-
-                # Full mode: Return all split data
-                splits_result = conn.execute(
-                    """
-                    SELECT
-                        split_index,
-                        ground_contact_time,
-                        vertical_oscillation,
-                        vertical_ratio
-                    FROM splits
-                    WHERE activity_id = ?
-                    ORDER BY split_index
-                    """,
-                    [activity_id],
-                ).fetchall()
-
-                if not splits_result:
-                    return {"splits": []}
-
-                splits = []
-                for row in splits_result:
-                    splits.append(
-                        {
-                            "split_number": row[0],
-                            "ground_contact_time_ms": row[1],
-                            "vertical_oscillation_cm": row[2],
-                            "vertical_ratio_percent": row[3],
-                        }
+                    sql = qb.build_statistics_sql(qb.FORM_FIELDS)
+                    result = conn.execute(sql, [activity_id]).fetchone()
+                    return qb.parse_statistics_result(
+                        result, qb.FORM_FIELDS, activity_id
                     )
 
-                return {"splits": splits}
+                sql = qb.build_full_sql(qb.FORM_FULL_COLUMNS)
+                rows = conn.execute(sql, [activity_id]).fetchall()
+                return qb.parse_full_result(rows, qb.FORM_FULL_KEYS)
 
         except Exception as e:
             logger.error(f"Error getting splits form metrics: {e}")
             if statistics_only:
-                return {
-                    "activity_id": activity_id,
-                    "statistics_only": True,
-                    "metrics": {},
-                }
+                return qb.empty_stats_result(activity_id)
             return {"splits": []}
 
     def get_splits_elevation(
@@ -332,129 +106,29 @@ class SplitsReader(BaseDBReader):
             Full mode (statistics_only=False):
                 Dict with 'splits' key containing list of split data with elevation
             Statistics mode (statistics_only=True):
-                Dict with aggregated statistics:
-                {
-                    "activity_id": int,
-                    "statistics_only": True,
-                    "metrics": {
-                        "elevation_gain": {"mean": float, "median": float, "std": float, "min": float, "max": float},
-                        "elevation_loss": {"mean": float, "median": float, "std": float, "min": float, "max": float}
-                    }
-                }
+                Dict with aggregated statistics
         """
         try:
             with self._get_connection() as conn:
                 if statistics_only:
-                    # Statistics mode: Use DuckDB aggregate functions
-                    result = conn.execute(
-                        """
-                        SELECT
-                            AVG(elevation_gain) as gain_mean,
-                            MEDIAN(elevation_gain) as gain_median,
-                            STDDEV(elevation_gain) as gain_std,
-                            MIN(elevation_gain) as gain_min,
-                            MAX(elevation_gain) as gain_max,
-                            AVG(elevation_loss) as loss_mean,
-                            MEDIAN(elevation_loss) as loss_median,
-                            STDDEV(elevation_loss) as loss_std,
-                            MIN(elevation_loss) as loss_min,
-                            MAX(elevation_loss) as loss_max
-                        FROM splits
-                        WHERE activity_id = ?
-                        """,
-                        [activity_id],
-                    ).fetchone()
-
-                    if not result or result[0] is None:
-                        # No data found
-                        return {
-                            "activity_id": activity_id,
-                            "statistics_only": True,
-                            "metrics": {},
-                        }
-
-                    return {
-                        "activity_id": activity_id,
-                        "statistics_only": True,
-                        "metrics": {
-                            "elevation_gain": {
-                                "mean": (
-                                    float(result[0]) if result[0] is not None else 0.0
-                                ),
-                                "median": (
-                                    float(result[1]) if result[1] is not None else 0.0
-                                ),
-                                "std": (
-                                    float(result[2]) if result[2] is not None else 0.0
-                                ),
-                                "min": (
-                                    float(result[3]) if result[3] is not None else 0.0
-                                ),
-                                "max": (
-                                    float(result[4]) if result[4] is not None else 0.0
-                                ),
-                            },
-                            "elevation_loss": {
-                                "mean": (
-                                    float(result[5]) if result[5] is not None else 0.0
-                                ),
-                                "median": (
-                                    float(result[6]) if result[6] is not None else 0.0
-                                ),
-                                "std": (
-                                    float(result[7]) if result[7] is not None else 0.0
-                                ),
-                                "min": (
-                                    float(result[8]) if result[8] is not None else 0.0
-                                ),
-                                "max": (
-                                    float(result[9]) if result[9] is not None else 0.0
-                                ),
-                            },
-                        },
-                    }
-
-                # Full mode: Return all split data
-                splits_result = conn.execute(
-                    """
-                    SELECT
-                        split_index,
-                        elevation_gain,
-                        elevation_loss,
-                        terrain_type
-                    FROM splits
-                    WHERE activity_id = ?
-                    ORDER BY split_index
-                    """,
-                    [activity_id],
-                ).fetchall()
-
-                if not splits_result:
-                    return {"splits": []}
-
-                splits = []
-                for row in splits_result:
-                    splits.append(
-                        {
-                            "split_number": row[0],
-                            "elevation_gain_m": row[1],
-                            "elevation_loss_m": row[2],
-                            "max_elevation_m": None,  # Not available in splits table
-                            "min_elevation_m": None,  # Not available in splits table
-                            "terrain_type": row[3],
-                        }
+                    sql = qb.build_statistics_sql(qb.ELEVATION_FIELDS)
+                    result = conn.execute(sql, [activity_id]).fetchone()
+                    return qb.parse_statistics_result(
+                        result, qb.ELEVATION_FIELDS, activity_id
                     )
 
-                return {"splits": splits}
+                sql = qb.build_full_sql(qb.ELEVATION_FULL_COLUMNS)
+                rows = conn.execute(sql, [activity_id]).fetchall()
+                return qb.parse_full_result(
+                    rows,
+                    qb.ELEVATION_FULL_KEYS,
+                    extra_keys=qb.ELEVATION_EXTRA_KEYS,
+                )
 
         except Exception as e:
             logger.error(f"Error getting splits elevation data: {e}")
             if statistics_only:
-                return {
-                    "activity_id": activity_id,
-                    "statistics_only": True,
-                    "metrics": {},
-                }
+                return qb.empty_stats_result(activity_id)
             return {"splits": []}
 
     def get_splits_comprehensive(
@@ -471,237 +145,31 @@ class SplitsReader(BaseDBReader):
 
         Returns:
             Full mode (statistics_only=False):
-                Dict with 'splits' key containing list of split data with all 14 fields:
-                - pace_seconds_per_km, heart_rate, max_heart_rate
-                - ground_contact_time, vertical_oscillation, vertical_ratio
-                - power, stride_length, cadence, max_cadence
-                - elevation_gain, elevation_loss
-                - intensity_type, role_phase (NEW: for split classification)
+                Dict with 'splits' key containing list of split data with all 14 fields
             Statistics mode (statistics_only=True):
-                Dict with aggregated statistics:
-                {
-                    "activity_id": int,
-                    "statistics_only": True,
-                    "metrics": {
-                        "pace": {"mean": float, "median": float, "std": float, "min": float, "max": float},
-                        "heart_rate": {...},
-                        "ground_contact_time": {...},
-                        "vertical_oscillation": {...},
-                        "vertical_ratio": {...},
-                        "power": {...},
-                        "stride_length": {...},
-                        "cadence": {...},
-                        "elevation_gain": {...},
-                        "elevation_loss": {...},
-                        "max_heart_rate": {...},
-                        "max_cadence": {...}
-                    }
-                }
+                Dict with aggregated statistics for 12 numeric fields
         """
         try:
             with self._get_connection() as conn:
                 if statistics_only:
-                    # Statistics mode: Use DuckDB aggregate functions for all 12 fields
-                    result = conn.execute(
-                        """
-                        SELECT
-                            AVG(pace_seconds_per_km) as pace_mean,
-                            MEDIAN(pace_seconds_per_km) as pace_median,
-                            STDDEV(pace_seconds_per_km) as pace_std,
-                            MIN(pace_seconds_per_km) as pace_min,
-                            MAX(pace_seconds_per_km) as pace_max,
-
-                            AVG(heart_rate) as hr_mean,
-                            MEDIAN(heart_rate) as hr_median,
-                            STDDEV(heart_rate) as hr_std,
-                            MIN(heart_rate) as hr_min,
-                            MAX(heart_rate) as hr_max,
-
-                            AVG(ground_contact_time) as gct_mean,
-                            MEDIAN(ground_contact_time) as gct_median,
-                            STDDEV(ground_contact_time) as gct_std,
-                            MIN(ground_contact_time) as gct_min,
-                            MAX(ground_contact_time) as gct_max,
-
-                            AVG(vertical_oscillation) as vo_mean,
-                            MEDIAN(vertical_oscillation) as vo_median,
-                            STDDEV(vertical_oscillation) as vo_std,
-                            MIN(vertical_oscillation) as vo_min,
-                            MAX(vertical_oscillation) as vo_max,
-
-                            AVG(vertical_ratio) as vr_mean,
-                            MEDIAN(vertical_ratio) as vr_median,
-                            STDDEV(vertical_ratio) as vr_std,
-                            MIN(vertical_ratio) as vr_min,
-                            MAX(vertical_ratio) as vr_max,
-
-                            AVG(power) as power_mean,
-                            MEDIAN(power) as power_median,
-                            STDDEV(power) as power_std,
-                            MIN(power) as power_min,
-                            MAX(power) as power_max,
-
-                            AVG(stride_length) as stride_mean,
-                            MEDIAN(stride_length) as stride_median,
-                            STDDEV(stride_length) as stride_std,
-                            MIN(stride_length) as stride_min,
-                            MAX(stride_length) as stride_max,
-
-                            AVG(cadence) as cadence_mean,
-                            MEDIAN(cadence) as cadence_median,
-                            STDDEV(cadence) as cadence_std,
-                            MIN(cadence) as cadence_min,
-                            MAX(cadence) as cadence_max,
-
-                            AVG(elevation_gain) as gain_mean,
-                            MEDIAN(elevation_gain) as gain_median,
-                            STDDEV(elevation_gain) as gain_std,
-                            MIN(elevation_gain) as gain_min,
-                            MAX(elevation_gain) as gain_max,
-
-                            AVG(elevation_loss) as loss_mean,
-                            MEDIAN(elevation_loss) as loss_median,
-                            STDDEV(elevation_loss) as loss_std,
-                            MIN(elevation_loss) as loss_min,
-                            MAX(elevation_loss) as loss_max,
-
-                            AVG(max_heart_rate) as max_hr_mean,
-                            MEDIAN(max_heart_rate) as max_hr_median,
-                            STDDEV(max_heart_rate) as max_hr_std,
-                            MIN(max_heart_rate) as max_hr_min,
-                            MAX(max_heart_rate) as max_hr_max,
-
-                            AVG(max_cadence) as max_cad_mean,
-                            MEDIAN(max_cadence) as max_cad_median,
-                            STDDEV(max_cadence) as max_cad_std,
-                            MIN(max_cadence) as max_cad_min,
-                            MAX(max_cadence) as max_cad_max
-                        FROM splits
-                        WHERE activity_id = ?
-                        """,
-                        [activity_id],
-                    ).fetchone()
-
-                    if not result or result[0] is None:
-                        # No data found
-                        return {
-                            "activity_id": activity_id,
-                            "statistics_only": True,
-                            "metrics": {},
-                        }
-
-                    # Helper function to convert stats to dict
-                    def stats_dict(offset: int) -> dict[str, float]:
-                        return {
-                            "mean": (
-                                float(result[offset])
-                                if result[offset] is not None
-                                else 0.0
-                            ),
-                            "median": (
-                                float(result[offset + 1])
-                                if result[offset + 1] is not None
-                                else 0.0
-                            ),
-                            "std": (
-                                float(result[offset + 2])
-                                if result[offset + 2] is not None
-                                else 0.0
-                            ),
-                            "min": (
-                                float(result[offset + 3])
-                                if result[offset + 3] is not None
-                                else 0.0
-                            ),
-                            "max": (
-                                float(result[offset + 4])
-                                if result[offset + 4] is not None
-                                else 0.0
-                            ),
-                        }
-
-                    return {
-                        "activity_id": activity_id,
-                        "statistics_only": True,
-                        "metrics": {
-                            "pace": stats_dict(0),
-                            "heart_rate": stats_dict(5),
-                            "ground_contact_time": stats_dict(10),
-                            "vertical_oscillation": stats_dict(15),
-                            "vertical_ratio": stats_dict(20),
-                            "power": stats_dict(25),
-                            "stride_length": stats_dict(30),
-                            "cadence": stats_dict(35),
-                            "elevation_gain": stats_dict(40),
-                            "elevation_loss": stats_dict(45),
-                            "max_heart_rate": stats_dict(50),
-                            "max_cadence": stats_dict(55),
-                        },
-                    }
-
-                # Full mode: Return all split data with 14 fields (added intensity_type, role_phase)
-                splits_result = conn.execute(
-                    """
-                    SELECT
-                        split_index,
-                        distance,
-                        pace_seconds_per_km,
-                        heart_rate,
-                        ground_contact_time,
-                        vertical_oscillation,
-                        vertical_ratio,
-                        power,
-                        stride_length,
-                        cadence,
-                        elevation_gain,
-                        elevation_loss,
-                        max_heart_rate,
-                        max_cadence,
-                        intensity_type,
-                        role_phase
-                    FROM splits
-                    WHERE activity_id = ?
-                    ORDER BY split_index
-                    """,
-                    [activity_id],
-                ).fetchall()
-
-                if not splits_result:
-                    return {"splits": []}
-
-                splits = []
-                for row in splits_result:
-                    splits.append(
-                        {
-                            "split_number": row[0],
-                            "distance_km": row[1],
-                            "avg_pace_seconds_per_km": row[2],
-                            "avg_heart_rate": row[3],
-                            "ground_contact_time_ms": row[4],
-                            "vertical_oscillation_cm": row[5],
-                            "vertical_ratio_percent": row[6],
-                            "power_watts": row[7] if row[7] is not None else 0.0,
-                            "stride_length_cm": row[8] if row[8] is not None else 0.0,
-                            "cadence_spm": row[9],
-                            "elevation_gain_m": row[10],
-                            "elevation_loss_m": row[11],
-                            "max_heart_rate_bpm": row[12],
-                            "max_cadence_spm": row[13],
-                            "intensity_type": row[14] if row[14] is not None else "",
-                            "role_phase": row[15] if row[15] is not None else "",
-                        }
+                    sql = qb.build_statistics_sql(qb.COMPREHENSIVE_STAT_FIELDS)
+                    result = conn.execute(sql, [activity_id]).fetchone()
+                    return qb.parse_statistics_result(
+                        result, qb.COMPREHENSIVE_STAT_FIELDS, activity_id
                     )
 
-                return {"splits": splits}
+                sql = qb.build_full_sql(qb.COMPREHENSIVE_FULL_COLUMNS)
+                rows = conn.execute(sql, [activity_id]).fetchall()
+                return qb.parse_full_result(
+                    rows,
+                    qb.COMPREHENSIVE_FULL_KEYS,
+                    defaults=qb.COMPREHENSIVE_FULL_DEFAULTS,
+                )
 
         except Exception as e:
             logger.error(f"Error getting comprehensive splits data: {e}")
             if statistics_only:
-                return {
-                    "activity_id": activity_id,
-                    "statistics_only": True,
-                    "metrics": {},
-                }
+                return qb.empty_stats_result(activity_id)
             return {"splits": []}
 
     def get_splits_all(

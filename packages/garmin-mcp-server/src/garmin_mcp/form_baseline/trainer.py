@@ -228,7 +228,6 @@ def train_power_efficiency_baseline(
     Raises:
         None - Returns None on errors instead of raising
     """
-    import os
     from datetime import datetime, timedelta
 
     import duckdb
@@ -237,8 +236,9 @@ def train_power_efficiency_baseline(
 
     # Get database path
     if db_path is None:
-        data_dir = os.getenv("GARMIN_DATA_DIR", "data")
-        db_path = f"{data_dir}/database/garmin_performance.duckdb"
+        from garmin_mcp.utils.paths import get_default_db_path
+
+        db_path = get_default_db_path()
 
     # Parse end_date
     if end_date is None:
@@ -382,7 +382,6 @@ def train_form_baselines(
     Raises:
         None - Returns None on errors instead of raising
     """
-    import os
     from datetime import datetime
 
     import duckdb
@@ -392,8 +391,9 @@ def train_form_baselines(
 
     # Get database path
     if db_path is None:
-        data_dir = os.getenv("GARMIN_DATA_DIR", "data")
-        db_path = f"{data_dir}/database/garmin_performance.duckdb"
+        from garmin_mcp.utils.paths import get_default_db_path
+
+        db_path = get_default_db_path()
 
     # Parse end_date
     if end_date is None:

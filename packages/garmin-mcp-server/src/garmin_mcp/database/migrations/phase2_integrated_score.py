@@ -1,6 +1,5 @@
 """Phase 2 migration: Add integrated_score and training_mode columns to form_evaluations."""
 
-import os
 from pathlib import Path
 
 import duckdb
@@ -16,8 +15,9 @@ def migrate_phase2_schema(db_path: str | None = None) -> None:
         FileNotFoundError: If database file does not exist
     """
     if db_path is None:
-        data_dir = os.getenv("GARMIN_DATA_DIR", "data")
-        db_path = str(Path(data_dir) / "database" / "garmin_performance.duckdb")
+        from garmin_mcp.utils.paths import get_default_db_path
+
+        db_path = get_default_db_path()
 
     if not Path(db_path).exists():
         raise FileNotFoundError(f"Database not found: {db_path}")

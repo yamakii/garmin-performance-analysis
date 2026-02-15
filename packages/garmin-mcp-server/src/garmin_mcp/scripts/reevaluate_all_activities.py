@@ -99,10 +99,9 @@ def main() -> int:
     if args.db_path:
         db_path = os.path.expanduser(args.db_path)
     else:
-        garmin_data_dir = os.getenv(
-            "GARMIN_DATA_DIR", os.path.expanduser("~/garmin_data")
-        )
-        db_path = f"{garmin_data_dir}/database/garmin_performance.duckdb"
+        from garmin_mcp.utils.paths import get_default_db_path
+
+        db_path = get_default_db_path()
     if not Path(db_path).exists():
         print(f"Error: Database not found: {db_path}", file=sys.stderr)
         return 1

@@ -5,15 +5,14 @@ This migration adds power efficiency evaluation columns to:
 2. form_evaluations - Power efficiency metrics
 """
 
-import os
-
 import duckdb
 
 
 def get_db_path() -> str:
     """Get database path from environment."""
-    data_dir = os.getenv("GARMIN_DATA_DIR", "data")
-    return f"{data_dir}/database/garmin_performance.duckdb"
+    from garmin_mcp.utils.paths import get_default_db_path
+
+    return get_default_db_path()
 
 
 def migrate_form_baseline_history(conn: duckdb.DuckDBPyConnection) -> None:
