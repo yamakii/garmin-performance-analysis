@@ -207,37 +207,33 @@ class IntervalAnalyzer:
                 "fatigue_indicators": {...}
             }
         """
-        import duckdb
-
+        from garmin_mcp.database.connection import get_connection
         from garmin_mcp.database.db_reader import GarminDBReader
 
         # Query DuckDB directly for splits with intensity_type and time ranges
         db_reader = GarminDBReader()
 
         try:
-            conn = duckdb.connect(str(db_reader.db_path), read_only=True)
-
-            result = conn.execute(
-                """
-                SELECT
-                    split_index,
-                    distance,
-                    start_time_s,
-                    end_time_s,
-                    intensity_type,
-                    pace_seconds_per_km,
-                    heart_rate,
-                    ground_contact_time,
-                    vertical_oscillation,
-                    vertical_ratio
-                FROM splits
-                WHERE activity_id = ?
-                ORDER BY split_index
-                """,
-                [activity_id],
-            ).fetchall()
-
-            conn.close()
+            with get_connection(db_reader.db_path) as conn:
+                result = conn.execute(
+                    """
+                    SELECT
+                        split_index,
+                        distance,
+                        start_time_s,
+                        end_time_s,
+                        intensity_type,
+                        pace_seconds_per_km,
+                        heart_rate,
+                        ground_contact_time,
+                        vertical_oscillation,
+                        vertical_ratio
+                    FROM splits
+                    WHERE activity_id = ?
+                    ORDER BY split_index
+                    """,
+                    [activity_id],
+                ).fetchall()
 
             if not result:
                 return {

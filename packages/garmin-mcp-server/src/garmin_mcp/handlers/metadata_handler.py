@@ -30,27 +30,26 @@ class MetadataHandler:
     async def _get_activity_by_date(
         self, arguments: dict[str, Any]
     ) -> list[TextContent]:
-        import duckdb
+        from garmin_mcp.database.connection import get_connection
 
         date = arguments["date"]
 
         try:
-            conn = duckdb.connect(str(self._db_reader.db_path), read_only=True)
-            activities_result = conn.execute(
-                """
-                SELECT
-                    activity_id,
-                    activity_name,
-                    start_time_local,
-                    total_distance_km,
-                    total_time_seconds
-                FROM activities
-                WHERE activity_date = ?
-                ORDER BY start_time_local
-                """,
-                [date],
-            ).fetchall()
-            conn.close()
+            with get_connection(self._db_reader.db_path) as conn:
+                activities_result = conn.execute(
+                    """
+                    SELECT
+                        activity_id,
+                        activity_name,
+                        start_time_local,
+                        total_distance_km,
+                        total_time_seconds
+                    FROM activities
+                    WHERE activity_date = ?
+                    ORDER BY start_time_local
+                    """,
+                    [date],
+                ).fetchall()
 
             activities = [
                 {

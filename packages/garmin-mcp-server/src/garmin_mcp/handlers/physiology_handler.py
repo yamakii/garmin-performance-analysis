@@ -59,8 +59,9 @@ class PhysiologyHandler:
     ) -> list[TextContent]:
         from datetime import datetime
 
-        import duckdb
         from dateutil.relativedelta import relativedelta
+
+        from garmin_mcp.database.connection import get_connection
 
         activity_id = arguments["activity_id"]
         activity_date = arguments["activity_date"]
@@ -68,57 +69,53 @@ class PhysiologyHandler:
         condition_group = arguments.get("condition_group", "flat_road")
 
         try:
-            conn = duckdb.connect(str(self._db_reader.db_path), read_only=True)
+            with get_connection(self._db_reader.db_path) as conn:
+                # Get current period baseline
+                current_baselines = conn.execute(
+                    """
+                    SELECT metric, coef_d, coef_b, period_start, period_end
+                    FROM form_baseline_history
+                    WHERE user_id = ?
+                      AND condition_group = ?
+                      AND period_start <= ?
+                      AND period_end >= ?
+                    ORDER BY metric
+                    """,
+                    [user_id, condition_group, activity_date, activity_date],
+                ).fetchall()
 
-            # Get current period baseline
-            current_baselines = conn.execute(
-                """
-                SELECT metric, coef_d, coef_b, period_start, period_end
-                FROM form_baseline_history
-                WHERE user_id = ?
-                  AND condition_group = ?
-                  AND period_start <= ?
-                  AND period_end >= ?
-                ORDER BY metric
-                """,
-                [user_id, condition_group, activity_date, activity_date],
-            ).fetchall()
+                if not current_baselines:
+                    result: dict[str, Any] = {
+                        "success": False,
+                        "error": f"No baseline found for {activity_date}",
+                    }
+                    return [
+                        TextContent(
+                            type="text",
+                            text=json.dumps(result, indent=2, ensure_ascii=False),
+                        )
+                    ]
 
-            if not current_baselines:
-                conn.close()
-                result: dict[str, Any] = {
-                    "success": False,
-                    "error": f"No baseline found for {activity_date}",
-                }
-                return [
-                    TextContent(
-                        type="text",
-                        text=json.dumps(result, indent=2, ensure_ascii=False),
-                    )
-                ]
+                # Calculate 1 month before the current period start
+                current_period_start = datetime.strptime(
+                    str(current_baselines[0][3]), "%Y-%m-%d"
+                )
+                one_month_before = current_period_start - relativedelta(months=1)
+                target_date = one_month_before.strftime("%Y-%m-%d")
 
-            # Calculate 1 month before the current period start
-            current_period_start = datetime.strptime(
-                str(current_baselines[0][3]), "%Y-%m-%d"
-            )
-            one_month_before = current_period_start - relativedelta(months=1)
-            target_date = one_month_before.strftime("%Y-%m-%d")
-
-            # Get previous period baseline (1 month before)
-            previous_baselines = conn.execute(
-                """
-                SELECT metric, coef_d, coef_b, period_start, period_end
-                FROM form_baseline_history
-                WHERE user_id = ?
-                  AND condition_group = ?
-                  AND period_start <= ?
-                  AND period_end >= ?
-                ORDER BY metric
-                """,
-                [user_id, condition_group, target_date, target_date],
-            ).fetchall()
-
-            conn.close()
+                # Get previous period baseline (1 month before)
+                previous_baselines = conn.execute(
+                    """
+                    SELECT metric, coef_d, coef_b, period_start, period_end
+                    FROM form_baseline_history
+                    WHERE user_id = ?
+                      AND condition_group = ?
+                      AND period_start <= ?
+                      AND period_end >= ?
+                    ORDER BY metric
+                    """,
+                    [user_id, condition_group, target_date, target_date],
+                ).fetchall()
 
             if not previous_baselines:
                 result = {

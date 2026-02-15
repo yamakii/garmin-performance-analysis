@@ -20,12 +20,11 @@ class TestDeprecationWarnings:
     @pytest.fixture
     def db_reader(self):
         """Create a GarminDBReader instance with mocked database."""
-        # Patch duckdb in the base reader module where it's actually imported
-        with patch("garmin_mcp.database.readers.base.duckdb") as mock_duckdb:
-            reader = GarminDBReader()
-            # Mock database connection
+        # Patch duckdb in the connection module where it's actually used
+        with patch("garmin_mcp.database.connection.duckdb") as mock_duckdb:
             mock_conn = MagicMock()
             mock_duckdb.connect.return_value = mock_conn
+            reader = GarminDBReader()
             yield reader, mock_conn
 
     def test_get_splits_all_shows_deprecation_warning(self, db_reader):

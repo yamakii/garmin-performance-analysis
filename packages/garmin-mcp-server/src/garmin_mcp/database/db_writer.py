@@ -7,9 +7,10 @@ Provides write operations to DuckDB for inserting performance data.
 import json
 import logging
 from datetime import UTC, datetime
-from pathlib import Path
 
 import duckdb
+
+from garmin_mcp.database.connection import get_db_path, get_write_connection
 
 logger = logging.getLogger(__name__)
 
@@ -19,12 +20,7 @@ class GarminDBWriter:
 
     def __init__(self, db_path: str | None = None):
         """Initialize DuckDB writer with database path."""
-        if db_path is None:
-            from garmin_mcp.utils.paths import get_database_dir
-
-            db_path = str(get_database_dir() / "garmin_performance.duckdb")
-
-        self.db_path = Path(db_path)
+        self.db_path = get_db_path(db_path)
         self._ensure_tables()
 
     def _ensure_tables(self):
@@ -51,7 +47,7 @@ class GarminDBWriter:
 
         Note: Schemas match those defined in individual inserters to ensure compatibility.
         """
-        conn = duckdb.connect(str(self.db_path))
+        conn = duckdb.connect(str(self.db_path))  # Direct connect for DDL operations
 
         # Create activities table (matches inserters/activities.py - 19 columns)
         conn.execute("""
@@ -464,83 +460,80 @@ class GarminDBWriter:
             True if successful
         """
         try:
-            conn = duckdb.connect(str(self.db_path))
+            with get_write_connection(self.db_path) as conn:
+                # Start transaction
+                conn.begin()
 
-            # Start transaction
-            conn.begin()
+                try:
+                    # UPSERT Step 1: Get next analysis_id from sequence (thread-safe)
+                    # Note: ON CONFLICT時は使用されず、既存のanalysis_idが保持される
+                    row = conn.execute(
+                        "SELECT nextval('seq_section_analyses_id')"
+                    ).fetchone()
+                    assert row is not None
+                    next_analysis_id = row[0]
 
-            try:
-                # UPSERT Step 1: Get next analysis_id from sequence (thread-safe)
-                # Note: ON CONFLICT時は使用されず、既存のanalysis_idが保持される
-                row = conn.execute(
-                    "SELECT nextval('seq_section_analyses_id')"
-                ).fetchone()
-                assert row is not None
-                next_analysis_id = row[0]
+                    # Auto-generate metadata if not present
+                    if "metadata" not in analysis_data:
+                        # Determine agent name from section_type
+                        if agent_name is None:
+                            agent_name = f"{section_type}-section-analyst"
 
-                # Auto-generate metadata if not present
-                if "metadata" not in analysis_data:
-                    # Determine agent name from section_type
-                    if agent_name is None:
-                        agent_name = f"{section_type}-section-analyst"
+                        # Generate metadata
+                        metadata = {
+                            "activity_id": str(activity_id),
+                            "date": activity_date,
+                            "analyst": agent_name,
+                            "version": agent_version,
+                            "timestamp": datetime.now(UTC).isoformat(),
+                        }
 
-                    # Generate metadata
-                    metadata = {
-                        "activity_id": str(activity_id),
-                        "date": activity_date,
-                        "analyst": agent_name,
-                        "version": agent_version,
-                        "timestamp": datetime.now(UTC).isoformat(),
-                    }
+                        # Add metadata to analysis_data
+                        analysis_data_with_metadata = {
+                            "metadata": metadata,
+                            **analysis_data,
+                        }
+                    else:
+                        # Use existing metadata
+                        analysis_data_with_metadata = analysis_data
+                        metadata = analysis_data["metadata"]
+                        agent_name = metadata.get("analyst", agent_name)
+                        agent_version = metadata.get("version", agent_version)
 
-                    # Add metadata to analysis_data
-                    analysis_data_with_metadata = {
-                        "metadata": metadata,
-                        **analysis_data,
-                    }
-                else:
-                    # Use existing metadata
-                    analysis_data_with_metadata = analysis_data
-                    metadata = analysis_data["metadata"]
-                    agent_name = metadata.get("analyst", agent_name)
-                    agent_version = metadata.get("version", agent_version)
+                    # UPSERT Step 2: Insert or Update using ON CONFLICT
+                    conn.execute(
+                        """
+                        INSERT INTO section_analyses
+                        (analysis_id, activity_id, activity_date, section_type, analysis_data, agent_name, agent_version)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT (activity_id, section_type)
+                        DO UPDATE SET
+                            analysis_data = EXCLUDED.analysis_data,
+                            agent_name = EXCLUDED.agent_name,
+                            agent_version = EXCLUDED.agent_version
+                    """,
+                        [
+                            next_analysis_id,
+                            activity_id,
+                            activity_date,
+                            section_type,
+                            json.dumps(analysis_data_with_metadata),
+                            agent_name,
+                            agent_version,
+                        ],
+                    )
 
-                # UPSERT Step 2: Insert or Update using ON CONFLICT
-                conn.execute(
-                    """
-                    INSERT INTO section_analyses
-                    (analysis_id, activity_id, activity_date, section_type, analysis_data, agent_name, agent_version)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT (activity_id, section_type)
-                    DO UPDATE SET
-                        analysis_data = EXCLUDED.analysis_data,
-                        agent_name = EXCLUDED.agent_name,
-                        agent_version = EXCLUDED.agent_version
-                """,
-                    [
-                        next_analysis_id,
-                        activity_id,
-                        activity_date,
-                        section_type,
-                        json.dumps(analysis_data_with_metadata),
-                        agent_name,
-                        agent_version,
-                    ],
-                )
+                    # Commit transaction
+                    conn.commit()
+                    logger.info(
+                        f"Upserted {section_type} analysis for activity {activity_id} (replaced existing if any)"
+                    )
+                    return True
 
-                # Commit transaction
-                conn.commit()
-                conn.close()
-                logger.info(
-                    f"Upserted {section_type} analysis for activity {activity_id} (replaced existing if any)"
-                )
-                return True
-
-            except Exception as e:
-                # Rollback on error
-                conn.rollback()
-                conn.close()
-                raise e
+                except Exception as e:
+                    # Rollback on error
+                    conn.rollback()
+                    raise e
 
         except Exception as e:
             logger.error(f"Error upserting section analysis: {e}")
@@ -558,65 +551,69 @@ class GarminDBWriter:
             True if successful
         """
         try:
-            conn = duckdb.connect(str(self.db_path))
+            with get_write_connection(self.db_path) as conn:
+                # Schema cleanup: Remove device-unprovided metabolic fields
+                for column in [
+                    "basal_metabolic_rate",
+                    "active_metabolic_rate",
+                    "metabolic_age",
+                    "visceral_fat_rating",
+                    "physique_rating",
+                ]:
+                    try:
+                        conn.execute(
+                            f"ALTER TABLE body_composition DROP COLUMN {column}"
+                        )
+                    except Exception:
+                        pass  # Column already removed or never existed
 
-            # Schema cleanup: Remove device-unprovided metabolic fields
-            for column in [
-                "basal_metabolic_rate",
-                "active_metabolic_rate",
-                "metabolic_age",
-                "visceral_fat_rating",
-                "physique_rating",
-            ]:
-                try:
-                    conn.execute(f"ALTER TABLE body_composition DROP COLUMN {column}")
-                except Exception:
-                    pass  # Column already removed or never existed
+                # Extract data from dateWeightList (first entry)
+                date_weight_list = weight_data.get("dateWeightList", [])
+                if not date_weight_list:
+                    logger.warning(f"No weight data found for {date}")
+                    return False
 
-            # Extract data from dateWeightList (first entry)
-            date_weight_list = weight_data.get("dateWeightList", [])
-            if not date_weight_list:
-                logger.warning(f"No weight data found for {date}")
-                return False
+                data = date_weight_list[0]
 
-            data = date_weight_list[0]
+                # Get next measurement_id
+                max_id_result = conn.execute(
+                    "SELECT COALESCE(MAX(measurement_id), 0) FROM body_composition"
+                ).fetchone()
+                next_measurement_id = max_id_result[0] + 1 if max_id_result else 1
 
-            # Get next measurement_id
-            max_id_result = conn.execute(
-                "SELECT COALESCE(MAX(measurement_id), 0) FROM body_composition"
-            ).fetchone()
-            next_measurement_id = max_id_result[0] + 1 if max_id_result else 1
+                # Convert grams to kg for consistency
+                weight_kg = (
+                    data.get("weight", 0) / 1000.0 if data.get("weight") else None
+                )
+                muscle_mass_kg = (
+                    data.get("muscleMass", 0) / 1000.0
+                    if data.get("muscleMass")
+                    else None
+                )
+                bone_mass_kg = (
+                    data.get("boneMass", 0) / 1000.0 if data.get("boneMass") else None
+                )
 
-            # Convert grams to kg for consistency
-            weight_kg = data.get("weight", 0) / 1000.0 if data.get("weight") else None
-            muscle_mass_kg = (
-                data.get("muscleMass", 0) / 1000.0 if data.get("muscleMass") else None
-            )
-            bone_mass_kg = (
-                data.get("boneMass", 0) / 1000.0 if data.get("boneMass") else None
-            )
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO body_composition
+                    (measurement_id, date, weight_kg, body_fat_percentage, muscle_mass_kg,
+                     bone_mass_kg, bmi, hydration_percentage, measurement_source)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                    [
+                        next_measurement_id,
+                        date,
+                        weight_kg,
+                        data.get("bodyFat"),
+                        muscle_mass_kg,
+                        bone_mass_kg,
+                        data.get("bmi"),
+                        data.get("bodyWater"),
+                        data.get("sourceType", "INDEX_SCALE"),
+                    ],
+                )
 
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO body_composition
-                (measurement_id, date, weight_kg, body_fat_percentage, muscle_mass_kg,
-                 bone_mass_kg, bmi, hydration_percentage, measurement_source)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-                [
-                    next_measurement_id,
-                    date,
-                    weight_kg,
-                    data.get("bodyFat"),
-                    muscle_mass_kg,
-                    bone_mass_kg,
-                    data.get("bmi"),
-                    data.get("bodyWater"),
-                    data.get("sourceType", "INDEX_SCALE"),
-                ],
-            )
-
-            conn.close()
             logger.info(f"Inserted body composition data for {date}")
             return True
         except Exception as e:

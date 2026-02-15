@@ -7,9 +7,10 @@ Provides common utilities for all reader classes.
 import logging
 from collections.abc import Generator
 from contextlib import contextmanager
-from pathlib import Path
 
 import duckdb
+
+from garmin_mcp.database.connection import get_connection, get_db_path
 
 logger = logging.getLogger(__name__)
 
@@ -22,14 +23,9 @@ class BaseDBReader:
 
         Args:
             db_path: Optional path to DuckDB database file.
-                    If None, uses default path from garmin_mcp.utils.paths.
+                    If None, uses default path from config.
         """
-        if db_path is None:
-            from garmin_mcp.utils.paths import get_database_dir
-
-            db_path = str(get_database_dir() / "garmin_performance.duckdb")
-
-        self.db_path = Path(db_path)
+        self.db_path = get_db_path(db_path)
         if not self.db_path.exists():
             logger.warning(f"Database not found: {self.db_path}")
 
@@ -44,8 +40,5 @@ class BaseDBReader:
             >>> with self._get_connection() as conn:
             ...     result = conn.execute("SELECT * FROM activities").fetchone()
         """
-        conn = duckdb.connect(str(self.db_path), read_only=True)
-        try:
+        with get_connection(self.db_path) as conn:
             yield conn
-        finally:
-            conn.close()

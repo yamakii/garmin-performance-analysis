@@ -1,6 +1,6 @@
 """Tests for WorkoutComparator."""
 
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -29,24 +29,23 @@ class TestWorkoutComparator:
 
     def test_find_similar_workouts_basic(self, comparator):
         """Test basic similar workout search."""
-        # Mock _execute_query for target activity
-        mock_result_target = Mock()
-        mock_result_target.fetchone.return_value = (
-            12345,
-            "2025-10-01",
-            "Morning Run",
-            300.0,
-            150.0,
-            10.0,
-            3.5,
-            0.5,
-            180.0,
-            250.0,
-        )
+        # _execute_query now returns list of tuples directly
+        target_rows = [
+            (
+                12345,
+                "2025-10-01",
+                "Morning Run",
+                300.0,
+                150.0,
+                10.0,
+                3.5,
+                0.5,
+                180.0,
+                250.0,
+            ),
+        ]
 
-        # Mock _execute_query for similar activities
-        mock_result_similar = Mock()
-        mock_result_similar.fetchall.return_value = [
+        similar_rows = [
             (
                 12340,
                 "2025-09-15",
@@ -76,7 +75,7 @@ class TestWorkoutComparator:
         with patch.object(
             comparator,
             "_execute_query",
-            side_effect=[mock_result_target, mock_result_similar],
+            side_effect=[target_rows, similar_rows],
         ):
             result = comparator.find_similar_workouts(
                 activity_id=12345, pace_tolerance=0.1, distance_tolerance=0.1, limit=10
@@ -91,29 +90,18 @@ class TestWorkoutComparator:
 
     def test_find_similar_workouts_with_pace_tolerance(self, comparator):
         """Test similar workout search with custom pace tolerance."""
-        mock_result_target = Mock()
-        mock_result_target.fetchone.return_value = (
-            12345,
-            "2025-10-01",
-            "Run",
-            300.0,
-            150.0,
-            10.0,
-            3.5,
-            0.5,
-            180.0,
-            250.0,
-        )
+        target_rows = [
+            (12345, "2025-10-01", "Run", 300.0, 150.0, 10.0, 3.5, 0.5, 180.0, 250.0),
+        ]
 
-        mock_result_similar = Mock()
-        mock_result_similar.fetchall.return_value = [
+        similar_rows = [
             (12340, "2025-09-15", "Run", 310.0, 148.0, 10.0, 3.3, 0.4, 178.0, 245.0),
         ]
 
         with patch.object(
             comparator,
             "_execute_query",
-            side_effect=[mock_result_target, mock_result_similar],
+            side_effect=[target_rows, similar_rows],
         ):
             result = comparator.find_similar_workouts(
                 activity_id=12345, pace_tolerance=0.05, distance_tolerance=0.1
@@ -124,29 +112,18 @@ class TestWorkoutComparator:
 
     def test_find_similar_workouts_with_distance_tolerance(self, comparator):
         """Test similar workout search with custom distance tolerance."""
-        mock_result_target = Mock()
-        mock_result_target.fetchone.return_value = (
-            12345,
-            "2025-10-01",
-            "Run",
-            300.0,
-            150.0,
-            10.0,
-            3.5,
-            0.5,
-            180.0,
-            250.0,
-        )
+        target_rows = [
+            (12345, "2025-10-01", "Run", 300.0, 150.0, 10.0, 3.5, 0.5, 180.0, 250.0),
+        ]
 
-        mock_result_similar = Mock()
-        mock_result_similar.fetchall.return_value = [
+        similar_rows = [
             (12340, "2025-09-15", "Run", 300.0, 148.0, 10.5, 3.3, 0.4, 178.0, 245.0),
         ]
 
         with patch.object(
             comparator,
             "_execute_query",
-            side_effect=[mock_result_target, mock_result_similar],
+            side_effect=[target_rows, similar_rows],
         ):
             result = comparator.find_similar_workouts(
                 activity_id=12345, pace_tolerance=0.1, distance_tolerance=0.05
@@ -157,27 +134,16 @@ class TestWorkoutComparator:
 
     def test_find_similar_workouts_with_terrain_match(self, comparator):
         """Test similar workout search with terrain matching."""
-        mock_result_target = Mock()
-        mock_result_target.fetchone.return_value = (
-            12345,
-            "2025-10-01",
-            "Run",
-            300.0,
-            150.0,
-            10.0,
-            3.5,
-            0.5,
-            180.0,
-            250.0,
-        )
+        target_rows = [
+            (12345, "2025-10-01", "Run", 300.0, 150.0, 10.0, 3.5, 0.5, 180.0, 250.0),
+        ]
 
-        mock_result_similar = Mock()
-        mock_result_similar.fetchall.return_value = []
+        similar_rows: list[tuple] = []
 
         with patch.object(
             comparator,
             "_execute_query",
-            side_effect=[mock_result_target, mock_result_similar],
+            side_effect=[target_rows, similar_rows],
         ):
             result = comparator.find_similar_workouts(
                 activity_id=12345,
@@ -190,22 +156,22 @@ class TestWorkoutComparator:
 
     def test_find_similar_workouts_with_activity_type_filter(self, comparator):
         """Test similar workout search with activity type filter."""
-        mock_result_target = Mock()
-        mock_result_target.fetchone.return_value = (
-            12345,
-            "2025-10-01",
-            "Tempo Run",
-            280.0,
-            155.0,
-            8.0,
-            3.8,
-            0.7,
-            185.0,
-            260.0,
-        )
+        target_rows = [
+            (
+                12345,
+                "2025-10-01",
+                "Tempo Run",
+                280.0,
+                155.0,
+                8.0,
+                3.8,
+                0.7,
+                185.0,
+                260.0,
+            ),
+        ]
 
-        mock_result_similar = Mock()
-        mock_result_similar.fetchall.return_value = [
+        similar_rows = [
             (
                 12340,
                 "2025-09-15",
@@ -223,7 +189,7 @@ class TestWorkoutComparator:
         with patch.object(
             comparator,
             "_execute_query",
-            side_effect=[mock_result_target, mock_result_similar],
+            side_effect=[target_rows, similar_rows],
         ):
             result = comparator.find_similar_workouts(
                 activity_id=12345,
@@ -238,29 +204,18 @@ class TestWorkoutComparator:
 
     def test_find_similar_workouts_with_date_range(self, comparator):
         """Test similar workout search with date range filter."""
-        mock_result_target = Mock()
-        mock_result_target.fetchone.return_value = (
-            12345,
-            "2025-10-01",
-            "Run",
-            300.0,
-            150.0,
-            10.0,
-            3.5,
-            0.5,
-            180.0,
-            250.0,
-        )
+        target_rows = [
+            (12345, "2025-10-01", "Run", 300.0, 150.0, 10.0, 3.5, 0.5, 180.0, 250.0),
+        ]
 
-        mock_result_similar = Mock()
-        mock_result_similar.fetchall.return_value = [
+        similar_rows = [
             (12340, "2025-09-15", "Run", 305.0, 148.0, 10.0, 3.3, 0.4, 178.0, 245.0),
         ]
 
         with patch.object(
             comparator,
             "_execute_query",
-            side_effect=[mock_result_target, mock_result_similar],
+            side_effect=[target_rows, similar_rows],
         ):
             result = comparator.find_similar_workouts(
                 activity_id=12345,
@@ -293,23 +248,12 @@ class TestWorkoutComparator:
 
     def test_limit_results(self, comparator):
         """Test result limit."""
-        mock_result_target = Mock()
-        mock_result_target.fetchone.return_value = (
-            12345,
-            "2025-10-01",
-            "Run",
-            300.0,
-            150.0,
-            10.0,
-            3.5,
-            0.5,
-            180.0,
-            250.0,
-        )
+        target_rows = [
+            (12345, "2025-10-01", "Run", 300.0, 150.0, 10.0, 3.5, 0.5, 180.0, 250.0),
+        ]
 
         # Mock 20 similar activities
-        mock_result_similar = Mock()
-        mock_result_similar.fetchall.return_value = [
+        similar_rows = [
             (
                 12340 - i,
                 "2025-09-15",
@@ -328,7 +272,7 @@ class TestWorkoutComparator:
         with patch.object(
             comparator,
             "_execute_query",
-            side_effect=[mock_result_target, mock_result_similar],
+            side_effect=[target_rows, similar_rows],
         ):
             result = comparator.find_similar_workouts(
                 activity_id=12345, pace_tolerance=0.1, distance_tolerance=0.1, limit=5
@@ -340,27 +284,16 @@ class TestWorkoutComparator:
 
     def test_no_similar_workouts(self, comparator):
         """Test when no similar workouts are found."""
-        mock_result_target = Mock()
-        mock_result_target.fetchone.return_value = (
-            12345,
-            "2025-10-01",
-            "Run",
-            300.0,
-            150.0,
-            10.0,
-            3.5,
-            0.5,
-            180.0,
-            250.0,
-        )
+        target_rows = [
+            (12345, "2025-10-01", "Run", 300.0, 150.0, 10.0, 3.5, 0.5, 180.0, 250.0),
+        ]
 
-        mock_result_similar = Mock()
-        mock_result_similar.fetchall.return_value = []
+        similar_rows: list[tuple] = []
 
         with patch.object(
             comparator,
             "_execute_query",
-            side_effect=[mock_result_target, mock_result_similar],
+            side_effect=[target_rows, similar_rows],
         ):
             result = comparator.find_similar_workouts(
                 activity_id=12345, pace_tolerance=0.1, distance_tolerance=0.1

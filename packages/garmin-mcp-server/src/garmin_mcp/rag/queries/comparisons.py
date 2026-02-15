@@ -8,8 +8,6 @@ calculate similarity scores, and generate performance comparison insights.
 import logging
 from typing import Any
 
-import duckdb
-
 from garmin_mcp.database.db_reader import GarminDBReader
 
 logger = logging.getLogger(__name__)
@@ -126,18 +124,19 @@ class WorkoutComparator:
             return None
 
     def _execute_query(self, query: str, params: list[Any]):
-        """Execute a database query.
+        """Execute a database query and return all rows.
 
         Args:
             query: SQL query string
             params: Query parameters
 
         Returns:
-            Query result object
+            List of result tuples
         """
-        conn = duckdb.connect(str(self.db_reader.db_path), read_only=True)
-        result = conn.execute(query, params)
-        return result
+        from garmin_mcp.database.connection import get_connection
+
+        with get_connection(self.db_reader.db_path) as conn:
+            return conn.execute(query, params).fetchall()
 
     def find_similar_workouts(
         self,
@@ -271,7 +270,7 @@ class WorkoutComparator:
 
         # Execute query
         try:
-            results = self._execute_query(query, params).fetchall()
+            results = self._execute_query(query, params)
 
             # Convert to dict format and classify each candidate
             similar_activities = []
@@ -382,7 +381,8 @@ class WorkoutComparator:
                 FROM activities
                 WHERE activity_id = ?
             """
-            row = self._execute_query(query, [activity_id]).fetchone()
+            rows = self._execute_query(query, [activity_id])
+            row = rows[0] if rows else None
 
             if not row:
                 return None

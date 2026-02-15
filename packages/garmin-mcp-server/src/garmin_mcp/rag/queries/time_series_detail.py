@@ -79,25 +79,21 @@ class TimeSeriesDetailExtractor:
         Raises:
             ValueError: If split not found or invalid.
         """
-        import duckdb
-
+        from garmin_mcp.database.connection import get_connection
         from garmin_mcp.database.db_reader import GarminDBReader
 
         db_reader = GarminDBReader()
 
         try:
-            conn = duckdb.connect(str(db_reader.db_path), read_only=True)
-
-            result = conn.execute(
-                """
-                SELECT start_time_s, end_time_s
-                FROM splits
-                WHERE activity_id = ? AND split_index = ?
-                """,
-                [activity_id, split_number],  # split_index is 1-based in DuckDB
-            ).fetchone()
-
-            conn.close()
+            with get_connection(db_reader.db_path) as conn:
+                result = conn.execute(
+                    """
+                    SELECT start_time_s, end_time_s
+                    FROM splits
+                    WHERE activity_id = ? AND split_index = ?
+                    """,
+                    [activity_id, split_number],  # split_index is 1-based in DuckDB
+                ).fetchone()
 
             if not result:
                 raise ValueError(
@@ -306,24 +302,20 @@ class TimeSeriesDetailExtractor:
             True if activity data exists in time_series_metrics table.
         """
         try:
-            import duckdb
-
+            from garmin_mcp.database.connection import get_connection
             from garmin_mcp.database.db_reader import GarminDBReader
 
             db_reader = GarminDBReader()
-            conn = duckdb.connect(str(db_reader.db_path), read_only=True)
-
-            result = conn.execute(
-                """
-                SELECT COUNT(*)
-                FROM time_series_metrics
-                WHERE activity_id = ?
-                LIMIT 1
-                """,
-                [activity_id],
-            ).fetchone()
-
-            conn.close()
+            with get_connection(db_reader.db_path) as conn:
+                result = conn.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM time_series_metrics
+                    WHERE activity_id = ?
+                    LIMIT 1
+                    """,
+                    [activity_id],
+                ).fetchone()
 
             return result[0] > 0 if result else False
         except Exception:

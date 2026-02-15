@@ -56,11 +56,11 @@ def save_data(
     Returns:
         File paths dict
     """
-    import duckdb
+    from garmin_mcp.database.connection import get_write_connection
 
     activity_dir = raw_dir / "activity" / str(activity_id)
 
-    with duckdb.connect(str(db_path)) as conn:
+    with get_write_connection(db_path) as conn:
         try:
             conn.execute("BEGIN TRANSACTION")
 

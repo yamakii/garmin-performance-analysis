@@ -8,10 +8,9 @@ import threading
 import time
 import uuid
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
-import duckdb
+from garmin_mcp.database.connection import get_db_path, get_write_connection
 
 logger = logging.getLogger(__name__)
 
@@ -26,12 +25,7 @@ class ViewManager:
             db_path: Path to DuckDB database file
             max_views: Maximum number of concurrent views (default 10)
         """
-        if db_path is None:
-            from garmin_mcp.utils.paths import get_database_dir
-
-            db_path = str(get_database_dir() / "garmin_performance.duckdb")
-
-        self.db_path = Path(db_path)
+        self.db_path = get_db_path(db_path)
         self.max_views = max_views
 
         # Track views: {view_name: {"expires_at": timestamp, "created_at": timestamp, "query": str, "row_count": int}}
@@ -61,8 +55,7 @@ class ViewManager:
         expires_at = current_time + ttl_seconds
 
         # Create the view in DuckDB (use regular VIEW, not TEMP, so it persists across connections)
-        conn = duckdb.connect(str(self.db_path))
-        try:
+        with get_write_connection(self.db_path) as conn:
             # Create regular view (not TEMP) so it persists across connections
             conn.execute(f"CREATE OR REPLACE VIEW {view_name} AS {query}")
 
@@ -84,9 +77,6 @@ class ViewManager:
                 # Enforce max views limit
                 if len(self._views) > self.max_views:
                     self._cleanup_oldest()
-
-        finally:
-            conn.close()
 
         return {
             "view": view_name,
@@ -124,9 +114,8 @@ class ViewManager:
 
         # Drop the view from DuckDB
         try:
-            conn = duckdb.connect(str(self.db_path))
-            conn.execute(f"DROP VIEW IF EXISTS {view_name}")
-            conn.close()
+            with get_write_connection(self.db_path) as conn:
+                conn.execute(f"DROP VIEW IF EXISTS {view_name}")
             logger.debug(f"Removed view: {view_name}")
         except Exception as e:
             logger.warning(f"Failed to drop view {view_name}: {e}")

@@ -69,8 +69,6 @@ class InsightExtractor:
         if not keywords:
             return []
 
-        import duckdb
-
         # Build WHERE clause for keyword filtering
         keyword_conditions = []
         for keyword in keywords:
@@ -102,9 +100,10 @@ class InsightExtractor:
         """
 
         try:
-            conn = duckdb.connect(str(self.db_reader.db_path), read_only=True)
-            results = conn.execute(query).fetchall()
-            conn.close()
+            from garmin_mcp.database.connection import get_connection
+
+            with get_connection(self.db_reader.db_path) as conn:
+                results = conn.execute(query).fetchall()
         except Exception as e:
             import logging
 
@@ -161,8 +160,6 @@ class InsightExtractor:
         if not keywords:
             return {"insights": [], "total_tokens": 0, "truncated": False}
 
-        import duckdb
-
         keyword_conditions = []
         for keyword in keywords:
             keyword_conditions.append(
@@ -187,9 +184,10 @@ class InsightExtractor:
         """
 
         try:
-            conn = duckdb.connect(str(self.db_reader.db_path), read_only=True)
-            results = conn.execute(query).fetchall()
-            conn.close()
+            from garmin_mcp.database.connection import get_connection
+
+            with get_connection(self.db_reader.db_path) as conn:
+                results = conn.execute(query).fetchall()
         except Exception as e:
             import logging
 
