@@ -58,7 +58,7 @@ class TestGarminWorkoutBuilder:
         result = GarminWorkoutBuilder.build(workout, pace_zones)
 
         steps = result["workoutSegments"][0]["workoutSteps"]
-        assert steps[0]["endCondition"]["conditionValue"] == 15000  # 15km in meters
+        assert steps[0]["endConditionValue"] == 15000  # 15km in meters
 
     def test_build_tempo_has_warmup_cooldown(self, pace_zones):
         workout = _make_workout(

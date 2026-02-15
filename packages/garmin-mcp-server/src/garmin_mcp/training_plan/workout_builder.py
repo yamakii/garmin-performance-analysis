@@ -63,6 +63,7 @@ class GarminWorkoutBuilder:
             "targetType": {
                 "workoutTargetTypeId": 6,
                 "workoutTargetTypeKey": "speed.zone",
+                "displayOrder": 6,
             }
         }
         if pace_low and pace_high:
@@ -71,78 +72,119 @@ class GarminWorkoutBuilder:
         return target
 
     @staticmethod
-    def _distance_condition(distance_km: float) -> dict:
-        """Create distance end condition."""
-        return {
-            "conditionTypeId": 3,
-            "conditionTypeKey": "distance",
-            "conditionValue": distance_km * 1000,  # meters
-        }
+    def _distance_condition(distance_km: float) -> tuple[dict, float]:
+        """Create distance end condition. Returns (condition_dict, value)."""
+        return (
+            {
+                "conditionTypeId": 3,
+                "conditionTypeKey": "distance",
+                "displayOrder": 3,
+                "displayable": True,
+            },
+            distance_km * 1000,  # meters
+        )
 
     @staticmethod
-    def _time_condition(minutes: float) -> dict:
-        """Create time end condition."""
-        return {
-            "conditionTypeId": 2,
-            "conditionTypeKey": "time",
-            "conditionValue": minutes * 60,  # seconds
-        }
+    def _time_condition(minutes: float) -> tuple[dict, float]:
+        """Create time end condition. Returns (condition_dict, value)."""
+        return (
+            {
+                "conditionTypeId": 2,
+                "conditionTypeKey": "time",
+                "displayOrder": 2,
+                "displayable": True,
+            },
+            minutes * 60,  # seconds
+        )
 
     @staticmethod
-    def _lap_button_condition() -> dict:
-        """Create lap button (open) end condition."""
-        return {
-            "conditionTypeId": 1,
-            "conditionTypeKey": "lap.button",
-        }
+    def _lap_button_condition() -> tuple[dict, None]:
+        """Create lap button (open) end condition. Returns (condition_dict, None)."""
+        return (
+            {
+                "conditionTypeId": 1,
+                "conditionTypeKey": "lap.button",
+                "displayOrder": 1,
+                "displayable": True,
+            },
+            None,
+        )
 
     @staticmethod
     def _build_simple_workout(workout: PlannedWorkout) -> list[dict]:
         """Build single-segment workout (easy, recovery, long run)."""
-        step = {
+        end_cond, end_val = GarminWorkoutBuilder._distance_condition(
+            workout.target_distance_km or 5.0
+        )
+        step: dict[str, Any] = {
             "type": "ExecutableStepDTO",
             "stepOrder": 1,
-            "stepType": {"stepTypeId": 3, "stepTypeKey": "interval"},
-            "endCondition": GarminWorkoutBuilder._distance_condition(
-                workout.target_distance_km or 5.0
-            ),
+            "stepType": {
+                "stepTypeId": 3,
+                "stepTypeKey": "interval",
+                "displayOrder": 3,
+            },
+            "endCondition": end_cond,
+            "endConditionValue": end_val,
+            "category": "RUN",
+            "exerciseName": "RUN",
             **GarminWorkoutBuilder._speed_target(
                 workout.target_pace_low, workout.target_pace_high
             ),
         }
         return [
-            {"segmentOrder": 1, "sportType": {"sportTypeId": 1}, "workoutSteps": [step]}
+            {
+                "segmentOrder": 1,
+                "sportType": {"sportTypeId": 1, "sportTypeKey": "running"},
+                "workoutSteps": [step],
+            }
         ]
 
     @staticmethod
     def _build_structured_workout(workout: PlannedWorkout) -> list[dict]:
         """Build warmup + main + cooldown workout (tempo, threshold)."""
-        steps = []
+        steps: list[dict[str, Any]] = []
         order = 1
 
         # Warmup
         if workout.warmup_minutes:
+            wu_cond, wu_val = GarminWorkoutBuilder._time_condition(
+                workout.warmup_minutes
+            )
             steps.append(
                 {
                     "type": "ExecutableStepDTO",
                     "stepOrder": order,
-                    "stepType": {"stepTypeId": 1, "stepTypeKey": "warmUp"},
-                    "endCondition": GarminWorkoutBuilder._time_condition(
-                        workout.warmup_minutes
-                    ),
+                    "stepType": {
+                        "stepTypeId": 1,
+                        "stepTypeKey": "warmUp",
+                        "displayOrder": 1,
+                    },
+                    "endCondition": wu_cond,
+                    "endConditionValue": wu_val,
+                    "category": "RUN",
+                    "exerciseName": "RUN",
                 }
             )
             order += 1
 
         # Main segment
+        main_cond, main_val = GarminWorkoutBuilder._distance_condition(
+            workout.target_distance_km or 5.0
+        )
         steps.append(
             {
                 "type": "ExecutableStepDTO",
                 "stepOrder": order,
-                "stepType": {"stepTypeId": 3, "stepTypeKey": "interval"},
-                "endCondition": GarminWorkoutBuilder._distance_condition(
-                    workout.target_distance_km or 5.0
-                ),
+                "stepType": {
+                    "stepTypeId": 3,
+                    "stepTypeKey": "interval",
+                    "displayOrder": 3,
+                },
+                "endCondition": main_cond,
+                "endConditionValue": main_val,
+                "category": "RUN",
+                "exerciseName": "RUN",
                 **GarminWorkoutBuilder._speed_target(
                     workout.target_pace_low, workout.target_pace_high
                 ),
@@ -152,19 +194,31 @@ class GarminWorkoutBuilder:
 
         # Cooldown
         if workout.cooldown_minutes:
+            cd_cond, cd_val = GarminWorkoutBuilder._time_condition(
+                workout.cooldown_minutes
+            )
             steps.append(
                 {
                     "type": "ExecutableStepDTO",
                     "stepOrder": order,
-                    "stepType": {"stepTypeId": 2, "stepTypeKey": "coolDown"},
-                    "endCondition": GarminWorkoutBuilder._time_condition(
-                        workout.cooldown_minutes
-                    ),
+                    "stepType": {
+                        "stepTypeId": 2,
+                        "stepTypeKey": "coolDown",
+                        "displayOrder": 2,
+                    },
+                    "endCondition": cd_cond,
+                    "endConditionValue": cd_val,
+                    "category": "RUN",
+                    "exerciseName": "RUN",
                 }
             )
 
         return [
-            {"segmentOrder": 1, "sportType": {"sportTypeId": 1}, "workoutSteps": steps}
+            {
+                "segmentOrder": 1,
+                "sportType": {"sportTypeId": 1, "sportTypeKey": "running"},
+                "workoutSteps": steps,
+            }
         ]
 
     @staticmethod
@@ -173,39 +227,57 @@ class GarminWorkoutBuilder:
         if not workout.intervals:
             return GarminWorkoutBuilder._build_simple_workout(workout)
 
-        steps = []
+        steps: list[dict[str, Any]] = []
         order = 1
         iv = workout.intervals
 
         # Warmup
         if workout.warmup_minutes:
+            wu_cond, wu_val = GarminWorkoutBuilder._time_condition(
+                workout.warmup_minutes
+            )
             steps.append(
                 {
                     "type": "ExecutableStepDTO",
                     "stepOrder": order,
-                    "stepType": {"stepTypeId": 1, "stepTypeKey": "warmUp"},
-                    "endCondition": GarminWorkoutBuilder._time_condition(
-                        workout.warmup_minutes
-                    ),
+                    "stepType": {
+                        "stepTypeId": 1,
+                        "stepTypeKey": "warmUp",
+                        "displayOrder": 1,
+                    },
+                    "endCondition": wu_cond,
+                    "endConditionValue": wu_val,
+                    "category": "RUN",
+                    "exerciseName": "RUN",
                 }
             )
             order += 1
 
         # Repeat group
-        repeat_steps = []
+        repeat_steps: list[dict[str, Any]] = []
 
         # Work interval
-        work_condition = (
-            GarminWorkoutBuilder._distance_condition(iv.work_distance_m / 1000)
-            if iv.work_distance_m
-            else GarminWorkoutBuilder._time_condition(iv.work_duration_minutes or 3)
-        )
+        if iv.work_distance_m:
+            work_cond, work_val = GarminWorkoutBuilder._distance_condition(
+                iv.work_distance_m / 1000
+            )
+        else:
+            work_cond, work_val = GarminWorkoutBuilder._time_condition(
+                iv.work_duration_minutes or 3
+            )
         repeat_steps.append(
             {
                 "type": "ExecutableStepDTO",
                 "stepOrder": 1,
-                "stepType": {"stepTypeId": 3, "stepTypeKey": "interval"},
-                "endCondition": work_condition,
+                "stepType": {
+                    "stepTypeId": 3,
+                    "stepTypeKey": "interval",
+                    "displayOrder": 3,
+                },
+                "endCondition": work_cond,
+                "endConditionValue": work_val,
+                "category": "RUN",
+                "exerciseName": "RUN",
                 **GarminWorkoutBuilder._speed_target(
                     iv.work_pace_low, iv.work_pace_high
                 ),
@@ -213,14 +285,22 @@ class GarminWorkoutBuilder:
         )
 
         # Recovery
+        rec_cond, rec_val = GarminWorkoutBuilder._time_condition(
+            iv.recovery_duration_minutes
+        )
         repeat_steps.append(
             {
                 "type": "ExecutableStepDTO",
                 "stepOrder": 2,
-                "stepType": {"stepTypeId": 4, "stepTypeKey": "recovery"},
-                "endCondition": GarminWorkoutBuilder._time_condition(
-                    iv.recovery_duration_minutes
-                ),
+                "stepType": {
+                    "stepTypeId": 4,
+                    "stepTypeKey": "recovery",
+                    "displayOrder": 4,
+                },
+                "endCondition": rec_cond,
+                "endConditionValue": rec_val,
+                "category": "RUN",
+                "exerciseName": "RUN",
             }
         )
 
@@ -228,7 +308,11 @@ class GarminWorkoutBuilder:
             {
                 "type": "RepeatGroupDTO",
                 "stepOrder": order,
-                "stepType": {"stepTypeId": 6, "stepTypeKey": "repeat"},
+                "stepType": {
+                    "stepTypeId": 6,
+                    "stepTypeKey": "repeat",
+                    "displayOrder": 6,
+                },
                 "numberOfIterations": iv.repetitions,
                 "workoutSteps": repeat_steps,
             }
@@ -237,17 +321,29 @@ class GarminWorkoutBuilder:
 
         # Cooldown
         if workout.cooldown_minutes:
+            cd_cond, cd_val = GarminWorkoutBuilder._time_condition(
+                workout.cooldown_minutes
+            )
             steps.append(
                 {
                     "type": "ExecutableStepDTO",
                     "stepOrder": order,
-                    "stepType": {"stepTypeId": 2, "stepTypeKey": "coolDown"},
-                    "endCondition": GarminWorkoutBuilder._time_condition(
-                        workout.cooldown_minutes
-                    ),
+                    "stepType": {
+                        "stepTypeId": 2,
+                        "stepTypeKey": "coolDown",
+                        "displayOrder": 2,
+                    },
+                    "endCondition": cd_cond,
+                    "endConditionValue": cd_val,
+                    "category": "RUN",
+                    "exerciseName": "RUN",
                 }
             )
 
         return [
-            {"segmentOrder": 1, "sportType": {"sportTypeId": 1}, "workoutSteps": steps}
+            {
+                "segmentOrder": 1,
+                "sportType": {"sportTypeId": 1, "sportTypeKey": "running"},
+                "workoutSteps": steps,
+            }
         ]
