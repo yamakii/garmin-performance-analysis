@@ -66,14 +66,18 @@ class PaceZones(BaseModel):
 
 
 class HRZones(BaseModel):
-    """Heart rate zones derived from lactate threshold."""
+    """Heart rate zones from Garmin user settings (5 zones)."""
 
-    easy_low: int = Field(description="Easy HR low (bpm)")
-    easy_high: int = Field(description="Easy HR high (bpm)")
-    marathon_low: int = Field(description="Marathon HR low (bpm)")
-    marathon_high: int = Field(description="Marathon HR high (bpm)")
-    threshold_low: int = Field(description="Threshold HR low (bpm)")
-    threshold_high: int = Field(description="Threshold HR high (bpm)")
+    zone1_low: int = Field(description="Zone 1 low boundary (bpm)")
+    zone1_high: int = Field(description="Zone 1 high boundary (bpm)")
+    zone2_low: int = Field(description="Zone 2 low boundary (bpm)")
+    zone2_high: int = Field(description="Zone 2 high boundary (bpm)")
+    zone3_low: int = Field(description="Zone 3 low boundary (bpm)")
+    zone3_high: int = Field(description="Zone 3 high boundary (bpm)")
+    zone4_low: int = Field(description="Zone 4 low boundary (bpm)")
+    zone4_high: int = Field(description="Zone 4 high boundary (bpm)")
+    zone5_low: int = Field(description="Zone 5 low boundary (bpm)")
+    zone5_high: int = Field(description="Zone 5 high boundary (bpm)")
 
 
 class FitnessSummary(BaseModel):
@@ -124,11 +128,20 @@ class IntervalDetail(BaseModel):
     recovery_type: str = Field(default="jog", description="Recovery type: jog or walk")
 
 
+class WorkoutMatch(BaseModel):
+    """Result of matching an activity to a planned workout."""
+
+    workout_id: str
+    actual_activity_id: int
+    activity_date: str
+
+
 class PlannedWorkout(BaseModel):
     """Individual planned workout."""
 
     workout_id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
     plan_id: str
+    version: int = Field(default=1, ge=1)
     week_number: int = Field(ge=1)
     day_of_week: int = Field(ge=1, le=7, description="1=Mon, 7=Sun")
     workout_date: date | None = None
@@ -159,6 +172,7 @@ class TrainingPlan(BaseModel):
     """Complete training plan."""
 
     plan_id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
+    version: int = Field(default=1, ge=1)
     goal_type: GoalType
     target_race_date: date | None = None
     target_time_seconds: int | None = None
@@ -210,6 +224,7 @@ class TrainingPlan(BaseModel):
         """Return a summary without individual workouts."""
         return {
             "plan_id": self.plan_id,
+            "version": self.version,
             "goal_type": self.goal_type.value,
             "target_race_date": (
                 str(self.target_race_date) if self.target_race_date else None

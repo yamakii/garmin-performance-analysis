@@ -27,12 +27,16 @@ def pace_zones():
 @pytest.fixture
 def hr_zones():
     return HRZones(
-        easy_low=111,
-        easy_high=135,
-        marathon_low=140,
-        marathon_high=155,
-        threshold_low=160,
-        threshold_high=170,
+        zone1_low=111,
+        zone1_high=135,
+        zone2_low=136,
+        zone2_high=155,
+        zone3_low=156,
+        zone3_high=170,
+        zone4_low=171,
+        zone4_high=185,
+        zone5_low=186,
+        zone5_high=200,
     )
 
 
@@ -232,7 +236,7 @@ class TestFillWorkoutDetailsWithHRZones:
         )
         easy = next(w for w in workouts if w.workout_type == WorkoutType.EASY)
         assert easy.target_hr_low == 111
-        assert easy.target_hr_high == 135
+        assert easy.target_hr_high == 155
         assert easy.target_duration_minutes is not None
         assert easy.target_duration_minutes > 0
         assert easy.target_pace_low is None
@@ -252,7 +256,7 @@ class TestFillWorkoutDetailsWithHRZones:
         )
         long_run = next(w for w in workouts if w.workout_type == WorkoutType.LONG_RUN)
         assert long_run.target_hr_low == 111
-        assert long_run.target_hr_high == 135
+        assert long_run.target_hr_high == 155
         assert long_run.target_duration_minutes is not None
         assert long_run.target_duration_minutes > 0
 

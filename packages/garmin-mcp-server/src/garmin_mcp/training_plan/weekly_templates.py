@@ -147,8 +147,8 @@ class WeeklyTemplateEngine:
                         workout_type=wt,
                         target_distance_km=easy_km,
                         target_duration_minutes=duration_min,
-                        target_hr_low=hr_zones.easy_low,
-                        target_hr_high=hr_zones.easy_high,
+                        target_hr_low=hr_zones.zone1_low,
+                        target_hr_high=hr_zones.zone2_high,
                         phase=phase,
                         description_ja=f"イージーラン {int(duration_min)}分",
                     )
@@ -175,8 +175,8 @@ class WeeklyTemplateEngine:
                         workout_type=wt,
                         target_distance_km=long_run_km,
                         target_duration_minutes=duration_min,
-                        target_hr_low=hr_zones.easy_low,
-                        target_hr_high=hr_zones.easy_high,
+                        target_hr_low=hr_zones.zone1_low,
+                        target_hr_high=hr_zones.zone2_high,
                         phase=phase,
                         description_ja=f"ロングラン {int(duration_min)}分",
                     )

@@ -14,10 +14,19 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def insert_training_plan(db_path: str | None, plan: TrainingPlan) -> None:
-    """Insert training plan and workouts into DuckDB.
+def insert_training_plan(
+    db_path: str | None,
+    plan: TrainingPlan,
+    previous_version: int | None = None,
+) -> None:
+    """Insert training plan and workouts into DuckDB (versioned).
 
-    Uses DELETE + INSERT pattern (same as other inserters).
+    Args:
+        db_path: Path to DuckDB database. If None, uses default.
+        plan: TrainingPlan to insert.
+        previous_version: If set, marks the previous version as 'superseded'
+            and inserts the new plan as the next version. If None, uses
+            DELETE + INSERT pattern for the same plan_id and version.
     """
     if db_path is None:
         from garmin_mcp.utils.paths import get_database_dir
@@ -30,7 +39,8 @@ def insert_training_plan(db_path: str | None, plan: TrainingPlan) -> None:
         # Ensure tables exist
         conn.execute("""
             CREATE TABLE IF NOT EXISTS training_plans (
-                plan_id VARCHAR PRIMARY KEY,
+                plan_id VARCHAR,
+                version INTEGER DEFAULT 1,
                 goal_type VARCHAR NOT NULL,
                 target_race_date DATE,
                 target_time_seconds INTEGER,
@@ -52,6 +62,7 @@ def insert_training_plan(db_path: str | None, plan: TrainingPlan) -> None:
             CREATE TABLE IF NOT EXISTS planned_workouts (
                 workout_id VARCHAR PRIMARY KEY,
                 plan_id VARCHAR NOT NULL,
+                version INTEGER DEFAULT 1,
                 week_number INTEGER NOT NULL,
                 day_of_week INTEGER NOT NULL,
                 workout_date DATE,
@@ -73,23 +84,38 @@ def insert_training_plan(db_path: str | None, plan: TrainingPlan) -> None:
             )
         """)
 
-        # Delete existing plan data
-        conn.execute("DELETE FROM planned_workouts WHERE plan_id = ?", [plan.plan_id])
-        conn.execute("DELETE FROM training_plans WHERE plan_id = ?", [plan.plan_id])
+        if previous_version is not None:
+            # UPDATE mode: mark old version as superseded, insert new version
+            conn.execute(
+                "UPDATE training_plans SET status = 'superseded' "
+                "WHERE plan_id = ? AND version = ?",
+                [plan.plan_id, previous_version],
+            )
+        else:
+            # NEW mode: delete existing data for this plan_id and version
+            conn.execute(
+                "DELETE FROM planned_workouts WHERE plan_id = ? AND version = ?",
+                [plan.plan_id, plan.version],
+            )
+            conn.execute(
+                "DELETE FROM training_plans WHERE plan_id = ? AND version = ?",
+                [plan.plan_id, plan.version],
+            )
 
         # Insert plan
         conn.execute(
             """
             INSERT INTO training_plans (
-                plan_id, goal_type, target_race_date, target_time_seconds,
+                plan_id, version, goal_type, target_race_date, target_time_seconds,
                 vdot, pace_zones_json, total_weeks, start_date,
                 weekly_volume_start_km, weekly_volume_peak_km,
                 runs_per_week, frequency_progression_json,
                 personalization_notes, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 plan.plan_id,
+                plan.version,
                 plan.goal_type.value,
                 str(plan.target_race_date) if plan.target_race_date else None,
                 plan.target_time_seconds,
@@ -116,17 +142,18 @@ def insert_training_plan(db_path: str | None, plan: TrainingPlan) -> None:
             conn.execute(
                 """
                 INSERT INTO planned_workouts (
-                    workout_id, plan_id, week_number, day_of_week,
+                    workout_id, plan_id, version, week_number, day_of_week,
                     workout_date, workout_type, description_ja,
                     target_distance_km, target_duration_minutes,
                     target_pace_low, target_pace_high,
                     target_hr_low, target_hr_high,
                     intervals_json, phase
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     w.workout_id,
                     w.plan_id,
+                    w.version,
                     w.week_number,
                     w.day_of_week,
                     str(w.workout_date) if w.workout_date else None,
@@ -143,6 +170,8 @@ def insert_training_plan(db_path: str | None, plan: TrainingPlan) -> None:
                 ],
             )
 
-        logger.info(f"Saved plan {plan.plan_id} with {len(plan.workouts)} workouts")
+        logger.info(
+            f"Saved plan {plan.plan_id} v{plan.version} with {len(plan.workouts)} workouts"
+        )
     finally:
         conn.close()

@@ -597,6 +597,10 @@ _TRAINING_PLAN_TOOLS: list[dict] = [
                     "items": {"type": "integer"},
                     "description": "Days to avoid scheduling workouts (1=Mon, 7=Sun). E.g., [3] for Wednesday off",
                 },
+                "plan_id": {
+                    "type": "string",
+                    "description": "Existing plan ID to update. Creates new version preserving completed weeks. Omit for new plan.",
+                },
             },
             "required": ["goal_type", "total_weeks"],
         },
@@ -610,6 +614,10 @@ _TRAINING_PLAN_TOOLS: list[dict] = [
                 "plan_id": {
                     "type": "string",
                     "description": "Plan identifier",
+                },
+                "version": {
+                    "type": "integer",
+                    "description": "Specific version to retrieve. Omit for latest active version.",
                 },
                 "week_number": {
                     "type": "integer",

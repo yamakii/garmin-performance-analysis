@@ -14,7 +14,9 @@ import pytest
 @pytest.fixture
 def agent_definition_path():
     """Path to phase-section-analyst agent definition."""
-    return Path(".claude/agents/phase-section-analyst.md")
+    # Navigate to project root from packages/garmin-mcp-server/tests/unit/
+    project_root = Path(__file__).resolve().parents[4]
+    return project_root / ".claude" / "agents" / "phase-section-analyst.md"
 
 
 @pytest.fixture

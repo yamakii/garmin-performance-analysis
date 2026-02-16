@@ -4,14 +4,13 @@ Implements the oxygen cost and %VO2max equations for:
 - VDOT estimation from race performance
 - Pace zone calculation
 - Race time prediction
-- HR zone derivation from lactate threshold
 """
 
 from __future__ import annotations
 
 import math
 
-from garmin_mcp.training_plan.models import HRZones, PaceZones
+from garmin_mcp.training_plan.models import PaceZones
 
 
 class VDOTCalculator:
@@ -169,36 +168,3 @@ class VDOTCalculator:
                 high_sec = mid_sec
 
         return (low_sec + high_sec) // 2
-
-    @staticmethod
-    def hr_zones_from_lt(lt_hr: int, max_hr: int | None = None) -> HRZones:
-        """Calculate HR training zones from lactate threshold heart rate.
-
-        Based on Daniels' framework:
-        - Easy: 65-79% of LTHR
-        - Marathon: 80-87% of LTHR
-        - Threshold: 88-92% of LTHR (near LT)
-
-        If max_hr is provided, zones are capped at max_hr.
-
-        Args:
-            lt_hr: Lactate threshold heart rate (bpm).
-            max_hr: Optional maximum heart rate (bpm).
-
-        Returns:
-            HRZones with bpm values.
-        """
-
-        def _cap(hr: int) -> int:
-            if max_hr is not None:
-                return min(hr, max_hr)
-            return hr
-
-        return HRZones(
-            easy_low=int(lt_hr * 0.65),
-            easy_high=_cap(int(lt_hr * 0.79)),
-            marathon_low=int(lt_hr * 0.80),
-            marathon_high=_cap(int(lt_hr * 0.87)),
-            threshold_low=int(lt_hr * 0.88),
-            threshold_high=_cap(int(lt_hr * 0.92)),
-        )

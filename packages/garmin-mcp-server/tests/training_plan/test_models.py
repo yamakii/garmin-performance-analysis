@@ -13,6 +13,7 @@ from garmin_mcp.training_plan.models import (
     PeriodizationPhase,
     PlannedWorkout,
     TrainingPlan,
+    WorkoutMatch,
     WorkoutType,
 )
 
@@ -73,15 +74,19 @@ class TestPaceZones:
 class TestHRZones:
     def test_valid_zones(self):
         zones = HRZones(
-            easy_low=120,
-            easy_high=140,
-            marathon_low=140,
-            marathon_high=155,
-            threshold_low=155,
-            threshold_high=170,
+            zone1_low=100,
+            zone1_high=120,
+            zone2_low=121,
+            zone2_high=140,
+            zone3_low=141,
+            zone3_high=160,
+            zone4_low=161,
+            zone4_high=180,
+            zone5_low=181,
+            zone5_high=200,
         )
-        assert zones.easy_low == 120
-        assert zones.threshold_high == 170
+        assert zones.zone1_low == 100
+        assert zones.zone5_high == 200
 
 
 @pytest.mark.unit
@@ -117,12 +122,16 @@ class TestFitnessSummary:
                 repetition=200,
             ),
             hr_zones=HRZones(
-                easy_low=120,
-                easy_high=140,
-                marathon_low=140,
-                marathon_high=155,
-                threshold_low=155,
-                threshold_high=170,
+                zone1_low=100,
+                zone1_high=120,
+                zone2_low=121,
+                zone2_high=140,
+                zone3_low=141,
+                zone3_high=160,
+                zone4_low=161,
+                zone4_high=180,
+                zone5_low=181,
+                zone5_high=200,
             ),
             weekly_volume_km=50.0,
             runs_per_week=5.0,
@@ -271,6 +280,7 @@ class TestTrainingPlan:
     def test_to_summary(self, sample_plan):
         summary = sample_plan.to_summary()
         assert summary["plan_id"] == "plan-1"
+        assert summary["version"] == 1
         assert summary["goal_type"] == "race_10k"
         assert summary["total_workouts"] == 3
         assert "workouts" not in summary
@@ -304,3 +314,98 @@ class TestTrainingPlan:
         assert plan2.plan_id == sample_plan.plan_id
         assert len(plan2.workouts) == len(sample_plan.workouts)
         assert plan2.goal_type == sample_plan.goal_type
+
+
+@pytest.mark.unit
+class TestWorkoutMatch:
+    def test_create_match(self):
+        match = WorkoutMatch(
+            workout_id="abc123",
+            actual_activity_id=99999,
+            activity_date="2026-03-15",
+        )
+        assert match.workout_id == "abc123"
+        assert match.actual_activity_id == 99999
+        assert match.activity_date == "2026-03-15"
+
+
+@pytest.mark.unit
+class TestVersioning:
+    def test_training_plan_default_version(self):
+        plan = TrainingPlan(
+            plan_id="v-test",
+            goal_type=GoalType.FITNESS,
+            vdot=40.0,
+            pace_zones=PaceZones(
+                easy_low=360,
+                easy_high=330,
+                marathon=300,
+                threshold=270,
+                interval=240,
+                repetition=210,
+            ),
+            total_weeks=4,
+            start_date=date(2026, 1, 1),
+            weekly_volume_start_km=20.0,
+            weekly_volume_peak_km=30.0,
+            runs_per_week=4,
+            phases=[(PeriodizationPhase.BASE, 4)],
+            weekly_volumes=[20, 22, 25, 28],
+        )
+        assert plan.version == 1
+
+    def test_training_plan_explicit_version(self):
+        plan = TrainingPlan(
+            plan_id="v-test",
+            version=3,
+            goal_type=GoalType.FITNESS,
+            vdot=40.0,
+            pace_zones=PaceZones(
+                easy_low=360,
+                easy_high=330,
+                marathon=300,
+                threshold=270,
+                interval=240,
+                repetition=210,
+            ),
+            total_weeks=4,
+            start_date=date(2026, 1, 1),
+            weekly_volume_start_km=20.0,
+            weekly_volume_peak_km=30.0,
+            runs_per_week=4,
+            phases=[(PeriodizationPhase.BASE, 4)],
+            weekly_volumes=[20, 22, 25, 28],
+        )
+        assert plan.version == 3
+
+    def test_planned_workout_default_version(self):
+        workout = PlannedWorkout(
+            plan_id="test-plan",
+            week_number=1,
+            day_of_week=2,
+            workout_type=WorkoutType.EASY,
+            phase=PeriodizationPhase.BASE,
+        )
+        assert workout.version == 1
+
+    def test_planned_workout_explicit_version(self):
+        workout = PlannedWorkout(
+            plan_id="test-plan",
+            version=2,
+            week_number=1,
+            day_of_week=2,
+            workout_type=WorkoutType.EASY,
+            phase=PeriodizationPhase.BASE,
+        )
+        assert workout.version == 2
+
+    def test_version_must_be_positive(self):
+        with pytest.raises(ValueError):
+            PlannedWorkout(
+                plan_id="test-plan",
+                version=0,
+                week_number=1,
+                day_of_week=2,
+                workout_type=WorkoutType.EASY,
+                phase=PeriodizationPhase.BASE,
+            )

@@ -72,16 +72,24 @@ class TrainingPlanHandler:
 
         try:
             generator = TrainingPlanGenerator(db_path=str(self._db_reader.db_path))
-            plan = generator.generate(
-                goal_type=arguments["goal_type"],
-                total_weeks=arguments["total_weeks"],
-                target_race_date=arguments.get("target_race_date"),
-                target_time_seconds=arguments.get("target_time_seconds"),
-                runs_per_week=arguments.get("runs_per_week", 4),
-                start_frequency=arguments.get("start_frequency"),
-                preferred_long_run_day=arguments.get("preferred_long_run_day", 7),
-                rest_days=arguments.get("rest_days"),
-            )
+            plan_id = arguments.get("plan_id")
+
+            if plan_id:
+                # UPDATE mode: create new version of existing plan
+                plan = generator.update(plan_id=plan_id)
+            else:
+                # CREATE mode: generate new plan
+                plan = generator.generate(
+                    goal_type=arguments["goal_type"],
+                    total_weeks=arguments["total_weeks"],
+                    target_race_date=arguments.get("target_race_date"),
+                    target_time_seconds=arguments.get("target_time_seconds"),
+                    runs_per_week=arguments.get("runs_per_week", 4),
+                    start_frequency=arguments.get("start_frequency"),
+                    preferred_long_run_day=arguments.get("preferred_long_run_day", 7),
+                    rest_days=arguments.get("rest_days"),
+                )
+
             result = plan.to_summary()
             result["first_week_workouts"] = [
                 w.model_dump() for w in plan.get_week_workouts(1)
@@ -122,11 +130,13 @@ class TrainingPlanHandler:
         try:
             reader = TrainingPlanReader(db_path=str(self._db_reader.db_path))
             plan_id = arguments["plan_id"]
+            version = arguments.get("version")
             week_number = arguments.get("week_number")
             summary_only = arguments.get("summary_only", False)
 
             result = reader.get_training_plan(
                 plan_id=plan_id,
+                version=version,
                 week_number=week_number,
                 summary_only=summary_only,
             )

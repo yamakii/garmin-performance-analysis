@@ -8,7 +8,7 @@ from garmin_mcp.training_plan.fitness_assessor import FitnessAssessor
 @pytest.mark.unit
 class TestFitnessAssessor:
     def _make_assessor(
-        self, mocker, activities, vo2_row=None, lt_row=None, type_rows=None
+        self, mocker, activities, vo2_row=None, hz_rows=None, type_rows=None
     ):
         """Helper to create assessor with mocked DB."""
         mock_conn = mocker.MagicMock()
@@ -21,18 +21,18 @@ class TestFitnessAssessor:
         mocker.patch.object(assessor, "_get_connection", return_value=mock_ctx)
 
         # Mock execute calls in order:
-        # 1. activities, 2. vo2_max, 3. lactate_threshold, 4. hr_efficiency
+        # 1. activities, 2. vo2_max, 3. heart_rate_zones, 4. hr_efficiency
         results = [
             mocker.MagicMock(fetchall=mocker.Mock(return_value=activities)),
             mocker.MagicMock(fetchone=mocker.Mock(return_value=vo2_row)),
-            mocker.MagicMock(fetchone=mocker.Mock(return_value=lt_row)),
+            mocker.MagicMock(fetchall=mocker.Mock(return_value=hz_rows or [])),
             mocker.MagicMock(fetchall=mocker.Mock(return_value=type_rows or [])),
         ]
         mock_conn.execute = mocker.Mock(side_effect=results)
         return assessor
 
     def test_assess_with_full_data(self, mocker):
-        """Normal case: VO2max + LT + activities available."""
+        """Normal case: VO2max + HR zones + activities available."""
         activities = [
             (1, "2026-02-01", 10.0, 3000, 300),
             (2, "2026-02-04", 8.0, 2400, 300),
@@ -42,7 +42,13 @@ class TestFitnessAssessor:
             mocker,
             activities=activities,
             vo2_row=(52.5,),
-            lt_row=(165,),
+            hz_rows=[
+                (1, 100, 120),
+                (2, 121, 140),
+                (3, 141, 160),
+                (4, 161, 180),
+                (5, 181, 200),
+            ],
             type_rows=[("low_moderate", 2), ("tempo_threshold", 1)],
         )
 
@@ -72,16 +78,16 @@ class TestFitnessAssessor:
             mocker,
             activities=activities,
             vo2_row=None,
-            lt_row=None,
+            hz_rows=None,
         )
 
         summary = assessor.assess()
 
         assert summary.vdot > 0
-        assert summary.hr_zones is None  # No LT data
+        assert summary.hr_zones is None  # No HR zone data
 
     def test_assess_vo2max_no_lt(self, mocker):
-        """VO2max available but no LT data."""
+        """VO2max available but no HR zone data."""
         activities = [
             (1, "2026-02-01", 10.0, 3000, 300),
         ]
@@ -89,7 +95,7 @@ class TestFitnessAssessor:
             mocker,
             activities=activities,
             vo2_row=(50.0,),
-            lt_row=None,
+            hz_rows=None,
         )
 
         summary = assessor.assess()

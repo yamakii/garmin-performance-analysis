@@ -1,17 +1,25 @@
 # Git Workflow Rules
 
-## Serena Activation
+## Serena Activation (MANDATORY)
 
-Before starting code investigation (reading symbols, exploring architecture),
-check if Serena is activated. If not, activate it:
+**MUST activate Serena BEFORE any code investigation**, including plan mode exploration.
+This is the FIRST step in any task involving code understanding.
 
-```bash
+```
 mcp__serena__activate_project("/home/yamakii/workspace/claude_workspace/garmin-performance-analysis")
 ```
 
-This applies to all phases: investigation, planning, and implementation.
-Serena's symbolic tools (find_symbol, get_symbols_overview, find_referencing_symbols)
-provide more precise code navigation than Glob/Grep alone.
+### When to activate
+- **Plan mode Phase 1 (Initial Understanding)**: MUST activate before launching Explore agents
+- **Planning phase**: MUST activate before project-planner agent
+- **Implementation phase**: MUST activate for worktree path
+
+### Why
+Serena's symbolic tools (`find_symbol`, `get_symbols_overview`, `find_referencing_symbols`)
+provide precise code navigation. Glob/Grep alone misses symbol relationships and type information.
+
+### Fallback
+If Serena activation fails, use Glob/Grep as fallback but note the limitation in your output.
 
 ## Branch Strategy
 

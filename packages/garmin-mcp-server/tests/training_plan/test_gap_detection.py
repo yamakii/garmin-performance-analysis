@@ -12,7 +12,7 @@ def _make_assessor(
     mocker,
     activities,
     vo2_row=None,
-    lt_row=None,
+    hz_rows=None,
     type_rows=None,
     pre_gap_vo2_row=None,
     baseline_activities=None,
@@ -36,7 +36,7 @@ def _make_assessor(
     # Build execute results in order matching assess() query sequence:
     # 1. activities (fetchall)
     # If gap detected: 2. baseline_activities 24-week (fetchall)
-    # 3. vo2_max (fetchone), 4. lactate_threshold (fetchone)
+    # 3. vo2_max (fetchone), 4. heart_rate_zones (fetchall)
     # If gap detected: 5. pre-gap vo2_max (fetchone)
     # Last: hr_efficiency (fetchall)
 
@@ -68,7 +68,7 @@ def _make_assessor(
         )
 
     results.append(mocker.MagicMock(fetchone=mocker.Mock(return_value=vo2_row)))
-    results.append(mocker.MagicMock(fetchone=mocker.Mock(return_value=lt_row)))
+    results.append(mocker.MagicMock(fetchall=mocker.Mock(return_value=hz_rows or [])))
 
     if has_gap:
         # Pre-gap VO2max query result

@@ -223,6 +223,7 @@ class TestGetTrainingPlan:
         assert data["plan_id"] == "plan_001"
         mock_reader_cls.return_value.get_training_plan.assert_called_once_with(
             plan_id="plan_001",
+            version=None,
             week_number=None,
             summary_only=False,
         )
@@ -245,6 +246,7 @@ class TestGetTrainingPlan:
 
         mock_reader_cls.return_value.get_training_plan.assert_called_once_with(
             plan_id="plan_001",
+            version=None,
             week_number=3,
             summary_only=True,
         )

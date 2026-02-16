@@ -10,7 +10,7 @@ import logging
 from datetime import date, datetime, timedelta
 
 from garmin_mcp.database.readers.base import BaseDBReader
-from garmin_mcp.training_plan.models import FitnessSummary
+from garmin_mcp.training_plan.models import FitnessSummary, HRZones
 from garmin_mcp.training_plan.vdot import VDOTCalculator
 
 logger = logging.getLogger(__name__)
@@ -154,20 +154,6 @@ class FitnessAssessor(BaseDBReader):
             ).fetchone()
             latest_vo2max = float(vo2_row[0]) if vo2_row else None
 
-            # 4. Get latest lactate threshold HR
-            lt_row = conn.execute(
-                """
-                SELECT l.heart_rate
-                FROM lactate_threshold l
-                JOIN activities a ON l.activity_id = a.activity_id
-                WHERE a.activity_date >= ?
-                ORDER BY a.activity_date DESC
-                LIMIT 1
-                """,
-                [cutoff_str],
-            ).fetchone()
-            lt_hr = int(lt_row[0]) if lt_row else None
-
             # 5. Calculate VDOT
             if latest_vo2max is not None:
                 vdot = VDOTCalculator.vdot_from_vo2max(latest_vo2max)
@@ -203,10 +189,35 @@ class FitnessAssessor(BaseDBReader):
             # 6. Derive pace zones
             pace_zones = VDOTCalculator.pace_zones(vdot)
 
-            # 7. Derive HR zones (if LT available)
+            # 7. Derive HR zones from Garmin user settings (DuckDB)
             hr_zones = None
-            if lt_hr is not None:
-                hr_zones = VDOTCalculator.hr_zones_from_lt(lt_hr)
+            hz_rows = conn.execute(
+                """
+                SELECT zone_number, zone_low_boundary, zone_high_boundary
+                FROM heart_rate_zones
+                WHERE activity_id = (
+                    SELECT activity_id FROM activities
+                    WHERE activity_date >= ?
+                    ORDER BY activity_date DESC
+                    LIMIT 1
+                )
+                ORDER BY zone_number
+                """,
+                [cutoff_str],
+            ).fetchall()
+            if len(hz_rows) == 5:
+                hr_zones = HRZones(
+                    zone1_low=hz_rows[0][1],
+                    zone1_high=hz_rows[0][2],
+                    zone2_low=hz_rows[1][1],
+                    zone2_high=hz_rows[1][2],
+                    zone3_low=hz_rows[2][1],
+                    zone3_high=hz_rows[2][2],
+                    zone4_low=hz_rows[3][1],
+                    zone4_high=hz_rows[3][2],
+                    zone5_low=hz_rows[4][1],
+                    zone5_high=hz_rows[4][2],
+                )
 
             # 8. Training type distribution
             type_rows = conn.execute(

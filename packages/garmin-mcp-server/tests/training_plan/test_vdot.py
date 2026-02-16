@@ -135,30 +135,3 @@ class TestPredictRaceTime:
         vdot = VDOTCalculator.vdot_from_race(5.0, original_time)
         predicted = VDOTCalculator.predict_race_time(vdot, 5.0)
         assert predicted == pytest.approx(original_time, abs=5)
-
-
-@pytest.mark.unit
-class TestHRZonesFromLT:
-    def test_basic_zones(self):
-        zones = VDOTCalculator.hr_zones_from_lt(170)
-        assert zones.easy_low == int(170 * 0.65)
-        assert zones.easy_high == int(170 * 0.79)
-        assert zones.threshold_low == int(170 * 0.88)
-        assert zones.threshold_high == int(170 * 0.92)
-
-    def test_zones_ordering(self):
-        zones = VDOTCalculator.hr_zones_from_lt(165)
-        assert zones.easy_low < zones.easy_high
-        assert zones.easy_high <= zones.marathon_low
-        assert zones.marathon_high <= zones.threshold_low
-        assert zones.threshold_low < zones.threshold_high
-
-    def test_max_hr_cap(self):
-        zones = VDOTCalculator.hr_zones_from_lt(170, max_hr=160)
-        assert zones.easy_high <= 160
-        assert zones.marathon_high <= 160
-        assert zones.threshold_high <= 160
-
-    def test_without_max_hr(self):
-        zones = VDOTCalculator.hr_zones_from_lt(170)
-        assert zones.threshold_high == int(170 * 0.92)
