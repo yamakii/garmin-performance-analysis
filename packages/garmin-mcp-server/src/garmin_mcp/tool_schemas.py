@@ -551,58 +551,17 @@ _TRAINING_PLAN_TOOLS: list[dict] = [
         },
     },
     {
-        "name": "generate_training_plan",
-        "description": "Generate a personalized training plan with periodization and pace targets",
+        "name": "save_training_plan",
+        "description": "Save a training plan (structured JSON) to DuckDB. Validates schema and safety constraints (volume progression <= 15%, return_to_run restrictions, date alignment).",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "goal_type": {
-                    "type": "string",
-                    "enum": [
-                        "race_5k",
-                        "race_10k",
-                        "race_half",
-                        "race_full",
-                        "fitness",
-                        "return_to_run",
-                    ],
-                    "description": "Training goal type",
-                },
-                "total_weeks": {
-                    "type": "integer",
-                    "description": "Plan duration in weeks (4-24)",
-                },
-                "target_race_date": {
-                    "type": "string",
-                    "description": "Race date in YYYY-MM-DD format (for race goals)",
-                },
-                "target_time_seconds": {
-                    "type": "integer",
-                    "description": "Target race time in seconds (optional)",
-                },
-                "runs_per_week": {
-                    "type": "integer",
-                    "description": "Number of runs per week (3-6, default: 4)",
-                },
-                "start_frequency": {
-                    "type": "integer",
-                    "description": "Starting runs/week (increases to runs_per_week). E.g., start_frequency=3, runs_per_week=6 \u2192 gradually increase",
-                },
-                "preferred_long_run_day": {
-                    "type": "integer",
-                    "description": "Preferred long run day (1=Mon, 7=Sun, default: 7)",
-                },
-                "rest_days": {
-                    "type": "array",
-                    "items": {"type": "integer"},
-                    "description": "Days to avoid scheduling workouts (1=Mon, 7=Sun). E.g., [3] for Wednesday off",
-                },
-                "plan_id": {
-                    "type": "string",
-                    "description": "Existing plan ID to update. Creates new version preserving completed weeks. Omit for new plan.",
+                "plan": {
+                    "type": "object",
+                    "description": "TrainingPlan JSON conforming to the Pydantic model schema (plan_id, goal_type, vdot, pace_zones, total_weeks, start_date, weekly_volumes, phases, workouts, etc.)",
                 },
             },
-            "required": ["goal_type", "total_weeks"],
+            "required": ["plan"],
         },
     },
     {

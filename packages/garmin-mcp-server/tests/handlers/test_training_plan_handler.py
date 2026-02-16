@@ -7,6 +7,59 @@ import pytest
 
 from garmin_mcp.handlers.training_plan_handler import TrainingPlanHandler
 
+# --- Fixtures ---
+
+
+def _make_plan_dict(
+    *,
+    goal_type: str = "fitness",
+    total_weeks: int = 4,
+    weekly_volumes: list[float] | None = None,
+    workouts: list[dict] | None = None,
+    start_date: str = "2026-03-02",
+    plan_id: str = "test0001",
+) -> dict:
+    """Build a minimal valid TrainingPlan dict for testing."""
+    if weekly_volumes is None:
+        weekly_volumes = [20.0, 21.0, 22.0, 18.0]
+    if workouts is None:
+        workouts = [
+            {
+                "workout_id": "w001",
+                "plan_id": plan_id,
+                "week_number": 1,
+                "day_of_week": 2,
+                "workout_date": "2026-03-03",
+                "workout_type": "easy",
+                "phase": "base",
+            },
+        ]
+    return {
+        "plan_id": plan_id,
+        "version": 1,
+        "goal_type": goal_type,
+        "vdot": 42.0,
+        "pace_zones": {
+            "easy_low": 370.0,
+            "easy_high": 340.0,
+            "marathon": 310.0,
+            "threshold": 285.0,
+            "interval": 260.0,
+            "repetition": 245.0,
+        },
+        "total_weeks": total_weeks,
+        "start_date": start_date,
+        "weekly_volume_start_km": weekly_volumes[0],
+        "weekly_volume_peak_km": max(weekly_volumes),
+        "runs_per_week": 3,
+        "phases": [["base", total_weeks]],
+        "weekly_volumes": weekly_volumes,
+        "workouts": workouts,
+    }
+
+
+# --- TestHandles ---
+
 
 class TestHandles:
     """Test handles() method for tool name matching."""
@@ -17,9 +70,15 @@ class TestHandles:
         handler = TrainingPlanHandler(mock_db_reader)
         assert handler.handles("get_current_fitness_summary") is True
 
-    def test_handles_generate_training_plan(self, mock_db_reader: MagicMock) -> None:
+    def test_handles_save_training_plan(self, mock_db_reader: MagicMock) -> None:
         handler = TrainingPlanHandler(mock_db_reader)
-        assert handler.handles("generate_training_plan") is True
+        assert handler.handles("save_training_plan") is True
+
+    def test_does_not_handle_generate_training_plan(
+        self, mock_db_reader: MagicMock
+    ) -> None:
+        handler = TrainingPlanHandler(mock_db_reader)
+        assert handler.handles("generate_training_plan") is False
 
     def test_handles_get_training_plan(self, mock_db_reader: MagicMock) -> None:
         handler = TrainingPlanHandler(mock_db_reader)
@@ -42,6 +101,9 @@ class TestHandles:
     def test_does_not_handle_empty_string(self, mock_db_reader: MagicMock) -> None:
         handler = TrainingPlanHandler(mock_db_reader)
         assert handler.handles("") is False
+
+
+# --- TestGetCurrentFitnessSummary ---
 
 
 class TestGetCurrentFitnessSummary:
@@ -101,105 +163,262 @@ class TestGetCurrentFitnessSummary:
         assert "DB error" in data["error"]
 
 
-class TestGenerateTrainingPlan:
-    """Test generate_training_plan via handle()."""
+# --- TestSaveTrainingPlan ---
+
+
+class TestSaveTrainingPlan:
+    """Test save_training_plan via handle()."""
 
     @pytest.mark.asyncio
-    async def test_with_required_args(
+    async def test_save_valid_plan(
         self, mock_db_reader: MagicMock, mocker: MagicMock
     ) -> None:
         mock_db_reader.db_path = "/tmp/test.duckdb"
-        mock_gen_cls = mocker.patch(
-            "garmin_mcp.training_plan.plan_generator.TrainingPlanGenerator"
+        mock_insert = mocker.patch(
+            "garmin_mcp.database.inserters.training_plans.insert_training_plan"
         )
-        mock_plan = mock_gen_cls.return_value.generate.return_value
-        mock_plan.to_summary.return_value = {
-            "plan_id": "plan_001",
-            "goal_type": "race_10k",
-        }
-        mock_workout = MagicMock()
-        mock_workout.model_dump.return_value = {"day": 1, "type": "easy"}
-        mock_plan.get_week_workouts.return_value = [mock_workout]
         handler = TrainingPlanHandler(mock_db_reader)
+        plan_dict = _make_plan_dict()
 
-        result = await handler.handle(
-            "generate_training_plan",
-            {"goal_type": "race_10k", "total_weeks": 12},
-        )
+        result = await handler.handle("save_training_plan", {"plan": plan_dict})
 
         data = json.loads(result[0].text)
-        assert data["plan_id"] == "plan_001"
-        assert data["goal_type"] == "race_10k"
-        assert len(data["first_week_workouts"]) == 1
-        mock_gen_cls.assert_called_once_with(db_path="/tmp/test.duckdb")
-        mock_gen_cls.return_value.generate.assert_called_once_with(
-            goal_type="race_10k",
-            total_weeks=12,
-            target_race_date=None,
-            target_time_seconds=None,
-            runs_per_week=4,
-            start_frequency=None,
-            preferred_long_run_day=7,
-            rest_days=None,
-        )
+        assert data["status"] == "saved"
+        assert data["plan_id"] == "test0001"
+        assert data["version"] == 1
+        assert data["workout_count"] == 1
+        mock_insert.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_with_all_optional_args(
+    async def test_save_plan_with_pydantic_validation_error(
         self, mock_db_reader: MagicMock, mocker: MagicMock
     ) -> None:
         mock_db_reader.db_path = "/tmp/test.duckdb"
-        mock_gen_cls = mocker.patch(
-            "garmin_mcp.training_plan.plan_generator.TrainingPlanGenerator"
+        mocker.patch(
+            "garmin_mcp.database.inserters.training_plans.insert_training_plan"
         )
-        mock_plan = mock_gen_cls.return_value.generate.return_value
-        mock_plan.to_summary.return_value = {"plan_id": "plan_002"}
-        mock_plan.get_week_workouts.return_value = []
         handler = TrainingPlanHandler(mock_db_reader)
 
-        await handler.handle(
-            "generate_training_plan",
-            {
-                "goal_type": "race_half",
-                "total_weeks": 16,
-                "target_race_date": "2025-06-01",
-                "target_time_seconds": 5400,
-                "runs_per_week": 5,
-                "start_frequency": 3,
-                "preferred_long_run_day": 6,
-                "rest_days": [1, 5],
-            },
-        )
-
-        mock_gen_cls.return_value.generate.assert_called_once_with(
-            goal_type="race_half",
-            total_weeks=16,
-            target_race_date="2025-06-01",
-            target_time_seconds=5400,
-            runs_per_week=5,
-            start_frequency=3,
-            preferred_long_run_day=6,
-            rest_days=[1, 5],
-        )
-
-    @pytest.mark.asyncio
-    async def test_error_returns_error_dict(
-        self, mock_db_reader: MagicMock, mocker: MagicMock
-    ) -> None:
-        mock_db_reader.db_path = "/tmp/test.duckdb"
-        mock_gen_cls = mocker.patch(
-            "garmin_mcp.training_plan.plan_generator.TrainingPlanGenerator"
-        )
-        mock_gen_cls.return_value.generate.side_effect = ValueError("Invalid goal")
-        handler = TrainingPlanHandler(mock_db_reader)
-
+        # Missing required fields
         result = await handler.handle(
-            "generate_training_plan",
-            {"goal_type": "invalid", "total_weeks": 4},
+            "save_training_plan", {"plan": {"goal_type": "fitness"}}
         )
 
         data = json.loads(result[0].text)
         assert "error" in data
-        assert "Invalid goal" in data["error"]
+
+    @pytest.mark.asyncio
+    async def test_save_plan_with_insert_error(
+        self, mock_db_reader: MagicMock, mocker: MagicMock
+    ) -> None:
+        mock_db_reader.db_path = "/tmp/test.duckdb"
+        mocker.patch(
+            "garmin_mcp.database.inserters.training_plans.insert_training_plan",
+            side_effect=RuntimeError("DB write error"),
+        )
+        handler = TrainingPlanHandler(mock_db_reader)
+        plan_dict = _make_plan_dict()
+
+        result = await handler.handle("save_training_plan", {"plan": plan_dict})
+
+        data = json.loads(result[0].text)
+        assert "error" in data
+        assert "DB write error" in data["error"]
+
+
+# --- TestValidatePlanSafety ---
+
+
+class TestValidatePlanSafety:
+    """Test _validate_plan_safety safety checks."""
+
+    def test_safe_plan_returns_no_errors(self) -> None:
+        from garmin_mcp.training_plan.models import TrainingPlan
+
+        plan = TrainingPlan.model_validate(
+            _make_plan_dict(weekly_volumes=[20.0, 21.0, 22.0, 18.0])
+        )
+        errors = TrainingPlanHandler._validate_plan_safety(plan)
+        assert errors == []
+
+    def test_volume_increase_over_15_percent(self) -> None:
+        from garmin_mcp.training_plan.models import TrainingPlan
+
+        plan = TrainingPlan.model_validate(
+            _make_plan_dict(weekly_volumes=[20.0, 24.0, 28.0, 22.0])
+        )
+        errors = TrainingPlanHandler._validate_plan_safety(plan)
+        assert len(errors) >= 1
+        assert "volume increase" in errors[0]
+        assert "15%" in errors[0]
+
+    def test_return_to_run_with_tempo_rejected(self) -> None:
+        from garmin_mcp.training_plan.models import TrainingPlan
+
+        plan = TrainingPlan.model_validate(
+            _make_plan_dict(
+                goal_type="return_to_run",
+                workouts=[
+                    {
+                        "workout_id": "w001",
+                        "plan_id": "test0001",
+                        "week_number": 1,
+                        "day_of_week": 2,
+                        "workout_date": "2026-03-03",
+                        "workout_type": "tempo",
+                        "phase": "base",
+                    },
+                ],
+            )
+        )
+        errors = TrainingPlanHandler._validate_plan_safety(plan)
+        assert len(errors) >= 1
+        assert "prohibited workout type" in errors[0]
+        assert "'tempo'" in errors[0]
+
+    def test_return_to_run_with_interval_rejected(self) -> None:
+        from garmin_mcp.training_plan.models import TrainingPlan
+
+        plan = TrainingPlan.model_validate(
+            _make_plan_dict(
+                goal_type="return_to_run",
+                workouts=[
+                    {
+                        "workout_id": "w001",
+                        "plan_id": "test0001",
+                        "week_number": 1,
+                        "day_of_week": 2,
+                        "workout_date": "2026-03-03",
+                        "workout_type": "interval",
+                        "phase": "base",
+                    },
+                ],
+            )
+        )
+        errors = TrainingPlanHandler._validate_plan_safety(plan)
+        assert len(errors) >= 1
+        assert "prohibited workout type" in errors[0]
+
+    def test_return_to_run_with_easy_only_passes(self) -> None:
+        from garmin_mcp.training_plan.models import TrainingPlan
+
+        plan = TrainingPlan.model_validate(
+            _make_plan_dict(
+                goal_type="return_to_run",
+                workouts=[
+                    {
+                        "workout_id": "w001",
+                        "plan_id": "test0001",
+                        "week_number": 1,
+                        "day_of_week": 2,
+                        "workout_date": "2026-03-03",
+                        "workout_type": "easy",
+                        "phase": "recovery",
+                    },
+                    {
+                        "workout_id": "w002",
+                        "plan_id": "test0001",
+                        "week_number": 1,
+                        "day_of_week": 7,
+                        "workout_date": "2026-03-08",
+                        "workout_type": "long_run",
+                        "phase": "recovery",
+                    },
+                ],
+            )
+        )
+        errors = TrainingPlanHandler._validate_plan_safety(plan)
+        assert errors == []
+
+    def test_workout_date_outside_week_range(self) -> None:
+        from garmin_mcp.training_plan.models import TrainingPlan
+
+        plan = TrainingPlan.model_validate(
+            _make_plan_dict(
+                start_date="2026-03-02",
+                workouts=[
+                    {
+                        "workout_id": "w001",
+                        "plan_id": "test0001",
+                        "week_number": 1,
+                        "day_of_week": 2,
+                        # Date is in week 2 range, not week 1
+                        "workout_date": "2026-03-12",
+                        "workout_type": "easy",
+                        "phase": "base",
+                    },
+                ],
+            )
+        )
+        errors = TrainingPlanHandler._validate_plan_safety(plan)
+        assert len(errors) >= 1
+        assert "outside week 1 range" in errors[0]
+
+    def test_workout_without_date_skips_date_check(self) -> None:
+        from garmin_mcp.training_plan.models import TrainingPlan
+
+        plan = TrainingPlan.model_validate(
+            _make_plan_dict(
+                workouts=[
+                    {
+                        "workout_id": "w001",
+                        "plan_id": "test0001",
+                        "week_number": 1,
+                        "day_of_week": 2,
+                        "workout_type": "easy",
+                        "phase": "base",
+                    },
+                ],
+            )
+        )
+        errors = TrainingPlanHandler._validate_plan_safety(plan)
+        assert errors == []
+
+    def test_volume_decrease_is_allowed(self) -> None:
+        """Recovery weeks with volume decrease should not trigger errors."""
+        from garmin_mcp.training_plan.models import TrainingPlan
+
+        plan = TrainingPlan.model_validate(
+            _make_plan_dict(weekly_volumes=[25.0, 27.0, 28.0, 20.0])
+        )
+        errors = TrainingPlanHandler._validate_plan_safety(plan)
+        assert errors == []
+
+    @pytest.mark.asyncio
+    async def test_safety_violation_returns_error_response(
+        self, mock_db_reader: MagicMock, mocker: MagicMock
+    ) -> None:
+        """Safety violations should return error response without calling insert."""
+        mock_db_reader.db_path = "/tmp/test.duckdb"
+        mock_insert = mocker.patch(
+            "garmin_mcp.database.inserters.training_plans.insert_training_plan"
+        )
+        handler = TrainingPlanHandler(mock_db_reader)
+        plan_dict = _make_plan_dict(
+            goal_type="return_to_run",
+            workouts=[
+                {
+                    "workout_id": "w001",
+                    "plan_id": "test0001",
+                    "week_number": 1,
+                    "day_of_week": 2,
+                    "workout_date": "2026-03-03",
+                    "workout_type": "interval",
+                    "phase": "base",
+                },
+            ],
+        )
+
+        result = await handler.handle("save_training_plan", {"plan": plan_dict})
+
+        data = json.loads(result[0].text)
+        assert data["error"] == "Safety validation failed"
+        assert len(data["details"]) >= 1
+        # insert should NOT be called when safety check fails
+        mock_insert.assert_not_called()
+
+
+# --- TestGetTrainingPlan ---
 
 
 class TestGetTrainingPlan:
@@ -269,6 +488,9 @@ class TestGetTrainingPlan:
         data = json.loads(result[0].text)
         assert "error" in data
         assert "Plan not found" in data["error"]
+
+
+# --- TestUploadWorkoutToGarmin ---
 
 
 class TestUploadWorkoutToGarmin:
@@ -384,6 +606,9 @@ class TestUploadWorkoutToGarmin:
         assert "API timeout" in data["error"]
 
 
+# --- TestDeleteWorkoutFromGarmin ---
+
+
 class TestDeleteWorkoutFromGarmin:
     """Test delete_workout_from_garmin via handle()."""
 
@@ -489,6 +714,9 @@ class TestDeleteWorkoutFromGarmin:
         data = json.loads(result[0].text)
         assert "error" in data
         assert "API error" in data["error"]
+
+
+# --- TestHandleUnknownTool ---
 
 
 class TestHandleUnknownTool:

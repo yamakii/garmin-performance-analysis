@@ -10,13 +10,25 @@ from garmin_mcp.database.db_reader import GarminDBReader
 
 logger = logging.getLogger(__name__)
 
+# Safety limits for volume progression
+MAX_WEEKLY_VOLUME_INCREASE_PCT = 0.15  # 15% hard limit
+
+# Workout types prohibited for return_to_run plans
+_RETURN_TO_RUN_PROHIBITED_TYPES = {
+    "tempo",
+    "threshold",
+    "interval",
+    "repetition",
+    "race_pace",
+}
+
 
 class TrainingPlanHandler:
     """Handles training plan-related tool calls."""
 
     _tool_names: set[str] = {
         "get_current_fitness_summary",
-        "generate_training_plan",
+        "save_training_plan",
         "get_training_plan",
         "upload_workout_to_garmin",
         "delete_workout_from_garmin",
@@ -31,8 +43,8 @@ class TrainingPlanHandler:
     async def handle(self, name: str, arguments: dict[str, Any]) -> list[TextContent]:
         if name == "get_current_fitness_summary":
             return await self._get_current_fitness_summary(arguments)
-        elif name == "generate_training_plan":
-            return await self._generate_training_plan(arguments)
+        elif name == "save_training_plan":
+            return await self._save_training_plan(arguments)
         elif name == "get_training_plan":
             return await self._get_training_plan(arguments)
         elif name == "upload_workout_to_garmin":
@@ -62,59 +74,45 @@ class TrainingPlanHandler:
             )
         ]
 
-    async def _generate_training_plan(
-        self, arguments: dict[str, Any]
-    ) -> list[TextContent]:
-        from garmin_mcp.training_plan.diagnostic_report import (
-            DiagnosticReportGenerator,
-        )
-        from garmin_mcp.training_plan.plan_generator import TrainingPlanGenerator
+    async def _save_training_plan(self, arguments: dict[str, Any]) -> list[TextContent]:
+        from garmin_mcp.database.inserters.training_plans import insert_training_plan
+        from garmin_mcp.training_plan.models import TrainingPlan
 
         try:
-            generator = TrainingPlanGenerator(db_path=str(self._db_reader.db_path))
-            plan_id = arguments.get("plan_id")
+            plan_data = arguments["plan"]
 
-            if plan_id:
-                # UPDATE mode: create new version of existing plan
-                plan = generator.update(plan_id=plan_id)
-            else:
-                # CREATE mode: generate new plan
-                plan = generator.generate(
-                    goal_type=arguments["goal_type"],
-                    total_weeks=arguments["total_weeks"],
-                    target_race_date=arguments.get("target_race_date"),
-                    target_time_seconds=arguments.get("target_time_seconds"),
-                    runs_per_week=arguments.get("runs_per_week", 4),
-                    start_frequency=arguments.get("start_frequency"),
-                    preferred_long_run_day=arguments.get("preferred_long_run_day", 7),
-                    rest_days=arguments.get("rest_days"),
-                )
+            # Pydantic validation
+            plan = TrainingPlan.model_validate(plan_data)
 
-            result = plan.to_summary()
-            result["first_week_workouts"] = [
-                w.model_dump() for w in plan.get_week_workouts(1)
-            ]
+            # Safety checks
+            errors = self._validate_plan_safety(plan)
+            if errors:
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(
+                            {"error": "Safety validation failed", "details": errors},
+                            indent=2,
+                            ensure_ascii=False,
+                        ),
+                    )
+                ]
 
-            # Generate and save diagnostic report
-            try:
-                if generator.last_fitness is None:
-                    raise ValueError("No fitness data available")
-                report_gen = DiagnosticReportGenerator()
-                content = report_gen.generate(
-                    fitness=generator.last_fitness,
-                    goal_type=arguments["goal_type"],
-                    plan_params={
-                        "start_km": plan.weekly_volume_start_km,
-                        "peak_km": plan.weekly_volume_peak_km,
-                    },
-                )
-                save_result = report_gen.save(content)
-                result["diagnostic_report_path"] = save_result["path"]
-            except Exception as e:
-                logger.warning(f"Diagnostic report generation failed: {e}")
+            # Save to DuckDB
+            insert_training_plan(
+                db_path=str(self._db_reader.db_path),
+                plan=plan,
+            )
+
+            result = {
+                "status": "saved",
+                "plan_id": plan.plan_id,
+                "version": plan.version,
+                "workout_count": len(plan.workouts),
+            }
 
         except Exception as e:
-            logger.error(f"Plan generation failed: {e}")
+            logger.error(f"Save training plan failed: {e}")
             result = {"error": str(e)}
 
         return [
@@ -123,6 +121,54 @@ class TrainingPlanHandler:
                 text=json.dumps(result, indent=2, ensure_ascii=False, default=str),
             )
         ]
+
+    @staticmethod
+    def _validate_plan_safety(plan: Any) -> list[str]:
+        """Run safety checks on a training plan.
+
+        Returns a list of error messages. Empty list means plan is safe.
+        """
+        errors: list[str] = []
+
+        # Check weekly volume progression <= 15%
+        volumes = plan.weekly_volumes
+        for i in range(1, len(volumes)):
+            if volumes[i - 1] > 0:
+                increase = (volumes[i] - volumes[i - 1]) / volumes[i - 1]
+                if increase > MAX_WEEKLY_VOLUME_INCREASE_PCT:
+                    errors.append(
+                        f"Week {i} to {i + 1}: volume increase "
+                        f"{increase:.1%} exceeds {MAX_WEEKLY_VOLUME_INCREASE_PCT:.0%} limit "
+                        f"({volumes[i - 1]:.1f}km \u2192 {volumes[i]:.1f}km)"
+                    )
+
+        # Check return_to_run has no quality workouts
+        if plan.goal_type.value == "return_to_run":
+            for w in plan.workouts:
+                if w.workout_type.value in _RETURN_TO_RUN_PROHIBITED_TYPES:
+                    errors.append(
+                        f"return_to_run plan contains prohibited workout type "
+                        f"'{w.workout_type.value}' in week {w.week_number}"
+                    )
+
+        # Check workout dates align with plan start_date + week offsets
+        if plan.start_date:
+            from datetime import timedelta
+
+            for w in plan.workouts:
+                if w.workout_date is not None:
+                    expected_week_start = plan.start_date + timedelta(
+                        weeks=w.week_number - 1
+                    )
+                    expected_week_end = expected_week_start + timedelta(days=6)
+                    if not (expected_week_start <= w.workout_date <= expected_week_end):
+                        errors.append(
+                            f"Workout {w.workout_id} date {w.workout_date} "
+                            f"is outside week {w.week_number} range "
+                            f"({expected_week_start} - {expected_week_end})"
+                        )
+
+        return errors
 
     async def _get_training_plan(self, arguments: dict[str, Any]) -> list[TextContent]:
         from garmin_mcp.database.readers.training_plans import TrainingPlanReader
