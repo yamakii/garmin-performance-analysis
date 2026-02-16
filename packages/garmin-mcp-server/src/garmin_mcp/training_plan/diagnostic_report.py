@@ -84,9 +84,10 @@ class DiagnosticReportGenerator:
             lines.append(f"- ピーク: {peak_km}km")
 
         if fitness.gap_detected and fitness.pre_gap_weekly_volume_km > 0:
+            target_75 = round(fitness.pre_gap_weekly_volume_km * 0.75, 1)
             lines.append(
-                f"- 理由: 段階的に休養前の75%"
-                f"（{fitness.pre_gap_weekly_volume_km}km）まで回復を目指す"
+                f"- 理由: 段階的に休養前（{fitness.pre_gap_weekly_volume_km}km/週）の"
+                f"75%（{target_75}km/週）まで回復を目指す"
             )
 
         lines.append("")

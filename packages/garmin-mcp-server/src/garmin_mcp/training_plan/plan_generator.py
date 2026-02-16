@@ -86,10 +86,17 @@ class TrainingPlanGenerator:
 
         # 4. Volume progression
         if goal == GoalType.RETURN_TO_RUN and fitness.gap_detected:
-            # Gap-aware: start from current (low) volume, target 75% of pre-gap
-            start_km = max(15.0, fitness.weekly_volume_km)
+            # Gap-aware: start from recent actual volume, target 75% of pre-gap
+            if fitness.recent_runs:
+                recent_total = sum(r.get("distance_km", 0) for r in fitness.recent_runs)
+                recent_weekly_est = recent_total  # recent 1-2 weeks total
+            else:
+                recent_weekly_est = fitness.weekly_volume_km
+            start_km = max(10.0, recent_weekly_est)
+
+            # Peak: 75% of pre-gap volume (minimum start * 1.1)
             pre_gap_target = fitness.pre_gap_weekly_volume_km * 0.75
-            peak_km = max(start_km * 1.3, pre_gap_target)
+            peak_km = max(start_km * 1.1, pre_gap_target)
         else:
             start_km = fitness.weekly_volume_km
             # Conservative 30% increase for return_to_run, 50% for others

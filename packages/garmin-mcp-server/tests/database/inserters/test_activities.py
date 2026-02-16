@@ -118,6 +118,7 @@ def test_insert_activities_complete_data():
         # Create raw activity.json
         raw_activity = {
             "activityName": "Morning Run",
+            "activityTypeDTO": {"typeKey": "running"},
             "summaryDTO": {
                 "startTimeLocal": "2025-10-09T06:00:00.0",
                 "startTimeGMT": "2025-10-08T21:00:00.0",

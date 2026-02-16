@@ -136,8 +136,8 @@ class TestGapDetection:
         assert summary.gap_detected is True
         assert summary.gap_weeks == 3
         assert summary.pre_gap_weekly_volume_km > 0
-        # Pre-gap: 30km over ~1 week
-        assert summary.pre_gap_weekly_volume_km == pytest.approx(30.0, abs=1.0)
+        # Pre-gap: 30km over 2 active ISO weeks (Jan 1 wk1, Jan 6 wk2)
+        assert summary.pre_gap_weekly_volume_km == pytest.approx(15.0, abs=1.0)
 
     def test_pre_gap_vdot_from_vo2(self, mocker):
         """Pre-gap VDOT is derived from VO2max data before the gap."""
@@ -192,8 +192,7 @@ class TestGapDetection:
         summary = assessor.assess(lookback_weeks=8)
 
         assert summary.gap_detected is True
-        # With 24-week baseline (114km over ~16 weeks), volume should be ~7+ km/week
-        # Much better than if only the 8-week window was used (8km / 1 week = 8km)
+        # With 24-week baseline (114km over 9 active weeks), volume ~12.7 km/week
         assert summary.pre_gap_weekly_volume_km > 5.0
         assert summary.pre_gap_vdot is not None
         assert summary.pre_gap_vdot > 0
@@ -243,7 +242,7 @@ class TestGapAwareVolumeCalculation:
         )
 
     def test_return_to_run_with_gap(self, mocker):
-        """Gap detected: peak_km = max(start*1.3, pre_gap*0.75)."""
+        """Gap detected: start from recent runs, peak = pre_gap*0.75."""
         fitness = self._make_fitness(
             gap_detected=True, weekly_volume=10.0, pre_gap_volume=32.5
         )
@@ -267,9 +266,10 @@ class TestGapAwareVolumeCalculation:
             runs_per_week=3,
         )
 
-        # start_km = max(15.0, 10.0) = 15.0
-        assert plan.weekly_volume_start_km == 15.0
-        # peak_km = max(15.0*1.3, 32.5*0.75) = max(19.5, 24.375) = 24.4
+        # No recent_runs → falls back to weekly_volume_km=10.0
+        # start_km = max(10.0, 10.0) = 10.0
+        assert plan.weekly_volume_start_km == 10.0
+        # peak_km = max(10.0*1.1, 32.5*0.75) = max(11.0, 24.375) = 24.4
         assert plan.weekly_volume_peak_km == pytest.approx(24.4, abs=0.1)
 
     def test_return_to_run_without_gap(self, mocker):
@@ -395,7 +395,7 @@ class TestDiagnosticReportGenerator:
         assert "約4週間" in content
         assert "32.5km" in content
         assert "復帰ラン: 3回" in content
-        assert "75%" in content
+        assert "75%（24.4km/週）" in content
 
     def test_save_creates_file(self, tmp_path, monkeypatch):
         """Save creates markdown file in diagnostics directory."""

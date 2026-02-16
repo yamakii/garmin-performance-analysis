@@ -42,7 +42,6 @@ class FitnessAssessor(BaseDBReader):
                        total_time_seconds, avg_pace_seconds_per_km
                 FROM activities
                 WHERE activity_date >= ?
-                  AND (activity_name LIKE '%ラン%' OR activity_name LIKE '%Run%')
                 ORDER BY activity_date DESC
                 """,
                 [cutoff_str],
@@ -104,7 +103,6 @@ class FitnessAssessor(BaseDBReader):
                            total_time_seconds, avg_pace_seconds_per_km
                     FROM activities
                     WHERE activity_date >= ? AND activity_date < ?
-                      AND (activity_name LIKE '%ラン%' OR activity_name LIKE '%Run%')
                     ORDER BY activity_date
                     """,
                     [baseline_cutoff_str, gap_end_date_str],
@@ -112,12 +110,13 @@ class FitnessAssessor(BaseDBReader):
 
                 if baseline_rows:
                     pre_gap_distance = sum(r[2] or 0 for r in baseline_rows)
-                    first_d = _to_date(baseline_rows[0][1])
-                    last_d = _to_date(baseline_rows[-1][1])
-                    pre_gap_span_weeks = max(1, ((last_d - first_d).days + 7) // 7)
-                    pre_gap_weekly_volume_km = round(
-                        pre_gap_distance / pre_gap_span_weeks, 1
-                    )
+                    # Count active weeks (weeks with at least 1 run)
+                    active_week_keys = set()
+                    for r in baseline_rows:
+                        d = _to_date(r[1])
+                        active_week_keys.add(d.isocalendar()[:2])  # (year, week)
+                    active_weeks = max(1, len(active_week_keys))
+                    pre_gap_weekly_volume_km = round(pre_gap_distance / active_weeks, 1)
 
                 # Post-gap runs (after the gap)
                 post_gap_rows = [
@@ -139,7 +138,6 @@ class FitnessAssessor(BaseDBReader):
                 FROM vo2_max v
                 JOIN activities a ON v.activity_id = a.activity_id
                 WHERE a.activity_date >= ?
-                  AND (a.activity_name LIKE '%ラン%' OR a.activity_name LIKE '%Run%')
                 ORDER BY a.activity_date DESC
                 LIMIT 1
                 """,
@@ -154,7 +152,6 @@ class FitnessAssessor(BaseDBReader):
                 FROM lactate_threshold l
                 JOIN activities a ON l.activity_id = a.activity_id
                 WHERE a.activity_date >= ?
-                  AND (a.activity_name LIKE '%ラン%' OR a.activity_name LIKE '%Run%')
                 ORDER BY a.activity_date DESC
                 LIMIT 1
                 """,
@@ -184,7 +181,6 @@ class FitnessAssessor(BaseDBReader):
                     FROM vo2_max v
                     JOIN activities a ON v.activity_id = a.activity_id
                     WHERE a.activity_date >= ? AND a.activity_date < ?
-                      AND (a.activity_name LIKE '%ラン%' OR a.activity_name LIKE '%Run%')
                     ORDER BY a.activity_date DESC
                     LIMIT 1
                     """,
@@ -211,7 +207,6 @@ class FitnessAssessor(BaseDBReader):
                 WHERE activity_id IN (
                     SELECT activity_id FROM activities
                     WHERE activity_date >= ?
-                      AND (activity_name LIKE '%ラン%' OR activity_name LIKE '%Run%')
                 )
                 GROUP BY training_type
                 """,

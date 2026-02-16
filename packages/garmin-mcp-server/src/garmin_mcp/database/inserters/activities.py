@@ -69,6 +69,17 @@ def insert_activities(
             if raw_activity_path.exists():
                 with open(raw_activity_path, encoding="utf-8") as f:
                     raw_activity = json.load(f)
+                    # Skip non-running activities
+                    activity_type_dto = raw_activity.get("activityTypeDTO", {})
+                    activity_type_key = activity_type_dto.get("typeKey", "")
+                    running_type_keys = {"running", "treadmill_running"}
+                    if activity_type_key not in running_type_keys:
+                        logger.info(
+                            f"Skipping non-running activity {activity_id}: "
+                            f"type={activity_type_key}"
+                        )
+                        return False
+
                     activity_name = raw_activity.get("activityName")
                     summary_dto = raw_activity.get("summaryDTO", {})
                     start_time_local_str = summary_dto.get("startTimeLocal")
