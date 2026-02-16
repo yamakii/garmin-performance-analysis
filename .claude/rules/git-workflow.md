@@ -1,5 +1,18 @@
 # Git Workflow Rules
 
+## Serena Activation
+
+Before starting code investigation (reading symbols, exploring architecture),
+check if Serena is activated. If not, activate it:
+
+```bash
+mcp__serena__activate_project("/home/yamakii/workspace/claude_workspace/garmin-performance-analysis")
+```
+
+This applies to all phases: investigation, planning, and implementation.
+Serena's symbolic tools (find_symbol, get_symbols_overview, find_referencing_symbols)
+provide more precise code navigation than Glob/Grep alone.
+
 ## Branch Strategy
 
 - **Planning**: Main branch (no worktree needed)
