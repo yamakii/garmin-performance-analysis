@@ -109,14 +109,23 @@ class FitnessAssessor(BaseDBReader):
                 ).fetchall()
 
                 if baseline_rows:
-                    pre_gap_distance = sum(r[2] or 0 for r in baseline_rows)
-                    # Count active weeks (weeks with at least 1 run)
-                    active_week_keys = set()
+                    # Aggregate distance per ISO week, then take median
+                    weekly_volumes: dict[tuple[int, int], float] = {}
                     for r in baseline_rows:
                         d = _to_date(r[1])
-                        active_week_keys.add(d.isocalendar()[:2])  # (year, week)
-                    active_weeks = max(1, len(active_week_keys))
-                    pre_gap_weekly_volume_km = round(pre_gap_distance / active_weeks, 1)
+                        week_key = d.isocalendar()[:2]
+                        weekly_volumes[week_key] = weekly_volumes.get(week_key, 0) + (
+                            r[2] or 0
+                        )
+                    if weekly_volumes:
+                        sorted_vols = sorted(weekly_volumes.values())
+                        mid = len(sorted_vols) // 2
+                        if len(sorted_vols) % 2 == 0:
+                            pre_gap_weekly_volume_km = round(
+                                (sorted_vols[mid - 1] + sorted_vols[mid]) / 2, 1
+                            )
+                        else:
+                            pre_gap_weekly_volume_km = round(sorted_vols[mid], 1)
 
                 # Post-gap runs (after the gap)
                 post_gap_rows = [
