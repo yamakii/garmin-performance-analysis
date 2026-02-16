@@ -7,7 +7,7 @@ training volume, and training type distribution.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from garmin_mcp.database.readers.base import BaseDBReader
 from garmin_mcp.training_plan.models import FitnessSummary
@@ -26,7 +26,7 @@ class FitnessAssessor(BaseDBReader):
             lookback_weeks: Number of weeks to analyze (default: 8).
 
         Returns:
-            FitnessSummary with VDOT, pace zones, volume metrics.
+            FitnessSummary with VDOT, pace zones, volume metrics, and gap info.
 
         Raises:
             ValueError: If no running activities found.
@@ -58,7 +58,81 @@ class FitnessAssessor(BaseDBReader):
             weekly_volume_km = round(total_distance / lookback_weeks, 1)
             runs_per_week = round(num_runs / lookback_weeks, 1)
 
-            # 2. Get latest VO2max
+            # 2. Detect training gap (7+ days between activities)
+            gap_detected = False
+            gap_weeks = 0
+            gap_end_date_str: str | None = None
+            pre_gap_weekly_volume_km = 0.0
+            pre_gap_vdot: float | None = None
+            recent_runs: list[dict[str, float | str | None]] = []
+
+            def _to_date_str(val: object) -> str:
+                """Convert date-like value to YYYY-MM-DD string."""
+                if isinstance(val, date):
+                    return val.strftime("%Y-%m-%d")
+                return str(val)
+
+            def _to_date(val: object) -> date:
+                """Convert date-like value to date object."""
+                if isinstance(val, date):
+                    return val
+                return datetime.strptime(str(val), "%Y-%m-%d").date()
+
+            # rows are sorted DESC, so reverse for chronological order
+            sorted_rows = sorted(rows, key=lambda r: r[1])
+            for i in range(1, len(sorted_rows)):
+                prev_d = _to_date(sorted_rows[i - 1][1])
+                curr_d = _to_date(sorted_rows[i][1])
+                gap_days = (curr_d - prev_d).days
+                if gap_days >= 7 and gap_days > gap_weeks * 7:
+                    gap_detected = True
+                    gap_weeks = gap_days // 7
+                    gap_end_date_str = _to_date_str(sorted_rows[i][1])
+
+            if gap_detected and gap_end_date_str is not None:
+                # Pre-gap baseline: use wider lookback (24 weeks) to capture
+                # sufficient training history before the gap.
+                # The standard lookback_weeks may be too narrow when the gap
+                # occupies most of the window.
+                baseline_cutoff_str = (datetime.now() - timedelta(weeks=24)).strftime(
+                    "%Y-%m-%d"
+                )
+
+                baseline_rows = conn.execute(
+                    """
+                    SELECT activity_id, activity_date, total_distance_km,
+                           total_time_seconds, avg_pace_seconds_per_km
+                    FROM activities
+                    WHERE activity_date >= ? AND activity_date < ?
+                      AND (activity_name LIKE '%ラン%' OR activity_name LIKE '%Run%')
+                    ORDER BY activity_date
+                    """,
+                    [baseline_cutoff_str, gap_end_date_str],
+                ).fetchall()
+
+                if baseline_rows:
+                    pre_gap_distance = sum(r[2] or 0 for r in baseline_rows)
+                    first_d = _to_date(baseline_rows[0][1])
+                    last_d = _to_date(baseline_rows[-1][1])
+                    pre_gap_span_weeks = max(1, ((last_d - first_d).days + 7) // 7)
+                    pre_gap_weekly_volume_km = round(
+                        pre_gap_distance / pre_gap_span_weeks, 1
+                    )
+
+                # Post-gap runs (after the gap)
+                post_gap_rows = [
+                    r for r in sorted_rows if _to_date_str(r[1]) >= gap_end_date_str
+                ]
+                for r in post_gap_rows:
+                    recent_runs.append(
+                        {
+                            "date": _to_date_str(r[1]),
+                            "distance_km": round(r[2], 2) if r[2] else 0,
+                            "pace": round(r[4], 1) if r[4] else None,
+                        }
+                    )
+
+            # 3. Get latest VO2max
             vo2_row = conn.execute(
                 """
                 SELECT v.precise_value
@@ -73,7 +147,7 @@ class FitnessAssessor(BaseDBReader):
             ).fetchone()
             latest_vo2max = float(vo2_row[0]) if vo2_row else None
 
-            # 3. Get latest lactate threshold HR
+            # 4. Get latest lactate threshold HR
             lt_row = conn.execute(
                 """
                 SELECT l.heart_rate
@@ -88,7 +162,7 @@ class FitnessAssessor(BaseDBReader):
             ).fetchone()
             lt_hr = int(lt_row[0]) if lt_row else None
 
-            # 4. Calculate VDOT
+            # 5. Calculate VDOT
             if latest_vo2max is not None:
                 vdot = VDOTCalculator.vdot_from_vo2max(latest_vo2max)
             else:
@@ -102,15 +176,34 @@ class FitnessAssessor(BaseDBReader):
                     raise ValueError("No suitable activities for VDOT estimation")
                 vdot = VDOTCalculator.vdot_from_race(best[2], best[3])
 
-            # 5. Derive pace zones
+            # 5b. Pre-gap VDOT (from VO2max before gap, using wider lookback)
+            if gap_detected and gap_end_date_str is not None:
+                pre_gap_vo2 = conn.execute(
+                    """
+                    SELECT v.precise_value
+                    FROM vo2_max v
+                    JOIN activities a ON v.activity_id = a.activity_id
+                    WHERE a.activity_date >= ? AND a.activity_date < ?
+                      AND (a.activity_name LIKE '%ラン%' OR a.activity_name LIKE '%Run%')
+                    ORDER BY a.activity_date DESC
+                    LIMIT 1
+                    """,
+                    [baseline_cutoff_str, gap_end_date_str],
+                ).fetchone()
+                if pre_gap_vo2:
+                    pre_gap_vdot = round(
+                        VDOTCalculator.vdot_from_vo2max(float(pre_gap_vo2[0])), 1
+                    )
+
+            # 6. Derive pace zones
             pace_zones = VDOTCalculator.pace_zones(vdot)
 
-            # 6. Derive HR zones (if LT available)
+            # 7. Derive HR zones (if LT available)
             hr_zones = None
             if lt_hr is not None:
                 hr_zones = VDOTCalculator.hr_zones_from_lt(lt_hr)
 
-            # 7. Training type distribution
+            # 8. Training type distribution
             type_rows = conn.execute(
                 """
                 SELECT training_type, COUNT(*) as cnt
@@ -141,4 +234,9 @@ class FitnessAssessor(BaseDBReader):
                 training_type_distribution=training_dist,
                 strengths=[],
                 weaknesses=[],
+                gap_detected=gap_detected,
+                gap_weeks=gap_weeks,
+                pre_gap_weekly_volume_km=pre_gap_weekly_volume_km,
+                pre_gap_vdot=pre_gap_vdot,
+                recent_runs=recent_runs,
             )

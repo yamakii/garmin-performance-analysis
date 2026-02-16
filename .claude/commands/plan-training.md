@@ -24,6 +24,17 @@ mcp__garmin-db__get_vo2_max_data(直近のactivity_id)
 
 現在の走力レベル（VDOT推定、週間走行距離、トレーニング構成）を把握。
 
+### Step 2.5: 診断レポート
+
+`generate_training_plan` 実行時に診断レポートが自動生成・保存される。
+保存先: `result/diagnostics/YYYY-MM-DD_fitness_diagnostic.md`
+
+生成後、レポートの要約をユーザーに提示：
+- 通常時: 現在のVDOT、週間走行距離、トレーニング構成
+- ギャップ検知時: 休養期間、休養前ベースライン、復帰後の実績
+
+ファイルパスも案内し、後で参照可能であることを伝える。
+
 ### Step 3: プラン生成
 
 ヒアリング結果と診断データから `generate_training_plan` を呼び出し：

@@ -90,6 +90,22 @@ class FitnessSummary(BaseModel):
     )
     strengths: list[str] = Field(default_factory=list)
     weaknesses: list[str] = Field(default_factory=list)
+    gap_detected: bool = Field(
+        default=False, description="Whether a training gap (7+ days) was detected"
+    )
+    gap_weeks: int = Field(
+        default=0, description="Duration of the longest gap in weeks"
+    )
+    pre_gap_weekly_volume_km: float = Field(
+        default=0, description="Weekly volume before the gap (km)"
+    )
+    pre_gap_vdot: float | None = Field(
+        default=None, description="VDOT estimate before the gap"
+    )
+    recent_runs: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Post-gap run summaries (date, distance_km, pace)",
+    )
 
 
 class IntervalDetail(BaseModel):

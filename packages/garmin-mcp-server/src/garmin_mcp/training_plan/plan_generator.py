@@ -7,6 +7,7 @@ from datetime import date, timedelta
 
 from garmin_mcp.training_plan.fitness_assessor import FitnessAssessor
 from garmin_mcp.training_plan.models import (
+    FitnessSummary,
     GoalType,
     TrainingPlan,
 )
@@ -22,6 +23,7 @@ class TrainingPlanGenerator:
 
     def __init__(self, db_path: str | None = None) -> None:
         self._db_path = db_path
+        self.last_fitness: FitnessSummary | None = None
 
     def generate(
         self,
@@ -48,6 +50,7 @@ class TrainingPlanGenerator:
         # 1. Assess fitness
         assessor = FitnessAssessor(db_path=self._db_path)
         fitness = assessor.assess()
+        self.last_fitness = fitness
 
         # 2. Use fitness VDOT and pace zones
         goal = GoalType(goal_type)
@@ -82,16 +85,24 @@ class TrainingPlanGenerator:
             phases = PeriodizationEngine.create_race_phases(total_weeks, goal)
 
         # 4. Volume progression
-        start_km = fitness.weekly_volume_km
-        # Conservative 30% increase for return_to_run, 50% for others
-        peak_km = start_km * 1.3 if goal == GoalType.RETURN_TO_RUN else start_km * 1.5
-        # Ensure minimum values
-        if start_km < 15:
-            start_km = 15.0
-        if peak_km < start_km * 1.3:
+        if goal == GoalType.RETURN_TO_RUN and fitness.gap_detected:
+            # Gap-aware: start from current (low) volume, target 75% of pre-gap
+            start_km = max(15.0, fitness.weekly_volume_km)
+            pre_gap_target = fitness.pre_gap_weekly_volume_km * 0.75
+            peak_km = max(start_km * 1.3, pre_gap_target)
+        else:
+            start_km = fitness.weekly_volume_km
+            # Conservative 30% increase for return_to_run, 50% for others
             peak_km = (
                 start_km * 1.3 if goal == GoalType.RETURN_TO_RUN else start_km * 1.5
             )
+            # Ensure minimum values
+            if start_km < 15:
+                start_km = 15.0
+            if peak_km < start_km * 1.3:
+                peak_km = (
+                    start_km * 1.3 if goal == GoalType.RETURN_TO_RUN else start_km * 1.5
+                )
 
         weekly_volumes = PeriodizationEngine.weekly_volume_progression(
             start_km, peak_km, phases

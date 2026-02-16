@@ -65,6 +65,9 @@ class TrainingPlanHandler:
     async def _generate_training_plan(
         self, arguments: dict[str, Any]
     ) -> list[TextContent]:
+        from garmin_mcp.training_plan.diagnostic_report import (
+            DiagnosticReportGenerator,
+        )
         from garmin_mcp.training_plan.plan_generator import TrainingPlanGenerator
 
         try:
@@ -83,6 +86,25 @@ class TrainingPlanHandler:
             result["first_week_workouts"] = [
                 w.model_dump() for w in plan.get_week_workouts(1)
             ]
+
+            # Generate and save diagnostic report
+            try:
+                if generator.last_fitness is None:
+                    raise ValueError("No fitness data available")
+                report_gen = DiagnosticReportGenerator()
+                content = report_gen.generate(
+                    fitness=generator.last_fitness,
+                    goal_type=arguments["goal_type"],
+                    plan_params={
+                        "start_km": plan.weekly_volume_start_km,
+                        "peak_km": plan.weekly_volume_peak_km,
+                    },
+                )
+                save_result = report_gen.save(content)
+                result["diagnostic_report_path"] = save_result["path"]
+            except Exception as e:
+                logger.warning(f"Diagnostic report generation failed: {e}")
+
         except Exception as e:
             logger.error(f"Plan generation failed: {e}")
             result = {"error": str(e)}

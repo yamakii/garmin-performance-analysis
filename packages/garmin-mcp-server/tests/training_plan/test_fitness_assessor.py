@@ -35,8 +35,8 @@ class TestFitnessAssessor:
         """Normal case: VO2max + LT + activities available."""
         activities = [
             (1, "2026-02-01", 10.0, 3000, 300),
-            (2, "2026-02-08", 8.0, 2400, 300),
-            (3, "2026-02-15", 12.0, 3600, 300),
+            (2, "2026-02-04", 8.0, 2400, 300),
+            (3, "2026-02-07", 12.0, 3600, 300),
         ]
         assessor = self._make_assessor(
             mocker,
@@ -66,7 +66,7 @@ class TestFitnessAssessor:
         """Falls back to race performance when no VO2max."""
         activities = [
             (1, "2026-02-01", 10.0, 3000, 300),
-            (2, "2026-02-08", 5.0, 1200, 240),  # faster pace
+            (2, "2026-02-04", 5.0, 1200, 240),  # faster pace
         ]
         assessor = self._make_assessor(
             mocker,
