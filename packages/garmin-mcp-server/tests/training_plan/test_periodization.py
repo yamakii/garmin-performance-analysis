@@ -90,6 +90,54 @@ class TestWeeklyVolumeProgression:
 
 
 @pytest.mark.unit
+class TestReturnToRunVolumeProgression:
+    """Tests for recovery-dominant volume progression (return_to_run)."""
+
+    @pytest.fixture()
+    def return_to_run_8w_phases(self):
+        """Standard 8-week return_to_run phases."""
+        return PeriodizationEngine.create_return_to_run_phases(8)
+
+    def test_return_to_run_volume_reaches_peak(self, return_to_run_8w_phases):
+        """RECOVERY-dominant plan should reach near peak_km."""
+        volumes = PeriodizationEngine.weekly_volume_progression(
+            11.9, 21.6, return_to_run_8w_phases
+        )
+        assert (
+            max(volumes) >= 19.0
+        ), f"Peak volume {max(volumes):.1f}km is too far from target 21.6km"
+
+    def test_return_to_run_recovery_weeks_lower(self, return_to_run_8w_phases):
+        """Every 4th week should be lower than the preceding week."""
+        volumes = PeriodizationEngine.weekly_volume_progression(
+            11.9, 21.6, return_to_run_8w_phases
+        )
+        # Week 4 (index 3) and week 8 (index 7) are recovery dips
+        assert volumes[3] < volumes[2], "Week 4 should be a recovery dip"
+        assert volumes[7] < volumes[6], "Week 8 should be a recovery dip"
+
+    def test_race_plan_not_using_linear_path(self):
+        """BASE/BUILD-dominant race plans should NOT use the linear path."""
+        phases = PeriodizationEngine.create_race_phases(12, GoalType.RACE_10K)
+        volumes = PeriodizationEngine.weekly_volume_progression(20.0, 50.0, phases)
+        # Race plan uses 10% rule, so BASE/BUILD increments are capped at 2.0km
+        # Verify the increment between first two weeks is <= 10% of start
+        assert volumes[1] - volumes[0] <= 20.0 * 0.10 + 0.01
+        # Verify it doesn't reach peak in BASE phase (10% rule limits it)
+        base_weeks = dict(phases).get(PeriodizationPhase.BASE, 0)
+        base_vols = volumes[:base_weeks]
+        assert max(base_vols) < 50.0, "10% rule should prevent reaching peak in BASE"
+
+    def test_return_to_run_length_matches(self, return_to_run_8w_phases):
+        """Output length should match total weeks."""
+        volumes = PeriodizationEngine.weekly_volume_progression(
+            11.9, 21.6, return_to_run_8w_phases
+        )
+        total = sum(w for _, w in return_to_run_8w_phases)
+        assert len(volumes) == total
+
+
+@pytest.mark.unit
 class TestCreateReturnToRunPhases:
     @pytest.mark.parametrize("total_weeks", [4, 6, 8, 10, 12])
     def test_phases_sum_to_total_weeks(self, total_weeks):

@@ -195,7 +195,17 @@ class PeriodizationEngine:
         Returns:
             List of weekly volume targets in kilometers
         """
-        weekly_volumes = []
+        # Detect recovery-dominant plans (e.g. return_to_run)
+        total_weeks = sum(w for _, w in phases)
+        recovery_weeks = sum(w for p, w in phases if p == PeriodizationPhase.RECOVERY)
+        is_recovery_dominant = total_weeks > 0 and recovery_weeks > total_weeks / 2
+
+        if is_recovery_dominant:
+            return PeriodizationEngine._linear_with_recovery_dips(
+                start_km, peak_km, total_weeks
+            )
+
+        weekly_volumes: list[float] = []
         week_count = 0
 
         # Count weeks in base and build phases for progression calculation
@@ -256,6 +266,33 @@ class PeriodizationEngine:
                     weekly_volumes.append(base_volume * 0.8)
 
         return weekly_volumes
+
+    @staticmethod
+    def _linear_with_recovery_dips(
+        start_km: float, peak_km: float, total_weeks: int
+    ) -> list[float]:
+        """Linear progression across all weeks with recovery dips every 4th week.
+
+        Used for recovery-dominant plans (e.g. return_to_run) where the 10% rule
+        is too restrictive due to few BASE/BUILD weeks.
+
+        Progression weeks (non-4th) linearly progress from start_km to peak_km.
+        Every 4th week drops to 80% of the previous week's volume.
+        """
+        progression_weeks = [w for w in range(1, total_weeks + 1) if w % 4 != 0]
+        n = len(progression_weeks)
+        increment = (peak_km - start_km) / max(n - 1, 1)
+
+        volumes: list[float] = []
+        prog_idx = 0
+        for week in range(1, total_weeks + 1):
+            if week % 4 == 0:
+                volumes.append(volumes[-1] * 0.8 if volumes else start_km * 0.8)
+            else:
+                vol = start_km + increment * prog_idx
+                volumes.append(min(vol, peak_km))
+                prog_idx += 1
+        return volumes
 
     @staticmethod
     def frequency_progression(
