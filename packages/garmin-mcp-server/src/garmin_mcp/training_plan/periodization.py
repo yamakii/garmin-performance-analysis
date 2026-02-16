@@ -201,7 +201,7 @@ class PeriodizationEngine:
         is_recovery_dominant = total_weeks > 0 and recovery_weeks > total_weeks / 2
 
         if is_recovery_dominant:
-            return PeriodizationEngine._linear_with_recovery_dips(
+            return PeriodizationEngine._linear_progression(
                 start_km, peak_km, total_weeks
             )
 
@@ -268,31 +268,18 @@ class PeriodizationEngine:
         return weekly_volumes
 
     @staticmethod
-    def _linear_with_recovery_dips(
+    def _linear_progression(
         start_km: float, peak_km: float, total_weeks: int
     ) -> list[float]:
-        """Linear progression across all weeks with recovery dips every 4th week.
+        """Pure linear progression from start_km to peak_km.
 
-        Used for recovery-dominant plans (e.g. return_to_run) where the 10% rule
-        is too restrictive due to few BASE/BUILD weeks.
-
-        Progression weeks (non-4th) linearly progress from start_km to peak_km.
-        Every 4th week drops to 80% of the previous week's volume.
+        Used for recovery-dominant plans (e.g. return_to_run) where volumes
+        are modest enough that recovery dips are unnecessary.
         """
-        progression_weeks = [w for w in range(1, total_weeks + 1) if w % 4 != 0]
-        n = len(progression_weeks)
-        increment = (peak_km - start_km) / max(n - 1, 1)
-
-        volumes: list[float] = []
-        prog_idx = 0
-        for week in range(1, total_weeks + 1):
-            if week % 4 == 0:
-                volumes.append(volumes[-1] * 0.8 if volumes else start_km * 0.8)
-            else:
-                vol = start_km + increment * prog_idx
-                volumes.append(min(vol, peak_km))
-                prog_idx += 1
-        return volumes
+        if total_weeks <= 1:
+            return [start_km] * total_weeks
+        increment = (peak_km - start_km) / (total_weeks - 1)
+        return [min(start_km + increment * i, peak_km) for i in range(total_weeks)]
 
     @staticmethod
     def frequency_progression(

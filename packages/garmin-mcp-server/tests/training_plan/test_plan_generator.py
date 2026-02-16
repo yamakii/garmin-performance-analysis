@@ -373,3 +373,34 @@ class TestPlanGeneratorFrequencyProgression:
         # All weeks should have 4 workouts
         for week_num in range(1, 13):
             assert plan.get_week_frequency(week_num) == 4
+
+    def test_return_to_run_auto_frequency_progression(
+        self, mocker, mock_fitness_summary
+    ):
+        """return_to_run auto-sets start_frequency to runs_per_week - 1."""
+        mock_assessor = mocker.MagicMock()
+        mock_assessor.assess.return_value = mock_fitness_summary
+
+        mocker.patch(
+            "garmin_mcp.training_plan.plan_generator.FitnessAssessor",
+            return_value=mock_assessor,
+        )
+        mocker.patch(
+            "garmin_mcp.database.inserters.training_plans.insert_training_plan",
+        )
+
+        from garmin_mcp.training_plan.plan_generator import TrainingPlanGenerator
+
+        generator = TrainingPlanGenerator(db_path=":memory:")
+        plan = generator.generate(
+            goal_type="return_to_run",
+            total_weeks=8,
+            runs_per_week=4,
+        )
+
+        # Auto start_frequency = max(4-1, 3) = 3
+        assert plan.frequency_progression is not None
+        assert plan.frequency_progression[0] == 3
+        assert plan.frequency_progression[-1] == 4
+        # Early weeks should have fewer runs than later weeks
+        assert plan.get_week_frequency(1) < plan.get_week_frequency(8)

@@ -132,6 +132,11 @@ class TrainingPlanGenerator:
             start = today + timedelta(days=days_until_monday)
 
         # 6. Frequency progression
+        # return_to_run: auto-set start_frequency to runs_per_week - 1
+        # (e.g. RECOVERY phase at 3 runs/week, BASE phase at 4 runs/week)
+        if goal == GoalType.RETURN_TO_RUN and start_frequency is None:
+            start_frequency = max(runs_per_week - 1, 3)
+
         freq_prog = None
         if start_frequency is not None and start_frequency != runs_per_week:
             freq_prog = PeriodizationEngine.frequency_progression(

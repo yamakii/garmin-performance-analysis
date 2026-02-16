@@ -107,14 +107,15 @@ class TestReturnToRunVolumeProgression:
             max(volumes) >= 19.0
         ), f"Peak volume {max(volumes):.1f}km is too far from target 21.6km"
 
-    def test_return_to_run_recovery_weeks_lower(self, return_to_run_8w_phases):
-        """Every 4th week should be lower than the preceding week."""
+    def test_return_to_run_monotonic_increase(self, return_to_run_8w_phases):
+        """Pure linear progression should monotonically increase."""
         volumes = PeriodizationEngine.weekly_volume_progression(
             11.9, 21.6, return_to_run_8w_phases
         )
-        # Week 4 (index 3) and week 8 (index 7) are recovery dips
-        assert volumes[3] < volumes[2], "Week 4 should be a recovery dip"
-        assert volumes[7] < volumes[6], "Week 8 should be a recovery dip"
+        for i in range(1, len(volumes)):
+            assert (
+                volumes[i] >= volumes[i - 1]
+            ), f"Week {i+1} ({volumes[i]:.1f}) < Week {i} ({volumes[i-1]:.1f})"
 
     def test_race_plan_not_using_linear_path(self):
         """BASE/BUILD-dominant race plans should NOT use the linear path."""
