@@ -17,9 +17,10 @@ from garmin_mcp.database.db_writer import GarminDBWriter
 class TestGarminDBReader:
     """Test suite for GarminDBReader."""
 
-    @pytest.fixture
-    def db_reader(self, tmp_path):
-        """Create GarminDBReader with test database."""
+    @pytest.fixture(scope="class")
+    def db_reader(self, tmp_path_factory):
+        """Create GarminDBReader with test database (class-scoped for read-only tests)."""
+        tmp_path = tmp_path_factory.mktemp("db_reader")
         db_path = tmp_path / "test.duckdb"
 
         # Create test splits.json file with lapDTOs

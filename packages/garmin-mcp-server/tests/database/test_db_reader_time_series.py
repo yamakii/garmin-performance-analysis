@@ -10,9 +10,10 @@ from garmin_mcp.database.db_reader import GarminDBReader
 class TestGarminDBReaderTimeSeries:
     """Test time series query methods in GarminDBReader."""
 
-    @pytest.fixture
-    def db_reader(self, tmp_path):
-        """Create GarminDBReader with temporary database."""
+    @pytest.fixture(scope="class")
+    def db_reader(self, tmp_path_factory):
+        """Create GarminDBReader with temporary database (class-scoped for read-only tests)."""
+        tmp_path = tmp_path_factory.mktemp("db_time_series")
         db_path = tmp_path / "test_garmin.duckdb"
 
         # Create test database with time_series_metrics table

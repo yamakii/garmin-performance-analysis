@@ -23,14 +23,15 @@ from garmin_mcp.database.inserters.activities import insert_activities
 class TestGarminDBReaderNormalized:
     """Test suite for GarminDBReader normalized table access."""
 
-    @pytest.fixture
+    @pytest.fixture(scope="class")
     def test_activity_id(self):
         """Test activity ID."""
         return 20615445009
 
-    @pytest.fixture
-    def db_reader(self, tmp_path, test_activity_id):
-        """Create GarminDBReader with test database containing normalized data."""
+    @pytest.fixture(scope="class")
+    def db_reader(self, tmp_path_factory, test_activity_id):
+        """Create GarminDBReader with test database containing normalized data (class-scoped for read-only tests)."""
+        tmp_path = tmp_path_factory.mktemp("db_normalized")
         db_path = tmp_path / "test.duckdb"
 
         # Create test splits.json for form_efficiency
@@ -230,9 +231,10 @@ class TestGarminDBReaderNormalized:
 class TestGetHeartRateZonesDetail:
     """Test get_heart_rate_zones_detail method."""
 
-    @pytest.fixture
-    def db_reader_with_hr_zones(self, tmp_path, test_activity_id):
-        """Create GarminDBReader with test database containing HR zones data."""
+    @pytest.fixture(scope="class")
+    def db_reader_with_hr_zones(self, tmp_path_factory, test_activity_id):
+        """Create GarminDBReader with test database containing HR zones data (class-scoped for read-only tests)."""
+        tmp_path = tmp_path_factory.mktemp("db_hr_zones")
         db_path = tmp_path / "test.duckdb"
 
         # Create test hr_zones.json with raw data
@@ -321,7 +323,7 @@ class TestGetHeartRateZonesDetail:
         for i in range(len(zones) - 1):
             assert zones[i]["zone_number"] < zones[i + 1]["zone_number"]
 
-    @pytest.fixture
+    @pytest.fixture(scope="class")
     def test_activity_id(self):
         """Test activity ID."""
         return 20615445009
@@ -330,14 +332,15 @@ class TestGetHeartRateZonesDetail:
 class TestGetVO2MaxData:
     """Test get_vo2_max_data method."""
 
-    @pytest.fixture
+    @pytest.fixture(scope="class")
     def test_activity_id(self):
         """Test activity ID."""
         return 20615445009
 
-    @pytest.fixture
-    def db_reader_with_vo2max(self, tmp_path, test_activity_id):
-        """Create GarminDBReader with test database containing VO2 max data."""
+    @pytest.fixture(scope="class")
+    def db_reader_with_vo2max(self, tmp_path_factory, test_activity_id):
+        """Create GarminDBReader with test database containing VO2 max data (class-scoped for read-only tests)."""
+        tmp_path = tmp_path_factory.mktemp("db_vo2max")
         db_path = tmp_path / "test.duckdb"
 
         # Create test vo2_max.json with raw data
@@ -408,14 +411,15 @@ class TestGetVO2MaxData:
 class TestGetLactateThresholdData:
     """Test get_lactate_threshold_data method."""
 
-    @pytest.fixture
+    @pytest.fixture(scope="class")
     def test_activity_id(self):
         """Test activity ID."""
         return 20615445009
 
-    @pytest.fixture
-    def db_reader_with_lactate(self, tmp_path, test_activity_id):
-        """Create GarminDBReader with test database containing lactate threshold data."""
+    @pytest.fixture(scope="class")
+    def db_reader_with_lactate(self, tmp_path_factory, test_activity_id):
+        """Create GarminDBReader with test database containing lactate threshold data (class-scoped for read-only tests)."""
+        tmp_path = tmp_path_factory.mktemp("db_lactate")
         db_path = tmp_path / "test.duckdb"
 
         # Create test lactate_threshold.json with raw data
@@ -495,14 +499,15 @@ class TestGetLactateThresholdData:
 class TestGetSplitsAll:
     """Test get_splits_all method."""
 
-    @pytest.fixture
+    @pytest.fixture(scope="class")
     def test_activity_id(self):
         """Test activity ID."""
         return 20615445009
 
-    @pytest.fixture
-    def db_reader_with_splits(self, tmp_path, test_activity_id):
-        """Create GarminDBReader with test database containing splits data."""
+    @pytest.fixture(scope="class")
+    def db_reader_with_splits(self, tmp_path_factory, test_activity_id):
+        """Create GarminDBReader with test database containing splits data (class-scoped for read-only tests)."""
+        tmp_path = tmp_path_factory.mktemp("db_splits_all")
         db_path = tmp_path / "test.duckdb"
 
         # Create test splits.json (raw data format)

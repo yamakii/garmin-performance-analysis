@@ -7,9 +7,10 @@ from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.database.db_writer import GarminDBWriter
 
 
-@pytest.fixture
-def db_reader(tmp_path):
-    """Create temporary database with test data."""
+@pytest.fixture(scope="module")
+def db_reader(tmp_path_factory):
+    """Create temporary database with test data (module-scoped for read-only tests)."""
+    tmp_path = tmp_path_factory.mktemp("db_split_time_ranges")
     db_path = tmp_path / "test_splits_time_ranges.duckdb"
 
     # Create database with test data

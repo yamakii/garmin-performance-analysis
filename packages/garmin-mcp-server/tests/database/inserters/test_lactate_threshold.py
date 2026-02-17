@@ -11,7 +11,6 @@ import json
 import duckdb
 import pytest
 
-from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.lactate_threshold import insert_lactate_threshold
 
 
@@ -49,10 +48,11 @@ class TestLactateThresholdInserter:
         return lt_file
 
     @pytest.mark.unit
-    def test_insert_lactate_threshold_success(self, sample_performance_file, tmp_path):
+    def test_insert_lactate_threshold_success(
+        self, sample_performance_file, initialized_db_path
+    ):
         """Test insert_lactate_threshold inserts data successfully."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_lactate_threshold(
@@ -65,10 +65,9 @@ class TestLactateThresholdInserter:
         assert db_path.exists()
 
     @pytest.mark.unit
-    def test_insert_lactate_threshold_missing_file(self, tmp_path):
+    def test_insert_lactate_threshold_missing_file(self, initialized_db_path):
         """Test insert_lactate_threshold handles missing file gracefully."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_lactate_threshold(
@@ -81,15 +80,14 @@ class TestLactateThresholdInserter:
         assert result is True
 
     @pytest.mark.unit
-    def test_insert_lactate_threshold_no_data(self, tmp_path):
+    def test_insert_lactate_threshold_no_data(self, tmp_path, initialized_db_path):
         """Test insert_lactate_threshold handles missing lactate_threshold data."""
         lt_data: dict = {}  # Empty file
         lt_file = tmp_path / "lactate_threshold.json"
         with open(lt_file, "w", encoding="utf-8") as f:
             json.dump(lt_data, f)
 
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_lactate_threshold(
@@ -103,12 +101,11 @@ class TestLactateThresholdInserter:
 
     @pytest.mark.integration
     def test_insert_lactate_threshold_db_integration(
-        self, sample_performance_file, tmp_path
+        self, sample_performance_file, initialized_db_path
     ):
         """Test insert_lactate_threshold actually writes to DuckDB."""
 
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_lactate_threshold(

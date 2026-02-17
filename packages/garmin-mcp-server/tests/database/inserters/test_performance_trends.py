@@ -11,7 +11,6 @@ import json
 import duckdb
 import pytest
 
-from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.performance_trends import insert_performance_trends
 
 
@@ -19,10 +18,11 @@ class TestPerformanceTrendsInserter:
     """Test suite for Performance Trends Inserter."""
 
     @pytest.mark.unit
-    def test_insert_performance_trends_success(self, sample_raw_splits_file, tmp_path):
+    def test_insert_performance_trends_success(
+        self, sample_raw_splits_file, initialized_db_path
+    ):
         """Test insert_performance_trends inserts data successfully."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
@@ -35,10 +35,9 @@ class TestPerformanceTrendsInserter:
         assert db_path.exists()
 
     @pytest.mark.unit
-    def test_insert_performance_trends_missing_file(self, tmp_path):
+    def test_insert_performance_trends_missing_file(self, initialized_db_path):
         """Test insert_performance_trends handles missing file."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
@@ -50,15 +49,14 @@ class TestPerformanceTrendsInserter:
         assert result is False
 
     @pytest.mark.unit
-    def test_insert_performance_trends_no_data(self, tmp_path):
+    def test_insert_performance_trends_no_data(self, tmp_path, initialized_db_path):
         """Test insert_performance_trends handles missing performance_trends."""
         performance_data = {"basic_metrics": {"distance_km": 5.0}}
         performance_file = tmp_path / "test.json"
         with open(performance_file, "w", encoding="utf-8") as f:
             json.dump(performance_data, f)
 
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
@@ -70,12 +68,11 @@ class TestPerformanceTrendsInserter:
 
     @pytest.mark.integration
     def test_insert_performance_trends_db_integration(
-        self, sample_raw_splits_file, tmp_path
+        self, sample_raw_splits_file, initialized_db_path
     ):
         """Test insert_performance_trends actually writes to DuckDB."""
 
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
@@ -109,11 +106,12 @@ class TestPerformanceTrendsInserter:
         conn.close()
 
     @pytest.mark.integration
-    def test_insert_4phase_performance_trends(self, sample_raw_splits_file, tmp_path):
+    def test_insert_4phase_performance_trends(
+        self, sample_raw_splits_file, initialized_db_path
+    ):
         """Test insert_performance_trends writes 4-phase interval training data correctly."""
 
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
@@ -233,11 +231,10 @@ class TestPerformanceTrendsInserter:
 
     @pytest.mark.unit
     def test_insert_performance_trends_raw_data_success(
-        self, sample_raw_splits_file, tmp_path
+        self, sample_raw_splits_file, initialized_db_path
     ):
         """Test insert_performance_trends with raw data mode."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
@@ -251,12 +248,11 @@ class TestPerformanceTrendsInserter:
 
     @pytest.mark.integration
     def test_insert_performance_trends_raw_data_db_integration(
-        self, sample_raw_splits_file, tmp_path
+        self, sample_raw_splits_file, initialized_db_path
     ):
         """Test insert_performance_trends with raw data actually writes to DuckDB."""
 
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
@@ -306,10 +302,9 @@ class TestPerformanceTrendsInserter:
         conn.close()
 
     @pytest.mark.unit
-    def test_insert_performance_trends_raw_data_missing_file(self, tmp_path):
+    def test_insert_performance_trends_raw_data_missing_file(self, initialized_db_path):
         """Test insert_performance_trends raw mode handles missing files."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
@@ -321,10 +316,11 @@ class TestPerformanceTrendsInserter:
         assert result is False
 
     @pytest.mark.unit
-    def test_warmup_cadence_power_calculation(self, sample_raw_splits_file, tmp_path):
+    def test_warmup_cadence_power_calculation(
+        self, sample_raw_splits_file, initialized_db_path
+    ):
         """Test warmup_avg_cadence and warmup_avg_power calculation."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
@@ -348,10 +344,9 @@ class TestPerformanceTrendsInserter:
         conn.close()
 
     @pytest.mark.unit
-    def test_warmup_evaluation(self, sample_raw_splits_file, tmp_path):
+    def test_warmup_evaluation(self, sample_raw_splits_file, initialized_db_path):
         """Test warmup_evaluation field."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
@@ -377,10 +372,11 @@ class TestPerformanceTrendsInserter:
         conn.close()
 
     @pytest.mark.unit
-    def test_run_cadence_power_calculation(self, sample_raw_splits_file, tmp_path):
+    def test_run_cadence_power_calculation(
+        self, sample_raw_splits_file, initialized_db_path
+    ):
         """Test run_avg_cadence and run_avg_power calculation."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
@@ -406,10 +402,9 @@ class TestPerformanceTrendsInserter:
         conn.close()
 
     @pytest.mark.unit
-    def test_run_evaluation(self, sample_raw_splits_file, tmp_path):
+    def test_run_evaluation(self, sample_raw_splits_file, initialized_db_path):
         """Test run_evaluation field."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
@@ -430,10 +425,11 @@ class TestPerformanceTrendsInserter:
         conn.close()
 
     @pytest.mark.unit
-    def test_recovery_cadence_power_calculation(self, sample_raw_splits_file, tmp_path):
+    def test_recovery_cadence_power_calculation(
+        self, sample_raw_splits_file, initialized_db_path
+    ):
         """Test recovery_avg_cadence and recovery_avg_power calculation."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
@@ -457,10 +453,9 @@ class TestPerformanceTrendsInserter:
         conn.close()
 
     @pytest.mark.unit
-    def test_recovery_evaluation(self, sample_raw_splits_file, tmp_path):
+    def test_recovery_evaluation(self, sample_raw_splits_file, initialized_db_path):
         """Test recovery_evaluation field."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
@@ -486,10 +481,11 @@ class TestPerformanceTrendsInserter:
         conn.close()
 
     @pytest.mark.unit
-    def test_cooldown_cadence_power_calculation(self, sample_raw_splits_file, tmp_path):
+    def test_cooldown_cadence_power_calculation(
+        self, sample_raw_splits_file, initialized_db_path
+    ):
         """Test cooldown_avg_cadence and cooldown_avg_power calculation."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
@@ -513,10 +509,9 @@ class TestPerformanceTrendsInserter:
         conn.close()
 
     @pytest.mark.unit
-    def test_cooldown_evaluation(self, sample_raw_splits_file, tmp_path):
+    def test_cooldown_evaluation(self, sample_raw_splits_file, initialized_db_path):
         """Test cooldown_evaluation field."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(

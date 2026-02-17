@@ -11,7 +11,6 @@ import json
 import duckdb
 import pytest
 
-from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.form_efficiency import insert_form_efficiency
 
 
@@ -19,10 +18,11 @@ class TestFormEfficiencyInserter:
     """Test suite for Form Efficiency Inserter."""
 
     @pytest.mark.unit
-    def test_insert_form_efficiency_success(self, sample_splits_file, tmp_path):
+    def test_insert_form_efficiency_success(
+        self, sample_splits_file, initialized_db_path
+    ):
         """Test insert_form_efficiency inserts data successfully."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_form_efficiency(
@@ -77,10 +77,11 @@ class TestFormEfficiencyInserter:
         assert result is False
 
     @pytest.mark.integration
-    def test_insert_form_efficiency_db_integration(self, sample_splits_file, tmp_path):
+    def test_insert_form_efficiency_db_integration(
+        self, sample_splits_file, initialized_db_path
+    ):
         """Test insert_form_efficiency actually writes to DuckDB."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_form_efficiency(
@@ -167,11 +168,10 @@ class TestFormEfficiencyInserter:
 
     @pytest.mark.unit
     def test_insert_form_efficiency_raw_data_success(
-        self, sample_splits_file, tmp_path
+        self, sample_splits_file, initialized_db_path
     ):
         """Test insert_form_efficiency with raw data."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_form_efficiency(
@@ -186,11 +186,10 @@ class TestFormEfficiencyInserter:
 
     @pytest.mark.integration
     def test_insert_form_efficiency_raw_data_db_integration(
-        self, sample_splits_file, tmp_path
+        self, sample_splits_file, initialized_db_path
     ):
         """Test insert_form_efficiency with raw data actually writes to DuckDB."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_form_efficiency(

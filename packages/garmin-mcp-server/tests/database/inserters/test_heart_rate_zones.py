@@ -11,7 +11,6 @@ import json
 import duckdb
 import pytest
 
-from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.heart_rate_zones import insert_heart_rate_zones
 
 
@@ -36,10 +35,11 @@ class TestHeartRateZonesInserter:
         return hr_zones_file
 
     @pytest.mark.unit
-    def test_insert_heart_rate_zones_success(self, sample_hr_zones_file, tmp_path):
+    def test_insert_heart_rate_zones_success(
+        self, sample_hr_zones_file, initialized_db_path
+    ):
         """Test insert_heart_rate_zones inserts data successfully."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_heart_rate_zones(
@@ -82,11 +82,10 @@ class TestHeartRateZonesInserter:
 
     @pytest.mark.integration
     def test_insert_heart_rate_zones_db_integration(
-        self, sample_hr_zones_file, tmp_path
+        self, sample_hr_zones_file, initialized_db_path
     ):
         """Test insert_heart_rate_zones actually writes to DuckDB."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_heart_rate_zones(

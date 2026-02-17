@@ -19,9 +19,10 @@ from garmin_mcp.database.db_writer import GarminDBWriter
 class TestGarminDBReaderStatistics:
     """Test suite for GarminDBReader statistics_only mode."""
 
-    @pytest.fixture
-    def db_reader(self, tmp_path):
-        """Create GarminDBReader with test database containing multiple splits."""
+    @pytest.fixture(scope="class")
+    def db_reader(self, tmp_path_factory):
+        """Create GarminDBReader with test database containing multiple splits (class-scoped for read-only tests)."""
+        tmp_path = tmp_path_factory.mktemp("db_statistics")
         db_path = tmp_path / "test.duckdb"
 
         # Create test splits.json file (raw data format) with 10 splits

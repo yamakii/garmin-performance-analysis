@@ -11,17 +11,15 @@ import json
 import duckdb
 import pytest
 
-from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.vo2_max import insert_vo2_max
 
 
 class TestVO2MaxInserter:
     """Test suite for VO2 Max Inserter."""
 
-    def test_insert_vo2_max_success(self, sample_raw_vo2_max_file, tmp_path):
+    def test_insert_vo2_max_success(self, sample_raw_vo2_max_file, initialized_db_path):
         """Test insert_vo2_max inserts data successfully."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_vo2_max(
@@ -33,10 +31,9 @@ class TestVO2MaxInserter:
         assert result is True
         assert db_path.exists()
 
-    def test_insert_vo2_max_missing_file(self, tmp_path):
+    def test_insert_vo2_max_missing_file(self, initialized_db_path):
         """Test insert_vo2_max handles missing file gracefully (returns True, skips)."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_vo2_max(
@@ -48,15 +45,14 @@ class TestVO2MaxInserter:
         # Should return True (not an error, vo2_max is optional)
         assert result is True
 
-    def test_insert_vo2_max_no_data(self, tmp_path):
+    def test_insert_vo2_max_no_data(self, tmp_path, initialized_db_path):
         """Test insert_vo2_max handles missing vo2_max data in file."""
         vo2_data: dict = {"generic": {}}  # Empty generic section
         vo2_file = tmp_path / "vo2_max.json"
         with open(vo2_file, "w", encoding="utf-8") as f:
             json.dump(vo2_data, f)
 
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_vo2_max(
@@ -68,11 +64,12 @@ class TestVO2MaxInserter:
         # Should return True (skips gracefully)
         assert result is True
 
-    def test_insert_vo2_max_db_integration(self, sample_raw_vo2_max_file, tmp_path):
+    def test_insert_vo2_max_db_integration(
+        self, sample_raw_vo2_max_file, initialized_db_path
+    ):
         """Test insert_vo2_max actually writes to DuckDB."""
 
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_vo2_max(
@@ -135,10 +132,11 @@ class TestVO2MaxInserter:
         assert result["date"] == "2025-08-19"
         assert result["category"] == 0
 
-    def test_insert_vo2_max_from_raw_data(self, sample_raw_vo2_max_file, tmp_path):
+    def test_insert_vo2_max_from_raw_data(
+        self, sample_raw_vo2_max_file, initialized_db_path
+    ):
         """Test insert_vo2_max with raw data file."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_vo2_max(
@@ -150,11 +148,12 @@ class TestVO2MaxInserter:
         assert result is True
         assert db_path.exists()
 
-    def test_insert_vo2_max_raw_data_integrity(self, sample_raw_vo2_max_file, tmp_path):
+    def test_insert_vo2_max_raw_data_integrity(
+        self, sample_raw_vo2_max_file, initialized_db_path
+    ):
         """Test raw data insertion produces correct database values."""
 
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         # Insert from raw data

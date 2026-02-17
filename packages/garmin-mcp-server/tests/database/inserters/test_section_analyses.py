@@ -12,7 +12,6 @@ from datetime import datetime
 import duckdb
 import pytest
 
-from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.activities import insert_activities
 from garmin_mcp.database.inserters.section_analyses import insert_section_analysis
 
@@ -47,13 +46,12 @@ class TestSectionAnalysisInserter:
         return analysis_file
 
     @pytest.mark.unit
-    def test_insert_section_analysis_success(self, sample_analysis_file, tmp_path):
+    def test_insert_section_analysis_success(
+        self, sample_analysis_file, initialized_db_path
+    ):
         """Test insert_section_analysis inserts data successfully."""
 
-        db_path = tmp_path / "test.duckdb"
-
-        # Setup: Insert activity first (FK constraint)
-        GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
         insert_activities(
             activity_id=20464005432,
@@ -89,12 +87,11 @@ class TestSectionAnalysisInserter:
         assert result is False
 
     @pytest.mark.unit
-    def test_insert_section_analysis_dict_success(self, sample_analysis_data, tmp_path):
+    def test_insert_section_analysis_dict_success(
+        self, sample_analysis_data, initialized_db_path
+    ):
         """Test insert_section_analysis_dict inserts data from dict."""
-        db_path = tmp_path / "test.duckdb"
-
-        # Setup: Insert activity first (FK constraint)
-        GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
         insert_activities(
             activity_id=20464005432,
@@ -116,15 +113,12 @@ class TestSectionAnalysisInserter:
 
     @pytest.mark.integration
     def test_insert_section_analysis_db_integration(
-        self, sample_analysis_file, tmp_path
+        self, sample_analysis_file, initialized_db_path
     ):
         """Test insert_section_analysis actually writes to DuckDB."""
         import duckdb
 
-        db_path = tmp_path / "test.duckdb"
-
-        # Setup: Insert activity first (FK constraint)
-        GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
         insert_activities(
             activity_id=20464005432,
@@ -159,15 +153,12 @@ class TestSectionAnalysisInserter:
 
     @pytest.mark.integration
     def test_insert_section_analysis_dict_db_integration(
-        self, sample_analysis_data, tmp_path
+        self, sample_analysis_data, initialized_db_path
     ):
         """Test insert_section_analysis with dict actually writes to DuckDB."""
         import duckdb
 
-        db_path = tmp_path / "test.duckdb"
-
-        # Setup: Insert activity first (FK constraint)
-        GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
         insert_activities(
             activity_id=20464005432,
@@ -205,14 +196,11 @@ class TestSectionAnalysisInserter:
         conn.close()
 
     @pytest.mark.unit
-    def test_insert_section_analysis_auto_metadata(self, tmp_path):
+    def test_insert_section_analysis_auto_metadata(self, initialized_db_path):
         """Test insert_section_analysis auto-generates metadata when not provided."""
         import duckdb
 
-        db_path = tmp_path / "test.duckdb"
-
-        # Setup: Insert activity first (FK constraint)
-        GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
         insert_activities(
             activity_id=20464005432,
@@ -269,14 +257,11 @@ class TestSectionAnalysisInserter:
         conn.close()
 
     @pytest.mark.unit
-    def test_insert_section_analysis_custom_agent_name(self, tmp_path):
+    def test_insert_section_analysis_custom_agent_name(self, initialized_db_path):
         """Test insert_section_analysis with custom agent_name."""
         import duckdb
 
-        db_path = tmp_path / "test.duckdb"
-
-        # Setup: Insert activity first (FK constraint)
-        GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
         insert_activities(
             activity_id=20464005432,

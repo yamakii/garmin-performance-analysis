@@ -11,7 +11,6 @@ import json
 import duckdb
 import pytest
 
-from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.hr_efficiency import insert_hr_efficiency
 
 
@@ -49,11 +48,10 @@ class TestHREfficiencyInserter:
         return hr_zones_file, activity_file
 
     @pytest.mark.unit
-    def test_insert_hr_efficiency_success(self, sample_raw_files, tmp_path):
+    def test_insert_hr_efficiency_success(self, sample_raw_files, initialized_db_path):
         """Test insert_hr_efficiency inserts data successfully."""
         hr_zones_file, activity_file = sample_raw_files
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_hr_efficiency(
@@ -98,12 +96,13 @@ class TestHREfficiencyInserter:
         assert result is False
 
     @pytest.mark.integration
-    def test_insert_hr_efficiency_db_integration(self, sample_raw_files, tmp_path):
+    def test_insert_hr_efficiency_db_integration(
+        self, sample_raw_files, initialized_db_path
+    ):
         """Test insert_hr_efficiency actually writes to DuckDB."""
 
         hr_zones_file, activity_file = sample_raw_files
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_hr_efficiency(
@@ -175,11 +174,10 @@ class TestHREfficiencyInserter:
 
     @pytest.mark.unit
     def test_insert_hr_efficiency_raw_data_success(
-        self, sample_hr_zones_file, sample_activity_file, tmp_path
+        self, sample_hr_zones_file, sample_activity_file, initialized_db_path
     ):
         """Test insert_hr_efficiency with raw data mode."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_hr_efficiency(
@@ -194,12 +192,11 @@ class TestHREfficiencyInserter:
 
     @pytest.mark.integration
     def test_insert_hr_efficiency_raw_data_db_integration(
-        self, sample_hr_zones_file, sample_activity_file, tmp_path
+        self, sample_hr_zones_file, sample_activity_file, initialized_db_path
     ):
         """Test insert_hr_efficiency with raw data actually writes to DuckDB."""
 
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_hr_efficiency(
@@ -246,10 +243,9 @@ class TestHREfficiencyInserter:
         conn.close()
 
     @pytest.mark.unit
-    def test_insert_hr_efficiency_raw_data_missing_files(self, tmp_path):
+    def test_insert_hr_efficiency_raw_data_missing_files(self, initialized_db_path):
         """Test insert_hr_efficiency raw mode handles missing files."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_hr_efficiency(
@@ -262,11 +258,10 @@ class TestHREfficiencyInserter:
         assert result is False
 
     @pytest.mark.unit
-    def test_primary_zone_calculation(self, sample_raw_files, tmp_path):
+    def test_primary_zone_calculation(self, sample_raw_files, initialized_db_path):
         """Test primary_zone field identifies the zone with highest time."""
         hr_zones_file, activity_file = sample_raw_files
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_hr_efficiency(
@@ -289,7 +284,7 @@ class TestHREfficiencyInserter:
         conn.close()
 
     @pytest.mark.unit
-    def test_zone_distribution_rating_recovery(self, tmp_path):
+    def test_zone_distribution_rating_recovery(self, tmp_path, initialized_db_path):
         """Test zone_distribution_rating for recovery training type."""
         # Create hr_zones with Zone 2 dominant (72%)
         hr_zones_data = [
@@ -316,8 +311,7 @@ class TestHREfficiencyInserter:
         with open(activity_file, "w", encoding="utf-8") as f:
             json.dump(activity_data, f, ensure_ascii=False, indent=2)
 
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
         result = insert_hr_efficiency(
             activity_id=12345,
@@ -337,7 +331,7 @@ class TestHREfficiencyInserter:
         conn.close()
 
     @pytest.mark.unit
-    def test_zone_distribution_rating_tempo(self, tmp_path):
+    def test_zone_distribution_rating_tempo(self, tmp_path, initialized_db_path):
         """Test zone_distribution_rating for tempo training type."""
         # Create hr_zones with Zone 3-4 at 65%
         hr_zones_data = [
@@ -363,8 +357,7 @@ class TestHREfficiencyInserter:
         with open(activity_file, "w", encoding="utf-8") as f:
             json.dump(activity_data, f, ensure_ascii=False, indent=2)
 
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
         result = insert_hr_efficiency(
             activity_id=12346,
@@ -384,7 +377,7 @@ class TestHREfficiencyInserter:
         conn.close()
 
     @pytest.mark.unit
-    def test_aerobic_efficiency_excellent(self, tmp_path):
+    def test_aerobic_efficiency_excellent(self, tmp_path, initialized_db_path):
         """Test aerobic_efficiency calculation for excellent aerobic base."""
         # Create hr_zones with 85% in Zone 2-3
         hr_zones_data = [
@@ -410,8 +403,7 @@ class TestHREfficiencyInserter:
         with open(activity_file, "w", encoding="utf-8") as f:
             json.dump(activity_data, f, ensure_ascii=False, indent=2)
 
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
         result = insert_hr_efficiency(
             activity_id=12347,
@@ -431,11 +423,10 @@ class TestHREfficiencyInserter:
         conn.close()
 
     @pytest.mark.unit
-    def test_training_quality_excellent(self, sample_raw_files, tmp_path):
+    def test_training_quality_excellent(self, sample_raw_files, initialized_db_path):
         """Test training_quality calculation for excellent training."""
         hr_zones_file, activity_file = sample_raw_files
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_hr_efficiency(
@@ -456,7 +447,7 @@ class TestHREfficiencyInserter:
         conn.close()
 
     @pytest.mark.unit
-    def test_zone2_focus_true(self, tmp_path):
+    def test_zone2_focus_true(self, tmp_path, initialized_db_path):
         """Test zone2_focus flag when >60% in Zone 2."""
         # Create hr_zones with 65% in Zone 2
         hr_zones_data = [
@@ -482,8 +473,7 @@ class TestHREfficiencyInserter:
         with open(activity_file, "w", encoding="utf-8") as f:
             json.dump(activity_data, f, ensure_ascii=False, indent=2)
 
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
         result = insert_hr_efficiency(
             activity_id=12348,
@@ -503,7 +493,7 @@ class TestHREfficiencyInserter:
         conn.close()
 
     @pytest.mark.unit
-    def test_zone2_focus_false(self, tmp_path):
+    def test_zone2_focus_false(self, tmp_path, initialized_db_path):
         """Test zone2_focus flag when <60% in Zone 2."""
         # Create hr_zones with 50% in Zone 2
         hr_zones_data = [
@@ -529,8 +519,7 @@ class TestHREfficiencyInserter:
         with open(activity_file, "w", encoding="utf-8") as f:
             json.dump(activity_data, f, ensure_ascii=False, indent=2)
 
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
         result = insert_hr_efficiency(
             activity_id=12349,
@@ -550,7 +539,7 @@ class TestHREfficiencyInserter:
         conn.close()
 
     @pytest.mark.unit
-    def test_zone4_threshold_work_true(self, tmp_path):
+    def test_zone4_threshold_work_true(self, tmp_path, initialized_db_path):
         """Test zone4_threshold_work flag when >20% in Zone 4-5."""
         # Create hr_zones with 25% in Zone 4-5
         hr_zones_data = [
@@ -576,8 +565,7 @@ class TestHREfficiencyInserter:
         with open(activity_file, "w", encoding="utf-8") as f:
             json.dump(activity_data, f, ensure_ascii=False, indent=2)
 
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
         result = insert_hr_efficiency(
             activity_id=12350,
@@ -597,11 +585,10 @@ class TestHREfficiencyInserter:
         conn.close()
 
     @pytest.mark.unit
-    def test_zone4_threshold_work_false(self, sample_raw_files, tmp_path):
+    def test_zone4_threshold_work_false(self, sample_raw_files, initialized_db_path):
         """Test zone4_threshold_work flag when <20% in Zone 4-5."""
         hr_zones_file, activity_file = sample_raw_files
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_hr_efficiency(

@@ -15,7 +15,6 @@ import json
 import duckdb
 import pytest
 
-from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.time_series_metrics import insert_time_series_metrics
 
 
@@ -95,12 +94,11 @@ class TestTimeSeriesMetricsInserter:
 
     @pytest.mark.unit
     def test_insert_time_series_metrics_success(
-        self, sample_activity_details_file, tmp_path
+        self, sample_activity_details_file, initialized_db_path
     ):
         """Test insert_time_series_metrics inserts data successfully."""
         # Setup: Create temporary DuckDB
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         # Execute
@@ -126,10 +124,11 @@ class TestTimeSeriesMetricsInserter:
         assert len(rows) == 3  # 3 time points
 
     @pytest.mark.unit
-    def test_metric_name_conversion(self, sample_activity_details_file, tmp_path):
+    def test_metric_name_conversion(
+        self, sample_activity_details_file, initialized_db_path
+    ):
         """Test metric name conversion: directHeartRate -> heart_rate."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_time_series_metrics(
@@ -155,10 +154,11 @@ class TestTimeSeriesMetricsInserter:
         assert row[2] == 170.0  # cadence
 
     @pytest.mark.unit
-    def test_unit_conversion_speed(self, sample_activity_details_file, tmp_path):
+    def test_unit_conversion_speed(
+        self, sample_activity_details_file, initialized_db_path
+    ):
         """Test that speed raw value is used as-is (no factor conversion)."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_time_series_metrics(
@@ -183,10 +183,11 @@ class TestTimeSeriesMetricsInserter:
         assert row[0] == 30.0
 
     @pytest.mark.unit
-    def test_unit_conversion_elevation(self, sample_activity_details_file, tmp_path):
+    def test_unit_conversion_elevation(
+        self, sample_activity_details_file, initialized_db_path
+    ):
         """Test that elevation raw value is used as-is (no factor conversion)."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_time_series_metrics(
@@ -211,10 +212,11 @@ class TestTimeSeriesMetricsInserter:
         assert row[0] == 50000.0
 
     @pytest.mark.unit
-    def test_timestamp_calculation(self, sample_activity_details_file, tmp_path):
+    def test_timestamp_calculation(
+        self, sample_activity_details_file, initialized_db_path
+    ):
         """Test timestamp_s calculation from sumDuration (already in seconds)."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_time_series_metrics(
@@ -240,10 +242,9 @@ class TestTimeSeriesMetricsInserter:
         assert rows[2][0] == 3
 
     @pytest.mark.unit
-    def test_null_handling(self, sample_activity_details_file, tmp_path):
+    def test_null_handling(self, sample_activity_details_file, initialized_db_path):
         """Test NULL handling for missing metrics."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_time_series_metrics(
@@ -267,10 +268,11 @@ class TestTimeSeriesMetricsInserter:
         assert row[0] is None  # Speed is NULL
 
     @pytest.mark.unit
-    def test_duplicate_handling(self, sample_activity_details_file, tmp_path):
+    def test_duplicate_handling(
+        self, sample_activity_details_file, initialized_db_path
+    ):
         """Test duplicate handling: DELETE before INSERT."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         # First insertion
@@ -302,10 +304,9 @@ class TestTimeSeriesMetricsInserter:
         assert rows[0] == 3
 
     @pytest.mark.unit
-    def test_insert_missing_file(self, tmp_path):
+    def test_insert_missing_file(self, initialized_db_path):
         """Test insert_time_series_metrics handles missing file."""
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_time_series_metrics(
@@ -317,15 +318,14 @@ class TestTimeSeriesMetricsInserter:
         assert result is False
 
     @pytest.mark.unit
-    def test_insert_invalid_json(self, tmp_path):
+    def test_insert_invalid_json(self, tmp_path, initialized_db_path):
         """Test insert_time_series_metrics handles invalid JSON."""
         # Create invalid JSON file
         invalid_file = tmp_path / "invalid.json"
         with open(invalid_file, "w", encoding="utf-8") as f:
             f.write("{invalid json")
 
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_time_series_metrics(
@@ -337,7 +337,7 @@ class TestTimeSeriesMetricsInserter:
         assert result is False
 
     @pytest.mark.unit
-    def test_insert_no_metric_descriptors(self, tmp_path):
+    def test_insert_no_metric_descriptors(self, tmp_path, initialized_db_path):
         """Test insert_time_series_metrics handles missing metricDescriptors."""
         # Create activity_details.json without metricDescriptors
         activity_details_data = {
@@ -349,8 +349,7 @@ class TestTimeSeriesMetricsInserter:
         with open(activity_details_file, "w", encoding="utf-8") as f:
             json.dump(activity_details_data, f)
 
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_time_series_metrics(
@@ -363,7 +362,7 @@ class TestTimeSeriesMetricsInserter:
 
     @pytest.mark.performance
     @pytest.mark.slow
-    def test_batch_insert_performance(self, tmp_path):
+    def test_batch_insert_performance(self, tmp_path, initialized_db_path):
         """Test batch insert performance: 2000 rows in reasonable time (<5s)."""
         import time
 
@@ -398,8 +397,7 @@ class TestTimeSeriesMetricsInserter:
         with open(activity_details_file, "w", encoding="utf-8") as f:
             json.dump(activity_details_data, f)
 
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         # Measure insertion time
@@ -429,7 +427,7 @@ class TestTimeSeriesMetricsInserter:
         assert rows[0] == 2000
 
     @pytest.mark.unit
-    def test_timestamp_s_uniqueness_with_seq_no(self, tmp_path):
+    def test_timestamp_s_uniqueness_with_seq_no(self, tmp_path, initialized_db_path):
         """Test seq_no prevents PRIMARY KEY violation when timestamp_s duplicates.
 
         Scenario: Multiple data points within same second (sub-second sampling).
@@ -470,8 +468,7 @@ class TestTimeSeriesMetricsInserter:
         with open(activity_details_file, "w", encoding="utf-8") as f:
             json.dump(activity_details_data, f)
 
-        db_path = tmp_path / "test.duckdb"
-        GarminDBWriter(db_path=str(db_path))
+        db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         # Execute insertion
