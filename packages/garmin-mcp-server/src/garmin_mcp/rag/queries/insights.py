@@ -72,10 +72,11 @@ class InsightExtractor:
         # Build WHERE clause for keyword filtering
         keyword_conditions = []
         for keyword in keywords:
-            # Check if the keyword field exists and is not empty in JSON
+            # Check if the keyword field exists and has a non-empty value.
+            # Supports both array fields (key_strengths) and dict fields (efficiency).
             keyword_conditions.append(
-                f"(json_extract_string(analysis_data, '$.{keyword}') IS NOT NULL AND "
-                f"json_array_length(json_extract(analysis_data, '$.{keyword}')) > 0)"
+                f"(json_extract(analysis_data, '$.{keyword}') IS NOT NULL AND "
+                f"CAST(json_extract(analysis_data, '$.{keyword}') AS VARCHAR) NOT IN ('null', '[]', '{{}}', '\"\"'))"
             )
 
         where_clause = f"({' OR '.join(keyword_conditions)})"
@@ -115,7 +116,7 @@ class InsightExtractor:
         for row in results:
             parsed_row = {
                 "activity_id": row[0],
-                "activity_date": row[1],
+                "activity_date": str(row[1]),
                 "section_type": row[2],
                 "analysis_data": (
                     json.loads(row[3]) if isinstance(row[3], str) else row[3]
@@ -163,8 +164,8 @@ class InsightExtractor:
         keyword_conditions = []
         for keyword in keywords:
             keyword_conditions.append(
-                f"(json_extract_string(analysis_data, '$.{keyword}') IS NOT NULL AND "
-                f"json_array_length(json_extract(analysis_data, '$.{keyword}')) > 0)"
+                f"(json_extract(analysis_data, '$.{keyword}') IS NOT NULL AND "
+                f"CAST(json_extract(analysis_data, '$.{keyword}') AS VARCHAR) NOT IN ('null', '[]', '{{}}', '\"\"'))"
             )
 
         where_clause = (
@@ -202,7 +203,7 @@ class InsightExtractor:
         for row in results:
             parsed_row = {
                 "activity_id": row[0],
-                "activity_date": row[1],
+                "activity_date": str(row[1]),
                 "section_type": row[2],
                 "analysis_data": (
                     json.loads(row[3]) if isinstance(row[3], str) else row[3]

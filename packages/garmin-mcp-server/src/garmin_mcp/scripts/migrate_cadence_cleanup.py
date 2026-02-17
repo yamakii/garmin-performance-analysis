@@ -84,6 +84,10 @@ def check_data_consistency(conn: duckdb.DuckDBPyConnection):
         FROM time_series_metrics
     """).fetchone()
 
+    if result is None:
+        print("\n❌ No data in time_series_metrics!")
+        return False
+
     print("\nData consistency check:")
     print(f"  Total rows: {result[0]:,}")
     print(f"  Non-null double_cadence: {result[1]:,}")
@@ -197,7 +201,7 @@ def verify_migration(conn: duckdb.DuckDBPyConnection):
         return False
 
     # Check data
-    result = conn.execute("""
+    stats = conn.execute("""
         SELECT
             COUNT(*) as total_rows,
             COUNT(cadence) as non_null_cadence,
@@ -207,17 +211,22 @@ def verify_migration(conn: duckdb.DuckDBPyConnection):
         FROM time_series_metrics
     """).fetchone()
 
-    print("\nData verification:")
-    print(f"  Total rows: {result[0]:,}")
-    print(f"  Non-null cadence: {result[1]:,}")
-    print(f"  Avg cadence: {result[2]:.1f}")
-    print(f"  Min cadence: {result[3]:.1f}")
-    print(f"  Max cadence: {result[4]:.1f}")
+    if stats is None:
+        print("\n❌ No data in time_series_metrics after migration!")
+        return False
 
+    print("\nData verification:")
+    print(f"  Total rows: {stats[0]:,}")
+    print(f"  Non-null cadence: {stats[1]:,}")
+    print(f"  Avg cadence: {stats[2]:.1f}")
+    print(f"  Min cadence: {stats[3]:.1f}")
+    print(f"  Max cadence: {stats[4]:.1f}")
+
+    avg_cadence: float = stats[2]
     # Verify values match expected range (both feet should be 160-200 typically)
-    if not (160 <= result[2] <= 200):
+    if not (160 <= avg_cadence <= 200):
         print(
-            f"\n⚠️  Warning: Average cadence {result[2]:.1f} is outside expected range (160-200)"
+            f"\n⚠️  Warning: Average cadence {avg_cadence:.1f} is outside expected range (160-200)"
         )
         print("  This might indicate migration used wrong source column")
         return False

@@ -67,9 +67,10 @@ def fix_temperature_units(db_path: str, dry_run: bool = True) -> None:
     logger.info("✅ Temperature units fixed successfully!")
 
     # Verify
-    remaining = conn.execute(
+    remaining_row = conn.execute(
         "SELECT COUNT(*) FROM activities WHERE temp_celsius > 40"
-    ).fetchone()[0]
+    ).fetchone()
+    remaining = remaining_row[0] if remaining_row is not None else 0
 
     if remaining > 0:
         logger.warning(f"⚠️  {remaining} anomalies still remain. Check manually.")

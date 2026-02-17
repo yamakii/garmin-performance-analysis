@@ -44,17 +44,20 @@ def db_path(tmp_path: Path) -> Path:
         )
     conn.close()
 
-    # Insert sample section analyses with different keywords
+    # Insert sample section analyses with actual agent output field names
     sample_analyses: list[dict[str, Any]] = [
         {
             "activity_id": 20594901208,
             "activity_date": "2025-10-05",
             "section_type": "efficiency",
             "analysis_data": {
-                "summary": "Great form efficiency with GCT improvements",
-                "improvements": ["Improved ground contact time by 5ms"],
-                "concerns": [],
-                "patterns": ["Consistent cadence throughout the run"],
+                "evaluation": {
+                    "gct": "Good ground contact time",
+                    "vo": "Normal vertical oscillation",
+                },
+                "key_strengths": ["Improved ground contact time by 5ms"],
+                "improvement_areas": [],
+                "efficiency": {"hr_zone_distribution": "Zone 2 dominant"},
             },
         },
         {
@@ -62,10 +65,9 @@ def db_path(tmp_path: Path) -> Path:
             "activity_date": "2025-10-05",
             "section_type": "phase",
             "analysis_data": {
-                "summary": "Good pacing strategy",
-                "improvements": ["Better negative split execution"],
-                "concerns": ["Slight HR drift in final phase"],
-                "patterns": ["Progressive pace increase in main phase"],
+                "evaluation": {"warmup": "Good", "main": "Strong"},
+                "key_strengths": ["Better negative split execution"],
+                "improvement_areas": ["Slight HR drift in final phase"],
             },
         },
         {
@@ -73,13 +75,16 @@ def db_path(tmp_path: Path) -> Path:
             "activity_date": "2025-10-07",
             "section_type": "efficiency",
             "analysis_data": {
-                "summary": "Form degradation detected",
-                "improvements": [],
-                "concerns": [
+                "evaluation": {
+                    "gct": "Degraded",
+                    "vo": "High vertical oscillation",
+                },
+                "key_strengths": [],
+                "improvement_areas": [
                     "Vertical oscillation increased by 2cm",
                     "Cadence drop in final km",
                 ],
-                "patterns": ["Fatigue-related form changes"],
+                "efficiency": {"hr_zone_distribution": "Zone 3 heavy"},
             },
         },
         {
@@ -87,10 +92,9 @@ def db_path(tmp_path: Path) -> Path:
             "activity_date": "2025-10-07",
             "section_type": "environment",
             "analysis_data": {
-                "summary": "Hot weather impact",
-                "improvements": [],
-                "concerns": ["Temperature 32°C affected performance"],
-                "patterns": ["HR elevated by 5bpm due to heat"],
+                "environmental_impact": "Hot weather reduced performance",
+                "key_strengths": [],
+                "improvement_areas": ["Temperature 32°C affected performance"],
             },
         },
     ]
@@ -121,44 +125,48 @@ class TestInsightExtractorBasics:
         extractor = InsightExtractor(str(db_path))
         assert extractor is not None
 
-    def test_search_by_keywords_improvements(self, extractor: InsightExtractor) -> None:
-        """Test searching for improvements keyword."""
+    def test_search_by_keywords_key_strengths(
+        self, extractor: InsightExtractor
+    ) -> None:
+        """Test searching for key_strengths keyword."""
         results = extractor.search_by_keywords(
-            keywords=["improvements"],
+            keywords=["key_strengths"],
             section_types=None,
             limit=10,
             offset=0,
         )
 
         assert len(results) > 0
-        # Should find entries with non-empty improvements
-        assert any("improvements" in r["analysis_data"] for r in results)
+        # Should find entries with non-empty key_strengths
+        assert any("key_strengths" in r["analysis_data"] for r in results)
 
-    def test_search_by_keywords_concerns(self, extractor: InsightExtractor) -> None:
-        """Test searching for concerns keyword."""
+    def test_search_by_keywords_improvement_areas(
+        self, extractor: InsightExtractor
+    ) -> None:
+        """Test searching for improvement_areas keyword."""
         results = extractor.search_by_keywords(
-            keywords=["concerns"],
+            keywords=["improvement_areas"],
             section_types=None,
             limit=10,
             offset=0,
         )
 
         assert len(results) > 0
-        # Should find entries with non-empty concerns
-        assert any("concerns" in r["analysis_data"] for r in results)
+        # Should find entries with non-empty improvement_areas
+        assert any("improvement_areas" in r["analysis_data"] for r in results)
 
-    def test_search_by_keywords_patterns(self, extractor: InsightExtractor) -> None:
-        """Test searching for patterns keyword."""
+    def test_search_by_keywords_evaluation(self, extractor: InsightExtractor) -> None:
+        """Test searching for evaluation keyword (dict field)."""
         results = extractor.search_by_keywords(
-            keywords=["patterns"],
+            keywords=["evaluation"],
             section_types=None,
             limit=10,
             offset=0,
         )
 
         assert len(results) > 0
-        # Should find entries with non-empty patterns
-        assert any("patterns" in r["analysis_data"] for r in results)
+        # Should find entries with non-empty evaluation dict
+        assert any("evaluation" in r["analysis_data"] for r in results)
 
 
 @pytest.mark.integration
@@ -168,7 +176,7 @@ class TestInsightExtractorFiltering:
     def test_filter_by_section_type(self, extractor: InsightExtractor) -> None:
         """Test filtering by section type."""
         results = extractor.search_by_keywords(
-            keywords=["improvements", "concerns", "patterns"],
+            keywords=["key_strengths", "improvement_areas", "evaluation"],
             section_types=["efficiency"],
             limit=10,
             offset=0,
@@ -183,7 +191,7 @@ class TestInsightExtractorFiltering:
     ) -> None:
         """Test filtering by multiple section types."""
         results = extractor.search_by_keywords(
-            keywords=["improvements", "concerns", "patterns"],
+            keywords=["key_strengths", "improvement_areas", "evaluation"],
             section_types=["efficiency", "phase"],
             limit=10,
             offset=0,
@@ -201,7 +209,7 @@ class TestInsightExtractorPagination:
     def test_pagination_limit(self, extractor: InsightExtractor) -> None:
         """Test limit parameter."""
         results = extractor.search_by_keywords(
-            keywords=["improvements", "concerns", "patterns"],
+            keywords=["key_strengths", "improvement_areas", "evaluation"],
             section_types=None,
             limit=2,
             offset=0,
@@ -213,7 +221,7 @@ class TestInsightExtractorPagination:
         """Test offset parameter."""
         # Get first 2 results
         first_batch = extractor.search_by_keywords(
-            keywords=["improvements", "concerns", "patterns"],
+            keywords=["key_strengths", "improvement_areas", "evaluation"],
             section_types=None,
             limit=2,
             offset=0,
@@ -221,7 +229,7 @@ class TestInsightExtractorPagination:
 
         # Get next 2 results
         second_batch = extractor.search_by_keywords(
-            keywords=["improvements", "concerns", "patterns"],
+            keywords=["key_strengths", "improvement_areas", "evaluation"],
             section_types=None,
             limit=2,
             offset=2,
@@ -245,7 +253,7 @@ class TestInsightExtractorTokenLimit:
         """Test extract_insights with max_tokens limit."""
         results = extractor.extract_insights(
             activity_id=20594901208,
-            keywords=["improvements", "concerns", "patterns"],
+            keywords=["key_strengths", "improvement_areas", "evaluation"],
             max_tokens=100,
         )
 
@@ -261,7 +269,7 @@ class TestInsightExtractorTokenLimit:
         """Test extract_insights without token limit."""
         results = extractor.extract_insights(
             activity_id=20594901208,
-            keywords=["improvements", "concerns", "patterns"],
+            keywords=["key_strengths", "improvement_areas", "evaluation"],
             max_tokens=None,
         )
 
@@ -300,7 +308,7 @@ class TestInsightExtractorEdgeCases:
         """Test extract_insights for non-existent activity."""
         results = extractor.extract_insights(
             activity_id=99999999999,
-            keywords=["improvements"],
+            keywords=["key_strengths"],
             max_tokens=None,
         )
 
@@ -312,7 +320,7 @@ class TestInsightExtractorEdgeCases:
     def test_nonexistent_section_type(self, extractor: InsightExtractor) -> None:
         """Test filtering by non-existent section type."""
         results = extractor.search_by_keywords(
-            keywords=["improvements"],
+            keywords=["key_strengths"],
             section_types=["nonexistent"],
             limit=10,
             offset=0,

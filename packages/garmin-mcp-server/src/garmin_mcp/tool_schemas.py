@@ -220,7 +220,7 @@ _ANALYSIS_TOOLS: list[dict] = [
                 "keywords": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Keywords to search for (e.g., improvements, concerns, patterns)",
+                    "description": "Keywords to search for (e.g., key_strengths, improvement_areas, efficiency, evaluation, environmental_impact)",
                 },
                 "section_types": {
                     "type": "array",
