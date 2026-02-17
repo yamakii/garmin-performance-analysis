@@ -19,6 +19,12 @@
 - Verify schema before column access: `PRAGMA table_info(table_name)`
 - NEVER use raw `duckdb.connect()` — it bypasses connection management and conflicts with `prohibited-practices.md`
 
+## DuckDB concurrency
+
+- DuckDB は同時に1つのwrite connectionのみサポート
+- 並列エージェントからの同時書き込みは不可 → 順次実行またはキュー制御が必要
+- connection locked エラーが出たらリトライ（最大3回、2秒backoff）
+
 ## DuckDB date handling
 
 - DuckDB returns `datetime.date` objects, NOT strings

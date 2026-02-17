@@ -70,19 +70,11 @@ See `.claude/rules/mcp-data-access.md` for workflow details and `docs/data-analy
 
 ## Common Pitfalls
 
-**Intent disambiguation:**
-- "Generate a training plan" → execute `/plan-training` coach workflow, NOT write code
-- "Analyze runs" → call MCP tools and interpret, NOT write a script
-- When ambiguous, ask one clarifying question
+**Intent disambiguation:** See `.claude/rules/intent-disambiguation.md`
 
-**Training plan volume validation:**
-- Always call `get_current_fitness_summary(lookback_weeks=8)` first
-- Starting volume MUST be within 10% of actual `weekly_volume_km`
-- If `gap_detected=true`, use `recent_runs` distance as baseline (not pre-gap average)
+**Training plan rules:** See `.claude/rules/training-plan-rules.md`
 
-**Project conventions:**
-- Rule files go in `.claude/rules/` — NEVER put rules directly in CLAUDE.md or other markdown docs
-- `.claude/rules/` files are auto-loaded; CLAUDE.md is for overview and workflows only
+**Project conventions:** Rule files go in `.claude/rules/` (auto-loaded). CLAUDE.md is for overview and workflows only.
 
 ---
 

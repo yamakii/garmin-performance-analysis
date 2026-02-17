@@ -30,6 +30,11 @@ Format: `(rating N.N/5.0)` with star marks and numeric score on a new line.
 
 Example: `(stars 4.0/5.0)`
 
+## Architecture Constraints (from architecture-preferences.md)
+
+- HR zones: always use Garmin-native zones from `heart_rate_zones` table (NEVER calculate from formulas)
+- Dates: DuckDB returns `datetime.date` → stringify before JSON/MCP output
+
 ## Writing Style
 
 - Natural Japanese sentences (avoid noun-ending style / taitomei)

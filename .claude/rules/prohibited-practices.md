@@ -18,6 +18,11 @@
 - Delete database without user approval: `rm *.duckdb`, `--delete-db`
 - Propose `--delete-db` as first solution for errors
 
+## Configuration
+
+- Put rules in CLAUDE.md directly: use `.claude/rules/` instead (auto-loaded)
+- Create rule files outside `.claude/rules/`: all rules must be in `.claude/rules/`
+
 ## Testing
 
 - Tests depending on real production data: `conn.execute("SELECT * FROM activities")`

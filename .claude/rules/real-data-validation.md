@@ -30,10 +30,20 @@
 3. statistics_only=True/False 両方のモードでテスト
 4. エッジケース: 短いアクティビティ(3km未満), インターバル, リカバリーラン
 
-### After Code Changes
-1. Restart MCP servers before verifying changes through MCP tools
-2. Stale MCP server state causes false negatives — fixes may appear broken when server just hasn't reloaded
-3. Verify with real data AFTER restart
+### CRITICAL: Restart MCP servers after code changes
+
+**When to restart:**
+- `packages/garmin-mcp-server/src/garmin_mcp/` 配下のファイルを編集した後
+- MCP toolの戻り値構造・型を変更した後
+
+**How to restart:**
+- garmin-db MCP: `/mcp` → restart garmin-db server
+- Serena MCP: `mcp__serena__activate_project()` で再アクティベート
+
+**Verification:**
+- 再起動後に実activity_idでtoolを呼び出して変更を確認
+- 再起動前の検証結果は信用しない
+- Stale MCP server state causes false negatives — fixes may appear broken when server just hasn't reloaded
 
 ## How to Validate
 
