@@ -30,6 +30,11 @@
 3. statistics_only=True/False 両方のモードでテスト
 4. エッジケース: 短いアクティビティ(3km未満), インターバル, リカバリーラン
 
+### After Code Changes
+1. Restart MCP servers before verifying changes through MCP tools
+2. Stale MCP server state causes false negatives — fixes may appear broken when server just hasn't reloaded
+3. Verify with real data AFTER restart
+
 ## How to Validate
 
 MCP toolsを直接呼び出して検証する（スクリプト不要）:

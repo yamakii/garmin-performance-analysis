@@ -18,3 +18,9 @@
 - Keep write transactions short — insert and commit promptly
 - Verify schema before column access: `PRAGMA table_info(table_name)`
 - NEVER use raw `duckdb.connect()` — it bypasses connection management and conflicts with `prohibited-practices.md`
+
+## DuckDB date handling
+
+- DuckDB returns `datetime.date` objects, NOT strings
+- Always stringify dates before passing to MCP tools or JSON serialization: `str(date_value)`
+- Never assume query results contain string dates — always handle `datetime.date`

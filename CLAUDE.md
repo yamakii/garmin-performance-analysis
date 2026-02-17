@@ -80,6 +80,10 @@ See `.claude/rules/mcp-data-access.md` for workflow details and `docs/data-analy
 - Starting volume MUST be within 10% of actual `weekly_volume_km`
 - If `gap_detected=true`, use `recent_runs` distance as baseline (not pre-gap average)
 
+**Project conventions:**
+- Rule files go in `.claude/rules/` — NEVER put rules directly in CLAUDE.md or other markdown docs
+- `.claude/rules/` files are auto-loaded; CLAUDE.md is for overview and workflows only
+
 ---
 
 ## For Tool Development
