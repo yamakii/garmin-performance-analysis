@@ -9,12 +9,10 @@ This package provides specialized reader classes for accessing DuckDB data:
 - PhysiologyReader: HR efficiency, VO2 max, lactate threshold
 - PerformanceReader: Performance trends, weather, section analyses
 - UtilityReader: Profiling and histogram operations
-- AggregateReader: Backward-compatible wrapper (delegates to above)
 - TimeSeriesReader: Time series data and anomaly detection
 - ExportReader: Query result export functionality
 """
 
-from garmin_mcp.database.readers.aggregate import AggregateReader
 from garmin_mcp.database.readers.base import BaseDBReader
 from garmin_mcp.database.readers.export import ExportReader
 from garmin_mcp.database.readers.form import FormReader
@@ -33,7 +31,6 @@ __all__ = [
     "PhysiologyReader",
     "PerformanceReader",
     "UtilityReader",
-    "AggregateReader",
     "TimeSeriesReader",
     "ExportReader",
 ]

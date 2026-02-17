@@ -18,17 +18,9 @@ from .data_fetcher import get_splits_data
 from .model_loader import load_models_from_db, load_models_from_file
 from .power_calculator import (
     calculate_power_efficiency_internal,
-    calculate_power_efficiency_rating,
 )
 from .scorer import compute_star_rating, score_observation
 from .text_generator import generate_evaluation_text, generate_overall_text
-
-# Backward-compatible aliases for internal functions
-_load_models_from_file = load_models_from_file
-_load_models_from_db = load_models_from_db
-_get_splits_data = get_splits_data
-_calculate_power_efficiency_rating = calculate_power_efficiency_rating
-_calculate_power_efficiency_internal = calculate_power_efficiency_internal
 
 
 def evaluate_and_store(
@@ -69,17 +61,17 @@ def evaluate_and_store(
     """
     # Load models
     if model_file is None:
-        models = _load_models_from_db(
+        models = load_models_from_db(
             db_path=db_path,
             activity_date=activity_date,
             user_id="default",
             condition_group=condition_group,
         )
     else:
-        models = _load_models_from_file(model_file)
+        models = load_models_from_file(model_file)
 
     # Get actual data from splits
-    splits_data = _get_splits_data(db_path, activity_id)
+    splits_data = get_splits_data(db_path, activity_id)
 
     # Build observation dict for scorer
     obs = {
@@ -258,7 +250,7 @@ def evaluate_and_store(
         "vo": score_result["vo_penalty"],
         "vr": score_result["vr_penalty"],
     }
-    power_result = _calculate_power_efficiency_internal(
+    power_result = calculate_power_efficiency_internal(
         conn, activity_id, activity_date, "default", condition_group, form_penalties
     )
 

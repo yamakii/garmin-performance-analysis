@@ -10,7 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from garmin_mcp.database.readers.aggregate import AggregateReader
+from garmin_mcp.database.readers.performance import PerformanceReader
+from garmin_mcp.database.readers.physiology import PhysiologyReader
 
 
 @pytest.fixture
@@ -22,21 +23,27 @@ def db_path():
 
 
 @pytest.fixture
-def reader(db_path):
-    """Aggregate reader for DuckDB queries."""
-    return AggregateReader(str(db_path))
+def physiology_reader(db_path):
+    """Physiology reader for HR efficiency queries."""
+    return PhysiologyReader(str(db_path))
+
+
+@pytest.fixture
+def performance_reader(db_path):
+    """Performance reader for trends and section analysis queries."""
+    return PerformanceReader(str(db_path))
 
 
 @pytest.mark.performance
 class TestPhaseEvaluationPerformance:
     """Test performance of phase evaluation with training type awareness."""
 
-    def test_training_type_retrieval_performance(self, reader):
+    def test_training_type_retrieval_performance(self, physiology_reader):
         """Training type retrieval completes in < 300ms."""
         activity_id = 20625808856
 
         start_time = time.time()
-        hr_efficiency = reader.get_hr_efficiency_analysis(activity_id)
+        hr_efficiency = physiology_reader.get_hr_efficiency_analysis(activity_id)
         elapsed_ms = (time.time() - start_time) * 1000
 
         assert hr_efficiency is not None
@@ -45,12 +52,12 @@ class TestPhaseEvaluationPerformance:
             elapsed_ms < 300
         ), f"Training type retrieval took {elapsed_ms:.2f}ms, expected < 300ms"
 
-    def test_performance_trends_retrieval_performance(self, reader):
+    def test_performance_trends_retrieval_performance(self, performance_reader):
         """Performance trends retrieval completes in < 300ms."""
         activity_id = 20625808856
 
         start_time = time.time()
-        performance_trends = reader.get_performance_trends(activity_id)
+        performance_trends = performance_reader.get_performance_trends(activity_id)
         elapsed_ms = (time.time() - start_time) * 1000
 
         assert performance_trends is not None
@@ -58,12 +65,12 @@ class TestPhaseEvaluationPerformance:
             elapsed_ms < 300
         ), f"Performance trends retrieval took {elapsed_ms:.2f}ms, expected < 300ms"
 
-    def test_section_analysis_retrieval_performance(self, reader):
+    def test_section_analysis_retrieval_performance(self, performance_reader):
         """Section analysis retrieval completes in < 300ms."""
         activity_id = 20625808856
 
         start_time = time.time()
-        reader.get_section_analysis(activity_id, "phase")
+        performance_reader.get_section_analysis(activity_id, "phase")
         elapsed_ms = (time.time() - start_time) * 1000
 
         # Should complete quickly regardless of whether analysis exists
@@ -71,13 +78,13 @@ class TestPhaseEvaluationPerformance:
             elapsed_ms < 300
         ), f"Section analysis retrieval took {elapsed_ms:.2f}ms, expected < 300ms"
 
-    def test_multiple_activities_retrieval_performance(self, reader):
+    def test_multiple_activities_retrieval_performance(self, performance_reader):
         """Retrieving phase analysis for multiple activities is efficient."""
         activity_ids = [20625808856, 20594901208, 20674329823]
 
         start_time = time.time()
         for activity_id in activity_ids:
-            reader.get_section_analysis(activity_id, "phase")
+            performance_reader.get_section_analysis(activity_id, "phase")
         elapsed_ms = (time.time() - start_time) * 1000
 
         # Should complete in < 900ms for 3 activities (< 300ms per activity)
@@ -107,11 +114,11 @@ class TestTokenEfficiency:
             line_count < 500
         ), f"Agent definition is {line_count} lines, expected < 500"
 
-    def test_evaluation_text_length(self, reader):
+    def test_evaluation_text_length(self, performance_reader):
         """Evaluation text length is reasonable (not excessively verbose)."""
         activity_id = 20625808856
 
-        analysis = reader.get_section_analysis(activity_id, "phase")
+        analysis = performance_reader.get_section_analysis(activity_id, "phase")
 
         if analysis:
             # Each evaluation should be 200-1000 characters (2-3 sentences)

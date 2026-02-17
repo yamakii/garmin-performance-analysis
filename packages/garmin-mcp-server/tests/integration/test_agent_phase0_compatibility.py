@@ -210,7 +210,7 @@ class TestSummarySectionAnalystNoDeprecated:
         ), f"Expected >80% reduction, got {token_reduction:.1%}"
 
 
-class TestBackwardCompatibility:
+class TestDefaultParameterBehavior:
     """Test backward compatibility of Phase 0 changes."""
 
     def test_existing_agent_behavior_preserved(self):

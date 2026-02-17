@@ -460,30 +460,6 @@ class GarminDBWriter:
 
         conn.close()
 
-    def insert_performance_data(
-        self, activity_id: int, activity_date: str, performance_data: dict
-    ) -> bool:
-        """
-        REMOVED: This method is deprecated and no longer needed.
-
-        The performance_data JSON table has been replaced with normalized tables.
-        Use individual inserter functions directly:
-        - insert_splits()
-        - insert_form_efficiency()
-        - insert_heart_rate_zones()
-        - insert_hr_efficiency()
-        - insert_performance_trends()
-        - insert_vo2_max()
-        - insert_lactate_threshold()
-
-        These are called automatically by GarminIngestWorker.save_data().
-        """
-        raise NotImplementedError(
-            "insert_performance_data() has been removed. "
-            "Use individual inserter functions (insert_splits, insert_form_efficiency, etc.) "
-            "which are called automatically by GarminIngestWorker.save_data()."
-        )
-
     def insert_section_analysis(
         self,
         activity_id: int,

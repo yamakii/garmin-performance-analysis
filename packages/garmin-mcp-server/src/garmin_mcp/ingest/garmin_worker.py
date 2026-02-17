@@ -18,14 +18,12 @@ from garminconnect import Garmin
 from garmin_mcp.ingest.api_client import get_garmin_client
 from garmin_mcp.ingest.duckdb_saver import save_data as _save_data
 from garmin_mcp.ingest.raw_data_fetcher import (
-    RawDataExtractor,
     collect_body_composition_data,
     collect_data,
     load_from_cache,
 )
 
-# Re-export for backward compatibility
-__all__ = ["GarminIngestWorker", "RawDataExtractor", "convert_numpy_types"]
+__all__ = ["GarminIngestWorker", "convert_numpy_types"]
 
 if TYPE_CHECKING:
     from garmin_mcp.database.db_reader import GarminDBReader
@@ -303,7 +301,7 @@ class GarminIngestWorker:
             return {}
 
         if "role_phase" not in df.columns:
-            return self._calculate_performance_trends_legacy(df)
+            return {}
 
         warmup_df = df[df["role_phase"] == "warmup"]
         run_df = df[df["role_phase"] == "run"]
@@ -396,71 +394,6 @@ class GarminIngestWorker:
             "run_phase": run_phase,
             "recovery_phase": recovery_phase,
             "cooldown_phase": cooldown_phase,
-            "pace_consistency": pace_consistency,
-            "hr_drift_percentage": hr_drift_percentage,
-            "cadence_consistency": (
-                "高い安定性" if df["avg_cadence"].std() < 5 else "変動あり"
-            ),
-            "fatigue_pattern": fatigue_pattern,
-        }
-
-    def _calculate_performance_trends_legacy(self, df: pd.DataFrame) -> dict[str, Any]:
-        """Legacy 3-phase calculation for backward compatibility.
-
-        Returns:
-            Phase-based analysis with warmup/main/finish
-        """
-        total_splits = len(df)
-        warmup_end = max(1, int(total_splits * 0.2))
-        finish_start = max(warmup_end + 1, int(total_splits * 0.8))
-
-        warmup_df = df.iloc[:warmup_end]
-        main_df = df.iloc[warmup_end:finish_start]
-        finish_df = df.iloc[finish_start:]
-
-        warmup_phase = {
-            "splits": list(range(1, warmup_end + 1)),
-            "avg_pace": warmup_df["avg_pace_seconds_per_km"].mean(),
-            "avg_hr": warmup_df["avg_heart_rate"].mean(),
-        }
-
-        main_phase = {
-            "splits": list(range(warmup_end + 1, finish_start + 1)),
-            "avg_pace": main_df["avg_pace_seconds_per_km"].mean(),
-            "avg_hr": main_df["avg_heart_rate"].mean(),
-        }
-
-        finish_phase = {
-            "splits": list(range(finish_start + 1, total_splits + 1)),
-            "avg_pace": finish_df["avg_pace_seconds_per_km"].mean(),
-            "avg_hr": finish_df["avg_heart_rate"].mean(),
-        }
-
-        pace_consistency = (
-            df["avg_pace_seconds_per_km"].std() / df["avg_pace_seconds_per_km"].mean()
-            if df["avg_pace_seconds_per_km"].mean() > 0
-            else 0
-        )
-
-        hr_drift_percentage = (
-            (finish_phase["avg_hr"] - warmup_phase["avg_hr"])
-            / warmup_phase["avg_hr"]
-            * 100
-            if warmup_phase["avg_hr"] > 0
-            else 0
-        )
-
-        if hr_drift_percentage < 5:
-            fatigue_pattern = "適切な疲労管理"
-        elif hr_drift_percentage < 10:
-            fatigue_pattern = "軽度の疲労蓄積"
-        else:
-            fatigue_pattern = "顕著な疲労蓄積"
-
-        return {
-            "warmup_phase": warmup_phase,
-            "main_phase": main_phase,
-            "finish_phase": finish_phase,
             "pace_consistency": pace_consistency,
             "hr_drift_percentage": hr_drift_percentage,
             "cadence_consistency": (

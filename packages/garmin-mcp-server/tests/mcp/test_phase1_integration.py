@@ -14,8 +14,8 @@ import duckdb
 import polars as pl
 import pytest
 
-from garmin_mcp.database.readers.aggregate import AggregateReader
 from garmin_mcp.database.readers.export import ExportReader
+from garmin_mcp.database.readers.utility import UtilityReader
 from garmin_mcp.mcp_server.view_manager import ViewManager
 
 
@@ -64,7 +64,7 @@ class TestPhase1Integration:
 
     def test_profile_then_export_workflow(self, test_db, tmp_path):
         """Test workflow: profile() to understand data, then export() for processing."""
-        aggregate_reader = AggregateReader(db_path=str(test_db))
+        aggregate_reader = UtilityReader(db_path=str(test_db))
         export_reader = ExportReader(db_path=str(test_db))
 
         # Step 1: Profile the data
@@ -97,7 +97,7 @@ class TestPhase1Integration:
 
     def test_histogram_then_materialize_workflow(self, test_db):
         """Test workflow: histogram() to analyze distribution, then materialize() for reuse."""
-        aggregate_reader = AggregateReader(db_path=str(test_db))
+        aggregate_reader = UtilityReader(db_path=str(test_db))
         view_manager = ViewManager(db_path=str(test_db))
 
         # Step 1: Get histogram to understand pace distribution
@@ -133,7 +133,7 @@ class TestPhase1Integration:
 
     def test_all_four_functions_workflow(self, test_db, tmp_path):
         """Test complete workflow using all 4 Phase 1 functions."""
-        aggregate_reader = AggregateReader(db_path=str(test_db))
+        aggregate_reader = UtilityReader(db_path=str(test_db))
         export_reader = ExportReader(db_path=str(test_db))
         view_manager = ViewManager(db_path=str(test_db))
 
@@ -183,7 +183,7 @@ class TestPhase1Integration:
 
     def test_output_size_constraints(self, test_db):
         """Test that all functions respect output size constraints."""
-        aggregate_reader = AggregateReader(db_path=str(test_db))
+        aggregate_reader = UtilityReader(db_path=str(test_db))
 
         # Test profile output size (~1KB target)
         profile_result = aggregate_reader.profile_table_or_query("splits")
@@ -209,7 +209,7 @@ class TestPhase1Integration:
 
     def test_date_range_filtering_consistency(self, test_db):
         """Test that date_range filtering works consistently across functions."""
-        aggregate_reader = AggregateReader(db_path=str(test_db))
+        aggregate_reader = UtilityReader(db_path=str(test_db))
         date_range = ("2025-01-01", "2025-01-31")
 
         # Profile with date_range
@@ -229,7 +229,7 @@ class TestPhase1Integration:
 
     def test_error_handling_consistency(self, test_db):
         """Test that all functions handle errors consistently."""
-        aggregate_reader = AggregateReader(db_path=str(test_db))
+        aggregate_reader = UtilityReader(db_path=str(test_db))
 
         # Profile empty result
         profile_result = aggregate_reader.profile_table_or_query(

@@ -2,7 +2,9 @@
 
 import pytest
 
-from garmin_mcp.form_baseline.evaluator import _calculate_power_efficiency_internal
+from garmin_mcp.form_baseline.power_calculator import (
+    calculate_power_efficiency_internal,
+)
 
 
 @pytest.fixture
@@ -145,7 +147,7 @@ def test_evaluate_power_efficiency_calculates_integrated_score(tmp_db_with_data)
     # Provide form penalties for integrated score
     form_penalties = {"gct": 10.0, "vo": 5.0, "vr": 8.0}
 
-    result = _calculate_power_efficiency_internal(
+    result = calculate_power_efficiency_internal(
         conn,
         activity_id=12345,
         activity_date="2025-10-28",
@@ -173,12 +175,12 @@ def test_evaluate_power_efficiency_calculates_integrated_score(tmp_db_with_data)
 
 
 def test_evaluate_no_power_returns_none(tmp_db_with_data):
-    """パワーデータなしの場合、_calculate_power_efficiency_internal()はNoneを返す."""
+    """パワーデータなしの場合、calculate_power_efficiency_internal()はNoneを返す."""
     import duckdb
 
     conn = duckdb.connect(tmp_db_with_data)
 
-    result = _calculate_power_efficiency_internal(
+    result = calculate_power_efficiency_internal(
         conn,
         activity_id=67890,
         activity_date="2021-06-01",
@@ -202,7 +204,7 @@ def test_integrated_score_uses_correct_weights(tmp_db_with_data):
     # Provide form penalties for integrated score
     form_penalties = {"gct": 10.0, "vo": 5.0, "vr": 8.0}
 
-    result = _calculate_power_efficiency_internal(
+    result = calculate_power_efficiency_internal(
         conn,
         activity_id=12345,
         activity_date="2025-10-28",
@@ -231,7 +233,7 @@ def test_integrated_score_updates_on_conflict(tmp_db_with_data):
 
     # First evaluation with higher penalties
     form_penalties1 = {"gct": 10.0, "vo": 5.0, "vr": 8.0}
-    result1 = _calculate_power_efficiency_internal(
+    result1 = calculate_power_efficiency_internal(
         conn,
         activity_id=12345,
         activity_date="2025-10-28",
@@ -245,7 +247,7 @@ def test_integrated_score_updates_on_conflict(tmp_db_with_data):
 
     # Second evaluation with lower penalties
     form_penalties2 = {"gct": 5.0, "vo": 3.0, "vr": 4.0}
-    result2 = _calculate_power_efficiency_internal(
+    result2 = calculate_power_efficiency_internal(
         conn,
         activity_id=12345,
         activity_date="2025-10-28",

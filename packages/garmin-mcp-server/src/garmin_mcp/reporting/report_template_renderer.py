@@ -199,7 +199,6 @@ class ReportTemplateRenderer:
         activity_id: str,
         date: str,
         basic_metrics: dict[str, Any],
-        section_analyses: dict[str, dict[str, Any]] | None = None,
         activity_name: str | None = None,
         location_name: str | None = None,
         weight_kg: float | None = None,
@@ -216,8 +215,6 @@ class ReportTemplateRenderer:
         run_metrics: dict[str, Any] | None = None,
         recovery_metrics: dict[str, Any] | None = None,
         cooldown_metrics: dict[str, Any] | None = None,
-        main_metrics: dict[str, Any] | None = None,
-        finish_metrics: dict[str, Any] | None = None,
         splits: list[dict[str, Any]] | None = None,
         mermaid_data: dict[str, Any] | None = None,
         heart_rate_zone_pie_data: str | None = None,
@@ -260,7 +257,6 @@ class ReportTemplateRenderer:
             activity_id: Activity ID
             date: Date (YYYY-MM-DD)
             basic_metrics: Performance data (distance, time, pace, HR, cadence, power)
-            section_analyses: (Legacy) Section analyses dict - deprecated, use individual params
             activity_name: Activity name
             location_name: Location name
             weight_kg: Body weight in kg
@@ -273,9 +269,7 @@ class ReportTemplateRenderer:
             warmup_metrics: Warmup phase metrics
             run_metrics: Run/main phase metrics (new naming)
             recovery_metrics: Recovery phase metrics (4-phase interval training only)
-            cooldown_metrics: Cooldown phase metrics (new naming, was finish)
-            main_metrics: (Legacy) Main phase metrics - deprecated, use run_metrics
-            finish_metrics: (Legacy) Finish phase metrics - deprecated, use cooldown_metrics
+            cooldown_metrics: Cooldown phase metrics
             splits: List of split data with metrics
             mermaid_data: Mermaid graph data for visualization
             efficiency: Form & HR efficiency analysis
@@ -291,26 +285,6 @@ class ReportTemplateRenderer:
             Template側でJSON dataをmarkdown形式にフォーマット。
             Worker側ではフォーマット処理を行わない（ロジックとプレゼンテーションの分離）。
         """
-        # Support legacy section_analyses parameter
-        if section_analyses:
-            efficiency = efficiency or section_analyses.get("efficiency", {})
-            environment_analysis = environment_analysis or section_analyses.get(
-                "environment_analysis", {}
-            )
-            phase_evaluation = phase_evaluation or section_analyses.get(
-                "phase_evaluation", {}
-            )
-            split_analysis = split_analysis or section_analyses.get(
-                "split_analysis", {}
-            )
-            summary = summary or section_analyses.get("summary", {})
-
-        # Support legacy main_metrics/finish_metrics naming
-        if main_metrics and not run_metrics:
-            run_metrics = main_metrics
-        if finish_metrics and not cooldown_metrics:
-            cooldown_metrics = finish_metrics
-
         template = self.load_template()
         return cast(
             str,
@@ -332,8 +306,6 @@ class ReportTemplateRenderer:
                 run_metrics=run_metrics,
                 recovery_metrics=recovery_metrics,
                 cooldown_metrics=cooldown_metrics,
-                main_metrics=main_metrics,  # Keep for backward compatibility
-                finish_metrics=finish_metrics,  # Keep for backward compatibility
                 splits=splits or [],
                 mermaid_data=mermaid_data,
                 heart_rate_zone_pie_data=heart_rate_zone_pie_data,

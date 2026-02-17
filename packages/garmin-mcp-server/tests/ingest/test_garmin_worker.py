@@ -154,25 +154,30 @@ class TestGarminIngestWorker:
     @pytest.mark.unit
     def test_collect_data_uses_cache_when_available(self, worker, tmp_path):
         """Test collect_data prioritizes cache over API calls."""
-        # Setup: Create cached file
+        # Setup: Create cached files in new per-file format
         worker.raw_dir = tmp_path
-        cached_file = tmp_path / "12345_raw.json"
-        cached_data = {
-            "activity": {"activityId": 12345},
-            "splits": {"activityId": 12345, "lapDTOs": [], "eventDTOs": []},
-            "weather": {"temp": 20},
-            "gear": [{"customMakeModel": "Cached Shoes"}],
-            "hr_zones": [{"zoneNumber": 1, "zoneLowBoundary": 100}],
+        activity_dir = tmp_path / "activity" / "12345"
+        activity_dir.mkdir(parents=True)
+
+        cache_files = {
+            "activity.json": {"activityId": 12345, "summaryDTO": {}},
+            "splits.json": {"activityId": 12345, "lapDTOs": [], "eventDTOs": []},
+            "weather.json": {"temp": 20},
+            "gear.json": [{"customMakeModel": "Cached Shoes"}],
+            "hr_zones.json": [{"zoneNumber": 1, "zoneLowBoundary": 100}],
+            "vo2_max.json": {},
+            "lactate_threshold.json": {},
         }
-        with open(cached_file, "w", encoding="utf-8") as f:
-            json.dump(cached_data, f)
+        for filename, data in cache_files.items():
+            with open(activity_dir / filename, "w", encoding="utf-8") as f:
+                json.dump(data, f)
 
         # Execute
         result = worker.collect_data(12345)
 
         # Verify cache was used (not API)
         assert result["gear"][0]["customMakeModel"] == "Cached Shoes"
-        assert "activity" in result
+        assert "activity_basic" in result
         assert "splits" in result
         assert "weather" in result
         assert "gear" in result

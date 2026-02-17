@@ -2,14 +2,13 @@
 DuckDB Reader for Garmin Performance Data
 
 Provides unified read-only access to DuckDB for querying performance data.
-This class maintains backward compatibility by delegating to specialized readers.
+Delegates to specialized readers for different data domains.
 """
 
 from pathlib import Path
 from typing import Any, Literal
 
 from garmin_mcp.database.readers import (
-    AggregateReader,
     ExportReader,
     FormReader,
     MetadataReader,
@@ -23,12 +22,11 @@ from garmin_mcp.database.readers import (
 
 class GarminDBReader:
     """
-    Unified DuckDB reader with backward compatibility.
+    Unified DuckDB reader.
 
     This class delegates to specialized reader classes:
     - MetadataReader: Activity date/ID queries
     - SplitsReader: Splits data queries
-    - AggregateReader: Pre-computed performance metrics
     - TimeSeriesReader: Time series data and anomaly detection
     - ExportReader: Query result export
     """
@@ -52,16 +50,7 @@ class GarminDBReader:
         self.performance = PerformanceReader(db_path)
         self.utility = UtilityReader(db_path)
 
-        # Backward compatibility: aggregate delegates to specialized readers
-        self.aggregate = AggregateReader(
-            db_path,
-            form=self.form,
-            physiology=self.physiology,
-            performance=self.performance,
-            utility=self.utility,
-        )
-
-        # For backward compatibility, expose db_path
+        # Expose db_path for handlers and scripts
         self.db_path = self.metadata.db_path
 
     def execute_read_query(

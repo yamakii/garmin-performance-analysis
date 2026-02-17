@@ -2,7 +2,7 @@
 
 import pytest
 
-from garmin_mcp.database.readers.aggregate import AggregateReader
+from garmin_mcp.database.readers.form import FormReader
 
 
 @pytest.fixture
@@ -112,7 +112,7 @@ def tmp_db_with_integrated_score(tmp_path):
 
 def test_get_form_evaluations_includes_integrated_score(tmp_db_with_integrated_score):
     """get_form_evaluations()が統合スコアとトレーニングモードを返す."""
-    reader = AggregateReader(tmp_db_with_integrated_score)
+    reader = FormReader(tmp_db_with_integrated_score)
 
     result = reader.get_form_evaluations(12345)
 
@@ -134,7 +134,7 @@ def test_get_form_evaluations_includes_integrated_score(tmp_db_with_integrated_s
 
 def test_get_form_evaluations_without_power(tmp_db_with_integrated_score):
     """パワーデータなしでも統合スコアを返す."""
-    reader = AggregateReader(tmp_db_with_integrated_score)
+    reader = FormReader(tmp_db_with_integrated_score)
 
     result = reader.get_form_evaluations(67890)
 
@@ -152,7 +152,7 @@ def test_get_form_evaluations_old_format_without_integrated_score(
     tmp_db_with_integrated_score,
 ):
     """統合スコアがない古いデータでもNoneを返して他のフィールドは正常."""
-    reader = AggregateReader(tmp_db_with_integrated_score)
+    reader = FormReader(tmp_db_with_integrated_score)
 
     result = reader.get_form_evaluations(11111)
 

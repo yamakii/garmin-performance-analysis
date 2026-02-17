@@ -188,7 +188,7 @@ class TestDuckDBIntegration:
         assert result[0] == 1
 
 
-class TestBackwardCompatibility:
+class TestExistingReaderBehavior:
     """Test that existing functionality still works."""
 
     def test_existing_report_generation_works(self, mock_reader_factory):

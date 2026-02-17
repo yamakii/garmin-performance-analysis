@@ -7,7 +7,7 @@ import json
 import duckdb
 import pytest
 
-from garmin_mcp.database.readers.aggregate import AggregateReader
+from garmin_mcp.database.readers.utility import UtilityReader
 
 
 @pytest.fixture
@@ -52,7 +52,7 @@ class TestHistogramColumn:
 
     def test_histogram_pace_20_bins(self, test_db):
         """Test histogram with default 20 bins."""
-        reader = AggregateReader(db_path=str(test_db))
+        reader = UtilityReader(db_path=str(test_db))
         result = reader.histogram_column("splits", "pace", bins=20)
 
         # Check basic structure
@@ -78,7 +78,7 @@ class TestHistogramColumn:
 
     def test_histogram_custom_bins(self, test_db):
         """Test histogram with custom bin count."""
-        reader = AggregateReader(db_path=str(test_db))
+        reader = UtilityReader(db_path=str(test_db))
         result = reader.histogram_column("splits", "pace", bins=10)
 
         # Should have approximately 10 bins (may be 11 due to boundary conditions)
@@ -86,7 +86,7 @@ class TestHistogramColumn:
 
     def test_histogram_with_date_range(self, test_db):
         """Test histogram with date_range filter."""
-        reader = AggregateReader(db_path=str(test_db))
+        reader = UtilityReader(db_path=str(test_db))
         result = reader.histogram_column(
             "splits", "pace", bins=10, date_range=("2025-01-01", "2025-12-31")
         )
@@ -96,7 +96,7 @@ class TestHistogramColumn:
 
     def test_histogram_query(self, test_db):
         """Test histogram on SQL query."""
-        reader = AggregateReader(db_path=str(test_db))
+        reader = UtilityReader(db_path=str(test_db))
         query = "SELECT pace FROM splits WHERE pace > 250"
         result = reader.histogram_column(query, "pace", bins=10)
 
@@ -106,7 +106,7 @@ class TestHistogramColumn:
 
     def test_histogram_empty_result(self, test_db):
         """Test histogram on empty result."""
-        reader = AggregateReader(db_path=str(test_db))
+        reader = UtilityReader(db_path=str(test_db))
         query = "SELECT pace FROM splits WHERE 1=0"
         result = reader.histogram_column(query, "pace")
 
@@ -115,7 +115,7 @@ class TestHistogramColumn:
 
     def test_histogram_column_with_nulls(self, test_db):
         """Test histogram with NULL values (should be excluded)."""
-        reader = AggregateReader(db_path=str(test_db))
+        reader = UtilityReader(db_path=str(test_db))
         result = reader.histogram_column("splits", "pace", bins=10)
 
         # Total count should exclude NULLs
@@ -123,7 +123,7 @@ class TestHistogramColumn:
 
     def test_histogram_single_value(self, test_db):
         """Test histogram with single unique value."""
-        reader = AggregateReader(db_path=str(test_db))
+        reader = UtilityReader(db_path=str(test_db))
         query = "SELECT pace FROM splits WHERE pace = 250"
         result = reader.histogram_column(query, "pace", bins=10)
 
@@ -133,7 +133,7 @@ class TestHistogramColumn:
 
     def test_histogram_output_size_limit(self, test_db):
         """Test that histogram output is limited to ~1KB."""
-        reader = AggregateReader(db_path=str(test_db))
+        reader = UtilityReader(db_path=str(test_db))
         result = reader.histogram_column("splits", "pace", bins=20)
 
         # Convert to JSON and check size

@@ -335,20 +335,6 @@ class ReportGeneratorWorker:
                     performance_data["cooldown_metrics"].get("avg_pace_seconds_per_km")
                 )
             )
-        # Legacy support
-        if "main_metrics" in performance_data:
-            performance_data["main_metrics"]["avg_pace_formatted"] = (
-                _format_pace_display(
-                    performance_data["main_metrics"].get("avg_pace_seconds_per_km")
-                )
-            )
-        if "finish_metrics" in performance_data:
-            performance_data["finish_metrics"]["avg_pace_formatted"] = (
-                _format_pace_display(
-                    performance_data["finish_metrics"].get("avg_pace_seconds_per_km")
-                )
-            )
-
         # Generate heart rate zone pie chart data
         hr_zone_pie_data = self._generate_hr_zone_pie_data(activity_id)
 
@@ -387,8 +373,6 @@ class ReportGeneratorWorker:
             "run_metrics": performance_data.get("run_metrics"),
             "recovery_metrics": performance_data.get("recovery_metrics"),
             "cooldown_metrics": performance_data.get("cooldown_metrics"),
-            "main_metrics": performance_data.get("main_metrics"),
-            "finish_metrics": performance_data.get("finish_metrics"),
             "splits": splits_data,
             "efficiency": section_analyses.get("efficiency"),
             "environment_analysis": section_analyses.get("environment_analysis"),

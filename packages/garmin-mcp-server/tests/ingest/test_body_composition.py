@@ -301,7 +301,7 @@ class TestCollectBodyCompositionData:
 
 
 @pytest.mark.unit
-class TestBackwardCompatibility:
+class TestExistingDataProcessing:
     """Tests for backward compatibility with existing data."""
 
     def test_process_existing_raw_data_new_structure(

@@ -1,5 +1,5 @@
 """
-Integration tests for power efficiency data in AggregateReader.get_form_evaluations().
+Integration tests for power efficiency data in FormReader.get_form_evaluations().
 
 Tests verify that power efficiency metrics are included in form_evaluations
 for activities with power data (2025+) and properly handled for activities
@@ -11,7 +11,7 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from garmin_mcp.database.readers.aggregate import AggregateReader
+from garmin_mcp.database.readers.form import FormReader
 
 
 @pytest.fixture
@@ -143,8 +143,8 @@ def test_get_form_evaluations_includes_power_data(tmp_db_path: str):
 
     conn.close()
 
-    # Test: Read form_evaluations with AggregateReader
-    reader = AggregateReader(tmp_db_path)
+    # Test: Read form_evaluations with FormReader
+    reader = FormReader(tmp_db_path)
     result = reader.get_form_evaluations(20594901208)
 
     # Assert: Result includes power section with all 7 fields
@@ -215,8 +215,8 @@ def test_get_form_evaluations_no_power_data(tmp_db_path: str):
 
     conn.close()
 
-    # Test: Read form_evaluations with AggregateReader
-    reader = AggregateReader(tmp_db_path)
+    # Test: Read form_evaluations with FormReader
+    reader = FormReader(tmp_db_path)
     result = reader.get_form_evaluations(12345678901)
 
     # Assert: Result includes power key but all values are None

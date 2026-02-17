@@ -7,7 +7,7 @@ import json
 import duckdb
 import pytest
 
-from garmin_mcp.database.readers.aggregate import AggregateReader
+from garmin_mcp.database.readers.utility import UtilityReader
 
 
 @pytest.fixture
@@ -77,7 +77,7 @@ class TestProfileTableOrQuery:
 
     def test_profile_splits_table(self, test_db):
         """Test profiling splits table."""
-        reader = AggregateReader(db_path=str(test_db))
+        reader = UtilityReader(db_path=str(test_db))
         result = reader.profile_table_or_query("splits")
 
         # Check basic structure
@@ -107,7 +107,7 @@ class TestProfileTableOrQuery:
 
     def test_profile_query(self, test_db):
         """Test profiling SQL query."""
-        reader = AggregateReader(db_path=str(test_db))
+        reader = UtilityReader(db_path=str(test_db))
         query = "SELECT pace, heart_rate FROM splits WHERE pace IS NOT NULL LIMIT 100"
         result = reader.profile_table_or_query(query)
 
@@ -122,7 +122,7 @@ class TestProfileTableOrQuery:
 
     def test_profile_with_date_range_filter(self, test_db):
         """Test profiling with date_range filter."""
-        reader = AggregateReader(db_path=str(test_db))
+        reader = UtilityReader(db_path=str(test_db))
         result = reader.profile_table_or_query(
             "splits", date_range=("2025-01-01", "2025-12-31")
         )
@@ -133,7 +133,7 @@ class TestProfileTableOrQuery:
 
     def test_profile_empty_table(self, test_db):
         """Test profiling empty result."""
-        reader = AggregateReader(db_path=str(test_db))
+        reader = UtilityReader(db_path=str(test_db))
         query = "SELECT * FROM splits WHERE 1=0"  # Always empty
         result = reader.profile_table_or_query(query)
 
@@ -142,7 +142,7 @@ class TestProfileTableOrQuery:
 
     def test_profile_column_with_nulls(self, test_db):
         """Test profiling column with NULL values."""
-        reader = AggregateReader(db_path=str(test_db))
+        reader = UtilityReader(db_path=str(test_db))
         result = reader.profile_table_or_query("splits")
 
         # Some columns might have NULLs
@@ -151,7 +151,7 @@ class TestProfileTableOrQuery:
 
     def test_profile_output_size_limit(self, test_db):
         """Test that profile output is limited to ~1KB."""
-        reader = AggregateReader(db_path=str(test_db))
+        reader = UtilityReader(db_path=str(test_db))
         result = reader.profile_table_or_query("time_series_metrics")
 
         # Convert to JSON and check size

@@ -2,8 +2,7 @@
 PerformanceTrendsInserter - Insert performance_trends to DuckDB
 
 Extracts phase-based performance analysis from raw splits.json and inserts into
-performance_trends table. Supports both 4-phase (warmup/run/recovery/cooldown)
-and legacy 3-phase (warmup/main/finish) structures.
+performance_trends table. Supports 4-phase (warmup/run/recovery/cooldown) structure.
 """
 
 import json
@@ -12,26 +11,9 @@ from pathlib import Path
 
 import duckdb
 
+from garmin_mcp.database.inserters.splits_helpers.phase_mapping import PhaseMapper
+
 logger = logging.getLogger(__name__)
-
-
-def _map_intensity_to_phase(intensity_type: str | None) -> str | None:
-    """Map Garmin intensityType to role_phase."""
-    if not intensity_type:
-        return None
-
-    intensity_upper = intensity_type.upper()
-
-    if intensity_upper == "WARMUP":
-        return "warmup"
-    elif intensity_upper in ("INTERVAL", "ACTIVE"):
-        return "run"
-    elif intensity_upper == "RECOVERY":
-        return "recovery"
-    elif intensity_upper == "COOLDOWN":
-        return "cooldown"
-    else:
-        return None
 
 
 def _extract_performance_trends_from_raw(raw_splits_file: str) -> dict | None:
@@ -74,7 +56,7 @@ def _extract_performance_trends_from_raw(raw_splits_file: str) -> dict | None:
             continue
 
         intensity_type = lap.get("intensityType")
-        phase = _map_intensity_to_phase(intensity_type)
+        phase = PhaseMapper.map_intensity_to_phase(intensity_type)
 
         distance_m = lap.get("distance", 0)
         distance_km = distance_m / 1000.0 if distance_m else None
@@ -272,12 +254,11 @@ def insert_performance_trends(
 
     Supports both:
     - New 4-phase structure: warmup/run/recovery/cooldown (interval training)
-    - Legacy 3-phase structure: warmup/main/finish (regular runs)
 
     Steps:
     1. Load raw splits.json
     2. Extract and calculate performance_trends
-    3. Detect phase structure (3-phase or 4-phase)
+    3. Detect 4-phase structure
     4. Convert splits arrays to comma-separated strings
     5. Insert into performance_trends table
 
@@ -305,9 +286,8 @@ def insert_performance_trends(
             "DELETE FROM performance_trends WHERE activity_id = ?", [activity_id]
         )
 
-        # Detect phase structure (4-phase or legacy 3-phase)
+        # Check for 4-phase structure
         has_run_phase = "run_phase" in perf_trends
-        has_main_phase = "main_phase" in perf_trends
 
         # Helper function to format pace
         def format_pace(pace_seconds):
@@ -407,65 +387,6 @@ def insert_performance_trends(
             )
             logger.info(
                 f"Inserted 4-phase performance trends for activity {activity_id}"
-            )
-
-        elif has_main_phase:
-            # Legacy 3-phase structure - insert into warmup/run/cooldown columns
-            # (main → run, finish → cooldown)
-            warmup_phase = perf_trends.get("warmup_phase", {})
-            main_phase = perf_trends.get("main_phase", {})
-            finish_phase = perf_trends.get("finish_phase", {})
-
-            # Convert splits arrays to comma-separated strings
-            warmup_splits = ",".join(str(s) for s in warmup_phase.get("splits", []))
-            run_splits = ",".join(str(s) for s in main_phase.get("splits", []))
-            cooldown_splits = ",".join(str(s) for s in finish_phase.get("splits", []))
-
-            # Insert legacy 3-phase data (map to 4-phase columns)
-            conn.execute(
-                """
-                INSERT INTO performance_trends (
-                    activity_id,
-                    pace_consistency,
-                    hr_drift_percentage,
-                    cadence_consistency,
-                    fatigue_pattern,
-                    warmup_splits,
-                    warmup_avg_pace_seconds_per_km,
-                    warmup_avg_pace_str,
-                    warmup_avg_hr,
-                    run_splits,
-                    run_avg_pace_seconds_per_km,
-                    run_avg_pace_str,
-                    run_avg_hr,
-                    cooldown_splits,
-                    cooldown_avg_pace_seconds_per_km,
-                    cooldown_avg_pace_str,
-                    cooldown_avg_hr
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                [
-                    activity_id,
-                    perf_trends.get("pace_consistency"),
-                    perf_trends.get("hr_drift_percentage"),
-                    perf_trends.get("cadence_consistency"),
-                    perf_trends.get("fatigue_pattern"),
-                    warmup_splits,
-                    warmup_phase.get("avg_pace"),
-                    format_pace(warmup_phase.get("avg_pace")),
-                    warmup_phase.get("avg_hr"),
-                    run_splits,
-                    main_phase.get("avg_pace"),
-                    format_pace(main_phase.get("avg_pace")),
-                    main_phase.get("avg_hr"),
-                    cooldown_splits,
-                    finish_phase.get("avg_pace"),
-                    format_pace(finish_phase.get("avg_pace")),
-                    finish_phase.get("avg_hr"),
-                ],
-            )
-            logger.info(
-                f"Inserted legacy 3-phase performance trends for activity {activity_id}"
             )
 
         else:

@@ -17,33 +17,10 @@ import logging
 
 import duckdb
 
-from garmin_mcp.database.inserters.splits_helpers.cadence_power import (
-    CadencePowerCalculator,
-)
-from garmin_mcp.database.inserters.splits_helpers.environmental import (
-    EnvironmentalCalculator,
-)
 from garmin_mcp.database.inserters.splits_helpers.extractor import SplitsExtractor
-from garmin_mcp.database.inserters.splits_helpers.hr_calculations import HRCalculator
 from garmin_mcp.database.inserters.splits_helpers.phase_mapping import PhaseMapper
-from garmin_mcp.database.inserters.splits_helpers.terrain import TerrainClassifier
 
 logger = logging.getLogger(__name__)
-
-# Backward-compatible module-level aliases for the extracted functions
-_classify_terrain = TerrainClassifier.classify_terrain
-_map_intensity_to_phase = PhaseMapper.map_intensity_to_phase
-_estimate_intensity_type = PhaseMapper.estimate_intensity_type
-_calculate_hr_zone = HRCalculator.calculate_hr_zone
-_calculate_cadence_rating = CadencePowerCalculator.calculate_cadence_rating
-_calculate_power_efficiency = CadencePowerCalculator.calculate_power_efficiency
-_calculate_environmental_conditions = (
-    EnvironmentalCalculator.calculate_environmental_conditions
-)
-_calculate_wind_impact = EnvironmentalCalculator.calculate_wind_impact
-_calculate_temp_impact = EnvironmentalCalculator.calculate_temp_impact
-_calculate_environmental_impact = EnvironmentalCalculator.calculate_environmental_impact
-_extract_splits_from_raw = SplitsExtractor.extract_splits_from_raw
 
 
 def insert_splits(
@@ -73,7 +50,7 @@ def insert_splits(
             logger.error("raw_splits_file required")
             return False
 
-        split_metrics = _extract_splits_from_raw(raw_splits_file)
+        split_metrics = SplitsExtractor.extract_splits_from_raw(raw_splits_file)
         if not split_metrics:
             logger.error("Failed to extract splits from raw data")
             return False
@@ -109,7 +86,7 @@ def _insert_splits_with_connection(
         )
 
         # Get estimated intensity types for all splits
-        estimated_types = _estimate_intensity_type(split_metrics)
+        estimated_types = PhaseMapper.estimate_intensity_type(split_metrics)
 
         # Apply estimation only to splits with NULL intensity_type
         for split, estimated_type in zip(split_metrics, estimated_types, strict=True):

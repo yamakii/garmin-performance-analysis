@@ -230,8 +230,6 @@ class ReportDataLoader:
                         "avg_hr": perf_trends[12],
                         "fatigue_pattern": perf_trends[3],
                     }
-                    data["main_metrics"] = data["run_metrics"]
-                    data["finish_metrics"] = data["cooldown_metrics"]
 
             # Add training type if available
             if hr_eff:

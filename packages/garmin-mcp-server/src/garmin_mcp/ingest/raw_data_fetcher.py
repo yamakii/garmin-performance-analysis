@@ -228,13 +228,6 @@ def collect_data(
     Returns:
         Raw data dict with keys: activity, splits, weather, gear, hr_zones, etc.
     """
-    # Backward compatibility: Check old format cache first
-    old_cache_file = raw_dir / f"{activity_id}_raw.json"
-    if old_cache_file.exists():
-        logger.info(f"Using old format cached data for activity {activity_id}")
-        with open(old_cache_file, encoding="utf-8") as f:
-            return cast(dict[str, Any], json.load(f))
-
     # Normalize force_refetch parameter
     force_refetch_set = set(force_refetch) if force_refetch else set()
 

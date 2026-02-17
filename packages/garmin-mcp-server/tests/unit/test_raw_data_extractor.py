@@ -9,7 +9,7 @@ class TestRawDataExtractor:
 
     def test_extract_training_effect_old_summary(self):
         """Test extraction from old format summaryDTO."""
-        from garmin_mcp.ingest.garmin_worker import RawDataExtractor
+        from garmin_mcp.ingest.raw_data_fetcher import RawDataExtractor
 
         raw_data = {
             "activityId": 20594901208,
@@ -29,7 +29,7 @@ class TestRawDataExtractor:
 
     def test_extract_training_effect_new(self):
         """Test extraction from new format (summaryDTO still exists)."""
-        from garmin_mcp.ingest.garmin_worker import RawDataExtractor
+        from garmin_mcp.ingest.raw_data_fetcher import RawDataExtractor
 
         raw_data = {
             "activityId": 20615445009,
@@ -50,7 +50,7 @@ class TestRawDataExtractor:
 
     def test_extract_training_effect_missing(self):
         """Test extraction when training effect data is missing."""
-        from garmin_mcp.ingest.garmin_worker import RawDataExtractor
+        from garmin_mcp.ingest.raw_data_fetcher import RawDataExtractor
 
         raw_data = {
             "activityId": 12345,
@@ -63,7 +63,7 @@ class TestRawDataExtractor:
 
     def test_extract_from_raw_data(self):
         """Test full extraction from raw_data dict."""
-        from garmin_mcp.ingest.garmin_worker import RawDataExtractor
+        from garmin_mcp.ingest.raw_data_fetcher import RawDataExtractor
 
         raw_data = {
             "activity": {

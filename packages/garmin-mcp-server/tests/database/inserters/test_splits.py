@@ -13,6 +13,15 @@ import pytest
 
 from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.splits import insert_splits
+from garmin_mcp.database.inserters.splits_helpers.cadence_power import (
+    CadencePowerCalculator,
+)
+from garmin_mcp.database.inserters.splits_helpers.environmental import (
+    EnvironmentalCalculator,
+)
+from garmin_mcp.database.inserters.splits_helpers.extractor import SplitsExtractor
+from garmin_mcp.database.inserters.splits_helpers.hr_calculations import HRCalculator
+from garmin_mcp.database.inserters.splits_helpers.phase_mapping import PhaseMapper
 
 
 class TestSplitsInserter:
@@ -393,8 +402,7 @@ class TestSplitsInserter:
 
     @pytest.mark.unit
     def test_extract_splits_includes_stride_length(self, tmp_path):
-        """Test _extract_splits_from_raw() extracts stride_length field."""
-        from garmin_mcp.database.inserters.splits import _extract_splits_from_raw
+        """Test SplitsExtractor.extract_splits_from_raw() extracts stride_length field."""
 
         # Create test data with strideLength
         raw_splits_data = {
@@ -413,7 +421,7 @@ class TestSplitsInserter:
             json.dump(raw_splits_data, f)
 
         # Execute
-        splits = _extract_splits_from_raw(str(splits_file))
+        splits = SplitsExtractor.extract_splits_from_raw(str(splits_file))
 
         # Verify
         assert splits is not None
@@ -423,8 +431,7 @@ class TestSplitsInserter:
 
     @pytest.mark.unit
     def test_extract_splits_includes_max_metrics(self, tmp_path):
-        """Test _extract_splits_from_raw() extracts max_heart_rate, max_cadence, max_power."""
-        from garmin_mcp.database.inserters.splits import _extract_splits_from_raw
+        """Test SplitsExtractor.extract_splits_from_raw() extracts max_heart_rate, max_cadence, max_power."""
 
         # Create test data with max metrics
         raw_splits_data = {
@@ -445,7 +452,7 @@ class TestSplitsInserter:
             json.dump(raw_splits_data, f)
 
         # Execute
-        splits = _extract_splits_from_raw(str(splits_file))
+        splits = SplitsExtractor.extract_splits_from_raw(str(splits_file))
 
         # Verify
         assert splits is not None
@@ -459,8 +466,7 @@ class TestSplitsInserter:
 
     @pytest.mark.unit
     def test_extract_splits_includes_power_metrics(self, tmp_path):
-        """Test _extract_splits_from_raw() extracts normalized_power."""
-        from garmin_mcp.database.inserters.splits import _extract_splits_from_raw
+        """Test SplitsExtractor.extract_splits_from_raw() extracts normalized_power."""
 
         # Create test data with normalized power
         raw_splits_data = {
@@ -479,7 +485,7 @@ class TestSplitsInserter:
             json.dump(raw_splits_data, f)
 
         # Execute
-        splits = _extract_splits_from_raw(str(splits_file))
+        splits = SplitsExtractor.extract_splits_from_raw(str(splits_file))
 
         # Verify
         assert splits is not None
@@ -489,8 +495,7 @@ class TestSplitsInserter:
 
     @pytest.mark.unit
     def test_extract_splits_includes_speed_metrics(self, tmp_path):
-        """Test _extract_splits_from_raw() extracts average_speed and grade_adjusted_speed."""
-        from garmin_mcp.database.inserters.splits import _extract_splits_from_raw
+        """Test SplitsExtractor.extract_splits_from_raw() extracts average_speed and grade_adjusted_speed."""
 
         # Create test data with speed metrics
         raw_splits_data = {
@@ -510,7 +515,7 @@ class TestSplitsInserter:
             json.dump(raw_splits_data, f)
 
         # Execute
-        splits = _extract_splits_from_raw(str(splits_file))
+        splits = SplitsExtractor.extract_splits_from_raw(str(splits_file))
 
         # Verify
         assert splits is not None
@@ -522,8 +527,7 @@ class TestSplitsInserter:
 
     @pytest.mark.unit
     def test_extract_splits_handles_missing_fields(self, tmp_path):
-        """Test _extract_splits_from_raw() handles missing new fields gracefully (NULL)."""
-        from garmin_mcp.database.inserters.splits import _extract_splits_from_raw
+        """Test SplitsExtractor.extract_splits_from_raw() handles missing new fields gracefully (NULL)."""
 
         # Create test data WITHOUT new fields (simulate older activity)
         raw_splits_data = {
@@ -542,7 +546,7 @@ class TestSplitsInserter:
             json.dump(raw_splits_data, f)
 
         # Execute
-        splits = _extract_splits_from_raw(str(splits_file))
+        splits = SplitsExtractor.extract_splits_from_raw(str(splits_file))
 
         # Verify - should return None for missing fields, not error
         assert splits is not None
@@ -557,11 +561,10 @@ class TestSplitsInserter:
 
     @pytest.mark.unit
     def test_extract_splits_preserves_existing_fields(self, sample_raw_splits_file):
-        """Test _extract_splits_from_raw() still extracts all 19 existing fields correctly."""
-        from garmin_mcp.database.inserters.splits import _extract_splits_from_raw
+        """Test SplitsExtractor.extract_splits_from_raw() still extracts all 19 existing fields correctly."""
 
         # Execute
-        splits = _extract_splits_from_raw(str(sample_raw_splits_file))
+        splits = SplitsExtractor.extract_splits_from_raw(str(sample_raw_splits_file))
 
         # Verify existing fields still present
         assert splits is not None
@@ -1064,7 +1067,6 @@ class TestSplitsInserter:
 
         RED Phase: This test will fail because _calculate_hr_zone doesn't exist yet.
         """
-        from garmin_mcp.database.inserters.splits import _calculate_hr_zone
 
         # Test data: Typical HR zones for a runner
         hr_zones = [
@@ -1076,21 +1078,28 @@ class TestSplitsInserter:
         ]
 
         # Test zone mapping
-        assert _calculate_hr_zone(110, hr_zones) == "Zone 1"
-        assert _calculate_hr_zone(145, hr_zones) == "Zone 2"
-        assert _calculate_hr_zone(160, hr_zones) == "Zone 3"
-        assert _calculate_hr_zone(170, hr_zones) == "Zone 4"
-        assert _calculate_hr_zone(185, hr_zones) == "Zone 5"
+        assert HRCalculator.calculate_hr_zone(110, hr_zones) == "Zone 1"
+        assert HRCalculator.calculate_hr_zone(145, hr_zones) == "Zone 2"
+        assert HRCalculator.calculate_hr_zone(160, hr_zones) == "Zone 3"
+        assert HRCalculator.calculate_hr_zone(170, hr_zones) == "Zone 4"
+        assert HRCalculator.calculate_hr_zone(185, hr_zones) == "Zone 5"
 
         # Test edge cases
-        assert _calculate_hr_zone(95, hr_zones) == "Zone 0 (Recovery)"  # Below Zone 1
-        assert _calculate_hr_zone(200, hr_zones) == "Zone 5+ (Max)"  # Above Zone 5
+        assert (
+            HRCalculator.calculate_hr_zone(95, hr_zones) == "Zone 0 (Recovery)"
+        )  # Below Zone 1
+        assert (
+            HRCalculator.calculate_hr_zone(200, hr_zones) == "Zone 5+ (Max)"
+        )  # Above Zone 5
 
         # Test boundary values
-        assert _calculate_hr_zone(120, hr_zones) in ["Zone 1", "Zone 2"]  # Boundary
+        assert HRCalculator.calculate_hr_zone(120, hr_zones) in [
+            "Zone 1",
+            "Zone 2",
+        ]  # Boundary
 
         # Test None handling
-        assert _calculate_hr_zone(None, hr_zones) is None
+        assert HRCalculator.calculate_hr_zone(None, hr_zones) is None
 
     @pytest.mark.unit
     def test_calculate_cadence_rating(self):
@@ -1098,136 +1107,189 @@ class TestSplitsInserter:
 
         RED Phase: This test will fail because _calculate_cadence_rating doesn't exist yet.
         """
-        from garmin_mcp.database.inserters.splits import _calculate_cadence_rating
 
         # Test ratings based on scientific thresholds
-        assert _calculate_cadence_rating(165) == "Low (165 spm, target 180+)"
-        assert _calculate_cadence_rating(175) == "Good (175 spm)"
-        assert _calculate_cadence_rating(185) == "Excellent (185 spm)"
-        assert _calculate_cadence_rating(192) == "Elite (192 spm)"
+        assert (
+            CadencePowerCalculator.calculate_cadence_rating(165)
+            == "Low (165 spm, target 180+)"
+        )
+        assert CadencePowerCalculator.calculate_cadence_rating(175) == "Good (175 spm)"
+        assert (
+            CadencePowerCalculator.calculate_cadence_rating(185)
+            == "Excellent (185 spm)"
+        )
+        assert CadencePowerCalculator.calculate_cadence_rating(192) == "Elite (192 spm)"
 
         # Test boundary values
-        assert _calculate_cadence_rating(170) == "Good (170 spm)"
-        assert _calculate_cadence_rating(180) == "Excellent (180 spm)"
-        assert _calculate_cadence_rating(190) == "Elite (190 spm)"
+        assert CadencePowerCalculator.calculate_cadence_rating(170) == "Good (170 spm)"
+        assert (
+            CadencePowerCalculator.calculate_cadence_rating(180)
+            == "Excellent (180 spm)"
+        )
+        assert CadencePowerCalculator.calculate_cadence_rating(190) == "Elite (190 spm)"
 
         # Test None handling
-        assert _calculate_cadence_rating(None) is None
+        assert CadencePowerCalculator.calculate_cadence_rating(None) is None
 
     @pytest.mark.unit
     def test_calculate_power_efficiency(self):
         """Test power efficiency (W/kg) calculation."""
-        from garmin_mcp.database.inserters.splits import _calculate_power_efficiency
 
         # Test various power/weight ratios
         # 170/70 = 2.43 (Low, <2.5)
         # 200/70 = 2.86 (Moderate, 2.5-3.5)
         # 250/70 = 3.57 (Good, 3.5-4.5)
         # 350/70 = 5.0 (Excellent, >=4.5)
-        assert _calculate_power_efficiency(170, 70) == "Low (2.4 W/kg)"
-        assert _calculate_power_efficiency(200, 70) == "Moderate (2.9 W/kg)"
-        assert _calculate_power_efficiency(250, 70) == "Good (3.6 W/kg)"
-        assert _calculate_power_efficiency(350, 70) == "Excellent (5.0 W/kg)"
+        assert (
+            CadencePowerCalculator.calculate_power_efficiency(170, 70)
+            == "Low (2.4 W/kg)"
+        )
+        assert (
+            CadencePowerCalculator.calculate_power_efficiency(200, 70)
+            == "Moderate (2.9 W/kg)"
+        )
+        assert (
+            CadencePowerCalculator.calculate_power_efficiency(250, 70)
+            == "Good (3.6 W/kg)"
+        )
+        assert (
+            CadencePowerCalculator.calculate_power_efficiency(350, 70)
+            == "Excellent (5.0 W/kg)"
+        )
 
         # Test None handling
-        assert _calculate_power_efficiency(None, 70) is None
-        assert _calculate_power_efficiency(250, None) is None
-        assert _calculate_power_efficiency(None, None) is None
+        assert CadencePowerCalculator.calculate_power_efficiency(None, 70) is None
+        assert CadencePowerCalculator.calculate_power_efficiency(250, None) is None
+        assert CadencePowerCalculator.calculate_power_efficiency(None, None) is None
 
     @pytest.mark.unit
     def test_calculate_environmental_conditions(self):
         """Test environmental conditions summary."""
-        from garmin_mcp.database.inserters.splits import (
-            _calculate_environmental_conditions,
-        )
 
         # Test various conditions
-        assert _calculate_environmental_conditions(15, 2, 65) == "Cool (15°C), Calm"
         assert (
-            _calculate_environmental_conditions(28, 12, 85)
+            EnvironmentalCalculator.calculate_environmental_conditions(15, 2, 65)
+            == "Cool (15°C), Calm"
+        )
+        assert (
+            EnvironmentalCalculator.calculate_environmental_conditions(28, 12, 85)
             == "Hot (28°C), Breezy (12 km/h), Humid (85%)"
         )
         assert (
-            _calculate_environmental_conditions(8, 20, 25)
+            EnvironmentalCalculator.calculate_environmental_conditions(8, 20, 25)
             == "Cold (8°C), Windy (20 km/h), Dry (25%)"
         )
-        assert _calculate_environmental_conditions(20, None, None) == "Mild (20°C)"
+        assert (
+            EnvironmentalCalculator.calculate_environmental_conditions(20, None, None)
+            == "Mild (20°C)"
+        )
 
         # Test None handling
-        assert _calculate_environmental_conditions(None, 10, 50) is None
+        assert (
+            EnvironmentalCalculator.calculate_environmental_conditions(None, 10, 50)
+            is None
+        )
 
     @pytest.mark.unit
     def test_calculate_wind_impact(self):
         """Test wind impact evaluation."""
-        from garmin_mcp.database.inserters.splits import _calculate_wind_impact
 
         # Test wind levels
-        assert _calculate_wind_impact(3) == "Minimal (<5 km/h)"
-        assert _calculate_wind_impact(10, None) == "Moderate (10 km/h)"
+        assert EnvironmentalCalculator.calculate_wind_impact(3) == "Minimal (<5 km/h)"
         assert (
-            _calculate_wind_impact(20) == "Significant (20 km/h, pace impact expected)"
+            EnvironmentalCalculator.calculate_wind_impact(10, None)
+            == "Moderate (10 km/h)"
+        )
+        assert (
+            EnvironmentalCalculator.calculate_wind_impact(20)
+            == "Significant (20 km/h, pace impact expected)"
         )
 
         # Test with direction (headwind/tailwind/crosswind)
-        assert _calculate_wind_impact(12, 30) == "Moderate headwind (12 km/h)"
-        assert _calculate_wind_impact(12, 180) == "Moderate tailwind (12 km/h)"
-        assert _calculate_wind_impact(12, 90) == "Moderate crosswind (12 km/h)"
+        assert (
+            EnvironmentalCalculator.calculate_wind_impact(12, 30)
+            == "Moderate headwind (12 km/h)"
+        )
+        assert (
+            EnvironmentalCalculator.calculate_wind_impact(12, 180)
+            == "Moderate tailwind (12 km/h)"
+        )
+        assert (
+            EnvironmentalCalculator.calculate_wind_impact(12, 90)
+            == "Moderate crosswind (12 km/h)"
+        )
 
         # Test None handling
-        assert _calculate_wind_impact(None) is None
+        assert EnvironmentalCalculator.calculate_wind_impact(None) is None
 
     @pytest.mark.unit
     def test_calculate_temp_impact(self):
         """Test temperature impact based on training type."""
-        from garmin_mcp.database.inserters.splits import _calculate_temp_impact
 
         # Test recovery/low_moderate (wider tolerance)
-        assert _calculate_temp_impact(18, "recovery") == "Good (18°C)"
-        assert _calculate_temp_impact(28, "low_moderate") == "Hot (28°C)"
+        assert (
+            EnvironmentalCalculator.calculate_temp_impact(18, "recovery")
+            == "Good (18°C)"
+        )
+        assert (
+            EnvironmentalCalculator.calculate_temp_impact(28, "low_moderate")
+            == "Hot (28°C)"
+        )
 
         # Test base/tempo_threshold (moderate tolerance)
-        assert _calculate_temp_impact(15, "tempo_threshold") == "Ideal (15°C)"
         assert (
-            _calculate_temp_impact(25, "tempo_threshold")
+            EnvironmentalCalculator.calculate_temp_impact(15, "tempo_threshold")
+            == "Ideal (15°C)"
+        )
+        assert (
+            EnvironmentalCalculator.calculate_temp_impact(25, "tempo_threshold")
             == "Hot (25°C, hydration important)"
         )
 
         # Test interval_sprint (narrow tolerance)
-        assert _calculate_temp_impact(12, "interval_sprint") == "Ideal (12°C)"
         assert (
-            _calculate_temp_impact(28, "interval_sprint")
+            EnvironmentalCalculator.calculate_temp_impact(12, "interval_sprint")
+            == "Ideal (12°C)"
+        )
+        assert (
+            EnvironmentalCalculator.calculate_temp_impact(28, "interval_sprint")
             == "Too hot (28°C, consider rescheduling)"
         )
 
         # Test None handling
-        assert _calculate_temp_impact(None, "base") is None
+        assert EnvironmentalCalculator.calculate_temp_impact(None, "base") is None
 
     @pytest.mark.unit
     def test_calculate_environmental_impact(self):
         """Test overall environmental impact rating."""
-        from garmin_mcp.database.inserters.splits import _calculate_environmental_impact
 
         # Test ideal conditions (score=0)
         assert (
-            _calculate_environmental_impact("Ideal (15°C)", "Minimal (<5 km/h)", 3, 2)
+            EnvironmentalCalculator.calculate_environmental_impact(
+                "Ideal (15°C)", "Minimal (<5 km/h)", 3, 2
+            )
             == "Ideal conditions"
         )
 
         # Test good conditions (score=1-2: Warm(1) + no wind + 30m elevation(0))
         assert (
-            _calculate_environmental_impact("Warm (22°C)", "Minimal (<5 km/h)", 15, 15)
+            EnvironmentalCalculator.calculate_environmental_impact(
+                "Warm (22°C)", "Minimal (<5 km/h)", 15, 15
+            )
             == "Good conditions"
         )
 
         # Test moderate challenge (score=3-4: Hot(2) + Moderate(1) + 40m elevation(0))
         assert (
-            _calculate_environmental_impact("Hot (25°C)", "Moderate (10 km/h)", 20, 20)
+            EnvironmentalCalculator.calculate_environmental_impact(
+                "Hot (25°C)", "Moderate (10 km/h)", 20, 20
+            )
             == "Moderate challenge"
         )
 
         # Test challenging conditions (score=5: Hot(2) + Moderate(1) + 120m elevation(2))
         assert (
-            _calculate_environmental_impact(
+            EnvironmentalCalculator.calculate_environmental_impact(
                 "Hot (26°C)", "Moderate headwind (12 km/h)", 60, 60
             )
             == "Challenging conditions"
@@ -1235,7 +1297,7 @@ class TestSplitsInserter:
 
         # Test extreme conditions (score=6: Too hot(3) + Moderate(1) + 120m elevation(2))
         assert (
-            _calculate_environmental_impact(
+            EnvironmentalCalculator.calculate_environmental_impact(
                 "Too hot (28°C)", "Moderate (12 km/h)", 60, 60
             )
             == "Extreme conditions"
@@ -1243,7 +1305,7 @@ class TestSplitsInserter:
 
         # Test extreme conditions (score=7: Too hot(3) + Significant(2) + 120m elevation(2))
         assert (
-            _calculate_environmental_impact(
+            EnvironmentalCalculator.calculate_environmental_impact(
                 "Too hot (30°C)", "Significant (20 km/h)", 100, 100
             )
             == "Extreme conditions"
@@ -1256,7 +1318,6 @@ class TestSplitsInserter:
     @pytest.mark.unit
     def test_estimate_intensity_type_warmup_first_two_splits(self):
         """Test WARMUP estimation for first 2 splits."""
-        from garmin_mcp.database.inserters.splits import _estimate_intensity_type
 
         # Test case 1: 10 splits total (first 2 should be WARMUP)
         splits = [
@@ -1272,7 +1333,7 @@ class TestSplitsInserter:
             {"pace_seconds_per_km": 310, "avg_heart_rate": 130},
         ]
 
-        result = _estimate_intensity_type(splits)
+        result = PhaseMapper.estimate_intensity_type(splits)
 
         assert result[0] == "WARMUP"
         assert result[1] == "WARMUP"
@@ -1281,7 +1342,6 @@ class TestSplitsInserter:
     @pytest.mark.unit
     def test_estimate_intensity_type_warmup_single_for_short_run(self):
         """Test WARMUP estimation for short runs (≤6 splits, only first 1)."""
-        from garmin_mcp.database.inserters.splits import _estimate_intensity_type
 
         # Test case: 6 splits total (only first 1 should be WARMUP)
         splits = [
@@ -1293,7 +1353,7 @@ class TestSplitsInserter:
             {"pace_seconds_per_km": 300, "avg_heart_rate": 140},
         ]
 
-        result = _estimate_intensity_type(splits)
+        result = PhaseMapper.estimate_intensity_type(splits)
 
         assert result[0] == "WARMUP"
         assert result[1] != "WARMUP"
@@ -1301,7 +1361,6 @@ class TestSplitsInserter:
     @pytest.mark.unit
     def test_estimate_intensity_type_cooldown_last_two_splits(self):
         """Test COOLDOWN estimation for last 2 splits."""
-        from garmin_mcp.database.inserters.splits import _estimate_intensity_type
 
         # Test case: 10 splits total (last 2 should be COOLDOWN)
         splits = [
@@ -1317,7 +1376,7 @@ class TestSplitsInserter:
             {"pace_seconds_per_km": 310, "avg_heart_rate": 130},  # Split 9 → COOLDOWN
         ]
 
-        result = _estimate_intensity_type(splits)
+        result = PhaseMapper.estimate_intensity_type(splits)
 
         assert result[-2] == "COOLDOWN"
         assert result[-1] == "COOLDOWN"
@@ -1326,7 +1385,6 @@ class TestSplitsInserter:
     @pytest.mark.unit
     def test_estimate_intensity_type_cooldown_single_for_short_run(self):
         """Test COOLDOWN estimation for short runs (≤6 splits, only last 1)."""
-        from garmin_mcp.database.inserters.splits import _estimate_intensity_type
 
         # Test case: 6 splits total (only last 1 should be COOLDOWN)
         splits = [
@@ -1338,7 +1396,7 @@ class TestSplitsInserter:
             {"pace_seconds_per_km": 300, "avg_heart_rate": 140},  # Split 5 → COOLDOWN
         ]
 
-        result = _estimate_intensity_type(splits)
+        result = PhaseMapper.estimate_intensity_type(splits)
 
         assert result[-1] == "COOLDOWN"
         assert result[-2] != "COOLDOWN"
@@ -1346,7 +1404,6 @@ class TestSplitsInserter:
     @pytest.mark.unit
     def test_estimate_intensity_type_recovery_after_interval(self):
         """Test RECOVERY estimation (pace >400 AND previous was INTERVAL/RECOVERY)."""
-        from garmin_mcp.database.inserters.splits import _estimate_intensity_type
 
         # Test case: Sprint pattern (WARMUP, INTERVAL, RECOVERY, INTERVAL, RECOVERY, COOLDOWN)
         splits = [
@@ -1371,7 +1428,7 @@ class TestSplitsInserter:
             {"pace_seconds_per_km": 320, "avg_heart_rate": 130},  # COOLDOWN
         ]
 
-        result = _estimate_intensity_type(splits)
+        result = PhaseMapper.estimate_intensity_type(splits)
 
         assert result[0] == "WARMUP"
         assert result[1] == "WARMUP"
@@ -1387,7 +1444,6 @@ class TestSplitsInserter:
     @pytest.mark.unit
     def test_estimate_intensity_type_interval_by_fast_pace(self):
         """Test INTERVAL estimation by fast pace (pace < avg × 0.90)."""
-        from garmin_mcp.database.inserters.splits import _estimate_intensity_type
 
         # Test case: Threshold run (WARMUP, INTERVAL zone, COOLDOWN)
         # Average pace ≈ 260 sec/km, threshold = 234 sec/km
@@ -1402,7 +1458,7 @@ class TestSplitsInserter:
             {"pace_seconds_per_km": 310, "avg_heart_rate": 130},  # COOLDOWN
         ]
 
-        result = _estimate_intensity_type(splits)
+        result = PhaseMapper.estimate_intensity_type(splits)
 
         assert result[0] == "WARMUP"
         assert result[1] == "WARMUP"
@@ -1415,7 +1471,6 @@ class TestSplitsInserter:
 
     def test_estimate_intensity_type_interval_by_high_hr(self):
         """Test INTERVAL estimation by high HR (HR > avg × 1.1)."""
-        from garmin_mcp.database.inserters.splits import _estimate_intensity_type
 
         # Test case: High HR effort
         # Average HR = 153.75 bpm, threshold = 169.125 bpm
@@ -1443,7 +1498,7 @@ class TestSplitsInserter:
             {"pace_seconds_per_km": 310, "avg_heart_rate": 130},  # COOLDOWN
         ]
 
-        result = _estimate_intensity_type(splits)
+        result = PhaseMapper.estimate_intensity_type(splits)
 
         assert result[0] == "WARMUP"
         assert result[1] == "WARMUP"
@@ -1456,7 +1511,6 @@ class TestSplitsInserter:
 
     def test_estimate_intensity_type_active_default(self):
         """Test ACTIVE estimation as default (doesn't match other rules)."""
-        from garmin_mcp.database.inserters.splits import _estimate_intensity_type
 
         # Test case: Easy run (moderate pace, moderate HR)
         # With 4 splits (≤6), expect: WARMUP, ACTIVE, ACTIVE, COOLDOWN
@@ -1467,7 +1521,7 @@ class TestSplitsInserter:
             {"pace_seconds_per_km": 272, "avg_heart_rate": 146},  # COOLDOWN (position)
         ]
 
-        result = _estimate_intensity_type(splits)
+        result = PhaseMapper.estimate_intensity_type(splits)
 
         # Position-based rules apply first for runs ≤6 splits
         assert result[0] == "WARMUP"  # First split
@@ -1477,7 +1531,6 @@ class TestSplitsInserter:
 
     def test_estimate_intensity_type_missing_hr_values(self):
         """Test estimation handles missing HR values gracefully."""
-        from garmin_mcp.database.inserters.splits import _estimate_intensity_type
 
         # Test case: Some splits without HR data (6 splits total)
         # With 6 splits (≤6): WARMUP (1), middle (4), COOLDOWN (1)
@@ -1496,7 +1549,7 @@ class TestSplitsInserter:
             {"pace_seconds_per_km": 300, "avg_heart_rate": None},  # COOLDOWN (position)
         ]
 
-        result = _estimate_intensity_type(splits)
+        result = PhaseMapper.estimate_intensity_type(splits)
 
         # Should not crash and produce reasonable estimates
         assert result[0] == "WARMUP"  # Position-based
@@ -1507,14 +1560,13 @@ class TestSplitsInserter:
     @pytest.mark.unit
     def test_estimate_intensity_type_single_split(self):
         """Test estimation handles edge case of single split."""
-        from garmin_mcp.database.inserters.splits import _estimate_intensity_type
 
         # Test case: Only 1 split (should not be both WARMUP and COOLDOWN)
         splits = [
             {"pace_seconds_per_km": 270, "avg_heart_rate": 150},
         ]
 
-        result = _estimate_intensity_type(splits)
+        result = PhaseMapper.estimate_intensity_type(splits)
 
         # Single split: no warmup/cooldown designation
         assert len(result) == 1
@@ -1523,11 +1575,10 @@ class TestSplitsInserter:
     @pytest.mark.unit
     def test_estimate_intensity_type_empty_splits(self):
         """Test estimation handles empty splits list."""
-        from garmin_mcp.database.inserters.splits import _estimate_intensity_type
 
         splits: list[dict] = []
 
-        result = _estimate_intensity_type(splits)
+        result = PhaseMapper.estimate_intensity_type(splits)
 
         assert result == []
 

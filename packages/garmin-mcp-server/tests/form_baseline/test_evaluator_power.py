@@ -8,6 +8,11 @@ from datetime import datetime, timedelta
 import duckdb
 import pytest
 
+from garmin_mcp.form_baseline.power_calculator import (
+    calculate_power_efficiency_internal,
+    calculate_power_efficiency_rating,
+)
+
 
 @pytest.fixture
 def tmp_db_with_baseline(tmp_path):
@@ -115,13 +120,11 @@ def test_evaluate_power_efficiency(tmp_db_with_baseline):
     """パワー効率の計算が正しく動作する."""
     import duckdb
 
-    from garmin_mcp.form_baseline.evaluator import _calculate_power_efficiency_internal
-
     today = datetime.now().date()
     conn = duckdb.connect(tmp_db_with_baseline)
 
     form_penalties = {"gct": 10.0, "vo": 5.0, "vr": 8.0}
-    result = _calculate_power_efficiency_internal(
+    result = calculate_power_efficiency_internal(
         conn,
         activity_id=1001,
         activity_date=str(today - timedelta(days=5)),
@@ -148,8 +151,6 @@ def test_evaluate_power_efficiency_no_power(tmp_db_with_baseline):
     """パワーデータなしの場合、Noneを返す."""
     import duckdb
 
-    from garmin_mcp.form_baseline.evaluator import _calculate_power_efficiency_internal
-
     # Add activity without power
     conn = duckdb.connect(tmp_db_with_baseline)
     today = datetime.now().date()
@@ -158,7 +159,7 @@ def test_evaluate_power_efficiency_no_power(tmp_db_with_baseline):
     )
     conn.execute("INSERT INTO splits VALUES (10003, 1002, 3.5, NULL)")
 
-    result = _calculate_power_efficiency_internal(
+    result = calculate_power_efficiency_internal(
         conn,
         activity_id=1002,
         activity_date=str(today - timedelta(days=3)),
@@ -175,10 +176,9 @@ def test_evaluate_power_efficiency_no_power(tmp_db_with_baseline):
 @pytest.mark.unit
 def test_power_efficiency_rating_calculation():
     """スコアから星評価を計算."""
-    from garmin_mcp.form_baseline.evaluator import _calculate_power_efficiency_rating
 
-    assert _calculate_power_efficiency_rating(0.06) == "★★★★★"
-    assert _calculate_power_efficiency_rating(0.03) == "★★★★☆"
-    assert _calculate_power_efficiency_rating(0.0) == "★★★☆☆"
-    assert _calculate_power_efficiency_rating(-0.03) == "★★☆☆☆"
-    assert _calculate_power_efficiency_rating(-0.06) == "★☆☆☆☆"
+    assert calculate_power_efficiency_rating(0.06) == "★★★★★"
+    assert calculate_power_efficiency_rating(0.03) == "★★★★☆"
+    assert calculate_power_efficiency_rating(0.0) == "★★★☆☆"
+    assert calculate_power_efficiency_rating(-0.03) == "★★☆☆☆"
+    assert calculate_power_efficiency_rating(-0.06) == "★☆☆☆☆"

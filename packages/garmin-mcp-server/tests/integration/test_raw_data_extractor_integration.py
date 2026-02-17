@@ -11,7 +11,7 @@ class TestRawDataExtractorIntegration:
 
     def test_extract_from_old_format_file(self, fixture_base_path):
         """Test extraction from old format activity file."""
-        from garmin_mcp.ingest.garmin_worker import RawDataExtractor
+        from garmin_mcp.ingest.raw_data_fetcher import RawDataExtractor
 
         # Old format: activity.json in 20594901208
         old_file = fixture_base_path / "raw/activity/20594901208/activity.json"
@@ -29,7 +29,7 @@ class TestRawDataExtractorIntegration:
 
     def test_extract_from_new_format_file(self, fixture_base_path):
         """Test extraction from new format activity file."""
-        from garmin_mcp.ingest.garmin_worker import RawDataExtractor
+        from garmin_mcp.ingest.raw_data_fetcher import RawDataExtractor
 
         # New format: activity.json in 20615445009
         activity_file = fixture_base_path / "raw/activity/20615445009/activity.json"
@@ -48,7 +48,7 @@ class TestRawDataExtractorIntegration:
 
     def test_extract_from_raw_data_structure(self, fixture_base_path):
         """Test extraction from wrapped raw_data structure."""
-        from garmin_mcp.ingest.garmin_worker import RawDataExtractor
+        from garmin_mcp.ingest.raw_data_fetcher import RawDataExtractor
 
         old_file = fixture_base_path / "raw/activity/20594901208/activity.json"
         assert old_file.exists(), "Fixture data should be available"

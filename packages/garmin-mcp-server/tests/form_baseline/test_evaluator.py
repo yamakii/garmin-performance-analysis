@@ -16,9 +16,9 @@ class TestEvaluateAndStore:
 
     def test_evaluate_and_store_basic(self, mocker):
         """Test basic evaluation flow with mocked dependencies."""
-        # Mock _load_models_from_file
+        # Mock load_models_from_file
         mock_load_models = mocker.patch(
-            "garmin_mcp.form_baseline.evaluator._load_models_from_file"
+            "garmin_mcp.form_baseline.evaluator.load_models_from_file"
         )
         mock_load_models.return_value = {
             "gct": mocker.Mock(),
@@ -26,9 +26,9 @@ class TestEvaluateAndStore:
             "vr": mocker.Mock(),
         }
 
-        # Mock _get_splits_data
+        # Mock get_splits_data
         mock_get_splits = mocker.patch(
-            "garmin_mcp.form_baseline.evaluator._get_splits_data"
+            "garmin_mcp.form_baseline.evaluator.get_splits_data"
         )
         mock_get_splits.return_value = {
             "pace_s_per_km": 431.0,
@@ -118,9 +118,9 @@ class TestEvaluateAndStore:
 
     def test_evaluate_missing_splits(self, mocker):
         """Test error handling when splits data is missing."""
-        # Mock _load_models_from_file to succeed
+        # Mock load_models_from_file to succeed
         mock_load_models = mocker.patch(
-            "garmin_mcp.form_baseline.evaluator._load_models_from_file"
+            "garmin_mcp.form_baseline.evaluator.load_models_from_file"
         )
         mock_load_models.return_value = {
             "gct": mocker.Mock(),
@@ -128,9 +128,9 @@ class TestEvaluateAndStore:
             "vr": mocker.Mock(),
         }
 
-        # Mock _get_splits_data to raise ValueError
+        # Mock get_splits_data to raise ValueError
         mock_get_splits = mocker.patch(
-            "garmin_mcp.form_baseline.evaluator._get_splits_data"
+            "garmin_mcp.form_baseline.evaluator.get_splits_data"
         )
         mock_get_splits.side_effect = ValueError("No splits found for activity 999999")
 
@@ -147,7 +147,7 @@ class TestEvaluateAndStore:
         """Test cadence evaluation when >= 180spm."""
         # Mock all dependencies
         mocker.patch(
-            "garmin_mcp.form_baseline.evaluator._load_models_from_file",
+            "garmin_mcp.form_baseline.evaluator.load_models_from_file",
             return_value={
                 "gct": mocker.Mock(),
                 "vo": mocker.Mock(),
@@ -155,7 +155,7 @@ class TestEvaluateAndStore:
             },
         )
         mocker.patch(
-            "garmin_mcp.form_baseline.evaluator._get_splits_data",
+            "garmin_mcp.form_baseline.evaluator.get_splits_data",
             return_value={
                 "pace_s_per_km": 431.0,
                 "gct_ms": 258.0,
@@ -221,7 +221,7 @@ class TestEvaluateAndStore:
         """Test cadence evaluation when < 180spm."""
         # Mock all dependencies
         mocker.patch(
-            "garmin_mcp.form_baseline.evaluator._load_models_from_file",
+            "garmin_mcp.form_baseline.evaluator.load_models_from_file",
             return_value={
                 "gct": mocker.Mock(),
                 "vo": mocker.Mock(),
@@ -229,7 +229,7 @@ class TestEvaluateAndStore:
             },
         )
         mocker.patch(
-            "garmin_mcp.form_baseline.evaluator._get_splits_data",
+            "garmin_mcp.form_baseline.evaluator.get_splits_data",
             return_value={
                 "pace_s_per_km": 431.0,
                 "gct_ms": 258.0,
