@@ -26,3 +26,12 @@ def test_analysis(mock_reader_factory):
 ```
 
 See `docs/testing_guidelines.md` for detailed patterns and examples.
+
+## Test Performance Rules
+
+- **Unit test budget**: Each unit test must complete in <200ms (setup + call). Use `--durations=10` to verify.
+- **Fixture scoping**: Read-only fixtures should use `scope="class"` or `scope="module"`.
+  - Use `tmp_path_factory.mktemp()` for class/module scope (not `tmp_path`)
+- **DB schema initialization**: Use `initialized_db_path` fixture from `inserters/conftest.py` (~0.6ms file copy) instead of `GarminDBWriter()` per test (~50ms DDL).
+- **No `GarminDBWriter` in inserter test bodies**: Always use the shared template fixture.
+- **Parallel safety**: Tests must not depend on execution order. Use unique `activity_id` per test for DB isolation.
