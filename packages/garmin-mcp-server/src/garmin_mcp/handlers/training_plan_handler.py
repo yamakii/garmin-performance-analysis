@@ -10,8 +10,9 @@ from garmin_mcp.database.db_reader import GarminDBReader
 
 logger = logging.getLogger(__name__)
 
-# Safety limits for volume progression
-MAX_WEEKLY_VOLUME_INCREASE_PCT = 0.15  # 15% hard limit
+# Safety limits for volume progression (2-tier)
+VOLUME_WARNING_THRESHOLD_PCT = 0.15  # 15% warning threshold
+VOLUME_HARD_LIMIT_PCT = 0.25  # 25% hard limit
 
 # Workout types prohibited for return_to_run plans
 _RETURN_TO_RUN_PROHIBITED_TYPES = {
@@ -84,8 +85,8 @@ class TrainingPlanHandler:
             # Pydantic validation
             plan = TrainingPlan.model_validate(plan_data)
 
-            # Safety checks
-            errors = self._validate_plan_safety(plan)
+            # Safety checks (2-tier: errors block, warnings pass through)
+            errors, warnings = self._validate_plan_safety(plan)
             if errors:
                 return [
                     TextContent(
@@ -104,12 +105,14 @@ class TrainingPlanHandler:
                 plan=plan,
             )
 
-            result = {
+            result: dict[str, Any] = {
                 "status": "saved",
                 "plan_id": plan.plan_id,
                 "version": plan.version,
                 "workout_count": len(plan.workouts),
             }
+            if warnings:
+                result["warnings"] = warnings
 
         except Exception as e:
             logger.error(f"Save training plan failed: {e}")
@@ -123,22 +126,30 @@ class TrainingPlanHandler:
         ]
 
     @staticmethod
-    def _validate_plan_safety(plan: Any) -> list[str]:
+    def _validate_plan_safety(plan: Any) -> tuple[list[str], list[str]]:
         """Run safety checks on a training plan.
 
-        Returns a list of error messages. Empty list means plan is safe.
+        Returns (errors, warnings). Errors block saving; warnings are
+        included in the success response but do not prevent saving.
         """
         errors: list[str] = []
+        warnings: list[str] = []
 
-        # Check weekly volume progression <= 15%
+        # Check weekly volume progression (2-tier: warning at 15%, error at 25%)
         volumes = plan.weekly_volumes
         for i in range(1, len(volumes)):
             if volumes[i - 1] > 0:
                 increase = (volumes[i] - volumes[i - 1]) / volumes[i - 1]
-                if increase > MAX_WEEKLY_VOLUME_INCREASE_PCT:
+                if increase > VOLUME_HARD_LIMIT_PCT:
                     errors.append(
                         f"Week {i} to {i + 1}: volume increase "
-                        f"{increase:.1%} exceeds {MAX_WEEKLY_VOLUME_INCREASE_PCT:.0%} limit "
+                        f"{increase:.1%} exceeds {VOLUME_HARD_LIMIT_PCT:.0%} hard limit "
+                        f"({volumes[i - 1]:.1f}km \u2192 {volumes[i]:.1f}km)"
+                    )
+                elif increase > VOLUME_WARNING_THRESHOLD_PCT:
+                    warnings.append(
+                        f"Week {i} to {i + 1}: volume increase "
+                        f"{increase:.1%} exceeds {VOLUME_WARNING_THRESHOLD_PCT:.0%} guideline "
                         f"({volumes[i - 1]:.1f}km \u2192 {volumes[i]:.1f}km)"
                     )
 
@@ -168,7 +179,7 @@ class TrainingPlanHandler:
                             f"({expected_week_start} - {expected_week_end})"
                         )
 
-        return errors
+        return errors, warnings
 
     async def _get_training_plan(self, arguments: dict[str, Any]) -> list[TextContent]:
         from garmin_mcp.database.readers.training_plans import TrainingPlanReader

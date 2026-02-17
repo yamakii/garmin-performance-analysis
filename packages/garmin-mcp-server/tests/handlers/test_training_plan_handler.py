@@ -238,19 +238,50 @@ class TestValidatePlanSafety:
         plan = TrainingPlan.model_validate(
             _make_plan_dict(weekly_volumes=[20.0, 21.0, 22.0, 18.0])
         )
-        errors = TrainingPlanHandler._validate_plan_safety(plan)
+        errors, warnings = TrainingPlanHandler._validate_plan_safety(plan)
         assert errors == []
+        assert warnings == []
 
-    def test_volume_increase_over_15_percent(self) -> None:
+    def test_volume_increase_15_to_25_returns_warning(self) -> None:
+        """20% increase (between 15% and 25%) should produce warning, not error."""
         from garmin_mcp.training_plan.models import TrainingPlan
 
+        # 20.0 -> 24.0 = 20% increase
         plan = TrainingPlan.model_validate(
             _make_plan_dict(weekly_volumes=[20.0, 24.0, 28.0, 22.0])
         )
-        errors = TrainingPlanHandler._validate_plan_safety(plan)
+        errors, warnings = TrainingPlanHandler._validate_plan_safety(plan)
+        assert errors == []
+        assert len(warnings) >= 1
+        assert "volume increase" in warnings[0]
+        assert "15%" in warnings[0]
+
+    def test_volume_increase_over_25_returns_error(self) -> None:
+        """30% increase (over 25%) should produce error."""
+        from garmin_mcp.training_plan.models import TrainingPlan
+
+        # 20.0 -> 26.0 = 30% increase
+        plan = TrainingPlan.model_validate(
+            _make_plan_dict(weekly_volumes=[20.0, 26.0, 28.0, 22.0])
+        )
+        errors, warnings = TrainingPlanHandler._validate_plan_safety(plan)
         assert len(errors) >= 1
         assert "volume increase" in errors[0]
-        assert "15%" in errors[0]
+        assert "25%" in errors[0]
+        assert "hard limit" in errors[0]
+
+    def test_volume_increase_exactly_25_returns_warning(self) -> None:
+        """Exactly 25% increase should be warning (not error, since > not >=)."""
+        from garmin_mcp.training_plan.models import TrainingPlan
+
+        # 20.0 -> 25.0 = exactly 25% increase
+        plan = TrainingPlan.model_validate(
+            _make_plan_dict(weekly_volumes=[20.0, 25.0, 26.0, 22.0])
+        )
+        errors, warnings = TrainingPlanHandler._validate_plan_safety(plan)
+        assert errors == []
+        assert len(warnings) >= 1
+        assert "volume increase" in warnings[0]
 
     def test_return_to_run_with_tempo_rejected(self) -> None:
         from garmin_mcp.training_plan.models import TrainingPlan
@@ -271,7 +302,7 @@ class TestValidatePlanSafety:
                 ],
             )
         )
-        errors = TrainingPlanHandler._validate_plan_safety(plan)
+        errors, warnings = TrainingPlanHandler._validate_plan_safety(plan)
         assert len(errors) >= 1
         assert "prohibited workout type" in errors[0]
         assert "'tempo'" in errors[0]
@@ -295,7 +326,7 @@ class TestValidatePlanSafety:
                 ],
             )
         )
-        errors = TrainingPlanHandler._validate_plan_safety(plan)
+        errors, warnings = TrainingPlanHandler._validate_plan_safety(plan)
         assert len(errors) >= 1
         assert "prohibited workout type" in errors[0]
 
@@ -327,7 +358,7 @@ class TestValidatePlanSafety:
                 ],
             )
         )
-        errors = TrainingPlanHandler._validate_plan_safety(plan)
+        errors, warnings = TrainingPlanHandler._validate_plan_safety(plan)
         assert errors == []
 
     def test_workout_date_outside_week_range(self) -> None:
@@ -350,7 +381,7 @@ class TestValidatePlanSafety:
                 ],
             )
         )
-        errors = TrainingPlanHandler._validate_plan_safety(plan)
+        errors, warnings = TrainingPlanHandler._validate_plan_safety(plan)
         assert len(errors) >= 1
         assert "outside week 1 range" in errors[0]
 
@@ -371,7 +402,7 @@ class TestValidatePlanSafety:
                 ],
             )
         )
-        errors = TrainingPlanHandler._validate_plan_safety(plan)
+        errors, warnings = TrainingPlanHandler._validate_plan_safety(plan)
         assert errors == []
 
     def test_volume_decrease_is_allowed(self) -> None:
@@ -381,14 +412,15 @@ class TestValidatePlanSafety:
         plan = TrainingPlan.model_validate(
             _make_plan_dict(weekly_volumes=[25.0, 27.0, 28.0, 20.0])
         )
-        errors = TrainingPlanHandler._validate_plan_safety(plan)
+        errors, warnings = TrainingPlanHandler._validate_plan_safety(plan)
         assert errors == []
+        assert warnings == []
 
     @pytest.mark.asyncio
-    async def test_safety_violation_returns_error_response(
+    async def test_safety_error_returns_error_response(
         self, mock_db_reader: MagicMock, mocker: MagicMock
     ) -> None:
-        """Safety violations should return error response without calling insert."""
+        """Safety errors (>25%) should return error response without calling insert."""
         mock_db_reader.db_path = "/tmp/test.duckdb"
         mock_insert = mocker.patch(
             "garmin_mcp.database.inserters.training_plans.insert_training_plan"
@@ -416,6 +448,29 @@ class TestValidatePlanSafety:
         assert len(data["details"]) >= 1
         # insert should NOT be called when safety check fails
         mock_insert.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_warnings_included_in_success_response(
+        self, mock_db_reader: MagicMock, mocker: MagicMock
+    ) -> None:
+        """Warnings (15-25%) should be included in saved response."""
+        mock_db_reader.db_path = "/tmp/test.duckdb"
+        mock_insert = mocker.patch(
+            "garmin_mcp.database.inserters.training_plans.insert_training_plan"
+        )
+        handler = TrainingPlanHandler(mock_db_reader)
+        # 20.0 -> 24.0 = 20% increase (warning range)
+        plan_dict = _make_plan_dict(weekly_volumes=[20.0, 24.0, 25.0, 20.0])
+
+        result = await handler.handle("save_training_plan", {"plan": plan_dict})
+
+        data = json.loads(result[0].text)
+        assert data["status"] == "saved"
+        assert "warnings" in data
+        assert len(data["warnings"]) >= 1
+        assert "volume increase" in data["warnings"][0]
+        # insert SHOULD be called even with warnings
+        mock_insert.assert_called_once()
 
 
 # --- TestGetTrainingPlan ---
