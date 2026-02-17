@@ -7,6 +7,7 @@ Credentials read from GARMIN_EMAIL and GARMIN_PASSWORD environment variables.
 import logging
 import os
 import threading
+from pathlib import Path
 
 from garminconnect import Garmin
 
@@ -22,6 +23,11 @@ def get_garmin_client() -> Garmin:
     Thread-safe singleton that reads credentials from environment variables:
     - GARMIN_EMAIL
     - GARMIN_PASSWORD
+    - GARMINTOKENS (optional, default: ~/.garth) - OAuth token cache directory
+
+    Tries token-based login first (no password sent to Garmin).
+    Falls back to credential login if tokens are missing or expired,
+    then saves tokens for future use.
 
     Returns:
         Authenticated Garmin client
@@ -48,10 +54,26 @@ def get_garmin_client() -> Garmin:
                 "Set GARMIN_EMAIL and GARMIN_PASSWORD environment variables."
             )
 
-        logger.info(f"Authenticating with Garmin Connect as {email}")
+        tokenstore = os.getenv("GARMINTOKENS", "~/.garth")
+        tokenstore_path = str(Path(tokenstore).expanduser().resolve())
+
         client = Garmin(email, password)
-        client.login()
-        logger.info("Garmin authentication successful")
+
+        try:
+            client.login(tokenstore_path)
+            logger.info(f"Garmin authentication via token cache ({tokenstore_path})")
+        except (FileNotFoundError, Exception) as e:
+            logger.info(
+                f"Token login failed ({type(e).__name__}), "
+                f"authenticating with credentials as {email}"
+            )
+            client.login()
+            logger.info("Garmin credential authentication successful")
+
+        # Always save tokens (captures refreshed OAuth2 tokens too)
+        client.garth.dump(tokenstore_path)
+        logger.info(f"Garmin tokens saved to {tokenstore_path}")
+
         _client = client
 
     return _client

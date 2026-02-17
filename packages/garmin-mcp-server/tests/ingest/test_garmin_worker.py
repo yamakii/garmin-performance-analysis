@@ -21,8 +21,17 @@ class TestGarminIngestWorker:
     """Test suite for GarminIngestWorker."""
 
     @pytest.fixture
-    def worker(self, tmp_path):
+    def worker(self, tmp_path, monkeypatch):
         """Create GarminIngestWorker instance with isolated tmp database."""
+
+        # Prevent real Garmin API calls on cache miss
+        def _no_api():
+            raise ValueError("No credentials in test")
+
+        monkeypatch.setattr(
+            "garmin_mcp.ingest.raw_data_fetcher.get_garmin_client",
+            _no_api,
+        )
         worker = GarminIngestWorker()
         # Use tmp_path for isolated database to avoid interference
         worker._db_path = tmp_path / "test_garmin.duckdb"

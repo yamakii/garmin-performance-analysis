@@ -1,7 +1,6 @@
 """Tests for body composition data processing in GarminIngestWorker."""
 
 import json
-import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -22,25 +21,30 @@ def test_date():
 
 
 @pytest.fixture
-def worker():
+def worker(tmp_path, monkeypatch):
     """Create GarminIngestWorker instance with temporary directories."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmppath = Path(tmpdir)
+    # Monkeypatch path functions to avoid filesystem walk in __init__
+    monkeypatch.setattr("garmin_mcp.utils.paths.get_project_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        "garmin_mcp.utils.paths.get_raw_dir",
+        lambda: tmp_path / "data" / "raw",
+    )
+    monkeypatch.setattr(
+        "garmin_mcp.utils.paths.get_weight_raw_dir",
+        lambda: tmp_path / "data" / "raw" / "weight",
+    )
+    monkeypatch.setattr(
+        "garmin_mcp.utils.paths.get_default_db_path",
+        lambda: str(tmp_path / "test.duckdb"),
+    )
+    # Prevent real Garmin API calls on cache miss
+    monkeypatch.setattr(
+        "garmin_mcp.ingest.raw_data_fetcher.get_garmin_client",
+        Mock(side_effect=ValueError("No credentials in test")),
+    )
 
-        # Create worker and override project_root to use temp directory
-        worker = GarminIngestWorker()
-        worker.project_root = tmppath
-        worker.raw_dir = tmppath / "data" / "raw"
-        worker.weight_raw_dir = tmppath / "data" / "raw" / "weight"  # NEW
-        worker._db_path = str(tmppath / "test.duckdb")
-
-        # Create directories
-        for directory in [
-            worker.raw_dir,
-        ]:
-            directory.mkdir(parents=True, exist_ok=True)
-
-        yield worker
+    worker = GarminIngestWorker()
+    yield worker
 
 
 @pytest.fixture
