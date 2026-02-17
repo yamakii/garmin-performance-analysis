@@ -26,6 +26,12 @@ fi
 echo "[hook] Formatting: $(basename "$FILE_PATH")" >&2
 uv run black --quiet "$FILE_PATH" 2>/dev/null
 uv run ruff check --fix --quiet "$FILE_PATH" 2>/dev/null
+
+# Type check (advisory, does not block)
+uv run mypy --no-error-summary --no-pretty "$FILE_PATH" 2>/dev/null \
+  && echo "[hook] Types OK" >&2 \
+  || echo "[hook] Type warnings: uv run mypy $FILE_PATH" >&2
+
 echo "[hook] Done" >&2
 
 exit 0

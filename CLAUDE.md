@@ -68,6 +68,20 @@ See `.claude/rules/mcp-data-access.md` for workflow details and `docs/data-analy
 
 ---
 
+## Common Pitfalls
+
+**Intent disambiguation:**
+- "Generate a training plan" → execute `/plan-training` coach workflow, NOT write code
+- "Analyze runs" → call MCP tools and interpret, NOT write a script
+- When ambiguous, ask one clarifying question
+
+**Training plan volume validation:**
+- Always call `get_current_fitness_summary(lookback_weeks=8)` first
+- Starting volume MUST be within 10% of actual `weekly_volume_km`
+- If `gap_detected=true`, use `recent_runs` distance as baseline (not pre-gap average)
+
+---
+
 ## For Tool Development
 
 **When:** Modifying code, adding features, fixing bugs, running tests, managing projects.

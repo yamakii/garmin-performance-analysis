@@ -21,6 +21,11 @@ provide precise code navigation. Glob/Grep alone misses symbol relationships and
 ### Fallback
 If Serena activation fails, use Glob/Grep as fallback but note the limitation in your output.
 
+### Stale Session Recovery
+- Re-activate Serena with the same path: `mcp__serena__activate_project("/path/to/project")`
+- If still broken: `/mcp` → restart serena server
+- For worktrees: always use the worktree's absolute path, not the main repo path
+
 ## Branch Strategy
 
 - **Planning**: Main branch (no worktree needed)

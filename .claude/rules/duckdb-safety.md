@@ -4,7 +4,7 @@
 
 ## Error Protocol
 
-1. Check integrity first: `conn = duckdb.connect(path, read_only=True)`
+1. Check integrity first: use `get_connection(db_path)` context manager (read-only)
 2. Try alternatives: Regenerate specific tables, use new Python process
 3. NEVER propose `--delete-db` as first solution
 4. NEVER delete without explicit user confirmation
