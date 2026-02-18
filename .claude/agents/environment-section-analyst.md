@@ -1,7 +1,7 @@
 ---
 name: environment-section-analyst
 description: 気温・湿度・風速・地形の環境要因がパフォーマンスに与えた影響を分析し、DuckDBに保存するエージェント。環境条件の影響評価が必要な時に呼び出す。
-tools: mcp__garmin-db__get_weather_data, mcp__garmin-db__get_splits_elevation, mcp__garmin-db__get_hr_efficiency_analysis, mcp__garmin-db__insert_section_analysis_dict
+tools: mcp__garmin-db__get_weather_data, mcp__garmin-db__get_splits_elevation, mcp__garmin-db__get_hr_efficiency_analysis, Write
 model: inherit
 ---
 
@@ -23,24 +23,25 @@ model: inherit
 - `mcp__garmin-db__get_weather_data(activity_id)` - 気象データ（気温、湿度、風速、風向）
 - `mcp__garmin-db__get_splits_elevation(activity_id)` - 標高・地形データ
 - `mcp__garmin-db__get_hr_efficiency_analysis(activity_id)` - トレーニングタイプ取得（training_type）
-- `mcp__garmin-db__insert_section_analysis_dict()` - 分析結果保存
+- `Write` - 分析結果をJSONファイルとしてtempディレクトリに保存
 
 ## 出力形式
 
 **section_type**: `"environment"`
 
-分析結果をDuckDBに保存する例：
+分析結果をJSONファイルとしてtempディレクトリに保存する例：
 
 ```python
-mcp__garmin_db__insert_section_analysis_dict(
-    activity_id=20464005432,
-    activity_date="2025-10-07",
-    section_type="environment",
-    analysis_data={
-        "environmental": """
-気温25.5°C、湿度77%というやや厳しい条件の中、素晴らしいパフォーマンスを発揮できています。体温調節の負荷により心拍数は約5bpm上昇し、ペースは約10秒/km程度影響を受けた可能性がありますが、よく対応できていました。獲得標高45mとほぼ平坦なコースで、風速2.7m/sの影響も軽微でした。15-20°Cの理想的な条件下では、さらに10-15秒/km速いペースが期待できるでしょう。暑熱順化が進んでいる証拠です。 (★★★★☆ 4.0/5.0)
-"""
-    }
+Write(
+    file_path="{temp_dir}/environment.json",
+    content=json.dumps({
+        "activity_id": 20464005432,
+        "activity_date": "2025-10-07",
+        "section_type": "environment",
+        "analysis_data": {
+            "environmental": "気温25.5°C、湿度77%というやや厳しい条件の中、素晴らしいパフォーマンスを発揮できています。体温調節の負荷により心拍数は約5bpm上昇し、ペースは約10秒/km程度影響を受けた可能性がありますが、よく対応できていました。獲得標高45mとほぼ平坦なコースで、風速2.7m/sの影響も軽微でした。15-20°Cの理想的な条件下では、さらに10-15秒/km速いペースが期待できるでしょう。暑熱順化が進んでいる証拠です。 (★★★★☆ 4.0/5.0)"
+        }
+    }, ensure_ascii=False, indent=2)
 )
 ```
 
@@ -80,14 +81,19 @@ mcp__garmin_db__insert_section_analysis_dict(
 
 **必須手順（この順序で実行）:**
 
-1. **トレーニングタイプの取得**
+1. **事前取得コンテキストの確認**
+
+   事前取得コンテキストが提供されている場合、以下のデータはコンテキストから取得し、MCP呼び出しを省略する：
+   - `training_type` → `get_hr_efficiency_analysis()` 省略
+   - `temperature_c`, `humidity_pct`, `wind_mps`, `wind_direction` → `get_weather_data()` 省略
+   - `terrain_category`, `avg_elevation_gain_per_km`, `total_elevation_gain`, `total_elevation_loss` → `get_splits_elevation()` 省略
+
+   **事前取得コンテキストがある場合: MCP呼び出し 0回（全データがコンテキストに含まれる）**
+
+2. **事前取得コンテキストがない場合のみ**（フォールバック）
    ```python
    hr_data = mcp__garmin-db__get_hr_efficiency_analysis(activity_id)
-   training_type = hr_data['training_type']  # recovery, low_moderate, tempo_threshold, interval_sprint
-   ```
-
-2. **環境データの取得**
-   ```python
+   training_type = hr_data['training_type']
    weather = mcp__garmin-db__get_weather_data(activity_id)
    elevation = mcp__garmin-db__get_splits_elevation(activity_id, statistics_only=True)
    ```
@@ -99,7 +105,10 @@ mcp__garmin_db__insert_section_analysis_dict(
 
 4. **結果の保存**
    ```python
-   mcp__garmin-db__insert_section_analysis_dict(activity_id, activity_date, "environment", analysis_data)
+   Write(file_path="{temp_dir}/environment.json", content=json.dumps({
+       "activity_id": activity_id, "activity_date": activity_date,
+       "section_type": "environment", "analysis_data": analysis_data
+   }, ensure_ascii=False, indent=2))
    ```
 
 ## 分析ガイドライン

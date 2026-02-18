@@ -1,7 +1,7 @@
 ---
 name: split-section-analyst
 description: 全1kmスプリットのペース・心拍・フォーム指標を詳細分析し、環境統合評価を行うエージェント。DuckDBに保存。スプリット毎の変化パターン検出が必要な時に呼び出す。
-tools: mcp__garmin-db__get_splits_comprehensive, mcp__garmin-db__get_splits_pace_hr, mcp__garmin-db__get_splits_form_metrics, mcp__garmin-db__insert_section_analysis_dict
+tools: mcp__garmin-db__get_splits_comprehensive, mcp__garmin-db__get_splits_pace_hr, mcp__garmin-db__get_splits_form_metrics, Write
 model: inherit
 ---
 
@@ -34,7 +34,7 @@ model: inherit
 - `mcp__garmin-db__get_splits_form_metrics(activity_id, statistics_only=False)` - フォーム効率データ（GCT, VO, VR ~4フィールド/スプリット）
 
 **必須ツール:**
-- `mcp__garmin-db__insert_section_analysis_dict()` - 分析結果をDuckDBに保存
+- `Write` - 分析結果をJSONファイルとしてtempディレクトリに保存
 
 **Token Optimization Strategy:**
 - Use `statistics_only=True` by default for trend analysis (67-80% token reduction)
@@ -45,23 +45,26 @@ model: inherit
 
 **section_type**: `"split"`
 
-分析結果をDuckDBに保存する例：
+分析結果をJSONファイルとしてtempディレクトリに保存する例：
 
 ```python
-mcp__garmin_db__insert_section_analysis_dict(
-    activity_id=20464005432,
-    activity_date="2025-10-07",
-    section_type="split",
-    analysis_data={
-        "highlights": "Split 2でメインペース到達、Split 3で12m上りも適切に対応、Split 5で余力残してフィニッシュ加速",
-        "analyses": {
-            "split_1": "ウォームアップとして理想的なペースで、メインより遅めのペースで身体を慣らしながら、心拍数も段階的に上げられています。",
-            "split_2": "メインペースに入り、心拍数が安定してフォーム効率も良好です。素晴らしいスタートが切れています。",
-            "split_3": "安定したペース維持ができており、標高12mの上りでも適切にペースを調整できています。ペース感覚が優れていますね。",
-            "split_4": "若干ペースが落ちてきましたが、これは自然な疲労の兆候です。心拍ドリフトも軽度で、よくコントロールできています。",
-            "split_5": "フィニッシュで加速できました！余力を残した良好な追い込みで、ペース配分が適切だった証拠ですね。"
+Write(
+    file_path="{temp_dir}/split.json",
+    content=json.dumps({
+        "activity_id": 20464005432,
+        "activity_date": "2025-10-07",
+        "section_type": "split",
+        "analysis_data": {
+            "highlights": "Split 2でメインペース到達、Split 3で12m上りも適切に対応、Split 5で余力残してフィニッシュ加速",
+            "analyses": {
+                "split_1": "ウォームアップとして理想的なペースで、メインより遅めのペースで身体を慣らしながら、心拍数も段階的に上げられています。",
+                "split_2": "メインペースに入り、心拍数が安定してフォーム効率も良好です。素晴らしいスタートが切れています。",
+                "split_3": "安定したペース維持ができており、標高12mの上りでも適切にペースを調整できています。ペース感覚が優れていますね。",
+                "split_4": "若干ペースが落ちてきましたが、これは自然な疲労の兆候です。心拍ドリフトも軽度で、よくコントロールできています。",
+                "split_5": "フィニッシュで加速できました！余力を残した良好な追い込みで、ペース配分が適切だった証拠ですね。"
+            }
         }
-    }
+    }, ensure_ascii=False, indent=2)
 )
 ```
 

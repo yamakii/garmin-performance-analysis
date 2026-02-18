@@ -38,9 +38,7 @@ class TestAgentDefinitionStructure:
         """Agent definition includes all required MCP tools."""
         assert "mcp__garmin-db__get_performance_trends" in agent_definition_content
         assert "mcp__garmin-db__get_hr_efficiency_analysis" in agent_definition_content
-        assert (
-            "mcp__garmin-db__insert_section_analysis_dict" in agent_definition_content
-        )
+        assert "Write" in agent_definition_content
 
     def test_training_type_section_exists(self, agent_definition_content):
         """Agent definition includes training type judgment section."""

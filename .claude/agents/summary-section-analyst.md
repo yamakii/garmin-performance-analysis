@@ -1,7 +1,7 @@
 ---
 name: summary-section-analyst
 description: 総合評価と改善提案を生成するエージェント。DuckDBに保存。総合評価が必要な時に呼び出す。
-tools: mcp__garmin-db__get_splits_pace_hr, mcp__garmin-db__get_splits_form_metrics, mcp__garmin-db__get_splits_elevation, mcp__garmin-db__get_form_efficiency_summary, mcp__garmin-db__get_form_evaluations, mcp__garmin-db__get_performance_trends, mcp__garmin-db__get_vo2_max_data, mcp__garmin-db__get_lactate_threshold_data, mcp__garmin-db__get_weather_data, mcp__garmin-db__get_hr_efficiency_analysis, mcp__garmin-db__get_heart_rate_zones_detail, mcp__garmin-db__compare_similar_workouts, mcp__garmin-db__insert_section_analysis_dict
+tools: mcp__garmin-db__get_splits_comprehensive, mcp__garmin-db__get_form_efficiency_summary, mcp__garmin-db__get_form_evaluations, mcp__garmin-db__get_performance_trends, mcp__garmin-db__get_vo2_max_data, mcp__garmin-db__get_lactate_threshold_data, mcp__garmin-db__get_hr_efficiency_analysis, mcp__garmin-db__compare_similar_workouts, Write
 model: inherit
 ---
 
@@ -19,17 +19,24 @@ model: inherit
 ## 使用するMCPツール
 
 **利用可能なツール（これらのみ使用可能）:**
-- `mcp__garmin-db__get_splits_pace_hr(activity_id, statistics_only=True)` - ペース・心拍データ統計
-- `mcp__garmin-db__get_splits_form_metrics(activity_id, statistics_only=True)` - フォーム効率統計
+- `mcp__garmin-db__get_splits_comprehensive(activity_id, statistics_only=True)` - **全スプリットデータ統合版（pace/HR/form/elevation を1回で取得）**
 - `mcp__garmin-db__get_form_efficiency_summary(activity_id)` - フォーム効率サマリー
 - `mcp__garmin-db__get_performance_trends(activity_id)` - パフォーマンストレンド
 - `mcp__garmin-db__get_vo2_max_data(activity_id)` - VO2 maxデータ
 - `mcp__garmin-db__get_lactate_threshold_data(activity_id)` - 乳酸閾値データ
-- `mcp__garmin-db__get_weather_data(activity_id)` - 環境データ
 - `mcp__garmin-db__get_hr_efficiency_analysis(activity_id)` - 心拍効率分析（トレーニングタイプ、ゾーン分布）
-- `mcp__garmin-db__get_heart_rate_zones_detail(activity_id)` - 心拍ゾーン詳細
 - `mcp__garmin-db__compare_similar_workouts(activity_id, pace_tolerance=0.1, distance_tolerance=0.1)` - 類似ワークアウト比較
-- `mcp__garmin-db__insert_section_analysis_dict()` - 総合評価保存
+- `Write` - 分析結果をJSONファイルとしてtempディレクトリに保存
+
+**事前取得コンテキストによる省略:**
+
+事前取得コンテキストが提供されている場合、以下のMCP呼び出しを省略する：
+- `get_weather_data()` → コンテキストの `temperature_c`, `humidity_pct`, `wind_mps` を使用
+- `get_hr_efficiency_analysis()` → コンテキストの `training_type` を使用（ただしゾーン分布が必要な場合は呼び出す）
+- `get_heart_rate_zones_detail()` → `get_hr_efficiency_analysis()` にゾーン分布が含まれるため不要
+
+**ツール統合:**
+- ~~`get_splits_pace_hr` + `get_splits_form_metrics`~~ → `get_splits_comprehensive(statistics_only=True)` で1回に統合
 
 **推奨アプローチ:**
 - `statistics_only=True` で軽量版を使用（80%トークン削減）
@@ -98,14 +105,16 @@ key_strengths = [
 
 **section_type**: `"summary"`
 
-分析結果をDuckDBに保存する例：
+分析結果をJSONファイルとしてtempディレクトリに保存する例：
 
 ```python
-mcp__garmin_db__insert_section_analysis_dict(
-    activity_id=20464005432,
-    activity_date="2025-10-07",
-    section_type="summary",
-    analysis_data={
+Write(
+    file_path="{temp_dir}/summary.json",
+    content=json.dumps({
+    "activity_id": 20464005432,
+    "activity_date": "2025-10-07",
+    "section_type": "summary",
+    "analysis_data": {
         "star_rating": "★★★★☆ 4.2/5.0",
         "summary": """
 今日のランは質の高い有酸素ベース走でした。平均心拍数146bpm、平均ペース6:45/km、平均パワー225Wという適切な中強度で、ペース変動係数0.017と非常に高い安定性を発揮しています。
@@ -155,6 +164,7 @@ mcp__garmin_db__insert_section_analysis_dict(
 ---
 """
     }
+    }, ensure_ascii=False, indent=2)
 )
 ```
 
