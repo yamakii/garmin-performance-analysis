@@ -13,6 +13,7 @@ from garmin_mcp.handlers.analysis_handler import AnalysisHandler
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestHandles:
     """Test handles() method for tool name matching."""
 
@@ -48,6 +49,7 @@ class TestHandles:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestInsertSectionAnalysisDict:
     """Test _insert_section_analysis_dict via handle()."""
 
@@ -107,6 +109,7 @@ class TestInsertSectionAnalysisDict:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestGetIntervalAnalysis:
     """Test _get_interval_analysis via handle()."""
 
@@ -133,6 +136,7 @@ class TestGetIntervalAnalysis:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestDetectFormAnomaliesSummary:
     """Test _detect_form_anomalies_summary via handle()."""
 
@@ -184,6 +188,7 @@ class TestDetectFormAnomaliesSummary:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestGetFormAnomalyDetails:
     """Test _get_form_anomaly_details via handle()."""
 
@@ -262,6 +267,7 @@ class TestGetFormAnomalyDetails:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestAnalyzePerformanceTrends:
     """Test _analyze_performance_trends via handle()."""
 
@@ -358,6 +364,7 @@ class TestAnalyzePerformanceTrends:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestExtractInsights:
     """Test _extract_insights via handle()."""
 
@@ -452,6 +459,7 @@ class TestExtractInsights:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestCompareSimilarWorkouts:
     """Test _compare_similar_workouts via handle()."""
 
@@ -570,6 +578,7 @@ class TestCompareSimilarWorkouts:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestHandleUnknownTool:
     """Test that unknown tool names raise ValueError."""
 

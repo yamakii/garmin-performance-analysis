@@ -138,6 +138,7 @@ def tmp_db_with_data(tmp_path):
     return db_path
 
 
+@pytest.mark.unit
 def test_evaluate_power_efficiency_calculates_integrated_score(tmp_db_with_data):
     """評価時に統合スコアも計算される."""
     import duckdb
@@ -174,6 +175,7 @@ def test_evaluate_power_efficiency_calculates_integrated_score(tmp_db_with_data)
     assert result["training_mode"] == "interval_sprint"
 
 
+@pytest.mark.unit
 def test_evaluate_no_power_returns_none(tmp_db_with_data):
     """パワーデータなしの場合、calculate_power_efficiency_internal()はNoneを返す."""
     import duckdb
@@ -195,6 +197,7 @@ def test_evaluate_no_power_returns_none(tmp_db_with_data):
     assert result is None
 
 
+@pytest.mark.unit
 def test_integrated_score_uses_correct_weights(tmp_db_with_data):
     """統合スコアが正しい重みを使用している."""
     import duckdb
@@ -225,6 +228,7 @@ def test_integrated_score_uses_correct_weights(tmp_db_with_data):
     assert "integrated_score" in result
 
 
+@pytest.mark.unit
 def test_integrated_score_updates_on_conflict(tmp_db_with_data):
     """ペナルティが変わると、integrated_scoreも変わる."""
     import duckdb

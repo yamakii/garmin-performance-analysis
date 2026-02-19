@@ -51,6 +51,7 @@ def mock_reader_factory(mocker):
     return _create_reader
 
 
+@pytest.mark.unit
 class TestPhaseEvaluationLogic:
     """Test phase evaluation logic with mocked data."""
 
@@ -143,6 +144,7 @@ class TestPhaseEvaluationLogic:
         assert "⚠️" not in cooldown_eval
 
 
+@pytest.mark.unit
 class TestDuckDBIntegration:
     """Test DuckDB storage and retrieval with mocks."""
 
@@ -188,6 +190,7 @@ class TestDuckDBIntegration:
         assert result[0] == 1
 
 
+@pytest.mark.unit
 class TestExistingReaderBehavior:
     """Test that existing functionality still works."""
 
@@ -221,6 +224,7 @@ class TestExistingReaderBehavior:
                 assert isinstance(analysis, dict)
 
 
+@pytest.mark.unit
 class TestTrainingTypeCategorization:
     """Test training type to category mapping."""
 

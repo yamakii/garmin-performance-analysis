@@ -7,6 +7,7 @@ import pytest
 from garmin_mcp.form_baseline.trend_analyzer import analyze_form_trend
 
 
+@pytest.mark.unit
 class TestAnalyzeFormTrend:
     """Test cases for analyze_form_trend function."""
 
@@ -191,6 +192,7 @@ class TestAnalyzeFormTrend:
             assert result["vr_improvement"] == exp_vr, f"VR failed for delta={vr_b}"
 
 
+@pytest.mark.unit
 class TestGenerateTrendInterpretation:
     """Test cases for trend interpretation text generation."""
 

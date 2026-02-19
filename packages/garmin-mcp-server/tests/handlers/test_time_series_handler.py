@@ -8,6 +8,7 @@ import pytest
 from garmin_mcp.handlers.time_series_handler import TimeSeriesHandler
 
 
+@pytest.mark.unit
 class TestHandles:
     """Test handles() method for tool name matching."""
 
@@ -30,6 +31,7 @@ class TestHandles:
         assert handler.handles("") is False
 
 
+@pytest.mark.unit
 class TestGetSplitTimeSeriesDetail:
     """Test get_split_time_series_detail via handle()."""
 
@@ -118,6 +120,7 @@ class TestGetSplitTimeSeriesDetail:
         assert result[0].type == "text"
 
 
+@pytest.mark.unit
 class TestGetTimeRangeDetail:
     """Test get_time_range_detail via handle()."""
 
@@ -198,6 +201,7 @@ class TestGetTimeRangeDetail:
         assert result[0].type == "text"
 
 
+@pytest.mark.unit
 class TestHandleUnknownTool:
     """Test that unknown tool names raise ValueError."""
 

@@ -9,6 +9,7 @@ import pytest
 from garmin_mcp.handlers.metadata_handler import MetadataHandler
 
 
+@pytest.mark.unit
 class TestHandles:
     """Test handles() method for tool name matching."""
 
@@ -29,6 +30,7 @@ class TestHandles:
         assert handler.handles("") is False
 
 
+@pytest.mark.unit
 class TestGetActivityByDate:
     """Test _get_activity_by_date via handle()."""
 
@@ -143,6 +145,7 @@ class TestGetActivityByDate:
         assert data["start_time"] is None
 
 
+@pytest.mark.unit
 class TestGetDateByActivityId:
     """Test _get_date_by_activity_id via handle()."""
 
@@ -170,6 +173,7 @@ class TestGetDateByActivityId:
         assert data["date"] is None
 
 
+@pytest.mark.unit
 class TestHandleUnknownTool:
     """Test that unknown tool names raise ValueError."""
 

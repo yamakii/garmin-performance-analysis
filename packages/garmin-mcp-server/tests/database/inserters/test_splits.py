@@ -1465,6 +1465,7 @@ class TestSplitsInserter:
         assert result[6] == "COOLDOWN"
         assert result[7] == "COOLDOWN"
 
+    @pytest.mark.unit
     def test_estimate_intensity_type_interval_by_high_hr(self):
         """Test INTERVAL estimation by high HR (HR > avg × 1.1)."""
 
@@ -1505,6 +1506,7 @@ class TestSplitsInserter:
         assert result[6] == "COOLDOWN"
         assert result[7] == "COOLDOWN"
 
+    @pytest.mark.unit
     def test_estimate_intensity_type_active_default(self):
         """Test ACTIVE estimation as default (doesn't match other rules)."""
 
@@ -1525,6 +1527,7 @@ class TestSplitsInserter:
         assert result[2] == "ACTIVE"  # Middle splits
         assert result[3] == "COOLDOWN"  # Last split
 
+    @pytest.mark.unit
     def test_estimate_intensity_type_missing_hr_values(self):
         """Test estimation handles missing HR values gracefully."""
 

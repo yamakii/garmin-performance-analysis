@@ -12,6 +12,7 @@ from garmin_mcp.form_baseline.trainer import (
 )
 
 
+@pytest.mark.unit
 class TestGCTPowerModel:
     """Test GCT power model dataclass."""
 
@@ -39,6 +40,7 @@ class TestGCTPowerModel:
         assert abs(speed - expected) < 0.01
 
 
+@pytest.mark.unit
 class TestLinearModel:
     """Test linear model dataclass."""
 
@@ -54,6 +56,7 @@ class TestLinearModel:
         assert abs(result - 7.0) < 0.01
 
 
+@pytest.mark.unit
 class TestFitGCTPower:
     """Test GCT power model fitting."""
 
@@ -132,6 +135,7 @@ class TestFitGCTPower:
             fit_gct_power(df, fallback_ransac=False)
 
 
+@pytest.mark.unit
 class TestFitLinear:
     """Test linear model fitting."""
 

@@ -11,6 +11,7 @@ from garmin_mcp.form_baseline.evaluator import evaluate_and_store
 from garmin_mcp.form_baseline.scorer import compute_star_rating
 
 
+@pytest.mark.unit
 class TestEvaluateAndStore:
     """Test cases for evaluate_and_store function."""
 
@@ -291,6 +292,7 @@ class TestEvaluateAndStore:
         assert result["cadence"]["achieved"] is False
 
 
+@pytest.mark.unit
 class TestComputeStarRating:
     """Test cases for compute_star_rating function."""
 

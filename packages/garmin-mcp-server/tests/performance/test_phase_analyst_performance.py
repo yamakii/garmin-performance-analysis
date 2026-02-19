@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from garmin_mcp.database.connection import get_db_path
 from garmin_mcp.database.readers.performance import PerformanceReader
 from garmin_mcp.database.readers.physiology import PhysiologyReader
 
@@ -17,9 +18,7 @@ from garmin_mcp.database.readers.physiology import PhysiologyReader
 @pytest.fixture
 def db_path():
     """Path to DuckDB database."""
-    return (
-        Path.home() / "garmin_data" / "data" / "database" / "garmin_performance.duckdb"
-    )
+    return get_db_path(None)
 
 
 @pytest.fixture

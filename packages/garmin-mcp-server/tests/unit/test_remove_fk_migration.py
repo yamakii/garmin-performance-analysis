@@ -70,6 +70,7 @@ def populated_db(test_db_path):
     return test_db_path
 
 
+@pytest.mark.unit
 class TestBackupTables:
     """Test backup table creation."""
 
@@ -100,6 +101,7 @@ class TestBackupTables:
         conn.close()
 
 
+@pytest.mark.unit
 class TestDropOldTables:
     """Test dropping old tables with FK constraints."""
 
@@ -133,6 +135,7 @@ class TestDropOldTables:
         conn.close()
 
 
+@pytest.mark.unit
 class TestCreateNewTables:
     """Test creating new tables without FK constraints."""
 
@@ -174,6 +177,7 @@ class TestCreateNewTables:
         conn.close()
 
 
+@pytest.mark.unit
 class TestRestoreData:
     """Test data restoration from backup tables."""
 
@@ -211,6 +215,7 @@ class TestRestoreData:
         conn.close()
 
 
+@pytest.mark.unit
 class TestVerifyDataIntegrity:
     """Test data integrity verification."""
 
@@ -258,6 +263,7 @@ class TestVerifyDataIntegrity:
         conn.close()
 
 
+@pytest.mark.unit
 class TestCleanupBackupTables:
     """Test cleanup of backup tables."""
 
@@ -306,6 +312,7 @@ class TestCleanupBackupTables:
         conn.close()
 
 
+@pytest.mark.unit
 class TestMigrationRollback:
     """Test transaction rollback on error."""
 

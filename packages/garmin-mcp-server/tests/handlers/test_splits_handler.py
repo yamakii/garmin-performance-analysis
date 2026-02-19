@@ -14,6 +14,7 @@ ACTIVITY_ID = 20594901208
 # -- handles() tests ----------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestHandles:
     """Test SplitsHandler.handles() routing."""
 
@@ -51,6 +52,7 @@ class TestHandles:
 # -- get_splits_pace_hr tests -------------------------------------------------
 
 
+@pytest.mark.unit
 class TestGetSplitsPaceHr:
     """Test get_splits_pace_hr handler."""
 
@@ -123,6 +125,7 @@ class TestGetSplitsPaceHr:
 # -- get_splits_form_metrics tests --------------------------------------------
 
 
+@pytest.mark.unit
 class TestGetSplitsFormMetrics:
     """Test get_splits_form_metrics handler."""
 
@@ -182,6 +185,7 @@ class TestGetSplitsFormMetrics:
 # -- get_splits_elevation tests -----------------------------------------------
 
 
+@pytest.mark.unit
 class TestGetSplitsElevation:
     """Test get_splits_elevation handler."""
 
@@ -241,6 +245,7 @@ class TestGetSplitsElevation:
 # -- get_splits_comprehensive tests -------------------------------------------
 
 
+@pytest.mark.unit
 class TestGetSplitsComprehensive:
     """Test get_splits_comprehensive handler."""
 
@@ -301,6 +306,7 @@ class TestGetSplitsComprehensive:
 # -- Error handling tests -----------------------------------------------------
 
 
+@pytest.mark.unit
 class TestErrorHandling:
     """Test error cases."""
 

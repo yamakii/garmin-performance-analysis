@@ -9,6 +9,20 @@
 - **performance** (`@pytest.mark.performance`): Real data OK, but skip if unavailable
 - **garmin_api**: External API tests (skipped in CI)
 
+## CRITICAL: Every test MUST have a pytest marker
+
+- All test classes MUST have a class-level marker: `@pytest.mark.unit`, `@pytest.mark.integration`, `@pytest.mark.performance`, or `@pytest.mark.garmin_api`
+- Standalone test functions (not in a class) MUST have a function-level marker
+- When adding a new test file, add the marker BEFORE writing any test logic
+- Prefer class-level markers over per-method markers (less noise, same effect)
+- Mixed marker classes (e.g., unit + integration methods) use per-method markers
+
+**Verification after adding tests:**
+```bash
+# Must return 0 — no unmarked tests allowed
+uv run pytest -m "not unit and not integration and not performance and not slow and not garmin_api" --collect-only -q 2>/dev/null | tail -1
+```
+
 ## Mock Patterns
 
 ```python

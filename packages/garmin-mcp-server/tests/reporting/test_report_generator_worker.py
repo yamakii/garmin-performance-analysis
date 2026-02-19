@@ -365,6 +365,7 @@ class TestFormatPace:
         assert worker._format_pace(369) == "6:09/km"
 
 
+@pytest.mark.unit
 class TestLoadSimilarWorkouts:
     """Test _load_similar_workouts method."""
 

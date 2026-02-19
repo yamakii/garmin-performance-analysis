@@ -9,6 +9,7 @@ from unittest.mock import Mock
 import pytest
 
 
+@pytest.mark.unit
 class TestSplitSectionAnalystStatisticsMode:
     """Test split-section-analyst agent compatibility with statistics_only parameter."""
 
@@ -107,6 +108,7 @@ class TestSplitSectionAnalystStatisticsMode:
         assert "splits" in pace_data or "statistics" in pace_data
 
 
+@pytest.mark.unit
 class TestSummarySectionAnalystNoDeprecated:
     """Test summary-section-analyst agent avoids deprecated functions."""
 
@@ -210,6 +212,7 @@ class TestSummarySectionAnalystNoDeprecated:
         ), f"Expected >80% reduction, got {token_reduction:.1%}"
 
 
+@pytest.mark.unit
 class TestDefaultParameterBehavior:
     """Test backward compatibility of Phase 0 changes."""
 

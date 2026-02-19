@@ -8,6 +8,7 @@ import pytest
 from garmin_mcp.training_plan.vdot import VDOTCalculator
 
 
+@pytest.mark.unit
 class TestVDOTFromRace:
     """Test VDOT calculation from race performances against formula-derived values."""
 
@@ -107,6 +108,7 @@ class TestPaceZones:
             assert zones.repetition > 0
 
 
+@pytest.mark.unit
 class TestPredictRaceTime:
     def test_predict_5k_vdot_40(self):
         time_sec = VDOTCalculator.predict_race_time(40, 5.0)

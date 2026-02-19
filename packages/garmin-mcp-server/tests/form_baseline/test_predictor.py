@@ -3,30 +3,11 @@
 import pytest
 
 from garmin_mcp.form_baseline.predictor import predict_expectations
-from garmin_mcp.form_baseline.trainer import GCTPowerModel, LinearModel
 
 
+@pytest.mark.unit
 class TestPredictExpectations:
     """Tests for predict_expectations function."""
-
-    @pytest.fixture
-    def sample_models(self) -> dict:
-        """Create sample trained models for testing."""
-        return {
-            "gct": GCTPowerModel(
-                alpha=5.3,  # log(200) ≈ 5.3
-                d=-0.15,
-                rmse=5.0,
-                n_samples=100,
-                speed_range=(3.0, 5.0),
-            ),
-            "vo": LinearModel(
-                a=10.0, b=-2.0, rmse=0.5, n_samples=100, speed_range=(3.0, 5.0)
-            ),
-            "vr": LinearModel(
-                a=10.0, b=-0.5, rmse=0.3, n_samples=100, speed_range=(3.0, 5.0)
-            ),
-        }
 
     def test_predict_expectations_basic(self, sample_models: dict) -> None:
         """Test basic expectation prediction."""

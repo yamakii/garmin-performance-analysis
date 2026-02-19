@@ -14,6 +14,7 @@ import pytest
 from garmin_mcp.database.inserters.vo2_max import insert_vo2_max
 
 
+@pytest.mark.unit
 class TestVO2MaxInserter:
     """Test suite for VO2 Max Inserter."""
 

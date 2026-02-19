@@ -22,6 +22,7 @@ EXPECTED_TOOL_NAMES = [
 ]
 
 
+@pytest.mark.unit
 class TestHandles:
     """Test PhysiologyHandler.handles() for each known tool and unknown names."""
 
@@ -95,6 +96,7 @@ SAMPLE_DATA = {
 }
 
 
+@pytest.mark.unit
 class TestSimpleMethods:
     """Test the 6 simple delegation methods that call db_reader and return JSON."""
 
@@ -152,6 +154,7 @@ class TestSimpleMethods:
         assert parsed == {}
 
 
+@pytest.mark.unit
 class TestUnknownTool:
     """Test that an unknown tool name raises ValueError."""
 
@@ -194,6 +197,7 @@ def _make_mock_conn(mocker: pytest.fixture, side_effects: list) -> MagicMock:
     return mock_conn
 
 
+@pytest.mark.unit
 class TestFormBaselineTrend:
     """Test _get_form_baseline_trend with mocked DuckDB connection."""
 

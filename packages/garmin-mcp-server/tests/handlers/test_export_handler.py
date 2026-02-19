@@ -9,6 +9,7 @@ import pytest
 from garmin_mcp.handlers.export_handler import ExportHandler
 
 
+@pytest.mark.unit
 class TestHandles:
     """Test handles() method for tool name matching."""
 
@@ -25,6 +26,7 @@ class TestHandles:
         assert handler.handles("") is False
 
 
+@pytest.mark.unit
 class TestExportSuccess:
     """Test successful export via handle()."""
 
@@ -136,6 +138,7 @@ class TestExportSuccess:
         assert result[0].type == "text"
 
 
+@pytest.mark.unit
 class TestExportValueError:
     """Test ValueError handling (e.g. size limit exceeded)."""
 
@@ -187,6 +190,7 @@ class TestExportValueError:
         assert "suggestion" in data
 
 
+@pytest.mark.unit
 class TestExportGeneralException:
     """Test general exception handling."""
 
@@ -210,6 +214,7 @@ class TestExportGeneralException:
         assert "suggestion" not in data
 
 
+@pytest.mark.unit
 class TestHandleUnknownTool:
     """Test that unknown tool names raise ValueError."""
 

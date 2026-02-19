@@ -6,6 +6,7 @@ import pytest
 from garmin_mcp.form_baseline.utils import drop_outliers, to_speed
 
 
+@pytest.mark.unit
 class TestDropOutliers:
     """Test outlier removal with IQR method."""
 
@@ -72,6 +73,7 @@ class TestDropOutliers:
         assert len(result) == 5
 
 
+@pytest.mark.unit
 class TestToSpeed:
     """Test pace to speed conversion."""
 

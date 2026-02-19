@@ -8,6 +8,7 @@ import pytest
 from garmin_mcp.handlers.performance_handler import PerformanceHandler
 
 
+@pytest.mark.unit
 class TestHandles:
     """Test handles() method for tool name matching."""
 
@@ -28,6 +29,7 @@ class TestHandles:
         assert handler.handles("") is False
 
 
+@pytest.mark.unit
 class TestGetPerformanceTrends:
     """Test get_performance_trends via handle()."""
 
@@ -60,6 +62,7 @@ class TestGetPerformanceTrends:
         assert data is None
 
 
+@pytest.mark.unit
 class TestGetWeatherData:
     """Test get_weather_data via handle()."""
 
@@ -93,6 +96,7 @@ class TestGetWeatherData:
         assert data is None
 
 
+@pytest.mark.unit
 class TestHandleUnknownTool:
     """Test that unknown tool names raise ValueError."""
 

@@ -3,12 +3,15 @@
 This module tests the Japanese evaluation text generation for form metrics.
 """
 
+import pytest
+
 from garmin_mcp.form_baseline.text_generator import (
     generate_evaluation_text,
     generate_overall_text,
 )
 
 
+@pytest.mark.unit
 class TestGenerateEvaluationText:
     """Test cases for generate_evaluation_text function."""
 
@@ -256,6 +259,7 @@ class TestGenerateEvaluationText:
         assert "★★☆☆☆" in text
 
 
+@pytest.mark.unit
 class TestGenerateOverallText:
     """Test cases for generate_overall_text function."""
 

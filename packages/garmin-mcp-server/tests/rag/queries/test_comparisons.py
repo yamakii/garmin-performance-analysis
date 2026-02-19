@@ -7,6 +7,7 @@ import pytest
 from garmin_mcp.rag.queries.comparisons import WorkoutComparator
 
 
+@pytest.mark.unit
 class TestWorkoutComparator:
     """Test WorkoutComparator functionality."""
 
@@ -306,6 +307,7 @@ class TestWorkoutComparator:
         )
 
 
+@pytest.mark.unit
 class TestTrainingTypeSimilarity:
     """Test training type similarity matrix."""
 
@@ -422,6 +424,7 @@ class TestTrainingTypeSimilarity:
                 assert isinstance(similarity, float)
 
 
+@pytest.mark.unit
 class TestWeatherDataRetrieval:
     """Test weather data retrieval functionality."""
 
@@ -468,6 +471,7 @@ class TestWeatherDataRetrieval:
         assert abs(diff - 5.6) < 0.1
 
 
+@pytest.mark.unit
 class TestSimilarityCalculationImproved:
     """Test improved similarity calculation with training type."""
 
@@ -602,6 +606,7 @@ class TestSimilarityCalculationImproved:
         assert 85.0 <= score <= 87.0
 
 
+@pytest.mark.unit
 class TestInterpretationWithTemperature:
     """Test interpretation generation with temperature context."""
 

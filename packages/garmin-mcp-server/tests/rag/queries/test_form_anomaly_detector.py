@@ -54,6 +54,7 @@ def sample_performance_data(base_path: Path) -> dict[str, object]:
         return data
 
 
+@pytest.mark.unit
 def test_rolling_stats_calculation(detector: FormAnomalyDetector) -> None:
     """Test rolling statistics calculation with various window sizes.
 
@@ -77,6 +78,7 @@ def test_rolling_stats_calculation(detector: FormAnomalyDetector) -> None:
     assert all(s >= 0 for s in rolling_stds)
 
 
+@pytest.mark.unit
 def test_detect_anomalies_with_zero_std(detector: FormAnomalyDetector) -> None:
     """Test anomaly detection when standard deviation is zero.
 
@@ -97,6 +99,7 @@ def test_detect_anomalies_with_zero_std(detector: FormAnomalyDetector) -> None:
     assert len(anomalies) == 0
 
 
+@pytest.mark.unit
 def test_context_extraction_edge_cases(detector: FormAnomalyDetector) -> None:
     """Test context window extraction at boundaries.
 
@@ -131,6 +134,7 @@ def test_context_extraction_edge_cases(detector: FormAnomalyDetector) -> None:
     assert "after_30s" in context_end
 
 
+@pytest.mark.unit
 def test_analyze_anomaly_causes_with_missing_metrics(
     detector: FormAnomalyDetector,
 ) -> None:
@@ -163,6 +167,7 @@ def test_analyze_anomaly_causes_with_missing_metrics(
     assert "hr_drift_percent" in details
 
 
+@pytest.mark.unit
 def test_recommendations_generation(detector: FormAnomalyDetector) -> None:
     """Test recommendation generation for different anomaly patterns.
 
@@ -213,6 +218,7 @@ def test_recommendations_generation(detector: FormAnomalyDetector) -> None:
     assert any("疲労" in r for r in recs_fatigue)
 
 
+@pytest.mark.unit
 def test_rolling_stats_with_insufficient_data(detector: FormAnomalyDetector) -> None:
     """Test rolling statistics with insufficient data points.
 
@@ -231,6 +237,7 @@ def test_rolling_stats_with_insufficient_data(detector: FormAnomalyDetector) -> 
     assert stds[0] == 0.0
 
 
+@pytest.mark.unit
 def test_detect_anomalies_with_none_values(detector: FormAnomalyDetector) -> None:
     """Test anomaly detection skips None values correctly.
 
@@ -252,6 +259,7 @@ def test_detect_anomalies_with_none_values(detector: FormAnomalyDetector) -> Non
     assert any(a["value"] == 20.0 for a in anomalies)
 
 
+@pytest.mark.unit
 def test_analyze_causes_elevation_priority(detector: FormAnomalyDetector) -> None:
     """Test that elevation change has priority in cause classification.
 
@@ -287,6 +295,7 @@ def test_analyze_causes_elevation_priority(detector: FormAnomalyDetector) -> Non
     assert details["elevation_change_5s"] > 5.0
 
 
+@pytest.mark.unit
 def test_analyze_causes_pace_priority(detector: FormAnomalyDetector) -> None:
     """Test that pace change has priority over fatigue.
 
@@ -319,6 +328,7 @@ def test_analyze_causes_pace_priority(detector: FormAnomalyDetector) -> None:
     assert details["pace_change_10s"] > 0.25
 
 
+@pytest.mark.unit
 def test_analyze_causes_fatigue_detection(detector: FormAnomalyDetector) -> None:
     """Test fatigue detection when elevation and pace changes are minimal.
 
@@ -355,6 +365,7 @@ def test_analyze_causes_fatigue_detection(detector: FormAnomalyDetector) -> None
     assert abs(details["hr_drift_percent"]) > 10.0
 
 
+@pytest.mark.unit
 def test_context_extraction_with_none_values(detector: FormAnomalyDetector) -> None:
     """Test context extraction filters None values correctly.
 

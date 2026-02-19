@@ -61,6 +61,7 @@ def _make_plan_dict(
 # --- TestHandles ---
 
 
+@pytest.mark.unit
 class TestHandles:
     """Test handles() method for tool name matching."""
 
@@ -106,6 +107,7 @@ class TestHandles:
 # --- TestGetCurrentFitnessSummary ---
 
 
+@pytest.mark.unit
 class TestGetCurrentFitnessSummary:
     """Test get_current_fitness_summary via handle()."""
 
@@ -166,6 +168,7 @@ class TestGetCurrentFitnessSummary:
 # --- TestSaveTrainingPlan ---
 
 
+@pytest.mark.unit
 class TestSaveTrainingPlan:
     """Test save_training_plan via handle()."""
 
@@ -229,6 +232,7 @@ class TestSaveTrainingPlan:
 # --- TestValidatePlanSafety ---
 
 
+@pytest.mark.unit
 class TestValidatePlanSafety:
     """Test _validate_plan_safety safety checks."""
 
@@ -476,6 +480,7 @@ class TestValidatePlanSafety:
 # --- TestGetTrainingPlan ---
 
 
+@pytest.mark.unit
 class TestGetTrainingPlan:
     """Test get_training_plan via handle()."""
 
@@ -548,6 +553,7 @@ class TestGetTrainingPlan:
 # --- TestUploadWorkoutToGarmin ---
 
 
+@pytest.mark.unit
 class TestUploadWorkoutToGarmin:
     """Test upload_workout_to_garmin via handle()."""
 
@@ -664,6 +670,7 @@ class TestUploadWorkoutToGarmin:
 # --- TestDeleteWorkoutFromGarmin ---
 
 
+@pytest.mark.unit
 class TestDeleteWorkoutFromGarmin:
     """Test delete_workout_from_garmin via handle()."""
 
@@ -774,6 +781,7 @@ class TestDeleteWorkoutFromGarmin:
 # --- TestHandleUnknownTool ---
 
 
+@pytest.mark.unit
 class TestHandleUnknownTool:
     """Test that unknown tool names raise ValueError."""
 

@@ -3,30 +3,11 @@
 import pytest
 
 from garmin_mcp.form_baseline.scorer import compute_star_rating, score_observation
-from garmin_mcp.form_baseline.trainer import GCTPowerModel, LinearModel
 
 
+@pytest.mark.unit
 class TestScoreObservation:
     """Tests for score_observation function."""
-
-    @pytest.fixture
-    def sample_models(self) -> dict:
-        """Create sample trained models for testing."""
-        return {
-            "gct": GCTPowerModel(
-                alpha=5.3,  # log(200) approx 5.3
-                d=-0.15,
-                rmse=5.0,
-                n_samples=100,
-                speed_range=(3.0, 5.0),
-            ),
-            "vo": LinearModel(
-                a=10.0, b=-2.0, rmse=0.5, n_samples=100, speed_range=(3.0, 5.0)
-            ),
-            "vr": LinearModel(
-                a=10.0, b=-0.5, rmse=0.3, n_samples=100, speed_range=(3.0, 5.0)
-            ),
-        }
 
     def test_score_observation_perfect_match(self, sample_models: dict) -> None:
         """Test scoring when actual matches expected perfectly."""
@@ -154,6 +135,7 @@ class TestScoreObservation:
         assert result["vr_pct_actual"] == 7.5
 
 
+@pytest.mark.unit
 class TestComputeStarRating:
     """Tests for compute_star_rating function."""
 

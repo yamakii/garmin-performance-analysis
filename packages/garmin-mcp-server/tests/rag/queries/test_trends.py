@@ -19,9 +19,8 @@ class TestPerformanceTrendAnalyzer:
             analyzer.db_reader = mock_reader.return_value
             return analyzer
 
-    def test_initialization(self):
+    def test_initialization(self, analyzer):
         """Test analyzer initialization."""
-        analyzer = PerformanceTrendAnalyzer()
         assert analyzer.db_reader is not None
 
     def test_analyze_metric_trend_improving(self, analyzer):

@@ -500,6 +500,7 @@ class TestUploadPlanDeduplication:
         uploader._reuse_workout.assert_called_once()  # type: ignore[attr-defined]
 
 
+@pytest.mark.unit
 class TestReuseWorkoutDateConversion:
     """Test that _reuse_workout converts datetime.date to str for scheduling."""
 

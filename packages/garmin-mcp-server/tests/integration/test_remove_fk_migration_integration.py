@@ -148,6 +148,7 @@ def production_like_db(tmp_path):
     return db_path
 
 
+@pytest.mark.integration
 class TestEndToEndMigration:
     """Test complete migration workflow."""
 
@@ -260,6 +261,7 @@ class TestEndToEndMigration:
         conn.close()
 
 
+@pytest.mark.integration
 class TestDryRunMode:
     """Test dry run mode."""
 
@@ -310,6 +312,7 @@ class TestDryRunMode:
         conn.close()
 
 
+@pytest.mark.integration
 class TestRegenerateCompatibility:
     """Test compatibility with regenerate_duckdb.py logic."""
 

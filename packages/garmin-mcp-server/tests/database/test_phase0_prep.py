@@ -60,6 +60,7 @@ def setup_test_db(test_db_path):
     return test_db_path
 
 
+@pytest.mark.unit
 class TestPhase0FormBaselinesRemoval:
     """Tests for form_baselines table removal."""
 
@@ -82,6 +83,7 @@ class TestPhase0FormBaselinesRemoval:
         ), "form_baselines table should be removed"
 
 
+@pytest.mark.unit
 class TestPhase0BodyMassColumn:
     """Tests for base_weight_kg column addition."""
 
@@ -121,6 +123,7 @@ class TestPhase0BodyMassColumn:
         ), "Production activities table should have base_weight_kg column"
 
 
+@pytest.mark.unit
 class TestPhase0BodyMassPopulation:
     """Tests for base_weight_kg population from body_composition."""
 

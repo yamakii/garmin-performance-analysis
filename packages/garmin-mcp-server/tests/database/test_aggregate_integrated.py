@@ -110,6 +110,7 @@ def tmp_db_with_integrated_score(tmp_path):
     return db_path
 
 
+@pytest.mark.unit
 def test_get_form_evaluations_includes_integrated_score(tmp_db_with_integrated_score):
     """get_form_evaluations()が統合スコアとトレーニングモードを返す."""
     reader = FormReader(tmp_db_with_integrated_score)
@@ -132,6 +133,7 @@ def test_get_form_evaluations_includes_integrated_score(tmp_db_with_integrated_s
     assert result["overall_score"] == 4.5
 
 
+@pytest.mark.unit
 def test_get_form_evaluations_without_power(tmp_db_with_integrated_score):
     """パワーデータなしでも統合スコアを返す."""
     reader = FormReader(tmp_db_with_integrated_score)
@@ -148,6 +150,7 @@ def test_get_form_evaluations_without_power(tmp_db_with_integrated_score):
     assert result["power"]["efficiency_score"] is None
 
 
+@pytest.mark.unit
 def test_get_form_evaluations_old_format_without_integrated_score(
     tmp_db_with_integrated_score,
 ):
