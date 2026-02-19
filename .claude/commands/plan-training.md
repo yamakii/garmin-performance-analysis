@@ -105,18 +105,18 @@ mcp__garmin-db__get_current_fitness_summary(lookback_weeks=8)
 
 ユーザーが承認したら、以下を順番に実行：
 
-#### 5a. プランファイルを出力
+#### 5a. DuckDBに保存
 
-承認されたプランを `result/training_plans/YYYY-MM-DD_[plan_id].md` に書き出す。
+以下のJSON構造で `save_training_plan` MCPツールを呼び出す。レスポンスの `markdown_path` を取得する。
+
+#### 5b. プランファイルを出力
+
+`save_training_plan` が返した `markdown_path` にMarkdownレポートを書き出す。
 
 内容:
 - 目標・VDOT・フェーズ構成
 - 週ごとのワークアウト表（全週分）
 - コーチのコメント（レビューで議論した内容を含む）
-
-#### 5b. DuckDBに保存
-
-以下のJSON構造で `save_training_plan` MCPツールを呼び出す。
 
 #### 5c. Garmin Connectへアップロード
 

@@ -105,11 +105,19 @@ class TrainingPlanHandler:
                 plan=plan,
             )
 
+            # Build markdown output path
+            from garmin_mcp.utils.paths import get_result_dir
+
+            plans_dir = get_result_dir() / "training_plans"
+            date_str = str(plan.start_date) if plan.start_date else "unknown"
+            md_filename = f"{date_str}_{plan.plan_id}.md"
+
             result: dict[str, Any] = {
                 "status": "saved",
                 "plan_id": plan.plan_id,
                 "version": plan.version,
                 "workout_count": len(plan.workouts),
+                "markdown_path": str(plans_dir / md_filename),
             }
             if warnings:
                 result["warnings"] = warnings
