@@ -7,7 +7,10 @@
 
 ## Schedule Constraints
 - 日付が正しい曜日に割り当てられているか必ず検証
-- 3日連続ランニング禁止
+- 連続ランニング制限（頻度に応じた段階制）:
+  - 3-4回/週: 3日連続禁止
+  - 5回/週: 4日連続禁止（3日連続は許容）
+  - 6回/週: 週1日以上の完全休養日 + 高強度(tempo/threshold/interval/repetition)の連続配置禁止
 - HR zone targetはGarmin native zones内に収まること
 
 ## Execution Intent
