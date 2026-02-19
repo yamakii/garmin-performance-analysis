@@ -27,7 +27,13 @@ fi
 uv run black --quiet "$FILE_PATH" 2>/dev/null
 uv run ruff check --fix --quiet "$FILE_PATH" 2>/dev/null
 
-# Type check (advisory, does not block)
-uv run mypy --no-error-summary --no-pretty "$FILE_PATH" 2>/dev/null
+# Type check — block on errors (exit 2 = Claude must fix before proceeding)
+MYPY_OUTPUT=$(uv run mypy --no-error-summary --no-pretty "$FILE_PATH" 2>/dev/null)
+MYPY_EXIT=$?
+
+if [[ $MYPY_EXIT -ne 0 ]]; then
+  echo "$MYPY_OUTPUT" >&2
+  exit 2
+fi
 
 exit 0
