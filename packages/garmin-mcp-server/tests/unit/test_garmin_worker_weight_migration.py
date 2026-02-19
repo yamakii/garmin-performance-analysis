@@ -37,6 +37,7 @@ def worker(tmp_path, monkeypatch):
     )
 
     worker = GarminIngestWorker()
+    worker._ensure_dirs()
     yield worker
 
 

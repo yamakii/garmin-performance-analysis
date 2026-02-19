@@ -17,23 +17,12 @@ def worker_with_temp_dirs(tmp_path, monkeypatch):
     def patched_init(self, db_path=None):
         self.project_root = tmp_path
         self.raw_dir = tmp_path / "raw"
-        self.parquet_dir = tmp_path / "parquet"
-        self.performance_dir = tmp_path / "performance"
-        self.precheck_dir = tmp_path / "precheck"
-        self.weight_cache_dir = tmp_path / "weight_cache" / "raw"
-
-        # Create directories
-        for directory in [
-            self.raw_dir,
-            self.parquet_dir,
-            self.performance_dir,
-            self.precheck_dir,
-        ]:
-            directory.mkdir(parents=True, exist_ok=True)
+        self.weight_raw_dir = tmp_path / "raw" / "weight"
 
         self._db_reader = None
         self._db_path = db_path
         self._garmin_client = None
+        self._dirs_ensured = False
 
     monkeypatch.setattr(GarminIngestWorker, "__init__", patched_init)
 

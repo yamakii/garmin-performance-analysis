@@ -89,13 +89,7 @@ class GarminIngestWorker:
         self.project_root = get_project_root()
         self.raw_dir = get_raw_dir()
         self.weight_raw_dir = get_weight_raw_dir()
-
-        # Create directories
-        for directory in [
-            self.raw_dir,
-            self.weight_raw_dir,
-        ]:
-            directory.mkdir(parents=True, exist_ok=True)
+        self._dirs_ensured = False
 
         # DB path: Resolve to concrete path if None
         if db_path is None:
@@ -104,6 +98,14 @@ class GarminIngestWorker:
 
         # DB reader for activity date lookup
         self._db_reader: GarminDBReader | None = None
+
+    def _ensure_dirs(self) -> None:
+        """Create data directories on first use (lazy initialization)."""
+        if self._dirs_ensured:
+            return
+        for directory in [self.raw_dir, self.weight_raw_dir]:
+            directory.mkdir(parents=True, exist_ok=True)
+        self._dirs_ensured = True
 
     @classmethod
     def get_garmin_client(cls) -> Garmin:
@@ -168,6 +170,7 @@ class GarminIngestWorker:
 
         Delegates to raw_data_fetcher.collect_data().
         """
+        self._ensure_dirs()
         return collect_data(self.raw_dir, activity_id, force_refetch)
 
     def collect_body_composition_data(self, date: str) -> dict[str, Any] | None:
@@ -175,6 +178,7 @@ class GarminIngestWorker:
 
         Delegates to raw_data_fetcher.collect_body_composition_data().
         """
+        self._ensure_dirs()
         return collect_body_composition_data(self.weight_raw_dir, date)
 
     def _calculate_form_efficiency_summary(self, df: pd.DataFrame) -> dict[str, Any]:

@@ -82,11 +82,16 @@ class TestGarminWorkerBackwardCompatibility:
         assert worker.raw_dir == project_root / "data" / "raw"
         assert worker.weight_raw_dir == project_root / "data" / "raw" / "weight"
 
-    def test_directory_creation_still_works(self, tmp_path: Path) -> None:
-        """Test that directories are still created on initialization."""
+    def test_directory_creation_is_lazy(self, tmp_path: Path) -> None:
+        """Test that directories are created lazily, not on init."""
         # autouse fixture already sets GARMIN_DATA_DIR to tmp_path/data
         worker = GarminIngestWorker()
 
-        # Directories should be created
+        # Directories should NOT be created on init
+        assert not worker.raw_dir.exists()
+        assert not worker.weight_raw_dir.exists()
+
+        # After _ensure_dirs(), directories should exist
+        worker._ensure_dirs()
         assert worker.raw_dir.exists()
         assert worker.weight_raw_dir.exists()
