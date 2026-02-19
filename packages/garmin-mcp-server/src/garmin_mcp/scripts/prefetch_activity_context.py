@@ -18,7 +18,18 @@ Output (JSON to stdout):
       "terrain_category": "flat",
       "avg_elevation_gain_per_km": 1.6,
       "total_elevation_gain": 12.8,
-      "total_elevation_loss": 11.2
+      "total_elevation_loss": 11.2,
+      "planned_workout": {
+        "workout_type": "easy_run",
+        "description_ja": "イージーラン 6km",
+        "target_hr_low": 121,
+        "target_hr_high": 148,
+        "target_pace_low": null,
+        "target_pace_high": null,
+        "target_distance_km": 6.0,
+        "target_duration_minutes": null,
+        "plan_id": "5k_improvement_2026"
+      }
     }
 """
 
@@ -49,7 +60,7 @@ def prefetch_activity_context(activity_id: int) -> dict:
         activity_id: Garmin activity ID.
 
     Returns:
-        Dict with training_type, weather, and terrain data.
+        Dict with training_type, weather, terrain, and planned_workout data.
     """
     db_path = get_db_path()
 
@@ -91,7 +102,49 @@ def prefetch_activity_context(activity_id: int) -> dict:
 
         training_type = hr_row[0] if hr_row else None
 
-        # 3. Elevation statistics (from splits table)
+        # 3. Planned workout target (if training plan exists)
+        planned_workout = None
+        try:
+            planned_row = conn.execute(
+                """
+                SELECT
+                    pw.workout_type,
+                    pw.description_ja,
+                    pw.target_hr_low,
+                    pw.target_hr_high,
+                    pw.target_pace_low,
+                    pw.target_pace_high,
+                    pw.target_distance_km,
+                    pw.target_duration_minutes,
+                    pw.plan_id
+                FROM planned_workouts pw
+                JOIN training_plans tp
+                    ON pw.plan_id = tp.plan_id AND pw.version = tp.version
+                WHERE pw.workout_date = ?::DATE
+                  AND pw.workout_type != 'rest'
+                  AND tp.status = 'active'
+                ORDER BY tp.version DESC
+                LIMIT 1
+                """,
+                [activity_date],
+            ).fetchone()
+
+            if planned_row:
+                planned_workout = {
+                    "workout_type": planned_row[0],
+                    "description_ja": planned_row[1],
+                    "target_hr_low": planned_row[2],
+                    "target_hr_high": planned_row[3],
+                    "target_pace_low": planned_row[4],
+                    "target_pace_high": planned_row[5],
+                    "target_distance_km": planned_row[6],
+                    "target_duration_minutes": planned_row[7],
+                    "plan_id": planned_row[8],
+                }
+        except Exception:
+            pass  # Table may not exist if no plan was ever saved
+
+        # 4. Elevation statistics (from splits table)
         elev_row = conn.execute(
             """
             SELECT
@@ -121,6 +174,7 @@ def prefetch_activity_context(activity_id: int) -> dict:
         "avg_elevation_gain_per_km": avg_gain_per_km,
         "total_elevation_gain": round(total_gain, 1),
         "total_elevation_loss": round(total_loss, 1),
+        "planned_workout": planned_workout,
     }
 
 

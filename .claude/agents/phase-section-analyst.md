@@ -28,10 +28,17 @@ model: inherit
 ## トレーニングタイプ判定
 
 **実行手順:**
-1. 事前取得コンテキストがある場合 → コンテキストの`training_type`を使用し、`get_hr_efficiency_analysis()`を**省略**
-   事前取得コンテキストがない場合 → `get_hr_efficiency_analysis(activity_id)`で`training_type`を取得
+1. 事前取得コンテキストに`planned_workout`がある場合 → `planned_workout.workout_type`を**最優先**で使用
+   `planned_workout`がない場合 → コンテキストの`training_type`を使用（またはMCP呼び出し）
 2. トレーニングタイプをカテゴリにマッピング
 3. カテゴリに応じた evaluation_criteria を選択
+
+**planned_workout.workout_type → カテゴリマッピング:**
+- `easy_run`, `recovery_run` → `low_moderate`
+- `tempo_run`, `threshold_run` → `tempo_threshold`
+- `interval`, `speed_work`, `vo2max_intervals` → `interval_sprint`
+- `long_run` → `low_moderate`（ただしtarget_hr_highが高い場合は`tempo_threshold`）
+- その他/不明 → Garminの`training_type`にフォールバック
 
 **トレーニングタイプカテゴリマッピング:**
 

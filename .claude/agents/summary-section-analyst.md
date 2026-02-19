@@ -64,6 +64,15 @@ model: inherit
    - ❌ NG: "VO良好" を improvement_areas に記載
    - ✅ OK: "VO改善必要（11.5cm、目標9cm未満）" を improvement_areas に記載
 
+### プラン目標によるフィルタリング:
+
+事前取得コンテキストに`planned_workout`がある場合、improvement_areasとrecommendationsを以下のルールでフィルタする:
+
+- `target_hr_low`〜`target_hr_high`が設定されていて、実際のHRがその範囲内 → HR関連のimprovement_areasに**含めない**
+- `target_pace_low`〜`target_pace_high`が設定されていて、実際のペースがその範囲内 → ペース関連のimprovement_areasに**含めない**
+- プラン目標を超えた場合のみ改善提案を記載
+- `planned_workout`がnullの場合は従来通り（フィルタなし）
+
 ### 矛盾防止ガイドライン:
 
 **理由**: `get_form_evaluations()` はペース補正済みの精密評価を提供します。この評価を無視すると、efficiency-section-analyst との間で矛盾が発生します。

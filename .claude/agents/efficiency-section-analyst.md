@@ -114,6 +114,22 @@ Write(
 
 ## Training Type別評価
 
+### プラン目標がある場合（planned_workout != null）
+
+**CRITICAL**: 事前取得コンテキストに`planned_workout`がある場合、HR評価はプラン目標を最優先基準とする。
+
+- `target_hr_low`〜`target_hr_high`が設定されている場合:
+  - 実際のHRがこの範囲内 → 「プラン目標通り」とポジティブに評価
+  - 範囲を超えた場合のみ改善提案
+- Zone配分はサブ情報として記載（メインの評価基準はプラン目標）
+- `planned_workout.workout_type`で表記（Garminのtraining_typeではなく）
+
+**NG表現**: "recoveryとしてはHRが高い"（Garmin分類のrecoveryで判断）
+**OK表現**: "プラン目標HR 121-148bpmに対し平均142bpmで目標範囲内です"
+
+### プラン目標がない場合（planned_workout == null）
+
+従来通りtraining_typeベースで評価:
 - **aerobic_base/recovery**: Zone 2-3中心、Zone 4以上最小限
 - **tempo/lactate_threshold**: Zone 3-4中心、Zone 5侵入許容
 - **vo2max/anaerobic/speed**: Zone 4-5中心

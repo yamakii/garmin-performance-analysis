@@ -14,6 +14,9 @@ When the orchestrator provides a "事前取得コンテキスト" JSON in the pr
 - `training_type` → skip `get_hr_efficiency_analysis()` if you only need training_type
 - `temperature_c`, `humidity_pct`, `wind_mps`, `wind_direction` → skip `get_weather_data()`
 - `terrain_category`, `avg_elevation_gain_per_km`, `total_elevation_gain`, `total_elevation_loss` → skip `get_splits_elevation(statistics_only=True)`
+- `planned_workout` → not nullの場合、プランのワークアウト目標を含む（workout_type, target_hr_low/high, target_pace_low/high等）
+  - **プラン目標がある場合は、Garminのtraining_typeより優先して評価基準とする**
+  - nullの場合は従来通りtraining_typeベースで評価（アドホックラン）
 
 **Rules:**
 - If you need MORE data than what's in the context (e.g., full zone percentages from hr_efficiency), call the MCP tool normally
