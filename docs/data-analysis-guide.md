@@ -193,7 +193,7 @@ print(json.dumps(summary, indent=2))
 
 **Execute via Bash:**
 ```bash
-cd /home/yamakii/workspace/claude_workspace/garmin-data-analyst-agent
+cd /home/yamakii/workspace/garmin-performance-analysis
 
 cat > /tmp/analyze.py << 'EOF'
 <python_code_from_above>
@@ -463,7 +463,7 @@ uv run python /tmp/analyze.py
 ```
 
 **CRITICAL:**
-- Use absolute paths: `/home/yamakii/workspace/claude_workspace/garmin-data-analyst-agent`
+- Use absolute paths: `/home/yamakii/workspace/garmin-performance-analysis`
 - Use `uv run python` (NOT plain `python`)
 - Clean up temp files after use
 

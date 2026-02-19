@@ -6,7 +6,7 @@
 This is the FIRST step in any task involving code understanding.
 
 ```
-mcp__serena__activate_project("/home/yamakii/workspace/claude_workspace/garmin-performance-analysis")
+mcp__serena__activate_project("/home/yamakii/workspace/garmin-performance-analysis")
 ```
 
 ### When to activate

@@ -76,7 +76,7 @@ DEVELOPMENT_PROCESS.md の Phase 2（実装フェーズ）を支援する専門�
    mcp__serena__activate_project(worktree_abs_path)
 
    # Example:
-   # mcp__serena__activate_project("/home/user/workspace/claude_workspace/garmin-project_name")
+   # mcp__serena__activate_project("/home/user/workspace/garmin-project_name")
    ```
 
 4. **Worktree セットアップ確認**

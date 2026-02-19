@@ -28,6 +28,8 @@ from pathlib import Path
 
 import duckdb
 
+from garmin_mcp.database.connection import get_db_path
+
 
 def backup_database(db_path: Path) -> Path:
     """Create backup of database before migration."""
@@ -242,10 +244,8 @@ def main():
     parser.add_argument(
         "--db-path",
         type=Path,
-        default=Path(
-            "/home/yamakii/garmin_data/data/database/garmin_performance.duckdb"
-        ),
-        help="Path to DuckDB database",
+        default=None,
+        help="Path to DuckDB database (default: $GARMIN_DATA_DIR/database/garmin_performance.duckdb)",
     )
     parser.add_argument(
         "--dry-run",
@@ -260,7 +260,7 @@ def main():
 
     args = parser.parse_args()
 
-    db_path = args.db_path
+    db_path = get_db_path(args.db_path)
 
     if not db_path.exists():
         print(f"❌ Database not found: {db_path}")

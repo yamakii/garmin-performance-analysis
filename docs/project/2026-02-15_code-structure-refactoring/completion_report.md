@@ -5,7 +5,7 @@
 - **Purpose**: Decompose 5 large modules (800-2,757 lines each) into focused, single-responsibility components to improve maintainability, testability, and navigability of the garmin-mcp-server codebase.
 - **Scope**: 41 files changed across 6 phases, 5,832 insertions / 5,216 deletions (net +616 lines)
 - **Implementation Date**: 2026-02-15
-- **Branch**: `refactor/phase-1-aggregate-reader` (worktree at `/home/yamakii/workspace/claude_workspace/garmin-refactor-1`, merged to main, worktree removed)
+- **Branch**: `refactor/phase-1-aggregate-reader` (worktree at `/home/yamakii/workspace/garmin-refactor-1`, merged to main, worktree removed)
 - **External API Impact**: Zero. All MCP tool names, parameters, and response formats are unchanged.
 
 ## 2. Implementation Details

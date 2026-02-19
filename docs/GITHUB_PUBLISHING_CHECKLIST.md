@@ -56,7 +56,7 @@ ls -la result/   # 空であることを確認
 **コマンド:**
 ```bash
 # プロジェクトルートに移動
-cd /home/user/workspace/claude_workspace/garmin
+cd /home/user/workspace/garmin-performance-analysis
 
 # .env.exampleをコピー
 cp .env.example .env
@@ -146,7 +146,7 @@ alias bfg='java -jar bfg-1.14.0.jar'
 
 ```bash
 # リポジトリ全体をバックアップ
-cd /home/user/workspace/claude_workspace/
+cd /home/user/workspace/
 tar -czf garmin-backup-$(date +%Y%m%d).tar.gz garmin/
 
 # バックアップが作成されたことを確認
@@ -159,7 +159,7 @@ ls -lh garmin-backup-*.tar.gz
 
 ```bash
 # プロジェクトルートに移動
-cd /home/user/workspace/claude_workspace/garmin
+cd /home/user/workspace/garmin-performance-analysis
 
 # 現在のworktreeを確認
 git worktree list
