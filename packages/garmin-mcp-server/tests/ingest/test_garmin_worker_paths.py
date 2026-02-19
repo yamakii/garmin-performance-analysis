@@ -15,25 +15,20 @@ class TestGarminWorkerDefaultPaths:
     """Tests for GarminIngestWorker with default paths."""
 
     def test_garmin_worker_uses_default_paths(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         """Test that GarminIngestWorker uses default paths when env vars not set."""
         monkeypatch.delenv("GARMIN_DATA_DIR", raising=False)
-        from garmin_mcp.utils.paths import get_project_root
-
-        get_project_root.cache_clear()
+        fake_root = tmp_path / "project"
+        (fake_root / ".git").mkdir(parents=True)
+        monkeypatch.setattr(
+            "garmin_mcp.utils.paths.get_project_root", lambda: fake_root
+        )
 
         worker = GarminIngestWorker()
 
-        # Should use project_root/data
-        assert worker.raw_dir.parent.name == "data"
-        assert worker.weight_raw_dir.parent.parent.name == "data"
-
-        # Check subdirectory names
-        assert worker.raw_dir.name == "raw"
-        assert worker.weight_raw_dir.name == "weight"
-
-        # All paths should be absolute
+        assert worker.raw_dir == fake_root / "data" / "raw"
+        assert worker.weight_raw_dir == fake_root / "data" / "raw" / "weight"
         assert worker.raw_dir.is_absolute()
         assert worker.weight_raw_dir.is_absolute()
 
@@ -68,19 +63,21 @@ class TestGarminWorkerCustomPaths:
 class TestGarminWorkerBackwardCompatibility:
     """Tests for backward compatibility of path configuration."""
 
-    def test_existing_behavior_preserved(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_existing_behavior_preserved(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
         """Test that existing behavior is preserved when env vars not set."""
         monkeypatch.delenv("GARMIN_DATA_DIR", raising=False)
-        from garmin_mcp.utils.paths import get_project_root
-
-        get_project_root.cache_clear()
+        fake_root = tmp_path / "project"
+        (fake_root / ".git").mkdir(parents=True)
+        monkeypatch.setattr(
+            "garmin_mcp.utils.paths.get_project_root", lambda: fake_root
+        )
 
         worker = GarminIngestWorker()
-        project_root = get_project_root()
 
-        # Should match the default paths based on project root
-        assert worker.raw_dir == project_root / "data" / "raw"
-        assert worker.weight_raw_dir == project_root / "data" / "raw" / "weight"
+        assert worker.raw_dir == fake_root / "data" / "raw"
+        assert worker.weight_raw_dir == fake_root / "data" / "raw" / "weight"
 
     def test_directory_creation_is_lazy(self, tmp_path: Path) -> None:
         """Test that directories are created lazily, not on init."""
