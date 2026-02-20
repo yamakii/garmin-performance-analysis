@@ -39,17 +39,20 @@ def test_db(tmp_path_factory):
         )
     """)
 
-    # Insert 500 rows of varied data
-    for i in range(500):
-        activity_id = (i % 5) + 1
-        date = f"2025-0{(i % 3) + 1}-{(i % 28) + 1:02d}"
-        pace = 240 + (i % 60)
-        heart_rate = 140 + (i % 40)
-        cadence = 170 + (i % 20)
-        conn.execute(f"""
-            INSERT INTO splits VALUES
-            ({activity_id}, '{date}', {i+1}, {pace}, {heart_rate}, {cadence}, 1.0)
-        """)
+    # Insert 500 rows of varied data via bulk insert
+    rows = [
+        (
+            (i % 5) + 1,
+            f"2025-0{(i % 3) + 1}-{(i % 28) + 1:02d}",
+            i + 1,
+            240 + (i % 60),
+            140 + (i % 40),
+            170 + (i % 20),
+            1.0,
+        )
+        for i in range(500)
+    ]
+    conn.executemany("INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
 
     conn.close()
     yield db_path

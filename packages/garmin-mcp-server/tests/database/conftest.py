@@ -3,11 +3,41 @@
 Shared fixtures for database reader and inserter tests.
 """
 
+import shutil
 from pathlib import Path
 from typing import Any
 
 import duckdb
 import pytest
+
+from garmin_mcp.database.db_writer import GarminDBWriter
+
+# ---------------------------------------------------------------------------
+# Module-scoped schema template for reader tests (avoids ~50ms DDL per test)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def _reader_schema_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Module-scoped DuckDB with full schema pre-initialized.
+
+    Same pattern as inserters/conftest.py._schema_template_path.
+    """
+    tmp_path = tmp_path_factory.mktemp("reader_template")
+    db_path = tmp_path / "template.duckdb"
+    GarminDBWriter(db_path=str(db_path))
+    return Path(db_path)
+
+
+@pytest.fixture
+def reader_db_path(_reader_schema_template: Path, tmp_path: Path) -> Path:
+    """Function-scoped DuckDB with full schema via file copy.
+
+    Use this in reader tests to get a clean, schema-initialized DB.
+    """
+    db_path = tmp_path / "reader_test.duckdb"
+    shutil.copy2(str(_reader_schema_template), str(db_path))
+    return db_path
 
 
 @pytest.fixture
@@ -84,7 +114,6 @@ def db_with_splits(temp_db_path: Path, sample_splits_data: dict, write_json_file
     Returns:
         Tuple of (db_path_str, activity_id).
     """
-    from garmin_mcp.database.db_writer import GarminDBWriter
     from garmin_mcp.database.inserters.splits import insert_splits
 
     splits_file = write_json_file("splits.json", sample_splits_data)
