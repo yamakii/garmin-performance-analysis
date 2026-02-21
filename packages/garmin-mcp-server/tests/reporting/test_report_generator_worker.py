@@ -40,7 +40,7 @@ class TestReportTemplateRenderer:
         }
 
         report = renderer.render_report(
-            "12345", "2025-09-22", basic_metrics, section_analyses
+            "12345", "2025-09-22", basic_metrics, section_analyses  # type: ignore[arg-type]
         )
 
         assert "5.0" in report or "5.00" in report  # Template側でフォーマット
@@ -61,7 +61,7 @@ class TestReportTemplateRenderer:
         }
 
         report = renderer.render_report(
-            "12345", "2025-09-22", basic_metrics, section_analyses
+            "12345", "2025-09-22", basic_metrics, section_analyses  # type: ignore[arg-type]
         )
 
         assert report is not None
@@ -327,7 +327,7 @@ class TestMermaidGraphGeneration:
             "12345",
             "2025-09-22",
             basic_metrics,
-            section_analyses,
+            section_analyses,  # type: ignore[arg-type]
             mermaid_data=mermaid_data,
         )
 

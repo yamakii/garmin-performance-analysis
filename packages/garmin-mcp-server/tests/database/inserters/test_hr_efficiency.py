@@ -275,9 +275,11 @@ class TestHREfficiencyInserter:
 
         # Verify primary_zone in DuckDB
 
-        primary_zone = conn.execute(
+        _row = conn.execute(
             "SELECT primary_zone FROM hr_efficiency WHERE activity_id = 20615445009"
-        ).fetchone()[0]
+        ).fetchone()
+        assert _row is not None
+        primary_zone = _row[0]
 
         # Zone 2 has highest time (1041.858s)
         assert primary_zone == "Zone 2"
@@ -322,9 +324,11 @@ class TestHREfficiencyInserter:
 
         assert result is True
 
-        rating = conn.execute(
+        _row = conn.execute(
             "SELECT zone_distribution_rating FROM hr_efficiency WHERE activity_id = 12345"
-        ).fetchone()[0]
+        ).fetchone()
+        assert _row is not None
+        rating = _row[0]
 
         # 72% in Zone 2 → Excellent for recovery
         assert rating == "Excellent"
@@ -368,9 +372,11 @@ class TestHREfficiencyInserter:
 
         assert result is True
 
-        rating = conn.execute(
+        _row = conn.execute(
             "SELECT zone_distribution_rating FROM hr_efficiency WHERE activity_id = 12346"
-        ).fetchone()[0]
+        ).fetchone()
+        assert _row is not None
+        rating = _row[0]
 
         # 65% in Zone 3-4 → Excellent for tempo
         assert rating == "Excellent"
@@ -414,9 +420,11 @@ class TestHREfficiencyInserter:
 
         assert result is True
 
-        efficiency = conn.execute(
+        _row = conn.execute(
             "SELECT aerobic_efficiency FROM hr_efficiency WHERE activity_id = 12347"
-        ).fetchone()[0]
+        ).fetchone()
+        assert _row is not None
+        efficiency = _row[0]
 
         # 85% in Zone 2-3 → Excellent aerobic base
         assert efficiency == "Excellent aerobic base"
@@ -438,9 +446,11 @@ class TestHREfficiencyInserter:
 
         assert result is True
 
-        quality = conn.execute(
+        _row = conn.execute(
             "SELECT training_quality FROM hr_efficiency WHERE activity_id = 20615445009"
-        ).fetchone()[0]
+        ).fetchone()
+        assert _row is not None
+        quality = _row[0]
 
         # Should have a quality rating
         assert quality in ["Excellent", "Good", "Fair", "Poor"]
@@ -484,9 +494,11 @@ class TestHREfficiencyInserter:
 
         assert result is True
 
-        zone2_focus = conn.execute(
+        _row = conn.execute(
             "SELECT zone2_focus FROM hr_efficiency WHERE activity_id = 12348"
-        ).fetchone()[0]
+        ).fetchone()
+        assert _row is not None
+        zone2_focus = _row[0]
 
         # 65% in Zone 2 → True
         assert zone2_focus is True
@@ -530,9 +542,11 @@ class TestHREfficiencyInserter:
 
         assert result is True
 
-        zone2_focus = conn.execute(
+        _row = conn.execute(
             "SELECT zone2_focus FROM hr_efficiency WHERE activity_id = 12349"
-        ).fetchone()[0]
+        ).fetchone()
+        assert _row is not None
+        zone2_focus = _row[0]
 
         # 50% in Zone 2 → False
         assert zone2_focus is False
@@ -576,9 +590,11 @@ class TestHREfficiencyInserter:
 
         assert result is True
 
-        threshold_work = conn.execute(
+        _row = conn.execute(
             "SELECT zone4_threshold_work FROM hr_efficiency WHERE activity_id = 12350"
-        ).fetchone()[0]
+        ).fetchone()
+        assert _row is not None
+        threshold_work = _row[0]
 
         # 25% in Zone 4-5 → True
         assert threshold_work is True
@@ -600,9 +616,11 @@ class TestHREfficiencyInserter:
 
         assert result is True
 
-        threshold_work = conn.execute(
+        _row = conn.execute(
             "SELECT zone4_threshold_work FROM hr_efficiency WHERE activity_id = 20615445009"
-        ).fetchone()[0]
+        ).fetchone()
+        assert _row is not None
+        threshold_work = _row[0]
 
         # Zone 4-5 have 675.8s + 0s = 675.8s out of ~2715s total = ~25% → True
         assert threshold_work is True

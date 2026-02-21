@@ -226,6 +226,7 @@ class TestGarminDBReaderExport:
             result = conn.execute(
                 f"SELECT COUNT(*) FROM read_parquet('{output_path}')"
             ).fetchone()
+            assert result is not None
             assert result[0] == 10
 
     def test_export_query_result_csv(self, test_db):

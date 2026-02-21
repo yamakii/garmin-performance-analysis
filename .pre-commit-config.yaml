@@ -21,20 +21,18 @@ repos:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.18.2
-    hooks:
-      - id: mypy
-        additional_dependencies:
-          - types-requests
-          - types-python-dateutil
-        args: [--ignore-missing-imports]
-
   - repo: local
     hooks:
-      - id: pytest
-        name: pytest
-        entry: uv run pytest --tb=short
+      - id: mypy
+        name: mypy
+        entry: uv run mypy
         language: system
+        types: [python]
+        pass_filenames: true
+
+      - id: pytest
+        name: pytest (unit)
+        entry: uv run pytest -m unit --tb=short
+        language: system
+        types: [python]
         pass_filenames: false
-        always_run: true
