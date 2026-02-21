@@ -30,7 +30,8 @@ def generate_evaluation_text(
 ) -> str:
     """Generate Japanese evaluation text for a single metric.
 
-    Symmetric evaluation philosophy: Deviation from expected (in either direction) = instability.
+    Asymmetric evaluation: lower-than-expected values indicate efficiency improvement
+    and receive positive text, while higher-than-expected values indicate degradation.
 
     Args:
         metric: 'gct', 'vo', or 'vr'
@@ -85,24 +86,40 @@ def generate_evaluation_text(
         actual_str = f"{actual:.1f}"
         expected_str = f"{expected:.1f}"
 
-    # Symmetric evaluation: deviation in BOTH directions is considered unstable
+    # Asymmetric evaluation: improvement direction (lower) is positive,
+    # degradation direction (higher) is negative.
     if abs(delta_pct) <= 2:
         # Ideal (abs(delta) <= 2%)
         text = (
             f"{actual_str}{unit}は期待値{expected_str}{unit}±2%の理想範囲内です。"
             f"適切な{name}を維持できています。{star_rating}"
         )
+    elif delta_pct < 0 and abs(delta_pct) <= 5:
+        # Slight improvement (2% < |delta| <= 5%, lower = more efficient)
+        direction = label["direction_low"]
+        text = (
+            f"{actual_str}{unit}は期待値{expected_str}{unit}より"
+            f"{abs(delta_pct):.1f}%{direction}、効率的なフォームです。{star_rating}"
+        )
+    elif delta_pct < 0:
+        # Large improvement (|delta| > 5%, lower = more efficient)
+        direction = label["direction_low"]
+        text = (
+            f"{actual_str}{unit}は期待値{expected_str}{unit}より"
+            f"{abs(delta_pct):.0f}%{direction}、効率面で良好です。"
+            f"ただしバランスの確認を推奨します。{star_rating}"
+        )
     elif abs(delta_pct) <= 5:
-        # Slightly off (2% < abs(delta) <= 5%)
-        direction = label["direction_low"] if delta_pct < 0 else label["direction_high"]
+        # Slightly degraded (2% < delta <= 5%, higher = less efficient)
+        direction = label["direction_high"]
         text = (
             f"{actual_str}{unit}は期待値{expected_str}{unit}より"
             f"{abs(delta_pct):.1f}%{direction}、やや外れています。"
             f"通常のフォームから軽度のズレが見られます。{star_rating}"
         )
     else:
-        # Significantly off (abs(delta) > 5%)
-        direction = label["direction_low"] if delta_pct < 0 else label["direction_high"]
+        # Significantly degraded (delta > 5%, higher = less efficient)
+        direction = label["direction_high"]
         text = (
             f"{actual_str}{unit}は期待値{expected_str}{unit}より"
             f"{abs(delta_pct):.0f}%{direction}、大きく外れています。"

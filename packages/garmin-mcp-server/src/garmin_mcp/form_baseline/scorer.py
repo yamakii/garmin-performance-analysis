@@ -1,6 +1,11 @@
 """Form baseline scorer module.
 
 Scores actual form metrics against baseline expectations and generates star ratings.
+
+Uses asymmetric penalty: lower-than-expected values (= more efficient) receive
+reduced penalties, while higher-than-expected values (= less efficient) receive
+full penalties. A consistency adjustment rewards balanced improvement across all
+three metrics and penalizes divergent patterns.
 """
 
 from typing import Any
@@ -8,12 +13,71 @@ from typing import Any
 from .predictor import predict_expectations
 from .trainer import GCTPowerModel, LinearModel
 
+# Penalty factors by direction.
+# Lower-than-expected (negative delta) = efficiency improvement → reduced penalty.
+# Higher-than-expected (positive delta) = degradation → full penalty.
+IMPROVEMENT_FACTOR: dict[str, float] = {"gct": 0.3, "vo": 0.3, "vr": 0.2}
+DEGRADATION_FACTOR: dict[str, float] = {"gct": 1.0, "vo": 1.0, "vr": 1.0}
+
+
+def _compute_penalty(metric: str, delta_pct: float) -> float:
+    """Compute asymmetric penalty for a single metric.
+
+    Args:
+        metric: 'gct', 'vo', or 'vr'
+        delta_pct: Percentage delta from expected (negative = improvement)
+
+    Returns:
+        Penalty score clamped to 0-100.
+    """
+    factor = IMPROVEMENT_FACTOR[metric] if delta_pct < 0 else DEGRADATION_FACTOR[metric]
+    return max(0.0, min(100.0, abs(delta_pct) * factor * 10.0))
+
+
+def _compute_consistency_adjustment(
+    gct_delta_pct: float,
+    vo_delta_pct: float,
+    vr_delta_pct: float,
+) -> float:
+    """Compute consistency adjustment across the three form metrics.
+
+    Rewards balanced improvement (all deltas negative) and penalizes
+    divergent patterns (large spread between metrics).
+
+    Args:
+        gct_delta_pct: GCT percentage delta from expected
+        vo_delta_pct: VO percentage delta from expected
+        vr_delta_pct: VR percentage delta from expected
+
+    Returns:
+        Adjustment value (positive = bonus, negative = penalty) to apply
+        to the overall score.
+    """
+    deltas = [gct_delta_pct, vo_delta_pct, vr_delta_pct]
+    all_improved = all(d <= 0 for d in deltas)
+    spread = max(deltas) - min(deltas)
+
+    if all_improved:
+        return min(5.0, abs(sum(deltas)) / 3.0 * 0.5)
+    elif spread > 15.0:
+        return -10.0
+    elif spread > 10.0:
+        return -5.0
+    elif spread > 5.0:
+        return -2.0
+    return 0.0
+
 
 def score_observation(
     models: dict[str, GCTPowerModel | LinearModel],
     obs: dict[str, float],
 ) -> dict[str, Any]:
     """Score actual observation against baseline expectations.
+
+    Uses asymmetric penalty calculation: improvement direction (actual < expected)
+    receives a reduced penalty factor, while degradation (actual > expected) uses
+    the full penalty factor. A consistency adjustment is applied to the overall
+    score based on the spread and direction of all three metrics.
 
     Args:
         models: Dictionary of trained models (gct, vo, vr)
@@ -29,13 +93,13 @@ def score_observation(
         Dictionary containing:
             - All fields from predict_expectations
             - gct_delta_pct: Percentage difference from expected
-            - gct_penalty: Penalty score for GCT
+            - gct_penalty: Penalty score for GCT (asymmetric)
             - vo_delta_cm: Absolute difference from expected (cm)
             - vo_delta_pct: Percentage difference from expected
-            - vo_penalty: Penalty score for VO
+            - vo_penalty: Penalty score for VO (asymmetric)
             - vr_delta_pct: Percentage difference from expected
-            - vr_penalty: Penalty score for VR
-            - score: Overall score (0-100)
+            - vr_penalty: Penalty score for VR (asymmetric)
+            - score: Overall score (0-100, with consistency adjustment)
             - gct_needs_improvement: Boolean flag
             - vo_needs_improvement: Boolean flag
             - vr_needs_improvement: Boolean flag
@@ -66,20 +130,17 @@ def score_observation(
         (obs["vr_pct"] - expectations["vr_pct_exp"]) / expectations["vr_pct_exp"]
     ) * 100.0
 
-    # Calculate penalties (higher delta = higher penalty)
-    # All metrics use percentage-based penalty calculation for consistency
-    # GCT: exceeding by >5% is concerning
-    gct_penalty = max(0.0, min(100.0, abs(gct_delta_pct) * 10.0))
+    # Calculate asymmetric penalties
+    gct_penalty = _compute_penalty("gct", gct_delta_pct)
+    vo_penalty = _compute_penalty("vo", vo_delta_pct)
+    vr_penalty = _compute_penalty("vr", vr_delta_pct)
 
-    # VO: exceeding by >5% is concerning (now percentage-based like GCT/VR)
-    vo_penalty = max(0.0, min(100.0, abs(vo_delta_pct) * 10.0))
-
-    # VR: exceeding by >5% is concerning
-    vr_penalty = max(0.0, min(100.0, abs(vr_delta_pct) * 10.0))
-
-    # Overall score (100 - average penalty)
+    # Overall score with consistency adjustment
     avg_penalty = (gct_penalty + vo_penalty + vr_penalty) / 3.0
-    overall_score = max(0.0, 100.0 - avg_penalty)
+    adjustment = _compute_consistency_adjustment(
+        gct_delta_pct, vo_delta_pct, vr_delta_pct
+    )
+    overall_score = max(0.0, min(100.0, 100.0 - avg_penalty + adjustment))
 
     # Needs improvement flags (penalty > 20 = needs improvement)
     gct_needs_improvement = gct_penalty > 20.0
@@ -109,18 +170,23 @@ def compute_star_rating(
     penalty: float,
     delta_pct: float,
 ) -> dict[str, Any]:
-    """Compute star rating from penalty and delta percentage.
+    """Compute star rating from penalty score.
 
-    Star rating logic (using ASCII representation):
-    - 5 stars (5.0): Excellent - penalty < 10, delta < 5%
-    - 4 stars (4.0): Good - penalty < 20, delta < 10%
-    - 3 stars (3.0): Average - penalty < 40, delta < 20%
-    - 2 stars (2.0): Below Average - penalty < 60, delta < 30%
-    - 1 star (1.0): Poor - penalty >= 60 or delta >= 30%
+    With asymmetric penalties, the direction information is already encoded
+    in the penalty value, so only penalty thresholds are used for rating.
+    The delta_pct parameter is kept for interface compatibility but is not
+    used in the rating logic.
+
+    Star rating logic:
+    - 5 stars (5.0): Excellent - penalty < 10
+    - 4 stars (4.0): Good - penalty < 20
+    - 3 stars (3.0): Average - penalty < 40
+    - 2 stars (2.0): Below Average - penalty < 60
+    - 1 star (1.0): Poor - penalty >= 60
 
     Args:
-        penalty: Penalty score (0-100)
-        delta_pct: Percentage delta from expected
+        penalty: Penalty score (0-100, already asymmetric)
+        delta_pct: Percentage delta from expected (kept for compatibility)
 
     Returns:
         Dictionary containing:
@@ -133,26 +199,24 @@ def compute_star_rating(
         >>> print(rating['score'])
         5.0
     """
-    abs_delta = abs(delta_pct)
-
     # Unicode stars: U+2605 (filled) U+2606 (empty)
     filled_star = "\u2605"  # ★
     empty_star = "\u2606"  # ☆
 
-    # Determine rating based on penalty and delta
-    if penalty < 10.0 and abs_delta < 5.0:
+    # Determine rating based on penalty only (direction is encoded in penalty)
+    if penalty < 10.0:
         star_rating = filled_star * 5
         score = 5.0
         category = "excellent"
-    elif penalty < 20.0 and abs_delta < 10.0:
+    elif penalty < 20.0:
         star_rating = filled_star * 4 + empty_star
         score = 4.0
         category = "good"
-    elif penalty < 40.0 and abs_delta < 20.0:
+    elif penalty < 40.0:
         star_rating = filled_star * 3 + empty_star * 2
         score = 3.0
         category = "average"
-    elif penalty < 60.0 and abs_delta < 30.0:
+    elif penalty < 60.0:
         star_rating = filled_star * 2 + empty_star * 3
         score = 2.0
         category = "below_average"
