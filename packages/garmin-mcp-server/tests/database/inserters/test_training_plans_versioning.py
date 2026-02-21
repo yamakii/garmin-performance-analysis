@@ -139,6 +139,8 @@ class TestInsertTrainingPlanVersioning:
             "SELECT COUNT(*) FROM planned_workouts WHERE plan_id = 'plan-1' AND version = 2"
         ).fetchone()
         conn.close()
+        assert v1_workouts is not None
+        assert v2_workouts is not None
 
         assert v1_workouts[0] == 2  # not deleted
         assert v2_workouts[0] == 2
@@ -156,6 +158,7 @@ class TestInsertTrainingPlanVersioning:
             "SELECT COUNT(*) FROM training_plans WHERE plan_id = 'plan-1'"
         ).fetchone()
         conn.close()
+        assert count is not None
 
         assert count[0] == 2  # both versions exist
 
@@ -170,5 +173,6 @@ class TestInsertTrainingPlanVersioning:
             "SELECT COUNT(*) FROM training_plans WHERE plan_id = 'plan-1'"
         ).fetchone()
         conn.close()
+        assert count is not None
 
         assert count[0] == 1  # only one version

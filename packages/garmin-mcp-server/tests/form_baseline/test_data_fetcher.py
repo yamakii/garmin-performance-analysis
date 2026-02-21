@@ -1,5 +1,7 @@
 """Tests for form_baseline.data_fetcher module."""
 
+from pathlib import Path
+
 import duckdb
 import pytest
 
@@ -31,7 +33,7 @@ def _create_tables(conn: duckdb.DuckDBPyConnection) -> None:
 class TestGetSplitsDataWithRunSplits:
     """Test get_splits_data when run_splits exist in performance_trends."""
 
-    def test_with_run_splits(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_with_run_splits(self, tmp_path: Path) -> None:
         """Only splits matching run_splits indices should be averaged."""
         db_path = str(tmp_path / "test.duckdb")
         conn = duckdb.connect(db_path)
@@ -72,7 +74,7 @@ class TestGetSplitsDataWithRunSplits:
 class TestGetSplitsDataWithoutRunSplits:
     """Test get_splits_data when no run_splits in performance_trends."""
 
-    def test_without_run_splits(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_without_run_splits(self, tmp_path: Path) -> None:
         """All splits should be used when run_splits is absent."""
         db_path = str(tmp_path / "test.duckdb")
         conn = duckdb.connect(db_path)
@@ -113,9 +115,7 @@ class TestGetSplitsDataWithoutRunSplits:
 class TestGetSplitsDataNoSplits:
     """Test get_splits_data raises ValueError when no splits found."""
 
-    def test_no_splits_raises_value_error(
-        self, tmp_path: pytest.TempPathFactory
-    ) -> None:
+    def test_no_splits_raises_value_error(self, tmp_path: Path) -> None:
         """ValueError should be raised when no matching splits exist."""
         db_path = str(tmp_path / "test.duckdb")
         conn = duckdb.connect(db_path)
@@ -136,7 +136,7 @@ class TestGetSplitsDataNoSplits:
 class TestGetSplitsDataCadenceNull:
     """Test get_splits_data handles NULL cadence correctly."""
 
-    def test_cadence_null_returns_zero(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_cadence_null_returns_zero(self, tmp_path: Path) -> None:
         """When cadence is NULL, it should be returned as 0.0."""
         db_path = str(tmp_path / "test.duckdb")
         conn = duckdb.connect(db_path)

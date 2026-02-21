@@ -109,7 +109,7 @@ def _insert_baseline_row(
 class TestLoadModelsFromFileValid:
     """Test load_models_from_file with valid JSON."""
 
-    def test_load_valid_json(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_load_valid_json(self, tmp_path: Path) -> None:
         """Valid JSON should produce correct model types."""
         model_file = tmp_path / "models.json"
         model_file.write_text(json.dumps(_make_model_json()))
@@ -134,7 +134,7 @@ class TestLoadModelsFromFileValid:
 class TestLoadModelsFromFileNotFound:
     """Test load_models_from_file with non-existent file."""
 
-    def test_file_not_found(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_file_not_found(self, tmp_path: Path) -> None:
         """Non-existent path should raise FileNotFoundError."""
         bad_path = tmp_path / "nonexistent.json"
 
@@ -146,7 +146,7 @@ class TestLoadModelsFromFileNotFound:
 class TestLoadModelsFromFileInvalidStructure:
     """Test load_models_from_file with invalid JSON structure."""
 
-    def test_invalid_structure(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_invalid_structure(self, tmp_path: Path) -> None:
         """JSON missing required keys should raise KeyError."""
         model_file = tmp_path / "bad_models.json"
         # Missing 'gct' key entirely
@@ -166,7 +166,7 @@ class TestLoadModelsFromFileInvalidStructure:
 class TestLoadModelsFromDbBaselineExists:
     """Test load_models_from_db when baseline rows exist."""
 
-    def test_baseline_exists(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_baseline_exists(self, tmp_path: Path) -> None:
         """Should return 3 models when all baseline rows exist."""
         db_path = str(tmp_path / "test.duckdb")
         conn = duckdb.connect(db_path)
@@ -192,7 +192,7 @@ class TestLoadModelsFromDbBaselineExists:
 class TestLoadModelsFromDbNoBaseline:
     """Test load_models_from_db when no baseline exists."""
 
-    def test_no_baseline_raises(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_no_baseline_raises(self, tmp_path: Path) -> None:
         """Empty table should raise ValueError."""
         db_path = str(tmp_path / "test.duckdb")
         conn = duckdb.connect(db_path)
@@ -207,7 +207,7 @@ class TestLoadModelsFromDbNoBaseline:
 class TestLoadModelsFromDbIncompleteBaseline:
     """Test load_models_from_db when baseline is incomplete."""
 
-    def test_incomplete_baseline_raises(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_incomplete_baseline_raises(self, tmp_path: Path) -> None:
         """Only gct row present should raise ValueError about incomplete data."""
         db_path = str(tmp_path / "test.duckdb")
         conn = duckdb.connect(db_path)
@@ -225,7 +225,7 @@ class TestLoadModelsFromDbIncompleteBaseline:
 class TestLoadModelsFromDbSelectsLatest:
     """Test load_models_from_db selects the latest baseline."""
 
-    def test_selects_latest_baseline(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_selects_latest_baseline(self, tmp_path: Path) -> None:
         """When multiple baselines exist, the latest period_end should be used."""
         db_path = str(tmp_path / "test.duckdb")
         conn = duckdb.connect(db_path)
@@ -246,6 +246,6 @@ class TestLoadModelsFromDbSelectsLatest:
         result = load_models_from_db(db_path, "2025-10-15")
 
         # Should use the newer baseline (period_end=2025-10-01)
-        assert result["gct"].alpha == 5.0
-        assert result["vo"].a == 12.0
-        assert result["vr"].a == 10.0
+        assert result["gct"].alpha == 5.0  # type: ignore[union-attr]
+        assert result["vo"].a == 12.0  # type: ignore[union-attr]
+        assert result["vr"].a == 10.0  # type: ignore[union-attr]

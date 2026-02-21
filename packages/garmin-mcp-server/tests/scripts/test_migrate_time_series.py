@@ -136,6 +136,7 @@ def test_migration_dry_run(temp_raw_dir, temp_db_path):
     conn = duckdb.connect(str(temp_db_path))
     row_count = conn.execute("SELECT COUNT(*) FROM time_series_metrics").fetchone()
     conn.close()
+    assert row_count is not None
 
     assert row_count[0] == 0  # No rows should exist after dry run
 

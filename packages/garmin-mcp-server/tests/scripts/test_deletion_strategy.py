@@ -79,7 +79,7 @@ class TestDeleteActivityRecords:
         original_count = _count(db_with_data, "splits")
         try:
             # Pass non-list to trigger error inside loop
-            delete_activity_records([1001], ["splits", None], db_with_data)
+            delete_activity_records([1001], ["splits", None], db_with_data)  # type: ignore[list-item]
         except Exception:
             pass
         # Data should still be intact (rollback)

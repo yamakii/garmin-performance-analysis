@@ -1,6 +1,7 @@
 """Tests for PhysiologyHandler."""
 
 import json
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -170,7 +171,7 @@ class TestUnknownTool:
 # ---------------------------------------------------------------------------
 
 
-def _make_mock_conn(mocker: pytest.fixture, side_effects: list) -> MagicMock:
+def _make_mock_conn(mocker: Any, side_effects: list) -> MagicMock:
     """Create a mock duckdb connection with sequential execute().fetchall() results.
 
     Args:

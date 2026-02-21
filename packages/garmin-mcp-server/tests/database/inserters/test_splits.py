@@ -739,6 +739,7 @@ class TestSplitsInserter:
             FROM splits
             WHERE activity_id = 12345
             """).fetchone()
+        assert split_data is not None
 
         # Present fields should have values
         assert split_data[0] == pytest.approx(90.0)  # stride_length
@@ -784,6 +785,7 @@ class TestSplitsInserter:
             FROM splits
             WHERE activity_id = 20636804823
             """).fetchone()
+        assert stats is not None
 
         # All 2 splits should have all 7 new fields
         assert stats[0] == 2  # total_splits
@@ -872,6 +874,7 @@ class TestSplitsInserter:
         act1 = conn.execute(
             "SELECT stride_length, max_heart_rate, max_power, normalized_power FROM splits WHERE activity_id = 1"
         ).fetchone()
+        assert act1 is not None
         assert act1[0] == pytest.approx(91.0)
         assert act1[1] == 150
         assert act1[2] == pytest.approx(400)
@@ -881,6 +884,7 @@ class TestSplitsInserter:
         act2 = conn.execute(
             "SELECT stride_length, max_heart_rate, max_power, normalized_power FROM splits WHERE activity_id = 2"
         ).fetchone()
+        assert act2 is not None
         assert act2[0] == pytest.approx(90.0)
         assert act2[1] == 145
         assert act2[2] is None  # No power data
@@ -890,6 +894,7 @@ class TestSplitsInserter:
         act3 = conn.execute(
             "SELECT stride_length, max_heart_rate, max_cadence FROM splits WHERE activity_id = 3"
         ).fetchone()
+        assert act3 is not None
         assert act3[0] == pytest.approx(88.0)
         assert act3[1] == 140
         assert act3[2] is None  # No cadence data
@@ -976,6 +981,7 @@ class TestSplitsInserter:
                 COUNT(grade_adjusted_speed) * 100.0 / COUNT(*) as grade_adj_pct
             FROM splits
             """).fetchone()
+        assert stats is not None
 
         # Verify population rates
         assert stats[0] == 3  # total_splits

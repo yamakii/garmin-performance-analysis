@@ -91,10 +91,12 @@ class TestBackupTables:
         assert result is not None
 
         # Verify data copied
-        count_original = conn.execute("SELECT COUNT(*) FROM splits").fetchone()[0]
-        count_backup = conn.execute("SELECT COUNT(*) FROM splits_backup_fk").fetchone()[
-            0
-        ]
+        _row = conn.execute("SELECT COUNT(*) FROM splits").fetchone()
+        assert _row is not None
+        count_original = _row[0]
+        _row = conn.execute("SELECT COUNT(*) FROM splits_backup_fk").fetchone()
+        assert _row is not None
+        count_backup = _row[0]
         assert count_original == count_backup
         assert count_backup == 3
 
@@ -171,7 +173,9 @@ class TestCreateNewTables:
             INSERT INTO splits (activity_id, split_index, distance, pace_seconds_per_km)
             VALUES (99999, 1, 1.0, 300.0)
         """)
-        count = conn.execute("SELECT COUNT(*) FROM splits").fetchone()[0]
+        _row = conn.execute("SELECT COUNT(*) FROM splits").fetchone()
+        assert _row is not None
+        count = _row[0]
         assert count == 1  # Orphaned record inserted successfully (no FK constraint)
 
         conn.close()
@@ -199,7 +203,9 @@ class TestRestoreData:
         _restore_data(conn, ["splits"])
 
         # Verify data restored (populated_db has 3 rows)
-        count = conn.execute("SELECT COUNT(*) FROM splits").fetchone()[0]
+        _row = conn.execute("SELECT COUNT(*) FROM splits").fetchone()
+        assert _row is not None
+        count = _row[0]
         assert count == 3
 
         # Verify data content (check only the columns from populated_db fixture)
@@ -298,10 +304,10 @@ class TestCleanupBackupTables:
         _cleanup_backup_tables(conn, ["splits"])
 
         # Verify backup removed
-        result = conn.execute(
+        backup_result = conn.execute(
             "SELECT table_name FROM information_schema.tables WHERE table_name = 'splits_backup_fk'"
         ).fetchall()
-        assert len(result) == 0
+        assert len(backup_result) == 0
 
         # Verify original table still exists
         result = conn.execute(
@@ -345,7 +351,9 @@ class TestMigrationRollback:
         conn = duckdb.connect(str(test_db_path))
 
         # activities table should still exist
-        activities_count = conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0]
+        _row = conn.execute("SELECT COUNT(*) FROM activities").fetchone()
+        assert _row is not None
+        activities_count = _row[0]
         assert activities_count == 1
 
         # No backup tables should exist

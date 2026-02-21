@@ -337,6 +337,7 @@ class TestPerformanceTrendsInserter:
             FROM performance_trends
             WHERE activity_id = 20636804823
             """).fetchone()
+        assert data is not None
 
         # Sample has warmup split with cadence=183.6, power=268
         assert data[0] == 183.6  # warmup_avg_cadence
@@ -358,9 +359,11 @@ class TestPerformanceTrendsInserter:
         assert result is True
 
         conn = duckdb.connect(str(db_path))
-        evaluation = conn.execute(
+        _row = conn.execute(
             "SELECT warmup_evaluation FROM performance_trends WHERE activity_id = 20636804823"
-        ).fetchone()[0]
+        ).fetchone()
+        assert _row is not None
+        evaluation = _row[0]
 
         # Should have a valid evaluation
         assert evaluation in [
@@ -393,6 +396,7 @@ class TestPerformanceTrendsInserter:
             FROM performance_trends
             WHERE activity_id = 20636804823
             """).fetchone()
+        assert data is not None
 
         # Sample has run splits with cadence=187.0 and 186.2, power=262 and 267
         expected_cadence = (187.0 + 186.2) / 2
@@ -416,9 +420,11 @@ class TestPerformanceTrendsInserter:
         assert result is True
 
         conn = duckdb.connect(str(db_path))
-        evaluation = conn.execute(
+        _row = conn.execute(
             "SELECT run_evaluation FROM performance_trends WHERE activity_id = 20636804823"
-        ).fetchone()[0]
+        ).fetchone()
+        assert _row is not None
+        evaluation = _row[0]
 
         # Should have a valid evaluation
         assert evaluation in ["Excellent", "Good", "Fair", "Poor"]
@@ -446,6 +452,7 @@ class TestPerformanceTrendsInserter:
             FROM performance_trends
             WHERE activity_id = 20636804823
             """).fetchone()
+        assert data is not None
 
         # Sample has recovery split with cadence=170.0, power=200
         assert data[0] == 170.0  # recovery_avg_cadence
@@ -467,9 +474,11 @@ class TestPerformanceTrendsInserter:
         assert result is True
 
         conn = duckdb.connect(str(db_path))
-        evaluation = conn.execute(
+        _row = conn.execute(
             "SELECT recovery_evaluation FROM performance_trends WHERE activity_id = 20636804823"
-        ).fetchone()[0]
+        ).fetchone()
+        assert _row is not None
+        evaluation = _row[0]
 
         # Should have a valid evaluation
         assert evaluation in [
@@ -502,6 +511,7 @@ class TestPerformanceTrendsInserter:
             FROM performance_trends
             WHERE activity_id = 20636804823
             """).fetchone()
+        assert data is not None
 
         # Sample has cooldown split with cadence=175.0, power=220
         assert data[0] == 175.0  # cooldown_avg_cadence
@@ -523,9 +533,11 @@ class TestPerformanceTrendsInserter:
         assert result is True
 
         conn = duckdb.connect(str(db_path))
-        evaluation = conn.execute(
+        _row = conn.execute(
             "SELECT cooldown_evaluation FROM performance_trends WHERE activity_id = 20636804823"
-        ).fetchone()[0]
+        ).fetchone()
+        assert _row is not None
+        evaluation = _row[0]
 
         # Should have a valid evaluation
         assert evaluation in [

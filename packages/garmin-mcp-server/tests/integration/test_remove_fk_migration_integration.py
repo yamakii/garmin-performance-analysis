@@ -189,9 +189,9 @@ class TestEndToEndMigration:
             "form_efficiency",
             "heart_rate_zones",
         ]:
-            counts_before[table] = conn.execute(
-                f"SELECT COUNT(*) FROM {table}"
-            ).fetchone()[0]
+            _row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+            assert _row is not None
+            counts_before[table] = _row[0]
 
         conn.close()
 
@@ -201,7 +201,9 @@ class TestEndToEndMigration:
         # Verify counts after migration
         conn = duckdb.connect(str(production_like_db))
         for table, count_before in counts_before.items():
-            count_after = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            _row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+            assert _row is not None
+            count_after = _row[0]
             assert (
                 count_after == count_before
             ), f"{table}: {count_after} != {count_before}"
@@ -253,9 +255,11 @@ class TestEndToEndMigration:
         )
 
         # Verify insertion succeeded
-        count = conn.execute(
+        _row = conn.execute(
             "SELECT COUNT(*) FROM splits WHERE activity_id = 99999"
-        ).fetchone()[0]
+        ).fetchone()
+        assert _row is not None
+        count = _row[0]
         assert count == 1  # Orphaned record exists (no FK constraint)
 
         conn.close()
@@ -277,9 +281,9 @@ class TestDryRunMode:
         # Get row counts before dry run
         counts_before = {}
         for table in ["activities", "splits", "form_efficiency"]:
-            counts_before[table] = conn.execute(
-                f"SELECT COUNT(*) FROM {table}"
-            ).fetchone()[0]
+            _row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+            assert _row is not None
+            counts_before[table] = _row[0]
 
         conn.close()
 
@@ -299,7 +303,9 @@ class TestDryRunMode:
         assert tables_before == tables_after
 
         for table, count_before in counts_before.items():
-            count_after = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            _row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+            assert _row is not None
+            count_after = _row[0]
             assert count_after == count_before
 
         # Verify FK constraints still exist (dry run didn't remove them)
@@ -346,15 +352,19 @@ class TestRegenerateCompatibility:
                 )
 
         # Verify deletions
-        splits_count = conn.execute(
+        _row = conn.execute(
             "SELECT COUNT(*) FROM splits WHERE activity_id = 12345"
-        ).fetchone()[0]
+        ).fetchone()
+        assert _row is not None
+        splits_count = _row[0]
         assert splits_count == 0
 
         # Verify other activity still exists
-        splits_count_other = conn.execute(
+        _row = conn.execute(
             "SELECT COUNT(*) FROM splits WHERE activity_id = 67890"
-        ).fetchone()[0]
+        ).fetchone()
+        assert _row is not None
+        splits_count_other = _row[0]
         assert splits_count_other == 1
 
         conn.close()
