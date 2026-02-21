@@ -36,7 +36,6 @@ dmypy.json
 # Environment variables
 .env
 .env.local
-.envrc
 
 # Project specific - Data directories
 data/raw/*
