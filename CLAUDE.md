@@ -102,9 +102,16 @@ mcp__serena__activate_project("/absolute/path/to/worktree")
 ```
 
 **2. Development Process (GitHub Issue-centric)**
-```
-Decompose → Plan mode (per sub-issue) → Implement (worktree) → Ship & Close
 
+Plan mode の探索フェーズで規模判定と Issue 連携を行う:
+```
+Plan mode Phase 1 (探索):
+  Issue番号あり? → gh issue view N → 設計をベースにプラン作成
+  Large task?    → プラン内で /decompose を推奨
+  Small task?    → 通常のプラン作成 → Implement
+```
+
+```
 Commands & Agents:
 - /decompose: Break large tasks into Epic + Sub-issues on GitHub
 - /project-status: Show Epic progress dashboard
@@ -112,6 +119,8 @@ Commands & Agents:
 - completion-reporter: Posts report to Issue + closes it
 - /ship --close N: Push + close Issue
 ```
+
+See `.claude/rules/project-workflow.md` for routing details.
 
 ### Data Processing Scripts
 
