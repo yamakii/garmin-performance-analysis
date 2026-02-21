@@ -32,7 +32,26 @@ Run the full ship workflow for the current changes.
 
 4. **Push**: Run `git push` to push to remote. If no upstream is set, use `git push -u origin <branch>`.
 
-5. **Close Issue** (if `--close` specified): After successful push, close the specified GitHub Issue:
+5. **Merge & cleanup** (if on a feature branch):
+   ```bash
+   # Merge to main
+   cd /home/yamakii/workspace/garmin-performance-analysis
+   git merge --no-ff feature/{name}
+
+   # Push main
+   git push
+
+   # Delete remote and local feature branch
+   git push origin --delete feature/{name}
+   git branch -d feature/{name}
+
+   # Remove worktree if it exists
+   git worktree remove ../garmin-{name} 2>/dev/null || true
+   ```
+
+   If on main branch (no feature branch), skip this step.
+
+6. **Close Issue** (if `--close` specified): After successful push, close the specified GitHub Issue:
    ```bash
    gh issue close {number}
    ```
