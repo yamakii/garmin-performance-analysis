@@ -10,6 +10,30 @@ Run the full ship workflow for the current changes.
 
 ## Steps
 
+0. **State diagnosis** (only when `$ARGUMENTS` is empty — no commit message, no `--close`):
+
+   Check the following in order. Execute from the first incomplete step found:
+
+   a. **Uncommitted changes**: Run `git status`. If there are staged or unstaged changes → go to Step 1 (normal flow).
+
+   b. **Unpushed commits**: Run `git log origin/$(git branch --show-current)..HEAD --oneline`. If there are commits → go to Step 4 (Push).
+
+   c. **Unmerged feature branch**: If currently on a `feature/*` branch, or `git branch --list 'feature/*'` shows unmerged feature branches → go to Step 5 (Merge & cleanup).
+
+   d. **Unclosed Issue**: Extract issue numbers from recent commits:
+      ```bash
+      git log --oneline -5 | grep -oP '\(#\K[0-9]+(?=\))'
+      ```
+      For each extracted number, check if the issue is still open:
+      ```bash
+      gh issue view {number} --json state --jq '.state'
+      ```
+      If any issue is OPEN → execute Step 6 (Close Issue) with that number.
+
+   e. **All complete**: If none of the above apply → report 「全ステップ完了済みです。未完了の作業はありません。」 and stop.
+
+   If `$ARGUMENTS` is not empty (commit message or `--close` provided), skip Step 0 entirely and proceed as before.
+
 1. **Review changes**: Run `git status` and `git diff --staged` to understand what will be committed. If nothing is staged, show unstaged changes and ask what to stage.
 
 2. **Quality check**: Run `uv run pre-commit run --files <changed-files>` on all modified files. If any check fails, fix the issues and re-run.
