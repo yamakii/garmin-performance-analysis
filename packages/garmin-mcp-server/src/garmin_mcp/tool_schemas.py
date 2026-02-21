@@ -673,7 +673,17 @@ _SERVER_TOOLS: list[dict] = [
     {
         "name": "reload_server",
         "description": "Restart the MCP server process to pick up code changes. The server will exit and Claude Code will automatically reconnect.",
-        "inputSchema": {"type": "object", "properties": {}},
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "server_dir": {
+                    "type": "string",
+                    "description": "Absolute path to garmin-mcp-server package directory. "
+                    "If provided, the server restarts from this directory (for worktree development). "
+                    "If omitted, restores default directory.",
+                },
+            },
+        },
     },
 ]
 
