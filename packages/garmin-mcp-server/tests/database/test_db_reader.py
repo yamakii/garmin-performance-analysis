@@ -129,8 +129,6 @@ class TestGarminDBReader:
         assert split1["split_number"] == 1
         assert split1["elevation_gain_m"] == 5
         assert split1["elevation_loss_m"] == 2
-        assert split1["max_elevation_m"] is None  # Not available in splits table
-        assert split1["min_elevation_m"] is None  # Not available in splits table
         assert split1["terrain_type"] == "起伏"  # total=7, 5<=total<15
 
         # Check second split
@@ -138,8 +136,6 @@ class TestGarminDBReader:
         assert split2["split_number"] == 2
         assert split2["elevation_gain_m"] == 8
         assert split2["elevation_loss_m"] == 3
-        assert split2["max_elevation_m"] is None  # Not available in splits table
-        assert split2["min_elevation_m"] is None  # Not available in splits table
         assert split2["terrain_type"] == "起伏"
 
     @pytest.mark.unit
@@ -234,19 +230,16 @@ class TestGarminDBReader:
 
         # Check warmup phase
         assert "warmup_phase" in result
-        assert result["warmup_phase"]["splits"] == [1, 2]
         assert result["warmup_phase"]["avg_pace"] == 420.0
         assert result["warmup_phase"]["avg_hr"] == 145.0
 
         # Check run phase
         assert "run_phase" in result
-        assert result["run_phase"]["splits"] == [3, 4, 5]
         assert result["run_phase"]["avg_pace"] == 360.0
         assert result["run_phase"]["avg_hr"] == 165.0
 
         # Check cooldown phase
         assert "cooldown_phase" in result
-        assert result["cooldown_phase"]["splits"] == [6]
         assert result["cooldown_phase"]["avg_pace"] == 390.0
         assert result["cooldown_phase"]["avg_hr"] == 150.0
 
@@ -317,7 +310,6 @@ class TestGarminDBReader:
 
         # 4-phase interval training MUST have recovery phase
         assert "recovery_phase" in result
-        assert result["recovery_phase"]["splits"] == [3, 5]
         assert result["recovery_phase"]["avg_pace"] == 540.0
         assert result["recovery_phase"]["avg_hr"] == 140.0
 

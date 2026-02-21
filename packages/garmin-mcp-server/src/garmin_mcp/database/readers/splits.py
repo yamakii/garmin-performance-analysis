@@ -122,7 +122,6 @@ class SplitsReader(BaseDBReader):
                 return qb.parse_full_result(
                     rows,
                     qb.ELEVATION_FULL_KEYS,
-                    extra_keys=qb.ELEVATION_EXTRA_KEYS,
                 )
 
         except Exception as e:

@@ -81,7 +81,6 @@ class PerformanceTrendAnalyzer:
                 "data_points": int,
                 "start_date": str,
                 "end_date": str,
-                "filtered_activity_ids": list[int]
             }
         """
         if metric not in self.METRIC_SOURCES:
@@ -106,7 +105,6 @@ class PerformanceTrendAnalyzer:
                 "data_points": len(metric_values),
                 "start_date": start_date,
                 "end_date": end_date,
-                "filtered_activity_ids": filtered_ids,
             }
 
         # Perform linear regression
@@ -131,7 +129,6 @@ class PerformanceTrendAnalyzer:
             "data_points": len(metric_values),
             "start_date": start_date,
             "end_date": end_date,
-            "filtered_activity_ids": filtered_ids,
         }
 
     def _apply_filters(

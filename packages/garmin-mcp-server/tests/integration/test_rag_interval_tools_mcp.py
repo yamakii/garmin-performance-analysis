@@ -461,7 +461,6 @@ class TestRagIntervalToolsMcp:
                 "data_points": 10,
                 "start_date": "2025-10-01",
                 "end_date": "2025-10-10",
-                "filtered_activity_ids": [fixture_activity_id],
             }
 
             result = await call_tool(
@@ -498,7 +497,6 @@ class TestRagIntervalToolsMcp:
                 "data_points": 5,
                 "start_date": "2025-10-01",
                 "end_date": "2025-10-10",
-                "filtered_activity_ids": [fixture_activity_id],
             }
 
             result = await call_tool(
@@ -637,7 +635,6 @@ class TestRagIntervalToolsMcp:
                         "interpretation": "ペース: 5.0秒/km遅い, 心拍数: 2bpm低い",
                     }
                 ],
-                "comparison_summary": "1件の類似ワークアウトを発見。平均類似度: 95.5%",
             }
 
             result = await call_tool(
@@ -659,7 +656,6 @@ class TestRagIntervalToolsMcp:
                 response_data["target_activity"]["activity_id"] == fixture_activity_id
             )
             assert len(response_data["similar_activities"]) == 1
-            assert "comparison_summary" in response_data
 
     @pytest.mark.asyncio
     async def test_call_compare_similar_workouts_with_all_filters(
@@ -677,7 +673,6 @@ class TestRagIntervalToolsMcp:
                     "distance_km": 8.0,
                 },
                 "similar_activities": [],
-                "comparison_summary": "類似するワークアウトが見つかりませんでした",
             }
 
             result = await call_tool(

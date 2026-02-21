@@ -102,7 +102,7 @@ ELEVATION_FULL_KEYS = (
     "elevation_loss_m",
     "terrain_type",
 )
-ELEVATION_EXTRA_KEYS = {"max_elevation_m": None, "min_elevation_m": None}
+
 
 COMPREHENSIVE_FULL_COLUMNS = (
     "split_index",
