@@ -54,6 +54,23 @@ git commit -m "feat: description
 Co-Authored-By: Claude <noreply@anthropic.com>"
 ```
 
+## Commit Discipline
+
+各コミットは**単一の関心事**のみ含めること:
+
+- feat: 1つの機能追加のみ
+- fix: 1つのバグ修正のみ
+- test: テスト追加/修正のみ
+- docs: ドキュメント変更のみ
+- refactor: リファクタリングのみ
+
+**禁止パターン:**
+- feat + fix を1コミットに混ぜる
+- コード変更 + 無関係なルール更新を混ぜる
+- 複数の独立した機能を1コミットにまとめる
+
+**判断基準:** コミットメッセージに "and" や "+" が必要なら分割すべき。
+
 ## After Merge
 
 ```bash

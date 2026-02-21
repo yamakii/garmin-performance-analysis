@@ -12,6 +12,7 @@
 - Implement on main branch (use worktree)
 - Remove worktree without checking status: `git worktree remove --force`
 - Force push to main/master
+- 複数の無関係な変更を1コミットに混在させる（1 commit = 1 concern）
 
 ## Database
 
