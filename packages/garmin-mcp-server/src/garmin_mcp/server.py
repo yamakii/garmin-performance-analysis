@@ -6,6 +6,7 @@ Provides efficient DuckDB access to performance data via MCP protocol.
 
 import asyncio
 import logging
+import os
 from typing import Any
 
 from mcp.server import Server
@@ -58,12 +59,27 @@ async def list_tools() -> list[Tool]:
 @mcp.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """Handle tool calls by dispatching to the appropriate handler."""
+    if name == "reload_server":
+        return await _handle_reload_server()
     if not _handlers:
         _init_handlers()
     for handler in _handlers:
         if handler.handles(name):
             return await handler.handle(name, arguments)
     raise ValueError(f"Unknown tool: {name}")
+
+
+async def _handle_reload_server() -> list[TextContent]:
+    """Handle reload_server by scheduling process exit after response is sent."""
+    logger.info("reload_server called - scheduling process exit")
+    loop = asyncio.get_event_loop()
+    loop.call_later(0.5, os._exit, 0)
+    return [
+        TextContent(
+            type="text",
+            text='{"success": true, "message": "Server will restart momentarily."}',
+        )
+    ]
 
 
 async def main() -> None:

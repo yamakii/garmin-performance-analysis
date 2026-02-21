@@ -37,7 +37,7 @@
 - MCP toolの戻り値構造・型を変更した後
 
 **How to restart:**
-- garmin-db MCP: `/mcp` → restart garmin-db server
+- garmin-db MCP: `mcp__garmin-db__reload_server()` を呼び出す（自動再接続）
 - Serena MCP: `mcp__serena__activate_project()` で再アクティベート
 
 **Verification:**

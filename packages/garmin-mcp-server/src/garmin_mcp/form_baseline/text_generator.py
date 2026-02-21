@@ -107,7 +107,7 @@ def generate_evaluation_text(
         text = (
             f"{actual_str}{unit}は期待値{expected_str}{unit}より"
             f"{abs(delta_pct):.0f}%{direction}、効率面で良好です。"
-            f"ただしバランスの確認を推奨します。{star_rating}"
+            f"この指標自体は良好で、他の指標とのバランスで総合評価されています。{star_rating}"
         )
     elif abs(delta_pct) <= 5:
         # Slightly degraded (2% < delta <= 5%, higher = less efficient)

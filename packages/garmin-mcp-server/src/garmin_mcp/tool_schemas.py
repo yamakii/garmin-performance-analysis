@@ -639,6 +639,14 @@ _TRAINING_PLAN_TOOLS: list[dict] = [
     },
 ]
 
+_SERVER_TOOLS: list[dict] = [
+    {
+        "name": "reload_server",
+        "description": "Restart the MCP server process to pick up code changes. The server will exit and Claude Code will automatically reconnect.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+]
+
 
 def get_tool_definitions() -> list[Tool]:
     """Return all MCP tool definitions as a list of Tool objects."""
@@ -651,6 +659,7 @@ def get_tool_definitions() -> list[Tool]:
         + _PERFORMANCE_TOOLS
         + _TIME_SERIES_TOOLS
         + _TRAINING_PLAN_TOOLS
+        + _SERVER_TOOLS
     )
     return [
         Tool(
@@ -674,6 +683,7 @@ TOOL_NAMES: set[str] = {
         _PERFORMANCE_TOOLS,
         _TIME_SERIES_TOOLS,
         _TRAINING_PLAN_TOOLS,
+        _SERVER_TOOLS,
     ]
     for schema in group
 }
