@@ -1,16 +1,10 @@
 {
   "mcpServers": {
     "garmin-db": {
-      "command": "uv",
+      "command": "bash",
       "args": [
-        "run",
-        "--directory",
-        "packages/garmin-mcp-server",
-        "garmin-mcp-server"
-      ],
-      "env": {
-        "MCP_RESTART_TRIGGER": "2026-02-15"
-      }
+        "scripts/start-mcp-server.sh"
+      ]
     },
     "serena": {
       "command": "uvx",

@@ -60,7 +60,7 @@ async def list_tools() -> list[Tool]:
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """Handle tool calls by dispatching to the appropriate handler."""
     if name == "reload_server":
-        return await _handle_reload_server()
+        return await _handle_reload_server(server_dir=arguments.get("server_dir"))
     if not _handlers:
         _init_handlers()
     for handler in _handlers:
@@ -69,15 +69,34 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     raise ValueError(f"Unknown tool: {name}")
 
 
-async def _handle_reload_server() -> list[TextContent]:
-    """Handle reload_server by scheduling process exit after response is sent."""
-    logger.info("reload_server called - scheduling process exit")
+async def _handle_reload_server(
+    server_dir: str | None = None,
+) -> list[TextContent]:
+    """Handle reload_server by scheduling process exit after response is sent.
+
+    If server_dir is provided, writes it to /tmp/garmin-mcp-server-dir so the
+    launcher script starts from that directory on reconnect.
+    If server_dir is not provided, removes the override file to restore default.
+    """
+    override_file = "/tmp/garmin-mcp-server-dir"
+
+    if server_dir is not None:
+        with open(override_file, "w") as f:
+            f.write(server_dir)
+        msg = f"Server will restart from: {server_dir}"
+        logger.info("reload_server called with server_dir=%s", server_dir)
+    else:
+        if os.path.exists(override_file):
+            os.remove(override_file)
+        msg = "Server will restart from default directory."
+        logger.info("reload_server called - restoring default directory")
+
     loop = asyncio.get_event_loop()
     loop.call_later(0.5, os._exit, 0)
     return [
         TextContent(
             type="text",
-            text='{"success": true, "message": "Server will restart momentarily."}',
+            text=f'{{"success": true, "message": "{msg}"}}',
         )
     ]
 
