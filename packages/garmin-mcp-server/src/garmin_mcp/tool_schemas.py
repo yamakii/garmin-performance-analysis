@@ -403,6 +403,17 @@ _PERFORMANCE_TOOLS: list[dict] = [
             "required": ["activity_id"],
         },
     },
+    {
+        "name": "prefetch_activity_context",
+        "description": "Pre-fetch shared activity context for analysis agents. Returns training_type, weather, terrain, HR efficiency (zone_percentages), form evaluation scores, phase structure, and planned workout in a single call.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "activity_id": {"type": "integer"},
+            },
+            "required": ["activity_id"],
+        },
+    },
 ]
 
 _TIME_SERIES_TOOLS: list[dict] = [

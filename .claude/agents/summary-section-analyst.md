@@ -32,8 +32,10 @@ model: inherit
 
 事前取得コンテキストが提供されている場合、以下のMCP呼び出しを省略する：
 - `get_weather_data()` → コンテキストの `temperature_c`, `humidity_pct`, `wind_mps` を使用
-- `get_hr_efficiency_analysis()` → コンテキストの `training_type` を使用（ただしゾーン分布が必要な場合は呼び出す）
-- `get_heart_rate_zones_detail()` → `get_hr_efficiency_analysis()` にゾーン分布が含まれるため不要
+- `get_hr_efficiency_analysis()` → コンテキストの `training_type`, `zone_percentages`, `primary_zone` 等を使用（C1拡張により完全省略可能）
+- `get_heart_rate_zones_detail()` → `zone_percentages` がコンテキストに含まれるため不要
+- `get_form_evaluations()` → コンテキストの `form_scores` にstar_rating/score/integrated_score/overall_scoreが含まれる場合は省略可能（C2拡張）。ただし `needs_improvement` フィールドが必要な場合はツール呼び出しが必要
+- `get_performance_trends()` → コンテキストの `phase_structure` にpace_consistency/hr_drift等が含まれる場合は省略可能（C3拡張）。ただしメイン区間の詳細評価が必要な場合はツール呼び出しが必要
 
 **ツール統合:**
 - ~~`get_splits_pace_hr` + `get_splits_form_metrics`~~ → `get_splits_comprehensive(statistics_only=True)` で1回に統合

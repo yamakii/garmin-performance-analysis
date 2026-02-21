@@ -1,4 +1,4 @@
-"""Handler for performance tools: get_performance_trends, get_weather_data."""
+"""Handler for performance tools: get_performance_trends, get_weather_data, prefetch_activity_context."""
 
 from typing import Any
 
@@ -11,7 +11,11 @@ from garmin_mcp.handlers.base import format_json_response
 class PerformanceHandler:
     """Handles performance-related tool calls."""
 
-    _tool_names: set[str] = {"get_performance_trends", "get_weather_data"}
+    _tool_names: set[str] = {
+        "get_performance_trends",
+        "get_weather_data",
+        "prefetch_activity_context",
+    }
 
     def __init__(self, db_reader: GarminDBReader) -> None:
         self._db_reader = db_reader
@@ -26,7 +30,18 @@ class PerformanceHandler:
             result = self._db_reader.get_performance_trends(activity_id)  # type: ignore[assignment]
         elif name == "get_weather_data":
             result = self._db_reader.get_weather_data(activity_id)  # type: ignore[assignment]
+        elif name == "prefetch_activity_context":
+            result = self._prefetch_activity_context(activity_id)  # type: ignore[assignment]
         else:
             raise ValueError(f"Unknown tool: {name}")
 
         return [TextContent(type="text", text=format_json_response(result))]
+
+    @staticmethod
+    def _prefetch_activity_context(activity_id: int) -> dict:
+        """Delegate to the prefetch script function."""
+        from garmin_mcp.scripts.prefetch_activity_context import (
+            prefetch_activity_context,
+        )
+
+        return prefetch_activity_context(activity_id)

@@ -1,7 +1,7 @@
 """Tests for PerformanceHandler."""
 
 import json
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -19,6 +19,10 @@ class TestHandles:
     def test_handles_get_weather_data(self, mock_db_reader: MagicMock) -> None:
         handler = PerformanceHandler(mock_db_reader)
         assert handler.handles("get_weather_data") is True
+
+    def test_handles_prefetch_activity_context(self, mock_db_reader: MagicMock) -> None:
+        handler = PerformanceHandler(mock_db_reader)
+        assert handler.handles("prefetch_activity_context") is True
 
     def test_does_not_handle_unknown_tool(self, mock_db_reader: MagicMock) -> None:
         handler = PerformanceHandler(mock_db_reader)
@@ -94,6 +98,58 @@ class TestGetWeatherData:
 
         data = json.loads(result[0].text)
         assert data is None
+
+
+@pytest.mark.unit
+class TestPrefetchActivityContext:
+    """Test prefetch_activity_context via handle()."""
+
+    @pytest.mark.asyncio
+    async def test_returns_full_context(self, mock_db_reader: MagicMock) -> None:
+        prefetch_data = {
+            "activity_id": 12345,
+            "activity_date": "2026-02-16",
+            "training_type": "aerobic_base",
+            "temperature_c": 7.8,
+            "zone_percentages": {"zone1": 5.2, "zone2": 36.8},
+            "form_scores": {"gct": {"star_rating": "★★★★★", "score": 4.8}},
+            "phase_structure": {"pace_consistency": 0.017},
+        }
+        handler = PerformanceHandler(mock_db_reader)
+
+        with patch.object(
+            PerformanceHandler,
+            "_prefetch_activity_context",
+            return_value=prefetch_data,
+        ):
+            result = await handler.handle(
+                "prefetch_activity_context", {"activity_id": 12345}
+            )
+
+        data = json.loads(result[0].text)
+        assert data["activity_id"] == 12345
+        assert data["training_type"] == "aerobic_base"
+        assert data["zone_percentages"]["zone1"] == 5.2
+        assert data["form_scores"]["gct"]["score"] == 4.8
+        assert data["phase_structure"]["pace_consistency"] == 0.017
+
+    @pytest.mark.asyncio
+    async def test_returns_error_for_missing_activity(
+        self, mock_db_reader: MagicMock
+    ) -> None:
+        handler = PerformanceHandler(mock_db_reader)
+
+        with patch.object(
+            PerformanceHandler,
+            "_prefetch_activity_context",
+            return_value={"error": "Activity 99999 not found"},
+        ):
+            result = await handler.handle(
+                "prefetch_activity_context", {"activity_id": 99999}
+            )
+
+        data = json.loads(result[0].text)
+        assert "error" in data
 
 
 @pytest.mark.unit

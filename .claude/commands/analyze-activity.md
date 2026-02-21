@@ -4,14 +4,15 @@
 
 ## ワークフロー
 
-1. **データ収集 + コンテキスト事前取得**: WorkflowPlanner → mkdir → prefetch を1コマンドで実行
-2. **セクション分析**: 5つのエージェントを並列実行（事前取得コンテキスト付き）
-3. **結果登録**: merge script でDuckDBに一括登録
-4. **レポート生成**: report-generator-worker で最終レポート作成
+1. **データ収集**: WorkflowPlanner → mkdir
+2. **コンテキスト事前取得**: MCP ツールで prefetch（Bash許可不要）
+3. **セクション分析**: 5つのエージェントを並列実行（事前取得コンテキスト付き）
+4. **結果登録**: merge script でDuckDBに一括登録
+5. **レポート生成**: report-generator-worker で最終レポート作成
 
 ## 実行手順
 
-### Step 1: データ収集 + コンテキスト事前取得
+### Step 1: データ収集
 
 以下を**1つのBashコマンドチェーン**で実行してください：
 
@@ -20,17 +21,26 @@ RESULT=$(uv run python -m garmin_mcp.planner.workflow_planner {{arg1}}) && \
 ACTIVITY_ID=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['activity_id'])") && \
 ACTIVITY_DATE=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['date'])") && \
 mkdir -p /tmp/analysis_$ACTIVITY_ID && \
-uv run python -m garmin_mcp.scripts.prefetch_activity_context $ACTIVITY_ID
+echo "{\"activity_id\": $ACTIVITY_ID, \"date\": \"$ACTIVITY_DATE\"}"
 ```
 
 このコマンドは以下を実行します：
 - 日付 {{arg1}} からアクティビティIDを解決
 - GarminIngestWorkerでデータ収集・DuckDB格納
 - 分析用tempフォルダ作成
-- 共有コンテキストの事前取得（training_type, weather, terrain）
 
-実行後、出力された最終行のJSONを `CONTEXT` として保持し、`activity_id` と `date` を取得してください。
+実行後、出力された `activity_id` と `date` を取得してください。
 tempフォルダパスは `ANALYSIS_TEMP_DIR=/tmp/analysis_{activity_id}` として以降使用。
+
+### Step 1.5: コンテキスト事前取得（MCP ツール）
+
+MCPツールで事前取得コンテキストを取得してください（Bash許可不要）：
+
+```
+mcp__garmin-db__prefetch_activity_context(activity_id)
+```
+
+返却されたJSONを `CONTEXT` として保持してください。
 
 ### Step 2: セクション分析（並列実行）
 
