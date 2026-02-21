@@ -13,7 +13,8 @@ model: inherit
 
 1. `get_form_evaluations(activity_id)` - ペース補正済み評価取得（GCT/VO/VR + **パワー効率** + **統合スコア**）
 2. `get_hr_efficiency_analysis(activity_id)` - 心拍ゾーン + training_type
-   - **事前取得コンテキストにtraining_typeがある場合でも、ゾーン分布(zone_percentages)が必要なため省略不可**
+   - **事前取得コンテキストに `zone_percentages` がある場合は省略可能** (C1拡張)
+   - コンテキストに zone_percentages + primary_zone + zone_distribution_rating 等が含まれていれば、このツール呼び出しは不要
 3. `get_heart_rate_zones_detail(activity_id)` - ゾーン詳細
 4. `get_form_baseline_trend(activity_id, activity_date)` - 1ヶ月前との係数比較（必須）
 5. テキスト生成: efficiency, evaluation, form_trend

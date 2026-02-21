@@ -22,7 +22,10 @@ model: inherit
 
 **利用可能なツール（これらのみ使用可能）:**
 - `mcp__garmin-db__get_performance_trends(activity_id)` - フェーズデータ取得
+  - **事前取得コンテキストに `phase_structure` がある場合は省略可能** (C3拡張)
+  - ただしフェーズ評価には各フェーズの詳細データ（splits, avg_pace, avg_hr）が必要なため、phase_structureだけでは不十分な場合はツール呼び出しが必要
 - `mcp__garmin-db__get_hr_efficiency_analysis(activity_id)` - トレーニングタイプ取得
+  - **事前取得コンテキストに `training_type` がある場合は省略可能**
 - `Write` - 分析結果をJSONファイルとしてtempディレクトリに保存
 
 ## トレーニングタイプ判定

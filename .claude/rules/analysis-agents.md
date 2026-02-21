@@ -17,9 +17,12 @@ When the orchestrator provides a "事前取得コンテキスト" JSON in the pr
 - `planned_workout` → not nullの場合、プランのワークアウト目標を含む（workout_type, target_hr_low/high, target_pace_low/high等）
   - **プラン目標がある場合は、Garminのtraining_typeより優先して評価基準とする**
   - nullの場合は従来通りtraining_typeベースで評価（アドホックラン）
+- `zone_percentages` (dict: zone1-zone5), `primary_zone`, `zone_distribution_rating`, `hr_stability`, `aerobic_efficiency`, `training_quality`, `zone2_focus`, `zone4_threshold_work` → skip `get_hr_efficiency_analysis()` completely (C1)
+- `form_scores` (dict: gct/vo/vr star_rating+score, integrated_score, overall_score, overall_star_rating) → skip `get_form_evaluations()` if you only need scores (C2)
+- `phase_structure` (dict: pace_consistency, hr_drift_percentage, cadence_consistency, fatigue_pattern, warmup/run/recovery/cooldown avg_pace+avg_hr) → skip `get_performance_trends()` if you only need phase overview (C3)
 
 **Rules:**
-- If you need MORE data than what's in the context (e.g., full zone percentages from hr_efficiency), call the MCP tool normally
+- If you need MORE data than what's in the context (e.g., full evaluation_text from form_evaluations, or detailed per-split data from performance_trends), call the MCP tool normally
 - If the context provides everything you need for a field, do NOT call the corresponding MCP tool
 - The context is read-only reference data — always trust it as accurate
 
