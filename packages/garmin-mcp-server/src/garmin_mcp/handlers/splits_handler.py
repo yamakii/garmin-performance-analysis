@@ -1,12 +1,12 @@
 """Handler for splits tools."""
 
-import json
 import logging
 from typing import Any
 
 from mcp.types import TextContent
 
 from garmin_mcp.database.db_reader import GarminDBReader
+from garmin_mcp.handlers.base import format_json_response
 
 logger = logging.getLogger(__name__)
 
@@ -53,8 +53,4 @@ class SplitsHandler:
         else:
             raise ValueError(f"Unknown tool: {name}")
 
-        return [
-            TextContent(
-                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
-            )
-        ]
+        return [TextContent(type="text", text=format_json_response(result))]

@@ -1,11 +1,11 @@
 """Handler for time series tools: get_split_time_series_detail, get_time_range_detail."""
 
-import json
 from typing import Any
 
 from mcp.types import TextContent
 
 from garmin_mcp.database.db_reader import GarminDBReader
+from garmin_mcp.handlers.base import format_json_response
 
 
 class TimeSeriesHandler:
@@ -41,11 +41,7 @@ class TimeSeriesHandler:
             detect_anomalies=arguments.get("detect_anomalies", False),
             z_threshold=arguments.get("z_threshold", 2.0),
         )
-        return [
-            TextContent(
-                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
-            )
-        ]
+        return [TextContent(type="text", text=format_json_response(result))]
 
     async def _get_time_range_detail(
         self, arguments: dict[str, Any]
@@ -60,8 +56,4 @@ class TimeSeriesHandler:
             metrics=arguments.get("metrics"),
             statistics_only=arguments.get("statistics_only", False),
         )
-        return [
-            TextContent(
-                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
-            )
-        ]
+        return [TextContent(type="text", text=format_json_response(result))]

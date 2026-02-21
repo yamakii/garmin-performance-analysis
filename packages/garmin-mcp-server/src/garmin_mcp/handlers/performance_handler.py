@@ -1,11 +1,11 @@
 """Handler for performance tools: get_performance_trends, get_weather_data."""
 
-import json
 from typing import Any
 
 from mcp.types import TextContent
 
 from garmin_mcp.database.db_reader import GarminDBReader
+from garmin_mcp.handlers.base import format_json_response
 
 
 class PerformanceHandler:
@@ -29,8 +29,4 @@ class PerformanceHandler:
         else:
             raise ValueError(f"Unknown tool: {name}")
 
-        return [
-            TextContent(
-                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
-            )
-        ]
+        return [TextContent(type="text", text=format_json_response(result))]

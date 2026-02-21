@@ -1,12 +1,12 @@
 """Handler for training plan tool calls."""
 
-import json
 import logging
 from typing import Any
 
 from mcp.types import TextContent
 
 from garmin_mcp.database.db_reader import GarminDBReader
+from garmin_mcp.handlers.base import format_json_response
 
 logger = logging.getLogger(__name__)
 
@@ -69,11 +69,7 @@ class TrainingPlanHandler:
             logger.error(f"Fitness assessment failed: {e}")
             result = {"error": str(e)}  # type: ignore[assignment]
 
-        return [
-            TextContent(
-                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
-            )
-        ]
+        return [TextContent(type="text", text=format_json_response(result))]
 
     async def _save_training_plan(self, arguments: dict[str, Any]) -> list[TextContent]:
         from garmin_mcp.database.inserters.training_plans import insert_training_plan
@@ -91,10 +87,8 @@ class TrainingPlanHandler:
                 return [
                     TextContent(
                         type="text",
-                        text=json.dumps(
-                            {"error": "Safety validation failed", "details": errors},
-                            indent=2,
-                            ensure_ascii=False,
+                        text=format_json_response(
+                            {"error": "Safety validation failed", "details": errors}
                         ),
                     )
                 ]
@@ -129,7 +123,7 @@ class TrainingPlanHandler:
         return [
             TextContent(
                 type="text",
-                text=json.dumps(result, indent=2, ensure_ascii=False, default=str),
+                text=format_json_response(result, default=str),
             )
         ]
 
@@ -212,7 +206,7 @@ class TrainingPlanHandler:
         return [
             TextContent(
                 type="text",
-                text=json.dumps(result, indent=2, ensure_ascii=False, default=str),
+                text=format_json_response(result, default=str),
             )
         ]
 
@@ -245,7 +239,7 @@ class TrainingPlanHandler:
         return [
             TextContent(
                 type="text",
-                text=json.dumps(result, indent=2, ensure_ascii=False, default=str),
+                text=format_json_response(result, default=str),
             )
         ]
 
@@ -274,6 +268,6 @@ class TrainingPlanHandler:
         return [
             TextContent(
                 type="text",
-                text=json.dumps(result, indent=2, ensure_ascii=False, default=str),
+                text=format_json_response(result, default=str),
             )
         ]
