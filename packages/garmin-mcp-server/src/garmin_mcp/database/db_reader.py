@@ -214,6 +214,20 @@ class GarminDBReader:
         """
         return self.splits.get_split_time_ranges(activity_id)
 
+    def get_bulk_metric_averages(
+        self, activity_ids: list[int], column: str
+    ) -> dict[int, float]:
+        """Get average metric value per activity in a single SQL query.
+
+        Args:
+            activity_ids: List of activity IDs
+            column: DuckDB column name (e.g., "pace_seconds_per_km")
+
+        Returns:
+            Dict mapping activity_id to average value
+        """
+        return self.splits.get_bulk_metric_averages(activity_ids, column)
+
     # ========== Form Methods ==========
 
     def get_form_efficiency_summary(self, activity_id: int) -> dict[str, Any] | None:

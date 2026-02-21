@@ -168,3 +168,73 @@ class TestGetSplitsAll:
         ):
             warnings.simplefilter("ignore", DeprecationWarning)
             splits_reader.get_splits_all(ACTIVITY_ID, max_output_size=10)
+
+
+BULK_ID_1 = 88880010
+BULK_ID_2 = 88880011
+BULK_ID_3 = 88880012
+
+
+@pytest.mark.unit
+class TestGetBulkMetricAverages:
+    """Tests for SplitsReader.get_bulk_metric_averages()."""
+
+    @pytest.fixture
+    def bulk_reader(self, reader_db_path: Path) -> SplitsReader:
+        """SplitsReader with 3 activities for bulk query testing."""
+        _insert_test_splits(reader_db_path, BULK_ID_1, n=3)
+        _insert_test_splits(reader_db_path, BULK_ID_2, n=3)
+        _insert_test_splits(reader_db_path, BULK_ID_3, n=3)
+        return SplitsReader(db_path=str(reader_db_path))
+
+    def test_returns_dict_of_averages(self, bulk_reader: SplitsReader) -> None:
+        """Basic return type and content."""
+        result = bulk_reader.get_bulk_metric_averages(
+            [BULK_ID_1, BULK_ID_2], "pace_seconds_per_km"
+        )
+        assert isinstance(result, dict)
+        assert BULK_ID_1 in result
+        assert BULK_ID_2 in result
+        assert isinstance(result[BULK_ID_1], float)
+
+    def test_all_allowed_columns(self, bulk_reader: SplitsReader) -> None:
+        """All allowed columns should work without error."""
+        for column in [
+            "pace_seconds_per_km",
+            "heart_rate",
+            "cadence",
+            "power",
+            "ground_contact_time",
+            "vertical_oscillation",
+            "vertical_ratio",
+            "elevation_gain",
+        ]:
+            result = bulk_reader.get_bulk_metric_averages([BULK_ID_1], column)
+            assert isinstance(result, dict)
+
+    def test_invalid_column_raises(self, bulk_reader: SplitsReader) -> None:
+        """Invalid column name should raise ValueError."""
+        with pytest.raises(ValueError, match="Invalid column"):
+            bulk_reader.get_bulk_metric_averages([BULK_ID_1], "DROP TABLE splits")
+
+    def test_empty_activity_ids(self, bulk_reader: SplitsReader) -> None:
+        """Empty activity_ids should return empty dict."""
+        result = bulk_reader.get_bulk_metric_averages([], "pace_seconds_per_km")
+        assert result == {}
+
+    def test_missing_activity_excluded(self, bulk_reader: SplitsReader) -> None:
+        """Activity with no splits should not appear in result."""
+        result = bulk_reader.get_bulk_metric_averages(
+            [BULK_ID_1, MISSING_ID], "pace_seconds_per_km"
+        )
+        assert BULK_ID_1 in result
+        assert MISSING_ID not in result
+
+    def test_averages_are_correct(self, bulk_reader: SplitsReader) -> None:
+        """Verify the average calculation is correct."""
+        result = bulk_reader.get_bulk_metric_averages(
+            [BULK_ID_1], "pace_seconds_per_km"
+        )
+        # _insert_test_splits inserts pace_seconds_per_km = 300 + i*5 for i=1..3
+        # Values: 305, 310, 315 → avg = 310.0
+        assert result[BULK_ID_1] == pytest.approx(310.0)
