@@ -14,17 +14,20 @@ Run the full ship workflow for the current changes.
 
 2. **Quality check**: Run `uv run pre-commit run --files <changed-files>` on all modified files. If any check fails, fix the issues and re-run.
 
-3. **Commit**: Create a commit with `--no-verify` (quality check already done in step 2). Use Conventional Commits format. If the user provided a commit message as argument (before `--close`), use it. Otherwise, auto-generate from the diff.
+3. **Commit**: Create a commit using Conventional Commits format. If the user provided a commit message as argument (before `--close`), use it. Otherwise, auto-generate from the diff.
 
-   ```bash
-   git commit --no-verify -m "<type>: <description>
+   Format:
+   ```
+   <type>: <description>
 
-   Co-Authored-By: Claude <noreply@anthropic.com>"
+   Co-Authored-By: Claude <noreply@anthropic.com>
    ```
 
    If `--close` is used with an issue number, include it in the commit message:
    ```
    <type>: <description> (#issue-number)
+
+   Co-Authored-By: Claude <noreply@anthropic.com>
    ```
 
 4. **Push**: Run `git push` to push to remote. If no upstream is set, use `git push -u origin <branch>`.
