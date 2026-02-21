@@ -11,7 +11,7 @@ Garmin running performance analysis system with **DuckDB-first architecture** an
 **Key Features:**
 - DuckDB normalized storage (14 tables, 100+ activities)
 - 30+ token-optimized MCP tools (70-98.8% reduction)
-- 8 specialized agents (5 analysis + 3 development)
+- 7 specialized agents (5 analysis + 2 development)
 - Japanese reports (code/docs in English)
 
 **Two Use Cases:**
@@ -101,14 +101,16 @@ direnv allow
 mcp__serena__activate_project("/absolute/path/to/worktree")
 ```
 
-**2. Development Process (TDD)**
+**2. Development Process (GitHub Issue-centric)**
 ```
-Planning (main) → Implementation (worktree) → Completion (merge)
+Decompose → Plan mode (per sub-issue) → Implement (worktree) → Ship & Close
 
-Agents:
-- project-planner: Creates planning.md, GitHub Issue
-- tdd-implementer: TDD cycle (Red → Green → Refactor)
-- completion-reporter: Generates completion_report.md
+Commands & Agents:
+- /decompose: Break large tasks into Epic + Sub-issues on GitHub
+- /project-status: Show Epic progress dashboard
+- tdd-implementer: TDD cycle (reads design from GitHub Issue body)
+- completion-reporter: Posts report to Issue + closes it
+- /ship --close N: Push + close Issue
 ```
 
 ### Data Processing Scripts
@@ -131,19 +133,24 @@ uv run python -m garmin_mcp.scripts.bulk_fetch_raw_data --start-date 2025-10-01
 uv run python -m garmin_mcp.scripts.bulk_fetch_activity_details --activity-ids 12345 67890
 ```
 
-### Project Management
+### Project Management (GitHub Issue-centric)
 
-**GitHub Issue Integration:**
-- All projects tracked as Issues (Open = Active, Closed = Archived)
-- Link Issues in planning.md, reference in commits (`#123`)
+**GitHub Issues are the Single Source of Truth:**
+- `epic` label: Large tasks with sub-issues (task list tracks progress)
+- `sub-issue` label: Independently implementable units (1 plan mode cycle = 1 sub-issue)
+- `spike` label: Investigation only, no code changes
 
-**Project Structure:**
+**Workflows:**
+- Large task: `/decompose` → Epic + Sub-issues → Plan mode per sub-issue → `/ship --close N`
+- Small task: Plan mode → `/ship` (Issue optional)
+- Progress: `/project-status [epic-number]`
+
+**Issue hierarchy:**
 ```
-docs/project/
-├── 2025-XX-XX_project_name/    # Active
-│   ├── planning.md
-│   └── completion_report.md
-└── _archived/                  # Completed
+Epic #50: Refactor ingest pipeline
+  ├── Sub-issue #51: Extract ApiClient (closed)
+  ├── Sub-issue #52: Extract RawDataFetcher (in progress)
+  └── Sub-issue #53: Extract DuckDBSaver (pending)
 ```
 
 ---
@@ -195,8 +202,8 @@ garmin-performance-analysis/
 │       │   └── validation/         # Data validation
 │       └── tests/
 ├── .claude/
-│   ├── agents/                     # 5 analysis + 3 dev agents
-│   ├── commands/                   # /analyze-activity, /batch-analyze, /plan-training
+│   ├── agents/                     # 5 analysis + 2 dev agents
+│   ├── commands/                   # /analyze-activity, /batch-analyze, /decompose, /project-status, /ship
 │   ├── rules/                      # Shared rules (auto-loaded)
 │   └── settings.local.json
 ├── data/                           # GARMIN_DATA_DIR (configurable via .env)
@@ -218,10 +225,9 @@ garmin-performance-analysis/
 4. **efficiency-section-analyst**: Form (GCT/VO/VR) + HR efficiency
 5. **environment-section-analyst**: Environmental impact (weather, terrain)
 
-**3 Development Agents:**
-- **project-planner**: Creates planning.md, GitHub Issue
-- **tdd-implementer**: TDD cycle in worktree
-- **completion-reporter**: Generates completion_report.md
+**2 Development Agents:**
+- **tdd-implementer**: TDD cycle in worktree (reads design from GitHub Issue)
+- **completion-reporter**: Posts completion report to GitHub Issue + closes it
 
 ### Critical Data Sources
 

@@ -11,7 +11,7 @@ mcp__serena__activate_project("/home/yamakii/workspace/garmin-performance-analys
 
 ### When to activate
 - **Plan mode Phase 1 (Initial Understanding)**: MUST activate before launching Explore agents
-- **Planning phase**: MUST activate before project-planner agent
+- **Decompose phase**: MUST activate before `/decompose` command (code exploration)
 - **Implementation phase**: MUST activate for worktree path
 
 ### Why

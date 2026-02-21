@@ -14,7 +14,7 @@ Run the full ship workflow for the current changes.
 
 2. **Quality check**: Run `uv run pre-commit run --files <changed-files>` on all modified files. If any check fails, fix the issues and re-run.
 
-3. **Commit**: Create a commit using Conventional Commits format. If the user provided a commit message as argument, use it. Otherwise, auto-generate from the diff.
+3. **Commit**: Create a commit using Conventional Commits format. If the user provided a commit message as argument (before `--close`), use it. Otherwise, auto-generate from the diff.
 
    Format:
    ```
@@ -23,8 +23,31 @@ Run the full ship workflow for the current changes.
    Co-Authored-By: Claude <noreply@anthropic.com>
    ```
 
-4. **Push**: Run `git push` to push to remote.
+   If `--close` is used with an issue number, include it in the commit message:
+   ```
+   <type>: <description> (#issue-number)
+
+   Co-Authored-By: Claude <noreply@anthropic.com>
+   ```
+
+4. **Push**: Run `git push` to push to remote. If no upstream is set, use `git push -u origin <branch>`.
+
+5. **Close Issue** (if `--close` specified): After successful push, close the specified GitHub Issue:
+   ```bash
+   gh issue close {number}
+   ```
+
+   If the closed Issue is a sub-issue (has "Part of #XX" in body), show the Epic's updated progress:
+   ```bash
+   gh issue view {epic-number} --json body
+   ```
 
 ## Arguments
 
-$ARGUMENTS — Optional commit message. If not provided, auto-generate from diff.
+$ARGUMENTS — Optional commit message and/or `--close <issue-number>`.
+
+Examples:
+- `/ship` — auto-generate commit message, push
+- `/ship fix: correct form evaluation` — use provided message, push
+- `/ship --close 51` — auto-generate message, push, close #51
+- `/ship feat: extract ApiClient --close 51` — use message, push, close #51
