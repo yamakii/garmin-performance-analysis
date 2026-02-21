@@ -38,16 +38,13 @@ class PerformanceReader(BaseDBReader):
                         hr_drift_percentage,
                         cadence_consistency,
                         fatigue_pattern,
-                        warmup_splits,
                         warmup_avg_pace_seconds_per_km,
                         warmup_avg_hr,
-                        run_splits,
                         run_avg_pace_seconds_per_km,
                         run_avg_hr,
                         recovery_splits,
                         recovery_avg_pace_seconds_per_km,
                         recovery_avg_hr,
-                        cooldown_splits,
                         cooldown_avg_pace_seconds_per_km,
                         cooldown_avg_hr
                     FROM performance_trends
@@ -59,40 +56,30 @@ class PerformanceReader(BaseDBReader):
                 if not result:
                     return None
 
-                # Helper function to parse splits (CSV format: '1,2,3')
-                def parse_splits(splits_str: str | None) -> list[int]:
-                    if not splits_str:
-                        return []
-                    return [int(s.strip()) for s in splits_str.split(",")]
-
                 trends_data = {
                     "pace_consistency": result[0],
                     "hr_drift_percentage": result[1],
                     "cadence_consistency": result[2],
                     "fatigue_pattern": result[3],
                     "warmup_phase": {
-                        "splits": parse_splits(result[4]),
-                        "avg_pace": result[5],
-                        "avg_hr": result[6],
+                        "avg_pace": result[4],
+                        "avg_hr": result[5],
                     },
                     "run_phase": {
-                        "splits": parse_splits(result[7]),
-                        "avg_pace": result[8],
-                        "avg_hr": result[9],
+                        "avg_pace": result[6],
+                        "avg_hr": result[7],
                     },
                     "cooldown_phase": {
-                        "splits": parse_splits(result[13]),
-                        "avg_pace": result[14],
-                        "avg_hr": result[15],
+                        "avg_pace": result[11],
+                        "avg_hr": result[12],
                     },
                 }
 
                 # Add recovery_phase only if it exists (4-phase interval training)
-                if result[10] is not None:
+                if result[8] is not None:
                     trends_data["recovery_phase"] = {
-                        "splits": parse_splits(result[10]),
-                        "avg_pace": result[11],
-                        "avg_hr": result[12],
+                        "avg_pace": result[9],
+                        "avg_hr": result[10],
                     }
 
                 return trends_data

@@ -6,7 +6,6 @@ from garmin_mcp.database.readers.splits_query_builder import (
     COMPREHENSIVE_FULL_DEFAULTS,
     COMPREHENSIVE_FULL_KEYS,
     COMPREHENSIVE_STAT_FIELDS,
-    ELEVATION_EXTRA_KEYS,
     ELEVATION_FULL_KEYS,
     FORM_FIELDS,
     FORM_FULL_KEYS,
@@ -121,15 +120,6 @@ class TestParseFullResult:
         assert result["splits"][0]["split_number"] == 1
         assert result["splits"][0]["avg_pace_seconds_per_km"] == 310
         assert result["splits"][1]["avg_heart_rate"] == 154
-
-    @pytest.mark.unit
-    def test_extra_keys_added(self):
-        rows = [(1, 5.0, 3.0, "flat")]
-        result = parse_full_result(
-            rows, ELEVATION_FULL_KEYS, extra_keys=ELEVATION_EXTRA_KEYS
-        )
-        assert result["splits"][0]["max_elevation_m"] is None
-        assert result["splits"][0]["min_elevation_m"] is None
 
     @pytest.mark.unit
     def test_defaults_applied_for_none(self):

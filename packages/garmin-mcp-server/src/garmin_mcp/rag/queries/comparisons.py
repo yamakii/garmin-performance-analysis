@@ -183,7 +183,6 @@ class WorkoutComparator:
                         "interpretation": str
                     }
                 ],
-                "comparison_summary": str
             }
         """
         # Get target activity data
@@ -192,7 +191,6 @@ class WorkoutComparator:
             return {
                 "target_activity": None,
                 "similar_activities": [],
-                "comparison_summary": f"Activity {activity_id} not found",
             }
 
         # Calculate pace and distance ranges
@@ -337,19 +335,9 @@ class WorkoutComparator:
                     }
                 )
 
-            # Generate comparison summary
-            if similar_activities:
-                avg_similarity = sum(
-                    a["similarity_score"] for a in similar_activities
-                ) / len(similar_activities)
-                summary = f"{len(similar_activities)}件の類似ワークアウトを発見。平均類似度: {avg_similarity:.1f}%"
-            else:
-                summary = "類似するワークアウトが見つかりませんでした"
-
             return {
                 "target_activity": target,
                 "similar_activities": similar_activities,
-                "comparison_summary": summary,
             }
 
         except Exception as e:
@@ -357,7 +345,6 @@ class WorkoutComparator:
             return {
                 "target_activity": target,
                 "similar_activities": [],
-                "comparison_summary": f"Error: {str(e)}",
             }
 
     def _get_target_activity(self, activity_id: int) -> dict[str, Any] | None:

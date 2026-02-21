@@ -87,7 +87,6 @@ class TestWorkoutComparator:
         assert result["target_activity"]["activity_id"] == 12345
         assert "similar_activities" in result
         assert len(result["similar_activities"]) == 2
-        assert "comparison_summary" in result
 
     def test_find_similar_workouts_with_pace_tolerance(self, comparator):
         """Test similar workout search with custom pace tolerance."""
@@ -302,9 +301,6 @@ class TestWorkoutComparator:
 
         assert result is not None
         assert len(result["similar_activities"]) == 0
-        assert (
-            "類似するワークアウトが見つかりませんでした" in result["comparison_summary"]
-        )
 
 
 @pytest.mark.unit

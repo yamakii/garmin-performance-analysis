@@ -89,12 +89,6 @@ class TestGetPerformanceTrends:
         assert result is not None
         assert result["pace_consistency"] == 0.92
 
-    def test_csv_splits_parsed_to_list(self, perf_reader: PerformanceReader):
-        result = perf_reader.get_performance_trends(ACTIVITY_ID)
-        assert result is not None
-        assert result["run_phase"]["splits"] == [2, 3, 4, 5, 6, 7]
-        assert result["warmup_phase"]["splits"] == [1]
-
     def test_no_recovery_phase_when_null(self, perf_reader: PerformanceReader):
         """3-phase activity should NOT have recovery_phase key."""
         result = perf_reader.get_performance_trends(ACTIVITY_ID)
@@ -143,7 +137,7 @@ class TestGetPerformanceTrends:
         result = reader.get_performance_trends(ACTIVITY_ID + 1)
         assert result is not None
         assert "recovery_phase" in result
-        assert result["recovery_phase"]["splits"] == [5, 6]
+        assert result["recovery_phase"]["avg_pace"] == 350.0
 
     def test_missing_activity(self, perf_reader: PerformanceReader):
         assert perf_reader.get_performance_trends(MISSING_ID) is None
