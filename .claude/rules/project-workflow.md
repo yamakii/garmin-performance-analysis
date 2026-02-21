@@ -15,12 +15,25 @@ Plan mode に入ったら、コード探索と並行して以下を行う:
 |------|----------|-----------|
 | **Large** | 3+ファイル変更、複数の独立した作業単位、アーキテクチャ変更 | プラン内で `/decompose` を推奨し、ExitPlanMode で提案 |
 | **Small + Issue あり** | Issue 番号が指定されている、または Sub-issue として存在 | Issue body の Design/Test Plan をベースにプランを詳細化 |
-| **Small + Issue なし** | 1-2ファイル、明確なスコープ | 通常通りプランを書く |
+| **Small + Issue なし** | 1-2ファイル、明確なスコープ | プランを書く（Issue 不要） |
 
 ### Phase 2: プラン作成
 
 - **Issue ありの場合**: プランファイルの冒頭に `Issue: #{number}` を記載。Issue body の設計をベースにプランを詳細化
-- **Issue なしの場合**: 通常通りプランを書く。必要に応じて plan 承認後に Issue を作成
+- **Large + Issue なし**: プランの冒頭に `Issue: TBD (create before implementation)` を記載。ExitPlanMode 後、実装開始前に Issue を作成する
+- **Small + Issue なし**: プランの冒頭に `Issue: N/A` を記載
+
+### プランファイル必須フィールド
+
+プランファイルの冒頭に以下を必ず記載する:
+
+```
+Issue: #{number} | TBD (create before implementation) | N/A
+Scale: Large (3+ files) | Small (1-2 files)
+```
+
+- `Issue` が未記載のプランは不完全とみなす
+- `TBD` の場合、ExitPlanMode 後・実装開始前に Issue を作成し番号を確定する
 
 ### Plan 承認後の実装への引き継ぎ
 

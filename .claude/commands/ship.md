@@ -1,6 +1,6 @@
 ---
 allowed-tools: Bash, Read, Glob, Grep
-description: Commit, quality check, and push changes
+description: Commit and push changes
 user-invocable: true
 ---
 
@@ -16,9 +16,9 @@ Run the full ship workflow for the current changes.
 
    a. **Uncommitted changes**: Run `git status`. If there are staged or unstaged changes → go to Step 1 (normal flow).
 
-   b. **Unpushed commits**: Run `git log origin/$(git branch --show-current)..HEAD --oneline`. If there are commits → go to Step 4 (Push).
+   b. **Unpushed commits**: Run `git log origin/$(git branch --show-current)..HEAD --oneline`. If there are commits → go to Step 3 (Push).
 
-   c. **Unmerged feature branch**: If currently on a `feature/*` branch, or `git branch --list 'feature/*'` shows unmerged feature branches → go to Step 5 (Merge & cleanup).
+   c. **Unmerged feature branch**: If currently on a `feature/*` branch, or `git branch --list 'feature/*'` shows unmerged feature branches → go to Step 4 (Merge & cleanup).
 
    d. **Unclosed Issue**: Extract issue numbers from recent commits:
       ```bash
@@ -28,7 +28,7 @@ Run the full ship workflow for the current changes.
       ```bash
       gh issue view {number} --json state --jq '.state'
       ```
-      If any issue is OPEN → execute Step 6 (Close Issue) with that number.
+      If any issue is OPEN → execute Step 5 (Close Issue) with that number.
 
    e. **All complete**: If none of the above apply → report 「全ステップ完了済みです。未完了の作業はありません。」 and stop.
 
@@ -36,9 +36,7 @@ Run the full ship workflow for the current changes.
 
 1. **Review changes**: Run `git status` and `git diff --staged` to understand what will be committed. If nothing is staged, show unstaged changes and ask what to stage.
 
-2. **Quality check**: Run `uv run pre-commit run --files <changed-files>` on all modified files. If any check fails, fix the issues and re-run.
-
-3. **Commit**: Create a commit using Conventional Commits format. If the user provided a commit message as argument (before `--close`), use it. Otherwise, auto-generate from the diff.
+2. **Commit**: Create a commit using Conventional Commits format. If the user provided a commit message as argument (before `--close`), use it. Otherwise, auto-generate from the diff.
 
    Format:
    ```
@@ -54,9 +52,9 @@ Run the full ship workflow for the current changes.
    Co-Authored-By: Claude <noreply@anthropic.com>
    ```
 
-4. **Push**: Run `git push` to push to remote. If no upstream is set, use `git push -u origin <branch>`.
+3. **Push**: Run `git push` to push to remote. If no upstream is set, use `git push -u origin <branch>`.
 
-5. **Merge & cleanup** (if on a feature branch):
+4. **Merge & cleanup** (if on a feature branch):
    ```bash
    # Merge to main
    cd /home/yamakii/workspace/garmin-performance-analysis
@@ -75,7 +73,7 @@ Run the full ship workflow for the current changes.
 
    If on main branch (no feature branch), skip this step.
 
-6. **Close Issue** (if `--close` specified): After successful push:
+5. **Close Issue** (if `--close` specified): After successful push:
 
    a. **Change Log guard**: Check if the Issue body has a `## Change Log` section:
       ```bash
