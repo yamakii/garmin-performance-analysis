@@ -29,6 +29,15 @@ Plan mode 終了時に、tdd-implementer に以下を渡す:
 - プランファイルのパス
 - ワークツリー名の提案
 
+### Issue Body Sync（Plan 承認後）
+
+Issue 番号がある場合、探索で Issue body の Design と Plan 内容に差異があれば:
+
+1. Design セクションを Plan の内容で更新
+2. Change Log に `- YYYY-MM-DD (Plan): {差異の概要}` を追記
+
+差異がなければスキップ。詳細は `.claude/rules/issue-sync.md` 参照。
+
 ### 大きなタスクの分割シグナル
 
 探索フェーズで以下を検出した場合、プラン内で `/decompose` を推奨:

@@ -51,15 +51,30 @@ Run the full ship workflow for the current changes.
 
    If on main branch (no feature branch), skip this step.
 
-6. **Close Issue** (if `--close` specified): After successful push, close the specified GitHub Issue:
-   ```bash
-   gh issue close {number}
-   ```
+6. **Close Issue** (if `--close` specified): After successful push:
 
-   If the closed Issue is a sub-issue (has "Part of #XX" in body), show the Epic's updated progress:
-   ```bash
-   gh issue view {epic-number} --json body
-   ```
+   a. **Change Log guard**: Check if the Issue body has a `## Change Log` section:
+      ```bash
+      CURRENT_BODY=$(gh issue view {number} --json body --jq '.body')
+      ```
+      - If Change Log exists → proceed to close
+      - If Change Log does NOT exist → append a minimal entry as fallback:
+        ```bash
+        # Append Change Log section with minimal entry
+        # - YYYY-MM-DD (Ship): Closed via /ship
+        printf '%s' "$NEW_BODY" | gh issue edit {number} --body-file -
+        ```
+      - If `gh issue edit` fails → warn and proceed (best-effort, see `.claude/rules/issue-sync.md`)
+
+   b. **Close the Issue**:
+      ```bash
+      gh issue close {number}
+      ```
+
+   c. If the closed Issue is a sub-issue (has "Part of #XX" in body), show the Epic's updated progress:
+      ```bash
+      gh issue view {epic-number} --json body
+      ```
 
 ## Arguments
 

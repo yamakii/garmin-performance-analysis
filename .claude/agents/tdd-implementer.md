@@ -161,6 +161,12 @@ GitHub Issue に記載された設計に基づき、Test-Driven Development（Re
    feat(scope): add new feature (#51)
    ```
 
+3. **Issue Body Sync（Issue 番号がある場合）**
+   - Test Plan のチェックボックスを実績に合わせて更新（パスした項目を `[x]` に）
+   - Design に実装で変わった部分を反映（インターフェース変更、ファイル構成変更等）
+   - Change Log に `- YYYY-MM-DD (Build): {変更サマリー}` を追記
+   - 詳細は `.claude/rules/issue-sync.md` 参照
+
 ## Commit Message Format
 
 ### Type Prefix
@@ -214,6 +220,7 @@ Every test MUST have a marker. See `.claude/rules/testing.md` for details.
 - [ ] TDD サイクル（Red → Green → Refactor）が守られている
 - [ ] コード品質チェックが全てパス
 - [ ] Conventional Commits 形式でコミット済み
+- [ ] Issue body が実態を反映している（Design 更新、Test Plan チェック、Change Log 追記）
 
 ## Handoff to Completion
 

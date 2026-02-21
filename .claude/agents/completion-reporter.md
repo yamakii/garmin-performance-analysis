@@ -75,9 +75,11 @@ description: 実装完了時に呼び出す完了レポート生成エージェ�
    git diff --name-only HEAD~10..HEAD
    ```
 
-### Phase 2: レポート生成 & 投稿
+### Phase 2: レポート生成 & Issue 更新
 
-#### Issue がある場合: コメント投稿
+#### Step 1: コメント投稿
+
+**Issue がある場合:**
 
 ```bash
 gh issue comment {number} --body "$(cat <<'EOF'
@@ -113,25 +115,32 @@ EOF
 )"
 ```
 
-Then close the issue:
+**Issue がない場合:** レポートを Markdown 形式でターミナルに出力。
+
+#### Step 2: Issue Body Sync（Change Log 追記）
+
+Issue がある場合、Issue body の Change Log に完了サマリーを追記:
+
+```bash
+CURRENT_BODY=$(gh issue view {number} --json body --jq '.body')
+# Change Log セクションに追記:
+# - YYYY-MM-DD (Done): 全テストパス (Unit: X, Integration: Y), Black/Ruff/Mypy パス, Coverage XX%
+printf '%s' "$NEW_BODY" | gh issue edit {number} --body-file -
+```
+
+詳細は `.claude/rules/issue-sync.md` 参照。失敗時は警告を表示して続行（best-effort）。
+
+#### Step 3: Issue クローズ
 
 ```bash
 gh issue close {number}
 ```
 
-#### Sub-issue の場合: Epic の進捗も確認
+Sub-issue の場合は Epic の進捗も確認:
 
 ```bash
-# Sub-issue をクローズ
-gh issue close {sub-issue-number}
-
-# Epic の進捗を確認（GitHub が自動で task list を更新）
 gh issue view {epic-number} --json body
 ```
-
-#### Issue がない場合: ターミナル表示のみ
-
-レポートを Markdown 形式でターミナルに出力。
 
 ### Phase 3: 検証
 
@@ -157,3 +166,4 @@ gh issue view {epic-number} --json body
 - [ ] Issue がクローズされている（Issue ありの場合）
 - [ ] 受け入れ基準との照合が完了している
 - [ ] 未達成項目は Notes に記載されている
+- [ ] Issue body の Change Log に完了サマリーが追記されている（Issue ありの場合）
