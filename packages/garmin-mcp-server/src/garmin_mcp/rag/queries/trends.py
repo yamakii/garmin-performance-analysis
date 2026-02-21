@@ -27,19 +27,20 @@ class PerformanceTrendAnalyzer:
     - distance_range: (min_km, max_km)
     """
 
-    # Supported metrics and their data sources
-    METRIC_SOURCES = {
-        "pace": "splits_pace_hr",
-        "heart_rate": "splits_pace_hr",
-        "cadence": "splits_all",
-        "power": "splits_all",
-        "vertical_oscillation": "splits_form_metrics",
-        "ground_contact_time": "splits_form_metrics",
-        "vertical_ratio": "splits_form_metrics",
-        "distance": "activities",
-        "training_effect": "activities",
-        "elevation_gain": "splits_elevation",
+    # Metric name → DuckDB column name mapping
+    METRIC_COLUMNS: dict[str, str] = {
+        "pace": "pace_seconds_per_km",
+        "heart_rate": "heart_rate",
+        "cadence": "cadence",
+        "power": "power",
+        "vertical_oscillation": "vertical_oscillation",
+        "ground_contact_time": "ground_contact_time",
+        "vertical_ratio": "vertical_ratio",
+        "elevation_gain": "elevation_gain",
     }
+
+    # Metrics that are not yet supported via bulk query
+    UNSUPPORTED_METRICS = {"distance", "training_effect"}
 
     def __init__(self, db_path: str | None = None):
         """Initialize trend analyzer.
@@ -83,7 +84,7 @@ class PerformanceTrendAnalyzer:
                 "end_date": str,
             }
         """
-        if metric not in self.METRIC_SOURCES:
+        if metric not in self.METRIC_COLUMNS and metric not in self.UNSUPPORTED_METRICS:
             raise ValueError(f"Unsupported metric: {metric}")
 
         # Apply filters
@@ -220,114 +221,19 @@ class PerformanceTrendAnalyzer:
     def _extract_metric_values(
         self, metric: str, activity_ids: list[int]
     ) -> list[float]:
-        """Extract metric values from activities.
+        """Extract metric values from activities using a single bulk SQL query.
 
         Args:
             metric: Metric name
             activity_ids: List of activity IDs
 
         Returns:
-            List of metric values (one per activity)
+            List of metric values (one per activity), preserving activity_ids order
         """
-        values = []
+        column = self.METRIC_COLUMNS.get(metric)
+        if column is None:
+            return []  # distance, training_effect are not yet supported
 
-        for activity_id in activity_ids:
-            value = self._get_activity_metric_average(activity_id, metric)
-            if value is not None:
-                values.append(value)
-
-        # Return empty list if no valid values found
-        if not values:
-            return []
-
-        return values
-
-    def _get_activity_metric_average(
-        self, activity_id: int, metric: str
-    ) -> float | None:
-        """Get average value of metric for an activity.
-
-        Args:
-            activity_id: Activity ID
-            metric: Metric name
-
-        Returns:
-            Average metric value, or None if unavailable
-        """
-        source = self.METRIC_SOURCES[metric]
-
-        if source == "splits_pace_hr":
-            splits = self.db_reader.get_splits_pace_hr(activity_id)
-            if not splits or not splits.get("splits"):
-                return None
-
-            if metric == "pace":
-                values = [s["avg_pace_seconds_per_km"] for s in splits["splits"]]
-            elif metric == "heart_rate":
-                values = [
-                    s["avg_heart_rate"] for s in splits["splits"] if s["avg_heart_rate"]
-                ]
-            else:
-                return None
-
-        elif source == "splits_form_metrics":
-            splits = self.db_reader.get_splits_form_metrics(activity_id)
-            if not splits or not splits.get("splits"):
-                return None
-
-            if metric == "ground_contact_time":
-                values = [
-                    s["ground_contact_time_ms"]
-                    for s in splits["splits"]
-                    if s["ground_contact_time_ms"]
-                ]
-            elif metric == "vertical_oscillation":
-                values = [
-                    s["vertical_oscillation_cm"]
-                    for s in splits["splits"]
-                    if s["vertical_oscillation_cm"]
-                ]
-            elif metric == "vertical_ratio":
-                values = [
-                    s["vertical_ratio_percent"]
-                    for s in splits["splits"]
-                    if s["vertical_ratio_percent"]
-                ]
-            else:
-                return None
-
-        elif source == "splits_elevation":
-            splits = self.db_reader.get_splits_elevation(activity_id)
-            if not splits or not splits.get("splits"):
-                return None
-
-            if metric == "elevation_gain":
-                values = [
-                    s["elevation_gain_m"]
-                    for s in splits["splits"]
-                    if s["elevation_gain_m"]
-                ]
-            else:
-                return None
-
-        elif source == "splits_all":
-            splits = self.db_reader.get_splits_all(activity_id)
-            if not splits or not splits.get("splits"):
-                return None
-
-            if metric == "cadence":
-                values = [s["cadence"] for s in splits["splits"] if s["cadence"]]
-            elif metric == "power":
-                values = [s["power"] for s in splits["splits"] if s["power"]]
-            else:
-                return None
-
-        else:
-            # For activities table metrics (distance, training_effect)
-            # TODO: Implement when activities table queries are available
-            return None
-
-        if not values:
-            return None
-
-        return float(np.mean(values))
+        averages = self.db_reader.get_bulk_metric_averages(activity_ids, column)
+        # Preserve activity_ids order (x-axis for linear regression)
+        return [averages[aid] for aid in activity_ids if aid in averages]

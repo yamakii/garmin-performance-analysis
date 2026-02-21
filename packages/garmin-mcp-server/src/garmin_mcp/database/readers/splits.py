@@ -375,3 +375,49 @@ class SplitsReader(BaseDBReader):
         except Exception as e:
             logger.error(f"Error getting split time ranges: {e}")
             return []
+
+    def get_bulk_metric_averages(
+        self, activity_ids: list[int], column: str
+    ) -> dict[int, float]:
+        """Get average metric value per activity in a single SQL query.
+
+        Args:
+            activity_ids: List of activity IDs
+            column: DuckDB column name (e.g., "pace_seconds_per_km")
+
+        Returns:
+            Dict mapping activity_id to average value
+        """
+        allowed_columns = {
+            "pace_seconds_per_km",
+            "heart_rate",
+            "cadence",
+            "power",
+            "ground_contact_time",
+            "vertical_oscillation",
+            "vertical_ratio",
+            "elevation_gain",
+        }
+        if column not in allowed_columns:
+            raise ValueError(f"Invalid column: {column}")
+
+        if not activity_ids:
+            return {}
+
+        placeholders = ",".join(["?"] * len(activity_ids))
+        sql = f"""
+            SELECT activity_id, AVG({column}) as avg_value
+            FROM splits
+            WHERE activity_id IN ({placeholders})
+              AND {column} IS NOT NULL
+            GROUP BY activity_id
+            ORDER BY activity_id
+        """
+        try:
+            with self._get_connection() as conn:
+                rows = conn.execute(sql, activity_ids).fetchall()
+
+            return {int(row[0]): float(row[1]) for row in rows if row[1] is not None}
+        except Exception as e:
+            logger.error(f"Error getting bulk metric averages: {e}")
+            return {}
