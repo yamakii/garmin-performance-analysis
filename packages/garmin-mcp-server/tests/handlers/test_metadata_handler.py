@@ -21,6 +21,10 @@ class TestHandles:
         handler = MetadataHandler(mock_db_reader)
         assert handler.handles("get_date_by_activity_id") is True
 
+    def test_handles_ingest_activity(self, mock_db_reader: MagicMock) -> None:
+        handler = MetadataHandler(mock_db_reader)
+        assert handler.handles("ingest_activity") is True
+
     def test_does_not_handle_unknown_tool(self, mock_db_reader: MagicMock) -> None:
         handler = MetadataHandler(mock_db_reader)
         assert handler.handles("get_splits_pace_hr") is False
@@ -171,6 +175,124 @@ class TestGetDateByActivityId:
         data = json.loads(result[0].text)
         assert data["activity_id"] == 99999
         assert data["date"] is None
+
+
+@pytest.mark.unit
+class TestIngestActivity:
+    """Test _ingest_activity via handle()."""
+
+    @pytest.mark.asyncio
+    async def test_success(self, mock_db_reader: MagicMock) -> None:
+        mock_db_reader.db_path = "/fake/path.duckdb"
+        handler = MetadataHandler(mock_db_reader)
+
+        mock_planner = MagicMock()
+        mock_planner.execute_full_workflow.return_value = {
+            "activity_id": 12345,
+            "date": "2025-10-15",
+            "validation_status": "passed",
+            "quality_score": 1.0,
+            "form_evaluation_status": "success",
+            "files": ["activity.json"],
+            "timestamp": "2025-10-15T12:00:00",
+        }
+
+        with patch(
+            "garmin_mcp.planner.workflow_planner.WorkflowPlanner",
+            return_value=mock_planner,
+        ):
+            result = await handler.handle("ingest_activity", {"date": "2025-10-15"})
+
+        data = json.loads(result[0].text)
+        assert data["success"] is True
+        assert data["activity_id"] == 12345
+        assert data["date"] == "2025-10-15"
+        assert data["form_evaluation_status"] == "success"
+        assert data["validation_status"] == "passed"
+        assert data["quality_score"] == 1.0
+        mock_planner.execute_full_workflow.assert_called_once_with(
+            date="2025-10-15", force_regenerate=False
+        )
+
+    @pytest.mark.asyncio
+    async def test_with_force_regenerate(self, mock_db_reader: MagicMock) -> None:
+        mock_db_reader.db_path = "/fake/path.duckdb"
+        handler = MetadataHandler(mock_db_reader)
+
+        mock_planner = MagicMock()
+        mock_planner.execute_full_workflow.return_value = {
+            "activity_id": 12345,
+            "date": "2025-10-15",
+            "validation_status": "passed",
+            "quality_score": 1.0,
+            "form_evaluation_status": "success",
+            "files": [],
+            "timestamp": "2025-10-15T12:00:00",
+        }
+
+        with patch(
+            "garmin_mcp.planner.workflow_planner.WorkflowPlanner",
+            return_value=mock_planner,
+        ):
+            result = await handler.handle(
+                "ingest_activity",
+                {"date": "2025-10-15", "force_regenerate": True},
+            )
+
+        data = json.loads(result[0].text)
+        assert data["success"] is True
+        mock_planner.execute_full_workflow.assert_called_once_with(
+            date="2025-10-15", force_regenerate=True
+        )
+
+    @pytest.mark.asyncio
+    async def test_workflow_error(self, mock_db_reader: MagicMock) -> None:
+        mock_db_reader.db_path = "/fake/path.duckdb"
+        handler = MetadataHandler(mock_db_reader)
+
+        mock_planner = MagicMock()
+        mock_planner.execute_full_workflow.side_effect = ValueError(
+            "No activity found for 2025-01-01"
+        )
+
+        with patch(
+            "garmin_mcp.planner.workflow_planner.WorkflowPlanner",
+            return_value=mock_planner,
+        ):
+            result = await handler.handle("ingest_activity", {"date": "2025-01-01"})
+
+        data = json.loads(result[0].text)
+        assert data["success"] is False
+        assert "No activity found" in data["error"]
+
+    @pytest.mark.asyncio
+    async def test_date_stringified(self, mock_db_reader: MagicMock) -> None:
+        """Verify datetime.date in result is stringified."""
+        from datetime import date
+
+        mock_db_reader.db_path = "/fake/path.duckdb"
+        handler = MetadataHandler(mock_db_reader)
+
+        mock_planner = MagicMock()
+        mock_planner.execute_full_workflow.return_value = {
+            "activity_id": 12345,
+            "date": date(2025, 10, 15),
+            "validation_status": "passed",
+            "quality_score": 1.0,
+            "form_evaluation_status": "success",
+            "files": [],
+            "timestamp": "2025-10-15T12:00:00",
+        }
+
+        with patch(
+            "garmin_mcp.planner.workflow_planner.WorkflowPlanner",
+            return_value=mock_planner,
+        ):
+            result = await handler.handle("ingest_activity", {"date": "2025-10-15"})
+
+        data = json.loads(result[0].text)
+        assert data["date"] == "2025-10-15"
+        assert isinstance(data["date"], str)
 
 
 @pytest.mark.unit
