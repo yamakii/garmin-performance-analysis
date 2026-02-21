@@ -1,11 +1,11 @@
 """Handler for physiology tools."""
 
-import json
 from typing import Any
 
 from mcp.types import TextContent
 
 from garmin_mcp.database.db_reader import GarminDBReader
+from garmin_mcp.handlers.base import format_json_response
 
 
 class PhysiologyHandler:
@@ -48,11 +48,7 @@ class PhysiologyHandler:
         else:
             raise ValueError(f"Unknown tool: {name}")
 
-        return [
-            TextContent(
-                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
-            )
-        ]
+        return [TextContent(type="text", text=format_json_response(result))]
 
     async def _get_form_baseline_trend(
         self, arguments: dict[str, Any]
@@ -92,7 +88,7 @@ class PhysiologyHandler:
                     return [
                         TextContent(
                             type="text",
-                            text=json.dumps(result, indent=2, ensure_ascii=False),
+                            text=format_json_response(result),
                         )
                     ]
 
@@ -125,7 +121,7 @@ class PhysiologyHandler:
                 return [
                     TextContent(
                         type="text",
-                        text=json.dumps(result, indent=2, ensure_ascii=False),
+                        text=format_json_response(result),
                     )
                 ]
 
@@ -172,16 +168,8 @@ class PhysiologyHandler:
                 "metrics": metrics_data,
             }
 
-            return [
-                TextContent(
-                    type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
-                )
-            ]
+            return [TextContent(type="text", text=format_json_response(result))]
 
         except Exception as e:
             result = {"success": False, "error": str(e)}
-            return [
-                TextContent(
-                    type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
-                )
-            ]
+            return [TextContent(type="text", text=format_json_response(result))]

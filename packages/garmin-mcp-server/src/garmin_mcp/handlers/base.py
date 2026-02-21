@@ -1,8 +1,15 @@
 """Base protocol for tool handlers."""
 
+import json
+from collections.abc import Callable
 from typing import Any, Protocol
 
 from mcp.types import TextContent
+
+
+def format_json_response(data: Any, *, default: Callable | None = None) -> str:
+    """Format data as compact JSON for MCP responses."""
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":"), default=default)
 
 
 class ToolHandler(Protocol):

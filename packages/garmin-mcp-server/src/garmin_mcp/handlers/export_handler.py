@@ -1,11 +1,11 @@
 """Handler for export tool."""
 
-import json
 from typing import Any
 
 from mcp.types import TextContent
 
 from garmin_mcp.database.db_reader import GarminDBReader
+from garmin_mcp.handlers.base import format_json_response
 
 
 class ExportHandler:
@@ -57,11 +57,7 @@ class ExportHandler:
                 "expires_at": datetime.fromtimestamp(expires_at).isoformat() + "Z",
             }
 
-            return [
-                TextContent(
-                    type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
-                )
-            ]
+            return [TextContent(type="text", text=format_json_response(result))]
 
         except ValueError as e:
             # Size limit exceeded
@@ -69,16 +65,8 @@ class ExportHandler:
                 "error": str(e),
                 "suggestion": "Refine your query with WHERE clauses, LIMIT, or aggregation functions.",
             }
-            return [
-                TextContent(
-                    type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
-                )
-            ]
+            return [TextContent(type="text", text=format_json_response(result))]
         except Exception as e:
             # Other errors
             result = {"error": f"Export failed: {str(e)}"}
-            return [
-                TextContent(
-                    type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
-                )
-            ]
+            return [TextContent(type="text", text=format_json_response(result))]

@@ -1,12 +1,12 @@
 """Handler for analysis tools."""
 
-import json
 import logging
 from typing import Any
 
 from mcp.types import TextContent
 
 from garmin_mcp.database.db_reader import GarminDBReader
+from garmin_mcp.handlers.base import format_json_response
 
 logger = logging.getLogger(__name__)
 
@@ -73,11 +73,7 @@ class AnalysisHandler:
             "section_type": section_type,
         }
 
-        return [
-            TextContent(
-                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
-            )
-        ]
+        return [TextContent(type="text", text=format_json_response(result))]
 
     async def _get_interval_analysis(
         self, arguments: dict[str, Any]
@@ -88,11 +84,7 @@ class AnalysisHandler:
         result = analyzer.get_interval_analysis(
             activity_id=arguments["activity_id"],
         )
-        return [
-            TextContent(
-                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
-            )
-        ]
+        return [TextContent(type="text", text=format_json_response(result))]
 
     async def _detect_form_anomalies_summary(
         self, arguments: dict[str, Any]
@@ -105,11 +97,7 @@ class AnalysisHandler:
             metrics=arguments.get("metrics"),
             z_threshold=arguments.get("z_threshold", 2.0),
         )
-        return [
-            TextContent(
-                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
-            )
-        ]
+        return [TextContent(type="text", text=format_json_response(result))]
 
     async def _get_form_anomaly_details(
         self, arguments: dict[str, Any]
@@ -145,11 +133,7 @@ class AnalysisHandler:
             z_threshold=arguments.get("z_threshold", 2.0),
             filters=filters if filters else None,
         )
-        return [
-            TextContent(
-                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
-            )
-        ]
+        return [TextContent(type="text", text=format_json_response(result))]
 
     async def _analyze_performance_trends(
         self, arguments: dict[str, Any]
@@ -176,11 +160,7 @@ class AnalysisHandler:
             temperature_range=temperature_range,
             distance_range=distance_range,
         )
-        return [
-            TextContent(
-                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
-            )
-        ]
+        return [TextContent(type="text", text=format_json_response(result))]
 
     async def _extract_insights(self, arguments: dict[str, Any]) -> list[TextContent]:
         from garmin_mcp.rag.queries.insights import InsightExtractor
@@ -207,7 +187,7 @@ class AnalysisHandler:
         return [
             TextContent(
                 type="text",
-                text=json.dumps(result, indent=2, ensure_ascii=False, default=str),
+                text=format_json_response(result, default=str),
             )
         ]
 
@@ -239,6 +219,6 @@ class AnalysisHandler:
         return [
             TextContent(
                 type="text",
-                text=json.dumps(result, indent=2, ensure_ascii=False, default=str),
+                text=format_json_response(result, default=str),
             )
         ]

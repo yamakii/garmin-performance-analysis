@@ -1,11 +1,11 @@
 """Handler for metadata tools: get_activity_by_date, get_date_by_activity_id."""
 
-import json
 from typing import Any
 
 from mcp.types import TextContent
 
 from garmin_mcp.database.db_reader import GarminDBReader
+from garmin_mcp.handlers.base import format_json_response
 
 
 class MetadataHandler:
@@ -87,11 +87,7 @@ class MetadataHandler:
         except Exception as e:
             result = {"success": False, "error": str(e), "activities": []}
 
-        return [
-            TextContent(
-                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
-            )
-        ]
+        return [TextContent(type="text", text=format_json_response(result))]
 
     async def _get_date_by_activity_id(
         self, arguments: dict[str, Any]
@@ -99,8 +95,4 @@ class MetadataHandler:
         activity_id = arguments["activity_id"]
         date = self._db_reader.get_activity_date(activity_id)
         result = {"activity_id": activity_id, "date": date}
-        return [
-            TextContent(
-                type="text", text=json.dumps(result, indent=2, ensure_ascii=False)
-            )
-        ]
+        return [TextContent(type="text", text=format_json_response(result))]
