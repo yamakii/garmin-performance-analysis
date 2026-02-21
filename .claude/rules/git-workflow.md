@@ -26,11 +26,13 @@ If Serena activation fails, use Glob/Grep as fallback but note the limitation in
 - If still broken: `/mcp` → restart serena server
 - For worktrees: always use the worktree's absolute path, not the main repo path
 
-## Branch Strategy
+## Branch Strategy (STRICT — NO EXCEPTIONS)
 
-- **Planning**: Main branch (no worktree needed)
-- **Implementation**: Git worktree mandatory
+- **Planning**: Main branch (read-only exploration, no edits)
+- **Implementation**: Git worktree MANDATORY — ユーザーが明示的に「worktree不要」と指示しない限り、必ずworktreeを作成する。曖昧な判断で省略してはならない。
 - **Completion**: Merge to main, remove worktree
+
+**禁止:** main ブランチ上での直接的なコード編集（ルールファイル `.claude/rules/` のみ例外）
 
 ## Worktree Setup
 
