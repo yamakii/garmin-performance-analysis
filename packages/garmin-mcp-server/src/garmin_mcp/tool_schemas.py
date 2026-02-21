@@ -89,7 +89,7 @@ _METADATA_TOOLS: list[dict] = [
 _SPLITS_TOOLS: list[dict] = [
     {
         "name": "get_splits_pace_hr",
-        "description": "Get pace and heart rate data from splits (lightweight: ~3 fields/split, or ~200 bytes with statistics_only=True)",
+        "description": "Deprecated: use get_splits_comprehensive instead. Get pace and heart rate data from splits (lightweight: ~3 fields/split, or ~200 bytes with statistics_only=True)",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -105,7 +105,7 @@ _SPLITS_TOOLS: list[dict] = [
     },
     {
         "name": "get_splits_form_metrics",
-        "description": "Get form efficiency metrics from splits (lightweight: ~4 fields/split, or ~300 bytes with statistics_only=True)",
+        "description": "Deprecated: use get_splits_comprehensive instead. Get form efficiency metrics from splits (lightweight: ~4 fields/split, or ~300 bytes with statistics_only=True)",
         "inputSchema": {
             "type": "object",
             "properties": {

@@ -1,7 +1,7 @@
 ---
 name: split-section-analyst
 description: 全1kmスプリットのペース・心拍・フォーム指標を詳細分析し、環境統合評価を行うエージェント。DuckDBに保存。スプリット毎の変化パターン検出が必要な時に呼び出す。
-tools: mcp__garmin-db__get_splits_comprehensive, mcp__garmin-db__get_splits_pace_hr, mcp__garmin-db__get_splits_form_metrics, Write
+tools: mcp__garmin-db__get_splits_comprehensive, Write
 model: inherit
 ---
 
@@ -29,17 +29,12 @@ model: inherit
   - このエージェントは個別スプリット分析が必須のため`statistics_only=False`を使用
   - 各スプリットのintensity_type と role_phaseが必要
 
-**代替ツール（後方互換性のため維持）:**
-- `mcp__garmin-db__get_splits_pace_hr(activity_id, statistics_only=False)` - ペース・心拍データ（~4フィールド/スプリット）
-- `mcp__garmin-db__get_splits_form_metrics(activity_id, statistics_only=False)` - フォーム効率データ（GCT, VO, VR ~4フィールド/スプリット）
-
 **必須ツール:**
 - `Write` - 分析結果をJSONファイルとしてtempディレクトリに保存
 
 **Token Optimization Strategy:**
-- Use `statistics_only=True` by default for trend analysis (67-80% token reduction)
-- Use `statistics_only=False` only when comparing individual split performance
-- Example: "Overall pace trend" → statistics_only=True, "Split 3 vs Split 5" → statistics_only=False
+- このエージェントは個別スプリット分析が必須のため、常に `statistics_only=False` を使用する
+- `statistics_only=True` は使用しない（スプリット毎の詳細データが必要）
 
 ## 出力形式
 
