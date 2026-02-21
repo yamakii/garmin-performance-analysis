@@ -85,7 +85,13 @@ GitHub Issue に記載された設計に基づき、Test-Driven Development（Re
    mcp__serena__activate_project("/absolute/path/to/worktree")
    ```
 
-5. **以降の全作業はworktree内で実行**
+5. **garmin-db MCP Reload** (CRITICAL — MCP tool変更時)
+   ```python
+   # garmin_mcp コードを編集する場合、worktreeのコードで MCP サーバーを再起動
+   mcp__garmin-db__reload_server(server_dir="/absolute/path/to/worktree/packages/garmin-mcp-server")
+   ```
+
+6. **以降の全作業はworktree内で実行**
 
 ### Phase 1: Red（失敗するテストを書く）
 
@@ -112,6 +118,7 @@ GitHub Issue に記載された設計に基づき、Test-Driven Development（Re
 ### Phase 2: Green（テストを通す最小限の実装）
 
 1. **最小実装**
+   - garmin_mcp コードを変更した場合: `mcp__garmin-db__reload_server(server_dir=...)` で再起動
 
 2. **テスト再実行（成功確認）**
    ```bash
@@ -129,6 +136,7 @@ GitHub Issue に記載された設計に基づき、Test-Driven Development（Re
 ### Phase 3: Refactor（リファクタリング）
 
 1. **コード改善** — 重複削除、可読性向上
+   - garmin_mcp コードを変更した場合: `mcp__garmin-db__reload_server(server_dir=...)` で再起動
 
 2. **テスト再実行（維持確認）**
    ```bash

@@ -22,9 +22,11 @@ provide precise code navigation. Glob/Grep alone misses symbol relationships and
 If Serena activation fails, use Glob/Grep as fallback but note the limitation in your output.
 
 ### Stale Session Recovery
-- Re-activate Serena with the same path: `mcp__serena__activate_project("/path/to/project")`
-- If still broken: `/mcp` → restart serena server
-- For worktrees: always use the worktree's absolute path, not the main repo path
+- Serena: `mcp__serena__activate_project("/path/to/project")` で再アクティベート
+- garmin-db: `mcp__garmin-db__reload_server(server_dir="/path/to/worktree/packages/garmin-mcp-server")` で再起動
+- server_dir 省略で default ディレクトリに復帰: `mcp__garmin-db__reload_server()`
+- If still broken: `/mcp` → restart server
+- For worktrees: always use the worktree's absolute path
 
 ## Branch Strategy (STRICT — NO EXCEPTIONS)
 
@@ -44,6 +46,9 @@ direnv allow
 
 # MANDATORY: Activate Serena for code editing
 mcp__serena__activate_project("/absolute/path/to/worktree")
+
+# MANDATORY: Point garmin-db MCP to worktree code
+mcp__garmin-db__reload_server(server_dir="/absolute/path/to/worktree/packages/garmin-mcp-server")
 ```
 
 ## Commit Convention

@@ -99,6 +99,9 @@ direnv allow
 
 # MANDATORY: Activate Serena for agents
 mcp__serena__activate_project("/absolute/path/to/worktree")
+
+# MANDATORY: Point garmin-db MCP to worktree code
+mcp__garmin-db__reload_server(server_dir="/absolute/path/to/worktree/packages/garmin-mcp-server")
 ```
 
 **2. Development Process (GitHub Issue-centric)**
