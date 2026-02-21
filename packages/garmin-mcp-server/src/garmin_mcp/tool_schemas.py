@@ -65,6 +65,25 @@ _METADATA_TOOLS: list[dict] = [
             "required": ["activity_id"],
         },
     },
+    {
+        "name": "ingest_activity",
+        "description": "Ingest activity data from Garmin Connect into DuckDB. Fetches raw data, stores in DuckDB, and runs form evaluation.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string",
+                    "description": "Activity date in YYYY-MM-DD format",
+                },
+                "force_regenerate": {
+                    "type": "boolean",
+                    "description": "Force regeneration of all data (default: false)",
+                    "default": False,
+                },
+            },
+            "required": ["date"],
+        },
+    },
 ]
 
 _SPLITS_TOOLS: list[dict] = [

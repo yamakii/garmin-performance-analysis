@@ -1,5 +1,6 @@
-"""Handler for metadata tools: get_activity_by_date, get_date_by_activity_id."""
+"""Handler for metadata tools: get_activity_by_date, get_date_by_activity_id, ingest_activity."""
 
+import logging
 from typing import Any
 
 from mcp.types import TextContent
@@ -7,11 +8,17 @@ from mcp.types import TextContent
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.handlers.base import format_json_response
 
+logger = logging.getLogger(__name__)
+
 
 class MetadataHandler:
     """Handles metadata-related tool calls."""
 
-    _tool_names: set[str] = {"get_activity_by_date", "get_date_by_activity_id"}
+    _tool_names: set[str] = {
+        "get_activity_by_date",
+        "get_date_by_activity_id",
+        "ingest_activity",
+    }
 
     def __init__(self, db_reader: GarminDBReader) -> None:
         self._db_reader = db_reader
@@ -24,6 +31,8 @@ class MetadataHandler:
             return await self._get_activity_by_date(arguments)
         elif name == "get_date_by_activity_id":
             return await self._get_date_by_activity_id(arguments)
+        elif name == "ingest_activity":
+            return await self._ingest_activity(arguments)
         else:
             raise ValueError(f"Unknown tool: {name}")
 
@@ -95,4 +104,31 @@ class MetadataHandler:
         activity_id = arguments["activity_id"]
         date = self._db_reader.get_activity_date(activity_id)
         result = {"activity_id": activity_id, "date": date}
+        return [TextContent(type="text", text=format_json_response(result))]
+
+    async def _ingest_activity(self, arguments: dict[str, Any]) -> list[TextContent]:
+        from garmin_mcp.planner.workflow_planner import WorkflowPlanner
+
+        date = arguments["date"]
+        force_regenerate = arguments.get("force_regenerate", False)
+
+        try:
+            planner = WorkflowPlanner(db_path=str(self._db_reader.db_path))
+            workflow_result = planner.execute_full_workflow(
+                date=date, force_regenerate=force_regenerate
+            )
+            result: dict[str, Any] = {
+                "success": True,
+                "activity_id": workflow_result["activity_id"],
+                "date": str(workflow_result["date"]),
+                "form_evaluation_status": workflow_result.get(
+                    "form_evaluation_status", "unknown"
+                ),
+                "validation_status": workflow_result.get("validation_status"),
+                "quality_score": workflow_result.get("quality_score"),
+            }
+        except Exception as e:
+            logger.error(f"Ingest activity failed for {date}: {e}", exc_info=True)
+            result = {"success": False, "error": str(e)}
+
         return [TextContent(type="text", text=format_json_response(result))]

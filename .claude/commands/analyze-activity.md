@@ -4,7 +4,7 @@
 
 ## ワークフロー
 
-1. **データ収集**: WorkflowPlanner → mkdir
+1. **データ収集**: ingest_activity MCP ツール → mkdir
 2. **コンテキスト事前取得**: MCP ツールで prefetch（Bash許可不要）
 3. **セクション分析**: 5つのエージェントを並列実行（事前取得コンテキスト付き）
 4. **結果登録**: merge script でDuckDBに一括登録
@@ -14,22 +14,20 @@
 
 ### Step 1: データ収集
 
-以下を**1つのBashコマンドチェーン**で実行してください：
+MCPツールでデータ収集・DuckDB格納を実行してください（Bash許可不要）：
 
-```bash
-RESULT=$(uv run python -m garmin_mcp.planner.workflow_planner {{arg1}}) && \
-ACTIVITY_ID=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['activity_id'])") && \
-ACTIVITY_DATE=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['date'])") && \
-mkdir -p /tmp/analysis_$ACTIVITY_ID && \
-echo "{\"activity_id\": $ACTIVITY_ID, \"date\": \"$ACTIVITY_DATE\"}"
+```
+mcp__garmin-db__ingest_activity(date="{{arg1}}")
 ```
 
-このコマンドは以下を実行します：
-- 日付 {{arg1}} からアクティビティIDを解決
-- GarminIngestWorkerでデータ収集・DuckDB格納
-- 分析用tempフォルダ作成
+返却された `activity_id` と `date` を取得してください。
 
-実行後、出力された `activity_id` と `date` を取得してください。
+次に、分析用tempフォルダを作成：
+
+```bash
+mkdir -p /tmp/analysis_{activity_id}
+```
+
 tempフォルダパスは `ANALYSIS_TEMP_DIR=/tmp/analysis_{activity_id}` として以降使用。
 
 ### Step 1.5: コンテキスト事前取得（MCP ツール）
