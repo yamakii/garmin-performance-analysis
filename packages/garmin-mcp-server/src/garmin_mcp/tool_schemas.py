@@ -671,6 +671,14 @@ _TRAINING_PLAN_TOOLS: list[dict] = [
 
 _SERVER_TOOLS: list[dict] = [
     {
+        "name": "get_server_info",
+        "description": "Get diagnostic info about the running MCP server (server_dir, override file status). Use to verify which directory the server is running from.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
         "name": "reload_server",
         "description": "Restart the MCP server process to pick up code changes. The server will exit and Claude Code will automatically reconnect.",
         "inputSchema": {
