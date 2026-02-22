@@ -816,4 +816,88 @@ class TestValidateTableDependencies:
         assert "12345" not in error_msg or "67890" in error_msg
 
 
-# Phase 2 tests (deletion logic) will be added later
+@pytest.mark.unit
+class TestDateRangeScopedDeletion:
+    """Test that --tables + date range + --force uses scoped deletion (not table-wide)."""
+
+    def test_date_range_uses_scoped_deletion(self, tmp_path, mocker):
+        """Date range should use delete_activity_records with resolved IDs,
+        NOT delete_table_all_records."""
+        mock_delete_table_all = mocker.patch.object(
+            DuckDBRegenerator, "delete_table_all_records"
+        )
+        mock_delete_activity = mocker.patch.object(
+            DuckDBRegenerator, "delete_activity_records"
+        )
+        mocker.patch.object(DuckDBRegenerator, "validate_table_dependencies")
+        mocker.patch.object(
+            DuckDBRegenerator,
+            "get_activities_by_date_range",
+            return_value=[(12345, "2025-05-01"), (67890, "2025-05-15")],
+        )
+        mocker.patch.object(
+            DuckDBRegenerator,
+            "regenerate_single_activity",
+            return_value={"status": "success"},
+        )
+
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(
+            db_path=db_path, tables=["performance_trends"], force=True
+        )
+
+        regenerator.regenerate_all(start_date="2025-05-01", end_date="2025-05-31")
+
+        mock_delete_activity.assert_called_once_with([12345, 67890])
+        mock_delete_table_all.assert_not_called()
+
+    def test_date_range_runs_validation(self, tmp_path, mocker):
+        """Date range should call validate_table_dependencies with resolved IDs."""
+        mock_validate = mocker.patch.object(
+            DuckDBRegenerator, "validate_table_dependencies"
+        )
+        mocker.patch.object(DuckDBRegenerator, "delete_activity_records")
+        mocker.patch.object(
+            DuckDBRegenerator,
+            "get_activities_by_date_range",
+            return_value=[(12345, "2025-05-01")],
+        )
+        mocker.patch.object(
+            DuckDBRegenerator,
+            "regenerate_single_activity",
+            return_value={"status": "success"},
+        )
+
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(db_path=db_path, tables=["splits"], force=True)
+
+        regenerator.regenerate_all(start_date="2025-05-01", end_date="2025-05-31")
+
+        mock_validate.assert_called_once_with(["splits"], [12345])
+
+    def test_no_filter_still_uses_table_wide_deletion(self, tmp_path, mocker):
+        """Without activity_ids or date range, table-wide deletion is preserved."""
+        mock_delete_table_all = mocker.patch.object(
+            DuckDBRegenerator, "delete_table_all_records"
+        )
+        mock_delete_activity = mocker.patch.object(
+            DuckDBRegenerator, "delete_activity_records"
+        )
+        mocker.patch.object(
+            DuckDBRegenerator,
+            "get_all_activities_from_raw",
+            return_value=[(12345, "2025-01-01")],
+        )
+        mocker.patch.object(
+            DuckDBRegenerator,
+            "regenerate_single_activity",
+            return_value={"status": "success"},
+        )
+
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(db_path=db_path, tables=["splits"], force=True)
+
+        regenerator.regenerate_all()
+
+        mock_delete_table_all.assert_called_once_with(["splits"])
+        mock_delete_activity.assert_not_called()

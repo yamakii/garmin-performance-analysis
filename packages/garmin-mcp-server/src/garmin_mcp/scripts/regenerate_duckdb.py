@@ -312,14 +312,18 @@ class DuckDBRegenerator:
         )
         logger.info(f"Regenerating{tables_info}")
 
+        resolved_ids = [a[0] for a in activities]
+
         # Validate table dependencies before deletion
-        if activity_ids:
-            self.validate_table_dependencies(self.tables, activity_ids)
+        if activity_ids or (start_date and end_date):
+            self.validate_table_dependencies(self.tables, resolved_ids)
 
         # Deletion strategy based on activity_ids AND force flag
         if self.tables and self.force:
             if activity_ids:
                 self.delete_activity_records(activity_ids)
+            elif start_date and end_date:
+                self.delete_activity_records(resolved_ids)
             else:
                 self.delete_table_all_records(self.tables)
         elif self.tables and not self.force:
