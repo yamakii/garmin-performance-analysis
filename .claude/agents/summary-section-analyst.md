@@ -112,6 +112,31 @@ key_strengths = [
 - efficiency-section-analyst も同じ `get_form_evaluations()` を使用するため、矛盾は発生しません
 - `needs_improvement=true` の指標のみを improvement_areas に含めることで、一貫性が保たれます
 
+## 統合フォームスコア（integrated_score）の活用
+
+**CRITICAL**: 事前取得コンテキストの `form_scores.integrated_score` を総合評価に組み込むこと。
+
+### 使用手順:
+
+1. **summaryテキストに含める:**
+   - 「統合フォームスコア: XX.X/100」を summary の冒頭〜中盤に自然に組み込む
+   - 例: 「フォーム効率は統合スコア78.5/100と良好で、...」
+
+2. **類似ワークアウトとの比較:**
+   - `compare_similar_workouts()` の結果にスコアデータがあれば、推移をコメント
+   - 改善: key_strengths に「**フォームスコア向上**: 前回比+3.2pt（75.3→78.5/100）✅」
+   - 悪化: improvement_areas に「フォームスコア低下: 前回比-2.1pt（80.6→78.5/100）」
+
+3. **analysis_data に `integrated_score` フィールドを出力:**
+   - `"integrated_score": 78.5` （float）
+   - integrated_score が null または事前取得コンテキストに含まれない場合はフィールドを省略
+
+### null ハンドリング:
+- `form_scores` が null、または `integrated_score` が null の場合:
+  - summary テキストにスコアを記載しない
+  - `integrated_score` フィールドを省略
+  - 他の分析は通常通り続行
+
 ## 出力形式
 
 **section_type**: `"summary"`
@@ -127,8 +152,9 @@ Write(
     "section_type": "summary",
     "analysis_data": {
         "star_rating": "★★★★☆ 4.2/5.0",
+        "integrated_score": 78.5,
         "summary": """
-今日のランは質の高い有酸素ベース走でした。平均心拍数146bpm、平均ペース6:45/km、平均パワー225Wという適切な中強度で、ペース変動係数0.017と非常に高い安定性を発揮しています。
+今日のランは質の高い有酸素ベース走でした。フォーム効率は統合スコア78.5/100と良好です。平均心拍数146bpm、平均ペース6:45/km、平均パワー225Wという適切な中強度で、ペース変動係数0.017と非常に高い安定性を発揮しています。
 """,
         "key_strengths": [
             "ペース安定性: 変動係数0.017（目標<0.05を大幅クリア）",
@@ -185,16 +211,20 @@ Write(
    - 評価基準: 5.0=完璧、4.5-4.9=非常に良好、4.0-4.4=良好、3.5-3.9=標準、3.0-3.4=要改善
    - 観点: フォーム効率30%、ペース管理25%、心拍管理25%、トレーニング品質20%
 
-2. **summary**: 2-3文のワークアウト要約（心拍/ペース/パワーの主要メトリクス）
+2. **integrated_score**: float (0-100) または省略
+   - 事前取得コンテキストの `form_scores.integrated_score` をそのまま出力
+   - null/未取得の場合はフィールドごと省略（`"integrated_score": null` は不可）
 
-3. **key_strengths**: 優れている点のリスト（3-5項目、1行/項目）
+3. **summary**: 2-3文のワークアウト要約（心拍/ペース/パワーの主要メトリクス + 統合フォームスコア）
+
+4. **key_strengths**: 優れている点のリスト（3-5項目、1行/項目）
    - フォーマット: "指標名: 数値（評価コメント）"
    - 重要項目は太字+✅で強調可能
 
-4. **improvement_areas**: 改善可能な点のリスト（2-4項目、1行/項目）
+5. **improvement_areas**: 改善可能な点のリスト（2-4項目、1行/項目）
    - フォーマット: "課題: 具体的な状況（目標値や推奨値）"
 
-5. **recommendations**: 改善提案（構造化マークダウン）
+6. **recommendations**: 改善提案（構造化マークダウン）
 
    **MANDATORY FORMAT - 以下の構造を厳密に守ること:**
 

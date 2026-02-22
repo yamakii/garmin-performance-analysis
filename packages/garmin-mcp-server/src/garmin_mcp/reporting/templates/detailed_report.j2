@@ -71,7 +71,7 @@
 N/A
 {%- endif %}
 
-### 総合所見{% if summary.star_rating %} ({{ summary.star_rating }}){% endif %}
+### 総合所見{% if summary.star_rating %} ({{ summary.star_rating }}){% endif %}{% if summary.integrated_score %} | フォーム {{ summary.integrated_score|round(1) }}/100{% endif %}
 
 {{ summary.summary if summary.summary else "評価データがありません。" }}
 
