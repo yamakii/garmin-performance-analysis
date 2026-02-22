@@ -11,6 +11,7 @@ mcp__serena__activate_project("/home/yamakii/workspace/garmin-performance-analys
 
 ### When to activate
 - **Plan mode Phase 1 (Initial Understanding)**: MUST activate before launching Explore agents
+  - Note: 親コンテキストでの activate は Explore エージェント（別プロセス）に引き継がれない。Explore エージェント自身の Serena 活用ルールは `.claude/rules/explore-agent-serena.md` を参照
 - **Decompose phase**: MUST activate before `/decompose` command (code exploration)
 - **Implementation phase**: MUST activate for worktree path
 
