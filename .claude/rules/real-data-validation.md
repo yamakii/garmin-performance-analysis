@@ -33,20 +33,14 @@
 
 ### Agent Definition Changes (.claude/agents/*.md)
 
-**プロンプト変更時（tools 以外）:**
-1. `/analyze-activity YYYY-MM-DD` で実アクティビティを分析
-2. 対象エージェントの出力を確認:
-   - 変更した指示が出力に反映されているか
-   - 日本語の自然さ
-   - 出力 JSON の構造が壊れていないか
-
-**tools フィールド変更時:**
-- tools はセッション開始時に読み込まれるため、同一セッションでは検証不可
-- コミット後、ユーザーに以下を依頼する:
-  「tools フィールドを変更しました。Claude Code を再起動し、
-  `/resume` で復帰後、`/analyze-activity YYYY-MM-DD` を実行して
-  新ツールが正しく呼び出されることを確認してください。」
-- 注意: `/clear` → `/resume` では tools は再読み込みされない
+**検証手順:**
+- エージェント定義（プロンプト・tools 両方）は同一セッションでは検証不可
+  - Task tool はプロジェクトの `.claude/agents/` から定義を読み込む
+  - worktree の変更は反映されず、`/clear` → `/resume` でも再読み込みされない
+- **手順**: main にマージ → 新セッション開始 → `/analyze-activity YYYY-MM-DD` で検証
+- コミット時にユーザーに依頼:
+  「エージェント定義を変更しました。新セッションで
+  `/analyze-activity YYYY-MM-DD` を実行して出力を確認してください。」
 
 **確認不要なケース:**
 - コメント・空行のみの変更
