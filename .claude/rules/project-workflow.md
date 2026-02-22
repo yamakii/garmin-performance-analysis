@@ -30,10 +30,34 @@ Plan mode に入ったら、コード探索と並行して以下を行う:
 ```
 Issue: #{number} | TBD (create before implementation) | N/A
 Scale: Large (3+ files) | Small (1-2 files)
+Type: Implementation | Roadmap
 ```
 
 - `Issue` が未記載のプランは不完全とみなす
 - `TBD` の場合、ExitPlanMode 後・実装開始前に Issue を作成し番号を確定する
+- `Type` が未記載の場合、`Implementation` とみなす
+
+### プラン種類（Type）の定義
+
+| Type | 内容 | 例 |
+|------|------|-----|
+| **Implementation** | 具体的なコード変更プラン | 機能追加、バグ修正、リファクタリング |
+| **Roadmap** | 優先度付き改善提案リスト | 改善提案10件の優先度マトリクス、技術的負債の整理 |
+
+### Plan 承認後の自動遷移ルール
+
+承認後のアクションはプランの Type と Scale で決まる。**ユーザーに再確認しない。**
+
+| Type | Scale | 承認後アクション |
+|------|-------|-----------------|
+| Implementation | Small | worktree 作成 → tdd-implementer |
+| Implementation | Large | `/decompose` → Epic + Sub-issues |
+| Roadmap | — | `/decompose` → Epic + Sub-issues |
+
+**Roadmap 固有ルール:**
+- 優先度マトリクスがプランに含まれている場合、承認 = その順序での実行承認
+- ユーザーに「どれからやるか」を再度聞かない
+- 「将来」「backlog」ラベルの項目は Sub-issue 作成するが `backlog` ラベル付与
 
 ### Plan 承認後の実装への引き継ぎ
 
