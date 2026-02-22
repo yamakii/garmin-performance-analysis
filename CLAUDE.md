@@ -106,12 +106,12 @@ mcp__garmin-db__reload_server(server_dir="/absolute/path/to/worktree/packages/ga
 
 **2. Development Process (GitHub Issue-centric)**
 
-Plan mode の探索フェーズで規模判定と Issue 連携を行う:
+全タスクで Issue 必須。Plan mode の探索フェーズで Issue 連携と分解判定を行う:
 ```
 Plan mode Phase 1 (探索):
   Issue番号あり? → gh issue view N → 設計をベースにプラン作成
-  Large task?    → プラン内で /decompose を推奨
-  Small task?    → 通常のプラン作成 → Implement
+  Issue番号なし? → Issue: TBD → 承認後に Issue 作成
+  分解が必要?   → プラン内で /decompose を推奨
 ```
 
 ```
@@ -153,8 +153,8 @@ uv run python -m garmin_mcp.scripts.bulk_fetch_activity_details --activity-ids 1
 - `spike` label: Investigation only, no code changes
 
 **Workflows:**
-- Large task: `/decompose` → Epic + Sub-issues → Plan mode per sub-issue → `/ship --close N`
-- Small task: Plan mode → `/ship` (Issue optional)
+- All tasks: Plan mode → Issue 作成 → worktree → `/ship --close N`
+- Decomposable task: `/decompose` → Epic + Sub-issues → Plan mode per sub-issue → `/ship --close N`
 - Progress: `/project-status [epic-number]`
 
 **Issue hierarchy:**

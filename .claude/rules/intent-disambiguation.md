@@ -9,10 +9,10 @@
 - 日本語の問題報告 → バグレポートとして扱う。コマンドとして実行しない
 
 ### Development Task Routing (IMPORTANT)
-開発タスクでは、plan mode の探索フェーズで規模を判定する:
-- **大きいタスク** (3+ファイル、複数の独立した作業): → プラン内で `/decompose` を推奨
-- **Sub-issue 着手** (Issue 番号あり): → 探索フェーズで `gh issue view` → 設計をベースにプラン作成
-- **小さいタスク** (1-2ファイル、明確): → 通常の plan mode
+全ての開発タスクで Issue を作成する（Issue なし実装は禁止）:
+- **Issue 番号あり**: → 探索フェーズで `gh issue view` → 設計をベースにプラン作成
+- **Issue 番号なし**: → `Issue: TBD` でプラン作成 → 承認後に Issue 作成
+- **分解が必要** (複数の独立した作業単位): → プラン内で `/decompose` を推奨
 
 詳細は `.claude/rules/project-workflow.md` を参照。
 
