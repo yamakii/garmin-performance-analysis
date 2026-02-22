@@ -4,7 +4,7 @@
 
 ## ワークフロー
 
-1. **データ収集**: ingest_activity MCP ツール → mkdir
+1. **データ収集**: ingest_activity MCP ツール
 2. **コンテキスト事前取得**: MCP ツールで prefetch（Bash許可不要）
 3. **セクション分析**: 5つのエージェントを並列実行（事前取得コンテキスト付き）
 4. **結果登録**: merge script でDuckDBに一括登録
@@ -22,13 +22,8 @@ mcp__garmin-db__ingest_activity(date="{{arg1}}")
 
 返却された `activity_id` と `date` を取得してください。
 
-次に、分析用tempフォルダを作成：
-
-```bash
-mkdir -p /tmp/analysis_{activity_id}
-```
-
 tempフォルダパスは `ANALYSIS_TEMP_DIR=/tmp/analysis_{activity_id}` として以降使用。
+（ディレクトリはエージェントの Write tool が自動作成します）
 
 ### Step 1.5: コンテキスト事前取得（MCP ツール）
 

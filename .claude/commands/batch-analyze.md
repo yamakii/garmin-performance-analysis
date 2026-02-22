@@ -7,12 +7,11 @@
 1. **JSONファイル読み込み**: `$ARGUMENTS` のパスからJSONを読み込む（デフォルト: `/tmp/batch_activity_list.json`）
 2. **フィルタ**: `status: "success"` のアクティビティのみ抽出
 3. **各アクティビティに対して順次実行**:
-   a. tempフォルダ作成 + コンテキスト事前取得:
-      ```bash
-      mkdir -p /tmp/analysis_{activity_id} && \
-      uv run python -m garmin_mcp.scripts.prefetch_activity_context {activity_id}
+   a. コンテキスト事前取得:
       ```
-   b. 出力JSONを `CONTEXT` として保持
+      mcp__garmin-db__prefetch_activity_context(activity_id)
+      ```
+   b. 返却されたJSONを `CONTEXT` として保持
    c. 5つのセクション分析エージェントを**並列実行**（Task tool、CONTEXTをプロンプトに含める）
    d. 全エージェント完了後、一括登録: `uv run python -m garmin_mcp.scripts.merge_section_analyses /tmp/analysis_{activity_id}`
    e. レポート生成コマンドを実行
