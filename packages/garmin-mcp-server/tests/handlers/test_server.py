@@ -71,17 +71,18 @@ class TestHandleReloadServer:
         assert "default" in data["message"].lower()
 
     @pytest.mark.asyncio
-    async def test_schedules_exit(self) -> None:
-        """reload_server schedules os._exit(0) after 0.5s delay."""
+    async def test_schedules_graceful_shutdown(self) -> None:
+        """reload_server schedules _graceful_shutdown after 0.5s delay."""
+        from garmin_mcp.server import _graceful_shutdown
+
         mock_loop = MagicMock(spec=asyncio.AbstractEventLoop)
         with (
             patch("garmin_mcp.server.asyncio.get_event_loop", return_value=mock_loop),
-            patch("garmin_mcp.server.os._exit") as mock_exit,
             patch("garmin_mcp.server.os.path.exists", return_value=False),
         ):
             await _handle_reload_server()
 
-        mock_loop.call_later.assert_called_once_with(0.5, mock_exit, 0)
+        mock_loop.call_later.assert_called_once_with(0.5, _graceful_shutdown)
 
     @pytest.mark.asyncio
     async def test_with_valid_server_dir_writes_override_file(self) -> None:
@@ -168,3 +169,96 @@ class TestHandleReloadServer:
         # Must not raise
         data = json.loads(result[0].text)
         assert data["success"] is True
+
+
+@pytest.mark.unit
+class TestGracefulShutdown:
+    """Tests for _graceful_shutdown."""
+
+    def test_calls_export_manager_cleanup(self) -> None:
+        """_graceful_shutdown calls ExportManager.cleanup_all()."""
+        from garmin_mcp.server import _graceful_shutdown
+
+        mock_export_mgr = MagicMock()
+        mock_view_mgr = MagicMock()
+        with (
+            patch(
+                "garmin_mcp.server.get_export_manager",
+                return_value=mock_export_mgr,
+                create=True,
+            ),
+            patch(
+                "garmin_mcp.mcp_server.export_manager.get_export_manager",
+                return_value=mock_export_mgr,
+            ),
+            patch(
+                "garmin_mcp.mcp_server.view_manager.get_view_manager",
+                return_value=mock_view_mgr,
+            ),
+            patch("garmin_mcp.server.os._exit") as mock_exit,
+        ):
+            _graceful_shutdown()
+
+        mock_export_mgr.cleanup_all.assert_called_once()
+        mock_exit.assert_called_once_with(0)
+
+    def test_calls_view_manager_cleanup(self) -> None:
+        """_graceful_shutdown calls ViewManager.cleanup_all()."""
+        from garmin_mcp.server import _graceful_shutdown
+
+        mock_export_mgr = MagicMock()
+        mock_view_mgr = MagicMock()
+        with (
+            patch(
+                "garmin_mcp.mcp_server.export_manager.get_export_manager",
+                return_value=mock_export_mgr,
+            ),
+            patch(
+                "garmin_mcp.mcp_server.view_manager.get_view_manager",
+                return_value=mock_view_mgr,
+            ),
+            patch("garmin_mcp.server.os._exit"),
+        ):
+            _graceful_shutdown()
+
+        mock_view_mgr.cleanup_all.assert_called_once()
+
+    def test_handles_uninitialized_managers(self) -> None:
+        """_graceful_shutdown does not raise when managers are not initialized."""
+        from garmin_mcp.server import _graceful_shutdown
+
+        with (
+            patch(
+                "garmin_mcp.mcp_server.export_manager.get_export_manager",
+                side_effect=Exception("not initialized"),
+            ),
+            patch(
+                "garmin_mcp.mcp_server.view_manager.get_view_manager",
+                side_effect=Exception("not initialized"),
+            ),
+            patch("garmin_mcp.server.os._exit") as mock_exit,
+        ):
+            _graceful_shutdown()
+
+        mock_exit.assert_called_once_with(0)
+
+    def test_calls_os_exit(self) -> None:
+        """_graceful_shutdown calls os._exit(0)."""
+        from garmin_mcp.server import _graceful_shutdown
+
+        mock_export_mgr = MagicMock()
+        mock_view_mgr = MagicMock()
+        with (
+            patch(
+                "garmin_mcp.mcp_server.export_manager.get_export_manager",
+                return_value=mock_export_mgr,
+            ),
+            patch(
+                "garmin_mcp.mcp_server.view_manager.get_view_manager",
+                return_value=mock_view_mgr,
+            ),
+            patch("garmin_mcp.server.os._exit") as mock_exit,
+        ):
+            _graceful_shutdown()
+
+        mock_exit.assert_called_once_with(0)

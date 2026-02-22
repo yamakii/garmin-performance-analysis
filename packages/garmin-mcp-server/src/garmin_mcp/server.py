@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 import os
+import signal
 from pathlib import Path
 from typing import Any
 
@@ -100,6 +101,31 @@ def _handle_get_server_info() -> list[TextContent]:
     return [TextContent(type="text", text=json.dumps(info))]
 
 
+def _graceful_shutdown() -> None:
+    """Perform cleanup and exit gracefully.
+
+    Uses os._exit(0) instead of sys.exit() because sys.exit() raises SystemExit,
+    which may be caught and suppressed by the asyncio event loop when called from
+    loop.call_later(). os._exit(0) guarantees process termination. The graceful
+    aspect is running cleanup *before* the hard exit.
+    """
+    logger.info("Graceful shutdown initiated")
+    try:
+        from garmin_mcp.mcp_server.export_manager import get_export_manager
+
+        get_export_manager().cleanup_all()
+    except Exception:
+        logger.debug("Export cleanup skipped (not initialized)")
+    try:
+        from garmin_mcp.mcp_server.view_manager import get_view_manager
+
+        get_view_manager().cleanup_all()
+    except Exception:
+        logger.debug("View cleanup skipped (not initialized)")
+    logger.info("Cleanup complete, exiting")
+    os._exit(0)
+
+
 async def _handle_reload_server(
     server_dir: str | None = None,
 ) -> list[TextContent]:
@@ -133,7 +159,7 @@ async def _handle_reload_server(
         logger.info("reload_server called - restoring default directory")
 
     loop = asyncio.get_event_loop()
-    loop.call_later(0.5, os._exit, 0)
+    loop.call_later(0.5, _graceful_shutdown)
     return [
         TextContent(
             type="text",
@@ -144,6 +170,8 @@ async def _handle_reload_server(
 
 async def main() -> None:
     """Main entry point for MCP server."""
+    loop = asyncio.get_event_loop()
+    loop.add_signal_handler(signal.SIGTERM, _graceful_shutdown)
     async with stdio_server() as (read_stream, write_stream):
         await mcp.run(read_stream, write_stream, mcp.create_initialization_options())
 
