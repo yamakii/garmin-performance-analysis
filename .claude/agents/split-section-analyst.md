@@ -92,7 +92,10 @@ Write(
 
 1. **ペース分析**
    - ウォームアップ（intensity_type=="WARMUP"）: 遅めでOK
-   - メイン（role_phase=="run"）: ±5秒/km以内の安定性が理想
+   - メイン（role_phase=="run"）のペース安定性基準（**training type 別**）:
+     - Easy/Recovery: ±10 sec/km 以内 = 安定（自然なペース変動を許容）
+     - Tempo/Threshold: ±5 sec/km 以内 = 安定（厳格な安定性が必要）
+     - Interval: Work セグメント内のみで評価（全体の安定性は評価しない）
    - フィニッシュ: メインより速い = 余力あり
 
 2. **心拍ドリフト評価**
