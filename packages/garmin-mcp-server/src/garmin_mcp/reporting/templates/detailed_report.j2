@@ -88,6 +88,15 @@ N/A
 - {{ area }}
 {% endfor %}
 {% endif %}
+{% if summary.plan_achievement %}
+
+### プラン達成度
+**目標**: {{ summary.plan_achievement.description_ja }}{% if summary.plan_achievement.targets.pace %} {{ summary.plan_achievement.targets.pace }}{% endif %}{% if summary.plan_achievement.targets.hr %}, HR {{ summary.plan_achievement.targets.hr }}{% endif %}
+
+**実績**: {% if summary.plan_achievement.actuals.pace %}{{ summary.plan_achievement.actuals.pace }}{% endif %}{% if summary.plan_achievement.actuals.hr %}, HR {{ summary.plan_achievement.actuals.hr }}{% endif %} → {% if summary.plan_achievement.hr_achieved is not defined or summary.plan_achievement.hr_achieved %}{% if summary.plan_achievement.pace_achieved is not defined or summary.plan_achievement.pace_achieved %}✅ 達成{% else %}⚠️ 一部未達{% endif %}{% else %}⚠️ 一部未達{% endif %}
+
+{{ summary.plan_achievement.evaluation }}
+{% endif %}
 {% endif %}
 
 ### ペース・心拍{% if show_physiological %}・パワー{% endif %}推移{% if is_interval %}(Work/Recoveryハイライト){% endif %}

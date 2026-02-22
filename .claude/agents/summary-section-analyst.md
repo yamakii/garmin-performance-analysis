@@ -137,6 +137,56 @@ key_strengths = [
   - `integrated_score` フィールドを省略
   - 他の分析は通常通り続行
 
+## プラン達成度（plan_achievement）
+
+**条件**: 事前取得コンテキストの `planned_workout` が not null の場合のみ出力。null（アドホックラン）の場合はフィールドごとスキップ。
+
+### 出力手順:
+
+1. **目標値を取得:**
+   - `planned_workout.target_hr_low` / `target_hr_high` → HR目標範囲
+   - `planned_workout.target_pace_low` / `target_pace_high` → ペース目標範囲（秒/km）
+   - `planned_workout.workout_type` → ワークアウトタイプ（easy, tempo, interval等）
+   - いずれかが null の場合、該当する比較をスキップ
+
+2. **実績値を取得:**
+   - `phase_structure.run.avg_hr` → メイン区間の平均HR
+   - `phase_structure.run.avg_pace_str` → メイン区間の平均ペース
+
+3. **達成判定:**
+   - HR: 実績が `target_hr_low` ≤ avg_hr ≤ `target_hr_high` なら達成（✅）、範囲外なら未達（⚠️）
+   - ペース: 実績が `target_pace_low` ≤ avg_pace ≤ `target_pace_high` なら達成（✅）、範囲外なら未達（⚠️）
+
+4. **analysis_data に `plan_achievement` dict を出力:**
+
+```json
+"plan_achievement": {
+  "workout_type": "easy",
+  "description_ja": "イージーラン",
+  "targets": {"hr": "120-145bpm", "pace": "6:30-7:00/km"},
+  "actuals": {"hr": "142bpm", "pace": "6:45/km"},
+  "hr_achieved": true,
+  "pace_achieved": true,
+  "evaluation": "ペースもHRも目標範囲内で安定したイージーランでした。"
+}
+```
+
+### workout_type → description_ja マッピング:
+- `easy` → "イージーラン"
+- `recovery` → "リカバリーラン"
+- `long_run` → "ロングラン"
+- `tempo` → "テンポ走"
+- `threshold` → "閾値走"
+- `interval` → "インターバル"
+- `repetition` → "レペティション"
+- その他 → workout_type をそのまま使用
+
+### null ハンドリング:
+- `planned_workout` が null → `plan_achievement` フィールドを出力しない
+- `target_hr_low`/`target_hr_high` が null → `hr_achieved` を出力しない、targets.hr を省略
+- `target_pace_low`/`target_pace_high` が null → `pace_achieved` を出力しない、targets.pace を省略
+- 両方 null → `plan_achievement` フィールドを出力しない
+
 ## 出力形式
 
 **section_type**: `"summary"`
