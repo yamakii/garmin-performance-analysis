@@ -9,6 +9,7 @@
 - DuckDB schema変更/migration → 実テーブルでPRAGMA table_info確認
 - MCP tool変更 → 実activity_idで呼び出して戻り値の型・構造確認
 - Ingest pipeline変更 → 実activity 1件でend-to-end実行
+- Agent definition変更 → `/analyze-activity` で出力確認（tools変更時は再起動必要）
 
 ## Validation Checklist
 
@@ -29,6 +30,27 @@
 2. 戻り値のJSON構造とフィールド型を確認
 3. statistics_only=True/False 両方のモードでテスト
 4. エッジケース: 短いアクティビティ(3km未満), インターバル, リカバリーラン
+
+### Agent Definition Changes (.claude/agents/*.md)
+
+**プロンプト変更時（tools 以外）:**
+1. `/analyze-activity YYYY-MM-DD` で実アクティビティを分析
+2. 対象エージェントの出力を確認:
+   - 変更した指示が出力に反映されているか
+   - 日本語の自然さ
+   - 出力 JSON の構造が壊れていないか
+
+**tools フィールド変更時:**
+- tools はセッション開始時に読み込まれるため、同一セッションでは検証不可
+- コミット後、ユーザーに以下を依頼する:
+  「tools フィールドを変更しました。Claude Code を再起動し、
+  `/resume` で復帰後、`/analyze-activity YYYY-MM-DD` を実行して
+  新ツールが正しく呼び出されることを確認してください。」
+- 注意: `/clear` → `/resume` では tools は再読み込みされない
+
+**確認不要なケース:**
+- コメント・空行のみの変更
+- typo 修正（分析ロジックに影響しない）
 
 ### CRITICAL: Restart MCP servers after code changes
 
