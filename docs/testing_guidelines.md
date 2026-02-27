@@ -10,7 +10,7 @@
 ### `@pytest.mark.integration`
 - 統合テスト
 - ファイルシステム、DuckDB、Parquetファイルなどの外部リソースを使用
-- **pre-commit hookで実行される**
+- **pre-commit hookでは実行されない**（pre-commitはunitのみ）
 
 ### `@pytest.mark.garmin_api`
 - Garmin API認証が必要なテスト

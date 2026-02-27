@@ -57,7 +57,7 @@ Run the full ship workflow for the current changes.
 4. **Merge & cleanup** (if on a feature branch):
    ```bash
    # Merge to main
-   cd /home/yamakii/workspace/garmin-performance-analysis
+   cd $(git rev-parse --show-toplevel)
    git merge --no-ff feature/{name}
 
    # Push main

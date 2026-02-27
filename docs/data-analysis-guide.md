@@ -59,7 +59,7 @@ This guide describes the **DuckDB × MCP × Python Architecture** for bulk perfo
 2. Metrics: pace, heart_rate, distance, form metrics, etc.
 3. Analysis type: trend, prediction, comparison, correlation
 
-**Pre-Check with profile() (RECOMMENDED - データ量確認):**
+**Pre-Check with profile() (RECOMMENDED - データ量確認, 未実装):**
 ```python
 # データ量とカラム統計を事前確認（export前の安全確認）
 profile_result = mcp__garmin-db__profile(
@@ -193,7 +193,7 @@ print(json.dumps(summary, indent=2))
 
 **Execute via Bash:**
 ```bash
-cd /home/yamakii/workspace/garmin-performance-analysis
+cd $(git rev-parse --show-toplevel)
 
 cat > /tmp/analyze.py << 'EOF'
 <python_code_from_above>
@@ -300,7 +300,7 @@ data = mcp__garmin-db__export(
 )
 ```
 
-### 2. mcp__garmin-db__profile (推奨 - 事前確認)
+### 2. mcp__garmin-db__profile (推奨 - 事前確認) — 未実装
 
 **Purpose:** データの要約統計を取得（export前の事前確認に最適）
 
@@ -348,7 +348,7 @@ profile = mcp__garmin-db__profile(
 
 **Token Cost:** ~500 bytes（exportの1/50）
 
-### 3. mcp__garmin-db__histogram (推奨 - 分布確認)
+### 3. mcp__garmin-db__histogram (推奨 - 分布確認) — 未実装
 
 **Purpose:** カラムの分布特性を取得（生データなし）
 
@@ -395,7 +395,7 @@ pace_dist = mcp__garmin-db__histogram(
 
 **Token Cost:** ~1KB（20ビン × 50バイト）
 
-### 4. mcp__garmin-db__materialize (推奨 - 複雑クエリ最適化)
+### 4. mcp__garmin-db__materialize (推奨 - 複雑クエリ最適化) — 未実装
 
 **Purpose:** 一時ビュー作成（複雑なクエリを再利用、高速化）
 
@@ -463,7 +463,7 @@ uv run python /tmp/analyze.py
 ```
 
 **CRITICAL:**
-- Use absolute paths: `/home/yamakii/workspace/garmin-performance-analysis`
+- Use absolute paths: `$(git rev-parse --show-toplevel)`
 - Use `uv run python` (NOT plain `python`)
 - Clean up temp files after use
 

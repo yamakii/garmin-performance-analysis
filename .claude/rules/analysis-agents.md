@@ -27,7 +27,7 @@ The context is read-only reference data — always trust it as accurate.
 
 ## Star Rating Format
 
-`(rating N.N/5.0)` — example: `(stars 4.0/5.0)`
+`(★★★★☆ N.N/5.0)` — example: `(★★★★☆ 4.0/5.0)`
 
 ## Architecture Constraints
 
