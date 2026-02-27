@@ -18,3 +18,9 @@ uv run mypy .                 # Type check
 uv run pytest                 # All tests
 uv run pytest -m unit         # Unit only
 ```
+
+## Bash Style
+
+- Don't chain commands (`&&`, `||`, `;`) — triggers re-permission prompts
+- Use parallel Bash tool calls for independent commands
+- Chain only when order-dependent (e.g., `git add && git commit`)

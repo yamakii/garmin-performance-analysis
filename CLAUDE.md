@@ -80,90 +80,25 @@ See `.claude/rules/mcp-data-access.md` for workflow details and `docs/data-analy
 
 ## For Tool Development
 
-**When:** Modifying code, adding features, fixing bugs, running tests, managing projects.
+**When:** Modifying code, adding features, fixing bugs, running tests.
 
-Rules are auto-loaded from `.claude/rules/` (MCP data access, git workflow, testing, code quality, etc.).
+**Workflow:** Plan mode → Issue → Worktree → Implement → Ship
 
-### Development Workflow
+Key rules (auto-loaded from `.claude/rules/`):
+- `workflow-orchestration.md` — plan-first, subagent delegation, verification, elegance check
+- `project-workflow.md` — Issue routing, plan phases, approval flow
+- `git-workflow.md` — Serena, worktree, commit convention
+- `code-quality.md` — Black, Ruff, Mypy, Pytest
+- `testing.md` — markers, mocks, performance budgets
 
-**1. Environment Setup**
-```bash
-# Initial setup (main branch)
-uv sync --extra dev
-
-# For new feature (worktree)
-git worktree add -b feature/name ../garmin-feature-name main
-cd ../garmin-feature-name
-uv sync --extra dev
-direnv allow
-
-# MANDATORY: Activate Serena for agents
-mcp__serena__activate_project("/absolute/path/to/worktree")
-
-# MANDATORY: Point garmin-db MCP to worktree code
-mcp__garmin-db__reload_server(server_dir="/absolute/path/to/worktree/packages/garmin-mcp-server")
-```
-
-**2. Development Process (GitHub Issue-centric)**
-
-全タスクで Issue 必須。Plan mode の探索フェーズで Issue 連携と分解判定を行う:
-```
-Plan mode Phase 1 (探索):
-  Issue番号あり? → gh issue view N → 設計をベースにプラン作成
-  Issue番号なし? → Issue: TBD → 承認後に Issue 作成
-  分解が必要?   → プラン内で /decompose を推奨
-```
-
-```
-Commands & Agents:
-- /decompose: Break large tasks into Epic + Sub-issues on GitHub
-- /project-status: Show Epic progress dashboard
-- tdd-implementer: TDD cycle (reads design from GitHub Issue body)
-- completion-reporter: Posts report to Issue + closes it
-- /ship --close N: Push + close Issue
-```
-
-See `.claude/rules/project-workflow.md` for routing details.
-
-### Data Processing Scripts
-
-**DuckDB Regeneration:**
-```bash
-# Surgical update (recommended)
-uv run python -m garmin_mcp.scripts.regenerate_duckdb \
-  --tables splits form_efficiency \
-  --activity-ids 12345 \
-  --force
-```
-
-Options: `--tables`, `--activity-ids`, `--start-date`/`--end-date`, `--delete-db` (dangerous).
-See `.claude/rules/duckdb-safety.md` for safety rules.
-
-**Raw Data Fetching:**
-```bash
-uv run python -m garmin_mcp.scripts.bulk_fetch_raw_data --start-date 2025-10-01
-uv run python -m garmin_mcp.scripts.bulk_fetch_activity_details --activity-ids 12345 67890
-```
-
-### Project Management (GitHub Issue-centric)
-
-**GitHub Issues are the Single Source of Truth:**
-- `epic` label: Large tasks with sub-issues (task list tracks progress)
-- `sub-issue` label: Independently implementable units (1 plan mode cycle = 1 sub-issue)
-- `spike` label: Investigation only, no code changes
-
-**Workflows:**
-- All tasks: Plan mode → Issue 作成 → worktree → `/ship --close N`
-- Decomposable task: `/decompose` → Epic + Sub-issues → Plan mode per sub-issue → `/ship --close N`
-- Progress: `/project-status [epic-number]`
-
-**Issue hierarchy:**
-```
-Epic #50: Refactor ingest pipeline
-  ├── Sub-issue #51: Extract ApiClient (closed)
-  ├── Sub-issue #52: Extract RawDataFetcher (in progress)
-  └── Sub-issue #53: Extract DuckDBSaver (pending)
-```
+### Quick Commands
+| Command | Purpose |
+|---------|---------|
+| `uv sync --extra dev` | Initial setup |
+| `direnv allow` | Auto-load env |
+| `uv run python -m garmin_mcp.scripts.regenerate_duckdb --tables X --activity-ids N --force` | Surgical DuckDB update |
+| `uv run python -m garmin_mcp.scripts.bulk_fetch_raw_data --start-date YYYY-MM-DD` | Fetch raw data |
+| `uv run python -m garmin_mcp.scripts.bulk_fetch_activity_details --activity-ids N` | Fetch activity details |
 
 ---
 
@@ -217,6 +152,7 @@ garmin-performance-analysis/
 │   ├── agents/                     # 5 analysis + 2 dev agents
 │   ├── commands/                   # /analyze-activity, /batch-analyze, /decompose, /project-status, /ship
 │   ├── rules/                      # Shared rules (auto-loaded)
+│   ├── tasks/                      # todo.md, lessons.md (session tracking)
 │   └── settings.local.json
 ├── data/                           # GARMIN_DATA_DIR (configurable via .env)
 │   ├── raw/                        # API responses (8 files/activity)
