@@ -30,6 +30,12 @@ repos:
         types: [python]
         pass_filenames: true
 
+      - id: no-direct-duckdb-connect
+        name: no direct duckdb.connect()
+        entry: .claude/hooks/no-direct-duckdb-connect.sh
+        language: system
+        pass_filenames: false
+
       - id: pytest
         name: pytest (unit)
         entry: uv run pytest -m unit --tb=short
