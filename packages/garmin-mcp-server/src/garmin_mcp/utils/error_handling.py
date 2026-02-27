@@ -5,9 +5,67 @@ This module provides consistent error messages and retry guidance for
 size limit violations and data processing errors.
 """
 
+import json
 import logging
+from collections.abc import Callable, Coroutine
+from functools import wraps
+from typing import Any
+
+from mcp.types import TextContent
 
 logger = logging.getLogger(__name__)
+
+
+def safe_tool_handler(
+    func: Callable[..., Coroutine[Any, Any, list[TextContent]]],
+) -> Callable[..., Coroutine[Any, Any, list[TextContent]]]:
+    """Wrap async handler methods to return structured errors instead of raising."""
+
+    @wraps(func)
+    async def wrapper(*args: Any, **kwargs: Any) -> list[TextContent]:
+        try:
+            return await func(*args, **kwargs)
+        except LLMSafeError as e:
+            logger.warning("LLMSafeError in %s: %s", func.__name__, e.message)
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(
+                        {"error": e.message, "suggestion": e.suggestion},
+                        ensure_ascii=False,
+                    ),
+                )
+            ]
+        except (KeyError, ValueError, TypeError) as e:
+            logger.warning("Parameter error in %s: %s", func.__name__, e)
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(
+                        {
+                            "error": f"Invalid parameter: {e}",
+                            "suggestion": "Check parameter names and types",
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+            ]
+        except Exception:
+            logger.exception("Unhandled error in %s", func.__name__)
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(
+                        {
+                            "error": "Internal error occurred",
+                            "suggestion": "Try again or check server logs",
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+            ]
+
+    return wrapper
 
 
 class LLMSafeError(Exception):
