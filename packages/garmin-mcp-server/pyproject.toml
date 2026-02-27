@@ -101,7 +101,7 @@ asyncio_default_fixture_loop_scope = "function"
 
 [tool.coverage.run]
 source = ["src/garmin_mcp"]
-omit = ["tests/*", ".venv/*"]
+omit = ["tests/*", ".venv/*", "*/scripts/*", "*/benchmarks/*"]
 
 [tool.coverage.report]
 exclude_lines = [
