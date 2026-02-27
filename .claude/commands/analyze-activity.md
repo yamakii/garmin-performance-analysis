@@ -67,9 +67,17 @@ prompt: "Activity ID {activity_id} ({date}) のアクティビティタイプ判
 
 **注意**: split-section-analyst にはCONTEXT不要（既にcomprehensive 1回で最適化済み）
 
+### Step 2.1: エラーハンドリング（部分結果判定）
+
+5エージェント完了後、成功/失敗を集計してください：
+
+- **5/5 成功**: Step 2.5 へ進む（通常フロー）
+- **4/5 成功**: 失敗セクション名をユーザーに通知し、成功した結果のみで続行。レポートに「{section_type} セクションは取得できませんでした」と記載。
+- **3/5 以下**: レポート生成を中止。全エラー内容をユーザーに報告して停止。
+
 ### Step 2.5: 分析結果のDuckDB登録（Merge）
 
-全エージェント完了後、1コマンドで一括登録：
+エラーハンドリング通過後、1コマンドで一括登録：
 
 ```bash
 uv run python -m garmin_mcp.scripts.merge_section_analyses /tmp/analysis_{activity_id}
@@ -77,10 +85,11 @@ uv run python -m garmin_mcp.scripts.merge_section_analyses /tmp/analysis_{activi
 
 - 全 `.json` を読み込み→DuckDBに一括挿入→成功時にtempフォルダ自動削除
 - 失敗時: JSONファイルは残る（`--keep` で明示的に残すことも可能）
+- 4/5 モードの場合、存在する `.json` のみが登録される
 
 ### Step 3: レポート生成
 
-全てのセクション分析が完了したら、最終レポートを生成してください：
+全てのセクション分析（または部分結果）が登録されたら、最終レポートを生成してください：
 
 ```bash
 uv run python -m garmin_mcp.reporting.report_generator_worker {activity_id} {date}

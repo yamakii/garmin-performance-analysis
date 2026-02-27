@@ -34,6 +34,15 @@ The context is read-only reference data — always trust it as accurate.
 - HR zones: always use Garmin-native zones (NEVER calculate from formulas)
 - Dates: DuckDB returns `datetime.date` → stringify before JSON output
 
+## Error Recovery
+
+When an analysis agent fails (timeout, MCP error, invalid output):
+
+- **5/5 成功**: Normal flow — merge all and generate report.
+- **4/5 成功**: Skip the failed section. Generate report with available sections. Note the missing section in the report header.
+- **3/5 以下**: Abort report generation. Report all errors to the user with section names and error details.
+- **Failed section handling**: Log the error content. Notify the user which section failed and why. Do NOT retry automatically — let the user decide.
+
 ## Writing Style
 
 - Natural Japanese sentences (avoid noun-ending / taitomei)
