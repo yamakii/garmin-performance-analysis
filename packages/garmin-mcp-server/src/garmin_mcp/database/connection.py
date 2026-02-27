@@ -16,7 +16,7 @@ Usage:
 """
 
 import logging
-import threading
+import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
@@ -24,9 +24,6 @@ from pathlib import Path
 import duckdb
 
 logger = logging.getLogger(__name__)
-
-# Thread-local storage for read-only connections
-_thread_local = threading.local()
 
 
 def _resolve_db_path(db_path: str | Path | None = None) -> Path:
@@ -49,9 +46,58 @@ def _resolve_db_path(db_path: str | Path | None = None) -> Path:
     return get_database_dir() / "garmin_performance.duckdb"
 
 
+def _connect_with_retry(
+    path: Path,
+    *,
+    read_only: bool = False,
+    retries: int = 3,
+    backoff: float = 2.0,
+) -> duckdb.DuckDBPyConnection:
+    """Connect to DuckDB with retry on lock errors.
+
+    DuckDB supports only one writer at a time. When concurrent access
+    causes lock contention, this retries with linear backoff.
+
+    Args:
+        path: Path to database file.
+        read_only: Whether to open in read-only mode.
+        retries: Maximum number of retry attempts.
+        backoff: Base delay in seconds (linear: backoff, 2*backoff, ...).
+
+    Returns:
+        DuckDB connection.
+
+    Raises:
+        duckdb.IOException: If lock cannot be acquired after all retries,
+            or if the error is not lock-related.
+    """
+    for attempt in range(retries + 1):
+        try:
+            return duckdb.connect(str(path), read_only=read_only)
+        except duckdb.IOException as e:
+            if "Could not set lock" not in str(e):
+                raise
+            if attempt == retries:
+                raise
+            delay = backoff * (attempt + 1)
+            logger.warning(
+                "DuckDB lock contention on %s, retrying in %.1fs " "(attempt %d/%d)",
+                path,
+                delay,
+                attempt + 1,
+                retries,
+            )
+            time.sleep(delay)
+    # Unreachable, but satisfies type checker
+    raise RuntimeError("Unreachable")  # pragma: no cover
+
+
 @contextmanager
 def get_connection(
     db_path: str | Path | None = None,
+    *,
+    retries: int = 3,
+    backoff: float = 2.0,
 ) -> Generator[duckdb.DuckDBPyConnection, None, None]:
     """Get a read-only DuckDB connection.
 
@@ -61,12 +107,14 @@ def get_connection(
 
     Args:
         db_path: Path to database file. If None, uses config default.
+        retries: Maximum retry attempts on lock errors.
+        backoff: Base delay in seconds for linear backoff.
 
     Yields:
         Read-only DuckDB connection.
     """
     path = _resolve_db_path(db_path)
-    conn = duckdb.connect(str(path), read_only=True)
+    conn = _connect_with_retry(path, read_only=True, retries=retries, backoff=backoff)
     try:
         yield conn
     finally:
@@ -76,6 +124,9 @@ def get_connection(
 @contextmanager
 def get_write_connection(
     db_path: str | Path | None = None,
+    *,
+    retries: int = 3,
+    backoff: float = 2.0,
 ) -> Generator[duckdb.DuckDBPyConnection, None, None]:
     """Get a read-write DuckDB connection.
 
@@ -84,12 +135,14 @@ def get_write_connection(
 
     Args:
         db_path: Path to database file. If None, uses config default.
+        retries: Maximum retry attempts on lock errors.
+        backoff: Base delay in seconds for linear backoff.
 
     Yields:
         Read-write DuckDB connection.
     """
     path = _resolve_db_path(db_path)
-    conn = duckdb.connect(str(path))
+    conn = _connect_with_retry(path, read_only=False, retries=retries, backoff=backoff)
     try:
         yield conn
     finally:
