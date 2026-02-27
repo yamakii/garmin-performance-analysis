@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from contextlib import contextmanager
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
@@ -9,18 +10,46 @@ import pytest
 from garmin_mcp.server import _handle_get_server_info, _handle_reload_server
 
 
+def _mock_get_connection(mock_conn):
+    """Create a mock context manager for get_connection."""
+
+    @contextmanager
+    def _ctx(*args, **kwargs):
+        yield mock_conn
+
+    return _ctx
+
+
 @pytest.mark.unit
 class TestHandleGetServerInfo:
     """Tests for _handle_get_server_info."""
 
+    def _make_mock_conn(
+        self,
+        table_count: int = 14,
+        last_date: str | None = "2025-10-15",
+    ) -> MagicMock:
+        mock_conn = MagicMock()
+        # SHOW TABLES returns one row per table
+        mock_conn.execute.return_value.fetchall.return_value = [
+            (f"t{i}",) for i in range(table_count)
+        ]
+        mock_conn.execute.return_value.fetchone.return_value = (last_date,)
+        return mock_conn
+
     def test_returns_server_dir(self) -> None:
         """get_server_info returns the server directory."""
+        mock_conn = self._make_mock_conn()
         with (
             patch(
                 "garmin_mcp.server._get_server_dir",
                 return_value="/some/path/garmin-mcp-server",
             ),
             patch("garmin_mcp.server.os.path.exists", return_value=False),
+            patch(
+                "garmin_mcp.database.connection.get_connection",
+                _mock_get_connection(mock_conn),
+            ),
         ):
             result = _handle_get_server_info()
 
@@ -32,6 +61,7 @@ class TestHandleGetServerInfo:
 
     def test_with_override_file(self) -> None:
         """get_server_info includes override info when file exists."""
+        mock_conn = self._make_mock_conn()
         with (
             patch(
                 "garmin_mcp.server._get_server_dir",
@@ -42,12 +72,103 @@ class TestHandleGetServerInfo:
                 "builtins.open",
                 mock_open(read_data="/worktree/packages/garmin-mcp-server"),
             ),
+            patch(
+                "garmin_mcp.database.connection.get_connection",
+                _mock_get_connection(mock_conn),
+            ),
         ):
             result = _handle_get_server_info()
 
         data = json.loads(result[0].text)
         assert data["override_file_exists"] is True
         assert data["override_dir"] == "/worktree/packages/garmin-mcp-server"
+
+    def test_db_diagnostics_connected(self) -> None:
+        """get_server_info returns DB diagnostics when connected."""
+        mock_conn = self._make_mock_conn(table_count=14, last_date="2025-10-15")
+        with (
+            patch(
+                "garmin_mcp.server._get_server_dir",
+                return_value="/some/path",
+            ),
+            patch("garmin_mcp.server.os.path.exists", return_value=False),
+            patch(
+                "garmin_mcp.database.connection.get_connection",
+                _mock_get_connection(mock_conn),
+            ),
+        ):
+            result = _handle_get_server_info()
+
+        data = json.loads(result[0].text)
+        assert data["db_status"] == "connected"
+        assert data["table_count"] == 14
+        assert data["last_ingest_date"] == "2025-10-15"
+
+    def test_db_diagnostics_error(self) -> None:
+        """get_server_info returns error status when DB connection fails."""
+
+        @contextmanager
+        def _failing_conn(*args, **kwargs):
+            raise RuntimeError("DB file not found")
+            yield  # pragma: no cover
+
+        with (
+            patch(
+                "garmin_mcp.server._get_server_dir",
+                return_value="/some/path",
+            ),
+            patch("garmin_mcp.server.os.path.exists", return_value=False),
+            patch(
+                "garmin_mcp.database.connection.get_connection",
+                _failing_conn,
+            ),
+        ):
+            result = _handle_get_server_info()
+
+        data = json.loads(result[0].text)
+        assert data["db_status"] == "error: DB file not found"
+        assert data["table_count"] is None
+        assert data["last_ingest_date"] is None
+
+    def test_tool_count(self) -> None:
+        """get_server_info returns tool_count."""
+        mock_conn = self._make_mock_conn()
+        with (
+            patch(
+                "garmin_mcp.server._get_server_dir",
+                return_value="/some/path",
+            ),
+            patch("garmin_mcp.server.os.path.exists", return_value=False),
+            patch(
+                "garmin_mcp.database.connection.get_connection",
+                _mock_get_connection(mock_conn),
+            ),
+        ):
+            result = _handle_get_server_info()
+
+        data = json.loads(result[0].text)
+        assert isinstance(data["tool_count"], int)
+        assert data["tool_count"] >= 30
+
+    def test_last_ingest_date_none_when_empty(self) -> None:
+        """get_server_info returns null last_ingest_date for empty DB."""
+        mock_conn = self._make_mock_conn(table_count=14, last_date=None)
+        with (
+            patch(
+                "garmin_mcp.server._get_server_dir",
+                return_value="/some/path",
+            ),
+            patch("garmin_mcp.server.os.path.exists", return_value=False),
+            patch(
+                "garmin_mcp.database.connection.get_connection",
+                _mock_get_connection(mock_conn),
+            ),
+        ):
+            result = _handle_get_server_info()
+
+        data = json.loads(result[0].text)
+        assert data["db_status"] == "connected"
+        assert data["last_ingest_date"] is None
 
 
 @pytest.mark.unit

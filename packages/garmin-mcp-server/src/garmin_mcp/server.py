@@ -111,11 +111,32 @@ def _handle_get_server_info() -> list[TextContent]:
         except OSError:
             pass
 
-    info = {
+    info: dict[str, Any] = {
         "server_dir": server_dir,
         "override_file_exists": override_exists,
         "override_dir": override_dir,
     }
+
+    # DB diagnostics (best-effort, never raise)
+    try:
+        from garmin_mcp.database.connection import get_connection
+
+        with get_connection() as conn:
+            tables = conn.execute("SHOW TABLES").fetchall()
+            info["db_status"] = "connected"
+            info["table_count"] = len(tables)
+            row = conn.execute(
+                "SELECT MAX(start_time_local) FROM activities"
+            ).fetchone()
+            info["last_ingest_date"] = str(row[0]) if row and row[0] else None
+    except Exception as e:
+        info["db_status"] = f"error: {e}"
+        info["table_count"] = None
+        info["last_ingest_date"] = None
+
+    # Tool count
+    info["tool_count"] = len(get_tool_definitions())
+
     return [TextContent(type="text", text=json.dumps(info))]
 
 
