@@ -580,10 +580,12 @@ class TestCompareSimilarWorkouts:
 
 @pytest.mark.unit
 class TestHandleUnknownTool:
-    """Test that unknown tool names raise ValueError."""
+    """Test that unknown tool names return structured error response."""
 
     @pytest.mark.asyncio
-    async def test_raises_value_error(self, mock_db_reader: MagicMock) -> None:
+    async def test_returns_error_response(self, mock_db_reader: MagicMock) -> None:
         handler = AnalysisHandler(mock_db_reader)
-        with pytest.raises(ValueError, match="Unknown tool"):
-            await handler.handle("nonexistent_tool", {})
+        result = await handler.handle("nonexistent_tool", {})
+        body = json.loads(result[0].text)
+        assert "Invalid parameter" in body["error"]
+        assert "Unknown tool" in body["error"]

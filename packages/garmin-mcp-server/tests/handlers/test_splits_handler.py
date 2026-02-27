@@ -311,10 +311,12 @@ class TestErrorHandling:
     """Test error cases."""
 
     @pytest.mark.asyncio
-    async def test_unknown_tool_raises_value_error(
+    async def test_unknown_tool_returns_error_response(
         self, mock_db_reader: MagicMock
     ) -> None:
         handler = SplitsHandler(mock_db_reader)
 
-        with pytest.raises(ValueError, match="Unknown tool"):
-            await handler.handle("nonexistent_tool", {"activity_id": ACTIVITY_ID})
+        result = await handler.handle("nonexistent_tool", {"activity_id": ACTIVITY_ID})
+        body = json.loads(result[0].text)
+        assert "Invalid parameter" in body["error"]
+        assert "Unknown tool" in body["error"]
