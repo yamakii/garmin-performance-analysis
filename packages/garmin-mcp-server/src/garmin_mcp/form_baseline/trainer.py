@@ -230,8 +230,6 @@ def train_power_efficiency_baseline(
     """
     from datetime import datetime, timedelta
 
-    import duckdb
-
     from garmin_mcp.form_baseline.power_efficiency_model import PowerEfficiencyModel
 
     # Get database path
@@ -251,95 +249,96 @@ def train_power_efficiency_baseline(
     period_end = end_dt.strftime("%Y-%m-%d")
 
     # Connect to database
-    conn = duckdb.connect(db_path)
+    from garmin_mcp.database.connection import get_write_connection
 
     try:
-        # Query data
-        query = """
-            SELECT
-                s.average_speed AS speed_mps,
-                s.power AS power_w,
-                a.base_weight_kg
-            FROM splits s
-            JOIN activities a ON s.activity_id = a.activity_id
-            WHERE a.activity_date >= ?
-              AND a.activity_date <= ?
-              AND s.power IS NOT NULL
-              AND a.base_weight_kg IS NOT NULL
-              AND s.average_speed > 1.5
-              AND s.average_speed < 7.0
-        """
-
-        result = conn.execute(query, [period_start, period_end]).fetchall()
-
-        if len(result) < 10:
-            # Insufficient data
-            return None
-
-        # Convert to power_wkg and speeds
-        power_wkg_values = []
-        speeds = []
-
-        for row in result:
-            speed_mps, power_w, base_weight_kg = row
-            if power_w is None or base_weight_kg is None or base_weight_kg <= 0:
-                continue
-            power_wkg = power_w / base_weight_kg
-            power_wkg_values.append(power_wkg)
-            speeds.append(speed_mps)
-
-        if len(power_wkg_values) < 10:
-            # Insufficient valid data
-            return None
-
-        # Fit model
-        model = PowerEfficiencyModel()
-        model.fit(power_wkg_values, speeds)
-
-        # Insert into form_baseline_history with UPSERT
-        conn.execute(
+        with get_write_connection(db_path) as conn:
+            # Query data
+            query = """
+                SELECT
+                    s.average_speed AS speed_mps,
+                    s.power AS power_w,
+                    a.base_weight_kg
+                FROM splits s
+                JOIN activities a ON s.activity_id = a.activity_id
+                WHERE a.activity_date >= ?
+                  AND a.activity_date <= ?
+                  AND s.power IS NOT NULL
+                  AND a.base_weight_kg IS NOT NULL
+                  AND s.average_speed > 1.5
+                  AND s.average_speed < 7.0
             """
-            INSERT INTO form_baseline_history (
-                history_id,
-                user_id,
-                condition_group,
-                metric,
-                model_type,
-                period_start,
-                period_end,
-                n_samples,
-                power_a,
-                power_b,
-                power_rmse
-            ) VALUES (nextval('form_baseline_history_seq'), ?, ?, 'power', 'linear', ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (user_id, condition_group, metric, period_start, period_end)
-            DO UPDATE SET
-                model_type = EXCLUDED.model_type,
-                n_samples = EXCLUDED.n_samples,
-                power_a = EXCLUDED.power_a,
-                power_b = EXCLUDED.power_b,
-                power_rmse = EXCLUDED.power_rmse
-            """,
-            [
-                user_id,
-                condition_group,
-                period_start,
-                period_end,
-                len(power_wkg_values),
-                model.power_a,
-                model.power_b,
-                model.power_rmse,
-            ],
-        )
 
-        return {
-            "power_a": model.power_a,
-            "power_b": model.power_b,
-            "power_rmse": model.power_rmse,
-            "n_samples": len(power_wkg_values),
-            "period_start": period_start,
-            "period_end": period_end,
-        }
+            result = conn.execute(query, [period_start, period_end]).fetchall()
+
+            if len(result) < 10:
+                # Insufficient data
+                return None
+
+            # Convert to power_wkg and speeds
+            power_wkg_values = []
+            speeds = []
+
+            for row in result:
+                speed_mps, power_w, base_weight_kg = row
+                if power_w is None or base_weight_kg is None or base_weight_kg <= 0:
+                    continue
+                power_wkg = power_w / base_weight_kg
+                power_wkg_values.append(power_wkg)
+                speeds.append(speed_mps)
+
+            if len(power_wkg_values) < 10:
+                # Insufficient valid data
+                return None
+
+            # Fit model
+            model = PowerEfficiencyModel()
+            model.fit(power_wkg_values, speeds)
+
+            # Insert into form_baseline_history with UPSERT
+            conn.execute(
+                """
+                INSERT INTO form_baseline_history (
+                    history_id,
+                    user_id,
+                    condition_group,
+                    metric,
+                    model_type,
+                    period_start,
+                    period_end,
+                    n_samples,
+                    power_a,
+                    power_b,
+                    power_rmse
+                ) VALUES (nextval('form_baseline_history_seq'), ?, ?, 'power', 'linear', ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (user_id, condition_group, metric, period_start, period_end)
+                DO UPDATE SET
+                    model_type = EXCLUDED.model_type,
+                    n_samples = EXCLUDED.n_samples,
+                    power_a = EXCLUDED.power_a,
+                    power_b = EXCLUDED.power_b,
+                    power_rmse = EXCLUDED.power_rmse
+                """,
+                [
+                    user_id,
+                    condition_group,
+                    period_start,
+                    period_end,
+                    len(power_wkg_values),
+                    model.power_a,
+                    model.power_b,
+                    model.power_rmse,
+                ],
+            )
+
+            return {
+                "power_a": model.power_a,
+                "power_b": model.power_b,
+                "power_rmse": model.power_rmse,
+                "n_samples": len(power_wkg_values),
+                "period_start": period_start,
+                "period_end": period_end,
+            }
 
     except Exception as e:
         # Return None on any error (graceful degradation)
@@ -348,8 +347,6 @@ def train_power_efficiency_baseline(
         print(f"Error in train_power_efficiency_baseline: {e}")
         traceback.print_exc()
         return None
-    finally:
-        conn.close()
 
 
 def train_form_baselines(
@@ -384,7 +381,6 @@ def train_form_baselines(
     """
     from datetime import datetime
 
-    import duckdb
     from dateutil.relativedelta import relativedelta
 
     from garmin_mcp.form_baseline import utils
@@ -407,11 +403,12 @@ def train_form_baselines(
     period_end = end_dt.strftime("%Y-%m-%d")
 
     # Connect to database
-    conn = duckdb.connect(db_path, read_only=False)
+    from garmin_mcp.database.connection import get_write_connection
 
     try:
-        # Query with date filter for 2-month window
-        query = """
+        with get_write_connection(db_path) as conn:
+            # Query with date filter for 2-month window
+            query = """
             SELECT
                 s.pace_seconds_per_km,
                 s.ground_contact_time,
@@ -430,36 +427,42 @@ def train_form_baselines(
               AND a.activity_date <= ?
         """
 
-        df = conn.execute(query, [period_start, period_end]).df()
+            df = conn.execute(query, [period_start, period_end]).df()
 
-        if len(df) < 50:
-            # Insufficient data
-            return None
+            if len(df) < 50:
+                # Insufficient data
+                return None
 
-        # Preprocess data
-        df_clean = df.copy()
-        df_clean = utils.drop_outliers(df_clean, "ground_contact_time", (150.0, 350.0))
-        df_clean = utils.drop_outliers(df_clean, "vertical_oscillation", (5.0, 20.0))
-        df_clean = utils.drop_outliers(df_clean, "vertical_ratio", (4.0, 15.0))
+            # Preprocess data
+            df_clean = df.copy()
+            df_clean = utils.drop_outliers(
+                df_clean, "ground_contact_time", (150.0, 350.0)
+            )
+            df_clean = utils.drop_outliers(
+                df_clean, "vertical_oscillation", (5.0, 20.0)
+            )
+            df_clean = utils.drop_outliers(df_clean, "vertical_ratio", (4.0, 15.0))
 
-        if len(df_clean) < 50:
-            # Insufficient data after outlier removal
-            return None
+            if len(df_clean) < 50:
+                # Insufficient data after outlier removal
+                return None
 
-        # Add derived columns
-        df_clean["speed_mps"] = df_clean["pace_seconds_per_km"].apply(utils.to_speed)
-        df_clean["gct_ms"] = df_clean["ground_contact_time"]
-        df_clean["vo_value"] = df_clean["vertical_oscillation"]
-        df_clean["vr_value"] = df_clean["vertical_ratio"]
+            # Add derived columns
+            df_clean["speed_mps"] = df_clean["pace_seconds_per_km"].apply(
+                utils.to_speed
+            )
+            df_clean["gct_ms"] = df_clean["ground_contact_time"]
+            df_clean["vo_value"] = df_clean["vertical_oscillation"]
+            df_clean["vr_value"] = df_clean["vertical_ratio"]
 
-        # Train GCT, VO, VR models
-        gct_model: GCTPowerModel = fit_gct_power(df_clean)
-        vo_model: LinearModel = fit_linear(df_clean, "vo")
-        vr_model: LinearModel = fit_linear(df_clean, "vr")
+            # Train GCT, VO, VR models
+            gct_model: GCTPowerModel = fit_gct_power(df_clean)
+            vo_model: LinearModel = fit_linear(df_clean, "vo")
+            vr_model: LinearModel = fit_linear(df_clean, "vr")
 
-        # Insert GCT model
-        conn.execute(
-            """
+            # Insert GCT model
+            conn.execute(
+                """
             INSERT INTO form_baseline_history (
                 history_id, user_id, condition_group, metric, model_type,
                 coef_alpha, coef_d, coef_a, coef_b,
@@ -479,27 +482,27 @@ def train_form_baselines(
                 speed_range_max = EXCLUDED.speed_range_max,
                 trained_at = now()
             """,
-            [
-                user_id,
-                condition_group,
-                "gct",
-                "power",
-                gct_model.alpha,
-                gct_model.d,
-                None,
-                None,
-                period_start,
-                period_end,
-                gct_model.n_samples,
-                gct_model.rmse,
-                gct_model.speed_range[0],
-                gct_model.speed_range[1],
-            ],
-        )
+                [
+                    user_id,
+                    condition_group,
+                    "gct",
+                    "power",
+                    gct_model.alpha,
+                    gct_model.d,
+                    None,
+                    None,
+                    period_start,
+                    period_end,
+                    gct_model.n_samples,
+                    gct_model.rmse,
+                    gct_model.speed_range[0],
+                    gct_model.speed_range[1],
+                ],
+            )
 
-        # Insert VO model
-        conn.execute(
-            """
+            # Insert VO model
+            conn.execute(
+                """
             INSERT INTO form_baseline_history (
                 history_id, user_id, condition_group, metric, model_type,
                 coef_alpha, coef_d, coef_a, coef_b,
@@ -519,27 +522,27 @@ def train_form_baselines(
                 speed_range_max = EXCLUDED.speed_range_max,
                 trained_at = now()
             """,
-            [
-                user_id,
-                condition_group,
-                "vo",
-                "linear",
-                None,
-                None,
-                vo_model.a,
-                vo_model.b,
-                period_start,
-                period_end,
-                vo_model.n_samples,
-                vo_model.rmse,
-                vo_model.speed_range[0],
-                vo_model.speed_range[1],
-            ],
-        )
+                [
+                    user_id,
+                    condition_group,
+                    "vo",
+                    "linear",
+                    None,
+                    None,
+                    vo_model.a,
+                    vo_model.b,
+                    period_start,
+                    period_end,
+                    vo_model.n_samples,
+                    vo_model.rmse,
+                    vo_model.speed_range[0],
+                    vo_model.speed_range[1],
+                ],
+            )
 
-        # Insert VR model
-        conn.execute(
-            """
+            # Insert VR model
+            conn.execute(
+                """
             INSERT INTO form_baseline_history (
                 history_id, user_id, condition_group, metric, model_type,
                 coef_alpha, coef_d, coef_a, coef_b,
@@ -559,65 +562,65 @@ def train_form_baselines(
                 speed_range_max = EXCLUDED.speed_range_max,
                 trained_at = now()
             """,
-            [
-                user_id,
-                condition_group,
-                "vr",
-                "linear",
-                None,
-                None,
-                vr_model.a,
-                vr_model.b,
-                period_start,
-                period_end,
-                vr_model.n_samples,
-                vr_model.rmse,
-                vr_model.speed_range[0],
-                vr_model.speed_range[1],
-            ],
-        )
+                [
+                    user_id,
+                    condition_group,
+                    "vr",
+                    "linear",
+                    None,
+                    None,
+                    vr_model.a,
+                    vr_model.b,
+                    period_start,
+                    period_end,
+                    vr_model.n_samples,
+                    vr_model.rmse,
+                    vr_model.speed_range[0],
+                    vr_model.speed_range[1],
+                ],
+            )
 
-        # Train Power model
-        power_result = train_power_efficiency_baseline(
-            user_id=user_id,
-            condition_group=condition_group,
-            end_date=period_end,
-            window_months=window_months,
-            db_path=db_path,
-        )
+            # Train Power model
+            power_result = train_power_efficiency_baseline(
+                user_id=user_id,
+                condition_group=condition_group,
+                end_date=period_end,
+                window_months=window_months,
+                db_path=db_path,
+            )
 
-        result = {
-            "gct": {
-                "alpha": gct_model.alpha,
-                "d": gct_model.d,
-                "rmse": gct_model.rmse,
-                "n_samples": gct_model.n_samples,
-            },
-            "vo": {
-                "a": vo_model.a,
-                "b": vo_model.b,
-                "rmse": vo_model.rmse,
-                "n_samples": vo_model.n_samples,
-            },
-            "vr": {
-                "a": vr_model.a,
-                "b": vr_model.b,
-                "rmse": vr_model.rmse,
-                "n_samples": vr_model.n_samples,
-            },
-            "period_start": period_start,
-            "period_end": period_end,
-        }
-
-        if power_result:
-            result["power"] = {
-                "power_a": power_result["power_a"],
-                "power_b": power_result["power_b"],
-                "power_rmse": power_result["power_rmse"],
-                "n_samples": power_result["n_samples"],
+            result = {
+                "gct": {
+                    "alpha": gct_model.alpha,
+                    "d": gct_model.d,
+                    "rmse": gct_model.rmse,
+                    "n_samples": gct_model.n_samples,
+                },
+                "vo": {
+                    "a": vo_model.a,
+                    "b": vo_model.b,
+                    "rmse": vo_model.rmse,
+                    "n_samples": vo_model.n_samples,
+                },
+                "vr": {
+                    "a": vr_model.a,
+                    "b": vr_model.b,
+                    "rmse": vr_model.rmse,
+                    "n_samples": vr_model.n_samples,
+                },
+                "period_start": period_start,
+                "period_end": period_end,
             }
 
-        return result
+            if power_result:
+                result["power"] = {
+                    "power_a": power_result["power_a"],
+                    "power_b": power_result["power_b"],
+                    "power_rmse": power_result["power_rmse"],
+                    "n_samples": power_result["n_samples"],
+                }
+
+            return result
 
     except Exception as e:
         # Return None on any error (graceful degradation)
@@ -626,5 +629,3 @@ def train_form_baselines(
         print(f"Error in train_form_baselines: {e}")
         traceback.print_exc()
         return None
-    finally:
-        conn.close()
