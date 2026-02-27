@@ -16,6 +16,8 @@ from pathlib import Path
 
 import duckdb
 
+from garmin_mcp.validation.validators import validate_activity
+
 logger = logging.getLogger(__name__)
 
 
@@ -170,6 +172,28 @@ def insert_activities(
                     if gear_data:
                         gear_type = gear_data.get("gearTypeName")
                         gear_model = gear_data.get("customMakeModel")
+
+        # Validate before insertion
+        validate_activity(
+            {
+                "activity_id": activity_id,
+                "activity_date": date,
+                "activity_name": activity_name,
+                "total_distance_km": total_distance_km,
+                "total_time_seconds": total_time_seconds,
+                "avg_speed_ms": avg_speed_ms,
+                "avg_pace_seconds_per_km": avg_pace_seconds_per_km,
+                "avg_heart_rate": avg_heart_rate,
+                "max_heart_rate": max_heart_rate,
+                "temp_celsius": temp_celsius,
+                "relative_humidity_percent": relative_humidity_percent,
+                "wind_speed_kmh": wind_speed_kmh,
+                "wind_direction": wind_direction,
+                "gear_type": gear_type,
+                "gear_model": gear_model,
+                "base_weight_kg": base_weight_kg,
+            }
+        )
 
         _insert_with_connection(
             conn,

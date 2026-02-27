@@ -19,6 +19,7 @@ import duckdb
 
 from garmin_mcp.database.inserters.splits_helpers.extractor import SplitsExtractor
 from garmin_mcp.database.inserters.splits_helpers.phase_mapping import PhaseMapper
+from garmin_mcp.validation.validators import validate_split
 
 logger = logging.getLogger(__name__)
 
@@ -97,11 +98,38 @@ def _insert_splits_with_connection(
             f"Applied intensity_type estimation for activity {activity_id}: {estimated_types}"
         )
 
-    # Insert each split with 7 new fields
+    # Validate and insert each split
     for split in split_metrics:
         split_number = split.get("split_number")
         if split_number is None:
             continue
+
+        # Validate physical constraints before insertion
+        validate_split(
+            {
+                "activity_id": activity_id,
+                "split_index": split_number,
+                "distance": split.get("distance_km"),
+                "duration_seconds": split.get("duration_seconds"),
+                "pace_seconds_per_km": split.get("pace_seconds_per_km")
+                or split.get("avg_pace_seconds_per_km"),
+                "heart_rate": split.get("avg_heart_rate"),
+                "cadence": split.get("avg_cadence"),
+                "ground_contact_time": split.get("ground_contact_time_ms"),
+                "vertical_oscillation": split.get("vertical_oscillation_cm"),
+                "vertical_ratio": split.get("vertical_ratio_percent"),
+                "elevation_gain": split.get("elevation_gain_m"),
+                "elevation_loss": split.get("elevation_loss_m"),
+                "power": split.get("avg_power"),
+                "stride_length": split.get("stride_length_cm"),
+                "max_heart_rate": split.get("max_heart_rate"),
+                "max_cadence": split.get("max_cadence"),
+                "max_power": split.get("max_power"),
+                "normalized_power": split.get("normalized_power"),
+                "average_speed": split.get("average_speed_mps"),
+                "grade_adjusted_speed": split.get("grade_adjusted_speed_mps"),
+            }
+        )
 
         conn.execute(
             """
