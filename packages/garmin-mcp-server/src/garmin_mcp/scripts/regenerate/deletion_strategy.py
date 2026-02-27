@@ -8,6 +8,8 @@ from pathlib import Path
 
 import duckdb
 
+from garmin_mcp.database.connection import get_write_connection
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,7 +41,7 @@ def delete_activity_records(
     logger.info(f"   Tables: {', '.join(tables_to_delete)}")
     logger.info("   Reason: --activity-ids specified with --tables")
 
-    with duckdb.connect(str(db_path)) as conn:
+    with get_write_connection(db_path) as conn:
         try:
             conn.execute("BEGIN TRANSACTION")
 
@@ -96,7 +98,7 @@ def delete_table_all_records(
     logger.warning(f"   Tables: {', '.join(tables_to_delete)}")
     logger.warning("   Reason: --tables specified without --activity-ids")
 
-    with duckdb.connect(str(db_path)) as conn:
+    with get_write_connection(db_path) as conn:
         conn.execute("BEGIN TRANSACTION")
         deleted_tables = []
         try:

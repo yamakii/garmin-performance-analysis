@@ -24,8 +24,7 @@ import json
 import sys
 from pathlib import Path
 
-import duckdb
-
+from garmin_mcp.database.connection import get_connection
 from garmin_mcp.form_baseline import trainer, utils
 from garmin_mcp.form_baseline.trainer import GCTPowerModel, LinearModel
 
@@ -68,26 +67,24 @@ def main() -> int:
 
     # Connect to DuckDB and fetch data
     try:
-        conn = duckdb.connect(str(db_path), read_only=True)
+        with get_connection(str(db_path)) as conn:
+            query = """
+                SELECT
+                    pace_seconds_per_km,
+                    ground_contact_time,
+                    vertical_oscillation,
+                    vertical_ratio,
+                    stride_length,
+                    cadence
+                FROM splits
+                WHERE ground_contact_time IS NOT NULL
+                  AND vertical_oscillation IS NOT NULL
+                  AND vertical_ratio IS NOT NULL
+                  AND pace_seconds_per_km > 0
+                  AND pace_seconds_per_km < 600
+            """
 
-        query = """
-            SELECT
-                pace_seconds_per_km,
-                ground_contact_time,
-                vertical_oscillation,
-                vertical_ratio,
-                stride_length,
-                cadence
-            FROM splits
-            WHERE ground_contact_time IS NOT NULL
-              AND vertical_oscillation IS NOT NULL
-              AND vertical_ratio IS NOT NULL
-              AND pace_seconds_per_km > 0
-              AND pace_seconds_per_km < 600
-        """
-
-        df = conn.execute(query).df()
-        conn.close()
+            df = conn.execute(query).df()
 
         if args.verbose:
             print(f"Loaded {len(df)} splits from database", file=sys.stderr)

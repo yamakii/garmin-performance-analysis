@@ -35,9 +35,9 @@ import logging
 from pathlib import Path
 from typing import Any
 
-import duckdb
 from tqdm import tqdm
 
+from garmin_mcp.database.connection import get_connection, get_write_connection
 from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.time_series_metrics import insert_time_series_metrics
 from garmin_mcp.utils.paths import get_database_dir, get_raw_dir
@@ -182,15 +182,14 @@ class TimeSeriesMigrator:
             Number of data points in time_series_metrics table
         """
         try:
-            conn = duckdb.connect(str(self.db_path), read_only=True)
-            result = conn.execute(
-                "SELECT COUNT(*) FROM time_series_metrics WHERE activity_id = ?",
-                [activity_id],
-            ).fetchone()
-            conn.close()
-            if result is None:
-                return 0
-            return int(result[0])
+            with get_connection(self.db_path) as conn:
+                result = conn.execute(
+                    "SELECT COUNT(*) FROM time_series_metrics WHERE activity_id = ?",
+                    [activity_id],
+                ).fetchone()
+                if result is None:
+                    return 0
+                return int(result[0])
         except Exception as e:
             logger.debug(f"Error counting data points for {activity_id}: {e}")
             return 0
@@ -230,7 +229,7 @@ class TimeSeriesMigrator:
             data_points = self.count_data_points_in_raw(activity_id)
 
             # Use TimeSeriesMetricsInserter to insert data
-            with duckdb.connect(str(self.db_path)) as conn:
+            with get_write_connection(self.db_path) as conn:
                 success = insert_time_series_metrics(
                     activity_details_file=str(activity_details_path),
                     activity_id=activity_id,
@@ -378,12 +377,11 @@ class TimeSeriesMigrator:
         else:
             # Get all activities from DuckDB
             try:
-                conn = duckdb.connect(str(self.db_path), read_only=True)
-                results = conn.execute(
-                    "SELECT DISTINCT activity_id FROM time_series_metrics"
-                ).fetchall()
-                conn.close()
-                activities_to_verify = [row[0] for row in results]
+                with get_connection(self.db_path) as conn:
+                    results = conn.execute(
+                        "SELECT DISTINCT activity_id FROM time_series_metrics"
+                    ).fetchall()
+                    activities_to_verify = [row[0] for row in results]
             except Exception as e:
                 logger.error(f"Error querying DuckDB: {e}")
                 return {

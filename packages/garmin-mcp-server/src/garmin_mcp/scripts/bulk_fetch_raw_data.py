@@ -32,9 +32,9 @@ import time
 from pathlib import Path
 from typing import Any
 
-import duckdb
 from tqdm import tqdm
 
+from garmin_mcp.database.connection import get_connection
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.ingest.garmin_worker import GarminIngestWorker
 from garmin_mcp.utils.paths import get_database_dir, get_raw_dir
@@ -108,7 +108,7 @@ class BulkRawDataFetcher:
             List of (activity_id, activity_date) tuples
         """
         # Connect to DuckDB
-        with duckdb.connect(str(self.db_reader.db_path), read_only=True) as conn:
+        with get_connection(self.db_reader.db_path) as conn:
             query = """
                 SELECT activity_id, activity_date
                 FROM activities

@@ -20,8 +20,7 @@ Usage:
 import json
 import logging
 
-import duckdb
-
+from garmin_mcp.database.connection import get_connection
 from garmin_mcp.reporting.report_generator_worker import ReportGeneratorWorker
 from garmin_mcp.utils.paths import get_database_dir
 
@@ -42,7 +41,7 @@ def get_section_completeness(
     if not activity_ids:
         return {}
 
-    with duckdb.connect(db_path, read_only=True) as conn:
+    with get_connection(db_path) as conn:
         placeholders = ", ".join(["?"] * len(activity_ids))
         rows = conn.execute(
             f"SELECT activity_id, section_type FROM section_analyses "
@@ -60,7 +59,7 @@ def get_activities_by_date_range(
     db_path: str, start_date: str, end_date: str
 ) -> list[tuple[int, str]]:
     """Get (activity_id, date) pairs from DuckDB."""
-    with duckdb.connect(db_path, read_only=True) as conn:
+    with get_connection(db_path) as conn:
         rows = conn.execute(
             "SELECT activity_id, activity_date FROM activities "
             "WHERE activity_date BETWEEN ? AND ? ORDER BY activity_date",

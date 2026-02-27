@@ -109,15 +109,14 @@ class GarminWorkoutUploader:
 
             # Update DB with Garmin workout ID
             if garmin_id:
-                import duckdb
+                from garmin_mcp.database.connection import get_write_connection
 
                 db_path = self._db_path or str(self._reader.db_path)
-                update_conn = duckdb.connect(db_path)
-                update_conn.execute(
-                    "UPDATE planned_workouts SET garmin_workout_id = ?, uploaded_at = CURRENT_TIMESTAMP WHERE workout_id = ?",
-                    [garmin_id, workout_id],
-                )
-                update_conn.close()
+                with get_write_connection(db_path) as update_conn:
+                    update_conn.execute(
+                        "UPDATE planned_workouts SET garmin_workout_id = ?, uploaded_at = CURRENT_TIMESTAMP WHERE workout_id = ?",
+                        [garmin_id, workout_id],
+                    )
 
             # Schedule on calendar if requested
             scheduled = False
@@ -174,15 +173,14 @@ class GarminWorkoutUploader:
 
         Sets the garmin_workout_id on the DB row and optionally schedules it.
         """
-        import duckdb
+        from garmin_mcp.database.connection import get_write_connection
 
         db_path = self._db_path or str(self._reader.db_path)
-        update_conn = duckdb.connect(db_path)
-        update_conn.execute(
-            "UPDATE planned_workouts SET garmin_workout_id = ?, uploaded_at = CURRENT_TIMESTAMP WHERE workout_id = ?",
-            [garmin_workout_id, workout_id],
-        )
-        update_conn.close()
+        with get_write_connection(db_path) as update_conn:
+            update_conn.execute(
+                "UPDATE planned_workouts SET garmin_workout_id = ?, uploaded_at = CURRENT_TIMESTAMP WHERE workout_id = ?",
+                [garmin_workout_id, workout_id],
+            )
 
         scheduled = False
         if schedule and workout_date:
@@ -373,18 +371,17 @@ class GarminWorkoutUploader:
             ).fetchone()
             shared_count = shared_count_row[0] if shared_count_row else 0
 
-        import duckdb
+        from garmin_mcp.database.connection import get_write_connection
 
         db_path = self._db_path or str(self._reader.db_path)
 
         if shared_count > 0:
             # Other workouts still reference this Garmin workout - just clear DB ref
-            update_conn = duckdb.connect(db_path)
-            update_conn.execute(
-                "UPDATE planned_workouts SET garmin_workout_id = NULL, uploaded_at = NULL WHERE workout_id = ?",
-                [workout_id],
-            )
-            update_conn.close()
+            with get_write_connection(db_path) as update_conn:
+                update_conn.execute(
+                    "UPDATE planned_workouts SET garmin_workout_id = NULL, uploaded_at = NULL WHERE workout_id = ?",
+                    [workout_id],
+                )
 
             logger.info(
                 f"Cleared garmin_workout_id for {workout_id} "
@@ -406,12 +403,11 @@ class GarminWorkoutUploader:
                 f"/workout-service/workout/{garmin_workout_id}", method="DELETE"
             )
 
-            update_conn = duckdb.connect(db_path)
-            update_conn.execute(
-                "UPDATE planned_workouts SET garmin_workout_id = NULL, uploaded_at = NULL WHERE workout_id = ?",
-                [workout_id],
-            )
-            update_conn.close()
+            with get_write_connection(db_path) as update_conn:
+                update_conn.execute(
+                    "UPDATE planned_workouts SET garmin_workout_id = NULL, uploaded_at = NULL WHERE workout_id = ?",
+                    [workout_id],
+                )
 
             return {
                 "success": True,

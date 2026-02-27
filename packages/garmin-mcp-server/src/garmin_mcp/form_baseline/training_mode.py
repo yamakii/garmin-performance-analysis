@@ -1,6 +1,6 @@
 """Training mode detection from hr_efficiency table."""
 
-import duckdb
+from garmin_mcp.database.connection import get_connection
 
 
 def get_training_mode(activity_id: int, db_path: str | None = None) -> str:
@@ -22,9 +22,7 @@ def get_training_mode(activity_id: int, db_path: str | None = None) -> str:
 
         db_path = get_default_db_path()
 
-    conn = duckdb.connect(db_path, read_only=True)
-
-    try:
+    with get_connection(db_path) as conn:
         result = conn.execute(
             """
             SELECT training_type
@@ -41,6 +39,3 @@ def get_training_mode(activity_id: int, db_path: str | None = None) -> str:
         else:
             # Default to low_moderate if not found or NULL
             return "low_moderate"
-
-    finally:
-        conn.close()

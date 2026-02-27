@@ -6,7 +6,7 @@ Handles loading trained models from JSON files and DuckDB.
 import json
 from pathlib import Path
 
-import duckdb
+from garmin_mcp.database.connection import get_connection
 
 from .trainer import GCTPowerModel, LinearModel
 
@@ -92,9 +92,7 @@ def load_models_from_db(
     Raises:
         ValueError: If no baseline found for the activity date
     """
-    conn = duckdb.connect(db_path, read_only=True)
-
-    try:
+    with get_connection(db_path) as conn:
         baselines = conn.execute(
             """
             WITH latest_baseline AS (
@@ -158,6 +156,3 @@ def load_models_from_db(
             )
 
         return models
-
-    finally:
-        conn.close()

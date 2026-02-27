@@ -8,8 +8,6 @@ import json
 import logging
 from datetime import UTC, datetime
 
-import duckdb
-
 from garmin_mcp.database.connection import get_db_path, get_write_connection
 
 logger = logging.getLogger(__name__)
@@ -47,10 +45,9 @@ class GarminDBWriter:
 
         Note: Schemas match those defined in individual inserters to ensure compatibility.
         """
-        conn = duckdb.connect(str(self.db_path))  # Direct connect for DDL operations
-
-        # Create activities table (matches inserters/activities.py - 19 columns)
-        conn.execute("""
+        with get_write_connection(self.db_path) as conn:
+            # Create activities table (matches inserters/activities.py - 19 columns)
+            conn.execute("""
             CREATE TABLE IF NOT EXISTS activities (
                 activity_id BIGINT PRIMARY KEY,
                 activity_date DATE NOT NULL,
@@ -74,391 +71,389 @@ class GarminDBWriter:
             )
         """)
 
-        # Create splits table (from inserters/splits.py) with time range columns
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS splits (
-                activity_id BIGINT,
-                split_index INTEGER,
-                distance DOUBLE,
-                duration_seconds DOUBLE,
-                start_time_gmt VARCHAR,
-                start_time_s INTEGER,
-                end_time_s INTEGER,
-                intensity_type VARCHAR,
-                role_phase VARCHAR,
-                pace_str VARCHAR,
-                pace_seconds_per_km DOUBLE,
-                heart_rate INTEGER,
-                hr_zone VARCHAR,
-                cadence DOUBLE,
-                cadence_rating VARCHAR,
-                power DOUBLE,
-                power_efficiency VARCHAR,
-                stride_length DOUBLE,
-                ground_contact_time DOUBLE,
-                vertical_oscillation DOUBLE,
-                vertical_ratio DOUBLE,
-                elevation_gain DOUBLE,
-                elevation_loss DOUBLE,
-                terrain_type VARCHAR,
-                environmental_conditions VARCHAR,
-                wind_impact VARCHAR,
-                temp_impact VARCHAR,
-                environmental_impact VARCHAR,
-                max_heart_rate INTEGER,
-                max_cadence DOUBLE,
-                max_power DOUBLE,
-                normalized_power DOUBLE,
-                average_speed DOUBLE,
-                grade_adjusted_speed DOUBLE,
-                PRIMARY KEY (activity_id, split_index)
-                -- FK constraint removed (2025-11-01): Single data source + bulk writes only
-            )
-        """)
+            # Create splits table (from inserters/splits.py) with time range columns
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS splits (
+                    activity_id BIGINT,
+                    split_index INTEGER,
+                    distance DOUBLE,
+                    duration_seconds DOUBLE,
+                    start_time_gmt VARCHAR,
+                    start_time_s INTEGER,
+                    end_time_s INTEGER,
+                    intensity_type VARCHAR,
+                    role_phase VARCHAR,
+                    pace_str VARCHAR,
+                    pace_seconds_per_km DOUBLE,
+                    heart_rate INTEGER,
+                    hr_zone VARCHAR,
+                    cadence DOUBLE,
+                    cadence_rating VARCHAR,
+                    power DOUBLE,
+                    power_efficiency VARCHAR,
+                    stride_length DOUBLE,
+                    ground_contact_time DOUBLE,
+                    vertical_oscillation DOUBLE,
+                    vertical_ratio DOUBLE,
+                    elevation_gain DOUBLE,
+                    elevation_loss DOUBLE,
+                    terrain_type VARCHAR,
+                    environmental_conditions VARCHAR,
+                    wind_impact VARCHAR,
+                    temp_impact VARCHAR,
+                    environmental_impact VARCHAR,
+                    max_heart_rate INTEGER,
+                    max_cadence DOUBLE,
+                    max_power DOUBLE,
+                    normalized_power DOUBLE,
+                    average_speed DOUBLE,
+                    grade_adjusted_speed DOUBLE,
+                    PRIMARY KEY (activity_id, split_index)
+                    -- FK constraint removed (2025-11-01): Single data source + bulk writes only
+                )
+            """)
 
-        # Create form_efficiency table (from inserters/form_efficiency.py)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS form_efficiency (
-                activity_id BIGINT PRIMARY KEY,
-                gct_average DOUBLE,
-                gct_min DOUBLE,
-                gct_max DOUBLE,
-                gct_std DOUBLE,
-                gct_variability DOUBLE,
-                gct_rating VARCHAR,
-                gct_evaluation VARCHAR,
-                vo_average DOUBLE,
-                vo_min DOUBLE,
-                vo_max DOUBLE,
-                vo_std DOUBLE,
-                vo_trend VARCHAR,
-                vo_rating VARCHAR,
-                vo_evaluation VARCHAR,
-                vr_average DOUBLE,
-                vr_min DOUBLE,
-                vr_max DOUBLE,
-                vr_std DOUBLE,
-                vr_rating VARCHAR,
-                vr_evaluation VARCHAR
-                -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
-            )
-        """)
+            # Create form_efficiency table (from inserters/form_efficiency.py)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS form_efficiency (
+                    activity_id BIGINT PRIMARY KEY,
+                    gct_average DOUBLE,
+                    gct_min DOUBLE,
+                    gct_max DOUBLE,
+                    gct_std DOUBLE,
+                    gct_variability DOUBLE,
+                    gct_rating VARCHAR,
+                    gct_evaluation VARCHAR,
+                    vo_average DOUBLE,
+                    vo_min DOUBLE,
+                    vo_max DOUBLE,
+                    vo_std DOUBLE,
+                    vo_trend VARCHAR,
+                    vo_rating VARCHAR,
+                    vo_evaluation VARCHAR,
+                    vr_average DOUBLE,
+                    vr_min DOUBLE,
+                    vr_max DOUBLE,
+                    vr_std DOUBLE,
+                    vr_rating VARCHAR,
+                    vr_evaluation VARCHAR
+                    -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
+                )
+            """)
 
-        # Create heart_rate_zones table (from inserters/heart_rate_zones.py)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS heart_rate_zones (
-                activity_id BIGINT,
-                zone_number INTEGER,
-                zone_low_boundary INTEGER,
-                zone_high_boundary INTEGER,
-                time_in_zone_seconds DOUBLE,
-                zone_percentage DOUBLE,
-                PRIMARY KEY (activity_id, zone_number)
-                -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
-            )
-        """)
+            # Create heart_rate_zones table (from inserters/heart_rate_zones.py)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS heart_rate_zones (
+                    activity_id BIGINT,
+                    zone_number INTEGER,
+                    zone_low_boundary INTEGER,
+                    zone_high_boundary INTEGER,
+                    time_in_zone_seconds DOUBLE,
+                    zone_percentage DOUBLE,
+                    PRIMARY KEY (activity_id, zone_number)
+                    -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
+                )
+            """)
 
-        # Create hr_efficiency table (from inserters/hr_efficiency.py)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS hr_efficiency (
-                activity_id BIGINT PRIMARY KEY,
-                primary_zone VARCHAR,
-                zone_distribution_rating VARCHAR,
-                hr_stability VARCHAR,
-                aerobic_efficiency VARCHAR,
-                training_quality VARCHAR,
-                zone2_focus BOOLEAN,
-                zone4_threshold_work BOOLEAN,
-                training_type VARCHAR,
-                zone1_percentage DOUBLE,
-                zone2_percentage DOUBLE,
-                zone3_percentage DOUBLE,
-                zone4_percentage DOUBLE,
-                zone5_percentage DOUBLE
-                -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
-            )
-        """)
+            # Create hr_efficiency table (from inserters/hr_efficiency.py)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS hr_efficiency (
+                    activity_id BIGINT PRIMARY KEY,
+                    primary_zone VARCHAR,
+                    zone_distribution_rating VARCHAR,
+                    hr_stability VARCHAR,
+                    aerobic_efficiency VARCHAR,
+                    training_quality VARCHAR,
+                    zone2_focus BOOLEAN,
+                    zone4_threshold_work BOOLEAN,
+                    training_type VARCHAR,
+                    zone1_percentage DOUBLE,
+                    zone2_percentage DOUBLE,
+                    zone3_percentage DOUBLE,
+                    zone4_percentage DOUBLE,
+                    zone5_percentage DOUBLE
+                    -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
+                )
+            """)
 
-        # Create performance_trends table with 4-phase schema (from inserters/performance_trends.py)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS performance_trends (
-                activity_id BIGINT PRIMARY KEY,
-                pace_consistency DOUBLE,
-                hr_drift_percentage DOUBLE,
-                cadence_consistency VARCHAR,
-                fatigue_pattern VARCHAR,
-                warmup_splits VARCHAR,
-                warmup_avg_pace_seconds_per_km DOUBLE,
-                warmup_avg_pace_str VARCHAR,
-                warmup_avg_hr DOUBLE,
-                warmup_avg_cadence DOUBLE,
-                warmup_avg_power DOUBLE,
-                warmup_evaluation VARCHAR,
-                run_splits VARCHAR,
-                run_avg_pace_seconds_per_km DOUBLE,
-                run_avg_pace_str VARCHAR,
-                run_avg_hr DOUBLE,
-                run_avg_cadence DOUBLE,
-                run_avg_power DOUBLE,
-                run_evaluation VARCHAR,
-                recovery_splits VARCHAR,
-                recovery_avg_pace_seconds_per_km DOUBLE,
-                recovery_avg_pace_str VARCHAR,
-                recovery_avg_hr DOUBLE,
-                recovery_avg_cadence DOUBLE,
-                recovery_avg_power DOUBLE,
-                recovery_evaluation VARCHAR,
-                cooldown_splits VARCHAR,
-                cooldown_avg_pace_seconds_per_km DOUBLE,
-                cooldown_avg_pace_str VARCHAR,
-                cooldown_avg_hr DOUBLE,
-                cooldown_avg_cadence DOUBLE,
-                cooldown_avg_power DOUBLE,
-                cooldown_evaluation VARCHAR
-                -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
-            )
-        """)
+            # Create performance_trends table with 4-phase schema (from inserters/performance_trends.py)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS performance_trends (
+                    activity_id BIGINT PRIMARY KEY,
+                    pace_consistency DOUBLE,
+                    hr_drift_percentage DOUBLE,
+                    cadence_consistency VARCHAR,
+                    fatigue_pattern VARCHAR,
+                    warmup_splits VARCHAR,
+                    warmup_avg_pace_seconds_per_km DOUBLE,
+                    warmup_avg_pace_str VARCHAR,
+                    warmup_avg_hr DOUBLE,
+                    warmup_avg_cadence DOUBLE,
+                    warmup_avg_power DOUBLE,
+                    warmup_evaluation VARCHAR,
+                    run_splits VARCHAR,
+                    run_avg_pace_seconds_per_km DOUBLE,
+                    run_avg_pace_str VARCHAR,
+                    run_avg_hr DOUBLE,
+                    run_avg_cadence DOUBLE,
+                    run_avg_power DOUBLE,
+                    run_evaluation VARCHAR,
+                    recovery_splits VARCHAR,
+                    recovery_avg_pace_seconds_per_km DOUBLE,
+                    recovery_avg_pace_str VARCHAR,
+                    recovery_avg_hr DOUBLE,
+                    recovery_avg_cadence DOUBLE,
+                    recovery_avg_power DOUBLE,
+                    recovery_evaluation VARCHAR,
+                    cooldown_splits VARCHAR,
+                    cooldown_avg_pace_seconds_per_km DOUBLE,
+                    cooldown_avg_pace_str VARCHAR,
+                    cooldown_avg_hr DOUBLE,
+                    cooldown_avg_cadence DOUBLE,
+                    cooldown_avg_power DOUBLE,
+                    cooldown_evaluation VARCHAR
+                    -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
+                )
+            """)
 
-        # Create vo2_max table (from inserters/vo2_max.py)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS vo2_max (
-                activity_id BIGINT PRIMARY KEY,
-                precise_value DOUBLE,
-                value DOUBLE,
-                date DATE,
-                category INTEGER
-                -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
-            )
-        """)
+            # Create vo2_max table (from inserters/vo2_max.py)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS vo2_max (
+                    activity_id BIGINT PRIMARY KEY,
+                    precise_value DOUBLE,
+                    value DOUBLE,
+                    date DATE,
+                    category INTEGER
+                    -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
+                )
+            """)
 
-        # Create lactate_threshold table (from inserters/lactate_threshold.py)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS lactate_threshold (
-                activity_id BIGINT PRIMARY KEY,
-                heart_rate INTEGER,
-                speed_mps DOUBLE,
-                date_hr TIMESTAMP,
-                functional_threshold_power INTEGER,
-                power_to_weight DOUBLE,
-                weight DOUBLE,
-                date_power TIMESTAMP
-                -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
-            )
-        """)
+            # Create lactate_threshold table (from inserters/lactate_threshold.py)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS lactate_threshold (
+                    activity_id BIGINT PRIMARY KEY,
+                    heart_rate INTEGER,
+                    speed_mps DOUBLE,
+                    date_hr TIMESTAMP,
+                    functional_threshold_power INTEGER,
+                    power_to_weight DOUBLE,
+                    weight DOUBLE,
+                    date_power TIMESTAMP
+                    -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
+                )
+            """)
 
-        # Create body_composition table (from inserters/body_composition.py)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS body_composition (
-                measurement_id INTEGER PRIMARY KEY,
-                date DATE NOT NULL,
-                weight_kg DOUBLE,
-                body_fat_percentage DOUBLE,
-                muscle_mass_kg DOUBLE,
-                bone_mass_kg DOUBLE,
-                bmi DOUBLE,
-                hydration_percentage DOUBLE,
-                measurement_source VARCHAR
-            )
-        """)
+            # Create body_composition table (from inserters/body_composition.py)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS body_composition (
+                    measurement_id INTEGER PRIMARY KEY,
+                    date DATE NOT NULL,
+                    weight_kg DOUBLE,
+                    body_fat_percentage DOUBLE,
+                    muscle_mass_kg DOUBLE,
+                    bone_mass_kg DOUBLE,
+                    bmi DOUBLE,
+                    hydration_percentage DOUBLE,
+                    measurement_source VARCHAR
+                )
+            """)
 
-        # form_baselines table removed - replaced by form_baseline_history
+            # form_baselines table removed - replaced by form_baseline_history
 
-        # Create form_baseline_history table (for trend analysis)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS form_baseline_history (
-                history_id INTEGER PRIMARY KEY,
-                user_id VARCHAR DEFAULT 'default',
-                condition_group VARCHAR DEFAULT 'flat_road',
-                metric VARCHAR,
-                model_type VARCHAR,
+            # Create form_baseline_history table (for trend analysis)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS form_baseline_history (
+                    history_id INTEGER PRIMARY KEY,
+                    user_id VARCHAR DEFAULT 'default',
+                    condition_group VARCHAR DEFAULT 'flat_road',
+                    metric VARCHAR,
+                    model_type VARCHAR,
 
-                coef_alpha FLOAT,
-                coef_d FLOAT,
-                coef_a FLOAT,
-                coef_b FLOAT,
+                    coef_alpha FLOAT,
+                    coef_d FLOAT,
+                    coef_a FLOAT,
+                    coef_b FLOAT,
 
-                power_a FLOAT,
-                power_b FLOAT,
-                power_rmse FLOAT,
+                    power_a FLOAT,
+                    power_b FLOAT,
+                    power_rmse FLOAT,
 
-                period_start DATE NOT NULL,
-                period_end DATE NOT NULL,
-                trained_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    period_start DATE NOT NULL,
+                    period_end DATE NOT NULL,
+                    trained_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-                n_samples INTEGER,
-                rmse FLOAT,
-                speed_range_min FLOAT,
-                speed_range_max FLOAT,
+                    n_samples INTEGER,
+                    rmse FLOAT,
+                    speed_range_min FLOAT,
+                    speed_range_max FLOAT,
 
-                UNIQUE(user_id, condition_group, metric, period_start, period_end)
-            )
-        """)
+                    UNIQUE(user_id, condition_group, metric, period_start, period_end)
+                )
+            """)
 
-        # Create form_evaluations table
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS form_evaluations (
-                eval_id INTEGER PRIMARY KEY,
-                activity_id BIGINT UNIQUE,
+            # Create form_evaluations table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS form_evaluations (
+                    eval_id INTEGER PRIMARY KEY,
+                    activity_id BIGINT UNIQUE,
 
-                gct_ms_expected FLOAT,
-                vo_cm_expected FLOAT,
-                vr_pct_expected FLOAT,
+                    gct_ms_expected FLOAT,
+                    vo_cm_expected FLOAT,
+                    vr_pct_expected FLOAT,
 
-                gct_ms_actual FLOAT,
-                vo_cm_actual FLOAT,
-                vr_pct_actual FLOAT,
+                    gct_ms_actual FLOAT,
+                    vo_cm_actual FLOAT,
+                    vr_pct_actual FLOAT,
 
-                gct_delta_pct FLOAT,
-                vo_delta_cm FLOAT,
-                vr_delta_pct FLOAT,
+                    gct_delta_pct FLOAT,
+                    vo_delta_cm FLOAT,
+                    vr_delta_pct FLOAT,
 
-                gct_penalty FLOAT,
-                gct_star_rating VARCHAR,
-                gct_score FLOAT,
-                gct_needs_improvement BOOLEAN,
-                gct_evaluation_text TEXT,
+                    gct_penalty FLOAT,
+                    gct_star_rating VARCHAR,
+                    gct_score FLOAT,
+                    gct_needs_improvement BOOLEAN,
+                    gct_evaluation_text TEXT,
 
-                vo_penalty FLOAT,
-                vo_star_rating VARCHAR,
-                vo_score FLOAT,
-                vo_needs_improvement BOOLEAN,
-                vo_evaluation_text TEXT,
+                    vo_penalty FLOAT,
+                    vo_star_rating VARCHAR,
+                    vo_score FLOAT,
+                    vo_needs_improvement BOOLEAN,
+                    vo_evaluation_text TEXT,
 
-                vr_penalty FLOAT,
-                vr_star_rating VARCHAR,
-                vr_score FLOAT,
-                vr_needs_improvement BOOLEAN,
-                vr_evaluation_text TEXT,
+                    vr_penalty FLOAT,
+                    vr_star_rating VARCHAR,
+                    vr_score FLOAT,
+                    vr_needs_improvement BOOLEAN,
+                    vr_evaluation_text TEXT,
 
-                cadence_actual FLOAT,
-                cadence_minimum INTEGER DEFAULT 180,
-                cadence_achieved BOOLEAN,
+                    cadence_actual FLOAT,
+                    cadence_minimum INTEGER DEFAULT 180,
+                    cadence_achieved BOOLEAN,
 
-                overall_score FLOAT,
-                overall_star_rating VARCHAR,
+                    overall_score FLOAT,
+                    overall_star_rating VARCHAR,
 
-                power_avg_w FLOAT,
-                power_wkg FLOAT,
-                speed_actual_mps FLOAT,
-                speed_expected_mps FLOAT,
-                power_efficiency_score FLOAT,
-                power_efficiency_rating VARCHAR,
-                power_efficiency_needs_improvement BOOLEAN,
-                integrated_score FLOAT,
-                training_mode VARCHAR,
+                    power_avg_w FLOAT,
+                    power_wkg FLOAT,
+                    speed_actual_mps FLOAT,
+                    speed_expected_mps FLOAT,
+                    power_efficiency_score FLOAT,
+                    power_efficiency_rating VARCHAR,
+                    power_efficiency_needs_improvement BOOLEAN,
+                    integrated_score FLOAT,
+                    training_mode VARCHAR,
 
-                evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
-            )
-        """)
+                    evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
+                )
+            """)
 
-        # Create section_analyses table
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS section_analyses (
-                analysis_id INTEGER PRIMARY KEY,
-                activity_id BIGINT NOT NULL,
-                activity_date DATE NOT NULL,
-                section_type VARCHAR NOT NULL,
-                analysis_data VARCHAR,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                agent_name VARCHAR,
-                agent_version VARCHAR
-                -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
-            )
-        """)
+            # Create section_analyses table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS section_analyses (
+                    analysis_id INTEGER PRIMARY KEY,
+                    activity_id BIGINT NOT NULL,
+                    activity_date DATE NOT NULL,
+                    section_type VARCHAR NOT NULL,
+                    analysis_data VARCHAR,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    agent_name VARCHAR,
+                    agent_version VARCHAR
+                    -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
+                )
+            """)
 
-        # Create time_series_metrics table
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS time_series_metrics (
-                activity_id BIGINT NOT NULL,
-                seq_no INTEGER NOT NULL,
-                timestamp_s INTEGER NOT NULL,
-                sum_moving_duration DOUBLE,
-                sum_duration DOUBLE,
-                sum_elapsed_duration DOUBLE,
-                sum_distance DOUBLE,
-                sum_accumulated_power DOUBLE,
-                heart_rate DOUBLE,
-                speed DOUBLE,
-                grade_adjusted_speed DOUBLE,
-                cadence DOUBLE,
-                cadence_single_foot DOUBLE,
-                cadence_total DOUBLE,
-                power DOUBLE,
-                ground_contact_time DOUBLE,
-                vertical_oscillation DOUBLE,
-                vertical_ratio DOUBLE,
-                stride_length DOUBLE,
-                vertical_speed DOUBLE,
-                elevation DOUBLE,
-                air_temperature DOUBLE,
-                latitude DOUBLE,
-                longitude DOUBLE,
-                available_stamina DOUBLE,
-                potential_stamina DOUBLE,
-                body_battery DOUBLE,
-                performance_condition DOUBLE,
-                PRIMARY KEY (activity_id, seq_no)
-            )
-        """)
+            # Create time_series_metrics table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS time_series_metrics (
+                    activity_id BIGINT NOT NULL,
+                    seq_no INTEGER NOT NULL,
+                    timestamp_s INTEGER NOT NULL,
+                    sum_moving_duration DOUBLE,
+                    sum_duration DOUBLE,
+                    sum_elapsed_duration DOUBLE,
+                    sum_distance DOUBLE,
+                    sum_accumulated_power DOUBLE,
+                    heart_rate DOUBLE,
+                    speed DOUBLE,
+                    grade_adjusted_speed DOUBLE,
+                    cadence DOUBLE,
+                    cadence_single_foot DOUBLE,
+                    cadence_total DOUBLE,
+                    power DOUBLE,
+                    ground_contact_time DOUBLE,
+                    vertical_oscillation DOUBLE,
+                    vertical_ratio DOUBLE,
+                    stride_length DOUBLE,
+                    vertical_speed DOUBLE,
+                    elevation DOUBLE,
+                    air_temperature DOUBLE,
+                    latitude DOUBLE,
+                    longitude DOUBLE,
+                    available_stamina DOUBLE,
+                    potential_stamina DOUBLE,
+                    body_battery DOUBLE,
+                    performance_condition DOUBLE,
+                    PRIMARY KEY (activity_id, seq_no)
+                )
+            """)
 
-        # Create indexes for time_series_metrics
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_time_series_activity "
-            "ON time_series_metrics(activity_id)"
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_time_series_timestamp "
-            "ON time_series_metrics(activity_id, timestamp_s)"
-        )
-
-        # Create sequence for form_evaluations if it doesn't exist
-        try:
-            conn.execute("SELECT nextval('form_evaluations_seq')")
-        except Exception:
-            # Sequence doesn't exist, create it
-            max_id_result = conn.execute(
-                "SELECT COALESCE(MAX(eval_id), 0) FROM form_evaluations"
-            ).fetchone()
-            start_value = max_id_result[0] + 1 if max_id_result else 1
+            # Create indexes for time_series_metrics
             conn.execute(
-                f"CREATE SEQUENCE IF NOT EXISTS form_evaluations_seq START {start_value}"
+                "CREATE INDEX IF NOT EXISTS idx_time_series_activity "
+                "ON time_series_metrics(activity_id)"
             )
-
-        # Create sequence for form_baseline_history if it doesn't exist
-        try:
-            conn.execute("SELECT nextval('form_baseline_history_seq')")
-        except Exception:
-            # Sequence doesn't exist, create it
-            max_id_result = conn.execute(
-                "SELECT COALESCE(MAX(history_id), 0) FROM form_baseline_history"
-            ).fetchone()
-            start_value = max_id_result[0] + 1 if max_id_result else 1
             conn.execute(
-                f"CREATE SEQUENCE IF NOT EXISTS form_baseline_history_seq START {start_value}"
+                "CREATE INDEX IF NOT EXISTS idx_time_series_timestamp "
+                "ON time_series_metrics(activity_id, timestamp_s)"
             )
 
-        # Create sequence for section_analyses if it doesn't exist
-        try:
-            conn.execute("SELECT nextval('seq_section_analyses_id')")
-        except Exception:
-            # Sequence doesn't exist, create it
-            # Get max existing analysis_id to start sequence from there
-            max_id_result = conn.execute(
-                "SELECT COALESCE(MAX(analysis_id), 0) FROM section_analyses"
-            ).fetchone()
-            start_value = max_id_result[0] + 1 if max_id_result else 1
-            conn.execute(
-                f"CREATE SEQUENCE IF NOT EXISTS seq_section_analyses_id START {start_value}"
-            )
+            # Create sequence for form_evaluations if it doesn't exist
+            try:
+                conn.execute("SELECT nextval('form_evaluations_seq')")
+            except Exception:
+                # Sequence doesn't exist, create it
+                max_id_result = conn.execute(
+                    "SELECT COALESCE(MAX(eval_id), 0) FROM form_evaluations"
+                ).fetchone()
+                start_value = max_id_result[0] + 1 if max_id_result else 1
+                conn.execute(
+                    f"CREATE SEQUENCE IF NOT EXISTS form_evaluations_seq START {start_value}"
+                )
 
-        # Create UNIQUE index on (activity_id, section_type) if it doesn't exist
-        conn.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_activity_section
-            ON section_analyses(activity_id, section_type)
-        """)
+            # Create sequence for form_baseline_history if it doesn't exist
+            try:
+                conn.execute("SELECT nextval('form_baseline_history_seq')")
+            except Exception:
+                # Sequence doesn't exist, create it
+                max_id_result = conn.execute(
+                    "SELECT COALESCE(MAX(history_id), 0) FROM form_baseline_history"
+                ).fetchone()
+                start_value = max_id_result[0] + 1 if max_id_result else 1
+                conn.execute(
+                    f"CREATE SEQUENCE IF NOT EXISTS form_baseline_history_seq START {start_value}"
+                )
 
-        conn.close()
+            # Create sequence for section_analyses if it doesn't exist
+            try:
+                conn.execute("SELECT nextval('seq_section_analyses_id')")
+            except Exception:
+                # Sequence doesn't exist, create it
+                # Get max existing analysis_id to start sequence from there
+                max_id_result = conn.execute(
+                    "SELECT COALESCE(MAX(analysis_id), 0) FROM section_analyses"
+                ).fetchone()
+                start_value = max_id_result[0] + 1 if max_id_result else 1
+                conn.execute(
+                    f"CREATE SEQUENCE IF NOT EXISTS seq_section_analyses_id START {start_value}"
+                )
+
+            # Create UNIQUE index on (activity_id, section_type) if it doesn't exist
+            conn.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_activity_section
+                ON section_analyses(activity_id, section_type)
+            """)
 
     def insert_section_analysis(
         self,

@@ -6,8 +6,6 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
-import duckdb
-
 if TYPE_CHECKING:
     from garmin_mcp.training_plan.models import TrainingPlan
 
@@ -33,9 +31,9 @@ def insert_training_plan(
 
         db_path = str(get_database_dir() / "garmin_performance.duckdb")
 
-    conn = duckdb.connect(db_path)
+    from garmin_mcp.database.connection import get_write_connection
 
-    try:
+    with get_write_connection(db_path) as conn:
         # Ensure tables exist
         conn.execute("""
             CREATE TABLE IF NOT EXISTS training_plans (
@@ -173,5 +171,3 @@ def insert_training_plan(
         logger.info(
             f"Saved plan {plan.plan_id} v{plan.version} with {len(plan.workouts)} workouts"
         )
-    finally:
-        conn.close()
