@@ -20,6 +20,7 @@ class GarminDBWriter:
         """Initialize DuckDB writer with database path."""
         self.db_path = get_db_path(db_path)
         self._ensure_tables()
+        self._run_migrations()
 
     def _ensure_tables(self):
         """Ensure required tables exist with normalized schema.
@@ -454,6 +455,15 @@ class GarminDBWriter:
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_activity_section
                 ON section_analyses(activity_id, section_type)
             """)
+
+    def _run_migrations(self) -> None:
+        """Run pending database migrations after table creation."""
+        from garmin_mcp.database.migrations.runner import MigrationRunner
+
+        runner = MigrationRunner(self.db_path)
+        applied = runner.run_pending()
+        if applied:
+            logger.info("Applied %d migration(s): %s", len(applied), applied)
 
     def insert_section_analysis(
         self,
