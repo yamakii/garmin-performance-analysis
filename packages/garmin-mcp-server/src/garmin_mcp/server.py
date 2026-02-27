@@ -69,6 +69,24 @@ async def list_tools() -> list[Tool]:
 @mcp.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """Handle tool calls by dispatching to the appropriate handler."""
+    import time
+
+    start = time.monotonic()
+    try:
+        result = await _dispatch_tool(name, arguments)
+        duration_ms = (time.monotonic() - start) * 1000
+        logger.info("tool=%s duration_ms=%.1f status=ok", name, duration_ms)
+        return result
+    except Exception as e:
+        duration_ms = (time.monotonic() - start) * 1000
+        logger.error(
+            "tool=%s duration_ms=%.1f status=error error=%s", name, duration_ms, e
+        )
+        raise
+
+
+async def _dispatch_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
+    """Dispatch tool call to the appropriate handler."""
     if name == "reload_server":
         return await _handle_reload_server(server_dir=arguments.get("server_dir"))
     if name == "get_server_info":
@@ -170,6 +188,9 @@ async def _handle_reload_server(
 
 async def main() -> None:
     """Main entry point for MCP server."""
+    from garmin_mcp.utils.logging_config import setup_mcp_logging
+
+    setup_mcp_logging()
     loop = asyncio.get_event_loop()
     loop.add_signal_handler(signal.SIGTERM, _graceful_shutdown)
     async with stdio_server() as (read_stream, write_stream):
