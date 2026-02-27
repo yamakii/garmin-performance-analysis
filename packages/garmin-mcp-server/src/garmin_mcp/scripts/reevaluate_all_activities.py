@@ -14,8 +14,7 @@ import argparse
 import sys
 from pathlib import Path
 
-import duckdb
-
+from garmin_mcp.database.connection import get_connection
 from garmin_mcp.form_baseline.evaluator import evaluate_and_store
 
 
@@ -32,9 +31,7 @@ def get_activities_to_reevaluate(db_path: str) -> list[tuple[int, str]]:
     Returns:
         List of (activity_id, activity_date) tuples
     """
-    conn = duckdb.connect(db_path, read_only=True)
-
-    try:
+    with get_connection(db_path) as conn:
         result = conn.execute("""
             WITH activities_with_form AS (
                 SELECT DISTINCT a.activity_id, a.activity_date
@@ -60,9 +57,6 @@ def get_activities_to_reevaluate(db_path: str) -> list[tuple[int, str]]:
         """).fetchall()
 
         return [(int(row[0]), str(row[1])) for row in result]
-
-    finally:
-        conn.close()
 
 
 def main() -> int:
@@ -152,11 +146,11 @@ def main() -> int:
             if args.verbose:
                 print(f"\n  Overall: {result['overall_star_rating']}", end=" ")
 
-            print("✓")
+            print("\u2713")
             success_count += 1
 
         except Exception as e:
-            print("✗")
+            print("\u2717")
             print(f"  Error: {e}", file=sys.stderr)
             fail_count += 1
 

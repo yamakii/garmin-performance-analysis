@@ -7,6 +7,8 @@ This migration adds power efficiency evaluation columns to:
 
 import duckdb
 
+from garmin_mcp.database.connection import get_write_connection
+
 
 def get_db_path() -> str:
     """Get database path from environment."""
@@ -98,25 +100,22 @@ def run_migration(db_path: str | None = None) -> None:
     print(f"Starting Phase 1 migration: {db_path}")
     print("=" * 60)
 
-    conn = duckdb.connect(db_path)
+    with get_write_connection(db_path) as conn:
+        try:
+            # Migrate form_baseline_history
+            migrate_form_baseline_history(conn)
 
-    try:
-        # Migrate form_baseline_history
-        migrate_form_baseline_history(conn)
+            print()
 
-        print()
+            # Migrate form_evaluations
+            migrate_form_evaluations(conn)
 
-        # Migrate form_evaluations
-        migrate_form_evaluations(conn)
+            print("=" * 60)
+            print("✓ Migration completed successfully")
 
-        print("=" * 60)
-        print("✓ Migration completed successfully")
-
-    except Exception as e:
-        print(f"✗ Migration failed: {e}")
-        raise
-    finally:
-        conn.close()
+        except Exception as e:
+            print(f"✗ Migration failed: {e}")
+            raise
 
 
 if __name__ == "__main__":

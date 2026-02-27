@@ -8,6 +8,8 @@ from pathlib import Path
 
 import duckdb
 
+from garmin_mcp.database.connection import get_connection
+
 logger = logging.getLogger(__name__)
 
 # All available DuckDB tables
@@ -109,7 +111,7 @@ def _find_missing_activity_ids(activity_ids: list[int], db_path: Path) -> list[i
         return list(activity_ids)
 
     try:
-        with duckdb.connect(str(db_path), read_only=True) as conn:
+        with get_connection(db_path) as conn:
             try:
                 missing = []
                 for activity_id in activity_ids:

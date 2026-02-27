@@ -3,7 +3,7 @@
 Handles fetching splits data from DuckDB for evaluation.
 """
 
-import duckdb
+from garmin_mcp.database.connection import get_connection
 
 
 def get_splits_data(
@@ -32,9 +32,7 @@ def get_splits_data(
     Raises:
         ValueError: If no splits found for activity
     """
-    conn = duckdb.connect(db_path, read_only=True)
-
-    try:
+    with get_connection(db_path) as conn:
         # Get run_splits from performance_trends
         run_splits_result = conn.execute(
             """
@@ -100,6 +98,3 @@ def get_splits_data(
             "vr_pct": float(vr_pct),
             "cadence": float(cadence) if cadence is not None else 0.0,
         }
-
-    finally:
-        conn.close()

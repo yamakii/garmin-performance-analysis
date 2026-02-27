@@ -1,14 +1,17 @@
 """Tests for database connection utilities.
 
-Covers get_db_path(), get_connection(), and get_write_connection().
+Covers get_db_path(), get_connection(), get_write_connection(),
+and _connect_with_retry().
 """
 
 from pathlib import Path
+from unittest.mock import patch
 
 import duckdb
 import pytest
 
 from garmin_mcp.database.connection import (
+    _connect_with_retry,
     get_connection,
     get_db_path,
     get_write_connection,
@@ -126,3 +129,85 @@ class TestGetWriteConnection:
 
         with pytest.raises(duckdb.ConnectionException):
             ref.execute("SELECT 1")
+
+
+@pytest.mark.unit
+class TestConnectWithRetry:
+    """Tests for _connect_with_retry() lock handling."""
+
+    def test_retry_succeeds_on_second_attempt(self, tmp_path: Path):
+        """Should succeed when lock clears on retry."""
+        db_file = tmp_path / "test.duckdb"
+        duckdb.connect(str(db_file)).close()
+
+        lock_error = duckdb.IOException("Could not set lock on file")
+        mock_conn = duckdb.connect(str(db_file), read_only=True)
+
+        with patch("garmin_mcp.database.connection.duckdb.connect") as mock_connect:
+            mock_connect.side_effect = [lock_error, mock_conn]
+            conn = _connect_with_retry(db_file, read_only=True, retries=3, backoff=0.01)
+            assert conn is mock_conn
+            assert mock_connect.call_count == 2
+        mock_conn.close()
+
+    def test_raises_after_max_retries(self, tmp_path: Path):
+        """Should raise after exhausting all retries."""
+        db_file = tmp_path / "test.duckdb"
+        lock_error = duckdb.IOException("Could not set lock on file")
+
+        with patch("garmin_mcp.database.connection.duckdb.connect") as mock_connect:
+            mock_connect.side_effect = lock_error
+            with pytest.raises(duckdb.IOException, match="Could not set lock"):
+                _connect_with_retry(db_file, read_only=True, retries=2, backoff=0.01)
+            # Initial attempt + 2 retries = 3 calls
+            assert mock_connect.call_count == 3
+
+    def test_non_lock_ioexception_raises_immediately(self, tmp_path: Path):
+        """Non-lock IOException should not be retried."""
+        db_file = tmp_path / "test.duckdb"
+        other_error = duckdb.IOException("Permission denied")
+
+        with patch("garmin_mcp.database.connection.duckdb.connect") as mock_connect:
+            mock_connect.side_effect = other_error
+            with pytest.raises(duckdb.IOException, match="Permission denied"):
+                _connect_with_retry(db_file, read_only=True, retries=3, backoff=0.01)
+            assert mock_connect.call_count == 1
+
+    def test_read_connection_retries_on_lock(self, tmp_path: Path):
+        """get_connection() should retry on lock errors."""
+        db_file = tmp_path / "test.duckdb"
+        duckdb.connect(str(db_file)).close()
+
+        lock_error = duckdb.IOException("Could not set lock on file")
+        real_conn = duckdb.connect(str(db_file), read_only=True)
+
+        with patch("garmin_mcp.database.connection.duckdb.connect") as mock_connect:
+            mock_connect.side_effect = [lock_error, real_conn]
+            with get_connection(db_file, retries=3, backoff=0.01) as conn:
+                result = conn.execute("SELECT 1").fetchone()
+                assert result == (1,)
+
+    def test_write_connection_retries_on_lock(self, tmp_path: Path):
+        """get_write_connection() should retry on lock errors."""
+        db_file = tmp_path / "test.duckdb"
+        duckdb.connect(str(db_file)).close()
+
+        lock_error = duckdb.IOException("Could not set lock on file")
+        real_conn = duckdb.connect(str(db_file))
+
+        with patch("garmin_mcp.database.connection.duckdb.connect") as mock_connect:
+            mock_connect.side_effect = [lock_error, real_conn]
+            with get_write_connection(db_file, retries=3, backoff=0.01) as conn:
+                result = conn.execute("SELECT 1").fetchone()
+                assert result == (1,)
+
+    def test_zero_retries_no_retry(self, tmp_path: Path):
+        """With retries=0, lock error should raise immediately."""
+        db_file = tmp_path / "test.duckdb"
+        lock_error = duckdb.IOException("Could not set lock on file")
+
+        with patch("garmin_mcp.database.connection.duckdb.connect") as mock_connect:
+            mock_connect.side_effect = lock_error
+            with pytest.raises(duckdb.IOException, match="Could not set lock"):
+                _connect_with_retry(db_file, read_only=True, retries=0, backoff=0.01)
+            assert mock_connect.call_count == 1

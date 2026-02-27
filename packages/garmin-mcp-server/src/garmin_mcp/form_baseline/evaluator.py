@@ -12,8 +12,6 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-import duckdb
-
 from .data_fetcher import get_splits_data
 from .model_loader import load_models_from_db, load_models_from_file
 from .power_calculator import (
@@ -185,24 +183,23 @@ def evaluate_and_store(
     overall_text = generate_overall_text(evaluation)
     evaluation["overall_text"] = overall_text
 
-    # Store evaluation results in DuckDB
-    conn = duckdb.connect(db_path)
-
-    # Check baseline freshness and auto-retrain if needed (all metrics)
+    # Scope 1: Check baseline freshness (read-only)
+    from garmin_mcp.database.connection import get_connection, get_write_connection
     from garmin_mcp.form_baseline.trainer import train_form_baselines
 
-    # Get newest baseline end date across all metrics
-    baseline_check = conn.execute(
-        """
-        SELECT MAX(period_end) as newest_end
-        FROM form_baseline_history
-        WHERE user_id = 'default'
-          AND condition_group = ?
-          AND metric IN ('gct', 'vo', 'vr', 'power')
-        """,
-        [condition_group],
-    ).fetchone()
+    with get_connection(db_path) as conn:
+        baseline_check = conn.execute(
+            """
+            SELECT MAX(period_end) as newest_end
+            FROM form_baseline_history
+            WHERE user_id = 'default'
+              AND condition_group = ?
+              AND metric IN ('gct', 'vo', 'vr', 'power')
+            """,
+            [condition_group],
+        ).fetchone()
 
+    # Scope 2: Auto-retrain if baselines are stale (trainer owns its own connections)
     if (
         baseline_check
         and baseline_check[0]
@@ -216,8 +213,6 @@ def evaluate_and_store(
             print(
                 f"Form baselines are {baseline_age_days} days old. Auto-retraining all metrics..."
             )
-            # Close connection before retraining (trainer opens its own)
-            conn.close()
             retrain_result = train_form_baselines(
                 db_path=db_path,
                 user_id="default",
@@ -241,32 +236,36 @@ def evaluate_and_store(
                     print(
                         f"    Power: n={retrain_result['power']['n_samples']}, RMSE={retrain_result['power']['power_rmse']:.2f}"
                     )
-            # Reconnect
-            conn = duckdb.connect(db_path)
 
-    # Evaluate power efficiency (if available)
-    form_penalties = {
-        "gct": score_result["gct_penalty"],
-        "vo": score_result["vo_penalty"],
-        "vr": score_result["vr_penalty"],
-    }
-    power_result = calculate_power_efficiency_internal(
-        conn, activity_id, activity_date, "default", condition_group, form_penalties
-    )
-
-    if power_result:
-        evaluation["power"] = {
-            "avg_w": power_result["avg_w"],
-            "wkg": power_result["wkg"],
-            "speed_actual_mps": power_result["speed_actual_mps"],
-            "speed_expected_mps": power_result["speed_expected_mps"],
-            "efficiency_score": power_result["efficiency_score"],
-            "star_rating": power_result["star_rating"],
-            "needs_improvement": power_result["needs_improvement"],
+    # Scope 3: Power calculation + store results (write)
+    with get_write_connection(db_path) as conn:
+        form_penalties = {
+            "gct": score_result["gct_penalty"],
+            "vo": score_result["vo_penalty"],
+            "vr": score_result["vr_penalty"],
         }
-        evaluation["integrated_score"] = power_result["integrated_score"]
-        evaluation["training_mode"] = power_result["training_mode"]
-    try:
+        power_result = calculate_power_efficiency_internal(
+            conn,
+            activity_id,
+            activity_date,
+            "default",
+            condition_group,
+            form_penalties,
+        )
+
+        if power_result:
+            evaluation["power"] = {
+                "avg_w": power_result["avg_w"],
+                "wkg": power_result["wkg"],
+                "speed_actual_mps": power_result["speed_actual_mps"],
+                "speed_expected_mps": power_result["speed_expected_mps"],
+                "efficiency_score": power_result["efficiency_score"],
+                "star_rating": power_result["star_rating"],
+                "needs_improvement": power_result["needs_improvement"],
+            }
+            evaluation["integrated_score"] = power_result["integrated_score"]
+            evaluation["training_mode"] = power_result["training_mode"]
+
         conn.execute(
             """
             INSERT INTO form_evaluations (
@@ -379,9 +378,5 @@ def evaluate_and_store(
                 evaluation.get("training_mode"),
             ],
         )
-        conn.close()
-    except Exception as e:
-        conn.close()
-        raise RuntimeError(f"Failed to store evaluation results: {e}") from e
 
     return evaluation

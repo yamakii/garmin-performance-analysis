@@ -3,8 +3,7 @@
 import logging
 from datetime import date, timedelta
 
-import duckdb
-
+from garmin_mcp.database.connection import get_connection
 from garmin_mcp.training_plan.models import WorkoutMatch
 from garmin_mcp.utils.paths import get_database_dir
 
@@ -14,7 +13,7 @@ logger = logging.getLogger(__name__)
 class ActivityMatcher:
     """Matches actual activities to planned workouts.
 
-    Uses date-based matching only (±1 day tolerance).
+    Uses date-based matching only (+-1 day tolerance).
     Distance and type are not checked because the user may have
     changed the planned workout content.
     """
@@ -32,16 +31,15 @@ class ActivityMatcher:
 
         Algorithm:
         1. Query planned_workouts (non-rest, with workout_date) for plan+version
-        2. Query activities within plan date range (± 1 day buffer)
+        2. Query activities within plan date range (+- 1 day buffer)
         3. For each planned workout (sorted by date):
-           - Find unmatched activities within ±1 day
+           - Find unmatched activities within +-1 day
            - If multiple candidates, pick closest date
         4. Return matches
 
-        Note: Distance/type are not validated — user may change workout content.
+        Note: Distance/type are not validated -- user may change workout content.
         """
-        conn = duckdb.connect(self._get_db_path())
-        try:
+        with get_connection(self._get_db_path()) as conn:
             # 1. Get planned workouts (non-rest, with dates)
             workout_rows = conn.execute(
                 """
@@ -78,7 +76,7 @@ class ActivityMatcher:
             if not activity_rows:
                 return []
 
-            # 4. Match: for each workout, find closest unmatched activity within ±1 day
+            # 4. Match: for each workout, find closest unmatched activity within +-1 day
             matched_activity_ids: set[int] = set()
             matches: list[WorkoutMatch] = []
 
@@ -114,9 +112,6 @@ class ActivityMatcher:
 
             return matches
 
-        finally:
-            conn.close()
-
     def get_completed_weeks(self, plan_id: str, version: int) -> tuple[set[int], int]:
         """Return (completed week numbers, last_completed_week).
 
@@ -128,8 +123,7 @@ class ActivityMatcher:
             return set(), 0
 
         # Get week numbers for matched workouts
-        conn = duckdb.connect(self._get_db_path())
-        try:
+        with get_connection(self._get_db_path()) as conn:
             matched_workout_ids = [m.workout_id for m in matches]
             placeholders = ", ".join(["?"] * len(matched_workout_ids))
             rows = conn.execute(
@@ -145,9 +139,6 @@ class ActivityMatcher:
             completed_weeks = {row[0] for row in rows}
             last_completed = max(completed_weeks) if completed_weeks else 0
             return completed_weeks, last_completed
-
-        finally:
-            conn.close()
 
     @staticmethod
     def _to_date(val: object) -> date:

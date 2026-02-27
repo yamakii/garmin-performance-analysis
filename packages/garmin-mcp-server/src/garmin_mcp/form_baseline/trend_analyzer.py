@@ -7,8 +7,9 @@ form improvements or deterioration.
 from datetime import datetime
 from typing import Any
 
-import duckdb
 from dateutil.relativedelta import relativedelta
+
+from garmin_mcp.database.connection import get_connection
 
 
 def analyze_form_trend(
@@ -67,9 +68,7 @@ def analyze_form_trend(
             f"Invalid activity_date format: {activity_date}. Expected YYYY-MM-DD."
         ) from e
 
-    conn = duckdb.connect(db_path, read_only=True)
-
-    try:
+    with get_connection(db_path) as conn:
         # Calculate target month end (last day of activity month)
         current_month_end = (
             activity_dt.replace(day=1) + relativedelta(months=1) - relativedelta(days=1)
@@ -211,9 +210,6 @@ def analyze_form_trend(
             "past_period": (str(past_period_start), str(past_period_end)),
             "interpretation_text": interpretation,
         }
-
-    finally:
-        conn.close()
 
 
 def _generate_trend_interpretation(

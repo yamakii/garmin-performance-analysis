@@ -12,9 +12,9 @@ import logging
 from pathlib import Path
 from typing import Any
 
-import duckdb
 from tqdm import tqdm
 
+from garmin_mcp.database.connection import get_connection
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.ingest.garmin_worker import GarminIngestWorker
 from garmin_mcp.scripts.regenerate.deletion_strategy import (
@@ -133,7 +133,7 @@ class DuckDBRegenerator:
         self, start_date: str, end_date: str
     ) -> list[tuple[int, str]]:
         """Get activity IDs from DuckDB by date range."""
-        with duckdb.connect(str(self.db_reader.db_path), read_only=True) as conn:
+        with get_connection(self.db_reader.db_path) as conn:
             query = """
                 SELECT activity_id, activity_date
                 FROM activities
@@ -149,7 +149,7 @@ class DuckDBRegenerator:
             return False
 
         try:
-            with duckdb.connect(str(self.db_reader.db_path), read_only=True) as conn:
+            with get_connection(self.db_reader.db_path) as conn:
                 query = "SELECT COUNT(*) FROM activities WHERE activity_id = ?"
                 result = conn.execute(query, (activity_id,)).fetchone()
                 return result[0] > 0 if result else False

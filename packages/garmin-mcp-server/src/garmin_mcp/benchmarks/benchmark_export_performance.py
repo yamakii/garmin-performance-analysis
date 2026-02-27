@@ -25,7 +25,7 @@ class ExportBenchmark:
     def __init__(self, db_path: Path | None = None):
         """Initialize benchmark with in-memory database."""
         self.db_path = db_path or ":memory:"
-        self.conn = duckdb.connect(str(self.db_path))
+        self.conn = duckdb.connect(str(self.db_path))  # noqa: duckdb-connect
         self.results: list[dict] = []
 
     def create_mock_data(self, n_rows: int) -> None:
