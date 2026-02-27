@@ -13,6 +13,7 @@ import logging
 
 import duckdb
 
+from garmin_mcp.database.connection import get_write_connection
 from garmin_mcp.utils.paths import get_database_dir
 
 logger = logging.getLogger(__name__)
@@ -47,8 +48,7 @@ def migrate_add_plan_versioning(db_path: str | None = None) -> None:
     if db_path is None:
         db_path = str(get_database_dir() / "garmin_performance.duckdb")
 
-    conn = duckdb.connect(db_path)
-    try:
+    with get_write_connection(db_path) as conn:
         # Check if tables exist
         if not _table_exists(conn, "training_plans"):
             print("  training_plans table does not exist, skipping.")
@@ -97,9 +97,6 @@ def migrate_add_plan_versioning(db_path: str | None = None) -> None:
         )
 
         print("  Migration completed successfully.")
-
-    finally:
-        conn.close()
 
 
 def run_plan_versioning_migration(db_path: str | None = None) -> None:

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-import duckdb
+from garmin_mcp.database.connection import get_write_connection
 
 
 def migrate_phase2_schema(db_path: str | None = None) -> None:
@@ -22,9 +22,7 @@ def migrate_phase2_schema(db_path: str | None = None) -> None:
     if not Path(db_path).exists():
         raise FileNotFoundError(f"Database not found: {db_path}")
 
-    conn = duckdb.connect(db_path)
-
-    try:
+    with get_write_connection(db_path) as conn:
         # Add integrated_score column (DOUBLE)
         conn.execute("""
             ALTER TABLE form_evaluations
@@ -40,9 +38,6 @@ def migrate_phase2_schema(db_path: str | None = None) -> None:
         print("✅ Phase 2 migration completed successfully")
         print("   - Added integrated_score (DOUBLE) to form_evaluations")
         print("   - Added training_mode (VARCHAR) to form_evaluations")
-
-    finally:
-        conn.close()
 
 
 if __name__ == "__main__":

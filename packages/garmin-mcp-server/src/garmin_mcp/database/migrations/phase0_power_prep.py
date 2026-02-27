@@ -6,8 +6,7 @@ This migration:
 3. Populates body_mass_kg from body_composition table
 """
 
-import duckdb
-
+from garmin_mcp.database.connection import get_write_connection
 from garmin_mcp.utils.paths import get_database_dir
 
 
@@ -23,20 +22,17 @@ def migrate_phase0_drop_form_baselines(db_path: str | None = None) -> None:
     if db_path is None:
         db_path = str(get_database_dir() / "garmin_performance.duckdb")
 
-    conn = duckdb.connect(db_path)
+    with get_write_connection(db_path) as conn:
+        # Check if table exists
+        tables = conn.execute("SHOW TABLES").fetchall()
+        table_names = [t[0] for t in tables]
 
-    # Check if table exists
-    tables = conn.execute("SHOW TABLES").fetchall()
-    table_names = [t[0] for t in tables]
-
-    if "form_baselines" in table_names:
-        print("Dropping form_baselines table...")
-        conn.execute("DROP TABLE form_baselines")
-        print("✓ form_baselines table dropped")
-    else:
-        print("✓ form_baselines table does not exist (already removed)")
-
-    conn.close()
+        if "form_baselines" in table_names:
+            print("Dropping form_baselines table...")
+            conn.execute("DROP TABLE form_baselines")
+            print("✓ form_baselines table dropped")
+        else:
+            print("✓ form_baselines table does not exist (already removed)")
 
 
 def migrate_phase0_add_body_mass_kg(db_path: str | None = None) -> None:
@@ -48,20 +44,17 @@ def migrate_phase0_add_body_mass_kg(db_path: str | None = None) -> None:
     if db_path is None:
         db_path = str(get_database_dir() / "garmin_performance.duckdb")
 
-    conn = duckdb.connect(db_path)
+    with get_write_connection(db_path) as conn:
+        # Check if column already exists
+        schema = conn.execute("PRAGMA table_info(activities)").fetchall()
+        column_names = [row[1] for row in schema]
 
-    # Check if column already exists
-    schema = conn.execute("PRAGMA table_info(activities)").fetchall()
-    column_names = [row[1] for row in schema]
-
-    if "body_mass_kg" not in column_names:
-        print("Adding body_mass_kg column to activities table...")
-        conn.execute("ALTER TABLE activities ADD COLUMN body_mass_kg DOUBLE")
-        print("✓ body_mass_kg column added")
-    else:
-        print("✓ body_mass_kg column already exists")
-
-    conn.close()
+        if "body_mass_kg" not in column_names:
+            print("Adding body_mass_kg column to activities table...")
+            conn.execute("ALTER TABLE activities ADD COLUMN body_mass_kg DOUBLE")
+            print("✓ body_mass_kg column added")
+        else:
+            print("✓ body_mass_kg column already exists")
 
 
 def migrate_phase0_populate_body_mass_kg(db_path: str | None = None) -> None:
@@ -76,51 +69,48 @@ def migrate_phase0_populate_body_mass_kg(db_path: str | None = None) -> None:
     if db_path is None:
         db_path = str(get_database_dir() / "garmin_performance.duckdb")
 
-    conn = duckdb.connect(db_path)
+    with get_write_connection(db_path) as conn:
+        # First, check if column exists
+        schema = conn.execute("PRAGMA table_info(activities)").fetchall()
+        column_names = [row[1] for row in schema]
 
-    # First, check if column exists
-    schema = conn.execute("PRAGMA table_info(activities)").fetchall()
-    column_names = [row[1] for row in schema]
+        if "body_mass_kg" not in column_names:
+            raise ValueError(
+                "body_mass_kg column does not exist. Run migrate_phase0_add_body_mass_kg first."
+            )
 
-    if "body_mass_kg" not in column_names:
-        raise ValueError(
-            "body_mass_kg column does not exist. Run migrate_phase0_add_body_mass_kg first."
-        )
+        print("Populating body_mass_kg from body_composition...")
 
-    print("Populating body_mass_kg from body_composition...")
+        # Strategy: For each activity, find the most recent body_composition measurement
+        # on or before the activity date
+        conn.execute("""
+            UPDATE activities
+            SET body_mass_kg = (
+                SELECT weight_kg
+                FROM body_composition
+                WHERE body_composition.date <= activities.activity_date
+                ORDER BY body_composition.date DESC
+                LIMIT 1
+            )
+            WHERE body_mass_kg IS NULL
+        """)
 
-    # Strategy: For each activity, find the most recent body_composition measurement
-    # on or before the activity date
-    conn.execute("""
-        UPDATE activities
-        SET body_mass_kg = (
-            SELECT weight_kg
-            FROM body_composition
-            WHERE body_composition.date <= activities.activity_date
-            ORDER BY body_composition.date DESC
-            LIMIT 1
-        )
-        WHERE body_mass_kg IS NULL
-    """)
+        # Check results
+        total_result = conn.execute("SELECT COUNT(*) FROM activities").fetchone()
+        assert total_result is not None
+        total = total_result[0]
 
-    # Check results
-    total_result = conn.execute("SELECT COUNT(*) FROM activities").fetchone()
-    assert total_result is not None
-    total = total_result[0]
+        populated_result = conn.execute("""
+            SELECT COUNT(*) FROM activities WHERE body_mass_kg IS NOT NULL
+        """).fetchone()
+        assert populated_result is not None
+        populated = populated_result[0]
 
-    populated_result = conn.execute("""
-        SELECT COUNT(*) FROM activities WHERE body_mass_kg IS NOT NULL
-    """).fetchone()
-    assert populated_result is not None
-    populated = populated_result[0]
-
-    missing_result = conn.execute("""
-        SELECT COUNT(*) FROM activities WHERE body_mass_kg IS NULL
-    """).fetchone()
-    assert missing_result is not None
-    missing = missing_result[0]
-
-    conn.close()
+        missing_result = conn.execute("""
+            SELECT COUNT(*) FROM activities WHERE body_mass_kg IS NULL
+        """).fetchone()
+        assert missing_result is not None
+        missing = missing_result[0]
 
     print(f"✓ body_mass_kg populated: {populated}/{total} activities")
     if missing > 0:

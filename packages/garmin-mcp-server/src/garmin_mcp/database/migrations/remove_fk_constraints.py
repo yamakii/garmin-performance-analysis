@@ -18,6 +18,8 @@ from typing import Any
 
 import duckdb
 
+from garmin_mcp.database.connection import get_write_connection
+
 
 def _backup_tables(conn: duckdb.DuckDBPyConnection, tables: list[str]) -> None:
     """Create backup tables using CTAS (CREATE TABLE AS SELECT).
@@ -417,40 +419,36 @@ def migrate_remove_fk_constraints(
         print("8. COMMIT")
         return {"status": "dry_run", "tables": tables_to_migrate}
 
-    conn = duckdb.connect(db_path)
+    with get_write_connection(db_path) as conn:
+        try:
+            conn.execute("BEGIN TRANSACTION")
 
-    try:
-        conn.execute("BEGIN TRANSACTION")
+            # 1. Backup
+            _backup_tables(conn, tables_to_migrate)
 
-        # 1. Backup
-        _backup_tables(conn, tables_to_migrate)
+            # 2. Drop old tables
+            _drop_old_tables(conn, tables_to_migrate)
 
-        # 2. Drop old tables
-        _drop_old_tables(conn, tables_to_migrate)
+            # 3. Create new tables without FK
+            _create_new_tables(conn, tables_to_migrate)
 
-        # 3. Create new tables without FK
-        _create_new_tables(conn, tables_to_migrate)
+            # 4. Restore data
+            _restore_data(conn, tables_to_migrate)
 
-        # 4. Restore data
-        _restore_data(conn, tables_to_migrate)
+            # 5. Verify data integrity
+            verification_results = _verify_data_integrity(conn, tables_to_migrate)
 
-        # 5. Verify data integrity
-        verification_results = _verify_data_integrity(conn, tables_to_migrate)
+            # 6. Cleanup backup tables
+            _cleanup_backup_tables(conn, tables_to_migrate)
 
-        # 6. Cleanup backup tables
-        _cleanup_backup_tables(conn, tables_to_migrate)
+            conn.execute("COMMIT")
 
-        conn.execute("COMMIT")
+            return {
+                "status": "success",
+                "tables": tables_to_migrate,
+                "verification": verification_results,
+            }
 
-        conn.close()
-
-        return {
-            "status": "success",
-            "tables": tables_to_migrate,
-            "verification": verification_results,
-        }
-
-    except Exception as e:
-        conn.execute("ROLLBACK")
-        conn.close()
-        raise Exception(f"Migration failed: {e}") from e
+        except Exception as e:
+            conn.execute("ROLLBACK")
+            raise Exception(f"Migration failed: {e}") from e
