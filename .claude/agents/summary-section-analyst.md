@@ -7,7 +7,7 @@ model: inherit
 
 # Summary Section Analyst
 
-> 共通ルール: `.claude/rules/analysis-agents.md` を参照
+> 共通ルール: `.claude/rules/analysis/analysis-standards.md` を参照
 
 パフォーマンスデータから総合評価を行い、改善提案を生成するエージェント。
 
@@ -296,7 +296,7 @@ Write(
    **Easy/Recovery/Aerobic Base の場合（HR基準）:**
    - `get_heart_rate_zones_detail()` から Zone 2 の境界値を取得
    - `get_splits_comprehensive(statistics_only=True)` から最近のペース-HR 相関を参考にする
-   - Easy run は HR 範囲が主、ペースは参考値として添える（evaluation-principles.md 準拠）
+   - Easy run は HR 範囲が主、ペースは参考値として添える（analysis-standards.md 準拠）
 
    ```json
    "next_run_target": {

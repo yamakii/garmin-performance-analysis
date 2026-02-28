@@ -64,7 +64,7 @@ mcp__garmin-db__compare_similar_workouts(
 **When:** Statistical analysis, multi-month trends, race prediction, adhoc queries involving 10+ activities.
 
 Use the export-based 5-step workflow (Plan → Export → Code → Result → Interpret).
-See `.claude/rules/analysis/mcp-data-access.md` for workflow details and `docs/data-analysis-guide.md` for examples.
+See `.claude/rules/analysis/analysis-standards.md` for workflow details and `docs/data-analysis-guide.md` for examples.
 
 ---
 
@@ -72,7 +72,7 @@ See `.claude/rules/analysis/mcp-data-access.md` for workflow details and `docs/d
 
 **Intent disambiguation:** See `.claude/rules/intent-disambiguation.md`
 
-**Training plan rules:** See `.claude/rules/analysis/training-plan-rules.md`
+**Training plan rules:** See `.claude/rules/analysis/analysis-standards.md`
 
 **Project conventions:** Rule files go in `.claude/rules/` (auto-loaded). CLAUDE.md is for overview and workflows only.
 
@@ -86,12 +86,7 @@ See `.claude/rules/analysis/mcp-data-access.md` for workflow details and `docs/d
 
 Key rules (auto-loaded from `.claude/rules/dev/`):
 - `workflow-orchestration.md` — plan-first, subagent delegation, verification, elegance check
-- `project-workflow.md` — Issue routing, plan phases, approval flow
-- `git-workflow.md` — Serena, worktree, commit convention
-- `code-quality.md` — Black, Ruff, Mypy, Pytest
-- `testing.md` — markers, mocks, performance budgets
-- `worktree-validation-protocol.md` — analysis workspace ベースの検証フロー
-- `e2e-verification.md` — E2E 検証レベル・基準
+- `dev-standards.md` — git, testing, code quality, architecture, validation (consolidated)
 
 ### Analysis Workspace (検証用)
 
