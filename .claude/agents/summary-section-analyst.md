@@ -217,6 +217,16 @@ Write(
             "上下動: 11.5cm（目標9cm未満を2.5cm上回る）"
         ],
         "next_action": "次のベース走では HR 130-145 bpm を維持し、最初の1kmはゆっくり入る（Zone 2 > 60% で成功）",
+        "next_run_target": {
+            "recommended_type": "easy",
+            "target_hr_low": 120,
+            "target_hr_high": 141,
+            "reference_pace_low_formatted": "6:50/km",
+            "reference_pace_high_formatted": "7:05/km",
+            "success_criterion": "Zone 2 比率 60% 以上で成功",
+            "adjustment_tip": "暑い日は +5bpm 許容、疲労時は上限を 5bpm 下げる",
+            "summary_ja": "次の Easy Run では HR 120-141 bpm を維持（参考ペース 6:50/km~7:05/km）。Zone 2 比率 60% 以上で成功"
+        },
         "recommendations": """
 今回のベース走（有酸素ゾーン中心）を次回実施する際の改善点：
 
@@ -279,7 +289,62 @@ Write(
    - 例: `"次のEasy Runでは HR 135-140 bpm を維持（Zone 2 > 60% で成功）"`
    - 例: `"次のテンポ走では 5:00-5:10/km を維持（CV < 0.02 で成功）"`
 
-7. **recommendations**: 改善提案（構造化マークダウン、**最大2件**）
+7. **next_run_target**: 次のランの具体的目標（dict、**必須**）
+
+   トレーニングタイプに応じて以下のデータを算出し、dictとして出力する。
+
+   **Easy/Recovery/Aerobic Base の場合（HR基準）:**
+   - `get_heart_rate_zones_detail()` から Zone 2 の境界値を取得
+   - `get_splits_comprehensive(statistics_only=True)` から最近のペース-HR 相関を参考にする
+   - Easy run は HR 範囲が主、ペースは参考値として添える（evaluation-principles.md 準拠）
+
+   ```json
+   "next_run_target": {
+     "recommended_type": "easy",
+     "target_hr_low": 120,
+     "target_hr_high": 141,
+     "reference_pace_low_formatted": "6:50/km",
+     "reference_pace_high_formatted": "7:10/km",
+     "success_criterion": "Zone 2 比率 60% 以上で成功",
+     "adjustment_tip": "暑い日は +5bpm 許容、疲労時は上限を 5bpm 下げる",
+     "summary_ja": "次の Easy Run では HR 120-141 bpm を維持（参考ペース 6:50/km~7:10/km）。Zone 2 比率 60% 以上で成功"
+   }
+   ```
+
+   **Tempo/Lactate Threshold の場合（LTペース基準）:**
+   - `get_lactate_threshold_data()` から LT 速度を取得
+   - テンポ範囲 = LTペース ±5%
+
+   ```json
+   "next_run_target": {
+     "recommended_type": "tempo",
+     "target_pace_low_formatted": "5:00/km",
+     "target_pace_high_formatted": "5:30/km",
+     "target_hr": 168,
+     "success_criterion": "ペース変動係数 (CV) < 0.03 かつ 5:00/km~5:30/km 維持で成功",
+     "adjustment_tip": "暑い日は 5-10秒/km 遅めを許容",
+     "summary_ja": "次のテンポ走では 5:00/km~5:30/km を維持（目標 HR ~168 bpm）。..."
+   }
+   ```
+
+   **Interval/VO2max の場合（vVO2max ペース基準）:**
+   - `get_vo2_max_data()` から VO2max を取得
+   - vVO2max (km/h) = VO2max / 3.5 → インターバルペース = 95-100% vVO2max
+
+   ```json
+   "next_run_target": {
+     "recommended_type": "interval",
+     "target_pace_low_formatted": "4:19/km",
+     "target_pace_high_formatted": "4:33/km",
+     "success_criterion": "Work 区間を 4:19/km~4:33/km で維持し、Recovery で HR が Zone 2 まで回復すれば成功",
+     "adjustment_tip": "疲労時は本数を減らして質を維持",
+     "summary_ja": "次のインターバルでは Work 区間を 4:19/km~4:33/km で実施。..."
+   }
+   ```
+
+   **データ不足時:** `"next_run_target": {"insufficient_data": true, "summary_ja": "...理由..."}`
+
+8. **recommendations**: 改善提案（構造化マークダウン、**最大2件**）
 
    **MANDATORY FORMAT - 以下の構造を厳密に守ること:**
 

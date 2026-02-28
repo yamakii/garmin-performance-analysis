@@ -417,7 +417,40 @@ VO2 Maxデータがありません。
 ---
 
 {# =================================================================== #}
-{# SECTION 9 (or 8 or 7): 技術的詳細 #}
+{# SECTION 9 (or 8 or 7): 次のランの目標 #}
+{# =================================================================== #}
+{% if summary and summary.next_run_target and not summary.next_run_target.get('insufficient_data') %}
+## 🎯 次のランの目標
+
+{{ summary.next_run_target.summary_ja }}
+
+{% if summary.next_run_target.recommended_type == "easy" %}
+| 項目 | 目標 |
+|------|------|
+| **心拍数** | {{ summary.next_run_target.target_hr_low }}-{{ summary.next_run_target.target_hr_high }} bpm |
+{% if summary.next_run_target.reference_pace_low_formatted %}| **参考ペース** | {{ summary.next_run_target.reference_pace_low_formatted }}~{{ summary.next_run_target.reference_pace_high_formatted }} |{% endif %}
+| **成功基準** | {{ summary.next_run_target.success_criterion }} |
+{% elif summary.next_run_target.recommended_type == "tempo" %}
+| 項目 | 目標 |
+|------|------|
+| **ペース** | {{ summary.next_run_target.target_pace_low_formatted }}~{{ summary.next_run_target.target_pace_high_formatted }} |
+{% if summary.next_run_target.target_hr %}| **心拍数** | ~{{ summary.next_run_target.target_hr }} bpm |{% endif %}
+| **成功基準** | {{ summary.next_run_target.success_criterion }} |
+{% elif summary.next_run_target.recommended_type == "interval" %}
+| 項目 | 目標 |
+|------|------|
+| **Work ペース** | {{ summary.next_run_target.target_pace_low_formatted }}~{{ summary.next_run_target.target_pace_high_formatted }} |
+| **成功基準** | {{ summary.next_run_target.success_criterion }} |
+{% endif %}
+{% if summary.next_run_target.adjustment_tip %}
+> **💡 調整ヒント**: {{ summary.next_run_target.adjustment_tip }}
+{% endif %}
+
+---
+
+{% endif %}
+{# =================================================================== #}
+{# SECTION 10 (or 9 or 8): 技術的詳細 #}
 {# =================================================================== #}
 ## 技術的詳細
 
@@ -443,7 +476,7 @@ VO2 Maxデータがありません。
 ---
 
 {# =================================================================== #}
-{# SECTION 10 (or 9 or 8): 📚 用語解説 #}
+{# SECTION 11 (or 10 or 9): 📚 用語解説 #}
 {# =================================================================== #}
 ## 📚 用語解説
 
