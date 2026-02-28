@@ -1,0 +1,21 @@
+{
+  "activityId": 12345678901,
+  "activityName": "Verification Easy Run",
+  "activityTypeDTO": {
+    "typeId": 1,
+    "typeKey": "running",
+    "parentTypeId": 17
+  },
+  "summaryDTO": {
+    "startTimeLocal": "2025-01-15T07:00:00.0",
+    "startTimeGMT": "2025-01-14T22:00:00.0",
+    "distance": 7000.0,
+    "duration": 2310.0,
+    "averageSpeed": 3.03,
+    "averageHR": 148,
+    "maxHR": 165,
+    "minHR": 110,
+    "trainingEffectLabel": "AEROBIC_BASE"
+  },
+  "locationName": "Tokyo, Japan"
+}

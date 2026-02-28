@@ -18,6 +18,7 @@ htmlcov/
 *.cover
 .hypothesis/
 test_data/
+**/verification.duckdb
 
 # Type checking and linting
 .mypy_cache/

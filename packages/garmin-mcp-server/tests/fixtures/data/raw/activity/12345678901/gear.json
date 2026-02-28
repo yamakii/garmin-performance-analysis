@@ -1,0 +1,11 @@
+[
+  {
+    "uuid": "abc123-def456",
+    "gearPk": 12345,
+    "gearTypeName": "Running Shoes",
+    "customMakeModel": "Nike Vaporfly 3",
+    "dateBegin": "2024-06-01",
+    "dateEnd": null,
+    "running": true
+  }
+]
