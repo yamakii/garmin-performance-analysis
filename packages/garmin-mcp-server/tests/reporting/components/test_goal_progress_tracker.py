@@ -1,6 +1,7 @@
 """Tests for GoalProgressTracker - race goal progress tracking using VDOT predictions."""
 
 import pytest
+
 from garmin_mcp.reporting.components.goal_progress_tracker import GoalProgressTracker
 
 
@@ -60,6 +61,7 @@ class TestCalculateProgress:
         # VDOT ~49.5 gives roughly 43:45 for 10K
         result = self.tracker.calculate_progress(goal=goal, current_vdot=49.5)
 
+        assert result is not None
         assert "predicted_time_seconds" in result
         assert "goal_time_seconds" in result
         assert result["goal_time_seconds"] == 2580
