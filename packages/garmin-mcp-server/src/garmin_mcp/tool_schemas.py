@@ -185,6 +185,48 @@ _ANALYSIS_TOOLS: list[dict] = [
         },
     },
     {
+        "name": "validate_section_json",
+        "description": "Validate section analysis data against Pydantic schema. Returns {valid: bool, errors: list[str]}.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "section_type": {
+                    "type": "string",
+                    "enum": [
+                        "split",
+                        "phase",
+                        "efficiency",
+                        "environment",
+                        "summary",
+                    ],
+                },
+                "analysis_data": {"type": "object"},
+            },
+            "required": ["section_type", "analysis_data"],
+        },
+    },
+    {
+        "name": "get_analysis_contract",
+        "description": "Get analysis contract for a section type (output schema, evaluation thresholds, instructions). Agents call this for up-to-date evaluation criteria.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "section_type": {
+                    "type": "string",
+                    "description": "Section type",
+                    "enum": [
+                        "split",
+                        "phase",
+                        "efficiency",
+                        "environment",
+                        "summary",
+                    ],
+                },
+            },
+            "required": ["section_type"],
+        },
+    },
+    {
         "name": "analyze_performance_trends",
         "description": "Analyze performance trends across multiple activities with filtering (Phase 3.1)",
         "inputSchema": {

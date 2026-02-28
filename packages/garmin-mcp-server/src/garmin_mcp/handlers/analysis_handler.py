@@ -17,6 +17,8 @@ class AnalysisHandler:
 
     _tool_names: set[str] = {
         "insert_section_analysis_dict",
+        "validate_section_json",
+        "get_analysis_contract",
         "get_interval_analysis",
         "detect_form_anomalies_summary",
         "get_form_anomaly_details",
@@ -45,6 +47,10 @@ class AnalysisHandler:
             return await self._analyze_performance_trends(arguments)
         elif name == "extract_insights":
             return await self._extract_insights(arguments)
+        elif name == "validate_section_json":
+            return await self._validate_section_json(arguments)
+        elif name == "get_analysis_contract":
+            return await self._get_analysis_contract(arguments)
         elif name == "compare_similar_workouts":
             return await self._compare_similar_workouts(arguments)
         else:
@@ -192,6 +198,41 @@ class AnalysisHandler:
                 text=format_json_response(result, default=str),
             )
         ]
+
+    async def _validate_section_json(
+        self, arguments: dict[str, Any]
+    ) -> list[TextContent]:
+        from garmin_mcp.validation.section_schemas import validate_section_data
+
+        section_type = arguments["section_type"]
+        analysis_data = arguments["analysis_data"]
+
+        valid, errors = validate_section_data(section_type, analysis_data)
+
+        result = {
+            "valid": valid,
+            "errors": errors,
+            "section_type": section_type,
+        }
+
+        return [TextContent(type="text", text=format_json_response(result))]
+
+    async def _get_analysis_contract(
+        self, arguments: dict[str, Any]
+    ) -> list[TextContent]:
+        from garmin_mcp.validation.contracts import get_contract
+
+        section_type = arguments["section_type"]
+        try:
+            contract = get_contract(section_type)
+            return [TextContent(type="text", text=format_json_response(contract))]
+        except ValueError as e:
+            return [
+                TextContent(
+                    type="text",
+                    text=format_json_response({"error": str(e)}),
+                )
+            ]
 
     async def _compare_similar_workouts(
         self, arguments: dict[str, Any]
