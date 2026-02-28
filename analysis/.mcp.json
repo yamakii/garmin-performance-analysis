@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "garmin-db": {
+      "command": "bash",
+      "args": [
+        "../scripts/start-analysis-server.sh"
+      ]
+    }
+  }
+}

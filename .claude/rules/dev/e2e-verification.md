@@ -17,6 +17,21 @@
 **複数カテゴリにまたがる場合**: 最も高いレベルを採用する。
 **判断に迷う場合**: L2 を選択する。L3 は agent 定義変更時のみ。
 
+## 検証環境
+
+- **ディレクトリ**: `analysis/`
+- **DB**: fixture DB (`analysis/data/database/`)
+- **検証コマンド**: `cd analysis/ && claude -p "/analyze-activity 2025-10-09"`
+- **Worktree 検証時**: `analysis/.env` の `GARMIN_MCP_SERVER_DIR` を worktree パスに設定
+
+### Fixture DB 生成
+
+```bash
+GARMIN_DATA_DIR=analysis/data \
+  uv run python -m garmin_mcp.scripts.regenerate_duckdb \
+  --activity-ids 12345678901 --force
+```
+
 ## L3 検証基準
 
 ### 構造チェック（FAIL = 致命的）
