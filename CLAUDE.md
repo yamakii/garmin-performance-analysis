@@ -64,7 +64,7 @@ mcp__garmin-db__compare_similar_workouts(
 **When:** Statistical analysis, multi-month trends, race prediction, adhoc queries involving 10+ activities.
 
 Use the export-based 5-step workflow (Plan → Export → Code → Result → Interpret).
-See `.claude/rules/mcp-data-access.md` for workflow details and `docs/data-analysis-guide.md` for examples.
+See `.claude/rules/analysis/mcp-data-access.md` for workflow details and `docs/data-analysis-guide.md` for examples.
 
 ---
 
@@ -72,7 +72,7 @@ See `.claude/rules/mcp-data-access.md` for workflow details and `docs/data-analy
 
 **Intent disambiguation:** See `.claude/rules/intent-disambiguation.md`
 
-**Training plan rules:** See `.claude/rules/training-plan-rules.md`
+**Training plan rules:** See `.claude/rules/analysis/training-plan-rules.md`
 
 **Project conventions:** Rule files go in `.claude/rules/` (auto-loaded). CLAUDE.md is for overview and workflows only.
 
@@ -84,12 +84,26 @@ See `.claude/rules/mcp-data-access.md` for workflow details and `docs/data-analy
 
 **Workflow:** Plan mode → Issue → Worktree → Implement → Ship
 
-Key rules (auto-loaded from `.claude/rules/`):
+Key rules (auto-loaded from `.claude/rules/dev/`):
 - `workflow-orchestration.md` — plan-first, subagent delegation, verification, elegance check
 - `project-workflow.md` — Issue routing, plan phases, approval flow
 - `git-workflow.md` — Serena, worktree, commit convention
 - `code-quality.md` — Black, Ruff, Mypy, Pytest
 - `testing.md` — markers, mocks, performance budgets
+- `worktree-validation-protocol.md` — analysis workspace ベースの検証フロー
+- `e2e-verification.md` — E2E 検証レベル・基準
+
+### Analysis Workspace (検証用)
+
+`analysis/` ディレクトリで分析専用ワークスペースを提供。worktree 検証時に使用:
+```bash
+# 1. analysis/.env に worktree パスを設定
+echo 'GARMIN_MCP_SERVER_DIR=/path/to/worktree/packages/garmin-mcp-server' > analysis/.env
+# 2. fixture DB 生成
+GARMIN_DATA_DIR=analysis/data uv run python -m garmin_mcp.scripts.regenerate_duckdb --activity-ids 12345678901 --force
+# 3. E2E 検証
+cd analysis/ && claude -p "/analyze-activity 2025-10-09"
+```
 
 ### Quick Commands
 | Command | Purpose |
