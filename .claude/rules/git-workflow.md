@@ -17,7 +17,7 @@ mcp__serena__activate_project("/home/yamakii/workspace/garmin-performance-analys
 ## Branch Strategy
 
 - **Code changes** (`packages/`, `tests/`): worktree MANDATORY
-- **Rules/docs** (`.claude/rules/`, `docs/`, `CLAUDE.md`): main OK
+- **Rules/docs** (`.claude/rules/`, `docs/`, `CLAUDE.md`): PR required (branch protection)
 - **Planning**: main branch (read-only)
 
 ### Worktree Setup
@@ -36,7 +36,7 @@ git worktree remove ../garmin-feature-name
 ## PR Convention
 
 - merge commit --no-ff (`--delete-branch` で自動ブランチ削除、TDD履歴保持)
-- main 直 push は rules/docs のみ (既存ルール維持)
+- main への直接 push は禁止（branch protection 有効）
 - `/ship --pr N` でマージ
 
 ### Parallel Branches

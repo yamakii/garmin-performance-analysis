@@ -17,13 +17,7 @@ echo "$command" | grep -q "^git commit" || exit 0
 branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || exit 0
 [ "$branch" != "main" ] && [ "$branch" != "master" ] && exit 0
 
-# rules/docs のみの変更は例外として許可 (.claude/, .github/, docs/, CLAUDE.md)
-staged=$(git diff --cached --name-only 2>/dev/null)
-[ -z "$staged" ] && { echo "BLOCKED: mainブランチへの直接コミットは禁止です" >&2; exit 2; }
-non_docs=$(echo "$staged" | grep -v "^\.claude/" | grep -v "^\.github/" | grep -v "^docs/" | grep -v "^CLAUDE\.md$" || true)
-[ -z "$non_docs" ] && exit 0
-
-# mainブランチでのcommit → ブロック
+# mainブランチでのcommit → ブロック（branch protection により全変更がPR必須）
 echo "BLOCKED: mainブランチへの直接コミットは禁止です" >&2
 echo "worktreeを作成してください: git worktree add -b feature/name ../garmin-name main" >&2
 exit 2
