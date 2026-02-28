@@ -18,6 +18,11 @@ thin plan の例（不足とみなす）:
 
 例外: プロンプト変更のみ（.claude/agents/, .claude/rules/）→ Interface 省略可。Test Plan は必須。
 
+Risks セクション（任意）:
+- 計画時点で不確実な技術的判断・未検証の前提があれば記載する
+- [検証済] / [未検証] タグで区別し、spike 推奨があればユーザーに判断を仰ぐ
+- リスクなしなら省略可
+
 ## Phase 1: Delegate (実装委任)
 
 サブエージェント(developer, worktree isolation)に以下を含めて委任:

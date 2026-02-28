@@ -18,6 +18,11 @@
   class FooBar:
       def method(self, x: int) -> str: ...
 
+  ### Risks
+  - [検証済] DuckDB の JSON 型は nested object をサポート (v0.9+)
+  - [未検証] Garmin API の rate limit が bulk fetch に影響する可能性
+  - [未検証] time_series_metrics の 2000 行を1クエリで返すとタイムアウトする可能性 → spike 推奨
+
   ### Test Plan
   - [ ] test_method_happy_path [unit] -- x=5 → "5"
   - [ ] test_method_edge_case [unit] -- x=-1 → raises ValueError
