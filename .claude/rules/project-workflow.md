@@ -31,21 +31,17 @@ Type: Implementation | Roadmap
 
 | Type | 条件 | 承認後アクション |
 |------|------|-----------------|
-| Implementation | 単一作業 | worktree → tdd-implementer |
+| Implementation | 単一作業 | worktree → 実装 |
 | Implementation | 分解推奨 | `/decompose` → Epic + Sub-issues |
 | Roadmap | — | `/decompose` → Epic + Sub-issues |
 
 **ユーザーに再確認しない。** 優先度マトリクスあり = その順序で実行承認済み。
-
-### Plan 承認後の実装への引き継ぎ
-
-tdd-implementer に渡す: Issue 番号、プランファイルパス、ワークツリー名の提案。
 
 ### Review Gates
 
 | Gate | Timing | Who | Criteria |
 |------|--------|-----|----------|
 | Design | Issue 作成時 | User (/decompose で確認) | Design セクション完備 |
-| Test Plan | Red phase 後 | 自動 (completion-reporter) | テストが Design をカバー |
+| Test Plan | テスト追加後 | CI + レビュー | テストが Design をカバー |
 | Code | PR ready 後 | User + CI | CI pass + diff 確認 |
 | Merge | /ship --pr | User | 全チェック green |

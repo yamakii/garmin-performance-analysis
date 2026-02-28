@@ -8,7 +8,7 @@
 - DuckDB schema変更 → `PRAGMA table_info` + 実データ型確認
 - MCP tool変更 → 実activity_idで呼び出し、`statistics_only=True/False` 両方テスト
 - Ingest pipeline変更 → 実activity 1件でend-to-end
-- Agent definition変更 → mainマージ → 新セッション → `/analyze-activity YYYY-MM-DD` で検証
+- Agent definition変更 → fixture データで E2E 検証 → mainマージ後の `/analyze-activity` は任意
 
 ## MCP Server Restart (コード変更後)
 

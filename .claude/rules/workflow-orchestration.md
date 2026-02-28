@@ -3,6 +3,7 @@
 ## Plan-First
 - Non-trivial tasks (3+ steps or architectural decisions): plan mode
 - If execution goes sideways: STOP and re-plan. Don't push through with workarounds.
+- Use plan mode for verification steps, not just building
 
 ## Subagent Delegation
 - Offload research/exploration to subagents. Keep main context clean.

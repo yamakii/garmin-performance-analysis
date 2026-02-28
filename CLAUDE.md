@@ -11,7 +11,7 @@ Garmin running performance analysis system with **DuckDB-first architecture** an
 **Key Features:**
 - DuckDB normalized storage (14 tables, 100+ activities)
 - 30+ token-optimized MCP tools (70-98.8% reduction)
-- 7 specialized agents (5 analysis + 2 development)
+- 5 specialized analysis agents
 - Japanese reports (code/docs in English)
 
 **Two Use Cases:**
@@ -149,7 +149,7 @@ garmin-performance-analysis/
 │       │   └── validation/         # Data validation
 │       └── tests/
 ├── .claude/
-│   ├── agents/                     # 5 analysis + 2 dev agents
+│   ├── agents/                     # 5 analysis agents
 │   ├── commands/                   # /analyze-activity, /batch-analyze, /decompose, /project-status, /ship
 │   ├── rules/                      # Shared rules (auto-loaded)
 │   ├── tasks/                      # todo.md, lessons.md (session tracking)
@@ -172,10 +172,6 @@ garmin-performance-analysis/
 3. **summary-section-analyst**: Activity type + overall assessment
 4. **efficiency-section-analyst**: Form (GCT/VO/VR) + HR efficiency
 5. **environment-section-analyst**: Environmental impact (weather, terrain)
-
-**2 Development Agents:**
-- **tdd-implementer**: TDD cycle in worktree (reads design from GitHub Issue)
-- **completion-reporter**: Posts completion report to GitHub Issue + closes it
 
 ### Critical Data Sources
 

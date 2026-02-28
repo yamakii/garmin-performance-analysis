@@ -1,16 +1,16 @@
 # PR Review Rules
 
 ## PR Lifecycle
-- Draft PR: tdd-implementer Phase 1.5 (Red 完了後)
-- Ready: Phase 4.5 (全コミット完了後)
-- Review: completion-reporter の自動レビュー + ユーザー確認
+- Draft PR: 実装初期（テスト追加後）
+- Ready: 全コミット完了後
+- Review: CI + ユーザー確認
 - Merge: /ship --pr (merge commit)
 
 ## Convention
 - 1 PR = 1 Sub-issue (1:1 マッピング)
 - PR title: Conventional Commits 形式
 - PR body: "Closes #{issue}" を含む
-- Merge strategy: merge commit --no-ff (TDD の Red→Green→Refactor 履歴を保持)
+- Merge strategy: merge commit --no-ff
 
 ## Automated Review Checklist
 - 設計カバレッジ: Issue Design の対象ファイル vs 実際の変更ファイル
