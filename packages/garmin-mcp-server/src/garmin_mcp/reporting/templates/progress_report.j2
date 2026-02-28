@@ -1,0 +1,33 @@
+## {{ weeks | length }}週間プログレスレポート ({{ start_date }} ~ {{ end_date }})
+
+**期間**: {{ start_date }} ~ {{ end_date }} | **アクティビティ数**: {{ total_activities }}件
+
+{% if weeks %}
+| 週 | 回数 | 距離 | 平均ペース | 平均HR | Zone 2% | フォームスコア |
+|----|------|------|-----------|--------|---------|-------------|
+{% for week in weeks %}
+| {{ week.label }} | {{ week.run_count }} | {{ week.total_distance_km }}km | {{ week.avg_pace_formatted or "N/A" }} | {{ week.avg_hr or "N/A" }}{% if week.avg_hr %} bpm{% endif %} | {{ week.avg_zone2_pct or "N/A" }}{% if week.avg_zone2_pct %}%{% endif %} | {{ week.avg_form_score or "N/A" }} |
+{% endfor %}
+
+{% if trends %}
+### トレンド ({{ weeks[0].label }} → {{ weeks[-1].label }})
+
+{% if trends.pace_change is defined %}
+- **平均ペース**: {{ trends.pace_change_formatted }}
+{% endif %}
+{% if trends.distance_change_km is defined %}
+- **週間距離**: {{ "+" if trends.distance_change_km >= 0 }}{{ trends.distance_change_km }}km
+{% endif %}
+{% if trends.zone2_change_pp is defined %}
+- **Zone 2比率**: {{ "+" if trends.zone2_change_pp >= 0 }}{{ trends.zone2_change_pp }}pp ({{ weeks[0].avg_zone2_pct }}%→{{ weeks[-1].avg_zone2_pct }}%)
+{% endif %}
+{% if trends.form_score_change is defined %}
+- **フォームスコア**: {{ "+" if trends.form_score_change >= 0 }}{{ trends.form_score_change }} ({{ weeks[0].avg_form_score }}→{{ weeks[-1].avg_form_score }})
+{% endif %}
+{% if trends.hr_change is defined %}
+- **平均HR**: {{ "+" if trends.hr_change >= 0 }}{{ trends.hr_change }} bpm
+{% endif %}
+{% endif %}
+{% else %}
+_対象期間にアクティビティがありません。_
+{% endif %}
