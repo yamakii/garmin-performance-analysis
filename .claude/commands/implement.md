@@ -69,7 +69,7 @@ Implementation Plan:
 各 Issue に対して汎用サブエージェントを worktree で起動:
 
 ```
-Agent(subagent_type="general-purpose", isolation="worktree", prompt="""
+Agent(subagent_type="developer", isolation="worktree", prompt="""
   Issue: #{number}
   Title: {title}
   Implement according to the Issue design.
