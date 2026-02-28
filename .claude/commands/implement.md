@@ -66,10 +66,10 @@ Implementation Plan:
 
 ### Step 4: Tier 0 の並列実装
 
-各 Issue に対して `tdd-implementer` を Task tool で起動:
+各 Issue に対して汎用サブエージェントを worktree で起動:
 
 ```
-Task(subagent_type="tdd-implementer", isolation="worktree", prompt="""
+Agent(subagent_type="general-purpose", isolation="worktree", prompt="""
   Issue: #{number}
   Title: {title}
   Implement according to the Issue design.
@@ -77,15 +77,14 @@ Task(subagent_type="tdd-implementer", isolation="worktree", prompt="""
 """)
 ```
 
-**並列起動:** Tier 0 の全 Issue を同時に Task tool で起動（独立しているため並列安全）。
+**並列起動:** Tier 0 の全 Issue を同時に Agent tool で起動（独立しているため並列安全）。
 
 ### Step 5: 完了報告 & マージ待ち
 
-各 tdd-implementer 完了後:
+各サブエージェント完了後:
 
-1. `completion-reporter` を起動（PR レポート + 自動レビュー）
-2. ユーザーに PR URL を提示
-3. `/ship --pr N` でのマージを待つ
+1. ユーザーに PR URL を提示
+2. `/ship --pr N` でのマージを待つ
 
 ```
 Tier 0 results:
@@ -119,11 +118,11 @@ All implementations complete for Epic #{epic}:
 
 ## DuckDB 並列安全性
 
-- tdd-implementer はテスト時 mock DB を使用 → 並列 OK
+- 実装はテスト時 mock DB を使用 → 並列 OK
 - DB schema migration が必要な PR → マージは順次（依存関係で自然に制御）
 
 ## Notes
 
 - マージ判断は常にユーザー（自動マージしない）
-- 各 PR の completion-reporter 完了時に PR URL を提示
+- 各 PR 完了時に PR URL を提示
 - コンフリクト発生時: `git rebase origin/main && git push --force-with-lease`

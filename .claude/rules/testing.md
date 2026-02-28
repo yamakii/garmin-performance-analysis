@@ -54,4 +54,3 @@ See `docs/testing_guidelines.md` for detailed patterns and examples.
 
 - Issue Test Plan で指定された `test_xxx` 関数名はそのまま使用する
 - 実装中に発見した追加テストは Issue body にも反映する（issue-sync）
-- completion-reporter が関数名の exact match で検証する
