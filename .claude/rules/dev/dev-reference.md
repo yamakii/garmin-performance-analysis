@@ -66,13 +66,11 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 
 迷ったら L2。L3 は agent 定義変更時のみ。
 
-### 検証フロー (`analysis/` ワークスペース)
+### 検証フロー (FIFO キュー + Validation Agent)
 
-1. `analysis/.env` に `GARMIN_MCP_SERVER_DIR=/path/to/worktree/packages/garmin-mcp-server`
-2. Fixture DB: `GARMIN_DATA_DIR=analysis/data uv run python -m garmin_mcp.scripts.regenerate_duckdb --activity-ids 12345678901 --force`
-3. L1: MCP tool 呼び出し → 非null、型一致、値範囲チェック (pace 3:00-9:00, HR 80-200)
-4. L2: L1 + `uv run pytest -m integration --tb=short -q`
-5. L3: `cd analysis/ && claude -p "/analyze-activity 2025-10-09"` + 構造/内容チェック
+1. L1: `reload_server(server_dir=worktree_path)` → MCP tool 呼び出し → 非null、型一致、値範囲チェック (pace 3:00-9:00, HR 80-200) → `reload_server()` で復帰
+2. L2: L1 + worktree 内で `uv run pytest -m integration --tb=short -q`
+3. L3: L2 + Validation Agent で `/analyze-activity` 実行 + 構造/内容チェック（詳細は `worktree-validation-protocol.md`）
 
 ### L3 検証基準
 

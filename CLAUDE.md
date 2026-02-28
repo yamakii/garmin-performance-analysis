@@ -89,17 +89,9 @@ Key rules (auto-loaded from `.claude/rules/dev/`):
 - `implementation-workflow.md` — delegate → verify → ship (手続き的ワークフロー)
 - `dev-reference.md` — git, testing, code quality, architecture, validation (参照辞書)
 
-### Analysis Workspace (検証用)
+### Worktree 検証
 
-`analysis/` ディレクトリで分析専用ワークスペースを提供。worktree 検証時に使用:
-```bash
-# 1. analysis/.env に worktree パスを設定
-echo 'GARMIN_MCP_SERVER_DIR=/path/to/worktree/packages/garmin-mcp-server' > analysis/.env
-# 2. fixture DB 生成
-GARMIN_DATA_DIR=analysis/data uv run python -m garmin_mcp.scripts.regenerate_duckdb --activity-ids 12345678901 --force
-# 3. E2E 検証
-cd analysis/ && claude -p "/analyze-activity 2025-10-09"
-```
+FIFO キュー + Validation Agent 方式。詳細は `.claude/rules/dev/worktree-validation-protocol.md` を参照。
 
 ### Quick Commands
 | Command | Purpose |

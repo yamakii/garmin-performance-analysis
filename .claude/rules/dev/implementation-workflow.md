@@ -50,7 +50,7 @@ thin plan の例（不足とみなす）:
 |-------|---------|---------|
 | L1 | `uv run pytest {test_path} -m unit -v` | 0 failures |
 | L2 | L1 + `uv run pytest -m integration --tb=short -q` | 0 failures |
-| L3 | L2 + `cd analysis/ && claude -p "/analyze-activity 2025-10-09"` | 該当セクション出力あり |
+| L3 | L2 + Validation Agent（foreground）で `reload_server` → `/analyze-activity` 実行 | analysis_data 非null + 必須フィールド存在 |
 
 **CRITICAL**: テスト結果は自分のターンで確認する。サブエージェントの報告を信じない。
 

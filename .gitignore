@@ -88,12 +88,3 @@ build/
 
 # Serena MCP
 .serena/
-
-# Analysis workspace
-analysis/.env
-analysis/data/raw/
-analysis/data/database/*.duckdb
-analysis/data/database/*.duckdb.wal
-analysis/result/*
-!analysis/data/database/.gitkeep
-!analysis/result/.gitkeep
