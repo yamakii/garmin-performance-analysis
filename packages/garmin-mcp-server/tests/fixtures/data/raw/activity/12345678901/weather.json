@@ -1,0 +1,12 @@
+{
+  "temp": 50,
+  "apparentTemp": 46,
+  "dewPoint": 37,
+  "relativeHumidity": 65,
+  "windSpeed": 12,
+  "windDirectionCompassPoint": "NW",
+  "weatherStationDTO": {
+    "id": "RJTT",
+    "name": "Tokyo International Airport"
+  }
+}
