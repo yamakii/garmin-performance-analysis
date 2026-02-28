@@ -5,7 +5,23 @@
 ## 1. Project Workflow
 
 - **Issue必須**: 全開発タスクで Issue 作成。Issue なし実装は禁止
-- **Plan冒頭**: `Issue: #{number} | TBD` + `Type: Implementation | Roadmap` + `Validation Level: L1|L2|L3|skip`
+- **Plan構造**（thin plan は Phase 0 でブロック）:
+  ```
+  Issue: #{number} | TBD
+  Type: Implementation | Roadmap
+  Validation Level: L1 | L2 | L3 | skip
+
+  ### Files to Create/Modify
+  - `packages/.../foo.py` -- new | modify
+
+  ### Interface
+  class FooBar:
+      def method(self, x: int) -> str: ...
+
+  ### Test Plan
+  - [ ] test_method_happy_path [unit] -- x=5 → "5"
+  - [ ] test_method_edge_case [unit] -- x=-1 → raises ValueError
+  ```
 - **Plan承認後**: Issue作成(TBD時) → Issue sync → worktree実装 or `/decompose`。再確認不要
 - **Review Gates**: Design → Test Plan → Code(CI) → Validation → Merge(`/ship --pr`)
 
@@ -13,6 +29,16 @@
 
 Issue body の Design/Test Plan は常に最新を反映。Change Log に `(Plan):`, `(Build):`, `(Done):`, `(Ship):` で追記。
 Skip: Design セクションなし、Issue番号不明、dry-run時。
+
+### design-approved 品質基準
+
+`/implement` が `design-approved` ラベルでフィルタする際の品質基準:
+- Test Plan に test_xxx 形式の関数名がある
+- 各テストに [unit|integration] マーカーがある
+- 入力値・期待値が具体的（数値 or 文字列）
+- 新規クラス/関数 → Interface にシグネチャがある
+
+満たさない → ラベルを外し、Issue コメントで補完を依頼。
 
 ## 2. Git & Branching
 
