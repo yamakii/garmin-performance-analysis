@@ -127,7 +127,7 @@ If `--close` is specified, or PR body contains `Closes #N`:
         # - YYYY-MM-DD (Ship): Closed via /ship
         printf '%s' "$NEW_BODY" | gh issue edit {number} --body-file -
         ```
-      - If `gh issue edit` fails → warn and proceed (best-effort, see `.claude/rules/dev/dev-standards.md`)
+      - If `gh issue edit` fails → warn and proceed (best-effort, see `.claude/rules/dev/dev-reference.md`)
 
    b. **Close the Issue**:
       ```bash

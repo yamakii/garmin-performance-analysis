@@ -1,6 +1,6 @@
-# Development Standards
+# Development Reference
 
-Consolidated reference for all dev rules. `workflow-orchestration.md` is the primary orchestration guide.
+参照用辞書。手続き的ワークフローは `implementation-workflow.md` を参照。
 
 ## 1. Project Workflow
 
