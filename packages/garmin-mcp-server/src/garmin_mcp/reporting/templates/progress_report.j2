@@ -1,0 +1,28 @@
+## {{ title }}
+
+**期間:** {{ start_date }} ~ {{ end_date }}
+
+{% if weeks %}
+| 週 | 距離 | 平均ペース | Zone 2% | フォームスコア | ラン数 |
+|----|------|-----------|---------|---------------|--------|
+{% for week in weeks %}
+| {{ week.week_label }} | {{ "%.1f"|format(week.distance_km) }}km | {{ week.avg_pace_formatted }} | {{ "%.1f"|format(week.zone2_pct) }}% | {{ "%.1f"|format(week.form_score) }} | {{ week.num_activities }} |
+{% endfor %}
+{% else %}
+_この期間にアクティビティはありません。_
+{% endif %}
+
+{% if trends %}
+### トレンド
+
+{% if trends.pace_change is defined and trends.pace_change != 0 %}
+- **平均ペース:** {{ "%+.0f"|format(trends.pace_change) }}秒/km {% if trends.pace_change < 0 %}(改善){% elif trends.pace_change > 0 %}(低下){% endif %}
+
+{% endif %}
+{% if trends.zone2_change is defined and trends.zone2_change != 0 %}
+- **Zone 2比率:** {{ "%+.1f"|format(trends.zone2_change) }}pp ({{ "%.1f"|format(weeks[0].zone2_pct) }}% → {{ "%.1f"|format(weeks[-1].zone2_pct) }}%)
+{% endif %}
+{% if trends.form_change is defined and trends.form_change != 0 %}
+- **フォームスコア:** {{ "%+.1f"|format(trends.form_change) }} ({{ "%.1f"|format(weeks[0].form_score) }} → {{ "%.1f"|format(weeks[-1].form_score) }})
+{% endif %}
+{% endif %}
