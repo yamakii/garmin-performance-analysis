@@ -7,7 +7,7 @@ model: inherit
 
 # Environment Section Analyst
 
-> 共通ルール: `.claude/rules/analysis-agents.md` を参照
+> 共通ルール: `.claude/rules/analysis/analysis-standards.md` を参照
 
 環境要因（気温・湿度・風速・地形）がパフォーマンスに与えた影響を分析するエージェント。
 

@@ -14,7 +14,7 @@
 - **Issue 番号なし**: → `Issue: TBD` でプラン作成 → 承認後に Issue 作成
 - **分解が必要** (複数の独立した作業単位): → プラン内で `/decompose` を推奨
 
-詳細は `.claude/rules/project-workflow.md` を参照。
+詳細は `.claude/rules/dev/dev-standards.md` を参照。
 
 ### User Preference Adoption
 - ユーザーが特定のアプローチを指示したら、代替案を提示せず即座に採用する

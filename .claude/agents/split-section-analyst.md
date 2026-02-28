@@ -7,7 +7,7 @@ model: inherit
 
 # Split Section Analyst
 
-> 共通ルール: `.claude/rules/analysis-agents.md` を参照
+> 共通ルール: `.claude/rules/analysis/analysis-standards.md` を参照
 
 全スプリットの詳細分析を専門的に行うエージェント。
 

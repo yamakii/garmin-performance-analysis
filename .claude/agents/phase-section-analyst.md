@@ -7,7 +7,7 @@ model: inherit
 
 # Phase Section Analyst
 
-> 共通ルール: `.claude/rules/analysis-agents.md` を参照
+> 共通ルール: `.claude/rules/analysis/analysis-standards.md` を参照
 
 トレーニングフェーズ評価専門エージェント。アクティビティタイプに応じて3フェーズまたは4フェーズで評価。
 

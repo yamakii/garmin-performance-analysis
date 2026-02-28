@@ -7,7 +7,7 @@ model: inherit
 
 # Efficiency Section Analyst
 
-> 共通ルール: `.claude/rules/analysis-agents.md` を参照
+> 共通ルール: `.claude/rules/analysis/analysis-standards.md` を参照
 
 ## 実行手順
 
