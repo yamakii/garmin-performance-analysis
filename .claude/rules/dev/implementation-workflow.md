@@ -20,7 +20,7 @@ thin plan の例（不足とみなす）:
 
 ## Phase 1: Delegate (実装委任)
 
-サブエージェント(general-purpose, worktree isolation)に以下を含めて委任:
+サブエージェント(developer, worktree isolation)に以下を含めて委任:
 - Issue 番号と `gh issue view` 実行指示
 - プランの実装手順（そのまま渡す）
 - 実装前確認（コードを書く前に出力させる）:
