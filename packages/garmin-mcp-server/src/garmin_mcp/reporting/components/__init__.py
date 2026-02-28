@@ -8,6 +8,7 @@ from garmin_mcp.reporting.components.formatting import (
     get_activity_type_display,
     get_training_type_category,
 )
+from garmin_mcp.reporting.components.goal_progress_tracker import GoalProgressTracker
 from garmin_mcp.reporting.components.insight_generator import InsightGenerator
 from garmin_mcp.reporting.components.next_run_calculator import NextRunCalculator
 from garmin_mcp.reporting.components.physiological_calculator import (
@@ -17,6 +18,7 @@ from garmin_mcp.reporting.components.workout_comparator import WorkoutComparator
 
 __all__ = [
     "ChartGenerator",
+    "GoalProgressTracker",
     "InsightGenerator",
     "NextRunCalculator",
     "PhysiologicalCalculator",
