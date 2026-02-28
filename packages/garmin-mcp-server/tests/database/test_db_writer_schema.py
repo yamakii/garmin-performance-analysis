@@ -220,3 +220,100 @@ class TestDBWriterSchema:
             # Verify date is NOT NULL
             date_col = [c for c in columns if c[0] == "date"][0]
             assert date_col[2] == "NO", "date column should be NOT NULL"
+
+    @pytest.mark.unit
+    def test_ensure_tables_creates_all_tables(self):
+        """Test that _ensure_tables() creates all 15 tables (13 existing + training_plans + planned_workouts)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test.duckdb"
+            writer = GarminDBWriter(db_path=str(db_path))
+
+            writer._ensure_tables()
+
+            conn = duckdb.connect(str(db_path))
+            tables = conn.execute(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
+            ).fetchall()
+            table_names = [t[0] for t in tables]
+            conn.close()
+
+            expected_tables = [
+                "activities",
+                "splits",
+                "form_efficiency",
+                "heart_rate_zones",
+                "hr_efficiency",
+                "performance_trends",
+                "vo2_max",
+                "lactate_threshold",
+                "body_composition",
+                "form_baseline_history",
+                "form_evaluations",
+                "section_analyses",
+                "time_series_metrics",
+                "training_plans",
+                "planned_workouts",
+            ]
+            for table in expected_tables:
+                assert (
+                    table in table_names
+                ), f"{table} table should be created by _ensure_tables()"
+
+            assert len(expected_tables) == 15, "Expected 15 tables total"
+
+    @pytest.mark.unit
+    def test_training_plans_insert_without_prior_create(self):
+        """Test that insert_training_plan() works after _ensure_tables() without its own CREATE TABLE."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test.duckdb"
+            GarminDBWriter(db_path=str(db_path))
+
+            # _ensure_tables() is called in __init__, tables should already exist
+            conn = duckdb.connect(str(db_path))
+
+            # Verify training_plans and planned_workouts exist
+            tables = conn.execute(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
+            ).fetchall()
+            table_names = [t[0] for t in tables]
+            assert "training_plans" in table_names
+            assert "planned_workouts" in table_names
+
+            # Verify we can insert into training_plans directly (no CREATE TABLE needed)
+            conn.execute("""
+                INSERT INTO training_plans (
+                    plan_id, version, goal_type, vdot, pace_zones_json,
+                    total_weeks, start_date, weekly_volume_start_km,
+                    weekly_volume_peak_km, runs_per_week
+                ) VALUES (
+                    'test-plan', 1, 'base_building', 45.0, '{}',
+                    8, '2026-03-01', 30.0, 40.0, 4
+                )
+            """)
+            result = conn.execute(
+                "SELECT COUNT(*) FROM training_plans WHERE plan_id = 'test-plan'"
+            ).fetchone()
+            assert result is not None
+            assert (
+                result[0] == 1
+            ), "Should be able to insert into training_plans after _ensure_tables()"
+
+            # Verify we can insert into planned_workouts directly
+            conn.execute("""
+                INSERT INTO planned_workouts (
+                    workout_id, plan_id, version, week_number, day_of_week,
+                    workout_type, phase
+                ) VALUES (
+                    'test-workout-1', 'test-plan', 1, 1, 1,
+                    'easy', 'base'
+                )
+            """)
+            result = conn.execute(
+                "SELECT COUNT(*) FROM planned_workouts WHERE workout_id = 'test-workout-1'"
+            ).fetchone()
+            assert result is not None
+            assert (
+                result[0] == 1
+            ), "Should be able to insert into planned_workouts after _ensure_tables()"
+
+            conn.close()
