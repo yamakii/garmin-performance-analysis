@@ -49,3 +49,9 @@ See `docs/testing_guidelines.md` for detailed patterns and examples.
 - **DB schema initialization**: Use `initialized_db_path` fixture from `inserters/conftest.py` (~0.6ms file copy) instead of `GarminDBWriter()` per test (~50ms DDL).
 - **No `GarminDBWriter` in inserter test bodies**: Always use the shared template fixture.
 - **Parallel safety**: Tests must not depend on execution order. Use unique `activity_id` per test for DB isolation.
+
+## Test Naming Convention (Issue Traceability)
+
+- Issue Test Plan で指定された `test_xxx` 関数名はそのまま使用する
+- 実装中に発見した追加テストは Issue body にも反映する（issue-sync）
+- completion-reporter が関数名の exact match で検証する

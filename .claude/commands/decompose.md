@@ -29,6 +29,14 @@ mcp__serena__activate_project("/home/yamakii/workspace/garmin-performance-analys
 3. `mcp__serena__search_for_pattern` でパターン検索
 4. 影響範囲と変更の複雑さを評価
 
+**Test Plan 作成時のルール:**
+- Design Interface に記載した各関数・メソッドに対して最低1ケース
+- happy path + error/edge case を各1つ以上
+- テスト関数名は `test_{what}` 形式で明示
+- scenario は具体値を含む（「不正データ」ではなく「distance=-1.0」）
+- `[marker]` は `@pytest.mark.*` に直結（unit/integration/performance）
+- `--` の左 = Given/When (setup)、`→` の右 = Then (assertion)
+
 ### Step 3: 分解判定
 
 調査結果から規模を判定:
@@ -108,8 +116,13 @@ Part of #{Epic番号}: {Epic タイトル}
 {主要なクラス・関数のシグネチャ}
 
 ## Test Plan
-- [ ] Unit: {テスト項目}
-- [ ] Integration: {テスト項目}
+
+### `ClassName.method_name()`
+- [ ] `test_scenario_happy_path` [unit] -- {setup/input} → {expected outcome}
+- [ ] `test_scenario_edge_case` [unit] -- {setup/input} → {expected outcome}
+
+### Integration
+- [ ] `test_e2e_scenario` [integration] -- {setup} → {assertion}
 
 ## Dependencies
 - Blocks: #{依存先のsub-issue番号}
@@ -164,7 +177,10 @@ gh issue create \
 {簡潔な設計}
 
 ## Test Plan
-- [ ] {テスト項目}
+
+### `function_or_class()`
+- [ ] `test_happy_path` [unit] -- {setup/input} → {expected outcome}
+- [ ] `test_edge_case` [unit] -- {setup/input} → {expected outcome}
 EOF
 )"
 ```
