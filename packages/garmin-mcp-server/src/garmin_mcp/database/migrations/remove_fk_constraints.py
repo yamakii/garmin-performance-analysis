@@ -18,8 +18,6 @@ from typing import Any
 
 import duckdb
 
-from garmin_mcp.database.connection import get_write_connection
-
 
 def _backup_tables(conn: duckdb.DuckDBPyConnection, tables: list[str]) -> None:
     """Create backup tables using CTAS (CREATE TABLE AS SELECT).
@@ -45,22 +43,6 @@ def _drop_old_tables(conn: duckdb.DuckDBPyConnection, tables: list[str]) -> None
     """
     for table in tables:
         conn.execute(f"DROP TABLE {table}")
-
-
-def _create_new_tables(conn: duckdb.DuckDBPyConnection, tables: list[str]) -> None:
-    """Create new tables without FK constraints.
-
-    Args:
-        conn: DuckDB connection
-        tables: List of table names to create
-    """
-    # Table schemas without FK constraints
-    schemas = _get_table_schemas_without_fk()
-
-    for table in tables:
-        if table not in schemas:
-            raise ValueError(f"Unknown table: {table}")
-        conn.execute(schemas[table])
 
 
 def _restore_data(conn: duckdb.DuckDBPyConnection, tables: list[str]) -> None:
@@ -155,228 +137,6 @@ def _cleanup_backup_tables(conn: duckdb.DuckDBPyConnection, tables: list[str]) -
         conn.execute(f"DROP TABLE {backup_table}")
 
 
-def _get_table_schemas_without_fk() -> dict[str, str]:
-    """Return CREATE TABLE statements without FK constraints.
-
-    Returns:
-        Dict mapping table names to CREATE TABLE SQL
-    """
-    return {
-        "splits": """
-            CREATE TABLE splits (
-                activity_id BIGINT,
-                split_index INTEGER,
-                distance DOUBLE,
-                duration_seconds DOUBLE,
-                start_time_gmt VARCHAR,
-                start_time_s INTEGER,
-                end_time_s INTEGER,
-                intensity_type VARCHAR,
-                role_phase VARCHAR,
-                pace_str VARCHAR,
-                pace_seconds_per_km DOUBLE,
-                heart_rate INTEGER,
-                hr_zone VARCHAR,
-                cadence DOUBLE,
-                cadence_rating VARCHAR,
-                power DOUBLE,
-                power_efficiency VARCHAR,
-                stride_length DOUBLE,
-                ground_contact_time DOUBLE,
-                vertical_oscillation DOUBLE,
-                vertical_ratio DOUBLE,
-                elevation_gain DOUBLE,
-                elevation_loss DOUBLE,
-                terrain_type VARCHAR,
-                environmental_conditions VARCHAR,
-                wind_impact VARCHAR,
-                temp_impact VARCHAR,
-                environmental_impact VARCHAR,
-                PRIMARY KEY (activity_id, split_index)
-            )
-        """,
-        "form_efficiency": """
-            CREATE TABLE form_efficiency (
-                activity_id BIGINT PRIMARY KEY,
-                gct_average DOUBLE,
-                gct_min DOUBLE,
-                gct_max DOUBLE,
-                gct_std DOUBLE,
-                gct_variability DOUBLE,
-                gct_rating VARCHAR,
-                gct_evaluation VARCHAR,
-                vo_average DOUBLE,
-                vo_min DOUBLE,
-                vo_max DOUBLE,
-                vo_std DOUBLE,
-                vo_trend VARCHAR,
-                vo_rating VARCHAR,
-                vo_evaluation VARCHAR,
-                vr_average DOUBLE,
-                vr_min DOUBLE,
-                vr_max DOUBLE,
-                vr_std DOUBLE,
-                vr_rating VARCHAR,
-                vr_evaluation VARCHAR
-            )
-        """,
-        "heart_rate_zones": """
-            CREATE TABLE heart_rate_zones (
-                activity_id BIGINT,
-                zone_number INTEGER,
-                zone_low_boundary INTEGER,
-                zone_high_boundary INTEGER,
-                time_in_zone_seconds DOUBLE,
-                zone_percentage DOUBLE,
-                PRIMARY KEY (activity_id, zone_number)
-            )
-        """,
-        "hr_efficiency": """
-            CREATE TABLE hr_efficiency (
-                activity_id BIGINT PRIMARY KEY,
-                primary_zone VARCHAR,
-                zone_distribution_rating VARCHAR,
-                hr_stability VARCHAR,
-                aerobic_efficiency VARCHAR,
-                training_quality VARCHAR,
-                zone2_focus BOOLEAN,
-                zone4_threshold_work BOOLEAN,
-                training_type VARCHAR,
-                zone1_percentage DOUBLE,
-                zone2_percentage DOUBLE,
-                zone3_percentage DOUBLE,
-                zone4_percentage DOUBLE,
-                zone5_percentage DOUBLE
-            )
-        """,
-        "performance_trends": """
-            CREATE TABLE performance_trends (
-                activity_id BIGINT PRIMARY KEY,
-                pace_consistency DOUBLE,
-                hr_drift_percentage DOUBLE,
-                cadence_consistency VARCHAR,
-                fatigue_pattern VARCHAR,
-                warmup_splits VARCHAR,
-                warmup_avg_pace_seconds_per_km DOUBLE,
-                warmup_avg_pace_str VARCHAR,
-                warmup_avg_hr DOUBLE,
-                warmup_avg_cadence DOUBLE,
-                warmup_avg_power DOUBLE,
-                warmup_evaluation VARCHAR,
-                run_splits VARCHAR,
-                run_avg_pace_seconds_per_km DOUBLE,
-                run_avg_pace_str VARCHAR,
-                run_avg_hr DOUBLE,
-                run_avg_cadence DOUBLE,
-                run_avg_power DOUBLE,
-                run_evaluation VARCHAR,
-                recovery_splits VARCHAR,
-                recovery_avg_pace_seconds_per_km DOUBLE,
-                recovery_avg_pace_str VARCHAR,
-                recovery_avg_hr DOUBLE,
-                recovery_avg_cadence DOUBLE,
-                recovery_avg_power DOUBLE,
-                recovery_evaluation VARCHAR,
-                cooldown_splits VARCHAR,
-                cooldown_avg_pace_seconds_per_km DOUBLE,
-                cooldown_avg_pace_str VARCHAR,
-                cooldown_avg_hr DOUBLE,
-                cooldown_avg_cadence DOUBLE,
-                cooldown_avg_power DOUBLE,
-                cooldown_evaluation VARCHAR
-            )
-        """,
-        "vo2_max": """
-            CREATE TABLE vo2_max (
-                activity_id BIGINT PRIMARY KEY,
-                precise_value DOUBLE,
-                value DOUBLE,
-                date DATE,
-                category INTEGER
-            )
-        """,
-        "lactate_threshold": """
-            CREATE TABLE lactate_threshold (
-                activity_id BIGINT PRIMARY KEY,
-                heart_rate INTEGER,
-                speed_mps DOUBLE,
-                date_hr TIMESTAMP,
-                functional_threshold_power INTEGER,
-                power_to_weight DOUBLE,
-                weight DOUBLE,
-                date_power TIMESTAMP
-            )
-        """,
-        "form_evaluations": """
-            CREATE TABLE form_evaluations (
-                eval_id INTEGER PRIMARY KEY,
-                activity_id BIGINT UNIQUE,
-
-                gct_ms_expected FLOAT,
-                vo_cm_expected FLOAT,
-                vr_pct_expected FLOAT,
-
-                gct_ms_actual FLOAT,
-                vo_cm_actual FLOAT,
-                vr_pct_actual FLOAT,
-
-                gct_delta_pct FLOAT,
-                vo_delta_cm FLOAT,
-                vr_delta_pct FLOAT,
-
-                gct_penalty FLOAT,
-                gct_star_rating VARCHAR,
-                gct_score FLOAT,
-                gct_needs_improvement BOOLEAN,
-                gct_evaluation_text TEXT,
-
-                vo_penalty FLOAT,
-                vo_star_rating VARCHAR,
-                vo_score FLOAT,
-                vo_needs_improvement BOOLEAN,
-                vo_evaluation_text TEXT,
-
-                vr_penalty FLOAT,
-                vr_star_rating VARCHAR,
-                vr_score FLOAT,
-                vr_needs_improvement BOOLEAN,
-                vr_evaluation_text TEXT,
-
-                cadence_actual FLOAT,
-                cadence_minimum INTEGER DEFAULT 180,
-                cadence_achieved BOOLEAN,
-
-                overall_score FLOAT,
-                overall_star_rating VARCHAR,
-
-                power_avg_w FLOAT,
-                power_wkg FLOAT,
-                speed_actual_mps FLOAT,
-                speed_expected_mps FLOAT,
-                power_efficiency_score FLOAT,
-                power_efficiency_rating VARCHAR,
-                power_efficiency_needs_improvement BOOLEAN,
-                integrated_score FLOAT,
-                training_mode VARCHAR,
-
-                evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """,
-        "section_analyses": """
-            CREATE TABLE section_analyses (
-                analysis_id INTEGER PRIMARY KEY,
-                activity_id BIGINT NOT NULL,
-                activity_date DATE NOT NULL,
-                section_type VARCHAR NOT NULL,
-                analysis_data VARCHAR,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                agent_name VARCHAR,
-                agent_version VARCHAR
-            )
-        """,
-    }
-
-
 def migrate_remove_fk_constraints(
     db_path: str, dry_run: bool = False
 ) -> dict[str, Any]:
@@ -419,36 +179,10 @@ def migrate_remove_fk_constraints(
         print("8. COMMIT")
         return {"status": "dry_run", "tables": tables_to_migrate}
 
-    with get_write_connection(db_path) as conn:
-        try:
-            conn.execute("BEGIN TRANSACTION")
-
-            # 1. Backup
-            _backup_tables(conn, tables_to_migrate)
-
-            # 2. Drop old tables
-            _drop_old_tables(conn, tables_to_migrate)
-
-            # 3. Create new tables without FK
-            _create_new_tables(conn, tables_to_migrate)
-
-            # 4. Restore data
-            _restore_data(conn, tables_to_migrate)
-
-            # 5. Verify data integrity
-            verification_results = _verify_data_integrity(conn, tables_to_migrate)
-
-            # 6. Cleanup backup tables
-            _cleanup_backup_tables(conn, tables_to_migrate)
-
-            conn.execute("COMMIT")
-
-            return {
-                "status": "success",
-                "tables": tables_to_migrate,
-                "verification": verification_results,
-            }
-
-        except Exception as e:
-            conn.execute("ROLLBACK")
-            raise Exception(f"Migration failed: {e}") from e
+    # This function is deprecated. The migration runner uses _wrap_remove_fk
+    # (no-op) instead. DDL schemas are centralized in db_writer._ensure_tables().
+    raise NotImplementedError(
+        "migrate_remove_fk_constraints is deprecated. "
+        "DDL is now centralized in db_writer._ensure_tables(). "
+        "The migration runner uses _wrap_remove_fk (no-op) instead."
+    )

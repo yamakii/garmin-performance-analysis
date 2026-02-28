@@ -74,7 +74,11 @@ def _make_plan(
 class TestInsertTrainingPlanVersioning:
     @pytest.fixture
     def db_path(self, tmp_path):
-        return str(tmp_path / "test.duckdb")
+        from garmin_mcp.database.db_writer import GarminDBWriter
+
+        path = str(tmp_path / "test.duckdb")
+        GarminDBWriter(db_path=path)  # Creates all tables via _ensure_tables()
+        return path
 
     def test_new_plan_has_version_1(self, db_path):
         """New plan should be saved with version=1."""
