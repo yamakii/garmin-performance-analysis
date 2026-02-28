@@ -5,6 +5,7 @@
 - Edit code without Serena MCP
 - Implement on main branch (use worktree for code changes)
 - `git worktree remove --force` without checking status
+- Push directly to main (branch protection enabled — all changes require PR)
 - Force push to main/master
 - 複数の無関係な変更を1コミットに混在させる
 
