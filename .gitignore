@@ -74,6 +74,11 @@ tmp/*
 
 # Project specific - Local settings
 .claude/settings.local.json
+.claude/tasks/
+.mcp.json
+
+# Package-level data (runtime-generated)
+packages/garmin-mcp-server/data/
 
 # Distribution / packaging
 dist/

@@ -6,7 +6,10 @@
 - Use plan mode for verification steps, not just building
 
 ## Subagent Delegation
-- Offload research/exploration to subagents. Keep main context clean.
+- **実装もエージェントに委任する** — 手動実装よりエージェント委任を常に優先
+- 単一 issue: general-purpose agent (worktree isolation) に実装を委任
+- 複数 sub-issue: `/implement` で並列エージェント実行
+- Research/exploration: Explore agent で調査、main context を軽く保つ
 - One focused task per subagent.
 - Complex problems: throw more compute at it via parallel subagents.
 
