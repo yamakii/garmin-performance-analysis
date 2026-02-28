@@ -97,6 +97,11 @@ GitHub Issue に記載された設計に基づき、Test-Driven Development（Re
 
 1. **Issue の Test Plan からテストケース抽出**
    - Issue body の `## Test Plan` セクションを参照
+   - 各 `test_xxx` 関数名をそのまま使用する（名前を変更しない）
+   - `[marker]` に対応する `@pytest.mark.*` を付与
+   - `--` の左側がテストの setup/Given、`→` の右側が assertion/Then
+   - Test Plan に記載のないテストは追加可能（発見した edge case 等）
+     → その場合、Phase 4 の Issue sync で Test Plan にも追記する
 
 2. **テストファイル作成**
    ```python

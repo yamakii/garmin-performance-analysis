@@ -131,11 +131,16 @@ gh issue comment {ISSUE_NUMBER} --body "Implementation complete. Review PR: #${P
    git diff --name-only main...HEAD
    ```
 
-2. **テスト計画カバレッジ**: Issue Test Plan のチェックボックス項目 vs 実際のテスト関数名を比較
+2. **テスト計画カバレッジ** (exact matching):
    ```bash
-   # Issue body の Test Plan セクションからチェック項目を抽出
-   # テストファイルから実際のテスト関数名を取得
-   uv run pytest --collect-only -q 2>/dev/null | head -30
+   # a. Issue body から `test_xxx` パターンで関数名を全て抽出
+   gh issue view {ISSUE_NUMBER} --json body --jq '.body' | grep -oP '`(test_\w+)`' | tr -d '`' | sort -u
+
+   # b. 実際のテスト関数名を取得
+   uv run pytest --collect-only -q 2>/dev/null | grep '::test_' | sed 's/.*::test_/test_/' | sort -u
+
+   # c. Exact match で比較
+   # Missing = Issue にあるが実装にない、Extra = 実装にあるが Issue にない
    ```
 
 3. **CI ステータス**: `gh pr checks {PR_NUMBER}` で確認
@@ -151,12 +156,18 @@ gh pr comment {PR_NUMBER} --body "$(cat <<'EOF'
 - Unexpected changes: {list or "none"}
 
 ### Test Plan Coverage
-- Plan items: {n}, Tests written: {n} ({percentage}%)
+| Status | Count | Details |
+|--------|-------|---------|
+| Specified | {N} | Issue Test Plan の test cases |
+| Implemented | {M} | 関数名一致 |
+| Missing | {K} | `test_foo`, `test_bar` |
+| Extra | {E} | 実装で追加 (informational) |
 
 ### CI Status
 {pass/fail details}
 
 ### Verdict: {READY FOR MERGE / NEEDS ATTENTION}
+<!-- Missing > 0 → Verdict: NEEDS ATTENTION -->
 EOF
 )"
 ```
