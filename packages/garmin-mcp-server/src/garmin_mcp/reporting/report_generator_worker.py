@@ -26,6 +26,7 @@ from garmin_mcp.reporting.components.physiological_calculator import (
 from garmin_mcp.reporting.components.workout_comparator import (
     WorkoutComparator,
 )
+from garmin_mcp.reporting.quality_gate import QualityGate
 from garmin_mcp.reporting.report_template_renderer import ReportTemplateRenderer
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,7 @@ class ReportGeneratorWorker:
         self._physiological_calculator = PhysiologicalCalculator(self.db_reader)
         self._workout_comparator = WorkoutComparator(self.db_reader)
         self._insight_generator = InsightGenerator()
+        self._quality_gate = QualityGate()
 
     # =========================================================================
     # Delegating methods (backward-compatible thin wrappers)
@@ -280,6 +282,9 @@ class ReportGeneratorWorker:
                 f"No section analyses found for activity {activity_id}. Cannot generate report."
             )
 
+        # Run advisory quality gate (warnings only, never blocks)
+        quality_result = self._quality_gate.validate(section_analyses)
+
         # Load splits data for split analysis
         splits_data = self.load_splits_data(activity_id)
 
@@ -423,6 +428,7 @@ class ReportGeneratorWorker:
             "date": date,
             "report_path": save_result["path"],
             "timestamp": datetime.now().isoformat(),
+            "quality_warnings": quality_result["warnings"],
         }
 
 
