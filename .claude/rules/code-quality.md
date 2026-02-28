@@ -5,9 +5,9 @@
 - **black**: Code formatting (line-length=88)
 - **ruff**: Linting (rules: E, F, W, I, UP, B, SIM, RUF)
 - **mypy**: Type checking (python 3.12, strict optional)
-- **pytest**: Unit tests (`-m unit`)
-
 Source of truth for all settings: `pyproject.toml`
+
+Tests are verified via CI and local manual execution (`uv run pytest -m unit`), not pre-commit.
 
 ## Manual Commands
 

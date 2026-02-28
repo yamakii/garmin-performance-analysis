@@ -30,7 +30,7 @@ GitHub Issue に記載された設計に基づき、Test-Driven Development（Re
 - Black によるフォーマット
 - Ruff による Lint チェック
 - Mypy による型チェック
-- Pytest によるテスト実行
+- Pytest によるテスト実行（ローカル手動 `uv run pytest -m unit`、pre-commit ではない）
 
 ### 4. Git 管理
 - Worktree内のfeature branchで作業
