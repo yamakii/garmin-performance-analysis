@@ -396,6 +396,20 @@ VO2 Maxデータがありません。
 ---
 
 {# =================================================================== #}
+{# Goal Progress (optional) #}
+{# =================================================================== #}
+{% if summary and summary.goal_progress %}
+## 🎯 ゴール進捗
+
+{{ summary.goal_progress.goal_type_ja }}: {{ summary.goal_progress.goal_time_formatted }}{% if summary.goal_progress.weeks_remaining is not none %} (残り{{ summary.goal_progress.weeks_remaining }}週間){% endif %}
+
+現在の予測: {{ summary.goal_progress.predicted_time_formatted }} (VDOT {{ summary.goal_progress.current_vdot }})
+ギャップ: {{ summary.goal_progress.gap_formatted }} → {{ summary.goal_progress.pace_gap_formatted }}
+
+---
+
+{% endif %}
+{# =================================================================== #}
 {# SECTION 8 (or 7 or 6): 💡 改善ポイント #}
 {# =================================================================== #}
 ## 💡 改善ポイント
