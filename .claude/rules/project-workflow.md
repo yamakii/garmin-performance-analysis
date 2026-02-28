@@ -22,6 +22,12 @@ Type: Implementation | Roadmap
 | **Implementation** | 具体的なコード変更プラン |
 | **Roadmap** | 優先度付き改善提案リスト |
 
+Issue Design セクションに以下を必須で含める:
+```
+Validation Level: L1|L2|L3|skip
+```
+`e2e-verification.md` のガイドラインを参照してレベルを決定する。
+
 ### Plan 承認後の自動遷移ルール
 
 **実行順序（スキップ禁止）:**
@@ -41,7 +47,8 @@ Type: Implementation | Roadmap
 
 | Gate | Timing | Who | Criteria |
 |------|--------|-----|----------|
-| Design | Issue 作成時 | User (/decompose で確認) | Design セクション完備 |
+| Design | Issue 作成時 | User (/decompose で確認) | Design セクション完備 + Validation Level 明記 |
 | Test Plan | テスト追加後 | CI + レビュー | テストが Design をカバー |
 | Code | PR ready 後 | User + CI | CI pass + diff 確認 |
+| Validation | PR ready 後 | Validation Agent | `validation_level` に応じた検証 pass |
 | Merge | /ship --pr | User | 全チェック green |
