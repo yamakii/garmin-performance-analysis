@@ -344,7 +344,40 @@ Write(
 
    **データ不足時:** `"next_run_target": {"insufficient_data": true, "summary_ja": "...理由..."}`
 
-8. **recommendations**: 改善提案（構造化マークダウン、**最大2件**）
+8. **goal_progress**: レース目標への進捗（dict、**条件付き**）
+
+   アクティブなトレーニングプランにレース目標がある場合のみ出力。fitness/return_to_run プランの場合は省略。
+
+   **算出手順:**
+   - `get_training_plan()` からプランデータを取得（事前取得コンテキストにない場合）
+   - `get_vo2_max_data(activity_id)` から VO2max を取得（事前取得コンテキストにない場合）
+   - `GoalProgressTracker` を使って進捗を計算
+
+   ```json
+   "goal_progress": {
+     "goal_type": "race_10k",
+     "goal_type_ja": "10K目標",
+     "race_distance_km": 10.0,
+     "goal_time_seconds": 2580,
+     "goal_time_formatted": "43:00",
+     "predicted_time_seconds": 2625,
+     "predicted_time_formatted": "43:45",
+     "gap_seconds": -45,
+     "gap_formatted": "-45秒",
+     "pace_gap_per_km": 4.5,
+     "pace_gap_formatted": "あと5秒/km改善が必要",
+     "current_vdot": 47.2,
+     "weeks_remaining": 8,
+     "status": "behind"
+   }
+   ```
+
+   **null ハンドリング:**
+   - トレーニングプランなし → `goal_progress` フィールドを出力しない
+   - goal_type が "fitness" or "return_to_run" で始まる → 出力しない
+   - VO2max データなし → 出力しない
+
+9. **recommendations**: 改善提案（構造化マークダウン、**最大2件**）
 
    **MANDATORY FORMAT - 以下の構造を厳密に守ること:**
 
