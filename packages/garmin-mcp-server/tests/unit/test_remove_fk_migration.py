@@ -13,16 +13,8 @@ Test coverage:
 import duckdb
 import pytest
 
-# Import will fail initially (TDD Red phase)
-# from garmin_mcp.database.migrations.remove_fk_constraints import (
-#     migrate_remove_fk_constraints,
-#     _backup_tables,
-#     _drop_old_tables,
-#     _create_new_tables,
-#     _restore_data,
-#     _verify_data_integrity,
-#     _cleanup_backup_tables,
-# )
+# Note: _create_new_tables and _get_table_schemas_without_fk were removed in #100.
+# Remaining functions are imported locally in each test class.
 
 
 @pytest.fixture
@@ -139,27 +131,20 @@ class TestDropOldTables:
 
 @pytest.mark.unit
 class TestCreateNewTables:
-    """Test creating new tables without FK constraints."""
+    """Test creating new tables without FK constraints.
 
-    def test_create_new_tables_without_fk(self, test_db_path):
-        """Test that new tables are created without FK constraints."""
-        from garmin_mcp.database.migrations.remove_fk_constraints import (
-            _create_new_tables,
-        )
+    Note: _create_new_tables and _get_table_schemas_without_fk were removed in #100
+    (DDL centralized to db_writer._ensure_tables). FK-free table creation is now
+    tested in test_db_writer_schema.py::test_foreign_key_constraints.
+    """
+
+    def test_ensure_tables_creates_splits_without_fk(self, test_db_path):
+        """Test that _ensure_tables creates splits table without FK constraints."""
+        from garmin_mcp.database.db_writer import GarminDBWriter
+
+        GarminDBWriter(db_path=str(test_db_path))
 
         conn = duckdb.connect(str(test_db_path))
-
-        # Create activities table (parent - needed for FK check)
-        conn.execute("""
-            CREATE TABLE activities (
-                activity_id BIGINT PRIMARY KEY,
-                activity_date DATE NOT NULL,
-                activity_name VARCHAR
-            )
-        """)
-
-        # Create new splits table without FK
-        _create_new_tables(conn, ["splits"])
 
         # Verify table exists
         result = conn.execute(
@@ -168,7 +153,6 @@ class TestCreateNewTables:
         assert result is not None
 
         # Verify NO foreign key constraints by inserting orphaned record
-        # If FK exists, this would fail; if no FK, it succeeds
         conn.execute("""
             INSERT INTO splits (activity_id, split_index, distance, pace_seconds_per_km)
             VALUES (99999, 1, 1.0, 300.0)
@@ -189,7 +173,6 @@ class TestRestoreData:
         """Test that data is completely restored from backup."""
         from garmin_mcp.database.migrations.remove_fk_constraints import (
             _backup_tables,
-            _create_new_tables,
             _drop_old_tables,
             _restore_data,
         )
@@ -199,7 +182,16 @@ class TestRestoreData:
         # Execute migration steps
         _backup_tables(conn, ["splits"])
         _drop_old_tables(conn, ["splits"])
-        _create_new_tables(conn, ["splits"])
+        # Create splits table without FK (previously used _create_new_tables)
+        conn.execute("""
+            CREATE TABLE splits (
+                activity_id BIGINT,
+                split_index INTEGER,
+                distance DOUBLE,
+                pace_seconds_per_km DOUBLE,
+                PRIMARY KEY (activity_id, split_index)
+            )
+        """)
         _restore_data(conn, ["splits"])
 
         # Verify data restored (populated_db has 3 rows)
@@ -343,11 +335,12 @@ class TestMigrationRollback:
         # Note: splits table doesn't exist, so migration should fail
         conn.close()
 
-        # Execute migration (should fail and rollback)
-        with pytest.raises(Exception, match="Migration failed"):
+        # migrate_remove_fk_constraints is deprecated (#100: DDL centralized).
+        # Non-dry-run mode raises NotImplementedError.
+        with pytest.raises(NotImplementedError, match="deprecated"):
             migrate_remove_fk_constraints(str(test_db_path), dry_run=False)
 
-        # Verify database is unchanged (rollback succeeded)
+        # Verify database is unchanged
         conn = duckdb.connect(str(test_db_path))
 
         # activities table should still exist
@@ -355,12 +348,5 @@ class TestMigrationRollback:
         assert _row is not None
         activities_count = _row[0]
         assert activities_count == 1
-
-        # No backup tables should exist
-        backup_tables = conn.execute("""
-            SELECT table_name FROM information_schema.tables
-            WHERE table_name LIKE '%_backup_fk'
-        """).fetchall()
-        assert len(backup_tables) == 0
 
         conn.close()

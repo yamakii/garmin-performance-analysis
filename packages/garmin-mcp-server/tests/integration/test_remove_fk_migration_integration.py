@@ -150,119 +150,17 @@ def production_like_db(tmp_path):
 
 @pytest.mark.integration
 class TestEndToEndMigration:
-    """Test complete migration workflow."""
+    """Test complete migration workflow.
 
-    def test_migrate_production_like_db(self, production_like_db):
-        """Test migration on production-like database."""
-        # Execute migration
-        result = migrate_remove_fk_constraints(str(production_like_db), dry_run=False)
+    Note: migrate_remove_fk_constraints(dry_run=False) is deprecated (#100).
+    The migration runner uses _wrap_remove_fk (no-op) instead.
+    These tests verify the deprecated function raises NotImplementedError.
+    """
 
-        # Verify migration success
-        assert result["status"] == "success"
-        assert len(result["tables"]) == 9
-        assert "verification" in result
-
-        # Verify all tables migrated
-        expected_tables = [
-            "splits",
-            "form_efficiency",
-            "heart_rate_zones",
-            "hr_efficiency",
-            "performance_trends",
-            "vo2_max",
-            "lactate_threshold",
-            "form_evaluations",
-            "section_analyses",
-        ]
-        for table in expected_tables:
-            assert table in result["tables"]
-
-    def test_data_integrity_after_migration(self, production_like_db):
-        """Test that all data is preserved after migration."""
-        conn = duckdb.connect(str(production_like_db))
-
-        # Get counts before migration
-        counts_before = {}
-        for table in [
-            "activities",
-            "splits",
-            "form_efficiency",
-            "heart_rate_zones",
-        ]:
-            _row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
-            assert _row is not None
-            counts_before[table] = _row[0]
-
-        conn.close()
-
-        # Execute migration
-        migrate_remove_fk_constraints(str(production_like_db), dry_run=False)
-
-        # Verify counts after migration
-        conn = duckdb.connect(str(production_like_db))
-        for table, count_before in counts_before.items():
-            _row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
-            assert _row is not None
-            count_after = _row[0]
-            assert (
-                count_after == count_before
-            ), f"{table}: {count_after} != {count_before}"
-
-        # Verify specific data
-        splits_data = conn.execute(
-            "SELECT activity_id, split_index, pace_seconds_per_km FROM splits ORDER BY activity_id, split_index"
-        ).fetchall()
-        assert len(splits_data) == 3
-        assert splits_data[0] == (12345, 1, 300.0)
-        assert splits_data[1] == (12345, 2, 295.0)
-        assert splits_data[2] == (67890, 1, 310.0)
-
-        conn.close()
-
-    def test_queries_work_after_migration(self, production_like_db):
-        """Test that LEFT JOIN queries work after migration."""
-        # Execute migration
-        migrate_remove_fk_constraints(str(production_like_db), dry_run=False)
-
-        conn = duckdb.connect(str(production_like_db))
-
-        # Test LEFT JOIN (should work with or without FK)
-        result = conn.execute("""
-            SELECT a.activity_id, a.activity_name, COUNT(s.split_index) as split_count
-            FROM activities a
-            LEFT JOIN splits s ON a.activity_id = s.activity_id
-            GROUP BY a.activity_id, a.activity_name
-            ORDER BY a.activity_id
-        """).fetchall()
-
-        assert len(result) == 2
-        assert result[0] == (12345, "Morning Run", 2)
-        assert result[1] == (67890, "Evening Run", 1)
-
-        conn.close()
-
-    def test_no_fk_constraints_after_migration(self, production_like_db):
-        """Test that no FK constraints exist after migration."""
-        # Execute migration
-        migrate_remove_fk_constraints(str(production_like_db), dry_run=False)
-
-        conn = duckdb.connect(str(production_like_db))
-
-        # Test orphaned record insertion (should succeed with no FK)
-        # Insert record with non-existent activity_id
-        conn.execute(
-            "INSERT INTO splits (activity_id, split_index, distance, pace_seconds_per_km) VALUES (99999, 1, 1.0, 300.0)"
-        )
-
-        # Verify insertion succeeded
-        _row = conn.execute(
-            "SELECT COUNT(*) FROM splits WHERE activity_id = 99999"
-        ).fetchone()
-        assert _row is not None
-        count = _row[0]
-        assert count == 1  # Orphaned record exists (no FK constraint)
-
-        conn.close()
+    def test_migrate_raises_not_implemented(self, production_like_db):
+        """Test that non-dry-run migration raises NotImplementedError (deprecated)."""
+        with pytest.raises(NotImplementedError, match="deprecated"):
+            migrate_remove_fk_constraints(str(production_like_db), dry_run=False)
 
 
 @pytest.mark.integration
@@ -320,70 +218,47 @@ class TestDryRunMode:
 
 @pytest.mark.integration
 class TestRegenerateCompatibility:
-    """Test compatibility with regenerate_duckdb.py logic."""
+    """Test compatibility with regenerate_duckdb.py logic.
 
-    def test_regenerate_works_after_migration(self, production_like_db):
-        """Test that deletion logic works after FK removal."""
-        # Execute migration
-        migrate_remove_fk_constraints(str(production_like_db), dry_run=False)
+    Note: FK-free tables are now created by db_writer._ensure_tables().
+    These tests verify deletion works on FK-free tables created by GarminDBWriter.
+    """
 
-        conn = duckdb.connect(str(production_like_db))
+    def test_regenerate_works_with_fk_free_tables(self, tmp_path):
+        """Test that deletion logic works on FK-free tables from _ensure_tables."""
+        from garmin_mcp.database.db_writer import GarminDBWriter
 
-        # Simulate regenerate_duckdb.py deletion (any order, no FK constraints)
-        activity_ids_to_delete = [12345]
+        db_path = tmp_path / "test_regenerate.duckdb"
+        GarminDBWriter(db_path=str(db_path))
 
-        # Delete from tables in arbitrary order (no FK ordering required)
-        for table in ["splits", "form_efficiency", "heart_rate_zones"]:
-            if table == "heart_rate_zones":
-                conn.execute(
-                    f"DELETE FROM {table} WHERE activity_id IN ({','.join(map(str, activity_ids_to_delete))})"
-                )
-            elif table in ["form_evaluations", "section_analyses"]:
-                # These tables might not have data, so skip if they don't exist
-                try:
-                    conn.execute(
-                        f"DELETE FROM {table} WHERE activity_id IN ({','.join(map(str, activity_ids_to_delete))})"
-                    )
-                except Exception:
-                    pass
-            else:
-                conn.execute(
-                    f"DELETE FROM {table} WHERE activity_id IN ({','.join(map(str, activity_ids_to_delete))})"
-                )
+        conn = duckdb.connect(str(db_path))
 
-        # Verify deletions
+        # Insert sample data
+        conn.execute(
+            "INSERT INTO activities (activity_id, activity_date, activity_name) "
+            "VALUES (12345, '2025-10-15', 'Morning Run')"
+        )
+        conn.execute(
+            "INSERT INTO activities (activity_id, activity_date, activity_name) "
+            "VALUES (67890, '2025-10-16', 'Evening Run')"
+        )
+        conn.execute("INSERT INTO splits (activity_id, split_index) VALUES (12345, 1)")
+        conn.execute("INSERT INTO splits (activity_id, split_index) VALUES (12345, 2)")
+        conn.execute("INSERT INTO splits (activity_id, split_index) VALUES (67890, 1)")
+
+        # Delete in arbitrary order (no FK ordering required)
+        conn.execute("DELETE FROM splits WHERE activity_id = 12345")
+
         _row = conn.execute(
             "SELECT COUNT(*) FROM splits WHERE activity_id = 12345"
         ).fetchone()
         assert _row is not None
-        splits_count = _row[0]
-        assert splits_count == 0
+        assert _row[0] == 0
 
-        # Verify other activity still exists
         _row = conn.execute(
             "SELECT COUNT(*) FROM splits WHERE activity_id = 67890"
         ).fetchone()
         assert _row is not None
-        splits_count_other = _row[0]
-        assert splits_count_other == 1
-
-        conn.close()
-
-    def test_no_orphaned_records(self, production_like_db):
-        """Test that LEFT JOIN detects no orphaned records after migration."""
-        # Execute migration
-        migrate_remove_fk_constraints(str(production_like_db), dry_run=False)
-
-        conn = duckdb.connect(str(production_like_db))
-
-        # Check for orphaned splits (splits without matching activity)
-        orphaned_splits = conn.execute("""
-            SELECT s.activity_id
-            FROM splits s
-            LEFT JOIN activities a ON s.activity_id = a.activity_id
-            WHERE a.activity_id IS NULL
-        """).fetchall()
-
-        assert len(orphaned_splits) == 0
+        assert _row[0] == 1
 
         conn.close()
