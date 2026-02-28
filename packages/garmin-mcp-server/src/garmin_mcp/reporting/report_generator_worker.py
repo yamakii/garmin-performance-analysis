@@ -26,6 +26,7 @@ from garmin_mcp.reporting.components.physiological_calculator import (
 from garmin_mcp.reporting.components.workout_comparator import (
     WorkoutComparator,
 )
+from garmin_mcp.reporting.quality_gate import QualityGate
 from garmin_mcp.reporting.report_template_renderer import ReportTemplateRenderer
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,7 @@ class ReportGeneratorWorker:
         self._physiological_calculator = PhysiologicalCalculator(self.db_reader)
         self._workout_comparator = WorkoutComparator(self.db_reader)
         self._insight_generator = InsightGenerator()
+        self._quality_gate = QualityGate()
 
     # =========================================================================
     # Delegating methods (backward-compatible thin wrappers)
@@ -300,6 +302,14 @@ class ReportGeneratorWorker:
             except Exception as e:
                 logger.warning(f"Could not generate workout insights: {e}")
 
+        # Run advisory quality gate
+        quality_result = self._quality_gate.validate(section_analyses)
+        if not quality_result.passed:
+            logger.warning(
+                "Quality gate: %d warning(s) detected (advisory only)",
+                len(quality_result.warnings),
+            )
+
         logger.info("[3/4] Generating report from section analyses...")
 
         # Format pace values for display
@@ -417,13 +427,21 @@ class ReportGeneratorWorker:
         # Save report
         save_result = self.renderer.save_report(str(activity_id), date, report_content)
 
-        return {
+        result: dict[str, Any] = {
             "success": True,
             "activity_id": activity_id,
             "date": date,
             "report_path": save_result["path"],
             "timestamp": datetime.now().isoformat(),
         }
+
+        if not quality_result.passed:
+            result["quality_warnings"] = [
+                {"check": w.check_name, "message": w.message}
+                for w in quality_result.warnings
+            ]
+
+        return result
 
 
 def main() -> None:
