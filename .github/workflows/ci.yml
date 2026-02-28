@@ -3,26 +3,33 @@ name: CI
 on:
   pull_request:
     branches: [main]
-    paths:
-      - 'packages/**'
-      - 'pyproject.toml'
-      - '.pre-commit-config.yaml'
-      - '.github/workflows/**'
   push:
     branches: [main]
-    paths:
-      - 'packages/**'
-      - 'pyproject.toml'
-      - '.pre-commit-config.yaml'
-      - '.github/workflows/**'
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'packages/**'
+              - 'pyproject.toml'
+              - '.pre-commit-config.yaml'
+              - '.github/workflows/**'
+
   lint-and-test:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: packages/garmin-mcp-server
-
     steps:
       - uses: actions/checkout@v4
 
@@ -47,3 +54,19 @@ jobs:
 
       - name: Run unit tests with coverage
         run: uv run pytest -m unit --tb=short -n 4 --maxfail=5 --cov=garmin_mcp --cov-report=term-missing --cov-fail-under=60
+
+  ci-guard:
+    needs: [changes, lint-and-test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check CI result
+        run: |
+          if [ "${{ needs.changes.outputs.code }}" == "false" ]; then
+            echo "No code changes — skipping CI"
+            exit 0
+          fi
+          if [ "${{ needs.lint-and-test.result }}" != "success" ]; then
+            echo "lint-and-test failed"
+            exit 1
+          fi
