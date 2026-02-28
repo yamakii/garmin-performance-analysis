@@ -17,11 +17,11 @@ echo "$command" | grep -q "^git commit" || exit 0
 branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || exit 0
 [ "$branch" != "main" ] && [ "$branch" != "master" ] && exit 0
 
-# .claude/ 配下のみの変更は例外として許可
+# rules/docs のみの変更は例外として許可 (.claude/, .github/, docs/, CLAUDE.md)
 staged=$(git diff --cached --name-only 2>/dev/null)
 [ -z "$staged" ] && { echo "BLOCKED: mainブランチへの直接コミットは禁止です" >&2; exit 2; }
-non_claude=$(echo "$staged" | grep -v "^\.claude/" || true)
-[ -z "$non_claude" ] && exit 0
+non_docs=$(echo "$staged" | grep -v "^\.claude/" | grep -v "^\.github/" | grep -v "^docs/" | grep -v "^CLAUDE\.md$" || true)
+[ -z "$non_docs" ] && exit 0
 
 # mainブランチでのcommit → ブロック
 echo "BLOCKED: mainブランチへの直接コミットは禁止です" >&2

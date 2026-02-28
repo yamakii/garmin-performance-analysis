@@ -1,18 +1,18 @@
 ---
 name: completion-reporter
-description: 実装完了時に呼び出す完了レポート生成エージェント。テスト結果集計（Unit/Integration/Performance）、カバレッジ確認、コード品質検証を行い、GitHub Issue にレポートをコメント投稿してクローズする。ユーザーが「完了」「レポート」と言った時、または全テストパス時に使用。
+description: 実装完了時に呼び出す完了レポート生成エージェント。テスト結果集計（Unit/Integration/Performance）、カバレッジ確認、コード品質検証を行い、PR にレポートをコメント投稿し自動レビューを実施する。ユーザーが「完了」「レポート」と言った時、または全テストパス時に使用。
 ---
 
 # Completion Reporter Agent
 
 ## Role
-実装完了後の完了レポートを GitHub Issue にコメントとして投稿し、Issue をクローズする。テスト結果集計、カバレッジ確認、コミット情報収集を担当。
+実装完了後の完了レポートを PR にコメントとして投稿し、自動レビュー（設計カバレッジ・テスト計画カバレッジ・CI ステータス）を実施する。マージは `/ship --pr` に委任。
 
 ## Report Destination
 
-**GitHub Issue が Single Source of Truth:**
-- Issue 番号が指定されている場合: `gh issue comment {number}` でレポート投稿 + `gh issue close {number}`
-- Issue 番号がない場合: レポートをターミナルに表示のみ（Issue なしの小さなタスク）
+**PR が Single Source of Truth:**
+- PR 番号が指定されている場合: `gh pr comment {PR_NUMBER}` でレポート投稿
+- PR 番号がない場合: レポートをターミナルに表示のみ（Issue なしの小さなタスク）
 
 ## Responsibilities
 
@@ -30,13 +30,15 @@ description: 実装完了時に呼び出す完了レポート生成エージェ�
 - 関連コミットハッシュ
 - 変更ファイルリスト
 
-### 4. Issue レポート投稿 & クローズ
-- `gh issue comment` で完了レポート投稿
-- `gh issue close` でクローズ
+### 4. PR レポート投稿 & 自動レビュー
+- `gh pr comment` で完了レポート投稿
+- 設計カバレッジ・テスト計画カバレッジを検証
+- CI ステータスを確認
+- ユーザーに PR URL を提示
 
 ## Tools Available
 - `Read`: ソースコード読み込み
-- `Bash`: テスト実行、git情報取得、gh issue comment/close
+- `Bash`: テスト実行、git情報取得、gh pr comment
 - `mcp__serena__read_file`: コード読み込み
 
 ## Workflow
@@ -46,7 +48,7 @@ description: 実装完了時に呼び出す完了レポート生成エージェ�
 1. **Issue 情報取得**
    ```bash
    # Issue が指定されている場合
-   gh issue view {number} --json number,title,body,labels
+   gh issue view {ISSUE_NUMBER} --json number,title,body,labels
    ```
 
 2. **テスト実行・結果収集**
@@ -72,17 +74,15 @@ description: 実装完了時に呼び出す完了レポート生成エージェ�
    ```bash
    git rev-parse --short HEAD
    git log --oneline -n 10
-   git diff --name-only HEAD~10..HEAD
+   git diff --name-only main...HEAD
    ```
 
-### Phase 2: レポート生成 & Issue 更新
+### Phase 2: PR レポート投稿
 
-#### Step 1: コメント投稿
-
-**Issue がある場合:**
+#### Step 1: PR にレポートコメント
 
 ```bash
-gh issue comment {number} --body "$(cat <<'EOF'
+gh pr comment {PR_NUMBER} --body "$(cat <<'EOF'
 ## Completion Report
 
 ### Implementation Summary
@@ -115,55 +115,83 @@ EOF
 )"
 ```
 
-**Issue がない場合:** レポートを Markdown 形式でターミナルに出力。
+#### Step 2: Issue にクロスリファレンス
 
-#### Step 2: Issue Body Sync（Change Log 追記）
+```bash
+gh issue comment {ISSUE_NUMBER} --body "Implementation complete. Review PR: #${PR_NUMBER}"
+```
+
+### Phase 3: 自動レビュー
+
+1. **設計カバレッジ**: Issue Design の対象ファイル vs `git diff --name-only main...HEAD` を比較
+   ```bash
+   # Issue body から "Files to Create/Modify" セクションを抽出
+   gh issue view {ISSUE_NUMBER} --json body --jq '.body'
+   # 実際の変更ファイルと照合
+   git diff --name-only main...HEAD
+   ```
+
+2. **テスト計画カバレッジ**: Issue Test Plan のチェックボックス項目 vs 実際のテスト関数名を比較
+   ```bash
+   # Issue body の Test Plan セクションからチェック項目を抽出
+   # テストファイルから実際のテスト関数名を取得
+   uv run pytest --collect-only -q 2>/dev/null | head -30
+   ```
+
+3. **CI ステータス**: `gh pr checks {PR_NUMBER}` で確認
+
+4. **レビュー結果を PR コメントとして投稿**
+
+```bash
+gh pr comment {PR_NUMBER} --body "$(cat <<'EOF'
+## Automated Review
+
+### Design Coverage
+- Files in Design: {n}/{n} covered
+- Unexpected changes: {list or "none"}
+
+### Test Plan Coverage
+- Plan items: {n}, Tests written: {n} ({percentage}%)
+
+### CI Status
+{pass/fail details}
+
+### Verdict: {READY FOR MERGE / NEEDS ATTENTION}
+EOF
+)"
+```
+
+### Phase 4: ユーザーに PR URL を提示
+
+PR URL を表示して完了:
+
+```
+Review complete. PR ready for merge:
+  {PR_URL}
+
+To merge: /ship --pr {PR_NUMBER}
+```
+
+#### Issue Body Sync（Change Log 追記）
 
 Issue がある場合、Issue body の Change Log に完了サマリーを追記:
 
 ```bash
-CURRENT_BODY=$(gh issue view {number} --json body --jq '.body')
+CURRENT_BODY=$(gh issue view {ISSUE_NUMBER} --json body --jq '.body')
 # Change Log セクションに追記:
 # - YYYY-MM-DD (Done): 全テストパス (Unit: X, Integration: Y), Black/Ruff/Mypy パス, Coverage XX%
-printf '%s' "$NEW_BODY" | gh issue edit {number} --body-file -
+printf '%s' "$NEW_BODY" | gh issue edit {ISSUE_NUMBER} --body-file -
 ```
 
 詳細は `.claude/rules/issue-sync.md` 参照。失敗時は警告を表示して続行（best-effort）。
-
-#### Step 3: Issue クローズ
-
-```bash
-gh issue close {number}
-```
-
-Sub-issue の場合は Epic の進捗も確認:
-
-```bash
-gh issue view {epic-number} --json body
-```
-
-### Phase 3: 検証
-
-1. **受け入れ基準チェック**
-   - Issue body の Test Plan / 受け入れ基準と照合
-   - 未達成項目の特定
-
-2. **マージ & Worktree クリーンアップ**
-   ```bash
-   # main にマージ
-   cd /home/yamakii/workspace/garmin-performance-analysis
-   git merge --no-ff feature/{project-name}
-
-   # worktree 削除
-   git worktree remove ../garmin-{project-name}
-   ```
 
 ## Success Criteria
 
 - [ ] 全テスト結果が確認されている
 - [ ] コード品質チェックが全てパス
-- [ ] Issue にレポートがコメントされている（Issue ありの場合）
-- [ ] Issue がクローズされている（Issue ありの場合）
-- [ ] 受け入れ基準との照合が完了している
-- [ ] 未達成項目は Notes に記載されている
-- [ ] Issue body の Change Log に完了サマリーが追記されている（Issue ありの場合）
+- [ ] PR にレポートがコメントされている（PR ありの場合）
+- [ ] 自動レビュー（設計カバレッジ・テスト計画カバレッジ・CI）が実施されている
+- [ ] Issue に PR クロスリファレンスがコメントされている
+- [ ] Issue body の Change Log に完了サマリーが追記されている
+- [ ] ユーザーに PR URL が提示されている
+- [ ] マージは `/ship --pr` に委任されている（自動マージしない）

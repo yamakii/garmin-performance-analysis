@@ -40,3 +40,12 @@ Type: Implementation | Roadmap
 ### Plan 承認後の実装への引き継ぎ
 
 tdd-implementer に渡す: Issue 番号、プランファイルパス、ワークツリー名の提案。
+
+### Review Gates
+
+| Gate | Timing | Who | Criteria |
+|------|--------|-----|----------|
+| Design | Issue 作成時 | User (/decompose で確認) | Design セクション完備 |
+| Test Plan | Red phase 後 | 自動 (completion-reporter) | テストが Design をカバー |
+| Code | PR ready 後 | User + CI | CI pass + diff 確認 |
+| Merge | /ship --pr | User | 全チェック green |

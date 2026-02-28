@@ -33,6 +33,17 @@ mcp__garmin-db__reload_server(server_dir="/absolute/path/to/worktree/packages/ga
 git worktree remove ../garmin-feature-name
 ```
 
+## PR Convention
+
+- merge commit --no-ff (`--delete-branch` で自動ブランチ削除、TDD履歴保持)
+- main 直 push は rules/docs のみ (既存ルール維持)
+- `/ship --pr N` でマージ
+
+### Parallel Branches
+- 各 worktree = 1 feature branch = 1 PR = 1 sub-issue
+- 依存関係: B が A に依存 → A の PR マージ後に B を rebase
+- DuckDB single-writer: テストは mock なので並列 OK。マージは順次。
+
 ## Commit Convention
 
 Conventional Commits + Co-Authored-By. 各コミットは**単一の関心事**のみ。

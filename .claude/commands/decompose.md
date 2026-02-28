@@ -92,6 +92,7 @@ EOF
 gh issue create \
   --title "{Sub-issue タイトル}" \
   --label "sub-issue" \
+  --label "design-approved" \
   --body "$(cat <<'EOF'
 ## Summary
 {何をするか}

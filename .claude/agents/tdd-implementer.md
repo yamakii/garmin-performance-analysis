@@ -44,7 +44,7 @@ GitHub Issue に記載された設計に基づき、Test-Driven Development（Re
 - `mcp__serena__insert_after_symbol`: 新規メソッド追加
 - `mcp__serena__find_symbol`: シンボル検索
 - `mcp__serena__execute_shell_command`: テスト実行、品質チェック
-- `Bash`: git操作、pytest実行、gh issue view
+- `Bash`: git操作、pytest実行、gh issue view、gh pr create
 
 ## Workflow
 
@@ -115,6 +115,43 @@ GitHub Issue に記載された設計に基づき、Test-Driven Development（Re
    # FAILED が期待される結果
    ```
 
+### Phase 1.5: Draft PR 作成 (Red 完了後)
+
+CI を早期に走らせ、WIP を可視化する。
+
+1. **テストコミット & プッシュ**
+   ```bash
+   git add <test-files>
+   git commit -m "$(cat <<'EOF'
+   test(scope): add failing tests for {feature} (#{issue})
+
+   Co-Authored-By: Claude <noreply@anthropic.com>
+   EOF
+   )"
+   git push -u origin feature/${PROJECT_NAME}
+   ```
+
+2. **Draft PR 作成**
+   ```bash
+   PR_URL=$(gh pr create --draft \
+     --title "feat(scope): {description} (#{issue})" \
+     --body "$(cat <<'EOF'
+   ## Summary
+   {Issue summary}
+
+   Closes #{issue}
+
+   ## Review Checklist
+   - [ ] Tests match Issue Test Plan
+   - [ ] Implementation matches Issue Design
+   - [ ] CI passes
+   EOF
+   )")
+   PR_NUMBER=$(gh pr view --json number --jq '.number')
+   ```
+
+3. **PR 番号を記録** — 以降の Phase で使用
+
 ### Phase 2: Green（テストを通す最小限の実装）
 
 1. **最小実装**
@@ -151,22 +188,22 @@ GitHub Issue に記載された設計に基づき、Test-Driven Development（Re
    uv run pytest
    ```
 
-### Phase 4: Commit
+### Phase 4: Commit & Push
 
 1. **Conventional Commit 形式でコミット (in worktree)**
    ```bash
    git add <specific-files>
    git commit -m "$(cat <<'EOF'
-   feat(scope): add new feature
+   feat(scope): add new feature (#{issue})
 
    Co-Authored-By: Claude <noreply@anthropic.com>
    EOF
    )"
    ```
 
-2. **Issue 番号をコミットメッセージに含める（該当する場合）**
-   ```
-   feat(scope): add new feature (#51)
+2. **Push to PR branch**
+   ```bash
+   git push origin feature/${PROJECT_NAME}
    ```
 
 3. **Issue Body Sync（Issue 番号がある場合）**
@@ -174,6 +211,14 @@ GitHub Issue に記載された設計に基づき、Test-Driven Development（Re
    - Design に実装で変わった部分を反映（インターフェース変更、ファイル構成変更等）
    - Change Log に `- YYYY-MM-DD (Build): {変更サマリー}` を追記
    - 詳細は `.claude/rules/issue-sync.md` 参照
+
+### Phase 4.5: PR Ready
+
+全コミット完了後、Draft を Ready に変更:
+
+```bash
+gh pr ready ${PR_NUMBER}
+```
 
 ## Commit Message Format
 
@@ -224,6 +269,7 @@ Every test MUST have a marker. See `.claude/rules/testing.md` for details.
 - [ ] 最新mainからworktreeが作成されている
 - [ ] Worktree内で全作業が実施されている
 - [ ] Feature branchにコミットされている（main branchは未変更）
+- [ ] Draft PR が作成され、Ready に変更されている
 - [ ] 全テストケースが実装されている
 - [ ] TDD サイクル（Red → Green → Refactor）が守られている
 - [ ] コード品質チェックが全てパス
@@ -236,7 +282,9 @@ Every test MUST have a marker. See `.claude/rules/testing.md` for details.
 - **Issue Number**: `#{number}` (Epic の場合は `#{sub-issue} (epic #{epic})`)
 - **Worktree Path**: `../garmin-{project_name}/`
 - **Branch**: `feature/{project_name}`
+- **PR Number**: `#{PR_NUMBER}`
+- **PR URL**: `{PR_URL}`
 - **テスト結果サマリー**
 - **コミットハッシュ** (feature branch)
 
-completion-reporter は Issue にレポートをコメントし、mainへマージ後にクローズする。
+completion-reporter は PR にレポートをコメントし、自動レビューを実施する。マージは `/ship --pr` に委任。
