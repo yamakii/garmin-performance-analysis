@@ -85,8 +85,9 @@ See `.claude/rules/analysis/analysis-standards.md` for workflow details and `doc
 **Workflow:** Plan mode → Issue → Worktree → Implement → Ship
 
 Key rules (auto-loaded from `.claude/rules/dev/`):
-- `workflow-orchestration.md` — plan-first, subagent delegation, verification, elegance check
-- `dev-standards.md` — git, testing, code quality, architecture, validation (consolidated)
+- `workflow-orchestration.md` — plan-first, elegance check, core principles
+- `implementation-workflow.md` — delegate → verify → ship (手続き的ワークフロー)
+- `dev-reference.md` — git, testing, code quality, architecture, validation (参照辞書)
 
 ### Analysis Workspace (検証用)
 

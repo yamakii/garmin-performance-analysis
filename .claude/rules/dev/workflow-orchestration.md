@@ -5,13 +5,9 @@
 - If execution goes sideways: STOP and re-plan. Don't push through with workarounds.
 - Use plan mode for verification steps, not just building
 
-## Subagent Delegation
-- **実装もエージェントに委任する** — 手動実装よりエージェント委任を常に優先
-- 単一 issue: general-purpose agent (worktree isolation) に実装を委任
-- 複数 sub-issue: `/implement` で並列エージェント実行
-- Research/exploration: Explore agent で調査、main context を軽く保つ
-- One focused task per subagent.
-- Complex problems: throw more compute at it via parallel subagents.
+## Implementation
+- プラン承認後は `implementation-workflow.md` に従って実行する
+- 委任・検証・Ship の手順はすべてそちらに定義
 
 ## Self-Improvement Loop
 - After ANY user correction: append to `.claude/tasks/lessons.md`
@@ -19,11 +15,6 @@
 - Write rules in `.claude/rules/` that prevent the same mistake from recurring
 - Ruthlessly iterate until mistake rate drops
 - セッション開始時: lessons.md を確認し、関連する過去の教訓を意識する
-
-## Completion Verification
-- Never mark complete without proof: passing tests, log output, or demonstration.
-- Diff behavior between main and changes when relevant.
-- Self-check: "Would a staff engineer approve this?"
 
 ## Elegance Check
 - 3+ files changed or new pattern introduced: pause and consider alternatives.
