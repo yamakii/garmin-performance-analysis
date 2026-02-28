@@ -1,7 +1,7 @@
 ---
 name: split-section-analyst
 description: 全1kmスプリットのペース・心拍・フォーム指標を詳細分析し、環境統合評価を行うエージェント。DuckDBに保存。スプリット毎の変化パターン検出が必要な時に呼び出す。
-tools: mcp__garmin-db__get_splits_comprehensive, mcp__garmin-db__detect_form_anomalies_summary, mcp__garmin-db__get_form_anomaly_details, Write
+tools: mcp__garmin-db__get_splits_comprehensive, mcp__garmin-db__detect_form_anomalies_summary, mcp__garmin-db__get_form_anomaly_details, mcp__garmin-db__get_split_time_series_detail, Write
 model: inherit
 ---
 
@@ -28,6 +28,11 @@ model: inherit
   - **分類（intensity_type, role_phase）← NEW: これらを必ず使用すること**
   - このエージェントは個別スプリット分析が必須のため`statistics_only=False`を使用
   - 各スプリットのintensity_type と role_phaseが必要
+
+**後半フォーム劣化検出ツール（条件付き）:**
+- `mcp__garmin-db__get_split_time_series_detail(activity_id, split_number, statistics_only=False)` — 特定スプリットの秒単位メトリクス取得
+  - 後半スプリットでフォーム劣化が検出された場合のみ使用（下記「後半フォーム劣化検出」参照）
+  - metrics: `["directGroundContactTime", "directVerticalOscillation", "directVerticalRatio"]` を指定して必要な指標のみ取得
 
 **フォーム異常検出ツール（オプション）:**
 - `mcp__garmin-db__detect_form_anomalies_summary(activity_id)` — 異常サマリー取得（~700 tokens、軽量）
@@ -141,6 +146,46 @@ Write(
    - 目標範囲: 180-190 spm（エリートランナー基準）
    - max_cadenceとの比較: 10 spm以上の差 = リズムの乱れ検出
    - スプリット間の安定性: ±5 spm以内が理想
+
+9. **後半フォーム劣化検出**（`get_split_time_series_detail` を使用）
+
+   **目的**: 後半スプリットでGCT/VO/VRが悪化するパターンを秒単位で分析し、疲労開始タイミングを特定する。
+
+   **検出フロー:**
+   1. `get_splits_comprehensive(activity_id, statistics_only=False)` の結果から、メイン区間（`role_phase=="run"`）のスプリットを抽出
+   2. メイン区間の前半平均と後半のGCT/VO/VRを比較し、後半で悪化しているスプリットを特定:
+      - GCT: 前半平均より **+10ms以上** 増加
+      - VO: 前半平均より **+0.5cm以上** 増加
+      - VR: 前半平均より **+0.3%以上** 増加
+   3. 上記いずれかに該当するスプリットがない場合 → **スキップ**（追加ツール呼び出しなし、トークン節約）
+   4. 悪化が顕著なスプリットがある場合 → 最後の2-3スプリットで `get_split_time_series_detail()` を呼び出し:
+      ```
+      get_split_time_series_detail(
+        activity_id=<id>,
+        split_number=<N>,
+        statistics_only=False,
+        metrics=["directGroundContactTime", "directVerticalOscillation", "directVerticalRatio"]
+      )
+      ```
+   5. 秒単位データからスプリット内の変化パターンを分析:
+      - スプリット前半(0-500m) vs 後半(500m-1000m) の平均値を比較
+      - 急変点（GCTが急上昇し始めるタイミング）を特定
+      - 疲労開始ポイントを距離で表現（例:「600m以降」）
+
+   **出力への統合:**
+   - 劣化が検出されたスプリットの `analyses` に詳細を追記
+   - フォーマット例:
+     ```
+     ⚠️ フォーム劣化検出: スプリット後半(600m以降)でGCTが258→285msに急上昇。
+     疲労によるフォーム崩れの兆候です。次回はこのスプリットの1km手前から
+     ペースを5秒/km落とすとフォーム維持しやすくなります。
+     ```
+   - `highlights` にも劣化検出の事実を含める
+
+   **スキップ条件（重要 — トークン節約）:**
+   - メイン区間が3スプリット未満（前半/後半の比較が不十分）
+   - 全スプリットでフォーム指標が安定（上記閾値未満）
+   - Interval/Recovery ワークアウト（フォーム変動がワークアウト設計由来）
 
 ## 重要事項
 
