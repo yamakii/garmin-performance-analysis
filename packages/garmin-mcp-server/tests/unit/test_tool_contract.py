@@ -1,5 +1,9 @@
 """Contract tests ensuring tool names stay in sync across schemas and handlers."""
 
+from __future__ import annotations
+
+from typing import Protocol
+
 import pytest
 
 from garmin_mcp.handlers.analysis_handler import AnalysisHandler
@@ -12,7 +16,12 @@ from garmin_mcp.handlers.time_series_handler import TimeSeriesHandler
 from garmin_mcp.handlers.training_plan_handler import TrainingPlanHandler
 from garmin_mcp.tool_schemas import TOOL_NAMES, get_tool_definitions
 
-HANDLER_CLASSES = [
+
+class _HasToolNames(Protocol):
+    _tool_names: set[str]
+
+
+HANDLER_CLASSES: list[type[_HasToolNames]] = [
     AnalysisHandler,
     ExportHandler,
     MetadataHandler,
