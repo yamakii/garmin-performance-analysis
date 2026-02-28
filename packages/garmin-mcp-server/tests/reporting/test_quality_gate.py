@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from garmin_mcp.reporting.quality_gate import QualityGate
 
 
