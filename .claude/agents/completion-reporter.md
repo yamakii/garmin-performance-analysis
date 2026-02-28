@@ -121,6 +121,39 @@ EOF
 gh issue comment {ISSUE_NUMBER} --body "Implementation complete. Review PR: #${PR_NUMBER}"
 ```
 
+### Phase 2.5: E2E Pipeline Verification (分析エージェント関連の変更時のみ)
+
+**対象判定**: 以下のいずれかに変更がある場合のみ実施（`git diff --name-only main...HEAD` で判定）:
+- `.claude/agents/*-analyst.md`
+- `src/garmin_mcp/handlers/`
+- `src/garmin_mcp/database/readers/`
+- `src/garmin_mcp/reporting/`
+
+上記に変更がない場合はこの Phase をスキップする。
+
+1. **Verification DB 生成 + GARMIN_DATA_DIR 切替**
+   ```bash
+   cd {worktree_path}
+   GARMIN_DATA_DIR={worktree_path}/packages/garmin-mcp-server/tests/fixtures/data \
+     uv run python packages/garmin-mcp-server/tests/generate_verification_db.py
+   ```
+   ```
+   mcp__garmin-db__reload_server(server_dir="{worktree_path}/packages/garmin-mcp-server")
+   ```
+
+2. **verification activity (ID: 12345678901, date: 2025-10-09) で 5 エージェント分析を実行**
+   - split-section-analyst, phase-section-analyst, efficiency-section-analyst, environment-section-analyst, summary-section-analyst
+
+3. **LLM-as-Judge で出力を評価**
+   - `.claude/rules/e2e-verification.md` の基準に従う
+
+4. **GARMIN_DATA_DIR を元に戻して再リロード**
+   ```
+   mcp__garmin-db__reload_server()  # server_dir 省略でデフォルト復帰
+   ```
+
+5. **検証結果を PR コメントに PASS/FAIL + 理由を追記**
+
 ### Phase 3: 自動レビュー
 
 1. **設計カバレッジ**: Issue Design の対象ファイル vs `git diff --name-only main...HEAD` を比較

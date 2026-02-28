@@ -193,6 +193,32 @@ CI を早期に走らせ、WIP を可視化する。
    uv run pytest
    ```
 
+### Phase 3.5: MCP Smoke Test (garmin_mcp コード変更時のみ)
+
+**前提条件**: `packages/garmin-mcp-server/src/garmin_mcp/` 配下のコードを変更した場合のみ実施。agent/rules/docs のみの変更時はスキップ。
+
+1. **Verification DB を生成**
+   ```bash
+   cd {worktree_path}
+   GARMIN_DATA_DIR={worktree_path}/packages/garmin-mcp-server/tests/fixtures/data \
+     uv run python packages/garmin-mcp-server/tests/generate_verification_db.py
+   ```
+
+2. **GARMIN_DATA_DIR を fixture に向けて MCP サーバーをリロード**
+   ```
+   mcp__garmin-db__reload_server(server_dir="{worktree_path}/packages/garmin-mcp-server")
+   ```
+   ※ reload_server 前に環境変数 GARMIN_DATA_DIR が fixture を指していること
+
+3. **変更対象のツールを呼び出し、レスポンスが非エラーであることを確認**
+   - `mcp__garmin-db__get_activity_by_date(date="2025-10-09")` → activity_id `12345678901` が返ること
+   - 変更した Handler/Reader に関連するツールを追加で呼ぶ
+
+4. **検証後、GARMIN_DATA_DIR を元に戻して再リロード**
+   ```
+   mcp__garmin-db__reload_server()  # server_dir 省略でデフォルト復帰
+   ```
+
 ### Phase 4: Commit & Push
 
 1. **Conventional Commit 形式でコミット (in worktree)**
