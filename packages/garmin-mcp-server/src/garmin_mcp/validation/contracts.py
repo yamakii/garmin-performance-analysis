@@ -431,54 +431,115 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             },
         },
         "evaluation_policy": {
-            "star_rating_scale": {
-                "5.0": "Exceptional",
-                "4.0-4.9": "Strong",
-                "3.0-3.9": "Adequate",
-                "2.0-2.9": "Below expectations",
-                "1.0-1.9": "Poor",
+            "star_rating": {
+                "weights": {
+                    "form_efficiency": 0.30,
+                    "pace_consistency": 0.25,
+                    "hr_management": 0.25,
+                    "execution_quality": 0.20,
+                },
+                "scale": [
+                    {"stars": "5.0", "min": 4.5, "description": "Exceptional"},
+                    {"stars": "4.0-4.9", "min": 3.5, "description": "Strong"},
+                    {"stars": "3.0-3.9", "min": 2.5, "description": "Adequate"},
+                    {
+                        "stars": "2.0-2.9",
+                        "min": 1.5,
+                        "description": "Below expectations",
+                    },
+                    {"stars": "1.0-1.9", "min": 0, "description": "Poor"},
+                ],
             },
             "next_run_target_variants": {
-                "easy_recovery": [
-                    "recommended_type",
-                    "target_hr_low",
-                    "target_hr_high",
-                    "reference_pace_low_formatted",
-                    "reference_pace_high_formatted",
-                    "success_criterion",
-                    "adjustment_tip",
-                    "summary_ja",
-                ],
-                "tempo_threshold": [
-                    "recommended_type",
-                    "target_pace_low_formatted",
-                    "target_pace_high_formatted",
-                    "target_hr",
-                    "success_criterion",
-                    "adjustment_tip",
-                    "summary_ja",
-                ],
-                "interval": [
-                    "recommended_type",
-                    "target_pace_low_formatted",
-                    "target_pace_high_formatted",
-                    "success_criterion",
-                    "adjustment_tip",
-                    "summary_ja",
-                ],
-                "data_insufficient": [
-                    "insufficient_data",
-                    "summary_ja",
+                "base_easy": {
+                    "distance": "±10%",
+                    "pace": "±5sec/km (reference only)",
+                    "hr_cap": "avg+5bpm, ≤Zone2 upper",
+                    "focus": "HR range primary, pace secondary",
+                },
+                "tempo": {
+                    "distance": "same or +1km",
+                    "pace": "-3sec/km (gradual improvement)",
+                    "hr_zone": "Zone 3-4 time +5%",
+                },
+                "interval": {
+                    "sets": "same or +1 rep",
+                    "pace": "±3sec/km",
+                    "recovery": "HR drops to Zone 2 before next set",
+                },
+                "long_run": {
+                    "distance": "+1-2km (≤30% weekly volume)",
+                    "pace": "Easy pace (HR Zone 1-2)",
+                    "nutrition": "Plan fueling if >60min",
+                },
+            },
+            "recommendations": {
+                "max_count": 2,
+                "format": {
+                    "heading": "### N. Title ⭐ 重要度: 高/中/低",
+                    "sections": [
+                        "**現状:**",
+                        "**推奨アクション:**",
+                        "**期待効果:**",
+                    ],
+                    "separator": "---",
+                },
+                "rules": [
+                    "Specific numbers required (no generic advice)",
+                    "Easy run suggestions use HR range, not pace",
+                    "Each recommendation must include measurable target",
                 ],
             },
-            "recommendations_max": 2,
+            "plan_achievement": {
+                "weights": {"pace": 0.40, "hr": 0.30, "distance": 0.30},
+                "scale": [
+                    {"stars": 5, "min_pct": 95},
+                    {"stars": 4, "min_pct": 85},
+                    {"stars": 3, "min_pct": 75},
+                    {"stars": 2, "min_pct": 60},
+                    {"stars": 1, "min_pct": 0},
+                ],
+            },
+            "training_type_criteria": {
+                "base": {
+                    "hr_zone_1_2": ">=80%",
+                    "pace_cv": "<3%",
+                },
+                "tempo": {
+                    "hr_zone_3_4": ">=60%",
+                    "pace_cv": "<5%",
+                    "hr_drift": "10-15% allowed",
+                },
+                "interval": {
+                    "work_recovery_contrast": "clear HR amplitude",
+                    "hr_drift": "N/A",
+                },
+                "recovery": {
+                    "hr_zone_1_2": ">=90%",
+                    "form_eval": "not required",
+                },
+                "race": {
+                    "pacing": "negative split or even",
+                    "hr_drift": "expected",
+                },
+            },
+            "summary_structure": {
+                "line_1": "training_type + distance + overall rating (1 sentence)",
+                "line_2": "Best aspect with specific number",
+                "line_3": "Improvement point with number (optional if none)",
+            },
             "next_action_count": 1,
         },
         "instructions": [
+            "Retrieve star_rating weights and training_type_criteria from this contract",
             "Exactly 1 next_action with numeric target and success condition",
-            "Maximum 2 recommendations with specific numbers",
+            "Maximum recommendations per recommendations.max_count",
+            "Follow recommendations.format for structured markdown",
             "Easy run suggestions use HR range, not pace",
             "Include plan_achievement only when planned_workout exists",
+            "Use plan_achievement.weights and scale for achievement scoring",
+            "Use summary_structure for summary text format",
+            "Use next_run_target_variants[type] for target calculation",
         ],
     },
 }
