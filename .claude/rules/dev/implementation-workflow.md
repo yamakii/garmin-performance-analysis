@@ -26,7 +26,7 @@ Risks セクション（任意）:
 ## Phase 1: Delegate (実装委任)
 
 サブエージェント(developer, worktree isolation)に以下を含めて委任:
-- Issue 番号と `gh issue view` 実行指示
+- Issue 番号と `mcp__github__get_issue` 実行指示
 - プランの実装手順（そのまま渡す）
 - 実装前確認（コードを書く前に出力させる）:
   1. 変更対象ファイル一覧
@@ -68,5 +68,5 @@ Risks セクション（任意）:
 Phase 2 完了後のみ実行可能:
 1. worktree ブランチを main repo に fetch
 2. remote に push
-3. `gh pr create` (Closes #{issue})
+3. `mcp__github__create_pull_request` (Closes #{issue})
 4. ユーザーに PR URL を報告

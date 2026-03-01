@@ -10,7 +10,7 @@
 
 ### Development Task Routing (IMPORTANT)
 全ての開発タスクで Issue を作成する（Issue なし実装は禁止）:
-- **Issue 番号あり**: → 探索フェーズで `gh issue view` → 設計をベースにプラン作成
+- **Issue 番号あり**: → 探索フェーズで `mcp__github__get_issue` → 設計をベースにプラン作成
 - **Issue 番号なし**: → `Issue: TBD` でプラン作成 → 承認後に Issue 作成
 - **分解が必要** (複数の独立した作業単位): → プラン内で `/decompose` を推奨
 

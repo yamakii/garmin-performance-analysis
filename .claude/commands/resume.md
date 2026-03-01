@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash, Read, Write, Edit, TaskCreate, TaskList, Glob
+allowed-tools: Bash, Read, Write, Edit, TaskCreate, TaskList, Glob, mcp__github__get_issue
 description: Resume a saved session checkpoint after /clear
 user-invocable: true
 ---
@@ -45,12 +45,12 @@ $ARGUMENTS — Optional slug name. If not provided, show available checkpoints a
 
 チェックポイントに Issue 番号がある場合:
 
-```bash
+```
 # Issue の最新状態を取得（クローズ済みの場合もある）
-gh issue view {number} --json number,title,state,body,labels
+mcp__github__get_issue(owner="yamakii", repo="garmin-performance-analysis", issue_number={number})
 
 # Epic がある場合、Epic の進捗も確認
-gh issue view {epic-number} --json number,title,body
+mcp__github__get_issue(owner="yamakii", repo="garmin-performance-analysis", issue_number={epic-number})
 ```
 
 Issue の設計情報を読み込み、文脈を復元する。

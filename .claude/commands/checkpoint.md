@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash, Read, Write, Edit, TaskList, Glob
+allowed-tools: Bash, Read, Write, Edit, TaskList, Glob, mcp__github__get_issue
 description: Save session state to auto-memory for resumption after /clear
 user-invocable: true
 ---
@@ -44,9 +44,9 @@ TaskList ツールを呼び出し、pending/in_progress のタスクを取得し
 4. 検出できない場合: `issue: none` として保存
 
 Issue が検出された場合:
-```bash
+```
 # Issue の情報を取得
-gh issue view {number} --json number,title,labels
+mcp__github__get_issue(owner="yamakii", repo="garmin-performance-analysis", issue_number={number})
 
 # Sub-issue の場合、親 Epic も取得
 # Issue body に "Part of #XX" があれば Epic 番号を抽出
