@@ -18,9 +18,65 @@ def test_get_contract_split():
 @pytest.mark.unit
 def test_get_contract_phase():
     contract = get_contract("phase")
-    assert "warmup_criteria" in contract["evaluation_policy"]
-    assert "cooldown_criteria" in contract["evaluation_policy"]
-    assert "star_rating_format" in contract["evaluation_policy"]
+    policy = contract["evaluation_policy"]
+    assert "star_rating_format" in policy
+    assert "evaluation_criteria" in policy
+    assert "cv_thresholds" in policy
+    assert "warmup_criteria" in policy
+    assert "cooldown_criteria" in policy
+    assert "hr_drift_by_type" in policy
+    assert "phase_structures" in policy
+
+
+@pytest.mark.unit
+def test_phase_contract_has_evaluation_criteria():
+    contract = get_contract("phase")
+    criteria = contract["evaluation_policy"]["evaluation_criteria"]
+    assert len(criteria) == 3
+    for category in ["low_moderate", "tempo_threshold", "interval_sprint"]:
+        assert category in criteria
+        assert "hr_target" in criteria[category]
+        assert "weights" in criteria[category]
+
+
+@pytest.mark.unit
+def test_phase_contract_has_cv_thresholds():
+    contract = get_contract("phase")
+    cv = contract["evaluation_policy"]["cv_thresholds"]
+    assert len(cv) == 3
+    for category in ["low_moderate", "tempo_threshold", "interval_sprint"]:
+        assert category in cv
+
+
+@pytest.mark.unit
+def test_phase_contract_has_warmup_cooldown_criteria():
+    contract = get_contract("phase")
+    policy = contract["evaluation_policy"]
+    warmup = policy["warmup_criteria"]
+    cooldown = policy["cooldown_criteria"]
+    for category in ["low_moderate", "tempo_threshold", "interval_sprint"]:
+        assert category in warmup
+        assert category in cooldown
+
+
+@pytest.mark.unit
+def test_phase_contract_has_hr_drift_by_type():
+    contract = get_contract("phase")
+    drift = contract["evaluation_policy"]["hr_drift_by_type"]
+    assert "low_moderate" in drift
+    assert "tempo_threshold" in drift
+    assert "normal" in drift["low_moderate"]
+    assert "excessive" in drift["low_moderate"]
+
+
+@pytest.mark.unit
+def test_phase_contract_has_phase_structures():
+    contract = get_contract("phase")
+    structures = contract["evaluation_policy"]["phase_structures"]
+    assert "normal_run" in structures
+    assert "interval" in structures
+    assert len(structures["normal_run"]) == 3
+    assert len(structures["interval"]) == 4
 
 
 @pytest.mark.unit
