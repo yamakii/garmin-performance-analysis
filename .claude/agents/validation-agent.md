@@ -44,6 +44,15 @@ get_server_info()  # server_dir 確認
 prefetch_activity_context(activity_id)
 ```
 
+### Step 2.5: ANALYSIS_TEMP_DIR 生成
+
+現在時刻の unix timestamp を取得し、timestamp 付きユニークパスを生成:
+```
+ANALYSIS_TEMP_DIR=/tmp/analysis_{activity_id}_{unix_timestamp}
+```
+unix_timestamp は現在時刻の秒数（例: 1709312345）。
+これにより再分析時に前回の JSON が残っていても Write tool の既存ファイル制約を回避できる。
+
 ### Step 3: 5 Analyst Agents 並列実行
 
 Agent tool で以下を並列起動:
@@ -53,11 +62,11 @@ Agent tool で以下を並列起動:
 - split-section-analyst
 - summary-section-analyst
 
-各エージェントに activity_id, date, prefetch context, temp_dir を渡す。
+各エージェントに activity_id, date, prefetch context, `ANALYSIS_TEMP_DIR` を渡す。
 
 ### Step 4: 結果検証
 
-`/tmp/analysis_{activity_id}/` 内の JSON ファイルを Read で確認:
+`{ANALYSIS_TEMP_DIR}/` 内の JSON ファイルを Read で確認:
 - 5ファイル存在: efficiency.json, environment.json, phase.json, split.json, summary.json
 - 各ファイルの `analysis_data` が非null
 - `activity_id`, `section_type` フィールドが存在
@@ -65,7 +74,7 @@ Agent tool で以下を並列起動:
 ### Step 5: 復帰・クリーンアップ
 ```
 reload_server()  # main 復帰
-rm -rf /tmp/analysis_{activity_id}/
+rm -rf {ANALYSIS_TEMP_DIR}/
 ```
 
 ## 判定基準

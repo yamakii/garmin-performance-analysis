@@ -14,7 +14,7 @@ Consolidated reference for all analysis rules.
 
 - **独立動作**: 他セクション分析を参照しない。全データを MCP tools から直接取得
 - **事前コンテキスト**: orchestrator 提供の JSON を信頼し、不足時のみ追加 MCP 呼び出し
-- **出力**: 日本語テキスト + English key names。`{temp_dir}/{section_type}.json` に出力
+- **出力**: 日本語テキスト + English key names。`{ANALYSIS_TEMP_DIR}/{section_type}.json` に出力（ANALYSIS_TEMP_DIR は orchestrator が timestamp 付きユニークパスとして提供）
 - **JSON構造**: `{"activity_id": <int>, "activity_date": "<YYYY-MM-DD>", "section_type": "<type>", "analysis_data": {...}}`
 - **星評価**: `(★★★★☆ N.N/5.0)`
 - **HR zones**: Garmin native zones のみ (計算式禁止)
