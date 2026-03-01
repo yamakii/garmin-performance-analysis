@@ -79,21 +79,127 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
         },
         "evaluation_policy": {
             "star_rating_format": "(★★★★☆ N.N/5.0)",
+            "evaluation_criteria": {
+                "low_moderate": {
+                    "hr_target": "Zone 1-2",
+                    "pace_focus": "even pace",
+                    "weights": {
+                        "hr_control": 0.40,
+                        "pace_stability": 0.30,
+                        "form": 0.30,
+                    },
+                },
+                "tempo_threshold": {
+                    "hr_target": "Zone 3-4",
+                    "pace_focus": "negative split allowed",
+                    "weights": {
+                        "target_pace": 0.40,
+                        "hr_control": 0.30,
+                        "pace_stability": 0.30,
+                    },
+                },
+                "interval_sprint": {
+                    "hr_target": "Zone 4-5",
+                    "pace_focus": "work/recovery consistency",
+                    "weights": {
+                        "work_intensity": 0.40,
+                        "recovery_quality": 0.30,
+                        "structure": 0.30,
+                    },
+                },
+            },
+            "cv_thresholds": {
+                "low_moderate": {
+                    "excellent": "<2%",
+                    "good": "<3%",
+                    "fair": "<5%",
+                    "poor": ">=5%",
+                },
+                "tempo_threshold": {
+                    "excellent": "<3%",
+                    "good": "<5%",
+                    "fair": "<7%",
+                    "poor": ">=7%",
+                },
+                "interval_sprint": {
+                    "work": "<5%",
+                    "recovery": "<10%",
+                },
+            },
             "warmup_criteria": {
-                "excellent": "Gradual HR rise to Zone 2, 10-15 min",
-                "good": "Adequate preparation, minor inconsistency",
-                "poor": "Too short (<5 min) or too intense (Zone 3+)",
+                "low_moderate": {
+                    "not_needed": "Warmup not required for low intensity",
+                    "star_if_absent": "5.0",
+                },
+                "tempo_threshold": {
+                    "5_star": (
+                        "1-2km, main pace +15-30sec/km, " "gradual HR rise to Zone 2"
+                    ),
+                    "4_star": "Pace diff +10-40sec/km",
+                    "3_star": "Present but HR spikes or too short",
+                    "star_if_absent": "3.0",
+                },
+                "interval_sprint": {
+                    "5_star": (
+                        "2km+, HR to Zone 2 gradually, " "dynamic stretching implied"
+                    ),
+                    "4_star": "1-2km, adequate pace progression",
+                    "3_star": "<1km or HR spikes",
+                    "star_if_absent": "1.0",
+                },
             },
             "cooldown_criteria": {
-                "excellent": "Gradual HR descent, 5-10 min",
-                "good": "Present but brief",
-                "poor": "Absent or abrupt stop",
+                "low_moderate": {
+                    "not_needed": "Cooldown not required for low intensity",
+                    "star_if_absent": "5.0",
+                },
+                "tempo_threshold": {
+                    "5_star": (
+                        "Last 1km at main +20-40sec/km, " "HR drops to Zone 1-2"
+                    ),
+                    "4_star": "Pace drops but HR stays elevated",
+                    "3_star": "Abrupt stop or absent",
+                    "star_if_absent": "3.0",
+                },
+                "interval_sprint": {
+                    "5_star": (
+                        "Last 1km at main +20-40sec/km, " "HR drops to Zone 1-2"
+                    ),
+                    "4_star": "Pace drops but HR stays elevated",
+                    "3_star": "Abrupt stop or absent",
+                    "star_if_absent": "1.0",
+                },
+            },
+            "hr_drift_by_type": {
+                "low_moderate": {
+                    "normal": "<5%",
+                    "mild": "5-8%",
+                    "excessive": ">8%",
+                },
+                "tempo_threshold": {
+                    "normal": "<8%",
+                    "mild": "8-12%",
+                    "excessive": ">12%",
+                },
+                "interval_sprint": ("N/A (not applicable for interval structure)"),
+            },
+            "phase_structures": {
+                "normal_run": ["warmup", "run", "cooldown"],
+                "interval": ["warmup", "work", "recovery", "cooldown"],
+                "detection": (
+                    "recovery_splits present → 4-phase, " "otherwise → 3-phase"
+                ),
             },
         },
         "instructions": [
-            "Evaluate each phase independently",
+            "Evaluate each phase independently using criteria from " "this contract",
             "Include star rating on its own line in parentheses",
-            "Base evaluation on training_type from prefetch context",
+            "Base evaluation on training_type mapped to "
+            "evaluation_criteria category",
+            "Use cv_thresholds for pace stability assessment " "per training type",
+            "Apply warmup/cooldown criteria based on " "training type category",
+            "Use hr_drift_by_type for HR drift assessment " "(skip for interval)",
+            "Detect phase structure using " "phase_structures.detection rule",
         ],
     },
     "efficiency": {
