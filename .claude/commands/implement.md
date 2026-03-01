@@ -77,24 +77,43 @@ Agent(subagent_type="developer", isolation="worktree", prompt="""
 
 **並列起動:** Tier 0 の全 Issue を同時に Agent tool で起動（独立しているため並列安全）。
 
-### Step 5: 完了報告 & マージ待ち
+### Step 5: Validation (FIFO)
 
-各サブエージェント完了後:
+各 developer agent 完了後、Validation Level に応じて検証を実行:
 
-1. ユーザーに PR URL を提示
-2. `/ship --pr N` でのマージを待つ
+1. **Manifest 確認**: `/tmp/validation_queue/<branch>.json` を読み込む
+   - developer agent が manifest を書いていない場合:
+     worktree_path と changed_files から Validation Level を自動判定（`dev-reference.md` §3 の判定表を使用）
+   - skip レベルの場合 → 検証をスキップし Step 6 へ
+
+2. **Validation Agent 起動**: foreground で1つずつ起動（FIFO 順）
+   ```
+   Agent(subagent_type="validation-agent", prompt="""
+     Manifest: /tmp/validation_queue/<branch>.json
+     （または worktree_path, changed_files, validation_level を直接指定）
+   """)
+   ```
+
+3. **結果に応じて分岐**:
+   - **PASS** → Step 6 へ
+   - **FAIL** → developer agent を resume して修正指示、再度 Step 5
+   - **WARNING** → ユーザーに報告、判断を委ねる
+
+### Step 6: Ship & 次のティアへ
+
+Validation PASS（または skip）の PR をユーザーに報告:
 
 ```
 Tier 0 results:
-  #51 → PR #61 ready for review: {URL}
-  #52 → PR #62 ready for review: {URL}
+  #51 → PR #61 validated (L1 PASS): {URL}
+  #52 → PR #62 validated (skip): {URL}
 
 To proceed to Tier 1, merge these PRs:
-  /ship --pr 61
-  /ship --pr 62
+  /ship --pr 61 --validated
+  /ship --pr 62 --validated
 ```
 
-### Step 6: 次のティアへ進行
+### Step 7: 次のティアへ進行
 
 マージ完了後、依存グラフを更新:
 
@@ -102,7 +121,7 @@ To proceed to Tier 1, merge these PRs:
 2. 新たに unblock された Issue を特定
 3. 次のティアの Issue に対して Step 4-5 を繰り返す
 
-### Step 7: 全完了
+### Step 8: 全完了
 
 全 Issue が完了したら報告:
 

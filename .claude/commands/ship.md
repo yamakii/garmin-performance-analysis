@@ -43,7 +43,13 @@ mcp__github__get_pull_request_status(owner="yamakii", repo="garmin-performance-a
 mcp__github__get_pull_request(owner="yamakii", repo="garmin-performance-analysis", pull_number={PR_NUMBER})
 ```
 
-If checks are failing, report to user and stop (do not merge).
+**`--validated` フラグあり**（Validation Agent PASS 済み）:
+- CI ステータスを確認するが、pending/running でもマージ可能
+- CI failing の場合のみ WARNING を表示（ブロックしない）
+
+**`--validated` フラグなし**（従来動作）:
+- CI checks が全て pass していなければマージしない
+- checks が failing → report to user and stop (do not merge)
 
 ### Step 2-PR: Merge (merge commit, TDD 履歴保持)
 
@@ -132,7 +138,7 @@ If `--close` is specified, or PR body contains `Closes #N`:
 
 ## Arguments
 
-$ARGUMENTS — Optional commit message and/or `--close <issue-number>` and/or `--pr <pr-number>`.
+$ARGUMENTS — Optional commit message and/or `--close <issue-number>` and/or `--pr <pr-number>` and/or `--validated`.
 
 Examples:
 - `/ship` — auto-diagnose state and execute appropriate step
@@ -141,3 +147,5 @@ Examples:
 - `/ship feat: extract ApiClient --close 51` — use message, push, close #51
 - `/ship --pr 42` — merge PR #42 via merge commit, sync local, cleanup worktree
 - `/ship --pr 42 --close 51` — merge PR #42 + close Issue #51
+- `/ship --pr 42 --validated` — merge PR #42 (Validation Agent PASS 済み、CI pending でも可)
+- `/ship --pr 42 --validated --close 51` — merge + close (validated)
