@@ -185,10 +185,54 @@ def test_environment_contract_has_star_rating_weights():
 def test_get_contract_summary():
     contract = get_contract("summary")
     policy = contract["evaluation_policy"]
-    assert "star_rating_scale" in policy
+    assert "star_rating" in policy
     assert "next_run_target_variants" in policy
-    assert policy["recommendations_max"] == 2
+    assert policy["recommendations"]["max_count"] == 2
     assert policy["next_action_count"] == 1
+
+
+@pytest.mark.unit
+def test_summary_contract_has_star_rating_weights():
+    contract = get_contract("summary")
+    weights = contract["evaluation_policy"]["star_rating"]["weights"]
+    assert abs(sum(weights.values()) - 1.0) < 0.01
+    assert len(weights) == 4
+
+
+@pytest.mark.unit
+def test_summary_contract_has_next_run_variants():
+    contract = get_contract("summary")
+    variants = contract["evaluation_policy"]["next_run_target_variants"]
+    assert len(variants) == 4
+    for v in ["base_easy", "tempo", "interval", "long_run"]:
+        assert v in variants
+
+
+@pytest.mark.unit
+def test_summary_contract_has_recommendations_rules():
+    contract = get_contract("summary")
+    rec = contract["evaluation_policy"]["recommendations"]
+    assert rec["max_count"] == 2
+    assert "format" in rec
+    assert "rules" in rec
+
+
+@pytest.mark.unit
+def test_summary_contract_has_plan_achievement():
+    contract = get_contract("summary")
+    pa = contract["evaluation_policy"]["plan_achievement"]
+    weights = pa["weights"]
+    assert abs(sum(weights.values()) - 1.0) < 0.01
+    assert len(pa["scale"]) == 5
+
+
+@pytest.mark.unit
+def test_summary_contract_has_training_type_criteria():
+    contract = get_contract("summary")
+    criteria = contract["evaluation_policy"]["training_type_criteria"]
+    assert len(criteria) == 5
+    for t in ["base", "tempo", "interval", "recovery", "race"]:
+        assert t in criteria
 
 
 @pytest.mark.unit
