@@ -120,6 +120,7 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 - ルールを CLAUDE.md に直接記述 (`.claude/rules/` を使う)
 - 本番データ依存テスト
 - 複数の無関係な変更を1コミットに混在
+- Validation Level: skip を理由に Issue/Plan/Worktree/PR をスキップ
 
 ## 8. LLM Round-Trip Optimization
 
