@@ -63,6 +63,7 @@ ANALYSIS_TEMP_DIR=/tmp/analysis_{activity_id}_{unix_timestamp}
 ```
 unix_timestamp は現在時刻の秒数（例: 1709312345）。
 これにより再分析時に前回の JSON が残っていても Write tool の既存ファイル制約を回避できる。
+**事前の mkdir は不要**。Write tool がファイル書き込み時に親ディレクトリを自動作成する。`mkdir -p` や `Bash` でのディレクトリ作成は行わないこと。
 
 ### Step 3: 5 Analyst Agents 並列実行
 
