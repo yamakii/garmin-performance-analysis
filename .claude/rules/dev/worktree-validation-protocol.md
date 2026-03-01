@@ -115,7 +115,10 @@ manifest の `validation_level` に応じた手順を実行する。
 
 ## Skip 条件
 
-`validation_level` 未指定かつ変更が `.claude/rules/`, `docs/`, `CLAUDE.md` のみの場合、検証スキップ。
+`validation_level: skip` は Validation Agent の実行をスキップする。
+Issue → Plan → Worktree → PR のワークフローは変わらない。
+
+判定: `validation_level` 未指定かつ変更が `.claude/rules/`, `docs/`, `CLAUDE.md` のみの場合に該当。
 
 ## Manifest ディレクトリ
 

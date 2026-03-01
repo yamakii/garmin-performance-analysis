@@ -56,6 +56,7 @@ Risks セクション（任意）:
 | L1 | `uv run pytest {test_path} -m unit -v` | 0 failures |
 | L2 | L1 + `uv run pytest -m integration --tb=short -q` | 0 failures |
 | L3 | L2 + Validation Agent（foreground）で `reload_server` → `/analyze-activity` 実行 | analysis_data 非null + 必須フィールド存在 |
+| skip | Validation Agent スキップ。コードレビュー(Phase 2a)のみ | 2a チェック通過 |
 
 **CRITICAL**: テスト結果は自分のターンで確認する。サブエージェントの報告を信じない。
 
@@ -68,7 +69,7 @@ Risks セクション（任意）:
 - `/implement` の Step 5 が Phase 2 に相当する
 - developer agent 完了 → Validation Agent 起動（Step 5）→ Phase 3 (Ship)
 - Validation Agent は `/implement` が自動起動する（手動で別途起動する必要はない）
-- skip レベル（ルール/コマンド変更のみ）の場合は検証をスキップして Phase 3 へ
+- skip レベルの場合は Phase 2a（コードレビュー）のみ実施し Phase 3 へ（Validation Agent はスキップ）
 
 ## Phase 3: Ship (PR作成)
 
