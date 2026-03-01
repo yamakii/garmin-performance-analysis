@@ -55,6 +55,19 @@ def _detect_tool_error(result: list) -> bool:
     return False
 
 
+def _count_warnings(result: list) -> int:
+    """Count warnings in tool result."""
+    for item in result:
+        if hasattr(item, "text"):
+            try:
+                data = json.loads(item.text)
+                if isinstance(data, dict) and "_warnings" in data:
+                    return len(data["_warnings"])
+            except (ValueError, TypeError):
+                pass
+    return 0
+
+
 # Initialize server
 mcp = Server("garmin-db")
 db_reader = GarminDBReader()
@@ -108,6 +121,9 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             )
         else:
             logger.info("tool=%s %sduration_ms=%.1f status=ok", name, ctx, duration_ms)
+        warning_count = _count_warnings(result)
+        if warning_count > 0:
+            logger.info("tool=%s %swarning_count=%d", name, ctx, warning_count)
         return result
     except Exception as e:
         duration_ms = (time.monotonic() - start) * 1000
