@@ -9,6 +9,13 @@ model: inherit
 
 Worktree で実装されたコード変更を検証するエージェント。
 
+## Step 0: Manifest 読み込み
+
+1. `/tmp/validation_queue/{branch}.json` を Read で取得
+2. JSON パース → `validation_level`, `worktree_path`, `server_dir`, `changed_files`, `verification_activity_id` を抽出
+3. `validation_level` が `skip` → 即座に manifest 削除して PASS を返却して終了
+4. L1/L2/L3 → 対応する検証セクションへ進む
+
 ## 検証レベル
 
 ### L1: MCP Check
@@ -100,6 +107,7 @@ Markdown レポートの基本チェック:
 ```
 reload_server()  # main 復帰
 rm -rf {ANALYSIS_TEMP_DIR}/
+rm /tmp/validation_queue/{branch}.json
 ```
 
 ## 判定基準

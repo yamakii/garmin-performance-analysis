@@ -81,16 +81,16 @@ Agent(subagent_type="developer", isolation="worktree", prompt="""
 
 各 developer agent 完了後、Validation Level に応じて検証を実行:
 
-1. **Manifest 確認**: `/tmp/validation_queue/<branch>.json` を読み込む
-   - developer agent が manifest を書いていない場合:
-     worktree_path と changed_files から Validation Level を自動判定（`dev-reference.md` §3 の判定表を使用）
-   - skip レベルの場合 → 検証をスキップし Step 6 へ
+1. **Manifest 読み込み**: `/tmp/validation_queue/<branch>.json` を Read で読み込む
+   - Manifest が存在する場合: `validation_level` を使用
+   - Manifest が存在しない場合（fallback）: worktree の changed_files から `dev-reference.md` §3 の判定表で Validation Level を自動判定
+   - `skip` レベルの場合 → 検証をスキップし Step 6 へ
 
 2. **Validation Agent 起動**: foreground で1つずつ起動（FIFO 順）
    ```
    Agent(subagent_type="validation-agent", prompt="""
      Manifest: /tmp/validation_queue/<branch>.json
-     （または worktree_path, changed_files, validation_level を直接指定）
+     （manifest がない場合は worktree_path, changed_files, validation_level を直接指定）
    """)
    ```
 
