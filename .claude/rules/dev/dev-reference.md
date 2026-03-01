@@ -49,8 +49,7 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 
 - **Serena activate**: コード調査前に必ず `mcp__serena__activate_project()` 実行
 - **Stale recovery**: Serena → activate、garmin-db → `reload_server()`、それでもダメなら `/mcp`
-- **Code changes** (`packages/`, `tests/`): worktree MANDATORY
-- **Rules/docs** (`.claude/rules/`, `docs/`): PR required (branch protection)
+- **全変更**: Issue → Plan → Worktree → PR（branch protection により必須）
 - **Planning**: main branch (read-only)
 - **PR**: merge commit --no-ff、1 PR = 1 Sub-issue、title は Conventional Commits、body に `Closes #{issue}`
 - **Commit**: Conventional Commits + Co-Authored-By。単一の関心事のみ（"and" が必要なら分割）
@@ -59,6 +58,9 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 ## 3. Validation
 
 ### Validation Level 判定
+
+> **Validation Level は PR マージ前の検証方法を決めるもの。
+> skip は「Validation Agent をスキップ」であり「ワークフロー(Issue/Plan/Worktree/PR)をスキップ」ではない。**
 
 変更対象の**全ファイル**を以下と照合し、最も高いレベルを採用:
 
