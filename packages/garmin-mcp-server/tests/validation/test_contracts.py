@@ -38,10 +38,53 @@ def test_get_contract_efficiency():
 def test_get_contract_environment():
     contract = get_contract("environment")
     policy = contract["evaluation_policy"]
-    assert "temperature" in policy
+    assert "temperature_by_training_type" in policy
     assert "humidity" in policy
-    assert "wind" in policy
+    assert "wind_speed_ms" in policy
     assert "terrain_classification" in policy
+
+
+@pytest.mark.unit
+def test_environment_contract_has_temperature_by_type():
+    contract = get_contract("environment")
+    temp = contract["evaluation_policy"]["temperature_by_training_type"]
+    assert len(temp) == 4
+    for category in [
+        "recovery",
+        "base_moderate",
+        "tempo_threshold",
+        "interval_sprint",
+    ]:
+        assert category in temp
+
+
+@pytest.mark.unit
+def test_environment_contract_has_humidity_thresholds():
+    contract = get_contract("environment")
+    humidity = contract["evaluation_policy"]["humidity"]
+    assert "good" in humidity
+    assert "challenging" in humidity
+
+
+@pytest.mark.unit
+def test_environment_contract_has_wind_thresholds():
+    contract = get_contract("environment")
+    wind = contract["evaluation_policy"]["wind_speed_ms"]
+    assert len(wind) == 4
+
+
+@pytest.mark.unit
+def test_environment_contract_has_terrain_classification():
+    contract = get_contract("environment")
+    terrain = contract["evaluation_policy"]["terrain_classification"]
+    assert len(terrain) == 4
+
+
+@pytest.mark.unit
+def test_environment_contract_has_star_rating_weights():
+    contract = get_contract("environment")
+    weights = contract["evaluation_policy"]["star_rating"]["weights"]
+    assert abs(sum(weights.values()) - 1.0) < 0.01
 
 
 @pytest.mark.unit

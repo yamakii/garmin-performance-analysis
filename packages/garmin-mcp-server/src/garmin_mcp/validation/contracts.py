@@ -159,34 +159,90 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             },
         },
         "evaluation_policy": {
-            "temperature": {
-                "optimal": "10-15°C",
-                "good": "5-10°C or 15-20°C",
-                "challenging": "0-5°C or 20-25°C",
-                "severe": "<0°C or >25°C",
+            "temperature_by_training_type": {
+                "recovery": {
+                    "ideal": "<15",
+                    "good": "15-22",
+                    "acceptable": "22-28",
+                    "warm": ">28",
+                },
+                "base_moderate": {
+                    "cold": "<10",
+                    "ideal": "10-18",
+                    "ok": "18-23",
+                    "hot": "23-28",
+                    "severe": ">28",
+                },
+                "tempo_threshold": {
+                    "cold": "<8",
+                    "ideal": "8-15",
+                    "good": "15-20",
+                    "warm": "20-25",
+                    "hot": ">25",
+                },
+                "interval_sprint": {
+                    "ideal": "8-15",
+                    "good": "15-20",
+                    "warm": "20-23",
+                    "dangerous": "23-28",
+                    "extreme": ">28",
+                },
             },
             "humidity": {
-                "optimal": "40-60%",
-                "acceptable": "30-40% or 60-70%",
-                "challenging": "<30% or >70%",
+                "good": "<60%",
+                "acceptable": "60-75%",
+                "challenging": ">75%",
             },
-            "wind": {
-                "calm": "0-10 km/h",
-                "moderate": "10-20 km/h",
-                "strong": "20-30 km/h",
-                "severe": ">30 km/h",
+            "wind_speed_ms": {
+                "minimal": "<2",
+                "light": "2-4",
+                "moderate": "4-6",
+                "strong": ">6",
             },
             "terrain_classification": {
                 "flat": "<10m/km",
-                "undulating": "10-20m/km",
-                "hilly": "20-40m/km",
-                "mountainous": ">40m/km",
+                "undulating": "10-30m/km",
+                "hilly": "30-50m/km",
+                "mountainous": ">50m/km",
+            },
+            "star_rating": {
+                "weights": {
+                    "temperature": 0.40,
+                    "humidity": 0.25,
+                    "terrain": 0.20,
+                    "wind": 0.15,
+                },
+                "scale": [
+                    {
+                        "stars": "5.0",
+                        "description": "All conditions optimal",
+                    },
+                    {
+                        "stars": "4.5-4.9",
+                        "description": "1 factor slightly suboptimal",
+                    },
+                    {
+                        "stars": "4.0-4.4",
+                        "description": "Multiple minor issues",
+                    },
+                    {
+                        "stars": "3.5-3.9",
+                        "description": "Noticeable environmental burden",
+                    },
+                    {
+                        "stars": "≤3.0",
+                        "description": "Multiple challenging factors",
+                    },
+                ],
             },
         },
         "instructions": [
             "Use weather.json data (not device temperature)",
-            "Evaluate combined impact of temperature + humidity + wind",
-            "Include terrain classification from elevation data",
+            "Retrieve training_type and evaluate temperature using "
+            "temperature_by_training_type[category]",
+            "Evaluate humidity, wind (m/s), and terrain using thresholds "
+            "from this contract",
+            "Compute weighted star rating using star_rating.weights",
             "Star rating reflects overall environmental favorability",
         ],
     },
