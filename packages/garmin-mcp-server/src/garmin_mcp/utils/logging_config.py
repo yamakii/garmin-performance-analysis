@@ -6,6 +6,7 @@ so all log output goes to stderr or rotating log files.
 
 import logging
 import sys
+import uuid
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -54,3 +55,6 @@ def setup_mcp_logging(
     )
     file_handler.setFormatter(formatter)
     root_logger.addHandler(file_handler)
+
+    session_id = uuid.uuid4().hex[:8]
+    root_logger.info("session_start session_id=%s", session_id)
