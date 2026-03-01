@@ -63,6 +63,13 @@ Risks セクション（任意）:
 - 全チェック通過 → Phase 3 へ
 - 失敗あり → サブエージェントを resume して修正指示、再度 Phase 2
 
+## Phase 2 と /implement の対応
+
+- `/implement` の Step 5 が Phase 2 に相当する
+- developer agent 完了 → Validation Agent 起動（Step 5）→ Phase 3 (Ship)
+- Validation Agent は `/implement` が自動起動する（手動で別途起動する必要はない）
+- skip レベル（ルール/コマンド変更のみ）の場合は検証をスキップして Phase 3 へ
+
 ## Phase 3: Ship (PR作成)
 
 Phase 2 完了後のみ実行可能:
@@ -70,3 +77,4 @@ Phase 2 完了後のみ実行可能:
 2. remote に push
 3. `mcp__github__create_pull_request` (Closes #{issue})
 4. ユーザーに PR URL を報告
+5. Validation PASS 済みの場合: `/ship --pr N --validated` でのマージを提案
