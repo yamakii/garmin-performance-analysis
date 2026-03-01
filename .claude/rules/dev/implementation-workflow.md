@@ -17,6 +17,8 @@ thin plan の例（不足とみなす）:
 - Interface なしで新規クラス導入
 
 例外: プロンプト変更のみ（.claude/agents/, .claude/rules/）→ Interface 省略可。Test Plan は必須。
+※ これは Interface 省略の条件であり、Validation Level とは無関係。
+agents は L3、rules は skip（dev-reference.md §3 参照）。
 
 Risks セクション（任意）:
 - 計画時点で不確実な技術的判断・未検証の前提があれば記載する
