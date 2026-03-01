@@ -32,6 +32,29 @@ logger = logging.getLogger(__name__)
 
 OVERRIDE_FILE = "/tmp/garmin-mcp-server-dir"
 
+
+def _extract_log_context(arguments: dict[str, Any]) -> str:
+    """Extract activity_id or date from arguments for log context."""
+    if "activity_id" in arguments:
+        return f"activity_id={arguments['activity_id']} "
+    if "date" in arguments:
+        return f"date={arguments['date']} "
+    return ""
+
+
+def _detect_tool_error(result: list) -> bool:
+    """Check if any TextContent in result contains an error response."""
+    for item in result:
+        if hasattr(item, "text"):
+            try:
+                data = json.loads(item.text)
+                if isinstance(data, dict) and "error" in data:
+                    return True
+            except (ValueError, TypeError):
+                pass
+    return False
+
+
 # Initialize server
 mcp = Server("garmin-db")
 db_reader = GarminDBReader()
@@ -75,7 +98,16 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     try:
         result = await _dispatch_tool(name, arguments)
         duration_ms = (time.monotonic() - start) * 1000
-        logger.info("tool=%s duration_ms=%.1f status=ok", name, duration_ms)
+        ctx = _extract_log_context(arguments)
+        if _detect_tool_error(result):
+            logger.warning(
+                "tool=%s %sduration_ms=%.1f status=tool_error",
+                name,
+                ctx,
+                duration_ms,
+            )
+        else:
+            logger.info("tool=%s %sduration_ms=%.1f status=ok", name, ctx, duration_ms)
         return result
     except Exception as e:
         duration_ms = (time.monotonic() - start) * 1000

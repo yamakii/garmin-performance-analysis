@@ -99,6 +99,20 @@ class TestSetupMcpLogging:
         assert len(logger.handlers) == 2
         self._clear_garmin_logger()
 
+    def test_session_start_marker_logged(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Verify that session_start is logged when setup_mcp_logging is called."""
+        from garmin_mcp.utils.logging_config import setup_mcp_logging
+
+        self._clear_garmin_logger()
+        with caplog.at_level(logging.INFO, logger="garmin_mcp"):
+            setup_mcp_logging(log_dir=tmp_path)
+        assert any(
+            "session_start session_id=" in record.message for record in caplog.records
+        )
+        self._clear_garmin_logger()
+
 
 @pytest.mark.unit
 class TestCallToolLogging:
