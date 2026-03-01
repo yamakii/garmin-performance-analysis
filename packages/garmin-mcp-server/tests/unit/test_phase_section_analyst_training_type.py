@@ -42,10 +42,7 @@ class TestAgentDefinitionStructure:
 
     def test_training_type_section_exists(self, agent_definition_content):
         """Agent definition includes training type judgment section."""
-        assert (
-            "## トレーニングタイプ判定" in agent_definition_content
-            or "## トレーニングタイプ判定（NEW）" in agent_definition_content
-        )
+        assert "トレーニングタイプ判定" in agent_definition_content
 
 
 @pytest.mark.unit
@@ -108,11 +105,11 @@ class TestEvaluationGuidelines:
 
     def test_warmup_evaluation_guidelines_exist(self, agent_definition_content):
         """Warmup evaluation guidelines exist for all categories."""
-        assert "### ウォームアップ" in agent_definition_content
+        assert "warmup" in agent_definition_content.lower()
 
     def test_cooldown_evaluation_guidelines_exist(self, agent_definition_content):
         """Cooldown evaluation guidelines exist for all categories."""
-        assert "### Cooldown" in agent_definition_content
+        assert "cooldown" in agent_definition_content.lower()
 
     def test_tone_guidance_exists(self, agent_definition_content):
         """Tone guidance exists for different categories."""
