@@ -7,6 +7,13 @@ from typing import Any, Protocol
 from mcp.types import TextContent
 
 
+def inject_warnings(data: dict[str, Any], warnings: list[str]) -> dict[str, Any]:
+    """Add _warnings field to response data if warnings are non-empty."""
+    if warnings:
+        data["_warnings"] = warnings
+    return data
+
+
 def format_json_response(data: Any, *, default: Callable | None = None) -> str:
     """Format data as compact JSON for MCP responses."""
     return json.dumps(data, ensure_ascii=False, separators=(",", ":"), default=default)

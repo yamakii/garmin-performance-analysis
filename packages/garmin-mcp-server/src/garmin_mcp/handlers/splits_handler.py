@@ -6,7 +6,7 @@ from typing import Any
 from mcp.types import TextContent
 
 from garmin_mcp.database.db_reader import GarminDBReader
-from garmin_mcp.handlers.base import format_json_response
+from garmin_mcp.handlers.base import format_json_response, inject_warnings
 from garmin_mcp.utils.error_handling import safe_tool_handler
 
 logger = logging.getLogger(__name__)
@@ -54,5 +54,19 @@ class SplitsHandler:
             )
         else:
             raise ValueError(f"Unknown tool: {name}")
+
+        # Detect missing form metrics in split data
+        warnings: list[str] = []
+        splits = result.get("splits") if isinstance(result, dict) else None
+        if splits:
+            missing_form = sum(
+                1 for s in splits if s.get("ground_contact_time_ms") is None
+            )
+            if missing_form > 0:
+                warnings.append(
+                    f"{missing_form}/{len(splits)} splits missing form metrics"
+                )
+        if isinstance(result, dict):
+            inject_warnings(result, warnings)
 
         return [TextContent(type="text", text=format_json_response(result))]

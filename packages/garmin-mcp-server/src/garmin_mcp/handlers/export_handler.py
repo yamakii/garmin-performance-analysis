@@ -5,7 +5,7 @@ from typing import Any
 from mcp.types import TextContent
 
 from garmin_mcp.database.db_reader import GarminDBReader
-from garmin_mcp.handlers.base import format_json_response
+from garmin_mcp.handlers.base import format_json_response, inject_warnings
 
 
 class ExportHandler:
@@ -23,6 +23,7 @@ class ExportHandler:
         if name != "export":
             raise ValueError(f"Unknown tool: {name}")
 
+        import time
         from datetime import datetime
 
         from garmin_mcp.mcp_server.export_manager import get_export_manager
@@ -41,12 +42,14 @@ class ExportHandler:
             )
 
             # Export query result
+            query_start = time.monotonic()
             metadata = self._db_reader.export_query_result(
                 query=query,
                 output_path=file_path,
                 export_format=export_format,
                 max_rows=max_rows,
             )
+            query_duration = time.monotonic() - query_start
 
             # Build result
             result: dict[str, Any] = {
@@ -56,6 +59,14 @@ class ExportHandler:
                 "columns": metadata["columns"],
                 "expires_at": datetime.fromtimestamp(expires_at).isoformat() + "Z",
             }
+
+            # Warn on slow queries
+            warnings: list[str] = []
+            if query_duration > 5.0:
+                warnings.append(
+                    f"Query took {query_duration:.1f}s" " - consider adding filters"
+                )
+            inject_warnings(result, warnings)
 
             return [TextContent(type="text", text=format_json_response(result))]
 
