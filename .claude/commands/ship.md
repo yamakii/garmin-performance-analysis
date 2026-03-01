@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash, Read, Glob, Grep
+allowed-tools: Bash, Read, Glob, Grep, mcp__github__get_pull_request, mcp__github__get_pull_request_status, mcp__github__merge_pull_request, mcp__github__get_issue, mcp__github__update_issue
 description: Commit and push changes
 user-invocable: true
 ---
@@ -14,7 +14,7 @@ Run the full ship workflow for the current changes.
 
    Check the following in order. Execute from the first incomplete step found:
 
-   a. **Open PR on current branch**: Run `gh pr view --json number,state 2>/dev/null`. If a PR exists and is open → go to Step 1-PR (PR flow).
+   a. **Open PR on current branch**: Use `mcp__github__list_pull_requests(owner="yamakii", repo="garmin-performance-analysis", head="yamakii:{branch}", state="open")`. If a PR exists and is open → go to Step 1-PR (PR flow).
 
    b. **Uncommitted changes**: Run `git status`. If there are staged or unstaged changes → go to Step 1 (normal flow).
 
@@ -26,11 +26,7 @@ Run the full ship workflow for the current changes.
       ```bash
       git log --oneline -5 | grep -oP '\(#\K[0-9]+(?=\))'
       ```
-      For each extracted number, check if the issue is still open:
-      ```bash
-      gh issue view {number} --json state --jq '.state'
-      ```
-      If any issue is OPEN → execute Step 5 (Close Issue) with that number.
+      For each extracted number, check if the issue is still open using `mcp__github__get_issue(owner="yamakii", repo="garmin-performance-analysis", issue_number=N)`. If any issue state is "open" → execute Step 5 (Close Issue) with that number.
 
    f. **All complete**: If none of the above apply → report 「全ステップ完了済みです。未完了の作業はありません。」 and stop.
 
@@ -42,18 +38,20 @@ Run the full ship workflow for the current changes.
 
 ### Step 1-PR: CI 確認
 
-```bash
-gh pr checks {PR_NUMBER}
-gh pr view {PR_NUMBER} --json mergeable,statusCheckRollup
+```
+mcp__github__get_pull_request_status(owner="yamakii", repo="garmin-performance-analysis", pull_number={PR_NUMBER})
+mcp__github__get_pull_request(owner="yamakii", repo="garmin-performance-analysis", pull_number={PR_NUMBER})
 ```
 
 If checks are failing, report to user and stop (do not merge).
 
 ### Step 2-PR: Merge (merge commit, TDD 履歴保持)
 
-```bash
-gh pr merge {PR_NUMBER} --merge --delete-branch
 ```
+mcp__github__merge_pull_request(owner="yamakii", repo="garmin-performance-analysis", pull_number={PR_NUMBER}, merge_method="merge")
+```
+
+Note: Branch deletion is handled by GitHub's auto-delete setting.
 
 ### Step 3-PR: ローカル同期 + クリーンアップ
 
@@ -116,28 +114,21 @@ If `--close` is specified, or PR body contains `Closes #N`:
 
 5. **Close Issue** (if `--close` specified): After successful push:
 
-   a. **Change Log guard**: Check if the Issue body has a `## Change Log` section:
-      ```bash
-      CURRENT_BODY=$(gh issue view {number} --json body --jq '.body')
-      ```
+   a. **Change Log guard**: Check if the Issue body has a `## Change Log` section using `mcp__github__get_issue(owner="yamakii", repo="garmin-performance-analysis", issue_number={number})`.
       - If Change Log exists → proceed to close
-      - If Change Log does NOT exist → append a minimal entry as fallback:
-        ```bash
-        # Append Change Log section with minimal entry
-        # - YYYY-MM-DD (Ship): Closed via /ship
-        printf '%s' "$NEW_BODY" | gh issue edit {number} --body-file -
+      - If Change Log does NOT exist → append a minimal entry as fallback using `mcp__github__update_issue` with updated body containing:
         ```
-      - If `gh issue edit` fails → warn and proceed (best-effort, see `.claude/rules/dev/dev-reference.md`)
+        ## Change Log
+        - YYYY-MM-DD (Ship): Closed via /ship
+        ```
+      - If update fails → warn and proceed (best-effort)
 
    b. **Close the Issue**:
-      ```bash
-      gh issue close {number}
+      ```
+      mcp__github__update_issue(owner="yamakii", repo="garmin-performance-analysis", issue_number={number}, state="closed")
       ```
 
-   c. If the closed Issue is a sub-issue (has "Part of #XX" in body), show the Epic's updated progress:
-      ```bash
-      gh issue view {epic-number} --json body
-      ```
+   c. If the closed Issue is a sub-issue (has "Part of #XX" in body), show the Epic's updated progress using `mcp__github__get_issue(owner="yamakii", repo="garmin-performance-analysis", issue_number={epic-number})`.
 
 ## Arguments
 

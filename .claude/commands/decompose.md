@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash, Read, Glob, Grep, mcp__serena__activate_project, mcp__serena__find_symbol, mcp__serena__get_symbols_overview, mcp__serena__find_referencing_symbols, mcp__serena__search_for_pattern, mcp__serena__read_file, mcp__serena__list_dir, AskUserQuestion
+allowed-tools: Bash, Read, Glob, Grep, mcp__serena__activate_project, mcp__serena__find_symbol, mcp__serena__get_symbols_overview, mcp__serena__find_referencing_symbols, mcp__serena__search_for_pattern, mcp__serena__read_file, mcp__serena__list_dir, mcp__github__create_issue, mcp__github__update_issue, mcp__github__get_issue, AskUserQuestion
 description: Decompose a large task into Epic + Sub-issues on GitHub
 user-invocable: true
 ---
@@ -69,16 +69,17 @@ mcp__serena__activate_project("/home/yamakii/workspace/garmin-performance-analys
 
 ### Step 5: GitHub Issues 作成
 
-承認後、`gh` CLI で Issues を一括作成:
+承認後、GitHub MCP ツールで Issues を一括作成:
 
 #### 5a: Epic Issue 作成
 
-```bash
-gh issue create \
-  --title "{Epic タイトル}" \
-  --label "epic" \
-  --body "$(cat <<'EOF'
-## Goal
+```
+mcp__github__create_issue(
+  owner="yamakii",
+  repo="garmin-performance-analysis",
+  title="{Epic タイトル}",
+  labels=["epic"],
+  body="""## Goal
 {ゴールの説明}
 
 ## Sub-issues
@@ -87,22 +88,21 @@ gh issue create \
 ...
 
 ## Context
-{コードベース調査で得た背景情報}
-EOF
-)"
+{コードベース調査で得た背景情報}"""
+)
 ```
 
 #### 5b: Sub-issue Issues 作成
 
 各 Sub-issue を作成:
 
-```bash
-gh issue create \
-  --title "{Sub-issue タイトル}" \
-  --label "sub-issue" \
-  --label "design-approved" \
-  --body "$(cat <<'EOF'
-## Summary
+```
+mcp__github__create_issue(
+  owner="yamakii",
+  repo="garmin-performance-analysis",
+  title="{Sub-issue タイトル}",
+  labels=["sub-issue", "design-approved"],
+  body="""## Summary
 {何をするか}
 
 ## Parent
@@ -126,26 +126,26 @@ Part of #{Epic番号}: {Epic タイトル}
 
 ## Dependencies
 - Blocks: #{依存先のsub-issue番号}
-- Blocked by: #{依存元のsub-issue番号}
-EOF
-)"
+- Blocked by: #{依存元のsub-issue番号}"""
+)
 ```
 
 #### 5c: Epic の task list 更新
 
 Sub-issues の番号が確定したら、Epic body の task list を実番号で更新:
 
-```bash
-# Epic body を更新して実際の Issue 番号を反映
-gh issue edit {Epic番号} --body "$(cat <<'EOF'
-## Goal
+```
+mcp__github__update_issue(
+  owner="yamakii",
+  repo="garmin-performance-analysis",
+  issue_number={Epic番号},
+  body="""## Goal
 ...
 ## Sub-issues
 - [ ] #51 Extract ApiClient singleton
 - [ ] #52 Extract RawDataFetcher
-...
-EOF
-)"
+..."""
+)
 ```
 
 ### Step 6: 結果報告
@@ -159,18 +159,19 @@ Issues created:
     ...
 
 Next: Plan mode で #{最初のsub-issue番号} から着手できます。
-  gh issue view {番号} で設計を確認してください。
+  mcp__github__get_issue で設計を確認してください。
 ```
 
 ## Small Task Flow
 
 単発の小さなタスクの場合:
 
-```bash
-gh issue create \
-  --title "{タイトル}" \
-  --body "$(cat <<'EOF'
-## Summary
+```
+mcp__github__create_issue(
+  owner="yamakii",
+  repo="garmin-performance-analysis",
+  title="{タイトル}",
+  body="""## Summary
 {何をするか}
 
 ## Design
@@ -180,28 +181,27 @@ gh issue create \
 
 ### `function_or_class()`
 - [ ] `test_happy_path` [unit] -- {setup/input} → {expected outcome}
-- [ ] `test_edge_case` [unit] -- {setup/input} → {expected outcome}
-EOF
-)"
+- [ ] `test_edge_case` [unit] -- {setup/input} → {expected outcome}"""
+)
 ```
 
 ## Spike Flow
 
 調査タスクの場合:
 
-```bash
-gh issue create \
-  --title "Spike: {調査タイトル}" \
-  --label "spike" \
-  --body "$(cat <<'EOF'
-## Question
+```
+mcp__github__create_issue(
+  owner="yamakii",
+  repo="garmin-performance-analysis",
+  title="Spike: {調査タイトル}",
+  labels=["spike"],
+  body="""## Question
 {調査したいこと}
 
 ## Scope
 {調査範囲}
 
 ## Expected Output
-{調査結果の形式 — 例: ADR, 比較表, PoC}
-EOF
-)"
+{調査結果の形式 — 例: ADR, 比較表, PoC}"""
+)
 ```

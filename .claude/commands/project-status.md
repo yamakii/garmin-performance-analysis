@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash
+allowed-tools: mcp__github__list_issues, mcp__github__get_issue
 description: Show Epic progress with sub-issue status
 user-invocable: true
 ---
@@ -18,24 +18,24 @@ $ARGUMENTS — Optional Epic issue number. If not provided, show all open Epics.
 
 #### 引数なしの場合: 全 open Epic を表示
 
-```bash
-gh issue list --label "epic" --state open --json number,title,body --jq '.[] | {number, title, body}'
+```
+mcp__github__list_issues(owner="yamakii", repo="garmin-performance-analysis", state="open", labels=["epic"])
 ```
 
 #### 引数ありの場合: 指定 Epic を取得
 
-```bash
-gh issue view $ARGUMENTS --json number,title,body,state
+```
+mcp__github__get_issue(owner="yamakii", repo="garmin-performance-analysis", issue_number=$ARGUMENTS)
 ```
 
 ### Step 2: Sub-issue の状態取得
 
 Epic body の task list から Sub-issue 番号を抽出し、各 Issue の状態を取得:
 
-```bash
+```
 # Epic body から #番号 を抽出
-# 各 Issue の state を gh issue view で取得
-gh issue view {番号} --json number,title,state,assignees
+# 各 Issue の state を取得
+mcp__github__get_issue(owner="yamakii", repo="garmin-performance-analysis", issue_number={番号})
 ```
 
 ### Step 3: 進捗表示
