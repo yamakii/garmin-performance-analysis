@@ -114,24 +114,30 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             },
         },
         "evaluation_policy": {
-            "gct": {
-                "excellent": "220-260ms",
-                "good": "260-280ms",
-                "needs_improvement": ">280ms",
+            "form_ranges": {
+                "gct": {
+                    "excellent": "<220ms",
+                    "good": "220-260ms",
+                    "standard": "260-280ms",
+                    "needs_improvement": ">280ms",
+                },
+                "vo": {
+                    "excellent": "<6.0cm",
+                    "good": "6.0-8.0cm",
+                    "standard": "8.0-10.0cm",
+                    "needs_improvement": ">10.0cm",
+                },
+                "vr": {
+                    "excellent": "<6.0%",
+                    "good": "6.0-8.0%",
+                    "standard": "8.0-10.0%",
+                    "needs_improvement": ">10.0%",
+                },
             },
-            "vertical_oscillation": {
-                "excellent": "6-8cm",
-                "good": "8-10cm",
-                "needs_improvement": ">10cm",
-            },
-            "vertical_ratio": {
-                "ideal": "8-10%",
-                "acceptable": "7-11%",
-                "needs_improvement": ">11%",
-            },
-            "cadence": {
+            "cadence_ranges": {
                 "ideal": ">=180 spm",
-                "acceptable": "175-179 spm",
+                "near_target": "178-179 spm",
+                "acceptable": "175-177 spm",
                 "needs_improvement": "<175 spm",
             },
             "integrated_score_stars": {
@@ -141,11 +147,40 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "2_stars": "50-69",
                 "1_star": "<50",
             },
+            "power_efficiency_stars": {
+                "5_stars": "+5% or more (highly efficient)",
+                "4_stars": "+2% to +5% (efficient)",
+                "3_stars": "±2% (normal pattern)",
+                "2_stars": "-2% to -5% (slightly inefficient)",
+                "1_star": "-5% or less (inefficient)",
+            },
+            "baseline_comparison": {
+                "daily_variation_normal": "±5%",
+                "baseline_improved": ">+10%",
+                "baseline_normal": "±10%",
+                "baseline_attention": "<-10%",
+            },
+            "zone_targets": {
+                "base_easy_recovery": {
+                    "primary_zones": "Zone 1-2",
+                    "target_pct": ">=70%",
+                },
+                "tempo_threshold": {
+                    "primary_zones": "Zone 3-4",
+                    "target_pct": ">=60%",
+                },
+                "interval_sprint": {
+                    "primary_zones": "Zone 4-5",
+                    "target_pct": ">=50%",
+                },
+            },
         },
         "instructions": [
             "Use form_evaluations MCP data as primary source",
-            "Report integrated_score with star rating",
-            "Compare baseline coefficients with 1-month prior",
+            "Retrieve form ranges, cadence, and star rating scales from this contract",
+            "Report integrated_score with star rating using integrated_score_stars scale",
+            "Compare baseline coefficients with 1-month prior using baseline_comparison thresholds",
+            "Evaluate HR zone distribution against zone_targets for the training_type",
             "Use Garmin native HR zones only",
         ],
     },

@@ -27,11 +27,49 @@ def test_get_contract_phase():
 def test_get_contract_efficiency():
     contract = get_contract("efficiency")
     policy = contract["evaluation_policy"]
-    assert "gct" in policy
-    assert "vertical_oscillation" in policy
-    assert "vertical_ratio" in policy
-    assert "cadence" in policy
+    assert "form_ranges" in policy
+    assert "cadence_ranges" in policy
     assert "integrated_score_stars" in policy
+    assert "power_efficiency_stars" in policy
+    assert "baseline_comparison" in policy
+    assert "zone_targets" in policy
+
+
+@pytest.mark.unit
+def test_efficiency_contract_has_form_ranges():
+    contract = get_contract("efficiency")
+    form = contract["evaluation_policy"]["form_ranges"]
+    assert len(form) == 3
+    for metric in ["gct", "vo", "vr"]:
+        assert metric in form
+        assert "excellent" in form[metric]
+        assert "needs_improvement" in form[metric]
+
+
+@pytest.mark.unit
+def test_efficiency_contract_has_integrated_score():
+    contract = get_contract("efficiency")
+    score = contract["evaluation_policy"]["integrated_score_stars"]
+    assert "5_stars" in score
+    assert "1_star" in score
+
+
+@pytest.mark.unit
+def test_efficiency_contract_has_zone_targets():
+    contract = get_contract("efficiency")
+    zones = contract["evaluation_policy"]["zone_targets"]
+    assert len(zones) == 3
+    for category in ["base_easy_recovery", "tempo_threshold", "interval_sprint"]:
+        assert category in zones
+
+
+@pytest.mark.unit
+def test_efficiency_contract_has_baseline_thresholds():
+    contract = get_contract("efficiency")
+    baseline = contract["evaluation_policy"]["baseline_comparison"]
+    assert "daily_variation_normal" in baseline
+    assert "baseline_improved" in baseline
+    assert "baseline_attention" in baseline
 
 
 @pytest.mark.unit
