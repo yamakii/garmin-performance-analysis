@@ -46,8 +46,8 @@ mcp__serena__activate_project("/home/yamakii/workspace/garmin-performance-analys
 ### Step 4: テスト & Lint
 
 ```bash
-uv run pytest {test_path} -m unit -v
-uv run ruff check {changed_files}
+uv run --directory {worktree_path} pytest {test_path} -m unit -v
+uv run --directory {worktree_path} ruff check {changed_files}
 ```
 
 失敗があれば修正して再実行。
@@ -55,8 +55,8 @@ uv run ruff check {changed_files}
 ### Step 5: Commit
 
 ```bash
-git add {changed_files}
-git commit -m "{conventional commit message}
+git -C {worktree_path} add {changed_files}
+git -C {worktree_path} commit -m "{conventional commit message}
 
 Closes #{issue_number}
 
