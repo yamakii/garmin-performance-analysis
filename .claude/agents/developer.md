@@ -63,6 +63,30 @@ Closes #{issue_number}
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ```
 
+### Step 5.5: Validation Manifest 書き出し
+
+commit 完了後、Validation Agent 用の manifest を書き出す。
+
+1. Validation Level 判定（`dev-reference.md` §3 の判定表で changed_files の最高レベルを採用）
+2. Write tool で JSON manifest を書き出し:
+   - パス: `/tmp/validation_queue/{branch_name}.json`
+   - Write tool が親ディレクトリを自動作成するため `mkdir -p` 不要
+3. Manifest スキーマ（`worktree-validation-protocol.md` §Implementation Agent の責務 に準拠）:
+   ```json
+   {
+     "branch": "feature/xxx",
+     "worktree_path": "/absolute/path/to/worktree",
+     "server_dir": "/absolute/path/to/worktree/packages/garmin-mcp-server",
+     "pr_number": null,
+     "issue_number": 72,
+     "validation_level": "L1|L2|L3|skip",
+     "change_category": "handler|reader|agent|reporting|ingest|schema|other",
+     "changed_files": ["src/garmin_mcp/handlers/foo.py"],
+     "test_results": {"unit": "pass", "integration": "pass"},
+     "verification_activity_id": 20636804823
+   }
+   ```
+
 ## 禁止事項
 
 - `git push` — push はオーケストレーターの責務
@@ -84,4 +108,5 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 - [ ] 全テストが pass
 - [ ] ruff check が clean
 - [ ] commit 完了（push はしない）
+- [ ] Manifest 書き出し完了
 - [ ] 変更ファイル一覧と commit hash を報告
