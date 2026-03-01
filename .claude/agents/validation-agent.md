@@ -29,7 +29,18 @@ Worktree で実装されたコード変更を検証するエージェント。
 4. 検証基準チェック:
    - **構造**: 全5セクションの `analysis_data` 非null、必須フィールド存在
    - **内容**: ペース/HR が fixture 範囲と整合、セクション間矛盾なし
-5. `reload_server()` で main 復帰
+   - Fixture: `dev-reference.md` §3 の L3 検証基準を参照
+5. (任意) DuckDB 挿入検証: `insert_section_analysis_dict` で各セクションを挿入し成功を確認
+6. (任意) レポート生成検証: Markdown レポートが生成され、5セクション分の内容を含むことを確認
+7. `reload_server()` で main 復帰
+
+## L3 Fixture
+
+- Activity: `20636804823` (2025-10-09, aerobic_base 5.66km, ~6:26/km, HR avg 144bpm)
+- Content check ranges:
+  - Pace: 6:00-6:45/km (360-405 sec/km)
+  - HR: 120-160 bpm
+- 詳細は `dev-reference.md` §3 を参照
 
 ## L3 実行手順
 
@@ -61,8 +72,21 @@ Agent tool で以下を並列起動:
 - 5ファイル存在: efficiency.json, environment.json, phase.json, split.json, summary.json
 - 各ファイルの `analysis_data` が非null
 - `activity_id`, `section_type` フィールドが存在
+- 内容チェック（WARNING レベル）:
+  - ペース値が 360-405 sec/km 範囲内
+  - HR 値が 120-160 bpm 範囲内
 
-### Step 5: 復帰・クリーンアップ
+### Step 5: DuckDB 挿入検証（任意）
+各セクションの JSON を `insert_section_analysis_dict` で DuckDB に挿入:
+- 5件全て成功すること
+- エラー発生時は WARNING（構造チェックとは別）
+
+### Step 6: レポート生成検証（任意）
+Markdown レポートの基本チェック:
+- ファイルが生成されること
+- 5セクション分の見出しが存在すること
+
+### Step 7: 復帰・クリーンアップ
 ```
 reload_server()  # main 復帰
 rm -rf /tmp/analysis_{activity_id}/

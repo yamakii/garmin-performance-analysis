@@ -48,7 +48,7 @@ Main Session (queue manager — 検証作業はしない)
      "change_category": "handler|reader|agent|reporting|ingest|schema|other",
      "changed_files": ["src/garmin_mcp/handlers/foo.py"],
      "test_results": {"unit": "pass", "integration": "pass"},
-     "verification_activity_id": 12345678901
+     "verification_activity_id": 20636804823
    }
    ```
 3. PR 作成 (draft)
@@ -103,9 +103,11 @@ manifest の `validation_level` に応じた手順を実行する。
 5. 検証基準チェック（`dev-reference.md` §3 の L3 検証基準）:
    - **構造チェック**: 5 セクションの `analysis_data` が非 null、必須フィールド存在
    - **内容チェック**: ペース・HR 値が fixture 範囲と整合、セクション間矛盾なし
-6. `mcp__garmin-db__reload_server()` で main 復帰
-7. pass/fail + 詳細を返却
-8. Manifest ファイルを削除
+6. (任意) DuckDB 挿入検証: `insert_section_analysis_dict` で各セクション挿入成功を確認
+7. (任意) レポート生成検証: Markdown レポート生成 + 5セクション見出し存在を確認
+8. `mcp__garmin-db__reload_server()` で main 復帰
+9. pass/fail + 詳細を返却
+10. Manifest ファイルを削除
 
 ### 判定基準
 
