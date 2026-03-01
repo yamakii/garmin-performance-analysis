@@ -22,8 +22,8 @@ mcp__garmin-db__ingest_activity(date="{{arg1}}")
 
 返却された `activity_id` と `date` を取得してください。
 
-tempフォルダパスは `ANALYSIS_TEMP_DIR=/tmp/analysis_{activity_id}` として以降使用。
-（ディレクトリはエージェントの Write tool が自動作成します）
+tempフォルダパスは `ANALYSIS_TEMP_DIR=/tmp/analysis_{activity_id}_{unix_timestamp}` として以降使用。unix_timestamp は現在時刻の秒数（例: 1709312345）。
+ディレクトリは Write tool がファイル書き込み時に自動作成するため、事前の mkdir は不要。
 
 ### Step 1.5: コンテキスト事前取得（MCP ツール）
 
@@ -80,7 +80,7 @@ prompt: "Activity ID {activity_id} ({date}) のアクティビティタイプ判
 エラーハンドリング通過後、1コマンドで一括登録：
 
 ```bash
-uv run python -m garmin_mcp.scripts.merge_section_analyses /tmp/analysis_{activity_id}
+uv run python -m garmin_mcp.scripts.merge_section_analyses {ANALYSIS_TEMP_DIR}
 ```
 
 - 全 `.json` を読み込み→DuckDBに一括挿入→成功時にtempフォルダ自動削除

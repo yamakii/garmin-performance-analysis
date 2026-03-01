@@ -99,6 +99,7 @@ manifest の `validation_level` に応じた手順を実行する。
 
 1-3. L1 と同じ（reload_server + health check）
 4. `/analyze-activity {fixture_date}` を実行（analyze-activity.md が Single Source of Truth）
+   - temp ディレクトリパスは analyze-activity.md の ANALYSIS_TEMP_DIR 定義に従う（timestamp 付きユニークパス）
    - Fixture: `dev-reference.md` §3 の L3 検証基準を参照
 5. 検証基準チェック（`dev-reference.md` §3 の L3 検証基準）:
    - **構造チェック**: 5 セクションの `analysis_data` が非 null、必須フィールド存在
