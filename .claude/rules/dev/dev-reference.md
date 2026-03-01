@@ -83,7 +83,10 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 
 - **構造 (FAIL=致命的)**: 全5セクションの `analysis_data` 非null、必須フィールド存在、Markdown生成
 - **内容 (WARNING)**: ペース/HR が fixture 範囲と整合、セクション間の矛盾なし
-- **Fixture**: Activity `12345678901` (2025-10-09, Easy run 7km, 5:15-5:45/km)
+- **Fixture**: Activity `20636804823` (2025-10-09, aerobic_base 5.66km, ~6:26/km, HR avg 144bpm)
+- **Content check ranges**:
+  - Pace: 6:00-6:45/km (360-405 sec/km)
+  - HR: 120-160 bpm
 
 ## 4. Testing
 
