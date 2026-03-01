@@ -38,6 +38,7 @@ Risks セクション（任意）:
 - lint 実行指示: `uv run ruff check {changed_files}`
 - commit 指示: ブランチ名、コミットメッセージ形式
 - **push しない**指示
+- **Manifest 書き出し指示**: commit 後に `/tmp/validation_queue/{branch}.json` へ manifest を書き出すこと（developer.md Step 5.5 参照）
 
 ## Phase 2: Verify (独立検証)
 
