@@ -78,7 +78,6 @@ manifest の `validation_level` に応じた手順を実行する。
    - 値が妥当な範囲内（ペース 3:00-9:00/km、HR 80-200 bpm 等）
 6. `mcp__garmin-db__reload_server()` で main 復帰
 7. pass/fail + 詳細を返却
-8. Manifest ファイルを削除
 
 ### L2: Integration
 
@@ -93,7 +92,6 @@ manifest の `validation_level` に応じた手順を実行する。
    - 失敗あり → 失敗テスト名とエラー内容を記録、L2 fail
 7. `mcp__garmin-db__reload_server()` で main 復帰
 8. pass/fail + 詳細を返却
-9. Manifest ファイルを削除
 
 ### L3: Full E2E
 
@@ -108,7 +106,6 @@ manifest の `validation_level` に応じた手順を実行する。
 7. (任意) レポート生成検証: Markdown レポート生成 + 5セクション見出し存在を確認
 8. `mcp__garmin-db__reload_server()` で main 復帰
 9. pass/fail + 詳細を返却
-10. Manifest ファイルを削除
 
 ### 判定基準
 
@@ -128,4 +125,4 @@ Issue → Plan → Worktree → PR のワークフローは変わらない。
 パス: `/tmp/validation_queue/`
 
 - Write tool が親ディレクトリを自動作成するため、明示的な `mkdir` は不要
-- 検証完了後、manifest ファイルは Validation Agent が削除する
+- manifest ファイルは /tmp 内のため OS 再起動で自動消去される（明示的な削除は不要）

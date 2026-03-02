@@ -108,7 +108,6 @@ Markdown レポートの基本チェック:
 ```
 reload_server()  # main 復帰
 rm -rf {ANALYSIS_TEMP_DIR}/
-rm /tmp/validation_queue/{branch}.json  # manifest 削除
 ```
 
 ## 判定基準
