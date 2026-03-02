@@ -125,8 +125,7 @@ Issue → Plan → Worktree → PR のワークフローは変わらない。
 
 ## Manifest ディレクトリ
 
-```bash
-mkdir -p /tmp/validation_queue
-```
+パス: `/tmp/validation_queue/`
 
-検証完了後、manifest ファイルは Validation Agent が削除する。
+- Write tool が親ディレクトリを自動作成するため、明示的な `mkdir` は不要
+- 検証完了後、manifest ファイルは Validation Agent が削除する
