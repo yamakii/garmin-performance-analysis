@@ -1,0 +1,38 @@
+"""API tests for GET /api/trends/*."""
+
+import pytest
+from fastapi.testclient import TestClient
+
+from garmin_web.app import create_app
+
+_ENDPOINTS = (
+    "/api/trends/volume",
+    "/api/trends/physiology",
+    "/api/trends/form",
+    "/api/trends/efficiency",
+)
+
+
+@pytest.mark.integration
+def test_api_trends_all_endpoints_200(trends_db_path, empty_trends_db_path):
+    client = TestClient(create_app(db_path=trends_db_path))
+    for endpoint in _ENDPOINTS:
+        response = client.get(endpoint)
+        assert response.status_code == 200, endpoint
+
+    volume = client.get("/api/trends/volume", params={"granularity": "month"})
+    assert volume.status_code == 200
+    assert [bucket["bucket"] for bucket in volume.json()] == ["2025-10", "2025-11"]
+
+    # Invalid granularity is rejected by FastAPI validation
+    invalid = client.get("/api/trends/volume", params={"granularity": "day"})
+    assert invalid.status_code == 422
+
+    # Empty DB returns 200 with empty payloads
+    empty_client = TestClient(create_app(db_path=empty_trends_db_path))
+    assert empty_client.get("/api/trends/volume").json() == []
+    assert empty_client.get("/api/trends/form").json() == []
+    assert empty_client.get("/api/trends/efficiency").json() == []
+    physiology = empty_client.get("/api/trends/physiology")
+    assert physiology.status_code == 200
+    assert physiology.json() == {"vo2max": [], "lactate_threshold": []}
