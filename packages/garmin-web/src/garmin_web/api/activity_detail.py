@@ -1,4 +1,4 @@
-"""Activity detail API router (detail, time-series, sections)."""
+"""Activity detail API router (detail, time-series, track, sections)."""
 
 from typing import Annotated
 
@@ -8,6 +8,7 @@ from garmin_mcp.database.connection import get_connection
 from garmin_web.queries.detail import get_activity_detail
 from garmin_web.queries.sections import get_sections
 from garmin_web.queries.time_series import get_time_series
+from garmin_web.queries.track import get_track
 
 router = APIRouter(prefix="/api")
 
@@ -44,6 +45,18 @@ def get_activity_time_series(
             )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/activities/{activity_id}/track")
+def get_activity_track(request: Request, activity_id: int) -> dict:
+    """Return the GPS track for an activity.
+
+    Activities without GPS data (e.g. indoor runs) return 200 with an
+    empty points array.
+    """
+    db_path = getattr(request.app.state, "db_path", None)
+    with get_connection(db_path) as conn:
+        return {"points": get_track(conn, activity_id)}
 
 
 @router.get("/activities/{activity_id}/sections")

@@ -28,20 +28,35 @@ function speedToPace(value: number | null): number | null {
   return Math.round(1000 / value);
 }
 
+const HOVER_THROTTLE_MS = 50;
+
 /**
  * Stacked line charts (one grid per metric) with a shared x axis:
  * dataZoom and axisPointer are linked across all grids.
  * The "speed" metric is displayed as pace (min/km, inverted axis).
+ *
+ * Hover sync (Issue #200): onHoverIndex reports the hovered data index
+ * (throttled 50ms); hoverIndex shows the tooltip at an externally chosen
+ * index (e.g. driven by the GPS map).
  */
 export default function TimeSeriesChart({
   data,
   metricLabels,
+  hoverIndex = null,
+  onHoverIndex,
 }: {
   data: TimeSeriesResponse;
   metricLabels: Record<string, string>;
+  hoverIndex?: number | null;
+  onHoverIndex?: (index: number | null) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
+  const onHoverIndexRef = useRef(onHoverIndex);
+  onHoverIndexRef.current = onHoverIndex;
+  // Last index dispatched from the outside; suppresses re-emitting it.
+  const externalIndexRef = useRef<number | null>(null);
+  const lastEmitRef = useRef(0);
 
   const metricNames = Object.keys(data.metrics);
   const height = GRID_TOP + metricNames.length * (GRID_HEIGHT + GRID_GAP) + 60;
@@ -51,7 +66,28 @@ export default function TimeSeriesChart({
     if (!container || metricNames.length === 0) {
       return;
     }
-    chartRef.current ??= echarts.init(container);
+    if (!chartRef.current) {
+      const chart = echarts.init(container);
+      chartRef.current = chart;
+      chart.on("updateAxisPointer", (event) => {
+        const axesInfo = (event as { axesInfo?: { value: number }[] })
+          .axesInfo;
+        const index = axesInfo?.[0]?.value;
+        if (index == null || index === externalIndexRef.current) {
+          return;
+        }
+        const now = Date.now();
+        if (now - lastEmitRef.current < HOVER_THROTTLE_MS) {
+          return;
+        }
+        lastEmitRef.current = now;
+        onHoverIndexRef.current?.(index);
+      });
+      chart.getZr().on("globalout", () => {
+        externalIndexRef.current = null;
+        onHoverIndexRef.current?.(null);
+      });
+    }
 
     const base = data.timestamps[0] ?? 0;
     const elapsedLabels = data.timestamps.map((t) => formatElapsed(t - base));
@@ -120,6 +156,24 @@ export default function TimeSeriesChart({
     chartRef.current.resize({ height });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, metricLabels, height]);
+
+  // Externally driven hover (map -> chart): show/hide the tooltip.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) {
+      return;
+    }
+    externalIndexRef.current = hoverIndex;
+    if (hoverIndex == null) {
+      chart.dispatchAction({ type: "hideTip" });
+      return;
+    }
+    chart.dispatchAction({
+      type: "showTip",
+      seriesIndex: 0,
+      dataIndex: hoverIndex,
+    });
+  }, [hoverIndex]);
 
   useEffect(() => {
     const handleResize = () => chartRef.current?.resize();
