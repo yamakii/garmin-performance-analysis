@@ -2,7 +2,7 @@
 name: split-section-analyst
 description: 全1kmスプリットのペース・心拍・フォーム指標を詳細分析し、環境統合評価を行うエージェント。DuckDBに保存。スプリット毎の変化パターン検出が必要な時に呼び出す。
 tools: mcp__garmin-db__get_splits_comprehensive, mcp__garmin-db__detect_form_anomalies_summary, mcp__garmin-db__get_form_anomaly_details, mcp__garmin-db__get_split_time_series_detail, mcp__garmin-db__get_analysis_contract, mcp__garmin-db__validate_section_json, Write
-model: inherit
+model: sonnet
 ---
 
 # Split Section Analyst

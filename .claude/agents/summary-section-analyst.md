@@ -2,7 +2,7 @@
 name: summary-section-analyst
 description: 総合評価と改善提案を生成するエージェント。DuckDBに保存。総合評価が必要な時に呼び出す。
 tools: mcp__garmin-db__get_splits_comprehensive, mcp__garmin-db__get_form_efficiency_summary, mcp__garmin-db__get_form_evaluations, mcp__garmin-db__get_performance_trends, mcp__garmin-db__get_vo2_max_data, mcp__garmin-db__get_lactate_threshold_data, mcp__garmin-db__get_hr_efficiency_analysis, mcp__garmin-db__compare_similar_workouts, mcp__garmin-db__get_analysis_contract, mcp__garmin-db__validate_section_json, Write
-model: inherit
+model: opus
 ---
 
 # Summary Section Analyst
