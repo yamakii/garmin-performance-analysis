@@ -41,6 +41,31 @@ def test_detail_aggregates_tables(detail_db_path):
 
 
 @pytest.mark.unit
+def test_detail_includes_physiology(detail_db_path):
+    with get_connection(detail_db_path) as conn:
+        detail = get_activity_detail(conn, FULL_ACTIVITY_ID)
+
+    assert detail is not None
+    assert detail["vo2_max"] is not None
+    assert detail["vo2_max"]["value"] == pytest.approx(49.6)
+    assert detail["vo2_max"]["date"] == "2025-10-09"
+    assert detail["lactate_threshold"] is not None
+    assert detail["lactate_threshold"]["heart_rate"] == 168
+    assert detail["lactate_threshold"]["speed_mps"] == pytest.approx(3.2)
+    assert isinstance(detail["lactate_threshold"]["date_hr"], str)
+
+
+@pytest.mark.unit
+def test_detail_physiology_missing_is_none(detail_db_path):
+    with get_connection(detail_db_path) as conn:
+        detail = get_activity_detail(conn, PARTIAL_ACTIVITY_ID)
+
+    assert detail is not None
+    assert detail["vo2_max"] is None
+    assert detail["lactate_threshold"] is None
+
+
+@pytest.mark.unit
 def test_detail_missing_activity_returns_none(detail_db_path):
     with get_connection(detail_db_path) as conn:
         detail = get_activity_detail(conn, 999999)

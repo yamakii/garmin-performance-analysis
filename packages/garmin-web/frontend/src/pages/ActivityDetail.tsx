@@ -7,7 +7,14 @@ import {
   fetchTrack,
 } from "../api/client";
 import MapPanel from "../components/MapPanel";
-import SectionCard from "../components/sections/SectionCard";
+import EfficiencyReport from "../components/report/EfficiencyReport";
+import EnvironmentReport from "../components/report/EnvironmentReport";
+import FallbackFields from "../components/report/FallbackFields";
+import PhaseTimeline from "../components/report/PhaseTimeline";
+import ReportCard, { isRecord } from "../components/report/ReportCard";
+import SplitNarrative from "../components/report/SplitNarrative";
+import StarRating from "../components/report/StarRating";
+import SummaryReport from "../components/report/SummaryReport";
 import TimeSeriesChart from "../components/TimeSeriesChart";
 import type {
   ActivityDetailResponse,
@@ -34,7 +41,14 @@ const METRIC_LABELS: Record<string, string> = Object.fromEntries(
 
 const DEFAULT_METRICS = ["heart_rate", "speed"];
 
-const SECTION_ORDER = ["summary", "split", "phase", "efficiency", "environment"];
+// Section types with dedicated report components; others fall back.
+const KNOWN_SECTION_TYPES = [
+  "summary",
+  "split",
+  "phase",
+  "efficiency",
+  "environment",
+];
 
 export function formatDuration(totalSeconds: number | null): string {
   if (totalSeconds == null || totalSeconds < 0) {
@@ -74,12 +88,12 @@ interface HoverState {
   value: number;
 }
 
-function orderedSectionTypes(sections: SectionsResponse): string[] {
-  const known = SECTION_ORDER.filter((type) => type in sections);
-  const unknown = Object.keys(sections).filter(
-    (type) => !SECTION_ORDER.includes(type),
-  );
-  return [...known, ...unknown];
+function summaryStarRating(sections: SectionsResponse | null): string | null {
+  const data = sections?.summary?.data;
+  if (isRecord(data) && typeof data.star_rating === "string") {
+    return data.star_rating;
+  }
+  return null;
 }
 
 export default function ActivityDetail() {
@@ -226,6 +240,7 @@ export default function ActivityDetail() {
     setHover(seqNo == null ? null : { source: "map", value: seqNo });
   };
 
+  // Report header KPIs, extended with physiology metrics when available.
   const kpis: { label: string; value: string }[] = [
     { label: "距離", value: formatDistance(activity.total_distance_km) },
     { label: "時間", value: formatDuration(activity.total_time_seconds) },
@@ -235,9 +250,31 @@ export default function ActivityDetail() {
       value: `${activity.avg_heart_rate ?? "-"} bpm`,
     },
   ];
+  if (detail.vo2_max?.value != null) {
+    kpis.push({ label: "VO2 Max", value: detail.vo2_max.value.toFixed(1) });
+  }
+  const lt = detail.lactate_threshold;
+  if (lt && (lt.heart_rate != null || lt.speed_mps != null)) {
+    const parts: string[] = [];
+    if (lt.heart_rate != null) {
+      parts.push(`${lt.heart_rate} bpm`);
+    }
+    if (lt.speed_mps != null && lt.speed_mps > 0) {
+      parts.push(`${formatPace(1000 / lt.speed_mps)}/km`);
+    }
+    kpis.push({ label: "乳酸閾値", value: parts.join(" / ") });
+  }
+
+  const starRating = summaryStarRating(sections);
+  const unknownSectionTypes = sections
+    ? Object.keys(sections).filter(
+        (type) => !KNOWN_SECTION_TYPES.includes(type),
+      )
+    : [];
 
   return (
     <div className="space-y-6">
+      {/* Report header: title, date, overall star rating, KPI grid */}
       <div>
         <Link
           to="/"
@@ -245,16 +282,18 @@ export default function ActivityDetail() {
         >
           ← アクティビティ一覧
         </Link>
-        <h1 className="mt-2 text-xl font-bold text-slate-900">
-          {activity.activity_name ?? "アクティビティ"}{" "}
-          <span className="font-normal text-slate-500">
-            ({activity.activity_date})
-          </span>
-        </h1>
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+          <h1 className="text-xl font-bold text-slate-900">
+            {activity.activity_name ?? "アクティビティ"}{" "}
+            <span className="font-normal text-slate-500">
+              ({activity.activity_date})
+            </span>
+          </h1>
+          {starRating && <StarRating text={starRating} />}
+        </div>
       </div>
 
-      {/* KPI header: 4 stat cards */}
-      <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <dl className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         {kpis.map(({ label, value }) => (
           <div
             key={label}
@@ -263,28 +302,15 @@ export default function ActivityDetail() {
             <dt className="text-xs font-medium tracking-wide text-slate-500 uppercase">
               {label}
             </dt>
-            <dd className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">
+            <dd className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
               {value}
             </dd>
           </div>
         ))}
       </dl>
 
-      {/* GPS track map (placeholder when the activity has no GPS data) */}
-      {track !== null && (
-        <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
-          <h2 className="px-5 pt-4 pb-2 text-base font-semibold text-slate-800">
-            コース
-          </h2>
-          <div className="overflow-hidden rounded-b-xl">
-            <MapPanel
-              points={track}
-              hoverSeqNo={mapHoverSeqNo}
-              onHoverSeqNo={handleMapHover}
-            />
-          </div>
-        </section>
-      )}
+      {/* Overall assessment report */}
+      <SummaryReport section={sections?.summary} />
 
       {/* Time series chart with metric toggles */}
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -328,66 +354,91 @@ export default function ActivityDetail() {
         )}
       </section>
 
-      {/* Splits table */}
-      {splits.length > 0 && (
+      {/* GPS track map (placeholder when the activity has no GPS data) */}
+      {track !== null && (
+        <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <h2 className="px-5 pt-4 pb-2 text-base font-semibold text-slate-800">
+            コース
+          </h2>
+          <div className="overflow-hidden rounded-b-xl">
+            <MapPanel
+              points={track}
+              hoverSeqNo={mapHoverSeqNo}
+              onHoverSeqNo={handleMapHover}
+            />
+          </div>
+        </section>
+      )}
+
+      {/* Splits: table + per-split narrative from the split analyst */}
+      {(splits.length > 0 || sections?.split) && (
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="mb-3 text-base font-semibold text-slate-800">
             スプリット
           </h2>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-xs tracking-wide text-slate-500 uppercase">
-                <th className="px-2 py-2 text-left font-medium">#</th>
-                <th className="px-2 py-2 text-right font-medium">距離</th>
-                <th className="px-2 py-2 text-right font-medium">ペース</th>
-                <th className="px-2 py-2 text-right font-medium">心拍</th>
-                <th className="px-2 py-2 text-right font-medium">ケイデンス</th>
-                <th className="px-2 py-2 text-right font-medium">パワー</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {splits.map((split) => (
-                <tr key={split.split_index} className="hover:bg-slate-50">
-                  <td className="px-2 py-2 text-left tabular-nums text-slate-500">
-                    {split.split_index}
-                  </td>
-                  <td className="px-2 py-2 text-right tabular-nums">
-                    {formatDistance(split.distance)}
-                  </td>
-                  <td className="px-2 py-2 text-right tabular-nums">
-                    {formatPace(split.pace_seconds_per_km)}
-                  </td>
-                  <td className="px-2 py-2 text-right tabular-nums">
-                    {split.heart_rate ?? "-"}
-                  </td>
-                  <td className="px-2 py-2 text-right tabular-nums">
-                    {split.cadence ?? "-"}
-                  </td>
-                  <td className="px-2 py-2 text-right tabular-nums">
-                    {split.power ?? "-"}
-                  </td>
+          {splits.length > 0 && (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs tracking-wide text-slate-500 uppercase">
+                  <th className="px-2 py-2 text-left font-medium">#</th>
+                  <th className="px-2 py-2 text-right font-medium">距離</th>
+                  <th className="px-2 py-2 text-right font-medium">ペース</th>
+                  <th className="px-2 py-2 text-right font-medium">心拍</th>
+                  <th className="px-2 py-2 text-right font-medium">
+                    ケイデンス
+                  </th>
+                  <th className="px-2 py-2 text-right font-medium">パワー</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {splits.map((split) => (
+                  <tr key={split.split_index} className="hover:bg-slate-50">
+                    <td className="px-2 py-2 text-left tabular-nums text-slate-500">
+                      {split.split_index}
+                    </td>
+                    <td className="px-2 py-2 text-right tabular-nums">
+                      {formatDistance(split.distance)}
+                    </td>
+                    <td className="px-2 py-2 text-right tabular-nums">
+                      {formatPace(split.pace_seconds_per_km)}
+                    </td>
+                    <td className="px-2 py-2 text-right tabular-nums">
+                      {split.heart_rate ?? "-"}
+                    </td>
+                    <td className="px-2 py-2 text-right tabular-nums">
+                      {split.cadence ?? "-"}
+                    </td>
+                    <td className="px-2 py-2 text-right tabular-nums">
+                      {split.power ?? "-"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <SplitNarrative section={sections?.split} />
         </section>
       )}
 
-      {/* Section analysis cards */}
-      {sections && Object.keys(sections).length > 0 && (
-        <section>
-          <h2 className="mb-3 text-base font-semibold text-slate-800">分析</h2>
-          <div className="space-y-4">
-            {orderedSectionTypes(sections).map((sectionType) => (
-              <SectionCard
-                key={sectionType}
-                sectionType={sectionType}
-                section={sections[sectionType]}
-              />
-            ))}
-          </div>
-        </section>
-      )}
+      {/* Phase evaluation timeline */}
+      <PhaseTimeline section={sections?.phase} />
+
+      {/* Efficiency: structured form stats + analyst prose */}
+      <EfficiencyReport
+        section={sections?.efficiency}
+        formEfficiency={detail.form_efficiency}
+      />
+
+      {/* Environmental impact */}
+      <EnvironmentReport section={sections?.environment} />
+
+      {/* Unknown section types degrade to key-value cards */}
+      {sections &&
+        unknownSectionTypes.map((type) => (
+          <ReportCard key={type} title={type} section={sections[type]}>
+            {(data) => <FallbackFields data={data} exclude={["metadata"]} />}
+          </ReportCard>
+        ))}
     </div>
   );
 }

@@ -22,29 +22,36 @@ export function renderValue(value: unknown): ReactNode {
     );
   }
   if (typeof value === "object") {
-    return <KeyValueList data={value as Record<string, unknown>} />;
+    return <FallbackFields data={value as Record<string, unknown>} flush />;
   }
   return String(value);
 }
 
 /**
- * Generic key-value renderer for unknown / fallback section fields.
+ * Renders fields that no dedicated report component consumed as a
+ * key-value list (graceful degradation for schema evolution, Spike #198).
  * String values are rendered as Markdown; arrays and nested objects
  * are rendered recursively.
  */
-export default function KeyValueList({
+export default function FallbackFields({
   data,
   exclude = [],
+  flush = false,
 }: {
   data: Record<string, unknown>;
   exclude?: string[];
+  /** Render without the top divider (for nested objects). */
+  flush?: boolean;
 }) {
   const entries = Object.entries(data).filter(([key]) => !exclude.includes(key));
   if (entries.length === 0) {
     return null;
   }
+  const frame = flush
+    ? "divide-y divide-slate-100"
+    : "mt-4 divide-y divide-slate-100 border-t border-slate-100";
   return (
-    <dl className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
+    <dl className={frame}>
       {entries.map(([key, value]) => (
         <div key={key} className="py-2">
           <dt className="text-xs font-medium tracking-wide text-slate-500">
