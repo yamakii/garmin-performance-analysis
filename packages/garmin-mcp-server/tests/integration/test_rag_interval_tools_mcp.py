@@ -419,20 +419,24 @@ class TestRagIntervalToolsMcp:
 
     @pytest.mark.asyncio
     async def test_call_interval_analysis_missing_activity_id_error(self):
-        """Test that missing activity_id raises KeyError."""
-        with pytest.raises(KeyError):
-            await call_tool(name="get_interval_analysis", arguments={})
+        """Missing activity_id returns a structured parameter error."""
+        result = await call_tool(name="get_interval_analysis", arguments={})
+        response = json.loads(result[0].text)
+        assert "Invalid parameter" in response["error"]
+        assert "activity_id" in response["error"]
 
     @pytest.mark.asyncio
     async def test_call_split_time_series_missing_split_number_error(
         self, fixture_activity_id: int
     ):
-        """Test that missing split_number raises KeyError."""
-        with pytest.raises(KeyError):
-            await call_tool(
-                name="get_split_time_series_detail",
-                arguments={"activity_id": fixture_activity_id},
-            )
+        """Missing split_number returns a structured parameter error."""
+        result = await call_tool(
+            name="get_split_time_series_detail",
+            arguments={"activity_id": fixture_activity_id},
+        )
+        response = json.loads(result[0].text)
+        assert "Invalid parameter" in response["error"]
+        assert "split_number" in response["error"]
 
     @pytest.mark.asyncio
     async def test_list_tools_includes_phase3_rag_tools(self):
