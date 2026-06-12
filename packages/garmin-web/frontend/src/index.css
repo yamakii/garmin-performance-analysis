@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans:
+    "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui,
+    -apple-system, "Segoe UI", sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-slate-50 font-sans text-slate-800 antialiased;
+  }
+}
+
+/*
+ * Markdown-rendered analysis text (react-markdown output).
+ * Tailwind preflight strips list/paragraph styles, so restore a compact
+ * reading style scoped to .markdown-body.
+ */
+.markdown-body p {
+  margin: 0.25rem 0;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  margin: 0.25rem 0;
+  padding-left: 1.25rem;
+}
+
+.markdown-body ul {
+  list-style: disc;
+}
+
+.markdown-body ol {
+  list-style: decimal;
+}
+
+.markdown-body li {
+  margin: 0.125rem 0;
+}
+
+.markdown-body strong {
+  font-weight: 600;
+  color: var(--color-slate-900);
+}
+
+.markdown-body code {
+  border-radius: 0.25rem;
+  background-color: var(--color-slate-100);
+  padding: 0.0625rem 0.25rem;
+  font-size: 0.85em;
+}

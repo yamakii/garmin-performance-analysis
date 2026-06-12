@@ -1,6 +1,11 @@
 import type { EfficiencySectionData } from "../../types";
 import KeyValueList from "./KeyValueList";
 import MarkdownText from "./MarkdownText";
+import {
+  SECTION_CARD_CLASS,
+  SECTION_SUBTITLE_CLASS,
+  SECTION_TITLE_CLASS,
+} from "./SectionCard";
 
 const FIELDS: { key: keyof EfficiencySectionData & string; label: string }[] = [
   { key: "efficiency", label: "フォーム効率" },
@@ -16,8 +21,8 @@ export default function EfficiencySectionCard({
   data: EfficiencySectionData;
 }) {
   return (
-    <section className="section-card">
-      <h3>効率分析</h3>
+    <section className={SECTION_CARD_CLASS}>
+      <h3 className={SECTION_TITLE_CLASS}>効率分析</h3>
       {FIELDS.map(({ key, label }) => {
         const text = data[key];
         if (typeof text !== "string") {
@@ -25,7 +30,7 @@ export default function EfficiencySectionCard({
         }
         return (
           <div key={key}>
-            <h4>{label}</h4>
+            <h4 className={SECTION_SUBTITLE_CLASS}>{label}</h4>
             <MarkdownText text={text} />
           </div>
         );

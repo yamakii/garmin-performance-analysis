@@ -66,49 +66,68 @@ export default function ActivityList() {
   }, []);
 
   if (loading) {
-    return <p>読み込み中...</p>;
+    return (
+      <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
+        <span
+          aria-hidden="true"
+          className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-600"
+        />
+        読み込み中...
+      </div>
+    );
   }
   if (error) {
-    return <p role="alert">エラー: {error}</p>;
+    return (
+      <p
+        role="alert"
+        className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+      >
+        エラー: {error}
+      </p>
+    );
   }
   if (activities.length === 0) {
-    return <p>アクティビティがありません</p>;
+    return (
+      <p className="rounded-xl border border-slate-200 bg-white px-4 py-12 text-center text-sm text-slate-500 shadow-sm">
+        アクティビティがありません
+      </p>
+    );
   }
 
   const groups = groupByMonth(activities);
 
   return (
     <div>
-      <h1>アクティビティ一覧</h1>
+      <h1 className="mb-6 text-xl font-bold text-slate-900">
+        アクティビティ一覧
+      </h1>
       {[...groups.entries()].map(([month, monthActivities]) => (
-        <section key={month}>
-          <h2>{month}</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>日付</th>
-                <th>名前</th>
-                <th>距離</th>
-                <th>ペース</th>
-                <th>平均HR</th>
-              </tr>
-            </thead>
-            <tbody>
-              {monthActivities.map((activity) => (
-                <tr
-                  key={activity.activity_id}
-                  onClick={() => navigate(`/activities/${activity.activity_id}`)}
-                  style={{ cursor: "pointer" }}
-                >
-                  <td>{activity.activity_date}</td>
-                  <td>{activity.activity_name ?? "-"}</td>
-                  <td>{formatDistance(activity.total_distance_km)}</td>
-                  <td>{formatPace(activity.avg_pace_seconds_per_km)}</td>
-                  <td>{activity.avg_heart_rate ?? "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <section key={month} className="mb-8">
+          <h2 className="mb-2 text-sm font-semibold text-slate-500">{month}</h2>
+          <ul className="space-y-2">
+            {monthActivities.map((activity) => (
+              <li
+                key={activity.activity_id}
+                onClick={() => navigate(`/activities/${activity.activity_id}`)}
+                className="flex cursor-pointer items-center gap-4 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition-shadow hover:shadow-md"
+              >
+                <span className="shrink-0 rounded-md bg-indigo-50 px-2 py-1 text-xs font-semibold tabular-nums text-indigo-700">
+                  {activity.activity_date}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">
+                  {activity.activity_name ?? "-"}
+                </span>
+                <span className="flex shrink-0 items-baseline gap-4 text-right text-sm tabular-nums text-slate-600">
+                  <span>{formatDistance(activity.total_distance_km)}</span>
+                  <span>{formatPace(activity.avg_pace_seconds_per_km)}</span>
+                  <span>
+                    {activity.avg_heart_rate ?? "-"}
+                    <span className="ml-0.5 text-xs text-slate-400">bpm</span>
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
         </section>
       ))}
     </div>

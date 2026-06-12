@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import EChart from "../../components/EChart";
+import { AXIS_STYLE, BASE_CHART_OPTION } from "../../components/chartTheme";
 import type { FormTrendPoint } from "../../api/trends";
 
 interface FormBlockProps {
@@ -9,10 +10,15 @@ interface FormBlockProps {
 export default function FormBlock({ data }: FormBlockProps) {
   const option = useMemo(
     () => ({
+      ...BASE_CHART_OPTION,
       tooltip: { trigger: "axis" as const },
       legend: { data: ["総合スコア", "GCT Δ%", "VO Δcm", "VR Δ%"] },
-      xAxis: { type: "category" as const, data: data.map((p) => p.date) },
-      yAxis: { type: "value" as const, scale: true },
+      xAxis: {
+        type: "category" as const,
+        data: data.map((p) => p.date),
+        ...AXIS_STYLE,
+      },
+      yAxis: { type: "value" as const, scale: true, ...AXIS_STYLE },
       series: [
         {
           name: "総合スコア",
@@ -40,10 +46,17 @@ export default function FormBlock({ data }: FormBlockProps) {
   );
 
   return (
-    <section aria-label="フォーム">
-      <h2>フォームスコア推移</h2>
+    <section
+      aria-label="フォーム"
+      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+    >
+      <h2 className="mb-3 text-base font-semibold text-slate-800">
+        フォームスコア推移
+      </h2>
       {data.length === 0 ? (
-        <p>データがありません</p>
+        <p className="py-8 text-center text-sm text-slate-500">
+          データがありません
+        </p>
       ) : (
         <EChart option={option} ariaLabel="フォーム評価の折れ線グラフ" />
       )}
