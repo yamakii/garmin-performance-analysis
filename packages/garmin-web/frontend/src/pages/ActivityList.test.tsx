@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import ActivityList from "./ActivityList";
 
@@ -39,7 +40,11 @@ describe("ActivityList", () => {
       ),
     );
 
-    render(<ActivityList />);
+    render(
+      <MemoryRouter>
+        <ActivityList />
+      </MemoryRouter>,
+    );
 
     // Wait for the data rows to appear
     expect(await screen.findByText("2025-10-09")).toBeInTheDocument();
