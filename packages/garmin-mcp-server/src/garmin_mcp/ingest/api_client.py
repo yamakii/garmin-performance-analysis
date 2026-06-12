@@ -70,8 +70,11 @@ def get_garmin_client() -> Garmin:
             client.login()
             logger.info("Garmin credential authentication successful")
 
-        # Always save tokens (captures refreshed OAuth2 tokens too)
-        client.garth.dump(tokenstore_path)
+        # Always save tokens (captures refreshed OAuth2 tokens too).
+        # garminconnect 0.3.x exposes the underlying auth client as
+        # ``Garmin.client`` (curl-cffi based); the legacy ``.garth`` attribute
+        # was removed. ``client.dump(path)`` persists the OAuth tokens.
+        client.client.dump(tokenstore_path)
         logger.info(f"Garmin tokens saved to {tokenstore_path}")
 
         _client = client

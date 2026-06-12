@@ -68,7 +68,7 @@ class TestGarminWorkoutUploader:
     def test_schedule_workout_success(self, mocker):
         """Should schedule workout on Garmin Connect calendar."""
         mock_client = mocker.MagicMock()
-        mock_client.garth.post.return_value = None  # Success
+        mock_client.client.post.return_value = None  # Success
 
         uploader = GarminWorkoutUploader.__new__(GarminWorkoutUploader)
         uploader._db_path = ":memory:"
@@ -77,7 +77,8 @@ class TestGarminWorkoutUploader:
         result = uploader._schedule_workout(mock_client, 12345, "2026-03-15")
 
         assert result is True
-        mock_client.garth.post.assert_called_once_with(
+        # garminconnect 0.3.x: scheduling POST moved from ``.garth`` to ``.client``
+        mock_client.client.post.assert_called_once_with(
             "connectapi",
             "/workout-service/schedule/12345",
             json={"date": "2026-03-15"},
@@ -87,7 +88,7 @@ class TestGarminWorkoutUploader:
     def test_schedule_workout_failure(self, mocker):
         """Should return False and log warning on schedule failure."""
         mock_client = mocker.MagicMock()
-        mock_client.garth.post.side_effect = Exception("API error")
+        mock_client.client.post.side_effect = Exception("API error")
 
         uploader = GarminWorkoutUploader.__new__(GarminWorkoutUploader)
         uploader._db_path = ":memory:"
@@ -165,7 +166,7 @@ class TestGarminWorkoutUploader:
         # Mock client
         mock_client = mocker.MagicMock()
         mock_client.upload_workout.return_value = {"workoutId": 99999}
-        mock_client.garth.post.return_value = None
+        mock_client.client.post.return_value = None
 
         # Mock duckdb for update
         mock_duckdb_conn = mocker.MagicMock()
@@ -287,7 +288,7 @@ class TestGarminWorkoutUploader:
         mock_conn.execute.side_effect = [mock_cursor1, mock_cursor2]
 
         mock_client = mocker.MagicMock()
-        mock_client.connectapi.return_value = None
+        mock_client.client.delete.return_value = None
 
         mock_duckdb_conn = mocker.MagicMock()
         mocker.patch("duckdb.connect", return_value=mock_duckdb_conn)
@@ -306,8 +307,9 @@ class TestGarminWorkoutUploader:
         assert result["success"] is True
         assert result["deleted"] is True
         assert result["garmin_workout_id"] == 99999
-        mock_client.connectapi.assert_called_once_with(
-            "/workout-service/workout/99999", method="DELETE"
+        # garminconnect 0.3.x: DELETE moved from connectapi(method=) to client.delete
+        mock_client.client.delete.assert_called_once_with(
+            "connectapi", "/workout-service/workout/99999"
         )
         mock_duckdb_conn.execute.assert_called_once()
         mock_duckdb_conn.close.assert_called_once()
@@ -601,7 +603,7 @@ class TestDeleteWorkoutSafeSharing:
         mock_conn.execute.side_effect = [mock_cursor1, mock_cursor2]
 
         mock_client = mocker.MagicMock()
-        mock_client.connectapi.return_value = None
+        mock_client.client.delete.return_value = None
 
         mock_duckdb_conn = mocker.MagicMock()
         mocker.patch("duckdb.connect", return_value=mock_duckdb_conn)
@@ -619,6 +621,7 @@ class TestDeleteWorkoutSafeSharing:
 
         assert result["success"] is True
         assert result["deleted"] is True
-        mock_client.connectapi.assert_called_once_with(
-            "/workout-service/workout/99999", method="DELETE"
+        # garminconnect 0.3.x: DELETE moved from connectapi(method=) to client.delete
+        mock_client.client.delete.assert_called_once_with(
+            "connectapi", "/workout-service/workout/99999"
         )

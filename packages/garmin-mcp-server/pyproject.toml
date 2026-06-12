@@ -5,7 +5,7 @@ description = "Garmin running performance analysis MCP server with DuckDB backen
 readme = "../../README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "garminconnect>=0.2.0",
+    "garminconnect>=0.3.0",
     "duckdb>=1.1.1",
     "pandas>=3.0.0",
     "polars>=1.9.0",
