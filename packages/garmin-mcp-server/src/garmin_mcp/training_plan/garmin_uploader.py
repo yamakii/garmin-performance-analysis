@@ -153,7 +153,10 @@ class GarminWorkoutUploader:
         try:
             url = f"/workout-service/schedule/{garmin_workout_id}"
             payload = {"date": scheduled_date}
-            client.garth.post("connectapi", url, json=payload, api=True)
+            # garminconnect 0.3.x removed the ``.garth`` attribute; the
+            # underlying auth client (``Garmin.client``) exposes the same
+            # ``post(domain, path, json=..., api=...)`` helper.
+            client.client.post("connectapi", url, json=payload, api=True)
             logger.info(f"Scheduled workout {garmin_workout_id} on {scheduled_date}")
             return True
         except Exception as e:
@@ -396,11 +399,14 @@ class GarminWorkoutUploader:
                 "reason": f"Garmin workout kept ({shared_count} other references)",
             }
 
-        # Last reference - delete from Garmin
+        # Last reference - delete from Garmin.
+        # garminconnect 0.3.x: ``Garmin.connectapi`` only performs GET requests
+        # (passing ``method=`` collides with its internal call). Use the
+        # underlying client's ``delete(domain, path)`` helper for DELETE.
         try:
             client = self._get_garmin_client()
-            client.connectapi(
-                f"/workout-service/workout/{garmin_workout_id}", method="DELETE"
+            client.client.delete(
+                "connectapi", f"/workout-service/workout/{garmin_workout_id}"
             )
 
             with get_write_connection(db_path) as update_conn:

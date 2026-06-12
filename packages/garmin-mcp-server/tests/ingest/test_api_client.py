@@ -48,7 +48,8 @@ class TestGetGarminClient:
         # Token login is called with a path argument
         args, _ = mock_instance.login.call_args
         assert len(args) == 1  # tokenstore_path passed
-        mock_instance.garth.dump.assert_called_once()
+        # garminconnect 0.3.x: token dump moved from ``.garth`` to ``.client``
+        mock_instance.client.dump.assert_called_once()
 
     def test_token_login_failure_falls_back_to_credential(
         self, mocker: MockerFixture
@@ -78,7 +79,8 @@ class TestGetGarminClient:
         # Second call: credential login without path
         second_call_args, _ = mock_instance.login.call_args_list[1]
         assert len(second_call_args) == 0
-        mock_instance.garth.dump.assert_called_once()
+        # garminconnect 0.3.x: token dump moved from ``.garth`` to ``.client``
+        mock_instance.client.dump.assert_called_once()
 
     def test_singleton_returns_same_instance(self, mocker: MockerFixture) -> None:
         """Calling get_garmin_client() twice returns the same object."""
