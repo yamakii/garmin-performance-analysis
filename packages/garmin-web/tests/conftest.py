@@ -429,6 +429,40 @@ _DETAIL_HR_ZONES = [
 _SECTION_TYPES = ["split", "phase", "efficiency", "environment", "summary"]
 
 
+# Real-schema payloads per section type (Spike #198: key occurrence table).
+# Keys present in 100% of production rows are included for each type.
+_SECTION_PAYLOADS: dict[str, dict] = {
+    "split": {
+        "highlights": "**2km地点**で最速ペース 6:19/km を記録しました。",
+        "analyses": {
+            "split_1": "入りの1kmは 6:30/km と抑えた立ち上がりでした。",
+            "split_2": "ペースが 6:19/km まで上がり心拍も安定しています。",
+        },
+    },
+    "phase": {
+        "warmup_evaluation": "心拍 130bpm 台で適切なウォームアップでした。",
+        "run_evaluation": "メインランは 6:26/km で安定していました。",
+        "cooldown_evaluation": "最後の 0.6km で心拍を 120bpm 台へ落とせています。",
+        "evaluation_criteria": "aerobic_base 基準（HR Zone 2 中心）で評価しています。",
+    },
+    "efficiency": {
+        "efficiency": "GCT 248ms、上下動 7.8cm とフォーム効率は良好です。",
+        "evaluation": "Zone 2 滞在率 60% で有酸素ベースに合致しています。",
+        "form_trend": "後半もフォーム指標の劣化は見られません。",
+    },
+    "environment": {
+        "environmental": "気温 18°C・無風でコンディションは良好でした。",
+    },
+    "summary": {
+        "star_rating": "★★★★☆ 4.2/5.0",
+        "summary": "有酸素ベースとして安定した良いランでした。",
+        "key_strengths": ["心拍の安定（平均144bpm）", "ケイデンス維持"],
+        "improvement_areas": ["後半のペース低下", "ウォームアップ不足"],
+        "recommendations": "次回は HR 135-145 を維持してイージーランを実施しましょう。",
+    },
+}
+
+
 def _section_json(activity_id: int, section_type: str) -> str:
     return json.dumps(
         {
@@ -439,7 +473,7 @@ def _section_json(activity_id: int, section_type: str) -> str:
                 "version": "1.0",
                 "timestamp": "2025-10-09T12:00:00+09:00",
             },
-            "summary": f"{section_type} の分析テキスト",
+            **_SECTION_PAYLOADS[section_type],
         },
         ensure_ascii=False,
     )
@@ -457,6 +491,8 @@ def detail_db_path(tmp_path: Path) -> Path:
         conn.execute(_CREATE_HEART_RATE_ZONES)
         conn.execute(_CREATE_PERFORMANCE_TRENDS)
         conn.execute(_CREATE_FORM_EVALUATIONS_DETAIL)
+        conn.execute(_CREATE_VO2_MAX)
+        conn.execute(_CREATE_LACTATE_THRESHOLD)
         conn.execute(_CREATE_TIME_SERIES_METRICS)
         conn.execute(_CREATE_SECTION_ANALYSES)
 
@@ -483,6 +519,15 @@ def detail_db_path(tmp_path: Path) -> Path:
         conn.execute(
             "INSERT INTO form_evaluations VALUES (?, ?, ?, ?, ?)",
             [1, FULL_ACTIVITY_ID, 4.1, "★★★★☆", "2025-10-09 12:00:00"],
+        )
+        # Physiology rows for the FULL activity only (PARTIAL has none).
+        conn.execute(
+            "INSERT INTO vo2_max VALUES (?, ?, ?, ?, ?)",
+            [FULL_ACTIVITY_ID, 49.6, 50.0, "2025-10-09", 5],
+        )
+        conn.execute(
+            "INSERT INTO lactate_threshold VALUES (?, ?, ?, ?)",
+            [FULL_ACTIVITY_ID, 168, 3.2, "2025-10-09 06:30:00"],
         )
 
         # Time series: 2000 rows with GPS (full) / 300 rows without GPS

@@ -36,8 +36,9 @@ def get_activity_detail(
     """Aggregate activity detail data into a single dict.
 
     Combines activities, splits, form_efficiency, heart_rate_zones,
-    performance_trends and form_evaluations. Splits are ordered by
-    split_index ascending; HR zones by zone_number ascending.
+    performance_trends, form_evaluations, vo2_max and lactate_threshold.
+    Splits are ordered by split_index ascending; HR zones by zone_number
+    ascending.
 
     Args:
         conn: Open DuckDB connection (read-only is sufficient).
@@ -45,8 +46,9 @@ def get_activity_detail(
 
     Returns:
         Dict with keys: activity, splits, form_efficiency, hr_zones,
-        performance_trends, form_evaluations. Single-row tables that have
-        no row for the activity are None; list tables are empty lists.
+        performance_trends, form_evaluations, vo2_max, lactate_threshold.
+        Single-row tables that have no row for the activity are None;
+        list tables are empty lists.
         Returns None if the activity itself does not exist.
     """
     activity = _fetch_one(
@@ -80,6 +82,18 @@ def get_activity_detail(
         "form_evaluations": _fetch_one(
             conn,
             "SELECT * FROM form_evaluations WHERE activity_id = ?",
+            [activity_id],
+        ),
+        "vo2_max": _fetch_one(
+            conn,
+            "SELECT COALESCE(precise_value, value) AS value, date"
+            " FROM vo2_max WHERE activity_id = ?",
+            [activity_id],
+        ),
+        "lactate_threshold": _fetch_one(
+            conn,
+            "SELECT heart_rate, speed_mps, date_hr"
+            " FROM lactate_threshold WHERE activity_id = ?",
             [activity_id],
         ),
     }

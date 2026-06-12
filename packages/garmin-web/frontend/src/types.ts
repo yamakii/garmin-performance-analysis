@@ -31,6 +31,19 @@ export interface HrZoneRow {
   zone_percentage: number | null;
 }
 
+export interface Vo2MaxData {
+  value: number | null;
+  date: string | null;
+  [key: string]: unknown;
+}
+
+export interface LactateThresholdData {
+  heart_rate: number | null;
+  speed_mps: number | null;
+  date_hr: string | null;
+  [key: string]: unknown;
+}
+
 export interface ActivityDetailResponse {
   activity: ActivitySummary & Record<string, unknown>;
   splits: SplitRow[];
@@ -38,6 +51,8 @@ export interface ActivityDetailResponse {
   hr_zones: HrZoneRow[];
   performance_trends: Record<string, unknown> | null;
   form_evaluations: Record<string, unknown> | null;
+  vo2_max: Vo2MaxData | null;
+  lactate_threshold: LactateThresholdData | null;
 }
 
 export interface TimeSeriesResponse {
