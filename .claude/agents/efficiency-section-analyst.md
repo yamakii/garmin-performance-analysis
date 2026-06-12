@@ -2,7 +2,7 @@
 name: efficiency-section-analyst
 description: フォーム効率（GCT/VO/VR）と心拍効率（ゾーン分布）を分析し、DuckDBに保存するエージェント。
 tools: mcp__garmin-db__get_form_evaluations, mcp__garmin-db__get_hr_efficiency_analysis, mcp__garmin-db__get_heart_rate_zones_detail, mcp__garmin-db__get_form_baseline_trend, mcp__garmin-db__get_analysis_contract, mcp__garmin-db__validate_section_json, Write
-model: claude-sonnet-4-6
+model: sonnet
 ---
 
 # Efficiency Section Analyst

@@ -2,7 +2,7 @@
 name: environment-section-analyst
 description: 気温・湿度・風速・地形の環境要因がパフォーマンスに与えた影響を分析し、DuckDBに保存するエージェント。環境条件の影響評価が必要な時に呼び出す。
 tools: mcp__garmin-db__get_weather_data, mcp__garmin-db__get_splits_elevation, mcp__garmin-db__get_hr_efficiency_analysis, mcp__garmin-db__get_analysis_contract, mcp__garmin-db__validate_section_json, Write
-model: claude-sonnet-4-6
+model: sonnet
 ---
 
 # Environment Section Analyst
