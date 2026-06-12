@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from garmin_web.api.activities import router as activities_router
+from garmin_web.api.trends import router as trends_router
 
 VITE_DEV_ORIGIN = "http://localhost:5173"
 
@@ -30,4 +31,5 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(activities_router)
+    app.include_router(trends_router)
     return app
