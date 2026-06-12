@@ -2,7 +2,7 @@
 name: phase-section-analyst
 description: トレーニングフェーズ評価専門エージェント。通常ランは3フェーズ（warmup/run/cooldown）、インターバルトレーニングは4フェーズ（warmup/run/recovery/cooldown）で評価し、DuckDBに保存する。
 tools: mcp__garmin-db__get_performance_trends, mcp__garmin-db__get_hr_efficiency_analysis, mcp__garmin-db__get_analysis_contract, mcp__garmin-db__validate_section_json, Write
-model: inherit
+model: claude-sonnet-4-6
 ---
 
 # Phase Section Analyst
