@@ -4,13 +4,16 @@ import {
   fetchActivityDetail,
   fetchSections,
   fetchTimeSeries,
+  fetchTrack,
 } from "../api/client";
+import MapPanel from "../components/MapPanel";
 import SectionCard from "../components/sections/SectionCard";
 import TimeSeriesChart from "../components/TimeSeriesChart";
 import type {
   ActivityDetailResponse,
   SectionsResponse,
   TimeSeriesResponse,
+  TrackPoint,
 } from "../types";
 import { formatDistance, formatPace } from "./ActivityList";
 
@@ -44,6 +47,33 @@ export function formatDuration(totalSeconds: number | null): string {
   return hours > 0 ? `${hours}:${mmss}` : mmss;
 }
 
+/** Binary search: index of the timestamp nearest to target (ascending). */
+export function nearestTimestampIndex(
+  timestamps: number[],
+  target: number,
+): number {
+  let low = 0;
+  let high = timestamps.length - 1;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (timestamps[mid] < target) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+  if (low > 0 && target - timestamps[low - 1] <= timestamps[low] - target) {
+    return low - 1;
+  }
+  return low;
+}
+
+/** Shared hover state in the seq_no / timestamp_s domain. */
+interface HoverState {
+  source: "chart" | "map";
+  value: number;
+}
+
 function orderedSectionTypes(sections: SectionsResponse): string[] {
   const known = SECTION_ORDER.filter((type) => type in sections);
   const unknown = Object.keys(sections).filter(
@@ -59,6 +89,8 @@ export default function ActivityDetail() {
   const [timeSeries, setTimeSeries] = useState<TimeSeriesResponse | null>(null);
   const [selectedMetrics, setSelectedMetrics] =
     useState<string[]>(DEFAULT_METRICS);
+  const [track, setTrack] = useState<TrackPoint[] | null>(null);
+  const [hover, setHover] = useState<HoverState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -109,6 +141,27 @@ export default function ActivityDetail() {
     };
   }, [id, selectedMetrics]);
 
+  useEffect(() => {
+    if (!id) {
+      return;
+    }
+    let cancelled = false;
+    fetchTrack(id)
+      .then((data) => {
+        if (!cancelled) {
+          setTrack(data.points);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTrack([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
   const toggleMetric = (key: string) => {
     setSelectedMetrics((current) =>
       current.includes(key)
@@ -132,6 +185,27 @@ export default function ActivityDetail() {
   }
 
   const { activity, splits } = detail;
+
+  // Bidirectional hover sync: chart data index <-> track seq_no, matched
+  // through the nearest timestamp / seq_no value.
+  const timestamps = timeSeries?.timestamps ?? [];
+  const chartHoverIndex =
+    hover?.source === "map" && timestamps.length > 0
+      ? nearestTimestampIndex(timestamps, hover.value)
+      : null;
+  const mapHoverSeqNo = hover?.value ?? null;
+
+  const handleChartHover = (index: number | null) => {
+    setHover(
+      index == null || timestamps.length === 0
+        ? null
+        : { source: "chart", value: timestamps[index] ?? index },
+    );
+  };
+
+  const handleMapHover = (seqNo: number | null) => {
+    setHover(seqNo == null ? null : { source: "map", value: seqNo });
+  };
 
   return (
     <div>
@@ -162,6 +236,18 @@ export default function ActivityDetail() {
         </div>
       </dl>
 
+      {/* GPS track map (placeholder when the activity has no GPS data) */}
+      {track !== null && (
+        <section>
+          <h2>コース</h2>
+          <MapPanel
+            points={track}
+            hoverSeqNo={mapHoverSeqNo}
+            onHoverSeqNo={handleMapHover}
+          />
+        </section>
+      )}
+
       {/* Time series chart with metric toggles */}
       <section>
         <h2>タイムシリーズ</h2>
@@ -178,7 +264,12 @@ export default function ActivityDetail() {
           ))}
         </div>
         {timeSeries && Object.keys(timeSeries.metrics).length > 0 ? (
-          <TimeSeriesChart data={timeSeries} metricLabels={METRIC_LABELS} />
+          <TimeSeriesChart
+            data={timeSeries}
+            metricLabels={METRIC_LABELS}
+            hoverIndex={chartHoverIndex}
+            onHoverIndex={handleChartHover}
+          />
         ) : (
           <p>表示する指標を選択してください</p>
         )}

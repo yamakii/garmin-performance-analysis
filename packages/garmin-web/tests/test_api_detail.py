@@ -5,7 +5,8 @@ from fastapi.testclient import TestClient
 
 from garmin_web.app import create_app
 
-FULL_ACTIVITY_ID = 9000000101
+FULL_ACTIVITY_ID = 9000000101  # 2000 time-series rows with GPS
+PARTIAL_ACTIVITY_ID = 9000000102  # 300 time-series rows, no GPS (indoor)
 
 
 @pytest.mark.integration
@@ -54,6 +55,27 @@ def test_api_detail_endpoints_200(detail_db_path):
         "summary",
     }
     assert all(s["parse_error"] is False for s in sections.values())
+
+
+@pytest.mark.integration
+def test_api_track_200(detail_db_path):
+    client = TestClient(create_app(db_path=detail_db_path))
+    response = client.get(f"/api/activities/{FULL_ACTIVITY_ID}/track")
+
+    assert response.status_code == 200
+    points = response.json()["points"]
+    assert len(points) == 2000
+    assert points[0] == {"seq_no": 0, "lat": 35.6, "lon": 139.7}
+    assert [p["seq_no"] for p in points] == sorted(p["seq_no"] for p in points)
+
+
+@pytest.mark.integration
+def test_api_track_empty_for_indoor(detail_db_path):
+    client = TestClient(create_app(db_path=detail_db_path))
+    response = client.get(f"/api/activities/{PARTIAL_ACTIVITY_ID}/track")
+
+    assert response.status_code == 200
+    assert response.json()["points"] == []
 
 
 @pytest.mark.integration

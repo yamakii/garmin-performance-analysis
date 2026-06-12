@@ -266,6 +266,8 @@ _CREATE_TIME_SERIES_METRICS = """
         heart_rate DOUBLE,
         speed DOUBLE,
         cadence DOUBLE,
+        latitude DOUBLE,
+        longitude DOUBLE,
         PRIMARY KEY (activity_id, seq_no)
     )
 """
@@ -282,6 +284,21 @@ _CREATE_SECTION_ANALYSES = """
         agent_version VARCHAR
     )
 """
+
+
+@pytest.fixture
+def track_conn():
+    """In-memory DuckDB with time_series_metrics table, no rows.
+
+    Track unit tests insert their own rows (activity_id band: 9000002xxx).
+    Column order: activity_id, seq_no, timestamp_s, heart_rate, speed,
+    cadence, latitude, longitude.
+    """
+    conn = duckdb.connect(":memory:")
+    conn.execute(_CREATE_TIME_SERIES_METRICS)
+    yield conn
+    conn.close()
+
 
 # Activity 9000000101: full data (5 splits, form_efficiency, 5 HR zones,
 # performance_trends, form_evaluations, 2000 time-series rows, 5 sections).
@@ -468,15 +485,18 @@ def detail_db_path(tmp_path: Path) -> Path:
             [1, FULL_ACTIVITY_ID, 4.1, "★★★★☆", "2025-10-09 12:00:00"],
         )
 
-        # Time series: 2000 rows (full) / 300 rows (partial)
+        # Time series: 2000 rows with GPS (full) / 300 rows without GPS
+        # (partial, simulating an indoor run).
         conn.execute(
             "INSERT INTO time_series_metrics"
-            f" SELECT {FULL_ACTIVITY_ID}, i, i, 140 + i % 20, 2.8, 170.0"
+            f" SELECT {FULL_ACTIVITY_ID}, i, i, 140 + i % 20, 2.8, 170.0,"
+            " 35.6 + i * 1e-5, 139.7 + i * 1e-5"
             " FROM range(2000) AS t(i)"
         )
         conn.execute(
             "INSERT INTO time_series_metrics"
-            f" SELECT {PARTIAL_ACTIVITY_ID}, i, i, 135 + i % 10, 2.6, 168.0"
+            f" SELECT {PARTIAL_ACTIVITY_ID}, i, i, 135 + i % 10, 2.6, 168.0,"
+            " NULL, NULL"
             " FROM range(300) AS t(i)"
         )
 

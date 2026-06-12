@@ -3,6 +3,7 @@ import type {
   ActivitySummary,
   SectionsResponse,
   TimeSeriesResponse,
+  TrackResponse,
 } from "../types";
 
 export async function fetchActivities(params?: {
@@ -46,6 +47,16 @@ export async function fetchTimeSeries(
     throw new Error(`Failed to fetch time series: ${response.status}`);
   }
   return (await response.json()) as TimeSeriesResponse;
+}
+
+export async function fetchTrack(
+  activityId: string | number,
+): Promise<TrackResponse> {
+  const response = await fetch(`/api/activities/${activityId}/track`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch track: ${response.status}`);
+  }
+  return (await response.json()) as TrackResponse;
 }
 
 export async function fetchSections(

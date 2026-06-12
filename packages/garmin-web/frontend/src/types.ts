@@ -45,6 +45,18 @@ export interface TimeSeriesResponse {
   metrics: Record<string, (number | null)[]>;
 }
 
+// --- GPS track (Issue #200) ---
+
+export interface TrackPoint {
+  seq_no: number;
+  lat: number;
+  lon: number;
+}
+
+export interface TrackResponse {
+  points: TrackPoint[];
+}
+
 export interface SectionResult {
   data: Record<string, unknown> | null;
   parse_error: boolean;
