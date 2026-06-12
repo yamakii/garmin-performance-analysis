@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       code: ${{ steps.filter.outputs.code }}
+      web: ${{ steps.filter.outputs.web }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -21,6 +22,9 @@ jobs:
               - 'packages/**'
               - 'pyproject.toml'
               - '.pre-commit-config.yaml'
+              - '.github/workflows/**'
+            web:
+              - 'packages/garmin-web/**'
               - '.github/workflows/**'
 
   lint-and-test:
@@ -55,18 +59,80 @@ jobs:
       - name: Run unit tests with coverage
         run: uv run pytest -m unit --tb=short -n 4 --maxfail=5 --cov=garmin_mcp --cov-report=term-missing --cov-fail-under=60
 
+  web-backend:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/garmin-web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Lint with ruff
+        run: uv run ruff check src/ tests/
+
+      - name: Run unit and integration tests
+        run: uv run pytest -m "unit or integration" --tb=short
+
+  web-frontend:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/garmin-web/frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: packages/garmin-web/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Run tests
+        run: npx vitest run
+
+      - name: Build
+        run: npm run build
+
   ci-guard:
-    needs: [changes, lint-and-test]
+    needs: [changes, lint-and-test, web-backend, web-frontend]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Check CI result
         run: |
-          if [ "${{ needs.changes.outputs.code }}" == "false" ]; then
+          if [ "${{ needs.changes.outputs.code }}" == "false" ] && [ "${{ needs.changes.outputs.web }}" == "false" ]; then
             echo "No code changes — skipping CI"
             exit 0
           fi
-          if [ "${{ needs.lint-and-test.result }}" != "success" ]; then
+          if [ "${{ needs.changes.outputs.code }}" == "true" ] && [ "${{ needs.lint-and-test.result }}" != "success" ]; then
             echo "lint-and-test failed"
+            exit 1
+          fi
+          if [ "${{ needs.changes.outputs.web }}" == "true" ] && [ "${{ needs.web-backend.result }}" != "success" ]; then
+            echo "web-backend failed"
+            exit 1
+          fi
+          if [ "${{ needs.changes.outputs.web }}" == "true" ] && [ "${{ needs.web-frontend.result }}" != "success" ]; then
+            echo "web-frontend failed"
             exit 1
           fi

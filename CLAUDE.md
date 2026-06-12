@@ -133,7 +133,7 @@ FIFO キュー + Validation Agent 方式。詳細は `.claude/rules/dev/worktree
 ```
 garmin-performance-analysis/
 ├── packages/
-│   └── garmin-mcp-server/
+│   ├── garmin-mcp-server/
 │       ├── pyproject.toml
 │       ├── src/garmin_mcp/
 │       │   ├── ingest/             # API → Raw data (ApiClient, RawDataFetcher, DuckDBSaver)
@@ -149,6 +149,10 @@ garmin-performance-analysis/
 │       │   │   └── regenerate/     # DuckDB regeneration utilities
 │       │   ├── tool_schemas.py     # MCP tool definitions (30 tools)
 │       │   └── validation/         # Data validation
+│       └── tests/
+│   └── garmin-web/                 # Web app (see docs/garmin-web.md)
+│       ├── src/garmin_web/         # FastAPI backend (api/, queries/, cli.py)
+│       ├── frontend/               # Vite + React SPA
 │       └── tests/
 ├── .claude/
 │   ├── agents/                     # 5 analysis agents
