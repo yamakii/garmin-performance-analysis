@@ -81,7 +81,11 @@ export default function MapPanel({
   }, [points]);
 
   if (points.length === 0 || bounds == null) {
-    return <p>GPSデータがありません</p>;
+    return (
+      <p className="px-5 py-8 text-center text-sm text-slate-500">
+        GPSデータがありません
+      </p>
+    );
   }
 
   const hoverPoint =
@@ -116,7 +120,7 @@ export default function MapPanel({
       />
       <Polyline
         positions={positions}
-        pathOptions={{ color: "#1d4ed8", weight: 4 }}
+        pathOptions={{ color: "#4f46e5", weight: 4 }}
         eventHandlers={{
           mousemove: handleMouseMove,
           mouseout: () => onHoverSeqNo?.(null),
@@ -126,7 +130,7 @@ export default function MapPanel({
         <CircleMarker
           center={[hoverPoint.lat, hoverPoint.lon]}
           radius={7}
-          pathOptions={{ color: "#dc2626", fillColor: "#dc2626", fillOpacity: 0.9 }}
+          pathOptions={{ color: "#f59e0b", fillColor: "#f59e0b", fillOpacity: 0.9 }}
         />
       )}
     </MapContainer>

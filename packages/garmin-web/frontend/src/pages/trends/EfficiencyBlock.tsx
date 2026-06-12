@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import EChart from "../../components/EChart";
+import { AXIS_STYLE, BASE_CHART_OPTION } from "../../components/chartTheme";
 import type { EfficiencyTrendPoint } from "../../api/trends";
 
 interface EfficiencyBlockProps {
@@ -17,10 +18,15 @@ const ZONE_KEYS = [
 export default function EfficiencyBlock({ data }: EfficiencyBlockProps) {
   const option = useMemo(
     () => ({
+      ...BASE_CHART_OPTION,
       tooltip: { trigger: "axis" as const },
       legend: { data: ZONE_KEYS.map((_, i) => `Zone ${i + 1}`) },
-      xAxis: { type: "category" as const, data: data.map((p) => p.date) },
-      yAxis: { type: "value" as const, name: "%", max: 100 },
+      xAxis: {
+        type: "category" as const,
+        data: data.map((p) => p.date),
+        ...AXIS_STYLE,
+      },
+      yAxis: { type: "value" as const, name: "%", max: 100, ...AXIS_STYLE },
       series: ZONE_KEYS.map((key, i) => ({
         name: `Zone ${i + 1}`,
         type: "bar" as const,
@@ -32,10 +38,17 @@ export default function EfficiencyBlock({ data }: EfficiencyBlockProps) {
   );
 
   return (
-    <section aria-label="効率">
-      <h2>効率推移 (HRゾーン分布)</h2>
+    <section
+      aria-label="効率"
+      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+    >
+      <h2 className="mb-3 text-base font-semibold text-slate-800">
+        効率推移 (HRゾーン分布)
+      </h2>
       {data.length === 0 ? (
-        <p>データがありません</p>
+        <p className="py-8 text-center text-sm text-slate-500">
+          データがありません
+        </p>
       ) : (
         <EChart option={option} ariaLabel="HRゾーン分布の積み上げ棒グラフ" />
       )}

@@ -1,6 +1,12 @@
 import * as echarts from "echarts";
 import { useEffect, useRef } from "react";
 import type { TimeSeriesResponse } from "../types";
+import {
+  AXIS_LABEL_COLOR,
+  CHART_FONT_SIZE,
+  CHART_PALETTE,
+  GRID_LINE_COLOR,
+} from "./chartTheme";
 
 const GRID_HEIGHT = 140;
 const GRID_GAP = 50;
@@ -96,6 +102,8 @@ export default function TimeSeriesChart({
 
     const option: echarts.EChartsOption = {
       animation: false,
+      color: CHART_PALETTE,
+      textStyle: { fontSize: CHART_FONT_SIZE, color: AXIS_LABEL_COLOR },
       axisPointer: { link: [{ xAxisIndex: "all" }] },
       tooltip: { trigger: "axis" },
       grid: metricNames.map((_, i) => ({
@@ -108,7 +116,12 @@ export default function TimeSeriesChart({
         type: "category",
         gridIndex: i,
         data: elapsedLabels,
-        axisLabel: { show: i === lastIndex },
+        axisLabel: {
+          show: i === lastIndex,
+          color: AXIS_LABEL_COLOR,
+          fontSize: CHART_FONT_SIZE,
+        },
+        axisLine: { lineStyle: { color: GRID_LINE_COLOR } },
         axisPointer: { show: true },
       })),
       yAxis: metricNames.map((name, i) => {
@@ -117,11 +130,17 @@ export default function TimeSeriesChart({
           type: "value",
           gridIndex: i,
           name: metricLabels[name] ?? name,
+          nameTextStyle: { color: AXIS_LABEL_COLOR, fontSize: CHART_FONT_SIZE },
           scale: true,
           inverse: isPace,
-          axisLabel: isPace
-            ? { formatter: (value: number) => formatPaceLabel(value) }
-            : {},
+          axisLabel: {
+            color: AXIS_LABEL_COLOR,
+            fontSize: CHART_FONT_SIZE,
+            ...(isPace
+              ? { formatter: (value: number) => formatPaceLabel(value) }
+              : {}),
+          },
+          splitLine: { lineStyle: { color: GRID_LINE_COLOR } },
         };
       }),
       series: metricNames.map((name, i) => {

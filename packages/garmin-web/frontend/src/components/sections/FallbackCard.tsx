@@ -1,4 +1,5 @@
 import KeyValueList from "./KeyValueList";
+import { SECTION_CARD_CLASS, SECTION_TITLE_CLASS } from "./SectionCard";
 
 /** Generic card rendering all fields as key-value pairs. */
 export default function FallbackCard({
@@ -11,8 +12,8 @@ export default function FallbackCard({
   exclude?: string[];
 }) {
   return (
-    <section className="section-card">
-      <h3>{title}</h3>
+    <section className={SECTION_CARD_CLASS}>
+      <h3 className={SECTION_TITLE_CLASS}>{title}</h3>
       <KeyValueList data={data} exclude={exclude} />
     </section>
   );

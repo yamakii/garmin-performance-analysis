@@ -13,7 +13,7 @@ export function renderValue(value: unknown): ReactNode {
   }
   if (Array.isArray(value)) {
     return (
-      <ul>
+      <ul className="list-disc space-y-0.5 pl-5">
         {value.map((item, index) => (
           // eslint-disable-next-line react/no-array-index-key
           <li key={index}>{renderValue(item)}</li>
@@ -44,11 +44,13 @@ export default function KeyValueList({
     return null;
   }
   return (
-    <dl className="key-value-list">
+    <dl className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
       {entries.map(([key, value]) => (
-        <div key={key} className="key-value-item">
-          <dt>{key}</dt>
-          <dd>{renderValue(value)}</dd>
+        <div key={key} className="py-2">
+          <dt className="text-xs font-medium tracking-wide text-slate-500">
+            {key}
+          </dt>
+          <dd className="mt-0.5 text-sm text-slate-700">{renderValue(value)}</dd>
         </div>
       ))}
     </dl>

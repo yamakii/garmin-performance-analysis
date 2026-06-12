@@ -175,13 +175,32 @@ export default function ActivityDetail() {
   };
 
   if (loading) {
-    return <p>読み込み中...</p>;
+    return (
+      <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
+        <span
+          aria-hidden="true"
+          className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-600"
+        />
+        読み込み中...
+      </div>
+    );
   }
   if (error) {
-    return <p role="alert">エラー: {error}</p>;
+    return (
+      <p
+        role="alert"
+        className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+      >
+        エラー: {error}
+      </p>
+    );
   }
   if (!detail) {
-    return <p>アクティビティが見つかりません</p>;
+    return (
+      <p className="rounded-xl border border-slate-200 bg-white px-4 py-12 text-center text-sm text-slate-500 shadow-sm">
+        アクティビティが見つかりません
+      </p>
+    );
   }
 
   const { activity, splits } = detail;
@@ -207,61 +226,93 @@ export default function ActivityDetail() {
     setHover(seqNo == null ? null : { source: "map", value: seqNo });
   };
 
-  return (
-    <div>
-      <p>
-        <Link to="/">← アクティビティ一覧</Link>
-      </p>
-      <h1>
-        {activity.activity_name ?? "アクティビティ"} ({activity.activity_date})
-      </h1>
+  const kpis: { label: string; value: string }[] = [
+    { label: "距離", value: formatDistance(activity.total_distance_km) },
+    { label: "時間", value: formatDuration(activity.total_time_seconds) },
+    { label: "平均ペース", value: formatPace(activity.avg_pace_seconds_per_km) },
+    {
+      label: "平均心拍",
+      value: `${activity.avg_heart_rate ?? "-"} bpm`,
+    },
+  ];
 
-      {/* KPI header */}
-      <dl className="kpi-header">
-        <div>
-          <dt>距離</dt>
-          <dd>{formatDistance(activity.total_distance_km)}</dd>
-        </div>
-        <div>
-          <dt>時間</dt>
-          <dd>{formatDuration(activity.total_time_seconds)}</dd>
-        </div>
-        <div>
-          <dt>平均ペース</dt>
-          <dd>{formatPace(activity.avg_pace_seconds_per_km)}</dd>
-        </div>
-        <div>
-          <dt>平均心拍</dt>
-          <dd>{activity.avg_heart_rate ?? "-"} bpm</dd>
-        </div>
+  return (
+    <div className="space-y-6">
+      <div>
+        <Link
+          to="/"
+          className="text-sm font-medium text-indigo-600 hover:text-indigo-800"
+        >
+          ← アクティビティ一覧
+        </Link>
+        <h1 className="mt-2 text-xl font-bold text-slate-900">
+          {activity.activity_name ?? "アクティビティ"}{" "}
+          <span className="font-normal text-slate-500">
+            ({activity.activity_date})
+          </span>
+        </h1>
+      </div>
+
+      {/* KPI header: 4 stat cards */}
+      <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        {kpis.map(({ label, value }) => (
+          <div
+            key={label}
+            className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+          >
+            <dt className="text-xs font-medium tracking-wide text-slate-500 uppercase">
+              {label}
+            </dt>
+            <dd className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">
+              {value}
+            </dd>
+          </div>
+        ))}
       </dl>
 
       {/* GPS track map (placeholder when the activity has no GPS data) */}
       {track !== null && (
-        <section>
-          <h2>コース</h2>
-          <MapPanel
-            points={track}
-            hoverSeqNo={mapHoverSeqNo}
-            onHoverSeqNo={handleMapHover}
-          />
+        <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <h2 className="px-5 pt-4 pb-2 text-base font-semibold text-slate-800">
+            コース
+          </h2>
+          <div className="overflow-hidden rounded-b-xl">
+            <MapPanel
+              points={track}
+              hoverSeqNo={mapHoverSeqNo}
+              onHoverSeqNo={handleMapHover}
+            />
+          </div>
         </section>
       )}
 
       {/* Time series chart with metric toggles */}
-      <section>
-        <h2>タイムシリーズ</h2>
-        <div className="metric-toggles">
-          {AVAILABLE_METRICS.map(({ key, label }) => (
-            <label key={key} style={{ marginRight: "1em" }}>
-              <input
-                type="checkbox"
-                checked={selectedMetrics.includes(key)}
-                onChange={() => toggleMetric(key)}
-              />
-              {label}
-            </label>
-          ))}
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="mb-3 text-base font-semibold text-slate-800">
+          タイムシリーズ
+        </h2>
+        <div className="mb-4 flex flex-wrap gap-2">
+          {AVAILABLE_METRICS.map(({ key, label }) => {
+            const checked = selectedMetrics.includes(key);
+            return (
+              <label
+                key={key}
+                className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors ${
+                  checked
+                    ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  className="accent-indigo-600"
+                  checked={checked}
+                  onChange={() => toggleMetric(key)}
+                />
+                {label}
+              </label>
+            );
+          })}
         </div>
         {timeSeries && Object.keys(timeSeries.metrics).length > 0 ? (
           <TimeSeriesChart
@@ -271,34 +322,50 @@ export default function ActivityDetail() {
             onHoverIndex={handleChartHover}
           />
         ) : (
-          <p>表示する指標を選択してください</p>
+          <p className="py-8 text-center text-sm text-slate-500">
+            表示する指標を選択してください
+          </p>
         )}
       </section>
 
       {/* Splits table */}
       {splits.length > 0 && (
-        <section>
-          <h2>スプリット</h2>
-          <table>
+        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="mb-3 text-base font-semibold text-slate-800">
+            スプリット
+          </h2>
+          <table className="w-full text-sm">
             <thead>
-              <tr>
-                <th>#</th>
-                <th>距離</th>
-                <th>ペース</th>
-                <th>心拍</th>
-                <th>ケイデンス</th>
-                <th>パワー</th>
+              <tr className="text-xs tracking-wide text-slate-500 uppercase">
+                <th className="px-2 py-2 text-left font-medium">#</th>
+                <th className="px-2 py-2 text-right font-medium">距離</th>
+                <th className="px-2 py-2 text-right font-medium">ペース</th>
+                <th className="px-2 py-2 text-right font-medium">心拍</th>
+                <th className="px-2 py-2 text-right font-medium">ケイデンス</th>
+                <th className="px-2 py-2 text-right font-medium">パワー</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-slate-100">
               {splits.map((split) => (
-                <tr key={split.split_index}>
-                  <td>{split.split_index}</td>
-                  <td>{formatDistance(split.distance)}</td>
-                  <td>{formatPace(split.pace_seconds_per_km)}</td>
-                  <td>{split.heart_rate ?? "-"}</td>
-                  <td>{split.cadence ?? "-"}</td>
-                  <td>{split.power ?? "-"}</td>
+                <tr key={split.split_index} className="hover:bg-slate-50">
+                  <td className="px-2 py-2 text-left tabular-nums text-slate-500">
+                    {split.split_index}
+                  </td>
+                  <td className="px-2 py-2 text-right tabular-nums">
+                    {formatDistance(split.distance)}
+                  </td>
+                  <td className="px-2 py-2 text-right tabular-nums">
+                    {formatPace(split.pace_seconds_per_km)}
+                  </td>
+                  <td className="px-2 py-2 text-right tabular-nums">
+                    {split.heart_rate ?? "-"}
+                  </td>
+                  <td className="px-2 py-2 text-right tabular-nums">
+                    {split.cadence ?? "-"}
+                  </td>
+                  <td className="px-2 py-2 text-right tabular-nums">
+                    {split.power ?? "-"}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -309,14 +376,16 @@ export default function ActivityDetail() {
       {/* Section analysis cards */}
       {sections && Object.keys(sections).length > 0 && (
         <section>
-          <h2>分析</h2>
-          {orderedSectionTypes(sections).map((sectionType) => (
-            <SectionCard
-              key={sectionType}
-              sectionType={sectionType}
-              section={sections[sectionType]}
-            />
-          ))}
+          <h2 className="mb-3 text-base font-semibold text-slate-800">分析</h2>
+          <div className="space-y-4">
+            {orderedSectionTypes(sections).map((sectionType) => (
+              <SectionCard
+                key={sectionType}
+                sectionType={sectionType}
+                section={sections[sectionType]}
+              />
+            ))}
+          </div>
         </section>
       )}
     </div>

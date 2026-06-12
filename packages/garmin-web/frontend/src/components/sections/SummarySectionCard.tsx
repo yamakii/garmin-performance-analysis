@@ -1,6 +1,11 @@
 import type { SummarySectionData } from "../../types";
 import KeyValueList from "./KeyValueList";
 import MarkdownText from "./MarkdownText";
+import {
+  SECTION_CARD_CLASS,
+  SECTION_SUBTITLE_CLASS,
+  SECTION_TITLE_CLASS,
+} from "./SectionCard";
 
 const KNOWN_KEYS = [
   "metadata",
@@ -17,16 +22,22 @@ export default function SummarySectionCard({
   data: SummarySectionData;
 }) {
   return (
-    <section className="section-card">
-      <h3>
+    <section className={SECTION_CARD_CLASS}>
+      <h3 className={SECTION_TITLE_CLASS}>
         総合評価
-        {typeof data.star_rating === "string" ? ` ${data.star_rating}` : ""}
+        {typeof data.star_rating === "string" ? (
+          <span className="ml-2 font-normal text-amber-500">
+            {data.star_rating}
+          </span>
+        ) : (
+          ""
+        )}
       </h3>
       {typeof data.summary === "string" && <MarkdownText text={data.summary} />}
       {Array.isArray(data.key_strengths) && data.key_strengths.length > 0 && (
         <>
-          <h4>強み</h4>
-          <ul>
+          <h4 className={SECTION_SUBTITLE_CLASS}>強み</h4>
+          <ul className="list-disc space-y-1 pl-5">
             {data.key_strengths.map((item) => (
               <li key={String(item)}>
                 <MarkdownText text={String(item)} />
@@ -38,8 +49,8 @@ export default function SummarySectionCard({
       {Array.isArray(data.improvement_areas) &&
         data.improvement_areas.length > 0 && (
           <>
-            <h4>改善ポイント</h4>
-            <ul>
+            <h4 className={SECTION_SUBTITLE_CLASS}>改善ポイント</h4>
+            <ul className="list-disc space-y-1 pl-5">
               {data.improvement_areas.map((item) => (
                 <li key={String(item)}>
                   <MarkdownText text={String(item)} />
@@ -50,7 +61,7 @@ export default function SummarySectionCard({
         )}
       {typeof data.recommendations === "string" && (
         <>
-          <h4>推奨事項</h4>
+          <h4 className={SECTION_SUBTITLE_CLASS}>推奨事項</h4>
           <MarkdownText text={data.recommendations} />
         </>
       )}

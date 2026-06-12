@@ -50,9 +50,9 @@ describe("ActivityList", () => {
     expect(await screen.findByText("2025-10-09")).toBeInTheDocument();
     expect(screen.getByText("2025-10-07")).toBeInTheDocument();
 
-    // 2 data rows + 1 header row in the single 2025-10 month group
-    const rows = screen.getAllByRole("row");
-    expect(rows).toHaveLength(3);
+    // 2 activity row cards in the single 2025-10 month group
+    const rows = screen.getAllByRole("listitem");
+    expect(rows).toHaveLength(2);
 
     // Month grouping heading
     expect(

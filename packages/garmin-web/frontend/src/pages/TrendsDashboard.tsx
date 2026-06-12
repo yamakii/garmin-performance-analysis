@@ -60,26 +60,45 @@ export default function TrendsDashboard() {
   }, []);
 
   if (error) {
-    return <p role="alert">エラー: {error}</p>;
+    return (
+      <p
+        role="alert"
+        className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+      >
+        エラー: {error}
+      </p>
+    );
   }
 
   const loading =
     volume == null || physiology == null || form == null || efficiency == null;
   if (loading) {
-    return <p>読み込み中...</p>;
+    return (
+      <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
+        <span
+          aria-hidden="true"
+          className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-600"
+        />
+        読み込み中...
+      </div>
+    );
   }
 
   return (
     <div>
-      <h1>トレンドダッシュボード</h1>
-      <VolumeBlock
-        data={volume}
-        granularity={granularity}
-        onGranularityChange={setGranularity}
-      />
-      <PhysiologyBlock data={physiology} />
-      <FormBlock data={form} />
-      <EfficiencyBlock data={efficiency} />
+      <h1 className="mb-6 text-xl font-bold text-slate-900">
+        トレンドダッシュボード
+      </h1>
+      <div className="grid gap-4 md:grid-cols-2">
+        <VolumeBlock
+          data={volume}
+          granularity={granularity}
+          onGranularityChange={setGranularity}
+        />
+        <PhysiologyBlock data={physiology} />
+        <FormBlock data={form} />
+        <EfficiencyBlock data={efficiency} />
+      </div>
     </div>
   );
 }
