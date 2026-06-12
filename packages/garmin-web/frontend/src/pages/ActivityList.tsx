@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { fetchActivities } from "../api/client";
 import type { ActivitySummary } from "../types";
 
@@ -39,6 +40,7 @@ function groupByMonth(
 }
 
 export default function ActivityList() {
+  const navigate = useNavigate();
   const [activities, setActivities] = useState<ActivitySummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -93,7 +95,11 @@ export default function ActivityList() {
             </thead>
             <tbody>
               {monthActivities.map((activity) => (
-                <tr key={activity.activity_id}>
+                <tr
+                  key={activity.activity_id}
+                  onClick={() => navigate(`/activities/${activity.activity_id}`)}
+                  style={{ cursor: "pointer" }}
+                >
                   <td>{activity.activity_date}</td>
                   <td>{activity.activity_name ?? "-"}</td>
                   <td>{formatDistance(activity.total_distance_km)}</td>
