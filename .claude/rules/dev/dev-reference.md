@@ -69,6 +69,7 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 | `.claude/agents/*-analyst.md` | L3 |
 | `handlers/`, `database/readers/` | L1 |
 | `reporting/`, `ingest/`, `database/migrations/` | L2 |
+| `packages/garmin-web/` | L2 |
 | `.claude/rules/`, `docs/`, `CLAUDE.md` | skip |
 
 迷ったら L2。L3 は agent 定義変更時のみ。

@@ -11,6 +11,9 @@ dependencies = [
     "garmin-mcp-server",
 ]
 
+[project.scripts]
+garmin-web = "garmin_web.cli:main"
+
 [tool.uv.sources]
 garmin-mcp-server = { workspace = true }
 
