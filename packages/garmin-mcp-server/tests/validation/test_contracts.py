@@ -1,5 +1,7 @@
 """Tests for analysis contracts."""
 
+import re
+
 import pytest
 
 from garmin_mcp.validation.contracts import VALID_SECTION_TYPES, get_contract
@@ -100,6 +102,40 @@ def test_efficiency_contract_has_form_ranges():
         assert metric in form
         assert "excellent" in form[metric]
         assert "needs_improvement" in form[metric]
+
+
+@pytest.mark.unit
+def test_cadence_contract_is_pace_dependent():
+    """Regression test for #252: cadence_ranges must be pace-dependent.
+
+    The old contract hard-coded an absolute 180 spm target (">=180 spm",
+    "178-179 spm", "175-177 spm", "<175 spm"), which caused the narration
+    layer to flag cadence as "needs improvement" against a fixed threshold,
+    contradicting the pace-dependent form_evaluation.cadence data layer.
+    """
+    contract = get_contract("efficiency")
+    cadence = contract["evaluation_policy"]["cadence_ranges"]
+
+    # No absolute fixed-threshold spm values (e.g. ">=180", "178-179",
+    # "175-177", "<175") anywhere in the cadence policy.
+    fixed_threshold = re.compile(r"(?:>=|<=|<|>)?\s*\d{2,3}\s*(?:-\s*\d{2,3})?\s*spm")
+    for key, value in cadence.items():
+        assert isinstance(value, str)
+        # Allow the "180 spm" mention only inside an explicit "do NOT use"
+        # warning; reject any standalone fixed-threshold spm value.
+        matches = fixed_threshold.findall(value)
+        for match in matches:
+            assert "do not use" in value.lower() or "not use" in value.lower(), (
+                f"cadence_ranges['{key}'] contains absolute spm threshold "
+                f"'{match.strip()}' outside a 'do NOT use' warning"
+            )
+
+    # Pace-dependent keys must be present and reference form_evaluation.cadence.
+    assert "method" in cadence
+    assert "star_rating" in cadence
+    joined = " ".join(cadence.values()).lower()
+    assert "form_evaluation.cadence" in joined
+    assert "pace-dependent" in joined or "pace dependent" in joined
 
 
 @pytest.mark.unit

@@ -117,7 +117,7 @@ Write(file_path="{ANALYSIS_TEMP_DIR}/{section}.json", content=json.dumps({
 ### 評価ルール（`get_analysis_contract("efficiency")` の evaluation_policy 参照）
 
 1. `form_ranges` で GCT/VO/VR の絶対値評価（値は `form_evaluation` から、**star_rating は手動計算せず `form_evaluation.{metric}.star_rating` を使用**）
-2. `cadence_ranges` でケイデンス評価（`form_evaluation.cadence`、null なら対象外）
+2. **ケイデンス評価はペース依存**（`form_evaluation.cadence`、null なら対象外）。**star_rating は手動計算せず `form_evaluation.cadence.star_rating` を使用し、絶対180spm目標で「未達」と評価しない**。文言は `form_evaluation.cadence.evaluation_text`（ペース依存の期待値ベース）を参照
 3. `power_efficiency_stars` でパワー効率評価（`form_evaluation.power` がある場合のみ）。正の efficiency_score →「ランニングエコノミー改善」、負 →「疲労/環境/路面の影響の可能性」（安易に非効率と断定しない）
 4. `integrated_score_stars` で統合スコアの星評価（`form_evaluation.integrated_score` または `form_scores`）
 5. `zone_targets[training_type_category]` で HR ゾーン配分評価（`zone_percentages` + `hr_zones_detail`）。**`planned_workout` がある場合はプラン目標HRを最優先基準**
@@ -280,6 +280,7 @@ analysis_data = {
 2. `needs_improvement=false` の指標 → `key_strengths`（**文字列**で記述、リストに格納）
 3. `needs_improvement` が null の指標 → 評価対象外（含めない）
 4. 達成済み目標は improvement_areas に含めない
+   - ケイデンスは `form_evaluation.cadence.needs_improvement` に従う。`false` なら improvement_areas に含めない（**絶対180spm目標で「あと N spm」等の未達表現を出さない**）
 5. `form_evaluation` が null → form ベースの improvement_areas を生成しない
 6. **`improvement_areas` は最大2件**（`key_strengths` は 3-5項目目安）
 
