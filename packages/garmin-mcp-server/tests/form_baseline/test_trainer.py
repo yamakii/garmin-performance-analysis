@@ -1,5 +1,8 @@
 """Tests for form_baseline.trainer module."""
 
+from datetime import datetime, timedelta
+
+import duckdb
 import numpy as np
 import pandas as pd
 import pytest
@@ -9,6 +12,7 @@ from garmin_mcp.form_baseline.trainer import (
     LinearModel,
     fit_gct_power,
     fit_linear,
+    train_form_baselines,
 )
 
 
@@ -241,3 +245,155 @@ class TestFitLinear:
         # their cadence outliers removed them) -> min 2.5, max 5.0
         assert model.speed_range[0] == 2.5
         assert model.speed_range[1] == 5.0
+
+
+def _seed_baseline_db(db_path: str) -> None:
+    """Seed a real DuckDB with splits/activities for train_form_baselines.
+
+    Creates 20 activities x 5 splits = 100 rows within a 60-day window.
+    Each split carries GCT/VO/VR/cadence that vary with speed (so the
+    linear/power fits are well-conditioned) and stay inside the trainer's
+    outlier bounds. Power + base_weight_kg are included so the trailing
+    power-efficiency training also has data.
+    """
+    conn = duckdb.connect(db_path)
+
+    conn.execute("""
+        CREATE TABLE activities (
+            activity_id INTEGER PRIMARY KEY,
+            activity_date DATE,
+            base_weight_kg FLOAT
+        )
+        """)
+    conn.execute("""
+        CREATE TABLE splits (
+            split_id INTEGER PRIMARY KEY,
+            activity_id INTEGER,
+            pace_seconds_per_km FLOAT,
+            ground_contact_time FLOAT,
+            vertical_oscillation FLOAT,
+            vertical_ratio FLOAT,
+            stride_length FLOAT,
+            cadence FLOAT,
+            average_speed FLOAT,
+            power FLOAT
+        )
+        """)
+    conn.execute("CREATE SEQUENCE seq_history_id START 1")
+    conn.execute("CREATE SEQUENCE form_baseline_history_seq START 1")
+    conn.execute("""
+        CREATE TABLE form_baseline_history (
+            history_id INTEGER PRIMARY KEY DEFAULT nextval('seq_history_id'),
+            user_id VARCHAR DEFAULT 'default',
+            condition_group VARCHAR DEFAULT 'flat_road',
+            metric VARCHAR,
+            model_type VARCHAR,
+            coef_alpha FLOAT,
+            coef_d FLOAT,
+            coef_a FLOAT,
+            coef_b FLOAT,
+            period_start DATE,
+            period_end DATE,
+            trained_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            n_samples INTEGER,
+            rmse FLOAT,
+            speed_range_min FLOAT,
+            speed_range_max FLOAT,
+            power_a FLOAT,
+            power_b FLOAT,
+            power_rmse FLOAT,
+            UNIQUE (user_id, condition_group, metric, period_start, period_end)
+        )
+        """)
+
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=55)
+
+    activity_rows = []
+    split_rows = []
+    for i in range(20):
+        activity_date = start_date + timedelta(days=i * 2)
+        activity_id = 2000 + i
+        base_weight_kg = 70.0
+        activity_rows.append((activity_id, activity_date.date(), base_weight_kg))
+
+        for j in range(5):
+            split_id = activity_id * 10 + j
+            # Pace 330 -> 270 sec/km => speed ~3.03 -> 3.70 m/s
+            pace = 330.0 - (i * 5 + j * 12) % 60
+            speed = 1000.0 / pace
+            # Form metrics vary with speed, within outlier bounds:
+            # GCT 150-350, VO 5-20, VR 4-15, cadence 140-210
+            gct = 300.0 - 20.0 * speed
+            vo = 12.0 - 1.0 * speed
+            vr = 11.0 - 1.0 * speed
+            cadence = 160.0 + 5.0 * speed  # positive slope with speed
+            stride_length = 1.0 + 0.1 * speed
+            power = 180.0 + 30.0 * speed
+            split_rows.append(
+                (
+                    split_id,
+                    activity_id,
+                    pace,
+                    gct,
+                    vo,
+                    vr,
+                    stride_length,
+                    cadence,
+                    speed,
+                    power,
+                )
+            )
+
+    conn.executemany("INSERT INTO activities VALUES (?, ?, ?)", activity_rows)
+    conn.executemany(
+        "INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", split_rows
+    )
+    conn.close()
+
+
+@pytest.mark.integration
+def test_train_form_baselines_inserts_cadence_row(tmp_path):
+    """Regression for #219: cadence baseline INSERT must succeed.
+
+    The cadence INSERT previously had an off-by-one placeholder (15 ? for
+    14 values), causing DuckDB to fail and the cadence baseline to never
+    persist. train_form_baselines swallows the error and returns None, so
+    we assert directly against form_baseline_history.
+    """
+    db_path = str(tmp_path / "baseline.duckdb")
+    _seed_baseline_db(db_path)
+
+    result = train_form_baselines(
+        user_id="default",
+        condition_group="flat_road",
+        end_date=datetime.now().strftime("%Y-%m-%d"),
+        window_months=2,
+        db_path=db_path,
+    )
+
+    assert result is not None, "train_form_baselines should not fail on valid data"
+
+    conn = duckdb.connect(db_path, read_only=True)
+    try:
+        count_row = conn.execute(
+            "SELECT COUNT(*) FROM form_baseline_history WHERE metric = 'cadence'"
+        ).fetchone()
+        assert count_row is not None
+        assert count_row[0] == 1, "Exactly one cadence baseline row expected"
+
+        coef_row = conn.execute(
+            "SELECT coef_a, coef_b FROM form_baseline_history WHERE metric = 'cadence'"
+        ).fetchone()
+        assert coef_row is not None
+        assert coef_row[0] is not None, "cadence coef_a must be non-null"
+        assert coef_row[1] is not None, "cadence coef_b must be non-null"
+
+        # VO/VR baselines should be created alongside cadence.
+        vo_vr_row = conn.execute(
+            "SELECT COUNT(*) FROM form_baseline_history " "WHERE metric IN ('vo', 'vr')"
+        ).fetchone()
+        assert vo_vr_row is not None
+        assert vo_vr_row[0] == 2, "VO and VR baselines should also be inserted"
+    finally:
+        conn.close()
