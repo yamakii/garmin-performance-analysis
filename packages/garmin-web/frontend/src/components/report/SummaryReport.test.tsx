@@ -24,7 +24,9 @@ function section(data: Record<string, unknown>) {
 
 describe("SummaryReport", () => {
   it("renders strengths, improvements and recommendations", () => {
-    render(<SummaryReport section={section(baseData)} />);
+    const { container } = render(
+      <SummaryReport section={section(baseData)} />,
+    );
 
     // Large star rating parsed from the star_rating string
     expect(screen.getByLabelText("評価 4.3 / 5.0")).toBeInTheDocument();
@@ -39,7 +41,10 @@ describe("SummaryReport", () => {
     expect(screen.getByText("改善ポイント")).toBeInTheDocument();
     expect(screen.getByText("後半のペース低下")).toBeInTheDocument();
 
-    expect(screen.getByText("推奨事項")).toBeInTheDocument();
+    // recommendations now live inside a collapsed <details> ("詳しい改善ポイント")
+    expect(screen.getByText("詳しい改善ポイント")).toBeInTheDocument();
+    const details = container.querySelector("details");
+    expect(details).not.toBeNull();
     expect(
       screen.getByText(
         "次回は HR 135-145 を維持してイージーランを実施しましょう。",
@@ -58,19 +63,66 @@ describe("SummaryReport", () => {
       />,
     );
 
-    // next_action renders as an action callout, not a key-value row
-    expect(screen.getByText("次のアクション")).toBeInTheDocument();
-    expect(
-      screen.getByText("次回はHR 135-145でイージーランを実施"),
-    ).toBeInTheDocument();
+    // next_action renders as a single lead heading, not a key-value row
+    const leads = screen.getAllByText("次回はHR 135-145でイージーランを実施");
+    expect(leads).toHaveLength(1);
     expect(screen.queryByText("next_action")).not.toBeInTheDocument();
     // integrated_score renders as a badge
     expect(screen.getByText("統合スコア 4.1")).toBeInTheDocument();
     unmount();
 
-    // Absent next_action -> callout is not rendered
+    // Absent next_action -> lead heading is not rendered
     render(<SummaryReport section={section(baseData)} />);
-    expect(screen.queryByText("次のアクション")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("次回はHR 135-145でイージーランを実施"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("collapses recommendations into details", () => {
+    const { container } = render(
+      <SummaryReport
+        section={section({
+          ...baseData,
+          next_action: "次回はZone 2を維持",
+        })}
+      />,
+    );
+
+    // recommendations are rendered inside a <details> element
+    const details = container.querySelector("details");
+    expect(details).not.toBeNull();
+    expect(
+      details?.textContent?.includes(
+        "次回は HR 135-145 を維持してイージーランを実施しましょう。",
+      ),
+    ).toBe(true);
+
+    // next_action appears exactly once (as the lead heading)
+    expect(screen.getAllByText("次回はZone 2を維持")).toHaveLength(1);
+  });
+
+  it("renders next_run_target as a prescription card, not a key dump", () => {
+    render(
+      <SummaryReport
+        section={section({
+          ...baseData,
+          next_run_target: {
+            recommended_type: "aerobic_base",
+            target_hr_low: 140,
+            target_hr_high: 150,
+            reference_pace_low_formatted: "6:52",
+            reference_pace_high_formatted: "7:02",
+            success_criterion: "Zone 1+2比率85%以上を維持",
+            summary_ja: "次回は平均心拍140-150bpmを目安に",
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText("ベース走")).toBeInTheDocument();
+    expect(screen.getByText("140–150 bpm")).toBeInTheDocument();
+    // No raw english keys leak into the DOM
+    expect(screen.queryByText("recommended_type")).not.toBeInTheDocument();
   });
 
   it("unknown fields fall back to key-value", () => {

@@ -2,6 +2,7 @@ import type { SectionResult } from "../../types";
 import ActionCallout from "./ActionCallout";
 import FallbackFields, { renderValue } from "./FallbackFields";
 import MarkdownText from "./MarkdownText";
+import NextRunTarget from "./NextRunTarget";
 import ReportCard from "./ReportCard";
 import StarRating from "./StarRating";
 
@@ -115,20 +116,33 @@ export default function SummaryReport({
                 )}
             </div>
           )}
-          {typeof data.recommendations === "string" && (
-            <ActionCallout title="推奨事項">
-              <MarkdownText text={data.recommendations} />
-            </ActionCallout>
-          )}
-          {typeof data.next_action === "string" && (
-            <ActionCallout title="次のアクション">
-              <MarkdownText text={data.next_action} />
-            </ActionCallout>
-          )}
-          {data.next_run_target != null && (
-            <ActionCallout title="次回ラン目標">
-              {renderValue(data.next_run_target)}
-            </ActionCallout>
+          {(typeof data.next_action === "string" ||
+            data.next_run_target != null ||
+            typeof data.recommendations === "string") && (
+            <div className="space-y-3">
+              {typeof data.next_action === "string" && (
+                <p className="text-sm font-semibold text-slate-800">
+                  {data.next_action}
+                </p>
+              )}
+              {data.next_run_target != null &&
+                typeof data.next_run_target === "object" &&
+                !Array.isArray(data.next_run_target) && (
+                  <NextRunTarget
+                    data={data.next_run_target as Record<string, unknown>}
+                  />
+                )}
+              {typeof data.recommendations === "string" && (
+                <details className="rounded-lg border border-slate-100 bg-slate-50/60 px-4 py-2">
+                  <summary className="cursor-pointer text-sm font-medium text-slate-600">
+                    詳しい改善ポイント
+                  </summary>
+                  <div className="mt-2">
+                    <MarkdownText text={data.recommendations} />
+                  </div>
+                </details>
+              )}
+            </div>
           )}
           {data.plan_achievement != null && (
             <ActionCallout title="プラン達成度">
