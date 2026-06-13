@@ -156,7 +156,7 @@ class TestDetectFormAnomaliesSummary:
         data = json.loads(result[0].text)
         assert data == expected
         mock_cls.return_value.detect_form_anomalies_summary.assert_called_once_with(
-            activity_id=12345, metrics=None, z_threshold=2.0
+            activity_id=12345, metrics=None, z_threshold=3.0
         )
 
     @pytest.mark.asyncio
