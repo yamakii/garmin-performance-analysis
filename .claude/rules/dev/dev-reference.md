@@ -76,9 +76,9 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 
 ### 検証フロー (FIFO キュー + Validation Agent)
 
-1. L1: `reload_server(server_dir=worktree_path)` → MCP tool 呼び出し → 非null、型一致、値範囲チェック (pace 3:00-9:00, HR 80-200) → `reload_server()` で復帰
-2. L2: L1 + worktree 内で `uv run pytest -m integration --tb=short -q`
-3. L3: L2 + Validation Agent で `/analyze-activity` 実行 + 構造/内容チェック（詳細は `worktree-validation-protocol.md`）
+1. L1: worktree コードを subprocess で import → 下層関数を `verification_activity_id` で呼び出し → 非null、型一致、値範囲 (pace 3:00-9:00, HR 80-200)、`json.dumps` 可能を検証（`reload_server` は使わない）
+2. L2: L1 + worktree 内で `uv run --directory <worktree> pytest -m integration --tb=short -q`
+3. L3: agent 定義変更時、メインセッションが worktree の `.md` を main に一時適用 → `/analyze-activity` 実行 + 構造/内容チェック → `git checkout` で復元（reload 非依存。詳細は `worktree-validation-protocol.md`）
 
 ### L3 検証基準
 
@@ -134,6 +134,6 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 
 ## 9. Real Data Validation
 
-- コード変更後は `reload_server()` 必須（stale state で false negative になる）
+- worktree コード変更の検証は in-process / subprocess（`uv run --directory <worktree> ...`）で行う。`reload_server` は使わない（サブエージェントは reload を跨ぐと `mcp__garmin-db__*` を失う。spike #243）。live MCP 確認が要る稀なケースのみメインセッションが reload + `get_server_info` の ready ポーリング
 - MCP tool 変更 → 実 activity_id で `statistics_only=True/False` 両方テスト
 - Agent 定義変更 → fixture データで E2E 検証
