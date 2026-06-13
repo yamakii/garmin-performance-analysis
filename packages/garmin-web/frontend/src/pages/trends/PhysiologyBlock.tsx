@@ -1,6 +1,11 @@
 import { useMemo } from "react";
 import EChart from "../../components/EChart";
-import { AXIS_STYLE, BASE_CHART_OPTION } from "../../components/chartTheme";
+import {
+  AXIS_STYLE,
+  BASE_CHART_OPTION,
+  INK_COLOR,
+  METRIC_COLORS,
+} from "../../components/chartTheme";
 import type { PhysiologyTrend } from "../../api/trends";
 
 interface PhysiologyBlockProps {
@@ -32,12 +37,16 @@ export default function PhysiologyBlock({ data }: PhysiologyBlockProps) {
         {
           name: "VO2max",
           type: "line" as const,
+          itemStyle: { color: INK_COLOR },
+          lineStyle: { color: INK_COLOR },
           data: data.vo2max.map((p) => p.value),
         },
         {
           name: "LT心拍",
           type: "line" as const,
           yAxisIndex: 1,
+          itemStyle: { color: METRIC_COLORS.heart_rate },
+          lineStyle: { color: METRIC_COLORS.heart_rate },
           data: data.lactate_threshold.map((p) => [p.date, p.heart_rate]),
         },
       ],
@@ -54,7 +63,7 @@ export default function PhysiologyBlock({ data }: PhysiologyBlockProps) {
       aria-label="生理指標"
       className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
     >
-      <h2 className="mb-3 text-base font-semibold text-slate-800">
+      <h2 className="mb-3 font-display text-base font-semibold text-ink">
         生理指標 (VO2max / 乳酸閾値)
       </h2>
       {isEmpty ? (

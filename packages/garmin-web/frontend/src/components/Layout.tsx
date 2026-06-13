@@ -4,8 +4,8 @@ import { NavLink } from "react-router-dom";
 function navLinkClass({ isActive }: { isActive: boolean }): string {
   const base = "rounded-md px-3 py-1.5 text-sm font-medium transition-colors";
   return isActive
-    ? `${base} bg-indigo-50 text-indigo-700`
-    : `${base} text-slate-600 hover:bg-slate-100 hover:text-slate-900`;
+    ? `${base} bg-ink/5 text-ink`
+    : `${base} text-slate-600 hover:bg-slate-100 hover:text-ink`;
 }
 
 /**
@@ -19,7 +19,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
           <NavLink
             to="/"
-            className="text-base font-bold tracking-tight text-indigo-600"
+            className="font-display text-lg font-bold tracking-tight text-ink"
           >
             Garmin Performance
           </NavLink>

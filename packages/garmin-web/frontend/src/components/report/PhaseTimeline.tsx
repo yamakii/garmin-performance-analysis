@@ -5,7 +5,7 @@ import ReportCard from "./ReportCard";
 
 const PHASES: { key: string; label: string; dot: string }[] = [
   { key: "warmup_evaluation", label: "ウォームアップ", dot: "bg-sky-400" },
-  { key: "run_evaluation", label: "メインラン", dot: "bg-indigo-500" },
+  { key: "run_evaluation", label: "メインラン", dot: "bg-ink" },
   // Interval training only (5.6% of rows per Spike #198).
   { key: "recovery_evaluation", label: "リカバリー", dot: "bg-violet-400" },
   { key: "cooldown_evaluation", label: "クールダウン", dot: "bg-emerald-400" },

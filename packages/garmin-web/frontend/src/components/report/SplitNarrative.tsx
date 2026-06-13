@@ -59,7 +59,7 @@ export default function SplitNarrative({
           {entries.map(([key, text]) => (
             <li key={key} className="flex items-start gap-3">
               <span
-                className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold tabular-nums text-indigo-700"
+                className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink/10 font-numeric text-xs font-semibold tabular-nums text-ink"
                 aria-label={`スプリット ${splitLabel(key)}`}
               >
                 {splitLabel(key)}
