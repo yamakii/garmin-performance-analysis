@@ -62,12 +62,12 @@ contract の `required_fields` と `evaluation_policy` に従い `analysis_data`
 
 **分析観点** (contract の evaluation_policy を参照):
 - ペース安定性: training type に応じた基準で評価
-- HR ドリフト: contract の `hr_drift` 閾値で判定
+- HR ドリフト: ウォームアップ後の定常区間で「前半 vs 後半」を比較して判定（contract の first-half vs second-half method）。**序盤スプリット（Split 1 や定常化前の最初の数分）のHR上昇は安静→定常への正常なウォームアップ応答であり、疲労・オーバーペース・「有酸素能力の上限」とは解釈しない**。「Split 1（コールドスタート）→ 末尾スプリット」の単純差分をドリフト指標として記述に使わない。コールドスタート由来のHR上昇に fatigue ラベルを付けない
 - フォーム変化: GCT増加=疲労、VO増加=フォーム崩れ、ケイデンス低下=エネルギー枯渇
 - 環境統合: 上りはペース低下正常、気温25℃超はHR+5-10bpm許容
 - パワー評価: W/kg比率（体重60kg仮定）、スプリット間15%以上低下は疲労兆候
 - 歩幅評価: 5%以上低下は疲労蓄積
-- ケイデンス評価: 180-190 spm目標、max_cadenceとの10spm以上差はリズム乱れ
+- ケイデンス評価: `get_form_evaluations` の `cadence_expected` / `cadence_delta_pct` / `cadence_needs_improvement`（ペース依存 trained baseline, #215）を権威的ソースとする。**固定の「180spm目標」で各スプリットの不足を判定しない**（遅いペースでは期待ケイデンスも低い）。ペース相応かどうかで記述し、max_cadence との10spm以上差は「リズム乱れ」の観点として残してよい
 - 計測エラー: contract の `anomaly_thresholds` に該当する異常値を指摘
 
 **文体**: 日本語コーチングトーン、具体的数値、1-2文/スプリット。
