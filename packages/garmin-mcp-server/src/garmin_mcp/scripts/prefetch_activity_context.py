@@ -44,8 +44,19 @@ Output (JSON to stdout):
         "run": {"avg_pace": "5:45/km", "avg_hr": 155.0},
         "cooldown": {"avg_pace": "7:12/km", "avg_hr": 140.0}
       },
-      "planned_workout": null
+      "planned_workout": null,
+      "form_evaluation": {...},      # FormReader.get_form_evaluations (or null)
+      "hr_zones_detail": {"zones": [...]},  # PhysiologyReader (or null)
+      "form_baseline_trend": {"success": true, "metrics": {...}},
+      "similar_workouts": {"target_activity": {...}, "similar_activities": [...]},
+      "vo2_max": null,               # training-type conditional (or data dict)
+      "lactate_threshold": null      # training-type conditional (or data dict)
     }
+
+Bundle keys form_evaluation..lactate_threshold are additive (Issue #235);
+existing keys above are never modified. vo2_max / lactate_threshold are
+training-type conditional (tempo/threshold -> LT only; vo2max/interval/speed
+-> vo2_max only; others -> both null; unknown type -> both included).
 """
 
 import argparse
@@ -53,6 +64,37 @@ import json
 import sys
 
 from garmin_mcp.database.connection import get_connection, get_db_path
+
+# Training types for which lactate threshold is the relevant aerobic ceiling.
+_LT_TRAINING_TYPES = {"tempo", "threshold", "lactate_threshold"}
+# Training types for which VO2 max is the relevant aerobic ceiling.
+_VO2_TRAINING_TYPES = {"vo2max", "vo2_max", "interval", "speed"}
+
+
+def _should_include_vo2_max(training_type: str | None) -> bool:
+    """Decide whether vo2_max is relevant for the given training type.
+
+    Rules (see Issue #235):
+    - None training_type -> include (safe side)
+    - vo2max / interval / speed -> include
+    - everything else -> exclude
+    """
+    if training_type is None:
+        return True
+    return training_type.lower() in _VO2_TRAINING_TYPES
+
+
+def _should_include_lactate_threshold(training_type: str | None) -> bool:
+    """Decide whether lactate_threshold is relevant for the given training type.
+
+    Rules (see Issue #235):
+    - None training_type -> include (safe side)
+    - tempo / threshold -> include
+    - everything else -> exclude
+    """
+    if training_type is None:
+        return True
+    return training_type.lower() in _LT_TRAINING_TYPES
 
 
 def _classify_terrain(avg_gain_per_km: float | None) -> str:
@@ -332,6 +374,54 @@ def prefetch_activity_context(activity_id: int) -> dict:
         except Exception:
             pass  # Table may not exist
 
+    # ------------------------------------------------------------------
+    # Bundle expansion (S1, Issue #235): reuse existing readers/comparators
+    # so each section agent receives a complete analysis bundle without
+    # issuing redundant MCP calls. All keys below are additive — existing
+    # keys above are never modified (backward compatible).
+    # ------------------------------------------------------------------
+    from garmin_mcp.database.readers.form import FormReader
+    from garmin_mcp.database.readers.physiology import PhysiologyReader
+
+    db_path_str = str(db_path)
+    form_reader = FormReader(db_path_str)
+    physiology_reader = PhysiologyReader(db_path_str)
+
+    # Full pace-corrected form evaluation (needs_improvement flags, deltas, etc.)
+    form_evaluation = form_reader.get_form_evaluations(activity_id)
+
+    # Heart rate zone boundaries + time distribution
+    hr_zones_detail = physiology_reader.get_heart_rate_zones_detail(activity_id)
+
+    # Form baseline trend (current vs 1-month-prior coefficients). Uses the
+    # reader extracted from physiology_handler so logic is shared, not duplicated.
+    form_baseline_trend = physiology_reader.get_form_baseline_trend(
+        activity_id, activity_date
+    )
+
+    # VO2 max / lactate threshold are training-type conditional.
+    vo2_max = (
+        physiology_reader.get_vo2_max_data(activity_id)
+        if _should_include_vo2_max(training_type)
+        else None
+    )
+    lactate_threshold = (
+        physiology_reader.get_lactate_threshold_data(activity_id)
+        if _should_include_lactate_threshold(training_type)
+        else None
+    )
+
+    # Similar past workouts (own connection via WorkoutComparator). Called once,
+    # outside the read transaction above. Key is always present (null on error).
+    similar_workouts: dict | None
+    try:
+        from garmin_mcp.rag.queries.comparisons import WorkoutComparator
+
+        comparator = WorkoutComparator(db_path_str)
+        similar_workouts = comparator.find_similar_workouts(activity_id, limit=3)
+    except Exception:
+        similar_workouts = None
+
     return {
         "activity_id": activity_id,
         "activity_date": activity_date,
@@ -355,6 +445,13 @@ def prefetch_activity_context(activity_id: int) -> dict:
         "form_scores": form_scores,
         "phase_structure": phase_structure,
         "planned_workout": planned_workout,
+        # --- S1 bundle expansion (Issue #235, additive) ---
+        "form_evaluation": form_evaluation,
+        "hr_zones_detail": hr_zones_detail,
+        "form_baseline_trend": form_baseline_trend,
+        "similar_workouts": similar_workouts,
+        "vo2_max": vo2_max,
+        "lactate_threshold": lactate_threshold,
     }
 
 

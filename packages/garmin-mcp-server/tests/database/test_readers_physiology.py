@@ -204,3 +204,175 @@ class TestGetLactateThreshold:
 
     def test_missing_activity(self, phys_reader: PhysiologyReader):
         assert phys_reader.get_lactate_threshold_data(MISSING_ID) is None
+
+
+# ---------------------------------------------------------------------------
+# get_form_baseline_trend (extracted from PhysiologyHandler in Issue #235)
+# ---------------------------------------------------------------------------
+
+
+def _seed_baseline_history(db_path: Path) -> None:
+    """Insert current (October) and previous (September) baselines.
+
+    Mirrors the previous handler's two-period comparison logic so the
+    reader output can be validated against known expectations.
+    """
+    conn = duckdb.connect(str(db_path))
+    rows = [
+        # (user_id, condition_group, metric, coef_d, coef_b, period_start, period_end)
+        ("default", "flat_road", "GCT", -0.15, 260.0, "2025-10-01", "2025-10-31"),
+        ("default", "flat_road", "VO", 0.02, 8.0, "2025-10-01", "2025-10-31"),
+        ("default", "flat_road", "GCT", -0.12, 265.0, "2025-09-01", "2025-09-30"),
+        ("default", "flat_road", "VO", 0.025, 8.5, "2025-09-01", "2025-09-30"),
+    ]
+    for i, (uid, cg, metric, cd, cb, ps, pe) in enumerate(rows):
+        conn.execute(
+            """
+            INSERT INTO form_baseline_history
+                (history_id, user_id, condition_group, metric,
+                 coef_d, coef_b, period_start, period_end)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [i, uid, cg, metric, cd, cb, ps, pe],
+        )
+    conn.close()
+
+
+@pytest.mark.unit
+class TestGetFormBaselineTrend:
+    """Tests for PhysiologyReader.get_form_baseline_trend()."""
+
+    def test_success_both_periods(self, reader_db_path: Path):
+        _seed_baseline_history(reader_db_path)
+        reader = PhysiologyReader(db_path=str(reader_db_path))
+
+        result = reader.get_form_baseline_trend(12345, "2025-10-15")
+
+        assert result["success"] is True
+        assert result["activity_id"] == 12345
+        assert result["activity_date"] == "2025-10-15"
+        gct = result["metrics"]["GCT"]
+        # coef columns are FLOAT in DuckDB → compare with tolerance.
+        assert gct["current"]["coef_d"] == pytest.approx(-0.15)
+        assert gct["previous"]["coef_d"] == pytest.approx(-0.12)
+        assert gct["delta_d"] == pytest.approx(-0.15 - (-0.12))
+        assert gct["delta_b"] == pytest.approx(260.0 - 265.0)
+
+    def test_no_current_baseline(self, reader_db_path: Path):
+        # No baselines seeded → no current period match.
+        reader = PhysiologyReader(db_path=str(reader_db_path))
+        result = reader.get_form_baseline_trend(12345, "2025-10-15")
+        assert result["success"] is False
+        assert "No baseline found" in result["error"]
+
+    def test_no_previous_baseline(self, reader_db_path: Path):
+        # Seed only the current (October) period.
+        conn = duckdb.connect(str(reader_db_path))
+        conn.execute("""
+            INSERT INTO form_baseline_history
+                (history_id, user_id, condition_group, metric,
+                 coef_d, coef_b, period_start, period_end)
+            VALUES (0, 'default', 'flat_road', 'GCT',
+                    -0.15, 260.0, '2025-10-01', '2025-10-31')
+            """)
+        conn.close()
+        reader = PhysiologyReader(db_path=str(reader_db_path))
+        result = reader.get_form_baseline_trend(12345, "2025-10-15")
+        assert result["success"] is False
+        assert "No previous baseline found" in result["error"]
+
+    def test_custom_user_id_and_condition_group(self, reader_db_path: Path):
+        # Seed under a custom user_id/condition_group only.
+        conn = duckdb.connect(str(reader_db_path))
+        custom = [
+            ("runner1", "hilly", "GCT", -0.15, 260.0, "2025-10-01", "2025-10-31"),
+            ("runner1", "hilly", "GCT", -0.12, 265.0, "2025-09-01", "2025-09-30"),
+        ]
+        for i, (uid, cg, metric, cd, cb, ps, pe) in enumerate(custom):
+            conn.execute(
+                """
+                INSERT INTO form_baseline_history
+                    (history_id, user_id, condition_group, metric,
+                     coef_d, coef_b, period_start, period_end)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [i, uid, cg, metric, cd, cb, ps, pe],
+            )
+        conn.close()
+        reader = PhysiologyReader(db_path=str(reader_db_path))
+
+        # Default user/group → not found.
+        default_result = reader.get_form_baseline_trend(12345, "2025-10-15")
+        assert default_result["success"] is False
+
+        # Custom user/group → success.
+        custom_result = reader.get_form_baseline_trend(
+            12345, "2025-10-15", user_id="runner1", condition_group="hilly"
+        )
+        assert custom_result["success"] is True
+        assert "GCT" in custom_result["metrics"]
+
+    def test_delta_with_none_coef(self, reader_db_path: Path):
+        conn = duckdb.connect(str(reader_db_path))
+        rows = [
+            ("default", "flat_road", "GCT", None, 260.0, "2025-10-01", "2025-10-31"),
+            ("default", "flat_road", "GCT", -0.12, 265.0, "2025-09-01", "2025-09-30"),
+        ]
+        for i, (uid, cg, metric, cd, cb, ps, pe) in enumerate(rows):
+            conn.execute(
+                """
+                INSERT INTO form_baseline_history
+                    (history_id, user_id, condition_group, metric,
+                     coef_d, coef_b, period_start, period_end)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [i, uid, cg, metric, cd, cb, ps, pe],
+            )
+        conn.close()
+        reader = PhysiologyReader(db_path=str(reader_db_path))
+        result = reader.get_form_baseline_trend(12345, "2025-10-15")
+        gct = result["metrics"]["GCT"]
+        # delta_d omitted because current coef_d is None.
+        assert "delta_d" not in gct
+        assert gct["delta_b"] == pytest.approx(260.0 - 265.0)
+
+    def test_baseline_reader_matches_handler(self, reader_db_path: Path):
+        """Extracted reader returns the exact dict the old handler produced.
+
+        The previous PhysiologyHandler._get_form_baseline_trend built this
+        structure inline; this asserts the migration is behavior-preserving.
+        """
+        _seed_baseline_history(reader_db_path)
+        reader = PhysiologyReader(db_path=str(reader_db_path))
+
+        result = reader.get_form_baseline_trend(12345, "2025-10-15")
+
+        # Top-level envelope matches the old handler exactly.
+        assert result["success"] is True
+        assert result["activity_id"] == 12345
+        assert result["activity_date"] == "2025-10-15"
+        assert set(result["metrics"].keys()) == {"GCT", "VO"}
+
+        # Expected per-metric coefficients (coef_* columns are FLOAT → approx).
+        # Each tuple: (curr_d, curr_b, prev_d, prev_b).
+        expected_metrics: dict[str, tuple[float, float, float, float]] = {
+            "GCT": (-0.15, 260.0, -0.12, 265.0),
+            "VO": (0.02, 8.0, 0.025, 8.5),
+        }
+        for metric, (curr_d, curr_b, prev_d, prev_b) in expected_metrics.items():
+            block = result["metrics"][metric]
+            # Structure preserved (current/previous/delta keys + period strings).
+            assert set(block.keys()) == {
+                "current",
+                "previous",
+                "delta_d",
+                "delta_b",
+            }
+            assert block["current"]["coef_d"] == pytest.approx(curr_d)
+            assert block["current"]["coef_b"] == pytest.approx(curr_b)
+            assert block["current"]["period"] == "2025-10-01 to 2025-10-31"
+            assert block["previous"]["coef_d"] == pytest.approx(prev_d)
+            assert block["previous"]["coef_b"] == pytest.approx(prev_b)
+            assert block["previous"]["period"] == "2025-09-01 to 2025-09-30"
+            assert block["delta_d"] == pytest.approx(curr_d - prev_d)
+            assert block["delta_b"] == pytest.approx(curr_b - prev_b)
