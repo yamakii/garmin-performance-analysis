@@ -6,7 +6,7 @@
 
 1. **データ収集**: ingest_activity MCP ツール
 2. **コンテキスト事前取得**: MCP ツールで prefetch（Bash許可不要）
-3. **セクション分析**: 5つのエージェントを並列実行（事前取得コンテキスト付き）
+3. **セクション分析**: 2つのエージェント（unified-section-analyst + split-section-analyst）を並列実行（unified は事前取得コンテキスト付き）
 4. **結果登録**: merge script でDuckDBに一括登録
 5. **レポート生成**: report-generator-worker で最終レポート作成
 
@@ -37,43 +37,30 @@ mcp__garmin-db__prefetch_activity_context(activity_id)
 
 ### Step 2: セクション分析（並列実行）
 
-5つのエージェントを並列で呼び出してください。**各エージェントのpromptに事前取得コンテキスト（CONTEXT）を含めること**：
+2つのエージェントを並列で呼び出してください。**unified-section-analyst のpromptに事前取得コンテキスト（CONTEXT）を含めること**：
 
 ```
-Task: efficiency-section-analyst
-prompt: "Activity ID {activity_id} ({date}) のフォーム効率と心拍効率を分析してください。
+Task: unified-section-analyst
+prompt: "Activity ID {activity_id} ({date}) の efficiency / phase / environment / summary の4セクションを分析してください。
 事前取得コンテキスト: {CONTEXT}
-結果は {ANALYSIS_TEMP_DIR}/efficiency.json に保存してください。"
-
-Task: environment-section-analyst
-prompt: "Activity ID {activity_id} ({date}) の環境要因（気温、風速、地形）の影響を分析してください。
-事前取得コンテキスト: {CONTEXT}
-結果は {ANALYSIS_TEMP_DIR}/environment.json に保存してください。"
-
-Task: phase-section-analyst
-prompt: "Activity ID {activity_id} ({date}) のフェーズ評価を実行してください。
-事前取得コンテキスト: {CONTEXT}
-結果は {ANALYSIS_TEMP_DIR}/phase.json に保存してください。"
+結果は {ANALYSIS_TEMP_DIR}/efficiency.json, {ANALYSIS_TEMP_DIR}/phase.json, {ANALYSIS_TEMP_DIR}/environment.json, {ANALYSIS_TEMP_DIR}/summary.json の4ファイルに保存してください。"
 
 Task: split-section-analyst
 prompt: "Activity ID {activity_id} ({date}) の全スプリットを詳細分析してください。
 結果は {ANALYSIS_TEMP_DIR}/split.json に保存してください。"
-
-Task: summary-section-analyst
-prompt: "Activity ID {activity_id} ({date}) のアクティビティタイプ判定と総合評価を生成してください。
-事前取得コンテキスト: {CONTEXT}
-結果は {ANALYSIS_TEMP_DIR}/summary.json に保存してください。"
 ```
 
-**注意**: split-section-analyst にはCONTEXT不要（既にcomprehensive 1回で最適化済み）
+**注意**:
+- unified-section-analyst が efficiency / phase / environment / summary の4 JSON を生成する（旧4エージェントを統合）
+- split-section-analyst にはCONTEXT不要（既にcomprehensive 1回で最適化済み）
 
 ### Step 2.1: エラーハンドリング（部分結果判定）
 
-5エージェント完了後、成功/失敗を集計してください：
+2エージェント完了後、成功/失敗を集計してください（unified は4 JSON すべてが揃って初めて成功扱い）：
 
-- **5/5 成功**: Step 2.5 へ進む（通常フロー）
-- **4/5 成功**: 失敗セクション名をユーザーに通知し、成功した結果のみで続行。レポートに「{section_type} セクションは取得できませんでした」と記載。
-- **3/5 以下**: レポート生成を中止。全エラー内容をユーザーに報告して停止。
+- **2/2 成功**: Step 2.5 へ進む（通常フロー）
+- **1/2 成功**: 失敗したエージェント名をユーザーに通知し、成功した結果のみで続行。レポートに「該当セクションは取得できませんでした」と記載。
+- **0/2 成功**: レポート生成を中止。全エラー内容をユーザーに報告して停止。
 
 ### Step 2.5: 分析結果のDuckDB登録（Merge）
 
@@ -97,8 +84,8 @@ uv run python -m garmin_mcp.reporting.report_generator_worker {activity_id} {dat
 
 ## 重要事項
 
-- **並列実行必須**: セクション分析は必ず並列で実行（トークン効率）
-- **コンテキスト注入必須**: Step 2で各エージェントに事前取得CONTEXTを渡す（split以外）
+- **並列実行必須**: セクション分析（unified + split）は必ず並列で実行（トークン効率）
+- **コンテキスト注入必須**: Step 2で unified-section-analyst に事前取得CONTEXTを渡す（split は不要）
 - **DuckDB優先**: mcp__garmin-db__*ツールを使用してトークン削減
 - **日本語出力**: 全ての分析は日本語で
 - **データソース**: DuckDBのみ使用（raw JSONから直接抽出）
