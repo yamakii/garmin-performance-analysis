@@ -149,6 +149,76 @@ class TestVO2MaxInserter:
         assert result is True
         assert db_path.exists()
 
+    def test_extract_vo2_max_generic_nested(self, tmp_path):
+        """Test extraction from list-wrapped nested 'generic' format (legacy)."""
+        from garmin_mcp.database.inserters.vo2_max import _extract_vo2_max_from_raw
+
+        raw = [
+            {
+                "generic": {
+                    "vo2MaxValue": 47.0,
+                    "vo2MaxPreciseValue": 47.3,
+                    "calendarDate": "2025-10-04",
+                }
+            }
+        ]
+        vo2_file = tmp_path / "vo2_max.json"
+        with open(vo2_file, "w", encoding="utf-8") as f:
+            json.dump(raw, f)
+
+        result = _extract_vo2_max_from_raw(str(vo2_file))
+
+        assert result is not None
+        assert result["precise_value"] == 47.3
+        assert result["value"] == 47.0
+        assert result["date"] == "2025-10-04"
+        assert result["category"] == 0
+
+    def test_extract_vo2_max_flat(self, tmp_path):
+        """Test extraction from flat top-level format (reduced responses)."""
+        from garmin_mcp.database.inserters.vo2_max import _extract_vo2_max_from_raw
+
+        raw = {
+            "vo2MaxValue": 48.0,
+            "vo2MaxPreciseValue": 47.6,
+            "calendarDate": "2025-10-12",
+        }
+        vo2_file = tmp_path / "vo2_max.json"
+        with open(vo2_file, "w", encoding="utf-8") as f:
+            json.dump(raw, f)
+
+        result = _extract_vo2_max_from_raw(str(vo2_file))
+
+        assert result is not None
+        assert result["precise_value"] == 47.6
+        assert result["value"] == 48.0
+        assert result["date"] == "2025-10-12"
+        assert result["category"] == 0
+
+    def test_extract_vo2_max_empty(self, tmp_path):
+        """Test empty dict (no generic, no flat fields) returns None."""
+        from garmin_mcp.database.inserters.vo2_max import _extract_vo2_max_from_raw
+
+        vo2_file = tmp_path / "vo2_max.json"
+        with open(vo2_file, "w", encoding="utf-8") as f:
+            json.dump({}, f)
+
+        result = _extract_vo2_max_from_raw(str(vo2_file))
+
+        assert result is None
+
+    def test_extract_vo2_max_empty_list(self, tmp_path):
+        """Test empty list returns None."""
+        from garmin_mcp.database.inserters.vo2_max import _extract_vo2_max_from_raw
+
+        vo2_file = tmp_path / "vo2_max.json"
+        with open(vo2_file, "w", encoding="utf-8") as f:
+            json.dump([], f)
+
+        result = _extract_vo2_max_from_raw(str(vo2_file))
+
+        assert result is None
+
     def test_insert_vo2_max_raw_data_integrity(
         self, sample_raw_vo2_max_file, initialized_db_path
     ):

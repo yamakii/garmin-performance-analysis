@@ -90,7 +90,9 @@ def _extract_vo2_max_from_raw(raw_vo2_max_file: str) -> dict | None:
     """
     Extract vo2_max data from raw API response (vo2_max.json).
 
-    Raw data structure:
+    Supports two raw data structures:
+
+    1. Nested "generic" format (legacy full responses):
     {
         "generic": {
             "vo2MaxValue": 45,
@@ -99,6 +101,15 @@ def _extract_vo2_max_from_raw(raw_vo2_max_file: str) -> dict | None:
             "fitnessAge": null
         }
     }
+
+    2. Flat format (reduced responses written by RawDataFetcher):
+    {
+        "vo2MaxValue": 48.0,
+        "vo2MaxPreciseValue": 47.6,
+        "calendarDate": "2025-10-12"
+    }
+
+    Both list-wrapped (``[{...}]``) and bare dict variants are accepted.
 
     Args:
         raw_vo2_max_file: Path to raw vo2_max.json file
@@ -123,22 +134,30 @@ def _extract_vo2_max_from_raw(raw_vo2_max_file: str) -> dict | None:
                 return None
             raw_data = raw_data[0]  # Get first element
 
-        # Extract from "generic" section
+        # Select source: prefer nested "generic" section (legacy full format),
+        # fall back to top-level fields (flat reduced format).
         generic = raw_data.get("generic", {})
-        if not generic:
-            logger.warning(f"No 'generic' section in {raw_vo2_max_file}")
+        if generic:
+            source = generic
+        elif (
+            raw_data.get("vo2MaxPreciseValue") is not None
+            or raw_data.get("vo2MaxValue") is not None
+        ):
+            source = raw_data
+        else:
+            logger.warning(f"No vo2_max fields found in {raw_vo2_max_file}")
             return None
 
         # Map raw API fields to performance.json format
         # Note: fitness_age removed (device does not provide this data)
         return {
-            "precise_value": generic.get("vo2MaxPreciseValue"),
+            "precise_value": source.get("vo2MaxPreciseValue"),
             "value": (
-                float(generic.get("vo2MaxValue"))
-                if generic.get("vo2MaxValue") is not None
+                float(source.get("vo2MaxValue"))
+                if source.get("vo2MaxValue") is not None
                 else None
             ),
-            "date": generic.get("calendarDate"),
+            "date": source.get("calendarDate"),
             "category": 0,  # Default category (not provided in raw data)
         }
 
