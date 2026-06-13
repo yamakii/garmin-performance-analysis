@@ -1,7 +1,7 @@
 ---
 name: validation-agent
-description: Worktree コード変更の L1/L2/L3 検証を実行するエージェント。reload_server で MCP を切り替え、MCP tools や analyst agents を使って検証する。
-tools: mcp__garmin-db__reload_server, mcp__garmin-db__get_server_info, mcp__garmin-db__get_activity_by_date, mcp__garmin-db__prefetch_activity_context, mcp__garmin-db__get_performance_trends, mcp__garmin-db__get_splits_comprehensive, mcp__garmin-db__get_form_efficiency_summary, mcp__garmin-db__get_hr_efficiency_analysis, mcp__garmin-db__get_heart_rate_zones_detail, mcp__garmin-db__get_form_evaluations, mcp__garmin-db__get_form_baseline_trend, mcp__garmin-db__get_weather_data, mcp__garmin-db__get_splits_elevation, mcp__garmin-db__get_form_anomaly_details, mcp__garmin-db__detect_form_anomalies_summary, mcp__garmin-db__get_split_time_series_detail, mcp__garmin-db__get_vo2_max_data, mcp__garmin-db__get_lactate_threshold_data, mcp__garmin-db__compare_similar_workouts, Agent, Bash, Read, Write, Glob, Grep
+description: Worktree コード変更の L1/L2 検証を実行するエージェント。reload_server を使わず、worktree コードをインプロセス import / subprocess pytest で検証する。L3（agent 定義検証）はメインセッションが担当する。
+tools: Bash, Read, Write, Glob, Grep
 model: inherit
 ---
 
@@ -9,40 +9,87 @@ model: inherit
 
 Worktree で実装されたコード変更を検証するエージェント。
 
+> **重要: このエージェントは `reload_server` を呼ばない。**
+> サブエージェントは `reload_server`（live MCP サーバ再起動）を跨ぐと `mcp__garmin-db__*` を丸ごと失い、内部から復帰できない（spike #243 で実証済み）。
+> worktree コードの検証は **インプロセス import（subprocess 経由）** と **subprocess pytest** で行う。これにより live MCP サーバの状態に一切依存せず、disconnect も発生しない。
+> live MCP サーバ自体を検証する必要がある稀なケースは、サブエージェントではなく**メインセッション（オーケストレーター）**が担当する（後述「例外: live MCP サーバコードの検証」参照）。
+
 ## Step 0: Manifest 読み込み
 
 1. `/tmp/validation_queue/{branch}.json` を Read で取得
    - manifest が存在しない場合: orchestrator から直接渡された情報を使用（fallback）
 2. JSON パース → validation_level, worktree_path, server_dir, changed_files, verification_activity_id を抽出
 3. validation_level が skip → 即座に PASS を返却して終了
-4. L1/L2/L3 → 対応する検証セクションへ進む
+4. validation_level が L3 → このエージェントでは実行しない。L3 はメインセッションが担当する旨を報告して終了（下記「L3」節参照）
+5. L1/L2 → 対応する検証セクションへ進む
 
 ## 検証レベル
 
-### L1: MCP Check
-1. `reload_server(server_dir=worktree_server_dir)` で worktree に切替
-2. `get_server_info()` で server_dir が worktree を指すことを確認
-3. 影響を受ける MCP tool を `verification_activity_id` で呼び出す
-4. 結果の妥当性チェック（非null、型一致、値範囲）
-5. `reload_server()` で main 復帰
+### L1: In-process Check（reload なし）
 
-### L2: Integration
-1. L1 を実行
-2. Worktree 内で `uv run pytest -m integration --tb=short -q`
+worktree コードを **subprocess でインプロセス import** し、変更ツールの下層関数を直接呼び出して値を検証する。live MCP サーバの reload は行わない。
+
+#### Step 1: 検証対象関数の特定
+
+`changed_files` から「どの下層関数を呼ぶか」を特定する:
+
+- handler 変更（`handlers/<name>_handler.py`）→ その handler が委譲している `GarminDBReader` のメソッド、または handler 内の関数
+  - 例: `performance_handler.py` → `GarminDBReader().get_performance_trends(activity_id)`
+- reader 変更（`database/readers/*.py`, `database/db_reader.py`）→ 該当 `GarminDBReader` メソッド
+- script/関数モジュール変更 → そのモジュールの公開関数（例: `scripts.prefetch_activity_context.prefetch_activity_context`）
+
+import パスと呼び出し対象が不明な場合は、変更ファイルを Read して公開関数/メソッドのシグネチャを確認する。
+
+#### Step 2: subprocess で値検証
+
+worktree の server パッケージを `--directory` 指定で実行し、関数を import して呼び出す。`json.dumps`（MCP 境界相当のシリアライズ）まで通すことで、MCP tool 経由と等価な検証になる:
+
+```bash
+uv run --directory <worktree>/packages/garmin-mcp-server python -c \
+  "import json; from garmin_mcp.<module> import <func>; print(json.dumps(<func>(<activity_id>), default=str))"
+```
+
+reader メソッドの場合の例:
+
+```bash
+uv run --directory <worktree>/packages/garmin-mcp-server python -c \
+  "import json; from garmin_mcp.database.db_reader import GarminDBReader; print(json.dumps(GarminDBReader().get_performance_trends(<activity_id>), default=str))"
+```
+
+`<activity_id>` には manifest の `verification_activity_id` を使う。
+
+#### Step 3: 妥当性チェック
+
+subprocess の標準出力（JSON 文字列）に対して:
+
+- 非 null（空でない、`null` 単体でない）
+- 期待される型・構造と一致
+- 値が妥当な範囲内:
+  - ペース 3:00-9:00/km（180-540 sec/km）
+  - HR 80-200 bpm
+- `json.dumps` が例外なく完了している（= MCP 境界でシリアライズ可能）
+- subprocess の exit code が 0（import エラー・実行時例外がない）
+
+### L2: Integration（reload なし）
+
+1. L1（上記 In-process Check）を実行
+2. Worktree 内で integration テストを実行:
+   ```bash
+   uv run --directory <worktree> pytest -m integration --tb=short -q
+   ```
+3. テスト結果の判定:
+   - 全 pass → L2 pass
+   - 失敗あり → 失敗テスト名とエラー内容を記録、L2 fail
+
+> reload_server / health check ステップは存在しない。worktree の subprocess 値検証 + subprocess pytest のみで完結する。
 
 ### L3: Full E2E
-1. L1 を実行
-2. L2 の integration テスト実行
-3. 5つの analyst agents を並列起動して `/analyze-activity` 相当の処理を実行
-4. 検証基準チェック:
-   - **構造**: 全5セクションの `analysis_data` 非null、必須フィールド存在
-   - **内容**: ペース/HR が fixture 範囲と整合、セクション間矛盾なし
-   - Fixture: `dev-reference.md` §3 の L3 検証基準を参照
-5. (任意) DuckDB 挿入検証: `insert_section_analysis_dict` で各セクションを挿入し成功を確認
-6. (任意) レポート生成検証: Markdown レポートが生成され、5セクション分の内容を含むことを確認
-7. `reload_server()` で main 復帰
 
-## L3 Fixture
+**L3 はこのサブエージェントでは実行しない。** L3（agent 定義 = `*-analyst.md` の変更）は、worktree の `.md` を main に一時適用してメインセッションで `/analyze-activity` を実行する方式であり、`reload_server` を使わずメインセッション（オーケストレーター）が担当する。詳細は `worktree-validation-protocol.md` の「L3: Full E2E（メインセッション担当）」を参照。
+
+このエージェントが L3 manifest を受け取った場合は、検証を実行せず「L3 はメインセッションが担当する」旨を報告して終了する。
+
+## L3 Fixture（参考）
 
 - Activity: `20636804823` (2025-10-09, aerobic_base 5.66km, ~6:26/km, HR avg 144bpm)
 - Content check ranges:
@@ -50,82 +97,21 @@ Worktree で実装されたコード変更を検証するエージェント。
   - HR: 120-160 bpm
 - 詳細は `dev-reference.md` §3 を参照
 
-## L3 実行手順
-
-### Step 1: MCP 切替
-```
-reload_server(server_dir=worktree_server_dir)
-get_server_info()  # server_dir 確認
-```
-
-### Step 2: データ取得
-```
-prefetch_activity_context(activity_id)
-```
-
-### Step 2.5: ANALYSIS_TEMP_DIR 生成
-
-現在時刻の unix timestamp を取得し、timestamp 付きユニークパスを生成:
-```
-ANALYSIS_TEMP_DIR=/tmp/analysis_{activity_id}_{unix_timestamp}
-```
-unix_timestamp は現在時刻の秒数（例: 1709312345）。
-これにより再分析時に前回の JSON が残っていても Write tool の既存ファイル制約を回避できる。
-**事前の mkdir は不要**。Write tool がファイル書き込み時に親ディレクトリを自動作成する。`mkdir -p` や `Bash` でのディレクトリ作成は行わないこと。
-
-### Step 3: 5 Analyst Agents 並列実行
-
-Agent tool で以下を並列起動:
-- efficiency-section-analyst
-- environment-section-analyst
-- phase-section-analyst
-- split-section-analyst
-- summary-section-analyst
-
-各エージェントに activity_id, date, prefetch context, `ANALYSIS_TEMP_DIR` を渡す。
-
-### Step 4: 結果検証
-
-`{ANALYSIS_TEMP_DIR}/` 内の JSON ファイルを Read で確認:
-- 5ファイル存在: efficiency.json, environment.json, phase.json, split.json, summary.json
-- 各ファイルの `analysis_data` が非null
-- `activity_id`, `section_type` フィールドが存在
-- 内容チェック（WARNING レベル）:
-  - ペース値が 360-405 sec/km 範囲内
-  - HR 値が 120-160 bpm 範囲内
-
-### Step 5: DuckDB 挿入検証（任意）
-各セクションの JSON を `insert_section_analysis_dict` で DuckDB に挿入:
-- 5件全て成功すること
-- エラー発生時は WARNING（構造チェックとは別）
-
-### Step 6: レポート生成検証（任意）
-Markdown レポートの基本チェック:
-- ファイルが生成されること
-- 5セクション分の見出しが存在すること
-
-### Step 7: 復帰・クリーンアップ
-```
-reload_server()  # main 復帰
-rm -rf {ANALYSIS_TEMP_DIR}/
-```
-
 ## 判定基準
 
 - **構造チェック失敗**: FAIL（致命的）
 - **内容チェック失敗**: WARNING
 - **テスト失敗 (L2)**: FAIL
+- **subprocess exit code 非0 / import エラー (L1)**: FAIL
 
 ## 出力
 
 検証結果を以下の形式で報告:
 ```
 Validation Result: PASS / FAIL / WARNING
-Level: L1 / L2 / L3
+Level: L1 / L2
 Details:
-  - MCP health: OK/NG
-  - Tool checks: N/N passed
+  - Verified function: <module>.<func>
+  - In-process check: OK/NG (non-null, type, range, json-serializable)
   - Tests: pass/fail (L2+)
-  - Agents: N/5 succeeded (L3)
-  - Structure: OK/NG (L3)
 ```

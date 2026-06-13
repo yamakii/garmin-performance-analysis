@@ -58,7 +58,7 @@ Risks セクション（任意）:
 |-------|---------|---------|
 | L1 | `uv run pytest {test_path} -m unit -v` | 0 failures |
 | L2 | L1 + `uv run pytest -m integration --tb=short -q` | 0 failures |
-| L3 | L2 + Validation Agent（foreground）で `reload_server` → `/analyze-activity` 実行 | analysis_data 非null + 必須フィールド存在 |
+| L3 | L2 + メインセッションが worktree の `.md` を main に一時適用 → `/analyze-activity` 実行 → `git checkout` で復元（reload 非依存） | analysis_data 非null + 必須フィールド存在 |
 | skip | Validation Agent スキップ。コードレビュー(Phase 2a)のみ | 2a チェック通過 |
 
 **CRITICAL**: テスト結果は自分のターンで確認する。サブエージェントの報告を信じない。
