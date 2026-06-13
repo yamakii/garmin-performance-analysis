@@ -241,10 +241,28 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 },
             },
             "cadence_ranges": {
-                "ideal": ">=180 spm",
-                "near_target": "178-179 spm",
-                "acceptable": "175-177 spm",
-                "needs_improvement": "<175 spm",
+                "_note": (
+                    "Pace-dependent cadence evaluation. "
+                    "Do NOT use an absolute 180 spm target."
+                ),
+                "method": (
+                    "Compare form_evaluation.cadence.actual against "
+                    "form_evaluation.cadence.expected (pace-dependent baseline "
+                    "from the trained model)."
+                ),
+                "star_rating": (
+                    "Use form_evaluation.cadence.star_rating as-is; never "
+                    "recompute from a fixed spm threshold."
+                ),
+                "evaluation_text": (
+                    "When narrating cadence, use "
+                    "form_evaluation.cadence.evaluation_text "
+                    "(already pace-dependent)."
+                ),
+                "needs_improvement": (
+                    "Use the form_evaluation.cadence.needs_improvement flag; "
+                    "do not derive needs_improvement from an absolute spm cutoff."
+                ),
             },
             "integrated_score_stars": {
                 "5_stars": "95-100",
