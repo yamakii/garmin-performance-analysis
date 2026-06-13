@@ -441,16 +441,35 @@ def _collect_vo2_max(
             activity_date = start_time_local.split("T")[0]
             try:
                 max_metrics = client.get_max_metrics(activity_date)
-                generic_metrics = max_metrics.get("generic", {})
-                vo2_max_data = {
-                    "vo2MaxValue": generic_metrics.get("vo2MaxValue"),
-                    "vo2MaxPreciseValue": generic_metrics.get("vo2MaxPreciseValue"),
-                    "calendarDate": generic_metrics.get("calendarDate"),
-                }
-                raw_data["vo2_max"] = vo2_max_data
-                with open(vo2_max_file, "w", encoding="utf-8") as f:
-                    json.dump(vo2_max_data, f, ensure_ascii=False, indent=2)
-                logger.info(f"Cached vo2_max to {vo2_max_file}")
+                # get_max_metrics returns a list of entries (one per metric set);
+                # older raw dumps stored a single dict. Handle both shapes.
+                entry = (
+                    max_metrics[0]
+                    if isinstance(max_metrics, list) and max_metrics
+                    else max_metrics if isinstance(max_metrics, dict) else {}
+                )
+                generic_metrics = (
+                    entry.get("generic", {}) if isinstance(entry, dict) else {}
+                )
+                if generic_metrics:
+                    vo2_max_data = {
+                        "vo2MaxValue": generic_metrics.get("vo2MaxValue"),
+                        "vo2MaxPreciseValue": generic_metrics.get("vo2MaxPreciseValue"),
+                        "calendarDate": generic_metrics.get("calendarDate"),
+                    }
+                    raw_data["vo2_max"] = vo2_max_data
+                    with open(vo2_max_file, "w", encoding="utf-8") as f:
+                        json.dump(vo2_max_data, f, ensure_ascii=False, indent=2)
+                    logger.info(f"Cached vo2_max to {vo2_max_file}")
+                else:
+                    # Fetch succeeded but contained no usable VO2 max metrics.
+                    raw_data["vo2_max"] = {}
+                    with open(vo2_max_file, "w", encoding="utf-8") as f:
+                        json.dump({}, f, ensure_ascii=False, indent=2)
+                    logger.warning(
+                        "VO2 max response had no 'generic' metrics for "
+                        f"{activity_id} on {activity_date}; cached empty payload"
+                    )
             except Exception as e:
                 logger.warning(f"Failed to fetch VO2 max data: {e}")
                 raw_data["vo2_max"] = {}
