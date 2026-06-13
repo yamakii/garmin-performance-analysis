@@ -49,7 +49,10 @@ def evaluate_and_store(
                     needs_improvement, evaluation_text}
             - vo: {same structure as gct}
             - vr: {same structure as gct}
-            - cadence: {actual, minimum, achieved}
+            - cadence: pace-dependent {actual, expected, delta_pct, star_rating,
+                       score, needs_improvement, evaluation_text} when a cadence
+                       baseline is available, otherwise legacy
+                       {actual, minimum, achieved}
             - overall_score: float (0-5.0)
             - overall_star_rating: str
 
@@ -77,6 +80,7 @@ def evaluate_and_store(
         "gct_ms": splits_data["gct_ms"],
         "vo_cm": splits_data["vo_cm"],
         "vr_pct": splits_data["vr_pct"],
+        "cadence": splits_data["cadence"],
     }
 
     # Predict expectations and score
@@ -132,8 +136,40 @@ def evaluate_and_store(
         gct_rating["score"] + vo_rating["score"] + vr_rating["score"]
     ) / 3.0
 
-    # Cadence evaluation
-    cadence_achieved = splits_data["cadence"] >= 180.0
+    # Cadence evaluation (pace-dependent when a cadence baseline is available).
+    # Falls back to the legacy fixed-180 flag when no cadence model exists
+    # (backward compatible with older databases / untrained activities).
+    has_cadence_model = "cadence" in models and "cadence_penalty" in score_result
+    if has_cadence_model:
+        cadence_rating = compute_star_rating(
+            penalty=score_result["cadence_penalty"],
+            delta_pct=score_result["cadence_delta_pct"],
+        )
+        cadence_text = generate_evaluation_text(
+            metric="cadence",
+            actual=score_result["cadence_actual"],
+            expected=score_result["cadence_exp"],
+            delta_pct=score_result["cadence_delta_pct"],
+            pace_s_per_km=splits_data["pace_s_per_km"],
+            star_rating=cadence_rating["star_rating"],
+            score=cadence_rating["score"],
+        )
+        cadence_eval = {
+            "actual": score_result["cadence_actual"],
+            "expected": score_result["cadence_exp"],
+            "delta_pct": score_result["cadence_delta_pct"],
+            "star_rating": cadence_rating["star_rating"],
+            "score": cadence_rating["score"],
+            "needs_improvement": score_result["cadence_needs_improvement"],
+            "evaluation_text": cadence_text,
+        }
+    else:
+        # Legacy behaviour: no cadence baseline available.
+        cadence_eval = {
+            "actual": splits_data["cadence"],
+            "minimum": 180,
+            "achieved": splits_data["cadence"] >= 180.0,
+        }
 
     # Build result dictionary
     evaluation = {
@@ -167,11 +203,7 @@ def evaluate_and_store(
             "needs_improvement": score_result["vr_needs_improvement"],
             "evaluation_text": vr_text,
         },
-        "cadence": {
-            "actual": splits_data["cadence"],
-            "minimum": 180,
-            "achieved": cadence_achieved,
-        },
+        "cadence": cadence_eval,
         "overall_score": overall_score,
         "overall_star_rating": compute_star_rating(
             penalty=(5.0 - overall_score) * 20.0,
@@ -277,6 +309,8 @@ def evaluate_and_store(
                 vo_penalty, vo_star_rating, vo_score, vo_needs_improvement, vo_evaluation_text,
                 vr_penalty, vr_star_rating, vr_score, vr_needs_improvement, vr_evaluation_text,
                 cadence_actual, cadence_minimum, cadence_achieved,
+                cadence_expected, cadence_delta_pct, cadence_star_rating,
+                cadence_score, cadence_needs_improvement, cadence_evaluation_text,
                 overall_score, overall_star_rating,
                 power_avg_w, power_wkg, speed_actual_mps, speed_expected_mps,
                 power_efficiency_score, power_efficiency_rating, power_efficiency_needs_improvement,
@@ -284,6 +318,7 @@ def evaluate_and_store(
             ) VALUES (
                 nextval('form_evaluations_seq'),
                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?,
                 ?, ?, ?, ?, ?, ?, ?, ?, ?
             )
             ON CONFLICT (activity_id) DO UPDATE SET
@@ -314,6 +349,12 @@ def evaluate_and_store(
                 cadence_actual = EXCLUDED.cadence_actual,
                 cadence_minimum = EXCLUDED.cadence_minimum,
                 cadence_achieved = EXCLUDED.cadence_achieved,
+                cadence_expected = EXCLUDED.cadence_expected,
+                cadence_delta_pct = EXCLUDED.cadence_delta_pct,
+                cadence_star_rating = EXCLUDED.cadence_star_rating,
+                cadence_score = EXCLUDED.cadence_score,
+                cadence_needs_improvement = EXCLUDED.cadence_needs_improvement,
+                cadence_evaluation_text = EXCLUDED.cadence_evaluation_text,
                 overall_score = EXCLUDED.overall_score,
                 overall_star_rating = EXCLUDED.overall_star_rating,
                 power_avg_w = EXCLUDED.power_avg_w,
@@ -359,10 +400,19 @@ def evaluate_and_store(
                 evaluation["vr"]["score"],
                 evaluation["vr"]["needs_improvement"],
                 evaluation["vr"]["evaluation_text"],
-                # Cadence
+                # Cadence (legacy columns retained for backward compatibility)
                 evaluation["cadence"]["actual"],
-                evaluation["cadence"]["minimum"],
-                evaluation["cadence"]["achieved"],
+                evaluation["cadence"].get("minimum", 180),
+                evaluation["cadence"].get(
+                    "achieved", evaluation["cadence"]["actual"] >= 180.0
+                ),
+                # Cadence (pace-dependent columns; None when no cadence model)
+                evaluation["cadence"].get("expected"),
+                evaluation["cadence"].get("delta_pct"),
+                evaluation["cadence"].get("star_rating"),
+                evaluation["cadence"].get("score"),
+                evaluation["cadence"].get("needs_improvement"),
+                evaluation["cadence"].get("evaluation_text"),
                 # Overall
                 evaluation["overall_score"],
                 evaluation["overall_star_rating"],

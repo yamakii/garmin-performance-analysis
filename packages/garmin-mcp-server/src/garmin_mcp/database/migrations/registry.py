@@ -86,6 +86,13 @@ def _wrap_remove_fk(conn: duckdb.DuckDBPyConnection) -> None:
     pass
 
 
+def _wrap_add_cadence_columns(conn: duckdb.DuckDBPyConnection) -> None:
+    """Wrap cadence columns migration to run on an existing connection."""
+    from .add_cadence_columns import add_cadence_columns
+
+    add_cadence_columns(conn)
+
+
 def _wrap_plan_versioning(conn: duckdb.DuckDBPyConnection) -> None:
     """Wrap plan versioning migration to run on an existing connection."""
     from .add_plan_versioning import _column_exists, _table_exists
@@ -129,4 +136,5 @@ MIGRATIONS: list[tuple[int, str, Callable[[duckdb.DuckDBPyConnection], None]]] =
     (3, "phase2_integrated_score", _wrap_phase2),
     (4, "remove_fk_constraints", _wrap_remove_fk),
     (5, "add_plan_versioning", _wrap_plan_versioning),
+    (6, "add_cadence_columns", _wrap_add_cadence_columns),
 ]

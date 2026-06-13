@@ -204,3 +204,40 @@ class TestFitLinear:
         # Should raise ValueError or have issues
         with pytest.raises((ValueError, Exception)):
             fit_linear(df, metric="vo")
+
+    def test_fit_linear_cadence_positive_slope(self):
+        """Cadence increases with speed -> b > 0."""
+        # Synthetic data: cadence = 160.0 + 5.0 * speed (positive slope)
+        speed_values = np.array([2.5, 3.0, 3.5, 4.0, 4.5, 5.0])
+        a_true = 160.0
+        b_true = 5.0
+        cadence_values = a_true + b_true * speed_values
+
+        df = pd.DataFrame({"cadence_value": cadence_values, "speed_mps": speed_values})
+
+        model = fit_linear(df, metric="cadence")
+
+        # Faster speed -> higher cadence: positive slope
+        assert model.b > 0
+        assert abs(model.a - a_true) < 0.5
+        assert abs(model.b - b_true) < 0.5
+        assert model.n_samples == 6
+
+    def test_fit_linear_cadence_outlier_removal(self):
+        """Cadence values below 140spm / above 210spm are removed."""
+        # 6 valid points plus 2 outliers (one < 140, one > 210)
+        speed_values = np.array([2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 3.2, 3.8])
+        cadence_values = np.array(
+            [172.0, 175.0, 178.0, 181.0, 184.0, 187.0, 130.0, 215.0]
+        )
+
+        df = pd.DataFrame({"cadence_value": cadence_values, "speed_mps": speed_values})
+
+        model = fit_linear(df, metric="cadence")
+
+        # Two outliers removed -> 6 valid samples remain
+        assert model.n_samples == 6
+        # Speed range should reflect only valid rows (3.2 and 3.8 kept, but
+        # their cadence outliers removed them) -> min 2.5, max 5.0
+        assert model.speed_range[0] == 2.5
+        assert model.speed_range[1] == 5.0

@@ -140,13 +140,16 @@ def fit_gct_power(df: pd.DataFrame, fallback_ransac: bool = True) -> GCTPowerMod
     )
 
 
-def fit_linear(df: pd.DataFrame, metric: Literal["vo", "vr"]) -> LinearModel:
+def fit_linear(df: pd.DataFrame, metric: Literal["vo", "vr", "cadence"]) -> LinearModel:
     """
-    Train linear model for VO or VR.
+    Train linear model for VO, VR or cadence.
 
     Args:
         df: DataFrame with columns ['{metric}_value', 'speed_mps']
-        metric: 'vo' (Vertical Oscillation) or 'vr' (Vertical Ratio)
+        metric: 'vo' (Vertical Oscillation), 'vr' (Vertical Ratio) or
+            'cadence' (Step cadence). For cadence, b > 0 is expected
+            (faster speed -> higher cadence), but no monotonicity check
+            is enforced (linear fit only).
 
     Returns:
         LinearModel
@@ -161,6 +164,8 @@ def fit_linear(df: pd.DataFrame, metric: Literal["vo", "vr"]) -> LinearModel:
         df_clean = drop_outliers(df, column=column, valid_range=(2, 15))
     elif metric == "vr":
         df_clean = drop_outliers(df, column=column, valid_range=(2, 20))
+    elif metric == "cadence":
+        df_clean = drop_outliers(df, column=column, valid_range=(140.0, 210.0))
     else:
         raise ValueError(f"Unknown metric: {metric}")
 
@@ -371,6 +376,7 @@ def train_form_baselines(
             'gct': {'alpha': float, 'd': float, 'rmse': float, 'n_samples': int},
             'vo': {'a': float, 'b': float, 'rmse': float, 'n_samples': int},
             'vr': {'a': float, 'b': float, 'rmse': float, 'n_samples': int},
+            'cadence': {'a': float, 'b': float, 'rmse': float, 'n_samples': int},
             'power': {'power_a': float, 'power_b': float, 'power_rmse': float, 'n_samples': int},
             'period_start': str,
             'period_end': str,
@@ -442,6 +448,7 @@ def train_form_baselines(
                 df_clean, "vertical_oscillation", (5.0, 20.0)
             )
             df_clean = utils.drop_outliers(df_clean, "vertical_ratio", (4.0, 15.0))
+            df_clean = utils.drop_outliers(df_clean, "cadence", (140.0, 210.0))
 
             if len(df_clean) < 50:
                 # Insufficient data after outlier removal
@@ -454,11 +461,13 @@ def train_form_baselines(
             df_clean["gct_ms"] = df_clean["ground_contact_time"]
             df_clean["vo_value"] = df_clean["vertical_oscillation"]
             df_clean["vr_value"] = df_clean["vertical_ratio"]
+            df_clean["cadence_value"] = df_clean["cadence"]
 
-            # Train GCT, VO, VR models
+            # Train GCT, VO, VR, cadence models
             gct_model: GCTPowerModel = fit_gct_power(df_clean)
             vo_model: LinearModel = fit_linear(df_clean, "vo")
             vr_model: LinearModel = fit_linear(df_clean, "vr")
+            cadence_model: LinearModel = fit_linear(df_clean, "cadence")
 
             # Insert GCT model
             conn.execute(
@@ -580,6 +589,46 @@ def train_form_baselines(
                 ],
             )
 
+            # Insert cadence model
+            conn.execute(
+                """
+            INSERT INTO form_baseline_history (
+                history_id, user_id, condition_group, metric, model_type,
+                coef_alpha, coef_d, coef_a, coef_b,
+                period_start, period_end,
+                n_samples, rmse, speed_range_min, speed_range_max
+            ) VALUES (nextval('form_baseline_history_seq'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (user_id, condition_group, metric, period_start, period_end)
+            DO UPDATE SET
+                model_type = EXCLUDED.model_type,
+                coef_alpha = EXCLUDED.coef_alpha,
+                coef_d = EXCLUDED.coef_d,
+                coef_a = EXCLUDED.coef_a,
+                coef_b = EXCLUDED.coef_b,
+                n_samples = EXCLUDED.n_samples,
+                rmse = EXCLUDED.rmse,
+                speed_range_min = EXCLUDED.speed_range_min,
+                speed_range_max = EXCLUDED.speed_range_max,
+                trained_at = now()
+            """,
+                [
+                    user_id,
+                    condition_group,
+                    "cadence",
+                    "linear",
+                    None,
+                    None,
+                    cadence_model.a,
+                    cadence_model.b,
+                    period_start,
+                    period_end,
+                    cadence_model.n_samples,
+                    cadence_model.rmse,
+                    cadence_model.speed_range[0],
+                    cadence_model.speed_range[1],
+                ],
+            )
+
             # Train Power model
             power_result = train_power_efficiency_baseline(
                 user_id=user_id,
@@ -607,6 +656,12 @@ def train_form_baselines(
                     "b": vr_model.b,
                     "rmse": vr_model.rmse,
                     "n_samples": vr_model.n_samples,
+                },
+                "cadence": {
+                    "a": cadence_model.a,
+                    "b": cadence_model.b,
+                    "rmse": cadence_model.rmse,
+                    "n_samples": cadence_model.n_samples,
                 },
                 "period_start": period_start,
                 "period_end": period_end,

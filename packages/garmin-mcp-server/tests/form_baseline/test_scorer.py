@@ -8,6 +8,27 @@ from garmin_mcp.form_baseline.scorer import (
     compute_star_rating,
     score_observation,
 )
+from garmin_mcp.form_baseline.trainer import GCTPowerModel, LinearModel
+
+
+@pytest.fixture
+def models_with_cadence() -> dict:
+    """Sample models including a constant cadence model (expected = 180spm)."""
+    return {
+        "gct": GCTPowerModel(
+            alpha=5.3, d=-0.15, rmse=5.0, n_samples=100, speed_range=(3.0, 5.0)
+        ),
+        "vo": LinearModel(
+            a=10.0, b=-2.0, rmse=0.5, n_samples=100, speed_range=(3.0, 5.0)
+        ),
+        "vr": LinearModel(
+            a=10.0, b=-0.5, rmse=0.3, n_samples=100, speed_range=(3.0, 5.0)
+        ),
+        # b=0 -> predict(speed) == 180 for any speed
+        "cadence": LinearModel(
+            a=180.0, b=0.0, rmse=2.0, n_samples=100, speed_range=(3.0, 5.0)
+        ),
+    }
 
 
 @pytest.mark.unit
@@ -138,6 +159,79 @@ class TestScoreObservation:
         assert result["gct_ms_actual"] == 200.0
         assert result["vo_cm_actual"] == 8.0
         assert result["vr_pct_actual"] == 7.5
+
+
+@pytest.mark.unit
+class TestScoreCadence:
+    """Tests for pace-dependent cadence scoring (reversed direction)."""
+
+    def test_score_cadence_below_expected_penalized(
+        self, models_with_cadence: dict
+    ) -> None:
+        """actual=172, expected=180 -> below expected -> needs_improvement=True."""
+        obs = {
+            "pace_s_per_km": 300.0,
+            "gct_ms": 250.0,
+            "vo_cm": 8.0,
+            "vr_pct": 7.5,
+            "cadence": 172.0,
+        }
+
+        result = score_observation(models_with_cadence, obs)
+
+        # delta_pct = (172 - 180) / 180 * 100 = -4.44% (degradation for cadence)
+        assert result["cadence_actual"] == 172.0
+        assert result["cadence_delta_pct"] < 0
+        # Degradation uses full factor: 4.44 * 1.0 * 10 = ~44.4 -> > 20
+        assert result["cadence_penalty"] > 20.0
+        assert result["cadence_needs_improvement"] is True
+
+    def test_score_cadence_above_expected_no_penalty(
+        self, models_with_cadence: dict
+    ) -> None:
+        """actual=185, expected=180 -> above expected -> no penalty, 5 stars."""
+        obs = {
+            "pace_s_per_km": 300.0,
+            "gct_ms": 250.0,
+            "vo_cm": 8.0,
+            "vr_pct": 7.5,
+            "cadence": 185.0,
+        }
+
+        result = score_observation(models_with_cadence, obs)
+
+        # delta_pct = (185 - 180) / 180 * 100 = +2.78% (improvement for cadence)
+        assert result["cadence_actual"] == 185.0
+        assert result["cadence_delta_pct"] > 0
+        # Improvement uses reduced factor: 2.78 * 0.3 * 10 = ~8.3 -> < 10
+        assert result["cadence_penalty"] < 10.0
+        assert result["cadence_needs_improvement"] is False
+
+        rating = compute_star_rating(
+            penalty=result["cadence_penalty"],
+            delta_pct=result["cadence_delta_pct"],
+        )
+        assert rating["score"] == 5.0
+
+    def test_score_cadence_not_in_overall(self, models_with_cadence: dict) -> None:
+        """Cadence must not change overall score vs no-cadence models."""
+        obs_base = {
+            "pace_s_per_km": 300.0,
+            "gct_ms": 250.0,
+            "vo_cm": 8.0,
+            "vr_pct": 7.5,
+        }
+        models_no_cadence = {
+            k: v for k, v in models_with_cadence.items() if k != "cadence"
+        }
+
+        score_without = score_observation(models_no_cadence, dict(obs_base))
+        score_with = score_observation(
+            models_with_cadence, {**obs_base, "cadence": 150.0}
+        )
+
+        # Overall score identical despite very poor cadence
+        assert score_with["score"] == score_without["score"]
 
 
 @pytest.mark.unit

@@ -292,6 +292,126 @@ class TestEvaluateAndStore:
         assert result["cadence"]["achieved"] is False
 
 
+@pytest.mark.integration
+class TestEvaluatorCadencePaceDependent:
+    """Pace-dependent cadence evaluation (mock DuckDB)."""
+
+    def _patch_common(self, mocker, cadence_actual: float):
+        """Patch shared evaluator dependencies. Returns mocks dict."""
+        # models include a cadence model -> pace-dependent path
+        mocker.patch(
+            "garmin_mcp.form_baseline.evaluator.load_models_from_file",
+            return_value={
+                "gct": mocker.Mock(),
+                "vo": mocker.Mock(),
+                "vr": mocker.Mock(),
+                "cadence": mocker.Mock(),
+            },
+        )
+        # Slow easy-pace activity (~7:11/km) with cadence below fixed-180
+        mocker.patch(
+            "garmin_mcp.form_baseline.evaluator.get_splits_data",
+            return_value={
+                "pace_s_per_km": 431.0,
+                "gct_ms": 258.0,
+                "vo_cm": 7.1,
+                "vr_pct": 7.3,
+                "cadence": cadence_actual,
+            },
+        )
+        # score_observation returns cadence_* because a cadence model exists.
+        # Expected cadence at this slow pace is 174spm (NOT fixed 180).
+        cadence_exp = 174.0
+        cadence_delta_pct = (cadence_actual - cadence_exp) / cadence_exp * 100.0
+        # Reversed direction: below expected -> degradation, above -> improvement
+        if cadence_delta_pct >= 0:
+            cadence_penalty = abs(cadence_delta_pct) * 0.3 * 10.0
+        else:
+            cadence_penalty = abs(cadence_delta_pct) * 1.0 * 10.0
+        mocker.patch(
+            "garmin_mcp.form_baseline.evaluator.score_observation",
+            return_value={
+                "gct_ms_exp": 259.0,
+                "vo_cm_exp": 7.0,
+                "vr_pct_exp": 7.2,
+                "gct_ms_actual": 258.0,
+                "vo_cm_actual": 7.1,
+                "vr_pct_actual": 7.3,
+                "gct_delta_pct": -0.4,
+                "gct_penalty": 2.0,
+                "vo_delta_cm": 0.1,
+                "vo_delta_pct": 1.4,
+                "vo_penalty": 2.0,
+                "vr_delta_pct": 1.4,
+                "vr_penalty": 2.0,
+                "score": 99.3,
+                "gct_needs_improvement": False,
+                "vo_needs_improvement": False,
+                "vr_needs_improvement": False,
+                "cadence_exp": cadence_exp,
+                "cadence_actual": cadence_actual,
+                "cadence_delta_pct": cadence_delta_pct,
+                "cadence_penalty": cadence_penalty,
+                "cadence_needs_improvement": cadence_penalty > 20.0,
+            },
+        )
+        mocker.patch(
+            "garmin_mcp.form_baseline.evaluator.compute_star_rating",
+            return_value={
+                "star_rating": "★★★★★",
+                "score": 5.0,
+                "category": "excellent",
+            },
+        )
+        mocker.patch(
+            "garmin_mcp.form_baseline.evaluator.generate_evaluation_text",
+            return_value="ケイデンス評価文",
+        )
+        mocker.patch(
+            "garmin_mcp.form_baseline.evaluator.generate_overall_text",
+            return_value="Overall text",
+        )
+        mock_conn = mocker.MagicMock()
+        mocker.patch("duckdb.connect", return_value=mock_conn)
+
+    def test_evaluator_cadence_pace_dependent(self, mocker):
+        """Slow-pace 176spm should NOT be flagged (above pace-adjusted 174spm)."""
+        # 176spm < fixed 180 but >= pace-adjusted expectation 174spm
+        self._patch_common(mocker, cadence_actual=176.0)
+
+        result = evaluate_and_store(
+            activity_id=20790040925,
+            activity_date="2025-10-25",
+            db_path=":memory:",
+            model_file=Path("/tmp/test.json"),
+        )
+
+        cadence = result["cadence"]
+        # Pace-dependent structure (not legacy minimum/achieved)
+        assert "expected" in cadence
+        assert "delta_pct" in cadence
+        assert "evaluation_text" in cadence
+        assert cadence["expected"] == 174.0
+        assert cadence["actual"] == 176.0
+        # Above pace-adjusted expectation -> not flagged despite < 180
+        assert cadence["needs_improvement"] is False
+
+    def test_evaluator_cadence_below_baseline_flagged(self, mocker):
+        """Cadence well below pace-adjusted expectation should be flagged."""
+        self._patch_common(mocker, cadence_actual=165.0)
+
+        result = evaluate_and_store(
+            activity_id=20790040925,
+            activity_date="2025-10-25",
+            db_path=":memory:",
+            model_file=Path("/tmp/test.json"),
+        )
+
+        cadence = result["cadence"]
+        # 165 vs 174 = -5.2% degradation -> penalty ~51.7 -> flagged
+        assert cadence["needs_improvement"] is True
+
+
 @pytest.mark.unit
 class TestComputeStarRating:
     """Test cases for compute_star_rating function."""

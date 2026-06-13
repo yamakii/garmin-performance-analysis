@@ -26,6 +26,8 @@ def predict_expectations(
             - gct_ms_exp: Expected ground contact time (ms)
             - vo_cm_exp: Expected vertical oscillation (cm)
             - vr_pct_exp: Expected vertical ratio (%)
+            - cadence_exp: Expected cadence (spm), only present when a
+              'cadence' model is available (backward compatible)
 
     Example:
         >>> from garmin_mcp.form_baseline.trainer import train_models
@@ -51,10 +53,18 @@ def predict_expectations(
     assert isinstance(vr_model, LinearModel)
     vr_pct_exp = vr_model.predict(speed_mps)
 
-    return {
+    result = {
         "pace": pace_s_per_km,
         "speed_mps": speed_mps,
         "gct_ms_exp": gct_ms_exp,
         "vo_cm_exp": vo_cm_exp,
         "vr_pct_exp": vr_pct_exp,
     }
+
+    # Cadence is optional (backward compatible: absent in old baselines)
+    cadence_model = models.get("cadence")
+    if cadence_model is not None:
+        assert isinstance(cadence_model, LinearModel)
+        result["cadence_exp"] = cadence_model.predict(speed_mps)
+
+    return result

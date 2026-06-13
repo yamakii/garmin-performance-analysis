@@ -69,6 +69,13 @@ def tmp_db_path(tmp_path: Path) -> str:
             cadence_minimum INTEGER DEFAULT 180,
             cadence_achieved BOOLEAN,
 
+            cadence_expected DOUBLE,
+            cadence_delta_pct DOUBLE,
+            cadence_star_rating VARCHAR,
+            cadence_score DOUBLE,
+            cadence_needs_improvement BOOLEAN,
+            cadence_evaluation_text VARCHAR,
+
             overall_score FLOAT,
             overall_star_rating VARCHAR,
 
