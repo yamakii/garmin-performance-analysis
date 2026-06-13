@@ -102,8 +102,23 @@ class FormReader(BaseDBReader):
         """
         try:
             with self._get_connection() as conn:
+                # Detect pace-dependent cadence columns (backward compatible
+                # with older databases that predate the cadence migration).
+                schema = conn.execute("PRAGMA table_info(form_evaluations)").fetchall()
+                column_names = {row[1] for row in schema}
+                has_cadence_cols = "cadence_expected" in column_names
+
+                cadence_select = (
+                    """,
+                        cadence_expected, cadence_delta_pct, cadence_star_rating,
+                        cadence_score, cadence_needs_improvement,
+                        cadence_evaluation_text"""
+                    if has_cadence_cols
+                    else ""
+                )
+
                 result = conn.execute(
-                    """
+                    f"""
                     SELECT
                         gct_ms_expected, gct_ms_actual, gct_delta_pct,
                         gct_star_rating, gct_score, gct_needs_improvement,
@@ -119,7 +134,7 @@ class FormReader(BaseDBReader):
                         power_avg_w, power_wkg, speed_actual_mps, speed_expected_mps,
                         power_efficiency_score, power_efficiency_rating,
                         power_efficiency_needs_improvement,
-                        integrated_score, training_mode
+                        integrated_score, training_mode{cadence_select}
                     FROM form_evaluations
                     WHERE activity_id = ?
                     """,
@@ -168,6 +183,13 @@ class FormReader(BaseDBReader):
                         "actual": result[21],
                         "minimum": result[22],
                         "achieved": result[23],
+                        # Pace-dependent fields only present on migrated DBs.
+                        "expected": result[35] if has_cadence_cols else None,
+                        "delta_pct": result[36] if has_cadence_cols else None,
+                        "star_rating": result[37] if has_cadence_cols else None,
+                        "score": result[38] if has_cadence_cols else None,
+                        "needs_improvement": (result[39] if has_cadence_cols else None),
+                        "evaluation_text": (result[40] if has_cadence_cols else None),
                     },
                     "power": {
                         "avg_w": result[26],

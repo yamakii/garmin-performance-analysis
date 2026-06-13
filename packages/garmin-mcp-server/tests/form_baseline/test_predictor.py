@@ -3,6 +3,7 @@
 import pytest
 
 from garmin_mcp.form_baseline.predictor import predict_expectations
+from garmin_mcp.form_baseline.trainer import LinearModel
 
 
 @pytest.mark.unit
@@ -98,3 +99,27 @@ class TestPredictExpectations:
         assert result1["gct_ms_exp"] == result2["gct_ms_exp"]
         assert result1["vo_cm_exp"] == result2["vo_cm_exp"]
         assert result1["vr_pct_exp"] == result2["vr_pct_exp"]
+
+    def test_predict_cadence_from_speed(self, sample_models: dict) -> None:
+        """Cadence expectation predicted from speed via LinearModel."""
+        # cadence = 160.0 + 5.0 * speed
+        models = dict(sample_models)
+        models["cadence"] = LinearModel(
+            a=160.0, b=5.0, rmse=2.0, n_samples=100, speed_range=(2.0, 5.0)
+        )
+
+        pace_s_per_km = 400.0  # speed = 2.5 m/s
+        speed_mps = 1000.0 / pace_s_per_km
+
+        result = predict_expectations(models, pace_s_per_km)
+
+        # Expected cadence = 160.0 + 5.0 * 2.5 = 172.5
+        expected_cadence = 160.0 + 5.0 * speed_mps
+        assert "cadence_exp" in result
+        assert abs(result["cadence_exp"] - expected_cadence) < 0.01
+        assert abs(result["cadence_exp"] - 172.5) < 0.01
+
+    def test_predict_no_cadence_when_model_absent(self, sample_models: dict) -> None:
+        """cadence_exp is absent when no cadence model (backward compatible)."""
+        result = predict_expectations(sample_models, 300.0)
+        assert "cadence_exp" not in result

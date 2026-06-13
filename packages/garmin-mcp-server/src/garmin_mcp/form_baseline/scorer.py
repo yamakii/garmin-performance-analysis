@@ -14,23 +14,45 @@ from .predictor import predict_expectations
 from .trainer import GCTPowerModel, LinearModel
 
 # Penalty factors by direction.
-# Lower-than-expected (negative delta) = efficiency improvement → reduced penalty.
-# Higher-than-expected (positive delta) = degradation → full penalty.
-IMPROVEMENT_FACTOR: dict[str, float] = {"gct": 0.3, "vo": 0.3, "vr": 0.2}
-DEGRADATION_FACTOR: dict[str, float] = {"gct": 1.0, "vo": 1.0, "vr": 1.0}
+# For GCT/VO/VR: lower-than-expected (negative delta) = efficiency improvement
+#   → reduced penalty; higher-than-expected (positive delta) = degradation → full.
+# For cadence the direction is REVERSED: higher-than-expected (positive delta) =
+#   improvement → reduced penalty; lower-than-expected (negative delta) =
+#   degradation → full penalty.
+IMPROVEMENT_FACTOR: dict[str, float] = {
+    "gct": 0.3,
+    "vo": 0.3,
+    "vr": 0.2,
+    "cadence": 0.3,
+}
+DEGRADATION_FACTOR: dict[str, float] = {
+    "gct": 1.0,
+    "vo": 1.0,
+    "vr": 1.0,
+    "cadence": 1.0,
+}
 
 
 def _compute_penalty(metric: str, delta_pct: float) -> float:
     """Compute asymmetric penalty for a single metric.
 
+    For GCT/VO/VR a negative delta (actual < expected) is an improvement.
+    For cadence the direction is reversed: a positive delta (actual > expected)
+    is the improvement and a negative delta (actual < expected) is degradation.
+
     Args:
-        metric: 'gct', 'vo', or 'vr'
-        delta_pct: Percentage delta from expected (negative = improvement)
+        metric: 'gct', 'vo', 'vr', or 'cadence'
+        delta_pct: Percentage delta from expected
 
     Returns:
         Penalty score clamped to 0-100.
     """
-    factor = IMPROVEMENT_FACTOR[metric] if delta_pct < 0 else DEGRADATION_FACTOR[metric]
+    # Reversed direction for cadence: positive delta = improvement.
+    is_improvement = delta_pct > 0 if metric == "cadence" else delta_pct < 0
+
+    factor = (
+        IMPROVEMENT_FACTOR[metric] if is_improvement else DEGRADATION_FACTOR[metric]
+    )
     return max(0.0, min(100.0, abs(delta_pct) * factor * 10.0))
 
 
@@ -147,7 +169,7 @@ def score_observation(
     vo_needs_improvement = vo_penalty > 20.0
     vr_needs_improvement = vr_penalty > 20.0
 
-    return {
+    result = {
         **expectations,
         "gct_ms_actual": obs["gct_ms"],
         "vo_cm_actual": obs["vo_cm"],
@@ -164,6 +186,21 @@ def score_observation(
         "vo_needs_improvement": vo_needs_improvement,
         "vr_needs_improvement": vr_needs_improvement,
     }
+
+    # Cadence is an INDEPENDENT metric: it is NOT included in overall_score or
+    # the consistency adjustment. It is only scored when a cadence model is
+    # available and the observation provides a cadence value.
+    cadence_exp = expectations.get("cadence_exp")
+    if cadence_exp is not None and obs.get("cadence") is not None:
+        cadence_actual = obs["cadence"]
+        cadence_delta_pct = ((cadence_actual - cadence_exp) / cadence_exp) * 100.0
+        cadence_penalty = _compute_penalty("cadence", cadence_delta_pct)
+        result["cadence_actual"] = cadence_actual
+        result["cadence_delta_pct"] = cadence_delta_pct
+        result["cadence_penalty"] = cadence_penalty
+        result["cadence_needs_improvement"] = cadence_penalty > 20.0
+
+    return result
 
 
 def compute_star_rating(

@@ -34,7 +34,7 @@ def generate_evaluation_text(
     and receive positive text, while higher-than-expected values indicate degradation.
 
     Args:
-        metric: 'gct', 'vo', or 'vr'
+        metric: 'gct', 'vo', 'vr', or 'cadence'
         actual: Actual measured value
         expected: Expected value from baseline model
         delta_pct: Delta percentage ((actual - expected) / expected * 100)
@@ -49,6 +49,16 @@ def generate_evaluation_text(
         >>> generate_evaluation_text('gct', 258.0, 261.0, -1.1, 431.0, '★★★★★', 5.0)
         '258msは期待値261ms±2%の理想範囲内です。適切な接地時間を維持できています。★★★★★'
     """
+    # Cadence has REVERSED semantics (higher cadence = better), so it is
+    # handled separately from the GCT/VO/VR efficiency metrics.
+    if metric == "cadence":
+        return _generate_cadence_text(
+            actual=actual,
+            expected=expected,
+            delta_pct=delta_pct,
+            star_rating=star_rating,
+        )
+
     # Metric-specific labels
     labels = {
         "gct": {
@@ -124,6 +134,61 @@ def generate_evaluation_text(
             f"{actual_str}{unit}は期待値{expected_str}{unit}より"
             f"{abs(delta_pct):.0f}%{direction}、大きく外れています。"
             f"フォームの不安定さが見られます。{label['improvement_action']}を推奨します。{star_rating}"
+        )
+
+    return text
+
+
+def _generate_cadence_text(
+    actual: float,
+    expected: float,
+    delta_pct: float,
+    star_rating: str,
+) -> str:
+    """Generate Japanese evaluation text for cadence.
+
+    Cadence has reversed semantics compared to GCT/VO/VR: a higher-than-expected
+    cadence (positive delta) is an improvement, while a lower-than-expected
+    cadence (negative delta) is degradation.
+
+    Args:
+        actual: Actual measured cadence (spm)
+        expected: Expected cadence from baseline model (spm)
+        delta_pct: Delta percentage ((actual - expected) / expected * 100)
+        star_rating: Star rating string (e.g., '★★★★★')
+
+    Returns:
+        Japanese evaluation text
+    """
+    actual_str = f"{actual:.0f}"
+    expected_str = f"{expected:.0f}"
+
+    if abs(delta_pct) <= 2:
+        text = (
+            f"{actual_str}spmは期待値{expected_str}spm±2%の理想範囲内です。"
+            f"適切なケイデンスを維持できています。{star_rating}"
+        )
+    elif delta_pct > 0 and abs(delta_pct) <= 5:
+        text = (
+            f"{actual_str}spmは期待値{expected_str}spmより"
+            f"{abs(delta_pct):.1f}%高く、効率的なピッチ走法です。{star_rating}"
+        )
+    elif delta_pct > 0:
+        text = (
+            f"{actual_str}spmは期待値{expected_str}spmより"
+            f"{abs(delta_pct):.0f}%高く、良好なケイデンスです。{star_rating}"
+        )
+    elif abs(delta_pct) <= 5:
+        text = (
+            f"{actual_str}spmは期待値{expected_str}spmより"
+            f"{abs(delta_pct):.1f}%低く、やや下回っています。"
+            f"ピッチをわずかに上げる余地があります。{star_rating}"
+        )
+    else:
+        text = (
+            f"{actual_str}spmは期待値{expected_str}spmより"
+            f"{abs(delta_pct):.0f}%低く、大きく下回っています。"
+            f"ピッチを上げる意識でケイデンスの改善を推奨します。{star_rating}"
         )
 
     return text

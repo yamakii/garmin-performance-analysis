@@ -20,7 +20,9 @@ def load_models_from_file(
         model_file: Path to JSON file with model coefficients
 
     Returns:
-        Dictionary of models: {'gct': GCTPowerModel, 'vo': LinearModel, 'vr': LinearModel}
+        Dictionary of models: {'gct': GCTPowerModel, 'vo': LinearModel,
+        'vr': LinearModel}. May also contain 'cadence': LinearModel when a
+        cadence baseline is available (optional for backward compatibility).
 
     Raises:
         FileNotFoundError: If model file doesn't exist
@@ -62,11 +64,27 @@ def load_models_from_file(
         speed_range=(vr_data["speed_range"]["min"], vr_data["speed_range"]["max"]),
     )
 
-    return {
+    models: dict[str, GCTPowerModel | LinearModel] = {
         "gct": gct_model,
         "vo": vo_model,
         "vr": vr_model,
     }
+
+    # Cadence model is optional (backward compatible with older model files)
+    cadence_data = data.get("cadence")
+    if cadence_data is not None:
+        models["cadence"] = LinearModel(
+            a=cadence_data["a"],
+            b=cadence_data["b"],
+            rmse=cadence_data["rmse"],
+            n_samples=cadence_data["n_samples"],
+            speed_range=(
+                cadence_data["speed_range"]["min"],
+                cadence_data["speed_range"]["max"],
+            ),
+        )
+
+    return models
 
 
 def load_models_from_db(
@@ -87,7 +105,9 @@ def load_models_from_db(
         condition_group: Condition group name (default: 'flat_road')
 
     Returns:
-        Dictionary of models: {'gct': GCTPowerModel, 'vo': LinearModel, 'vr': LinearModel}
+        Dictionary of models: {'gct': GCTPowerModel, 'vo': LinearModel,
+        'vr': LinearModel}. May also contain 'cadence': LinearModel when a
+        cadence baseline is available (optional for backward compatibility).
 
     Raises:
         ValueError: If no baseline found for the activity date
@@ -148,9 +168,18 @@ def load_models_from_db(
                     n_samples=int(n_samples),
                     speed_range=(float(speed_min), float(speed_max)),
                 )
+            elif metric == "cadence":
+                # Cadence is optional (backward compatible: absent in old DBs)
+                models["cadence"] = LinearModel(
+                    a=float(a),
+                    b=float(b),
+                    rmse=float(rmse),
+                    n_samples=int(n_samples),
+                    speed_range=(float(speed_min), float(speed_max)),
+                )
 
-        # Validate all metrics present
-        if len(models) != 3 or not all(m in models for m in ["gct", "vo", "vr"]):
+        # Validate core metrics present (cadence is optional)
+        if not all(m in models for m in ["gct", "vo", "vr"]):
             raise ValueError(
                 f"Incomplete baseline data. Found metrics: {list(models.keys())}"
             )
