@@ -275,7 +275,9 @@ class WorkoutComparator:
             for row in results:
                 candidate = {
                     "activity_id": row[0],
-                    "activity_date": row[1],
+                    # DuckDB DATE columns return datetime.date; convert to str so
+                    # the dict is JSON-serializable at the MCP boundary (Issue #235).
+                    "activity_date": str(row[1]) if row[1] is not None else None,
                     "activity_name": row[2],
                     "avg_pace": row[3],
                     "avg_heart_rate": row[4],
@@ -376,7 +378,9 @@ class WorkoutComparator:
 
             activity_data = {
                 "activity_id": row[0],
-                "activity_date": row[1],
+                # DuckDB DATE columns return datetime.date; convert to str so
+                # the dict is JSON-serializable at the MCP boundary (Issue #235).
+                "activity_date": str(row[1]) if row[1] is not None else None,
                 "activity_name": row[2],
                 "avg_pace": row[3],
                 "avg_heart_rate": row[4],
