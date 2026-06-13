@@ -7,7 +7,13 @@ from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
-from garmin_mcp.server import _handle_get_server_info, _handle_reload_server
+import garmin_mcp.server as server_module
+from garmin_mcp.server import (
+    _dispatch_tool,
+    _ensure_handlers_initialized,
+    _handle_get_server_info,
+    _handle_reload_server,
+)
 
 
 def _mock_get_connection(mock_conn):
@@ -383,3 +389,65 @@ class TestGracefulShutdown:
             _graceful_shutdown()
 
         mock_exit.assert_called_once_with(0)
+
+
+@pytest.mark.unit
+class TestServerReadiness:
+    """Tests for eager handler init and get_server_info readiness fields."""
+
+    def _make_mock_conn(self) -> MagicMock:
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value.fetchall.return_value = [("t0",)]
+        mock_conn.execute.return_value.fetchone.return_value = ("2025-10-15",)
+        return mock_conn
+
+    def test_get_server_info_includes_started_at_and_ready(self) -> None:
+        """get_server_info response includes started_at (ISO str) and ready=True."""
+        from datetime import datetime
+
+        # Ensure handlers are initialized so ready reflects an initialized server.
+        _ensure_handlers_initialized()
+        mock_conn = self._make_mock_conn()
+        with (
+            patch(
+                "garmin_mcp.server._get_server_dir",
+                return_value="/some/path",
+            ),
+            patch("garmin_mcp.server.os.path.exists", return_value=False),
+            patch(
+                "garmin_mcp.database.connection.get_connection",
+                _mock_get_connection(mock_conn),
+            ),
+        ):
+            result = _handle_get_server_info()
+
+        data = json.loads(result[0].text)
+        assert isinstance(data["started_at"], str)
+        # started_at must be a valid ISO 8601 timestamp.
+        datetime.fromisoformat(data["started_at"])
+        assert data["ready"] is True
+
+    def test_handlers_eager_initialized(self) -> None:
+        """_ensure_handlers_initialized populates _handlers without a tool call."""
+        # Start from an uninitialized registry.
+        server_module._handlers = []
+        assert server_module._handlers == []
+
+        _ensure_handlers_initialized()
+
+        assert len(server_module._handlers) > 0
+
+    @pytest.mark.asyncio
+    async def test_dispatch_lazy_fallback_still_works(self) -> None:
+        """_dispatch_tool lazily initializes handlers when registry is empty."""
+        # Reset to an empty registry to simulate the legacy lazy path where no
+        # eager init ran (e.g. a code path bypassing main()).
+        server_module._handlers = []
+        assert server_module._handlers == []
+
+        # An unknown tool still reaches the not-found branch *after* the lazy
+        # init runs, so the registry must be populated as a side effect.
+        with pytest.raises(ValueError, match="Unknown tool"):
+            await _dispatch_tool("definitely_not_a_real_tool", {})
+
+        assert len(server_module._handlers) > 0

@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import signal
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,10 @@ from garmin_mcp.tool_schemas import get_tool_definitions
 logger = logging.getLogger(__name__)
 
 OVERRIDE_FILE = "/tmp/garmin-mcp-server-dir"
+
+# Process start time, recorded once at module load (ISO 8601, UTC).
+# Callers use this to detect that a reload produced a fresh process.
+_STARTED_AT: str = datetime.now(UTC).isoformat()
 
 
 def _extract_log_context(arguments: dict[str, Any]) -> str:
@@ -89,6 +94,18 @@ def _init_handlers() -> None:
         ExportHandler(db_reader),
         TrainingPlanHandler(db_reader),
     ]
+
+
+def _ensure_handlers_initialized() -> None:
+    """Idempotent eager initialization of the handler registry.
+
+    Called from the startup sequence so that the very first tool call after a
+    (re)start does not pay the lazy-init cost. Safe to call multiple times:
+    re-initializing only rebuilds the registry, which is harmless and keeps the
+    lazy fallback in _dispatch_tool intact for backward compatibility.
+    """
+    if not _handlers:
+        _init_handlers()
 
 
 def _get_server_dir() -> str:
@@ -163,6 +180,8 @@ def _handle_get_server_info() -> list[TextContent]:
         "server_dir": server_dir,
         "override_file_exists": override_exists,
         "override_dir": override_dir,
+        "started_at": _STARTED_AT,
+        "ready": bool(_handlers),
     }
 
     # DB diagnostics (best-effort, never raise)
@@ -245,6 +264,11 @@ async def _handle_reload_server(
         msg = "Server will restart from default directory."
         logger.info("reload_server called - restoring default directory")
 
+    msg += (
+        " Before calling tools, confirm readiness via get_server_info "
+        "(ready=true and a refreshed started_at)."
+    )
+
     loop = asyncio.get_event_loop()
     loop.call_later(0.5, _graceful_shutdown)
     return [
@@ -260,6 +284,10 @@ async def main() -> None:
     from garmin_mcp.utils.logging_config import setup_mcp_logging
 
     setup_mcp_logging()
+    # Eagerly initialize handlers so the first tool call after a (re)start does
+    # not pay the lazy-init cost. The lazy fallback in _dispatch_tool remains as
+    # a safety net for any code path that bypasses this entry point.
+    _ensure_handlers_initialized()
     loop = asyncio.get_event_loop()
     loop.add_signal_handler(signal.SIGTERM, _graceful_shutdown)
     async with stdio_server() as (read_stream, write_stream):
