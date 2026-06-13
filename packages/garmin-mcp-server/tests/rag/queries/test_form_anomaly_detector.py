@@ -333,7 +333,7 @@ def test_analyze_causes_fatigue_detection(detector: FormAnomalyDetector) -> None
     """Test fatigue detection when elevation and pace changes are minimal.
 
     Verify that:
-    - HR drift > 10% triggers "fatigue" cause
+    - HR drift > 10% AND a sustained degradation trend trigger "fatigue" cause
     - When elevation and pace changes are below thresholds
     """
     anomaly = {"timestamp": 500, "metric": "directGroundContactTime", "value": 230.0}
@@ -356,8 +356,14 @@ def test_analyze_causes_fatigue_detection(detector: FormAnomalyDetector) -> None
         [150.0] * 300 + [158.0] * 100 + [168.0] * 100 + [172.0] * 100,
     )
 
+    # Issue #232: fatigue now requires a sustained degradation trend in addition
+    # to HR drift.
     cause, details = detector._analyze_anomaly_causes(
-        anomaly, elevation_series, pace_series, hr_series
+        anomaly,
+        elevation_series,
+        pace_series,
+        hr_series,
+        sustained_degradation=True,
     )
 
     # Should detect fatigue
@@ -388,6 +394,150 @@ def test_context_extraction_with_none_values(detector: FormAnomalyDetector) -> N
     assert "after_30s" in context
     assert context["before_30s"]["metric_avg"] > 0
     assert context["after_30s"]["metric_avg"] > 0
+
+
+# ==========================================
+# Issue #232: Sensitivity Gates (z-threshold, magnitude, fatigue)
+# ==========================================
+
+
+@pytest.mark.unit
+def test_zscore_threshold_default_3(detector: FormAnomalyDetector) -> None:
+    """Test _detect_anomalies_by_zscore default z_threshold is 3.0.
+
+    Verify that:
+    - The default threshold is 3.0 (raised from 2.0)
+    - A point with 2.0 < z <= 3.0 is NOT flagged when the default is used
+    """
+    import inspect
+
+    sig = inspect.signature(detector._detect_anomalies_by_zscore)
+    assert sig.parameters["z_threshold"].default == 3.0
+
+    # A metric without a magnitude gate, with z = 2.5 (between old and new
+    # thresholds) should NOT be flagged under the default threshold.
+    # mean=200, std=2 -> value 205 gives z = 2.5
+    time_series: list[float | None] = cast(
+        list[float | None], [200.0] * 50 + [205.0] + [200.0] * 49
+    )
+    rolling_means = [200.0] * 100
+    rolling_stds = [2.0] * 100
+
+    anomalies = detector._detect_anomalies_by_zscore(
+        "directHeartRate", time_series, rolling_means, rolling_stds
+    )
+
+    assert len(anomalies) == 0
+
+
+@pytest.mark.unit
+def test_vo_small_change_not_flagged(detector: FormAnomalyDetector) -> None:
+    """Test VO small (0.4cm) deviation is not flagged despite high z-score.
+
+    Verify that:
+    - VO deviation of 0.4 cm with z > 3 is filtered by the magnitude gate
+      (gate = 0.5 cm)
+    """
+    # mean=8.0, std=0.1 -> value 8.4 gives deviation 0.4, z = 4.0 (> 3)
+    time_series: list[float | None] = cast(
+        list[float | None], [8.0] * 50 + [8.4] + [8.0] * 49
+    )
+    rolling_means = [8.0] * 100
+    rolling_stds = [0.1] * 100
+
+    anomalies = detector._detect_anomalies_by_zscore(
+        "directVerticalOscillation", time_series, rolling_means, rolling_stds
+    )
+
+    assert len(anomalies) == 0
+
+
+@pytest.mark.unit
+def test_vo_material_change_flagged(detector: FormAnomalyDetector) -> None:
+    """Test VO material (0.7cm) deviation with z > 3 is flagged.
+
+    Verify that:
+    - VO deviation of 0.7 cm with z > 3 passes both z and magnitude gates
+    """
+    # mean=8.0, std=0.1 -> value 8.7 gives deviation 0.7, z = 7.0 (> 3)
+    time_series: list[float | None] = cast(
+        list[float | None], [8.0] * 50 + [8.7] + [8.0] * 49
+    )
+    rolling_means = [8.0] * 100
+    rolling_stds = [0.1] * 100
+
+    anomalies = detector._detect_anomalies_by_zscore(
+        "directVerticalOscillation", time_series, rolling_means, rolling_stds
+    )
+
+    assert len(anomalies) == 1
+    assert anomalies[0]["value"] == 8.7
+
+
+@pytest.mark.unit
+def test_gct_magnitude_gate(detector: FormAnomalyDetector) -> None:
+    """Test GCT magnitude gate: 8ms ignored, 12ms detected.
+
+    Verify that:
+    - GCT deviation of 8 ms (z > 3) is below the 10 ms gate -> not flagged
+    - GCT deviation of 12 ms (z > 3) is at/above the gate -> flagged
+    """
+    rolling_means = [240.0] * 100
+    rolling_stds = [2.0] * 100
+
+    # 8ms deviation: value 248, z = 4.0 (> 3) but below 10ms gate
+    series_8ms: list[float | None] = cast(
+        list[float | None], [240.0] * 50 + [248.0] + [240.0] * 49
+    )
+    anomalies_8 = detector._detect_anomalies_by_zscore(
+        "directGroundContactTime", series_8ms, rolling_means, rolling_stds
+    )
+    assert len(anomalies_8) == 0
+
+    # 12ms deviation: value 252, z = 6.0 (> 3) and >= 10ms gate
+    series_12ms: list[float | None] = cast(
+        list[float | None], [240.0] * 50 + [252.0] + [240.0] * 49
+    )
+    anomalies_12 = detector._detect_anomalies_by_zscore(
+        "directGroundContactTime", series_12ms, rolling_means, rolling_stds
+    )
+    assert len(anomalies_12) == 1
+    assert anomalies_12[0]["value"] == 252.0
+
+
+@pytest.mark.unit
+def test_fatigue_requires_sustained_trend(detector: FormAnomalyDetector) -> None:
+    """Test fatigue label requires a sustained degradation trend.
+
+    Verify that:
+    - A single z anomaly with HR drift > 10% but no sustained trend is
+      classified as pace_change (not fatigue)
+    - The same anomaly with sustained_degradation=True is classified as fatigue
+    """
+    anomaly = {"timestamp": 500, "metric": "directVerticalOscillation", "value": 9.0}
+
+    # Minimal elevation and pace change so neither takes priority
+    elevation_series: list[float | None] = cast(list[float | None], [10.0] * 600)
+    pace_series: list[float | None] = cast(list[float | None], [4.0] * 600)
+
+    # Significant HR drift (>10%): baseline 150, current ~172
+    hr_series: list[float | None] = cast(
+        list[float | None],
+        [150.0] * 300 + [158.0] * 100 + [168.0] * 100 + [172.0] * 100,
+    )
+
+    # Without sustained degradation -> NOT fatigue (falls back to pace_change)
+    cause_no_trend, details_no_trend = detector._analyze_anomaly_causes(
+        anomaly, elevation_series, pace_series, hr_series, sustained_degradation=False
+    )
+    assert cause_no_trend == "pace_change"
+    assert abs(details_no_trend["hr_drift_percent"]) > 10.0
+
+    # With sustained degradation -> fatigue
+    cause_trend, _ = detector._analyze_anomaly_causes(
+        anomaly, elevation_series, pace_series, hr_series, sustained_degradation=True
+    )
+    assert cause_trend == "fatigue"
 
 
 # ==========================================

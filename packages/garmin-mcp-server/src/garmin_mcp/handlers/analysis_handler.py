@@ -97,20 +97,26 @@ class AnalysisHandler:
     async def _detect_form_anomalies_summary(
         self, arguments: dict[str, Any]
     ) -> list[TextContent]:
-        from garmin_mcp.rag.queries.form_anomaly_detector import FormAnomalyDetector
+        from garmin_mcp.rag.queries.form_anomaly_detector import (
+            DEFAULT_Z_THRESHOLD,
+            FormAnomalyDetector,
+        )
 
         detector = FormAnomalyDetector()
         result = detector.detect_form_anomalies_summary(
             activity_id=arguments["activity_id"],
             metrics=arguments.get("metrics"),
-            z_threshold=arguments.get("z_threshold", 2.0),
+            z_threshold=arguments.get("z_threshold", DEFAULT_Z_THRESHOLD),
         )
         return [TextContent(type="text", text=format_json_response(result))]
 
     async def _get_form_anomaly_details(
         self, arguments: dict[str, Any]
     ) -> list[TextContent]:
-        from garmin_mcp.rag.queries.form_anomaly_detector import FormAnomalyDetector
+        from garmin_mcp.rag.queries.form_anomaly_detector import (
+            DEFAULT_Z_THRESHOLD,
+            FormAnomalyDetector,
+        )
 
         detector = FormAnomalyDetector()
 
@@ -138,7 +144,7 @@ class AnalysisHandler:
         result = detector.get_form_anomaly_details(
             activity_id=arguments["activity_id"],
             metrics=arguments.get("metrics"),
-            z_threshold=arguments.get("z_threshold", 2.0),
+            z_threshold=arguments.get("z_threshold", DEFAULT_Z_THRESHOLD),
             filters=filters if filters else None,
         )
         return [TextContent(type="text", text=format_json_response(result))]
