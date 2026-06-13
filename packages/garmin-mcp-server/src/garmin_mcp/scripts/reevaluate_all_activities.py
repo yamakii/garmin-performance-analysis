@@ -40,8 +40,6 @@ def get_activities_to_reevaluate(db_path: str) -> list[tuple[int, str]]:
                 WHERE s.ground_contact_time IS NOT NULL
                   AND s.vertical_oscillation IS NOT NULL
                   AND s.vertical_ratio IS NOT NULL
-                  AND (EXTRACT(YEAR FROM a.activity_date) = 2021
-                       OR EXTRACT(YEAR FROM a.activity_date) = 2025)
             )
             SELECT awf.activity_id, awf.activity_date
             FROM activities_with_form awf

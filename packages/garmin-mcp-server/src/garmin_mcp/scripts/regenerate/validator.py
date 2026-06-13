@@ -105,6 +105,54 @@ def validate_table_dependencies(
     )
 
 
+def find_missing_form_evaluations(
+    activity_ids: list[int] | None, db_path: Path
+) -> list[tuple[int, str]]:
+    """Find activities with form-metric splits but no form_evaluations row.
+
+    form_evaluations is generated at ingest time (not by regenerate_duckdb), so
+    re-generating splits from raw data can leave activities without a form
+    evaluation. This detects those gaps so a nudge can be shown.
+
+    Args:
+        activity_ids: Restrict detection to these IDs (None = all activities).
+        db_path: Path to DuckDB database.
+
+    Returns:
+        List of (activity_id, activity_date) tuples for activities that have
+        splits with GCT/VO/VR but no form_evaluations row, ordered by date.
+        Returns an empty list if the DB or required tables do not exist.
+    """
+    if not db_path.exists():
+        return []
+
+    query = """
+        SELECT DISTINCT a.activity_id, a.activity_date
+        FROM activities a
+        JOIN splits s ON a.activity_id = s.activity_id
+        WHERE s.ground_contact_time IS NOT NULL
+          AND s.vertical_oscillation IS NOT NULL
+          AND s.vertical_ratio IS NOT NULL
+          AND a.activity_id NOT IN (SELECT activity_id FROM form_evaluations)
+    """
+    params: list[int] = []
+    if activity_ids:
+        placeholders = ", ".join("?" for _ in activity_ids)
+        query += f"          AND a.activity_id IN ({placeholders})\n"
+        params = list(activity_ids)
+    query += "        ORDER BY a.activity_date"
+
+    try:
+        with get_connection(db_path) as conn:
+            try:
+                result = conn.execute(query, params).fetchall()
+                return [(int(row[0]), str(row[1])) for row in result]
+            except duckdb.CatalogException:
+                return []
+    except Exception:
+        return []
+
+
 def _find_missing_activity_ids(activity_ids: list[int], db_path: Path) -> list[int]:
     """Find activity IDs that don't exist in DuckDB."""
     if not db_path.exists():
