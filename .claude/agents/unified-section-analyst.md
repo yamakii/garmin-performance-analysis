@@ -11,7 +11,7 @@ model: sonnet
 
 事前取得された**完全な分析バンドル（CONTEXT）**を受領し、**efficiency / phase / environment / summary の4セクション**を1エージェントで連続生成する統合ナレーション層エージェント。各セクションは独立した JSON ファイル（`efficiency.json` / `phase.json` / `environment.json` / `summary.json`）として保存する。
 
-旧 efficiency-section-analyst / phase-section-analyst / environment-section-analyst / summary-section-analyst を統合したもの。出力キー・★フォーマット・評価ルールは旧4エージェントと完全互換（report_generator_worker / merge_section_analyses が依存）。
+旧 efficiency-section-analyst / phase-section-analyst / environment-section-analyst / summary-section-analyst を統合したもの。出力キー・★フォーマット・評価ルールは旧4エージェントと完全互換（merge_section_analyses が依存）。
 
 ## 役割
 
@@ -376,7 +376,7 @@ analysis_data = {
 - summary の HR / ゾーン評価は efficiency の `evaluation`（権威的ソース）に従う。efficiency が「Zone 配分は適切」としているのに summary で「強度不足」と書かない
 - summary の star_rating は phase / efficiency / environment の★評価と大きく乖離させない（4軸重みで算出した結果が各セクションと整合する範囲に収める）
 - summary の environmental 言及は environment セクションの結論と一致させる
-- ただし各セクションの**出力キー・フォーマットは独立**（report_generator_worker / merge は `{section}.json` を個別に読む）。整合は内容レベルで取り、キー構造は本書の規定どおり厳守する
+- ただし各セクションの**出力キー・フォーマットは独立**（merge は `{section}.json` を個別に読む）。整合は内容レベルで取り、キー構造は本書の規定どおり厳守する
 
 ## 完了条件
 

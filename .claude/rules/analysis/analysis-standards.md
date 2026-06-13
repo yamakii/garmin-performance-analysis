@@ -23,9 +23,9 @@ Consolidated reference for all analysis rules.
 
 ### Error Recovery
 
-- 5/5 成功 → 通常フロー
-- 4/5 成功 → 失敗セクション skip、レポートヘッダーに記載
-- 3/5 以下 → レポート中止、全エラーをユーザーに報告。自動リトライしない
+- 5/5 成功 → 通常フロー（全セクションを DuckDB に登録）
+- 4/5 成功 → 失敗セクションを skip、成功した4セクションのみ DuckDB に登録。skip 内容をユーザーに報告
+- 3/5 以下 → 分析中止、DuckDB 登録は行わず、全エラーをユーザーに報告。自動リトライしない
 
 ## 3. Evaluation Principles
 

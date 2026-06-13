@@ -7,8 +7,7 @@
 1. **データ収集**: ingest_activity MCP ツール
 2. **コンテキスト事前取得**: MCP ツールで prefetch（Bash許可不要）
 3. **セクション分析**: 2つのエージェント（unified-section-analyst + split-section-analyst）を並列実行（unified は事前取得コンテキスト付き）
-4. **結果登録**: merge script でDuckDBに一括登録
-5. **レポート生成**: report-generator-worker で最終レポート作成
+4. **結果登録**: merge script でDuckDBに一括登録（Web版で閲覧）
 
 ## 実行手順
 
@@ -59,8 +58,8 @@ prompt: "Activity ID {activity_id} ({date}) の全スプリットを詳細分析
 2エージェント完了後、成功/失敗を集計してください（unified は4 JSON すべてが揃って初めて成功扱い）：
 
 - **2/2 成功**: Step 2.5 へ進む（通常フロー）
-- **1/2 成功**: 失敗したエージェント名をユーザーに通知し、成功した結果のみで続行。レポートに「該当セクションは取得できませんでした」と記載。
-- **0/2 成功**: レポート生成を中止。全エラー内容をユーザーに報告して停止。
+- **1/2 成功**: 失敗したエージェント名をユーザーに通知し、成功した結果のみ DuckDB に登録して続行。該当セクションが欠落している旨をユーザーに報告。
+- **0/2 成功**: 分析を中止。DuckDB 登録は行わず、全エラー内容をユーザーに報告して停止。
 
 ### Step 2.5: 分析結果のDuckDB登録（Merge）
 
@@ -74,13 +73,7 @@ uv run python -m garmin_mcp.scripts.merge_section_analyses {ANALYSIS_TEMP_DIR}
 - 失敗時: JSONファイルは残る（`--keep` で明示的に残すことも可能）
 - 4/5 モードの場合、存在する `.json` のみが登録される
 
-### Step 3: レポート生成
-
-全てのセクション分析（または部分結果）が登録されたら、最終レポートを生成してください：
-
-```bash
-uv run python -m garmin_mcp.reporting.report_generator_worker {activity_id} {date}
-```
+DuckDB 登録の完了をもって分析は完結します。分析結果は Web 版（`packages/garmin-web`）で閲覧してください。
 
 ## 重要事項
 
@@ -89,3 +82,4 @@ uv run python -m garmin_mcp.reporting.report_generator_worker {activity_id} {dat
 - **DuckDB優先**: mcp__garmin-db__*ツールを使用してトークン削減
 - **日本語出力**: 全ての分析は日本語で
 - **データソース**: DuckDBのみ使用（raw JSONから直接抽出）
+- **閲覧**: 分析結果は Web 版（`packages/garmin-web`）が DuckDB から描画する（Markdown レポートは生成しない）
