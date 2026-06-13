@@ -35,18 +35,21 @@ export default function EfficiencyReport({
       label: "接地時間",
       value: asNumber(formEfficiency?.gct_average),
       unit: "ms",
+      digits: 0,
       rating: asString(formEfficiency?.gct_rating),
     },
     {
       label: "上下動",
       value: asNumber(formEfficiency?.vo_average),
       unit: "cm",
+      digits: 1,
       rating: asString(formEfficiency?.vo_rating),
     },
     {
       label: "上下動比",
       value: asNumber(formEfficiency?.vr_average),
       unit: "%",
+      digits: 1,
       rating: asString(formEfficiency?.vr_rating),
     },
   ].filter((stat) => stat.value != null);
@@ -57,7 +60,7 @@ export default function EfficiencyReport({
         <>
           {stats.length > 0 && (
             <dl className="mb-4 grid grid-cols-3 gap-3">
-              {stats.map(({ label, value, unit, rating }) => (
+              {stats.map(({ label, value, unit, digits, rating }) => (
                 <div
                   key={label}
                   className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2"
@@ -67,7 +70,7 @@ export default function EfficiencyReport({
                   </dt>
                   {/* GCT / VO / VR share the violet form-metric color (#214). */}
                   <dd className="mt-0.5 font-numeric text-2xl leading-none font-semibold tabular-nums text-metric-form">
-                    {value}
+                    {value!.toFixed(digits)}
                     <span className="ml-0.5 text-xs font-normal text-slate-500">
                       {unit}
                     </span>
