@@ -23,6 +23,13 @@ export function formatDistance(km: number | null): string {
   return `${km.toFixed(2)} km`;
 }
 
+export function formatCadence(cadence: number | null): string {
+  if (cadence == null) {
+    return "-";
+  }
+  return String(Math.round(cadence));
+}
+
 /** "N本 ・ 合計 XX.X km" summary for a month heading (Issue #214). */
 export function monthSummary(activities: ActivitySummary[]): string {
   const totalKm = activities.reduce(

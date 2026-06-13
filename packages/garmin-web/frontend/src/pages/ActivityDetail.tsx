@@ -23,7 +23,7 @@ import type {
   TimeSeriesResponse,
   TrackPoint,
 } from "../types";
-import { formatDistance, formatPace } from "./ActivityList";
+import { formatCadence, formatDistance, formatPace } from "./ActivityList";
 
 const AVAILABLE_METRICS: { key: string; label: string }[] = [
   { key: "heart_rate", label: "心拍数" },
@@ -361,7 +361,7 @@ export default function ActivityDetail() {
                       {split.heart_rate ?? "-"}
                     </td>
                     <td className="px-2 py-2 text-right tabular-nums">
-                      {split.cadence ?? "-"}
+                      {formatCadence(split.cadence)}
                     </td>
                     <td className="px-2 py-2 text-right tabular-nums">
                       {split.power ?? "-"}
