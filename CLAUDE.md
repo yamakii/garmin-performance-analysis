@@ -11,7 +11,7 @@ Garmin running performance analysis system with **DuckDB-first architecture** an
 **Key Features:**
 - DuckDB normalized storage (14 tables, 100+ activities)
 - 30+ token-optimized MCP tools (70-98.8% reduction)
-- 5 specialized analysis agents
+- 2 analysis agents (unified-section-analyst + split-section-analyst)
 - Japanese reports (code/docs in English)
 
 **Two Use Cases:**
@@ -126,7 +126,7 @@ FIFO キュー + Validation Agent 方式。詳細は `.claude/rules/dev/worktree
 - Performance: `splits`, `performance_trends`, `time_series_metrics` (26 metrics x 1000-2000 rows)
 - Physiology: `form_efficiency`, `form_evaluations`, `form_baseline_history`, `hr_efficiency`, `heart_rate_zones`, `vo2_max`, `lactate_threshold`
 - Training: `training_plans`, `planned_workouts`
-- Analysis: `section_analyses` (5 agent results per activity)
+- Analysis: `section_analyses` (5 section results per activity: efficiency/phase/environment/summary/split)
 
 ### Directory Structure
 
@@ -155,7 +155,7 @@ garmin-performance-analysis/
 │       ├── frontend/               # Vite + React SPA
 │       └── tests/
 ├── .claude/
-│   ├── agents/                     # 5 analysis agents
+│   ├── agents/                     # 2 analysis agents (unified + split)
 │   ├── commands/                   # /analyze-activity, /batch-analyze, /decompose, /project-status, /ship
 │   ├── rules/                      # Shared rules (auto-loaded)
 │   ├── tasks/                      # todo.md, lessons.md (session tracking)
@@ -172,12 +172,17 @@ garmin-performance-analysis/
 
 ### Agent System
 
-**5 Section Analysis Agents (run in parallel via Task tool):**
-1. **split-section-analyst**: 1km split analysis (pace, HR, form)
-2. **phase-section-analyst**: Phase evaluation (warmup/run/cooldown, training-type-aware)
-3. **summary-section-analyst**: Activity type + overall assessment
-4. **efficiency-section-analyst**: Form (GCT/VO/VR) + HR efficiency
-5. **environment-section-analyst**: Environmental impact (weather, terrain)
+**2 Section Analysis Agents (run in parallel via Task tool):**
+1. **unified-section-analyst**: 4 sections in one agent (sonnet) — emits `efficiency.json`, `phase.json`, `environment.json`, `summary.json`
+   - **efficiency**: Form (GCT/VO/VR) + power + cadence + HR efficiency
+   - **phase**: Phase evaluation (warmup/run/cooldown[/recovery], training-type-aware)
+   - **environment**: Environmental impact (temperature, humidity, wind, terrain)
+   - **summary**: Activity type + 4-axis overall assessment + recommendations
+2. **split-section-analyst**: 1km split analysis (pace, HR, form)
+
+> Consolidated from 5→2 agents (#250). The unified agent receives prefetched CONTEXT;
+> split needs no CONTEXT. Each section is still written as a separate `{section}.json`
+> consumed by `merge_section_analyses` / `report_generator_worker`.
 
 ### Critical Data Sources
 

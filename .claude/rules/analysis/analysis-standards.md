@@ -10,9 +10,9 @@ Consolidated reference for all analysis rules.
 
 ## 2. Agent Rules
 
-5 section agents (split, phase, efficiency, environment, summary) の共通ルール:
+5 section type (split, phase, efficiency, environment, summary) を生成する2エージェント（unified-section-analyst が efficiency/phase/environment/summary を、split-section-analyst が split を担当）の共通ルール:
 
-- **独立動作**: 他セクション分析を参照しない。全データを MCP tools から直接取得
+- **独立動作**: 全データを CONTEXT / MCP tools から直接取得。例外として unified-section-analyst は自身が生成する4セクション間の整合（summary が他セクションの結論と矛盾しない）を取ってよい
 - **事前コンテキスト**: orchestrator 提供の JSON を信頼し、不足時のみ追加 MCP 呼び出し
 - **出力**: 日本語テキスト + English key names。`{ANALYSIS_TEMP_DIR}/{section_type}.json` に出力（ANALYSIS_TEMP_DIR は orchestrator が timestamp 付きユニークパスとして提供）。**事前の mkdir は不要**（Write tool が親ディレクトリを自動作成する）
 - **JSON構造**: `{"activity_id": <int>, "activity_date": "<YYYY-MM-DD>", "section_type": "<type>", "analysis_data": {...}}`
