@@ -597,7 +597,7 @@ def train_form_baselines(
                 coef_alpha, coef_d, coef_a, coef_b,
                 period_start, period_end,
                 n_samples, rmse, speed_range_min, speed_range_max
-            ) VALUES (nextval('form_baseline_history_seq'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (nextval('form_baseline_history_seq'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (user_id, condition_group, metric, period_start, period_end)
             DO UPDATE SET
                 model_type = EXCLUDED.model_type,
