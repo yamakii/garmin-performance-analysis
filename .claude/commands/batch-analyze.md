@@ -1,6 +1,6 @@
 # Batch Analyze Activities
 
-`$ARGUMENTS` からアクティビティリストJSONを読み込み、セクション分析とレポート生成を連続実行してください。
+`$ARGUMENTS` からアクティビティリストJSONを読み込み、セクション分析を連続実行して DuckDB に登録してください（分析結果は Web 版で閲覧）。
 
 ## ワークフロー
 
@@ -13,9 +13,8 @@
       ```
    b. 返却されたJSONを `CONTEXT` として保持
    c. 2つのセクション分析エージェント（unified + split）を**並列実行**（Task tool、unified にCONTEXTをプロンプトに含める）
-   d. 全エージェント完了後、一括登録: `uv run python -m garmin_mcp.scripts.merge_section_analyses /tmp/analysis_{activity_id}`
-   e. レポート生成コマンドを実行
-   f. 進捗ログ: `[N/total] Activity {id} ({date}) complete`
+   d. 全エージェント完了後、一括登録（各アクティビティの最終ステップ）: `uv run python -m garmin_mcp.scripts.merge_section_analyses /tmp/analysis_{activity_id}`
+   e. 進捗ログ: `[N/total] Activity {id} ({date}) complete`
 4. **失敗時**: エラーログを出力してスキップ、次のアクティビティへ（JSONファイルは残す）
 
 ## セクション分析エージェント（並列実行）
@@ -35,14 +34,6 @@ prompt: "Activity ID {activity_id} ({date}) の全スプリットを詳細分析
 ```
 
 **注意**: unified-section-analyst が efficiency / phase / environment / summary の4 JSON を生成する（旧4エージェントを統合）。
-
-## レポート生成
-
-全エージェント完了後、以下のコマンドを実行：
-
-```bash
-uv run python -m garmin_mcp.reporting.report_generator_worker {activity_id} {date}
-```
 
 ## 注意事項
 

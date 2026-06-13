@@ -6,13 +6,13 @@ This file provides guidance to Claude Code when working with this repository.
 
 Garmin running performance analysis system with **DuckDB-first architecture** and **MCP-first tool usage**.
 
-**System Pipeline:** Raw Data (API) → DuckDB → MCP Tools → Analysis → Reports
+**System Pipeline:** Raw Data (API) → DuckDB → MCP Tools → Analysis
 
 **Key Features:**
 - DuckDB normalized storage (14 tables, 100+ activities)
 - 30+ token-optimized MCP tools (70-98.8% reduction)
 - 2 analysis agents (unified-section-analyst + split-section-analyst)
-- Japanese reports (code/docs in English)
+- Japanese analysis stored in DuckDB, viewed via the Web app (code/docs in English)
 
 **Two Use Cases:**
 1. **Activity Analysis** - Analyze running data using MCP tools (→ See "For Activity Analysis")
@@ -22,7 +22,7 @@ Garmin running performance analysis system with **DuckDB-first architecture** an
 
 ## For Activity Analysis
 
-**When:** Analyzing activities, generating reports, finding trends, comparing workouts.
+**When:** Analyzing activities, finding trends, comparing workouts.
 
 All MCP tools have docstrings describing their parameters. Use `mcp__garmin-db__*` tools directly.
 
@@ -106,7 +106,7 @@ FIFO キュー + Validation Agent 方式。詳細は `.claude/rules/dev/worktree
 
 ## Architecture
 
-**Pipeline:** API → Raw JSON → DuckDB → MCP Tools → Analysis → Markdown Reports
+**Pipeline:** API → Raw JSON → DuckDB → MCP Tools → Analysis (viewed via Web app)
 
 **Key Modules (after Phase 1/2 refactoring):**
 
@@ -118,7 +118,6 @@ FIFO キュー + Validation Agent 方式。詳細は `.claude/rules/dev/worktree
 | `DuckDBSaver` | Transaction-batched DuckDB insertion |
 | `GarminDBWriter` | DuckDB write operations (14 tables, 12 inserters) |
 | `GarminDBReader` | DuckDB read operations (query builders) |
-| `ReportGeneratorWorker` | Template-based report generation |
 | 8 MCP Handlers | MetadataHandler, SplitsHandler, PhysiologyHandler, PerformanceHandler, AnalysisHandler, TimeSeriesHandler, ExportHandler, TrainingPlanHandler |
 
 **DuckDB Schema (14 tables):**
@@ -142,7 +141,6 @@ garmin-performance-analysis/
 │       │   │   ├── readers/        # Query builders (SplitsQueryBuilder etc.)
 │       │   │   └── migrations/     # Schema migrations
 │       │   ├── handlers/           # 8 MCP tool handlers
-│       │   ├── reporting/          # Report generation + components
 │       │   ├── training_plan/      # Training plan generation
 │       │   ├── form_baseline/      # Form baseline training
 │       │   ├── scripts/
@@ -164,8 +162,7 @@ garmin-performance-analysis/
 │   ├── raw/                        # API responses (8 files/activity)
 │   └── database/                   # garmin_performance.duckdb
 ├── result/                         # GARMIN_RESULT_DIR (configurable via .env)
-│   ├── individual/                 # YEAR/MONTH/YYYY-MM-DD_id.md
-│   └── monthly/
+│   └── training_plans/             # Generated training plans
 ├── docs/
 └── CLAUDE.md
 ```
@@ -182,7 +179,7 @@ garmin-performance-analysis/
 
 > Consolidated from 5→2 agents (#250). The unified agent receives prefetched CONTEXT;
 > split needs no CONTEXT. Each section is still written as a separate `{section}.json`
-> consumed by `merge_section_analyses` / `report_generator_worker`.
+> consumed by `merge_section_analyses`.
 
 ### Critical Data Sources
 

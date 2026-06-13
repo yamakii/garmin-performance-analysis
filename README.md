@@ -9,7 +9,7 @@ A comprehensive running performance analysis system that integrates with Garmin 
 - **Garmin MCP Integration**: Direct connection to Garmin Connect for data retrieval
 - **DuckDB Backend**: Efficient storage and querying of performance data
 - **Multi-agent Analysis**: Specialized agents for different analysis types
-- **Japanese Reports**: All analysis reports generated in Japanese
+- **Japanese Analysis**: All analysis stored in DuckDB and viewed via the web app (`packages/garmin-web`)
 - **Environmental Integration**: Weather, terrain, and body condition analysis
 - **Performance Tracking**: Historical trend analysis and workout comparison
 
@@ -18,7 +18,7 @@ A comprehensive running performance analysis system that integrates with Garmin 
 ### Data Flow
 
 ```
-Garmin API → Raw Data → Performance Analysis → DuckDB → Analysis Reports
+Garmin API → Raw Data → Performance Analysis → DuckDB → Web App (packages/garmin-web)
 ```
 
 ### Core Components
@@ -27,7 +27,7 @@ Garmin API → Raw Data → Performance Analysis → DuckDB → Analysis Reports
 - **Database Layer** (`tools/database/`): DuckDB integration for efficient queries
 - **Analysis Agents** (configured in `.claude/`): Specialized analysis workflows
 - **MCP Servers** (`servers/`): Custom MCP servers for data access
-- **Reporting** (`tools/reporting/`): Template-based report generation
+- **Web App** (`packages/garmin-web`): FastAPI + React app that renders analysis stored in DuckDB
 
 ## Installation
 
@@ -106,7 +106,7 @@ pre-commit run --all-files
 - `data/raw/`: Immutable Garmin API responses
 - `data/performance/`: Pre-processed performance metrics
 - `data/database/`: DuckDB database files
-- `result/`: Final analysis reports
+- `result/training_plans/`: Generated training plans
 
 ### Configurable Data Paths
 

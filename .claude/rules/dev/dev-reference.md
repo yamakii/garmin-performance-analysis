@@ -82,7 +82,7 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 
 ### L3 検証基準
 
-- **構造 (FAIL=致命的)**: 全5セクションの `analysis_data` 非null、必須フィールド存在、Markdown生成
+- **構造 (FAIL=致命的)**: 全5セクションの `analysis_data` 非null、必須フィールド存在、merge → DuckDB `section_analyses` 登録成功
 - **内容 (WARNING)**: ペース/HR が fixture 範囲と整合、セクション間の矛盾なし
 - **Fixture**: Activity `20636804823` (2025-10-09, aerobic_base 5.66km, ~6:26/km, HR avg 144bpm)
 - **Content check ranges**:
