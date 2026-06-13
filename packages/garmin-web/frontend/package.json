@@ -10,6 +10,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@fontsource/barlow-condensed": "^5.2.8",
+    "@fontsource/zen-kaku-gothic-new": "^5.2.7",
     "@tailwindcss/vite": "^4.3.0",
     "echarts": "^6.1.0",
     "leaflet": "^1.9.4",

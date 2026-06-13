@@ -4,8 +4,9 @@ import type { TimeSeriesResponse } from "../types";
 import {
   AXIS_LABEL_COLOR,
   CHART_FONT_SIZE,
-  CHART_PALETTE,
   GRID_LINE_COLOR,
+  INK_COLOR,
+  METRIC_COLORS,
 } from "./chartTheme";
 
 const GRID_HEIGHT = 140;
@@ -102,7 +103,6 @@ export default function TimeSeriesChart({
 
     const option: echarts.EChartsOption = {
       animation: false,
-      color: CHART_PALETTE,
       textStyle: { fontSize: CHART_FONT_SIZE, color: AXIS_LABEL_COLOR },
       axisPointer: { link: [{ xAxisIndex: "all" }] },
       tooltip: { trigger: "axis" },
@@ -148,12 +148,17 @@ export default function TimeSeriesChart({
         const values = isPace
           ? data.metrics[name].map(speedToPace)
           : data.metrics[name];
+        // Each line carries its metric's semantic color (Issue #214),
+        // matching the active toggle pill in ActivityDetail.
+        const color = METRIC_COLORS[name] ?? INK_COLOR;
         return {
           name: metricLabels[name] ?? name,
           type: "line" as const,
           xAxisIndex: i,
           yAxisIndex: i,
           data: values,
+          itemStyle: { color },
+          lineStyle: { color },
           showSymbol: false,
           connectNulls: false,
           tooltip: isPace

@@ -81,7 +81,7 @@ export default function SummaryReport({
                 <StarRating text={data.star_rating} size="lg" />
               )}
               {typeof data.integrated_score === "number" && (
-                <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold tabular-nums text-indigo-700">
+                <span className="rounded-full bg-ink/5 px-3 py-1 text-xs font-semibold tabular-nums text-ink">
                   統合スコア {data.integrated_score}
                 </span>
               )}

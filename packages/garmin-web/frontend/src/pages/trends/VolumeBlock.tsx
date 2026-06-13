@@ -1,6 +1,10 @@
 import { useMemo } from "react";
 import EChart from "../../components/EChart";
-import { AXIS_STYLE, BASE_CHART_OPTION } from "../../components/chartTheme";
+import {
+  AXIS_STYLE,
+  BASE_CHART_OPTION,
+  INK_COLOR,
+} from "../../components/chartTheme";
 import type { Granularity, VolumeTrendPoint } from "../../api/trends";
 
 interface VolumeBlockProps {
@@ -13,8 +17,8 @@ function toggleClass(active: boolean): string {
   const base =
     "rounded-md px-3 py-1 text-sm font-medium transition-colors cursor-pointer";
   return active
-    ? `${base} bg-white text-indigo-700 shadow-sm`
-    : `${base} text-slate-600 hover:text-slate-900`;
+    ? `${base} bg-white text-ink shadow-sm`
+    : `${base} text-slate-600 hover:text-ink`;
 }
 
 export default function VolumeBlock({
@@ -37,7 +41,7 @@ export default function VolumeBlock({
           name: "距離 (km)",
           type: "bar" as const,
           data: data.map((p) => p.distance_km),
-          itemStyle: { borderRadius: [3, 3, 0, 0] },
+          itemStyle: { color: INK_COLOR, borderRadius: [3, 3, 0, 0] },
         },
       ],
     }),
@@ -50,7 +54,7 @@ export default function VolumeBlock({
       className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
     >
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-base font-semibold text-slate-800">走行量</h2>
+        <h2 className="font-display text-base font-semibold text-ink">走行量</h2>
         <div
           role="group"
           aria-label="集計単位"

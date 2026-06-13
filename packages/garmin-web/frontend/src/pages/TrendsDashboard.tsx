@@ -77,7 +77,7 @@ export default function TrendsDashboard() {
       <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
         <span
           aria-hidden="true"
-          className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-600"
+          className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-ink"
         />
         読み込み中...
       </div>
@@ -86,10 +86,10 @@ export default function TrendsDashboard() {
 
   return (
     <div>
-      <h1 className="mb-6 text-xl font-bold text-slate-900">
+      <h1 className="mb-6 font-display text-2xl font-bold tracking-tight text-ink">
         トレンドダッシュボード
       </h1>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="stagger-in grid gap-4 md:grid-cols-2">
         <VolumeBlock
           data={volume}
           granularity={granularity}

@@ -65,7 +65,8 @@ export default function EfficiencyReport({
                   <dt className="text-xs font-medium tracking-wide text-slate-500">
                     {label}
                   </dt>
-                  <dd className="mt-0.5 text-lg font-semibold tabular-nums text-slate-900">
+                  {/* GCT / VO / VR share the violet form-metric color (#214). */}
+                  <dd className="mt-0.5 font-numeric text-2xl leading-none font-semibold tabular-nums text-metric-form">
                     {value}
                     <span className="ml-0.5 text-xs font-normal text-slate-500">
                       {unit}

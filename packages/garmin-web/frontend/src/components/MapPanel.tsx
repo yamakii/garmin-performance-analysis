@@ -3,8 +3,12 @@ import { useMemo, useRef } from "react";
 import { CircleMarker, MapContainer, Polyline, TileLayer } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import type { TrackPoint } from "../types";
+import { INK_COLOR } from "./chartTheme";
 
 const HOVER_THROTTLE_MS = 50;
+
+/** Gold (#214 --color-gold): the hover marker echoes the star-rating accent. */
+const HOVER_MARKER_COLOR = "#f59e0b";
 
 /** Binary search: index of the point whose seq_no is nearest to target. */
 export function nearestPointIndex(points: TrackPoint[], target: number): number {
@@ -120,7 +124,7 @@ export default function MapPanel({
       />
       <Polyline
         positions={positions}
-        pathOptions={{ color: "#4f46e5", weight: 4 }}
+        pathOptions={{ color: INK_COLOR, weight: 4 }}
         eventHandlers={{
           mousemove: handleMouseMove,
           mouseout: () => onHoverSeqNo?.(null),
@@ -130,7 +134,11 @@ export default function MapPanel({
         <CircleMarker
           center={[hoverPoint.lat, hoverPoint.lon]}
           radius={7}
-          pathOptions={{ color: "#f59e0b", fillColor: "#f59e0b", fillOpacity: 0.9 }}
+          pathOptions={{
+            color: HOVER_MARKER_COLOR,
+            fillColor: HOVER_MARKER_COLOR,
+            fillOpacity: 0.9,
+          }}
         />
       )}
     </MapContainer>

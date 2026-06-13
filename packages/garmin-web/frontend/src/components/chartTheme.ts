@@ -1,15 +1,49 @@
 /**
- * Shared visual tokens for ECharts (Issue #210 light-clean theme).
+ * Shared visual tokens for ECharts (Issue #214 "Editorial Sport" theme).
  * Visual styling only — chart data shaping stays in each component.
+ *
+ * Color values mirror the CSS custom properties in index.css @theme;
+ * ECharts renders into canvas so it cannot read CSS variables directly.
  */
 
-/** indigo-600, sky-500, emerald-500, amber-500, violet-500 */
+/** Ink navy: editorial axis color, first in the default palette. */
+export const INK_COLOR = "#16213a";
+
+/**
+ * Semantic color per time-series metric key. Used consistently by
+ * TimeSeriesChart, the metric toggles and the trend blocks.
+ * Form metrics (GCT / VO / VR) share the violet family.
+ */
+export const METRIC_COLORS: Record<string, string> = {
+  heart_rate: "#e11d48",
+  speed: "#0d9488",
+  cadence: "#d97706",
+  power: "#7c3aed",
+  elevation: "#78716c",
+  ground_contact_time: "#8b5cf6",
+  vertical_oscillation: "#8b5cf6",
+  vertical_ratio: "#8b5cf6",
+};
+
+/** Violet shades for overlaid form lines (overall / GCT / VO / VR). */
+export const FORM_LINE_COLORS = ["#16213a", "#8b5cf6", "#a78bfa", "#c4b5fd"];
+
+/** Garmin HR zone colors z1-z5 (calm -> hot). */
+export const ZONE_COLORS = [
+  "#94a3b8",
+  "#38bdf8",
+  "#34d399",
+  "#fbbf24",
+  "#f87171",
+];
+
+/** ink, pace teal, HR rose, cadence amber, power violet */
 export const CHART_PALETTE = [
-  "#4f46e5",
-  "#0ea5e9",
-  "#10b981",
-  "#f59e0b",
-  "#8b5cf6",
+  INK_COLOR,
+  METRIC_COLORS.speed,
+  METRIC_COLORS.heart_rate,
+  METRIC_COLORS.cadence,
+  METRIC_COLORS.power,
 ];
 
 /** slate-200 */

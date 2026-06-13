@@ -6,6 +6,8 @@ import {
   fetchTimeSeries,
   fetchTrack,
 } from "../api/client";
+import { METRIC_COLORS } from "../components/chartTheme";
+import HeroHeader from "../components/HeroHeader";
 import MapPanel from "../components/MapPanel";
 import EfficiencyReport from "../components/report/EfficiencyReport";
 import EnvironmentReport from "../components/report/EnvironmentReport";
@@ -13,7 +15,6 @@ import FallbackFields from "../components/report/FallbackFields";
 import PhaseTimeline from "../components/report/PhaseTimeline";
 import ReportCard, { isRecord } from "../components/report/ReportCard";
 import SplitNarrative from "../components/report/SplitNarrative";
-import StarRating from "../components/report/StarRating";
 import SummaryReport from "../components/report/SummaryReport";
 import TimeSeriesChart from "../components/TimeSeriesChart";
 import type {
@@ -49,17 +50,6 @@ const KNOWN_SECTION_TYPES = [
   "efficiency",
   "environment",
 ];
-
-export function formatDuration(totalSeconds: number | null): string {
-  if (totalSeconds == null || totalSeconds < 0) {
-    return "-";
-  }
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = Math.floor(totalSeconds % 60);
-  const mmss = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-  return hours > 0 ? `${hours}:${mmss}` : mmss;
-}
 
 /** Binary search: index of the timestamp nearest to target (ascending). */
 export function nearestTimestampIndex(
@@ -193,7 +183,7 @@ export default function ActivityDetail() {
       <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
         <span
           aria-hidden="true"
-          className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-600"
+          className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-ink"
         />
         読み込み中...
       </div>
@@ -217,7 +207,7 @@ export default function ActivityDetail() {
     );
   }
 
-  const { activity, splits } = detail;
+  const { splits } = detail;
 
   // Bidirectional hover sync: chart data index <-> track seq_no, matched
   // through the nearest timestamp / seq_no value.
@@ -240,31 +230,6 @@ export default function ActivityDetail() {
     setHover(seqNo == null ? null : { source: "map", value: seqNo });
   };
 
-  // Report header KPIs, extended with physiology metrics when available.
-  const kpis: { label: string; value: string }[] = [
-    { label: "距離", value: formatDistance(activity.total_distance_km) },
-    { label: "時間", value: formatDuration(activity.total_time_seconds) },
-    { label: "平均ペース", value: formatPace(activity.avg_pace_seconds_per_km) },
-    {
-      label: "平均心拍",
-      value: `${activity.avg_heart_rate ?? "-"} bpm`,
-    },
-  ];
-  if (detail.vo2_max?.value != null) {
-    kpis.push({ label: "VO2 Max", value: detail.vo2_max.value.toFixed(1) });
-  }
-  const lt = detail.lactate_threshold;
-  if (lt && (lt.heart_rate != null || lt.speed_mps != null)) {
-    const parts: string[] = [];
-    if (lt.heart_rate != null) {
-      parts.push(`${lt.heart_rate} bpm`);
-    }
-    if (lt.speed_mps != null && lt.speed_mps > 0) {
-      parts.push(`${formatPace(1000 / lt.speed_mps)}/km`);
-    }
-    kpis.push({ label: "乳酸閾値", value: parts.join(" / ") });
-  }
-
   const starRating = summaryStarRating(sections);
   const unknownSectionTypes = sections
     ? Object.keys(sections).filter(
@@ -273,65 +238,55 @@ export default function ActivityDetail() {
     : [];
 
   return (
-    <div className="space-y-6">
-      {/* Report header: title, date, overall star rating, KPI grid */}
+    <div className="stagger-in space-y-6">
+      {/* Report hero: back link, display headline, gold stars, KPI strip */}
       <div>
         <Link
           to="/"
-          className="text-sm font-medium text-indigo-600 hover:text-indigo-800"
+          className="text-sm font-medium text-ink/70 hover:text-ink"
         >
           ← アクティビティ一覧
         </Link>
-        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-          <h1 className="text-xl font-bold text-slate-900">
-            {activity.activity_name ?? "アクティビティ"}{" "}
-            <span className="font-normal text-slate-500">
-              ({activity.activity_date})
-            </span>
-          </h1>
-          {starRating && <StarRating text={starRating} />}
+        <div className="mt-2">
+          <HeroHeader detail={detail} starRating={starRating} />
         </div>
       </div>
-
-      <dl className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        {kpis.map(({ label, value }) => (
-          <div
-            key={label}
-            className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-          >
-            <dt className="text-xs font-medium tracking-wide text-slate-500 uppercase">
-              {label}
-            </dt>
-            <dd className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
-              {value}
-            </dd>
-          </div>
-        ))}
-      </dl>
 
       {/* Overall assessment report */}
       <SummaryReport section={sections?.summary} />
 
       {/* Time series chart with metric toggles */}
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="mb-3 text-base font-semibold text-slate-800">
+        <h2 className="mb-3 font-display text-base font-semibold text-ink">
           タイムシリーズ
         </h2>
         <div className="mb-4 flex flex-wrap gap-2">
           {AVAILABLE_METRICS.map(({ key, label }) => {
             const checked = selectedMetrics.includes(key);
+            // Active toggles carry the metric's semantic color (Issue #214),
+            // matching its line color in the chart below.
+            const color = METRIC_COLORS[key] ?? "#16213a";
             return (
               <label
                 key={key}
                 className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors ${
                   checked
-                    ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+                    ? "font-medium"
                     : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                 }`}
+                style={
+                  checked
+                    ? {
+                        color,
+                        borderColor: `${color}4d`,
+                        backgroundColor: `${color}14`,
+                      }
+                    : undefined
+                }
               >
                 <input
                   type="checkbox"
-                  className="accent-indigo-600"
+                  style={{ accentColor: color }}
                   checked={checked}
                   onChange={() => toggleMetric(key)}
                 />
@@ -357,7 +312,7 @@ export default function ActivityDetail() {
       {/* GPS track map (placeholder when the activity has no GPS data) */}
       {track !== null && (
         <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
-          <h2 className="px-5 pt-4 pb-2 text-base font-semibold text-slate-800">
+          <h2 className="px-5 pt-4 pb-2 font-display text-base font-semibold text-ink">
             コース
           </h2>
           <div className="overflow-hidden rounded-b-xl">
@@ -373,7 +328,7 @@ export default function ActivityDetail() {
       {/* Splits: table + per-split narrative from the split analyst */}
       {(splits.length > 0 || sections?.split) && (
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-3 text-base font-semibold text-slate-800">
+          <h2 className="mb-3 font-display text-base font-semibold text-ink">
             スプリット
           </h2>
           {splits.length > 0 && (
@@ -390,7 +345,7 @@ export default function ActivityDetail() {
                   <th className="px-2 py-2 text-right font-medium">パワー</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-100 font-numeric text-[15px]">
                 {splits.map((split) => (
                   <tr key={split.split_index} className="hover:bg-slate-50">
                     <td className="px-2 py-2 text-left tabular-nums text-slate-500">

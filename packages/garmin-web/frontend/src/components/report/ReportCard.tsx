@@ -55,7 +55,9 @@ export default function ReportCard({
   }
   return (
     <section className={REPORT_CARD_CLASS}>
-      <h2 className="mb-3 text-base font-semibold text-slate-800">{title}</h2>
+      <h2 className="mb-3 font-display text-base font-semibold text-ink">
+        {title}
+      </h2>
       {body}
     </section>
   );

@@ -32,7 +32,7 @@ export default function StarRating({
 }) {
   const parsed = parseStarRating(text);
   if (!parsed) {
-    return <span className="text-sm text-amber-500">{text}</span>;
+    return <span className="text-sm text-gold">{text}</span>;
   }
   const filled = Math.min(
     STAR_COUNT,
@@ -45,10 +45,10 @@ export default function StarRating({
       aria-label={`評価 ${parsed.score.toFixed(1)} / ${parsed.max.toFixed(1)}`}
     >
       <span aria-hidden="true" className={`${starClass} leading-none`}>
-        <span className="text-amber-400">{"★".repeat(filled)}</span>
+        <span className="text-gold">{"★".repeat(filled)}</span>
         <span className="text-slate-300">{"★".repeat(STAR_COUNT - filled)}</span>
       </span>
-      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold tabular-nums text-amber-700">
+      <span className="rounded-full bg-gold/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-gold">
         {parsed.score.toFixed(1)} / {parsed.max.toFixed(1)}
       </span>
     </span>

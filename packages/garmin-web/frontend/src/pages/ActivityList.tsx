@@ -23,6 +23,15 @@ export function formatDistance(km: number | null): string {
   return `${km.toFixed(2)} km`;
 }
 
+/** "N本 ・ 合計 XX.X km" summary for a month heading (Issue #214). */
+export function monthSummary(activities: ActivitySummary[]): string {
+  const totalKm = activities.reduce(
+    (sum, activity) => sum + (activity.total_distance_km ?? 0),
+    0,
+  );
+  return `${activities.length}本 ・ 合計 ${totalKm.toFixed(1)} km`;
+}
+
 function groupByMonth(
   activities: ActivitySummary[],
 ): Map<string, ActivitySummary[]> {
@@ -70,7 +79,7 @@ export default function ActivityList() {
       <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
         <span
           aria-hidden="true"
-          className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-600"
+          className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-ink"
         />
         読み込み中...
       </div>
@@ -98,26 +107,29 @@ export default function ActivityList() {
 
   return (
     <div>
-      <h1 className="mb-6 text-xl font-bold text-slate-900">
+      <h1 className="mb-6 font-display text-2xl font-bold tracking-tight text-ink">
         アクティビティ一覧
       </h1>
       {[...groups.entries()].map(([month, monthActivities]) => (
         <section key={month} className="mb-8">
-          <h2 className="mb-2 text-sm font-semibold text-slate-500">{month}</h2>
-          <ul className="space-y-2">
+          <h2 className="mb-2 flex items-baseline gap-3 text-sm font-semibold text-slate-500">
+            <span className="font-numeric text-base text-ink">{month}</span>
+            <span className="font-normal">{monthSummary(monthActivities)}</span>
+          </h2>
+          <ul className="stagger-in space-y-2">
             {monthActivities.map((activity) => (
               <li
                 key={activity.activity_id}
                 onClick={() => navigate(`/activities/${activity.activity_id}`)}
-                className="flex cursor-pointer items-center gap-4 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition-shadow hover:shadow-md"
+                className="flex cursor-pointer items-center gap-4 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition-[box-shadow,border-color] hover:border-signal/50 hover:shadow-md"
               >
-                <span className="shrink-0 rounded-md bg-indigo-50 px-2 py-1 text-xs font-semibold tabular-nums text-indigo-700">
+                <span className="shrink-0 rounded-md bg-ink/5 px-2 py-1 font-numeric text-sm font-semibold tabular-nums text-ink">
                   {activity.activity_date}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">
                   {activity.activity_name ?? "-"}
                 </span>
-                <span className="flex shrink-0 items-baseline gap-4 text-right text-sm tabular-nums text-slate-600">
+                <span className="flex shrink-0 items-baseline gap-4 text-right font-numeric text-base tabular-nums text-slate-700">
                   <span>{formatDistance(activity.total_distance_km)}</span>
                   <span>{formatPace(activity.avg_pace_seconds_per_km)}</span>
                   <span>

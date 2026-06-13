@@ -1,6 +1,10 @@
 import { useMemo } from "react";
 import EChart from "../../components/EChart";
-import { AXIS_STYLE, BASE_CHART_OPTION } from "../../components/chartTheme";
+import {
+  AXIS_STYLE,
+  BASE_CHART_OPTION,
+  ZONE_COLORS,
+} from "../../components/chartTheme";
 import type { EfficiencyTrendPoint } from "../../api/trends";
 
 interface EfficiencyBlockProps {
@@ -31,6 +35,7 @@ export default function EfficiencyBlock({ data }: EfficiencyBlockProps) {
         name: `Zone ${i + 1}`,
         type: "bar" as const,
         stack: "zones",
+        itemStyle: { color: ZONE_COLORS[i] },
         data: data.map((p) => p[key]),
       })),
     }),
@@ -42,7 +47,7 @@ export default function EfficiencyBlock({ data }: EfficiencyBlockProps) {
       aria-label="効率"
       className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
     >
-      <h2 className="mb-3 text-base font-semibold text-slate-800">
+      <h2 className="mb-3 font-display text-base font-semibold text-ink">
         効率推移 (HRゾーン分布)
       </h2>
       {data.length === 0 ? (

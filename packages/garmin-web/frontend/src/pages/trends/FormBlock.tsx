@@ -1,6 +1,10 @@
 import { useMemo } from "react";
 import EChart from "../../components/EChart";
-import { AXIS_STYLE, BASE_CHART_OPTION } from "../../components/chartTheme";
+import {
+  AXIS_STYLE,
+  BASE_CHART_OPTION,
+  FORM_LINE_COLORS,
+} from "../../components/chartTheme";
 import type { FormTrendPoint } from "../../api/trends";
 
 interface FormBlockProps {
@@ -11,6 +15,8 @@ export default function FormBlock({ data }: FormBlockProps) {
   const option = useMemo(
     () => ({
       ...BASE_CHART_OPTION,
+      // Overall = ink, form deltas = violet family (Issue #214).
+      color: FORM_LINE_COLORS,
       tooltip: { trigger: "axis" as const },
       legend: { data: ["総合スコア", "GCT Δ%", "VO Δcm", "VR Δ%"] },
       xAxis: {
@@ -50,7 +56,7 @@ export default function FormBlock({ data }: FormBlockProps) {
       aria-label="フォーム"
       className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
     >
-      <h2 className="mb-3 text-base font-semibold text-slate-800">
+      <h2 className="mb-3 font-display text-base font-semibold text-ink">
         フォームスコア推移
       </h2>
       {data.length === 0 ? (

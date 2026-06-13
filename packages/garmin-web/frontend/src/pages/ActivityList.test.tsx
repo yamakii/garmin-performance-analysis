@@ -54,10 +54,13 @@ describe("ActivityList", () => {
     const rows = screen.getAllByRole("listitem");
     expect(rows).toHaveLength(2);
 
-    // Month grouping heading
+    // Month grouping heading now carries the month plus its run-count /
+    // total-distance summary (Issue #214), so match on the month prefix.
     expect(
-      screen.getByRole("heading", { level: 2, name: "2025-10" }),
+      screen.getByRole("heading", { level: 2, name: /2025-10/ }),
     ).toBeInTheDocument();
+    // Month summary: 2 runs totalling 5.66 + 8.01 = 13.7 km
+    expect(screen.getByText(/2本 ・ 合計 13\.7 km/)).toBeInTheDocument();
 
     // Distance and pace formatting
     expect(screen.getByText("5.66 km")).toBeInTheDocument();
