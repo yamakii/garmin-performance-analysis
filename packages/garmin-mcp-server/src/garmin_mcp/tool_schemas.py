@@ -552,7 +552,7 @@ _TIME_SERIES_TOOLS: list[dict] = [
                 },
                 "z_threshold": {
                     "type": "number",
-                    "description": "Z-score threshold for anomaly detection (default: 2.0)",
+                    "description": "Z-score threshold for anomaly detection (default: 3.0)",
                 },
             },
             "required": ["activity_id"],

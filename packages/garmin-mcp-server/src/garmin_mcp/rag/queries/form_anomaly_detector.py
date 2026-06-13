@@ -18,6 +18,32 @@ from typing import Any
 
 from garmin_mcp.rag.loaders.activity_details_loader import ActivityDetailsLoader
 
+# Default z-score threshold for anomaly detection.
+# Raised from 2.0 to 3.0 to avoid flagging small, materially-insignificant
+# fluctuations (especially VO, whose 60s-window std is only ~0.1-0.2 cm).
+DEFAULT_Z_THRESHOLD = 3.0
+
+# Minimum absolute deviation from the rolling mean for an anomaly to be
+# considered material (combined with the z-score threshold via AND).
+# Values are aligned with the form_degradation_triggers contract:
+#   VO  >= 0.5 cm, GCT >= 10 ms, VR >= 0.3 %.
+# Metrics not listed here (cadence, power, pace, ...) have no magnitude gate.
+MAGNITUDE_GATES: dict[str, float] = {
+    "directVerticalOscillation": 0.5,  # cm
+    "directGroundContactTime": 10.0,  # ms
+    "directVerticalRatio": 0.3,  # %
+}
+
+# Sustained degradation thresholds: a form metric is considered to be in a
+# persistent fatigue-driven decline when its second-half rolling mean exceeds
+# its first-half rolling mean by at least this amount (same units as the
+# magnitude gates / form_degradation_triggers).
+FORM_DEGRADATION_TRIGGERS: dict[str, float] = {
+    "directVerticalOscillation": 0.5,  # cm
+    "directGroundContactTime": 10.0,  # ms
+    "directVerticalRatio": 0.3,  # %
+}
+
 
 class FormAnomalyDetector:
     """Detect form metric anomalies and identify probable causes.
@@ -82,27 +108,73 @@ class FormAnomalyDetector:
 
         return rolling_means, rolling_stds
 
+    def _has_sustained_degradation(
+        self,
+        metric_name: str,
+        metric_series: list[float | None],
+    ) -> bool:
+        """Determine whether a form metric shows a sustained degradation trend.
+
+        Compares the mean of the second half of the activity to the first half.
+        Returns True only when the increase (worsening) exceeds the metric's
+        ``form_degradation_trigger``. Metrics without a configured trigger and
+        series too short to split return False.
+
+        Args:
+            metric_name: Name of the form metric.
+            metric_series: Time series of the form metric values.
+
+        Returns:
+            True if a persistent first-half vs second-half degradation exceeding
+            the form_degradation_trigger exists, else False.
+        """
+        trigger = FORM_DEGRADATION_TRIGGERS.get(metric_name)
+        if trigger is None:
+            return False
+
+        values = [v for v in metric_series if v is not None]
+        if len(values) < 4:
+            return False
+
+        midpoint = len(values) // 2
+        first_half = values[:midpoint]
+        second_half = values[midpoint:]
+        if not first_half or not second_half:
+            return False
+
+        return (statistics.mean(second_half) - statistics.mean(first_half)) >= trigger
+
     def _detect_anomalies_by_zscore(
         self,
         metric_name: str,
         time_series: list[float | None],
         rolling_means: list[float],
         rolling_stds: list[float],
-        z_threshold: float = 2.0,
+        z_threshold: float = DEFAULT_Z_THRESHOLD,
     ) -> list[dict[str, Any]]:
         """Detect anomalies using z-score method with rolling statistics.
+
+        An anomaly is flagged only when **both** conditions hold:
+        - the z-score exceeds ``z_threshold`` AND
+        - the absolute deviation from the rolling mean is at least the metric's
+          magnitude gate (``MAGNITUDE_GATES``). Metrics without a configured
+          gate use the z-score condition alone.
+
+        This combined gate prevents small, materially-insignificant fluctuations
+        (e.g. a few mm of vertical oscillation) from being reported as anomalies.
 
         Args:
             metric_name: Name of the metric being analyzed.
             time_series: List of metric values.
             rolling_means: List of rolling mean values.
             rolling_stds: List of rolling standard deviation values.
-            z_threshold: Z-score threshold for anomaly detection (default: 2.0).
+            z_threshold: Z-score threshold for anomaly detection (default: 3.0).
 
         Returns:
             List of anomaly dictionaries with timestamp, value, z-score.
         """
         anomalies = []
+        magnitude_gate = MAGNITUDE_GATES.get(metric_name)
 
         for idx, value in enumerate(time_series):
             if value is None:
@@ -114,18 +186,25 @@ class FormAnomalyDetector:
             if std_val == 0:
                 continue
 
-            z_score = abs((value - mean_val) / std_val)
+            deviation = abs(value - mean_val)
+            z_score = deviation / std_val
 
-            if z_score > z_threshold:
-                anomalies.append(
-                    {
-                        "timestamp": idx,
-                        "metric": metric_name,
-                        "value": value,
-                        "baseline": mean_val,
-                        "z_score": z_score,
-                    }
-                )
+            if z_score <= z_threshold:
+                continue
+
+            # Absolute-change gate: skip sub-threshold magnitude changes.
+            if magnitude_gate is not None and deviation < magnitude_gate:
+                continue
+
+            anomalies.append(
+                {
+                    "timestamp": idx,
+                    "metric": metric_name,
+                    "value": value,
+                    "baseline": mean_val,
+                    "z_score": z_score,
+                }
+            )
 
         return anomalies
 
@@ -135,14 +214,25 @@ class FormAnomalyDetector:
         elevation_series: list[float | None],
         pace_series: list[float | None],
         hr_series: list[float | None],
+        sustained_degradation: bool = False,
     ) -> tuple[str, dict[str, Any]]:
         """Analyze probable cause of anomaly using correlation analysis.
+
+        ``fatigue`` is assigned only when the metric exhibits a *sustained*
+        degradation trend across the activity (``sustained_degradation=True``).
+        Isolated/sporadic point anomalies — even when accumulated HR drift is
+        high — are classified as ``pace_change`` (low correlation) instead, to
+        avoid labelling natural late-activity HR drift as fatigue-driven form
+        breakdown.
 
         Args:
             anomaly: Anomaly dictionary with timestamp and metric info.
             elevation_series: Elevation time series.
             pace_series: Pace time series (min/km).
             hr_series: Heart rate time series.
+            sustained_degradation: Whether the metric for this anomaly shows a
+                persistent first-half vs second-half degradation exceeding its
+                form_degradation_trigger. Required for a ``fatigue`` label.
 
         Returns:
             Tuple of (probable_cause, cause_details).
@@ -198,13 +288,17 @@ class FormAnomalyDetector:
         elif pace_change > 0.25:  # ~15 sec/km change
             cause_details["pace_correlation"] = min(0.95, 0.5 + (pace_change / 0.5))
             return "pace_change", cause_details
-        elif abs(hr_drift_percent) > 10.0:
+        elif abs(hr_drift_percent) > 10.0 and sustained_degradation:
+            # Fatigue requires BOTH significant HR drift AND a persistent
+            # degradation trend in the form metric. High HR drift alone (which
+            # naturally occurs late in a run) is not sufficient.
             cause_details["hr_correlation"] = min(
                 0.95, 0.5 + (abs(hr_drift_percent) / 30.0)
             )
             return "fatigue", cause_details
         else:
-            # Default to pace change with low correlation
+            # Default to pace change with low correlation (covers isolated /
+            # sporadic point anomalies that lack a sustained degradation trend).
             cause_details["pace_correlation"] = 0.3
             return "pace_change", cause_details
 
@@ -403,7 +497,7 @@ class FormAnomalyDetector:
         elevation_series: list[float | None],
         pace_series: list[float | None],
         hr_series: list[float | None],
-        z_threshold: float = 2.0,
+        z_threshold: float = DEFAULT_Z_THRESHOLD,
         context_window: int = 30,
     ) -> list[dict[str, Any]]:
         """Detect anomalies for all form metrics.
@@ -431,6 +525,12 @@ class FormAnomalyDetector:
                 metric_series, window_size=60
             )
 
+            # Pre-compute whether this metric shows a sustained degradation
+            # trend (required for a fatigue classification).
+            sustained_degradation = self._has_sustained_degradation(
+                metric_name, metric_series
+            )
+
             # Detect anomalies
             raw_anomalies = self._detect_anomalies_by_zscore(
                 metric_name,
@@ -447,6 +547,7 @@ class FormAnomalyDetector:
                     elevation_series,
                     pace_series,
                     hr_series,
+                    sustained_degradation,
                 )
 
                 context = self._extract_context(
@@ -600,7 +701,7 @@ class FormAnomalyDetector:
         self,
         activity_id: int,
         metrics: list[str] | None = None,
-        z_threshold: float = 2.0,
+        z_threshold: float = DEFAULT_Z_THRESHOLD,
     ) -> dict[str, Any]:
         """Detect form metric anomalies and return summary only (lightweight).
 
@@ -614,7 +715,7 @@ class FormAnomalyDetector:
                     (default: ["directGroundContactTime",
                                "directVerticalOscillation",
                                "directVerticalRatio"]).
-            z_threshold: Z-score threshold for anomaly detection (default: 2.0).
+            z_threshold: Z-score threshold for anomaly detection (default: 3.0).
 
         Returns:
             Dictionary with anomaly summary:
@@ -723,7 +824,7 @@ class FormAnomalyDetector:
         self,
         activity_id: int,
         metrics: list[str] | None = None,
-        z_threshold: float = 2.0,
+        z_threshold: float = DEFAULT_Z_THRESHOLD,
         context_window: int = 30,
         filters: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
@@ -738,7 +839,7 @@ class FormAnomalyDetector:
                     (default: ["directGroundContactTime",
                                "directVerticalOscillation",
                                "directVerticalRatio"]).
-            z_threshold: Z-score threshold for anomaly detection (default: 2.0).
+            z_threshold: Z-score threshold for anomaly detection (default: 3.0).
             context_window: Context window size in seconds (default: 30).
             filters: Optional filters dict with keys:
                 - "anomaly_ids": [int, ...] - Specific anomaly IDs
