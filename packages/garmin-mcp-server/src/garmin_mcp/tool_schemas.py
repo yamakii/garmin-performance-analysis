@@ -466,7 +466,7 @@ _PERFORMANCE_TOOLS: list[dict] = [
     },
     {
         "name": "prefetch_activity_context",
-        "description": "Pre-fetch shared activity context for analysis agents. Returns training_type, weather, terrain, HR efficiency (zone_percentages), form evaluation scores, phase structure, and planned workout in a single call.",
+        "description": "Pre-fetch shared activity context for analysis agents. Returns training_type, weather, terrain, HR efficiency (zone_percentages), form evaluation scores, phase structure, and planned workout in a single call. Auto-generates the form baseline for the activity's month (and prior month) if missing.",
         "inputSchema": {
             "type": "object",
             "properties": {
