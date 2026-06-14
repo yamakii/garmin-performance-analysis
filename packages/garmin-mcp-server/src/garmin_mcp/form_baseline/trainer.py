@@ -1,6 +1,7 @@
 """Statistical model training for form baseline system."""
 
 from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 from typing import Any, Literal
 
 import numpy as np
@@ -385,8 +386,6 @@ def train_form_baselines(
     Raises:
         None - Returns None on errors instead of raising
     """
-    from datetime import datetime
-
     from dateutil.relativedelta import relativedelta
 
     from garmin_mcp.form_baseline import utils
@@ -684,3 +683,103 @@ def train_form_baselines(
         print(f"Error in train_form_baselines: {e}")
         traceback.print_exc()
         return None
+
+
+def _month_end(d: date) -> date:
+    """Return the last day of the month containing ``d`` (handles December)."""
+    import calendar
+
+    last_day = calendar.monthrange(d.year, d.month)[1]
+    return date(d.year, d.month, last_day)
+
+
+def _target_month_ends(activity_date: str) -> list[str]:
+    """Return ``[current_month_end, prior_month_end]`` as "YYYY-MM-DD" strings.
+
+    The current-month end matches the period_end used by the monthly baseline
+    script (so periods align). The prior-month end is the day before the
+    current month's first day.
+    """
+    d = datetime.strptime(activity_date, "%Y-%m-%d").date()
+    current_end = _month_end(d)
+    prior_end = date(d.year, d.month, 1) - timedelta(days=1)
+    return [current_end.strftime("%Y-%m-%d"), prior_end.strftime("%Y-%m-%d")]
+
+
+def ensure_form_baselines_for_date(
+    activity_date: str,
+    db_path: str | None = None,
+    user_id: str = "default",
+    condition_group: str = "flat_road",
+) -> dict[str, list[str]]:
+    """Generate the form baseline for an activity's month + prior month if missing.
+
+    Self-healing helper invoked from prefetch so that form-trend comparison is
+    always available. Never raises: any error is swallowed and reflected in the
+    returned buckets. Each period is processed sequentially (single-writer).
+
+    Args:
+        activity_date: Activity date ("YYYY-MM-DD"). Determines target months.
+        db_path: Database path. If None, uses GARMIN_DATA_DIR resolution.
+        user_id: User identifier.
+        condition_group: Condition group (e.g., 'flat_road').
+
+    Returns:
+        Dict with three buckets keyed by period_end ("YYYY-MM-DD"):
+        ``{"generated": [...], "skipped": [...], "insufficient": [...]}``.
+    """
+    from garmin_mcp.database.connection import get_connection
+
+    result: dict[str, list[str]] = {
+        "generated": [],
+        "skipped": [],
+        "insufficient": [],
+    }
+
+    try:
+        period_ends = _target_month_ends(activity_date)
+    except Exception:
+        return result
+
+    for period_end in period_ends:
+        # Existence check (read connection closed before any write).
+        try:
+            with get_connection(db_path) as conn:
+                count_row = conn.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM form_baseline_history
+                    WHERE period_end = ?
+                      AND metric = 'gct'
+                      AND user_id = ?
+                      AND condition_group = ?
+                    """,
+                    [period_end, user_id, condition_group],
+                ).fetchone()
+            exists = count_row is not None and count_row[0] > 0
+        except Exception:
+            # If the existence check fails, skip this period defensively.
+            continue
+
+        if exists:
+            result["skipped"].append(period_end)
+            continue
+
+        # Missing -> train (train_form_baselines opens its own write connection).
+        try:
+            trained = train_form_baselines(
+                user_id=user_id,
+                condition_group=condition_group,
+                end_date=period_end,
+                window_months=2,
+                db_path=db_path,
+            )
+        except Exception:
+            trained = None
+
+        if trained is None:
+            result["insufficient"].append(period_end)
+        else:
+            result["generated"].append(period_end)
+
+    return result

@@ -393,6 +393,25 @@ def prefetch_activity_context(activity_id: int) -> dict:
     # Heart rate zone boundaries + time distribution
     hr_zones_detail = physiology_reader.get_heart_rate_zones_detail(activity_id)
 
+    # Self-healing (Issue #266): ensure the form baseline exists for the
+    # activity's month (+ prior month) so the trend comparison below is
+    # available even if the monthly baseline script was not run. Best-effort:
+    # never blocks prefetch on failure.
+    from garmin_mcp.form_baseline.trainer import ensure_form_baselines_for_date
+
+    form_baseline_autogen: dict
+    try:
+        form_baseline_autogen = ensure_form_baselines_for_date(
+            activity_date, db_path_str
+        )
+    except Exception as e:
+        form_baseline_autogen = {
+            "generated": [],
+            "skipped": [],
+            "insufficient": [],
+            "error": str(e),
+        }
+
     # Form baseline trend (current vs 1-month-prior coefficients). Uses the
     # reader extracted from physiology_handler so logic is shared, not duplicated.
     form_baseline_trend = physiology_reader.get_form_baseline_trend(
@@ -449,6 +468,7 @@ def prefetch_activity_context(activity_id: int) -> dict:
         "form_evaluation": form_evaluation,
         "hr_zones_detail": hr_zones_detail,
         "form_baseline_trend": form_baseline_trend,
+        "form_baseline_autogen": form_baseline_autogen,
         "similar_workouts": similar_workouts,
         "vo2_max": vo2_max,
         "lactate_threshold": lactate_threshold,

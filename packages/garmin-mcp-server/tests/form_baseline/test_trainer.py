@@ -1,6 +1,6 @@
 """Tests for form_baseline.trainer module."""
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import duckdb
 import numpy as np
@@ -10,6 +10,9 @@ import pytest
 from garmin_mcp.form_baseline.trainer import (
     GCTPowerModel,
     LinearModel,
+    _month_end,
+    _target_month_ends,
+    ensure_form_baselines_for_date,
     fit_gct_power,
     fit_linear,
     train_form_baselines,
@@ -397,3 +400,222 @@ def test_train_form_baselines_inserts_cadence_row(tmp_path):
         assert vo_vr_row[0] == 2, "VO and VR baselines should also be inserted"
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Issue #266: self-healing baseline generation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_target_month_ends_current_and_prev():
+    """_target_month_ends returns [current_month_end, prior_month_end]."""
+    assert _target_month_ends("2026-06-14") == ["2026-06-30", "2026-05-31"]
+
+
+@pytest.mark.unit
+def test_month_end_december():
+    """_month_end handles the year boundary (December)."""
+    assert _month_end(date(2026, 12, 5)) == date(2026, 12, 31)
+
+
+def _create_baseline_schema(conn: duckdb.DuckDBPyConnection) -> None:
+    """Create the activities/splits/form_baseline_history schema for ensure tests."""
+    conn.execute("""
+        CREATE TABLE activities (
+            activity_id INTEGER PRIMARY KEY,
+            activity_date DATE,
+            base_weight_kg FLOAT
+        )
+        """)
+    conn.execute("""
+        CREATE TABLE splits (
+            split_id INTEGER PRIMARY KEY,
+            activity_id INTEGER,
+            pace_seconds_per_km FLOAT,
+            ground_contact_time FLOAT,
+            vertical_oscillation FLOAT,
+            vertical_ratio FLOAT,
+            stride_length FLOAT,
+            cadence FLOAT,
+            average_speed FLOAT,
+            power FLOAT
+        )
+        """)
+    conn.execute("CREATE SEQUENCE seq_history_id START 1")
+    conn.execute("CREATE SEQUENCE form_baseline_history_seq START 1")
+    conn.execute("""
+        CREATE TABLE form_baseline_history (
+            history_id INTEGER PRIMARY KEY DEFAULT nextval('seq_history_id'),
+            user_id VARCHAR DEFAULT 'default',
+            condition_group VARCHAR DEFAULT 'flat_road',
+            metric VARCHAR,
+            model_type VARCHAR,
+            coef_alpha FLOAT,
+            coef_d FLOAT,
+            coef_a FLOAT,
+            coef_b FLOAT,
+            period_start DATE,
+            period_end DATE,
+            trained_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            n_samples INTEGER,
+            rmse FLOAT,
+            speed_range_min FLOAT,
+            speed_range_max FLOAT,
+            power_a FLOAT,
+            power_b FLOAT,
+            power_rmse FLOAT,
+            UNIQUE (user_id, condition_group, metric, period_start, period_end)
+        )
+        """)
+
+
+def _make_splits(activity_id: int) -> list[tuple]:
+    """Return 5 well-conditioned splits (within outlier bounds) for an activity."""
+    rows = []
+    for j in range(5):
+        split_id = activity_id * 10 + j
+        # Pace 330 -> 270 sec/km => speed ~3.03 -> 3.70 m/s
+        pace = 330.0 - (activity_id * 5 + j * 12) % 60
+        speed = 1000.0 / pace
+        gct = 300.0 - 20.0 * speed  # 150-350
+        vo = 12.0 - 1.0 * speed  # 5-20
+        vr = 11.0 - 1.0 * speed  # 4-15
+        cadence = 160.0 + 5.0 * speed  # 140-210
+        stride_length = 1.0 + 0.1 * speed
+        power = 180.0 + 30.0 * speed
+        rows.append(
+            (
+                split_id,
+                activity_id,
+                pace,
+                gct,
+                vo,
+                vr,
+                stride_length,
+                cadence,
+                speed,
+                power,
+            )
+        )
+    return rows
+
+
+def _seed_two_month_window(db_path: str, activity_date: str, splits_per_month: int):
+    """Seed activities/splits across the activity month and prior month.
+
+    ``splits_per_month`` controls how many 5-split activities go into EACH of the
+    two months. With 12 activities/month -> 60 splits/month (>=50) so both the
+    current and prior baseline periods (each a 2-month window) have enough data.
+    Use a small value (e.g. 1 -> 5 splits) to exercise the insufficient path.
+    """
+    conn = duckdb.connect(db_path)
+    _create_baseline_schema(conn)
+
+    d = datetime.strptime(activity_date, "%Y-%m-%d").date()
+    # Mid-points of the activity month and the prior month.
+    current_mid = date(d.year, d.month, 15)
+    prior_first = date(d.year, d.month, 1) - timedelta(days=1)
+    prior_mid = date(prior_first.year, prior_first.month, 15)
+
+    activity_rows = []
+    split_rows = []
+    next_id = 3000
+    for month_anchor in (current_mid, prior_mid):
+        for k in range(splits_per_month):
+            activity_id = next_id
+            next_id += 1
+            act_date = month_anchor + timedelta(days=k % 10)
+            activity_rows.append((activity_id, act_date, 70.0))
+            split_rows.extend(_make_splits(activity_id))
+
+    if activity_rows:
+        conn.executemany("INSERT INTO activities VALUES (?, ?, ?)", activity_rows)
+    if split_rows:
+        conn.executemany(
+            "INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", split_rows
+        )
+    conn.close()
+
+
+def _count_baseline_rows(db_path: str) -> int:
+    """Return the total number of rows in form_baseline_history."""
+    conn = duckdb.connect(db_path, read_only=True)
+    try:
+        row = conn.execute("SELECT COUNT(*) FROM form_baseline_history").fetchone()
+        return int(row[0]) if row is not None else 0
+    finally:
+        conn.close()
+
+
+@pytest.mark.integration
+def test_ensure_generates_when_missing(tmp_path):
+    """ensure generates baselines for the activity month + prior month."""
+    db_path = str(tmp_path / "ensure_gen.duckdb")
+    activity_date = "2026-03-15"
+    _seed_two_month_window(db_path, activity_date, splits_per_month=12)
+
+    result = ensure_form_baselines_for_date(activity_date, db_path)
+
+    assert len(result["generated"]) == 2, result
+    assert result["skipped"] == []
+    assert result["insufficient"] == []
+    assert set(result["generated"]) == {"2026-03-31", "2026-02-28"}
+
+    conn = duckdb.connect(db_path, read_only=True)
+    try:
+        for period_end in ("2026-03-31", "2026-02-28"):
+            row = conn.execute(
+                """
+                SELECT COUNT(*) FROM form_baseline_history
+                WHERE period_end = ? AND metric IN ('gct', 'vo', 'vr')
+                """,
+                [period_end],
+            ).fetchone()
+            assert row is not None
+            assert row[0] == 3, f"gct/vo/vr expected for {period_end}, got {row[0]}"
+    finally:
+        conn.close()
+
+
+@pytest.mark.integration
+def test_ensure_skips_when_exists(tmp_path):
+    """ensure is idempotent: a second call skips both periods, rows unchanged."""
+    db_path = str(tmp_path / "ensure_skip.duckdb")
+    activity_date = "2026-03-15"
+    _seed_two_month_window(db_path, activity_date, splits_per_month=12)
+
+    first = ensure_form_baselines_for_date(activity_date, db_path)
+    assert len(first["generated"]) == 2
+
+    count_after_first = _count_baseline_rows(db_path)
+
+    second = ensure_form_baselines_for_date(activity_date, db_path)
+    assert len(second["skipped"]) == 2, second
+    assert second["generated"] == []
+    assert second["insufficient"] == []
+    assert set(second["skipped"]) == {"2026-03-31", "2026-02-28"}
+
+    count_after_second = _count_baseline_rows(db_path)
+
+    assert count_after_second == count_after_first, "row count must be unchanged"
+
+
+@pytest.mark.integration
+def test_ensure_insufficient_data(tmp_path):
+    """ensure records insufficient periods when splits < 50, no rows, no raise."""
+    db_path = str(tmp_path / "ensure_insufficient.duckdb")
+    activity_date = "2026-03-15"
+    # 1 activity/month -> 5 splits/month -> < 50 in each 2-month window.
+    _seed_two_month_window(db_path, activity_date, splits_per_month=1)
+
+    result = ensure_form_baselines_for_date(activity_date, db_path)
+
+    assert result["generated"] == [], result
+    assert result["skipped"] == []
+    assert len(result["insufficient"]) == 2
+    assert set(result["insufficient"]) == {"2026-03-31", "2026-02-28"}
+
+    assert (
+        _count_baseline_rows(db_path) == 0
+    ), "no baseline rows should be created on insufficient data"
