@@ -1,10 +1,19 @@
 import type {
   ActivityDetailResponse,
   ActivitySummary,
+  GoalResponse,
   SectionsResponse,
   TimeSeriesResponse,
   TrackResponse,
 } from "../types";
+
+export async function fetchGoal(): Promise<GoalResponse> {
+  const response = await fetch("/api/goal");
+  if (!response.ok) {
+    throw new Error(`Failed to fetch goal: ${response.status}`);
+  }
+  return (await response.json()) as GoalResponse;
+}
 
 export async function fetchActivities(params?: {
   from?: string;

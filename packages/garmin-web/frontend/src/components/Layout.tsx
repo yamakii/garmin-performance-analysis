@@ -30,6 +30,9 @@ export default function Layout({ children }: { children: ReactNode }) {
             <NavLink to="/trends" className={navLinkClass}>
               トレンド
             </NavLink>
+            <NavLink to="/goal" className={navLinkClass}>
+              目標
+            </NavLink>
           </nav>
         </div>
       </header>
