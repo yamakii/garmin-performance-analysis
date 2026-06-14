@@ -33,6 +33,7 @@ class TrainingPlanHandler:
         "get_training_plan",
         "upload_workout_to_garmin",
         "delete_workout_from_garmin",
+        "get_garmin_scheduled_workouts",
     }
 
     def __init__(self, db_reader: GarminDBReader) -> None:
@@ -52,6 +53,8 @@ class TrainingPlanHandler:
             return await self._upload_workout_to_garmin(arguments)
         elif name == "delete_workout_from_garmin":
             return await self._delete_workout_from_garmin(arguments)
+        elif name == "get_garmin_scheduled_workouts":
+            return await self._get_garmin_scheduled_workouts(arguments)
         else:
             raise ValueError(f"Unknown tool: {name}")
 
@@ -234,6 +237,34 @@ class TrainingPlanHandler:
                 result = {"error": "Either workout_id or plan_id is required"}
         except Exception as e:
             logger.error(f"Garmin upload failed: {e}")
+            result = {"error": str(e)}
+
+        return [
+            TextContent(
+                type="text",
+                text=format_json_response(result, default=str),
+            )
+        ]
+
+    async def _get_garmin_scheduled_workouts(
+        self, arguments: dict[str, Any]
+    ) -> list[TextContent]:
+        from garmin_mcp.training_plan.garmin_calendar import GarminCalendarReader
+
+        try:
+            reader = GarminCalendarReader()
+            workouts = reader.get_scheduled_workouts(
+                arguments["start_date"],
+                arguments["end_date"],
+            )
+            result: dict[str, Any] = {
+                "start_date": arguments["start_date"],
+                "end_date": arguments["end_date"],
+                "count": len(workouts),
+                "workouts": workouts,
+            }
+        except Exception as e:
+            logger.error(f"Get Garmin scheduled workouts failed: {e}")
             result = {"error": str(e)}
 
         return [
