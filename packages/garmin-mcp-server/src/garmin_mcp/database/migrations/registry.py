@@ -93,6 +93,13 @@ def _wrap_add_cadence_columns(conn: duckdb.DuckDBPyConnection) -> None:
     add_cadence_columns(conn)
 
 
+def _wrap_athlete_tables(conn: duckdb.DuckDBPyConnection) -> None:
+    """Wrap athlete tables migration to run on an existing connection."""
+    from .add_athlete_tables import add_athlete_tables
+
+    add_athlete_tables(conn)
+
+
 def _wrap_plan_versioning(conn: duckdb.DuckDBPyConnection) -> None:
     """Wrap plan versioning migration to run on an existing connection."""
     from .add_plan_versioning import _column_exists, _table_exists
@@ -137,4 +144,5 @@ MIGRATIONS: list[tuple[int, str, Callable[[duckdb.DuckDBPyConnection], None]]] =
     (4, "remove_fk_constraints", _wrap_remove_fk),
     (5, "add_plan_versioning", _wrap_plan_versioning),
     (6, "add_cadence_columns", _wrap_add_cadence_columns),
+    (7, "add_athlete_tables", _wrap_athlete_tables),
 ]
