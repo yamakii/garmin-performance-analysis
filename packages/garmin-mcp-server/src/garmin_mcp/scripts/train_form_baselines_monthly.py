@@ -117,7 +117,7 @@ def main() -> int:
     # Connect to DuckDB and fetch data for the 6-month window
     with get_write_connection(db_path) as conn:
         try:
-            # Query with date filter for 2-month window (2021 and 2025 data only)
+            # Query with date filter for 2-month window (2021 and 2025+ data)
             query = f"""
                 SELECT
                     s.pace_seconds_per_km,
@@ -135,7 +135,7 @@ def main() -> int:
                   AND s.pace_seconds_per_km < 600
                   AND a.activity_date >= '{period_start.date()}'
                   AND a.activity_date <= '{period_end.date()}'
-                  AND (EXTRACT(YEAR FROM a.activity_date) = 2021 OR EXTRACT(YEAR FROM a.activity_date) = 2025)
+                  AND (EXTRACT(YEAR FROM a.activity_date) = 2021 OR EXTRACT(YEAR FROM a.activity_date) >= 2025)
             """
 
             df = conn.execute(query).df()
