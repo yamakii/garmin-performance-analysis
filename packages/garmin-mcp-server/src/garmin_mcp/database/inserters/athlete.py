@@ -17,6 +17,7 @@ Write semantics:
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -112,3 +113,72 @@ def insert_athlete_profile(profile: dict[str, Any], db_path: str | None = None) 
             len(goals),
             len(retrospectives),
         )
+
+
+def insert_weekly_review(review: dict[str, Any], db_path: str | None = None) -> bool:
+    """Insert (or update) a weekly review record.
+
+    The record is UPSERTed on the ``(user_id, week_start_date)`` unique index
+    (``idx_weekly_reviews_week``), so re-saving the same week overwrites the
+    prior review in place. The free-form ``review_data`` payload is serialized
+    to JSON and stored as a VARCHAR column. Surrogate keys are drawn from
+    ``seq_weekly_reviews_id`` via ``nextval``.
+
+    Args:
+        review: Review dict with keys ``user_id`` (defaults to ``"default"``),
+            ``week_start_date``, ``week_end_date``, ``review_date``,
+            ``review_data`` (dict, serialized to JSON), ``agent_name``, and
+            ``agent_version``.
+        db_path: Path to DuckDB database. If None, uses default.
+
+    Returns:
+        ``True`` on success.
+    """
+    if db_path is None:
+        from garmin_mcp.utils.paths import get_database_dir
+
+        db_path = str(get_database_dir() / "garmin_performance.duckdb")
+
+    from garmin_mcp.database.connection import get_write_connection
+
+    user_id = review.get("user_id") or "default"
+    review_data_json = json.dumps(review.get("review_data"), ensure_ascii=False)
+
+    with get_write_connection(db_path) as conn:
+        # UPSERT keyed on the (user_id, week_start_date) unique index.
+        # created_at is left to the table DEFAULT (CURRENT_TIMESTAMP) on insert
+        # to avoid the DuckDB Binder error seen when passing CURRENT_TIMESTAMP
+        # in an ON CONFLICT INSERT (mirrors athlete_profile handling).
+        conn.execute(
+            """
+            INSERT INTO weekly_reviews (
+                review_id, user_id, week_start_date, week_end_date,
+                review_date, review_data, agent_name, agent_version
+            ) VALUES (
+                nextval('seq_weekly_reviews_id'), ?, ?, ?, ?, ?, ?, ?
+            )
+            ON CONFLICT (user_id, week_start_date) DO UPDATE SET
+                week_end_date = EXCLUDED.week_end_date,
+                review_date = EXCLUDED.review_date,
+                review_data = EXCLUDED.review_data,
+                agent_name = EXCLUDED.agent_name,
+                agent_version = EXCLUDED.agent_version
+            """,
+            [
+                user_id,
+                review.get("week_start_date"),
+                review.get("week_end_date"),
+                review.get("review_date"),
+                review_data_json,
+                review.get("agent_name"),
+                review.get("agent_version"),
+            ],
+        )
+
+        logger.info(
+            "Saved weekly review user_id=%s week_start_date=%s",
+            user_id,
+            review.get("week_start_date"),
+        )
+
+    return True

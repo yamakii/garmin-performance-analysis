@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -73,6 +74,76 @@ class AthleteReader(BaseDBReader):
             ]
 
             return result
+
+    def get_weekly_review(
+        self, week_start_date: str | None = None, user_id: str = "default"
+    ) -> dict[str, Any] | None:
+        """Get a single weekly review record.
+
+        Args:
+            week_start_date: Week start (``YYYY-MM-DD``). When ``None``, the most
+                recent review (highest ``week_start_date``) is returned.
+            user_id: Profile owner identifier (defaults to ``"default"``).
+
+        Returns:
+            A dict with the review columns (date/timestamp values converted to
+            ``str``) where ``review_data`` is JSON-decoded back into a dict, or
+            ``None`` when no matching review exists.
+        """
+        with self._get_connection() as conn:
+            select_cols = (
+                "review_id, user_id, week_start_date, week_end_date, review_date, "
+                "review_data, created_at, agent_name, agent_version "
+                "FROM weekly_reviews WHERE user_id = ?"
+            )
+            if week_start_date is None:
+                row = conn.execute(
+                    f"SELECT {select_cols} ORDER BY week_start_date DESC LIMIT 1",
+                    [user_id],
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    f"SELECT {select_cols} AND week_start_date = ?",
+                    [user_id, week_start_date],
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            columns = [desc[0] for desc in conn.description]
+            return self._review_row_to_dict(columns, row)
+
+    def list_weekly_reviews(
+        self, limit: int = 8, user_id: str = "default"
+    ) -> list[dict[str, Any]]:
+        """List recent weekly reviews in descending week order.
+
+        Args:
+            limit: Maximum number of reviews to return (default 8).
+            user_id: Profile owner identifier (defaults to ``"default"``).
+
+        Returns:
+            A list of review dicts (newest first). Each ``review_data`` is
+            JSON-decoded back into a dict.
+        """
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT review_id, user_id, week_start_date, week_end_date, "
+                "review_date, review_data, created_at, agent_name, agent_version "
+                "FROM weekly_reviews WHERE user_id = ? "
+                "ORDER BY week_start_date DESC LIMIT ?",
+                [user_id, limit],
+            ).fetchall()
+            columns = [desc[0] for desc in conn.description]
+            return [self._review_row_to_dict(columns, row) for row in rows]
+
+    @classmethod
+    def _review_row_to_dict(cls, columns: list[str], row: tuple) -> dict[str, Any]:
+        """Convert a weekly_reviews row, JSON-decoding ``review_data``."""
+        record = cls._row_to_dict(columns, row)
+        raw = record.get("review_data")
+        record["review_data"] = json.loads(raw) if raw is not None else None
+        return record
 
     @staticmethod
     def _row_to_dict(columns: list[str], row: tuple) -> dict[str, Any]:
