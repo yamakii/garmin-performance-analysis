@@ -19,6 +19,7 @@ from mcp.types import TextContent, Tool
 
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.handlers.analysis_handler import AnalysisHandler
+from garmin_mcp.handlers.athlete_handler import AthleteHandler
 from garmin_mcp.handlers.base import ToolHandler
 from garmin_mcp.handlers.export_handler import ExportHandler
 from garmin_mcp.handlers.metadata_handler import MetadataHandler
@@ -93,6 +94,7 @@ def _init_handlers() -> None:
         TimeSeriesHandler(db_reader),
         ExportHandler(db_reader),
         TrainingPlanHandler(db_reader),
+        AthleteHandler(db_reader),
     ]
 
 

@@ -729,6 +729,36 @@ _TRAINING_PLAN_TOOLS: list[dict] = [
     },
 ]
 
+_ATHLETE_TOOLS: list[dict] = [
+    {
+        "name": "save_athlete_profile",
+        "description": "Save the athlete profile (current focus, race goals, and season retrospectives) as a single object to DuckDB. The profile row is upserted on user_id; goals and retrospectives are fully replaced per user_id.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "profile": {
+                    "type": "object",
+                    "description": "Profile JSON with user_id (default 'default'), current_focus, focus_notes, goals (list of {race_name, race_date, priority, goal_type, distance_km, target_time_seconds, status, notes}), and retrospectives (list of {season_label, period_start, period_end, narrative, key_learnings}).",
+                },
+            },
+            "required": ["profile"],
+        },
+    },
+    {
+        "name": "get_athlete_profile",
+        "description": "Get the athlete profile (current focus, goals, and retrospectives) merged into a single object. Returns an empty structure (current_focus=None, goals=[], retrospectives=[]) when no profile is registered.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "user_id": {
+                    "type": "string",
+                    "description": "Profile owner identifier (default: 'default')",
+                },
+            },
+        },
+    },
+]
+
 _SERVER_TOOLS: list[dict] = [
     {
         "name": "get_server_info",
@@ -767,6 +797,7 @@ def get_tool_definitions() -> list[Tool]:
         + _PERFORMANCE_TOOLS
         + _TIME_SERIES_TOOLS
         + _TRAINING_PLAN_TOOLS
+        + _ATHLETE_TOOLS
         + _SERVER_TOOLS
     )
     return [
@@ -791,6 +822,7 @@ TOOL_NAMES: set[str] = {
         _PERFORMANCE_TOOLS,
         _TIME_SERIES_TOOLS,
         _TRAINING_PLAN_TOOLS,
+        _ATHLETE_TOOLS,
         _SERVER_TOOLS,
     ]
     for schema in group
