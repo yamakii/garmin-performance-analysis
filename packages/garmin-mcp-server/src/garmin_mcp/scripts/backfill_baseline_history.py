@@ -49,25 +49,26 @@ def parse_year_month(year_month_str: str) -> datetime:
 
 
 def generate_month_range(start_date: datetime, end_date: datetime) -> list[str]:
-    """Generate list of YYYY-MM strings for months in range (2021 and 2025 only).
+    """Generate list of YYYY-MM strings for months in range (2021 and 2025+).
 
     Args:
         start_date: Start month (inclusive)
         end_date: End month (inclusive)
 
     Returns:
-        List of month strings in YYYY-MM format (filtered to 2021 and 2025)
+        List of month strings in YYYY-MM format (filtered to 2021 and 2025+).
+        Gap years (2022-2024) are excluded since no activity data exists.
 
     Example:
-        >>> generate_month_range(datetime(2024, 10, 1), datetime(2025, 12, 1))
-        ['2025-10', '2025-11', '2025-12']  # Only 2025 months
+        >>> generate_month_range(datetime(2025, 12, 1), datetime(2026, 2, 1))
+        ['2025-12', '2026-01', '2026-02']  # 2025+ months
     """
     months = []
     current = start_date
 
     while current <= end_date:
-        # Only include months from 2021 or 2025
-        if current.year in (2021, 2025):
+        # Only include months from 2021 or 2025 onward
+        if current.year == 2021 or current.year >= 2025:
             months.append(current.strftime("%Y-%m"))
         current += relativedelta(months=1)
 
@@ -99,7 +100,8 @@ def train_month(
         "uv",
         "run",
         "python",
-        "tools/scripts/train_form_baselines_monthly.py",
+        "-m",
+        "garmin_mcp.scripts.train_form_baselines_monthly",
         "--year-month",
         year_month,
         "--db-path",
