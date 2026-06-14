@@ -7,6 +7,7 @@ from typing import Protocol
 import pytest
 
 from garmin_mcp.handlers.analysis_handler import AnalysisHandler
+from garmin_mcp.handlers.athlete_handler import AthleteHandler
 from garmin_mcp.handlers.export_handler import ExportHandler
 from garmin_mcp.handlers.metadata_handler import MetadataHandler
 from garmin_mcp.handlers.performance_handler import PerformanceHandler
@@ -30,6 +31,7 @@ HANDLER_CLASSES: list[type[_HasToolNames]] = [
     SplitsHandler,
     TimeSeriesHandler,
     TrainingPlanHandler,
+    AthleteHandler,
 ]
 
 # Tools handled directly in server.py, not by any handler class
