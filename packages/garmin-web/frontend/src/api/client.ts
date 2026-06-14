@@ -5,6 +5,7 @@ import type {
   SectionsResponse,
   TimeSeriesResponse,
   TrackResponse,
+  WeeklyReview,
 } from "../types";
 
 export async function fetchGoal(): Promise<GoalResponse> {
@@ -13,6 +14,24 @@ export async function fetchGoal(): Promise<GoalResponse> {
     throw new Error(`Failed to fetch goal: ${response.status}`);
   }
   return (await response.json()) as GoalResponse;
+}
+
+export async function fetchWeeklyReviews(limit = 12): Promise<WeeklyReview[]> {
+  const response = await fetch(`/api/weekly-reviews?limit=${limit}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch weekly reviews: ${response.status}`);
+  }
+  return (await response.json()) as WeeklyReview[];
+}
+
+export async function fetchWeeklyReview(
+  weekStart: string,
+): Promise<WeeklyReview> {
+  const response = await fetch(`/api/weekly-reviews/${weekStart}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch weekly review: ${response.status}`);
+  }
+  return (await response.json()) as WeeklyReview;
 }
 
 export async function fetchActivities(params?: {

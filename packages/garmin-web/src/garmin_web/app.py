@@ -11,6 +11,7 @@ from garmin_web.api.activities import router as activities_router
 from garmin_web.api.activity_detail import router as activity_detail_router
 from garmin_web.api.goal import router as goal_router
 from garmin_web.api.trends import router as trends_router
+from garmin_web.api.weekly_reviews import router as weekly_reviews_router
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,7 @@ def create_app(
     app.include_router(activity_detail_router)
     app.include_router(trends_router)
     app.include_router(goal_router)
+    app.include_router(weekly_reviews_router)
 
     resolved_static_dir = Path(static_dir) if static_dir else _DEFAULT_STATIC_DIR
     _mount_spa(app, resolved_static_dir)

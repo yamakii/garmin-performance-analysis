@@ -33,6 +33,9 @@ export default function Layout({ children }: { children: ReactNode }) {
             <NavLink to="/goal" className={navLinkClass}>
               目標
             </NavLink>
+            <NavLink to="/weekly-reviews" className={navLinkClass}>
+              週次レビュー
+            </NavLink>
           </nav>
         </div>
       </header>

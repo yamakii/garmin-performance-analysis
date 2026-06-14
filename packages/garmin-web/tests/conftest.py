@@ -727,3 +727,131 @@ def empty_goal_db_path(tmp_path: Path) -> Path:
     finally:
         conn.close()
     return db_path
+
+
+# --- Weekly review page fixtures (Issue #283) --------------------------
+# Mirror the weekly_reviews schema in
+# garmin_mcp/database/migrations/add_athlete_tables.py (review_data is stored
+# as a JSON VARCHAR). The Web app is read-only; data is written here directly.
+
+_CREATE_WEEKLY_REVIEWS = """
+    CREATE TABLE weekly_reviews (
+        review_id INTEGER PRIMARY KEY,
+        user_id VARCHAR DEFAULT 'default',
+        week_start_date DATE NOT NULL,
+        week_end_date DATE NOT NULL,
+        review_date DATE,
+        review_data VARCHAR,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        agent_name VARCHAR,
+        agent_version VARCHAR
+    )
+"""
+
+
+def _review_data(week_label: str, red_count: int) -> dict:
+    """Build a representative review_data payload (verdict, periodization, ...)."""
+    verdict = [
+        {
+            "date": "2026-06-16",
+            "session": "Tempo",
+            "rating": "✅",
+            "comment": "狙い通りのテンポ走でした。",
+        },
+        {
+            "date": "2026-06-18",
+            "session": "Easy",
+            "rating": "🟡",
+            "comment": "心拍がやや高めでした。",
+        },
+    ]
+    verdict += [
+        {
+            "date": "2026-06-20",
+            "session": "Anaerobic",
+            "rating": "🔴",
+            "comment": "強度過多に注意してください。",
+        }
+        for _ in range(red_count)
+    ]
+    return {
+        "plan_week_start": None,
+        "actuals_week_start": None,
+        "this_week": {
+            "volume_km": 35.5,
+            "run_count": 4,
+            "hr_discipline": "Zone 2 中心で良好でした。",
+            "highlights": ["週末ロング走を完遂"],
+        },
+        "garmin_next_week": [
+            {"date": "2026-06-23", "title": "Tempo", "type": "fbtAdaptiveWorkout"},
+        ],
+        "periodization": {
+            "weeks_to_a_race": None,
+            "a_race": "さいたまマラソン",
+            "weeks_to_b_race": 17,
+            "b_race": "新潟シティマラソン",
+            "expected_phase": "有酸素ベース構築期",
+            "garmin_phase": "ベース期",
+            "gap": "強度がやや先行気味です。",
+        },
+        "verdict": verdict,
+        "goal_alignment": f"{week_label} は目標方針におおむね沿っています。",
+        "recommendations": ["Z2を維持する（HR 135-145bpm）", "ロング走を1本入れる"],
+        "overall": f"{week_label} は順調に積み上げられた良い週でした。",
+    }
+
+
+# (week_start_date, week_end_date, review_date, week_label, red_count)
+_WEEKLY_REVIEW_ROWS = [
+    ("2026-06-01", "2026-06-07", "2026-06-08", "6/1週", 1),
+    ("2026-06-08", "2026-06-14", "2026-06-15", "6/8週", 0),
+    ("2026-06-15", "2026-06-21", "2026-06-22", "6/15週", 2),
+]
+
+
+def _insert_weekly_reviews(conn: duckdb.DuckDBPyConnection) -> None:
+    for idx, (start, end, review_date, label, red) in enumerate(
+        _WEEKLY_REVIEW_ROWS, start=1
+    ):
+        conn.execute(
+            "INSERT INTO weekly_reviews ("
+            "review_id, user_id, week_start_date, week_end_date, review_date,"
+            " review_data, agent_name, agent_version"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                idx,
+                "default",
+                start,
+                end,
+                review_date,
+                json.dumps(_review_data(label, red), ensure_ascii=False),
+                "weekly-review",
+                "1.0",
+            ],
+        )
+
+
+@pytest.fixture
+def weekly_reviews_db_path(tmp_path: Path) -> Path:
+    """DuckDB with weekly_reviews table populated (3 weeks, June 2026)."""
+    db_path = tmp_path / "test_garmin_web_weekly_reviews.duckdb"
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(_CREATE_WEEKLY_REVIEWS)
+        _insert_weekly_reviews(conn)
+    finally:
+        conn.close()
+    return db_path
+
+
+@pytest.fixture
+def empty_weekly_reviews_db_path(tmp_path: Path) -> Path:
+    """DuckDB with an empty weekly_reviews table."""
+    db_path = tmp_path / "test_garmin_web_weekly_reviews_empty.duckdb"
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(_CREATE_WEEKLY_REVIEWS)
+    finally:
+        conn.close()
+    return db_path

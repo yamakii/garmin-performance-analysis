@@ -43,6 +43,70 @@ export interface GoalResponse {
   retrospectives: SeasonRetrospective[];
 }
 
+// --- Weekly reviews (Issue #283) ---
+
+export interface WeeklyReviewVerdict {
+  date?: string;
+  session?: string;
+  rating?: string; // "✅" | "🟡" | "🔴"
+  comment?: string;
+  [key: string]: unknown;
+}
+
+export interface WeeklyReviewPeriodization {
+  weeks_to_a_race?: number | null;
+  a_race?: string | null;
+  weeks_to_b_race?: number | null;
+  b_race?: string | null;
+  expected_phase?: string | null;
+  garmin_phase?: string | null;
+  gap?: string | null;
+  [key: string]: unknown;
+}
+
+export interface WeeklyReviewThisWeek {
+  volume_km?: number | null;
+  run_count?: number | null;
+  intensity_distribution?: Record<string, unknown>;
+  hr_discipline?: string | null;
+  highlights?: string[];
+  [key: string]: unknown;
+}
+
+export interface WeeklyReviewPlanItem {
+  date?: string;
+  title?: string;
+  type?: string;
+  [key: string]: unknown;
+}
+
+export interface WeeklyReviewData {
+  plan_week_start?: string | null;
+  actuals_week_start?: string | null;
+  this_week?: WeeklyReviewThisWeek;
+  garmin_next_week?: WeeklyReviewPlanItem[];
+  periodization?: WeeklyReviewPeriodization;
+  verdict?: WeeklyReviewVerdict[];
+  goal_alignment?: string | null;
+  recommendations?: string[];
+  overall?: string | null;
+  [key: string]: unknown;
+}
+
+export interface WeeklyReview {
+  review_id: number;
+  user_id: string;
+  week_start_date: string;
+  week_end_date: string;
+  review_date: string | null;
+  review_data: WeeklyReviewData | null;
+  created_at: string | null;
+  agent_name: string | null;
+  agent_version: string | null;
+}
+
+export type WeeklyReviewListResponse = WeeklyReview[];
+
 // --- Activity detail (Issue #199) ---
 
 export interface SplitRow {
