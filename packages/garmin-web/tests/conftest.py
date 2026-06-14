@@ -589,3 +589,141 @@ def detail_db_path(tmp_path: Path) -> Path:
     finally:
         conn.close()
     return db_path
+
+
+# --- Goal page fixtures (Issue #282) -----------------------------------
+# Mirror the athlete-centric schema in
+# garmin_mcp/database/migrations/add_athlete_tables.py (only the columns the
+# goal query reads). The Web app is read-only; data is written here directly.
+
+_CREATE_ATHLETE_PROFILE = """
+    CREATE TABLE athlete_profile (
+        user_id VARCHAR PRIMARY KEY DEFAULT 'default',
+        current_focus VARCHAR,
+        focus_notes VARCHAR,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+"""
+
+_CREATE_ATHLETE_GOALS = """
+    CREATE TABLE athlete_goals (
+        goal_id INTEGER PRIMARY KEY,
+        user_id VARCHAR DEFAULT 'default',
+        race_name VARCHAR NOT NULL,
+        race_date DATE,
+        priority VARCHAR,
+        goal_type VARCHAR,
+        distance_km DOUBLE,
+        target_time_seconds INTEGER,
+        status VARCHAR DEFAULT 'active',
+        notes VARCHAR,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+"""
+
+_CREATE_SEASON_RETROSPECTIVES = """
+    CREATE TABLE season_retrospectives (
+        retro_id INTEGER PRIMARY KEY,
+        user_id VARCHAR DEFAULT 'default',
+        season_label VARCHAR,
+        period_start DATE,
+        period_end DATE,
+        narrative VARCHAR,
+        key_learnings VARCHAR,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+"""
+
+_GOAL_TABLE_DDLS = [
+    _CREATE_ATHLETE_PROFILE,
+    _CREATE_ATHLETE_GOALS,
+    _CREATE_SEASON_RETROSPECTIVES,
+]
+
+
+def _create_goal_tables(conn: duckdb.DuckDBPyConnection) -> None:
+    for ddl in _GOAL_TABLE_DDLS:
+        conn.execute(ddl)
+
+
+@pytest.fixture
+def goal_db_path(tmp_path: Path) -> Path:
+    """DuckDB with athlete tables: 1 profile, 2 goals, 1 retrospective."""
+    db_path = tmp_path / "test_garmin_web_goal.duckdb"
+    conn = duckdb.connect(str(db_path))
+    try:
+        _create_goal_tables(conn)
+        conn.execute(
+            "INSERT INTO athlete_profile "
+            "(user_id, current_focus, focus_notes, updated_at) "
+            "VALUES (?, ?, ?, ?)",
+            [
+                "default",
+                "サブ4達成に向けた持久力強化",
+                "週末ロング走を軸に有酸素ベースを底上げ",
+                "2026-06-14 09:00:00",
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO athlete_goals ("
+            "goal_id, user_id, race_name, race_date, priority, goal_type,"
+            " distance_km, target_time_seconds, status, notes"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    1,
+                    "default",
+                    "つくばマラソン",
+                    "2026-11-22",
+                    "A",
+                    "marathon",
+                    42.195,
+                    16200,  # 4:30:00
+                    "active",
+                    "メインターゲット",
+                ),
+                (
+                    2,
+                    "default",
+                    "ハーフマラソン大会",
+                    None,  # 日付未定
+                    "B",
+                    "half",
+                    21.0975,
+                    7200,  # 2:00:00
+                    "active",
+                    "調整レース",
+                ),
+            ],
+        )
+        conn.execute(
+            "INSERT INTO season_retrospectives ("
+            "retro_id, user_id, season_label, period_start, period_end,"
+            " narrative, key_learnings"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                1,
+                "default",
+                "2025秋シーズン",
+                "2025-09-01",
+                "2025-12-31",
+                "故障なく走り込めた一方、後半の失速が課題でした。",
+                "ロング走でのペース管理を重視する",
+            ],
+        )
+    finally:
+        conn.close()
+    return db_path
+
+
+@pytest.fixture
+def empty_goal_db_path(tmp_path: Path) -> Path:
+    """DuckDB with empty athlete tables (no profile / goals / retrospectives)."""
+    db_path = tmp_path / "test_garmin_web_goal_empty.duckdb"
+    conn = duckdb.connect(str(db_path))
+    try:
+        _create_goal_tables(conn)
+    finally:
+        conn.close()
+    return db_path

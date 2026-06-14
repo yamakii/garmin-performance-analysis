@@ -8,6 +8,41 @@ export interface ActivitySummary {
   avg_heart_rate: number | null;
 }
 
+// --- Goal page (Issue #282) ---
+
+export interface GoalProfile {
+  current_focus: string | null;
+  focus_notes: string | null;
+  updated_at: string | null;
+}
+
+export interface GoalRace {
+  goal_id: number;
+  race_name: string | null;
+  race_date: string | null;
+  priority: string | null;
+  goal_type: string | null;
+  distance_km: number | null;
+  target_time_seconds: number | null;
+  status: string | null;
+  notes: string | null;
+}
+
+export interface SeasonRetrospective {
+  retro_id: number;
+  season_label: string | null;
+  period_start: string | null;
+  period_end: string | null;
+  narrative: string | null;
+  key_learnings: string | null;
+}
+
+export interface GoalResponse {
+  profile: GoalProfile;
+  goals: GoalRace[];
+  retrospectives: SeasonRetrospective[];
+}
+
 // --- Activity detail (Issue #199) ---
 
 export interface SplitRow {
