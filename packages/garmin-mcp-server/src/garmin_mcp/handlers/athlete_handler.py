@@ -17,6 +17,8 @@ class AthleteHandler:
     _tool_names: set[str] = {
         "save_athlete_profile",
         "get_athlete_profile",
+        "save_weekly_review",
+        "get_weekly_review",
     }
 
     def __init__(self, db_reader: GarminDBReader) -> None:
@@ -30,6 +32,10 @@ class AthleteHandler:
             return await self._save_athlete_profile(arguments)
         elif name == "get_athlete_profile":
             return await self._get_athlete_profile(arguments)
+        elif name == "save_weekly_review":
+            return await self._save_weekly_review(arguments)
+        elif name == "get_weekly_review":
+            return await self._get_weekly_review(arguments)
         else:
             raise ValueError(f"Unknown tool: {name}")
 
@@ -72,6 +78,52 @@ class AthleteHandler:
             result = reader.get_athlete_profile(user_id=user_id)
         except Exception as e:
             logger.error(f"Get athlete profile failed: {e}")
+            result = {"error": str(e)}
+
+        return [
+            TextContent(
+                type="text",
+                text=format_json_response(result, default=str),
+            )
+        ]
+
+    async def _save_weekly_review(self, arguments: dict[str, Any]) -> list[TextContent]:
+        from garmin_mcp.database.inserters.athlete import insert_weekly_review
+
+        try:
+            review = arguments["review"]
+            insert_weekly_review(
+                review=review,
+                db_path=str(self._db_reader.db_path),
+            )
+            result: dict[str, Any] = {
+                "status": "saved",
+                "user_id": review.get("user_id", "default"),
+                "week_start_date": review.get("week_start_date"),
+            }
+        except Exception as e:
+            logger.error(f"Save weekly review failed: {e}")
+            result = {"error": str(e)}
+
+        return [
+            TextContent(
+                type="text",
+                text=format_json_response(result, default=str),
+            )
+        ]
+
+    async def _get_weekly_review(self, arguments: dict[str, Any]) -> list[TextContent]:
+        from garmin_mcp.database.readers.athlete import AthleteReader
+
+        try:
+            reader = AthleteReader(db_path=str(self._db_reader.db_path))
+            user_id = arguments.get("user_id", "default")
+            result = reader.get_weekly_review(
+                week_start_date=arguments.get("week_start_date"),
+                user_id=user_id,
+            )
+        except Exception as e:
+            logger.error(f"Get weekly review failed: {e}")
             result = {"error": str(e)}
 
         return [

@@ -6,7 +6,10 @@ via file copy) to avoid per-test GarminDBWriter DDL overhead.
 
 import pytest
 
-from garmin_mcp.database.inserters.athlete import insert_athlete_profile
+from garmin_mcp.database.inserters.athlete import (
+    insert_athlete_profile,
+    insert_weekly_review,
+)
 from garmin_mcp.database.readers.athlete import AthleteReader
 
 
@@ -121,3 +124,80 @@ def test_get_profile_empty(initialized_db_path) -> None:
     assert result["updated_at"] is None
     assert result["goals"] == []
     assert result["retrospectives"] == []
+
+
+def _weekly_review(
+    week_start_date: str = "2026-06-08", volume_km: float = 28.8
+) -> dict:
+    return {
+        "user_id": "default",
+        "week_start_date": week_start_date,
+        "week_end_date": "2026-06-14",
+        "review_date": "2026-06-14",
+        "review_data": {
+            "this_week": {"volume_km": volume_km, "run_count": 4},
+            "garmin_next_week": [
+                {"date": "2026-06-16", "title": "Tempo", "type": "fbtAdaptiveWorkout"}
+            ],
+            "verdict": [
+                {
+                    "date": "2026-06-20",
+                    "session": "Anaerobic",
+                    "rating": "🔴",
+                    "comment": "強度過多に注意",
+                }
+            ],
+            "recommendations": ["Z2を維持する"],
+            "overall": "順調に積み上げ",
+        },
+        "agent_name": "weekly-review",
+        "agent_version": "1.0",
+    }
+
+
+@pytest.mark.integration
+def test_save_then_get_weekly_review(initialized_db_path) -> None:
+    """Save a weekly review, then get it back with review_data JSON restored."""
+    db_path = str(initialized_db_path)
+    review = _weekly_review()
+    assert insert_weekly_review(review, db_path=db_path) is True
+
+    result = AthleteReader(db_path=db_path).get_weekly_review()
+
+    assert result is not None
+    assert result["user_id"] == "default"
+    assert result["week_start_date"] == "2026-06-08"
+    assert result["week_end_date"] == "2026-06-14"
+    assert result["review_date"] == "2026-06-14"
+    assert result["agent_name"] == "weekly-review"
+    assert result["agent_version"] == "1.0"
+    assert result["review_data"] == review["review_data"]
+    assert result["review_data"]["this_week"]["volume_km"] == 28.8
+    assert result["review_data"]["verdict"][0]["rating"] == "🔴"
+
+
+@pytest.mark.integration
+def test_weekly_review_upsert_same_week(initialized_db_path) -> None:
+    """Saving the same (user_id, week_start_date) twice keeps a single row."""
+    db_path = str(initialized_db_path)
+    insert_weekly_review(_weekly_review(volume_km=28.8), db_path=db_path)
+    insert_weekly_review(_weekly_review(volume_km=35.5), db_path=db_path)
+
+    reviews = AthleteReader(db_path=db_path).list_weekly_reviews()
+    assert len(reviews) == 1
+    assert reviews[0]["review_data"]["this_week"]["volume_km"] == 35.5
+
+
+@pytest.mark.integration
+def test_list_weekly_reviews_order(initialized_db_path) -> None:
+    """list_weekly_reviews returns reviews in descending week order, limited."""
+    db_path = str(initialized_db_path)
+    insert_weekly_review(_weekly_review(week_start_date="2026-05-25"), db_path=db_path)
+    insert_weekly_review(_weekly_review(week_start_date="2026-06-01"), db_path=db_path)
+    insert_weekly_review(_weekly_review(week_start_date="2026-06-08"), db_path=db_path)
+
+    reviews = AthleteReader(db_path=db_path).list_weekly_reviews(limit=2)
+
+    assert len(reviews) == 2
+    assert reviews[0]["week_start_date"] == "2026-06-08"
+    assert reviews[1]["week_start_date"] == "2026-06-01"

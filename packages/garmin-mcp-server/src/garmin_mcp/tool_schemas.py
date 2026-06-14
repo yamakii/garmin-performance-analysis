@@ -757,6 +757,37 @@ _ATHLETE_TOOLS: list[dict] = [
             },
         },
     },
+    {
+        "name": "save_weekly_review",
+        "description": "Save a weekly training review to DuckDB. The record is upserted on (user_id, week_start_date), so re-saving the same week overwrites the prior review. The free-form review_data payload is stored as JSON.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "review": {
+                    "type": "object",
+                    "description": "Review JSON with user_id (default 'default'), week_start_date, week_end_date, review_date, review_data (object, e.g. {this_week, garmin_next_week, verdict, recommendations, overall}), agent_name, and agent_version.",
+                },
+            },
+            "required": ["review"],
+        },
+    },
+    {
+        "name": "get_weekly_review",
+        "description": "Get a single weekly review. When week_start_date is omitted, the most recent review is returned. review_data is JSON-decoded back into an object. Returns null when no matching review exists.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "week_start_date": {
+                    "type": "string",
+                    "description": "Week start date (YYYY-MM-DD). When omitted, returns the most recent review.",
+                },
+                "user_id": {
+                    "type": "string",
+                    "description": "Profile owner identifier (default: 'default')",
+                },
+            },
+        },
+    },
 ]
 
 _SERVER_TOOLS: list[dict] = [
