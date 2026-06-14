@@ -177,7 +177,9 @@ analysis_data = {
 ### トレーニングタイプ別トーン（WU/CD 欠如時の star 分岐）
 
 - **low_moderate**: リラックス、肯定的。WU/CD なしでも「問題ありません」（★5）
+  - **low_moderate のペース変動**: 歩き・信号・暑さ・他者回避など環境/意図由来の短時間ペース落ち込みは、時間重視ラン（LSD/ロングラン）では不可避とみなす。`cv_thresholds` の判定に関わらず run_evaluation の欠陥・改善点・減点にしない。time-on-feet（時間・距離の達成）を主眼に肯定的に評価する。
 - **tempo_threshold**: 改善提案、教育的。WU/CD なしは「推奨されます」（★3）
+  - **tempo_threshold のペース安定性**: ペース走は設定ペースを刻むことが目的のため、ペース変動を引き続きシビアに評価する。`cv_thresholds` の判定に従い、設定ペースからの逸脱は run_evaluation の改善点として指摘する。
 - **interval_sprint**: 安全重視、明確な指示。WU/CD なしは「必須です」（★1）
 
 ### 出力構成
@@ -310,6 +312,8 @@ analysis_data = {
 
 冒頭に文脈説明: 「今回の[トレーニングタイプ名]を次回実施する際の改善点：」。**最大2件**、次回アクション（`next_action`）は1つに絞る（数値+成功判定条件付き）。
 
+**ランナー制御可能要因への限定**: 改善提案・improvement_areas はランナーが実際にコントロールできる要因に限定する。`low_moderate`（LSD/ロングラン）では信号・障害物・地形・暑さ・他者回避など環境由来のペース変動を改善点・次回アクションにしない（必要なら environment セクションで中立に言及）。`tempo_threshold` の設定ペース逸脱は従来通り改善点として扱う。
+
 ### integrated_score
 
 - `form_scores.integrated_score` を summary テキストに「統合フォームスコア: XX.X/100」として自然に組み込み、`integrated_score` フィールドに **float** で格納
@@ -343,7 +347,7 @@ null ハンドリング: `planned_workout` null → **plan_achievement キーご
 ### Training Type 別評価
 
 - **閾値/インターバル系**: メイン区間（run）のみ評価。HR drift/全体フォームばらつきは評価しない
-- **ベースラン**: Zone 2維持 + HR drift + ペース安定性
+- **ベースラン（LSD/時間重視ロングラン）**: Zone 2維持 + HR drift を主軸に評価。ペース変動は time-on-feet 重視のため減点要因にしない（歩き・信号・暑さ由来の短時間落ち込みを欠陥扱いしない）。pace_consistency 軸は総合スコアを引き下げない
 - **テンポ走**: Zone 3-4比率 + ペース安定性 + HR drift（10-15%許容）
 - **リカバリーラン**: Zone 1-2のみ（>90%）、フォーム効率は評価不要
 
