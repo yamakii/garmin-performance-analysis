@@ -709,6 +709,24 @@ _TRAINING_PLAN_TOOLS: list[dict] = [
             },
         },
     },
+    {
+        "name": "get_garmin_scheduled_workouts",
+        "description": "Fetch scheduled workouts (including adaptive plan workouts) from the Garmin Connect calendar-service for a date range. Returns workout-type calendar items sorted by date.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "start_date": {
+                    "type": "string",
+                    "description": "Inclusive start date (YYYY-MM-DD)",
+                },
+                "end_date": {
+                    "type": "string",
+                    "description": "Inclusive end date (YYYY-MM-DD)",
+                },
+            },
+            "required": ["start_date", "end_date"],
+        },
+    },
 ]
 
 _SERVER_TOOLS: list[dict] = [
