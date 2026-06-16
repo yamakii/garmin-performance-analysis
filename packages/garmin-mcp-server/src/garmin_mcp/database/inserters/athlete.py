@@ -116,13 +116,15 @@ def insert_athlete_profile(profile: dict[str, Any], db_path: str | None = None) 
 
 
 def insert_weekly_review(review: dict[str, Any], db_path: str | None = None) -> bool:
-    """Insert (or update) a weekly review record.
+    """Insert a weekly review record, appending a new version (no overwrite).
 
-    The record is UPSERTed on the ``(user_id, week_start_date)`` unique index
-    (``idx_weekly_reviews_week``), so re-saving the same week overwrites the
-    prior review in place. The free-form ``review_data`` payload is serialized
-    to JSON and stored as a VARCHAR column. Surrogate keys are drawn from
-    ``seq_weekly_reviews_id`` via ``nextval``.
+    Every save inserts a fresh row: re-saving the same
+    ``(user_id, week_start_date)`` appends a new version rather than overwriting
+    the prior one, preserving the full review history. The reader returns the
+    latest version (highest ``created_at``) per week as canonical. The free-form
+    ``review_data`` payload is serialized to JSON and stored as a VARCHAR column.
+    Surrogate keys are drawn from ``seq_weekly_reviews_id`` via ``nextval`` and
+    ``created_at`` is left to the table DEFAULT (``CURRENT_TIMESTAMP``).
 
     Args:
         review: Review dict with keys ``user_id`` (defaults to ``"default"``),
@@ -145,10 +147,8 @@ def insert_weekly_review(review: dict[str, Any], db_path: str | None = None) -> 
     review_data_json = json.dumps(review.get("review_data"), ensure_ascii=False)
 
     with get_write_connection(db_path) as conn:
-        # UPSERT keyed on the (user_id, week_start_date) unique index.
-        # created_at is left to the table DEFAULT (CURRENT_TIMESTAMP) on insert
-        # to avoid the DuckDB Binder error seen when passing CURRENT_TIMESTAMP
-        # in an ON CONFLICT INSERT (mirrors athlete_profile handling).
+        # Always INSERT a new version; same-week re-saves append rather than
+        # overwrite. created_at is left to the table DEFAULT (CURRENT_TIMESTAMP).
         conn.execute(
             """
             INSERT INTO weekly_reviews (
@@ -157,12 +157,6 @@ def insert_weekly_review(review: dict[str, Any], db_path: str | None = None) -> 
             ) VALUES (
                 nextval('seq_weekly_reviews_id'), ?, ?, ?, ?, ?, ?, ?
             )
-            ON CONFLICT (user_id, week_start_date) DO UPDATE SET
-                week_end_date = EXCLUDED.week_end_date,
-                review_date = EXCLUDED.review_date,
-                review_data = EXCLUDED.review_data,
-                agent_name = EXCLUDED.agent_name,
-                agent_version = EXCLUDED.agent_version
             """,
             [
                 user_id,

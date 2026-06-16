@@ -100,6 +100,13 @@ def _wrap_athlete_tables(conn: duckdb.DuckDBPyConnection) -> None:
     add_athlete_tables(conn)
 
 
+def _wrap_drop_weekly_review_index(conn: duckdb.DuckDBPyConnection) -> None:
+    """Wrap the weekly_reviews index drop migration on an existing connection."""
+    from .drop_weekly_review_index import drop_weekly_review_index
+
+    drop_weekly_review_index(conn)
+
+
 def _wrap_plan_versioning(conn: duckdb.DuckDBPyConnection) -> None:
     """Wrap plan versioning migration to run on an existing connection."""
     from .add_plan_versioning import _column_exists, _table_exists
@@ -145,4 +152,5 @@ MIGRATIONS: list[tuple[int, str, Callable[[duckdb.DuckDBPyConnection], None]]] =
     (5, "add_plan_versioning", _wrap_plan_versioning),
     (6, "add_cadence_columns", _wrap_add_cadence_columns),
     (7, "add_athlete_tables", _wrap_athlete_tables),
+    (8, "drop_weekly_review_index", _wrap_drop_weekly_review_index),
 ]

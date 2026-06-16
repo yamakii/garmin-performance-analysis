@@ -176,28 +176,148 @@ def test_save_then_get_weekly_review(initialized_db_path) -> None:
     assert result["review_data"]["verdict"][0]["rating"] == "🔴"
 
 
+def _set_review_created_at(db_path: str, review_id: int, created_at: str) -> None:
+    """Force a specific created_at on a row for deterministic version ordering.
+
+    The production DEFAULT (CURRENT_TIMESTAMP) can tie within the same second,
+    so version-ordering assertions set distinct created_at values explicitly.
+    """
+    from garmin_mcp.database.connection import get_write_connection
+
+    with get_write_connection(db_path) as conn:
+        conn.execute(
+            "UPDATE weekly_reviews SET created_at = ? WHERE review_id = ?",
+            [created_at, review_id],
+        )
+
+
+def _latest_review_id(db_path: str) -> int:
+    from garmin_mcp.database.connection import get_connection
+
+    with get_connection(db_path) as conn:
+        row = conn.execute(
+            "SELECT review_id FROM weekly_reviews "
+            "ORDER BY review_id DESC LIMIT 1"
+        ).fetchone()
+    return int(row[0])
+
+
 @pytest.mark.integration
-def test_weekly_review_upsert_same_week(initialized_db_path) -> None:
-    """Saving the same (user_id, week_start_date) twice keeps a single row."""
+def test_insert_weekly_review_appends_new_version(initialized_db_path) -> None:
+    """Saving the same week twice appends a new version (2 rows, distinct ids)."""
     db_path = str(initialized_db_path)
     insert_weekly_review(_weekly_review(volume_km=28.8), db_path=db_path)
     insert_weekly_review(_weekly_review(volume_km=35.5), db_path=db_path)
 
-    reviews = AthleteReader(db_path=db_path).list_weekly_reviews()
-    assert len(reviews) == 1
-    assert reviews[0]["review_data"]["this_week"]["volume_km"] == 35.5
+    versions = AthleteReader(db_path=db_path).list_weekly_review_versions("2026-06-08")
+    assert len(versions) == 2
+    review_ids = {v["review_id"] for v in versions}
+    assert len(review_ids) == 2
+    volumes = {v["review_data"]["this_week"]["volume_km"] for v in versions}
+    assert volumes == {28.8, 35.5}
 
 
 @pytest.mark.integration
-def test_list_weekly_reviews_order(initialized_db_path) -> None:
-    """list_weekly_reviews returns reviews in descending week order, limited."""
+def test_insert_weekly_review_distinct_weeks(initialized_db_path) -> None:
+    """Saving two distinct weeks yields two rows (regression)."""
     db_path = str(initialized_db_path)
-    insert_weekly_review(_weekly_review(week_start_date="2026-05-25"), db_path=db_path)
     insert_weekly_review(_weekly_review(week_start_date="2026-06-01"), db_path=db_path)
     insert_weekly_review(_weekly_review(week_start_date="2026-06-08"), db_path=db_path)
 
-    reviews = AthleteReader(db_path=db_path).list_weekly_reviews(limit=2)
-
+    reviews = AthleteReader(db_path=db_path).list_weekly_reviews()
     assert len(reviews) == 2
-    assert reviews[0]["week_start_date"] == "2026-06-08"
-    assert reviews[1]["week_start_date"] == "2026-06-01"
+    weeks = {r["week_start_date"] for r in reviews}
+    assert weeks == {"2026-06-01", "2026-06-08"}
+
+
+@pytest.mark.integration
+def test_get_weekly_review_returns_latest_version(initialized_db_path) -> None:
+    """get_weekly_review(week) returns the latest version (highest created_at)."""
+    db_path = str(initialized_db_path)
+    insert_weekly_review(_weekly_review(volume_km=28.8), db_path=db_path)
+    first_id = _latest_review_id(db_path)
+    _set_review_created_at(db_path, first_id, "2026-06-14 09:00:00")
+
+    insert_weekly_review(_weekly_review(volume_km=35.5), db_path=db_path)
+    second_id = _latest_review_id(db_path)
+    _set_review_created_at(db_path, second_id, "2026-06-14 18:00:00")
+
+    result = AthleteReader(db_path=db_path).get_weekly_review("2026-06-08")
+    assert result is not None
+    assert result["review_id"] == second_id
+    assert result["review_data"]["this_week"]["volume_km"] == 35.5
+
+
+@pytest.mark.integration
+def test_get_weekly_review_none_returns_latest_week_latest_version(
+    initialized_db_path,
+) -> None:
+    """get_weekly_review(None) returns the latest version of the most recent week."""
+    db_path = str(initialized_db_path)
+    insert_weekly_review(_weekly_review(week_start_date="2026-06-01"), db_path=db_path)
+
+    insert_weekly_review(
+        _weekly_review(week_start_date="2026-06-08", volume_km=28.8), db_path=db_path
+    )
+    older_id = _latest_review_id(db_path)
+    _set_review_created_at(db_path, older_id, "2026-06-14 09:00:00")
+
+    insert_weekly_review(
+        _weekly_review(week_start_date="2026-06-08", volume_km=35.5), db_path=db_path
+    )
+    newer_id = _latest_review_id(db_path)
+    _set_review_created_at(db_path, newer_id, "2026-06-14 18:00:00")
+
+    result = AthleteReader(db_path=db_path).get_weekly_review()
+    assert result is not None
+    assert result["week_start_date"] == "2026-06-08"
+    assert result["review_id"] == newer_id
+    assert result["review_data"]["this_week"]["volume_km"] == 35.5
+
+
+@pytest.mark.integration
+def test_list_weekly_reviews_dedupes_per_week(initialized_db_path) -> None:
+    """list_weekly_reviews returns one (latest) row per week despite versions."""
+    db_path = str(initialized_db_path)
+    # Two versions of the same week + one distinct week.
+    insert_weekly_review(
+        _weekly_review(week_start_date="2026-06-08", volume_km=28.8), db_path=db_path
+    )
+    insert_weekly_review(
+        _weekly_review(week_start_date="2026-06-08", volume_km=35.5), db_path=db_path
+    )
+    insert_weekly_review(_weekly_review(week_start_date="2026-06-01"), db_path=db_path)
+
+    reviews = AthleteReader(db_path=db_path).list_weekly_reviews()
+    assert len(reviews) == 2
+    weeks = {r["week_start_date"] for r in reviews}
+    assert weeks == {"2026-06-08", "2026-06-01"}
+
+
+@pytest.mark.integration
+def test_list_weekly_review_versions_returns_all(initialized_db_path) -> None:
+    """list_weekly_review_versions returns all 3 versions, created_at DESC."""
+    db_path = str(initialized_db_path)
+    insert_weekly_review(_weekly_review(volume_km=10.0), db_path=db_path)
+    _set_review_created_at(db_path, _latest_review_id(db_path), "2026-06-14 09:00:00")
+    insert_weekly_review(_weekly_review(volume_km=20.0), db_path=db_path)
+    _set_review_created_at(db_path, _latest_review_id(db_path), "2026-06-14 12:00:00")
+    insert_weekly_review(_weekly_review(volume_km=30.0), db_path=db_path)
+    _set_review_created_at(db_path, _latest_review_id(db_path), "2026-06-14 18:00:00")
+
+    versions = AthleteReader(db_path=db_path).list_weekly_review_versions("2026-06-08")
+    assert len(versions) == 3
+    ordered_volumes = [
+        v["review_data"]["this_week"]["volume_km"] for v in versions
+    ]
+    assert ordered_volumes == [30.0, 20.0, 10.0]
+
+
+@pytest.mark.integration
+def test_list_weekly_review_versions_empty(initialized_db_path) -> None:
+    """list_weekly_review_versions returns [] when no review exists for the week."""
+    db_path = str(initialized_db_path)
+    insert_weekly_review(_weekly_review(week_start_date="2026-06-08"), db_path=db_path)
+
+    versions = AthleteReader(db_path=db_path).list_weekly_review_versions("2099-01-04")
+    assert versions == []

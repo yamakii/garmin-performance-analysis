@@ -577,11 +577,6 @@ class GarminDBWriter:
                 )
             """)
 
-            conn.execute("""
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_weekly_reviews_week
-                ON weekly_reviews(user_id, week_start_date)
-            """)
-
     def _run_migrations(self) -> None:
         """Run pending database migrations after table creation."""
         from garmin_mcp.database.migrations.runner import MigrationRunner

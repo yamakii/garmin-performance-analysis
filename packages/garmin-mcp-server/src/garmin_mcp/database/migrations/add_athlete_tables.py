@@ -4,7 +4,8 @@ Adds four tables that form the foundation of the weekly training review cycle:
 - athlete_profile: single-row profile holding the athlete's current focus
 - athlete_goals: race goals with target times and priorities
 - season_retrospectives: free-form season-level retrospectives
-- weekly_reviews: per-week review records (UPSERT keyed on user_id + week_start)
+- weekly_reviews: per-week review records (append a new version per save; the
+  reader returns the latest version per week as canonical)
 
 These tables are not API-derived, so they are intentionally excluded from
 ``scripts/regenerate/validator.py:AVAILABLE_TABLES``.
@@ -76,9 +77,4 @@ def add_athlete_tables(conn: duckdb.DuckDBPyConnection) -> None:
             agent_name VARCHAR,
             agent_version VARCHAR
         )
-    """)
-
-    conn.execute("""
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_weekly_reviews_week
-        ON weekly_reviews(user_id, week_start_date)
     """)
