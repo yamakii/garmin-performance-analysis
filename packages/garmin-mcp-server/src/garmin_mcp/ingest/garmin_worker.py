@@ -454,51 +454,36 @@ class GarminIngestWorker:
         bone_mass_values: list[float] = []
         muscle_mass_values: list[float] = []
 
-        # First, try to get data for the target date
-        target_raw_data = self.collect_body_composition_data(date)
-        if not target_raw_data or not target_raw_data.get("dateWeightList"):
-            logger.warning(
-                f"No body composition data found for {date}, "
-                "skipping past 7 days lookup"
-            )
-            return None
-
-        # Target date has data, collect from it
-        target_data = target_raw_data["dateWeightList"][0]
-        if target_data.get("weight"):
-            weights.append(target_data["weight"] / 1000.0)
-        if target_data.get("bmi"):
-            bmi_values.append(target_data["bmi"])
-        if target_data.get("bodyFat"):
-            body_fat_values.append(target_data["bodyFat"])
-        if target_data.get("bodyWater"):
-            body_water_values.append(target_data["bodyWater"])
-        if target_data.get("boneMass"):
-            bone_mass_values.append(target_data["boneMass"] / 1000.0)
-        if target_data.get("muscleMass"):
-            muscle_mass_values.append(target_data["muscleMass"] / 1000.0)
-
-        # Now collect from past 6 days (total 7 days with target date)
-        for i in range(1, 7):
+        # Scan the full window [date-6, date] (7 days). The target date is not
+        # treated specially: even if it has no measurement, past days within the
+        # window still contribute. Only an empty window yields None.
+        for i in range(7):
             check_date = target_date - timedelta(days=i)
             check_date_str = check_date.strftime("%Y-%m-%d")
 
             raw_data = self.collect_body_composition_data(check_date_str)
-            if raw_data and raw_data.get("dateWeightList"):
-                data = raw_data["dateWeightList"][0]
+            if not raw_data or not raw_data.get("dateWeightList"):
+                if i == 0:
+                    logger.warning(
+                        f"No body composition data for target date {date}, "
+                        "falling back to past days within the window"
+                    )
+                continue
 
-                if data.get("weight"):
-                    weights.append(data["weight"] / 1000.0)
-                if data.get("bmi"):
-                    bmi_values.append(data["bmi"])
-                if data.get("bodyFat"):
-                    body_fat_values.append(data["bodyFat"])
-                if data.get("bodyWater"):
-                    body_water_values.append(data["bodyWater"])
-                if data.get("boneMass"):
-                    bone_mass_values.append(data["boneMass"] / 1000.0)
-                if data.get("muscleMass"):
-                    muscle_mass_values.append(data["muscleMass"] / 1000.0)
+            data = raw_data["dateWeightList"][0]
+
+            if data.get("weight"):
+                weights.append(data["weight"] / 1000.0)
+            if data.get("bmi"):
+                bmi_values.append(data["bmi"])
+            if data.get("bodyFat"):
+                body_fat_values.append(data["bodyFat"])
+            if data.get("bodyWater"):
+                body_water_values.append(data["bodyWater"])
+            if data.get("boneMass"):
+                bone_mass_values.append(data["boneMass"] / 1000.0)
+            if data.get("muscleMass"):
+                muscle_mass_values.append(data["muscleMass"] / 1000.0)
 
         if not weights:
             logger.warning(f"No weight data found in past 7 days for {date}")
