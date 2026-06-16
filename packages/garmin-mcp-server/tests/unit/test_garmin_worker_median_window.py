@@ -71,9 +71,9 @@ class TestCalculateMedianWeightWindow:
     def test_median_weight_target_day_missing(self, worker):
         """Target day has no data; previous day weight=79.6 → weight_kg≈79.6."""
         target = "2025-10-10"
-        prev = (
-            datetime.strptime(target, "%Y-%m-%d") - timedelta(days=1)
-        ).strftime("%Y-%m-%d")
+        prev = (datetime.strptime(target, "%Y-%m-%d") - timedelta(days=1)).strftime(
+            "%Y-%m-%d"
+        )
 
         worker.collect_body_composition_data = Mock(
             side_effect=_make_collector({prev: 79.6})
