@@ -72,10 +72,10 @@ class TestMigrationRunner:
         runner = MigrationRunner(db_path)
         applied = runner.run_pending()
 
-        assert len(applied) == 7
+        assert len(applied) == 8
         assert applied[0] == "phase0_power_prep"
-        assert applied[-1] == "add_athlete_tables"
-        assert runner.get_current_version() == 7
+        assert applied[-1] == "drop_weekly_review_index"
+        assert runner.get_current_version() == 8
 
     def test_run_pending_skips_applied(self, db_path: Path) -> None:
         """Running twice applies nothing the second time."""
@@ -83,7 +83,7 @@ class TestMigrationRunner:
         first = runner.run_pending()
         second = runner.run_pending()
 
-        assert len(first) == 7
+        assert len(first) == 8
         assert second == []
 
     def test_run_pending_partial(self, db_path: Path) -> None:
@@ -110,12 +110,13 @@ class TestMigrationRunner:
         runner = MigrationRunner(db_path)
         applied = runner.run_pending()
 
-        assert runner.get_current_version() == 7
+        assert runner.get_current_version() == 8
         assert applied == [
             "remove_fk_constraints",
             "add_plan_versioning",
             "add_cadence_columns",
             "add_athlete_tables",
+            "drop_weekly_review_index",
         ]
 
     def test_migration_records_applied_at(self, db_path: Path) -> None:
@@ -129,7 +130,7 @@ class TestMigrationRunner:
         ).fetchall()
         conn.close()
 
-        assert len(rows) == 7
+        assert len(rows) == 8
         for version, name, applied_at in rows:
             assert applied_at is not None
             assert isinstance(name, str)

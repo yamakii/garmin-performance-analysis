@@ -78,11 +78,16 @@ class AthleteReader(BaseDBReader):
     def get_weekly_review(
         self, week_start_date: str | None = None, user_id: str = "default"
     ) -> dict[str, Any] | None:
-        """Get a single weekly review record.
+        """Get the latest version of a single weekly review record.
+
+        Weekly reviews are versioned: each save appends a new row, so a given
+        week may have several rows. This returns the latest version (highest
+        ``created_at``).
 
         Args:
-            week_start_date: Week start (``YYYY-MM-DD``). When ``None``, the most
-                recent review (highest ``week_start_date``) is returned.
+            week_start_date: Week start (``YYYY-MM-DD``). When ``None``, the
+                latest version of the most recent week (highest
+                ``week_start_date``) is returned.
             user_id: Profile owner identifier (defaults to ``"default"``).
 
         Returns:
@@ -98,12 +103,14 @@ class AthleteReader(BaseDBReader):
             )
             if week_start_date is None:
                 row = conn.execute(
-                    f"SELECT {select_cols} ORDER BY week_start_date DESC LIMIT 1",
+                    f"SELECT {select_cols} "
+                    "ORDER BY week_start_date DESC, created_at DESC LIMIT 1",
                     [user_id],
                 ).fetchone()
             else:
                 row = conn.execute(
-                    f"SELECT {select_cols} AND week_start_date = ?",
+                    f"SELECT {select_cols} AND week_start_date = ? "
+                    "ORDER BY created_at DESC LIMIT 1",
                     [user_id, week_start_date],
                 ).fetchone()
 
@@ -116,23 +123,53 @@ class AthleteReader(BaseDBReader):
     def list_weekly_reviews(
         self, limit: int = 8, user_id: str = "default"
     ) -> list[dict[str, Any]]:
-        """List recent weekly reviews in descending week order.
+        """List recent weekly reviews (latest version per week) in week order.
+
+        Weekly reviews are versioned (multiple rows per week). This deduplicates
+        to the latest version per week before applying the limit.
 
         Args:
             limit: Maximum number of reviews to return (default 8).
             user_id: Profile owner identifier (defaults to ``"default"``).
 
         Returns:
-            A list of review dicts (newest first). Each ``review_data`` is
-            JSON-decoded back into a dict.
+            A list of review dicts (newest week first, latest version per week).
+            Each ``review_data`` is JSON-decoded back into a dict.
         """
         with self._get_connection() as conn:
             rows = conn.execute(
                 "SELECT review_id, user_id, week_start_date, week_end_date, "
                 "review_date, review_data, created_at, agent_name, agent_version "
                 "FROM weekly_reviews WHERE user_id = ? "
+                "QUALIFY ROW_NUMBER() OVER ("
+                "PARTITION BY week_start_date ORDER BY created_at DESC) = 1 "
                 "ORDER BY week_start_date DESC LIMIT ?",
                 [user_id, limit],
+            ).fetchall()
+            columns = [desc[0] for desc in conn.description]
+            return [self._review_row_to_dict(columns, row) for row in rows]
+
+    def list_weekly_review_versions(
+        self, week_start_date: str, user_id: str = "default"
+    ) -> list[dict[str, Any]]:
+        """List all versions of a weekly review for a given week.
+
+        Args:
+            week_start_date: Week start (``YYYY-MM-DD``).
+            user_id: Profile owner identifier (defaults to ``"default"``).
+
+        Returns:
+            A list of every version saved for the week, newest first
+            (``created_at`` DESC). Each ``review_data`` is JSON-decoded back into
+            a dict. Empty when no review exists for the week.
+        """
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT review_id, user_id, week_start_date, week_end_date, "
+                "review_date, review_data, created_at, agent_name, agent_version "
+                "FROM weekly_reviews WHERE user_id = ? AND week_start_date = ? "
+                "ORDER BY created_at DESC",
+                [user_id, week_start_date],
             ).fetchall()
             columns = [desc[0] for desc in conn.description]
             return [self._review_row_to_dict(columns, row) for row in rows]
