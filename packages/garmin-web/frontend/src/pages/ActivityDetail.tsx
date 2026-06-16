@@ -381,7 +381,7 @@ export default function ActivityDetail() {
       {/* Efficiency: structured form stats + analyst prose */}
       <EfficiencyReport
         section={sections?.efficiency}
-        formEfficiency={detail.form_efficiency}
+        formEvaluations={detail.form_evaluations}
       />
 
       {/* Environmental impact */}
