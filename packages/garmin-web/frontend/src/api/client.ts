@@ -34,6 +34,18 @@ export async function fetchWeeklyReview(
   return (await response.json()) as WeeklyReview;
 }
 
+export async function fetchWeeklyReviewVersions(
+  weekStart: string,
+): Promise<WeeklyReview[]> {
+  const response = await fetch(`/api/weekly-reviews/${weekStart}/versions`);
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch weekly review versions: ${response.status}`,
+    );
+  }
+  return (await response.json()) as WeeklyReview[];
+}
+
 export async function fetchActivities(params?: {
   from?: string;
   to?: string;
