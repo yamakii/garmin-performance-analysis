@@ -138,12 +138,18 @@ export default function EfficiencyReport({
       {(data) => (
         <>
           {stats.length > 0 && (
-            <dl className="mb-4 grid grid-cols-3 gap-3">
+            // Columns track tile count so 4 tiles (with power) fit one row
+            // and 3 tiles (no power) stay balanced without an empty cell.
+            <dl
+              className={`mb-4 grid grid-cols-2 gap-3 ${
+                stats.length >= 4 ? "sm:grid-cols-4" : "sm:grid-cols-3"
+              }`}
+            >
               {stats.map(
                 ({ label, value, unit, digits, rating, note, subValue }) => (
                   <div
                     key={label}
-                    className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2"
+                    className="rounded-lg bg-slate-50 px-3 py-2"
                   >
                     <dt className="text-xs font-medium tracking-wide text-slate-500">
                       {label}

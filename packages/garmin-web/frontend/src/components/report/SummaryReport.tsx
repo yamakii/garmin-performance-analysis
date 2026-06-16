@@ -133,7 +133,7 @@ export default function SummaryReport({
                   />
                 )}
               {typeof data.recommendations === "string" && (
-                <details className="rounded-lg border border-slate-100 bg-slate-50/60 px-4 py-2">
+                <details className="rounded-lg bg-slate-50 px-3 py-2">
                   <summary className="cursor-pointer text-sm font-medium text-slate-600">
                     詳しい改善ポイント
                   </summary>
