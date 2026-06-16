@@ -196,9 +196,9 @@ def _latest_review_id(db_path: str) -> int:
 
     with get_connection(db_path) as conn:
         row = conn.execute(
-            "SELECT review_id FROM weekly_reviews "
-            "ORDER BY review_id DESC LIMIT 1"
+            "SELECT review_id FROM weekly_reviews " "ORDER BY review_id DESC LIMIT 1"
         ).fetchone()
+    assert row is not None
     return int(row[0])
 
 
@@ -307,9 +307,7 @@ def test_list_weekly_review_versions_returns_all(initialized_db_path) -> None:
 
     versions = AthleteReader(db_path=db_path).list_weekly_review_versions("2026-06-08")
     assert len(versions) == 3
-    ordered_volumes = [
-        v["review_data"]["this_week"]["volume_km"] for v in versions
-    ]
+    ordered_volumes = [v["review_data"]["this_week"]["volume_km"] for v in versions]
     assert ordered_volumes == [30.0, 20.0, 10.0]
 
 

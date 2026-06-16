@@ -77,11 +77,12 @@ def test_weekly_reviews_allow_multiple_versions_per_week(tmp_path: Path) -> None
                      DATE '2025-06-09', DATE '2025-06-15')
                 """)
 
-        count = conn.execute(
+        count_row = conn.execute(
             "SELECT COUNT(*) FROM weekly_reviews "
             "WHERE user_id = 'default' AND week_start_date = DATE '2025-06-09'"
-        ).fetchone()[0]
-        assert count == 2
+        ).fetchone()
+        assert count_row is not None
+        assert count_row[0] == 2
     finally:
         conn.close()
 
@@ -119,10 +120,11 @@ def test_migration_v8_drops_unique_index(tmp_path: Path) -> None:
                      DATE '2025-06-09', DATE '2025-06-15')
                 """)
 
-        count = conn.execute(
+        count_row = conn.execute(
             "SELECT COUNT(*) FROM weekly_reviews "
             "WHERE user_id = 'default' AND week_start_date = DATE '2025-06-09'"
-        ).fetchone()[0]
-        assert count == 2
+        ).fetchone()
+        assert count_row is not None
+        assert count_row[0] == 2
     finally:
         conn.close()
