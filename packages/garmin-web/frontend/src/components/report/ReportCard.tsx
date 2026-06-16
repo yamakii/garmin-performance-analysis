@@ -4,6 +4,15 @@ import type { SectionResult } from "../../types";
 export const REPORT_CARD_CLASS =
   "rounded-xl border border-slate-200 bg-white p-5 shadow-sm";
 
+/** Neutral gray sub-box nested on a white report card. */
+export const SUBCARD = "rounded-lg bg-slate-50 px-3 py-2";
+
+/** Subsection heading inside a report card (h3). */
+export const SUBHEADING = "text-sm font-semibold text-slate-700";
+
+/** Compact meta label for a dt / footnote heading. */
+export const META_LABEL = "text-xs font-medium tracking-wide text-slate-500";
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

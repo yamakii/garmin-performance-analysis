@@ -1,7 +1,7 @@
 import type { SectionResult } from "../../types";
 import FallbackFields from "./FallbackFields";
 import MarkdownText from "./MarkdownText";
-import ReportCard from "./ReportCard";
+import ReportCard, { META_LABEL, SUBCARD, SUBHEADING } from "./ReportCard";
 
 const PHASES: { key: string; label: string; dot: string }[] = [
   { key: "warmup_evaluation", label: "ウォームアップ", dot: "bg-sky-400" },
@@ -42,9 +42,7 @@ export default function PhaseTimeline({
                       aria-hidden="true"
                       className={`absolute top-1 -left-[27px] h-3 w-3 rounded-full ring-4 ring-white ${dot}`}
                     />
-                    <h3 className="text-sm font-semibold text-slate-700">
-                      {label}
-                    </h3>
+                    <h3 className={SUBHEADING}>{label}</h3>
                     <div className="mt-1">
                       <MarkdownText text={data[key] as string} />
                     </div>
@@ -53,10 +51,8 @@ export default function PhaseTimeline({
               </ol>
             )}
             {typeof data.evaluation_criteria === "string" && (
-              <div className="mt-4 rounded-lg bg-slate-50 px-3 py-2">
-                <h3 className="text-xs font-medium tracking-wide text-slate-500">
-                  評価基準
-                </h3>
+              <div className={`mt-4 ${SUBCARD}`}>
+                <h3 className={META_LABEL}>評価基準</h3>
                 <MarkdownText text={data.evaluation_criteria} />
               </div>
             )}

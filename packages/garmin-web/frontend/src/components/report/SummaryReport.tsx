@@ -3,7 +3,7 @@ import ActionCallout from "./ActionCallout";
 import FallbackFields, { renderValue } from "./FallbackFields";
 import MarkdownText from "./MarkdownText";
 import NextRunTarget from "./NextRunTarget";
-import ReportCard from "./ReportCard";
+import ReportCard, { SUBCARD } from "./ReportCard";
 import StarRating from "./StarRating";
 
 // Keys with dedicated UI (Spike #198: 100% keys + optional summary fields).
@@ -133,7 +133,7 @@ export default function SummaryReport({
                   />
                 )}
               {typeof data.recommendations === "string" && (
-                <details className="rounded-lg bg-slate-50 px-3 py-2">
+                <details className={SUBCARD}>
                   <summary className="cursor-pointer text-sm font-medium text-slate-600">
                     詳しい改善ポイント
                   </summary>

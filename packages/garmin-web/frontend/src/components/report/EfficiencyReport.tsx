@@ -1,7 +1,7 @@
 import type { SectionResult } from "../../types";
 import FallbackFields from "./FallbackFields";
 import MarkdownText from "./MarkdownText";
-import ReportCard from "./ReportCard";
+import ReportCard, { META_LABEL, SUBCARD, SUBHEADING } from "./ReportCard";
 
 const FIELDS: { key: string; label: string }[] = [
   { key: "efficiency", label: "フォーム効率" },
@@ -147,11 +147,8 @@ export default function EfficiencyReport({
             >
               {stats.map(
                 ({ label, value, unit, digits, rating, note, subValue }) => (
-                  <div
-                    key={label}
-                    className="rounded-lg bg-slate-50 px-3 py-2"
-                  >
-                    <dt className="text-xs font-medium tracking-wide text-slate-500">
+                  <div key={label} className={SUBCARD}>
+                    <dt className={META_LABEL}>
                       {label}
                     </dt>
                     {/* GCT / VO / VR / power share the violet form-metric color (#214). */}
@@ -184,9 +181,7 @@ export default function EfficiencyReport({
             }
             return (
               <div key={key} className="mt-3 first:mt-0">
-                <h3 className="mb-1 text-sm font-semibold text-slate-700">
-                  {label}
-                </h3>
+                <h3 className={`mb-1 ${SUBHEADING}`}>{label}</h3>
                 <MarkdownText text={text} />
               </div>
             );

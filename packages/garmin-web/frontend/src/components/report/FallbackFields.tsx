@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import MarkdownText from "./MarkdownText";
+import { META_LABEL } from "./ReportCard";
 
 export function renderValue(value: unknown): ReactNode {
   if (value == null) {
@@ -54,9 +55,7 @@ export default function FallbackFields({
     <dl className={frame}>
       {entries.map(([key, value]) => (
         <div key={key} className="py-2">
-          <dt className="text-xs font-medium tracking-wide text-slate-500">
-            {key}
-          </dt>
+          <dt className={META_LABEL}>{key}</dt>
           <dd className="mt-0.5 text-sm text-slate-700">{renderValue(value)}</dd>
         </div>
       ))}
