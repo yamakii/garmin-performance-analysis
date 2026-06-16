@@ -1,7 +1,7 @@
 import type { SectionResult } from "../../types";
 import FallbackFields from "./FallbackFields";
 import MarkdownText from "./MarkdownText";
-import { isRecord, ParseErrorNotice } from "./ReportCard";
+import { isRecord, ParseErrorNotice, SUBCARD, SUBHEADING } from "./ReportCard";
 
 const KNOWN_KEYS = ["metadata", "highlights", "analyses"];
 
@@ -48,9 +48,9 @@ export default function SplitNarrative({
 
   return (
     <div className="mt-4 border-t border-slate-100 pt-4">
-      <h3 className="text-sm font-semibold text-slate-700">スプリット解説</h3>
+      <h3 className={SUBHEADING}>スプリット解説</h3>
       {typeof data.highlights === "string" && (
-        <div className="mt-2 rounded-lg bg-slate-50 px-3 py-2">
+        <div className={`mt-2 ${SUBCARD}`}>
           <MarkdownText text={data.highlights} />
         </div>
       )}
