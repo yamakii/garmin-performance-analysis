@@ -89,10 +89,12 @@ def calculate_power_efficiency_internal(
         # Get average power and speed from splits
         splits_data = conn.execute(
             """
-            SELECT AVG(power) as power_avg, AVG(average_speed) as speed_avg
+            SELECT AVG(power) as power_avg, AVG(grade_adjusted_speed) as speed_avg
             FROM splits
             WHERE activity_id = ?
               AND power IS NOT NULL
+              AND grade_adjusted_speed IS NOT NULL
+              AND role_phase = 'run'
             """,
             [activity_id],
         ).fetchone()

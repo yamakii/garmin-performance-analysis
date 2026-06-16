@@ -36,7 +36,9 @@ def _base_tmp_db(tmp_path_factory: pytest.TempPathFactory) -> str:
             split_id INTEGER PRIMARY KEY,
             activity_id INTEGER,
             average_speed FLOAT,
-            power FLOAT
+            grade_adjusted_speed FLOAT,
+            power FLOAT,
+            role_phase VARCHAR
         )
     """)
 
@@ -83,11 +85,16 @@ def _base_tmp_db(tmp_path_factory: pytest.TempPathFactory) -> str:
             split_id = activity_id * 10 + j
             power = 200 + j * 20
             power_wkg = power / base_weight_kg
-            speed = 1.0 + 0.7 * power_wkg
-            split_rows.append((split_id, activity_id, speed, power))
+            # grade_adjusted_speed follows the model speed = 1.0 + 0.7 * power_wkg.
+            # average_speed is set to a different value to prove GAP is the input.
+            gap_speed = 1.0 + 0.7 * power_wkg
+            avg_speed = gap_speed + 0.5
+            split_rows.append(
+                (split_id, activity_id, avg_speed, gap_speed, power, "run")
+            )
 
     conn.executemany("INSERT INTO activities VALUES (?, ?, ?)", activity_rows)
-    conn.executemany("INSERT INTO splits VALUES (?, ?, ?, ?)", split_rows)
+    conn.executemany("INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?)", split_rows)
     conn.close()
     return db_path
 
@@ -193,3 +200,83 @@ def test_train_power_efficiency_baseline_insufficient_data(tmp_db_path):
     )
 
     assert result is None
+
+
+@pytest.mark.integration
+def test_power_baseline_excludes_non_run_splits(tmp_db_path):
+    """warmup/cooldown スプリットは学習サンプルから除外される.
+
+    base fixture は 20 activities × 5 run splits = 100 run splits。
+    各 activity に warmup/cooldown を 1 件ずつ追加しても、n_samples は
+    run の 100 件のまま（非定常スプリットは除外）になることを検証する。
+    """
+    from garmin_mcp.form_baseline.trainer import train_power_efficiency_baseline
+
+    conn = duckdb.connect(tmp_db_path)
+    # Add 1 warmup + 1 cooldown split per activity (40 non-run splits total).
+    extra_rows = []
+    for i in range(20):
+        activity_id = 1000 + i
+        # Use deliberately off-model speeds/power for the non-run splits so that
+        # if they leaked in, both n_samples and the fit would change.
+        extra_rows.append(
+            (activity_id * 100 + 1, activity_id, 9.0, 9.0, 400.0, "warmup")
+        )
+        extra_rows.append(
+            (activity_id * 100 + 2, activity_id, 0.5, 0.5, 100.0, "cooldown")
+        )
+    conn.executemany("INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?)", extra_rows)
+    conn.close()
+
+    result = train_power_efficiency_baseline(
+        user_id="default",
+        condition_group="flat_road",
+        end_date=datetime.now().strftime("%Y-%m-%d"),
+        window_months=2,
+        db_path=tmp_db_path,
+    )
+
+    assert result is not None
+    # Only the 100 run splits should be used (warmup/cooldown excluded).
+    assert (
+        result["n_samples"] == 100
+    ), f"Expected 100 run-only samples, got {result['n_samples']}"
+    # Fit should remain the model speed = 1.0 + 0.7 * power_wkg.
+    assert 0.5 < result["power_a"] < 1.5
+    assert 0.5 < result["power_b"] < 1.0
+
+
+@pytest.mark.integration
+def test_power_baseline_uses_grade_adjusted_speed(tmp_db_path):
+    """回帰の速度入力が grade_adjusted_speed (GAP) であることを検証する.
+
+    base fixture は GAP = 1.0 + 0.7 * power_wkg、average_speed = GAP + 0.5。
+    average_speed を更にずらしても fit は変わらず、GAP に対して
+    power_a≈1.0 / power_b≈0.7 で回帰されることを確認する。
+    """
+    from garmin_mcp.form_baseline.trainer import train_power_efficiency_baseline
+
+    conn = duckdb.connect(tmp_db_path)
+    # Corrupt average_speed entirely; GAP is untouched. If the query used
+    # average_speed the fit (and the speed range filter) would break.
+    conn.execute("UPDATE splits SET average_speed = 99.0")
+    conn.close()
+
+    result = train_power_efficiency_baseline(
+        user_id="default",
+        condition_group="flat_road",
+        end_date=datetime.now().strftime("%Y-%m-%d"),
+        window_months=2,
+        db_path=tmp_db_path,
+    )
+
+    assert result is not None
+    assert result["n_samples"] == 100, "GAP-based filter should keep all run splits"
+    # Fit reflects the GAP model, not the corrupted average_speed.
+    assert (
+        0.5 < result["power_a"] < 1.5
+    ), f"power_a should track GAP (~1.0), got {result['power_a']}"
+    assert (
+        0.5 < result["power_b"] < 1.0
+    ), f"power_b should track GAP (~0.7), got {result['power_b']}"
+    assert result["power_rmse"] < 0.5

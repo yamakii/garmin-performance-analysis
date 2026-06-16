@@ -279,7 +279,9 @@ def _seed_baseline_db(db_path: str) -> None:
             stride_length FLOAT,
             cadence FLOAT,
             average_speed FLOAT,
-            power FLOAT
+            grade_adjusted_speed FLOAT,
+            power FLOAT,
+            role_phase VARCHAR
         )
         """)
     conn.execute("CREATE SEQUENCE seq_history_id START 1")
@@ -344,13 +346,15 @@ def _seed_baseline_db(db_path: str) -> None:
                     stride_length,
                     cadence,
                     speed,
+                    speed,  # grade_adjusted_speed mirrors average_speed
                     power,
+                    "run",
                 )
             )
 
     conn.executemany("INSERT INTO activities VALUES (?, ?, ?)", activity_rows)
     conn.executemany(
-        "INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", split_rows
+        "INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", split_rows
     )
     conn.close()
 
@@ -439,7 +443,9 @@ def _create_baseline_schema(conn: duckdb.DuckDBPyConnection) -> None:
             stride_length FLOAT,
             cadence FLOAT,
             average_speed FLOAT,
-            power FLOAT
+            grade_adjusted_speed FLOAT,
+            power FLOAT,
+            role_phase VARCHAR
         )
         """)
     conn.execute("CREATE SEQUENCE seq_history_id START 1")
@@ -495,7 +501,9 @@ def _make_splits(activity_id: int) -> list[tuple]:
                 stride_length,
                 cadence,
                 speed,
+                speed,  # grade_adjusted_speed mirrors average_speed
                 power,
+                "run",
             )
         )
     return rows
@@ -533,7 +541,7 @@ def _seed_two_month_window(db_path: str, activity_date: str, splits_per_month: i
         conn.executemany("INSERT INTO activities VALUES (?, ?, ?)", activity_rows)
     if split_rows:
         conn.executemany(
-            "INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", split_rows
+            "INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", split_rows
         )
     conn.close()
 
