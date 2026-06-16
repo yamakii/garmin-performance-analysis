@@ -61,13 +61,26 @@ prompt: "Activity ID {activity_id} ({date}) の全スプリットを詳細分析
 
 2エージェント完了後、成功/失敗を集計してください（unified は4 JSON すべてが揃って初めて成功扱い）：
 
-- **2/2 成功**: Step 2.5 へ進む（通常フロー）
-- **1/2 成功**: 失敗したエージェント名をユーザーに通知し、成功した結果のみ DuckDB に登録して続行。該当セクションが欠落している旨をユーザーに報告。
+- **2/2 成功**: Step 2.2 へ進む（通常フロー）
+- **1/2 成功**: 失敗したエージェント名をユーザーに通知し、成功した結果のみ Step 2.2 → DuckDB に登録して続行。該当セクションが欠落している旨をユーザーに報告。
 - **0/2 成功**: 分析を中止。DuckDB 登録は行わず、全エラー内容をユーザーに報告して停止。
+
+### Step 2.2: 日本語校正パス（proofreader agent）
+
+merge の前に、生成された JSON の日本語散文を校正してください。section 分析は稀にトークン崩れ（誤字・誤変換・活用崩れ）を出力するため、それを自動修正する品質ゲートです。
+
+```
+Task: proofreader
+prompt: "{ANALYSIS_TEMP_DIR} 配下の *.json の日本語散文フィールドを校正してください。崩れ（誤字・誤変換・活用崩れ）のみを Edit で最小修正し、数値・★・キー・構造・意味は変えないでください。"
+```
+
+- **存在する `.json` のみ**を対象（4/5 モードでも可）。proofreader は崩れが無ければ何もしない
+- proofreader は**散文の崩れだけ**を直す（数値・★・enum・JSON構造は保護）。詳細は `.claude/agents/proofreader.md`
+- 校正完了後に Step 2.5（merge）へ進む。proofreader が失敗・skip しても、未校正のまま merge は可能（校正は best-effort の品質向上ステップ）
 
 ### Step 2.5: 分析結果のDuckDB登録（Merge）
 
-エラーハンドリング通過後、1コマンドで一括登録：
+校正パス通過後、1コマンドで一括登録：
 
 ```bash
 uv run python -m garmin_mcp.scripts.merge_section_analyses {ANALYSIS_TEMP_DIR}
