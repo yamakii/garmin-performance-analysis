@@ -95,4 +95,32 @@ describe("Goal", () => {
       screen.getByText("故障なく走り込めた一方、後半の失速が課題でした。"),
     ).toBeInTheDocument();
   });
+
+  it("shows a /set-goal CLI hint in each empty state", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            profile: { current_focus: null, focus_notes: null, updated_at: null },
+            goals: [],
+            retrospectives: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+
+    render(
+      <MemoryRouter>
+        <Goal />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByText("現フェーズが登録されていません"),
+    ).toBeInTheDocument();
+    // All three empty sections point the user at the CLI command.
+    expect(screen.getAllByText("/set-goal")).toHaveLength(3);
+  });
 });

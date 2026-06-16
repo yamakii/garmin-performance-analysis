@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import EmptyState, { CliCommand } from "../components/EmptyState";
 import { fetchWeeklyReviews } from "../api/client";
 import type { WeeklyReview } from "../types";
 
@@ -106,9 +107,14 @@ export default function WeeklyReviews() {
             })}
           </ul>
         ) : (
-          <p className="py-4 text-center text-sm text-slate-500">
-            週次レビューが登録されていません
-          </p>
+          <EmptyState
+            message="週次レビューが登録されていません"
+            hint={
+              <>
+                CLI <CliCommand>/weekly-review</CliCommand> で作成できます
+              </>
+            }
+          />
         )}
       </section>
     </div>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import EmptyState, { CliCommand } from "../components/EmptyState";
 import { fetchGoal } from "../api/client";
 import type { GoalResponse } from "../types";
 
@@ -104,9 +105,14 @@ export default function Goal() {
             )}
           </div>
         ) : (
-          <p className="py-4 text-center text-sm text-slate-500">
-            現フェーズが登録されていません
-          </p>
+          <EmptyState
+            message="現フェーズが登録されていません"
+            hint={
+              <>
+                CLI <CliCommand>/set-goal</CliCommand> で登録できます
+              </>
+            }
+          />
         )}
       </section>
 
@@ -159,9 +165,14 @@ export default function Goal() {
             </tbody>
           </table>
         ) : (
-          <p className="py-4 text-center text-sm text-slate-500">
-            目標レースが登録されていません
-          </p>
+          <EmptyState
+            message="目標レースが登録されていません"
+            hint={
+              <>
+                CLI <CliCommand>/set-goal</CliCommand> で登録できます
+              </>
+            }
+          />
         )}
       </section>
 
@@ -197,9 +208,14 @@ export default function Goal() {
             ))}
           </ul>
         ) : (
-          <p className="py-4 text-center text-sm text-slate-500">
-            振り返りが登録されていません
-          </p>
+          <EmptyState
+            message="振り返りが登録されていません"
+            hint={
+              <>
+                CLI <CliCommand>/set-goal</CliCommand> で登録できます
+              </>
+            }
+          />
         )}
       </section>
     </div>

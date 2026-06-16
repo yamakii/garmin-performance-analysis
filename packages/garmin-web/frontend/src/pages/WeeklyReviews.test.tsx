@@ -83,4 +83,27 @@ describe("WeeklyReviews", () => {
     expect(hrefs).toContain("/weekly-reviews/2026-06-15");
     expect(hrefs).toContain("/weekly-reviews/2026-06-08");
   });
+
+  it("shows a /weekly-review CLI hint when there are no reviews", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    render(
+      <MemoryRouter>
+        <WeeklyReviews />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByText("週次レビューが登録されていません"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("/weekly-review")).toBeInTheDocument();
+  });
 });
