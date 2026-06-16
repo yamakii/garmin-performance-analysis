@@ -3,20 +3,40 @@
 from fastapi import APIRouter, HTTPException, Request
 from garmin_mcp.database.connection import get_connection
 
-from garmin_web.queries.weekly_reviews import get_weekly_review, list_weekly_reviews
+from garmin_web.queries.weekly_reviews import (
+    get_weekly_review,
+    list_weekly_review_versions,
+    list_weekly_reviews,
+)
 
 router = APIRouter(prefix="/api")
 
 
 @router.get("/weekly-reviews")
 def list_weekly_reviews_endpoint(request: Request, limit: int = 12) -> list[dict]:
-    """Return recent weekly reviews (newest first).
+    """Return recent weekly reviews (newest first), one per week.
 
-    Read-only: registration/updates are owned by the CLI (`/weekly-review`).
+    The list is de-duplicated to the latest version of each week. Read-only:
+    registration/updates are owned by the CLI (`/weekly-review`).
     """
     db_path = getattr(request.app.state, "db_path", None)
     with get_connection(db_path) as conn:
         return list_weekly_reviews(conn, limit=limit)
+
+
+@router.get("/weekly-reviews/{week_start_date}/versions")
+def list_weekly_review_versions_endpoint(
+    request: Request, week_start_date: str
+) -> list[dict]:
+    """Return all saved versions for a single week (newest first).
+
+    Returns an empty list (status 200) when no versions exist for the week.
+    The more specific ``/versions`` path is declared before the bare
+    ``/{week_start_date}`` route so it is matched first.
+    """
+    db_path = getattr(request.app.state, "db_path", None)
+    with get_connection(db_path) as conn:
+        return list_weekly_review_versions(conn, week_start_date)
 
 
 @router.get("/weekly-reviews/{week_start_date}")

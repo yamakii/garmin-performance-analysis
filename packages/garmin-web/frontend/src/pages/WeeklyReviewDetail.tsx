@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { fetchWeeklyReview } from "../api/client";
+import { fetchWeeklyReviewVersions } from "../api/client";
 import type { WeeklyReview } from "../types";
 
 function Section({
@@ -20,9 +20,15 @@ function Section({
   );
 }
 
+function versionLabel(version: WeeklyReview, isLatest: boolean): string {
+  const stamp = version.created_at ?? version.review_date ?? "日時不明";
+  return isLatest ? `${stamp}（最新）` : stamp;
+}
+
 export default function WeeklyReviewDetail() {
   const { weekStart } = useParams<{ weekStart: string }>();
-  const [review, setReview] = useState<WeeklyReview | null>(null);
+  const [versions, setVersions] = useState<WeeklyReview[]>([]);
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -32,10 +38,11 @@ export default function WeeklyReviewDetail() {
     }
     let cancelled = false;
     setLoading(true);
-    fetchWeeklyReview(weekStart)
+    fetchWeeklyReviewVersions(weekStart)
       .then((data) => {
         if (!cancelled) {
-          setReview(data);
+          setVersions(data);
+          setSelectedIndex(0);
           setLoading(false);
         }
       })
@@ -71,10 +78,11 @@ export default function WeeklyReviewDetail() {
       </p>
     );
   }
-  if (review == null) {
+  if (versions.length === 0) {
     return null;
   }
 
+  const review = versions[Math.min(selectedIndex, versions.length - 1)];
   const data = review.review_data;
   const thisWeek = data?.this_week;
   const periodization = data?.periodization;
@@ -97,6 +105,32 @@ export default function WeeklyReviewDetail() {
       <p className="font-numeric text-sm tabular-nums text-slate-500">
         {review.week_start_date} 〜 {review.week_end_date}
       </p>
+
+      {versions.length > 1 && (
+        <div className="flex flex-wrap items-center gap-3">
+          <label
+            htmlFor="version-select"
+            className="text-sm font-medium text-slate-500"
+          >
+            版を選択:
+          </label>
+          <select
+            id="version-select"
+            value={selectedIndex}
+            onChange={(e) => setSelectedIndex(Number(e.target.value))}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-ink shadow-sm focus:border-ink focus:outline-none"
+          >
+            {versions.map((v, i) => (
+              <option key={v.review_id} value={i}>
+                {versionLabel(v, i === 0)}
+              </option>
+            ))}
+          </select>
+          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+            全{versions.length}版
+          </span>
+        </div>
+      )}
 
       {data == null ? (
         <p className="py-4 text-center text-sm text-slate-500">
