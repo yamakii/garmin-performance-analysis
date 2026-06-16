@@ -29,7 +29,9 @@ def tmp_db_with_data(tmp_path):
             split_id INTEGER,
             activity_id INTEGER,
             power DOUBLE,
-            average_speed DOUBLE
+            average_speed DOUBLE,
+            grade_adjusted_speed DOUBLE,
+            role_phase VARCHAR
         )
     """)
 
@@ -86,11 +88,12 @@ def tmp_db_with_data(tmp_path):
         INSERT INTO activities VALUES (12345, '2025-10-28', 70.0)
     """)
 
+    # split_id, activity_id, power, average_speed, grade_adjusted_speed, role_phase
     conn.execute("""
         INSERT INTO splits VALUES
-            (1, 12345, 280.0, 4.5),
-            (2, 12345, 290.0, 4.6),
-            (3, 12345, 285.0, 4.55)
+            (1, 12345, 280.0, 4.5, 4.5, 'run'),
+            (2, 12345, 290.0, 4.6, 4.6, 'run'),
+            (3, 12345, 285.0, 4.55, 4.55, 'run')
     """)
 
     conn.execute("""
@@ -119,8 +122,8 @@ def tmp_db_with_data(tmp_path):
 
     conn.execute("""
         INSERT INTO splits VALUES
-            (1, 67890, NULL, 4.0),
-            (2, 67890, NULL, 4.1)
+            (1, 67890, NULL, 4.0, 4.0, 'run'),
+            (2, 67890, NULL, 4.1, 4.1, 'run')
     """)
 
     conn.execute("""

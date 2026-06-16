@@ -262,7 +262,7 @@ def train_power_efficiency_baseline(
             # Query data
             query = """
                 SELECT
-                    s.average_speed AS speed_mps,
+                    s.grade_adjusted_speed AS speed_mps,
                     s.power AS power_w,
                     a.base_weight_kg
                 FROM splits s
@@ -271,8 +271,10 @@ def train_power_efficiency_baseline(
                   AND a.activity_date <= ?
                   AND s.power IS NOT NULL
                   AND a.base_weight_kg IS NOT NULL
-                  AND s.average_speed > 1.5
-                  AND s.average_speed < 7.0
+                  AND s.grade_adjusted_speed IS NOT NULL
+                  AND s.role_phase = 'run'
+                  AND s.grade_adjusted_speed > 1.5
+                  AND s.grade_adjusted_speed < 7.0
             """
 
             result = conn.execute(query, [period_start, period_end]).fetchall()

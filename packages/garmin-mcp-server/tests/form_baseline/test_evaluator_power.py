@@ -37,7 +37,9 @@ def tmp_db_with_baseline(tmp_path):
             split_id INTEGER PRIMARY KEY,
             activity_id INTEGER,
             average_speed FLOAT,
-            power FLOAT
+            grade_adjusted_speed FLOAT,
+            power FLOAT,
+            role_phase VARCHAR
         )
     """)
 
@@ -107,9 +109,16 @@ def tmp_db_with_baseline(tmp_path):
     # Insert hr_efficiency (training type)
     conn.execute("INSERT INTO hr_efficiency VALUES (1001, 'low_moderate')")
 
-    # Insert splits with power
-    conn.execute("INSERT INTO splits VALUES (10001, 1001, 3.5, 250.0)")  # 3.33 W/kg
-    conn.execute("INSERT INTO splits VALUES (10002, 1001, 3.6, 260.0)")  # 3.47 W/kg
+    # Insert run splits with power. grade_adjusted_speed is the GAP input used
+    # for evaluation; average_speed is set to a different value to ensure GAP
+    # (not average_speed) drives speed_actual.
+    # split_id, activity_id, average_speed, grade_adjusted_speed, power, role_phase
+    conn.execute(
+        "INSERT INTO splits VALUES (10001, 1001, 9.0, 3.5, 250.0, 'run')"
+    )  # 3.33 W/kg
+    conn.execute(
+        "INSERT INTO splits VALUES (10002, 1001, 9.0, 3.6, 260.0, 'run')"
+    )  # 3.47 W/kg
 
     conn.close()
     return db_path
@@ -157,7 +166,7 @@ def test_evaluate_power_efficiency_no_power(tmp_db_with_baseline):
     conn.execute(
         "INSERT INTO activities VALUES (1002, ?, 75.0)", [today - timedelta(days=3)]
     )
-    conn.execute("INSERT INTO splits VALUES (10003, 1002, 3.5, NULL)")
+    conn.execute("INSERT INTO splits VALUES (10003, 1002, 9.0, 3.5, NULL, 'run')")
 
     result = calculate_power_efficiency_internal(
         conn,
@@ -171,6 +180,42 @@ def test_evaluate_power_efficiency_no_power(tmp_db_with_baseline):
     conn.close()
 
     assert result is None  # No power data available
+
+
+@pytest.mark.integration
+def test_power_eval_uses_gap_and_run_only(tmp_db_with_baseline):
+    """speed_actual は run スプリットの GAP 平均で算出される.
+
+    既存の run スプリット (GAP 3.5, 3.6 → 平均 3.55) に加え、
+    cooldown/warmup スプリットと GAP=NULL の run スプリットを投入しても、
+    speed_actual は run かつ GAP 非null の平均 3.55 のまま（average_speed=9.0
+    や非定常・null スプリットは無視）であることを検証する。
+    """
+    conn = duckdb.connect(tmp_db_with_baseline)
+    # Non-run splits with off-model GAP that must be ignored.
+    conn.execute("INSERT INTO splits VALUES (10004, 1001, 9.0, 6.0, 300.0, 'cooldown')")
+    conn.execute("INSERT INTO splits VALUES (10005, 1001, 9.0, 6.0, 300.0, 'warmup')")
+    # Run split with GAP=NULL must be ignored (power present).
+    conn.execute("INSERT INTO splits VALUES (10006, 1001, 9.0, NULL, 300.0, 'run')")
+
+    today = datetime.now().date()
+    result = calculate_power_efficiency_internal(
+        conn,
+        activity_id=1001,
+        activity_date=str(today - timedelta(days=5)),
+        user_id="default",
+        condition_group="flat_road",
+        form_penalties=None,
+    )
+
+    conn.close()
+
+    assert result is not None
+    # GAP average of run splits = (3.5 + 3.6) / 2 = 3.55, not average_speed (9.0)
+    # and not affected by the cooldown/warmup (GAP 6.0) or GAP-null splits.
+    assert (
+        abs(result["speed_actual_mps"] - 3.55) < 1e-3
+    ), f"speed_actual should be GAP run-only avg 3.55, got {result['speed_actual_mps']}"
 
 
 @pytest.mark.unit
