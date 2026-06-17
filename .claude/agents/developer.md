@@ -1,7 +1,7 @@
 ---
 name: developer
 description: 実装タスク用サブエージェント。worktree isolation で起動し、コード実装・テスト・commit を行う。
-tools: Bash, Read, Edit, Write, Glob, Grep, mcp__serena__activate_project, mcp__serena__find_symbol, mcp__serena__get_symbols_overview, mcp__serena__find_referencing_symbols, mcp__serena__search_for_pattern, mcp__github__get_issue
+tools: Bash, Read, Edit, Write, Glob, Grep, mcp__serena__activate_project, mcp__serena__find_symbol, mcp__serena__get_symbols_overview, mcp__serena__find_referencing_symbols, mcp__serena__search_for_pattern, mcp__serena__get_diagnostics_for_file, mcp__github__get_issue
 model: inherit
 ---
 
@@ -43,7 +43,11 @@ mcp__serena__activate_project("/home/yamakii/workspace/garmin-performance-analys
 - Test Plan のテスト関数を全て実装
 - 既存パターンに従う（周辺コードを読んでスタイルを合わせる）
 
-### Step 4: テスト & Lint
+### Step 4: 診断 → テスト & Lint
+
+commit 前に、変更した各ファイルへ `mcp__serena__get_diagnostics_for_file` を実行し、
+型・import エラーが無いことを前倒しで確認する（pre-commit を待たずに検出）。Python /
+TypeScript 双方に有効。診断が出たら修正してから次へ。
 
 ```bash
 uv run --directory {worktree_path} pytest {test_path} -m unit -v
