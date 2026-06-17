@@ -30,27 +30,6 @@ class IntervalAnalysisParams(BaseModel):
     activity_id: int
 
 
-def _splits_schema(statistics_only_description: str) -> dict[str, Any]:
-    """Build a splits inputSchema with a tool-specific stats description.
-
-    Each split tool's ``statistics_only`` field carries a distinct hand-written
-    description, so the schema is provided via ``input_schema_override`` instead
-    of being derived from the shared params model.
-    """
-    return {
-        "type": "object",
-        "properties": {
-            "activity_id": {"type": "integer"},
-            "statistics_only": {
-                "type": "boolean",
-                "description": statistics_only_description,
-                "default": False,
-            },
-        },
-        "required": ["activity_id"],
-    }
-
-
 def _inject_split_warnings(result: Any) -> Any:
     """Attach a ``_warnings`` field when splits are missing form metrics."""
     splits = result.get("splits") if isinstance(result, dict) else None
@@ -108,11 +87,13 @@ SPLITS_TOOLS: list[ToolDef] = [
         handler=_get_splits_pace_hr,
         cli_group="splits",
         cli_name="pace-hr",
-        input_schema_override=_splits_schema(
-            "If true, return only aggregated statistics (mean, median, std, min, "
-            "max) instead of per-split data. Reduces output size by ~80%. Default: "
-            "false"
-        ),
+        field_descriptions={
+            "statistics_only": (
+                "If true, return only aggregated statistics (mean, median, std, "
+                "min, max) instead of per-split data. Reduces output size by ~80%. "
+                "Default: false"
+            )
+        },
     ),
     ToolDef(
         name="get_splits_form_metrics",
@@ -125,11 +106,13 @@ SPLITS_TOOLS: list[ToolDef] = [
         handler=_get_splits_form_metrics,
         cli_group="splits",
         cli_name="form-metrics",
-        input_schema_override=_splits_schema(
-            "If true, return only aggregated statistics (mean, median, std, min, "
-            "max) for GCT, VO, VR instead of per-split data. Reduces output size "
-            "by ~80%. Default: false"
-        ),
+        field_descriptions={
+            "statistics_only": (
+                "If true, return only aggregated statistics (mean, median, std, "
+                "min, max) for GCT, VO, VR instead of per-split data. Reduces "
+                "output size by ~80%. Default: false"
+            )
+        },
     ),
     ToolDef(
         name="get_splits_elevation",
@@ -141,11 +124,13 @@ SPLITS_TOOLS: list[ToolDef] = [
         handler=_get_splits_elevation,
         cli_group="splits",
         cli_name="elevation",
-        input_schema_override=_splits_schema(
-            "If true, return only aggregated statistics (mean, median, std, min, "
-            "max) for elevation gain/loss instead of per-split data. Reduces "
-            "output size by ~80%. Default: false"
-        ),
+        field_descriptions={
+            "statistics_only": (
+                "If true, return only aggregated statistics (mean, median, std, "
+                "min, max) for elevation gain/loss instead of per-split data. "
+                "Reduces output size by ~80%. Default: false"
+            )
+        },
     ),
     ToolDef(
         name="get_splits_comprehensive",
@@ -158,11 +143,13 @@ SPLITS_TOOLS: list[ToolDef] = [
         handler=_get_splits_comprehensive,
         cli_group="splits",
         cli_name="comprehensive",
-        input_schema_override=_splits_schema(
-            "If true, return only aggregated statistics (mean, median, std, min, "
-            "max) instead of per-split data. Reduces output size by ~67%. Default: "
-            "false"
-        ),
+        field_descriptions={
+            "statistics_only": (
+                "If true, return only aggregated statistics (mean, median, std, "
+                "min, max) instead of per-split data. Reduces output size by ~67%. "
+                "Default: false"
+            )
+        },
     ),
     ToolDef(
         name="get_interval_analysis",
