@@ -1,7 +1,7 @@
 ---
 name: developer
 description: 実装タスク用サブエージェント。worktree isolation で起動し、コード実装・テスト・commit を行う。
-tools: Bash, Read, Edit, Write, Glob, Grep, mcp__serena__activate_project, mcp__serena__find_symbol, mcp__serena__get_symbols_overview, mcp__serena__find_referencing_symbols, mcp__serena__search_for_pattern, mcp__serena__get_diagnostics_for_file, mcp__github__get_issue
+tools: Bash, Read, Edit, Write, Glob, Grep, mcp__serena__activate_project, mcp__serena__find_symbol, mcp__serena__get_symbols_overview, mcp__serena__find_referencing_symbols, mcp__serena__search_for_pattern, mcp__serena__get_diagnostics_for_file, mcp__github__issue_read
 model: inherit
 ---
 
@@ -14,7 +14,7 @@ Issue の設計に基づいてコードを実装するエージェント。
 ### Step 0: Issue 読み込み
 
 ```
-mcp__github__get_issue(owner="yamakii", repo="garmin-performance-analysis", issue_number={number})
+mcp__github__issue_read(method="get", owner="yamakii", repo="garmin-performance-analysis", issue_number={number})
 ```
 
 Issue body の Design セクションから以下を把握:

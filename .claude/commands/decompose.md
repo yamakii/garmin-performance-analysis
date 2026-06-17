@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash, Read, Glob, Grep, mcp__serena__activate_project, mcp__serena__find_symbol, mcp__serena__get_symbols_overview, mcp__serena__find_referencing_symbols, mcp__serena__search_for_pattern, mcp__serena__read_file, mcp__serena__list_dir, mcp__github__create_issue, mcp__github__update_issue, mcp__github__get_issue, AskUserQuestion
+allowed-tools: Bash, Read, Glob, Grep, mcp__serena__activate_project, mcp__serena__find_symbol, mcp__serena__get_symbols_overview, mcp__serena__find_referencing_symbols, mcp__serena__search_for_pattern, mcp__serena__read_file, mcp__serena__list_dir, mcp__github__issue_write, mcp__github__issue_read, AskUserQuestion
 description: Decompose a large task into Epic + Sub-issues on GitHub
 user-invocable: true
 ---
@@ -74,7 +74,8 @@ mcp__serena__activate_project("/home/yamakii/workspace/garmin-performance-analys
 #### 5a: Epic Issue 作成
 
 ```
-mcp__github__create_issue(
+mcp__github__issue_write(
+  method="create",
   owner="yamakii",
   repo="garmin-performance-analysis",
   title="{Epic タイトル}",
@@ -97,7 +98,8 @@ mcp__github__create_issue(
 各 Sub-issue を作成:
 
 ```
-mcp__github__create_issue(
+mcp__github__issue_write(
+  method="create",
   owner="yamakii",
   repo="garmin-performance-analysis",
   title="{Sub-issue タイトル}",
@@ -135,7 +137,8 @@ Part of #{Epic番号}: {Epic タイトル}
 Sub-issues の番号が確定したら、Epic body の task list を実番号で更新:
 
 ```
-mcp__github__update_issue(
+mcp__github__issue_write(
+  method="update",
   owner="yamakii",
   repo="garmin-performance-analysis",
   issue_number={Epic番号},
@@ -159,7 +162,7 @@ Issues created:
     ...
 
 Next: Plan mode で #{最初のsub-issue番号} から着手できます。
-  mcp__github__get_issue で設計を確認してください。
+  mcp__github__issue_read (method="get") で設計を確認してください。
 ```
 
 ## Small Task Flow
@@ -167,7 +170,8 @@ Next: Plan mode で #{最初のsub-issue番号} から着手できます。
 単発の小さなタスクの場合:
 
 ```
-mcp__github__create_issue(
+mcp__github__issue_write(
+  method="create",
   owner="yamakii",
   repo="garmin-performance-analysis",
   title="{タイトル}",
@@ -190,7 +194,8 @@ mcp__github__create_issue(
 調査タスクの場合:
 
 ```
-mcp__github__create_issue(
+mcp__github__issue_write(
+  method="create",
   owner="yamakii",
   repo="garmin-performance-analysis",
   title="Spike: {調査タイトル}",

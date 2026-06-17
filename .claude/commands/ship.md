@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash, Read, Glob, Grep, mcp__github__get_pull_request, mcp__github__get_pull_request_status, mcp__github__merge_pull_request, mcp__github__get_issue, mcp__github__update_issue
+allowed-tools: Bash, Read, Glob, Grep, mcp__github__list_pull_requests, mcp__github__pull_request_read, mcp__github__merge_pull_request, mcp__github__issue_read, mcp__github__issue_write
 description: Commit and push changes
 user-invocable: true
 ---
@@ -26,7 +26,7 @@ Run the full ship workflow for the current changes.
       ```bash
       git log --oneline -5 | grep -oP '\(#\K[0-9]+(?=\))'
       ```
-      For each extracted number, check if the issue is still open using `mcp__github__get_issue(owner="yamakii", repo="garmin-performance-analysis", issue_number=N)`. If any issue state is "open" → execute Step 5 (Close Issue) with that number.
+      For each extracted number, check if the issue is still open using `mcp__github__issue_read(method="get", owner="yamakii", repo="garmin-performance-analysis", issue_number=N)`. If any issue state is "open" → execute Step 5 (Close Issue) with that number.
 
    f. **All complete**: If none of the above apply → report 「全ステップ完了済みです。未完了の作業はありません。」 and stop.
 
@@ -39,9 +39,11 @@ Run the full ship workflow for the current changes.
 ### Step 1-PR: CI 確認
 
 ```
-mcp__github__get_pull_request_status(owner="yamakii", repo="garmin-performance-analysis", pull_number={PR_NUMBER})
-mcp__github__get_pull_request(owner="yamakii", repo="garmin-performance-analysis", pull_number={PR_NUMBER})
+mcp__github__pull_request_read(method="get_check_runs", owner="yamakii", repo="garmin-performance-analysis", pullNumber={PR_NUMBER})
+mcp__github__pull_request_read(method="get", owner="yamakii", repo="garmin-performance-analysis", pullNumber={PR_NUMBER})
 ```
+
+`get_check_runs` は head commit の CI チェック（check-runs）を返す。required check `ci-guard` が `conclusion: "success"` ならマージ可。`web-backend` / `web-frontend` は `packages/garmin-web/**` 変更時のみ走り、それ以外は `conclusion: "skipped"`（正常）。
 
 **`--validated` フラグあり**（Validation Agent PASS 済み）:
 - CI ステータスを確認するが、pending/running でもマージ可能
@@ -54,7 +56,7 @@ mcp__github__get_pull_request(owner="yamakii", repo="garmin-performance-analysis
 ### Step 2-PR: Merge (merge commit, TDD 履歴保持)
 
 ```
-mcp__github__merge_pull_request(owner="yamakii", repo="garmin-performance-analysis", pull_number={PR_NUMBER}, merge_method="merge")
+mcp__github__merge_pull_request(owner="yamakii", repo="garmin-performance-analysis", pullNumber={PR_NUMBER}, merge_method="merge")
 ```
 
 Note: Branch deletion is handled by GitHub's auto-delete setting.
@@ -120,9 +122,9 @@ If `--close` is specified, or PR body contains `Closes #N`:
 
 5. **Close Issue** (if `--close` specified): After successful push:
 
-   a. **Change Log guard**: Check if the Issue body has a `## Change Log` section using `mcp__github__get_issue(owner="yamakii", repo="garmin-performance-analysis", issue_number={number})`.
+   a. **Change Log guard**: Check if the Issue body has a `## Change Log` section using `mcp__github__issue_read(method="get", owner="yamakii", repo="garmin-performance-analysis", issue_number={number})`.
       - If Change Log exists → proceed to close
-      - If Change Log does NOT exist → append a minimal entry as fallback using `mcp__github__update_issue` with updated body containing:
+      - If Change Log does NOT exist → append a minimal entry as fallback using `mcp__github__issue_write(method="update", ...)` with updated body containing:
         ```
         ## Change Log
         - YYYY-MM-DD (Ship): Closed via /ship
@@ -131,10 +133,10 @@ If `--close` is specified, or PR body contains `Closes #N`:
 
    b. **Close the Issue**:
       ```
-      mcp__github__update_issue(owner="yamakii", repo="garmin-performance-analysis", issue_number={number}, state="closed")
+      mcp__github__issue_write(method="update", owner="yamakii", repo="garmin-performance-analysis", issue_number={number}, state="closed")
       ```
 
-   c. If the closed Issue is a sub-issue (has "Part of #XX" in body), show the Epic's updated progress using `mcp__github__get_issue(owner="yamakii", repo="garmin-performance-analysis", issue_number={epic-number})`.
+   c. If the closed Issue is a sub-issue (has "Part of #XX" in body), show the Epic's updated progress using `mcp__github__issue_read(method="get", owner="yamakii", repo="garmin-performance-analysis", issue_number={epic-number})`.
 
 ## Arguments
 
