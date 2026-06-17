@@ -1,19 +1,23 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import Goal, { formatTargetTime } from "./Goal";
+import Goal, { daysUntil, formatTargetTime } from "./Goal";
+
+/** A race date comfortably in the future so the countdown is positive. */
+const FUTURE_DATE = "2099-02-01";
 
 const FIXTURE_GOAL = {
   profile: {
     current_focus: "サブ4達成に向けた持久力強化",
-    focus_notes: "週末ロング走を軸に有酸素ベースを底上げ",
+    focus_notes:
+      "全体方針は積み上げ。【ボトルネック】後半の失速を抑える【ロング走】月2回 30km",
     updated_at: "2026-06-14 09:00:00",
   },
   goals: [
     {
       goal_id: 1,
-      race_name: "つくばマラソン",
-      race_date: "2026-11-22",
+      race_name: "さいたまマラソン",
+      race_date: FUTURE_DATE,
       priority: "A",
       goal_type: "marathon",
       distance_km: 42.195,
@@ -23,7 +27,7 @@ const FIXTURE_GOAL = {
     },
     {
       goal_id: 2,
-      race_name: "ハーフマラソン大会",
+      race_name: "新潟ハーフ",
       race_date: null,
       priority: "B",
       goal_type: "half",
@@ -45,6 +49,18 @@ const FIXTURE_GOAL = {
   ],
 };
 
+function stubFetch(payload: unknown) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ),
+  );
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -57,17 +73,19 @@ describe("formatTargetTime", () => {
   });
 });
 
+describe("daysUntil", () => {
+  it("returns whole days to a future date and null for missing/invalid", () => {
+    const today = new Date(2026, 0, 1); // 2026-01-01 local
+    expect(daysUntil("2026-01-11", today)).toBe(10);
+    expect(daysUntil("2025-12-31", today)).toBe(-1);
+    expect(daysUntil(null, today)).toBeNull();
+    expect(daysUntil("not-a-date", today)).toBeNull();
+  });
+});
+
 describe("Goal", () => {
-  it("renders profile, goals and retrospectives from API", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify(FIXTURE_GOAL), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      ),
-    );
+  it("test_Goal_renders_race_countdown", async () => {
+    stubFetch(FIXTURE_GOAL);
 
     render(
       <MemoryRouter>
@@ -75,41 +93,69 @@ describe("Goal", () => {
       </MemoryRouter>,
     );
 
-    // Profile focus
+    // Hero shows the A race name and the countdown scaffolding.
+    expect(await screen.findByText("目標レースまで")).toBeInTheDocument();
+    expect(screen.getAllByText("さいたまマラソン").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("あと").length).toBeGreaterThan(0);
+
+    // Target time formatted via formatTargetTime is shown.
+    expect(screen.getAllByText("4:30:00").length).toBeGreaterThan(0);
+
+    // B race with null date shows the "日程未定" badge.
+    expect(screen.getAllByText("日程未定").length).toBeGreaterThan(0);
+  });
+
+  it("test_Goal_renders_focus_accordion", async () => {
+    stubFetch(FIXTURE_GOAL);
+
+    render(
+      <MemoryRouter>
+        <Goal />
+      </MemoryRouter>,
+    );
+
+    // current_focus lead line.
     expect(
       await screen.findByText("サブ4達成に向けた持久力強化"),
     ).toBeInTheDocument();
 
-    // Race rows: names + human-readable target time
-    expect(screen.getByText("つくばマラソン")).toBeInTheDocument();
-    expect(screen.getByText("ハーフマラソン大会")).toBeInTheDocument();
-    expect(screen.getByText("4:30:00")).toBeInTheDocument();
-    expect(screen.getByText("2:00:00")).toBeInTheDocument();
+    // focus_notes 【…】 headings become section card titles.
+    expect(screen.getByText("ボトルネック")).toBeInTheDocument();
+    expect(screen.getByText("ロング走")).toBeInTheDocument();
+    expect(screen.getByText("後半の失速を抑える")).toBeInTheDocument();
 
-    // Null race date renders as 未定
-    expect(screen.getByText("未定")).toBeInTheDocument();
+    // Preamble before the first heading is shown as a lead paragraph.
+    expect(screen.getByText("全体方針は積み上げ。")).toBeInTheDocument();
+  });
 
-    // Retrospective
+  it("test_Goal_renders_race_cards_with_notes", async () => {
+    stubFetch(FIXTURE_GOAL);
+
+    render(
+      <MemoryRouter>
+        <Goal />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("目標レース");
+
+    // notes (previously hidden) are now rendered.
+    expect(screen.getByText("メインターゲット")).toBeInTheDocument();
+    expect(screen.getByText("調整レース")).toBeInTheDocument();
+
+    // Retrospective timeline.
     expect(screen.getByText("2025秋シーズン")).toBeInTheDocument();
     expect(
       screen.getByText("故障なく走り込めた一方、後半の失速が課題でした。"),
     ).toBeInTheDocument();
   });
 
-  it("shows a /set-goal CLI hint in each empty state", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            profile: { current_focus: null, focus_notes: null, updated_at: null },
-            goals: [],
-            retrospectives: [],
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      ),
-    );
+  it("test_Goal_empty_states", async () => {
+    stubFetch({
+      profile: { current_focus: null, focus_notes: null, updated_at: null },
+      goals: [],
+      retrospectives: [],
+    });
 
     render(
       <MemoryRouter>
@@ -120,7 +166,39 @@ describe("Goal", () => {
     expect(
       await screen.findByText("現フェーズが登録されていません"),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText("目標レースが登録されていません"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("振り返りが登録されていません"),
+    ).toBeInTheDocument();
+
     // All three empty sections point the user at the CLI command.
     expect(screen.getAllByText("/set-goal")).toHaveLength(3);
+  });
+
+  it("test_Goal_focus_notes_fallback_without_brackets", async () => {
+    stubFetch({
+      profile: {
+        current_focus: "回復力重視",
+        focus_notes: "見出しの無い自由記述メモ。これを丸ごと1ブロックで出す。",
+        updated_at: null,
+      },
+      goals: [],
+      retrospectives: [],
+    });
+
+    render(
+      <MemoryRouter>
+        <Goal />
+      </MemoryRouter>,
+    );
+
+    // Whole free-text note is shown even without 【…】 headings.
+    expect(
+      await screen.findByText(
+        "見出しの無い自由記述メモ。これを丸ごと1ブロックで出す。",
+      ),
+    ).toBeInTheDocument();
   });
 });
