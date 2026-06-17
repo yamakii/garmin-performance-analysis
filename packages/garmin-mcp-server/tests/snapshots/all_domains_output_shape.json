@@ -1,0 +1,185 @@
+{
+  "detect_form_anomalies_summary": {
+    "activity_id": "int",
+    "anomalies_detected": "int",
+    "recommendations": [
+      "list",
+      "str"
+    ],
+    "summary": {
+      "elevation_related": "int",
+      "fatigue_related": "int",
+      "gct_anomalies": "int",
+      "pace_related": "int",
+      "severity_distribution": {
+        "high": "int",
+        "low": "int",
+        "medium": "int"
+      },
+      "temporal_clusters": [
+        "list",
+        {
+          "count": "int",
+          "end": "int",
+          "start": "int"
+        }
+      ],
+      "vo_anomalies": "int",
+      "vr_anomalies": "int"
+    },
+    "top_anomalies": [
+      "list",
+      {
+        "metric": "str",
+        "probable_cause": "str",
+        "timestamp": "int",
+        "z_score": "float"
+      }
+    ]
+  },
+  "get_interval_analysis": {
+    "activity_id": "int",
+    "fatigue_indicators": {
+      "gct_degradation_ms": "float",
+      "hr_increase_bpm": "int",
+      "pace_degradation_sec_per_km": "float"
+    },
+    "segments": [
+      "list",
+      {
+        "avg_gct_ms": "float",
+        "avg_hr_bpm": "int",
+        "avg_pace_min_per_km": "float",
+        "avg_vo_cm": "float",
+        "avg_vr_percent": "float",
+        "duration_seconds": "int",
+        "end_time": "int",
+        "segment_number": "int",
+        "segment_type": "str",
+        "start_time": "int"
+      }
+    ],
+    "work_recovery_comparison": {}
+  },
+  "get_performance_trends": {
+    "cadence_consistency": "str",
+    "cooldown_phase": {
+      "avg_hr": "NoneType",
+      "avg_pace": "NoneType"
+    },
+    "fatigue_pattern": "str",
+    "hr_drift_percentage": "NoneType",
+    "pace_consistency": "float",
+    "recovery_phase": {
+      "avg_hr": "NoneType",
+      "avg_pace": "NoneType"
+    },
+    "run_phase": {
+      "avg_hr": "float",
+      "avg_pace": "float"
+    },
+    "warmup_phase": {
+      "avg_hr": "NoneType",
+      "avg_pace": "NoneType"
+    }
+  },
+  "get_split_time_series_detail": {
+    "activity_id": "int",
+    "metrics": [
+      "list",
+      "str"
+    ],
+    "split_number": "int",
+    "statistics": {
+      "cadence": {
+        "max": "float",
+        "mean": "float",
+        "min": "float",
+        "std": "float"
+      },
+      "ground_contact_time": {
+        "max": "float",
+        "mean": "float",
+        "min": "float",
+        "std": "float"
+      },
+      "heart_rate": {
+        "max": "float",
+        "mean": "float",
+        "min": "float",
+        "std": "float"
+      },
+      "power": {
+        "max": "float",
+        "mean": "float",
+        "min": "float",
+        "std": "float"
+      },
+      "speed": {
+        "max": "float",
+        "mean": "float",
+        "min": "float",
+        "std": "float"
+      },
+      "vertical_oscillation": {
+        "max": "float",
+        "mean": "float",
+        "min": "float",
+        "std": "float"
+      },
+      "vertical_ratio": {
+        "max": "float",
+        "mean": "float",
+        "min": "float",
+        "std": "float"
+      }
+    },
+    "time_range": {
+      "end_time_s": "int",
+      "start_time_s": "int"
+    },
+    "time_series": [
+      "list",
+      {
+        "cadence": "float",
+        "ground_contact_time": "NoneType",
+        "heart_rate": "float",
+        "power": "float",
+        "speed": "float",
+        "timestamp_s": "int",
+        "vertical_oscillation": "NoneType",
+        "vertical_ratio": "NoneType"
+      }
+    ]
+  },
+  "get_splits_comprehensive": {
+    "splits": [
+      "list",
+      {
+        "avg_heart_rate": "int",
+        "avg_pace_seconds_per_km": "float",
+        "cadence_spm": "float",
+        "distance_km": "float",
+        "elevation_gain_m": "float",
+        "elevation_loss_m": "float",
+        "ground_contact_time_ms": "float",
+        "intensity_type": "str",
+        "max_cadence_spm": "float",
+        "max_heart_rate_bpm": "int",
+        "power_watts": "float",
+        "role_phase": "str",
+        "split_number": "int",
+        "stride_length_cm": "float",
+        "vertical_oscillation_cm": "float",
+        "vertical_ratio_percent": "float"
+      }
+    ]
+  },
+  "get_weather_data": {
+    "humidity": "float",
+    "temperature_c": "float",
+    "temperature_f": "float",
+    "wind_direction": "str",
+    "wind_speed_ms": "float"
+  }
+}

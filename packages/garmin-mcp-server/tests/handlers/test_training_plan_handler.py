@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from garmin_mcp.handlers.training_plan_handler import TrainingPlanHandler
+from garmin_mcp.tools.training_plan import _validate_plan_safety
 
 # --- Fixtures ---
 
@@ -242,7 +243,7 @@ class TestValidatePlanSafety:
         plan = TrainingPlan.model_validate(
             _make_plan_dict(weekly_volumes=[20.0, 21.0, 22.0, 18.0])
         )
-        errors, warnings = TrainingPlanHandler._validate_plan_safety(plan)
+        errors, warnings = _validate_plan_safety(plan)
         assert errors == []
         assert warnings == []
 
@@ -254,7 +255,7 @@ class TestValidatePlanSafety:
         plan = TrainingPlan.model_validate(
             _make_plan_dict(weekly_volumes=[20.0, 24.0, 28.0, 22.0])
         )
-        errors, warnings = TrainingPlanHandler._validate_plan_safety(plan)
+        errors, warnings = _validate_plan_safety(plan)
         assert errors == []
         assert len(warnings) >= 1
         assert "volume increase" in warnings[0]
@@ -268,7 +269,7 @@ class TestValidatePlanSafety:
         plan = TrainingPlan.model_validate(
             _make_plan_dict(weekly_volumes=[20.0, 26.0, 28.0, 22.0])
         )
-        errors, warnings = TrainingPlanHandler._validate_plan_safety(plan)
+        errors, warnings = _validate_plan_safety(plan)
         assert len(errors) >= 1
         assert "volume increase" in errors[0]
         assert "25%" in errors[0]
@@ -282,7 +283,7 @@ class TestValidatePlanSafety:
         plan = TrainingPlan.model_validate(
             _make_plan_dict(weekly_volumes=[20.0, 25.0, 26.0, 22.0])
         )
-        errors, warnings = TrainingPlanHandler._validate_plan_safety(plan)
+        errors, warnings = _validate_plan_safety(plan)
         assert errors == []
         assert len(warnings) >= 1
         assert "volume increase" in warnings[0]
@@ -306,7 +307,7 @@ class TestValidatePlanSafety:
                 ],
             )
         )
-        errors, warnings = TrainingPlanHandler._validate_plan_safety(plan)
+        errors, warnings = _validate_plan_safety(plan)
         assert len(errors) >= 1
         assert "prohibited workout type" in errors[0]
         assert "'tempo'" in errors[0]
@@ -330,7 +331,7 @@ class TestValidatePlanSafety:
                 ],
             )
         )
-        errors, warnings = TrainingPlanHandler._validate_plan_safety(plan)
+        errors, warnings = _validate_plan_safety(plan)
         assert len(errors) >= 1
         assert "prohibited workout type" in errors[0]
 
@@ -362,7 +363,7 @@ class TestValidatePlanSafety:
                 ],
             )
         )
-        errors, warnings = TrainingPlanHandler._validate_plan_safety(plan)
+        errors, warnings = _validate_plan_safety(plan)
         assert errors == []
 
     def test_workout_date_outside_week_range(self) -> None:
@@ -385,7 +386,7 @@ class TestValidatePlanSafety:
                 ],
             )
         )
-        errors, warnings = TrainingPlanHandler._validate_plan_safety(plan)
+        errors, warnings = _validate_plan_safety(plan)
         assert len(errors) >= 1
         assert "outside week 1 range" in errors[0]
 
@@ -406,7 +407,7 @@ class TestValidatePlanSafety:
                 ],
             )
         )
-        errors, warnings = TrainingPlanHandler._validate_plan_safety(plan)
+        errors, warnings = _validate_plan_safety(plan)
         assert errors == []
 
     def test_volume_decrease_is_allowed(self) -> None:
@@ -416,7 +417,7 @@ class TestValidatePlanSafety:
         plan = TrainingPlan.model_validate(
             _make_plan_dict(weekly_volumes=[25.0, 27.0, 28.0, 20.0])
         )
-        errors, warnings = TrainingPlanHandler._validate_plan_safety(plan)
+        errors, warnings = _validate_plan_safety(plan)
         assert errors == []
         assert warnings == []
 

@@ -117,9 +117,8 @@ class TestPrefetchActivityContext:
         }
         handler = PerformanceHandler(mock_db_reader)
 
-        with patch.object(
-            PerformanceHandler,
-            "_prefetch_activity_context",
+        with patch(
+            "garmin_mcp.scripts.prefetch_activity_context.prefetch_activity_context",
             return_value=prefetch_data,
         ):
             result = await handler.handle(
@@ -139,9 +138,8 @@ class TestPrefetchActivityContext:
     ) -> None:
         handler = PerformanceHandler(mock_db_reader)
 
-        with patch.object(
-            PerformanceHandler,
-            "_prefetch_activity_context",
+        with patch(
+            "garmin_mcp.scripts.prefetch_activity_context.prefetch_activity_context",
             return_value={"error": "Activity 99999 not found"},
         ):
             result = await handler.handle(

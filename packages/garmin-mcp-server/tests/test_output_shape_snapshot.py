@@ -17,12 +17,16 @@ from typer.testing import CliRunner
 
 from garmin_mcp.cli import app
 from garmin_mcp.database.db_reader import GarminDBReader
+from garmin_mcp.tools import ALL_DEFS, ALL_DEFS_BY_NAME
 from garmin_mcp.tools.physiology import PHYSIOLOGY_TOOLS_BY_NAME
 from garmin_mcp.tools.registry import dispatch
 
 FIXTURE_ACTIVITY_ID = 20636804823
 FIXTURE_ACTIVITY_DATE = "2025-10-09"
 _SNAPSHOT_PATH = Path(__file__).parent / "snapshots" / "physiology_output_shape.json"
+_ALL_DOMAINS_SNAPSHOT_PATH = (
+    Path(__file__).parent / "snapshots" / "all_domains_output_shape.json"
+)
 
 
 def _resolve_real_db_path() -> Path | None:
@@ -157,3 +161,76 @@ def test_cli_hr_efficiency_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None
     payload = json.loads(result.stdout)
     assert "training_type" in payload
     assert payload["primary_zone"] == probe["primary_zone"]
+
+
+@pytest.mark.integration
+def test_cli_groups_cover_all_domains() -> None:
+    """Every registry cli_group is registered and its --help exits cleanly."""
+    runner = CliRunner()
+
+    # Top-level help lists all groups and exits 0.
+    top = runner.invoke(app, ["--help"])
+    assert top.exit_code == 0, top.output
+
+    expected_groups = {d.cli_group for d in ALL_DEFS}
+    # All 9 domains (8 rolled-out + physiology pilot) must be present.
+    assert expected_groups == {
+        "export",
+        "metadata",
+        "splits",
+        "analysis",
+        "physiology",
+        "performance",
+        "time-series",
+        "training-plan",
+        "athlete",
+    }
+
+    for group in sorted(expected_groups):
+        result = runner.invoke(app, [group, "--help"])
+        assert result.exit_code == 0, f"{group} --help failed: {result.output}"
+
+
+@pytest.mark.integration
+def test_output_shape_snapshot_all(
+    real_reader: GarminDBReader, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Activity-dependent tools across domains keep a stable output shape.
+
+    Uses the fixture activity and skips gracefully when the DB/activity is
+    missing (via the ``real_reader`` fixture). Asserts key-sets + value types,
+    not values.
+
+    Several of these tools construct their own analyzer (IntervalAnalyzer,
+    FormAnomalyDetector, ...) that resolves the DB via ``get_db_path()`` rather
+    than the passed reader, so point ``GARMIN_DATA_DIR`` at the real DB for the
+    duration (the autouse isolation fixture otherwise rewrites it to a tmp dir).
+    """
+    db_path = _resolve_real_db_path()
+    if db_path is None:
+        pytest.skip("Real DuckDB not available; skipping all-domains snapshot test")
+    monkeypatch.setenv("GARMIN_DATA_DIR", str(db_path.parent.parent))
+
+    snapshot = json.loads(_ALL_DOMAINS_SNAPSHOT_PATH.read_text(encoding="utf-8"))
+
+    invocations: dict[str, dict[str, object]] = {
+        "get_splits_comprehensive": {"activity_id": FIXTURE_ACTIVITY_ID},
+        "get_interval_analysis": {"activity_id": FIXTURE_ACTIVITY_ID},
+        "get_performance_trends": {"activity_id": FIXTURE_ACTIVITY_ID},
+        "get_weather_data": {"activity_id": FIXTURE_ACTIVITY_ID},
+        "get_split_time_series_detail": {
+            "activity_id": FIXTURE_ACTIVITY_ID,
+            "split_number": 1,
+        },
+        "detect_form_anomalies_summary": {"activity_id": FIXTURE_ACTIVITY_ID},
+    }
+
+    assert set(invocations) == set(snapshot)
+
+    for name, args in invocations.items():
+        result = dispatch(ALL_DEFS_BY_NAME, real_reader, name, args)
+        assert result is not None, f"{name} returned None"
+        actual_shape = _shape(result)
+        assert _shapes_match(
+            actual_shape, snapshot[name]
+        ), f"shape mismatch for {name}: {json.dumps(actual_shape, sort_keys=True)}"

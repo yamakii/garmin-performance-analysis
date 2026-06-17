@@ -1,0 +1,931 @@
+[
+  {
+    "description": "Export query results to file (returns handle only, not data). Use for large datasets that need processing in Python.",
+    "inputSchema": {
+      "properties": {
+        "format": {
+          "default": "parquet",
+          "description": "Output format (parquet recommended for efficiency)",
+          "enum": [
+            "parquet",
+            "csv"
+          ],
+          "type": "string"
+        },
+        "max_rows": {
+          "default": 100000,
+          "description": "Safety limit for export size (default: 100000)",
+          "type": "integer"
+        },
+        "query": {
+          "description": "DuckDB SQL query to execute",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "name": "export"
+  },
+  {
+    "description": "Get activity ID and metadata from date",
+    "inputSchema": {
+      "properties": {
+        "date": {
+          "description": "Date in YYYY-MM-DD format",
+          "type": "string"
+        }
+      },
+      "required": [
+        "date"
+      ],
+      "type": "object"
+    },
+    "name": "get_activity_by_date"
+  },
+  {
+    "description": "Get date and activity name from activity ID",
+    "inputSchema": {
+      "properties": {
+        "activity_id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "activity_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_date_by_activity_id"
+  },
+  {
+    "description": "Ingest activity data from Garmin Connect into DuckDB. Fetches raw data, stores in DuckDB, and runs form evaluation.",
+    "inputSchema": {
+      "properties": {
+        "date": {
+          "description": "Activity date in YYYY-MM-DD format",
+          "type": "string"
+        },
+        "force_regenerate": {
+          "default": false,
+          "description": "Force regeneration of all data (default: false)",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "date"
+      ],
+      "type": "object"
+    },
+    "name": "ingest_activity"
+  },
+  {
+    "description": "Deprecated: use get_splits_comprehensive instead. Get pace and heart rate data from splits (lightweight: ~3 fields/split, or ~200 bytes with statistics_only=True)",
+    "inputSchema": {
+      "properties": {
+        "activity_id": {
+          "type": "integer"
+        },
+        "statistics_only": {
+          "default": false,
+          "description": "If true, return only aggregated statistics (mean, median, std, min, max) instead of per-split data. Reduces output size by ~80%. Default: false",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "activity_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_splits_pace_hr"
+  },
+  {
+    "description": "Deprecated: use get_splits_comprehensive instead. Get form efficiency metrics from splits (lightweight: ~4 fields/split, or ~300 bytes with statistics_only=True)",
+    "inputSchema": {
+      "properties": {
+        "activity_id": {
+          "type": "integer"
+        },
+        "statistics_only": {
+          "default": false,
+          "description": "If true, return only aggregated statistics (mean, median, std, min, max) for GCT, VO, VR instead of per-split data. Reduces output size by ~80%. Default: false",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "activity_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_splits_form_metrics"
+  },
+  {
+    "description": "Get elevation and terrain data from splits (lightweight: ~5 fields/split, or ~250 bytes with statistics_only=True)",
+    "inputSchema": {
+      "properties": {
+        "activity_id": {
+          "type": "integer"
+        },
+        "statistics_only": {
+          "default": false,
+          "description": "If true, return only aggregated statistics (mean, median, std, min, max) for elevation gain/loss instead of per-split data. Reduces output size by ~80%. Default: false",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "activity_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_splits_elevation"
+  },
+  {
+    "description": "Get comprehensive split data (12 fields: pace, HR, form, power, cadence, elevation). Supports statistics_only mode for 67% token reduction.",
+    "inputSchema": {
+      "properties": {
+        "activity_id": {
+          "type": "integer"
+        },
+        "statistics_only": {
+          "default": false,
+          "description": "If true, return only aggregated statistics (mean, median, std, min, max) instead of per-split data. Reduces output size by ~67%. Default: false",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "activity_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_splits_comprehensive"
+  },
+  {
+    "description": "Analyze interval training Work/Recovery segments using intensity_type from DuckDB",
+    "inputSchema": {
+      "properties": {
+        "activity_id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "activity_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_interval_analysis"
+  },
+  {
+    "description": "Insert section analysis dict directly into DuckDB (no file creation)",
+    "inputSchema": {
+      "properties": {
+        "activity_date": {
+          "type": "string"
+        },
+        "activity_id": {
+          "type": "integer"
+        },
+        "analysis_data": {
+          "type": "object"
+        },
+        "section_type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "activity_id",
+        "activity_date",
+        "section_type",
+        "analysis_data"
+      ],
+      "type": "object"
+    },
+    "name": "insert_section_analysis_dict"
+  },
+  {
+    "description": "Validate section analysis data against Pydantic schema. Returns {valid: bool, errors: list[str]}.",
+    "inputSchema": {
+      "properties": {
+        "analysis_data": {
+          "type": "object"
+        },
+        "section_type": {
+          "enum": [
+            "split",
+            "phase",
+            "efficiency",
+            "environment",
+            "summary"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "section_type",
+        "analysis_data"
+      ],
+      "type": "object"
+    },
+    "name": "validate_section_json"
+  },
+  {
+    "description": "Get analysis contract for a section type (output schema, evaluation thresholds, instructions). Agents call this for up-to-date evaluation criteria.",
+    "inputSchema": {
+      "properties": {
+        "section_type": {
+          "description": "Section type",
+          "enum": [
+            "split",
+            "phase",
+            "efficiency",
+            "environment",
+            "summary"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "section_type"
+      ],
+      "type": "object"
+    },
+    "name": "get_analysis_contract"
+  },
+  {
+    "description": "Analyze performance trends across multiple activities with filtering (Phase 3.1)",
+    "inputSchema": {
+      "properties": {
+        "activity_ids": {
+          "description": "List of activity IDs to analyze",
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "activity_type": {
+          "description": "Optional activity type filter",
+          "type": "string"
+        },
+        "distance_range": {
+          "description": "Optional [min_km, max_km] filter",
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "end_date": {
+          "description": "End date in YYYY-MM-DD format",
+          "type": "string"
+        },
+        "metric": {
+          "description": "Metric name (pace, heart_rate, cadence, power, vertical_oscillation, ground_contact_time, vertical_ratio, distance, training_effect, elevation_gain)",
+          "type": "string"
+        },
+        "start_date": {
+          "description": "Start date in YYYY-MM-DD format",
+          "type": "string"
+        },
+        "temperature_range": {
+          "description": "Optional [min_temp, max_temp] filter in Celsius",
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        }
+      },
+      "required": [
+        "metric",
+        "start_date",
+        "end_date",
+        "activity_ids"
+      ],
+      "type": "object"
+    },
+    "name": "analyze_performance_trends"
+  },
+  {
+    "description": "Extract insights from section analyses using keyword-based search (Phase 3.2)",
+    "inputSchema": {
+      "properties": {
+        "keywords": {
+          "description": "Keywords to search for (e.g., key_strengths, improvement_areas, efficiency, evaluation, environmental_impact)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "limit": {
+          "default": 10,
+          "description": "Maximum number of results (default: 10)",
+          "type": "integer"
+        },
+        "max_tokens": {
+          "description": "Maximum token count (optional)",
+          "type": "integer"
+        },
+        "offset": {
+          "default": 0,
+          "description": "Number of results to skip (default: 0)",
+          "type": "integer"
+        },
+        "section_types": {
+          "description": "Optional section types to filter by",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "keywords"
+      ],
+      "type": "object"
+    },
+    "name": "extract_insights"
+  },
+  {
+    "description": "Find and compare similar past workouts based on pace and distance (Phase 4.5)",
+    "inputSchema": {
+      "properties": {
+        "activity_id": {
+          "description": "Target activity ID",
+          "type": "integer"
+        },
+        "activity_type_filter": {
+          "description": "Optional activity type keyword filter",
+          "type": "string"
+        },
+        "date_range": {
+          "description": "Optional [start_date, end_date] in YYYY-MM-DD format",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "distance_tolerance": {
+          "description": "Distance tolerance as fraction (default 0.2 = ±20%)",
+          "type": "number"
+        },
+        "limit": {
+          "description": "Maximum number of results (default 10)",
+          "type": "integer"
+        },
+        "pace_tolerance": {
+          "description": "Pace tolerance as fraction (default 0.2 = ±20%)",
+          "type": "number"
+        },
+        "terrain_match": {
+          "description": "Whether to match terrain characteristics",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "activity_id"
+      ],
+      "type": "object"
+    },
+    "name": "compare_similar_workouts"
+  },
+  {
+    "description": "Get form efficiency summary (GCT, VO, VR metrics) from form_efficiency table",
+    "inputSchema": {
+      "properties": {
+        "activity_id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "activity_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_form_efficiency_summary"
+  },
+  {
+    "description": "Get pace-corrected form evaluation results (expected values, actual values, scores, star ratings, evaluation texts)",
+    "inputSchema": {
+      "properties": {
+        "activity_id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "activity_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_form_evaluations"
+  },
+  {
+    "description": "Get form baseline trend (1-month coefficient comparison for form_trend analysis)",
+    "inputSchema": {
+      "properties": {
+        "activity_date": {
+          "description": "Activity date in YYYY-MM-DD format",
+          "type": "string"
+        },
+        "activity_id": {
+          "type": "integer"
+        },
+        "condition_group": {
+          "default": "flat_road",
+          "description": "Condition group (default: 'flat_road')",
+          "type": "string"
+        },
+        "user_id": {
+          "default": "default",
+          "description": "User ID (default: 'default')",
+          "type": "string"
+        }
+      },
+      "required": [
+        "activity_id",
+        "activity_date"
+      ],
+      "type": "object"
+    },
+    "name": "get_form_baseline_trend"
+  },
+  {
+    "description": "Get HR efficiency analysis (zone distribution, training type) from hr_efficiency table",
+    "inputSchema": {
+      "properties": {
+        "activity_id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "activity_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_hr_efficiency_analysis"
+  },
+  {
+    "description": "Get heart rate zones detail (boundaries, time distribution) from heart_rate_zones table",
+    "inputSchema": {
+      "properties": {
+        "activity_id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "activity_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_heart_rate_zones_detail"
+  },
+  {
+    "description": "Get VO2 max data (precise value, fitness age, category) from vo2_max table",
+    "inputSchema": {
+      "properties": {
+        "activity_id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "activity_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_vo2_max_data"
+  },
+  {
+    "description": "Get lactate threshold data (HR, speed, power) from lactate_threshold table",
+    "inputSchema": {
+      "properties": {
+        "activity_id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "activity_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_lactate_threshold_data"
+  },
+  {
+    "description": "Get performance trends data (pace consistency, HR drift, phase analysis)",
+    "inputSchema": {
+      "properties": {
+        "activity_id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "activity_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_performance_trends"
+  },
+  {
+    "description": "Get weather data (temperature, humidity, wind) from activity",
+    "inputSchema": {
+      "properties": {
+        "activity_id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "activity_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_weather_data"
+  },
+  {
+    "description": "Pre-fetch shared activity context for analysis agents. Returns training_type, weather, terrain, HR efficiency (zone_percentages), form evaluation scores, phase structure, and planned workout in a single call. Auto-generates the form baseline for the activity's month (and prior month) if missing.",
+    "inputSchema": {
+      "properties": {
+        "activity_id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "activity_id"
+      ],
+      "type": "object"
+    },
+    "name": "prefetch_activity_context"
+  },
+  {
+    "description": "Get second-by-second detailed metrics for a specific 1km split (DuckDB-based, 98.8% token reduction)",
+    "inputSchema": {
+      "properties": {
+        "activity_id": {
+          "type": "integer"
+        },
+        "detect_anomalies": {
+          "description": "Whether to detect anomalies in the data. Default: false",
+          "type": "boolean"
+        },
+        "metrics": {
+          "description": "List of metric names to extract (optional)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "split_number": {
+          "description": "Split number (1-based)",
+          "type": "integer"
+        },
+        "statistics_only": {
+          "description": "If true, only return statistics (98.8% token reduction). Default: false",
+          "type": "boolean"
+        },
+        "z_threshold": {
+          "description": "Z-score threshold for anomaly detection. Default: 2.0",
+          "type": "number"
+        }
+      },
+      "required": [
+        "activity_id",
+        "split_number"
+      ],
+      "type": "object"
+    },
+    "name": "get_split_time_series_detail"
+  },
+  {
+    "description": "Get second-by-second detailed metrics for arbitrary time range",
+    "inputSchema": {
+      "properties": {
+        "activity_id": {
+          "type": "integer"
+        },
+        "end_time_s": {
+          "description": "End time in seconds",
+          "type": "integer"
+        },
+        "metrics": {
+          "description": "List of metric names to extract (optional)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "start_time_s": {
+          "description": "Start time in seconds",
+          "type": "integer"
+        },
+        "statistics_only": {
+          "description": "If true, only return statistics (mean, std, min, max) without time series data. Default: false",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "activity_id",
+        "start_time_s",
+        "end_time_s"
+      ],
+      "type": "object"
+    },
+    "name": "get_time_range_detail"
+  },
+  {
+    "description": "Detect form anomalies and return lightweight summary (~700 tokens, 95% reduction)",
+    "inputSchema": {
+      "properties": {
+        "activity_id": {
+          "type": "integer"
+        },
+        "metrics": {
+          "description": "Metrics to analyze (default: GCT, VO, VR)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "z_threshold": {
+          "description": "Z-score threshold for anomaly detection (default: 3.0)",
+          "type": "number"
+        }
+      },
+      "required": [
+        "activity_id"
+      ],
+      "type": "object"
+    },
+    "name": "detect_form_anomalies_summary"
+  },
+  {
+    "description": "Get detailed anomaly information with flexible filtering (variable token size)",
+    "inputSchema": {
+      "properties": {
+        "activity_id": {
+          "type": "integer"
+        },
+        "anomaly_ids": {
+          "description": "Optional specific anomaly IDs to retrieve",
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "causes": {
+          "description": "Optional causes to filter (elevation_change, pace_change, fatigue)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "limit": {
+          "default": 50,
+          "description": "Maximum number of results (default: 50)",
+          "type": "integer"
+        },
+        "metrics": {
+          "description": "Optional metric names to filter",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sort_by": {
+          "default": "z_score",
+          "description": "Sort order: z_score (desc) or timestamp (asc)",
+          "enum": [
+            "z_score",
+            "timestamp"
+          ],
+          "type": "string"
+        },
+        "time_range": {
+          "description": "Optional [start_sec, end_sec] time range",
+          "items": {
+            "type": "integer"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "z_threshold": {
+          "description": "Optional minimum z-score threshold",
+          "type": "number"
+        }
+      },
+      "required": [
+        "activity_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_form_anomaly_details"
+  },
+  {
+    "description": "Get current fitness level assessment (VDOT, pace zones, weekly volume, training type distribution)",
+    "inputSchema": {
+      "properties": {
+        "lookback_weeks": {
+          "description": "Number of weeks to analyze (default: 8)",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "name": "get_current_fitness_summary"
+  },
+  {
+    "description": "Save a training plan (structured JSON) to DuckDB. Validates schema and safety constraints (volume progression <= 15%, return_to_run restrictions, date alignment).",
+    "inputSchema": {
+      "properties": {
+        "plan": {
+          "description": "TrainingPlan JSON conforming to the Pydantic model schema (plan_id, goal_type, vdot, pace_zones, total_weeks, start_date, weekly_volumes, phases, workouts, etc.)",
+          "type": "object"
+        }
+      },
+      "required": [
+        "plan"
+      ],
+      "type": "object"
+    },
+    "name": "save_training_plan"
+  },
+  {
+    "description": "Get a previously generated training plan",
+    "inputSchema": {
+      "properties": {
+        "plan_id": {
+          "description": "Plan identifier",
+          "type": "string"
+        },
+        "summary_only": {
+          "description": "If true, exclude individual workouts (default: false)",
+          "type": "boolean"
+        },
+        "version": {
+          "description": "Specific version to retrieve. Omit for latest active version.",
+          "type": "integer"
+        },
+        "week_number": {
+          "description": "Specific week to retrieve (optional)",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "plan_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_training_plan"
+  },
+  {
+    "description": "Upload workout(s) to Garmin Connect",
+    "inputSchema": {
+      "properties": {
+        "plan_id": {
+          "description": "Plan ID to upload all workouts from",
+          "type": "string"
+        },
+        "schedule": {
+          "default": true,
+          "description": "Schedule workouts on Garmin Connect calendar (default: true)",
+          "type": "boolean"
+        },
+        "week_number": {
+          "description": "Specific week to upload (with plan_id)",
+          "type": "integer"
+        },
+        "workout_id": {
+          "description": "Single workout ID to upload",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "upload_workout_to_garmin"
+  },
+  {
+    "description": "Delete workout(s) from Garmin Connect",
+    "inputSchema": {
+      "properties": {
+        "plan_id": {
+          "description": "Plan ID to delete all workouts from",
+          "type": "string"
+        },
+        "week_number": {
+          "description": "Specific week to delete (with plan_id)",
+          "type": "integer"
+        },
+        "workout_id": {
+          "description": "Single workout ID to delete",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "delete_workout_from_garmin"
+  },
+  {
+    "description": "Fetch scheduled workouts (including adaptive plan workouts) from the Garmin Connect calendar-service for a date range. Returns workout-type calendar items sorted by date.",
+    "inputSchema": {
+      "properties": {
+        "end_date": {
+          "description": "Inclusive end date (YYYY-MM-DD)",
+          "type": "string"
+        },
+        "start_date": {
+          "description": "Inclusive start date (YYYY-MM-DD)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start_date",
+        "end_date"
+      ],
+      "type": "object"
+    },
+    "name": "get_garmin_scheduled_workouts"
+  },
+  {
+    "description": "Save the athlete profile (current focus, race goals, and season retrospectives) as a single object to DuckDB. The profile row is upserted on user_id; goals and retrospectives are fully replaced per user_id.",
+    "inputSchema": {
+      "properties": {
+        "profile": {
+          "description": "Profile JSON with user_id (default 'default'), current_focus, focus_notes, goals (list of {race_name, race_date, priority, goal_type, distance_km, target_time_seconds, status, notes}), and retrospectives (list of {season_label, period_start, period_end, narrative, key_learnings}).",
+          "type": "object"
+        }
+      },
+      "required": [
+        "profile"
+      ],
+      "type": "object"
+    },
+    "name": "save_athlete_profile"
+  },
+  {
+    "description": "Get the athlete profile (current focus, goals, and retrospectives) merged into a single object. Returns an empty structure (current_focus=None, goals=[], retrospectives=[]) when no profile is registered.",
+    "inputSchema": {
+      "properties": {
+        "user_id": {
+          "description": "Profile owner identifier (default: 'default')",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "get_athlete_profile"
+  },
+  {
+    "description": "Save a weekly training review to DuckDB. Each save appends a new version for (user_id, week_start_date) instead of overwriting, so re-running the same week keeps prior versions as history; the latest version is treated as canonical. The free-form review_data payload is stored as JSON.",
+    "inputSchema": {
+      "properties": {
+        "review": {
+          "description": "Review JSON with user_id (default 'default'), week_start_date, week_end_date, review_date, review_data (object, e.g. {this_week, garmin_next_week, verdict, recommendations, overall}), agent_name, and agent_version.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "review"
+      ],
+      "type": "object"
+    },
+    "name": "save_weekly_review"
+  },
+  {
+    "description": "Get a single weekly review (the latest version of its week). When week_start_date is omitted, the latest version of the most recent week is returned. review_data is JSON-decoded back into an object. Returns null when no matching review exists.",
+    "inputSchema": {
+      "properties": {
+        "user_id": {
+          "description": "Profile owner identifier (default: 'default')",
+          "type": "string"
+        },
+        "week_start_date": {
+          "description": "Week start date (YYYY-MM-DD). When omitted, returns the most recent review.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "get_weekly_review"
+  },
+  {
+    "description": "Get diagnostic info about the running MCP server (server_dir, override file status). Use to verify which directory the server is running from.",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "get_server_info"
+  },
+  {
+    "description": "Restart the MCP server process to pick up code changes. The server will exit and Claude Code will automatically reconnect.",
+    "inputSchema": {
+      "properties": {
+        "server_dir": {
+          "description": "Absolute path to garmin-mcp-server package directory. If provided, the server restarts from this directory (for worktree development). If omitted, restores default directory.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "reload_server"
+  }
+]
