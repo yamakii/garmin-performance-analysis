@@ -12,179 +12,107 @@ provide runtime defaults for dispatch.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.tools.registry import ToolDef
 
 # ----------------------------------------------------------------------------
-# Params models (runtime defaults; schemas come from overrides below)
+# Params models (drive validation, the CLI signature, and the derived MCP
+# schema). Optional fields whose hand schema emitted no ``default`` key are
+# modeled as ``... | None = None`` and coalesced to their runtime default in the
+# handler, so behavior is unchanged while the schema stays byte-identical.
 # ----------------------------------------------------------------------------
+
+# Runtime defaults preserved from the previous Pydantic models.
+_DEFAULT_STATISTICS_ONLY = False
+_DEFAULT_DETECT_ANOMALIES = False
+_DEFAULT_SPLIT_Z_THRESHOLD = 2.0
 
 
 class SplitTimeSeriesDetailParams(BaseModel):
     """Arguments for ``get_split_time_series_detail``."""
 
     activity_id: int
-    split_number: int
-    metrics: list[str] | None = None
-    statistics_only: bool = False
-    detect_anomalies: bool = False
-    z_threshold: float = 2.0
+    split_number: int = Field(description="Split number (1-based)")
+    metrics: list[str] | None = Field(
+        default=None, description="List of metric names to extract (optional)"
+    )
+    statistics_only: bool | None = Field(
+        default=None,
+        description=(
+            "If true, only return statistics (98.8% token reduction). Default: false"
+        ),
+    )
+    detect_anomalies: bool | None = Field(
+        default=None,
+        description="Whether to detect anomalies in the data. Default: false",
+    )
+    z_threshold: float | None = Field(
+        default=None,
+        description="Z-score threshold for anomaly detection. Default: 2.0",
+    )
 
 
 class TimeRangeDetailParams(BaseModel):
     """Arguments for ``get_time_range_detail``."""
 
     activity_id: int
-    start_time_s: int
-    end_time_s: int
-    metrics: list[str] | None = None
-    statistics_only: bool = False
+    start_time_s: int = Field(description="Start time in seconds")
+    end_time_s: int = Field(description="End time in seconds")
+    metrics: list[str] | None = Field(
+        default=None, description="List of metric names to extract (optional)"
+    )
+    statistics_only: bool | None = Field(
+        default=None,
+        description=(
+            "If true, only return statistics (mean, std, min, max) without time "
+            "series data. Default: false"
+        ),
+    )
 
 
 class DetectFormAnomaliesSummaryParams(BaseModel):
     """Arguments for ``detect_form_anomalies_summary``."""
 
     activity_id: int
-    metrics: list[str] | None = None
-    z_threshold: float | None = None
+    metrics: list[str] | None = Field(
+        default=None, description="Metrics to analyze (default: GCT, VO, VR)"
+    )
+    z_threshold: float | None = Field(
+        default=None,
+        description="Z-score threshold for anomaly detection (default: 3.0)",
+    )
 
 
 class FormAnomalyDetailsParams(BaseModel):
     """Arguments for ``get_form_anomaly_details``."""
 
     activity_id: int
-    anomaly_ids: list[int] | None = None
-    time_range: list[int] | None = None
-    metrics: list[str] | None = None
-    z_threshold: float | None = None
-    causes: list[str] | None = None
-    limit: int = 50
-    sort_by: str = "z_score"
-
-
-# ----------------------------------------------------------------------------
-# Hand-written inputSchema overrides
-# ----------------------------------------------------------------------------
-
-_SPLIT_TIME_SERIES_DETAIL_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "activity_id": {"type": "integer"},
-        "split_number": {
-            "type": "integer",
-            "description": "Split number (1-based)",
-        },
-        "metrics": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "List of metric names to extract (optional)",
-        },
-        "statistics_only": {
-            "type": "boolean",
-            "description": "If true, only return statistics (98.8% token reduction). Default: false",
-        },
-        "detect_anomalies": {
-            "type": "boolean",
-            "description": "Whether to detect anomalies in the data. Default: false",
-        },
-        "z_threshold": {
-            "type": "number",
-            "description": "Z-score threshold for anomaly detection. Default: 2.0",
-        },
-    },
-    "required": ["activity_id", "split_number"],
-}
-
-_TIME_RANGE_DETAIL_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "activity_id": {"type": "integer"},
-        "start_time_s": {
-            "type": "integer",
-            "description": "Start time in seconds",
-        },
-        "end_time_s": {
-            "type": "integer",
-            "description": "End time in seconds",
-        },
-        "metrics": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "List of metric names to extract (optional)",
-        },
-        "statistics_only": {
-            "type": "boolean",
-            "description": "If true, only return statistics (mean, std, min, max) without time series data. Default: false",
-        },
-    },
-    "required": ["activity_id", "start_time_s", "end_time_s"],
-}
-
-_DETECT_FORM_ANOMALIES_SUMMARY_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "activity_id": {"type": "integer"},
-        "metrics": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Metrics to analyze (default: GCT, VO, VR)",
-        },
-        "z_threshold": {
-            "type": "number",
-            "description": "Z-score threshold for anomaly detection (default: 3.0)",
-        },
-    },
-    "required": ["activity_id"],
-}
-
-_FORM_ANOMALY_DETAILS_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "activity_id": {"type": "integer"},
-        "anomaly_ids": {
-            "type": "array",
-            "items": {"type": "integer"},
-            "description": "Optional specific anomaly IDs to retrieve",
-        },
-        "time_range": {
-            "type": "array",
-            "items": {"type": "integer"},
-            "minItems": 2,
-            "maxItems": 2,
-            "description": "Optional [start_sec, end_sec] time range",
-        },
-        "metrics": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Optional metric names to filter",
-        },
-        "z_threshold": {
-            "type": "number",
-            "description": "Optional minimum z-score threshold",
-        },
-        "causes": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Optional causes to filter (elevation_change, pace_change, fatigue)",
-        },
-        "limit": {
-            "type": "integer",
-            "description": "Maximum number of results (default: 50)",
-            "default": 50,
-        },
-        "sort_by": {
-            "type": "string",
-            "description": "Sort order: z_score (desc) or timestamp (asc)",
-            "enum": ["z_score", "timestamp"],
-            "default": "z_score",
-        },
-    },
-    "required": ["activity_id"],
-}
+    anomaly_ids: list[int] | None = Field(
+        default=None, description="Optional specific anomaly IDs to retrieve"
+    )
+    time_range: Annotated[list[int], Field(min_length=2, max_length=2)] | None = Field(
+        default=None, description="Optional [start_sec, end_sec] time range"
+    )
+    metrics: list[str] | None = Field(
+        default=None, description="Optional metric names to filter"
+    )
+    z_threshold: float | None = Field(
+        default=None, description="Optional minimum z-score threshold"
+    )
+    causes: list[str] | None = Field(
+        default=None,
+        description="Optional causes to filter (elevation_change, pace_change, fatigue)",
+    )
+    limit: int = Field(
+        default=50, description="Maximum number of results (default: 50)"
+    )
+    sort_by: Literal["z_score", "timestamp"] = Field(
+        default="z_score", description="Sort order: z_score (desc) or timestamp (asc)"
+    )
 
 
 # ----------------------------------------------------------------------------
@@ -202,9 +130,19 @@ def _get_split_time_series_detail(
         activity_id=p.activity_id,
         split_number=p.split_number,
         metrics=p.metrics,
-        statistics_only=p.statistics_only,
-        detect_anomalies=p.detect_anomalies,
-        z_threshold=p.z_threshold,
+        statistics_only=(
+            p.statistics_only
+            if p.statistics_only is not None
+            else _DEFAULT_STATISTICS_ONLY
+        ),
+        detect_anomalies=(
+            p.detect_anomalies
+            if p.detect_anomalies is not None
+            else _DEFAULT_DETECT_ANOMALIES
+        ),
+        z_threshold=(
+            p.z_threshold if p.z_threshold is not None else _DEFAULT_SPLIT_Z_THRESHOLD
+        ),
     )
 
 
@@ -217,7 +155,11 @@ def _get_time_range_detail(reader: GarminDBReader, p: TimeRangeDetailParams) -> 
         start_time=p.start_time_s,
         end_time=p.end_time_s,
         metrics=p.metrics,
-        statistics_only=p.statistics_only,
+        statistics_only=(
+            p.statistics_only
+            if p.statistics_only is not None
+            else _DEFAULT_STATISTICS_ONLY
+        ),
     )
 
 
@@ -279,7 +221,6 @@ TIME_SERIES_TOOLS: list[ToolDef] = [
         handler=_get_split_time_series_detail,
         cli_group="time-series",
         cli_name="split-detail",
-        input_schema_override=_SPLIT_TIME_SERIES_DETAIL_SCHEMA,
     ),
     ToolDef(
         name="get_time_range_detail",
@@ -288,7 +229,6 @@ TIME_SERIES_TOOLS: list[ToolDef] = [
         handler=_get_time_range_detail,
         cli_group="time-series",
         cli_name="time-range-detail",
-        input_schema_override=_TIME_RANGE_DETAIL_SCHEMA,
     ),
     ToolDef(
         name="detect_form_anomalies_summary",
@@ -300,7 +240,6 @@ TIME_SERIES_TOOLS: list[ToolDef] = [
         handler=_detect_form_anomalies_summary,
         cli_group="time-series",
         cli_name="anomalies-summary",
-        input_schema_override=_DETECT_FORM_ANOMALIES_SUMMARY_SCHEMA,
     ),
     ToolDef(
         name="get_form_anomaly_details",
@@ -312,7 +251,6 @@ TIME_SERIES_TOOLS: list[ToolDef] = [
         handler=_get_form_anomaly_details,
         cli_group="time-series",
         cli_name="anomaly-details",
-        input_schema_override=_FORM_ANOMALY_DETAILS_SCHEMA,
     ),
 ]
 

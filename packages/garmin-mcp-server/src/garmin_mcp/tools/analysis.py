@@ -10,12 +10,14 @@ normalization cannot reproduce, so they use ``input_schema_override``.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.tools.registry import ToolDef
+
+_SECTION_TYPES = Literal["split", "phase", "efficiency", "environment", "summary"]
 
 # ----------------------------------------------------------------------------
 # Params models
@@ -34,30 +36,51 @@ class InsertSectionAnalysisParams(BaseModel):
 class ValidateSectionJsonParams(BaseModel):
     """Arguments for ``validate_section_json``."""
 
-    section_type: str
+    section_type: _SECTION_TYPES
     analysis_data: dict[str, Any]
 
 
 class GetAnalysisContractParams(BaseModel):
     """Arguments for ``get_analysis_contract``."""
 
-    section_type: str = Field(description="Section type")
+    section_type: _SECTION_TYPES = Field(description="Section type")
 
 
 class AnalyzePerformanceTrendsParams(BaseModel):
     """Arguments for ``analyze_performance_trends``."""
 
-    metric: str
-    start_date: str
-    end_date: str
-    activity_ids: list[int]
-    activity_type: str | None = None
-    temperature_range: list[float] | None = None
-    distance_range: list[float] | None = None
+    metric: str = Field(
+        description=(
+            "Metric name (pace, heart_rate, cadence, power, vertical_oscillation, "
+            "ground_contact_time, vertical_ratio, distance, training_effect, "
+            "elevation_gain)"
+        )
+    )
+    start_date: str = Field(description="Start date in YYYY-MM-DD format")
+    end_date: str = Field(description="End date in YYYY-MM-DD format")
+    activity_ids: list[int] = Field(description="List of activity IDs to analyze")
+    activity_type: str | None = Field(
+        default=None, description="Optional activity type filter"
+    )
+    temperature_range: (
+        Annotated[list[float], Field(min_length=2, max_length=2)] | None
+    ) = Field(
+        default=None, description="Optional [min_temp, max_temp] filter in Celsius"
+    )
+    distance_range: Annotated[list[float], Field(min_length=2, max_length=2)] | None = (
+        Field(default=None, description="Optional [min_km, max_km] filter")
+    )
 
 
 class ExtractInsightsParams(BaseModel):
-    """Arguments for ``extract_insights``."""
+    """Arguments for ``extract_insights``.
+
+    NOTE: ``activity_id`` is a deliberately *internal* validation field used by
+    the handler but intentionally absent from the documented MCP surface (the
+    original hand schema never exposed it). Deriving the schema would surface
+    ``activity_id`` and break byte-parity, so this tool keeps an
+    ``input_schema_override`` (the one remaining override).
+    """
 
     keywords: list[str]
     activity_id: int | None = None
@@ -70,86 +93,36 @@ class ExtractInsightsParams(BaseModel):
 class CompareSimilarWorkoutsParams(BaseModel):
     """Arguments for ``compare_similar_workouts``."""
 
-    activity_id: int
-    pace_tolerance: float | None = None
-    distance_tolerance: float | None = None
-    terrain_match: bool | None = None
-    activity_type_filter: str | None = None
-    date_range: list[str] | None = None
-    limit: int | None = None
+    activity_id: int = Field(description="Target activity ID")
+    pace_tolerance: float | None = Field(
+        default=None, description="Pace tolerance as fraction (default 0.2 = ±20%)"
+    )
+    distance_tolerance: float | None = Field(
+        default=None,
+        description="Distance tolerance as fraction (default 0.2 = ±20%)",
+    )
+    terrain_match: bool | None = Field(
+        default=None, description="Whether to match terrain characteristics"
+    )
+    activity_type_filter: str | None = Field(
+        default=None, description="Optional activity type keyword filter"
+    )
+    date_range: list[str] | None = Field(
+        default=None,
+        description="Optional [start_date, end_date] in YYYY-MM-DD format",
+    )
+    limit: int | None = Field(
+        default=None, description="Maximum number of results (default 10)"
+    )
 
 
 # ----------------------------------------------------------------------------
-# Hand-written inputSchema overrides (nested arrays with minItems/maxItems and
-# enums that the standard normalization cannot reproduce verbatim).
+# Remaining hand-written inputSchema override.
+#
+# Only ``extract_insights`` keeps an override: its params model carries an
+# internal ``activity_id`` validation field that the documented MCP surface
+# intentionally hides, so a derived schema would not be byte-identical.
 # ----------------------------------------------------------------------------
-
-_VALIDATE_SECTION_JSON_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "section_type": {
-            "type": "string",
-            "enum": ["split", "phase", "efficiency", "environment", "summary"],
-        },
-        "analysis_data": {"type": "object"},
-    },
-    "required": ["section_type", "analysis_data"],
-}
-
-_GET_ANALYSIS_CONTRACT_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "section_type": {
-            "type": "string",
-            "description": "Section type",
-            "enum": ["split", "phase", "efficiency", "environment", "summary"],
-        },
-    },
-    "required": ["section_type"],
-}
-
-_ANALYZE_PERFORMANCE_TRENDS_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "metric": {
-            "type": "string",
-            "description": "Metric name (pace, heart_rate, cadence, power, vertical_oscillation, "
-            "ground_contact_time, vertical_ratio, distance, training_effect, elevation_gain)",
-        },
-        "start_date": {
-            "type": "string",
-            "description": "Start date in YYYY-MM-DD format",
-        },
-        "end_date": {
-            "type": "string",
-            "description": "End date in YYYY-MM-DD format",
-        },
-        "activity_ids": {
-            "type": "array",
-            "items": {"type": "integer"},
-            "description": "List of activity IDs to analyze",
-        },
-        "activity_type": {
-            "type": "string",
-            "description": "Optional activity type filter",
-        },
-        "temperature_range": {
-            "type": "array",
-            "items": {"type": "number"},
-            "minItems": 2,
-            "maxItems": 2,
-            "description": "Optional [min_temp, max_temp] filter in Celsius",
-        },
-        "distance_range": {
-            "type": "array",
-            "items": {"type": "number"},
-            "minItems": 2,
-            "maxItems": 2,
-            "description": "Optional [min_km, max_km] filter",
-        },
-    },
-    "required": ["metric", "start_date", "end_date", "activity_ids"],
-}
 
 _EXTRACT_INSIGHTS_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -180,42 +153,6 @@ _EXTRACT_INSIGHTS_SCHEMA: dict[str, Any] = {
         },
     },
     "required": ["keywords"],
-}
-
-_COMPARE_SIMILAR_WORKOUTS_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "activity_id": {
-            "type": "integer",
-            "description": "Target activity ID",
-        },
-        "pace_tolerance": {
-            "type": "number",
-            "description": "Pace tolerance as fraction (default 0.2 = ±20%)",
-        },
-        "distance_tolerance": {
-            "type": "number",
-            "description": "Distance tolerance as fraction (default 0.2 = ±20%)",
-        },
-        "terrain_match": {
-            "type": "boolean",
-            "description": "Whether to match terrain characteristics",
-        },
-        "activity_type_filter": {
-            "type": "string",
-            "description": "Optional activity type keyword filter",
-        },
-        "date_range": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Optional [start_date, end_date] in YYYY-MM-DD format",
-        },
-        "limit": {
-            "type": "integer",
-            "description": "Maximum number of results (default 10)",
-        },
-    },
-    "required": ["activity_id"],
 }
 
 
@@ -356,7 +293,6 @@ ANALYSIS_TOOLS: list[ToolDef] = [
         handler=_validate_section_json,
         cli_group="analysis",
         cli_name="validate-section",
-        input_schema_override=_VALIDATE_SECTION_JSON_SCHEMA,
     ),
     ToolDef(
         name="get_analysis_contract",
@@ -369,7 +305,6 @@ ANALYSIS_TOOLS: list[ToolDef] = [
         handler=_get_analysis_contract,
         cli_group="analysis",
         cli_name="contract",
-        input_schema_override=_GET_ANALYSIS_CONTRACT_SCHEMA,
     ),
     ToolDef(
         name="analyze_performance_trends",
@@ -378,7 +313,6 @@ ANALYSIS_TOOLS: list[ToolDef] = [
         handler=_analyze_performance_trends,
         cli_group="analysis",
         cli_name="performance-trends",
-        input_schema_override=_ANALYZE_PERFORMANCE_TRENDS_SCHEMA,
     ),
     ToolDef(
         name="extract_insights",
@@ -396,7 +330,6 @@ ANALYSIS_TOOLS: list[ToolDef] = [
         handler=_compare_similar_workouts,
         cli_group="analysis",
         cli_name="compare-workouts",
-        input_schema_override=_COMPARE_SIMILAR_WORKOUTS_SCHEMA,
     ),
 ]
 

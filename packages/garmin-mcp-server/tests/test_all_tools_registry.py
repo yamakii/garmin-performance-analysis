@@ -11,16 +11,28 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any, Literal
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import BaseModel, Field, ValidationError
 
 from garmin_mcp.tool_schemas import get_tool_definitions
 from garmin_mcp.tools import ALL_DEFS, ALL_DEFS_BY_NAME
-from garmin_mcp.tools.registry import build_mcp_tools, dispatch
+from garmin_mcp.tools.registry import (
+    ToolDef,
+    build_mcp_tools,
+    dispatch,
+    to_mcp_input_schema,
+)
 
 _GOLDEN_PATH = Path(__file__).parent / "snapshots" / "all_tools_golden.json"
+
+# Tools allowed to keep an ``input_schema_override`` (documented exceptions).
+# ``extract_insights`` keeps one because its params model carries an internal
+# ``activity_id`` validation field that the documented MCP surface intentionally
+# hides, so a derived schema would not be byte-identical to the golden snapshot.
+_OVERRIDE_ALLOWLIST = {"extract_insights"}
 
 
 def _as_dicts(tools: Any) -> list[dict[str, Any]]:
@@ -169,8 +181,10 @@ def test_dispatch_all_domains() -> None:
 
 
 @pytest.mark.unit
-def test_export_override_schema() -> None:
-    """The export tool serves the verbatim hand-written inputSchema."""
+def test_export_derived_schema() -> None:
+    """The export tool's inputSchema is now DERIVED from ``ExportParams`` (no
+    ``input_schema_override``) yet remains byte-identical to the hand schema."""
+    assert ALL_DEFS_BY_NAME["export"].input_schema_override is None
     export_tool = next(t for t in build_mcp_tools(ALL_DEFS) if t.name == "export")
     assert export_tool.inputSchema == {
         "type": "object",
@@ -193,3 +207,129 @@ def test_export_override_schema() -> None:
         },
         "required": ["query"],
     }
+
+
+# ----------------------------------------------------------------------------
+# Normalizer unit tests (Issue #333)
+# ----------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_normalizer_enum() -> None:
+    """``Literal[...]`` fields surface as an inline ``enum`` on the property,
+    including the optional (``anyOf``) case."""
+
+    class M(BaseModel):
+        fmt: Literal["parquet", "csv"] = "parquet"
+        opt: Literal["x", "y"] | None = None
+
+    schema = to_mcp_input_schema(M)
+    fmt = schema["properties"]["fmt"]
+    assert fmt["type"] == "string"
+    assert fmt["enum"] == ["parquet", "csv"]
+    assert fmt["default"] == "parquet"
+
+    opt = schema["properties"]["opt"]
+    assert opt["type"] == "string"
+    assert opt["enum"] == ["x", "y"]
+    assert "default" not in opt  # None default dropped
+
+
+@pytest.mark.unit
+def test_normalizer_array_items_and_length() -> None:
+    """``list[T]`` keeps ``items``; ``Annotated[list[T], Field(min/max_length)]``
+    adds ``minItems``/``maxItems``."""
+
+    class M(BaseModel):
+        ids: list[int]
+        pair: Annotated[list[float], Field(min_length=2, max_length=2)] | None = None
+
+    schema = to_mcp_input_schema(M)
+    ids = schema["properties"]["ids"]
+    assert ids == {"type": "array", "items": {"type": "integer"}}
+
+    pair = schema["properties"]["pair"]
+    assert pair["type"] == "array"
+    assert pair["items"] == {"type": "number"}
+    assert pair["minItems"] == 2
+    assert pair["maxItems"] == 2
+    assert "default" not in pair
+
+
+@pytest.mark.unit
+def test_normalizer_drops_none_default() -> None:
+    """An Optional field defaulting to ``None`` emits no ``default`` key and is
+    not listed in ``required``."""
+
+    class M(BaseModel):
+        opt: str | None = None
+
+    schema = to_mcp_input_schema(M)
+    assert "default" not in schema["properties"]["opt"]
+    assert "required" not in schema
+
+
+@pytest.mark.unit
+def test_normalizer_keeps_explicit_default() -> None:
+    """Explicit non-None defaults (``False``, ``"parquet"``, ``10``, ``True``)
+    are emitted as ``default``."""
+
+    class M(BaseModel):
+        flag: bool = False
+        fmt: str = "parquet"
+        limit: int = 10
+        on: bool = True
+
+    props = to_mcp_input_schema(M)["properties"]
+    assert props["flag"]["default"] is False
+    assert props["fmt"]["default"] == "parquet"
+    assert props["limit"]["default"] == 10
+    assert props["on"]["default"] is True
+
+
+@pytest.mark.unit
+def test_field_description_override() -> None:
+    """``field_descriptions`` overwrites the named property's description while
+    leaving the rest of the derived schema intact (shared-model pattern)."""
+
+    class M(BaseModel):
+        activity_id: int
+        statistics_only: bool = False
+
+    schema = to_mcp_input_schema(
+        M, field_descriptions={"statistics_only": "tool-specific text"}
+    )
+    assert schema["properties"]["statistics_only"]["description"] == (
+        "tool-specific text"
+    )
+    # Unrelated properties are untouched.
+    assert schema["properties"]["activity_id"] == {"type": "integer"}
+
+
+@pytest.mark.unit
+def test_dispatch_rejects_invalid_enum() -> None:
+    """Dispatching a tool with an out-of-range ``Literal`` value raises a
+    pydantic ``ValidationError`` (the model is the faithful validator)."""
+    reader = MagicMock()
+    with pytest.raises(ValidationError):
+        dispatch(
+            ALL_DEFS_BY_NAME,
+            reader,
+            "get_analysis_contract",
+            {"section_type": "not_a_section"},
+        )
+
+
+@pytest.mark.unit
+def test_override_usage_minimized() -> None:
+    """Exactly the allow-listed tools keep an ``input_schema_override``; every
+    other tool's schema is derived from its params model."""
+    with_override = {d.name for d in ALL_DEFS if d.input_schema_override is not None}
+    assert with_override == _OVERRIDE_ALLOWLIST
+    assert len(with_override) == 1
+
+
+@pytest.mark.unit
+def test_tooldef_has_field_descriptions_attr() -> None:
+    """``ToolDef`` exposes the new ``field_descriptions`` override field."""
+    assert "field_descriptions" in ToolDef.__dataclass_fields__

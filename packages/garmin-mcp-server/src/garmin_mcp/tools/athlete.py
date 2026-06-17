@@ -13,12 +13,17 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.tools.registry import ToolDef
 
 logger = logging.getLogger(__name__)
+
+# Runtime default preserved from the previous Pydantic models: ``user_id`` is
+# modeled as ``str | None = None`` (so the derived schema emits no ``default``
+# key, matching the hand schema) and coalesced to this in the handlers.
+_DEFAULT_USER_ID = "default"
 
 
 # ----------------------------------------------------------------------------
@@ -29,77 +34,51 @@ logger = logging.getLogger(__name__)
 class SaveAthleteProfileParams(BaseModel):
     """Arguments for ``save_athlete_profile``."""
 
-    profile: dict[str, Any]
+    profile: dict[str, Any] = Field(
+        description=(
+            "Profile JSON with user_id (default 'default'), current_focus, "
+            "focus_notes, goals (list of {race_name, race_date, priority, "
+            "goal_type, distance_km, target_time_seconds, status, notes}), and "
+            "retrospectives (list of {season_label, period_start, period_end, "
+            "narrative, key_learnings})."
+        )
+    )
 
 
 class GetAthleteProfileParams(BaseModel):
     """Arguments for ``get_athlete_profile``."""
 
-    user_id: str = "default"
+    user_id: str | None = Field(
+        default=None, description="Profile owner identifier (default: 'default')"
+    )
 
 
 class SaveWeeklyReviewParams(BaseModel):
     """Arguments for ``save_weekly_review``."""
 
-    review: dict[str, Any]
+    review: dict[str, Any] = Field(
+        description=(
+            "Review JSON with user_id (default 'default'), week_start_date, "
+            "week_end_date, review_date, review_data (object, e.g. {this_week, "
+            "garmin_next_week, verdict, recommendations, overall}), agent_name, "
+            "and agent_version."
+        )
+    )
 
 
 class GetWeeklyReviewParams(BaseModel):
     """Arguments for ``get_weekly_review``."""
 
-    week_start_date: str | None = None
-    user_id: str = "default"
-
-
-# ----------------------------------------------------------------------------
-# Hand-written inputSchema overrides
-# ----------------------------------------------------------------------------
-
-_SAVE_ATHLETE_PROFILE_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "profile": {
-            "type": "object",
-            "description": "Profile JSON with user_id (default 'default'), current_focus, focus_notes, goals (list of {race_name, race_date, priority, goal_type, distance_km, target_time_seconds, status, notes}), and retrospectives (list of {season_label, period_start, period_end, narrative, key_learnings}).",
-        },
-    },
-    "required": ["profile"],
-}
-
-_GET_ATHLETE_PROFILE_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "user_id": {
-            "type": "string",
-            "description": "Profile owner identifier (default: 'default')",
-        },
-    },
-}
-
-_SAVE_WEEKLY_REVIEW_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "review": {
-            "type": "object",
-            "description": "Review JSON with user_id (default 'default'), week_start_date, week_end_date, review_date, review_data (object, e.g. {this_week, garmin_next_week, verdict, recommendations, overall}), agent_name, and agent_version.",
-        },
-    },
-    "required": ["review"],
-}
-
-_GET_WEEKLY_REVIEW_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "week_start_date": {
-            "type": "string",
-            "description": "Week start date (YYYY-MM-DD). When omitted, returns the most recent review.",
-        },
-        "user_id": {
-            "type": "string",
-            "description": "Profile owner identifier (default: 'default')",
-        },
-    },
-}
+    week_start_date: str | None = Field(
+        default=None,
+        description=(
+            "Week start date (YYYY-MM-DD). When omitted, returns the most recent "
+            "review."
+        ),
+    )
+    user_id: str | None = Field(
+        default=None, description="Profile owner identifier (default: 'default')"
+    )
 
 
 # ----------------------------------------------------------------------------
@@ -129,7 +108,9 @@ def _get_athlete_profile(reader: GarminDBReader, p: GetAthleteProfileParams) -> 
 
     try:
         athlete_reader = AthleteReader(db_path=str(reader.db_path))
-        return athlete_reader.get_athlete_profile(user_id=p.user_id)
+        return athlete_reader.get_athlete_profile(
+            user_id=p.user_id if p.user_id is not None else _DEFAULT_USER_ID
+        )
     except Exception as e:  # noqa: BLE001
         logger.error(f"Get athlete profile failed: {e}")
         return {"error": str(e)}
@@ -158,7 +139,7 @@ def _get_weekly_review(reader: GarminDBReader, p: GetWeeklyReviewParams) -> Any:
         athlete_reader = AthleteReader(db_path=str(reader.db_path))
         return athlete_reader.get_weekly_review(
             week_start_date=p.week_start_date,
-            user_id=p.user_id,
+            user_id=p.user_id if p.user_id is not None else _DEFAULT_USER_ID,
         )
     except Exception as e:  # noqa: BLE001
         logger.error(f"Get weekly review failed: {e}")
@@ -178,7 +159,6 @@ ATHLETE_TOOLS: list[ToolDef] = [
         handler=_save_athlete_profile,
         cli_group="athlete",
         cli_name="save-profile",
-        input_schema_override=_SAVE_ATHLETE_PROFILE_SCHEMA,
     ),
     ToolDef(
         name="get_athlete_profile",
@@ -192,7 +172,6 @@ ATHLETE_TOOLS: list[ToolDef] = [
         handler=_get_athlete_profile,
         cli_group="athlete",
         cli_name="get-profile",
-        input_schema_override=_GET_ATHLETE_PROFILE_SCHEMA,
     ),
     ToolDef(
         name="save_weekly_review",
@@ -207,7 +186,6 @@ ATHLETE_TOOLS: list[ToolDef] = [
         handler=_save_weekly_review,
         cli_group="athlete",
         cli_name="save-review",
-        input_schema_override=_SAVE_WEEKLY_REVIEW_SCHEMA,
     ),
     ToolDef(
         name="get_weekly_review",
@@ -221,7 +199,6 @@ ATHLETE_TOOLS: list[ToolDef] = [
         handler=_get_weekly_review,
         cli_group="athlete",
         cli_name="get-review",
-        input_schema_override=_GET_WEEKLY_REVIEW_SCHEMA,
     ),
 ]
 

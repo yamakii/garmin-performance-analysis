@@ -14,10 +14,16 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.tools.registry import ToolDef
+
+# Runtime defaults preserved from the previous Pydantic models (the optional
+# fields below are modeled as ``... | None = None`` so the derived MCP schema
+# emits no ``default`` key, matching the hand schema; handlers coalesce to these).
+_DEFAULT_LOOKBACK_WEEKS = 8
+_DEFAULT_SUMMARY_ONLY = False
 
 logger = logging.getLogger(__name__)
 
@@ -43,151 +49,77 @@ _RETURN_TO_RUN_PROHIBITED_TYPES = {
 class CurrentFitnessSummaryParams(BaseModel):
     """Arguments for ``get_current_fitness_summary``."""
 
-    lookback_weeks: int = 8
+    lookback_weeks: int | None = Field(
+        default=None, description="Number of weeks to analyze (default: 8)"
+    )
 
 
 class SaveTrainingPlanParams(BaseModel):
     """Arguments for ``save_training_plan``."""
 
-    plan: dict[str, Any]
+    plan: dict[str, Any] = Field(
+        description=(
+            "TrainingPlan JSON conforming to the Pydantic model schema (plan_id, "
+            "goal_type, vdot, pace_zones, total_weeks, start_date, weekly_volumes, "
+            "phases, workouts, etc.)"
+        )
+    )
 
 
 class GetTrainingPlanParams(BaseModel):
     """Arguments for ``get_training_plan``."""
 
-    plan_id: str
-    version: int | None = None
-    week_number: int | None = None
-    summary_only: bool = False
+    plan_id: str = Field(description="Plan identifier")
+    version: int | None = Field(
+        default=None,
+        description="Specific version to retrieve. Omit for latest active version.",
+    )
+    week_number: int | None = Field(
+        default=None, description="Specific week to retrieve (optional)"
+    )
+    summary_only: bool | None = Field(
+        default=None,
+        description="If true, exclude individual workouts (default: false)",
+    )
 
 
 class UploadWorkoutParams(BaseModel):
     """Arguments for ``upload_workout_to_garmin``."""
 
-    workout_id: str | None = None
-    plan_id: str | None = None
-    week_number: int | None = None
-    schedule: bool = True
+    workout_id: str | None = Field(
+        default=None, description="Single workout ID to upload"
+    )
+    plan_id: str | None = Field(
+        default=None, description="Plan ID to upload all workouts from"
+    )
+    week_number: int | None = Field(
+        default=None, description="Specific week to upload (with plan_id)"
+    )
+    schedule: bool = Field(
+        default=True,
+        description="Schedule workouts on Garmin Connect calendar (default: true)",
+    )
 
 
 class DeleteWorkoutParams(BaseModel):
     """Arguments for ``delete_workout_from_garmin``."""
 
-    workout_id: str | None = None
-    plan_id: str | None = None
-    week_number: int | None = None
+    workout_id: str | None = Field(
+        default=None, description="Single workout ID to delete"
+    )
+    plan_id: str | None = Field(
+        default=None, description="Plan ID to delete all workouts from"
+    )
+    week_number: int | None = Field(
+        default=None, description="Specific week to delete (with plan_id)"
+    )
 
 
 class GarminScheduledWorkoutsParams(BaseModel):
     """Arguments for ``get_garmin_scheduled_workouts``."""
 
-    start_date: str
-    end_date: str
-
-
-# ----------------------------------------------------------------------------
-# Hand-written inputSchema overrides
-# ----------------------------------------------------------------------------
-
-_CURRENT_FITNESS_SUMMARY_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "lookback_weeks": {
-            "type": "integer",
-            "description": "Number of weeks to analyze (default: 8)",
-        },
-    },
-}
-
-_SAVE_TRAINING_PLAN_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "plan": {
-            "type": "object",
-            "description": "TrainingPlan JSON conforming to the Pydantic model schema (plan_id, goal_type, vdot, pace_zones, total_weeks, start_date, weekly_volumes, phases, workouts, etc.)",
-        },
-    },
-    "required": ["plan"],
-}
-
-_GET_TRAINING_PLAN_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "plan_id": {
-            "type": "string",
-            "description": "Plan identifier",
-        },
-        "version": {
-            "type": "integer",
-            "description": "Specific version to retrieve. Omit for latest active version.",
-        },
-        "week_number": {
-            "type": "integer",
-            "description": "Specific week to retrieve (optional)",
-        },
-        "summary_only": {
-            "type": "boolean",
-            "description": "If true, exclude individual workouts (default: false)",
-        },
-    },
-    "required": ["plan_id"],
-}
-
-_UPLOAD_WORKOUT_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "workout_id": {
-            "type": "string",
-            "description": "Single workout ID to upload",
-        },
-        "plan_id": {
-            "type": "string",
-            "description": "Plan ID to upload all workouts from",
-        },
-        "week_number": {
-            "type": "integer",
-            "description": "Specific week to upload (with plan_id)",
-        },
-        "schedule": {
-            "type": "boolean",
-            "description": "Schedule workouts on Garmin Connect calendar (default: true)",
-            "default": True,
-        },
-    },
-}
-
-_DELETE_WORKOUT_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "workout_id": {
-            "type": "string",
-            "description": "Single workout ID to delete",
-        },
-        "plan_id": {
-            "type": "string",
-            "description": "Plan ID to delete all workouts from",
-        },
-        "week_number": {
-            "type": "integer",
-            "description": "Specific week to delete (with plan_id)",
-        },
-    },
-}
-
-_GARMIN_SCHEDULED_WORKOUTS_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "start_date": {
-            "type": "string",
-            "description": "Inclusive start date (YYYY-MM-DD)",
-        },
-        "end_date": {
-            "type": "string",
-            "description": "Inclusive end date (YYYY-MM-DD)",
-        },
-    },
-    "required": ["start_date", "end_date"],
-}
+    start_date: str = Field(description="Inclusive start date (YYYY-MM-DD)")
+    end_date: str = Field(description="Inclusive end date (YYYY-MM-DD)")
 
 
 # ----------------------------------------------------------------------------
@@ -260,7 +192,13 @@ def _get_current_fitness_summary(
 
     try:
         assessor = FitnessAssessor(db_path=str(reader.db_path))
-        summary = assessor.assess(lookback_weeks=p.lookback_weeks)
+        summary = assessor.assess(
+            lookback_weeks=(
+                p.lookback_weeks
+                if p.lookback_weeks is not None
+                else _DEFAULT_LOOKBACK_WEEKS
+            )
+        )
         return summary.model_dump()
     except Exception as e:  # noqa: BLE001
         logger.error(f"Fitness assessment failed: {e}")
@@ -310,7 +248,9 @@ def _get_training_plan(reader: GarminDBReader, p: GetTrainingPlanParams) -> Any:
             plan_id=p.plan_id,
             version=p.version,
             week_number=p.week_number,
-            summary_only=p.summary_only,
+            summary_only=(
+                p.summary_only if p.summary_only is not None else _DEFAULT_SUMMARY_ONLY
+            ),
         )
     except Exception as e:  # noqa: BLE001
         logger.error(f"Get training plan failed: {e}")
@@ -379,7 +319,6 @@ TRAINING_PLAN_TOOLS: list[ToolDef] = [
         handler=_get_current_fitness_summary,
         cli_group="training-plan",
         cli_name="fitness-summary",
-        input_schema_override=_CURRENT_FITNESS_SUMMARY_SCHEMA,
     ),
     ToolDef(
         name="save_training_plan",
@@ -392,7 +331,6 @@ TRAINING_PLAN_TOOLS: list[ToolDef] = [
         handler=_save_training_plan,
         cli_group="training-plan",
         cli_name="save-plan",
-        input_schema_override=_SAVE_TRAINING_PLAN_SCHEMA,
     ),
     ToolDef(
         name="get_training_plan",
@@ -401,7 +339,6 @@ TRAINING_PLAN_TOOLS: list[ToolDef] = [
         handler=_get_training_plan,
         cli_group="training-plan",
         cli_name="get-plan",
-        input_schema_override=_GET_TRAINING_PLAN_SCHEMA,
     ),
     ToolDef(
         name="upload_workout_to_garmin",
@@ -410,7 +347,6 @@ TRAINING_PLAN_TOOLS: list[ToolDef] = [
         handler=_upload_workout_to_garmin,
         cli_group="training-plan",
         cli_name="upload-workout",
-        input_schema_override=_UPLOAD_WORKOUT_SCHEMA,
     ),
     ToolDef(
         name="delete_workout_from_garmin",
@@ -419,7 +355,6 @@ TRAINING_PLAN_TOOLS: list[ToolDef] = [
         handler=_delete_workout_from_garmin,
         cli_group="training-plan",
         cli_name="delete-workout",
-        input_schema_override=_DELETE_WORKOUT_SCHEMA,
     ),
     ToolDef(
         name="get_garmin_scheduled_workouts",
@@ -432,7 +367,6 @@ TRAINING_PLAN_TOOLS: list[ToolDef] = [
         handler=_get_garmin_scheduled_workouts,
         cli_group="training-plan",
         cli_name="scheduled-workouts",
-        input_schema_override=_GARMIN_SCHEDULED_WORKOUTS_SCHEMA,
     ),
 ]
 

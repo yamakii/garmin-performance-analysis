@@ -39,6 +39,10 @@ class ToolDef:
         input_schema_override: Explicit MCP ``inputSchema`` for special tools that
             cannot be expressed via the standard normalization. When set, it is
             used verbatim instead of deriving from ``params``.
+        field_descriptions: Optional per-tool override of property descriptions,
+            applied after deriving the schema from ``params``. This lets several
+            tools share a single params model while each gives a property (e.g.
+            ``statistics_only``) its own MCP description.
     """
 
     name: str
@@ -48,9 +52,13 @@ class ToolDef:
     cli_group: str
     cli_name: str
     input_schema_override: dict[str, Any] | None = None
+    field_descriptions: dict[str, str] | None = None
 
 
-def to_mcp_input_schema(params: type[BaseModel]) -> dict[str, Any]:
+def to_mcp_input_schema(
+    params: type[BaseModel],
+    field_descriptions: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """Convert a Pydantic model to a hand-written-equivalent MCP inputSchema.
 
     Pydantic's ``model_json_schema()`` emits ``title`` fields, ``$defs``, and
@@ -59,15 +67,31 @@ def to_mcp_input_schema(params: type[BaseModel]) -> dict[str, Any]:
     served (byte-for-byte dict equality):
 
     - top-level ``type`` is always ``"object"``
-    - each property keeps only ``type`` plus optional ``description`` / ``default``
+    - each property keeps only the meaningful JSON-Schema keys: ``type``,
+      ``description``, ``enum`` (``Literal``), ``items`` (``list[T]``),
+      ``minItems`` / ``maxItems`` (``Annotated[list[T], Field(min_length=...,
+      max_length=...)]``), and ``default``
+    - ``default`` is omitted when the Pydantic default is ``None`` (Optional
+      fields without an explicit non-None default), and kept for explicit
+      non-None defaults (``False``, ``"parquet"``, ``10`` ...)
+    - ``dict[str, Any]`` fields normalize to ``{"type": "object"}`` (Pydantic's
+      ``additionalProperties`` is stripped)
     - ``required`` is preserved (omitted when empty, matching the hand schemas)
+
+    Args:
+        params: The Pydantic model to derive the schema from.
+        field_descriptions: Optional mapping of property name -> description that
+            overwrites the derived ``description`` for those properties.
     """
     raw = params.model_json_schema()
     raw_props: dict[str, Any] = raw.get("properties", {})
 
     properties: dict[str, Any] = {}
     for prop_name, prop_schema in raw_props.items():
-        properties[prop_name] = _normalize_property(prop_schema)
+        normalized = _normalize_property(prop_schema)
+        if field_descriptions and prop_name in field_descriptions:
+            normalized["description"] = field_descriptions[prop_name]
+        properties[prop_name] = normalized
 
     schema: dict[str, Any] = {
         "type": "object",
@@ -80,23 +104,50 @@ def to_mcp_input_schema(params: type[BaseModel]) -> dict[str, Any]:
 
 
 def _normalize_property(prop_schema: dict[str, Any]) -> dict[str, Any]:
-    """Reduce a single Pydantic property schema to ``type``/``description``/``default``."""
+    """Reduce a single Pydantic property schema to the minimal MCP shape.
+
+    Keeps ``type``, ``description``, ``enum``, ``items``, ``minItems`` /
+    ``maxItems`` and ``default`` (the last only when the default is non-None),
+    digging into the non-null ``anyOf`` branch for ``Optional[...]`` fields.
+    """
     normalized: dict[str, Any] = {}
 
-    prop_type = prop_schema.get("type")
-    if prop_type is None and "anyOf" in prop_schema:
-        # Optional[...] surfaces as anyOf [{type: X}, {type: null}]; take the
-        # first non-null branch's type.
+    # Resolve the "shape" source: for Optional[...] the type/enum/items live in
+    # the first non-null ``anyOf`` branch; otherwise they are on prop_schema.
+    shape: dict[str, Any] = prop_schema
+    if "type" not in prop_schema and "anyOf" in prop_schema:
         for branch in prop_schema["anyOf"]:
             if branch.get("type") and branch.get("type") != "null":
-                prop_type = branch["type"]
+                shape = branch
                 break
+
+    prop_type = shape.get("type")
     if prop_type is not None:
         normalized["type"] = prop_type
 
+    # Description always lives on the outer property schema (Field(description=)).
     if "description" in prop_schema:
         normalized["description"] = prop_schema["description"]
-    if "default" in prop_schema:
+
+    # Literal[...] -> enum (inlined by Pydantic; also handled inside anyOf).
+    if "enum" in shape:
+        normalized["enum"] = list(shape["enum"])
+
+    # list[T] -> items; Annotated[list[T], Field(min/max_length)] -> minItems/maxItems.
+    if "items" in shape:
+        item_schema = shape["items"]
+        normalized["items"] = (
+            {"type": item_schema["type"]}
+            if isinstance(item_schema, dict) and "type" in item_schema
+            else item_schema
+        )
+    if "minItems" in shape:
+        normalized["minItems"] = shape["minItems"]
+    if "maxItems" in shape:
+        normalized["maxItems"] = shape["maxItems"]
+
+    # default: keep explicit non-None defaults, drop Optional's None default.
+    if "default" in prop_schema and prop_schema["default"] is not None:
         normalized["default"] = prop_schema["default"]
 
     return normalized
@@ -109,7 +160,7 @@ def build_mcp_tools(defs: list[ToolDef]) -> list[Tool]:
         input_schema = (
             d.input_schema_override
             if d.input_schema_override is not None
-            else to_mcp_input_schema(d.params)
+            else to_mcp_input_schema(d.params, d.field_descriptions)
         )
         tools.append(
             Tool(
