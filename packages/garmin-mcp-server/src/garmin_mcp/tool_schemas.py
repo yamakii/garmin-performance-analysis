@@ -759,7 +759,7 @@ _ATHLETE_TOOLS: list[dict] = [
     },
     {
         "name": "save_weekly_review",
-        "description": "Save a weekly training review to DuckDB. The record is upserted on (user_id, week_start_date), so re-saving the same week overwrites the prior review. The free-form review_data payload is stored as JSON.",
+        "description": "Save a weekly training review to DuckDB. Each save appends a new version for (user_id, week_start_date) instead of overwriting, so re-running the same week keeps prior versions as history; the latest version is treated as canonical. The free-form review_data payload is stored as JSON.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -773,7 +773,7 @@ _ATHLETE_TOOLS: list[dict] = [
     },
     {
         "name": "get_weekly_review",
-        "description": "Get a single weekly review. When week_start_date is omitted, the most recent review is returned. review_data is JSON-decoded back into an object. Returns null when no matching review exists.",
+        "description": "Get a single weekly review (the latest version of its week). When week_start_date is omitted, the latest version of the most recent week is returned. review_data is JSON-decoded back into an object. Returns null when no matching review exists.",
         "inputSchema": {
             "type": "object",
             "properties": {
