@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from garmin_mcp import tool_schemas
+import garmin_mcp.tool_schemas as tool_schemas
 from garmin_mcp.tools.physiology import (
     PHYSIOLOGY_TOOLS,
     PHYSIOLOGY_TOOLS_BY_NAME,

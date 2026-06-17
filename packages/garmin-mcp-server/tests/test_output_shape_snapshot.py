@@ -106,7 +106,7 @@ def real_reader() -> GarminDBReader:
 def test_output_shape_snapshot_physiology(real_reader: GarminDBReader) -> None:
     snapshot = json.loads(_SNAPSHOT_PATH.read_text(encoding="utf-8"))
 
-    invocations = {
+    invocations: dict[str, dict[str, Any]] = {
         "get_form_efficiency_summary": {"activity_id": FIXTURE_ACTIVITY_ID},
         "get_form_evaluations": {"activity_id": FIXTURE_ACTIVITY_ID},
         "get_form_baseline_trend": {
