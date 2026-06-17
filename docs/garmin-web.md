@@ -55,6 +55,11 @@ All endpoints are read-only `GET` under `/api`.
 | `/api/trends/physiology?from=...&to=...` | VO2max and lactate threshold history |
 | `/api/trends/form?from=...&to=...` | Form evaluation score history |
 | `/api/trends/efficiency?from=...&to=...` | Pace/HR efficiency and HR zone distribution history |
+| `/api/weekly-reviews?limit=12` | Weekly reviews, newest week first, **one row per week** (latest version of each week) |
+| `/api/weekly-reviews/{week_start_date}` | Latest version of the week's review. 404 if none |
+| `/api/weekly-reviews/{week_start_date}/versions` | All saved versions of the week, newest first. Empty array (200) if none. Backs the detail-page version selector |
+
+> Weekly reviews are versioned: re-running `/weekly-review` for the same week appends a new row instead of overwriting (Epic #311). The list view de-duplicates to the latest version per week; the detail page fetches `/versions` to switch between past versions.
 
 ## Architecture
 
