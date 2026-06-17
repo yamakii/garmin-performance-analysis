@@ -1,17 +1,24 @@
-"""Handler for export tool."""
+"""Handler for the export tool.
+
+Thin adapter over the single-source registry
+(``garmin_mcp.tools.export.EXPORT_TOOLS``).
+"""
 
 from typing import Any
 
 from mcp.types import TextContent
 
 from garmin_mcp.database.db_reader import GarminDBReader
-from garmin_mcp.handlers.base import format_json_response, inject_warnings
+from garmin_mcp.handlers.base import format_json_response
+from garmin_mcp.tools import ALL_DEFS_BY_NAME
+from garmin_mcp.tools.export import EXPORT_TOOLS_BY_NAME
+from garmin_mcp.tools.registry import dispatch
 
 
 class ExportHandler:
-    """Handles export-related tool calls."""
+    """Handles export-related tool calls via the registry."""
 
-    _tool_names: set[str] = {"export"}
+    _tool_names: set[str] = set(EXPORT_TOOLS_BY_NAME)
 
     def __init__(self, db_reader: GarminDBReader) -> None:
         self._db_reader = db_reader
@@ -20,64 +27,7 @@ class ExportHandler:
         return name in self._tool_names
 
     async def handle(self, name: str, arguments: dict[str, Any]) -> list[TextContent]:
-        if name != "export":
+        if name not in self._tool_names:
             raise ValueError(f"Unknown tool: {name}")
-
-        import time
-        from datetime import datetime
-
-        from garmin_mcp.mcp_server.export_manager import get_export_manager
-
-        query = arguments["query"]
-        export_format = arguments.get("format", "parquet")
-        max_rows = arguments.get("max_rows", 100000)
-
-        try:
-            # Get export manager
-            export_manager = get_export_manager()
-
-            # Create export handle
-            file_path, handle, expires_at = export_manager.create_export_handle(
-                export_format=export_format
-            )
-
-            # Export query result
-            query_start = time.monotonic()
-            metadata = self._db_reader.export_query_result(
-                query=query,
-                output_path=file_path,
-                export_format=export_format,
-                max_rows=max_rows,
-            )
-            query_duration = time.monotonic() - query_start
-
-            # Build result
-            result: dict[str, Any] = {
-                "handle": handle,
-                "rows": metadata["rows"],
-                "size_mb": metadata["size_mb"],
-                "columns": metadata["columns"],
-                "expires_at": datetime.fromtimestamp(expires_at).isoformat() + "Z",
-            }
-
-            # Warn on slow queries
-            warnings: list[str] = []
-            if query_duration > 5.0:
-                warnings.append(
-                    f"Query took {query_duration:.1f}s" " - consider adding filters"
-                )
-            inject_warnings(result, warnings)
-
-            return [TextContent(type="text", text=format_json_response(result))]
-
-        except ValueError as e:
-            # Size limit exceeded
-            result = {
-                "error": str(e),
-                "suggestion": "Refine your query with WHERE clauses, LIMIT, or aggregation functions.",
-            }
-            return [TextContent(type="text", text=format_json_response(result))]
-        except Exception as e:
-            # Other errors
-            result = {"error": f"Export failed: {str(e)}"}
-            return [TextContent(type="text", text=format_json_response(result))]
+        result = dispatch(ALL_DEFS_BY_NAME, self._db_reader, name, arguments)
+        return [TextContent(type="text", text=format_json_response(result))]

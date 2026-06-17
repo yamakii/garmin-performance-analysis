@@ -21,9 +21,8 @@ class TestHandles:
         "tool_name",
         [
             "insert_section_analysis_dict",
-            "get_interval_analysis",
-            "detect_form_anomalies_summary",
-            "get_form_anomaly_details",
+            "validate_section_json",
+            "get_analysis_contract",
             "analyze_performance_trends",
             "extract_insights",
             "compare_similar_workouts",
@@ -34,6 +33,21 @@ class TestHandles:
     ) -> None:
         handler = AnalysisHandler(mock_db_reader)
         assert handler.handles(tool_name) is True
+
+    @pytest.mark.parametrize(
+        "tool_name",
+        [
+            # Moved to other domains in the registry rollout (#329):
+            "get_interval_analysis",  # -> SplitsHandler
+            "detect_form_anomalies_summary",  # -> TimeSeriesHandler
+            "get_form_anomaly_details",  # -> TimeSeriesHandler
+        ],
+    )
+    def test_does_not_handle_relocated_tools(
+        self, mock_db_reader: MagicMock, tool_name: str
+    ) -> None:
+        handler = AnalysisHandler(mock_db_reader)
+        assert handler.handles(tool_name) is False
 
     def test_does_not_handle_unknown_tool(self, mock_db_reader: MagicMock) -> None:
         handler = AnalysisHandler(mock_db_reader)
@@ -104,162 +118,10 @@ class TestInsertSectionAnalysisDict:
         assert data["success"] is False
 
 
-# ---------------------------------------------------------------------------
-# get_interval_analysis
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestGetIntervalAnalysis:
-    """Test _get_interval_analysis via handle()."""
-
-    @pytest.mark.asyncio
-    async def test_returns_data(self, mock_db_reader: MagicMock, mocker: Any) -> None:
-        expected = {"intervals": [{"type": "work", "pace": 280}]}
-        mock_cls = mocker.patch(
-            "garmin_mcp.rag.queries.interval_analysis.IntervalAnalyzer"
-        )
-        mock_cls.return_value.get_interval_analysis.return_value = expected
-        handler = AnalysisHandler(mock_db_reader)
-
-        result = await handler.handle("get_interval_analysis", {"activity_id": 12345})
-
-        data = json.loads(result[0].text)
-        assert data == expected
-        mock_cls.return_value.get_interval_analysis.assert_called_once_with(
-            activity_id=12345
-        )
-
-
-# ---------------------------------------------------------------------------
-# detect_form_anomalies_summary
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestDetectFormAnomaliesSummary:
-    """Test _detect_form_anomalies_summary via handle()."""
-
-    @pytest.mark.asyncio
-    async def test_defaults(self, mock_db_reader: MagicMock, mocker: Any) -> None:
-        expected = {"anomaly_count": 2, "summary": "ok"}
-        mock_cls = mocker.patch(
-            "garmin_mcp.rag.queries.form_anomaly_detector.FormAnomalyDetector"
-        )
-        mock_cls.return_value.detect_form_anomalies_summary.return_value = expected
-        handler = AnalysisHandler(mock_db_reader)
-
-        result = await handler.handle(
-            "detect_form_anomalies_summary", {"activity_id": 12345}
-        )
-
-        data = json.loads(result[0].text)
-        assert data == expected
-        mock_cls.return_value.detect_form_anomalies_summary.assert_called_once_with(
-            activity_id=12345, metrics=None, z_threshold=3.0
-        )
-
-    @pytest.mark.asyncio
-    async def test_with_optional_args(
-        self, mock_db_reader: MagicMock, mocker: Any
-    ) -> None:
-        mock_cls = mocker.patch(
-            "garmin_mcp.rag.queries.form_anomaly_detector.FormAnomalyDetector"
-        )
-        mock_cls.return_value.detect_form_anomalies_summary.return_value = {}
-        handler = AnalysisHandler(mock_db_reader)
-
-        await handler.handle(
-            "detect_form_anomalies_summary",
-            {
-                "activity_id": 12345,
-                "metrics": ["GCT", "VO"],
-                "z_threshold": 1.5,
-            },
-        )
-
-        mock_cls.return_value.detect_form_anomalies_summary.assert_called_once_with(
-            activity_id=12345, metrics=["GCT", "VO"], z_threshold=1.5
-        )
-
-
-# ---------------------------------------------------------------------------
-# get_form_anomaly_details
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestGetFormAnomalyDetails:
-    """Test _get_form_anomaly_details via handle()."""
-
-    @pytest.mark.asyncio
-    async def test_minimal_args(self, mock_db_reader: MagicMock, mocker: Any) -> None:
-        expected: dict[str, list[str]] = {"details": []}
-        mock_cls = mocker.patch(
-            "garmin_mcp.rag.queries.form_anomaly_detector.FormAnomalyDetector"
-        )
-        mock_cls.return_value.get_form_anomaly_details.return_value = expected
-        handler = AnalysisHandler(mock_db_reader)
-
-        result = await handler.handle(
-            "get_form_anomaly_details", {"activity_id": 12345}
-        )
-
-        data = json.loads(result[0].text)
-        assert data == expected
-        call_kwargs = mock_cls.return_value.get_form_anomaly_details.call_args
-        assert call_kwargs.kwargs["activity_id"] == 12345
-        assert call_kwargs.kwargs["filters"]["limit"] == 50
-
-    @pytest.mark.asyncio
-    async def test_with_all_filters(
-        self, mock_db_reader: MagicMock, mocker: Any
-    ) -> None:
-        mock_cls = mocker.patch(
-            "garmin_mcp.rag.queries.form_anomaly_detector.FormAnomalyDetector"
-        )
-        mock_cls.return_value.get_form_anomaly_details.return_value = {}
-        handler = AnalysisHandler(mock_db_reader)
-
-        await handler.handle(
-            "get_form_anomaly_details",
-            {
-                "activity_id": 12345,
-                "anomaly_ids": [1, 2, 3],
-                "time_range": [100, 500],
-                "metrics": ["GCT"],
-                "z_threshold": 3.0,
-                "causes": ["fatigue"],
-                "limit": 20,
-            },
-        )
-
-        call_kwargs = mock_cls.return_value.get_form_anomaly_details.call_args.kwargs
-        filters = call_kwargs["filters"]
-        assert filters["anomaly_ids"] == [1, 2, 3]
-        assert filters["time_range"] == (100, 500)
-        assert filters["metrics"] == ["GCT"]
-        assert filters["min_z_score"] == 3.0
-        assert filters["causes"] == ["fatigue"]
-        assert filters["limit"] == 20
-
-    @pytest.mark.asyncio
-    async def test_time_range_converted_to_tuple(
-        self, mock_db_reader: MagicMock, mocker: Any
-    ) -> None:
-        mock_cls = mocker.patch(
-            "garmin_mcp.rag.queries.form_anomaly_detector.FormAnomalyDetector"
-        )
-        mock_cls.return_value.get_form_anomaly_details.return_value = {}
-        handler = AnalysisHandler(mock_db_reader)
-
-        await handler.handle(
-            "get_form_anomaly_details",
-            {"activity_id": 12345, "time_range": [0, 1000]},
-        )
-
-        call_kwargs = mock_cls.return_value.get_form_anomaly_details.call_args.kwargs
-        assert isinstance(call_kwargs["filters"]["time_range"], tuple)
+# Note: get_interval_analysis, detect_form_anomalies_summary, and
+# get_form_anomaly_details were relocated to SplitsHandler / TimeSeriesHandler in
+# the registry rollout (#329); their behavioral tests now live in
+# test_splits_handler.py and test_time_series_handler.py.
 
 
 # ---------------------------------------------------------------------------

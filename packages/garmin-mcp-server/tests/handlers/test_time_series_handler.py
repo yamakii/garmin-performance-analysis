@@ -212,3 +212,144 @@ class TestHandleUnknownTool:
         body = json.loads(result[0].text)
         assert "Invalid parameter" in body["error"]
         assert "Unknown tool" in body["error"]
+
+
+# ---------------------------------------------------------------------------
+# detect_form_anomalies_summary (relocated from AnalysisHandler in #329)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestDetectFormAnomaliesSummary:
+    """Test detect_form_anomalies_summary via handle()."""
+
+    def test_handles(self, mock_db_reader: MagicMock) -> None:
+        handler = TimeSeriesHandler(mock_db_reader)
+        assert handler.handles("detect_form_anomalies_summary") is True
+
+    @pytest.mark.asyncio
+    async def test_defaults(self, mock_db_reader: MagicMock, mocker: MagicMock) -> None:
+        expected = {"anomaly_count": 2, "summary": "ok"}
+        mock_cls = mocker.patch(
+            "garmin_mcp.rag.queries.form_anomaly_detector.FormAnomalyDetector"
+        )
+        mock_cls.return_value.detect_form_anomalies_summary.return_value = expected
+        handler = TimeSeriesHandler(mock_db_reader)
+
+        result = await handler.handle(
+            "detect_form_anomalies_summary", {"activity_id": 12345}
+        )
+
+        data = json.loads(result[0].text)
+        assert data == expected
+        mock_cls.return_value.detect_form_anomalies_summary.assert_called_once_with(
+            activity_id=12345, metrics=None, z_threshold=3.0
+        )
+
+    @pytest.mark.asyncio
+    async def test_with_optional_args(
+        self, mock_db_reader: MagicMock, mocker: MagicMock
+    ) -> None:
+        mock_cls = mocker.patch(
+            "garmin_mcp.rag.queries.form_anomaly_detector.FormAnomalyDetector"
+        )
+        mock_cls.return_value.detect_form_anomalies_summary.return_value = {}
+        handler = TimeSeriesHandler(mock_db_reader)
+
+        await handler.handle(
+            "detect_form_anomalies_summary",
+            {
+                "activity_id": 12345,
+                "metrics": ["GCT", "VO"],
+                "z_threshold": 1.5,
+            },
+        )
+
+        mock_cls.return_value.detect_form_anomalies_summary.assert_called_once_with(
+            activity_id=12345, metrics=["GCT", "VO"], z_threshold=1.5
+        )
+
+
+# ---------------------------------------------------------------------------
+# get_form_anomaly_details (relocated from AnalysisHandler in #329)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestGetFormAnomalyDetails:
+    """Test get_form_anomaly_details via handle()."""
+
+    def test_handles(self, mock_db_reader: MagicMock) -> None:
+        handler = TimeSeriesHandler(mock_db_reader)
+        assert handler.handles("get_form_anomaly_details") is True
+
+    @pytest.mark.asyncio
+    async def test_minimal_args(
+        self, mock_db_reader: MagicMock, mocker: MagicMock
+    ) -> None:
+        expected: dict[str, list[str]] = {"details": []}
+        mock_cls = mocker.patch(
+            "garmin_mcp.rag.queries.form_anomaly_detector.FormAnomalyDetector"
+        )
+        mock_cls.return_value.get_form_anomaly_details.return_value = expected
+        handler = TimeSeriesHandler(mock_db_reader)
+
+        result = await handler.handle(
+            "get_form_anomaly_details", {"activity_id": 12345}
+        )
+
+        data = json.loads(result[0].text)
+        assert data == expected
+        call_kwargs = mock_cls.return_value.get_form_anomaly_details.call_args
+        assert call_kwargs.kwargs["activity_id"] == 12345
+        assert call_kwargs.kwargs["filters"]["limit"] == 50
+
+    @pytest.mark.asyncio
+    async def test_with_all_filters(
+        self, mock_db_reader: MagicMock, mocker: MagicMock
+    ) -> None:
+        mock_cls = mocker.patch(
+            "garmin_mcp.rag.queries.form_anomaly_detector.FormAnomalyDetector"
+        )
+        mock_cls.return_value.get_form_anomaly_details.return_value = {}
+        handler = TimeSeriesHandler(mock_db_reader)
+
+        await handler.handle(
+            "get_form_anomaly_details",
+            {
+                "activity_id": 12345,
+                "anomaly_ids": [1, 2, 3],
+                "time_range": [100, 500],
+                "metrics": ["GCT"],
+                "z_threshold": 3.0,
+                "causes": ["fatigue"],
+                "limit": 20,
+            },
+        )
+
+        call_kwargs = mock_cls.return_value.get_form_anomaly_details.call_args.kwargs
+        filters = call_kwargs["filters"]
+        assert filters["anomaly_ids"] == [1, 2, 3]
+        assert filters["time_range"] == (100, 500)
+        assert filters["metrics"] == ["GCT"]
+        assert filters["min_z_score"] == 3.0
+        assert filters["causes"] == ["fatigue"]
+        assert filters["limit"] == 20
+
+    @pytest.mark.asyncio
+    async def test_time_range_converted_to_tuple(
+        self, mock_db_reader: MagicMock, mocker: MagicMock
+    ) -> None:
+        mock_cls = mocker.patch(
+            "garmin_mcp.rag.queries.form_anomaly_detector.FormAnomalyDetector"
+        )
+        mock_cls.return_value.get_form_anomaly_details.return_value = {}
+        handler = TimeSeriesHandler(mock_db_reader)
+
+        await handler.handle(
+            "get_form_anomaly_details",
+            {"activity_id": 12345, "time_range": [0, 1000]},
+        )
+
+        call_kwargs = mock_cls.return_value.get_form_anomaly_details.call_args.kwargs
+        assert isinstance(call_kwargs["filters"]["time_range"], tuple)
