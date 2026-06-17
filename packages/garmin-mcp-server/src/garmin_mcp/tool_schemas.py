@@ -7,6 +7,9 @@ The get_tool_definitions() function returns MCP Tool objects.
 
 from mcp.types import Tool
 
+from garmin_mcp.tools.physiology import PHYSIOLOGY_TOOLS
+from garmin_mcp.tools.registry import build_mcp_tools
+
 # ============================================================
 # Schema definitions grouped by category
 # ============================================================
@@ -347,99 +350,10 @@ _ANALYSIS_TOOLS: list[dict] = [
     },
 ]
 
-_PHYSIOLOGY_TOOLS: list[dict] = [
-    {
-        "name": "get_form_efficiency_summary",
-        "description": "Get form efficiency summary (GCT, VO, VR metrics) from form_efficiency table",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "activity_id": {"type": "integer"},
-            },
-            "required": ["activity_id"],
-        },
-    },
-    {
-        "name": "get_form_evaluations",
-        "description": "Get pace-corrected form evaluation results (expected values, actual values, scores, star ratings, evaluation texts)",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "activity_id": {"type": "integer"},
-            },
-            "required": ["activity_id"],
-        },
-    },
-    {
-        "name": "get_form_baseline_trend",
-        "description": "Get form baseline trend (1-month coefficient comparison for form_trend analysis)",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "activity_id": {"type": "integer"},
-                "activity_date": {
-                    "type": "string",
-                    "description": "Activity date in YYYY-MM-DD format",
-                },
-                "user_id": {
-                    "type": "string",
-                    "description": "User ID (default: 'default')",
-                    "default": "default",
-                },
-                "condition_group": {
-                    "type": "string",
-                    "description": "Condition group (default: 'flat_road')",
-                    "default": "flat_road",
-                },
-            },
-            "required": ["activity_id", "activity_date"],
-        },
-    },
-    {
-        "name": "get_hr_efficiency_analysis",
-        "description": "Get HR efficiency analysis (zone distribution, training type) from hr_efficiency table",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "activity_id": {"type": "integer"},
-            },
-            "required": ["activity_id"],
-        },
-    },
-    {
-        "name": "get_heart_rate_zones_detail",
-        "description": "Get heart rate zones detail (boundaries, time distribution) from heart_rate_zones table",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "activity_id": {"type": "integer"},
-            },
-            "required": ["activity_id"],
-        },
-    },
-    {
-        "name": "get_vo2_max_data",
-        "description": "Get VO2 max data (precise value, fitness age, category) from vo2_max table",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "activity_id": {"type": "integer"},
-            },
-            "required": ["activity_id"],
-        },
-    },
-    {
-        "name": "get_lactate_threshold_data",
-        "description": "Get lactate threshold data (HR, speed, power) from lactate_threshold table",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "activity_id": {"type": "integer"},
-            },
-            "required": ["activity_id"],
-        },
-    },
-]
+# Physiology tools are now declared via the single-source registry
+# (garmin_mcp.tools.physiology.PHYSIOLOGY_TOOLS) and built with build_mcp_tools().
+# See get_tool_definitions() / TOOL_NAMES below for how they are spliced in at the
+# same position the hand-written _PHYSIOLOGY_TOOLS list previously occupied.
 
 _PERFORMANCE_TOOLS: list[dict] = [
     {
@@ -817,28 +731,34 @@ _SERVER_TOOLS: list[dict] = [
 ]
 
 
-def get_tool_definitions() -> list[Tool]:
-    """Return all MCP tool definitions as a list of Tool objects."""
-    all_schemas = (
-        _EXPORT_TOOLS
-        + _METADATA_TOOLS
-        + _SPLITS_TOOLS
-        + _ANALYSIS_TOOLS
-        + _PHYSIOLOGY_TOOLS
-        + _PERFORMANCE_TOOLS
-        + _TIME_SERIES_TOOLS
-        + _TRAINING_PLAN_TOOLS
-        + _ATHLETE_TOOLS
-        + _SERVER_TOOLS
+def _hand_schema_to_tool(schema: dict) -> Tool:
+    return Tool(
+        name=schema["name"],
+        description=schema["description"],
+        inputSchema=schema["inputSchema"],
     )
-    return [
-        Tool(
-            name=schema["name"],
-            description=schema["description"],
-            inputSchema=schema["inputSchema"],
-        )
-        for schema in all_schemas
-    ]
+
+
+def get_tool_definitions() -> list[Tool]:
+    """Return all MCP tool definitions as a list of Tool objects.
+
+    Physiology tools are derived from the single-source registry
+    (``build_mcp_tools(PHYSIOLOGY_TOOLS)``) and spliced in at the same position
+    the hand-written ``_PHYSIOLOGY_TOOLS`` list previously occupied, preserving
+    byte-for-byte ordering and schema parity on the live MCP surface.
+    """
+    return (
+        [_hand_schema_to_tool(s) for s in _EXPORT_TOOLS]
+        + [_hand_schema_to_tool(s) for s in _METADATA_TOOLS]
+        + [_hand_schema_to_tool(s) for s in _SPLITS_TOOLS]
+        + [_hand_schema_to_tool(s) for s in _ANALYSIS_TOOLS]
+        + build_mcp_tools(PHYSIOLOGY_TOOLS)
+        + [_hand_schema_to_tool(s) for s in _PERFORMANCE_TOOLS]
+        + [_hand_schema_to_tool(s) for s in _TIME_SERIES_TOOLS]
+        + [_hand_schema_to_tool(s) for s in _TRAINING_PLAN_TOOLS]
+        + [_hand_schema_to_tool(s) for s in _ATHLETE_TOOLS]
+        + [_hand_schema_to_tool(s) for s in _SERVER_TOOLS]
+    )
 
 
 # Tool name registry for validation
@@ -849,7 +769,6 @@ TOOL_NAMES: set[str] = {
         _METADATA_TOOLS,
         _SPLITS_TOOLS,
         _ANALYSIS_TOOLS,
-        _PHYSIOLOGY_TOOLS,
         _PERFORMANCE_TOOLS,
         _TIME_SERIES_TOOLS,
         _TRAINING_PLAN_TOOLS,
@@ -857,4 +776,4 @@ TOOL_NAMES: set[str] = {
         _SERVER_TOOLS,
     ]
     for schema in group
-}
+} | {d.name for d in PHYSIOLOGY_TOOLS}
