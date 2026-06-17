@@ -228,9 +228,7 @@ class TestDetectFormAnomaliesSummary:
         assert handler.handles("detect_form_anomalies_summary") is True
 
     @pytest.mark.asyncio
-    async def test_defaults(
-        self, mock_db_reader: MagicMock, mocker: MagicMock
-    ) -> None:
+    async def test_defaults(self, mock_db_reader: MagicMock, mocker: MagicMock) -> None:
         expected = {"anomaly_count": 2, "summary": "ok"}
         mock_cls = mocker.patch(
             "garmin_mcp.rag.queries.form_anomaly_detector.FormAnomalyDetector"

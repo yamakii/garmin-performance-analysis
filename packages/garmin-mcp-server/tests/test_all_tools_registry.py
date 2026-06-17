@@ -163,6 +163,7 @@ def test_dispatch_all_domains() -> None:
         )
         result = dispatch(ALL_DEFS_BY_NAME, reader, "export", {"query": "SELECT 1"})
         reader.export_query_result.assert_called_once()
+        assert isinstance(result, dict)
         assert result["handle"] == "handle-1"
         assert result["rows"] == 1
 
