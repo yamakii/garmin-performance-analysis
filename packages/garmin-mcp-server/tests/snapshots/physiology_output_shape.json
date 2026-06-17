@@ -1,0 +1,182 @@
+{
+  "get_form_baseline_trend": {
+    "activity_date": "str",
+    "activity_id": "int",
+    "metrics": {
+      "gct": {
+        "current": {
+          "coef_b": "NoneType",
+          "coef_d": "float",
+          "period": "str"
+        },
+        "delta_d": "float",
+        "previous": {
+          "coef_b": "NoneType",
+          "coef_d": "float",
+          "period": "str"
+        }
+      },
+      "power": {
+        "current": {
+          "coef_b": "NoneType",
+          "coef_d": "NoneType",
+          "period": "str"
+        }
+      },
+      "vo": {
+        "current": {
+          "coef_b": "float",
+          "coef_d": "NoneType",
+          "period": "str"
+        },
+        "delta_b": "float",
+        "previous": {
+          "coef_b": "float",
+          "coef_d": "NoneType",
+          "period": "str"
+        }
+      },
+      "vr": {
+        "current": {
+          "coef_b": "float",
+          "coef_d": "NoneType",
+          "period": "str"
+        },
+        "delta_b": "float",
+        "previous": {
+          "coef_b": "float",
+          "coef_d": "NoneType",
+          "period": "str"
+        }
+      }
+    },
+    "success": "bool"
+  },
+  "get_form_efficiency_summary": {
+    "gct": {
+      "average": "float",
+      "evaluation": "NoneType",
+      "max": "float",
+      "min": "float",
+      "rating": "str",
+      "std": "float",
+      "variability": "float"
+    },
+    "vo": {
+      "average": "float",
+      "evaluation": "NoneType",
+      "max": "float",
+      "min": "float",
+      "rating": "str",
+      "std": "float",
+      "trend": "NoneType"
+    },
+    "vr": {
+      "average": "float",
+      "evaluation": "NoneType",
+      "max": "float",
+      "min": "float",
+      "rating": "str",
+      "std": "float"
+    }
+  },
+  "get_form_evaluations": {
+    "activity_id": "int",
+    "cadence": {
+      "achieved": "bool",
+      "actual": "float",
+      "delta_pct": "NoneType",
+      "evaluation_text": "NoneType",
+      "expected": "NoneType",
+      "minimum": "int",
+      "needs_improvement": "NoneType",
+      "score": "NoneType",
+      "star_rating": "NoneType"
+    },
+    "gct": {
+      "actual": "float",
+      "delta_pct": "float",
+      "evaluation_text": "str",
+      "expected": "float",
+      "needs_improvement": "bool",
+      "score": "float",
+      "star_rating": "str"
+    },
+    "integrated_score": "float",
+    "overall_score": "float",
+    "overall_star_rating": "str",
+    "power": {
+      "avg_w": "float",
+      "efficiency_score": "float",
+      "needs_improvement": "bool",
+      "speed_actual_mps": "float",
+      "speed_expected_mps": "float",
+      "star_rating": "str",
+      "wkg": "float"
+    },
+    "training_mode": "str",
+    "vo": {
+      "actual": "float",
+      "delta_cm": "float",
+      "delta_pct": "float",
+      "evaluation_text": "str",
+      "expected": "float",
+      "needs_improvement": "bool",
+      "score": "float",
+      "star_rating": "str"
+    },
+    "vr": {
+      "actual": "float",
+      "delta_pct": "float",
+      "evaluation_text": "str",
+      "expected": "float",
+      "needs_improvement": "bool",
+      "score": "float",
+      "star_rating": "str"
+    }
+  },
+  "get_heart_rate_zones_detail": {
+    "zones": [
+      "list",
+      {
+        "high_boundary": "int",
+        "low_boundary": "int",
+        "time_in_zone_seconds": "float",
+        "zone_number": "int",
+        "zone_percentage": "float"
+      }
+    ]
+  },
+  "get_hr_efficiency_analysis": {
+    "aerobic_efficiency": "str",
+    "hr_stability": "str",
+    "primary_zone": "str",
+    "training_quality": "str",
+    "training_type": "str",
+    "zone2_focus": "bool",
+    "zone4_threshold_work": "bool",
+    "zone_distribution_rating": "str",
+    "zone_percentages": {
+      "zone1": "float",
+      "zone2": "float",
+      "zone3": "float",
+      "zone4": "float",
+      "zone5": "float"
+    }
+  },
+  "get_lactate_threshold_data": {
+    "date_hr": "str",
+    "date_power": "str",
+    "functional_threshold_power": "int",
+    "heart_rate": "int",
+    "power_to_weight": "float",
+    "speed_mps": "float",
+    "weight": "float"
+  },
+  "get_vo2_max_data": {
+    "category": "str",
+    "date": "str",
+    "precise_value": "float",
+    "value": "float"
+  }
+}
