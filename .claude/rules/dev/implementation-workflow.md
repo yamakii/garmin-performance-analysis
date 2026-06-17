@@ -28,7 +28,7 @@ Risks セクション（任意）:
 ## Phase 1: Delegate (実装委任)
 
 サブエージェント(developer, worktree isolation)に以下を含めて委任:
-- Issue 番号と `mcp__github__get_issue` 実行指示
+- Issue 番号と `mcp__github__issue_read` (method="get") 実行指示
 - プランの実装手順（そのまま渡す）
 - 実装前確認（コードを書く前に出力させる）:
   1. 変更対象ファイル一覧

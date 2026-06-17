@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash, Read, Glob, Grep, Task, AskUserQuestion, mcp__github__get_issue
+allowed-tools: Bash, Read, Glob, Grep, Task, AskUserQuestion, mcp__github__issue_read
 description: Parallel implementation orchestrator for Epic sub-issues
 user-invocable: true
 ---
@@ -22,11 +22,11 @@ Examples:
 
 ```
 # Epic の場合: sub-issues を取得
-epic = mcp__github__get_issue(owner="yamakii", repo="garmin-performance-analysis", issue_number={epic})
+epic = mcp__github__issue_read(method="get", owner="yamakii", repo="garmin-performance-analysis", issue_number={epic})
 # body から "- [ ] #N" パターンで sub-issue 番号を抽出
 
 # 各 sub-issue の情報を取得
-mcp__github__get_issue(owner="yamakii", repo="garmin-performance-analysis", issue_number={N})
+mcp__github__issue_read(method="get", owner="yamakii", repo="garmin-performance-analysis", issue_number={N})
 ```
 
 ### Step 2: フィルタリング
@@ -71,7 +71,7 @@ Agent(subagent_type="developer", isolation="worktree", prompt="""
   Issue: #{number}
   Title: {title}
   Implement according to the Issue design.
-  mcp__github__get_issue で設計を読み込んでください。
+  mcp__github__issue_read (method="get") で設計を読み込んでください。
 """)
 ```
 
