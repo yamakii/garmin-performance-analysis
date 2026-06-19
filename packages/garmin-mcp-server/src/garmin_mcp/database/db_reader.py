@@ -17,6 +17,7 @@ from garmin_mcp.database.readers import (
     RaceReader,
     SplitsReader,
     TimeSeriesReader,
+    TrainingLoadReader,
     UtilityReader,
 )
 
@@ -50,6 +51,7 @@ class GarminDBReader:
         self.physiology = PhysiologyReader(db_path)
         self.performance = PerformanceReader(db_path)
         self.race = RaceReader(db_path)
+        self.training_load = TrainingLoadReader(db_path)
         self.utility = UtilityReader(db_path)
 
         # Expose db_path for handlers and scripts
@@ -388,6 +390,37 @@ class GarminDBReader:
             Dict with current_vdot, predicted_times, goal, and progress.
         """
         return self.race.get_race_readiness(user_id, lookback_weeks)
+
+    # ========== Training Load Methods ==========
+
+    def get_acwr(self, end_date: str | None = None) -> dict[str, Any]:
+        """Get the distance-based Acute:Chronic Workload Ratio (ACWR).
+
+        Args:
+            end_date: ``YYYY-MM-DD`` reference day (defaults to the latest
+                ``activity_date``).
+
+        Returns:
+            Dict with end_date, acute_load_7d, chronic_load_28d_weekly, acwr,
+            status, and load_metric.
+        """
+        return self.training_load.get_acwr(end_date)
+
+    def get_load_trend(
+        self, lookback_weeks: int = 12, end_date: str | None = None
+    ) -> dict[str, Any]:
+        """Get the weekly load and ACWR trend over ``lookback_weeks``.
+
+        Args:
+            lookback_weeks: Number of trailing weekly buckets (default 12).
+            end_date: ``YYYY-MM-DD`` reference day (defaults to the latest
+                ``activity_date``).
+
+        Returns:
+            Dict with a ``weeks`` array (week_start, load_km, acwr, status) and
+            ``load_metric``.
+        """
+        return self.training_load.get_load_trend(lookback_weeks, end_date)
 
     # ========== Time Series Methods ==========
 
