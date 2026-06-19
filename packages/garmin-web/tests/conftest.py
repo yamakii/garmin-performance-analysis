@@ -1006,3 +1006,119 @@ def training_load_high_risk_db_path(tmp_path: Path) -> Path:
     """DuckDB with a recent volume spike (ACWR > 1.5 -> high_risk)."""
     db_path = tmp_path / "test_garmin_web_training_load_high_risk.duckdb"
     return _build_training_load_db(db_path, spike=True)
+
+
+# --- Durability (cardiac-decoupling) fixtures (Issue #364) -------------
+# DurabilityReader.get_durability_trend (#358) reads `activities`
+# (total_distance_km / activity_date >= min_distance_km) plus
+# `time_series_metrics` (heart_rate, speed, timestamp_s per seq_no). For each
+# qualifying long run it splits the series at the timestamp midpoint and
+# compares back-half vs front-half HR/speed efficiency. We synthesise two
+# >=15 km long runs whose second half costs more HR per unit speed (positive
+# decoupling) so the endpoint returns non-empty activities + a trend block.
+
+_DURABILITY_RANGE = 600  # time-series rows per long run
+
+
+def _insert_durability_series(
+    conn: duckdb.DuckDBPyConnection,
+    activity_id: int,
+    *,
+    front_hr: int,
+    back_hr: int,
+    front_speed: float,
+    back_speed: float,
+) -> None:
+    """Insert a two-phase HR/speed series (front half then back half).
+
+    seq_no/timestamp_s share i so the midpoint splits the series cleanly; the
+    back half uses a higher HR and slightly lower speed to produce a positive
+    decoupling_pct (fade).
+    """
+    half = _DURABILITY_RANGE // 2
+    conn.execute(
+        "INSERT INTO time_series_metrics"
+        f" SELECT {activity_id}, i, i,"
+        f" CASE WHEN i < {half} THEN {front_hr} ELSE {back_hr} END,"
+        f" CASE WHEN i < {half} THEN {front_speed} ELSE {back_speed} END,"
+        " 170.0, NULL, NULL"
+        f" FROM range({_DURABILITY_RANGE}) AS t(i)"
+    )
+
+
+# (activity_id, date, name, distance_km, front_hr, back_hr, front_spd, back_spd)
+_DURABILITY_LONG_RUNS = [
+    (9000005001, "2025-10-05", "Long Run A", 18.0, 145, 156, 2.8, 2.7),
+    (9000005002, "2025-10-19", "Long Run B", 21.0, 144, 153, 2.8, 2.72),
+]
+
+
+@pytest.fixture
+def durability_db_path(tmp_path: Path) -> Path:
+    """DuckDB with two >=15 km long runs whose second half decouples.
+
+    Also includes a short run (8 km) that must be excluded by the default
+    ``min_distance_km`` filter.
+    """
+    db_path = tmp_path / "test_garmin_web_durability.duckdb"
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(_CREATE_ACTIVITIES)
+        conn.execute(_CREATE_TIME_SERIES_METRICS)
+
+        activity_rows = [
+            (aid, date, name, km, int(km * 330), 330.0, front_hr)
+            for aid, date, name, km, front_hr, _back_hr, _fs, _bs in (
+                _DURABILITY_LONG_RUNS
+            )
+        ]
+        # Short run that should be filtered out (< 15 km).
+        activity_rows.append(
+            (9000005003, "2025-10-12", "Short Run", 8.0, 2400, 300.0, 140)
+        )
+        conn.executemany(
+            "INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?, ?)",
+            activity_rows,
+        )
+
+        for (
+            aid,
+            _date,
+            _name,
+            _km,
+            front_hr,
+            back_hr,
+            front_spd,
+            back_spd,
+        ) in _DURABILITY_LONG_RUNS:
+            _insert_durability_series(
+                conn,
+                aid,
+                front_hr=front_hr,
+                back_hr=back_hr,
+                front_speed=front_spd,
+                back_speed=back_spd,
+            )
+    finally:
+        conn.close()
+    return db_path
+
+
+@pytest.fixture
+def durability_empty_db_path(tmp_path: Path) -> Path:
+    """DuckDB with only short runs (< 15 km) -> no qualifying long runs."""
+    db_path = tmp_path / "test_garmin_web_durability_empty.duckdb"
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(_CREATE_ACTIVITIES)
+        conn.execute(_CREATE_TIME_SERIES_METRICS)
+        conn.executemany(
+            "INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                (9000005101, "2025-10-05", "Easy Run", 8.0, 2400, 300.0, 140),
+                (9000005102, "2025-10-12", "Easy Run", 6.0, 1800, 300.0, 138),
+            ],
+        )
+    finally:
+        conn.close()
+    return db_path
