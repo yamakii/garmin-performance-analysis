@@ -1,8 +1,14 @@
+---
+name: analyze-activity
+description: Analyze a single running activity end-to-end — ingest the data, prefetch context, run the section-analysis agents in parallel, and store results in DuckDB for the Web app. Use when the user asks to analyze a run / activity for a date (例:「ランを分析」「10/15のアクティビティを分析」). Argument is the target date YYYY-MM-DD; defaults to today.
+argument-hint: [YYYY-MM-DD]
+---
+
 # Analyze Activity Command
 
-日付 {{arg1}} のアクティビティの完全な分析を実行してください。
+日付 $ARGUMENTS のアクティビティの完全な分析を実行してください。
 
-**引数なしの場合は today（実行日）を対象日とします。** 以降の手順で `{{arg1}}` が空のときは today の日付（YYYY-MM-DD）に読み替えてください。
+**引数なしの場合は today（実行日）を対象日とします。** 以降の手順で `$ARGUMENTS` が空のときは today の日付（YYYY-MM-DD）に読み替えてください。
 
 ## ワークフロー
 
@@ -18,10 +24,10 @@
 MCPツールでデータ収集・DuckDB格納を実行してください（Bash許可不要）：
 
 ```
-mcp__garmin-db__ingest_activity(date="{{arg1}}")
+mcp__garmin-db__ingest_activity(date="$ARGUMENTS")
 ```
 
-`{{arg1}}` が空の場合は today の日付（YYYY-MM-DD）を `date` に渡してください。
+`$ARGUMENTS` が空の場合は today の日付（YYYY-MM-DD）を `date` に渡してください。
 
 返却された `activity_id` と `date` を取得してください。
 

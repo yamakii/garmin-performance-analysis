@@ -1,7 +1,8 @@
 ---
+name: project-status
+description: Show Epic progress as a dashboard with each sub-issue's status. Use when the user asks for project / Epic / issue progress. Optional argument is an Epic issue number; with none, shows all open Epics.
+argument-hint: [epic-number]
 allowed-tools: mcp__github__list_issues, mcp__github__issue_read
-description: Show Epic progress with sub-issue status
-user-invocable: true
 ---
 
 # /project-status — Epic Progress Dashboard

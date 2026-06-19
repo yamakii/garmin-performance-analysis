@@ -1,3 +1,9 @@
+---
+name: weekly-review
+description: Coach-perspective weekly review of the Garmin training plan for a target week W, weighing the prior completed week's results, past reviews, and goals, then saved to DuckDB. Use when the user asks for a weekly training review. Optional argument is the target week; with none, a smart default picks the current or next week based on today.
+argument-hint: [target week]
+---
+
 # Weekly Review Command
 
 **レビュー対象トレーニング週 W**（=これからこなすプラン週）の Garmin プランを、**直前の完了週 W-1 の実績**と過去レビュー・目標を踏まえて **コーチ視点でレビュー** し、DuckDB に保存してください。
@@ -8,23 +14,23 @@
 
 ## 引数
 
-`{{arg1}}` で **対象週 W** を決めます（W は常に月曜開始〜日曜終了）。
+`$ARGUMENTS` で **対象週 W** を決めます（W は常に月曜開始〜日曜終了）。
 
 - **省略時（スマート既定）**: today の曜日で対象週を切り替える
   - today が **日曜** → 対象週 W = **翌週**（今週は消化済みなので、先を計画してレビュー）
   - today が **月・火・水・木・金・土** → 対象週 W = **今週**（今いる週をレビュー）
-- `{{arg1}}` = `this` → W = today を含む週
-- `{{arg1}}` = `next` → W = today を含む週の **翌週**
-- `{{arg1}}` = `YYYY-MM-DD` → W = その日を含む週
+- `$ARGUMENTS` = `this` → W = today を含む週
+- `$ARGUMENTS` = `next` → W = today を含む週の **翌週**
+- `$ARGUMENTS` = `YYYY-MM-DD` → W = その日を含む週
 
 実績材料は常に **W の直前の完了週 W-1（月〜日）** を主軸とし、**W が進行中（today が W 内）なら today までに W で実走した分**を「今週ここまで」として補足的に加味します。
 
 例:
 - today = 日曜 2026-06-14・引数なし → **W = 翌週 2026-06-15〜2026-06-21**、実績 = W-1 = 2026-06-08〜2026-06-14
 - today = 火曜 2026-06-16・引数なし → **W = 今週 2026-06-15〜2026-06-21**、実績 = W-1 = 2026-06-08〜2026-06-14 ＋ 6/15・6/16 の実走（W 進行中分）
-- `{{arg1}}` = `this`（today = 火 2026-06-16）→ W = 2026-06-15〜2026-06-21
-- `{{arg1}}` = `next`（today = 火 2026-06-16）→ W = 2026-06-22〜2026-06-28
-- `{{arg1}}` = 2026-06-16 → W = 2026-06-15〜2026-06-21
+- `$ARGUMENTS` = `this`（today = 火 2026-06-16）→ W = 2026-06-15〜2026-06-21
+- `$ARGUMENTS` = `next`（today = 火 2026-06-16）→ W = 2026-06-22〜2026-06-28
+- `$ARGUMENTS` = 2026-06-16 → W = 2026-06-15〜2026-06-21
 
 ## ワークフロー
 
@@ -39,7 +45,7 @@
 
 ### Step 1: 対象週 W を確定
 
-`{{arg1}}` と today から **対象週 W** を決定し、その月〜日と直前週 W-1 の月〜日を算出してください:
+`$ARGUMENTS` と today から **対象週 W** を決定し、その月〜日と直前週 W-1 の月〜日を算出してください:
 
 - 引数なし: today が日曜なら W = 翌週、月〜土なら W = 今週
 - `this`: W = today を含む週
