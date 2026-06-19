@@ -2,7 +2,6 @@
 name: ship
 description: Run the full ship workflow — commit, push, create or merge the PR, and close issues. Use when the user asks to ship / commit / push the current changes or to merge a specific PR. Optional argument is a commit message, or flags like --pr N / --close M.
 argument-hint: [commit message | --pr N --close M]
-disable-model-invocation: true
 allowed-tools: Bash, Read, Glob, Grep, mcp__github__list_pull_requests, mcp__github__pull_request_read, mcp__github__merge_pull_request, mcp__github__issue_read, mcp__github__issue_write
 ---
 
