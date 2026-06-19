@@ -114,6 +114,31 @@ class GarminDBReader:
         """
         return self.metadata.query_activity_by_date(date)
 
+    def get_activity_dates(self, activity_ids: list[int]) -> dict[int, str]:
+        """Bulk-fetch activity dates for multiple activities in one query.
+
+        Args:
+            activity_ids: List of activity IDs
+
+        Returns:
+            Dict mapping activity_id -> activity_date (YYYY-MM-DD str)
+        """
+        return self.metadata.get_activity_dates(activity_ids)
+
+    def get_bulk_activity_fields(
+        self, activity_ids: list[int], fields: list[str]
+    ) -> dict[int, dict[str, Any]]:
+        """Bulk-fetch arbitrary ``activities`` columns in a single query.
+
+        Args:
+            activity_ids: List of activity IDs
+            fields: Column names to fetch (validated against an allowlist)
+
+        Returns:
+            Dict mapping activity_id -> {field: value}
+        """
+        return self.metadata.get_bulk_activity_fields(activity_ids, fields)
+
     # ========== Splits Methods ==========
 
     def get_splits_pace_hr(

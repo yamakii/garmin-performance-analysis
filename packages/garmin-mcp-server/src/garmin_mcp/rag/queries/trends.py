@@ -5,6 +5,7 @@ including linear regression analysis and filtering capabilities.
 """
 
 import logging
+from datetime import date
 from typing import Any
 
 import numpy as np
@@ -22,7 +23,10 @@ class PerformanceTrendAnalyzer:
     distance, training_effect, elevation_gain.
 
     Filtering options:
-    - activity_type: Training type classification
+    - activity_type: NOT SUPPORTED. The ``activities`` table stores only
+      running activities (filtered at ingest) and has no classification
+      column, so passing ``activity_type`` raises ``NotImplementedError``
+      rather than silently returning unfiltered results.
     - temperature_range: (min_temp, max_temp) in Celsius
     - distance_range: (min_km, max_km)
     """
@@ -76,13 +80,25 @@ class PerformanceTrendAnalyzer:
             {
                 "metric": str,
                 "trend": "improving" | "declining" | "stable",
-                "slope": float,
+                "slope": float,  # change in metric per day (date-based x-axis)
                 "correlation": float,
                 "p_value": float,
                 "data_points": int,
                 "start_date": str,
                 "end_date": str,
             }
+
+        Note:
+            ``slope`` is expressed **per day**: the regression x-axis is the
+            number of days elapsed since the earliest activity (not the
+            activity index). This corrects the previous index-based slope,
+            which was sensitive to ``activity_ids`` ordering and treated
+            unequal date intervals as uniform.
+
+        Raises:
+            ValueError: If ``metric`` is unsupported.
+            NotImplementedError: If ``activity_type`` is provided (no
+                classification column exists on the ``activities`` table).
         """
         if metric not in self.METRIC_COLUMNS and metric not in self.UNSUPPORTED_METRICS:
             raise ValueError(f"Unsupported metric: {metric}")
@@ -92,24 +108,31 @@ class PerformanceTrendAnalyzer:
             activity_ids, activity_type, temperature_range, distance_range
         )
 
-        # Extract metric values from activities
-        metric_values = self._extract_metric_values(metric, filtered_ids)
+        # Extract metric values keyed by activity_id.
+        metric_values_by_id = self._extract_metric_values(metric, filtered_ids)
+
+        # Pair each value with its activity date and sort chronologically so
+        # the regression x-axis reflects real elapsed time, not call order.
+        date_value_pairs = self._build_date_value_pairs(metric_values_by_id)
 
         # Check if we have enough data points
-        if len(metric_values) < 2:
+        if len(date_value_pairs) < 2:
             return {
                 "metric": metric,
                 "trend": "insufficient_data",
                 "slope": 0.0,
                 "correlation": 0.0,
                 "p_value": 1.0,
-                "data_points": len(metric_values),
+                "data_points": len(date_value_pairs),
                 "start_date": start_date,
                 "end_date": end_date,
             }
 
-        # Perform linear regression
-        x = np.arange(len(metric_values))
+        # Build a date-based x-axis: days elapsed since the earliest activity.
+        ordinals = [d.toordinal() for d, _ in date_value_pairs]
+        base = ordinals[0]
+        x = np.array([o - base for o in ordinals], dtype=float)
+        metric_values = [v for _, v in date_value_pairs]
         slope, intercept, r_value, p_value, std_err = stats.linregress(x, metric_values)
 
         # Determine trend
@@ -127,7 +150,7 @@ class PerformanceTrendAnalyzer:
             "slope": float(slope),
             "correlation": float(r_value),
             "p_value": float(p_value),
-            "data_points": len(metric_values),
+            "data_points": len(date_value_pairs),
             "start_date": start_date,
             "end_date": end_date,
         }
@@ -149,78 +172,60 @@ class PerformanceTrendAnalyzer:
 
         Returns:
             Filtered list of activity IDs
+
+        Raises:
+            NotImplementedError: If ``activity_type`` is provided. The
+                ``activities`` table has no classification column (only
+                running activities are ingested), so we refuse to silently
+                return unfiltered results.
         """
+        if activity_type is not None:
+            raise NotImplementedError(
+                "activity_type filtering is not supported: the activities "
+                "table has no classification column (only running activities "
+                "are ingested). Remove the activity_type argument."
+            )
+
         filtered = activity_ids.copy()
 
-        # TODO: Implement activity_type filter using ActivityClassifier (Phase 3.3)
-        if activity_type is not None:
-            logger.warning("Activity type filtering not yet implemented")
+        if temperature_range is None and distance_range is None:
+            return filtered
 
-        # Filter by temperature range
+        # Bulk-fetch the fields needed for any active filter in one query,
+        # avoiding the previous per-activity (N+1) reader calls.
+        needed_fields: list[str] = []
         if temperature_range is not None:
-            min_temp, max_temp = temperature_range
-            filtered = [
-                aid
-                for aid in filtered
-                if self._check_temperature_range(aid, min_temp, max_temp)
-            ]
-
-        # Filter by distance range
+            needed_fields.append("temp_celsius")
         if distance_range is not None:
-            min_km, max_km = distance_range
-            filtered = [
-                aid
-                for aid in filtered
-                if self._check_distance_range(aid, min_km, max_km)
-            ]
+            needed_fields.append("total_distance_km")
 
-        return filtered
+        fields_by_id = self.db_reader.get_bulk_activity_fields(filtered, needed_fields)
 
-    def _check_temperature_range(
-        self, activity_id: int, min_temp: float, max_temp: float
-    ) -> bool:
-        """Check if activity temperature is within range.
+        result: list[int] = []
+        for aid in filtered:
+            fields = fields_by_id.get(aid)
+            if fields is None:
+                continue
 
-        Args:
-            activity_id: Activity ID
-            min_temp: Minimum temperature in Celsius
-            max_temp: Maximum temperature in Celsius
+            if temperature_range is not None:
+                min_temp, max_temp = temperature_range
+                temp = fields.get("temp_celsius")
+                if temp is None or not (min_temp <= temp <= max_temp):
+                    continue
 
-        Returns:
-            True if temperature is within range, False otherwise
-        """
-        weather = self.db_reader.get_weather_data(activity_id)
-        if not weather or weather.get("temperature_c") is None:
-            return False
+            if distance_range is not None:
+                min_km, max_km = distance_range
+                distance = fields.get("total_distance_km")
+                if distance is None or not (min_km <= distance <= max_km):
+                    continue
 
-        temp = weather["temperature_c"]
-        return bool(min_temp <= temp <= max_temp)
+            result.append(aid)
 
-    def _check_distance_range(
-        self, activity_id: int, min_km: float, max_km: float
-    ) -> bool:
-        """Check if activity distance is within range.
-
-        Args:
-            activity_id: Activity ID
-            min_km: Minimum distance in km
-            max_km: Maximum distance in km
-
-        Returns:
-            True if distance is within range, False otherwise
-        """
-        # TODO: Implement distance query from activities table
-        # For now, estimate from splits
-        splits = self.db_reader.get_splits_pace_hr(activity_id)
-        if not splits or not splits.get("splits"):
-            return False
-
-        total_distance = sum(s.get("distance_km", 0) for s in splits["splits"])
-        return bool(min_km <= total_distance <= max_km)
+        return result
 
     def _extract_metric_values(
         self, metric: str, activity_ids: list[int]
-    ) -> list[float]:
+    ) -> dict[int, float]:
         """Extract metric values from activities using a single bulk SQL query.
 
         Args:
@@ -228,12 +233,47 @@ class PerformanceTrendAnalyzer:
             activity_ids: List of activity IDs
 
         Returns:
-            List of metric values (one per activity), preserving activity_ids order
+            Dict mapping activity_id -> average metric value. Activities with
+            no data are omitted.
         """
         column = self.METRIC_COLUMNS.get(metric)
         if column is None:
-            return []  # distance, training_effect are not yet supported
+            return {}  # distance, training_effect are not yet supported
 
-        averages = self.db_reader.get_bulk_metric_averages(activity_ids, column)
-        # Preserve activity_ids order (x-axis for linear regression)
-        return [averages[aid] for aid in activity_ids if aid in averages]
+        return self.db_reader.get_bulk_metric_averages(activity_ids, column)
+
+    def _build_date_value_pairs(
+        self, metric_values_by_id: dict[int, float]
+    ) -> list[tuple[date, float]]:
+        """Pair metric values with activity dates, sorted chronologically.
+
+        Args:
+            metric_values_by_id: Mapping of activity_id -> metric value
+
+        Returns:
+            List of (activity_date, value) tuples sorted by date ascending.
+            Activities without a parseable date are dropped.
+        """
+        if not metric_values_by_id:
+            return []
+
+        dates_by_id = self.db_reader.get_activity_dates(
+            list(metric_values_by_id.keys())
+        )
+
+        pairs: list[tuple[date, float]] = []
+        for aid, value in metric_values_by_id.items():
+            date_str = dates_by_id.get(aid)
+            if date_str is None:
+                continue
+            try:
+                activity_date = date.fromisoformat(str(date_str)[:10])
+            except ValueError:
+                logger.warning(
+                    "Skipping activity %s: unparseable date %r", aid, date_str
+                )
+                continue
+            pairs.append((activity_date, value))
+
+        pairs.sort(key=lambda p: p[0])
+        return pairs
