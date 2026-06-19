@@ -107,6 +107,13 @@ def _wrap_drop_weekly_review_index(conn: duckdb.DuckDBPyConnection) -> None:
     drop_weekly_review_index(conn)
 
 
+def _wrap_add_body_composition_date_index(conn: duckdb.DuckDBPyConnection) -> None:
+    """Wrap the body_composition date index migration on an existing connection."""
+    from .add_body_composition_date_index import add_body_composition_date_index
+
+    add_body_composition_date_index(conn)
+
+
 def _wrap_plan_versioning(conn: duckdb.DuckDBPyConnection) -> None:
     """Wrap plan versioning migration to run on an existing connection."""
     from .add_plan_versioning import _column_exists, _table_exists
@@ -153,4 +160,9 @@ MIGRATIONS: list[tuple[int, str, Callable[[duckdb.DuckDBPyConnection], None]]] =
     (6, "add_cadence_columns", _wrap_add_cadence_columns),
     (7, "add_athlete_tables", _wrap_athlete_tables),
     (8, "drop_weekly_review_index", _wrap_drop_weekly_review_index),
+    (
+        9,
+        "add_body_composition_date_index",
+        _wrap_add_body_composition_date_index,
+    ),
 ]

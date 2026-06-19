@@ -13,6 +13,47 @@ from garmin_mcp.database.connection import get_db_path, get_write_connection
 logger = logging.getLogger(__name__)
 
 
+def _body_comp_row(date: str, weight_data: dict) -> dict | None:
+    """Build a normalized body_composition row dict from raw weight data.
+
+    Extracts the first ``dateWeightList`` entry and converts gram-based fields
+    (weight / muscleMass / boneMass) to kilograms. Shared by
+    ``GarminDBWriter.insert_body_composition`` and the backfill script so the
+    table is the single source of truth for body composition.
+
+    Args:
+        date: Date in YYYY-MM-DD format.
+        weight_data: Raw weight data dict from Garmin API.
+
+    Returns:
+        Row dict with keys ``date, weight_kg, body_fat_percentage,
+        muscle_mass_kg, bone_mass_kg, bmi, hydration_percentage,
+        measurement_source`` or ``None`` if ``dateWeightList`` is empty.
+    """
+    date_weight_list = weight_data.get("dateWeightList", [])
+    if not date_weight_list:
+        return None
+
+    data = date_weight_list[0]
+
+    weight_kg = data.get("weight", 0) / 1000.0 if data.get("weight") else None
+    muscle_mass_kg = (
+        data.get("muscleMass", 0) / 1000.0 if data.get("muscleMass") else None
+    )
+    bone_mass_kg = data.get("boneMass", 0) / 1000.0 if data.get("boneMass") else None
+
+    return {
+        "date": date,
+        "weight_kg": weight_kg,
+        "body_fat_percentage": data.get("bodyFat"),
+        "muscle_mass_kg": muscle_mass_kg,
+        "bone_mass_kg": bone_mass_kg,
+        "bmi": data.get("bmi"),
+        "hydration_percentage": data.get("bodyWater"),
+        "measurement_source": data.get("sourceType", "INDEX_SCALE"),
+    }
+
+
 class GarminDBWriter:
     """Write operations to DuckDB for Garmin performance data."""
 
@@ -276,6 +317,12 @@ class GarminDBWriter:
                     measurement_source VARCHAR
                 )
             """)
+            # One row per day: enables idempotent date-keyed upsert (INSERT OR
+            # REPLACE) so cache backfill never duplicates a date.
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS "
+                "idx_body_composition_date ON body_composition(date)"
+            )
 
             # form_baselines table removed - replaced by form_baseline_history
 
@@ -664,66 +711,42 @@ class GarminDBWriter:
             True if successful
         """
         try:
+            row = _body_comp_row(date, weight_data)
+            if row is None:
+                logger.warning(f"No weight data found for {date}")
+                return False
+
             with get_write_connection(self.db_path) as conn:
-                # Schema cleanup: Remove device-unprovided metabolic fields
-                for column in [
-                    "basal_metabolic_rate",
-                    "active_metabolic_rate",
-                    "metabolic_age",
-                    "visceral_fat_rating",
-                    "physique_rating",
-                ]:
-                    try:
-                        conn.execute(
-                            f"ALTER TABLE body_composition DROP COLUMN {column}"
-                        )
-                    except Exception:
-                        pass  # Column already removed or never existed
+                # The table has two unique constraints (measurement_id PK and the
+                # unique date index), so DuckDB cannot infer a single conflict
+                # target for ON CONFLICT. Delete any existing row for this date
+                # first, then insert — making the operation a date-level upsert.
+                conn.execute(
+                    "DELETE FROM body_composition WHERE date = ?", [row["date"]]
+                )
 
-                # Extract data from dateWeightList (first entry)
-                date_weight_list = weight_data.get("dateWeightList", [])
-                if not date_weight_list:
-                    logger.warning(f"No weight data found for {date}")
-                    return False
-
-                data = date_weight_list[0]
-
-                # Get next measurement_id
                 max_id_result = conn.execute(
                     "SELECT COALESCE(MAX(measurement_id), 0) FROM body_composition"
                 ).fetchone()
                 next_measurement_id = max_id_result[0] + 1 if max_id_result else 1
 
-                # Convert grams to kg for consistency
-                weight_kg = (
-                    data.get("weight", 0) / 1000.0 if data.get("weight") else None
-                )
-                muscle_mass_kg = (
-                    data.get("muscleMass", 0) / 1000.0
-                    if data.get("muscleMass")
-                    else None
-                )
-                bone_mass_kg = (
-                    data.get("boneMass", 0) / 1000.0 if data.get("boneMass") else None
-                )
-
                 conn.execute(
                     """
-                    INSERT OR REPLACE INTO body_composition
+                    INSERT INTO body_composition
                     (measurement_id, date, weight_kg, body_fat_percentage, muscle_mass_kg,
                      bone_mass_kg, bmi, hydration_percentage, measurement_source)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                     [
                         next_measurement_id,
-                        date,
-                        weight_kg,
-                        data.get("bodyFat"),
-                        muscle_mass_kg,
-                        bone_mass_kg,
-                        data.get("bmi"),
-                        data.get("bodyWater"),
-                        data.get("sourceType", "INDEX_SCALE"),
+                        row["date"],
+                        row["weight_kg"],
+                        row["body_fat_percentage"],
+                        row["muscle_mass_kg"],
+                        row["bone_mass_kg"],
+                        row["bmi"],
+                        row["hydration_percentage"],
+                        row["measurement_source"],
                     ],
                 )
 
