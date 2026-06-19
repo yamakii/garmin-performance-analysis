@@ -13,12 +13,14 @@ import type {
   VolumeTrendPoint,
 } from "../api/trends";
 import { fetchTrainingLoad } from "../api/training_load";
-import type { AcwrTrend } from "../types";
+import { fetchDurabilityTrend } from "../api/durability";
+import type { AcwrTrend, DurabilityTrend } from "../types";
 import VolumeBlock from "./trends/VolumeBlock";
 import PhysiologyBlock from "./trends/PhysiologyBlock";
 import FormBlock from "./trends/FormBlock";
 import EfficiencyBlock from "./trends/EfficiencyBlock";
 import TrainingLoadBlock from "./trends/TrainingLoadBlock";
+import DurabilityBlock from "./trends/DurabilityBlock";
 
 export default function TrendsDashboard() {
   const [granularity, setGranularity] = useState<Granularity>("week");
@@ -29,6 +31,7 @@ export default function TrendsDashboard() {
     null,
   );
   const [trainingLoad, setTrainingLoad] = useState<AcwrTrend | null>(null);
+  const [durability, setDurability] = useState<DurabilityTrend | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -52,15 +55,25 @@ export default function TrendsDashboard() {
       fetchFormTrend(),
       fetchEfficiencyTrend(),
       fetchTrainingLoad(),
+      fetchDurabilityTrend(),
     ])
-      .then(([physiologyData, formData, efficiencyData, trainingLoadData]) => {
-        if (!cancelled) {
-          setPhysiology(physiologyData);
-          setForm(formData);
-          setEfficiency(efficiencyData);
-          setTrainingLoad(trainingLoadData);
-        }
-      })
+      .then(
+        ([
+          physiologyData,
+          formData,
+          efficiencyData,
+          trainingLoadData,
+          durabilityData,
+        ]) => {
+          if (!cancelled) {
+            setPhysiology(physiologyData);
+            setForm(formData);
+            setEfficiency(efficiencyData);
+            setTrainingLoad(trainingLoadData);
+            setDurability(durabilityData);
+          }
+        },
+      )
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
       });
@@ -85,7 +98,8 @@ export default function TrendsDashboard() {
     physiology == null ||
     form == null ||
     efficiency == null ||
-    trainingLoad == null;
+    trainingLoad == null ||
+    durability == null;
   if (loading) {
     return (
       <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
@@ -113,6 +127,7 @@ export default function TrendsDashboard() {
         <FormBlock data={form} />
         <EfficiencyBlock data={efficiency} />
         <TrainingLoadBlock data={trainingLoad} />
+        <DurabilityBlock data={durability} />
       </div>
     </div>
   );

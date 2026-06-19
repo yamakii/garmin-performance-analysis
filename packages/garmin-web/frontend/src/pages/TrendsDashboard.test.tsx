@@ -95,6 +95,39 @@ const TRAINING_LOAD_INSUFFICIENT = {
   trend: { weeks: [], load_metric: "distance_km" },
 };
 
+const DURABILITY_WORSENING = {
+  activities: [
+    {
+      activity_id: 9000005001,
+      activity_date: "2025-10-05",
+      distance_km: 18.0,
+      decoupling_pct: 4.2,
+      pace_fade_pct: 3.7,
+    },
+    {
+      activity_id: 9000005002,
+      activity_date: "2025-10-19",
+      distance_km: 21.0,
+      decoupling_pct: 6.3,
+      pace_fade_pct: 5.1,
+    },
+  ],
+  trend: {
+    decoupling_slope_per_day: 0.15,
+    data_points: 2,
+    direction: "worsening",
+  },
+};
+
+const DURABILITY_EMPTY = {
+  activities: [],
+  trend: {
+    decoupling_slope_per_day: 0.0,
+    data_points: 0,
+    direction: "insufficient_data",
+  },
+};
+
 function jsonResponse(payload: unknown): Response {
   return new Response(JSON.stringify(payload), {
     status: 200,
@@ -102,7 +135,10 @@ function jsonResponse(payload: unknown): Response {
   });
 }
 
-function stubTrendsFetch(trainingLoad: unknown): void {
+function stubTrendsFetch(
+  trainingLoad: unknown,
+  durability: unknown = DURABILITY_WORSENING,
+): void {
   vi.stubGlobal(
     "fetch",
     vi.fn().mockImplementation((url: string) => {
@@ -121,6 +157,9 @@ function stubTrendsFetch(trainingLoad: unknown): void {
       if (url.startsWith("/api/training-load")) {
         return Promise.resolve(jsonResponse(trainingLoad));
       }
+      if (url.startsWith("/api/durability-trend")) {
+        return Promise.resolve(jsonResponse(durability));
+      }
       return Promise.reject(new Error(`Unexpected fetch: ${url}`));
     }),
   );
@@ -131,12 +170,12 @@ afterEach(() => {
 });
 
 describe("TrendsDashboard", () => {
-  it("renders all five trend blocks from API data", async () => {
+  it("renders all six trend blocks from API data", async () => {
     stubTrendsFetch(TRAINING_LOAD_OPTIMAL);
 
     render(<TrendsDashboard />);
 
-    // All five block headings appear once data is loaded
+    // All six block headings appear once data is loaded
     expect(
       await screen.findByRole("heading", { level: 2, name: "走行量" }),
     ).toBeInTheDocument();
@@ -152,6 +191,9 @@ describe("TrendsDashboard", () => {
     expect(
       screen.getByRole("heading", { level: 2, name: "訓練負荷 (ACWR)" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 2, name: "耐久性 (心拍デカップリング)" }),
+    ).toBeInTheDocument();
 
     // Volume block summary is rendered from the mocked API data
     expect(screen.getByText(/2025-W42/)).toBeInTheDocument();
@@ -163,6 +205,30 @@ describe("TrendsDashboard", () => {
     // ACWR block shows the optimal status badge and current ACWR value
     expect(screen.getByText("最適")).toBeInTheDocument();
     expect(screen.getByText(/現在のACWR:/)).toBeInTheDocument();
+
+    // Durability block shows the worsening direction badge + run count line
+    expect(screen.getByText("悪化傾向")).toBeInTheDocument();
+    expect(screen.getByText(/デカップリング推移/)).toBeInTheDocument();
+  });
+
+  it("falls back when durability data is insufficient", async () => {
+    stubTrendsFetch(TRAINING_LOAD_OPTIMAL, DURABILITY_EMPTY);
+
+    render(<TrendsDashboard />);
+
+    expect(
+      await screen.findByRole("heading", {
+        level: 2,
+        name: "耐久性 (心拍デカップリング)",
+      }),
+    ).toBeInTheDocument();
+
+    // No qualifying long runs -> insufficient_data badge + fallback message.
+    expect(screen.getByText("データ不足")).toBeInTheDocument();
+    expect(
+      screen.getByText(/15km以上のロングランがないため/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/デカップリング推移/)).not.toBeInTheDocument();
   });
 
   it("renders a high-risk warning in the ACWR block", async () => {

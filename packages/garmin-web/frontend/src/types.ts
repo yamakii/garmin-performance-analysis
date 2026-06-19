@@ -108,6 +108,31 @@ export interface AcwrTrend {
   };
 }
 
+// --- Durability (cardiac decoupling) (Issue #364) ---
+
+export type DurabilityDirection =
+  | "improving"
+  | "worsening"
+  | "stable"
+  | "insufficient_data";
+
+export interface DurabilityActivity {
+  activity_id: number;
+  activity_date: string;
+  distance_km: number;
+  decoupling_pct: number;
+  pace_fade_pct: number;
+}
+
+export interface DurabilityTrend {
+  activities: DurabilityActivity[];
+  trend: {
+    decoupling_slope_per_day: number;
+    data_points: number;
+    direction: DurabilityDirection;
+  };
+}
+
 // --- Weekly reviews (Issue #283) ---
 
 export interface WeeklyReviewVerdict {
