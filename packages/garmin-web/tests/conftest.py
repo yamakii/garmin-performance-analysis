@@ -194,8 +194,35 @@ def empty_trends_db_path(tmp_path: Path) -> Path:
 
 
 # --- Detail page fixtures (Issue #199) ---------------------------------
-# Reduced-column versions of the production schemas: queries use SELECT *
-# and ORDER BY key columns only, so only representative columns are needed.
+# Full production schemas (mirroring garmin_mcp/database/db_writer.py and the
+# applied migrations) so the explicit-column queries in queries/detail.py
+# (Issue #369) resolve every column. Column order matches the live database
+# (PRAGMA table_info order), i.e. what the previous ``SELECT *`` returned.
+
+_CREATE_DETAIL_ACTIVITIES = """
+    CREATE TABLE activities (
+        activity_id BIGINT PRIMARY KEY,
+        activity_date DATE NOT NULL,
+        activity_name VARCHAR,
+        start_time_local TIMESTAMP,
+        start_time_gmt TIMESTAMP,
+        location_name VARCHAR,
+        total_distance_km DOUBLE,
+        total_time_seconds INTEGER,
+        avg_speed_ms DOUBLE,
+        avg_pace_seconds_per_km DOUBLE,
+        avg_heart_rate INTEGER,
+        max_heart_rate INTEGER,
+        temp_celsius DOUBLE,
+        relative_humidity_percent DOUBLE,
+        wind_speed_kmh DOUBLE,
+        wind_direction VARCHAR,
+        gear_type VARCHAR,
+        gear_model VARCHAR,
+        base_weight_kg DOUBLE,
+        body_mass_kg DOUBLE
+    )
+"""
 
 _CREATE_SPLITS = """
     CREATE TABLE splits (
@@ -203,15 +230,36 @@ _CREATE_SPLITS = """
         split_index INTEGER,
         distance DOUBLE,
         duration_seconds DOUBLE,
+        start_time_gmt VARCHAR,
+        start_time_s INTEGER,
+        end_time_s INTEGER,
+        intensity_type VARCHAR,
+        role_phase VARCHAR,
+        pace_str VARCHAR,
         pace_seconds_per_km DOUBLE,
         heart_rate INTEGER,
+        hr_zone VARCHAR,
         cadence DOUBLE,
+        cadence_rating VARCHAR,
         power DOUBLE,
+        power_efficiency VARCHAR,
+        stride_length DOUBLE,
         ground_contact_time DOUBLE,
         vertical_oscillation DOUBLE,
         vertical_ratio DOUBLE,
         elevation_gain DOUBLE,
         elevation_loss DOUBLE,
+        terrain_type VARCHAR,
+        environmental_conditions VARCHAR,
+        wind_impact VARCHAR,
+        temp_impact VARCHAR,
+        environmental_impact VARCHAR,
+        max_heart_rate INTEGER,
+        max_cadence DOUBLE,
+        max_power DOUBLE,
+        normalized_power DOUBLE,
+        average_speed DOUBLE,
+        grade_adjusted_speed DOUBLE,
         PRIMARY KEY (activity_id, split_index)
     )
 """
@@ -220,11 +268,25 @@ _CREATE_FORM_EFFICIENCY = """
     CREATE TABLE form_efficiency (
         activity_id BIGINT PRIMARY KEY,
         gct_average DOUBLE,
-        vo_average DOUBLE,
-        vr_average DOUBLE,
+        gct_min DOUBLE,
+        gct_max DOUBLE,
+        gct_std DOUBLE,
+        gct_variability DOUBLE,
         gct_rating VARCHAR,
+        gct_evaluation VARCHAR,
+        vo_average DOUBLE,
+        vo_min DOUBLE,
+        vo_max DOUBLE,
+        vo_std DOUBLE,
+        vo_trend VARCHAR,
         vo_rating VARCHAR,
-        vr_rating VARCHAR
+        vo_evaluation VARCHAR,
+        vr_average DOUBLE,
+        vr_min DOUBLE,
+        vr_max DOUBLE,
+        vr_std DOUBLE,
+        vr_rating VARCHAR,
+        vr_evaluation VARCHAR
     )
 """
 
@@ -245,17 +307,91 @@ _CREATE_PERFORMANCE_TRENDS = """
         activity_id BIGINT PRIMARY KEY,
         pace_consistency DOUBLE,
         hr_drift_percentage DOUBLE,
-        fatigue_pattern VARCHAR
+        cadence_consistency VARCHAR,
+        fatigue_pattern VARCHAR,
+        warmup_splits VARCHAR,
+        warmup_avg_pace_seconds_per_km DOUBLE,
+        warmup_avg_pace_str VARCHAR,
+        warmup_avg_hr DOUBLE,
+        warmup_avg_cadence DOUBLE,
+        warmup_avg_power DOUBLE,
+        warmup_evaluation VARCHAR,
+        run_splits VARCHAR,
+        run_avg_pace_seconds_per_km DOUBLE,
+        run_avg_pace_str VARCHAR,
+        run_avg_hr DOUBLE,
+        run_avg_cadence DOUBLE,
+        run_avg_power DOUBLE,
+        run_evaluation VARCHAR,
+        recovery_splits VARCHAR,
+        recovery_avg_pace_seconds_per_km DOUBLE,
+        recovery_avg_pace_str VARCHAR,
+        recovery_avg_hr DOUBLE,
+        recovery_avg_cadence DOUBLE,
+        recovery_avg_power DOUBLE,
+        recovery_evaluation VARCHAR,
+        cooldown_splits VARCHAR,
+        cooldown_avg_pace_seconds_per_km DOUBLE,
+        cooldown_avg_pace_str VARCHAR,
+        cooldown_avg_hr DOUBLE,
+        cooldown_avg_cadence DOUBLE,
+        cooldown_avg_power DOUBLE,
+        cooldown_evaluation VARCHAR
     )
 """
 
+# Live column order: cadence_* columns and integrated_score/training_mode were
+# appended by migrations, so they follow evaluated_at (not the CREATE TABLE
+# textual order in db_writer.py).
 _CREATE_FORM_EVALUATIONS_DETAIL = """
     CREATE TABLE form_evaluations (
         eval_id INTEGER PRIMARY KEY,
         activity_id BIGINT UNIQUE,
+        gct_ms_expected FLOAT,
+        vo_cm_expected FLOAT,
+        vr_pct_expected FLOAT,
+        gct_ms_actual FLOAT,
+        vo_cm_actual FLOAT,
+        vr_pct_actual FLOAT,
+        gct_delta_pct FLOAT,
+        vo_delta_cm FLOAT,
+        vr_delta_pct FLOAT,
+        gct_penalty FLOAT,
+        gct_star_rating VARCHAR,
+        gct_score FLOAT,
+        gct_needs_improvement BOOLEAN,
+        gct_evaluation_text TEXT,
+        vo_penalty FLOAT,
+        vo_star_rating VARCHAR,
+        vo_score FLOAT,
+        vo_needs_improvement BOOLEAN,
+        vo_evaluation_text TEXT,
+        vr_penalty FLOAT,
+        vr_star_rating VARCHAR,
+        vr_score FLOAT,
+        vr_needs_improvement BOOLEAN,
+        vr_evaluation_text TEXT,
+        cadence_actual FLOAT,
+        cadence_minimum INTEGER DEFAULT 180,
+        cadence_achieved BOOLEAN,
         overall_score FLOAT,
         overall_star_rating VARCHAR,
-        evaluated_at TIMESTAMP
+        power_avg_w FLOAT,
+        power_wkg FLOAT,
+        speed_actual_mps FLOAT,
+        speed_expected_mps FLOAT,
+        power_efficiency_score FLOAT,
+        power_efficiency_rating VARCHAR,
+        power_efficiency_needs_improvement BOOLEAN,
+        integrated_score DOUBLE,
+        training_mode VARCHAR,
+        evaluated_at TIMESTAMP,
+        cadence_expected DOUBLE,
+        cadence_delta_pct DOUBLE,
+        cadence_star_rating VARCHAR,
+        cadence_score DOUBLE,
+        cadence_needs_improvement BOOLEAN,
+        cadence_evaluation_text VARCHAR
     )
 """
 
@@ -489,7 +625,7 @@ def detail_db_path(tmp_path: Path) -> Path:
     db_path = tmp_path / "test_garmin_web_detail.duckdb"
     conn = duckdb.connect(str(db_path))
     try:
-        conn.execute(_CREATE_ACTIVITIES)
+        conn.execute(_CREATE_DETAIL_ACTIVITIES)
         conn.execute(_CREATE_SPLITS)
         conn.execute(_CREATE_FORM_EFFICIENCY)
         conn.execute(_CREATE_HEART_RATE_ZONES)
@@ -500,16 +636,29 @@ def detail_db_path(tmp_path: Path) -> Path:
         conn.execute(_CREATE_TIME_SERIES_METRICS)
         conn.execute(_CREATE_SECTION_ANALYSES)
 
+        # Insert into the same 7 representative columns the reduced fixtures
+        # used; the remaining production columns stay NULL.
         conn.executemany(
-            "INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO activities ("
+            "activity_id, activity_date, activity_name, total_distance_km,"
+            " total_time_seconds, avg_pace_seconds_per_km, avg_heart_rate"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?)",
             _DETAIL_ACTIVITIES,
         )
         conn.executemany(
-            "INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO splits ("
+            "activity_id, split_index, distance, duration_seconds,"
+            " pace_seconds_per_km, heart_rate, cadence, power,"
+            " ground_contact_time, vertical_oscillation, vertical_ratio,"
+            " elevation_gain, elevation_loss"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             _DETAIL_SPLITS,
         )
         conn.execute(
-            "INSERT INTO form_efficiency VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO form_efficiency ("
+            "activity_id, gct_average, vo_average, vr_average, gct_rating,"
+            " vo_rating, vr_rating"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?)",
             [FULL_ACTIVITY_ID, 248.0, 7.8, 8.1, "good", "good", "average"],
         )
         conn.executemany(
@@ -517,11 +666,16 @@ def detail_db_path(tmp_path: Path) -> Path:
             _DETAIL_HR_ZONES,
         )
         conn.execute(
-            "INSERT INTO performance_trends VALUES (?, ?, ?, ?)",
+            "INSERT INTO performance_trends ("
+            "activity_id, pace_consistency, hr_drift_percentage, fatigue_pattern"
+            ") VALUES (?, ?, ?, ?)",
             [FULL_ACTIVITY_ID, 4.2, 3.1, "stable"],
         )
         conn.execute(
-            "INSERT INTO form_evaluations VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO form_evaluations ("
+            "eval_id, activity_id, overall_score, overall_star_rating,"
+            " evaluated_at"
+            ") VALUES (?, ?, ?, ?, ?)",
             [1, FULL_ACTIVITY_ID, 4.1, "★★★★☆", "2025-10-09 12:00:00"],
         )
         # Physiology rows for the FULL activity only (PARTIAL has none).
