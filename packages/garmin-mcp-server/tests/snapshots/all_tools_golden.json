@@ -368,7 +368,7 @@
           "type": "array"
         },
         "distance_tolerance": {
-          "description": "Distance tolerance as fraction (default 0.2 = ±20%)",
+          "description": "Distance tolerance as fraction (default 0.2 = \u00b120%)",
           "type": "number"
         },
         "limit": {
@@ -376,7 +376,7 @@
           "type": "integer"
         },
         "pace_tolerance": {
-          "description": "Pace tolerance as fraction (default 0.2 = ±20%)",
+          "description": "Pace tolerance as fraction (default 0.2 = \u00b120%)",
           "type": "number"
         },
         "terrain_match": {
@@ -956,6 +956,48 @@
       "type": "object"
     },
     "name": "get_load_trend"
+  },
+  {
+    "description": "Get one activity's cardiac decoupling: the second-half vs first-half HR/speed efficiency ratio (split at the time-series timestamp midpoint). Returns activity_id, activity_date, distance_km, decoupling_pct ((back HR/speed)/(front HR/speed)-1; >5% suggests insufficient aerobic durability), and pace_fade_pct (back/front pace ratio). Returns null when HR or speed data is missing.",
+    "inputSchema": {
+      "properties": {
+        "activity_id": {
+          "description": "Activity ID to compute first-half vs second-half decoupling for.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "activity_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_activity_durability"
+  },
+  {
+    "description": "Get the longitudinal cardiac-decoupling trend across long runs in a date window. Only activities with total_distance_km >= min_distance_km (default 15) are included. Returns an activities array (per-activity durability, date ascending) and a trend block with decoupling_slope_per_day (regressed on elapsed days), data_points, and direction (improving when decoupling falls / worsening / stable / insufficient_data).",
+    "inputSchema": {
+      "properties": {
+        "end_date": {
+          "description": "Inclusive window end date (YYYY-MM-DD).",
+          "type": "string"
+        },
+        "min_distance_km": {
+          "default": 15.0,
+          "description": "Minimum total_distance_km for an activity to qualify as a long run (default: 15.0). Shorter runs are excluded.",
+          "type": "number"
+        },
+        "start_date": {
+          "description": "Inclusive window start date (YYYY-MM-DD).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start_date",
+        "end_date"
+      ],
+      "type": "object"
+    },
+    "name": "get_durability_trend"
   },
   {
     "description": "Get diagnostic info about the running MCP server (server_dir, override file status). Use to verify which directory the server is running from.",
