@@ -1,3 +1,8 @@
+---
+name: set-goal
+description: Interactively register or update the athlete's race goals, current-phase focus, and last-season retrospective into DuckDB (read later by plan-training and the weekly review). Use when the user wants to set or update running goals / target races (「目標設定」). The Web app is read-only, so registration happens here.
+---
+
 # 目標設定コマンド
 
 あなたはランニングコーチのアシスタントです。選手の**目標（本命/中間レース）・現フェーズの重点・昨季の振り返り**を対話で登録/更新します。Web アプリは参照専用のため、登録/更新はこの CLI が担います。

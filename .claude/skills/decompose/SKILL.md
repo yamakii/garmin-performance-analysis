@@ -1,7 +1,8 @@
 ---
+name: decompose
+description: Decompose a large development task into an Epic plus implementable sub-issues on GitHub. Use when a dev task is big enough to need splitting into multiple coordinated GitHub issues (e.g. リファクタリング全体・新機能の段階実装). Argument is the task description.
+argument-hint: <task description>
 allowed-tools: Bash, Read, Glob, Grep, mcp__serena__activate_project, mcp__serena__find_symbol, mcp__serena__get_symbols_overview, mcp__serena__find_referencing_symbols, mcp__serena__search_for_pattern, mcp__serena__read_file, mcp__serena__list_dir, mcp__github__issue_write, mcp__github__issue_read, AskUserQuestion
-description: Decompose a large task into Epic + Sub-issues on GitHub
-user-invocable: true
 ---
 
 # /decompose — Task Decomposition into GitHub Issues

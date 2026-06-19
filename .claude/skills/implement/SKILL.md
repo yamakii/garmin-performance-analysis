@@ -1,7 +1,8 @@
 ---
+name: implement
+description: Parallel implementation orchestrator for an Epic's design-approved sub-issues. Use when the user wants to auto-implement the issues under an Epic in dependency order with worktree-isolated agents. Argument is the Epic number or a list of issue numbers.
+argument-hint: <epic-number | issue-numbers>
 allowed-tools: Bash, Read, Glob, Grep, Task, AskUserQuestion, mcp__github__issue_read
-description: Parallel implementation orchestrator for Epic sub-issues
-user-invocable: true
 ---
 
 # /implement — Parallel Implementation Orchestrator

@@ -1,3 +1,9 @@
+---
+name: batch-analyze
+description: Run section analysis sequentially over a list of activities read from a JSON file, storing each result in DuckDB for the Web app. Use when the user wants to batch-analyze multiple activities at once. Argument is the path to the activity-list JSON (default /tmp/batch_activity_list.json).
+argument-hint: [path/to/activity_list.json]
+---
+
 # Batch Analyze Activities
 
 `$ARGUMENTS` からアクティビティリストJSONを読み込み、セクション分析を連続実行して DuckDB に登録してください（分析結果は Web 版で閲覧）。
