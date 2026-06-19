@@ -1,10 +1,21 @@
-"""Tests for PerformanceTrendAnalyzer."""
+"""Tests for PerformanceTrendAnalyzer.
+
+The analyzer's regression x-axis is date-based (days since the earliest
+activity), so the mocked reader provides ``get_activity_dates`` alongside the
+bulk metric averages. Filtering uses ``get_bulk_activity_fields`` (a single
+bulk query) rather than per-activity reader calls.
+"""
 
 from unittest.mock import patch
 
 import pytest
 
 from garmin_mcp.rag.queries.trends import PerformanceTrendAnalyzer
+
+
+def _dates_for(activity_ids: list[int], start_day: int = 1) -> dict[int, str]:
+    """Build evenly-spaced January 2025 dates following activity_ids order."""
+    return {aid: f"2025-01-{start_day + i:02d}" for i, aid in enumerate(activity_ids)}
 
 
 class TestPerformanceTrendAnalyzer:
@@ -18,10 +29,12 @@ class TestPerformanceTrendAnalyzer:
             analyzer.db_reader = mock_reader.return_value
             return analyzer
 
+    @pytest.mark.unit
     def test_initialization(self, analyzer):
         """Test analyzer initialization."""
         assert analyzer.db_reader is not None
 
+    @pytest.mark.unit
     def test_analyze_metric_trend_improving(self, analyzer):
         """Test improving pace trend detection."""
         # Mock bulk query: improving (decreasing) pace
@@ -30,6 +43,7 @@ class TestPerformanceTrendAnalyzer:
             2: 305.0,
             3: 300.0,
         }
+        analyzer.db_reader.get_activity_dates.return_value = _dates_for([1, 2, 3])
 
         result = analyzer.analyze_metric_trend(
             metric="pace",
@@ -48,6 +62,7 @@ class TestPerformanceTrendAnalyzer:
             [1, 2, 3], "pace_seconds_per_km"
         )
 
+    @pytest.mark.unit
     def test_analyze_metric_trend_declining(self, analyzer):
         """Test declining pace trend detection."""
         analyzer.db_reader.get_bulk_metric_averages.return_value = {
@@ -55,6 +70,7 @@ class TestPerformanceTrendAnalyzer:
             2: 305.0,
             3: 310.0,
         }
+        analyzer.db_reader.get_activity_dates.return_value = _dates_for([1, 2, 3])
 
         result = analyzer.analyze_metric_trend(
             metric="pace",
@@ -66,6 +82,7 @@ class TestPerformanceTrendAnalyzer:
         assert result["trend"] == "declining"
         assert result["slope"] > 0  # Increasing pace is declining
 
+    @pytest.mark.unit
     def test_analyze_metric_trend_stable(self, analyzer):
         """Test stable trend detection (p-value > 0.05)."""
         analyzer.db_reader.get_bulk_metric_averages.return_value = {
@@ -73,6 +90,7 @@ class TestPerformanceTrendAnalyzer:
             2: 301.0,
             3: 299.0,
         }
+        analyzer.db_reader.get_activity_dates.return_value = _dates_for([1, 2, 3])
 
         result = analyzer.analyze_metric_trend(
             metric="pace",
@@ -83,9 +101,11 @@ class TestPerformanceTrendAnalyzer:
 
         assert result["trend"] == "stable"
 
-    def test_analyze_metric_trend_insufficient_data(self, analyzer):
-        """Test insufficient data handling."""
+    @pytest.mark.unit
+    def test_trend_insufficient_data(self, analyzer):
+        """Single data point yields insufficient_data."""
         analyzer.db_reader.get_bulk_metric_averages.return_value = {1: 300.0}
+        analyzer.db_reader.get_activity_dates.return_value = _dates_for([1])
 
         result = analyzer.analyze_metric_trend(
             metric="pace",
@@ -97,6 +117,7 @@ class TestPerformanceTrendAnalyzer:
         assert result["trend"] == "insufficient_data"
         assert result["data_points"] == 1
 
+    @pytest.mark.unit
     def test_analyze_metric_heart_rate(self, analyzer):
         """Test heart rate trend analysis."""
         analyzer.db_reader.get_bulk_metric_averages.return_value = {
@@ -104,6 +125,7 @@ class TestPerformanceTrendAnalyzer:
             2: 152.0,
             3: 150.0,
         }
+        analyzer.db_reader.get_activity_dates.return_value = _dates_for([1, 2, 3])
 
         result = analyzer.analyze_metric_trend(
             metric="heart_rate",
@@ -118,6 +140,7 @@ class TestPerformanceTrendAnalyzer:
             [1, 2, 3], "heart_rate"
         )
 
+    @pytest.mark.unit
     def test_analyze_metric_form_metrics(self, analyzer):
         """Test form metrics (GCT) trend analysis."""
         analyzer.db_reader.get_bulk_metric_averages.return_value = {
@@ -125,6 +148,7 @@ class TestPerformanceTrendAnalyzer:
             2: 245.0,
             3: 240.0,
         }
+        analyzer.db_reader.get_activity_dates.return_value = _dates_for([1, 2, 3])
 
         result = analyzer.analyze_metric_trend(
             metric="ground_contact_time",
@@ -139,6 +163,7 @@ class TestPerformanceTrendAnalyzer:
             [1, 2, 3], "ground_contact_time"
         )
 
+    @pytest.mark.unit
     def test_analyze_metric_elevation(self, analyzer):
         """Test elevation gain trend analysis."""
         analyzer.db_reader.get_bulk_metric_averages.return_value = {
@@ -146,6 +171,7 @@ class TestPerformanceTrendAnalyzer:
             2: 120.0,
             3: 140.0,
         }
+        analyzer.db_reader.get_activity_dates.return_value = _dates_for([1, 2, 3])
 
         result = analyzer.analyze_metric_trend(
             metric="elevation_gain",
@@ -160,6 +186,7 @@ class TestPerformanceTrendAnalyzer:
             [1, 2, 3], "elevation_gain"
         )
 
+    @pytest.mark.unit
     def test_analyze_metric_vertical_oscillation(self, analyzer):
         """Test vertical oscillation trend analysis."""
         analyzer.db_reader.get_bulk_metric_averages.return_value = {
@@ -167,6 +194,7 @@ class TestPerformanceTrendAnalyzer:
             2: 9.2,
             3: 9.0,
         }
+        analyzer.db_reader.get_activity_dates.return_value = _dates_for([1, 2, 3])
 
         result = analyzer.analyze_metric_trend(
             metric="vertical_oscillation",
@@ -178,6 +206,7 @@ class TestPerformanceTrendAnalyzer:
         assert result["metric"] == "vertical_oscillation"
         assert result["data_points"] == 3
 
+    @pytest.mark.unit
     def test_analyze_metric_vertical_ratio(self, analyzer):
         """Test vertical ratio trend analysis."""
         analyzer.db_reader.get_bulk_metric_averages.return_value = {
@@ -185,6 +214,7 @@ class TestPerformanceTrendAnalyzer:
             2: 8.2,
             3: 8.0,
         }
+        analyzer.db_reader.get_activity_dates.return_value = _dates_for([1, 2, 3])
 
         result = analyzer.analyze_metric_trend(
             metric="vertical_ratio",
@@ -196,6 +226,7 @@ class TestPerformanceTrendAnalyzer:
         assert result["metric"] == "vertical_ratio"
         assert result["data_points"] == 3
 
+    @pytest.mark.unit
     def test_analyze_metric_cadence(self, analyzer):
         """Test cadence trend analysis."""
         analyzer.db_reader.get_bulk_metric_averages.return_value = {
@@ -203,6 +234,7 @@ class TestPerformanceTrendAnalyzer:
             2: 182.0,
             3: 184.0,
         }
+        analyzer.db_reader.get_activity_dates.return_value = _dates_for([1, 2, 3])
 
         result = analyzer.analyze_metric_trend(
             metric="cadence",
@@ -215,6 +247,7 @@ class TestPerformanceTrendAnalyzer:
         assert result["data_points"] == 3
         assert result["slope"] > 0  # Increasing cadence
 
+    @pytest.mark.unit
     def test_analyze_metric_power(self, analyzer):
         """Test power trend analysis."""
         analyzer.db_reader.get_bulk_metric_averages.return_value = {
@@ -222,6 +255,7 @@ class TestPerformanceTrendAnalyzer:
             2: 255.0,
             3: 260.0,
         }
+        analyzer.db_reader.get_activity_dates.return_value = _dates_for([1, 2, 3])
 
         result = analyzer.analyze_metric_trend(
             metric="power",
@@ -234,66 +268,7 @@ class TestPerformanceTrendAnalyzer:
         assert result["data_points"] == 3
         assert result["slope"] > 0  # Increasing power
 
-    def test_filter_by_temperature_range(self, analyzer):
-        """Test temperature range filtering."""
-        analyzer.db_reader.get_weather_data.side_effect = [
-            {"temperature_c": 15.0},  # Within range
-            {"temperature_c": 25.0},  # Outside range
-            {"temperature_c": 18.0},  # Within range
-        ]
-        # Bulk query returns data for filtered activities only
-        analyzer.db_reader.get_bulk_metric_averages.return_value = {
-            1: 300.0,
-            3: 305.0,
-        }
-
-        result = analyzer.analyze_metric_trend(
-            metric="pace",
-            start_date="2025-01-01",
-            end_date="2025-01-31",
-            activity_ids=[1, 2, 3],
-            temperature_range=(10.0, 20.0),
-        )
-
-        # Only activities 1 and 3 should be included
-        assert result["data_points"] == 2
-
-    def test_filter_by_distance_range(self, analyzer):
-        """Test distance range filtering."""
-
-        splits_data = {
-            1: {
-                "splits": [{"distance_km": 1.0, "avg_pace_seconds_per_km": 300}] * 2
-            },  # 2km - outside
-            2: {
-                "splits": [{"distance_km": 1.0, "avg_pace_seconds_per_km": 305}] * 5
-            },  # 5km - within
-            3: {
-                "splits": [{"distance_km": 1.0, "avg_pace_seconds_per_km": 310}] * 10
-            },  # 10km - within
-        }
-
-        def mock_get_splits_pace_hr(activity_id):
-            return splits_data.get(activity_id, {"splits": []})
-
-        analyzer.db_reader.get_splits_pace_hr.side_effect = mock_get_splits_pace_hr
-        # Bulk query returns data for filtered activities (2 and 3)
-        analyzer.db_reader.get_bulk_metric_averages.return_value = {
-            2: 305.0,
-            3: 310.0,
-        }
-
-        result = analyzer.analyze_metric_trend(
-            metric="pace",
-            start_date="2025-01-01",
-            end_date="2025-01-31",
-            activity_ids=[1, 2, 3],
-            distance_range=(5.0, 15.0),
-        )
-
-        # Only activities 2 and 3 should be included
-        assert result["data_points"] == 2
-
+    @pytest.mark.unit
     def test_unsupported_metric(self, analyzer):
         """Test unsupported metric handling."""
         with pytest.raises(ValueError, match="Unsupported metric"):
@@ -304,9 +279,11 @@ class TestPerformanceTrendAnalyzer:
                 activity_ids=[1, 2, 3],
             )
 
-    def test_empty_splits_data(self, analyzer):
-        """Test handling of empty splits data."""
+    @pytest.mark.unit
+    def test_empty_metric_data(self, analyzer):
+        """Test handling of empty metric data."""
         analyzer.db_reader.get_bulk_metric_averages.return_value = {}
+        analyzer.db_reader.get_activity_dates.return_value = {}
 
         result = analyzer.analyze_metric_trend(
             metric="pace",
@@ -318,12 +295,17 @@ class TestPerformanceTrendAnalyzer:
         assert result["trend"] == "insufficient_data"
         assert result["data_points"] == 0
 
+    @pytest.mark.unit
     def test_missing_activity_in_bulk_result(self, analyzer):
         """Test that missing activities in bulk result are skipped."""
-        # Activity 2 has no data
+        # Activity 2 has no metric data
         analyzer.db_reader.get_bulk_metric_averages.return_value = {
             1: 310.0,
             3: 300.0,
+        }
+        analyzer.db_reader.get_activity_dates.return_value = {
+            1: "2025-01-01",
+            3: "2025-01-03",
         }
 
         result = analyzer.analyze_metric_trend(
@@ -335,13 +317,110 @@ class TestPerformanceTrendAnalyzer:
 
         assert result["data_points"] == 2
 
-    def test_order_preserved_in_bulk_result(self, analyzer):
-        """Test that activity_ids order is preserved for regression."""
-        # Return dict in non-sequential order
+    @pytest.mark.unit
+    def test_activity_type_filter_not_silent_noop(self, analyzer):
+        """activity_type must raise NotImplementedError, never silently pass."""
+        analyzer.db_reader.get_bulk_metric_averages.return_value = {
+            1: 300.0,
+            2: 305.0,
+        }
+        analyzer.db_reader.get_activity_dates.return_value = _dates_for([1, 2])
+
+        with pytest.raises(NotImplementedError, match="activity_type"):
+            analyzer.analyze_metric_trend(
+                metric="pace",
+                start_date="2025-01-01",
+                end_date="2025-01-31",
+                activity_ids=[1, 2],
+                activity_type="aerobic_base",
+            )
+
+        # Filtering raised before any metric extraction happened.
+        analyzer.db_reader.get_bulk_metric_averages.assert_not_called()
+
+    @pytest.mark.integration
+    def test_trend_uses_date_axis_not_index(self, analyzer):
+        """Regression uses activity_date order, not the activity_ids order.
+
+        activity_ids are passed in a date-shuffled order. By index the pace
+        would look increasing (declining), but in true chronological order it
+        decreases (improving). The date-based x-axis must yield "improving".
+        """
+        # activity_ids order: [3, 1, 2]
+        # Dates: id 1 = Jan 1, id 2 = Jan 2, id 3 = Jan 3 (chronological by id)
+        # Values by id: id 1 = 320, id 2 = 310, id 3 = 300
+        # Chronological (Jan1->Jan3): 320, 310, 300 -> decreasing -> improving
+        # Index order [3,1,2] values: 300, 320, 310 -> would NOT be improving
         analyzer.db_reader.get_bulk_metric_averages.return_value = {
             3: 300.0,
-            1: 310.0,
+            1: 320.0,
+            2: 310.0,
+        }
+        analyzer.db_reader.get_activity_dates.return_value = {
+            1: "2025-01-01",
+            2: "2025-01-02",
+            3: "2025-01-03",
+        }
+
+        result = analyzer.analyze_metric_trend(
+            metric="pace",
+            start_date="2025-01-01",
+            end_date="2025-01-31",
+            activity_ids=[3, 1, 2],
+        )
+
+        assert result["trend"] == "improving"
+        assert result["slope"] < 0
+
+    @pytest.mark.integration
+    def test_trend_unequal_date_intervals(self, analyzer):
+        """Unequal date gaps use elapsed days, not uniform spacing.
+
+        Activities at day 0, 1, 30, 90. Pace increases over real time, so the
+        per-day slope must be positive (declining) and small in magnitude.
+        """
+        analyzer.db_reader.get_bulk_metric_averages.return_value = {
+            1: 300.0,
+            2: 301.0,
+            3: 320.0,
+            4: 360.0,
+        }
+        analyzer.db_reader.get_activity_dates.return_value = {
+            1: "2025-01-01",  # day 0
+            2: "2025-01-02",  # day 1
+            3: "2025-01-31",  # day 30
+            4: "2025-04-01",  # day 90
+        }
+
+        result = analyzer.analyze_metric_trend(
+            metric="pace",
+            start_date="2025-01-01",
+            end_date="2025-04-01",
+            activity_ids=[1, 2, 3, 4],
+        )
+
+        # Pace rising over ~90 days -> positive per-day slope -> declining.
+        assert result["slope"] > 0
+        assert result["trend"] == "declining"
+        # Per-day slope is modest (60 sec over ~90 days), not the per-index
+        # slope (~20 sec/step) the old index-based axis would have produced.
+        assert result["slope"] < 5.0
+
+    @pytest.mark.integration
+    def test_distance_filter_uses_activities_table(self, analyzer):
+        """distance_range filters via activities.total_distance_km."""
+        analyzer.db_reader.get_bulk_activity_fields.return_value = {
+            1: {"total_distance_km": 2.0},  # outside (5-10)
+            2: {"total_distance_km": 7.0},  # within
+            3: {"total_distance_km": 9.5},  # within
+        }
+        analyzer.db_reader.get_bulk_metric_averages.return_value = {
             2: 305.0,
+            3: 310.0,
+        }
+        analyzer.db_reader.get_activity_dates.return_value = {
+            2: "2025-01-02",
+            3: "2025-01-03",
         }
 
         result = analyzer.analyze_metric_trend(
@@ -349,8 +428,50 @@ class TestPerformanceTrendAnalyzer:
             start_date="2025-01-01",
             end_date="2025-01-31",
             activity_ids=[1, 2, 3],
+            distance_range=(5.0, 10.0),
         )
 
-        # Values should be [310, 305, 300] (following activity_ids order)
-        assert result["trend"] == "improving"
-        assert result["slope"] < 0
+        # Only activities 2 and 3 pass the distance filter.
+        assert result["data_points"] == 2
+        analyzer.db_reader.get_bulk_activity_fields.assert_called_once_with(
+            [1, 2, 3], ["total_distance_km"]
+        )
+        # The metric query received only the filtered IDs.
+        analyzer.db_reader.get_bulk_metric_averages.assert_called_once_with(
+            [2, 3], "pace_seconds_per_km"
+        )
+        # Old splits-based distance path is no longer used.
+        analyzer.db_reader.get_splits_pace_hr.assert_not_called()
+
+    @pytest.mark.integration
+    def test_temperature_filter_bulk_no_n_plus_1(self, analyzer):
+        """temperature_range uses one bulk query, no per-activity reads."""
+        analyzer.db_reader.get_bulk_activity_fields.return_value = {
+            1: {"temp_celsius": 15.0},  # within (10-20)
+            2: {"temp_celsius": 25.0},  # outside
+            3: {"temp_celsius": 18.0},  # within
+        }
+        analyzer.db_reader.get_bulk_metric_averages.return_value = {
+            1: 300.0,
+            3: 305.0,
+        }
+        analyzer.db_reader.get_activity_dates.return_value = {
+            1: "2025-01-01",
+            3: "2025-01-03",
+        }
+
+        result = analyzer.analyze_metric_trend(
+            metric="pace",
+            start_date="2025-01-01",
+            end_date="2025-01-31",
+            activity_ids=[1, 2, 3],
+            temperature_range=(10.0, 20.0),
+        )
+
+        assert result["data_points"] == 2
+        # Exactly one bulk call for the temperature field.
+        analyzer.db_reader.get_bulk_activity_fields.assert_called_once_with(
+            [1, 2, 3], ["temp_celsius"]
+        )
+        # No per-activity weather lookups (the old N+1 path).
+        analyzer.db_reader.get_weather_data.assert_not_called()
