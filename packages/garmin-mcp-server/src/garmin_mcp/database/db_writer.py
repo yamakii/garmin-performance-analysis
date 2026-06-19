@@ -23,9 +23,14 @@ class GarminDBWriter:
         self._run_migrations()
 
     def _ensure_tables(self):
-        """Ensure required tables exist with normalized schema.
+        """Create the base DuckDB schema (the 15 core tables).
 
-        Creates (15 tables):
+        This method owns the *base* schema only. It is the first step of
+        ``__init__`` and is immediately followed by ``_run_migrations()``,
+        which applies incremental migrations (column additions, the
+        athlete-centric tables, index drops, etc.).
+
+        Creates (15 base tables):
         - activities: Base activity metadata (19 columns)
         - splits: Split-by-split metrics (28 columns, NO FK)
         - form_efficiency: Form efficiency summary (GCT, VO, VR, NO FK)
@@ -42,12 +47,22 @@ class GarminDBWriter:
         - training_plans: Training plan metadata (versioned)
         - planned_workouts: Individual workout definitions
 
+        Tables owned exclusively by migrations (NOT created here):
+        - athlete_profile / athlete_goals / season_retrospectives /
+          weekly_reviews and their sequences -> migrations/add_athlete_tables.py
+          (schema version 7). See issue #342 for the single-source-of-truth
+          rationale.
+
         Change Log:
         - 2025-11-01: Removed FK constraints from 9 child tables
           Reason: Single data source + bulk writes + LEFT JOINs only
           Data integrity enforced at application layer
+        - 2026-06-19 (#342): Moved athlete-centric table DDL out of this method;
+          it is now owned solely by migrations/add_athlete_tables.py to remove
+          duplicate DDL.
 
-        Note: Schemas match those defined in individual inserters to ensure compatibility.
+        Note: ``CREATE TABLE IF NOT EXISTS`` keeps this method idempotent, so
+        re-instantiating ``GarminDBWriter`` on an existing database is a no-op.
         """
         with get_write_connection(self.db_path) as conn:
             # Create activities table (matches inserters/activities.py - 19 columns)
@@ -515,67 +530,12 @@ class GarminDBWriter:
                 ON section_analyses(activity_id, section_type)
             """)
 
-            # Create athlete-centric tables for the weekly review cycle
-            # (see migrations/add_athlete_tables.py). Sequences mirror the
-            # seq_section_analyses_id pattern above.
-            conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_athlete_goals_id START 1")
-            conn.execute(
-                "CREATE SEQUENCE IF NOT EXISTS seq_season_retrospectives_id START 1"
-            )
-            conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_weekly_reviews_id START 1")
-
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS athlete_profile (
-                    user_id VARCHAR PRIMARY KEY DEFAULT 'default',
-                    current_focus VARCHAR,
-                    focus_notes VARCHAR,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS athlete_goals (
-                    goal_id INTEGER PRIMARY KEY,
-                    user_id VARCHAR DEFAULT 'default',
-                    race_name VARCHAR NOT NULL,
-                    race_date DATE,
-                    priority VARCHAR,
-                    goal_type VARCHAR,
-                    distance_km DOUBLE,
-                    target_time_seconds INTEGER,
-                    status VARCHAR DEFAULT 'active',
-                    notes VARCHAR,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS season_retrospectives (
-                    retro_id INTEGER PRIMARY KEY,
-                    user_id VARCHAR DEFAULT 'default',
-                    season_label VARCHAR,
-                    period_start DATE,
-                    period_end DATE,
-                    narrative VARCHAR,
-                    key_learnings VARCHAR,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS weekly_reviews (
-                    review_id INTEGER PRIMARY KEY,
-                    user_id VARCHAR DEFAULT 'default',
-                    week_start_date DATE NOT NULL,
-                    week_end_date DATE NOT NULL,
-                    review_date DATE,
-                    review_data VARCHAR,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    agent_name VARCHAR,
-                    agent_version VARCHAR
-                )
-            """)
+            # NOTE: The athlete-centric tables (athlete_profile, athlete_goals,
+            # season_retrospectives, weekly_reviews) and their sequences are
+            # owned exclusively by migrations/add_athlete_tables.py (schema
+            # version 7), which the migration runner applies right after this
+            # method during __init__. They are intentionally NOT created here to
+            # keep a single source of truth for that DDL (see issue #342).
 
     def _run_migrations(self) -> None:
         """Run pending database migrations after table creation."""
