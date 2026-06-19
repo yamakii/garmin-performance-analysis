@@ -10,7 +10,7 @@ Garmin running performance analysis system with **DuckDB-first architecture** an
 
 **Key Features:**
 - DuckDB normalized storage (14 tables, 100+ activities)
-- 30+ token-optimized MCP tools (70-98.8% reduction)
+- 41 token-optimized MCP tools (70-98.8% reduction), declared via a single-source `tools/` registry
 - 2 analysis agents (unified-section-analyst + split-section-analyst)
 - Japanese analysis stored in DuckDB, viewed via the Web app (code/docs in English)
 
@@ -116,9 +116,9 @@ FIFO キュー + Validation Agent 方式。詳細は `.claude/rules/dev/worktree
 | `ApiClient` | Garmin Connect API authentication singleton |
 | `RawDataFetcher` | Cache-first raw data collection |
 | `DuckDBSaver` | Transaction-batched DuckDB insertion |
-| `GarminDBWriter` | DuckDB write operations (14 tables, 12 inserters) |
+| `GarminDBWriter` | DuckDB write operations (14 tables, 13 inserters) |
 | `GarminDBReader` | DuckDB read operations (query builders) |
-| 8 MCP Handlers | MetadataHandler, SplitsHandler, PhysiologyHandler, PerformanceHandler, AnalysisHandler, TimeSeriesHandler, ExportHandler, TrainingPlanHandler |
+| `tools/` registry | 41 tools declared as `ToolDef` (39 domain + 2 server). `server.py` dispatches directly from `ALL_DEFS_BY_NAME` (O(1) lookup); domain handlers were removed in #340 |
 
 **DuckDB Schema (14 tables):**
 - Metadata: `activities`, `body_composition`
@@ -137,15 +137,16 @@ garmin-performance-analysis/
 │       ├── src/garmin_mcp/
 │       │   ├── ingest/             # API → Raw data (ApiClient, RawDataFetcher, DuckDBSaver)
 │       │   ├── database/
-│       │   │   ├── inserters/      # 12 table-specific inserters
+│       │   │   ├── inserters/      # 13 table-specific inserters
 │       │   │   ├── readers/        # Query builders (SplitsQueryBuilder etc.)
 │       │   │   └── migrations/     # Schema migrations
-│       │   ├── handlers/           # 8 MCP tool handlers
+│       │   ├── handlers/           # base.py only (shared response helpers); domain dispatch lives in tools/ + server.py
 │       │   ├── training_plan/      # Training plan generation
 │       │   ├── form_baseline/      # Form baseline training
 │       │   ├── scripts/
 │       │   │   └── regenerate/     # DuckDB regeneration utilities
-│       │   ├── tool_schemas.py     # MCP tool definitions (30 tools)
+│       │   ├── tools/              # ToolDef registry (single source for 41 MCP tools)
+│       │   ├── tool_schemas.py     # thin wrapper: registry tools + 2 server tools
 │       │   └── validation/         # Data validation
 │       └── tests/
 │   └── garmin-web/                 # Web app (see docs/garmin-web.md)
