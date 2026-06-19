@@ -247,28 +247,19 @@ def _extract_form_efficiency_from_raw(
     raw_activity_details_file: str | None = None,
 ) -> dict | None:
     """
-    Extract form efficiency data from raw splits.json or activity_details.json.
-
-    Priority: activity_details.json (second-by-second metrics) > splits.json (lap averages)
+    Extract form efficiency data from raw splits.json.
 
     Args:
         raw_splits_file: Path to splits.json
-        raw_activity_details_file: Path to activity_details.json (optional)
+        raw_activity_details_file: Path to activity_details.json (currently unused;
+            accepted for caller compatibility)
 
     Returns:
         Dictionary with form_efficiency_summary data matching performance.json structure
     """
     import statistics
 
-    # Try activity_details.json first (more granular data)
-    if raw_activity_details_file:
-        activity_details_path = Path(raw_activity_details_file)
-        if activity_details_path.exists():
-            # TODO: Implement activity_details.json parsing for metricsData
-            # For now, fall through to splits.json
-            pass
-
-    # Fallback: Use splits.json
+    # Use splits.json (lap averages)
     if not raw_splits_file:
         logger.error("No raw data file provided for form efficiency extraction")
         return None

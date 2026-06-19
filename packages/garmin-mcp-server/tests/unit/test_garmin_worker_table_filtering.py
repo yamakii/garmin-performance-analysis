@@ -322,7 +322,6 @@ class TestProcessActivityTableFilteringIntegration:
 
         # Mock methods
         with (
-            patch.object(worker, "_check_duckdb_cache", return_value=None),
             patch.object(worker, "collect_data", return_value={}),
             patch.object(worker, "_calculate_median_weight", return_value=None),
             patch.object(worker, "save_data") as mock_save_data,
