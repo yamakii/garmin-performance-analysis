@@ -47,6 +47,54 @@ const EFFICIENCY = [
   },
 ];
 
+const TRAINING_LOAD_OPTIMAL = {
+  current: {
+    end_date: "2025-10-13",
+    acute_load_7d: 20.0,
+    chronic_load_28d_weekly: 20.0,
+    acwr: 1.0,
+    status: "optimal",
+    load_metric: "distance_km",
+  },
+  trend: {
+    weeks: [
+      { week_start: "2025-09-22", load_km: 20.0, acwr: 1.0, status: "optimal" },
+      { week_start: "2025-09-29", load_km: 22.0, acwr: 1.05, status: "optimal" },
+    ],
+    load_metric: "distance_km",
+  },
+};
+
+const TRAINING_LOAD_HIGH_RISK = {
+  current: {
+    end_date: "2025-10-13",
+    acute_load_7d: 50.0,
+    chronic_load_28d_weekly: 20.0,
+    acwr: 2.5,
+    status: "high_risk",
+    load_metric: "distance_km",
+  },
+  trend: {
+    weeks: [
+      { week_start: "2025-09-22", load_km: 10.0, acwr: 0.6, status: "undertraining" },
+      { week_start: "2025-10-06", load_km: 50.0, acwr: 2.5, status: "high_risk" },
+    ],
+    load_metric: "distance_km",
+  },
+};
+
+const TRAINING_LOAD_INSUFFICIENT = {
+  current: {
+    end_date: null,
+    acute_load_7d: 0.0,
+    chronic_load_28d_weekly: 0.0,
+    acwr: null,
+    status: "insufficient_data",
+    load_metric: "distance_km",
+  },
+  trend: { weeks: [], load_metric: "distance_km" },
+};
+
 function jsonResponse(payload: unknown): Response {
   return new Response(JSON.stringify(payload), {
     status: 200,
@@ -54,34 +102,41 @@ function jsonResponse(payload: unknown): Response {
   });
 }
 
+function stubTrendsFetch(trainingLoad: unknown): void {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith("/api/trends/volume")) {
+        return Promise.resolve(jsonResponse(VOLUME));
+      }
+      if (url.startsWith("/api/trends/physiology")) {
+        return Promise.resolve(jsonResponse(PHYSIOLOGY));
+      }
+      if (url.startsWith("/api/trends/form")) {
+        return Promise.resolve(jsonResponse(FORM));
+      }
+      if (url.startsWith("/api/trends/efficiency")) {
+        return Promise.resolve(jsonResponse(EFFICIENCY));
+      }
+      if (url.startsWith("/api/training-load")) {
+        return Promise.resolve(jsonResponse(trainingLoad));
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
+    }),
+  );
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe("TrendsDashboard", () => {
-  it("renders all four trend blocks from API data", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation((url: string) => {
-        if (url.startsWith("/api/trends/volume")) {
-          return Promise.resolve(jsonResponse(VOLUME));
-        }
-        if (url.startsWith("/api/trends/physiology")) {
-          return Promise.resolve(jsonResponse(PHYSIOLOGY));
-        }
-        if (url.startsWith("/api/trends/form")) {
-          return Promise.resolve(jsonResponse(FORM));
-        }
-        if (url.startsWith("/api/trends/efficiency")) {
-          return Promise.resolve(jsonResponse(EFFICIENCY));
-        }
-        return Promise.reject(new Error(`Unexpected fetch: ${url}`));
-      }),
-    );
+  it("renders all five trend blocks from API data", async () => {
+    stubTrendsFetch(TRAINING_LOAD_OPTIMAL);
 
     render(<TrendsDashboard />);
 
-    // All four block headings appear once data is loaded
+    // All five block headings appear once data is loaded
     expect(
       await screen.findByRole("heading", { level: 2, name: "走行量" }),
     ).toBeInTheDocument();
@@ -94,6 +149,9 @@ describe("TrendsDashboard", () => {
     expect(
       screen.getByRole("heading", { level: 2, name: "効率推移 (HRゾーン分布)" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 2, name: "訓練負荷 (ACWR)" }),
+    ).toBeInTheDocument();
 
     // Volume block summary is rendered from the mocked API data
     expect(screen.getByText(/2025-W42/)).toBeInTheDocument();
@@ -101,5 +159,39 @@ describe("TrendsDashboard", () => {
 
     // Physiology block shows the latest VO2max from the mocked API data
     expect(screen.getByText(/最新VO2max: 50\.1/)).toBeInTheDocument();
+
+    // ACWR block shows the optimal status badge and current ACWR value
+    expect(screen.getByText("最適")).toBeInTheDocument();
+    expect(screen.getByText(/現在のACWR:/)).toBeInTheDocument();
+  });
+
+  it("renders a high-risk warning in the ACWR block", async () => {
+    stubTrendsFetch(TRAINING_LOAD_HIGH_RISK);
+
+    render(<TrendsDashboard />);
+
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "訓練負荷 (ACWR)" }),
+    ).toBeInTheDocument();
+
+    // High-risk status renders a badge and an alert message.
+    expect(screen.getByText("高リスク")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(/故障リスクが高い/);
+  });
+
+  it("falls back when ACWR data is insufficient", async () => {
+    stubTrendsFetch(TRAINING_LOAD_INSUFFICIENT);
+
+    render(<TrendsDashboard />);
+
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "訓練負荷 (ACWR)" }),
+    ).toBeInTheDocument();
+
+    // Insufficient data -> fallback message, no current ACWR line.
+    expect(
+      screen.getByText(/ACWRを算出するためのデータが不足しています/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/現在のACWR:/)).not.toBeInTheDocument();
   });
 });

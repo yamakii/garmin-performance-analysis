@@ -938,3 +938,71 @@ def race_readiness_no_goal_db_path(tmp_path: Path) -> Path:
     """DuckDB with recent activities + vo2_max but no race goal rows."""
     db_path = tmp_path / "test_garmin_web_race_readiness_no_goal.duckdb"
     return _build_race_readiness_db(db_path, with_goal=False)
+
+
+# --- Training load (ACWR) fixtures (Issue #363) ------------------------
+# GarminDBReader.get_acwr / get_load_trend (#357) read only the `activities`
+# table (sum of total_distance_km per day). ACWR = acute (last-7-day load) /
+# chronic weekly average (last-28-day load / 4). Dates are relative to today so
+# the acute/chronic windows always line up with the inserted runs.
+
+
+def _build_training_load_db(db_path: Path, *, spike: bool) -> Path:
+    """Create a training-load DB (activities only).
+
+    Steady weeks give an optimal ACWR; ``spike`` front-loads the most recent
+    week so acute >> chronic weekly average (ACWR > 1.5 -> high_risk).
+    """
+    today = _dt.date.today()
+
+    def _at(days_ago: int) -> str:
+        return (today - _dt.timedelta(days=days_ago)).strftime("%Y-%m-%d")
+
+    # Four trailing weeks. Each tuple: (days_ago, distance_km).
+    if spike:
+        # Acute (last 7d) = 50 km; prior 3 weeks = 10 km each.
+        # chronic_total(28d) = 80 -> weekly 20 -> ACWR = 50 / 20 = 2.5.
+        runs = [
+            (1, 50.0),  # this week (acute)
+            (8, 10.0),  # week -1
+            (15, 10.0),  # week -2
+            (22, 10.0),  # week -3
+        ]
+    else:
+        # Steady ~20 km/week -> acute 20, chronic weekly 20 -> ACWR ~1.0.
+        runs = [
+            (1, 20.0),
+            (8, 20.0),
+            (15, 20.0),
+            (22, 20.0),
+        ]
+
+    activity_rows = [
+        (9000004000 + idx, _at(days_ago), "Run", km, int(km * 300), 300.0, 145)
+        for idx, (days_ago, km) in enumerate(runs, start=1)
+    ]
+
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(_CREATE_ACTIVITIES)
+        conn.executemany(
+            "INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?, ?)",
+            activity_rows,
+        )
+    finally:
+        conn.close()
+    return db_path
+
+
+@pytest.fixture
+def training_load_db_path(tmp_path: Path) -> Path:
+    """DuckDB with steady weekly load (optimal ACWR ~1.0)."""
+    db_path = tmp_path / "test_garmin_web_training_load.duckdb"
+    return _build_training_load_db(db_path, spike=False)
+
+
+@pytest.fixture
+def training_load_high_risk_db_path(tmp_path: Path) -> Path:
+    """DuckDB with a recent volume spike (ACWR > 1.5 -> high_risk)."""
+    db_path = tmp_path / "test_garmin_web_training_load_high_risk.duckdb"
+    return _build_training_load_db(db_path, spike=True)
