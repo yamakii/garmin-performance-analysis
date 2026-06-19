@@ -2,6 +2,7 @@ import type {
   ActivityDetailResponse,
   ActivitySummary,
   GoalResponse,
+  RaceReadiness,
   SectionsResponse,
   TimeSeriesResponse,
   TrackResponse,
@@ -14,6 +15,14 @@ export async function fetchGoal(): Promise<GoalResponse> {
     throw new Error(`Failed to fetch goal: ${response.status}`);
   }
   return (await response.json()) as GoalResponse;
+}
+
+export async function fetchRaceReadiness(): Promise<RaceReadiness> {
+  const response = await fetch("/api/race-readiness");
+  if (!response.ok) {
+    throw new Error(`Failed to fetch race readiness: ${response.status}`);
+  }
+  return (await response.json()) as RaceReadiness;
 }
 
 export async function fetchWeeklyReviews(limit = 12): Promise<WeeklyReview[]> {

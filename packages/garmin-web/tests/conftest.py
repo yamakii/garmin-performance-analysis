@@ -5,6 +5,7 @@ this is the documented exception to the get_connection()-only rule,
 required because fixture creation needs write access to a new file.
 """
 
+import datetime as _dt
 import json
 from pathlib import Path
 
@@ -855,3 +856,85 @@ def empty_weekly_reviews_db_path(tmp_path: Path) -> Path:
     finally:
         conn.close()
     return db_path
+
+
+# --- Race readiness page fixtures (Issue #362) -------------------------
+# RaceReader.get_race_readiness (#356) aggregates current VDOT (via
+# FitnessAssessor: needs recent `activities` + `vo2_max`), the active race goal
+# (`athlete_goals`), VDOT predictions, and a goal-progress block. Dates are
+# computed relative to today so the activities always fall inside the default
+# 8-week lookback window and the goal stays in the future.
+
+
+def _build_race_readiness_db(db_path: Path, *, with_goal: bool) -> Path:
+    """Create a race-readiness DB (activities + vo2_max [+ optional goal])."""
+    today = _dt.date.today()
+    recent_dates = [
+        (today - _dt.timedelta(days=offset)).strftime("%Y-%m-%d")
+        for offset in (3, 10, 17)
+    ]
+    future_race_date = (today + _dt.timedelta(days=180)).strftime("%Y-%m-%d")
+
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(_CREATE_ACTIVITIES)
+        conn.execute(_CREATE_VO2_MAX)
+        conn.execute(_CREATE_HEART_RATE_ZONES)
+        # FitnessAssessor reads hr_efficiency.training_type; left empty here.
+        conn.execute(
+            "CREATE TABLE hr_efficiency ("
+            "activity_id BIGINT PRIMARY KEY, training_type VARCHAR)"
+        )
+        _create_goal_tables(conn)
+
+        activity_rows = [
+            (9000003001, recent_dates[0], "Tempo Run", 10.0, 2700, 270.0, 158),
+            (9000003002, recent_dates[1], "Easy Run", 8.0, 2880, 360.0, 140),
+            (9000003003, recent_dates[2], "Long Run", 16.0, 6240, 390.0, 145),
+        ]
+        conn.executemany(
+            "INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?, ?)",
+            activity_rows,
+        )
+        # vo2_max drives VDOT (FitnessAssessor prefers precise_value).
+        conn.execute(
+            "INSERT INTO vo2_max VALUES (?, ?, ?, ?, ?)",
+            [9000003001, 52.0, 52.0, recent_dates[0], 5],
+        )
+
+        if with_goal:
+            conn.execute(
+                "INSERT INTO athlete_goals ("
+                "goal_id, user_id, race_name, race_date, priority, goal_type,"
+                " distance_km, target_time_seconds, status, notes"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    1,
+                    "default",
+                    "さいたまマラソン",
+                    future_race_date,
+                    "A",
+                    "marathon",
+                    42.195,
+                    16200,  # 4:30:00
+                    "active",
+                    "サブ4.5メインターゲット",
+                ],
+            )
+    finally:
+        conn.close()
+    return db_path
+
+
+@pytest.fixture
+def race_readiness_db_path(tmp_path: Path) -> Path:
+    """DuckDB with recent activities + vo2_max + an active (priority A) goal."""
+    db_path = tmp_path / "test_garmin_web_race_readiness.duckdb"
+    return _build_race_readiness_db(db_path, with_goal=True)
+
+
+@pytest.fixture
+def race_readiness_no_goal_db_path(tmp_path: Path) -> Path:
+    """DuckDB with recent activities + vo2_max but no race goal rows."""
+    db_path = tmp_path / "test_garmin_web_race_readiness_no_goal.duckdb"
+    return _build_race_readiness_db(db_path, with_goal=False)
