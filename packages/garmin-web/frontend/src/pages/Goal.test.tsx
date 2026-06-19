@@ -1,7 +1,30 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import Goal, { daysUntil, formatTargetTime } from "./Goal";
+import Goal, { daysUntil, formatGap, formatTargetTime } from "./Goal";
+
+const FIXTURE_READINESS = {
+  current_vdot: 48.5,
+  predicted_times: {
+    race_5k: 1290,
+    race_10k: 2670,
+    half: 5910,
+    full: 12360,
+  },
+  goal: {
+    race_name: "さいたまマラソン",
+    race_date: "2099-02-01",
+    distance_km: 42.195,
+    target_time_seconds: 16200,
+  },
+  progress: {
+    predicted_time_seconds: 15300, // 4:15:00
+    gap_seconds: -900, // 15min ahead of the 4:30:00 target
+    pace_gap_sec_per_km: -21.3,
+    weeks_remaining: 18,
+    status: "ahead",
+  },
+};
 
 /** A race date comfortably in the future so the countdown is positive. */
 const FUTURE_DATE = "2099-02-01";
@@ -49,15 +72,30 @@ const FIXTURE_GOAL = {
   ],
 };
 
-function stubFetch(payload: unknown) {
+function jsonResponse(payload: unknown): Response {
+  return new Response(JSON.stringify(payload), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+/**
+ * Route by URL: /api/goal -> goal payload, /api/race-readiness -> readiness
+ * payload (defaults to a 404 so the supplementary card stays hidden).
+ */
+function stubFetch(goalPayload: unknown, readiness?: unknown) {
   vi.stubGlobal(
     "fetch",
-    vi.fn().mockResolvedValue(
-      new Response(JSON.stringify(payload), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    ),
+    vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/race-readiness")) {
+        if (readiness === undefined) {
+          return Promise.resolve(new Response(null, { status: 404 }));
+        }
+        return Promise.resolve(jsonResponse(readiness));
+      }
+      return Promise.resolve(jsonResponse(goalPayload));
+    }),
   );
 }
 
@@ -83,7 +121,39 @@ describe("daysUntil", () => {
   });
 });
 
+describe("formatGap", () => {
+  it("formats signed gaps as ±M:SS / ±H:MM:SS", () => {
+    expect(formatGap(-900)).toBe("−15:00");
+    expect(formatGap(900)).toBe("+15:00");
+    expect(formatGap(0)).toBe("±0:00");
+    expect(formatGap(3661)).toBe("+1:01:01");
+  });
+});
+
 describe("Goal", () => {
+  it("test_Goal_renders_race_prediction_card", async () => {
+    stubFetch(FIXTURE_GOAL, FIXTURE_READINESS);
+
+    render(
+      <MemoryRouter>
+        <Goal />
+      </MemoryRouter>,
+    );
+
+    // Section heading and goal race name.
+    expect(await screen.findByText("レース予測")).toBeInTheDocument();
+
+    // Predicted time formatted via formatTargetTime (15300 -> 4:15:00).
+    expect(screen.getByText("4:15:00")).toBeInTheDocument();
+
+    // VDOT value rendered.
+    expect(screen.getByText("48.5")).toBeInTheDocument();
+
+    // Gap and "ahead" status badge.
+    expect(screen.getByText("−15:00")).toBeInTheDocument();
+    expect(screen.getByText("前倒し")).toBeInTheDocument();
+  });
+
   it("test_Goal_renders_race_countdown", async () => {
     stubFetch(FIXTURE_GOAL);
 

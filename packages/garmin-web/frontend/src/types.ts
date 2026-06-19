@@ -43,6 +43,38 @@ export interface GoalResponse {
   retrospectives: SeasonRetrospective[];
 }
 
+// --- Race readiness (Issue #362) ---
+
+export interface RaceReadinessPredictedTimes {
+  race_5k?: number;
+  race_10k?: number;
+  half?: number;
+  full?: number;
+  [key: string]: number | undefined;
+}
+
+export interface RaceReadinessGoal {
+  race_name: string | null;
+  race_date: string | null;
+  distance_km: number | null;
+  target_time_seconds: number | null;
+}
+
+export interface RaceReadinessProgress {
+  predicted_time_seconds: number;
+  gap_seconds: number;
+  pace_gap_sec_per_km: number;
+  weeks_remaining: number | null;
+  status: "ahead" | "on_track" | "behind";
+}
+
+export interface RaceReadiness {
+  current_vdot: number | null;
+  predicted_times: RaceReadinessPredictedTimes;
+  goal: RaceReadinessGoal | null;
+  progress: RaceReadinessProgress | null;
+}
+
 // --- Weekly reviews (Issue #283) ---
 
 export interface WeeklyReviewVerdict {

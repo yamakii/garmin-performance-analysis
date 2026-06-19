@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 import EmptyState, { CliCommand } from "../components/EmptyState";
-import { fetchGoal } from "../api/client";
-import type { GoalRace, GoalResponse, SeasonRetrospective } from "../types";
+import { fetchGoal, fetchRaceReadiness } from "../api/client";
+import type {
+  GoalRace,
+  GoalResponse,
+  RaceReadiness,
+  SeasonRetrospective,
+} from "../types";
 import { parseFocusNotes } from "../utils/focusNotes";
 
 /** Format a target time in seconds as H:MM:SS (e.g. 16200 -> "4:30:00"). */
@@ -372,8 +377,116 @@ function RetrospectiveCard({ retro }: { retro: SeasonRetrospective }) {
   );
 }
 
+/** Format a signed gap in seconds as ±H:MM:SS / ±M:SS (0 -> "±0:00"). */
+export function formatGap(seconds: number): string {
+  const sign = seconds > 0 ? "+" : seconds < 0 ? "−" : "±";
+  const abs = Math.abs(seconds);
+  const hours = Math.floor(abs / 3600);
+  const minutes = Math.floor((abs % 3600) / 60);
+  const secs = abs % 60;
+  const body =
+    hours > 0
+      ? `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
+      : `${minutes}:${String(secs).padStart(2, "0")}`;
+  return `${sign}${body}`;
+}
+
+type RaceStatus = NonNullable<RaceReadiness["progress"]>["status"];
+
+const STATUS_META: Record<RaceStatus, { label: string; className: string }> = {
+  ahead: { label: "前倒し", className: "bg-emerald-100 text-emerald-700" },
+  on_track: { label: "順調", className: "bg-sky-100 text-sky-700" },
+  behind: { label: "遅れ", className: "bg-amber-100 text-amber-700" },
+};
+
+/**
+ * Race prediction card: current VDOT, the goal-distance predicted time, the gap
+ * to target, and a status badge. Falls back to an explanatory line when VDOT or
+ * the goal is missing.
+ */
+function RacePredictionCard({ readiness }: { readiness: RaceReadiness }) {
+  const { current_vdot, goal, progress } = readiness;
+
+  if (current_vdot == null) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <EmptyState
+          message="現在のフィットネスを推定できませんでした"
+          hint="直近のランニングデータが不足しています"
+        />
+      </div>
+    );
+  }
+
+  const weeksRemaining = progress?.weeks_remaining ?? null;
+  const statusMeta = progress != null ? STATUS_META[progress.status] : null;
+
+  return (
+    <article className="relative overflow-hidden rounded-xl border border-signal/40 bg-white p-5 shadow-sm ring-1 ring-signal/20">
+      <span
+        aria-hidden="true"
+        className="absolute inset-y-0 left-0 w-1 bg-signal"
+      />
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="font-display text-lg font-semibold text-ink">
+            {goal?.race_name ?? "目標レース未設定"}
+          </h3>
+          {weeksRemaining != null && (
+            <p className="mt-0.5 font-numeric text-sm tabular-nums text-slate-500">
+              残り {weeksRemaining} 週
+            </p>
+          )}
+        </div>
+        {statusMeta != null && (
+          <span
+            className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${statusMeta.className}`}
+          >
+            {statusMeta.label}
+          </span>
+        )}
+      </div>
+
+      <dl className="mt-4 grid grid-cols-3 gap-3 border-t border-slate-100 pt-4">
+        <div>
+          <dt className="text-xs tracking-wide text-slate-400">現在 VDOT</dt>
+          <dd className="mt-0.5 font-numeric text-base font-semibold tabular-nums text-ink">
+            {current_vdot.toFixed(1)}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs tracking-wide text-slate-400">予測タイム</dt>
+          <dd className="mt-0.5 font-numeric text-base font-semibold tabular-nums text-ink">
+            {progress != null
+              ? formatTargetTime(progress.predicted_time_seconds)
+              : "-"}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs tracking-wide text-slate-400">目標との差</dt>
+          <dd className="mt-0.5 font-numeric text-base font-semibold tabular-nums text-ink">
+            {progress != null ? formatGap(progress.gap_seconds) : "-"}
+          </dd>
+        </div>
+      </dl>
+
+      {goal != null && goal.target_time_seconds != null && (
+        <p className="mt-4 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+          目標タイム {formatTargetTime(goal.target_time_seconds)} に対する現在の予測です。
+        </p>
+      )}
+      {goal == null && (
+        <p className="mt-4 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+          目標レースが未登録のため、距離別の予測タイムのみ算出しています。
+        </p>
+      )}
+    </article>
+  );
+}
+
 export default function Goal() {
   const [goal, setGoal] = useState<GoalResponse | null>(null);
+  const [readiness, setReadiness] = useState<RaceReadiness | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -391,6 +504,23 @@ export default function Goal() {
           setError(err instanceof Error ? err.message : String(err));
           setLoading(false);
         }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Race readiness is supplementary: a failure here must not block the page.
+  useEffect(() => {
+    let cancelled = false;
+    fetchRaceReadiness()
+      .then((data) => {
+        if (!cancelled) {
+          setReadiness(data);
+        }
+      })
+      .catch(() => {
+        /* non-fatal: the prediction card is simply hidden */
       });
     return () => {
       cancelled = true;
@@ -434,6 +564,17 @@ export default function Goal() {
     <div className="stagger-in space-y-8">
       {/* 1. Race countdown hero */}
       {hasFeaturedRace && <CountdownHero goals={goals} />}
+
+      {/* 1b. Race prediction (VDOT-based gap to the goal) */}
+      {readiness != null && (
+        <section>
+          <h2 className={SECTION_HEADING}>Race prediction</h2>
+          <p className="mt-1 mb-4 font-display text-xl font-bold tracking-tight text-ink">
+            レース予測
+          </p>
+          <RacePredictionCard readiness={readiness} />
+        </section>
+      )}
 
       {/* 2. Target races as cards */}
       <section>
