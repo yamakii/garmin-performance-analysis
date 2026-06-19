@@ -135,25 +135,6 @@ class GarminIngestWorker:
         result = self._db_reader.get_activity_date(activity_id)
         return cast(str | None, result) if result else None
 
-    def _check_duckdb_cache(self, activity_id: int) -> dict[str, Any] | None:
-        """Check if activity data exists in DuckDB.
-
-        Args:
-            activity_id: Activity ID to check
-
-        Returns:
-            Complete performance data dict if all sections exist, None otherwise
-        """
-        if self._db_reader is None:
-            return None
-
-        # TODO: Implement DuckDB cache checking with normalized schema
-        logger.debug(
-            f"Activity {activity_id}: DuckDB cache checking not implemented "
-            "for normalized schema"
-        )
-        return None
-
     def load_from_cache(
         self, activity_id: int, skip_files: set[str] | None = None
     ) -> dict[str, Any] | None:
@@ -180,50 +161,6 @@ class GarminIngestWorker:
         """
         self._ensure_dirs()
         return collect_body_composition_data(self.weight_raw_dir, date)
-
-    def _calculate_form_efficiency_summary(self, df: pd.DataFrame) -> dict[str, Any]:
-        """Calculate form efficiency summary (legacy method).
-
-        Returns:
-            Form metrics with statistics and ratings
-        """
-        if df.empty:
-            return {}
-
-        gct_stats = {
-            "average": df["ground_contact_time_ms"].mean(),
-            "min": df["ground_contact_time_ms"].min(),
-            "max": df["ground_contact_time_ms"].max(),
-            "std": df["ground_contact_time_ms"].std(),
-        }
-
-        vo_stats = {
-            "average": df["vertical_oscillation_cm"].mean(),
-            "min": df["vertical_oscillation_cm"].min(),
-            "max": df["vertical_oscillation_cm"].max(),
-            "std": df["vertical_oscillation_cm"].std(),
-        }
-
-        vr_stats = {
-            "average": df["vertical_ratio_percent"].mean(),
-            "min": df["vertical_ratio_percent"].min(),
-            "max": df["vertical_ratio_percent"].max(),
-            "std": df["vertical_ratio_percent"].std(),
-        }
-
-        gct_rating = "★★★★★" if gct_stats["average"] < 240 else "★★★☆☆"
-        vo_rating = "★★★★★" if vo_stats["average"] < 8.0 else "★★★☆☆"
-        vr_rating = "★★★★★" if vr_stats["average"] < 8.5 else "★★★☆☆"
-
-        return {
-            "gct_stats": gct_stats,
-            "gct_rating": gct_rating,
-            "vo_stats": vo_stats,
-            "vo_rating": vo_rating,
-            "vr_stats": vr_stats,
-            "vr_rating": vr_rating,
-            "evaluation": "優秀な接地時間、効率的な地面反力利用",
-        }
 
     def _calculate_hr_efficiency_analysis(
         self,
@@ -293,117 +230,6 @@ class GarminIngestWorker:
             "hr_stability": "優秀" if df["avg_heart_rate"].std() < 5 else "変動あり",
             "description": "適切な心拍ゾーンで実施",
             **zone_percentages,
-        }
-
-    def _calculate_performance_trends(self, df: pd.DataFrame) -> dict[str, Any]:
-        """Calculate performance trends with 4-phase support (legacy method).
-
-        Returns:
-            Phase-based analysis and consistency metrics
-        """
-        if df.empty or len(df) < 3:
-            return {}
-
-        if "role_phase" not in df.columns:
-            return {}
-
-        warmup_df = df[df["role_phase"] == "warmup"]
-        run_df = df[df["role_phase"] == "run"]
-        recovery_df = df[df["role_phase"] == "recovery"]
-        cooldown_df = df[df["role_phase"] == "cooldown"]
-
-        warmup_phase = {
-            "splits": warmup_df["split_number"].tolist() if not warmup_df.empty else [],
-            "avg_pace": (
-                warmup_df["avg_pace_seconds_per_km"].mean()
-                if not warmup_df.empty
-                else None
-            ),
-            "avg_hr": (
-                warmup_df["avg_heart_rate"].mean() if not warmup_df.empty else None
-            ),
-        }
-
-        run_phase = {
-            "splits": run_df["split_number"].tolist() if not run_df.empty else [],
-            "avg_pace": (
-                run_df["avg_pace_seconds_per_km"].mean() if not run_df.empty else None
-            ),
-            "avg_hr": run_df["avg_heart_rate"].mean() if not run_df.empty else None,
-        }
-
-        recovery_phase = {
-            "splits": (
-                recovery_df["split_number"].tolist() if not recovery_df.empty else []
-            ),
-            "avg_pace": (
-                recovery_df["avg_pace_seconds_per_km"].mean()
-                if not recovery_df.empty
-                else None
-            ),
-            "avg_hr": (
-                recovery_df["avg_heart_rate"].mean() if not recovery_df.empty else None
-            ),
-        }
-
-        cooldown_phase = {
-            "splits": (
-                cooldown_df["split_number"].tolist() if not cooldown_df.empty else []
-            ),
-            "avg_pace": (
-                cooldown_df["avg_pace_seconds_per_km"].mean()
-                if not cooldown_df.empty
-                else None
-            ),
-            "avg_hr": (
-                cooldown_df["avg_heart_rate"].mean() if not cooldown_df.empty else None
-            ),
-        }
-
-        if not run_df.empty:
-            pace_consistency = (
-                run_df["avg_pace_seconds_per_km"].std()
-                / run_df["avg_pace_seconds_per_km"].mean()
-                if run_df["avg_pace_seconds_per_km"].mean() > 0
-                else 0
-            )
-        else:
-            pace_consistency = 0
-
-        warmup_hr_val = warmup_phase.get("avg_hr")
-        cooldown_hr_val = cooldown_phase.get("avg_hr")
-        if (
-            warmup_hr_val is not None
-            and cooldown_hr_val is not None
-            and isinstance(warmup_hr_val, int | float)
-            and isinstance(cooldown_hr_val, int | float)
-        ):
-            hr_drift_percentage = (
-                (float(cooldown_hr_val) - float(warmup_hr_val))
-                / float(warmup_hr_val)
-                * 100
-            )
-        else:
-            hr_drift_percentage = 0
-
-        if hr_drift_percentage < 5:
-            fatigue_pattern = "適切な疲労管理"
-        elif hr_drift_percentage < 10:
-            fatigue_pattern = "軽度の疲労蓄積"
-        else:
-            fatigue_pattern = "顕著な疲労蓄積"
-
-        return {
-            "warmup_phase": warmup_phase,
-            "run_phase": run_phase,
-            "recovery_phase": recovery_phase,
-            "cooldown_phase": cooldown_phase,
-            "pace_consistency": pace_consistency,
-            "hr_drift_percentage": hr_drift_percentage,
-            "cadence_consistency": (
-                "高い安定性" if df["avg_cadence"].std() < 5 else "変動あり"
-            ),
-            "fatigue_pattern": fatigue_pattern,
         }
 
     def _should_insert_table(self, table_name: str, tables: list[str] | None) -> bool:
@@ -583,20 +409,6 @@ class GarminIngestWorker:
             Result dict with file paths
         """
         logger.info(f"Processing activity {activity_id} ({date})")
-
-        # Step 0: Check DuckDB cache first
-        cache_exists = self._check_duckdb_cache(activity_id)
-
-        if cache_exists is not None:
-            logger.info(
-                f"Activity {activity_id}: Using complete data from DuckDB cache"
-            )
-            return {
-                "activity_id": activity_id,
-                "date": date,
-                "status": "success",
-                "source": "duckdb_cache",
-            }
 
         # Step 1: Collect data (cache-first with optional force_refetch)
         raw_data = self.collect_data(activity_id, force_refetch=force_refetch)

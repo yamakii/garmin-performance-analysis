@@ -819,39 +819,3 @@ class TestGarminIngestWorker:
                 mock_collect.assert_called_once_with(
                     activity_id, force_refetch=["activity_details"]
                 )
-
-    @pytest.mark.integration
-    def test_force_refetch_with_duckdb_cache(self, worker, tmp_path):
-        """Test DuckDB cache bypasses force_refetch (DuckDB has priority)."""
-        activity_id = 12345
-        date = "2025-10-10"
-
-        # Mock _check_duckdb_cache to return complete performance data
-        complete_performance_data = {
-            "basic_metrics": {"distance_km": 5.0},
-            "heart_rate_zones": {},
-            "efficiency_metrics": {},
-            "training_effect": {},
-            "power_to_weight": {},
-            "split_metrics": [],
-            "vo2_max": {},
-            "lactate_threshold": {},
-            "form_efficiency_summary": {},
-            "hr_efficiency_analysis": {},
-            "performance_trends": {},
-        }
-
-        with patch.object(worker, "_check_duckdb_cache") as mock_duckdb_check:
-            mock_duckdb_check.return_value = complete_performance_data
-
-            with patch.object(worker, "collect_data") as mock_collect:
-                # Execute with force_refetch
-                result = worker.process_activity(
-                    activity_id, date, force_refetch=["weather"]
-                )
-
-                # Verify collect_data was NOT called (DuckDB cache hit)
-                mock_collect.assert_not_called()
-
-                # Verify DuckDB cache was used
-                assert result["source"] == "duckdb_cache"
