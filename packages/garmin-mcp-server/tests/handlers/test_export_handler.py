@@ -1,4 +1,4 @@
-"""Tests for ExportHandler."""
+"""Tests for the export tool (dispatched via the single-source registry)."""
 
 import datetime
 import json
@@ -6,24 +6,16 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from garmin_mcp.handlers.export_handler import ExportHandler
+from garmin_mcp.tools import ALL_DEFS_BY_NAME
+from tests.handlers.conftest import dispatch_tool
 
 
 @pytest.mark.unit
-class TestHandles:
-    """Test handles() method for tool name matching."""
+class TestToolRegistration:
+    """The export tool is registered in the single-source registry."""
 
-    def test_handles_export(self, mock_db_reader: MagicMock) -> None:
-        handler = ExportHandler(mock_db_reader)
-        assert handler.handles("export") is True
-
-    def test_does_not_handle_unknown_tool(self, mock_db_reader: MagicMock) -> None:
-        handler = ExportHandler(mock_db_reader)
-        assert handler.handles("get_splits_pace_hr") is False
-
-    def test_does_not_handle_empty_string(self, mock_db_reader: MagicMock) -> None:
-        handler = ExportHandler(mock_db_reader)
-        assert handler.handles("") is False
+    def test_export_registered(self) -> None:
+        assert "export" in ALL_DEFS_BY_NAME
 
 
 @pytest.mark.unit
@@ -50,9 +42,10 @@ class TestExportSuccess:
             "size_mb": 0.5,
             "columns": ["a", "b"],
         }
-        handler = ExportHandler(mock_db_reader)
 
-        result = await handler.handle("export", {"query": "SELECT * FROM activities"})
+        result = dispatch_tool(
+            mock_db_reader, "export", {"query": "SELECT * FROM activities"}
+        )
 
         data = json.loads(result[0].text)
         assert data["handle"] == "handle_abc123"
@@ -90,9 +83,9 @@ class TestExportSuccess:
             "size_mb": 0.1,
             "columns": ["x"],
         }
-        handler = ExportHandler(mock_db_reader)
 
-        result = await handler.handle(
+        result = dispatch_tool(
+            mock_db_reader,
             "export",
             {"query": "SELECT x FROM t", "format": "csv", "max_rows": 500},
         )
@@ -130,9 +123,8 @@ class TestExportSuccess:
             "size_mb": 0.0,
             "columns": [],
         }
-        handler = ExportHandler(mock_db_reader)
 
-        result = await handler.handle("export", {"query": "SELECT 1"})
+        result = dispatch_tool(mock_db_reader, "export", {"query": "SELECT 1"})
 
         assert len(result) == 1
         assert result[0].type == "text"
@@ -154,9 +146,10 @@ class TestExportValueError:
             "garmin_mcp.mcp_server.export_manager.get_export_manager",
             return_value=mock_export_mgr,
         )
-        handler = ExportHandler(mock_db_reader)
 
-        result = await handler.handle("export", {"query": "SELECT * FROM big_table"})
+        result = dispatch_tool(
+            mock_db_reader, "export", {"query": "SELECT * FROM big_table"}
+        )
 
         data = json.loads(result[0].text)
         assert "error" in data
@@ -180,9 +173,8 @@ class TestExportValueError:
             return_value=mock_export_mgr,
         )
         mock_db_reader.export_query_result.side_effect = ValueError("Invalid query")
-        handler = ExportHandler(mock_db_reader)
 
-        result = await handler.handle("export", {"query": "INVALID SQL"})
+        result = dispatch_tool(mock_db_reader, "export", {"query": "INVALID SQL"})
 
         data = json.loads(result[0].text)
         assert "error" in data
@@ -204,9 +196,8 @@ class TestExportGeneralException:
             "garmin_mcp.mcp_server.export_manager.get_export_manager",
             return_value=mock_export_mgr,
         )
-        handler = ExportHandler(mock_db_reader)
 
-        result = await handler.handle("export", {"query": "SELECT 1"})
+        result = dispatch_tool(mock_db_reader, "export", {"query": "SELECT 1"})
 
         data = json.loads(result[0].text)
         assert "error" in data
@@ -215,11 +206,13 @@ class TestExportGeneralException:
 
 
 @pytest.mark.unit
-class TestHandleUnknownTool:
-    """Test that unknown tool names raise ValueError."""
+class TestUnknownTool:
+    """An unregistered tool name is not dispatchable via the registry.
 
-    @pytest.mark.asyncio
-    async def test_raises_value_error(self, mock_db_reader: MagicMock) -> None:
-        handler = ExportHandler(mock_db_reader)
-        with pytest.raises(ValueError, match="Unknown tool"):
-            await handler.handle("nonexistent_tool", {"query": "SELECT 1"})
+    ``server._dispatch_tool`` translates this into a ``ValueError`` for the MCP
+    surface; that contract is covered in ``tests/handlers/test_server.py``.
+    """
+
+    def test_unknown_tool_not_in_registry(self, mock_db_reader: MagicMock) -> None:
+        with pytest.raises(KeyError):
+            dispatch_tool(mock_db_reader, "nonexistent_tool", {"query": "SELECT 1"})

@@ -1,10 +1,14 @@
-"""Base protocol for tool handlers."""
+"""Shared MCP response helpers.
+
+Tool dispatch now happens directly in ``server.py`` via the single-source
+registry (``garmin_mcp.tools.ALL_DEFS_BY_NAME``); the per-domain handler classes
+and the ``ToolHandler`` protocol were removed in #340. These two helpers remain
+because both the registry handler functions and ``server.py`` use them.
+"""
 
 import json
 from collections.abc import Callable
-from typing import Any, Protocol
-
-from mcp.types import TextContent
+from typing import Any
 
 
 def inject_warnings(data: dict[str, Any], warnings: list[str]) -> dict[str, Any]:
@@ -17,15 +21,3 @@ def inject_warnings(data: dict[str, Any], warnings: list[str]) -> dict[str, Any]
 def format_json_response(data: Any, *, default: Callable | None = None) -> str:
     """Format data as compact JSON for MCP responses."""
     return json.dumps(data, ensure_ascii=False, separators=(",", ":"), default=default)
-
-
-class ToolHandler(Protocol):
-    """Protocol for MCP tool handlers."""
-
-    def handles(self, name: str) -> bool:
-        """Return True if this handler handles the given tool name."""
-        ...
-
-    async def handle(self, name: str, arguments: dict[str, Any]) -> list[TextContent]:
-        """Handle a tool call and return results."""
-        ...

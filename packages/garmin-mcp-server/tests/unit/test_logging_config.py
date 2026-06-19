@@ -120,25 +120,21 @@ class TestCallToolLogging:
 
     @pytest.fixture
     def _patch_handlers(self, mocker: MockerFixture) -> None:
-        """Patch _handlers to avoid real DB initialization."""
-        import garmin_mcp.server as server_mod
-
-        mock_handler = mocker.Mock()
-        mock_handler.handles.return_value = True
-        mock_handler.handle = mocker.AsyncMock(
-            return_value=[{"type": "text", "text": "ok"}]
+        """Patch _dispatch_tool to return a canned result (no DB/registry)."""
+        mocker.patch(
+            "garmin_mcp.server._dispatch_tool",
+            new=mocker.AsyncMock(
+                return_value=[{"type": "text", "text": "ok"}],
+            ),
         )
-        server_mod._handlers = [mock_handler]
 
     @pytest.fixture
     def _patch_handlers_error(self, mocker: MockerFixture) -> None:
-        """Patch _handlers to raise an error."""
-        import garmin_mcp.server as server_mod
-
-        mock_handler = mocker.Mock()
-        mock_handler.handles.return_value = True
-        mock_handler.handle = mocker.AsyncMock(side_effect=RuntimeError("test error"))
-        server_mod._handlers = [mock_handler]
+        """Patch _dispatch_tool to raise an error."""
+        mocker.patch(
+            "garmin_mcp.server._dispatch_tool",
+            new=mocker.AsyncMock(side_effect=RuntimeError("test error")),
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.usefixtures("_patch_handlers")

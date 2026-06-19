@@ -1,4 +1,4 @@
-"""Tests for MetadataHandler."""
+"""Tests for the metadata tools (dispatched via the single-source registry)."""
 
 import json
 from datetime import datetime
@@ -6,32 +6,20 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from garmin_mcp.handlers.metadata_handler import MetadataHandler
+from garmin_mcp.tools import ALL_DEFS_BY_NAME
+from tests.handlers.conftest import dispatch_tool
 
 
 @pytest.mark.unit
-class TestHandles:
-    """Test handles() method for tool name matching."""
+class TestToolRegistration:
+    """Metadata tools are registered in the single-source registry."""
 
-    def test_handles_get_activity_by_date(self, mock_db_reader: MagicMock) -> None:
-        handler = MetadataHandler(mock_db_reader)
-        assert handler.handles("get_activity_by_date") is True
-
-    def test_handles_get_date_by_activity_id(self, mock_db_reader: MagicMock) -> None:
-        handler = MetadataHandler(mock_db_reader)
-        assert handler.handles("get_date_by_activity_id") is True
-
-    def test_handles_ingest_activity(self, mock_db_reader: MagicMock) -> None:
-        handler = MetadataHandler(mock_db_reader)
-        assert handler.handles("ingest_activity") is True
-
-    def test_does_not_handle_unknown_tool(self, mock_db_reader: MagicMock) -> None:
-        handler = MetadataHandler(mock_db_reader)
-        assert handler.handles("get_splits_pace_hr") is False
-
-    def test_does_not_handle_empty_string(self, mock_db_reader: MagicMock) -> None:
-        handler = MetadataHandler(mock_db_reader)
-        assert handler.handles("") is False
+    @pytest.mark.parametrize(
+        "name",
+        ["get_activity_by_date", "get_date_by_activity_id", "ingest_activity"],
+    )
+    def test_metadata_tool_registered(self, name: str) -> None:
+        assert name in ALL_DEFS_BY_NAME
 
 
 @pytest.mark.unit
@@ -41,7 +29,6 @@ class TestGetActivityByDate:
     @pytest.mark.asyncio
     async def test_single_result(self, mock_db_reader: MagicMock) -> None:
         mock_db_reader.db_path = "/fake/path.duckdb"
-        handler = MetadataHandler(mock_db_reader)
 
         mock_conn = MagicMock()
         mock_conn.execute.return_value.fetchall.return_value = [
@@ -49,8 +36,8 @@ class TestGetActivityByDate:
         ]
 
         with patch("duckdb.connect", return_value=mock_conn):
-            result = await handler.handle(
-                "get_activity_by_date", {"date": "2025-10-15"}
+            result = dispatch_tool(
+                mock_db_reader, "get_activity_by_date", {"date": "2025-10-15"}
             )
 
         data = json.loads(result[0].text)
@@ -64,7 +51,6 @@ class TestGetActivityByDate:
     @pytest.mark.asyncio
     async def test_no_results(self, mock_db_reader: MagicMock) -> None:
         mock_db_reader.db_path = "/fake/path.duckdb"
-        handler = MetadataHandler(mock_db_reader)
 
         mock_conn = MagicMock()
         mock_conn.execute.return_value.fetchall.return_value = []
@@ -73,8 +59,8 @@ class TestGetActivityByDate:
             "duckdb.connect",
             return_value=mock_conn,
         ):
-            result = await handler.handle(
-                "get_activity_by_date", {"date": "2025-01-01"}
+            result = dispatch_tool(
+                mock_db_reader, "get_activity_by_date", {"date": "2025-01-01"}
             )
 
         data = json.loads(result[0].text)
@@ -85,7 +71,6 @@ class TestGetActivityByDate:
     @pytest.mark.asyncio
     async def test_multiple_results(self, mock_db_reader: MagicMock) -> None:
         mock_db_reader.db_path = "/fake/path.duckdb"
-        handler = MetadataHandler(mock_db_reader)
 
         mock_conn = MagicMock()
         mock_conn.execute.return_value.fetchall.return_value = [
@@ -97,8 +82,8 @@ class TestGetActivityByDate:
             "duckdb.connect",
             return_value=mock_conn,
         ):
-            result = await handler.handle(
-                "get_activity_by_date", {"date": "2025-10-15"}
+            result = dispatch_tool(
+                mock_db_reader, "get_activity_by_date", {"date": "2025-10-15"}
             )
 
         data = json.loads(result[0].text)
@@ -111,14 +96,13 @@ class TestGetActivityByDate:
     @pytest.mark.asyncio
     async def test_exception_handling(self, mock_db_reader: MagicMock) -> None:
         mock_db_reader.db_path = "/nonexistent/path.duckdb"
-        handler = MetadataHandler(mock_db_reader)
 
         with patch(
             "duckdb.connect",
             side_effect=Exception("Connection failed"),
         ):
-            result = await handler.handle(
-                "get_activity_by_date", {"date": "2025-10-15"}
+            result = dispatch_tool(
+                mock_db_reader, "get_activity_by_date", {"date": "2025-10-15"}
             )
 
         data = json.loads(result[0].text)
@@ -129,7 +113,6 @@ class TestGetActivityByDate:
     async def test_start_time_none_handled(self, mock_db_reader: MagicMock) -> None:
         """Verify None start_time is serialized correctly."""
         mock_db_reader.db_path = "/fake/path.duckdb"
-        handler = MetadataHandler(mock_db_reader)
 
         mock_conn = MagicMock()
         mock_conn.execute.return_value.fetchall.return_value = [
@@ -140,8 +123,8 @@ class TestGetActivityByDate:
             "duckdb.connect",
             return_value=mock_conn,
         ):
-            result = await handler.handle(
-                "get_activity_by_date", {"date": "2025-10-15"}
+            result = dispatch_tool(
+                mock_db_reader, "get_activity_by_date", {"date": "2025-10-15"}
             )
 
         data = json.loads(result[0].text)
@@ -156,9 +139,10 @@ class TestGetDateByActivityId:
     @pytest.mark.asyncio
     async def test_found(self, mock_db_reader: MagicMock) -> None:
         mock_db_reader.get_activity_date.return_value = "2025-10-15"
-        handler = MetadataHandler(mock_db_reader)
 
-        result = await handler.handle("get_date_by_activity_id", {"activity_id": 12345})
+        result = dispatch_tool(
+            mock_db_reader, "get_date_by_activity_id", {"activity_id": 12345}
+        )
 
         data = json.loads(result[0].text)
         assert data["activity_id"] == 12345
@@ -168,9 +152,10 @@ class TestGetDateByActivityId:
     @pytest.mark.asyncio
     async def test_not_found(self, mock_db_reader: MagicMock) -> None:
         mock_db_reader.get_activity_date.return_value = None
-        handler = MetadataHandler(mock_db_reader)
 
-        result = await handler.handle("get_date_by_activity_id", {"activity_id": 99999})
+        result = dispatch_tool(
+            mock_db_reader, "get_date_by_activity_id", {"activity_id": 99999}
+        )
 
         data = json.loads(result[0].text)
         assert data["activity_id"] == 99999
@@ -184,7 +169,6 @@ class TestIngestActivity:
     @pytest.mark.asyncio
     async def test_success(self, mock_db_reader: MagicMock) -> None:
         mock_db_reader.db_path = "/fake/path.duckdb"
-        handler = MetadataHandler(mock_db_reader)
 
         mock_planner = MagicMock()
         mock_planner.execute_full_workflow.return_value = {
@@ -201,7 +185,9 @@ class TestIngestActivity:
             "garmin_mcp.planner.workflow_planner.WorkflowPlanner",
             return_value=mock_planner,
         ):
-            result = await handler.handle("ingest_activity", {"date": "2025-10-15"})
+            result = dispatch_tool(
+                mock_db_reader, "ingest_activity", {"date": "2025-10-15"}
+            )
 
         data = json.loads(result[0].text)
         assert data["success"] is True
@@ -217,7 +203,6 @@ class TestIngestActivity:
     @pytest.mark.asyncio
     async def test_with_force_regenerate(self, mock_db_reader: MagicMock) -> None:
         mock_db_reader.db_path = "/fake/path.duckdb"
-        handler = MetadataHandler(mock_db_reader)
 
         mock_planner = MagicMock()
         mock_planner.execute_full_workflow.return_value = {
@@ -234,7 +219,8 @@ class TestIngestActivity:
             "garmin_mcp.planner.workflow_planner.WorkflowPlanner",
             return_value=mock_planner,
         ):
-            result = await handler.handle(
+            result = dispatch_tool(
+                mock_db_reader,
                 "ingest_activity",
                 {"date": "2025-10-15", "force_regenerate": True},
             )
@@ -248,7 +234,6 @@ class TestIngestActivity:
     @pytest.mark.asyncio
     async def test_workflow_error(self, mock_db_reader: MagicMock) -> None:
         mock_db_reader.db_path = "/fake/path.duckdb"
-        handler = MetadataHandler(mock_db_reader)
 
         mock_planner = MagicMock()
         mock_planner.execute_full_workflow.side_effect = ValueError(
@@ -259,7 +244,9 @@ class TestIngestActivity:
             "garmin_mcp.planner.workflow_planner.WorkflowPlanner",
             return_value=mock_planner,
         ):
-            result = await handler.handle("ingest_activity", {"date": "2025-01-01"})
+            result = dispatch_tool(
+                mock_db_reader, "ingest_activity", {"date": "2025-01-01"}
+            )
 
         data = json.loads(result[0].text)
         assert data["success"] is False
@@ -271,7 +258,6 @@ class TestIngestActivity:
         from datetime import date
 
         mock_db_reader.db_path = "/fake/path.duckdb"
-        handler = MetadataHandler(mock_db_reader)
 
         mock_planner = MagicMock()
         mock_planner.execute_full_workflow.return_value = {
@@ -288,7 +274,9 @@ class TestIngestActivity:
             "garmin_mcp.planner.workflow_planner.WorkflowPlanner",
             return_value=mock_planner,
         ):
-            result = await handler.handle("ingest_activity", {"date": "2025-10-15"})
+            result = dispatch_tool(
+                mock_db_reader, "ingest_activity", {"date": "2025-10-15"}
+            )
 
         data = json.loads(result[0].text)
         assert data["date"] == "2025-10-15"
@@ -296,11 +284,13 @@ class TestIngestActivity:
 
 
 @pytest.mark.unit
-class TestHandleUnknownTool:
-    """Test that unknown tool names raise ValueError."""
+class TestUnknownTool:
+    """An unregistered tool name is not dispatchable via the registry.
 
-    @pytest.mark.asyncio
-    async def test_raises_value_error(self, mock_db_reader: MagicMock) -> None:
-        handler = MetadataHandler(mock_db_reader)
-        with pytest.raises(ValueError, match="Unknown tool"):
-            await handler.handle("nonexistent_tool", {})
+    The MCP-facing ``ValueError`` contract lives in
+    ``tests/handlers/test_server.py``.
+    """
+
+    def test_unknown_tool_not_in_registry(self, mock_db_reader: MagicMock) -> None:
+        with pytest.raises(KeyError):
+            dispatch_tool(mock_db_reader, "nonexistent_tool", {})

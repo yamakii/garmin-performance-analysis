@@ -7,10 +7,8 @@ from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
-import garmin_mcp.server as server_module
 from garmin_mcp.server import (
     _dispatch_tool,
-    _ensure_handlers_initialized,
     _handle_get_server_info,
     _handle_reload_server,
 )
@@ -393,7 +391,7 @@ class TestGracefulShutdown:
 
 @pytest.mark.unit
 class TestServerReadiness:
-    """Tests for eager handler init and get_server_info readiness fields."""
+    """Tests for get_server_info readiness fields (registry-driven dispatch)."""
 
     def _make_mock_conn(self) -> MagicMock:
         mock_conn = MagicMock()
@@ -402,11 +400,13 @@ class TestServerReadiness:
         return mock_conn
 
     def test_get_server_info_includes_started_at_and_ready(self) -> None:
-        """get_server_info response includes started_at (ISO str) and ready=True."""
+        """get_server_info response includes started_at (ISO str) and ready=True.
+
+        Dispatch is now driven directly by the registry imported at module load,
+        so ``ready`` is True without any handler initialization step.
+        """
         from datetime import datetime
 
-        # Ensure handlers are initialized so ready reflects an initialized server.
-        _ensure_handlers_initialized()
         mock_conn = self._make_mock_conn()
         with (
             patch(
@@ -427,27 +427,115 @@ class TestServerReadiness:
         datetime.fromisoformat(data["started_at"])
         assert data["ready"] is True
 
-    def test_handlers_eager_initialized(self) -> None:
-        """_ensure_handlers_initialized populates _handlers without a tool call."""
-        # Start from an uninitialized registry.
-        server_module._handlers = []
-        assert server_module._handlers == []
 
-        _ensure_handlers_initialized()
-
-        assert len(server_module._handlers) > 0
+@pytest.mark.unit
+class TestDispatchTool:
+    """Tests for _dispatch_tool routing through the single-source registry."""
 
     @pytest.mark.asyncio
-    async def test_dispatch_lazy_fallback_still_works(self) -> None:
-        """_dispatch_tool lazily initializes handlers when registry is empty."""
-        # Reset to an empty registry to simulate the legacy lazy path where no
-        # eager init ran (e.g. a code path bypassing main()).
-        server_module._handlers = []
-        assert server_module._handlers == []
+    async def test_dispatch_known_tool_returns_textcontent(self) -> None:
+        """A registry tool routes through dispatch and returns one TextContent.
 
-        # An unknown tool still reaches the not-found branch *after* the lazy
-        # init runs, so the registry must be populated as a side effect.
-        with pytest.raises(ValueError, match="Unknown tool"):
-            await _dispatch_tool("definitely_not_a_real_tool", {})
+        The result is serialized via ``format_json_response`` (compact JSON),
+        proving the registry path is exercised end-to-end.
+        """
+        mock_reader = MagicMock()
+        mock_reader.get_activity_date.return_value = "2025-10-09"
+        with patch("garmin_mcp.server.db_reader", mock_reader):
+            result = await _dispatch_tool("get_date_by_activity_id", {"activity_id": 7})
 
-        assert len(server_module._handlers) > 0
+        assert len(result) == 1
+        assert result[0].type == "text"
+        data = json.loads(result[0].text)
+        assert data == {"activity_id": 7, "date": "2025-10-09"}
+        mock_reader.get_activity_date.assert_called_once_with(7)
+
+    @pytest.mark.asyncio
+    async def test_dispatch_unknown_tool_raises(self) -> None:
+        """_dispatch_tool raises ValueError for an unregistered tool name."""
+        with pytest.raises(ValueError, match="Unknown tool: nonexistent_tool"):
+            await _dispatch_tool("nonexistent_tool", {})
+
+    @pytest.mark.asyncio
+    async def test_dispatch_server_tool_get_server_info(self) -> None:
+        """get_server_info is handled inline (no registry/reader dependency)."""
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value.fetchall.return_value = [("t0",)]
+        mock_conn.execute.return_value.fetchone.return_value = ("2025-10-15",)
+        with (
+            patch("garmin_mcp.server._get_server_dir", return_value="/some/path"),
+            patch("garmin_mcp.server.os.path.exists", return_value=False),
+            patch(
+                "garmin_mcp.database.connection.get_connection",
+                _mock_get_connection(mock_conn),
+            ),
+        ):
+            result = await _dispatch_tool("get_server_info", {})
+
+        assert len(result) == 1
+        data = json.loads(result[0].text)
+        assert "started_at" in data
+        assert data["ready"] is True
+
+    @pytest.mark.asyncio
+    async def test_dispatch_date_serialized_as_str(self) -> None:
+        """A handler returning a ``datetime.date`` serializes via ``default=str``.
+
+        Without ``default=str`` json.dumps would raise on a bare ``date``; this
+        guards the MCP-boundary serialization contract.
+        """
+        from datetime import date
+
+        mock_reader = MagicMock()
+        mock_reader.get_activity_date.return_value = date(2025, 10, 9)
+        with patch("garmin_mcp.server.db_reader", mock_reader):
+            result = await _dispatch_tool("get_date_by_activity_id", {"activity_id": 7})
+
+        data = json.loads(result[0].text)
+        assert data == {"activity_id": 7, "date": "2025-10-09"}
+
+    @pytest.mark.asyncio
+    async def test_all_41_tools_dispatchable(self) -> None:
+        """Every registry tool name plus the 2 server tools avoids 'Unknown tool'.
+
+        Each registry tool is invoked with a mock reader and empty args; the only
+        outcome forbidden is the ``Unknown tool`` ValueError (validation errors
+        from missing required args are expected and ignored).
+        """
+        from garmin_mcp.tools import ALL_DEFS_BY_NAME
+
+        names = list(ALL_DEFS_BY_NAME) + ["get_server_info", "reload_server"]
+        assert len(names) == 41
+
+        mock_reader = MagicMock()
+        mock_reader.db_path = ":memory:"
+        for name in names:
+            try:
+                with (
+                    patch("garmin_mcp.server.db_reader", mock_reader),
+                    patch(
+                        "garmin_mcp.server._handle_reload_server",
+                        new=_AsyncNoop(),
+                    ),
+                    patch("garmin_mcp.server._handle_get_server_info", _Noop()),
+                ):
+                    await _dispatch_tool(name, {})
+            except ValueError as exc:  # pragma: no cover - defensive
+                assert "Unknown tool" not in str(exc), f"{name} not dispatchable"
+            except Exception:
+                # Validation / downstream errors are fine: the tool *was* routed.
+                pass
+
+
+class _Noop:
+    """Callable stand-in returning an empty TextContent list."""
+
+    def __call__(self, *args, **kwargs) -> list:
+        return []
+
+
+class _AsyncNoop:
+    """Awaitable stand-in returning an empty TextContent list."""
+
+    async def __call__(self, *args, **kwargs) -> list:
+        return []

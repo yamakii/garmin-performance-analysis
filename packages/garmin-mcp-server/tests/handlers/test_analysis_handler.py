@@ -1,4 +1,4 @@
-"""Tests for AnalysisHandler."""
+"""Tests for the analysis tools (dispatched via the single-source registry)."""
 
 import json
 from typing import Any
@@ -6,16 +6,17 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from garmin_mcp.handlers.analysis_handler import AnalysisHandler
+from garmin_mcp.tools import ALL_DEFS_BY_NAME
+from tests.handlers.conftest import dispatch_tool
 
 # ---------------------------------------------------------------------------
-# handles()
+# registry membership
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-class TestHandles:
-    """Test handles() method for tool name matching."""
+class TestToolRegistration:
+    """Analysis tools are registered in the single-source registry."""
 
     @pytest.mark.parametrize(
         "tool_name",
@@ -28,34 +29,12 @@ class TestHandles:
             "compare_similar_workouts",
         ],
     )
-    def test_handles_known_tools(
-        self, mock_db_reader: MagicMock, tool_name: str
-    ) -> None:
-        handler = AnalysisHandler(mock_db_reader)
-        assert handler.handles(tool_name) is True
+    def test_analysis_tool_registered(self, tool_name: str) -> None:
+        assert tool_name in ALL_DEFS_BY_NAME
 
-    @pytest.mark.parametrize(
-        "tool_name",
-        [
-            # Moved to other domains in the registry rollout (#329):
-            "get_interval_analysis",  # -> SplitsHandler
-            "detect_form_anomalies_summary",  # -> TimeSeriesHandler
-            "get_form_anomaly_details",  # -> TimeSeriesHandler
-        ],
-    )
-    def test_does_not_handle_relocated_tools(
-        self, mock_db_reader: MagicMock, tool_name: str
-    ) -> None:
-        handler = AnalysisHandler(mock_db_reader)
-        assert handler.handles(tool_name) is False
-
-    def test_does_not_handle_unknown_tool(self, mock_db_reader: MagicMock) -> None:
-        handler = AnalysisHandler(mock_db_reader)
-        assert handler.handles("get_splits_pace_hr") is False
-
-    def test_does_not_handle_empty_string(self, mock_db_reader: MagicMock) -> None:
-        handler = AnalysisHandler(mock_db_reader)
-        assert handler.handles("") is False
+    @pytest.mark.parametrize("tool_name", ["unknown_tool", ""])
+    def test_unknown_tool_not_registered(self, tool_name: str) -> None:
+        assert tool_name not in ALL_DEFS_BY_NAME
 
 
 # ---------------------------------------------------------------------------
@@ -73,9 +52,9 @@ class TestInsertSectionAnalysisDict:
             "garmin_mcp.database.inserters.section_analyses.insert_section_analysis",
             return_value=True,
         )
-        handler = AnalysisHandler(mock_db_reader)
 
-        result = await handler.handle(
+        result = dispatch_tool(
+            mock_db_reader,
             "insert_section_analysis_dict",
             {
                 "activity_id": 12345,
@@ -102,9 +81,9 @@ class TestInsertSectionAnalysisDict:
             "garmin_mcp.database.inserters.section_analyses.insert_section_analysis",
             return_value=False,
         )
-        handler = AnalysisHandler(mock_db_reader)
 
-        result = await handler.handle(
+        result = dispatch_tool(
+            mock_db_reader,
             "insert_section_analysis_dict",
             {
                 "activity_id": 12345,
@@ -142,9 +121,9 @@ class TestAnalyzePerformanceTrends:
             "garmin_mcp.rag.queries.trends.PerformanceTrendAnalyzer"
         )
         mock_cls.return_value.analyze_metric_trend.return_value = expected
-        handler = AnalysisHandler(mock_db_reader)
 
-        result = await handler.handle(
+        result = dispatch_tool(
+            mock_db_reader,
             "analyze_performance_trends",
             {
                 "metric": "pace",
@@ -174,9 +153,9 @@ class TestAnalyzePerformanceTrends:
             "garmin_mcp.rag.queries.trends.PerformanceTrendAnalyzer"
         )
         mock_cls.return_value.analyze_metric_trend.return_value = {}
-        handler = AnalysisHandler(mock_db_reader)
 
-        await handler.handle(
+        dispatch_tool(
+            mock_db_reader,
             "analyze_performance_trends",
             {
                 "metric": "heart_rate",
@@ -202,9 +181,9 @@ class TestAnalyzePerformanceTrends:
             "garmin_mcp.rag.queries.trends.PerformanceTrendAnalyzer"
         )
         mock_cls.return_value.analyze_metric_trend.return_value = {}
-        handler = AnalysisHandler(mock_db_reader)
 
-        await handler.handle(
+        dispatch_tool(
+            mock_db_reader,
             "analyze_performance_trends",
             {
                 "metric": "pace",
@@ -237,9 +216,9 @@ class TestExtractInsights:
         expected = {"insights": ["pace improved"]}
         mock_cls = mocker.patch("garmin_mcp.rag.queries.insights.InsightExtractor")
         mock_cls.return_value.extract_insights.return_value = expected
-        handler = AnalysisHandler(mock_db_reader)
 
-        result = await handler.handle(
+        result = dispatch_tool(
+            mock_db_reader,
             "extract_insights",
             {"activity_id": 12345, "keywords": ["improvement"]},
         )
@@ -256,9 +235,9 @@ class TestExtractInsights:
     ) -> None:
         mock_cls = mocker.patch("garmin_mcp.rag.queries.insights.InsightExtractor")
         mock_cls.return_value.extract_insights.return_value = {}
-        handler = AnalysisHandler(mock_db_reader)
 
-        await handler.handle(
+        dispatch_tool(
+            mock_db_reader,
             "extract_insights",
             {"activity_id": 12345, "keywords": ["pace"], "max_tokens": 500},
         )
@@ -274,9 +253,9 @@ class TestExtractInsights:
         expected = {"results": [{"activity_id": 111, "match": "text"}]}
         mock_cls = mocker.patch("garmin_mcp.rag.queries.insights.InsightExtractor")
         mock_cls.return_value.search_by_keywords.return_value = expected
-        handler = AnalysisHandler(mock_db_reader)
 
-        result = await handler.handle(
+        result = dispatch_tool(
+            mock_db_reader,
             "extract_insights",
             {"keywords": ["improvement"]},
         )
@@ -296,9 +275,9 @@ class TestExtractInsights:
     ) -> None:
         mock_cls = mocker.patch("garmin_mcp.rag.queries.insights.InsightExtractor")
         mock_cls.return_value.search_by_keywords.return_value = {}
-        handler = AnalysisHandler(mock_db_reader)
 
-        await handler.handle(
+        dispatch_tool(
+            mock_db_reader,
             "extract_insights",
             {
                 "keywords": ["pace"],
@@ -330,10 +309,9 @@ class TestCompareSimilarWorkouts:
         expected = {"similar": [{"activity_id": 999, "similarity": 0.95}]}
         mock_cls = mocker.patch("garmin_mcp.rag.queries.comparisons.WorkoutComparator")
         mock_cls.return_value.find_similar_workouts.return_value = expected
-        handler = AnalysisHandler(mock_db_reader)
 
-        result = await handler.handle(
-            "compare_similar_workouts", {"activity_id": 12345}
+        result = dispatch_tool(
+            mock_db_reader, "compare_similar_workouts", {"activity_id": 12345}
         )
 
         data = json.loads(result[0].text)
@@ -354,9 +332,9 @@ class TestCompareSimilarWorkouts:
     ) -> None:
         mock_cls = mocker.patch("garmin_mcp.rag.queries.comparisons.WorkoutComparator")
         mock_cls.return_value.find_similar_workouts.return_value = {}
-        handler = AnalysisHandler(mock_db_reader)
 
-        await handler.handle(
+        dispatch_tool(
+            mock_db_reader,
             "compare_similar_workouts",
             {
                 "activity_id": 12345,
@@ -373,9 +351,9 @@ class TestCompareSimilarWorkouts:
     ) -> None:
         mock_cls = mocker.patch("garmin_mcp.rag.queries.comparisons.WorkoutComparator")
         mock_cls.return_value.find_similar_workouts.return_value = {}
-        handler = AnalysisHandler(mock_db_reader)
 
-        await handler.handle(
+        dispatch_tool(
+            mock_db_reader,
             "compare_similar_workouts",
             {"activity_id": 12345, "date_range": ["2025-01-01", "2025-12-31"]},
         )
@@ -389,9 +367,9 @@ class TestCompareSimilarWorkouts:
     ) -> None:
         mock_cls = mocker.patch("garmin_mcp.rag.queries.comparisons.WorkoutComparator")
         mock_cls.return_value.find_similar_workouts.return_value = {}
-        handler = AnalysisHandler(mock_db_reader)
 
-        await handler.handle(
+        dispatch_tool(
+            mock_db_reader,
             "compare_similar_workouts",
             {
                 "activity_id": 12345,
@@ -425,10 +403,9 @@ class TestCompareSimilarWorkouts:
         mock_cls.return_value.find_similar_workouts.return_value = {
             "date": date(2025, 10, 15),
         }
-        handler = AnalysisHandler(mock_db_reader)
 
-        result = await handler.handle(
-            "compare_similar_workouts", {"activity_id": 12345}
+        result = dispatch_tool(
+            mock_db_reader, "compare_similar_workouts", {"activity_id": 12345}
         )
 
         data = json.loads(result[0].text)
@@ -441,13 +418,9 @@ class TestCompareSimilarWorkouts:
 
 
 @pytest.mark.unit
-class TestHandleUnknownTool:
-    """Test that unknown tool names return structured error response."""
+class TestUnknownTool:
+    """An unregistered tool name is not dispatchable via the registry."""
 
-    @pytest.mark.asyncio
-    async def test_returns_error_response(self, mock_db_reader: MagicMock) -> None:
-        handler = AnalysisHandler(mock_db_reader)
-        result = await handler.handle("nonexistent_tool", {})
-        body = json.loads(result[0].text)
-        assert "Invalid parameter" in body["error"]
-        assert "Unknown tool" in body["error"]
+    def test_unknown_tool_not_in_registry(self, mock_db_reader: MagicMock) -> None:
+        with pytest.raises(KeyError):
+            dispatch_tool(mock_db_reader, "nonexistent_tool", {})

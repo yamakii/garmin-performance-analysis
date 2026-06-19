@@ -1,4 +1,4 @@
-"""Tests for SplitsHandler."""
+"""Tests for the splits tools (dispatched via the single-source registry)."""
 
 import json
 from typing import Any
@@ -6,17 +6,18 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from garmin_mcp.handlers.splits_handler import SplitsHandler
+from garmin_mcp.tools import ALL_DEFS_BY_NAME
+from tests.handlers.conftest import dispatch_tool
 
 ACTIVITY_ID = 20594901208
 
 
-# -- handles() tests ----------------------------------------------------------
+# -- registry membership tests ------------------------------------------------
 
 
 @pytest.mark.unit
-class TestHandles:
-    """Test SplitsHandler.handles() routing."""
+class TestToolRegistration:
+    """Splits tools are registered in the single-source registry."""
 
     @pytest.mark.parametrize(
         "tool_name",
@@ -27,26 +28,15 @@ class TestHandles:
             "get_splits_comprehensive",
         ],
     )
-    def test_handles_returns_true_for_known_tools(
-        self, mock_db_reader: MagicMock, tool_name: str
-    ) -> None:
-        handler = SplitsHandler(mock_db_reader)
-        assert handler.handles(tool_name) is True
+    def test_splits_tool_registered(self, tool_name: str) -> None:
+        assert tool_name in ALL_DEFS_BY_NAME
 
     @pytest.mark.parametrize(
         "tool_name",
-        [
-            "get_activity_by_date",
-            "unknown_tool",
-            "",
-            "get_splits_pace_hr_v2",
-        ],
+        ["unknown_tool", "", "get_splits_pace_hr_v2"],
     )
-    def test_handles_returns_false_for_unknown_tools(
-        self, mock_db_reader: MagicMock, tool_name: str
-    ) -> None:
-        handler = SplitsHandler(mock_db_reader)
-        assert handler.handles(tool_name) is False
+    def test_unknown_tool_not_registered(self, tool_name: str) -> None:
+        assert tool_name not in ALL_DEFS_BY_NAME
 
 
 # -- get_splits_pace_hr tests -------------------------------------------------
@@ -63,9 +53,9 @@ class TestGetSplitsPaceHr:
         sample_splits_result: dict[str, Any],
     ) -> None:
         mock_db_reader.get_splits_pace_hr.return_value = sample_splits_result
-        handler = SplitsHandler(mock_db_reader)
 
-        result = await handler.handle(
+        result = dispatch_tool(
+            mock_db_reader,
             "get_splits_pace_hr",
             {"activity_id": ACTIVITY_ID, "statistics_only": False},
         )
@@ -83,9 +73,9 @@ class TestGetSplitsPaceHr:
         sample_statistics_result: dict[str, Any],
     ) -> None:
         mock_db_reader.get_splits_pace_hr.return_value = sample_statistics_result
-        handler = SplitsHandler(mock_db_reader)
 
-        result = await handler.handle(
+        result = dispatch_tool(
+            mock_db_reader,
             "get_splits_pace_hr",
             {"activity_id": ACTIVITY_ID, "statistics_only": True},
         )
@@ -101,9 +91,10 @@ class TestGetSplitsPaceHr:
         self, mock_db_reader: MagicMock
     ) -> None:
         mock_db_reader.get_splits_pace_hr.return_value = {}
-        handler = SplitsHandler(mock_db_reader)
 
-        await handler.handle("get_splits_pace_hr", {"activity_id": ACTIVITY_ID})
+        dispatch_tool(
+            mock_db_reader, "get_splits_pace_hr", {"activity_id": ACTIVITY_ID}
+        )
 
         mock_db_reader.get_splits_pace_hr.assert_called_once_with(
             ACTIVITY_ID, statistics_only=False
@@ -112,10 +103,9 @@ class TestGetSplitsPaceHr:
     @pytest.mark.asyncio
     async def test_returns_none_as_json_null(self, mock_db_reader: MagicMock) -> None:
         mock_db_reader.get_splits_pace_hr.return_value = None
-        handler = SplitsHandler(mock_db_reader)
 
-        result = await handler.handle(
-            "get_splits_pace_hr", {"activity_id": ACTIVITY_ID}
+        result = dispatch_tool(
+            mock_db_reader, "get_splits_pace_hr", {"activity_id": ACTIVITY_ID}
         )
 
         parsed = json.loads(result[0].text)
@@ -136,9 +126,9 @@ class TestGetSplitsFormMetrics:
         sample_splits_result: dict[str, Any],
     ) -> None:
         mock_db_reader.get_splits_form_metrics.return_value = sample_splits_result
-        handler = SplitsHandler(mock_db_reader)
 
-        result = await handler.handle(
+        result = dispatch_tool(
+            mock_db_reader,
             "get_splits_form_metrics",
             {"activity_id": ACTIVITY_ID, "statistics_only": False},
         )
@@ -156,9 +146,9 @@ class TestGetSplitsFormMetrics:
         sample_statistics_result: dict[str, Any],
     ) -> None:
         mock_db_reader.get_splits_form_metrics.return_value = sample_statistics_result
-        handler = SplitsHandler(mock_db_reader)
 
-        result = await handler.handle(
+        result = dispatch_tool(
+            mock_db_reader,
             "get_splits_form_metrics",
             {"activity_id": ACTIVITY_ID, "statistics_only": True},
         )
@@ -172,10 +162,9 @@ class TestGetSplitsFormMetrics:
     @pytest.mark.asyncio
     async def test_returns_empty_dict(self, mock_db_reader: MagicMock) -> None:
         mock_db_reader.get_splits_form_metrics.return_value = {}
-        handler = SplitsHandler(mock_db_reader)
 
-        result = await handler.handle(
-            "get_splits_form_metrics", {"activity_id": ACTIVITY_ID}
+        result = dispatch_tool(
+            mock_db_reader, "get_splits_form_metrics", {"activity_id": ACTIVITY_ID}
         )
 
         parsed = json.loads(result[0].text)
@@ -196,9 +185,9 @@ class TestGetSplitsElevation:
         sample_splits_result: dict[str, Any],
     ) -> None:
         mock_db_reader.get_splits_elevation.return_value = sample_splits_result
-        handler = SplitsHandler(mock_db_reader)
 
-        result = await handler.handle(
+        result = dispatch_tool(
+            mock_db_reader,
             "get_splits_elevation",
             {"activity_id": ACTIVITY_ID, "statistics_only": False},
         )
@@ -216,9 +205,9 @@ class TestGetSplitsElevation:
         sample_statistics_result: dict[str, Any],
     ) -> None:
         mock_db_reader.get_splits_elevation.return_value = sample_statistics_result
-        handler = SplitsHandler(mock_db_reader)
 
-        result = await handler.handle(
+        result = dispatch_tool(
+            mock_db_reader,
             "get_splits_elevation",
             {"activity_id": ACTIVITY_ID, "statistics_only": True},
         )
@@ -232,10 +221,9 @@ class TestGetSplitsElevation:
     @pytest.mark.asyncio
     async def test_returns_none_as_json_null(self, mock_db_reader: MagicMock) -> None:
         mock_db_reader.get_splits_elevation.return_value = None
-        handler = SplitsHandler(mock_db_reader)
 
-        result = await handler.handle(
-            "get_splits_elevation", {"activity_id": ACTIVITY_ID}
+        result = dispatch_tool(
+            mock_db_reader, "get_splits_elevation", {"activity_id": ACTIVITY_ID}
         )
 
         parsed = json.loads(result[0].text)
@@ -256,9 +244,9 @@ class TestGetSplitsComprehensive:
         sample_splits_result: dict[str, Any],
     ) -> None:
         mock_db_reader.get_splits_comprehensive.return_value = sample_splits_result
-        handler = SplitsHandler(mock_db_reader)
 
-        result = await handler.handle(
+        result = dispatch_tool(
+            mock_db_reader,
             "get_splits_comprehensive",
             {"activity_id": ACTIVITY_ID, "statistics_only": False},
         )
@@ -276,9 +264,9 @@ class TestGetSplitsComprehensive:
         sample_statistics_result: dict[str, Any],
     ) -> None:
         mock_db_reader.get_splits_comprehensive.return_value = sample_statistics_result
-        handler = SplitsHandler(mock_db_reader)
 
-        result = await handler.handle(
+        result = dispatch_tool(
+            mock_db_reader,
             "get_splits_comprehensive",
             {"activity_id": ACTIVITY_ID, "statistics_only": True},
         )
@@ -294,9 +282,10 @@ class TestGetSplitsComprehensive:
         self, mock_db_reader: MagicMock
     ) -> None:
         mock_db_reader.get_splits_comprehensive.return_value = {}
-        handler = SplitsHandler(mock_db_reader)
 
-        await handler.handle("get_splits_comprehensive", {"activity_id": ACTIVITY_ID})
+        dispatch_tool(
+            mock_db_reader, "get_splits_comprehensive", {"activity_id": ACTIVITY_ID}
+        )
 
         mock_db_reader.get_splits_comprehensive.assert_called_once_with(
             ACTIVITY_ID, statistics_only=False
@@ -310,16 +299,11 @@ class TestGetSplitsComprehensive:
 class TestErrorHandling:
     """Test error cases."""
 
-    @pytest.mark.asyncio
-    async def test_unknown_tool_returns_error_response(
-        self, mock_db_reader: MagicMock
-    ) -> None:
-        handler = SplitsHandler(mock_db_reader)
-
-        result = await handler.handle("nonexistent_tool", {"activity_id": ACTIVITY_ID})
-        body = json.loads(result[0].text)
-        assert "Invalid parameter" in body["error"]
-        assert "Unknown tool" in body["error"]
+    def test_unknown_tool_not_in_registry(self, mock_db_reader: MagicMock) -> None:
+        with pytest.raises(KeyError):
+            dispatch_tool(
+                mock_db_reader, "nonexistent_tool", {"activity_id": ACTIVITY_ID}
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -338,9 +322,10 @@ class TestGetIntervalAnalysis:
             "garmin_mcp.rag.queries.interval_analysis.IntervalAnalyzer"
         )
         mock_cls.return_value.get_interval_analysis.return_value = expected
-        handler = SplitsHandler(mock_db_reader)
 
-        result = await handler.handle("get_interval_analysis", {"activity_id": 12345})
+        result = dispatch_tool(
+            mock_db_reader, "get_interval_analysis", {"activity_id": 12345}
+        )
 
         data = json.loads(result[0].text)
         assert data == expected
@@ -348,6 +333,5 @@ class TestGetIntervalAnalysis:
             activity_id=12345
         )
 
-    def test_handles_interval_analysis(self, mock_db_reader: MagicMock) -> None:
-        handler = SplitsHandler(mock_db_reader)
-        assert handler.handles("get_interval_analysis") is True
+    def test_interval_analysis_registered(self) -> None:
+        assert "get_interval_analysis" in ALL_DEFS_BY_NAME

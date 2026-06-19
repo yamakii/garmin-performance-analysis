@@ -1,21 +1,13 @@
-"""Handler modules for MCP tool dispatch."""
+"""Shared MCP response helpers.
 
-from garmin_mcp.handlers.analysis_handler import AnalysisHandler
-from garmin_mcp.handlers.base import ToolHandler
-from garmin_mcp.handlers.export_handler import ExportHandler
-from garmin_mcp.handlers.metadata_handler import MetadataHandler
-from garmin_mcp.handlers.performance_handler import PerformanceHandler
-from garmin_mcp.handlers.physiology_handler import PhysiologyHandler
-from garmin_mcp.handlers.splits_handler import SplitsHandler
-from garmin_mcp.handlers.time_series_handler import TimeSeriesHandler
+The per-domain handler classes were removed in #340 (tool dispatch now happens
+directly in ``server.py`` via ``garmin_mcp.tools.ALL_DEFS_BY_NAME``). Only the
+two response helpers in ``base`` remain.
+"""
+
+from garmin_mcp.handlers.base import format_json_response, inject_warnings
 
 __all__ = [
-    "ToolHandler",
-    "AnalysisHandler",
-    "ExportHandler",
-    "MetadataHandler",
-    "PerformanceHandler",
-    "PhysiologyHandler",
-    "SplitsHandler",
-    "TimeSeriesHandler",
+    "format_json_response",
+    "inject_warnings",
 ]
