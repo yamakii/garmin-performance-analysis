@@ -1,34 +1,24 @@
-"""Tests for TimeSeriesHandler."""
+"""Tests for the time-series tools (dispatched via the single-source registry)."""
 
 import json
 from unittest.mock import MagicMock
 
 import pytest
 
-from garmin_mcp.handlers.time_series_handler import TimeSeriesHandler
+from garmin_mcp.tools import ALL_DEFS_BY_NAME
+from tests.handlers.conftest import dispatch_tool
 
 
 @pytest.mark.unit
-class TestHandles:
-    """Test handles() method for tool name matching."""
+class TestToolRegistration:
+    """Time-series tools are registered in the single-source registry."""
 
-    def test_handles_get_split_time_series_detail(
-        self, mock_db_reader: MagicMock
-    ) -> None:
-        handler = TimeSeriesHandler(mock_db_reader)
-        assert handler.handles("get_split_time_series_detail") is True
-
-    def test_handles_get_time_range_detail(self, mock_db_reader: MagicMock) -> None:
-        handler = TimeSeriesHandler(mock_db_reader)
-        assert handler.handles("get_time_range_detail") is True
-
-    def test_does_not_handle_unknown_tool(self, mock_db_reader: MagicMock) -> None:
-        handler = TimeSeriesHandler(mock_db_reader)
-        assert handler.handles("get_splits_pace_hr") is False
-
-    def test_does_not_handle_empty_string(self, mock_db_reader: MagicMock) -> None:
-        handler = TimeSeriesHandler(mock_db_reader)
-        assert handler.handles("") is False
+    @pytest.mark.parametrize(
+        "name",
+        ["get_split_time_series_detail", "get_time_range_detail"],
+    )
+    def test_time_series_tool_registered(self, name: str) -> None:
+        assert name in ALL_DEFS_BY_NAME
 
 
 @pytest.mark.unit
@@ -46,9 +36,9 @@ class TestGetSplitTimeSeriesDetail:
         mock_extractor_cls.return_value.get_split_time_series_detail.return_value = (
             expected
         )
-        handler = TimeSeriesHandler(mock_db_reader)
 
-        result = await handler.handle(
+        result = dispatch_tool(
+            mock_db_reader,
             "get_split_time_series_detail",
             {"activity_id": 12345, "split_number": 3},
         )
@@ -76,9 +66,9 @@ class TestGetSplitTimeSeriesDetail:
         mock_extractor_cls.return_value.get_split_time_series_detail.return_value = (
             expected
         )
-        handler = TimeSeriesHandler(mock_db_reader)
 
-        result = await handler.handle(
+        result = dispatch_tool(
+            mock_db_reader,
             "get_split_time_series_detail",
             {
                 "activity_id": 12345,
@@ -109,9 +99,9 @@ class TestGetSplitTimeSeriesDetail:
             "garmin_mcp.rag.queries.time_series_detail.TimeSeriesDetailExtractor"
         )
         mock_extractor_cls.return_value.get_split_time_series_detail.return_value = {}
-        handler = TimeSeriesHandler(mock_db_reader)
 
-        result = await handler.handle(
+        result = dispatch_tool(
+            mock_db_reader,
             "get_split_time_series_detail",
             {"activity_id": 1, "split_number": 1},
         )
@@ -133,9 +123,9 @@ class TestGetTimeRangeDetail:
             "garmin_mcp.rag.queries.time_series_detail.TimeSeriesDetailExtractor"
         )
         mock_extractor_cls.return_value.extract_metrics.return_value = expected
-        handler = TimeSeriesHandler(mock_db_reader)
 
-        result = await handler.handle(
+        result = dispatch_tool(
+            mock_db_reader,
             "get_time_range_detail",
             {"activity_id": 12345, "start_time_s": 100, "end_time_s": 500},
         )
@@ -159,9 +149,9 @@ class TestGetTimeRangeDetail:
             "garmin_mcp.rag.queries.time_series_detail.TimeSeriesDetailExtractor"
         )
         mock_extractor_cls.return_value.extract_metrics.return_value = expected
-        handler = TimeSeriesHandler(mock_db_reader)
 
-        result = await handler.handle(
+        result = dispatch_tool(
+            mock_db_reader,
             "get_time_range_detail",
             {
                 "activity_id": 12345,
@@ -190,9 +180,9 @@ class TestGetTimeRangeDetail:
             "garmin_mcp.rag.queries.time_series_detail.TimeSeriesDetailExtractor"
         )
         mock_extractor_cls.return_value.extract_metrics.return_value = {}
-        handler = TimeSeriesHandler(mock_db_reader)
 
-        result = await handler.handle(
+        result = dispatch_tool(
+            mock_db_reader,
             "get_time_range_detail",
             {"activity_id": 1, "start_time_s": 0, "end_time_s": 100},
         )
@@ -202,16 +192,12 @@ class TestGetTimeRangeDetail:
 
 
 @pytest.mark.unit
-class TestHandleUnknownTool:
-    """Test that unknown tool names return structured error response."""
+class TestUnknownTool:
+    """An unregistered tool name is not dispatchable via the registry."""
 
-    @pytest.mark.asyncio
-    async def test_returns_error_response(self, mock_db_reader: MagicMock) -> None:
-        handler = TimeSeriesHandler(mock_db_reader)
-        result = await handler.handle("nonexistent_tool", {"activity_id": 12345})
-        body = json.loads(result[0].text)
-        assert "Invalid parameter" in body["error"]
-        assert "Unknown tool" in body["error"]
+    def test_unknown_tool_not_in_registry(self, mock_db_reader: MagicMock) -> None:
+        with pytest.raises(KeyError):
+            dispatch_tool(mock_db_reader, "nonexistent_tool", {"activity_id": 12345})
 
 
 # ---------------------------------------------------------------------------
@@ -223,9 +209,8 @@ class TestHandleUnknownTool:
 class TestDetectFormAnomaliesSummary:
     """Test detect_form_anomalies_summary via handle()."""
 
-    def test_handles(self, mock_db_reader: MagicMock) -> None:
-        handler = TimeSeriesHandler(mock_db_reader)
-        assert handler.handles("detect_form_anomalies_summary") is True
+    def test_registered(self) -> None:
+        assert "detect_form_anomalies_summary" in ALL_DEFS_BY_NAME
 
     @pytest.mark.asyncio
     async def test_defaults(self, mock_db_reader: MagicMock, mocker: MagicMock) -> None:
@@ -234,10 +219,9 @@ class TestDetectFormAnomaliesSummary:
             "garmin_mcp.rag.queries.form_anomaly_detector.FormAnomalyDetector"
         )
         mock_cls.return_value.detect_form_anomalies_summary.return_value = expected
-        handler = TimeSeriesHandler(mock_db_reader)
 
-        result = await handler.handle(
-            "detect_form_anomalies_summary", {"activity_id": 12345}
+        result = dispatch_tool(
+            mock_db_reader, "detect_form_anomalies_summary", {"activity_id": 12345}
         )
 
         data = json.loads(result[0].text)
@@ -254,9 +238,9 @@ class TestDetectFormAnomaliesSummary:
             "garmin_mcp.rag.queries.form_anomaly_detector.FormAnomalyDetector"
         )
         mock_cls.return_value.detect_form_anomalies_summary.return_value = {}
-        handler = TimeSeriesHandler(mock_db_reader)
 
-        await handler.handle(
+        dispatch_tool(
+            mock_db_reader,
             "detect_form_anomalies_summary",
             {
                 "activity_id": 12345,
@@ -279,9 +263,8 @@ class TestDetectFormAnomaliesSummary:
 class TestGetFormAnomalyDetails:
     """Test get_form_anomaly_details via handle()."""
 
-    def test_handles(self, mock_db_reader: MagicMock) -> None:
-        handler = TimeSeriesHandler(mock_db_reader)
-        assert handler.handles("get_form_anomaly_details") is True
+    def test_registered(self) -> None:
+        assert "get_form_anomaly_details" in ALL_DEFS_BY_NAME
 
     @pytest.mark.asyncio
     async def test_minimal_args(
@@ -292,10 +275,9 @@ class TestGetFormAnomalyDetails:
             "garmin_mcp.rag.queries.form_anomaly_detector.FormAnomalyDetector"
         )
         mock_cls.return_value.get_form_anomaly_details.return_value = expected
-        handler = TimeSeriesHandler(mock_db_reader)
 
-        result = await handler.handle(
-            "get_form_anomaly_details", {"activity_id": 12345}
+        result = dispatch_tool(
+            mock_db_reader, "get_form_anomaly_details", {"activity_id": 12345}
         )
 
         data = json.loads(result[0].text)
@@ -312,9 +294,9 @@ class TestGetFormAnomalyDetails:
             "garmin_mcp.rag.queries.form_anomaly_detector.FormAnomalyDetector"
         )
         mock_cls.return_value.get_form_anomaly_details.return_value = {}
-        handler = TimeSeriesHandler(mock_db_reader)
 
-        await handler.handle(
+        dispatch_tool(
+            mock_db_reader,
             "get_form_anomaly_details",
             {
                 "activity_id": 12345,
@@ -344,9 +326,9 @@ class TestGetFormAnomalyDetails:
             "garmin_mcp.rag.queries.form_anomaly_detector.FormAnomalyDetector"
         )
         mock_cls.return_value.get_form_anomaly_details.return_value = {}
-        handler = TimeSeriesHandler(mock_db_reader)
 
-        await handler.handle(
+        dispatch_tool(
+            mock_db_reader,
             "get_form_anomaly_details",
             {"activity_id": 12345, "time_range": [0, 1000]},
         )

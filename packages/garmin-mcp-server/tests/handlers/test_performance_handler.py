@@ -1,36 +1,24 @@
-"""Tests for PerformanceHandler."""
+"""Tests for the performance tools (dispatched via the single-source registry)."""
 
 import json
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from garmin_mcp.handlers.performance_handler import PerformanceHandler
+from garmin_mcp.tools import ALL_DEFS_BY_NAME
+from tests.handlers.conftest import dispatch_tool
 
 
 @pytest.mark.unit
-class TestHandles:
-    """Test handles() method for tool name matching."""
+class TestToolRegistration:
+    """Performance tools are registered in the single-source registry."""
 
-    def test_handles_get_performance_trends(self, mock_db_reader: MagicMock) -> None:
-        handler = PerformanceHandler(mock_db_reader)
-        assert handler.handles("get_performance_trends") is True
-
-    def test_handles_get_weather_data(self, mock_db_reader: MagicMock) -> None:
-        handler = PerformanceHandler(mock_db_reader)
-        assert handler.handles("get_weather_data") is True
-
-    def test_handles_prefetch_activity_context(self, mock_db_reader: MagicMock) -> None:
-        handler = PerformanceHandler(mock_db_reader)
-        assert handler.handles("prefetch_activity_context") is True
-
-    def test_does_not_handle_unknown_tool(self, mock_db_reader: MagicMock) -> None:
-        handler = PerformanceHandler(mock_db_reader)
-        assert handler.handles("get_splits_pace_hr") is False
-
-    def test_does_not_handle_empty_string(self, mock_db_reader: MagicMock) -> None:
-        handler = PerformanceHandler(mock_db_reader)
-        assert handler.handles("") is False
+    @pytest.mark.parametrize(
+        "name",
+        ["get_performance_trends", "get_weather_data", "prefetch_activity_context"],
+    )
+    def test_performance_tool_registered(self, name: str) -> None:
+        assert name in ALL_DEFS_BY_NAME
 
 
 @pytest.mark.unit
@@ -45,9 +33,10 @@ class TestGetPerformanceTrends:
             "hr_drift": {"drift_percent": 2.5},
         }
         mock_db_reader.get_performance_trends.return_value = trends_data
-        handler = PerformanceHandler(mock_db_reader)
 
-        result = await handler.handle("get_performance_trends", {"activity_id": 12345})
+        result = dispatch_tool(
+            mock_db_reader, "get_performance_trends", {"activity_id": 12345}
+        )
 
         data = json.loads(result[0].text)
         assert data["activity_id"] == 12345
@@ -58,9 +47,10 @@ class TestGetPerformanceTrends:
     @pytest.mark.asyncio
     async def test_returns_none(self, mock_db_reader: MagicMock) -> None:
         mock_db_reader.get_performance_trends.return_value = None
-        handler = PerformanceHandler(mock_db_reader)
 
-        result = await handler.handle("get_performance_trends", {"activity_id": 99999})
+        result = dispatch_tool(
+            mock_db_reader, "get_performance_trends", {"activity_id": 99999}
+        )
 
         data = json.loads(result[0].text)
         assert data is None
@@ -79,9 +69,10 @@ class TestGetWeatherData:
             "wind_speed_mps": 3.2,
         }
         mock_db_reader.get_weather_data.return_value = weather_data
-        handler = PerformanceHandler(mock_db_reader)
 
-        result = await handler.handle("get_weather_data", {"activity_id": 12345})
+        result = dispatch_tool(
+            mock_db_reader, "get_weather_data", {"activity_id": 12345}
+        )
 
         data = json.loads(result[0].text)
         assert data["activity_id"] == 12345
@@ -92,9 +83,10 @@ class TestGetWeatherData:
     @pytest.mark.asyncio
     async def test_returns_none(self, mock_db_reader: MagicMock) -> None:
         mock_db_reader.get_weather_data.return_value = None
-        handler = PerformanceHandler(mock_db_reader)
 
-        result = await handler.handle("get_weather_data", {"activity_id": 99999})
+        result = dispatch_tool(
+            mock_db_reader, "get_weather_data", {"activity_id": 99999}
+        )
 
         data = json.loads(result[0].text)
         assert data is None
@@ -115,14 +107,13 @@ class TestPrefetchActivityContext:
             "form_scores": {"gct": {"star_rating": "★★★★★", "score": 4.8}},
             "phase_structure": {"pace_consistency": 0.017},
         }
-        handler = PerformanceHandler(mock_db_reader)
 
         with patch(
             "garmin_mcp.scripts.prefetch_activity_context.prefetch_activity_context",
             return_value=prefetch_data,
         ):
-            result = await handler.handle(
-                "prefetch_activity_context", {"activity_id": 12345}
+            result = dispatch_tool(
+                mock_db_reader, "prefetch_activity_context", {"activity_id": 12345}
             )
 
         data = json.loads(result[0].text)
@@ -136,14 +127,13 @@ class TestPrefetchActivityContext:
     async def test_returns_error_for_missing_activity(
         self, mock_db_reader: MagicMock
     ) -> None:
-        handler = PerformanceHandler(mock_db_reader)
 
         with patch(
             "garmin_mcp.scripts.prefetch_activity_context.prefetch_activity_context",
             return_value={"error": "Activity 99999 not found"},
         ):
-            result = await handler.handle(
-                "prefetch_activity_context", {"activity_id": 99999}
+            result = dispatch_tool(
+                mock_db_reader, "prefetch_activity_context", {"activity_id": 99999}
             )
 
         data = json.loads(result[0].text)
@@ -151,13 +141,9 @@ class TestPrefetchActivityContext:
 
 
 @pytest.mark.unit
-class TestHandleUnknownTool:
-    """Test that unknown tool names return structured error response."""
+class TestUnknownTool:
+    """An unregistered tool name is not dispatchable via the registry."""
 
-    @pytest.mark.asyncio
-    async def test_returns_error_response(self, mock_db_reader: MagicMock) -> None:
-        handler = PerformanceHandler(mock_db_reader)
-        result = await handler.handle("nonexistent_tool", {"activity_id": 12345})
-        body = json.loads(result[0].text)
-        assert "Invalid parameter" in body["error"]
-        assert "Unknown tool" in body["error"]
+    def test_unknown_tool_not_in_registry(self, mock_db_reader: MagicMock) -> None:
+        with pytest.raises(KeyError):
+            dispatch_tool(mock_db_reader, "nonexistent_tool", {"activity_id": 12345})

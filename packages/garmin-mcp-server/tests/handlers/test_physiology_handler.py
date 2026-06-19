@@ -1,4 +1,4 @@
-"""Tests for PhysiologyHandler."""
+"""Tests for the physiology tools (dispatched via the single-source registry)."""
 
 import json
 from typing import Any
@@ -6,10 +6,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from garmin_mcp.handlers.physiology_handler import PhysiologyHandler
+from garmin_mcp.tools import ALL_DEFS_BY_NAME
+from tests.handlers.conftest import dispatch_tool
 
 # ---------------------------------------------------------------------------
-# handles() tests
+# registry membership tests
 # ---------------------------------------------------------------------------
 
 EXPECTED_TOOL_NAMES = [
@@ -24,25 +25,16 @@ EXPECTED_TOOL_NAMES = [
 
 
 @pytest.mark.unit
-class TestHandles:
-    """Test PhysiologyHandler.handles() for each known tool and unknown names."""
+class TestToolRegistration:
+    """Physiology tools are registered in the single-source registry."""
 
     @pytest.mark.parametrize("tool_name", EXPECTED_TOOL_NAMES)
-    def test_handles_known_tools(
-        self, mock_db_reader: MagicMock, tool_name: str
-    ) -> None:
-        handler = PhysiologyHandler(mock_db_reader)
-        assert handler.handles(tool_name) is True
+    def test_physiology_tool_registered(self, tool_name: str) -> None:
+        assert tool_name in ALL_DEFS_BY_NAME
 
-    @pytest.mark.parametrize(
-        "tool_name",
-        ["unknown_tool", "get_splits_pace_hr", "get_performance_trends", ""],
-    )
-    def test_handles_unknown_tools(
-        self, mock_db_reader: MagicMock, tool_name: str
-    ) -> None:
-        handler = PhysiologyHandler(mock_db_reader)
-        assert handler.handles(tool_name) is False
+    @pytest.mark.parametrize("tool_name", ["unknown_tool", ""])
+    def test_unknown_tool_not_registered(self, tool_name: str) -> None:
+        assert tool_name not in ALL_DEFS_BY_NAME
 
 
 # ---------------------------------------------------------------------------
@@ -112,8 +104,7 @@ class TestSimpleMethods:
         expected = SAMPLE_DATA[tool_name]
         getattr(mock_db_reader, reader_method).return_value = expected
 
-        handler = PhysiologyHandler(mock_db_reader)
-        result = await handler.handle(tool_name, {"activity_id": 12345})
+        result = dispatch_tool(mock_db_reader, tool_name, {"activity_id": 12345})
 
         assert len(result) == 1
         parsed = json.loads(result[0].text)
@@ -130,8 +121,7 @@ class TestSimpleMethods:
     ) -> None:
         getattr(mock_db_reader, reader_method).return_value = None
 
-        handler = PhysiologyHandler(mock_db_reader)
-        result = await handler.handle(tool_name, {"activity_id": 99999})
+        result = dispatch_tool(mock_db_reader, tool_name, {"activity_id": 99999})
 
         assert len(result) == 1
         parsed = json.loads(result[0].text)
@@ -147,8 +137,7 @@ class TestSimpleMethods:
     ) -> None:
         getattr(mock_db_reader, reader_method).return_value = {}
 
-        handler = PhysiologyHandler(mock_db_reader)
-        result = await handler.handle(tool_name, {"activity_id": 12345})
+        result = dispatch_tool(mock_db_reader, tool_name, {"activity_id": 12345})
 
         assert len(result) == 1
         parsed = json.loads(result[0].text)
@@ -157,13 +146,11 @@ class TestSimpleMethods:
 
 @pytest.mark.unit
 class TestUnknownTool:
-    """Test that an unknown tool name raises ValueError."""
+    """An unregistered tool name is not dispatchable via the registry."""
 
-    @pytest.mark.asyncio
-    async def test_unknown_tool_raises(self, mock_db_reader: MagicMock) -> None:
-        handler = PhysiologyHandler(mock_db_reader)
-        with pytest.raises(ValueError, match="Unknown tool"):
-            await handler.handle("nonexistent_tool", {"activity_id": 1})
+    def test_unknown_tool_not_in_registry(self, mock_db_reader: MagicMock) -> None:
+        with pytest.raises(KeyError):
+            dispatch_tool(mock_db_reader, "nonexistent_tool", {"activity_id": 1})
 
 
 # ---------------------------------------------------------------------------
@@ -197,8 +184,7 @@ class TestFormBaselineTrendDelegation:
         }
         reader = self._reader_with_physiology(expected)
 
-        handler = PhysiologyHandler(reader)
-        result = await handler.handle("get_form_baseline_trend", self.BASE_ARGS)
+        result = dispatch_tool(reader, "get_form_baseline_trend", self.BASE_ARGS)
 
         assert json.loads(result[0].text) == expected
         reader.physiology.get_form_baseline_trend.assert_called_once_with(
@@ -214,8 +200,7 @@ class TestFormBaselineTrendDelegation:
             "user_id": "runner1",
             "condition_group": "hilly",
         }
-        handler = PhysiologyHandler(reader)
-        await handler.handle("get_form_baseline_trend", args)
+        dispatch_tool(reader, "get_form_baseline_trend", args)
 
         reader.physiology.get_form_baseline_trend.assert_called_once_with(
             12345, "2025-10-15", user_id="runner1", condition_group="hilly"
@@ -226,7 +211,6 @@ class TestFormBaselineTrendDelegation:
         error = {"success": False, "error": "No baseline found for 2025-10-15"}
         reader = self._reader_with_physiology(error)
 
-        handler = PhysiologyHandler(reader)
-        result = await handler.handle("get_form_baseline_trend", self.BASE_ARGS)
+        result = dispatch_tool(reader, "get_form_baseline_trend", self.BASE_ARGS)
 
         assert json.loads(result[0].text) == error

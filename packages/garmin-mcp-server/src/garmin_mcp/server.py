@@ -18,17 +18,11 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 from garmin_mcp.database.db_reader import GarminDBReader
-from garmin_mcp.handlers.analysis_handler import AnalysisHandler
-from garmin_mcp.handlers.athlete_handler import AthleteHandler
-from garmin_mcp.handlers.base import ToolHandler
-from garmin_mcp.handlers.export_handler import ExportHandler
-from garmin_mcp.handlers.metadata_handler import MetadataHandler
-from garmin_mcp.handlers.performance_handler import PerformanceHandler
-from garmin_mcp.handlers.physiology_handler import PhysiologyHandler
-from garmin_mcp.handlers.splits_handler import SplitsHandler
-from garmin_mcp.handlers.time_series_handler import TimeSeriesHandler
-from garmin_mcp.handlers.training_plan_handler import TrainingPlanHandler
+from garmin_mcp.handlers.base import format_json_response
 from garmin_mcp.tool_schemas import get_tool_definitions
+from garmin_mcp.tools import ALL_DEFS_BY_NAME
+from garmin_mcp.tools.registry import dispatch
+from garmin_mcp.utils.error_handling import safe_tool_handler
 
 logger = logging.getLogger(__name__)
 
@@ -78,37 +72,6 @@ def _count_warnings(result: list) -> int:
 mcp = Server("garmin-db")
 db_reader = GarminDBReader()
 
-# Registry of handlers (lazily initialized)
-_handlers: list[ToolHandler] = []
-
-
-def _init_handlers() -> None:
-    """Initialize handler registry with db_reader instance."""
-    global _handlers
-    _handlers = [
-        MetadataHandler(db_reader),
-        SplitsHandler(db_reader),
-        PhysiologyHandler(db_reader),
-        PerformanceHandler(db_reader),
-        AnalysisHandler(db_reader),
-        TimeSeriesHandler(db_reader),
-        ExportHandler(db_reader),
-        TrainingPlanHandler(db_reader),
-        AthleteHandler(db_reader),
-    ]
-
-
-def _ensure_handlers_initialized() -> None:
-    """Idempotent eager initialization of the handler registry.
-
-    Called from the startup sequence so that the very first tool call after a
-    (re)start does not pay the lazy-init cost. Safe to call multiple times:
-    re-initializing only rebuilds the registry, which is harmless and keeps the
-    lazy fallback in _dispatch_tool intact for backward compatibility.
-    """
-    if not _handlers:
-        _init_handlers()
-
 
 def _get_server_dir() -> str:
     """Get the package directory this server is running from."""
@@ -153,17 +116,35 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
 
 async def _dispatch_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-    """Dispatch tool call to the appropriate handler."""
+    """Dispatch a tool call via the single-source registry.
+
+    The two server-level tools (``reload_server``, ``get_server_info``) are
+    handled inline; every other tool is routed through
+    ``garmin_mcp.tools.ALL_DEFS_BY_NAME`` (O(1) lookup) and serialized with
+    ``default=str`` so ``datetime.date`` values cross the MCP boundary safely.
+    """
     if name == "reload_server":
         return await _handle_reload_server(server_dir=arguments.get("server_dir"))
     if name == "get_server_info":
         return _handle_get_server_info()
-    if not _handlers:
-        _init_handlers()
-    for handler in _handlers:
-        if handler.handles(name):
-            return await handler.handle(name, arguments)
+    if name in ALL_DEFS_BY_NAME:
+        return await _dispatch_registry_tool(name, arguments)
     raise ValueError(f"Unknown tool: {name}")
+
+
+@safe_tool_handler
+async def _dispatch_registry_tool(
+    name: str, arguments: dict[str, Any]
+) -> list[TextContent]:
+    """Validate + dispatch a registry tool, returning a serialized TextContent.
+
+    ``@safe_tool_handler`` converts parameter/validation errors (including
+    Pydantic ``ValidationError``, a ``ValueError`` subclass) into the structured
+    ``{"error": "Invalid parameter: ..."}`` response that the MCP surface has
+    always returned, while ``default=str`` keeps ``datetime.date`` serializable.
+    """
+    result = dispatch(ALL_DEFS_BY_NAME, db_reader, name, arguments)
+    return [TextContent(type="text", text=format_json_response(result, default=str))]
 
 
 def _handle_get_server_info() -> list[TextContent]:
@@ -183,7 +164,9 @@ def _handle_get_server_info() -> list[TextContent]:
         "override_file_exists": override_exists,
         "override_dir": override_dir,
         "started_at": _STARTED_AT,
-        "ready": bool(_handlers),
+        # Dispatch is now driven directly by the registry, which is imported at
+        # module load, so the server is ready to serve tools as soon as it runs.
+        "ready": bool(ALL_DEFS_BY_NAME),
     }
 
     # DB diagnostics (best-effort, never raise)
@@ -286,10 +269,6 @@ async def main() -> None:
     from garmin_mcp.utils.logging_config import setup_mcp_logging
 
     setup_mcp_logging()
-    # Eagerly initialize handlers so the first tool call after a (re)start does
-    # not pay the lazy-init cost. The lazy fallback in _dispatch_tool remains as
-    # a safety net for any code path that bypasses this entry point.
-    _ensure_handlers_initialized()
     loop = asyncio.get_event_loop()
     loop.add_signal_handler(signal.SIGTERM, _graceful_shutdown)
     async with stdio_server() as (read_stream, write_stream):

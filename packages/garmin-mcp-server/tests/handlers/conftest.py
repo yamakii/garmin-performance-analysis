@@ -1,14 +1,35 @@
 """Handler test fixtures.
 
-Shared fixtures for MCP handler tests using mock GarminDBReader.
+Shared fixtures for MCP tool dispatch tests using a mock GarminDBReader.
+
+The per-domain handler classes were removed in #340; these tests now exercise
+the production dispatch path directly via ``dispatch_tool`` (registry lookup +
+``format_json_response(..., default=str)``), which is exactly what
+``server._dispatch_tool`` does for non-server tools.
 """
 
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+from mcp.types import TextContent
 
 from garmin_mcp.database.db_reader import GarminDBReader
+from garmin_mcp.handlers.base import format_json_response
+from garmin_mcp.tools import ALL_DEFS_BY_NAME
+from garmin_mcp.tools.registry import dispatch
+
+
+def dispatch_tool(
+    reader: Any, name: str, arguments: dict[str, Any]
+) -> list[TextContent]:
+    """Dispatch a registry tool and wrap the result like the MCP server does.
+
+    Mirrors ``garmin_mcp.server._dispatch_tool`` for non-server tools so the
+    tests assert against the exact bytes the live server would emit.
+    """
+    result = dispatch(ALL_DEFS_BY_NAME, reader, name, arguments)
+    return [TextContent(type="text", text=format_json_response(result, default=str))]
 
 
 @pytest.fixture
