@@ -908,6 +908,25 @@
     "name": "get_weekly_review"
   },
   {
+    "description": "Get race readiness: the athlete's current VDOT (from recent fitness), VDOT-based race-time predictions (5k/10k/half/full in seconds), the active race goal (priority A / active preferred, else the nearest future race), and a progress block with the predicted goal-distance time, gap to target (seconds; positive = behind target), pace gap (sec/km), weeks remaining, and a status (ahead/on_track/behind). Returns empty predictions when no VDOT can be derived and a null goal/progress when no goal is registered.",
+    "inputSchema": {
+      "properties": {
+        "lookback_weeks": {
+          "default": 8,
+          "description": "Lookback window (weeks) for the fitness assessment (default: 8)",
+          "type": "integer"
+        },
+        "user_id": {
+          "default": "default",
+          "description": "Profile owner identifier (default: 'default')",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "get_race_readiness"
+  },
+  {
     "description": "Get diagnostic info about the running MCP server (server_dir, override file status). Use to verify which directory the server is running from.",
     "inputSchema": {
       "properties": {},

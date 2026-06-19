@@ -14,6 +14,7 @@ from garmin_mcp.database.readers import (
     MetadataReader,
     PerformanceReader,
     PhysiologyReader,
+    RaceReader,
     SplitsReader,
     TimeSeriesReader,
     UtilityReader,
@@ -48,6 +49,7 @@ class GarminDBReader:
         self.form = FormReader(db_path)
         self.physiology = PhysiologyReader(db_path)
         self.performance = PerformanceReader(db_path)
+        self.race = RaceReader(db_path)
         self.utility = UtilityReader(db_path)
 
         # Expose db_path for handlers and scripts
@@ -370,6 +372,22 @@ class GarminDBReader:
         return self.performance.get_section_analysis(
             activity_id, section_type, max_output_size
         )
+
+    # ========== Race Methods ==========
+
+    def get_race_readiness(
+        self, user_id: str = "default", lookback_weeks: int = 8
+    ) -> dict[str, Any]:
+        """Get race readiness (current VDOT, predictions, and goal progress).
+
+        Args:
+            user_id: Profile owner identifier (defaults to ``"default"``)
+            lookback_weeks: Lookback window for fitness assessment (default 8)
+
+        Returns:
+            Dict with current_vdot, predicted_times, goal, and progress.
+        """
+        return self.race.get_race_readiness(user_id, lookback_weeks)
 
     # ========== Time Series Methods ==========
 
