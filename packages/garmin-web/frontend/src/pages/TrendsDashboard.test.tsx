@@ -103,6 +103,9 @@ const DURABILITY_WORSENING = {
       distance_km: 18.0,
       decoupling_pct: 4.2,
       pace_fade_pct: 3.7,
+      gct_fade_pct: 2.1,
+      vo_fade_pct: 1.4,
+      vr_fade_pct: 0.9,
     },
     {
       activity_id: 9000005002,
@@ -110,12 +113,17 @@ const DURABILITY_WORSENING = {
       distance_km: 21.0,
       decoupling_pct: 6.3,
       pace_fade_pct: 5.1,
+      gct_fade_pct: 5.8,
+      vo_fade_pct: 3.2,
+      vr_fade_pct: 2.6,
     },
   ],
   trend: {
     decoupling_slope_per_day: 0.15,
     data_points: 2,
     direction: "worsening",
+    gct_fade_slope_per_day: 0.26,
+    form_direction: "worsening",
   },
 };
 
@@ -125,6 +133,8 @@ const DURABILITY_EMPTY = {
     decoupling_slope_per_day: 0.0,
     data_points: 0,
     direction: "insufficient_data",
+    gct_fade_slope_per_day: null,
+    form_direction: "insufficient_data",
   },
 };
 
@@ -192,7 +202,10 @@ describe("TrendsDashboard", () => {
       screen.getByRole("heading", { level: 2, name: "訓練負荷 (ACWR)" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { level: 2, name: "耐久性 (心拍デカップリング)" }),
+      screen.getByRole("heading", {
+        level: 2,
+        name: "耐久性 (心拍デカップリング・フォーム失速)",
+      }),
     ).toBeInTheDocument();
 
     // Volume block summary is rendered from the mocked API data
@@ -206,9 +219,13 @@ describe("TrendsDashboard", () => {
     expect(screen.getByText("最適")).toBeInTheDocument();
     expect(screen.getByText(/現在のACWR:/)).toBeInTheDocument();
 
-    // Durability block shows the worsening direction badge + run count line
-    expect(screen.getByText("悪化傾向")).toBeInTheDocument();
-    expect(screen.getByText(/デカップリング推移/)).toBeInTheDocument();
+    // Durability block shows worsening HR + form direction badges and the run
+    // count line covering both decoupling and GCT fade.
+    expect(screen.getByText("心拍 悪化傾向")).toBeInTheDocument();
+    expect(screen.getByText("フォーム 悪化傾向")).toBeInTheDocument();
+    expect(
+      screen.getByText(/デカップリングとGCT後半失速の推移/),
+    ).toBeInTheDocument();
   });
 
   it("falls back when durability data is insufficient", async () => {
@@ -219,16 +236,19 @@ describe("TrendsDashboard", () => {
     expect(
       await screen.findByRole("heading", {
         level: 2,
-        name: "耐久性 (心拍デカップリング)",
+        name: "耐久性 (心拍デカップリング・フォーム失速)",
       }),
     ).toBeInTheDocument();
 
-    // No qualifying long runs -> insufficient_data badge + fallback message.
-    expect(screen.getByText("データ不足")).toBeInTheDocument();
+    // No qualifying long runs -> insufficient_data badges (HR + form) + fallback.
+    expect(screen.getByText("心拍 データ不足")).toBeInTheDocument();
+    expect(screen.getByText("フォーム データ不足")).toBeInTheDocument();
     expect(
       screen.getByText(/15km以上のロングランがないため/),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/デカップリング推移/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/デカップリングとGCT後半失速の推移/),
+    ).not.toBeInTheDocument();
   });
 
   it("renders a high-risk warning in the ACWR block", async () => {

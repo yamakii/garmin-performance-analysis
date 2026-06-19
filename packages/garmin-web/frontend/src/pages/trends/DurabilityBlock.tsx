@@ -112,8 +112,14 @@ export default function DurabilityBlock({ data }: DurabilityBlockProps) {
     };
   }, [activities]);
 
-  const directionMeta = DIRECTION_META[trend.direction];
-  const formDirectionMeta = DIRECTION_META[trend.form_direction];
+  const directionMeta =
+    DIRECTION_META[trend.direction] ?? DIRECTION_META.insufficient_data;
+  // form_direction is optional on empty/older payloads; fall back safely so the
+  // badge never reads an undefined meta.
+  const formDirectionMeta =
+    (trend.form_direction != null
+      ? DIRECTION_META[trend.form_direction]
+      : undefined) ?? DIRECTION_META.insufficient_data;
   const isEmpty = activities.length === 0;
 
   return (
