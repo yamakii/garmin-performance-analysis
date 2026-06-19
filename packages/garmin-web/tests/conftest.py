@@ -269,6 +269,9 @@ _CREATE_TIME_SERIES_METRICS = """
         cadence DOUBLE,
         latitude DOUBLE,
         longitude DOUBLE,
+        ground_contact_time DOUBLE,
+        vertical_oscillation DOUBLE,
+        vertical_ratio DOUBLE,
         PRIMARY KEY (activity_id, seq_no)
     )
 """
@@ -536,13 +539,13 @@ def detail_db_path(tmp_path: Path) -> Path:
         conn.execute(
             "INSERT INTO time_series_metrics"
             f" SELECT {FULL_ACTIVITY_ID}, i, i, 140 + i % 20, 2.8, 170.0,"
-            " 35.6 + i * 1e-5, 139.7 + i * 1e-5"
+            " 35.6 + i * 1e-5, 139.7 + i * 1e-5, NULL, NULL, NULL"
             " FROM range(2000) AS t(i)"
         )
         conn.execute(
             "INSERT INTO time_series_metrics"
             f" SELECT {PARTIAL_ACTIVITY_ID}, i, i, 135 + i % 10, 2.6, 168.0,"
-            " NULL, NULL"
+            " NULL, NULL, NULL, NULL, NULL"
             " FROM range(300) AS t(i)"
         )
 
@@ -1028,12 +1031,15 @@ def _insert_durability_series(
     back_hr: int,
     front_speed: float,
     back_speed: float,
+    front_gct: float,
+    back_gct: float,
 ) -> None:
-    """Insert a two-phase HR/speed series (front half then back half).
+    """Insert a two-phase HR/speed/GCT series (front half then back half).
 
     seq_no/timestamp_s share i so the midpoint splits the series cleanly; the
     back half uses a higher HR and slightly lower speed to produce a positive
-    decoupling_pct (fade).
+    decoupling_pct (fade), plus a higher ground-contact time to produce a
+    positive gct_fade_pct (#368).
     """
     half = _DURABILITY_RANGE // 2
     conn.execute(
@@ -1041,15 +1047,18 @@ def _insert_durability_series(
         f" SELECT {activity_id}, i, i,"
         f" CASE WHEN i < {half} THEN {front_hr} ELSE {back_hr} END,"
         f" CASE WHEN i < {half} THEN {front_speed} ELSE {back_speed} END,"
-        " 170.0, NULL, NULL"
+        " 170.0, NULL, NULL,"
+        f" CASE WHEN i < {half} THEN {front_gct} ELSE {back_gct} END,"
+        " NULL, NULL"
         f" FROM range({_DURABILITY_RANGE}) AS t(i)"
     )
 
 
-# (activity_id, date, name, distance_km, front_hr, back_hr, front_spd, back_spd)
+# (activity_id, date, name, distance_km, front_hr, back_hr, front_spd, back_spd,
+#  front_gct, back_gct)
 _DURABILITY_LONG_RUNS = [
-    (9000005001, "2025-10-05", "Long Run A", 18.0, 145, 156, 2.8, 2.7),
-    (9000005002, "2025-10-19", "Long Run B", 21.0, 144, 153, 2.8, 2.72),
+    (9000005001, "2025-10-05", "Long Run A", 18.0, 145, 156, 2.8, 2.7, 250.0, 258.0),
+    (9000005002, "2025-10-19", "Long Run B", 21.0, 144, 153, 2.8, 2.72, 250.0, 268.0),
 ]
 
 
@@ -1068,7 +1077,7 @@ def durability_db_path(tmp_path: Path) -> Path:
 
         activity_rows = [
             (aid, date, name, km, int(km * 330), 330.0, front_hr)
-            for aid, date, name, km, front_hr, _back_hr, _fs, _bs in (
+            for aid, date, name, km, front_hr, _back_hr, _fs, _bs, _fg, _bg in (
                 _DURABILITY_LONG_RUNS
             )
         ]
@@ -1090,6 +1099,8 @@ def durability_db_path(tmp_path: Path) -> Path:
             back_hr,
             front_spd,
             back_spd,
+            front_gct,
+            back_gct,
         ) in _DURABILITY_LONG_RUNS:
             _insert_durability_series(
                 conn,
@@ -1098,6 +1109,8 @@ def durability_db_path(tmp_path: Path) -> Path:
                 back_hr=back_hr,
                 front_speed=front_spd,
                 back_speed=back_spd,
+                front_gct=front_gct,
+                back_gct=back_gct,
             )
     finally:
         conn.close()

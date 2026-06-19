@@ -5,7 +5,11 @@ import {
   BASE_CHART_OPTION,
   METRIC_COLORS,
 } from "../../components/chartTheme";
-import type { DurabilityDirection, DurabilityTrend } from "../../types";
+import type {
+  DurabilityActivity,
+  DurabilityDirection,
+  DurabilityTrend,
+} from "../../types";
 
 interface DurabilityBlockProps {
   data: DurabilityTrend;
@@ -26,15 +30,43 @@ const DIRECTION_META: Record<
 
 /** Decoupling above 5% is the common threshold for insufficient durability. */
 const DECOUPLING_WARNING_LINE = 5;
+/** GCT fade above 5% in the second half flags muscular fade (same convention). */
+const GCT_FADE_WARNING_LINE = 5;
+
+const DECOUPLING_SERIES = "デカップリング (%)";
+const GCT_FADE_SERIES = "GCT後半失速 (%)";
+
+function formatFade(value: number | null): string {
+  return value == null ? "—" : `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
+}
 
 export default function DurabilityBlock({ data }: DurabilityBlockProps) {
   const { activities, trend } = data;
 
-  const option = useMemo(
-    () => ({
+  const option = useMemo(() => {
+    const byDate = new Map<string, DurabilityActivity>(
+      activities.map((a) => [a.activity_date, a]),
+    );
+    return {
       ...BASE_CHART_OPTION,
-      tooltip: { trigger: "axis" as const },
-      legend: { data: ["デカップリング (%)"] },
+      tooltip: {
+        trigger: "axis" as const,
+        formatter: (params: unknown) => {
+          const list = Array.isArray(params) ? params : [params];
+          const first = list[0] as { axisValue?: string } | undefined;
+          const axisValue = first?.axisValue ?? "";
+          const activity = byDate.get(axisValue);
+          if (!activity) return axisValue;
+          return [
+            `<strong>${axisValue}</strong>`,
+            `デカップリング: ${formatFade(activity.decoupling_pct)}`,
+            `GCT後半失速: ${formatFade(activity.gct_fade_pct)}`,
+            `上下動後半失速: ${formatFade(activity.vo_fade_pct)}`,
+            `上下動比後半失速: ${formatFade(activity.vr_fade_pct)}`,
+          ].join("<br/>");
+        },
+      },
+      legend: { data: [DECOUPLING_SERIES, GCT_FADE_SERIES] },
       xAxis: {
         type: "category" as const,
         data: activities.map((a) => a.activity_date),
@@ -47,7 +79,7 @@ export default function DurabilityBlock({ data }: DurabilityBlockProps) {
       },
       series: [
         {
-          name: "デカップリング (%)",
+          name: DECOUPLING_SERIES,
           type: "line" as const,
           itemStyle: { color: METRIC_COLORS.heart_rate },
           lineStyle: { color: METRIC_COLORS.heart_rate },
@@ -60,12 +92,34 @@ export default function DurabilityBlock({ data }: DurabilityBlockProps) {
             data: [{ yAxis: DECOUPLING_WARNING_LINE }],
           },
         },
+        {
+          name: GCT_FADE_SERIES,
+          type: "line" as const,
+          connectNulls: false,
+          itemStyle: { color: METRIC_COLORS.ground_contact_time },
+          lineStyle: { color: METRIC_COLORS.ground_contact_time },
+          // null form fades render as gaps (connectNulls: false).
+          data: activities.map((a) => a.gct_fade_pct),
+          markLine: {
+            silent: true,
+            symbol: "none",
+            lineStyle: { color: "#fbbf24", type: "dashed" as const },
+            label: { formatter: "GCT 5%", color: "#d97706" },
+            data: [{ yAxis: GCT_FADE_WARNING_LINE }],
+          },
+        },
       ],
-    }),
-    [activities],
-  );
+    };
+  }, [activities]);
 
-  const directionMeta = DIRECTION_META[trend.direction];
+  const directionMeta =
+    DIRECTION_META[trend.direction] ?? DIRECTION_META.insufficient_data;
+  // form_direction is optional on empty/older payloads; fall back safely so the
+  // badge never reads an undefined meta.
+  const formDirectionMeta =
+    (trend.form_direction != null
+      ? DIRECTION_META[trend.form_direction]
+      : undefined) ?? DIRECTION_META.insufficient_data;
   const isEmpty = activities.length === 0;
 
   return (
@@ -75,13 +129,20 @@ export default function DurabilityBlock({ data }: DurabilityBlockProps) {
     >
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="font-display text-base font-semibold text-ink">
-          耐久性 (心拍デカップリング)
+          耐久性 (心拍デカップリング・フォーム失速)
         </h2>
-        <span
-          className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${directionMeta.className}`}
-        >
-          {directionMeta.label}
-        </span>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <span
+            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${directionMeta.className}`}
+          >
+            心拍 {directionMeta.label}
+          </span>
+          <span
+            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${formDirectionMeta.className}`}
+          >
+            フォーム {formDirectionMeta.label}
+          </span>
+        </div>
       </div>
       {isEmpty ? (
         <p className="py-8 text-center text-sm text-slate-500">
@@ -91,14 +152,12 @@ export default function DurabilityBlock({ data }: DurabilityBlockProps) {
         <>
           <p className="mb-1 text-sm text-slate-600">
             ロングラン{" "}
-            <span className="font-semibold text-ink">
-              {trend.data_points}
-            </span>{" "}
-            本のデカップリング推移 (5%超で後半失速の目安)
+            <span className="font-semibold text-ink">{trend.data_points}</span>{" "}
+            本のデカップリングとGCT後半失速の推移 (いずれも5%超で後半失速の目安)
           </p>
           <EChart
             option={option}
-            ariaLabel="ロングランのデカップリング推移グラフ"
+            ariaLabel="ロングランのデカップリング・GCT失速推移グラフ"
           />
         </>
       )}

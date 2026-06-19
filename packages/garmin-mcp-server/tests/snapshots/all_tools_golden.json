@@ -958,7 +958,7 @@
     "name": "get_load_trend"
   },
   {
-    "description": "Get one activity's cardiac decoupling: the second-half vs first-half HR/speed efficiency ratio (split at the time-series timestamp midpoint). Returns activity_id, activity_date, distance_km, decoupling_pct ((back HR/speed)/(front HR/speed)-1; >5% suggests insufficient aerobic durability), and pace_fade_pct (back/front pace ratio). Returns null when HR or speed data is missing.",
+    "description": "Get one activity's cardiac decoupling: the second-half vs first-half HR/speed efficiency ratio (split at the time-series timestamp midpoint). Returns activity_id, activity_date, distance_km, decoupling_pct ((back HR/speed)/(front HR/speed)-1; >5% suggests insufficient aerobic durability), pace_fade_pct (back/front pace ratio), and nullable second-half form fades gct_fade_pct / vo_fade_pct / vr_fade_pct (back-vs-front ground-contact time / vertical oscillation / vertical ratio; null on devices lacking the metric). Returns null when HR or speed data is missing.",
     "inputSchema": {
       "properties": {
         "activity_id": {
@@ -974,7 +974,7 @@
     "name": "get_activity_durability"
   },
   {
-    "description": "Get the longitudinal cardiac-decoupling trend across long runs in a date window. Only activities with total_distance_km >= min_distance_km (default 15) are included. Returns an activities array (per-activity durability, date ascending) and a trend block with decoupling_slope_per_day (regressed on elapsed days), data_points, and direction (improving when decoupling falls / worsening / stable / insufficient_data).",
+    "description": "Get the longitudinal cardiac-decoupling trend across long runs in a date window. Only activities with total_distance_km >= min_distance_km (default 15) are included. Returns an activities array (per-activity durability, date ascending) and a trend block with decoupling_slope_per_day (regressed on elapsed days), data_points, direction (improving when decoupling falls / worsening / stable / insufficient_data), plus second-half form decay: gct_fade_slope_per_day (GCT fade regressed over runs with form data; null when <2 such runs) and form_direction (same classification applied to GCT fade).",
     "inputSchema": {
       "properties": {
         "end_date": {

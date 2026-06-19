@@ -122,6 +122,10 @@ export interface DurabilityActivity {
   distance_km: number;
   decoupling_pct: number;
   pace_fade_pct: number;
+  // Second-half form fades (#368): nullable on devices lacking the metric.
+  gct_fade_pct: number | null;
+  vo_fade_pct: number | null;
+  vr_fade_pct: number | null;
 }
 
 export interface DurabilityTrend {
@@ -130,6 +134,9 @@ export interface DurabilityTrend {
     decoupling_slope_per_day: number;
     data_points: number;
     direction: DurabilityDirection;
+    // GCT-fade trend (#368): slope is null when <2 runs have form data.
+    gct_fade_slope_per_day: number | null;
+    form_direction: DurabilityDirection;
   };
 }
 

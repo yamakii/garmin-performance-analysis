@@ -6,9 +6,12 @@ efficiency to the first-half HR/speed efficiency. ``>5%`` is a common rule of
 thumb for insufficient aerobic durability.
 
 This is the *longitudinal* counterpart to the per-activity second-half form
-decay analysis (#61, split-section-analyst). v1 focuses on decoupling and pace
-fade only; second-half *form* decay (GCT/VO/VR) is already covered per-activity
-by #61 and is intentionally out of scope here.
+decay analysis (#61, split-section-analyst). Alongside cardiac decoupling and
+pace fade, the reader now also tracks second-half **form** decay (#368): how
+ground-contact time, vertical oscillation and vertical ratio worsen from the
+first to the second half of a long run, and whether that degradation trends
+worse over time. Together (cardiac + muscular) they give the complete fatigue
+picture for durability-focused training.
 
 Definitions (per activity, using ``time_series_metrics``):
 
@@ -20,9 +23,16 @@ Definitions (per activity, using ``time_series_metrics``):
   Positive means the second half costs more HR per unit speed (fade).
 - ``pace_fade_pct`` = ``(back_pace / front_pace) - 1`` as a percentage, where
   pace = ``1 / avg_speed``; this reduces to ``front_speed / back_speed - 1``.
+- ``gct_fade_pct`` / ``vo_fade_pct`` / ``vr_fade_pct`` = ``(back / front) - 1``
+  as a percentage for ground-contact time, vertical oscillation and vertical
+  ratio respectively. Positive means form worsened in the second half. These
+  are **independent and nullable**: older devices lack GCT/VO/VR, so a null
+  form metric is reported as ``None`` and never blocks decoupling computation.
 
 Returns ``None`` for an activity when HR or speed is missing or the midpoint
-cannot split the series into two non-empty halves (HR-data-dependent).
+cannot split the series into two non-empty halves (HR-data-dependent). Form
+fades are computed independently within that activity and may individually be
+``None`` without affecting decoupling.
 """
 
 from __future__ import annotations
@@ -65,7 +75,14 @@ class DurabilityReader(BaseDBReader):
                     "distance_km": float,
                     "decoupling_pct": float,  # (back HR/spd)/(front HR/spd)-1, %
                     "pace_fade_pct": float,   # back_pace/front_pace-1, %
+                    "gct_fade_pct": float | None,  # (back_gct/front_gct-1), %
+                    "vo_fade_pct": float | None,   # (back_vo/front_vo-1), %
+                    "vr_fade_pct": float | None,   # (back_vr/front_vr-1), %
                 }
+
+            The three form-fade fields are ``None`` when either half lacks a
+            non-null average for that metric (older devices), independently of
+            the always-present decoupling/pace-fade fields.
         """
         with self._get_connection() as conn:
             bounds = conn.execute(
@@ -89,26 +106,66 @@ class DurabilityReader(BaseDBReader):
             midpoint = (min_ts + max_ts) / 2.0
 
             # First half: [min_ts, midpoint); second half: [midpoint, max_ts].
+            # Form metrics (GCT/VO/VR) are averaged on the SAME midpoint split
+            # but are intentionally NOT in the WHERE NOT NULL filters: they are
+            # independent of HR/speed and may be null on older devices.
             halves = conn.execute(
                 """
                 SELECT
                     avg(CASE WHEN timestamp_s < ? THEN heart_rate END) AS front_hr,
                     avg(CASE WHEN timestamp_s < ? THEN speed END) AS front_speed,
                     avg(CASE WHEN timestamp_s >= ? THEN heart_rate END) AS back_hr,
-                    avg(CASE WHEN timestamp_s >= ? THEN speed END) AS back_speed
+                    avg(CASE WHEN timestamp_s >= ? THEN speed END) AS back_speed,
+                    avg(CASE WHEN timestamp_s < ? THEN ground_contact_time END)
+                        AS front_gct,
+                    avg(CASE WHEN timestamp_s >= ? THEN ground_contact_time END)
+                        AS back_gct,
+                    avg(CASE WHEN timestamp_s < ? THEN vertical_oscillation END)
+                        AS front_vo,
+                    avg(CASE WHEN timestamp_s >= ? THEN vertical_oscillation END)
+                        AS back_vo,
+                    avg(CASE WHEN timestamp_s < ? THEN vertical_ratio END)
+                        AS front_vr,
+                    avg(CASE WHEN timestamp_s >= ? THEN vertical_ratio END)
+                        AS back_vr
                 FROM time_series_metrics
                 WHERE activity_id = ?
                   AND heart_rate IS NOT NULL
                   AND speed IS NOT NULL
                   AND speed > 0
                 """,
-                [midpoint, midpoint, midpoint, midpoint, activity_id],
+                [midpoint] * 10 + [activity_id],
             ).fetchone()
 
-        if halves is None or any(v is None for v in halves):
+        if halves is None:
             return None
 
-        front_hr, front_speed, back_hr, back_speed = (float(v) for v in halves)
+        (
+            raw_front_hr,
+            raw_front_speed,
+            raw_back_hr,
+            raw_back_speed,
+            front_gct,
+            back_gct,
+            front_vo,
+            back_vo,
+            front_vr,
+            back_vr,
+        ) = halves
+
+        # Decoupling/pace fade require all four HR/speed averages (HR-dependent).
+        if any(
+            v is None
+            for v in (raw_front_hr, raw_front_speed, raw_back_hr, raw_back_speed)
+        ):
+            return None
+
+        front_hr, front_speed, back_hr, back_speed = (
+            float(raw_front_hr),
+            float(raw_front_speed),
+            float(raw_back_hr),
+            float(raw_back_speed),
+        )
         if front_speed <= 0 or back_speed <= 0 or front_hr <= 0:
             return None
 
@@ -130,7 +187,24 @@ class DurabilityReader(BaseDBReader):
             "distance_km": distance_km,
             "decoupling_pct": round(decoupling_pct, 2),
             "pace_fade_pct": round(pace_fade_pct, 2),
+            "gct_fade_pct": self._fade_pct(front_gct, back_gct),
+            "vo_fade_pct": self._fade_pct(front_vo, back_vo),
+            "vr_fade_pct": self._fade_pct(front_vr, back_vr),
         }
+
+    @staticmethod
+    def _fade_pct(front: Any, back: Any) -> float | None:
+        """Return ``(back/front - 1) * 100`` (rounded) or ``None``.
+
+        ``None`` when either half average is null (decoupled metric absent) or
+        the front average is non-positive (cannot form a meaningful ratio).
+        """
+        if front is None or back is None:
+            return None
+        front_f = float(front)
+        if front_f <= 0:
+            return None
+        return round((float(back) / front_f - 1.0) * 100.0, 2)
 
     def get_durability_trend(
         self,
@@ -161,6 +235,9 @@ class DurabilityReader(BaseDBReader):
                         "data_points": int,
                         "direction": "improving" | "worsening" | "stable"
                                      | "insufficient_data",
+                        "gct_fade_slope_per_day": float | None,
+                        "form_direction": "improving" | "worsening" | "stable"
+                                          | "insufficient_data",
                     },
                 }
 
@@ -168,6 +245,11 @@ class DurabilityReader(BaseDBReader):
             (slope < 0 and p < 0.05), ``worsening`` when it rises significantly,
             ``stable`` when not significant, and ``insufficient_data`` with
             ``slope = 0.0`` when fewer than 2 qualifying activities exist.
+
+            ``form_direction`` applies the same classification to the GCT-fade
+            regression (over activities with a non-null ``gct_fade_pct``).
+            ``gct_fade_slope_per_day`` is ``None`` (and ``form_direction`` is
+            ``insufficient_data``) when fewer than 2 such activities exist.
         """
         long_run_ids = self._long_run_ids(start_date, end_date, min_distance_km)
 
@@ -184,12 +266,20 @@ class DurabilityReader(BaseDBReader):
         return {"activities": activities, "trend": trend}
 
     def _build_trend(self, activities: list[dict[str, Any]]) -> dict[str, Any]:
-        """Regress decoupling on elapsed days; classify the trend direction."""
+        """Regress decoupling and GCT fade on elapsed days; classify direction.
+
+        Both regressions use the SAME ordinal/base-day x-axis convention. The
+        GCT-fade regression runs only over activities with a non-null
+        ``gct_fade_pct`` (form metrics are decoupled and may be absent), so it
+        may have fewer points than the decoupling regression.
+        """
         if len(activities) < 2:
             return {
                 "decoupling_slope_per_day": 0.0,
                 "data_points": len(activities),
                 "direction": "insufficient_data",
+                "gct_fade_slope_per_day": None,
+                "form_direction": "insufficient_data",
             }
 
         ordinals = [
@@ -209,11 +299,51 @@ class DurabilityReader(BaseDBReader):
         else:
             direction = "worsening"
 
+        gct_slope, form_direction = self._regress_form(activities, ordinals, base)
+
         return {
             "decoupling_slope_per_day": float(slope),
             "data_points": len(activities),
             "direction": direction,
+            "gct_fade_slope_per_day": gct_slope,
+            "form_direction": form_direction,
         }
+
+    def _regress_form(
+        self,
+        activities: list[dict[str, Any]],
+        ordinals: list[int],
+        base: int,
+    ) -> tuple[float | None, str]:
+        """Regress ``gct_fade_pct`` on elapsed days over non-null form points.
+
+        Returns ``(slope_per_day, form_direction)``. ``slope`` is ``None`` and
+        the direction is ``insufficient_data`` when fewer than 2 activities have
+        a non-null ``gct_fade_pct``.
+        """
+        form_x: list[float] = []
+        form_y: list[float] = []
+        for activity, ordinal in zip(activities, ordinals, strict=True):
+            gct_fade = activity.get("gct_fade_pct")
+            if gct_fade is not None:
+                form_x.append(float(ordinal - base))
+                form_y.append(float(gct_fade))
+
+        if len(form_y) < 2:
+            return None, "insufficient_data"
+
+        slope, _intercept, _r, p_value, _std_err = stats.linregress(
+            np.array(form_x, dtype=float), form_y
+        )
+
+        if p_value > _P_VALUE_THRESHOLD:
+            form_direction = "stable"
+        elif slope < 0:
+            form_direction = "improving"  # form fade falling = better durability
+        else:
+            form_direction = "worsening"
+
+        return float(slope), form_direction
 
     def _long_run_ids(
         self, start_date: str, end_date: str, min_distance_km: float

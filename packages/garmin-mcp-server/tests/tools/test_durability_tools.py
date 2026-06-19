@@ -72,3 +72,47 @@ def test_durability_tool_dispatch() -> None:
 
     payload = json.loads(json.dumps(result, default=str))
     assert payload["trend"]["direction"] == "insufficient_data"
+
+
+@pytest.mark.unit
+def test_durability_tool_serializes_form_fields() -> None:
+    """Form-fade fields (#368) pass through the tool and stay JSON-serializable."""
+    reader = MagicMock()
+    reader.get_activity_durability.return_value = {
+        "activity_id": 5101,
+        "activity_date": "2025-09-03",
+        "distance_km": 19.0,
+        "decoupling_pct": 6.0,
+        "pace_fade_pct": 0.0,
+        "gct_fade_pct": 8.0,
+        "vo_fade_pct": 5.0,
+        "vr_fade_pct": None,  # nullable form metric
+    }
+
+    result = dispatch(
+        ALL_DEFS_BY_NAME, reader, "get_activity_durability", {"activity_id": 5101}
+    )
+    payload = json.loads(json.dumps(result, default=str))
+    assert payload["gct_fade_pct"] == 8.0
+    assert payload["vo_fade_pct"] == 5.0
+    assert payload["vr_fade_pct"] is None
+
+    reader.get_durability_trend.return_value = {
+        "activities": [],
+        "trend": {
+            "decoupling_slope_per_day": 0.0,
+            "data_points": 0,
+            "direction": "insufficient_data",
+            "gct_fade_slope_per_day": None,
+            "form_direction": "insufficient_data",
+        },
+    }
+    trend_result = dispatch(
+        ALL_DEFS_BY_NAME,
+        reader,
+        "get_durability_trend",
+        {"start_date": "2025-09-01", "end_date": "2025-09-30"},
+    )
+    trend_payload = json.loads(json.dumps(trend_result, default=str))
+    assert trend_payload["trend"]["gct_fade_slope_per_day"] is None
+    assert trend_payload["trend"]["form_direction"] == "insufficient_data"
