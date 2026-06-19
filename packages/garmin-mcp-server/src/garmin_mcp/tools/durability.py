@@ -5,8 +5,12 @@ activity's first-half vs second-half decoupling) and ``get_durability_trend``
 (the decoupling trend across long runs in a date window). Both delegate to
 ``DurabilityReader``.
 
-v1 measures cardiac decoupling and pace fade only; second-half *form* decay
-(GCT/VO/VR) is already covered per-activity by #61 and is out of scope here.
+Both tools also surface second-half *form* decay (#368): per-activity
+``gct_fade_pct`` / ``vo_fade_pct`` / ``vr_fade_pct`` (nullable; back-vs-front
+half ground-contact time / vertical oscillation / vertical ratio), and a trend
+``gct_fade_slope_per_day`` + ``form_direction`` regressed over long runs. Form
+fields are independent and nullable: a missing form metric never blocks the
+cardiac decoupling computation.
 """
 
 from __future__ import annotations
@@ -66,8 +70,11 @@ DURABILITY_TOOLS: list[ToolDef] = [
             "HR/speed efficiency ratio (split at the time-series timestamp "
             "midpoint). Returns activity_id, activity_date, distance_km, "
             "decoupling_pct ((back HR/speed)/(front HR/speed)-1; >5% suggests "
-            "insufficient aerobic durability), and pace_fade_pct (back/front pace "
-            "ratio). Returns null when HR or speed data is missing."
+            "insufficient aerobic durability), pace_fade_pct (back/front pace "
+            "ratio), and nullable second-half form fades gct_fade_pct / "
+            "vo_fade_pct / vr_fade_pct (back-vs-front ground-contact time / "
+            "vertical oscillation / vertical ratio; null on devices lacking the "
+            "metric). Returns null when HR or speed data is missing."
         ),
         params=GetActivityDurabilityParams,
         handler=_get_activity_durability,
@@ -82,8 +89,11 @@ DURABILITY_TOOLS: list[ToolDef] = [
             "min_distance_km (default 15) are included. Returns an activities "
             "array (per-activity durability, date ascending) and a trend block "
             "with decoupling_slope_per_day (regressed on elapsed days), "
-            "data_points, and direction (improving when decoupling falls / "
-            "worsening / stable / insufficient_data)."
+            "data_points, direction (improving when decoupling falls / "
+            "worsening / stable / insufficient_data), plus second-half form "
+            "decay: gct_fade_slope_per_day (GCT fade regressed over runs with "
+            "form data; null when <2 such runs) and form_direction (same "
+            "classification applied to GCT fade)."
         ),
         params=GetDurabilityTrendParams,
         handler=_get_durability_trend,

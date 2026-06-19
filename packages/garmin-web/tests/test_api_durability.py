@@ -63,6 +63,45 @@ def test_durability_trend_endpoint_shape(durability_db_path):
 
 
 @pytest.mark.integration
+def test_durability_endpoint_includes_form_fade(durability_db_path):
+    """The endpoint surfaces #368 per-activity form fades + trend form fields."""
+    client = TestClient(create_app(db_path=durability_db_path))
+    response = client.get(
+        "/api/durability-trend",
+        params={"start_date": "2025-10-01", "end_date": "2025-10-31"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+
+    activities = payload["activities"]
+    assert len(activities) == 2
+    for activity in activities:
+        assert set(activity) >= {
+            "gct_fade_pct",
+            "vo_fade_pct",
+            "vr_fade_pct",
+        }
+        # GCT rises in the second half of both seeded long runs.
+        assert isinstance(activity["gct_fade_pct"], (int, float))
+        assert activity["gct_fade_pct"] > 0
+        # VO/VR not seeded -> null.
+        assert activity["vo_fade_pct"] is None
+        assert activity["vr_fade_pct"] is None
+
+    trend = payload["trend"]
+    assert set(trend) >= {"gct_fade_slope_per_day", "form_direction"}
+    # Both runs have GCT data -> form regression is computed.
+    assert isinstance(trend["gct_fade_slope_per_day"], (int, float))
+    assert trend["form_direction"] in {
+        "improving",
+        "worsening",
+        "stable",
+        "insufficient_data",
+    }
+
+
+@pytest.mark.integration
 def test_durability_trend_empty(durability_empty_db_path):
     client = TestClient(create_app(db_path=durability_empty_db_path))
     response = client.get(
