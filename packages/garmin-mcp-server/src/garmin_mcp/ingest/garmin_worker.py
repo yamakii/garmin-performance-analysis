@@ -266,50 +266,57 @@ class GarminIngestWorker:
     def _calculate_median_weight(self, date: str) -> dict[str, Any] | None:
         """Calculate median weight from past 7 days including target date.
 
+        The ``body_composition`` table is the single source of truth. Cache
+        files within the window are synced into the table first (upsert), then
+        the window is read back from the table and median-aggregated per column.
+
         Args:
             date: Date in YYYY-MM-DD format
 
         Returns:
             Dict with median weight data or None
         """
+        from garmin_mcp.database.connection import get_connection
+        from garmin_mcp.database.db_writer import GarminDBWriter
+
         target_date = datetime.strptime(date, "%Y-%m-%d")
-        weights: list[float] = []
-        bmi_values: list[float] = []
-        body_fat_values: list[float] = []
-        body_water_values: list[float] = []
-        bone_mass_values: list[float] = []
-        muscle_mass_values: list[float] = []
+        start_date_str = (target_date - timedelta(days=6)).strftime("%Y-%m-%d")
+        end_date_str = date
 
-        # Scan the full window [date-6, date] (7 days). The target date is not
-        # treated specially: even if it has no measurement, past days within the
-        # window still contribute. Only an empty window yields None.
+        # 1. Sync any cached body composition within the window into the table
+        #    so the table reflects the latest cache state (idempotent upsert).
+        writer = (
+            GarminDBWriter(db_path=self._db_path) if self._db_path else GarminDBWriter()
+        )
         for i in range(7):
-            check_date = target_date - timedelta(days=i)
-            check_date_str = check_date.strftime("%Y-%m-%d")
-
+            check_date_str = (target_date - timedelta(days=i)).strftime("%Y-%m-%d")
             raw_data = self.collect_body_composition_data(check_date_str)
-            if not raw_data or not raw_data.get("dateWeightList"):
-                if i == 0:
-                    logger.warning(
-                        f"No body composition data for target date {date}, "
-                        "falling back to past days within the window"
-                    )
-                continue
+            if raw_data and raw_data.get("dateWeightList"):
+                writer.insert_body_composition(check_date_str, raw_data)
+            elif i == 0:
+                logger.warning(
+                    f"No body composition data for target date {date}, "
+                    "falling back to past days within the window"
+                )
 
-            data = raw_data["dateWeightList"][0]
+        # 2. Read the window back from the table and median-aggregate.
+        with get_connection(self._db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT weight_kg, bmi, body_fat_percentage, muscle_mass_kg,
+                       bone_mass_kg, hydration_percentage
+                FROM body_composition
+                WHERE date BETWEEN ? AND ?
+                """,
+                [start_date_str, end_date_str],
+            ).fetchall()
 
-            if data.get("weight"):
-                weights.append(data["weight"] / 1000.0)
-            if data.get("bmi"):
-                bmi_values.append(data["bmi"])
-            if data.get("bodyFat"):
-                body_fat_values.append(data["bodyFat"])
-            if data.get("bodyWater"):
-                body_water_values.append(data["bodyWater"])
-            if data.get("boneMass"):
-                bone_mass_values.append(data["boneMass"] / 1000.0)
-            if data.get("muscleMass"):
-                muscle_mass_values.append(data["muscleMass"] / 1000.0)
+        weights = [r[0] for r in rows if r[0] is not None]
+        bmi_values = [r[1] for r in rows if r[1] is not None]
+        body_fat_values = [r[2] for r in rows if r[2] is not None]
+        muscle_mass_values = [r[3] for r in rows if r[3] is not None]
+        bone_mass_values = [r[4] for r in rows if r[4] is not None]
+        body_water_values = [r[5] for r in rows if r[5] is not None]
 
         if not weights:
             logger.warning(f"No weight data found in past 7 days for {date}")
