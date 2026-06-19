@@ -59,16 +59,16 @@ def test_schema_parity_all_tools() -> None:
 
 
 @pytest.mark.unit
-def test_all_tools_count_41() -> None:
-    """ALL_DEFS holds the 39 handler-domain tools (unique names); the live MCP
-    surface adds the 2 server tools for 41 total."""
-    assert len(ALL_DEFS) == 39
+def test_all_tools_count_42() -> None:
+    """ALL_DEFS holds the 40 handler-domain tools (unique names); the live MCP
+    surface adds the 2 server tools for 42 total."""
+    assert len(ALL_DEFS) == 40
     names = [d.name for d in ALL_DEFS]
     assert len(names) == len(set(names)), "duplicate tool names in ALL_DEFS"
-    assert len(ALL_DEFS_BY_NAME) == 39
+    assert len(ALL_DEFS_BY_NAME) == 40
 
     live_names = [t.name for t in get_tool_definitions()]
-    assert len(live_names) == 41
+    assert len(live_names) == 42
     assert len(live_names) == len(
         set(live_names)
     ), "duplicate tool names on MCP surface"

@@ -19,13 +19,14 @@ from garmin_mcp.tools.export import EXPORT_TOOLS
 from garmin_mcp.tools.metadata import METADATA_TOOLS
 from garmin_mcp.tools.performance import PERFORMANCE_TOOLS
 from garmin_mcp.tools.physiology import PHYSIOLOGY_TOOLS
+from garmin_mcp.tools.race import RACE_TOOLS
 from garmin_mcp.tools.registry import ToolDef
 from garmin_mcp.tools.splits import SPLITS_TOOLS
 from garmin_mcp.tools.time_series import TIME_SERIES_TOOLS
 from garmin_mcp.tools.training_plan import TRAINING_PLAN_TOOLS
 
-# Order mirrors the legacy get_tool_definitions() concatenation exactly so the
-# 41-tool golden snapshot matches without any sorting assumption.
+# Order mirrors the legacy get_tool_definitions() concatenation, with later
+# additions (race) appended last; the golden snapshot is regenerated to match.
 ALL_DEFS: list[ToolDef] = (
     EXPORT_TOOLS
     + METADATA_TOOLS
@@ -36,6 +37,7 @@ ALL_DEFS: list[ToolDef] = (
     + TIME_SERIES_TOOLS
     + TRAINING_PLAN_TOOLS
     + ATHLETE_TOOLS
+    + RACE_TOOLS
 )
 
 ALL_DEFS_BY_NAME: dict[str, ToolDef] = {d.name: d for d in ALL_DEFS}
