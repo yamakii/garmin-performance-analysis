@@ -75,6 +75,39 @@ export interface RaceReadiness {
   progress: RaceReadinessProgress | null;
 }
 
+// --- Training load / ACWR (Issue #363) ---
+
+export type AcwrStatus =
+  | "undertraining"
+  | "optimal"
+  | "caution"
+  | "high_risk"
+  | "insufficient_data";
+
+export interface AcwrCurrent {
+  end_date: string | null;
+  acute_load_7d: number;
+  chronic_load_28d_weekly: number;
+  acwr: number | null;
+  status: AcwrStatus;
+  load_metric: string;
+}
+
+export interface AcwrWeek {
+  week_start: string;
+  load_km: number;
+  acwr: number | null;
+  status: AcwrStatus;
+}
+
+export interface AcwrTrend {
+  current: AcwrCurrent;
+  trend: {
+    weeks: AcwrWeek[];
+    load_metric: string;
+  };
+}
+
 // --- Weekly reviews (Issue #283) ---
 
 export interface WeeklyReviewVerdict {

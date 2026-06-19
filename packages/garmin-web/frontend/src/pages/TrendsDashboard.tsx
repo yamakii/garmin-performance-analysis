@@ -12,10 +12,13 @@ import type {
   PhysiologyTrend,
   VolumeTrendPoint,
 } from "../api/trends";
+import { fetchTrainingLoad } from "../api/training_load";
+import type { AcwrTrend } from "../types";
 import VolumeBlock from "./trends/VolumeBlock";
 import PhysiologyBlock from "./trends/PhysiologyBlock";
 import FormBlock from "./trends/FormBlock";
 import EfficiencyBlock from "./trends/EfficiencyBlock";
+import TrainingLoadBlock from "./trends/TrainingLoadBlock";
 
 export default function TrendsDashboard() {
   const [granularity, setGranularity] = useState<Granularity>("week");
@@ -25,6 +28,7 @@ export default function TrendsDashboard() {
   const [efficiency, setEfficiency] = useState<EfficiencyTrendPoint[] | null>(
     null,
   );
+  const [trainingLoad, setTrainingLoad] = useState<AcwrTrend | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -43,12 +47,18 @@ export default function TrendsDashboard() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([fetchPhysiologyTrend(), fetchFormTrend(), fetchEfficiencyTrend()])
-      .then(([physiologyData, formData, efficiencyData]) => {
+    Promise.all([
+      fetchPhysiologyTrend(),
+      fetchFormTrend(),
+      fetchEfficiencyTrend(),
+      fetchTrainingLoad(),
+    ])
+      .then(([physiologyData, formData, efficiencyData, trainingLoadData]) => {
         if (!cancelled) {
           setPhysiology(physiologyData);
           setForm(formData);
           setEfficiency(efficiencyData);
+          setTrainingLoad(trainingLoadData);
         }
       })
       .catch((err: unknown) => {
@@ -71,7 +81,11 @@ export default function TrendsDashboard() {
   }
 
   const loading =
-    volume == null || physiology == null || form == null || efficiency == null;
+    volume == null ||
+    physiology == null ||
+    form == null ||
+    efficiency == null ||
+    trainingLoad == null;
   if (loading) {
     return (
       <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
@@ -98,6 +112,7 @@ export default function TrendsDashboard() {
         <PhysiologyBlock data={physiology} />
         <FormBlock data={form} />
         <EfficiencyBlock data={efficiency} />
+        <TrainingLoadBlock data={trainingLoad} />
       </div>
     </div>
   );
