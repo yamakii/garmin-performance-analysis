@@ -10,12 +10,14 @@ This package provides specialized reader classes for accessing DuckDB data:
 - PerformanceReader: Performance trends, weather, section analyses
 - RaceReader: Race readiness (current VDOT + goal gap)
 - TrainingLoadReader: Distance-based training load (ACWR)
+- DurabilityReader: Long-run cardiac decoupling / pace fade trend
 - UtilityReader: Profiling and histogram operations
 - TimeSeriesReader: Time series data and anomaly detection
 - ExportReader: Query result export functionality
 """
 
 from garmin_mcp.database.readers.base import BaseDBReader
+from garmin_mcp.database.readers.durability import DurabilityReader
 from garmin_mcp.database.readers.export import ExportReader
 from garmin_mcp.database.readers.form import FormReader
 from garmin_mcp.database.readers.metadata import MetadataReader
@@ -36,6 +38,7 @@ __all__ = [
     "PerformanceReader",
     "RaceReader",
     "TrainingLoadReader",
+    "DurabilityReader",
     "UtilityReader",
     "TimeSeriesReader",
     "ExportReader",

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from garmin_mcp.database.readers import (
+    DurabilityReader,
     ExportReader,
     FormReader,
     MetadataReader,
@@ -52,6 +53,7 @@ class GarminDBReader:
         self.performance = PerformanceReader(db_path)
         self.race = RaceReader(db_path)
         self.training_load = TrainingLoadReader(db_path)
+        self.durability = DurabilityReader(db_path)
         self.utility = UtilityReader(db_path)
 
         # Expose db_path for handlers and scripts
@@ -421,6 +423,41 @@ class GarminDBReader:
             ``load_metric``.
         """
         return self.training_load.get_load_trend(lookback_weeks, end_date)
+
+    # ========== Durability Methods ==========
+
+    def get_activity_durability(self, activity_id: int) -> dict[str, Any] | None:
+        """Get one activity's first-half vs second-half cardiac decoupling.
+
+        Args:
+            activity_id: Activity ID.
+
+        Returns:
+            Dict with activity_id, activity_date, distance_km, decoupling_pct,
+            and pace_fade_pct, or None when HR/speed data is missing or the
+            timestamp midpoint cannot split the series.
+        """
+        return self.durability.get_activity_durability(activity_id)
+
+    def get_durability_trend(
+        self, start_date: str, end_date: str, min_distance_km: float = 15.0
+    ) -> dict[str, Any]:
+        """Get the long-run decoupling trend over a date window.
+
+        Args:
+            start_date: Inclusive window start (``YYYY-MM-DD``).
+            end_date: Inclusive window end (``YYYY-MM-DD``).
+            min_distance_km: Minimum distance to qualify as a long run
+                (default 15.0).
+
+        Returns:
+            Dict with an ``activities`` array (per-activity durability, date
+            ascending) and a ``trend`` block (decoupling_slope_per_day,
+            data_points, direction).
+        """
+        return self.durability.get_durability_trend(
+            start_date, end_date, min_distance_km
+        )
 
     # ========== Time Series Methods ==========
 
