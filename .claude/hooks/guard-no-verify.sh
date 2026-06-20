@@ -12,8 +12,8 @@ print(json.load(sys.stdin).get('tool_input',{}).get('command',''))
 
 [ -z "$command" ] && exit 0
 
-# git commit 以外は通す
-echo "$command" | grep -q "git commit" || exit 0
+# git commit 以外は通す（git -C <path> commit 形式も検知）
+echo "$command" | grep -Eq 'git( +-C +[^ ]+)? +commit' || exit 0
 
 # --no-verify を含まないなら通す
 echo "$command" | grep -q -- "--no-verify" || exit 0
