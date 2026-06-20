@@ -147,6 +147,60 @@ class GarminDBReader:
         """
         return self.metadata.get_bulk_activity_fields(activity_ids, fields)
 
+    # ========== Latest Ingest Date Methods ==========
+
+    def get_latest_activity_date(self) -> str | None:
+        """Return the most recent activity date stored in DuckDB.
+
+        Used by catch-up window resolution. No Garmin access; reads only the
+        ``activities`` table. Restricted to rows with a recorded distance
+        (``total_distance_km IS NOT NULL``) so non-distance entries do not
+        skew the latest-run cursor.
+
+        Returns:
+            Latest ``activity_date`` as ``YYYY-MM-DD``, or ``None`` when the
+            table is empty (or all rows lack a distance).
+        """
+        rows = self.execute_read_query(
+            "SELECT MAX(activity_date) FROM activities "
+            "WHERE total_distance_km IS NOT NULL"
+        )
+        if rows and rows[0][0] is not None:
+            return str(rows[0][0])
+        return None
+
+    def get_latest_weight_date(self) -> str | None:
+        """Return the most recent body-composition date stored in DuckDB.
+
+        Used by catch-up window resolution. No Garmin access; reads only the
+        ``body_composition`` table.
+
+        Returns:
+            Latest ``date`` as ``YYYY-MM-DD``, or ``None`` when the table is
+            empty.
+        """
+        rows = self.execute_read_query("SELECT MAX(date) FROM body_composition")
+        if rows and rows[0][0] is not None:
+            return str(rows[0][0])
+        return None
+
+    def get_latest_strength_date(self) -> str | None:
+        """Return the most recent strength-session date stored in DuckDB.
+
+        Used by catch-up window resolution. No Garmin access; reads only the
+        ``strength_sessions`` table.
+
+        Returns:
+            Latest ``activity_date`` as ``YYYY-MM-DD``, or ``None`` when the
+            table is empty.
+        """
+        rows = self.execute_read_query(
+            "SELECT MAX(activity_date) FROM strength_sessions"
+        )
+        if rows and rows[0][0] is not None:
+            return str(rows[0][0])
+        return None
+
     # ========== Splits Methods ==========
 
     def get_splits_pace_hr(
