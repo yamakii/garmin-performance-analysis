@@ -2,75 +2,75 @@
 
 > **⚠️ Unofficial Tool**: This is a community-developed project for personal use, not affiliated with Garmin Ltd.
 
-A comprehensive running performance analysis system that integrates with Garmin Connect to provide detailed split-by-split analysis with environmental integration.
+A comprehensive running performance analysis system that integrates with Garmin Connect to provide detailed split-by-split analysis with environmental integration. Built on a **DuckDB-first** storage layer and a **MCP-first** tooling layer.
 
 ## Features
 
-- **Garmin MCP Integration**: Direct connection to Garmin Connect for data retrieval
-- **DuckDB Backend**: Efficient storage and querying of performance data
-- **Multi-agent Analysis**: Specialized agents for different analysis types
+- **Garmin MCP Integration**: 46 token-optimized MCP tools for data retrieval and analysis, declared from a single-source `tools/` registry
+- **DuckDB Backend**: Normalized storage (14 tables, 100+ activities) for efficient querying
+- **Multi-agent Analysis**: 2 section-analysis agents (`unified-section-analyst` + `split-section-analyst`) that run in parallel
 - **Japanese Analysis**: All analysis stored in DuckDB and viewed via the web app (`packages/garmin-web`)
 - **Environmental Integration**: Weather, terrain, and body condition analysis
-- **Performance Tracking**: Historical trend analysis and workout comparison
+- **Performance Tracking**: Historical trend analysis, race readiness, ACWR load, and workout comparison
 
 ## Architecture
 
 ### Data Flow
 
 ```
-Garmin API → Raw Data → Performance Analysis → DuckDB → Web App (packages/garmin-web)
+Garmin API → Raw JSON → DuckDB → MCP Tools → Analysis → Web App (packages/garmin-web)
 ```
 
 ### Core Components
 
-- **Data Ingestion** (`tools/ingest/`): Collects and processes Garmin data
-- **Database Layer** (`tools/database/`): DuckDB integration for efficient queries
-- **Analysis Agents** (configured in `.claude/`): Specialized analysis workflows
-- **MCP Servers** (`servers/`): Custom MCP servers for data access
-- **Web App** (`packages/garmin-web`): FastAPI + React app that renders analysis stored in DuckDB
+The project is a uv workspace with two packages:
+
+- **`packages/garmin-mcp-server`**: Python MCP server
+  - `src/garmin_mcp/ingest/`: API → raw data collection (`ApiClient`, `RawDataFetcher`, `DuckDBSaver`)
+  - `src/garmin_mcp/database/`: DuckDB read/write layer (`inserters/`, `readers/`, `migrations/`)
+  - `src/garmin_mcp/tools/`: `ToolDef` registry — single source for all 46 MCP tools
+  - `src/garmin_mcp/scripts/`: ingestion, regeneration, and backfill utilities
+- **`packages/garmin-web`**: FastAPI backend + Vite/React SPA that renders analysis stored in DuckDB
+- **Analysis Agents & Skills** (`.claude/`): section-analysis agents and user-invocable skills (`/analyze-activity`, `/plan-training`, etc.)
+
+See `CLAUDE.md` for the full architecture and DuckDB schema reference.
 
 ## Installation
 
 ```bash
-# Install dependencies
-uv sync
-
-# Install with development tools
+# Install dependencies (including development tools)
 uv sync --extra dev
+
+# Configure data/result directories and auto-load env
+cp .env.example .env   # edit GARMIN_DATA_DIR, GARMIN_RESULT_DIR
+direnv allow
 ```
 
 ## Usage
 
 ### Individual Activity Analysis
 
-```bash
-# Analyze a specific activity
-/analyze-activity <activity_id> <date>
+Run inside Claude Code — ingests the data, runs the section-analysis agents in parallel, and stores results in DuckDB:
+
+```
+/analyze-activity <date>      # e.g. /analyze-activity 2025-10-15 (defaults to today)
 ```
 
-### Batch Analysis
+### Fetch Raw Data
 
 ```bash
-# Run batch analysis for date range
-uv run python tools/batch/batch_planner.py
+# Fetch raw data from a start date
+uv run python -m garmin_mcp.scripts.bulk_fetch_raw_data --start-date 2025-10-01
+
+# Fetch detailed activity data for specific activities
+uv run python -m garmin_mcp.scripts.bulk_fetch_activity_details --activity-ids 12345 67890
 ```
 
-### Bulk Fetch Activity Details
-
-Fetch detailed activity data (maxchart=2000) for all activities missing `activity_details.json`:
+### Surgical DuckDB Update
 
 ```bash
-# Show what would be fetched (dry run)
-uv run python tools/bulk_fetch_activity_details.py --dry-run
-
-# Fetch missing activity_details.json files
-uv run python tools/bulk_fetch_activity_details.py
-
-# Force re-fetch even if files exist
-uv run python tools/bulk_fetch_activity_details.py --force
-
-# Adjust API rate limit delay (default: 1.0 seconds)
-uv run python tools/bulk_fetch_activity_details.py --delay 2.0
+# Regenerate selected tables for selected activities
+uv run python -m garmin_mcp.scripts.regenerate_duckdb --tables splits --activity-ids 12345 --force
 ```
 
 ## Development
@@ -103,10 +103,11 @@ pre-commit run --all-files
 
 ## Data Structure
 
-- `data/raw/`: Immutable Garmin API responses
-- `data/performance/`: Pre-processed performance metrics
-- `data/database/`: DuckDB database files
+- `data/raw/`: Immutable Garmin API responses (one set of files per activity)
+- `data/database/`: DuckDB database file (`garmin_performance.duckdb`)
 - `result/training_plans/`: Generated training plans
+
+> `data/` and `result/` are git-ignored and configurable via `.env` (`GARMIN_DATA_DIR`, `GARMIN_RESULT_DIR`).
 
 ### Configurable Data Paths
 
@@ -163,8 +164,9 @@ For more details, see `docs/GITHUB_PUBLISHING_CHECKLIST.md`.
 
 This project uses the following MCP servers (configured in `.mcp.json`):
 
-- **garmin-db**: DuckDB-based performance data queries and section analysis storage
+- **garmin-db**: DuckDB-based performance data queries and section analysis storage (46 tools)
 - **serena**: Symbol-aware code navigation and editing operations
+- **github**: Issue and pull request operations for the development workflow
 
 ## Configuration
 
