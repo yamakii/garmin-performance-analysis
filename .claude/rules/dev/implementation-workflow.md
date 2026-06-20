@@ -80,11 +80,15 @@ Phase 2b の完了条件は **`scripts/ci-check.sh` が exit 0（0 failures）**
 - Validation Agent は `/implement` が自動起動する（手動で別途起動する必要はない）
 - skip レベルの場合は Phase 2a（コードレビュー）のみ実施し Phase 3 へ（Validation Agent はスキップ）
 
-## Phase 3: Ship (PR作成)
+## Phase 3: Ship (PR作成 + 条件付き auto-merge)
 
 Phase 2 完了後のみ実行可能:
 1. worktree ブランチを main repo に fetch
 2. remote に push
 3. `mcp__github__create_pull_request` (Closes #{issue})
-4. ユーザーに PR URL を報告
-5. Validation PASS 済みの場合: `/ship --pr N --validated` でのマージを提案
+4. `ci-guard` が completed になるまでポーリング（`pull_request_read(method="get_check_runs")`）
+5. **auto-merge ゲート**: 検証(L1/L2) PASS + `ci-guard` success + mergeable を満たせば
+   `merge_pull_request` で自動マージ（テスト・検証の充実が前提, #395）。
+   `/implement` ではこの判定を `implement-tier` Workflow が担う
+6. **例外は人間ゲート**: 検証 FAIL / 内容チェック WARNING / CI 失敗 / コンフリクト / L3 含みは
+   auto-merge せず、PR URL と理由をユーザーに報告して判断を仰ぐ（手動マージは `/ship --pr N --validated`）

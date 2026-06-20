@@ -2,7 +2,7 @@
 name: implement
 description: Parallel implementation orchestrator for an Epic's design-approved sub-issues. Use when the user wants to auto-implement the issues under an Epic in dependency order with worktree-isolated agents. Argument is the Epic number or a list of issue numbers.
 argument-hint: <epic-number | issue-numbers>
-allowed-tools: Bash, Read, Glob, Grep, Task, AskUserQuestion, mcp__github__issue_read
+allowed-tools: Bash, Read, Glob, Grep, Task, Workflow, AskUserQuestion, mcp__github__issue_read
 ---
 
 # /implement — Parallel Implementation Orchestrator
@@ -63,75 +63,80 @@ Implementation Plan:
     #56 — already closed
 ```
 
-### Step 4: Tier 0 の並列実装
+### Step 4: ティアを Workflow で実装（implement-tier.js）
 
-各 Issue に対して汎用サブエージェントを worktree で起動:
-
-```
-Agent(subagent_type="developer", isolation="worktree", prompt="""
-  Issue: #{number}
-  Title: {title}
-  Implement according to the Issue design.
-  mcp__github__issue_read (method="get") で設計を読み込んでください。
-""")
-```
-
-**並列起動:** Tier 0 の全 Issue を同時に Agent tool で起動（独立しているため並列安全）。
-
-### Step 5: Validation (FIFO)
-
-各 developer agent 完了後、Validation Level に応じて検証を実行:
-
-1. **Manifest 読み込み**: `/tmp/validation_queue/<branch>.json` を Read で取得
-   - manifest が存在する場合: validation_level, worktree_path, server_dir 等を使用
-   - manifest が存在しない場合（fallback）: worktree_path と changed_files から Validation Level を自動判定（`dev-reference.md` §3 の判定表を使用）
-   - skip レベル → 検証をスキップし Step 6 へ
-
-2. **Validation Agent 起動**: foreground で1つずつ起動（FIFO 順）
-   ```
-   Agent(subagent_type="validation-agent", prompt="""
-     Manifest: /tmp/validation_queue/<branch>.json
-     （manifest なしの場合: worktree_path, changed_files, validation_level を直接指定）
-   """)
-   ```
-
-3. **結果に応じて分岐**:
-   - **PASS** → Step 6 へ
-   - **FAIL** → developer agent を resume して修正指示、再度 Step 5
-   - **WARNING** → ユーザーに報告、判断を委ねる
-
-### Step 6: Ship & 次のティアへ
-
-Validation PASS（または skip）の PR をユーザーに報告:
+各ティアは **`implement-tier` Workflow** に委譲する。1回の呼び出しが
+「ティア内 Issue の並列 worktree 実装 → L1/L2 並列検証 → PR 作成 → 条件付き auto-merge」
+を担い、結果（merged / escalated / dropped）を構造化して返す。
 
 ```
-Tier 0 results:
-  #51 → PR #61 validated (L1 PASS): {URL}
-  #52 → PR #62 validated (skip): {URL}
-
-To proceed to Tier 1, merge these PRs:
-  /ship --pr 61 --validated
-  /ship --pr 62 --validated
+Workflow(
+  scriptPath=".claude/workflows/implement-tier.js",
+  args={
+    "owner": "yamakii",
+    "repo": "garmin-performance-analysis",
+    "tierName": "Tier 0",
+    "issues": [
+      {"number": 51, "title": "Extract ApiClient singleton"},
+      {"number": 52, "title": "Extract RawDataFetcher"}
+    ]
+  }
+)
 ```
 
-### Step 7: 次のティアへ進行
+> Workflow は明示的なオプトイン機能。`/implement` の呼び出し自体がオプトインに該当する
+> （ユーザーがティア自動実装を要求している）ため、このコマンド内での Workflow 起動は許可される。
 
-マージ完了後、依存グラフを更新:
+Workflow 内部の流れ（`implement-tier.js`）:
+1. **Implement**（並列）: 各 Issue を developer agent（`isolation: 'worktree'`）で実装。manifest を
+   schema 付き構造化出力で返す（`/tmp/validation_queue` ファイルは使わない）
+2. **Validate**（並列）: validation-agent が L1/L2 を subprocess で検証。`skip` は pass 扱い、
+   `L3` は escalate（メインセッション担当のため Workflow では検証しない）
+3. **Ship**: push → PR 作成（`Closes #{issue}`）→ `ci-guard` が completed になるまでポーリング
+4. **Merge**（auto-merge ゲート）: **L1/L2 PASS かつ `ci-guard` success かつ mergeable** の PR のみ
+   `merge_pull_request` で自動マージ。条件を満たさないものは merge せず escalate
+
+### Step 5: Workflow 結果の処理
+
+Workflow の返り値:
+```json
+{
+  "tier": "Tier 0",
+  "merged":    [{"issue": 51, "pr": 61, "sha": "..."}],
+  "escalated": [{"issue": 52, "pr": 62, "reason": "ci-guard が failure"}],
+  "dropped":   []
+}
+```
+
+- **merged**: 自動マージ済み。ユーザーに PR とマージ SHA を報告
+- **escalated**: auto-merge せず人間判断が必要。理由ごとに対応:
+  - `検証 FAIL` → developer agent を resume して修正、再度 Workflow（該当 Issue のみ）
+  - `内容チェック WARNING` → ユーザーに報告し判断を仰ぐ（マージするなら `/ship --pr N --validated`）
+  - `ci-guard が failure` → CI ログを確認して修正
+  - `L3` → メインセッションが worktree の `.md` を main に一時適用して L3 検証（`worktree-validation-protocol.md`）→ 手動マージ
+  - `コンフリクト` → `git -C <worktree> rebase origin/main` → push → 再度 Step 4
+- **dropped**: agent 死亡 or skip。エラーを報告
+
+### Step 6: 次のティアへ進行
+
+ティアの merged Issue がマージされると依存が解け、次ティアが unblock される。
 
 1. マージ済み Issue を完了としてマーク
-2. 新たに unblock された Issue を特定
-3. 次のティアの Issue に対して Step 4-5 を繰り返す
+2. 新たに unblock された Issue を次ティアとして特定
+3. 次ティアの Issue で Step 4（Workflow）を再実行
 
-### Step 8: 全完了
+> auto-merge により merge → 次ティア unblock が Workflow 内で完結するため、複数ティアを
+> 続けて流せる。escalated が残るティアのみ人間が介入する。
+
+### Step 7: 全完了
 
 全 Issue が完了したら報告:
 
 ```
 All implementations complete for Epic #{epic}:
-  #51 → merged (PR #61)
-  #52 → merged (PR #62)
-  #53 → merged (PR #63)
-  #54 → merged (PR #64)
+  #51 → merged (PR #61)   [auto-merged: L1 PASS + ci-guard ✓]
+  #52 → merged (PR #62)   [auto-merged: skip + ci-guard ✓]
+  #53 → escalated (PR #63) [WARNING: 内容チェック — 要レビュー]
 ```
 
 ## DuckDB 並列安全性
@@ -141,6 +146,9 @@ All implementations complete for Epic #{epic}:
 
 ## Notes
 
-- マージ判断は常にユーザー（自動マージしない）
-- 各 PR 完了時に PR URL を提示
-- コンフリクト発生時: `git rebase origin/main && git push --force-with-lease`
+- **auto-merge ゲート**: 検証（L1/L2）PASS + `ci-guard` success + mergeable を満たす PR のみ
+  Workflow が自動マージする。テスト・検証の充実がこの緩和の前提（#395）
+- **人間ゲートが残る例外**: 検証 FAIL / 内容チェック WARNING / CI 失敗 / コンフリクト / L3 含み
+- **L3 は Workflow に載せない**: agent 定義変更はメインセッションが reload 非依存で担当
+- 各 PR の結果（merged/escalated）は Workflow 返り値からユーザーに提示
+- branch protection は維持（auto-merge も `ci-guard` 成功が前提）

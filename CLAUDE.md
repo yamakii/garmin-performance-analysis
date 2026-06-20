@@ -91,7 +91,9 @@ Key rules (auto-loaded from `.claude/rules/dev/`):
 
 ### Worktree 検証
 
-FIFO キュー + Validation Agent 方式。詳細は `.claude/rules/dev/worktree-validation-protocol.md` を参照。
+Validation Agent 方式（L1/L2 は subprocess で並列起動可、L3 のみメインセッション直列）。
+`/implement` は `implement-tier` Workflow でティアを実装し、検証 PASS + `ci-guard` green の PR を auto-merge する。
+詳細は `.claude/rules/dev/worktree-validation-protocol.md` を参照。
 
 ### Quick Commands
 | Command | Purpose |
