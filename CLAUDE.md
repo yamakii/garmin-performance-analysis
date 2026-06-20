@@ -155,7 +155,7 @@ garmin-performance-analysis/
 │       └── tests/
 ├── .claude/
 │   ├── agents/                     # 2 analysis agents (unified + split)
-│   ├── skills/                     # 9 user-invocable skills (/analyze-activity, /batch-analyze, /decompose, /implement, /plan-training, /project-status, /set-goal, /ship, /weekly-review)
+│   ├── skills/                     # 8 user-invocable skills (/analyze-activity, /decompose, /implement, /plan-training, /project-status, /set-goal, /ship, /weekly-review)
 │   ├── rules/                      # Shared rules (auto-loaded)
 │   ├── tasks/                      # todo.md, lessons.md (session tracking)
 │   └── settings.local.json
