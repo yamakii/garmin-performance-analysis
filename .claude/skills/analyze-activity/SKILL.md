@@ -12,12 +12,14 @@ argument-hint: [YYYY-MM-DD]
 
 ## ワークフロー
 
-1. **データ収集**: ingest_activity MCP ツール（補強セッションも strength_sessions に取り込む）
-2. **コンテキスト事前取得**: MCP ツールで prefetch（Bash許可不要）
-3. **セクション分析**: 2つのエージェント（unified-section-analyst + split-section-analyst）を並列実行（unified は事前取得コンテキスト付き）
-4. **結果登録**: merge script でDuckDBに一括登録（Web版で閲覧）
+1. **差分キャッチアップ**: catch_up_ingest MCP ツール（ランニング・体重・補強の未取込分を対象日まで埋める）
+2. **当日ラン取り込み**: ingest_activity MCP ツール（対象日のランニング activity）
+3. **コンテキスト事前取得**: MCP ツールで prefetch（Bash許可不要）
+4. **セクション分析**: 2つのエージェント（unified-section-analyst + split-section-analyst）を並列実行（unified は事前取得コンテキスト付き）
+5. **結果登録**: merge script でDuckDBに一括登録（Web版で閲覧）
 
-> 補強（strength_training）は **取り込みのみ**。section 分析・ペース/フォーム評価・レポートは一切行わず、unified/split agent も補強には使いません。
+> 補強（strength_training）・体重（body_composition）は **取り込みのみ**。section 分析・ペース/フォーム評価・レポートは一切行わず、unified/split agent も補強には使いません。
+> 分析（Step 1.5〜2.5）は **対象日のランニング activity 1件のみ**を対象とします（キャッチアップで埋めた過去分は取り込むだけで分析しません）。
 
 ## 実行手順
 
@@ -26,24 +28,23 @@ argument-hint: [YYYY-MM-DD]
 MCPツールでデータ収集・DuckDB格納を実行してください（Bash許可不要）。
 以降 `$ARGUMENTS` が空の場合は today の日付（YYYY-MM-DD）を `date` として読み替えてください。
 
-#### Step 1a: 補強（strength）セッションの取り込み
+#### Step 1a: 差分キャッチアップ（ランニング・体重・補強）
 
-まず対象日の補強セッションを strength_sessions に取り込みます（Garminアクセス、取り込みのみ）：
-
-```
-mcp__garmin-db__ingest_strength_sessions(start_date="$ARGUMENTS", end_date="$ARGUMENTS")
-```
-
-返り値 `{inserted, updated, activity_ids}` を保持してください。`inserted + updated > 0`（補強を取り込んだ）場合のみ、サマリを取得してユーザーに一言報告：
+まず対象日までの未取込分を一括で埋めます（Garminアクセス、取り込みのみ）。ランニング・体重・補強の3ドメインを、各ドメインの最終取込日（または対象日−30日のフロア）から対象日まで差分取込します：
 
 ```
-mcp__garmin-db__get_strength_sessions(start_date="$ARGUMENTS", end_date="$ARGUMENTS")
+mcp__garmin-db__catch_up_ingest(end_date="$ARGUMENTS")
 ```
 
-報告例: 「補強セッションを取り込みました（N回 / active_sets X / category_counts {...}）」。補強 0 件なら何も報告不要（または「補強なし」）。
-**補強には section 分析・ペース/フォーム評価を一切適用しません。** unified/split agent は補強 activity に使いません。
+`$ARGUMENTS` が空のときは end_date を today の日付（YYYY-MM-DD）に読み替えてください（end_date 省略でも内部既定が today）。
+返り値はドメインごとの `{inserted, updated, ...}` ＋ 解決済みウィンドウです。**日次運用なら差分は小さく、Garmin 呼び出しはわずかです（内部スロットル済み）**。
+
+いずれかのドメインで取り込みが発生した（`inserted + updated > 0`）場合のみ、ドメイン別サマリをユーザーに一言報告してください（例: 「キャッチアップ取込: ランニング N件 / 体重 M件 / 補強 K件」）。何も取り込まれなければ報告不要（または「差分なし」）。
+**補強・体重は取り込みのみで、section 分析・ペース/フォーム評価を一切適用しません。** unified/split agent は補強・体重に使いません。
 
 #### Step 1b: ランニング activity の取り込み
+
+対象日のランニング activity を取り込みます（Step 1a のキャッチアップで既に取り込まれていることもありますが、`ingest_activity` は冪等なので問題ありません）：
 
 ```
 mcp__garmin-db__ingest_activity(date="$ARGUMENTS")
@@ -51,8 +52,8 @@ mcp__garmin-db__ingest_activity(date="$ARGUMENTS")
 
 返却された `activity_id` と `date` を取得してください。
 
-**ランなし日（補強のみ）の graceful 処理**: `ingest_activity` がランニング activity を返さない（activity_id なし）場合は、**Step 1.5〜2.5（prefetch / section分析 / merge）をスキップ**し、「ランニング activity なし。補強セッションを strength_sessions に取り込み済み（summary）」と報告して正常終了してください（エラー終了しない）。
-ラン + 補強の両方がある日は、ランは通常どおり Step 1.5 以降で分析し、補強は Step 1a の取り込み + 報告のみ（分析しない）。
+**ランなし日（補強・体重のみ）の graceful 処理**: `ingest_activity` がランニング activity を返さない（activity_id なし）場合は、**Step 1.5〜2.5（prefetch / section分析 / merge）をスキップ**し、「ランニング activity なし。catch_up_ingest で差分取込済み（summary）」と報告して正常終了してください（エラー終了しない）。
+ラン + 補強の両方がある日は、ランは通常どおり Step 1.5 以降で分析し、補強・体重は Step 1a のキャッチアップ取り込み + 報告のみ（分析しない）。
 
 tempフォルダパスは `ANALYSIS_TEMP_DIR=/tmp/analysis_{activity_id}_{unix_timestamp}` として以降使用。unix_timestamp は現在時刻の秒数（例: 1709312345）。
 ディレクトリは Write tool がファイル書き込み時に自動作成するため、事前の mkdir は不要。
@@ -123,8 +124,9 @@ DuckDB 登録の完了をもって分析は完結します。分析結果は Web
 
 ## 重要事項
 
-- **補強は取り込みのみ**: 補強（strength_training）は Step 1a で strength_sessions へ取り込むだけ。section 分析・ペース/フォーム評価・レポートは行わない（unified/split agent も使わない）
-- **ランなし日**: その日にランニング activity が無ければ Step 1.5〜2.5 をスキップし、補強取り込みのサマリ報告で正常終了
+- **キャッチアップは取り込みのみ**: Step 1a の catch_up_ingest はランニング・体重・補強の未取込分を対象日まで埋めるだけ。補強・体重には section 分析・ペース/フォーム評価・レポートを行わない（unified/split agent も使わない）
+- **分析は当日のラン1件のみ**: キャッチアップで埋めた過去分は取り込むだけで、Step 1.5〜2.5 の分析対象は対象日のランニング activity 1件に限定
+- **ランなし日**: その日にランニング activity が無ければ Step 1.5〜2.5 をスキップし、catch_up_ingest の差分取込サマリ報告で正常終了
 - **並列実行必須**: セクション分析（unified + split）は必ず並列で実行（トークン効率）
 - **コンテキスト注入必須**: Step 2で unified-section-analyst に事前取得CONTEXTを渡す（split は不要）
 - **DuckDB優先**: mcp__garmin-db__*ツールを使用してトークン削減

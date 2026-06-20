@@ -63,6 +63,18 @@ argument-hint: [target week]
 
 ### Step 2: 実績収集（W-1 主軸 ＋ W 進行中分）
 
+#### Step 2-0: 差分キャッチアップ（実績を読む前に1回）
+
+実績を読み始める前に、**DB を最新化するため catch_up_ingest を1回だけ呼んでください**（ランニング・体重・補強の未取込分を today まで差分取込）:
+
+```
+mcp__garmin-db__catch_up_ingest(end_date=today)
+```
+
+**日次運用なら差分は小さく、Garmin 呼び出しはわずかです（内部スロットル済み）**。これ以降の `get_activity_by_date` / `get_strength_sessions` / `get_current_fitness_summary` 等は**すべて DB 読取**（Garmin 非アクセス）で、最新化されたデータを読みます。
+
+#### Step 2-1: 各日の実績収集
+
 実績の主軸は **直前の完了週 W-1（`prev_mon`〜`prev_sun`）** です。各日について MCP ツールで実績を集めてください（Bash 許可不要）:
 
 ```
@@ -116,7 +128,7 @@ mcp__garmin-db__get_strength_sessions(start_date=prev_mon, end_date=prev_sun)
 
 収集する観点: **補強の回数・実施日・所要時間（`active_duration_seconds`）・HR・セット数（`active_sets`）・カテゴリ構成（`category_counts`）**。
 
-- **補強は DB のみから読む（Garmin 非アクセス）**。取り込み（`ingest_strength_sessions`）はこのコマンドでは呼ばない。
+- **補強は DB のみから読む（Garmin 非アクセス）**。最新化は Step 2-0 の catch_up_ingest が冒頭で一括して済ませているため、この収集ステップで個別の取り込みは呼ばない。
 - 補強には **ペース/フォーム評価を適用しない**（`get_performance_trends` 等のラン用ツールは補強 activity に使わない）。回復・補強遵守・故障予防の文脈でのみ扱う。
 - 補強が0件の期間でも問題ありません。空配列ならそのまま「補強記録なし」として扱います。
 
