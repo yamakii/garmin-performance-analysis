@@ -1,74 +1,84 @@
 # Testing Guidelines
 
+Quick reference for test markers and execution. The authoritative rules for
+test budgets, fixtures, and parallel-safety live in
+`.claude/rules/dev/dev-reference.md` §4 (auto-loaded).
+
+## Monorepo layout
+
+Tests live in two packages, each with its own `pyproject.toml` pytest config:
+
+- `packages/garmin-mcp-server/tests/`
+- `packages/garmin-web/tests/`
+
+Run them via `uv run --directory <package> pytest ...`. The canonical CI
+command set is `scripts/ci-check.sh` (server: `pytest -m unit`; web:
+`pytest -m "unit or integration"`).
+
 ## Test Markers
 
-### `@pytest.mark.unit`
-- 単体テスト
-- 外部依存なし（ファイルシステム、データベース、API不要）
-- 高速実行
+Defined in each package's `pyproject.toml` (`[tool.pytest.ini_options]`):
 
-### `@pytest.mark.integration`
-- 統合テスト
-- ファイルシステム、DuckDB、Parquetファイルなどの外部リソースを使用
-- **pre-commit hookでは実行されない**（pre-commitはunitのみ）
-
-### `@pytest.mark.garmin_api`
-- Garmin API認証が必要なテスト
-- Rate limit対策のため、**pre-commit hookから除外される**
-- 手動実行のみ: `pytest -m garmin_api`
-
-### `@pytest.mark.performance`
-- パフォーマンステスト
-- 実行時間の測定やベンチマーク
+| Marker | Meaning |
+|--------|---------|
+| `unit` | Fast, isolated — mocks only, no I/O, < 100ms |
+| `integration` | Moderate speed — mock DuckDB / filesystem / Parquet |
+| `performance` | Benchmarks; real data OK (skipped if unavailable) |
+| `slow` | Slow tests, deselected by default |
+| `garmin_api` | Requires Garmin API auth; rate-limited, manual only |
 
 ## Default Behavior
 
-```bash
-# 通常のpytest実行（デフォルトでgarmin_api除外）
-pytest  # garmin_apiマーカー以外のすべてのテスト
+`addopts` deselects three markers by default, so a bare `pytest` skips
+`garmin_api`, `slow`, and `performance`:
+
+```toml
+addopts = "-m 'not garmin_api and not slow and not performance' --strict-markers -n 4 ..."
 ```
 
-**重要**: `pyproject.toml` の `addopts` でデフォルトで `garmin_api` を除外しています。
-
-## Test Execution Examples
-
 ```bash
-# デフォルト（garmin_api除外）
-pytest
+# From a package dir — runs unit + integration only
+uv run --directory packages/garmin-mcp-server pytest
 
-# Unit testsのみ
-pytest -m unit
+# Unit only
+uv run --directory packages/garmin-mcp-server pytest -m unit
 
-# Integration testsのみ
-pytest -m integration
+# Integration only
+uv run --directory packages/garmin-mcp-server pytest -m integration
 
-# Garmin API testsのみ（手動実行、デフォルト除外を上書き）
-pytest -m garmin_api
+# Garmin API tests (override the default deselect)
+uv run --directory packages/garmin-mcp-server pytest -m garmin_api
 
-# すべてのテスト（garmin_api含む）
-pytest -m ""
+# Everything, including deselected markers
+uv run --directory packages/garmin-mcp-server pytest -m ""
 ```
+
+## pre-commit vs CI
+
+- **pre-commit runs no tests.** Its hooks are formatting/lint/type only:
+  `black`, `ruff`, `mypy`, `no-direct-duckdb-connect`, `check-banned-patterns`
+  (plus whitespace/EOF/yaml/json utility hooks). See `.pre-commit-config.yaml`.
+- **Tests run in CI** (`ci-guard`) and locally via `scripts/ci-check.sh`.
+  Run `scripts/ci-check.sh` before pushing to reproduce the CI gate
+  (whole-package `black --check` / `mypy` / `pytest`), which per-file
+  pre-commit does not cover.
 
 ## Best Practices
 
-1. **Garmin API認証が必要なテストには必ず `@pytest.mark.garmin_api` を付ける**
-   - Rate limitを避けるため、pre-commitでは実行されない
-
-2. **Integration testsはキャッシュファイルを使う**
-   - `data/raw/` にキャッシュファイルがある場合、API呼び出しは不要
-   - キャッシュファイル存在確認: `assert cache_file.exists()`
-
-3. **複数マーカーの併用**
+1. **Tag Garmin-API tests with `@pytest.mark.garmin_api`** so they are
+   deselected by default and only run manually (avoids 429 rate limits).
+2. **Integration tests use cached raw data** under `data/raw/` instead of live
+   API calls. Assert the cache exists: `assert cache_file.exists()`.
+3. **Combine markers** when a test is both:
    ```python
    @pytest.mark.integration
    @pytest.mark.garmin_api
    def test_api_integration():
-       # API認証 + 統合テスト
-       pass
+       ...
    ```
 
 ## Garmin API Rate Limit
 
-- Garmin APIには429 Too Many Requestsのrate limitがある
-- 認証失敗が続くと一時的にブロックされる
-- `@pytest.mark.garmin_api` マーカーで隔離し、手動実行のみにする
+- Garmin API returns `429 Too Many Requests` under load; repeated auth failures
+  can trigger a temporary block.
+- Isolate such tests behind `@pytest.mark.garmin_api` and run them manually.

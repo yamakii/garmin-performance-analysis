@@ -59,17 +59,6 @@ This guide describes the **DuckDB × MCP × Python Architecture** for bulk perfo
 2. Metrics: pace, heart_rate, distance, form metrics, etc.
 3. Analysis type: trend, prediction, comparison, correlation
 
-**Pre-Check with profile() (RECOMMENDED - データ量確認, 未実装):**
-```python
-# データ量とカラム統計を事前確認（export前の安全確認）
-profile_result = mcp__garmin-db__profile(
-    table_or_query="activities",
-    date_range=("2025-05-01", "2025-10-17")
-)
-# → row_count: 107, NULL率確認, 範囲妥当性確認
-# → 大量データ（10,000+行）なら集計クエリに変更
-```
-
 **Check Schema (MANDATORY - prevents column name errors):**
 ```python
 # ALWAYS run this to avoid column name errors
@@ -128,7 +117,7 @@ handle = mcp__garmin-db__export(
     format="parquet",  # MANDATORY: NOT csv
     max_rows=1000
 )
-# Returns: {"handle": "/path/to/export.parquet", "rows": 107, "columns": 10}
+# Returns: {"handle": "/path/to/export.parquet", "rows": 107, "columns": 10, "size_mb": 0.04, "expires_at": "..."}
 # Token cost: ~25 tokens (NOT 55,000!)
 ```
 
@@ -214,7 +203,7 @@ uv run python /tmp/analyze.py
 **Validation:**
 ```python
 # Auto-applied by helper functions (already implemented)
-from tools.utils.llm_safe_data import safe_json_output, safe_summary_table
+from garmin_mcp.utils.llm_safe_data import safe_json_output, safe_summary_table
 
 # JSON output (auto-trims if >1KB)
 safe_json_output(summary)
@@ -279,10 +268,13 @@ mcp__garmin-db__export(
   "handle": "/path/to/export.parquet",
   "rows": 107,
   "columns": 10,
-  "tables_used": ["activities", "splits"],
-  "query_time_ms": 45
+  "size_mb": 0.04,
+  "expires_at": "2025-10-17T12:00:00Z"
 }
 ```
+
+> A `_warnings` array is added when the query takes > 5s. On failure the dict
+> contains `error` (and a `suggestion`) instead of a handle.
 
 **Usage:**
 ```python
@@ -300,153 +292,12 @@ data = mcp__garmin-db__export(
 )
 ```
 
-### 2. mcp__garmin-db__profile (推奨 - 事前確認) — 未実装
+> Need pre-export profiling, histograms, or materialized views? There are no
+> dedicated MCP tools for these — express them as SQL inside `export()`
+> (e.g. `SELECT COUNT(*)`, `GROUP BY` bucketing, or a CTE) and read the
+> resulting parquet in STEP 3.
 
-**Purpose:** データの要約統計を取得（export前の事前確認に最適）
-
-**Signature:**
-```python
-mcp__garmin-db__profile(
-    table_or_query: str,              # テーブル名 or SQL query
-    date_range: Optional[tuple] = None  # (start_date, end_date)
-) -> dict
-```
-
-**Returns:**
-```json
-{
-  "row_count": 107,
-  "date_range": ["2025-05-01", "2025-10-17"],
-  "columns": {
-    "pace_seconds_per_km": {
-      "min": 240, "max": 360, "mean": 270,
-      "median": 265, "std": 15, "null_rate": 0.01
-    },
-    "heart_rate": {
-      "min": 120, "max": 180, "mean": 150,
-      "null_rate": 0.0
-    }
-  }
-}
-```
-
-**Usage:**
-```python
-# データ量とカラム統計を事前確認
-profile = mcp__garmin-db__profile(
-    table_or_query="activities",
-    date_range=("2025-05-01", "2025-10-17")
-)
-# → 107行、NULL率確認、範囲確認後にexport実行
-```
-
-**When to Use:**
-- ✅ Export前のデータ量確認（大量データ防止）
-- ✅ NULL率確認（欠損値対策）
-- ✅ 日付範囲の妥当性確認
-- ✅ 複雑なクエリの事前テスト
-
-**Token Cost:** ~500 bytes（exportの1/50）
-
-### 3. mcp__garmin-db__histogram (推奨 - 分布確認) — 未実装
-
-**Purpose:** カラムの分布特性を取得（生データなし）
-
-**Signature:**
-```python
-mcp__garmin-db__histogram(
-    table_or_query: str,              # テーブル名 or SQL query
-    column: str,                       # 対象カラム
-    bins: int = 20,                    # ビン数
-    date_range: Optional[tuple] = None # (start_date, end_date)
-) -> dict
-```
-
-**Returns:**
-```json
-{
-  "column": "pace_seconds_per_km",
-  "bins": [
-    {"min": 240, "max": 250, "count": 12},
-    {"min": 250, "max": 260, "count": 45},
-    {"min": 260, "max": 270, "count": 30},
-    ...
-  ],
-  "total_count": 107
-}
-```
-
-**Usage:**
-```python
-# ペース分布を確認（可視化前の分析）
-pace_dist = mcp__garmin-db__histogram(
-    table_or_query="SELECT pace_seconds_per_km FROM splits WHERE activity_date >= '2025-05-01'",
-    column="pace_seconds_per_km",
-    bins=20
-)
-# → 分布が正規分布か、外れ値がないかを確認
-```
-
-**When to Use:**
-- ✅ 分布特性の確認（正規分布、偏り、外れ値）
-- ✅ グラフ生成前の事前分析
-- ✅ 異常値検出
-- ✅ ビン境界の最適化
-
-**Token Cost:** ~1KB（20ビン × 50バイト）
-
-### 4. mcp__garmin-db__materialize (推奨 - 複雑クエリ最適化) — 未実装
-
-**Purpose:** 一時ビュー作成（複雑なクエリを再利用、高速化）
-
-**Signature:**
-```python
-mcp__garmin-db__materialize(
-    name: str,              # ビュー名（ユニーク）
-    query: str,             # 物質化するSQL
-    ttl_seconds: int = 3600 # 有効期限（デフォルト1時間）
-) -> dict
-```
-
-**Returns:**
-```json
-{
-  "view": "temp_view_abc123",
-  "rows": 107,
-  "expires_at": "2025-10-17T12:00:00Z"
-}
-```
-
-**Usage:**
-```python
-# 複雑なJOINを物質化（2回目以降が高速）
-view = mcp__garmin-db__materialize(
-    name="analysis_5months",
-    query="""
-    WITH splits_agg AS (...)
-    SELECT a.*, s.avg_pace, fe.gct_average
-    FROM activities a
-    LEFT JOIN splits_agg s ON a.activity_id = s.activity_id
-    LEFT JOIN form_efficiency fe ON a.activity_id = fe.activity_id
-    WHERE a.activity_date >= '2025-05-01'
-    """
-)
-
-# ビューを参照して高速クエリ
-data = mcp__garmin-db__export(
-    query=f"SELECT * FROM {view['view']} WHERE avg_pace < 270",
-    format="parquet"
-)
-```
-
-**When to Use:**
-- ✅ 複雑なJOINクエリを複数回実行する場合
-- ✅ 同じデータセットを異なる条件でフィルタする場合
-- ✅ パフォーマンス最適化（2-5x高速化）
-
-**Token Cost:** ~100 bytes（ハンドルのみ）
-
-### 5. Bash (必須)
+### 2. Bash (必須)
 
 **Purpose:** Execute Python analysis scripts
 
