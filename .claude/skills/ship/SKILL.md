@@ -64,13 +64,20 @@ Note: Branch deletion is handled by GitHub's auto-delete setting.
 
 ### Step 3-PR: ローカル同期 + クリーンアップ
 
+`{branch}` は Step 1-PR の `pull_request_read(method="get")` が返す `head.ref`（PR head ブランチ）。`git pull` 後はマージ済みなので `git branch -d` で安全に削除できる（未マージなら `-d` が拒否する）。
+
 ```bash
 git checkout main
 git pull
 
-# Remove worktree if it exists
+# Remove worktree and delete the now-merged local branch + prune stale tracking refs
 git worktree remove ../garmin-{name} 2>/dev/null || true
+git branch -d {branch} 2>/dev/null || true
+git remote prune origin 2>/dev/null || true
 ```
+
+> `worktree-agent-*`（`Agent(isolation: "worktree")` 由来）など ship 経由でない残留ブランチは
+> `bash scripts/prune-merged-branches.sh` で一括掃除できる（`git branch -d` ベースで安全）。
 
 ### Step 4-PR: Issue クローズ
 
