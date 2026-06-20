@@ -12,24 +12,47 @@ argument-hint: [YYYY-MM-DD]
 
 ## ワークフロー
 
-1. **データ収集**: ingest_activity MCP ツール
+1. **データ収集**: ingest_activity MCP ツール（補強セッションも strength_sessions に取り込む）
 2. **コンテキスト事前取得**: MCP ツールで prefetch（Bash許可不要）
 3. **セクション分析**: 2つのエージェント（unified-section-analyst + split-section-analyst）を並列実行（unified は事前取得コンテキスト付き）
 4. **結果登録**: merge script でDuckDBに一括登録（Web版で閲覧）
+
+> 補強（strength_training）は **取り込みのみ**。section 分析・ペース/フォーム評価・レポートは一切行わず、unified/split agent も補強には使いません。
 
 ## 実行手順
 
 ### Step 1: データ収集
 
-MCPツールでデータ収集・DuckDB格納を実行してください（Bash許可不要）：
+MCPツールでデータ収集・DuckDB格納を実行してください（Bash許可不要）。
+以降 `$ARGUMENTS` が空の場合は today の日付（YYYY-MM-DD）を `date` として読み替えてください。
+
+#### Step 1a: 補強（strength）セッションの取り込み
+
+まず対象日の補強セッションを strength_sessions に取り込みます（Garminアクセス、取り込みのみ）：
+
+```
+mcp__garmin-db__ingest_strength_sessions(start_date="$ARGUMENTS", end_date="$ARGUMENTS")
+```
+
+返り値 `{inserted, updated, activity_ids}` を保持してください。`inserted + updated > 0`（補強を取り込んだ）場合のみ、サマリを取得してユーザーに一言報告：
+
+```
+mcp__garmin-db__get_strength_sessions(start_date="$ARGUMENTS", end_date="$ARGUMENTS")
+```
+
+報告例: 「補強セッションを取り込みました（N回 / active_sets X / category_counts {...}）」。補強 0 件なら何も報告不要（または「補強なし」）。
+**補強には section 分析・ペース/フォーム評価を一切適用しません。** unified/split agent は補強 activity に使いません。
+
+#### Step 1b: ランニング activity の取り込み
 
 ```
 mcp__garmin-db__ingest_activity(date="$ARGUMENTS")
 ```
 
-`$ARGUMENTS` が空の場合は today の日付（YYYY-MM-DD）を `date` に渡してください。
-
 返却された `activity_id` と `date` を取得してください。
+
+**ランなし日（補強のみ）の graceful 処理**: `ingest_activity` がランニング activity を返さない（activity_id なし）場合は、**Step 1.5〜2.5（prefetch / section分析 / merge）をスキップ**し、「ランニング activity なし。補強セッションを strength_sessions に取り込み済み（summary）」と報告して正常終了してください（エラー終了しない）。
+ラン + 補強の両方がある日は、ランは通常どおり Step 1.5 以降で分析し、補強は Step 1a の取り込み + 報告のみ（分析しない）。
 
 tempフォルダパスは `ANALYSIS_TEMP_DIR=/tmp/analysis_{activity_id}_{unix_timestamp}` として以降使用。unix_timestamp は現在時刻の秒数（例: 1709312345）。
 ディレクトリは Write tool がファイル書き込み時に自動作成するため、事前の mkdir は不要。
@@ -100,6 +123,8 @@ DuckDB 登録の完了をもって分析は完結します。分析結果は Web
 
 ## 重要事項
 
+- **補強は取り込みのみ**: 補強（strength_training）は Step 1a で strength_sessions へ取り込むだけ。section 分析・ペース/フォーム評価・レポートは行わない（unified/split agent も使わない）
+- **ランなし日**: その日にランニング activity が無ければ Step 1.5〜2.5 をスキップし、補強取り込みのサマリ報告で正常終了
 - **並列実行必須**: セクション分析（unified + split）は必ず並列で実行（トークン効率）
 - **コンテキスト注入必須**: Step 2で unified-section-analyst に事前取得CONTEXTを渡す（split は不要）
 - **DuckDB優先**: mcp__garmin-db__*ツールを使用してトークン削減
