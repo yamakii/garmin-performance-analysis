@@ -35,3 +35,9 @@ repos:
         entry: .claude/hooks/no-direct-duckdb-connect.sh
         language: system
         pass_filenames: false
+
+      - id: check-banned-patterns
+        name: check banned patterns (hardcoded paths, float==0)
+        entry: .claude/hooks/check-banned-patterns.sh
+        language: system
+        pass_filenames: false
