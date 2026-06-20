@@ -14,7 +14,8 @@ print(json.load(sys.stdin).get('tool_input',{}).get('command',''))
 echo "$command" | grep -Eq 'git( +-C +[^ ]+)? +commit' || exit 0
 
 # command から -C <path> を抽出（あればターゲットの worktree を見る）
-cpath=$(echo "$command" | grep -oE 'git +-C +[^ ]+' | head -1 | sed -E 's/.*-C +//')
+# grep が非マッチ時に exit 1 を返しても set -e で落ちないよう || true で吸収
+cpath=$(echo "$command" | grep -oE 'git +-C +[^ ]+' | head -1 | sed -E 's/.*-C +//' || true)
 
 # ターゲットブランチを解決（-C があればそのパス、なければ CWD）
 if [ -n "$cpath" ]; then
