@@ -16,8 +16,8 @@ print(json.load(sys.stdin).get('tool_input',{}).get('command',''))
 # ALLOW_PUSH=1 による明示 ack があれば通す（避難経路）
 echo "$command" | grep -q "ALLOW_PUSH=1" && exit 0
 
-# git push を含まないなら通す
-echo "$command" | grep -q "git push" || exit 0
+# git push を含まないなら通す（git -C <path> push 形式も検知）
+echo "$command" | grep -Eq 'git( +-C +[^ ]+)? +push' || exit 0
 
 # force push 判定（--force-with-lease は除外）
 has_force=0
@@ -33,7 +33,7 @@ if [ "$has_force" -eq 1 ]; then
 fi
 
 # main/master への明示 push（ref トークン）
-if echo "$command" | grep -Eq 'git push[^&|;]*(\bmain\b|\bmaster\b)'; then
+if echo "$command" | grep -Eq 'git( +-C +[^ ]+)? +push[^&|;]*(\bmain\b|\bmaster\b)'; then
   echo "BLOCKED: main/master への直接 push は禁止です。worktree + PR 経由にしてください。" >&2
   echo "意図的なら: ALLOW_PUSH=1 <元コマンド>" >&2
   exit 2
