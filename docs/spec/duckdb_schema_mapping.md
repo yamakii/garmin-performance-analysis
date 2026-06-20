@@ -1,825 +1,738 @@
 # DuckDB Schema Mapping Specification
 
-**Version**: 2.2
-**Last Updated**: 2025-10-28
+**Version**: 2.3
+**Last Updated**: 2026-06-20
 **Database**: `garmin_performance.duckdb`
-**Total Tables**: 14
+**Total Tables**: 19 domain tables (+ `schema_version` migration bookkeeping)
 
-This document provides comprehensive schema documentation for all DuckDB tables in the Garmin performance analysis system.
+This document provides comprehensive schema documentation for all DuckDB tables in the Garmin performance analysis system. Every column name, type, and primary key below is verified against the live schema (`PRAGMA table_info`). Where prose describes derived/calculated logic, that logic lives in the inserters / form-baseline modules and is documented here because it is not otherwise discoverable from the column definitions.
+
+> **Schema bookkeeping**: a 20th table, `schema_version` (`version INTEGER PK`, `name`, `applied_at`), tracks applied migrations and is **not** a domain table. The migration runner (`database/migrations/registry.py`) applies numbered migrations after `_ensure_tables()` and records them there.
 
 ## Change History
 
+### Version 2.3 (2026-06-20)
+- **`form_baselines` table dropped** (migration `phase0_power_prep`, schema version 1). Pace-corrected baselines now live solely in `form_baseline_history`, and `activities.body_mass_kg` was backfilled in the same migration.
+- **All FOREIGN KEY constraints removed** (migration `remove_fk_constraints`, version 4, 2025-11-01). No table declares FK constraints; `_ensure_tables()` creates FK-free schemas. Referential integrity is maintained by the ingest pipeline, not the database.
+- **Power-efficiency columns added** to `form_evaluations` (migration `phase1_power_efficiency`, version 2) and `integrated_score` / `training_mode` (migration `phase2_integrated_score`, version 3).
+- **Cadence evaluation columns added** to `form_evaluations` (migration `add_cadence_columns`, version 6).
+- **Plan versioning** added: `training_plans.version` and `planned_workouts.version` (migration `add_plan_versioning`, version 5).
+- **Athlete-centric tables added**: `athlete_profile`, `athlete_goals`, `season_retrospectives`, `weekly_reviews` (migration `add_athlete_tables`, version 7). These back the `/set-goal`, `/plan-training`, and `/weekly-review` features. DDL for these tables is owned exclusively by the migration (not `_ensure_tables()`) to keep a single source of truth (issue #342).
+- **`weekly_reviews` UNIQUE index dropped** (migration `drop_weekly_review_index`, version 8) to allow multiple revisions per week.
+- **`body_composition` date index added** as a UNIQUE index (migration `add_body_composition_date_index`, version 9; also created in `_ensure_tables()`).
+- **`form_baseline_history` extended** with `model_type` and power-model coefficients (`power_a`, `power_b`, `power_rmse`) alongside the existing `coef_alpha/d/a/b`.
+
 ### Version 2.2 (2025-10-28)
-- **Unified Form Evaluation System**: Added 3 new tables for pace-corrected form evaluation
-  - `form_baselines`: Statistical model coefficients (power regression for GCT, linear for VO/VR)
-  - `form_baseline_history`: 2-month rolling window baseline history for trend analysis
-  - `form_evaluations`: Activity-level evaluation results with star ratings and needs_improvement flags
-- **New MCP Tools**: `get_form_evaluations()`, `get_form_baseline_trend()`
-- **Benefit**: Eliminates evaluation contradictions between agents, provides data-driven pace-corrected standards
+- Introduced the unified pace-corrected form evaluation system (`form_baseline_history`, `form_evaluations`, plus the now-dropped `form_baselines`) and MCP tools `get_form_evaluations()`, `get_form_baseline_trend()`.
 
 ### Version 2.1 (2025-10-24)
-- **Cadence Column Cleanup**: Simplified time_series_metrics cadence columns
-  - Removed 4 redundant cadence columns: `cadence` (old single-foot), `cadence_single_foot`, `cadence_total`, `fractional_cadence`
-  - Kept single `cadence` column containing `directDoubleCadence` (both feet, directly from Garmin API)
-  - Migration: 260,304 rows updated, backward-incompatible change
-  - Reason: Eliminated confusion between single-foot (90 spm) and both-feet (180 spm) cadence values
+- Simplified `time_series_metrics` cadence to a single `cadence` column holding `directDoubleCadence` (both feet, ~180 spm), removing single-foot/total/fractional variants.
 
 ### Version 2.0 (2025-10-20)
-- **Schema Cleanup**: Removed 6 device-unprovided NULL fields
-  - `vo2_max.fitness_age` (0% population)
-  - `body_composition`: basal_metabolic_rate, active_metabolic_rate, metabolic_age, visceral_fat_rating, physique_rating (all 0%)
-- **Phase 2 Enhancements**: Added 28 calculation fields across 4 tables
-  - `splits`: 7 calculation fields (hr_zone, cadence_rating, power_efficiency, environmental_conditions, wind_impact, temp_impact, environmental_impact)
-  - `form_efficiency`: 4 evaluation fields (gct_evaluation, vo_evaluation, vr_evaluation, vo_trend)
-  - `hr_efficiency`: 6 evaluation fields (primary_zone, zone_distribution_rating, aerobic_efficiency, training_quality, zone2_focus, zone4_threshold_work)
-  - `performance_trends`: 12 phase-based fields (warmup/run/recovery/cooldown × 3 fields each)
+- Removed device-unprovided NULL fields (`vo2_max.fitness_age`; `body_composition` metabolic fields) and added derived/evaluation fields across `splits`, `form_efficiency`, `hr_efficiency`, `performance_trends`.
 
 ---
 
-## Table of Contents
+## Table of Contents (19 domain tables by category)
 
-1. [activities](#1-activities) - Activity metadata
-2. [splits](#2-splits) - 1km lap/split data
-3. [time_series_metrics](#3-time_series_metrics) - Second-by-second metrics
-4. [form_efficiency](#4-form_efficiency) - Running form metrics (GCT/VO/VR)
-5. [form_baselines](#5-form_baselines) - Statistical model coefficients for pace-corrected evaluation
-6. [form_baseline_history](#6-form_baseline_history) - 2-month rolling window baseline history
-7. [form_evaluations](#7-form_evaluations) - Pace-corrected activity evaluation results
-8. [hr_efficiency](#8-hr_efficiency) - Heart rate efficiency analysis
-9. [heart_rate_zones](#9-heart_rate_zones) - HR zone boundaries and distribution
-10. [performance_trends](#10-performance_trends) - Performance and fatigue patterns
-11. [vo2_max](#11-vo2_max) - VO2 max estimates
-12. [lactate_threshold](#12-lactate_threshold) - Lactate threshold data
-13. [body_composition](#13-body_composition) - Weight and body metrics
-14. [section_analyses](#14-section_analyses) - Agent analysis results
+| # | Table | Category | Primary Key | Row scale |
+|---|-------|----------|-------------|-----------|
+| 1 | [activities](#1-activities) | Metadata | `activity_id` | ~520 activities |
+| 2 | [body_composition](#2-body_composition) | Metadata | `measurement_id` (UNIQUE on `date`) | daily measurements |
+| 3 | [splits](#3-splits) | Performance | `(activity_id, split_index)` | ~9 splits/activity |
+| 4 | [time_series_metrics](#4-time_series_metrics) | Performance | `(activity_id, seq_no)` | ~1,000–2,000 rows/activity |
+| 5 | [performance_trends](#5-performance_trends) | Performance | `activity_id` | 1/activity |
+| 6 | [form_efficiency](#6-form_efficiency) | Physiology | `activity_id` | 1/activity |
+| 7 | [form_evaluations](#7-form_evaluations) | Physiology | `eval_id` | ~340/520 (fixable ceiling) |
+| 8 | [form_baseline_history](#8-form_baseline_history) | Physiology | `history_id` | monthly × metrics |
+| 9 | [hr_efficiency](#9-hr_efficiency) | Physiology | `activity_id` | 1/activity |
+| 10 | [heart_rate_zones](#10-heart_rate_zones) | Physiology | `(activity_id, zone_number)` | 5 zones/activity |
+| 11 | [vo2_max](#11-vo2_max) | Physiology | `activity_id` | ~78% of activities |
+| 12 | [lactate_threshold](#12-lactate_threshold) | Physiology | `activity_id` | ~52% of activities |
+| 13 | [training_plans](#13-training_plans) | Training | `plan_id` (+ `version`) | per generated plan |
+| 14 | [planned_workouts](#14-planned_workouts) | Training | `workout_id` | per planned session |
+| 15 | [section_analyses](#15-section_analyses) | Analysis | `analysis_id` (UNIQUE on `(activity_id, section_type)`) | 5/analyzed activity |
+| 16 | [athlete_profile](#16-athlete_profile) | Athlete | `user_id` | 1/user |
+| 17 | [athlete_goals](#17-athlete_goals) | Athlete | `goal_id` | per registered goal |
+| 18 | [season_retrospectives](#18-season_retrospectives) | Athlete | `retro_id` | per season |
+| 19 | [weekly_reviews](#19-weekly_reviews) | Athlete | `review_id` | per weekly review |
 
 ---
 
 ## 1. activities
 
 **Purpose**: Core activity metadata and summary metrics
-
 **Primary Key**: `activity_id`
-**Row Count**: ~231 activities
-**Source**: `data/raw/activity/{activity_id}/activity.json`
+**Source**: `data/raw/activity/{activity_id}/activity.json` (+ `weather.json` for weather fields)
 
-### Schema
+### Schema (20 columns)
 
-| Column | Type | Nullable | Source | Description |
-|--------|------|----------|--------|-------------|
-| activity_id | BIGINT | NO | summaryDTO.activityId | Unique activity identifier |
-| date | DATE | NO | summaryDTO.startTimeLocal | Activity date (YYYY-MM-DD) |
-| activity_name | VARCHAR | YES | summaryDTO.activityName | Activity name/title |
-| start_time_local | TIMESTAMP | YES | summaryDTO.startTimeLocal | Start time (local timezone) |
-| start_time_gmt | TIMESTAMP | YES | summaryDTO.startTimeGMT | Start time (GMT) |
-| total_time_seconds | INTEGER | YES | summaryDTO.duration | Total duration (seconds) |
-| total_distance_km | DOUBLE | YES | summaryDTO.distance / 1000 | Total distance (km) |
-| avg_pace_seconds_per_km | DOUBLE | YES | Calculated from distance/duration | Average pace (sec/km) |
-| avg_heart_rate | INTEGER | YES | summaryDTO.averageHR | Average heart rate (bpm) |
-| max_heart_rate | INTEGER | YES | summaryDTO.maxHR | Maximum heart rate (bpm) |
-| avg_cadence | INTEGER | YES | summaryDTO.averageRunCadence | Average cadence (spm, total) |
-| avg_power | INTEGER | YES | summaryDTO.avgPower | Average power (W) |
-| normalized_power | INTEGER | YES | summaryDTO.normPower | Normalized power (W) |
-| cadence_stability | DOUBLE | YES | Calculated | Cadence stability score |
-| power_efficiency | DOUBLE | YES | Calculated | Power efficiency metric |
-| pace_variability | DOUBLE | YES | Calculated | Pace variability coefficient |
-| aerobic_te | DOUBLE | YES | summaryDTO.aerobicTrainingEffect | Aerobic training effect (0-5) |
-| anaerobic_te | DOUBLE | YES | summaryDTO.anaerobicTrainingEffect | Anaerobic training effect (0-5) |
-| training_effect_source | VARCHAR | YES | summaryDTO.trainingEffectLabel | Training type classification |
-| power_to_weight | DOUBLE | YES | avg_power / weight_kg | Power-to-weight ratio (W/kg) |
-| weight_kg | DOUBLE | YES | 7-day median | Weight (kg, statistical) |
-| weight_source | VARCHAR | YES | Calculated | Weight data source |
-| weight_method | VARCHAR | YES | Calculated | Weight calculation method |
-| stability_score | DOUBLE | YES | Calculated | Overall stability metric |
-| external_temp_c | DOUBLE | YES | weather.json temp | External temperature (°C) |
-| external_temp_f | DOUBLE | YES | Calculated from temp_c | External temperature (°F) |
-| humidity | INTEGER | YES | weather.json relativeHumidity | Relative humidity (%) |
-| wind_speed_ms | DOUBLE | YES | weather.json windSpeed | Wind speed (m/s) |
-| wind_direction_compass | VARCHAR | YES | weather.json windDirectionCompassPoint | Wind direction (N/NE/E/etc) |
-| gear_name | VARCHAR | YES | summaryDTO.gear.displayName | Shoe/gear name |
-| gear_type | VARCHAR | YES | summaryDTO.gear.gearTypeName | Gear type |
-| created_at | TIMESTAMP | NO | CURRENT_TIMESTAMP | Record creation time |
-| updated_at | TIMESTAMP | NO | CURRENT_TIMESTAMP | Record update time |
-| total_elevation_gain | DOUBLE | YES | summaryDTO.elevationGain | Total elevation gain (m) |
-| total_elevation_loss | DOUBLE | YES | summaryDTO.elevationLoss | Total elevation loss (m) |
-| location_name | VARCHAR | YES | summaryDTO.locationName | Activity location |
+| Column | Type | Description |
+|--------|------|-------------|
+| activity_id | BIGINT (PK) | Unique activity identifier |
+| activity_date | DATE | Activity date (YYYY-MM-DD) |
+| activity_name | VARCHAR | Activity name/title |
+| start_time_local | TIMESTAMP | Start time (local timezone) |
+| start_time_gmt | TIMESTAMP | Start time (GMT) |
+| location_name | VARCHAR | Activity location |
+| total_distance_km | DOUBLE | Total distance (km) |
+| total_time_seconds | INTEGER | Total duration (seconds) |
+| avg_speed_ms | DOUBLE | Average speed (m/s) |
+| avg_pace_seconds_per_km | DOUBLE | Average pace (sec/km) |
+| avg_heart_rate | INTEGER | Average heart rate (bpm) |
+| max_heart_rate | INTEGER | Maximum heart rate (bpm) |
+| temp_celsius | DOUBLE | External temperature from `weather.json` (°C) |
+| relative_humidity_percent | DOUBLE | Relative humidity from `weather.json` (%) |
+| wind_speed_kmh | DOUBLE | Wind speed from `weather.json` (km/h) |
+| wind_direction | VARCHAR | Wind direction (compass, e.g. N/NE/E) |
+| gear_type | VARCHAR | Gear type |
+| gear_model | VARCHAR | Shoe/gear model name |
+| base_weight_kg | DOUBLE | Base/reference weight (kg) |
+| body_mass_kg | DOUBLE | Body mass at activity time (kg), backfilled from `body_composition` (migration `phase0_power_prep`) |
 
-**Population**: 100% for core fields (activity_id, date), 80-95% for optional metrics
+> **Common name traps** (the live schema differs from older drafts): it is `activity_date` (not `date`); `temp_celsius` (not `external_temp_c`); `relative_humidity_percent` (not `humidity`); `wind_speed_kmh` (not `wind_speed_ms`); `gear_model` (not `gear_name`). There are **no** `created_at`/`updated_at`, and **no** cadence/power/training-effect columns on this table — cadence/power live on `splits`, `time_series_metrics`, and the phase columns of `performance_trends`.
 
 ---
 
-## 2. splits
+## 2. body_composition
+
+**Purpose**: Weight and body composition measurements
+**Primary Key**: `measurement_id` — with a **UNIQUE index on `date`** (`idx_body_composition_date`), so one row per day, enabling idempotent date-keyed upsert (`INSERT OR REPLACE`) on cache backfill.
+**Source**: `data/raw/weight/YYYY-MM-DD.json`
+
+### Schema (9 columns)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| measurement_id | INTEGER (PK) | Unique measurement ID |
+| date | DATE | Measurement date (UNIQUE) |
+| weight_kg | DOUBLE | Weight (kg) |
+| body_fat_percentage | DOUBLE | Body fat (%) |
+| muscle_mass_kg | DOUBLE | Muscle mass (kg) |
+| bone_mass_kg | DOUBLE | Bone mass (kg) |
+| bmi | DOUBLE | Body mass index |
+| hydration_percentage | DOUBLE | Hydration (%) |
+| measurement_source | VARCHAR | Measurement device/source |
+
+> 5 metabolic fields (basal/active metabolic rate, metabolic age, visceral fat rating, physique rating) were removed in v2.0 — the device does not provide them.
+
+---
+
+## 3. splits
 
 **Purpose**: 1km lap/split-level performance data with environmental calculations
-
 **Primary Key**: `(activity_id, split_index)`
-**Row Count**: ~2,016 splits (~9 splits/activity)
 **Source**: `data/raw/activity/{activity_id}/splits.json` (lapDTOs)
 
-### Schema
+### Schema (34 columns)
 
-| Column | Type | Nullable | Source | Description |
-|--------|------|----------|--------|-------------|
-| activity_id | BIGINT | NO | activityId | Activity reference |
-| split_index | INTEGER | NO | lapIndex | Split number (1-based) |
-| distance | DOUBLE | YES | distance | Split distance (m) |
-| duration_seconds | DOUBLE | YES | duration | Split duration (s) |
-| start_time_gmt | VARCHAR | YES | startTimeGMT | Split start time |
-| start_time_s | INTEGER | YES | Calculated from startLatitude timing | Split start offset (s) |
-| end_time_s | INTEGER | YES | start_time_s + duration | Split end offset (s) |
-| intensity_type | VARCHAR | YES | intensityType | Garmin intensity (warmup/active/recovery/cooldown/rest) |
-| role_phase | VARCHAR | YES | Derived from position | Workout phase classification |
-| pace_str | VARCHAR | YES | averageSpeed → mm:ss | Human-readable pace |
-| pace_seconds_per_km | DOUBLE | YES | 1000 / averageSpeed | Pace (sec/km) |
-| heart_rate | INTEGER | YES | averageHR | Average HR (bpm) |
-| **hr_zone** | VARCHAR | YES | **CALCULATED** | **HR zone mapping (Zone1-5)** |
-| cadence | DOUBLE | YES | averageRunCadence | Cadence (spm, total) |
-| **cadence_rating** | VARCHAR | YES | **CALCULATED** | **Cadence quality (Excellent/Good/Fair/Low)** |
-| power | DOUBLE | YES | avgPower | Average power (W) |
-| **power_efficiency** | VARCHAR | YES | **CALCULATED** | **Power efficiency (Excellent/Good/Fair/Low)** |
-| stride_length | DOUBLE | YES | strideLength | Stride length (cm) |
-| ground_contact_time | DOUBLE | YES | groundContactTime | GCT (ms) |
-| vertical_oscillation | DOUBLE | YES | verticalOscillation | VO (cm) |
-| vertical_ratio | DOUBLE | YES | verticalRatio | VR (%) |
-| elevation_gain | DOUBLE | YES | elevationGain | Elevation gain (m) |
-| elevation_loss | DOUBLE | YES | elevationLoss | Elevation loss (m) |
-| terrain_type | VARCHAR | YES | Calculated from elevation | Terrain classification |
-| **environmental_conditions** | VARCHAR | YES | **CALCULATED** | **Weather summary** |
-| **wind_impact** | VARCHAR | YES | **CALCULATED** | **Wind impact (None/Light/Moderate/Strong)** |
-| **temp_impact** | VARCHAR | YES | **CALCULATED** | **Temperature impact (Ideal/Good/Slightly hot/etc)** |
-| **environmental_impact** | VARCHAR | YES | **CALCULATED** | **Combined environmental impact** |
+| Column | Type | Source | Description |
+|--------|------|--------|-------------|
+| activity_id | BIGINT (PK) | activityId | Activity reference |
+| split_index | INTEGER (PK) | lapIndex | Split number (1-based) |
+| distance | DOUBLE | distance | Split distance (m) |
+| duration_seconds | DOUBLE | duration | Split duration (s) |
+| start_time_gmt | VARCHAR | startTimeGMT | Split start time |
+| start_time_s | INTEGER | Calculated | Split start offset (s) |
+| end_time_s | INTEGER | start_time_s + duration | Split end offset (s) |
+| intensity_type | VARCHAR | intensityType | Garmin intensity (WARMUP/INTERVAL/RECOVERY/COOLDOWN/REST) |
+| role_phase | VARCHAR | Derived from position | Workout phase classification (warmup/run/recovery/cooldown) |
+| pace_str | VARCHAR | averageSpeed → mm:ss | Human-readable pace |
+| pace_seconds_per_km | DOUBLE | 1000 / averageSpeed | Pace (sec/km) |
+| heart_rate | INTEGER | averageHR | Average HR (bpm) |
+| **hr_zone** | VARCHAR | **CALCULATED** | HR zone mapping (Zone1–5) |
+| cadence | DOUBLE | averageRunCadence | Cadence (spm, both feet) |
+| **cadence_rating** | VARCHAR | **CALCULATED** | Cadence quality (Excellent/Good/Fair/Low) |
+| power | DOUBLE | avgPower | Average power (W) |
+| **power_efficiency** | VARCHAR | **CALCULATED** | Power efficiency (Excellent/Good/Fair/Low) |
+| stride_length | DOUBLE | strideLength | Stride length (cm) |
+| ground_contact_time | DOUBLE | groundContactTime | GCT (ms) |
+| vertical_oscillation | DOUBLE | verticalOscillation | VO (cm) |
+| vertical_ratio | DOUBLE | verticalRatio | VR (%) |
+| elevation_gain | DOUBLE | elevationGain | Elevation gain (m) |
+| elevation_loss | DOUBLE | elevationLoss | Elevation loss (m) |
+| terrain_type | VARCHAR | Calculated from elevation | Terrain classification |
+| **environmental_conditions** | VARCHAR | **CALCULATED** | Weather summary |
+| **wind_impact** | VARCHAR | **CALCULATED** | Wind impact (None/Light/Moderate/Strong) |
+| **temp_impact** | VARCHAR | **CALCULATED** | Temperature impact band |
+| **environmental_impact** | VARCHAR | **CALCULATED** | Combined environmental impact |
+| max_heart_rate | INTEGER | maxHR | Max HR in split (bpm) |
+| max_cadence | DOUBLE | maxRunCadence | Max cadence in split (spm) |
+| max_power | DOUBLE | maxPower | Max power in split (W) |
+| normalized_power | DOUBLE | normPower | Normalized power (W) |
+| average_speed | DOUBLE | averageSpeed | Average speed (m/s) |
+| grade_adjusted_speed | DOUBLE | gradeAdjustedSpeed | Grade-adjusted speed (m/s) |
 
-### Calculation Logic (7 fields)
+### Calculation Logic (derived fields)
 
 #### hr_zone
-Maps heart_rate to zone using heart_rate_zones boundaries:
-- Zone 1: < zone2_low_boundary
-- Zone 2: zone2_low ≤ HR < zone3_low
-- Zone 3: zone3_low ≤ HR < zone4_low
-- Zone 4: zone4_low ≤ HR < zone5_low
-- Zone 5: ≥ zone5_low
+Maps `heart_rate` to a zone using `heart_rate_zones` boundaries:
+- Zone 1: < zone2_low; Zone 2: zone2_low ≤ HR < zone3_low; Zone 3: zone3_low ≤ HR < zone4_low; Zone 4: zone4_low ≤ HR < zone5_low; Zone 5: ≥ zone5_low
 
-#### cadence_rating
-Based on total cadence (spm):
-- Excellent: ≥190 spm
-- Good: 180-189 spm
-- Fair: 170-179 spm
-- Low: <170 spm
+#### cadence_rating (both-feet spm)
+- Excellent: ≥190 · Good: 180–189 · Fair: 170–179 · Low: <170
 
-#### power_efficiency
-Based on W/kg ratio:
-- Excellent: ≥4.0 W/kg
-- Good: 3.0-3.9 W/kg
-- Fair: 2.0-2.9 W/kg
-- Low: <2.0 W/kg
+#### power_efficiency (W/kg)
+- Excellent: ≥4.0 · Good: 3.0–3.9 · Fair: 2.0–2.9 · Low: <2.0
 
 #### environmental_conditions
-Combines temperature, humidity, wind from weather.json:
-- Example: "18.5°C, 65%, Wind: 3.2m/s NE"
+Combines temperature, humidity, wind from `weather.json` (e.g. `"18.5°C, 65%, Wind: 3.2km/h NE"`).
 
-#### wind_impact
-Based on wind speed (m/s):
-- None: <2.0
-- Light: 2.0-4.9
-- Moderate: 5.0-7.9
-- Strong: ≥8.0
+#### wind_impact (by wind speed)
+- None: light · Light · Moderate · Strong — thresholds scale with the unit recorded in `weather.json`.
 
-#### temp_impact
-Training-type-aware temperature evaluation:
-- Recovery: 15-22°C = Good (wider tolerance)
-- Base Run: 10-18°C = Ideal, 18-23°C = Acceptable
-- Tempo/Threshold: 8-15°C = Ideal, 15-20°C = Good, 20-25°C = Slightly hot
-- Interval/Sprint: 8-15°C = Ideal, 20-23°C = Slightly hot, >23°C = Dangerous
+#### temp_impact (training-type-aware)
+- Recovery: 15–22°C = Good (wider tolerance)
+- Base Run: 10–18°C = Ideal, 18–23°C = Acceptable
+- Tempo/Threshold: 8–15°C = Ideal, 15–20°C = Good, 20–25°C = Slightly hot
+- Interval/Sprint: 8–15°C = Ideal, 20–23°C = Slightly hot, >23°C = Dangerous
 
 #### environmental_impact
-Combines wind + temperature impacts:
-- Negligible: Both None/Ideal
-- Low: Light wind or Good temp
-- Moderate: Moderate wind or Slightly hot
-- High: Strong wind or Hot/Dangerous
+Combines wind + temperature bands: Negligible (both ideal) → Low → Moderate → High (strong wind or hot/dangerous temp).
 
-**Population**: 100% for core fields, 99.75% for stride_length, 100% for max metrics, 39.8% for power metrics
+> **Temperature note**: split-level environmental fields derive from `weather.json` (external station), **not** device temperature in `time_series_metrics.air_temperature` (which runs +5–8°C from body heat).
 
 ### MCP Tools for Splits Data
-
-**Comprehensive Tool (Recommended):**
-- `mcp__garmin-db__get_splits_comprehensive(activity_id, statistics_only=True/False)`
-  - **Fields**: 12 fields (pace, HR, GCT, VO, VR, power, stride_length, cadence, elevation_gain/loss, max_HR, max_cadence)
-  - **Token Optimization**: 67% reduction with `statistics_only=True`
-  - **Use Case**: Complete split analysis in one call
-
-**Lightweight Tools (Backward Compatible):**
-- `mcp__garmin-db__get_splits_pace_hr()` - 4 fields (pace, HR, max_HR, distance)
-- `mcp__garmin-db__get_splits_form_metrics()` - 4 fields (GCT, VO, VR, split_index)
-- `mcp__garmin-db__get_splits_elevation()` - 5 fields (elevation_gain/loss, terrain_type, split_index, distance)
+- `get_splits_comprehensive(activity_id, statistics_only=True/False)` — 12-field one-call view; ~67% token reduction with `statistics_only=True`.
+- Lightweight: `get_splits_pace_hr()`, `get_splits_form_metrics()`, `get_splits_elevation()`.
 
 ---
 
-## 3. time_series_metrics
+## 4. time_series_metrics
 
-**Purpose**: Second-by-second detailed metrics (26 fields)
-
-**Primary Key**: `(activity_id, seq_no)`
-**Row Count**: ~260,304 rows (~1,126 rows/activity)
+**Purpose**: Second-by-second detailed metrics
+**Primary Key**: `(activity_id, seq_no)` — note the PK is on `seq_no`, **not** `timestamp_s`. A non-unique secondary index `idx_time_series_timestamp` exists on `(activity_id, timestamp_s)`, plus `idx_time_series_activity` on `(activity_id)`.
 **Source**: `data/raw/activity/{activity_id}/metrics.json`
 
-### Schema
+### Schema (26 columns)
 
-| Column | Type | Nullable | Description |
-|--------|------|----------|-------------|
-| activity_id | BIGINT | NO | Activity reference |
-| seq_no | INTEGER | NO | Sequence number |
-| timestamp_s | INTEGER | NO | Timestamp offset (seconds) |
-| sum_moving_duration | DOUBLE | YES | Cumulative moving duration |
-| sum_duration | DOUBLE | YES | Cumulative total duration |
-| sum_elapsed_duration | DOUBLE | YES | Cumulative elapsed duration |
-| sum_distance | DOUBLE | YES | Cumulative distance (m) |
-| sum_accumulated_power | DOUBLE | YES | Cumulative power |
-| heart_rate | DOUBLE | YES | Instantaneous HR (bpm) |
-| speed | DOUBLE | YES | Instantaneous speed (m/s) |
-| grade_adjusted_speed | DOUBLE | YES | Grade-adjusted speed (m/s) |
-| cadence | DOUBLE | YES | Both feet cadence from directDoubleCadence (~180 spm, raw from Garmin API) |
-| power | DOUBLE | YES | Instantaneous power (W) |
-| ground_contact_time | DOUBLE | YES | GCT (ms) |
-| vertical_oscillation | DOUBLE | YES | VO (cm) |
-| vertical_ratio | DOUBLE | YES | VR (%) |
-| stride_length | DOUBLE | YES | Stride length (cm) |
-| vertical_speed | DOUBLE | YES | Vertical speed (m/s) |
-| elevation | DOUBLE | YES | Elevation (m) |
-| air_temperature | DOUBLE | YES | Device temperature (°C, +5-8°C body heat) |
-| latitude | DOUBLE | YES | GPS latitude |
-| longitude | DOUBLE | YES | GPS longitude |
-| available_stamina | DOUBLE | YES | Available stamina |
-| potential_stamina | DOUBLE | YES | Potential stamina |
-| body_battery | DOUBLE | YES | Body battery level |
-| performance_condition | DOUBLE | YES | Performance condition |
+| Column | Type | Description |
+|--------|------|-------------|
+| activity_id | BIGINT (PK) | Activity reference |
+| seq_no | INTEGER (PK) | Sequence number |
+| timestamp_s | INTEGER | Timestamp offset (seconds) |
+| sum_moving_duration | DOUBLE | Cumulative moving duration |
+| sum_duration | DOUBLE | Cumulative total duration |
+| sum_elapsed_duration | DOUBLE | Cumulative elapsed duration |
+| sum_distance | DOUBLE | Cumulative distance (m) |
+| sum_accumulated_power | DOUBLE | Cumulative power |
+| heart_rate | DOUBLE | Instantaneous HR (bpm) |
+| speed | DOUBLE | Instantaneous speed (m/s) |
+| grade_adjusted_speed | DOUBLE | Grade-adjusted speed (m/s) |
+| cadence | DOUBLE | Both-feet cadence from `directDoubleCadence` (~180 spm, raw from Garmin API) |
+| power | DOUBLE | Instantaneous power (W) |
+| ground_contact_time | DOUBLE | GCT (ms) |
+| vertical_oscillation | DOUBLE | VO (cm) |
+| vertical_ratio | DOUBLE | VR (%) |
+| stride_length | DOUBLE | Stride length (cm) |
+| vertical_speed | DOUBLE | Vertical speed (m/s) |
+| elevation | DOUBLE | Elevation (m) |
+| air_temperature | DOUBLE | Device temperature (°C, +5–8°C body heat) |
+| latitude | DOUBLE | GPS latitude |
+| longitude | DOUBLE | GPS longitude |
+| available_stamina | DOUBLE | Available stamina |
+| potential_stamina | DOUBLE | Potential stamina |
+| body_battery | DOUBLE | Body battery level |
+| performance_condition | DOUBLE | Performance condition |
 
-**Population**: 100% for timestamp/distance, 95-99% for HR/speed/cadence, 30-40% for power metrics
+> There is a single `cadence` column. The legacy `cadence_single_foot` / `cadence_total` / `fractional_cadence` columns are **not present** (removed v2.1).
 
 ---
 
-## 4. form_efficiency
+## 5. performance_trends
 
-**Purpose**: Running form efficiency summary (GCT/VO/VR)
-
+**Purpose**: Performance patterns and 4-phase workout analysis (warmup / run / recovery / cooldown)
 **Primary Key**: `activity_id`
-**Row Count**: ~231 activities
-**Source**: Aggregated from splits.json (lapDTOs)
+**Source**: Calculated from `splits.json`
 
-### Schema
+### Schema (33 columns)
 
-| Column | Type | Nullable | Source | Description |
-|--------|------|----------|--------|-------------|
-| activity_id | BIGINT | NO | - | Activity reference |
-| gct_average | DOUBLE | YES | AVG(groundContactTime) | Average GCT (ms) |
-| gct_min | DOUBLE | YES | MIN(groundContactTime) | Minimum GCT (ms) |
-| gct_max | DOUBLE | YES | MAX(groundContactTime) | Maximum GCT (ms) |
-| gct_std | DOUBLE | YES | STDDEV(groundContactTime) | GCT standard deviation |
-| gct_variability | DOUBLE | YES | (std/avg) * 100 | GCT variability (%) |
-| gct_rating | VARCHAR | YES | Calculated | GCT quality rating (★) |
-| **gct_evaluation** | VARCHAR | YES | **CALCULATED** | **GCT quality evaluation** |
-| vo_average | DOUBLE | YES | AVG(verticalOscillation) | Average VO (cm) |
-| vo_min | DOUBLE | YES | MIN(verticalOscillation) | Minimum VO (cm) |
-| vo_max | DOUBLE | YES | MAX(verticalOscillation) | Maximum VO (cm) |
-| vo_std | DOUBLE | YES | STDDEV(verticalOscillation) | VO standard deviation |
-| **vo_trend** | VARCHAR | YES | **CALCULATED** | **VO trend analysis (increasing/stable/decreasing)** |
-| vo_rating | VARCHAR | YES | Calculated | VO quality rating (★) |
-| **vo_evaluation** | VARCHAR | YES | **CALCULATED** | **VO quality evaluation** |
-| vr_average | DOUBLE | YES | AVG(verticalRatio) | Average VR (%) |
-| vr_min | DOUBLE | YES | MIN(verticalRatio) | Minimum VR (%) |
-| vr_max | DOUBLE | YES | MAX(verticalRatio) | Maximum VR (%) |
-| vr_std | DOUBLE | YES | STDDEV(verticalRatio) | VR standard deviation |
-| vr_rating | VARCHAR | YES | Calculated | VR quality rating (★) |
-| **vr_evaluation** | VARCHAR | YES | **CALCULATED** | **VR quality evaluation** |
+| Column | Type | Description |
+|--------|------|-------------|
+| activity_id | BIGINT (PK) | Activity reference |
+| pace_consistency | DOUBLE | Pace consistency score |
+| hr_drift_percentage | DOUBLE | HR drift (%) |
+| cadence_consistency | VARCHAR | Cadence consistency rating |
+| fatigue_pattern | VARCHAR | Fatigue pattern classification |
+| warmup_splits | VARCHAR | Comma-separated warmup split indices |
+| warmup_avg_pace_seconds_per_km | DOUBLE | Warmup avg pace (sec/km) |
+| warmup_avg_pace_str | VARCHAR | Warmup pace (mm:ss) |
+| warmup_avg_hr | DOUBLE | Warmup avg HR |
+| warmup_avg_cadence | DOUBLE | Warmup avg cadence |
+| warmup_avg_power | DOUBLE | Warmup avg power |
+| warmup_evaluation | VARCHAR | Warmup quality evaluation |
+| run_splits | VARCHAR | Comma-separated run split indices |
+| run_avg_pace_seconds_per_km | DOUBLE | Run avg pace (sec/km) |
+| run_avg_pace_str | VARCHAR | Run pace (mm:ss) |
+| run_avg_hr | DOUBLE | Run avg HR |
+| run_avg_cadence | DOUBLE | Run avg cadence |
+| run_avg_power | DOUBLE | Run avg power |
+| run_evaluation | VARCHAR | Run quality evaluation |
+| recovery_splits | VARCHAR | Comma-separated recovery split indices |
+| recovery_avg_pace_seconds_per_km | DOUBLE | Recovery avg pace (sec/km) |
+| recovery_avg_pace_str | VARCHAR | Recovery pace (mm:ss) |
+| recovery_avg_hr | DOUBLE | Recovery avg HR |
+| recovery_avg_cadence | DOUBLE | Recovery avg cadence |
+| recovery_avg_power | DOUBLE | Recovery avg power |
+| recovery_evaluation | VARCHAR | Recovery quality evaluation |
+| cooldown_splits | VARCHAR | Comma-separated cooldown split indices |
+| cooldown_avg_pace_seconds_per_km | DOUBLE | Cooldown avg pace (sec/km) |
+| cooldown_avg_pace_str | VARCHAR | Cooldown pace (mm:ss) |
+| cooldown_avg_hr | DOUBLE | Cooldown avg HR |
+| cooldown_avg_cadence | DOUBLE | Cooldown avg cadence |
+| cooldown_avg_power | DOUBLE | Cooldown avg power |
+| cooldown_evaluation | VARCHAR | Cooldown quality evaluation |
 
-### Calculation Logic (4 fields)
+### Calculation Logic
 
-#### gct_evaluation
-Based on gct_average (ms):
-- Excellent: <200ms
-- Good: 200-250ms
-- Fair: 250-300ms
-- Poor: >300ms
+#### Phase detection (from `splits.intensity_type`)
+Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVERY` · Cooldown = `COOLDOWN`. Per-phase pace/HR/cadence/power are averages of the splits in that phase (power NULL if no power data).
 
-#### vo_evaluation
-Based on vo_average (cm):
-- Excellent: <7cm
-- Good: 7-10cm
-- Fair: 10-12cm
-- Poor: >12cm
-
-#### vr_evaluation
-Based on vr_average (%):
-- Excellent: <7%
-- Good: 7-8%
-- Fair: 8-10%
-- Poor: >10%
-
-#### vo_trend
-Analyzes VO changes across splits:
-- Increasing: VO worsens >5% from start to end
-- Stable: VO changes ≤5%
-- Decreasing: VO improves >5% from start to end
-
-**Population**: 100% for all fields (aggregated from splits)
+#### Phase evaluations
+- **warmup**: Excellent = gradual pace increase + steady HR rise; Good = ≥5 min; Needs Improvement = <3 min or missing.
+- **run** (training-type-aware): Excellent = consistent pace (CV <5%), stable HR; Good = CV 5–10%; Needs Improvement = CV >10%.
+- **recovery**: Excellent = HR drops ≥20 bpm and cadence drops ≥10 spm vs run; Good = HR drops 10–19 bpm; Needs Improvement = HR drop <10 bpm.
+- **cooldown**: Excellent = gradual pace decrease + steady HR fall; Good = ≥5 min; Needs Improvement = <3 min or missing.
 
 ---
 
-## 5. form_baselines
+## 6. form_efficiency
 
-**Purpose**: Statistical model coefficients for pace-corrected form expectations
+**Purpose**: Running form efficiency summary (GCT/VO/VR), aggregated from splits
+**Primary Key**: `activity_id`
+**Source**: Aggregated from `splits.json` (lapDTOs)
 
-**Primary Key**: `baseline_id`
-**Unique Key**: `(user_id, condition_group, metric)`
-**Row Count**: 3 rows (GCT, VO, VR)
-**Source**: Trained from splits data using `tools/scripts/train_form_baselines.py`
+### Schema (21 columns)
 
-### Schema
+| Column | Type | Description |
+|--------|------|-------------|
+| activity_id | BIGINT (PK) | Activity reference |
+| gct_average | DOUBLE | Average GCT (ms) |
+| gct_min | DOUBLE | Minimum GCT (ms) |
+| gct_max | DOUBLE | Maximum GCT (ms) |
+| gct_std | DOUBLE | GCT standard deviation |
+| gct_variability | DOUBLE | GCT variability `(std/avg)*100` (%) |
+| gct_rating | VARCHAR | GCT quality rating (★) |
+| gct_evaluation | VARCHAR | GCT quality evaluation text |
+| vo_average | DOUBLE | Average VO (cm) |
+| vo_min | DOUBLE | Minimum VO (cm) |
+| vo_max | DOUBLE | Maximum VO (cm) |
+| vo_std | DOUBLE | VO standard deviation |
+| vo_trend | VARCHAR | VO trend (increasing/stable/decreasing) |
+| vo_rating | VARCHAR | VO quality rating (★) |
+| vo_evaluation | VARCHAR | VO quality evaluation text |
+| vr_average | DOUBLE | Average VR (%) |
+| vr_min | DOUBLE | Minimum VR (%) |
+| vr_max | DOUBLE | Maximum VR (%) |
+| vr_std | DOUBLE | VR standard deviation |
+| vr_rating | VARCHAR | VR quality rating (★) |
+| vr_evaluation | VARCHAR | VR quality evaluation text |
 
-| Column | Type | Nullable | Description |
-|--------|------|----------|-------------|
-| baseline_id | INTEGER | NO | Unique baseline ID |
-| user_id | VARCHAR | NO | User identifier (default: 'default') |
-| condition_group | VARCHAR | NO | Terrain group (default: 'flat_road') |
-| metric | VARCHAR | NO | Metric name ('gct', 'vo', 'vr') |
-| coef_alpha | DOUBLE | YES | GCT: log(v) intercept (α in v = c * (GCT)^d) |
-| coef_d | DOUBLE | YES | GCT: power exponent (d < 0, monotonic) |
-| coef_a | DOUBLE | YES | VO/VR: intercept (a in y = a + b * v) |
-| coef_b | DOUBLE | YES | VO/VR: slope (b) |
-| rmse | DOUBLE | YES | Root mean squared error |
-| n_samples | INTEGER | YES | Number of training samples |
-| speed_range_min | DOUBLE | YES | Minimum speed (m/s) |
-| speed_range_max | DOUBLE | YES | Maximum speed (m/s) |
-| trained_at | TIMESTAMP | NO | Training timestamp |
+### Calculation Logic
+- **gct_evaluation** (by `gct_average`): Excellent <200ms · Good 200–250ms · Fair 250–300ms · Poor >300ms
+- **vo_evaluation** (by `vo_average`): Excellent <7cm · Good 7–10cm · Fair 10–12cm · Poor >12cm
+- **vr_evaluation** (by `vr_average`): Excellent <7% · Good 7–8% · Fair 8–10% · Poor >10%
+- **vo_trend**: Increasing = VO worsens >5% start→end · Stable = ≤5% · Decreasing = improves >5%
 
-### Model Types
-
-**GCT (Ground Contact Time):**
-- Model: Power regression `v = exp((log(GCT) - α) / d)`
-- Constraint: d < 0 (ensures monotonicity: faster pace → shorter GCT)
-- Training: Huber regression with outlier removal (IQR method)
-
-**VO (Vertical Oscillation) and VR (Vertical Ratio):**
-- Model: Linear regression `y = a + b * v`
-- Training: Huber regression with outlier removal (IQR method)
-
-### Training Script
-
-```bash
-# Train baselines from all data
-uv run python tools/scripts/train_form_baselines.py \
-  --db-path /path/to/garmin_performance.duckdb \
-  --verbose
-
-# Train monthly with 2-month rolling window
-uv run python tools/scripts/train_form_baselines_monthly.py \
-  --year-month 2025-10 \
-  --db-path /path/to/garmin_performance.duckdb
-```
-
-**Population**: 100% (3 metrics, manually trained)
-
----
-
-## 6. form_baseline_history
-
-**Purpose**: 2-month rolling window baseline history for trend analysis
-
-**Primary Key**: `history_id`
-**Unique Key**: `(user_id, condition_group, metric, period_start, period_end)`
-**Row Count**: Variable (weekly updates × 3 metrics)
-**Source**: `tools/scripts/train_form_baselines_monthly.py`
-
-### Schema
-
-| Column | Type | Nullable | Description |
-|--------|------|----------|-------------|
-| history_id | INTEGER | NO | Unique history ID |
-| user_id | VARCHAR | NO | User identifier |
-| condition_group | VARCHAR | NO | Terrain group |
-| metric | VARCHAR | NO | Metric name ('gct', 'vo', 'vr') |
-| period_start | DATE | NO | Training period start date |
-| period_end | DATE | NO | Training period end date (inclusive) |
-| coef_d | DOUBLE | YES | GCT: power exponent (for trend analysis) |
-| coef_b | DOUBLE | YES | VO/VR: slope (for trend analysis) |
-| n_samples | INTEGER | YES | Number of training samples in window |
-| trained_at | TIMESTAMP | NO | Training timestamp |
-
-### Usage in Trend Analysis
-
-The `get_form_baseline_trend(activity_id, activity_date)` MCP tool:
-1. Retrieves current period baseline (activity_date within period_start/period_end)
-2. Retrieves 1-month-ago baseline (activity_date - 1 month within period_start/period_end)
-3. Calculates deltas: Δd (GCT), Δb (VO/VR)
-4. Interprets trends:
-   - GCT: Negative Δd = improvement (shorter GCT at same pace)
-   - VO/VR: Negative Δb = improvement (less bounce at same pace)
-
-**Population**: Variable (depends on monthly training schedule)
+> These fixed-threshold ratings are the simple aggregate view. The pace-corrected (speed-aware) evaluation lives in `form_evaluations`, which is the authoritative source for star ratings and needs-improvement flags.
 
 ---
 
 ## 7. form_evaluations
 
-**Purpose**: Pace-corrected activity evaluation results with star ratings
+**Purpose**: Pace-corrected per-activity form evaluation with star ratings and needs-improvement flags
+**Primary Key**: `eval_id` (one row per `activity_id`)
+**Source**: Generated by the form-baseline evaluator (`form_baseline/evaluator.py`) using coefficients from `form_baseline_history`.
 
-**Primary Key**: `eval_id`
-**Unique Key**: `activity_id`
-**Row Count**: 224 activities (96.9% of activities)
-**Source**: Generated by `workflow_planner` using `tools/form_baseline/evaluator.py`
+### Schema (46 columns)
 
-### Schema
-
-| Column | Type | Nullable | Description |
-|--------|------|----------|-------------|
-| eval_id | INTEGER | NO | Unique evaluation ID |
-| activity_id | BIGINT | NO | Activity reference (unique) |
-| gct_ms_expected | DOUBLE | YES | Expected GCT from pace (ms) |
-| vo_cm_expected | DOUBLE | YES | Expected VO from pace (cm) |
-| vr_pct_expected | DOUBLE | YES | Expected VR from pace (%) |
-| gct_ms_actual | DOUBLE | YES | Actual GCT (ms) |
-| vo_cm_actual | DOUBLE | YES | Actual VO (cm) |
-| vr_pct_actual | DOUBLE | YES | Actual VR (%) |
-| gct_delta_pct | DOUBLE | YES | GCT deviation (%) |
-| vo_delta_cm | DOUBLE | YES | VO deviation (cm) |
-| vr_delta_pct | DOUBLE | YES | VR deviation (%) |
-| gct_penalty | DOUBLE | YES | GCT penalty score (0-100) |
-| gct_star_rating | VARCHAR | YES | GCT rating (★★★★★ ~ ★☆☆☆☆) |
-| gct_score | DOUBLE | YES | GCT score (0-5.0) |
-| gct_needs_improvement | BOOLEAN | YES | GCT needs improvement flag |
-| gct_evaluation_text | TEXT | YES | GCT evaluation text (Japanese) |
-| vo_penalty | DOUBLE | YES | VO penalty score (0-100) |
-| vo_star_rating | VARCHAR | YES | VO rating (★★★★★ ~ ★☆☆☆☆) |
-| vo_score | DOUBLE | YES | VO score (0-5.0) |
-| vo_needs_improvement | BOOLEAN | YES | VO needs improvement flag |
-| vo_evaluation_text | TEXT | YES | VO evaluation text (Japanese) |
-| vr_penalty | DOUBLE | YES | VR penalty score (0-100) |
-| vr_star_rating | VARCHAR | YES | VR rating (★★★★★ ~ ★☆☆☆☆) |
-| vr_score | DOUBLE | YES | VR score (0-5.0) |
-| vr_needs_improvement | BOOLEAN | YES | VR needs improvement flag |
-| vr_evaluation_text | TEXT | YES | VR evaluation text (Japanese) |
-| cadence_actual | DOUBLE | YES | Actual cadence (spm) |
-| cadence_minimum | DOUBLE | YES | Minimum cadence threshold (180 spm) |
-| cadence_achieved | BOOLEAN | YES | Cadence achievement flag |
-| overall_score | DOUBLE | YES | Overall form score (0-5.0) |
-| overall_star_rating | VARCHAR | YES | Overall rating (★★★★★ ~ ★☆☆☆☆) |
-| evaluated_at | TIMESTAMP | NO | Evaluation timestamp |
+| Column | Type | Description |
+|--------|------|-------------|
+| eval_id | INTEGER (PK) | Unique evaluation ID |
+| activity_id | BIGINT | Activity reference (one per activity) |
+| gct_ms_expected | FLOAT | Expected GCT from pace (ms) |
+| vo_cm_expected | FLOAT | Expected VO from pace (cm) |
+| vr_pct_expected | FLOAT | Expected VR from pace (%) |
+| gct_ms_actual | FLOAT | Actual GCT (ms) |
+| vo_cm_actual | FLOAT | Actual VO (cm) |
+| vr_pct_actual | FLOAT | Actual VR (%) |
+| gct_delta_pct | FLOAT | GCT deviation (%) |
+| vo_delta_cm | FLOAT | VO deviation (cm) |
+| vr_delta_pct | FLOAT | VR deviation (%) |
+| gct_penalty | FLOAT | GCT penalty score |
+| gct_star_rating | VARCHAR | GCT rating (★★★★★ ~ ★☆☆☆☆) |
+| gct_score | FLOAT | GCT score (0–5.0) |
+| gct_needs_improvement | BOOLEAN | GCT needs-improvement flag |
+| gct_evaluation_text | VARCHAR | GCT evaluation text (Japanese) |
+| vo_penalty | FLOAT | VO penalty score |
+| vo_star_rating | VARCHAR | VO rating |
+| vo_score | FLOAT | VO score (0–5.0) |
+| vo_needs_improvement | BOOLEAN | VO needs-improvement flag |
+| vo_evaluation_text | VARCHAR | VO evaluation text (Japanese) |
+| vr_penalty | FLOAT | VR penalty score |
+| vr_star_rating | VARCHAR | VR rating |
+| vr_score | FLOAT | VR score (0–5.0) |
+| vr_needs_improvement | BOOLEAN | VR needs-improvement flag |
+| vr_evaluation_text | VARCHAR | VR evaluation text (Japanese) |
+| cadence_actual | FLOAT | Actual cadence (spm) |
+| cadence_minimum | INTEGER | Minimum cadence threshold (spm) |
+| cadence_achieved | BOOLEAN | Cadence achievement flag |
+| overall_score | FLOAT | Overall form score (0–5.0) |
+| overall_star_rating | VARCHAR | Overall rating |
+| power_avg_w | FLOAT | Average power (W) |
+| power_wkg | FLOAT | Power-to-weight (W/kg) |
+| speed_actual_mps | FLOAT | Actual speed (m/s) |
+| speed_expected_mps | FLOAT | Expected speed from power model (m/s) |
+| power_efficiency_score | FLOAT | Power efficiency score |
+| power_efficiency_rating | VARCHAR | Power efficiency rating |
+| power_efficiency_needs_improvement | BOOLEAN | Power efficiency needs-improvement flag |
+| integrated_score | FLOAT | Integrated form+power score (migration v3) |
+| training_mode | VARCHAR | Training mode classification (migration v3) |
+| evaluated_at | TIMESTAMP | Evaluation timestamp |
+| cadence_expected | DOUBLE | Expected cadence (spm) (migration v6) |
+| cadence_delta_pct | DOUBLE | Cadence deviation (%) (migration v6) |
+| cadence_star_rating | VARCHAR | Cadence rating (migration v6) |
+| cadence_score | DOUBLE | Cadence score (0–5.0) (migration v6) |
+| cadence_needs_improvement | BOOLEAN | Cadence needs-improvement flag (migration v6) |
+| cadence_evaluation_text | VARCHAR | Cadence evaluation text (Japanese) (migration v6) |
 
 ### Evaluation Logic
+- **Score**: start at perfect (100), apply penalty by deviation from the pace-expected value, then map to 0–5.0. Roughly: ±2% → ★★★★★ 5.0; 2–5% → ~★★★★☆ 4.0; 5–10% → ~★★★☆☆ 3.0; >10% → ★★☆☆☆ / ★☆☆☆☆.
+- **needs_improvement**: true when deviation > ~5% from expected.
+- **overall_score**: combines GCT/VO/VR (GCT weighted highest); `integrated_score` further folds in power efficiency.
 
-**Score Calculation:**
-- Base score: 100 (perfect)
-- Penalty: Based on deviation from expected value
-  - Ideal range: ±2% → 0 penalty (★★★★★ 5.0)
-  - Good range: 2-5% → 0-30 penalty (★★★★☆ 4.0)
-  - Fair range: 5-10% → 30-60 penalty (★★★☆☆ 3.0)
-  - Poor range: >10% → 60-90 penalty (★★☆☆☆ 2.0 or ★☆☆☆☆ 1.0)
-- Score: (100 - penalty) / 20
+> **Authoritative source**: when an agent reports a star rating or "needs improvement", `form_evaluations` is the source of truth — it is pace-corrected, unlike the fixed-threshold `form_efficiency` ratings.
 
-**needs_improvement Flag:**
-- `true` if deviation > 5% from expected value
-- `false` if within ideal/good range
-
-**Overall Score:**
-- Average of GCT, VO, VR scores
-- Weighted slightly toward GCT (most important metric)
-
-### MCP Tool
-
-`get_form_evaluations(activity_id)` returns:
-```json
-{
-  "gct": {
-    "expected_ms": 260.1,
-    "actual_ms": 258.3,
-    "delta_pct": -0.7,
-    "score": 5.0,
-    "star_rating": "★★★★★",
-    "needs_improvement": false,
-    "evaluation_text": "258msは期待値260ms±2%の理想範囲内です..."
-  },
-  "vo": { ... },
-  "vr": { ... },
-  "overall_score": 4.3,
-  "overall_star_rating": "★★★★☆",
-  "cadence_actual": 181.27,
-  "cadence_achieved": true
-}
-```
-
-**Population**: 96.9% (requires form_baselines to be trained)
+> **Population ceiling**: ~340/520 runs. The remainder lack recorded GCT/VO/VR or have no preceding baseline period and are permanently un-fixable; repeated backfill does not raise coverage.
 
 ---
 
-## 8. hr_efficiency
+## 8. form_baseline_history
 
-**Purpose**: Heart rate efficiency and training quality analysis
+**Purpose**: Rolling-window pace-corrected baseline coefficients for trend analysis (replaces the dropped `form_baselines`)
+**Primary Key**: `history_id`
+**Source**: Monthly baseline training (rolling window) over splits data.
 
+### Schema (19 columns)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| history_id | INTEGER (PK) | Unique history ID |
+| user_id | VARCHAR | User identifier (default `'default'`) |
+| condition_group | VARCHAR | Terrain group (default `'flat_road'`) |
+| metric | VARCHAR | Metric name (`gct`, `vo`, `vr`) |
+| model_type | VARCHAR | Model family (power vs linear) |
+| coef_alpha | FLOAT | GCT power model: `log(v)` intercept (α) |
+| coef_d | FLOAT | GCT power model: exponent (d < 0, monotonic) |
+| coef_a | FLOAT | VO/VR linear model: intercept (a) |
+| coef_b | FLOAT | VO/VR linear model: slope (b) |
+| period_start | DATE | Training window start |
+| period_end | DATE | Training window end (inclusive) |
+| trained_at | TIMESTAMP | Training timestamp |
+| n_samples | INTEGER | Training samples in window |
+| rmse | FLOAT | Root mean squared error |
+| speed_range_min | FLOAT | Minimum training speed (m/s) |
+| speed_range_max | FLOAT | Maximum training speed (m/s) |
+| power_a | FLOAT | Power model coefficient a (speed-from-power) |
+| power_b | FLOAT | Power model coefficient b |
+| power_rmse | FLOAT | Power model RMSE |
+
+### Model Types
+- **GCT**: power regression `v = exp((log(GCT) - α) / d)`, constrained `d < 0` so faster pace → shorter GCT. Trained with Huber regression + IQR outlier removal.
+- **VO / VR**: linear regression `y = a + b·v` (Huber + IQR outlier removal).
+- **Power**: speed-from-power relationship (`power_a`, `power_b`) used for power-efficiency scoring in `form_evaluations`.
+
+### Trend Usage
+`get_form_baseline_trend(activity_id, activity_date)`:
+1. Retrieves the baseline whose `[period_start, period_end]` contains `activity_date`.
+2. Retrieves the ~1-month-earlier baseline.
+3. Computes Δd (GCT) / Δb (VO/VR); negative deltas = improvement (shorter GCT / less bounce at the same pace).
+
+> Baselines are **not** generated automatically — monthly backfill is required, and "No baseline found" usually means no trained window covers the year/period of the activity.
+
+---
+
+## 9. hr_efficiency
+
+**Purpose**: Heart-rate efficiency and training-quality analysis
 **Primary Key**: `activity_id`
-**Row Count**: ~231 activities
-**Source**: `hr_zones.json`, `activity.json`
+**Source**: HR-zone data + activity metadata
 
-### Schema
+### Schema (14 columns)
 
-| Column | Type | Nullable | Source | Description |
-|--------|------|----------|--------|-------------|
-| activity_id | BIGINT | NO | - | Activity reference |
-| **primary_zone** | VARCHAR | YES | **CALCULATED** | **Zone with most time** |
-| **zone_distribution_rating** | VARCHAR | YES | **CALCULATED** | **Distribution quality** |
-| hr_stability | VARCHAR | YES | Calculated | HR stability rating |
-| **aerobic_efficiency** | VARCHAR | YES | **CALCULATED** | **Aerobic efficiency rating** |
-| **training_quality** | VARCHAR | YES | **CALCULATED** | **Overall training quality** |
-| **zone2_focus** | BOOLEAN | YES | **CALCULATED** | **Zone 2 focus indicator** |
-| **zone4_threshold_work** | BOOLEAN | YES | **CALCULATED** | **Zone 4+ threshold work** |
-| training_type | VARCHAR | YES | trainingEffectLabel | Training type (aerobic_base, tempo, threshold, etc) |
-| zone1_percentage | DOUBLE | YES | Calculated | Zone 1 time (%) |
-| zone2_percentage | DOUBLE | YES | Calculated | Zone 2 time (%) |
-| zone3_percentage | DOUBLE | YES | Calculated | Zone 3 time (%) |
-| zone4_percentage | DOUBLE | YES | Calculated | Zone 4 time (%) |
-| zone5_percentage | DOUBLE | YES | Calculated | Zone 5 time (%) |
+| Column | Type | Description |
+|--------|------|-------------|
+| activity_id | BIGINT (PK) | Activity reference |
+| primary_zone | VARCHAR | Zone with most time |
+| zone_distribution_rating | VARCHAR | Distribution quality |
+| hr_stability | VARCHAR | HR stability rating |
+| aerobic_efficiency | VARCHAR | Aerobic efficiency rating |
+| training_quality | VARCHAR | Overall training quality |
+| zone2_focus | BOOLEAN | Zone 2 focus indicator |
+| zone4_threshold_work | BOOLEAN | Zone 4+ threshold-work indicator |
+| training_type | VARCHAR | Training type (aerobic_base/tempo/threshold/…) |
+| zone1_percentage | DOUBLE | Zone 1 time (%) |
+| zone2_percentage | DOUBLE | Zone 2 time (%) |
+| zone3_percentage | DOUBLE | Zone 3 time (%) |
+| zone4_percentage | DOUBLE | Zone 4 time (%) |
+| zone5_percentage | DOUBLE | Zone 5 time (%) |
 
-### Calculation Logic (6 fields)
+### Calculation Logic
+- **primary_zone**: zone with max time.
+- **zone_distribution_rating** (training-type-aware): Recovery Z1+Z2 ≥80%; Base Z2 ≥60%; Tempo Z3+Z4 ≥50%; Threshold Z4 ≥40%; Interval Z4+Z5 ≥60% = Excellent.
+- **aerobic_efficiency** (by Z1+Z2 %): Excellent ≥80% · Good 60–79% · Fair 40–59% · Poor <40%.
+- **training_quality**: combines distribution rating + primary zone + training type.
+- **zone2_focus**: true if Z2 ≥50%. **zone4_threshold_work**: true if Z4+Z5 ≥20%.
 
-#### primary_zone
-Zone with maximum time_in_zone_seconds
-
-#### zone_distribution_rating
-Training-type-aware rating:
-- Recovery: Z1+Z2 ≥80% = Excellent
-- Base Run: Z2 ≥60% = Excellent
-- Tempo: Z3+Z4 ≥50% = Excellent
-- Threshold: Z4 ≥40% = Excellent
-- Interval: Z4+Z5 ≥60% = Excellent
-
-#### aerobic_efficiency
-Based on Z1+Z2 percentage:
-- Excellent: ≥80%
-- Good: 60-79%
-- Fair: 40-59%
-- Poor: <40%
-
-#### training_quality
-Combines zone_distribution_rating + primary_zone + training_type:
-- Excellent: Distribution Excellent + primary zone matches target
-- Good: Distribution Good or Fair with acceptable primary zone
-- Needs Improvement: Poor distribution or mismatched zones
-
-#### zone2_focus
-True if zone2_percentage ≥50%
-
-#### zone4_threshold_work
-True if (zone4_percentage + zone5_percentage) ≥20%
-
-**Population**: 100% for all fields (calculated from heart_rate_zones)
+> Zone percentages use Garmin-native HR zones from `heart_rate_zones` — never a computed formula (e.g. 220−age).
 
 ---
 
-## 9. heart_rate_zones
+## 10. heart_rate_zones
 
 **Purpose**: HR zone boundaries and time distribution
+**Primary Key**: `(activity_id, zone_number)` (composite)
+**Source**: HR-zone JSON
 
-**Primary Key**: `(activity_id, zone_number)`
-**Row Count**: ~1,155 rows (5 zones × 231 activities)
-**Source**: `hr_zones.json`
+### Schema (6 columns)
 
-### Schema
-
-| Column | Type | Nullable | Description |
-|--------|------|----------|-------------|
-| activity_id | BIGINT | NO | Activity reference |
-| zone_number | INTEGER | NO | Zone number (1-5) |
-| zone_low_boundary | INTEGER | YES | Zone lower HR boundary (bpm) |
-| zone_high_boundary | INTEGER | YES | Zone upper HR boundary (bpm, calculated) |
-| time_in_zone_seconds | DOUBLE | YES | Time spent in zone (s) |
-| zone_percentage | DOUBLE | YES | Time in zone (%) |
-
-**Population**: 100% (5 zones per activity)
-
----
-
-## 10. performance_trends
-
-**Purpose**: Performance patterns and 4-phase workout analysis
-
-**Primary Key**: `activity_id`
-**Row Count**: ~231 activities
-**Source**: Calculated from splits.json
-
-### Schema
-
-| Column | Type | Nullable | Source | Description |
-|--------|------|----------|--------|-------------|
-| activity_id | BIGINT | NO | - | Activity reference |
-| pace_consistency | DOUBLE | YES | Calculated | Pace consistency score |
-| hr_drift_percentage | DOUBLE | YES | (last_hr - first_hr) / first_hr | HR drift (%) |
-| cadence_consistency | VARCHAR | YES | Calculated | Cadence consistency rating |
-| fatigue_pattern | VARCHAR | YES | Calculated | Fatigue pattern classification |
-| warmup_splits | VARCHAR | YES | Comma-separated | Warmup split indices |
-| warmup_avg_pace_seconds_per_km | DOUBLE | YES | AVG(pace) | Warmup avg pace |
-| warmup_avg_pace_str | VARCHAR | YES | mm:ss | Warmup pace string |
-| warmup_avg_hr | DOUBLE | YES | AVG(HR) | Warmup avg HR |
-| **warmup_avg_cadence** | DOUBLE | YES | **CALCULATED** | **Warmup avg cadence** |
-| **warmup_avg_power** | DOUBLE | YES | **CALCULATED** | **Warmup avg power** |
-| **warmup_evaluation** | VARCHAR | YES | **CALCULATED** | **Warmup quality evaluation** |
-| run_splits | VARCHAR | YES | Comma-separated | Run split indices |
-| run_avg_pace_seconds_per_km | DOUBLE | YES | AVG(pace) | Run avg pace |
-| run_avg_pace_str | VARCHAR | YES | mm:ss | Run pace string |
-| run_avg_hr | DOUBLE | YES | AVG(HR) | Run avg HR |
-| **run_avg_cadence** | DOUBLE | YES | **CALCULATED** | **Run avg cadence** |
-| **run_avg_power** | DOUBLE | YES | **CALCULATED** | **Run avg power** |
-| **run_evaluation** | VARCHAR | YES | **CALCULATED** | **Run quality evaluation** |
-| recovery_splits | VARCHAR | YES | Comma-separated | Recovery split indices |
-| recovery_avg_pace_seconds_per_km | DOUBLE | YES | AVG(pace) | Recovery avg pace |
-| recovery_avg_pace_str | VARCHAR | YES | mm:ss | Recovery pace string |
-| recovery_avg_hr | DOUBLE | YES | AVG(HR) | Recovery avg HR |
-| **recovery_avg_cadence** | DOUBLE | YES | **CALCULATED** | **Recovery avg cadence** |
-| **recovery_avg_power** | DOUBLE | YES | **CALCULATED** | **Recovery avg power** |
-| **recovery_evaluation** | VARCHAR | YES | **CALCULATED** | **Recovery quality evaluation** |
-| cooldown_splits | VARCHAR | YES | Comma-separated | Cooldown split indices |
-| cooldown_avg_pace_seconds_per_km | DOUBLE | YES | AVG(pace) | Cooldown avg pace |
-| cooldown_avg_pace_str | VARCHAR | YES | mm:ss | Cooldown pace string |
-| cooldown_avg_hr | DOUBLE | YES | AVG(HR) | Cooldown avg HR |
-| **cooldown_avg_cadence** | DOUBLE | YES | **CALCULATED** | **Cooldown avg cadence** |
-| **cooldown_avg_power** | DOUBLE | YES | **CALCULATED** | **Cooldown avg power** |
-| **cooldown_evaluation** | VARCHAR | YES | **CALCULATED** | **Cooldown quality evaluation** |
-
-### Calculation Logic (12 fields)
-
-#### Phase Detection
-Based on splits.intensity_type:
-- Warmup: intensity_type = 'warmup'
-- Run: intensity_type = 'active' (main workout)
-- Recovery: intensity_type = 'recovery'
-- Cooldown: intensity_type = 'cooldown'
-
-#### warmup_avg_cadence / run_avg_cadence / recovery_avg_cadence / cooldown_avg_cadence
-Average of split cadence values within each phase
-
-#### warmup_avg_power / run_avg_power / recovery_avg_power / cooldown_avg_power
-Average of split power values within each phase (NULL if no power data)
-
-#### warmup_evaluation
-- Excellent: Gradual pace increase, HR rises steadily
-- Good: Adequate warmup duration (>5 min)
-- Needs Improvement: Too short (<3 min) or missing
-
-#### run_evaluation
-Training-type-aware:
-- Excellent: Pace consistent (CV <5%), HR stable
-- Good: Acceptable consistency (CV 5-10%)
-- Needs Improvement: High variability (CV >10%)
-
-#### recovery_evaluation
-- Excellent: HR drops ≥20 bpm from run phase, cadence drops ≥10 spm
-- Good: HR drops 10-19 bpm
-- Needs Improvement: Insufficient recovery (HR drop <10 bpm)
-
-#### cooldown_evaluation
-- Excellent: Gradual pace decrease, HR lowers steadily
-- Good: Adequate cooldown duration (>5 min)
-- Needs Improvement: Too short (<3 min) or missing
-
-**Population**: 100% for core fields, 80-95% for phase-specific fields (depends on workout structure)
+| Column | Type | Description |
+|--------|------|-------------|
+| activity_id | BIGINT (PK) | Activity reference |
+| zone_number | INTEGER (PK) | Zone number (1–5) |
+| zone_low_boundary | INTEGER | Zone lower HR boundary (bpm) |
+| zone_high_boundary | INTEGER | Zone upper HR boundary (bpm) |
+| time_in_zone_seconds | DOUBLE | Time spent in zone (s) |
+| zone_percentage | DOUBLE | Time in zone (%) |
 
 ---
 
 ## 11. vo2_max
 
 **Purpose**: VO2 max estimates
-
 **Primary Key**: `activity_id`
-**Row Count**: ~180 activities (78% population)
-**Source**: `vo2_max.json`
+**Source**: VO2-max JSON
 
-### Schema
+### Schema (5 columns)
 
-| Column | Type | Nullable | Description |
-|--------|------|----------|-------------|
-| activity_id | BIGINT | NO | Activity reference |
-| precise_value | DOUBLE | YES | Precise VO2 max (ml/kg/min) |
-| value | DOUBLE | YES | Rounded VO2 max (ml/kg/min) |
-| date | DATE | YES | Measurement date |
-| category | INTEGER | YES | Fitness category (0-6) |
+| Column | Type | Description |
+|--------|------|-------------|
+| activity_id | BIGINT (PK) | Activity reference |
+| precise_value | DOUBLE | Precise VO2 max (ml/kg/min) |
+| value | DOUBLE | Rounded VO2 max (ml/kg/min) |
+| date | DATE | Measurement date |
+| category | INTEGER | Fitness category (0–6) |
 
-**Note**: `fitness_age` field removed in v2.0 (device does not provide this data)
-
-**Population**: 78% (Garmin provides VO2 max only for certain activity types)
+> `fitness_age` removed in v2.0. Population ~78% — Garmin provides VO2 max only for certain activity types.
 
 ---
 
 ## 12. lactate_threshold
 
-**Purpose**: Lactate threshold estimates
-
+**Purpose**: Lactate-threshold and FTP estimates
 **Primary Key**: `activity_id`
-**Row Count**: ~120 activities (52% population)
-**Source**: `lactate_threshold.json`
+**Source**: Lactate-threshold JSON
 
-### Schema
+### Schema (8 columns)
 
-| Column | Type | Nullable | Description |
-|--------|------|----------|-------------|
-| activity_id | BIGINT | NO | Activity reference |
-| heart_rate | INTEGER | YES | Lactate threshold HR (bpm) |
-| speed_mps | DOUBLE | YES | Lactate threshold speed (m/s) |
-| date_hr | TIMESTAMP | YES | HR threshold measurement date |
-| functional_threshold_power | INTEGER | YES | FTP (W) |
-| power_to_weight | DOUBLE | YES | FTP / weight (W/kg) |
-| weight | DOUBLE | YES | Weight at measurement (kg) |
-| date_power | TIMESTAMP | YES | FTP measurement date |
+| Column | Type | Description |
+|--------|------|-------------|
+| activity_id | BIGINT (PK) | Activity reference |
+| heart_rate | INTEGER | Lactate-threshold HR (bpm) |
+| speed_mps | DOUBLE | Lactate-threshold speed (m/s) |
+| date_hr | TIMESTAMP | HR-threshold measurement timestamp |
+| functional_threshold_power | INTEGER | FTP (W) |
+| power_to_weight | DOUBLE | FTP / weight (W/kg) |
+| weight | DOUBLE | Weight at measurement (kg) |
+| date_power | TIMESTAMP | FTP measurement timestamp |
 
-**Population**: 52% (requires sufficient training history for Garmin to estimate)
-
----
-
-## 13. body_composition
-
-**Purpose**: Weight and body composition measurements
-
-**Primary Key**: `measurement_id`
-**Row Count**: Variable (daily measurements)
-**Source**: `data/raw/weight/YYYY-MM-DD.json`
-
-### Schema
-
-| Column | Type | Nullable | Description |
-|--------|------|----------|-------------|
-| measurement_id | INTEGER | NO | Unique measurement ID |
-| date | DATE | NO | Measurement date |
-| weight_kg | DOUBLE | YES | Weight (kg) |
-| body_fat_percentage | DOUBLE | YES | Body fat (%) |
-| muscle_mass_kg | DOUBLE | YES | Muscle mass (kg) |
-| bone_mass_kg | DOUBLE | YES | Bone mass (kg) |
-| bmi | DOUBLE | YES | Body mass index |
-| hydration_percentage | DOUBLE | YES | Hydration (%) |
-| measurement_source | VARCHAR | YES | Measurement device |
-
-**Note**: 5 metabolic fields removed in v2.0 (device does not provide this data):
-- basal_metabolic_rate
-- active_metabolic_rate
-- metabolic_age
-- visceral_fat_rating
-- physique_rating
-
-**Population**: Varies by measurement availability (scale usage)
+> Population ~52% — requires sufficient training history for Garmin to estimate.
 
 ---
 
-## 14. section_analyses
+## 13. training_plans
 
-**Purpose**: Agent-generated analysis results (5 types per activity)
+**Purpose**: Generated training-plan headers (backs `/plan-training`). Versioned — one plan_id can have multiple `version` rows.
+**Primary Key**: logically `(plan_id, version)`; the live table declares no PK constraint (FK/PK constraints removed; uniqueness enforced by the writer).
+**Source**: `save_training_plan` MCP tool / training-plan generator.
 
-**Primary Key**: `analysis_id`
-**Row Count**: ~1,155 rows (5 analyses × 231 activities)
-**Source**: Generated by section analysis agents
+### Schema (16 columns)
 
-### Schema
+| Column | Type | Description |
+|--------|------|-------------|
+| plan_id | VARCHAR | Plan identifier |
+| version | INTEGER | Plan revision (migration `add_plan_versioning`) |
+| goal_type | VARCHAR | Goal/race type |
+| target_race_date | DATE | Target race date |
+| target_time_seconds | INTEGER | Target finish time (s) |
+| vdot | DOUBLE | VDOT fitness estimate |
+| pace_zones_json | VARCHAR | JSON of derived pace zones |
+| total_weeks | INTEGER | Plan length (weeks) |
+| start_date | DATE | Plan start date |
+| weekly_volume_start_km | DOUBLE | Initial weekly volume (km) |
+| weekly_volume_peak_km | DOUBLE | Peak weekly volume (km) |
+| runs_per_week | INTEGER | Runs per week |
+| frequency_progression_json | VARCHAR | JSON frequency progression |
+| personalization_notes | VARCHAR | Personalization narrative |
+| status | VARCHAR | Plan status (active/archived/…) |
+| created_at | TIMESTAMP | Creation timestamp |
 
-| Column | Type | Nullable | Description |
-|--------|------|----------|-------------|
-| analysis_id | INTEGER | NO | Unique analysis ID |
-| activity_id | BIGINT | NO | Activity reference |
-| activity_date | DATE | NO | Activity date |
-| section_type | VARCHAR | NO | Analysis type (split/phase/summary/efficiency/environment) |
-| analysis_data | VARCHAR | YES | JSON analysis results |
-| created_at | TIMESTAMP | NO | Analysis creation timestamp |
-| agent_name | VARCHAR | YES | Agent identifier |
-| agent_version | VARCHAR | YES | Agent version |
+---
+
+## 14. planned_workouts
+
+**Purpose**: Individual planned sessions belonging to a training plan; links plan → actual activity and tracks adherence.
+**Primary Key**: `workout_id`
+**Source**: Training-plan generator / Garmin upload flow.
+
+### Schema (21 columns)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| workout_id | VARCHAR (PK) | Workout identifier |
+| plan_id | VARCHAR | Parent plan reference |
+| week_number | INTEGER | Plan week (1-based) |
+| day_of_week | INTEGER | Day of week |
+| workout_date | DATE | Scheduled date |
+| workout_type | VARCHAR | Workout type (easy/tempo/interval/long/…) |
+| description_ja | VARCHAR | Japanese description |
+| target_distance_km | DOUBLE | Target distance (km) |
+| target_duration_minutes | DOUBLE | Target duration (min) |
+| target_pace_low | DOUBLE | Target pace low bound (sec/km) |
+| target_pace_high | DOUBLE | Target pace high bound (sec/km) |
+| target_hr_low | INTEGER | Target HR low (bpm) |
+| target_hr_high | INTEGER | Target HR high (bpm) |
+| intervals_json | VARCHAR | JSON interval structure |
+| phase | VARCHAR | Plan phase (base/build/peak/taper) |
+| garmin_workout_id | BIGINT | Uploaded Garmin workout ID |
+| uploaded_at | TIMESTAMP | Upload timestamp |
+| actual_activity_id | BIGINT | Matched executed activity |
+| adherence_score | DOUBLE | Plan-vs-actual adherence |
+| completed_at | TIMESTAMP | Completion timestamp |
+| version | INTEGER | Plan-version link (migration `add_plan_versioning`) |
+
+---
+
+## 15. section_analyses
+
+**Purpose**: Agent-generated analysis results (5 section types per analyzed activity)
+**Primary Key**: `analysis_id` — with a **UNIQUE index on `(activity_id, section_type)`** (`idx_activity_section`), so re-analysis replaces rather than duplicates a section.
+**Source**: Section-analysis agents (`unified-section-analyst`, `split-section-analyst`).
+
+### Schema (8 columns)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| analysis_id | INTEGER (PK) | Unique analysis ID |
+| activity_id | BIGINT | Activity reference |
+| activity_date | DATE | Activity date |
+| section_type | VARCHAR | Section (split/phase/summary/efficiency/environment) |
+| analysis_data | VARCHAR | JSON analysis payload (Japanese narrative + English keys) |
+| created_at | TIMESTAMP | Creation timestamp |
+| agent_name | VARCHAR | Agent identifier |
+| agent_version | VARCHAR | Agent version |
 
 ### Section Types
-
-1. **split**: 1km split analysis (pace, HR, form)
-2. **phase**: Phase evaluation (warmup/run/cooldown, training-type-aware)
-3. **summary**: Activity type classification + overall assessment
-4. **efficiency**: Form (GCT/VO/VR) + HR efficiency
-5. **environment**: Environmental impact analysis (weather, terrain)
-
-**Population**: 100% (5 analyses per activity, auto-generated)
+1. **split** — 1km split analysis (pace/HR/form), from `split-section-analyst`.
+2. **phase** — warmup/run/cooldown[/recovery] evaluation, training-type-aware.
+3. **summary** — activity-type classification + 4-axis overall assessment.
+4. **efficiency** — form (GCT/VO/VR) + power + cadence + HR efficiency.
+5. **environment** — environmental impact (temperature, humidity, wind, terrain).
 
 ---
 
-## Summary Statistics
+## 16. athlete_profile
 
-| Table | Row Count | Primary Key Type | Foreign Keys | Population |
-|-------|-----------|------------------|--------------|------------|
-| activities | 231 | activity_id | - | 100% (core) |
-| splits | 2,016 | (activity_id, split_index) | activities | 100% |
-| time_series_metrics | 250,186 | (activity_id, timestamp_s) | activities | 100% |
-| form_efficiency | 231 | activity_id | activities | 100% |
-| form_baselines | 3 | baseline_id | - | 100% (manually trained) |
-| form_baseline_history | Variable | history_id | - | Variable (weekly) |
-| form_evaluations | 224 | eval_id (unique: activity_id) | activities | 96.9% |
-| hr_efficiency | 231 | activity_id | activities | 100% |
-| heart_rate_zones | 1,155 | (activity_id, zone_number) | activities | 100% |
-| performance_trends | 231 | activity_id | activities | 100% |
-| vo2_max | 180 | activity_id | activities | 78% |
-| lactate_threshold | 120 | activity_id | activities | 52% |
-| body_composition | Variable | measurement_id | - | Variable |
-| section_analyses | 1,155 | analysis_id | activities | 100% |
+**Purpose**: Athlete's current training focus (read by `/plan-training` and `/weekly-review`; written by `/set-goal`)
+**Primary Key**: `user_id`
+**Source**: `save_athlete_profile` / `/set-goal`. Owned by migration `add_athlete_tables` (version 7).
 
-**Total Database Size**: ~670 MB
-**Total Tables**: 14
-**Total Activities**: 231
+### Schema (4 columns)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| user_id | VARCHAR (PK) | User identifier |
+| current_focus | VARCHAR | Current training focus |
+| focus_notes | VARCHAR | Focus notes (rendered as `【見出し】` sections in the Web app) |
+| updated_at | TIMESTAMP | Last update timestamp |
+
+---
+
+## 17. athlete_goals
+
+**Purpose**: Registered race goals (target races, priorities, target times)
+**Primary Key**: `goal_id`
+**Source**: `/set-goal`. Owned by migration `add_athlete_tables`.
+
+### Schema (12 columns)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| goal_id | INTEGER (PK) | Goal identifier |
+| user_id | VARCHAR | User identifier |
+| race_name | VARCHAR | Race name |
+| race_date | DATE | Race date |
+| priority | VARCHAR | Goal priority (A/B/C) |
+| goal_type | VARCHAR | Goal type |
+| distance_km | DOUBLE | Race distance (km) |
+| target_time_seconds | INTEGER | Target finish time (s) |
+| status | VARCHAR | Goal status |
+| notes | VARCHAR | Free-form notes |
+| created_at | TIMESTAMP | Creation timestamp |
+| updated_at | TIMESTAMP | Last update timestamp |
+
+---
+
+## 18. season_retrospectives
+
+**Purpose**: Last-season retrospective narrative used as context by `/plan-training` and `/weekly-review`
+**Primary Key**: `retro_id`
+**Source**: `/set-goal`. Owned by migration `add_athlete_tables`.
+
+### Schema (8 columns)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| retro_id | INTEGER (PK) | Retrospective identifier |
+| user_id | VARCHAR | User identifier |
+| season_label | VARCHAR | Season label |
+| period_start | DATE | Season start |
+| period_end | DATE | Season end |
+| narrative | VARCHAR | Retrospective narrative |
+| key_learnings | VARCHAR | Key learnings |
+| created_at | TIMESTAMP | Creation timestamp |
+
+---
+
+## 19. weekly_reviews
+
+**Purpose**: Coach-perspective weekly training reviews (backs `/weekly-review`)
+**Primary Key**: `review_id` — the former UNIQUE index was **dropped** (migration `drop_weekly_review_index`, version 8) to allow multiple revisions of the same week.
+**Source**: `save_weekly_review` / `/weekly-review`. Owned by migration `add_athlete_tables`.
+
+### Schema (9 columns)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| review_id | INTEGER (PK) | Review identifier |
+| user_id | VARCHAR | User identifier |
+| week_start_date | DATE | Review week start |
+| week_end_date | DATE | Review week end |
+| review_date | DATE | Date the review was written |
+| review_data | VARCHAR | JSON review payload |
+| created_at | TIMESTAMP | Creation timestamp |
+| agent_name | VARCHAR | Agent identifier |
+| agent_version | VARCHAR | Agent version |
+
+---
+
+## Indexes & Constraints Summary
+
+- **No FOREIGN KEY constraints** anywhere (removed 2025-11-01, migration `remove_fk_constraints`). Referential integrity is enforced by the ingest pipeline.
+- UNIQUE: `idx_body_composition_date` on `body_composition(date)`; `idx_activity_section` on `section_analyses(activity_id, section_type)`.
+- Composite PKs: `splits(activity_id, split_index)`, `time_series_metrics(activity_id, seq_no)`, `heart_rate_zones(activity_id, zone_number)`.
+- Secondary indexes on `time_series_metrics`: `idx_time_series_activity(activity_id)`, `idx_time_series_timestamp(activity_id, timestamp_s)`.
+- Sequences back the surrogate keys for `form_evaluations` (`form_evaluations_seq`), `form_baseline_history` (`form_baseline_history_seq`), and `section_analyses` (`seq_section_analyses_id`).
 
 ---
 
@@ -829,72 +742,51 @@ Training-type-aware:
 Raw Data (API)
     ↓
 data/raw/activity/{id}/
-    ├── activity.json         → activities, hr_efficiency
-    ├── splits.json           → splits, form_efficiency, performance_trends
-    ├── hr_zones.json         → heart_rate_zones, hr_efficiency
-    ├── vo2_max.json          → vo2_max
+    ├── activity.json          → activities, hr_efficiency
+    ├── splits.json            → splits, form_efficiency, performance_trends
+    ├── hr_zones.json          → heart_rate_zones, hr_efficiency
+    ├── vo2_max.json           → vo2_max
     ├── lactate_threshold.json → lactate_threshold
-    ├── weather.json          → activities (weather fields)
-    └── metrics.json          → time_series_metrics
+    ├── weather.json           → activities (weather fields), splits (env fields)
+    └── metrics.json           → time_series_metrics
+data/raw/weight/YYYY-MM-DD.json → body_composition
     ↓
-DuckDB Inserters
-    ├── activities.py
-    ├── splits.py (7 calculation fields)
-    ├── time_series_metrics.py
-    ├── form_efficiency.py (4 evaluation fields)
-    ├── hr_efficiency.py (6 evaluation fields)
-    ├── heart_rate_zones.py
-    ├── performance_trends.py (12 phase fields)
-    ├── vo2_max.py
-    ├── lactate_threshold.py
-    └── body_composition.py
+DuckDB Inserters (13 table-specific inserters)
     ↓
-garmin_performance.duckdb (14 tables)
+garmin_performance.duckdb (19 domain tables + schema_version)
     ↓
-Form Baseline System (NEW)
-    ├── train_form_baselines.py → form_baselines (3 metrics)
-    ├── train_form_baselines_monthly.py → form_baseline_history (weekly)
-    └── evaluator.py → form_evaluations (per activity)
+Form Baseline System
+    ├── monthly baseline training → form_baseline_history (rolling window)
+    └── evaluator.py              → form_evaluations (per activity)
     ↓
-MCP Tools (70-98.8% token reduction)
-    ├── get_form_evaluations(activity_id)
-    ├── get_form_baseline_trend(activity_id, activity_date)
-    └── ... (existing tools)
+MCP Tools (46 tools, token-optimized)
     ↓
-Analysis Agents (5 types)
-    ├── efficiency-section-analyst (uses get_form_evaluations, get_form_baseline_trend)
-    ├── summary-section-analyst (uses needs_improvement flags)
-    └── ... (other agents)
+Analysis Agents (unified-section-analyst + split-section-analyst)
+    → section_analyses (5 sections/activity)
     ↓
-Markdown Reports (Japanese)
+Web App (read-only viewer; goals/plans/reviews stored via skills)
 ```
 
 ---
 
 ## Maintenance Notes
 
-### Schema Migration
-Use `tools/scripts/regenerate_duckdb.py` for schema changes:
+### Surgical regeneration
 ```bash
-# Single table
-uv run python tools/scripts/regenerate_duckdb.py --tables splits
-
-# Multiple tables with date range
-uv run python tools/scripts/regenerate_duckdb.py \
+uv run python -m garmin_mcp.scripts.regenerate_duckdb \
   --tables splits form_efficiency hr_efficiency performance_trends \
-  --start-date 2025-10-01 --end-date 2025-10-31
+  --activity-ids <ids> --force
 ```
 
+### Migrations
+Numbered migrations live in `database/migrations/` and are registered in `registry.py`; they run after `_ensure_tables()` during `GarminDBWriter` init. `backup_if_pending` snapshots the production DB before applying pending migrations (2 generations; raises on failure).
+
 ### Backup Policy
-- Create timestamped backups before schema changes
-- Store in `data/database/backups/`
-- Verify backup integrity with read-only connection
+`data/` and `result/` are **git-untracked — deletion is unrecoverable**. Verify contents and confirm with the user before any destructive operation; keep timestamped backups before schema changes.
 
 ### Testing Requirements
-- All tests must use mocked data (no production DB access)
-- Use `@pytest.fixture` for test data
-- Integration tests: `pytest-mock` for DuckDB connections
-- Performance tests: Real data OK, skip if unavailable
+- No production-DB dependence; all tests carry a pytest marker (`unit`/`integration`/`performance`/`garmin_api`).
+- Use the `initialized_db_path` fixture rather than constructing a writer per test.
 
 ---
 
