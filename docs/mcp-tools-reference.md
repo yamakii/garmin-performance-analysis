@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **46 tools** (44 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **48 tools** (46 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -25,6 +25,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Race](#race) (1)
 - [Training Load](#training-load) (2)
 - [Durability](#durability) (2)
+- [strength](#strength) (2)
 - [Server](#server) (2)
 
 ## Export
@@ -552,6 +553,30 @@ Get the longitudinal cardiac-decoupling trend across long runs in a date window.
 | `start_date` | string | **required** | Inclusive window start date (YYYY-MM-DD). |
 | `end_date` | string | **required** | Inclusive window end date (YYYY-MM-DD). |
 | `min_distance_km` | number | optional (default `15.0`) | Minimum total_distance_km for an activity to qualify as a long run (default: 15.0). Shorter runs are excluded. |
+
+## strength
+
+### `ingest_strength_sessions`
+
+CLI: `garmin-db strength ingest`
+
+Discover strength_training (補強) activities from the Garmin Connect API in a date window and upsert summary rows into the strength_sessions table. Discovery uses the activity list filtered to typeKey == 'strength_training' (runs with distance are excluded). Each session's ACTIVE exercise sets are aggregated into a category_counts map (e.g. {"CRUNCH": 4, "PLANK": 7}). Idempotent: re-ingesting an activity overwrites its row. Returns inserted, updated, and activity_ids.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `start_date` | string | **required** | Inclusive window start date (YYYY-MM-DD). |
+| `end_date` | string | **required** | Inclusive window end date (YYYY-MM-DD). |
+
+### `get_strength_sessions`
+
+CLI: `garmin-db strength list`
+
+Get persisted strength_training (補強) summaries with activity_date in [start_date, end_date] from the strength_sessions table (no Garmin access). Returns a list (activity_date ascending) of summaries with activity_id, activity_date, start_time_local, activity_name, active/elapsed duration, avg/max heart rate, calories, active/total sets and category_counts (a dict of ACTIVE exercise-set categories). Returns an empty list when none match.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `start_date` | string | **required** | Inclusive window start date (YYYY-MM-DD). |
+| `end_date` | string | **required** | Inclusive window end date (YYYY-MM-DD). |
 
 ## Server
 

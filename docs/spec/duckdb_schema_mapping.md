@@ -24,6 +24,9 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 
 ## Change History
 
+### Version 2.4 (2026-06-21)
+- **`strength_sessions` table added** (migration `add_strength_sessions`, version 10; also created in `_ensure_tables()`). Persists strength-training (補強) summaries at session granularity with a `category_counts` JSON map, kept out of `activities` to avoid polluting run aggregations. Populated by `ingest_strength_sessions` and read via `get_strength_sessions` (issue #450).
+
 ### Version 2.3 (2026-06-20)
 - **`form_baselines` table dropped** (migration `phase0_power_prep`, schema version 1). Pace-corrected baselines now live solely in `form_baseline_history`, and `activities.body_mass_kg` was backfilled in the same migration.
 - **All FOREIGN KEY constraints removed** (migration `remove_fk_constraints`, version 4, 2025-11-01). No table declares FK constraints; `_ensure_tables()` creates FK-free schemas. Referential integrity is maintained by the ingest pipeline, not the database.
@@ -46,7 +49,7 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 
 ---
 
-## Table of Contents (19 domain tables by category)
+## Table of Contents (20 domain tables by category)
 
 | # | Table | Category | Primary Key | Row scale |
 |---|-------|----------|-------------|-----------|
@@ -69,6 +72,7 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 | 17 | [athlete_goals](#17-athlete_goals) | Athlete | `goal_id` | per registered goal |
 | 18 | [season_retrospectives](#18-season_retrospectives) | Athlete | `retro_id` | per season |
 | 19 | [weekly_reviews](#19-weekly_reviews) | Athlete | `review_id` | per weekly review |
+| 20 | [strength_sessions](#20-strength_sessions) | Training | `activity_id` | per strength session |
 
 ---
 
@@ -816,6 +820,36 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 <!-- END GENERATED: schema:weekly_reviews -->
 
 **Units & notes**: `week_start_date` / `week_end_date` bound the reviewed week; `review_date` is when it was written; `review_data` is the JSON payload; `agent_name` / `agent_version` identify the producing agent. The former UNIQUE index was dropped (migration `drop_weekly_review_index`) to allow multiple revisions per week.
+
+---
+
+## 20. strength_sessions
+
+**Purpose**: Strength-training (補強) summaries at session granularity. Kept separate from `activities` so strength work (no distance/pace) never pollutes run-centric aggregations (issue #450, parent #449).
+**Primary Key**: `activity_id`
+**Source**: Garmin Connect activity list filtered to `activityType.typeKey == 'strength_training'` plus the activity's `exerciseSets`. Populated by `ingest/strength_ingest.py` (`ingest_strength_sessions`); created by both migration `add_strength_sessions` (version 10) and `_ensure_tables()`.
+
+### Schema
+
+<!-- BEGIN GENERATED: schema:strength_sessions -->
+| Column | Type |
+|--------|------|
+| activity_id (PK) | BIGINT |
+| activity_date | DATE |
+| start_time_local | TIMESTAMP |
+| activity_name | VARCHAR |
+| active_duration_seconds | INTEGER |
+| elapsed_duration_seconds | INTEGER |
+| avg_heart_rate | INTEGER |
+| max_heart_rate | INTEGER |
+| calories | INTEGER |
+| active_sets | INTEGER |
+| total_sets | INTEGER |
+| category_counts | JSON |
+| ingested_at | TIMESTAMP |
+<!-- END GENERATED: schema:strength_sessions -->
+
+**Units & notes**: `active_duration_seconds` = Garmin `movingDuration`, `elapsed_duration_seconds` = `duration`. `category_counts` is a JSON map of ACTIVE exercise-set categories to counts (e.g. `{"CRUNCH": 4, "PLANK": 7}`); the reader returns it as a dict. Read via `get_strength_sessions(start_date, end_date)` (no Garmin access).
 
 ---
 

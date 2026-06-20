@@ -11,6 +11,7 @@ This package provides specialized reader classes for accessing DuckDB data:
 - RaceReader: Race readiness (current VDOT + goal gap)
 - TrainingLoadReader: Distance-based training load (ACWR)
 - DurabilityReader: Long-run cardiac decoupling / pace fade trend
+- StrengthSessionsReader: Strength-training (補強) summaries
 - UtilityReader: Profiling and histogram operations
 - TimeSeriesReader: Time series data and anomaly detection
 - ExportReader: Query result export functionality
@@ -25,6 +26,7 @@ from garmin_mcp.database.readers.performance import PerformanceReader
 from garmin_mcp.database.readers.physiology import PhysiologyReader
 from garmin_mcp.database.readers.race import RaceReader
 from garmin_mcp.database.readers.splits import SplitsReader
+from garmin_mcp.database.readers.strength_sessions import StrengthSessionsReader
 from garmin_mcp.database.readers.time_series import TimeSeriesReader
 from garmin_mcp.database.readers.training_load import TrainingLoadReader
 from garmin_mcp.database.readers.utility import UtilityReader
@@ -39,6 +41,7 @@ __all__ = [
     "RaceReader",
     "TrainingLoadReader",
     "DurabilityReader",
+    "StrengthSessionsReader",
     "UtilityReader",
     "TimeSeriesReader",
     "ExportReader",

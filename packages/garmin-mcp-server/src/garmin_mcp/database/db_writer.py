@@ -521,6 +521,28 @@ class GarminDBWriter:
                 )
             """)
 
+            # Create strength_sessions table (mirrors
+            # migrations/add_strength_sessions.py; strength training is stored
+            # at summary granularity, kept out of ``activities`` to avoid
+            # polluting run aggregations -- issue #450).
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS strength_sessions (
+                    activity_id BIGINT PRIMARY KEY,
+                    activity_date DATE,
+                    start_time_local TIMESTAMP,
+                    activity_name VARCHAR,
+                    active_duration_seconds INTEGER,
+                    elapsed_duration_seconds INTEGER,
+                    avg_heart_rate INTEGER,
+                    max_heart_rate INTEGER,
+                    calories INTEGER,
+                    active_sets INTEGER,
+                    total_sets INTEGER,
+                    category_counts JSON,
+                    ingested_at TIMESTAMP
+                )
+            """)
+
             # Create indexes for time_series_metrics
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_time_series_activity "

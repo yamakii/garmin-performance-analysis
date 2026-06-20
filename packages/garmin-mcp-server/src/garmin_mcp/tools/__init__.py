@@ -23,6 +23,7 @@ from garmin_mcp.tools.physiology import PHYSIOLOGY_TOOLS
 from garmin_mcp.tools.race import RACE_TOOLS
 from garmin_mcp.tools.registry import ToolDef
 from garmin_mcp.tools.splits import SPLITS_TOOLS
+from garmin_mcp.tools.strength import STRENGTH_TOOLS
 from garmin_mcp.tools.time_series import TIME_SERIES_TOOLS
 from garmin_mcp.tools.training_load import LOAD_TOOLS
 from garmin_mcp.tools.training_plan import TRAINING_PLAN_TOOLS
@@ -43,6 +44,7 @@ ALL_DEFS: list[ToolDef] = (
     + RACE_TOOLS
     + LOAD_TOOLS
     + DURABILITY_TOOLS
+    + STRENGTH_TOOLS
 )
 
 ALL_DEFS_BY_NAME: dict[str, ToolDef] = {d.name: d for d in ALL_DEFS}
