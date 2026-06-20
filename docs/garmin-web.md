@@ -55,6 +55,10 @@ All endpoints are read-only `GET` under `/api`.
 | `/api/trends/physiology?from=...&to=...` | VO2max and lactate threshold history |
 | `/api/trends/form?from=...&to=...` | Form evaluation score history |
 | `/api/trends/efficiency?from=...&to=...` | Pace/HR efficiency and HR zone distribution history |
+| `/api/goal` | Current athlete goal, phase focus, and last-season retrospective. Backs the `/goal` page |
+| `/api/race-readiness?user_id=default&lookback_weeks=8` | Race-readiness / prediction metrics over the lookback window |
+| `/api/training-load?lookback_weeks=12` | ACWR training-load `current` snapshot + `trend` series |
+| `/api/durability-trend?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD` | Durability trend over the date range (`start_date`/`end_date` required) |
 | `/api/weekly-reviews?limit=12` | Weekly reviews, newest week first, **one row per week** (latest version of each week) |
 | `/api/weekly-reviews/{week_start_date}` | Latest version of the week's review. 404 if none |
 | `/api/weekly-reviews/{week_start_date}/versions` | All saved versions of the week, newest first. Empty array (200) if none. Backs the detail-page version selector |
