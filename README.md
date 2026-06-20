@@ -33,7 +33,8 @@ The project is a uv workspace with two packages:
 - **`packages/garmin-web`**: FastAPI backend + Vite/React SPA that renders analysis stored in DuckDB
 - **Analysis Agents & Skills** (`.claude/`): section-analysis agents and user-invocable skills (`/analyze-activity`, `/plan-training`, etc.)
 
-See `CLAUDE.md` for the full architecture and DuckDB schema reference.
+See [`docs/architecture.md`](docs/architecture.md) for the design rationale
+(the "why"), and `CLAUDE.md` for the full module map and DuckDB schema reference.
 
 ## Installation
 
