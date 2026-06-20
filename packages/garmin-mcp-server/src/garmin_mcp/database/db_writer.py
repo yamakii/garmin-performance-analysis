@@ -586,7 +586,13 @@ class GarminDBWriter:
 
     def _run_migrations(self) -> None:
         """Run pending database migrations after table creation."""
+        from garmin_mcp.database.migrations.backup import backup_if_pending
         from garmin_mcp.database.migrations.runner import MigrationRunner
+
+        # Back up the real production DB before applying pending migrations.
+        # A copy failure raises RuntimeError and intentionally aborts init so
+        # that no migration runs without a safety net.
+        backup_if_pending(self.db_path)
 
         runner = MigrationRunner(self.db_path)
         applied = runner.run_pending()
