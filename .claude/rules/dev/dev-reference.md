@@ -28,7 +28,9 @@
   - [ ] test_method_edge_case [unit] -- x=-1 → raises ValueError
   ```
 - **Plan承認後**: Issue作成(TBD時) → Issue sync → worktree実装 or `/decompose`。再確認不要
-- **Review Gates**: Design → Test Plan → Code(CI) → Validation → Merge(`/ship --pr`)
+- **Review Gates**: Design → Test Plan → Code(CI) → Validation → Merge
+  - `/implement` 経由: 検証(L1/L2) PASS + `ci-guard` success + mergeable なら **auto-merge**（`implement-tier` Workflow）。例外（FAIL / 内容チェック WARNING / CI 失敗 / コンフリクト / L3）のみ人間が `/ship --pr N --validated`
+  - 単発 PR: 従来どおり `/ship --pr N`（CI green 確認後）
 
 ### Issue Sync
 
