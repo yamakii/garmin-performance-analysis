@@ -44,24 +44,32 @@ Open http://localhost:5173 during development.
 
 All endpoints are read-only `GET` under `/api`.
 
+The table below is generated from the FastAPI routers; each description is the
+first line of the route handler's docstring. Regenerate after route changes:
+`uv run --directory packages/garmin-web python -m garmin_web.scripts.generate_api_doc`
+(append `--check` to verify drift). Path parameters appear as `{name}`; query
+parameters are documented in each handler's docstring.
+
+<!-- BEGIN GENERATED: web-api-table -->
 | Endpoint | Description |
 |----------|-------------|
-| `/api/activities?from=YYYY-MM-DD&to=YYYY-MM-DD` | Activity list, date descending. `from`/`to` are optional inclusive bounds |
-| `/api/activities/{id}` | Aggregated detail (splits, form efficiency, HR zones, performance trends, form evaluation). 404 if unknown |
-| `/api/activities/{id}/time-series?metrics=heart_rate,speed&max_points=500` | Downsampled time series. `metrics` is a required comma-separated list; unknown metrics → 422 |
-| `/api/activities/{id}/track` | GPS track points. Indoor runs return an empty `points` array |
-| `/api/activities/{id}/sections` | Section analyses (split / phase / efficiency / environment / summary) |
-| `/api/trends/volume?from=...&to=...` | Weekly distance / duration / run-count aggregates |
-| `/api/trends/physiology?from=...&to=...` | VO2max and lactate threshold history |
-| `/api/trends/form?from=...&to=...` | Form evaluation score history |
-| `/api/trends/efficiency?from=...&to=...` | Pace/HR efficiency and HR zone distribution history |
-| `/api/goal` | Current athlete goal, phase focus, and last-season retrospective. Backs the `/goal` page |
-| `/api/race-readiness?user_id=default&lookback_weeks=8` | Race-readiness / prediction metrics over the lookback window |
-| `/api/training-load?lookback_weeks=12` | ACWR training-load `current` snapshot + `trend` series |
-| `/api/durability-trend?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD` | Durability trend over the date range (`start_date`/`end_date` required) |
-| `/api/weekly-reviews?limit=12` | Weekly reviews, newest week first, **one row per week** (latest version of each week) |
-| `/api/weekly-reviews/{week_start_date}` | Latest version of the week's review. 404 if none |
-| `/api/weekly-reviews/{week_start_date}/versions` | All saved versions of the week, newest first. Empty array (200) if none. Backs the detail-page version selector |
+| `/api/activities` | Return activities sorted by date descending. |
+| `/api/activities/{activity_id}` | Return aggregated detail for one activity, or 404 if unknown. |
+| `/api/activities/{activity_id}/sections` | Return section analyses keyed by section_type. |
+| `/api/activities/{activity_id}/time-series` | Return downsampled time series for the requested metrics. |
+| `/api/activities/{activity_id}/track` | Return the GPS track for an activity. |
+| `/api/durability-trend` | Return the long-run decoupling trend over a date window. |
+| `/api/goal` | Return the athlete goal payload (profile + goals + retrospectives). |
+| `/api/race-readiness` | Return current VDOT, race-time predictions, and goal progress. |
+| `/api/training-load` | Return the current ACWR snapshot plus the weekly load/ACWR trend. |
+| `/api/trends/efficiency` | HR efficiency trend with zone distribution. |
+| `/api/trends/form` | Form evaluation score trend. |
+| `/api/trends/physiology` | VO2max and lactate threshold time series. |
+| `/api/trends/volume` | Running volume aggregated per ISO week or calendar month. |
+| `/api/weekly-reviews` | Return recent weekly reviews (newest first), one per week. |
+| `/api/weekly-reviews/{week_start_date}` | Return a single weekly review by its week-start date. |
+| `/api/weekly-reviews/{week_start_date}/versions` | Return all saved versions for a single week (newest first). |
+<!-- END GENERATED: web-api-table -->
 
 > Weekly reviews are versioned: re-running `/weekly-review` for the same week appends a new row instead of overwriting (Epic #311). The list view de-duplicates to the latest version per week; the detail page fetches `/versions` to switch between past versions.
 

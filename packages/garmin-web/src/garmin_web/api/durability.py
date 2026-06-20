@@ -5,7 +5,7 @@ long-run decoupling/pace-fade computation lives in the reader, so the Web layer
 never re-implements the durability logic.
 """
 
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, Request
 from garmin_mcp.database.db_reader import GarminDBReader
@@ -28,4 +28,7 @@ def get_durability_trend_endpoint(
     """
     db_path = getattr(request.app.state, "db_path", None)
     reader = GarminDBReader(db_path=str(db_path) if db_path is not None else None)
-    return reader.get_durability_trend(start_date, end_date, min_distance_km)
+    return cast(
+        "dict[str, Any]",
+        reader.get_durability_trend(start_date, end_date, min_distance_km),
+    )
