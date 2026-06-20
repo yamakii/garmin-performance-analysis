@@ -74,7 +74,9 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 
 迷ったら L2。L3 は agent 定義変更時のみ。
 
-### 検証フロー (FIFO キュー + Validation Agent)
+### 検証フロー (Validation Agent)
+
+> L1/L2 は subprocess（`uv run --directory <worktree>`）で検証するためプロセス分離されており**並列起動が安全**。複数 worktree の L1/L2 を同時に検証してよい（旧 FIFO 直列前提は reload 依存時代の遺物）。直列が残るのは L3（メインセッション担当）のみ。
 
 1. L1: worktree コードを subprocess で import → 下層関数を `verification_activity_id` で呼び出し → 非null、型一致、値範囲 (pace 3:00-9:00, HR 80-200)、`json.dumps` 可能を検証（`reload_server` は使わない）
 2. L2: L1 + worktree 内で `uv run --directory <worktree> pytest -m integration --tb=short -q`

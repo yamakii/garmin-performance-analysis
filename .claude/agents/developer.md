@@ -70,6 +70,8 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ### Step 5.5: Validation Manifest 書き出し
 
 commit 完了後、Validation Agent 用の manifest を書き出す。
+manifest は L1/L2 検証（subprocess・並列起動可）の入力になる。各 worktree が独立に書き出すため、
+複数 worktree の検証が並列に走っても manifest 同士は競合しない（ファイル名は branch 名で一意）。
 
 1. Validation Level 判定（`dev-reference.md` §3 の判定表で changed_files の最高レベルを採用）
 2. Write tool で JSON manifest を書き出し:
