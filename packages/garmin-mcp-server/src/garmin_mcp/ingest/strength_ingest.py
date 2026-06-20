@@ -103,14 +103,20 @@ def _aggregate_categories(exercise_sets: dict[str, Any]) -> dict[str, int]:
 
     Returns:
         Mapping of category name -> number of ACTIVE sets. REST sets and sets
-        without a category are ignored. Empty dict when no ACTIVE sets exist.
+        whose category is missing or ``"UNKNOWN"`` are ignored. Empty dict when
+        no ACTIVE sets exist.
+
+    Note:
+        Garmin nests the category under ``exercises[].category`` rather than at
+        the set level, so the first exercise's category is used per ACTIVE set.
     """
     counts: dict[str, int] = {}
     for entry in exercise_sets.get("exerciseSets") or []:
         if entry.get("setType") != "ACTIVE":
             continue
-        category = entry.get("category")
-        if not category:
+        exercises = entry.get("exercises") or []
+        category = exercises[0].get("category") if exercises else None
+        if not category or category == "UNKNOWN":
             continue
         counts[category] = counts.get(category, 0) + 1
     return counts
