@@ -5,7 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+> Granular per-change history is tracked in GitHub Issues and Pull Requests
+> (the single source of truth). This file summarizes major themes per release.
+
 ## [Unreleased]
+
+Major work since 4.0.3 (the entries below summarize broad themes; see GitHub
+PRs/Issues for specifics):
+
+### Added
+- **Web app** (`packages/garmin-web`): FastAPI + React SPA to browse analysis
+  stored in DuckDB — activity browser, time-series/track views, trends
+  (volume / physiology / form / efficiency), goal page, and versioned weekly reviews.
+- **Race readiness, ACWR training load, and durability** tooling (MCP tools +
+  web `/goal` and `/trends` pages).
+- **Athlete-centric features**: `/set-goal`, `/plan-training`, and `/weekly-review`
+  skills backed by new `athlete_profile` / `athlete_goals` / `season_retrospectives`
+  / `weekly_reviews` tables.
+- **Unified pace-corrected form evaluation**: rolling baselines
+  (`form_baseline_history`), power efficiency, integrated score, and cadence
+  evaluation in `form_evaluations`.
+- Onboarding docs: `docs/getting-started.md`, Garmin auth in `.env.example`/README,
+  `CONTRIBUTING.md`, `SECURITY.md`.
+
+### Changed
+- **Monorepo restructure** into `packages/garmin-mcp-server` + `packages/garmin-web`
+  (modules now under `garmin_mcp.*`).
+- **MCP tooling**: 46 token-optimized tools declared from a single-source
+  `tools/` `ToolDef` registry (schema + dispatch + CLI derived from one place).
+- **DuckDB schema**: removed FOREIGN KEY constraints, added plan versioning,
+  cadence/power columns, and body-composition date index; refreshed
+  `docs/spec/duckdb_schema_mapping.md` to the live 19-table schema.
+- **Dev workflow**: worktree validation protocol, `/implement` tier workflow with
+  conditional auto-merge, guard hooks, and `scripts/ci-check.sh`.
+- Pruned obsolete `docs/` planning artifacts now tracked in GitHub Issues.
 
 ## [4.0.3] - 2025-10-25
 
