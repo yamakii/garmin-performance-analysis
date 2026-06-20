@@ -18,7 +18,10 @@ from unittest.mock import MagicMock, patch
 import duckdb
 import pytest
 
-from garmin_mcp.ingest.strength_ingest import ingest_strength_sessions
+from garmin_mcp.ingest.strength_ingest import (
+    _aggregate_categories,
+    ingest_strength_sessions,
+)
 
 _STRENGTH_ACTIVITY_ID = 23315203017
 
@@ -57,13 +60,69 @@ def _run_summary() -> dict[str, Any]:
     }
 
 
+def _active_set(category: str) -> dict[str, Any]:
+    """Build an ACTIVE set with the category nested under ``exercises[]``.
+
+    Mirrors the real Garmin structure where ``category`` lives on each exercise
+    rather than at the set level.
+    """
+    return {
+        "setType": "ACTIVE",
+        "repetitionCount": 12,
+        "exercises": [{"category": category, "name": None}],
+    }
+
+
 def _exercise_sets() -> dict[str, Any]:
-    """Exercise sets payload: 4 ACTIVE CRUNCH, 7 ACTIVE PLANK, plus REST."""
+    """Exercise sets payload: 4 ACTIVE CRUNCH, 7 ACTIVE PLANK, plus REST.
+
+    Uses the real nested structure (``exercises[].category``).
+    """
     sets: list[dict[str, Any]] = []
-    sets += [{"setType": "ACTIVE", "category": "CRUNCH"} for _ in range(4)]
-    sets += [{"setType": "ACTIVE", "category": "PLANK"} for _ in range(7)]
-    sets += [{"setType": "REST", "category": None} for _ in range(11)]
+    sets += [_active_set("CRUNCH") for _ in range(4)]
+    sets += [_active_set("PLANK") for _ in range(7)]
+    sets += [{"setType": "REST", "exercises": []} for _ in range(11)]
     return {"exerciseSets": sets}
+
+
+@pytest.mark.unit
+def test_aggregate_categories_nested_exercises() -> None:
+    """ACTIVE sets with nested ``exercises[0].category`` are counted; REST is not."""
+    payload = {
+        "exerciseSets": [
+            _active_set("CRUNCH"),
+            _active_set("PLANK"),
+            {"setType": "REST", "exercises": []},
+        ]
+    }
+    assert _aggregate_categories(payload) == {"CRUNCH": 1, "PLANK": 1}
+
+
+@pytest.mark.unit
+def test_aggregate_categories_skips_unknown_and_empty() -> None:
+    """ACTIVE sets with UNKNOWN category or no exercises are not counted."""
+    payload = {
+        "exerciseSets": [
+            {
+                "setType": "ACTIVE",
+                "exercises": [{"category": "UNKNOWN", "name": None}],
+            },
+            {"setType": "ACTIVE", "exercises": []},
+        ]
+    }
+    assert _aggregate_categories(payload) == {}
+
+
+@pytest.mark.unit
+def test_aggregate_categories_ignores_rest_sets() -> None:
+    """A payload of only REST sets yields an empty dict."""
+    payload = {
+        "exerciseSets": [
+            {"setType": "REST", "exercises": []},
+            {"setType": "REST", "exercises": []},
+        ]
+    }
+    assert _aggregate_categories(payload) == {}
 
 
 def _make_client(activities: list[dict[str, Any]]) -> MagicMock:
