@@ -10,7 +10,7 @@ Garmin running performance analysis system with **DuckDB-first architecture** an
 
 **Key Features:**
 - DuckDB normalized storage (14 tables, 100+ activities)
-- 41 token-optimized MCP tools (70-98.8% reduction), declared via a single-source `tools/` registry
+- 46 token-optimized MCP tools (70-98.8% reduction), declared via a single-source `tools/` registry
 - 2 analysis agents (unified-section-analyst + split-section-analyst)
 - Japanese analysis stored in DuckDB, viewed via the Web app (code/docs in English)
 
@@ -110,7 +110,7 @@ Validation Agent 方式（L1/L2 は subprocess で並列起動可、L3 のみメ
 
 **Pipeline:** API → Raw JSON → DuckDB → MCP Tools → Analysis (viewed via Web app)
 
-**Key Modules (after Phase 1/2 refactoring):**
+**Key Modules:**
 
 | Module | Role |
 |---|---|
@@ -120,7 +120,7 @@ Validation Agent 方式（L1/L2 は subprocess で並列起動可、L3 のみメ
 | `DuckDBSaver` | Transaction-batched DuckDB insertion |
 | `GarminDBWriter` | DuckDB write operations (14 tables, 13 inserters) |
 | `GarminDBReader` | DuckDB read operations (query builders) |
-| `tools/` registry | 41 tools declared as `ToolDef` (39 domain + 2 server). `server.py` dispatches directly from `ALL_DEFS_BY_NAME` (O(1) lookup); domain handlers were removed in #340 |
+| `tools/` registry | 46 tools declared as `ToolDef` (44 domain + 2 server). `server.py` dispatches directly from `ALL_DEFS_BY_NAME` (O(1) lookup) |
 
 **DuckDB Schema (14 tables):**
 - Metadata: `activities`, `body_composition`
@@ -147,7 +147,7 @@ garmin-performance-analysis/
 │       │   ├── form_baseline/      # Form baseline training
 │       │   ├── scripts/
 │       │   │   └── regenerate/     # DuckDB regeneration utilities
-│       │   ├── tools/              # ToolDef registry (single source for 41 MCP tools)
+│       │   ├── tools/              # ToolDef registry (single source for 46 MCP tools)
 │       │   ├── tool_schemas.py     # thin wrapper: registry tools + 2 server tools
 │       │   └── validation/         # Data validation
 │       └── tests/
@@ -156,9 +156,10 @@ garmin-performance-analysis/
 │       ├── frontend/               # Vite + React SPA
 │       └── tests/
 ├── .claude/
-│   ├── agents/                     # 2 analysis agents (unified + split)
+│   ├── agents/                     # 5 agent defs: 2 analysis (unified+split) + developer/proofreader/validation
 │   ├── skills/                     # 8 user-invocable skills (/analyze-activity, /decompose, /implement, /plan-training, /project-status, /set-goal, /ship, /weekly-review)
 │   ├── rules/                      # Shared rules (auto-loaded)
+│   ├── workflows/                  # Workflow scripts (implement-tier.js = /implement tier orchestration)
 │   ├── tasks/                      # todo.md, lessons.md (session tracking)
 │   └── settings.local.json
 ├── data/                           # GARMIN_DATA_DIR (configurable via .env)
@@ -180,9 +181,8 @@ garmin-performance-analysis/
    - **summary**: Activity type + 4-axis overall assessment + recommendations
 2. **split-section-analyst**: 1km split analysis (pace, HR, form)
 
-> Consolidated from 5→2 agents (#250). The unified agent receives prefetched CONTEXT;
-> split needs no CONTEXT. Each section is still written as a separate `{section}.json`
-> consumed by `merge_section_analyses`.
+> The unified agent receives prefetched CONTEXT; split needs no CONTEXT. Each section
+> is written as a separate `{section}.json` consumed by `merge_section_analyses`.
 
 ### Critical Data Sources
 
