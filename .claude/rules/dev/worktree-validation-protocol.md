@@ -2,22 +2,30 @@
 
 ## Overview
 
-並行 worktree 実装エージェントの検証を FIFO キューで逐次処理する。
-MCP server は単一プロセスのため、検証は直列実行が必須。
+並行 worktree 実装エージェントの検証を実行する。
+L1/L2 検証は worktree コードを **subprocess（`uv run --directory <worktree>`）** で評価する。
+subprocess はプロセス分離されており**並列実行が安全**なため、L1/L2 の Validation Agent は**並列起動してよい**。
+直列が必須なのは **L3 のみ**（メインセッションが担当し、live MCP サーバの reload を扱う稀ケース）。
+
+> かつては「MCP server は単一プロセスゆえ検証は直列必須」という FIFO 前提があったが、
+> これは L1/L2 が `reload_server`（live MCP サーバ再起動）に依存していた時代の制約。
+> 現行の L1/L2 は reload を使わず subprocess で完結するため、この前提はもはや当てはまらない。
 
 ## Architecture
 
 ```
-Main Session (queue manager — 検証作業はしない)
+Main Session (validation manager — L1/L2 の検証作業はサブエージェントに委譲)
 │
 ├─ Implementation Agent A (background, worktree) ──完了──┐
 ├─ Implementation Agent B (background, worktree) ──完了──┤
 └─ Implementation Agent C (background, worktree) ──完了──┘
                                                          │
-                                          FIFO 順 ◄──────┘
-                  Validation Agent #1 (foreground) → A 検証
-                  Validation Agent #2 (foreground) → B 検証
-                  Validation Agent #3 (foreground) → C 検証
+                            L1/L2 は並列起動可 ◄─────────┘
+                  Validation Agent (foreground) → A 検証 ┐
+                  Validation Agent (foreground) → B 検証 ├ 並列可（subprocess 分離）
+                  Validation Agent (foreground) → C 検証 ┘
+
+                  L3 のみ直列（メインセッションが reload を扱う場合）
 ```
 
 ## reload_server 非依存の原則
@@ -63,11 +71,11 @@ Main Session (queue manager — 検証作業はしない)
    ```
 3. PR 作成 (draft)
 
-## Main Session の責務 (Queue Manager)
+## Main Session の責務 (Validation Manager)
 
 - 完了通知を受信したら、validation_level に応じて起動先を選ぶ:
-  - **L1 / L2**: Validation Agent を **foreground** で起動（毎回新規）
-  - **L3**: メインセッション（オーケストレーター）が**自分で**実行する（後述「L3: Full E2E（メインセッション担当）」）。L3 はサブエージェントに委譲しない
+  - **L1 / L2**: Validation Agent を **foreground** で起動（毎回新規）。subprocess 分離されているため**複数の Validation Agent を並列起動してよい**（FIFO で1つずつ待つ必要はない）
+  - **L3**: メインセッション（オーケストレーター）が**自分で**実行する（後述「L3: Full E2E（メインセッション担当）」）。L3 はサブエージェントに委譲せず、reload を扱うため直列に実行する
 - 検証結果に応じて:
   - **pass**: PR を ready にする / `/ship` 候補としてユーザーに報告
   - **fail**: PR にコメント追記、修正指示
@@ -75,7 +83,7 @@ Main Session (queue manager — 検証作業はしない)
 
 ## Validation Agent の責務（L1 / L2）
 
-毎回独立起動。前回の検証コンテキストは持たない。
+毎回独立起動。前回の検証コンテキストは持たない。subprocess 分離により**並列起動が安全**（複数 worktree の L1/L2 を同時に検証してよい）。
 manifest の `validation_level` が L1/L2 のときのみ起動される。**サブエージェントは `reload_server` を呼ばない。**
 
 ### L1: In-process Check（reload なし）

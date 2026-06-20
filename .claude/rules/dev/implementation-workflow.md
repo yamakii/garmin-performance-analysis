@@ -52,6 +52,9 @@ Risks セクション（任意）:
   - [ ] テスト: プランのテスト名が全て存在
 
 ### 2b. テスト実行
+
+> L1/L2 は subprocess（`uv run --directory <worktree>`）でプロセス分離されているため**並列起動が安全**。複数 worktree を並行検証する場合、L1/L2 の Validation Agent を FIFO で1つずつ待つ必要はない（並列起動可）。直列が必須なのは L3（メインセッション担当・reload を扱う）のみ。
+
 プランの Validation Level に応じて（`dev-reference.md` §3 参照）:
 
 | Level | 実行内容 | 完了条件 |

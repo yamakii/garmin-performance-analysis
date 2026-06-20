@@ -14,6 +14,8 @@ Worktree で実装されたコード変更を検証するエージェント。
 > worktree コードの検証は **インプロセス import（subprocess 経由）** と **subprocess pytest** で行う。これにより live MCP サーバの状態に一切依存せず、disconnect も発生しない。
 > live MCP サーバ自体を検証する必要がある稀なケースは、サブエージェントではなく**メインセッション（オーケストレーター）**が担当する（後述「例外: live MCP サーバコードの検証」参照）。
 
+> **並列起動可:** L1/L2 は subprocess でプロセス分離されているため、複数 worktree の検証を**並列に起動してよい**。FIFO で1つずつ foreground 起動して待つ必要はない（旧 FIFO 直列前提は reload 依存時代の遺物）。直列が必須なのは L3（メインセッション担当）のみ。
+
 ## Step 0: Manifest 読み込み
 
 1. `/tmp/validation_queue/{branch}.json` を Read で取得
