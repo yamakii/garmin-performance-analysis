@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **48 tools** (46 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **49 tools** (47 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -26,6 +26,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Training Load](#training-load) (2)
 - [Durability](#durability) (2)
 - [strength](#strength) (2)
+- [ingest](#ingest) (1)
 - [Server](#server) (2)
 
 ## Export
@@ -577,6 +578,20 @@ Get persisted strength_training (補強) summaries with activity_date in [start_
 |-----------|------|----------|-------------|
 | `start_date` | string | **required** | Inclusive window start date (YYYY-MM-DD). |
 | `end_date` | string | **required** | Inclusive window end date (YYYY-MM-DD). |
+
+## ingest
+
+### `catch_up_ingest`
+
+CLI: `garmin-db ingest catch-up`
+
+Differential catch-up ingest across the running, weight and strength domains in a single call. Resolves an independent window per domain (each table advances at its own pace): end_date or today as the shared end, and per-domain start = start_date (when given) or that domain's latest stored date, or end_date - 30 days when the domain is empty. running delegates to ingest_running_activities, weight to ingest_weight_range, strength to ingest_strength_sessions. Pass domains to ingest a subset (default: all three). A failure in one domain is isolated (its entry carries an error) while the others complete. Returns each requested domain's result plus a window map of {domain: {start, end}}.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `start_date` | string | optional | Inclusive shared window start date (YYYY-MM-DD). When omitted, each domain resolves its own start from its latest stored date (or end_date - 30 days when that domain is empty). |
+| `end_date` | string | optional | Inclusive window end date (YYYY-MM-DD). Defaults to today when omitted. |
+| `domains` | array[string] | optional | Subset of domains to ingest. Defaults to all of running, weight, strength. Domains not listed are skipped. |
 
 ## Server
 

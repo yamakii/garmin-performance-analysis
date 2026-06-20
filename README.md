@@ -6,7 +6,7 @@ A comprehensive running performance analysis system that integrates with Garmin 
 
 ## Features
 
-- **Garmin MCP Integration**: 48 token-optimized MCP tools for data retrieval and analysis, declared from a single-source `tools/` registry ([tool reference](docs/mcp-tools-reference.md))
+- **Garmin MCP Integration**: 49 token-optimized MCP tools for data retrieval and analysis, declared from a single-source `tools/` registry ([tool reference](docs/mcp-tools-reference.md))
 - **DuckDB Backend**: Normalized storage (20 tables, 100+ activities) for efficient querying
 - **Multi-agent Analysis**: 2 section-analysis agents (`unified-section-analyst` + `split-section-analyst`) that run in parallel
 - **Japanese Analysis**: All analysis stored in DuckDB and viewed via the web app (`packages/garmin-web`)
@@ -28,7 +28,7 @@ The project is a uv workspace with two packages:
 - **`packages/garmin-mcp-server`**: Python MCP server
   - `src/garmin_mcp/ingest/`: API → raw data collection (`ApiClient`, `RawDataFetcher`, `DuckDBSaver`)
   - `src/garmin_mcp/database/`: DuckDB read/write layer (`inserters/`, `readers/`, `migrations/`)
-  - `src/garmin_mcp/tools/`: `ToolDef` registry — single source for all 48 MCP tools
+  - `src/garmin_mcp/tools/`: `ToolDef` registry — single source for all 49 MCP tools
   - `src/garmin_mcp/scripts/`: ingestion, regeneration, and backfill utilities
 - **`packages/garmin-web`**: FastAPI backend + Vite/React SPA that renders analysis stored in DuckDB
 - **Analysis Agents & Skills** (`.claude/`): section-analysis agents and user-invocable skills (`/analyze-activity`, `/plan-training`, etc.)
@@ -182,7 +182,7 @@ If `.env` is not configured, the system uses default directories:
 
 MCP servers are configured per-user in a local, git-ignored `.mcp.json`:
 
-- **garmin-db**: DuckDB-based performance data queries and section analysis storage (48 tools)
+- **garmin-db**: DuckDB-based performance data queries and section analysis storage (49 tools)
 - **serena**: Symbol-aware code navigation and editing operations
 
 ## Configuration

@@ -495,7 +495,7 @@ class TestDispatchTool:
         assert data == {"activity_id": 7, "date": "2025-10-09"}
 
     @pytest.mark.asyncio
-    async def test_all_48_tools_dispatchable(self) -> None:
+    async def test_all_49_tools_dispatchable(self) -> None:
         """Every registry tool name plus the 2 server tools avoids 'Unknown tool'.
 
         Each registry tool is invoked with a mock reader and empty args; the only
@@ -505,7 +505,7 @@ class TestDispatchTool:
         from garmin_mcp.tools import ALL_DEFS_BY_NAME
 
         names = list(ALL_DEFS_BY_NAME) + ["get_server_info", "reload_server"]
-        assert len(names) == 48
+        assert len(names) == 49
 
         mock_reader = MagicMock()
         mock_reader.db_path = ":memory:"
