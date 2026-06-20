@@ -158,8 +158,6 @@ If `.env` is not configured, the system uses default directories:
 - **Flexible Storage**: Use external drives or NAS for large datasets
 - **Environment Separation**: Different paths for development/production
 
-For more details, see `docs/GITHUB_PUBLISHING_CHECKLIST.md`.
-
 ## MCP Servers
 
 MCP servers are configured per-user in a local, git-ignored `.mcp.json`:
