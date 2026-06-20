@@ -20,6 +20,7 @@ import pytest
 
 from garmin_mcp.ingest.strength_ingest import (
     _aggregate_categories,
+    _resolve_window,
     ingest_strength_sessions,
 )
 
@@ -230,3 +231,107 @@ def test_ingest_strength_sessions_filters_non_strength(temp_db_path: Path) -> No
         conn.close()
     assert ids == [_STRENGTH_ACTIVITY_ID]
     assert 99999 not in ids
+
+
+# ---------------------------------------------------------------------------
+# _resolve_window
+# ---------------------------------------------------------------------------
+
+
+def _seed_strength_row(db_path: Path, activity_id: int, activity_date: str) -> None:
+    """Insert a minimal strength_sessions row so the latest date is set."""
+    from garmin_mcp.database.db_writer import GarminDBWriter
+
+    GarminDBWriter(db_path=str(db_path))
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(
+            """
+            INSERT INTO strength_sessions (activity_id, activity_date)
+            VALUES (?, ?)
+            """,
+            [activity_id, activity_date],
+        )
+    finally:
+        conn.close()
+
+
+@pytest.mark.integration
+def test_resolve_window_empty_db_uses_30d_floor(temp_db_path: Path) -> None:
+    """No stored strength date → start is end - 30 days."""
+    from garmin_mcp.database.db_writer import GarminDBWriter
+
+    GarminDBWriter(db_path=str(temp_db_path))
+    assert _resolve_window(None, "2026-06-20", str(temp_db_path)) == (
+        "2026-05-21",
+        "2026-06-20",
+    )
+
+
+@pytest.mark.integration
+def test_resolve_window_from_latest(temp_db_path: Path) -> None:
+    """Latest stored strength date is used as the (inclusive) window start."""
+    _seed_strength_row(temp_db_path, 111, "2026-06-10")
+    assert _resolve_window(None, "2026-06-20", str(temp_db_path)) == (
+        "2026-06-10",
+        "2026-06-20",
+    )
+
+
+@pytest.mark.unit
+def test_resolve_window_end_defaults_today() -> None:
+    """end_date=None resolves to today (start passed through)."""
+    from datetime import date
+
+    today = date.today().isoformat()
+    start, end = _resolve_window("2026-06-01", None, "ignored.duckdb")
+    assert start == "2026-06-01"
+    assert end == today
+
+
+@pytest.mark.unit
+def test_resolve_window_explicit_range_passthrough() -> None:
+    """Both dates explicit → returned unchanged (no DB access)."""
+    assert _resolve_window("2026-06-01", "2026-06-30", "ignored.duckdb") == (
+        "2026-06-01",
+        "2026-06-30",
+    )
+
+
+# ---------------------------------------------------------------------------
+# ingest_strength_sessions (catch-up)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_ingest_catchup_uses_resolved_window(temp_db_path: Path) -> None:
+    """Omitting start_date discovers from the latest stored date to end_date."""
+    _seed_strength_row(temp_db_path, 111, "2026-06-10")
+    client = _make_client([_strength_summary()])
+    with patch(
+        "garmin_mcp.ingest.strength_ingest.get_garmin_client", return_value=client
+    ):
+        result = ingest_strength_sessions(
+            end_date="2026-06-20", db_path=str(temp_db_path)
+        )
+
+    # Discovery was called with the catch-up window.
+    client.get_activities_by_date.assert_called_once_with("2026-06-10", "2026-06-20")
+    assert result["window"] == {"start": "2026-06-10", "end": "2026-06-20"}
+
+
+@pytest.mark.integration
+def test_ingest_explicit_range_unchanged(temp_db_path: Path) -> None:
+    """Explicit range behaves as before: only the strength row is upserted."""
+    client = _make_client([_run_summary(), _strength_summary()])
+    with patch(
+        "garmin_mcp.ingest.strength_ingest.get_garmin_client", return_value=client
+    ):
+        result = ingest_strength_sessions(
+            "2026-06-01", "2026-06-30", db_path=str(temp_db_path)
+        )
+
+    client.get_activities_by_date.assert_called_once_with("2026-06-01", "2026-06-30")
+    assert result["inserted"] == 1
+    assert result["activity_ids"] == [_STRENGTH_ACTIVITY_ID]
+    assert result["window"] == {"start": "2026-06-01", "end": "2026-06-30"}

@@ -1000,22 +1000,18 @@
     "name": "get_durability_trend"
   },
   {
-    "description": "Discover strength_training (補強) activities from the Garmin Connect API in a date window and upsert summary rows into the strength_sessions table. Discovery uses the activity list filtered to typeKey == 'strength_training' (runs with distance are excluded). Each session's ACTIVE exercise sets are aggregated into a category_counts map (e.g. {\"CRUNCH\": 4, \"PLANK\": 7}). Idempotent: re-ingesting an activity overwrites its row. Returns inserted, updated, and activity_ids.",
+    "description": "Discover strength_training (補強) activities from the Garmin Connect API in a date window and upsert summary rows into the strength_sessions table. Catch-up aware: omit start_date to ingest from the latest stored strength date (re-fetched so recent edits are reflected), or end_date - 30 days when none exist yet; omit end_date to default to today. Discovery uses the activity list filtered to typeKey == 'strength_training' (runs with distance are excluded). Each session's ACTIVE exercise sets are aggregated into a category_counts map (e.g. {\"CRUNCH\": 4, \"PLANK\": 7}). Idempotent: re-ingesting an activity overwrites its row. Returns inserted, updated, activity_ids, and the resolved window {start, end}.",
     "inputSchema": {
       "properties": {
         "end_date": {
-          "description": "Inclusive window end date (YYYY-MM-DD).",
+          "description": "Inclusive window end date (YYYY-MM-DD). Defaults to today when omitted.",
           "type": "string"
         },
         "start_date": {
-          "description": "Inclusive window start date (YYYY-MM-DD).",
+          "description": "Inclusive window start date (YYYY-MM-DD). When omitted, catch-up resolution is used: the latest stored strength date (re-fetched so recent edits are reflected), or end_date - 30 days when no strength session exists yet.",
           "type": "string"
         }
       },
-      "required": [
-        "start_date",
-        "end_date"
-      ],
       "type": "object"
     },
     "name": "ingest_strength_sessions"

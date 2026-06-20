@@ -20,30 +20,74 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from garmin_mcp.database.connection import get_db_path, get_write_connection
+from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.ingest.api_client import get_garmin_client
 
 logger = logging.getLogger(__name__)
 
 _STRENGTH_TYPE_KEY = "strength_training"
+_EMPTY_DB_FLOOR_DAYS = 30
+
+
+def _resolve_window(
+    start_date: str | None,
+    end_date: str | None,
+    resolved_path: str,
+) -> tuple[str, str]:
+    """Resolve the inclusive ``(start, end)`` ingest window (catch-up aware).
+
+    Args:
+        start_date: Explicit window start (``YYYY-MM-DD``), or ``None`` for
+            catch-up resolution.
+        end_date: Explicit window end (``YYYY-MM-DD``), or ``None`` for today.
+        resolved_path: Path to the DuckDB database (already resolved).
+
+    Returns:
+        ``(start, end)`` as ``YYYY-MM-DD`` strings.
+
+        - ``end`` defaults to today when omitted.
+        - When ``start`` is given, it is returned unchanged (explicit range).
+        - When ``start`` is omitted, catch-up applies: the latest
+          ``strength_sessions.activity_date`` in the DB (re-fetched so recent
+          edits are reflected), or ``end - 30 days`` when the table is empty.
+    """
+    resolved_end = end_date if end_date is not None else date.today().isoformat()
+
+    if start_date is not None:
+        return start_date, resolved_end
+
+    latest = GarminDBReader(db_path=resolved_path).get_latest_strength_date()
+    if latest is not None:
+        return latest, resolved_end
+
+    end_obj = date.fromisoformat(resolved_end)
+    floor = end_obj - timedelta(days=_EMPTY_DB_FLOOR_DAYS)
+    return floor.isoformat(), resolved_end
 
 
 def ingest_strength_sessions(
-    start_date: str, end_date: str, db_path: str | None = None
+    start_date: str | None = None,
+    end_date: str | None = None,
+    db_path: str | None = None,
 ) -> dict[str, Any]:
-    """Discover and upsert strength_training summaries in ``[start, end]``.
+    """Discover and upsert strength_training summaries (catch-up aware).
 
     Args:
-        start_date: Inclusive window start (``YYYY-MM-DD``).
-        end_date: Inclusive window end (``YYYY-MM-DD``).
+        start_date: Inclusive window start (``YYYY-MM-DD``). When omitted,
+            catch-up resolution is used: the latest stored strength date (that
+            day is re-fetched so recent edits are reflected), or ``end - 30``
+            days when the table is empty.
+        end_date: Inclusive window end (``YYYY-MM-DD``). Defaults to today.
         db_path: Optional DuckDB path (defaults to the configured database).
 
     Returns:
-        Dict ``{"inserted": int, "updated": int, "activity_ids": list[int]}``.
+        Dict ``{"inserted", "updated", "activity_ids", "window"}`` where
+        ``window`` is ``{"start": str, "end": str}`` (the resolved range).
         ``inserted`` counts new rows; ``updated`` counts rows that already
         existed and were overwritten (idempotent upsert).
     """
@@ -51,8 +95,10 @@ def ingest_strength_sessions(
     # Ensure the schema (and strength_sessions table) exists.
     GarminDBWriter(db_path=resolved_path)
 
+    window_start, window_end = _resolve_window(start_date, end_date, resolved_path)
+
     client = get_garmin_client()
-    activities = client.get_activities_by_date(start_date, end_date)
+    activities = client.get_activities_by_date(window_start, window_end)
     strength = [a for a in activities if _is_strength(a)]
 
     inserted = 0
@@ -82,6 +128,7 @@ def ingest_strength_sessions(
         "inserted": inserted,
         "updated": updated,
         "activity_ids": activity_ids,
+        "window": {"start": window_start, "end": window_end},
     }
 
 
