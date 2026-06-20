@@ -44,7 +44,7 @@ Consolidated reference for all analysis rules.
 
 ### エージェント間の一貫性
 
-- HR zone 評価 → efficiency-section-analyst の `evaluation` が権威的ソース
+- HR zone 評価 → unified-section-analyst の efficiency セクションの `evaluation` が権威的ソース
 - plan target 存在時 → training_type 評価より plan 達成度を優先
 
 ## 4. Training Plans
