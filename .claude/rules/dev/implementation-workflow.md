@@ -80,15 +80,38 @@ Phase 2b の完了条件は **`scripts/ci-check.sh` が exit 0（0 failures）**
 - Validation Agent は `/implement` が自動起動する（手動で別途起動する必要はない）
 - skip レベルの場合は Phase 2a（コードレビュー）のみ実施し Phase 3 へ（Validation Agent はスキップ）
 
+## Phase 2.9: Pre-merge verification (全 PR 必須)
+
+> **`ci-guard` green は「CI が検証できた範囲が通った」だけ。検証完了の証明ではない。**
+> 原則: **変更した挙動を自動テストで exercise し、CI でゲートする**。手動確認は
+> 自動化が原理的に困難な領域（分析の品質、web の見た目）に限定し、その場合のみ
+> PR 本文の `## Verification` に記録する。「人がマージ前に workflow を手動起動して
+> 目視」は検証手段として不可（再現性なし・ロジックバグを見落とす）。
+
+カテゴリ別の必須検証（マージ前）:
+
+| 変更カテゴリ | 必須検証（自動が原則） | CI が実行 |
+|----------|----------------------|----------|
+| `packages/` コード | unit + L1/L2（subprocess import + 実 activity_id + integration）| `lint-and-test`（unit/型/lint）+ Validation Agent |
+| `packages/garmin-web/` | pytest + vitest + build（CI）。**UI の見た目はマージ後の確認で可**（pre-merge ブロッカーにしない） | `web-backend` / `web-frontend` |
+| `.claude/agents/*-analyst.md` | L3（fixture で `/analyze-activity`、構造/内容チェック） | なし（メインセッションが実行） |
+| `.claude/workflows/*.js` | **純粋ロジックを `// >>> testable` ブロックに置き、`node --test .claude/workflows/tests/` で自動検証**。プロンプト/構造変更はレビュー | `meta-checks`（構文 smoke + `node --test`） |
+| `.claude/hooks/*.sh` | hook を代表入力で発火させ exit code を検証する自動テスト（理想）。当面は `bash -n` + レビュー | `meta-checks`（`bash -n`） |
+| `.claude/skills/*.md` / `rules/` | 該当 skill / ルール手順を実行して挙動確認（記録） | なし |
+| `docs/**` / `*.md` / `.env.example` | docs-integrity / magic-number テスト + リンク・コマンド目視 | `lint-and-test`（doc-guard テスト） |
+
+`scripts/check-claude-scripts.sh`（`meta-checks` が CI 実行）= `.claude/workflows`・`.claude/hooks` の構文 smoke + workflow 純粋ロジックの `node --test`。**ロジックは必ず testable ブロックに切り出してテストを足す**（#441 のような args 取り違えを CI で捕捉するため）。
+
 ## Phase 3: Ship (PR作成 + 条件付き auto-merge)
 
-Phase 2 完了後のみ実行可能:
+Phase 2 + Phase 2.9 完了後のみ実行可能:
 1. worktree ブランチを main repo に fetch
 2. remote に push
-3. `mcp__github__create_pull_request` (Closes #{issue})
+3. `mcp__github__create_pull_request` (Closes #{issue}, 本文に `## Verification` を記録)
 4. `ci-guard` が completed になるまでポーリング（`pull_request_read(method="get_check_runs")`）
-5. **auto-merge ゲート**: 検証(L1/L2) PASS + `ci-guard` success + mergeable を満たせば
+5. **auto-merge ゲート**: 検証(L1/L2) PASS + `ci-guard` success + mergeable + **Phase 2.9 の検証完了**を満たせば
    `merge_pull_request` で自動マージ（テスト・検証の充実が前提, #395）。
    `/implement` ではこの判定を `implement-tier` Workflow が担う
-6. **例外は人間ゲート**: 検証 FAIL / 内容チェック WARNING / CI 失敗 / コンフリクト / L3 含みは
-   auto-merge せず、PR URL と理由をユーザーに報告して判断を仰ぐ（手動マージは `/ship --pr N --validated`）
+6. **例外は人間ゲート**: 検証 FAIL / 内容チェック WARNING / CI 失敗 / コンフリクト / L3 / **`.claude/(workflows|hooks|agents)` 変更**は
+   auto-merge せず（`implement-tier` も escalate）、PR URL と理由を報告して判断を仰ぐ。
+   `.claude/` 挙動変更は CI の自動テスト（`meta-checks`）green + 人によるレビュー後に手動マージ（`/ship --pr N --validated`）

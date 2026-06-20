@@ -12,6 +12,7 @@ jobs:
     outputs:
       code: ${{ steps.filter.outputs.code }}
       web: ${{ steps.filter.outputs.web }}
+      meta: ${{ steps.filter.outputs.meta }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -23,9 +24,15 @@ jobs:
               - 'pyproject.toml'
               - '.pre-commit-config.yaml'
               - '.github/workflows/**'
+              - 'docs/**'
+              - '**/*.md'
+              - '.env.example'
             web:
               - 'packages/garmin-web/**'
               - '.github/workflows/**'
+            meta:
+              - '.claude/workflows/**'
+              - '.claude/hooks/**'
 
   lint-and-test:
     needs: changes
@@ -97,7 +104,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: packages/garmin-web/frontend/package-lock.json
 
@@ -116,15 +123,27 @@ jobs:
       - name: Build
         run: npm run build
 
+  meta-checks:
+    needs: changes
+    if: needs.changes.outputs.meta == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Syntax-smoke .claude scripts
+        run: bash scripts/check-claude-scripts.sh
+
   ci-guard:
-    needs: [changes, lint-and-test, web-backend, web-frontend]
+    needs: [changes, lint-and-test, web-backend, web-frontend, meta-checks]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Check CI result
         run: |
-          if [ "${{ needs.changes.outputs.code }}" == "false" ] && [ "${{ needs.changes.outputs.web }}" == "false" ]; then
-            echo "No code changes — skipping CI"
+          if [ "${{ needs.changes.outputs.code }}" == "false" ] && [ "${{ needs.changes.outputs.web }}" == "false" ] && [ "${{ needs.changes.outputs.meta }}" == "false" ]; then
+            echo "No code/doc/meta changes — skipping CI"
             exit 0
           fi
           if [ "${{ needs.changes.outputs.code }}" == "true" ] && [ "${{ needs.lint-and-test.result }}" != "success" ]; then
@@ -137,5 +156,9 @@ jobs:
           fi
           if [ "${{ needs.changes.outputs.web }}" == "true" ] && [ "${{ needs.web-frontend.result }}" != "success" ]; then
             echo "web-frontend failed"
+            exit 1
+          fi
+          if [ "${{ needs.changes.outputs.meta }}" == "true" ] && [ "${{ needs.meta-checks.result }}" != "success" ]; then
+            echo "meta-checks failed"
             exit 1
           fi
