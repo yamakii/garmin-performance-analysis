@@ -162,11 +162,10 @@ For more details, see `docs/GITHUB_PUBLISHING_CHECKLIST.md`.
 
 ## MCP Servers
 
-This project uses the following MCP servers (configured in `.mcp.json`):
+MCP servers are configured per-user in a local, git-ignored `.mcp.json`:
 
 - **garmin-db**: DuckDB-based performance data queries and section analysis storage (46 tools)
 - **serena**: Symbol-aware code navigation and editing operations
-- **github**: Issue and pull request operations for the development workflow
 
 ## Configuration
 
