@@ -27,11 +27,22 @@ logger = logging.getLogger(__name__)
 class IngestStrengthSessionsParams(BaseModel):
     """Arguments for ``ingest_strength_sessions``."""
 
-    start_date: str = Field(
-        description="Inclusive window start date (YYYY-MM-DD).",
+    # Optional fields are modeled as ``str | None = None`` so the derived MCP
+    # schema emits no ``default`` and omits them from ``required``.
+    start_date: str | None = Field(
+        default=None,
+        description=(
+            "Inclusive window start date (YYYY-MM-DD). When omitted, catch-up "
+            "resolution is used: the latest stored strength date (re-fetched so "
+            "recent edits are reflected), or end_date - 30 days when no strength "
+            "session exists yet."
+        ),
     )
-    end_date: str = Field(
-        description="Inclusive window end date (YYYY-MM-DD).",
+    end_date: str | None = Field(
+        default=None,
+        description=(
+            "Inclusive window end date (YYYY-MM-DD). Defaults to today when " "omitted."
+        ),
     )
 
 
@@ -52,7 +63,9 @@ def _ingest_strength_sessions(
     from garmin_mcp.ingest.strength_ingest import ingest_strength_sessions
 
     return ingest_strength_sessions(
-        p.start_date, p.end_date, db_path=str(reader.db_path)
+        start_date=p.start_date,
+        end_date=p.end_date,
+        db_path=str(reader.db_path),
     )
 
 
@@ -66,12 +79,15 @@ STRENGTH_TOOLS: list[ToolDef] = [
         description=(
             "Discover strength_training (補強) activities from the Garmin Connect "
             "API in a date window and upsert summary rows into the "
-            "strength_sessions table. Discovery uses the activity list filtered "
-            "to typeKey == 'strength_training' (runs with distance are excluded). "
-            "Each session's ACTIVE exercise sets are aggregated into a "
+            "strength_sessions table. Catch-up aware: omit start_date to ingest "
+            "from the latest stored strength date (re-fetched so recent edits "
+            "are reflected), or end_date - 30 days when none exist yet; omit "
+            "end_date to default to today. Discovery uses the activity list "
+            "filtered to typeKey == 'strength_training' (runs with distance are "
+            "excluded). Each session's ACTIVE exercise sets are aggregated into a "
             'category_counts map (e.g. {"CRUNCH": 4, "PLANK": 7}). Idempotent: '
             "re-ingesting an activity overwrites its row. Returns inserted, "
-            "updated, and activity_ids."
+            "updated, activity_ids, and the resolved window {start, end}."
         ),
         params=IngestStrengthSessionsParams,
         handler=_ingest_strength_sessions,
