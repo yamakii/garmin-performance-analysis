@@ -18,6 +18,17 @@ import duckdb
 import numpy as np
 import polars as pl
 
+from garmin_mcp.utils.paths import get_result_dir
+
+
+def benchmark_output_path() -> Path:
+    """Path for the benchmark results JSON.
+
+    Resolves under the env-based result directory (``$GARMIN_RESULT_DIR`` or
+    ``<project>/result``) — a runtime-artifact location, never under ``docs/``.
+    """
+    return get_result_dir() / "benchmarks" / "benchmark_results.json"
+
 
 class ExportBenchmark:
     """Benchmark for export() function performance."""
@@ -263,10 +274,8 @@ class ExportBenchmark:
             f"| Parquet vs CSV speedup | > 3x | {speedup_100k:.2f}x | {status_speedup} |"
         )
 
-        # Save results to JSON
-        output_path = Path(
-            "docs/project/2025-10-16_duckdb_mcp_llm_architecture/benchmark_results.json"
-        )
+        # Save results to JSON (runtime artifact under the result dir, not docs/)
+        output_path = benchmark_output_path()
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         results_data = {
