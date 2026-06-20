@@ -41,10 +41,29 @@ See `CLAUDE.md` for the full architecture and DuckDB schema reference.
 # Install dependencies (including development tools)
 uv sync --extra dev
 
-# Configure data/result directories and auto-load env
-cp .env.example .env   # edit GARMIN_DATA_DIR, GARMIN_RESULT_DIR
+# Configure data/result directories and credentials, then auto-load env
+cp .env.example .env   # edit GARMIN_DATA_DIR, GARMIN_RESULT_DIR, GARMIN_EMAIL, GARMIN_PASSWORD
 direnv allow
 ```
+
+New here? Follow the [Getting Started guide](docs/getting-started.md) for the full
+cold-start path (authenticate → fetch → build DuckDB → analyze → view).
+
+### Garmin Connect Authentication
+
+Fetching data requires your Garmin Connect credentials in the environment
+(see `.env.example`):
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `GARMIN_EMAIL` | yes | Garmin Connect account email |
+| `GARMIN_PASSWORD` | yes | Garmin Connect account password |
+| `GARMINTOKENS` | no | OAuth token cache directory (default `~/.garth`) |
+
+On first fetch the system logs in and caches OAuth tokens under `GARMINTOKENS`;
+subsequent runs reuse the cache and do not resend your password. If Garmin
+returns `429 Too Many Requests`, wait before retrying — repeated auth failures
+can trigger a temporary block.
 
 ## Usage
 
