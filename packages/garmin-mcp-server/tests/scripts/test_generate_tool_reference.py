@@ -29,10 +29,10 @@ def test_reference_is_in_sync() -> None:
 
 @pytest.mark.unit
 def test_all_tools_present() -> None:
-    """Every registry + server tool name appears, and the count is 46."""
+    """Every registry + server tool name appears, and the count is 48."""
     content = render_reference()
     names = [d.name for d in ALL_DEFS] + [t["name"] for t in _SERVER_TOOLS]
-    assert len(names) == 46
+    assert len(names) == 48
     for name in names:
         assert f"### `{name}`" in content, f"{name} missing from reference"
 

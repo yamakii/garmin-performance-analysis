@@ -368,7 +368,7 @@
           "type": "array"
         },
         "distance_tolerance": {
-          "description": "Distance tolerance as fraction (default 0.2 = \u00b120%)",
+          "description": "Distance tolerance as fraction (default 0.2 = ±20%)",
           "type": "number"
         },
         "limit": {
@@ -376,7 +376,7 @@
           "type": "integer"
         },
         "pace_tolerance": {
-          "description": "Pace tolerance as fraction (default 0.2 = \u00b120%)",
+          "description": "Pace tolerance as fraction (default 0.2 = ±20%)",
           "type": "number"
         },
         "terrain_match": {
@@ -998,6 +998,48 @@
       "type": "object"
     },
     "name": "get_durability_trend"
+  },
+  {
+    "description": "Discover strength_training (補強) activities from the Garmin Connect API in a date window and upsert summary rows into the strength_sessions table. Discovery uses the activity list filtered to typeKey == 'strength_training' (runs with distance are excluded). Each session's ACTIVE exercise sets are aggregated into a category_counts map (e.g. {\"CRUNCH\": 4, \"PLANK\": 7}). Idempotent: re-ingesting an activity overwrites its row. Returns inserted, updated, and activity_ids.",
+    "inputSchema": {
+      "properties": {
+        "end_date": {
+          "description": "Inclusive window end date (YYYY-MM-DD).",
+          "type": "string"
+        },
+        "start_date": {
+          "description": "Inclusive window start date (YYYY-MM-DD).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start_date",
+        "end_date"
+      ],
+      "type": "object"
+    },
+    "name": "ingest_strength_sessions"
+  },
+  {
+    "description": "Get persisted strength_training (補強) summaries with activity_date in [start_date, end_date] from the strength_sessions table (no Garmin access). Returns a list (activity_date ascending) of summaries with activity_id, activity_date, start_time_local, activity_name, active/elapsed duration, avg/max heart rate, calories, active/total sets and category_counts (a dict of ACTIVE exercise-set categories). Returns an empty list when none match.",
+    "inputSchema": {
+      "properties": {
+        "end_date": {
+          "description": "Inclusive window end date (YYYY-MM-DD).",
+          "type": "string"
+        },
+        "start_date": {
+          "description": "Inclusive window start date (YYYY-MM-DD).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start_date",
+        "end_date"
+      ],
+      "type": "object"
+    },
+    "name": "get_strength_sessions"
   },
   {
     "description": "Get diagnostic info about the running MCP server (server_dir, override file status). Use to verify which directory the server is running from.",
