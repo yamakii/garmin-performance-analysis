@@ -50,8 +50,15 @@ class PowerEfficiencyModel:
         x = np.array(power_wkg_values)
         y = np.array(speeds)
 
-        # Check for zero variance
-        if np.std(x) == 0:
+        # Check for (near-)zero variance. Use peak-to-peak relative to the data
+        # scale rather than np.std == 0: with nearly identical inputs np.std
+        # suffers catastrophic cancellation and returns a tiny non-zero value
+        # (e.g. 4e-16), so an exact == 0 test misses the degenerate case. scipy
+        # >= 1.18 no longer raises for such near-constant x (it returns slope 0),
+        # so this guard must catch it before fitting.
+        x_range = float(np.ptp(x))
+        x_scale = max(abs(float(np.mean(x))), 1e-9)
+        if x_range / x_scale < 1e-9:
             raise ValueError(
                 "power_wkg_values has zero variance (all values are the same)"
             )
