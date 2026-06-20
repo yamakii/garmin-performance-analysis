@@ -16,20 +16,46 @@ export const meta = {
 //   issues: [{ number: int, title: string }],   // one tier; deps already resolved by caller
 //   tierName?: string,
 // }
+// ── pure logic (side-effect-free; extracted & unit-tested in CI) ─────────
+// The block between the markers below is evaluated by
+// .claude/workflows/tests/implement-tier.test.mjs (node --test, run by the
+// CI meta-checks job). Keep it free of top-level side effects / workflow
+// globals so the test can extract and exercise it directly.
+// >>> testable
 // The harness may deliver `args` as a JSON string rather than a parsed object,
 // so normalize before reading fields (accept string, object, or undefined).
-const ARGS =
-  typeof args === 'string'
-    ? (() => {
-        try {
-          return JSON.parse(args)
-        } catch {
-          return {}
-        }
-      })()
-    : args && typeof args === 'object'
-      ? args
-      : {}
+function normalizeArgs(raw) {
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw)
+    } catch {
+      return {}
+    }
+  }
+  return raw && typeof raw === 'object' ? raw : {}
+}
+
+// Decide auto-merge purely (deterministic). Returns { ok, reason }.
+function mergeDecision(acc) {
+  const m = acc.manifest ?? {}
+  const v = acc.validation ?? {}
+  const s = acc.ship ?? {}
+  // .claude orchestration/hooks/agents changes are not behaviorally verifiable
+  // by the per-issue CI gate here — never auto-merge; escalate to human review.
+  const files = m.changed_files ?? []
+  if (files.some((f) => /^\.claude\/(workflows|hooks|agents)\//.test(f)))
+    return { ok: false, reason: '.claude/ 挙動変更 — auto-merge 対象外（人手判断へ）' }
+  if (v.level === 'L3') return { ok: false, reason: 'L3 (agent 定義変更) はメインセッション担当。auto-merge 対象外' }
+  if (v.status === 'fail') return { ok: false, reason: `検証 FAIL: ${v.details ?? ''}` }
+  if (v.status === 'warning') return { ok: false, reason: `内容チェック WARNING: ${v.details ?? ''} — 人間判断へ` }
+  if (s.ci_conclusion !== 'success') return { ok: false, reason: `ci-guard が ${s.ci_conclusion}` }
+  if (!s.mergeable) return { ok: false, reason: 'コンフリクト / mergeable=false' }
+  if (!s.pr_number) return { ok: false, reason: 'PR 未作成' }
+  return { ok: true, reason: '検証 PASS + ci-guard success + mergeable' }
+}
+// <<< testable
+
+const ARGS = normalizeArgs(args)
 const OWNER = ARGS.owner ?? 'yamakii'
 const REPO = ARGS.repo ?? 'garmin-performance-analysis'
 const ISSUES = ARGS.issues ?? []
@@ -90,18 +116,7 @@ function repoCtx() {
   return `owner="${OWNER}", repo="${REPO}"`
 }
 
-// Decide auto-merge purely in JS (deterministic control flow).
-function mergeDecision(acc) {
-  const v = acc.validation ?? {}
-  const s = acc.ship ?? {}
-  if (v.level === 'L3') return { ok: false, reason: 'L3 (agent 定義変更) はメインセッション担当。auto-merge 対象外' }
-  if (v.status === 'fail') return { ok: false, reason: `検証 FAIL: ${v.details ?? ''}` }
-  if (v.status === 'warning') return { ok: false, reason: `内容チェック WARNING: ${v.details ?? ''} — 人間判断へ` }
-  if (s.ci_conclusion !== 'success') return { ok: false, reason: `ci-guard が ${s.ci_conclusion}` }
-  if (!s.mergeable) return { ok: false, reason: 'コンフリクト / mergeable=false' }
-  if (!s.pr_number) return { ok: false, reason: 'PR 未作成' }
-  return { ok: true, reason: '検証 PASS + ci-guard success + mergeable' }
-}
+// mergeDecision / normalizeArgs are defined in the testable block near the top.
 
 // ── pipeline: each issue flows Implement → Validate → Ship → Merge independently ──
 const results = await pipeline(
