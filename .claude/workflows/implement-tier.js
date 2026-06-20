@@ -16,9 +16,23 @@ export const meta = {
 //   issues: [{ number: int, title: string }],   // one tier; deps already resolved by caller
 //   tierName?: string,
 // }
-const OWNER = args.owner ?? 'yamakii'
-const REPO = args.repo ?? 'garmin-performance-analysis'
-const ISSUES = args.issues ?? []
+// The harness may deliver `args` as a JSON string rather than a parsed object,
+// so normalize before reading fields (accept string, object, or undefined).
+const ARGS =
+  typeof args === 'string'
+    ? (() => {
+        try {
+          return JSON.parse(args)
+        } catch {
+          return {}
+        }
+      })()
+    : args && typeof args === 'object'
+      ? args
+      : {}
+const OWNER = ARGS.owner ?? 'yamakii'
+const REPO = ARGS.repo ?? 'garmin-performance-analysis'
+const ISSUES = ARGS.issues ?? []
 
 // ── schemas ───────────────────────────────────────────────────────────
 const MANIFEST_SCHEMA = {
@@ -163,7 +177,7 @@ const dropped = ISSUES.filter((i) => !clean.some((r) => r.issue === i.number))
 log(`Tier 完了: ${merged.length} auto-merged, ${escalated.length} escalated, ${dropped.length} dropped`)
 
 return {
-  tier: args.tierName ?? null,
+  tier: ARGS.tierName ?? null,
   merged: merged.map((r) => ({ issue: r.issue, pr: r.ship?.pr_number, sha: r.merge?.merge_sha })),
   escalated: escalated.map((r) => ({ issue: r.issue, pr: r.ship?.pr_number, reason: r.merge?.reason })),
   dropped: dropped.map((i) => i.number),
