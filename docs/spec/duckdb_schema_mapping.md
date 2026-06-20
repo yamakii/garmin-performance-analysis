@@ -7,6 +7,19 @@
 
 This document provides comprehensive schema documentation for all DuckDB tables in the Garmin performance analysis system. Every column name, type, and primary key below is verified against the live schema (`PRAGMA table_info`). Where prose describes derived/calculated logic, that logic lives in the inserters / form-baseline modules and is documented here because it is not otherwise discoverable from the column definitions.
 
+> **Half-generated**: the per-table `| Column | Type |` tables (PK marked `(PK)`) between
+> `<!-- BEGIN GENERATED: schema:<table> -->` / `<!-- END GENERATED: schema:<table> -->`
+> markers are rendered from the live schema by
+> `garmin_mcp.scripts.generate_schema_doc`. Do not edit them by hand. The surrounding
+> prose (units, sources, calculation logic, change history) is hand-written and preserved
+> verbatim. Regenerate with:
+> ```bash
+> uv run --directory packages/garmin-mcp-server \
+>   python -m garmin_mcp.scripts.generate_schema_doc
+> ```
+> A drift test (`tests/scripts/test_generate_schema_doc.py`) fails CI if a schema change
+> lands without regenerating.
+
 > **Schema bookkeeping**: a 20th table, `schema_version` (`version INTEGER PK`, `name`, `applied_at`), tracks applied migrations and is **not** a domain table. The migration runner (`database/migrations/registry.py`) applies numbered migrations after `_ensure_tables()` and records them there.
 
 ## Change History
@@ -65,30 +78,34 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 **Primary Key**: `activity_id`
 **Source**: `data/raw/activity/{activity_id}/activity.json` (+ `weather.json` for weather fields)
 
-### Schema (20 columns)
+### Schema
 
-| Column | Type | Description |
-|--------|------|-------------|
-| activity_id | BIGINT (PK) | Unique activity identifier |
-| activity_date | DATE | Activity date (YYYY-MM-DD) |
-| activity_name | VARCHAR | Activity name/title |
-| start_time_local | TIMESTAMP | Start time (local timezone) |
-| start_time_gmt | TIMESTAMP | Start time (GMT) |
-| location_name | VARCHAR | Activity location |
-| total_distance_km | DOUBLE | Total distance (km) |
-| total_time_seconds | INTEGER | Total duration (seconds) |
-| avg_speed_ms | DOUBLE | Average speed (m/s) |
-| avg_pace_seconds_per_km | DOUBLE | Average pace (sec/km) |
-| avg_heart_rate | INTEGER | Average heart rate (bpm) |
-| max_heart_rate | INTEGER | Maximum heart rate (bpm) |
-| temp_celsius | DOUBLE | External temperature from `weather.json` (°C) |
-| relative_humidity_percent | DOUBLE | Relative humidity from `weather.json` (%) |
-| wind_speed_kmh | DOUBLE | Wind speed from `weather.json` (km/h) |
-| wind_direction | VARCHAR | Wind direction (compass, e.g. N/NE/E) |
-| gear_type | VARCHAR | Gear type |
-| gear_model | VARCHAR | Shoe/gear model name |
-| base_weight_kg | DOUBLE | Base/reference weight (kg) |
-| body_mass_kg | DOUBLE | Body mass at activity time (kg), backfilled from `body_composition` (migration `phase0_power_prep`) |
+<!-- BEGIN GENERATED: schema:activities -->
+| Column | Type |
+|--------|------|
+| activity_id (PK) | BIGINT |
+| activity_date | DATE |
+| activity_name | VARCHAR |
+| start_time_local | TIMESTAMP |
+| start_time_gmt | TIMESTAMP |
+| location_name | VARCHAR |
+| total_distance_km | DOUBLE |
+| total_time_seconds | INTEGER |
+| avg_speed_ms | DOUBLE |
+| avg_pace_seconds_per_km | DOUBLE |
+| avg_heart_rate | INTEGER |
+| max_heart_rate | INTEGER |
+| temp_celsius | DOUBLE |
+| relative_humidity_percent | DOUBLE |
+| wind_speed_kmh | DOUBLE |
+| wind_direction | VARCHAR |
+| gear_type | VARCHAR |
+| gear_model | VARCHAR |
+| base_weight_kg | DOUBLE |
+| body_mass_kg | DOUBLE |
+<!-- END GENERATED: schema:activities -->
+
+**Units & sources** (not derivable from column names): `total_distance_km` (km); `total_time_seconds` (s); `avg_speed_ms` (m/s); `avg_pace_seconds_per_km` (sec/km); `avg_heart_rate` / `max_heart_rate` (bpm). Weather fields come from `weather.json`: `temp_celsius` (°C), `relative_humidity_percent` (%), `wind_speed_kmh` (km/h), `wind_direction` (compass, e.g. N/NE/E). `gear_model` is the shoe/gear model name. `body_mass_kg` is the body mass at activity time, backfilled from `body_composition` (migration `phase0_power_prep`); `base_weight_kg` is the base/reference weight.
 
 > **Common name traps** (the live schema differs from older drafts): it is `activity_date` (not `date`); `temp_celsius` (not `external_temp_c`); `relative_humidity_percent` (not `humidity`); `wind_speed_kmh` (not `wind_speed_ms`); `gear_model` (not `gear_name`). There are **no** `created_at`/`updated_at`, and **no** cadence/power/training-effect columns on this table — cadence/power live on `splits`, `time_series_metrics`, and the phase columns of `performance_trends`.
 
@@ -100,19 +117,23 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 **Primary Key**: `measurement_id` — with a **UNIQUE index on `date`** (`idx_body_composition_date`), so one row per day, enabling idempotent date-keyed upsert (`INSERT OR REPLACE`) on cache backfill.
 **Source**: `data/raw/weight/YYYY-MM-DD.json`
 
-### Schema (9 columns)
+### Schema
 
-| Column | Type | Description |
-|--------|------|-------------|
-| measurement_id | INTEGER (PK) | Unique measurement ID |
-| date | DATE | Measurement date (UNIQUE) |
-| weight_kg | DOUBLE | Weight (kg) |
-| body_fat_percentage | DOUBLE | Body fat (%) |
-| muscle_mass_kg | DOUBLE | Muscle mass (kg) |
-| bone_mass_kg | DOUBLE | Bone mass (kg) |
-| bmi | DOUBLE | Body mass index |
-| hydration_percentage | DOUBLE | Hydration (%) |
-| measurement_source | VARCHAR | Measurement device/source |
+<!-- BEGIN GENERATED: schema:body_composition -->
+| Column | Type |
+|--------|------|
+| measurement_id (PK) | INTEGER |
+| date | DATE |
+| weight_kg | DOUBLE |
+| body_fat_percentage | DOUBLE |
+| muscle_mass_kg | DOUBLE |
+| bone_mass_kg | DOUBLE |
+| bmi | DOUBLE |
+| hydration_percentage | DOUBLE |
+| measurement_source | VARCHAR |
+<!-- END GENERATED: schema:body_composition -->
+
+**Units & notes**: `date` carries a UNIQUE index (one row per day); `weight_kg` / `muscle_mass_kg` / `bone_mass_kg` in kg; `body_fat_percentage` / `hydration_percentage` in %; `bmi` is the body mass index; `measurement_source` is the device/source.
 
 > 5 metabolic fields (basal/active metabolic rate, metabolic age, visceral fat rating, physique rating) were removed in v2.0 — the device does not provide them.
 
@@ -124,44 +145,50 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 **Primary Key**: `(activity_id, split_index)`
 **Source**: `data/raw/activity/{activity_id}/splits.json` (lapDTOs)
 
-### Schema (34 columns)
+### Schema
 
-| Column | Type | Source | Description |
-|--------|------|--------|-------------|
-| activity_id | BIGINT (PK) | activityId | Activity reference |
-| split_index | INTEGER (PK) | lapIndex | Split number (1-based) |
-| distance | DOUBLE | distance | Split distance (m) |
-| duration_seconds | DOUBLE | duration | Split duration (s) |
-| start_time_gmt | VARCHAR | startTimeGMT | Split start time |
-| start_time_s | INTEGER | Calculated | Split start offset (s) |
-| end_time_s | INTEGER | start_time_s + duration | Split end offset (s) |
-| intensity_type | VARCHAR | intensityType | Garmin intensity (WARMUP/INTERVAL/RECOVERY/COOLDOWN/REST) |
-| role_phase | VARCHAR | Derived from position | Workout phase classification (warmup/run/recovery/cooldown) |
-| pace_str | VARCHAR | averageSpeed → mm:ss | Human-readable pace |
-| pace_seconds_per_km | DOUBLE | 1000 / averageSpeed | Pace (sec/km) |
-| heart_rate | INTEGER | averageHR | Average HR (bpm) |
-| **hr_zone** | VARCHAR | **CALCULATED** | HR zone mapping (Zone1–5) |
-| cadence | DOUBLE | averageRunCadence | Cadence (spm, both feet) |
-| **cadence_rating** | VARCHAR | **CALCULATED** | Cadence quality (Excellent/Good/Fair/Low) |
-| power | DOUBLE | avgPower | Average power (W) |
-| **power_efficiency** | VARCHAR | **CALCULATED** | Power efficiency (Excellent/Good/Fair/Low) |
-| stride_length | DOUBLE | strideLength | Stride length (cm) |
-| ground_contact_time | DOUBLE | groundContactTime | GCT (ms) |
-| vertical_oscillation | DOUBLE | verticalOscillation | VO (cm) |
-| vertical_ratio | DOUBLE | verticalRatio | VR (%) |
-| elevation_gain | DOUBLE | elevationGain | Elevation gain (m) |
-| elevation_loss | DOUBLE | elevationLoss | Elevation loss (m) |
-| terrain_type | VARCHAR | Calculated from elevation | Terrain classification |
-| **environmental_conditions** | VARCHAR | **CALCULATED** | Weather summary |
-| **wind_impact** | VARCHAR | **CALCULATED** | Wind impact (None/Light/Moderate/Strong) |
-| **temp_impact** | VARCHAR | **CALCULATED** | Temperature impact band |
-| **environmental_impact** | VARCHAR | **CALCULATED** | Combined environmental impact |
-| max_heart_rate | INTEGER | maxHR | Max HR in split (bpm) |
-| max_cadence | DOUBLE | maxRunCadence | Max cadence in split (spm) |
-| max_power | DOUBLE | maxPower | Max power in split (W) |
-| normalized_power | DOUBLE | normPower | Normalized power (W) |
-| average_speed | DOUBLE | averageSpeed | Average speed (m/s) |
-| grade_adjusted_speed | DOUBLE | gradeAdjustedSpeed | Grade-adjusted speed (m/s) |
+<!-- BEGIN GENERATED: schema:splits -->
+| Column | Type |
+|--------|------|
+| activity_id (PK) | BIGINT |
+| split_index (PK) | INTEGER |
+| distance | DOUBLE |
+| duration_seconds | DOUBLE |
+| start_time_gmt | VARCHAR |
+| start_time_s | INTEGER |
+| end_time_s | INTEGER |
+| intensity_type | VARCHAR |
+| role_phase | VARCHAR |
+| pace_str | VARCHAR |
+| pace_seconds_per_km | DOUBLE |
+| heart_rate | INTEGER |
+| hr_zone | VARCHAR |
+| cadence | DOUBLE |
+| cadence_rating | VARCHAR |
+| power | DOUBLE |
+| power_efficiency | VARCHAR |
+| stride_length | DOUBLE |
+| ground_contact_time | DOUBLE |
+| vertical_oscillation | DOUBLE |
+| vertical_ratio | DOUBLE |
+| elevation_gain | DOUBLE |
+| elevation_loss | DOUBLE |
+| terrain_type | VARCHAR |
+| environmental_conditions | VARCHAR |
+| wind_impact | VARCHAR |
+| temp_impact | VARCHAR |
+| environmental_impact | VARCHAR |
+| max_heart_rate | INTEGER |
+| max_cadence | DOUBLE |
+| max_power | DOUBLE |
+| normalized_power | DOUBLE |
+| average_speed | DOUBLE |
+| grade_adjusted_speed | DOUBLE |
+<!-- END GENERATED: schema:splits -->
+
+**Sources** (raw lapDTO field → column): `activityId`→`activity_id`, `lapIndex`→`split_index`, `distance`→`distance` (m), `duration`→`duration_seconds` (s), `startTimeGMT`→`start_time_gmt`, `intensityType`→`intensity_type` (WARMUP/INTERVAL/RECOVERY/COOLDOWN/REST), `averageSpeed`→`pace_str`/`pace_seconds_per_km`/`average_speed`, `averageHR`→`heart_rate`, `averageRunCadence`→`cadence` (spm, both feet), `avgPower`→`power` (W), `strideLength`→`stride_length` (cm), `groundContactTime`→`ground_contact_time` (ms), `verticalOscillation`→`vertical_oscillation` (cm), `verticalRatio`→`vertical_ratio` (%), `elevationGain`/`elevationLoss`→`elevation_gain`/`elevation_loss` (m), `maxHR`→`max_heart_rate`, `maxRunCadence`→`max_cadence`, `maxPower`→`max_power`, `normPower`→`normalized_power`, `gradeAdjustedSpeed`→`grade_adjusted_speed` (m/s). `start_time_s` / `end_time_s` are computed offsets; `role_phase` is derived from split position.
+
+**Calculated columns** (see Calculation Logic below): `hr_zone`, `cadence_rating`, `power_efficiency`, `terrain_type`, `environmental_conditions`, `wind_impact`, `temp_impact`, `environmental_impact`.
 
 ### Calculation Logic (derived fields)
 
@@ -204,36 +231,42 @@ Combines wind + temperature bands: Negligible (both ideal) → Low → Moderate 
 **Primary Key**: `(activity_id, seq_no)` — note the PK is on `seq_no`, **not** `timestamp_s`. A non-unique secondary index `idx_time_series_timestamp` exists on `(activity_id, timestamp_s)`, plus `idx_time_series_activity` on `(activity_id)`.
 **Source**: `data/raw/activity/{activity_id}/metrics.json`
 
-### Schema (26 columns)
+### Schema
 
-| Column | Type | Description |
-|--------|------|-------------|
-| activity_id | BIGINT (PK) | Activity reference |
-| seq_no | INTEGER (PK) | Sequence number |
-| timestamp_s | INTEGER | Timestamp offset (seconds) |
-| sum_moving_duration | DOUBLE | Cumulative moving duration |
-| sum_duration | DOUBLE | Cumulative total duration |
-| sum_elapsed_duration | DOUBLE | Cumulative elapsed duration |
-| sum_distance | DOUBLE | Cumulative distance (m) |
-| sum_accumulated_power | DOUBLE | Cumulative power |
-| heart_rate | DOUBLE | Instantaneous HR (bpm) |
-| speed | DOUBLE | Instantaneous speed (m/s) |
-| grade_adjusted_speed | DOUBLE | Grade-adjusted speed (m/s) |
-| cadence | DOUBLE | Both-feet cadence from `directDoubleCadence` (~180 spm, raw from Garmin API) |
-| power | DOUBLE | Instantaneous power (W) |
-| ground_contact_time | DOUBLE | GCT (ms) |
-| vertical_oscillation | DOUBLE | VO (cm) |
-| vertical_ratio | DOUBLE | VR (%) |
-| stride_length | DOUBLE | Stride length (cm) |
-| vertical_speed | DOUBLE | Vertical speed (m/s) |
-| elevation | DOUBLE | Elevation (m) |
-| air_temperature | DOUBLE | Device temperature (°C, +5–8°C body heat) |
-| latitude | DOUBLE | GPS latitude |
-| longitude | DOUBLE | GPS longitude |
-| available_stamina | DOUBLE | Available stamina |
-| potential_stamina | DOUBLE | Potential stamina |
-| body_battery | DOUBLE | Body battery level |
-| performance_condition | DOUBLE | Performance condition |
+<!-- BEGIN GENERATED: schema:time_series_metrics -->
+| Column | Type |
+|--------|------|
+| activity_id (PK) | BIGINT |
+| seq_no (PK) | INTEGER |
+| timestamp_s | INTEGER |
+| sum_moving_duration | DOUBLE |
+| sum_duration | DOUBLE |
+| sum_elapsed_duration | DOUBLE |
+| sum_distance | DOUBLE |
+| sum_accumulated_power | DOUBLE |
+| heart_rate | DOUBLE |
+| speed | DOUBLE |
+| grade_adjusted_speed | DOUBLE |
+| cadence | DOUBLE |
+| cadence_single_foot | DOUBLE |
+| cadence_total | DOUBLE |
+| power | DOUBLE |
+| ground_contact_time | DOUBLE |
+| vertical_oscillation | DOUBLE |
+| vertical_ratio | DOUBLE |
+| stride_length | DOUBLE |
+| vertical_speed | DOUBLE |
+| elevation | DOUBLE |
+| air_temperature | DOUBLE |
+| latitude | DOUBLE |
+| longitude | DOUBLE |
+| available_stamina | DOUBLE |
+| potential_stamina | DOUBLE |
+| body_battery | DOUBLE |
+| performance_condition | DOUBLE |
+<!-- END GENERATED: schema:time_series_metrics -->
+
+**Units & notes**: `timestamp_s` is a seconds offset; `sum_*` columns are cumulative (`sum_distance` in m); `heart_rate` (bpm); `speed` / `grade_adjusted_speed` / `vertical_speed` (m/s); `cadence` is both-feet cadence from `directDoubleCadence` (~180 spm, raw from Garmin API); `power` (W); `ground_contact_time` (ms); `vertical_oscillation` / `stride_length` (cm); `vertical_ratio` (%); `elevation` (m); `air_temperature` is **device** temperature (°C, +5–8°C body heat); `latitude` / `longitude` are GPS coordinates.
 
 > There is a single `cadence` column. The legacy `cadence_single_foot` / `cadence_total` / `fractional_cadence` columns are **not present** (removed v2.1).
 
@@ -245,43 +278,47 @@ Combines wind + temperature bands: Negligible (both ideal) → Low → Moderate 
 **Primary Key**: `activity_id`
 **Source**: Calculated from `splits.json`
 
-### Schema (33 columns)
+### Schema
 
-| Column | Type | Description |
-|--------|------|-------------|
-| activity_id | BIGINT (PK) | Activity reference |
-| pace_consistency | DOUBLE | Pace consistency score |
-| hr_drift_percentage | DOUBLE | HR drift (%) |
-| cadence_consistency | VARCHAR | Cadence consistency rating |
-| fatigue_pattern | VARCHAR | Fatigue pattern classification |
-| warmup_splits | VARCHAR | Comma-separated warmup split indices |
-| warmup_avg_pace_seconds_per_km | DOUBLE | Warmup avg pace (sec/km) |
-| warmup_avg_pace_str | VARCHAR | Warmup pace (mm:ss) |
-| warmup_avg_hr | DOUBLE | Warmup avg HR |
-| warmup_avg_cadence | DOUBLE | Warmup avg cadence |
-| warmup_avg_power | DOUBLE | Warmup avg power |
-| warmup_evaluation | VARCHAR | Warmup quality evaluation |
-| run_splits | VARCHAR | Comma-separated run split indices |
-| run_avg_pace_seconds_per_km | DOUBLE | Run avg pace (sec/km) |
-| run_avg_pace_str | VARCHAR | Run pace (mm:ss) |
-| run_avg_hr | DOUBLE | Run avg HR |
-| run_avg_cadence | DOUBLE | Run avg cadence |
-| run_avg_power | DOUBLE | Run avg power |
-| run_evaluation | VARCHAR | Run quality evaluation |
-| recovery_splits | VARCHAR | Comma-separated recovery split indices |
-| recovery_avg_pace_seconds_per_km | DOUBLE | Recovery avg pace (sec/km) |
-| recovery_avg_pace_str | VARCHAR | Recovery pace (mm:ss) |
-| recovery_avg_hr | DOUBLE | Recovery avg HR |
-| recovery_avg_cadence | DOUBLE | Recovery avg cadence |
-| recovery_avg_power | DOUBLE | Recovery avg power |
-| recovery_evaluation | VARCHAR | Recovery quality evaluation |
-| cooldown_splits | VARCHAR | Comma-separated cooldown split indices |
-| cooldown_avg_pace_seconds_per_km | DOUBLE | Cooldown avg pace (sec/km) |
-| cooldown_avg_pace_str | VARCHAR | Cooldown pace (mm:ss) |
-| cooldown_avg_hr | DOUBLE | Cooldown avg HR |
-| cooldown_avg_cadence | DOUBLE | Cooldown avg cadence |
-| cooldown_avg_power | DOUBLE | Cooldown avg power |
-| cooldown_evaluation | VARCHAR | Cooldown quality evaluation |
+<!-- BEGIN GENERATED: schema:performance_trends -->
+| Column | Type |
+|--------|------|
+| activity_id (PK) | BIGINT |
+| pace_consistency | DOUBLE |
+| hr_drift_percentage | DOUBLE |
+| cadence_consistency | VARCHAR |
+| fatigue_pattern | VARCHAR |
+| warmup_splits | VARCHAR |
+| warmup_avg_pace_seconds_per_km | DOUBLE |
+| warmup_avg_pace_str | VARCHAR |
+| warmup_avg_hr | DOUBLE |
+| warmup_avg_cadence | DOUBLE |
+| warmup_avg_power | DOUBLE |
+| warmup_evaluation | VARCHAR |
+| run_splits | VARCHAR |
+| run_avg_pace_seconds_per_km | DOUBLE |
+| run_avg_pace_str | VARCHAR |
+| run_avg_hr | DOUBLE |
+| run_avg_cadence | DOUBLE |
+| run_avg_power | DOUBLE |
+| run_evaluation | VARCHAR |
+| recovery_splits | VARCHAR |
+| recovery_avg_pace_seconds_per_km | DOUBLE |
+| recovery_avg_pace_str | VARCHAR |
+| recovery_avg_hr | DOUBLE |
+| recovery_avg_cadence | DOUBLE |
+| recovery_avg_power | DOUBLE |
+| recovery_evaluation | VARCHAR |
+| cooldown_splits | VARCHAR |
+| cooldown_avg_pace_seconds_per_km | DOUBLE |
+| cooldown_avg_pace_str | VARCHAR |
+| cooldown_avg_hr | DOUBLE |
+| cooldown_avg_cadence | DOUBLE |
+| cooldown_avg_power | DOUBLE |
+| cooldown_evaluation | VARCHAR |
+<!-- END GENERATED: schema:performance_trends -->
+
+**Units & notes**: `hr_drift_percentage` (%); `*_splits` columns are comma-separated split indices; `*_avg_pace_seconds_per_km` (sec/km); `*_avg_pace_str` (mm:ss); `*_avg_hr` / `*_avg_cadence` / `*_avg_power` are per-phase averages (power NULL when no power data). The four phase prefixes are `warmup` / `run` / `recovery` / `cooldown`, each with a `*_evaluation` quality string.
 
 ### Calculation Logic
 
@@ -302,31 +339,35 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 **Primary Key**: `activity_id`
 **Source**: Aggregated from `splits.json` (lapDTOs)
 
-### Schema (21 columns)
+### Schema
 
-| Column | Type | Description |
-|--------|------|-------------|
-| activity_id | BIGINT (PK) | Activity reference |
-| gct_average | DOUBLE | Average GCT (ms) |
-| gct_min | DOUBLE | Minimum GCT (ms) |
-| gct_max | DOUBLE | Maximum GCT (ms) |
-| gct_std | DOUBLE | GCT standard deviation |
-| gct_variability | DOUBLE | GCT variability `(std/avg)*100` (%) |
-| gct_rating | VARCHAR | GCT quality rating (★) |
-| gct_evaluation | VARCHAR | GCT quality evaluation text |
-| vo_average | DOUBLE | Average VO (cm) |
-| vo_min | DOUBLE | Minimum VO (cm) |
-| vo_max | DOUBLE | Maximum VO (cm) |
-| vo_std | DOUBLE | VO standard deviation |
-| vo_trend | VARCHAR | VO trend (increasing/stable/decreasing) |
-| vo_rating | VARCHAR | VO quality rating (★) |
-| vo_evaluation | VARCHAR | VO quality evaluation text |
-| vr_average | DOUBLE | Average VR (%) |
-| vr_min | DOUBLE | Minimum VR (%) |
-| vr_max | DOUBLE | Maximum VR (%) |
-| vr_std | DOUBLE | VR standard deviation |
-| vr_rating | VARCHAR | VR quality rating (★) |
-| vr_evaluation | VARCHAR | VR quality evaluation text |
+<!-- BEGIN GENERATED: schema:form_efficiency -->
+| Column | Type |
+|--------|------|
+| activity_id (PK) | BIGINT |
+| gct_average | DOUBLE |
+| gct_min | DOUBLE |
+| gct_max | DOUBLE |
+| gct_std | DOUBLE |
+| gct_variability | DOUBLE |
+| gct_rating | VARCHAR |
+| gct_evaluation | VARCHAR |
+| vo_average | DOUBLE |
+| vo_min | DOUBLE |
+| vo_max | DOUBLE |
+| vo_std | DOUBLE |
+| vo_trend | VARCHAR |
+| vo_rating | VARCHAR |
+| vo_evaluation | VARCHAR |
+| vr_average | DOUBLE |
+| vr_min | DOUBLE |
+| vr_max | DOUBLE |
+| vr_std | DOUBLE |
+| vr_rating | VARCHAR |
+| vr_evaluation | VARCHAR |
+<!-- END GENERATED: schema:form_efficiency -->
+
+**Units & notes**: per metric (`gct` in ms, `vo` in cm, `vr` in %) the table carries `*_average` / `*_min` / `*_max` / `*_std`, plus a `*_rating` (★) and `*_evaluation` text. `gct_variability` is `(std/avg)*100` (%); `vo_trend` is increasing/stable/decreasing.
 
 ### Calculation Logic
 - **gct_evaluation** (by `gct_average`): Excellent <200ms · Good 200–250ms · Fair 250–300ms · Poor >300ms
@@ -344,57 +385,61 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 **Primary Key**: `eval_id` (one row per `activity_id`)
 **Source**: Generated by the form-baseline evaluator (`form_baseline/evaluator.py`) using coefficients from `form_baseline_history`.
 
-### Schema (46 columns)
+### Schema
 
-| Column | Type | Description |
-|--------|------|-------------|
-| eval_id | INTEGER (PK) | Unique evaluation ID |
-| activity_id | BIGINT | Activity reference (one per activity) |
-| gct_ms_expected | FLOAT | Expected GCT from pace (ms) |
-| vo_cm_expected | FLOAT | Expected VO from pace (cm) |
-| vr_pct_expected | FLOAT | Expected VR from pace (%) |
-| gct_ms_actual | FLOAT | Actual GCT (ms) |
-| vo_cm_actual | FLOAT | Actual VO (cm) |
-| vr_pct_actual | FLOAT | Actual VR (%) |
-| gct_delta_pct | FLOAT | GCT deviation (%) |
-| vo_delta_cm | FLOAT | VO deviation (cm) |
-| vr_delta_pct | FLOAT | VR deviation (%) |
-| gct_penalty | FLOAT | GCT penalty score |
-| gct_star_rating | VARCHAR | GCT rating (★★★★★ ~ ★☆☆☆☆) |
-| gct_score | FLOAT | GCT score (0–5.0) |
-| gct_needs_improvement | BOOLEAN | GCT needs-improvement flag |
-| gct_evaluation_text | VARCHAR | GCT evaluation text (Japanese) |
-| vo_penalty | FLOAT | VO penalty score |
-| vo_star_rating | VARCHAR | VO rating |
-| vo_score | FLOAT | VO score (0–5.0) |
-| vo_needs_improvement | BOOLEAN | VO needs-improvement flag |
-| vo_evaluation_text | VARCHAR | VO evaluation text (Japanese) |
-| vr_penalty | FLOAT | VR penalty score |
-| vr_star_rating | VARCHAR | VR rating |
-| vr_score | FLOAT | VR score (0–5.0) |
-| vr_needs_improvement | BOOLEAN | VR needs-improvement flag |
-| vr_evaluation_text | VARCHAR | VR evaluation text (Japanese) |
-| cadence_actual | FLOAT | Actual cadence (spm) |
-| cadence_minimum | INTEGER | Minimum cadence threshold (spm) |
-| cadence_achieved | BOOLEAN | Cadence achievement flag |
-| overall_score | FLOAT | Overall form score (0–5.0) |
-| overall_star_rating | VARCHAR | Overall rating |
-| power_avg_w | FLOAT | Average power (W) |
-| power_wkg | FLOAT | Power-to-weight (W/kg) |
-| speed_actual_mps | FLOAT | Actual speed (m/s) |
-| speed_expected_mps | FLOAT | Expected speed from power model (m/s) |
-| power_efficiency_score | FLOAT | Power efficiency score |
-| power_efficiency_rating | VARCHAR | Power efficiency rating |
-| power_efficiency_needs_improvement | BOOLEAN | Power efficiency needs-improvement flag |
-| integrated_score | FLOAT | Integrated form+power score (migration v3) |
-| training_mode | VARCHAR | Training mode classification (migration v3) |
-| evaluated_at | TIMESTAMP | Evaluation timestamp |
-| cadence_expected | DOUBLE | Expected cadence (spm) (migration v6) |
-| cadence_delta_pct | DOUBLE | Cadence deviation (%) (migration v6) |
-| cadence_star_rating | VARCHAR | Cadence rating (migration v6) |
-| cadence_score | DOUBLE | Cadence score (0–5.0) (migration v6) |
-| cadence_needs_improvement | BOOLEAN | Cadence needs-improvement flag (migration v6) |
-| cadence_evaluation_text | VARCHAR | Cadence evaluation text (Japanese) (migration v6) |
+<!-- BEGIN GENERATED: schema:form_evaluations -->
+| Column | Type |
+|--------|------|
+| eval_id (PK) | INTEGER |
+| activity_id | BIGINT |
+| gct_ms_expected | FLOAT |
+| vo_cm_expected | FLOAT |
+| vr_pct_expected | FLOAT |
+| gct_ms_actual | FLOAT |
+| vo_cm_actual | FLOAT |
+| vr_pct_actual | FLOAT |
+| gct_delta_pct | FLOAT |
+| vo_delta_cm | FLOAT |
+| vr_delta_pct | FLOAT |
+| gct_penalty | FLOAT |
+| gct_star_rating | VARCHAR |
+| gct_score | FLOAT |
+| gct_needs_improvement | BOOLEAN |
+| gct_evaluation_text | VARCHAR |
+| vo_penalty | FLOAT |
+| vo_star_rating | VARCHAR |
+| vo_score | FLOAT |
+| vo_needs_improvement | BOOLEAN |
+| vo_evaluation_text | VARCHAR |
+| vr_penalty | FLOAT |
+| vr_star_rating | VARCHAR |
+| vr_score | FLOAT |
+| vr_needs_improvement | BOOLEAN |
+| vr_evaluation_text | VARCHAR |
+| cadence_actual | FLOAT |
+| cadence_minimum | INTEGER |
+| cadence_achieved | BOOLEAN |
+| cadence_expected | DOUBLE |
+| cadence_delta_pct | DOUBLE |
+| cadence_star_rating | VARCHAR |
+| cadence_score | DOUBLE |
+| cadence_needs_improvement | BOOLEAN |
+| cadence_evaluation_text | VARCHAR |
+| overall_score | FLOAT |
+| overall_star_rating | VARCHAR |
+| power_avg_w | FLOAT |
+| power_wkg | FLOAT |
+| speed_actual_mps | FLOAT |
+| speed_expected_mps | FLOAT |
+| power_efficiency_score | FLOAT |
+| power_efficiency_rating | VARCHAR |
+| power_efficiency_needs_improvement | BOOLEAN |
+| integrated_score | FLOAT |
+| training_mode | VARCHAR |
+| evaluated_at | TIMESTAMP |
+<!-- END GENERATED: schema:form_evaluations -->
+
+**Units & notes**: `eval_id` is the surrogate PK; one row per `activity_id`. Per form metric (`gct`/`vo`/`vr`) the table carries `*_expected` and `*_actual` values (gct ms, vo cm, vr %), a deviation (`gct_delta_pct` / `vo_delta_cm` / `vr_delta_pct`), a `*_penalty`, `*_star_rating`, `*_score` (0–5.0), `*_needs_improvement` flag, and `*_evaluation_text` (Japanese). Cadence columns: `cadence_actual` / `cadence_minimum` / `cadence_achieved`, plus the migration-v6 set `cadence_expected` / `cadence_delta_pct` / `cadence_star_rating` / `cadence_score` / `cadence_needs_improvement` / `cadence_evaluation_text`. Power columns: `power_avg_w` (W), `power_wkg` (W/kg), `speed_actual_mps` / `speed_expected_mps` (m/s), `power_efficiency_score` / `power_efficiency_rating` / `power_efficiency_needs_improvement`. `overall_score` / `overall_star_rating` summarize form; `integrated_score` / `training_mode` are migration v3; `evaluated_at` is the evaluation timestamp.
 
 ### Evaluation Logic
 - **Score**: start at perfect (100), apply penalty by deviation from the pace-expected value, then map to 0–5.0. Roughly: ±2% → ★★★★★ 5.0; 2–5% → ~★★★★☆ 4.0; 5–10% → ~★★★☆☆ 3.0; >10% → ★★☆☆☆ / ★☆☆☆☆.
@@ -413,29 +458,33 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 **Primary Key**: `history_id`
 **Source**: Monthly baseline training (rolling window) over splits data.
 
-### Schema (19 columns)
+### Schema
 
-| Column | Type | Description |
-|--------|------|-------------|
-| history_id | INTEGER (PK) | Unique history ID |
-| user_id | VARCHAR | User identifier (default `'default'`) |
-| condition_group | VARCHAR | Terrain group (default `'flat_road'`) |
-| metric | VARCHAR | Metric name (`gct`, `vo`, `vr`) |
-| model_type | VARCHAR | Model family (power vs linear) |
-| coef_alpha | FLOAT | GCT power model: `log(v)` intercept (α) |
-| coef_d | FLOAT | GCT power model: exponent (d < 0, monotonic) |
-| coef_a | FLOAT | VO/VR linear model: intercept (a) |
-| coef_b | FLOAT | VO/VR linear model: slope (b) |
-| period_start | DATE | Training window start |
-| period_end | DATE | Training window end (inclusive) |
-| trained_at | TIMESTAMP | Training timestamp |
-| n_samples | INTEGER | Training samples in window |
-| rmse | FLOAT | Root mean squared error |
-| speed_range_min | FLOAT | Minimum training speed (m/s) |
-| speed_range_max | FLOAT | Maximum training speed (m/s) |
-| power_a | FLOAT | Power model coefficient a (speed-from-power) |
-| power_b | FLOAT | Power model coefficient b |
-| power_rmse | FLOAT | Power model RMSE |
+<!-- BEGIN GENERATED: schema:form_baseline_history -->
+| Column | Type |
+|--------|------|
+| history_id (PK) | INTEGER |
+| user_id | VARCHAR |
+| condition_group | VARCHAR |
+| metric | VARCHAR |
+| model_type | VARCHAR |
+| coef_alpha | FLOAT |
+| coef_d | FLOAT |
+| coef_a | FLOAT |
+| coef_b | FLOAT |
+| power_a | FLOAT |
+| power_b | FLOAT |
+| power_rmse | FLOAT |
+| period_start | DATE |
+| period_end | DATE |
+| trained_at | TIMESTAMP |
+| n_samples | INTEGER |
+| rmse | FLOAT |
+| speed_range_min | FLOAT |
+| speed_range_max | FLOAT |
+<!-- END GENERATED: schema:form_baseline_history -->
+
+**Units & notes**: `user_id` defaults to `'default'`, `condition_group` to `'flat_road'`; `metric` is `gct` / `vo` / `vr`; `model_type` distinguishes power vs linear. GCT power-model coefficients `coef_alpha` (α, `log(v)` intercept) and `coef_d` (exponent, d < 0); VO/VR linear-model `coef_a` (intercept) and `coef_b` (slope). `period_start`/`period_end` bound the (inclusive) training window; `n_samples` is the sample count; `rmse` the error; `speed_range_min`/`speed_range_max` (m/s). `power_a`/`power_b` are the speed-from-power coefficients and `power_rmse` its error.
 
 ### Model Types
 - **GCT**: power regression `v = exp((log(GCT) - α) / d)`, constrained `d < 0` so faster pace → shorter GCT. Trained with Huber regression + IQR outlier removal.
@@ -458,24 +507,28 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 **Primary Key**: `activity_id`
 **Source**: HR-zone data + activity metadata
 
-### Schema (14 columns)
+### Schema
 
-| Column | Type | Description |
-|--------|------|-------------|
-| activity_id | BIGINT (PK) | Activity reference |
-| primary_zone | VARCHAR | Zone with most time |
-| zone_distribution_rating | VARCHAR | Distribution quality |
-| hr_stability | VARCHAR | HR stability rating |
-| aerobic_efficiency | VARCHAR | Aerobic efficiency rating |
-| training_quality | VARCHAR | Overall training quality |
-| zone2_focus | BOOLEAN | Zone 2 focus indicator |
-| zone4_threshold_work | BOOLEAN | Zone 4+ threshold-work indicator |
-| training_type | VARCHAR | Training type (aerobic_base/tempo/threshold/…) |
-| zone1_percentage | DOUBLE | Zone 1 time (%) |
-| zone2_percentage | DOUBLE | Zone 2 time (%) |
-| zone3_percentage | DOUBLE | Zone 3 time (%) |
-| zone4_percentage | DOUBLE | Zone 4 time (%) |
-| zone5_percentage | DOUBLE | Zone 5 time (%) |
+<!-- BEGIN GENERATED: schema:hr_efficiency -->
+| Column | Type |
+|--------|------|
+| activity_id (PK) | BIGINT |
+| primary_zone | VARCHAR |
+| zone_distribution_rating | VARCHAR |
+| hr_stability | VARCHAR |
+| aerobic_efficiency | VARCHAR |
+| training_quality | VARCHAR |
+| zone2_focus | BOOLEAN |
+| zone4_threshold_work | BOOLEAN |
+| training_type | VARCHAR |
+| zone1_percentage | DOUBLE |
+| zone2_percentage | DOUBLE |
+| zone3_percentage | DOUBLE |
+| zone4_percentage | DOUBLE |
+| zone5_percentage | DOUBLE |
+<!-- END GENERATED: schema:hr_efficiency -->
+
+**Units & notes**: `primary_zone` is the zone with most time; `zone_distribution_rating` / `hr_stability` / `aerobic_efficiency` / `training_quality` are rating strings; `zone2_focus` / `zone4_threshold_work` are boolean indicators; `training_type` is aerobic_base/tempo/threshold/…; `zone1_percentage`…`zone5_percentage` are per-zone time (%).
 
 ### Calculation Logic
 - **primary_zone**: zone with max time.
@@ -494,16 +547,20 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 **Primary Key**: `(activity_id, zone_number)` (composite)
 **Source**: HR-zone JSON
 
-### Schema (6 columns)
+### Schema
 
-| Column | Type | Description |
-|--------|------|-------------|
-| activity_id | BIGINT (PK) | Activity reference |
-| zone_number | INTEGER (PK) | Zone number (1–5) |
-| zone_low_boundary | INTEGER | Zone lower HR boundary (bpm) |
-| zone_high_boundary | INTEGER | Zone upper HR boundary (bpm) |
-| time_in_zone_seconds | DOUBLE | Time spent in zone (s) |
-| zone_percentage | DOUBLE | Time in zone (%) |
+<!-- BEGIN GENERATED: schema:heart_rate_zones -->
+| Column | Type |
+|--------|------|
+| activity_id (PK) | BIGINT |
+| zone_number (PK) | INTEGER |
+| zone_low_boundary | INTEGER |
+| zone_high_boundary | INTEGER |
+| time_in_zone_seconds | DOUBLE |
+| zone_percentage | DOUBLE |
+<!-- END GENERATED: schema:heart_rate_zones -->
+
+**Units & notes**: `zone_number` 1–5; `zone_low_boundary` / `zone_high_boundary` (bpm); `time_in_zone_seconds` (s); `zone_percentage` (%).
 
 ---
 
@@ -513,15 +570,19 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 **Primary Key**: `activity_id`
 **Source**: VO2-max JSON
 
-### Schema (5 columns)
+### Schema
 
-| Column | Type | Description |
-|--------|------|-------------|
-| activity_id | BIGINT (PK) | Activity reference |
-| precise_value | DOUBLE | Precise VO2 max (ml/kg/min) |
-| value | DOUBLE | Rounded VO2 max (ml/kg/min) |
-| date | DATE | Measurement date |
-| category | INTEGER | Fitness category (0–6) |
+<!-- BEGIN GENERATED: schema:vo2_max -->
+| Column | Type |
+|--------|------|
+| activity_id (PK) | BIGINT |
+| precise_value | DOUBLE |
+| value | DOUBLE |
+| date | DATE |
+| category | INTEGER |
+<!-- END GENERATED: schema:vo2_max -->
+
+**Units & notes**: `precise_value` / `value` are precise vs rounded VO2 max (ml/kg/min); `category` is the fitness category (0–6).
 
 > `fitness_age` removed in v2.0. Population ~78% — Garmin provides VO2 max only for certain activity types.
 
@@ -533,18 +594,22 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 **Primary Key**: `activity_id`
 **Source**: Lactate-threshold JSON
 
-### Schema (8 columns)
+### Schema
 
-| Column | Type | Description |
-|--------|------|-------------|
-| activity_id | BIGINT (PK) | Activity reference |
-| heart_rate | INTEGER | Lactate-threshold HR (bpm) |
-| speed_mps | DOUBLE | Lactate-threshold speed (m/s) |
-| date_hr | TIMESTAMP | HR-threshold measurement timestamp |
-| functional_threshold_power | INTEGER | FTP (W) |
-| power_to_weight | DOUBLE | FTP / weight (W/kg) |
-| weight | DOUBLE | Weight at measurement (kg) |
-| date_power | TIMESTAMP | FTP measurement timestamp |
+<!-- BEGIN GENERATED: schema:lactate_threshold -->
+| Column | Type |
+|--------|------|
+| activity_id (PK) | BIGINT |
+| heart_rate | INTEGER |
+| speed_mps | DOUBLE |
+| date_hr | TIMESTAMP |
+| functional_threshold_power | INTEGER |
+| power_to_weight | DOUBLE |
+| weight | DOUBLE |
+| date_power | TIMESTAMP |
+<!-- END GENERATED: schema:lactate_threshold -->
+
+**Units & notes**: `heart_rate` is the lactate-threshold HR (bpm); `speed_mps` (m/s); `date_hr` is the HR-threshold timestamp; `functional_threshold_power` is FTP (W); `power_to_weight` is FTP/weight (W/kg); `weight` (kg) at measurement; `date_power` is the FTP timestamp.
 
 > Population ~52% — requires sufficient training history for Garmin to estimate.
 
@@ -556,26 +621,30 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 **Primary Key**: logically `(plan_id, version)`; the live table declares no PK constraint (FK/PK constraints removed; uniqueness enforced by the writer).
 **Source**: `save_training_plan` MCP tool / training-plan generator.
 
-### Schema (16 columns)
+### Schema
 
-| Column | Type | Description |
-|--------|------|-------------|
-| plan_id | VARCHAR | Plan identifier |
-| version | INTEGER | Plan revision (migration `add_plan_versioning`) |
-| goal_type | VARCHAR | Goal/race type |
-| target_race_date | DATE | Target race date |
-| target_time_seconds | INTEGER | Target finish time (s) |
-| vdot | DOUBLE | VDOT fitness estimate |
-| pace_zones_json | VARCHAR | JSON of derived pace zones |
-| total_weeks | INTEGER | Plan length (weeks) |
-| start_date | DATE | Plan start date |
-| weekly_volume_start_km | DOUBLE | Initial weekly volume (km) |
-| weekly_volume_peak_km | DOUBLE | Peak weekly volume (km) |
-| runs_per_week | INTEGER | Runs per week |
-| frequency_progression_json | VARCHAR | JSON frequency progression |
-| personalization_notes | VARCHAR | Personalization narrative |
-| status | VARCHAR | Plan status (active/archived/…) |
-| created_at | TIMESTAMP | Creation timestamp |
+<!-- BEGIN GENERATED: schema:training_plans -->
+| Column | Type |
+|--------|------|
+| plan_id | VARCHAR |
+| version | INTEGER |
+| goal_type | VARCHAR |
+| target_race_date | DATE |
+| target_time_seconds | INTEGER |
+| vdot | DOUBLE |
+| pace_zones_json | VARCHAR |
+| total_weeks | INTEGER |
+| start_date | DATE |
+| weekly_volume_start_km | DOUBLE |
+| weekly_volume_peak_km | DOUBLE |
+| runs_per_week | INTEGER |
+| frequency_progression_json | VARCHAR |
+| personalization_notes | VARCHAR |
+| status | VARCHAR |
+| created_at | TIMESTAMP |
+<!-- END GENERATED: schema:training_plans -->
+
+**Units & notes**: the live table declares **no PK constraint** (uniqueness `(plan_id, version)` enforced by the writer); `version` is the revision (migration `add_plan_versioning`). `target_time_seconds` (s); `vdot` is the fitness estimate; `pace_zones_json` / `frequency_progression_json` are JSON strings; `total_weeks` (weeks); `weekly_volume_start_km` / `weekly_volume_peak_km` (km); `status` is active/archived/….
 
 ---
 
@@ -585,31 +654,35 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 **Primary Key**: `workout_id`
 **Source**: Training-plan generator / Garmin upload flow.
 
-### Schema (21 columns)
+### Schema
 
-| Column | Type | Description |
-|--------|------|-------------|
-| workout_id | VARCHAR (PK) | Workout identifier |
-| plan_id | VARCHAR | Parent plan reference |
-| week_number | INTEGER | Plan week (1-based) |
-| day_of_week | INTEGER | Day of week |
-| workout_date | DATE | Scheduled date |
-| workout_type | VARCHAR | Workout type (easy/tempo/interval/long/…) |
-| description_ja | VARCHAR | Japanese description |
-| target_distance_km | DOUBLE | Target distance (km) |
-| target_duration_minutes | DOUBLE | Target duration (min) |
-| target_pace_low | DOUBLE | Target pace low bound (sec/km) |
-| target_pace_high | DOUBLE | Target pace high bound (sec/km) |
-| target_hr_low | INTEGER | Target HR low (bpm) |
-| target_hr_high | INTEGER | Target HR high (bpm) |
-| intervals_json | VARCHAR | JSON interval structure |
-| phase | VARCHAR | Plan phase (base/build/peak/taper) |
-| garmin_workout_id | BIGINT | Uploaded Garmin workout ID |
-| uploaded_at | TIMESTAMP | Upload timestamp |
-| actual_activity_id | BIGINT | Matched executed activity |
-| adherence_score | DOUBLE | Plan-vs-actual adherence |
-| completed_at | TIMESTAMP | Completion timestamp |
-| version | INTEGER | Plan-version link (migration `add_plan_versioning`) |
+<!-- BEGIN GENERATED: schema:planned_workouts -->
+| Column | Type |
+|--------|------|
+| workout_id (PK) | VARCHAR |
+| plan_id | VARCHAR |
+| version | INTEGER |
+| week_number | INTEGER |
+| day_of_week | INTEGER |
+| workout_date | DATE |
+| workout_type | VARCHAR |
+| description_ja | VARCHAR |
+| target_distance_km | DOUBLE |
+| target_duration_minutes | DOUBLE |
+| target_pace_low | DOUBLE |
+| target_pace_high | DOUBLE |
+| target_hr_low | INTEGER |
+| target_hr_high | INTEGER |
+| intervals_json | VARCHAR |
+| phase | VARCHAR |
+| garmin_workout_id | BIGINT |
+| uploaded_at | TIMESTAMP |
+| actual_activity_id | BIGINT |
+| adherence_score | DOUBLE |
+| completed_at | TIMESTAMP |
+<!-- END GENERATED: schema:planned_workouts -->
+
+**Units & notes**: `week_number` 1-based; `workout_type` is easy/tempo/interval/long/…; `description_ja` is the Japanese description; `target_distance_km` (km); `target_duration_minutes` (min); `target_pace_low` / `target_pace_high` (sec/km); `target_hr_low` / `target_hr_high` (bpm); `intervals_json` is the JSON interval structure; `phase` is base/build/peak/taper; `garmin_workout_id` is the uploaded ID; `actual_activity_id` links the matched executed activity; `adherence_score` is the plan-vs-actual score; `version` links the plan version (migration `add_plan_versioning`).
 
 ---
 
@@ -619,18 +692,22 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 **Primary Key**: `analysis_id` — with a **UNIQUE index on `(activity_id, section_type)`** (`idx_activity_section`), so re-analysis replaces rather than duplicates a section.
 **Source**: Section-analysis agents (`unified-section-analyst`, `split-section-analyst`).
 
-### Schema (8 columns)
+### Schema
 
-| Column | Type | Description |
-|--------|------|-------------|
-| analysis_id | INTEGER (PK) | Unique analysis ID |
-| activity_id | BIGINT | Activity reference |
-| activity_date | DATE | Activity date |
-| section_type | VARCHAR | Section (split/phase/summary/efficiency/environment) |
-| analysis_data | VARCHAR | JSON analysis payload (Japanese narrative + English keys) |
-| created_at | TIMESTAMP | Creation timestamp |
-| agent_name | VARCHAR | Agent identifier |
-| agent_version | VARCHAR | Agent version |
+<!-- BEGIN GENERATED: schema:section_analyses -->
+| Column | Type |
+|--------|------|
+| analysis_id (PK) | INTEGER |
+| activity_id | BIGINT |
+| activity_date | DATE |
+| section_type | VARCHAR |
+| analysis_data | VARCHAR |
+| created_at | TIMESTAMP |
+| agent_name | VARCHAR |
+| agent_version | VARCHAR |
+<!-- END GENERATED: schema:section_analyses -->
+
+**Units & notes**: `analysis_id` is the surrogate PK with a UNIQUE index on `(activity_id, section_type)`; `section_type` is split/phase/summary/efficiency/environment; `analysis_data` is the JSON payload (Japanese narrative + English keys); `agent_name` / `agent_version` identify the producing agent.
 
 ### Section Types
 1. **split** — 1km split analysis (pace/HR/form), from `split-section-analyst`.
@@ -647,14 +724,18 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 **Primary Key**: `user_id`
 **Source**: `save_athlete_profile` / `/set-goal`. Owned by migration `add_athlete_tables` (version 7).
 
-### Schema (4 columns)
+### Schema
 
-| Column | Type | Description |
-|--------|------|-------------|
-| user_id | VARCHAR (PK) | User identifier |
-| current_focus | VARCHAR | Current training focus |
-| focus_notes | VARCHAR | Focus notes (rendered as `【見出し】` sections in the Web app) |
-| updated_at | TIMESTAMP | Last update timestamp |
+<!-- BEGIN GENERATED: schema:athlete_profile -->
+| Column | Type |
+|--------|------|
+| user_id (PK) | VARCHAR |
+| current_focus | VARCHAR |
+| focus_notes | VARCHAR |
+| updated_at | TIMESTAMP |
+<!-- END GENERATED: schema:athlete_profile -->
+
+**Units & notes**: `current_focus` is the current training focus; `focus_notes` is rendered as `【見出し】` sections in the Web app.
 
 ---
 
@@ -664,22 +745,26 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 **Primary Key**: `goal_id`
 **Source**: `/set-goal`. Owned by migration `add_athlete_tables`.
 
-### Schema (12 columns)
+### Schema
 
-| Column | Type | Description |
-|--------|------|-------------|
-| goal_id | INTEGER (PK) | Goal identifier |
-| user_id | VARCHAR | User identifier |
-| race_name | VARCHAR | Race name |
-| race_date | DATE | Race date |
-| priority | VARCHAR | Goal priority (A/B/C) |
-| goal_type | VARCHAR | Goal type |
-| distance_km | DOUBLE | Race distance (km) |
-| target_time_seconds | INTEGER | Target finish time (s) |
-| status | VARCHAR | Goal status |
-| notes | VARCHAR | Free-form notes |
-| created_at | TIMESTAMP | Creation timestamp |
-| updated_at | TIMESTAMP | Last update timestamp |
+<!-- BEGIN GENERATED: schema:athlete_goals -->
+| Column | Type |
+|--------|------|
+| goal_id (PK) | INTEGER |
+| user_id | VARCHAR |
+| race_name | VARCHAR |
+| race_date | DATE |
+| priority | VARCHAR |
+| goal_type | VARCHAR |
+| distance_km | DOUBLE |
+| target_time_seconds | INTEGER |
+| status | VARCHAR |
+| notes | VARCHAR |
+| created_at | TIMESTAMP |
+| updated_at | TIMESTAMP |
+<!-- END GENERATED: schema:athlete_goals -->
+
+**Units & notes**: `priority` is A/B/C; `distance_km` (km); `target_time_seconds` (s); `notes` is free-form.
 
 ---
 
@@ -689,18 +774,22 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 **Primary Key**: `retro_id`
 **Source**: `/set-goal`. Owned by migration `add_athlete_tables`.
 
-### Schema (8 columns)
+### Schema
 
-| Column | Type | Description |
-|--------|------|-------------|
-| retro_id | INTEGER (PK) | Retrospective identifier |
-| user_id | VARCHAR | User identifier |
-| season_label | VARCHAR | Season label |
-| period_start | DATE | Season start |
-| period_end | DATE | Season end |
-| narrative | VARCHAR | Retrospective narrative |
-| key_learnings | VARCHAR | Key learnings |
-| created_at | TIMESTAMP | Creation timestamp |
+<!-- BEGIN GENERATED: schema:season_retrospectives -->
+| Column | Type |
+|--------|------|
+| retro_id (PK) | INTEGER |
+| user_id | VARCHAR |
+| season_label | VARCHAR |
+| period_start | DATE |
+| period_end | DATE |
+| narrative | VARCHAR |
+| key_learnings | VARCHAR |
+| created_at | TIMESTAMP |
+<!-- END GENERATED: schema:season_retrospectives -->
+
+**Units & notes**: `season_label` names the season; `period_start` / `period_end` bound it; `narrative` and `key_learnings` are free-form prose.
 
 ---
 
@@ -710,19 +799,23 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 **Primary Key**: `review_id` — the former UNIQUE index was **dropped** (migration `drop_weekly_review_index`, version 8) to allow multiple revisions of the same week.
 **Source**: `save_weekly_review` / `/weekly-review`. Owned by migration `add_athlete_tables`.
 
-### Schema (9 columns)
+### Schema
 
-| Column | Type | Description |
-|--------|------|-------------|
-| review_id | INTEGER (PK) | Review identifier |
-| user_id | VARCHAR | User identifier |
-| week_start_date | DATE | Review week start |
-| week_end_date | DATE | Review week end |
-| review_date | DATE | Date the review was written |
-| review_data | VARCHAR | JSON review payload |
-| created_at | TIMESTAMP | Creation timestamp |
-| agent_name | VARCHAR | Agent identifier |
-| agent_version | VARCHAR | Agent version |
+<!-- BEGIN GENERATED: schema:weekly_reviews -->
+| Column | Type |
+|--------|------|
+| review_id (PK) | INTEGER |
+| user_id | VARCHAR |
+| week_start_date | DATE |
+| week_end_date | DATE |
+| review_date | DATE |
+| review_data | VARCHAR |
+| created_at | TIMESTAMP |
+| agent_name | VARCHAR |
+| agent_version | VARCHAR |
+<!-- END GENERATED: schema:weekly_reviews -->
+
+**Units & notes**: `week_start_date` / `week_end_date` bound the reviewed week; `review_date` is when it was written; `review_data` is the JSON payload; `agent_name` / `agent_version` identify the producing agent. The former UNIQUE index was dropped (migration `drop_weekly_review_index`) to allow multiple revisions per week.
 
 ---
 
