@@ -61,6 +61,9 @@ Risks セクション（任意）:
 | L3 | L2 + メインセッションが worktree の `.md` を main に一時適用 → `/analyze-activity` 実行 → `git checkout` で復元（reload 非依存） | analysis_data 非null + 必須フィールド存在 |
 | skip | Validation Agent スキップ。コードレビュー(Phase 2a)のみ | 2a チェック通過 |
 
+CI 同一コマンド（whole-package の `black --check .` / `mypy .` / `pytest -m unit ... --cov-fail-under=60`、web 変更時は web-backend/web-frontend）を再現する正典コマンドは `scripts/ci-check.sh`。
+Phase 2b の完了条件は **`scripts/ci-check.sh` が exit 0（0 failures）** とする。per-file の pre-commit では捕まらない型エラー・他モジュール破壊を CI 前に検出するため、commit 前に必ず実行する。
+
 **CRITICAL**: テスト結果は自分のターンで確認する。サブエージェントの報告を信じない。
 
 ### 2c. 判定
