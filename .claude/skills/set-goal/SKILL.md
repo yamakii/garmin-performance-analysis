@@ -16,7 +16,7 @@ description: Interactively register or update the athlete's race goals, current-
 - **target_time_seconds は秒の整数**。`4:30:00` のような入力は秒に変換する（4:30:00 → 16200、3:30:00 → 12600、1:45:00 → 6300）
 - **race_date は `YYYY-MM-DD`** 形式
 - **priority**: `A`=本命, `B`=中間, `C`=その他
-- **質問は段階的に**: `AskUserQuestion` を一度に詰め込みすぎず、項目ごとに小分けして聞く（`analyze-activity.md` / `plan-training.md` の流儀に合わせる）
+- **質問は段階的に**: `AskUserQuestion` を一度に詰め込みすぎず、項目ごとに小分けして聞く（`/analyze-activity`・`/plan-training` の流儀に合わせる）
 
 ## ワークフロー
 
