@@ -103,6 +103,23 @@ mcp__garmin-db__analyze_performance_trends(metric="pace", start_date=prev_mon, e
 
 走行距離・ラン回数・強度分布・心拍規律（HR discipline）・ハイライトは **主に W-1 をベースに評価** し、W 進行中分は「今週ここまで」の補足として扱ってください。
 
+#### 補強（strength）の収集
+
+ラン実績とは別に、**補強（筋トレ/補強）セッション**を DuckDB から収集してください。期間は W-1（`prev_mon`〜`prev_sun`）を主軸とし、**W が進行中なら W の月曜〜today** も加味します（ラン実績と同じ期間方針）:
+
+```
+mcp__garmin-db__get_strength_sessions(start_date=prev_mon, end_date=prev_sun)
+# W が進行中ならもう一度: start_date=week_start_date, end_date=today
+```
+
+返却は `{activity_id, activity_date, start_time_local, activity_name, active_duration_seconds, elapsed_duration_seconds, avg_heart_rate, max_heart_rate, calories, active_sets, total_sets, category_counts, ...}` の配列です。`category_counts` は `{"CRUNCH":4,"PLANK":7,...}` の形で、ACTIVE セットのカテゴリ別本数（=体幹中心か等、補強の中身）を表します。
+
+収集する観点: **補強の回数・実施日・所要時間（`active_duration_seconds`）・HR・セット数（`active_sets`）・カテゴリ構成（`category_counts`）**。
+
+- **補強は DB のみから読む（Garmin 非アクセス）**。取り込み（`ingest_strength_sessions`）はこのコマンドでは呼ばない。
+- 補強には **ペース/フォーム評価を適用しない**（`get_performance_trends` 等のラン用ツールは補強 activity に使わない）。回復・補強遵守・故障予防の文脈でのみ扱う。
+- 補強が0件の期間でも問題ありません。空配列ならそのまま「補強記録なし」として扱います。
+
 ### Step 3: W の Garmin プランの取得
 
 ```
@@ -180,6 +197,10 @@ Step 3 で取得した対象週 W プラン（`training_plan_name` / `training_p
 - **暑熱期の管理**: 気温・湿度が高い時期は、ペース目標ではなく **心拍／努力度（RPE）で管理する** よう助言する。
 - **過去レビューとの連続性**: `get_weekly_review()` の前回指摘がどうなったか（改善した／継続課題か）に言及する。
 - **中間レースの扱い**: 新潟など priority=B の中間レースは、**全力 PB を狙わず制御された練習として扱う** 方針との整合をチェックする。profile の goals に中間レースがあれば、対象週 W プランがそれを過度に意識した高強度になっていないか確認する。
+- **補強（strength）の考慮**: Step 2 で収集した補強セッションを、主に **Execution（補強メニュー遵守）** と **回復・故障予防** の観点で考慮する。ユーザー目標（**回復力・筋持久力重視／故障歴あり**, [[user-running-goal]]）に直結するため、補強の継続は積極評価する。
+  - **補強がある週**: 頻度（回数）と **週内配置**（ラン高強度日と同日/連続に重なっていないか）にコメントする。`category_counts` から中身（体幹中心か等）に触れ、回復・故障予防に資するかを一言添える。高強度ランと補強が重なって回復を圧迫している場合は配置調整を助言する。
+  - **補強が無い週**: 「今週は補強記録なし」と明示し、故障予防・筋持久力の観点から補強の空白を指摘する（破綻させない）。
+  - 補強には **ペース/フォーム/強度分布の評価を適用しない**。`recommendations` で補強に触れる場合も、ラン処方の具体値（HR ゾーン等）とは切り分けて回復・遵守の文脈で記述する。
 
 #### 判定結果の言語
 
