@@ -47,8 +47,14 @@ done
 
 # Behavioral tests for workflow pure logic (extracted from source; see
 # .claude/workflows/tests/). These catch logic regressions, not just syntax.
-if [ -d .claude/workflows/tests ]; then
-  if node --test .claude/workflows/tests/; then
+# Targets node 22 (the CI version). Pass explicit file paths — node 22's
+# `--test` does not accept a directory.
+wf_tests=()
+for t in .claude/workflows/tests/*.test.mjs; do
+  [ -e "$t" ] && wf_tests+=("$t")
+done
+if [ "${#wf_tests[@]}" -gt 0 ]; then
+  if node --test "${wf_tests[@]}"; then
     echo "ok (workflow tests): node --test"
   else
     echo "FAIL (workflow tests)" >&2

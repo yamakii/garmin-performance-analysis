@@ -93,7 +93,7 @@ Phase 2b の完了条件は **`scripts/ci-check.sh` が exit 0（0 failures）**
 | 変更カテゴリ | 必須検証（自動が原則） | CI が実行 |
 |----------|----------------------|----------|
 | `packages/` コード | unit + L1/L2（subprocess import + 実 activity_id + integration）| `lint-and-test`（unit/型/lint）+ Validation Agent |
-| `packages/garmin-web/` | pytest + vitest + build。UI の見た目のみ手動可（記録） | `web-backend` / `web-frontend` |
+| `packages/garmin-web/` | pytest + vitest + build（CI）。**UI の見た目はマージ後の確認で可**（pre-merge ブロッカーにしない） | `web-backend` / `web-frontend` |
 | `.claude/agents/*-analyst.md` | L3（fixture で `/analyze-activity`、構造/内容チェック） | なし（メインセッションが実行） |
 | `.claude/workflows/*.js` | **純粋ロジックを `// >>> testable` ブロックに置き、`node --test .claude/workflows/tests/` で自動検証**。プロンプト/構造変更はレビュー | `meta-checks`（構文 smoke + `node --test`） |
 | `.claude/hooks/*.sh` | hook を代表入力で発火させ exit code を検証する自動テスト（理想）。当面は `bash -n` + レビュー | `meta-checks`（`bash -n`） |
