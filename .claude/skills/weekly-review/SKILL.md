@@ -35,7 +35,7 @@ argument-hint: [target week]
 ## ワークフロー
 
 1. **対象週 W を確定**: 引数（または today の曜日）から W の月曜（`week_start_date`）・日曜（`week_end_date`）、W-1 の月曜（`prev_mon`）・日曜（`prev_sun`）を算出
-2. **実績収集**: W-1（月〜日）を主軸に各日 `get_activity_by_date` で activity_id を集め、`get_performance_trends` 等で実績を把握。W が進行中なら today までの W の実走も加味
+2. **実績収集**: W-1（月〜日）を主軸に各日 `get_activity_by_date` で activity_id を集め、`get_performance_trends` 等で実績を把握。W が進行中なら today までの W の実走も加味。あわせて `get_load_trend`/`get_acwr` で複数週の負荷トレンド（週量ランプ・ACWR・連続 build 週数）を収集し、カットバック周期を判定
 3. **W の Garmin プラン取得**: `get_garmin_scheduled_workouts(week_start_date, week_end_date)`
 4. **コンテキスト読込**: `get_athlete_profile()`（目標）+ `get_weekly_review()`（直近の過去レビュー）
 5. **コーチ視点でレビュー生成**（このコマンドの核。目標逆算フェーズ分析 ＋ 具体的処方を含む）
@@ -132,6 +132,19 @@ mcp__garmin-db__get_strength_sessions(start_date=prev_mon, end_date=prev_sun)
 - 補強には **ペース/フォーム評価を適用しない**（`get_performance_trends` 等のラン用ツールは補強 activity に使わない）。回復・補強遵守・故障予防の文脈でのみ扱う。
 - 補強が0件の期間でも問題ありません。空配列ならそのまま「補強記録なし」として扱います。
 
+#### Step 2-2: 負荷トレンド収集（複数週・カットバック周期判定の材料）
+
+**W-1 単独では「積み上げ何週目か／カットバックの番か」が分かりません。** ロング・週量の伸長可否を周期で判断するため、複数週の負荷トレンドを必ず収集してください（catch_up 後の DB 読取・Garmin 非アクセス）:
+
+```
+mcp__garmin-db__get_load_trend(lookback_weeks=10, end_date=today)
+mcp__garmin-db__get_acwr(end_date=today)
+```
+
+- `get_load_trend` は `weeks`（古い→新しい）配列を返し、各要素は `{week_start, load_km(その週の総距離), acwr, status}`。週量ランプ（例: 19.94→28.82→30.99km）と ACWR 推移をこの系列から読む。
+- `get_acwr` は `{acute_load_7d, chronic_load_28d_weekly, acwr, status}`。`status` は undertraining(<0.8) / optimal(0.8-1.3) / caution(1.3-1.5) / high_risk(>1.5) / insufficient_data。いずれも距離ベース・HR 非依存。
+- この2つの結果は **Step 5-A の「カットバック周期サブ分析」** で使います。
+
 ### Step 3: W の Garmin プランの取得
 
 ```
@@ -191,6 +204,25 @@ Step 3 で取得した対象週 W プラン（`training_plan_name` / `training_p
 
 ギャップは **A=さいたま視点 / B=新潟視点で分けて** 言及してください。この結果は Step 6 の表示と Step 7 の `periodization` フィールドに反映します。
 
+**4. カットバック周期サブ分析（必須）— トレンドで increase/deload を判定**
+
+Step 2-2 の `get_load_trend` / `get_acwr` を使い、対象週 W が **積み上げを続ける番か、カットバック（deload）の番か**を判定します。ロング・週量の伸長可否は **2つのゲート両方** で決めます:
+
+1. **進行ゲート**（脚が崩れていないか）: 直近ロングの後半で GCT+10ms 以上 / ケイデンス5以上低下 / ペース大幅低下が無ければ「伸ばせる条件」を満たす（[[long-run-progression-two-gates]]）。
+2. **カットバック周期ゲート**: `get_load_trend.weeks` から以下を算出する。
+   - **連続 build 週数**: 直近で週量（`load_km`）が概ね非減少（前週比プラス〜横ばい）で積み上がっている連続週数。
+   - **最後のカットバック週からの経過**: 前週比 −30〜40% 以上に落ちた週からの経過週数。
+   - **ACWR / status**: caution(≥1.3) は ramp 過多の注意、high_risk(>1.5) は強い警告。
+   - これを「**カットバック2-3週ごと・週まるごと −30〜40%**」ルールと照合する。
+
+**判定**: 次のいずれかなら `cutback_due = true`（= W は deload の番）とする:
+- 連続 build 週数が **3週以上**、または
+- ACWR `status` が **caution / high_risk**（≥1.3）、かつ週量や最長ロングが直近ピークを更新した直後
+
+**重要**: 進行ゲートが GREEN（脚は崩れていない）でも、`cutback_due = true` なら **deload を優先**する。新ピーク直後＋3週連続 build で「もう1週積む」助言をしてはいけない（2026-06-21 の見落としを構造的に防ぐための分岐）。`cutback_due = true` のときの W への処方は: 週量 −30〜40%、ロングは短縮（直近ロングから −25〜35%）、質ゼロ、休養を1日増やす。`cutback_due = false`（直近にカットバック済み／ACWR optimal で連続2週以内）なら、進行ゲート GREEN を条件に小刻みな漸進（時間 +5〜10% 程度、+10〜15% を上限）を許可する。
+
+この結果は Step 6 の表示と Step 7 の `periodization.load_trend` に反映します。
+
 #### 評価方針
 
 - **目標観点を最優先**: ユーザーの目標は **回復力・筋持久力・故障再発防止**。スピードはすでに到達済みのため、**高強度（Anaerobic / インターバル / レペティション）の価値は低い**。スピード偏重のセッションは慎重に扱う。
@@ -206,6 +238,7 @@ Step 3 で取得した対象週 W プラン（`training_plan_name` / `training_p
     - 「流し: 100m×4-6 本（疾走 20-25 秒 / 休 60 秒 jog）」
     - 「テンポ: 閾値心拍域で 15-20 分（暑熱時はペース固定せず心拍上限で）」
 - **ロング走の有無を最重要チェック**: ロング走はマラソン筋持久力の核。**対象週 W プランにロング走が無ければ必ず指摘**し、`overall` でも触れる。欠落時の代替提案も具体値（時間/距離/HR）で添える。
+- **伸長可否はトレンドで判定（W-1 単独で決めない）**: ロング・週量を「来週も伸ばすか」は、進行ゲート（脚崩れ）だけでなく **Step 5-A-4 のカットバック周期** も必ず照合する。`cutback_due = true`（3週連続 build／ACWR caution+・新ピーク直後）なら、進行ゲートが GREEN でも **deload を優先**して処方する（[[long-run-progression-two-gates]]）。
 - **暑熱期の管理**: 気温・湿度が高い時期は、ペース目標ではなく **心拍／努力度（RPE）で管理する** よう助言する。
 - **過去レビューとの連続性**: `get_weekly_review()` の前回指摘がどうなったか（改善した／継続課題か）に言及する。
 - **中間レースの扱い**: 新潟など priority=B の中間レースは、**全力 PB を狙わず制御された練習として扱う** 方針との整合をチェックする。profile の goals に中間レースがあれば、対象週 W プランがそれを過度に意識した高強度になっていないか確認する。
@@ -229,6 +262,7 @@ Step 3 で取得した対象週 W プラン（`training_plan_name` / `training_p
   - W に **本来あるべきフェーズ/テーマ**（`expected_phase`）
   - Garmin Coach の **実フェーズ/構成傾向**（`garmin_phase`、`training_plan_name` に言及）
   - 両者の **ギャップ**（`gap`、A=さいたま視点 / B=新潟視点で分けて）
+  - **負荷トレンド / カットバック判定**（`load_trend`、Step 5-A-4）: 週量ランプ（直近数週の `load_km`）・ACWR/status・連続 build 週数を示し、**今週が積み上げか deload か**（`cutback_due`）を明示する。`cutback_due = true` なら W への処方を deload（週量 −30〜40%・ロング短縮・質ゼロ）として表に反映する。
 - **対象週 W プランの評価**（表形式）。コメントには時間/距離/HR ゾーン(bpm) または ペースの具体値を含める:
 
   | 日付 | セッション | 判定 | コメント |
@@ -275,7 +309,19 @@ mcp__garmin-db__save_weekly_review(review)
       "b_race": "新潟シティマラソン",
       "expected_phase": "有酸素ベース/筋持久力構築期",
       "garmin_phase": "...",
-      "gap": "..."
+      "gap": "...",
+      "load_trend": {
+        "consecutive_build_weeks": 3,
+        "last_cutback_weeks_ago": null,
+        "acwr": 1.43,
+        "acwr_status": "caution",
+        "cutback_due": true,
+        "weekly_ramp": [
+          {"week": "2026-06-01", "load_km": 19.9},
+          {"week": "2026-06-08", "load_km": 28.8},
+          {"week": "2026-06-15", "load_km": 31.0}
+        ]
+      }
     },
     "verdict": [
       {"date": "YYYY-MM-DD", "session": "...", "rating": "✅|🟡|🔴", "comment": "..."}
@@ -297,6 +343,7 @@ mcp__garmin-db__save_weekly_review(review)
 - `periodization` は Step 5-A の目標逆算フェーズ分析の結果を格納する:
   - `weeks_to_a_race` / `weeks_to_b_race` は **整数 or null**（null = race_date 未確定で算出不能）。`a_race` / `b_race` はレース名。
   - `expected_phase` は W にあるべきマクロフェーズ/テーマ（日本語短文）。`garmin_phase` は Garmin Coach 実プランのフェーズ/構成傾向（日本語短文）。`gap` は両者のギャップ（日本語短文、A=さいたま / B=新潟 の観点を含める）。
+  - `load_trend` は Step 5-A-4 のカットバック周期サブ分析の結果。`consecutive_build_weeks`（整数）/ `last_cutback_weeks_ago`（整数 or null）/ `acwr`（数値 or null）/ `acwr_status`（文字列）/ `cutback_due`（bool）/ `weekly_ramp`（直近数週の `{week, load_km}` 配列）。`cutback_due=true` のときは `expected_phase` を deload として記述し、`recommendations` / `verdict` も deload 処方（週量 −30〜40%・ロング短縮・質ゼロ）に揃える。
 
 ### Step 8: 完了報告
 
@@ -311,6 +358,7 @@ mcp__garmin-db__save_weekly_review(review)
 - **具体的処方を必須化**: 各セッション評価・recommendations に時間/距離/HR ゾーン(bpm) または ペースの具体値を含める。曖昧表現は禁止。HR ゾーンは `get_current_fitness_summary` の Garmin native zones から引用する。
 - **recommendations は最大2件**、次回アクションは具体的に絞る。
 - **ロング走の有無を必ずチェック**: マラソン筋持久力の核のため、欠落していれば指摘する。
+- **トレンドで判定（W-1 単独で increase/cutback を決めない）**: Step 2-2 の `get_load_trend`/`get_acwr` で複数週の負荷ランプ・ACWR・連続 build 週数を必ず収集し、Step 5-A-4 でカットバック周期を判定する。進行ゲート（脚崩れ）が GREEN でも `cutback_due=true` なら deload を優先（[[long-run-progression-two-gates]]）。
 - **目標観点を最優先**: 回復力・筋持久力・故障再発防止。高強度の価値は低い前提で評価する。
 - **profile 未登録時**: `/set-goal` の実行を促して停止する。
 - **任意タイミング実行可**: W が途中でも、W-1 の実績 ＋ W 進行中分でレビューする。
