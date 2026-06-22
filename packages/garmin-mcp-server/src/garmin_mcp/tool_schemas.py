@@ -21,7 +21,7 @@ from garmin_mcp.tools.registry import build_mcp_tools
 _SERVER_TOOLS: list[dict] = [
     {
         "name": "get_server_info",
-        "description": "Get diagnostic info about the running MCP server (server_dir, override file status). Use to verify which directory the server is running from.",
+        "description": "Get diagnostic info about the running MCP server (server_dir). Use to verify which directory the server is running from.",
         "inputSchema": {
             "type": "object",
             "properties": {},
@@ -29,17 +29,10 @@ _SERVER_TOOLS: list[dict] = [
     },
     {
         "name": "reload_server",
-        "description": "Restart the MCP server process to pick up code changes. The server will exit and Claude Code will automatically reconnect.",
+        "description": "Restart the worker to pick up the latest code. The launcher process stays alive, so the MCP connection is preserved (no reconnect needed).",
         "inputSchema": {
             "type": "object",
-            "properties": {
-                "server_dir": {
-                    "type": "string",
-                    "description": "Absolute path to garmin-mcp-server package directory. "
-                    "If provided, the server restarts from this directory (for worktree development). "
-                    "If omitted, restores default directory.",
-                },
-            },
+            "properties": {},
         },
     },
 ]
