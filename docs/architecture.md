@@ -79,8 +79,8 @@ aggregates them. From that single declaration the system derives:
 
 - the **MCP `inputSchema`** (normalized from a Pydantic `params` model, or an
   explicit override),
-- **dispatch** (`server.py` looks up `ALL_DEFS_BY_NAME` — O(1) — and calls the
-  handler),
+- **dispatch** (the worker looks up `ALL_DEFS_BY_NAME` — O(1) — and calls the
+  handler via `dispatch()`),
 - the **`garmin-db` CLI** (Typer subcommands from `cli_group` / `cli_name`), and
 - the **generated tool reference** ([`docs/mcp-tools-reference.md`](mcp-tools-reference.md)).
 
@@ -91,6 +91,54 @@ sync test keeps the generated reference current — so adding a tool is just
 "add a `ToolDef`", and forgetting to regenerate fails CI. The two server tools
 (`get_server_info`, `reload_server`) are intentionally outside the registry
 because they act on the server process itself, not on data.
+
+## MCP server: stable shim + swappable worker
+
+The MCP server is split into a tiny, *unchanging* **shim** and a *swappable*
+**worker** (Epic #478):
+
+```
+Claude Code (MCP client)
+   │  stdio (one long-lived MCP session)
+   ▼
+server.py — SHIM (owns the MCP session; never imports volatile domain code)
+   │  newline-JSON IPC over a WorkerClient
+   ▼
+garmin_mcp.worker — WORKER (fresh process; imports the latest on-disk
+   tool registry + DB readers and runs dispatch())
+```
+
+- **`server.py` (shim)** owns only the MCP protocol session. `list_tools`
+  returns the worker's schema plus the two server tools; every other
+  `call_tool` is delegated to the worker over the IPC.
+- **`garmin_mcp.worker`** is a fresh process that imports the volatile
+  `tools/` registry and `database` readers and executes
+  `dispatch(defs_by_name, reader, name, arguments)`.
+- **`reload_server`** restarts *only the worker* (so it re-imports the latest
+  on-disk code) and emits a `notifications/tools/list_changed`. The shim
+  process stays alive, so the MCP session — and any subagent's tool access —
+  survives the reload.
+
+**Why:** the old `reload_server` killed its own process with `os._exit(0)` and
+depended on the launcher (`scripts/start-mcp-server.sh`, with an override-dir
+file) to respawn the client. That respawn was an unsupported client behaviour
+and the root cause of instability — lost subagent tools (#243), flush races,
+non-deterministic startup, and stale override files. Keeping the session in an
+immutable shim while replacing only the worker removes that whole failure class.
+The `reload_server` `server_dir` argument is gone too: the worker always
+re-imports the latest on-disk code rather than being pointed at a directory.
+
+**Reflection model (verified):**
+
+- **Signature-compatible changes** (reader logic / bug fixes — the large
+  majority of edits) reflect into the *same* session with **zero touch**: the
+  next `reload_server` (or next tool call) re-imports the new code.
+- **Schema-shape changes** (added/removed tools or changed args = changed
+  `inputSchema`) are cached by the client, so a `list_changed` notification
+  alone does not refresh them — **only this kind needs one `/mcp` reconnect**.
+- Corollary: tools whose shape tends to churn can accept a generic
+  `options: dict` so their `inputSchema` stays fixed; such edits then count as
+  logic changes and keep the zero-touch path.
 
 ## Section-analysis agents & prefetch context
 

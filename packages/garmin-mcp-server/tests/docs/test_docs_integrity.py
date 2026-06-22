@@ -171,3 +171,59 @@ def test_all_referenced_repo_paths_exist():
     assert not missing, "Referenced repo paths that do not exist:\n" + "\n".join(
         missing
     )
+
+
+# --- reload model wording guard (Issue #482) --------------------------------
+
+# Docs/rules that must describe the *new* shim+worker reload model (Epic #478),
+# not the retired "self-exit + client respawn" one. Resolved relative to the
+# repo root so the guard is path-portable across worktrees.
+_RELOAD_MODEL_DOCS: tuple[str, ...] = (
+    "docs/architecture.md",
+    ".claude/rules/dev/worktree-validation-protocol.md",
+    ".claude/rules/dev/dev-reference.md",
+)
+
+# Patterns signalling the stale (pre-#478) reload prescription.
+_STALE_RELOAD_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"os\._exit"),
+    re.compile(r"自動的に再接続"),
+    re.compile(r"自動 ?respawn|automatically (?:respawn|reconnect)"),
+    re.compile(r"reload_server\(server_dir"),
+)
+
+# A stale match is allowed only when the line also marks it as the *removed*
+# old model (so explaining what was retired is fine; prescribing it is not).
+_REMOVED_MARKERS: re.Pattern[str] = re.compile(
+    r"撤去|削除|廃止|旧|\bold\b|retired|removed|no longer|もはや|"
+    r"かつて|previously|\bgone\b"
+)
+
+
+@pytest.mark.unit
+def test_docs_no_stale_reload_self_exit_wording():
+    """Guard: reload docs must not prescribe the retired self-exit/respawn model.
+
+    The new model (Epic #478) is a stable shim + swappable worker where
+    ``reload_server`` restarts only the worker and the shim/session survives.
+    The retired model killed the process (``os._exit``), relied on the client to
+    automatically respawn/reconnect, and pointed reload at a ``server_dir``.
+    Mentions that explicitly describe the old model as removed are allowed.
+    """
+    root = get_project_root()
+    offenders: list[str] = []
+    for rel in _RELOAD_MODEL_DOCS:
+        path = root / rel
+        assert path.exists(), f"{rel} missing (reload-model doc moved?)"
+        for lineno, line in enumerate(
+            path.read_text(encoding="utf-8").splitlines(), start=1
+        ):
+            for pat in _STALE_RELOAD_PATTERNS:
+                if pat.search(line) and not _REMOVED_MARKERS.search(line):
+                    offenders.append(f"{rel}:{lineno}: {line.strip()}")
+
+    assert not offenders, (
+        "Stale reload-model wording (pre-#478 self-exit/respawn) found. "
+        "Describe the shim+worker model instead, or mark the mention as the "
+        "removed old model:\n" + "\n".join(offenders)
+    )

@@ -138,6 +138,7 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 
 ## 9. Real Data Validation
 
-- worktree コード変更の検証は in-process / subprocess（`uv run --directory <worktree> ...`）で行う。`reload_server` は使わない（サブエージェントは reload を跨ぐと `mcp__garmin-db__*` を失う。spike #243）。live MCP 確認が要る稀なケースのみメインセッションが reload + `get_server_info` の ready ポーリング
+- worktree コード変更の検証は in-process / subprocess（`uv run --directory <worktree> ...`）で行う。`reload_server` は使わない（サブエージェントは reload を跨ぐと tool 一覧を再取得できず `mcp__garmin-db__*` を見失う。spike #243）。live MCP 確認が要る稀なケースのみメインセッションが reload + `get_server_info` の ready ポーリング
+- **reload モデル（Epic #478）**: MCP サーバは安定 shim（MCP セッション保持）+ 差し替え可能 worker（fresh プロセスで最新コードを import し `dispatch` 実行）。`reload_server` は **worker のみ再起動 + `tools/list_changed` 送出**で、shim は死なない＝接続は切れない（旧 `os._exit` 自殺 + クライアント respawn 依存・`server_dir` 引数は撤去済み）。**シグネチャ不変変更は zero-touch 反映、スキーマ形変更（tool 追加/削除・引数変更）のみ `/mcp` 再接続が1回必要**
 - MCP tool 変更 → 実 activity_id で `statistics_only=True/False` 両方テスト
 - Agent 定義変更 → fixture データで E2E 検証
