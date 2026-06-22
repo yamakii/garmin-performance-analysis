@@ -62,6 +62,27 @@ if [ "${#wf_tests[@]}" -gt 0 ]; then
   fi
 fi
 
+# scripts/tests/*.sh : syntax-smoke (bash -n) for the self-tests themselves.
+for f in scripts/tests/*.sh; do
+  if bash -n "$f"; then
+    echo "ok (script test syntax): $f"
+  else
+    echo "FAIL (script test syntax): $f" >&2
+    status=1
+  fi
+done
+
+# Behavioral self-test for the merged-worktree cleanup script. Builds its own
+# temp git repos, so it is hermetic and safe to run in CI.
+if [ -x scripts/tests/test-cleanup-merged-worktrees.sh ] || [ -e scripts/tests/test-cleanup-merged-worktrees.sh ]; then
+  if bash scripts/tests/test-cleanup-merged-worktrees.sh; then
+    echo "ok (script test): cleanup-merged-worktrees"
+  else
+    echo "FAIL (script test): cleanup-merged-worktrees" >&2
+    status=1
+  fi
+fi
+
 if [ "$status" -ne 0 ]; then
   echo "check-claude-scripts: FAILED" >&2
 else
