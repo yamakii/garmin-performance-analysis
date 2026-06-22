@@ -39,6 +39,26 @@ class TestClassifyTerrain:
     def test_boundary_hilly_mountainous(self) -> None:
         assert _classify_terrain(50.0) == "mountainous"
 
+    def test_classify_terrain_flat_no_undulation(self) -> None:
+        # avg in flat band, no significant single-split bump -> stays flat
+        assert _classify_terrain(4.0, max_split_change=3.0) == "flat"
+
+    def test_classify_terrain_promoted_to_undulating_by_split(self) -> None:
+        # avg in flat band but a single split has gain+loss=19 (>=15)
+        # -> promoted to undulating (2026-06-22 regression, Issue #473)
+        assert _classify_terrain(4.0, max_split_change=19.0) == "undulating"
+
+    def test_classify_terrain_undulating_by_avg(self) -> None:
+        # average-driven undulating; no split data provided
+        assert _classify_terrain(15.0, max_split_change=None) == "undulating"
+
+    def test_classify_terrain_hilly_unchanged(self) -> None:
+        # hilly stays average-driven regardless of single-split bumps
+        assert _classify_terrain(35.0) == "hilly"
+
+    def test_classify_terrain_none(self) -> None:
+        assert _classify_terrain(None) == "unknown"
+
 
 @pytest.mark.unit
 class TestBuildPhaseDict:
@@ -162,7 +182,9 @@ class TestPrefetchActivityContext:
             # Query 3: planned_workout
             None,
             # Query 4: elevation
-            (12.8, 11.2, 8),
+            # (total_gain, total_loss, split_count,
+            #  max_split_change, max_split_gain, max_split_loss)
+            (12.8, 11.2, 8, 4.5, 2.5, 2.0),
             # Query 5: form_evaluations (C2)
             (
                 "★★★★★",  # gct_star_rating
@@ -214,6 +236,8 @@ class TestPrefetchActivityContext:
         assert result["training_type"] == "aerobic_base"
         assert result["temperature_c"] == 7.8
         assert result["terrain_category"] == "flat"
+        assert result["max_split_elevation_gain"] == 2.5
+        assert result["max_split_elevation_loss"] == 2.0
 
         # C1: zone_percentages and HR efficiency fields
         assert result["zone_percentages"]["zone1"] == 5.2
@@ -273,7 +297,7 @@ class TestPrefetchActivityContext:
             (datetime.date(2026, 2, 16), 7.8, 84, 4.0, "NW"),  # activity
             None,  # hr_efficiency missing
             None,  # planned_workout
-            (0.0, 0.0, 0),  # elevation (no splits)
+            (None, None, 0, None, None, None),  # elevation (no splits)
             None,  # form_evaluations missing
             None,  # performance_trends missing
         ]
@@ -315,7 +339,7 @@ class TestPrefetchActivityContext:
             elif call_count == 2 or call_count == 3:
                 mock_result.fetchone.return_value = None
             elif call_count == 4:
-                mock_result.fetchone.return_value = (0.0, 0.0, 0)
+                mock_result.fetchone.return_value = (None, None, 0, None, None, None)
             elif call_count == 5:
                 raise Exception("Table form_evaluations does not exist")
             elif call_count == 6:
