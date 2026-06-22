@@ -6,6 +6,7 @@ import {
   INK_COLOR,
   METRIC_COLORS,
 } from "../../components/chartTheme";
+import { axisTooltipFormatter } from "../../utils/formatNumber";
 import type { PhysiologyTrend } from "../../api/trends";
 
 interface PhysiologyBlockProps {
@@ -16,7 +17,10 @@ export default function PhysiologyBlock({ data }: PhysiologyBlockProps) {
   const option = useMemo(
     () => ({
       ...BASE_CHART_OPTION,
-      tooltip: { trigger: "axis" as const },
+      tooltip: {
+        trigger: "axis" as const,
+        formatter: axisTooltipFormatter({ VO2max: 1, LT心拍: 0 }),
+      },
       legend: { data: ["VO2max", "LT心拍"] },
       xAxis: {
         type: "category" as const,

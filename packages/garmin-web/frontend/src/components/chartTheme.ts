@@ -25,6 +25,18 @@ export const METRIC_COLORS: Record<string, string> = {
   vertical_ratio: "#8b5cf6",
 };
 
+/** Decimal places per time-series metric. speed (pace) is excluded
+ *  because it uses a dedicated mm:ss formatter. */
+export const METRIC_DECIMALS: Record<string, number> = {
+  heart_rate: 0,
+  cadence: 0,
+  power: 0,
+  elevation: 0,
+  ground_contact_time: 1,
+  vertical_oscillation: 1,
+  vertical_ratio: 1,
+};
+
 /** Violet shades for overlaid form lines (overall / GCT / VO / VR). */
 export const FORM_LINE_COLORS = ["#16213a", "#8b5cf6", "#a78bfa", "#c4b5fd"];
 
