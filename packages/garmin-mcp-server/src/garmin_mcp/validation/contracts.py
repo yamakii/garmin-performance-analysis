@@ -363,6 +363,10 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "undulating": "10-30m/km",
                 "hilly": "30-50m/km",
                 "mountainous": ">50m/km",
+                "note": (
+                    "平均が flat 域でも単一区間 gain+loss >=15m なら "
+                    "undulating に昇格 (局所の丘を拾う, Issue #473)"
+                ),
             },
             "star_rating": {
                 "weights": {

@@ -215,7 +215,7 @@ analysis_data = {
 | 気温影響評価 | `temperature_c` |
 | 湿度影響評価 | `humidity_pct` |
 | 風影響評価 | `wind_mps`, `wind_direction` |
-| 地形分類・標高負荷評価 | `terrain_category`, `avg_elevation_gain_per_km`, `total_elevation_gain`, `total_elevation_loss` |
+| 地形分類・標高負荷評価 | `terrain_category`, `avg_elevation_gain_per_km`, `total_elevation_gain`, `total_elevation_loss`, `max_split_elevation_gain`, `max_split_elevation_loss` |
 | training_type カテゴリマッピング | `training_type` |
 
 ### 評価ルール（`get_analysis_contract("environment")` 参照）
@@ -240,6 +240,7 @@ analysis_data = {
 
 - **複合効果**: 気温+湿度+風の相乗効果を評価
 - **実測値優先**: 推定ではなく CONTEXT の実測環境データを使用
+- **地形記述の整合**: 地形の記述は `terrain_category` と `total_elevation_gain` / `max_split_elevation_gain` に整合させる。`terrain_category != "flat"` または `total_elevation_gain >= 20m` のときは「完全フラット」「標高負荷ゼロ/ほぼなし」等の断定表現を禁止し、累積獲得標高と主要な起伏区間（最大区間の獲得 `max_split_elevation_gain` / 下降 `max_split_elevation_loss`）に言及する
 - 星評価形式 `(★★★★☆ N.N/5.0)` を**テキスト末尾**に配置
 
 ---

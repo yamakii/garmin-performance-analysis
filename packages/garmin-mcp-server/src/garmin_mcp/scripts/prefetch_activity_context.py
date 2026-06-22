@@ -19,6 +19,8 @@ Output (JSON to stdout):
       "avg_elevation_gain_per_km": 1.6,
       "total_elevation_gain": 12.8,
       "total_elevation_loss": 11.2,
+      "max_split_elevation_gain": 4.5,
+      "max_split_elevation_loss": 3.9,
       "zone_percentages": {"zone1": 5.2, "zone2": 36.8, "zone3": 60.5, ...},
       "primary_zone": "Zone 3",
       "zone_distribution_rating": "appropriate",
@@ -70,6 +72,12 @@ _LT_TRAINING_TYPES = {"tempo", "threshold", "lactate_threshold"}
 # Training types for which VO2 max is the relevant aerobic ceiling.
 _VO2_TRAINING_TYPES = {"vo2max", "vo2_max", "interval", "speed"}
 
+# Single-split (gain+loss) threshold above which a locally hilly split promotes
+# an otherwise "flat" (average-driven) classification to "undulating".
+# Sourced from TerrainClassifier's 丘陵 (hilly) cutoff so the local-bump
+# sensitivity stays in sync with per-split terrain labeling (see Issue #473).
+_SPLIT_UNDULATION_THRESHOLD = 15.0  # m, == TerrainClassifier 丘陵 cutoff
+
 
 def _should_include_vo2_max(training_type: str | None) -> bool:
     """Decide whether vo2_max is relevant for the given training type.
@@ -97,11 +105,27 @@ def _should_include_lactate_threshold(training_type: str | None) -> bool:
     return training_type.lower() in _LT_TRAINING_TYPES
 
 
-def _classify_terrain(avg_gain_per_km: float | None) -> str:
-    """Classify terrain based on average elevation gain per km."""
+def _classify_terrain(
+    avg_gain_per_km: float | None,
+    max_split_change: float | None = None,  # 単一区間の最大 (gain+loss)
+) -> str:
+    """Classify terrain based on average elevation gain per km.
+
+    Average gain drives the primary classification (sustained gradient).
+    When the primary result is "flat" but a single split has a large
+    (gain+loss) change (>= _SPLIT_UNDULATION_THRESHOLD, sourced from
+    TerrainClassifier's 丘陵 cutoff), promote to "undulating" so local
+    bumps averaged out across the run are not lost (see Issue #473).
+    hilly/mountainous remain average-driven (sustained climbs).
+    """
     if avg_gain_per_km is None:
         return "unknown"
     if avg_gain_per_km < 10:
+        if (
+            max_split_change is not None
+            and max_split_change >= _SPLIT_UNDULATION_THRESHOLD
+        ):
+            return "undulating"
         return "flat"
     if avg_gain_per_km < 30:
         return "undulating"
@@ -286,7 +310,10 @@ def prefetch_activity_context(activity_id: int) -> dict:
             SELECT
                 SUM(elevation_gain) AS total_gain,
                 SUM(elevation_loss) AS total_loss,
-                COUNT(*) AS split_count
+                COUNT(*) AS split_count,
+                MAX(elevation_gain + elevation_loss) AS max_split_change,
+                MAX(elevation_gain) AS max_split_gain,
+                MAX(elevation_loss) AS max_split_loss
             FROM splits
             WHERE activity_id = ?
             """,
@@ -296,6 +323,9 @@ def prefetch_activity_context(activity_id: int) -> dict:
         total_gain = elev_row[0] if elev_row and elev_row[0] else 0.0
         total_loss = elev_row[1] if elev_row and elev_row[1] else 0.0
         split_count = elev_row[2] if elev_row else 0
+        max_split_change = elev_row[3] if elev_row and elev_row[3] else 0.0
+        max_split_gain = elev_row[4] if elev_row and elev_row[4] else 0.0
+        max_split_loss = elev_row[5] if elev_row and elev_row[5] else 0.0
         avg_gain_per_km = round(total_gain / split_count, 1) if split_count > 0 else 0.0
 
         # 5. Form evaluation scores (C2)
@@ -449,10 +479,12 @@ def prefetch_activity_context(activity_id: int) -> dict:
         "humidity_pct": humidity,
         "wind_mps": wind_mps,
         "wind_direction": wind_direction,
-        "terrain_category": _classify_terrain(avg_gain_per_km),
+        "terrain_category": _classify_terrain(avg_gain_per_km, max_split_change),
         "avg_elevation_gain_per_km": avg_gain_per_km,
         "total_elevation_gain": round(total_gain, 1),
         "total_elevation_loss": round(total_loss, 1),
+        "max_split_elevation_gain": round(max_split_gain, 1),
+        "max_split_elevation_loss": round(max_split_loss, 1),
         "zone_percentages": zone_percentages,
         "primary_zone": primary_zone,
         "zone_distribution_rating": zone_distribution_rating,

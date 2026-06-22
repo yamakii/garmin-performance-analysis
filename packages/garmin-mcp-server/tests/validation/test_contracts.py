@@ -207,7 +207,9 @@ def test_environment_contract_has_wind_thresholds():
 def test_environment_contract_has_terrain_classification():
     contract = get_contract("environment")
     terrain = contract["evaluation_policy"]["terrain_classification"]
-    assert len(terrain) == 4
+    # 4 classification bands + explanatory note for split-peak promotion (#473)
+    assert {"flat", "undulating", "hilly", "mountainous"} <= set(terrain)
+    assert "note" in terrain
 
 
 @pytest.mark.unit
