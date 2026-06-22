@@ -79,6 +79,11 @@ git remote prune origin 2>/dev/null || true
 > `worktree-agent-*`（`Agent(isolation: "worktree")` 由来）など ship 経由でない残留ブランチは
 > `bash scripts/prune-merged-branches.sh` で一括掃除できる（`git branch -d` ベースで安全）。
 
+マージ成功後、`bash scripts/cleanup-merged-worktrees.sh` を実行して残留を一括掃除し、結果
+（removed worktrees / deleted branches / skipped(理由付き)）をユーザーに報告する。**origin/main に
+マージ済み かつ clean なものだけ**を削除し（`git worktree remove` は `--force` なし、`git branch -d`
+で `-D` 禁止）、dirty・未マージは git が拒否＝残す。消せなかったものは warn のみでフローは止めない。
+
 ### Step 4-PR: Issue クローズ
 
 If `--close` is specified, or PR body contains `Closes #N`:

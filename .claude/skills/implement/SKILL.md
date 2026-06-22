@@ -149,6 +149,17 @@ git merge --ff-only origin/main
   「ローカル main を `<sha>` に同期。live MCP に反映するには `mcp__garmin-db__reload_server()`
   （シグネチャ不変変更は zero-touch）。スキーマ形変更を含む場合のみ `/mcp` 再接続」と案内する。
 
+#### 7c. Cleanup（マージ済み worktree/ブランチの安全掃除）
+
+7a の同期後、メインセッションが `bash scripts/cleanup-merged-worktrees.sh` を実行する
+（dry-run ではなく実行）。auto-merge で残った `.claude/worktrees/*` と `feat/*`・`worktree-*`
+ブランチのうち、**origin/main にマージ済み かつ clean なものだけ**を削除する。
+
+- 安全: `git worktree remove`（**`--force` なし**）+ `git branch -d`（**`-D` 禁止**）。dirty な
+  worktree や未マージブランチは git が拒否＝残す。消せなかったものは warn 報告のみで止まらない。
+- 実行後、スクリプトのサマリ（removed worktrees / deleted branches / skipped(理由付き)）を
+  オーケストレータが報告する。
+
 #### 7b. 報告
 
 全 Issue が完了したら報告:
@@ -160,6 +171,7 @@ All implementations complete for Epic #{epic}:
   #53 → escalated (PR #63) [WARNING: 内容チェック — 要レビュー]
 
 Local main: synced to <sha>   (または: ff-only failed — 手動同期が必要)
+Cleanup: removed N worktree(s), deleted M branch(es); skipped K (理由)
 ```
 
 ## DuckDB 並列安全性
