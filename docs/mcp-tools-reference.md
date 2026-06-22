@@ -597,14 +597,12 @@ Differential catch-up ingest across the running, weight and strength domains in 
 
 ### `get_server_info`
 
-Get diagnostic info about the running MCP server (server_dir, override file status). Use to verify which directory the server is running from.
+Get diagnostic info about the running MCP server (server_dir). Use to verify which directory the server is running from.
 
 _No parameters._
 
 ### `reload_server`
 
-Restart the MCP server process to pick up code changes. The server will exit and Claude Code will automatically reconnect.
+Restart the worker to pick up the latest code. The launcher process stays alive, so the MCP connection is preserved (no reconnect needed).
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `server_dir` | string | optional | Absolute path to garmin-mcp-server package directory. If provided, the server restarts from this directory (for worktree development). If omitted, restores default directory. |
+_No parameters._

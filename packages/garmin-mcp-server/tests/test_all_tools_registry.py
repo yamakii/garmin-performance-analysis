@@ -338,3 +338,38 @@ def test_override_usage_minimized() -> None:
 def test_tooldef_has_field_descriptions_attr() -> None:
     """``ToolDef`` exposes the new ``field_descriptions`` override field."""
     assert "field_descriptions" in ToolDef.__dataclass_fields__
+
+
+# ----------------------------------------------------------------------------
+# reload_server schema simplification (Issue #481)
+# ----------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_reload_server_schema_has_no_server_dir() -> None:
+    """``reload_server`` takes no arguments: its ``inputSchema.properties`` is
+    empty (the override ``server_dir`` argument was removed in #481)."""
+    tools = {t.name: t for t in get_tool_definitions()}
+    reload_tool = tools["reload_server"]
+    assert reload_tool.inputSchema == {"type": "object", "properties": {}}
+    assert reload_tool.inputSchema["properties"] == {}
+    assert "server_dir" not in reload_tool.inputSchema["properties"]
+
+
+@pytest.mark.unit
+def test_tool_golden_snapshot_matches() -> None:
+    """The live MCP surface still equals the (regenerated) golden snapshot."""
+    golden = json.loads(_GOLDEN_PATH.read_text(encoding="utf-8"))
+    live = _as_dicts(get_tool_definitions())
+    assert live == golden
+
+
+@pytest.mark.unit
+def test_tool_count_unchanged() -> None:
+    """Removing ``server_dir`` does not change the tool count: ``reload_server``
+    is retained by name; the surface still serves 49 tools (47 domain + 2
+    server)."""
+    live_names = [t.name for t in get_tool_definitions()]
+    assert len(live_names) == 49
+    assert "reload_server" in live_names
+    assert "get_server_info" in live_names
