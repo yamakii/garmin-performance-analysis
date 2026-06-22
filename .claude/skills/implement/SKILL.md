@@ -130,6 +130,27 @@ Workflow の返り値:
 
 ### Step 7: 全完了
 
+#### 7a. ローカル main を同期（必須）
+
+auto-merge は PR を **origin/main にのみ**反映する。ローカル作業ツリーは自動更新されず
+origin より遅れて drift するため、**MCP サーバ・各種ツールはローカルから起動する以上、
+マージ済みでもローカルでは旧コードが走る**。最終報告の前に、メインセッションがローカル
+main を origin へ fast-forward only で同期する:
+
+```
+git fetch origin
+git merge --ff-only origin/main
+```
+
+- `--ff-only` なので、ローカルに未コミット変更や独自コミットがある場合は**安全に失敗**
+  （force しない・データ消失なし）。失敗したら同期できなかった旨と理由を報告し、ユーザーに
+  手動同期を促す（自動 stash / reset はしない）。
+- 成功したら同期後 SHA を報告する。MCP サーバコードを変更した Epic の場合は
+  「ローカル main を `<sha>` に同期。live MCP に反映するには `mcp__garmin-db__reload_server()`
+  （シグネチャ不変変更は zero-touch）。スキーマ形変更を含む場合のみ `/mcp` 再接続」と案内する。
+
+#### 7b. 報告
+
 全 Issue が完了したら報告:
 
 ```
@@ -137,6 +158,8 @@ All implementations complete for Epic #{epic}:
   #51 → merged (PR #61)   [auto-merged: L1 PASS + ci-guard ✓]
   #52 → merged (PR #62)   [auto-merged: skip + ci-guard ✓]
   #53 → escalated (PR #63) [WARNING: 内容チェック — 要レビュー]
+
+Local main: synced to <sha>   (または: ff-only failed — 手動同期が必要)
 ```
 
 ## DuckDB 並列安全性
