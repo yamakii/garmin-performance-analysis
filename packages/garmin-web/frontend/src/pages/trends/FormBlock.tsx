@@ -5,6 +5,7 @@ import {
   BASE_CHART_OPTION,
   FORM_LINE_COLORS,
 } from "../../components/chartTheme";
+import { axisTooltipFormatter } from "../../utils/formatNumber";
 import type { FormTrendPoint } from "../../api/trends";
 
 interface FormBlockProps {
@@ -17,7 +18,15 @@ export default function FormBlock({ data }: FormBlockProps) {
       ...BASE_CHART_OPTION,
       // Overall = ink, form deltas = violet family (Issue #214).
       color: FORM_LINE_COLORS,
-      tooltip: { trigger: "axis" as const },
+      tooltip: {
+        trigger: "axis" as const,
+        formatter: axisTooltipFormatter({
+          総合スコア: 1,
+          "GCT Δ%": 1,
+          "VO Δcm": 1,
+          "VR Δ%": 1,
+        }),
+      },
       legend: { data: ["総合スコア", "GCT Δ%", "VO Δcm", "VR Δ%"] },
       xAxis: {
         type: "category" as const,

@@ -5,6 +5,7 @@ import {
   BASE_CHART_OPTION,
   INK_COLOR,
 } from "../../components/chartTheme";
+import { axisTooltipFormatter } from "../../utils/formatNumber";
 import type { Granularity, VolumeTrendPoint } from "../../api/trends";
 
 interface VolumeBlockProps {
@@ -29,7 +30,10 @@ export default function VolumeBlock({
   const option = useMemo(
     () => ({
       ...BASE_CHART_OPTION,
-      tooltip: { trigger: "axis" as const },
+      tooltip: {
+        trigger: "axis" as const,
+        formatter: axisTooltipFormatter({ "距離 (km)": 1 }),
+      },
       xAxis: {
         type: "category" as const,
         data: data.map((p) => p.bucket),

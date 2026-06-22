@@ -6,6 +6,7 @@ import {
   INK_COLOR,
   METRIC_COLORS,
 } from "../../components/chartTheme";
+import { axisTooltipFormatter } from "../../utils/formatNumber";
 import type { AcwrStatus, AcwrTrend } from "../../types";
 
 interface TrainingLoadBlockProps {
@@ -33,7 +34,10 @@ export default function TrainingLoadBlock({ data }: TrainingLoadBlockProps) {
   const option = useMemo(
     () => ({
       ...BASE_CHART_OPTION,
-      tooltip: { trigger: "axis" as const },
+      tooltip: {
+        trigger: "axis" as const,
+        formatter: axisTooltipFormatter({ "週間距離 (km)": 1, ACWR: 2 }),
+      },
       legend: { data: ["週間距離 (km)", "ACWR"] },
       xAxis: {
         type: "category" as const,

@@ -5,6 +5,7 @@ import {
   BASE_CHART_OPTION,
   ZONE_COLORS,
 } from "../../components/chartTheme";
+import { axisTooltipFormatter } from "../../utils/formatNumber";
 import type { EfficiencyTrendPoint } from "../../api/trends";
 
 interface EfficiencyBlockProps {
@@ -23,7 +24,10 @@ export default function EfficiencyBlock({ data }: EfficiencyBlockProps) {
   const option = useMemo(
     () => ({
       ...BASE_CHART_OPTION,
-      tooltip: { trigger: "axis" as const },
+      tooltip: {
+        trigger: "axis" as const,
+        formatter: axisTooltipFormatter({}),
+      },
       legend: { data: ZONE_KEYS.map((_, i) => `Zone ${i + 1}`) },
       xAxis: {
         type: "category" as const,

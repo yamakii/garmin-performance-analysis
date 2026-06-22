@@ -1,4 +1,5 @@
 import type { ActivityDetailResponse } from "../types";
+import { formatNumber } from "../utils/formatNumber";
 import StarRating from "./report/StarRating";
 
 /**
@@ -77,7 +78,7 @@ export default function HeroHeader({
   if (lt && (lt.heart_rate != null || lt.speed_mps != null)) {
     const parts: string[] = [];
     if (lt.heart_rate != null) {
-      parts.push(`${lt.heart_rate} bpm`);
+      parts.push(`${formatNumber(lt.heart_rate, 0)} bpm`);
     }
     if (lt.speed_mps != null && lt.speed_mps > 0) {
       parts.push(`${kpiPace(1000 / lt.speed_mps)}/km`);

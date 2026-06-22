@@ -1,12 +1,14 @@
 import * as echarts from "echarts";
 import { useEffect, useRef } from "react";
 import type { TimeSeriesResponse } from "../types";
+import { formatNumber } from "../utils/formatNumber";
 import {
   AXIS_LABEL_COLOR,
   CHART_FONT_SIZE,
   GRID_LINE_COLOR,
   INK_COLOR,
   METRIC_COLORS,
+  METRIC_DECIMALS,
 } from "./chartTheme";
 
 const GRID_HEIGHT = 140;
@@ -168,7 +170,12 @@ export default function TimeSeriesChart({
                     ? `${formatPaceLabel(value)}/km`
                     : "-",
               }
-            : {},
+            : {
+                valueFormatter: (value) =>
+                  typeof value === "number"
+                    ? formatNumber(value, METRIC_DECIMALS[name] ?? 1)
+                    : "-",
+              },
         };
       }),
       dataZoom: [
