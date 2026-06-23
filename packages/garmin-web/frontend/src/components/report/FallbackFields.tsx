@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { formatNumber } from "../../utils/formatNumber";
 import MarkdownText from "./MarkdownText";
 import { META_LABEL } from "./ReportCard";
 
@@ -9,7 +10,12 @@ export function renderValue(value: unknown): ReactNode {
   if (typeof value === "string") {
     return <MarkdownText text={value} />;
   }
-  if (typeof value === "number" || typeof value === "boolean") {
+  if (typeof value === "number") {
+    // Strip floating-point noise / trailing zeros from un-consumed numeric
+    // fields (e.g. integrated_score 4.2000000000001 -> "4.2").
+    return formatNumber(value);
+  }
+  if (typeof value === "boolean") {
     return String(value);
   }
   if (Array.isArray(value)) {

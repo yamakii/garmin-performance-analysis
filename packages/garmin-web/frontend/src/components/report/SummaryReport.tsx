@@ -1,4 +1,5 @@
 import type { SectionResult } from "../../types";
+import { formatNumber } from "../../utils/formatNumber";
 import ActionCallout from "./ActionCallout";
 import FallbackFields, { renderValue } from "./FallbackFields";
 import MarkdownText from "./MarkdownText";
@@ -83,7 +84,7 @@ export default function SummaryReport({
               )}
               {typeof data.integrated_score === "number" && (
                 <span className="rounded-full bg-ink/5 px-3 py-1 text-xs font-semibold tabular-nums text-ink">
-                  統合スコア {data.integrated_score}
+                  統合スコア {formatNumber(data.integrated_score, 1)}
                 </span>
               )}
             </div>

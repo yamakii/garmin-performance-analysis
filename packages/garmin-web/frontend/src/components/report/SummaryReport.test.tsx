@@ -78,6 +78,21 @@ describe("SummaryReport", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("test_summary_report_integrated_score_precision", () => {
+    // Raw float from the backend must render with clean precision (#493).
+    render(
+      <SummaryReport
+        section={section({
+          ...baseData,
+          integrated_score: 4.2000000000001,
+        })}
+      />,
+    );
+
+    expect(screen.getByText("統合スコア 4.2")).toBeInTheDocument();
+    expect(screen.queryByText(/4\.20000/)).not.toBeInTheDocument();
+  });
+
   it("collapses recommendations into details", () => {
     const { container } = render(
       <SummaryReport
