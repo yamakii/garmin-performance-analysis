@@ -15,7 +15,9 @@ import shutil
 import sys
 from pathlib import Path
 
+from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.database.db_writer import GarminDBWriter
+from garmin_mcp.validation.validators import check_form_trend_consistency
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +50,19 @@ def merge_section_analyses(temp_dir: Path, *, keep: bool = False) -> dict:
             activity_id = data["activity_id"]
             activity_date = str(data["activity_date"])
             analysis_data = data["analysis_data"]
+
+            if section_type == "efficiency":
+                trend = GarminDBReader().physiology.get_form_baseline_trend(
+                    activity_id, activity_date
+                )
+                ok, errs = check_form_trend_consistency(
+                    analysis_data.get("form_trend", ""),
+                    bool(trend.get("success")),
+                )
+                if not ok:
+                    failed.append(section_type)
+                    errors.extend(errs)
+                    continue  # Do not insert inconsistent efficiency analysis.
 
             success = writer.insert_section_analysis(
                 activity_id=activity_id,
