@@ -3,13 +3,15 @@ import { describe, expect, it, vi } from "vitest";
 import BodyCompositionChart from "./BodyCompositionChart";
 import type { BodyCompositionTrend } from "../../types";
 
-// echarts requires a real canvas; mock it out for jsdom.
-vi.mock("echarts", () => ({
-  init: () => ({
-    setOption: vi.fn(),
-    resize: vi.fn(),
-    dispose: vi.fn(),
-  }),
+// echarts requires a real canvas; mock the modular wrapper out for jsdom.
+vi.mock("../../lib/echarts", () => ({
+  echarts: {
+    init: () => ({
+      setOption: vi.fn(),
+      resize: vi.fn(),
+      dispose: vi.fn(),
+    }),
+  },
 }));
 
 // Latest weight 78.847 must render via formatNumber as "78.8".
