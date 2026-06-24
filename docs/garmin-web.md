@@ -58,9 +58,12 @@ parameters are documented in each handler's docstring.
 | `/api/activities/{activity_id}/sections` | Return section analyses keyed by section_type. |
 | `/api/activities/{activity_id}/time-series` | Return downsampled time series for the requested metrics. |
 | `/api/activities/{activity_id}/track` | Return the GPS track for an activity. |
+| `/api/body-composition-trend` | Body-composition trend over the trailing ``weeks`` weeks (#501). |
 | `/api/durability-trend` | Return the long-run decoupling trend over a date window. |
 | `/api/goal` | Return the athlete goal payload (profile + goals + retrospectives). |
 | `/api/race-readiness` | Return current VDOT, race-time predictions, and goal progress. |
+| `/api/recovery-status` | Morning go/no-go recovery status for ``date`` (#500). |
+| `/api/recovery-trend` | RHR / HRV recovery trend over the trailing ``weeks`` weeks (#499). |
 | `/api/training-load` | Return the current ACWR snapshot plus the weekly load/ACWR trend. |
 | `/api/trends/efficiency` | HR efficiency trend with zone distribution. |
 | `/api/trends/form` | Form evaluation score trend. |

@@ -140,6 +140,73 @@ export interface DurabilityTrend {
   };
 }
 
+// --- Recovery / body composition (Issue #502) ---
+
+export type RhrTrend = "improving" | "stable" | "fatigued" | null;
+
+export type HrvStatus = "low" | "balanced" | "high" | null;
+
+export type RecoveryRecommendation =
+  | "rest"
+  | "easy"
+  | "moderate"
+  | "quality"
+  | "unknown";
+
+export interface RecoverySeriesPoint {
+  date: string;
+  resting_hr: number | null;
+  hrv_overnight_ms: number | null;
+}
+
+export interface RecoveryTrend {
+  weeks: number;
+  rhr: {
+    median_7d: number | null;
+    median_30d: number | null;
+    rhr_trend: RhrTrend;
+  };
+  hrv: {
+    latest_ms: number | null;
+    status: HrvStatus;
+    hrv_below_baseline_days: number;
+    under_recovery: boolean;
+  };
+  series: RecoverySeriesPoint[];
+}
+
+export interface RecoveryStatus {
+  date: string | null;
+  recommendation: RecoveryRecommendation;
+  score: number | null;
+  reasons: string[];
+  training_readiness: number | null;
+  body_battery_high: number | null;
+  sleep_score: number | null;
+}
+
+export interface BodyCompositionSeriesPoint {
+  date: string;
+  weight_kg: number | null;
+  fat_mass: number | null;
+  lean_mass: number | null;
+}
+
+export interface BodyCompositionChange {
+  delta_weight: number | null;
+  delta_fat: number | null;
+  delta_lean: number | null;
+  lean_loss_ratio: number | null;
+  muscle_loss_warning: boolean;
+}
+
+export interface BodyCompositionTrend {
+  weeks: number;
+  series: BodyCompositionSeriesPoint[];
+  change: BodyCompositionChange;
+  lean_pwr: number | null;
+}
+
 // --- Weekly reviews (Issue #283) ---
 
 export interface WeeklyReviewVerdict {

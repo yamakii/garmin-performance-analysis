@@ -138,6 +138,47 @@ const DURABILITY_EMPTY = {
   },
 };
 
+const RECOVERY_TREND = {
+  weeks: 8,
+  rhr: { median_7d: 48, median_30d: 49, rhr_trend: "improving" },
+  hrv: {
+    latest_ms: 65.0,
+    status: "balanced",
+    hrv_below_baseline_days: 0,
+    under_recovery: false,
+  },
+  series: [
+    { date: "2025-10-06", resting_hr: 48, hrv_overnight_ms: 65.0 },
+    { date: "2025-10-07", resting_hr: 47, hrv_overnight_ms: 68.0 },
+  ],
+};
+
+const RECOVERY_STATUS = {
+  date: "2025-10-07",
+  recommendation: "quality",
+  score: 80,
+  reasons: ["Training Readiness 80 が高くHRVも正常→質練OK"],
+  training_readiness: 80,
+  body_battery_high: 92,
+  sleep_score: 80,
+};
+
+const BODY_COMPOSITION = {
+  weeks: 12,
+  series: [
+    { date: "2025-10-06", weight_kg: 80.0, fat_mass: 17.6, lean_mass: 62.4 },
+    { date: "2025-10-07", weight_kg: 78.8, fat_mass: 16.4, lean_mass: 62.4 },
+  ],
+  change: {
+    delta_weight: -1.2,
+    delta_fat: -1.0,
+    delta_lean: -0.2,
+    lean_loss_ratio: 0.17,
+    muscle_loss_warning: false,
+  },
+  lean_pwr: 4.0,
+};
+
 function jsonResponse(payload: unknown): Response {
   return new Response(JSON.stringify(payload), {
     status: 200,
@@ -169,6 +210,15 @@ function stubTrendsFetch(
       }
       if (url.startsWith("/api/durability-trend")) {
         return Promise.resolve(jsonResponse(durability));
+      }
+      if (url.startsWith("/api/recovery-trend")) {
+        return Promise.resolve(jsonResponse(RECOVERY_TREND));
+      }
+      if (url.startsWith("/api/recovery-status")) {
+        return Promise.resolve(jsonResponse(RECOVERY_STATUS));
+      }
+      if (url.startsWith("/api/body-composition-trend")) {
+        return Promise.resolve(jsonResponse(BODY_COMPOSITION));
       }
       return Promise.reject(new Error(`Unexpected fetch: ${url}`));
     }),
@@ -226,6 +276,21 @@ describe("TrendsDashboard", () => {
     expect(
       screen.getByText(/デカップリングとGCT後半失速の推移/),
     ).toBeInTheDocument();
+
+    // Recovery / condition / body-composition panels (Issue #502).
+    expect(
+      screen.getByRole("heading", { level: 2, name: "回復トレンド (RHR / HRV)" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 2, name: "当日コンディション" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 2, name: "体組成 (体重内訳)" }),
+    ).toBeInTheDocument();
+    // Quality recommendation -> green badge label.
+    expect(screen.getByText("質練OK")).toBeInTheDocument();
+    // Body-composition summary renders the net weight loss via formatNumber.
+    expect(screen.getByText(/-1\.2kg/)).toBeInTheDocument();
   });
 
   it("falls back when durability data is insufficient", async () => {
