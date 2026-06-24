@@ -14,13 +14,27 @@ import type {
 } from "../api/trends";
 import { fetchTrainingLoad } from "../api/training_load";
 import { fetchDurabilityTrend } from "../api/durability";
-import type { AcwrTrend, DurabilityTrend } from "../types";
+import {
+  fetchBodyCompositionTrend,
+  fetchRecoveryStatus,
+  fetchRecoveryTrend,
+} from "../api/recovery";
+import type {
+  AcwrTrend,
+  BodyCompositionTrend,
+  DurabilityTrend,
+  RecoveryStatus,
+  RecoveryTrend,
+} from "../types";
 import VolumeBlock from "./trends/VolumeBlock";
 import PhysiologyBlock from "./trends/PhysiologyBlock";
 import FormBlock from "./trends/FormBlock";
 import EfficiencyBlock from "./trends/EfficiencyBlock";
 import TrainingLoadBlock from "./trends/TrainingLoadBlock";
 import DurabilityBlock from "./trends/DurabilityBlock";
+import RecoveryPanel from "./trends/RecoveryPanel";
+import ConditionCard from "./trends/ConditionCard";
+import BodyCompositionChart from "./trends/BodyCompositionChart";
 
 export default function TrendsDashboard() {
   const [granularity, setGranularity] = useState<Granularity>("week");
@@ -32,6 +46,12 @@ export default function TrendsDashboard() {
   );
   const [trainingLoad, setTrainingLoad] = useState<AcwrTrend | null>(null);
   const [durability, setDurability] = useState<DurabilityTrend | null>(null);
+  const [recovery, setRecovery] = useState<RecoveryTrend | null>(null);
+  const [recoveryStatus, setRecoveryStatus] = useState<RecoveryStatus | null>(
+    null,
+  );
+  const [bodyComposition, setBodyComposition] =
+    useState<BodyCompositionTrend | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -56,6 +76,9 @@ export default function TrendsDashboard() {
       fetchEfficiencyTrend(),
       fetchTrainingLoad(),
       fetchDurabilityTrend(),
+      fetchRecoveryTrend(),
+      fetchRecoveryStatus(),
+      fetchBodyCompositionTrend(),
     ])
       .then(
         ([
@@ -64,6 +87,9 @@ export default function TrendsDashboard() {
           efficiencyData,
           trainingLoadData,
           durabilityData,
+          recoveryData,
+          recoveryStatusData,
+          bodyCompositionData,
         ]) => {
           if (!cancelled) {
             setPhysiology(physiologyData);
@@ -71,6 +97,9 @@ export default function TrendsDashboard() {
             setEfficiency(efficiencyData);
             setTrainingLoad(trainingLoadData);
             setDurability(durabilityData);
+            setRecovery(recoveryData);
+            setRecoveryStatus(recoveryStatusData);
+            setBodyComposition(bodyCompositionData);
           }
         },
       )
@@ -99,7 +128,10 @@ export default function TrendsDashboard() {
     form == null ||
     efficiency == null ||
     trainingLoad == null ||
-    durability == null;
+    durability == null ||
+    recovery == null ||
+    recoveryStatus == null ||
+    bodyComposition == null;
   if (loading) {
     return (
       <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
@@ -128,6 +160,9 @@ export default function TrendsDashboard() {
         <EfficiencyBlock data={efficiency} />
         <TrainingLoadBlock data={trainingLoad} />
         <DurabilityBlock data={durability} />
+        <RecoveryPanel data={recovery} />
+        <ConditionCard data={recoveryStatus} />
+        <BodyCompositionChart data={bodyComposition} />
       </div>
     </div>
   );

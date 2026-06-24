@@ -1289,3 +1289,173 @@ def durability_empty_db_path(tmp_path: Path) -> Path:
     finally:
         conn.close()
     return db_path
+
+
+# --- Recovery / body-composition fixtures (Issue #502) -----------------
+# Mirror the daily_wellness schema (migrations/add_daily_wellness_table.py),
+# the body_composition schema (db_writer.py) and the lactate_threshold FTP
+# columns the body-composition reader joins for lean power-to-weight. The Web
+# layer delegates to GarminDBReader (#499/#500/#501); data is written directly.
+
+_CREATE_DAILY_WELLNESS = """
+    CREATE TABLE daily_wellness (
+        wellness_id INTEGER PRIMARY KEY,
+        date DATE NOT NULL,
+        resting_hr INTEGER,
+        hrv_overnight_ms DOUBLE,
+        hrv_status VARCHAR,
+        hrv_baseline_low DOUBLE,
+        hrv_baseline_high DOUBLE,
+        sleep_seconds INTEGER,
+        sleep_score INTEGER,
+        training_readiness INTEGER,
+        body_battery_high INTEGER,
+        body_battery_low INTEGER,
+        stress_avg INTEGER,
+        source VARCHAR
+    )
+"""
+
+_CREATE_BODY_COMPOSITION = """
+    CREATE TABLE body_composition (
+        measurement_id INTEGER PRIMARY KEY,
+        date DATE NOT NULL,
+        weight_kg DOUBLE,
+        body_fat_percentage DOUBLE,
+        muscle_mass_kg DOUBLE,
+        bone_mass_kg DOUBLE,
+        bmi DOUBLE,
+        hydration_percentage DOUBLE,
+        measurement_source VARCHAR
+    )
+"""
+
+# FTP columns the body-composition reader reads for lean power-to-weight.
+_CREATE_LACTATE_THRESHOLD_FTP = """
+    CREATE TABLE lactate_threshold (
+        activity_id BIGINT PRIMARY KEY,
+        functional_threshold_power INTEGER,
+        power_to_weight DOUBLE,
+        date_power TIMESTAMP
+    )
+"""
+
+
+def _recent_dates(n: int) -> list[str]:
+    """``n`` ascending dates ending today, so they fall in the trailing window."""
+    today = _dt.date.today()
+    return [
+        (today - _dt.timedelta(days=offset)).strftime("%Y-%m-%d")
+        for offset in range(n - 1, -1, -1)
+    ]
+
+
+@pytest.fixture
+def recovery_db_path(tmp_path: Path) -> Path:
+    """DuckDB with daily_wellness rows over the trailing days.
+
+    The most recent night is below the HRV baseline band twice in a row so the
+    HRV under-recovery flag is exercised; readiness/sleep stay mid-to-high so
+    the latest-day status is recommendable.
+    """
+    db_path = tmp_path / "test_garmin_web_recovery.duckdb"
+    dates = _recent_dates(5)
+    # (resting_hr, hrv_overnight_ms, hrv_low, hrv_high, sleep, readiness, bb_high)
+    rows = [
+        (48, 65.0, 55.0, 80.0, 82, 78, 90),
+        (47, 68.0, 55.0, 80.0, 80, 80, 92),
+        (49, 70.0, 55.0, 80.0, 78, 76, 88),
+        (50, 52.0, 55.0, 80.0, 70, 70, 75),  # below baseline (night -1)
+        (51, 50.0, 55.0, 80.0, 72, 72, 78),  # below baseline (latest night)
+    ]
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(_CREATE_DAILY_WELLNESS)
+        conn.executemany(
+            "INSERT INTO daily_wellness ("
+            "wellness_id, date, resting_hr, hrv_overnight_ms, hrv_status,"
+            " hrv_baseline_low, hrv_baseline_high, sleep_score,"
+            " training_readiness, body_battery_high"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    idx + 1,
+                    dates[idx],
+                    rhr,
+                    hrv,
+                    "balanced",
+                    low,
+                    high,
+                    sleep,
+                    readiness,
+                    bb_high,
+                )
+                for idx, (
+                    rhr,
+                    hrv,
+                    low,
+                    high,
+                    sleep,
+                    readiness,
+                    bb_high,
+                ) in enumerate(rows)
+            ],
+        )
+    finally:
+        conn.close()
+    return db_path
+
+
+@pytest.fixture
+def body_composition_db_path(tmp_path: Path) -> Path:
+    """DuckDB with body_composition rows (net weight loss) + an FTP row.
+
+    Weight falls from 80.0 to 78.8 kg over the window with body fat dropping,
+    so ``change`` reports a negative ``delta_weight``; the FTP row drives a
+    non-null lean power-to-weight.
+    """
+    db_path = tmp_path / "test_garmin_web_body_composition.duckdb"
+    dates = _recent_dates(4)
+    # (weight_kg, body_fat_percentage)
+    measurements = [
+        (80.0, 22.0),
+        (79.5, 21.6),
+        (79.1, 21.2),
+        (78.8, 20.8),
+    ]
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(_CREATE_BODY_COMPOSITION)
+        conn.execute(_CREATE_LACTATE_THRESHOLD_FTP)
+        conn.executemany(
+            "INSERT INTO body_composition ("
+            "measurement_id, date, weight_kg, body_fat_percentage"
+            ") VALUES (?, ?, ?, ?)",
+            [
+                (idx + 1, dates[idx], weight, fat)
+                for idx, (weight, fat) in enumerate(measurements)
+            ],
+        )
+        conn.execute(
+            "INSERT INTO lactate_threshold ("
+            "activity_id, functional_threshold_power, power_to_weight, date_power"
+            ") VALUES (?, ?, ?, ?)",
+            [9000006001, 250, 3.1, f"{dates[-1]} 06:30:00"],
+        )
+    finally:
+        conn.close()
+    return db_path
+
+
+@pytest.fixture
+def empty_recovery_db_path(tmp_path: Path) -> Path:
+    """DuckDB with empty daily_wellness / body_composition / FTP tables."""
+    db_path = tmp_path / "test_garmin_web_recovery_empty.duckdb"
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(_CREATE_DAILY_WELLNESS)
+        conn.execute(_CREATE_BODY_COMPOSITION)
+        conn.execute(_CREATE_LACTATE_THRESHOLD_FTP)
+    finally:
+        conn.close()
+    return db_path
