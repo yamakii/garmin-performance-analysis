@@ -201,6 +201,105 @@ class GarminDBReader:
             return str(rows[0][0])
         return None
 
+    # ========== Body Composition Methods ==========
+
+    def get_body_composition_trend(self, weeks: int = 12) -> dict[str, Any]:
+        """Body-composition trend over the last ``weeks`` weeks (#501).
+
+        Reads ``body_composition`` for the trailing window and decomposes the
+        weight change between the first and last measurement into fat / lean
+        components. Also derives a lean-mass power-to-weight ratio using the most
+        recent ``lactate_threshold.functional_threshold_power`` and the latest
+        measurement's body fat (null-safe; skipped when body fat or FTP missing).
+
+        Args:
+            weeks: Trailing window length in weeks (default: 12).
+
+        Returns:
+            ``{"weeks", "series": [{"date","weight_kg","fat_mass","lean_mass"}],
+            "change": {...decompose_weight_change...}, "lean_pwr": float|None}``.
+            ``series`` is date-ascending; ``fat_mass`` / ``lean_mass`` are
+            ``None`` for rows lacking body fat. ``change`` is an empty-ish
+            decomposition (all-None deltas) when fewer than 2 measurements
+            exist. Dates are ``YYYY-MM-DD`` strings.
+        """
+        from datetime import datetime, timedelta
+
+        from garmin_mcp.analysis.body_composition import (
+            decompose_weight_change,
+            lean_power_to_weight,
+        )
+
+        cutoff = (datetime.now() - timedelta(weeks=weeks)).strftime("%Y-%m-%d")
+        rows = self.execute_read_query(
+            """
+            SELECT date, weight_kg, body_fat_percentage
+            FROM body_composition
+            WHERE date >= ?
+            ORDER BY date ASC
+            """,
+            (cutoff,),
+        )
+
+        series: list[dict[str, Any]] = []
+        for date_val, weight_kg, body_fat_pct in rows:
+            fat_mass: float | None = None
+            lean_mass: float | None = None
+            if weight_kg is not None and body_fat_pct is not None:
+                fat_mass = round(weight_kg * body_fat_pct / 100.0, 2)
+                lean_mass = round(weight_kg - fat_mass, 2)
+            series.append(
+                {
+                    "date": str(date_val),
+                    "weight_kg": weight_kg,
+                    "fat_mass": fat_mass,
+                    "lean_mass": lean_mass,
+                }
+            )
+
+        if len(rows) >= 2:
+            first = {
+                "weight_kg": rows[0][1],
+                "body_fat_pct": rows[0][2],
+            }
+            last = {
+                "weight_kg": rows[-1][1],
+                "body_fat_pct": rows[-1][2],
+            }
+            change = decompose_weight_change(first, last)
+        else:
+            change = {
+                "delta_weight": None,
+                "delta_fat": None,
+                "delta_lean": None,
+                "lean_loss_ratio": None,
+                "muscle_loss_warning": False,
+            }
+
+        # Lean power-to-weight from the most recent FTP and the latest body comp.
+        ftp_rows = self.execute_read_query("""
+            SELECT functional_threshold_power
+            FROM lactate_threshold
+            WHERE functional_threshold_power IS NOT NULL
+            ORDER BY date_power DESC NULLS LAST
+            LIMIT 1
+            """)
+        ftp_w = ftp_rows[0][0] if ftp_rows else None
+        lean_pwr: float | None = None
+        if rows:
+            lean_pwr = lean_power_to_weight(
+                ftp_w=ftp_w,
+                weight_kg=rows[-1][1],
+                body_fat_pct=rows[-1][2],
+            )
+
+        return {
+            "weeks": weeks,
+            "series": series,
+            "change": change,
+            "lean_pwr": lean_pwr,
+        }
+
     # ========== Splits Methods ==========
 
     def get_splits_pace_hr(

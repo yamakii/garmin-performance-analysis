@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **49 tools** (47 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **50 tools** (48 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -17,7 +17,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Metadata](#metadata) (3)
 - [Splits](#splits) (5)
 - [Analysis](#analysis) (6)
-- [Physiology](#physiology) (7)
+- [Physiology](#physiology) (8)
 - [Performance](#performance) (3)
 - [Time Series](#time-series) (4)
 - [Training Plan](#training-plan) (6)
@@ -288,6 +288,16 @@ Get lactate threshold data (HR, speed, power) from lactate_threshold table
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `activity_id` | integer | **required** |  |
+
+### `get_body_composition_trend`
+
+CLI: `garmin-db physiology body-composition-trend`
+
+Get the body-composition trend over the trailing window (default 12 weeks). Decomposes the weight change between the first and last measurement into fat-mass and lean-mass components. Returns weeks, a date-ascending series ([{date, weight_kg, fat_mass, lean_mass}]; fat_mass/lean_mass null when body fat unrecorded), a change block (delta_weight, delta_fat, delta_lean, lean_loss_ratio, muscle_loss_warning -- true when >40% of the lost weight is lean mass, flagging leg-durability/injury risk), and lean_pwr (lean-mass power-to-weight = latest functional_threshold_power / lean mass; null when body fat or FTP is missing).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `weeks` | integer | optional (default `12`) | Trailing window length in weeks to analyze (default: 12). |
 
 ## Performance
 
