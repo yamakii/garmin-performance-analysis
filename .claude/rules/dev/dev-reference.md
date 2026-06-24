@@ -81,7 +81,7 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 > L1/L2 は subprocess（`uv run --directory <worktree>`）で検証するためプロセス分離されており**並列起動が安全**。複数 worktree の L1/L2 を同時に検証してよい。直列が残るのは L3（メインセッション担当）のみ。経緯（旧 FIFO 直列前提）は `worktree-validation-protocol.md` を参照。
 
 1. L1: worktree コードを subprocess で import → 下層関数を `verification_activity_id` で呼び出し → 非null、型一致、値範囲 (pace 3:00-9:00, HR 80-200)、`json.dumps` 可能を検証（`reload_server` は使わない）
-2. L2: L1 + worktree 内で `uv run --directory <worktree> pytest -m integration --tb=short -q`
+2. L2: L1 + worktree 内で `uv run --directory <worktree> bash scripts/ci-check.sh`（CI 同一: unit+型+lint+doc-guard、web 変更時は web チェック）が exit 0 + `uv run --directory <worktree> pytest -m integration --tb=short -q`（ci-check.sh は integration を回さないため別途実行）。これで tool/table 追加時の doc-sync/unit 漏れを ci-guard 前に検出する
 3. L3: agent 定義変更時、メインセッションが worktree の `.md` を main に一時適用 → `/analyze-activity` 実行 + 構造/内容チェック → `git checkout` で復元（reload 非依存。詳細は `worktree-validation-protocol.md`）
 
 ### L3 検証基準

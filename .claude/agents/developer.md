@@ -43,7 +43,25 @@ mcp__serena__activate_project("/home/yamakii/workspace/garmin-performance-analys
 - Test Plan のテスト関数を全て実装
 - 既存パターンに従う（周辺コードを読んでスタイルを合わせる）
 
-### Step 4: 診断 → テスト & Lint
+### Step 3.5: 新 tool / table 追加時の doc-sync チェックリスト
+
+新しい MCP tool / DuckDB テーブル・migration を追加したら、**同じ commit で**以下を更新する。
+これを怠ると ci-guard の doc-guard / count テストで落ちる（Epic #497 の #498・#500 で2回連続発生）。
+
+**新 MCP tool を追加した場合:**
+- [ ] `README.md` + `CLAUDE.md` の tool 数（例:「52 token-optimized MCP tools」「50 domain + 2 server」）を更新
+- [ ] `generate_tool_reference` を実行して `docs/mcp-tools-reference.md` を再生成
+- [ ] golden snapshot `tests/snapshots/all_tools_golden.json` を再生成
+- [ ] `test_all_tools_registry.py` / `test_generate_tool_reference.py` のハードコードされた tool count を更新
+
+**新 DuckDB テーブル / migration を追加した場合:**
+- [ ] `README.md` + `CLAUDE.md` のテーブル数（例:「21 tables」「21 domain tables」）を更新
+- [ ] `generate_schema_doc` を実行して `docs/spec/duckdb_schema_mapping.md` の生成ブロック + `## N. <table>` セクションを再生成
+- [ ] `test_migration_runner.py` の migration 数（期待値）を更新
+
+迷ったら下記 `scripts/ci-check.sh` を回せば doc-guard / count テストが漏れを検出する。
+
+### Step 4: 診断 → テスト & Lint → ci-check.sh
 
 commit 前に、変更した各ファイルへ `mcp__serena__get_diagnostics_for_file` を実行し、
 型・import エラーが無いことを前倒しで確認する（pre-commit を待たずに検出）。Python /
@@ -55,6 +73,19 @@ uv run --directory {worktree_path} ruff check {changed_files}
 ```
 
 失敗があれば修正して再実行。
+
+**完了ゲート（commit / manifest 返却の前提）:** `uv run pytest -m unit` だけでは
+doc-sync 漏れ・他モジュール破壊・型エラーを見逃す（per-file の pre-commit でも捕まらない）。
+`packages/` 配下を変更した場合は、commit 前に **CI 同一コマンドの正典**を回し exit 0 を確認する
+（`implementation-workflow.md` Phase 2b の完了条件）:
+
+```bash
+uv run --directory {worktree_path} bash scripts/ci-check.sh
+```
+
+これは whole-package の `pytest -m unit ... --cov-fail-under=60` + `black --check .` + `mypy .`
++ doc-guard テスト（web 変更時は web-backend/web-frontend）を実行する。exit 0 になるまで修正してから
+Step 5（commit）に進む。`.claude/` / `docs/` のみの変更（packages 非変更）では不要。
 
 ### Step 5: Commit
 
@@ -113,6 +144,8 @@ manifest は L1/L2 検証（subprocess・並列起動可）の入力になる。
 
 - [ ] 全テストが pass
 - [ ] ruff check が clean
+- [ ] （`packages/` 変更時）`scripts/ci-check.sh` が exit 0（unit + 型 + lint + doc-guard、web 変更時は web チェック）
+- [ ] tool/table を追加した場合、Step 3.5 の doc-sync チェックリストを完了
 - [ ] commit 完了（push はしない）
 - [ ] Manifest 書き出し完了
 - [ ] 変更ファイル一覧と commit hash を報告

@@ -147,8 +147,13 @@ const results = await pipeline(
       `あなたは validation-agent です。worktree のコード変更を ${manifest.validation_level} で検証してください。\n` +
         `manifest: ${JSON.stringify(manifest)}\n` +
         `.claude/rules/dev/worktree-validation-protocol.md の L1/L2 手順（reload_server を使わず subprocess: ` +
-        `uv run --directory ${manifest.worktree_path} ...）で実行し、非null・型一致・値範囲・json.dumps 可能・exit 0 を確認。` +
-        `L2 なら worktree 内で integration テストも。結果を schema で返す（pass/fail/warning）。`,
+        `uv run --directory ${manifest.worktree_path} ...）で実行する。\n` +
+        `L1 = in-process import check: 下層関数を verification_activity_id で呼び、非null・型一致・値範囲・json.dumps 可能・exit 0 を確認。\n` +
+        `L2 = L1 + **CI 同一ゲート**: \`uv run --directory ${manifest.worktree_path} bash scripts/ci-check.sh\` が exit 0 ` +
+        `（whole-package の pytest -m unit + black --check + mypy + doc-guard、web 変更時は web チェック）。` +
+        `ci-check.sh は integration を回さないため、追加で \`uv run --directory ${manifest.worktree_path} pytest -m integration --tb=short -q\` も実行する。` +
+        `これにより doc-sync/unit 漏れ（README/CLAUDE のカウント、golden snapshot、count テスト等）を ci-guard 前に検出する。\n` +
+        `完了条件: L1 OK かつ（L2 なら）ci-check.sh exit 0 + integration 0 failures。結果を schema で返す（pass/fail/warning）。`,
       { label: `val:#${issue.number}`, phase: 'Validate', agentType: 'validation-agent', schema: VALIDATION_SCHEMA }
     ).then((v) => ({ manifest, validation: v }))
   },

@@ -72,18 +72,29 @@ subprocess の標準出力（JSON 文字列）に対して:
 - `json.dumps` が例外なく完了している（= MCP 境界でシリアライズ可能）
 - subprocess の exit code が 0（import エラー・実行時例外がない）
 
-### L2: Integration（reload なし）
+### L2: Integration + CI 同一ゲート（reload なし）
+
+L2 は L1（in-process import check）に加え、**CI と対称な品質ゲート**を worktree subprocess で回す。
+これにより doc-sync / unit 漏れ（README/CLAUDE のカウント、`mcp-tools-reference.md`、golden snapshot、
+`test_migration_runner` 等の count テスト）を **ci-guard 試行前**に検出する（Epic #497 の手戻り対策）。
 
 1. L1（上記 In-process Check）を実行
-2. Worktree 内で integration テストを実行:
+2. **CI 同一コマンドの正典**を worktree で実行（exit 0 を確認）:
+   ```bash
+   uv run --directory <worktree> bash scripts/ci-check.sh
+   ```
+   これは whole-package の `pytest -m unit ... --cov-fail-under=60` + `black --check .` + `mypy .`
+   + doc-guard テスト（web 変更時は web-backend/web-frontend）を実行する。
+3. `scripts/ci-check.sh` は **integration を回さない**ため、別途 integration テストを実行:
    ```bash
    uv run --directory <worktree> pytest -m integration --tb=short -q
    ```
-3. テスト結果の判定:
-   - 全 pass → L2 pass
-   - 失敗あり → 失敗テスト名とエラー内容を記録、L2 fail
+4. 判定:
+   - ci-check.sh exit 0 かつ integration 全 pass → L2 pass
+   - ci-check.sh 非 0（unit / 型 / lint / doc-guard 失敗）または integration 失敗 → L2 fail
+     （失敗ステップ名・テスト名・エラー内容を記録）
 
-> reload_server / health check ステップは存在しない。worktree の subprocess 値検証 + subprocess pytest のみで完結する。
+> reload_server / health check ステップは存在しない。worktree の subprocess 値検証 + subprocess ci-check.sh / pytest のみで完結する。
 
 ### L3: Full E2E
 
@@ -103,7 +114,8 @@ subprocess の標準出力（JSON 文字列）に対して:
 
 - **構造チェック失敗**: FAIL（致命的）
 - **内容チェック失敗**: WARNING
-- **テスト失敗 (L2)**: FAIL
+- **ci-check.sh 非0 (L2)**: FAIL（unit / 型 / lint / doc-guard 失敗 = ci-guard で落ちる）
+- **integration テスト失敗 (L2)**: FAIL
 - **subprocess exit code 非0 / import エラー (L1)**: FAIL
 
 ## 出力
@@ -115,5 +127,6 @@ Level: L1 / L2
 Details:
   - Verified function: <module>.<func>
   - In-process check: OK/NG (non-null, type, range, json-serializable)
-  - Tests: pass/fail (L2+)
+  - ci-check.sh: pass/fail (L2 — unit/型/lint/doc-guard)
+  - Integration tests: pass/fail (L2)
 ```
