@@ -63,6 +63,18 @@ def _insert_strength(db_path: Path, *, activity_id: int, activity_date: str) -> 
         conn.close()
 
 
+def _insert_wellness(db_path: Path, *, wellness_id: int, date: str) -> None:
+    """Insert one daily_wellness row (minimal columns)."""
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(
+            "INSERT INTO daily_wellness (wellness_id, date) VALUES (?, ?)",
+            [wellness_id, date],
+        )
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # get_latest_activity_date
 # ---------------------------------------------------------------------------
@@ -143,3 +155,28 @@ def test_latest_strength_date_empty_returns_none(reader_db_path: Path) -> None:
     """Empty strength_sessions table -> None."""
     reader = GarminDBReader(db_path=str(reader_db_path))
     assert reader.get_latest_strength_date() is None
+
+
+# ---------------------------------------------------------------------------
+# get_latest_wellness_date (issue #508)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_get_latest_wellness_date_returns_max(reader_db_path: Path) -> None:
+    """Two daily_wellness days -> the later date (str)."""
+    _insert_wellness(reader_db_path, wellness_id=1, date="2026-06-01")
+    _insert_wellness(reader_db_path, wellness_id=2, date="2026-06-20")
+
+    reader = GarminDBReader(db_path=str(reader_db_path))
+    result = reader.get_latest_wellness_date()
+
+    assert result == "2026-06-20"
+    assert isinstance(result, str)
+
+
+@pytest.mark.unit
+def test_get_latest_wellness_date_empty_returns_none(reader_db_path: Path) -> None:
+    """Empty daily_wellness table -> None."""
+    reader = GarminDBReader(db_path=str(reader_db_path))
+    assert reader.get_latest_wellness_date() is None
