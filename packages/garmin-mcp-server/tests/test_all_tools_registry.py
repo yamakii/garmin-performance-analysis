@@ -59,21 +59,22 @@ def test_schema_parity_all_tools() -> None:
 
 
 @pytest.mark.unit
-def test_all_tools_count_47() -> None:
-    """ALL_DEFS holds the 47 handler-domain tools (unique names); the live MCP
-    surface adds the 2 server tools for 49 total.
+def test_all_tools_count_48() -> None:
+    """ALL_DEFS holds the 48 handler-domain tools (unique names); the live MCP
+    surface adds the 2 server tools for 50 total.
 
     #450 added 2 strength-session tools (ingest_strength_sessions,
     get_strength_sessions), raising the domain count from 44 to 46. #463 added
-    the catch_up_ingest orchestrator, raising it to 47.
+    the catch_up_ingest orchestrator, raising it to 47. #501 added
+    get_body_composition_trend, raising it to 48.
     """
-    assert len(ALL_DEFS) == 47
+    assert len(ALL_DEFS) == 48
     names = [d.name for d in ALL_DEFS]
     assert len(names) == len(set(names)), "duplicate tool names in ALL_DEFS"
-    assert len(ALL_DEFS_BY_NAME) == 47
+    assert len(ALL_DEFS_BY_NAME) == 48
 
     live_names = [t.name for t in get_tool_definitions()]
-    assert len(live_names) == 49
+    assert len(live_names) == 50
     assert len(live_names) == len(
         set(live_names)
     ), "duplicate tool names on MCP surface"
@@ -367,9 +368,9 @@ def test_tool_golden_snapshot_matches() -> None:
 @pytest.mark.unit
 def test_tool_count_unchanged() -> None:
     """Removing ``server_dir`` does not change the tool count: ``reload_server``
-    is retained by name; the surface still serves 49 tools (47 domain + 2
-    server)."""
+    is retained by name; the surface serves 50 tools (48 domain + 2 server,
+    after #501's get_body_composition_trend)."""
     live_names = [t.name for t in get_tool_definitions()]
-    assert len(live_names) == 49
+    assert len(live_names) == 50
     assert "reload_server" in live_names
     assert "get_server_info" in live_names
