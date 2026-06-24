@@ -1076,6 +1076,20 @@
     "name": "get_body_composition_trend"
   },
   {
+    "description": "Get the RHR / HRV recovery trend over the trailing window (default 8 weeks) from daily_wellness. Returns weeks, an rhr block (median_7d, median_30d, rhr_trend -- 'improving' when the 7-day median is >=2 bpm below the 30-day median, 'fatigued' when >=3 bpm above, else 'stable'), an hrv block (latest_ms, status, hrv_below_baseline_days, under_recovery -- true when >=2 consecutive nights are below HRV baseline; AND this with a high get_acwr to flag over-training), and a date-ascending series ([{date, resting_hr, hrv_overnight_ms}]). Medians / HRV fields are null when data is missing (device-off days are skipped).",
+    "inputSchema": {
+      "properties": {
+        "weeks": {
+          "default": 8,
+          "description": "Trailing window length in weeks to analyze (default: 8).",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "name": "get_recovery_trend"
+  },
+  {
     "description": "Get diagnostic info about the running MCP server (server_dir). Use to verify which directory the server is running from.",
     "inputSchema": {
       "properties": {},
