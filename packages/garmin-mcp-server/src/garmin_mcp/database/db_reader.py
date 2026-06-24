@@ -300,6 +300,66 @@ class GarminDBReader:
             "lean_pwr": lean_pwr,
         }
 
+    def get_recovery_trend(self, weeks: int = 8) -> dict[str, Any]:
+        """RHR / HRV recovery trend over the last ``weeks`` weeks (#499).
+
+        Reads ``daily_wellness`` for the trailing window and derives a
+        resting-HR trend (7-day vs 30-day median) and an HRV recovery status
+        (consecutive nights below baseline). Backs "my cardio came back" with
+        objective markers; ``hrv.under_recovery`` is meant to be AND-ed with a
+        high ``get_acwr`` to flag under-recovery.
+
+        Args:
+            weeks: Trailing window length in weeks (default: 8).
+
+        Returns:
+            ``{"weeks", "rhr": {median_7d, median_30d, rhr_trend}, "hrv":
+            {latest_ms, status, hrv_below_baseline_days, under_recovery},
+            "series": [{date, resting_hr, hrv_overnight_ms}]}``. ``series`` is
+            date-ascending; medians / HRV fields are ``None`` when data is
+            missing (null-safe). Dates are ``YYYY-MM-DD`` strings.
+        """
+        from datetime import datetime, timedelta
+
+        from garmin_mcp.analysis.recovery import (
+            compute_hrv_recovery,
+            compute_rhr_trend,
+        )
+
+        cutoff = (datetime.now() - timedelta(weeks=weeks)).strftime("%Y-%m-%d")
+        rows = self.execute_read_query(
+            """
+            SELECT date, resting_hr, hrv_overnight_ms,
+                   hrv_baseline_low, hrv_baseline_high
+            FROM daily_wellness
+            WHERE date >= ?
+            ORDER BY date ASC
+            """,
+            (cutoff,),
+        )
+
+        series: list[dict[str, Any]] = []
+        daily_rhr: list[tuple[str, int | None]] = []
+        hrv_rows: list[tuple[str, float | None, float | None, float | None]] = []
+        for date_val, resting_hr, hrv_ms, base_low, base_high in rows:
+            date_str = str(date_val)
+            series.append(
+                {
+                    "date": date_str,
+                    "resting_hr": resting_hr,
+                    "hrv_overnight_ms": hrv_ms,
+                }
+            )
+            daily_rhr.append((date_str, resting_hr))
+            hrv_rows.append((date_str, hrv_ms, base_low, base_high))
+
+        return {
+            "weeks": weeks,
+            "rhr": compute_rhr_trend(daily_rhr),
+            "hrv": compute_hrv_recovery(hrv_rows),
+            "series": series,
+        }
+
     # ========== Splits Methods ==========
 
     def get_splits_pace_hr(

@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **50 tools** (48 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **51 tools** (49 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -17,7 +17,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Metadata](#metadata) (3)
 - [Splits](#splits) (5)
 - [Analysis](#analysis) (6)
-- [Physiology](#physiology) (8)
+- [Physiology](#physiology) (9)
 - [Performance](#performance) (3)
 - [Time Series](#time-series) (4)
 - [Training Plan](#training-plan) (6)
@@ -298,6 +298,16 @@ Get the body-composition trend over the trailing window (default 12 weeks). Deco
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `weeks` | integer | optional (default `12`) | Trailing window length in weeks to analyze (default: 12). |
+
+### `get_recovery_trend`
+
+CLI: `garmin-db physiology recovery-trend`
+
+Get the RHR / HRV recovery trend over the trailing window (default 8 weeks) from daily_wellness. Returns weeks, an rhr block (median_7d, median_30d, rhr_trend -- 'improving' when the 7-day median is >=2 bpm below the 30-day median, 'fatigued' when >=3 bpm above, else 'stable'), an hrv block (latest_ms, status, hrv_below_baseline_days, under_recovery -- true when >=2 consecutive nights are below HRV baseline; AND this with a high get_acwr to flag over-training), and a date-ascending series ([{date, resting_hr, hrv_overnight_ms}]). Medians / HRV fields are null when data is missing (device-off days are skipped).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `weeks` | integer | optional (default `8`) | Trailing window length in weeks to analyze (default: 8). |
 
 ## Performance
 

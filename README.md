@@ -28,7 +28,7 @@ The project is a uv workspace with two packages:
 - **`packages/garmin-mcp-server`**: Python MCP server
   - `src/garmin_mcp/ingest/`: API → raw data collection (`ApiClient`, `RawDataFetcher`, `DuckDBSaver`)
   - `src/garmin_mcp/database/`: DuckDB read/write layer (`inserters/`, `readers/`, `migrations/`)
-  - `src/garmin_mcp/tools/`: `ToolDef` registry — single source for all 50 MCP tools
+  - `src/garmin_mcp/tools/`: `ToolDef` registry — single source for all 51 MCP tools
   - `src/garmin_mcp/scripts/`: ingestion, regeneration, and backfill utilities
 - **`packages/garmin-web`**: FastAPI backend + Vite/React SPA that renders analysis stored in DuckDB
 - **Analysis Agents & Skills** (`.claude/`): section-analysis agents and user-invocable skills (`/analyze-activity`, `/plan-training`, etc.)
@@ -182,7 +182,7 @@ If `.env` is not configured, the system uses default directories:
 
 MCP servers are configured per-user in a local, git-ignored `.mcp.json`:
 
-- **garmin-db**: DuckDB-based performance data queries and section analysis storage (50 tools)
+- **garmin-db**: DuckDB-based performance data queries and section analysis storage (51 tools)
 - **serena**: Symbol-aware code navigation and editing operations
 
 ## Configuration
