@@ -2,7 +2,7 @@
 name: decompose
 description: Decompose a large development task into an Epic plus implementable sub-issues on GitHub. Use when a dev task is big enough to need splitting into multiple coordinated GitHub issues (e.g. リファクタリング全体・新機能の段階実装). Argument is the task description.
 argument-hint: <task description>
-allowed-tools: Bash, Read, Glob, Grep, mcp__serena__activate_project, mcp__serena__find_symbol, mcp__serena__get_symbols_overview, mcp__serena__find_referencing_symbols, mcp__serena__search_for_pattern, mcp__serena__read_file, mcp__serena__list_dir, mcp__github__issue_write, mcp__github__issue_read, AskUserQuestion
+allowed-tools: Bash, Read, Glob, Grep, mcp__serena__activate_project, mcp__serena__find_symbol, mcp__serena__get_symbols_overview, mcp__serena__find_referencing_symbols, mcp__serena__search_for_pattern, mcp__serena__read_file, mcp__serena__list_dir, mcp__github__issue_write, mcp__github__issue_read, mcp__github__sub_issue_write, AskUserQuestion
 ---
 
 # /decompose — Task Decomposition into GitHub Issues
@@ -74,6 +74,10 @@ mcp__serena__activate_project("/home/yamakii/workspace/garmin-performance-analys
 
 #### 5a: Epic Issue 作成
 
+> **checkbox を使わない。** sub-issue の open/closed state は GitHub のネイティブ sub-issue
+> リンク（Step 5c でリンク）が issue state から自動集計するため、本文 checkbox は state を
+> 二重管理して必ず drift する（#516）。本文には **state を持たないプレーン参照リスト**のみ置く。
+
 ```
 mcp__github__issue_write(
   method="create",
@@ -85,9 +89,15 @@ mcp__github__issue_write(
 {ゴールの説明}
 
 ## Sub-issues
-- [ ] #{sub-issue-1のタイトル — 作成後に番号で更新}
-- [ ] #{sub-issue-2のタイトル}
+> ステータスは GitHub のネイティブ sub-issue 欄（"X of Y completed"）と
+> `/project-status` の live fetch が権威。下記は参照用で state を持たない。
+
+- #{sub-issue-1 — 作成後に番号で更新} — {一言目的} — {Level}
+- #{sub-issue-2} — {一言目的} — {Level}
 ...
+
+## 依存関係
+{state を持たない構造情報なので drift しない。ASCII グラフ可}
 
 ## Context
 {コードベース調査で得た背景情報}"""
@@ -133,9 +143,28 @@ Part of #{Epic番号}: {Epic タイトル}
 )
 ```
 
-#### 5c: Epic の task list 更新
+#### 5c: ネイティブ sub-issue リンク + Epic 本文の参照更新
 
-Sub-issues の番号が確定したら、Epic body の task list を実番号で更新:
+Sub-issues の番号が確定したら、**各 sub-issue を GitHub のネイティブ sub-issue として
+Epic にリンク**する（checkbox の更新はしない）。これで Epic の "X of Y completed" が
+issue state から自動集計され、`/project-status` の `get_sub_issues` が全件返す。
+
+```
+# 作成した各 sub-issue を Epic にネイティブリンク（sub_issue_id は issue の内部 id）
+mcp__github__sub_issue_write(
+  method="add",
+  owner="yamakii",
+  repo="garmin-performance-analysis",
+  issue_number={Epic番号},
+  sub_issue_id={sub-issue の内部 id}
+)
+```
+
+> `sub_issue_id` は issue **番号**ではなく内部 **id**。`issue_write(method="create")` の
+> 戻り値に含まれる `id` を使う（取得できない場合は `issue_read(method="get")` の `id`）。
+
+リンク後、Epic 本文の Sub-issues 参照リストを実番号で更新（**checkbox にはしない**。
+state を持たないプレーン参照のまま）:
 
 ```
 mcp__github__issue_write(
@@ -146,9 +175,15 @@ mcp__github__issue_write(
   body="""## Goal
 ...
 ## Sub-issues
-- [ ] #51 Extract ApiClient singleton
-- [ ] #52 Extract RawDataFetcher
-..."""
+> ステータスは GitHub のネイティブ sub-issue 欄と /project-status の live fetch が権威。
+
+- #51 Extract ApiClient singleton — シングルトン化 — L1
+- #52 Extract RawDataFetcher — キャッシュ優先取得 — L2
+...
+
+## 依存関係
+#51 → #52 → ...
+"""
 )
 ```
 

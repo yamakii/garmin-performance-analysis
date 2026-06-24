@@ -29,30 +29,63 @@ mcp__github__list_issues(owner="yamakii", repo="garmin-performance-analysis", st
 mcp__github__issue_read(method="get", owner="yamakii", repo="garmin-performance-analysis", issue_number=$ARGUMENTS)
 ```
 
-### Step 2: Sub-issue の状態取得
+### Step 2: Sub-issue 番号の収集 + live state 取得
 
-Epic body の task list から Sub-issue 番号を抽出し、各 Issue の状態を取得:
+> **本文の checkbox (`- [ ] #N` / `- [x] #N`) は state ソースとして読まない**（#516）。
+> 本文 checkbox は drift する。完了判定は常に各 issue の **live state** を権威とする。
+
+#### 2a: Sub-issue 番号の和集合を作る
+
+ネイティブ sub-issue リンク（権威）と本文の `#N` 参照（移行期の旧 epic フォールバック）の
+**和集合**を取る:
 
 ```
-# Epic body から #番号 を抽出
-# 各 Issue の state を取得
+# ネイティブ sub-issue（権威）— 新しい epic はこれで全件返る
+mcp__github__issue_read(method="get_sub_issues", owner="yamakii", repo="garmin-performance-analysis", issue_number={Epic番号})
+
+# 本文の #N 参照（移行期: ネイティブ未リンクの旧 epic フォールバック）
+# Epic body から #番号 を抽出（checkbox の有無は問わない。プレーン参照 `#N` も拾う）
+```
+
+両者を **issue 番号で和集合**にする（重複は1件に統合）。これで:
+- 新 epic: `get_sub_issues` が全件返す
+- 旧 epic（本文参照のみ・未リンク）: 本文 `#N` フォールバックで拾う
+
+#### 2b: 各 issue を live fetch して state 判定
+
+和集合の各番号を **毎回 `issue_read(method="get")` で live fetch** し、`state` / `state_reason`
+で完了判定する（`state="closed"` → 完了）。**本文 checkbox は読まない。**
+
+```
 mcp__github__issue_read(method="get", owner="yamakii", repo="garmin-performance-analysis", issue_number={番号})
 ```
 
+#### 2c: 移行期の drift 検出
+
+旧 epic で**本文 checkbox** と **live state** が食い違う場合は `⚠️ drift` を付す
+（本文は参考、live state が正）:
+- 本文 `- [ ] #N`（未チェック）だが live `state="closed"` → `⚠️ drift (body stale)`
+- 本文 `- [x] #N`（チェック済）だが live `state="open"` → `⚠️ drift (body stale)`
+
 ### Step 3: 進捗表示
 
+完了数/総数は **live state** で算出する（本文 checkbox からは数えない）。
 以下の形式で表示:
 
 ```
-## #{Epic番号} {Epic タイトル} [{完了数}/{総数} complete]
+## #{Epic番号} {Epic タイトル} [{完了数}/{総数} complete] (live state)
 
   [x] #{番号} {タイトル} (closed {日付})
   [x] #{番号} {タイトル} (closed {日付})
   [ ] #{番号} {タイトル} (open — in progress)
   [ ] #{番号} {タイトル} (open)
+  [x] #{番号} {タイトル} (closed {日付}) ⚠️ drift (body stale)
 
 Progress: ████████░░░░ 50%
 ```
+
+> 表示の `[x]`/`[ ]` は **live state を反映した派生表示**であり、Epic 本文の checkbox では
+> ない。本文に checkbox が無い（新 epic）でも live state から `[x]`/`[ ]` を導出する。
 
 複数 Epic がある場合は、各 Epic を上記形式で順に表示。
 
