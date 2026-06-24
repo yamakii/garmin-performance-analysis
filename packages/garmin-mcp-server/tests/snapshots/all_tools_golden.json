@@ -1062,6 +1062,20 @@
     "name": "catch_up_ingest"
   },
   {
+    "description": "Get the body-composition trend over the trailing window (default 12 weeks). Decomposes the weight change between the first and last measurement into fat-mass and lean-mass components. Returns weeks, a date-ascending series ([{date, weight_kg, fat_mass, lean_mass}]; fat_mass/lean_mass null when body fat unrecorded), a change block (delta_weight, delta_fat, delta_lean, lean_loss_ratio, muscle_loss_warning -- true when >40% of the lost weight is lean mass, flagging leg-durability/injury risk), and lean_pwr (lean-mass power-to-weight = latest functional_threshold_power / lean mass; null when body fat or FTP is missing).",
+    "inputSchema": {
+      "properties": {
+        "weeks": {
+          "default": 12,
+          "description": "Trailing window length in weeks to analyze (default: 12).",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "name": "get_body_composition_trend"
+  },
+  {
     "description": "Get diagnostic info about the running MCP server (server_dir). Use to verify which directory the server is running from.",
     "inputSchema": {
       "properties": {},

@@ -191,15 +191,26 @@ def _get_current_fitness_summary(
     from garmin_mcp.training_plan.fitness_assessor import FitnessAssessor
 
     try:
-        assessor = FitnessAssessor(db_path=str(reader.db_path))
-        summary = assessor.assess(
-            lookback_weeks=(
-                p.lookback_weeks
-                if p.lookback_weeks is not None
-                else _DEFAULT_LOOKBACK_WEEKS
-            )
+        lookback = (
+            p.lookback_weeks
+            if p.lookback_weeks is not None
+            else _DEFAULT_LOOKBACK_WEEKS
         )
-        return summary.model_dump()
+        assessor = FitnessAssessor(db_path=str(reader.db_path))
+        summary = assessor.assess(lookback_weeks=lookback)
+        result = summary.model_dump()
+
+        # Attach a body-composition summary (#501). Independent + null-safe: a
+        # failure here must not break the fitness assessment, so it is best-effort
+        # and surfaces nothing when body-composition data is absent.
+        try:
+            body_comp = reader.get_body_composition_trend(weeks=lookback)
+            if body_comp.get("series"):
+                result["body_composition"] = body_comp
+        except Exception as bc_err:  # noqa: BLE001
+            logger.warning(f"Body-composition summary skipped: {bc_err}")
+
+        return result
     except Exception as e:  # noqa: BLE001
         logger.error(f"Fitness assessment failed: {e}")
         return {"error": str(e)}

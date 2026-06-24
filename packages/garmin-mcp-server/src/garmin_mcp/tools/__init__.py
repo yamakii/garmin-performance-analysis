@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from garmin_mcp.tools.analysis import ANALYSIS_TOOLS
 from garmin_mcp.tools.athlete import ATHLETE_TOOLS
+from garmin_mcp.tools.body_composition import BODY_COMPOSITION_TOOLS
 from garmin_mcp.tools.durability import DURABILITY_TOOLS
 from garmin_mcp.tools.export import EXPORT_TOOLS
 from garmin_mcp.tools.ingest import INGEST_TOOLS
@@ -47,6 +48,7 @@ ALL_DEFS: list[ToolDef] = (
     + DURABILITY_TOOLS
     + STRENGTH_TOOLS
     + INGEST_TOOLS
+    + BODY_COMPOSITION_TOOLS
 )
 
 ALL_DEFS_BY_NAME: dict[str, ToolDef] = {d.name: d for d in ALL_DEFS}
