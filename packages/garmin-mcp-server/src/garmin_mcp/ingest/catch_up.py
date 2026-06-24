@@ -1,4 +1,4 @@
-"""Catch-up ingest orchestrator: fill running/weight/strength gaps in one call.
+"""Catch-up ingest: fill running/weight/strength/wellness gaps in one call.
 
 For each requested domain, resolve an independent ``[start, end]`` window and
 delegate to that domain's existing ingest primitive:
@@ -6,6 +6,7 @@ delegate to that domain's existing ingest primitive:
 - ``running``  -> :func:`ingest_running_activities`
 - ``weight``   -> :func:`ingest_weight_range`
 - ``strength`` -> :func:`ingest_strength_sessions`
+- ``wellness`` -> :func:`ingest_wellness_range`
 
 The window is resolved per domain because each table advances at its own pace:
 
@@ -29,7 +30,7 @@ from garmin_mcp.database.db_reader import GarminDBReader
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_DOMAINS: tuple[str, ...] = ("running", "weight", "strength")
+DEFAULT_DOMAINS: tuple[str, ...] = ("running", "weight", "strength", "wellness")
 _EMPTY_DB_FLOOR_DAYS = 30
 
 # Reader method used to find each domain's latest stored date (issue #460).
@@ -37,6 +38,7 @@ _LATEST_DATE_METHOD: dict[str, str] = {
     "running": "get_latest_activity_date",
     "weight": "get_latest_weight_date",
     "strength": "get_latest_strength_date",
+    "wellness": "get_latest_wellness_date",
 }
 
 
@@ -49,7 +51,8 @@ def _resolve_domain_window(
     """Resolve the inclusive ``(start, end)`` window for a single domain.
 
     Args:
-        domain: One of ``"running"``, ``"weight"``, ``"strength"``.
+        domain: One of ``"running"``, ``"weight"``, ``"strength"``,
+            ``"wellness"``.
         start_date: Explicit shared start (``YYYY-MM-DD``), or ``None`` for
             catch-up resolution from the domain's latest stored date.
         resolved_end: The already-resolved window end (``YYYY-MM-DD``).
@@ -90,10 +93,17 @@ def _run_strength(window_start: str, window_end: str, db_path: str) -> dict[str,
     return ingest_strength_sessions(window_start, window_end, db_path=db_path)
 
 
+def _run_wellness(window_start: str, window_end: str, db_path: str) -> dict[str, Any]:
+    from garmin_mcp.ingest.wellness_ingest import ingest_wellness_range
+
+    return ingest_wellness_range(window_start, window_end, db_path=db_path)
+
+
 _DOMAIN_RUNNERS = {
     "running": _run_running,
     "weight": _run_weight,
     "strength": _run_strength,
+    "wellness": _run_wellness,
 }
 
 
@@ -103,7 +113,7 @@ def catch_up_ingest(
     domains: list[str] | None = None,
     db_path: str | None = None,
 ) -> dict[str, Any]:
-    """Differential catch-up ingest across running/weight/strength domains.
+    """Differential catch-up ingest across running/weight/strength/wellness.
 
     For each requested domain, resolve an independent window and delegate to its
     ingest primitive. The ``end`` is shared (``end_date`` or today); each
@@ -115,8 +125,9 @@ def catch_up_ingest(
             omitted, each domain resolves its own start from its latest date.
         end_date: Optional inclusive window end (``YYYY-MM-DD``). Defaults to
             today when omitted.
-        domains: Optional subset of ``["running", "weight", "strength"]``.
-            Defaults to all three. Domains not listed are skipped entirely.
+        domains: Optional subset of ``["running", "weight", "strength",
+            "wellness"]``. Defaults to all four. Domains not listed are skipped
+            entirely.
         db_path: Optional DuckDB path (defaults to the configured database).
 
     Returns:

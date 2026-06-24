@@ -201,6 +201,21 @@ class GarminDBReader:
             return str(rows[0][0])
         return None
 
+    def get_latest_wellness_date(self) -> str | None:
+        """Return the most recent daily-wellness date stored in DuckDB.
+
+        Used by catch-up window resolution. No Garmin access; reads only the
+        ``daily_wellness`` table.
+
+        Returns:
+            Latest ``date`` as ``YYYY-MM-DD``, or ``None`` when the table is
+            empty.
+        """
+        rows = self.execute_read_query("SELECT MAX(date) FROM daily_wellness")
+        if rows and rows[0][0] is not None:
+            return str(rows[0][0])
+        return None
+
     # ========== Body Composition Methods ==========
 
     def get_body_composition_trend(self, weeks: int = 12) -> dict[str, Any]:

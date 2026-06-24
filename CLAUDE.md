@@ -104,6 +104,7 @@ Validation Agent 方式（L1/L2 は subprocess で並列起動可、L3 のみメ
 | `uv run python -m garmin_mcp.scripts.bulk_fetch_raw_data --start-date YYYY-MM-DD` | Fetch raw data |
 | `uv run python -m garmin_mcp.scripts.bulk_fetch_activity_details --activity-ids N` | Fetch activity details |
 | `uv run python -m garmin_mcp.scripts.backfill_wellness [--start-date YYYY-MM-DD]` | Rate-limit-safe full-history daily_wellness backfill (monthly chunks, 429 backoff, auto data-floor stop, resume) |
+| `uv run python -m garmin_mcp ingest catch-up --domains wellness --start-date YYYY-MM-DD` | Backfill daily wellness (RHR/HRV/sleep) over a date range |
 
 ---
 

@@ -1,8 +1,9 @@
 """Catch-up ingest orchestrator tool definition (issue #463).
 
-Exposes a single ``catch_up_ingest`` tool that fills running/weight/strength
-gaps in one call by resolving an independent window per domain and delegating to
-each domain's ingest primitive. Delegates to ``ingest.catch_up``.
+Exposes a single ``catch_up_ingest`` tool that fills
+running/weight/strength/wellness gaps in one call by resolving an independent
+window per domain and delegating to each domain's ingest primitive. Delegates
+to ``ingest.catch_up``.
 """
 
 from __future__ import annotations
@@ -42,7 +43,7 @@ class CatchUpIngestParams(BaseModel):
         default=None,
         description=(
             "Subset of domains to ingest. Defaults to all of running, weight, "
-            "strength. Domains not listed are skipped."
+            "strength, wellness. Domains not listed are skipped."
         ),
     )
 
@@ -62,15 +63,16 @@ INGEST_TOOLS: list[ToolDef] = [
     ToolDef(
         name="catch_up_ingest",
         description=(
-            "Differential catch-up ingest across the running, weight and "
-            "strength domains in a single call. Resolves an independent window "
-            "per domain (each table advances at its own pace): end_date or today "
-            "as the shared end, and per-domain start = start_date (when given) "
-            "or that domain's latest stored date, or end_date - 30 days when the "
-            "domain is empty. running delegates to ingest_running_activities, "
-            "weight to ingest_weight_range, strength to ingest_strength_sessions. "
-            "Pass domains to ingest a subset (default: all three). A failure in "
-            "one domain is isolated (its entry carries an error) while the others "
+            "Differential catch-up ingest across the running, weight, strength "
+            "and wellness domains in a single call. Resolves an independent "
+            "window per domain (each table advances at its own pace): end_date or "
+            "today as the shared end, and per-domain start = start_date (when "
+            "given) or that domain's latest stored date, or end_date - 30 days "
+            "when the domain is empty. running delegates to "
+            "ingest_running_activities, weight to ingest_weight_range, strength "
+            "to ingest_strength_sessions, wellness to ingest_wellness_range. Pass "
+            "domains to ingest a subset (default: all four). A failure in one "
+            "domain is isolated (its entry carries an error) while the others "
             "complete. Returns each requested domain's result plus a window map "
             "of {domain: {start, end}}."
         ),
