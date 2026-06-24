@@ -27,6 +27,13 @@ RHR_FATIGUED_DELTA = 3  # 7d at least 3 bpm above 30d -> fatigue / illness.
 # HRV under-recovery: this many consecutive nights below baseline_low triggers.
 HRV_UNDER_RECOVERY_DAYS = 2
 
+# Go/no-go thresholds for the morning recovery status (#500).
+# Training Readiness / sleep score at or above which the day is treated as
+# under-recovered (rest/easy), and the readiness needed to green-light quality.
+RECOVERY_LOW_READINESS = 50
+RECOVERY_LOW_SLEEP = 50
+RECOVERY_QUALITY_READINESS = 75
+
 
 def _median_or_none(values: Sequence[float]) -> float | None:
     """Median of ``values``, or ``None`` when empty (null-safe)."""
@@ -129,4 +136,92 @@ def compute_hrv_recovery(
         "status": status,
         "hrv_below_baseline_days": below_days,
         "under_recovery": below_days >= HRV_UNDER_RECOVERY_DAYS,
+    }
+
+
+def classify_recovery_status(
+    readiness: int | None,
+    body_battery_high: int | None,
+    sleep_score: int | None,
+    under_recovery: bool | None,
+) -> dict[str, Any]:
+    """Morning go/no-go recommendation from today's recovery markers (#500).
+
+    Synthesizes Training Readiness, Body Battery, sleep score and the HRV
+    ``under_recovery`` flag (#499) into a single recommended training intensity
+    so the athlete can decide "run or rest" with data support.
+
+    Args:
+        readiness: Garmin Training Readiness (0-100), or ``None`` if unmeasured.
+        body_battery_high: Day's peak Body Battery (0-100), or ``None``. Carried
+            through into ``reasons`` for context; it does not gate the band.
+        sleep_score: Sleep score (0-100), or ``None`` if unmeasured.
+        under_recovery: HRV under-recovery flag from ``compute_hrv_recovery``
+            (>=2 consecutive nights below baseline). ``None``/``False`` -> normal.
+
+    Recommendation bands:
+        - ``readiness < 50`` **or** ``sleep_score < 50`` **or** ``under_recovery``
+          -> ``"rest"`` (very low readiness/sleep) or ``"easy"``.
+        - ``readiness >= 75`` **and** HRV normal -> ``"quality"`` (T allowed).
+        - otherwise -> ``"moderate"``.
+
+    Missing-data days (device not worn -> readiness and sleep both ``None``) ->
+    ``recommendation="unknown"`` with a "go by feel" reason (null-safe).
+
+    Returns:
+        ``{"recommendation": "rest|easy|moderate|quality|unknown",
+        "score": int | None, "reasons": list[str]}``. ``score`` is the mean of
+        the available readiness / sleep / body-battery markers (``None`` when
+        none are present).
+    """
+    markers = [m for m in (readiness, sleep_score, body_battery_high) if m is not None]
+    score = round(sum(markers) / len(markers)) if markers else None
+
+    # Device-off day: no readiness and no sleep signal -> go by feel.
+    if readiness is None and sleep_score is None:
+        return {
+            "recommendation": "unknown",
+            "score": score,
+            "reasons": ["データ無し・感覚優先"],
+        }
+
+    reasons: list[str] = []
+    under = bool(under_recovery)
+
+    low_readiness = readiness is not None and readiness < RECOVERY_LOW_READINESS
+    low_sleep = sleep_score is not None and sleep_score < RECOVERY_LOW_SLEEP
+
+    if low_readiness or low_sleep or under:
+        if under:
+            reasons.append("HRVがベースライン割れ（連夜）→回復優先")
+        if low_readiness:
+            reasons.append(f"Training Readiness {readiness} が低い")
+        if low_sleep:
+            reasons.append(f"睡眠スコア {sleep_score} が低い")
+        # Very low readiness/sleep -> full rest, otherwise easy.
+        if (readiness is not None and readiness < 30) or (
+            sleep_score is not None and sleep_score < 30
+        ):
+            recommendation = "rest"
+        else:
+            recommendation = "easy"
+    elif (
+        readiness is not None and readiness >= RECOVERY_QUALITY_READINESS and not under
+    ):
+        recommendation = "quality"
+        reasons.append(f"Training Readiness {readiness} が高くHRVも正常→質練OK")
+    else:
+        recommendation = "moderate"
+        if readiness is not None:
+            reasons.append(f"Training Readiness {readiness} は中程度")
+        if sleep_score is not None:
+            reasons.append(f"睡眠スコア {sleep_score} は中程度")
+
+    if body_battery_high is not None:
+        reasons.append(f"Body Battery ピーク {body_battery_high}")
+
+    return {
+        "recommendation": recommendation,
+        "score": score,
+        "reasons": reasons,
     }
