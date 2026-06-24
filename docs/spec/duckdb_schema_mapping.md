@@ -1,9 +1,9 @@
 # DuckDB Schema Mapping Specification
 
-**Version**: 2.3
-**Last Updated**: 2026-06-20
+**Version**: 2.5
+**Last Updated**: 2026-06-24
 **Database**: `garmin_performance.duckdb`
-**Total Tables**: 19 domain tables (+ `schema_version` migration bookkeeping)
+**Total Tables**: 21 domain tables (+ `schema_version` migration bookkeeping)
 
 This document provides comprehensive schema documentation for all DuckDB tables in the Garmin performance analysis system. Every column name, type, and primary key below is verified against the live schema (`PRAGMA table_info`). Where prose describes derived/calculated logic, that logic lives in the inserters / form-baseline modules and is documented here because it is not otherwise discoverable from the column definitions.
 
@@ -20,9 +20,12 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 > A drift test (`tests/scripts/test_generate_schema_doc.py`) fails CI if a schema change
 > lands without regenerating.
 
-> **Schema bookkeeping**: a 20th table, `schema_version` (`version INTEGER PK`, `name`, `applied_at`), tracks applied migrations and is **not** a domain table. The migration runner (`database/migrations/registry.py`) applies numbered migrations after `_ensure_tables()` and records them there.
+> **Schema bookkeeping**: a 22nd table, `schema_version` (`version INTEGER PK`, `name`, `applied_at`), tracks applied migrations and is **not** a domain table. The migration runner (`database/migrations/registry.py`) applies numbered migrations after `_ensure_tables()` and records them there.
 
 ## Change History
+
+### Version 2.5 (2026-06-24)
+- **`daily_wellness` table added** (migration `add_daily_wellness_table`, version 11; also created in `_ensure_tables()`). Daily physiological / recovery metrics (resting HR, overnight HRV, sleep, training readiness, body battery, stress) keyed by date, collected cache-first by `ingest_wellness_range`. Backs the recovery analysis layer (Epic #497, issue #498).
 
 ### Version 2.4 (2026-06-21)
 - **`strength_sessions` table added** (migration `add_strength_sessions`, version 10; also created in `_ensure_tables()`). Persists strength-training (補強) summaries at session granularity with a `category_counts` JSON map, kept out of `activities` to avoid polluting run aggregations. Populated by `ingest_strength_sessions` and read via `get_strength_sessions` (issue #450).
@@ -49,7 +52,7 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 
 ---
 
-## Table of Contents (20 domain tables by category)
+## Table of Contents (21 domain tables by category)
 
 | # | Table | Category | Primary Key | Row scale |
 |---|-------|----------|-------------|-----------|
@@ -73,6 +76,7 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 | 18 | [season_retrospectives](#18-season_retrospectives) | Athlete | `retro_id` | per season |
 | 19 | [weekly_reviews](#19-weekly_reviews) | Athlete | `review_id` | per weekly review |
 | 20 | [strength_sessions](#20-strength_sessions) | Training | `activity_id` | per strength session |
+| 21 | [daily_wellness](#21-daily_wellness) | Physiology | `wellness_id` (UNIQUE on `date`) | daily |
 
 ---
 
@@ -850,6 +854,37 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 <!-- END GENERATED: schema:strength_sessions -->
 
 **Units & notes**: `active_duration_seconds` = Garmin `movingDuration`, `elapsed_duration_seconds` = `duration`. `category_counts` is a JSON map of ACTIVE exercise-set categories to counts (e.g. `{"CRUNCH": 4, "PLANK": 7}`); the reader returns it as a dict. Read via `get_strength_sessions(start_date, end_date)` (no Garmin access).
+
+---
+
+## 21. daily_wellness
+
+**Purpose**: Daily physiological / recovery metrics (resting HR, overnight HRV, sleep, training readiness, body battery, stress) keyed by date. Independent of activities; enables objective fitness-return and recovery-gating analysis (Epic #497, issue #498).
+**Primary Key**: `wellness_id` (one row per `date`, enforced by unique index `idx_daily_wellness_date`)
+**Source**: Garmin Connect daily endpoints (`get_stats` / `get_hrv_data` / `get_sleep_data` / `get_training_readiness`) collected cache-first by `ingest/wellness_ingest.py` (`ingest_wellness_range`); created by both migration `add_daily_wellness_table` (version 11) and `_ensure_tables()`.
+
+### Schema
+
+<!-- BEGIN GENERATED: schema:daily_wellness -->
+| Column | Type |
+|--------|------|
+| wellness_id (PK) | INTEGER |
+| date | DATE |
+| resting_hr | INTEGER |
+| hrv_overnight_ms | DOUBLE |
+| hrv_status | VARCHAR |
+| hrv_baseline_low | DOUBLE |
+| hrv_baseline_high | DOUBLE |
+| sleep_seconds | INTEGER |
+| sleep_score | INTEGER |
+| training_readiness | INTEGER |
+| body_battery_high | INTEGER |
+| body_battery_low | INTEGER |
+| stress_avg | INTEGER |
+| source | VARCHAR |
+<!-- END GENERATED: schema:daily_wellness -->
+
+**Units & notes**: `hrv_overnight_ms` = overnight rMSSD average (ms); `hrv_status` = Garmin status (BALANCED/UNBALANCED/LOW/POOR) with `hrv_baseline_low`/`hrv_baseline_high` the personal baseline band. `training_readiness` is 0-100; `body_battery_high`/`body_battery_low` bound the day; `stress_avg` is the daily average. Device-off days yield nulls. Read via the recovery tools (Epic #497).
 
 ---
 

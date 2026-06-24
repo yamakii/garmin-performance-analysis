@@ -121,6 +121,13 @@ def _wrap_add_strength_sessions(conn: duckdb.DuckDBPyConnection) -> None:
     add_strength_sessions(conn)
 
 
+def _wrap_add_daily_wellness_table(conn: duckdb.DuckDBPyConnection) -> None:
+    """Wrap the daily_wellness table migration on an existing connection."""
+    from .add_daily_wellness_table import add_daily_wellness_table
+
+    add_daily_wellness_table(conn)
+
+
 def _wrap_plan_versioning(conn: duckdb.DuckDBPyConnection) -> None:
     """Wrap plan versioning migration to run on an existing connection."""
     from .add_plan_versioning import _column_exists, _table_exists
@@ -173,4 +180,5 @@ MIGRATIONS: list[tuple[int, str, Callable[[duckdb.DuckDBPyConnection], None]]] =
         _wrap_add_body_composition_date_index,
     ),
     (10, "add_strength_sessions", _wrap_add_strength_sessions),
+    (11, "add_daily_wellness_table", _wrap_add_daily_wellness_table),
 ]

@@ -54,6 +54,82 @@ def _body_comp_row(date: str, weight_data: dict) -> dict | None:
     }
 
 
+def _wellness_row(date: str, wellness_data: dict) -> dict | None:
+    """Build a normalized daily_wellness row from merged wellness data.
+
+    Maps the merged shape produced by
+    :func:`garmin_mcp.ingest.raw_data_fetcher.collect_wellness_data` (keys
+    ``stats``, ``hrv``, ``sleep``, ``training_readiness``) onto the
+    ``daily_wellness`` columns. Every sub-source is null-safe: a missing /
+    empty section leaves its fields ``None`` (e.g. a device-off day with only
+    a resting HR).
+
+    Args:
+        date: Date in ``YYYY-MM-DD`` format.
+        wellness_data: Merged wellness dict (any subset of the four sections).
+
+    Returns:
+        Row dict keyed by the ``daily_wellness`` columns, or ``None`` when no
+        metric at all could be extracted (all sections empty).
+    """
+    stats = wellness_data.get("stats") or {}
+    hrv = wellness_data.get("hrv") or {}
+    sleep = wellness_data.get("sleep") or {}
+    readiness_raw = wellness_data.get("training_readiness") or []
+
+    # training_readiness is a list of entries; take the first if present.
+    if isinstance(readiness_raw, list):
+        readiness = readiness_raw[0] if readiness_raw else {}
+    else:
+        readiness = readiness_raw or {}
+
+    # HRV: overnight average, status, and baseline band.
+    hrv_summary = hrv.get("hrvSummary") or {}
+    hrv_overnight_ms = hrv_summary.get("lastNightAvg") or hrv.get("lastNightAvg")
+    hrv_status = hrv_summary.get("status") or hrv.get("status")
+    hrv_baseline = hrv_summary.get("baseline") or hrv.get("baseline") or {}
+    hrv_baseline_low = hrv_baseline.get("lowUpper")
+    hrv_baseline_high = hrv_baseline.get("balancedUpper")
+
+    # Sleep: nested under dailySleepDTO in the raw payload, with a flat
+    # fallback for already-flattened test fixtures.
+    sleep_dto = sleep.get("dailySleepDTO") or {}
+    sleep_seconds = sleep_dto.get("sleepTimeSeconds") or sleep.get("sleepTimeSeconds")
+    sleep_scores = sleep_dto.get("sleepScores") or {}
+    sleep_overall = sleep_scores.get("overall") or {}
+    sleep_score = sleep_overall.get("value") or sleep.get("sleepScore")
+
+    training_readiness = readiness.get("score")
+
+    resting_hr = stats.get("restingHeartRate")
+    body_battery_high = stats.get("bodyBatteryHighestValue")
+    body_battery_low = stats.get("bodyBatteryLowestValue")
+    stress_avg = stats.get("averageStressLevel")
+
+    row = {
+        "date": date,
+        "resting_hr": resting_hr,
+        "hrv_overnight_ms": hrv_overnight_ms,
+        "hrv_status": hrv_status,
+        "hrv_baseline_low": hrv_baseline_low,
+        "hrv_baseline_high": hrv_baseline_high,
+        "sleep_seconds": sleep_seconds,
+        "sleep_score": sleep_score,
+        "training_readiness": training_readiness,
+        "body_battery_high": body_battery_high,
+        "body_battery_low": body_battery_low,
+        "stress_avg": stress_avg,
+        "source": "garmin",
+    }
+
+    # If no metric could be extracted at all, treat the day as empty.
+    metric_keys = [k for k in row if k not in ("date", "source")]
+    if all(row[k] is None for k in metric_keys):
+        return None
+
+    return row
+
+
 class GarminDBWriter:
     """Write operations to DuckDB for Garmin performance data."""
 
@@ -322,6 +398,31 @@ class GarminDBWriter:
             conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS "
                 "idx_body_composition_date ON body_composition(date)"
+            )
+
+            # Create daily_wellness table (RHR / HRV / sleep / readiness /
+            # body battery / stress). Keyed by date for idempotent upserts.
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS daily_wellness (
+                    wellness_id INTEGER PRIMARY KEY,
+                    date DATE NOT NULL,
+                    resting_hr INTEGER,
+                    hrv_overnight_ms DOUBLE,
+                    hrv_status VARCHAR,
+                    hrv_baseline_low DOUBLE,
+                    hrv_baseline_high DOUBLE,
+                    sleep_seconds INTEGER,
+                    sleep_score INTEGER,
+                    training_readiness INTEGER,
+                    body_battery_high INTEGER,
+                    body_battery_low INTEGER,
+                    stress_avg INTEGER,
+                    source VARCHAR
+                )
+            """)
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS "
+                "idx_daily_wellness_date ON daily_wellness(date)"
             )
 
             # form_baselines table removed - replaced by form_baseline_history
@@ -782,4 +883,68 @@ class GarminDBWriter:
             return True
         except Exception as e:
             logger.error(f"Error inserting body composition data: {e}")
+            return False
+
+    def insert_daily_wellness(self, date: str, wellness_data: dict) -> bool:
+        """Insert (date-level upsert) daily wellness data.
+
+        Builds a normalized row via :func:`_wellness_row` and upserts it by
+        ``date``. Because the table has both a PRIMARY KEY (``wellness_id``)
+        and a UNIQUE index (``date``), DuckDB cannot infer a single conflict
+        target, so existing rows for the date are deleted first and a fresh
+        row inserted — an INSERT OR REPLACE keyed on date.
+
+        Args:
+            date: Date in ``YYYY-MM-DD`` format.
+            wellness_data: Merged wellness dict from
+                :func:`collect_wellness_data`.
+
+        Returns:
+            True on success, False when there is no wellness data to store.
+        """
+        try:
+            row = _wellness_row(date, wellness_data)
+            if row is None:
+                logger.warning(f"No wellness data found for {date}")
+                return False
+
+            with get_write_connection(self.db_path) as conn:
+                conn.execute("DELETE FROM daily_wellness WHERE date = ?", [row["date"]])
+
+                max_id_result = conn.execute(
+                    "SELECT COALESCE(MAX(wellness_id), 0) FROM daily_wellness"
+                ).fetchone()
+                next_wellness_id = max_id_result[0] + 1 if max_id_result else 1
+
+                conn.execute(
+                    """
+                    INSERT INTO daily_wellness
+                    (wellness_id, date, resting_hr, hrv_overnight_ms, hrv_status,
+                     hrv_baseline_low, hrv_baseline_high, sleep_seconds, sleep_score,
+                     training_readiness, body_battery_high, body_battery_low,
+                     stress_avg, source)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                    [
+                        next_wellness_id,
+                        row["date"],
+                        row["resting_hr"],
+                        row["hrv_overnight_ms"],
+                        row["hrv_status"],
+                        row["hrv_baseline_low"],
+                        row["hrv_baseline_high"],
+                        row["sleep_seconds"],
+                        row["sleep_score"],
+                        row["training_readiness"],
+                        row["body_battery_high"],
+                        row["body_battery_low"],
+                        row["stress_avg"],
+                        row["source"],
+                    ],
+                )
+
+            logger.info(f"Inserted daily wellness data for {date}")
+            return True
+        except Exception as e:
+            logger.error(f"Error inserting daily wellness data: {e}")
             return False
