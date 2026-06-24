@@ -28,8 +28,23 @@ class GetRecoveryTrendParams(BaseModel):
     )
 
 
+class GetRecoveryStatusParams(BaseModel):
+    """Arguments for ``get_recovery_status``."""
+
+    date: str | None = Field(
+        default=None,
+        description=(
+            "Target day as YYYY-MM-DD. Omit to use the latest day in " "daily_wellness."
+        ),
+    )
+
+
 def _get_recovery_trend(reader: GarminDBReader, p: GetRecoveryTrendParams) -> Any:
     return reader.get_recovery_trend(p.weeks)
+
+
+def _get_recovery_status(reader: GarminDBReader, p: GetRecoveryStatusParams) -> Any:
+    return reader.get_recovery_status(p.date)
 
 
 RECOVERY_TOOLS: list[ToolDef] = [
@@ -51,6 +66,26 @@ RECOVERY_TOOLS: list[ToolDef] = [
         handler=_get_recovery_trend,
         cli_group="physiology",
         cli_name="recovery-trend",
+    ),
+    ToolDef(
+        name="get_recovery_status",
+        description=(
+            "Get today's morning go/no-go recovery status from daily_wellness "
+            "(defaults to the latest day; pass date=YYYY-MM-DD for a specific "
+            "day). Synthesizes Training Readiness, Body Battery and sleep score "
+            "with the HRV under_recovery flag into a recommendation: 'rest' / "
+            "'easy' when readiness<50 or sleep<50 or HRV is under-recovered "
+            "(>=2 nights below baseline), 'quality' (tempo allowed) when "
+            "readiness>=75 and HRV is normal, else 'moderate'. Device-off days "
+            "(no readiness and no sleep) return recommendation='unknown' with a "
+            "'go by feel' reason. Returns date, recommendation, score (mean of "
+            "available markers), reasons, and the raw training_readiness, "
+            "body_battery_high, sleep_score (all null-safe)."
+        ),
+        params=GetRecoveryStatusParams,
+        handler=_get_recovery_status,
+        cli_group="physiology",
+        cli_name="recovery-status",
     ),
 ]
 

@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **51 tools** (49 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **52 tools** (50 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -17,7 +17,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Metadata](#metadata) (3)
 - [Splits](#splits) (5)
 - [Analysis](#analysis) (6)
-- [Physiology](#physiology) (9)
+- [Physiology](#physiology) (10)
 - [Performance](#performance) (3)
 - [Time Series](#time-series) (4)
 - [Training Plan](#training-plan) (6)
@@ -308,6 +308,16 @@ Get the RHR / HRV recovery trend over the trailing window (default 8 weeks) from
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `weeks` | integer | optional (default `8`) | Trailing window length in weeks to analyze (default: 8). |
+
+### `get_recovery_status`
+
+CLI: `garmin-db physiology recovery-status`
+
+Get today's morning go/no-go recovery status from daily_wellness (defaults to the latest day; pass date=YYYY-MM-DD for a specific day). Synthesizes Training Readiness, Body Battery and sleep score with the HRV under_recovery flag into a recommendation: 'rest' / 'easy' when readiness<50 or sleep<50 or HRV is under-recovered (>=2 nights below baseline), 'quality' (tempo allowed) when readiness>=75 and HRV is normal, else 'moderate'. Device-off days (no readiness and no sleep) return recommendation='unknown' with a 'go by feel' reason. Returns date, recommendation, score (mean of available markers), reasons, and the raw training_readiness, body_battery_high, sleep_score (all null-safe).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `date` | string | optional | Target day as YYYY-MM-DD. Omit to use the latest day in daily_wellness. |
 
 ## Performance
 

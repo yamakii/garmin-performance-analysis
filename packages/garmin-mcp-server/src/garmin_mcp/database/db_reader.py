@@ -360,6 +360,87 @@ class GarminDBReader:
             "series": series,
         }
 
+    def get_recovery_status(self, date: str | None = None) -> dict[str, Any]:
+        """Morning go/no-go recovery status for ``date`` (#500).
+
+        Synthesizes the day's Training Readiness, Body Battery, sleep score and
+        the HRV ``under_recovery`` flag (#499) into a recommended training
+        intensity (rest/easy/moderate/quality), to support a data-backed
+        "run or rest" decision.
+
+        Args:
+            date: Target ``YYYY-MM-DD`` day. ``None`` (default) uses the latest
+                date present in ``daily_wellness``.
+
+        Returns:
+            ``{"date", "recommendation", "score", "reasons",
+            "training_readiness", "body_battery_high", "sleep_score"}``. When the
+            day has no data (device off) ``recommendation`` is ``"unknown"`` with
+            a "go by feel" reason (null-safe). ``date`` is ``None`` only when the
+            table is empty. Dates are ``YYYY-MM-DD`` strings.
+        """
+        from garmin_mcp.analysis.recovery import (
+            classify_recovery_status,
+            compute_hrv_recovery,
+        )
+
+        if date is None:
+            latest = self.execute_read_query("SELECT MAX(date) FROM daily_wellness", ())
+            date = str(latest[0][0]) if latest and latest[0][0] is not None else None
+
+        if date is None:
+            return {
+                "date": None,
+                "recommendation": "unknown",
+                "score": None,
+                "reasons": ["データ無し・感覚優先"],
+                "training_readiness": None,
+                "body_battery_high": None,
+                "sleep_score": None,
+            }
+
+        day_rows = self.execute_read_query(
+            """
+            SELECT training_readiness, body_battery_high, sleep_score
+            FROM daily_wellness
+            WHERE date = ?
+            """,
+            (date,),
+        )
+        readiness: int | None = None
+        body_battery_high: int | None = None
+        sleep_score: int | None = None
+        if day_rows:
+            readiness, body_battery_high, sleep_score = day_rows[0]
+
+        # Derive the HRV under-recovery flag from the trailing window up to date.
+        hrv_window = self.execute_read_query(
+            """
+            SELECT date, hrv_overnight_ms, hrv_baseline_low, hrv_baseline_high
+            FROM daily_wellness
+            WHERE date <= ?
+            ORDER BY date ASC
+            """,
+            (date,),
+        )
+        hrv_rows: list[tuple[str, float | None, float | None, float | None]] = [
+            (str(d), ms, low, high) for d, ms, low, high in hrv_window
+        ]
+        under_recovery = compute_hrv_recovery(hrv_rows)["under_recovery"]
+
+        status = classify_recovery_status(
+            readiness, body_battery_high, sleep_score, under_recovery
+        )
+        return {
+            "date": date,
+            "recommendation": status["recommendation"],
+            "score": status["score"],
+            "reasons": status["reasons"],
+            "training_readiness": readiness,
+            "body_battery_high": body_battery_high,
+            "sleep_score": sleep_score,
+        }
+
     # ========== Splits Methods ==========
 
     def get_splits_pace_hr(

@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from garmin_mcp.analysis.recovery import (
+    classify_recovery_status,
     compute_hrv_recovery,
     compute_rhr_trend,
 )
@@ -114,3 +115,72 @@ def test_hrv_within_baseline() -> None:
     assert result["under_recovery"] is False
     assert result["latest_ms"] == 64.0
     assert result["status"] == "balanced"
+
+
+@pytest.mark.unit
+def test_status_rest_low_readiness() -> None:
+    """Low Training Readiness -> rest/easy (under-recovered)."""
+    result = classify_recovery_status(
+        readiness=40,
+        body_battery_high=70,
+        sleep_score=80,
+        under_recovery=False,
+    )
+
+    assert result["recommendation"] in {"rest", "easy"}
+    assert result["reasons"]
+
+
+@pytest.mark.unit
+def test_status_quality_green() -> None:
+    """High readiness + good sleep + normal HRV -> quality (T allowed)."""
+    result = classify_recovery_status(
+        readiness=82,
+        body_battery_high=90,
+        sleep_score=85,
+        under_recovery=False,
+    )
+
+    assert result["recommendation"] == "quality"
+
+
+@pytest.mark.unit
+def test_status_moderate_midband() -> None:
+    """Mid-band readiness, no flags -> moderate."""
+    result = classify_recovery_status(
+        readiness=62,
+        body_battery_high=75,
+        sleep_score=70,
+        under_recovery=False,
+    )
+
+    assert result["recommendation"] == "moderate"
+
+
+@pytest.mark.unit
+def test_status_under_recovery_overrides() -> None:
+    """HRV under-recovery overrides high readiness -> not quality."""
+    result = classify_recovery_status(
+        readiness=80,
+        body_battery_high=85,
+        sleep_score=80,
+        under_recovery=True,
+    )
+
+    assert result["recommendation"] != "quality"
+    assert result["recommendation"] in {"rest", "easy"}
+
+
+@pytest.mark.unit
+def test_status_unknown_on_missing_data() -> None:
+    """All markers None (device off) -> unknown + non-empty reasons."""
+    result = classify_recovery_status(
+        readiness=None,
+        body_battery_high=None,
+        sleep_score=None,
+        under_recovery=None,
+    )
+
+    assert result["recommendation"] == "unknown"
+    assert result["reasons"]
+    assert result["score"] is None
