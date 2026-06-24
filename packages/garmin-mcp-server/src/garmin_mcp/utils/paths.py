@@ -89,3 +89,8 @@ def get_default_db_path() -> str:
 def get_weight_raw_dir() -> Path:
     """Get the weight raw data directory."""
     return get_data_base_dir() / "raw" / "weight"
+
+
+def get_wellness_raw_dir() -> Path:
+    """Get the daily wellness raw data directory."""
+    return get_data_base_dir() / "raw" / "wellness"

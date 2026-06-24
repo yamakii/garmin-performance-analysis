@@ -577,3 +577,83 @@ def collect_body_composition_data(
             json.dump({}, f)
         logger.info(f"Created empty marker file after error: {weight_file}")
         return None
+
+
+def collect_wellness_data(wellness_raw_dir: Path, date: str) -> dict[str, Any] | None:
+    """Collect daily wellness data with a cache-first strategy.
+
+    Bundles four Garmin Connect endpoints into a single per-day cache file
+    (``raw/wellness/{date}.json``):
+
+    - ``get_stats``: daily summary (resting HR, average stress, body battery)
+    - ``get_hrv_data``: overnight HRV + status + baseline
+    - ``get_sleep_data``: sleep duration + sleep score
+    - ``get_training_readiness``: training readiness score
+
+    Cache priority:
+    1. Read ``raw/wellness/{date}.json`` if present. An empty ``{}`` marker
+       means "no data for this day" and short-circuits to ``None`` (no API
+       call).
+    2. On a cache miss, call the four endpoints, merge their responses, and
+       cache the result. If every endpoint yields nothing, an empty marker is
+       written and ``None`` returned.
+
+    Args:
+        wellness_raw_dir: Wellness raw data directory.
+        date: Date in ``YYYY-MM-DD`` format.
+
+    Returns:
+        Merged wellness data dict (keys ``stats``, ``hrv``, ``sleep``,
+        ``training_readiness``), or ``None`` when no data is available.
+    """
+    wellness_file = wellness_raw_dir / f"{date}.json"
+    if wellness_file.exists():
+        with open(wellness_file, encoding="utf-8") as f:
+            cached_data = json.load(f)
+            # Empty dict indicates no data available (marker file)
+            if not cached_data:
+                logger.debug(f"Empty marker file found for {date}, skipping API call")
+                return None
+            logger.info(f"Using cached wellness data for {date}")
+            return cast(dict[str, Any], cached_data)
+
+    logger.info(f"Fetching wellness data for {date} from Garmin Connect API")
+    try:
+        client = get_garmin_client()
+
+        def _safe(call: Any) -> Any:
+            try:
+                return call()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"Wellness sub-fetch failed for {date}: {exc}")
+                return None
+
+        merged: dict[str, Any] = {
+            "stats": _safe(lambda: client.get_stats(date)),
+            "hrv": _safe(lambda: client.get_hrv_data(date)),
+            "sleep": _safe(lambda: client.get_sleep_data(date)),
+            "training_readiness": _safe(lambda: client.get_training_readiness(date)),
+        }
+
+        if not any(merged.values()):
+            logger.warning(f"No wellness data found for {date}")
+            wellness_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(wellness_file, "w", encoding="utf-8") as f:
+                json.dump({}, f)
+            logger.info(f"Created empty marker file: {wellness_file}")
+            return None
+
+        wellness_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(wellness_file, "w", encoding="utf-8") as f:
+            json.dump(merged, f, indent=2, ensure_ascii=False)
+
+        logger.info(f"Cached wellness data to {wellness_file}")
+        return merged
+
+    except Exception as e:
+        logger.error(f"Error fetching wellness data for {date}: {e}")
+        wellness_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(wellness_file, "w", encoding="utf-8") as f:
+            json.dump({}, f)
+        logger.info(f"Created empty marker file after error: {wellness_file}")
+        return None
