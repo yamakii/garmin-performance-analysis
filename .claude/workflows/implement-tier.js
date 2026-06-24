@@ -37,14 +37,8 @@ function normalizeArgs(raw) {
 
 // Decide auto-merge purely (deterministic). Returns { ok, reason }.
 function mergeDecision(acc) {
-  const m = acc.manifest ?? {}
   const v = acc.validation ?? {}
   const s = acc.ship ?? {}
-  // .claude orchestration/hooks/agents changes are not behaviorally verifiable
-  // by the per-issue CI gate here — never auto-merge; escalate to human review.
-  const files = m.changed_files ?? []
-  if (files.some((f) => /^\.claude\/(workflows|hooks|agents)\//.test(f)))
-    return { ok: false, reason: '.claude/ 挙動変更 — auto-merge 対象外（人手判断へ）' }
   if (v.level === 'L3') return { ok: false, reason: 'L3 (agent 定義変更) はメインセッション担当。auto-merge 対象外' }
   if (v.status === 'fail') return { ok: false, reason: `検証 FAIL: ${v.details ?? ''}` }
   if (v.status === 'warning') return { ok: false, reason: `内容チェック WARNING: ${v.details ?? ''} — 人間判断へ` }

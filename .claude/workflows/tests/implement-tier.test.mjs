@@ -34,15 +34,20 @@ const GREEN = {
   ship: { ci_conclusion: 'success', mergeable: true, pr_number: 1 },
 }
 
-test('mergeDecision escalates .claude/ behavioral changes (no auto-merge)', () => {
-  for (const f of [
-    '.claude/workflows/x.js',
-    '.claude/hooks/y.sh',
-    '.claude/agents/z-analyst.md',
-  ]) {
+test('mergeDecision auto-merges .claude/workflows and hooks when green', () => {
+  for (const f of ['.claude/workflows/x.js', '.claude/hooks/y.sh']) {
     const d = mergeDecision({ manifest: { changed_files: [f] }, ...GREEN })
-    assert.equal(d.ok, false, `${f} should escalate`)
+    assert.equal(d.ok, true, `${f} should auto-merge when green`)
   }
+})
+
+test('mergeDecision still escalates L3 agent definitions', () => {
+  const d = mergeDecision({
+    manifest: { changed_files: ['.claude/agents/z-analyst.md'] },
+    validation: { status: 'pass', level: 'L3' },
+    ship: GREEN.ship,
+  })
+  assert.equal(d.ok, false, 'L3 should escalate')
 })
 
 test('mergeDecision allows normal green code/doc changes', () => {

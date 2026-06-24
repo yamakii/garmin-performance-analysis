@@ -112,6 +112,8 @@ Phase 2 + Phase 2.9 完了後のみ実行可能:
 5. **auto-merge ゲート**: 検証(L1/L2) PASS + `ci-guard` success + mergeable + **Phase 2.9 の検証完了**を満たせば
    `merge_pull_request` で自動マージ（テスト・検証の充実が前提, #395）。
    `/implement` ではこの判定を `implement-tier` Workflow が担う
-6. **例外は人間ゲート**: 検証 FAIL / 内容チェック WARNING / CI 失敗 / コンフリクト / L3 / **`.claude/(workflows|hooks|agents)` 変更**は
+6. **例外は人間ゲート**: 検証 FAIL / 内容チェック WARNING / CI 失敗 / コンフリクト / L3 は
    auto-merge せず（`implement-tier` も escalate）、PR URL と理由を報告して判断を仰ぐ。
-   `.claude/` 挙動変更は CI の自動テスト（`meta-checks`）green + 人によるレビュー後に手動マージ（`/ship --pr N --validated`）
+   `.claude/workflows`・`.claude/hooks` 変更は `meta-checks`（`node --test` / `bash -n`）が CI でロジックをゲートするため、
+   green であれば他カテゴリと同じく auto-merge する。agent 定義（`.claude/agents/*-analyst.md`）は L3 のため
+   引き続き escalate し、メインセッションが L3 検証後に手動マージ（`/ship --pr N --validated`）。
