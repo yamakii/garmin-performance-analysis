@@ -2,13 +2,15 @@ import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import TrendsDashboard from "./TrendsDashboard";
 
-// echarts requires a real canvas; mock it out for jsdom
-vi.mock("echarts", () => ({
-  init: () => ({
-    setOption: vi.fn(),
-    resize: vi.fn(),
-    dispose: vi.fn(),
-  }),
+// echarts requires a real canvas; mock the modular wrapper out for jsdom
+vi.mock("../lib/echarts", () => ({
+  echarts: {
+    init: () => ({
+      setOption: vi.fn(),
+      resize: vi.fn(),
+      dispose: vi.fn(),
+    }),
+  },
 }));
 
 const VOLUME = [

@@ -1,4 +1,4 @@
-import * as echarts from "echarts";
+import { echarts, type EChartsOption } from "../lib/echarts";
 import { useEffect, useRef } from "react";
 import type { TimeSeriesResponse } from "../types";
 import { formatNumber } from "../utils/formatNumber";
@@ -103,7 +103,7 @@ export default function TimeSeriesChart({
     const lastIndex = metricNames.length - 1;
     const allXAxisIndices = metricNames.map((_, i) => i);
 
-    const option: echarts.EChartsOption = {
+    const option: EChartsOption = {
       animation: false,
       textStyle: { fontSize: CHART_FONT_SIZE, color: AXIS_LABEL_COLOR },
       axisPointer: { link: [{ xAxisIndex: "all" }] },

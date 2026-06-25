@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
-import * as echarts from "echarts";
+import { echarts, type EChartsOption } from "../lib/echarts";
 
 interface EChartProps {
-  option: echarts.EChartsOption;
+  option: EChartsOption;
   ariaLabel: string;
   height?: number;
 }
