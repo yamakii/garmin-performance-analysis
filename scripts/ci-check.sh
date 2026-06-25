@@ -25,6 +25,14 @@ run() {
   fi
 }
 
+# --- bootstrap (garmin-mcp-server) ---
+# Fresh worktrees do not share a .venv. `uv run` auto-syncs the default deps and
+# the [dependency-groups] dev group, but NOT the [project.optional-dependencies]
+# dev extra (pytest / black / mypy live there), so without this the checks below
+# fail with "command not found". Idempotent — a no-op on an already-synced venv.
+# Mirrors the CI lint-and-test install step (uv sync --extra dev).
+run uv sync --directory "$SERVER" --extra dev
+
 # --- lint-and-test (garmin-mcp-server, whole-package) ---
 run uv run --directory "$SERVER" ruff check .
 run uv run --directory "$SERVER" black --check .
@@ -35,6 +43,12 @@ run uv run --directory "$SERVER" pytest -m unit --tb=short -n 4 --maxfail=5 \
 # --- web checks: only when packages/garmin-web/ changed vs main ---
 if git -C "$ROOT" diff --name-only main...HEAD | grep -q '^packages/garmin-web/'; then
   echo "▶ web changes detected — running web-backend / web-frontend checks"
+
+  # web bootstrap: fresh worktrees lack the web venv and node_modules.
+  # Mirrors CI (web-backend: uv sync, web-frontend: npm ci). uv sync is
+  # idempotent; npm ci is heavy, so only run it when node_modules is absent.
+  run uv sync --directory "$WEB"
+  [ -d "$FRONTEND/node_modules" ] || run npm --prefix "$FRONTEND" ci
 
   # web-backend (packages/garmin-web)
   run uv run --directory "$WEB" ruff check src/ tests/
