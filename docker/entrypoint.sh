@@ -24,6 +24,15 @@ if [ "$(id -u)" -eq 0 ]; then
 
   uid="$(id -u claude)"
   gid="$(id -g claude)"
+  # setpriv (unlike `su -`/`login`) does NOT reset HOME, so it would stay /root
+  # (root-owned, unwritable post-drop) and bash would read /root/.bashrc while
+  # uv/npm caches landed in /root/.cache — both Permission denied. Set HOME (and
+  # USER/LOGNAME) to claude's explicitly. We do this by export rather than
+  # `setpriv --reset-env` because --reset-env clears every env var except TERM,
+  # which would wipe the --env-file vars (GARMIN_*, creds) and Dockerfile ENV
+  # (UV_PROJECT_ENVIRONMENT etc.) that MCP auth and the venv location depend on.
+  HOME="$(getent passwd "$uid" | cut -d: -f6)"
+  export HOME USER=claude LOGNAME=claude
   # Drop root → claude (root dropping privileges is always allowed, even under
   # no-new-privileges) and run the requested command.
   exec setpriv --reuid "$uid" --regid "$gid" --init-groups -- "$@"
