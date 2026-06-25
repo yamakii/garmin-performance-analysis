@@ -105,6 +105,22 @@ Subsequent runs can skip the rebuild:
 NO_BUILD=1 docker/run.sh
 ```
 
+### Updating Claude Code
+
+Claude Code's in-container auto-updater is **disabled** (`DISABLE_AUTOUPDATER=1`):
+it's npm-global-installed as root but runs as the non-root `claude` user, so it
+can't write the global npm dir and would just fail on startup. Update by
+rebuilding the image with the target version:
+
+```bash
+CLAUDE_CODE_VERSION=2.1.193 docker/run.sh   # reinstalls that version
+```
+
+`run.sh` passes `CLAUDE_CODE_VERSION` (default `latest`) as a build-arg. Changing
+the value busts the cached `npm install -g …@<version>` layer; a plain rebuild
+reuses it and won't pick up a newer release. To force the newest without pinning,
+rebuild that layer fresh with `docker build --no-cache` (or bump the version).
+
 To launch Claude directly instead of a shell:
 
 ```bash

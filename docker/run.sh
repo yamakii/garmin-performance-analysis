@@ -27,11 +27,15 @@ if [ ! -f "$ENV_FILE" ]; then
 fi
 
 # ---- build ----
+# To update Claude Code, set CLAUDE_CODE_VERSION to the target version and rebuild:
+# `CLAUDE_CODE_VERSION=2.1.193 docker/run.sh`. Changing the value busts the cached
+# `npm install -g ...@<version>` layer; a plain rebuild reuses it and won't update.
 if [ "${NO_BUILD:-0}" != "1" ]; then
     echo "▶ Building $IMAGE (context: $SCRIPT_DIR) ..."
     docker build \
         --build-arg "USER_UID=$(id -u)" \
         --build-arg "USER_GID=$(id -g)" \
+        --build-arg "CLAUDE_CODE_VERSION=${CLAUDE_CODE_VERSION:-latest}" \
         -t "$IMAGE" \
         "$SCRIPT_DIR"
 fi

@@ -68,11 +68,16 @@ RUN if getent group "${USER_GID}" >/dev/null; then \
 # Keep the container's uv venv OUTSIDE the bind-mounted /workspace so it never
 # clobbers the host .venv. Use the system Python (no managed downloads at runtime
 # = smaller egress surface).
+# DISABLE_AUTOUPDATER=1: Claude Code is npm-global-installed as root but runs as
+# the non-root `claude` user (cap-drop ALL, no-new-privileges), so the in-place
+# auto-updater can't write the global npm dir and fails on startup. Updating is
+# done by rebuilding the image (see CLAUDE_CODE_VERSION build-arg / docker/README).
 ENV UV_PROJECT_ENVIRONMENT=/home/claude/uv-venv \
     UV_PYTHON_DOWNLOADS=never \
     UV_PYTHON=python3.12 \
     PATH=/usr/local/bin:$PATH \
-    SHELL=/bin/bash
+    SHELL=/bin/bash \
+    DISABLE_AUTOUPDATER=1
 
 # ---- firewall + entrypoint ----
 COPY init-firewall.sh /usr/local/bin/init-firewall.sh
