@@ -44,15 +44,20 @@ egress allowlist is in place.
 | Host | Container | Mode | Why |
 |------|-----------|------|-----|
 | repo root | `/workspace` | rw | live edits + `data/` DuckDB |
-| `~/.claude/.credentials.json` | same | rw | reuse the subscription OAuth login (token refresh writes back) |
-| named volume `garmin-claude-home` | `/home/claude/.claude` | rw | container-local Claude config/onboarding, **isolated from the live host session** |
+| `$CLAUDE_DOCKER_HOME` (default `~/.claude-docker`) | `/home/claude/.claude` | rw | the container's own Claude home — sessions/history/auth persist on the host, **isolated from the host's `~/.claude`** |
 | `.env` (via `--env-file`) | env vars | — | optional credential source for the MCP servers |
 | `GARMIN_DATA_DIR` / `GARMIN_RESULT_DIR` | mounted + remapped (see below) | rw | only when set; in-repo dirs resolve to `/workspace/<rel>` |
 | `$GARMINTOKENS` (default `~/.garth`) | same abs path | rw | persist garth OAuth token cache across runs (skip repeated logins) |
 
-> The full `~/.claude` directory is **not** mounted on purpose: it holds the live
-> host session's `sessions/`, `history.jsonl` and `jobs/`, which a second Claude
-> process would race on. Only the credential file is shared.
+> The container's `~/.claude` is a **dedicated host directory** (`~/.claude-docker`
+> by default), **not** the host's own `~/.claude`. That keeps its sessions,
+> `history.jsonl`, `jobs/` and `.credentials.json` persistent on the host across
+> runs while never racing the live host Claude session. Because it's a *directory*
+> bind mount (not the old named volume + single-file credentials mount), Claude
+> Code's atomic OAuth token refresh persists too: **you log in once inside the
+> container and it sticks** — no re-login every run. The container's session
+> history is its own and is **not shared** with the host's (you can't resume a
+> host conversation in the container, by design).
 
 ### Credentials: `.env` or host OS env
 
@@ -73,8 +78,9 @@ over the same key in `.env`. This lets you keep secrets out of `.env`.
 ## Prerequisites
 
 - Docker (tested with 27.x).
-- Logged in to Claude Code on the host (`~/.claude/.credentials.json` exists), or
-  be ready to log in inside the container.
+- On first run, log in to Claude **inside the container** once — it persists in
+  `~/.claude-docker` on the host, so later runs don't prompt again. (The host's
+  own `~/.claude` login is intentionally not shared.)
 - Credentials for the `garmin-db` / `github` MCP servers, supplied **either** via a
   populated `.env` (`cp .env.example .env` + fill in) **or** as host OS env vars
   (`GARMIN_EMAIL`, `GARMIN_PASSWORD`, …; `GITHUB_TOKEN` falls back to `gh auth token`).
