@@ -110,7 +110,12 @@ fi
 # Plain (non-path) credential passthrough. A value-less `-e VAR` pulls VAR from
 # this script's env (OS env, possibly augmented by .env) and overrides any
 # same-named entry from --env-file. Keep creds in your shell instead of .env.
-for v in GARMIN_EMAIL GARMIN_PASSWORD GITHUB_TOKEN; do
+# CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) / ANTHROPIC_API_KEY /
+# ANTHROPIC_AUTH_TOKEN authenticate Claude Code itself without an interactive
+# login — the single-file ~/.claude/.credentials.json bind mount can't persist
+# OAuth token refresh, so without one of these the container re-prompts to log in.
+for v in GARMIN_EMAIL GARMIN_PASSWORD GITHUB_TOKEN \
+         CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN; do
     [ -n "${!v:-}" ] && env_args+=( -e "$v" )
 done
 [ -n "${GITHUB_TOKEN:-}" ] || echo "WARN: GITHUB_TOKEN unset — github MCP won't authenticate." >&2

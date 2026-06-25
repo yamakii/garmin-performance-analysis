@@ -52,15 +52,18 @@ egress allowlist is in place.
 
 > The full `~/.claude` directory is **not** mounted on purpose: it holds the live
 > host session's `sessions/`, `history.jsonl` and `jobs/`, which a second Claude
-> process would race on. Only the credential file is shared.
+> process would race on. The container keeps its **own** session history in the
+> named volume (persists across runs, but is **separate from the host's** — you
+> can't resume a host conversation in the container and vice versa).
 
 ### Credentials: `.env` or host OS env
 
 `docker/run.sh` accepts credentials from **either** `.env` **or** your host shell
 environment — you don't need both. For each of `GARMIN_EMAIL`, `GARMIN_PASSWORD`,
-`GARMIN_DATA_DIR`, `GARMIN_RESULT_DIR`, `GITHUB_TOKEN`, a value present in your
-host env is forwarded into the container with `-e VAR` and **takes precedence**
-over the same key in `.env`. This lets you keep secrets out of `.env`.
+`GARMIN_DATA_DIR`, `GARMIN_RESULT_DIR`, `GITHUB_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`,
+`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, a value present in your host env is
+forwarded into the container with `-e VAR` and **takes precedence** over the same
+key in `.env`. This lets you keep secrets out of `.env`.
 
 - **GitHub token**: if `GITHUB_TOKEN` isn't already exported, it is derived from
   `gh auth token` on the host (no PAT stored anywhere). Run `gh auth login` first.
@@ -70,11 +73,33 @@ over the same key in `.env`. This lets you keep secrets out of `.env`.
   out-of-repo dir is bind-mounted at the same absolute path. So the MCP server
   always resolves them to a real mounted location.
 
+### Stop the container re-prompting for login
+
+The container shares only the single file `~/.claude/.credentials.json` with the
+host. Claude Code refreshes its OAuth token mid-session and rewrites that file
+atomically (temp file + rename), which a **single-file bind mount can't persist**
+back to the host — so the refreshed token is lost and the next run prompts to log
+in again. (Sessions still persist; only auth doesn't.)
+
+Fix it by supplying a non-interactive token via env — no file write-back needed:
+
+```bash
+# one-time, on the host (subscription-compatible, ~1-year token):
+claude setup-token
+export CLAUDE_CODE_OAUTH_TOKEN=<the printed token>   # add to your shell rc or .env
+```
+
+`docker/run.sh` forwards `CLAUDE_CODE_OAUTH_TOKEN` into the container, where it
+outranks the (non-persisting) file-based OAuth, so the container is authenticated
+on every run without a login prompt. `ANTHROPIC_API_KEY` (Console credits) or
+`ANTHROPIC_AUTH_TOKEN` (gateway/proxy) work the same way if you prefer those.
+
 ## Prerequisites
 
 - Docker (tested with 27.x).
 - Logged in to Claude Code on the host (`~/.claude/.credentials.json` exists), or
-  be ready to log in inside the container.
+  be ready to log in inside the container. To avoid re-logging-in on every run,
+  export `CLAUDE_CODE_OAUTH_TOKEN` (see "Stop the container re-prompting for login").
 - Credentials for the `garmin-db` / `github` MCP servers, supplied **either** via a
   populated `.env` (`cp .env.example .env` + fill in) **or** as host OS env vars
   (`GARMIN_EMAIL`, `GARMIN_PASSWORD`, …; `GITHUB_TOKEN` falls back to `gh auth token`).
