@@ -14,7 +14,6 @@ set -euo pipefail
 
 IMAGE="garmin-claude-sandbox"
 CONTAINER="garmin-claude"
-CONFIG_VOLUME="garmin-claude-home"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -25,11 +24,6 @@ ENV_FILE="$REPO_ROOT/.env"
 if [ ! -f "$ENV_FILE" ]; then
     echo "INFO: $ENV_FILE not found — relying on host OS env vars for credentials." >&2
     ENV_FILE=""
-fi
-
-CRED_FILE="$HOME/.claude/.credentials.json"
-if [ ! -f "$CRED_FILE" ]; then
-    echo "WARN: $CRED_FILE not found — you will need to log in to Claude inside the container." >&2
 fi
 
 # ---- build ----
@@ -43,16 +37,22 @@ if [ "${NO_BUILD:-0}" != "1" ]; then
 fi
 
 # ---- mounts ----
+# The container's ~/.claude is a DEDICATED host directory (NOT the host's own
+# ~/.claude), so its sessions/history/auth persist on the host across runs while
+# staying isolated from a live host Claude session. A directory bind mount (vs a
+# named volume + single-file cred mount) also lets Claude Code's atomic OAuth
+# token refresh persist — log in once inside the container and it sticks.
+# Override the location with CLAUDE_DOCKER_HOME.
+CLAUDE_DOCKER_HOME="${CLAUDE_DOCKER_HOME:-$HOME/.claude-docker}"
+mkdir -p "$CLAUDE_DOCKER_HOME"
+if [ ! -f "$CLAUDE_DOCKER_HOME/.credentials.json" ]; then
+    echo "INFO: first run — log in to Claude once inside the container; it persists" >&2
+    echo "      in $CLAUDE_DOCKER_HOME for subsequent runs." >&2
+fi
 mounts=(
     -v "$REPO_ROOT:/workspace"
-    -v "$CONFIG_VOLUME:/home/claude/.claude"          # container-local Claude config/onboarding (named volume)
+    -v "$CLAUDE_DOCKER_HOME:/home/claude/.claude"
 )
-# Share ONLY the credentials file with the host (rw, for OAuth token refresh).
-# The rest of ~/.claude stays in the named volume so the container never collides
-# with a live host Claude session's sessions/history/jobs state.
-if [ -f "$CRED_FILE" ]; then
-    mounts+=( -v "$CRED_FILE:/home/claude/.claude/.credentials.json" )
-fi
 
 # Load .env (if present) so its GARMIN_* values feed the resolution below.
 # Inherited host OS env vars stay set unless .env overrides them.
