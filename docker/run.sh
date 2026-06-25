@@ -23,7 +23,7 @@ command -v docker >/dev/null 2>&1 || { echo "ERROR: docker not found on PATH" >&
 
 ENV_FILE="$REPO_ROOT/.env"
 if [ ! -f "$ENV_FILE" ]; then
-    echo "WARN: $ENV_FILE not found — garmin-db / github MCP will fail to authenticate." >&2
+    echo "INFO: $ENV_FILE not found — relying on host OS env vars for credentials." >&2
     ENV_FILE=""
 fi
 
@@ -54,23 +54,66 @@ if [ -f "$CRED_FILE" ]; then
     mounts+=( -v "$CRED_FILE:/home/claude/.claude/.credentials.json" )
 fi
 
-# Data/result dirs that live OUTSIDE the repo must be mounted explicitly at the
-# same absolute path (the in-repo default data/ is already under /workspace).
+# Load .env (if present) so its GARMIN_* values feed the resolution below.
+# Inherited host OS env vars stay set unless .env overrides them.
 if [ -n "$ENV_FILE" ]; then
     # shellcheck disable=SC1090
     set -a; . "$ENV_FILE" 2>/dev/null || true; set +a
-    for d in "${GARMIN_DATA_DIR:-}" "${GARMIN_RESULT_DIR:-}"; do
-        [ -n "$d" ] && [ -d "$d" ] || continue
-        abs="$(cd "$d" && pwd)"
-        case "$abs/" in
-            "$REPO_ROOT"/*) : ;;                       # inside repo → already mounted
-            *) mounts+=( -v "$abs:$abs" ) ;;
-        esac
-    done
 fi
 
 env_args=()
 [ -n "$ENV_FILE" ] && env_args+=( --env-file "$ENV_FILE" )
+
+# Map a host dir to its container path. Inside-repo dirs are already bind-mounted
+# at /workspace; outside-repo dirs get mounted at the same absolute path. Result
+# in CONTAINER_PATH (no $(...) — mounts+= must mutate the parent shell's array).
+CONTAINER_PATH=""
+resolve_dir() {
+    local abs rel
+    abs="$(cd "$1" && pwd)"
+    case "$abs/" in
+        "$REPO_ROOT"/*)
+            rel="${abs#"$REPO_ROOT"}"                  # "" or "/sub/dir"
+            CONTAINER_PATH="/workspace${rel}"
+            ;;
+        *)
+            mounts+=( -v "$abs:$abs" )
+            CONTAINER_PATH="$abs"
+            ;;
+    esac
+}
+
+# Data/result dirs: mount (if outside the repo) and forward the env var pointing
+# at the CONTAINER-side path so the MCP server resolves it to the mounted dir.
+if [ -n "${GARMIN_DATA_DIR:-}" ] && [ -d "$GARMIN_DATA_DIR" ]; then
+    resolve_dir "$GARMIN_DATA_DIR";   env_args+=( -e "GARMIN_DATA_DIR=$CONTAINER_PATH" )
+fi
+if [ -n "${GARMIN_RESULT_DIR:-}" ] && [ -d "$GARMIN_RESULT_DIR" ]; then
+    resolve_dir "$GARMIN_RESULT_DIR"; env_args+=( -e "GARMIN_RESULT_DIR=$CONTAINER_PATH" )
+fi
+
+# Garth token cache: mount it (same abs path) + point GARMINTOKENS at it so the
+# container reuses OAuth tokens instead of a fresh credential login each run.
+tokendir="${GARMINTOKENS:-$HOME/.garth}"
+mkdir -p "$tokendir" 2>/dev/null || true
+if [ -d "$tokendir" ]; then
+    tok_abs="$(cd "$tokendir" && pwd)"
+    mounts+=( -v "$tok_abs:$tok_abs" )
+    env_args+=( -e "GARMINTOKENS=$tok_abs" )
+fi
+
+# GitHub token: derive from the host gh CLI if not already exported.
+if [ -z "${GITHUB_TOKEN:-}" ] && command -v gh >/dev/null 2>&1; then
+    GITHUB_TOKEN="$(gh auth token 2>/dev/null || true)"; export GITHUB_TOKEN
+fi
+
+# Plain (non-path) credential passthrough. A value-less `-e VAR` pulls VAR from
+# this script's env (OS env, possibly augmented by .env) and overrides any
+# same-named entry from --env-file. Keep creds in your shell instead of .env.
+for v in GARMIN_EMAIL GARMIN_PASSWORD GITHUB_TOKEN; do
+    [ -n "${!v:-}" ] && env_args+=( -e "$v" )
+done
+[ -n "${GITHUB_TOKEN:-}" ] || echo "WARN: GITHUB_TOKEN unset — github MCP won't authenticate." >&2
 
 # ---- run ----
 echo "▶ Launching $CONTAINER ..."

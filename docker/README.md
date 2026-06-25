@@ -46,20 +46,38 @@ egress allowlist is in place.
 | repo root | `/workspace` | rw | live edits + `data/` DuckDB |
 | `~/.claude/.credentials.json` | same | rw | reuse the subscription OAuth login (token refresh writes back) |
 | named volume `garmin-claude-home` | `/home/claude/.claude` | rw | container-local Claude config/onboarding, **isolated from the live host session** |
-| `.env` (via `--env-file`) | env vars | — | Garmin + `GITHUB_TOKEN` for the MCP servers |
-| `GARMIN_DATA_DIR` / `GARMIN_RESULT_DIR` | same abs path | rw | only when they point outside the repo |
+| `.env` (via `--env-file`) | env vars | — | optional credential source for the MCP servers |
+| `GARMIN_DATA_DIR` / `GARMIN_RESULT_DIR` | mounted + remapped (see below) | rw | only when set; in-repo dirs resolve to `/workspace/<rel>` |
+| `$GARMINTOKENS` (default `~/.garth`) | same abs path | rw | persist garth OAuth token cache across runs (skip repeated logins) |
 
 > The full `~/.claude` directory is **not** mounted on purpose: it holds the live
 > host session's `sessions/`, `history.jsonl` and `jobs/`, which a second Claude
 > process would race on. Only the credential file is shared.
+
+### Credentials: `.env` or host OS env
+
+`docker/run.sh` accepts credentials from **either** `.env` **or** your host shell
+environment — you don't need both. For each of `GARMIN_EMAIL`, `GARMIN_PASSWORD`,
+`GARMIN_DATA_DIR`, `GARMIN_RESULT_DIR`, `GITHUB_TOKEN`, a value present in your
+host env is forwarded into the container with `-e VAR` and **takes precedence**
+over the same key in `.env`. This lets you keep secrets out of `.env`.
+
+- **GitHub token**: if `GITHUB_TOKEN` isn't already exported, it is derived from
+  `gh auth token` on the host (no PAT stored anywhere). Run `gh auth login` first.
+- **Data/result dirs**: the container-side `GARMIN_DATA_DIR` / `GARMIN_RESULT_DIR`
+  are remapped to the path where the dir is actually mounted — an in-repo dir
+  becomes `/workspace/<rel>` (already mounted via the repo bind-mount); an
+  out-of-repo dir is bind-mounted at the same absolute path. So the MCP server
+  always resolves them to a real mounted location.
 
 ## Prerequisites
 
 - Docker (tested with 27.x).
 - Logged in to Claude Code on the host (`~/.claude/.credentials.json` exists), or
   be ready to log in inside the container.
-- A populated `.env` at the repo root (`cp .env.example .env` + fill in), if you
-  want the `garmin-db` / `github` MCP servers to authenticate.
+- Credentials for the `garmin-db` / `github` MCP servers, supplied **either** via a
+  populated `.env` (`cp .env.example .env` + fill in) **or** as host OS env vars
+  (`GARMIN_EMAIL`, `GARMIN_PASSWORD`, …; `GITHUB_TOKEN` falls back to `gh auth token`).
 
 ## Usage
 
