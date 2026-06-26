@@ -177,6 +177,25 @@ def _validate_plan_safety(plan: Any) -> tuple[list[str], list[str]]:
                         f"({expected_week_start} - {expected_week_end})"
                     )
 
+    # Advisory (non-blocking): readiness gate is applied at plan-design time via
+    # apply_readiness_gate (#557). Surface a reminder when week-1 still contains
+    # quality workouts so the caller confirms daily wellness was considered.
+    from garmin_mcp.training_plan.readiness_gate import DOWNGRADE_MAP
+
+    week1_quality = sorted(
+        {
+            w.workout_type.value
+            for w in plan.workouts
+            if w.week_number == 1 and w.workout_type.value in DOWNGRADE_MAP
+        }
+    )
+    if week1_quality:
+        warnings.append(
+            "Week 1 contains quality workouts "
+            f"({', '.join(week1_quality)}); confirm the readiness gate "
+            "(get_wellness_baseline_deviation) was applied before saving."
+        )
+
     return errors, warnings
 
 

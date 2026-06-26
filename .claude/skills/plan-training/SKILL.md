@@ -104,6 +104,24 @@ mcp__garmin-db__get_current_fitness_summary(lookback_weeks=8)
 4. **週間ボリューム進行 ≤ 10%**: 理想値。15%超は要説明、25%超はサーバーがリジェクト
 5. **リカバリー週**: 3-4週ごとにボリューム20-30%減の回復週を挿入
 
+**Readiness ゲート（質ワークアウトのダウングレード）:**
+
+当日の個人ベースライン逸脱（HRVが個人帯を下回る、またはRHR上昇）を消費し、
+**先頭週の質ワークアウト**（tempo/threshold/interval/repetition）を easy/recovery に
+ダウングレードする。プラン初案を提示する**前**に必ず実行する。
+
+1. `mcp__garmin-db__get_wellness_baseline_deviation` で当日の逸脱フラグを取得する（#555）
+2. 純粋関数 `apply_readiness_gate(deviation, workouts, weeks_to_check=1)` を適用する
+   （`garmin_mcp.training_plan.readiness_gate`）。`overall_flag=True` のとき先頭週の
+   tempo/threshold→easy、interval/repetition→recovery に書き換わり、調整ノート（日本語）が返る。
+   `overall_flag=False` のときは素通し（ノート空）。
+3. ダウングレードが発生した場合、返却ノートを**コーチコメントに明記**し、
+   「本日のリカバリー状態が低下しているため先頭週の質練を緩めました」と**ユーザーに確認**する。
+   ユーザーが当初の強度を希望する場合のみ元に戻す。
+
+> `save_training_plan` は先頭週に質ワークアウトが残っていると advisory 警告（非ブロッキング）を返す。
+> ゲート適用を確認するためのリマインダーであり、保存自体は妨げない。
+
 **提示フォーマット**:
 ```markdown
 ## トレーニングプラン初案
