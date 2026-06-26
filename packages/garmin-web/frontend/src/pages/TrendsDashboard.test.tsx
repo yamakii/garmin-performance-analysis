@@ -165,6 +165,28 @@ const RECOVERY_STATUS = {
   sleep_score: 80,
 };
 
+const HEAT_ADJUSTED = {
+  status: "ok",
+  coefficients: { beta_heat: 0.35, ref_temp_c: 15.0, n: 12 },
+  neutral_hr_slope: -0.02,
+  points: [
+    {
+      date: "2025-07-01",
+      temp_c: 28,
+      raw_hr: 150,
+      heat_cost: 4.55,
+      neutral_hr: 145.45,
+    },
+    {
+      date: "2025-07-15",
+      temp_c: 32,
+      raw_hr: 154,
+      heat_cost: 5.95,
+      neutral_hr: 148.05,
+    },
+  ],
+};
+
 const BODY_COMPOSITION = {
   weeks: 12,
   series: [
@@ -221,6 +243,9 @@ function stubTrendsFetch(
       }
       if (url.startsWith("/api/body-composition-trend")) {
         return Promise.resolve(jsonResponse(BODY_COMPOSITION));
+      }
+      if (url.startsWith("/api/trends/heat-adjusted")) {
+        return Promise.resolve(jsonResponse(HEAT_ADJUSTED));
       }
       return Promise.reject(new Error(`Unexpected fetch: ${url}`));
     }),

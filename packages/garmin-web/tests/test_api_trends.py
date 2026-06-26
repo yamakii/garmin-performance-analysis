@@ -36,3 +36,27 @@ def test_api_trends_all_endpoints_200(trends_db_path, empty_trends_db_path):
     physiology = empty_client.get("/api/trends/physiology")
     assert physiology.status_code == 200
     assert physiology.json() == {"vo2max": [], "lactate_threshold": []}
+
+
+@pytest.mark.integration
+def test_api_heat_adjusted_returns_payload(heat_db_path):
+    client = TestClient(create_app(db_path=heat_db_path))
+
+    response = client.get("/api/trends/heat-adjusted", params={"days": 365})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok"
+    assert "coefficients" in body
+    assert "points" in body
+    assert len(body["points"]) >= 10
+
+
+@pytest.mark.integration
+def test_api_heat_adjusted_rejects_bad_days(heat_db_path):
+    client = TestClient(create_app(db_path=heat_db_path))
+
+    # days below the ge=30 bound is rejected by FastAPI validation.
+    response = client.get("/api/trends/heat-adjusted", params={"days": 10})
+
+    assert response.status_code == 422

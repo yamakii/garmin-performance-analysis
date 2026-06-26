@@ -67,6 +67,7 @@ parameters are documented in each handler's docstring.
 | `/api/training-load` | Return the current ACWR snapshot plus the weekly load/ACWR trend. |
 | `/api/trends/efficiency` | HR efficiency trend with zone distribution. |
 | `/api/trends/form` | Form evaluation score trend. |
+| `/api/trends/heat-adjusted` | Climate-neutral HR-at-pace trend with per-run heat_cost. |
 | `/api/trends/physiology` | VO2max and lactate threshold time series. |
 | `/api/trends/volume` | Running volume aggregated per ISO week or calendar month. |
 | `/api/weekly-reviews` | Return recent weekly reviews (newest first), one per week. |

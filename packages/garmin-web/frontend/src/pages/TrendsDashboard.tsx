@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   fetchEfficiencyTrend,
   fetchFormTrend,
+  fetchHeatAdjustedTrend,
   fetchPhysiologyTrend,
   fetchVolumeTrend,
 } from "../api/trends";
@@ -9,6 +10,7 @@ import type {
   EfficiencyTrendPoint,
   FormTrendPoint,
   Granularity,
+  HeatAdjustedTrend,
   PhysiologyTrend,
   VolumeTrendPoint,
 } from "../api/trends";
@@ -30,11 +32,15 @@ import VolumeBlock from "./trends/VolumeBlock";
 import PhysiologyBlock from "./trends/PhysiologyBlock";
 import FormBlock from "./trends/FormBlock";
 import EfficiencyBlock from "./trends/EfficiencyBlock";
+import HeatAdjustedBlock from "./trends/HeatAdjustedBlock";
 import TrainingLoadBlock from "./trends/TrainingLoadBlock";
 import DurabilityBlock from "./trends/DurabilityBlock";
 import RecoveryPanel from "./trends/RecoveryPanel";
 import ConditionCard from "./trends/ConditionCard";
 import BodyCompositionChart from "./trends/BodyCompositionChart";
+
+/** Trailing window (days) for the climate-neutral HR trend (one year). */
+const HEAT_ADJUSTED_LOOKBACK_DAYS = 365;
 
 export default function TrendsDashboard() {
   const [granularity, setGranularity] = useState<Granularity>("week");
@@ -42,6 +48,9 @@ export default function TrendsDashboard() {
   const [physiology, setPhysiology] = useState<PhysiologyTrend | null>(null);
   const [form, setForm] = useState<FormTrendPoint[] | null>(null);
   const [efficiency, setEfficiency] = useState<EfficiencyTrendPoint[] | null>(
+    null,
+  );
+  const [heatAdjusted, setHeatAdjusted] = useState<HeatAdjustedTrend | null>(
     null,
   );
   const [trainingLoad, setTrainingLoad] = useState<AcwrTrend | null>(null);
@@ -79,6 +88,7 @@ export default function TrendsDashboard() {
       fetchRecoveryTrend(),
       fetchRecoveryStatus(),
       fetchBodyCompositionTrend(),
+      fetchHeatAdjustedTrend(HEAT_ADJUSTED_LOOKBACK_DAYS),
     ])
       .then(
         ([
@@ -90,6 +100,7 @@ export default function TrendsDashboard() {
           recoveryData,
           recoveryStatusData,
           bodyCompositionData,
+          heatAdjustedData,
         ]) => {
           if (!cancelled) {
             setPhysiology(physiologyData);
@@ -100,6 +111,7 @@ export default function TrendsDashboard() {
             setRecovery(recoveryData);
             setRecoveryStatus(recoveryStatusData);
             setBodyComposition(bodyCompositionData);
+            setHeatAdjusted(heatAdjustedData);
           }
         },
       )
@@ -131,7 +143,8 @@ export default function TrendsDashboard() {
     durability == null ||
     recovery == null ||
     recoveryStatus == null ||
-    bodyComposition == null;
+    bodyComposition == null ||
+    heatAdjusted == null;
   if (loading) {
     return (
       <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
@@ -158,6 +171,7 @@ export default function TrendsDashboard() {
         <PhysiologyBlock data={physiology} />
         <FormBlock data={form} />
         <EfficiencyBlock data={efficiency} />
+        <HeatAdjustedBlock data={heatAdjusted} />
         <TrainingLoadBlock data={trainingLoad} />
         <DurabilityBlock data={durability} />
         <RecoveryPanel data={recovery} />

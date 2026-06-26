@@ -1459,3 +1459,81 @@ def empty_recovery_db_path(tmp_path: Path) -> Path:
     finally:
         conn.close()
     return db_path
+
+
+# --- Heat-adjusted trend fixtures (Issue #551) ------------------------------
+# The heat-adjustment model (Issue #549) re-reads avg_heart_rate /
+# avg_pace_seconds_per_km / temp_celsius / activity_date from the activities
+# table via GarminDBReader, so the fixture DB must expose those columns and be
+# file-backed (the query resolves the file from the connection and re-opens it
+# read-only). MIN_FIT_ACTIVITIES is 10, so the happy fixture seeds 12 rows with
+# temperature spread to keep the regression well-conditioned.
+
+_CREATE_HEAT_ACTIVITIES = """
+    CREATE TABLE activities (
+        activity_id BIGINT PRIMARY KEY,
+        activity_date DATE NOT NULL,
+        avg_heart_rate INTEGER,
+        avg_pace_seconds_per_km DOUBLE,
+        temp_celsius DOUBLE
+    )
+"""
+
+
+def _heat_rows(dates: list[str]) -> list[tuple[int, str, int, float, float]]:
+    """Synthesize (id, date, hr, pace, temp) rows with a +0.35 bpm/°C signal."""
+    rows: list[tuple[int, str, int, float, float]] = []
+    for i, day in enumerate(dates):
+        temp = 8.0 + (i % 6) * 5.0  # 8..33 °C, crossing the 15 °C hinge
+        pace = 360.0 + (i % 3) * 8.0
+        hinge = max(temp - 15.0, 0.0)
+        hr = int(round(140 + 0.35 * hinge + (i % 2)))
+        rows.append((9000007000 + i, day, hr, pace, temp))
+    return rows
+
+
+def _seed_heat_db(db_path: Path, rows: list[tuple]) -> None:
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(_CREATE_HEAT_ACTIVITIES)
+        if rows:
+            conn.executemany(
+                "INSERT INTO activities VALUES (?, ?, ?, ?, ?)",
+                rows,
+            )
+    finally:
+        conn.close()
+
+
+@pytest.fixture
+def heat_conn_happy(tmp_path: Path):
+    """Read-only file-backed conn with 12 heat-varying runs (2025 H1)."""
+    db_path = tmp_path / "test_garmin_web_heat.duckdb"
+    dates = [
+        (_dt.date(2025, 1, 6) + _dt.timedelta(days=14 * i)).isoformat()
+        for i in range(12)
+    ]
+    _seed_heat_db(db_path, _heat_rows(dates))
+    conn = duckdb.connect(str(db_path), read_only=True)
+    yield conn
+    conn.close()
+
+
+@pytest.fixture
+def heat_conn_insufficient(tmp_path: Path):
+    """Read-only file-backed conn with a single run (below the fit minimum)."""
+    db_path = tmp_path / "test_garmin_web_heat_one.duckdb"
+    _seed_heat_db(db_path, _heat_rows(["2025-03-01"]))
+    conn = duckdb.connect(str(db_path), read_only=True)
+    yield conn
+    conn.close()
+
+
+@pytest.fixture
+def heat_db_path(tmp_path: Path) -> Path:
+    """File DuckDB with 12 heat-varying runs within the trailing year."""
+    db_path = tmp_path / "test_garmin_web_heat_api.duckdb"
+    today = _dt.date.today()
+    dates = [(today - _dt.timedelta(days=20 * i + 5)).isoformat() for i in range(12)]
+    _seed_heat_db(db_path, _heat_rows(dates))
+    return db_path
