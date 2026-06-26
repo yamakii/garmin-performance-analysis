@@ -72,6 +72,30 @@ export interface CriticalSpeedPoint {
   label: string;
 }
 
+export interface ObjectiveFitnessCurvePoint {
+  date: string;
+  vdot: number;
+  source_distance_km: number;
+}
+
+export interface GarminVo2maxPoint {
+  date: string;
+  value: number;
+}
+
+export interface OptimismGap {
+  garmin_vdot: number;
+  objective_vdot: number;
+  gap_vdot: number;
+  gap_pace_sec_per_km: number;
+}
+
+export interface ObjectiveFitnessTrend {
+  objective_curve: ObjectiveFitnessCurvePoint[];
+  garmin_vo2max: GarminVo2maxPoint[];
+  optimism_gap: OptimismGap | null;
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
   if (!response.ok) {
@@ -106,4 +130,8 @@ export function fetchHeatAdjustedTrend(
 
 export function fetchCriticalSpeed(): Promise<CriticalSpeedPoint[]> {
   return fetchJson("/api/trends/critical-speed");
+}
+
+export function fetchObjectiveFitnessTrend(): Promise<ObjectiveFitnessTrend> {
+  return fetchJson("/api/trends/objective-fitness");
 }

@@ -4,6 +4,7 @@ import {
   fetchEfficiencyTrend,
   fetchFormTrend,
   fetchHeatAdjustedTrend,
+  fetchObjectiveFitnessTrend,
   fetchPhysiologyTrend,
   fetchVolumeTrend,
 } from "../api/trends";
@@ -13,6 +14,7 @@ import type {
   FormTrendPoint,
   Granularity,
   HeatAdjustedTrend,
+  ObjectiveFitnessTrend,
   PhysiologyTrend,
   VolumeTrendPoint,
 } from "../api/trends";
@@ -38,6 +40,7 @@ import FormBlock from "./trends/FormBlock";
 import EfficiencyBlock from "./trends/EfficiencyBlock";
 import HeatAdjustedBlock from "./trends/HeatAdjustedBlock";
 import CriticalSpeedPanel from "./trends/CriticalSpeedPanel";
+import ObjectiveFitnessBlock from "./trends/ObjectiveFitnessBlock";
 import TrainingLoadBlock from "./trends/TrainingLoadBlock";
 import DurabilityBlock from "./trends/DurabilityBlock";
 import RecoveryPanel from "./trends/RecoveryPanel";
@@ -72,6 +75,8 @@ export default function TrendsDashboard() {
   const [criticalSpeed, setCriticalSpeed] = useState<
     CriticalSpeedPoint[] | null
   >(null);
+  const [objectiveFitness, setObjectiveFitness] =
+    useState<ObjectiveFitnessTrend | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -101,6 +106,7 @@ export default function TrendsDashboard() {
       fetchBodyCompositionTrend(),
       fetchHeatAdjustedTrend(HEAT_ADJUSTED_LOOKBACK_DAYS),
       fetchCriticalSpeed(),
+      fetchObjectiveFitnessTrend(),
       fetchWeightEconomyCoupling(),
     ])
       .then(
@@ -115,6 +121,7 @@ export default function TrendsDashboard() {
           bodyCompositionData,
           heatAdjustedData,
           criticalSpeedData,
+          objectiveFitnessData,
           weightEconomyData,
         ]) => {
           if (!cancelled) {
@@ -128,6 +135,7 @@ export default function TrendsDashboard() {
             setBodyComposition(bodyCompositionData);
             setHeatAdjusted(heatAdjustedData);
             setCriticalSpeed(criticalSpeedData);
+            setObjectiveFitness(objectiveFitnessData);
             setWeightEconomy(weightEconomyData);
           }
         },
@@ -163,6 +171,7 @@ export default function TrendsDashboard() {
     bodyComposition == null ||
     heatAdjusted == null ||
     criticalSpeed == null ||
+    objectiveFitness == null ||
     weightEconomy == null;
   if (loading) {
     return (
@@ -188,6 +197,7 @@ export default function TrendsDashboard() {
           onGranularityChange={setGranularity}
         />
         <PhysiologyBlock data={physiology} />
+        <ObjectiveFitnessBlock data={objectiveFitness} />
         <FormBlock data={form} />
         <EfficiencyBlock data={efficiency} />
         <HeatAdjustedBlock data={heatAdjusted} />

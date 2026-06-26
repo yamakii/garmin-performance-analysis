@@ -10,7 +10,10 @@ efforts and every quarter is dropped (Epic #526 #565 regression).
 import duckdb
 import pytest
 
-from garmin_web.queries.objective_fitness import get_quarterly_critical_speed
+from garmin_web.queries.objective_fitness import (
+    get_objective_fitness_trend,
+    get_quarterly_critical_speed,
+)
 
 _CREATE_ACTIVITIES = """
     CREATE TABLE activities (
@@ -24,6 +27,13 @@ _CREATE_SPLITS = """
         split_index INTEGER,
         distance DOUBLE,
         duration_seconds DOUBLE
+    )
+"""
+_CREATE_VO2_MAX = """
+    CREATE TABLE vo2_max (
+        activity_id BIGINT,
+        value DOUBLE,
+        date DATE
     )
 """
 
@@ -90,3 +100,83 @@ def test_get_quarterly_critical_speed_empty_db():
         assert get_quarterly_critical_speed(conn) == []
     finally:
         conn.close()
+
+
+def _trend_conn() -> duckdb.DuckDBPyConnection:
+    """In-memory DuckDB with two km-unit runs + Garmin VO2max rows."""
+    conn = duckdb.connect(":memory:")
+    conn.execute(_CREATE_ACTIVITIES)
+    conn.execute(_CREATE_SPLITS)
+    conn.execute(_CREATE_VO2_MAX)
+    conn.executemany(
+        "INSERT INTO activities VALUES (?, ?)",
+        [(9200000001, "2026-04-01"), (9200000002, "2026-05-01")],
+    )
+    # distance is in KM (1.0 == 1 km lap), like the production extractor stores.
+    run1 = [(9200000001, i, 1.0, 370.0) for i in range(10)]  # 10 km @ 6:10/km
+    run2 = [(9200000002, i, 1.0, 360.0) for i in range(6)]  # 6 km @ 6:00/km
+    conn.executemany("INSERT INTO splits VALUES (?, ?, ?, ?)", run1 + run2)
+    # Garmin VO2max (optimistic vs the real-run derived VDOT).
+    conn.executemany(
+        "INSERT INTO vo2_max VALUES (?, ?, ?)",
+        [(9200000001, 48.0, "2026-04-01"), (9200000002, 49.0, "2026-05-01")],
+    )
+    return conn
+
+
+@pytest.mark.integration
+def test_get_objective_fitness_trend_structure():
+    """km-unit splits + vo2_max -> both series ascending + a non-null gap."""
+    conn = _trend_conn()
+    try:
+        result = get_objective_fitness_trend(conn)
+    finally:
+        conn.close()
+
+    assert set(result) == {"objective_curve", "garmin_vo2max", "optimism_gap"}
+
+    curve = result["objective_curve"]
+    garmin = result["garmin_vo2max"]
+    assert curve, "km-unit splits produced no objective curve (km->m conversion?)"
+    assert garmin
+
+    # Both series ascending by date.
+    assert [p["date"] for p in curve] == sorted(p["date"] for p in curve)
+    assert [p["date"] for p in garmin] == sorted(p["date"] for p in garmin)
+
+    # Curve point shape.
+    for point in curve:
+        assert set(point) == {"date", "vdot", "source_distance_km"}
+        assert 20.0 < point["vdot"] < 80.0
+
+    gap = result["optimism_gap"]
+    assert gap is not None
+    assert set(gap) == {
+        "garmin_vdot",
+        "objective_vdot",
+        "gap_vdot",
+        "gap_pace_sec_per_km",
+    }
+    # Garmin estimate is more optimistic than the real-run derived VDOT here.
+    assert gap["garmin_vdot"] > gap["objective_vdot"]
+    assert gap["gap_vdot"] > 0
+    assert gap["gap_pace_sec_per_km"] > 0
+
+
+@pytest.mark.integration
+def test_get_objective_fitness_trend_empty():
+    """Empty DB -> both series [] and a null gap, no exception."""
+    conn = duckdb.connect(":memory:")
+    conn.execute(_CREATE_ACTIVITIES)
+    conn.execute(_CREATE_SPLITS)
+    conn.execute(_CREATE_VO2_MAX)
+    try:
+        result = get_objective_fitness_trend(conn)
+    finally:
+        conn.close()
+
+    assert result == {
+        "objective_curve": [],
+        "garmin_vo2max": [],
+        "optimism_gap": None,
+    }

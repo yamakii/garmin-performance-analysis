@@ -198,6 +198,23 @@ const CRITICAL_SPEED = [
   },
 ];
 
+const OBJECTIVE_FITNESS = {
+  objective_curve: [
+    { date: "2025-10-06", vdot: 34.5, source_distance_km: 5.0 },
+    { date: "2025-10-13", vdot: 35.2, source_distance_km: 5.0 },
+  ],
+  garmin_vo2max: [
+    { date: "2025-10-06", value: 44.6 },
+    { date: "2025-10-13", value: 45.1 },
+  ],
+  optimism_gap: {
+    garmin_vdot: 44.6,
+    objective_vdot: 35.2,
+    gap_vdot: 9.4,
+    gap_pace_sec_per_km: 63,
+  },
+};
+
 const BODY_COMPOSITION = {
   weeks: 12,
   series: [
@@ -282,6 +299,9 @@ function stubTrendsFetch(
       if (url.startsWith("/api/trends/heat-adjusted")) {
         return Promise.resolve(jsonResponse(HEAT_ADJUSTED));
       }
+      if (url.startsWith("/api/trends/objective-fitness")) {
+        return Promise.resolve(jsonResponse(OBJECTIVE_FITNESS));
+      }
       if (url.startsWith("/api/weight-economy-coupling")) {
         return Promise.resolve(jsonResponse(WEIGHT_ECONOMY));
       }
@@ -329,6 +349,15 @@ describe("TrendsDashboard", () => {
 
     // Physiology block shows the latest VO2max from the mocked API data
     expect(screen.getByText(/最新VO2max: 50\.1/)).toBeInTheDocument();
+
+    // Objective fitness overlay block renders with the optimism gap annotation.
+    expect(
+      screen.getByRole("heading", {
+        level: 2,
+        name: "客観フィットネス曲線 (実走VDOT vs Garmin VO2max)",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/63 s\/km/)).toBeInTheDocument();
 
     // ACWR block shows the optimal status badge and current ACWR value
     expect(screen.getByText("最適")).toBeInTheDocument();
