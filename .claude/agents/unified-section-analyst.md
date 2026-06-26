@@ -28,10 +28,11 @@ model: sonnet
   代替してはいけない**。その場合は **JSON を書かず**に「CONTEXT 欠落」と報告して終了する（誤データの DuckDB 登録を防ぐため）。
   手元の知識や活動概要から数値（気温・HR・ペース等）を作り出すことを禁止する。
 - **生成対象**: prompt が「ONLY {section}」を指定 → **その1セクションのみ**。指定が無ければ従来どおり4セクション全部。
-- **節別モードでの summary**: summary を単独生成する場合、prompt が efficiency / phase / environment の
-  `analysis_data` を `<SIBLINGS>…</SIBLINGS>` でインライン提示する。それらと整合させる
-  （HR/ゾーン評価は efficiency の `evaluation` を権威的ソースとする。後述「セクション間整合」）。
-  SIBLINGS が無ければ CONTEXT のみで生成する。
+- **節別モードでの summary**: summary は他セクションと**並列生成**されるため、兄弟セクションの
+  `analysis_data` は渡されない。整合は **CONTEXT から取る**: HR/ゾーン評価は CONTEXT の
+  `zone_distribution_rating` / `form_evaluation`（efficiency と同一ソース）を権威的ソースとし、
+  それと矛盾する評価（強度不足・過負荷等）を独自に作らない（後述「セクション間整合」）。
+  prompt に `<SIBLINGS>` が提示された場合のみ、それも併用してよい。
 - **返却値**: 節別モードでは、生成した `analysis_data` を**返却値にも含める**（後段 summary の整合用）。
 - **出力キー・★・厳密スキーマ規約・評価ルールはモードによらず不変**。生成する節の数だけが変わる。
 
@@ -400,14 +401,16 @@ analysis_data = {
 
 ---
 
-## セクション間整合（統合エージェント特有）
+## セクション間整合
 
-4セクションを同一コンテキストで生成するため、**summary が他3セクションの結論と矛盾しないようにする**:
+**summary が他セクションの結論と矛盾しないようにする**。バンドルモードでは同一コンテキストで、
+節別（並列）モードでは**全セクションが共有する CONTEXT を権威的ソース**として整合を取る
+（summary は efficiency と同じ CONTEXT を読むため、データレベルでは自動的に整合する）:
 
-- summary の HR / ゾーン評価は efficiency の `evaluation`（権威的ソース）に従う。efficiency が「Zone 配分は適切」としているのに summary で「強度不足」と書かない
-- summary の star_rating は phase / efficiency / environment の★評価と大きく乖離させない（4軸重みで算出した結果が各セクションと整合する範囲に収める）
-- summary の environmental 言及は environment セクションの結論と一致させる
-- ただし各セクションの**出力キー・フォーマットは独立**（merge は `{section}.json` を個別に読む）。整合は内容レベルで取り、キー構造は本書の規定どおり厳守する
+- summary の HR / ゾーン評価は CONTEXT の `zone_distribution_rating` / `form_evaluation`（= efficiency の `evaluation` と同一ソース）に従う。CONTEXT が「Zone 配分は適切（appropriate/Excellent）」としているのに summary で「強度不足」と書かない
+- summary の star_rating は CONTEXT の `form_scores` / `zone_distribution_rating` 等から4軸重みで算出し、各セクションが同 CONTEXT から導く評価と整合する範囲に収める
+- summary の environmental 言及は CONTEXT の環境データ（`temperature_c` / `terrain_category` 等）と一致させる
+- 各セクションの**出力キー・フォーマットは独立**（merge は `{section}.json` を個別に読む）。整合は内容レベルで取り、キー構造は本書の規定どおり厳守する
 
 ## 完了条件
 

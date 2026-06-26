@@ -18,9 +18,8 @@ const {
   sectionPlan,
   buildSectionPrompt,
   buildSummaryPrompt,
-  collectSiblings,
 } = new Function(
-  `${m[1]}\nreturn { normalizeArgs, shouldAnalyze, sectionPlan, buildSectionPrompt, buildSummaryPrompt, collectSiblings }`,
+  `${m[1]}\nreturn { normalizeArgs, shouldAnalyze, sectionPlan, buildSectionPrompt, buildSummaryPrompt }`,
 )()
 
 test('normalizeArgs accepts a bare date string', () => {
@@ -42,10 +41,9 @@ test('shouldAnalyze gates on has_run', () => {
   assert.equal(shouldAnalyze(undefined), false)
 })
 
-test('sectionPlan splits independent group, dependent summary, and split', () => {
+test('sectionPlan puts all 4 unified sections (incl. summary) in one barrier', () => {
   const p = sectionPlan()
-  assert.deepEqual(p.independent, ['efficiency', 'phase', 'environment'])
-  assert.equal(p.dependent, 'summary')
+  assert.deepEqual(p.unified, ['efficiency', 'phase', 'environment', 'summary'])
   assert.equal(p.extra, 'split')
 })
 
@@ -65,22 +63,12 @@ test('buildSectionPrompt inlines CONTEXT and targets only the named section', ()
   assert.doesNotMatch(out, /Read\(/) // no file-read dependency
 })
 
-test('buildSummaryPrompt inlines CONTEXT and the sibling analysis_data', () => {
-  const out = buildSummaryPrompt(CTX, JSON.stringify({ efficiency: { evaluation: 'zone2 ok' } }))
+test('buildSummaryPrompt inlines CONTEXT and derives consistency from it (no siblings)', () => {
+  const out = buildSummaryPrompt(CTX)
   assert.match(out, /<CONTEXT>/)
-  assert.match(out, /<SIBLINGS>/)
-  assert.match(out, /"evaluation":"zone2 ok"/)
+  assert.match(out, /"training_type":"aerobic_base"/) // real data inlined
+  assert.match(out, /zone_distribution_rating|form_evaluation/) // CONTEXT-based consistency
   assert.match(out, /ONLY summary/)
   assert.match(out, /\/tmp\/analysis_1_2\/summary\.json/)
-})
-
-test('collectSiblings maps section -> analysis_data and ignores split/nulls', () => {
-  const out = collectSiblings([
-    { section: 'efficiency', analysis_data: { a: 1 }, written: true },
-    { section: 'phase', analysis_data: { b: 2 }, written: true },
-    null, // a dropped agent
-    'split agent free-text result', // split returns text, not a section object
-    { section: 'environment', analysis_data: { c: 3 }, written: true },
-  ])
-  assert.deepEqual(out, { efficiency: { a: 1 }, phase: { b: 2 }, environment: { c: 3 } })
+  assert.doesNotMatch(out, /<SIBLINGS>/) // no sibling JSONs in parallel mode
 })
