@@ -59,9 +59,9 @@ def test_schema_parity_all_tools() -> None:
 
 
 @pytest.mark.unit
-def test_all_tools_count_53() -> None:
-    """ALL_DEFS holds the 53 handler-domain tools (unique names); the live MCP
-    surface adds the 2 server tools for 55 total.
+def test_all_tools_count_54() -> None:
+    """ALL_DEFS holds the 54 handler-domain tools (unique names); the live MCP
+    surface adds the 2 server tools for 56 total.
 
     #450 added 2 strength-session tools (ingest_strength_sessions,
     get_strength_sessions), raising the domain count from 44 to 46. #463 added
@@ -70,15 +70,16 @@ def test_all_tools_count_53() -> None:
     raising it to 49. #500 added get_recovery_status, raising it to 50. #550
     added get_heat_adjusted_trend, raising it to 51. #554 added
     get_weight_economy_coupling, raising it to 52. #563 added
-    get_objective_fitness_curve, raising it to 53.
+    get_objective_fitness_curve, raising it to 53. #555 added
+    get_wellness_baseline_deviation, raising it to 54.
     """
-    assert len(ALL_DEFS) == 53
+    assert len(ALL_DEFS) == 54
     names = [d.name for d in ALL_DEFS]
     assert len(names) == len(set(names)), "duplicate tool names in ALL_DEFS"
-    assert len(ALL_DEFS_BY_NAME) == 53
+    assert len(ALL_DEFS_BY_NAME) == 54
 
     live_names = [t.name for t in get_tool_definitions()]
-    assert len(live_names) == 55
+    assert len(live_names) == 56
     assert len(live_names) == len(
         set(live_names)
     ), "duplicate tool names on MCP surface"
@@ -394,9 +395,10 @@ def test_tool_golden_snapshot_matches() -> None:
 @pytest.mark.unit
 def test_tool_count_unchanged() -> None:
     """Removing ``server_dir`` does not change the tool count: ``reload_server``
-    is retained by name; the surface serves 55 tools (53 domain + 2 server,
-    after #554's get_weight_economy_coupling + #563's get_objective_fitness_curve)."""
+    is retained by name; the surface serves 56 tools (54 domain + 2 server,
+    after #563's get_objective_fitness_curve + #555's
+    get_wellness_baseline_deviation)."""
     live_names = [t.name for t in get_tool_definitions()]
-    assert len(live_names) == 55
+    assert len(live_names) == 56
     assert "reload_server" in live_names
     assert "get_server_info" in live_names

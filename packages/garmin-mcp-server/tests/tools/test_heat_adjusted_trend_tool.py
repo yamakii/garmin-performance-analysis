@@ -169,9 +169,9 @@ def test_tool_dispatch_calls_reader() -> None:
 
 @pytest.mark.unit
 def test_tool_schema_parity() -> None:
-    """The live MCP surface is 55 (53 domain + 2 server) after #554 + #563."""
+    """The live MCP surface is 56 (54 domain + 2 server) after #563 + #555."""
     live_names = [t.name for t in get_tool_definitions()]
     assert "get_heat_adjusted_trend" in live_names
-    assert len(live_names) == 55
+    assert len(live_names) == 56
     assert len(live_names) == len(set(live_names)), "duplicate tool names on surface"
-    assert len(ALL_DEFS) == 53
+    assert len(ALL_DEFS) == 54
