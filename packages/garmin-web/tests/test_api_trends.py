@@ -53,6 +53,39 @@ def test_api_heat_adjusted_returns_payload(heat_db_path):
 
 
 @pytest.mark.integration
+def test_objective_fitness_route_200(
+    objective_fitness_db_path, empty_objective_fitness_db_path
+):
+    client = TestClient(create_app(db_path=objective_fitness_db_path))
+
+    response = client.get("/api/trends/objective-fitness")
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body) == {"objective_curve", "garmin_vo2max", "optimism_gap"}
+    assert body["objective_curve"], "expected a non-empty objective curve"
+    assert body["garmin_vo2max"]
+    for point in body["objective_curve"]:
+        assert set(point) == {"date", "vdot", "source_distance_km"}
+    gap = body["optimism_gap"]
+    assert set(gap) == {
+        "garmin_vdot",
+        "objective_vdot",
+        "gap_vdot",
+        "gap_pace_sec_per_km",
+    }
+
+    # Empty DB returns 200 with empty series and a null gap.
+    empty_client = TestClient(create_app(db_path=empty_objective_fitness_db_path))
+    empty = empty_client.get("/api/trends/objective-fitness")
+    assert empty.status_code == 200
+    assert empty.json() == {
+        "objective_curve": [],
+        "garmin_vo2max": [],
+        "optimism_gap": None,
+    }
+
+
+@pytest.mark.integration
 def test_api_heat_adjusted_rejects_bad_days(heat_db_path):
     client = TestClient(create_app(db_path=heat_db_path))
 

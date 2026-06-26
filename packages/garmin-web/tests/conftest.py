@@ -193,6 +193,70 @@ def empty_trends_db_path(tmp_path: Path) -> Path:
     return db_path
 
 
+# --- Objective fitness curve fixtures (Issue #564) ---------------------------
+# get_objective_fitness_trend reads `splits` (km-unit distance + duration) +
+# `activities` (date) + `vo2_max` (value/date). The 1km laps feed best-effort
+# extraction (km->m conversion in the query) and the latest VO2max anchors the
+# optimism gap.
+_CREATE_OBJ_SPLITS = """
+    CREATE TABLE splits (
+        activity_id BIGINT,
+        split_index INTEGER,
+        distance DOUBLE,
+        duration_seconds DOUBLE
+    )
+"""
+
+
+@pytest.fixture
+def objective_fitness_db_path(tmp_path: Path) -> Path:
+    """File DuckDB with two km-unit runs + Garmin VO2max rows."""
+    db_path = tmp_path / "test_garmin_web_objective_fitness.duckdb"
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(_CREATE_ACTIVITIES)
+        conn.execute(_CREATE_OBJ_SPLITS)
+        conn.execute(_CREATE_VO2_MAX)
+        conn.executemany(
+            "INSERT INTO activities ("
+            "activity_id, activity_date, activity_name, total_distance_km,"
+            " total_time_seconds, avg_pace_seconds_per_km, avg_heart_rate"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                (9200001001, "2026-04-01", "Run A", 10.0, 3700, 370.0, 150),
+                (9200001002, "2026-05-01", "Run B", 6.0, 2160, 360.0, 152),
+            ],
+        )
+        run1 = [(9200001001, i, 1.0, 370.0) for i in range(10)]
+        run2 = [(9200001002, i, 1.0, 360.0) for i in range(6)]
+        conn.executemany("INSERT INTO splits VALUES (?, ?, ?, ?)", run1 + run2)
+        conn.executemany(
+            "INSERT INTO vo2_max (activity_id, precise_value, value, date, category)"
+            " VALUES (?, ?, ?, ?, ?)",
+            [
+                (9200001001, 48.0, 48.0, "2026-04-01", 5),
+                (9200001002, 49.0, 49.0, "2026-05-01", 5),
+            ],
+        )
+    finally:
+        conn.close()
+    return db_path
+
+
+@pytest.fixture
+def empty_objective_fitness_db_path(tmp_path: Path) -> Path:
+    """File DuckDB with empty activities + splits + vo2_max tables."""
+    db_path = tmp_path / "test_garmin_web_objective_fitness_empty.duckdb"
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(_CREATE_ACTIVITIES)
+        conn.execute(_CREATE_OBJ_SPLITS)
+        conn.execute(_CREATE_VO2_MAX)
+    finally:
+        conn.close()
+    return db_path
+
+
 # --- Detail page fixtures (Issue #199) ---------------------------------
 # Full production schemas (mirroring garmin_mcp/database/db_writer.py and the
 # applied migrations) so the explicit-column queries in queries/detail.py

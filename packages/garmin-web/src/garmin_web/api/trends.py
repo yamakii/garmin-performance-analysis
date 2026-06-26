@@ -77,3 +77,15 @@ def get_critical_speed(request: Request) -> list[dict]:
     """
     with get_connection(_db_path(request)) as conn:
         return objective_fitness_queries.get_quarterly_critical_speed(conn)
+
+
+@router.get("/objective-fitness")
+def get_objective_fitness(request: Request) -> dict:
+    """Objective (real-run derived) fitness curve vs Garmin VO2max + optimism gap.
+
+    Overlays a rolling 90-day best-effort performance-VDOT curve on Garmin's own
+    VO2max series and surfaces the optimism gap (Garmin-derived VDOT minus the
+    objective VDOT, in VDOT and s/km).
+    """
+    with get_connection(_db_path(request)) as conn:
+        return objective_fitness_queries.get_objective_fitness_trend(conn)
