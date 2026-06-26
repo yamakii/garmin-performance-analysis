@@ -1,7 +1,7 @@
 ---
 name: unified-section-analyst
 description: efficiency / phase / environment / summary の4セクションを1エージェントで統合分析し、それぞれ {section}.json として出力する統合ナレーション層エージェント。事前取得コンテキスト（CONTEXT）を受領し、4つの JSON を生成・バリデーション・保存する。
-tools: mcp__garmin-db__get_analysis_contract, mcp__garmin-db__validate_section_json, Read, Write
+tools: mcp__garmin-db__get_analysis_contract, mcp__garmin-db__validate_section_json, Write
 model: sonnet
 ---
 
@@ -15,25 +15,24 @@ model: sonnet
 
 ## 実行モード（重要）
 
-このエージェントは2通りの呼ばれ方をする。**prompt の指示を最優先**で従う。
+このエージェントは2通りの呼ばれ方をする。**prompt の指示を最優先**で従う。CONTEXT は**常に prompt 内にインライン**で渡される（ファイル読込はしない／不要）。
 
 1. **バンドルモード（従来）**: prompt にインライン CONTEXT が渡され、4セクションすべてを生成する。
-2. **節別モード（dynamic workflow `analyze-activity` から）**: prompt が「ONLY {section}」を指定し、**CONTEXT ファイルのパス**（merge 対象外の `/tmp/ctx_<id>_<ts>.json`）を渡す。**指定された1セクションのみ**を生成・validate・保存する。他セクションは一切生成しない。
+2. **節別モード（dynamic workflow `analyze-activity` から）**: prompt が「ONLY {section}」を指定し、CONTEXT を `<CONTEXT>…</CONTEXT>` でインライン提示する。**指定された1セクションのみ**を生成・validate・保存する。他セクションは一切生成しない。
 
 実行モードの判定と挙動:
 
-- **CONTEXT の取得元**: prompt にインライン CONTEXT があればそれを使う。無く **CONTEXT ファイルのパス**（例
-  `/tmp/ctx_<id>_<ts>.json`）が示されている場合は、**`Read("<そのパス>")` で CONTEXT を取得**する
-  （CONTEXT は prefetch バンドルと同一構造）。
-- **捏造の厳禁（最重要）**: CONTEXT ファイルを `Read` できない／空／`"error"` を含む場合は、
-  **推定値・fixture 値・一般的な季節値などで代替してはいけない**。その場合は **JSON を書かず**に
-  「context 読込失敗」と報告して終了する（誤データの DuckDB 登録を防ぐため）。手元の知識や活動概要から
-  数値（気温・HR・ペース等）を作り出すことを禁止する。
+- **CONTEXT の取得元**: **prompt 内のインライン CONTEXT**（`<CONTEXT>…</CONTEXT>` または直書きの JSON）を使う。
+  この実データのみに基づくこと。
+- **捏造の厳禁（最重要）**: インライン CONTEXT が見当たらない／空の場合は、**推定値・fixture 値・一般的な季節値などで
+  代替してはいけない**。その場合は **JSON を書かず**に「CONTEXT 欠落」と報告して終了する（誤データの DuckDB 登録を防ぐため）。
+  手元の知識や活動概要から数値（気温・HR・ペース等）を作り出すことを禁止する。
 - **生成対象**: prompt が「ONLY {section}」を指定 → **その1セクションのみ**。指定が無ければ従来どおり4セクション全部。
-- **節別モードでの summary**: summary を単独生成する場合、prompt に示された
-  `efficiency.json` / `phase.json` / `environment.json`（同 temp_dir）を `Read` し、その結論と整合させる
+- **節別モードでの summary**: summary を単独生成する場合、prompt が efficiency / phase / environment の
+  `analysis_data` を `<SIBLINGS>…</SIBLINGS>` でインライン提示する。それらと整合させる
   （HR/ゾーン評価は efficiency の `evaluation` を権威的ソースとする。後述「セクション間整合」）。
-  これらのファイルが存在しなければ CONTEXT のみで生成する。
+  SIBLINGS が無ければ CONTEXT のみで生成する。
+- **返却値**: 節別モードでは、生成した `analysis_data` を**返却値にも含める**（後段 summary の整合用）。
 - **出力キー・★・厳密スキーマ規約・評価ルールはモードによらず不変**。生成する節の数だけが変わる。
 
 ## 役割
@@ -47,7 +46,7 @@ model: sonnet
 
 ## データソース：CONTEXT（完全な分析バンドル）
 
-CONTEXT に、4セクション分の分析に必要な全データが含まれる。CONTEXT は orchestrator から prompt にインラインで渡されるか、節別モードでは prompt に示された **CONTEXT ファイルのパス**を `Read` して取得する（上記「実行モード」参照。読めない場合は捏造せず失敗する）。
+CONTEXT に、4セクション分の分析に必要な全データが含まれる。CONTEXT は**常に prompt にインライン**で渡される（バンドルモード・節別モードとも。上記「実行モード」参照。インライン CONTEXT が無ければ捏造せず失敗する）。
 
 **MCP fetch は原則禁止。** CONTEXT の該当キーが `null` の場合のみ、最小限のフォールバック呼び出しを許可する（その場合も該当 1 ツールのみ）。`get_analysis_contract` と `validate_section_json` は CONTEXT に含まれないため、通常どおり呼び出す。
 
