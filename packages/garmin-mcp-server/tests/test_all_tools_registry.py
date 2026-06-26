@@ -59,29 +59,52 @@ def test_schema_parity_all_tools() -> None:
 
 
 @pytest.mark.unit
-def test_all_tools_count_49() -> None:
-    """ALL_DEFS holds the 51 handler-domain tools (unique names); the live MCP
-    surface adds the 2 server tools for 53 total.
+def test_all_tools_count_51() -> None:
+    """ALL_DEFS holds the 52 handler-domain tools (unique names); the live MCP
+    surface adds the 2 server tools for 54 total.
 
     #450 added 2 strength-session tools (ingest_strength_sessions,
     get_strength_sessions), raising the domain count from 44 to 46. #463 added
     the catch_up_ingest orchestrator, raising it to 47. #501 added
     get_body_composition_trend, raising it to 48. #499 added get_recovery_trend,
     raising it to 49. #500 added get_recovery_status, raising it to 50. #550
-    added get_heat_adjusted_trend, raising it to 51.
+    added get_heat_adjusted_trend, raising it to 51. #563 added
+    get_objective_fitness_curve, raising it to 52.
     """
-    assert len(ALL_DEFS) == 51
+    assert len(ALL_DEFS) == 52
     names = [d.name for d in ALL_DEFS]
     assert len(names) == len(set(names)), "duplicate tool names in ALL_DEFS"
-    assert len(ALL_DEFS_BY_NAME) == 51
+    assert len(ALL_DEFS_BY_NAME) == 52
 
     live_names = [t.name for t in get_tool_definitions()]
-    assert len(live_names) == 53
+    assert len(live_names) == 54
     assert len(live_names) == len(
         set(live_names)
     ), "duplicate tool names on MCP surface"
     assert "get_server_info" in live_names
     assert "reload_server" in live_names
+
+
+@pytest.mark.unit
+def test_objective_fitness_tool_registered() -> None:
+    """get_objective_fitness_curve is registered and wired to the reader."""
+    assert "get_objective_fitness_curve" in ALL_DEFS_BY_NAME
+
+    reader = MagicMock()
+    reader.fitness_curve.get_objective_fitness_curve.return_value = {
+        "objective_curve": [],
+        "garmin_vo2max": [],
+        "optimism_gap": None,
+    }
+    dispatch(
+        ALL_DEFS_BY_NAME,
+        reader,
+        "get_objective_fitness_curve",
+        {"window_days": 90},
+    )
+    reader.fitness_curve.get_objective_fitness_curve.assert_called_once_with(
+        window_days=90
+    )
 
 
 @pytest.mark.unit
@@ -370,9 +393,9 @@ def test_tool_golden_snapshot_matches() -> None:
 @pytest.mark.unit
 def test_tool_count_unchanged() -> None:
     """Removing ``server_dir`` does not change the tool count: ``reload_server``
-    is retained by name; the surface serves 53 tools (51 domain + 2 server,
-    after #550's get_heat_adjusted_trend)."""
+    is retained by name; the surface serves 54 tools (52 domain + 2 server,
+    after #563's get_objective_fitness_curve)."""
     live_names = [t.name for t in get_tool_definitions()]
-    assert len(live_names) == 53
+    assert len(live_names) == 54
     assert "reload_server" in live_names
     assert "get_server_info" in live_names

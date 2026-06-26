@@ -11,6 +11,7 @@ from typing import Any, Literal
 from garmin_mcp.database.readers import (
     DurabilityReader,
     ExportReader,
+    FitnessCurveReader,
     FormReader,
     MetadataReader,
     PerformanceReader,
@@ -55,6 +56,7 @@ class GarminDBReader:
         self.race = RaceReader(db_path)
         self.training_load = TrainingLoadReader(db_path)
         self.durability = DurabilityReader(db_path)
+        self.fitness_curve = FitnessCurveReader(db_path)
         self.strength_sessions = StrengthSessionsReader(db_path)
         self.utility = UtilityReader(db_path)
 

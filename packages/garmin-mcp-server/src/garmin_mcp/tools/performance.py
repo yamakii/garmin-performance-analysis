@@ -20,8 +20,20 @@ class ActivityIdParams(BaseModel):
     activity_id: int
 
 
+class ObjectiveFitnessParams(BaseModel):
+    """Arguments for the objective fitness curve tool."""
+
+    window_days: int = 90
+
+
 def _get_performance_trends(reader: GarminDBReader, p: ActivityIdParams) -> Any:
     return reader.get_performance_trends(p.activity_id)
+
+
+def _get_objective_fitness_curve(
+    reader: GarminDBReader, p: ObjectiveFitnessParams
+) -> Any:
+    return reader.fitness_curve.get_objective_fitness_curve(window_days=p.window_days)
 
 
 def _get_weather_data(reader: GarminDBReader, p: ActivityIdParams) -> Any:
@@ -64,6 +76,18 @@ PERFORMANCE_TOOLS: list[ToolDef] = [
         handler=_prefetch_activity_context,
         cli_group="performance",
         cli_name="prefetch-context",
+    ),
+    ToolDef(
+        name="get_objective_fitness_curve",
+        description=(
+            "Objective (non-optimistic) fitness curve: rolling 90-day max "
+            "best-effort performance VDOT from splits, side-by-side with Garmin "
+            "VO2max and the optimism gap."
+        ),
+        params=ObjectiveFitnessParams,
+        handler=_get_objective_fitness_curve,
+        cli_group="performance",
+        cli_name="objective-fitness-curve",
     ),
 ]
 

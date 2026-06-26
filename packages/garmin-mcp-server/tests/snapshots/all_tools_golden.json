@@ -590,6 +590,19 @@
     }
   },
   {
+    "name": "get_objective_fitness_curve",
+    "description": "Objective (non-optimistic) fitness curve: rolling 90-day max best-effort performance VDOT from splits, side-by-side with Garmin VO2max and the optimism gap.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "window_days": {
+          "type": "integer",
+          "default": 90
+        }
+      }
+    }
+  },
+  {
     "name": "get_split_time_series_detail",
     "description": "Get second-by-second detailed metrics for a specific 1km split (DuckDB-based, 98.8% token reduction)",
     "inputSchema": {
