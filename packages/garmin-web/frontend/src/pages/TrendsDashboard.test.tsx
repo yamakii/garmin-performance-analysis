@@ -187,6 +187,17 @@ const HEAT_ADJUSTED = {
   ],
 };
 
+const CRITICAL_SPEED = [
+  {
+    quarter: "2025-Q4",
+    cs_mps: 2.83,
+    cs_pace_sec_per_km: 353.4,
+    r_squared: 0.9998,
+    n: 4,
+    label: "threshold-anchored (no short/long max effort)",
+  },
+];
+
 const BODY_COMPOSITION = {
   weeks: 12,
   series: [
@@ -225,6 +236,9 @@ function stubTrendsFetch(
       }
       if (url.startsWith("/api/trends/form")) {
         return Promise.resolve(jsonResponse(FORM));
+      }
+      if (url.startsWith("/api/trends/critical-speed")) {
+        return Promise.resolve(jsonResponse(CRITICAL_SPEED));
       }
       if (url.startsWith("/api/trends/efficiency")) {
         return Promise.resolve(jsonResponse(EFFICIENCY));

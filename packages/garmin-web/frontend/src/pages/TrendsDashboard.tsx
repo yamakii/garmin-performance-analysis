@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  fetchCriticalSpeed,
   fetchEfficiencyTrend,
   fetchFormTrend,
   fetchHeatAdjustedTrend,
@@ -7,6 +8,7 @@ import {
   fetchVolumeTrend,
 } from "../api/trends";
 import type {
+  CriticalSpeedPoint,
   EfficiencyTrendPoint,
   FormTrendPoint,
   Granularity,
@@ -33,6 +35,7 @@ import PhysiologyBlock from "./trends/PhysiologyBlock";
 import FormBlock from "./trends/FormBlock";
 import EfficiencyBlock from "./trends/EfficiencyBlock";
 import HeatAdjustedBlock from "./trends/HeatAdjustedBlock";
+import CriticalSpeedPanel from "./trends/CriticalSpeedPanel";
 import TrainingLoadBlock from "./trends/TrainingLoadBlock";
 import DurabilityBlock from "./trends/DurabilityBlock";
 import RecoveryPanel from "./trends/RecoveryPanel";
@@ -61,6 +64,9 @@ export default function TrendsDashboard() {
   );
   const [bodyComposition, setBodyComposition] =
     useState<BodyCompositionTrend | null>(null);
+  const [criticalSpeed, setCriticalSpeed] = useState<
+    CriticalSpeedPoint[] | null
+  >(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -89,6 +95,7 @@ export default function TrendsDashboard() {
       fetchRecoveryStatus(),
       fetchBodyCompositionTrend(),
       fetchHeatAdjustedTrend(HEAT_ADJUSTED_LOOKBACK_DAYS),
+      fetchCriticalSpeed(),
     ])
       .then(
         ([
@@ -101,6 +108,7 @@ export default function TrendsDashboard() {
           recoveryStatusData,
           bodyCompositionData,
           heatAdjustedData,
+          criticalSpeedData,
         ]) => {
           if (!cancelled) {
             setPhysiology(physiologyData);
@@ -112,6 +120,7 @@ export default function TrendsDashboard() {
             setRecoveryStatus(recoveryStatusData);
             setBodyComposition(bodyCompositionData);
             setHeatAdjusted(heatAdjustedData);
+            setCriticalSpeed(criticalSpeedData);
           }
         },
       )
@@ -144,7 +153,8 @@ export default function TrendsDashboard() {
     recovery == null ||
     recoveryStatus == null ||
     bodyComposition == null ||
-    heatAdjusted == null;
+    heatAdjusted == null ||
+    criticalSpeed == null;
   if (loading) {
     return (
       <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
@@ -172,6 +182,7 @@ export default function TrendsDashboard() {
         <FormBlock data={form} />
         <EfficiencyBlock data={efficiency} />
         <HeatAdjustedBlock data={heatAdjusted} />
+        <CriticalSpeedPanel data={criticalSpeed} />
         <TrainingLoadBlock data={trainingLoad} />
         <DurabilityBlock data={durability} />
         <RecoveryPanel data={recovery} />

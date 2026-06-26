@@ -63,6 +63,15 @@ export interface HeatAdjustedTrend {
   points: HeatAdjustedPoint[];
 }
 
+export interface CriticalSpeedPoint {
+  quarter: string;
+  cs_mps: number;
+  cs_pace_sec_per_km: number;
+  r_squared: number;
+  n: number;
+  label: string;
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
   if (!response.ok) {
@@ -93,4 +102,8 @@ export function fetchHeatAdjustedTrend(
   days: number,
 ): Promise<HeatAdjustedTrend> {
   return fetchJson(`/api/trends/heat-adjusted?days=${days}`);
+}
+
+export function fetchCriticalSpeed(): Promise<CriticalSpeedPoint[]> {
+  return fetchJson("/api/trends/critical-speed");
 }
