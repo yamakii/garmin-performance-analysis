@@ -23,7 +23,11 @@ import logging
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from garmin_mcp.database.connection import get_db_path, get_write_connection
+from garmin_mcp.database.connection import (
+    get_connection,
+    get_db_path,
+    get_write_connection,
+)
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.ingest.api_client import get_garmin_client
@@ -53,8 +57,9 @@ def _resolve_window(
         - ``end`` defaults to today when omitted.
         - When ``start`` is given, it is returned unchanged (explicit range).
         - When ``start`` is omitted, catch-up applies: the latest
-          ``strength_sessions.activity_date`` in the DB (re-fetched so recent
-          edits are reflected), or ``end - 30 days`` when the table is empty.
+          ``strength_sessions.activity_date`` in the DB, or ``end - 30 days``
+          when the table is empty. (Sessions already stored in the window are
+          skipped by the caller, not re-fetched.)
     """
     resolved_end = end_date if end_date is not None else date.today().isoformat()
 
@@ -79,17 +84,20 @@ def ingest_strength_sessions(
 
     Args:
         start_date: Inclusive window start (``YYYY-MM-DD``). When omitted,
-            catch-up resolution is used: the latest stored strength date (that
-            day is re-fetched so recent edits are reflected), or ``end - 30``
-            days when the table is empty.
+            catch-up resolution is used: the latest stored strength date, or
+            ``end - 30`` days when the table is empty. Sessions already stored
+            within the window are skipped (not re-fetched).
         end_date: Inclusive window end (``YYYY-MM-DD``). Defaults to today.
         db_path: Optional DuckDB path (defaults to the configured database).
 
     Returns:
-        Dict ``{"inserted", "updated", "activity_ids", "window"}`` where
-        ``window`` is ``{"start": str, "end": str}`` (the resolved range).
-        ``inserted`` counts new rows; ``updated`` counts rows that already
-        existed and were overwritten (idempotent upsert).
+        Dict ``{"discovered", "ingested", "skipped_existing", "activity_ids",
+        "window"}`` where ``window`` is ``{"start": str, "end": str}`` (the
+        resolved range). ``discovered`` counts strength sessions matched in the
+        window; ``ingested`` counts newly fetched + saved sessions;
+        ``skipped_existing`` counts sessions already in ``strength_sessions``
+        (skipped without an exercise_sets API call). Mirrors
+        :func:`ingest_running_activities`.
     """
     resolved_path = str(get_db_path(db_path))
     # Ensure the schema (and strength_sessions table) exists.
@@ -101,32 +109,39 @@ def ingest_strength_sessions(
     activities = client.get_activities_by_date(window_start, window_end)
     strength = [a for a in activities if _is_strength(a)]
 
-    inserted = 0
-    updated = 0
+    ingested = 0
+    skipped_existing = 0
     activity_ids: list[int] = []
 
     for activity in strength:
         activity_id = int(activity["activityId"])
+
+        # exists-first: skip already-stored sessions WITHOUT calling the
+        # per-session exercise_sets API (mirrors running_ingest). Strength
+        # exercise sets do not change after the fact, so a refresh is moot.
+        with get_connection(resolved_path) as conn:
+            exists = conn.execute(
+                "SELECT 1 FROM strength_sessions WHERE activity_id = ?",
+                [activity_id],
+            ).fetchone()
+        if exists is not None:
+            skipped_existing += 1
+            continue
+
         exercise_sets = client.get_activity_exercise_sets(activity_id)
         category_counts = _aggregate_categories(exercise_sets)
         row = _build_row(activity, category_counts)
 
         with get_write_connection(resolved_path) as conn:
-            exists = conn.execute(
-                "SELECT 1 FROM strength_sessions WHERE activity_id = ?",
-                [activity_id],
-            ).fetchone()
             _upsert(conn, row)
 
-        if exists is None:
-            inserted += 1
-        else:
-            updated += 1
+        ingested += 1
         activity_ids.append(activity_id)
 
     return {
-        "inserted": inserted,
-        "updated": updated,
+        "discovered": len(strength),
+        "ingested": ingested,
+        "skipped_existing": skipped_existing,
         "activity_ids": activity_ids,
         "window": {"start": window_start, "end": window_end},
     }

@@ -636,7 +636,7 @@ Get the longitudinal cardiac-decoupling trend across long runs in a date window.
 
 CLI: `garmin-db strength ingest`
 
-Discover strength_training (補強) activities from the Garmin Connect API in a date window and upsert summary rows into the strength_sessions table. Catch-up aware: omit start_date to ingest from the latest stored strength date (re-fetched so recent edits are reflected), or end_date - 30 days when none exist yet; omit end_date to default to today. Discovery uses the activity list filtered to typeKey == 'strength_training' (runs with distance are excluded). Each session's ACTIVE exercise sets are aggregated into a category_counts map (e.g. {"CRUNCH": 4, "PLANK": 7}). Idempotent: re-ingesting an activity overwrites its row. Returns inserted, updated, activity_ids, and the resolved window {start, end}.
+Discover strength_training (補強) activities from the Garmin Connect API in a date window and insert summary rows into the strength_sessions table. Catch-up aware: omit start_date to ingest from the latest stored strength date, or end_date - 30 days when none exist yet; omit end_date to default to today. Discovery uses the activity list filtered to typeKey == 'strength_training' (runs with distance are excluded). Each session's ACTIVE exercise sets are aggregated into a category_counts map (e.g. {"CRUNCH": 4, "PLANK": 7}). Sessions already stored are skipped without an exercise_sets API call. Returns discovered, ingested, skipped_existing, activity_ids, and the resolved window {start, end}.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

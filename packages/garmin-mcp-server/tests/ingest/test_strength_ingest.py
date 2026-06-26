@@ -159,8 +159,9 @@ def test_ingest_strength_sessions_inserts_summary(temp_db_path: Path) -> None:
             "2026-06-01", "2026-06-30", db_path=str(temp_db_path)
         )
 
-    assert result["inserted"] == 1
-    assert result["updated"] == 0
+    assert result["discovered"] == 1
+    assert result["ingested"] == 1
+    assert result["skipped_existing"] == 0
     assert result["activity_ids"] == [_STRENGTH_ACTIVITY_ID]
 
     row = _fetch_row(temp_db_path, _STRENGTH_ACTIVITY_ID)
@@ -176,8 +177,8 @@ def test_ingest_strength_sessions_inserts_summary(temp_db_path: Path) -> None:
 
 
 @pytest.mark.integration
-def test_ingest_strength_sessions_idempotent(temp_db_path: Path) -> None:
-    """Re-ingesting the same activity upserts (no duplicate; counted updated)."""
+def test_ingest_strength_sessions_skips_existing(temp_db_path: Path) -> None:
+    """Re-ingesting skips stored sessions WITHOUT a per-session API call."""
     client = _make_client([_strength_summary()])
     with patch(
         "garmin_mcp.ingest.strength_ingest.get_garmin_client", return_value=client
@@ -185,13 +186,16 @@ def test_ingest_strength_sessions_idempotent(temp_db_path: Path) -> None:
         first = ingest_strength_sessions(
             "2026-06-01", "2026-06-30", db_path=str(temp_db_path)
         )
+        client.get_activity_exercise_sets.reset_mock()
         second = ingest_strength_sessions(
             "2026-06-01", "2026-06-30", db_path=str(temp_db_path)
         )
 
-    assert first["inserted"] == 1
-    assert second["inserted"] == 0
-    assert second["updated"] == 1
+    assert first["ingested"] == 1
+    assert second["ingested"] == 0
+    assert second["skipped_existing"] == 1
+    # The already-stored session must NOT trigger a per-session API call.
+    client.get_activity_exercise_sets.assert_not_called()
 
     conn = duckdb.connect(str(temp_db_path))
     try:
@@ -216,7 +220,7 @@ def test_ingest_strength_sessions_filters_non_strength(temp_db_path: Path) -> No
             "2026-06-01", "2026-06-30", db_path=str(temp_db_path)
         )
 
-    assert result["inserted"] == 1
+    assert result["ingested"] == 1
     assert result["activity_ids"] == [_STRENGTH_ACTIVITY_ID]
 
     conn = duckdb.connect(str(temp_db_path))
@@ -332,6 +336,6 @@ def test_ingest_explicit_range_unchanged(temp_db_path: Path) -> None:
         )
 
     client.get_activities_by_date.assert_called_once_with("2026-06-01", "2026-06-30")
-    assert result["inserted"] == 1
+    assert result["ingested"] == 1
     assert result["activity_ids"] == [_STRENGTH_ACTIVITY_ID]
     assert result["window"] == {"start": "2026-06-01", "end": "2026-06-30"}
