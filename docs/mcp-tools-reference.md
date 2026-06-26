@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **54 tools** (52 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **55 tools** (53 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -18,7 +18,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Splits](#splits) (5)
 - [Analysis](#analysis) (7)
 - [Physiology](#physiology) (11)
-- [Performance](#performance) (3)
+- [Performance](#performance) (4)
 - [Time Series](#time-series) (4)
 - [Training Plan](#training-plan) (6)
 - [Athlete](#athlete) (4)
@@ -374,6 +374,16 @@ Pre-fetch shared activity context for analysis agents. Returns training_type, we
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `activity_id` | integer | **required** |  |
+
+### `get_objective_fitness_curve`
+
+CLI: `garmin-db performance objective-fitness-curve`
+
+Objective (non-optimistic) fitness curve: rolling 90-day max best-effort performance VDOT from splits, side-by-side with Garmin VO2max and the optimism gap.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `window_days` | integer | optional (default `90`) |  |
 
 ## Time Series
 
