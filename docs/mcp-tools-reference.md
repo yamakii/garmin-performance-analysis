@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **54 tools** (52 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **55 tools** (53 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -17,7 +17,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Metadata](#metadata) (3)
 - [Splits](#splits) (5)
 - [Analysis](#analysis) (7)
-- [Physiology](#physiology) (10)
+- [Physiology](#physiology) (11)
 - [Performance](#performance) (4)
 - [Time Series](#time-series) (4)
 - [Training Plan](#training-plan) (6)
@@ -311,6 +311,17 @@ Get the body-composition trend over the trailing window (default 12 weeks). Deco
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `weeks` | integer | optional (default `12`) | Trailing window length in weeks to analyze (default: 12). |
+
+### `get_weight_economy_coupling`
+
+CLI: `garmin-db physiology weight-economy-coupling`
+
+Couple easy runs (default training_type=aerobic_base) with body weight and fit a longitudinal running-economy model over the trailing window (default 52 weeks). Joins each easy run to its nearest body_composition weight (within max_gap_days, default 14) and derives the efficiency factor EF = avg_speed_ms / avg_heart_rate, then fits EF ~ weight + days (+ VO2max fitness) by OLS. Returns weeks, n_runs_total, n_matched, weight_spread_kg, a model block (weight/days/fitness coefficients with p-values and VIF, R^2, delta_ef_per_5kg_loss effect size, collinearity_flag, note) reported as an association rather than a clean causal coefficient, a date-ascending series ([{activity_id, run_date, weight_kg, ef, weight_gap_days}]), and a note. When too few runs match for the regression, model is null and a reason string is included (no error raised).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `weeks` | integer | optional (default `52`) | Trailing window length in weeks to analyze (default: 52). |
+| `max_gap_days` | integer | optional (default `14`) | Maximum allowed absolute day gap between a run and the nearest body-composition weight measurement for the join (default: 14). |
 
 ### `get_recovery_trend`
 

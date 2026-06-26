@@ -34,6 +34,30 @@ def _get_body_composition_trend(
     return reader.get_body_composition_trend(p.weeks)
 
 
+class GetWeightEconomyCouplingParams(BaseModel):
+    """Arguments for ``get_weight_economy_coupling``."""
+
+    weeks: int = Field(
+        default=52,
+        description="Trailing window length in weeks to analyze (default: 52).",
+    )
+    max_gap_days: int = Field(
+        default=14,
+        description=(
+            "Maximum allowed absolute day gap between a run and the nearest "
+            "body-composition weight measurement for the join (default: 14)."
+        ),
+    )
+
+
+def _get_weight_economy_coupling(
+    reader: GarminDBReader, p: GetWeightEconomyCouplingParams
+) -> Any:
+    return reader.get_weight_economy_coupling(
+        weeks=p.weeks, max_gap_days=p.max_gap_days
+    )
+
+
 BODY_COMPOSITION_TOOLS: list[ToolDef] = [
     ToolDef(
         name="get_body_composition_trend",
@@ -53,6 +77,29 @@ BODY_COMPOSITION_TOOLS: list[ToolDef] = [
         handler=_get_body_composition_trend,
         cli_group="physiology",
         cli_name="body-composition-trend",
+    ),
+    ToolDef(
+        name="get_weight_economy_coupling",
+        description=(
+            "Couple easy runs (default training_type=aerobic_base) with body "
+            "weight and fit a longitudinal running-economy model over the "
+            "trailing window (default 52 weeks). Joins each easy run to its "
+            "nearest body_composition weight (within max_gap_days, default 14) "
+            "and derives the efficiency factor EF = avg_speed_ms / "
+            "avg_heart_rate, then fits EF ~ weight + days (+ VO2max fitness) by "
+            "OLS. Returns weeks, n_runs_total, n_matched, weight_spread_kg, a "
+            "model block (weight/days/fitness coefficients with p-values and "
+            "VIF, R^2, delta_ef_per_5kg_loss effect size, collinearity_flag, "
+            "note) reported as an association rather than a clean causal "
+            "coefficient, a date-ascending series ([{activity_id, run_date, "
+            "weight_kg, ef, weight_gap_days}]), and a note. When too few runs "
+            "match for the regression, model is null and a reason string is "
+            "included (no error raised)."
+        ),
+        params=GetWeightEconomyCouplingParams,
+        handler=_get_weight_economy_coupling,
+        cli_group="physiology",
+        cli_name="weight-economy-coupling",
     ),
 ]
 
