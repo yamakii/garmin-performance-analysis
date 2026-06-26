@@ -72,6 +72,18 @@ class AnalyzePerformanceTrendsParams(BaseModel):
     )
 
 
+class GetHeatAdjustedTrendParams(BaseModel):
+    """Arguments for ``get_heat_adjusted_trend``."""
+
+    start_date: str = Field(description="Start date in YYYY-MM-DD format")
+    end_date: str = Field(description="End date in YYYY-MM-DD format")
+    activity_ids: list[int] = Field(description="List of activity IDs to analyze")
+    ref_temp_c: float | None = Field(
+        default=None,
+        description="Hinge reference temperature in Celsius (default 15)",
+    )
+
+
 class ExtractInsightsParams(BaseModel):
     """Arguments for ``extract_insights``.
 
@@ -232,6 +244,17 @@ def _analyze_performance_trends(
     )
 
 
+def _get_heat_adjusted_trend(
+    reader: GarminDBReader, p: GetHeatAdjustedTrendParams
+) -> Any:
+    return reader.get_heat_adjusted_trend(
+        activity_ids=p.activity_ids,
+        start_date=p.start_date,
+        end_date=p.end_date,
+        ref_temp_c=p.ref_temp_c if p.ref_temp_c is not None else 15.0,
+    )
+
+
 def _extract_insights(reader: GarminDBReader, p: ExtractInsightsParams) -> Any:
     from garmin_mcp.rag.queries.insights import InsightExtractor
 
@@ -313,6 +336,17 @@ ANALYSIS_TOOLS: list[ToolDef] = [
         handler=_analyze_performance_trends,
         cli_group="analysis",
         cli_name="performance-trends",
+    ),
+    ToolDef(
+        name="get_heat_adjusted_trend",
+        description=(
+            "Climate-neutral HR-at-pace trend with per-run heat_cost "
+            "(temperature-adjusted fitness)"
+        ),
+        params=GetHeatAdjustedTrendParams,
+        handler=_get_heat_adjusted_trend,
+        cli_group="analysis",
+        cli_name="heat-adjusted-trend",
     ),
     ToolDef(
         name="extract_insights",

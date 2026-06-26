@@ -788,6 +788,39 @@ class GarminDBReader:
         """
         return self.strength_sessions.get_strength_sessions(start_date, end_date)
 
+    # ========== Heat Adjustment Methods ==========
+
+    def get_heat_adjusted_trend(
+        self,
+        activity_ids: list[int],
+        start_date: str,
+        end_date: str,
+        ref_temp_c: float = 15.0,
+    ) -> dict[str, Any]:
+        """Get the climate-neutral HR-at-pace trend with per-run heat_cost.
+
+        Thin wrapper around
+        ``HeatAdjustmentModel(ref_temp_c).compute_trend(...)``. Fits the
+        temperature-hinge regression and returns, for each run in the window,
+        the ``heat_cost`` and climate-neutral HR (reprojected onto
+        ``ref_temp_c``), plus the time trend of the neutral HR.
+
+        Args:
+            activity_ids: Activity IDs to include.
+            start_date: Inclusive lower date bound (``YYYY-MM-DD``).
+            end_date: Inclusive upper date bound (``YYYY-MM-DD``).
+            ref_temp_c: Hinge reference temperature in Celsius (default 15.0).
+
+        Returns:
+            ``json.dumps``-serializable dict (``status="ok"`` with coefficients
+            and points, or ``status="insufficient_data"`` when too few complete
+            rows fall in the window).
+        """
+        from garmin_mcp.rag.queries.heat_adjustment import HeatAdjustmentModel
+
+        model = HeatAdjustmentModel(db_path=str(self.db_path), ref_temp_c=ref_temp_c)
+        return model.compute_trend(activity_ids, start_date, end_date)
+
     # ========== Time Series Methods ==========
 
     def get_time_series_statistics(

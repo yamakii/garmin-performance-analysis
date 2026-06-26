@@ -60,22 +60,23 @@ def test_schema_parity_all_tools() -> None:
 
 @pytest.mark.unit
 def test_all_tools_count_49() -> None:
-    """ALL_DEFS holds the 50 handler-domain tools (unique names); the live MCP
-    surface adds the 2 server tools for 52 total.
+    """ALL_DEFS holds the 51 handler-domain tools (unique names); the live MCP
+    surface adds the 2 server tools for 53 total.
 
     #450 added 2 strength-session tools (ingest_strength_sessions,
     get_strength_sessions), raising the domain count from 44 to 46. #463 added
     the catch_up_ingest orchestrator, raising it to 47. #501 added
     get_body_composition_trend, raising it to 48. #499 added get_recovery_trend,
-    raising it to 49. #500 added get_recovery_status, raising it to 50.
+    raising it to 49. #500 added get_recovery_status, raising it to 50. #550
+    added get_heat_adjusted_trend, raising it to 51.
     """
-    assert len(ALL_DEFS) == 50
+    assert len(ALL_DEFS) == 51
     names = [d.name for d in ALL_DEFS]
     assert len(names) == len(set(names)), "duplicate tool names in ALL_DEFS"
-    assert len(ALL_DEFS_BY_NAME) == 50
+    assert len(ALL_DEFS_BY_NAME) == 51
 
     live_names = [t.name for t in get_tool_definitions()]
-    assert len(live_names) == 52
+    assert len(live_names) == 53
     assert len(live_names) == len(
         set(live_names)
     ), "duplicate tool names on MCP surface"
@@ -369,9 +370,9 @@ def test_tool_golden_snapshot_matches() -> None:
 @pytest.mark.unit
 def test_tool_count_unchanged() -> None:
     """Removing ``server_dir`` does not change the tool count: ``reload_server``
-    is retained by name; the surface serves 52 tools (50 domain + 2 server,
-    after #500's get_recovery_status)."""
+    is retained by name; the surface serves 53 tools (51 domain + 2 server,
+    after #550's get_heat_adjusted_trend)."""
     live_names = [t.name for t in get_tool_definitions()]
-    assert len(live_names) == 52
+    assert len(live_names) == 53
     assert "reload_server" in live_names
     assert "get_server_info" in live_names

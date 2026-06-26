@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **52 tools** (50 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **53 tools** (51 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -16,7 +16,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Export](#export) (1)
 - [Metadata](#metadata) (3)
 - [Splits](#splits) (5)
-- [Analysis](#analysis) (6)
+- [Analysis](#analysis) (7)
 - [Physiology](#physiology) (10)
 - [Performance](#performance) (3)
 - [Time Series](#time-series) (4)
@@ -183,6 +183,19 @@ Analyze performance trends across multiple activities with filtering (Phase 3.1)
 | `activity_type` | string | optional | Optional activity type filter |
 | `temperature_range` | array[number] | optional | Optional [min_temp, max_temp] filter in Celsius |
 | `distance_range` | array[number] | optional | Optional [min_km, max_km] filter |
+
+### `get_heat_adjusted_trend`
+
+CLI: `garmin-db analysis heat-adjusted-trend`
+
+Climate-neutral HR-at-pace trend with per-run heat_cost (temperature-adjusted fitness)
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `start_date` | string | **required** | Start date in YYYY-MM-DD format |
+| `end_date` | string | **required** | End date in YYYY-MM-DD format |
+| `activity_ids` | array[integer] | **required** | List of activity IDs to analyze |
+| `ref_temp_c` | number | optional | Hinge reference temperature in Celsius (default 15) |
 
 ### `extract_insights`
 
