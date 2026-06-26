@@ -65,6 +65,7 @@ parameters are documented in each handler's docstring.
 | `/api/recovery-status` | Morning go/no-go recovery status for ``date`` (#500). |
 | `/api/recovery-trend` | RHR / HRV recovery trend over the trailing ``weeks`` weeks (#499). |
 | `/api/training-load` | Return the current ACWR snapshot plus the weekly load/ACWR trend. |
+| `/api/trends/critical-speed` | Quarterly threshold-anchored Critical Speed fit (CS pace + R^2). |
 | `/api/trends/efficiency` | HR efficiency trend with zone distribution. |
 | `/api/trends/form` | Form evaluation score trend. |
 | `/api/trends/physiology` | VO2max and lactate threshold time series. |

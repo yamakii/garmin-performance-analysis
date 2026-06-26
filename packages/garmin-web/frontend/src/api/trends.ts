@@ -42,6 +42,15 @@ export interface EfficiencyTrendPoint {
   zone5_percentage: number | null;
 }
 
+export interface CriticalSpeedPoint {
+  quarter: string;
+  cs_mps: number;
+  cs_pace_sec_per_km: number;
+  r_squared: number;
+  n: number;
+  label: string;
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
   if (!response.ok) {
@@ -66,4 +75,8 @@ export function fetchFormTrend(): Promise<FormTrendPoint[]> {
 
 export function fetchEfficiencyTrend(): Promise<EfficiencyTrendPoint[]> {
   return fetchJson("/api/trends/efficiency");
+}
+
+export function fetchCriticalSpeed(): Promise<CriticalSpeedPoint[]> {
+  return fetchJson("/api/trends/critical-speed");
 }
