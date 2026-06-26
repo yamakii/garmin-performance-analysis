@@ -595,6 +595,64 @@ class GarminDBReader:
             "sleep_score": sleep_score,
         }
 
+    def get_wellness_baseline_deviation(
+        self, date: str | None = None, window_days: int = 30
+    ) -> dict[str, Any]:
+        """Personal-baseline deviation for HRV / readiness / RHR on ``date`` (#555).
+
+        Builds a rolling personal baseline band (mean +/- SD over the trailing
+        ``window_days``) for HRV, Training Readiness and resting HR from
+        ``daily_wellness``, then judges the target day against its *own* band as
+        a z-score. Low HRV / readiness or high RHR relative to the band raises an
+        ``adverse`` deviation, surfacing an early warning the athlete's absolute
+        numbers would miss.
+
+        Args:
+            date: Target ``YYYY-MM-DD`` day. ``None`` (default) uses the latest
+                date present in ``daily_wellness``.
+            window_days: Trailing window length in days for the band (today
+                excluded). Default 30.
+
+        Returns:
+            ``{"date", "hrv": {...}, "readiness": {...}, "rhr": {...},
+            "overall_flag": bool}``. Each metric block carries
+            ``mean, std, today, z, flag, adverse, n``; bands with fewer than 7
+            non-null samples are ``flag="insufficient"`` (null-safe).
+            ``overall_flag`` is ``True`` when any metric is in an unfavorable
+            deviation. Dates are ``YYYY-MM-DD`` strings.
+        """
+        from garmin_mcp.analysis.wellness_baseline import (
+            compute_wellness_baseline_deviation,
+        )
+
+        if date is None:
+            latest = self.execute_read_query("SELECT MAX(date) FROM daily_wellness", ())
+            date = str(latest[0][0]) if latest and latest[0][0] is not None else None
+
+        if date is None:
+            return compute_wellness_baseline_deviation([], window_days=window_days)
+
+        # Today plus the trailing window (window_days days before it).
+        raw = self.execute_read_query(
+            """
+            SELECT date, hrv_overnight_ms, training_readiness, resting_hr
+            FROM daily_wellness
+            WHERE date <= ?
+            ORDER BY date ASC
+            """,
+            (date,),
+        )
+        rows = [
+            {
+                "date": str(d),
+                "hrv_overnight_ms": hrv_ms,
+                "training_readiness": readiness,
+                "resting_hr": resting_hr,
+            }
+            for d, hrv_ms, readiness, resting_hr in raw[-(window_days + 1) :]
+        ]
+        return compute_wellness_baseline_deviation(rows, window_days=window_days)
+
     # ========== Splits Methods ==========
 
     def get_splits_pace_hr(

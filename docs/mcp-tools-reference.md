@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **55 tools** (53 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **56 tools** (54 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -17,7 +17,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Metadata](#metadata) (3)
 - [Splits](#splits) (5)
 - [Analysis](#analysis) (7)
-- [Physiology](#physiology) (11)
+- [Physiology](#physiology) (12)
 - [Performance](#performance) (4)
 - [Time Series](#time-series) (4)
 - [Training Plan](#training-plan) (6)
@@ -342,6 +342,17 @@ Get today's morning go/no-go recovery status from daily_wellness (defaults to th
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `date` | string | optional | Target day as YYYY-MM-DD. Omit to use the latest day in daily_wellness. |
+
+### `get_wellness_baseline_deviation`
+
+CLI: `garmin-db physiology wellness-baseline`
+
+Judge today's HRV / Training Readiness / resting HR against the athlete's own rolling personal baseline band (mean +/- SD over the trailing window, default 30 days) from daily_wellness -- a per-individual early warning, not an absolute threshold (defaults to the latest day; pass date=YYYY-MM-DD for a specific day). Returns date, an hrv / readiness / rhr block each with mean, std, today, z=(today-mean)/std, flag ('low' when z<-1, 'high' when z>+1, else 'within'; 'insufficient' with null stats when <7 non-null samples), adverse (true in the unfavorable direction -- low HRV/readiness or high RHR), and n, plus overall_flag (true when any metric is in an adverse deviation). All fields are null-safe (device-off days are skipped).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `date` | string | optional | Target day as YYYY-MM-DD. Omit to use the latest day in daily_wellness. |
+| `window_days` | integer | optional (default `30`) | Trailing window length in days used to build the personal baseline band (today excluded; default 30). |
 
 ## Performance
 

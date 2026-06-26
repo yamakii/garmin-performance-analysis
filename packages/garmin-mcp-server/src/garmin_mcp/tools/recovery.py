@@ -39,12 +39,36 @@ class GetRecoveryStatusParams(BaseModel):
     )
 
 
+class GetWellnessBaselineDeviationParams(BaseModel):
+    """Arguments for ``get_wellness_baseline_deviation``."""
+
+    date: str | None = Field(
+        default=None,
+        description=(
+            "Target day as YYYY-MM-DD. Omit to use the latest day in " "daily_wellness."
+        ),
+    )
+    window_days: int = Field(
+        default=30,
+        description=(
+            "Trailing window length in days used to build the personal baseline "
+            "band (today excluded; default 30)."
+        ),
+    )
+
+
 def _get_recovery_trend(reader: GarminDBReader, p: GetRecoveryTrendParams) -> Any:
     return reader.get_recovery_trend(p.weeks)
 
 
 def _get_recovery_status(reader: GarminDBReader, p: GetRecoveryStatusParams) -> Any:
     return reader.get_recovery_status(p.date)
+
+
+def _get_wellness_baseline_deviation(
+    reader: GarminDBReader, p: GetWellnessBaselineDeviationParams
+) -> Any:
+    return reader.get_wellness_baseline_deviation(p.date, p.window_days)
 
 
 RECOVERY_TOOLS: list[ToolDef] = [
@@ -86,6 +110,27 @@ RECOVERY_TOOLS: list[ToolDef] = [
         handler=_get_recovery_status,
         cli_group="physiology",
         cli_name="recovery-status",
+    ),
+    ToolDef(
+        name="get_wellness_baseline_deviation",
+        description=(
+            "Judge today's HRV / Training Readiness / resting HR against the "
+            "athlete's own rolling personal baseline band (mean +/- SD over the "
+            "trailing window, default 30 days) from daily_wellness -- a "
+            "per-individual early warning, not an absolute threshold (defaults to "
+            "the latest day; pass date=YYYY-MM-DD for a specific day). Returns "
+            "date, an hrv / readiness / rhr block each with mean, std, today, "
+            "z=(today-mean)/std, flag ('low' when z<-1, 'high' when z>+1, else "
+            "'within'; 'insufficient' with null stats when <7 non-null samples), "
+            "adverse (true in the unfavorable direction -- low HRV/readiness or "
+            "high RHR), and n, plus overall_flag (true when any metric is in an "
+            "adverse deviation). All fields are null-safe (device-off days are "
+            "skipped)."
+        ),
+        params=GetWellnessBaselineDeviationParams,
+        handler=_get_wellness_baseline_deviation,
+        cli_group="physiology",
+        cli_name="wellness-baseline",
     ),
 ]
 

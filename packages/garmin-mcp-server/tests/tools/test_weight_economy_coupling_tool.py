@@ -52,10 +52,10 @@ def test_tool_dispatch_forwards_params() -> None:
 
 @pytest.mark.unit
 def test_tool_count_doc_sync() -> None:
-    """With #563 added too, the registry holds 53 domain + 2 server = 55 live."""
-    assert len(ALL_DEFS) == 53
+    """With #563 + #555 added too, the registry holds 54 domain + 2 server = 56."""
+    assert len(ALL_DEFS) == 54
     live_names = [t.name for t in get_tool_definitions()]
-    assert len(live_names) == 55
+    assert len(live_names) == 56
     assert "get_weight_economy_coupling" in live_names
 
 
