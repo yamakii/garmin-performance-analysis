@@ -28,3 +28,11 @@ def get_recovery_status(db_path: Any, date: str | None = None) -> dict[str, Any]
 def get_body_composition_trend(db_path: Any, weeks: int = 12) -> dict[str, Any]:
     """Body-composition trend over the trailing ``weeks`` (delegates to #501)."""
     return cast("dict[str, Any]", _reader(db_path).get_body_composition_trend(weeks))
+
+
+def get_weight_economy_coupling(db_path: Any, weeks: int = 52) -> dict[str, Any]:
+    """Weight-economy coupling over the trailing ``weeks`` (delegates to #554)."""
+    return cast(
+        "dict[str, Any]",
+        _reader(db_path).get_weight_economy_coupling(weeks=weeks),
+    )

@@ -401,3 +401,43 @@ export interface SummarySectionData {
   plan_achievement?: Record<string, unknown>;
   [key: string]: unknown;
 }
+
+// --- Weight ↔ running-economy coupling (Issue #556) ---
+// Faithful to the backend reader output (#554): ``model`` is the
+// dataclasses.asdict of WeightEconomyModel, whose covariates are nested
+// (``weight: {coef, p_value, vif}``), so the TS type mirrors that shape and
+// avoids a mapping layer.
+
+export interface WeightEconomySeriesPoint {
+  activity_id: number;
+  run_date: string;
+  weight_kg: number;
+  ef: number;
+  weight_gap_days: number;
+}
+
+export interface WeightEconomyCovariate {
+  coef: number;
+  p_value: number;
+  vif: number;
+}
+
+export interface WeightEconomyModel {
+  n: number;
+  r_squared: number;
+  weight: WeightEconomyCovariate;
+  days: WeightEconomyCovariate;
+  fitness: WeightEconomyCovariate | null;
+  delta_ef_per_5kg_loss: number;
+  collinearity_flag: boolean;
+  note: string;
+}
+
+export interface WeightEconomyCoupling {
+  weeks: number;
+  n_matched: number;
+  weight_spread_kg: number;
+  model: WeightEconomyModel | null;
+  series: WeightEconomySeriesPoint[];
+  note: string;
+}

@@ -231,6 +231,27 @@ const BODY_COMPOSITION = {
   lean_pwr: 4.0,
 };
 
+const WEIGHT_ECONOMY = {
+  weeks: 52,
+  n_matched: 2,
+  weight_spread_kg: 1.2,
+  model: {
+    n: 6,
+    r_squared: 0.42,
+    weight: { coef: -0.00044, p_value: 0.03, vif: 1.8 },
+    days: { coef: 0.00001, p_value: 0.2, vif: 1.8 },
+    fitness: null,
+    delta_ef_per_5kg_loss: 0.0022,
+    collinearity_flag: false,
+    note: "association with effect-size estimate (no collinearity detected)",
+  },
+  series: [
+    { activity_id: 1, run_date: "2025-10-06", weight_kg: 80.0, ef: 0.0176, weight_gap_days: 0 },
+    { activity_id: 2, run_date: "2025-10-20", weight_kg: 78.8, ef: 0.0181, weight_gap_days: 1 },
+  ],
+  note: "association with effect-size estimate (no collinearity detected)",
+};
+
 function jsonResponse(payload: unknown): Response {
   return new Response(JSON.stringify(payload), {
     status: 200,
@@ -280,6 +301,9 @@ function stubTrendsFetch(
       }
       if (url.startsWith("/api/trends/objective-fitness")) {
         return Promise.resolve(jsonResponse(OBJECTIVE_FITNESS));
+      }
+      if (url.startsWith("/api/weight-economy-coupling")) {
+        return Promise.resolve(jsonResponse(WEIGHT_ECONOMY));
       }
       return Promise.reject(new Error(`Unexpected fetch: ${url}`));
     }),
