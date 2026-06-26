@@ -315,6 +315,143 @@ class GarminDBReader:
             "lean_pwr": lean_pwr,
         }
 
+    def get_weight_economy_coupling(
+        self,
+        weeks: int = 52,
+        training_types: list[str] | None = None,
+        max_gap_days: int = 14,
+    ) -> dict[str, Any]:
+        """Couple easy runs with body weight and fit the longitudinal EF model (#554).
+
+        Joins easy runs (``hr_efficiency.training_type`` in ``training_types``,
+        default ``["aerobic_base"]``) within the last ``weeks`` weeks against all
+        ``body_composition`` weights by nearest-neighbour date matching
+        (``max_gap_days``), derives the efficiency factor
+        ``EF = avg_speed_ms / avg_heart_rate`` per run, attaches a per-activity
+        VO2max fitness covariate (nearest ``vo2_max`` by date), and fits the
+        longitudinal OLS ``EF ~ weight + days (+ fitness)`` (#552/#553). Reports
+        the weight effect as an *association* (effect size + collinearity note),
+        not a clean causal coefficient. ``activities.body_mass_kg`` is not used
+        (unbackfilled); weight always comes from ``body_composition``.
+
+        Args:
+            weeks: Trailing window length in weeks (default: 52).
+            training_types: ``hr_efficiency.training_type`` values to treat as
+                easy runs (default: ``["aerobic_base"]``).
+            max_gap_days: Maximum allowed absolute day gap for the run/weight join.
+
+        Returns:
+            ``{"weeks", "n_runs_total", "n_matched", "weight_spread_kg", "model",
+            "series": [{"activity_id","run_date","weight_kg","ef",
+            "weight_gap_days"}], "note"}``. ``model`` is the
+            :class:`WeightEconomyModel` as a dict, or ``None`` (with a ``"reason"``
+            string) when too few runs matched for the regression. Never raises on
+            insufficient data. Dates are ``YYYY-MM-DD`` strings.
+        """
+        import dataclasses
+        from datetime import datetime, timedelta
+
+        from garmin_mcp.analysis.running_economy import (
+            RunRecord,
+            WeightMeasurement,
+            fit_weight_economy_model,
+            join_runs_with_weight,
+        )
+
+        if training_types is None:
+            training_types = ["aerobic_base"]
+
+        cutoff = (datetime.now() - timedelta(weeks=weeks)).strftime("%Y-%m-%d")
+        placeholders = ",".join("?" for _ in training_types)
+        run_rows = self.execute_read_query(
+            f"""
+            SELECT a.activity_id, a.activity_date, a.avg_speed_ms, a.avg_heart_rate
+            FROM activities a
+            JOIN hr_efficiency h ON a.activity_id = h.activity_id
+            WHERE h.training_type IN ({placeholders})
+              AND a.activity_date >= ?
+              AND a.avg_speed_ms IS NOT NULL
+              AND a.avg_heart_rate IS NOT NULL
+            ORDER BY a.activity_date ASC
+            """,
+            (*training_types, cutoff),
+        )
+        runs = [
+            RunRecord(
+                activity_id=int(activity_id),
+                run_date=run_date,
+                avg_speed_ms=float(avg_speed_ms),
+                avg_heart_rate=float(avg_heart_rate),
+            )
+            for activity_id, run_date, avg_speed_ms, avg_heart_rate in run_rows
+        ]
+
+        weight_rows = self.execute_read_query("""
+            SELECT date, weight_kg
+            FROM body_composition
+            WHERE weight_kg IS NOT NULL
+            ORDER BY date ASC
+            """)
+        measurements = [
+            WeightMeasurement(measure_date=measure_date, weight_kg=float(weight_kg))
+            for measure_date, weight_kg in weight_rows
+        ]
+
+        # Fitness covariate: nearest VO2max (by date) per run activity.
+        vo2_rows = self.execute_read_query("""
+            SELECT date, value
+            FROM vo2_max
+            WHERE value IS NOT NULL AND date IS NOT NULL
+            ORDER BY date ASC
+            """)
+        vo2_points = [(vo2_date, float(value)) for vo2_date, value in vo2_rows]
+        fitness_by_activity: dict[int, float] = {}
+        for run in runs:
+            if not vo2_points:
+                break
+            nearest = min(vo2_points, key=lambda p: abs((run.run_date - p[0]).days))
+            fitness_by_activity[run.activity_id] = nearest[1]
+
+        coupled = join_runs_with_weight(runs, measurements, max_gap_days=max_gap_days)
+        weights = [c.weight_kg for c in coupled]
+        weight_spread = round(max(weights) - min(weights), 2) if weights else 0.0
+        series = [
+            {
+                "activity_id": c.activity_id,
+                "run_date": str(c.run_date),
+                "weight_kg": c.weight_kg,
+                "ef": c.ef,
+                "weight_gap_days": c.weight_gap_days,
+            }
+            for c in coupled
+        ]
+
+        result: dict[str, Any] = {
+            "weeks": weeks,
+            "n_runs_total": len(runs),
+            "n_matched": len(coupled),
+            "weight_spread_kg": weight_spread,
+            "model": None,
+            "series": series,
+            "note": "",
+        }
+
+        fitness = fitness_by_activity if fitness_by_activity else None
+        try:
+            model = fit_weight_economy_model(coupled, fitness_by_activity=fitness)
+        except ValueError as exc:
+            result["model"] = None
+            result["reason"] = str(exc)
+            result["note"] = (
+                "insufficient matched runs for the longitudinal regression; "
+                "no association estimated"
+            )
+            return result
+
+        result["model"] = dataclasses.asdict(model)
+        result["note"] = model.note
+        return result
+
     def get_recovery_trend(self, weeks: int = 8) -> dict[str, Any]:
         """RHR / HRV recovery trend over the last ``weeks`` weeks (#499).
 

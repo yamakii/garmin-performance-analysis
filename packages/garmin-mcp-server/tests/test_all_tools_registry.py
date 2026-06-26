@@ -70,13 +70,13 @@ def test_all_tools_count_49() -> None:
     raising it to 49. #500 added get_recovery_status, raising it to 50. #550
     added get_heat_adjusted_trend, raising it to 51.
     """
-    assert len(ALL_DEFS) == 51
+    assert len(ALL_DEFS) == 52
     names = [d.name for d in ALL_DEFS]
     assert len(names) == len(set(names)), "duplicate tool names in ALL_DEFS"
-    assert len(ALL_DEFS_BY_NAME) == 51
+    assert len(ALL_DEFS_BY_NAME) == 52
 
     live_names = [t.name for t in get_tool_definitions()]
-    assert len(live_names) == 53
+    assert len(live_names) == 54
     assert len(live_names) == len(
         set(live_names)
     ), "duplicate tool names on MCP surface"
@@ -373,6 +373,6 @@ def test_tool_count_unchanged() -> None:
     is retained by name; the surface serves 53 tools (51 domain + 2 server,
     after #550's get_heat_adjusted_trend)."""
     live_names = [t.name for t in get_tool_definitions()]
-    assert len(live_names) == 53
+    assert len(live_names) == 54
     assert "reload_server" in live_names
     assert "get_server_info" in live_names
