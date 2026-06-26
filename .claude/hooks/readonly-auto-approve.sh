@@ -47,4 +47,4 @@ while IFS= read -r subcmd; do
 done <<< "$subcommands"
 
 # All subcommands are read-only - auto-approve
-echo '{"decision":"allow","reason":"All subcommands are read-only"}'
+echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"All subcommands are read-only"}}'
