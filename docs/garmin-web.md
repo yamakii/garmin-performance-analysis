@@ -74,6 +74,7 @@ parameters are documented in each handler's docstring.
 | `/api/weekly-reviews` | Return recent weekly reviews (newest first), one per week. |
 | `/api/weekly-reviews/{week_start_date}` | Return a single weekly review by its week-start date. |
 | `/api/weekly-reviews/{week_start_date}/versions` | Return all saved versions for a single week (newest first). |
+| `/api/weight-economy-coupling` | Weight <-> easy-run economy (EF) coupling over the trailing ``weeks`` (#554). |
 <!-- END GENERATED: web-api-table -->
 
 > Weekly reviews are versioned: re-running `/weekly-review` for the same week appends a new row instead of overwriting (Epic #311). The list view de-duplicates to the latest version per week; the detail page fetches `/versions` to switch between past versions.

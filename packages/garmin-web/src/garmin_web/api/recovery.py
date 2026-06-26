@@ -50,3 +50,17 @@ def get_body_composition_trend_endpoint(
     ``change`` carries the first-to-last weight delta breakdown.
     """
     return recovery_queries.get_body_composition_trend(_db_path(request), weeks)
+
+
+@router.get("/weight-economy-coupling")
+def get_weight_economy_coupling_endpoint(
+    request: Request, weeks: int = 52
+) -> dict[str, Any]:
+    """Weight <-> easy-run economy (EF) coupling over the trailing ``weeks`` (#554).
+
+    Read-only: delegates entirely to the reader. ``series`` overlays each easy
+    run's EF on its nearest body-weight measurement; ``model`` carries the
+    longitudinal effect size + collinearity (association) caveat, or ``None``
+    when too few runs matched. Never 500s on insufficient data.
+    """
+    return recovery_queries.get_weight_economy_coupling(_db_path(request), weeks)
