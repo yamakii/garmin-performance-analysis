@@ -72,12 +72,19 @@ RUN if getent group "${USER_GID}" >/dev/null; then \
 # the non-root `claude` user (cap-drop ALL, no-new-privileges), so the in-place
 # auto-updater can't write the global npm dir and fails on startup. Updating is
 # done by rebuilding the image (see CLAUDE_CODE_VERSION build-arg / docker/README).
+# CLAUDE_CONFIG_DIR=/home/claude/.claude: by default Claude Code writes its big
+# config file to $HOME/.claude.json — a SIBLING of ~/.claude/, so OUTSIDE the
+# bind-mounted ~/.claude dir → lost on every restart ("config file not found").
+# Pointing CLAUDE_CONFIG_DIR at the mounted dir relocates .claude.json (and all
+# config) inside it, so auth/trust/MCP state persists. Sessions already live at
+# $CLAUDE_CONFIG_DIR/… so no data moves; the atomic rewrite stays within the mount.
 ENV UV_PROJECT_ENVIRONMENT=/home/claude/uv-venv \
     UV_PYTHON_DOWNLOADS=never \
     UV_PYTHON=python3.12 \
     PATH=/usr/local/bin:$PATH \
     SHELL=/bin/bash \
-    DISABLE_AUTOUPDATER=1
+    DISABLE_AUTOUPDATER=1 \
+    CLAUDE_CONFIG_DIR=/home/claude/.claude
 
 # ---- firewall + entrypoint ----
 COPY init-firewall.sh /usr/local/bin/init-firewall.sh

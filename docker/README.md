@@ -58,6 +58,12 @@ egress allowlist is in place.
 > container and it sticks** — no re-login every run. The container's session
 > history is its own and is **not shared** with the host's (you can't resume a
 > host conversation in the container, by design).
+>
+> The image also sets `CLAUDE_CONFIG_DIR=/home/claude/.claude` so Claude Code's
+> `.claude.json` (auth session, per-project trust, user-scoped MCP servers) lands
+> **inside** the mounted dir. By default it lives at `$HOME/.claude.json` — a
+> sibling of `~/.claude/`, outside the mount — and would be lost every restart
+> ("Claude configuration file not found at: /home/claude/.claude.json").
 
 ### Credentials: `.env` or host OS env
 
