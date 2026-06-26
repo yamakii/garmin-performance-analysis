@@ -53,6 +53,7 @@ def compute_metric_baseline(
     series: Sequence[float | None],
     today: float | None,
     *,
+    metric: str | None = None,
     min_samples: int = DEFAULT_MIN_SAMPLES,
     direction: str = "low_is_bad",
     sd_threshold: float = DEFAULT_SD_THRESHOLD,
@@ -63,6 +64,11 @@ def compute_metric_baseline(
         series: Past ``window_days`` values (today excluded), ascending. ``None``
             entries (device-off days) are skipped before computing mean / SD.
         today: Today's value, or ``None`` when unmeasured.
+        metric: Explicit metric label for the returned block. When ``None`` the
+            label falls back to ``_metric_label(direction)`` -- a best-effort
+            guess for lone calls. ``compute_wellness_baseline_deviation`` always
+            passes the correct label so HRV / readiness (both ``low_is_bad``) are
+            not conflated (#583).
         min_samples: Minimum non-null samples required; below this the band is
             ``"insufficient"`` (mean/std/z = ``None``).
         direction: ``"low_is_bad"`` (HRV / readiness -- a low value is
@@ -78,7 +84,7 @@ def compute_metric_baseline(
         or ``today`` is ``None`` the metric is ``"insufficient"`` and
         ``adverse=False`` (no signal).
     """
-    metric = _metric_label(direction)
+    metric = metric if metric is not None else _metric_label(direction)
     present = [v for v in series if v is not None]
     n = len(present)
 
@@ -162,7 +168,9 @@ def compute_wellness_baseline_deviation(
     """
     if not rows:
         empty = {
-            label: asdict(compute_metric_baseline([], None, direction=direction))
+            label: asdict(
+                compute_metric_baseline([], None, metric=label, direction=direction)
+            )
             for label, _col, direction in _METRICS
         }
         return {"date": None, **empty, "overall_flag": False}
@@ -177,6 +185,7 @@ def compute_wellness_baseline_deviation(
         baseline = compute_metric_baseline(
             series,
             today_row.get(col),
+            metric=label,
             direction=direction,
             sd_threshold=sd_threshold,
         )

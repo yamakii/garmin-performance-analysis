@@ -140,3 +140,37 @@ def test_compute_deviation_overall_flag_false() -> None:
     assert result["readiness"]["flag"] == "within"
     assert result["rhr"]["flag"] == "within"
     assert result["overall_flag"] is False
+
+
+@pytest.mark.unit
+def test_compute_deviation_readiness_metric_label() -> None:
+    """Each block's ``metric`` matches its key (#583).
+
+    HRV and readiness are both ``low_is_bad``; the loop must label readiness
+    ``"readiness"`` rather than letting it fall back to ``"hrv"``.
+    """
+    rows = _rows(hrv_today=60.0, readiness_today=70.0, rhr_today=50.0)
+
+    result = compute_wellness_baseline_deviation(rows)
+
+    assert result["readiness"]["metric"] == "readiness"
+    assert result["hrv"]["metric"] == "hrv"
+    assert result["rhr"]["metric"] == "rhr"
+
+
+@pytest.mark.unit
+def test_compute_metric_baseline_explicit_label_overrides() -> None:
+    """Explicit ``metric`` overrides the direction-based fallback label."""
+    result = compute_metric_baseline(
+        _HRV_SERIES, 60.0, metric="readiness", direction="low_is_bad"
+    )
+
+    assert result.metric == "readiness"
+
+
+@pytest.mark.unit
+def test_compute_metric_baseline_label_fallback() -> None:
+    """No ``metric`` + ``low_is_bad`` falls back to ``"hrv"`` (legacy behavior)."""
+    result = compute_metric_baseline(_HRV_SERIES, 60.0, direction="low_is_bad")
+
+    assert result.metric == "hrv"
