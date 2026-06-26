@@ -42,6 +42,27 @@ export interface EfficiencyTrendPoint {
   zone5_percentage: number | null;
 }
 
+export interface HeatAdjustedPoint {
+  date: string;
+  temp_c: number | null;
+  raw_hr: number | null;
+  heat_cost: number | null;
+  neutral_hr: number | null;
+}
+
+export interface HeatAdjustedCoefficients {
+  beta_heat: number;
+  ref_temp_c: number;
+  n: number;
+}
+
+export interface HeatAdjustedTrend {
+  status: string;
+  coefficients: HeatAdjustedCoefficients | null;
+  neutral_hr_slope: number | null;
+  points: HeatAdjustedPoint[];
+}
+
 export interface CriticalSpeedPoint {
   quarter: string;
   cs_mps: number;
@@ -75,6 +96,12 @@ export function fetchFormTrend(): Promise<FormTrendPoint[]> {
 
 export function fetchEfficiencyTrend(): Promise<EfficiencyTrendPoint[]> {
   return fetchJson("/api/trends/efficiency");
+}
+
+export function fetchHeatAdjustedTrend(
+  days: number,
+): Promise<HeatAdjustedTrend> {
+  return fetchJson(`/api/trends/heat-adjusted?days=${days}`);
 }
 
 export function fetchCriticalSpeed(): Promise<CriticalSpeedPoint[]> {

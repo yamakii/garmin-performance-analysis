@@ -5,6 +5,7 @@ import pytest
 from garmin_web.queries.trends import (
     get_efficiency_trend,
     get_form_trend,
+    get_heat_adjusted_trend,
     get_physiology_trend,
     get_volume_trend,
 )
@@ -135,3 +136,27 @@ def test_efficiency_trend_zone_percentages(trends_conn):
     assert point["zone2_percentage"] == pytest.approx(60.0)
     assert point["primary_zone"] == "Zone 2"
     assert point["aerobic_efficiency"] == "good"
+
+
+@pytest.mark.integration
+def test_queries_heat_adjusted_trend_happy(heat_conn_happy):
+    """12 temp-varying runs fit the model and yield per-run neutral HR."""
+    result = get_heat_adjusted_trend(heat_conn_happy, "2025-01-01", "2025-12-31")
+
+    assert result["status"] == "ok"
+    assert result["coefficients"]["ref_temp_c"] == pytest.approx(15.0)
+    points = result["points"]
+    assert len(points) == 12
+    for point in points:
+        # neutral HR is raw HR with the heat-induced uplift removed.
+        assert point["neutral_hr"] == pytest.approx(
+            point["raw_hr"] - point["heat_cost"]
+        )
+
+
+@pytest.mark.integration
+def test_queries_heat_adjusted_trend_insufficient(heat_conn_insufficient):
+    """A single run is below the model's fit minimum."""
+    result = get_heat_adjusted_trend(heat_conn_insufficient, "2025-01-01", "2025-12-31")
+
+    assert result["status"] == "insufficient_data"

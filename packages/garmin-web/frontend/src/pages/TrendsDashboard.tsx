@@ -3,6 +3,7 @@ import {
   fetchCriticalSpeed,
   fetchEfficiencyTrend,
   fetchFormTrend,
+  fetchHeatAdjustedTrend,
   fetchPhysiologyTrend,
   fetchVolumeTrend,
 } from "../api/trends";
@@ -11,6 +12,7 @@ import type {
   EfficiencyTrendPoint,
   FormTrendPoint,
   Granularity,
+  HeatAdjustedTrend,
   PhysiologyTrend,
   VolumeTrendPoint,
 } from "../api/trends";
@@ -32,6 +34,7 @@ import VolumeBlock from "./trends/VolumeBlock";
 import PhysiologyBlock from "./trends/PhysiologyBlock";
 import FormBlock from "./trends/FormBlock";
 import EfficiencyBlock from "./trends/EfficiencyBlock";
+import HeatAdjustedBlock from "./trends/HeatAdjustedBlock";
 import CriticalSpeedPanel from "./trends/CriticalSpeedPanel";
 import TrainingLoadBlock from "./trends/TrainingLoadBlock";
 import DurabilityBlock from "./trends/DurabilityBlock";
@@ -39,12 +42,18 @@ import RecoveryPanel from "./trends/RecoveryPanel";
 import ConditionCard from "./trends/ConditionCard";
 import BodyCompositionChart from "./trends/BodyCompositionChart";
 
+/** Trailing window (days) for the climate-neutral HR trend (one year). */
+const HEAT_ADJUSTED_LOOKBACK_DAYS = 365;
+
 export default function TrendsDashboard() {
   const [granularity, setGranularity] = useState<Granularity>("week");
   const [volume, setVolume] = useState<VolumeTrendPoint[] | null>(null);
   const [physiology, setPhysiology] = useState<PhysiologyTrend | null>(null);
   const [form, setForm] = useState<FormTrendPoint[] | null>(null);
   const [efficiency, setEfficiency] = useState<EfficiencyTrendPoint[] | null>(
+    null,
+  );
+  const [heatAdjusted, setHeatAdjusted] = useState<HeatAdjustedTrend | null>(
     null,
   );
   const [trainingLoad, setTrainingLoad] = useState<AcwrTrend | null>(null);
@@ -85,6 +94,7 @@ export default function TrendsDashboard() {
       fetchRecoveryTrend(),
       fetchRecoveryStatus(),
       fetchBodyCompositionTrend(),
+      fetchHeatAdjustedTrend(HEAT_ADJUSTED_LOOKBACK_DAYS),
       fetchCriticalSpeed(),
     ])
       .then(
@@ -97,6 +107,7 @@ export default function TrendsDashboard() {
           recoveryData,
           recoveryStatusData,
           bodyCompositionData,
+          heatAdjustedData,
           criticalSpeedData,
         ]) => {
           if (!cancelled) {
@@ -108,6 +119,7 @@ export default function TrendsDashboard() {
             setRecovery(recoveryData);
             setRecoveryStatus(recoveryStatusData);
             setBodyComposition(bodyCompositionData);
+            setHeatAdjusted(heatAdjustedData);
             setCriticalSpeed(criticalSpeedData);
           }
         },
@@ -141,6 +153,7 @@ export default function TrendsDashboard() {
     recovery == null ||
     recoveryStatus == null ||
     bodyComposition == null ||
+    heatAdjusted == null ||
     criticalSpeed == null;
   if (loading) {
     return (
@@ -168,6 +181,7 @@ export default function TrendsDashboard() {
         <PhysiologyBlock data={physiology} />
         <FormBlock data={form} />
         <EfficiencyBlock data={efficiency} />
+        <HeatAdjustedBlock data={heatAdjusted} />
         <CriticalSpeedPanel data={criticalSpeed} />
         <TrainingLoadBlock data={trainingLoad} />
         <DurabilityBlock data={durability} />
