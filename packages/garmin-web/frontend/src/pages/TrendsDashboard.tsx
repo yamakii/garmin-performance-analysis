@@ -22,6 +22,7 @@ import {
   fetchBodyCompositionTrend,
   fetchRecoveryStatus,
   fetchRecoveryTrend,
+  fetchWeightEconomyCoupling,
 } from "../api/recovery";
 import type {
   AcwrTrend,
@@ -29,6 +30,7 @@ import type {
   DurabilityTrend,
   RecoveryStatus,
   RecoveryTrend,
+  WeightEconomyCoupling,
 } from "../types";
 import VolumeBlock from "./trends/VolumeBlock";
 import PhysiologyBlock from "./trends/PhysiologyBlock";
@@ -41,6 +43,7 @@ import DurabilityBlock from "./trends/DurabilityBlock";
 import RecoveryPanel from "./trends/RecoveryPanel";
 import ConditionCard from "./trends/ConditionCard";
 import BodyCompositionChart from "./trends/BodyCompositionChart";
+import WeightEconomyChart from "./trends/WeightEconomyChart";
 
 /** Trailing window (days) for the climate-neutral HR trend (one year). */
 const HEAT_ADJUSTED_LOOKBACK_DAYS = 365;
@@ -64,6 +67,8 @@ export default function TrendsDashboard() {
   );
   const [bodyComposition, setBodyComposition] =
     useState<BodyCompositionTrend | null>(null);
+  const [weightEconomy, setWeightEconomy] =
+    useState<WeightEconomyCoupling | null>(null);
   const [criticalSpeed, setCriticalSpeed] = useState<
     CriticalSpeedPoint[] | null
   >(null);
@@ -96,6 +101,7 @@ export default function TrendsDashboard() {
       fetchBodyCompositionTrend(),
       fetchHeatAdjustedTrend(HEAT_ADJUSTED_LOOKBACK_DAYS),
       fetchCriticalSpeed(),
+      fetchWeightEconomyCoupling(),
     ])
       .then(
         ([
@@ -109,6 +115,7 @@ export default function TrendsDashboard() {
           bodyCompositionData,
           heatAdjustedData,
           criticalSpeedData,
+          weightEconomyData,
         ]) => {
           if (!cancelled) {
             setPhysiology(physiologyData);
@@ -121,6 +128,7 @@ export default function TrendsDashboard() {
             setBodyComposition(bodyCompositionData);
             setHeatAdjusted(heatAdjustedData);
             setCriticalSpeed(criticalSpeedData);
+            setWeightEconomy(weightEconomyData);
           }
         },
       )
@@ -154,7 +162,8 @@ export default function TrendsDashboard() {
     recoveryStatus == null ||
     bodyComposition == null ||
     heatAdjusted == null ||
-    criticalSpeed == null;
+    criticalSpeed == null ||
+    weightEconomy == null;
   if (loading) {
     return (
       <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
@@ -188,6 +197,7 @@ export default function TrendsDashboard() {
         <RecoveryPanel data={recovery} />
         <ConditionCard data={recoveryStatus} />
         <BodyCompositionChart data={bodyComposition} />
+        <WeightEconomyChart data={weightEconomy} />
       </div>
     </div>
   );

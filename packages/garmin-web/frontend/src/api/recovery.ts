@@ -2,6 +2,7 @@ import type {
   BodyCompositionTrend,
   RecoveryStatus,
   RecoveryTrend,
+  WeightEconomyCoupling,
 } from "../types";
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -27,4 +28,11 @@ export function fetchBodyCompositionTrend(
   weeks = 12,
 ): Promise<BodyCompositionTrend> {
   return fetchJson(`/api/body-composition-trend?weeks=${weeks}`);
+}
+
+/** Weight ↔ easy-run economy (EF) coupling over the trailing N weeks (#554). */
+export function fetchWeightEconomyCoupling(
+  weeks = 52,
+): Promise<WeightEconomyCoupling> {
+  return fetchJson(`/api/weight-economy-coupling?weeks=${weeks}`);
 }
