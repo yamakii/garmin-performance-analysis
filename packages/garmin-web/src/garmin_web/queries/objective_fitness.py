@@ -45,7 +45,9 @@ def get_quarterly_critical_speed(conn: duckdb.DuckDBPyConnection) -> list[dict]:
         splits = [
             {
                 "split_index": split_index,
-                "distance": distance,
+                # DB stores splits.distance in km; segments.best_contiguous_segment
+                # expects meters (compares against target_distance_km * 1000).
+                "distance": distance * 1000.0,
                 "duration_seconds": duration_seconds,
             }
             for (_aid, _date, split_index, distance, duration_seconds) in run_rows
