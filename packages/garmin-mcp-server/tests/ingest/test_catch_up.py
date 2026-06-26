@@ -64,7 +64,7 @@ def test_catch_up_resolves_per_domain_window(temp_db_path: Path) -> None:
         ) as weight_mock,
         patch(
             "garmin_mcp.ingest.strength_ingest.ingest_strength_sessions",
-            return_value={"inserted": 0, "updated": 0},
+            return_value={"discovered": 0, "ingested": 0, "skipped_existing": 0},
         ) as strength_mock,
         patch(
             "garmin_mcp.ingest.wellness_ingest.ingest_wellness_range",
@@ -173,7 +173,7 @@ def test_catch_up_domain_error_isolated(temp_db_path: Path) -> None:
         ),
         patch(
             "garmin_mcp.ingest.strength_ingest.ingest_strength_sessions",
-            return_value={"inserted": 2, "updated": 0},
+            return_value={"discovered": 2, "ingested": 2, "skipped_existing": 0},
         ),
         patch(
             "garmin_mcp.ingest.wellness_ingest.ingest_wellness_range",
@@ -184,7 +184,11 @@ def test_catch_up_domain_error_isolated(temp_db_path: Path) -> None:
 
     assert result["running"] == {"error": "garmin boom"}
     assert result["weight"] == {"ingested_days": 1, "with_data": 1}
-    assert result["strength"] == {"inserted": 2, "updated": 0}
+    assert result["strength"] == {
+        "discovered": 2,
+        "ingested": 2,
+        "skipped_existing": 0,
+    }
     # Window is still recorded for the failed domain.
     assert result["window"]["running"] == {"start": "2026-06-18", "end": "2026-06-20"}
 
