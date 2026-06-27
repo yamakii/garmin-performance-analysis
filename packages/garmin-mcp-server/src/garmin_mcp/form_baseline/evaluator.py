@@ -164,11 +164,19 @@ def evaluate_and_store(
             "evaluation_text": cadence_text,
         }
     else:
-        # Legacy behaviour: no cadence baseline available.
+        # No cadence baseline available: fall back to the fixed-180spm rule,
+        # but emit the same key set as the model branch so downstream consumers
+        # (form_evaluations insert, web detail) handle a single shape.
         cadence_eval = {
             "actual": splits_data["cadence"],
-            "minimum": 180,
-            "achieved": splits_data["cadence"] >= 180.0,
+            "expected": None,
+            "delta_pct": None,
+            "star_rating": None,
+            "score": None,
+            "needs_improvement": splits_data["cadence"] < 180.0,
+            "evaluation_text": (
+                "ケイデンスベースライン未学習のため固定180spm基準で判定"
+            ),
         }
 
     # Build result dictionary
@@ -400,12 +408,10 @@ def evaluate_and_store(
                 evaluation["vr"]["score"],
                 evaluation["vr"]["needs_improvement"],
                 evaluation["vr"]["evaluation_text"],
-                # Cadence (legacy columns retained for backward compatibility)
+                # Cadence (legacy fixed-180 columns derived from the unified shape)
                 evaluation["cadence"]["actual"],
-                evaluation["cadence"].get("minimum", 180),
-                evaluation["cadence"].get(
-                    "achieved", evaluation["cadence"]["actual"] >= 180.0
-                ),
+                180,
+                evaluation["cadence"]["actual"] >= 180.0,
                 # Cadence (pace-dependent columns; None when no cadence model)
                 evaluation["cadence"].get("expected"),
                 evaluation["cadence"].get("delta_pct"),

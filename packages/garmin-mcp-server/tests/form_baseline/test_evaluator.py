@@ -113,9 +113,9 @@ class TestEvaluateAndStore:
         assert result["gct"]["expected"] == 259.0
         assert result["gct"]["evaluation_text"] == "評価文のテスト"
 
-        # Verify cadence
+        # Verify cadence (unified shape: no model -> fixed-180 fallback)
         assert result["cadence"]["actual"] == 183.0
-        assert result["cadence"]["achieved"] is True
+        assert result["cadence"]["needs_improvement"] is False
 
     def test_evaluate_missing_splits(self, mocker):
         """Test error handling when splits data is missing."""
@@ -214,9 +214,9 @@ class TestEvaluateAndStore:
             model_file=Path("/tmp/test.json"),
         )
 
-        # Verify cadence achieved
+        # Verify cadence achieved (unified shape)
         assert result["cadence"]["actual"] == 183.0
-        assert result["cadence"]["achieved"] is True
+        assert result["cadence"]["needs_improvement"] is False
 
     def test_cadence_evaluation_not_achieved(self, mocker):
         """Test cadence evaluation when < 180spm."""
@@ -289,7 +289,7 @@ class TestEvaluateAndStore:
         )
 
         assert result["cadence"]["actual"] == 175.0
-        assert result["cadence"]["achieved"] is False
+        assert result["cadence"]["needs_improvement"] is True
 
 
 @pytest.mark.integration
@@ -410,6 +410,180 @@ class TestEvaluatorCadencePaceDependent:
         cadence = result["cadence"]
         # 165 vs 174 = -5.2% degradation -> penalty ~51.7 -> flagged
         assert cadence["needs_improvement"] is True
+
+
+CADENCE_EVAL_KEYS = {
+    "actual",
+    "expected",
+    "delta_pct",
+    "star_rating",
+    "score",
+    "needs_improvement",
+    "evaluation_text",
+}
+
+
+@pytest.mark.unit
+class TestCadenceEvalShape:
+    """cadence_eval emits one shape regardless of model availability (#615)."""
+
+    def _patch_without_model(self, mocker, cadence: float):
+        """No cadence model -> fixed-180 fallback branch."""
+        mocker.patch(
+            "garmin_mcp.form_baseline.evaluator.load_models_from_file",
+            return_value={
+                "gct": mocker.Mock(),
+                "vo": mocker.Mock(),
+                "vr": mocker.Mock(),
+            },
+        )
+        mocker.patch(
+            "garmin_mcp.form_baseline.evaluator.get_splits_data",
+            return_value={
+                "pace_s_per_km": 431.0,
+                "gct_ms": 258.0,
+                "vo_cm": 7.1,
+                "vr_pct": 7.3,
+                "cadence": cadence,
+            },
+        )
+        mocker.patch(
+            "garmin_mcp.form_baseline.evaluator.score_observation",
+            return_value={
+                "gct_ms_exp": 259.0,
+                "vo_cm_exp": 7.0,
+                "vr_pct_exp": 7.2,
+                "gct_ms_actual": 258.0,
+                "vo_cm_actual": 7.1,
+                "vr_pct_actual": 7.3,
+                "gct_delta_pct": -0.4,
+                "gct_penalty": 2.0,
+                "vo_delta_cm": 0.1,
+                "vo_delta_pct": 1.4,
+                "vo_penalty": 2.0,
+                "vr_delta_pct": 1.4,
+                "vr_penalty": 2.0,
+                "score": 99.3,
+                "gct_needs_improvement": False,
+                "vo_needs_improvement": False,
+                "vr_needs_improvement": False,
+            },
+        )
+        mocker.patch(
+            "garmin_mcp.form_baseline.evaluator.compute_star_rating",
+            return_value={
+                "star_rating": "★★★★★",
+                "score": 5.0,
+                "category": "excellent",
+            },
+        )
+        mocker.patch(
+            "garmin_mcp.form_baseline.evaluator.generate_evaluation_text",
+            return_value="Test text",
+        )
+        mocker.patch(
+            "garmin_mcp.form_baseline.evaluator.generate_overall_text",
+            return_value="Overall text",
+        )
+        mocker.patch("duckdb.connect", return_value=mocker.MagicMock())
+
+    def _patch_with_model(self, mocker, cadence: float):
+        """Cadence model present -> pace-dependent branch (all keys non-None)."""
+        mocker.patch(
+            "garmin_mcp.form_baseline.evaluator.load_models_from_file",
+            return_value={
+                "gct": mocker.Mock(),
+                "vo": mocker.Mock(),
+                "vr": mocker.Mock(),
+                "cadence": mocker.Mock(),
+            },
+        )
+        mocker.patch(
+            "garmin_mcp.form_baseline.evaluator.get_splits_data",
+            return_value={
+                "pace_s_per_km": 431.0,
+                "gct_ms": 258.0,
+                "vo_cm": 7.1,
+                "vr_pct": 7.3,
+                "cadence": cadence,
+            },
+        )
+        mocker.patch(
+            "garmin_mcp.form_baseline.evaluator.score_observation",
+            return_value={
+                "gct_ms_exp": 259.0,
+                "vo_cm_exp": 7.0,
+                "vr_pct_exp": 7.2,
+                "gct_ms_actual": 258.0,
+                "vo_cm_actual": 7.1,
+                "vr_pct_actual": 7.3,
+                "gct_delta_pct": -0.4,
+                "gct_penalty": 2.0,
+                "vo_delta_cm": 0.1,
+                "vo_delta_pct": 1.4,
+                "vo_penalty": 2.0,
+                "vr_delta_pct": 1.4,
+                "vr_penalty": 2.0,
+                "score": 99.3,
+                "gct_needs_improvement": False,
+                "vo_needs_improvement": False,
+                "vr_needs_improvement": False,
+                "cadence_exp": 174.0,
+                "cadence_actual": cadence,
+                "cadence_delta_pct": 1.1,
+                "cadence_penalty": 3.3,
+                "cadence_needs_improvement": False,
+            },
+        )
+        mocker.patch(
+            "garmin_mcp.form_baseline.evaluator.compute_star_rating",
+            return_value={
+                "star_rating": "★★★★★",
+                "score": 5.0,
+                "category": "excellent",
+            },
+        )
+        mocker.patch(
+            "garmin_mcp.form_baseline.evaluator.generate_evaluation_text",
+            return_value="ケイデンス評価文",
+        )
+        mocker.patch(
+            "garmin_mcp.form_baseline.evaluator.generate_overall_text",
+            return_value="Overall text",
+        )
+        mocker.patch("duckdb.connect", return_value=mocker.MagicMock())
+
+    def _run(self, mocker):
+        return evaluate_and_store(
+            activity_id=20790040925,
+            activity_date="2025-10-25",
+            db_path=":memory:",
+            model_file=Path("/tmp/test.json"),
+        )
+
+    def test_cadence_eval_shape_consistent_without_model(self, mocker):
+        """No cadence model -> cadence_eval has the same key set as model branch."""
+        self._patch_without_model(mocker, cadence=183.0)
+        result = self._run(mocker)
+        assert set(result["cadence"].keys()) == CADENCE_EVAL_KEYS
+
+    def test_cadence_eval_shape_with_model(self, mocker):
+        """Cadence model -> full key set, all values non-None."""
+        self._patch_with_model(mocker, cadence=176.0)
+        result = self._run(mocker)
+        cadence = result["cadence"]
+        assert set(cadence.keys()) == CADENCE_EVAL_KEYS
+        assert all(value is not None for value in cadence.values())
+
+    def test_needs_improvement_below_180(self, mocker):
+        """No model: 175spm flags improvement, 185spm does not."""
+        self._patch_without_model(mocker, cadence=175.0)
+        below = self._run(mocker)
+        assert below["cadence"]["needs_improvement"] is True
+
+        self._patch_without_model(mocker, cadence=185.0)
+        above = self._run(mocker)
+        assert above["cadence"]["needs_improvement"] is False
 
 
 @pytest.mark.unit
