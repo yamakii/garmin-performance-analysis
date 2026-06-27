@@ -14,6 +14,8 @@
 - **Issue 番号なし**: → `Issue: TBD` でプラン作成 → 承認後に Issue 作成
 - **分解が必要** (複数の独立した作業単位): → プラン内で `/decompose` を推奨
 
+**プラン承認後の実装は既定で `/implement <issue番号>`**（**単発 Issue でも Epic でも**）。承認時に `design-approved` を付与してから起動する。手動の developer 委任＋`/ship` は例外（L3／Workflow 不可／docs・rules の skip 微修正）で、**「単発だから手動」と判断しない**。
+
 詳細は `.claude/rules/dev/dev-reference.md` を参照。
 
 ### User Preference Adoption

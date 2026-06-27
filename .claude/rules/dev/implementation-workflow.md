@@ -27,6 +27,14 @@ Risks セクション（任意）:
 
 ## Phase 1: Delegate (実装委任)
 
+> **既定経路は `/implement <issue番号>`**（**単発 Issue / Epic を問わず**）。プラン承認後、Issue に
+> `design-approved` を付与し（Phase 0 完全性で Design/Test Plan は担保済み）、`/implement <issue>` を
+> 起動すれば `implement-tier` Workflow が **developer 実装 → L1/L2 検証 → push/PR → 条件付き
+> auto-merge** を一括で回す（Phase 2〜3 を内包）。**この場合、以下の Phase 1〜3 を手で行う必要はない。**
+>
+> 以下の **手動 developer 委任は例外（フォールバック）**: L3（agent 定義変更）/ Workflow 不可環境 /
+> skip-level の docs・rules 微修正。**「単発だから手動」ではない**。手動経路を取るときのみ次の手順に従う。
+
 サブエージェント(developer, worktree isolation)に以下を含めて委任:
 - Issue 番号と `mcp__github__issue_read` (method="get") 実行指示
 - プランの実装手順（そのまま渡す）
@@ -104,7 +112,11 @@ Phase 2b の完了条件は **`scripts/ci-check.sh` が exit 0（0 failures）**
 
 ## Phase 3: Ship (PR作成 + 条件付き auto-merge)
 
-Phase 2 + Phase 2.9 完了後のみ実行可能:
+> **既定経路（`/implement`）では Ship＋auto-merge を `implement-tier` Workflow が内包する**ため、
+> この手動 Phase 3 は**フォールバック経路（手動 developer 委任）専用**。`/implement` を使ったら
+> 手動 push/PR/merge は不要（Workflow の返り値で merged/escalated を確認するだけ）。
+
+Phase 2 + Phase 2.9 完了後のみ実行可能（手動経路）:
 1. worktree ブランチを main repo に fetch
 2. remote に push
 3. `mcp__github__create_pull_request` (Closes #{issue}, 本文に `## Verification` を記録)
