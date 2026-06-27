@@ -116,6 +116,8 @@ Phase 2b の完了条件は **`scripts/ci-check.sh` が exit 0（0 failures）**
 > この手動 Phase 3 は**フォールバック経路（手動 developer 委任）専用**。`/implement` を使ったら
 > 手動 push/PR/merge は不要（Workflow の返り値で merged/escalated を確認するだけ）。
 
+> **正本マップ**: 本 Phase 3 が **auto-merge ゲート / Ship 手順の正本**。**検証メカニクス**は `worktree-validation-protocol.md`、**Validation Level 判定表**は `dev-reference.md §3` を正本とする。
+
 Phase 2 + Phase 2.9 完了後のみ実行可能（手動経路）:
 1. worktree ブランチを main repo に fetch
 2. remote に push

@@ -7,6 +7,8 @@ L1/L2 検証は worktree コードを **subprocess（`uv run --directory <worktr
 subprocess はプロセス分離されており**並列実行が安全**なため、L1/L2 の Validation Agent は**並列起動してよい**。
 直列が必須なのは **L3 のみ**（メインセッションが担当し、live MCP サーバの reload を扱う稀ケース）。
 
+> **正本マップ**: 本書は**検証メカニクス（L1/L2/L3 の実行手順）の正本**。**Validation Level 判定表**は `dev-reference.md §3`、**auto-merge ゲート / Ship 手順**は `implementation-workflow.md` Phase 3 を正本とする。各書の再掲は参照用で、矛盾時は各正本を優先する。
+
 > かつては「MCP server は単一プロセスゆえ検証は直列必須」という FIFO 前提があったが、
 > これは L1/L2 が `reload_server`（live MCP サーバ再起動）に依存していた時代の制約。
 > 現行の L1/L2 は reload を使わず subprocess で完結するため、この前提はもはや当てはまらない。
