@@ -67,3 +67,32 @@ class MigrationRunner:
                 logger.info("Applied migration %d: %s", version, name)
 
             return applied
+
+
+def ensure_schema_current(db_path: str | Path | None = None) -> list[str]:
+    """Apply pending migrations (idempotent). Returns applied names.
+
+    Thin startup helper that backs up a real production DB (when it has pending
+    migrations) and then runs every migration above the on-disk
+    ``schema_version``. Safe to call at server/worker bootstrap before any tool
+    is served: when the schema already matches the registry maximum this is a
+    no-op (returns ``[]``) and re-running it never raises.
+
+    This decouples schema migration from ``GarminDBWriter`` construction so that
+    read-only paths (e.g. ``get_athlete_profile``) also see an up-to-date schema
+    instead of crashing on a column a newer reader expects (issue #631).
+
+    Args:
+        db_path: Explicit database path, or ``None`` to resolve the default.
+
+    Returns:
+        The names of the migrations applied during this call (empty when the
+        schema was already current).
+    """
+    from garmin_mcp.database.migrations.backup import backup_if_pending
+
+    resolved = get_db_path(db_path)
+    # Best-effort safety net: copy the real production DB before mutating it.
+    # No-op for temp/in-memory/fresh/up-to-date databases.
+    backup_if_pending(resolved)
+    return MigrationRunner(resolved).run_pending()

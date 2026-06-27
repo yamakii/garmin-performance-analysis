@@ -31,6 +31,7 @@ JSON-serializable via ``default=str``.
 from __future__ import annotations
 
 import json
+import logging
 import signal
 import sys
 from datetime import UTC, datetime
@@ -42,8 +43,41 @@ from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.tools import ALL_DEFS, ALL_DEFS_BY_NAME
 from garmin_mcp.tools.registry import build_mcp_tools, dispatch
 
+logger = logging.getLogger(__name__)
+
 # Captured at import so each fresh worker process reports its own start time.
 _STARTED_AT = datetime.now(UTC).isoformat()
+
+
+def _apply_startup_migrations(db_path: str | None = None) -> list[str]:
+    """Bring the on-disk schema up to date before serving any request.
+
+    Runs once per worker process — i.e. on the initial spawn *and* on every
+    reload, so migrations added between reloads are never missed. Migration
+    application is intentionally decoupled from ``GarminDBWriter`` construction:
+    read-only tools (e.g. ``get_athlete_profile``) never build a writer, so a
+    newer reader expecting a column would otherwise crash until some unrelated
+    write path happened to run the writer-init migrations (issue #631).
+
+    ``ensure_schema_current`` is idempotent (a no-op when the schema already
+    matches the registry), so this is cheap on the common already-current path.
+
+    Args:
+        db_path: Explicit database path, or ``None`` to resolve the default.
+
+    Returns:
+        The names of the migrations applied during this call.
+    """
+    from garmin_mcp.database.migrations.runner import ensure_schema_current
+
+    applied = ensure_schema_current(db_path)
+    if applied:
+        logger.info(
+            "Applied %d pending migration(s) at worker startup: %s",
+            len(applied),
+            applied,
+        )
+    return applied
 
 
 def build_schema() -> list[dict[str, Any]]:
@@ -160,12 +194,19 @@ def _install_sigterm_handler() -> None:
 def main() -> None:
     """Read stdin line-by-line, dispatch each request, write one JSON line out.
 
-    A single ``GarminDBReader`` is created up front and reused across requests.
-    Blank lines are ignored; malformed JSON is reported as ``ok=False`` rather
-    than crashing the loop. SIGTERM triggers export/view cleanup then exit.
+    Pending schema migrations are applied once at startup (before the reader is
+    built or any request is served) so read-only paths never observe a stale
+    schema. A single ``GarminDBReader`` is created up front and reused across
+    requests. Blank lines are ignored; malformed JSON is reported as
+    ``ok=False`` rather than crashing the loop. SIGTERM triggers export/view
+    cleanup then exit.
     """
     _install_sigterm_handler()
-    reader = GarminDBReader(str(get_db_path()))
+    db_path = str(get_db_path())
+    # Apply pending schema migrations before serving any tool (read or write),
+    # closing the read-before-write and reload-stale-migration gaps (issue #631).
+    _apply_startup_migrations(db_path)
+    reader = GarminDBReader(db_path)
 
     for line in sys.stdin:
         line = line.strip()

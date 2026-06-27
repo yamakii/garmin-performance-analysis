@@ -6,7 +6,25 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from garmin_mcp.database.migrations.runner import MigrationRunner
+from garmin_mcp.database.migrations.runner import (
+    MigrationRunner,
+    ensure_schema_current,
+)
+
+
+def _make_v11_db(db_path: Path) -> None:
+    """Build a DB stuck at schema_version 11 with add_week_start_day pending.
+
+    Applies all migrations (→ 12), then rolls back the final one by dropping the
+    ``week_start_day`` column and deleting its schema_version row, simulating the
+    real production state that crashed ``get_athlete_profile`` (issue #631).
+    """
+    _create_schema_only_db(db_path)
+    MigrationRunner(db_path).run_pending()
+    conn = duckdb.connect(str(db_path))
+    conn.execute("ALTER TABLE athlete_profile DROP COLUMN week_start_day")
+    conn.execute("DELETE FROM schema_version WHERE version = 12")
+    conn.close()
 
 
 def _create_schema_only_db(db_path: Path) -> None:
@@ -139,3 +157,40 @@ class TestMigrationRunner:
             assert applied_at is not None
             assert isinstance(name, str)
             assert version > 0
+
+
+@pytest.mark.unit
+class TestEnsureSchemaCurrent:
+    """Tests for the ensure_schema_current startup helper."""
+
+    def test_ensure_schema_current_applies_pending(self, tmp_path: Path) -> None:
+        """A DB at version 11 is migrated to 12 and gains week_start_day."""
+        db_path = tmp_path / "v11.duckdb"
+        _make_v11_db(db_path)
+        runner = MigrationRunner(db_path)
+        assert runner.get_current_version() == 11
+
+        applied = ensure_schema_current(db_path)
+
+        assert applied == ["add_week_start_day"]
+        assert runner.get_current_version() == 12
+
+        conn = duckdb.connect(str(db_path), read_only=True)
+        columns = [
+            row[1]
+            for row in conn.execute("PRAGMA table_info(athlete_profile)").fetchall()
+        ]
+        conn.close()
+        assert "week_start_day" in columns
+
+    def test_ensure_schema_current_noop_when_uptodate(self, db_path: Path) -> None:
+        """An up-to-date DB yields no applied migrations and re-runs cleanly."""
+        MigrationRunner(db_path).run_pending()
+        assert MigrationRunner(db_path).get_current_version() == 12
+
+        first = ensure_schema_current(db_path)
+        second = ensure_schema_current(db_path)
+
+        assert first == []
+        assert second == []
+        assert MigrationRunner(db_path).get_current_version() == 12
