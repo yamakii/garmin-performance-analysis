@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta
 from garmin_mcp.database.readers.base import BaseDBReader
 from garmin_mcp.training_plan.models import FitnessSummary, HRZones
 from garmin_mcp.training_plan.vdot import VDOTCalculator
+from garmin_mcp.utils.week import get_week_start_day, week_start
 
 logger = logging.getLogger(__name__)
 
@@ -109,11 +110,13 @@ class FitnessAssessor(BaseDBReader):
                 ).fetchall()
 
                 if baseline_rows:
-                    # Aggregate distance per ISO week, then take median
-                    weekly_volumes: dict[tuple[int, int], float] = {}
+                    # Aggregate distance per calendar week (aligned to the
+                    # configured week-start day; Monday by default), then median.
+                    start_day = get_week_start_day(conn)
+                    weekly_volumes: dict[date, float] = {}
                     for r in baseline_rows:
                         d = _to_date(r[1])
-                        week_key = d.isocalendar()[:2]
+                        week_key = week_start(d, start_day)
                         weekly_volumes[week_key] = weekly_volumes.get(week_key, 0) + (
                             r[2] or 0
                         )

@@ -23,6 +23,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from garmin_mcp.database.readers.base import BaseDBReader
+from garmin_mcp.utils.week import get_week_start_day, week_start
 
 logger = logging.getLogger(__name__)
 
@@ -123,10 +124,14 @@ class TrainingLoadReader(BaseDBReader):
     ) -> dict[str, Any]:
         """Return the weekly load and ACWR over the trailing ``lookback_weeks``.
 
-        Each bucket is a 7-day window ending on ``end_date`` (the most recent
-        week) and stepping back 7 days at a time. For every week the ACWR is the
+        Buckets are **calendar weeks** aligned to the configured week-start day
+        (``athlete_profile.week_start_day``; Monday by default). The most recent
+        bucket runs from its week-start through ``end_date`` and is therefore a
+        partial week when ``end_date`` is not the last day of the week. Older
+        buckets are full 7-day calendar weeks. For every week the ACWR is the
         acute (that week's load) divided by the chronic weekly average computed
-        from the 28 days ending on that week's last day.
+        from the 28 days ending on that bucket's last day. The rolling ACWR
+        windows themselves (see :meth:`get_acwr`) are unchanged.
 
         Args:
             lookback_weeks: Number of trailing weekly buckets (default 12).
@@ -143,30 +148,40 @@ class TrainingLoadReader(BaseDBReader):
         if resolved_end is None or lookback_weeks <= 0:
             return {"weeks": [], "load_metric": LOAD_METRIC}
 
-        # Pull every daily load once: from 27 days before the oldest week's last
-        # day (for that week's chronic window) through resolved_end.
-        oldest_week_end = resolved_end - timedelta(days=7 * (lookback_weeks - 1))
-        history_start = oldest_week_end - timedelta(days=27)
+        with self._get_connection() as conn:
+            start_day = get_week_start_day(conn)
+
+        # Newest bucket starts on the week-start day of resolved_end; older
+        # buckets step back 7 days each.
+        current_week_start = week_start(resolved_end, start_day)
+        oldest_week_start = current_week_start - timedelta(
+            days=7 * (lookback_weeks - 1)
+        )
+        # Pull every daily load once: from 27 days before the oldest bucket's
+        # last day (for that bucket's chronic window) through resolved_end.
+        history_start = oldest_week_start - timedelta(days=27)
         daily = self._daily_loads(history_start, resolved_end)
 
         weeks: list[dict[str, Any]] = []
         # Iterate oldest -> newest so the array reads chronologically.
         for i in range(lookback_weeks - 1, -1, -1):
-            week_end = resolved_end - timedelta(days=7 * i)
-            week_start = week_end - timedelta(days=6)
-            chronic_start = week_end - timedelta(days=27)
+            bucket_start = current_week_start - timedelta(days=7 * i)
+            # The newest bucket is capped at resolved_end (a partial week);
+            # older buckets are full calendar weeks.
+            bucket_end = min(bucket_start + timedelta(days=6), resolved_end)
+            chronic_start = bucket_end - timedelta(days=27)
 
             acute_total = sum(
-                km for day, km in daily.items() if week_start <= day <= week_end
+                km for day, km in daily.items() if bucket_start <= day <= bucket_end
             )
             chronic_total = sum(
-                km for day, km in daily.items() if chronic_start <= day <= week_end
+                km for day, km in daily.items() if chronic_start <= day <= bucket_end
             )
             acwr = _acwr_from_loads(acute_total, chronic_total)
 
             weeks.append(
                 {
-                    "week_start": week_start.strftime("%Y-%m-%d"),
+                    "week_start": bucket_start.strftime("%Y-%m-%d"),
                     "load_km": round(acute_total, 2),
                     "acwr": round(acwr, 2) if acwr is not None else None,
                     "status": _classify(acwr),
