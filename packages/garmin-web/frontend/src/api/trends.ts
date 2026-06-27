@@ -1,6 +1,8 @@
 export type Granularity = "week" | "month";
 
 export interface VolumeTrendPoint {
+  // "week" -> the week's start date "YYYY-MM-DD" (configurable start day,
+  // default Monday); "month" -> "YYYY-MM".
   bucket: string;
   distance_km: number;
   duration_seconds: number;

@@ -5,12 +5,19 @@ from garmin_mcp.rag.queries.heat_adjustment import REF_TEMP_C, HeatAdjustmentMod
 
 _VALID_GRANULARITIES = ("week", "month")
 
-_BUCKET_EXPRESSIONS = {
-    # ISO week, e.g. "2025-W41" (isoyear/weekofyear are ISO-8601 in DuckDB)
-    "week": "printf('%d-W%02d', isoyear(activity_date), weekofyear(activity_date))",
-    # Calendar month, e.g. "2025-10"
-    "month": "strftime(activity_date, '%Y-%m')",
-}
+# Calendar month bucket, e.g. "2025-10".
+_MONTH_BUCKET = "strftime(activity_date, '%Y-%m')"
+
+# Configurable calendar-week bucket: the date the activity's week starts on,
+# e.g. "2025-10-06" (same representation as weekly_reviews.week_start_date).
+# isodow() is 1=Mon .. 7=Sun; the ``?`` parameter is week_start_day (0=Mon ..
+# 6=Sun, matching Python's date.weekday()). The modulo shifts each date back to
+# its week-start date; the offset is cast to INTEGER because DATE - <int> days
+# requires an INTEGER (a BIGINT modulo result has no DATE subtraction overload).
+_WEEK_BUCKET = (
+    "CAST(activity_date - "
+    "CAST((isodow(activity_date) - 1 - ? + 7) % 7 AS INTEGER) AS VARCHAR)"
+)
 
 
 def _rows_to_dicts(result: duckdb.DuckDBPyConnection) -> list[dict]:
@@ -20,19 +27,24 @@ def _rows_to_dicts(result: duckdb.DuckDBPyConnection) -> list[dict]:
 
 
 def get_volume_trend(
-    conn: duckdb.DuckDBPyConnection, granularity: str = "week"
+    conn: duckdb.DuckDBPyConnection,
+    granularity: str = "week",
+    week_start_day: int = 0,
 ) -> list[dict]:
-    """Aggregate running volume per ISO week or calendar month.
+    """Aggregate running volume per calendar week or calendar month.
 
     Args:
         conn: Open DuckDB connection (read-only is sufficient).
-        granularity: "week" (ISO week, e.g. "2025-W41") or
-            "month" (e.g. "2025-10").
+        granularity: "week" (calendar week keyed by its start date, e.g.
+            "2025-10-06") or "month" (e.g. "2025-10").
+        week_start_day: Day the week starts on (0=Mon .. 6=Sun, matching
+            Python's ``date.weekday()``). Only affects "week" granularity.
 
     Returns:
         List of dicts sorted by bucket ascending, each with keys:
         bucket (str), distance_km (float), duration_seconds (int),
-        run_count (int).
+        run_count (int). For "week" the bucket is the week's start date as
+        "YYYY-MM-DD"; for "month" it is "YYYY-MM".
 
     Raises:
         ValueError: If granularity is not "week" or "month".
@@ -41,8 +53,14 @@ def get_volume_trend(
         raise ValueError(
             f"granularity must be one of {_VALID_GRANULARITIES}, got {granularity!r}"
         )
-    bucket_expr = _BUCKET_EXPRESSIONS[granularity]
-    result = conn.execute(f"""
+    if granularity == "week":
+        bucket_expr = _WEEK_BUCKET
+        params: list = [week_start_day]
+    else:
+        bucket_expr = _MONTH_BUCKET
+        params = []
+    result = conn.execute(
+        f"""
         SELECT
             {bucket_expr} AS bucket,
             COALESCE(SUM(total_distance_km), 0.0) AS distance_km,
@@ -52,7 +70,9 @@ def get_volume_trend(
         FROM activities
         GROUP BY bucket
         ORDER BY bucket
-    """)
+    """,
+        params,
+    )
     return _rows_to_dicts(result)
 
 

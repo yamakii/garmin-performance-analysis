@@ -14,8 +14,8 @@ vi.mock("../lib/echarts", () => ({
 }));
 
 const VOLUME = [
-  { bucket: "2025-W41", distance_km: 15.0, duration_seconds: 5400, run_count: 2 },
-  { bucket: "2025-W42", distance_km: 8.0, duration_seconds: 2400, run_count: 1 },
+  { bucket: "2025-09-22", distance_km: 15.0, duration_seconds: 5400, run_count: 2 },
+  { bucket: "2025-09-29", distance_km: 8.0, duration_seconds: 2400, run_count: 1 },
 ];
 
 const PHYSIOLOGY = {
@@ -344,7 +344,8 @@ describe("TrendsDashboard", () => {
     ).toBeInTheDocument();
 
     // Volume block summary is rendered from the mocked API data
-    expect(screen.getByText(/2025-W42/)).toBeInTheDocument();
+    // (weekly buckets now key on the week's start date, e.g. "2025-09-29")
+    expect(screen.getByText(/2025-09-29/)).toBeInTheDocument();
     expect(screen.getByText(/8\.0 km/)).toBeInTheDocument();
 
     // Physiology block shows the latest VO2max from the mocked API data

@@ -71,7 +71,7 @@ parameters are documented in each handler's docstring.
 | `/api/trends/heat-adjusted` | Climate-neutral HR-at-pace trend with per-run heat_cost. |
 | `/api/trends/objective-fitness` | Objective (real-run derived) fitness curve vs Garmin VO2max + optimism gap. |
 | `/api/trends/physiology` | VO2max and lactate threshold time series. |
-| `/api/trends/volume` | Running volume aggregated per ISO week or calendar month. |
+| `/api/trends/volume` | Running volume aggregated per calendar week or calendar month. |
 | `/api/weekly-reviews` | Return recent weekly reviews (newest first), one per week. |
 | `/api/weekly-reviews/{week_start_date}` | Return a single weekly review by its week-start date. |
 | `/api/weekly-reviews/{week_start_date}/versions` | Return all saved versions for a single week (newest first). |

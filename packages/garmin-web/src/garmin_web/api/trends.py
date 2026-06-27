@@ -7,6 +7,7 @@ from fastapi import APIRouter, Query, Request
 from garmin_mcp.database.connection import get_connection
 
 from garmin_web.queries import objective_fitness as objective_fitness_queries
+from garmin_web.queries import settings as settings_queries
 from garmin_web.queries import trends as trends_queries
 
 router = APIRouter(prefix="/api/trends")
@@ -21,12 +22,17 @@ def get_volume(
     request: Request,
     granularity: Annotated[Literal["week", "month"], Query()] = "week",
 ) -> list[dict]:
-    """Running volume aggregated per ISO week or calendar month.
+    """Running volume aggregated per calendar week or calendar month.
 
-    Invalid granularity values are rejected with 422 by FastAPI validation.
+    Weekly buckets honor the athlete's configured ``week_start_day``
+    (``athlete_profile``; defaults to Monday). Invalid granularity values are
+    rejected with 422 by FastAPI validation.
     """
     with get_connection(_db_path(request)) as conn:
-        return trends_queries.get_volume_trend(conn, granularity=granularity)
+        week_start_day = settings_queries.get_week_start_day(conn)
+        return trends_queries.get_volume_trend(
+            conn, granularity=granularity, week_start_day=week_start_day
+        )
 
 
 @router.get("/physiology")
