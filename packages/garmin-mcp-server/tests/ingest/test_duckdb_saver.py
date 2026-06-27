@@ -2,14 +2,39 @@
 
 from __future__ import annotations
 
+import json
+import shutil
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, call
 
+import duckdb
 import pytest
 
-from garmin_mcp.ingest.duckdb_saver import save_data, should_insert_table
+from garmin_mcp.database.db_writer import GarminDBWriter
+from garmin_mcp.ingest.duckdb_saver import (
+    _insert_activities,
+    save_data,
+    should_insert_table,
+)
+
+
+@pytest.fixture(scope="module")
+def _schema_template_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Module-scoped DuckDB template with schema pre-initialized."""
+    tmp_path = tmp_path_factory.mktemp("duckdb_saver_template")
+    db_path = tmp_path / "template.duckdb"
+    GarminDBWriter(db_path=str(db_path))
+    return db_path
+
+
+@pytest.fixture
+def initialized_db_path(_schema_template_path: Path, tmp_path: Path) -> Path:
+    """Function-scoped DuckDB with schema pre-initialized via file copy."""
+    db_path = tmp_path / "test.duckdb"
+    shutil.copy2(str(_schema_template_path), str(db_path))
+    return db_path
 
 
 @pytest.mark.unit
@@ -167,3 +192,66 @@ class TestSaveData:
         inserter_mocks["lactate_threshold"].assert_not_called()
         inserter_mocks["vo2_max"].assert_not_called()
         inserter_mocks["time_series"].assert_not_called()
+
+
+@pytest.mark.integration
+class TestInsertActivities:
+    """Regression tests for _insert_activities after legacy fallback removal."""
+
+    def test_insert_activities_new_format_unchanged(
+        self, initialized_db_path: Path, tmp_path: Path
+    ) -> None:
+        """Multi-file raw format inserts as before (legacy branch removal is no-op)."""
+        activity_id = 998877
+        activity_dir = tmp_path / "activity" / str(activity_id)
+        activity_dir.mkdir(parents=True)
+
+        (activity_dir / "activity.json").write_text(
+            json.dumps(
+                {
+                    "activityName": "Morning Run",
+                    "activityTypeDTO": {"typeKey": "running"},
+                    "summaryDTO": {
+                        "startTimeLocal": "2025-10-09T06:00:00.0",
+                        "startTimeGMT": "2025-10-08T21:00:00.0",
+                    },
+                    "locationName": "Tokyo",
+                }
+            )
+        )
+        (activity_dir / "weather.json").write_text(
+            json.dumps({"temp": 68, "relativeHumidity": 65})
+        )
+        (activity_dir / "gear.json").write_text(
+            json.dumps({"gearTypeName": "Shoes", "customMakeModel": "Nike Pegasus 40"})
+        )
+
+        conn = duckdb.connect(str(initialized_db_path))
+        try:
+            _insert_activities(
+                conn,
+                activity_id,
+                "2025-10-09",
+                tmp_path,
+                activity_dir / "activity.json",
+                activity_dir / "weather.json",
+                activity_dir / "gear.json",
+                None,
+            )
+
+            row = conn.execute(
+                "SELECT activity_id, activity_date, activity_name, "
+                "location_name, temp_celsius, gear_model "
+                "FROM activities WHERE activity_id = ?",
+                [activity_id],
+            ).fetchone()
+        finally:
+            conn.close()
+
+        assert row is not None
+        assert row[0] == activity_id
+        assert str(row[1]) == "2025-10-09"
+        assert row[2] == "Morning Run"
+        assert row[3] == "Tokyo"
+        assert row[4] == 20.0  # 68F -> 20C
+        assert row[5] == "Nike Pegasus 40"

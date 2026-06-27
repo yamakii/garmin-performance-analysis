@@ -156,15 +156,6 @@ def _insert_activities(
     """Insert activities (parent table)."""
     from garmin_mcp.database.inserters.activities import insert_activities
 
-    # Fallback: check if using old structure
-    if raw_activity_file and not raw_activity_file.exists():
-        legacy_raw_file = raw_dir / f"{activity_id}_raw.json"
-        if legacy_raw_file.exists():
-            raw_activity_file = None
-            raw_weather_file = None
-            raw_gear_file = None
-            logger.warning(f"Using legacy raw data format for activity {activity_id}")
-
     success = insert_activities(
         activity_id=activity_id,
         date=activity_date or "1970-01-01",
