@@ -730,7 +730,7 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 
 **Purpose**: Athlete's current training focus (read by `/plan-training` and `/weekly-review`; written by `/set-goal`)
 **Primary Key**: `user_id`
-**Source**: `save_athlete_profile` / `/set-goal`. Owned by migration `add_athlete_tables` (version 7).
+**Source**: `save_athlete_profile` / `/set-goal`. Owned by migration `add_athlete_tables` (version 7); `week_start_day` added by migration `add_week_start_day` (version 12).
 
 ### Schema
 
@@ -740,10 +740,11 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 | user_id (PK) | VARCHAR |
 | current_focus | VARCHAR |
 | focus_notes | VARCHAR |
+| week_start_day | INTEGER |
 | updated_at | TIMESTAMP |
 <!-- END GENERATED: schema:athlete_profile -->
 
-**Units & notes**: `current_focus` is the current training focus; `focus_notes` is rendered as `【見出し】` sections in the Web app.
+**Units & notes**: `current_focus` is the current training focus; `focus_notes` is rendered as `【見出し】` sections in the Web app. `week_start_day` is the athlete's preferred week start day (0=Monday … 6=Sunday, following `datetime.date.weekday()`), defaulting to 0; it is the single source of truth for week boundaries via `utils/week.py`.
 
 ---
 

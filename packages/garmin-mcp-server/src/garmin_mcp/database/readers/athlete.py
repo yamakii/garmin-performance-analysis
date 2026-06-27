@@ -22,14 +22,15 @@ class AthleteReader(BaseDBReader):
 
         Returns:
             Dict with ``user_id``, ``current_focus``, ``focus_notes``,
-            ``updated_at`` (str), ``goals`` (list) and ``retrospectives`` (list).
-            When no profile row exists, ``current_focus``/``focus_notes``/
-            ``updated_at`` are ``None`` and the lists are empty.
-            All date/timestamp values are converted to ``str``.
+            ``week_start_day`` (int, 0=Monday … 6=Sunday), ``updated_at`` (str),
+            ``goals`` (list) and ``retrospectives`` (list). When no profile row
+            exists, ``current_focus``/``focus_notes``/``updated_at`` are ``None``,
+            ``week_start_day`` is ``0`` and the lists are empty. All
+            date/timestamp values are converted to ``str``.
         """
         with self._get_connection() as conn:
             profile_row = conn.execute(
-                "SELECT current_focus, focus_notes, updated_at "
+                "SELECT current_focus, focus_notes, week_start_day, updated_at "
                 "FROM athlete_profile WHERE user_id = ?",
                 [user_id],
             ).fetchone()
@@ -39,6 +40,7 @@ class AthleteReader(BaseDBReader):
                     "user_id": user_id,
                     "current_focus": None,
                     "focus_notes": None,
+                    "week_start_day": 0,
                     "updated_at": None,
                 }
             else:
@@ -46,8 +48,11 @@ class AthleteReader(BaseDBReader):
                     "user_id": user_id,
                     "current_focus": profile_row[0],
                     "focus_notes": profile_row[1],
+                    "week_start_day": (
+                        profile_row[2] if profile_row[2] is not None else 0
+                    ),
                     "updated_at": (
-                        str(profile_row[2]) if profile_row[2] is not None else None
+                        str(profile_row[3]) if profile_row[3] is not None else None
                     ),
                 }
 

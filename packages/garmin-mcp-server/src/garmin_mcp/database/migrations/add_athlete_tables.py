@@ -31,6 +31,7 @@ def add_athlete_tables(conn: duckdb.DuckDBPyConnection) -> None:
             user_id VARCHAR PRIMARY KEY DEFAULT 'default',
             current_focus VARCHAR,
             focus_notes VARCHAR,
+            week_start_day INTEGER DEFAULT 0,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)

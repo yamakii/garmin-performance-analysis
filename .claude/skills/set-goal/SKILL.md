@@ -82,6 +82,14 @@ mcp__garmin-db__get_athlete_profile()
 
 既存の振り返りを残したまま新シーズン分を**追加**する場合は、既存分も含めて全件を `retrospectives` に詰める（洗い替えのため）。
 
+#### 2e. 週の開始曜日
+
+「週の集計（週次レビューや週間距離）をどの曜日始まりにしますか？」と確認する。
+
+- `week_start_day`: 週の開始曜日を `0=月曜 … 6=日曜`（`datetime.date.weekday()` 準拠）の整数で格納する。
+- 既定は `0`（月曜始まり）。既存 profile に値があればそれを初期値として提示し、「変更なし」を選べるようにする。
+- 全機能（週次レビュー・週間距離など）はこの値を共通の週定義（`utils/week.py`）として参照する。
+
 ### Step 3: profile dict の組み立てと最終確認
 
 収集内容を以下の構造に組み立てる。**Step 1 で取得した既存の goals / retrospectives のうち変更しない分も必ず含める**（洗い替えのため）。
@@ -91,6 +99,7 @@ mcp__garmin-db__get_athlete_profile()
   "user_id": "default",
   "current_focus": "BASE 期・有酸素基盤構築",
   "focus_notes": "膝に違和感あり。週3回・低強度中心で様子見",
+  "week_start_day": 0,
   "goals": [
     {
       "race_name": "東京マラソン",

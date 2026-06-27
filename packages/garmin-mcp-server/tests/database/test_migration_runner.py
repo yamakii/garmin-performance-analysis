@@ -72,10 +72,10 @@ class TestMigrationRunner:
         runner = MigrationRunner(db_path)
         applied = runner.run_pending()
 
-        assert len(applied) == 11
+        assert len(applied) == 12
         assert applied[0] == "phase0_power_prep"
-        assert applied[-1] == "add_daily_wellness_table"
-        assert runner.get_current_version() == 11
+        assert applied[-1] == "add_week_start_day"
+        assert runner.get_current_version() == 12
 
     def test_run_pending_skips_applied(self, db_path: Path) -> None:
         """Running twice applies nothing the second time."""
@@ -83,7 +83,7 @@ class TestMigrationRunner:
         first = runner.run_pending()
         second = runner.run_pending()
 
-        assert len(first) == 11
+        assert len(first) == 12
         assert second == []
 
     def test_run_pending_partial(self, db_path: Path) -> None:
@@ -110,7 +110,7 @@ class TestMigrationRunner:
         runner = MigrationRunner(db_path)
         applied = runner.run_pending()
 
-        assert runner.get_current_version() == 11
+        assert runner.get_current_version() == 12
         assert applied == [
             "remove_fk_constraints",
             "add_plan_versioning",
@@ -120,6 +120,7 @@ class TestMigrationRunner:
             "add_body_composition_date_index",
             "add_strength_sessions",
             "add_daily_wellness_table",
+            "add_week_start_day",
         ]
 
     def test_migration_records_applied_at(self, db_path: Path) -> None:
@@ -133,7 +134,7 @@ class TestMigrationRunner:
         ).fetchall()
         conn.close()
 
-        assert len(rows) == 11
+        assert len(rows) == 12
         for version, name, applied_at in rows:
             assert applied_at is not None
             assert isinstance(name, str)
