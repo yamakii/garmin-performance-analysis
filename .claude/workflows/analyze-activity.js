@@ -185,6 +185,9 @@ await parallel([
       // summary uses a focused, leaner agent (just summary rules) instead of
       // loading the full unified def; efficiency/phase/environment stay on unified.
       agentType: s === 'summary' ? 'summary-section-analyst' : 'unified-section-analyst',
+      // summary's cost is reasoning depth (4-axis eval, recs synthesis), not output
+      // volume (~2KB). Cap its effort to cut that reasoning time (output/UX unchanged).
+      ...(s === 'summary' ? { effort: 'medium' } : {}),
     })
   ),
   () => agent(buildSplitPrompt(ctx), { label: plan.extra, phase: 'Analyze', agentType: 'split-section-analyst' }),
