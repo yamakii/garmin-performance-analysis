@@ -1,13 +1,13 @@
 ---
 name: implement
-description: Parallel implementation orchestrator for an Epic's design-approved sub-issues. Use when the user wants to auto-implement the issues under an Epic in dependency order with worktree-isolated agents. Argument is the Epic number or a list of issue numbers.
+description: Parallel implementation orchestrator for an approved issue (single) or an Epic's design-approved sub-issues. Use when the user wants to auto-implement a plan-approved issue, or the issues under an Epic in dependency order, with worktree-isolated agents. Argument is the Epic number or a list of issue numbers.
 argument-hint: <epic-number | issue-numbers>
 allowed-tools: Bash, Read, Glob, Grep, Task, Workflow, AskUserQuestion, mcp__github__issue_read
 ---
 
 # /implement — Parallel Implementation Orchestrator
 
-Epic 配下の design-approved Issue を依存順に自動実装する。
+プラン承認済みの**単発 Issue**、または **Epic 配下**の design-approved Issue を依存順に自動実装する。
 
 ## Arguments
 
@@ -33,8 +33,9 @@ mcp__github__issue_read(method="get", owner="yamakii", repo="garmin-performance-
 ### Step 2: フィルタリング
 
 1. **State**: OPEN の Issue のみ対象（CLOSED はスキップ）
-2. **Label**: `design-approved` ラベルがある Issue のみ対象
-   - ラベルなしの Issue → スキップし報告: 「#{N} は design-approved がありません」
+2. **Label / 承認判定**:
+   - **Epic 展開のサブ Issue**: `design-approved` ラベル必須。ラベルなし → スキップし報告: 「#{N} は design-approved がありません」（品質ゲート維持）
+   - **明示指定された個別 Issue 番号**（`/implement #N` で直接渡された単発/複数）: `design-approved` が無くても、body に **Design ＋ Test Plan セクションがあれば対象**とし、その場で `mcp__github__issue_write` で `design-approved` を付与してから進む。**Design か Test Plan が欠落**している場合のみスキップし、補完を依頼する
 3. **Dependencies**: Issue body の `Blocked by: #N` から依存関係を抽出
 
 ### Step 3: 依存グラフからティア分類

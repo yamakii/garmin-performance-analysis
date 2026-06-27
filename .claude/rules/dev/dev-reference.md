@@ -27,14 +27,15 @@
   - [ ] test_method_happy_path [unit] -- x=5 → "5"
   - [ ] test_method_edge_case [unit] -- x=-1 → raises ValueError
   ```
-- **Plan承認後**: Issue作成(TBD時) → Issue sync → worktree実装 or `/decompose`。再確認不要
+- **Plan承認後**: Issue作成(TBD時) → Issue sync（`design-approved` 付与）→ 既定で `/implement <issue>` 実装 or `/decompose`。再確認不要
 - **Review Gates**: Design → Test Plan → Code(CI) → Validation → Merge
-  - `/implement` 経由: 検証(L1/L2) PASS + `ci-guard` success + mergeable なら **auto-merge**（`implement-tier` Workflow）。例外（FAIL / 内容チェック WARNING / CI 失敗 / コンフリクト / L3）のみ人間が `/ship --pr N --validated`
-  - 単発 PR: 従来どおり `/ship --pr N`（CI green 確認後）
+  - **既定経路 = `/implement <issue番号>`**（**単発 Issue / Epic を問わず**）: 検証(L1/L2) PASS + `ci-guard` success + mergeable なら **auto-merge**（`implement-tier` Workflow）。例外（FAIL / 内容チェック WARNING / CI 失敗 / コンフリクト / L3）のみ人間が `/ship --pr N --validated`
+  - **手動 developer 委任 + `/ship --pr N` は例外（フォールバック）**: L3（agent 定義変更）/ Workflow 不可環境 / skip-level の docs・rules 微修正のみ。**「単発だから手動」ではない**（単発でも既定は /implement）
 
 ### Issue Sync
 
 Issue body の Design/Test Plan は常に最新を反映。Change Log に `(Plan):`, `(Build):`, `(Done):`, `(Ship):` で追記。
+**プラン承認時**: Design/Test Plan が後述の `design-approved 品質基準` を満たす Issue に **`design-approved` ラベルを付与**してから `/implement <issue>` を起動する（**単発 Issue でも付与する**。これで /implement Step 2 のゲートを通り、既定経路に乗る）。
 Skip: Design セクションなし、Issue番号不明、dry-run時。
 
 ### design-approved 品質基準
