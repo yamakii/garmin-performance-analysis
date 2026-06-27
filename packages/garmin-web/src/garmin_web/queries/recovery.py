@@ -36,3 +36,13 @@ def get_weight_economy_coupling(db_path: Any, weeks: int = 52) -> dict[str, Any]
         "dict[str, Any]",
         _reader(db_path).get_weight_economy_coupling(weeks=weeks),
     )
+
+
+def get_wellness_baseline_deviation(
+    db_path: Any, date: str | None = None, window_days: int = 30
+) -> dict[str, Any]:
+    """Personal-baseline deviation for HRV / readiness / RHR (delegates to #555)."""
+    return cast(
+        "dict[str, Any]",
+        _reader(db_path).get_wellness_baseline_deviation(date, window_days),
+    )

@@ -252,6 +252,56 @@ const WEIGHT_ECONOMY = {
   note: "association with effect-size estimate (no collinearity detected)",
 };
 
+const WELLNESS_BASELINE_WITHIN = {
+  date: "2025-10-07",
+  hrv: {
+    metric: "hrv",
+    mean: 65.0,
+    std: 4.0,
+    today: 64.0,
+    z: -0.25,
+    flag: "within",
+    adverse: false,
+    n: 30,
+  },
+  readiness: {
+    metric: "readiness",
+    mean: 75.0,
+    std: 6.0,
+    today: 76.0,
+    z: 0.17,
+    flag: "within",
+    adverse: false,
+    n: 30,
+  },
+  rhr: {
+    metric: "rhr",
+    mean: 48.0,
+    std: 1.5,
+    today: 48.0,
+    z: 0.0,
+    flag: "within",
+    adverse: false,
+    n: 30,
+  },
+  overall_flag: false,
+};
+
+const WELLNESS_BASELINE_ADVERSE = {
+  ...WELLNESS_BASELINE_WITHIN,
+  hrv: {
+    metric: "hrv",
+    mean: 65.0,
+    std: 4.0,
+    today: 40.0,
+    z: -6.25,
+    flag: "low",
+    adverse: true,
+    n: 30,
+  },
+  overall_flag: true,
+};
+
 function jsonResponse(payload: unknown): Response {
   return new Response(JSON.stringify(payload), {
     status: 200,
@@ -262,6 +312,7 @@ function jsonResponse(payload: unknown): Response {
 function stubTrendsFetch(
   trainingLoad: unknown,
   durability: unknown = DURABILITY_WORSENING,
+  wellnessBaseline: unknown = WELLNESS_BASELINE_WITHIN,
 ): void {
   vi.stubGlobal(
     "fetch",
@@ -304,6 +355,9 @@ function stubTrendsFetch(
       }
       if (url.startsWith("/api/weight-economy-coupling")) {
         return Promise.resolve(jsonResponse(WEIGHT_ECONOMY));
+      }
+      if (url.startsWith("/api/wellness-baseline-deviation")) {
+        return Promise.resolve(jsonResponse(wellnessBaseline));
       }
       return Promise.reject(new Error(`Unexpected fetch: ${url}`));
     }),
@@ -386,6 +440,40 @@ describe("TrendsDashboard", () => {
     expect(screen.getByText("質練OK")).toBeInTheDocument();
     // Body-composition summary renders the net weight loss via formatNumber.
     expect(screen.getByText(/-1\.2kg/)).toBeInTheDocument();
+
+    // Wellness personal-baseline deviation panel heading (Issue #635).
+    expect(
+      screen.getByRole("heading", {
+        level: 2,
+        name: "個人ベースライン逸脱 (HRV / Readiness / RHR)",
+      }),
+    ).toBeInTheDocument();
+    // All-within baseline -> no overall-flag alert.
+    expect(
+      screen.queryByText(/個人ベースラインから不利な方向に逸脱/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("raises a wellness baseline alert when overall_flag is set", async () => {
+    stubTrendsFetch(
+      TRAINING_LOAD_OPTIMAL,
+      DURABILITY_WORSENING,
+      WELLNESS_BASELINE_ADVERSE,
+    );
+
+    render(<TrendsDashboard />);
+
+    expect(
+      await screen.findByRole("heading", {
+        level: 2,
+        name: "個人ベースライン逸脱 (HRV / Readiness / RHR)",
+      }),
+    ).toBeInTheDocument();
+
+    // Adverse HRV deviation -> overall_flag alert is surfaced.
+    expect(
+      screen.getByText(/個人ベースラインから不利な方向に逸脱/),
+    ).toBeInTheDocument();
   });
 
   it("falls back when durability data is insufficient", async () => {

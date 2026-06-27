@@ -64,3 +64,21 @@ def get_weight_economy_coupling_endpoint(
     when too few runs matched. Never 500s on insufficient data.
     """
     return recovery_queries.get_weight_economy_coupling(_db_path(request), weeks)
+
+
+@router.get("/wellness-baseline-deviation")
+def get_wellness_baseline_deviation_endpoint(
+    request: Request, date: str | None = None, window_days: int = 30
+) -> dict[str, Any]:
+    """Personal-baseline deviation for HRV / readiness / RHR on ``date`` (#555).
+
+    Read-only: delegates entirely to the reader. Builds a rolling personal band
+    (mean +/- SD over the trailing ``window_days``) for each metric and judges
+    the target day against its own band as a z-score. ``date`` defaults to the
+    latest day in ``daily_wellness``; bands with fewer than 7 samples are
+    ``flag="insufficient"`` (null-safe, never 500s). ``overall_flag`` is True
+    when any metric sits in an unfavorable deviation.
+    """
+    return recovery_queries.get_wellness_baseline_deviation(
+        _db_path(request), date, window_days
+    )

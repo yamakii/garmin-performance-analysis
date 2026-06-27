@@ -3,6 +3,7 @@ import type {
   RecoveryStatus,
   RecoveryTrend,
   WeightEconomyCoupling,
+  WellnessBaselineDeviation,
 } from "../types";
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -35,4 +36,9 @@ export function fetchWeightEconomyCoupling(
   weeks = 52,
 ): Promise<WeightEconomyCoupling> {
   return fetchJson(`/api/weight-economy-coupling?weeks=${weeks}`);
+}
+
+/** Personal-baseline deviation for HRV / readiness / RHR on the latest day (#555). */
+export function fetchWellnessBaselineDeviation(): Promise<WellnessBaselineDeviation> {
+  return fetchJson("/api/wellness-baseline-deviation");
 }
