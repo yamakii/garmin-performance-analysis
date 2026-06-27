@@ -1,13 +1,14 @@
 """Tests for body composition data processing in GarminIngestWorker."""
 
 import json
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
 
 from garmin_mcp.ingest.garmin_worker import GarminIngestWorker
+from garmin_mcp.ingest.raw_data_fetcher import collect_body_composition_data
 
 
 @pytest.fixture
@@ -397,3 +398,62 @@ class TestExistingDataProcessing:
         assert median_data["source"] == "7DAY_MEDIAN"
         assert median_data["sample_count"] == 5
         assert median_data["weight_kg"] > 0
+
+
+@pytest.mark.unit
+class TestCurrentDayMarkerGuard:
+    """Tests for the current-day no-marker guard (issue #603)."""
+
+    def test_weight_current_day_no_data_no_marker(self, tmp_path):
+        """Current day with no weight → None and no marker file written."""
+        weight_dir = tmp_path / "weight"
+        mock_client = Mock()
+        mock_client.get_daily_weigh_ins.return_value = {"dateWeightList": []}
+
+        with patch(
+            "garmin_mcp.ingest.raw_data_fetcher.get_garmin_client",
+            return_value=mock_client,
+        ):
+            result = collect_body_composition_data(
+                weight_dir, "2026-06-27", today=date(2026, 6, 27)
+            )
+
+        assert result is None
+        assert (weight_dir / "2026-06-27.json").exists() is False
+
+    def test_weight_past_day_no_data_writes_marker(self, tmp_path):
+        """Past day with no weight → empty marker written and None."""
+        weight_dir = tmp_path / "weight"
+        mock_client = Mock()
+        mock_client.get_daily_weigh_ins.return_value = {"dateWeightList": []}
+
+        with patch(
+            "garmin_mcp.ingest.raw_data_fetcher.get_garmin_client",
+            return_value=mock_client,
+        ):
+            result = collect_body_composition_data(
+                weight_dir, "2026-06-27", today=date(2026, 6, 28)
+            )
+
+        assert result is None
+        cache_file = weight_dir / "2026-06-27.json"
+        assert cache_file.exists()
+        with open(cache_file, encoding="utf-8") as f:
+            assert json.load(f) == {}
+
+    def test_weight_current_day_error_no_marker(self, tmp_path):
+        """Current day where fetch raises → None and no marker file written."""
+        weight_dir = tmp_path / "weight"
+        mock_client = Mock()
+        mock_client.get_daily_weigh_ins.side_effect = Exception("boom")
+
+        with patch(
+            "garmin_mcp.ingest.raw_data_fetcher.get_garmin_client",
+            return_value=mock_client,
+        ):
+            result = collect_body_composition_data(
+                weight_dir, "2026-06-27", today=date(2026, 6, 27)
+            )
+
+        assert result is None
+        assert (weight_dir / "2026-06-27.json").exists() is False
