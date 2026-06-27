@@ -1,9 +1,9 @@
 import type { SectionResult } from "../../types";
 import { formatNumber } from "../../utils/formatNumber";
-import ActionCallout from "./ActionCallout";
-import FallbackFields, { renderValue } from "./FallbackFields";
+import FallbackFields from "./FallbackFields";
 import MarkdownText from "./MarkdownText";
 import NextRunTarget from "./NextRunTarget";
+import PlanAchievement from "./PlanAchievement";
 import ReportCard, { SUBCARD } from "./ReportCard";
 import StarRating from "./StarRating";
 
@@ -145,11 +145,13 @@ export default function SummaryReport({
               )}
             </div>
           )}
-          {data.plan_achievement != null && (
-            <ActionCallout title="プラン達成度">
-              {renderValue(data.plan_achievement)}
-            </ActionCallout>
-          )}
+          {data.plan_achievement != null &&
+            typeof data.plan_achievement === "object" &&
+            !Array.isArray(data.plan_achievement) && (
+              <PlanAchievement
+                data={data.plan_achievement as Record<string, unknown>}
+              />
+            )}
           <FallbackFields data={data} exclude={KNOWN_KEYS} />
         </div>
       )}
