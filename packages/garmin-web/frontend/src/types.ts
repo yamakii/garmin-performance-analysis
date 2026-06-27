@@ -185,6 +185,27 @@ export interface RecoveryStatus {
   sleep_score: number | null;
 }
 
+/** One metric's personal baseline band and today's position within it (#555). */
+export interface MetricBaseline {
+  metric: "hrv" | "readiness" | "rhr";
+  mean: number | null;
+  std: number | null;
+  today: number | null;
+  z: number | null;
+  flag: "low" | "high" | "within" | "insufficient";
+  adverse: boolean;
+  n: number;
+}
+
+/** Personal-baseline deviation for HRV / readiness / RHR on a target day (#555). */
+export interface WellnessBaselineDeviation {
+  date: string | null;
+  hrv: MetricBaseline;
+  readiness: MetricBaseline;
+  rhr: MetricBaseline;
+  overall_flag: boolean;
+}
+
 export interface BodyCompositionSeriesPoint {
   date: string;
   weight_kg: number | null;
