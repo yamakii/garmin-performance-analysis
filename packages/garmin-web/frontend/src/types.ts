@@ -244,6 +244,16 @@ export interface WeeklyReviewPlanItem {
   [key: string]: unknown;
 }
 
+export interface WeeklyReviewWeightTracking {
+  recent_median_kg?: number | null;
+  bmi?: number | null;
+  trend?: string | null;
+  week_classification?: string | null;
+  flag?: string | null;
+  target_first?: string | null;
+  [key: string]: unknown;
+}
+
 export interface WeeklyReviewData {
   plan_week_start?: string | null;
   actuals_week_start?: string | null;
@@ -254,6 +264,10 @@ export interface WeeklyReviewData {
   goal_alignment?: string | null;
   recommendations?: string[];
   overall?: string | null;
+  weight_tracking?: WeeklyReviewWeightTracking;
+  recovery?: unknown;
+  continuity_note?: string | null;
+  weekly_ramp?: unknown;
   [key: string]: unknown;
 }
 

@@ -88,6 +88,17 @@ export default function WeeklyReviewDetail() {
   const periodization = data?.periodization;
   const verdict = data?.verdict ?? [];
   const recommendations = data?.recommendations ?? [];
+  const garminNextWeek = data?.garmin_next_week ?? [];
+  const intensityDistribution = thisWeek?.intensity_distribution;
+  const intensityEntries =
+    intensityDistribution != null
+      ? Object.entries(intensityDistribution).filter(
+          ([, v]) => typeof v === "number" || typeof v === "string",
+        )
+      : [];
+  const weightTracking = data?.weight_tracking;
+  const recovery = data?.recovery;
+  const weeklyRamp = data?.weekly_ramp;
 
   return (
     <div className="stagger-in space-y-6">
@@ -168,6 +179,18 @@ export default function WeeklyReviewDetail() {
                       ))}
                     </ul>
                   )}
+                {intensityEntries.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {intensityEntries.map(([k, v]) => (
+                      <span
+                        key={k}
+                        className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600"
+                      >
+                        {k}: {String(v)}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : (
               <p className="text-sm text-slate-500">実績データがありません</p>
@@ -275,6 +298,105 @@ export default function WeeklyReviewDetail() {
                   <li key={i}>{rec}</li>
                 ))}
               </ul>
+            </Section>
+          )}
+
+          {/* Garmin next-week planned workouts (#597) */}
+          {garminNextWeek.length > 0 && (
+            <Section title="来週のGarminワークアウト">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs tracking-wide text-slate-500 uppercase">
+                    <th className="px-2 py-2 text-left font-medium">日付</th>
+                    <th className="px-2 py-2 text-left font-medium">種別</th>
+                    <th className="px-2 py-2 text-left font-medium">
+                      タイトル
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {garminNextWeek.map((w, i) => (
+                    <tr key={i} className="hover:bg-slate-50">
+                      <td className="px-2 py-2 text-left font-numeric tabular-nums text-slate-700">
+                        {w.date ?? "-"}
+                      </td>
+                      <td className="px-2 py-2 text-left text-slate-700">
+                        {w.type ?? "-"}
+                      </td>
+                      <td className="px-2 py-2 text-left text-slate-600">
+                        {w.title ?? "-"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Section>
+          )}
+
+          {/* Weight tracking (#597) */}
+          {weightTracking != null && (
+            <Section title="体重トラッキング">
+              <div className="space-y-1 text-sm text-slate-700">
+                {weightTracking.recent_median_kg != null && (
+                  <p>
+                    <span className="font-medium text-slate-500">
+                      直近中央値: </span>
+                    {weightTracking.recent_median_kg} kg
+                  </p>
+                )}
+                {weightTracking.bmi != null && (
+                  <p>
+                    <span className="font-medium text-slate-500">BMI: </span>
+                    {weightTracking.bmi}
+                  </p>
+                )}
+                {weightTracking.trend != null && (
+                  <p>
+                    <span className="font-medium text-slate-500">傾向: </span>
+                    {weightTracking.trend}
+                  </p>
+                )}
+                {weightTracking.week_classification != null && (
+                  <p>
+                    <span className="font-medium text-slate-500">週分類: </span>
+                    {weightTracking.week_classification}
+                  </p>
+                )}
+                {weightTracking.flag != null && (
+                  <p>
+                    <span className="font-medium text-slate-500">注意: </span>
+                    {weightTracking.flag}
+                  </p>
+                )}
+                {weightTracking.target_first != null && (
+                  <p>
+                    <span className="font-medium text-slate-500">
+                      第一目標: </span>
+                    {weightTracking.target_first}
+                  </p>
+                )}
+              </div>
+            </Section>
+          )}
+
+          {/* Recovery (#597) — string only for now */}
+          {typeof recovery === "string" && (
+            <Section title="リカバリー">
+              <p className="text-sm text-slate-700">{recovery}</p>
+            </Section>
+          )}
+
+          {/* Continuity with the previous review (#597) */}
+          {data.continuity_note != null && (
+            <Section title="前回からの継続性">
+              <p className="text-sm text-slate-700">{data.continuity_note}</p>
+            </Section>
+          )}
+
+          {/* Weekly ramp (#597) — string only for now */}
+          {typeof weeklyRamp === "string" && (
+            <Section title="週次ランプ">
+              <p className="text-sm text-slate-700">{weeklyRamp}</p>
             </Section>
           )}
 
