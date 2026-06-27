@@ -162,12 +162,18 @@ def test_acwr_distance_only_no_hr_dependency(reader_db_path: Path) -> None:
 
 @pytest.mark.integration
 def test_get_load_trend_weekly_buckets(reader_db_path: Path) -> None:
-    """12-week trend yields 12 contiguous weekly buckets, each with an ACWR."""
+    """12-week trend yields 12 contiguous calendar-week buckets (Monday-aligned).
+
+    The newest bucket is a partial week (its Monday through END_DATE); the older
+    buckets are full 7-day weeks.
+    """
     from datetime import datetime, timedelta
 
-    # 12 weeks of even 5 km/day load so each bucket is populated.
+    # Seed even 5 km/day load over the whole lookback span so each bucket is
+    # populated. 12 calendar weeks span more than 12 * 7 days once partial weeks
+    # are involved, so seed a generous window.
     end = datetime.strptime(END_DATE, "%Y-%m-%d").date()
-    for i in range(12 * 7):
+    for i in range(13 * 7):
         day = (end - timedelta(days=i)).strftime("%Y-%m-%d")
         _insert_activity(
             reader_db_path,
@@ -184,15 +190,138 @@ def test_get_load_trend_weekly_buckets(reader_db_path: Path) -> None:
     assert result["load_metric"] == "distance_km"
     assert len(weeks) == 12
 
-    # Buckets are contiguous and chronological (each starts 7 days after prev).
+    # Buckets are contiguous, chronological and aligned to Monday (start_day=0).
     starts = [datetime.strptime(w["week_start"], "%Y-%m-%d").date() for w in weeks]
     for prev, nxt in zip(starts, starts[1:], strict=False):
         assert (nxt - prev) == timedelta(days=7)
+    for s in starts:
+        assert s.weekday() == 0  # Monday
 
-    # Each week has the expected load and a computed ACWR.
-    for w in weeks:
+    # Full (older) weeks carry a complete 7-day load; the newest is partial.
+    for w in weeks[:-1]:
         assert w["load_km"] == 35.0  # 7 days * 5 km
         assert w["acwr"] is not None
-    # Steady load -> the newest week is optimal (acwr ~= 1.0).
-    assert weeks[-1]["acwr"] == pytest.approx(1.0)
-    assert weeks[-1]["status"] == "optimal"
+    # END_DATE 2025-10-28 is a Tuesday -> newest bucket = Mon 10-27 .. Tue 10-28.
+    assert weeks[-1]["week_start"] == "2025-10-27"
+    assert weeks[-1]["load_km"] == 10.0  # 2 days * 5 km (partial week)
+
+
+@pytest.mark.integration
+def test_load_trend_weeks_align_to_monday(reader_db_path: Path) -> None:
+    """With the default config (no profile row) every week_start is a Monday."""
+    from datetime import datetime, timedelta
+
+    end_date = "2026-06-24"  # a Wednesday
+    end = datetime.strptime(end_date, "%Y-%m-%d").date()
+    for i in range(12 * 7):
+        day = (end - timedelta(days=i)).strftime("%Y-%m-%d")
+        _insert_activity(
+            reader_db_path,
+            activity_id=5000 + i,
+            activity_date=day,
+            distance_km=5.0,
+        )
+
+    result = TrainingLoadReader(db_path=str(reader_db_path)).get_load_trend(
+        lookback_weeks=12, end_date=end_date
+    )
+
+    weeks = result["weeks"]
+    assert len(weeks) == 12
+    for w in weeks:
+        ws = datetime.strptime(w["week_start"], "%Y-%m-%d").date()
+        assert ws.weekday() == 0  # Monday
+
+
+@pytest.mark.integration
+def test_load_trend_weeks_align_to_configured_day(reader_db_path: Path) -> None:
+    """With week_start_day=6 (Sunday) every week_start is a Sunday."""
+    from datetime import datetime, timedelta
+
+    # Configure Sunday-start weeks.
+    conn = duckdb.connect(str(reader_db_path))
+    try:
+        conn.execute(
+            "INSERT INTO athlete_profile (user_id, week_start_day) VALUES (?, ?)",
+            ["default", 6],
+        )
+    finally:
+        conn.close()
+
+    end_date = "2026-06-24"  # a Wednesday
+    end = datetime.strptime(end_date, "%Y-%m-%d").date()
+    for i in range(12 * 7):
+        day = (end - timedelta(days=i)).strftime("%Y-%m-%d")
+        _insert_activity(
+            reader_db_path,
+            activity_id=6000 + i,
+            activity_date=day,
+            distance_km=5.0,
+        )
+
+    result = TrainingLoadReader(db_path=str(reader_db_path)).get_load_trend(
+        lookback_weeks=12, end_date=end_date
+    )
+
+    weeks = result["weeks"]
+    assert len(weeks) == 12
+    for w in weeks:
+        ws = datetime.strptime(w["week_start"], "%Y-%m-%d").date()
+        assert ws.weekday() == 6  # Sunday
+    # Sunday on/before Wed 2026-06-24 is 2026-06-21.
+    assert weeks[-1]["week_start"] == "2026-06-21"
+
+
+@pytest.mark.integration
+def test_load_trend_latest_bucket_is_partial_week(reader_db_path: Path) -> None:
+    """The newest bucket aggregates only week-start day .. end_date (partial)."""
+    from datetime import datetime, timedelta
+
+    end_date = "2026-06-24"  # Wednesday -> Monday-week starts 2026-06-22
+    end = datetime.strptime(end_date, "%Y-%m-%d").date()
+    # Seed 5 km/day across the partial week (Mon 06-22 .. Wed 06-24) and earlier.
+    for i in range(12 * 7):
+        day = (end - timedelta(days=i)).strftime("%Y-%m-%d")
+        _insert_activity(
+            reader_db_path,
+            activity_id=7000 + i,
+            activity_date=day,
+            distance_km=5.0,
+        )
+
+    result = TrainingLoadReader(db_path=str(reader_db_path)).get_load_trend(
+        lookback_weeks=12, end_date=end_date
+    )
+
+    newest = result["weeks"][-1]
+    assert newest["week_start"] == "2026-06-22"  # Monday
+    # Mon/Tue/Wed = 3 days * 5 km = 15 km (partial week, not a full 35 km).
+    assert newest["load_km"] == 15.0
+
+
+@pytest.mark.unit
+def test_acwr_unchanged_rolling(mocker) -> None:
+    """get_acwr stays rolling: acute = last 7 days, chronic = last 28 days / 4.
+
+    It must be independent of calendar-week bucketing (no week_start_day read).
+    """
+    from datetime import date, timedelta
+
+    reader = TrainingLoadReader.__new__(TrainingLoadReader)
+    reader.db_path = mocker.MagicMock()
+
+    end = date(2026, 6, 24)
+    daily: dict[date, float] = {}
+    for i in range(7):  # last 7 days: 10 km each -> acute 70
+        daily[end - timedelta(days=i)] = 10.0
+    for i in range(7, 28):  # days 8-28: 5 km each
+        daily[end - timedelta(days=i)] = 5.0
+    mocker.patch.object(reader, "_daily_loads", return_value=daily)
+
+    result = reader.get_acwr(end_date="2026-06-24")
+
+    # acute = 7 * 10 = 70; chronic total = 70 + 21 * 5 = 175; weekly = 43.75
+    assert result["acute_load_7d"] == 70.0
+    assert result["chronic_load_28d_weekly"] == pytest.approx(43.75)
+    assert result["acwr"] == pytest.approx(1.6)
+    assert result["status"] == "high_risk"

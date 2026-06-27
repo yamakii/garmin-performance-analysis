@@ -10,6 +10,10 @@ feature shares a single, consistent week definition.
 from __future__ import annotations
 
 from datetime import date, timedelta
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import duckdb
 
 DEFAULT_WEEK_START_DAY = 0  # 0=Monday … 6=Sunday (date.weekday() convention)
 
@@ -44,3 +48,30 @@ def week_bounds(d: date, start_day: int = DEFAULT_WEEK_START_DAY) -> tuple[date,
     """
     start = week_start(d, start_day)
     return start, start + timedelta(days=6)
+
+
+def get_week_start_day(
+    conn: duckdb.DuckDBPyConnection, user_id: str = "default"
+) -> int:
+    """Read the configured week-start day from ``athlete_profile``.
+
+    Args:
+        conn: An open DuckDB connection.
+        user_id: Athlete profile key (defaults to ``"default"``).
+
+    Returns:
+        The configured ``week_start_day`` (``0``-``6``). Falls back to
+        :data:`DEFAULT_WEEK_START_DAY` (Monday) when the profile row or the
+        ``week_start_day`` column is absent.
+    """
+    try:
+        row = conn.execute(
+            "SELECT week_start_day FROM athlete_profile WHERE user_id = ?",
+            [user_id],
+        ).fetchone()
+    except Exception:
+        # Column/table not present yet (e.g. pre-migration DB) -> Monday.
+        return DEFAULT_WEEK_START_DAY
+    if row is None or row[0] is None:
+        return DEFAULT_WEEK_START_DAY
+    return int(row[0])
