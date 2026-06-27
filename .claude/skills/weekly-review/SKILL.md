@@ -8,34 +8,38 @@ argument-hint: [target week]
 
 **レビュー対象トレーニング週 W**（=これからこなすプラン週）の Garmin プランを、**直前の完了週 W-1 の実績**と過去レビュー・目標を踏まえて **コーチ視点でレビュー** し、DuckDB に保存してください。
 
-レビューの単位は「対象週 W」1つに固定します。保存キー（`week_start_date`/`week_end_date`）は **W の月〜日** なので、実行日が変わっても同じ W のレビューとして扱われます（実行日でレビューがずれません）。同じ W で複数回実行した場合は**上書きせず各実行を新しい版（バージョン）として追記**し、最新版を正規（canonical）として扱います。過去版も履歴として保持され、Web の詳細ページで切り替えて閲覧できます。
+レビューの単位は「対象週 W」1つに固定します。保存キー（`week_start_date`/`week_end_date`）は **W の開始日〜終了日**（週の開始曜日は `get_athlete_profile().week_start_day` に従う。既定=月曜）なので、実行日が変わっても同じ W のレビューとして扱われます（実行日でレビューがずれません）。同じ W で複数回実行した場合は**上書きせず各実行を新しい版（バージョン）として追記**し、最新版を正規（canonical）として扱います。過去版も履歴として保持され、Web の詳細ページで切り替えて閲覧できます。
 
 専用エージェントには委任しません。**メインセッションが直接オーケストレーション**し、LLM のコーチ判断をそのまま使います。週の任意のタイミングで実行可能です。
 
 ## 引数
 
-`$ARGUMENTS` で **対象週 W** を決めます（W は常に月曜開始〜日曜終了）。
+`$ARGUMENTS` で **対象週 W** を決めます。W の開始曜日は `get_athlete_profile().week_start_day`（既定=月曜）に従います（設定未登録なら月曜始まり）。
 
-- **省略時（スマート既定）**: today の曜日で対象週を切り替える
-  - today が **日曜** → 対象週 W = **翌週**（今週は消化済みなので、先を計画してレビュー）
-  - today が **月・火・水・木・金・土** → 対象週 W = **今週**（今いる週をレビュー）
+> **`week_start_day` の規約**: `0`=月曜 〜 `6`=日曜 の整数（Python の `date.weekday()` と同じ）。`get_athlete_profile()` に `week_start_day` が無い／null の場合は **`0`（月曜始まり）にフォールバック**します。以下「週の開始日」「週の終了日」は、この設定で決まる週境界を指します（開始日の曜日 = `week_start_day`、終了日 = 開始日の6日後）。
+
+- **省略時（スマート既定）**: today が W 内のどこにいるかで対象週を切り替える
+  - today が **週の最終日**（= 週の開始曜日の前日。既定では日曜） → 対象週 W = **翌週**（今週は消化済みなので、先を計画してレビュー）
+  - today が **週の最終日以外**（既定では開始日〜終了日前日） → 対象週 W = **今週**（今いる週をレビュー）
 - `$ARGUMENTS` = `this` → W = today を含む週
 - `$ARGUMENTS` = `next` → W = today を含む週の **翌週**
 - `$ARGUMENTS` = `YYYY-MM-DD` → W = その日を含む週
 
-実績材料は常に **W の直前の完了週 W-1（月〜日）** を主軸とし、**W が進行中（today が W 内）なら today までに W で実走した分**を「今週ここまで」として補足的に加味します。
+実績材料は常に **W の直前の完了週 W-1（開始日〜終了日）** を主軸とし、**W が進行中（today が W 内）なら today までに W で実走した分**を「今週ここまで」として補足的に加味します。
 
-例:
-- today = 日曜 2026-06-14・引数なし → **W = 翌週 2026-06-15〜2026-06-21**、実績 = W-1 = 2026-06-08〜2026-06-14
+例（`week_start_day=0`＝既定の月曜始まり。日曜終了）:
+- today = 日曜 2026-06-14（= 週の最終日）・引数なし → **W = 翌週 2026-06-15〜2026-06-21**、実績 = W-1 = 2026-06-08〜2026-06-14
 - today = 火曜 2026-06-16・引数なし → **W = 今週 2026-06-15〜2026-06-21**、実績 = W-1 = 2026-06-08〜2026-06-14 ＋ 6/15・6/16 の実走（W 進行中分）
 - `$ARGUMENTS` = `this`（today = 火 2026-06-16）→ W = 2026-06-15〜2026-06-21
 - `$ARGUMENTS` = `next`（today = 火 2026-06-16）→ W = 2026-06-22〜2026-06-28
 - `$ARGUMENTS` = 2026-06-16 → W = 2026-06-15〜2026-06-21
 
+> `week_start_day=6`（日曜始まり・土曜終了）の例: today = 土曜 2026-06-20（= 週の最終日）・引数なし → **W = 翌週 2026-06-21〜2026-06-27**、実績 = W-1 = 2026-06-14〜2026-06-20。開始曜日が変われば各日付も同様にずれます。
+
 ## ワークフロー
 
-1. **対象週 W を確定**: 引数（または today の曜日）から W の月曜（`week_start_date`）・日曜（`week_end_date`）、W-1 の月曜（`prev_mon`）・日曜（`prev_sun`）を算出
-2. **実績収集**: W-1（月〜日）を主軸に各日 `get_activity_by_date` で activity_id を集め、`get_performance_trends` 等で実績を把握。W が進行中なら today までの W の実走も加味。あわせて `get_load_trend`/`get_acwr` で複数週の負荷トレンド（週量ランプ・ACWR・連続 build 週数）を収集し、カットバック周期を判定。さらに `get_recovery_trend`/`get_recovery_status` で RHR/HRV/睡眠/training readiness を収集し、回復の質を負荷と複合で講評
+1. **対象週 W を確定**: `get_athlete_profile().week_start_day`（既定=月曜）を読み、引数（または today）から W の開始日（`week_start_date`）・終了日（`week_end_date`）、W-1 の開始日（`prev_start`）・終了日（`prev_end`）を算出
+2. **実績収集**: W-1（開始日〜終了日）を主軸に各日 `get_activity_by_date` で activity_id を集め、`get_performance_trends` 等で実績を把握。W が進行中なら today までの W の実走も加味。あわせて `get_load_trend`/`get_acwr` で複数週の負荷トレンド（週量ランプ・ACWR・連続 build 週数）を収集し、カットバック周期を判定。さらに `get_recovery_trend`/`get_recovery_status` で RHR/HRV/睡眠/training readiness を収集し、回復の質を負荷と複合で講評
 3. **W の Garmin プラン取得**: `get_garmin_scheduled_workouts(week_start_date, week_end_date)`
 4. **コンテキスト読込**: `get_athlete_profile()`（目標）+ `get_weekly_review()`（直近の過去レビュー）
 5. **コーチ視点でレビュー生成**（このコマンドの核。目標逆算フェーズ分析 ＋ 具体的処方を含む）
@@ -45,21 +49,30 @@ argument-hint: [target week]
 
 ### Step 1: 対象週 W を確定
 
-`$ARGUMENTS` と today から **対象週 W** を決定し、その月〜日と直前週 W-1 の月〜日を算出してください:
+まず **週の開始曜日** を取得します（これが日付算出の基準）:
 
-- 引数なし: today が日曜なら W = 翌週、月〜土なら W = 今週
+```
+mcp__garmin-db__get_athlete_profile()   # 返却に week_start_day（0=月〜6=日）があれば採用
+```
+
+- `week_start_day` が **存在すればその曜日**を週の開始曜日とする（例: `0`=月曜始まり、`6`=日曜始まり）。
+- `week_start_day` が **無い／null**（設定未登録）の場合は **`0`（月曜始まり）にフォールバック**する。
+
+次に `$ARGUMENTS` と today から **対象週 W** を決定し、設定した開始曜日に基づいて W と直前週 W-1 の開始日・終了日を算出してください:
+
+- 引数なし: today が **週の最終日**（= 開始曜日の前日。既定では日曜）なら W = 翌週、それ以外なら W = 今週
 - `this`: W = today を含む週
 - `next`: W = today を含む週の翌週
 - `YYYY-MM-DD`: W = その日を含む週
 
-算出する日付:
+「ある日付 D を含む週の開始日」は、`D` から **`(D.weekday() - week_start_day) mod 7` 日だけ遡った日** です（既定 `week_start_day=0` ならその週の月曜）。算出する日付:
 
-- `week_start_date` = **W の月曜**（保存キー）
-- `week_end_date` = **W の日曜**（保存キー）
-- `prev_mon` = **W-1 の月曜**（= week_start_date の7日前）
-- `prev_sun` = **W-1 の日曜**（= week_start_date の前日）
+- `week_start_date` = **W の開始日**（保存キー。曜日 = `week_start_day`）
+- `week_end_date` = **W の終了日**（保存キー。= week_start_date の6日後）
+- `prev_start` = **W-1 の開始日**（= week_start_date の7日前）
+- `prev_end` = **W-1 の終了日**（= week_start_date の前日）
 
-確定した対象週 W（week_start_date〜week_end_date）と実績週 W-1（prev_mon〜prev_sun）、および「W が進行中か（today が W 内か）」をユーザーに一言で提示してから次に進んでください。
+確定した対象週 W（week_start_date〜week_end_date）と実績週 W-1（prev_start〜prev_end）、設定した開始曜日（既定=月曜）、および「W が進行中か（today が W 内か）」をユーザーに一言で提示してから次に進んでください。
 
 ### Step 2: 実績収集（W-1 主軸 ＋ W 進行中分）
 
@@ -75,14 +88,14 @@ mcp__garmin-db__catch_up_ingest(end_date=today)
 
 #### Step 2-1: 各日の実績収集
 
-実績の主軸は **直前の完了週 W-1（`prev_mon`〜`prev_sun`）** です。各日について MCP ツールで実績を集めてください（Bash 許可不要）:
+実績の主軸は **直前の完了週 W-1（`prev_start`〜`prev_end`）** です。各日について MCP ツールで実績を集めてください（Bash 許可不要）:
 
 ```
-# W-1 の各日について（prev_mon〜prev_sun）
+# W-1 の各日について（prev_start〜prev_end）
 mcp__garmin-db__get_activity_by_date(date="YYYY-MM-DD")
 ```
 
-**W が進行中の場合**（today が `week_start_date`〜`week_end_date` 内）は、W の月曜から today までの各日も同様に収集し、「今週ここまで」の実走として加味してください:
+**W が進行中の場合**（today が `week_start_date`〜`week_end_date` 内）は、W の開始日から today までの各日も同様に収集し、「今週ここまで」の実走として加味してください:
 
 ```
 # W 進行中分（week_start_date〜today）※ W が進行中のときのみ
@@ -110,17 +123,17 @@ mcp__garmin-db__get_current_fitness_summary(lookback_weeks=1)   # vdot, hr_zones
 期間トレンド（ペース・心拍の推移）が必要なら、収集した activity_ids を渡して取得します:
 
 ```
-mcp__garmin-db__analyze_performance_trends(metric="pace", start_date=prev_mon, end_date=prev_sun, activity_ids=[...])
+mcp__garmin-db__analyze_performance_trends(metric="pace", start_date=prev_start, end_date=prev_end, activity_ids=[...])
 ```
 
 走行距離・ラン回数・強度分布・心拍規律（HR discipline）・ハイライトは **主に W-1 をベースに評価** し、W 進行中分は「今週ここまで」の補足として扱ってください。
 
 #### 補強（strength）の収集
 
-ラン実績とは別に、**補強（筋トレ/補強）セッション**を DuckDB から収集してください。期間は W-1（`prev_mon`〜`prev_sun`）を主軸とし、**W が進行中なら W の月曜〜today** も加味します（ラン実績と同じ期間方針）:
+ラン実績とは別に、**補強（筋トレ/補強）セッション**を DuckDB から収集してください。期間は W-1（`prev_start`〜`prev_end`）を主軸とし、**W が進行中なら W の開始日〜today** も加味します（ラン実績と同じ期間方針）:
 
 ```
-mcp__garmin-db__get_strength_sessions(start_date=prev_mon, end_date=prev_sun)
+mcp__garmin-db__get_strength_sessions(start_date=prev_start, end_date=prev_end)
 # W が進行中ならもう一度: start_date=week_start_date, end_date=today
 ```
 
@@ -193,11 +206,11 @@ mcp__garmin-db__get_weekly_review()       # 引数なし = 直近の過去レビ
 
 **1. 各レースの残り週数を算出**
 
-`goals` の各レース（A=本命さいたま / B=中間 新潟）について、**対象週 W の月曜（`week_start_date`）時点での残り週数**を求めます:
+`goals` の各レース（A=本命さいたま / B=中間 新潟）について、**対象週 W の開始日（`week_start_date`）時点での残り週数**を求めます:
 
 - `race_date` が確定している場合（例: 新潟シティマラソン 2026-10-11）:
   - `weeks_to_race = ceil((race_date − week_start_date) / 7)`（整数。週単位に切り上げ）
-  - 例: W 月曜 = 2026-06-15、race_date = 2026-10-11 → 約 17 週
+  - 例: W 開始日 = 2026-06-15（既定の月曜始まり）、race_date = 2026-10-11 → 約 17 週
 - `race_date` が null の場合（例: さいたまマラソン、本命だが開催日 2027 年 2 月で未確定）:
   - `weeks_to_race = null` とし、レビュー文では「**約 2027 年 2 月・残り週数は概算/未確定**」と明示して扱う
   - 概算が必要なら「2027-02 中旬」を仮置きして「概算 約 N 週（未確定）」と注記する。null を黙って 0 扱いにしない
@@ -389,8 +402,8 @@ mcp__garmin-db__save_weekly_review(review)
 }
 ```
 
-- `week_start_date` / `week_end_date` は **対象週 W の月曜・日曜**（Step 1 で確定したもの。これが保存キー）。同じ W で再実行すると上書きせず**新しい版を追記**し、最新版が canonical（過去版は履歴として保持）。
-- `review_data.plan_week_start` は **W の月曜**（= week_start_date）。`review_data.actuals_week_start` は **W-1 の月曜**（= prev_mon）。これにより保存レコードが「どの週のプランをどの週の実績で評価したか」を自己説明的に持つ。
+- `week_start_date` / `week_end_date` は **対象週 W の開始日・終了日**（Step 1 で `week_start_day` に基づき確定したもの。これが保存キー）。同じ W で再実行すると上書きせず**新しい版を追記**し、最新版が canonical（過去版は履歴として保持）。保存キーは日付そのものなので、開始曜日を変更しても過去レコードとの互換は保たれる。
+- `review_data.plan_week_start` は **W の開始日**（= week_start_date）。`review_data.actuals_week_start` は **W-1 の開始日**（= prev_start）。これにより保存レコードが「どの週のプランをどの週の実績で評価したか」を自己説明的に持つ。
 - `review_date` は実行日（today）。
 - `this_week` は実績サマリー（W-1 主軸、W 進行中分は補足）を格納する（キー名は互換のため `this_week` のまま）。
 - `garmin_next_week` は Step 3 で取得した **対象週 W** のプランを `{date, title, type}` に整形（`type` は `item_type` を使う。キー名は互換のため `garmin_next_week` のまま）。
@@ -406,7 +419,8 @@ mcp__garmin-db__save_weekly_review(review)
 
 ## 重要事項
 
-- **週アンカーは対象週 W（プラン週）**: 保存キーは W の月〜日。同じ W の再実行は上書きせず**新しい版を追記**し、最新版を canonical として扱う（過去版は履歴として保持され、Web で閲覧可能）。
+- **週の開始曜日は設定駆動**: Step 1 で `get_athlete_profile().week_start_day`（`0`=月〜`6`=日、既定=月曜）を読み、W / W-1 の開始日・終了日をその曜日基準で算出する。`week_start_day` が無い／null なら **月曜始まりにフォールバック**する。月曜開始をハードコードしない。
+- **週アンカーは対象週 W（プラン週）**: 保存キーは W の開始日〜終了日（開始曜日は `get_athlete_profile().week_start_day`、既定=月曜）。同じ W の再実行は上書きせず**新しい版を追記**し、最新版を canonical として扱う（過去版は履歴として保持され、Web で閲覧可能）。
 - **専用エージェント不使用**: メインセッションが直接実行する（LLM のコーチ判断をそのまま使う）。
 - **日本語出力**: 全てのレビュー・コメントは日本語、コーチ的トーン、具体的な数値を添える。
 - **目標逆算フェーズ分析を必ず行う**: race_date（null 可）から残り週数を算出し、あるべきフェーズ vs Garmin プランのギャップを `periodization` に格納する。
