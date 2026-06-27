@@ -11,7 +11,7 @@ Garmin running performance analysis system with **DuckDB-first architecture** an
 **Key Features:**
 - DuckDB normalized storage (21 tables, 100+ activities)
 - 56 token-optimized MCP tools (70-98.8% reduction), declared via a single-source `tools/` registry
-- 2 analysis agents (unified-section-analyst + split-section-analyst)
+- 3 analysis agents (unified-section-analyst + split-section-analyst + summary-section-analyst)
 - Japanese analysis stored in DuckDB, viewed via the Web app (code/docs in English)
 
 **Two Use Cases:**
@@ -161,7 +161,7 @@ garmin-performance-analysis/
 │       ├── frontend/               # Vite + React SPA
 │       └── tests/
 ├── .claude/
-│   ├── agents/                     # 5 agent defs: 2 analysis (unified+split) + developer/proofreader/validation
+│   ├── agents/                     # 6 agent defs: 3 analysis (unified+split+summary) + developer/proofreader/validation
 │   ├── skills/                     # 8 user-invocable skills (/analyze-activity, /decompose, /implement, /plan-training, /project-status, /set-goal, /ship, /weekly-review)
 │   ├── rules/                      # Shared rules (auto-loaded)
 │   ├── workflows/                  # Workflow scripts (implement-tier.js = /implement tier orchestration)
@@ -178,16 +178,22 @@ garmin-performance-analysis/
 
 ### Agent System
 
-**2 Section Analysis Agents (run in parallel via Task tool):**
-1. **unified-section-analyst**: 4 sections in one agent (sonnet) — emits `efficiency.json`, `phase.json`, `environment.json`, `summary.json`
+**3 Section Analysis Agents (run in parallel by the `analyze-activity` workflow):**
+1. **unified-section-analyst** (sonnet): produces efficiency / phase / environment. Supports a
+   bundle mode (all 4 sections incl. summary in one agent) and a per-section mode; the
+   `analyze-activity` workflow calls it once per section for efficiency/phase/environment.
    - **efficiency**: Form (GCT/VO/VR) + power + cadence + HR efficiency
    - **phase**: Phase evaluation (warmup/run/cooldown[/recovery], training-type-aware)
    - **environment**: Environmental impact (temperature, humidity, wind, terrain)
-   - **summary**: Activity type + 4-axis overall assessment + recommendations
-2. **split-section-analyst**: 1km split analysis (pace, HR, form)
+2. **summary-section-analyst** (sonnet): focused, leaner agent for `summary.json` only —
+   Activity type + 4-axis overall assessment + recommendations. Split out of unified so the
+   summary call does not load the full unified def (perf).
+3. **split-section-analyst**: 1km split analysis (pace, HR, form)
 
-> The unified agent receives prefetched CONTEXT; split needs no CONTEXT. Each section
-> is written as a separate `{section}.json` consumed by `merge_section_analyses`.
+> Section agents receive prefetched CONTEXT inline in the prompt (no file reads); split needs
+> no CONTEXT. Each section is written as a separate `{section}.json` consumed by
+> `merge_section_analyses`. summary derives cross-section consistency from the shared CONTEXT
+> (it runs in parallel with the others, not after them).
 
 ### Critical Data Sources
 
