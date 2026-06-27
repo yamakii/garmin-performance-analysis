@@ -951,6 +951,44 @@ def empty_goal_db_path(tmp_path: Path) -> Path:
     return db_path
 
 
+# --- Athlete settings fixtures (Issue #605) ----------------------------
+# athlete_profile gains a configurable week_start_day (0=Mon .. 6=Sun) in
+# Sub-1 (#602). get_week_start_day reads it to align the volume trend's
+# calendar-week buckets; these fixtures mirror that column.
+
+_CREATE_ATHLETE_PROFILE_WEEK_START = """
+    CREATE TABLE athlete_profile (
+        user_id VARCHAR PRIMARY KEY DEFAULT 'default',
+        current_focus VARCHAR,
+        focus_notes VARCHAR,
+        week_start_day INTEGER DEFAULT 0,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+"""
+
+
+@pytest.fixture
+def settings_conn_no_profile():
+    """In-memory DuckDB with an empty athlete_profile table (no rows)."""
+    conn = duckdb.connect(":memory:")
+    conn.execute(_CREATE_ATHLETE_PROFILE_WEEK_START)
+    yield conn
+    conn.close()
+
+
+@pytest.fixture
+def settings_conn_sunday_start():
+    """In-memory DuckDB with a profile row whose week_start_day is 6 (Sunday)."""
+    conn = duckdb.connect(":memory:")
+    conn.execute(_CREATE_ATHLETE_PROFILE_WEEK_START)
+    conn.execute(
+        "INSERT INTO athlete_profile (user_id, week_start_day) VALUES (?, ?)",
+        ["default", 6],
+    )
+    yield conn
+    conn.close()
+
+
 # --- Weekly review page fixtures (Issue #283) --------------------------
 # Mirror the weekly_reviews schema in
 # garmin_mcp/database/migrations/add_athlete_tables.py (review_data is stored

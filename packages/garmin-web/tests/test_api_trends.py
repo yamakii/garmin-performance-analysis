@@ -24,6 +24,16 @@ def test_api_trends_all_endpoints_200(trends_db_path, empty_trends_db_path):
     assert volume.status_code == 200
     assert [bucket["bucket"] for bucket in volume.json()] == ["2025-10", "2025-11"]
 
+    # Weekly buckets key on the week's start date (Monday by default, since the
+    # trends fixture has no athlete_profile row -> week_start_day falls back to 0)
+    weekly = client.get("/api/trends/volume", params={"granularity": "week"})
+    assert weekly.status_code == 200
+    assert [bucket["bucket"] for bucket in weekly.json()] == [
+        "2025-10-06",
+        "2025-10-13",
+        "2025-11-03",
+    ]
+
     # Invalid granularity is rejected by FastAPI validation
     invalid = client.get("/api/trends/volume", params={"granularity": "day"})
     assert invalid.status_code == 422

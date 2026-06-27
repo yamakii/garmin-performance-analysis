@@ -14,8 +14,12 @@ _INSERT_ACTIVITY = "INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?, ?)"
 
 
 @pytest.mark.unit
-def test_volume_weekly_buckets(trends_conn):
-    """2025-10-06 (Mon) and 10-09 share ISO week W41; 10-13 starts W42."""
+def test_volume_trend_bucket_is_week_start_date(trends_conn):
+    """Monday-start weeks key on the week's start date (YYYY-MM-DD).
+
+    2025-10-06 (Mon) and 2025-10-09 (Thu) share the week starting 2025-10-06;
+    2025-10-13 (Mon) starts the next week.
+    """
     trends_conn.executemany(
         _INSERT_ACTIVITY,
         [
@@ -25,20 +29,44 @@ def test_volume_weekly_buckets(trends_conn):
         ],
     )
 
-    result = get_volume_trend(trends_conn, granularity="week")
+    result = get_volume_trend(trends_conn, granularity="week", week_start_day=0)
 
-    assert [bucket["bucket"] for bucket in result] == ["2025-W41", "2025-W42"]
-    w41 = result[0]
-    assert w41["distance_km"] == pytest.approx(15.0)
-    assert w41["duration_seconds"] == 5400
-    assert w41["run_count"] == 2
-    w42 = result[1]
-    assert w42["distance_km"] == pytest.approx(8.0)
-    assert w42["run_count"] == 1
+    assert [bucket["bucket"] for bucket in result] == ["2025-10-06", "2025-10-13"]
+    first = result[0]
+    assert first["distance_km"] == pytest.approx(15.0)
+    assert first["duration_seconds"] == 5400
+    assert first["run_count"] == 2
+    second = result[1]
+    assert second["distance_km"] == pytest.approx(8.0)
+    assert second["run_count"] == 1
 
 
 @pytest.mark.unit
-def test_volume_monthly_buckets(trends_conn):
+def test_volume_trend_sunday_start(trends_conn):
+    """week_start_day=6 buckets on the preceding Sunday.
+
+    Sunday-start weeks shift 2025-10-06 (Mon) / 2025-10-09 (Thu) into the week
+    starting 2025-10-05, and 2025-10-13 (Mon) into the week starting 2025-10-12.
+    """
+    trends_conn.executemany(
+        _INSERT_ACTIVITY,
+        [
+            (9000001101, "2025-10-06", "Run A", 10.0, 3600, 360.0, 140),
+            (9000001102, "2025-10-09", "Run B", 5.0, 1800, 360.0, 145),
+            (9000001103, "2025-10-13", "Run C", 8.0, 2400, 300.0, 150),
+        ],
+    )
+
+    result = get_volume_trend(trends_conn, granularity="week", week_start_day=6)
+
+    assert [bucket["bucket"] for bucket in result] == ["2025-10-05", "2025-10-12"]
+    assert result[0]["run_count"] == 2
+    assert result[1]["run_count"] == 1
+
+
+@pytest.mark.unit
+def test_volume_trend_month_unchanged(trends_conn):
+    """Monthly granularity still keys on "YYYY-MM" regardless of week settings."""
     trends_conn.executemany(
         _INSERT_ACTIVITY,
         [
@@ -57,7 +85,7 @@ def test_volume_monthly_buckets(trends_conn):
 
 
 @pytest.mark.unit
-def test_volume_invalid_granularity_raises(trends_conn):
+def test_volume_trend_invalid_granularity_raises(trends_conn):
     with pytest.raises(ValueError, match="granularity"):
         get_volume_trend(trends_conn, granularity="day")
 
