@@ -67,6 +67,15 @@ commit 前に、変更した各ファイルへ `mcp__serena__get_diagnostics_for
 型・import エラーが無いことを前倒しで確認する（pre-commit を待たずに検出）。Python /
 TypeScript 双方に有効。診断が出たら修正してから次へ。
 
+**新規 worktree の dev 依存 bootstrap（個別テスト/lint の前に1度）:** fresh worktree は
+`.venv` を共有せず、`uv run` は optional-dependencies の `dev` extra（pytest/black/mypy 本体）を
+自動同期しない。下記の個別コマンドを回す前に1度だけ同期する（Issue #534 Item 2。詳細は
+`worktree-commands.md` の Worktree Environment Bootstrap）:
+
+```bash
+uv sync --directory {worktree_path}/packages/garmin-mcp-server --extra dev
+```
+
 ```bash
 uv run --directory {worktree_path} pytest {test_path} -m unit -v
 uv run --directory {worktree_path} ruff check {changed_files}
@@ -86,6 +95,8 @@ uv run --directory {worktree_path} bash scripts/ci-check.sh
 これは whole-package の `pytest -m unit ... --cov-fail-under=60` + `black --check .` + `mypy .`
 + doc-guard テスト（web 変更時は web-backend/web-frontend）を実行する。exit 0 になるまで修正してから
 Step 5（commit）に進む。`.claude/` / `docs/` のみの変更（packages 非変更）では不要。
+`ci-check.sh` は冒頭で dev 依存を self-bootstrap（`uv sync --extra dev` 等）するため、
+fresh worktree でも追加の sync は不要。
 
 ### Step 5: Commit
 
