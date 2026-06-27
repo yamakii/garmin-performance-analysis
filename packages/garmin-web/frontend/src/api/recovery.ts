@@ -1,5 +1,6 @@
 import type {
   BodyCompositionTrend,
+  FormAnomalyFlagsResponse,
   RecoveryStatus,
   RecoveryTrend,
   WeightEconomyCoupling,
@@ -41,4 +42,11 @@ export function fetchWeightEconomyCoupling(
 /** Personal-baseline deviation for HRV / readiness / RHR on the latest day (#555). */
 export function fetchWellnessBaselineDeviation(): Promise<WellnessBaselineDeviation> {
   return fetchJson("/api/wellness-baseline-deviation");
+}
+
+/** Form-anomaly "今週の注意点" flags across the trailing N weeks of runs (#636). */
+export function fetchFormAnomalyFlags(
+  weeks = 2,
+): Promise<FormAnomalyFlagsResponse> {
+  return fetchJson(`/api/form-anomaly-flags?weeks=${weeks}`);
 }

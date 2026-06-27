@@ -302,6 +302,28 @@ const WELLNESS_BASELINE_ADVERSE = {
   overall_flag: true,
 };
 
+const FORM_ANOMALY_FLAGS = {
+  weeks: 2,
+  scanned: 4,
+  limited: false,
+  flags: [
+    {
+      activity_id: 9100000002,
+      activity_date: "2025-10-19",
+      anomalies_detected: 3,
+      severity_high: 1,
+      top_recommendation: "後半のGCT増加に注意してください。",
+    },
+  ],
+};
+
+const FORM_ANOMALY_FLAGS_EMPTY = {
+  weeks: 2,
+  scanned: 4,
+  limited: false,
+  flags: [],
+};
+
 function jsonResponse(payload: unknown): Response {
   return new Response(JSON.stringify(payload), {
     status: 200,
@@ -313,10 +335,14 @@ function stubTrendsFetch(
   trainingLoad: unknown,
   durability: unknown = DURABILITY_WORSENING,
   wellnessBaseline: unknown = WELLNESS_BASELINE_WITHIN,
+  formAnomalyFlags: unknown = FORM_ANOMALY_FLAGS,
 ): void {
   vi.stubGlobal(
     "fetch",
     vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith("/api/form-anomaly-flags")) {
+        return Promise.resolve(jsonResponse(formAnomalyFlags));
+      }
       if (url.startsWith("/api/trends/volume")) {
         return Promise.resolve(jsonResponse(VOLUME));
       }
@@ -452,6 +478,15 @@ describe("TrendsDashboard", () => {
     expect(
       screen.queryByText(/個人ベースラインから不利な方向に逸脱/),
     ).not.toBeInTheDocument();
+
+    // "今週の注意点" card lists the flagged run with its recommendation.
+    expect(
+      screen.getByRole("heading", { level: 2, name: "今週の注意点" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("2025-10-19")).toBeInTheDocument();
+    expect(
+      screen.getByText(/後半のGCT増加に注意してください/),
+    ).toBeInTheDocument();
   });
 
   it("raises a wellness baseline alert when overall_flag is set", async () => {
@@ -473,6 +508,25 @@ describe("TrendsDashboard", () => {
     // Adverse HRV deviation -> overall_flag alert is surfaced.
     expect(
       screen.getByText(/個人ベースラインから不利な方向に逸脱/),
+    ).toBeInTheDocument();
+  });
+
+  it("shows 問題なし in the form-anomaly card when no flags", async () => {
+    stubTrendsFetch(
+      TRAINING_LOAD_OPTIMAL,
+      DURABILITY_WORSENING,
+      WELLNESS_BASELINE_WITHIN,
+      FORM_ANOMALY_FLAGS_EMPTY,
+    );
+
+    render(<TrendsDashboard />);
+
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "今週の注意点" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("問題なし")).toBeInTheDocument();
+    expect(
+      screen.getByText(/直近のランでフォームの異常は検出されていません/),
     ).toBeInTheDocument();
   });
 

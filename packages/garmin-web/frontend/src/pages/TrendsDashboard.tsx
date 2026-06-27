@@ -22,6 +22,7 @@ import { fetchTrainingLoad } from "../api/training_load";
 import { fetchDurabilityTrend } from "../api/durability";
 import {
   fetchBodyCompositionTrend,
+  fetchFormAnomalyFlags,
   fetchRecoveryStatus,
   fetchRecoveryTrend,
   fetchWeightEconomyCoupling,
@@ -31,6 +32,7 @@ import type {
   AcwrTrend,
   BodyCompositionTrend,
   DurabilityTrend,
+  FormAnomalyFlagsResponse,
   RecoveryStatus,
   RecoveryTrend,
   WeightEconomyCoupling,
@@ -47,6 +49,7 @@ import TrainingLoadBlock from "./trends/TrainingLoadBlock";
 import DurabilityBlock from "./trends/DurabilityBlock";
 import RecoveryPanel from "./trends/RecoveryPanel";
 import ConditionCard from "./trends/ConditionCard";
+import FormAnomalyFlagsCard from "./trends/FormAnomalyFlagsCard";
 import BodyCompositionChart from "./trends/BodyCompositionChart";
 import WeightEconomyChart from "./trends/WeightEconomyChart";
 import WellnessBaselineChart from "./trends/WellnessBaselineChart";
@@ -82,6 +85,8 @@ export default function TrendsDashboard() {
   >(null);
   const [objectiveFitness, setObjectiveFitness] =
     useState<ObjectiveFitnessTrend | null>(null);
+  const [formAnomalyFlags, setFormAnomalyFlags] =
+    useState<FormAnomalyFlagsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -114,6 +119,7 @@ export default function TrendsDashboard() {
       fetchObjectiveFitnessTrend(),
       fetchWeightEconomyCoupling(),
       fetchWellnessBaselineDeviation(),
+      fetchFormAnomalyFlags(),
     ])
       .then(
         ([
@@ -130,6 +136,7 @@ export default function TrendsDashboard() {
           objectiveFitnessData,
           weightEconomyData,
           wellnessBaselineData,
+          formAnomalyFlagsData,
         ]) => {
           if (!cancelled) {
             setPhysiology(physiologyData);
@@ -145,6 +152,7 @@ export default function TrendsDashboard() {
             setObjectiveFitness(objectiveFitnessData);
             setWeightEconomy(weightEconomyData);
             setWellnessBaseline(wellnessBaselineData);
+            setFormAnomalyFlags(formAnomalyFlagsData);
           }
         },
       )
@@ -181,7 +189,8 @@ export default function TrendsDashboard() {
     criticalSpeed == null ||
     objectiveFitness == null ||
     weightEconomy == null ||
-    wellnessBaseline == null;
+    wellnessBaseline == null ||
+    formAnomalyFlags == null;
   if (loading) {
     return (
       <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
@@ -200,6 +209,7 @@ export default function TrendsDashboard() {
         トレンドダッシュボード
       </h1>
       <div className="stagger-in grid gap-4 md:grid-cols-2">
+        <FormAnomalyFlagsCard data={formAnomalyFlags} />
         <VolumeBlock
           data={volume}
           granularity={granularity}

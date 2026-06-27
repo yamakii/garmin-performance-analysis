@@ -52,6 +52,21 @@ def get_body_composition_trend_endpoint(
     return recovery_queries.get_body_composition_trend(_db_path(request), weeks)
 
 
+@router.get("/form-anomaly-flags")
+def get_form_anomaly_flags_endpoint(
+    request: Request, weeks: int = 2, max_activities: int = 12
+) -> dict[str, Any]:
+    """"今週の注意点": form-anomaly flags across the trailing ``weeks`` runs (#636).
+
+    Rolls up the per-activity ``detect_form_anomalies_summary`` over recent runs.
+    ``max_activities`` caps the scan; ``limited`` is True when more candidate
+    runs existed than were scanned (``scanned``). Never 500s on missing raw data.
+    """
+    return recovery_queries.get_recent_form_anomaly_flags(
+        _db_path(request), weeks, max_activities
+    )
+
+
 @router.get("/weight-economy-coupling")
 def get_weight_economy_coupling_endpoint(
     request: Request, weeks: int = 52
