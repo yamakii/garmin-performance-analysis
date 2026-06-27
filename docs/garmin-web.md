@@ -60,6 +60,7 @@ parameters are documented in each handler's docstring.
 | `/api/activities/{activity_id}/track` | Return the GPS track for an activity. |
 | `/api/body-composition-trend` | Body-composition trend over the trailing ``weeks`` weeks (#501). |
 | `/api/durability-trend` | Return the long-run decoupling trend over a date window. |
+| `/api/form-anomaly-flags` | "今週の注意点": form-anomaly flags across the trailing ``weeks`` runs (#636). |
 | `/api/goal` | Return the athlete goal payload (profile + goals + retrospectives). |
 | `/api/race-readiness` | Return current VDOT, race-time predictions, and goal progress. |
 | `/api/recovery-status` | Morning go/no-go recovery status for ``date`` (#500). |

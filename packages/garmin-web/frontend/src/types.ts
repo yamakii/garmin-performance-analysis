@@ -206,6 +206,23 @@ export interface WellnessBaselineDeviation {
   overall_flag: boolean;
 }
 
+// --- Form anomaly "今週の注意点" flags (Issue #636) ---
+
+export interface FormAnomalyFlag {
+  activity_id: number;
+  activity_date: string;
+  anomalies_detected: number;
+  severity_high: number;
+  top_recommendation: string | null;
+}
+
+export interface FormAnomalyFlagsResponse {
+  weeks: number;
+  scanned: number;
+  limited: boolean;
+  flags: FormAnomalyFlag[];
+}
+
 export interface BodyCompositionSeriesPoint {
   date: string;
   weight_kg: number | null;
