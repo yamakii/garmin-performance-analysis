@@ -49,11 +49,12 @@ function shouldAnalyze(fetch) {
 
 // The 4 unified sections split into an independent group (run in parallel) and
 // one dependent section (summary, needs the other three for cross-section
-// consistency). `split` is independent and runs alongside the group.
+// consistency, derived from the shared CONTEXT). All four unified sections plus
+// `split` run in ONE parallel barrier — summary no longer waits for siblings, so
+// the previously-serial summary (the long pole) is hidden behind the barrier.
 function sectionPlan() {
   return {
-    independent: ['efficiency', 'phase', 'environment'],
-    dependent: 'summary',
+    unified: ['efficiency', 'phase', 'environment', 'summary'],
     extra: 'split',
   }
 }
@@ -83,19 +84,18 @@ function buildSectionPrompt(section, ctx) {
     `CONTEXT（prefetch バンドル, JSON）は以下です。この実データのみに基づき、推定値・fixture 値で代替しないこと:\n` +
     `<CONTEXT>\n${ctx.contextJson}\n</CONTEXT>\n` +
     `ONLY ${section}: ${section}.json だけを生成・validate・保存し、他セクションは一切生成しないこと。\n` +
-    `保存先: ${ctx.tempDir}/${section}.json\n` +
-    `生成した analysis_data を返却値にも含めること（後段 summary の整合用）。`
+    `保存先: ${ctx.tempDir}/${section}.json`
   )
 }
 
-function buildSummaryPrompt(ctx, siblingsJson) {
+function buildSummaryPrompt(ctx) {
   return (
     `Activity ID ${ctx.activityId} (${ctx.activityDate}) の **summary** セクションのみを分析してください。\n` +
-    `CONTEXT（prefetch バンドル, JSON）は以下です。この実データのみに基づくこと:\n` +
+    `CONTEXT（prefetch バンドル, JSON）は以下です。この実データのみに基づき、推定値・fixture 値で代替しないこと:\n` +
     `<CONTEXT>\n${ctx.contextJson}\n</CONTEXT>\n` +
-    `整合のため、既に生成済みの efficiency / phase / environment の analysis_data を渡します。` +
-    `HR/ゾーン評価は efficiency の evaluation を権威的ソースとして矛盾しないようにしてください:\n` +
-    `<SIBLINGS>\n${siblingsJson}\n</SIBLINGS>\n` +
+    `summary は他セクションと並列生成されるため兄弟JSONは渡されません。整合は CONTEXT から取ること:` +
+    `HR/ゾーン評価は CONTEXT の zone_distribution_rating / form_evaluation を権威的ソースとし、` +
+    `それと矛盾する評価（強度不足・過負荷等）を独自に作らないこと。\n` +
     `ONLY summary: summary.json だけを生成・validate・保存すること。\n` +
     `保存先: ${ctx.tempDir}/summary.json`
   )
@@ -123,16 +123,6 @@ function mergePrompt(ctx) {
   )
 }
 
-// Collect the {section: analysis_data} map from the parallel section results so
-// summary can be checked for cross-section consistency. Tolerates nulls and
-// the split result (which has no `section`/`analysis_data`).
-function collectSiblings(results) {
-  const out = {}
-  for (const r of results || []) {
-    if (r && r.section && r.analysis_data) out[r.section] = r.analysis_data
-  }
-  return out
-}
 // <<< testable
 
 const ARGS = normalizeArgs(args)
@@ -148,16 +138,6 @@ const FETCH_SCHEMA = {
     temp_dir: { type: ['string', 'null'] },
     context_json: { type: ['string', 'null'] },
     catch_up_summary: { type: 'string' },
-  },
-}
-
-const SECTION_SCHEMA = {
-  type: 'object',
-  required: ['section', 'written'],
-  properties: {
-    section: { type: 'string' },
-    written: { type: 'boolean' },
-    analysis_data: { type: ['object', 'null'] },
   },
 }
 
@@ -193,26 +173,20 @@ const ctx = {
 }
 const plan = sectionPlan()
 
-// ── Phase Analyze: independent sections + split in parallel, then summary ──
+// ── Phase Analyze: all 4 unified sections + split in ONE parallel barrier ──
+// summary uses CONTEXT-only consistency (no sibling JSONs), so it no longer
+// runs serially after the others — wall-clock collapses to the slowest section.
 phase('Analyze')
-// Barrier: summary needs the three independent sections' analysis_data inline.
-const indep = await parallel([
-  ...plan.independent.map((s) => () =>
-    agent(buildSectionPrompt(s, ctx), {
+await parallel([
+  ...plan.unified.map((s) => () =>
+    agent(s === 'summary' ? buildSummaryPrompt(ctx) : buildSectionPrompt(s, ctx), {
       label: s,
       phase: 'Analyze',
       agentType: 'unified-section-analyst',
-      schema: SECTION_SCHEMA,
     })
   ),
   () => agent(buildSplitPrompt(ctx), { label: plan.extra, phase: 'Analyze', agentType: 'split-section-analyst' }),
 ])
-const siblings = collectSiblings(indep)
-await agent(buildSummaryPrompt(ctx, JSON.stringify(siblings)), {
-  label: plan.dependent,
-  phase: 'Analyze',
-  agentType: 'unified-section-analyst',
-})
 
 // ── Phase Finalize: proofread Japanese prose, then merge into DuckDB ──
 phase('Finalize')
