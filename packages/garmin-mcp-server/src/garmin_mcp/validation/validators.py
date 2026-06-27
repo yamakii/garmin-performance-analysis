@@ -6,7 +6,14 @@ Raises pydantic.ValidationError on invalid data.
 
 from __future__ import annotations
 
+import re
+
 from garmin_mcp.validation.models import ActivityRecord, SplitRecord
+
+# Summary star_rating must look like ``★★★★☆ 4.2/5.0``: 1-5 filled stars,
+# 0-4 empty stars, then a ``N.N/5.0`` numeric rating. The captured group is the
+# numeric rating, which must additionally fall within [0.0, 5.0].
+_STAR_RATING_PATTERN = re.compile(r"^★{1,5}☆{0,4}\s*(\d+(?:\.\d+)?)/5\.0$")
 
 # Skip phrases that indicate "no baseline / data unavailable" narration.
 # When form_baseline_trend.success is True (comparison data exists), any of
@@ -74,6 +81,62 @@ def check_form_trend_consistency(
         )
 
     return True, []
+
+
+def check_narration_numeric_consistency(
+    analysis_data: dict,
+) -> tuple[bool, list[str]]:
+    """Deterministically validate the summary section's structured numbers.
+
+    Guard for the non-deterministic LLM narration bug where the summary section
+    emits out-of-range structured values (``integrated_score=120``,
+    ``★★★★★ 6.5/5.0``, a malformed star rating). Such records must not be
+    inserted into DuckDB.
+
+    Validates:
+        - ``integrated_score`` ∈ [0.0, 100.0]
+        - ``star_rating`` matches ``★{1,5}☆{0,4} N.N/5.0`` and the extracted
+          numeric rating ∈ [0.0, 5.0]
+
+    Args:
+        analysis_data: The summary section's ``analysis_data`` dict.
+
+    Returns:
+        ``(True, [])`` when consistent (or when the target fields are absent —
+        absence is left to existing schema validation). ``(False, [error, ...])``
+        when a present field is out of range or malformed.
+    """
+    errors: list[str] = []
+
+    score = analysis_data.get("integrated_score")
+    if score is not None:
+        try:
+            score_val = float(score)
+        except (TypeError, ValueError):
+            errors.append(f"integrated_score is not numeric: {score!r}")
+        else:
+            if not (0.0 <= score_val <= 100.0):
+                errors.append(
+                    f"integrated_score={score_val} is out of range [0.0, 100.0]"
+                )
+
+    star_rating = analysis_data.get("star_rating")
+    if star_rating is not None:
+        match = _STAR_RATING_PATTERN.match(str(star_rating).strip())
+        if not match:
+            errors.append(
+                f"star_rating {star_rating!r} does not match the expected "
+                "format '★{1,5}☆{0,4} N.N/5.0'"
+            )
+        else:
+            rating_val = float(match.group(1))
+            if not (0.0 <= rating_val <= 5.0):
+                errors.append(
+                    f"star_rating numeric value {rating_val} is out of "
+                    "range [0.0, 5.0]"
+                )
+
+    return (not errors), errors
 
 
 def validate_activity(data: dict) -> ActivityRecord:

@@ -17,7 +17,10 @@ from pathlib import Path
 
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.database.db_writer import GarminDBWriter
-from garmin_mcp.validation.validators import check_form_trend_consistency
+from garmin_mcp.validation.validators import (
+    check_form_trend_consistency,
+    check_narration_numeric_consistency,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +66,13 @@ def merge_section_analyses(temp_dir: Path, *, keep: bool = False) -> dict:
                     failed.append(section_type)
                     errors.extend(errs)
                     continue  # Do not insert inconsistent efficiency analysis.
+
+            if section_type == "summary":
+                ok, errs = check_narration_numeric_consistency(analysis_data)
+                if not ok:
+                    failed.append(section_type)
+                    errors.extend(errs)
+                    continue  # Do not insert out-of-range summary narration.
 
             success = writer.insert_section_analysis(
                 activity_id=activity_id,
