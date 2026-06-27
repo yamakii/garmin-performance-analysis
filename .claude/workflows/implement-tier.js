@@ -4,9 +4,9 @@ export const meta = {
     'Implement one tier of design-approved issues: parallel worktree implementation, parallel L1/L2 validation, then auto-merge PRs that pass validation + ci-guard (human gate only on the exceptions)',
   phases: [
     { title: 'Implement', detail: 'one worktree developer agent per issue (parallel)' },
-    { title: 'Validate', detail: 'L1/L2 validation per implementation (parallel, subprocess)' },
-    { title: 'Ship', detail: 'push, create PR, poll ci-guard' },
-    { title: 'Merge', detail: 'auto-merge on validation pass + ci green; else escalate' },
+    { title: 'Validate', detail: 'L1/L2 validation per implementation (parallel, subprocess)', model: 'sonnet' },
+    { title: 'Ship', detail: 'push, create PR, poll ci-guard', model: 'sonnet' },
+    { title: 'Merge', detail: 'auto-merge on validation pass + ci green; else escalate', model: 'haiku' },
   ],
 }
 
@@ -148,7 +148,7 @@ const results = await pipeline(
         `ci-check.sh は integration を回さないため、追加で \`uv run --directory ${manifest.worktree_path} pytest -m integration --tb=short -q\` も実行する。` +
         `これにより doc-sync/unit 漏れ（README/CLAUDE のカウント、golden snapshot、count テスト等）を ci-guard 前に検出する。\n` +
         `完了条件: L1 OK かつ（L2 なら）ci-check.sh exit 0 + integration 0 failures。結果を schema で返す（pass/fail/warning）。`,
-      { label: `val:#${issue.number}`, phase: 'Validate', agentType: 'validation-agent', schema: VALIDATION_SCHEMA }
+      { label: `val:#${issue.number}`, phase: 'Validate', agentType: 'validation-agent', model: 'sonnet', schema: VALIDATION_SCHEMA }
     ).then((v) => ({ manifest, validation: v }))
   },
 
@@ -165,7 +165,7 @@ const results = await pipeline(
         `4. ci-guard の conclusion を ci_conclusion に（success/failure/pending）。web-backend/web-frontend/lint-and-test の skipped は無視。\n` +
         `5. PR が main に対して mergeable か（コンフリクトなし）を mergeable に。\n` +
         `schema で {pr_number, pr_url, ci_conclusion, mergeable, head_sha} を返す。`,
-      { label: `ship:#${issue.number}`, phase: 'Ship', schema: SHIP_SCHEMA }
+      { label: `ship:#${issue.number}`, phase: 'Ship', model: 'sonnet', schema: SHIP_SCHEMA }
     ).then((ship) => ({ ...acc, ship }))
   },
 
@@ -177,7 +177,7 @@ const results = await pipeline(
     return agent(
       `PR #${acc.ship.pr_number}（Issue #${issue.number}）を auto-merge してください。検証 PASS + ci-guard success + mergeable を確認済み。\n` +
         `mcp__github__merge_pull_request(${repoCtx()}, pullNumber=${acc.ship.pr_number}, merge_method="merge") を実行し、結果を schema で返す。`,
-      { label: `merge:#${issue.number}`, phase: 'Merge', schema: MERGE_SCHEMA }
+      { label: `merge:#${issue.number}`, phase: 'Merge', model: 'haiku', effort: 'low', schema: MERGE_SCHEMA }
     ).then((mg) => ({ issue: issue.number, ...acc, merge: { merged: mg.merged, reason: decision.reason, merge_sha: mg.merge_sha ?? null } }))
   }
 )
