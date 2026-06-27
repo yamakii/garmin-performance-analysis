@@ -29,7 +29,8 @@ def insert_athlete_profile(profile: dict[str, Any], db_path: str | None = None) 
 
     Args:
         profile: Profile dict with keys ``user_id`` (defaults to ``"default"``),
-            ``current_focus``, ``focus_notes``, ``goals`` (list of goal dicts),
+            ``current_focus``, ``focus_notes``, ``week_start_day`` (int,
+            0=Monday … 6=Sunday; defaults to 0), ``goals`` (list of goal dicts),
             and ``retrospectives`` (list of retrospective dicts).
         db_path: Path to DuckDB database. If None, uses default.
     """
@@ -48,16 +49,27 @@ def insert_athlete_profile(profile: dict[str, Any], db_path: str | None = None) 
         # UPSERT the single-row profile (PK = user_id), refreshing updated_at.
         # updated_at uses the table DEFAULT (CURRENT_TIMESTAMP) on insert and is
         # refreshed via now() on conflict.
+        week_start_day = profile.get("week_start_day")
+        if week_start_day is None:
+            week_start_day = 0
         conn.execute(
             """
-            INSERT INTO athlete_profile (user_id, current_focus, focus_notes)
-            VALUES (?, ?, ?)
+            INSERT INTO athlete_profile (
+                user_id, current_focus, focus_notes, week_start_day
+            )
+            VALUES (?, ?, ?, ?)
             ON CONFLICT (user_id) DO UPDATE SET
                 current_focus = EXCLUDED.current_focus,
                 focus_notes = EXCLUDED.focus_notes,
+                week_start_day = EXCLUDED.week_start_day,
                 updated_at = now()
             """,
-            [user_id, profile.get("current_focus"), profile.get("focus_notes")],
+            [
+                user_id,
+                profile.get("current_focus"),
+                profile.get("focus_notes"),
+                week_start_day,
+            ],
         )
 
         # Replace goals for this user_id (DELETE then INSERT).

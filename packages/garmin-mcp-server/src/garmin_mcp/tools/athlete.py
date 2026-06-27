@@ -37,10 +37,10 @@ class SaveAthleteProfileParams(BaseModel):
     profile: dict[str, Any] = Field(
         description=(
             "Profile JSON with user_id (default 'default'), current_focus, "
-            "focus_notes, goals (list of {race_name, race_date, priority, "
-            "goal_type, distance_km, target_time_seconds, status, notes}), and "
-            "retrospectives (list of {season_label, period_start, period_end, "
-            "narrative, key_learnings})."
+            "focus_notes, week_start_day (0=Mon..6=Sun, default 0), goals (list "
+            "of {race_name, race_date, priority, goal_type, distance_km, "
+            "target_time_seconds, status, notes}), and retrospectives (list of "
+            "{season_label, period_start, period_end, narrative, key_learnings})."
         )
     )
 
