@@ -8,12 +8,37 @@ Handles per-API file caching for Garmin Connect data:
 
 import json
 import logging
+from datetime import date as dt_date
 from pathlib import Path
 from typing import Any, cast
 
 from garmin_mcp.ingest.api_client import get_garmin_client
 
 logger = logging.getLogger(__name__)
+
+
+def _wellness_has_sleep(merged: dict[str, Any]) -> bool:
+    """Return True when merged['sleep'] carries a real overnight sleep record.
+
+    Used as the current-day completeness gate: a present sleep payload means the
+    night has synced (HRV / resting HR land together), so saving is safe. A
+    missing/empty sleep payload (e.g. a pre-sync morning fetch that only returned
+    training_readiness) is treated as incomplete.
+    """
+    sleep = merged.get("sleep")
+    if not isinstance(sleep, dict):
+        return False
+    dto = sleep.get("dailySleepDTO")
+    if not isinstance(dto, dict):
+        return False
+    if dto.get("sleepTimeSeconds"):
+        return True
+    scores = dto.get("sleepScores")
+    if isinstance(scores, dict):
+        overall = scores.get("overall")
+        if isinstance(overall, dict) and overall.get("value") is not None:
+            return True
+    return False
 
 
 class RawDataExtractor:
@@ -519,7 +544,7 @@ def _collect_lactate_threshold(
 
 
 def collect_body_composition_data(
-    weight_raw_dir: Path, date: str
+    weight_raw_dir: Path, date: str, today: dt_date | None = None
 ) -> dict[str, Any] | None:
     """Collect body composition data with cache-first strategy.
 
@@ -546,6 +571,10 @@ def collect_body_composition_data(
             logger.info(f"Using cached body composition data for {date}")
             return cast(dict[str, Any], cached_data)
 
+    # On the current day, weight may not have synced yet. Avoid writing an empty
+    # marker (which would permanently mask a later sync) and re-fetch next run.
+    is_current_day = dt_date.fromisoformat(date) >= (today or dt_date.today())
+
     # Fetch from Garmin Connect API
     logger.info(f"Fetching body composition data for {date} from Garmin Connect API")
     try:
@@ -554,6 +583,12 @@ def collect_body_composition_data(
 
         if not weight_data or not weight_data.get("dateWeightList"):
             logger.warning(f"No body composition data found for {date}")
+            if is_current_day:
+                logger.info(
+                    f"Current day {date} has no weight yet; "
+                    "skipping marker for later re-fetch"
+                )
+                return None
             # Create empty marker file to avoid repeated API calls
             weight_file.parent.mkdir(parents=True, exist_ok=True)
             with open(weight_file, "w", encoding="utf-8") as f:
@@ -571,6 +606,12 @@ def collect_body_composition_data(
 
     except Exception as e:
         logger.error(f"Error fetching body composition data for {date}: {e}")
+        if is_current_day:
+            logger.info(
+                f"Current day {date} fetch failed; "
+                "skipping marker for later re-fetch"
+            )
+            return None
         # Create empty marker file to avoid repeated API calls
         weight_file.parent.mkdir(parents=True, exist_ok=True)
         with open(weight_file, "w", encoding="utf-8") as f:
@@ -579,7 +620,9 @@ def collect_body_composition_data(
         return None
 
 
-def collect_wellness_data(wellness_raw_dir: Path, date: str) -> dict[str, Any] | None:
+def collect_wellness_data(
+    wellness_raw_dir: Path, date: str, today: dt_date | None = None
+) -> dict[str, Any] | None:
     """Collect daily wellness data with a cache-first strategy.
 
     Bundles four Garmin Connect endpoints into a single per-day cache file
@@ -617,6 +660,11 @@ def collect_wellness_data(wellness_raw_dir: Path, date: str) -> dict[str, Any] |
             logger.info(f"Using cached wellness data for {date}")
             return cast(dict[str, Any], cached_data)
 
+    # On the current day, the overnight sync (sleep/HRV/RHR) may not have landed
+    # yet. A partial fetch (e.g. training_readiness only) must NOT be cached, or
+    # it would permanently mask the real data; re-fetch next run instead.
+    is_current_day = dt_date.fromisoformat(date) >= (today or dt_date.today())
+
     logger.info(f"Fetching wellness data for {date} from Garmin Connect API")
     try:
         client = get_garmin_client()
@@ -635,6 +683,13 @@ def collect_wellness_data(wellness_raw_dir: Path, date: str) -> dict[str, Any] |
             "training_readiness": _safe(lambda: client.get_training_readiness(date)),
         }
 
+        if is_current_day and not _wellness_has_sleep(merged):
+            logger.info(
+                f"Current day {date} wellness incomplete (no sleep yet); "
+                "skipping save/marker for later re-fetch"
+            )
+            return None
+
         if not any(merged.values()):
             logger.warning(f"No wellness data found for {date}")
             wellness_file.parent.mkdir(parents=True, exist_ok=True)
@@ -652,6 +707,12 @@ def collect_wellness_data(wellness_raw_dir: Path, date: str) -> dict[str, Any] |
 
     except Exception as e:
         logger.error(f"Error fetching wellness data for {date}: {e}")
+        if is_current_day:
+            logger.info(
+                f"Current day {date} wellness fetch failed; "
+                "skipping marker for later re-fetch"
+            )
+            return None
         wellness_file.parent.mkdir(parents=True, exist_ok=True)
         with open(wellness_file, "w", encoding="utf-8") as f:
             json.dump({}, f)
