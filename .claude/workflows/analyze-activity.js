@@ -182,7 +182,9 @@ await parallel([
     agent(s === 'summary' ? buildSummaryPrompt(ctx) : buildSectionPrompt(s, ctx), {
       label: s,
       phase: 'Analyze',
-      agentType: 'unified-section-analyst',
+      // summary uses a focused, leaner agent (just summary rules) instead of
+      // loading the full unified def; efficiency/phase/environment stay on unified.
+      agentType: s === 'summary' ? 'summary-section-analyst' : 'unified-section-analyst',
     })
   ),
   () => agent(buildSplitPrompt(ctx), { label: plan.extra, phase: 'Analyze', agentType: 'split-section-analyst' }),
