@@ -66,6 +66,31 @@ def test_decompose_handles_missing_body_fat() -> None:
 
 
 @pytest.mark.unit
+def test_body_composition_delta_lean_golden() -> None:
+    """Golden: 70kg->65kg at a constant 25% body fat freezes the decomposition.
+
+    Losing weight at an unchanged body-fat percentage strips fat and lean in the
+    same 25/75 proportion as the body itself. These golden constants guard the
+    fat/lean split formula (``weight * bf%``) and the lean-loss-ratio coefficient
+    against silent drift; recompute deliberately if the math is intentionally
+    changed.
+
+    start fat 70*0.25=17.5, lean 52.5; end fat 65*0.25=16.25, lean 48.75.
+    """
+    start = {"weight_kg": 70.0, "body_fat_pct": 25.0}
+    end = {"weight_kg": 65.0, "body_fat_pct": 25.0}
+
+    result = decompose_weight_change(start, end)
+
+    assert result["delta_weight"] == pytest.approx(-5.0, abs=1e-6)
+    assert result["delta_fat"] == pytest.approx(-1.25, abs=1e-6)
+    assert result["delta_lean"] == pytest.approx(-3.75, abs=1e-6)
+    # 3.75 of the 5.0 kg lost is lean mass -> 0.75 lean-loss ratio.
+    assert result["lean_loss_ratio"] == pytest.approx(0.75, abs=1e-6)
+    assert result["muscle_loss_warning"] is True
+
+
+@pytest.mark.unit
 def test_lean_pwr_basic() -> None:
     """ftp=337, weight=78.8, fat=22.5 -> ~5.52 W/kg (lean ~61.07kg)."""
     result = lean_power_to_weight(ftp_w=337.0, weight_kg=78.8, body_fat_pct=22.5)

@@ -134,6 +134,44 @@ def test_get_objective_fitness_curve_optimism_gap_positive(
 
 
 @pytest.mark.integration
+def test_fitness_curve_optimism_gap_golden(reader_db_path: Path) -> None:
+    """Golden: a fixed run (6 x 1 km @ 340 s) + Garmin VO2max 44.6 freezes the gap.
+
+    The objective VDOT is derived from the best-effort splits, the Garmin VDOT
+    from its VO2max, and the optimism gap from the 5 km reference-distance race
+    predictions. These golden constants guard the VDOT tables and the gap
+    coefficients (5 km reference, VO2max->VDOT mapping) against silent drift;
+    recompute deliberately if the underlying VDOT math is intentionally changed.
+    """
+    _insert_run(
+        reader_db_path,
+        activity_id=1,
+        activity_date="2025-10-01",
+        split_seconds=340.0,
+    )
+    _insert_vo2max(reader_db_path, activity_id=1, value=44.6, date="2025-10-01")
+
+    reader = FitnessCurveReader(str(reader_db_path))
+    result = reader.get_objective_fitness_curve(window_days=90)
+
+    assert result["objective_curve"] == [
+        {
+            "date": "2025-10-01",
+            "vdot": pytest.approx(33.01, abs=0.01),
+            "source_distance_km": 5.0,
+        }
+    ]
+
+    gap = result["optimism_gap"]
+    assert gap is not None
+    assert gap["garmin_vdot"] == pytest.approx(43.71, abs=0.01)
+    assert gap["objective_vdot"] == pytest.approx(33.01, abs=0.01)
+    assert gap["gap_vdot"] == pytest.approx(10.7, abs=0.01)
+    assert gap["gap_speed_mps"] == pytest.approx(0.787, abs=0.005)
+    assert gap["gap_pace_sec_per_km"] == pytest.approx(71.8, abs=0.1)
+
+
+@pytest.mark.integration
 def test_get_objective_fitness_curve_empty_db(reader_db_path: Path) -> None:
     """No splits and no vo2_max -> empty curve, no exception."""
     reader = FitnessCurveReader(str(reader_db_path))

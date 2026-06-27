@@ -431,6 +431,31 @@ def test_zscore_threshold_default_3(detector: FormAnomalyDetector) -> None:
 
 
 @pytest.mark.unit
+def test_anomaly_zscore_threshold_golden(detector: FormAnomalyDetector) -> None:
+    """Golden: a fixed GCT spike freezes the z-score the detector fires at.
+
+    rolling mean 240 ms, std 2.5 ms, with one point at 253 ms: deviation 13 ms
+    (>= the 10 ms GCT magnitude gate) and z = 13 / 2.5 = 5.2 (> default 3.0). The
+    spike must be flagged exactly once with a frozen z-score of 5.2. This guards
+    the z-score formula and the gate interplay against silent drift; recompute
+    deliberately if the detection math is intentionally changed.
+    """
+    time_series: list[float | None] = cast(
+        list[float | None], [240.0] * 50 + [253.0] + [240.0] * 49
+    )
+    rolling_means = [240.0] * 100
+    rolling_stds = [2.5] * 100
+
+    anomalies = detector._detect_anomalies_by_zscore(
+        "directGroundContactTime", time_series, rolling_means, rolling_stds
+    )
+
+    assert len(anomalies) == 1
+    assert anomalies[0]["value"] == 253.0
+    assert anomalies[0]["z_score"] == pytest.approx(5.2, abs=1e-6)
+
+
+@pytest.mark.unit
 def test_vo_small_change_not_flagged(detector: FormAnomalyDetector) -> None:
     """Test VO small (0.4cm) deviation is not flagged despite high z-score.
 
