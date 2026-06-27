@@ -80,3 +80,41 @@ class TestQuarterlyCriticalSpeed:
         for row in result:
             assert "d_prime" not in row
             assert "d_prime_m" not in row
+
+
+# --- Golden regression tests (Issue #624) -------------------------------------
+# Freeze the 2-parameter CS fit (slope + R^2) on known synthetic frontiers so a
+# silent drift in the least-squares output is caught in CI.
+
+
+@pytest.mark.unit
+class TestCriticalSpeedGolden:
+    def test_critical_speed_golden_coef(self):
+        # Known duration-distance frontier inside the 2-45 min window, slightly
+        # off a perfect line so the fit is non-trivial. Outputs are frozen.
+        frontier = [
+            (150.0, 600.0),
+            (300.0, 1150.0),
+            (900.0, 3200.0),
+            (1800.0, 6100.0),
+        ]
+        fit = fit_critical_speed(frontier)
+        assert fit is not None
+        assert fit.n_points == 4
+        # Frozen golden of the current least-squares output.
+        assert fit.cs_mps == pytest.approx(3.32552954, rel=1e-3)
+        assert fit.cs_pace_sec_per_km == pytest.approx(300.703989, rel=1e-3)
+        assert fit.r_squared == pytest.approx(0.99963602, rel=1e-3)
+
+    def test_critical_speed_r2_high_on_linear_input(self):
+        # A perfectly linear frontier d = 3.0*t + 200 must fit with R^2 == 1.0
+        # and recover the exact slope (critical speed).
+        slope_mps = 3.0
+        intercept_m = 200.0
+        frontier = [
+            (t, slope_mps * t + intercept_m) for t in (120.0, 600.0, 1500.0, 2700.0)
+        ]
+        fit = fit_critical_speed(frontier)
+        assert fit is not None
+        assert fit.cs_mps == pytest.approx(slope_mps, rel=1e-9)
+        assert fit.r_squared == pytest.approx(1.0, abs=1e-9)
