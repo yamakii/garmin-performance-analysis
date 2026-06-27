@@ -269,6 +269,37 @@ class TestPerformanceTrendAnalyzer:
         assert result["slope"] > 0  # Increasing power
 
     @pytest.mark.unit
+    def test_trends_slope_golden(self, analyzer):
+        """Golden: a fixed pace series freezes the per-day regression slope.
+
+        Pace 310, 305, 304, 300, 296 on consecutive days (Jan 1-5 -> x = 0..4)
+        regresses to a slope of exactly -3.3 s/km per day (Sxy=-33, Sxx=10) with
+        correlation ~-0.986. This guards the date-based regression coefficient
+        against silent drift; recompute deliberately if the regression axis or
+        method is intentionally changed.
+        """
+        analyzer.db_reader.get_bulk_metric_averages.return_value = {
+            1: 310.0,
+            2: 305.0,
+            3: 304.0,
+            4: 300.0,
+            5: 296.0,
+        }
+        analyzer.db_reader.get_activity_dates.return_value = _dates_for([1, 2, 3, 4, 5])
+
+        result = analyzer.analyze_metric_trend(
+            metric="pace",
+            start_date="2025-01-01",
+            end_date="2025-01-31",
+            activity_ids=[1, 2, 3, 4, 5],
+        )
+
+        assert result["slope"] == pytest.approx(-3.3, abs=1e-6)
+        assert result["correlation"] == pytest.approx(-0.986064, abs=1e-5)
+        assert result["trend"] == "improving"
+        assert result["data_points"] == 5
+
+    @pytest.mark.unit
     def test_unsupported_metric(self, analyzer):
         """Test unsupported metric handling."""
         with pytest.raises(ValueError, match="Unsupported metric"):

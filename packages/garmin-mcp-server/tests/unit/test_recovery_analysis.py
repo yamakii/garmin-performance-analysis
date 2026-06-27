@@ -85,6 +85,40 @@ def test_rhr_trend_all_missing_returns_none() -> None:
 
 
 @pytest.mark.unit
+def test_recovery_trend_median_golden() -> None:
+    """Golden: a 30-day RHR/HRV series freezes the 7d/30d medians + latest HRV.
+
+    The RHR series is 30 distinct ascending values (40..69), so the medians are
+    sensitive to both the window slicing (last 7 vs last 30) and the even-count
+    midpoint average. The HRV series freezes the most-recent-night reading and
+    the consecutive-below-baseline counter. Recompute deliberately if the median
+    windows or HRV counting are intentionally changed.
+    """
+    # 30 days: RHR 40, 41, ... 69 (ascending).
+    daily_rhr = [(f"2026-05-{i + 1:02d}", 40 + i) for i in range(30)]
+
+    rhr = compute_rhr_trend(daily_rhr)
+
+    # Last 7 values are 63..69 -> median 66; all 30 (40..69) -> midpoint 54.5.
+    assert rhr["median_7d"] == 66
+    assert rhr["median_30d"] == pytest.approx(54.5, abs=1e-6)
+    assert rhr["rhr_trend"] == "fatigued"
+
+    hrv_rows = [
+        ("2026-06-20", 60.0, 55.0, 75.0),  # within band
+        ("2026-06-21", 52.0, 55.0, 75.0),  # below low
+        ("2026-06-22", 51.5, 55.0, 75.0),  # below low (latest)
+    ]
+
+    hrv = compute_hrv_recovery(hrv_rows)
+
+    assert hrv["latest_ms"] == pytest.approx(51.5, abs=1e-6)
+    assert hrv["hrv_below_baseline_days"] == 2
+    assert hrv["under_recovery"] is True
+    assert hrv["status"] == "low"
+
+
+@pytest.mark.unit
 def test_hrv_under_recovery_two_days_below() -> None:
     """Latest 2 nights below baseline_low -> under_recovery, count 2."""
     rows = [

@@ -639,6 +639,27 @@ class TestSimilarityCalculationImproved:
         assert score >= 0.0
 
     @pytest.mark.unit
+    def test_comparisons_similarity_golden(self, comparator):
+        """Golden: a fixed target/candidate pair freezes the weighted score.
+
+        pace 300->312 (4% slower) -> pace_similarity 0.96; distance 10->9.7
+        (3% shorter) -> distance_similarity 0.97; tempo vs lactate_threshold ->
+        type_similarity 0.80. Weighted (45/35/20): 0.96*0.45 + 0.97*0.35 +
+        0.80*0.20 = 0.9315 -> 93.15. This guards both the per-axis similarity
+        formulas and the 45/35/20 weights against silent drift; recompute
+        deliberately if the weighting is intentionally changed.
+        """
+        target = {"avg_pace": 300.0, "distance_km": 10.0, "training_type": "tempo"}
+        candidate = {
+            "avg_pace": 312.0,
+            "distance_km": 9.7,
+            "training_type": "lactate_threshold",
+        }
+
+        score = comparator._calculate_similarity_score(target, candidate)
+        assert score == pytest.approx(93.15, abs=0.01)
+
+    @pytest.mark.unit
     def test_similarity_missing_training_type(self, comparator):
         """Missing training type should use default 0.3 similarity."""
         target = {
