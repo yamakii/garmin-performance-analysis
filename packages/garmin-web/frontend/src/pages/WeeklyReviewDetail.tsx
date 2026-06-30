@@ -2,17 +2,23 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { fetchWeeklyReviewVersions } from "../api/client";
 import SectionHeading from "../components/SectionHeading";
+import SectionNav, { type NavItem } from "../components/SectionNav";
 import type { WeeklyReview } from "../types";
 
 function Section({
+  id,
   title,
   children,
 }: {
+  id?: string;
   title: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <section
+      id={id}
+      className="scroll-mt-20 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+    >
       <h2 className="mb-3 font-display text-base font-semibold text-ink">
         {title}
       </h2>
@@ -138,6 +144,40 @@ export default function WeeklyReviewDetail() {
     garminNextWeek.length > 0 ||
     data?.continuity_note != null;
 
+  // In-page nav: list only the Section cards that actually render below.
+  const navItems: NavItem[] =
+    data == null
+      ? []
+      : [
+          { id: "wr-actuals", label: "実績サマリー" },
+          weightTracking != null
+            ? { id: "wr-weight", label: "体重トラッキング" }
+            : null,
+          typeof recovery === "string"
+            ? { id: "wr-recovery", label: "リカバリー" }
+            : null,
+          { id: "wr-verdict", label: "対象週プラン評価" },
+          data.goal_alignment != null
+            ? { id: "wr-goal", label: "目標との整合" }
+            : null,
+          periodization != null
+            ? { id: "wr-periodization", label: "目標逆算フェーズ" }
+            : null,
+          typeof weeklyRamp === "string"
+            ? { id: "wr-ramp", label: "週次ランプ" }
+            : null,
+          recommendations.length > 0
+            ? { id: "wr-recommendations", label: "推奨アクション" }
+            : null,
+          garminNextWeek.length > 0
+            ? { id: "wr-garmin", label: "来週のGarminワークアウト" }
+            : null,
+          data.continuity_note != null
+            ? { id: "wr-continuity", label: "前回からの継続性" }
+            : null,
+          data.overall != null ? { id: "wr-overall", label: "総評" } : null,
+        ].filter((item): item is NavItem => item !== null);
+
   return (
     <div className="stagger-in space-y-6">
       <div className="flex items-start justify-between gap-3">
@@ -185,10 +225,13 @@ export default function WeeklyReviewDetail() {
         </p>
       ) : (
         <>
+          {/* Sticky in-page table of contents (rendered sections only) */}
+          <SectionNav items={navItems} />
+
           {/* ① This week — actuals, body, recovery */}
           <Group eyebrow="This Week" title="今週の実績">
             {/* This-week actuals */}
-            <Section title="実績サマリー">
+            <Section id="wr-actuals" title="実績サマリー">
               {thisWeek != null ? (
                 <div className="space-y-1 text-sm text-slate-700">
                   {thisWeek.volume_km != null && (
@@ -240,7 +283,7 @@ export default function WeeklyReviewDetail() {
 
             {/* Weight tracking (#597) */}
             {weightTracking != null && (
-              <Section title="体重トラッキング">
+              <Section id="wr-weight" title="体重トラッキング">
                 <div className="space-y-1 text-sm text-slate-700">
                   {weightTracking.recent_median_kg != null && (
                     <p>
@@ -287,7 +330,7 @@ export default function WeeklyReviewDetail() {
 
             {/* Recovery (#597) — string only for now */}
             {typeof recovery === "string" && (
-              <Section title="リカバリー">
+              <Section id="wr-recovery" title="リカバリー">
                 <p className="text-sm text-slate-700">{recovery}</p>
               </Section>
             )}
@@ -296,7 +339,7 @@ export default function WeeklyReviewDetail() {
           {/* ② Assessment — plan verdict, goal alignment, periodization, ramp */}
           <Group eyebrow="Assessment" title="評価">
             {/* Verdict table — target-week plan evaluation */}
-            <Section title="対象週プラン評価">
+            <Section id="wr-verdict" title="対象週プラン評価">
               {verdict.length > 0 ? (
                 <table className="w-full text-sm">
                   <thead>
@@ -337,14 +380,14 @@ export default function WeeklyReviewDetail() {
 
             {/* Goal alignment */}
             {data.goal_alignment != null && (
-              <Section title="目標との整合">
+              <Section id="wr-goal" title="目標との整合">
                 <p className="text-sm text-slate-700">{data.goal_alignment}</p>
               </Section>
             )}
 
             {/* Periodization (#286) — render only when present */}
             {periodization != null && (
-              <Section title="目標逆算フェーズ">
+              <Section id="wr-periodization" title="目標逆算フェーズ">
                 <div className="space-y-1 text-sm text-slate-700">
                   {periodization.a_race != null && (
                     <p>
@@ -393,7 +436,7 @@ export default function WeeklyReviewDetail() {
 
             {/* Weekly ramp (#597) — string only for now */}
             {typeof weeklyRamp === "string" && (
-              <Section title="週次ランプ">
+              <Section id="wr-ramp" title="週次ランプ">
                 <p className="text-sm text-slate-700">{weeklyRamp}</p>
               </Section>
             )}
@@ -404,7 +447,7 @@ export default function WeeklyReviewDetail() {
             <Group eyebrow="Next" title="次アクション">
               {/* Recommendations */}
               {recommendations.length > 0 && (
-                <Section title="推奨アクション">
+                <Section id="wr-recommendations" title="推奨アクション">
                   <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
                     {recommendations.map((rec, i) => (
                       <li key={i}>{rec}</li>
@@ -415,7 +458,7 @@ export default function WeeklyReviewDetail() {
 
               {/* Garmin next-week planned workouts (#597) */}
               {garminNextWeek.length > 0 && (
-                <Section title="来週のGarminワークアウト">
+                <Section id="wr-garmin" title="来週のGarminワークアウト">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-xs tracking-wide text-slate-500 uppercase">
@@ -451,7 +494,7 @@ export default function WeeklyReviewDetail() {
 
               {/* Continuity with the previous review (#597) */}
               {data.continuity_note != null && (
-                <Section title="前回からの継続性">
+                <Section id="wr-continuity" title="前回からの継続性">
                   <p className="text-sm text-slate-700">
                     {data.continuity_note}
                   </p>
@@ -462,7 +505,7 @@ export default function WeeklyReviewDetail() {
 
           {/* Overall — closing verdict, standalone */}
           {data.overall != null && (
-            <Section title="総評">
+            <Section id="wr-overall" title="総評">
               <p className="text-sm text-slate-700">{data.overall}</p>
             </Section>
           )}

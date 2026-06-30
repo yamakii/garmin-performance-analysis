@@ -80,7 +80,10 @@ describe("WeeklyReviewDetail", () => {
     });
 
     expect(
-      await screen.findByText("来週のGarminワークアウト"),
+      await screen.findByRole("heading", {
+        level: 2,
+        name: "来週のGarminワークアウト",
+      }),
     ).toBeInTheDocument();
     expect(screen.getByText("2026-06-22")).toBeInTheDocument();
     expect(screen.getByText("Easy Run")).toBeInTheDocument();
@@ -98,7 +101,9 @@ describe("WeeklyReviewDetail", () => {
       },
     });
 
-    expect(await screen.findByText("実績サマリー")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "実績サマリー" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("easy_z1_z2: 4")).toBeInTheDocument();
     expect(screen.getByText("long_run: 1")).toBeInTheDocument();
   });
@@ -112,7 +117,12 @@ describe("WeeklyReviewDetail", () => {
       },
     });
 
-    expect(await screen.findByText("体重トラッキング")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", {
+        level: 2,
+        name: "体重トラッキング",
+      }),
+    ).toBeInTheDocument();
     expect(screen.getByText(/79\.6/)).toBeInTheDocument();
     expect(screen.getByText(/24\.1/)).toBeInTheDocument();
     expect(screen.getByText("微減")).toBeInTheDocument();
@@ -123,7 +133,12 @@ describe("WeeklyReviewDetail", () => {
       continuity_note: "前回からの継続性は良好です。",
     });
 
-    expect(await screen.findByText("前回からの継続性")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", {
+        level: 2,
+        name: "前回からの継続性",
+      }),
+    ).toBeInTheDocument();
     expect(
       screen.getByText("前回からの継続性は良好です。"),
     ).toBeInTheDocument();
@@ -136,7 +151,9 @@ describe("WeeklyReviewDetail", () => {
     });
 
     // 実績サマリー is always present; the optional sections must not render.
-    expect(await screen.findByText("実績サマリー")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "実績サマリー" }),
+    ).toBeInTheDocument();
     expect(
       screen.queryByText("来週のGarminワークアウト"),
     ).not.toBeInTheDocument();
@@ -175,17 +192,48 @@ describe("WeeklyReviewDetail", () => {
   it("still hides 目標逆算フェーズ when periodization absent", async () => {
     renderDetail({ this_week: { volume_km: 30 } });
 
-    expect(await screen.findByText("実績サマリー")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "実績サマリー" }),
+    ).toBeInTheDocument();
     expect(screen.queryByText("目標逆算フェーズ")).not.toBeInTheDocument();
+  });
+
+  it("omits 目標逆算フェーズ from nav when periodization absent", async () => {
+    renderDetail({ this_week: { volume_km: 30 } });
+
+    const nav = await screen.findByRole("navigation", {
+      name: "セクション目次",
+    });
+    expect(within(nav).queryByText("目標逆算フェーズ")).not.toBeInTheDocument();
+  });
+
+  it("includes 実績サマリー and 総評 in nav when present", async () => {
+    renderDetail(fullReview);
+
+    const nav = await screen.findByRole("navigation", {
+      name: "セクション目次",
+    });
+    const actuals = within(nav).getByRole("link", { name: "実績サマリー" });
+    const overall = within(nav).getByRole("link", { name: "総評" });
+    expect(actuals).toHaveAttribute("href", "#wr-actuals");
+    expect(overall).toHaveAttribute("href", "#wr-overall");
+
+    // The corresponding Section cards carry the matching anchor ids.
+    expect(document.getElementById("wr-actuals")).not.toBeNull();
+    expect(document.getElementById("wr-overall")).not.toBeNull();
   });
 
   it("renders 総評 last when present", async () => {
     renderDetail(fullReview);
 
-    expect(await screen.findByText("総評")).toBeInTheDocument();
+    const overallHeading = await screen.findByRole("heading", {
+      level: 2,
+      name: "総評",
+    });
+    expect(overallHeading).toBeInTheDocument();
     // 総評 is standalone: not nested inside the 次アクション group region.
     expect(
-      screen.getByText("総評").closest('section[aria-label="次アクション"]'),
+      overallHeading.closest('section[aria-label="次アクション"]'),
     ).toBeNull();
     // ...and it is the last Section card heading in DOM order.
     const cardHeadings = screen.getAllByRole("heading", { level: 2 });
