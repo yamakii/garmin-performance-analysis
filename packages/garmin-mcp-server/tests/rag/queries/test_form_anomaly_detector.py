@@ -159,8 +159,9 @@ def test_analyze_anomaly_causes_with_missing_metrics(
         anomaly, elevation_series, pace_series, hr_series
     )
 
-    # Should return valid cause even with missing data
-    assert cause in ["elevation_change", "pace_change", "fatigue"]
+    # Should return valid cause even with missing data. With sparse context and
+    # no sustained trend the anomaly falls through to "isolated" (#666).
+    assert cause in ["elevation_change", "pace_change", "fatigue", "isolated"]
     assert isinstance(details, dict)
     assert "elevation_change_5s" in details
     assert "pace_change_10s" in details
@@ -171,49 +172,48 @@ def test_analyze_anomaly_causes_with_missing_metrics(
 def test_recommendations_generation(detector: FormAnomalyDetector) -> None:
     """Test recommendation generation for different anomaly patterns.
 
-    Verify that:
+    Verify that (new anomaly-list signature, #666):
     - Recommendations match anomaly causes
     - Multiple recommendations are generated when appropriate
     """
-    # Test elevation-related anomalies
-    summary_elevation = {
-        "gct_anomalies": 3,
-        "vo_anomalies": 0,
-        "vr_anomalies": 0,
-        "elevation_related": 3,
-        "pace_related": 0,
-        "fatigue_related": 0,
-    }
-
-    recs_elev = detector._generate_recommendations(summary_elevation)
+    # Test elevation-related anomalies (GCT dominant)
+    recs_elev = detector._generate_recommendations(
+        [
+            {
+                "probable_cause": "elevation_change",
+                "metric": "directGroundContactTime",
+            },
+            {
+                "probable_cause": "elevation_change",
+                "metric": "directGroundContactTime",
+            },
+        ]
+    )
     assert len(recs_elev) > 0
     assert any("上り坂" in r for r in recs_elev)
 
-    # Test pace-related anomalies
-    summary_pace = {
-        "gct_anomalies": 0,
-        "vo_anomalies": 2,
-        "vr_anomalies": 0,
-        "elevation_related": 0,
-        "pace_related": 2,
-        "fatigue_related": 0,
-    }
-
-    recs_pace = detector._generate_recommendations(summary_pace)
+    # Test pace-related anomalies (VO dominant)
+    recs_pace = detector._generate_recommendations(
+        [
+            {
+                "probable_cause": "pace_change",
+                "metric": "directVerticalOscillation",
+            },
+            {
+                "probable_cause": "pace_change",
+                "metric": "directVerticalOscillation",
+            },
+        ]
+    )
     assert len(recs_pace) > 0
     assert any("ペース" in r for r in recs_pace)
 
-    # Test fatigue-related anomalies
-    summary_fatigue = {
-        "gct_anomalies": 0,
-        "vo_anomalies": 0,
-        "vr_anomalies": 1,
-        "elevation_related": 0,
-        "pace_related": 0,
-        "fatigue_related": 1,
-    }
-
-    recs_fatigue = detector._generate_recommendations(summary_fatigue)
+    # Test fatigue-related anomalies (VR dominant)
+    recs_fatigue = detector._generate_recommendations(
+        [
+            {"probable_cause": "fatigue", "metric": "directVerticalRatio"},
+        ]
+    )
     assert len(recs_fatigue) > 0
     assert any("疲労" in r for r in recs_fatigue)
 
@@ -326,6 +326,30 @@ def test_analyze_causes_pace_priority(detector: FormAnomalyDetector) -> None:
     # Should prioritize pace change
     assert cause == "pace_change"
     assert details["pace_change_10s"] > 0.25
+
+
+@pytest.mark.unit
+def test_analyze_causes_default_isolated(detector: FormAnomalyDetector) -> None:
+    """Test isolated spikes (no elev/pace/fatigue signal) -> "isolated" (#666).
+
+    Verify that:
+    - An anomaly with small elevation change, small pace change, and no
+      sustained degradation is classified as "isolated"
+    - No fabricated pace_correlation is added to the details
+    """
+    anomaly = {"timestamp": 50, "metric": "directGroundContactTime", "value": 230.0}
+
+    # Flat elevation, flat pace, flat HR -> no identifiable cause.
+    elevation_series: list[float | None] = cast(list[float | None], [10.0] * 100)
+    pace_series: list[float | None] = cast(list[float | None], [4.0] * 100)
+    hr_series: list[float | None] = cast(list[float | None], [150.0] * 100)
+
+    cause, details = detector._analyze_anomaly_causes(
+        anomaly, elevation_series, pace_series, hr_series, sustained_degradation=False
+    )
+
+    assert cause == "isolated"
+    assert "pace_correlation" not in details
 
 
 @pytest.mark.unit
@@ -535,13 +559,15 @@ def test_fatigue_requires_sustained_trend(detector: FormAnomalyDetector) -> None
     """Test fatigue label requires a sustained degradation trend.
 
     Verify that:
-    - A single z anomaly with HR drift > 10% but no sustained trend is
-      classified as pace_change (not fatigue)
+    - A single z anomaly with HR drift > 10% but no sustained trend and no
+      pace signal is classified as "isolated" (not fatigue, not pace_change)
+      after #666
     - The same anomaly with sustained_degradation=True is classified as fatigue
     """
     anomaly = {"timestamp": 500, "metric": "directVerticalOscillation", "value": 9.0}
 
-    # Minimal elevation and pace change so neither takes priority
+    # Minimal elevation and pace change so neither takes priority (pace constant
+    # -> pace_change 0, below the 0.25 threshold).
     elevation_series: list[float | None] = cast(list[float | None], [10.0] * 600)
     pace_series: list[float | None] = cast(list[float | None], [4.0] * 600)
 
@@ -551,12 +577,14 @@ def test_fatigue_requires_sustained_trend(detector: FormAnomalyDetector) -> None
         [150.0] * 300 + [158.0] * 100 + [168.0] * 100 + [172.0] * 100,
     )
 
-    # Without sustained degradation -> NOT fatigue (falls back to pace_change)
+    # Without sustained degradation -> NOT fatigue; with no pace signal it now
+    # falls through to "isolated" (was the artificial low-confidence pace_change).
     cause_no_trend, details_no_trend = detector._analyze_anomaly_causes(
         anomaly, elevation_series, pace_series, hr_series, sustained_degradation=False
     )
-    assert cause_no_trend == "pace_change"
+    assert cause_no_trend == "isolated"
     assert abs(details_no_trend["hr_drift_percent"]) > 10.0
+    assert "pace_correlation" not in details_no_trend
 
     # With sustained degradation -> fatigue
     cause_trend, _ = detector._analyze_anomaly_causes(
@@ -681,13 +709,13 @@ def test_detect_all_anomalies_with_causes(detector: FormAnomalyDetector) -> None
 def test_generate_severity_distribution_all_levels(
     detector: FormAnomalyDetector,
 ) -> None:
-    """Test _generate_severity_distribution with all severity levels."""
+    """Test _generate_severity_distribution with all severity levels (#666)."""
     anomalies = [
-        {"z_score": 2.2},  # Low
-        {"z_score": 2.7},  # Medium
-        {"z_score": 3.5},  # High
-        {"z_score": 2.3},  # Low
-        {"z_score": 4.0},  # High
+        {"z_score": 3.2},  # Low (<= 3.5)
+        {"z_score": 3.0},  # Low (<= 3.5)
+        {"z_score": 4.0},  # Medium (3.5 < z <= 4.5)
+        {"z_score": 5.0},  # High (> 4.5)
+        {"z_score": 4.6},  # High (> 4.5)
     ]
 
     distribution = detector._generate_severity_distribution(anomalies)
@@ -728,6 +756,101 @@ def test_generate_severity_distribution_empty(detector: FormAnomalyDetector) -> 
     assert distribution["low"] == 0
     assert distribution["medium"] == 0
     assert distribution["high"] == 0
+
+
+@pytest.mark.unit
+def test_severity_rebucket_high_medium_low(detector: FormAnomalyDetector) -> None:
+    """Test re-stratified severity buckets (#666): high>4.5, 3.5-4.5, <=3.5."""
+    distribution = detector._generate_severity_distribution(
+        [
+            {"z_score": 5.0},  # high (> 4.5)
+            {"z_score": 4.0},  # medium (3.5 < z <= 4.5)
+            {"z_score": 3.2},  # low (<= 3.5)
+        ]
+    )
+
+    assert distribution["high"] == 1
+    assert distribution["medium"] == 1
+    assert distribution["low"] == 1
+
+
+@pytest.mark.unit
+def test_recommendation_names_dominant_metric(detector: FormAnomalyDetector) -> None:
+    """Test pace recommendation names the dominant metric, not a fixed one (#666).
+
+    With pace anomalies dominated by GCT, the recommendation must mention
+    接地時間(GCT) and must NOT fall back to the old hard-coded "VO".
+    """
+    anomalies = [
+        {"probable_cause": "pace_change", "metric": "directGroundContactTime"},
+        {"probable_cause": "pace_change", "metric": "directGroundContactTime"},
+        {"probable_cause": "pace_change", "metric": "directVerticalOscillation"},
+    ]
+
+    recs = detector._generate_recommendations(anomalies)
+
+    assert len(recs) == 1
+    assert "接地時間(GCT)" in recs[0]
+    assert "VO" not in recs[0]
+
+
+@pytest.mark.unit
+def test_recommendation_empty_for_isolated_only(
+    detector: FormAnomalyDetector,
+) -> None:
+    """Test isolated-only anomalies produce no recommendation (#666)."""
+    anomalies = [
+        {"probable_cause": "isolated", "metric": "directGroundContactTime"},
+        {"probable_cause": "isolated", "metric": "directVerticalOscillation"},
+    ]
+
+    assert detector._generate_recommendations(anomalies) == []
+
+
+@pytest.mark.unit
+def test_recommendation_elevation_and_fatigue_labels(
+    detector: FormAnomalyDetector,
+) -> None:
+    """Test elevation/fatigue causes emit the correct metric label + text (#666)."""
+    elevation_recs = detector._generate_recommendations(
+        [{"probable_cause": "elevation_change", "metric": "directVerticalRatio"}]
+    )
+    assert len(elevation_recs) == 1
+    assert "上り坂" in elevation_recs[0]
+    assert "上下動比(VR)" in elevation_recs[0]
+
+    fatigue_recs = detector._generate_recommendations(
+        [{"probable_cause": "fatigue", "metric": "directVerticalOscillation"}]
+    )
+    assert len(fatigue_recs) == 1
+    assert "疲労" in fatigue_recs[0]
+    assert "上下動(VO)" in fatigue_recs[0]
+
+
+@pytest.mark.unit
+def test_summary_includes_isolated_related(detector: FormAnomalyDetector) -> None:
+    """Test summary exposes isolated_related and pace_related excludes it (#666).
+
+    The fixture activity's GCT spikes have flat context (no elevation/pace/
+    fatigue signal), so they classify as isolated. pace_related must therefore
+    not absorb them.
+    """
+    result = detector.detect_form_anomalies_summary(
+        activity_id=12345678901,
+        metrics=["directGroundContactTime"],
+        z_threshold=2.0,
+    )
+
+    summary = result["summary"]
+    assert "isolated_related" in summary
+    # pace_related counts only genuine pace_change causes, not isolated noise.
+    cause_total = (
+        summary["elevation_related"]
+        + summary["pace_related"]
+        + summary["fatigue_related"]
+        + summary["isolated_related"]
+    )
+    assert cause_total == result["anomalies_detected"]
 
 
 @pytest.mark.unit
@@ -991,6 +1114,9 @@ def test_detect_form_anomalies_summary_structure(detector: FormAnomalyDetector) 
     summary = result["summary"]
     assert "gct_anomalies" in summary
     assert "elevation_related" in summary
+    assert "pace_related" in summary
+    assert "fatigue_related" in summary
+    assert "isolated_related" in summary  # #666
     assert "severity_distribution" in summary
     assert "temporal_clusters" in summary
 

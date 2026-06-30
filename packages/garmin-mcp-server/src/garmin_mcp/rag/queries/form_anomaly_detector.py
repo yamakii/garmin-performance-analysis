@@ -44,6 +44,14 @@ FORM_DEGRADATION_TRIGGERS: dict[str, float] = {
     "directVerticalRatio": 0.3,  # %
 }
 
+# Japanese display labels for the form metrics, used to name the dominant metric
+# in generated recommendations instead of hard-coding a single metric (#666).
+METRIC_LABELS: dict[str, str] = {
+    "directGroundContactTime": "接地時間(GCT)",
+    "directVerticalOscillation": "上下動(VO)",
+    "directVerticalRatio": "上下動比(VR)",
+}
+
 
 class FormAnomalyDetector:
     """Detect form metric anomalies and identify probable causes.
@@ -221,9 +229,10 @@ class FormAnomalyDetector:
         ``fatigue`` is assigned only when the metric exhibits a *sustained*
         degradation trend across the activity (``sustained_degradation=True``).
         Isolated/sporadic point anomalies — even when accumulated HR drift is
-        high — are classified as ``pace_change`` (low correlation) instead, to
-        avoid labelling natural late-activity HR drift as fatigue-driven form
-        breakdown.
+        high — are classified as ``isolated`` (no fabricated correlation)
+        instead, to avoid labelling natural late-activity HR drift as
+        fatigue-driven form breakdown *and* to avoid inflating ``pace_change``
+        with anomalies that have no real pace signal (#666).
 
         Args:
             anomaly: Anomaly dictionary with timestamp and metric info.
@@ -236,7 +245,8 @@ class FormAnomalyDetector:
 
         Returns:
             Tuple of (probable_cause, cause_details).
-            Probable causes: "elevation_change", "pace_change", "fatigue"
+            Probable causes: "elevation_change", "pace_change", "fatigue",
+            "isolated" (no identifiable cause).
         """
         timestamp = anomaly["timestamp"]
 
@@ -297,10 +307,11 @@ class FormAnomalyDetector:
             )
             return "fatigue", cause_details
         else:
-            # Default to pace change with low correlation (covers isolated /
-            # sporadic point anomalies that lack a sustained degradation trend).
-            cause_details["pace_correlation"] = 0.3
-            return "pace_change", cause_details
+            # Isolated / sporadic point anomaly: no elevation, pace, or
+            # sustained fatigue signal. Do not fabricate a pace correlation —
+            # these were previously mis-labelled as low-confidence pace_change
+            # and inflated the "ペース急変→VO増加" recommendation (#666).
+            return "isolated", cause_details
 
     def _extract_context(
         self,
@@ -354,27 +365,42 @@ class FormAnomalyDetector:
 
         return {"before_30s": before_ctx, "after_30s": after_ctx}
 
-    def _generate_recommendations(self, summary: dict[str, int]) -> list[str]:
-        """Generate improvement recommendations based on anomaly summary.
+    def _generate_recommendations(self, anomalies: list[dict[str, Any]]) -> list[str]:
+        """Generate improvement recommendations from cause-classified anomalies.
+
+        For each identifiable cause (elevation/pace/fatigue) the dominant form
+        metric driving that cause is named explicitly, instead of hard-coding a
+        single metric (the previous version always said "VO増加" regardless of
+        which metric actually spiked, #666). Anomalies whose cause is
+        ``isolated`` (no identifiable trigger) produce no recommendation, so a
+        run with only isolated noise yields an empty list.
 
         Args:
-            summary: Anomaly summary with counts by cause.
+            anomalies: List of anomaly records, each with ``probable_cause`` and
+                ``metric`` keys.
 
         Returns:
-            List of recommendation strings.
+            List of recommendation strings (empty when no cause-identified
+            anomalies exist).
         """
-        recommendations = []
+        from collections import Counter
 
-        if summary["elevation_related"] > 0:
-            recommendations.append("上り坂でGCT悪化が顕著 → 上り坂練習強化を推奨")
+        cause_templates = {
+            "elevation_change": "上り坂で{label}悪化 → 上り坂練習を強化",
+            "pace_change": "ペース変化時に{label}が増加 → ペース変化を緩やかに",
+            "fatigue": "後半に{label}悪化（疲労傾向）→ 持久力トレーニング強化",
+        }
 
-        if summary["pace_related"] > 0:
-            recommendations.append("ペース急変時にVO増加 → ペース変化を緩やかに")
-
-        if summary["fatigue_related"] > 0:
-            recommendations.append(
-                "疲労によるフォーム崩れ → 持久力トレーニング強化を推奨"
-            )
+        recommendations: list[str] = []
+        for cause, template in cause_templates.items():
+            metrics = [
+                a["metric"] for a in anomalies if a.get("probable_cause") == cause
+            ]
+            if not metrics:
+                continue
+            dominant_metric = Counter(metrics).most_common(1)[0][0]
+            label = METRIC_LABELS.get(dominant_metric, dominant_metric)
+            recommendations.append(template.format(label=label))
 
         return recommendations
 
@@ -579,15 +605,20 @@ class FormAnomalyDetector:
     ) -> dict[str, int]:
         """Generate severity distribution based on z-scores.
 
+        Detection fires at z > 3.0, so the previous high cut (z > 3.0) labelled
+        every detected anomaly "high" and the "（高 N）" badge was meaningless.
+        Re-stratified against the observed z distribution (min 3.0 / median 3.34
+        / max 5.24): high z > 4.5, medium 3.5 < z <= 4.5, low z <= 3.5 (#666).
+
         Args:
             anomalies: List of anomaly records.
 
         Returns:
             Dict with high/medium/low severity counts.
         """
-        high = sum(1 for a in anomalies if abs(a["z_score"]) > 3.0)
-        medium = sum(1 for a in anomalies if 2.5 < abs(a["z_score"]) <= 3.0)
-        low = sum(1 for a in anomalies if abs(a["z_score"]) <= 2.5)
+        high = sum(1 for a in anomalies if abs(a["z_score"]) > 4.5)
+        medium = sum(1 for a in anomalies if 3.5 < abs(a["z_score"]) <= 4.5)
+        low = sum(1 for a in anomalies if abs(a["z_score"]) <= 3.5)
 
         return {"high": high, "medium": medium, "low": low}
 
@@ -729,10 +760,11 @@ class FormAnomalyDetector:
                     "elevation_related": int,
                     "pace_related": int,
                     "fatigue_related": int,
+                    "isolated_related": int,  # spikes with no identifiable cause
                     "severity_distribution": {
-                        "high": int,    # z > 3.0
-                        "medium": int,  # 2.5 < z <= 3.0
-                        "low": int      # z <= 2.5
+                        "high": int,    # z > 4.5
+                        "medium": int,  # 3.5 < z <= 4.5
+                        "low": int      # z <= 3.5
                     },
                     "temporal_clusters": [
                         {"start": int, "end": int, "count": int},
@@ -786,6 +818,9 @@ class FormAnomalyDetector:
             "fatigue_related": sum(
                 1 for a in all_anomalies if a["probable_cause"] == "fatigue"
             ),
+            "isolated_related": sum(
+                1 for a in all_anomalies if a["probable_cause"] == "isolated"
+            ),
             "severity_distribution": self._generate_severity_distribution(
                 all_anomalies
             ),
@@ -806,11 +841,8 @@ class FormAnomalyDetector:
             for a in top_anomalies
         ]
 
-        # Generate recommendations
-        from typing import cast
-
-        summary_for_recs = cast(dict[str, int], summary)
-        recommendations = self._generate_recommendations(summary_for_recs)
+        # Generate recommendations from cause-classified anomalies (#666).
+        recommendations = self._generate_recommendations(all_anomalies)
 
         return {
             "activity_id": activity_id,

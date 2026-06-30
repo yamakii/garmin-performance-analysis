@@ -32,16 +32,34 @@ _CREATE_ACTIVITIES = """
 # Metric descriptors matching the raw Garmin activity_details.json layout the
 # detector parses: HR, speed (factor 0.1 -> m/s), GCT (ms), VO (factor 10 -> cm).
 _METRIC_DESCRIPTORS = [
-    {"metricsIndex": 0, "key": "directHeartRate", "unit": {"id": 100, "key": "bpm", "factor": 1.0}},
-    {"metricsIndex": 1, "key": "directSpeed", "unit": {"id": 20, "key": "mps", "factor": 0.1}},
-    {"metricsIndex": 2, "key": "directGroundContactTime", "unit": {"id": 40, "key": "ms", "factor": 1.0}},
-    {"metricsIndex": 3, "key": "directVerticalOscillation", "unit": {"id": 200, "key": "cm", "factor": 10.0}},
+    {
+        "metricsIndex": 0,
+        "key": "directHeartRate",
+        "unit": {"id": 100, "key": "bpm", "factor": 1.0},
+    },
+    {
+        "metricsIndex": 1,
+        "key": "directSpeed",
+        "unit": {"id": 20, "key": "mps", "factor": 0.1},
+    },
+    {
+        "metricsIndex": 2,
+        "key": "directGroundContactTime",
+        "unit": {"id": 40, "key": "ms", "factor": 1.0},
+    },
+    {
+        "metricsIndex": 3,
+        "key": "directVerticalOscillation",
+        "unit": {"id": 200, "key": "cm", "factor": 10.0},
+    },
 ]
 
 _SERIES_LEN = 80
 
 
-def _write_activity_details(base_path: Path, activity_id: int, gct_series: list[float]) -> None:
+def _write_activity_details(
+    base_path: Path, activity_id: int, gct_series: list[float]
+) -> None:
     """Write a raw activity_details.json with a controllable GCT series.
 
     HR / speed / VO are held constant so only the GCT series can flag an anomaly.
@@ -49,6 +67,35 @@ def _write_activity_details(base_path: Path, activity_id: int, gct_series: list[
     rows = [
         {"metrics": [140, 28, gct, 80]}  # raw speed 28 -> 2.8 m/s, VO 80 -> 8.0 cm
         for gct in gct_series
+    ]
+    payload = {
+        "activityId": activity_id,
+        "measurementCount": len(rows),
+        "metricDescriptors": _METRIC_DESCRIPTORS,
+        "activityDetailMetrics": rows,
+    }
+    activity_dir = base_path / "raw" / "activity" / str(activity_id)
+    activity_dir.mkdir(parents=True, exist_ok=True)
+    (activity_dir / "activity_details.json").write_text(
+        json.dumps(payload), encoding="utf-8"
+    )
+
+
+def _write_activity_details_with_speed(
+    base_path: Path,
+    activity_id: int,
+    gct_series: list[float],
+    speed_series: list[int],
+) -> None:
+    """Write raw activity_details.json with controllable GCT and speed series.
+
+    HR / VO are held constant; ``speed_series`` (raw, factor 0.1 -> m/s) lets a
+    test inject a pace change so a GCT spike classifies as a *material* cause
+    (pace_change) rather than isolated noise (#666).
+    """
+    rows = [
+        {"metrics": [140, speed, gct, 80]}
+        for gct, speed in zip(gct_series, speed_series, strict=True)
     ]
     payload = {
         "activityId": activity_id,
@@ -75,6 +122,25 @@ def _anomalous_gct() -> list[float]:
     return series
 
 
+def _flat_speed() -> list[int]:
+    """Constant speed (raw 28 -> 2.8 m/s) -> no pace change near a spike."""
+    return [28] * _SERIES_LEN
+
+
+def _pace_change_speed() -> list[int]:
+    """Speed dip around index 40 -> pace change > 0.25 at the GCT spike.
+
+    The detector converts speed via ``value / factor`` (factor 0.1) and derives
+    pace = (1000 / speed) / 60, so flat raw 28 -> pace ~0.060 and the dip to raw
+    4 -> pace ~0.417. The [30, 50] pace window straddling the spike therefore
+    spans ~0.36 (> the 0.25 threshold) -> a material pace_change cause (#666).
+    """
+    series = [28] * _SERIES_LEN
+    for i in range(38, 43):
+        series[i] = 4
+    return series
+
+
 def _build_db(base_path: Path, activities: list[tuple[int, str]]) -> Path:
     """Create the DuckDB at <base>/database/garmin.duckdb with given runs."""
     db_dir = base_path / "database"
@@ -88,10 +154,7 @@ def _build_db(base_path: Path, activities: list[tuple[int, str]]) -> Path:
             "activity_id, activity_date, activity_name, total_distance_km,"
             " total_time_seconds, avg_pace_seconds_per_km, avg_heart_rate"
             ") VALUES (?, ?, ?, ?, ?, ?, ?)",
-            [
-                (aid, adate, "Run", 8.0, 2880, 360.0, 140)
-                for aid, adate in activities
-            ],
+            [(aid, adate, "Run", 8.0, 2880, 360.0, 140) for aid, adate in activities],
         )
     finally:
         conn.close()
@@ -121,11 +184,18 @@ def test_form_anomaly_flags_endpoint_empty(tmp_path: Path):
 
 
 @pytest.mark.integration
-def test_form_anomaly_flags_detects_anomalous_run(tmp_path: Path):
-    """A run with a GCT spike -> flagged with anomalies_detected > 0."""
+def test_flags_skip_isolated_only_run(tmp_path: Path):
+    """A GCT spike with flat context is isolated noise -> not flagged (#666).
+
+    The spike is real (anomalies_detected > 0 at the detector level) but has no
+    identifiable cause (no elevation/pace/fatigue signal), so the roll-up must
+    drop it instead of surfacing "ペース急変→VO増加" on every run.
+    """
     base = tmp_path
     db_path = _build_db(base, [(9100000002, _recent(2))])
-    _write_activity_details(base, 9100000002, _anomalous_gct())
+    _write_activity_details_with_speed(
+        base, 9100000002, _anomalous_gct(), _flat_speed()
+    )
 
     client = TestClient(create_app(db_path=db_path))
     response = client.get("/api/form-anomaly-flags")
@@ -134,10 +204,33 @@ def test_form_anomaly_flags_detects_anomalous_run(tmp_path: Path):
     payload = response.json()
 
     flagged_ids = {f["activity_id"] for f in payload["flags"]}
-    assert 9100000002 in flagged_ids
+    assert 9100000002 not in flagged_ids
 
-    flag = next(f for f in payload["flags"] if f["activity_id"] == 9100000002)
-    assert flag["anomalies_detected"] > 0
+
+@pytest.mark.integration
+def test_flags_count_uses_material(tmp_path: Path):
+    """A GCT spike coincident with a pace change is material -> flagged (#666).
+
+    ``anomalies_detected`` on the flag reports the material (cause-identified)
+    count, and the standard flag schema is present.
+    """
+    base = tmp_path
+    db_path = _build_db(base, [(9100000003, _recent(2))])
+    _write_activity_details_with_speed(
+        base, 9100000003, _anomalous_gct(), _pace_change_speed()
+    )
+
+    client = TestClient(create_app(db_path=db_path))
+    response = client.get("/api/form-anomaly-flags")
+
+    assert response.status_code == 200
+    payload = response.json()
+
+    flagged_ids = {f["activity_id"] for f in payload["flags"]}
+    assert 9100000003 in flagged_ids
+
+    flag = next(f for f in payload["flags"] if f["activity_id"] == 9100000003)
+    assert flag["anomalies_detected"] == 1
     assert set(flag) >= {
         "activity_id",
         "activity_date",
