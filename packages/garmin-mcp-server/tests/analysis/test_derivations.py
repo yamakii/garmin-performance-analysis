@@ -2,7 +2,10 @@
 
 import pytest
 
-from garmin_mcp.analysis.derivations import compute_plan_achievement
+from garmin_mcp.analysis.derivations import (
+    compute_next_run_target,
+    compute_plan_achievement,
+)
 
 _EASY_PLAN = {
     "workout_type": "easy",
@@ -84,3 +87,77 @@ def test_plan_achievement_null_hr_target() -> None:
     assert result["pace_achieved"] is True
     # No HR target -> no formatted hr target string.
     assert "hr" not in result["targets"]
+
+
+# --- compute_next_run_target (Issue #672) ---
+
+
+@pytest.mark.unit
+def test_next_target_interval_from_vo2max() -> None:
+    result = compute_next_run_target(
+        training_type="interval",
+        planned_workout=None,
+        vo2_max={"precise_value": 52.5},
+        lactate_threshold=None,
+        avg_hr=160,
+        avg_pace_s_per_km=260,
+    )
+
+    # 52.5 / 3.5 = 15.0 km/h -> 3600/15.0 = 240s = 4:00 (100% vVO2max).
+    assert result["recommended_type"] == "interval"
+    assert result["target_pace_fast_formatted"] == "4:00/km"
+    # 95% -> 15.0 * 0.95 = 14.25 km/h -> 3600/14.25 = 252.6s -> 4:13.
+    assert result["target_pace_slow_formatted"] == "4:13/km"
+    assert "insufficient_data" not in result
+
+
+@pytest.mark.unit
+def test_next_target_tempo_from_lt() -> None:
+    result = compute_next_run_target(
+        training_type="tempo",
+        planned_workout=None,
+        vo2_max=None,
+        lactate_threshold={"speed_mps": 3.333},
+        avg_hr=158,
+        avg_pace_s_per_km=305,
+    )
+
+    # 1000 / 3.333 = 300.03s/km LT pace; target = -3s -> 297s = 4:57.
+    assert result["recommended_type"] == "tempo"
+    assert result["target_pace_formatted"] == "4:57/km"
+    assert result["target_hr"] == 158
+    assert "insufficient_data" not in result
+
+
+@pytest.mark.unit
+def test_next_target_easy_hr_based() -> None:
+    result = compute_next_run_target(
+        training_type="aerobic_base",
+        planned_workout=None,
+        vo2_max=None,
+        lactate_threshold=None,
+        avg_hr=144,
+        avg_pace_s_per_km=405,
+    )
+
+    assert result["recommended_type"] == "easy"
+    assert "target_hr_low" in result
+    assert "target_hr_high" in result
+    assert result["reference_pace_formatted"] == "6:45/km"
+    assert "insufficient_data" not in result
+
+
+@pytest.mark.unit
+def test_next_target_insufficient_data() -> None:
+    result = compute_next_run_target(
+        training_type="interval",
+        planned_workout=None,
+        vo2_max=None,
+        lactate_threshold=None,
+        avg_hr=160,
+        avg_pace_s_per_km=260,
+    )
+
+    assert result["insufficient_data"] is True
+    assert isinstance(result["summary_ja"], str)
+    assert result["recommended_type"] == "interval"

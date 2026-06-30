@@ -285,6 +285,7 @@ analysis_data = {
 | 履歴比較 | `similar_workouts`（`target_activity`, `similar_activities`） |
 | VO2max 言及 / interval ターゲット | `vo2_max`（null なら言及しない） |
 | LT 言及 / tempo・threshold ターゲット | `lactate_threshold`（null なら言及しない） |
+| 次回ラン目標（数値・ペース確定済み） | `next_run_target`（決定論化済み・転記して prose 追記） |
 | フォームベースライン推移 | `form_baseline_trend` |
 | HR ゾーン境界・時間分布 | `hr_zones_detail` |
 | プラン達成度 | `plan_achievement`（決定論化済み・null なら省略）, `planned_workout` |
@@ -294,7 +295,7 @@ analysis_data = {
 1. `star_rating.weights` で**4軸重み付き総合評価**（Effort / Performance / Efficiency / Execution）を算出 → `star_rating`
 2. `training_type_criteria[type]` で training_type 別の良し悪し判定
 3. `summary_structure` のフォーマットで `summary` テキスト生成（2-3文）
-4. `next_run_target_variants[type]` で `next_run_target` 算出
+4. `next_run_target` は `CONTEXT.next_run_target`（決定論化済み）を転記し prose のみ追記（数値・ペース整形は再計算しない・Issue #672）
 5. `recommendations.format` + `recommendations.rules` で `recommendations` 作成
 6. `plan_achievement.weights` + `plan_achievement.scale` でプラン達成度評価（`CONTEXT.plan_achievement` がある場合のみ）。達成判定 `hr_achieved` / `pace_achieved` と `targets`/`actuals` は `CONTEXT.plan_achievement` を転記し、散文 `evaluation` のみ追記（Issue #671）
 
@@ -317,14 +318,20 @@ analysis_data = {
 - 実ペースが `target_pace_low`〜`target_pace_high` 内 → ペース関連を improvement_areas に含めない
 - プラン目標を超えた場合のみ改善提案を記載
 
-### next_run_target（training_type 別、**dict**）
+### next_run_target（`CONTEXT.next_run_target` を転記・**dict**）
 
-`get_analysis_contract("summary")` の `next_run_target_variants` を参照し dict を算出:
+**数値計算・ペース整形は決定論化済み（Issue #672）。LLM は再計算しない。**
+`CONTEXT.next_run_target`（prefetch が確定）の全キー（`recommended_type` /
+`target_pace_*_formatted` / `target_hr*` / `reference_pace_*_formatted` /
+`vvo2max_kmh` / `insufficient_data` 等）を**そのまま転記**し、散文の
+`summary_ja`（と easy/recovery 系では `success_criterion` / `adjustment_tip`）の
+**prose フィールドのみ追記**する。vVO2max=precise_value/3.5、LT ペース=1000/speed_mps、
+秒→`M:SS/km` 整形を自分で行わない。
 
-- **easy / recovery（HR基準）**: `recommended_type`, `target_hr_low`, `target_hr_high`, `reference_pace_*_formatted`, `success_criterion`, `adjustment_tip`, `summary_ja`。HR 範囲が主、ペースは参考値
-- **tempo / threshold（LTペース基準）**: CONTEXT の `lactate_threshold` から LT 速度取得 → `recommended_type`, `target_pace_*_formatted`, `target_hr`。`lactate_threshold` が null → データ不足扱い
-- **interval（vVO2max基準）**: CONTEXT の `vo2_max` から VO2max 取得 → **vVO2max (km/h) = VO2max / 3.5** → インターバルペース = 95-100% vVO2max。`vo2_max` が null → データ不足扱い
-- **データ不足時**: `{"insufficient_data": true, "summary_ja": "...理由..."}`
+- **interval 系（vVO2max基準）**: `target_pace_fast_formatted`（100%）/ `target_pace_slow_formatted`（95%）/ `vvo2max_kmh` をそのまま転記
+- **tempo / threshold（LTペース基準）**: `target_pace_formatted`（LTペース−3s）/ `lt_pace_formatted` / `target_hr` をそのまま転記
+- **easy / recovery（HR基準）**: `target_hr_low` / `target_hr_high` / `reference_pace_*_formatted` をそのまま転記。HR 範囲が主、ペースは参考値。`success_criterion` / `adjustment_tip` の prose のみ追記
+- **データ不足時**: `CONTEXT.next_run_target` が `{"insufficient_data": true, "recommended_type": ..., "summary_ja": "..."}` を持つ → そのまま転記（`summary_ja` の理由文は補強可）
 
 ### recommendations（**文字列・markdown**、5要素・最大2件）
 

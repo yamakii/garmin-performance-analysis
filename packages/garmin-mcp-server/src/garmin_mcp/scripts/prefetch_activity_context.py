@@ -66,7 +66,10 @@ import argparse
 import json
 import sys
 
-from garmin_mcp.analysis.derivations import compute_plan_achievement
+from garmin_mcp.analysis.derivations import (
+    compute_next_run_target,
+    compute_plan_achievement,
+)
 from garmin_mcp.database.connection import get_connection, get_db_path
 
 # Training types for which lactate threshold is the relevant aerobic ceiling.
@@ -506,6 +509,16 @@ def prefetch_activity_context(activity_id: int) -> dict:
         # The agent adds only the prose `evaluation` field on top of this.
         "plan_achievement": compute_plan_achievement(
             planned_workout, avg_heart_rate, avg_pace_s_per_km
+        ),
+        # Deterministic next_run_target numeric core (Issue #672). The agent
+        # transcribes these values and adds only prose (summary_ja / tip).
+        "next_run_target": compute_next_run_target(
+            training_type,
+            planned_workout,
+            vo2_max,
+            lactate_threshold,
+            avg_heart_rate,
+            avg_pace_s_per_km,
         ),
         # --- S1 bundle expansion (Issue #235, additive) ---
         "form_evaluation": form_evaluation,
