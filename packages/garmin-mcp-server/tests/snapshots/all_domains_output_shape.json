@@ -11,6 +11,7 @@
       "fatigue_related": "int",
       "gct_anomalies": "int",
       "isolated_related": "int",
+      "max_material_cluster": "int",
       "pace_related": "int",
       "severity_distribution": {
         "high": "int",
