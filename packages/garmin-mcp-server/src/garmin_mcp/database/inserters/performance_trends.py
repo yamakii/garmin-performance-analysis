@@ -16,6 +16,49 @@ from garmin_mcp.database.inserters.splits_helpers.phase_mapping import PhaseMapp
 logger = logging.getLogger(__name__)
 
 
+def _compute_steady_decoupling(run_splits: list[dict]) -> float | None:
+    """定常区間（run-phase lap群）の Pa:HR デカップリング%。
+
+    run laps を前半/後半に二分し、各半分の効率比 (1/pace)/hr = 速度:HR を算出、
+    decoupling% = (ratio_first - ratio_second) / ratio_first * 100 を返す。
+    後半で同ペースなのにHRが上がる(効率低下)と正値。
+    使用可能 lap が2本未満、または pace/hr 欠損で算出不能なら None。
+    """
+    import statistics
+
+    valid = [
+        s
+        for s in run_splits
+        if s.get("pace") is not None
+        and s["pace"] > 0
+        and s.get("hr") is not None
+        and s["hr"] > 0
+    ]
+    if len(valid) < 2:
+        return None
+
+    mid = len(valid) // 2
+    first_half = valid[:mid]
+    second_half = valid[mid:]
+
+    def efficiency_ratio(splits: list[dict]) -> float | None:
+        if not splits:
+            return None
+        mean_pace = float(statistics.mean(float(s["pace"]) for s in splits))
+        mean_hr = float(statistics.mean(float(s["hr"]) for s in splits))
+        if mean_pace <= 0 or mean_hr <= 0:
+            return None
+        # speed:HR ratio = (1 / pace) / hr
+        return (1.0 / mean_pace) / mean_hr
+
+    ratio_first = efficiency_ratio(first_half)
+    ratio_second = efficiency_ratio(second_half)
+    if ratio_first is None or ratio_second is None or ratio_first == 0:
+        return None
+
+    return (ratio_first - ratio_second) / ratio_first * 100
+
+
 def _extract_performance_trends_from_raw(raw_splits_file: str) -> dict | None:
     """
     Extract performance trends from raw splits.json.
@@ -137,17 +180,11 @@ def _extract_performance_trends_from_raw(raw_splits_file: str) -> dict | None:
         else:
             result["pace_consistency"] = 0.0
 
-    # Calculate HR drift (warmup to run or run to cooldown)
-    if warmup_stats and run_stats:
-        warmup_hr = warmup_stats.get("avg_hr")
-        run_hr = run_stats.get("avg_hr")
-        if warmup_hr and run_hr and warmup_hr > 0:
-            result["hr_drift_percentage"] = ((run_hr - warmup_hr) / warmup_hr) * 100
-    elif run_stats and cooldown_stats:
-        run_hr = run_stats.get("avg_hr")
-        cooldown_hr = cooldown_stats.get("avg_hr")
-        if run_hr and cooldown_hr and run_hr > 0:
-            result["hr_drift_percentage"] = ((cooldown_hr - run_hr) / run_hr) * 100
+    # Calculate HR drift via steady-state Pa:HR decoupling over run-phase laps.
+    # Splits the run laps into first/second halves and measures the % drop in
+    # speed:HR efficiency. Works for single-phase easy/long runs (no structured
+    # warmup/cooldown) where the old phase-boundary comparison returned None.
+    result["hr_drift_percentage"] = _compute_steady_decoupling(run_splits)
 
     # Calculate phase evaluations
     # 1. Warmup evaluation
