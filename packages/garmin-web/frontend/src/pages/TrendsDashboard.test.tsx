@@ -336,10 +336,16 @@ function stubTrendsFetch(
   durability: unknown = DURABILITY_WORSENING,
   wellnessBaseline: unknown = WELLNESS_BASELINE_WITHIN,
   formAnomalyFlags: unknown = FORM_ANOMALY_FLAGS,
+  // When set, any endpoint whose URL starts with this prefix never resolves,
+  // simulating a slow card that must not block the rest of the dashboard.
+  slowPrefix?: string,
 ): void {
   vi.stubGlobal(
     "fetch",
     vi.fn().mockImplementation((url: string) => {
+      if (slowPrefix != null && url.startsWith(slowPrefix)) {
+        return new Promise<Response>(() => {});
+      }
       if (url.startsWith("/api/form-anomaly-flags")) {
         return Promise.resolve(jsonResponse(formAnomalyFlags));
       }
@@ -487,6 +493,56 @@ describe("TrendsDashboard", () => {
     expect(
       screen.getByText(/後半のGCT増加に注意してください/),
     ).toBeInTheDocument();
+  });
+
+  it("shows skeletons while data is null and content after resolve", async () => {
+    stubTrendsFetch(TRAINING_LOAD_OPTIMAL);
+
+    render(<TrendsDashboard />);
+
+    // Before any fetch resolves, every card is a busy skeleton placeholder and
+    // no real card heading exists yet (the page is not blocked on a spinner).
+    expect(screen.getAllByRole("status").length).toBeGreaterThan(0);
+    expect(
+      screen.queryByRole("heading", { level: 2, name: "走行量" }),
+    ).toBeNull();
+
+    // Once the fetches resolve, the skeletons are replaced by real cards.
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "走行量" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("renders resolved cards independently of slow ones", async () => {
+    // Physiology hangs forever; every other endpoint resolves promptly.
+    stubTrendsFetch(
+      TRAINING_LOAD_OPTIMAL,
+      DURABILITY_WORSENING,
+      WELLNESS_BASELINE_WITHIN,
+      FORM_ANOMALY_FLAGS,
+      "/api/trends/physiology",
+    );
+
+    render(<TrendsDashboard />);
+
+    // A fast card resolves and renders its real content even though physiology
+    // never resolves — proving cards no longer wait on the slowest fetch.
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "走行量" }),
+    ).toBeInTheDocument();
+
+    // The slow physiology card stays a busy skeleton alongside the resolved ones.
+    expect(
+      screen.queryByRole("heading", {
+        level: 2,
+        name: "生理指標 (VO2max / 乳酸閾値)",
+      }),
+    ).toBeNull();
+    const skeletons = screen.getAllByRole("status");
+    expect(
+      skeletons.some((el) => el.getAttribute("aria-label") === "生理指標"),
+    ).toBe(true);
   });
 
   it("renders 今週の注意点 as a full-width band outside the metric grid", async () => {
