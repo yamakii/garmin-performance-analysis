@@ -67,8 +67,10 @@ class PlanAchievement(BaseModel):
     description_ja: str
     targets: dict[str, str]
     actuals: dict[str, str]
-    hr_achieved: bool
-    pace_achieved: bool
+    # None when the corresponding target bound (or actual value) is null, so the
+    # deterministic skeleton (Issue #671) can omit a verdict instead of guessing.
+    hr_achieved: bool | None = None
+    pace_achieved: bool | None = None
     evaluation: str
 
 

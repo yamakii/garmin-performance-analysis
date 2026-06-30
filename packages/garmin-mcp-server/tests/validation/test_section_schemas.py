@@ -151,6 +151,32 @@ def test_summary_with_plan_achievement():
 
 
 @pytest.mark.unit
+def test_summary_plan_achievement_null_achieved():
+    """hr_achieved/pace_achieved may be null when a target is unset (Issue #671)."""
+    data = {
+        "star_rating": "★★★★☆ 4.0/5.0",
+        "summary": "ペース目標のみ設定されたランでした。",
+        "key_strengths": ["ペース目標達成"],
+        "improvement_areas": [],
+        "next_action": "次回もこのペース帯を維持して走りましょう。",
+        "next_run_target": {"recommended_type": "easy_run"},
+        "recommendations": "引き続きプランに沿ったトレーニングを推奨します。",
+        "plan_achievement": {
+            "workout_type": "easy",
+            "description_ja": "イージーラン",
+            "targets": {"pace": "6:30-7:00/km"},
+            "actuals": {"hr": "142bpm", "pace": "6:45/km"},
+            "hr_achieved": None,
+            "pace_achieved": True,
+            "evaluation": "ペース目標を達成しました。",
+        },
+    }
+    valid, errors = validate_section_data("summary", data)
+    assert valid is True
+    assert errors == []
+
+
+@pytest.mark.unit
 def test_summary_missing_star_rating():
     data = {
         "integrated_score": 78.5,

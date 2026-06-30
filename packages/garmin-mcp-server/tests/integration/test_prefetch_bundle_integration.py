@@ -15,6 +15,45 @@ import pytest
 from garmin_mcp.scripts.prefetch_activity_context import prefetch_activity_context
 
 FIXTURE_ACTIVITY_ID = 12345678901
+FIXTURE_ACTIVITY_DATE = "2025-01-15"
+
+
+def _insert_planned_workout(db_path: Path) -> None:
+    """Seed an active training plan + planned workout for the fixture date.
+
+    The verification fixture has no plan; this lets prefetch resolve a
+    planned_workout so plan_achievement is computed deterministically with
+    actuals derived from the fixture activity's avg_heart_rate (Issue #671).
+    """
+    conn = duckdb.connect(str(db_path))
+    conn.execute(
+        """
+        INSERT INTO training_plans (
+            plan_id, version, goal_type, vdot, pace_zones_json, total_weeks,
+            start_date, weekly_volume_start_km, weekly_volume_peak_km,
+            runs_per_week, status
+        ) VALUES (
+            'test-plan', 1, 'race', 50.0, '{}', 12,
+            ?::DATE, 30.0, 50.0, 4, 'active'
+        )
+        """,
+        [FIXTURE_ACTIVITY_DATE],
+    )
+    conn.execute(
+        """
+        INSERT INTO planned_workouts (
+            workout_id, plan_id, version, week_number, day_of_week,
+            workout_date, workout_type, phase, description_ja,
+            target_hr_low, target_hr_high, target_pace_low, target_pace_high
+        ) VALUES (
+            'test-workout', 'test-plan', 1, 1, 3,
+            ?::DATE, 'easy', 'base', 'イージーラン',
+            120, 160, 300, 360
+        )
+        """,
+        [FIXTURE_ACTIVITY_DATE],
+    )
+    conn.close()
 
 
 def _patch_db_path(monkeypatch: pytest.MonkeyPatch, verification_db_path: Path) -> None:
@@ -163,6 +202,42 @@ class TestPrefetchBundleExpansion:
         # Core existing values still resolve from the fixture.
         assert result["activity_id"] == FIXTURE_ACTIVITY_ID
         assert result["training_type"] == "aerobic_base"
+
+    def test_prefetch_emits_plan_achievement_key(
+        self, verification_db_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """plan_achievement is a deterministic dict when a plan exists.
+
+        With an active plan on the fixture date, prefetch resolves the planned
+        workout and computes plan_achievement with actuals derived from the
+        fixture activity's avg_heart_rate (148 bpm) — no LLM involved.
+        """
+        _insert_planned_workout(verification_db_path)
+        _patch_db_path(monkeypatch, verification_db_path)
+
+        result = prefetch_activity_context(FIXTURE_ACTIVITY_ID)
+
+        assert "plan_achievement" in result
+        pa = result["plan_achievement"]
+        assert isinstance(pa, dict)
+        assert pa["workout_type"] == "easy"
+        assert pa["description_ja"] == "イージーラン"
+        # actuals carry the activity's avg_heart_rate deterministically.
+        assert pa["actuals"]["hr"] == "148bpm"
+        # 148 bpm within 120-160 target -> achieved.
+        assert pa["hr_achieved"] is True
+        assert pa["pace_achieved"] is True
+
+    def test_prefetch_plan_achievement_none_without_plan(
+        self, verification_db_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """plan_achievement is None when the fixture has no planned workout."""
+        _patch_db_path(monkeypatch, verification_db_path)
+
+        result = prefetch_activity_context(FIXTURE_ACTIVITY_ID)
+
+        assert "plan_achievement" in result
+        assert result["plan_achievement"] is None
 
     def test_prefetch_bundle_is_json_serializable(
         self, verification_db_path: Path, monkeypatch: pytest.MonkeyPatch
