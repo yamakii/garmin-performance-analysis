@@ -575,13 +575,15 @@ def test_ensure_generates_when_missing(tmp_path):
         for period_end in ("2026-03-31", "2026-02-28"):
             row = conn.execute(
                 """
-                SELECT COUNT(*) FROM form_baseline_history
-                WHERE period_end = ? AND metric IN ('gct', 'vo', 'vr')
+                SELECT COUNT(DISTINCT metric) FROM form_baseline_history
+                WHERE period_end = ? AND metric IN ('gct', 'vo', 'vr', 'cadence')
                 """,
                 [period_end],
             ).fetchone()
             assert row is not None
-            assert row[0] == 3, f"gct/vo/vr expected for {period_end}, got {row[0]}"
+            assert (
+                row[0] == 4
+            ), f"gct/vo/vr/cadence expected for {period_end}, got {row[0]}"
     finally:
         conn.close()
 
@@ -627,3 +629,82 @@ def test_ensure_insufficient_data(tmp_path):
     assert (
         _count_baseline_rows(db_path) == 0
     ), "no baseline rows should be created on insufficient data"
+
+
+@pytest.mark.integration
+def test_train_form_baselines_respects_min_samples(tmp_path):
+    """min_samples gates training: 60 in-window rows -> None at 100, trains at 50."""
+    db_path = str(tmp_path / "min_samples.duckdb")
+    end_date = "2026-03-31"  # 2-month window: 2026-02-01 .. 2026-03-31
+
+    conn = duckdb.connect(db_path)
+    _create_baseline_schema(conn)
+    activity_rows = []
+    split_rows = []
+    for k in range(12):  # 12 activities * 5 splits = 60 in-window rows
+        activity_id = 4000 + k
+        act_date = date(2026, 3, 1) + timedelta(days=k)
+        activity_rows.append((activity_id, act_date, 70.0))
+        split_rows.extend(_make_splits(activity_id))
+    conn.executemany("INSERT INTO activities VALUES (?, ?, ?)", activity_rows)
+    conn.executemany(
+        "INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", split_rows
+    )
+    conn.close()
+
+    # 60 rows < min_samples=100 -> insufficient -> None.
+    assert (
+        train_form_baselines(
+            end_date=end_date, window_months=2, db_path=db_path, min_samples=100
+        )
+        is None
+    )
+
+    # 60 rows >= min_samples=50 -> trains and persists.
+    result = train_form_baselines(
+        end_date=end_date, window_months=2, db_path=db_path, min_samples=50
+    )
+    assert result is not None
+    assert "cadence" in result
+
+
+@pytest.mark.integration
+def test_ensure_skips_only_when_all_four_metrics_present(tmp_path):
+    """A period missing cadence (only gct/vo/vr) is re-trained, not skipped (#640)."""
+    db_path = str(tmp_path / "ensure_partial.duckdb")
+    activity_date = "2026-03-15"
+    _seed_two_month_window(db_path, activity_date, splits_per_month=12)
+
+    # Pre-seed only gct/vo/vr for the current-month period (cadence missing),
+    # mimicking an older batch run that predated cadence support.
+    conn = duckdb.connect(db_path)
+    try:
+        for metric in ("gct", "vo", "vr"):
+            conn.execute(
+                """
+                INSERT INTO form_baseline_history
+                    (user_id, condition_group, metric, model_type,
+                     period_start, period_end, n_samples)
+                VALUES ('default', 'flat_road', ?, 'linear',
+                        '2026-02-01', '2026-03-31', 60)
+                """,
+                [metric],
+            )
+    finally:
+        conn.close()
+
+    result = ensure_form_baselines_for_date(activity_date, db_path)
+
+    # Incomplete current-month period must be regenerated, not skipped.
+    assert "2026-03-31" in result["generated"], result
+    assert "2026-03-31" not in result["skipped"], result
+
+    conn = duckdb.connect(db_path, read_only=True)
+    try:
+        row = conn.execute("""
+            SELECT COUNT(*) FROM form_baseline_history
+            WHERE period_end = '2026-03-31' AND metric = 'cadence'
+            """).fetchone()
+        assert row is not None and row[0] >= 1, "cadence baseline must now exist"
+    finally:
+        conn.close()

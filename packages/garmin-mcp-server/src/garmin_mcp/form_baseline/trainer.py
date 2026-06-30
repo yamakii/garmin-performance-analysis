@@ -363,8 +363,18 @@ def train_form_baselines(
     end_date: str | None = None,
     window_months: int = 2,
     db_path: str | None = None,
+    min_samples: int = 50,
 ) -> dict[str, Any] | None:
-    """Train all form baselines (GCT, VO, VR, Power) with 2-month rolling window.
+    """Train all form baselines (GCT, VO, VR, cadence, Power) with rolling window.
+
+    This is the single source of truth for batch form-baseline training. The
+    ``train_form_baselines_weekly`` / ``train_form_baselines_monthly`` CLIs
+    delegate here via ``_form_baseline_training.train_and_store_baseline``.
+
+    GCT/VO/VR/cadence are always trained together from the same cleaned window.
+    Power is best-effort: it depends on ``role_phase = 'run'`` splits with a
+    non-null ``base_weight_kg``, so it can be legitimately absent for older
+    periods that lack those columns (this is not treated as a failure).
 
     Args:
         user_id: User identifier
@@ -372,6 +382,9 @@ def train_form_baselines(
         end_date: End date (YYYY-MM-DD). If None, uses today
         window_months: Training window in months (default: 2)
         db_path: Database path. If None, uses GARMIN_DATA_DIR
+        min_samples: Minimum number of samples required, both before and after
+            outlier removal (default: 50). Below this the window is skipped and
+            None is returned.
 
     Returns:
         Dict with trained models or None if insufficient data
@@ -436,7 +449,7 @@ def train_form_baselines(
 
             df = conn.execute(query, [period_start, period_end]).df()
 
-            if len(df) < 50:
+            if len(df) < min_samples:
                 # Insufficient data
                 return None
 
@@ -451,7 +464,7 @@ def train_form_baselines(
             df_clean = utils.drop_outliers(df_clean, "vertical_ratio", (4.0, 15.0))
             df_clean = utils.drop_outliers(df_clean, "cadence", (140.0, 210.0))
 
-            if len(df_clean) < 50:
+            if len(df_clean) < min_samples:
                 # Insufficient data after outlier removal
                 return None
 
@@ -745,20 +758,25 @@ def ensure_form_baselines_for_date(
 
     for period_end in period_ends:
         # Existence check (read connection closed before any write).
+        # All four form metrics (gct/vo/vr/cadence) must be present; a period
+        # with only some metrics (e.g. gct created by an older batch run that
+        # predated cadence support) is treated as incomplete and re-trained.
+        # power is best-effort and intentionally excluded to avoid re-training
+        # loops on periods where it is legitimately absent (#640).
         try:
             with get_connection(db_path) as conn:
                 count_row = conn.execute(
                     """
-                    SELECT COUNT(*)
+                    SELECT COUNT(DISTINCT metric)
                     FROM form_baseline_history
                     WHERE period_end = ?
-                      AND metric = 'gct'
+                      AND metric IN ('gct', 'vo', 'vr', 'cadence')
                       AND user_id = ?
                       AND condition_group = ?
                     """,
                     [period_end, user_id, condition_group],
                 ).fetchone()
-            exists = count_row is not None and count_row[0] > 0
+            exists = count_row is not None and count_row[0] == 4
         except Exception:
             # If the existence check fails, skip this period defensively.
             continue
