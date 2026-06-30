@@ -9,6 +9,7 @@ import {
 import { METRIC_COLORS } from "../components/chartTheme";
 import HeroHeader from "../components/HeroHeader";
 import MapPanel from "../components/MapPanel";
+import SectionNav, { type NavItem } from "../components/SectionNav";
 import EfficiencyReport from "../components/report/EfficiencyReport";
 import EnvironmentReport from "../components/report/EnvironmentReport";
 import FallbackFields from "../components/report/FallbackFields";
@@ -238,6 +239,24 @@ export default function ActivityDetail() {
       )
     : [];
 
+  // In-page nav: list only the sections that actually render below, so the
+  // table of contents never points at a missing anchor.
+  const hasTrack = track != null && track.length > 0;
+  const hasSplits = splits.length > 0 || Boolean(sections?.split);
+  const navItems: NavItem[] = [
+    sections?.summary ? { id: "section-overview", label: "総合評価" } : null,
+    { id: "section-timeseries", label: "タイムシリーズ" },
+    hasTrack ? { id: "section-course", label: "コース" } : null,
+    hasSplits ? { id: "section-splits", label: "スプリット" } : null,
+    sections?.phase ? { id: "section-phase", label: "フェーズ評価" } : null,
+    sections?.efficiency
+      ? { id: "section-efficiency", label: "効率分析" }
+      : null,
+    sections?.environment
+      ? { id: "section-environment", label: "環境影響" }
+      : null,
+  ].filter((item): item is NavItem => item !== null);
+
   return (
     <div className="stagger-in space-y-6">
       {/* Report hero: back link, display headline, gold stars, KPI strip */}
@@ -253,11 +272,21 @@ export default function ActivityDetail() {
         </div>
       </div>
 
+      {/* Sticky in-page table of contents (rendered sections only) */}
+      <SectionNav items={navItems} />
+
       {/* Overall assessment report */}
-      <SummaryReport section={sections?.summary} />
+      {sections?.summary && (
+        <div id="section-overview" className="scroll-mt-20">
+          <SummaryReport section={sections.summary} />
+        </div>
+      )}
 
       {/* Time series chart with metric toggles */}
-      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section
+        id="section-timeseries"
+        className="scroll-mt-20 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+      >
         <h2 className="mb-3 font-display text-base font-semibold text-ink">
           タイムシリーズ
         </h2>
@@ -310,9 +339,12 @@ export default function ActivityDetail() {
         )}
       </section>
 
-      {/* GPS track map (placeholder when the activity has no GPS data) */}
-      {track !== null && (
-        <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+      {/* GPS track map — omitted entirely when the activity has no GPS data */}
+      {hasTrack && (
+        <section
+          id="section-course"
+          className="scroll-mt-20 rounded-xl border border-slate-200 bg-white shadow-sm"
+        >
           <h2 className="px-5 pt-4 pb-2 font-display text-base font-semibold text-ink">
             コース
           </h2>
@@ -327,8 +359,11 @@ export default function ActivityDetail() {
       )}
 
       {/* Splits: table + per-split narrative from the split analyst */}
-      {(splits.length > 0 || sections?.split) && (
-        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      {hasSplits && (
+        <section
+          id="section-splits"
+          className="scroll-mt-20 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+        >
           <h2 className="mb-3 font-display text-base font-semibold text-ink">
             スプリット
           </h2>
@@ -377,16 +412,28 @@ export default function ActivityDetail() {
       )}
 
       {/* Phase evaluation timeline */}
-      <PhaseTimeline section={sections?.phase} />
+      {sections?.phase && (
+        <div id="section-phase" className="scroll-mt-20">
+          <PhaseTimeline section={sections.phase} />
+        </div>
+      )}
 
       {/* Efficiency: structured form stats + analyst prose */}
-      <EfficiencyReport
-        section={sections?.efficiency}
-        formEvaluations={detail.form_evaluations}
-      />
+      {sections?.efficiency && (
+        <div id="section-efficiency" className="scroll-mt-20">
+          <EfficiencyReport
+            section={sections.efficiency}
+            formEvaluations={detail.form_evaluations}
+          />
+        </div>
+      )}
 
       {/* Environmental impact */}
-      <EnvironmentReport section={sections?.environment} />
+      {sections?.environment && (
+        <div id="section-environment" className="scroll-mt-20">
+          <EnvironmentReport section={sections.environment} />
+        </div>
+      )}
 
       {/* Unknown section types degrade to key-value cards */}
       {sections &&
