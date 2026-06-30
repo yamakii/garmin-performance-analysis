@@ -3,6 +3,19 @@
     "activity_date": "str",
     "activity_id": "int",
     "metrics": {
+      "cadence": {
+        "current": {
+          "coef_b": "float",
+          "coef_d": "NoneType",
+          "period": "str"
+        },
+        "delta_b": "float",
+        "previous": {
+          "coef_b": "float",
+          "coef_d": "NoneType",
+          "period": "str"
+        }
+      },
       "gct": {
         "current": {
           "coef_b": "NoneType",
