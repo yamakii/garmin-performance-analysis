@@ -213,9 +213,20 @@ function CountdownHero({ goals }: { goals: GoalRace[] }) {
   );
 }
 
-/** Card for one target race. Priority A is visually featured. */
-function RaceCard({ race }: { race: GoalRace }) {
-  const featured = isPriorityA(race);
+/**
+ * Card for one target race. Priority A is visually featured, except when the
+ * same race is already headlined in the CountdownHero: passing
+ * `deemphasizeFeatured` drops the signal ring / left bar so the race is not
+ * featured twice on the page.
+ */
+function RaceCard({
+  race,
+  deemphasizeFeatured,
+}: {
+  race: GoalRace;
+  deemphasizeFeatured?: boolean;
+}) {
+  const featured = isPriorityA(race) && deemphasizeFeatured !== true;
   const border = featured
     ? "border-signal/40 ring-1 ring-signal/20"
     : "border-slate-200";
@@ -548,9 +559,14 @@ export default function Goal() {
   const hasProfile =
     profile.current_focus != null || profile.focus_notes != null;
   const focusSections = parseFocusNotes(profile.focus_notes);
-  const hasFeaturedRace = goals.some(
-    (race) => isPriorityA(race) || isPriorityB(race),
+  // The hero headlines the first priority-A and first priority-B race; those
+  // same races are de-emphasized in the list below to avoid double-featuring.
+  const heroRaceIds = new Set(
+    [goals.find(isPriorityA), goals.find(isPriorityB)]
+      .filter((race): race is GoalRace => race != null)
+      .map((race) => race.goal_id),
   );
+  const hasFeaturedRace = heroRaceIds.size > 0;
 
   return (
     <div className="stagger-in space-y-8">
@@ -571,7 +587,11 @@ export default function Goal() {
         {goals.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2">
             {goals.map((race) => (
-              <RaceCard key={race.goal_id} race={race} />
+              <RaceCard
+                key={race.goal_id}
+                race={race}
+                deemphasizeFeatured={heroRaceIds.has(race.goal_id)}
+              />
             ))}
           </div>
         ) : (
