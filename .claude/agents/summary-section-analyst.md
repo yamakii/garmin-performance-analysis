@@ -53,7 +53,7 @@ model: sonnet
 | `next_run_target` | **dict（契約キー）** `{"recommended_type": ..., ...}` | 文字列化禁止。中身は契約のキー名 |
 | `star_rating` | **文字列** `"★★★★☆ 4.2/5.0"` | — |
 | `integrated_score` | **float または省略**（0-100） | null 値を入れず省略する |
-| `plan_achievement` | **dict または省略** | planned_workout が null なら**キーごと省略** |
+| `plan_achievement` | **dict または省略** | `CONTEXT.plan_achievement` を転記し `evaluation` のみ追記。null なら**キーごと省略** |
 
 **再掲（絶対厳守）**: `improvement_areas` と `key_strengths` は**文字列のリスト**、`next_action` と `recommendations` は**文字列**、`next_run_target` のみ **dict**。これらをオブジェクト化してはいけない。
 
@@ -106,7 +106,7 @@ Write(file_path="{temp_dir}/summary.json", content=json.dumps({
 | LT 言及 / tempo・threshold ターゲット | `lactate_threshold`（null なら言及しない） |
 | フォームベースライン推移 | `form_baseline_trend` |
 | HR ゾーン境界・時間分布 | `hr_zones_detail` |
-| プラン達成度 | `planned_workout`（null なら plan_achievement を省略） |
+| プラン達成度 | `plan_achievement`（決定論化済み・null なら省略）, `planned_workout` |
 
 ### 評価ルール（`get_analysis_contract("summary")` 参照）
 
@@ -115,7 +115,7 @@ Write(file_path="{temp_dir}/summary.json", content=json.dumps({
 3. `summary_structure` のフォーマットで `summary` テキスト生成（2-3文）
 4. `next_run_target_variants[type]` で `next_run_target` 算出
 5. `recommendations.format` + `recommendations.rules` で `recommendations` 作成
-6. `plan_achievement.weights` + `plan_achievement.scale` でプラン達成度評価（`planned_workout` がある場合のみ）
+6. `plan_achievement.weights` + `plan_achievement.scale` でプラン達成度評価（`CONTEXT.plan_achievement` がある場合のみ）。達成判定 `hr_achieved` / `pace_achieved` と `targets`/`actuals` は `CONTEXT.plan_achievement` を転記し、散文 `evaluation` のみ追記（Issue #671）
 
 ### key_strengths / improvement_areas フィルタ（`form_evaluation` の `needs_improvement` を使用）
 
@@ -166,22 +166,28 @@ Write(file_path="{temp_dir}/summary.json", content=json.dumps({
 - `form_scores.integrated_score` を summary テキストに「統合フォームスコア: XX.X/100」として自然に組み込み、`integrated_score` フィールドに **float** で格納
 - `integrated_score` が null → **フィールドごと省略**（null を入れない）
 
-### plan_achievement（`planned_workout` が not null の場合のみ・**dict**）
+### plan_achievement（`CONTEXT.plan_achievement` が not null の場合のみ・**dict**）
+
+**達成判定・ラベル・targets/actuals は決定論化済み（Issue #671）。LLM は判定しない。**
+`CONTEXT.plan_achievement`（prefetch が確定）の `workout_type` / `description_ja` /
+`targets` / `actuals` / `hr_achieved` / `pace_achieved` を**そのまま転記**し、散文の
+`evaluation` フィールドのみ追記する。範囲比較・description_ja マップ・bpm/pace 整形を
+自分で行わない。
 
 ```json
 "plan_achievement": {
-  "workout_type": "easy",
-  "description_ja": "イージーラン",
-  "targets": {"hr": "120-145bpm", "pace": "6:30-7:00/km"},
-  "actuals": {"hr": "142bpm", "pace": "6:45/km"},
-  "hr_achieved": true,
-  "pace_achieved": true,
-  "evaluation": "..."
+  "workout_type": "easy",            # CONTEXT.plan_achievement をそのまま
+  "description_ja": "イージーラン",   # CONTEXT.plan_achievement をそのまま
+  "targets": {"hr": "120-145bpm", "pace": "6:30-7:00/km"},  # そのまま
+  "actuals": {"hr": "142bpm", "pace": "6:45/km"},           # そのまま
+  "hr_achieved": true,               # CONTEXT.plan_achievement をそのまま（null 可）
+  "pace_achieved": true,             # CONTEXT.plan_achievement をそのまま（null 可）
+  "evaluation": "..."                # ★LLM が追記する唯一のフィールド
 }
 ```
 
-workout_type → description_ja: `easy`→"イージーラン", `recovery`→"リカバリーラン", `long_run`→"ロングラン", `tempo`→"テンポ走", `threshold`→"閾値走", `interval`→"インターバル", `repetition`→"レペティション", その他→workout_type そのまま。
-null ハンドリング: `planned_workout` null → **plan_achievement キーごと省略**。`target_hr_*` null → `hr_achieved` 省略。`target_pace_*` null → `pace_achieved` 省略。両方 null → plan_achievement 省略。
+null ハンドリング: `CONTEXT.plan_achievement` が null（＝プランなし）→ **plan_achievement キーごと省略**。
+`hr_achieved` / `pace_achieved` が null（目標が未設定）の場合はその値（null）をそのまま転記する。
 
 ### HR Zone 評価ルール（矛盾防止）
 
