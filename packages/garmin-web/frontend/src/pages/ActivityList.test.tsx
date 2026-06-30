@@ -74,11 +74,91 @@ describe("ActivityList", () => {
     // Month summary: 2 runs totalling 5.66 + 8.01 = 13.7 km
     expect(screen.getByText(/2本 ・ 合計 13\.7 km/)).toBeInTheDocument();
 
-    // Distance and pace formatting
-    expect(screen.getByText("5.66 km")).toBeInTheDocument();
-    expect(screen.getByText("6:26/km")).toBeInTheDocument();
-    expect(screen.getByText("8.01 km")).toBeInTheDocument();
-    expect(screen.getByText("6:02/km")).toBeInTheDocument();
+    // Distance and pace values are now rendered split from their units
+    // (Issue #649): the numeric value and the unit live in separate elements.
+    expect(screen.getByText("5.66")).toBeInTheDocument();
+    expect(screen.getByText("6:26")).toBeInTheDocument();
+    expect(screen.getByText("8.01")).toBeInTheDocument();
+    expect(screen.getByText("6:02")).toBeInTheDocument();
+  });
+
+  it("renders distance with km unit suffix", async () => {
+    stubFetch(FIXTURE_ACTIVITIES);
+
+    render(
+      <MemoryRouter>
+        <ActivityList />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("2025-10-09");
+
+    // The numeric distance value and the "km" unit are distinct elements.
+    const value = screen.getByText("5.66");
+    const unit = screen.getAllByText("km")[0];
+    expect(value).toBeInTheDocument();
+    expect(unit).toBeInTheDocument();
+    expect(value).not.toBe(unit);
+    expect(value.textContent).toBe("5.66");
+  });
+
+  it("renders pace with /km unit suffix", async () => {
+    stubFetch(FIXTURE_ACTIVITIES);
+
+    render(
+      <MemoryRouter>
+        <ActivityList />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("2025-10-09");
+
+    // Pace value (without unit) and the "/km" unit are distinct elements.
+    const value = screen.getByText("6:26");
+    const unit = screen.getAllByText("/km")[0];
+    expect(value).toBeInTheDocument();
+    expect(unit).toBeInTheDocument();
+    expect(value).not.toBe(unit);
+  });
+
+  it("renders heart rate with bpm unit suffix", async () => {
+    stubFetch(FIXTURE_ACTIVITIES);
+
+    render(
+      <MemoryRouter>
+        <ActivityList />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("2025-10-09");
+
+    // Heart-rate value and the "bpm" unit are distinct elements; one per row.
+    const value = screen.getByText("144");
+    const units = screen.getAllByText("bpm");
+    expect(value).toBeInTheDocument();
+    expect(units).toHaveLength(2);
+    expect(value).not.toBe(units[0]);
+  });
+
+  it("metrics are visually separated (distinct elements)", async () => {
+    stubFetch(FIXTURE_ACTIVITIES);
+
+    render(
+      <MemoryRouter>
+        <ActivityList />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("2025-10-09");
+
+    // Distance, pace and heart-rate for a row are individually addressable
+    // DOM nodes (not a single merged text run), enabling visual separation.
+    const distance = screen.getByText("5.66");
+    const pace = screen.getByText("6:26");
+    const heartRate = screen.getByText("144");
+    expect(distance).not.toBe(pace);
+    expect(pace).not.toBe(heartRate);
+    expect(distance).not.toBe(heartRate);
   });
 
   it("renders each row as an anchor with correct href", async () => {
