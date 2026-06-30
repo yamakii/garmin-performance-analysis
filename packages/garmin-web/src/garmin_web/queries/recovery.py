@@ -87,8 +87,11 @@ def get_recent_form_anomaly_flags(
         ``{"weeks": int, "scanned": int, "limited": bool, "flags": [...]}``
         where each flag is ``{"activity_id": int, "activity_date": str,
         "anomalies_detected": int, "severity_high": int,
-        "top_recommendation": str | None}``. Runs with zero anomalies (or with
-        no usable raw data) are omitted from ``flags``.
+        "top_recommendation": str | None}``. ``anomalies_detected`` counts only
+        *material* anomalies — those with an identifiable cause (elevation /
+        pace / fatigue). Runs whose anomalies are all isolated noise (no
+        identifiable cause), have zero anomalies, or no usable raw data are
+        omitted from ``flags`` so the card stops surfacing every run (#666).
     """
     since = (_dt.date.today() - _dt.timedelta(weeks=weeks)).isoformat()
 
@@ -112,16 +115,25 @@ def get_recent_form_anomaly_flags(
         except (FileNotFoundError, KeyError, ValueError):
             # Missing/unusable raw data -> not a flaggable run; skip silently.
             continue
-        anomalies_detected = int(summary.get("anomalies_detected", 0))
-        if anomalies_detected <= 0:
+        if int(summary.get("anomalies_detected", 0)) <= 0:
             continue
-        distribution = summary.get("summary", {}).get("severity_distribution", {})
+        summary_dict = summary.get("summary", {})
+        # Count only material anomalies (identifiable cause); isolated noise is
+        # excluded so runs with no real form story drop out of the card (#666).
+        material = (
+            int(summary_dict.get("elevation_related", 0))
+            + int(summary_dict.get("pace_related", 0))
+            + int(summary_dict.get("fatigue_related", 0))
+        )
+        if material <= 0:
+            continue
+        distribution = summary_dict.get("severity_distribution", {})
         recommendations = summary.get("recommendations") or []
         flags.append(
             {
                 "activity_id": activity_id,
                 "activity_date": activity_date,
-                "anomalies_detected": anomalies_detected,
+                "anomalies_detected": material,
                 "severity_high": int(distribution.get("high", 0)),
                 "top_recommendation": recommendations[0] if recommendations else None,
             }
