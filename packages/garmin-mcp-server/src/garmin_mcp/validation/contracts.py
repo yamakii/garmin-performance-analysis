@@ -171,13 +171,20 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 },
             },
             "hr_drift_by_type": {
+                "definition": (
+                    "hr_drift_percentage is now a Pa:HR decoupling metric: "
+                    "run-phase laps are split into first/second halves and the "
+                    "% drop in speed:HR efficiency is reported. Positive = "
+                    "efficiency declined (same pace costs higher HR in the "
+                    "second half). <5% indicates good aerobic coupling."
+                ),
                 "low_moderate": {
-                    "normal": "<5%",
+                    "good_coupling": "<5%",
                     "mild": "5-8%",
                     "excessive": ">8%",
                 },
                 "tempo_threshold": {
-                    "normal": "<8%",
+                    "good_coupling": "<8%",
                     "mild": "8-12%",
                     "excessive": ">12%",
                 },

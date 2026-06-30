@@ -67,7 +67,8 @@ def test_phase_contract_has_hr_drift_by_type():
     drift = contract["evaluation_policy"]["hr_drift_by_type"]
     assert "low_moderate" in drift
     assert "tempo_threshold" in drift
-    assert "normal" in drift["low_moderate"]
+    assert "definition" in drift
+    assert "good_coupling" in drift["low_moderate"]
     assert "excessive" in drift["low_moderate"]
 
 
