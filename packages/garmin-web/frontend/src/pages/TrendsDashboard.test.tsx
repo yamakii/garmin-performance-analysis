@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import TrendsDashboard from "./TrendsDashboard";
 
@@ -487,6 +487,96 @@ describe("TrendsDashboard", () => {
     expect(
       screen.getByText(/後半のGCT増加に注意してください/),
     ).toBeInTheDocument();
+  });
+
+  it("renders 今週の注意点 as a full-width band outside the metric grid", async () => {
+    stubTrendsFetch(TRAINING_LOAD_OPTIMAL);
+
+    render(<TrendsDashboard />);
+
+    const band = (
+      await screen.findByRole("heading", { level: 2, name: "今週の注意点" })
+    ).closest("section");
+    expect(band).not.toBeNull();
+    // The alert band is its own region, not nested in any metric-group grid.
+    expect(band).toHaveAttribute("aria-label", "今週の注意点");
+    expect(band?.closest(".grid")).toBeNull();
+    // None of the three group regions contain the alert band.
+    for (const title of ["今の状態", "パフォーマンス", "フォーム & 身体"]) {
+      expect(band?.closest(`section[aria-label="${title}"]`)).toBeNull();
+    }
+  });
+
+  it("renders three section headings 今の状態 / パフォーマンス / フォーム & 身体", async () => {
+    stubTrendsFetch(TRAINING_LOAD_OPTIMAL);
+
+    render(<TrendsDashboard />);
+
+    expect(await screen.findByText("今の状態")).toBeInTheDocument();
+    expect(screen.getByText("パフォーマンス")).toBeInTheDocument();
+    expect(screen.getByText("フォーム & 身体")).toBeInTheDocument();
+  });
+
+  it("groups コンディション card under 今の状態 section", async () => {
+    stubTrendsFetch(TRAINING_LOAD_OPTIMAL);
+
+    render(<TrendsDashboard />);
+
+    const card = await screen.findByRole("heading", {
+      level: 2,
+      name: "当日コンディション",
+    });
+    const group = card.closest('section[aria-label="今の状態"]');
+    expect(group).not.toBeNull();
+    expect(within(group as HTMLElement).getByText("今の状態")).toBeInTheDocument();
+  });
+
+  it("groups 走行量 card under パフォーマンス section", async () => {
+    stubTrendsFetch(TRAINING_LOAD_OPTIMAL);
+
+    render(<TrendsDashboard />);
+
+    const card = await screen.findByRole("heading", {
+      level: 2,
+      name: "走行量",
+    });
+    const group = card.closest('section[aria-label="パフォーマンス"]');
+    expect(group).not.toBeNull();
+    expect(
+      within(group as HTMLElement).getByText("パフォーマンス"),
+    ).toBeInTheDocument();
+  });
+
+  it("still renders all 15 metric cards after regroup", async () => {
+    stubTrendsFetch(TRAINING_LOAD_OPTIMAL);
+
+    render(<TrendsDashboard />);
+
+    // Wait for data to load, then assert every card heading survives the regroup.
+    await screen.findByRole("heading", { level: 2, name: "走行量" });
+
+    const cardHeadings = [
+      "今週の注意点",
+      "走行量",
+      "生理指標 (VO2max / 乳酸閾値)",
+      "客観フィットネス曲線 (実走VDOT vs Garmin VO2max)",
+      "フォームスコア推移",
+      "効率推移 (HRゾーン分布)",
+      "気候中立HRトレンド (暑熱補正)",
+      "クリティカルスピード (四半期)",
+      "訓練負荷 (ACWR)",
+      "耐久性 (心拍デカップリング・フォーム失速)",
+      "回復トレンド (RHR / HRV)",
+      "当日コンディション",
+      "体組成 (体重内訳)",
+      "体重 × ランニングエコノミー (EF)",
+      "個人ベースライン逸脱 (HRV / Readiness / RHR)",
+    ];
+    for (const name of cardHeadings) {
+      expect(
+        screen.getByRole("heading", { level: 2, name }),
+      ).toBeInTheDocument();
+    }
   });
 
   it("raises a wellness baseline alert when overall_flag is set", async () => {

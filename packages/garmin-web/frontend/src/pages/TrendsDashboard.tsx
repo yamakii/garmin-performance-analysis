@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   fetchCriticalSpeed,
   fetchEfficiencyTrend,
@@ -56,6 +56,36 @@ import WellnessBaselineChart from "./trends/WellnessBaselineChart";
 
 /** Trailing window (days) for the climate-neutral HR trend (one year). */
 const HEAT_ADJUSTED_LOOKBACK_DAYS = 365;
+
+/** Eyebrow style shared with the Goal page section headers. */
+const SECTION_HEADING =
+  "text-xs font-semibold tracking-[0.2em] text-slate-400 uppercase";
+
+/**
+ * One titled metric group: an English eyebrow + Japanese heading (matching the
+ * Goal page section pattern) above a two-column grid of trend cards. The
+ * `aria-label` mirrors the Japanese title so the region (and its membership) is
+ * addressable in tests and assistive tech.
+ */
+function TrendSection({
+  eyebrow,
+  title,
+  children,
+}: {
+  eyebrow: string;
+  title: string;
+  children: ReactNode;
+}): ReactNode {
+  return (
+    <section aria-label={title}>
+      <p className={SECTION_HEADING}>{eyebrow}</p>
+      <p className="mt-1 mb-4 font-display text-xl font-bold tracking-tight text-ink">
+        {title}
+      </p>
+      <div className="grid gap-4 md:grid-cols-2">{children}</div>
+    </section>
+  );
+}
 
 export default function TrendsDashboard() {
   const [granularity, setGranularity] = useState<Granularity>("week");
@@ -204,30 +234,47 @@ export default function TrendsDashboard() {
   }
 
   return (
-    <div>
-      <h1 className="mb-6 font-display text-2xl font-bold tracking-tight text-ink">
+    <div className="space-y-8">
+      <h1 className="font-display text-2xl font-bold tracking-tight text-ink">
         トレンドダッシュボード
       </h1>
-      <div className="stagger-in grid gap-4 md:grid-cols-2">
-        <FormAnomalyFlagsCard data={formAnomalyFlags} />
-        <VolumeBlock
-          data={volume}
-          granularity={granularity}
-          onGranularityChange={setGranularity}
-        />
-        <PhysiologyBlock data={physiology} />
-        <ObjectiveFitnessBlock data={objectiveFitness} />
-        <FormBlock data={form} />
-        <EfficiencyBlock data={efficiency} />
-        <HeatAdjustedBlock data={heatAdjusted} />
-        <CriticalSpeedPanel data={criticalSpeed} />
-        <TrainingLoadBlock data={trainingLoad} />
-        <DurabilityBlock data={durability} />
-        <RecoveryPanel data={recovery} />
-        <ConditionCard data={recoveryStatus} />
-        <BodyCompositionChart data={bodyComposition} />
-        <WeightEconomyChart data={weightEconomy} />
-        <WellnessBaselineChart data={wellnessBaseline} />
+
+      {/*
+        Alert band: "今, 何を見るべきか" surfaced first, full width and outside
+        the metric grid so the weekly caution is the top priority.
+      */}
+      <FormAnomalyFlagsCard data={formAnomalyFlags} />
+
+      <div className="stagger-in space-y-10">
+        {/* ① 今の状態 / Condition Now */}
+        <TrendSection eyebrow="Condition Now" title="今の状態">
+          <ConditionCard data={recoveryStatus} />
+          <RecoveryPanel data={recovery} />
+          <WellnessBaselineChart data={wellnessBaseline} />
+          <TrainingLoadBlock data={trainingLoad} />
+        </TrendSection>
+
+        {/* ② パフォーマンス / Performance */}
+        <TrendSection eyebrow="Performance" title="パフォーマンス">
+          <VolumeBlock
+            data={volume}
+            granularity={granularity}
+            onGranularityChange={setGranularity}
+          />
+          <PhysiologyBlock data={physiology} />
+          <EfficiencyBlock data={efficiency} />
+          <CriticalSpeedPanel data={criticalSpeed} />
+          <ObjectiveFitnessBlock data={objectiveFitness} />
+          <HeatAdjustedBlock data={heatAdjusted} />
+        </TrendSection>
+
+        {/* ③ フォーム & 身体 / Body & Form */}
+        <TrendSection eyebrow="Body & Form" title="フォーム & 身体">
+          <FormBlock data={form} />
+          <DurabilityBlock data={durability} />
+          <BodyCompositionChart data={bodyComposition} />
+          <WeightEconomyChart data={weightEconomy} />
+        </TrendSection>
       </div>
     </div>
   );
