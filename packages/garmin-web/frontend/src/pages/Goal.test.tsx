@@ -247,6 +247,101 @@ describe("Goal", () => {
     expect(screen.getAllByText("/set-goal")).toHaveLength(3);
   });
 
+  it("does not double-feature A race when shown in countdown hero", async () => {
+    stubFetch(FIXTURE_GOAL);
+
+    const { container } = render(
+      <MemoryRouter>
+        <Goal />
+      </MemoryRouter>,
+    );
+
+    // The hero headlines the A/B races.
+    expect(await screen.findByText("目標レースまで")).toBeInTheDocument();
+
+    // The A race also appears in the list, but its card is no longer featured
+    // (no signal ring on the card, no signal left bar) to avoid a second
+    // emphasis of the same race.
+    const cards = Array.from(container.querySelectorAll("article"));
+    const aCard = cards.find((el) => el.textContent?.includes("さいたまマラソン"));
+    expect(aCard).toBeDefined();
+    expect(aCard?.className).not.toContain("ring-signal");
+    expect(aCard?.querySelector(".bg-signal")).toBeNull();
+  });
+
+  it("still lists all target races in the 目標レース section", async () => {
+    stubFetch(FIXTURE_GOAL);
+
+    const { container } = render(
+      <MemoryRouter>
+        <Goal />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("目標レース");
+
+    // Both the A and B target races remain in the list (information coverage is
+    // preserved even though the hero de-emphasizes their list cards).
+    const cards = Array.from(container.querySelectorAll("article"));
+    expect(cards).toHaveLength(2);
+    expect(
+      cards.some((el) => el.textContent?.includes("さいたまマラソン")),
+    ).toBe(true);
+    expect(cards.some((el) => el.textContent?.includes("新潟ハーフ"))).toBe(
+      true,
+    );
+  });
+
+  it("features A race in list when no countdown hero", async () => {
+    // Two priority-A races: the hero only headlines the first A race, so the
+    // second A race has no countdown-hero entry and keeps its list emphasis
+    // (signal ring + left bar) exactly as before this change.
+    stubFetch({
+      profile: { current_focus: null, focus_notes: null, updated_at: null },
+      goals: [
+        {
+          goal_id: 1,
+          race_name: "さいたまマラソン",
+          race_date: FUTURE_DATE,
+          priority: "A",
+          goal_type: "marathon",
+          distance_km: 42.195,
+          target_time_seconds: 16200,
+          status: "active",
+          notes: null,
+        },
+        {
+          goal_id: 3,
+          race_name: "別大マラソン",
+          race_date: FUTURE_DATE,
+          priority: "A",
+          goal_type: "marathon",
+          distance_km: 42.195,
+          target_time_seconds: 15600,
+          status: "active",
+          notes: null,
+        },
+      ],
+      retrospectives: [],
+    });
+
+    const { container } = render(
+      <MemoryRouter>
+        <Goal />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("目標レース");
+
+    const cards = Array.from(container.querySelectorAll("article"));
+    const secondACard = cards.find((el) =>
+      el.textContent?.includes("別大マラソン"),
+    );
+    expect(secondACard).toBeDefined();
+    expect(secondACard?.className).toContain("ring-signal");
+    expect(secondACard?.querySelector(".bg-signal")).not.toBeNull();
+  });
+
   it("test_Goal_focus_notes_fallback_without_brackets", async () => {
     stubFetch({
       profile: {
