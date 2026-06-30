@@ -162,7 +162,8 @@ class TestPrefetchActivityContext:
 
         mock_conn.execute.return_value.fetchone.side_effect = [
             # Query 1: activity metadata
-            (datetime.date(2026, 2, 16), 7.8, 84, 4.0, "NW"),
+            # (date, temp, humidity, wind, direction, avg_hr, avg_pace_s_per_km)
+            (datetime.date(2026, 2, 16), 7.8, 84, 4.0, "NW", 148, 330.0),
             # Query 2: hr_efficiency (C1 expanded)
             (
                 "aerobic_base",  # training_type
@@ -259,6 +260,9 @@ class TestPrefetchActivityContext:
         assert result["form_scores"]["overall_score"] == 4.3
         assert result["form_scores"]["overall_star_rating"] == "★★★★☆"
 
+        # plan_achievement: None when no planned workout (Issue #671)
+        assert result["plan_achievement"] is None
+
         # C3: phase_structure
         assert result["phase_structure"]["pace_consistency"] == 0.017
         assert result["phase_structure"]["hr_drift_percentage"] == 2.5
@@ -294,7 +298,7 @@ class TestPrefetchActivityContext:
         mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
         mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
         mock_conn.execute.return_value.fetchone.side_effect = [
-            (datetime.date(2026, 2, 16), 7.8, 84, 4.0, "NW"),  # activity
+            (datetime.date(2026, 2, 16), 7.8, 84, 4.0, "NW", 148, 330.0),  # activity
             None,  # hr_efficiency missing
             None,  # planned_workout
             (None, None, 0, None, None, None),  # elevation (no splits)
@@ -335,6 +339,8 @@ class TestPrefetchActivityContext:
                     84,
                     4.0,
                     "NW",
+                    148,
+                    330.0,
                 )
             elif call_count == 2 or call_count == 3:
                 mock_result.fetchone.return_value = None

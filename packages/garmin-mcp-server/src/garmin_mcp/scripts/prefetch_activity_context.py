@@ -47,6 +47,7 @@ Output (JSON to stdout):
         "cooldown": {"avg_pace": "7:12/km", "avg_hr": 140.0}
       },
       "planned_workout": null,
+      "plan_achievement": null,      # deterministic plan vs actual (or null)
       "form_evaluation": {...},      # FormReader.get_form_evaluations (or null)
       "hr_zones_detail": {"zones": [...]},  # PhysiologyReader (or null)
       "form_baseline_trend": {"success": true, "metrics": {...}},
@@ -65,6 +66,7 @@ import argparse
 import json
 import sys
 
+from garmin_mcp.analysis.derivations import compute_plan_achievement
 from garmin_mcp.database.connection import get_connection, get_db_path
 
 # Training types for which lactate threshold is the relevant aerobic ceiling.
@@ -196,7 +198,9 @@ def prefetch_activity_context(activity_id: int) -> dict:
                 temp_celsius,
                 relative_humidity_percent,
                 wind_speed_kmh,
-                wind_direction
+                wind_direction,
+                avg_heart_rate,
+                avg_pace_seconds_per_km
             FROM activities
             WHERE activity_id = ?
             """,
@@ -211,6 +215,8 @@ def prefetch_activity_context(activity_id: int) -> dict:
         humidity = activity_row[2]
         wind_kmh = activity_row[3]
         wind_direction = activity_row[4]
+        avg_heart_rate = activity_row[5]
+        avg_pace_s_per_km = activity_row[6]
         wind_mps = round(wind_kmh / 3.6, 1) if wind_kmh else None
 
         # 2. HR efficiency (C1: expanded from training_type only)
@@ -496,6 +502,11 @@ def prefetch_activity_context(activity_id: int) -> dict:
         "form_scores": form_scores,
         "phase_structure": phase_structure,
         "planned_workout": planned_workout,
+        # Deterministic plan vs actual skeleton (Issue #671). None when no plan.
+        # The agent adds only the prose `evaluation` field on top of this.
+        "plan_achievement": compute_plan_achievement(
+            planned_workout, avg_heart_rate, avg_pace_s_per_km
+        ),
         # --- S1 bundle expansion (Issue #235, additive) ---
         "form_evaluation": form_evaluation,
         "hr_zones_detail": hr_zones_detail,
