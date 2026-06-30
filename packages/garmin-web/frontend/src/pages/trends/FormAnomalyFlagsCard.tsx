@@ -1,3 +1,4 @@
+import StatusBadge from "../../components/StatusBadge";
 import type { FormAnomalyFlagsResponse } from "../../types";
 
 interface FormAnomalyFlagsCardProps {
@@ -25,15 +26,9 @@ export default function FormAnomalyFlagsCard({
         <h2 className="font-display text-base font-semibold text-ink">
           今週の注意点
         </h2>
-        <span
-          className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
-            hasFlags
-              ? "bg-amber-100 text-amber-700"
-              : "bg-emerald-100 text-emerald-700"
-          }`}
-        >
+        <StatusBadge tone={hasFlags ? "warn" : "good"}>
           {hasFlags ? `${data.flags.length}件` : "問題なし"}
-        </span>
+        </StatusBadge>
       </div>
 
       {hasFlags ? (

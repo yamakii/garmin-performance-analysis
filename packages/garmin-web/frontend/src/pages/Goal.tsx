@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import EmptyState, { CliCommand } from "../components/EmptyState";
 import SectionHeading from "../components/SectionHeading";
+import StatusBadge, { type StatusTone } from "../components/StatusBadge";
 import { fetchGoal, fetchRaceReadiness } from "../api/client";
 import type {
   GoalRace,
@@ -388,10 +389,10 @@ export function formatGap(seconds: number): string {
 
 type RaceStatus = NonNullable<RaceReadiness["progress"]>["status"];
 
-const STATUS_META: Record<RaceStatus, { label: string; className: string }> = {
-  ahead: { label: "前倒し", className: "bg-emerald-100 text-emerald-700" },
-  on_track: { label: "順調", className: "bg-sky-100 text-sky-700" },
-  behind: { label: "遅れ", className: "bg-amber-100 text-amber-700" },
+const STATUS_META: Record<RaceStatus, { label: string; tone: StatusTone }> = {
+  ahead: { label: "前倒し", tone: "good" },
+  on_track: { label: "順調", tone: "info" },
+  behind: { label: "遅れ", tone: "warn" },
 };
 
 /**
@@ -434,11 +435,7 @@ function RacePredictionCard({ readiness }: { readiness: RaceReadiness }) {
           )}
         </div>
         {statusMeta != null && (
-          <span
-            className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${statusMeta.className}`}
-          >
-            {statusMeta.label}
-          </span>
+          <StatusBadge tone={statusMeta.tone}>{statusMeta.label}</StatusBadge>
         )}
       </div>
 
