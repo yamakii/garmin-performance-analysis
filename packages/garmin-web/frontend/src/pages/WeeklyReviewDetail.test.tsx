@@ -1,8 +1,25 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import WeeklyReviewDetail from "./WeeklyReviewDetail";
 import type { WeeklyReviewData } from "../types";
+
+/** Full review touching every meaning group + 総評. */
+const fullReview: WeeklyReviewData = {
+  this_week: { volume_km: 35.5, run_count: 4 },
+  weight_tracking: { recent_median_kg: 79.6, bmi: 24.1 },
+  recovery: "回復は良好です。",
+  verdict: [
+    { date: "2026-06-16", session: "Easy Run", rating: "◎", comment: "good" },
+  ],
+  goal_alignment: "目標に整合しています。",
+  periodization: { a_race: "フルマラソン", expected_phase: "Base" },
+  weekly_ramp: "緩やかに増加しています。",
+  recommendations: ["月曜は休養に充てる"],
+  garmin_next_week: [{ date: "2026-06-22", title: "Easy Run", type: "easy" }],
+  continuity_note: "前回からの継続性は良好です。",
+  overall: "総じて順調です。",
+};
 
 function renderDetail(reviewData: WeeklyReviewData) {
   const versions = [
@@ -117,5 +134,51 @@ describe("WeeklyReviewDetail", () => {
     expect(screen.queryByText("リカバリー")).not.toBeInTheDocument();
     expect(screen.queryByText("前回からの継続性")).not.toBeInTheDocument();
     expect(screen.queryByText("週次ランプ")).not.toBeInTheDocument();
+  });
+
+  it("renders three group headings 今週の実績 / 評価 / 次アクション", async () => {
+    renderDetail(fullReview);
+
+    expect(
+      await screen.findByRole("region", { name: "今週の実績" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "評価" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "次アクション" }),
+    ).toBeInTheDocument();
+  });
+
+  it("places 実績サマリー under 今週の実績 group", async () => {
+    renderDetail(fullReview);
+
+    const group = await screen.findByRole("region", { name: "今週の実績" });
+    expect(within(group).getByText("実績サマリー")).toBeInTheDocument();
+  });
+
+  it("places 対象週プラン評価 under 評価 group", async () => {
+    renderDetail(fullReview);
+
+    const group = await screen.findByRole("region", { name: "評価" });
+    expect(within(group).getByText("対象週プラン評価")).toBeInTheDocument();
+  });
+
+  it("still hides 目標逆算フェーズ when periodization absent", async () => {
+    renderDetail({ this_week: { volume_km: 30 } });
+
+    expect(await screen.findByText("実績サマリー")).toBeInTheDocument();
+    expect(screen.queryByText("目標逆算フェーズ")).not.toBeInTheDocument();
+  });
+
+  it("renders 総評 last when present", async () => {
+    renderDetail(fullReview);
+
+    expect(await screen.findByText("総評")).toBeInTheDocument();
+    // 総評 is standalone: not nested inside the 次アクション group region.
+    expect(
+      screen.getByText("総評").closest('section[aria-label="次アクション"]'),
+    ).toBeNull();
+    // ...and it is the last Section card heading in DOM order.
+    const cardHeadings = screen.getAllByRole("heading", { level: 2 });
+    expect(cardHeadings[cardHeadings.length - 1]).toHaveTextContent("総評");
   });
 });
