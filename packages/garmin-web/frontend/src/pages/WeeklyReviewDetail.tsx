@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { fetchWeeklyReviewVersions } from "../api/client";
+import SectionHeading from "../components/SectionHeading";
 import type { WeeklyReview } from "../types";
 
 function Section({
@@ -139,10 +140,8 @@ export default function WeeklyReviewDetail() {
 
   return (
     <div className="stagger-in space-y-6">
-      <div className="flex items-baseline justify-between gap-3">
-        <h1 className="font-display text-2xl font-bold tracking-tight text-ink">
-          週次レビュー
-        </h1>
+      <div className="flex items-start justify-between gap-3">
+        <SectionHeading eyebrow="Weekly Review" title="週次レビュー" />
         <Link
           to="/weekly-reviews"
           className="text-sm font-medium text-slate-500 hover:text-ink"

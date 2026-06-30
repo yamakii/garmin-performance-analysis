@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import EmptyState, { CliCommand } from "../components/EmptyState";
+import SectionHeading from "../components/SectionHeading";
 import { fetchGoal, fetchRaceReadiness } from "../api/client";
 import type {
   GoalRace,
@@ -101,9 +102,6 @@ function isPriorityB(race: GoalRace): boolean {
  */
 const CONTOUR_PATTERN = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280' viewBox='0 0 280 280' fill='none' stroke='%2316213a' stroke-width='1'%3E%3Cpath d='M0 40c46-22 94 16 140-6s94-26 140-2'/%3E%3Cpath d='M0 90c46-24 94 18 140-8s94-28 140-2'/%3E%3Cpath d='M0 140c46-20 94 14 140-6s94-24 140-2'/%3E%3Cpath d='M0 190c46-26 94 20 140-8s94-30 140-2'/%3E%3Cpath d='M0 240c46-22 94 16 140-6s94-26 140-2'/%3E%3Cellipse cx='70' cy='66' rx='34' ry='13'/%3E%3Cellipse cx='70' cy='66' rx='20' ry='7'/%3E%3Cellipse cx='204' cy='214' rx='38' ry='15'/%3E%3Cellipse cx='204' cy='214' rx='22' ry='8'/%3E%3C/svg%3E")`;
 
-const SECTION_HEADING =
-  "text-xs font-semibold tracking-[0.2em] text-slate-400 uppercase";
-
 /** Single big "あと N日" countdown tile inside the hero. */
 function CountdownTile({
   race,
@@ -199,10 +197,7 @@ function CountdownHero({ goals }: { goals: GoalRace[] }) {
         style={{ backgroundImage: CONTOUR_PATTERN }}
       />
       <div className="relative px-6 py-7 md:px-8">
-        <p className={SECTION_HEADING}>Countdown</p>
-        <h1 className="mt-1 font-display text-2xl font-bold tracking-tight text-ink">
-          目標レースまで
-        </h1>
+        <SectionHeading eyebrow="Countdown" title="目標レースまで" />
         <div className="mt-6 grid gap-8 md:grid-cols-2 md:gap-12">
           {featured.map((race) => (
             <CountdownTile
@@ -567,21 +562,15 @@ export default function Goal() {
 
       {/* 1b. Race prediction (VDOT-based gap to the goal) */}
       {readiness != null && (
-        <section>
-          <h2 className={SECTION_HEADING}>Race prediction</h2>
-          <p className="mt-1 mb-4 font-display text-xl font-bold tracking-tight text-ink">
-            レース予測
-          </p>
+        <section className="space-y-4">
+          <SectionHeading eyebrow="Race prediction" title="レース予測" as="h2" />
           <RacePredictionCard readiness={readiness} />
         </section>
       )}
 
       {/* 2. Target races as cards */}
-      <section>
-        <h2 className={SECTION_HEADING}>Target races</h2>
-        <p className="mt-1 mb-4 font-display text-xl font-bold tracking-tight text-ink">
-          目標レース
-        </p>
+      <section className="space-y-4">
+        <SectionHeading eyebrow="Target races" title="目標レース" as="h2" />
         {goals.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2">
             {goals.map((race) => (
@@ -603,11 +592,8 @@ export default function Goal() {
       </section>
 
       {/* 3. Current phase as a structured accordion */}
-      <section>
-        <h2 className={SECTION_HEADING}>Current phase</h2>
-        <p className="mt-1 mb-4 font-display text-xl font-bold tracking-tight text-ink">
-          現フェーズ
-        </p>
+      <section className="space-y-4">
+        <SectionHeading eyebrow="Current phase" title="現フェーズ" as="h2" />
         {hasProfile ? (
           <div className="space-y-3">
             {profile.current_focus != null && (
@@ -648,11 +634,8 @@ export default function Goal() {
       </section>
 
       {/* 4. Season retrospectives as a timeline */}
-      <section>
-        <h2 className={SECTION_HEADING}>Retrospective</h2>
-        <p className="mt-1 mb-4 font-display text-xl font-bold tracking-tight text-ink">
-          昨季の振り返り
-        </p>
+      <section className="space-y-4">
+        <SectionHeading eyebrow="Retrospective" title="昨季の振り返り" as="h2" />
         {retrospectives.length > 0 ? (
           <ol className="relative ml-1.5 space-y-6 border-l-2 border-slate-200 pl-6">
             {retrospectives.map((retro) => (

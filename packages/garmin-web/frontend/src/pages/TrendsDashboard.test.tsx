@@ -401,6 +401,19 @@ afterEach(() => {
 });
 
 describe("TrendsDashboard", () => {
+  it("TrendsDashboard still shows トレンド heading", async () => {
+    stubTrendsFetch(TRAINING_LOAD_OPTIMAL);
+
+    render(<TrendsDashboard />);
+
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "トレンドダッシュボード",
+      }),
+    ).toBeInTheDocument();
+  });
+
   it("renders all six trend blocks from API data", async () => {
     stubTrendsFetch(TRAINING_LOAD_OPTIMAL);
 

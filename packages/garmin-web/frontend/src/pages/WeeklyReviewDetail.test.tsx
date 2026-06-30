@@ -61,6 +61,16 @@ afterEach(() => {
 });
 
 describe("WeeklyReviewDetail", () => {
+  it("WeeklyReviewDetail still shows 週次レビュー heading and 一覧へ link", async () => {
+    renderDetail(fullReview);
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "週次レビュー" }),
+    ).toBeInTheDocument();
+    const backLink = screen.getByRole("link", { name: "← 一覧へ" });
+    expect(backLink).toHaveAttribute("href", "/weekly-reviews");
+  });
+
   it("test_renders_garmin_next_week_table", async () => {
     renderDetail({
       garmin_next_week: [
