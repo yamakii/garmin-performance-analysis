@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import EmptyState, { CliCommand } from "../components/EmptyState";
+import SectionHeading from "../components/SectionHeading";
 import { fetchWeeklyReviews } from "../api/client";
 import type { WeeklyReview } from "../types";
 
@@ -71,9 +72,7 @@ export default function WeeklyReviews() {
 
   return (
     <div className="stagger-in space-y-6">
-      <h1 className="font-display text-2xl font-bold tracking-tight text-ink">
-        週次レビュー
-      </h1>
+      <SectionHeading eyebrow="Weekly Review" title="週次レビュー" />
 
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         {reviews.length > 0 ? (

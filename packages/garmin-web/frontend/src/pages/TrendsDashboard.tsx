@@ -54,6 +54,7 @@ import BodyCompositionChart from "./trends/BodyCompositionChart";
 import WeightEconomyChart from "./trends/WeightEconomyChart";
 import WellnessBaselineChart from "./trends/WellnessBaselineChart";
 import CardSkeleton from "../components/CardSkeleton";
+import SectionHeading from "../components/SectionHeading";
 
 /** Trailing window (days) for the climate-neutral HR trend (one year). */
 const HEAT_ADJUSTED_LOOKBACK_DAYS = 365;
@@ -183,9 +184,7 @@ export default function TrendsDashboard() {
   // slowest endpoint no longer holds the entire page behind one spinner.
   return (
     <div className="space-y-8">
-      <h1 className="font-display text-2xl font-bold tracking-tight text-ink">
-        トレンドダッシュボード
-      </h1>
+      <SectionHeading eyebrow="Trends" title="トレンドダッシュボード" />
 
       {/*
         Alert band: "今, 何を見るべきか" surfaced first, full width and outside

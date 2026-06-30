@@ -46,6 +46,28 @@ afterEach(() => {
 });
 
 describe("WeeklyReviews", () => {
+  it("WeeklyReviews still shows 週次レビュー heading", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(FIXTURE_REVIEWS), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    render(
+      <MemoryRouter>
+        <WeeklyReviews />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "週次レビュー" }),
+    ).toBeInTheDocument();
+  });
+
   it("renders the weekly review list from API", async () => {
     vi.stubGlobal(
       "fetch",

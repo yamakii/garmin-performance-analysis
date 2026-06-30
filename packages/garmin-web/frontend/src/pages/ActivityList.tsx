@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchActivities } from "../api/client";
+import SectionHeading from "../components/SectionHeading";
 import type { ActivitySummary } from "../types";
 
 export function formatPace(secondsPerKm: number | null): string {
@@ -113,9 +114,9 @@ export default function ActivityList() {
 
   return (
     <div>
-      <h1 className="mb-6 font-display text-2xl font-bold tracking-tight text-ink">
-        アクティビティ一覧
-      </h1>
+      <div className="mb-6">
+        <SectionHeading eyebrow="Activities" title="アクティビティ一覧" />
+      </div>
       {[...groups.entries()].map(([month, monthActivities]) => (
         <section key={month} className="mb-8">
           <h2 className="mb-2 flex items-baseline gap-3 text-sm font-semibold text-slate-500">

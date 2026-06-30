@@ -41,6 +41,23 @@ function stubFetch(activities: typeof FIXTURE_ACTIVITIES) {
 }
 
 describe("ActivityList", () => {
+  it("ActivityList still shows アクティビティ一覧 heading", async () => {
+    stubFetch(FIXTURE_ACTIVITIES);
+
+    render(
+      <MemoryRouter>
+        <ActivityList />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "アクティビティ一覧",
+      }),
+    ).toBeInTheDocument();
+  });
+
   it("renders rows from API", async () => {
     vi.stubGlobal(
       "fetch",
