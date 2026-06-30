@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { fetchActivities } from "../api/client";
 import type { ActivitySummary } from "../types";
 
@@ -56,7 +56,6 @@ function groupByMonth(
 }
 
 export default function ActivityList() {
-  const navigate = useNavigate();
   const [activities, setActivities] = useState<ActivitySummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -125,25 +124,26 @@ export default function ActivityList() {
           </h2>
           <ul className="stagger-in space-y-2">
             {monthActivities.map((activity) => (
-              <li
-                key={activity.activity_id}
-                onClick={() => navigate(`/activities/${activity.activity_id}`)}
-                className="flex cursor-pointer items-center gap-4 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition-[box-shadow,border-color] hover:border-signal/50 hover:shadow-md"
-              >
-                <span className="shrink-0 rounded-md bg-ink/5 px-2 py-1 font-numeric text-sm font-semibold tabular-nums text-ink">
-                  {activity.activity_date}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">
-                  {activity.activity_name ?? "-"}
-                </span>
-                <span className="flex shrink-0 items-baseline gap-4 text-right font-numeric text-base tabular-nums text-slate-700">
-                  <span>{formatDistance(activity.total_distance_km)}</span>
-                  <span>{formatPace(activity.avg_pace_seconds_per_km)}</span>
-                  <span>
-                    {activity.avg_heart_rate ?? "-"}
-                    <span className="ml-0.5 text-xs text-slate-400">bpm</span>
+              <li key={activity.activity_id}>
+                <Link
+                  to={`/activities/${activity.activity_id}`}
+                  className="flex items-center gap-4 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition-[box-shadow,border-color] hover:border-signal/50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+                >
+                  <span className="shrink-0 rounded-md bg-ink/5 px-2 py-1 font-numeric text-sm font-semibold tabular-nums text-ink">
+                    {activity.activity_date}
                   </span>
-                </span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">
+                    {activity.activity_name ?? "-"}
+                  </span>
+                  <span className="flex shrink-0 items-baseline gap-4 text-right font-numeric text-base tabular-nums text-slate-700">
+                    <span>{formatDistance(activity.total_distance_km)}</span>
+                    <span>{formatPace(activity.avg_pace_seconds_per_km)}</span>
+                    <span>
+                      {activity.avg_heart_rate ?? "-"}
+                      <span className="ml-0.5 text-xs text-slate-400">bpm</span>
+                    </span>
+                  </span>
+                </Link>
               </li>
             ))}
           </ul>
