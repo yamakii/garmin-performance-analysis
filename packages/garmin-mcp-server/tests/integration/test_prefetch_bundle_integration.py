@@ -239,6 +239,27 @@ class TestPrefetchBundleExpansion:
         assert "plan_achievement" in result
         assert result["plan_achievement"] is None
 
+    def test_prefetch_emits_next_run_target_key(
+        self, verification_db_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """next_run_target is a deterministic dict with recommended_type.
+
+        The fixture training_type is aerobic_base → HR-based "easy" target,
+        computed from the activity's avg_heart_rate with no LLM involved
+        (Issue #672).
+        """
+        _patch_db_path(monkeypatch, verification_db_path)
+
+        result = prefetch_activity_context(FIXTURE_ACTIVITY_ID)
+
+        assert "next_run_target" in result
+        nrt = result["next_run_target"]
+        assert isinstance(nrt, dict)
+        assert nrt["recommended_type"] == "easy"
+        # HR-based target derives from the fixture avg_heart_rate (148 bpm).
+        assert nrt["target_hr_low"] == 143
+        assert nrt["target_hr_high"] == 153
+
     def test_prefetch_bundle_is_json_serializable(
         self, verification_db_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
