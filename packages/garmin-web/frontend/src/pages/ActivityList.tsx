@@ -135,11 +135,31 @@ export default function ActivityList() {
                   <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">
                     {activity.activity_name ?? "-"}
                   </span>
-                  <span className="flex shrink-0 items-baseline gap-4 text-right font-numeric text-base tabular-nums text-slate-700">
-                    <span>{formatDistance(activity.total_distance_km)}</span>
-                    <span>{formatPace(activity.avg_pace_seconds_per_km)}</span>
-                    <span>
-                      {activity.avg_heart_rate ?? "-"}
+                  <span className="flex shrink-0 items-baseline divide-x divide-slate-200 text-right font-numeric tabular-nums text-slate-700">
+                    <span className="pr-3">
+                      <span className="text-base font-semibold text-slate-800">
+                        {formatDistance(activity.total_distance_km).replace(
+                          " km",
+                          "",
+                        )}
+                      </span>
+                      <span className="ml-0.5 text-xs font-normal text-slate-400">
+                        km
+                      </span>
+                    </span>
+                    <span className="px-3">
+                      <span className="text-base">
+                        {formatPace(activity.avg_pace_seconds_per_km).replace(
+                          "/km",
+                          "",
+                        )}
+                      </span>
+                      <span className="ml-0.5 text-xs text-slate-400">/km</span>
+                    </span>
+                    <span className="pl-3">
+                      <span className="text-base">
+                        {activity.avg_heart_rate ?? "-"}
+                      </span>
                       <span className="ml-0.5 text-xs text-slate-400">bpm</span>
                     </span>
                   </span>
