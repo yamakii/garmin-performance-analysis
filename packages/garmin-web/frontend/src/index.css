@@ -17,6 +17,18 @@
   --color-signal: #ff5a36;
   --color-gold: #f59e0b;
 
+  /*
+   * Status semantics (良 / 注意 / 悪 / 情報) — Issue #650.
+   * Use as the "on" (text/icon) color over a soft tint of the same hue
+   * (e.g. `bg-status-good/10 text-status-good`) so good/warn/bad badges
+   * follow the same token discipline as ink/signal/gold instead of ad-hoc
+   * amber-100 / emerald-100 / sky-100 utility pairs.
+   */
+  --color-status-good: #059669; /* emerald — 良 / on-track positive */
+  --color-status-warn: #d97706; /* amber — 注意 / caution */
+  --color-status-bad: #dc2626; /* red — 悪 / problem */
+  --color-status-info: #0284c7; /* sky — 情報 / neutral progress */
+
   /* Metric semantic colors (chartTheme.ts METRIC_COLORS mirrors these) */
   --color-metric-hr: #e11d48;
   --color-metric-pace: #0d9488;
