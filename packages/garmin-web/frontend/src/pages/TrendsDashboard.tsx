@@ -53,6 +53,7 @@ import FormAnomalyFlagsCard from "./trends/FormAnomalyFlagsCard";
 import BodyCompositionChart from "./trends/BodyCompositionChart";
 import WeightEconomyChart from "./trends/WeightEconomyChart";
 import WellnessBaselineChart from "./trends/WellnessBaselineChart";
+import CardSkeleton from "../components/CardSkeleton";
 
 /** Trailing window (days) for the climate-neutral HR trend (one year). */
 const HEAT_ADJUSTED_LOOKBACK_DAYS = 365;
@@ -135,60 +136,33 @@ export default function TrendsDashboard() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([
-      fetchPhysiologyTrend(),
-      fetchFormTrend(),
-      fetchEfficiencyTrend(),
-      fetchTrainingLoad(),
-      fetchDurabilityTrend(),
-      fetchRecoveryTrend(),
-      fetchRecoveryStatus(),
-      fetchBodyCompositionTrend(),
-      fetchHeatAdjustedTrend(HEAT_ADJUSTED_LOOKBACK_DAYS),
-      fetchCriticalSpeed(),
-      fetchObjectiveFitnessTrend(),
-      fetchWeightEconomyCoupling(),
-      fetchWellnessBaselineDeviation(),
-      fetchFormAnomalyFlags(),
-    ])
-      .then(
-        ([
-          physiologyData,
-          formData,
-          efficiencyData,
-          trainingLoadData,
-          durabilityData,
-          recoveryData,
-          recoveryStatusData,
-          bodyCompositionData,
-          heatAdjustedData,
-          criticalSpeedData,
-          objectiveFitnessData,
-          weightEconomyData,
-          wellnessBaselineData,
-          formAnomalyFlagsData,
-        ]) => {
-          if (!cancelled) {
-            setPhysiology(physiologyData);
-            setForm(formData);
-            setEfficiency(efficiencyData);
-            setTrainingLoad(trainingLoadData);
-            setDurability(durabilityData);
-            setRecovery(recoveryData);
-            setRecoveryStatus(recoveryStatusData);
-            setBodyComposition(bodyCompositionData);
-            setHeatAdjusted(heatAdjustedData);
-            setCriticalSpeed(criticalSpeedData);
-            setObjectiveFitness(objectiveFitnessData);
-            setWeightEconomy(weightEconomyData);
-            setWellnessBaseline(wellnessBaselineData);
-            setFormAnomalyFlags(formAnomalyFlagsData);
-          }
-        },
-      )
-      .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
-      });
+    // Wire each fetch independently (no Promise.all) so a slow endpoint never
+    // holds the whole dashboard hostage: every card resolves on its own and
+    // swaps its skeleton for content as soon as its data lands.
+    const wire = <T,>(promise: Promise<T>, set: (value: T) => void): void => {
+      promise
+        .then((value) => {
+          if (!cancelled) set(value);
+        })
+        .catch((err: unknown) => {
+          if (!cancelled)
+            setError(err instanceof Error ? err.message : String(err));
+        });
+    };
+    wire(fetchPhysiologyTrend(), setPhysiology);
+    wire(fetchFormTrend(), setForm);
+    wire(fetchEfficiencyTrend(), setEfficiency);
+    wire(fetchTrainingLoad(), setTrainingLoad);
+    wire(fetchDurabilityTrend(), setDurability);
+    wire(fetchRecoveryTrend(), setRecovery);
+    wire(fetchRecoveryStatus(), setRecoveryStatus);
+    wire(fetchBodyCompositionTrend(), setBodyComposition);
+    wire(fetchHeatAdjustedTrend(HEAT_ADJUSTED_LOOKBACK_DAYS), setHeatAdjusted);
+    wire(fetchCriticalSpeed(), setCriticalSpeed);
+    wire(fetchObjectiveFitnessTrend(), setObjectiveFitness);
+    wire(fetchWeightEconomyCoupling(), setWeightEconomy);
+    wire(fetchWellnessBaselineDeviation(), setWellnessBaseline);
+    wire(fetchFormAnomalyFlags(), setFormAnomalyFlags);
     return () => {
       cancelled = true;
     };
@@ -205,34 +179,8 @@ export default function TrendsDashboard() {
     );
   }
 
-  const loading =
-    volume == null ||
-    physiology == null ||
-    form == null ||
-    efficiency == null ||
-    trainingLoad == null ||
-    durability == null ||
-    recovery == null ||
-    recoveryStatus == null ||
-    bodyComposition == null ||
-    heatAdjusted == null ||
-    criticalSpeed == null ||
-    objectiveFitness == null ||
-    weightEconomy == null ||
-    wellnessBaseline == null ||
-    formAnomalyFlags == null;
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
-        <span
-          aria-hidden="true"
-          className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-ink"
-        />
-        読み込み中...
-      </div>
-    );
-  }
-
+  // Each card renders a per-card skeleton until its own data resolves, so the
+  // slowest endpoint no longer holds the entire page behind one spinner.
   return (
     <div className="space-y-8">
       <h1 className="font-display text-2xl font-bold tracking-tight text-ink">
@@ -243,37 +191,97 @@ export default function TrendsDashboard() {
         Alert band: "今, 何を見るべきか" surfaced first, full width and outside
         the metric grid so the weekly caution is the top priority.
       */}
-      <FormAnomalyFlagsCard data={formAnomalyFlags} />
+      {formAnomalyFlags == null ? (
+        <CardSkeleton label="今週の注意点" />
+      ) : (
+        <FormAnomalyFlagsCard data={formAnomalyFlags} />
+      )}
 
       <div className="stagger-in space-y-10">
         {/* ① 今の状態 / Condition Now */}
         <TrendSection eyebrow="Condition Now" title="今の状態">
-          <ConditionCard data={recoveryStatus} />
-          <RecoveryPanel data={recovery} />
-          <WellnessBaselineChart data={wellnessBaseline} />
-          <TrainingLoadBlock data={trainingLoad} />
+          {recoveryStatus == null ? (
+            <CardSkeleton label="当日コンディション" />
+          ) : (
+            <ConditionCard data={recoveryStatus} />
+          )}
+          {recovery == null ? (
+            <CardSkeleton label="回復トレンド" />
+          ) : (
+            <RecoveryPanel data={recovery} />
+          )}
+          {wellnessBaseline == null ? (
+            <CardSkeleton label="個人ベースライン逸脱" />
+          ) : (
+            <WellnessBaselineChart data={wellnessBaseline} />
+          )}
+          {trainingLoad == null ? (
+            <CardSkeleton label="訓練負荷" />
+          ) : (
+            <TrainingLoadBlock data={trainingLoad} />
+          )}
         </TrendSection>
 
         {/* ② パフォーマンス / Performance */}
         <TrendSection eyebrow="Performance" title="パフォーマンス">
-          <VolumeBlock
-            data={volume}
-            granularity={granularity}
-            onGranularityChange={setGranularity}
-          />
-          <PhysiologyBlock data={physiology} />
-          <EfficiencyBlock data={efficiency} />
-          <CriticalSpeedPanel data={criticalSpeed} />
-          <ObjectiveFitnessBlock data={objectiveFitness} />
-          <HeatAdjustedBlock data={heatAdjusted} />
+          {volume == null ? (
+            <CardSkeleton label="走行量" />
+          ) : (
+            <VolumeBlock
+              data={volume}
+              granularity={granularity}
+              onGranularityChange={setGranularity}
+            />
+          )}
+          {physiology == null ? (
+            <CardSkeleton label="生理指標" />
+          ) : (
+            <PhysiologyBlock data={physiology} />
+          )}
+          {efficiency == null ? (
+            <CardSkeleton label="効率推移" />
+          ) : (
+            <EfficiencyBlock data={efficiency} />
+          )}
+          {criticalSpeed == null ? (
+            <CardSkeleton label="クリティカルスピード" />
+          ) : (
+            <CriticalSpeedPanel data={criticalSpeed} />
+          )}
+          {objectiveFitness == null ? (
+            <CardSkeleton label="客観フィットネス曲線" />
+          ) : (
+            <ObjectiveFitnessBlock data={objectiveFitness} />
+          )}
+          {heatAdjusted == null ? (
+            <CardSkeleton label="気候中立HRトレンド" />
+          ) : (
+            <HeatAdjustedBlock data={heatAdjusted} />
+          )}
         </TrendSection>
 
         {/* ③ フォーム & 身体 / Body & Form */}
         <TrendSection eyebrow="Body & Form" title="フォーム & 身体">
-          <FormBlock data={form} />
-          <DurabilityBlock data={durability} />
-          <BodyCompositionChart data={bodyComposition} />
-          <WeightEconomyChart data={weightEconomy} />
+          {form == null ? (
+            <CardSkeleton label="フォームスコア推移" />
+          ) : (
+            <FormBlock data={form} />
+          )}
+          {durability == null ? (
+            <CardSkeleton label="耐久性" />
+          ) : (
+            <DurabilityBlock data={durability} />
+          )}
+          {bodyComposition == null ? (
+            <CardSkeleton label="体組成" />
+          ) : (
+            <BodyCompositionChart data={bodyComposition} />
+          )}
+          {weightEconomy == null ? (
+            <CardSkeleton label="体重 × ランニングエコノミー" />
+          ) : (
+            <WeightEconomyChart data={weightEconomy} />
+          )}
         </TrendSection>
       </div>
     </div>
