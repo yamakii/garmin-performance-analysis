@@ -168,7 +168,7 @@ analysis_data = {
 
 | 用途 | CONTEXT キー |
 |------|-------------|
-| training_type 判定（評価カテゴリ） | `training_type`, `planned_workout`（`workout_type`） |
+| 評価カテゴリ（決定論的に算出済み） | `phase_category`（`low_moderate`/`tempo_threshold`/`interval_sprint`） |
 | フェーズ別ペース・HR | `phase_structure.warmup/run/recovery/cooldown`（各 `avg_pace`, `avg_hr`） |
 | ペース安定性 | `phase_structure.pace_consistency` |
 | HR ドリフト | `phase_structure.hr_drift_percentage` |
@@ -176,19 +176,10 @@ analysis_data = {
 | ゾーン分布の補助評価 | `zone_percentages` |
 | フェーズ構造判定（3 or 4） | `phase_structure` に `recovery` キーが存在するか |
 
-### training_type → category 判定（`planned_workout` 優先）
+### category 判定
 
-1. `planned_workout` がある場合 → `workout_type` を最優先:
-   - `easy_run`, `recovery_run` → `low_moderate`
-   - `tempo_run`, `threshold_run` → `tempo_threshold`
-   - `interval`, `speed_work`, `vo2max_intervals` → `interval_sprint`
-   - `long_run` → `low_moderate`（target_hr_high が高い場合は `tempo_threshold`）
-2. ない場合 → `training_type` にフォールバック:
-   - `recovery`, `aerobic_base` → `low_moderate`
-   - `tempo`, `lactate_threshold` → `tempo_threshold`
-   - `vo2max`, `anaerobic_capacity`, `speed`, `interval_training` → `interval_sprint`
-   - null → `tempo_threshold`
-3. フェーズ構造: `phase_structure` に `recovery` キーが存在 → 4フェーズ（常に `interval_sprint` カテゴリ）、なし → 3フェーズ
+1. 評価カテゴリは `CONTEXT.phase_category` を使う（prefetch が `training_type` / `planned_workout`（`workout_type` 優先）から決定論的に算出。値: `low_moderate` | `tempo_threshold` | `interval_sprint`）。**この分類をエージェントが再計算しない。**
+2. フェーズ構造による上書きのみ適用: `phase_structure` に `recovery` キーが存在 → 4フェーズ（カテゴリを常に `interval_sprint` 扱い）、なし → 3フェーズ
 
 ### 評価ルール（`get_analysis_contract("phase")` 参照）
 
@@ -239,15 +230,11 @@ analysis_data = {
 | 湿度影響評価 | `humidity_pct` |
 | 風影響評価 | `wind_mps`, `wind_direction` |
 | 地形分類・標高負荷評価 | `terrain_category`, `avg_elevation_gain_per_km`, `total_elevation_gain`, `total_elevation_loss`, `max_split_elevation_gain`, `max_split_elevation_loss` |
-| training_type カテゴリマッピング | `training_type` |
+| 評価カテゴリ（決定論的に算出済み） | `environment_category`（`recovery`/`base_moderate`/`tempo_threshold`/`interval_sprint`） |
 
 ### 評価ルール（`get_analysis_contract("environment")` 参照）
 
-1. `training_type` をカテゴリにマッピング:
-   - recovery → `recovery`
-   - easy/base/moderate → `base_moderate`
-   - tempo/threshold → `tempo_threshold`
-   - interval/sprint → `interval_sprint`
+1. 評価カテゴリは `CONTEXT.environment_category` を使う（prefetch が `training_type` から決定論的に算出。値: `recovery` | `base_moderate` | `tempo_threshold` | `interval_sprint`）。**エージェントは再計算しない**
 2. `temperature_by_training_type[category]` で `temperature_c` の影響を評価
 3. `humidity`（`humidity_pct`）, `wind_speed_ms`（`wind_mps`）, `terrain_classification`（`terrain_category` + 標高系）で各要因を評価
 4. 複合効果を考慮（気温×湿度の相乗効果、季節性・時間帯）
