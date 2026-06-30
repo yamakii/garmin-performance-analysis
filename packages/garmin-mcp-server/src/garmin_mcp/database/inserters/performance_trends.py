@@ -59,6 +59,87 @@ def _compute_steady_decoupling(run_splits: list[dict]) -> float | None:
     return (ratio_first - ratio_second) / ratio_first * 100
 
 
+# intensityType buckets used to classify work vs rest reps.
+_WORK_INTENSITIES = {"ACTIVE", "INTERVAL"}
+_REST_INTENSITIES = {"REST", "RECOVERY"}
+
+
+def _classify_workout_structure(lap_dtos: list[dict]) -> str:
+    """'steady' | 'interval' を返す。
+
+    REST/RECOVERY と ACTIVE が交互に十分な回数現れれば 'interval'、
+    それ以外（単一強度の連続走）は 'steady'。判定不能は 'steady' に
+    フォールバック。WARMUP/COOLDOWN や intensityType 欠損 lap は無視する。
+    """
+    sequence: list[str] = []
+    for lap in lap_dtos:
+        intensity_type = lap.get("intensityType")
+        if not intensity_type:
+            continue
+        intensity_upper = str(intensity_type).upper()
+        if intensity_upper in _WORK_INTENSITIES:
+            sequence.append("work")
+        elif intensity_upper in _REST_INTENSITIES:
+            sequence.append("rest")
+        # WARMUP/COOLDOWN/unknown are ignored for structure detection.
+
+    work_count = sequence.count("work")
+    rest_count = sequence.count("rest")
+    # Need at least 2 work reps and 2 rest segments to be an interval session.
+    if work_count < 2 or rest_count < 2:
+        return "steady"
+
+    # Repeated work<->rest alternation distinguishes intervals from a single
+    # work block bracketed by one rest lap.
+    transitions = sum(
+        1 for prev, cur in zip(sequence, sequence[1:], strict=False) if prev != cur
+    )
+    return "interval" if transitions >= 3 else "steady"
+
+
+def _compute_rep_matched_drift(active_reps: list[dict]) -> float | None:
+    """ACTIVE 疾走レップ群について、序盤レップ vs 終盤レップの
+    同ペース下HR上昇率% を返す。レップ2本未満 / pace・hr 欠損で None。
+
+    各レップの speed:HR 効率比 (1/pace)/hr を序盤半分 / 終盤半分で平均し、
+    drift% = (ratio_early - ratio_late) / ratio_early * 100 を返す。
+    同一目標ペース下で終盤のHRが上がる(効率低下)と正値になる。
+    """
+    import statistics
+
+    valid = [
+        r
+        for r in active_reps
+        if r.get("pace") is not None
+        and r["pace"] > 0
+        and r.get("hr") is not None
+        and r["hr"] > 0
+    ]
+    if len(valid) < 2:
+        return None
+
+    mid = len(valid) // 2
+    early_reps = valid[:mid]
+    late_reps = valid[mid:]
+
+    def efficiency_ratio(reps: list[dict]) -> float | None:
+        if not reps:
+            return None
+        mean_pace = float(statistics.mean(float(r["pace"]) for r in reps))
+        mean_hr = float(statistics.mean(float(r["hr"]) for r in reps))
+        if mean_pace <= 0 or mean_hr <= 0:
+            return None
+        # speed:HR ratio = (1 / pace) / hr
+        return (1.0 / mean_pace) / mean_hr
+
+    ratio_early = efficiency_ratio(early_reps)
+    ratio_late = efficiency_ratio(late_reps)
+    if ratio_early is None or ratio_late is None or ratio_early == 0:
+        return None
+
+    return (ratio_early - ratio_late) / ratio_early * 100
+
+
 def _extract_performance_trends_from_raw(raw_splits_file: str) -> dict | None:
     """
     Extract performance trends from raw splits.json.
@@ -180,11 +261,17 @@ def _extract_performance_trends_from_raw(raw_splits_file: str) -> dict | None:
         else:
             result["pace_consistency"] = 0.0
 
-    # Calculate HR drift via steady-state Pa:HR decoupling over run-phase laps.
-    # Splits the run laps into first/second halves and measures the % drop in
-    # speed:HR efficiency. Works for single-phase easy/long runs (no structured
-    # warmup/cooldown) where the old phase-boundary comparison returned None.
-    result["hr_drift_percentage"] = _compute_steady_decoupling(run_splits)
+    # Calculate HR drift, branching on workout structure.
+    # - steady (single-intensity continuous run): Pa:HR decoupling over the
+    #   run-phase laps split into first/second halves (#sub-1).
+    # - interval/repetition (ACTIVE<->REST alternation): rep-matched drift over
+    #   the ACTIVE work reps only, since a plain time-bisection breaks down when
+    #   work and rest laps are interleaved.
+    workout_structure = _classify_workout_structure(lap_dtos)
+    if workout_structure == "interval":
+        result["hr_drift_percentage"] = _compute_rep_matched_drift(run_splits)
+    else:
+        result["hr_drift_percentage"] = _compute_steady_decoupling(run_splits)
 
     # Calculate phase evaluations
     # 1. Warmup evaluation
