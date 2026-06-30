@@ -938,6 +938,60 @@ def test_generate_temporal_clusters_empty(detector: FormAnomalyDetector) -> None
 
 
 @pytest.mark.unit
+def test_summary_includes_max_material_cluster(
+    detector: FormAnomalyDetector,
+) -> None:
+    """Summary exposes max_material_cluster matching the material-only max (#677)."""
+    activity_id = 12345678901
+    metrics = ["directGroundContactTime"]
+    z_threshold = 2.0
+
+    details = detector.get_form_anomaly_details(
+        activity_id=activity_id,
+        metrics=metrics,
+        z_threshold=z_threshold,
+        filters={"limit": 10000},
+    )
+    expected = detector._max_material_cluster(details["anomalies"])
+
+    summary = detector.detect_form_anomalies_summary(
+        activity_id=activity_id,
+        metrics=metrics,
+        z_threshold=z_threshold,
+    )["summary"]
+
+    assert "max_material_cluster" in summary
+    assert isinstance(summary["max_material_cluster"], int)
+    assert summary["max_material_cluster"] == expected
+
+
+@pytest.mark.unit
+def test_max_material_cluster_excludes_isolated(
+    detector: FormAnomalyDetector,
+) -> None:
+    """Isolated noise in the same window is excluded; only material counts (#677)."""
+    anomalies = [
+        {"timestamp": 10 * i, "probable_cause": "isolated"} for i in range(10)
+    ] + [
+        {"timestamp": 50, "probable_cause": "pace_change"},
+        {"timestamp": 100, "probable_cause": "elevation_change"},
+    ]
+
+    # All 12 fall in the first 5-minute window, but only the 2 material ones count.
+    assert detector._max_material_cluster(anomalies) == 2
+
+
+@pytest.mark.unit
+def test_max_material_cluster_zero_when_no_material(
+    detector: FormAnomalyDetector,
+) -> None:
+    """All-isolated anomalies yield a material cluster size of 0 (#677)."""
+    anomalies = [{"timestamp": 10 * i, "probable_cause": "isolated"} for i in range(5)]
+
+    assert detector._max_material_cluster(anomalies) == 0
+
+
+@pytest.mark.unit
 def test_apply_anomaly_filters_by_ids(detector: FormAnomalyDetector) -> None:
     """Test _apply_anomaly_filters filters by anomaly IDs."""
     anomalies = [

@@ -675,6 +675,29 @@ class FormAnomalyDetector:
 
         return clusters
 
+    def _max_material_cluster(self, anomalies: list[dict[str, Any]]) -> int:
+        """Largest 5-minute cluster size among *material* anomalies.
+
+        Clusters are computed over material anomalies only — those with an
+        identifiable cause (elevation / pace / fatigue), i.e. ``probable_cause``
+        other than ``"isolated"``. Isolated noise is excluded so a burst of
+        unexplained spikes never inflates the cluster size; only a genuine
+        concentration of cause-identified form movement counts (#677).
+
+        Args:
+            anomalies: List of anomaly records (each with ``probable_cause`` and
+                ``timestamp``).
+
+        Returns:
+            The maximum ``count`` across material 5-minute clusters, or 0 when
+            no material anomalies exist.
+        """
+        material = [a for a in anomalies if a.get("probable_cause") != "isolated"]
+        return max(
+            (c["count"] for c in self._generate_temporal_clusters(material)),
+            default=0,
+        )
+
     def _apply_anomaly_filters(
         self, anomalies: list[dict[str, Any]], filters: dict[str, Any]
     ) -> list[dict[str, Any]]:
@@ -769,7 +792,9 @@ class FormAnomalyDetector:
                     "temporal_clusters": [
                         {"start": int, "end": int, "count": int},
                         ...
-                    ]
+                    ],
+                    "max_material_cluster": int  # largest material-only
+                        # 5-minute cluster (isolated noise excluded, #677)
                 },
                 "top_anomalies": [  # Top 5 most severe
                     {
@@ -825,6 +850,11 @@ class FormAnomalyDetector:
                 all_anomalies
             ),
             "temporal_clusters": self._generate_temporal_clusters(all_anomalies),
+            # Largest material-only 5-minute cluster: lets consumers gate on a
+            # genuine concentration of cause-identified form movement rather
+            # than scattered isolated noise (#677). Kept alongside the existing
+            # full-anomaly temporal_clusters for backward compatibility.
+            "max_material_cluster": self._max_material_cluster(all_anomalies),
         }
 
         # Get top 5 anomalies (by z-score)

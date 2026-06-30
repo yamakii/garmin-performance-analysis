@@ -13,6 +13,19 @@ from garmin_mcp.database.connection import get_connection
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.rag.queries.form_anomaly_detector import FormAnomalyDetector
 
+# Run-level materiality floor for the "今週の注意点" card (#677). A run lights up
+# only when its form genuinely moved as a block, not just because an easy run /
+# stride produced one isolated material spike (which happens almost every run).
+# A run is noteworthy when EITHER:
+#   - it has >= _MIN_MATERIAL_FOR_FLAG material anomalies AND >= _MIN_HIGH_FOR_FLAG
+#     high-severity anomaly (scattered-but-severe), OR
+#   - its largest material-only 5-minute cluster reaches
+#     _MIN_MATERIAL_CLUSTER_FOR_FLAG (a concentrated form burst, even if no single
+#     spike is high-severity).
+_MIN_MATERIAL_FOR_FLAG = 3
+_MIN_HIGH_FOR_FLAG = 1
+_MIN_MATERIAL_CLUSTER_FOR_FLAG = 3
+
 
 def _reader(db_path: Any) -> GarminDBReader:
     """Build a reader bound to the request's DB path (None -> default)."""
@@ -92,6 +105,11 @@ def get_recent_form_anomaly_flags(
         pace / fatigue). Runs whose anomalies are all isolated noise (no
         identifiable cause), have zero anomalies, or no usable raw data are
         omitted from ``flags`` so the card stops surfacing every run (#666).
+        A run-level materiality floor (#677) further requires either a
+        scattered-but-severe profile (>= ``_MIN_MATERIAL_FOR_FLAG`` material
+        anomalies with >= ``_MIN_HIGH_FOR_FLAG`` high-severity) or a material
+        cluster of >= ``_MIN_MATERIAL_CLUSTER_FOR_FLAG``, so easy runs / strides
+        that produce only one or two material spikes no longer flag.
     """
     since = (_dt.date.today() - _dt.timedelta(weeks=weeks)).isoformat()
 
@@ -128,13 +146,24 @@ def get_recent_form_anomaly_flags(
         if material <= 0:
             continue
         distribution = summary_dict.get("severity_distribution", {})
+        # Run-level materiality floor (#677): suppress runs whose form did not
+        # move as a block. Light up only on a scattered-but-severe run (enough
+        # material anomalies AND at least one high-severity) or a concentrated
+        # material cluster, so easy runs / strides stop flagging every week.
+        severity_high = int(distribution.get("high", 0))
+        max_material_cluster = int(summary_dict.get("max_material_cluster", 0))
+        noteworthy = (
+            material >= _MIN_MATERIAL_FOR_FLAG and severity_high >= _MIN_HIGH_FOR_FLAG
+        ) or (max_material_cluster >= _MIN_MATERIAL_CLUSTER_FOR_FLAG)
+        if not noteworthy:
+            continue
         recommendations = summary.get("recommendations") or []
         flags.append(
             {
                 "activity_id": activity_id,
                 "activity_date": activity_date,
                 "anomalies_detected": material,
-                "severity_high": int(distribution.get("high", 0)),
+                "severity_high": severity_high,
                 "top_recommendation": recommendations[0] if recommendations else None,
             }
         )
