@@ -6,6 +6,7 @@ import {
   FORM_LINE_COLORS,
 } from "../../components/chartTheme";
 import { axisTooltipFormatter } from "../../utils/formatNumber";
+import { robustAxisBounds } from "../../utils/robustBounds";
 import type { FormTrendPoint } from "../../api/trends";
 
 interface FormBlockProps {
@@ -13,8 +14,17 @@ interface FormBlockProps {
 }
 
 export default function FormBlock({ data }: FormBlockProps) {
-  const option = useMemo(
-    () => ({
+  const option = useMemo(() => {
+    // Right axis carries the three form deltas. Their raw range is dominated by
+    // rare VR Δ% outliers (e.g. +170%), so derive robust bounds that push those
+    // off-screen while leaving the series data untouched (tooltips show reals).
+    const deltaBounds = robustAxisBounds([
+      ...data.map((p) => p.gct_delta),
+      ...data.map((p) => p.vo_delta),
+      ...data.map((p) => p.vr_delta),
+    ]);
+
+    return {
       ...BASE_CHART_OPTION,
       // Overall = ink, form deltas = violet family (Issue #214).
       color: FORM_LINE_COLORS,
@@ -33,32 +43,48 @@ export default function FormBlock({ data }: FormBlockProps) {
         data: data.map((p) => p.date),
         ...AXIS_STYLE,
       },
-      yAxis: { type: "value" as const, scale: true, ...AXIS_STYLE },
+      yAxis: [
+        // Left axis: overall score, fixed 1-5 so the trend stays readable.
+        { type: "value" as const, min: 1, max: 5, ...AXIS_STYLE },
+        // Right axis: form deltas on robust bounds (auto-scale if unavailable).
+        {
+          type: "value" as const,
+          ...(deltaBounds
+            ? { min: deltaBounds.min, max: deltaBounds.max }
+            : { scale: true }),
+          ...AXIS_STYLE,
+          // Only the left axis draws horizontal grid lines to avoid clutter.
+          splitLine: { show: false },
+        },
+      ],
       series: [
         {
           name: "総合スコア",
           type: "line" as const,
+          yAxisIndex: 0,
           data: data.map((p) => p.overall_score),
         },
         {
           name: "GCT Δ%",
           type: "line" as const,
+          yAxisIndex: 1,
           data: data.map((p) => p.gct_delta),
         },
         {
           name: "VO Δcm",
           type: "line" as const,
+          yAxisIndex: 1,
           data: data.map((p) => p.vo_delta),
         },
         {
           name: "VR Δ%",
           type: "line" as const,
+          yAxisIndex: 1,
           data: data.map((p) => p.vr_delta),
         },
       ],
-    }),
-    [data],
-  );
+    };
+  }, [data]);
 
   return (
     <section
