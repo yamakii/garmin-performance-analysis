@@ -38,7 +38,34 @@ def test_durability_tool_dispatch() -> None:
     assert payload["decoupling_pct"] == 10.0
     assert payload["pace_fade_pct"] == 0.0
 
-    # get_durability_trend: default min_distance_km=15.0 forwarded.
+    # Explicit min_distance_km is forwarded.
+    reader.get_durability_trend.return_value = {
+        "activities": [],
+        "trend": {
+            "decoupling_slope_per_day": 0.0,
+            "data_points": 0,
+            "direction": "insufficient_data",
+        },
+    }
+    reader.get_durability_trend.reset_mock()
+    result = dispatch(
+        ALL_DEFS_BY_NAME,
+        reader,
+        "get_durability_trend",
+        {"start_date": "2025-09-01", "end_date": "2025-09-30", "min_distance_km": 20.0},
+    )
+    reader.get_durability_trend.assert_called_once_with(
+        "2025-09-01", "2025-09-30", 20.0
+    )
+
+    payload = json.loads(json.dumps(result, default=str))
+    assert payload["trend"]["direction"] == "insufficient_data"
+
+
+@pytest.mark.unit
+def test_get_durability_trend_default_forwards_10km() -> None:
+    """Default get_durability_trend call forwards min_distance_km=10.0 (#695)."""
+    reader = MagicMock()
     reader.get_durability_trend.return_value = {
         "activities": [],
         "trend": {
@@ -55,23 +82,8 @@ def test_durability_tool_dispatch() -> None:
         {"start_date": "2025-09-01", "end_date": "2025-09-30"},
     )
     reader.get_durability_trend.assert_called_once_with(
-        "2025-09-01", "2025-09-30", 15.0
+        "2025-09-01", "2025-09-30", 10.0
     )
-
-    # Explicit min_distance_km is forwarded.
-    reader.get_durability_trend.reset_mock()
-    result = dispatch(
-        ALL_DEFS_BY_NAME,
-        reader,
-        "get_durability_trend",
-        {"start_date": "2025-09-01", "end_date": "2025-09-30", "min_distance_km": 20.0},
-    )
-    reader.get_durability_trend.assert_called_once_with(
-        "2025-09-01", "2025-09-30", 20.0
-    )
-
-    payload = json.loads(json.dumps(result, default=str))
-    assert payload["trend"]["direction"] == "insufficient_data"
 
 
 @pytest.mark.unit

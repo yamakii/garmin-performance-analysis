@@ -1273,7 +1273,7 @@ def training_load_high_risk_db_path(tmp_path: Path) -> Path:
 # `time_series_metrics` (heart_rate, speed, timestamp_s per seq_no). For each
 # qualifying long run it splits the series at the timestamp midpoint and
 # compares back-half vs front-half HR/speed efficiency. We synthesise two
-# >=15 km long runs whose second half costs more HR per unit speed (positive
+# long runs (18/21 km) whose second half costs more HR per unit speed (positive
 # decoupling) so the endpoint returns non-empty activities + a trend block.
 
 _DURABILITY_RANGE = 600  # time-series rows per long run
@@ -1320,10 +1320,10 @@ _DURABILITY_LONG_RUNS = [
 
 @pytest.fixture
 def durability_db_path(tmp_path: Path) -> Path:
-    """DuckDB with two >=15 km long runs whose second half decouples.
+    """DuckDB with two long runs (18/21 km) whose second half decouples.
 
     Also includes a short run (8 km) that must be excluded by the default
-    ``min_distance_km`` filter.
+    ``min_distance_km`` filter (10 km, #695).
     """
     db_path = tmp_path / "test_garmin_web_durability.duckdb"
     conn = duckdb.connect(str(db_path))
@@ -1337,7 +1337,7 @@ def durability_db_path(tmp_path: Path) -> Path:
                 _DURABILITY_LONG_RUNS
             )
         ]
-        # Short run that should be filtered out (< 15 km).
+        # Short run that should be filtered out (< 10 km default).
         activity_rows.append(
             (9000005003, "2025-10-12", "Short Run", 8.0, 2400, 300.0, 140)
         )
@@ -1375,7 +1375,7 @@ def durability_db_path(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def durability_empty_db_path(tmp_path: Path) -> Path:
-    """DuckDB with only short runs (< 15 km) -> no qualifying long runs."""
+    """DuckDB with only short runs (< 10 km) -> no qualifying long runs."""
     db_path = tmp_path / "test_garmin_web_durability_empty.duckdb"
     conn = duckdb.connect(str(db_path))
     try:

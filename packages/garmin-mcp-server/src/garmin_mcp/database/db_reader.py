@@ -948,7 +948,7 @@ class GarminDBReader:
         return self.durability.get_activity_durability(activity_id)
 
     def get_durability_trend(
-        self, start_date: str, end_date: str, min_distance_km: float = 15.0
+        self, start_date: str, end_date: str, min_distance_km: float = 10.0
     ) -> dict[str, Any]:
         """Get the long-run decoupling trend over a date window.
 
@@ -956,7 +956,7 @@ class GarminDBReader:
             start_date: Inclusive window start (``YYYY-MM-DD``).
             end_date: Inclusive window end (``YYYY-MM-DD``).
             min_distance_km: Minimum distance to qualify as a long run
-                (default 15.0).
+                (default 10.0).
 
         Returns:
             Dict with an ``activities`` array (per-activity durability, date

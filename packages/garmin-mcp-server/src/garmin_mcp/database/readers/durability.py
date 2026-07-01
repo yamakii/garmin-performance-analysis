@@ -210,7 +210,7 @@ class DurabilityReader(BaseDBReader):
         self,
         start_date: str,
         end_date: str,
-        min_distance_km: float = 15.0,
+        min_distance_km: float = 10.0,
     ) -> dict[str, Any]:
         """Return the decoupling trend across long runs in a date window.
 

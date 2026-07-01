@@ -20,7 +20,8 @@ def test_durability_trend_endpoint_shape(durability_db_path):
     # Top-level keys: per-activity durability + aggregate trend.
     assert set(payload) == {"activities", "trend"}
 
-    # Two >=15 km long runs qualify; the 8 km run is filtered out.
+    # Two long runs (18/21 km) qualify; the 8 km run is filtered out
+    # by the default min_distance_km (10 km, #695).
     activities = payload["activities"]
     assert isinstance(activities, list)
     assert len(activities) == 2
@@ -39,7 +40,7 @@ def test_durability_trend_endpoint_shape(durability_db_path):
         }
         assert isinstance(activity["activity_id"], int)
         assert isinstance(activity["distance_km"], (int, float))
-        assert activity["distance_km"] >= 15.0
+        assert activity["distance_km"] >= 10.0
         assert isinstance(activity["decoupling_pct"], (int, float))
         assert isinstance(activity["pace_fade_pct"], (int, float))
         # Back half costs more HR per unit speed -> positive decoupling.
