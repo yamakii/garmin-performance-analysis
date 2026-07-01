@@ -40,6 +40,10 @@ export const METRIC_DECIMALS: Record<string, number> = {
 /** Violet shades for overlaid form lines (overall / GCT / VO / VR). */
 export const FORM_LINE_COLORS = ["#16213a", "#8b5cf6", "#a78bfa", "#c4b5fd"];
 
+/** Distinct, harmonious hues for the three form deltas (GCT / VO / VR),
+ *  chosen for legibility over the shared-violet theme. */
+export const FORM_DELTA_COLORS = ["#0d9488", "#d97706", "#7c3aed"] as const; // teal / amber / violet
+
 /** Garmin HR zone colors z1-z5 (calm -> hot). */
 export const ZONE_COLORS = [
   "#94a3b8",

@@ -16,19 +16,34 @@ function point(overrides: Partial<FormTrendPoint> = {}): FormTrendPoint {
   };
 }
 
-type ValueAxis = { min?: number; max?: number; scale?: boolean };
-type Series = { name?: string; data?: unknown[] };
+type ValueAxis = {
+  min?: number;
+  max?: number;
+  scale?: boolean;
+  interval?: number;
+};
+type MarkArea = { data?: unknown[] };
+type MarkLine = { data?: { yAxis?: number }[] };
+type Series = {
+  name?: string;
+  data?: unknown[];
+  markArea?: MarkArea;
+  markLine?: MarkLine;
+};
 
 describe("buildScoreChartOption", () => {
-  it("test_buildScoreChartOption_fixes_1_to_5_axis", () => {
+  it("test_buildScoreChartOption_axis_has_headroom", () => {
     const option = buildScoreChartOption([point()]);
     const yAxis = option.yAxis as ValueAxis;
-    expect(yAxis.min).toBe(1);
-    expect(yAxis.max).toBe(5);
+    expect(yAxis.min!).toBeLessThan(1);
+    expect(yAxis.max!).toBeGreaterThan(5);
+    expect(yAxis.interval).toBe(1);
+  });
 
+  it("test_buildScoreChartOption_has_three_quality_bands", () => {
+    const option = buildScoreChartOption([point()]);
     const series = option.series as Series[];
-    expect(series).toHaveLength(1);
-    expect(series[0].name).toBe("総合スコア");
+    expect(series[0].markArea?.data).toHaveLength(3);
   });
 
   it("test_buildScoreChartOption_maps_overall_score", () => {
@@ -39,6 +54,22 @@ describe("buildScoreChartOption", () => {
 });
 
 describe("buildDeltaChartOption", () => {
+  it("test_buildDeltaChartOption_distinct_colors", () => {
+    const option = buildDeltaChartOption([point()]);
+    const colors = option.color as string[];
+    expect(colors).toHaveLength(3);
+    expect(new Set(colors).size).toBe(3);
+  });
+
+  it("test_buildDeltaChartOption_has_zero_baseline", () => {
+    const option = buildDeltaChartOption([point()]);
+    const series = option.series as Series[];
+    const hasZeroBaseline = series.some((s) =>
+      s.markLine?.data?.some((d) => d.yAxis === 0),
+    );
+    expect(hasZeroBaseline).toBe(true);
+  });
+
   it("test_buildDeltaChartOption_uses_robust_bounds", () => {
     const data = [
       point({ vr_delta: -2 }),

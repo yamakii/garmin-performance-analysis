@@ -1,6 +1,7 @@
 import {
   AXIS_STYLE,
   BASE_CHART_OPTION,
+  FORM_DELTA_COLORS,
   FORM_LINE_COLORS,
 } from "../../components/chartTheme";
 import { axisTooltipFormatter } from "../../utils/formatNumber";
@@ -21,9 +22,10 @@ function dateAxis(data: FormTrendPoint[]) {
 }
 
 /**
- * Score panel: the single overall_score series on a fixed 1-5 left axis.
- * Fixing the axis keeps the score trend readable regardless of how flat or
- * spiky the values are — this panel is the primary read.
+ * Score panel: the single overall_score series on a padded 1-5 left axis.
+ * The axis runs 0.5-5.5 (ticks at 1-5 with half-unit headroom) so the 5.0/1.0
+ * extremes never clip against the frame, backed by three faint quality bands
+ * (good / ok / watch) and dotted point markers for at-a-glance reading.
  */
 export function buildScoreChartOption(data: FormTrendPoint[]): EChartsOption {
   return {
@@ -36,12 +38,40 @@ export function buildScoreChartOption(data: FormTrendPoint[]): EChartsOption {
     },
     legend: { data: [SCORE_SERIES] },
     xAxis: dateAxis(data),
-    yAxis: { type: "value" as const, min: 1, max: 5, ...AXIS_STYLE },
+    yAxis: {
+      type: "value" as const,
+      min: 0.5,
+      max: 5.5,
+      interval: 1,
+      ...AXIS_STYLE,
+    },
     series: [
       {
         name: SCORE_SERIES,
         type: "line" as const,
+        symbol: "circle" as const,
+        symbolSize: 6,
+        showSymbol: true,
+        lineStyle: { width: 2.5 },
         data: data.map((p) => p.overall_score),
+        // Faint quality zones behind the line (good / ok / watch).
+        markArea: {
+          silent: true,
+          data: [
+            [
+              { yAxis: 3.5, itemStyle: { color: "rgba(16,185,129,0.08)" } },
+              { yAxis: 5.5 },
+            ],
+            [
+              { yAxis: 2, itemStyle: { color: "rgba(251,191,36,0.08)" } },
+              { yAxis: 3.5 },
+            ],
+            [
+              { yAxis: 0.5, itemStyle: { color: "rgba(239,68,68,0.08)" } },
+              { yAxis: 2 },
+            ],
+          ],
+        },
       },
     ],
   };
@@ -62,8 +92,8 @@ export function buildDeltaChartOption(data: FormTrendPoint[]): EChartsOption {
 
   return {
     ...BASE_CHART_OPTION,
-    // Form deltas = violet family (Issue #214), skipping the ink slot.
-    color: FORM_LINE_COLORS.slice(1),
+    // Distinct teal/amber/violet so the three deltas read apart at a glance.
+    color: [...FORM_DELTA_COLORS],
     tooltip: {
       trigger: "axis" as const,
       formatter: axisTooltipFormatter({
@@ -85,16 +115,38 @@ export function buildDeltaChartOption(data: FormTrendPoint[]): EChartsOption {
       {
         name: DELTA_SERIES[0],
         type: "line" as const,
+        symbol: "circle" as const,
+        symbolSize: 5,
+        lineStyle: { width: 2 },
         data: data.map((p) => p.gct_delta),
+        // Zero-delta baseline: deltas above/below the form baseline read against it.
+        markLine: {
+          silent: true,
+          symbol: "none" as const,
+          data: [{ yAxis: 0 }],
+          lineStyle: { type: "dashed" as const, color: "#94a3b8", width: 1 },
+          label: {
+            formatter: "基準",
+            position: "insideStartTop" as const,
+            color: "#94a3b8",
+            fontSize: 11,
+          },
+        },
       },
       {
         name: DELTA_SERIES[1],
         type: "line" as const,
+        symbol: "circle" as const,
+        symbolSize: 5,
+        lineStyle: { width: 2 },
         data: data.map((p) => p.vo_delta),
       },
       {
         name: DELTA_SERIES[2],
         type: "line" as const,
+        symbol: "circle" as const,
+        symbolSize: 5,
+        lineStyle: { width: 2 },
         data: data.map((p) => p.vr_delta),
       },
     ],
