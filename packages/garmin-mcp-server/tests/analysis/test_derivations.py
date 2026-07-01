@@ -5,6 +5,8 @@ import pytest
 from garmin_mcp.analysis.derivations import (
     compute_next_run_target,
     compute_plan_achievement,
+    map_environment_category,
+    map_phase_category,
 )
 
 _EASY_PLAN = {
@@ -161,3 +163,57 @@ def test_next_target_insufficient_data() -> None:
     assert result["insufficient_data"] is True
     assert isinstance(result["summary_ja"], str)
     assert result["recommended_type"] == "interval"
+
+
+# --- map_phase_category (Issue #673) ---
+
+
+@pytest.mark.unit
+def test_phase_category_from_planned_workout() -> None:
+    # planned_workout.workout_type takes precedence over training_type.
+    result = map_phase_category(
+        training_type="aerobic_base",
+        planned_workout={"workout_type": "tempo_run"},
+    )
+    assert result == "tempo_threshold"
+
+
+@pytest.mark.unit
+def test_phase_category_fallback_training_type() -> None:
+    result = map_phase_category(training_type="aerobic_base", planned_workout=None)
+    assert result == "low_moderate"
+
+
+@pytest.mark.unit
+def test_phase_category_interval() -> None:
+    result = map_phase_category(training_type="vo2max", planned_workout=None)
+    assert result == "interval_sprint"
+
+
+@pytest.mark.unit
+def test_phase_category_null_default() -> None:
+    result = map_phase_category(training_type=None, planned_workout=None)
+    assert result == "tempo_threshold"
+
+
+# --- map_environment_category (Issue #673) ---
+
+
+@pytest.mark.unit
+def test_env_category_recovery() -> None:
+    assert map_environment_category("recovery") == "recovery"
+
+
+@pytest.mark.unit
+def test_env_category_base() -> None:
+    assert map_environment_category("aerobic_base") == "base_moderate"
+
+
+@pytest.mark.unit
+def test_env_category_tempo() -> None:
+    assert map_environment_category("tempo") == "tempo_threshold"
+
+
+@pytest.mark.unit
+def test_env_category_interval() -> None:
+    assert map_environment_category("interval") == "interval_sprint"

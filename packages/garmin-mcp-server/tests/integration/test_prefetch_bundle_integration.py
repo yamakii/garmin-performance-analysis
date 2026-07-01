@@ -275,3 +275,19 @@ class TestPrefetchBundleExpansion:
 
         # No default= encoder: a raw date anywhere in the bundle would raise.
         json.dumps(result, ensure_ascii=False)
+
+    def test_prefetch_emits_category_keys(
+        self, verification_db_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """phase_category / environment_category are deterministic (Issue #673).
+
+        The fixture training_type is aerobic_base with no plan, so the prefetch
+        maps it to phase_category='low_moderate' and
+        environment_category='base_moderate' without any LLM involvement.
+        """
+        _patch_db_path(monkeypatch, verification_db_path)
+
+        result = prefetch_activity_context(FIXTURE_ACTIVITY_ID)
+
+        assert result["phase_category"] == "low_moderate"
+        assert result["environment_category"] == "base_moderate"

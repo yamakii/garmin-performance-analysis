@@ -69,6 +69,8 @@ import sys
 from garmin_mcp.analysis.derivations import (
     compute_next_run_target,
     compute_plan_achievement,
+    map_environment_category,
+    map_phase_category,
 )
 from garmin_mcp.database.connection import get_connection, get_db_path
 
@@ -505,6 +507,11 @@ def prefetch_activity_context(activity_id: int) -> dict:
         "form_scores": form_scores,
         "phase_structure": phase_structure,
         "planned_workout": planned_workout,
+        # Deterministic training_type -> category mapping (Issue #673). Moves
+        # the phase / environment classification tables out of the agent prose
+        # so both sections select evaluation criteria without re-deriving.
+        "phase_category": map_phase_category(training_type, planned_workout),
+        "environment_category": map_environment_category(training_type),
         # Deterministic plan vs actual skeleton (Issue #671). None when no plan.
         # The agent adds only the prose `evaluation` field on top of this.
         "plan_achievement": compute_plan_achievement(
