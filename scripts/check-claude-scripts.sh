@@ -62,6 +62,16 @@ if [ "${#wf_tests[@]}" -gt 0 ]; then
   fi
 fi
 
+# Agent-model gate: every agent() in .claude/workflows/*.js must resolve a
+# model (explicit model: or an agentType whose def declares model:). Prevents
+# silent inheritance of the (usually Opus) session model.
+if node scripts/check-workflow-agent-model.mjs; then
+  echo "ok (agent model gate)"
+else
+  echo "FAIL (agent model gate)" >&2
+  status=1
+fi
+
 # scripts/tests/*.sh : syntax-smoke (bash -n) for the self-tests themselves.
 for f in scripts/tests/*.sh; do
   if bash -n "$f"; then

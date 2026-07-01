@@ -157,6 +157,9 @@ const fetched = await agent(fetchPrompt(ARGS.date), {
   label: 'fetch',
   phase: 'Fetch',
   effort: 'low',
+  // pure orchestration (MCP/bash calls + JSON echo) — no analytical reasoning,
+  // so haiku is enough. Pins the model instead of inheriting the session's.
+  model: 'haiku',
   schema: FETCH_SCHEMA,
 })
 
@@ -196,7 +199,13 @@ await parallel([
 // ── Phase Finalize: proofread Japanese prose, then merge into DuckDB ──
 phase('Finalize')
 await agent(proofreadPrompt(ctx), { label: 'proofread', phase: 'Finalize', agentType: 'proofreader' })
-const merge = await agent(mergePrompt(ctx), { label: 'merge', phase: 'Finalize', schema: MERGE_SCHEMA })
+// pure orchestration (reads section JSONs, calls merge tool) — haiku suffices.
+const merge = await agent(mergePrompt(ctx), {
+  label: 'merge',
+  phase: 'Finalize',
+  model: 'haiku',
+  schema: MERGE_SCHEMA,
+})
 
 const succeeded = merge?.succeeded ?? []
 const failed = merge?.failed ?? []
