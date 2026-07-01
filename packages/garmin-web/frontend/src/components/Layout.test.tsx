@@ -3,6 +3,14 @@ import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import Layout from "./Layout";
 
+const NAV_LINKS = [
+  "ホーム",
+  "アクティビティ",
+  "トレンド",
+  "目標",
+  "週次レビュー",
+];
+
 function renderLayout(initialPath = "/") {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
@@ -14,23 +22,32 @@ function renderLayout(initialPath = "/") {
 }
 
 describe("Layout", () => {
-  it("renders all four nav links", () => {
+  it("renders all five nav links", () => {
     renderLayout();
 
-    expect(screen.getByRole("link", { name: "一覧" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "トレンド" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "目標" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "週次レビュー" }),
-    ).toBeInTheDocument();
+    for (const name of NAV_LINKS) {
+      expect(screen.getByRole("link", { name })).toBeInTheDocument();
+    }
 
     // Children render inside the content container.
     expect(screen.getByText("コンテンツ")).toBeInTheDocument();
 
     // NavLink marks the active route with aria-current="page".
-    expect(screen.getByRole("link", { name: "一覧" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "ホーム" })).toHaveAttribute(
       "aria-current",
       "page",
+    );
+  });
+
+  it("marks アクティビティ active on the /activities route", () => {
+    renderLayout("/activities");
+
+    expect(screen.getByRole("link", { name: "アクティビティ" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByRole("link", { name: "ホーム" })).not.toHaveAttribute(
+      "aria-current",
     );
   });
 
@@ -38,14 +55,14 @@ describe("Layout", () => {
     renderLayout();
 
     // Lightweight strategy: the nav scrolls horizontally instead of wrapping
-    // or cramping the four links on narrow screens.
+    // or cramping the five links on narrow screens.
     const nav = screen.getByRole("navigation", {
       name: "メインナビゲーション",
     });
     expect(nav).toHaveClass("overflow-x-auto");
 
     // Links stay full-size (do not compress) so they remain tappable.
-    for (const name of ["一覧", "トレンド", "目標", "週次レビュー"]) {
+    for (const name of NAV_LINKS) {
       expect(screen.getByRole("link", { name })).toHaveClass("shrink-0");
     }
   });
