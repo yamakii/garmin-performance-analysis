@@ -1,12 +1,9 @@
 import { useMemo } from "react";
 import EChart from "../../components/EChart";
 import {
-  AXIS_STYLE,
-  BASE_CHART_OPTION,
-  FORM_LINE_COLORS,
-} from "../../components/chartTheme";
-import { axisTooltipFormatter } from "../../utils/formatNumber";
-import { robustAxisBounds } from "../../utils/robustBounds";
+  buildDeltaChartOption,
+  buildScoreChartOption,
+} from "./formChartOptions";
 import type { FormTrendPoint } from "../../api/trends";
 
 interface FormBlockProps {
@@ -14,77 +11,11 @@ interface FormBlockProps {
 }
 
 export default function FormBlock({ data }: FormBlockProps) {
-  const option = useMemo(() => {
-    // Right axis carries the three form deltas. Their raw range is dominated by
-    // rare VR Δ% outliers (e.g. +170%), so derive robust bounds that push those
-    // off-screen while leaving the series data untouched (tooltips show reals).
-    const deltaBounds = robustAxisBounds([
-      ...data.map((p) => p.gct_delta),
-      ...data.map((p) => p.vo_delta),
-      ...data.map((p) => p.vr_delta),
-    ]);
-
-    return {
-      ...BASE_CHART_OPTION,
-      // Overall = ink, form deltas = violet family (Issue #214).
-      color: FORM_LINE_COLORS,
-      tooltip: {
-        trigger: "axis" as const,
-        formatter: axisTooltipFormatter({
-          総合スコア: 1,
-          "GCT Δ%": 1,
-          "VO Δcm": 1,
-          "VR Δ%": 1,
-        }),
-      },
-      legend: { data: ["総合スコア", "GCT Δ%", "VO Δcm", "VR Δ%"] },
-      xAxis: {
-        type: "category" as const,
-        data: data.map((p) => p.date),
-        ...AXIS_STYLE,
-      },
-      yAxis: [
-        // Left axis: overall score, fixed 1-5 so the trend stays readable.
-        { type: "value" as const, min: 1, max: 5, ...AXIS_STYLE },
-        // Right axis: form deltas on robust bounds (auto-scale if unavailable).
-        {
-          type: "value" as const,
-          ...(deltaBounds
-            ? { min: deltaBounds.min, max: deltaBounds.max }
-            : { scale: true }),
-          ...AXIS_STYLE,
-          // Only the left axis draws horizontal grid lines to avoid clutter.
-          splitLine: { show: false },
-        },
-      ],
-      series: [
-        {
-          name: "総合スコア",
-          type: "line" as const,
-          yAxisIndex: 0,
-          data: data.map((p) => p.overall_score),
-        },
-        {
-          name: "GCT Δ%",
-          type: "line" as const,
-          yAxisIndex: 1,
-          data: data.map((p) => p.gct_delta),
-        },
-        {
-          name: "VO Δcm",
-          type: "line" as const,
-          yAxisIndex: 1,
-          data: data.map((p) => p.vo_delta),
-        },
-        {
-          name: "VR Δ%",
-          type: "line" as const,
-          yAxisIndex: 1,
-          data: data.map((p) => p.vr_delta),
-        },
-      ],
-    };
-  }, [data]);
+  // Two stacked panels: score (1-5, the primary read) on top, form deltas
+  // (%/cm, robust-bounded) below. Overlaying both on one plot made the line
+  // crossings meaningless (Issue #691), so each gets its own axis + option.
+  const scoreOption = useMemo(() => buildScoreChartOption(data), [data]);
+  const deltaOption = useMemo(() => buildDeltaChartOption(data), [data]);
 
   return (
     <section
@@ -99,7 +30,28 @@ export default function FormBlock({ data }: FormBlockProps) {
           データがありません
         </p>
       ) : (
-        <EChart option={option} ariaLabel="フォーム評価の折れ線グラフ" />
+        <div className="space-y-4">
+          <div>
+            <h3 className="mb-1 text-sm font-medium text-slate-600">
+              フォームスコア (1〜5)
+            </h3>
+            <EChart
+              option={scoreOption}
+              ariaLabel="フォームスコアの折れ線グラフ"
+              height={220}
+            />
+          </div>
+          <div>
+            <h3 className="mb-1 text-sm font-medium text-slate-600">
+              フォーム偏差 (Δ)
+            </h3>
+            <EChart
+              option={deltaOption}
+              ariaLabel="フォーム偏差の折れ線グラフ"
+              height={220}
+            />
+          </div>
+        </div>
       )}
     </section>
   );
