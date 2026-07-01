@@ -18,7 +18,7 @@ def get_durability_trend_endpoint(
     request: Request,
     start_date: str,
     end_date: str,
-    min_distance_km: float = 15.0,
+    min_distance_km: float = 10.0,
 ) -> dict[str, Any]:
     """Return the long-run decoupling trend over a date window.
 

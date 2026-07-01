@@ -146,7 +146,7 @@ export default function DurabilityBlock({ data }: DurabilityBlockProps) {
       </div>
       {isEmpty ? (
         <p className="py-8 text-center text-sm text-slate-500">
-          15km以上のロングランがないため、耐久性トレンドを算出できません
+          10km以上のロングランがないため、耐久性トレンドを算出できません
         </p>
       ) : (
         <>

@@ -705,7 +705,7 @@ describe("TrendsDashboard", () => {
     expect(screen.getByText("心拍 データ不足")).toBeInTheDocument();
     expect(screen.getByText("フォーム データ不足")).toBeInTheDocument();
     expect(
-      screen.getByText(/15km以上のロングランがないため/),
+      screen.getByText(/10km以上のロングランがないため/),
     ).toBeInTheDocument();
     expect(
       screen.queryByText(/デカップリングとGCT後半失速の推移/),

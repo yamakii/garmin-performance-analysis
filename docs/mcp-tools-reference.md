@@ -622,13 +622,13 @@ Get one activity's cardiac decoupling: the second-half vs first-half HR/speed ef
 
 CLI: `garmin-db durability trend`
 
-Get the longitudinal cardiac-decoupling trend across long runs in a date window. Only activities with total_distance_km >= min_distance_km (default 15) are included. Returns an activities array (per-activity durability, date ascending) and a trend block with decoupling_slope_per_day (regressed on elapsed days), data_points, direction (improving when decoupling falls / worsening / stable / insufficient_data), plus second-half form decay: gct_fade_slope_per_day (GCT fade regressed over runs with form data; null when <2 such runs) and form_direction (same classification applied to GCT fade).
+Get the longitudinal cardiac-decoupling trend across long runs in a date window. Only activities with total_distance_km >= min_distance_km (default 10) are included. Returns an activities array (per-activity durability, date ascending) and a trend block with decoupling_slope_per_day (regressed on elapsed days), data_points, direction (improving when decoupling falls / worsening / stable / insufficient_data), plus second-half form decay: gct_fade_slope_per_day (GCT fade regressed over runs with form data; null when <2 such runs) and form_direction (same classification applied to GCT fade).
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `start_date` | string | **required** | Inclusive window start date (YYYY-MM-DD). |
 | `end_date` | string | **required** | Inclusive window end date (YYYY-MM-DD). |
-| `min_distance_km` | number | optional (default `15.0`) | Minimum total_distance_km for an activity to qualify as a long run (default: 15.0). Shorter runs are excluded. |
+| `min_distance_km` | number | optional (default `10.0`) | Minimum total_distance_km for an activity to qualify as a long run (default: 10.0). Shorter runs are excluded. |
 
 ## strength
 

@@ -44,10 +44,10 @@ class GetDurabilityTrendParams(BaseModel):
         description="Inclusive window end date (YYYY-MM-DD).",
     )
     min_distance_km: float = Field(
-        default=15.0,
+        default=10.0,
         description=(
             "Minimum total_distance_km for an activity to qualify as a long run "
-            "(default: 15.0). Shorter runs are excluded."
+            "(default: 10.0). Shorter runs are excluded."
         ),
     )
 
@@ -86,7 +86,7 @@ DURABILITY_TOOLS: list[ToolDef] = [
         description=(
             "Get the longitudinal cardiac-decoupling trend across long runs in a "
             "date window. Only activities with total_distance_km >= "
-            "min_distance_km (default 15) are included. Returns an activities "
+            "min_distance_km (default 10) are included. Returns an activities "
             "array (per-activity durability, date ascending) and a trend block "
             "with decoupling_slope_per_day (regressed on elapsed days), "
             "data_points, direction (improving when decoupling falls / "
