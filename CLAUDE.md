@@ -180,9 +180,8 @@ garmin-performance-analysis/
 ### Agent System
 
 **3 Section Analysis Agents (run in parallel by the `analyze-activity` workflow):**
-1. **unified-section-analyst** (sonnet): produces efficiency / phase / environment. Supports a
-   bundle mode (all 4 sections incl. summary in one agent) and a per-section mode; the
-   `analyze-activity` workflow calls it once per section for efficiency/phase/environment.
+1. **unified-section-analyst** (sonnet): produces efficiency / phase / environment; the
+   `analyze-activity` workflow calls it once per section (per-section mode).
    - **efficiency**: Form (GCT/VO/VR) + power + cadence + HR efficiency
    - **phase**: Phase evaluation (warmup/run/cooldown[/recovery], training-type-aware)
    - **environment**: Environmental impact (temperature, humidity, wind, terrain)
