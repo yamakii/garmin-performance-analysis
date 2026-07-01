@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import Layout from "./components/Layout";
 
+const Dashboard = lazy(() => import("./pages/Dashboard"));
 const ActivityList = lazy(() => import("./pages/ActivityList"));
 const ActivityDetail = lazy(() => import("./pages/ActivityDetail"));
 const TrendsDashboard = lazy(() => import("./pages/TrendsDashboard"));
@@ -21,7 +22,8 @@ export default function App() {
           }
         >
           <Routes>
-            <Route path="/" element={<ActivityList />} />
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/activities" element={<ActivityList />} />
             <Route path="/activities/:id" element={<ActivityDetail />} />
             <Route path="/trends" element={<TrendsDashboard />} />
             <Route path="/goal" element={<Goal />} />
