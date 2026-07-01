@@ -50,6 +50,6 @@ workflow の戻り値に応じてユーザーへ報告:
 ## 関連ファイル（保守用）
 
 - workflow 本体: `.claude/workflows/analyze-activity.js`（純粋ロジックは `// >>> testable` ブロック、テストは `.claude/workflows/tests/analyze-activity.test.mjs`）
-- セクションエージェント: `.claude/agents/unified-section-analyst.md`（節別モード対応）, `.claude/agents/split-section-analyst.md`
+- セクションエージェント: `.claude/agents/unified-section-analyst.md`（efficiency/phase/environment 節別）, `.claude/agents/summary-section-analyst.md`（summary 専用）, `.claude/agents/split-section-analyst.md`（split 専用）
 - 校正: `.claude/agents/proofreader.md`
 - スクリプト: `garmin_mcp.scripts.prefetch_activity_context`, `garmin_mcp.scripts.merge_section_analyses`
