@@ -6,7 +6,7 @@ export const meta = {
     { title: 'Implement', detail: 'one worktree developer agent per issue (parallel)' },
     { title: 'Validate', detail: 'L1/L2 validation per implementation (parallel, subprocess)', model: 'sonnet' },
     { title: 'Ship', detail: 'push, create PR, poll ci-guard', model: 'sonnet' },
-    { title: 'Merge', detail: 'auto-merge on validation pass + ci green; else escalate', model: 'haiku' },
+    { title: 'Merge', detail: 'auto-merge on validation pass + ci green; else escalate', model: 'sonnet' },
   ],
 }
 
@@ -176,8 +176,10 @@ const results = await pipeline(
     if (!decision.ok) return { issue: issue.number, ...acc, merge: { merged: false, reason: decision.reason } }
     return agent(
       `PR #${acc.ship.pr_number}（Issue #${issue.number}）を auto-merge してください。検証 PASS + ci-guard success + mergeable を確認済み。\n` +
-        `mcp__github__merge_pull_request(${repoCtx()}, pullNumber=${acc.ship.pr_number}, merge_method="merge") を実行し、結果を schema で返す。`,
-      { label: `merge:#${issue.number}`, phase: 'Merge', model: 'haiku', effort: 'low', schema: MERGE_SCHEMA }
+        `mcp__github__merge_pull_request(${repoCtx()}, pullNumber=${acc.ship.pr_number}, merge_method="merge") を実行し、結果を schema で返す。\n` +
+        `この tool が未ロードなら ToolSearch('select:mcp__github__merge_pull_request') で読み込んでから呼ぶこと。\n` +
+        `禁止: sub-LLM の spawn / Anthropic API の直叩き / Bash 等での権限システム迂回。マージは必ず上記 MCP tool 経由で行う。`,
+      { label: `merge:#${issue.number}`, phase: 'Merge', model: 'sonnet', effort: 'low', schema: MERGE_SCHEMA }
     ).then((mg) => ({ issue: issue.number, ...acc, merge: { merged: mg.merged, reason: decision.reason, merge_sha: mg.merge_sha ?? null } }))
   }
 )
