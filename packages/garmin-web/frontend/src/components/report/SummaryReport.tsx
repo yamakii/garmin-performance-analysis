@@ -6,11 +6,13 @@ import NextRunTarget from "./NextRunTarget";
 import PlanAchievement from "./PlanAchievement";
 import ReportCard, { SUBCARD } from "./ReportCard";
 import StarRating from "./StarRating";
+import StarRatingBreakdown from "./StarRatingBreakdown";
 
 // Keys with dedicated UI (Spike #198: 100% keys + optional summary fields).
 const KNOWN_KEYS = [
   "metadata",
   "star_rating",
+  "star_rating_breakdown",
   "summary",
   "key_strengths",
   "improvement_areas",
@@ -89,6 +91,10 @@ export default function SummaryReport({
               )}
             </div>
           )}
+          <StarRatingBreakdown
+            data={data.star_rating_breakdown}
+            showTotal={false}
+          />
           {typeof data.summary === "string" && (
             <MarkdownText text={data.summary} />
           )}

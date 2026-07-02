@@ -2,6 +2,7 @@ import type { SectionResult } from "../../types";
 import FallbackFields from "./FallbackFields";
 import MarkdownText from "./MarkdownText";
 import ReportCard, { META_LABEL, SUBCARD, SUBHEADING } from "./ReportCard";
+import StarRatingBreakdown from "./StarRatingBreakdown";
 
 const PHASES: { key: string; label: string; dot: string }[] = [
   { key: "warmup_evaluation", label: "ウォームアップ", dot: "bg-sky-400" },
@@ -14,6 +15,7 @@ const PHASES: { key: string; label: string; dot: string }[] = [
 const KNOWN_KEYS = [
   "metadata",
   "evaluation_criteria",
+  "star_rating_breakdown",
   ...PHASES.map((phase) => phase.key),
 ];
 
@@ -50,6 +52,12 @@ export default function PhaseTimeline({
                 ))}
               </ol>
             )}
+            {data.star_rating_breakdown != null &&
+              typeof data.star_rating_breakdown === "object" && (
+                <div className="mt-4">
+                  <StarRatingBreakdown data={data.star_rating_breakdown} />
+                </div>
+              )}
             {typeof data.evaluation_criteria === "string" && (
               <div className={`mt-4 ${SUBCARD}`}>
                 <h3 className={META_LABEL}>評価基準</h3>
