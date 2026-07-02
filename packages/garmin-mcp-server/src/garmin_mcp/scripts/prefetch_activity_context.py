@@ -64,7 +64,10 @@ training-type conditional (tempo/threshold -> LT only; vo2max/interval/speed
 
 import argparse
 import json
+import logging
 import sys
+
+import duckdb
 
 from garmin_mcp.analysis.derivations import (
     compute_next_run_target,
@@ -73,6 +76,8 @@ from garmin_mcp.analysis.derivations import (
     map_phase_category,
 )
 from garmin_mcp.database.connection import get_connection, get_db_path
+
+logger = logging.getLogger(__name__)
 
 # Training types for which lactate threshold is the relevant aerobic ceiling.
 _LT_TRAINING_TYPES = {"tempo", "threshold", "lactate_threshold"}
@@ -312,8 +317,9 @@ def prefetch_activity_context(activity_id: int) -> dict:
                     "target_duration_minutes": planned_row[7],
                     "plan_id": planned_row[8],
                 }
-        except Exception:
-            pass  # Table may not exist if no plan was ever saved
+        except duckdb.CatalogException:
+            # Table may not exist if no plan was ever saved.
+            logger.debug("table not found; leaving planned_workout as None")
 
         # 4. Elevation statistics (from splits table)
         elev_row = conn.execute(
@@ -378,8 +384,9 @@ def prefetch_activity_context(activity_id: int) -> dict:
                     "overall_score": form_row[7],
                     "overall_star_rating": form_row[8],
                 }
-        except Exception:
-            pass  # Table may not exist
+        except duckdb.CatalogException:
+            # Table may not exist.
+            logger.debug("table not found; leaving form_scores as None")
 
         # 6. Phase structure (C3)
         phase_structure = None
@@ -412,8 +419,9 @@ def prefetch_activity_context(activity_id: int) -> dict:
             if phase_row:
                 has_recovery = phase_row[12] is not None  # recovery_splits
                 phase_structure = _build_phase_dict(phase_row, has_recovery)
-        except Exception:
-            pass  # Table may not exist
+        except duckdb.CatalogException:
+            # Table may not exist.
+            logger.debug("table not found; leaving phase_structure as None")
 
     # ------------------------------------------------------------------
     # Bundle expansion (S1, Issue #235): reuse existing readers/comparators

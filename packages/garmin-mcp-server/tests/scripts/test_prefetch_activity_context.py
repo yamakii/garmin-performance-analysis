@@ -2,6 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
+import duckdb
 import pytest
 
 from garmin_mcp.scripts.prefetch_activity_context import (
@@ -347,9 +348,13 @@ class TestPrefetchActivityContext:
             elif call_count == 4:
                 mock_result.fetchone.return_value = (None, None, 0, None, None, None)
             elif call_count == 5:
-                raise Exception("Table form_evaluations does not exist")
+                raise duckdb.CatalogException(
+                    "Table with name form_evaluations does not exist"
+                )
             elif call_count == 6:
-                raise Exception("Table performance_trends does not exist")
+                raise duckdb.CatalogException(
+                    "Table with name performance_trends does not exist"
+                )
             return mock_result
 
         mock_conn.execute.side_effect = side_effect
@@ -359,3 +364,189 @@ class TestPrefetchActivityContext:
         assert result["form_scores"] is None
         assert result["phase_structure"] is None
         assert "error" not in result
+
+    @patch("garmin_mcp.scripts.prefetch_activity_context.get_db_path")
+    @patch("garmin_mcp.scripts.prefetch_activity_context.get_connection")
+    def test_prefetch_missing_table_leaves_field_none(
+        self, mock_get_conn: MagicMock, mock_get_db: MagicMock, mock_conn: MagicMock
+    ) -> None:
+        """planned_workouts table missing -> planned_workout is None, no error."""
+        import datetime
+
+        mock_get_db.return_value = "/fake/db.duckdb"
+        mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
+
+        call_count = 0
+
+        def side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            mock_result = MagicMock()
+            if call_count == 1:  # activity metadata
+                mock_result.fetchone.return_value = (
+                    datetime.date(2026, 2, 16),
+                    7.8,
+                    84,
+                    4.0,
+                    "NW",
+                    148,
+                    330.0,
+                )
+            elif call_count == 2:  # hr_efficiency
+                mock_result.fetchone.return_value = None
+            elif call_count == 3:  # planned_workouts table missing
+                raise duckdb.CatalogException(
+                    "Table with name planned_workouts does not exist"
+                )
+            elif call_count == 4:  # elevation
+                mock_result.fetchone.return_value = (None, None, 0, None, None, None)
+            else:  # form_evaluations / performance_trends
+                mock_result.fetchone.return_value = None
+            return mock_result
+
+        mock_conn.execute.side_effect = side_effect
+
+        result = prefetch_activity_context(12345)
+
+        assert result["planned_workout"] is None
+        assert result["plan_achievement"] is None
+        assert "error" not in result
+
+    @patch("garmin_mcp.scripts.prefetch_activity_context.get_db_path")
+    @patch("garmin_mcp.scripts.prefetch_activity_context.get_connection")
+    def test_prefetch_query_error_propagates(
+        self, mock_get_conn: MagicMock, mock_get_db: MagicMock, mock_conn: MagicMock
+    ) -> None:
+        """Non-catalog errors (e.g. BinderException) propagate to the caller."""
+        import datetime
+
+        mock_get_db.return_value = "/fake/db.duckdb"
+        mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
+
+        call_count = 0
+
+        def side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            mock_result = MagicMock()
+            if call_count == 1:  # activity metadata
+                mock_result.fetchone.return_value = (
+                    datetime.date(2026, 2, 16),
+                    7.8,
+                    84,
+                    4.0,
+                    "NW",
+                    148,
+                    330.0,
+                )
+            elif call_count == 4:  # elevation
+                mock_result.fetchone.return_value = (None, None, 0, None, None, None)
+            elif call_count == 5:  # form_evaluations query is broken
+                raise duckdb.BinderException(
+                    'Referenced column "gct_star_rating" not found'
+                )
+            else:
+                mock_result.fetchone.return_value = None
+            return mock_result
+
+        mock_conn.execute.side_effect = side_effect
+
+        with pytest.raises(duckdb.BinderException):
+            prefetch_activity_context(12345)
+
+    @patch("garmin_mcp.scripts.prefetch_activity_context.get_db_path")
+    @patch("garmin_mcp.scripts.prefetch_activity_context.get_connection")
+    def test_prefetch_full_context_regression(
+        self, mock_get_conn: MagicMock, mock_get_db: MagicMock, mock_conn: MagicMock
+    ) -> None:
+        """All tables present -> every key (incl. planned_workout) stays filled."""
+        import datetime
+
+        mock_get_db.return_value = "/fake/db.duckdb"
+        mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
+        mock_conn.execute.return_value.fetchone.side_effect = [
+            # Query 1: activity metadata
+            (datetime.date(2026, 2, 16), 7.8, 84, 4.0, "NW", 148, 330.0),
+            # Query 2: hr_efficiency
+            (
+                "aerobic_base",
+                "Zone 3",
+                "appropriate",
+                "stable",
+                "good",
+                "effective",
+                False,
+                False,
+                5.2,
+                36.8,
+                50.5,
+                5.0,
+                2.5,
+            ),
+            # Query 3: planned_workout row
+            (
+                "easy_run",  # workout_type
+                "イージーラン",  # description_ja
+                120,  # target_hr_low
+                145,  # target_hr_high
+                390.0,  # target_pace_low
+                420.0,  # target_pace_high
+                8.0,  # target_distance_km
+                50,  # target_duration_minutes
+                "plan-2026-02",  # plan_id
+            ),
+            # Query 4: elevation
+            (12.8, 11.2, 8, 4.5, 2.5, 2.0),
+            # Query 5: form_evaluations
+            ("★★★★★", 4.8, "★★★★☆", 4.0, "★★★★☆", 4.0, 92.5, 4.3, "★★★★☆"),
+            # Query 6: performance_trends
+            (
+                0.017,
+                2.5,
+                "stable",
+                "none",
+                "6:33/km",
+                134.0,
+                "1,2",
+                "5:45/km",
+                155.0,
+                "3,4,5,6",
+                None,
+                None,
+                None,
+                "7:12/km",
+                140.0,
+                "7,8",
+            ),
+        ]
+
+        result = prefetch_activity_context(12345)
+
+        assert "error" not in result
+        # planned_workout filled from the planned_workouts row
+        assert result["planned_workout"] == {
+            "workout_type": "easy_run",
+            "description_ja": "イージーラン",
+            "target_hr_low": 120,
+            "target_hr_high": 145,
+            "target_pace_low": 390.0,
+            "target_pace_high": 420.0,
+            "target_distance_km": 8.0,
+            "target_duration_minutes": 50,
+            "plan_id": "plan-2026-02",
+        }
+        # plan_achievement derived (non-null) when a plan exists
+        assert result["plan_achievement"] is not None
+        assert result["plan_achievement"]["workout_type"] == "easy_run"
+        # form_scores and phase_structure stay filled as before
+        assert result["form_scores"]["gct"]["score"] == 4.8
+        assert result["form_scores"]["overall_star_rating"] == "★★★★☆"
+        assert result["phase_structure"]["pace_consistency"] == 0.017
+        assert result["phase_structure"]["run"]["avg_hr"] == 155.0
+        # existing scalar keys unaffected
+        assert result["activity_date"] == "2026-02-16"
+        assert result["training_type"] == "aerobic_base"
+        assert result["terrain_category"] == "flat"
