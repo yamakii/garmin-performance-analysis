@@ -7,7 +7,9 @@ Raises pydantic.ValidationError on invalid data.
 from __future__ import annotations
 
 import re
+from typing import Any
 
+from garmin_mcp.analysis.derivations import compute_weighted_star_rating
 from garmin_mcp.validation.models import ActivityRecord, SplitRecord
 
 # Summary star_rating must look like ``★★★★☆ 4.2/5.0``: 1-5 filled stars,
@@ -137,6 +139,78 @@ def check_narration_numeric_consistency(
                 )
 
     return (not errors), errors
+
+
+# Sections whose star_rating is a weighted average the guard can recompute.
+_WEIGHTED_STAR_SECTIONS = frozenset({"summary", "phase", "environment"})
+
+# Max tolerated |recomputed - stated| difference. round(x, 1) on both sides
+# means anything beyond one decimal place of drift is an LLM arithmetic error.
+_STAR_WEIGHTING_TOLERANCE = 0.05
+
+
+def check_star_weighting_consistency(
+    section_type: str, analysis_data: dict[str, Any]
+) -> tuple[bool, str | None]:
+    """Verify the stated star_rating against its weighted-axis breakdown.
+
+    Deterministic guard for the LLM-computed weighted star ratings (summary
+    4-axis, phase, environment; Issue #706). When ``analysis_data`` carries a
+    ``star_rating_breakdown`` object::
+
+        {"axis_scores": {...}, "weights": {...}, "star_rating": 3.7}
+
+    the rating is recomputed with
+    :func:`garmin_mcp.analysis.derivations.compute_weighted_star_rating` and
+    compared against the stated value. The stated value is the breakdown's
+    numeric ``star_rating`` when present, otherwise the numeric part of the
+    top-level ``star_rating`` string (``★★★★☆ 3.7/5.0``).
+
+    Args:
+        section_type: The section type of the analysis JSON.
+        analysis_data: The section's ``analysis_data`` dict.
+
+    Returns:
+        ``(True, None)`` when consistent, or when the check does not apply:
+        section types without weighted ratings, or JSON without axis scores /
+        weights / a stated rating (agents not yet emitting the breakdown).
+        ``(False, reason)`` when the breakdown is malformed or the recomputed
+        rating differs from the stated one by more than 0.05.
+    """
+    if section_type not in _WEIGHTED_STAR_SECTIONS:
+        return True, None
+
+    breakdown = analysis_data.get("star_rating_breakdown")
+    if not isinstance(breakdown, dict):
+        return True, None
+    axis_scores = breakdown.get("axis_scores")
+    weights = breakdown.get("weights")
+    if not isinstance(axis_scores, dict) or not isinstance(weights, dict):
+        return True, None
+
+    stated: float | None = None
+    breakdown_rating = breakdown.get("star_rating")
+    if isinstance(breakdown_rating, int | float):
+        stated = float(breakdown_rating)
+    else:
+        match = _STAR_RATING_PATTERN.match(str(analysis_data.get("star_rating", "")))
+        if match:
+            stated = float(match.group(1))
+    if stated is None:
+        return True, None
+
+    try:
+        recomputed = compute_weighted_star_rating(axis_scores, weights)
+    except (TypeError, ValueError) as e:
+        return False, f"star_rating_breakdown is malformed: {e}"
+
+    if abs(recomputed - stated) > _STAR_WEIGHTING_TOLERANCE:
+        return False, (
+            f"star_rating {stated} does not match the weighted recomputation "
+            f"{recomputed} from star_rating_breakdown "
+            f"(axis_scores={axis_scores}, weights={weights})"
+        )
+    return True, None
 
 
 def validate_activity(data: dict) -> ActivityRecord:

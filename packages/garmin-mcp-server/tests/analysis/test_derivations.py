@@ -5,9 +5,40 @@ import pytest
 from garmin_mcp.analysis.derivations import (
     compute_next_run_target,
     compute_plan_achievement,
+    compute_weighted_star_rating,
     map_environment_category,
     map_phase_category,
 )
+
+
+@pytest.mark.unit
+def test_compute_weighted_star_rating_basic() -> None:
+    rating = compute_weighted_star_rating(
+        {"effort": 4.0, "performance": 3.0, "efficiency": 5.0, "execution": 2.0},
+        {"effort": 0.4, "performance": 0.3, "efficiency": 0.2, "execution": 0.1},
+    )
+
+    assert rating == 3.7
+
+
+@pytest.mark.unit
+def test_compute_weighted_star_rating_clamps_to_5() -> None:
+    rating = compute_weighted_star_rating(
+        {"effort": 5.5, "performance": 5.5, "efficiency": 5.5, "execution": 5.5},
+        {"effort": 0.4, "performance": 0.3, "efficiency": 0.2, "execution": 0.1},
+    )
+
+    assert rating == 5.0
+
+
+@pytest.mark.unit
+def test_compute_weighted_star_rating_key_mismatch_raises() -> None:
+    with pytest.raises(ValueError, match="weights keys must match"):
+        compute_weighted_star_rating(
+            {"effort": 4.0, "performance": 3.0, "efficiency": 5.0, "execution": 2.0},
+            {"effort": 0.4, "performance": 0.3, "efficiency": 0.3},
+        )
+
 
 _EASY_PLAN = {
     "workout_type": "easy",

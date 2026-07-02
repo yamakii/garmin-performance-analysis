@@ -104,3 +104,59 @@ class TestMergeNarrationNumericGuard:
         }
         assert "summary" not in inserted
         assert inserted == {"efficiency", "phase", "environment", "split"}
+
+
+@pytest.mark.integration
+class TestMergeStarWeightingGuard:
+    """Guard blocks weighting-inconsistent star ratings before insert."""
+
+    @patch("garmin_mcp.scripts.merge_section_analyses.GarminDBReader")
+    @patch("garmin_mcp.scripts.merge_section_analyses.GarminDBWriter")
+    def test_merge_rejects_summary_with_wrong_weighting(
+        self, mock_writer_cls, mock_reader_cls, tmp_path
+    ):
+        mock_reader_cls.return_value.physiology.get_form_baseline_trend.return_value = {
+            "success": False,
+            "metrics": {},
+        }
+        mock_writer = MagicMock()
+        mock_writer.insert_section_analysis.return_value = True
+        mock_writer_cls.return_value = mock_writer
+
+        # Stated 4.5 but the breakdown recomputes to 3.7 -> must be skipped.
+        _write_section_json(
+            tmp_path,
+            "summary",
+            {
+                "integrated_score": 85.0,
+                "star_rating": "★★★★☆ 4.5/5.0",
+                "star_rating_breakdown": {
+                    "axis_scores": {
+                        "effort": 4.0,
+                        "performance": 3.0,
+                        "efficiency": 5.0,
+                        "execution": 2.0,
+                    },
+                    "weights": {
+                        "effort": 0.4,
+                        "performance": 0.3,
+                        "efficiency": 0.2,
+                        "execution": 0.1,
+                    },
+                },
+            },
+        )
+        # Another valid section must still be inserted.
+        _write_section_json(tmp_path, "split", {"note": "split ok"})
+
+        result = merge_section_analyses(tmp_path, keep=True)
+
+        assert "summary" in result["failed"]
+        assert "summary" not in result["succeeded"]
+        assert result["succeeded"] == ["split"]
+        assert any("3.7" in err and "4.5" in err for err in result["errors"])
+        inserted = {
+            call.kwargs["section_type"]
+            for call in mock_writer.insert_section_analysis.call_args_list
+        }
+        assert inserted == {"split"}
