@@ -157,9 +157,10 @@ const fetched = await agent(fetchPrompt(ARGS.date), {
   label: 'fetch',
   phase: 'Fetch',
   effort: 'low',
-  // pure orchestration (MCP/bash calls + JSON echo) — no analytical reasoning,
-  // so haiku is enough. Pins the model instead of inheriting the session's.
-  model: 'haiku',
+  // orchestration (MCP/bash calls + JSON echo), but context_json must be copied
+  // verbatim ("一字一句そのまま") — haiku is unreliable at transcribing the large
+  // prefetch JSON, so pin sonnet. Pins the model instead of inheriting the session's.
+  model: 'sonnet',
   schema: FETCH_SCHEMA,
 })
 
