@@ -539,7 +539,7 @@ wheels = [
 
 [[package]]
 name = "garmin-mcp-server"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/garmin-mcp-server" }
 dependencies = [
     { name = "duckdb" },
@@ -617,7 +617,7 @@ dev = [{ name = "types-python-dateutil", specifier = ">=2.9.0.20260124" }]
 
 [[package]]
 name = "garmin-performance-analysis"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "garmin-mcp-server" },
@@ -653,7 +653,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "garmin-web"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/garmin-web" }
 dependencies = [
     { name = "duckdb" },
