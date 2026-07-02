@@ -10,7 +10,7 @@ from garmin_mcp.scripts.generate_tool_reference import (
     render_reference,
 )
 from garmin_mcp.tool_schemas import _SERVER_TOOLS
-from garmin_mcp.tools import ALL_DEFS
+from garmin_mcp.tools import ALL_DEFS, ALL_DEFS_BY_NAME
 
 
 @pytest.mark.unit
@@ -29,10 +29,16 @@ def test_reference_is_in_sync() -> None:
 
 @pytest.mark.unit
 def test_all_tools_present() -> None:
-    """Every registry + server tool name appears, and the count is 56."""
+    """Every registry + server tool name appears in the reference.
+
+    The expected name set is derived from the registry (no hard-coded count);
+    ``test_reference_is_in_sync`` remains the single byte-for-byte guard.
+    """
     content = render_reference()
     names = [d.name for d in ALL_DEFS] + [t["name"] for t in _SERVER_TOOLS]
-    assert len(names) == 56
+    # Names are unique and cover exactly the by-name registry + server tools.
+    assert len(names) == len(set(names)), "duplicate tool names"
+    assert set(names) == set(ALL_DEFS_BY_NAME) | {t["name"] for t in _SERVER_TOOLS}
     for name in names:
         assert f"### `{name}`" in content, f"{name} missing from reference"
 

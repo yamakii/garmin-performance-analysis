@@ -10,7 +10,7 @@ Garmin running performance analysis system with **DuckDB-first architecture** an
 
 **Key Features:**
 - DuckDB normalized storage (21 tables, 100+ activities)
-- 56 token-optimized MCP tools (70-98.8% reduction), declared via a single-source `tools/` registry
+- Token-optimized MCP tools (70-98.8% reduction), declared via a single-source `tools/` registry (see `docs/mcp-tools-reference.md` for the full set)
 - 3 analysis agents (unified-section-analyst + split-section-analyst + summary-section-analyst)
 - Japanese analysis stored in DuckDB, viewed via the Web app (code/docs in English)
 
@@ -123,7 +123,7 @@ Validation Agent 方式（L1/L2 は subprocess で並列起動可、L3 のみメ
 | `DuckDBSaver` | Transaction-batched DuckDB insertion |
 | `GarminDBWriter` | DuckDB write operations (21 tables, 13 inserters) |
 | `GarminDBReader` | DuckDB read operations (query builders) |
-| `tools/` registry | 56 tools declared as `ToolDef` (54 domain + 2 server). `server.py` dispatches directly from `ALL_DEFS_BY_NAME` (O(1) lookup) |
+| `tools/` registry | Domain tools + 2 server tools declared as `ToolDef` (see `docs/mcp-tools-reference.md`). `server.py` dispatches directly from `ALL_DEFS_BY_NAME` (O(1) lookup) |
 
 **DuckDB Schema (21 domain tables):**
 - Metadata: `activities`, `body_composition`
@@ -153,7 +153,7 @@ garmin-performance-analysis/
 │       │   ├── form_baseline/      # Form baseline training
 │       │   ├── scripts/
 │       │   │   └── regenerate/     # DuckDB regeneration utilities
-│       │   ├── tools/              # ToolDef registry (single source for 56 MCP tools)
+│       │   ├── tools/              # ToolDef registry (single source for all MCP tools)
 │       │   ├── tool_schemas.py     # thin wrapper: registry tools + 2 server tools
 │       │   └── validation/         # Data validation
 │       └── tests/
