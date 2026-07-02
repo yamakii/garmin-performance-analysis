@@ -2,7 +2,7 @@
 name: validation-agent
 description: Worktree コード変更の L1/L2 検証を実行するエージェント。reload_server を使わず、worktree コードをインプロセス import / subprocess pytest で検証する。L3（agent 定義検証）はメインセッションが担当する。
 tools: Bash, Read, Write, Glob, Grep
-model: inherit
+model: sonnet
 ---
 
 # Validation Agent

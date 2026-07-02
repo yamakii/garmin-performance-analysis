@@ -1,19 +1,30 @@
 # Workflow Agent Model Gate
 
-`.claude/workflows/*.js` の各 `agent()` 呼び出しは **model を明示解決できること**を必須とする。
-model も agentType も無い `agent()` はセッションモデル（多くは Opus）を暗黙継承し、コスト増・
-非決定性の温床になる。CI（`meta-checks` → `scripts/check-claude-scripts.sh` →
-`scripts/check-workflow-agent-model.mjs`）が違反を exit 1 で弾く。
+`.claude/workflows/*.js` の各 `agent()` 呼び出しは **許可モデル（最大 opus）を明示解決できること**を
+必須とする。model も agentType も無い `agent()`、および `model: inherit` はセッションモデル
+（Fable 等の上位モデル）を暗黙継承し、コスト増・非決定性の温床になる。CI（`meta-checks` →
+`scripts/check-claude-scripts.sh` → `scripts/check-workflow-agent-model.mjs`）が違反を exit 1 で弾く。
+
+## 許可モデル（opus が上限）
+
+```
+haiku / sonnet / opus
+```
+
+これ以外の値（`inherit` や上位セッションモデル名）は**すべて違反**。`inherit` はかつて
+「明示的オプトイン」として許容していたが、上位モデルを暗黙継承するため **Issue #723 で廃止**した。
 
 ## ルール
 
-各 `agent()` は次のいずれかで model を解決すること:
+各 `agent()` は次のいずれかで **許可モデル**を解決すること:
 
-1. **`model:` オプションを明示**（任意の値。例: `model: 'haiku'` / `model: 'sonnet'`）。
-2. **`agentType:` を指定**し、その def（`.claude/agents/<name>.md`）frontmatter が `model:` を
-   宣言している（`model: inherit` も**明示的なオプトインとして許容**）。
+1. **`model:` オプションを明示**し、その string literal 値が許可モデル（`haiku`/`sonnet`/`opus`）で
+   あること。許可リスト外の literal（例: `model: 'fable'`）→ **違反**。
+2. **`agentType:` を指定**し、その def（`.claude/agents/<name>.md`）frontmatter が **許可モデルの
+   `model:`** を宣言していること（`model: inherit` や許可リスト外は**違反**）。
 
-満たさない（model も agentType も無い / agentType の def が model 未宣言 or def 不在）→ **違反**。
+満たさない（model も agentType も無い / callsite model が許可リスト外 / agentType の def が
+model 未宣言 or def 不在 or 許可リスト外 or inherit）→ **違反**。
 
 ### 動的 agentType は許容
 
@@ -26,7 +37,7 @@ model も agentType も無い `agent()` はセッションモデル（多くは 
 // OK: 静的に unified-section-analyst / summary-section-analyst のいずれか
 agentType: s === 'summary' ? 'summary-section-analyst' : 'unified-section-analyst'
 ```
-どちらの def も `model:` を宣言していれば実質安全。gate は静的解決不能として素通しする。
+どちらの def も**許可モデルの** `model:` を宣言していれば実質安全。gate は静的解決不能として素通しする。
 
 ## model 選択の目安
 

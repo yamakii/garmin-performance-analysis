@@ -1,15 +1,21 @@
 #!/usr/bin/env node
-// Gate: every agent() call in .claude/workflows/*.js must resolve a model, so
-// no agent silently inherits the (usually Opus) session model — a cost and
-// non-determinism trap (e.g. analyze-activity fetch / merge).
+// Gate: every agent() call in .claude/workflows/*.js must resolve a model that
+// is capped at opus, so no agent silently inherits a higher-tier session model
+// — a cost and non-determinism trap (e.g. analyze-activity fetch / merge).
 //
-// A call resolves a model if EITHER:
-//   1. it passes an explicit `model:` option (any value), OR
+// A call resolves an allowed model if EITHER:
+//   1. it passes an explicit `model:` option whose string-literal value is in
+//      ALLOWED_MODELS (haiku / sonnet / opus; opus is the cap). A literal value
+//      OUTSIDE the allowlist (e.g. a higher-tier session model) is a violation.
+//      A dynamic model expression (ternary/variable, not statically resolvable)
+//      is trusted, OR
 //   2. it passes `agentType:` whose def (.claude/agents/<name>.md) frontmatter
-//      declares a `model:` line (`model: inherit` counts — it is an explicit
-//      opt-in). A dynamic agentType (ternary/variable, not statically
-//      resolvable) is allowed: we can't inspect the branch target, so we trust
-//      the author (the runtime def is expected to declare model).
+//      declares a `model:` line whose value is in ALLOWED_MODELS. `model:
+//      inherit` is NO LONGER allowed (it silently continues the session model),
+//      nor is any other value outside the allowlist. A dynamic agentType
+//      (ternary/variable, not statically resolvable) is allowed: we can't
+//      inspect the branch target, so we trust the author (the runtime def is
+//      expected to declare an allowed model).
 //
 // This module exports pure functions (unit-tested via node --test) plus a CLI
 // `main` that scans the repo and exits 1 on any violation.
@@ -18,6 +24,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+
+// Allowed workflow agent models, capped at opus (no higher-tier session models).
+export const ALLOWED_MODELS = new Set(['haiku', 'sonnet', 'opus'])
 
 // Blank out the *contents* of string literals, template literals, and comments
 // while preserving overall length and newline positions. Template `${...}`
@@ -224,15 +233,16 @@ export function optionKeys(optsRaw) {
   return scanTopLevelEntries(optsRaw).map((e) => e.key.replace(/^['"`]|['"`]$/g, ''))
 }
 
-// If `agentType`'s value is a plain string literal, return its name; otherwise
-// (dynamic: ternary / variable / expression, or absent) return null.
-export function agentTypeLiteral(optsRaw) {
+// If `key`'s value in the object literal is a plain string literal, return its
+// text; otherwise (dynamic: ternary / variable / expression, or key absent)
+// return null. Generalizes over any option key (model, agentType, ...).
+export function optionLiteral(optsRaw, key) {
   if (!optsRaw) return null
   const entries = scanTopLevelEntries(optsRaw)
-  const at = entries.find((e) => e.key.replace(/^['"`]|['"`]$/g, '') === 'agentType')
-  if (!at) return null
+  const ent = entries.find((e) => e.key.replace(/^['"`]|['"`]$/g, '') === key)
+  if (!ent) return null
   const s = stripLiterals(optsRaw)
-  let i = at.valueStart
+  let i = ent.valueStart
   let depth = 0
   let end = s.length
   while (i < s.length) {
@@ -250,9 +260,14 @@ export function agentTypeLiteral(optsRaw) {
     }
     i += 1
   }
-  const rawVal = optsRaw.slice(at.valueStart, end).trim()
+  const rawVal = optsRaw.slice(ent.valueStart, end).trim()
   const m = rawVal.match(/^(['"`])([A-Za-z0-9_-]+)\1$/)
   return m ? m[2] : null
+}
+
+// Backward-compatible wrapper: the string literal value of `agentType`, or null.
+export function agentTypeLiteral(optsRaw) {
+  return optionLiteral(optsRaw, 'agentType')
 }
 
 // Detect each agent(...) call and return the raw text of its last top-level
@@ -299,11 +314,13 @@ export function findAgentCalls(src) {
   return calls
 }
 
-// Return the list of gate violations. defHasModel(name) returns true (model
-// declared), false (def exists without model), or null (def not found).
-export function findViolations(src, defHasModel) {
+// Return the list of gate violations. defModel(name) returns the declared model
+// value (string, e.g. 'opus' / 'inherit'), false (def exists but declares no
+// model:), or null (def not found).
+export function findViolations(src, defModel) {
   const violations = []
   const lineOf = (idx) => src.slice(0, idx).split('\n').length
+  const allow = [...ALLOWED_MODELS].join(', ')
   for (const call of findAgentCalls(src)) {
     const line = lineOf(call.index)
     if (!call.optsRaw) {
@@ -311,15 +328,42 @@ export function findViolations(src, defHasModel) {
       continue
     }
     const keys = optionKeys(call.optsRaw)
-    if (keys.includes('model')) continue
+    if (keys.includes('model')) {
+      const model = optionLiteral(call.optsRaw, 'model')
+      if (model === null) continue // dynamic model expression — trust the author
+      if (ALLOWED_MODELS.has(model)) continue
+      violations.push({
+        line,
+        reason: `model '${model}' is outside the allowlist {${allow}} (opus is the cap)`,
+      })
+      continue
+    }
     if (keys.includes('agentType')) {
-      const name = agentTypeLiteral(call.optsRaw)
+      const name = optionLiteral(call.optsRaw, 'agentType')
       if (name === null) continue // dynamic agentType — trust the author
-      const has = defHasModel(name)
-      if (has === true) continue
-      if (has === false)
+      const model = defModel(name)
+      if (model === null) {
+        violations.push({ line, reason: `agentType '${name}' def not found` })
+        continue
+      }
+      if (model === false) {
         violations.push({ line, reason: `agentType '${name}' def declares no model:` })
-      else violations.push({ line, reason: `agentType '${name}' def not found` })
+        continue
+      }
+      if (model === 'inherit') {
+        violations.push({
+          line,
+          reason: `agentType '${name}' def declares model: inherit (no longer allowed; use ${allow})`,
+        })
+        continue
+      }
+      if (!ALLOWED_MODELS.has(model)) {
+        violations.push({
+          line,
+          reason: `agentType '${name}' def model '${model}' is outside the allowlist {${allow}} (opus is the cap)`,
+        })
+        continue
+      }
       continue
     }
     violations.push({ line, reason: 'agent() call has neither model: nor agentType:' })
@@ -327,15 +371,18 @@ export function findViolations(src, defHasModel) {
   return violations
 }
 
-// Build a defHasModel predicate backed by .claude/agents/<name>.md frontmatter.
-export function makeDefHasModel(agentsDir) {
+// Build a defModel resolver backed by .claude/agents/<name>.md frontmatter.
+// Returns the declared model value (string), false (def without model:), or
+// null (def not found).
+export function makeDefModel(agentsDir) {
   return (name) => {
     const file = path.join(agentsDir, `${name}.md`)
     if (!fs.existsSync(file)) return null
     const txt = fs.readFileSync(file, 'utf8')
     const fm = txt.match(/^---\n([\s\S]*?)\n---/)
     const body = fm ? fm[1] : txt
-    return /^model:\s*\S/m.test(body)
+    const m = body.match(/^model:\s*(\S+)/m)
+    return m ? m[1] : false
   }
 }
 
@@ -344,7 +391,7 @@ function main() {
   const root = path.resolve(here, '..')
   const wfDir = path.join(root, '.claude', 'workflows')
   const agentsDir = path.join(root, '.claude', 'agents')
-  const defHasModel = makeDefHasModel(agentsDir)
+  const defModel = makeDefModel(agentsDir)
 
   if (!fs.existsSync(wfDir)) {
     console.log('check-workflow-agent-model: no .claude/workflows dir — nothing to check')
@@ -358,7 +405,7 @@ function main() {
   let total = 0
   for (const file of files) {
     const src = fs.readFileSync(file, 'utf8')
-    const violations = findViolations(src, defHasModel)
+    const violations = findViolations(src, defModel)
     for (const v of violations) {
       console.error(
         `FAIL (agent model gate): ${path.relative(root, file)}:${v.line} — ${v.reason}`,
@@ -369,8 +416,10 @@ function main() {
 
   if (total > 0) {
     console.error(
-      `check-workflow-agent-model: ${total} violation(s). Every agent() must set model: ` +
-        `or an agentType whose def declares model:. See .claude/rules/dev/workflow-model-gate.md`,
+      `check-workflow-agent-model: ${total} violation(s). Every agent() must resolve a ` +
+        `model in {${[...ALLOWED_MODELS].join(', ')}} (opus is the cap) via an explicit model: ` +
+        `or an agentType whose def declares an allowed model:. ` +
+        `See .claude/rules/dev/workflow-model-gate.md`,
     )
     return 1
   }
