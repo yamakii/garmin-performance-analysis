@@ -4,7 +4,7 @@
 
 Explore エージェントはコード調査時、以下の手順で Serena を活用すること:
 
-1. **最初に activate**: `mcp__serena__activate_project("/home/yamakii/workspace/garmin-performance-analysis")`
+1. **最初に activate**: `mcp__serena__activate_project(<リポジトリルートの絶対パス>)`（checkout 位置は環境で異なる。例: ローカルは `/home/yamakii/workspace/garmin-performance-analysis`、background-job sandbox は `/workspace`）
 2. **シンボル探索**: `find_symbol`, `get_symbols_overview`, `find_referencing_symbols` を使う
 3. **パターン検索**: `search_for_pattern` で柔軟な regex 検索
 
