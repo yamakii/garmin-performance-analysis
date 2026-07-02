@@ -413,12 +413,16 @@ class GarminIngestWorker:
             tables: List of tables to regenerate
 
         Returns:
-            Result dict with file paths
+            Result dict with file paths and "completeness"
+            ({"missing": list[str], "fetch_status": dict[str, str]}).
+            "status" is "partial" when any per-API fetch failed,
+            "success" otherwise.
         """
         logger.info(f"Processing activity {activity_id} ({date})")
 
         # Step 1: Collect data (cache-first with optional force_refetch)
         raw_data = self.collect_data(activity_id, force_refetch=force_refetch)
+        fetch_status: dict[str, str] = raw_data.get("fetch_status") or {}
 
         # Step 2: Calculate 7-day median weight for W/kg
         median_weight_data = self._calculate_median_weight(date)
@@ -433,12 +437,21 @@ class GarminIngestWorker:
             base_weight_kg=weight_kg,
         )
 
+        missing = sorted(
+            key for key, state in fetch_status.items() if state == "failed"
+        )
+        if missing:
+            logger.warning(
+                f"Activity {activity_id} ingested with missing APIs: {missing}"
+            )
+
         return {
             "activity_id": activity_id,
             "date": date,
             "files": file_paths,
             "weight_kg": weight_kg,
-            "status": "success",
+            "status": "partial" if missing else "success",
+            "completeness": {"missing": missing, "fetch_status": fetch_status},
         }
 
     def _resolve_activity_id_from_duckdb(self, date: str) -> int | None:

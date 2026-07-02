@@ -10,11 +10,13 @@ import json
 import logging
 from datetime import date as dt_date
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from garmin_mcp.ingest.api_client import get_garmin_client
 
 logger = logging.getLogger(__name__)
+
+FetchState = Literal["fetched", "cached", "marker", "failed"]
 
 
 def _wellness_has_sleep(merged: dict[str, Any]) -> bool:
@@ -100,6 +102,38 @@ SUPPORTED_API_FILES = {
     "vo2_max",
     "lactate_threshold",
 }
+
+# (fetch_status key, raw_data key) pairs tracked per activity ingest.
+_FETCH_STATUS_KEYS = [
+    ("activity_basic", "activity_basic"),
+    ("activity_details", "activity"),
+    ("splits", "splits"),
+    ("weather", "weather"),
+    ("gear", "gear"),
+    ("hr_zones", "hr_zones"),
+    ("vo2_max", "vo2_max"),
+    ("lactate_threshold", "lactate_threshold"),
+]
+
+
+def _cached_fetch_status(raw_data: dict[str, Any]) -> dict[str, FetchState]:
+    """Derive fetch_status entries for data already present from cache.
+
+    Empty-dict payloads are empty markers ("no data" cache files), anything
+    else present is a regular cache hit.
+    """
+    status: dict[str, FetchState] = {}
+    for api_key, data_key in _FETCH_STATUS_KEYS:
+        if data_key not in raw_data:
+            continue
+        value = raw_data[data_key]
+        if value is None:
+            status[api_key] = "failed"
+        elif value == {}:
+            status[api_key] = "marker"
+        else:
+            status[api_key] = "cached"
+    return status
 
 
 def load_from_cache(
@@ -252,6 +286,8 @@ def collect_data(
 
     Returns:
         Raw data dict with keys: activity, splits, weather, gear, hr_zones, etc.
+        Includes "fetch_status": dict[str, FetchState] recording the per-API
+        outcome ("fetched" | "cached" | "marker" | "failed").
     """
     # Normalize force_refetch parameter
     force_refetch_set = set(force_refetch) if force_refetch else set()
@@ -269,10 +305,15 @@ def collect_data(
     cached_data = load_from_cache(raw_dir, activity_id, skip_files=force_refetch_set)
     if cached_data is not None and not force_refetch_set:
         # Full cache hit (no force refetch)
+        cached_data["fetch_status"] = _cached_fetch_status(cached_data)
         return cached_data
 
     # Partial cache hit or force refetch - start with cached data
     raw_data = cached_data if cached_data else {}
+
+    # Seed fetch_status from cache-loaded keys; per-API collectors overwrite
+    # the entries they actually act on (fetch/cache-read/marker/failure).
+    fetch_status: dict[str, FetchState] = _cached_fetch_status(raw_data)
 
     # Cache miss - fetch from API
     logger.info(f"Fetching activity {activity_id} from Garmin Connect API")
@@ -283,24 +324,26 @@ def collect_data(
     activity_dir.mkdir(parents=True, exist_ok=True)
 
     # 0. Activity basic info
-    _collect_activity_basic(client, activity_dir, raw_data, activity_id)
+    _collect_activity_basic(client, activity_dir, raw_data, activity_id, fetch_status)
 
     # 1. Activity details (chart data with dynamic maxchart)
     _collect_activity_details(
-        client, activity_dir, raw_data, activity_id, force_refetch_set
+        client, activity_dir, raw_data, activity_id, force_refetch_set, fetch_status
     )
 
     # 2-5. Standard API endpoints
     _collect_standard_apis(
-        client, activity_dir, raw_data, activity_id, force_refetch_set
+        client, activity_dir, raw_data, activity_id, force_refetch_set, fetch_status
     )
 
     # 6. VO2 max (requires activity date)
-    _collect_vo2_max(client, activity_dir, raw_data, activity_id, force_refetch_set)
+    _collect_vo2_max(
+        client, activity_dir, raw_data, activity_id, force_refetch_set, fetch_status
+    )
 
     # 7. Lactate threshold
     _collect_lactate_threshold(
-        client, activity_dir, raw_data, activity_id, force_refetch_set
+        client, activity_dir, raw_data, activity_id, force_refetch_set, fetch_status
     )
 
     # Extract training_effect from activity_basic.summaryDTO if available
@@ -320,6 +363,8 @@ def collect_data(
     # Weight data (requires separate weight cache manager)
     raw_data["weight"] = None
 
+    raw_data["fetch_status"] = fetch_status
+
     logger.info(f"Completed data collection for activity {activity_id}")
     return raw_data
 
@@ -329,6 +374,7 @@ def _collect_activity_basic(
     activity_dir: Path,
     raw_data: dict[str, Any],
     activity_id: int,
+    fetch_status: dict[str, FetchState],
 ) -> None:
     """Collect activity basic info (summaryDTO)."""
     activity_basic_file = activity_dir / "activity.json"
@@ -336,6 +382,7 @@ def _collect_activity_basic(
         logger.info(f"Using cached activity basic info for {activity_id}")
         with open(activity_basic_file, encoding="utf-8") as f:
             raw_data["activity_basic"] = json.load(f)
+        fetch_status["activity_basic"] = "cached"
     elif "activity_basic" not in raw_data:
         try:
             activity_basic = client.get_activity(str(activity_id))
@@ -343,9 +390,11 @@ def _collect_activity_basic(
             with open(activity_basic_file, "w", encoding="utf-8") as f:
                 json.dump(activity_basic, f, ensure_ascii=False, indent=2)
             logger.info(f"Cached activity basic info to {activity_basic_file}")
+            fetch_status["activity_basic"] = "fetched"
         except Exception as e:
             logger.error(f"Failed to fetch activity basic info: {e}")
             raw_data["activity_basic"] = None
+            fetch_status["activity_basic"] = "failed"
 
 
 def _collect_activity_details(
@@ -354,6 +403,7 @@ def _collect_activity_details(
     raw_data: dict[str, Any],
     activity_id: int,
     force_refetch_set: set[str],
+    fetch_status: dict[str, FetchState],
 ) -> None:
     """Collect activity details (chart data with dynamic maxchart)."""
     activity_file = activity_dir / "activity_details.json"
@@ -365,6 +415,7 @@ def _collect_activity_details(
         logger.info(f"Using cached activity_details for {activity_id}")
         with open(activity_file, encoding="utf-8") as f:
             raw_data["activity"] = json.load(f)
+        fetch_status["activity_details"] = "cached"
     elif "activity" not in raw_data or "activity_details" in force_refetch_set:
         try:
             # Calculate maxchart dynamically from activity duration
@@ -386,9 +437,11 @@ def _collect_activity_details(
             with open(activity_file, "w", encoding="utf-8") as f:
                 json.dump(activity_data, f, ensure_ascii=False, indent=2)
             logger.info(f"Cached activity_details to {activity_file}")
+            fetch_status["activity_details"] = "fetched"
         except Exception as e:
             logger.error(f"Failed to fetch activity_details: {e}")
             raw_data["activity"] = None
+            fetch_status["activity_details"] = "failed"
 
 
 def _collect_standard_apis(
@@ -397,6 +450,7 @@ def _collect_standard_apis(
     raw_data: dict[str, Any],
     activity_id: int,
     force_refetch_set: set[str],
+    fetch_status: dict[str, FetchState],
 ) -> None:
     """Collect splits, weather, gear, hr_zones."""
     standard_apis = [
@@ -421,6 +475,7 @@ def _collect_standard_apis(
             logger.info(f"Using cached {api_name} for {activity_id}")
             with open(cache_file, encoding="utf-8") as f:
                 raw_data[data_key] = json.load(f)
+            fetch_status[api_name] = "cached"
         elif data_key not in raw_data or api_name in force_refetch_set:
             try:
                 data = fetch_func(activity_id)
@@ -428,9 +483,11 @@ def _collect_standard_apis(
                 with open(cache_file, "w", encoding="utf-8") as f:
                     json.dump(data, f, ensure_ascii=False, indent=2)
                 logger.info(f"Cached {api_name} to {cache_file}")
+                fetch_status[api_name] = "fetched"
             except Exception as e:
                 logger.error(f"Failed to fetch {api_name}: {e}")
                 raw_data[data_key] = None
+                fetch_status[api_name] = "failed"
 
 
 def _collect_vo2_max(
@@ -439,6 +496,7 @@ def _collect_vo2_max(
     raw_data: dict[str, Any],
     activity_id: int,
     force_refetch_set: set[str],
+    fetch_status: dict[str, FetchState],
 ) -> None:
     """Collect VO2 max data (requires activity date)."""
     vo2_max_file = activity_dir / "vo2_max.json"
@@ -450,6 +508,7 @@ def _collect_vo2_max(
         logger.info(f"Using cached vo2_max for {activity_id}")
         with open(vo2_max_file, encoding="utf-8") as f:
             raw_data["vo2_max"] = json.load(f)
+        fetch_status["vo2_max"] = "marker" if raw_data["vo2_max"] == {} else "cached"
     elif "vo2_max" not in raw_data or "vo2_max" in force_refetch_set:
         # Extract activity date from activity.summaryDTO
         activity_data = raw_data.get("activity", {})
@@ -486,6 +545,7 @@ def _collect_vo2_max(
                     with open(vo2_max_file, "w", encoding="utf-8") as f:
                         json.dump(vo2_max_data, f, ensure_ascii=False, indent=2)
                     logger.info(f"Cached vo2_max to {vo2_max_file}")
+                    fetch_status["vo2_max"] = "fetched"
                 else:
                     # Fetch succeeded but contained no usable VO2 max metrics.
                     raw_data["vo2_max"] = {}
@@ -495,15 +555,18 @@ def _collect_vo2_max(
                         "VO2 max response had no 'generic' metrics for "
                         f"{activity_id} on {activity_date}; cached empty payload"
                     )
+                    fetch_status["vo2_max"] = "marker"
             except Exception as e:
                 logger.warning(f"Failed to fetch VO2 max data: {e}")
                 raw_data["vo2_max"] = {}
                 with open(vo2_max_file, "w", encoding="utf-8") as f:
                     json.dump({}, f, ensure_ascii=False, indent=2)
+                fetch_status["vo2_max"] = "failed"
         else:
             raw_data["vo2_max"] = {}
             with open(vo2_max_file, "w", encoding="utf-8") as f:
                 json.dump({}, f, ensure_ascii=False, indent=2)
+            fetch_status["vo2_max"] = "marker"
 
 
 def _collect_lactate_threshold(
@@ -512,6 +575,7 @@ def _collect_lactate_threshold(
     raw_data: dict[str, Any],
     activity_id: int,
     force_refetch_set: set[str],
+    fetch_status: dict[str, FetchState],
 ) -> None:
     """Collect lactate threshold data."""
     lactate_file = activity_dir / "lactate_threshold.json"
@@ -523,6 +587,9 @@ def _collect_lactate_threshold(
         logger.info(f"Using cached lactate_threshold for {activity_id}")
         with open(lactate_file, encoding="utf-8") as f:
             raw_data["lactate_threshold"] = json.load(f)
+        fetch_status["lactate_threshold"] = (
+            "marker" if raw_data["lactate_threshold"] == {} else "cached"
+        )
     elif (
         "lactate_threshold" not in raw_data or "lactate_threshold" in force_refetch_set
     ):
@@ -532,6 +599,7 @@ def _collect_lactate_threshold(
             with open(lactate_file, "w", encoding="utf-8") as f:
                 json.dump(lactate_threshold_data, f, ensure_ascii=False, indent=2)
             logger.info(f"Cached lactate_threshold to {lactate_file}")
+            fetch_status["lactate_threshold"] = "fetched"
         except Exception as e:
             logger.warning(f"Failed to fetch lactate threshold data: {e}")
             default_lactate = {
@@ -541,6 +609,7 @@ def _collect_lactate_threshold(
             raw_data["lactate_threshold"] = default_lactate
             with open(lactate_file, "w", encoding="utf-8") as f:
                 json.dump(default_lactate, f, ensure_ascii=False, indent=2)
+            fetch_status["lactate_threshold"] = "failed"
 
 
 def collect_body_composition_data(

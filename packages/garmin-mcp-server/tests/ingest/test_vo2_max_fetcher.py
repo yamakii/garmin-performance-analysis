@@ -36,7 +36,12 @@ def test_collect_vo2_max_parses_list_response(tmp_path):
     raw_data = _make_raw_data("2025-10-04")
 
     _collect_vo2_max(
-        client, tmp_path, raw_data, activity_id=123, force_refetch_set=set()
+        client,
+        tmp_path,
+        raw_data,
+        activity_id=123,
+        force_refetch_set=set(),
+        fetch_status={},
     )
 
     expected = {
@@ -63,7 +68,12 @@ def test_collect_vo2_max_parses_dict_response(tmp_path):
     raw_data = _make_raw_data("2025-10-04")
 
     _collect_vo2_max(
-        client, tmp_path, raw_data, activity_id=123, force_refetch_set=set()
+        client,
+        tmp_path,
+        raw_data,
+        activity_id=123,
+        force_refetch_set=set(),
+        fetch_status={},
     )
 
     expected = {
@@ -84,7 +94,12 @@ def test_collect_vo2_max_empty_list(tmp_path):
     raw_data = _make_raw_data("2025-10-04")
 
     _collect_vo2_max(
-        client, tmp_path, raw_data, activity_id=123, force_refetch_set=set()
+        client,
+        tmp_path,
+        raw_data,
+        activity_id=123,
+        force_refetch_set=set(),
+        fetch_status={},
     )
 
     assert raw_data["vo2_max"] == {}

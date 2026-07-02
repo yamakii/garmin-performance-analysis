@@ -233,6 +233,95 @@ class TestGarminIngestWorker:
             assert result["activity_id"] == 12345
             assert result["date"] == "2025-09-22"
 
+    @pytest.mark.unit
+    def test_process_activity_partial_status_on_failed_fetch(self, worker):
+        """A failed per-API fetch surfaces as status='partial' + missing list."""
+        with (
+            patch.object(worker, "collect_data") as mock_collect,
+            patch.object(worker, "_calculate_median_weight", return_value=None),
+            patch.object(worker, "save_data") as mock_save,
+        ):
+            mock_collect.return_value = {
+                "activity": {},
+                "splits": None,
+                "fetch_status": {
+                    "activity_basic": "fetched",
+                    "splits": "failed",
+                    "weather": "fetched",
+                },
+            }
+            mock_save.return_value = {"raw_dir": "/tmp/x"}
+
+            result = worker.process_activity(12345, "2025-09-22")
+
+            assert result["status"] == "partial"
+            assert result["completeness"]["missing"] == ["splits"]
+            assert result["completeness"]["fetch_status"]["splits"] == "failed"
+
+    @pytest.mark.unit
+    def test_process_activity_success_when_all_fetched(self, worker):
+        """No failed fetch → status='success' and empty missing list."""
+        with (
+            patch.object(worker, "collect_data") as mock_collect,
+            patch.object(worker, "_calculate_median_weight", return_value=None),
+            patch.object(worker, "save_data") as mock_save,
+        ):
+            mock_collect.return_value = {
+                "activity": {},
+                "splits": {"lapDTOs": []},
+                "fetch_status": {
+                    "activity_basic": "fetched",
+                    "splits": "cached",
+                    "weather": "marker",
+                },
+            }
+            mock_save.return_value = {"raw_dir": "/tmp/x"}
+
+            result = worker.process_activity(12345, "2025-09-22")
+
+            assert result["status"] == "success"
+            assert result["completeness"]["missing"] == []
+
+    @pytest.mark.integration
+    def test_ingest_result_includes_completeness(self, worker, tmp_path):
+        """End-to-end (cached API + mocked DuckDB) → result carries completeness.
+
+        The returned dict must include ``completeness`` (with ``missing`` and
+        ``fetch_status``) and remain JSON serializable across the MCP boundary.
+        """
+        activity_id = 12345
+        activity_dir = tmp_path / "activity" / str(activity_id)
+        activity_dir.mkdir(parents=True)
+        worker.raw_dir = tmp_path
+
+        cache_files = {
+            "activity.json": {"activityId": activity_id, "summaryDTO": {}},
+            "activity_details.json": {"activityId": activity_id},
+            "splits.json": {"activityId": activity_id, "lapDTOs": [], "eventDTOs": []},
+            "weather.json": {"temp": 20},
+            "gear.json": [{"customMakeModel": "Cached Shoes"}],
+            "hr_zones.json": [{"zoneNumber": 1, "zoneLowBoundary": 100}],
+            "vo2_max.json": {"vo2MaxValue": 47.0},
+            "lactate_threshold.json": {"lactateThresholdBPM": 160},
+        }
+        for filename, data in cache_files.items():
+            with open(activity_dir / filename, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+
+        with (
+            patch.object(worker, "_calculate_median_weight", return_value=None),
+            patch.object(worker, "save_data", return_value={"raw_dir": str(tmp_path)}),
+        ):
+            result = worker.process_activity(activity_id, "2025-09-22")
+
+        assert "completeness" in result
+        assert result["completeness"]["missing"] == []
+        assert isinstance(result["completeness"]["fetch_status"], dict)
+        assert result["completeness"]["fetch_status"]  # non-empty
+        assert result["status"] == "success"
+        # Must survive JSON serialization at the MCP boundary.
+        json.dumps(result)
+
     @pytest.mark.garmin_api
     def test_collect_data_with_real_garmin_api(self, worker):
         """Test collect_data with real Garmin MCP connection."""
