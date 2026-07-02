@@ -5,6 +5,19 @@ Shared fixtures for all tests. Specialized fixtures live in:
 - tests/handlers/conftest.py (Handler mock fixtures)
 """
 
+# Cap BLAS/OpenMP thread pools BEFORE any module (numpy/scipy/duckdb) is
+# imported. Under the sandbox cgroup (pids.max=512) combined with pytest-xdist
+# `-n 4`, OpenBLAS/OpenMP auto-spawning one thread per core exhausts the pid
+# quota and raises `RuntimeError: can't start new thread` /
+# `OpenBLAS blas_thread_init: pthread_create failed`. These env vars are only
+# honored if set before the numeric library is first imported, so this must
+# stay at the very top of the earliest-loaded conftest. `setdefault` keeps any
+# externally provided override (e.g. CI env) intact. See issue #740.
+import os
+
+for _thread_env_var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_thread_env_var, "1")
+
 import json
 from pathlib import Path
 from typing import Any

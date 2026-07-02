@@ -64,6 +64,13 @@ jobs:
         run: uv run mypy .
 
       - name: Run unit and integration tests with coverage
+        # Cap BLAS/OpenMP thread pools so xdist workers don't exhaust the pid
+        # quota (`can't start new thread`). Mirrors conftest; also covers
+        # subprocess-spawning tests. See issue #740.
+        env:
+          OPENBLAS_NUM_THREADS: "1"
+          OMP_NUM_THREADS: "1"
+          MKL_NUM_THREADS: "1"
         run: uv run pytest -m "unit or integration" --tb=short -n 4 --maxfail=5 --cov=garmin_mcp --cov-report=term-missing --cov-fail-under=60
 
   web-backend:
@@ -90,6 +97,11 @@ jobs:
         run: uv run ruff check src/ tests/
 
       - name: Run unit and integration tests
+        # Cap BLAS/OpenMP thread pools (see lint-and-test / issue #740).
+        env:
+          OPENBLAS_NUM_THREADS: "1"
+          OMP_NUM_THREADS: "1"
+          MKL_NUM_THREADS: "1"
         run: uv run pytest -m "unit or integration" --tb=short
 
   web-frontend:
