@@ -170,6 +170,37 @@ def _easy_target(
     return result
 
 
+def compute_weighted_star_rating(
+    axis_scores: dict[str, float], weights: dict[str, float]
+) -> float:
+    """Recompute a weighted star rating from per-axis scores (Issue #706).
+
+    ``rating = sum(axis_scores[k] * weights[k]) / sum(weights.values())``,
+    clamped to [0.0, 5.0] and returned as ``round(rating, 1)``. This is the
+    deterministic core behind the summary 4-axis rating and the phase /
+    environment weighted ratings, so the merge guard can verify the LLM's
+    stated ``star_rating`` instead of trusting its arithmetic.
+
+    Raises:
+        ValueError: When ``weights`` keys do not exactly match ``axis_scores``
+            keys, when either dict is empty, or when the weights sum to <= 0.
+    """
+    if not axis_scores or not weights:
+        raise ValueError("axis_scores and weights must be non-empty")
+    if set(axis_scores) != set(weights):
+        raise ValueError(
+            "weights keys must match axis_scores keys: "
+            f"axis_scores={sorted(axis_scores)}, weights={sorted(weights)}"
+        )
+    total_weight = sum(weights.values())
+    if total_weight <= 0:
+        raise ValueError(f"weights must sum to a positive value, got {total_weight}")
+
+    rating = sum(axis_scores[key] * weights[key] for key in axis_scores) / total_weight
+    clamped = min(5.0, max(0.0, rating))
+    return round(clamped, 1)
+
+
 # --- training_type -> category mapping for phase / environment (Issue #673) ---
 # These move the classification tables out of the agent prose
 # (unified-section-analyst.md) so the phase / environment sections select

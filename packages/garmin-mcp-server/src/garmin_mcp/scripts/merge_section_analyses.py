@@ -20,6 +20,7 @@ from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.validation.validators import (
     check_form_trend_consistency,
     check_narration_numeric_consistency,
+    check_star_weighting_consistency,
 )
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,12 @@ def merge_section_analyses(temp_dir: Path, *, keep: bool = False) -> dict:
                     failed.append(section_type)
                     errors.extend(errs)
                     continue  # Do not insert out-of-range summary narration.
+
+            ok, reason = check_star_weighting_consistency(section_type, analysis_data)
+            if not ok and reason is not None:
+                failed.append(section_type)
+                errors.append(f"{section_type}: {reason}")
+                continue  # Do not insert a miscomputed weighted star rating.
 
             success = writer.insert_section_analysis(
                 activity_id=activity_id,
