@@ -88,14 +88,43 @@ function summaryStarRating(sections: SectionsResponse | null): string | null {
   return null;
 }
 
+/** Per-panel fetch failure: alert message + retry, shown in place of the content. */
+function PanelError({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div
+      role="alert"
+      className="flex flex-col items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-8 text-sm text-red-700"
+    >
+      <p>読み込みに失敗しました: {message}</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="rounded-lg border border-red-300 bg-white px-4 py-1.5 font-medium text-red-700 transition-colors hover:bg-red-100"
+      >
+        再試行
+      </button>
+    </div>
+  );
+}
+
 export default function ActivityDetail() {
   const { id } = useParams<{ id: string }>();
   const [detail, setDetail] = useState<ActivityDetailResponse | null>(null);
   const [sections, setSections] = useState<SectionsResponse | null>(null);
   const [timeSeries, setTimeSeries] = useState<TimeSeriesResponse | null>(null);
+  const [timeSeriesError, setTimeSeriesError] = useState<string | null>(null);
+  const [timeSeriesRetryKey, setTimeSeriesRetryKey] = useState(0);
   const [selectedMetrics, setSelectedMetrics] =
     useState<string[]>(DEFAULT_METRICS);
   const [track, setTrack] = useState<TrackPoint[] | null>(null);
+  const [trackError, setTrackError] = useState<string | null>(null);
+  const [trackRetryKey, setTrackRetryKey] = useState(0);
   const [hover, setHover] = useState<HoverState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -128,6 +157,7 @@ export default function ActivityDetail() {
   useEffect(() => {
     if (!id || selectedMetrics.length === 0) {
       setTimeSeries(null);
+      setTimeSeriesError(null);
       return;
     }
     let cancelled = false;
@@ -135,17 +165,19 @@ export default function ActivityDetail() {
       .then((data) => {
         if (!cancelled) {
           setTimeSeries(data);
+          setTimeSeriesError(null);
         }
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         if (!cancelled) {
           setTimeSeries(null);
+          setTimeSeriesError(err instanceof Error ? err.message : String(err));
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [id, selectedMetrics]);
+  }, [id, selectedMetrics, timeSeriesRetryKey]);
 
   useEffect(() => {
     if (!id) {
@@ -156,17 +188,19 @@ export default function ActivityDetail() {
       .then((data) => {
         if (!cancelled) {
           setTrack(data.points);
+          setTrackError(null);
         }
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         if (!cancelled) {
-          setTrack([]);
+          setTrack(null);
+          setTrackError(err instanceof Error ? err.message : String(err));
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, trackRetryKey]);
 
   const toggleMetric = (key: string) => {
     setSelectedMetrics((current) =>
@@ -242,11 +276,14 @@ export default function ActivityDetail() {
   // In-page nav: list only the sections that actually render below, so the
   // table of contents never points at a missing anchor.
   const hasTrack = track != null && track.length > 0;
+  // The course section also renders (as an error panel) when the track
+  // fetch failed, so the nav anchor stays valid in that state too.
+  const showCourse = hasTrack || trackError !== null;
   const hasSplits = splits.length > 0 || Boolean(sections?.split);
   const navItems: NavItem[] = [
     sections?.summary ? { id: "section-overview", label: "総合評価" } : null,
     { id: "section-timeseries", label: "タイムシリーズ" },
-    hasTrack ? { id: "section-course", label: "コース" } : null,
+    showCourse ? { id: "section-course", label: "コース" } : null,
     hasSplits ? { id: "section-splits", label: "スプリット" } : null,
     sections?.phase ? { id: "section-phase", label: "フェーズ評価" } : null,
     sections?.efficiency
@@ -325,7 +362,12 @@ export default function ActivityDetail() {
             );
           })}
         </div>
-        {timeSeries && Object.keys(timeSeries.metrics).length > 0 ? (
+        {timeSeriesError !== null ? (
+          <PanelError
+            message={timeSeriesError}
+            onRetry={() => setTimeSeriesRetryKey((key) => key + 1)}
+          />
+        ) : timeSeries && Object.keys(timeSeries.metrics).length > 0 ? (
           <TimeSeriesChart
             data={timeSeries}
             metricLabels={METRIC_LABELS}
@@ -339,8 +381,9 @@ export default function ActivityDetail() {
         )}
       </section>
 
-      {/* GPS track map — omitted entirely when the activity has no GPS data */}
-      {hasTrack && (
+      {/* GPS track map — omitted entirely when the activity has no GPS data
+          (successful empty fetch); shown as an error panel when the fetch failed */}
+      {showCourse && (
         <section
           id="section-course"
           className="scroll-mt-20 rounded-xl border border-slate-200 bg-white shadow-sm"
@@ -348,13 +391,22 @@ export default function ActivityDetail() {
           <h2 className="px-5 pt-4 pb-2 font-display text-base font-semibold text-ink">
             コース
           </h2>
-          <div className="overflow-hidden rounded-b-xl">
-            <MapPanel
-              points={track}
-              hoverSeqNo={mapHoverSeqNo}
-              onHoverSeqNo={handleMapHover}
-            />
-          </div>
+          {trackError === null && track != null ? (
+            <div className="overflow-hidden rounded-b-xl">
+              <MapPanel
+                points={track}
+                hoverSeqNo={mapHoverSeqNo}
+                onHoverSeqNo={handleMapHover}
+              />
+            </div>
+          ) : (
+            <div className="px-5 pb-5">
+              <PanelError
+                message={trackError ?? "不明なエラー"}
+                onRetry={() => setTrackRetryKey((key) => key + 1)}
+              />
+            </div>
+          )}
         </section>
       )}
 
