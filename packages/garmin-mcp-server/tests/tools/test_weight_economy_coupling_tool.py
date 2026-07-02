@@ -13,7 +13,7 @@ import pytest
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.tool_schemas import get_tool_definitions
-from garmin_mcp.tools import ALL_DEFS, ALL_DEFS_BY_NAME
+from garmin_mcp.tools import ALL_DEFS_BY_NAME
 from garmin_mcp.tools.registry import dispatch
 
 
@@ -51,12 +51,15 @@ def test_tool_dispatch_forwards_params() -> None:
 
 
 @pytest.mark.unit
-def test_tool_count_doc_sync() -> None:
-    """With #563 + #555 added too, the registry holds 54 domain + 2 server = 56."""
-    assert len(ALL_DEFS) == 54
+def test_tool_registered_on_surface() -> None:
+    """get_weight_economy_coupling is a registry domain tool exposed on the live
+    MCP surface (count derived from the registry, never hard-coded — #745)."""
+    assert "get_weight_economy_coupling" in ALL_DEFS_BY_NAME
     live_names = [t.name for t in get_tool_definitions()]
-    assert len(live_names) == 56
     assert "get_weight_economy_coupling" in live_names
+    # Surface = domain registry + the two server tools, all unique.
+    assert len(live_names) == len(set(live_names))
+    assert set(ALL_DEFS_BY_NAME) <= set(live_names)
 
 
 def _seed(db_path: Path) -> None:

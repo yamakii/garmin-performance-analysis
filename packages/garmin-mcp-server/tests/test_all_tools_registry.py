@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pydantic import BaseModel, Field, ValidationError
 
-from garmin_mcp.tool_schemas import get_tool_definitions
+from garmin_mcp.tool_schemas import _SERVER_TOOLS, get_tool_definitions
 from garmin_mcp.tools import ALL_DEFS, ALL_DEFS_BY_NAME
 from garmin_mcp.tools.registry import (
     ToolDef,
@@ -59,32 +59,28 @@ def test_schema_parity_all_tools() -> None:
 
 
 @pytest.mark.unit
-def test_all_tools_count_54() -> None:
-    """ALL_DEFS holds the 54 handler-domain tools (unique names); the live MCP
-    surface adds the 2 server tools for 56 total.
+def test_registry_internally_consistent() -> None:
+    """The registry and the live MCP surface agree without any hard-coded count.
 
-    #450 added 2 strength-session tools (ingest_strength_sessions,
-    get_strength_sessions), raising the domain count from 44 to 46. #463 added
-    the catch_up_ingest orchestrator, raising it to 47. #501 added
-    get_body_composition_trend, raising it to 48. #499 added get_recovery_trend,
-    raising it to 49. #500 added get_recovery_status, raising it to 50. #550
-    added get_heat_adjusted_trend, raising it to 51. #554 added
-    get_weight_economy_coupling, raising it to 52. #563 added
-    get_objective_fitness_curve, raising it to 53. #555 added
-    get_wellness_baseline_deviation, raising it to 54.
+    Single-sourcing the tool count avoids the parallel-PR collision where two
+    branches each bump a literal (e.g. 54 -> 55) and merge to a stale value.
+    The only place a concrete number lives is the generated
+    ``docs/mcp-tools-reference.md`` (guarded byte-for-byte by
+    ``test_reference_is_in_sync``); everything else is derived here.
     """
-    assert len(ALL_DEFS) == 54
+    # ALL_DEFS names are unique and the by-name index covers exactly them.
     names = [d.name for d in ALL_DEFS]
     assert len(names) == len(set(names)), "duplicate tool names in ALL_DEFS"
-    assert len(ALL_DEFS_BY_NAME) == 54
+    assert len(ALL_DEFS_BY_NAME) == len(ALL_DEFS)
+    assert set(ALL_DEFS_BY_NAME) == set(names)
 
+    # The live MCP surface = domain tools + the two server tools, unique.
     live_names = [t.name for t in get_tool_definitions()]
-    assert len(live_names) == 56
-    assert len(live_names) == len(
-        set(live_names)
-    ), "duplicate tool names on MCP surface"
-    assert "get_server_info" in live_names
-    assert "reload_server" in live_names
+    server_names = {t["name"] for t in _SERVER_TOOLS}
+    assert len(live_names) == len(set(live_names)), "duplicate names on MCP surface"
+    assert set(live_names) == set(ALL_DEFS_BY_NAME) | server_names
+    assert len(live_names) == len(ALL_DEFS) + len(_SERVER_TOOLS)
+    assert server_names == {"get_server_info", "reload_server"}
 
 
 @pytest.mark.unit
@@ -393,12 +389,11 @@ def test_tool_golden_snapshot_matches() -> None:
 
 
 @pytest.mark.unit
-def test_tool_count_unchanged() -> None:
-    """Removing ``server_dir`` does not change the tool count: ``reload_server``
-    is retained by name; the surface serves 56 tools (54 domain + 2 server,
-    after #563's get_objective_fitness_curve + #555's
-    get_wellness_baseline_deviation)."""
+def test_server_tools_retained_by_name() -> None:
+    """Removing ``server_dir`` (#481) did not drop either server tool: the live
+    surface still carries ``reload_server`` and ``get_server_info`` on top of the
+    domain registry (count derived, never hard-coded)."""
     live_names = [t.name for t in get_tool_definitions()]
-    assert len(live_names) == 56
+    assert len(live_names) == len(ALL_DEFS) + len(_SERVER_TOOLS)
     assert "reload_server" in live_names
     assert "get_server_info" in live_names

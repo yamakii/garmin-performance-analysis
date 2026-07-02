@@ -1,9 +1,10 @@
 """Generate ``docs/mcp-tools-reference.md`` from the ToolDef registry.
 
-The MCP tool surface is declared once in ``garmin_mcp.tools.ALL_DEFS`` (44 domain
+The MCP tool surface is declared once in ``garmin_mcp.tools.ALL_DEFS`` (the domain
 tools) plus the 2 server tools in ``tool_schemas._SERVER_TOOLS``. This script
 renders that registry into a single human-readable reference so the doc never
-drifts from the code.
+drifts from the code. The concrete tool count lives only in the generated
+``docs/mcp-tools-reference.md`` header (``total`` below), never hard-coded.
 
 Usage::
 

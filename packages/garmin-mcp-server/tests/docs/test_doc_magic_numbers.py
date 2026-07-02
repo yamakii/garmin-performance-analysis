@@ -71,17 +71,20 @@ def test_numbers_before_ignores_unrelated() -> None:
 
 @pytest.mark.unit
 def test_readme_tool_count_matches_registry() -> None:
+    """Any ``N tools`` literal in README/CLAUDE must match the registry.
+
+    The concrete count is single-sourced to the generated
+    ``docs/mcp-tools-reference.md`` (Issue #745), so README/CLAUDE no longer
+    need to carry a number. This guard stays as a safety net: if a literal is
+    (re)introduced, it must agree with ``len(ALL_DEFS) + len(_SERVER_TOOLS)``.
+    """
     expected = _expected_tool_count()
-    found_any = False
     for doc in _DOC_PATHS:
         text = doc.read_text(encoding="utf-8")
-        counts = _numbers_before(r"(?:MCP )?tools", text)
-        for count in counts:
+        for count in _numbers_before(r"(?:MCP )?tools", text):
             assert (
                 count == expected
             ), f"{doc.name}: doc says {count} tools but registry has {expected}"
-        found_any = found_any or bool(counts)
-    assert found_any, "no 'N tools' string found in README.md or CLAUDE.md"
 
 
 @pytest.mark.integration
