@@ -17,6 +17,13 @@ FRONTEND="$WEB/frontend"
 
 FAILED=0
 
+# Cap BLAS/OpenMP thread pools so pytest-xdist workers don't exhaust the
+# sandbox pid quota (`can't start new thread`). Mirrors conftest + CI env.
+# See issue #740.
+export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
+export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
+
 run() {
   echo "▶ $*"
   if ! "$@"; then
