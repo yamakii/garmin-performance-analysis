@@ -9,6 +9,7 @@ Handles per-API file caching for Garmin Connect data:
 import json
 import logging
 from datetime import date as dt_date
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -41,6 +42,34 @@ def _wellness_has_sleep(merged: dict[str, Any]) -> bool:
         if isinstance(overall, dict) and overall.get("value") is not None:
             return True
     return False
+
+
+def _marker_is_authoritative(
+    marker_path: Path, target_date: str, grace_days: int = 7
+) -> bool:
+    """Return True when an empty ``{}`` marker can be trusted as "no data".
+
+    An empty marker is only authoritative once enough time has passed for
+    Garmin's delayed sync to have completed. If the marker file's mtime is at
+    least ``grace_days`` after ``target_date`` it means "the data genuinely
+    never arrived" → ``True`` (skip re-fetch). If it was written sooner (Garmin
+    may still sync, or the marker was a transient miss), return ``False`` so the
+    caller re-fetches and self-heals.
+
+    Args:
+        marker_path: Path to the ``{}`` marker file.
+        target_date: Date the marker is for, in ``YYYY-MM-DD`` format.
+        grace_days: Days after ``target_date`` before a marker is trusted.
+
+    Returns:
+        ``True`` if the marker is authoritative (skip fetch), else ``False``.
+    """
+    try:
+        mtime = datetime.fromtimestamp(marker_path.stat().st_mtime)
+    except OSError:
+        return False
+    target = datetime.fromisoformat(target_date)
+    return mtime >= target + timedelta(days=grace_days)
 
 
 class RawDataExtractor:
@@ -500,29 +529,42 @@ def _collect_vo2_max(
 ) -> None:
     """Collect VO2 max data (requires activity date)."""
     vo2_max_file = activity_dir / "vo2_max.json"
+
+    # Extract activity date from activity.summaryDTO (fallback: activity_basic).
+    activity_data = raw_data.get("activity", {})
+    summary = activity_data.get("summaryDTO", {}) if activity_data else {}
+    start_time_local = summary.get("startTimeLocal", "")
+    if not start_time_local:
+        activity_basic = raw_data.get("activity_basic", {})
+        summary = activity_basic.get("summaryDTO", {}) if activity_basic else {}
+        start_time_local = summary.get("startTimeLocal", "")
+    activity_date = start_time_local.split("T")[0] if start_time_local else ""
+
     if (
         vo2_max_file.exists()
         and "vo2_max" not in force_refetch_set
         and "vo2_max" not in raw_data
     ):
-        logger.info(f"Using cached vo2_max for {activity_id}")
         with open(vo2_max_file, encoding="utf-8") as f:
-            raw_data["vo2_max"] = json.load(f)
-        fetch_status["vo2_max"] = "marker" if raw_data["vo2_max"] == {} else "cached"
-    elif "vo2_max" not in raw_data or "vo2_max" in force_refetch_set:
-        # Extract activity date from activity.summaryDTO
-        activity_data = raw_data.get("activity", {})
-        summary = activity_data.get("summaryDTO", {}) if activity_data else {}
-        start_time_local = summary.get("startTimeLocal", "")
+            cached_vo2 = json.load(f)
+        if cached_vo2 != {}:
+            logger.info(f"Using cached vo2_max for {activity_id}")
+            raw_data["vo2_max"] = cached_vo2
+            fetch_status["vo2_max"] = "cached"
+            return
+        # Empty marker: trust it only once past the grace window; otherwise fall
+        # through and re-fetch so a delayed Garmin sync can self-heal.
+        if not activity_date or _marker_is_authoritative(vo2_max_file, activity_date):
+            raw_data["vo2_max"] = {}
+            fetch_status["vo2_max"] = "marker"
+            return
+        logger.info(
+            f"Stale empty vo2_max marker for {activity_id} "
+            f"({activity_date}); re-fetching"
+        )
 
-        # Fallback to activity_basic if activity not available
-        if not start_time_local:
-            activity_basic = raw_data.get("activity_basic", {})
-            summary = activity_basic.get("summaryDTO", {}) if activity_basic else {}
-            start_time_local = summary.get("startTimeLocal", "")
-
-        if start_time_local:
-            activity_date = start_time_local.split("T")[0]
+    if "vo2_max" not in raw_data or "vo2_max" in force_refetch_set:
+        if activity_date:
             try:
                 max_metrics = client.get_max_metrics(activity_date)
                 # get_max_metrics returns a list of entries (one per metric set);
@@ -557,16 +599,20 @@ def _collect_vo2_max(
                     )
                     fetch_status["vo2_max"] = "marker"
             except Exception as e:
+                # A failed API call is not "no data": do NOT write an empty
+                # marker (which would permanently mask a later sync). Leave the
+                # value unset so the next run re-fetches.
                 logger.warning(f"Failed to fetch VO2 max data: {e}")
-                raw_data["vo2_max"] = {}
-                with open(vo2_max_file, "w", encoding="utf-8") as f:
-                    json.dump({}, f, ensure_ascii=False, indent=2)
+                raw_data["vo2_max"] = None
                 fetch_status["vo2_max"] = "failed"
         else:
-            raw_data["vo2_max"] = {}
-            with open(vo2_max_file, "w", encoding="utf-8") as f:
-                json.dump({}, f, ensure_ascii=False, indent=2)
-            fetch_status["vo2_max"] = "marker"
+            # No activity date available: cannot fetch. Skip the marker so a
+            # later run (once the date is known) can re-fetch.
+            logger.warning(
+                f"No activity date for vo2_max of {activity_id}; skipping marker"
+            )
+            raw_data["vo2_max"] = None
+            fetch_status["vo2_max"] = "failed"
 
 
 def _collect_lactate_threshold(
@@ -633,10 +679,16 @@ def collect_body_composition_data(
     if weight_file.exists():
         with open(weight_file, encoding="utf-8") as f:
             cached_data = json.load(f)
-            # Empty dict indicates no data available (marker file)
-            if not cached_data:
-                logger.debug(f"Empty marker file found for {date}, skipping API call")
+        # Empty dict indicates no data available (marker file). Trust it only
+        # past the grace window; otherwise re-fetch so a delayed sync heals.
+        if not cached_data:
+            if _marker_is_authoritative(weight_file, date):
+                logger.debug(
+                    f"Authoritative empty marker for {date}, skipping API call"
+                )
                 return None
+            logger.info(f"Stale empty marker for {date}; re-fetching")
+        else:
             logger.info(f"Using cached body composition data for {date}")
             return cast(dict[str, Any], cached_data)
 
@@ -674,18 +726,10 @@ def collect_body_composition_data(
         return weight_data  # type: ignore[no-any-return]
 
     except Exception as e:
+        # A failed API call is not "no data": do NOT write an empty marker
+        # (which would permanently mask a later sync). Skipping it lets the
+        # next run self-heal.
         logger.error(f"Error fetching body composition data for {date}: {e}")
-        if is_current_day:
-            logger.info(
-                f"Current day {date} fetch failed; "
-                "skipping marker for later re-fetch"
-            )
-            return None
-        # Create empty marker file to avoid repeated API calls
-        weight_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(weight_file, "w", encoding="utf-8") as f:
-            json.dump({}, f)
-        logger.info(f"Created empty marker file after error: {weight_file}")
         return None
 
 
@@ -704,11 +748,14 @@ def collect_wellness_data(
 
     Cache priority:
     1. Read ``raw/wellness/{date}.json`` if present. An empty ``{}`` marker
-       means "no data for this day" and short-circuits to ``None`` (no API
-       call).
+       means "no data for this day", but is only authoritative once it is at
+       least ``grace_days`` old relative to ``date`` (see
+       ``_marker_is_authoritative``). A stale marker is re-fetched so a delayed
+       Garmin sync can self-heal.
     2. On a cache miss, call the four endpoints, merge their responses, and
        cache the result. If every endpoint yields nothing, an empty marker is
-       written and ``None`` returned.
+       written and ``None`` returned. API failures (exceptions) write no
+       marker, so the next run re-fetches.
 
     Args:
         wellness_raw_dir: Wellness raw data directory.
@@ -722,10 +769,16 @@ def collect_wellness_data(
     if wellness_file.exists():
         with open(wellness_file, encoding="utf-8") as f:
             cached_data = json.load(f)
-            # Empty dict indicates no data available (marker file)
-            if not cached_data:
-                logger.debug(f"Empty marker file found for {date}, skipping API call")
+        # Empty dict indicates no data available (marker file). Trust it only
+        # past the grace window; otherwise re-fetch so a delayed sync heals.
+        if not cached_data:
+            if _marker_is_authoritative(wellness_file, date):
+                logger.debug(
+                    f"Authoritative empty marker for {date}, skipping API call"
+                )
                 return None
+            logger.info(f"Stale empty marker for {date}; re-fetching")
+        else:
             logger.info(f"Using cached wellness data for {date}")
             return cast(dict[str, Any], cached_data)
 
@@ -775,15 +828,8 @@ def collect_wellness_data(
         return merged
 
     except Exception as e:
+        # A failed API call is not "no data": do NOT write an empty marker
+        # (which would permanently mask a later sync). Skipping it lets the
+        # next run self-heal.
         logger.error(f"Error fetching wellness data for {date}: {e}")
-        if is_current_day:
-            logger.info(
-                f"Current day {date} wellness fetch failed; "
-                "skipping marker for later re-fetch"
-            )
-            return None
-        wellness_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(wellness_file, "w", encoding="utf-8") as f:
-            json.dump({}, f)
-        logger.info(f"Created empty marker file after error: {wellness_file}")
         return None
