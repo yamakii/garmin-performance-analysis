@@ -17,6 +17,7 @@ from pathlib import Path
 
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.database.db_writer import GarminDBWriter
+from garmin_mcp.validation.section_schemas import validate_section_data
 from garmin_mcp.validation.validators import (
     check_form_trend_consistency,
     check_narration_numeric_consistency,
@@ -54,6 +55,19 @@ def merge_section_analyses(temp_dir: Path, *, keep: bool = False) -> dict:
             activity_id = data["activity_id"]
             activity_date = str(data["activity_date"])
             analysis_data = data["analysis_data"]
+
+            # Guard 0: re-validate against the section schema. proofreader (haiku)
+            # may have edited the temp JSON after the analyst wrote it, and the
+            # semantic guards below only cover a few fields. Reject schema-invalid
+            # payloads (missing required fields, unknown section_type from a stray
+            # filename) before they slip into DuckDB.
+            valid, schema_errors = validate_section_data(section_type, analysis_data)
+            if not valid:
+                failed.append(section_type)
+                errors.append(
+                    f"{section_type}: schema validation failed: {schema_errors}"
+                )
+                continue  # Do not insert a schema-invalid section.
 
             if section_type == "efficiency":
                 trend = GarminDBReader().physiology.get_form_baseline_trend(
