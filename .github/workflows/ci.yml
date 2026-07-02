@@ -33,6 +33,9 @@ jobs:
             meta:
               - '.claude/workflows/**'
               - '.claude/hooks/**'
+              - '.claude/agents/**'
+              - '.claude/settings.json'
+              - 'scripts/**'
 
   lint-and-test:
     needs: changes
