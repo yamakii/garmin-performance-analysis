@@ -15,7 +15,6 @@ from garmin_mcp.analysis.body_composition import (
 )
 from garmin_mcp.analysis.derivations import (
     WORKOUT_TYPE_DESCRIPTION_JA,
-    compute_plan_achievement,
     format_pace,
 )
 from garmin_mcp.analysis.recovery import (
@@ -43,7 +42,6 @@ __all__ = [
     "WeightMeasurement",
     "compute_ef",
     "compute_hrv_recovery",
-    "compute_plan_achievement",
     "compute_rhr_trend",
     "decompose_weight_change",
     "fit_weight_economy_model",

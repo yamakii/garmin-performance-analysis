@@ -257,12 +257,11 @@ def test_summary_contract_has_recommendations_rules():
 
 
 @pytest.mark.unit
-def test_summary_contract_has_plan_achievement():
+def test_summary_contract_has_no_plan_achievement():
+    """Plan vs actual removed (Issue #785): no plan_achievement in the contract."""
     contract = get_contract("summary")
-    pa = contract["evaluation_policy"]["plan_achievement"]
-    weights = pa["weights"]
-    assert abs(sum(weights.values()) - 1.0) < 0.01
-    assert len(pa["scale"]) == 5
+    assert "plan_achievement" not in contract["evaluation_policy"]
+    assert "plan_achievement" not in contract["required_fields"]
 
 
 @pytest.mark.unit

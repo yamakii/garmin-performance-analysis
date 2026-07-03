@@ -60,20 +60,6 @@ class NextRunTarget(BaseModel):
     insufficient_data: bool | None = None
 
 
-class PlanAchievement(BaseModel):
-    """Schema for plan achievement data."""
-
-    workout_type: str
-    description_ja: str
-    targets: dict[str, str]
-    actuals: dict[str, str]
-    # None when the corresponding target bound (or actual value) is null, so the
-    # deterministic skeleton (Issue #671) can omit a verdict instead of guessing.
-    hr_achieved: bool | None = None
-    pace_achieved: bool | None = None
-    evaluation: str
-
-
 class SummaryAnalysisData(BaseModel):
     """Schema for summary section analysis data."""
 
@@ -85,7 +71,6 @@ class SummaryAnalysisData(BaseModel):
     next_action: str = Field(min_length=10)
     next_run_target: NextRunTarget | dict[str, Any]
     recommendations: str = Field(min_length=5)
-    plan_achievement: PlanAchievement | None = None
 
 
 SECTION_SCHEMAS: dict[str, type[BaseModel]] = {

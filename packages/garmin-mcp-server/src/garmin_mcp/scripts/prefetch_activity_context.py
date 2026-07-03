@@ -46,8 +46,6 @@ Output (JSON to stdout):
         "run": {"avg_pace": "5:45/km", "avg_hr": 155.0},
         "cooldown": {"avg_pace": "7:12/km", "avg_hr": 140.0}
       },
-      "planned_workout": null,
-      "plan_achievement": null,      # deterministic plan vs actual (or null)
       "form_evaluation": {...},      # FormReader.get_form_evaluations (or null)
       "hr_zones_detail": {"zones": [...]},  # PhysiologyReader (or null)
       "form_baseline_trend": {"success": true, "metrics": {...}},
@@ -71,7 +69,6 @@ import duckdb
 
 from garmin_mcp.analysis.derivations import (
     compute_next_run_target,
-    compute_plan_achievement,
     map_environment_category,
     map_phase_category,
 )
@@ -195,7 +192,7 @@ def prefetch_activity_context(activity_id: int) -> dict:
 
     Returns:
         Dict with training_type, weather, terrain, HR efficiency,
-        form scores, phase structure, and planned_workout data.
+        form scores, and phase structure data.
     """
     db_path = get_db_path()
 
@@ -278,50 +275,7 @@ def prefetch_activity_context(activity_id: int) -> dict:
             zone2_focus = hr_row[6]
             zone4_threshold_work = hr_row[7]
 
-        # 3. Planned workout target (if training plan exists)
-        planned_workout = None
-        try:
-            planned_row = conn.execute(
-                """
-                SELECT
-                    pw.workout_type,
-                    pw.description_ja,
-                    pw.target_hr_low,
-                    pw.target_hr_high,
-                    pw.target_pace_low,
-                    pw.target_pace_high,
-                    pw.target_distance_km,
-                    pw.target_duration_minutes,
-                    pw.plan_id
-                FROM planned_workouts pw
-                JOIN training_plans tp
-                    ON pw.plan_id = tp.plan_id AND pw.version = tp.version
-                WHERE pw.workout_date = ?::DATE
-                  AND pw.workout_type != 'rest'
-                  AND tp.status = 'active'
-                ORDER BY tp.version DESC
-                LIMIT 1
-                """,
-                [activity_date],
-            ).fetchone()
-
-            if planned_row:
-                planned_workout = {
-                    "workout_type": planned_row[0],
-                    "description_ja": planned_row[1],
-                    "target_hr_low": planned_row[2],
-                    "target_hr_high": planned_row[3],
-                    "target_pace_low": planned_row[4],
-                    "target_pace_high": planned_row[5],
-                    "target_distance_km": planned_row[6],
-                    "target_duration_minutes": planned_row[7],
-                    "plan_id": planned_row[8],
-                }
-        except duckdb.CatalogException:
-            # Table may not exist if no plan was ever saved.
-            logger.debug("table not found; leaving planned_workout as None")
-
-        # 4. Elevation statistics (from splits table)
+        # 3. Elevation statistics (from splits table)
         elev_row = conn.execute(
             """
             SELECT
@@ -345,7 +299,7 @@ def prefetch_activity_context(activity_id: int) -> dict:
         max_split_loss = elev_row[5] if elev_row and elev_row[5] else 0.0
         avg_gain_per_km = round(total_gain / split_count, 1) if split_count > 0 else 0.0
 
-        # 5. Form evaluation scores (C2)
+        # 4. Form evaluation scores (C2)
         form_scores = None
         try:
             form_row = conn.execute(
@@ -388,7 +342,7 @@ def prefetch_activity_context(activity_id: int) -> dict:
             # Table may not exist.
             logger.debug("table not found; leaving form_scores as None")
 
-        # 6. Phase structure (C3)
+        # 5. Phase structure (C3)
         phase_structure = None
         try:
             phase_row = conn.execute(
@@ -514,22 +468,16 @@ def prefetch_activity_context(activity_id: int) -> dict:
         "zone4_threshold_work": zone4_threshold_work,
         "form_scores": form_scores,
         "phase_structure": phase_structure,
-        "planned_workout": planned_workout,
         # Deterministic training_type -> category mapping (Issue #673). Moves
         # the phase / environment classification tables out of the agent prose
         # so both sections select evaluation criteria without re-deriving.
-        "phase_category": map_phase_category(training_type, planned_workout),
+        "phase_category": map_phase_category(training_type, None),
         "environment_category": map_environment_category(training_type),
-        # Deterministic plan vs actual skeleton (Issue #671). None when no plan.
-        # The agent adds only the prose `evaluation` field on top of this.
-        "plan_achievement": compute_plan_achievement(
-            planned_workout, avg_heart_rate, avg_pace_s_per_km
-        ),
         # Deterministic next_run_target numeric core (Issue #672). The agent
         # transcribes these values and adds only prose (summary_ja / tip).
         "next_run_target": compute_next_run_target(
             training_type,
-            planned_workout,
+            None,
             vo2_max,
             lactate_threshold,
             avg_heart_rate,
