@@ -77,6 +77,8 @@ parameters are documented in each handler's docstring.
 | `/api/trends/efficiency` | HR efficiency trend with zone distribution. |
 | `/api/trends/form` | Form evaluation score trend. |
 | `/api/trends/heat-adjusted` | Climate-neutral HR-at-pace trend with per-run heat_cost. |
+| `/api/trends/narration` | Latest-version narration for the most recent period of a granularity. |
+| `/api/trends/narration/versions` | All saved narration versions for a single period, newest first. |
 | `/api/trends/objective-fitness` | Objective (real-run derived) fitness curve vs Garmin VO2max + optimism gap. |
 | `/api/trends/physiology` | VO2max and lactate threshold time series. |
 | `/api/trends/volume` | Running volume aggregated per calendar week or calendar month. |

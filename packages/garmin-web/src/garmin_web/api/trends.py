@@ -3,7 +3,7 @@
 from datetime import date, timedelta
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from garmin_mcp.database.connection import get_connection
 
 from garmin_web.queries import objective_fitness as objective_fitness_queries
@@ -83,6 +83,41 @@ def get_critical_speed(request: Request) -> list[dict]:
     """
     with get_connection(_db_path(request)) as conn:
         return objective_fitness_queries.get_quarterly_critical_speed(conn)
+
+
+@router.get("/narration/versions")
+def get_trend_narration_versions_endpoint(
+    request: Request,
+    granularity: Annotated[Literal["week", "month"], Query()] = "week",
+    period_start: str = Query(...),
+) -> list[dict]:
+    """All saved narration versions for a single period, newest first.
+
+    Declared before ``/narration`` so this fixed path is matched ahead of the
+    latest-period route. Invalid granularity values are rejected with 422 by
+    FastAPI validation; an unknown period returns ``[]`` (200).
+    """
+    with get_connection(_db_path(request)) as conn:
+        return trends_queries.list_trend_narration_versions(
+            conn, granularity, period_start
+        )
+
+
+@router.get("/narration")
+def get_trend_narration_endpoint(
+    request: Request,
+    granularity: Annotated[Literal["week", "month"], Query()] = "week",
+) -> dict:
+    """Latest-version narration for the most recent period of a granularity.
+
+    Invalid granularity values are rejected with 422 by FastAPI validation. When
+    no narration exists yet, responds with 404.
+    """
+    with get_connection(_db_path(request)) as conn:
+        narration = trends_queries.get_trend_narration(conn, granularity)
+    if narration is None:
+        raise HTTPException(status_code=404, detail="No trend narration found")
+    return narration
 
 
 @router.get("/objective-fitness")

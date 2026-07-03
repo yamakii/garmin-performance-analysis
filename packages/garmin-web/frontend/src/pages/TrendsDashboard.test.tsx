@@ -349,6 +349,20 @@ function stubTrendsFetch(
       if (url.startsWith("/api/form-anomaly-flags")) {
         return Promise.resolve(jsonResponse(formAnomalyFlags));
       }
+      // Trend narration card: no narration seeded in these dashboard tests, so
+      // 404 the latest-narration probe (the card then hides itself) and return
+      // an empty version list.
+      if (url.startsWith("/api/trends/narration/versions")) {
+        return Promise.resolve(jsonResponse([]));
+      }
+      if (url.startsWith("/api/trends/narration")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ detail: "No trend narration found" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
       if (url.startsWith("/api/trends/volume")) {
         return Promise.resolve(jsonResponse(VOLUME));
       }

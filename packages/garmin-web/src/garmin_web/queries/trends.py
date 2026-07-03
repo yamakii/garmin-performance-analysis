@@ -1,10 +1,103 @@
 """Read-only trend queries aggregating across activities."""
 
+import datetime as _dt
+import json
+
 import duckdb
 from garmin_mcp.database.connection import db_path_from_connection
 from garmin_mcp.rag.queries.heat_adjustment import REF_TEMP_C, HeatAdjustmentModel
 
 _VALID_GRANULARITIES = ("week", "month")
+
+# Longitudinal trend narration columns (issue #789/#791). analysis_data is a
+# JSON string decoded back into a dict; date/timestamp values are stringified.
+_NARRATION_COLUMNS = (
+    "analysis_id, user_id, granularity, period_start, period_end, "
+    "analysis_data, created_at, agent_name, agent_version"
+)
+
+# Latest version of the most recent period for a granularity. Multiple versions
+# may exist per period (append-only); newest period + newest version wins.
+_SELECT_NARRATION_LATEST = f"""
+    SELECT {_NARRATION_COLUMNS}
+    FROM trend_analyses
+    WHERE user_id = ? AND granularity = ?
+    ORDER BY period_start DESC, created_at DESC
+    LIMIT 1
+"""
+
+# All saved versions of a single period, newest first.
+_SELECT_NARRATION_VERSIONS = f"""
+    SELECT {_NARRATION_COLUMNS}
+    FROM trend_analyses
+    WHERE user_id = ? AND granularity = ? AND period_start = ?
+    ORDER BY created_at DESC
+"""
+
+
+def _narration_row_to_dict(columns: list[str], row: tuple) -> dict:
+    """Zip a row into a dict, JSON-decoding analysis_data and stringifying dates."""
+    record: dict = {}
+    for col, value in zip(columns, row, strict=True):
+        if isinstance(value, _dt.date | _dt.datetime):
+            record[col] = str(value)
+        else:
+            record[col] = value
+    raw = record.get("analysis_data")
+    record["analysis_data"] = json.loads(raw) if raw is not None else None
+    return record
+
+
+def get_trend_narration(
+    conn: duckdb.DuckDBPyConnection,
+    granularity: str = "week",
+    user_id: str = "default",
+) -> dict | None:
+    """Get the latest-version narration for the most recent period.
+
+    Args:
+        conn: Open DuckDB connection (read-only is sufficient).
+        granularity: Trend granularity (``"week"`` | ``"month"``).
+        user_id: Profile owner identifier (defaults to ``"default"``).
+
+    Returns:
+        A narration dict with ``analysis_data`` JSON-decoded and date/timestamp
+        values converted to ``str`` (the newest period, its latest version), or
+        ``None`` when no narration exists (drives a 404 at the API boundary).
+    """
+    result = conn.execute(_SELECT_NARRATION_LATEST, [user_id, granularity])
+    row = result.fetchone()
+    if row is None:
+        return None
+    columns = [desc[0] for desc in result.description]
+    return _narration_row_to_dict(columns, row)
+
+
+def list_trend_narration_versions(
+    conn: duckdb.DuckDBPyConnection,
+    granularity: str,
+    period_start: str,
+    user_id: str = "default",
+) -> list[dict]:
+    """List all saved narration versions for a single period, newest first.
+
+    Args:
+        conn: Open DuckDB connection (read-only is sufficient).
+        granularity: Trend granularity (``"week"`` | ``"month"``).
+        period_start: Period start (``YYYY-MM-DD``), the saved record key.
+        user_id: Profile owner identifier (defaults to ``"default"``).
+
+    Returns:
+        A list of narration dicts ordered by ``created_at`` descending (newest
+        first). Each ``analysis_data`` is JSON-decoded and date/timestamp values
+        are converted to ``str``. Empty when no versions exist for the period.
+    """
+    result = conn.execute(
+        _SELECT_NARRATION_VERSIONS, [user_id, granularity, period_start]
+    )
+    columns = [desc[0] for desc in result.description]
+    return [_narration_row_to_dict(columns, row) for row in result.fetchall()]
+
 
 # Calendar month bucket, e.g. "2025-10".
 _MONTH_BUCKET = "strftime(activity_date, '%Y-%m')"

@@ -98,6 +98,16 @@ export interface ObjectiveFitnessTrend {
   optimism_gap: OptimismGap | null;
 }
 
+export interface TrendNarration {
+  granularity: string;
+  period_start: string;
+  period_end: string;
+  // Free-form coach narration payload (narrative prose + optional structured
+  // fields). The card renders string values as prose and string[] as lists.
+  analysis_data: Record<string, unknown>;
+  created_at: string | null;
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
   if (!response.ok) {
@@ -136,4 +146,20 @@ export function fetchCriticalSpeed(): Promise<CriticalSpeedPoint[]> {
 
 export function fetchObjectiveFitnessTrend(): Promise<ObjectiveFitnessTrend> {
   return fetchJson("/api/trends/objective-fitness");
+}
+
+export function fetchTrendNarration(
+  granularity: Granularity,
+): Promise<TrendNarration> {
+  return fetchJson(`/api/trends/narration?granularity=${granularity}`);
+}
+
+export function fetchTrendNarrationVersions(
+  granularity: Granularity,
+  periodStart: string,
+): Promise<TrendNarration[]> {
+  return fetchJson(
+    `/api/trends/narration/versions?granularity=${granularity}` +
+      `&period_start=${encodeURIComponent(periodStart)}`,
+  );
 }

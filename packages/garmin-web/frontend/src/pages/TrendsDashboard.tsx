@@ -34,6 +34,7 @@ import WeightEconomyChart from "./trends/WeightEconomyChart";
 import WellnessBaselineChart from "./trends/WellnessBaselineChart";
 import CardSkeleton from "../components/CardSkeleton";
 import SectionHeading from "../components/SectionHeading";
+import TrendNarrationCard from "../components/TrendNarrationCard";
 
 /** Trailing window (days) for the climate-neutral HR trend (one year). */
 const HEAT_ADJUSTED_LOOKBACK_DAYS = 365;
@@ -142,6 +143,13 @@ export default function TrendsDashboard() {
   return (
     <div className="space-y-8">
       <SectionHeading eyebrow="Trends" title="トレンドダッシュボード" />
+
+      {/*
+        Coach narration: longitudinal trend write-up, full width and outside the
+        metric grid so the qualitative story leads the page. Hides itself when
+        no narration has been generated yet (404 / empty table).
+      */}
+      <TrendNarrationCard granularity={granularity} />
 
       {/*
         Alert band: "今, 何を見るべきか" surfaced first, full width and outside
