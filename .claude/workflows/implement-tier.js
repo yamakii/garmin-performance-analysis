@@ -219,7 +219,7 @@ const results = await pipeline(
         `ci-check.sh は integration も既定で回すため、別途 integration を実行する必要はない（Issue #743）。` +
         `これにより doc-sync/unit 漏れ（README/CLAUDE のカウント、golden snapshot、count テスト等）を ci-guard 前に検出する。\n` +
         `完了条件: L1 OK かつ（L2 なら）ci-check.sh exit 0。結果を schema で返す（pass/fail/warning）。`,
-      { label: `val:#${issue.number}`, phase: 'Validate', agentType: 'validation-agent', model: 'sonnet', schema: VALIDATION_SCHEMA }
+      { label: `val:#${issue.number}`, phase: 'Validate', agentType: 'validation-agent', schema: VALIDATION_SCHEMA }
     ).then((v) => ({ manifest, validation: v }))
   },
 

@@ -32,7 +32,7 @@ Issue body の Design セクションから以下を把握:
 ### Step 2: Serena activate & コード調査
 
 ```
-mcp__serena__activate_project("/home/yamakii/workspace/garmin-performance-analysis")
+mcp__serena__activate_project(<リポジトリルートの絶対パス>)  # checkout 位置は環境依存（sandbox では /workspace）
 ```
 
 既存コードを Read/Serena で調査し、変更箇所を特定。
@@ -49,13 +49,13 @@ mcp__serena__activate_project("/home/yamakii/workspace/garmin-performance-analys
 これを怠ると ci-guard の doc-guard / count テストで落ちる（Epic #497 の #498・#500 で2回連続発生）。
 
 **新 MCP tool を追加した場合:**
-- [ ] `README.md` + `CLAUDE.md` の tool 数（例:「52 token-optimized MCP tools」「50 domain + 2 server」）を更新
+- [ ] `README.md` + `CLAUDE.md` の tool 数（「N token-optimized MCP tools」「N domain + 2 server」）を更新
 - [ ] `generate_tool_reference` を実行して `docs/mcp-tools-reference.md` を再生成
 - [ ] golden snapshot `tests/snapshots/all_tools_golden.json` を再生成
 - [ ] `test_all_tools_registry.py` / `test_generate_tool_reference.py` のハードコードされた tool count を更新
 
 **新 DuckDB テーブル / migration を追加した場合:**
-- [ ] `README.md` + `CLAUDE.md` のテーブル数（例:「21 tables」「21 domain tables」）を更新
+- [ ] `README.md` + `CLAUDE.md` のテーブル数（「N tables」「N domain tables」）を更新
 - [ ] `generate_schema_doc` を実行して `docs/spec/duckdb_schema_mapping.md` の生成ブロック + `## N. <table>` セクションを再生成
 - [ ] `test_migration_runner.py` の migration 数（期待値）を更新
 
@@ -107,7 +107,7 @@ git -C {worktree_path} commit -m "{conventional commit message}
 
 Closes #{issue_number}
 
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
+Co-Authored-By: Claude <noreply@anthropic.com>"
 ```
 
 ### Step 5.5: Validation Manifest 返却
