@@ -99,7 +99,7 @@ class TestGetCurrentFitnessSummary:
         mock_db_reader.db_path = "/tmp/test.duckdb"
         expected = {"vdot": 45.2, "weekly_volume_km": 30.0}
         mock_assessor_cls = mocker.patch(
-            "garmin_mcp.training_plan.fitness_assessor.FitnessAssessor"
+            "garmin_mcp.fitness.fitness_assessor.FitnessAssessor"
         )
         mock_assessor = mock_assessor_cls.return_value
         mock_assessor.assess.return_value.model_dump.return_value = expected
@@ -118,7 +118,7 @@ class TestGetCurrentFitnessSummary:
     ) -> None:
         mock_db_reader.db_path = "/tmp/test.duckdb"
         mock_assessor_cls = mocker.patch(
-            "garmin_mcp.training_plan.fitness_assessor.FitnessAssessor"
+            "garmin_mcp.fitness.fitness_assessor.FitnessAssessor"
         )
         mock_assessor_cls.return_value.assess.return_value.model_dump.return_value = {}
 
@@ -134,7 +134,7 @@ class TestGetCurrentFitnessSummary:
     ) -> None:
         mock_db_reader.db_path = "/tmp/test.duckdb"
         mock_assessor_cls = mocker.patch(
-            "garmin_mcp.training_plan.fitness_assessor.FitnessAssessor"
+            "garmin_mcp.fitness.fitness_assessor.FitnessAssessor"
         )
         mock_assessor_cls.return_value.assess.side_effect = RuntimeError("DB error")
 

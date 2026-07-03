@@ -23,9 +23,9 @@ from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.training_plans import insert_training_plan
 from garmin_mcp.database.readers.training_plans import TrainingPlanReader
+from garmin_mcp.fitness.models import PaceZones
 from garmin_mcp.training_plan.models import (
     GoalType,
-    PaceZones,
     PeriodizationPhase,
     PlannedWorkout,
     TrainingPlan,

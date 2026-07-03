@@ -15,7 +15,7 @@ import duckdb
 import pytest
 
 from garmin_mcp.database.db_writer import GarminDBWriter
-from garmin_mcp.training_plan.fitness_assessor import FitnessAssessor
+from garmin_mcp.fitness.fitness_assessor import FitnessAssessor
 
 
 @pytest.fixture(scope="module")

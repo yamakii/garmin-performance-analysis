@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import math
 
-from garmin_mcp.training_plan.models import PaceZones
+from garmin_mcp.fitness.models import PaceZones
 
 
 class VDOTCalculator:

@@ -10,8 +10,8 @@ import logging
 from datetime import date, datetime, timedelta
 
 from garmin_mcp.database.readers.base import BaseDBReader
-from garmin_mcp.training_plan.models import FitnessSummary, HRZones
-from garmin_mcp.training_plan.vdot import VDOTCalculator
+from garmin_mcp.fitness.models import FitnessSummary, HRZones
+from garmin_mcp.fitness.vdot import VDOTCalculator
 from garmin_mcp.utils.week import get_week_start_day, week_start
 
 logger = logging.getLogger(__name__)

@@ -8,7 +8,8 @@ import logging
 from typing import Any
 
 from garmin_mcp.database.readers.training_plans import TrainingPlanReader
-from garmin_mcp.training_plan.models import PaceZones, PlannedWorkout, WorkoutType
+from garmin_mcp.fitness.models import PaceZones
+from garmin_mcp.training_plan.models import PlannedWorkout, WorkoutType
 from garmin_mcp.training_plan.workout_builder import GarminWorkoutBuilder
 
 logger = logging.getLogger(__name__)

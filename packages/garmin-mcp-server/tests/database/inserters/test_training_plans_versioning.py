@@ -6,9 +6,9 @@ import duckdb
 import pytest
 
 from garmin_mcp.database.inserters.training_plans import insert_training_plan
+from garmin_mcp.fitness.models import PaceZones
 from garmin_mcp.training_plan.models import (
     GoalType,
-    PaceZones,
     PeriodizationPhase,
     PlannedWorkout,
     TrainingPlan,

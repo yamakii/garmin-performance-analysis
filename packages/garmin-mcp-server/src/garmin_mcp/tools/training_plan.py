@@ -207,7 +207,7 @@ def _validate_plan_safety(plan: Any) -> tuple[list[str], list[str]]:
 def _get_current_fitness_summary(
     reader: GarminDBReader, p: CurrentFitnessSummaryParams
 ) -> Any:
-    from garmin_mcp.training_plan.fitness_assessor import FitnessAssessor
+    from garmin_mcp.fitness.fitness_assessor import FitnessAssessor
 
     try:
         lookback = (
@@ -322,7 +322,7 @@ def _delete_workout_from_garmin(reader: GarminDBReader, p: DeleteWorkoutParams) 
 def _get_garmin_scheduled_workouts(
     reader: GarminDBReader, p: GarminScheduledWorkoutsParams
 ) -> Any:
-    from garmin_mcp.training_plan.garmin_calendar import GarminCalendarReader
+    from garmin_mcp.fitness.garmin_calendar import GarminCalendarReader
 
     try:
         calendar_reader = GarminCalendarReader()

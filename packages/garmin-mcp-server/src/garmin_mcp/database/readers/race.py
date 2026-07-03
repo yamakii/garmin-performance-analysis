@@ -15,8 +15,7 @@ from typing import Any
 from garmin_mcp.analysis.race_prediction import predict_race_times
 from garmin_mcp.database.readers.base import BaseDBReader
 from garmin_mcp.database.readers.fitness_curve import FitnessCurveReader
-from garmin_mcp.training_plan.fitness_assessor import FitnessAssessor
-from garmin_mcp.training_plan.vdot import VDOTCalculator
+from garmin_mcp.fitness.vdot import VDOTCalculator
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +118,11 @@ class RaceReader(BaseDBReader):
         legitimate "no data" state, so it is mapped to ``None`` rather than
         propagated.
         """
+        # Imported lazily to avoid a circular import: ``FitnessAssessor`` imports
+        # ``database.readers.base``, which eagerly loads the readers package
+        # (including this module) via ``readers/__init__``.
+        from garmin_mcp.fitness.fitness_assessor import FitnessAssessor
+
         try:
             summary = FitnessAssessor(db_path=str(self.db_path)).assess(
                 lookback_weeks=lookback_weeks

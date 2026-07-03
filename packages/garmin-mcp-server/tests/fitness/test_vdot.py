@@ -5,7 +5,7 @@ Verifies against published Daniels' VDOT tables for known race performances.
 
 import pytest
 
-from garmin_mcp.training_plan.vdot import VDOTCalculator
+from garmin_mcp.fitness.vdot import VDOTCalculator
 
 
 @pytest.mark.unit
@@ -137,3 +137,16 @@ class TestPredictRaceTime:
         vdot = VDOTCalculator.vdot_from_race(5.0, original_time)
         predicted = VDOTCalculator.predict_race_time(vdot, 5.0)
         assert predicted == pytest.approx(original_time, abs=5)
+
+
+@pytest.mark.unit
+class TestVDOTFitnessModuleLocation:
+    """Guard: VDOTCalculator lives in the neutral fitness module (#783)."""
+
+    def test_vdot_import_from_fitness(self):
+        """VDOTCalculator imports from garmin_mcp.fitness.vdot and behaves as before."""
+        from garmin_mcp.fitness.vdot import VDOTCalculator as FitnessVDOT
+
+        assert FitnessVDOT.__module__ == "garmin_mcp.fitness.vdot"
+        # VDOT 40: 5K ≈ 24:06 (1446s) — unchanged behaviour after the move.
+        assert FitnessVDOT.predict_race_time(40, 5.0) == pytest.approx(1446, abs=30)
