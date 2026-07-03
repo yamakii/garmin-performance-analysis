@@ -111,7 +111,7 @@ function AcwrTile({ load }: { load: AcwrTrend | null }) {
     <Tile
       title="訓練負荷 (ACWR)"
       badge={current != null ? ACWR_META[current.status] : null}
-      to="/trends"
+      to="/trends#training-load"
     >
       <BigValue value={insufficient ? "—" : formatNumber(current.acwr, 2)} />
       {weeks.length > 1 && (
@@ -142,7 +142,7 @@ function HrvTile({ recovery }: { recovery: RecoveryTrend | null }) {
   const values = series.map((p) => p.hrv_overnight_ms);
 
   return (
-    <Tile title="HRV (夜間)" badge={badge} to="/trends">
+    <Tile title="HRV (夜間)" badge={badge} to="/trends#recovery">
       <BigValue
         value={hrv?.latest_ms != null ? formatNumber(hrv.latest_ms, 0) : "—"}
         unit="ms"
@@ -172,7 +172,7 @@ function RhrTile({ recovery }: { recovery: RecoveryTrend | null }) {
     <Tile
       title="安静時心拍"
       badge={rhr?.rhr_trend != null ? RHR_META[rhr.rhr_trend] : null}
-      to="/trends"
+      to="/trends#recovery"
     >
       <BigValue
         value={rhr?.median_7d != null ? formatNumber(rhr.median_7d, 0) : "—"}
@@ -203,7 +203,7 @@ function FlagsTile({ flags }: { flags: FormAnomalyFlagsResponse | null }) {
   const top = flags?.flags[0]?.top_recommendation ?? null;
 
   return (
-    <Tile title="フォーム注意点" badge={badge} to="/trends">
+    <Tile title="フォーム注意点" badge={badge} to="/trends#form-anomaly">
       <BigValue value={count != null ? String(count) : "—"} unit="件" />
       <p className="mt-1 line-clamp-3 text-[11px] leading-relaxed text-slate-500">
         {count === 0

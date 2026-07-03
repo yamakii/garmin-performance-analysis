@@ -118,6 +118,23 @@ describe("SnapshotTiles", () => {
     expect(screen.getAllByText("—")).toHaveLength(4);
   });
 
+  it("タイルが該当ページへリンクする", () => {
+    renderTiles();
+
+    // Each tile deep-links to its matching Trends anchor.
+    const recoveryTile = screen.getByText("HRV (夜間)").closest("a");
+    expect(recoveryTile).toHaveAttribute("href", "/trends#recovery");
+
+    const rhrTile = screen.getByText("安静時心拍").closest("a");
+    expect(rhrTile).toHaveAttribute("href", "/trends#recovery");
+
+    const loadTile = screen.getByText("訓練負荷 (ACWR)").closest("a");
+    expect(loadTile).toHaveAttribute("href", "/trends#training-load");
+
+    const flagsTile = screen.getByText("フォーム注意点").closest("a");
+    expect(flagsTile).toHaveAttribute("href", "/trends#form-anomaly");
+  });
+
   it("shows a dash for ACWR when data is insufficient", () => {
     renderTiles({
       current: {

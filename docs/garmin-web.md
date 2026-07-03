@@ -69,6 +69,7 @@ parameters are documented in each handler's docstring.
 | `/api/durability-trend` | Return the long-run decoupling trend over a date window. |
 | `/api/form-anomaly-flags` | "今週の注意点": form-anomaly flags across the trailing ``weeks`` runs (#636). |
 | `/api/goal` | Return the athlete goal payload (profile + goals + retrospectives). |
+| `/api/planned-workouts/today` | Return the planned workout for ``date`` (defaults to today). |
 | `/api/race-readiness` | Return current VDOT, race-time predictions, and goal progress. |
 | `/api/recovery-status` | Morning go/no-go recovery status for ``date`` (#500). |
 | `/api/recovery-trend` | RHR / HRV recovery trend over the trailing ``weeks`` weeks (#499). |

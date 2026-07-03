@@ -14,8 +14,9 @@ import SectionHeading from "../components/SectionHeading";
 import RaceProgress from "./dashboard/RaceProgress";
 import RecentRuns from "./dashboard/RecentRuns";
 import SnapshotTiles from "./dashboard/SnapshotTiles";
-import ThisWeekPlan from "./dashboard/ThisWeekPlan";
+import ThisWeekPlan, { toIsoDate } from "./dashboard/ThisWeekPlan";
 import TodayHero from "./dashboard/TodayHero";
+import { TodayPlanCard } from "./dashboard/TodayPlanCard";
 
 /**
  * Home page: today's cockpit. Reads top-down as 状態 (verdict hero, snapshot
@@ -92,6 +93,9 @@ export default function Dashboard() {
         ) : (
           <SnapshotTiles load={load} recovery={recovery} flags={flags} />
         )}
+
+        {/* ② 行動: 今日の予定 vs 実績 */}
+        <TodayPlanCard date={toIsoDate(new Date())} />
 
         {/* ② 行動: 今週のプラン + 次の行動 */}
         {reviews == null ? (

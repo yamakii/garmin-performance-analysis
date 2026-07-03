@@ -3,6 +3,7 @@ import {
   fetchActivities,
   fetchActivityDetail,
   fetchGoal,
+  fetchPlannedWorkoutToday,
   fetchRaceReadiness,
   fetchSections,
   fetchSectionVersions,
@@ -46,6 +47,7 @@ import type {
   DurabilityTrend,
   FormAnomalyFlagsResponse,
   GoalResponse,
+  PlannedWorkoutToday,
   RaceReadiness,
   RecoveryStatus,
   RecoveryTrend,
@@ -161,6 +163,18 @@ export function useWeeklyReviewVersions(
     queryKey: ["weeklyReviewVersions", weekStart],
     queryFn: () => fetchWeeklyReviewVersions(weekStart as string),
     enabled: weekStart != null,
+  });
+}
+
+// --- Today's planned workout ----------------------------------------------
+
+export function usePlannedWorkoutToday(
+  date: string | undefined,
+): UseQueryResult<PlannedWorkoutToday | null, Error> {
+  return useQuery({
+    queryKey: ["plannedWorkoutToday", date],
+    queryFn: () => fetchPlannedWorkoutToday(date as string),
+    enabled: date != null,
   });
 }
 
