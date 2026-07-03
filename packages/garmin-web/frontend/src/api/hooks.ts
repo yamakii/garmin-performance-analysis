@@ -28,6 +28,8 @@ import {
   fetchHeatAdjustedTrend,
   fetchObjectiveFitnessTrend,
   fetchPhysiologyTrend,
+  fetchTrendNarration,
+  fetchTrendNarrationVersions,
   fetchVolumeTrend,
   type CriticalSpeedPoint,
   type EfficiencyTrendPoint,
@@ -36,6 +38,7 @@ import {
   type HeatAdjustedTrend,
   type ObjectiveFitnessTrend,
   type PhysiologyTrend,
+  type TrendNarration,
   type VolumeTrendPoint,
 } from "./trends";
 import type {
@@ -179,6 +182,26 @@ export function usePhysiologyTrend(): UseQueryResult<PhysiologyTrend, Error> {
   return useQuery({
     queryKey: ["physiologyTrend"],
     queryFn: () => fetchPhysiologyTrend(),
+  });
+}
+
+export function useTrendNarration(
+  granularity: Granularity,
+): UseQueryResult<TrendNarration, Error> {
+  return useQuery({
+    queryKey: ["trendNarration", granularity],
+    queryFn: () => fetchTrendNarration(granularity),
+  });
+}
+
+export function useTrendNarrationVersions(
+  granularity: Granularity,
+  periodStart: string | undefined,
+): UseQueryResult<TrendNarration[], Error> {
+  return useQuery({
+    queryKey: ["trendNarrationVersions", granularity, periodStart],
+    queryFn: () => fetchTrendNarrationVersions(granularity, periodStart as string),
+    enabled: periodStart != null,
   });
 }
 
