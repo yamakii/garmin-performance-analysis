@@ -115,13 +115,11 @@ export default function ActivityDetail() {
     useState<string[]>(DEFAULT_METRICS);
   const [hover, setHover] = useState<HoverState | null>(null);
   // null = latest; otherwise pin sections to a past analysis batch's created_at.
-  const [selectedCreatedAt, setSelectedCreatedAt] = useState<string | null>(
-    null,
-  );
+  const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
 
   const detailQuery = useActivityDetail(id);
   const versionsQuery = useSectionVersions(id);
-  const sectionsQuery = useSections(id, selectedCreatedAt ?? undefined);
+  const sectionsQuery = useSections(id, selectedRunId ?? undefined);
   // The time-series query only runs when at least one metric is selected;
   // otherwise it stays idle and the chart shows its empty-state placeholder.
   const timeSeriesQuery = useTimeSeries(id, selectedMetrics);
@@ -134,18 +132,18 @@ export default function ActivityDetail() {
   const detail = detailQuery.data ?? null;
   const sections = sectionsQuery.data ?? null;
   const versions = versionsQuery.data ?? [];
-  // The selected batch index: 0 (latest) unless a past created_at is pinned.
+  // The selected run index: 0 (latest) unless a past run_id is pinned.
   const selectedVersionIndex =
-    selectedCreatedAt == null
+    selectedRunId == null
       ? 0
       : Math.max(
           0,
-          versions.findIndex((v) => v.created_at === selectedCreatedAt),
+          versions.findIndex((v) => v.run_id === selectedRunId),
         );
 
   const handleVersionChange = (index: number) => {
-    // Index 0 is the newest batch → clear the pin so we always track "latest".
-    setSelectedCreatedAt(index === 0 ? null : versions[index].created_at);
+    // Index 0 is the newest run → clear the pin so we always track "latest".
+    setSelectedRunId(index === 0 ? null : versions[index].run_id);
   };
 
   const hasMetrics = selectedMetrics.length > 0;
@@ -281,7 +279,7 @@ export default function ActivityDetail() {
             className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-ink shadow-sm focus:border-ink focus:outline-none"
           >
             {versions.map((version, i) => (
-              <option key={version.created_at} value={i}>
+              <option key={version.run_id} value={i}>
                 {i === 0
                   ? `${version.created_at}（最新）`
                   : version.created_at}

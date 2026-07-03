@@ -50,6 +50,7 @@ REQUIRED_SEQUENCES = {
     "form_evaluations_seq",
     "form_baseline_history_seq",
     "seq_section_analyses_id",
+    "seq_analysis_run_id",
     "seq_athlete_goals_id",
     "seq_season_retrospectives_id",
     "seq_weekly_reviews_id",

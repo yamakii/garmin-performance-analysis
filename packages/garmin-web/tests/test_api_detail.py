@@ -65,14 +65,18 @@ def test_api_section_versions_200(detail_db_path):
     assert response.status_code == 200
     versions = response.json()
     assert isinstance(versions, list)
-    assert len(versions) >= 1
-    # Every batch entry exposes its created_at + section_types.
-    all_types: set[str] = set()
-    for version in versions:
-        assert "created_at" in version
-        assert isinstance(version["section_types"], list)
-        all_types.update(version["section_types"])
-    assert all_types == {"split", "phase", "efficiency", "environment", "summary"}
+    # One analysis run of 5 sections = exactly one version, not five (#776).
+    assert len(versions) == 1
+    version = versions[0]
+    assert "run_id" in version
+    assert "created_at" in version
+    assert set(version["section_types"]) == {
+        "split",
+        "phase",
+        "efficiency",
+        "environment",
+        "summary",
+    }
 
     # Unknown activity -> empty list (status 200, not 404).
     response = client.get("/api/activities/999999/sections/versions")

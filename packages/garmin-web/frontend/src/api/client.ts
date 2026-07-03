@@ -124,11 +124,9 @@ export async function fetchTrack(
 
 export async function fetchSections(
   activityId: string | number,
-  createdAt?: string,
+  runId?: number,
 ): Promise<SectionsResponse> {
-  const query = createdAt
-    ? `?created_at=${encodeURIComponent(createdAt)}`
-    : "";
+  const query = runId != null ? `?run_id=${runId}` : "";
   const response = await fetch(
     `/api/activities/${activityId}/sections${query}`,
   );

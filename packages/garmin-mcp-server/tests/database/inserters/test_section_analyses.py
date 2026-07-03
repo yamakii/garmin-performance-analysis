@@ -400,3 +400,125 @@ class TestSectionAnalysisInserter:
 
         assert count_row is not None
         assert count_row[0] == 2
+
+    @pytest.mark.unit
+    def test_run_id_shared_across_run(self, initialized_db_path):
+        """A shared run_id groups several sections into one version (#776)."""
+        from garmin_mcp.database.db_writer import GarminDBWriter
+
+        db_path = initialized_db_path
+        conn = duckdb.connect(str(db_path))
+        insert_activities(activity_id=999903, date="2025-09-22", conn=conn)
+        conn.close()
+
+        writer = GarminDBWriter(db_path=str(db_path))
+        run_id = writer.next_run_id()
+        for section in ("efficiency", "phase", "summary"):
+            assert writer.insert_section_analysis(
+                activity_id=999903,
+                activity_date="2025-09-22",
+                section_type=section,
+                analysis_data={"note": section},
+                run_id=run_id,
+            )
+
+        conn = duckdb.connect(str(db_path))
+        run_ids = conn.execute(
+            "SELECT DISTINCT run_id FROM section_analyses WHERE activity_id = 999903"
+        ).fetchall()
+        conn.close()
+        # All three sections share the one run_id → a single version.
+        assert run_ids == [(run_id,)]
+
+    @pytest.mark.unit
+    def test_reanalysis_increments_run_id(self, initialized_db_path):
+        """A standalone re-analysis gets a new run_id, so it is its own version."""
+        from garmin_mcp.database.db_writer import GarminDBWriter
+
+        db_path = initialized_db_path
+        conn = duckdb.connect(str(db_path))
+        insert_activities(activity_id=999904, date="2025-09-22", conn=conn)
+        conn.close()
+
+        writer = GarminDBWriter(db_path=str(db_path))
+        # Two separate writes with no explicit run_id → two distinct run_ids.
+        writer.insert_section_analysis(
+            activity_id=999904,
+            activity_date="2025-09-22",
+            section_type="summary",
+            analysis_data={"v": 1},
+        )
+        writer.insert_section_analysis(
+            activity_id=999904,
+            activity_date="2025-09-22",
+            section_type="summary",
+            analysis_data={"v": 2},
+        )
+
+        conn = duckdb.connect(str(db_path))
+        run_ids = conn.execute(
+            "SELECT run_id FROM section_analyses"
+            " WHERE activity_id = 999904 ORDER BY analysis_id"
+        ).fetchall()
+        conn.close()
+        assert run_ids[0][0] != run_ids[1][0]
+
+    @pytest.mark.integration
+    def test_migration_backfills_one_run_per_activity(self, tmp_path):
+        """Migration 14 assigns each existing activity a single unique run_id."""
+        from garmin_mcp.database.migrations.add_section_analysis_run_id import (
+            add_section_analysis_run_id,
+        )
+
+        db_path = tmp_path / "legacy_run_id.duckdb"
+        conn = duckdb.connect(str(db_path))
+        # Legacy shape: no run_id column. Two activities, 3 sections each, with
+        # per-section distinct timestamps (the exact pre-#776 situation).
+        conn.execute("""
+            CREATE TABLE section_analyses (
+                analysis_id INTEGER PRIMARY KEY,
+                activity_id BIGINT NOT NULL,
+                activity_date DATE NOT NULL,
+                section_type VARCHAR NOT NULL,
+                analysis_data VARCHAR,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """)
+        rows = [
+            (1, 111, "2025-09-22 10:00:00.1", "efficiency"),
+            (2, 111, "2025-09-22 10:00:00.2", "phase"),
+            (3, 111, "2025-09-22 10:00:00.3", "summary"),
+            (4, 222, "2025-09-23 10:00:00.1", "efficiency"),
+            (5, 222, "2025-09-23 10:00:00.2", "phase"),
+            (6, 222, "2025-09-23 10:00:00.3", "summary"),
+        ]
+        for analysis_id, activity_id, stamp, section in rows:
+            conn.execute(
+                "INSERT INTO section_analyses"
+                " (analysis_id, activity_id, activity_date, section_type,"
+                "  analysis_data, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                [analysis_id, activity_id, "2025-09-22", section, "{}", stamp],
+            )
+
+        add_section_analysis_run_id(conn)
+
+        # Each activity collapses to exactly one run_id, and the two differ.
+        per_activity = conn.execute(
+            "SELECT activity_id, COUNT(DISTINCT run_id)"
+            " FROM section_analyses GROUP BY activity_id ORDER BY activity_id"
+        ).fetchall()
+        assert per_activity == [(111, 1), (222, 1)]
+        distinct_runs = conn.execute(
+            "SELECT COUNT(DISTINCT run_id) FROM section_analyses"
+        ).fetchone()
+        # A fresh run_id must allocate above the backfilled ones (no collision).
+        next_run = conn.execute("SELECT nextval('seq_analysis_run_id')").fetchone()
+        max_backfill = conn.execute(
+            "SELECT MAX(run_id) FROM section_analyses"
+        ).fetchone()
+        conn.close()
+
+        assert distinct_runs is not None and distinct_runs[0] == 2
+        assert next_run is not None and max_backfill is not None
+        assert next_run[0] > max_backfill[0]

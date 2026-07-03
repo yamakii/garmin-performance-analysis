@@ -485,7 +485,8 @@ _CREATE_SECTION_ANALYSES = """
         analysis_data VARCHAR,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         agent_name VARCHAR,
-        agent_version VARCHAR
+        agent_version VARCHAR,
+        run_id BIGINT
     )
 """
 
@@ -768,13 +769,14 @@ def detail_db_path(tmp_path: Path) -> Path:
         )
 
         # Sections: 5 valid for FULL; 4 valid + 1 broken (environment) for PARTIAL
+        # Each activity is one analysis run: FULL = run 1, PARTIAL = run 2.
         analysis_id = 1
         for section_type in _SECTION_TYPES:
             conn.execute(
                 "INSERT INTO section_analyses"
                 " (analysis_id, activity_id, activity_date, section_type,"
-                "  analysis_data, agent_name, agent_version)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "  analysis_data, agent_name, agent_version, run_id)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 [
                     analysis_id,
                     FULL_ACTIVITY_ID,
@@ -783,6 +785,7 @@ def detail_db_path(tmp_path: Path) -> Path:
                     _section_json(FULL_ACTIVITY_ID, section_type),
                     f"{section_type}-section-analyst",
                     "1.0",
+                    1,
                 ],
             )
             analysis_id += 1
@@ -795,8 +798,8 @@ def detail_db_path(tmp_path: Path) -> Path:
             conn.execute(
                 "INSERT INTO section_analyses"
                 " (analysis_id, activity_id, activity_date, section_type,"
-                "  analysis_data, agent_name, agent_version)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "  analysis_data, agent_name, agent_version, run_id)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 [
                     analysis_id,
                     PARTIAL_ACTIVITY_ID,
@@ -805,6 +808,7 @@ def detail_db_path(tmp_path: Path) -> Path:
                     analysis_data,
                     f"{section_type}-section-analyst",
                     "1.0",
+                    2,
                 ],
             )
             analysis_id += 1

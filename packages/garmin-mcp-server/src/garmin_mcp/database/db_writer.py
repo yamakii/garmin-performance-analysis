@@ -13,6 +13,27 @@ from garmin_mcp.database.connection import get_db_path, get_write_connection
 logger = logging.getLogger(__name__)
 
 
+def _next_run_id_on(conn) -> int:  # type: ignore[no-untyped-def]
+    """Return the next section-analysis ``run_id`` on an open connection (#776).
+
+    Self-heals if ``seq_analysis_run_id`` is missing (e.g. a DB that predates
+    migration 14 for any reason): it is created starting above the highest
+    existing run_id so allocated values never collide with backfilled ones.
+    """
+    try:
+        row = conn.execute("SELECT nextval('seq_analysis_run_id')").fetchone()
+    except Exception:
+        max_run = conn.execute(
+            "SELECT COALESCE(MAX(run_id), 0) FROM section_analyses"
+        ).fetchone()[0]
+        conn.execute(
+            f"CREATE SEQUENCE IF NOT EXISTS seq_analysis_run_id START {max_run + 1}"
+        )
+        row = conn.execute("SELECT nextval('seq_analysis_run_id')").fetchone()
+    assert row is not None
+    return int(row[0])
+
+
 def _body_comp_row(date: str, weight_data: dict) -> dict | None:
     """Build a normalized body_composition row dict from raw weight data.
 
@@ -533,8 +554,12 @@ class GarminDBWriter:
                     analysis_data VARCHAR,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     agent_name VARCHAR,
-                    agent_version VARCHAR
-                    -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
+                    agent_version VARCHAR,
+                    run_id BIGINT
+                    -- run_id (issue #776): one analysis run = one run_id, shared
+                    -- by every section written in that run. It is the unit of a
+                    -- "version" (append-only; a run is never overwritten). FK
+                    -- constraint removed (2025-11-01): integrity at app layer.
                 )
             """)
 
@@ -730,13 +755,21 @@ class GarminDBWriter:
         analysis_data: dict,
         agent_name: str | None = None,
         agent_version: str = "1.0",
+        run_id: int | None = None,
     ) -> bool:
         """
         Append section analysis data with auto-generated metadata.
 
         Append-only (issue #720): each call inserts a new row, preserving prior
         versions for the same (activity_id, section_type). Readers resolve the
-        canonical result as the latest version (highest created_at).
+        canonical result as the latest version (highest run_id).
+
+        Versioning (issue #776): every row carries a ``run_id`` identifying the
+        analysis run it belongs to. Pass a shared ``run_id`` (from
+        :meth:`next_run_id`) to group several sections written together into one
+        version — this is what the full-activity analysis does for its 5
+        sections. When ``run_id`` is omitted, a fresh run_id is allocated, so a
+        standalone single-section re-analysis becomes its own version.
 
         Args:
             activity_id: Activity ID
@@ -745,6 +778,8 @@ class GarminDBWriter:
             analysis_data: Analysis data dict (metadata will be auto-added if not present)
             agent_name: Optional agent name (defaults to {section_type}-section-analyst)
             agent_version: Agent version (defaults to "1.0")
+            run_id: Optional shared run identifier. Omit to allocate a new one
+                (single-section write = its own version).
 
         Returns:
             True if successful
@@ -761,6 +796,11 @@ class GarminDBWriter:
                     ).fetchone()
                     assert row is not None
                     next_analysis_id = row[0]
+
+                    # Allocate a fresh run_id when the caller did not supply a
+                    # shared one (#776): this write becomes its own version.
+                    if run_id is None:
+                        run_id = _next_run_id_on(conn)
 
                     # Auto-generate metadata if not present
                     if "metadata" not in analysis_data:
@@ -793,8 +833,8 @@ class GarminDBWriter:
                     conn.execute(
                         """
                         INSERT INTO section_analyses
-                        (analysis_id, activity_id, activity_date, section_type, analysis_data, agent_name, agent_version)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        (analysis_id, activity_id, activity_date, section_type, analysis_data, agent_name, agent_version, run_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                         [
                             next_analysis_id,
@@ -804,13 +844,14 @@ class GarminDBWriter:
                             json.dumps(analysis_data_with_metadata),
                             agent_name,
                             agent_version,
+                            run_id,
                         ],
                     )
 
                     # Commit transaction
                     conn.commit()
                     logger.info(
-                        f"Appended {section_type} analysis version for activity {activity_id}"
+                        f"Appended {section_type} analysis (run {run_id}) for activity {activity_id}"
                     )
                     return True
 
@@ -822,6 +863,17 @@ class GarminDBWriter:
         except Exception as e:
             logger.error(f"Error appending section analysis: {e}")
             return False
+
+    def next_run_id(self) -> int:
+        """Allocate a new analysis ``run_id`` (issue #776).
+
+        Call once per analysis run and pass the value to every
+        :meth:`insert_section_analysis` in that run so its sections share one
+        version. Values come from ``seq_analysis_run_id``, which starts above
+        every pre-existing run_id so new runs never collide with backfilled ones.
+        """
+        with get_write_connection(self.db_path) as conn:
+            return _next_run_id_on(conn)
 
     def insert_body_composition(self, date: str, weight_data: dict) -> bool:
         """

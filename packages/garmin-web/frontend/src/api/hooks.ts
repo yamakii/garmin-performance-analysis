@@ -83,11 +83,11 @@ export function useActivityDetail(
 
 export function useSections(
   id: string | undefined,
-  createdAt?: string,
+  runId?: number,
 ): UseQueryResult<SectionsResponse, Error> {
   return useQuery({
-    queryKey: ["sections", id, createdAt ?? null],
-    queryFn: () => fetchSections(id as string, createdAt),
+    queryKey: ["sections", id, runId ?? null],
+    queryFn: () => fetchSections(id as string, runId),
     enabled: id != null,
   });
 }

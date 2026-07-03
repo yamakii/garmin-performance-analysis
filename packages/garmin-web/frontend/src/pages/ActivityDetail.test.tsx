@@ -255,11 +255,15 @@ describe("ActivityDetail version selector", () => {
       let body: unknown;
       if (url.includes("/sections/versions")) {
         body = [
-          { created_at: NEW_STAMP, section_types: ["summary"] },
-          { created_at: OLD_STAMP, section_types: ["summary", "split"] },
+          { run_id: 2, created_at: NEW_STAMP, section_types: ["summary"] },
+          {
+            run_id: 1,
+            created_at: OLD_STAMP,
+            section_types: ["summary", "split"],
+          },
         ];
       } else if (url.includes("/sections")) {
-        const pinned = url.includes("created_at=");
+        const pinned = url.includes("run_id=");
         body = {
           summary: {
             data: {
@@ -298,15 +302,13 @@ describe("ActivityDetail version selector", () => {
     expect(within(select).getAllByRole("option")).toHaveLength(2);
     expect(screen.getByText("全2版")).toBeInTheDocument();
 
-    // Switching to the older batch re-fetches sections with the created_at pin.
+    // Switching to the older run re-fetches sections with the run_id pin.
     fireEvent.change(select, { target: { value: "1" } });
 
     await waitFor(() => {
       expect(
         fetchMock.mock.calls.some(([input]) =>
-          String(input).includes(
-            `/sections?created_at=${encodeURIComponent(OLD_STAMP)}`,
-          ),
+          String(input).includes("/sections?run_id=1"),
         ),
       ).toBe(true);
     });
