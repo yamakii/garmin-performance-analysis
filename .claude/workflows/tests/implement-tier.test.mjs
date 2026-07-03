@@ -13,8 +13,8 @@ const src = readFileSync(new URL('../implement-tier.js', import.meta.url), 'utf8
 const m = src.match(/\/\/ >>> testable\n([\s\S]*?)\n\s*\/\/ <<< testable/)
 assert.ok(m, 'testable block markers not found in implement-tier.js')
 // eslint-disable-next-line no-new-func
-const { normalizeArgs, mergeDecision, pushCmd, mergeResult } = new Function(
-  `${m[1]}\nreturn { normalizeArgs, mergeDecision, pushCmd, mergeResult }`,
+const { normalizeArgs, mergeDecision, pushCmd, mergeResult, levelFromChangedFiles } = new Function(
+  `${m[1]}\nreturn { normalizeArgs, mergeDecision, pushCmd, mergeResult, levelFromChangedFiles }`,
 )()
 
 test('normalizeArgs parses a JSON string (the #441 regression)', () => {
@@ -29,56 +29,100 @@ test('normalizeArgs passes objects through and defaults safely', () => {
   assert.deepEqual(normalizeArgs('not json'), {})
 })
 
-const GREEN = {
-  validation: { status: 'pass' },
-  ship: { ci_conclusion: 'success', mergeable: true, pr_number: 1 },
+const GREEN_SHIP = { ci_conclusion: 'success', mergeable: true, pr_number: 1 }
+
+// Build a fully-green acc whose declared level matches the changed_files verdict
+// (so the under-declaration guard passes) unless `level` is overridden.
+function greenAcc(changed_files, level = levelFromChangedFiles(changed_files)) {
+  return {
+    manifest: { changed_files, validation_level: level },
+    validation: { status: 'pass', level },
+    ship: { ...GREEN_SHIP },
+  }
 }
 
+test('test_level_from_changed_files_table maps representative paths', () => {
+  assert.equal(levelFromChangedFiles(['.claude/agents/z-analyst.md']), 'L3')
+  assert.equal(levelFromChangedFiles(['packages/garmin-mcp-server/src/garmin_mcp/database/readers/splits.py']), 'L1')
+  assert.equal(levelFromChangedFiles(['packages/garmin-mcp-server/src/garmin_mcp/tools/performance.py']), 'L1')
+  assert.equal(levelFromChangedFiles(['packages/garmin-web/frontend/src/App.tsx']), 'L2')
+  assert.equal(levelFromChangedFiles(['packages/garmin-mcp-server/src/garmin_mcp/ingest/worker.py']), 'L2')
+  assert.equal(levelFromChangedFiles(['.claude/rules/dev/x.md']), 'skip')
+  assert.equal(levelFromChangedFiles(['docs/x.md']), 'skip')
+  assert.equal(levelFromChangedFiles(['CLAUDE.md']), 'skip')
+  assert.equal(levelFromChangedFiles([]), 'skip')
+  // mixed → highest level wins
+  assert.equal(
+    levelFromChangedFiles(['docs/x.md', 'src/garmin_mcp/ingest/worker.py', 'src/garmin_mcp/database/readers/y.py']),
+    'L2',
+  )
+  assert.equal(levelFromChangedFiles(['docs/x.md', '.claude/agents/z-analyst.md']), 'L3')
+})
+
+test('test_matching_level_merges: 申告 L2 + web change + all-green → ok', () => {
+  const acc = greenAcc(['packages/garmin-web/frontend/src/App.tsx'], 'L2')
+  const d = mergeDecision(acc)
+  assert.equal(d.ok, true, 'matching declared level with green gates should merge')
+})
+
+test('test_undeclared_higher_level_escalates: 申告 L1 + ingest change → escalate', () => {
+  const d = mergeDecision({
+    manifest: {
+      changed_files: ['packages/garmin-mcp-server/src/garmin_mcp/ingest/worker.py'],
+      validation_level: 'L1',
+    },
+    validation: { status: 'pass', level: 'L1' },
+    ship: { ...GREEN_SHIP },
+  })
+  assert.equal(d.ok, false, 'under-declared L1 (computed L2) must escalate')
+  assert.match(d.reason, /過小申告/)
+  assert.match(d.reason, /申告 L1 \/ 判定 L2/)
+})
+
 test('mergeDecision auto-merges .claude/workflows and hooks when green', () => {
+  // workflows/hooks are unknown paths → computed L2; declaring L2 keeps them green.
   for (const f of ['.claude/workflows/x.js', '.claude/hooks/y.sh']) {
-    const d = mergeDecision({ manifest: { changed_files: [f] }, ...GREEN })
+    const d = mergeDecision(greenAcc([f], 'L2'))
     assert.equal(d.ok, true, `${f} should auto-merge when green`)
   }
 })
 
 test('mergeDecision still escalates L3 agent definitions', () => {
   const d = mergeDecision({
-    manifest: { changed_files: ['.claude/agents/z-analyst.md'] },
+    manifest: { changed_files: ['.claude/agents/z-analyst.md'], validation_level: 'L3' },
     validation: { status: 'pass', level: 'L3' },
-    ship: GREEN.ship,
+    ship: GREEN_SHIP,
   })
   assert.equal(d.ok, false, 'L3 should escalate')
 })
 
 test('mergeDecision allows normal green code/doc changes', () => {
-  assert.equal(
-    mergeDecision({ manifest: { changed_files: ['packages/x.py'] }, ...GREEN }).ok,
-    true,
-  )
-  assert.equal(
-    mergeDecision({ manifest: { changed_files: ['docs/x.md'] }, ...GREEN }).ok,
-    true,
-  )
+  assert.equal(mergeDecision(greenAcc(['packages/x.py'], 'L2')).ok, true)
+  assert.equal(mergeDecision(greenAcc(['docs/x.md'], 'skip')).ok, true)
 })
 
 test('mergeDecision blocks on failed validation / ci / conflict', () => {
-  const base = { manifest: { changed_files: ['packages/x.py'] } }
+  const files = ['packages/x.py']
   assert.equal(
-    mergeDecision({ ...base, validation: { status: 'fail' }, ship: GREEN.ship }).ok,
+    mergeDecision({
+      manifest: { changed_files: files, validation_level: 'L2' },
+      validation: { status: 'fail', level: 'L2' },
+      ship: GREEN_SHIP,
+    }).ok,
     false,
   )
   assert.equal(
     mergeDecision({
-      ...base,
-      validation: { status: 'pass' },
+      manifest: { changed_files: files, validation_level: 'L2' },
+      validation: { status: 'pass', level: 'L2' },
       ship: { ci_conclusion: 'failure', mergeable: true, pr_number: 1 },
     }).ok,
     false,
   )
   assert.equal(
     mergeDecision({
-      ...base,
-      validation: { status: 'pass' },
+      manifest: { changed_files: files, validation_level: 'L2' },
+      validation: { status: 'pass', level: 'L2' },
       ship: { ci_conclusion: 'success', mergeable: false, pr_number: 1 },
     }).ok,
     false,

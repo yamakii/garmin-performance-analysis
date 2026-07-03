@@ -35,11 +35,58 @@ function normalizeArgs(raw) {
   return raw && typeof raw === 'object' ? raw : {}
 }
 
+// Deterministic Validation Level from changed file paths. Mirrors the
+// judgment table in .claude/rules/dev/dev-reference.md §3 (that rule file is
+// the SOURCE OF TRUTH; keep this in sync — the table changes rarely). Ranked
+// skip < L1 < L2 < L3; empty/no files → 'skip'; unknown paths → 'L2'
+// (dev-reference §3: 迷ったら L2).
+const LEVEL_RANK = { skip: 0, L1: 1, L2: 2, L3: 3 }
+
+function levelForFile(f) {
+  // L3: analyst agent definitions
+  if (/^\.claude\/agents\/.*-analyst\.md$/.test(f)) return 'L3'
+  // skip: rules / docs / CLAUDE.md
+  if (f.startsWith('.claude/rules/') || f.startsWith('docs/') || f === 'CLAUDE.md') return 'skip'
+  // L1: ToolDef registry / handlers / database readers
+  if (/(^|\/)tools\//.test(f) || /(^|\/)handlers\//.test(f) || /(^|\/)database\/readers\//.test(f)) return 'L1'
+  // L2: reporting / ingest / migrations / web
+  if (
+    /(^|\/)reporting\//.test(f) ||
+    /(^|\/)ingest\//.test(f) ||
+    /(^|\/)database\/migrations\//.test(f) ||
+    f.startsWith('packages/garmin-web/')
+  )
+    return 'L2'
+  // unknown path → default L2
+  return 'L2'
+}
+
+function levelFromChangedFiles(files) {
+  const list = Array.isArray(files) ? files : []
+  let best = 'skip'
+  for (const f of list) {
+    const lvl = levelForFile(f)
+    if (LEVEL_RANK[lvl] > LEVEL_RANK[best]) best = lvl
+  }
+  return best
+}
+
 // Decide auto-merge purely (deterministic). Returns { ok, reason }.
 function mergeDecision(acc) {
   const v = acc.validation ?? {}
   const s = acc.ship ?? {}
+  const m = acc.manifest ?? {}
   if (v.level === 'L3') return { ok: false, reason: 'L3 (agent 定義変更) はメインセッション担当。auto-merge 対象外' }
+  // Guard against an under-declared Validation Level: re-derive the level from
+  // changed_files (developer self-report is untrusted — mirrors Phase 2b's
+  // "サブエージェントの報告を信じない"). If the machine verdict is HIGHER than
+  // the declared level, the change was validated too weakly → escalate.
+  const declared = m.validation_level ?? v.level
+  if (declared && LEVEL_RANK[declared] != null) {
+    const computed = levelFromChangedFiles(m.changed_files)
+    if (LEVEL_RANK[computed] > LEVEL_RANK[declared])
+      return { ok: false, reason: `validation_level 過小申告の疑い: 申告 ${declared} / 判定 ${computed}` }
+  }
   if (v.status === 'fail') return { ok: false, reason: `検証 FAIL: ${v.details ?? ''}` }
   if (v.status === 'warning') return { ok: false, reason: `内容チェック WARNING: ${v.details ?? ''} — 人間判断へ` }
   if (s.ci_conclusion !== 'success') return { ok: false, reason: `ci-guard が ${s.ci_conclusion}` }
