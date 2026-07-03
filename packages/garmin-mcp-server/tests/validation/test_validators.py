@@ -114,6 +114,42 @@ class TestCheckStarWeightingConsistency:
         assert ok is True
         assert reason is None
 
+    def test_guard_passes_consistent_breakdown(self):
+        # Regression: a consistent breakdown for every weighted section passes.
+        for section_type in ("summary", "phase", "environment"):
+            ok, reason = check_star_weighting_consistency(
+                section_type,
+                {
+                    "star_rating": "★★★★☆ 3.7/5.0",
+                    "star_rating_breakdown": _BREAKDOWN_3_7,
+                },
+            )
+            assert ok is True, section_type
+            assert reason is None, section_type
+
+    def test_guard_rejects_missing_breakdown_for_weighted_sections(self):
+        # Issue #751: fail-closed. Missing breakdown on a weighted-star section
+        # must be rejected (not silently passed).
+        for section_type in ("summary", "phase", "environment"):
+            ok, reason = check_star_weighting_consistency(
+                section_type,
+                {"star_rating": "★★★★☆ 4.2/5.0"},
+            )
+            assert ok is False, section_type
+            assert reason is not None
+            assert "star_rating_breakdown" in reason
+            assert section_type in reason
+
+    def test_guard_still_passes_non_weighted_sections_without_breakdown(self):
+        # efficiency / split carry no weighted rating -> breakdown not required.
+        for section_type in ("efficiency", "split"):
+            ok, reason = check_star_weighting_consistency(
+                section_type,
+                {"highlights": "1kmごとのペースは安定していました。"},
+            )
+            assert ok is True, section_type
+            assert reason is None, section_type
+
     def test_check_star_weighting_fail_mismatch(self):
         ok, reason = check_star_weighting_consistency(
             "summary",
@@ -135,13 +171,15 @@ class TestCheckStarWeightingConsistency:
         assert ok is True
         assert reason is None
 
-    def test_check_star_weighting_skips_summary_without_breakdown(self):
+    def test_check_star_weighting_rejects_summary_without_breakdown(self):
+        # Issue #751: previously fail-open; now fail-closed for weighted sections.
         ok, reason = check_star_weighting_consistency(
             "summary",
             {"star_rating": "★★★★☆ 4.2/5.0", "integrated_score": 85.0},
         )
-        assert ok is True
-        assert reason is None
+        assert ok is False
+        assert reason is not None
+        assert "star_rating_breakdown" in reason
 
     def test_check_star_weighting_phase_numeric_stated_pass(self):
         ok, reason = check_star_weighting_consistency(

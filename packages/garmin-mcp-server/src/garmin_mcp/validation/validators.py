@@ -171,22 +171,32 @@ def check_star_weighting_consistency(
         analysis_data: The section's ``analysis_data`` dict.
 
     Returns:
-        ``(True, None)`` when consistent, or when the check does not apply:
-        section types without weighted ratings, or JSON without axis scores /
-        weights / a stated rating (agents not yet emitting the breakdown).
-        ``(False, reason)`` when the breakdown is malformed or the recomputed
-        rating differs from the stated one by more than 0.05.
+        ``(True, None)`` when consistent, or when the check does not apply
+        (section types without weighted ratings). For weighted-star sections
+        (summary / phase / environment) the breakdown is **mandatory** and the
+        check is fail-closed (Issue #751): ``(False, reason)`` when the
+        breakdown is missing, not an object, lacks ``axis_scores`` / ``weights``
+        objects, is malformed, or the recomputed rating differs from the stated
+        one by more than 0.05. A weighted-star section whose breakdown carries
+        valid axis scores + weights but no stated rating still passes (nothing
+        to compare against).
     """
     if section_type not in _WEIGHTED_STAR_SECTIONS:
         return True, None
 
     breakdown = analysis_data.get("star_rating_breakdown")
     if not isinstance(breakdown, dict):
-        return True, None
+        return False, (
+            f"star_rating_breakdown is required for weighted-star section "
+            f"'{section_type}' but is missing or not an object"
+        )
     axis_scores = breakdown.get("axis_scores")
     weights = breakdown.get("weights")
     if not isinstance(axis_scores, dict) or not isinstance(weights, dict):
-        return True, None
+        return False, (
+            f"star_rating_breakdown for weighted-star section '{section_type}' "
+            "must contain 'axis_scores' and 'weights' objects"
+        )
 
     stated: float | None = None
     breakdown_rating = breakdown.get("star_rating")
