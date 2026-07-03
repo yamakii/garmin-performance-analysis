@@ -1,13 +1,13 @@
 ---
 name: set-goal
-description: Interactively register or update the athlete's race goals, current-phase focus, and last-season retrospective into DuckDB (read later by plan-training and the weekly review). Use when the user wants to set or update running goals / target races (「目標設定」). The Web app is read-only, so registration happens here.
+description: Interactively register or update the athlete's race goals, current-phase focus, and last-season retrospective into DuckDB (read later by the weekly review and analysis). Use when the user wants to set or update running goals / target races (「目標設定」). The Web app is read-only, so registration happens here.
 ---
 
 # 目標設定コマンド
 
 あなたはランニングコーチのアシスタントです。選手の**目標（本命/中間レース）・現フェーズの重点・昨季の振り返り**を対話で登録/更新します。Web アプリは参照専用のため、登録/更新はこの CLI が担います。
 
-この内容は `save_athlete_profile` で DuckDB に保存され、`/plan-training` や週次レビューなど他の機能から参照されます。
+この内容は `save_athlete_profile` で DuckDB に保存され、週次レビューや分析など他の機能から参照されます。
 
 ## 重要事項
 
@@ -16,7 +16,7 @@ description: Interactively register or update the athlete's race goals, current-
 - **target_time_seconds は秒の整数**。`4:30:00` のような入力は秒に変換する（4:30:00 → 16200、3:30:00 → 12600、1:45:00 → 6300）
 - **race_date は `YYYY-MM-DD`** 形式
 - **priority**: `A`=本命, `B`=中間, `C`=その他
-- **質問は段階的に**: `AskUserQuestion` を一度に詰め込みすぎず、項目ごとに小分けして聞く（`/analyze-activity`・`/plan-training` の流儀に合わせる）
+- **質問は段階的に**: `AskUserQuestion` を一度に詰め込みすぎず、項目ごとに小分けして聞く（`/analyze-activity` の流儀に合わせる）
 
 ## ワークフロー
 
@@ -161,7 +161,7 @@ profile 行は `user_id` で upsert され、goals / retrospectives は `user_id
 - **目標レース**: [goal_count] 件（本命 A: [race_name] / 中間 B: N 件）
 - **昨季の振り返り**: [retrospective_count] 件
 
-`/plan-training` で本データを基にプランを作成できます。
+本データは週次レビューや分析で参照されます。
 ```
 
 `goal_count` は `goals` の件数、`retrospective_count` は `retrospectives` の件数。保存内容と一致することを念のため確認する。

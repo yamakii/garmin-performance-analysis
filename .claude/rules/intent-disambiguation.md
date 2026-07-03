@@ -3,7 +3,6 @@
 ## CRITICAL: Understand user intent before acting
 
 ### Command Mappings
-- "トレーニングプラン生成/作成" → `/plan-training` を実行。コード分析やアーキテクチャ議論ではない
 - "ランを分析" → MCP toolsで分析・解釈。スクリプト作成ではない
 - "plan modeで起動しない" → バグ報告。plan mode無効化の指示ではない
 - 日本語の問題報告 → バグレポートとして扱う。コマンドとして実行しない

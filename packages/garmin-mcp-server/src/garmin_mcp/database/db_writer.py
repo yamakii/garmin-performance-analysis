@@ -598,7 +598,8 @@ class GarminDBWriter:
                 )
             """)
 
-            # Create training_plans table (from inserters/training_plans.py)
+            # Create training_plans table (plan-creation inserter removed in
+            # #787; table itself is dropped separately in S6)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS training_plans (
                     plan_id VARCHAR,
@@ -620,7 +621,8 @@ class GarminDBWriter:
                 )
             """)
 
-            # Create planned_workouts table (from inserters/training_plans.py)
+            # Create planned_workouts table (plan-creation inserter removed in
+            # #787; table itself is dropped separately in S6)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS planned_workouts (
                     workout_id VARCHAR PRIMARY KEY,
