@@ -12,7 +12,9 @@ import logging
 from datetime import date, datetime
 from typing import Any
 
+from garmin_mcp.analysis.race_prediction import predict_race_times
 from garmin_mcp.database.readers.base import BaseDBReader
+from garmin_mcp.database.readers.fitness_curve import FitnessCurveReader
 from garmin_mcp.training_plan.fitness_assessor import FitnessAssessor
 from garmin_mcp.training_plan.vdot import VDOTCalculator
 
@@ -61,6 +63,11 @@ class RaceReader(BaseDBReader):
             - ``progress``: {predicted_time_seconds, gap_seconds,
               pace_gap_sec_per_km, weeks_remaining, status} | None
               (present only when both ``current_vdot`` and ``goal`` exist)
+            - ``blended_predictions``: per-distance blend of the VDOT estimate
+              and the objective fitness curve with a confidence tag (see
+              ``analysis.race_prediction.predict_race_times``); keyed like
+              ``predicted_times`` (or ``{"insufficient_data": True}`` when
+              neither source is available)
         """
         current_vdot = self._current_vdot(lookback_weeks)
 
@@ -71,6 +78,10 @@ class RaceReader(BaseDBReader):
                 for key, distance_km in _PREDICTION_DISTANCES_KM.items()
             }
 
+        blended_predictions = predict_race_times(
+            current_vdot, self._objective_fitness_curve()
+        )
+
         goal = self._active_goal(user_id)
 
         progress: dict[str, Any] | None = None
@@ -80,9 +91,25 @@ class RaceReader(BaseDBReader):
         return {
             "current_vdot": current_vdot,
             "predicted_times": predicted_times,
+            "blended_predictions": blended_predictions,
             "goal": goal,
             "progress": progress,
         }
+
+    def _objective_fitness_curve(self) -> dict[str, Any] | None:
+        """Read the objective fitness curve, mapping any failure to ``None``.
+
+        The blended prediction degrades gracefully to VDOT-only when the curve
+        is unavailable (no splits, read error), so a failure here must not break
+        the readiness read.
+        """
+        try:
+            return FitnessCurveReader(
+                db_path=str(self.db_path)
+            ).get_objective_fitness_curve()
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning(f"Objective fitness curve unavailable: {e}")
+            return None
 
     def _current_vdot(self, lookback_weeks: int) -> float | None:
         """Return current VDOT from ``FitnessAssessor``, or None when unavailable.

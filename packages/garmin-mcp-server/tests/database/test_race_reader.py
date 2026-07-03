@@ -8,6 +8,7 @@ activity + VO2max (so a VDOT is derivable) and, where relevant, an athlete goal.
 
 from __future__ import annotations
 
+import json
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -177,6 +178,30 @@ def test_readiness_no_vdot(reader_db_path: Path) -> None:
     assert result["current_vdot"] is None
     assert result["predicted_times"] == {}
     assert result["progress"] is None
+
+
+@pytest.mark.integration
+def test_race_readiness_includes_blended_predictions(reader_db_path: Path) -> None:
+    """get_race_readiness exposes JSON-serializable blended_predictions."""
+    _insert_activity_with_vo2max(
+        reader_db_path, activity_id=444, activity_date=_recent_date(), vo2max=50.0
+    )
+
+    result = RaceReader(db_path=str(reader_db_path)).get_race_readiness()
+
+    assert "blended_predictions" in result
+    blended = result["blended_predictions"]
+    # VDOT is derivable but this tmp DB has no splits, so the curve is empty and
+    # every distance falls back to the VDOT-only prediction.
+    assert set(blended) == {"race_5k", "race_10k", "half", "full"}
+    entry = blended["race_10k"]
+    assert entry["confidence"] == "low"
+    assert entry["sources"] == ["vdot"]
+    assert entry["predicted_seconds"] == VDOTCalculator.predict_race_time(
+        result["current_vdot"], 10.0
+    )
+    # The whole readiness payload must serialize across the MCP boundary.
+    json.dumps(result, default=str)
 
 
 @pytest.mark.integration
