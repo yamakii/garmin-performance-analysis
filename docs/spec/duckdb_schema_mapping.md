@@ -3,7 +3,7 @@
 **Version**: 2.6
 **Last Updated**: 2026-07-03
 **Database**: `garmin_performance.duckdb`
-**Total Tables**: 22 domain tables (+ `schema_version` migration bookkeeping)
+**Total Tables**: 21 domain tables (+ `schema_version` migration bookkeeping)
 
 This document provides comprehensive schema documentation for all DuckDB tables in the Garmin performance analysis system. Every column name, type, and primary key below is verified against the live schema (`PRAGMA table_info`). Where prose describes derived/calculated logic, that logic lives in the inserters / form-baseline modules and is documented here because it is not otherwise discoverable from the column definitions.
 
@@ -38,7 +38,7 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 - **All FOREIGN KEY constraints removed** (migration `remove_fk_constraints`, version 4, 2025-11-01). No table declares FK constraints; `_ensure_tables()` creates FK-free schemas. Referential integrity is maintained by the ingest pipeline, not the database.
 - **Power-efficiency columns added** to `form_evaluations` (migration `phase1_power_efficiency`, version 2) and `integrated_score` / `training_mode` (migration `phase2_integrated_score`, version 3).
 - **Cadence evaluation columns added** to `form_evaluations` (migration `add_cadence_columns`, version 6).
-- **Plan versioning** added: `training_plans.version` and `planned_workouts.version` (migration `add_plan_versioning`, version 5).
+- **Plan tables dropped**: `training_plans` and `planned_workouts` removed (migration `drop_plan_tables`, version 17; Epic #781 removed the in-app plan-creation feature).
 - **Athlete-centric tables added**: `athlete_profile`, `athlete_goals`, `season_retrospectives`, `weekly_reviews` (migration `add_athlete_tables`, version 7). These back the `/set-goal`, `/plan-training`, and `/weekly-review` features. DDL for these tables is owned exclusively by the migration (not `_ensure_tables()`) to keep a single source of truth (issue #342).
 - **`weekly_reviews` UNIQUE index dropped** (migration `drop_weekly_review_index`, version 8) to allow multiple revisions per week.
 - **`body_composition` date index added** as a UNIQUE index (migration `add_body_composition_date_index`, version 9; also created in `_ensure_tables()`).
@@ -71,8 +71,6 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 | 10 | [heart_rate_zones](#10-heart_rate_zones) | Physiology | `(activity_id, zone_number)` | 5 zones/activity |
 | 11 | [vo2_max](#11-vo2_max) | Physiology | `activity_id` | ~78% of activities |
 | 12 | [lactate_threshold](#12-lactate_threshold) | Physiology | `activity_id` | ~52% of activities |
-| 13 | [training_plans](#13-training_plans) | Training | `plan_id` (+ `version`) | per generated plan |
-| 14 | [planned_workouts](#14-planned_workouts) | Training | `workout_id` | per planned session |
 | 15 | [section_analyses](#15-section_analyses) | Analysis | `analysis_id` (UNIQUE on `(activity_id, section_type)`) | 5/analyzed activity |
 | 16 | [athlete_profile](#16-athlete_profile) | Athlete | `user_id` | 1/user |
 | 17 | [athlete_goals](#17-athlete_goals) | Athlete | `goal_id` | per registered goal |
@@ -625,77 +623,6 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 **Units & notes**: `heart_rate` is the lactate-threshold HR (bpm); `speed_mps` (m/s); `date_hr` is the HR-threshold timestamp; `functional_threshold_power` is FTP (W); `power_to_weight` is FTP/weight (W/kg); `weight` (kg) at measurement; `date_power` is the FTP timestamp.
 
 > Population ~52% — requires sufficient training history for Garmin to estimate.
-
----
-
-## 13. training_plans
-
-**Purpose**: Generated training-plan headers (backs `/plan-training`). Versioned — one plan_id can have multiple `version` rows.
-**Primary Key**: logically `(plan_id, version)`; the live table declares no PK constraint (FK/PK constraints removed; uniqueness enforced by the writer).
-**Source**: `save_training_plan` MCP tool / training-plan generator.
-
-### Schema
-
-<!-- BEGIN GENERATED: schema:training_plans -->
-| Column | Type |
-|--------|------|
-| plan_id | VARCHAR |
-| version | INTEGER |
-| goal_type | VARCHAR |
-| target_race_date | DATE |
-| target_time_seconds | INTEGER |
-| vdot | DOUBLE |
-| pace_zones_json | VARCHAR |
-| total_weeks | INTEGER |
-| start_date | DATE |
-| weekly_volume_start_km | DOUBLE |
-| weekly_volume_peak_km | DOUBLE |
-| runs_per_week | INTEGER |
-| frequency_progression_json | VARCHAR |
-| personalization_notes | VARCHAR |
-| status | VARCHAR |
-| created_at | TIMESTAMP |
-<!-- END GENERATED: schema:training_plans -->
-
-**Units & notes**: the live table declares **no PK constraint** (uniqueness `(plan_id, version)` enforced by the writer); `version` is the revision (migration `add_plan_versioning`). `target_time_seconds` (s); `vdot` is the fitness estimate; `pace_zones_json` / `frequency_progression_json` are JSON strings; `total_weeks` (weeks); `weekly_volume_start_km` / `weekly_volume_peak_km` (km); `status` is active/archived/….
-
----
-
-## 14. planned_workouts
-
-**Purpose**: Individual planned sessions belonging to a training plan; links plan → actual activity and tracks adherence.
-**Primary Key**: `workout_id`
-**Source**: Training-plan generator / Garmin upload flow.
-
-### Schema
-
-<!-- BEGIN GENERATED: schema:planned_workouts -->
-| Column | Type |
-|--------|------|
-| workout_id (PK) | VARCHAR |
-| plan_id | VARCHAR |
-| version | INTEGER |
-| week_number | INTEGER |
-| day_of_week | INTEGER |
-| workout_date | DATE |
-| workout_type | VARCHAR |
-| description_ja | VARCHAR |
-| target_distance_km | DOUBLE |
-| target_duration_minutes | DOUBLE |
-| target_pace_low | DOUBLE |
-| target_pace_high | DOUBLE |
-| target_hr_low | INTEGER |
-| target_hr_high | INTEGER |
-| intervals_json | VARCHAR |
-| phase | VARCHAR |
-| garmin_workout_id | BIGINT |
-| uploaded_at | TIMESTAMP |
-| actual_activity_id | BIGINT |
-| adherence_score | DOUBLE |
-| completed_at | TIMESTAMP |
-<!-- END GENERATED: schema:planned_workouts -->
-
-**Units & notes**: `week_number` 1-based; `workout_type` is easy/tempo/interval/long/…; `description_ja` is the Japanese description; `target_distance_km` (km); `target_duration_minutes` (min); `target_pace_low` / `target_pace_high` (sec/km); `target_hr_low` / `target_hr_high` (bpm); `intervals_json` is the JSON interval structure; `phase` is base/build/peak/taper; `garmin_workout_id` is the uploaded ID; `actual_activity_id` links the matched executed activity; `adherence_score` is the plan-vs-actual score; `version` links the plan version (migration `add_plan_versioning`).
 
 ---
 

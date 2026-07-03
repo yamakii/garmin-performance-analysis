@@ -32,8 +32,6 @@ BASE_TABLES = {
     "form_evaluations",
     "section_analyses",
     "time_series_metrics",
-    "training_plans",
-    "planned_workouts",
 }
 
 # Tables owned exclusively by migrations/add_athlete_tables.py (version 7).

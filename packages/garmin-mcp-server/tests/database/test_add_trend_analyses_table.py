@@ -65,10 +65,10 @@ def test_migration_idempotent(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
-def test_registry_head_is_v16() -> None:
-    """The registry head is the new v16 trend_analyses migration."""
-    assert MIGRATIONS[-1] == (
+def test_trend_analyses_registered_at_v16() -> None:
+    """The trend_analyses migration is registered at version 16."""
+    assert (
         16,
         "add_trend_analyses_table",
         _wrap_add_trend_analyses_table,
-    )
+    ) in MIGRATIONS

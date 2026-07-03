@@ -163,6 +163,13 @@ def _wrap_add_trend_analyses_table(conn: duckdb.DuckDBPyConnection) -> None:
     add_trend_analyses_table(conn)
 
 
+def _wrap_drop_plan_tables(conn: duckdb.DuckDBPyConnection) -> None:
+    """Wrap the plan-tables drop migration on an existing connection."""
+    from .drop_plan_tables import drop_plan_tables
+
+    drop_plan_tables(conn)
+
+
 def _wrap_plan_versioning(conn: duckdb.DuckDBPyConnection) -> None:
     """Wrap plan versioning migration to run on an existing connection."""
     from .add_plan_versioning import _column_exists, _table_exists
@@ -221,4 +228,5 @@ MIGRATIONS: list[tuple[int, str, Callable[[duckdb.DuckDBPyConnection], None]]] =
     (14, "add_sync_runs_table", _wrap_add_sync_runs_table),
     (15, "add_section_analysis_run_id", _wrap_add_section_analysis_run_id),
     (16, "add_trend_analyses_table", _wrap_add_trend_analyses_table),
+    (17, "drop_plan_tables", _wrap_drop_plan_tables),
 ]
