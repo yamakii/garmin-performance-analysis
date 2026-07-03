@@ -62,6 +62,7 @@ parameters are documented in each handler's docstring.
 | `/api/activities` | Return activities sorted by date descending. |
 | `/api/activities/{activity_id}` | Return aggregated detail for one activity, or 404 if unknown. |
 | `/api/activities/{activity_id}/sections` | Return section analyses keyed by section_type. |
+| `/api/activities/{activity_id}/sections/versions` | Return saved analysis batches for an activity (newest first). |
 | `/api/activities/{activity_id}/time-series` | Return downsampled time series for the requested metrics. |
 | `/api/activities/{activity_id}/track` | Return the GPS track for an activity. |
 | `/api/body-composition-trend` | Body-composition trend over the trailing ``weeks`` weeks (#501). |

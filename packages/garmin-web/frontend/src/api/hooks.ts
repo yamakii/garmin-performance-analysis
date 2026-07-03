@@ -5,6 +5,7 @@ import {
   fetchGoal,
   fetchRaceReadiness,
   fetchSections,
+  fetchSectionVersions,
   fetchTimeSeries,
   fetchTrack,
   fetchWeeklyReviews,
@@ -49,6 +50,7 @@ import type {
   RecoveryStatus,
   RecoveryTrend,
   SectionsResponse,
+  SectionVersion,
   TimeSeriesResponse,
   TrackResponse,
   WeeklyReview,
@@ -79,10 +81,21 @@ export function useActivityDetail(
 
 export function useSections(
   id: string | undefined,
+  createdAt?: string,
 ): UseQueryResult<SectionsResponse, Error> {
   return useQuery({
-    queryKey: ["sections", id],
-    queryFn: () => fetchSections(id as string),
+    queryKey: ["sections", id, createdAt ?? null],
+    queryFn: () => fetchSections(id as string, createdAt),
+    enabled: id != null,
+  });
+}
+
+export function useSectionVersions(
+  id: string | undefined,
+): UseQueryResult<SectionVersion[], Error> {
+  return useQuery({
+    queryKey: ["sectionVersions", id],
+    queryFn: () => fetchSectionVersions(id as string),
     enabled: id != null,
   });
 }

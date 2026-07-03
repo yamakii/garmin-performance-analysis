@@ -58,7 +58,8 @@ REQUIRED_SEQUENCES = {
 REQUIRED_INDEXES = {
     "idx_time_series_activity",
     "idx_time_series_timestamp",
-    "idx_activity_section",
+    # idx_activity_section removed in #720: section_analyses is append-only, so
+    # the unique index on (activity_id, section_type) is no longer created.
 }
 
 

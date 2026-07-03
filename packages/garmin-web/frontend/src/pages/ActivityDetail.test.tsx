@@ -68,7 +68,9 @@ function stubFetch(opts: {
     vi.fn((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
       let body: unknown;
-      if (url.includes("/sections")) {
+      if (url.includes("/sections/versions")) {
+        body = [];
+      } else if (url.includes("/sections")) {
         body = opts.sections;
       } else if (url.includes("/time-series")) {
         body = { timestamps: [], metrics: {} };
@@ -144,7 +146,9 @@ function stubFetchWithErrors(opts: {
     const url = typeof input === "string" ? input : input.toString();
     let body: unknown;
     let status = 200;
-    if (url.includes("/sections")) {
+    if (url.includes("/sections/versions")) {
+      body = [];
+    } else if (url.includes("/sections")) {
       body = {};
     } else if (url.includes("/time-series")) {
       if (timeSeriesFailures > 0) {
@@ -237,5 +241,74 @@ describe("ActivityDetail panel errors", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     // Empty track (successful fetch) keeps the course section omitted.
     expect(document.getElementById("section-course")).toBeNull();
+  });
+});
+
+describe("ActivityDetail version selector", () => {
+  const OLD_STAMP = "2025-10-09 12:00:00";
+  const NEW_STAMP = "2025-10-09 13:00:00";
+
+  /** Stub returning 2 analysis batches; sections vary by the created_at pin. */
+  function stubVersionedFetch() {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      let body: unknown;
+      if (url.includes("/sections/versions")) {
+        body = [
+          { created_at: NEW_STAMP, section_types: ["summary"] },
+          { created_at: OLD_STAMP, section_types: ["summary", "split"] },
+        ];
+      } else if (url.includes("/sections")) {
+        const pinned = url.includes("created_at=");
+        body = {
+          summary: {
+            data: {
+              star_rating: pinned ? "★★★☆☆ 3.0/5.0" : "★★★★☆ 4.2/5.0",
+            },
+            parse_error: false,
+            raw: null,
+          },
+        };
+      } else if (url.includes("/time-series")) {
+        body = { timestamps: [], metrics: {} };
+      } else if (url.includes("/track")) {
+        body = { points: [] };
+      } else {
+        body = BASE_DETAIL;
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  it("バージョンセレクタが2版を表示し切替できる", async () => {
+    const fetchMock = stubVersionedFetch();
+    renderDetail();
+
+    // Selector shows both versions with the total-count badge.
+    const select = (await screen.findByLabelText(
+      "分析版を選択:",
+    )) as HTMLSelectElement;
+    expect(within(select).getAllByRole("option")).toHaveLength(2);
+    expect(screen.getByText("全2版")).toBeInTheDocument();
+
+    // Switching to the older batch re-fetches sections with the created_at pin.
+    fireEvent.change(select, { target: { value: "1" } });
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([input]) =>
+          String(input).includes(
+            `/sections?created_at=${encodeURIComponent(OLD_STAMP)}`,
+          ),
+        ),
+      ).toBe(true);
+    });
   });
 });

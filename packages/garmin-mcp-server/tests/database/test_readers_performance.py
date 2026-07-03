@@ -223,3 +223,53 @@ class TestGetSectionAnalysis:
             warnings.simplefilter("ignore", DeprecationWarning)
             result = perf_reader.get_section_analysis(ACTIVITY_ID, "nonexistent")
         assert result is None
+
+    def test_reader_returns_latest_version(self, reader_db_path: Path):
+        """With multiple versions of a section, the newest one is returned.
+
+        Append-only storage (#720) keeps every version; the reader resolves the
+        canonical result via ORDER BY created_at DESC.
+        """
+        conn = duckdb.connect(str(reader_db_path))
+        conn.execute(
+            "INSERT INTO activities (activity_id, activity_date) VALUES (?, ?)",
+            [ACTIVITY_ID, "2025-06-15"],
+        )
+        # Two versions of the same section, created 1 minute apart.
+        conn.execute(
+            """INSERT INTO section_analyses
+               (analysis_id, activity_id, activity_date, section_type,
+                analysis_data, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            [
+                10,
+                ACTIVITY_ID,
+                "2025-06-15",
+                "efficiency",
+                json.dumps({"summary": "old"}),
+                "2025-06-15 12:00:00",
+            ],
+        )
+        conn.execute(
+            """INSERT INTO section_analyses
+               (analysis_id, activity_id, activity_date, section_type,
+                analysis_data, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            [
+                11,
+                ACTIVITY_ID,
+                "2025-06-15",
+                "efficiency",
+                json.dumps({"summary": "new"}),
+                "2025-06-15 12:01:00",
+            ],
+        )
+        conn.close()
+
+        reader = PerformanceReader(db_path=str(reader_db_path))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            result = reader.get_section_analysis(ACTIVITY_ID, "efficiency")
+
+        assert result is not None
+        assert result["summary"] == "new"

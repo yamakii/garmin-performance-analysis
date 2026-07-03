@@ -58,6 +58,29 @@ def test_api_detail_endpoints_200(detail_db_path):
 
 
 @pytest.mark.integration
+def test_api_section_versions_200(detail_db_path):
+    client = TestClient(create_app(db_path=detail_db_path))
+
+    response = client.get(f"/api/activities/{FULL_ACTIVITY_ID}/sections/versions")
+    assert response.status_code == 200
+    versions = response.json()
+    assert isinstance(versions, list)
+    assert len(versions) >= 1
+    # Every batch entry exposes its created_at + section_types.
+    all_types: set[str] = set()
+    for version in versions:
+        assert "created_at" in version
+        assert isinstance(version["section_types"], list)
+        all_types.update(version["section_types"])
+    assert all_types == {"split", "phase", "efficiency", "environment", "summary"}
+
+    # Unknown activity -> empty list (status 200, not 404).
+    response = client.get("/api/activities/999999/sections/versions")
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+@pytest.mark.integration
 def test_api_track_200(detail_db_path):
     client = TestClient(create_app(db_path=detail_db_path))
     response = client.get(f"/api/activities/{FULL_ACTIVITY_ID}/track")
