@@ -145,7 +145,6 @@ Write(file_path="{ANALYSIS_TEMP_DIR}/{section}.json", content=json.dumps({
 | GCT/VO/VR + power + cadence 評価 | `form_evaluation`（各指標の `actual`/`expected`/`delta_pct`/`star_rating`/`score`/`needs_improvement`/`evaluation_text`） |
 | 統合スコア | `form_evaluation.integrated_score` ／ `form_scores`（`integrated_score`, `overall_score`, `overall_star_rating`） |
 | 心拍ゾーン分布評価 | `zone_percentages` + `hr_zones_detail`（ゾーン境界・時間分布）+ `training_type` + `zone_distribution_rating` + `primary_zone` + `hr_stability` + `aerobic_efficiency` + `training_quality` |
-| プラン目標HR | `planned_workout`（null なら training_type 基準で評価） |
 | 1ヶ月フォームトレンド | `form_baseline_trend`（`metrics.{metric}.delta_d`/`delta_b`、`current`/`previous` 係数） |
 
 `form_evaluation` のネスト: 各指標は `form_evaluation.gct.{actual, expected, delta_pct, star_rating, score, needs_improvement, evaluation_text}` 等。`cadence` は pace 依存フィールドが null なら評価対象外。`power` は `{avg_w, wkg, speed_actual_mps, speed_expected_mps, efficiency_score, star_rating, needs_improvement}`（パワーデータがある場合のみ）。
@@ -158,7 +157,7 @@ Write(file_path="{ANALYSIS_TEMP_DIR}/{section}.json", content=json.dumps({
 2. **ケイデンス評価はペース依存**（`form_evaluation.cadence`、null なら対象外）。**star_rating は手動計算せず `form_evaluation.cadence.star_rating` を使用し、絶対180spm目標で「未達」と評価しない**。文言は `form_evaluation.cadence.evaluation_text`（ペース依存の期待値ベース）を参照
 3. `power_efficiency_stars` でパワー効率評価（`form_evaluation.power` がある場合のみ）。正の efficiency_score →「ランニングエコノミー改善」、負 →「疲労/環境/路面の影響の可能性」（安易に非効率と断定しない）
 4. `integrated_score_stars` で統合スコアの星評価（`form_evaluation.integrated_score` または `form_scores`）
-5. `zone_targets[training_type_category]` で HR ゾーン配分評価（`zone_percentages` + `hr_zones_detail`）。**`planned_workout` がある場合はプラン目標HRを最優先基準**
+5. `zone_targets[training_type_category]` で HR ゾーン配分評価（`zone_percentages` + `hr_zones_detail`）。training_type 基準でゾーン配分を評価する
 6. `baseline_comparison` でトレンド評価（`form_baseline_trend.metrics` の delta_d/delta_b の正常/改善/要注意判定）。`form_baseline_trend.success=false` の場合は**データ不足として簡潔に記述**
 
 ### 出力構成
@@ -193,7 +192,7 @@ analysis_data = {
 
 ### category 判定
 
-1. 評価カテゴリは `CONTEXT.phase_category` を使う（prefetch が `training_type` / `planned_workout`（`workout_type` 優先）から決定論的に算出。値: `low_moderate` | `tempo_threshold` | `interval_sprint`）。**この分類をエージェントが再計算しない。**
+1. 評価カテゴリは `CONTEXT.phase_category` を使う（prefetch が `training_type` から決定論的に算出。値: `low_moderate` | `tempo_threshold` | `interval_sprint`）。**この分類をエージェントが再計算しない。**
 2. フェーズ構造による上書きのみ適用: `phase_structure` に `recovery` キーが存在 → 4フェーズ（カテゴリを常に `interval_sprint` 扱い）、なし → 3フェーズ
 
 ### 評価ルール（`get_analysis_contract("phase")` 参照）

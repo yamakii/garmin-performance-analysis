@@ -34,7 +34,7 @@ Consolidated reference for all analysis rules.
 1. **Effort**: HR / power / LT比
 2. **Performance**: pace / distance
 3. **Efficiency**: pace/HR, GCT/VR統合
-4. **Execution**: plan vs actual, 目的合致度
+4. **Execution**: training_type の目的合致度
 
 ### 改善提案
 
@@ -45,7 +45,7 @@ Consolidated reference for all analysis rules.
 ### エージェント間の一貫性
 
 - HR zone 評価 → unified-section-analyst の efficiency セクションの `evaluation` が権威的ソース
-- plan target 存在時 → training_type 評価より plan 達成度を優先
+- 各セクションの評価は training_type を基準に判定する
 
 ## 4. Training Plans
 
