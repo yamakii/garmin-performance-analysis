@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
-  fetchActivityDetail,
-  fetchSections,
-  fetchTimeSeries,
-  fetchTrack,
-} from "../api/client";
+  useActivityDetail,
+  useSections,
+  useTimeSeries,
+  useTrack,
+} from "../api/hooks";
 import { METRIC_COLORS } from "../components/chartTheme";
 import HeroHeader from "../components/HeroHeader";
 import MapPanel from "../components/MapPanel";
@@ -18,12 +18,7 @@ import ReportCard, { isRecord } from "../components/report/ReportCard";
 import SplitNarrative from "../components/report/SplitNarrative";
 import SummaryReport from "../components/report/SummaryReport";
 import TimeSeriesChart from "../components/TimeSeriesChart";
-import type {
-  ActivityDetailResponse,
-  SectionsResponse,
-  TimeSeriesResponse,
-  TrackPoint,
-} from "../types";
+import type { SectionsResponse } from "../types";
 import { formatNumber } from "../utils/formatNumber";
 import { formatCadence, formatDistance, formatPace } from "./ActivityList";
 
@@ -115,92 +110,33 @@ function PanelError({
 
 export default function ActivityDetail() {
   const { id } = useParams<{ id: string }>();
-  const [detail, setDetail] = useState<ActivityDetailResponse | null>(null);
-  const [sections, setSections] = useState<SectionsResponse | null>(null);
-  const [timeSeries, setTimeSeries] = useState<TimeSeriesResponse | null>(null);
-  const [timeSeriesError, setTimeSeriesError] = useState<string | null>(null);
-  const [timeSeriesRetryKey, setTimeSeriesRetryKey] = useState(0);
   const [selectedMetrics, setSelectedMetrics] =
     useState<string[]>(DEFAULT_METRICS);
-  const [track, setTrack] = useState<TrackPoint[] | null>(null);
-  const [trackError, setTrackError] = useState<string | null>(null);
-  const [trackRetryKey, setTrackRetryKey] = useState(0);
   const [hover, setHover] = useState<HoverState | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!id) {
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    Promise.all([fetchActivityDetail(id), fetchSections(id)])
-      .then(([detailData, sectionsData]) => {
-        if (!cancelled) {
-          setDetail(detailData);
-          setSections(sectionsData);
-          setLoading(false);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : String(err));
-          setLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [id]);
+  const detailQuery = useActivityDetail(id);
+  const sectionsQuery = useSections(id);
+  // The time-series query only runs when at least one metric is selected;
+  // otherwise it stays idle and the chart shows its empty-state placeholder.
+  const timeSeriesQuery = useTimeSeries(id, selectedMetrics);
+  const trackQuery = useTrack(id);
 
-  useEffect(() => {
-    if (!id || selectedMetrics.length === 0) {
-      setTimeSeries(null);
-      setTimeSeriesError(null);
-      return;
-    }
-    let cancelled = false;
-    fetchTimeSeries(id, selectedMetrics)
-      .then((data) => {
-        if (!cancelled) {
-          setTimeSeries(data);
-          setTimeSeriesError(null);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setTimeSeries(null);
-          setTimeSeriesError(err instanceof Error ? err.message : String(err));
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [id, selectedMetrics, timeSeriesRetryKey]);
+  const loading = detailQuery.isPending || sectionsQuery.isPending;
+  // A failed activity / sections fetch is fatal (full-page error); the
+  // time-series and track panels degrade individually instead.
+  const fatalError = detailQuery.error ?? sectionsQuery.error;
+  const detail = detailQuery.data ?? null;
+  const sections = sectionsQuery.data ?? null;
 
-  useEffect(() => {
-    if (!id) {
-      return;
-    }
-    let cancelled = false;
-    fetchTrack(id)
-      .then((data) => {
-        if (!cancelled) {
-          setTrack(data.points);
-          setTrackError(null);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setTrack(null);
-          setTrackError(err instanceof Error ? err.message : String(err));
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [id, trackRetryKey]);
+  const hasMetrics = selectedMetrics.length > 0;
+  const timeSeries = hasMetrics ? (timeSeriesQuery.data ?? null) : null;
+  const timeSeriesError =
+    hasMetrics && timeSeriesQuery.error != null
+      ? timeSeriesQuery.error.message
+      : null;
+  const track = trackQuery.data?.points ?? null;
+  const trackError =
+    trackQuery.error != null ? trackQuery.error.message : null;
 
   const toggleMetric = (key: string) => {
     setSelectedMetrics((current) =>
@@ -225,13 +161,13 @@ export default function ActivityDetail() {
       </div>
     );
   }
-  if (error) {
+  if (fatalError) {
     return (
       <p
         role="alert"
         className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
       >
-        エラー: {error}
+        エラー: {fatalError.message}
       </p>
     );
   }
@@ -365,7 +301,9 @@ export default function ActivityDetail() {
         {timeSeriesError !== null ? (
           <PanelError
             message={timeSeriesError}
-            onRetry={() => setTimeSeriesRetryKey((key) => key + 1)}
+            onRetry={() => {
+              void timeSeriesQuery.refetch();
+            }}
           />
         ) : timeSeries && Object.keys(timeSeries.metrics).length > 0 ? (
           <TimeSeriesChart
@@ -403,7 +341,9 @@ export default function ActivityDetail() {
             <div className="px-5 pb-5">
               <PanelError
                 message={trackError ?? "不明なエラー"}
-                onRetry={() => setTrackRetryKey((key) => key + 1)}
+                onRetry={() => {
+                  void trackQuery.refetch();
+                }}
               />
             </div>
           )}

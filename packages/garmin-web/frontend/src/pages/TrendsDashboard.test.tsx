@@ -1,5 +1,5 @@
-import { render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { render, screen, within } from "../test/utils";
 import TrendsDashboard from "./TrendsDashboard";
 
 // echarts requires a real canvas; mock the modular wrapper out for jsdom

@@ -1,11 +1,9 @@
-import { useEffect, useState } from "react";
 import EmptyState, { CliCommand } from "../components/EmptyState";
 import SectionHeading from "../components/SectionHeading";
 import StatusBadge, { type StatusTone } from "../components/StatusBadge";
-import { fetchGoal, fetchRaceReadiness } from "../api/client";
+import { useGoal, useRaceReadiness } from "../api/hooks";
 import type {
   GoalRace,
-  GoalResponse,
   RaceReadiness,
   SeasonRetrospective,
 } from "../types";
@@ -488,47 +486,15 @@ function RacePredictionCard({ readiness }: { readiness: RaceReadiness }) {
 }
 
 export default function Goal() {
-  const [goal, setGoal] = useState<GoalResponse | null>(null);
-  const [readiness, setReadiness] = useState<RaceReadiness | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const goalQuery = useGoal();
+  // Race readiness is supplementary: a failure here must not block the page,
+  // so its error is ignored and the prediction card is simply hidden.
+  const readinessQuery = useRaceReadiness();
 
-  useEffect(() => {
-    let cancelled = false;
-    fetchGoal()
-      .then((data) => {
-        if (!cancelled) {
-          setGoal(data);
-          setLoading(false);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : String(err));
-          setLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Race readiness is supplementary: a failure here must not block the page.
-  useEffect(() => {
-    let cancelled = false;
-    fetchRaceReadiness()
-      .then((data) => {
-        if (!cancelled) {
-          setReadiness(data);
-        }
-      })
-      .catch(() => {
-        /* non-fatal: the prediction card is simply hidden */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const goal = goalQuery.data ?? null;
+  const readiness = readinessQuery.data ?? null;
+  const loading = goalQuery.isPending;
+  const error = goalQuery.error;
 
   if (loading) {
     return (
@@ -547,7 +513,7 @@ export default function Goal() {
         role="alert"
         className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
       >
-        エラー: {error}
+        エラー: {error.message}
       </p>
     );
   }

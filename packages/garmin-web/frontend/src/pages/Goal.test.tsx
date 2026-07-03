@@ -1,6 +1,6 @@
-import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { render, screen } from "../test/utils";
 import Goal, { daysUntil, formatGap, formatTargetTime } from "./Goal";
 
 const FIXTURE_READINESS = {

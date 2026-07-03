@@ -1,8 +1,7 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import EmptyState, { CliCommand } from "../components/EmptyState";
 import SectionHeading from "../components/SectionHeading";
-import { fetchWeeklyReviews } from "../api/client";
+import { useWeeklyReviews } from "../api/hooks";
 import type { WeeklyReview } from "../types";
 
 /** Count verdict entries with a given emoji rating. */
@@ -21,31 +20,10 @@ export function overallExcerpt(review: WeeklyReview): string {
 }
 
 export default function WeeklyReviews() {
-  const [reviews, setReviews] = useState<WeeklyReview[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { data, isPending, error } = useWeeklyReviews();
+  const reviews = data ?? null;
 
-  useEffect(() => {
-    let cancelled = false;
-    fetchWeeklyReviews()
-      .then((data) => {
-        if (!cancelled) {
-          setReviews(data);
-          setLoading(false);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : String(err));
-          setLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (loading) {
+  if (isPending) {
     return (
       <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
         <span
@@ -62,7 +40,7 @@ export default function WeeklyReviews() {
         role="alert"
         className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
       >
-        エラー: {error}
+        エラー: {error.message}
       </p>
     );
   }

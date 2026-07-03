@@ -1,25 +1,16 @@
-import { useEffect, useState } from "react";
-import { fetchActivities, fetchGoal, fetchRaceReadiness, fetchWeeklyReviews } from "../api/client";
 import {
-  fetchFormAnomalyFlags,
-  fetchRecoveryStatus,
-  fetchRecoveryTrend,
-  fetchWellnessBaselineDeviation,
-} from "../api/recovery";
-import { fetchTrainingLoad } from "../api/training_load";
+  useActivities,
+  useFormAnomalyFlags,
+  useGoal,
+  useRaceReadiness,
+  useRecoveryStatus,
+  useRecoveryTrend,
+  useTrainingLoad,
+  useWeeklyReviews,
+  useWellnessBaselineDeviation,
+} from "../api/hooks";
 import CardSkeleton from "../components/CardSkeleton";
 import SectionHeading from "../components/SectionHeading";
-import type {
-  AcwrTrend,
-  ActivitySummary,
-  FormAnomalyFlagsResponse,
-  GoalResponse,
-  RaceReadiness,
-  RecoveryStatus,
-  RecoveryTrend,
-  WeeklyReview,
-  WellnessBaselineDeviation,
-} from "../types";
 import RaceProgress from "./dashboard/RaceProgress";
 import RecentRuns from "./dashboard/RecentRuns";
 import SnapshotTiles from "./dashboard/SnapshotTiles";
@@ -33,62 +24,42 @@ import TodayHero from "./dashboard/TodayHero";
  * deep-dive pages (trends / weekly reviews / goal) stay one link away.
  */
 export default function Dashboard() {
-  const [recoveryStatus, setRecoveryStatus] = useState<RecoveryStatus | null>(
-    null,
-  );
-  const [baseline, setBaseline] = useState<WellnessBaselineDeviation | null>(
-    null,
-  );
-  const [reviews, setReviews] = useState<WeeklyReview[] | null>(null);
-  const [load, setLoad] = useState<AcwrTrend | null>(null);
-  const [recovery, setRecovery] = useState<RecoveryTrend | null>(null);
-  const [flags, setFlags] = useState<FormAnomalyFlagsResponse | null>(null);
-  const [readiness, setReadiness] = useState<RaceReadiness | null>(null);
-  const [goal, setGoal] = useState<GoalResponse | null>(null);
-  const [activities, setActivities] = useState<ActivitySummary[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Each block is fed by an independent query so one slow endpoint never blocks
+  // the whole cockpit; every card swaps its skeleton for content as its own
+  // data lands.
+  const recoveryStatusQuery = useRecoveryStatus();
+  const reviewsQuery = useWeeklyReviews(1);
+  const loadQuery = useTrainingLoad();
+  const recoveryQuery = useRecoveryTrend();
+  const flagsQuery = useFormAnomalyFlags();
+  const activitiesQuery = useActivities();
+  // Supplementary blocks (baseline / readiness / goal) fail silently: their
+  // sections degrade instead of taking the home page down, so their errors are
+  // never folded into the page-level banner.
+  const baselineQuery = useWellnessBaselineDeviation();
+  const readinessQuery = useRaceReadiness();
+  const goalQuery = useGoal();
 
-  useEffect(() => {
-    let cancelled = false;
-    // Wire each fetch independently (TrendsDashboard pattern) so one slow
-    // endpoint never blocks the whole cockpit.
-    const wire = <T,>(promise: Promise<T>, set: (value: T) => void): void => {
-      promise
-        .then((value) => {
-          if (!cancelled) set(value);
-        })
-        .catch((err: unknown) => {
-          if (!cancelled)
-            setError(err instanceof Error ? err.message : String(err));
-        });
-    };
-    // Supplementary blocks (readiness / goal / baseline) fail silently: their
-    // sections degrade instead of taking the home page down.
-    const wireOptional = <T,>(
-      promise: Promise<T>,
-      set: (value: T) => void,
-    ): void => {
-      promise
-        .then((value) => {
-          if (!cancelled) set(value);
-        })
-        .catch(() => {
-          /* non-fatal */
-        });
-    };
-    wire(fetchRecoveryStatus(), setRecoveryStatus);
-    wire(fetchWeeklyReviews(1), setReviews);
-    wire(fetchTrainingLoad(), setLoad);
-    wire(fetchRecoveryTrend(), setRecovery);
-    wire(fetchFormAnomalyFlags(), setFlags);
-    wire(fetchActivities(), setActivities);
-    wireOptional(fetchWellnessBaselineDeviation(), setBaseline);
-    wireOptional(fetchRaceReadiness(), setReadiness);
-    wireOptional(fetchGoal(), setGoal);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const recoveryStatus = recoveryStatusQuery.data ?? null;
+  const baseline = baselineQuery.data ?? null;
+  const reviews = reviewsQuery.data ?? null;
+  const load = loadQuery.data ?? null;
+  const recovery = recoveryQuery.data ?? null;
+  const flags = flagsQuery.data ?? null;
+  const readiness = readinessQuery.data ?? null;
+  const goal = goalQuery.data ?? null;
+  const activities = activitiesQuery.data ?? null;
+
+  // A failure in any core endpoint takes the page down with a banner; the
+  // first error encountered wins.
+  const error =
+    recoveryStatusQuery.error ??
+    reviewsQuery.error ??
+    loadQuery.error ??
+    recoveryQuery.error ??
+    flagsQuery.error ??
+    activitiesQuery.error ??
+    null;
 
   if (error) {
     return (
@@ -96,7 +67,7 @@ export default function Dashboard() {
         role="alert"
         className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
       >
-        エラー: {error}
+        エラー: {error.message}
       </p>
     );
   }

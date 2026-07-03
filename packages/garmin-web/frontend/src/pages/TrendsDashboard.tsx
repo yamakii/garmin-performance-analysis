@@ -1,43 +1,22 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
-  fetchCriticalSpeed,
-  fetchEfficiencyTrend,
-  fetchFormTrend,
-  fetchHeatAdjustedTrend,
-  fetchObjectiveFitnessTrend,
-  fetchPhysiologyTrend,
-  fetchVolumeTrend,
-} from "../api/trends";
-import type {
-  CriticalSpeedPoint,
-  EfficiencyTrendPoint,
-  FormTrendPoint,
-  Granularity,
-  HeatAdjustedTrend,
-  ObjectiveFitnessTrend,
-  PhysiologyTrend,
-  VolumeTrendPoint,
-} from "../api/trends";
-import { fetchTrainingLoad } from "../api/training_load";
-import { fetchDurabilityTrend } from "../api/durability";
-import {
-  fetchBodyCompositionTrend,
-  fetchFormAnomalyFlags,
-  fetchRecoveryStatus,
-  fetchRecoveryTrend,
-  fetchWeightEconomyCoupling,
-  fetchWellnessBaselineDeviation,
-} from "../api/recovery";
-import type {
-  AcwrTrend,
-  BodyCompositionTrend,
-  DurabilityTrend,
-  FormAnomalyFlagsResponse,
-  RecoveryStatus,
-  RecoveryTrend,
-  WeightEconomyCoupling,
-  WellnessBaselineDeviation,
-} from "../types";
+  useBodyCompositionTrend,
+  useCriticalSpeed,
+  useDurabilityTrend,
+  useEfficiencyTrend,
+  useFormAnomalyFlags,
+  useFormTrend,
+  useHeatAdjustedTrend,
+  useObjectiveFitnessTrend,
+  usePhysiologyTrend,
+  useRecoveryStatus,
+  useRecoveryTrend,
+  useTrainingLoad,
+  useVolumeTrend,
+  useWeightEconomyCoupling,
+  useWellnessBaselineDeviation,
+} from "../api/hooks";
+import type { Granularity } from "../api/trends";
 import VolumeBlock from "./trends/VolumeBlock";
 import PhysiologyBlock from "./trends/PhysiologyBlock";
 import FormBlock from "./trends/FormBlock";
@@ -91,83 +70,61 @@ function TrendSection({
 
 export default function TrendsDashboard() {
   const [granularity, setGranularity] = useState<Granularity>("week");
-  const [volume, setVolume] = useState<VolumeTrendPoint[] | null>(null);
-  const [physiology, setPhysiology] = useState<PhysiologyTrend | null>(null);
-  const [form, setForm] = useState<FormTrendPoint[] | null>(null);
-  const [efficiency, setEfficiency] = useState<EfficiencyTrendPoint[] | null>(
-    null,
-  );
-  const [heatAdjusted, setHeatAdjusted] = useState<HeatAdjustedTrend | null>(
-    null,
-  );
-  const [trainingLoad, setTrainingLoad] = useState<AcwrTrend | null>(null);
-  const [durability, setDurability] = useState<DurabilityTrend | null>(null);
-  const [recovery, setRecovery] = useState<RecoveryTrend | null>(null);
-  const [recoveryStatus, setRecoveryStatus] = useState<RecoveryStatus | null>(
-    null,
-  );
-  const [bodyComposition, setBodyComposition] =
-    useState<BodyCompositionTrend | null>(null);
-  const [weightEconomy, setWeightEconomy] =
-    useState<WeightEconomyCoupling | null>(null);
-  const [wellnessBaseline, setWellnessBaseline] =
-    useState<WellnessBaselineDeviation | null>(null);
-  const [criticalSpeed, setCriticalSpeed] = useState<
-    CriticalSpeedPoint[] | null
-  >(null);
-  const [objectiveFitness, setObjectiveFitness] =
-    useState<ObjectiveFitnessTrend | null>(null);
-  const [formAnomalyFlags, setFormAnomalyFlags] =
-    useState<FormAnomalyFlagsResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetchVolumeTrend(granularity)
-      .then((data) => {
-        if (!cancelled) setVolume(data);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [granularity]);
+  // Each card is fed by an independent query (no Promise.all) so a slow
+  // endpoint never holds the whole dashboard hostage: every card resolves on
+  // its own and swaps its skeleton for content as soon as its data lands.
+  const volumeQuery = useVolumeTrend(granularity);
+  const physiologyQuery = usePhysiologyTrend();
+  const formQuery = useFormTrend();
+  const efficiencyQuery = useEfficiencyTrend();
+  const heatAdjustedQuery = useHeatAdjustedTrend(HEAT_ADJUSTED_LOOKBACK_DAYS);
+  const criticalSpeedQuery = useCriticalSpeed();
+  const objectiveFitnessQuery = useObjectiveFitnessTrend();
+  const trainingLoadQuery = useTrainingLoad();
+  const durabilityQuery = useDurabilityTrend();
+  const recoveryQuery = useRecoveryTrend();
+  const recoveryStatusQuery = useRecoveryStatus();
+  const bodyCompositionQuery = useBodyCompositionTrend();
+  const weightEconomyQuery = useWeightEconomyCoupling();
+  const wellnessBaselineQuery = useWellnessBaselineDeviation();
+  const formAnomalyFlagsQuery = useFormAnomalyFlags();
 
-  useEffect(() => {
-    let cancelled = false;
-    // Wire each fetch independently (no Promise.all) so a slow endpoint never
-    // holds the whole dashboard hostage: every card resolves on its own and
-    // swaps its skeleton for content as soon as its data lands.
-    const wire = <T,>(promise: Promise<T>, set: (value: T) => void): void => {
-      promise
-        .then((value) => {
-          if (!cancelled) set(value);
-        })
-        .catch((err: unknown) => {
-          if (!cancelled)
-            setError(err instanceof Error ? err.message : String(err));
-        });
-    };
-    wire(fetchPhysiologyTrend(), setPhysiology);
-    wire(fetchFormTrend(), setForm);
-    wire(fetchEfficiencyTrend(), setEfficiency);
-    wire(fetchTrainingLoad(), setTrainingLoad);
-    wire(fetchDurabilityTrend(), setDurability);
-    wire(fetchRecoveryTrend(), setRecovery);
-    wire(fetchRecoveryStatus(), setRecoveryStatus);
-    wire(fetchBodyCompositionTrend(), setBodyComposition);
-    wire(fetchHeatAdjustedTrend(HEAT_ADJUSTED_LOOKBACK_DAYS), setHeatAdjusted);
-    wire(fetchCriticalSpeed(), setCriticalSpeed);
-    wire(fetchObjectiveFitnessTrend(), setObjectiveFitness);
-    wire(fetchWeightEconomyCoupling(), setWeightEconomy);
-    wire(fetchWellnessBaselineDeviation(), setWellnessBaseline);
-    wire(fetchFormAnomalyFlags(), setFormAnomalyFlags);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const volume = volumeQuery.data ?? null;
+  const physiology = physiologyQuery.data ?? null;
+  const form = formQuery.data ?? null;
+  const efficiency = efficiencyQuery.data ?? null;
+  const heatAdjusted = heatAdjustedQuery.data ?? null;
+  const criticalSpeed = criticalSpeedQuery.data ?? null;
+  const objectiveFitness = objectiveFitnessQuery.data ?? null;
+  const trainingLoad = trainingLoadQuery.data ?? null;
+  const durability = durabilityQuery.data ?? null;
+  const recovery = recoveryQuery.data ?? null;
+  const recoveryStatus = recoveryStatusQuery.data ?? null;
+  const bodyComposition = bodyCompositionQuery.data ?? null;
+  const weightEconomy = weightEconomyQuery.data ?? null;
+  const wellnessBaseline = wellnessBaselineQuery.data ?? null;
+  const formAnomalyFlags = formAnomalyFlagsQuery.data ?? null;
+
+  // A failure in any card's endpoint takes the page down with a banner; the
+  // first error encountered wins.
+  const error =
+    volumeQuery.error ??
+    physiologyQuery.error ??
+    formQuery.error ??
+    efficiencyQuery.error ??
+    heatAdjustedQuery.error ??
+    criticalSpeedQuery.error ??
+    objectiveFitnessQuery.error ??
+    trainingLoadQuery.error ??
+    durabilityQuery.error ??
+    recoveryQuery.error ??
+    recoveryStatusQuery.error ??
+    bodyCompositionQuery.error ??
+    weightEconomyQuery.error ??
+    wellnessBaselineQuery.error ??
+    formAnomalyFlagsQuery.error ??
+    null;
 
   if (error) {
     return (
@@ -175,7 +132,7 @@ export default function TrendsDashboard() {
         role="alert"
         className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
       >
-        エラー: {error}
+        エラー: {error.message}
       </p>
     );
   }

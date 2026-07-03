@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { fetchWeeklyReviewVersions } from "../api/client";
+import { useWeeklyReviewVersions } from "../api/hooks";
 import SectionHeading from "../components/SectionHeading";
 import SectionNav, { type NavItem } from "../components/SectionNav";
 import type { WeeklyReview } from "../types";
@@ -67,37 +67,11 @@ function versionLabel(version: WeeklyReview, isLatest: boolean): string {
 
 export default function WeeklyReviewDetail() {
   const { weekStart } = useParams<{ weekStart: string }>();
-  const [versions, setVersions] = useState<WeeklyReview[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const versionsQuery = useWeeklyReviewVersions(weekStart);
+  const versions = versionsQuery.data ?? [];
 
-  useEffect(() => {
-    if (weekStart == null) {
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    fetchWeeklyReviewVersions(weekStart)
-      .then((data) => {
-        if (!cancelled) {
-          setVersions(data);
-          setSelectedIndex(0);
-          setLoading(false);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : String(err));
-          setLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [weekStart]);
-
-  if (loading) {
+  if (versionsQuery.isPending) {
     return (
       <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
         <span
@@ -108,13 +82,13 @@ export default function WeeklyReviewDetail() {
       </div>
     );
   }
-  if (error) {
+  if (versionsQuery.error) {
     return (
       <p
         role="alert"
         className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
       >
-        エラー: {error}
+        エラー: {versionsQuery.error.message}
       </p>
     );
   }

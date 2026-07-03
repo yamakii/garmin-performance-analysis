@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { fetchActivities } from "../api/client";
+import { useActivities } from "../api/hooks";
 import SectionHeading from "../components/SectionHeading";
 import type { ActivitySummary } from "../types";
 
@@ -57,31 +56,10 @@ function groupByMonth(
 }
 
 export default function ActivityList() {
-  const [activities, setActivities] = useState<ActivitySummary[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { data, isPending, error } = useActivities();
+  const activities = data ?? [];
 
-  useEffect(() => {
-    let cancelled = false;
-    fetchActivities()
-      .then((data) => {
-        if (!cancelled) {
-          setActivities(data);
-          setLoading(false);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : String(err));
-          setLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (loading) {
+  if (isPending) {
     return (
       <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
         <span
@@ -98,7 +76,7 @@ export default function ActivityList() {
         role="alert"
         className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
       >
-        エラー: {error}
+        エラー: {error.message}
       </p>
     );
   }
