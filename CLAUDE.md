@@ -121,7 +121,7 @@ Validation Agent 方式（L1/L2 は subprocess で並列起動可、L3 のみメ
 | `ApiClient` | Garmin Connect API authentication singleton |
 | `RawDataFetcher` | Cache-first raw data collection |
 | `DuckDBSaver` | Transaction-batched DuckDB insertion |
-| `GarminDBWriter` | DuckDB write operations (23 tables, 13 inserters) |
+| `GarminDBWriter` | DuckDB write operations (23 tables, 12 inserters) |
 | `GarminDBReader` | DuckDB read operations (query builders) |
 | `tools/` registry | Domain tools + 2 server tools declared as `ToolDef` (see `docs/mcp-tools-reference.md`). `server.py` dispatches directly from `ALL_DEFS_BY_NAME` (O(1) lookup) |
 
@@ -146,11 +146,10 @@ garmin-performance-analysis/
 │       ├── src/garmin_mcp/
 │       │   ├── ingest/             # API → Raw data (ApiClient, RawDataFetcher, DuckDBSaver)
 │       │   ├── database/
-│       │   │   ├── inserters/      # 13 table-specific inserters
+│       │   │   ├── inserters/      # 12 table-specific inserters
 │       │   │   ├── readers/        # Query builders (SplitsQueryBuilder etc.)
 │       │   │   └── migrations/     # Schema migrations
 │       │   ├── handlers/           # base.py only (shared response helpers); domain dispatch lives in tools/ + server.py
-│       │   ├── training_plan/      # Training plan generation
 │       │   ├── form_baseline/      # Form baseline training
 │       │   ├── scripts/
 │       │   │   └── regenerate/     # DuckDB regeneration utilities
@@ -164,7 +163,7 @@ garmin-performance-analysis/
 │       └── tests/
 ├── .claude/
 │   ├── agents/                     # 6 agent defs: 3 analysis (unified+split+summary) + developer/proofreader/validation
-│   ├── skills/                     # 8 user-invocable skills (/analyze-activity, /decompose, /implement, /plan-training, /project-status, /set-goal, /ship, /weekly-review)
+│   ├── skills/                     # 7 user-invocable skills (/analyze-activity, /decompose, /implement, /project-status, /set-goal, /ship, /weekly-review)
 │   ├── rules/                      # Shared rules (auto-loaded)
 │   ├── workflows/                  # Workflow scripts (implement-tier.js = /implement tier orchestration)
 │   ├── tasks/                      # todo.md, lessons.md (session tracking)
@@ -173,7 +172,6 @@ garmin-performance-analysis/
 │   ├── raw/                        # API responses (8 files/activity)
 │   └── database/                   # garmin_performance.duckdb
 ├── result/                         # GARMIN_RESULT_DIR (configurable via .env)
-│   └── training_plans/             # Generated training plans
 ├── docs/
 └── CLAUDE.md
 ```

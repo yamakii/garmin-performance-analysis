@@ -16,10 +16,7 @@ class GarminCalendarReader:
     """Reads scheduled workouts from the Garmin Connect calendar-service."""
 
     def _get_garmin_client(self) -> Any:
-        """Get authenticated Garmin Connect client.
-
-        Mirrors ``GarminWorkoutUploader._get_garmin_client``.
-        """
+        """Get authenticated Garmin Connect client via the ingest worker."""
         from garmin_mcp.ingest.garmin_worker import GarminIngestWorker
 
         worker = GarminIngestWorker()

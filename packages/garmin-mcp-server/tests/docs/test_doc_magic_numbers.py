@@ -87,6 +87,16 @@ def test_readme_tool_count_matches_registry() -> None:
             ), f"{doc.name}: doc says {count} tools but registry has {expected}"
 
 
+@pytest.mark.unit
+def test_doc_magic_numbers_tools_54() -> None:
+    """After #787 the live MCP surface is 54 tools; docs/registry must agree."""
+    assert _expected_tool_count() == 54
+    for doc in _DOC_PATHS:
+        text = doc.read_text(encoding="utf-8")
+        for count in _numbers_before(r"(?:MCP )?tools", text):
+            assert count == 54, f"{doc.name}: doc says {count} tools, expected 54"
+
+
 @pytest.mark.integration
 def test_doc_table_count_matches_schema(tmp_path: Path) -> None:
     expected = _expected_table_count(str(tmp_path / "fresh.duckdb"))

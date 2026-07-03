@@ -31,7 +31,7 @@ The project is a uv workspace with two packages:
   - `src/garmin_mcp/tools/`: `ToolDef` registry — single source for all MCP tools ([reference](docs/mcp-tools-reference.md))
   - `src/garmin_mcp/scripts/`: ingestion, regeneration, and backfill utilities
 - **`packages/garmin-web`**: FastAPI backend + Vite/React SPA that renders analysis stored in DuckDB
-- **Analysis Agents & Skills** (`.claude/`): section-analysis agents and user-invocable skills (`/analyze-activity`, `/plan-training`, etc.)
+- **Analysis Agents & Skills** (`.claude/`): section-analysis agents and user-invocable skills (`/analyze-activity`, `/weekly-review`, etc.)
 
 See [`docs/architecture.md`](docs/architecture.md) for the design rationale
 (the "why"), and `CLAUDE.md` for the full module map and DuckDB schema reference.
@@ -125,7 +125,6 @@ pre-commit run --all-files
 
 - `data/raw/`: Immutable Garmin API responses (one set of files per activity)
 - `data/database/`: DuckDB database file (`garmin_performance.duckdb`)
-- `result/training_plans/`: Generated training plans
 
 > `data/` and `result/` are git-ignored and configurable via `.env` (`GARMIN_DATA_DIR`, `GARMIN_RESULT_DIR`).
 

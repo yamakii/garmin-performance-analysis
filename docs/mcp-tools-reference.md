@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **58 tools** (56 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **54 tools** (52 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -20,7 +20,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Physiology](#physiology) (12)
 - [Performance](#performance) (4)
 - [Time Series](#time-series) (4)
-- [Training Plan](#training-plan) (6)
+- [Training Plan](#training-plan) (2)
 - [Athlete](#athlete) (4)
 - [Race](#race) (1)
 - [Training Load](#training-load) (3)
@@ -479,54 +479,6 @@ Get current fitness level assessment (VDOT, pace zones, weekly volume, training 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `lookback_weeks` | integer | optional | Number of weeks to analyze (default: 8) |
-
-### `save_training_plan`
-
-CLI: `garmin-db training-plan save-plan`
-
-Save a training plan (structured JSON) to DuckDB. Validates schema and safety constraints (volume progression <= 15%, return_to_run restrictions, date alignment).
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `plan` | object | **required** | TrainingPlan JSON conforming to the Pydantic model schema (plan_id, goal_type, vdot, pace_zones, total_weeks, start_date, weekly_volumes, phases, workouts, etc.) |
-
-### `get_training_plan`
-
-CLI: `garmin-db training-plan get-plan`
-
-Get a previously generated training plan
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `plan_id` | string | **required** | Plan identifier |
-| `version` | integer | optional | Specific version to retrieve. Omit for latest active version. |
-| `week_number` | integer | optional | Specific week to retrieve (optional) |
-| `summary_only` | boolean | optional | If true, exclude individual workouts (default: false) |
-
-### `upload_workout_to_garmin`
-
-CLI: `garmin-db training-plan upload-workout`
-
-Upload workout(s) to Garmin Connect
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `workout_id` | string | optional | Single workout ID to upload |
-| `plan_id` | string | optional | Plan ID to upload all workouts from |
-| `week_number` | integer | optional | Specific week to upload (with plan_id) |
-| `schedule` | boolean | optional (default `True`) | Schedule workouts on Garmin Connect calendar (default: true) |
-
-### `delete_workout_from_garmin`
-
-CLI: `garmin-db training-plan delete-workout`
-
-Delete workout(s) from Garmin Connect
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `workout_id` | string | optional | Single workout ID to delete |
-| `plan_id` | string | optional | Plan ID to delete all workouts from |
-| `week_number` | integer | optional | Specific week to delete (with plan_id) |
 
 ### `get_garmin_scheduled_workouts`
 

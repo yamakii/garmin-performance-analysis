@@ -84,6 +84,49 @@ def test_registry_internally_consistent() -> None:
 
 
 @pytest.mark.unit
+def test_deleted_tools_absent_from_registry() -> None:
+    """The self-authored plan-creation tools were removed in #787."""
+    removed = {
+        "save_training_plan",
+        "get_training_plan",
+        "upload_workout_to_garmin",
+        "delete_workout_from_garmin",
+    }
+    assert removed.isdisjoint(ALL_DEFS_BY_NAME)
+
+
+@pytest.mark.unit
+def test_kept_tools_present() -> None:
+    """The two surviving fitness/calendar tools remain and dispatch cleanly."""
+    for name in ("get_current_fitness_summary", "get_garmin_scheduled_workouts"):
+        assert name in ALL_DEFS_BY_NAME
+
+    # get_garmin_scheduled_workouts -> GarminCalendarReader.get_scheduled_workouts
+    reader = MagicMock()
+    with patch("garmin_mcp.fitness.garmin_calendar.GarminCalendarReader") as cal_cls:
+        cal_cls.return_value.get_scheduled_workouts.return_value = []
+        result = dispatch(
+            ALL_DEFS_BY_NAME,
+            reader,
+            "get_garmin_scheduled_workouts",
+            {"start_date": "2025-10-01", "end_date": "2025-10-07"},
+        )
+        cal_cls.return_value.get_scheduled_workouts.assert_called_once_with(
+            "2025-10-01", "2025-10-07"
+        )
+        assert isinstance(result, dict)
+        assert result["count"] == 0
+
+
+@pytest.mark.unit
+def test_tool_count_is_54() -> None:
+    """The live MCP surface is exactly 54 tools (58 -> 54 after #787)."""
+    assert len(ALL_DEFS) + len(_SERVER_TOOLS) == 54
+    golden = json.loads(_GOLDEN_PATH.read_text(encoding="utf-8"))
+    assert len(golden) == 54
+
+
+@pytest.mark.unit
 def test_objective_fitness_tool_registered() -> None:
     """get_objective_fitness_curve is registered and wired to the reader."""
     assert "get_objective_fitness_curve" in ALL_DEFS_BY_NAME
@@ -166,18 +209,6 @@ def test_dispatch_all_domains() -> None:
         assert kwargs["activity_id"] == 5
         assert kwargs["split_number"] == 2
         assert kwargs["z_threshold"] == 2.0
-
-    # training_plan -> TrainingPlanReader.get_training_plan(...)
-    reader = MagicMock()
-    reader.db_path = ":memory:"
-    with patch(
-        "garmin_mcp.database.readers.training_plans.TrainingPlanReader"
-    ) as plan_reader_cls:
-        plan_reader_cls.return_value.get_training_plan.return_value = {"plan_id": "p1"}
-        dispatch(ALL_DEFS_BY_NAME, reader, "get_training_plan", {"plan_id": "p1"})
-        plan_reader_cls.return_value.get_training_plan.assert_called_once_with(
-            plan_id="p1", version=None, week_number=None, summary_only=False
-        )
 
     # athlete -> AthleteReader.get_athlete_profile(...)
     reader = MagicMock()
