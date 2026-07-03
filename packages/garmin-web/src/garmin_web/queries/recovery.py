@@ -9,7 +9,8 @@ import datetime as _dt
 from pathlib import Path
 from typing import Any, cast
 
-from garmin_mcp.database.connection import get_connection
+import duckdb
+from garmin_mcp.database.connection import db_path_from_connection
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.rag.queries.form_anomaly_detector import FormAnomalyDetector
 
@@ -27,60 +28,74 @@ _MIN_HIGH_FOR_FLAG = 1
 _MIN_MATERIAL_CLUSTER_FOR_FLAG = 3
 
 
-def _reader(db_path: Any) -> GarminDBReader:
-    """Build a reader bound to the request's DB path (None -> default)."""
-    return GarminDBReader(db_path=str(db_path) if db_path is not None else None)
-
-
-def _detector_base_path(db_path: Any) -> Path | None:
-    """Derive the raw-data base dir from the request's DB path.
+def _detector_base_path(db_path: str | None) -> Path | None:
+    """Derive the raw-data base dir from the connection's DB file path.
 
     The form-anomaly detector reads ``raw/activity/<id>/activity_details.json``
     relative to its ``base_path``. Production layout is
     ``<data>/database/garmin_performance.duckdb``, so the data base dir is the
-    db file's grandparent. ``None`` lets the detector fall back to
-    ``GARMIN_DATA_DIR``.
+    db file's grandparent. ``None`` (e.g. an in-memory connection) lets the
+    detector fall back to ``GARMIN_DATA_DIR``.
     """
     if db_path is None:
         return None
-    return Path(str(db_path)).parent.parent
+    return Path(db_path).parent.parent
 
 
-def get_recovery_trend(db_path: Any, weeks: int = 8) -> dict[str, Any]:
+def get_recovery_trend(
+    conn: duckdb.DuckDBPyConnection, weeks: int = 8
+) -> dict[str, Any]:
     """RHR / HRV recovery trend over the trailing ``weeks`` (delegates to #499)."""
-    return cast("dict[str, Any]", _reader(db_path).get_recovery_trend(weeks))
+    return cast(
+        "dict[str, Any]",
+        GarminDBReader.from_connection(conn).get_recovery_trend(weeks),
+    )
 
 
-def get_recovery_status(db_path: Any, date: str | None = None) -> dict[str, Any]:
+def get_recovery_status(
+    conn: duckdb.DuckDBPyConnection, date: str | None = None
+) -> dict[str, Any]:
     """Morning go/no-go recovery status for ``date`` (delegates to #500)."""
-    return cast("dict[str, Any]", _reader(db_path).get_recovery_status(date))
+    return cast(
+        "dict[str, Any]",
+        GarminDBReader.from_connection(conn).get_recovery_status(date),
+    )
 
 
-def get_body_composition_trend(db_path: Any, weeks: int = 12) -> dict[str, Any]:
+def get_body_composition_trend(
+    conn: duckdb.DuckDBPyConnection, weeks: int = 12
+) -> dict[str, Any]:
     """Body-composition trend over the trailing ``weeks`` (delegates to #501)."""
-    return cast("dict[str, Any]", _reader(db_path).get_body_composition_trend(weeks))
+    return cast(
+        "dict[str, Any]",
+        GarminDBReader.from_connection(conn).get_body_composition_trend(weeks),
+    )
 
 
-def get_weight_economy_coupling(db_path: Any, weeks: int = 52) -> dict[str, Any]:
+def get_weight_economy_coupling(
+    conn: duckdb.DuckDBPyConnection, weeks: int = 52
+) -> dict[str, Any]:
     """Weight-economy coupling over the trailing ``weeks`` (delegates to #554)."""
     return cast(
         "dict[str, Any]",
-        _reader(db_path).get_weight_economy_coupling(weeks=weeks),
+        GarminDBReader.from_connection(conn).get_weight_economy_coupling(weeks=weeks),
     )
 
 
 def get_wellness_baseline_deviation(
-    db_path: Any, date: str | None = None, window_days: int = 30
+    conn: duckdb.DuckDBPyConnection, date: str | None = None, window_days: int = 30
 ) -> dict[str, Any]:
     """Personal-baseline deviation for HRV / readiness / RHR (delegates to #555)."""
     return cast(
         "dict[str, Any]",
-        _reader(db_path).get_wellness_baseline_deviation(date, window_days),
+        GarminDBReader.from_connection(conn).get_wellness_baseline_deviation(
+            date, window_days
+        ),
     )
 
 
 def get_recent_form_anomaly_flags(
-    db_path: Any, weeks: int = 2, max_activities: int = 12
+    conn: duckdb.DuckDBPyConnection, weeks: int = 2, max_activities: int = 12
 ) -> dict[str, Any]:
     """Scan the trailing ``weeks`` of runs and roll up form-anomaly flags.
 
@@ -92,7 +107,7 @@ def get_recent_form_anomaly_flags(
     ``scanned`` reports how many were actually inspected (no silent truncation).
 
     Args:
-        db_path: Request DB path (None -> default).
+        conn: Open DuckDB connection (read-only is sufficient).
         weeks: Trailing window length in weeks (default 2).
         max_activities: Maximum runs to scan (default 12).
 
@@ -113,18 +128,19 @@ def get_recent_form_anomaly_flags(
     """
     since = (_dt.date.today() - _dt.timedelta(weeks=weeks)).isoformat()
 
-    with get_connection(db_path) as conn:
-        rows = conn.execute(
-            "SELECT activity_id, activity_date FROM activities "
-            "WHERE activity_date >= ? ORDER BY activity_date DESC",
-            [since],
-        ).fetchall()
+    rows = conn.execute(
+        "SELECT activity_id, activity_date FROM activities "
+        "WHERE activity_date >= ? ORDER BY activity_date DESC",
+        [since],
+    ).fetchall()
 
     candidates = [(int(aid), str(adate)) for aid, adate in rows]
     limited = len(candidates) > max_activities
     selected = candidates[:max_activities]
 
-    detector = FormAnomalyDetector(base_path=_detector_base_path(db_path))
+    detector = FormAnomalyDetector(
+        base_path=_detector_base_path(db_path_from_connection(conn))
+    )
 
     flags: list[dict[str, Any]] = []
     for activity_id, activity_date in selected:

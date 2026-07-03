@@ -1,6 +1,7 @@
 """Read-only trend queries aggregating across activities."""
 
 import duckdb
+from garmin_mcp.database.connection import db_path_from_connection
 from garmin_mcp.rag.queries.heat_adjustment import REF_TEMP_C, HeatAdjustmentModel
 
 _VALID_GRANULARITIES = ("week", "month")
@@ -172,8 +173,7 @@ def get_heat_adjusted_trend(
     # Resolve the database file backing this connection so the model's reader
     # opens the same file (a second read-only connection is safe). An empty
     # path (e.g. an in-memory connection) falls back to the config default.
-    db_list = conn.execute("PRAGMA database_list").fetchall()
-    db_path = db_list[0][2] if db_list and db_list[0][2] else None
+    db_path = db_path_from_connection(conn)
 
     model = HeatAdjustmentModel(db_path=db_path, ref_temp_c=ref_temp_c)
     result: dict = model.compute_trend(activity_ids, start_date, end_date)

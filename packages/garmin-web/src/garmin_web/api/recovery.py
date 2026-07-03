@@ -8,6 +8,7 @@ Web layer stays a thin pass-through.
 from typing import Any
 
 from fastapi import APIRouter, Request
+from garmin_mcp.database.connection import get_connection
 
 from garmin_web.queries import recovery as recovery_queries
 
@@ -25,7 +26,8 @@ def get_recovery_trend_endpoint(request: Request, weeks: int = 8) -> dict[str, A
     Read-only: delegates entirely to the reader. ``series`` is date-ascending;
     ``rhr`` / ``hrv`` summary fields are null-safe when data is missing.
     """
-    return recovery_queries.get_recovery_trend(_db_path(request), weeks)
+    with get_connection(_db_path(request)) as conn:
+        return recovery_queries.get_recovery_trend(conn, weeks)
 
 
 @router.get("/recovery-status")
@@ -37,7 +39,8 @@ def get_recovery_status_endpoint(
     ``date`` defaults to the latest day in ``daily_wellness``. A device-off day
     returns ``recommendation="unknown"`` with a "go by feel" reason.
     """
-    return recovery_queries.get_recovery_status(_db_path(request), date)
+    with get_connection(_db_path(request)) as conn:
+        return recovery_queries.get_recovery_status(conn, date)
 
 
 @router.get("/body-composition-trend")
@@ -49,22 +52,24 @@ def get_body_composition_trend_endpoint(
     Read-only: ``series`` is date-ascending with fat/lean decomposition, and
     ``change`` carries the first-to-last weight delta breakdown.
     """
-    return recovery_queries.get_body_composition_trend(_db_path(request), weeks)
+    with get_connection(_db_path(request)) as conn:
+        return recovery_queries.get_body_composition_trend(conn, weeks)
 
 
 @router.get("/form-anomaly-flags")
 def get_form_anomaly_flags_endpoint(
     request: Request, weeks: int = 2, max_activities: int = 12
 ) -> dict[str, Any]:
-    """"今週の注意点": form-anomaly flags across the trailing ``weeks`` runs (#636).
+    """ "今週の注意点": form-anomaly flags across the trailing ``weeks`` runs (#636).
 
     Rolls up the per-activity ``detect_form_anomalies_summary`` over recent runs.
     ``max_activities`` caps the scan; ``limited`` is True when more candidate
     runs existed than were scanned (``scanned``). Never 500s on missing raw data.
     """
-    return recovery_queries.get_recent_form_anomaly_flags(
-        _db_path(request), weeks, max_activities
-    )
+    with get_connection(_db_path(request)) as conn:
+        return recovery_queries.get_recent_form_anomaly_flags(
+            conn, weeks, max_activities
+        )
 
 
 @router.get("/weight-economy-coupling")
@@ -78,7 +83,8 @@ def get_weight_economy_coupling_endpoint(
     longitudinal effect size + collinearity (association) caveat, or ``None``
     when too few runs matched. Never 500s on insufficient data.
     """
-    return recovery_queries.get_weight_economy_coupling(_db_path(request), weeks)
+    with get_connection(_db_path(request)) as conn:
+        return recovery_queries.get_weight_economy_coupling(conn, weeks)
 
 
 @router.get("/wellness-baseline-deviation")
@@ -94,6 +100,5 @@ def get_wellness_baseline_deviation_endpoint(
     ``flag="insufficient"`` (null-safe, never 500s). ``overall_flag`` is True
     when any metric sits in an unfavorable deviation.
     """
-    return recovery_queries.get_wellness_baseline_deviation(
-        _db_path(request), date, window_days
-    )
+    with get_connection(_db_path(request)) as conn:
+        return recovery_queries.get_wellness_baseline_deviation(conn, date, window_days)

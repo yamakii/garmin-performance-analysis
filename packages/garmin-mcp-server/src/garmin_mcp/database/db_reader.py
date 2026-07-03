@@ -8,6 +8,9 @@ Delegates to specialized readers for different data domains.
 from pathlib import Path
 from typing import Any, Literal
 
+import duckdb
+
+from garmin_mcp.database.connection import db_path_from_connection
 from garmin_mcp.database.readers import (
     DurabilityReader,
     ExportReader,
@@ -36,13 +39,25 @@ class GarminDBReader:
     - ExportReader: Query result export
     """
 
-    def __init__(self, db_path: str | None = None):
+    def __init__(
+        self,
+        db_path: str | None = None,
+        conn: duckdb.DuckDBPyConnection | None = None,
+    ):
         """Initialize DuckDB reader with database path.
 
         Args:
             db_path: Optional path to DuckDB database file.
                     If None, uses default path from garmin_mcp.utils.paths.
+            conn: Optional already-open connection to reuse for the centralized
+                    ``execute_read_query`` reads (single-connection mode). When
+                    provided, ``execute_read_query`` runs against it directly
+                    instead of opening a new connection per call. Prefer
+                    :meth:`from_connection` to build a reader in this mode.
         """
+        # Optional externally-owned connection (not closed by this reader).
+        self._external_conn = conn
+
         # Initialize all specialized readers
         self.metadata = MetadataReader(db_path)
         self.splits = SplitsReader(db_path)
@@ -63,13 +78,34 @@ class GarminDBReader:
         # Expose db_path for handlers and scripts
         self.db_path = self.metadata.db_path
 
+    @classmethod
+    def from_connection(cls, conn: duckdb.DuckDBPyConnection) -> "GarminDBReader":
+        """Build a reader that reuses an already-open request connection.
+
+        The centralized ``execute_read_query`` runs against ``conn`` directly
+        (no second connection is opened per call), so a caller that opened one
+        connection per request gets true single-connection reads. ``db_path``
+        is still resolved from ``conn`` so any reader path that needs the file
+        (e.g. a delegated model reopening it read-only) points at the same
+        database. The connection is owned by the caller and never closed here.
+
+        Args:
+            conn: Open DuckDB connection to reuse for reads.
+
+        Returns:
+            A ``GarminDBReader`` bound to ``conn``.
+        """
+        return cls(db_path=db_path_from_connection(conn), conn=conn)
+
     def execute_read_query(
         self, sql: str, params: tuple[Any, ...] = ()
     ) -> list[tuple[Any, ...]]:
         """Execute a read-only SQL query and return all results.
 
         Centralizes DuckDB connection management so callers don't need
-        to import duckdb or manage connections directly.
+        to import duckdb or manage connections directly. When the reader was
+        built with an external connection (``from_connection``), that shared
+        connection is reused instead of opening a new one.
 
         Args:
             sql: SQL query string
@@ -78,6 +114,8 @@ class GarminDBReader:
         Returns:
             List of result tuples
         """
+        if self._external_conn is not None:
+            return self._external_conn.execute(sql, params).fetchall()
         with self.metadata._get_connection() as conn:
             result: list[tuple[Any, ...]] = conn.execute(sql, params).fetchall()
             return result
@@ -87,6 +125,9 @@ class GarminDBReader:
     ) -> tuple[list[tuple[Any, ...]], list[str]]:
         """Execute a read-only SQL query and return results with column names.
 
+        Reuses the external connection when the reader was built with one
+        (``from_connection``).
+
         Args:
             sql: SQL query string
             params: Query parameters
@@ -94,6 +135,11 @@ class GarminDBReader:
         Returns:
             Tuple of (results, column_names)
         """
+        if self._external_conn is not None:
+            result = self._external_conn.execute(sql, params)
+            columns = [desc[0] for desc in result.description]
+            rows = result.fetchall()
+            return rows, columns
         with self.metadata._get_connection() as conn:
             result = conn.execute(sql, params)
             columns = [desc[0] for desc in result.description]

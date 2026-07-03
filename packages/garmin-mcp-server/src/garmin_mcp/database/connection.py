@@ -161,3 +161,21 @@ def get_db_path(db_path: str | Path | None = None) -> Path:
         Resolved Path to database file.
     """
     return _resolve_db_path(db_path)
+
+
+def db_path_from_connection(conn: duckdb.DuckDBPyConnection) -> str | None:
+    """Resolve the file path backing an already-open DuckDB connection.
+
+    Lets callers that hold only a live connection re-derive the database file
+    without hard-coding it — e.g. to open a second short-lived read-only
+    reader against the same file.
+
+    Args:
+        conn: Open DuckDB connection.
+
+    Returns:
+        The main database's on-disk path, or ``None`` for an in-memory
+        connection (no backing file).
+    """
+    rows = conn.execute("PRAGMA database_list").fetchall()
+    return rows[0][2] if rows and rows[0][2] else None
