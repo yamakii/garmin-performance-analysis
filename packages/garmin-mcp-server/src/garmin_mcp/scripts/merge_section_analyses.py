@@ -46,6 +46,10 @@ def merge_section_analyses(temp_dir: Path, *, keep: bool = False) -> dict:
     failed: list[str] = []
     errors: list[str] = []
 
+    # Allocate one run_id for this whole merge so all sections of this analysis
+    # run share a single version (issue #776).
+    run_id = writer.next_run_id()
+
     for json_file in json_files:
         section_type = json_file.stem
         try:
@@ -100,6 +104,7 @@ def merge_section_analyses(temp_dir: Path, *, keep: bool = False) -> dict:
                 activity_date=activity_date,
                 section_type=section_type,
                 analysis_data=analysis_data,
+                run_id=run_id,
             )
 
             if success:

@@ -411,8 +411,9 @@ export interface SectionResult {
 
 export type SectionsResponse = Record<string, SectionResult>;
 
-/** One saved analysis batch (a run = rows sharing created_at), from #720. */
+/** One saved analysis run (a version); run_id groups its sections (#776). */
 export interface SectionVersion {
+  run_id: number;
   created_at: string;
   section_types: string[];
 }

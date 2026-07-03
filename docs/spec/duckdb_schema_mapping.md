@@ -713,6 +713,7 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 | created_at | TIMESTAMP |
 | agent_name | VARCHAR |
 | agent_version | VARCHAR |
+| run_id | BIGINT |
 <!-- END GENERATED: schema:section_analyses -->
 
 **Units & notes**: `analysis_id` is the surrogate PK with a UNIQUE index on `(activity_id, section_type)`; `section_type` is split/phase/summary/efficiency/environment; `analysis_data` is the JSON payload (Japanese narrative + English keys); `agent_name` / `agent_version` identify the producing agent.

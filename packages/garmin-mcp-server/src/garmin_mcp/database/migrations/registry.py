@@ -142,6 +142,13 @@ def _wrap_drop_section_analysis_index(conn: duckdb.DuckDBPyConnection) -> None:
     drop_section_analysis_index(conn)
 
 
+def _wrap_add_section_analysis_run_id(conn: duckdb.DuckDBPyConnection) -> None:
+    """Wrap the section_analyses run_id migration on an existing connection."""
+    from .add_section_analysis_run_id import add_section_analysis_run_id
+
+    add_section_analysis_run_id(conn)
+
+
 def _wrap_plan_versioning(conn: duckdb.DuckDBPyConnection) -> None:
     """Wrap plan versioning migration to run on an existing connection."""
     from .add_plan_versioning import _column_exists, _table_exists
@@ -197,4 +204,5 @@ MIGRATIONS: list[tuple[int, str, Callable[[duckdb.DuckDBPyConnection], None]]] =
     (11, "add_daily_wellness_table", _wrap_add_daily_wellness_table),
     (12, "add_week_start_day", _wrap_add_week_start_day),
     (13, "drop_section_analysis_index", _wrap_drop_section_analysis_index),
+    (14, "add_section_analysis_run_id", _wrap_add_section_analysis_run_id),
 ]

@@ -36,7 +36,7 @@ def _make_v11_db(db_path: Path) -> None:
     MigrationRunner(db_path).run_pending()
     conn = duckdb.connect(str(db_path))
     conn.execute("ALTER TABLE athlete_profile DROP COLUMN week_start_day")
-    conn.execute("DELETE FROM schema_version WHERE version IN (12, 13)")
+    conn.execute("DELETE FROM schema_version WHERE version > 11")
     conn.close()
 
 
@@ -49,8 +49,12 @@ def test_server_startup_applies_migrations(tmp_path: Path) -> None:
 
     applied = worker._apply_startup_migrations(str(db_path))
 
-    assert applied == ["add_week_start_day", "drop_section_analysis_index"]
-    assert MigrationRunner(db_path).get_current_version() == 13
+    assert applied == [
+        "add_week_start_day",
+        "drop_section_analysis_index",
+        "add_section_analysis_run_id",
+    ]
+    assert MigrationRunner(db_path).get_current_version() == 14
 
 
 @pytest.mark.integration

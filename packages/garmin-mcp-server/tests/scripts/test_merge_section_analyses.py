@@ -253,6 +253,36 @@ class TestMergeSchemaGuard:
 
     @patch("garmin_mcp.scripts.merge_section_analyses.GarminDBReader")
     @patch("garmin_mcp.scripts.merge_section_analyses.GarminDBWriter")
+    def test_merge_shares_one_run_id_across_sections(
+        self, mock_writer_cls, mock_reader_cls, tmp_path
+    ):
+        """One merge = one run_id, passed to every section (#776)."""
+        mock_reader_cls.return_value.physiology.get_form_baseline_trend.return_value = {
+            "success": True,
+            "metrics": {},
+        }
+        mock_writer = MagicMock()
+        mock_writer.insert_section_analysis.return_value = True
+        mock_writer.next_run_id.return_value = 42
+        mock_writer_cls.return_value = mock_writer
+
+        for section in ("efficiency", "phase", "environment", "split", "summary"):
+            _write_section_json(tmp_path, section, _valid_data(section))
+
+        result = merge_section_analyses(tmp_path, keep=True)
+
+        assert result["failed"] == []
+        # next_run_id allocated exactly once; every insert got that run_id.
+        mock_writer.next_run_id.assert_called_once()
+        assert mock_writer.insert_section_analysis.call_count == 5
+        run_ids = {
+            call.kwargs["run_id"]
+            for call in mock_writer.insert_section_analysis.call_args_list
+        }
+        assert run_ids == {42}
+
+    @patch("garmin_mcp.scripts.merge_section_analyses.GarminDBReader")
+    @patch("garmin_mcp.scripts.merge_section_analyses.GarminDBWriter")
     def test_merge_rejects_unknown_section_type(
         self, mock_writer_cls, mock_reader_cls, tmp_path
     ):

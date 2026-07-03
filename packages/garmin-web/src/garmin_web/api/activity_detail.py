@@ -61,11 +61,12 @@ def get_activity_track(request: Request, activity_id: int) -> dict:
 
 @router.get("/activities/{activity_id}/sections/versions")
 def get_activity_section_versions(request: Request, activity_id: int) -> list[dict]:
-    """Return saved analysis batches for an activity (newest first).
+    """Return saved analysis runs for an activity (newest first).
 
-    Returns an empty list (status 200) when the activity has no section
-    analyses. The more specific ``/versions`` path is declared before the bare
-    ``/sections`` route so it is matched first.
+    Each entry is one analysis run (``run_id``); a full-activity analysis of 5
+    sections is a single version. Returns an empty list (status 200) when the
+    activity has no section analyses. The more specific ``/versions`` path is
+    declared before the bare ``/sections`` route so it is matched first.
     """
     db_path = getattr(request.app.state, "db_path", None)
     with get_connection(db_path) as conn:
@@ -76,14 +77,14 @@ def get_activity_section_versions(request: Request, activity_id: int) -> list[di
 def get_activity_sections(
     request: Request,
     activity_id: int,
-    created_at: Annotated[str | None, Query()] = None,
+    run_id: Annotated[int | None, Query()] = None,
 ) -> dict:
     """Return section analyses keyed by section_type.
 
-    Returns the latest version of each section by default; ``created_at`` pins
-    the view to that analysis run (each section's latest version at or before
-    the timestamp).
+    Returns the latest version of each section by default; ``run_id`` pins the
+    view to that analysis run (each section's latest version at or before that
+    run).
     """
     db_path = getattr(request.app.state, "db_path", None)
     with get_connection(db_path) as conn:
-        return get_sections(conn, activity_id, created_at=created_at)
+        return get_sections(conn, activity_id, run_id=run_id)

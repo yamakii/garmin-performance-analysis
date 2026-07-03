@@ -62,7 +62,7 @@ parameters are documented in each handler's docstring.
 | `/api/activities` | Return activities sorted by date descending. |
 | `/api/activities/{activity_id}` | Return aggregated detail for one activity, or 404 if unknown. |
 | `/api/activities/{activity_id}/sections` | Return section analyses keyed by section_type. |
-| `/api/activities/{activity_id}/sections/versions` | Return saved analysis batches for an activity (newest first). |
+| `/api/activities/{activity_id}/sections/versions` | Return saved analysis runs for an activity (newest first). |
 | `/api/activities/{activity_id}/time-series` | Return downsampled time series for the requested metrics. |
 | `/api/activities/{activity_id}/track` | Return the GPS track for an activity. |
 | `/api/body-composition-trend` | Body-composition trend over the trailing ``weeks`` weeks (#501). |
@@ -89,6 +89,8 @@ parameters are documented in each handler's docstring.
 <!-- END GENERATED: web-api-table -->
 
 > Weekly reviews are versioned: re-running `/weekly-review` for the same week appends a new row instead of overwriting (Epic #311). The list view de-duplicates to the latest version per week; the detail page fetches `/versions` to switch between past versions.
+
+> Section analyses are versioned by **`run_id`** (#776): one analysis run shares a single `run_id` across its sections, so a full-activity analysis of 5 sections is one version, not five. `/sections/versions` returns one entry per run (newest first); the detail page pins `/sections?run_id=N` to view an older run (each section's latest version at or before that run).
 
 ## Architecture
 
