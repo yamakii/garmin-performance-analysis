@@ -2,6 +2,7 @@ import type {
   ActivityDetailResponse,
   ActivitySummary,
   GoalResponse,
+  PlannedWorkoutToday,
   RaceReadiness,
   SectionsResponse,
   SectionVersion,
@@ -9,6 +10,18 @@ import type {
   TrackResponse,
   WeeklyReview,
 } from "../types";
+
+export async function fetchPlannedWorkoutToday(
+  date: string,
+): Promise<PlannedWorkoutToday | null> {
+  const response = await fetch(
+    `/api/planned-workouts/today?date=${encodeURIComponent(date)}`,
+  );
+  if (!response.ok) {
+    throw new Error(`Failed to fetch planned workout: ${response.status}`);
+  }
+  return (await response.json()) as PlannedWorkoutToday | null;
+}
 
 export async function fetchGoal(): Promise<GoalResponse> {
   const response = await fetch("/api/goal");

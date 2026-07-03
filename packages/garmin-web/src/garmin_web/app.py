@@ -11,6 +11,7 @@ from garmin_web.api.activities import router as activities_router
 from garmin_web.api.activity_detail import router as activity_detail_router
 from garmin_web.api.durability import router as durability_router
 from garmin_web.api.goal import router as goal_router
+from garmin_web.api.planned import router as planned_router
 from garmin_web.api.race import router as race_router
 from garmin_web.api.recovery import router as recovery_router
 from garmin_web.api.training_load import router as training_load_router
@@ -57,6 +58,7 @@ def create_app(
     app.include_router(activity_detail_router)
     app.include_router(trends_router)
     app.include_router(goal_router)
+    app.include_router(planned_router)
     app.include_router(race_router)
     app.include_router(training_load_router)
     app.include_router(durability_router)

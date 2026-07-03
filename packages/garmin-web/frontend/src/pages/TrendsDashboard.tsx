@@ -147,11 +147,16 @@ export default function TrendsDashboard() {
         Alert band: "今, 何を見るべきか" surfaced first, full width and outside
         the metric grid so the weekly caution is the top priority.
       */}
-      {formAnomalyFlags == null ? (
-        <CardSkeleton label="今週の注意点" />
-      ) : (
-        <FormAnomalyFlagsCard data={formAnomalyFlags} />
-      )}
+      {/* id anchors let the Home snapshot tiles deep-link to the matching card
+          (e.g. フォーム注意点 → /trends#form-anomaly). scroll-mt keeps the
+          target clear of the sticky header. */}
+      <div id="form-anomaly" className="scroll-mt-20">
+        {formAnomalyFlags == null ? (
+          <CardSkeleton label="今週の注意点" />
+        ) : (
+          <FormAnomalyFlagsCard data={formAnomalyFlags} />
+        )}
+      </div>
 
       <div className="stagger-in space-y-10">
         {/* ① 今の状態 / Condition Now */}
@@ -161,21 +166,25 @@ export default function TrendsDashboard() {
           ) : (
             <ConditionCard data={recoveryStatus} />
           )}
-          {recovery == null ? (
-            <CardSkeleton label="回復トレンド" />
-          ) : (
-            <RecoveryPanel data={recovery} />
-          )}
+          <div id="recovery" className="scroll-mt-20">
+            {recovery == null ? (
+              <CardSkeleton label="回復トレンド" />
+            ) : (
+              <RecoveryPanel data={recovery} />
+            )}
+          </div>
           {wellnessBaseline == null ? (
             <CardSkeleton label="個人ベースライン逸脱" />
           ) : (
             <WellnessBaselineChart data={wellnessBaseline} />
           )}
-          {trainingLoad == null ? (
-            <CardSkeleton label="訓練負荷" />
-          ) : (
-            <TrainingLoadBlock data={trainingLoad} />
-          )}
+          <div id="training-load" className="scroll-mt-20">
+            {trainingLoad == null ? (
+              <CardSkeleton label="訓練負荷" />
+            ) : (
+              <TrainingLoadBlock data={trainingLoad} />
+            )}
+          </div>
         </TrendSection>
 
         {/* ② パフォーマンス / Performance */}
