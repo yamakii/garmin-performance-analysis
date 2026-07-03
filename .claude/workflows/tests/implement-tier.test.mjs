@@ -13,8 +13,8 @@ const src = readFileSync(new URL('../implement-tier.js', import.meta.url), 'utf8
 const m = src.match(/\/\/ >>> testable\n([\s\S]*?)\n\s*\/\/ <<< testable/)
 assert.ok(m, 'testable block markers not found in implement-tier.js')
 // eslint-disable-next-line no-new-func
-const { normalizeArgs, mergeDecision } = new Function(
-  `${m[1]}\nreturn { normalizeArgs, mergeDecision }`,
+const { normalizeArgs, mergeDecision, pushCmd, mergeResult } = new Function(
+  `${m[1]}\nreturn { normalizeArgs, mergeDecision, pushCmd, mergeResult }`,
 )()
 
 test('normalizeArgs parses a JSON string (the #441 regression)', () => {
@@ -83,4 +83,32 @@ test('mergeDecision blocks on failed validation / ci / conflict', () => {
     }).ok,
     false,
   )
+})
+
+test('test_merge_failure_reason_uses_error: merge:false surfaces mg.error', () => {
+  const out = mergeResult('検証 PASS + ci-guard success + mergeable', { merged: false, error: 'boom' })
+  assert.equal(out.merged, false)
+  assert.ok(out.reason.includes('boom'), 'reason should surface the merge error, not the green sentence')
+  assert.equal(out.merge_sha, null)
+})
+
+test('test_merge_failure_reason_uses_error: falls back when no error given', () => {
+  const out = mergeResult('検証 PASS + ci-guard success + mergeable', { merged: false })
+  assert.equal(out.merged, false)
+  assert.equal(out.reason, 'merge_pull_request 失敗')
+})
+
+test('test_merge_success_keeps_green_reason: merge:true keeps decision reason', () => {
+  const out = mergeResult('検証 PASS + ci-guard success + mergeable', { merged: true, merge_sha: 'abc123' })
+  assert.equal(out.merged, true)
+  assert.equal(out.reason, '検証 PASS + ci-guard success + mergeable')
+  assert.equal(out.merge_sha, 'abc123')
+})
+
+test('pushCmd embeds a credential.helper feeding GITHUB_TOKEN', () => {
+  const cmd = pushCmd('/wt/path', 'feature/xyz')
+  assert.ok(cmd.includes('credential.helper'), 'push command must inject a credential helper')
+  assert.ok(cmd.includes('GITHUB_TOKEN'), 'helper must feed GITHUB_TOKEN')
+  assert.ok(cmd.includes('push -u origin feature/xyz'), 'push must target the branch')
+  assert.ok(!cmd.includes('${'), 'no unresolved template placeholders')
 })

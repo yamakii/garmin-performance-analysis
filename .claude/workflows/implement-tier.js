@@ -47,6 +47,29 @@ function mergeDecision(acc) {
   if (!s.pr_number) return { ok: false, reason: 'PR 未作成' }
   return { ok: true, reason: '検証 PASS + ci-guard success + mergeable' }
 }
+
+// Build the push command for the ship prompt. Worktrees have no credential
+// helper, so bare `git push https://github.com` fails with "could not read
+// Username" → pr_number=null → misleading "PR 未作成" escalation. Inject an
+// inline helper feeding GITHUB_TOKEN (token never touches the URL / process
+// args, so it stays out of `ps` output).
+function pushCmd(worktreePath, branch) {
+  return (
+    `git -C ${worktreePath} ` +
+    `-c credential.helper='!f(){ echo username=x-access-token; echo password=$GITHUB_TOKEN; };f' ` +
+    `push -u origin ${branch}`
+  )
+}
+
+// Resolve the Merge-stage outcome purely. On success the green decision reason
+// is kept; on failure the merge agent's actual `error` is surfaced (instead of
+// the stale success sentence) so the human reading the escalation sees the real
+// cause. Returns { merged, reason, merge_sha }.
+function mergeResult(decisionReason, mg) {
+  const merged = mg?.merged === true
+  const reason = merged ? decisionReason : (mg?.error ?? 'merge_pull_request 失敗')
+  return { merged, reason, merge_sha: mg?.merge_sha ?? null }
+}
 // <<< testable
 
 const ARGS = normalizeArgs(args)
@@ -110,7 +133,8 @@ function repoCtx() {
   return `owner="${OWNER}", repo="${REPO}"`
 }
 
-// mergeDecision / normalizeArgs are defined in the testable block near the top.
+// mergeDecision / normalizeArgs / pushCmd / mergeResult are defined in the
+// testable block near the top.
 
 // ── pipeline: each issue flows Implement → Validate → Ship → Merge independently ──
 const results = await pipeline(
@@ -159,7 +183,7 @@ const results = await pipeline(
     return agent(
       `次の worktree ブランチを ship してください（merge はまだしない）。\n` +
         `worktree_path=${m.worktree_path}, branch=${m.branch}, issue=#${issue.number}。\n\n` +
-        `1. git -C ${m.worktree_path} push -u origin ${m.branch}（必要なら origin/main へ rebase してから。コンフリクト時は mergeable=false で報告）。\n` +
+        `1. ${pushCmd(m.worktree_path, m.branch)}（必要なら origin/main へ rebase してから。コンフリクト時は mergeable=false で報告）。\n` +
         `2. mcp__github__create_pull_request(${repoCtx()}, head="${m.branch}", base="main", title=コミット要約, body="Closes #${issue.number}\\nPart of the tier")。\n` +
         `3. mcp__github__pull_request_read(method="get_check_runs", ${repoCtx()}, pullNumber=PR番号) を ci-guard が completed になるまでポーリング（数回・間隔を空けて）。\n` +
         `4. ci-guard の conclusion を ci_conclusion に（success/failure/pending）。web-backend/web-frontend/lint-and-test の skipped は無視。\n` +
@@ -180,7 +204,7 @@ const results = await pipeline(
         `この tool が未ロードなら ToolSearch('select:mcp__github__merge_pull_request') で読み込んでから呼ぶこと。\n` +
         `禁止: sub-LLM の spawn / Anthropic API の直叩き / Bash 等での権限システム迂回。マージは必ず上記 MCP tool 経由で行う。`,
       { label: `merge:#${issue.number}`, phase: 'Merge', model: 'sonnet', effort: 'low', schema: MERGE_SCHEMA }
-    ).then((mg) => ({ issue: issue.number, ...acc, merge: { merged: mg.merged, reason: decision.reason, merge_sha: mg.merge_sha ?? null } }))
+    ).then((mg) => ({ issue: issue.number, ...acc, merge: mergeResult(decision.reason, mg) }))
   }
 )
 
