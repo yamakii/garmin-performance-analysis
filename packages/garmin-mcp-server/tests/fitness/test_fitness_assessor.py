@@ -2,7 +2,7 @@
 
 import pytest
 
-from garmin_mcp.training_plan.fitness_assessor import FitnessAssessor
+from garmin_mcp.fitness.fitness_assessor import FitnessAssessor
 
 
 @pytest.mark.unit
@@ -103,3 +103,20 @@ class TestFitnessAssessor:
         assert summary.vdot > 0
         assert summary.pace_zones is not None
         assert summary.hr_zones is None
+
+
+@pytest.mark.unit
+class TestFitnessAssessorModuleLocation:
+    """Guard: FitnessAssessor lives in the neutral fitness module (#783)."""
+
+    def test_fitness_assessor_import_from_fitness(self):
+        """FitnessAssessor imports from garmin_mcp.fitness.fitness_assessor."""
+        from garmin_mcp.fitness.fitness_assessor import (
+            FitnessAssessor as FitnessAssessorFromFitness,
+        )
+
+        assert (
+            FitnessAssessorFromFitness.__module__
+            == "garmin_mcp.fitness.fitness_assessor"
+        )
+        assert FitnessAssessorFromFitness is FitnessAssessor

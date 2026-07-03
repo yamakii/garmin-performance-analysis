@@ -19,8 +19,8 @@ import logging
 from typing import Any
 
 from garmin_mcp.database.readers.base import BaseDBReader
+from garmin_mcp.fitness.vdot import VDOTCalculator
 from garmin_mcp.objective_fitness import rolling_max_curve, run_best_efforts
-from garmin_mcp.training_plan.vdot import VDOTCalculator
 
 logger = logging.getLogger(__name__)
 

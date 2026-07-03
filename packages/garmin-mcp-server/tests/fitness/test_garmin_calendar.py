@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from garmin_mcp.training_plan.garmin_calendar import GarminCalendarReader
+from garmin_mcp.fitness.garmin_calendar import GarminCalendarReader
 
 
 def _make_reader_with_calendar(

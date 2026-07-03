@@ -16,7 +16,7 @@ import duckdb
 import pytest
 
 from garmin_mcp.database.readers.race import RaceReader
-from garmin_mcp.training_plan.vdot import VDOTCalculator
+from garmin_mcp.fitness.vdot import VDOTCalculator
 
 # ---------------------------------------------------------------------------
 # VDOTCalculator prediction regression (unit)

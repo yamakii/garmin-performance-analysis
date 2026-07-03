@@ -4,12 +4,10 @@ from datetime import date
 
 import pytest
 
+from garmin_mcp.fitness.models import FitnessSummary, HRZones, PaceZones
 from garmin_mcp.training_plan.models import (
-    FitnessSummary,
     GoalType,
-    HRZones,
     IntervalDetail,
-    PaceZones,
     PeriodizationPhase,
     PlannedWorkout,
     TrainingPlan,

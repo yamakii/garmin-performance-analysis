@@ -6,9 +6,9 @@ from datetime import date
 
 import pytest
 
+from garmin_mcp.fitness.models import PaceZones
 from garmin_mcp.training_plan.models import (
     GoalType,
-    PaceZones,
     PeriodizationPhase,
     PlannedWorkout,
     TrainingPlan,

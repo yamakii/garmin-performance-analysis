@@ -2,9 +2,9 @@
 
 import pytest
 
+from garmin_mcp.fitness.models import PaceZones
 from garmin_mcp.training_plan.models import (
     IntervalDetail,
-    PaceZones,
     PeriodizationPhase,
     PlannedWorkout,
     WorkoutType,

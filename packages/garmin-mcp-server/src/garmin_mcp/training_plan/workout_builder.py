@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from garmin_mcp.training_plan.models import PaceZones, PlannedWorkout, WorkoutType
+from garmin_mcp.fitness.models import PaceZones
+from garmin_mcp.training_plan.models import PlannedWorkout, WorkoutType
 
 logger = logging.getLogger(__name__)
 

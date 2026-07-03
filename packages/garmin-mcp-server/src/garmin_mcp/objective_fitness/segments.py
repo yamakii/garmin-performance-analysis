@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from garmin_mcp.training_plan.vdot import VDOTCalculator
+from garmin_mcp.fitness.vdot import VDOTCalculator
 
 
 @dataclass(frozen=True)

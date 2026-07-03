@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from garmin_mcp.training_plan.vdot import VDOTCalculator
+from garmin_mcp.fitness.vdot import VDOTCalculator
 
 # Blend weights: the objective curve (real splits) outweighs the optimistic
 # VDOT estimate, but VDOT still contributes (Issue #716).

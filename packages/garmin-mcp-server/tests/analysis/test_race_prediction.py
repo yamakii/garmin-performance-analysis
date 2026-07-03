@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from garmin_mcp.analysis.race_prediction import predict_race_times
-from garmin_mcp.training_plan.vdot import VDOTCalculator
+from garmin_mcp.fitness.vdot import VDOTCalculator
 
 
 def _curve(source_distance_km: float, vdot: float) -> dict:
