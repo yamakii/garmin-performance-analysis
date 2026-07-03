@@ -32,6 +32,11 @@ Risks セクション（任意）:
 > 起動すれば `implement-tier` Workflow が **developer 実装 → L1/L2 検証 → push/PR → 条件付き
 > auto-merge** を一括で回す（Phase 2〜3 を内包）。**この場合、以下の Phase 1〜3 を手で行う必要はない。**
 >
+> **各ティア起動前は origin 同期（`git fetch origin` → behind なら `git merge --ff-only origin/main`）が必須**
+> — 初回ティアだけでなく **tier 間（前ティアの auto-merge 完了後、次ティア起動前）にも毎回**実行する。
+> fetch を怠ると次ティアの worktree が前ティアのマージ済み土台を含まないベースから切られ、add/add
+> コンフリクトの原因になる（手順は `.claude/skills/implement/SKILL.md` Step 3.5 が正本）。
+>
 > 以下の **手動 developer 委任は例外（フォールバック）**: L3（agent 定義変更）/ Workflow 不可環境 /
 > skip-level の docs・rules 微修正。**「単発だから手動」ではない**。手動経路を取るときのみ次の手順に従う。
 

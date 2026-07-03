@@ -64,6 +64,29 @@ Implementation Plan:
     #56 — already closed
 ```
 
+### Step 3.5: origin 同期（各ティア起動前・必須）
+
+ティアの Workflow を起動する**前に毎回**、メインセッションがローカル main を origin へ
+fast-forward only で同期する。`implement-tier.js` は git fetch もベース ref 指定もせず、worktree
+作成はハーネスの `isolation: 'worktree'` に委譲する。ローカルの remote-tracking ref は fetch
+しない限り古いままなので、**前ティアの auto-merge 完了後に fetch しないと、次ティアの developer が
+「前ティアのマージ済み土台を含まないベース」から分岐 → 土台を再実装 → 巨大 add/add コンフリクト**
+という事故が起きる（Epic #526 系で実際に発生）。
+
+```
+git fetch origin
+# behind なら:
+git merge --ff-only origin/main
+```
+
+- **初回ティア（Tier 0）起動前**にも実行する（プラン承認から時間が経ち origin が進んでいる場合に備える）。
+- **各ティア（Tier 1 以降）起動前**にも毎回実行する。前ティアの auto-merge が origin/main を進めるため、
+  次ティアの worktree が最新土台から切られるよう fetch + ff-only が必須。
+- `--ff-only` なので、ローカルに未コミット変更や独自コミットがあると**安全に失敗**（force しない・
+  データ消失なし）。失敗したら理由を報告し、ユーザーに手動同期を促す（自動 stash / reset はしない）。
+
+> Step 7a（全完了後の post-merge sync）はこの同期の**最終回**にあたる。手順は同一。
+
 ### Step 4: ティアを Workflow で実装（implement-tier.js）
 
 各ティアは **`implement-tier` Workflow** に委譲する。1回の呼び出しが
@@ -124,7 +147,8 @@ Workflow の返り値:
 
 1. マージ済み Issue を完了としてマーク
 2. 新たに unblock された Issue を次ティアとして特定
-3. 次ティアの Issue で Step 4（Workflow）を再実行
+3. **Step 3.5（origin 同期: fetch + ff-only）を再実行**してから、次ティアの Issue で Step 4（Workflow）を再実行。
+   前ティアの auto-merge 済み土台を次ティアの worktree ベースへ確実に取り込む
 
 > auto-merge により merge → 次ティア unblock が Workflow 内で完結するため、複数ティアを
 > 続けて流せる。escalated が残るティアのみ人間が介入する。
@@ -135,13 +159,9 @@ Workflow の返り値:
 
 auto-merge は PR を **origin/main にのみ**反映する。ローカル作業ツリーは自動更新されず
 origin より遅れて drift するため、**MCP サーバ・各種ツールはローカルから起動する以上、
-マージ済みでもローカルでは旧コードが走る**。最終報告の前に、メインセッションがローカル
-main を origin へ fast-forward only で同期する:
-
-```
-git fetch origin
-git merge --ff-only origin/main
-```
+マージ済みでもローカルでは旧コードが走る**。最終報告の前に、メインセッションが **Step 3.5 と
+同一手順**（`git fetch origin` → behind なら `git merge --ff-only origin/main`）でローカル main を
+origin へ同期する。これはティアごとの同期の**最終回**にあたる。
 
 - `--ff-only` なので、ローカルに未コミット変更や独自コミットがある場合は**安全に失敗**
   （force しない・データ消失なし）。失敗したら同期できなかった旨と理由を報告し、ユーザーに
