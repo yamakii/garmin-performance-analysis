@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **57 tools** (55 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **58 tools** (56 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -16,7 +16,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Export](#export) (1)
 - [Metadata](#metadata) (3)
 - [Splits](#splits) (5)
-- [Analysis](#analysis) (7)
+- [Analysis](#analysis) (8)
 - [Physiology](#physiology) (12)
 - [Performance](#performance) (4)
 - [Time Series](#time-series) (4)
@@ -167,6 +167,18 @@ Get analysis contract for a section type (output schema, evaluation thresholds, 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `section_type` | enum: `split`, `phase`, `efficiency`, `environment`, `summary` | **required** | Section type |
+
+### `find_unanalyzed_activities`
+
+CLI: `garmin-db analysis find-unanalyzed`
+
+Find running activities missing a complete set of section analyses in a date range. Returns [{activity_id, date, section_count}] for activities whose distinct section_analyses count is below required_sections (default 5), ordered by date ascending. Used to backfill analysis history for catch-up-ingested days.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `start_date` | string | **required** | Start date (inclusive) in YYYY-MM-DD format |
+| `end_date` | string | **required** | End date (inclusive) in YYYY-MM-DD format |
+| `required_sections` | integer | optional (default `5`) | Section count considered complete (default 5) |
 
 ### `analyze_performance_trends`
 

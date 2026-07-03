@@ -46,6 +46,17 @@ class GetAnalysisContractParams(BaseModel):
     section_type: _SECTION_TYPES = Field(description="Section type")
 
 
+class FindUnanalyzedActivitiesParams(BaseModel):
+    """Arguments for ``find_unanalyzed_activities``."""
+
+    start_date: str = Field(description="Start date (inclusive) in YYYY-MM-DD format")
+    end_date: str = Field(description="End date (inclusive) in YYYY-MM-DD format")
+    required_sections: int = Field(
+        default=5,
+        description="Section count considered complete (default 5)",
+    )
+
+
 class AnalyzePerformanceTrendsParams(BaseModel):
     """Arguments for ``analyze_performance_trends``."""
 
@@ -215,6 +226,16 @@ def _get_analysis_contract(
         return {"error": str(e)}
 
 
+def _find_unanalyzed_activities(
+    reader: GarminDBReader, p: FindUnanalyzedActivitiesParams
+) -> Any:
+    return reader.find_unanalyzed_activities(
+        start_date=p.start_date,
+        end_date=p.end_date,
+        required_sections=p.required_sections,
+    )
+
+
 def _analyze_performance_trends(
     reader: GarminDBReader, p: AnalyzePerformanceTrendsParams
 ) -> Any:
@@ -328,6 +349,20 @@ ANALYSIS_TOOLS: list[ToolDef] = [
         handler=_get_analysis_contract,
         cli_group="analysis",
         cli_name="contract",
+    ),
+    ToolDef(
+        name="find_unanalyzed_activities",
+        description=(
+            "Find running activities missing a complete set of section analyses "
+            "in a date range. Returns [{activity_id, date, section_count}] for "
+            "activities whose distinct section_analyses count is below "
+            "required_sections (default 5), ordered by date ascending. Used to "
+            "backfill analysis history for catch-up-ingested days."
+        ),
+        params=FindUnanalyzedActivitiesParams,
+        handler=_find_unanalyzed_activities,
+        cli_group="analysis",
+        cli_name="find-unanalyzed",
     ),
     ToolDef(
         name="analyze_performance_trends",

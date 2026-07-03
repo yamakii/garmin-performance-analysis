@@ -14,24 +14,49 @@ assert.ok(m, 'testable block markers not found in analyze-activity.js')
 // eslint-disable-next-line no-new-func
 const {
   normalizeArgs,
+  planBackfill,
   shouldAnalyze,
   sectionPlan,
   buildSectionPrompt,
   buildSummaryPrompt,
 } = new Function(
-  `${m[1]}\nreturn { normalizeArgs, shouldAnalyze, sectionPlan, buildSectionPrompt, buildSummaryPrompt }`,
+  `${m[1]}\nreturn { normalizeArgs, planBackfill, shouldAnalyze, sectionPlan, buildSectionPrompt, buildSummaryPrompt }`,
 )()
 
 test('normalizeArgs accepts a bare date string', () => {
-  assert.deepEqual(normalizeArgs('2025-10-09'), { date: '2025-10-09' })
+  assert.deepEqual(normalizeArgs('2025-10-09'), { date: '2025-10-09', dates: null })
 })
 
 test('normalizeArgs accepts an object and empty/undefined', () => {
-  assert.deepEqual(normalizeArgs({ date: '2025-10-09' }), { date: '2025-10-09' })
-  assert.deepEqual(normalizeArgs('{"date":"2025-10-09"}'), { date: '2025-10-09' })
-  assert.deepEqual(normalizeArgs(undefined), { date: null })
-  assert.deepEqual(normalizeArgs(''), { date: null })
-  assert.deepEqual(normalizeArgs({}), { date: null })
+  assert.deepEqual(normalizeArgs({ date: '2025-10-09' }), { date: '2025-10-09', dates: null })
+  assert.deepEqual(normalizeArgs('{"date":"2025-10-09"}'), { date: '2025-10-09', dates: null })
+  assert.deepEqual(normalizeArgs(undefined), { date: null, dates: null })
+  assert.deepEqual(normalizeArgs(''), { date: null, dates: null })
+  assert.deepEqual(normalizeArgs({}), { date: null, dates: null })
+})
+
+test('parseArgs が dates 配列を受理する', () => {
+  // backfill mode: a non-empty dates array is parsed and takes precedence.
+  assert.deepEqual(normalizeArgs('{"dates":["2026-06-01","2026-06-02"]}'), {
+    date: null,
+    dates: ['2026-06-01', '2026-06-02'],
+  })
+  assert.deepEqual(normalizeArgs({ dates: ['2026-06-01', '2026-06-02'] }), {
+    date: null,
+    dates: ['2026-06-01', '2026-06-02'],
+  })
+  // an empty dates array falls back to single-date (null) mode.
+  assert.deepEqual(normalizeArgs({ dates: [] }), { date: null, dates: null })
+})
+
+test('cap 超過時に残数を返す', () => {
+  const seven = ['d1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7']
+  const { toRun, remaining } = planBackfill(seven) // default cap = 5
+  assert.equal(toRun.length, 5)
+  assert.deepEqual(toRun, ['d1', 'd2', 'd3', 'd4', 'd5'])
+  assert.equal(remaining, 2)
+  // within cap: nothing deferred.
+  assert.deepEqual(planBackfill(['a', 'b']), { toRun: ['a', 'b'], remaining: 0 })
 })
 
 test('shouldAnalyze gates on has_run', () => {
