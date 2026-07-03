@@ -395,6 +395,12 @@ export interface SectionResult {
 
 export type SectionsResponse = Record<string, SectionResult>;
 
+/** One saved analysis batch (a run = rows sharing created_at), from #720. */
+export interface SectionVersion {
+  created_at: string;
+  section_types: string[];
+}
+
 // --- Section analysis data types (from Spike #198) ---
 
 export interface SectionMetadata {

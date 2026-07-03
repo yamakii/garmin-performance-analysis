@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import {
   useActivityDetail,
   useSections,
+  useSectionVersions,
   useTimeSeries,
   useTrack,
 } from "../api/hooks";
@@ -113,9 +114,14 @@ export default function ActivityDetail() {
   const [selectedMetrics, setSelectedMetrics] =
     useState<string[]>(DEFAULT_METRICS);
   const [hover, setHover] = useState<HoverState | null>(null);
+  // null = latest; otherwise pin sections to a past analysis batch's created_at.
+  const [selectedCreatedAt, setSelectedCreatedAt] = useState<string | null>(
+    null,
+  );
 
   const detailQuery = useActivityDetail(id);
-  const sectionsQuery = useSections(id);
+  const versionsQuery = useSectionVersions(id);
+  const sectionsQuery = useSections(id, selectedCreatedAt ?? undefined);
   // The time-series query only runs when at least one metric is selected;
   // otherwise it stays idle and the chart shows its empty-state placeholder.
   const timeSeriesQuery = useTimeSeries(id, selectedMetrics);
@@ -127,6 +133,20 @@ export default function ActivityDetail() {
   const fatalError = detailQuery.error ?? sectionsQuery.error;
   const detail = detailQuery.data ?? null;
   const sections = sectionsQuery.data ?? null;
+  const versions = versionsQuery.data ?? [];
+  // The selected batch index: 0 (latest) unless a past created_at is pinned.
+  const selectedVersionIndex =
+    selectedCreatedAt == null
+      ? 0
+      : Math.max(
+          0,
+          versions.findIndex((v) => v.created_at === selectedCreatedAt),
+        );
+
+  const handleVersionChange = (index: number) => {
+    // Index 0 is the newest batch → clear the pin so we always track "latest".
+    setSelectedCreatedAt(index === 0 ? null : versions[index].created_at);
+  };
 
   const hasMetrics = selectedMetrics.length > 0;
   const timeSeries = hasMetrics ? (timeSeriesQuery.data ?? null) : null;
@@ -244,6 +264,35 @@ export default function ActivityDetail() {
           <HeroHeader detail={detail} starRating={starRating} />
         </div>
       </div>
+
+      {/* Analysis version selector — shown only when a re-analysis exists (#720) */}
+      {versions.length > 1 && (
+        <div className="flex flex-wrap items-center gap-3">
+          <label
+            htmlFor="section-version-select"
+            className="text-sm font-medium text-slate-500"
+          >
+            分析版を選択:
+          </label>
+          <select
+            id="section-version-select"
+            value={selectedVersionIndex}
+            onChange={(e) => handleVersionChange(Number(e.target.value))}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-ink shadow-sm focus:border-ink focus:outline-none"
+          >
+            {versions.map((version, i) => (
+              <option key={version.created_at} value={i}>
+                {i === 0
+                  ? `${version.created_at}（最新）`
+                  : version.created_at}
+              </option>
+            ))}
+          </select>
+          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+            全{versions.length}版
+          </span>
+        </div>
+      )}
 
       {/* Sticky in-page table of contents (rendered sections only) */}
       <SectionNav items={navItems} />

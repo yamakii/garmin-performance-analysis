@@ -27,15 +27,16 @@ def _create_schema_only_db(db_path: Path) -> None:
 def _make_v11_db(db_path: Path) -> None:
     """Build a DB stuck at schema_version 11 with add_week_start_day pending.
 
-    Applies all migrations (→ 12), then rolls back the final one by dropping the
-    ``week_start_day`` column and deleting its schema_version row, reproducing
-    the production state that crashed ``get_athlete_profile``.
+    Applies all migrations, then rolls back to version 11 by dropping the
+    ``week_start_day`` column and deleting the schema_version rows above 11
+    (12 = add_week_start_day, 13 = drop_section_analysis_index), reproducing the
+    production state that crashed ``get_athlete_profile``.
     """
     _create_schema_only_db(db_path)
     MigrationRunner(db_path).run_pending()
     conn = duckdb.connect(str(db_path))
     conn.execute("ALTER TABLE athlete_profile DROP COLUMN week_start_day")
-    conn.execute("DELETE FROM schema_version WHERE version = 12")
+    conn.execute("DELETE FROM schema_version WHERE version IN (12, 13)")
     conn.close()
 
 
@@ -48,8 +49,8 @@ def test_server_startup_applies_migrations(tmp_path: Path) -> None:
 
     applied = worker._apply_startup_migrations(str(db_path))
 
-    assert applied == ["add_week_start_day"]
-    assert MigrationRunner(db_path).get_current_version() == 12
+    assert applied == ["add_week_start_day", "drop_section_analysis_index"]
+    assert MigrationRunner(db_path).get_current_version() == 13
 
 
 @pytest.mark.integration

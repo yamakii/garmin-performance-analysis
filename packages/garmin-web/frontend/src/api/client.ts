@@ -4,6 +4,7 @@ import type {
   GoalResponse,
   RaceReadiness,
   SectionsResponse,
+  SectionVersion,
   TimeSeriesResponse,
   TrackResponse,
   WeeklyReview,
@@ -110,10 +111,28 @@ export async function fetchTrack(
 
 export async function fetchSections(
   activityId: string | number,
+  createdAt?: string,
 ): Promise<SectionsResponse> {
-  const response = await fetch(`/api/activities/${activityId}/sections`);
+  const query = createdAt
+    ? `?created_at=${encodeURIComponent(createdAt)}`
+    : "";
+  const response = await fetch(
+    `/api/activities/${activityId}/sections${query}`,
+  );
   if (!response.ok) {
     throw new Error(`Failed to fetch sections: ${response.status}`);
   }
   return (await response.json()) as SectionsResponse;
+}
+
+export async function fetchSectionVersions(
+  activityId: string | number,
+): Promise<SectionVersion[]> {
+  const response = await fetch(
+    `/api/activities/${activityId}/sections/versions`,
+  );
+  if (!response.ok) {
+    throw new Error(`Failed to fetch section versions: ${response.status}`);
+  }
+  return (await response.json()) as SectionVersion[];
 }

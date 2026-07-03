@@ -694,11 +694,11 @@ class GarminDBWriter:
                     f"CREATE SEQUENCE IF NOT EXISTS seq_section_analyses_id START {start_value}"
                 )
 
-            # Create UNIQUE index on (activity_id, section_type) if it doesn't exist
-            conn.execute("""
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_activity_section
-                ON section_analyses(activity_id, section_type)
-            """)
+            # NOTE: section_analyses is append-only (issue #720). Each analysis
+            # run appends a new row per section_type; the reader returns the
+            # latest version (highest created_at) as canonical. No unique index
+            # on (activity_id, section_type) is created, and migration 13
+            # (drop_section_analysis_index) drops the legacy one from older DBs.
 
             # NOTE: The athlete-centric tables (athlete_profile, athlete_goals,
             # season_retrospectives, weekly_reviews) and their sequences are
@@ -732,10 +732,11 @@ class GarminDBWriter:
         agent_version: str = "1.0",
     ) -> bool:
         """
-        Insert or replace section analysis data with auto-generated metadata.
+        Append section analysis data with auto-generated metadata.
 
-        UPSERT logic: Deletes existing record for (activity_id, section_type)
-        before inserting new data to maintain 1:1 relationship.
+        Append-only (issue #720): each call inserts a new row, preserving prior
+        versions for the same (activity_id, section_type). Readers resolve the
+        canonical result as the latest version (highest created_at).
 
         Args:
             activity_id: Activity ID
@@ -754,8 +755,7 @@ class GarminDBWriter:
                 conn.begin()
 
                 try:
-                    # UPSERT Step 1: Get next analysis_id from sequence (thread-safe)
-                    # Note: ON CONFLICT時は使用されず、既存のanalysis_idが保持される
+                    # Get next analysis_id from sequence (thread-safe)
                     row = conn.execute(
                         "SELECT nextval('seq_section_analyses_id')"
                     ).fetchone()
@@ -789,17 +789,12 @@ class GarminDBWriter:
                         agent_name = metadata.get("analyst", agent_name)
                         agent_version = metadata.get("version", agent_version)
 
-                    # UPSERT Step 2: Insert or Update using ON CONFLICT
+                    # Append a new version row (no ON CONFLICT: issue #720).
                     conn.execute(
                         """
                         INSERT INTO section_analyses
                         (analysis_id, activity_id, activity_date, section_type, analysis_data, agent_name, agent_version)
                         VALUES (?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT (activity_id, section_type)
-                        DO UPDATE SET
-                            analysis_data = EXCLUDED.analysis_data,
-                            agent_name = EXCLUDED.agent_name,
-                            agent_version = EXCLUDED.agent_version
                     """,
                         [
                             next_analysis_id,
@@ -815,7 +810,7 @@ class GarminDBWriter:
                     # Commit transaction
                     conn.commit()
                     logger.info(
-                        f"Upserted {section_type} analysis for activity {activity_id} (replaced existing if any)"
+                        f"Appended {section_type} analysis version for activity {activity_id}"
                     )
                     return True
 
@@ -825,7 +820,7 @@ class GarminDBWriter:
                     raise e
 
         except Exception as e:
-            logger.error(f"Error upserting section analysis: {e}")
+            logger.error(f"Error appending section analysis: {e}")
             return False
 
     def insert_body_composition(self, date: str, weight_data: dict) -> bool:
