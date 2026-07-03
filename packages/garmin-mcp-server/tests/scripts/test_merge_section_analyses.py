@@ -8,6 +8,24 @@ import pytest
 
 from garmin_mcp.scripts.merge_section_analyses import merge_section_analyses
 
+# A weighted-axis breakdown that recomputes to 4.0 (matches the summary fixture's
+# stated "★★★★☆ 4.0/5.0"). Weighted-star sections (summary/phase/environment)
+# now require a breakdown (Issue #751 fail-closed), so the valid fixtures carry it.
+_BREAKDOWN_4_0: dict[str, dict] = {
+    "axis_scores": {
+        "effort": 4.0,
+        "performance": 4.0,
+        "efficiency": 4.0,
+        "execution": 4.0,
+    },
+    "weights": {
+        "effort": 0.4,
+        "performance": 0.3,
+        "efficiency": 0.2,
+        "execution": 0.1,
+    },
+}
+
 # Schema-valid analysis_data per section type. Guard 0 (schema re-validation,
 # Issue #708) rejects payloads missing required fields, so tests that exercise
 # the downstream semantic guards must start from schema-valid data.
@@ -22,9 +40,11 @@ _VALID_ANALYSIS_DATA: dict[str, dict] = {
         "run_evaluation": "メイン走行区間は安定したペースを維持しています。",
         "cooldown_evaluation": "クールダウンは十分な時間を確保できています。",
         "evaluation_criteria": "各フェーズのHRとペースで評価しています。",
+        "star_rating_breakdown": _BREAKDOWN_4_0,
     },
     "environment": {
         "environmental": "気温と湿度の影響は軽微で走行に大きな支障はありませんでした。",
+        "star_rating_breakdown": _BREAKDOWN_4_0,
     },
     "split": {
         "highlights": "全体的に安定したペースで走行できています。",
@@ -39,6 +59,7 @@ _VALID_ANALYSIS_DATA: dict[str, dict] = {
         "next_action": "次回はイージーペースで回復を優先しましょう。",
         "next_run_target": {"recommended_type": "easy"},
         "recommendations": "回復を最優先にしましょう。",
+        "star_rating_breakdown": _BREAKDOWN_4_0,
     },
 }
 
@@ -184,6 +205,44 @@ class TestMergeStarWeightingGuard:
         assert "summary" not in result["succeeded"]
         assert result["succeeded"] == ["split"]
         assert any("3.7" in err and "4.5" in err for err in result["errors"])
+        inserted = {
+            call.kwargs["section_type"]
+            for call in mock_writer.insert_section_analysis.call_args_list
+        }
+        assert inserted == {"split"}
+
+    @patch("garmin_mcp.scripts.merge_section_analyses.GarminDBReader")
+    @patch("garmin_mcp.scripts.merge_section_analyses.GarminDBWriter")
+    def test_merge_rejects_weighted_section_without_breakdown(
+        self, mock_writer_cls, mock_reader_cls, tmp_path
+    ):
+        # Issue #751: a weighted-star section (phase) whose payload omits
+        # star_rating_breakdown is schema-valid but fail-closed at the star
+        # weighting guard -> must not be inserted.
+        mock_reader_cls.return_value.physiology.get_form_baseline_trend.return_value = {
+            "success": False,
+            "metrics": {},
+        }
+        mock_writer = MagicMock()
+        mock_writer.insert_section_analysis.return_value = True
+        mock_writer_cls.return_value = mock_writer
+
+        # phase is schema-valid but carries no star_rating_breakdown.
+        phase = _valid_data("phase")
+        del phase["star_rating_breakdown"]
+        _write_section_json(tmp_path, "phase", phase)
+        # Another valid non-weighted section must still be inserted.
+        _write_section_json(tmp_path, "split", _valid_data("split"))
+
+        result = merge_section_analyses(tmp_path, keep=True)
+
+        assert "phase" in result["failed"]
+        assert "phase" not in result["succeeded"]
+        assert result["succeeded"] == ["split"]
+        assert any(
+            "phase" in err and "star_rating_breakdown" in err
+            for err in result["errors"]
+        )
         inserted = {
             call.kwargs["section_type"]
             for call in mock_writer.insert_section_analysis.call_args_list
