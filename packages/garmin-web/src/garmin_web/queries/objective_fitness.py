@@ -3,10 +3,10 @@
 from itertools import groupby
 
 import duckdb
+from garmin_mcp.fitness.vdot import VDOTCalculator
 from garmin_mcp.objective_fitness.critical_speed import quarterly_critical_speed
 from garmin_mcp.objective_fitness.curve import rolling_max_curve
 from garmin_mcp.objective_fitness.segments import run_best_efforts
-from garmin_mcp.training_plan.vdot import VDOTCalculator
 
 # Reference distance used to translate a VDOT difference into a pace gap. 5 km is
 # the canonical benchmark and lands the Epic #526 spike gap at ~63 s/km.
