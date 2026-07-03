@@ -47,11 +47,10 @@ function shouldAnalyze(fetch) {
   return !!(fetch && fetch.has_run)
 }
 
-// The 4 unified sections split into an independent group (run in parallel) and
-// one dependent section (summary, needs the other three for cross-section
-// consistency, derived from the shared CONTEXT). All four unified sections plus
-// `split` run in ONE parallel barrier — summary no longer waits for siblings, so
-// the previously-serial summary (the long pole) is hidden behind the barrier.
+// All four unified sections (efficiency/phase/environment/summary) plus `split`
+// run in ONE parallel barrier. summary derives cross-section consistency from the
+// shared CONTEXT (not from sibling outputs), so it does not wait for the other
+// sections — nothing here is serial.
 function sectionPlan() {
   return {
     unified: ['efficiency', 'phase', 'environment', 'summary'],

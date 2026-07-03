@@ -170,7 +170,7 @@ origin へ同期する。これはティアごとの同期の**最終回**にあ
   「ローカル main を `<sha>` に同期。live MCP に反映するには `mcp__garmin-db__reload_server()`
   （シグネチャ不変変更は zero-touch）。スキーマ形変更を含む場合のみ `/mcp` 再接続」と案内する。
 
-#### 7c. Cleanup（マージ済み worktree/ブランチの安全掃除）
+#### 7b. Cleanup（マージ済み worktree/ブランチの安全掃除）
 
 7a の同期後、メインセッションが `bash scripts/cleanup-merged-worktrees.sh` を実行する
 （dry-run ではなく実行）。auto-merge で残った `.claude/worktrees/*` と `feat/*`・`worktree-*`
@@ -181,7 +181,7 @@ origin へ同期する。これはティアごとの同期の**最終回**にあ
 - 実行後、スクリプトのサマリ（removed worktrees / deleted branches / skipped(理由付き)）を
   オーケストレータが報告する。
 
-#### 7b. 報告
+#### 7c. 報告
 
 全 Issue が完了したら報告:
 
