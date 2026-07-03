@@ -153,6 +153,85 @@ test_dry_run_makes_no_changes() {
     || fail "--dry-run must keep branch"
 }
 
+# A pid guaranteed not to be running (portable "dead holder").
+DEAD_PID=999999
+
+test_stale_locked_merged_worktree_removed() {
+  echo "test_stale_locked_merged_worktree_removed"
+  local work; work="$(setup_repo)"
+  add_worktree "$work" "feat-stale" "feat/stale"
+  merge_worktree_branch_into_origin_main "$work" ".claude/worktrees/feat-stale" "feat/stale"
+  # Lock with a reason carrying a dead holder pid → stale.
+  git -C "$work" worktree lock \
+    --reason "claude agent x (pid $DEAD_PID start 0)" ".claude/worktrees/feat-stale"
+
+  run_cleanup "$work" >/dev/null 2>&1
+
+  [ -d "$work/.claude/worktrees/feat-stale" ] && fail "stale locked worktree should be removed"
+  if git -C "$work" worktree list --porcelain | grep -q "feat-stale"; then
+    fail "stale locked worktree should be unregistered"
+  fi
+  if git -C "$work" branch --list "feat/stale" | grep -q "feat/stale"; then
+    fail "branch of stale locked worktree should be deleted"
+  fi
+}
+
+test_active_locked_worktree_kept() {
+  echo "test_active_locked_worktree_kept"
+  local work; work="$(setup_repo)"
+  add_worktree "$work" "feat-active" "feat/active"
+  merge_worktree_branch_into_origin_main "$work" ".claude/worktrees/feat-active" "feat/active"
+  # Spawn a live child and embed its pid in the lock reason → active.
+  sleep 300 &
+  local live_pid=$!
+  git -C "$work" worktree lock \
+    --reason "claude agent x (pid $live_pid start 0)" ".claude/worktrees/feat-active"
+
+  run_cleanup "$work" >/dev/null 2>&1
+
+  [ -d "$work/.claude/worktrees/feat-active" ] \
+    || fail "active locked worktree should be kept"
+  git -C "$work" worktree list --porcelain | grep -q "feat-active" \
+    || fail "active locked worktree should stay registered"
+
+  kill "$live_pid" 2>/dev/null
+  wait "$live_pid" 2>/dev/null
+}
+
+test_locked_without_pid_kept() {
+  echo "test_locked_without_pid_kept"
+  local work; work="$(setup_repo)"
+  add_worktree "$work" "feat-nopid" "feat/nopid"
+  merge_worktree_branch_into_origin_main "$work" ".claude/worktrees/feat-nopid" "feat/nopid"
+  # Lock reason without any pid → conservative keep.
+  git -C "$work" worktree lock --reason "manual hold" ".claude/worktrees/feat-nopid"
+
+  run_cleanup "$work" >/dev/null 2>&1
+
+  [ -d "$work/.claude/worktrees/feat-nopid" ] \
+    || fail "locked worktree without pid should be kept"
+  git -C "$work" worktree list --porcelain | grep -q "feat-nopid" \
+    || fail "locked worktree without pid should stay registered"
+}
+
+test_dry_run_does_not_unlock() {
+  echo "test_dry_run_does_not_unlock"
+  local work; work="$(setup_repo)"
+  add_worktree "$work" "feat-dryst" "feat/dryst"
+  merge_worktree_branch_into_origin_main "$work" ".claude/worktrees/feat-dryst" "feat/dryst"
+  git -C "$work" worktree lock \
+    --reason "claude agent x (pid $DEAD_PID start 0)" ".claude/worktrees/feat-dryst"
+
+  run_cleanup "$work" --dry-run >/dev/null 2>&1
+
+  [ -d "$work/.claude/worktrees/feat-dryst" ] \
+    || fail "--dry-run must not remove stale locked worktree"
+  # Still locked: porcelain should report the lock attribute.
+  if ! git -C "$work" worktree list --porcelain | grep -q "^locked"; then
+    fail "--dry-run must not unlock stale locked worktree"
+  fi
+}
+
 # ---------------------------------------------------------------------------
 
 test_removes_merged_clean_worktree
@@ -161,6 +240,10 @@ test_keeps_unmerged_branch
 test_deletes_merged_branch
 test_never_touches_main_or_current
 test_dry_run_makes_no_changes
+test_stale_locked_merged_worktree_removed
+test_active_locked_worktree_kept
+test_locked_without_pid_kept
+test_dry_run_does_not_unlock
 
 if [ "$failures" -ne 0 ]; then
   echo "test-cleanup-merged-worktrees: FAILED ($failures failure(s))" >&2

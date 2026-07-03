@@ -44,6 +44,22 @@ run() {
   "$@"
 }
 
+# Extract the holder pid embedded in a worktree lock reason, or empty if none.
+# Claude Code lock reasons look like: "claude agent <id> (pid <N> start <T>)".
+lock_reason_pid() {
+  printf '%s' "$1" | sed -n 's/.*pid \([0-9]\{1,\}\).*/\1/p'
+}
+
+# 0 if the lock reason carries a pid whose process is currently alive; 1 for a
+# dead pid or no extractable pid. Lock holders are same-user claude agents, so
+# `kill -0` succeeds on a live holder (no EPERM in practice) and a live lock is
+# correctly kept.
+lock_pid_alive() {
+  local reason="$1" pid
+  pid="$(lock_reason_pid "$reason")"
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+}
+
 # 1. Refresh remote refs (best-effort; keep going if offline).
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "[dry-run] would run: git fetch origin --prune"
@@ -61,8 +77,9 @@ current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
 #    Parse `git worktree list --porcelain`: blocks of "worktree <path>" / "branch <ref>".
 wt_path=""
 wt_branch=""
+wt_locked_reason=""
 process_worktree() {
-  local path="$1" branch="$2"
+  local path="$1" branch="$2" locked_reason="$3"
   [ -z "$path" ] && return 0
   # Only manage worktrees under .claude/worktrees/ (relative to repo root).
   case "$path" in
@@ -87,7 +104,31 @@ process_worktree() {
     return 0
   fi
   if git merge-base --is-ancestor "$short" origin/main 2>/dev/null; then
-    if run git worktree remove "$path"; then
+    if [ -n "$locked_reason" ]; then
+      # Merged & clean but locked: distinguish an active lock (holder alive →
+      # keep) from a stale lock (holder gone → reclaim). Conservative: keep
+      # whenever the holder may still be alive or no pid can be checked.
+      if lock_pid_alive "$locked_reason"; then
+        skipped+=("$path (locked active, kept)")
+        echo "warn: $path locked (holder pid alive), kept"
+      elif [ -n "$(lock_reason_pid "$locked_reason")" ]; then
+        # Pid extracted but the process is gone → stale lock, safe to reclaim.
+        if [ "$DRY_RUN" -eq 1 ]; then
+          echo "[dry-run] would clear stale lock and remove: $path"
+          skipped+=("$path (stale lock, would clear)")
+        elif git worktree unlock "$path" 2>/dev/null && git worktree remove "$path"; then
+          removed_worktrees+=("$path")
+          echo "info: $path stale lock cleared, removed"
+        else
+          skipped+=("$path (stale lock clear failed, kept)")
+          echo "warn: $path stale lock clear failed, kept"
+        fi
+      else
+        # Locked with no pid in the reason → cannot verify liveness, keep.
+        skipped+=("$path (locked unknown, kept)")
+        echo "warn: $path locked (no pid in reason), kept"
+      fi
+    elif run git worktree remove "$path"; then
       removed_worktrees+=("$path")
     else
       skipped+=("$path (remove failed, kept)")
@@ -103,15 +144,18 @@ while IFS= read -r line; do
   case "$line" in
     "worktree "*) wt_path="${line#worktree }" ;;
     "branch "*) wt_branch="${line#branch }" ;;
+    "locked "*) wt_locked_reason="${line#locked }" ;;
+    "locked") wt_locked_reason="(no reason)" ;;
     "")
-      process_worktree "$wt_path" "$wt_branch"
+      process_worktree "$wt_path" "$wt_branch" "$wt_locked_reason"
       wt_path=""
       wt_branch=""
+      wt_locked_reason=""
       ;;
   esac
 done < <(git worktree list --porcelain)
 # Flush the last block (porcelain output may not end with a blank line).
-process_worktree "$wt_path" "$wt_branch"
+process_worktree "$wt_path" "$wt_branch" "$wt_locked_reason"
 
 # 4. Delete local branches merged into origin/main (exclude main + current).
 #    `git branch -d` refuses unmerged branches, so this is safe by construction.
