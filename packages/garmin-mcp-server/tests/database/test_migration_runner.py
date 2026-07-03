@@ -17,15 +17,15 @@ def _make_v11_db(db_path: Path) -> None:
 
     Applies all migrations, then rolls back to version 11 by dropping the
     ``week_start_day`` column and deleting the schema_version rows for the
-    migrations above 11 (12 = add_week_start_day, 13 = drop_section_analysis_index),
-    simulating the real production state that crashed ``get_athlete_profile``
-    (issue #631).
+    migrations above 11 (12 = add_week_start_day, 13 = drop_section_analysis_index,
+    14 = add_sync_runs_table), simulating the real production state that crashed
+    ``get_athlete_profile`` (issue #631).
     """
     _create_schema_only_db(db_path)
     MigrationRunner(db_path).run_pending()
     conn = duckdb.connect(str(db_path))
     conn.execute("ALTER TABLE athlete_profile DROP COLUMN week_start_day")
-    conn.execute("DELETE FROM schema_version WHERE version IN (12, 13)")
+    conn.execute("DELETE FROM schema_version WHERE version IN (12, 13, 14)")
     conn.close()
 
 
@@ -92,10 +92,10 @@ class TestMigrationRunner:
         runner = MigrationRunner(db_path)
         applied = runner.run_pending()
 
-        assert len(applied) == 13
+        assert len(applied) == 14
         assert applied[0] == "phase0_power_prep"
-        assert applied[-1] == "drop_section_analysis_index"
-        assert runner.get_current_version() == 13
+        assert applied[-1] == "add_sync_runs_table"
+        assert runner.get_current_version() == 14
 
     def test_run_pending_skips_applied(self, db_path: Path) -> None:
         """Running twice applies nothing the second time."""
@@ -103,7 +103,7 @@ class TestMigrationRunner:
         first = runner.run_pending()
         second = runner.run_pending()
 
-        assert len(first) == 13
+        assert len(first) == 14
         assert second == []
 
     def test_run_pending_partial(self, db_path: Path) -> None:
@@ -130,7 +130,7 @@ class TestMigrationRunner:
         runner = MigrationRunner(db_path)
         applied = runner.run_pending()
 
-        assert runner.get_current_version() == 13
+        assert runner.get_current_version() == 14
         assert applied == [
             "remove_fk_constraints",
             "add_plan_versioning",
@@ -142,6 +142,7 @@ class TestMigrationRunner:
             "add_daily_wellness_table",
             "add_week_start_day",
             "drop_section_analysis_index",
+            "add_sync_runs_table",
         ]
 
     def test_migration_records_applied_at(self, db_path: Path) -> None:
@@ -155,7 +156,7 @@ class TestMigrationRunner:
         ).fetchall()
         conn.close()
 
-        assert len(rows) == 13
+        assert len(rows) == 14
         for version, name, applied_at in rows:
             assert applied_at is not None
             assert isinstance(name, str)
@@ -175,8 +176,12 @@ class TestEnsureSchemaCurrent:
 
         applied = ensure_schema_current(db_path)
 
-        assert applied == ["add_week_start_day", "drop_section_analysis_index"]
-        assert runner.get_current_version() == 13
+        assert applied == [
+            "add_week_start_day",
+            "drop_section_analysis_index",
+            "add_sync_runs_table",
+        ]
+        assert runner.get_current_version() == 14
 
         conn = duckdb.connect(str(db_path), read_only=True)
         columns = [
@@ -189,11 +194,11 @@ class TestEnsureSchemaCurrent:
     def test_ensure_schema_current_noop_when_uptodate(self, db_path: Path) -> None:
         """An up-to-date DB yields no applied migrations and re-runs cleanly."""
         MigrationRunner(db_path).run_pending()
-        assert MigrationRunner(db_path).get_current_version() == 13
+        assert MigrationRunner(db_path).get_current_version() == 14
 
         first = ensure_schema_current(db_path)
         second = ensure_schema_current(db_path)
 
         assert first == []
         assert second == []
-        assert MigrationRunner(db_path).get_current_version() == 13
+        assert MigrationRunner(db_path).get_current_version() == 14
