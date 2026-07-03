@@ -46,12 +46,28 @@ class GetLoadTrendParams(BaseModel):
     )
 
 
+class GetInjuryRiskParams(BaseModel):
+    """Arguments for ``get_injury_risk``."""
+
+    date: str | None = Field(
+        default=None,
+        description=(
+            "Reference day (YYYY-MM-DD) the injury-risk score is computed as of. "
+            "Defaults to the latest activity_date."
+        ),
+    )
+
+
 def _get_acwr(reader: GarminDBReader, p: GetAcwrParams) -> Any:
     return reader.get_acwr(p.end_date)
 
 
 def _get_load_trend(reader: GarminDBReader, p: GetLoadTrendParams) -> Any:
     return reader.get_load_trend(p.lookback_weeks, p.end_date)
+
+
+def _get_injury_risk(reader: GarminDBReader, p: GetInjuryRiskParams) -> Any:
+    return reader.get_injury_risk(p.date)
 
 
 LOAD_TOOLS: list[ToolDef] = [
@@ -85,6 +101,24 @@ LOAD_TOOLS: list[ToolDef] = [
         handler=_get_load_trend,
         cli_group="load",
         cli_name="trend",
+    ),
+    ToolDef(
+        name="get_injury_risk",
+        description=(
+            "Get a composite injury-risk score (0-100) with a low/moderate/high "
+            "band and a per-factor breakdown, live-computed (no LLM, no "
+            "backfill). Fuses four deterministic signals: ACWR (weight 0.40; "
+            "0.8-1.3 is the safe zone, 1.5 = 50%, 1.8+ = 100%), worsening "
+            "durability trend (0.25), personal wellness-baseline deviation of "
+            "HRV/readiness/RHR (0.20), and trailing-14-day form anomalies "
+            "(0.15). Missing signals are dropped and the rest renormalized; when "
+            "all are missing returns {insufficient_data: true}. Bands: <30 low / "
+            "30-60 moderate / >60 high. Defaults to the latest activity_date."
+        ),
+        params=GetInjuryRiskParams,
+        handler=_get_injury_risk,
+        cli_group="load",
+        cli_name="injury-risk",
     ),
 ]
 

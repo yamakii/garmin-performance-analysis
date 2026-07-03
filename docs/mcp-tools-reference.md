@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **56 tools** (54 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **57 tools** (55 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -23,7 +23,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Training Plan](#training-plan) (6)
 - [Athlete](#athlete) (4)
 - [Race](#race) (1)
-- [Training Load](#training-load) (2)
+- [Training Load](#training-load) (3)
 - [Durability](#durability) (2)
 - [strength](#strength) (2)
 - [ingest](#ingest) (1)
@@ -605,6 +605,16 @@ Get the weekly training-load and ACWR trend over the trailing lookback_weeks (de
 |-----------|------|----------|-------------|
 | `lookback_weeks` | integer | optional (default `12`) | Number of trailing weekly buckets to return (default: 12). |
 | `end_date` | string | optional | Reference day (YYYY-MM-DD) for the most recent week. Defaults to the latest activity_date. |
+
+### `get_injury_risk`
+
+CLI: `garmin-db load injury-risk`
+
+Get a composite injury-risk score (0-100) with a low/moderate/high band and a per-factor breakdown, live-computed (no LLM, no backfill). Fuses four deterministic signals: ACWR (weight 0.40; 0.8-1.3 is the safe zone, 1.5 = 50%, 1.8+ = 100%), worsening durability trend (0.25), personal wellness-baseline deviation of HRV/readiness/RHR (0.20), and trailing-14-day form anomalies (0.15). Missing signals are dropped and the rest renormalized; when all are missing returns {insufficient_data: true}. Bands: <30 low / 30-60 moderate / >60 high. Defaults to the latest activity_date.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `date` | string | optional | Reference day (YYYY-MM-DD) the injury-risk score is computed as of. Defaults to the latest activity_date. |
 
 ## Durability
 

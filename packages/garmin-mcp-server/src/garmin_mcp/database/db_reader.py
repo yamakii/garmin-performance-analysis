@@ -967,6 +967,107 @@ class GarminDBReader:
             start_date, end_date, min_distance_km
         )
 
+    # ========== Injury Risk Methods ==========
+
+    def get_injury_risk(self, date: str | None = None) -> dict[str, Any]:
+        """Get the composite injury-risk score as of ``date``.
+
+        Live-computes a 0-100 injury risk score by fusing four deterministic
+        signals -- ACWR, durability trend, personal wellness-baseline deviation
+        and trailing-14-day form anomalies -- via
+        ``garmin_mcp.analysis.injury_risk.compute_injury_risk`` (no LLM, no
+        backfill). Any signal that cannot be gathered is dropped and the rest are
+        renormalized; when all are missing the result is
+        ``{"insufficient_data": True}``.
+
+        Args:
+            date: ``YYYY-MM-DD`` reference day. ``None`` (default) uses the
+                latest ``activity_date``.
+
+        Returns:
+            ``json.dumps``-serializable dict with ``score`` (int 0-100),
+            ``band`` (``low`` / ``moderate`` / ``high``), ``factors`` and
+            ``available_inputs``; or ``{"insufficient_data": True}``.
+        """
+        from datetime import date as date_cls
+        from datetime import timedelta
+
+        from garmin_mcp.analysis.injury_risk import compute_injury_risk
+
+        if date is None:
+            latest = self.execute_read_query(
+                "SELECT MAX(activity_date) FROM activities", ()
+            )
+            date = str(latest[0][0]) if latest and latest[0][0] is not None else None
+
+        if date is None:
+            return {"insufficient_data": True}
+
+        acwr = self._safe_call(lambda: self.get_acwr(date))
+        wellness_deviation = self._safe_call(
+            lambda: self.get_wellness_baseline_deviation(date)
+        )
+
+        ref = date_cls.fromisoformat(date)
+        durability_start = str(ref - timedelta(days=90))
+        durability_trend = self._safe_call(
+            lambda: self.get_durability_trend(durability_start, date)
+        )
+
+        form_anomaly_count = self._form_anomaly_count(
+            str(ref - timedelta(days=13)), date
+        )
+
+        return compute_injury_risk(
+            acwr=acwr,
+            durability_trend=durability_trend,
+            wellness_deviation=wellness_deviation,
+            form_anomaly_count_14d=form_anomaly_count,
+        )
+
+    @staticmethod
+    def _safe_call(fn: Any) -> dict[str, Any] | None:
+        """Call ``fn`` returning its dict result, or ``None`` on any failure."""
+        try:
+            result = fn()
+        except Exception:
+            return None
+        return result if isinstance(result, dict) else None
+
+    def _form_anomaly_count(self, start_date: str, end_date: str) -> int | None:
+        """Total form anomalies across activities in ``[start_date, end_date]``.
+
+        Sums ``anomalies_detected`` from the per-activity form-anomaly detector
+        over every activity in the window. Returns ``None`` when the count cannot
+        be computed (e.g. raw activity details are unavailable), so the injury
+        risk score simply drops the form factor instead of failing.
+        """
+        try:
+            from garmin_mcp.rag.queries.form_anomaly_detector import (
+                FormAnomalyDetector,
+            )
+
+            rows = self.execute_read_query(
+                "SELECT activity_id FROM activities "
+                "WHERE activity_date >= ? AND activity_date <= ?",
+                (start_date, end_date),
+            )
+            if not rows:
+                return None
+
+            detector = FormAnomalyDetector()
+            total = 0
+            counted = False
+            for (activity_id,) in rows:
+                summary = detector.detect_form_anomalies_summary(activity_id)
+                detected = summary.get("anomalies_detected")
+                if detected is not None:
+                    total += int(detected)
+                    counted = True
+            return total if counted else None
+        except Exception:
+            return None
+
     # ========== Strength Session Methods ==========
 
     def get_strength_sessions(
