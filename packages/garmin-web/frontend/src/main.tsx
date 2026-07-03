@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
@@ -14,8 +15,22 @@ if (!rootElement) {
   throw new Error("Root element #root not found");
 }
 
+// One shared cache for the whole SPA: read-only endpoints stay fresh for a
+// minute (no refetch on navigation round-trips), and a single retry absorbs
+// transient network blips without hammering the API.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 60_000,
+      retry: 1,
+    },
+  },
+});
+
 createRoot(rootElement).render(
   <StrictMode>
-    <App />
+    <QueryClientProvider client={queryClient}>
+      <App />
+    </QueryClientProvider>
   </StrictMode>,
 );

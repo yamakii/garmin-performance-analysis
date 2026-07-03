@@ -1,6 +1,6 @@
-import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { render, screen } from "../test/utils";
 import Dashboard from "./Dashboard";
 
 // echarts requires a real canvas; mock the modular wrapper out for jsdom.
