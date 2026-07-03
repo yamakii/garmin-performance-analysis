@@ -4,11 +4,32 @@
 # whole-package, mirroring .github/workflows/ci.yml exactly.
 #
 # Use this before completing Phase 2b and before any `--no-verify` commit.
-#   scripts/ci-check.sh  → exit 0 (all pass) / exit 1 (something failed)
+#   scripts/ci-check.sh              → runs unit + integration (CI-identical)
+#   scripts/ci-check.sh --unit-only  → skips integration (faster, for iteration)
+# exit 0 (all pass) / exit 1 (something failed)
+#
+# The default pytest marker is `unit or integration`, exactly mirroring the CI
+# `lint-and-test` job (.github/workflows/ci.yml). This keeps ci-check.sh a
+# single source of CI parity — no need to run integration separately.
 #
 # `-e` is intentionally NOT set: we want to run every step and aggregate
 # failures so a single run surfaces all problems.
 set -uo pipefail
+
+# --- flag parsing ---
+PYTEST_MARKER="unit or integration"
+for arg in "$@"; do
+  case "$arg" in
+    --unit-only)
+      PYTEST_MARKER="unit"
+      ;;
+    *)
+      echo "unknown argument: $arg" >&2
+      echo "usage: ci-check.sh [--unit-only]" >&2
+      exit 2
+      ;;
+  esac
+done
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVER="$ROOT/packages/garmin-mcp-server"
@@ -44,7 +65,7 @@ run uv sync --directory "$SERVER" --extra dev
 run uv run --directory "$SERVER" ruff check .
 run uv run --directory "$SERVER" black --check .
 run uv run --directory "$SERVER" mypy .
-run uv run --directory "$SERVER" pytest -m unit --tb=short -n 4 --maxfail=5 \
+run uv run --directory "$SERVER" pytest -m "$PYTEST_MARKER" --tb=short -n 4 --maxfail=5 \
   --cov=garmin_mcp --cov-report=term-missing --cov-fail-under=60
 
 # --- web checks: only when packages/garmin-web/ changed vs main ---

@@ -93,6 +93,17 @@ if [ -x scripts/tests/test-cleanup-merged-worktrees.sh ] || [ -e scripts/tests/t
   fi
 fi
 
+# Behavioral self-test for ci-check.sh flag parsing (--unit-only). Uses PATH
+# shims so it never runs the real (slow) checks; hermetic and CI-safe.
+if [ -e scripts/tests/test-ci-check-flags.sh ]; then
+  if bash scripts/tests/test-ci-check-flags.sh; then
+    echo "ok (script test): ci-check-flags"
+  else
+    echo "FAIL (script test): ci-check-flags" >&2
+    status=1
+  fi
+fi
+
 if [ "$status" -ne 0 ]; then
   echo "check-claude-scripts: FAILED" >&2
 else
