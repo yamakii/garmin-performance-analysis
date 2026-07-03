@@ -158,7 +158,7 @@ class TestPrefetchActivityContext:
         return MagicMock()
 
     def _setup_basic_queries(self, mock_conn: MagicMock) -> None:
-        """Set up mock return values for all 6 queries."""
+        """Set up mock return values for all 5 queries."""
         import datetime
 
         mock_conn.execute.return_value.fetchone.side_effect = [
@@ -181,13 +181,11 @@ class TestPrefetchActivityContext:
                 5.0,  # zone4_percentage
                 2.5,  # zone5_percentage
             ),
-            # Query 3: planned_workout
-            None,
-            # Query 4: elevation
+            # Query 3: elevation
             # (total_gain, total_loss, split_count,
             #  max_split_change, max_split_gain, max_split_loss)
             (12.8, 11.2, 8, 4.5, 2.5, 2.0),
-            # Query 5: form_evaluations (C2)
+            # Query 4: form_evaluations (C2)
             (
                 "★★★★★",  # gct_star_rating
                 4.8,  # gct_score
@@ -199,7 +197,7 @@ class TestPrefetchActivityContext:
                 4.3,  # overall_score
                 "★★★★☆",  # overall_star_rating
             ),
-            # Query 6: performance_trends (C3)
+            # Query 5: performance_trends (C3)
             (
                 0.017,
                 2.5,
@@ -261,8 +259,9 @@ class TestPrefetchActivityContext:
         assert result["form_scores"]["overall_score"] == 4.3
         assert result["form_scores"]["overall_star_rating"] == "★★★★☆"
 
-        # plan_achievement: None when no planned workout (Issue #671)
-        assert result["plan_achievement"] is None
+        # Plan vs actual removed (Issue #785): no plan keys in the bundle.
+        assert "plan_achievement" not in result
+        assert "planned_workout" not in result
 
         # C3: phase_structure
         assert result["phase_structure"]["pace_consistency"] == 0.017
@@ -271,6 +270,29 @@ class TestPrefetchActivityContext:
         assert result["phase_structure"]["run"]["avg_hr"] == 155.0
         assert "recovery" not in result["phase_structure"]
         assert result["phase_structure"]["cooldown"]["avg_pace"] == "7:12/km"
+
+    @patch("garmin_mcp.scripts.prefetch_activity_context.get_db_path")
+    @patch("garmin_mcp.scripts.prefetch_activity_context.get_connection")
+    def test_prefetch_bundle_has_no_plan_keys(
+        self, mock_get_conn: MagicMock, mock_get_db: MagicMock, mock_conn: MagicMock
+    ) -> None:
+        """Plan vs actual removed (Issue #785): bundle has no plan_* keys.
+
+        phase_category / next_run_target still resolve from training_type with
+        planned_workout implicitly None.
+        """
+        mock_get_db.return_value = "/fake/db.duckdb"
+        mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
+        self._setup_basic_queries(mock_conn)
+
+        result = prefetch_activity_context(12345)
+
+        assert "planned_workout" not in result
+        assert "plan_achievement" not in result
+        # Generic derivations still work with no plan.
+        assert result["phase_category"] == "low_moderate"
+        assert result["next_run_target"]["recommended_type"] == "easy"
 
     @patch("garmin_mcp.scripts.prefetch_activity_context.get_db_path")
     @patch("garmin_mcp.scripts.prefetch_activity_context.get_connection")
@@ -301,7 +323,6 @@ class TestPrefetchActivityContext:
         mock_conn.execute.return_value.fetchone.side_effect = [
             (datetime.date(2026, 2, 16), 7.8, 84, 4.0, "NW", 148, 330.0),  # activity
             None,  # hr_efficiency missing
-            None,  # planned_workout
             (None, None, 0, None, None, None),  # elevation (no splits)
             None,  # form_evaluations missing
             None,  # performance_trends missing
@@ -333,7 +354,7 @@ class TestPrefetchActivityContext:
             nonlocal call_count
             call_count += 1
             mock_result = MagicMock()
-            if call_count == 1:
+            if call_count == 1:  # activity metadata
                 mock_result.fetchone.return_value = (
                     datetime.date(2026, 2, 16),
                     7.8,
@@ -343,15 +364,15 @@ class TestPrefetchActivityContext:
                     148,
                     330.0,
                 )
-            elif call_count == 2 or call_count == 3:
+            elif call_count == 2:  # hr_efficiency missing
                 mock_result.fetchone.return_value = None
-            elif call_count == 4:
+            elif call_count == 3:  # elevation
                 mock_result.fetchone.return_value = (None, None, 0, None, None, None)
-            elif call_count == 5:
+            elif call_count == 4:  # form_evaluations table missing
                 raise duckdb.CatalogException(
                     "Table with name form_evaluations does not exist"
                 )
-            elif call_count == 6:
+            elif call_count == 5:  # performance_trends table missing
                 raise duckdb.CatalogException(
                     "Table with name performance_trends does not exist"
                 )
@@ -363,54 +384,6 @@ class TestPrefetchActivityContext:
 
         assert result["form_scores"] is None
         assert result["phase_structure"] is None
-        assert "error" not in result
-
-    @patch("garmin_mcp.scripts.prefetch_activity_context.get_db_path")
-    @patch("garmin_mcp.scripts.prefetch_activity_context.get_connection")
-    def test_prefetch_missing_table_leaves_field_none(
-        self, mock_get_conn: MagicMock, mock_get_db: MagicMock, mock_conn: MagicMock
-    ) -> None:
-        """planned_workouts table missing -> planned_workout is None, no error."""
-        import datetime
-
-        mock_get_db.return_value = "/fake/db.duckdb"
-        mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
-        mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
-
-        call_count = 0
-
-        def side_effect(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            mock_result = MagicMock()
-            if call_count == 1:  # activity metadata
-                mock_result.fetchone.return_value = (
-                    datetime.date(2026, 2, 16),
-                    7.8,
-                    84,
-                    4.0,
-                    "NW",
-                    148,
-                    330.0,
-                )
-            elif call_count == 2:  # hr_efficiency
-                mock_result.fetchone.return_value = None
-            elif call_count == 3:  # planned_workouts table missing
-                raise duckdb.CatalogException(
-                    "Table with name planned_workouts does not exist"
-                )
-            elif call_count == 4:  # elevation
-                mock_result.fetchone.return_value = (None, None, 0, None, None, None)
-            else:  # form_evaluations / performance_trends
-                mock_result.fetchone.return_value = None
-            return mock_result
-
-        mock_conn.execute.side_effect = side_effect
-
-        result = prefetch_activity_context(12345)
-
-        assert result["planned_workout"] is None
-        assert result["plan_achievement"] is None
         assert "error" not in result
 
     @patch("garmin_mcp.scripts.prefetch_activity_context.get_db_path")
@@ -441,9 +414,9 @@ class TestPrefetchActivityContext:
                     148,
                     330.0,
                 )
-            elif call_count == 4:  # elevation
+            elif call_count == 3:  # elevation
                 mock_result.fetchone.return_value = (None, None, 0, None, None, None)
-            elif call_count == 5:  # form_evaluations query is broken
+            elif call_count == 4:  # form_evaluations query is broken
                 raise duckdb.BinderException(
                     'Referenced column "gct_star_rating" not found'
                 )
@@ -461,7 +434,7 @@ class TestPrefetchActivityContext:
     def test_prefetch_full_context_regression(
         self, mock_get_conn: MagicMock, mock_get_db: MagicMock, mock_conn: MagicMock
     ) -> None:
-        """All tables present -> every key (incl. planned_workout) stays filled."""
+        """All tables present -> every key stays filled (no plan keys)."""
         import datetime
 
         mock_get_db.return_value = "/fake/db.duckdb"
@@ -486,23 +459,11 @@ class TestPrefetchActivityContext:
                 5.0,
                 2.5,
             ),
-            # Query 3: planned_workout row
-            (
-                "easy_run",  # workout_type
-                "イージーラン",  # description_ja
-                120,  # target_hr_low
-                145,  # target_hr_high
-                390.0,  # target_pace_low
-                420.0,  # target_pace_high
-                8.0,  # target_distance_km
-                50,  # target_duration_minutes
-                "plan-2026-02",  # plan_id
-            ),
-            # Query 4: elevation
+            # Query 3: elevation
             (12.8, 11.2, 8, 4.5, 2.5, 2.0),
-            # Query 5: form_evaluations
+            # Query 4: form_evaluations
             ("★★★★★", 4.8, "★★★★☆", 4.0, "★★★★☆", 4.0, 92.5, 4.3, "★★★★☆"),
-            # Query 6: performance_trends
+            # Query 5: performance_trends
             (
                 0.017,
                 2.5,
@@ -526,21 +487,9 @@ class TestPrefetchActivityContext:
         result = prefetch_activity_context(12345)
 
         assert "error" not in result
-        # planned_workout filled from the planned_workouts row
-        assert result["planned_workout"] == {
-            "workout_type": "easy_run",
-            "description_ja": "イージーラン",
-            "target_hr_low": 120,
-            "target_hr_high": 145,
-            "target_pace_low": 390.0,
-            "target_pace_high": 420.0,
-            "target_distance_km": 8.0,
-            "target_duration_minutes": 50,
-            "plan_id": "plan-2026-02",
-        }
-        # plan_achievement derived (non-null) when a plan exists
-        assert result["plan_achievement"] is not None
-        assert result["plan_achievement"]["workout_type"] == "easy_run"
+        # Plan vs actual removed (Issue #785): no plan keys in the bundle.
+        assert "planned_workout" not in result
+        assert "plan_achievement" not in result
         # form_scores and phase_structure stay filled as before
         assert result["form_scores"]["gct"]["score"] == 4.8
         assert result["form_scores"]["overall_star_rating"] == "★★★★☆"

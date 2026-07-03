@@ -4,7 +4,6 @@ import pytest
 
 from garmin_mcp.analysis.derivations import (
     compute_next_run_target,
-    compute_plan_achievement,
     compute_weighted_star_rating,
     map_environment_category,
     map_phase_category,
@@ -38,88 +37,6 @@ def test_compute_weighted_star_rating_key_mismatch_raises() -> None:
             {"effort": 4.0, "performance": 3.0, "efficiency": 5.0, "execution": 2.0},
             {"effort": 0.4, "performance": 0.3, "efficiency": 0.3},
         )
-
-
-_EASY_PLAN = {
-    "workout_type": "easy",
-    "description_ja": "イージーラン",
-    "target_hr_low": 120,
-    "target_hr_high": 145,
-    "target_pace_low": 390,
-    "target_pace_high": 420,
-}
-
-
-@pytest.mark.unit
-def test_plan_achievement_hr_and_pace_achieved() -> None:
-    result = compute_plan_achievement(
-        _EASY_PLAN, actual_avg_hr=142, actual_avg_pace_s_per_km=405
-    )
-
-    assert result is not None
-    assert result["hr_achieved"] is True
-    assert result["pace_achieved"] is True
-    assert result["targets"]["hr"] == "120-145bpm"
-    assert result["actuals"]["pace"] == "6:45/km"
-    assert result["description_ja"] == "イージーラン"
-
-
-@pytest.mark.unit
-def test_plan_achievement_pace_missed() -> None:
-    result = compute_plan_achievement(
-        _EASY_PLAN, actual_avg_hr=142, actual_avg_pace_s_per_km=360
-    )
-
-    assert result is not None
-    assert result["pace_achieved"] is False
-    assert result["hr_achieved"] is True
-
-
-@pytest.mark.unit
-def test_plan_achievement_none_when_no_plan() -> None:
-    assert (
-        compute_plan_achievement(None, actual_avg_hr=142, actual_avg_pace_s_per_km=405)
-        is None
-    )
-
-
-@pytest.mark.unit
-def test_plan_achievement_description_ja_fallback() -> None:
-    plan = {
-        "workout_type": "tempo",
-        "description_ja": None,
-        "target_hr_low": 150,
-        "target_hr_high": 165,
-        "target_pace_low": 300,
-        "target_pace_high": 320,
-    }
-    result = compute_plan_achievement(
-        plan, actual_avg_hr=158, actual_avg_pace_s_per_km=310
-    )
-
-    assert result is not None
-    assert result["description_ja"] == "テンポ走"
-
-
-@pytest.mark.unit
-def test_plan_achievement_null_hr_target() -> None:
-    plan = {
-        "workout_type": "easy",
-        "description_ja": "イージーラン",
-        "target_hr_low": None,
-        "target_hr_high": None,
-        "target_pace_low": 390,
-        "target_pace_high": 420,
-    }
-    result = compute_plan_achievement(
-        plan, actual_avg_hr=142, actual_avg_pace_s_per_km=405
-    )
-
-    assert result is not None
-    assert result["hr_achieved"] is None
-    assert result["pace_achieved"] is True
-    # No HR target -> no formatted hr target string.
-    assert "hr" not in result["targets"]
 
 
 # --- compute_next_run_target (Issue #672) ---
@@ -196,6 +113,27 @@ def test_next_target_insufficient_data() -> None:
     assert result["recommended_type"] == "interval"
 
 
+@pytest.mark.unit
+def test_next_run_target_works_without_plan() -> None:
+    """With plan vs actual removed (Issue #785), planned_workout is always None.
+
+    The helper must still return a valid target dict driven by training_type.
+    """
+    result = compute_next_run_target(
+        training_type="aerobic_base",
+        planned_workout=None,
+        vo2_max=None,
+        lactate_threshold=None,
+        avg_hr=144,
+        avg_pace_s_per_km=405,
+    )
+
+    assert result["recommended_type"] == "easy"
+    assert result["target_hr_low"] == 139
+    assert result["target_hr_high"] == 149
+    assert "insufficient_data" not in result
+
+
 # --- map_phase_category (Issue #673) ---
 
 
@@ -225,6 +163,22 @@ def test_phase_category_interval() -> None:
 def test_phase_category_null_default() -> None:
     result = map_phase_category(training_type=None, planned_workout=None)
     assert result == "tempo_threshold"
+
+
+@pytest.mark.unit
+def test_phase_category_works_without_plan() -> None:
+    """Plan vs actual removed (Issue #785): planned_workout is always None.
+
+    map_phase_category must still classify from training_type alone.
+    """
+    assert (
+        map_phase_category(training_type="tempo", planned_workout=None)
+        == "tempo_threshold"
+    )
+    assert (
+        map_phase_category(training_type="recovery", planned_workout=None)
+        == "low_moderate"
+    )
 
 
 # --- map_environment_category (Issue #673) ---

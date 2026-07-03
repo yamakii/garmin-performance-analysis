@@ -18,44 +18,6 @@ FIXTURE_ACTIVITY_ID = 12345678901
 FIXTURE_ACTIVITY_DATE = "2025-01-15"
 
 
-def _insert_planned_workout(db_path: Path) -> None:
-    """Seed an active training plan + planned workout for the fixture date.
-
-    The verification fixture has no plan; this lets prefetch resolve a
-    planned_workout so plan_achievement is computed deterministically with
-    actuals derived from the fixture activity's avg_heart_rate (Issue #671).
-    """
-    conn = duckdb.connect(str(db_path))
-    conn.execute(
-        """
-        INSERT INTO training_plans (
-            plan_id, version, goal_type, vdot, pace_zones_json, total_weeks,
-            start_date, weekly_volume_start_km, weekly_volume_peak_km,
-            runs_per_week, status
-        ) VALUES (
-            'test-plan', 1, 'race', 50.0, '{}', 12,
-            ?::DATE, 30.0, 50.0, 4, 'active'
-        )
-        """,
-        [FIXTURE_ACTIVITY_DATE],
-    )
-    conn.execute(
-        """
-        INSERT INTO planned_workouts (
-            workout_id, plan_id, version, week_number, day_of_week,
-            workout_date, workout_type, phase, description_ja,
-            target_hr_low, target_hr_high, target_pace_low, target_pace_high
-        ) VALUES (
-            'test-workout', 'test-plan', 1, 1, 3,
-            ?::DATE, 'easy', 'base', 'イージーラン',
-            120, 160, 300, 360
-        )
-        """,
-        [FIXTURE_ACTIVITY_DATE],
-    )
-    conn.close()
-
-
 def _patch_db_path(monkeypatch: pytest.MonkeyPatch, verification_db_path: Path) -> None:
     """Point prefetch_activity_context.get_db_path() at the verification DB.
 
@@ -131,7 +93,6 @@ EXISTING_KEYS = {
     "zone4_threshold_work",
     "form_scores",
     "phase_structure",
-    "planned_workout",
 }
 
 
@@ -203,41 +164,26 @@ class TestPrefetchBundleExpansion:
         assert result["activity_id"] == FIXTURE_ACTIVITY_ID
         assert result["training_type"] == "aerobic_base"
 
-    def test_prefetch_emits_plan_achievement_key(
+    def test_prefetch_integration_no_plan(
         self, verification_db_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """plan_achievement is a deterministic dict when a plan exists.
+        """Plan vs actual removed (Issue #785): no plan keys, still serializable.
 
-        With an active plan on the fixture date, prefetch resolves the planned
-        workout and computes plan_achievement with actuals derived from the
-        fixture activity's avg_heart_rate (148 bpm) — no LLM involved.
+        The bundle must not carry planned_workout / plan_achievement, and the
+        generic derivations (phase_category / next_run_target) still resolve
+        from training_type with no plan. The whole bundle stays JSON-safe.
         """
-        _insert_planned_workout(verification_db_path)
         _patch_db_path(monkeypatch, verification_db_path)
 
         result = prefetch_activity_context(FIXTURE_ACTIVITY_ID)
 
-        assert "plan_achievement" in result
-        pa = result["plan_achievement"]
-        assert isinstance(pa, dict)
-        assert pa["workout_type"] == "easy"
-        assert pa["description_ja"] == "イージーラン"
-        # actuals carry the activity's avg_heart_rate deterministically.
-        assert pa["actuals"]["hr"] == "148bpm"
-        # 148 bpm within 120-160 target -> achieved.
-        assert pa["hr_achieved"] is True
-        assert pa["pace_achieved"] is True
-
-    def test_prefetch_plan_achievement_none_without_plan(
-        self, verification_db_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """plan_achievement is None when the fixture has no planned workout."""
-        _patch_db_path(monkeypatch, verification_db_path)
-
-        result = prefetch_activity_context(FIXTURE_ACTIVITY_ID)
-
-        assert "plan_achievement" in result
-        assert result["plan_achievement"] is None
+        assert "planned_workout" not in result
+        assert "plan_achievement" not in result
+        # Generic derivations still resolve from training_type alone.
+        assert result["phase_category"] == "low_moderate"
+        assert result["next_run_target"]["recommended_type"] == "easy"
+        # The whole bundle stays JSON-serializable with no custom encoder.
+        json.dumps(result, ensure_ascii=False)
 
     def test_prefetch_emits_next_run_target_key(
         self, verification_db_path: Path, monkeypatch: pytest.MonkeyPatch

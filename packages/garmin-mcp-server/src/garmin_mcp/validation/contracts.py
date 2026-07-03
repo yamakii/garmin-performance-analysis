@@ -453,11 +453,6 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "type": "string",
                 "description": "Max 2 in structured markdown",
             },
-            "plan_achievement": {
-                "type": "object",
-                "description": "Plan vs actual (if planned_workout exists)",
-                "optional": True,
-            },
         },
         "evaluation_policy": {
             "star_rating": {
@@ -519,16 +514,6 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                     "Each recommendation must include measurable target",
                 ],
             },
-            "plan_achievement": {
-                "weights": {"pace": 0.40, "hr": 0.30, "distance": 0.30},
-                "scale": [
-                    {"stars": 5, "min_pct": 95},
-                    {"stars": 4, "min_pct": 85},
-                    {"stars": 3, "min_pct": 75},
-                    {"stars": 2, "min_pct": 60},
-                    {"stars": 1, "min_pct": 0},
-                ],
-            },
             "training_type_criteria": {
                 "base": {
                     "hr_zone_1_2": ">=80%",
@@ -565,8 +550,6 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "Maximum recommendations per recommendations.max_count",
             "Follow recommendations.format for structured markdown",
             "Easy run suggestions use HR range, not pace",
-            "Include plan_achievement only when planned_workout exists",
-            "Use plan_achievement.weights and scale for achievement scoring",
             "Use summary_structure for summary text format",
             "Use next_run_target_variants[type] for target calculation",
         ],
