@@ -157,3 +157,9 @@ Common signs you need to add a host:
   the firewall disabled — debugging only; it removes the exfiltration protection.
 - The container fails to start if the firewall cannot be installed (fail-closed):
   it will not run with an open network unless you explicitly set `SANDBOX_FIREWALL=0`.
+- **GitHub API rate limit**: the firewall's `api.github.com/meta` fetch (which builds
+  the GitHub allowlist) is authenticated with `GITHUB_TOKEN` when present, raising the
+  limit from the unauthenticated 60/hr per IP to 5000/hr. Without a token, a spent 60/hr
+  budget makes startup fail-close (`failed to fetch usable GitHub IP ranges`) until the
+  window resets — set `GITHUB_TOKEN` (`run.sh` forwards it, deriving from `gh auth token`)
+  or wait for the reset.
