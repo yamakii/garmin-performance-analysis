@@ -92,8 +92,9 @@ doc-sync 漏れ・他モジュール破壊・型エラーを見逃す（per-file
 uv run --directory {worktree_path} bash scripts/ci-check.sh
 ```
 
-これは whole-package の `pytest -m unit ... --cov-fail-under=60` + `black --check .` + `mypy .`
-+ doc-guard テスト（web 変更時は web-backend/web-frontend）を実行する。exit 0 になるまで修正してから
+これは whole-package の `pytest -m "unit or integration" ... --cov-fail-under=60` + `black --check .` + `mypy .`
++ doc-guard テスト（web 変更時は web-backend/web-frontend）を実行する（integration も既定で回るため CI と対称。
+反復時は `--unit-only` で integration をスキップ可）。exit 0 になるまで修正してから
 Step 5（commit）に進む。`.claude/` / `docs/` のみの変更（packages 非変更）では不要。
 `ci-check.sh` は冒頭で dev 依存を self-bootstrap（`uv sync --extra dev` 等）するため、
 fresh worktree でも追加の sync は不要。
@@ -155,7 +156,7 @@ manifest は L1/L2 検証（subprocess・並列起動可）の入力になる。
 
 - [ ] 全テストが pass
 - [ ] ruff check が clean
-- [ ] （`packages/` 変更時）`scripts/ci-check.sh` が exit 0（unit + 型 + lint + doc-guard、web 変更時は web チェック）
+- [ ] （`packages/` 変更時）`scripts/ci-check.sh` が exit 0（unit + integration + 型 + lint + doc-guard、web 変更時は web チェック）
 - [ ] tool/table を追加した場合、Step 3.5 の doc-sync チェックリストを完了
 - [ ] commit 完了（push はしない）
 - [ ] Manifest 書き出し完了

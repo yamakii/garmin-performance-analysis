@@ -168,10 +168,10 @@ const results = await pipeline(
         `uv run --directory ${manifest.worktree_path} ...）で実行する。\n` +
         `L1 = in-process import check: 下層関数を verification_activity_id で呼び、非null・型一致・値範囲・json.dumps 可能・exit 0 を確認。\n` +
         `L2 = L1 + **CI 同一ゲート**: \`uv run --directory ${manifest.worktree_path} bash scripts/ci-check.sh\` が exit 0 ` +
-        `（whole-package の pytest -m unit + black --check + mypy + doc-guard、web 変更時は web チェック）。` +
-        `ci-check.sh は integration を回さないため、追加で \`uv run --directory ${manifest.worktree_path} pytest -m integration --tb=short -q\` も実行する。` +
+        `（whole-package の pytest -m "unit or integration" + black --check + mypy + doc-guard、web 変更時は web チェック）。` +
+        `ci-check.sh は integration も既定で回すため、別途 integration を実行する必要はない（Issue #743）。` +
         `これにより doc-sync/unit 漏れ（README/CLAUDE のカウント、golden snapshot、count テスト等）を ci-guard 前に検出する。\n` +
-        `完了条件: L1 OK かつ（L2 なら）ci-check.sh exit 0 + integration 0 failures。結果を schema で返す（pass/fail/warning）。`,
+        `完了条件: L1 OK かつ（L2 なら）ci-check.sh exit 0。結果を schema で返す（pass/fail/warning）。`,
       { label: `val:#${issue.number}`, phase: 'Validate', agentType: 'validation-agent', model: 'sonnet', schema: VALIDATION_SCHEMA }
     ).then((v) => ({ manifest, validation: v }))
   },
