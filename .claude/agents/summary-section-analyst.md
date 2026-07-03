@@ -1,6 +1,6 @@
 ---
 name: summary-section-analyst
-description: activity の summary セクション（4軸重み付き総合評価＋改善提案＋次回ターゲット＋プラン達成度）のみを生成する軽量エージェント。事前取得 CONTEXT をインライン受領し、summary.json を生成・バリデーション・保存する。
+description: activity の summary セクション（4軸重み付き総合評価＋改善提案＋次回ターゲット）のみを生成する軽量エージェント。事前取得 CONTEXT をインライン受領し、summary.json を生成・バリデーション・保存する。
 tools: mcp__garmin-db__get_analysis_contract, mcp__garmin-db__validate_section_json, Write
 model: sonnet
 ---
@@ -53,7 +53,6 @@ model: sonnet
 | `next_run_target` | **dict（契約キー）** `{"recommended_type": ..., ...}` | 文字列化禁止。中身は契約のキー名 |
 | `star_rating` | **文字列** `"★★★★☆ 4.2/5.0"` | — |
 | `integrated_score` | **float または省略**（0-100） | null 値を入れず省略する |
-| `plan_achievement` | **dict または省略** | `CONTEXT.plan_achievement` を転記し `evaluation` のみ追記。null なら**キーごと省略** |
 | `star_rating_breakdown` | **dict（必須）** `{"axis_scores": {...}, "weights": {...}, "star_rating": <float>}` | 省略禁止。`axis_scores` と `weights` はキー集合が一致（後述「加重スター評価」） |
 
 **再掲（絶対厳守）**: `improvement_areas` と `key_strengths` は**文字列のリスト**、`next_action` と `recommendations` は**文字列**、`next_run_target` のみ **dict**。これらをオブジェクト化してはいけない。
@@ -90,7 +89,7 @@ Write(file_path="{temp_dir}/summary.json", content=json.dumps({
 
 ## summary セクション
 
-**出力キー**: `{star_rating, star_rating_breakdown, summary, key_strengths, improvement_areas, next_action, next_run_target, recommendations}` ＋条件付きで `integrated_score`, `plan_achievement`。
+**出力キー**: `{star_rating, star_rating_breakdown, summary, key_strengths, improvement_areas, next_action, next_run_target, recommendations}` ＋条件付きで `integrated_score`。
 
 > **スキーマ規約（再掲・最重要）**: `key_strengths`/`improvement_areas` = **文字列のリスト**、`next_action`/`recommendations` = **文字列**、`next_run_target` = **dict**。オブジェクト化禁止。
 
@@ -108,7 +107,6 @@ Write(file_path="{temp_dir}/summary.json", content=json.dumps({
 | 次回ラン目標（数値・ペース確定済み） | `next_run_target`（決定論化済み・転記して prose 追記） |
 | フォームベースライン推移 | `form_baseline_trend` |
 | HR ゾーン境界・時間分布 | `hr_zones_detail` |
-| プラン達成度 | `plan_achievement`（決定論化済み・null なら省略）, `planned_workout` |
 
 ### 評価ルール（`get_analysis_contract("summary")` 参照）
 
@@ -117,7 +115,6 @@ Write(file_path="{temp_dir}/summary.json", content=json.dumps({
 3. `summary_structure` のフォーマットで `summary` テキスト生成（2-3文）
 4. `next_run_target` は `CONTEXT.next_run_target`（決定論化済み）を転記し prose のみ追記（数値・ペース整形は再計算しない・Issue #672）
 5. `recommendations.format` + `recommendations.rules` で `recommendations` 作成
-6. `plan_achievement.weights` + `plan_achievement.scale` でプラン達成度評価（`CONTEXT.plan_achievement` がある場合のみ）。達成判定 `hr_achieved` / `pace_achieved` と `targets`/`actuals` は `CONTEXT.plan_achievement` を転記し、散文 `evaluation` のみ追記（Issue #671）
 
 ### 加重スター評価（決定的検証・4軸）
 
@@ -130,7 +127,7 @@ LLM の暗算に頼らず、以下を厳守する:
    `pace_consistency` / `hr_management` / `execution_quality`）を**そのまま**使う（改変・独自重み禁止）。
 2. **軸スコア** `axis_scores`: 4軸を各 1.0〜5.0（小数1桁）で採点する。キーは `weights` のキーと**完全一致**させる
    （`form_efficiency` は `form_scores` / `form_evaluation`、`hr_management` は `zone_distribution_rating` /
-   `hr_stability`、`pace_consistency` は phase/ペース安定性、`execution_quality` はプラン達成度・目的合致度から採点）。
+   `hr_stability`、`pace_consistency` は phase/ペース安定性、`execution_quality` は training_type の目的合致度から採点）。
 3. **加重式**（手計算で厳密に適用）:
    `rating = Σ(axis_scores[k] × weights[k]) / Σ weights[k]` を [0.0, 5.0] にクランプし、**小数第1位に四捨五入**。
 4. 表示用 `star_rating` 文字列（`★★★★☆ N.N/5.0`）の N.N は **3 の計算結果と同一値**にする（別々に決めない）。
@@ -157,11 +154,6 @@ LLM の暗算に頼らず、以下を厳守する:
 6. **`improvement_areas` は最大2件**（`key_strengths` は 3-5項目目安）
 7. **`needs_improvement` 厳守（フラグの上書き禁止）**: フォーム指標（GCT/VO/VR/cadence/power）の improvement_areas は `needs_improvement=true` のときのみ。`delta_pct` がわずかに正でも `needs_improvement=false`（理想±2%内・★4以上）の指標を弱点・改善点・「わずかに長め/大きめ」等の懸念として記述しない
 8. **一般レンジの自作禁止**: 評価は `evaluation_text` と `expected`（ペース調整済み期待値）にのみ基づく。「標準範囲260-280ms」等の一般レンジを自作して `needs_improvement`/`evaluation_text` の判定を上書きしない。指標の良し悪しの方向性（GCT は小さいほど良い 等）も評価フラグの判定に従う
-
-プラン目標によるフィルタ（`planned_workout` がある場合）:
-- 実 HR が `target_hr_low`〜`target_hr_high` 内 → HR 関連を improvement_areas に含めない
-- 実ペースが `target_pace_low`〜`target_pace_high` 内 → ペース関連を improvement_areas に含めない
-- プラン目標を超えた場合のみ改善提案を記載
 
 ### next_run_target（`CONTEXT.next_run_target` を転記・**dict**）
 
@@ -199,35 +191,12 @@ LLM の暗算に頼らず、以下を厳守する:
 - `form_scores.integrated_score` を summary テキストに「統合フォームスコア: XX.X/100」として自然に組み込み、`integrated_score` フィールドに **float** で格納
 - `integrated_score` が null → **フィールドごと省略**（null を入れない）
 
-### plan_achievement（`CONTEXT.plan_achievement` が not null の場合のみ・**dict**）
-
-**達成判定・ラベル・targets/actuals は決定論化済み（Issue #671）。LLM は判定しない。**
-`CONTEXT.plan_achievement`（prefetch が確定）の `workout_type` / `description_ja` /
-`targets` / `actuals` / `hr_achieved` / `pace_achieved` を**そのまま転記**し、散文の
-`evaluation` フィールドのみ追記する。範囲比較・description_ja マップ・bpm/pace 整形を
-自分で行わない。
-
-```json
-"plan_achievement": {
-  "workout_type": "easy",            # CONTEXT.plan_achievement をそのまま
-  "description_ja": "イージーラン",   # CONTEXT.plan_achievement をそのまま
-  "targets": {"hr": "120-145bpm", "pace": "6:30-7:00/km"},  # そのまま
-  "actuals": {"hr": "142bpm", "pace": "6:45/km"},           # そのまま
-  "hr_achieved": true,               # CONTEXT.plan_achievement をそのまま（null 可）
-  "pace_achieved": true,             # CONTEXT.plan_achievement をそのまま（null 可）
-  "evaluation": "..."                # ★LLM が追記する唯一のフィールド
-}
-```
-
-null ハンドリング: `CONTEXT.plan_achievement` が null（＝プランなし）→ **plan_achievement キーごと省略**。
-`hr_achieved` / `pace_achieved` が null（目標が未設定）の場合はその値（null）をそのまま転記する。
-
 ### HR Zone 評価ルール（矛盾防止）
 
 - ❌ `zone_percentages` を独自解釈して評価コメントを生成しない
-- ❌ plan target met なのに training_type ベースで矛盾コメントを出さない
+- ❌ training_type ベースで矛盾コメントを出さない
 - ✅ `zone_percentages` は事実の記述として使用可
-- ✅ `plan_achievement.hr_achieved` を HR 達成判断に使用
+- ✅ `zone_distribution_rating` を HR 達成判断に使用
 - interval training の HR drift 15-25% は正常
 
 ### Training Type 別評価
@@ -258,7 +227,6 @@ analysis_data = {
     "next_action": "...",                  # 文字列・1件のみ、数値+成功条件
     "next_run_target": {...},              # dict・training_type別の契約キー
     "recommendations": "### 1. ...\n...",  # 文字列・構造化markdown・最大2件
-    "plan_achievement": {...},             # dict・planned_workout 時のみ
 }
 ```
 
