@@ -110,17 +110,22 @@ Closes #{issue_number}
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ```
 
-### Step 5.5: Validation Manifest 書き出し
+### Step 5.5: Validation Manifest 返却
 
-commit 完了後、Validation Agent 用の manifest を書き出す。
-manifest は L1/L2 検証（subprocess・並列起動可）の入力になる。各 worktree が独立に書き出すため、
-複数 worktree の検証が並列に走っても manifest 同士は競合しない（ファイル名は branch 名で一意）。
+commit 完了後、Validation Agent 用の manifest を返す。
+manifest は L1/L2 検証（subprocess・並列起動可）の入力になる。
+
+**既定経路（`/implement` の `implement-tier` Workflow）では、manifest を `/tmp` に書き出さず、
+この呼び出しの構造化出力（schema 準拠）として返す。** Workflow が構造化出力を受け取り、
+そのまま validation-agent へインラインで渡す。`/tmp/validation_queue/{branch}.json` への Write は
+**行わない**（デッドファイルとなりトークンを浪費するため）。
+
+構造化出力の schema が使えない環境（手動 developer 委任のフォールバック経路）でのみ、
+メッセージ末尾に同じ JSON をコードブロックで添える。`/tmp` ファイル方式は
+`worktree-validation-protocol.md` の「手動フォールバック経路」節を参照（既定では使わない）。
 
 1. Validation Level 判定（`dev-reference.md` §3 の判定表で changed_files の最高レベルを採用）
-2. Write tool で JSON manifest を書き出し:
-   - パス: `/tmp/validation_queue/{branch_name}.json`
-   - Write tool が親ディレクトリを自動作成するため `mkdir -p` 不要
-3. Manifest スキーマ（`worktree-validation-protocol.md` §Implementation Agent の責務 に準拠）:
+2. 以下の manifest を構造化出力として返す（親ディレクトリ作成・Write は不要）:
    ```json
    {
      "branch": "feature/xxx",
@@ -159,5 +164,5 @@ manifest は L1/L2 検証（subprocess・並列起動可）の入力になる。
 - [ ] （`packages/` 変更時）`scripts/ci-check.sh` が exit 0（unit + integration + 型 + lint + doc-guard、web 変更時は web チェック）
 - [ ] tool/table を追加した場合、Step 3.5 の doc-sync チェックリストを完了
 - [ ] commit 完了（push はしない）
-- [ ] Manifest 書き出し完了
+- [ ] Manifest を構造化出力として返却（`/tmp` への書き出しは行わない）
 - [ ] 変更ファイル一覧と commit hash を報告

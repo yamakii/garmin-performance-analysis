@@ -16,10 +16,13 @@ Worktree で実装されたコード変更を検証するエージェント。
 
 > **並列起動可:** L1/L2 は subprocess でプロセス分離されているため、複数 worktree の検証を**並列に起動してよい**。FIFO で1つずつ foreground 起動して待つ必要はない（旧 FIFO 直列前提は reload 依存時代の遺物）。直列が必須なのは L3（メインセッション担当）のみ。
 
-## Step 0: Manifest 読み込み
+## Step 0: Manifest 受領
 
-1. `/tmp/validation_queue/{branch}.json` を Read で取得
-   - manifest が存在しない場合: orchestrator から直接渡された情報を使用（fallback）
+1. **既定経路**: manifest は orchestrator（`implement-tier` Workflow）から**プロンプトにインラインで
+   渡される**（`manifest: {...JSON...}`）。プロンプト内の JSON をそのまま使う
+   - **手動フォールバック経路のみ**: プロンプトに manifest が無い場合に限り
+     `/tmp/validation_queue/{branch}.json` を Read で取得。既定経路では `/tmp` ファイルは存在しない
+     ため Read しに行かない
 2. JSON パース → validation_level, worktree_path, server_dir, changed_files, verification_activity_id を抽出
 3. validation_level が skip → 即座に PASS を返却して終了
 4. validation_level が L3 → このエージェントでは実行しない。L3 はメインセッションが担当する旨を報告して終了（下記「L3」節参照）
