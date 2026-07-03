@@ -51,10 +51,18 @@ iptables -A OUTPUT -o lo -j ACCEPT
 ipset create allowed-domains hash:net
 
 # --- GitHub IP ranges (covers github.com / api.github.com / git over https) ---
+# Authenticate the api.github.com calls when a token is available. The
+# unauthenticated limit is only 60 req/hr per IP and each launch spends 2 (this
+# /meta fetch + the /zen self-check below), so frequent rebuilds hit a 403 and
+# fail-closed. GITHUB_TOKEN (forwarded by run.sh, in root's env here) raises the
+# limit to 5000/hr.
+gh_auth=()
+[ -n "${GITHUB_TOKEN:-}" ] && gh_auth=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
 echo "Fetching GitHub IP ranges..."
-gh_ranges=$(curl -s --connect-timeout 10 https://api.github.com/meta || true)
+gh_ranges=$(curl -s --connect-timeout 10 "${gh_auth[@]}" https://api.github.com/meta || true)
 if [ -z "$gh_ranges" ] || ! echo "$gh_ranges" | jq -e '.web and .api and .git' >/dev/null 2>&1; then
     echo "ERROR: failed to fetch usable GitHub IP ranges from api.github.com/meta" >&2
+    echo "       (likely an unauthenticated api.github.com rate limit — set GITHUB_TOKEN or wait for reset)" >&2
     exit 1
 fi
 echo "Processing GitHub IP ranges..."
@@ -123,7 +131,7 @@ if curl --connect-timeout 5 -s https://example.com >/dev/null 2>&1; then
     exit 1
 fi
 echo "  OK: example.com is blocked as expected"
-if ! curl --connect-timeout 5 -s https://api.github.com/zen >/dev/null 2>&1; then
+if ! curl --connect-timeout 5 -s "${gh_auth[@]}" https://api.github.com/zen >/dev/null 2>&1; then
     echo "ERROR: firewall verification FAILED — api.github.com is NOT reachable" >&2
     exit 1
 fi
