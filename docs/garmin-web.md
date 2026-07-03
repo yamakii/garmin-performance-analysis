@@ -22,6 +22,12 @@ uv run garmin-web
 uv run garmin-web --host 0.0.0.0 --port 8888   # custom bind
 ```
 
+> ⚠️ **Security:** The web app has **no authentication** and displays personal
+> health data. The default `127.0.0.1` bind keeps it local-only. Binding to a
+> non-loopback address (e.g. `--host 0.0.0.0`) exposes that data to everyone on
+> the network. Only do so on a trusted LAN; the CLI logs a warning when the host
+> is not `127.0.0.1`/`localhost`.
+
 If `frontend/dist` does not exist, the server logs a warning and serves
 the API only.
 
