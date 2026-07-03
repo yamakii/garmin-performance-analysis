@@ -1,9 +1,9 @@
 # DuckDB Schema Mapping Specification
 
-**Version**: 2.5
-**Last Updated**: 2026-06-24
+**Version**: 2.6
+**Last Updated**: 2026-07-03
 **Database**: `garmin_performance.duckdb`
-**Total Tables**: 21 domain tables (+ `schema_version` migration bookkeeping)
+**Total Tables**: 22 domain tables (+ `schema_version` migration bookkeeping)
 
 This document provides comprehensive schema documentation for all DuckDB tables in the Garmin performance analysis system. Every column name, type, and primary key below is verified against the live schema (`PRAGMA table_info`). Where prose describes derived/calculated logic, that logic lives in the inserters / form-baseline modules and is documented here because it is not otherwise discoverable from the column definitions.
 
@@ -20,9 +20,12 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 > A drift test (`tests/scripts/test_generate_schema_doc.py`) fails CI if a schema change
 > lands without regenerating.
 
-> **Schema bookkeeping**: a 22nd table, `schema_version` (`version INTEGER PK`, `name`, `applied_at`), tracks applied migrations and is **not** a domain table. The migration runner (`database/migrations/registry.py`) applies numbered migrations after `_ensure_tables()` and records them there.
+> **Schema bookkeeping**: a 23rd table, `schema_version` (`version INTEGER PK`, `name`, `applied_at`), tracks applied migrations and is **not** a domain table. The migration runner (`database/migrations/registry.py`) applies numbered migrations after `_ensure_tables()` and records them there.
 
 ## Change History
+
+### Version 2.6 (2026-07-03)
+- **`sync_runs` table added** (migration `add_sync_runs_table`, version 14). Records one row per scheduled catch-up sync run (requested domains, `catch_up_ingest` result payload, and overall `success`/`partial`/`error` status), written by `garmin_mcp.scripts.scheduled_sync:run_sync`. Makes the previously manual catch-up/backfill flows callable unattended from cron/systemd with an auditable trail (issue #712, parent #701). DDL is owned exclusively by the migration (not `_ensure_tables()`).
 
 ### Version 2.5 (2026-06-24)
 - **`daily_wellness` table added** (migration `add_daily_wellness_table`, version 11; also created in `_ensure_tables()`). Daily physiological / recovery metrics (resting HR, overnight HRV, sleep, training readiness, body battery, stress) keyed by date, collected cache-first by `ingest_wellness_range`. Backs the recovery analysis layer (Epic #497, issue #498).
@@ -52,7 +55,7 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 
 ---
 
-## Table of Contents (21 domain tables by category)
+## Table of Contents (22 domain tables by category)
 
 | # | Table | Category | Primary Key | Row scale |
 |---|-------|----------|-------------|-----------|
@@ -77,6 +80,7 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 | 19 | [weekly_reviews](#19-weekly_reviews) | Athlete | `review_id` | per weekly review |
 | 20 | [strength_sessions](#20-strength_sessions) | Training | `activity_id` | per strength session |
 | 21 | [daily_wellness](#21-daily_wellness) | Physiology | `wellness_id` (UNIQUE on `date`) | daily |
+| 22 | [sync_runs](#22-sync_runs) | Operations | `run_id` | per scheduled sync run |
 
 ---
 
@@ -889,13 +893,36 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 
 ---
 
+## 22. sync_runs
+
+**Purpose**: Execution log for the scheduled auto-sync entrypoint. One row per catch-up sync run capturing the requested domains, the full `catch_up_ingest` result payload (JSON), and an overall status, so unattended cron/systemd runs leave an auditable trail (issue #712, parent #701).
+**Primary Key**: `run_id` (surrogate, drawn from `seq_sync_runs_id`)
+**Source**: Written by `garmin_mcp.scripts.scheduled_sync:run_sync`; created by migration `add_sync_runs_table` (version 14). DDL is owned exclusively by the migration (not `_ensure_tables()`).
+
+### Schema
+
+<!-- BEGIN GENERATED: schema:sync_runs -->
+| Column | Type |
+|--------|------|
+| run_id (PK) | INTEGER |
+| started_at | TIMESTAMP |
+| finished_at | TIMESTAMP |
+| domains | VARCHAR |
+| results | VARCHAR |
+| status | VARCHAR |
+<!-- END GENERATED: schema:sync_runs -->
+
+**Units & notes**: `domains` is a CSV of the requested domains (e.g. `running,weight,strength,wellness`). `results` is `json.dumps(catch_up_ingest(...))` including each domain's payload or `{"error": ...}` and the resolved per-domain `window`. `status` is `success` (all domains OK), `partial` (≥1 domain returned an error), or `error` (the run itself raised).
+
+---
+
 ## Indexes & Constraints Summary
 
 - **No FOREIGN KEY constraints** anywhere (removed 2025-11-01, migration `remove_fk_constraints`). Referential integrity is enforced by the ingest pipeline.
 - UNIQUE: `idx_body_composition_date` on `body_composition(date)`; `idx_activity_section` on `section_analyses(activity_id, section_type)`.
 - Composite PKs: `splits(activity_id, split_index)`, `time_series_metrics(activity_id, seq_no)`, `heart_rate_zones(activity_id, zone_number)`.
 - Secondary indexes on `time_series_metrics`: `idx_time_series_activity(activity_id)`, `idx_time_series_timestamp(activity_id, timestamp_s)`.
-- Sequences back the surrogate keys for `form_evaluations` (`form_evaluations_seq`), `form_baseline_history` (`form_baseline_history_seq`), and `section_analyses` (`seq_section_analyses_id`).
+- Sequences back the surrogate keys for `form_evaluations` (`form_evaluations_seq`), `form_baseline_history` (`form_baseline_history_seq`), `section_analyses` (`seq_section_analyses_id`), and `sync_runs` (`seq_sync_runs_id`).
 
 ---
 
