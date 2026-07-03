@@ -25,6 +25,13 @@ _RUN_B = 30000000002
 _STRENGTH = 30000000003
 
 
+class _FakeTooManyRequestsError(Exception):
+    """Stand-in matching GarminConnectTooManyRequestsError by class name."""
+
+
+_FakeTooManyRequestsError.__name__ = "GarminConnectTooManyRequestsError"
+
+
 def _run_summary(activity_id: int, date: str = "2026-06-15") -> dict[str, Any]:
     """Garmin activity-list summary for a distance run."""
     return {
@@ -159,3 +166,41 @@ def test_ingest_running_empty_range(temp_db_path: Path) -> None:
     assert result["skipped_existing"] == 0
     assert result["activity_ids"] == []
     worker.process_activity.assert_not_called()
+
+
+@pytest.mark.integration
+def test_running_ingest_retries_on_429(temp_db_path: Path) -> None:
+    """A 429 from get_activities_by_date backs off, then ingest continues."""
+    calls = {"n": 0}
+
+    def flaky_by_date(start: str, end: str) -> list[dict[str, Any]]:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise _FakeTooManyRequestsError("429 Too Many Requests")
+        return [_run_summary(_RUN_A)]
+
+    client = MagicMock()
+    client.get_activities_by_date.side_effect = flaky_by_date
+    worker = MagicMock()
+    with (
+        patch(
+            "garmin_mcp.ingest.running_ingest.get_garmin_client",
+            return_value=client,
+        ),
+        patch(
+            "garmin_mcp.ingest.running_ingest.GarminIngestWorker",
+            return_value=worker,
+        ),
+        patch("garmin_mcp.ingest.running_ingest.time.sleep"),
+        patch("garmin_mcp.ingest.retry.time.sleep"),
+    ):
+        result = ingest_running_activities(
+            "2026-06-01", "2026-06-30", db_path=str(temp_db_path)
+        )
+
+    # First call raised 429, retry succeeded -> discovery + ingest proceed.
+    assert calls["n"] == 2
+    assert result["discovered"] == 1
+    assert result["ingested"] == 1
+    assert result["activity_ids"] == [_RUN_A]
+    assert worker.process_activity.call_count == 1

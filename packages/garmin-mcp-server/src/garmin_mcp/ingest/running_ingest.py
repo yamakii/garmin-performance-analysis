@@ -22,6 +22,7 @@ from garmin_mcp.database.connection import get_connection, get_db_path
 from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.ingest.api_client import get_garmin_client
 from garmin_mcp.ingest.garmin_worker import GarminIngestWorker
+from garmin_mcp.ingest.retry import call_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ def ingest_running_activities(
     GarminDBWriter(db_path=resolved_path)
 
     client = get_garmin_client()
-    activities = client.get_activities_by_date(start_date, end_date)
+    activities = call_with_retry(client.get_activities_by_date, start_date, end_date)
     runs = [a for a in activities if _is_running(a)]
 
     ingested = 0

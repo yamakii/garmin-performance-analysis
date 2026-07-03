@@ -137,6 +137,60 @@ class PerformanceReader(BaseDBReader):
             logger.error(f"Error getting weather data: {e}")
             return None
 
+    def find_unanalyzed_activities(
+        self, start_date: str, end_date: str, required_sections: int = 5
+    ) -> list[dict[str, Any]]:
+        """Find running activities missing a complete set of section analyses.
+
+        ``activities`` LEFT JOIN ``section_analyses`` aggregated by
+        ``activity_id``; returns activities whose DISTINCT ``section_type`` count
+        is below ``required_sections`` within ``[start_date, end_date]``. All
+        ingested activities are runs (non-running types are filtered at ingest),
+        so no activity_type filter is needed. DISTINCT is used because
+        append-only storage (#720) keeps multiple versions of the same section.
+
+        Args:
+            start_date: Inclusive lower bound (YYYY-MM-DD).
+            end_date: Inclusive upper bound (YYYY-MM-DD).
+            required_sections: Section count considered complete (default 5).
+
+        Returns:
+            ``[{"activity_id": int, "date": "YYYY-MM-DD", "section_count": int}]``
+            ordered by date ascending (activity_id as tiebreaker). Empty list on
+            error or when every activity is complete.
+        """
+        try:
+            with self._get_connection() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT
+                        a.activity_id,
+                        a.activity_date,
+                        COUNT(DISTINCT s.section_type) AS section_count
+                    FROM activities a
+                    LEFT JOIN section_analyses s
+                        ON a.activity_id = s.activity_id
+                    WHERE a.activity_date BETWEEN ? AND ?
+                    GROUP BY a.activity_id, a.activity_date
+                    HAVING COUNT(DISTINCT s.section_type) < ?
+                    ORDER BY a.activity_date ASC, a.activity_id ASC
+                    """,
+                    [start_date, end_date, required_sections],
+                ).fetchall()
+
+                return [
+                    {
+                        "activity_id": row[0],
+                        "date": str(row[1]),
+                        "section_count": row[2],
+                    }
+                    for row in rows
+                ]
+
+        except Exception as e:
+            logger.error(f"Error finding unanalyzed activities: {e}")
+            return []
+
     def get_section_analysis(
         self, activity_id: int, section_type: str, max_output_size: int = 10240
     ) -> dict[str, Any] | None:

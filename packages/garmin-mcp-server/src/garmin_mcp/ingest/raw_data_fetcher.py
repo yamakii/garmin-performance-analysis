@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from garmin_mcp.ingest.api_client import get_garmin_client
+from garmin_mcp.ingest.retry import call_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -414,7 +415,7 @@ def _collect_activity_basic(
         fetch_status["activity_basic"] = "cached"
     elif "activity_basic" not in raw_data:
         try:
-            activity_basic = client.get_activity(str(activity_id))
+            activity_basic = call_with_retry(client.get_activity, str(activity_id))
             raw_data["activity_basic"] = activity_basic
             with open(activity_basic_file, "w", encoding="utf-8") as f:
                 json.dump(activity_basic, f, ensure_ascii=False, indent=2)
@@ -461,7 +462,9 @@ def _collect_activity_details(
                 f"({duration_seconds/60:.1f}min), using maxchart={maxchart}"
             )
 
-            activity_data = client.get_activity_details(activity_id, maxchart=maxchart)
+            activity_data = call_with_retry(
+                client.get_activity_details, activity_id, maxchart=maxchart
+            )
             raw_data["activity"] = activity_data
             with open(activity_file, "w", encoding="utf-8") as f:
                 json.dump(activity_data, f, ensure_ascii=False, indent=2)
@@ -507,7 +510,7 @@ def _collect_standard_apis(
             fetch_status[api_name] = "cached"
         elif data_key not in raw_data or api_name in force_refetch_set:
             try:
-                data = fetch_func(activity_id)
+                data = call_with_retry(fetch_func, activity_id)
                 raw_data[data_key] = data
                 with open(cache_file, "w", encoding="utf-8") as f:
                     json.dump(data, f, ensure_ascii=False, indent=2)
@@ -566,7 +569,7 @@ def _collect_vo2_max(
     if "vo2_max" not in raw_data or "vo2_max" in force_refetch_set:
         if activity_date:
             try:
-                max_metrics = client.get_max_metrics(activity_date)
+                max_metrics = call_with_retry(client.get_max_metrics, activity_date)
                 # get_max_metrics returns a list of entries (one per metric set);
                 # older raw dumps stored a single dict. Handle both shapes.
                 entry = (
@@ -640,7 +643,9 @@ def _collect_lactate_threshold(
         "lactate_threshold" not in raw_data or "lactate_threshold" in force_refetch_set
     ):
         try:
-            lactate_threshold_data = client.get_lactate_threshold(latest=True)
+            lactate_threshold_data = call_with_retry(
+                client.get_lactate_threshold, latest=True
+            )
             raw_data["lactate_threshold"] = lactate_threshold_data
             with open(lactate_file, "w", encoding="utf-8") as f:
                 json.dump(lactate_threshold_data, f, ensure_ascii=False, indent=2)
@@ -700,7 +705,7 @@ def collect_body_composition_data(
     logger.info(f"Fetching body composition data for {date} from Garmin Connect API")
     try:
         client = get_garmin_client()
-        weight_data = client.get_daily_weigh_ins(date)
+        weight_data = call_with_retry(client.get_daily_weigh_ins, date)
 
         if not weight_data or not weight_data.get("dateWeightList"):
             logger.warning(f"No body composition data found for {date}")
@@ -799,10 +804,12 @@ def collect_wellness_data(
                 return None
 
         merged: dict[str, Any] = {
-            "stats": _safe(lambda: client.get_stats(date)),
-            "hrv": _safe(lambda: client.get_hrv_data(date)),
-            "sleep": _safe(lambda: client.get_sleep_data(date)),
-            "training_readiness": _safe(lambda: client.get_training_readiness(date)),
+            "stats": _safe(lambda: call_with_retry(client.get_stats, date)),
+            "hrv": _safe(lambda: call_with_retry(client.get_hrv_data, date)),
+            "sleep": _safe(lambda: call_with_retry(client.get_sleep_data, date)),
+            "training_readiness": _safe(
+                lambda: call_with_retry(client.get_training_readiness, date)
+            ),
         }
 
         if is_current_day and not _wellness_has_sleep(merged):
