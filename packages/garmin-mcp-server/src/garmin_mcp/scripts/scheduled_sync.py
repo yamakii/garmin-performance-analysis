@@ -31,12 +31,18 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
-from garmin_mcp.database.connection import get_db_path, get_write_connection
+from garmin_mcp.database.connection import (
+    get_connection,
+    get_db_path,
+    get_write_connection,
+)
 from garmin_mcp.database.migrations.runner import ensure_schema_current
+from garmin_mcp.database.readers.trends_narration import TrendNarrationReader
 from garmin_mcp.ingest.catch_up import DEFAULT_DOMAINS, catch_up_ingest
+from garmin_mcp.utils.week import get_week_start_day, week_start
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +58,54 @@ def _classify_status(results: dict[str, Any]) -> str:
         for value in domain_results.values()
     )
     return "partial" if has_error else "success"
+
+
+def find_pending_trend_period(
+    db_path: str | None,
+    today: date,
+    granularity: str = "week",
+    user_id: str = "default",
+) -> dict[str, Any] | None:
+    """Return the most-recently-completed period lacking a trend narration.
+
+    Computes the last fully-completed week relative to ``today`` using the
+    athlete's configured week-start day (``utils.week``; never a hardcoded ISO
+    week), then checks ``trend_analyses`` for an existing row keyed by
+    ``(granularity, period_start)``. Returns ``None`` when a row already exists
+    (idempotent — the daily scheduled sync must not re-fire narration for a
+    period already narrated), else the pending period descriptor.
+
+    Only ``week`` granularity is detected here; monthly detection is a follow-up
+    (the readers' monthly support is partial — see #790).
+
+    Args:
+        db_path: Optional DuckDB path (defaults to the configured database).
+        today: The reference date (the sync run's date).
+        granularity: Currently only ``"week"`` is supported.
+        user_id: Athlete profile key.
+
+    Returns:
+        ``{"granularity", "period_start", "period_end"}`` for the pending period,
+        or ``None`` when it already has a narration row.
+    """
+    resolved_path = str(get_db_path(db_path))
+    with get_connection(resolved_path) as conn:
+        start_day = get_week_start_day(conn, user_id)
+
+    current_week_start = week_start(today, start_day)
+    period_start = current_week_start - timedelta(days=7)
+    period_end = period_start + timedelta(days=6)
+
+    reader = TrendNarrationReader(resolved_path)
+    existing = reader.get_trend_analysis(granularity, str(period_start), user_id)
+    if existing is not None:
+        return None
+
+    return {
+        "granularity": granularity,
+        "period_start": str(period_start),
+        "period_end": str(period_end),
+    }
 
 
 def _record_run(
@@ -115,6 +169,22 @@ def run_sync(
         logger.exception("scheduled sync failed")
         results = {"error": str(exc)}
         status = "error"
+
+    # Only on a fully-successful sync, detect whether the last completed week is
+    # still missing a trend narration. The result is recorded in ``sync_runs`` and
+    # returned so a cron/manual runner can fire ``trend-narration.js`` for it; the
+    # idempotency guard in ``find_pending_trend_period`` prevents the daily sync
+    # from re-queuing a period that already has a narration row (#792).
+    if status == "success":
+        try:
+            pending = find_pending_trend_period(resolved_path, started_at.date())
+            if pending is not None:
+                results["trend_pending"] = pending
+        except (
+            Exception
+        ):  # noqa: BLE001 - detection is best-effort, never fail the sync
+            logger.exception("trend-pending detection failed")
+
     finished_at = datetime.now()
 
     run_id = _record_run(
