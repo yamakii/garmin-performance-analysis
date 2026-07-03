@@ -7,6 +7,8 @@ adds the prose ``evaluation`` field. Leaving range comparison or label lookup to
 the LLM risks hallucinated "achieved" verdicts (Issue #671).
 """
 
+from typing import Any
+
 # Fallback Japanese labels by workout_type when planned_workouts.description_ja
 # is null. Mirrors the mapping the agent previously held inline (Issue #671).
 WORKOUT_TYPE_DESCRIPTION_JA: dict[str, str] = {
@@ -303,3 +305,147 @@ def map_environment_category(training_type: str | None) -> str:
         return "interval_sprint"
     # easy / base / moderate and any other aerobic type.
     return "base_moderate"
+
+
+# ---------------------------------------------------------------------------
+# Trend derivations (Issue #790): deterministic layer for trend narration.
+#
+# These pure helpers compute the accuracy-sensitive judgments (period deltas,
+# consecutive build streaks, cross-signal fusion flags) so the trend-narration
+# LLM only writes prose. Fabricated "load is up 12%" / "you are overreaching"
+# verdicts are avoided by computing them here (see #714 ADR §4).
+# ---------------------------------------------------------------------------
+
+# ACWR statuses that indicate an elevated acute load (see TrainingLoadReader).
+_HIGH_LOAD_ACWR_STATUSES = {"caution", "high_risk"}
+# The HRV recovery state string that flags accumulated under-recovery.
+_UNDER_RECOVERY_HRV_STATE = "under_recovery"
+# A period-over-period form delta (%) at or below this counts as a meaningful
+# form decline for cross-signal fusion. Small wobble (e.g. +1.0 / -0.5) does
+# not trip a fusion flag; only a sustained worsening does.
+_FORM_DECLINE_PCT_THRESHOLD = -2.0
+
+
+def compute_period_delta_pct(
+    current: float | None, prior: float | None
+) -> float | None:
+    """Return the percentage change from ``prior`` to ``current``.
+
+    ``(current - prior) / prior * 100``. Returns ``None`` when either operand is
+    ``None`` or when ``prior == 0`` (undefined / division by zero). The result
+    is rounded to 1 decimal place.
+    """
+    if current is None or prior is None:
+        return None
+    if prior == 0:
+        return None
+    return round((current - prior) / prior * 100, 1)
+
+
+def count_consecutive_build_weeks(weekly_loads: list[float]) -> int:
+    """Count the trailing streak of week-over-week load increases.
+
+    Walks backward from the last week while each prior week's load is strictly
+    less than the following week's load (an increasing streak). The final week
+    itself is always counted, so a list with no trailing increase returns ``1``.
+    An empty list returns ``0``.
+
+    Examples:
+        ``[30, 32, 35, 40]`` -> ``4`` (all increasing)
+        ``[40, 32, 35, 38]`` -> ``3`` (streak breaks at the 40 -> 32 drop)
+        ``[50, 40, 30]``     -> ``1`` (immediate decrease)
+        ``[]``               -> ``0``
+    """
+    if not weekly_loads:
+        return 0
+    count = 1
+    for i in range(len(weekly_loads) - 1, 0, -1):
+        if weekly_loads[i - 1] < weekly_loads[i]:
+            count += 1
+        else:
+            break
+    return count
+
+
+def compute_fusion_flags(
+    acwr_status: str | None,
+    hrv_state: str | None,
+    form_delta_pct: float | None,
+) -> dict[str, bool]:
+    """Fuse load / recovery / form signals into cross-signal warning flags.
+
+    Every returned value is always a ``bool`` (never ``None``), so the flags are
+    safe to read directly. All flags are *warning* flags: they stay ``False``
+    when signals are healthy, so an optimal/balanced/improving snapshot yields
+    all ``False``.
+
+    Flags:
+        - ``high_load_low_recovery``: ``acwr_status`` is caution/high_risk **and**
+          ``hrv_state == "under_recovery"`` (classic overreaching pattern).
+        - ``high_load_form_decline``: elevated load **and** a form decline
+          (``form_delta_pct <= _FORM_DECLINE_PCT_THRESHOLD``).
+        - ``under_recovery_form_decline``: HRV under-recovery **and** a form
+          decline.
+    """
+    high_load = acwr_status in _HIGH_LOAD_ACWR_STATUSES
+    under_recovery = hrv_state == _UNDER_RECOVERY_HRV_STATE
+    form_declining = (
+        form_delta_pct is not None and form_delta_pct <= _FORM_DECLINE_PCT_THRESHOLD
+    )
+
+    return {
+        "high_load_low_recovery": high_load and under_recovery,
+        "high_load_form_decline": high_load and form_declining,
+        "under_recovery_form_decline": under_recovery and form_declining,
+    }
+
+
+def compute_trend_headline_metrics(context: dict[str, Any]) -> dict[str, Any]:
+    """Extract deterministic headline metrics from a trend CONTEXT bundle.
+
+    The trend-narration analog of :func:`compute_plan_achievement`: it folds the
+    prefetched trend readers into the display-ready numbers so the LLM only adds
+    prose. Missing inputs are filled with ``None`` (never raises on a partial or
+    empty ``context``).
+
+    Args:
+        context: A trend CONTEXT bundle. Reads ``load_trend.weeks[*].load_km``
+            (weekly loads, oldest -> newest), ``acwr.status``,
+            ``recovery_trend.hrv`` and ``form_delta_pct`` when present.
+
+    Returns:
+        Dict with the always-present keys:
+        - ``load_delta_pct``: percentage change of the last week's load vs the
+          prior week (``None`` when fewer than two weekly loads exist).
+        - ``build_weeks``: trailing week-over-week build streak (``None`` when no
+          weekly loads exist).
+        - ``fusion_flags``: :func:`compute_fusion_flags` output (always a dict).
+    """
+    load_trend = context.get("load_trend") or {}
+    weeks = load_trend.get("weeks") or []
+    loads = [w.get("load_km") for w in weeks if w.get("load_km") is not None]
+
+    load_delta_pct: float | None = None
+    build_weeks: int | None = None
+    if len(loads) >= 2:
+        load_delta_pct = compute_period_delta_pct(loads[-1], loads[-2])
+    if loads:
+        build_weeks = count_consecutive_build_weeks(loads)
+
+    acwr = context.get("acwr") or {}
+    acwr_status = acwr.get("status")
+
+    hrv = (context.get("recovery_trend") or {}).get("hrv") or {}
+    # Map the recovery bundle to the string the pure fusion helper expects:
+    # the under-recovery boolean takes precedence over the raw HRV status.
+    hrv_state = (
+        _UNDER_RECOVERY_HRV_STATE if hrv.get("under_recovery") else hrv.get("status")
+    )
+
+    form_delta_pct = context.get("form_delta_pct")
+
+    return {
+        "load_delta_pct": load_delta_pct,
+        "build_weeks": build_weeks,
+        "fusion_flags": compute_fusion_flags(acwr_status, hrv_state, form_delta_pct),
+    }
