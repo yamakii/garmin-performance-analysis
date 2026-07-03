@@ -66,7 +66,7 @@ Risks セクション（任意）:
 
 ### 2b. テスト実行
 
-> L1/L2 は subprocess 検証でプロセス分離されているため**並列起動が安全**（FIFO で1つずつ待つ必要はない）。直列が必須なのは L3（メインセッション担当・reload を扱う）のみ。詳細・経緯は `worktree-validation-protocol.md` / `dev-reference.md §3` を参照。
+> L1/L2 は subprocess 検証でプロセス分離されているため**並列起動が安全**（FIFO で1つずつ待つ必要はない）。直列が必須なのは L3（メインセッション担当・reload 非依存）のみ。詳細・経緯は `worktree-validation-protocol.md` / `dev-reference.md §3` を参照。
 
 プランの Validation Level に応じて（`dev-reference.md` §3 参照）:
 
@@ -74,7 +74,7 @@ Risks セクション（任意）:
 |-------|---------|---------|
 | L1 | `uv run pytest {test_path} -m unit -v` | 0 failures |
 | L2 | `uv run --directory <worktree> bash scripts/ci-check.sh`（unit+integration+型+lint+doc-guard を一発で実行） | exit 0 |
-| L3 | L2 + メインセッションが worktree の `.md` を main に一時適用 → `/analyze-activity` 実行 → `git checkout` で復元（reload 非依存） | analysis_data 非null + 必須フィールド存在 |
+| L3 | pre-merge は **diff レビュー**のみ（同一セッション temp-apply は無効=偽ゲート #742）→ merge 後に**新規セッション**で `/analyze-activity` 実行、不合格なら revert。正本: `worktree-validation-protocol.md` | (post-merge) analysis_data 非null + 必須フィールド存在 |
 | skip | Validation Agent スキップ。コードレビュー(Phase 2a)のみ | 2a チェック通過 |
 
 CI 同一コマンド（whole-package の `black --check .` / `mypy .` / `pytest -m "unit or integration" ... --cov-fail-under=60`、web 変更時は web-backend/web-frontend）を再現する正典コマンドは `scripts/ci-check.sh`（integration も既定で実行。反復時は `--unit-only` で integration をスキップ可）。
@@ -107,7 +107,7 @@ Phase 2b の完了条件は **`scripts/ci-check.sh` が exit 0（0 failures）**
 |----------|----------------------|----------|
 | `packages/` コード | unit + L1/L2（subprocess import + 実 activity_id + integration）| `lint-and-test`（unit/型/lint）+ Validation Agent |
 | `packages/garmin-web/` | pytest + vitest + build（CI）。**UI の見た目はマージ後の確認で可**（pre-merge ブロッカーにしない） | `web-backend` / `web-frontend` |
-| `.claude/agents/*-analyst.md` | L3（fixture で `/analyze-activity`、構造/内容チェック） | なし（メインセッションが実行） |
+| `.claude/agents/*-analyst.md` | L3: pre-merge は **diff レビュー**のみ。behavioral 検証は**マージ後の新規セッション**で `/analyze-activity`（構造/内容チェック）— 同一セッション検証は無効（#742） | なし（メインセッションが post-merge 実行） |
 | `.claude/workflows/*.js` | **純粋ロジックを `// >>> testable` ブロックに置き、`node --test .claude/workflows/tests/` で自動検証**。プロンプト/構造変更はレビュー | `meta-checks`（構文 smoke + `node --test`） |
 | `.claude/hooks/*.sh` | hook を代表入力で発火させ exit code を検証する自動テスト（理想）。当面は `bash -n` + レビュー | `meta-checks`（`bash -n`） |
 | `.claude/skills/*.md` / `rules/` | 該当 skill / ルール手順を実行して挙動確認（記録） | なし |
@@ -135,4 +135,5 @@ Phase 2 + Phase 2.9 完了後のみ実行可能（手動経路）:
    auto-merge せず（`implement-tier` も escalate）、PR URL と理由を報告して判断を仰ぐ。
    `.claude/workflows`・`.claude/hooks` 変更は `meta-checks`（`node --test` / `bash -n`）が CI でロジックをゲートするため、
    green であれば他カテゴリと同じく auto-merge する。agent 定義（`.claude/agents/*-analyst.md`）は L3 のため
-   引き続き escalate し、メインセッションが L3 検証後に手動マージ（`/ship --pr N --validated`）。
+   引き続き escalate し、メインセッションが **diff レビュー後に**手動マージ（`/ship --pr N --validated`）→
+   **マージ後に新規セッションで L3 挙動検証**（同一セッション検証は無効 #742、不合格なら revert）。

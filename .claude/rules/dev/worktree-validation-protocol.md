@@ -153,31 +153,23 @@ count テスト）が ci-guard で初めて落ちて escalate になる（Epic #
 
 > reload_server / health check ステップは存在しない。subprocess 値検証 + subprocess ci-check.sh のみ。
 
-## L3: Full E2E（メインセッション担当）
+## L3: agent 定義変更の検証（同一セッション temp-apply は無効 — #742）
 
-L3（agent 定義 = `*-analyst.md` の変更）は**サブエージェントに委譲せず、メインセッション（オーケストレーター）が直接実行する**。
-agent コードは MCP サーバコードではないため `reload_server` は不要。worktree の `.md` を main の `.claude/agents/` に一時適用し、main 側にすでにバンドルされている prefetch 等の MCP tool で `/analyze-activity` を実行すれば足りる。
+L3（agent 定義 = `.claude/agents/*-analyst.md` の変更）は agent コードであり MCP サーバコードではないため `reload_server` は不要。しかし **agent 定義は本文（system prompt）ごとセッション開始時に一度だけ登録され、セッション途中の変更は spawn 時に反映されない**（tool list について #586/#593、**本文について #742 spike で実証**：main の analyst 定義本文にマーカー指示を mid-session 追記して同 agentType を spawn したところ、agent は「そんな指示は存在しない」と回答＝セッション開始時キャッシュを使用）。
 
-メインセッションが以下を実行する:
+> **旧手順「worktree の `.md` を main に一時適用（`cp`）→ 同一セッションで `/analyze-activity` 実行 → 検証 → `git checkout` で復元」は無効**（#742 で棄却）。同一セッションの spawn はセッション開始時キャッシュ（＝**変更前**の定義）を使うため、**変更後の挙動を一切 exercise しない**。通ったように見えて old def を検証しているだけの偽ゲートだった。`cp` による mid-session 差し替えも `/resume` も反映されない。
 
-1. **適用**: worktree の対象 `.md`（`changed_files` の `.claude/agents/*-analyst.md`）を main repo の `.claude/agents/` にコピー（上書き）
-   ```bash
-   cp <worktree>/.claude/agents/<name>-analyst.md <main>/.claude/agents/<name>-analyst.md
-   ```
-2. **実行**: メインセッションで `/analyze-activity {fixture_date}` を実行（`.claude/skills/analyze-activity/SKILL.md` が Single Source of Truth）
-   - temp ディレクトリパスは `.claude/skills/analyze-activity/SKILL.md` の ANALYSIS_TEMP_DIR 定義に従う（timestamp 付きユニークパス）
-   - Fixture: `dev-reference.md` §3 の L3 検証基準を参照
-3. **検証基準チェック**（`dev-reference.md` §3 の L3 検証基準）:
-   - **構造チェック**: 5 セクションの `analysis_data` が非 null、必須フィールド存在
-   - **内容チェック**: ペース・HR 値が fixture 範囲と整合、セクション間矛盾なし
-4. (任意) DuckDB 挿入検証: `insert_section_analysis_dict` で各セクション挿入成功を確認
-5. **復元**: 一時適用した `.md` を main の git 管理状態に戻す
-   ```bash
-   git -C <main> checkout -- .claude/agents/<name>-analyst.md
-   ```
-6. pass/fail + 詳細を返却
+### 正しい L3 検証（pre-merge diff レビュー + post-merge fresh-session E2E）
 
-> live MCP サーバ再起動（`reload_server`）は使わない。agent 定義の差し替えはファイルの一時適用→復元で完結する。
+agent 定義変更は **pre-merge に同一セッションで挙動検証できない**（原理的制約）。したがって:
+
+1. **Pre-merge（人間ゲート）**: メインセッションが worktree の `.md` 差分を Read で精査する。プロンプトは人間可読なので、構造・意図・出力キー整合・アンチ捏造ガード・[[]] 参照等をレビューで担保する。`implement-tier` は L3 を auto-merge せず escalate 済み。
+2. **Merge**: レビュー通過後、人間判断でマージ（`/ship --pr N --validated` 相当）。
+3. **Post-merge fresh-session E2E**: **変更が main の on-disk にある状態で開始した新規セッション**で `/analyze-activity {fixture_date}` を実行し、下記検証基準をチェックする（fresh session でないとキャッシュに載らないため必須）。
+   - 構造/内容/Fixture 基準は `dev-reference.md` §3 の L3 検証基準を参照。
+4. **不合格なら revert**: 構造チェック失敗なら該当 agent 定義変更を revert（**merge-first-verify-later; revert-if-bad**）。
+
+> なぜ fresh session が必須か: agentType レジストリは（本文含め）セッション開始時に一度だけ登録され、以後 spawn ごとに再読込されない（#586/#593/#742）。ゆえに「新規/変更 agent 定義を **pre-merge に** E2E 検証する」ことは原理的に不可能で、挙動検証は必ずマージ後の新規セッションに回る。pre-merge ゲートは diff レビュー、behavioral 検証は post-merge fresh session、が唯一成立する分担。
 
 ## 例外: live MCP サーバコードの検証（メインセッション限定）
 
