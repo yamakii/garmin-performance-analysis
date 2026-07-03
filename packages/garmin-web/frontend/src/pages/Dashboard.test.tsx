@@ -199,6 +199,19 @@ describe("Dashboard", () => {
     expect(screen.getByText("イージーラン")).toBeInTheDocument();
   });
 
+  it("test_dashboard_renders_without_today_plan_card", async () => {
+    mockAll();
+    renderDashboard();
+
+    // ThisWeekPlan (Garmin-native plan) still renders...
+    expect(await screen.findByText("Long Run")).toBeInTheDocument();
+    // ...but the removed plan-vs-actual TodayPlanCard does not.
+    expect(screen.queryByText("今日の予定と実績")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "今日の予定と実績" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("keeps the page alive when supplementary endpoints fail", async () => {
     mockAll();
     vi.mocked(fetchRaceReadiness).mockRejectedValue(new Error("boom"));

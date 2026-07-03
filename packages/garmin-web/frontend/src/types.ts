@@ -8,22 +8,6 @@ export interface ActivitySummary {
   avg_heart_rate: number | null;
 }
 
-// --- Today's planned workout (Issue #721) ---
-// `/api/planned-workouts/today` returns the planned session for a day, or null
-// on a rest day. Pace targets are sec/km; HR targets are bpm.
-export interface PlannedWorkoutToday {
-  workout_id: string;
-  workout_type: string | null;
-  description_ja: string | null;
-  target_distance_km: number | null;
-  target_pace_low: number | null;
-  target_pace_high: number | null;
-  target_hr_low: number | null;
-  target_hr_high: number | null;
-  actual_activity_id: number | null;
-  adherence_score: number | null;
-}
-
 // --- Goal page (Issue #282) ---
 
 export interface GoalProfile {
@@ -473,7 +457,6 @@ export interface SummarySectionData {
   integrated_score?: number;
   next_action?: string;
   next_run_target?: Record<string, unknown>;
-  plan_achievement?: Record<string, unknown>;
   [key: string]: unknown;
 }
 

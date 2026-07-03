@@ -3,7 +3,6 @@ import { formatNumber } from "../../utils/formatNumber";
 import FallbackFields from "./FallbackFields";
 import MarkdownText from "./MarkdownText";
 import NextRunTarget from "./NextRunTarget";
-import PlanAchievement from "./PlanAchievement";
 import ReportCard, { SUBCARD } from "./ReportCard";
 import StarRating from "./StarRating";
 import StarRatingBreakdown from "./StarRatingBreakdown";
@@ -20,7 +19,6 @@ const KNOWN_KEYS = [
   "integrated_score",
   "next_action",
   "next_run_target",
-  "plan_achievement",
 ];
 
 function StringList({
@@ -151,13 +149,6 @@ export default function SummaryReport({
               )}
             </div>
           )}
-          {data.plan_achievement != null &&
-            typeof data.plan_achievement === "object" &&
-            !Array.isArray(data.plan_achievement) && (
-              <PlanAchievement
-                data={data.plan_achievement as Record<string, unknown>}
-              />
-            )}
           <FallbackFields data={data} exclude={KNOWN_KEYS} />
         </div>
       )}

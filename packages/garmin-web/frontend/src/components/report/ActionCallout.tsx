@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 /**
  * Emphasized callout for actionable recommendations
- * (recommendations / next_action / next_run_target / plan_achievement).
+ * (recommendations / next_action / next_run_target).
  */
 export default function ActionCallout({
   title,

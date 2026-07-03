@@ -140,6 +140,22 @@ describe("SummaryReport", () => {
     expect(screen.queryByText("recommended_type")).not.toBeInTheDocument();
   });
 
+  it("test_summary_report_omits_plan_achievement", () => {
+    // Summary without plan_achievement (Issue #782: plan-vs-actual UI removed).
+    render(<SummaryReport section={section(baseData)} />);
+
+    // Core sections still render as before.
+    expect(
+      screen.getByText("有酸素ベースの安定したランでした。"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("強み")).toBeInTheDocument();
+    expect(screen.getByText("改善ポイント")).toBeInTheDocument();
+
+    // No dedicated plan-achievement card is rendered.
+    expect(screen.queryByText("プラン達成度")).not.toBeInTheDocument();
+    expect(screen.queryByText("plan_achievement")).not.toBeInTheDocument();
+  });
+
   it("unknown fields fall back to key-value", () => {
     render(
       <SummaryReport
