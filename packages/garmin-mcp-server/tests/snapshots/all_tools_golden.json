@@ -253,6 +253,32 @@
     }
   },
   {
+    "name": "find_unanalyzed_activities",
+    "description": "Find running activities missing a complete set of section analyses in a date range. Returns [{activity_id, date, section_count}] for activities whose distinct section_analyses count is below required_sections (default 5), ordered by date ascending. Used to backfill analysis history for catch-up-ingested days.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "start_date": {
+          "type": "string",
+          "description": "Start date (inclusive) in YYYY-MM-DD format"
+        },
+        "end_date": {
+          "type": "string",
+          "description": "End date (inclusive) in YYYY-MM-DD format"
+        },
+        "required_sections": {
+          "type": "integer",
+          "description": "Section count considered complete (default 5)",
+          "default": 5
+        }
+      },
+      "required": [
+        "start_date",
+        "end_date"
+      ]
+    }
+  },
+  {
     "name": "analyze_performance_trends",
     "description": "Analyze performance trends across multiple activities with filtering (Phase 3.1)",
     "inputSchema": {

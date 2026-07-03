@@ -931,6 +931,24 @@ class GarminDBReader:
             activity_id, section_type, max_output_size
         )
 
+    def find_unanalyzed_activities(
+        self, start_date: str, end_date: str, required_sections: int = 5
+    ) -> list[dict[str, Any]]:
+        """Find running activities missing a complete set of section analyses.
+
+        Args:
+            start_date: Inclusive lower bound (YYYY-MM-DD)
+            end_date: Inclusive upper bound (YYYY-MM-DD)
+            required_sections: Section count considered complete (default 5)
+
+        Returns:
+            [{"activity_id": int, "date": "YYYY-MM-DD", "section_count": int}]
+            ordered by date ascending; incomplete activities only.
+        """
+        return self.performance.find_unanalyzed_activities(
+            start_date, end_date, required_sections
+        )
+
     # ========== Race Methods ==========
 
     def get_race_readiness(

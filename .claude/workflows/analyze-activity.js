@@ -24,22 +24,41 @@ export const meta = {
 // CI meta-checks job). Keep it free of top-level side effects / workflow
 // globals so the test can extract and exercise it directly.
 // >>> testable
+// Per-run cap on backfill days so a wide catch-up window can't fan out into an
+// unbounded number of serial analyses. Overflow is reported (no silent caps).
+const MAX_BACKFILL_DATES = 5
+
 // The harness may deliver `args` as a JSON string, a bare date string, an
-// object, or undefined. Normalize to { date: string | null }.
+// object, or undefined. Normalize to { date: string | null, dates: string[] | null }.
+// `dates` (backfill mode) takes precedence when a non-empty array is supplied.
 function normalizeArgs(raw) {
+  const fromObj = (o) => {
+    if (Array.isArray(o.dates) && o.dates.length > 0) {
+      return { date: null, dates: o.dates.map(String) }
+    }
+    return { date: o.date ?? null, dates: null }
+  }
   if (typeof raw === 'string') {
     const s = raw.trim()
-    if (!s) return { date: null }
+    if (!s) return { date: null, dates: null }
     try {
       const parsed = JSON.parse(s)
-      if (parsed && typeof parsed === 'object') return { date: parsed.date ?? null }
-      return { date: String(parsed) }
+      if (parsed && typeof parsed === 'object') return fromObj(parsed)
+      return { date: String(parsed), dates: null }
     } catch {
-      return { date: s } // bare date string like "2025-10-09"
+      return { date: s, dates: null } // bare date string like "2025-10-09"
     }
   }
-  if (raw && typeof raw === 'object') return { date: raw.date ?? null }
-  return { date: null }
+  if (raw && typeof raw === 'object') return fromObj(raw)
+  return { date: null, dates: null }
+}
+
+// Split a backfill date list into the days to run now (capped) and the count of
+// deferred days. `remaining > 0` is surfaced via log so overflow is never silent.
+function planBackfill(dates, cap = MAX_BACKFILL_DATES) {
+  const toRun = dates.slice(0, cap)
+  const remaining = Math.max(0, dates.length - cap)
+  return { toRun, remaining }
 }
 
 // has_run gate: only run the analysis phases when the day had a running activity.
@@ -150,72 +169,93 @@ const MERGE_SCHEMA = {
   },
 }
 
-// ── Phase Fetch: ingest + prefetch CONTEXT once (returned inline) ──
-phase('Fetch')
-const fetched = await agent(fetchPrompt(ARGS.date), {
-  label: 'fetch',
-  phase: 'Fetch',
-  effort: 'low',
-  // orchestration (MCP/bash calls + JSON echo), but context_json must be copied
-  // verbatim ("一字一句そのまま") — haiku is unreliable at transcribing the large
-  // prefetch JSON, so pin sonnet. Pins the model instead of inheriting the session's.
-  model: 'sonnet',
-  schema: FETCH_SCHEMA,
-})
+// Analyze a single day end-to-end (Fetch → Analyze → Finalize). Runs the same
+// pipeline whether invoked once (single-date mode) or per day in a serial
+// backfill loop. DuckDB is single-writer, so days must not overlap the merge.
+async function runOneDay(date) {
+  // ── Phase Fetch: ingest + prefetch CONTEXT once (returned inline) ──
+  phase('Fetch')
+  const fetched = await agent(fetchPrompt(date), {
+    label: 'fetch',
+    phase: 'Fetch',
+    effort: 'low',
+    // orchestration (MCP/bash calls + JSON echo), but context_json must be copied
+    // verbatim ("一字一句そのまま") — haiku is unreliable at transcribing the large
+    // prefetch JSON, so pin sonnet. Pins the model instead of inheriting the session's.
+    model: 'sonnet',
+    schema: FETCH_SCHEMA,
+  })
 
-if (!shouldAnalyze(fetched)) {
-  log('ランニング activity なし。catch_up_ingest の差分取込のみで終了')
-  return { status: 'no_run', catch_up_summary: fetched?.catch_up_summary ?? null }
+  if (!shouldAnalyze(fetched)) {
+    log(`ランニング activity なし（${date ?? 'today'}）。catch_up_ingest の差分取込のみ`)
+    return { status: 'no_run', activity_date: fetched?.activity_date ?? date ?? null, catch_up_summary: fetched?.catch_up_summary ?? null }
+  }
+
+  const ctx = {
+    tempDir: fetched.temp_dir,
+    contextJson: fetched.context_json,
+    activityId: fetched.activity_id,
+    activityDate: fetched.activity_date,
+  }
+  const plan = sectionPlan()
+
+  // ── Phase Analyze: all 4 unified sections + split in ONE parallel barrier ──
+  // summary uses CONTEXT-only consistency (no sibling JSONs), so it no longer
+  // runs serially after the others — wall-clock collapses to the slowest section.
+  phase('Analyze')
+  await parallel([
+    ...plan.unified.map((s) => () =>
+      agent(s === 'summary' ? buildSummaryPrompt(ctx) : buildSectionPrompt(s, ctx), {
+        label: s,
+        phase: 'Analyze',
+        // summary uses a focused, leaner agent (just summary rules) instead of
+        // loading the full unified def; efficiency/phase/environment stay on unified.
+        agentType: s === 'summary' ? 'summary-section-analyst' : 'unified-section-analyst',
+        // summary's cost is reasoning depth (4-axis eval, recs synthesis), not output
+        // volume (~2KB). Cap its effort to cut that reasoning time (output/UX unchanged).
+        ...(s === 'summary' ? { effort: 'medium' } : {}),
+      })
+    ),
+    () => agent(buildSplitPrompt(ctx), { label: plan.extra, phase: 'Analyze', agentType: 'split-section-analyst' }),
+  ])
+
+  // ── Phase Finalize: proofread Japanese prose, then merge into DuckDB ──
+  phase('Finalize')
+  await agent(proofreadPrompt(ctx), { label: 'proofread', phase: 'Finalize', agentType: 'proofreader' })
+  // pure orchestration (reads section JSONs, calls merge tool) — haiku suffices.
+  const merge = await agent(mergePrompt(ctx), {
+    label: 'merge',
+    phase: 'Finalize',
+    model: 'haiku',
+    schema: MERGE_SCHEMA,
+  })
+
+  const succeeded = merge?.succeeded ?? []
+  const failed = merge?.failed ?? []
+  log(`merge 完了（${fetched.activity_date}）: ${succeeded.length} 登録 / ${failed.length} 失敗`)
+
+  return {
+    status: 'done',
+    activity_id: fetched.activity_id,
+    activity_date: fetched.activity_date,
+    succeeded,
+    failed,
+    errors: merge?.errors ?? [],
+  }
 }
 
-const ctx = {
-  tempDir: fetched.temp_dir,
-  contextJson: fetched.context_json,
-  activityId: fetched.activity_id,
-  activityDate: fetched.activity_date,
+// ── Backfill mode: analyze a capped list of days serially (single writer) ──
+if (ARGS.dates && ARGS.dates.length > 0) {
+  const { toRun, remaining } = planBackfill(ARGS.dates)
+  if (remaining > 0) {
+    log(`backfill 上限 ${MAX_BACKFILL_DATES} 件を超過。今回は ${toRun.length} 件を分析、残り ${remaining} 件は次回以降`)
+  }
+  const results = []
+  for (const d of toRun) {
+    results.push(await runOneDay(d))
+  }
+  return { status: 'backfill_done', analyzed: results.length, remaining, results }
 }
-const plan = sectionPlan()
 
-// ── Phase Analyze: all 4 unified sections + split in ONE parallel barrier ──
-// summary uses CONTEXT-only consistency (no sibling JSONs), so it no longer
-// runs serially after the others — wall-clock collapses to the slowest section.
-phase('Analyze')
-await parallel([
-  ...plan.unified.map((s) => () =>
-    agent(s === 'summary' ? buildSummaryPrompt(ctx) : buildSectionPrompt(s, ctx), {
-      label: s,
-      phase: 'Analyze',
-      // summary uses a focused, leaner agent (just summary rules) instead of
-      // loading the full unified def; efficiency/phase/environment stay on unified.
-      agentType: s === 'summary' ? 'summary-section-analyst' : 'unified-section-analyst',
-      // summary's cost is reasoning depth (4-axis eval, recs synthesis), not output
-      // volume (~2KB). Cap its effort to cut that reasoning time (output/UX unchanged).
-      ...(s === 'summary' ? { effort: 'medium' } : {}),
-    })
-  ),
-  () => agent(buildSplitPrompt(ctx), { label: plan.extra, phase: 'Analyze', agentType: 'split-section-analyst' }),
-])
-
-// ── Phase Finalize: proofread Japanese prose, then merge into DuckDB ──
-phase('Finalize')
-await agent(proofreadPrompt(ctx), { label: 'proofread', phase: 'Finalize', agentType: 'proofreader' })
-// pure orchestration (reads section JSONs, calls merge tool) — haiku suffices.
-const merge = await agent(mergePrompt(ctx), {
-  label: 'merge',
-  phase: 'Finalize',
-  model: 'haiku',
-  schema: MERGE_SCHEMA,
-})
-
-const succeeded = merge?.succeeded ?? []
-const failed = merge?.failed ?? []
-log(`merge 完了: ${succeeded.length} 登録 / ${failed.length} 失敗`)
-
-return {
-  status: 'done',
-  activity_id: fetched.activity_id,
-  activity_date: fetched.activity_date,
-  succeeded,
-  failed,
-  errors: merge?.errors ?? [],
-}
+// ── Single-date mode (default) ──
+return await runOneDay(ARGS.date)

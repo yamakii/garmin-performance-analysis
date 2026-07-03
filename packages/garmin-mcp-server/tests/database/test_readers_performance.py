@@ -273,3 +273,81 @@ class TestGetSectionAnalysis:
 
         assert result is not None
         assert result["summary"] == "new"
+
+
+# ---------------------------------------------------------------------------
+# find_unanalyzed_activities
+# ---------------------------------------------------------------------------
+
+_ALL_SECTIONS = ["efficiency", "phase", "environment", "summary", "split"]
+
+
+def _seed_activity(
+    conn: duckdb.DuckDBPyConnection,
+    activity_id: int,
+    date: str,
+    section_count: int,
+) -> None:
+    """Insert an activity plus ``section_count`` distinct section analyses."""
+    conn.execute(
+        "INSERT INTO activities (activity_id, activity_date) VALUES (?, ?)",
+        [activity_id, date],
+    )
+    for i, section in enumerate(_ALL_SECTIONS[:section_count]):
+        conn.execute(
+            """INSERT INTO section_analyses
+               (analysis_id, activity_id, activity_date, section_type,
+                analysis_data)
+               VALUES (?, ?, ?, ?, ?)""",
+            [
+                activity_id * 10 + i,
+                activity_id,
+                date,
+                section,
+                json.dumps({"summary": section}),
+            ],
+        )
+
+
+@pytest.mark.unit
+class TestFindUnanalyzedActivities:
+    """Tests for PerformanceReader.find_unanalyzed_activities()."""
+
+    def test_find_unanalyzed_returns_incomplete(self, reader_db_path: Path):
+        """3 activities (5/3/0 sections) -> 2 incomplete with counts 3 and 0."""
+        conn = duckdb.connect(str(reader_db_path))
+        _seed_activity(conn, 70000001, "2025-06-01", 5)  # complete
+        _seed_activity(conn, 70000002, "2025-06-02", 3)  # incomplete
+        _seed_activity(conn, 70000003, "2025-06-03", 0)  # never analyzed
+        conn.close()
+
+        reader = PerformanceReader(db_path=str(reader_db_path))
+        result = reader.find_unanalyzed_activities("2025-06-01", "2025-06-30")
+
+        assert [r["activity_id"] for r in result] == [70000002, 70000003]
+        assert [r["section_count"] for r in result] == [3, 0]
+        assert [r["date"] for r in result] == ["2025-06-02", "2025-06-03"]
+
+    def test_find_unanalyzed_empty_when_complete(self, reader_db_path: Path):
+        """Every activity has 5 sections -> no incomplete activities."""
+        conn = duckdb.connect(str(reader_db_path))
+        _seed_activity(conn, 70000010, "2025-06-01", 5)
+        _seed_activity(conn, 70000011, "2025-06-02", 5)
+        conn.close()
+
+        reader = PerformanceReader(db_path=str(reader_db_path))
+        result = reader.find_unanalyzed_activities("2025-06-01", "2025-06-30")
+
+        assert result == []
+
+    def test_find_unanalyzed_respects_date_range(self, reader_db_path: Path):
+        """An unanalyzed activity outside the range is excluded."""
+        conn = duckdb.connect(str(reader_db_path))
+        _seed_activity(conn, 70000020, "2025-06-15", 0)  # in range
+        _seed_activity(conn, 70000021, "2025-08-01", 0)  # out of range
+        conn.close()
+
+        reader = PerformanceReader(db_path=str(reader_db_path))
+        result = reader.find_unanalyzed_activities("2025-06-01", "2025-06-30")
+
+        assert [r["activity_id"] for r in result] == [70000020]
