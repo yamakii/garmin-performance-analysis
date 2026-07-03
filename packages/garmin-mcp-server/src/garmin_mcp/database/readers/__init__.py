@@ -31,6 +31,7 @@ from garmin_mcp.database.readers.splits import SplitsReader
 from garmin_mcp.database.readers.strength_sessions import StrengthSessionsReader
 from garmin_mcp.database.readers.time_series import TimeSeriesReader
 from garmin_mcp.database.readers.training_load import TrainingLoadReader
+from garmin_mcp.database.readers.trends_narration import TrendNarrationReader
 from garmin_mcp.database.readers.utility import UtilityReader
 
 __all__ = [
@@ -45,6 +46,7 @@ __all__ = [
     "DurabilityReader",
     "FitnessCurveReader",
     "StrengthSessionsReader",
+    "TrendNarrationReader",
     "UtilityReader",
     "TimeSeriesReader",
     "ExportReader",

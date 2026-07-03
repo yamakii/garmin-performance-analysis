@@ -24,6 +24,7 @@ from garmin_mcp.database.readers import (
     StrengthSessionsReader,
     TimeSeriesReader,
     TrainingLoadReader,
+    TrendNarrationReader,
     UtilityReader,
 )
 
@@ -73,6 +74,7 @@ class GarminDBReader:
         self.durability = DurabilityReader(db_path)
         self.fitness_curve = FitnessCurveReader(db_path)
         self.strength_sessions = StrengthSessionsReader(db_path)
+        self.trends_narration = TrendNarrationReader(db_path)
         self.utility = UtilityReader(db_path)
 
         # Expose db_path for handlers and scripts

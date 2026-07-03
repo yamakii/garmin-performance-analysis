@@ -55,7 +55,7 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 
 ---
 
-## Table of Contents (22 domain tables by category)
+## Table of Contents (23 domain tables by category)
 
 | # | Table | Category | Primary Key | Row scale |
 |---|-------|----------|-------------|-----------|
@@ -81,6 +81,7 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 | 20 | [strength_sessions](#20-strength_sessions) | Training | `activity_id` | per strength session |
 | 21 | [daily_wellness](#21-daily_wellness) | Physiology | `wellness_id` (UNIQUE on `date`) | daily |
 | 22 | [sync_runs](#22-sync_runs) | Operations | `run_id` | per scheduled sync run |
+| 23 | [trend_analyses](#23-trend_analyses) | Analysis | `analysis_id` | per week/month trend narration |
 
 ---
 
@@ -914,6 +915,32 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 <!-- END GENERATED: schema:sync_runs -->
 
 **Units & notes**: `domains` is a CSV of the requested domains (e.g. `running,weight,strength,wellness`). `results` is `json.dumps(catch_up_ingest(...))` including each domain's payload or `{"error": ...}` and the resolved per-domain `window`. `status` is `success` (all domains OK), `partial` (≥1 domain returned an error), or `error` (the run itself raised).
+
+---
+
+## 23. trend_analyses
+
+**Purpose**: Weekly / monthly longitudinal trend narratives for the continuous-coaching loop (issue #789, parent #701, spike #714). Append-only: each save appends a new version, and the reader returns the latest version (highest `created_at`) per `(user_id, granularity, period_start)` as canonical. One run = one row, so no `run_id` column is needed (unlike `section_analyses`).
+**Primary Key**: `analysis_id` (surrogate, drawn from `seq_trend_analyses_id`)
+**Source**: Written by `garmin_mcp.database.inserters.trend_analyses:insert_trend_analysis`; read by `garmin_mcp.database.readers.trends_narration:TrendNarrationReader`; created by migration `add_trend_analyses_table` (version 16). DDL is owned exclusively by the migration (not `_ensure_tables()`).
+
+### Schema
+
+<!-- BEGIN GENERATED: schema:trend_analyses -->
+| Column | Type |
+|--------|------|
+| analysis_id (PK) | INTEGER |
+| user_id | VARCHAR |
+| granularity | VARCHAR |
+| period_start | DATE |
+| period_end | DATE |
+| analysis_data | VARCHAR |
+| created_at | TIMESTAMP |
+| agent_name | VARCHAR |
+| agent_version | VARCHAR |
+<!-- END GENERATED: schema:trend_analyses -->
+
+**Units & notes**: `granularity` is `week` or `month`. `period_start` / `period_end` bound the aggregation window (inclusive). `analysis_data` is `json.dumps(...)` of the free-form trend narration payload. `agent_version` defaults to `1.0`.
 
 ---
 
