@@ -13,13 +13,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from garmin_mcp.scripts.backfill_wellness import (
-    backoff_seconds,
-    is_rate_limit_error,
-    jittered,
-    month_chunks,
-    run_backfill,
-)
+from garmin_mcp.ingest.retry import backoff_seconds, is_rate_limit_error, jittered
+from garmin_mcp.scripts.backfill_wellness import month_chunks, run_backfill
 
 
 class _FakeTooManyRequestsError(Exception):
@@ -89,6 +84,20 @@ def test_jittered_within_bounds() -> None:
     """rand=0 maps to the lower bound, rand~1 to the upper bound."""
     assert jittered(8.0, 0.2, 0.0) == pytest.approx(6.4)
     assert jittered(8.0, 0.2, 1.0) == pytest.approx(9.6)
+
+
+# --------------------------------------------------------------------------- #
+# shared retry module usage (issue #711)
+# --------------------------------------------------------------------------- #
+@pytest.mark.unit
+def test_backfill_wellness_uses_shared_retry() -> None:
+    """backfill_wellness re-uses the retry helpers from the shared module."""
+    from garmin_mcp.ingest import retry
+    from garmin_mcp.scripts import backfill_wellness
+
+    assert backfill_wellness.is_rate_limit_error is retry.is_rate_limit_error
+    assert backfill_wellness.backoff_seconds is retry.backoff_seconds
+    assert backfill_wellness.jittered is retry.jittered
 
 
 # --------------------------------------------------------------------------- #

@@ -62,7 +62,7 @@ def get_garmin_client() -> Garmin:
         try:
             client.login(tokenstore_path)
             logger.info(f"Garmin authentication via token cache ({tokenstore_path})")
-        except (FileNotFoundError, Exception) as e:
+        except Exception as e:
             logger.info(
                 f"Token login failed ({type(e).__name__}), "
                 f"authenticating with credentials as {email}"

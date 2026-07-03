@@ -46,6 +46,7 @@ from datetime import date
 from typing import Any
 
 from garmin_mcp.database.connection import get_db_path
+from garmin_mcp.ingest.retry import backoff_seconds, is_rate_limit_error, jittered
 
 logger = logging.getLogger(__name__)
 
@@ -89,59 +90,6 @@ def month_chunks(start: str, end: str) -> list[tuple[str, str]]:
 
     chunks.reverse()
     return chunks
-
-
-def backoff_seconds(attempt: int, base: float = 60.0, cap: float = 600.0) -> float:
-    """Exponential backoff: ``base * 2**attempt`` capped at ``cap``.
-
-    Args:
-        attempt: Zero-based retry attempt (0 -> base, 1 -> 2*base, ...).
-        base: Base delay in seconds for ``attempt == 0``.
-        cap: Maximum delay in seconds.
-
-    Returns:
-        The (capped) backoff delay in seconds.
-    """
-    return float(min(base * (2.0**attempt), cap))
-
-
-def is_rate_limit_error(exc: Exception) -> bool:
-    """Return True when ``exc`` indicates a Garmin rate-limit / 429 response.
-
-    Detects :class:`GarminConnectTooManyRequestsError` by class name (avoids a
-    hard import dependency) and the strings ``"429"`` / ``"Too Many Requests"``
-    in the exception message.
-
-    Args:
-        exc: The exception to classify.
-
-    Returns:
-        True if the exception is a rate-limit error, False otherwise.
-    """
-    if type(exc).__name__ == "GarminConnectTooManyRequestsError":
-        return True
-    message = str(exc).lower()
-    return "429" in message or "too many requests" in message
-
-
-def jittered(throttle: float, jitter: float, rand: float) -> float:
-    """Apply +/-``jitter`` fractional jitter to ``throttle``.
-
-    Maps ``rand`` in ``[0, 1)`` linearly onto ``[throttle*(1-jitter),
-    throttle*(1+jitter)]`` so callers can inject a deterministic ``rand`` in
-    tests.
-
-    Args:
-        throttle: Base throttle in seconds.
-        jitter: Jitter fraction (e.g. ``0.2`` for +/-20%).
-        rand: Random value in ``[0, 1)``.
-
-    Returns:
-        The jittered throttle in seconds.
-    """
-    low = throttle * (1.0 - jitter)
-    high = throttle * (1.0 + jitter)
-    return low + (high - low) * rand
 
 
 def _ingest_chunk_with_retry(
