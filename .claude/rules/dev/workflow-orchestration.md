@@ -13,6 +13,11 @@
 ## Self-Improvement Loop
 - After ANY user correction: append to `.claude/tasks/lessons.md`
 - Format: `- [YYYY-MM-DD] {mistake} -> {correct approach}`
+- **lessons.md はルール昇格前の一時バッファ**（恒久ルールの正本ではない）。溜めっぱなしにせず定期的に triage する:
+  再発防止をルール化できる教訓は `.claude/rules/` に昇格させ、一度きり・陳腐化したものは破棄する。
+  棚卸しの手順は `/project-status` の Step 5 に組み込まれている
+- lessons.md / settings.local.json は **git 管理外**。背景ジョブでは bg-isolation guard が shared checkout への
+  Edit/Write を拒否するため、これらの追記・削除は **Bash 経由の `uv run python`** で行う（python 直叩き・Edit は不可）
 - Write rules in `.claude/rules/` that prevent the same mistake from recurring
 - Ruthlessly iterate until mistake rate drops
 - セッション開始時: lessons.md を確認し、関連する過去の教訓を意識する

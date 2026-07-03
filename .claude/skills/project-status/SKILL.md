@@ -97,3 +97,18 @@ Progress: ████████░░░░ 50%
 Next actionable:
   #{番号} {タイトル} — no blockers, ready to start
 ```
+
+### Step 5: lessons.md 棚卸し（自己改善バッファの triage）
+
+進捗表示のついでに、`.claude/tasks/lessons.md`（ルール昇格前の一時バッファ）を triage する。
+lessons.md は git 管理外のため Read で内容を確認し、各エントリを分類:
+
+- **ルール化できる再発防止** → 該当する `.claude/rules/**` に昇格（新規追記 or 既存強化）し、lessons.md から削除
+- **一度きり / 既にルール化済み / 陳腐化** → lessons.md から削除
+- **保留（まだ判断がつかない）** → 残す
+
+> lessons.md は git 管理外。背景ジョブでは bg-isolation guard が Edit/Write を拒否するため、追記・削除は
+> **Bash 経由の `uv run python`** で行う（`.claude/rules/dev/workflow-orchestration.md` の Self-Improvement Loop 参照）。
+
+triage 結果を1行で報告する（例:「lessons 3件を triage: 1件を dev-reference §5 へ昇格、2件を陳腐化で削除」）。
+エントリが0件、または全て保留なら「lessons.md: triage 対象なし」と報告してスキップ。
