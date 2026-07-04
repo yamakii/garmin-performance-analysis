@@ -158,6 +158,69 @@ class PerformanceTrendAnalyzer:
             "end_date": end_date,
         }
 
+    def summarize_metric_period(
+        self,
+        metric: str,
+        activity_ids: list[int],
+        prev_activity_ids: list[int],
+    ) -> dict[str, Any]:
+        """Descriptive period summary of a metric (no within-period regression).
+
+        At week granularity, N (typically 3-6 runs) cannot support a linear
+        regression, and any signal is confounded by the week's workout-type mix
+        rather than fitness (Issue #813). Instead of regressing, describe the
+        period with its median and position it against the previous period's
+        median.
+
+        Args:
+            metric: Metric name (pace, heart_rate, ...).
+            activity_ids: Activity IDs inside the current period.
+            prev_activity_ids: Activity IDs inside the immediately preceding
+                period (e.g. the prior week), used for the period-over-period
+                delta.
+
+        Returns:
+            Dict::
+
+                {
+                    "metric": str,
+                    "mode": "descriptive",
+                    "median": float | None,        # None when no data
+                    "prev_period_median": float | None,
+                    "delta_pct": float | None,     # None when either median is None
+                    "data_points": int,
+                    "prev_data_points": int,
+                }
+
+            Deliberately carries no ``trend`` / ``slope`` / ``p_value`` keys:
+            there is no regression at this granularity.
+
+        Raises:
+            ValueError: If ``metric`` is unsupported.
+        """
+        if metric not in self.METRIC_COLUMNS and metric not in self.UNSUPPORTED_METRICS:
+            raise ValueError(f"Unsupported metric: {metric}")
+
+        current = list(self._extract_metric_values(metric, activity_ids).values())
+        previous = list(self._extract_metric_values(metric, prev_activity_ids).values())
+
+        median = float(np.median(current)) if current else None
+        prev_median = float(np.median(previous)) if previous else None
+
+        delta_pct: float | None = None
+        if median is not None and prev_median is not None and prev_median != 0:
+            delta_pct = (median - prev_median) / prev_median * 100.0
+
+        return {
+            "metric": metric,
+            "mode": "descriptive",
+            "median": median,
+            "prev_period_median": prev_median,
+            "delta_pct": delta_pct,
+            "data_points": len(current),
+            "prev_data_points": len(previous),
+        }
+
     def _apply_filters(
         self,
         activity_ids: list[int],

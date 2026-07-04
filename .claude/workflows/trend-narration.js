@@ -73,6 +73,13 @@ function narrationPrompt(ctx) {
     `<CONTEXT>\n${ctx.contextJson}\n</CONTEXT>\n` +
     `散文フィールドのみを書く: narrative（なぜトレンドが動いているか・シグナル相互関係）, ` +
     `key_learnings（配列）, recommendations（最大2件、具体的な次アクション）。\n` +
+    `【小Nガード（統計的誠実性, #813）】status="insufficient_data" もしくは data_points < 3 の成分は、` +
+    `トレンドとして語らないこと。検出力不足の "stable" は「安定」ではなく「判定不能（検出力不足）」と表現する。\n` +
+    `週次の metric_trends は mode="descriptive"（回帰ではなく median と前週比 delta_pct）。回帰・傾き・p値を語らず、` +
+    `「今週の median を前週と比べた記述」として扱うこと。\n` +
+    `週次の durability_trend / heat_adjusted_trend はトレーリング窓（8週 / 12週）で当てたトレンドで、` +
+    `in_period_activity_ids が今週の該当ラン。今週の値をそのトレーリングトレンド上に位置づけて語り、週内で回帰を主張しないこと。\n` +
+    `fitness_curve は 90 日窓の指標で、今週はその曲線上の現在位置として扱うこと（1週で崩壊/急伸したと解釈しない）。\n` +
     `headline_metrics / fusion_flags は CONTEXT の値をそのまま analysis_data に転記し、それと矛盾する主張をしないこと。\n` +
     `出力 JSON 構造:\n` +
     `{"granularity":"${ctx.granularity}","period_start":"${ctx.periodStart}","period_end":"${ctx.periodEnd}",` +
