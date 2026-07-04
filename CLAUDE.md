@@ -9,7 +9,7 @@ Garmin running performance analysis system with **DuckDB-first architecture** an
 **System Pipeline:** Raw Data (API) → DuckDB → MCP Tools → Analysis
 
 **Key Features:**
-- DuckDB normalized storage (21 tables, 100+ activities)
+- DuckDB normalized storage (22 tables, 100+ activities)
 - Token-optimized MCP tools (70-98.8% reduction), declared via a single-source `tools/` registry (see `docs/mcp-tools-reference.md` for the full set)
 - 3 analysis agents (unified-section-analyst + split-section-analyst + summary-section-analyst)
 - Japanese analysis stored in DuckDB, viewed via the Web app (code/docs in English)
@@ -121,18 +121,18 @@ Validation Agent 方式（L1/L2 は subprocess で並列起動可、L3 のみメ
 | `ApiClient` | Garmin Connect API authentication singleton |
 | `RawDataFetcher` | Cache-first raw data collection |
 | `DuckDBSaver` | Transaction-batched DuckDB insertion |
-| `GarminDBWriter` | DuckDB write operations (21 tables, 12 inserters) |
+| `GarminDBWriter` | DuckDB write operations (22 tables, 12 inserters) |
 | `GarminDBReader` | DuckDB read operations (query builders) |
 | `tools/` registry | Domain tools + 2 server tools declared as `ToolDef` (see `docs/mcp-tools-reference.md`). `server.py` dispatches directly from `ALL_DEFS_BY_NAME` (O(1) lookup) |
 
-**DuckDB Schema (21 domain tables):**
+**DuckDB Schema (22 domain tables):**
 - Metadata: `activities`, `body_composition`
 - Performance: `splits`, `performance_trends`, `time_series_metrics` (26 metrics x 1000-2000 rows)
 - Physiology: `form_efficiency`, `form_evaluations`, `form_baseline_history`, `hr_efficiency`, `heart_rate_zones`, `vo2_max`, `lactate_threshold`, `daily_wellness`
 - Training: `strength_sessions`
 - Athlete: `athlete_profile`, `athlete_goals`, `season_retrospectives`, `weekly_reviews`
 - Analysis: `section_analyses` (5 section results per activity: efficiency/phase/environment/summary/split), `trend_analyses` (weekly/monthly longitudinal trend narration)
-- Operations: `sync_runs` (scheduled auto-sync execution log)
+- Operations: `sync_runs` (scheduled auto-sync execution log), `analysis_runs` (allocated analysis run_id audit log; its INSERT makes run_id allocation durable)
 
 > See `docs/spec/duckdb_schema_mapping.md` for the full column-level schema.
 

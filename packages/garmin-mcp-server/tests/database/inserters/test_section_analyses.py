@@ -522,3 +522,115 @@ class TestSectionAnalysisInserter:
         assert distinct_runs is not None and distinct_runs[0] == 2
         assert next_run is not None and max_backfill is not None
         assert next_run[0] > max_backfill[0]
+
+    @pytest.mark.unit
+    def test_next_run_id_persists_across_writer_instances(self, initialized_db_path):
+        """A lone nextval used to evaporate on close; now it persists (#819).
+
+        Writer A allocates N; a brand-new Writer B (fresh connection) must get
+        N+1 — not N again, which was the pre-fix bug (all runs shared run_id 113).
+        """
+        from garmin_mcp.database.db_writer import GarminDBWriter
+
+        db_path = initialized_db_path
+        writer_a = GarminDBWriter(db_path=str(db_path))
+        first = writer_a.next_run_id()
+
+        writer_b = GarminDBWriter(db_path=str(db_path))
+        second = writer_b.next_run_id()
+
+        assert second == first + 1
+
+    @pytest.mark.unit
+    def test_next_run_id_records_analysis_run(self, initialized_db_path):
+        """next_run_id() writes an auditable analysis_runs row (#819)."""
+        from garmin_mcp.database.db_writer import GarminDBWriter
+
+        db_path = initialized_db_path
+        writer = GarminDBWriter(db_path=str(db_path))
+        run_id = writer.next_run_id()
+
+        conn = duckdb.connect(str(db_path))
+        row = conn.execute(
+            "SELECT run_id, started_at FROM analysis_runs WHERE run_id = ?",
+            [run_id],
+        ).fetchone()
+        conn.close()
+
+        assert row is not None
+        assert row[0] == run_id
+        assert row[1] is not None
+
+    @pytest.mark.integration
+    def test_migration_splits_conflated_run_113(self, tmp_path):
+        """Migration 18 splits the conflated run 113 into per-run clusters (#819).
+
+        15 rows sharing run_id=113 in 3 created_at clusters (>1 min apart, 5
+        sections each) → the oldest cluster keeps 113 and the next two become
+        114 / 115. The sequence is re-advanced so the next allocation is 116.
+        """
+        from garmin_mcp.database.migrations.add_analysis_runs_table import (
+            add_analysis_runs_table,
+        )
+
+        db_path = tmp_path / "conflated_run_113.duckdb"
+        conn = duckdb.connect(str(db_path))
+        conn.execute("""
+            CREATE TABLE section_analyses (
+                analysis_id INTEGER PRIMARY KEY,
+                activity_id BIGINT NOT NULL,
+                activity_date DATE NOT NULL,
+                section_type VARCHAR NOT NULL,
+                analysis_data VARCHAR,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                run_id BIGINT
+            )
+            """)
+        # Three clusters, >1 min apart; five sections per cluster (one run each),
+        # all originally conflated onto run_id 113.
+        sections = ("efficiency", "phase", "environment", "summary", "split")
+        clusters = [
+            ("2025-07-03 01:18:00", 700),  # oldest → keeps 113
+            ("2025-07-04 13:58:00", 701),  # → 114
+            ("2025-07-04 17:48:00", 702),  # → 115
+        ]
+        analysis_id = 1
+        for base_ts, activity_id in clusters:
+            base_minute = base_ts[:-2]  # strip seconds, keep "... HH:MM:"
+            for i, section in enumerate(sections):
+                stamp = f"{base_minute}{i:02d}.{i}"  # sub-second apart within run
+                conn.execute(
+                    "INSERT INTO section_analyses"
+                    " (analysis_id, activity_id, activity_date, section_type,"
+                    "  analysis_data, created_at, run_id)"
+                    " VALUES (?, ?, ?, ?, ?, ?, 113)",
+                    [analysis_id, activity_id, base_ts[:10], section, "{}", stamp],
+                )
+                analysis_id += 1
+
+        add_analysis_runs_table(conn)
+
+        # Each activity's five sections now carry a single distinct run_id, and
+        # the oldest cluster keeps 113 while the others take 114 and 115.
+        per_run = conn.execute(
+            "SELECT run_id, COUNT(*) FROM section_analyses GROUP BY run_id"
+            " ORDER BY run_id"
+        ).fetchall()
+        assert per_run == [(113, 5), (114, 5), (115, 5)]
+
+        # The oldest cluster (activity 700) keeps 113.
+        oldest = conn.execute(
+            "SELECT DISTINCT run_id FROM section_analyses WHERE activity_id = 700"
+        ).fetchall()
+        assert oldest == [(113,)]
+
+        # analysis_runs is backfilled with one row per distinct run_id.
+        run_rows = conn.execute(
+            "SELECT run_id FROM analysis_runs ORDER BY run_id"
+        ).fetchall()
+        assert run_rows == [(113,), (114,), (115,)]
+
+        # The sequence is re-advanced above the highest run_id → next id is 116.
+        next_run = conn.execute("SELECT nextval('seq_analysis_run_id')").fetchone()
+        conn.close()
+        assert next_run is not None and next_run[0] == 116

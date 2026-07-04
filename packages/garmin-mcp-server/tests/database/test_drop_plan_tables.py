@@ -59,6 +59,6 @@ def test_migration_idempotent(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
-def test_registry_head_is_v17() -> None:
-    """The registry head is the new v17 drop_plan_tables migration."""
-    assert MIGRATIONS[-1] == (17, "drop_plan_tables", _wrap_drop_plan_tables)
+def test_drop_plan_tables_registered_as_v17() -> None:
+    """drop_plan_tables is registered at version 17 (no longer the head)."""
+    assert (17, "drop_plan_tables", _wrap_drop_plan_tables) in MIGRATIONS

@@ -55,7 +55,7 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 
 ---
 
-## Table of Contents (23 domain tables by category)
+## Table of Contents (24 domain tables by category)
 
 | # | Table | Category | Primary Key | Row scale |
 |---|-------|----------|-------------|-----------|
@@ -80,6 +80,7 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 | 21 | [daily_wellness](#21-daily_wellness) | Physiology | `wellness_id` (UNIQUE on `date`) | daily |
 | 22 | [sync_runs](#22-sync_runs) | Operations | `run_id` | per scheduled sync run |
 | 23 | [trend_analyses](#23-trend_analyses) | Analysis | `analysis_id` | per week/month trend narration |
+| 24 | [analysis_runs](#24-analysis_runs) | Operations | `run_id` | per analysis run |
 
 ---
 
@@ -871,13 +872,32 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 
 ---
 
+## 24. analysis_runs
+
+**Purpose**: Bookkeeping / audit log of allocated analysis `run_id`s (issue #819). Its real role is durability: a lone `nextval('seq_analysis_run_id')` on a short-lived write connection does **not** persist the sequence advance on DuckDB, so `next_run_id()` used to re-allocate the same id (113) on every run. Pairing the `nextval` with an INSERT into this table on the *same* connection makes the advance durable; the row it writes doubles as an auditable run log.
+**Primary Key**: `run_id` (allocated from `seq_analysis_run_id`)
+**Source**: Written by `GarminDBWriter.next_run_id()`; created by both migration `add_analysis_runs_table` (version 18) and `_ensure_tables()`. The migration also splits the historically conflated run 113 and re-advances `seq_analysis_run_id` above the highest existing `run_id`.
+
+### Schema
+
+<!-- BEGIN GENERATED: schema:analysis_runs -->
+| Column | Type |
+|--------|------|
+| run_id (PK) | BIGINT |
+| started_at | TIMESTAMP |
+<!-- END GENERATED: schema:analysis_runs -->
+
+**Units & notes**: `started_at` is `CURRENT_TIMESTAMP` at allocation time. One row per `next_run_id()` call. The re-analysis fallback path in `insert_section_analysis` (`run_id is None`) allocates on its own insert connection (already durable) and intentionally does not log here.
+
+---
+
 ## Indexes & Constraints Summary
 
 - **No FOREIGN KEY constraints** anywhere (removed 2025-11-01, migration `remove_fk_constraints`). Referential integrity is enforced by the ingest pipeline.
 - UNIQUE: `idx_body_composition_date` on `body_composition(date)`; `idx_activity_section` on `section_analyses(activity_id, section_type)`.
 - Composite PKs: `splits(activity_id, split_index)`, `time_series_metrics(activity_id, seq_no)`, `heart_rate_zones(activity_id, zone_number)`.
 - Secondary indexes on `time_series_metrics`: `idx_time_series_activity(activity_id)`, `idx_time_series_timestamp(activity_id, timestamp_s)`.
-- Sequences back the surrogate keys for `form_evaluations` (`form_evaluations_seq`), `form_baseline_history` (`form_baseline_history_seq`), `section_analyses` (`seq_section_analyses_id`), and `sync_runs` (`seq_sync_runs_id`).
+- Sequences back the surrogate keys for `form_evaluations` (`form_evaluations_seq`), `form_baseline_history` (`form_baseline_history_seq`), `section_analyses` (`seq_section_analyses_id`), `sync_runs` (`seq_sync_runs_id`), and analysis `run_id` allocation (`seq_analysis_run_id`, whose advance is persisted by the `analysis_runs` INSERT — issue #819).
 
 ---
 
