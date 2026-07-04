@@ -238,8 +238,18 @@ class DurabilityReader(BaseDBReader):
                         "gct_fade_slope_per_day": float | None,
                         "form_direction": "improving" | "worsening" | "stable"
                                           | "insufficient_data",
+                        "best_run": {...} | None,   # lowest decoupling
+                        "worst_run": {...} | None,  # highest decoupling
+                        "metric_directions": {...}, # sign-convention labels
                     },
                 }
+
+            ``best_run`` / ``worst_run`` rank the runs by cardiac
+            ``decoupling_pct`` (lower = better durability) and are ``None`` when
+            fewer than 2 activities exist. ``metric_directions`` labels the sign
+            conventions and is always present. See ``_build_durability_ranking``.
+            These are descriptive and computed regardless of the ``<3``-point
+            regression significance gate.
 
             ``direction`` is ``improving`` when decoupling falls over time
             (slope < 0 and p < 0.05), ``worsening`` when it rises significantly,
@@ -263,7 +273,69 @@ class DurabilityReader(BaseDBReader):
         activities.sort(key=lambda a: a["activity_date"])
 
         trend = self._build_trend(activities)
+        # Ranking is descriptive (which run held up best), independent of the
+        # <3-point regression significance gate, so it is merged unconditionally.
+        trend.update(self._build_durability_ranking(activities))
         return {"activities": activities, "trend": trend}
+
+    def _build_durability_ranking(
+        self, activities: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Rank long runs by cardiac decoupling (lower = better durability).
+
+        pace_fade is intentionally excluded from ranking (it is a pacing-strategy
+        descriptor, not a durability measure). Returns::
+
+            {
+                "best_run": {...} | None,
+                "worst_run": {...} | None,
+                "metric_directions": {
+                    "decoupling_pct": "lower_is_better",
+                    "pace_fade_pct":
+                        "descriptor_negative_means_faster_second_half",
+                },
+            }
+
+        ``best_run`` / ``worst_run`` are ``{activity_id, activity_date,
+        decoupling_pct, pace_fade_pct}`` ranked by ``decoupling_pct`` ascending
+        (lower = better), tie-broken deterministically by ``(decoupling_pct,
+        activity_date, activity_id)``. Both are ``None`` when fewer than 2
+        activities exist (cannot rank). ``metric_directions`` is always present.
+        """
+        metric_directions = {
+            "decoupling_pct": "lower_is_better",
+            "pace_fade_pct": "descriptor_negative_means_faster_second_half",
+        }
+        if len(activities) < 2:
+            return {
+                "best_run": None,
+                "worst_run": None,
+                "metric_directions": metric_directions,
+            }
+
+        ranked = sorted(
+            activities,
+            key=lambda a: (
+                a["decoupling_pct"],
+                a["activity_date"],
+                a["activity_id"],
+            ),
+        )
+        return {
+            "best_run": self._durability_run_summary(ranked[0]),
+            "worst_run": self._durability_run_summary(ranked[-1]),
+            "metric_directions": metric_directions,
+        }
+
+    @staticmethod
+    def _durability_run_summary(activity: dict[str, Any]) -> dict[str, Any]:
+        """Project an activity down to the ranking-relevant durability fields."""
+        return {
+            "activity_id": activity["activity_id"],
+            "activity_date": activity["activity_date"],
+            "decoupling_pct": activity["decoupling_pct"],
+            "pace_fade_pct": activity["pace_fade_pct"],
+        }
 
     def _build_trend(self, activities: list[dict[str, Any]]) -> dict[str, Any]:
         """Regress decoupling and GCT fade on elapsed days; classify direction.

@@ -68,6 +68,24 @@ test('narrationPrompt includes small-N guard', () => {
   assert.match(out, /descriptive/) // weekly metric_trends are descriptive
 })
 
+test('narrationPrompt includes durability decoupling-ranking guard', () => {
+  const ctx = {
+    tempDir: '/tmp/trend_week_2026-06-15_1',
+    contextJson: '{"durability_trend":{"trend":{"best_run":{"decoupling_pct":-6.8}}}}',
+    periodStart: '2026-06-15',
+    periodEnd: '2026-06-21',
+    granularity: 'week',
+  }
+  const out = narrationPrompt(ctx)
+  // durability quality is judged by decoupling and transcribed from best_run,
+  // NOT derived from raw signed values (#823).
+  assert.match(out, /best_run/)
+  assert.match(out, /decoupling/)
+  // pace_fade is a pacing-strategy descriptor, not a quality axis.
+  assert.match(out, /pace_fade/)
+  assert.match(out, /優劣軸ではない/)
+})
+
 test('test_merge_prompt_references_save_script', () => {
   const ctx = { tempDir: '/tmp/trend_week_x' }
   const out = mergeTrendPrompt(ctx)

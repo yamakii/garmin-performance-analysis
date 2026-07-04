@@ -79,6 +79,11 @@ function narrationPrompt(ctx) {
     `「今週の median を前週と比べた記述」として扱うこと。\n` +
     `週次の durability_trend / heat_adjusted_trend はトレーリング窓（8週 / 12週）で当てたトレンドで、` +
     `in_period_activity_ids が今週の該当ラン。今週の値をそのトレーリングトレンド上に位置づけて語り、週内で回帰を主張しないこと。\n` +
+    `【durability の優劣判断（#823）】どのロングランが最も「粘れた」かは decoupling（心拍ドリフト, 低いほど良, ` +
+    `ペーシング戦略に依存しない）で判断し、durability_trend の best_run / worst_run（決定的に算出済み）を転記すること。` +
+    `生の符号付き値から自分で優劣を導出しない（0 に近い＝良い、ではない）。\n` +
+    `pace_fade は遂行の記述（負＝後半が速い/ネガティブスプリット）であって優劣軸ではない。大きな負値を無条件に「良い」「粘れた」と表現しない。` +
+    `理想かどうかは training_type の意図（steady aerobic か progression/fast-finish か）と併記し、意図が不明なら断定しないこと。\n` +
     `fitness_curve は 90 日窓の指標で、今週はその曲線上の現在位置として扱うこと（1週で崩壊/急伸したと解釈しない）。\n` +
     `headline_metrics / fusion_flags は CONTEXT の値をそのまま analysis_data に転記し、それと矛盾する主張をしないこと。\n` +
     `出力 JSON 構造:\n` +
