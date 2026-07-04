@@ -561,6 +561,17 @@ class GarminDBWriter:
                 )
             """)
 
+            # Create analysis_runs table (issue #819). Bookkeeping/audit log of
+            # allocated analysis run_ids. Its INSERT in next_run_id() is what
+            # makes the seq_analysis_run_id advance durable (a lone nextval does
+            # not persist on DuckDB). Mirrors migrations/add_analysis_runs_table.py.
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS analysis_runs (
+                    run_id BIGINT PRIMARY KEY,
+                    started_at TIMESTAMP
+                )
+            """)
+
             # Create time_series_metrics table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS time_series_metrics (
@@ -814,15 +825,27 @@ class GarminDBWriter:
             return False
 
     def next_run_id(self) -> int:
-        """Allocate a new analysis ``run_id`` (issue #776).
+        """Allocate a new analysis ``run_id`` (issue #776; durable per #819).
 
         Call once per analysis run and pass the value to every
         :meth:`insert_section_analysis` in that run so its sections share one
         version. Values come from ``seq_analysis_run_id``, which starts above
         every pre-existing run_id so new runs never collide with backfilled ones.
+
+        The allocation is paired with a bookkeeping INSERT into ``analysis_runs``
+        on the *same* connection (issue #819): a lone ``nextval`` does not persist
+        the sequence advance on DuckDB, so without the accompanying write every
+        run kept re-allocating the same id. The INSERT makes the advance durable
+        and doubles as an auditable run log.
         """
         with get_write_connection(self.db_path) as conn:
-            return _next_run_id_on(conn)
+            run_id = _next_run_id_on(conn)
+            conn.execute(
+                "INSERT INTO analysis_runs (run_id, started_at) "
+                "VALUES (?, CURRENT_TIMESTAMP)",
+                [run_id],
+            )
+            return run_id
 
     def insert_body_composition(self, date: str, weight_data: dict) -> bool:
         """
