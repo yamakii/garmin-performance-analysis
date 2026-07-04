@@ -1080,15 +1080,17 @@ class GarminDBReader:
             lambda: self.get_durability_trend(durability_start, date)
         )
 
-        form_anomaly_count = self._form_anomaly_count(
-            str(ref - timedelta(days=13)), date
+        form_anomaly = self._form_anomaly_signal(
+            recent_start=str(ref - timedelta(days=13)),
+            end_date=date,
+            baseline_start=str(ref - timedelta(days=90)),
         )
 
         return compute_injury_risk(
             acwr=acwr,
             durability_trend=durability_trend,
             wellness_deviation=wellness_deviation,
-            form_anomaly_count_14d=form_anomaly_count,
+            form_anomaly=form_anomaly,
         )
 
     @staticmethod
@@ -1100,37 +1102,83 @@ class GarminDBReader:
             return None
         return result if isinstance(result, dict) else None
 
-    def _form_anomaly_count(self, start_date: str, end_date: str) -> int | None:
-        """Total form anomalies across activities in ``[start_date, end_date]``.
+    def _form_anomaly_signal(
+        self, recent_start: str, end_date: str, baseline_start: str
+    ) -> dict[str, Any] | None:
+        """Acute:chronic material-form-anomaly event-rate signal (#807).
 
-        Sums ``anomalies_detected`` from the per-activity form-anomaly detector
-        over every activity in the window. Returns ``None`` when the count cannot
-        be computed (e.g. raw activity details are unavailable), so the injury
-        risk score simply drops the form factor instead of failing.
+        Sweeps every activity in ``[baseline_start, end_date]`` once, running the
+        per-activity form-anomaly detector and collapsing each activity's raw
+        z>3 spikes into deduped *material-severe* events
+        (``count_material_events``). Activities dated ``>= recent_start`` pool
+        into the recent (trailing-14-day) window; the rest form the personal
+        baseline. Events and running hours (from ``total_time_seconds``) are
+        pooled per window and turned into events/hour rates.
+
+        Replaces the old raw-count factor, whose fixed cap saturated at all times
+        because z>3 spikes appear at their ~0.22% chance base rate even on
+        healthy form. The ratio only adds risk when recent form movement exceeds
+        the athlete's own baseline.
+
+        Returns:
+            ``{"recent_rate", "baseline_rate", "recent_events", "baseline_events",
+            "recent_hours", "baseline_hours"}`` (events/hour rates), or ``None``
+            when no activity yielded raw detail (e.g. verification DB without raw
+            activity details) or on any error -- the form factor is then dropped.
         """
         try:
+            from garmin_mcp.analysis.injury_risk import count_material_events
             from garmin_mcp.rag.queries.form_anomaly_detector import (
                 FormAnomalyDetector,
             )
 
             rows = self.execute_read_query(
-                "SELECT activity_id FROM activities "
+                "SELECT activity_id, activity_date, total_time_seconds "
+                "FROM activities "
                 "WHERE activity_date >= ? AND activity_date <= ?",
-                (start_date, end_date),
+                (baseline_start, end_date),
             )
             if not rows:
                 return None
 
             detector = FormAnomalyDetector()
-            total = 0
+            recent_events = baseline_events = 0
+            recent_hours = baseline_hours = 0.0
             counted = False
-            for (activity_id,) in rows:
-                summary = detector.detect_form_anomalies_summary(activity_id)
-                detected = summary.get("anomalies_detected")
-                if detected is not None:
-                    total += int(detected)
-                    counted = True
-            return total if counted else None
+            for activity_id, activity_date, total_time_seconds in rows:
+                if total_time_seconds is None or total_time_seconds <= 0:
+                    continue
+                try:
+                    details = detector.get_form_anomaly_details(
+                        activity_id, filters={"limit": 1_000_000}
+                    )
+                except Exception:
+                    continue
+                events = count_material_events(details.get("anomalies", []))
+                hours = float(total_time_seconds) / 3600.0
+                if str(activity_date) >= recent_start:
+                    recent_events += events
+                    recent_hours += hours
+                else:
+                    baseline_events += events
+                    baseline_hours += hours
+                counted = True
+
+            if not counted:
+                return None
+
+            recent_rate = recent_events / recent_hours if recent_hours > 0 else 0.0
+            baseline_rate = (
+                baseline_events / baseline_hours if baseline_hours > 0 else 0.0
+            )
+            return {
+                "recent_rate": recent_rate,
+                "baseline_rate": baseline_rate,
+                "recent_events": recent_events,
+                "baseline_events": baseline_events,
+                "recent_hours": round(recent_hours, 4),
+                "baseline_hours": round(baseline_hours, 4),
+            }
         except Exception:
             return None
 
