@@ -115,8 +115,11 @@ class PerformanceTrendAnalyzer:
         # the regression x-axis reflects real elapsed time, not call order.
         date_value_pairs = self._build_date_value_pairs(metric_values_by_id)
 
-        # Check if we have enough data points
-        if len(date_value_pairs) < 2:
+        # Check if we have enough data points. Require at least 3: with exactly
+        # 2 points scipy.stats.linregress returns p_value == nan (df=0), and
+        # ``nan > 0.05`` is False, so a 2-point regression would bypass the
+        # significance gate below and confidently classify a direction.
+        if len(date_value_pairs) < 3:
             return {
                 "metric": metric,
                 "trend": "insufficient_data",

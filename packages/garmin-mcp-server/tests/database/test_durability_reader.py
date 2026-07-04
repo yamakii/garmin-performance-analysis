@@ -8,6 +8,7 @@ data is used.
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import duckdb
@@ -305,7 +306,7 @@ def test_durability_trend_uses_date_axis(reader_db_path: Path) -> None:
 
 @pytest.mark.integration
 def test_durability_trend_insufficient(reader_db_path: Path) -> None:
-    """Fewer than 2 qualifying activities -> direction='insufficient_data'."""
+    """Fewer than 3 qualifying activities -> direction='insufficient_data'."""
     reader = DurabilityReader(db_path=str(reader_db_path))
 
     _insert_activity(
@@ -455,14 +456,16 @@ def test_durability_trend_form_worsening(reader_db_path: Path) -> None:
 
 @pytest.mark.integration
 def test_durability_trend_form_insufficient(reader_db_path: Path) -> None:
-    """Fewer than 2 activities with form data -> form_direction insufficient.
+    """Fewer than 3 activities with form data -> form_direction insufficient.
 
-    Two qualifying long runs exist (so the decoupling trend is computed), but
-    only one carries GCT data, so the form regression is insufficient.
+    Three qualifying long runs exist (so the decoupling trend is computed), but
+    only two carry GCT data, so the form regression is insufficient (with only
+    two points ``linregress`` returns ``p_value == nan``, which would bypass the
+    significance gate).
     """
     reader = DurabilityReader(db_path=str(reader_db_path))
 
-    # Run with form data.
+    # Two runs with form data.
     _insert_activity(
         reader_db_path,
         activity_id=7201,
@@ -481,16 +484,34 @@ def test_durability_trend_form_insufficient(reader_db_path: Path) -> None:
             back_gct=260.0,
         ),
     )
-    # Run WITHOUT form data (GCT null).
     _insert_activity(
         reader_db_path,
         activity_id=7202,
+        activity_date="2025-09-12",
+        distance_km=18.5,
+    )
+    _insert_time_series_with_form(
+        reader_db_path,
+        activity_id=7202,
+        rows=_form_series(
+            front_hr=150.0,
+            front_speed=3.0,
+            back_hr=158.0,
+            back_speed=3.0,
+            front_gct=250.0,
+            back_gct=265.0,
+        ),
+    )
+    # Run WITHOUT form data (GCT null).
+    _insert_activity(
+        reader_db_path,
+        activity_id=7203,
         activity_date="2025-09-20",
         distance_km=19.0,
     )
     _insert_time_series_with_form(
         reader_db_path,
-        activity_id=7202,
+        activity_id=7203,
         rows=_form_series(
             front_hr=150.0,
             front_speed=3.0,
@@ -503,8 +524,88 @@ def test_durability_trend_form_insufficient(reader_db_path: Path) -> None:
 
     result = reader.get_durability_trend("2025-09-01", "2025-09-30")
 
-    # Decoupling trend is computed (2 qualifying runs)...
-    assert result["trend"]["data_points"] == 2
-    # ...but only one has form data -> form regression insufficient.
+    # Decoupling trend is computed (3 qualifying runs)...
+    assert result["trend"]["data_points"] == 3
+    assert result["trend"]["direction"] != "insufficient_data"
+    # ...but only two have form data -> form regression insufficient.
     assert result["trend"]["form_direction"] == "insufficient_data"
     assert result["trend"]["gct_fade_slope_per_day"] is None
+
+
+def _durability_activity(
+    activity_date: str,
+    decoupling_pct: float,
+    gct_fade_pct: float | None = None,
+) -> dict[str, object]:
+    """Build a minimal ``get_activity_durability``-shaped dict for _build_trend."""
+    return {
+        "activity_date": activity_date,
+        "decoupling_pct": decoupling_pct,
+        "gct_fade_pct": gct_fade_pct,
+    }
+
+
+@pytest.mark.unit
+def test_build_trend_two_long_runs_insufficient_data(tmp_path: Path) -> None:
+    """Two long runs must NOT classify: linregress p=nan bypasses the gate.
+
+    With exactly 2 points scipy.stats.linregress returns ``p_value == nan``
+    (df=0), and ``nan > 0.05`` is False, so the pre-fix code would confidently
+    report a durability direction. The >=3 guard returns insufficient_data.
+    """
+    reader = DurabilityReader(db_path=str(tmp_path / "unit.duckdb"))
+
+    activities = [
+        _durability_activity("2025-09-01", 4.0),
+        _durability_activity("2025-09-04", 6.0),  # 3 days later
+    ]
+
+    trend = reader._build_trend(activities)
+
+    assert trend["direction"] == "insufficient_data"
+    assert trend["decoupling_slope_per_day"] == 0.0
+    assert trend["data_points"] == 2
+
+
+@pytest.mark.unit
+def test_build_trend_three_long_runs_classifies(tmp_path: Path) -> None:
+    """Three long runs restore the significance gate with a finite slope."""
+    reader = DurabilityReader(db_path=str(tmp_path / "unit.duckdb"))
+
+    activities = [
+        _durability_activity("2025-09-01", 4.0),  # day 0
+        _durability_activity("2025-09-04", 5.0),  # day 3
+        _durability_activity("2025-09-07", 6.0),  # day 6
+    ]
+
+    trend = reader._build_trend(activities)
+
+    assert trend["data_points"] == 3
+    assert trend["direction"] in {"stable", "worsening"}
+    slope = trend["decoupling_slope_per_day"]
+    assert slope is not None
+    assert not math.isnan(slope)
+
+
+@pytest.mark.unit
+def test_regress_form_two_points_insufficient_data(tmp_path: Path) -> None:
+    """Three runs but only two with GCT data -> form regression insufficient.
+
+    Decoupling has 3 points (classified normally) while the GCT-fade regression
+    sees only 2 non-null points; with 2 points ``linregress`` returns
+    ``p_value == nan``, so the >=3 guard reports insufficient_data / None slope.
+    """
+    reader = DurabilityReader(db_path=str(tmp_path / "unit.duckdb"))
+
+    activities = [
+        _durability_activity("2025-09-01", 4.0, gct_fade_pct=2.0),  # day 0
+        _durability_activity("2025-09-04", 5.0, gct_fade_pct=4.0),  # day 3
+        _durability_activity("2025-09-07", 6.0, gct_fade_pct=None),  # day 6
+    ]
+
+    trend = reader._build_trend(activities)
+
+    # Decoupling classified (3 points), form insufficient (only 2 points).
+    assert trend["direction"] != "insufficient_data"
+    assert trend["form_direction"] == "insufficient_data"
+    assert trend["gct_fade_slope_per_day"] is None

@@ -6,6 +6,7 @@ bulk metric averages. Filtering uses ``get_bulk_activity_fields`` (a single
 bulk query) rather than per-activity reader calls.
 """
 
+import math
 from unittest.mock import patch
 
 import pytest
@@ -116,6 +117,61 @@ class TestPerformanceTrendAnalyzer:
 
         assert result["trend"] == "insufficient_data"
         assert result["data_points"] == 1
+
+    @pytest.mark.unit
+    def test_analyze_metric_trend_two_points_insufficient_data(self, analyzer):
+        """Two points must NOT classify: linregress p=nan bypasses the gate.
+
+        With exactly 2 observations scipy.stats.linregress returns
+        ``p_value == nan`` (df=0), and ``nan > 0.05`` is False, so the pre-fix
+        code would confidently report improving/declining. The >=3 guard now
+        returns the insufficient_data shape instead.
+        """
+        analyzer.db_reader.get_bulk_metric_averages.return_value = {1: 5.2, 2: 4.8}
+        analyzer.db_reader.get_activity_dates.return_value = {
+            1: "2025-01-01",  # day 0
+            2: "2025-01-04",  # day 3
+        }
+
+        result = analyzer.analyze_metric_trend(
+            metric="pace",
+            start_date="2025-01-01",
+            end_date="2025-01-31",
+            activity_ids=[1, 2],
+        )
+
+        assert result["trend"] == "insufficient_data"
+        assert result["slope"] == 0.0
+        assert result["data_points"] == 2
+
+    @pytest.mark.unit
+    def test_analyze_metric_trend_three_points_classifies(self, analyzer):
+        """Three points restore the significance gate: p_value is finite.
+
+        Regression-protects the n>=3 behavior: with 3 observations linregress
+        yields a real (non-nan) p_value and the trend is classified normally.
+        """
+        analyzer.db_reader.get_bulk_metric_averages.return_value = {
+            1: 5.2,
+            2: 5.0,
+            3: 4.8,
+        }
+        analyzer.db_reader.get_activity_dates.return_value = {
+            1: "2025-01-01",  # day 0
+            2: "2025-01-03",  # day 2
+            3: "2025-01-06",  # day 5
+        }
+
+        result = analyzer.analyze_metric_trend(
+            metric="pace",
+            start_date="2025-01-01",
+            end_date="2025-01-31",
+            activity_ids=[1, 2, 3],
+        )
+
+        assert not math.isnan(result["p_value"])
+        assert result["trend"] in {"stable", "improving", "declining"}
+        assert result["data_points"] == 3
 
     @pytest.mark.unit
     def test_analyze_metric_heart_rate(self, analyzer):
