@@ -152,7 +152,12 @@ def test_catch_up_domains_subset(temp_db_path: Path) -> None:
     run_mock.assert_not_called()
     strength_mock.assert_not_called()
 
-    assert set(result) == {"weight", "window"}
+    # Only the requested domain appears; the others are skipped entirely. A clean
+    # run may additionally carry a best-effort ``trend_pending`` (issue #810), so
+    # assert on the domain keys rather than an exact result-key set.
+    assert "weight" in result
+    assert "running" not in result
+    assert "strength" not in result
     assert set(result["window"]) == {"weight"}
 
 
