@@ -74,7 +74,11 @@ INGEST_TOOLS: list[ToolDef] = [
             "domains to ingest a subset (default: all four). A failure in one "
             "domain is isolated (its entry carries an error) while the others "
             "complete. Returns each requested domain's result plus a window map "
-            "of {domain: {start, end}}."
+            "of {domain: {start, end}}. On a fully-successful run (no domain "
+            "error), if the most-recently-completed week still lacks a trend "
+            "narration, the result also carries trend_pending: {granularity, "
+            "period_start, period_end} so callers can fire trend-narration for "
+            "it (idempotent: omitted once that week is narrated)."
         ),
         params=CatchUpIngestParams,
         handler=_catch_up_ingest,

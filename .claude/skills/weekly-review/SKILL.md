@@ -86,6 +86,8 @@ mcp__garmin-db__catch_up_ingest(end_date=today)
 
 **日次運用なら差分は小さく、Garmin 呼び出しはわずかです（内部スロットル済み）**。これ以降の `get_activity_by_date` / `get_strength_sessions` / `get_current_fitness_summary` 等は**すべて DB 読取**（Garmin 非アクセス）で、最新化されたデータを読みます。
 
+**`catch_up_ingest` の返却に `trend_pending` があれば控えておく**（全ドメイン成功かつ直前完了週の縦断トレンドが未生成のときのみ返る `{granularity, period_start, period_end}`）。これは Step 8（完了報告）で未生成トレンドを自動生成するのに使います。無ければ何もしません。
+
 #### Step 2-1: 各日の実績収集
 
 実績の主軸は **直前の完了週 W-1（`prev_start`〜`prev_end`）** です。各日について MCP ツールで実績を集めてください（Bash 許可不要）:
@@ -413,9 +415,17 @@ mcp__garmin-db__save_weekly_review(review)
   - `load_trend` は Step 5-A-4 のカットバック周期サブ分析の結果。`consecutive_build_weeks`（整数）/ `last_cutback_weeks_ago`（整数 or null）/ `acwr`（数値 or null）/ `acwr_status`（文字列）/ `cutback_due`（bool）/ `weekly_ramp`（直近数週の `{week, load_km}` 配列）。`cutback_due=true` のときは `expected_phase` を deload として記述し、`recommendations` / `verdict` も deload 処方（週量 −30〜40%・ロング短縮・質ゼロ）に揃える。
 - `recovery` は Step 5-A-5 の回復サブ分析の結果。`rhr_trend`（`improving`/`stable`/`fatigued`）/ `rhr_median_7d` / `rhr_median_30d`（bpm、null 可）/ `hrv_below_baseline_days`（整数、null 可）/ `hrv_under_recovery`（bool）/ `sleep_score`（null 可）/ `recommendation`（`get_recovery_status` の go/no-go）/ `load_recovery_verdict`（負荷×回復の複合講評の短文）/ `data_available`（bool）/ `early_warning_flag`（bool）/ `early_warning_note`（str or null）。回復データ欠損週は `data_available=false` とし、`load_recovery_verdict` を「回復データ不足のため負荷ベースで講評」とする。`hrv_under_recovery=true` かつ ACWR caution+ のときは `load_recovery_verdict` を「積み過ぎ・回復不足」とし、`recommendations` / `verdict` を deload 処方に揃える。`early_warning_flag` は Step 5-A-5 の個人ベースライン逸脱の early-warning ノート（`get_wellness_baseline_deviation` の逸脱や HRV ベースライン割れ）が出た場合に `true`、`early_warning_note` にその帰結＋予防アクションの短文を入れる。逸脱が無ければ `early_warning_flag=false`・`early_warning_note=null`。
 
-### Step 8: 完了報告
+### Step 8: 未生成トレンドの自動生成 ＋ 完了報告
 
-保存完了をユーザーに報告してください。どの対象週 W のプランをどの実績週 W-1 で評価したかを一言添え、レビューは **Web で参照可能**（一覧は週ごと最新版、詳細ページで同一週の過去版を切り替えて閲覧）になる旨も添えてください。同じ W で再実行した場合は新しい版が追記された旨も伝えてください。
+**未生成トレンドの自動生成（`trend_pending` があるときのみ）**: Step 2-0 の `catch_up_ingest` 返却に `trend_pending` があった場合は、直前完了週の縦断トレンドナレーションが未生成なので、ここで自動生成します。`trend_pending`（`{granularity, period_start, period_end}`）をそのまま引数に `trend-narration` Workflow を起動してください:
+
+```
+Workflow(name="trend-narration", args=trend_pending)
+```
+
+`trend-narration` は fetch → narrate → save の3ステージで縦断トレンドを生成し DuckDB の `trend_analyses` に保存します（`saved=true` で成功）。`trend_pending` が無ければこのステップは省略します。ローカル cron の `scheduled_sync` は `trend_pending` を検出するだけで LLM ナレーション生成はできないため、weekly-review 実行がこの生成トリガーを兼ねます。
+
+**完了報告**: 保存完了をユーザーに報告してください。どの対象週 W のプランをどの実績週 W-1 で評価したかを一言添え、レビューは **Web で参照可能**（一覧は週ごと最新版、詳細ページで同一週の過去版を切り替えて閲覧）になる旨も添えてください。同じ W で再実行した場合は新しい版が追記された旨も伝えてください。`trend-narration` を起動した場合は、どの期間（`period_start`〜`period_end`）のトレンドを自動生成したか（`saved` の成否）も完了報告に含めてください。
 
 ## 重要事項
 

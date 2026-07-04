@@ -12,6 +12,7 @@ import pytest
 
 from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.trend_analyses import insert_trend_analysis
+from garmin_mcp.ingest.catch_up import find_pending_trend_period
 from garmin_mcp.scripts import scheduled_sync
 
 
@@ -39,7 +40,7 @@ TODAY = date(2026, 6, 24)
 @pytest.mark.integration
 def test_pending_returns_period_on_gap(initialized_db_path: Path) -> None:
     """No narration row -> the immediately-preceding completed week is returned."""
-    result = scheduled_sync.find_pending_trend_period(str(initialized_db_path), TODAY)
+    result = find_pending_trend_period(str(initialized_db_path), TODAY)
 
     assert result is not None
     assert result["granularity"] == "week"
@@ -56,7 +57,7 @@ def test_pending_returns_period_on_gap(initialized_db_path: Path) -> None:
 @pytest.mark.integration
 def test_pending_skips_when_row_exists(initialized_db_path: Path) -> None:
     """An existing (week, period_start) row makes detection return None (idempotent)."""
-    pending = scheduled_sync.find_pending_trend_period(str(initialized_db_path), TODAY)
+    pending = find_pending_trend_period(str(initialized_db_path), TODAY)
     assert pending is not None
 
     insert_trend_analysis(
@@ -69,10 +70,7 @@ def test_pending_skips_when_row_exists(initialized_db_path: Path) -> None:
         db_path=str(initialized_db_path),
     )
 
-    assert (
-        scheduled_sync.find_pending_trend_period(str(initialized_db_path), TODAY)
-        is None
-    )
+    assert find_pending_trend_period(str(initialized_db_path), TODAY) is None
 
 
 @pytest.mark.integration
@@ -84,7 +82,7 @@ def test_pending_uses_week_start_day(initialized_db_path: Path) -> None:
     )
     conn.close()
 
-    result = scheduled_sync.find_pending_trend_period(str(initialized_db_path), TODAY)
+    result = find_pending_trend_period(str(initialized_db_path), TODAY)
 
     assert result is not None
     start = date.fromisoformat(result["period_start"])
@@ -104,8 +102,21 @@ _ALL_OK = {
 
 @pytest.mark.integration
 def test_run_sync_records_pending_only_on_success(initialized_db_path: Path) -> None:
-    """A successful sync attaches trend_pending; a partial sync does not."""
-    with patch.object(scheduled_sync, "catch_up_ingest", return_value=dict(_ALL_OK)):
+    """run_sync passes through the trend_pending that catch_up_ingest attaches.
+
+    Detection now lives inside ``catch_up_ingest`` (issue #810), so run_sync
+    records whatever it returns: a fully-successful run carries trend_pending,
+    a partial run does not.
+    """
+    clean = {
+        **_ALL_OK,
+        "trend_pending": {
+            "granularity": "week",
+            "period_start": "2026-06-15",
+            "period_end": "2026-06-21",
+        },
+    }
+    with patch.object(scheduled_sync, "catch_up_ingest", return_value=clean):
         outcome = scheduled_sync.run_sync(db_path=str(initialized_db_path))
     assert outcome["status"] == "success"
     assert outcome["results"]["trend_pending"]["granularity"] == "week"
