@@ -53,6 +53,48 @@ METRIC_LABELS: dict[str, str] = {
 }
 
 
+def generate_recommendations(anomalies: list[dict[str, Any]]) -> list[str]:
+    """Generate improvement recommendations from cause-classified anomalies.
+
+    For each identifiable cause (elevation/pace/fatigue) the dominant form
+    metric driving that cause is named explicitly, instead of hard-coding a
+    single metric (the previous version always said "VO増加" regardless of
+    which metric actually spiked, #666). Anomalies whose cause is ``isolated``
+    (no identifiable trigger) produce no recommendation, so a run with only
+    isolated noise yields an empty list.
+
+    Promoted to a pure module-level function (#809) so a reader can derive
+    ``top_recommendation`` from a single ``get_form_anomaly_details`` call
+    without re-running detection.
+
+    Args:
+        anomalies: List of anomaly records, each with ``probable_cause`` and
+            ``metric`` keys.
+
+    Returns:
+        List of recommendation strings (empty when no cause-identified anomalies
+        exist).
+    """
+    from collections import Counter
+
+    cause_templates = {
+        "elevation_change": "上り坂で{label}悪化 → 上り坂練習を強化",
+        "pace_change": "ペース変化時に{label}が増加 → ペース変化を緩やかに",
+        "fatigue": "後半に{label}悪化（疲労傾向）→ 持久力トレーニング強化",
+    }
+
+    recommendations: list[str] = []
+    for cause, template in cause_templates.items():
+        metrics = [a["metric"] for a in anomalies if a.get("probable_cause") == cause]
+        if not metrics:
+            continue
+        dominant_metric = Counter(metrics).most_common(1)[0][0]
+        label = METRIC_LABELS.get(dominant_metric, dominant_metric)
+        recommendations.append(template.format(label=label))
+
+    return recommendations
+
+
 class FormAnomalyDetector:
     """Detect form metric anomalies and identify probable causes.
 
@@ -366,43 +408,13 @@ class FormAnomalyDetector:
         return {"before_30s": before_ctx, "after_30s": after_ctx}
 
     def _generate_recommendations(self, anomalies: list[dict[str, Any]]) -> list[str]:
-        """Generate improvement recommendations from cause-classified anomalies.
+        """Delegate to the module-level :func:`generate_recommendations` (#809).
 
-        For each identifiable cause (elevation/pace/fatigue) the dominant form
-        metric driving that cause is named explicitly, instead of hard-coding a
-        single metric (the previous version always said "VO増加" regardless of
-        which metric actually spiked, #666). Anomalies whose cause is
-        ``isolated`` (no identifiable trigger) produce no recommendation, so a
-        run with only isolated noise yields an empty list.
-
-        Args:
-            anomalies: List of anomaly records, each with ``probable_cause`` and
-                ``metric`` keys.
-
-        Returns:
-            List of recommendation strings (empty when no cause-identified
-            anomalies exist).
+        Kept as an instance method for backward compatibility; the logic is now
+        a pure module-level function so a reader can derive ``top_recommendation``
+        from a single ``get_form_anomaly_details`` call without re-detecting.
         """
-        from collections import Counter
-
-        cause_templates = {
-            "elevation_change": "上り坂で{label}悪化 → 上り坂練習を強化",
-            "pace_change": "ペース変化時に{label}が増加 → ペース変化を緩やかに",
-            "fatigue": "後半に{label}悪化（疲労傾向）→ 持久力トレーニング強化",
-        }
-
-        recommendations: list[str] = []
-        for cause, template in cause_templates.items():
-            metrics = [
-                a["metric"] for a in anomalies if a.get("probable_cause") == cause
-            ]
-            if not metrics:
-                continue
-            dominant_metric = Counter(metrics).most_common(1)[0][0]
-            label = METRIC_LABELS.get(dominant_metric, dominant_metric)
-            recommendations.append(template.format(label=label))
-
-        return recommendations
+        return generate_recommendations(anomalies)
 
     def _extract_time_series(
         self,

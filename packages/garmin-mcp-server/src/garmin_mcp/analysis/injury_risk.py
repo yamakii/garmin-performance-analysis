@@ -43,17 +43,13 @@ _ACWR_SAFE_MAX = 1.3
 _ACWR_MID = 1.5
 _ACWR_HIGH = 1.8
 
-# Form-anomaly signal selection + acute:chronic ratio anchors (#807).
-# An anomaly counts toward the material-event rate only when it is *material*
-# (``probable_cause`` other than ``"isolated"``) and severe (``|z| >
-# _FORM_SEVERITY_MIN_Z``, matching the detector's medium/high strata). Adjacent
-# material anomalies within ``_FORM_EVENT_DEDUP_WINDOW_S`` seconds collapse into
-# a single event (one stop/transition, not 2-6 per-metric duplicates). The
+# Form-anomaly acute:chronic ratio anchors (#807). The material-event semantics
+# (what counts as a material-severe anomaly, and how per-metric spikes collapse
+# into deduped events) live in ``garmin_mcp.analysis.form_events`` -- the single
+# source shared by this factor and the web caution card (#809). The
 # recent:baseline event-rate ratio is piecewise-linear: <=1.2 safe (0 risk),
 # >=2.0 saturates (full risk). Baselines below ``_FORM_BASELINE_MIN_RATE``
 # events/hour are too sparse to compare against, so the factor is dropped.
-_FORM_SEVERITY_MIN_Z = 3.5
-_FORM_EVENT_DEDUP_WINDOW_S = 2
 _FORM_RATIO_SAFE = 1.2
 _FORM_RATIO_HIGH = 2.0
 _FORM_BASELINE_MIN_RATE = 0.2
@@ -139,43 +135,6 @@ def _wellness_factor(
         adverse / len(usable),
         f"起床時コンディション: {adverse}/{len(usable)} 指標逸脱",
     )
-
-
-def is_material_severe(anomaly: dict[str, Any]) -> bool:
-    """Whether a form anomaly is a *material, severe* signal (not noise).
-
-    Material means an identifiable cause (``probable_cause`` other than
-    ``"isolated"`` -- elevation / pace / fatigue). Severe means its z-score
-    magnitude exceeds ``_FORM_SEVERITY_MIN_Z`` (the detector's medium/high
-    strata). Isolated noise and low-severity (``|z| <= 3.5``) spikes -- which
-    occur at the ~0.22% chance base rate even on healthy form -- are excluded.
-    """
-    if anomaly.get("probable_cause") == "isolated":
-        return False
-    z = anomaly.get("z_score")
-    if z is None:
-        return False
-    return abs(float(z)) > _FORM_SEVERITY_MIN_Z
-
-
-def count_material_events(anomalies: list[dict[str, Any]]) -> int:
-    """Count deduped material-severe form-anomaly *events* in one activity.
-
-    Filters to material-severe anomalies (``is_material_severe``), then collapses
-    anomalies whose timestamps are within ``_FORM_EVENT_DEDUP_WINDOW_S`` seconds
-    of the previous one into a single event. A single stop/transition that trips
-    2-6 per-metric detections across GCT/VO/VR counts once, not many times.
-    """
-    timestamps = sorted(a["timestamp"] for a in anomalies if is_material_severe(a))
-    if not timestamps:
-        return 0
-    events = 1
-    prev = timestamps[0]
-    for ts in timestamps[1:]:
-        if ts - prev > _FORM_EVENT_DEDUP_WINDOW_S:
-            events += 1
-        prev = ts
-    return events
 
 
 def _form_ratio_to_risk(ratio: float) -> float:

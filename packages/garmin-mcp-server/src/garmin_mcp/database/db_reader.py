@@ -28,6 +28,21 @@ from garmin_mcp.database.readers import (
     UtilityReader,
 )
 
+# Module-level import (not local) so tests can stub the detector at the
+# ``db_reader`` import site and the material-event scan shares one class binding.
+from garmin_mcp.rag.queries.form_anomaly_detector import (
+    FormAnomalyDetector,
+    generate_recommendations,
+)
+
+# Per-activity memo for the shared material-event scan (#809), keyed by
+# ``(db_path, activity_id)``. Running the form-anomaly detector over a raw
+# activity is expensive (~0.5s/activity), so the first 90-day sweep costs ~17s;
+# subsequent caution-card / injury-risk reads (and incremental new activities)
+# hit the cache and return immediately. Cleared on process restart -- raw
+# re-fetch staleness is acceptable because raw re-fetch is rare.
+_MATERIAL_EVENT_MEMO: dict[tuple[Path, int], tuple[int, int, str | None]] = {}
+
 
 class GarminDBReader:
     """
@@ -1102,18 +1117,112 @@ class GarminDBReader:
             return None
         return result if isinstance(result, dict) else None
 
+    def _detector_base_path(self) -> Path:
+        """Derive the form-anomaly detector's raw-data base dir from ``db_path``.
+
+        The detector reads ``raw/activity/<id>/activity_details.json`` relative
+        to its ``base_path``. Both production
+        (``<data>/database/garmin_performance.duckdb``) and the web tests
+        (``<base>/database/*.duckdb``) place the DuckDB file one level under the
+        data base dir, so the base dir is the db file's grandparent. ``db_path``
+        is always resolved (falling back to the configured default), so the
+        grandparent matches ``GARMIN_DATA_DIR`` in the default layout.
+        """
+        return Path(self.db_path).parent.parent
+
+    def _material_event_scan(
+        self, start_date: str, end_date: str
+    ) -> list[dict[str, Any]] | None:
+        """Sweep ``[start_date, end_date]`` once for per-run material events (#809).
+
+        Runs the per-activity form-anomaly detector on every activity in the
+        window (one SQL query + one detector call per run), collapsing each run's
+        raw z>3 spikes into deduped *material-severe* events
+        (``count_material_events``) and counting the high-severity subset
+        (``count_high_severity``). This single scan is shared by both consumers
+        of the material-event semantics -- the injury-risk signal and the web
+        caution card -- so neither re-implements the aggregation.
+
+        Each per-activity detector result is memoized on
+        ``(db_path, activity_id)`` (``_MATERIAL_EVENT_MEMO``): the first 90-day
+        sweep is the only expensive pass; later reads and incremental new
+        activities hit the cache.
+
+        Args:
+            start_date: Inclusive lower ``activity_date`` bound (``YYYY-MM-DD``).
+            end_date: Inclusive upper ``activity_date`` bound (``YYYY-MM-DD``).
+
+        Returns:
+            A list (newest-first) of ``{"activity_id", "activity_date", "hours",
+            "events", "severity_high", "top_recommendation"}`` for every activity
+            whose raw detail was loadable and had a positive duration, or
+            ``None`` when no activity yielded usable raw detail (e.g. a
+            verification DB without raw activity details).
+        """
+        from garmin_mcp.analysis.form_events import (
+            count_high_severity,
+            count_material_events,
+        )
+
+        rows = self.execute_read_query(
+            "SELECT activity_id, activity_date, total_time_seconds "
+            "FROM activities "
+            "WHERE activity_date >= ? AND activity_date <= ? "
+            "ORDER BY activity_date DESC",
+            (start_date, end_date),
+        )
+        if not rows:
+            return None
+
+        detector: FormAnomalyDetector | None = None
+        scanned: list[dict[str, Any]] = []
+        for activity_id, activity_date, total_time_seconds in rows:
+            if total_time_seconds is None or total_time_seconds <= 0:
+                continue
+            key = (self.db_path, int(activity_id))
+            if key in _MATERIAL_EVENT_MEMO:
+                events, severity_high, top_recommendation = _MATERIAL_EVENT_MEMO[key]
+            else:
+                if detector is None:
+                    detector = FormAnomalyDetector(base_path=self._detector_base_path())
+                try:
+                    details = detector.get_form_anomaly_details(
+                        int(activity_id), filters={"limit": 1_000_000}
+                    )
+                except Exception:
+                    continue
+                anomalies = details.get("anomalies", [])
+                events = count_material_events(anomalies)
+                severity_high = count_high_severity(anomalies)
+                recs = generate_recommendations(anomalies)
+                top_recommendation = recs[0] if recs else None
+                _MATERIAL_EVENT_MEMO[key] = (events, severity_high, top_recommendation)
+
+            scanned.append(
+                {
+                    "activity_id": int(activity_id),
+                    "activity_date": str(activity_date),
+                    "hours": float(total_time_seconds) / 3600.0,
+                    "events": events,
+                    "severity_high": severity_high,
+                    "top_recommendation": top_recommendation,
+                }
+            )
+
+        return scanned or None
+
     def _form_anomaly_signal(
         self, recent_start: str, end_date: str, baseline_start: str
     ) -> dict[str, Any] | None:
         """Acute:chronic material-form-anomaly event-rate signal (#807).
 
-        Sweeps every activity in ``[baseline_start, end_date]`` once, running the
-        per-activity form-anomaly detector and collapsing each activity's raw
-        z>3 spikes into deduped *material-severe* events
-        (``count_material_events``). Activities dated ``>= recent_start`` pool
-        into the recent (trailing-14-day) window; the rest form the personal
-        baseline. Events and running hours (from ``total_time_seconds``) are
-        pooled per window and turned into events/hour rates.
+        Pools the shared ``_material_event_scan`` over ``[baseline_start,
+        end_date]`` into two windows: activities dated ``>= recent_start`` form
+        the recent (trailing-14-day) window, the rest the personal baseline.
+        Events and running hours are pooled per window and turned into
+        events/hour rates. The output contract is unchanged (#809 refactor is
+        internal): the injury-risk factor still consumes ``recent_rate`` /
+        ``baseline_rate``.
 
         Replaces the old raw-count factor, whose fixed cap saturated at all times
         because z>3 spikes appear at their ~0.22% chance base rate even on
@@ -1127,45 +1236,19 @@ class GarminDBReader:
             activity details) or on any error -- the form factor is then dropped.
         """
         try:
-            from garmin_mcp.analysis.injury_risk import count_material_events
-            from garmin_mcp.rag.queries.form_anomaly_detector import (
-                FormAnomalyDetector,
-            )
-
-            rows = self.execute_read_query(
-                "SELECT activity_id, activity_date, total_time_seconds "
-                "FROM activities "
-                "WHERE activity_date >= ? AND activity_date <= ?",
-                (baseline_start, end_date),
-            )
-            if not rows:
+            scan = self._material_event_scan(baseline_start, end_date)
+            if scan is None:
                 return None
 
-            detector = FormAnomalyDetector()
             recent_events = baseline_events = 0
             recent_hours = baseline_hours = 0.0
-            counted = False
-            for activity_id, activity_date, total_time_seconds in rows:
-                if total_time_seconds is None or total_time_seconds <= 0:
-                    continue
-                try:
-                    details = detector.get_form_anomaly_details(
-                        activity_id, filters={"limit": 1_000_000}
-                    )
-                except Exception:
-                    continue
-                events = count_material_events(details.get("anomalies", []))
-                hours = float(total_time_seconds) / 3600.0
-                if str(activity_date) >= recent_start:
-                    recent_events += events
-                    recent_hours += hours
+            for item in scan:
+                if item["activity_date"] >= recent_start:
+                    recent_events += item["events"]
+                    recent_hours += item["hours"]
                 else:
-                    baseline_events += events
-                    baseline_hours += hours
-                counted = True
-
-            if not counted:
-                return None
+                    baseline_events += item["events"]
+                    baseline_hours += item["hours"]
 
             recent_rate = recent_events / recent_hours if recent_hours > 0 else 0.0
             baseline_rate = (
@@ -1181,6 +1264,98 @@ class GarminDBReader:
             }
         except Exception:
             return None
+
+    def get_recent_form_anomaly_flags(
+        self, weeks: int = 2, max_activities: int = 12
+    ) -> dict[str, Any]:
+        """Roll up recent runs whose form flagged material anomalies (#809).
+
+        The "今週の注意点" caution card logic, moved from the web layer into the
+        reader so the web never re-implements the aggregation. Uses the shared
+        ``_material_event_scan`` (deduped material events + personal baseline)
+        and the ``form_events`` flag rule instead of the old fixed material
+        floor, so ordinary long runs whose event count is within the athlete's
+        own baseline no longer light up.
+
+        Recent candidates (for ``scanned`` / ``limited``) are the runs in the
+        trailing ``weeks``, newest-first, capped at ``max_activities``. The
+        personal baseline rate is pooled from runs in ``[today-90d,
+        today-weeks*7d)``; a baseline below ``_FORM_BASELINE_MIN_RATE`` events/h
+        (or with zero hours) is treated as ``None`` so ``should_flag_run`` falls
+        back to the conservative fixed floor.
+
+        Args:
+            weeks: Trailing window length in weeks (default 2).
+            max_activities: Maximum recent runs to surface (default 12).
+
+        Returns:
+            ``{"weeks": int, "scanned": int, "limited": bool, "flags": [...]}``
+            where each flag is ``{"activity_id", "activity_date",
+            "anomalies_detected", "severity_high", "top_recommendation"}``.
+            ``anomalies_detected`` is the deduped material-event count and
+            ``severity_high`` the material high-z count.
+        """
+        from datetime import date as date_cls
+        from datetime import timedelta
+
+        from garmin_mcp.analysis.form_events import should_flag_run
+        from garmin_mcp.analysis.injury_risk import _FORM_BASELINE_MIN_RATE
+
+        today = date_cls.today()
+        recent_start = (today - timedelta(weeks=weeks)).isoformat()
+        baseline_start = (today - timedelta(days=90)).isoformat()
+
+        # Recent candidates drive scanned/limited (current behaviour): every run
+        # in the trailing window, newest-first, capped at max_activities.
+        recent_rows = self.execute_read_query(
+            "SELECT activity_id FROM activities "
+            "WHERE activity_date >= ? ORDER BY activity_date DESC",
+            (recent_start,),
+        )
+        limited = len(recent_rows) > max_activities
+        selected_ids = {int(r[0]) for r in recent_rows[:max_activities]}
+        scanned = len(selected_ids)
+
+        scan = self._material_event_scan(baseline_start, today.isoformat()) or []
+
+        # Personal baseline material-event rate (runs strictly before the recent
+        # window). Too-sparse baselines drop to None -> conservative fallback.
+        baseline_events = 0
+        baseline_hours = 0.0
+        for item in scan:
+            if item["activity_date"] < recent_start:
+                baseline_events += item["events"]
+                baseline_hours += item["hours"]
+        baseline_rate: float | None = (
+            baseline_events / baseline_hours if baseline_hours > 0 else None
+        )
+        if baseline_rate is not None and baseline_rate < _FORM_BASELINE_MIN_RATE:
+            baseline_rate = None
+
+        flags: list[dict[str, Any]] = []
+        for item in scan:
+            if item["activity_id"] not in selected_ids:
+                continue
+            if item["activity_date"] < recent_start:
+                continue
+            if not should_flag_run(item["events"], item["hours"], baseline_rate):
+                continue
+            flags.append(
+                {
+                    "activity_id": item["activity_id"],
+                    "activity_date": item["activity_date"],
+                    "anomalies_detected": item["events"],
+                    "severity_high": item["severity_high"],
+                    "top_recommendation": item["top_recommendation"],
+                }
+            )
+
+        return {
+            "weeks": weeks,
+            "scanned": scanned,
+            "limited": limited,
+            "flags": flags,
+        }
 
     # ========== Strength Session Methods ==========
 

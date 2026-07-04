@@ -1,10 +1,10 @@
-"""API tests for the form-anomaly "今週の注意点" flags endpoint (Issue #636).
+"""API tests for the form-anomaly "今週の注意点" flags endpoint (#636, #809).
 
-``detect_form_anomalies_summary`` reads each activity's raw
-``raw/activity/<id>/activity_details.json`` relative to the detector base path
-(the db file's grandparent). These tests therefore build a data tree with both
-the DuckDB ``activities`` table and the matching raw time series so the
-roll-up exercises the real detector end-to-end.
+The aggregation now lives in ``GarminDBReader.get_recent_form_anomaly_flags``;
+the Web query is a thin delegator (#809). These tests cover (a) the delegation
+wiring (the endpoint forwards ``weeks`` / ``max_activities`` and returns the
+reader payload verbatim) and (b) an end-to-end pass where the real detector runs
+over seeded raw data and an isolated-only run yields no flags.
 """
 
 import datetime as dt
@@ -57,30 +57,6 @@ _METRIC_DESCRIPTORS = [
 _SERIES_LEN = 80
 
 
-def _write_activity_details(
-    base_path: Path, activity_id: int, gct_series: list[float]
-) -> None:
-    """Write a raw activity_details.json with a controllable GCT series.
-
-    HR / speed / VO are held constant so only the GCT series can flag an anomaly.
-    """
-    rows = [
-        {"metrics": [140, 28, gct, 80]}  # raw speed 28 -> 2.8 m/s, VO 80 -> 8.0 cm
-        for gct in gct_series
-    ]
-    payload = {
-        "activityId": activity_id,
-        "measurementCount": len(rows),
-        "metricDescriptors": _METRIC_DESCRIPTORS,
-        "activityDetailMetrics": rows,
-    }
-    activity_dir = base_path / "raw" / "activity" / str(activity_id)
-    activity_dir.mkdir(parents=True, exist_ok=True)
-    (activity_dir / "activity_details.json").write_text(
-        json.dumps(payload), encoding="utf-8"
-    )
-
-
 def _write_activity_details_with_speed(
     base_path: Path,
     activity_id: int,
@@ -90,8 +66,8 @@ def _write_activity_details_with_speed(
     """Write raw activity_details.json with controllable GCT and speed series.
 
     HR / VO are held constant; ``speed_series`` (raw, factor 0.1 -> m/s) lets a
-    test inject a pace change so a GCT spike classifies as a *material* cause
-    (pace_change) rather than isolated noise (#666).
+    test inject (or withhold) a pace change so a GCT spike classifies as a
+    *material* cause vs isolated noise (#666).
     """
     rows = [
         {"metrics": [140, speed, gct, 80]}
@@ -110,13 +86,8 @@ def _write_activity_details_with_speed(
     )
 
 
-def _normal_gct() -> list[float]:
-    """Flat GCT series (std 0 in every window) -> no anomalies."""
-    return [240.0] * _SERIES_LEN
-
-
 def _anomalous_gct() -> list[float]:
-    """Flat GCT with one sharp +90 ms spike -> a clear, material GCT anomaly."""
+    """Flat GCT with one sharp +90 ms spike -> a clear GCT anomaly."""
     series = [240.0] * _SERIES_LEN
     series[40] = 330.0
     return series
@@ -151,71 +122,19 @@ def _recent(days_ago: int) -> str:
     return (dt.date.today() - dt.timedelta(days=days_ago)).isoformat()
 
 
-class _StubDetector:
-    """Detector stub returning pre-built per-activity summaries.
-
-    The run-level materiality floor (#677) gates on exact combinations of
-    material count, high-severity count, and ``max_material_cluster``. These are
-    impractical to hit deterministically through the real z-score detector, so
-    the gate tests inject controlled summaries here while the real detector is
-    still exercised end-to-end by the ``_normal_gct`` / ``_anomalous_gct`` tests.
-    """
-
-    def __init__(self, summaries: dict[int, dict], base_path: object = None) -> None:
-        self._summaries = summaries
-
-    def detect_form_anomalies_summary(self, activity_id: int) -> dict:
-        return self._summaries[activity_id]
-
-
-def _stub_summary(
-    *,
-    material: int,
-    high: int,
-    max_material_cluster: int,
-    anomalies_detected: int | None = None,
-) -> dict:
-    """Build a detector summary with controlled gate inputs (#677).
-
-    ``material`` is reported as ``pace_related``; ``anomalies_detected`` defaults
-    to ``material`` (override to model isolated noise on top of material spikes).
-    """
-    detected = anomalies_detected if anomalies_detected is not None else material
-    return {
-        "anomalies_detected": detected,
-        "summary": {
-            "elevation_related": 0,
-            "pace_related": material,
-            "fatigue_related": 0,
-            "isolated_related": detected - material,
-            "severity_distribution": {"high": high, "medium": 0, "low": 0},
-            "max_material_cluster": max_material_cluster,
-            "temporal_clusters": [],
-        },
-        "recommendations": (
-            ["ペース変化時に接地時間(GCT)が増加 → ペース変化を緩やかに"]
-            if material
-            else []
-        ),
-    }
-
-
-def _patch_detector(
-    monkeypatch: pytest.MonkeyPatch, summaries: dict[int, dict]
-) -> None:
-    """Replace the recovery module's detector with a stub for the gate tests."""
-    monkeypatch.setattr(
-        "garmin_web.queries.recovery.FormAnomalyDetector",
-        lambda base_path=None: _StubDetector(summaries),
-    )
-
-
 @pytest.mark.integration
 def test_form_anomaly_flags_endpoint_empty(tmp_path: Path):
-    """A run with normal form data -> 200, empty flags, scanned > 0."""
+    """A GCT spike with flat context is isolated noise -> no flags (#666, end-to-end).
+
+    The spike is real at the detector level but has no identifiable cause, so the
+    reader's material-event scan yields zero material events and the card stays
+    empty. Exercises the full web -> reader -> real-detector delegation.
+    """
     base = tmp_path
-    db_path = _build_db(base, [(9100000001, _recent(1))])
-    _write_activity_details(base, 9100000001, _normal_gct())
+    db_path = _build_db(base, [(9100000002, _recent(2))])
+    _write_activity_details_with_speed(
+        base, 9100000002, _anomalous_gct(), _flat_speed()
+    )
 
     client = TestClient(create_app(db_path=db_path))
     response = client.get("/api/form-anomaly-flags")
@@ -229,123 +148,32 @@ def test_form_anomaly_flags_endpoint_empty(tmp_path: Path):
 
 
 @pytest.mark.integration
-def test_flags_skip_isolated_only_run(tmp_path: Path):
-    """A GCT spike with flat context is isolated noise -> not flagged (#666).
-
-    The spike is real (anomalies_detected > 0 at the detector level) but has no
-    identifiable cause (no elevation/pace/fatigue signal), so the roll-up must
-    drop it instead of surfacing "ペース急変→VO増加" on every run.
-    """
+def test_flags_delegate_to_reader(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """The endpoint forwards weeks/max_activities and returns the reader payload."""
     base = tmp_path
-    db_path = _build_db(base, [(9100000002, _recent(2))])
-    _write_activity_details_with_speed(
-        base, 9100000002, _anomalous_gct(), _flat_speed()
-    )
+    db_path = _build_db(base, [(9100000009, _recent(1))])
 
-    client = TestClient(create_app(db_path=db_path))
-    response = client.get("/api/form-anomaly-flags")
-
-    assert response.status_code == 200
-    payload = response.json()
-
-    flagged_ids = {f["activity_id"] for f in payload["flags"]}
-    assert 9100000002 not in flagged_ids
-
-
-@pytest.mark.integration
-def test_flags_skip_light_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """A light run (material=2, high=0, cluster<3) stays below the floor (#677)."""
-    base = tmp_path
-    activity_id = 9100000003
-    db_path = _build_db(base, [(activity_id, _recent(2))])
-    _patch_detector(
-        monkeypatch,
-        {activity_id: _stub_summary(material=2, high=0, max_material_cluster=2)},
-    )
-
-    client = TestClient(create_app(db_path=db_path))
-    response = client.get("/api/form-anomaly-flags")
-
-    assert response.status_code == 200
-    payload = response.json()
-    flagged_ids = {f["activity_id"] for f in payload["flags"]}
-    assert activity_id not in flagged_ids
-
-
-@pytest.mark.integration
-def test_flags_include_clustered_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """A material cluster of 3 lights up even with no high-severity spike (#677)."""
-    base = tmp_path
-    activity_id = 9100000004
-    db_path = _build_db(base, [(activity_id, _recent(2))])
-    _patch_detector(
-        monkeypatch,
-        {activity_id: _stub_summary(material=3, high=0, max_material_cluster=3)},
-    )
-
-    client = TestClient(create_app(db_path=db_path))
-    response = client.get("/api/form-anomaly-flags")
-
-    assert response.status_code == 200
-    payload = response.json()
-    flagged_ids = {f["activity_id"] for f in payload["flags"]}
-    assert activity_id in flagged_ids
-
-
-@pytest.mark.integration
-def test_flags_include_severe_scattered_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    """A scattered-but-severe run (material>=3, high>=1, cluster<3) flags (#677).
-
-    ``anomalies_detected`` on the flag reports the material count even when
-    isolated noise inflates the raw total, and the standard schema is present.
-    """
-    base = tmp_path
-    activity_id = 9100000005
-    db_path = _build_db(base, [(activity_id, _recent(2))])
-    _patch_detector(
-        monkeypatch,
-        {
-            activity_id: _stub_summary(
-                material=3, high=1, max_material_cluster=2, anomalies_detected=5
-            )
-        },
-    )
-
-    client = TestClient(create_app(db_path=db_path))
-    response = client.get("/api/form-anomaly-flags")
-
-    assert response.status_code == 200
-    payload = response.json()
-    flagged_ids = {f["activity_id"] for f in payload["flags"]}
-    assert activity_id in flagged_ids
-
-    flag = next(f for f in payload["flags"] if f["activity_id"] == activity_id)
-    assert flag["anomalies_detected"] == 3
-    assert flag["severity_high"] == 1
-    assert set(flag) >= {
-        "activity_id",
-        "activity_date",
-        "anomalies_detected",
-        "severity_high",
-        "top_recommendation",
+    captured: dict[str, int] = {}
+    sentinel = {
+        "weeks": 5,
+        "scanned": 3,
+        "limited": True,
+        "flags": [{"activity_id": 42}],
     }
 
+    def _fake(self, weeks: int = 2, max_activities: int = 12) -> dict:
+        captured["weeks"] = weeks
+        captured["max_activities"] = max_activities
+        return sentinel
 
-@pytest.mark.integration
-def test_form_anomaly_flags_respects_max_activities(tmp_path: Path):
-    """5 runs in the window, max_activities=2 -> scanned <= 2, limited True."""
-    base = tmp_path
-    activities = [(9100000010 + i, _recent(i + 1)) for i in range(5)]
-    db_path = _build_db(base, activities)
-    for aid, _ in activities:
-        _write_activity_details(base, aid, _normal_gct())
+    monkeypatch.setattr(
+        "garmin_web.queries.recovery.GarminDBReader.get_recent_form_anomaly_flags",
+        _fake,
+    )
 
     client = TestClient(create_app(db_path=db_path))
-    response = client.get("/api/form-anomaly-flags?max_activities=2")
+    response = client.get("/api/form-anomaly-flags?weeks=5&max_activities=7")
 
     assert response.status_code == 200
-    payload = response.json()
-    assert payload["scanned"] <= 2
-    assert payload["limited"] is True
+    assert captured == {"weeks": 5, "max_activities": 7}
+    assert response.json() == sentinel
