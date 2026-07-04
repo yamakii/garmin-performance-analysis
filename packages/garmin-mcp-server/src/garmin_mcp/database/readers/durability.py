@@ -244,12 +244,12 @@ class DurabilityReader(BaseDBReader):
             ``direction`` is ``improving`` when decoupling falls over time
             (slope < 0 and p < 0.05), ``worsening`` when it rises significantly,
             ``stable`` when not significant, and ``insufficient_data`` with
-            ``slope = 0.0`` when fewer than 2 qualifying activities exist.
+            ``slope = 0.0`` when fewer than 3 qualifying activities exist.
 
             ``form_direction`` applies the same classification to the GCT-fade
             regression (over activities with a non-null ``gct_fade_pct``).
             ``gct_fade_slope_per_day`` is ``None`` (and ``form_direction`` is
-            ``insufficient_data``) when fewer than 2 such activities exist.
+            ``insufficient_data``) when fewer than 3 such activities exist.
         """
         long_run_ids = self._long_run_ids(start_date, end_date, min_distance_km)
 
@@ -272,8 +272,13 @@ class DurabilityReader(BaseDBReader):
         GCT-fade regression runs only over activities with a non-null
         ``gct_fade_pct`` (form metrics are decoupled and may be absent), so it
         may have fewer points than the decoupling regression.
+
+        Requires at least 3 activities: with exactly 2 points scipy's
+        ``linregress`` returns ``p_value == nan`` (df=0), and ``nan > 0.05`` is
+        False, so a 2-point regression would skip the significance gate and
+        confidently classify a direction from just two observations.
         """
-        if len(activities) < 2:
+        if len(activities) < 3:
             return {
                 "decoupling_slope_per_day": 0.0,
                 "data_points": len(activities),
@@ -318,8 +323,9 @@ class DurabilityReader(BaseDBReader):
         """Regress ``gct_fade_pct`` on elapsed days over non-null form points.
 
         Returns ``(slope_per_day, form_direction)``. ``slope`` is ``None`` and
-        the direction is ``insufficient_data`` when fewer than 2 activities have
-        a non-null ``gct_fade_pct``.
+        the direction is ``insufficient_data`` when fewer than 3 activities have
+        a non-null ``gct_fade_pct`` (with exactly 2 points ``linregress``
+        returns ``p_value == nan``, which would bypass the significance gate).
         """
         form_x: list[float] = []
         form_y: list[float] = []
@@ -329,7 +335,7 @@ class DurabilityReader(BaseDBReader):
                 form_x.append(float(ordinal - base))
                 form_y.append(float(gct_fade))
 
-        if len(form_y) < 2:
+        if len(form_y) < 3:
             return None, "insufficient_data"
 
         slope, _intercept, _r, p_value, _std_err = stats.linregress(
