@@ -464,7 +464,9 @@ class GarminIngestWorker:
             Activity ID if found in DuckDB, None otherwise
         """
         if self._db_reader is None:
-            return None
+            from garmin_mcp.database.db_reader import GarminDBReader
+
+            self._db_reader = GarminDBReader(db_path=self._db_path)
 
         return self._db_reader.query_activity_by_date(date)
 
