@@ -3,8 +3,7 @@
     "activity_id": "int",
     "anomalies_detected": "int",
     "recommendations": [
-      "list",
-      "str"
+      "list"
     ],
     "summary": {
       "elevation_related": "int",
@@ -19,24 +18,13 @@
         "medium": "int"
       },
       "temporal_clusters": [
-        "list",
-        {
-          "count": "int",
-          "end": "int",
-          "start": "int"
-        }
+        "list"
       ],
       "vo_anomalies": "int",
       "vr_anomalies": "int"
     },
     "top_anomalies": [
-      "list",
-      {
-        "metric": "str",
-        "probable_cause": "str",
-        "timestamp": "int",
-        "z_score": "float"
-      }
+      "list"
     ]
   },
   "get_interval_analysis": {

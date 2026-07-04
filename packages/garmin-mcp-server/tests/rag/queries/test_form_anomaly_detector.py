@@ -594,6 +594,176 @@ def test_fatigue_requires_sustained_trend(detector: FormAnomalyDetector) -> None
 
 
 # ==========================================
+# Issue #820: Sustained + worse-direction gate
+# ==========================================
+
+
+@pytest.mark.unit
+def test_improvement_direction_not_flagged(detector: FormAnomalyDetector) -> None:
+    """GCT shortening (improvement) is not a form anomaly (#820).
+
+    GCT mean 260 ms / std 10 ms with one point at 220 ms: deviation 40 ms
+    (>= the 10 ms gate) and z = 4.0 (> 3.0), but it is in the *better* direction
+    (shorter GCT), so the direction gate skips it.
+    """
+    time_series: list[float | None] = cast(
+        list[float | None], [260.0] * 50 + [220.0] + [260.0] * 49
+    )
+    rolling_means = [260.0] * 100
+    rolling_stds = [10.0] * 100
+
+    anomalies = detector._detect_anomalies_by_zscore(
+        "directGroundContactTime", time_series, rolling_means, rolling_stds
+    )
+
+    assert len(anomalies) == 0
+
+
+@pytest.mark.unit
+def test_vo_improvement_not_flagged(detector: FormAnomalyDetector) -> None:
+    """VO dropping (improvement) with z > 3 is not flagged (#820).
+
+    VO mean 7.1 cm / std 0.4 cm with one point at 5.6 cm: deviation 1.5 cm
+    (z = 3.75, > 3) but in the better direction, so it is skipped.
+    """
+    time_series: list[float | None] = cast(
+        list[float | None], [7.1] * 50 + [5.6] + [7.1] * 49
+    )
+    rolling_means = [7.1] * 100
+    rolling_stds = [0.4] * 100
+
+    anomalies = detector._detect_anomalies_by_zscore(
+        "directVerticalOscillation", time_series, rolling_means, rolling_stds
+    )
+
+    assert len(anomalies) == 0
+
+
+@pytest.mark.unit
+def test_single_second_spike_not_flagged(detector: FormAnomalyDetector) -> None:
+    """A single-second worse GCT spike is dropped by the sustained gate (#820).
+
+    One 430 ms point in an otherwise 260 ms series is a worse-direction outlier
+    with z > 3, but it spans only 1 second (< MIN_SUSTAINED_SECONDS=5), so
+    _detect_all_anomalies filters it out.
+    """
+    form_metrics: dict[str, list[float | None]] = {
+        "directGroundContactTime": cast(
+            list[float | None], [260.0] * 50 + [430.0] + [260.0] * 49
+        ),
+    }
+    elevation_series: list[float | None] = cast(list[float | None], [10.0] * 100)
+    pace_series: list[float | None] = cast(list[float | None], [5.0] * 100)
+    hr_series: list[float | None] = cast(list[float | None], [150.0] * 100)
+
+    anomalies = detector._detect_all_anomalies(
+        form_metrics, elevation_series, pace_series, hr_series, z_threshold=3.0
+    )
+
+    assert anomalies == []
+
+
+@pytest.mark.unit
+def test_short_cluster_below_min_sustained_not_flagged(
+    detector: FormAnomalyDetector,
+) -> None:
+    """A 3-second worse cluster (span 3 < 5) is dropped by the sustained gate (#820)."""
+    form_metrics: dict[str, list[float | None]] = {
+        "directGroundContactTime": cast(
+            list[float | None], [260.0] * 50 + [430.0, 425.0, 428.0] + [260.0] * 47
+        ),
+    }
+    elevation_series: list[float | None] = cast(list[float | None], [10.0] * 100)
+    pace_series: list[float | None] = cast(list[float | None], [5.0] * 100)
+    hr_series: list[float | None] = cast(list[float | None], [150.0] * 100)
+
+    anomalies = detector._detect_all_anomalies(
+        form_metrics, elevation_series, pace_series, hr_series, z_threshold=3.0
+    )
+
+    assert anomalies == []
+
+
+@pytest.mark.unit
+def test_sustained_worse_deviation_flagged(detector: FormAnomalyDetector) -> None:
+    """A sustained (>= 5s) worse GCT deviation is retained with a cause (#820).
+
+    Five contiguous 300 ms points (baseline 260 ms) each clear the z > 3 and
+    10 ms gates in the worse direction and form a run spanning 5 seconds
+    (>= MIN_SUSTAINED_SECONDS=5), so all five survive the sustained filter and
+    receive a ``probable_cause``.
+    """
+    form_metrics: dict[str, list[float | None]] = {
+        "directGroundContactTime": cast(
+            list[float | None], [260.0] * 50 + [300.0] * 5 + [260.0] * 45
+        ),
+    }
+    elevation_series: list[float | None] = cast(list[float | None], [10.0] * 100)
+    pace_series: list[float | None] = cast(list[float | None], [5.0] * 100)
+    hr_series: list[float | None] = cast(list[float | None], [150.0] * 100)
+
+    anomalies = detector._detect_all_anomalies(
+        form_metrics, elevation_series, pace_series, hr_series, z_threshold=3.0
+    )
+
+    assert len(anomalies) == 5
+    assert [a["timestamp"] for a in anomalies] == [50, 51, 52, 53, 54]
+    assert all("probable_cause" in a for a in anomalies)
+
+
+@pytest.mark.unit
+def test_sustained_bridges_short_gap(detector: FormAnomalyDetector) -> None:
+    """Worse points at 100,102,104,106,108 bridge 1s gaps into one run (#820).
+
+    With SUSTAINED_ADJACENCY_TOLERANCE_SEC=2 the five points (each 2s apart)
+    belong to a single run spanning 9 seconds (>= 5), so all are retained.
+    """
+    anomalies = [
+        {
+            "timestamp": ts,
+            "metric": "directGroundContactTime",
+            "value": 300.0,
+            "baseline": 260.0,
+            "z_score": 4.0,
+        }
+        for ts in (100, 102, 104, 106, 108)
+    ]
+
+    result = detector._filter_sustained(anomalies)
+
+    assert [a["timestamp"] for a in result] == [100, 102, 104, 106, 108]
+
+
+@pytest.mark.unit
+def test_direction_gate_absent_for_unlisted_metric(
+    detector: FormAnomalyDetector,
+) -> None:
+    """Metrics not in WORSE_IS_HIGHER keep symmetric abs detection (#820).
+
+    A below-mean cadence dip (which would be skipped for a WORSE_IS_HIGHER
+    metric) is still flagged because cadence has no configured worse direction.
+    """
+    time_series: list[float | None] = cast(
+        list[float | None], [180.0] * 50 + [150.0] + [180.0] * 49
+    )
+    rolling_means = [180.0] * 100
+    rolling_stds = [5.0] * 100
+
+    anomalies = detector._detect_anomalies_by_zscore(
+        "directRunCadence", time_series, rolling_means, rolling_stds
+    )
+
+    assert len(anomalies) == 1
+    assert anomalies[0]["value"] == 150.0
+
+
+@pytest.mark.unit
+def test_filter_sustained_empty_input(detector: FormAnomalyDetector) -> None:
+    """_filter_sustained returns [] for empty input (#820)."""
+    assert detector._filter_sustained([]) == []
+
+
+# ==========================================
 # New API Tests: Helper Methods
 # ==========================================
 

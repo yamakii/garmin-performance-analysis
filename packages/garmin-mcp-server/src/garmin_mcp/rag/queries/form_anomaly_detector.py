@@ -52,6 +52,26 @@ METRIC_LABELS: dict[str, str] = {
     "directVerticalRatio": "上下動比(VR)",
 }
 
+# Form metrics whose *higher* value is the worse (degraded) direction. For these
+# a deviation in the lower direction (GCT shortening, VO/VR dropping) is an
+# improvement, not a form problem, so it must not be flagged as an anomaly
+# (#820). Metrics not listed here keep the symmetric abs-deviation behaviour.
+WORSE_IS_HIGHER: set[str] = {
+    "directGroundContactTime",
+    "directVerticalOscillation",
+    "directVerticalRatio",
+}
+
+# A form anomaly must persist for at least this many seconds to count. Transient
+# start/finish spikes and single-second outliers, even when materially large and
+# in the worse direction, are not form problems (#820).
+MIN_SUSTAINED_SECONDS: int = 5
+
+# Adjacent flagged seconds whose timestamp gap is within this tolerance are
+# treated as belonging to the same sustained run, bridging brief 1-second data
+# dropouts inside an otherwise continuous degradation (#820).
+SUSTAINED_ADJACENCY_TOLERANCE_SEC: int = 2
+
 
 def generate_recommendations(anomalies: list[dict[str, Any]]) -> list[str]:
     """Generate improvement recommendations from cause-classified anomalies.
@@ -213,6 +233,10 @@ class FormAnomalyDetector:
         This combined gate prevents small, materially-insignificant fluctuations
         (e.g. a few mm of vertical oscillation) from being reported as anomalies.
 
+        For metrics in ``WORSE_IS_HIGHER`` a deviation in the *better* direction
+        (GCT shortening, VO/VR dropping) is an improvement and is skipped, so
+        only worsening deviations can be flagged (#820).
+
         Args:
             metric_name: Name of the metric being analyzed.
             time_series: List of metric values.
@@ -236,7 +260,11 @@ class FormAnomalyDetector:
             if std_val == 0:
                 continue
 
-            deviation = abs(value - mean_val)
+            signed_deviation = value - mean_val
+            if metric_name in WORSE_IS_HIGHER and signed_deviation <= 0:
+                # Improvement (better direction) is not a form anomaly (#820).
+                continue
+            deviation = abs(signed_deviation)
             z_score = deviation / std_val
 
             if z_score <= z_threshold:
@@ -257,6 +285,47 @@ class FormAnomalyDetector:
             )
 
         return anomalies
+
+    def _filter_sustained(
+        self,
+        anomalies: list[dict[str, Any]],
+        min_seconds: int = MIN_SUSTAINED_SECONDS,
+        adjacency_tol: int = SUSTAINED_ADJACENCY_TOLERANCE_SEC,
+    ) -> list[dict[str, Any]]:
+        """Keep only anomalies belonging to a sustained run.
+
+        single-metric・timestamp 昇順の anomalies を、連続フラグ秒の差が
+        adjacency_tol 以下の run にグルーピングし、span(last-first+1) >= min_seconds
+        の run のみ残す。1秒スパイク・短い過渡クラスタを落とす。
+
+        Args:
+            anomalies: Single-metric anomaly records in ascending timestamp order.
+            min_seconds: Minimum span (last - first + 1) for a run to be kept.
+            adjacency_tol: Max timestamp gap between consecutive flagged seconds
+                that still counts as the same run (bridges brief data dropouts).
+
+        Returns:
+            The subset of ``anomalies`` that belong to a run spanning at least
+            ``min_seconds`` seconds. Order is preserved; input order is trusted.
+        """
+        if not anomalies:
+            return []
+
+        sustained: list[dict[str, Any]] = []
+        run: list[dict[str, Any]] = [anomalies[0]]
+
+        for prev, cur in zip(anomalies, anomalies[1:], strict=False):
+            if cur["timestamp"] - prev["timestamp"] <= adjacency_tol:
+                run.append(cur)
+            else:
+                if run[-1]["timestamp"] - run[0]["timestamp"] + 1 >= min_seconds:
+                    sustained.extend(run)
+                run = [cur]
+
+        if run[-1]["timestamp"] - run[0]["timestamp"] + 1 >= min_seconds:
+            sustained.extend(run)
+
+        return sustained
 
     def _analyze_anomaly_causes(
         self,
@@ -577,6 +646,12 @@ class FormAnomalyDetector:
                 rolling_stds,
                 z_threshold,
             )
+
+            # Keep only sustained runs: transient start/finish spikes and
+            # single-second outliers are not form problems (#820). raw_anomalies
+            # is single-metric and timestamp-ascending, as _filter_sustained
+            # requires.
+            raw_anomalies = self._filter_sustained(raw_anomalies)
 
             # Analyze causes and add context
             for raw_anomaly in raw_anomalies:
