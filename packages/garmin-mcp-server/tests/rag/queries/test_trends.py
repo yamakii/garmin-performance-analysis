@@ -425,6 +425,51 @@ class TestPerformanceTrendAnalyzer:
         # Filtering raised before any metric extraction happened.
         analyzer.db_reader.get_bulk_metric_averages.assert_not_called()
 
+    @pytest.mark.unit
+    def test_summarize_metric_period_medians_and_delta(self, analyzer):
+        """Descriptive summary: medians + previous-week delta, no regression."""
+        analyzer.db_reader.get_bulk_metric_averages.side_effect = [
+            {1: 5.5, 2: 5.4, 3: 5.6},  # current week
+            {4: 5.7, 5: 5.6, 6: 5.8},  # previous week
+        ]
+
+        result = analyzer.summarize_metric_period(
+            metric="pace",
+            activity_ids=[1, 2, 3],
+            prev_activity_ids=[4, 5, 6],
+        )
+
+        assert result["mode"] == "descriptive"
+        assert result["median"] == pytest.approx(5.5)
+        assert result["prev_period_median"] == pytest.approx(5.7)
+        assert result["delta_pct"] == pytest.approx(-3.5, abs=0.1)
+        assert result["data_points"] == 3
+        assert result["prev_data_points"] == 3
+        # No regression keys at week granularity.
+        assert "slope" not in result
+        assert "p_value" not in result
+        assert "trend" not in result
+
+    @pytest.mark.unit
+    def test_summarize_metric_period_empty_prev(self, analyzer):
+        """No previous-week runs -> null baseline and null delta."""
+        analyzer.db_reader.get_bulk_metric_averages.side_effect = [
+            {1: 5.5, 2: 5.4},  # current week
+            {},  # previous week: no runs
+        ]
+
+        result = analyzer.summarize_metric_period(
+            metric="pace",
+            activity_ids=[1, 2],
+            prev_activity_ids=[],
+        )
+
+        assert result["prev_period_median"] is None
+        assert result["delta_pct"] is None
+        assert result["prev_data_points"] == 0
+        assert result["data_points"] == 2
+        assert result["median"] == pytest.approx(5.45)
+
     @pytest.mark.integration
     def test_trend_uses_date_axis_not_index(self, analyzer):
         """Regression uses activity_date order, not the activity_ids order.

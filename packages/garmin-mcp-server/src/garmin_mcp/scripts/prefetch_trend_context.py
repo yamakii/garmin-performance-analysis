@@ -35,6 +35,18 @@ All bundle keys are additive (Issue #235): each trend reader is called
 independently and any per-reader failure yields ``null`` for that key rather
 than aborting the whole bundle. On a fatal error (bad dates) the bundle is
 ``{"error": "..."}`` and the CLI exits 1.
+
+Weekly granularity is statistically honest (Issue #813): a single week's N
+cannot support in-week regressions, so at ``granularity == "week"``:
+
+- ``metric_trends[*]`` are descriptive (median + previous-week baseline +
+  ``delta_pct``; ``mode="descriptive"``, no ``slope`` / ``p_value`` / ``trend``).
+- ``durability_trend`` / ``heat_adjusted_trend`` are fit over fixed trailing
+  windows (8 / 12 weeks) and carry ``in_period_activity_ids`` so the narration
+  can position this week's values on the trailing trend.
+- ``fitness_curve`` is pinned to a 90-day window (for both granularities).
+
+The ``month`` path keeps the original in-period regression behavior.
 """
 
 from __future__ import annotations
@@ -58,6 +70,16 @@ _METRIC_TREND_METRICS = ("pace", "heart_rate")
 # is anchored to now() with no end_date param, so it only represents a period
 # whose period_end falls inside this trailing window (see monthly table, #790).
 _RECOVERY_TREND_WEEKS = 8
+
+# Statistically-honest weekly windowing (Issue #813). At week granularity the
+# in-week N cannot support regressions, so metric trends become descriptive
+# (previous-week baseline) and the durability / heat-hinge fits run over fixed
+# trailing windows large enough to have real N and temperature spread. The
+# fitness curve is a 90-day rolling-max metric by design and is pinned to 90d
+# for both granularities (a 7-day window makes an easy week look like collapse).
+_FITNESS_CURVE_WINDOW_DAYS = 90
+_DURABILITY_TREND_WEEKS = 8
+_HEAT_FIT_WEEKS = 12
 
 
 def _safe[T](fn: Callable[[], T]) -> T | None:
@@ -132,12 +154,27 @@ def prefetch_trend_context(
             "error": f"period_end {period_end} precedes period_start {period_start}"
         }
 
+    is_week = granularity == "week"
+
     db_path = get_db_path()
     db_path_str = str(db_path)
 
-    # Single read txn: resolve the in-range activity IDs once.
+    # Weekly windowing bounds (Issue #813): the previous week (for the
+    # descriptive metric baseline) and the trailing heat-fit window.
+    prev_start = str(start_d - timedelta(days=7))
+    prev_end = str(start_d - timedelta(days=1))
+    heat_start = str(end_d - timedelta(days=_HEAT_FIT_WEEKS * 7 - 1))
+    durability_start = str(end_d - timedelta(days=_DURABILITY_TREND_WEEKS * 7 - 1))
+
+    # Single read txn: resolve the in-range activity IDs (and, weekly, the
+    # previous-week and trailing heat-window IDs) once.
+    prev_activity_ids: list[int] = []
+    heat_activity_ids: list[int] = []
     with get_connection(db_path) as conn:
         activity_ids = _resolve_activity_ids(conn, period_start, period_end)
+        if is_week:
+            prev_activity_ids = _resolve_activity_ids(conn, prev_start, prev_end)
+            heat_activity_ids = _resolve_activity_ids(conn, heat_start, period_end)
 
     # Number of trailing weekly buckets that fully cover the window (plus one so
     # the prior week is available for a period-over-period delta).
@@ -155,29 +192,78 @@ def prefetch_trend_context(
         lambda: reader.get_load_trend(lookback_weeks, end_date=period_end)
     )
     acwr = _safe(lambda: reader.get_acwr(end_date=period_end))
-    durability_trend = _safe(
-        lambda: reader.get_durability_trend(period_start, period_end)
-    )
+
+    # Fitness curve is a 90-day rolling-max metric by design; pin the window so a
+    # single easy week does not read as a fitness collapse (Issue #813).
     fitness_curve = _safe(
         lambda: reader.fitness_curve.get_objective_fitness_curve(
-            window_days=window_days
+            window_days=_FITNESS_CURVE_WINDOW_DAYS
         )
     )
-    heat_adjusted_trend = _safe(
-        lambda: reader.get_heat_adjusted_trend(activity_ids, period_start, period_end)
-    )
+
+    if is_week:
+        # Durability: fit the decoupling trend over a trailing 8-week window
+        # (N ~= 8-16 long runs) and mark this week's qualifying runs so the
+        # narration can position them on that trailing trend (Issue #813).
+        durability_trend = _safe(
+            lambda: reader.get_durability_trend(durability_start, period_end)
+        )
+        if isinstance(durability_trend, dict):
+            period_id_set = set(activity_ids)
+            durability_trend["window"] = {
+                "start": durability_start,
+                "end": period_end,
+                "weeks": _DURABILITY_TREND_WEEKS,
+            }
+            durability_trend["in_period_activity_ids"] = [
+                a["activity_id"]
+                for a in durability_trend.get("activities", [])
+                if a.get("activity_id") in period_id_set
+            ]
+
+        # Heat hinge: fit over a trailing 12-week window so N >= 10 and the
+        # temperature spread can actually identify a hinge; carry this week's
+        # runs so the narration references their heat_cost points (Issue #813).
+        heat_adjusted_trend = _safe(
+            lambda: reader.get_heat_adjusted_trend(
+                heat_activity_ids, heat_start, period_end
+            )
+        )
+        if isinstance(heat_adjusted_trend, dict):
+            heat_adjusted_trend["in_period_activity_ids"] = list(activity_ids)
+    else:
+        durability_trend = _safe(
+            lambda: reader.get_durability_trend(period_start, period_end)
+        )
+        heat_adjusted_trend = _safe(
+            lambda: reader.get_heat_adjusted_trend(
+                activity_ids, period_start, period_end
+            )
+        )
 
     metric_trends: dict[str, Any] = {}
     for metric in _METRIC_TREND_METRICS:
-        metric_trends[metric] = _safe(
-            partial(
-                trend_analyzer.analyze_metric_trend,
-                metric,
-                period_start,
-                period_end,
-                activity_ids,
+        if is_week:
+            # Descriptive summary vs the previous week; no within-week regression
+            # (N too small, confounded by workout-type mix) (Issue #813).
+            metric_trends[metric] = _safe(
+                partial(
+                    trend_analyzer.summarize_metric_period,
+                    metric,
+                    activity_ids,
+                    prev_activity_ids,
+                )
             )
-        )
+        else:
+            metric_trends[metric] = _safe(
+                partial(
+                    trend_analyzer.analyze_metric_trend,
+                    metric,
+                    period_start,
+                    period_end,
+                    activity_ids,
+                )
+            )
 
     # Recovery trend is anchored to now() (no end_date). Only include it when the
     # trailing window covers period_end; otherwise null + an explanatory note.

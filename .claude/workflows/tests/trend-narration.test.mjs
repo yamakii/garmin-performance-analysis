@@ -52,6 +52,22 @@ test('test_narration_prompt_embeds_context', () => {
   assert.match(out, /trend\.json/)
 })
 
+test('narrationPrompt includes small-N guard', () => {
+  const ctx = {
+    tempDir: '/tmp/trend_week_2026-06-15_1',
+    contextJson: '{"metric_trends":{"pace":{"mode":"descriptive"}}}',
+    periodStart: '2026-06-15',
+    periodEnd: '2026-06-21',
+    granularity: 'week',
+  }
+  const out = narrationPrompt(ctx)
+  // insufficient_data / small-N components must not be narrated as trends,
+  // and an underpowered "stable" is 判定不能, not 安定 (#813).
+  assert.match(out, /insufficient_data/)
+  assert.match(out, /判定不能/)
+  assert.match(out, /descriptive/) // weekly metric_trends are descriptive
+})
+
 test('test_merge_prompt_references_save_script', () => {
   const ctx = { tempDir: '/tmp/trend_week_x' }
   const out = mergeTrendPrompt(ctx)
