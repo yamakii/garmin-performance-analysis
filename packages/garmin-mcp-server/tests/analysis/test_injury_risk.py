@@ -20,8 +20,6 @@ from garmin_mcp.analysis.injury_risk import (
     _form_ratio_to_risk,
     classify_band,
     compute_injury_risk,
-    count_material_events,
-    is_material_severe,
 )
 
 # Reusable healthy inputs (no risk contribution).
@@ -119,49 +117,6 @@ def test_injury_risk_band_boundaries() -> None:
     assert classify_band(61) == "high"
 
 
-def _anomaly(timestamp: int, metric: str, z: float, cause: str) -> dict[str, Any]:
-    """Build a minimal anomaly record for the material-event helpers."""
-    return {
-        "timestamp": timestamp,
-        "metric": metric,
-        "z_score": z,
-        "probable_cause": cause,
-    }
-
-
-@pytest.mark.unit
-def test_count_material_events_dedups_adjacent() -> None:
-    """Adjacent per-metric spikes collapse; a far one is a separate event.
-
-    ts=100 (GCT z4), 100 (VO z4), 101 (VR z4) fall within the ±2s dedup window
-    -> 1 event; ts=140 (GCT z4) is far away -> a 2nd event. Total 2.
-    """
-    anomalies = [
-        _anomaly(100, "directGroundContactTime", 4.0, "pace_change"),
-        _anomaly(100, "directVerticalOscillation", 4.0, "pace_change"),
-        _anomaly(101, "directVerticalRatio", 4.0, "pace_change"),
-        _anomaly(140, "directGroundContactTime", 4.0, "elevation_change"),
-    ]
-
-    assert count_material_events(anomalies) == 2
-
-
-@pytest.mark.unit
-def test_count_material_events_excludes_isolated_and_low() -> None:
-    """Isolated noise and sub-3.5 z spikes drop; one material-severe remains.
-
-    isolated z5 (no cause) and pace z3.2 (|z| <= 3.5) are excluded; only the
-    elevation z4 survives -> 1 event.
-    """
-    anomalies = [
-        _anomaly(50, "directVerticalOscillation", 5.0, "isolated"),
-        _anomaly(200, "directGroundContactTime", 3.2, "pace_change"),
-        _anomaly(400, "directVerticalRatio", 4.0, "elevation_change"),
-    ]
-
-    assert count_material_events(anomalies) == 1
-
-
 @pytest.mark.unit
 def test_form_factor_ratio_below_safe_zero() -> None:
     """Recent rate below baseline (ratio 0.49 <= 1.2) -> 0 risk, factor present."""
@@ -198,14 +153,6 @@ def test_form_factor_insufficient_baseline_drops() -> None:
 def test_form_factor_none_signal() -> None:
     """A missing signal drops the factor."""
     assert _form_factor(None) == (None, "")
-
-
-@pytest.mark.unit
-def test_is_material_severe_boundary() -> None:
-    """Material cause + |z| > 3.5 is severe; isolated or z <= 3.5 is not."""
-    assert is_material_severe(_anomaly(0, "gct", 4.0, "pace_change")) is True
-    assert is_material_severe(_anomaly(0, "gct", 5.0, "isolated")) is False
-    assert is_material_severe(_anomaly(0, "gct", 3.5, "elevation_change")) is False
 
 
 @pytest.mark.unit

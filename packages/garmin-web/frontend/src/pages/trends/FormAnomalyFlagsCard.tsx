@@ -43,7 +43,7 @@ export default function FormAnomalyFlagsCard({
                   {flag.activity_date}
                 </span>
                 <span className="text-xs text-slate-500">
-                  異常 {flag.anomalies_detected}件
+                  異常イベント {flag.anomalies_detected}件
                   {flag.severity_high > 0 ? `（高 ${flag.severity_high}）` : ""}
                 </span>
               </div>
