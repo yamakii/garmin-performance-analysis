@@ -15,7 +15,14 @@ from typing import Any
 
 import pytest
 
-from garmin_mcp.analysis.injury_risk import classify_band, compute_injury_risk
+from garmin_mcp.analysis.injury_risk import (
+    _form_factor,
+    _form_ratio_to_risk,
+    classify_band,
+    compute_injury_risk,
+    count_material_events,
+    is_material_severe,
+)
 
 # Reusable healthy inputs (no risk contribution).
 _ACWR_HEALTHY: dict[str, Any] = {"acwr": 1.0, "status": "optimal"}
@@ -27,6 +34,9 @@ _WELLNESS_HEALTHY: dict[str, Any] = {
     "rhr": {"flag": "within", "adverse": False},
     "overall_flag": False,
 }
+# Healthy form signal: recent event rate well within the personal baseline
+# (ratio 0.5 <= 1.2 => 0 risk) but present (baseline rate above the floor).
+_FORM_HEALTHY: dict[str, Any] = {"recent_rate": 1.0, "baseline_rate": 2.0}
 
 
 @pytest.mark.unit
@@ -36,7 +46,7 @@ def test_injury_risk_low_all_healthy() -> None:
         acwr=_ACWR_HEALTHY,
         durability_trend=_DURABILITY_STABLE,
         wellness_deviation=_WELLNESS_HEALTHY,
-        form_anomaly_count_14d=0,
+        form_anomaly=_FORM_HEALTHY,
     )
 
     assert result["band"] == "low"
@@ -60,7 +70,7 @@ def test_injury_risk_high_acwr_spike() -> None:
         acwr={"acwr": 1.8, "status": "high_risk"},
         durability_trend=None,
         wellness_deviation=None,
-        form_anomaly_count_14d=None,
+        form_anomaly=None,
     )
 
     assert result["band"] == "high"
@@ -78,7 +88,7 @@ def test_injury_risk_missing_input_renormalizes() -> None:
         acwr=None,
         durability_trend=_DURABILITY_STABLE,
         wellness_deviation=_WELLNESS_HEALTHY,
-        form_anomaly_count_14d=0,
+        form_anomaly=_FORM_HEALTHY,
     )
 
     assert "acwr" not in result["available_inputs"]
@@ -94,7 +104,7 @@ def test_injury_risk_all_missing_insufficient() -> None:
         acwr=None,
         durability_trend=None,
         wellness_deviation=None,
-        form_anomaly_count_14d=None,
+        form_anomaly=None,
     )
 
     assert result == {"insufficient_data": True}
@@ -107,6 +117,110 @@ def test_injury_risk_band_boundaries() -> None:
     assert classify_band(30) == "moderate"
     assert classify_band(60) == "moderate"
     assert classify_band(61) == "high"
+
+
+def _anomaly(timestamp: int, metric: str, z: float, cause: str) -> dict[str, Any]:
+    """Build a minimal anomaly record for the material-event helpers."""
+    return {
+        "timestamp": timestamp,
+        "metric": metric,
+        "z_score": z,
+        "probable_cause": cause,
+    }
+
+
+@pytest.mark.unit
+def test_count_material_events_dedups_adjacent() -> None:
+    """Adjacent per-metric spikes collapse; a far one is a separate event.
+
+    ts=100 (GCT z4), 100 (VO z4), 101 (VR z4) fall within the ±2s dedup window
+    -> 1 event; ts=140 (GCT z4) is far away -> a 2nd event. Total 2.
+    """
+    anomalies = [
+        _anomaly(100, "directGroundContactTime", 4.0, "pace_change"),
+        _anomaly(100, "directVerticalOscillation", 4.0, "pace_change"),
+        _anomaly(101, "directVerticalRatio", 4.0, "pace_change"),
+        _anomaly(140, "directGroundContactTime", 4.0, "elevation_change"),
+    ]
+
+    assert count_material_events(anomalies) == 2
+
+
+@pytest.mark.unit
+def test_count_material_events_excludes_isolated_and_low() -> None:
+    """Isolated noise and sub-3.5 z spikes drop; one material-severe remains.
+
+    isolated z5 (no cause) and pace z3.2 (|z| <= 3.5) are excluded; only the
+    elevation z4 survives -> 1 event.
+    """
+    anomalies = [
+        _anomaly(50, "directVerticalOscillation", 5.0, "isolated"),
+        _anomaly(200, "directGroundContactTime", 3.2, "pace_change"),
+        _anomaly(400, "directVerticalRatio", 4.0, "elevation_change"),
+    ]
+
+    assert count_material_events(anomalies) == 1
+
+
+@pytest.mark.unit
+def test_form_factor_ratio_below_safe_zero() -> None:
+    """Recent rate below baseline (ratio 0.49 <= 1.2) -> 0 risk, factor present."""
+    risk, detail = _form_factor({"recent_rate": 1.4, "baseline_rate": 2.85})
+
+    assert risk == 0.0
+    assert detail  # present, non-empty detail => factor is available
+
+
+@pytest.mark.unit
+def test_form_factor_ratio_saturates() -> None:
+    """Recent rate 3x baseline (ratio 3.0 >= 2.0) saturates the factor at 1.0."""
+    risk, _ = _form_factor({"recent_rate": 6.0, "baseline_rate": 2.0})
+
+    assert risk == 1.0
+
+
+@pytest.mark.unit
+def test_form_factor_ratio_midpoint() -> None:
+    """Ratio 1.6 (midpoint of [1.2, 2.0]) -> 0.5 risk."""
+    assert _form_ratio_to_risk(1.6) == pytest.approx(0.5)
+
+    risk, _ = _form_factor({"recent_rate": 3.2, "baseline_rate": 2.0})
+    assert risk == pytest.approx(0.5)
+
+
+@pytest.mark.unit
+def test_form_factor_insufficient_baseline_drops() -> None:
+    """A baseline rate below the 0.2 floor drops the factor (too little data)."""
+    assert _form_factor({"recent_rate": 5.0, "baseline_rate": 0.1}) == (None, "")
+
+
+@pytest.mark.unit
+def test_form_factor_none_signal() -> None:
+    """A missing signal drops the factor."""
+    assert _form_factor(None) == (None, "")
+
+
+@pytest.mark.unit
+def test_is_material_severe_boundary() -> None:
+    """Material cause + |z| > 3.5 is severe; isolated or z <= 3.5 is not."""
+    assert is_material_severe(_anomaly(0, "gct", 4.0, "pace_change")) is True
+    assert is_material_severe(_anomaly(0, "gct", 5.0, "isolated")) is False
+    assert is_material_severe(_anomaly(0, "gct", 3.5, "elevation_change")) is False
+
+
+@pytest.mark.unit
+def test_injury_risk_form_ratio_contribution() -> None:
+    """A high-ratio form signal (others missing) -> form_anomaly top, band high."""
+    result = compute_injury_risk(
+        acwr=None,
+        durability_trend=None,
+        wellness_deviation=None,
+        form_anomaly={"recent_rate": 6.0, "baseline_rate": 2.0},
+    )
+
+    assert result["band"] == "high"
+    assert result["factors"][0]["name"] == "form_anomaly"
+    assert result["available_inputs"] == ["form_anomaly"]
 
 
 @pytest.mark.integration
