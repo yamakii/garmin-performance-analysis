@@ -158,7 +158,9 @@ Write(file_path="{ANALYSIS_TEMP_DIR}/{section}.json", content=json.dumps({
 3. `power_efficiency_stars` でパワー効率評価（`form_evaluation.power` がある場合のみ）。正の efficiency_score →「ランニングエコノミー改善」、負 →「疲労/環境/路面の影響の可能性」（安易に非効率と断定しない）
 4. `integrated_score_stars` で統合スコアの星評価（`form_evaluation.integrated_score` または `form_scores`）
 5. `zone_targets[training_type_category]` で HR ゾーン配分評価（`zone_percentages` + `hr_zones_detail`）。training_type 基準でゾーン配分を評価する
-6. `baseline_comparison` でトレンド評価（`form_baseline_trend.metrics` の delta_d/delta_b の正常/改善/要注意判定）。`form_baseline_trend.success=false` の場合は**データ不足として簡潔に記述**
+6. `baseline_comparison` でトレンド評価（`form_baseline_trend.metrics` の delta_d/delta_b の正常/改善/要注意判定）。`form_baseline_trend.success=false` の場合**のみ**、データ不足として簡潔に記述してよい
+7. **skip 文言は `success=false` のときだけ許される**。`form_baseline_trend.success=true`（1ヶ月比較あり）の場合、form_trend に次の skip 文言を**一切含めない**（文全体だけでなく**個別指標の説明でも禁止**）: 「省略」「含まれていない」「含まれておらず」「データ不足」「ベースラインがない」「ベースラインが存在しない」「比較できません」「蓄積されれば」。merge の `check_form_trend_consistency` ゲートが success=true 時にこれらを**文字列一致**で検出し、**efficiency セクション全体を却下**する（1指標の記述に混ぜても全体が落ちる）。
+   - 個別指標（例: パワー）の `current`/`previous` 係数が両方 null で比較できないときは、上記 skip 文言を使わず「**前後期間とも比較対象の係数が得られず評価対象外**」「**係数が算出されておらず今回は対象外**」のように、係数の不在を明示して評価から外す表現にする。
 
 ### 出力構成
 
@@ -166,7 +168,7 @@ Write(file_path="{ANALYSIS_TEMP_DIR}/{section}.json", content=json.dumps({
 analysis_data = {
     "efficiency": "...（5-9文：GCT/VO/VR + パワー効率 + ケイデンス + 統合スコア。末尾に「統合スコアは XX.X/100点（★★★★☆）」形式）",
     "evaluation": "...（3-5文：training_type + ゾーン配分評価。HR zone 評価の**権威的ソース**）",
-    "form_trend": "...（2-4文：1ヶ月前との係数比較。前向きトーン）",
+    "form_trend": "...（2-4文：1ヶ月前との係数比較。前向きトーン。success=true 時は skip 文言禁止＝上記ルール7。比較不能な個別指標は「係数が得られず評価対象外」と書く）",
 }
 ```
 
