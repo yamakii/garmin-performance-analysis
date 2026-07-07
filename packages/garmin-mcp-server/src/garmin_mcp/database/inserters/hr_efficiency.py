@@ -13,6 +13,46 @@ import duckdb
 
 logger = logging.getLogger(__name__)
 
+# raw Garmin/fallback training-type label → canonical intensity category.
+# Each canonical category is scored against its own correct HR-zone band so that
+# easy runs are rewarded for staying low (Zone1-2) instead of being penalised for
+# not spending time in high zones.
+_CANONICAL_CATEGORY_LABELS: dict[str, frozenset[str]] = {
+    "easy": frozenset(
+        {"aerobic_base", "recovery", "low_moderate", "base", "warmup", "easy"}
+    ),
+    "tempo": frozenset({"tempo", "tempo_run"}),
+    "threshold": frozenset({"lactate_threshold", "threshold_work", "threshold"}),
+    "vo2max": frozenset(
+        {
+            "vo2max",
+            "vo2_max",
+            "anaerobic_capacity",
+            "anaerobic",
+            "interval_sprint",
+            "speed",
+            "sprint",
+        }
+    ),
+}
+
+
+def _canonical_training_category(training_type: str | None) -> str:
+    """raw Garmin/fallback ラベル → 正準強度カテゴリ。
+
+    returns: "easy" | "tempo" | "threshold" | "vo2max" | "unknown"
+
+    "unknown" (unknown/mixed_effort/None など未知ラベル) は減点しない中立扱い。
+    """
+    if not training_type:
+        return "unknown"
+
+    normalized = training_type.lower()
+    for category, labels in _CANONICAL_CATEGORY_LABELS.items():
+        if normalized in labels:
+            return category
+    return "unknown"
+
 
 def _extract_hr_efficiency_from_raw(
     hr_zones_file: str | None, activity_file: str | None
@@ -110,58 +150,53 @@ def _extract_hr_efficiency_from_raw(
         else:
             training_type = "mixed_effort"
 
-    # 2. Calculate zone_distribution_rating based on training_type
-    zone_distribution_rating = "Fair"  # default
+    # 2. Calculate zone_distribution_rating based on the canonical intensity
+    #    category, scoring each category against its own correct HR-zone band.
+    category = _canonical_training_category(training_type)
 
-    if training_type:
-        zone2_pct = zone_percentages.get("zone2_percentage", 0)
-        zone3_pct = zone_percentages.get("zone3_percentage", 0)
-        zone4_pct = zone_percentages.get("zone4_percentage", 0)
-        zone5_pct = zone_percentages.get("zone5_percentage", 0)
+    zone1_pct = zone_percentages.get("zone1_percentage", 0)
+    zone2_pct = zone_percentages.get("zone2_percentage", 0)
+    zone3_pct = zone_percentages.get("zone3_percentage", 0)
+    zone4_pct = zone_percentages.get("zone4_percentage", 0)
+    zone5_pct = zone_percentages.get("zone5_percentage", 0)
 
-        if training_type in ("recovery", "low_moderate"):
-            # Zone 2 ≥70% → Excellent, ≥50% → Good
-            if zone2_pct >= 70:
-                zone_distribution_rating = "Excellent"
-            elif zone2_pct >= 50:
-                zone_distribution_rating = "Good"
-            elif zone2_pct >= 30:
-                zone_distribution_rating = "Fair"
-            else:
-                zone_distribution_rating = "Poor"
-        elif training_type in ("tempo_run", "threshold_work"):
-            # Zone 3-4 ≥60% → Excellent, ≥40% → Good
-            zone34_pct = zone3_pct + zone4_pct
-            if zone34_pct >= 60:
-                zone_distribution_rating = "Excellent"
-            elif zone34_pct >= 40:
-                zone_distribution_rating = "Good"
-            elif zone34_pct >= 20:
-                zone_distribution_rating = "Fair"
-            else:
-                zone_distribution_rating = "Poor"
-        elif training_type in ("interval_sprint", "vo2_max"):
-            # Zone 4-5 ≥50% → Excellent, ≥30% → Good
-            zone45_pct = zone4_pct + zone5_pct
-            if zone45_pct >= 50:
-                zone_distribution_rating = "Excellent"
-            elif zone45_pct >= 30:
-                zone_distribution_rating = "Good"
-            elif zone45_pct >= 15:
-                zone_distribution_rating = "Fair"
-            else:
-                zone_distribution_rating = "Poor"
+    if category == "easy":
+        # Easy/recovery: judged on Zone1-2 (staying low = success).
+        band_pct = zone1_pct + zone2_pct
+        if band_pct >= 90:
+            zone_distribution_rating = "Excellent"
+        elif band_pct >= 75:
+            zone_distribution_rating = "Good"
+        elif band_pct >= 60:
+            zone_distribution_rating = "Fair"
         else:
-            # aerobic_base or other types - default to Zone 2-3 focus
-            zone23_pct = zone2_pct + zone3_pct
-            if zone23_pct >= 70:
-                zone_distribution_rating = "Excellent"
-            elif zone23_pct >= 50:
-                zone_distribution_rating = "Good"
-            elif zone23_pct >= 30:
-                zone_distribution_rating = "Fair"
-            else:
-                zone_distribution_rating = "Poor"
+            zone_distribution_rating = "Poor"
+    elif category in ("tempo", "threshold"):
+        # Tempo/threshold: judged on Zone3-4.
+        band_pct = zone3_pct + zone4_pct
+        if band_pct >= 60:
+            zone_distribution_rating = "Excellent"
+        elif band_pct >= 40:
+            zone_distribution_rating = "Good"
+        elif band_pct >= 20:
+            zone_distribution_rating = "Fair"
+        else:
+            zone_distribution_rating = "Poor"
+    elif category == "vo2max":
+        # VO2max/anaerobic: judged on Zone4-5.
+        band_pct = zone4_pct + zone5_pct
+        if band_pct >= 50:
+            zone_distribution_rating = "Excellent"
+        elif band_pct >= 30:
+            zone_distribution_rating = "Good"
+        elif band_pct >= 15:
+            zone_distribution_rating = "Fair"
+        else:
+            zone_distribution_rating = "Poor"
+    else:
+        # unknown: neutral, never penalised down to Poor.
+        band_pct = zone1_pct + zone2_pct + zone3_pct
+        zone_distribution_rating = "Good" if band_pct >= 70 else "Fair"
 
     # 3. Calculate aerobic_efficiency (Zone 2-3 percentage)
     zone2_pct = zone_percentages.get("zone2_percentage", 0)
@@ -180,20 +215,19 @@ def _extract_hr_efficiency_from_raw(
     # 4. Calculate training_quality (combine zone_distribution_rating + primary_zone alignment)
     training_quality = "Fair"  # default
 
-    # Check if primary zone aligns with training type
+    # Check if primary zone aligns with the canonical intensity category.
+    # easy → Zone1/Zone2, tempo/threshold → Zone3/Zone4, vo2max → Zone4/Zone5,
+    # unknown → always aligned (neutral).
     primary_zone_aligned = False
-    if primary_zone and training_type:  # noqa: SIM102
-        if (
-            training_type in ("recovery", "low_moderate")
-            and "Zone 2" in primary_zone
-            or training_type in ("tempo_run", "threshold_work")
-            and ("Zone 3" in primary_zone or "Zone 4" in primary_zone)
-            or training_type in ("interval_sprint", "vo2_max")
-            and ("Zone 4" in primary_zone or "Zone 5" in primary_zone)
-            or training_type in ("aerobic_base",)
-            and ("Zone 2" in primary_zone or "Zone 3" in primary_zone)
-        ):
-            primary_zone_aligned = True
+    if category == "unknown":
+        primary_zone_aligned = True
+    elif primary_zone:
+        if category == "easy":
+            primary_zone_aligned = "Zone 1" in primary_zone or "Zone 2" in primary_zone
+        elif category in ("tempo", "threshold"):
+            primary_zone_aligned = "Zone 3" in primary_zone or "Zone 4" in primary_zone
+        elif category == "vo2max":
+            primary_zone_aligned = "Zone 4" in primary_zone or "Zone 5" in primary_zone
 
     # Combine rating with alignment
     if zone_distribution_rating == "Excellent" and primary_zone_aligned:
