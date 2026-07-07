@@ -144,7 +144,7 @@ def test_get_form_evaluations_includes_power_data(tmp_db_path: str):
             185.0, 180, TRUE,
             0.95, '★★★★★',
             280.0, 4.3, 3.5, 3.6,
-            -0.027, '★★★★☆', TRUE
+            -0.027, '同等', FALSE
         )
         """)
 
@@ -164,8 +164,9 @@ def test_get_form_evaluations_includes_power_data(tmp_db_path: str):
     assert power["speed_actual_mps"] == pytest.approx(3.5, rel=1e-3)
     assert power["speed_expected_mps"] == pytest.approx(3.6, rel=1e-3)
     assert power["efficiency_score"] == pytest.approx(-0.027, rel=1e-3)
-    assert power["star_rating"] == "★★★★☆"
-    assert power["needs_improvement"] is True
+    # power_efficiency_rating stores the self-baseline descriptor label now.
+    assert power["label"] == "同等"
+    assert power["needs_improvement"] is False
 
     # Verify existing fields are not broken
     assert result["gct"]["actual"] == pytest.approx(248.5, rel=1e-3)
@@ -236,7 +237,7 @@ def test_get_form_evaluations_no_power_data(tmp_db_path: str):
     assert power["speed_actual_mps"] is None
     assert power["speed_expected_mps"] is None
     assert power["efficiency_score"] is None
-    assert power["star_rating"] is None
+    assert power["label"] is None
     assert power["needs_improvement"] is None
 
     # Verify existing fields are not broken

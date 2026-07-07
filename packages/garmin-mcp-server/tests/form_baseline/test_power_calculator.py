@@ -1,68 +1,53 @@
-"""Tests for power_calculator.calculate_power_efficiency_rating."""
+"""Tests for power_calculator.calculate_power_efficiency_label."""
 
 import pytest
 
-from garmin_mcp.form_baseline.power_calculator import calculate_power_efficiency_rating
+from garmin_mcp.form_baseline.power_calculator import calculate_power_efficiency_label
 
 
 @pytest.mark.unit
-class TestCalculatePowerEfficiencyRating:
-    """Test star rating thresholds for power efficiency score."""
+class TestCalculatePowerEfficiencyLabel:
+    """Test the 3-level self-baseline descriptor for power efficiency score."""
 
     @pytest.mark.parametrize(
-        ("score", "expected_rating"),
+        ("z", "expected_label"),
         [
-            # Fixed absolute bands used when rel_rmse is not supplied.
-            pytest.param(0.10, "★★★★★", id="5star-high"),
-            pytest.param(0.06, "★★★★★", id="5star-boundary"),
-            pytest.param(0.04, "★★★★☆", id="4star-mid"),
-            pytest.param(0.03, "★★★★☆", id="4star-boundary"),
-            pytest.param(0.00, "★★★☆☆", id="3star-mid"),
-            pytest.param(-0.025, "★★★☆☆", id="3star-in-noise"),
-            pytest.param(-0.03, "★★☆☆☆", id="2star-boundary"),
-            pytest.param(-0.05, "★★☆☆☆", id="2star-mid"),
-            pytest.param(-0.06, "★☆☆☆☆", id="1star-boundary"),
-            pytest.param(-0.10, "★☆☆☆☆", id="1star-low"),
+            # z-score bands when rel_rmse is supplied: z>=1 上回る, |z|<1 同等,
+            # z<=-1 下回る.
+            pytest.param(1.2, "上回る", id="z-pos1.2-above"),
+            pytest.param(1.0, "上回る", id="z-1-above-boundary"),
+            pytest.param(0.0, "同等", id="z-0-at"),
+            pytest.param(-0.9, "同等", id="z-neg0.9-at"),
+            pytest.param(-1.2, "下回る", id="z-neg1.2-below"),
+            pytest.param(-1.0, "下回る", id="z-neg1-below-boundary"),
         ],
     )
-    def test_rating_tiers(self, score: float, expected_rating: str) -> None:
-        assert calculate_power_efficiency_rating(score) == expected_rating
-
-    def test_within_noise_is_3star(self) -> None:
-        """|z| < 1 (within ±1 RMSE) is treated as noise → 3★.
-
-        Regression: 2026-07-07 run — a single-run -2.5% residual with a 4% RMSE
-        baseline (z=-0.625) must not be penalized below 3★.
-        """
-        assert calculate_power_efficiency_rating(-0.025, rel_rmse=0.04) == "★★★☆☆"
-
-    @pytest.mark.parametrize(
-        ("z", "expected_rating"),
-        [
-            pytest.param(-2.5, "★☆☆☆☆", id="z-neg2.5-1star"),
-            pytest.param(-1.5, "★★☆☆☆", id="z-neg1.5-2star"),
-            pytest.param(0.0, "★★★☆☆", id="z-0-3star"),
-            pytest.param(1.5, "★★★★☆", id="z-1.5-4star"),
-            pytest.param(2.5, "★★★★★", id="z-2.5-5star"),
-        ],
-    )
-    def test_z_scaled_bands(self, z: float, expected_rating: str) -> None:
+    def test_label_z_bands(self, z: float, expected_label: str) -> None:
         rel_rmse = 0.04
         score = z * rel_rmse
         assert (
-            calculate_power_efficiency_rating(score, rel_rmse=rel_rmse)
-            == expected_rating
+            calculate_power_efficiency_label(score, rel_rmse=rel_rmse) == expected_label
         )
 
     @pytest.mark.parametrize(
-        ("score", "expected_rating"),
+        ("score", "expected_label"),
         [
-            pytest.param(-0.025, "★★★☆☆", id="fallback-3star"),
-            pytest.param(0.04, "★★★★☆", id="fallback-4star"),
-            pytest.param(-0.07, "★☆☆☆☆", id="fallback-1star"),
+            # Fixed absolute bands used when rel_rmse is not supplied.
+            pytest.param(0.04, "上回る", id="fallback-above"),
+            pytest.param(0.03, "上回る", id="fallback-above-boundary"),
+            pytest.param(-0.01, "同等", id="fallback-at"),
+            pytest.param(0.0, "同等", id="fallback-at-zero"),
+            pytest.param(-0.05, "下回る", id="fallback-below"),
+            pytest.param(-0.03, "下回る", id="fallback-below-boundary"),
         ],
     )
-    def test_fallback_when_no_rmse(self, score: float, expected_rating: str) -> None:
-        assert (
-            calculate_power_efficiency_rating(score, rel_rmse=None) == expected_rating
-        )
+    def test_label_fallback_no_rmse(self, score: float, expected_label: str) -> None:
+        assert calculate_power_efficiency_label(score, rel_rmse=None) == expected_label
+
+    def test_today_run_is_doukaku(self) -> None:
+        """|z| < 1 (within ±1 RMSE) reads as "同等" (at baseline = good).
+
+        Regression: 2026-07-07 run — a single-run -2.5% residual with a 4% RMSE
+        baseline (z=-0.625) must read as "同等", not a weakness.
+        """
+        assert calculate_power_efficiency_label(-0.025, rel_rmse=0.04) == "同等"

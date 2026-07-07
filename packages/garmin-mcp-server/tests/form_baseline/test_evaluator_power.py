@@ -10,7 +10,7 @@ import pytest
 
 from garmin_mcp.form_baseline.power_calculator import (
     calculate_power_efficiency_internal,
-    calculate_power_efficiency_rating,
+    calculate_power_efficiency_label,
 )
 
 
@@ -146,7 +146,8 @@ def test_evaluate_power_efficiency(tmp_db_with_baseline):
 
     assert result is not None
     assert "efficiency_score" in result
-    assert "star_rating" in result
+    assert "label" in result
+    assert result["label"] in ("上回る", "同等", "下回る")
     assert "integrated_score" in result
     assert result["integrated_score"] is not None
     assert result["avg_w"] > 0
@@ -219,14 +220,14 @@ def test_power_eval_uses_gap_and_run_only(tmp_db_with_baseline):
 
 
 @pytest.mark.unit
-def test_power_efficiency_rating_calculation():
-    """スコアから星評価を計算 (fallback fixed bands, no rel_rmse)."""
+def test_power_efficiency_label_calculation():
+    """スコアから3段階記述子を計算 (fallback fixed bands, no rel_rmse)."""
 
-    assert calculate_power_efficiency_rating(0.06) == "★★★★★"
-    assert calculate_power_efficiency_rating(0.03) == "★★★★☆"
-    assert calculate_power_efficiency_rating(0.0) == "★★★☆☆"
-    assert calculate_power_efficiency_rating(-0.03) == "★★☆☆☆"
-    assert calculate_power_efficiency_rating(-0.06) == "★☆☆☆☆"
+    assert calculate_power_efficiency_label(0.06) == "上回る"
+    assert calculate_power_efficiency_label(0.03) == "上回る"
+    assert calculate_power_efficiency_label(0.0) == "同等"
+    assert calculate_power_efficiency_label(-0.03) == "下回る"
+    assert calculate_power_efficiency_label(-0.06) == "下回る"
 
 
 def _build_gate_db(tmp_path, speed_actual: float, power_rmse: float) -> str:
@@ -280,22 +281,22 @@ def _build_gate_db(tmp_path, speed_actual: float, power_rmse: float) -> str:
     return db_path
 
 
-@pytest.mark.unit
+@pytest.mark.integration
 @pytest.mark.parametrize(
-    ("speed_actual", "power_rmse", "expected_needs_improvement"),
+    ("speed_actual", "power_rmse"),
     [
-        # score = (2.4375 - 2.5) / 2.5 = -0.025, rel_rmse = 0.1 / 2.5 = 0.04
-        # z = -0.625 (within noise) → -2*rel_rmse = -0.08; -0.025 <= -0.08 is False
-        pytest.param(2.4375, 0.1, False, id="within-noise-not-flagged"),
-        # score = (2.25 - 2.5) / 2.5 = -0.10, rel_rmse = 0.04, z = -2.5
-        # -0.10 <= -0.08 is True
-        pytest.param(2.25, 0.1, True, id="clearly-worse-flagged"),
+        # score = (2.4375 - 2.5) / 2.5 = -0.025 (within noise, z=-0.625)
+        pytest.param(2.4375, 0.1, id="within-noise"),
+        # score = (2.25 - 2.5) / 2.5 = -0.10 (clearly worse, z=-2.5)
+        pytest.param(2.25, 0.1, id="clearly-worse"),
     ],
 )
-def test_needs_improvement_gated(
-    tmp_path, speed_actual, power_rmse, expected_needs_improvement
-):
-    """needs_improvement is gated at z <= -2 (score <= -2 * rel_rmse)."""
+def test_power_needs_improvement_always_false(tmp_path, speed_actual, power_rmse):
+    """Power is not a quality axis: needs_improvement is always False (Epic #833).
+
+    Even a clearly-worse-than-baseline run (z=-2.5) must not be flagged for
+    improvement — power efficiency is a self-relative descriptor, not a weakness.
+    """
     db_path = _build_gate_db(tmp_path, speed_actual, power_rmse)
     conn = duckdb.connect(db_path)
     today = datetime.now().date()
@@ -310,4 +311,54 @@ def test_needs_improvement_gated(
     conn.close()
 
     assert result is not None
-    assert result["needs_improvement"] is expected_needs_improvement
+    assert result["needs_improvement"] is False
+
+
+@pytest.mark.integration
+def test_integrated_score_excludes_power(tmp_path):
+    """integrated_score is power-independent (Epic #833).
+
+    With gct/vo/vr penalties fixed, two runs with very different power scores
+    (a strong +6% over baseline vs a weak -10% below) produce the *same*
+    integrated_score, proving power no longer contributes to the composite.
+    """
+    form_penalties = {"gct": 10.0, "vo": 5.0, "vr": 8.0}
+    today = datetime.now().date()
+    activity_date = str(today - timedelta(days=5))
+
+    strong_dir = tmp_path / "strong"
+    weak_dir = tmp_path / "weak"
+    strong_dir.mkdir()
+    weak_dir.mkdir()
+
+    # Strong power: speed_actual 2.65 → score = (2.65 - 2.5) / 2.5 = +0.06
+    strong_db = _build_gate_db(strong_dir, 2.65, 0.1)
+    conn = duckdb.connect(strong_db)
+    strong = calculate_power_efficiency_internal(
+        conn,
+        activity_id=2001,
+        activity_date=activity_date,
+        user_id="default",
+        condition_group="flat_road",
+        form_penalties=form_penalties,
+    )
+    conn.close()
+
+    # Weak power: speed_actual 2.25 → score = (2.25 - 2.5) / 2.5 = -0.10
+    weak_db = _build_gate_db(weak_dir, 2.25, 0.1)
+    conn = duckdb.connect(weak_db)
+    weak = calculate_power_efficiency_internal(
+        conn,
+        activity_id=2001,
+        activity_date=activity_date,
+        user_id="default",
+        condition_group="flat_road",
+        form_penalties=form_penalties,
+    )
+    conn.close()
+
+    assert strong is not None and weak is not None
+    # Power scores differ (labels differ), but integrated_score is identical.
+    assert strong["efficiency_score"] != weak["efficiency_score"]
+    assert strong["integrated_score"] is not None
+    assert strong["integrated_score"] == pytest.approx(weak["integrated_score"])
