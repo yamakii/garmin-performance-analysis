@@ -220,10 +220,94 @@ def test_power_eval_uses_gap_and_run_only(tmp_db_with_baseline):
 
 @pytest.mark.unit
 def test_power_efficiency_rating_calculation():
-    """スコアから星評価を計算."""
+    """スコアから星評価を計算 (fallback fixed bands, no rel_rmse)."""
 
     assert calculate_power_efficiency_rating(0.06) == "★★★★★"
     assert calculate_power_efficiency_rating(0.03) == "★★★★☆"
     assert calculate_power_efficiency_rating(0.0) == "★★★☆☆"
     assert calculate_power_efficiency_rating(-0.03) == "★★☆☆☆"
     assert calculate_power_efficiency_rating(-0.06) == "★☆☆☆☆"
+
+
+def _build_gate_db(tmp_path, speed_actual: float, power_rmse: float) -> str:
+    """Build an in-memory-ish DuckDB whose power model yields a controlled
+    score and rel_rmse.
+
+    Uses power_b=0 so speed_expected == power_a (independent of W/kg), giving
+    a deterministic score = (speed_actual - power_a) / power_a and
+    rel_rmse = power_rmse / power_a.
+    """
+    db_path = str(tmp_path / "gate.duckdb")
+    conn = duckdb.connect(db_path)
+    conn.execute("CREATE SEQUENCE seq_history_id START 1")
+    conn.execute(
+        "CREATE TABLE activities (activity_id INTEGER PRIMARY KEY, "
+        "activity_date DATE, base_weight_kg FLOAT)"
+    )
+    conn.execute(
+        "CREATE TABLE splits (split_id INTEGER PRIMARY KEY, activity_id INTEGER, "
+        "average_speed FLOAT, grade_adjusted_speed FLOAT, power FLOAT, "
+        "role_phase VARCHAR)"
+    )
+    conn.execute(
+        "CREATE TABLE form_baseline_history ("
+        "history_id INTEGER PRIMARY KEY DEFAULT nextval('seq_history_id'), "
+        "user_id VARCHAR, condition_group VARCHAR, metric VARCHAR, "
+        "period_start DATE, period_end DATE, power_a DOUBLE, power_b DOUBLE, "
+        "power_rmse DOUBLE)"
+    )
+    conn.execute(
+        "CREATE TABLE hr_efficiency (activity_id INTEGER PRIMARY KEY, "
+        "training_type VARCHAR)"
+    )
+    today = datetime.now().date()
+    # speed_expected = power_a = 2.5, power_b = 0 → rel_rmse = power_rmse / 2.5
+    conn.execute(
+        "INSERT INTO form_baseline_history (user_id, condition_group, metric, "
+        "period_start, period_end, power_a, power_b, power_rmse) VALUES "
+        "('default', 'flat_road', 'power', ?, ?, 2.5, 0.0, ?)",
+        [today - timedelta(days=60), today, power_rmse],
+    )
+    conn.execute(
+        "INSERT INTO activities VALUES (2001, ?, 75.0)", [today - timedelta(days=5)]
+    )
+    conn.execute("INSERT INTO hr_efficiency VALUES (2001, 'low_moderate')")
+    conn.execute(
+        "INSERT INTO splits VALUES (20001, 2001, 9.0, ?, 250.0, 'run')",
+        [speed_actual],
+    )
+    conn.close()
+    return db_path
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("speed_actual", "power_rmse", "expected_needs_improvement"),
+    [
+        # score = (2.4375 - 2.5) / 2.5 = -0.025, rel_rmse = 0.1 / 2.5 = 0.04
+        # z = -0.625 (within noise) → -2*rel_rmse = -0.08; -0.025 <= -0.08 is False
+        pytest.param(2.4375, 0.1, False, id="within-noise-not-flagged"),
+        # score = (2.25 - 2.5) / 2.5 = -0.10, rel_rmse = 0.04, z = -2.5
+        # -0.10 <= -0.08 is True
+        pytest.param(2.25, 0.1, True, id="clearly-worse-flagged"),
+    ],
+)
+def test_needs_improvement_gated(
+    tmp_path, speed_actual, power_rmse, expected_needs_improvement
+):
+    """needs_improvement is gated at z <= -2 (score <= -2 * rel_rmse)."""
+    db_path = _build_gate_db(tmp_path, speed_actual, power_rmse)
+    conn = duckdb.connect(db_path)
+    today = datetime.now().date()
+    result = calculate_power_efficiency_internal(
+        conn,
+        activity_id=2001,
+        activity_date=str(today - timedelta(days=5)),
+        user_id="default",
+        condition_group="flat_road",
+        form_penalties=None,
+    )
+    conn.close()
+
+    assert result is not None
+    assert result["needs_improvement"] is expected_needs_improvement

@@ -4,22 +4,49 @@ Handles power efficiency scoring and star ratings.
 """
 
 
-def calculate_power_efficiency_rating(score: float) -> str:
+def calculate_power_efficiency_rating(
+    score: float, rel_rmse: float | None = None
+) -> str:
     """Calculate star rating from power efficiency score.
+
+    Calibrates the star judgement against the baseline's own natural scatter
+    (``rel_rmse = power_rmse / speed_expected``) using a z-score. Deviations
+    within noise (|z| < 1, i.e. within ±1 RMSE) are treated as 3★ so that a
+    single-run power residual is not over-penalized.
 
     Args:
         score: Power efficiency score (actual - expected) / expected
+        rel_rmse: Baseline relative RMSE (power_rmse / speed_expected). When
+            provided and non-zero, the score is normalized to a z-score:
+            z >= 2 → 5★ / 1 <= z < 2 → 4★ / -1 < z < 1 → 3★ /
+            -2 < z <= -1 → 2★ / z <= -2 → 1★.
+            When None or zero, falls back to fixed absolute bands:
+            >= 0.06 → 5★ / >= 0.03 → 4★ / (-0.03, 0.03) → 3★ /
+            (-0.06, -0.03] → 2★ / <= -0.06 → 1★.
 
     Returns:
         Star rating string
     """
-    if score >= 0.05:
+    if rel_rmse:
+        z = score / rel_rmse
+        if z >= 2:
+            return "★★★★★"
+        elif z >= 1:
+            return "★★★★☆"
+        elif z > -1:
+            return "★★★☆☆"
+        elif z > -2:
+            return "★★☆☆☆"
+        else:
+            return "★☆☆☆☆"
+
+    if score >= 0.06:
         return "★★★★★"
-    elif score >= 0.02:
+    elif score >= 0.03:
         return "★★★★☆"
-    elif -0.02 <= score < 0.02:
+    elif score > -0.03:
         return "★★★☆☆"
-    elif -0.05 <= score < -0.02:
+    elif score > -0.06:
         return "★★☆☆☆"
     else:
         return "★☆☆☆☆"
@@ -122,8 +149,14 @@ def calculate_power_efficiency_internal(
         power_wkg = power_avg / body_mass
         speed_expected = power_a + power_b * power_wkg
         score = (speed_actual - speed_expected) / speed_expected
-        rating = calculate_power_efficiency_rating(score)
-        needs_improvement = score < -0.02
+        # Normalize by the baseline's own natural scatter (relative RMSE) so the
+        # star judgement and improvement flag are calibrated to noise, not a
+        # fixed absolute band. Fall back to fixed bands when RMSE is unavailable.
+        rel_rmse = (
+            (power_rmse / speed_expected) if (power_rmse and speed_expected) else None
+        )
+        rating = calculate_power_efficiency_rating(score, rel_rmse)
+        needs_improvement = (score <= -2 * rel_rmse) if rel_rmse else (score < -0.06)
 
         # Calculate integrated score if form penalties provided
         integrated_score = None
