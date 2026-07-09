@@ -143,7 +143,8 @@ LLM の暗算に頼らず、以下を厳守する:
 
 ### key_strengths / improvement_areas フィルタ（`form_evaluation` の `needs_improvement` を使用）
 
-各指標は `form_evaluation.{gct,vo,vr,cadence,power}.needs_improvement` フラグを持つ。
+各指標は `form_evaluation.{gct,vo,vr,cadence}.needs_improvement` フラグを持つ。
+**power は除外**: パワー効率は自己ベースライン比の相対記述子（`form_evaluation.power.label` = 同等/上回る/下回る）であり★指標ではないため、summary の improvement_areas / key_strengths / recommendations の題材にしない（`needs_improvement` フィルタの対象外）。
 
 1. `needs_improvement=true` の指標のみ → `improvement_areas`（**文字列**で記述、リストに格納）
 2. `needs_improvement=false` の指標 → `key_strengths`（**文字列**で記述、リストに格納）
@@ -152,7 +153,7 @@ LLM の暗算に頼らず、以下を厳守する:
    - ケイデンスは `form_evaluation.cadence.needs_improvement` に従う。`false` なら improvement_areas に含めない（**絶対180spm目標で「あと N spm」等の未達表現を出さない**）
 5. `form_evaluation` が null → form ベースの improvement_areas を生成しない
 6. **`improvement_areas` は最大2件**（`key_strengths` は 3-5項目目安）
-7. **`needs_improvement` 厳守（フラグの上書き禁止）**: フォーム指標（GCT/VO/VR/cadence/power）の improvement_areas は `needs_improvement=true` のときのみ。`delta_pct` がわずかに正でも `needs_improvement=false`（理想±2%内・★4以上）の指標を弱点・改善点・「わずかに長め/大きめ」等の懸念として記述しない
+7. **`needs_improvement` 厳守（フラグの上書き禁止）**: フォーム指標（GCT/VO/VR/cadence）の improvement_areas は `needs_improvement=true` のときのみ。`delta_pct` がわずかに正でも `needs_improvement=false`（理想±2%内・★4以上）の指標を弱点・改善点・「わずかに長め/大きめ」等の懸念として記述しない
 8. **一般レンジの自作禁止**: 評価は `evaluation_text` と `expected`（ペース調整済み期待値）にのみ基づく。「標準範囲260-280ms」等の一般レンジを自作して `needs_improvement`/`evaluation_text` の判定を上書きしない。指標の良し悪しの方向性（GCT は小さいほど良い 等）も評価フラグの判定に従う
 
 ### next_run_target（`CONTEXT.next_run_target` を転記・**dict**）
@@ -184,7 +185,7 @@ LLM の暗算に頼らず、以下を厳守する:
 
 **ランナー制御可能要因への限定**: 改善提案・improvement_areas はランナーが実際にコントロールできる要因に限定する。`low_moderate`（LSD/ロングラン）では信号・障害物・地形・暑さ・他者回避など環境由来のペース変動を改善点・次回アクションにしない（必要なら environment セクションで中立に言及）。`tempo_threshold` の設定ペース逸脱は従来通り改善点として扱う。
 
-**フォーム指標の recommendation は `needs_improvement` に紐付ける**: GCT/VO/VR/cadence/power に関する recommendation は、その指標の `needs_improvement=true` のときのみ作成可。`needs_improvement=false`/理想範囲内の指標を題材にした改善提案を作らない（improvement_areas と整合させる）。一般レンジの自作禁止（上記フィルタ節 8 と同じ）。
+**フォーム指標の recommendation は `needs_improvement` に紐付ける**: GCT/VO/VR/cadence に関する recommendation は、その指標の `needs_improvement=true` のときのみ作成可（power は自己ベースライン比の相対記述子であり recommendation の題材にしない）。`needs_improvement=false`/理想範囲内の指標を題材にした改善提案を作らない（improvement_areas と整合させる）。一般レンジの自作禁止（上記フィルタ節 8 と同じ）。
 
 ### integrated_score
 

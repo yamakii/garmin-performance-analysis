@@ -147,7 +147,7 @@ Write(file_path="{ANALYSIS_TEMP_DIR}/{section}.json", content=json.dumps({
 | 心拍ゾーン分布評価 | `zone_percentages` + `hr_zones_detail`（ゾーン境界・時間分布）+ `training_type` + `zone_distribution_rating` + `primary_zone` + `hr_stability` + `aerobic_efficiency` + `training_quality` |
 | 1ヶ月フォームトレンド | `form_baseline_trend`（`metrics.{metric}.delta_d`/`delta_b`、`current`/`previous` 係数） |
 
-`form_evaluation` のネスト: 各指標は `form_evaluation.gct.{actual, expected, delta_pct, star_rating, score, needs_improvement, evaluation_text}` 等。`cadence` は pace 依存フィールドが null なら評価対象外。`power` は `{avg_w, wkg, speed_actual_mps, speed_expected_mps, efficiency_score, star_rating, needs_improvement}`（パワーデータがある場合のみ）。
+`form_evaluation` のネスト: 各指標は `form_evaluation.gct.{actual, expected, delta_pct, star_rating, score, needs_improvement, evaluation_text}` 等。`cadence` は pace 依存フィールドが null なら評価対象外。`power` は `{avg_w, wkg, speed_actual_mps, speed_expected_mps, efficiency_score, label, needs_improvement}`（パワーデータがある場合のみ）。**`label` は自己ベースライン比の相対記述子（`同等`/`上回る`/`下回る`）。power は★指標ではないため、パワー効率の記述にはこの `label` を使い、★評価はしない**。
 `hr_zones_detail.zones[]` の各要素: `{zone_number, low_boundary, high_boundary, time_in_zone_seconds, zone_percentage}`。
 `form_baseline_trend`: `success`（bool）、`metrics.{metric}.delta_d`/`.delta_b`、`.current.{coef_d, coef_b, period}` / `.previous`。
 
@@ -155,7 +155,7 @@ Write(file_path="{ANALYSIS_TEMP_DIR}/{section}.json", content=json.dumps({
 
 1. `form_ranges` で GCT/VO/VR の絶対値評価（値は `form_evaluation` から、**star_rating は手動計算せず `form_evaluation.{metric}.star_rating` を使用**）
 2. **ケイデンス評価はペース依存**（`form_evaluation.cadence`、null なら対象外）。**star_rating は手動計算せず `form_evaluation.cadence.star_rating` を使用し、絶対180spm目標で「未達」と評価しない**。文言は `form_evaluation.cadence.evaluation_text`（ペース依存の期待値ベース）を参照
-3. `power_efficiency_stars` でパワー効率評価（`form_evaluation.power` がある場合のみ）。正の efficiency_score →「ランニングエコノミー改善」、負 →「疲労/環境/路面の影響の可能性」（安易に非効率と断定しない）
+3. **パワー効率は自己ベースライン比の相対記述**（`form_evaluation.power` がある場合のみ）。`form_evaluation.power.label`（`同等`/`上回る`/`下回る`）をそのまま使い、「パワー効率（自己ベースライン比）: 同等/上回る/下回る」の形で記述する。**★評価はしない（power は★指標ではない）**。`label` が `下回る` でも安易に非効率と断定せず、疲労/環境/路面の影響の可能性に留める（efficiency_score の正負を★や優劣の断定に使わない）
 4. `integrated_score_stars` で統合スコアの星評価（`form_evaluation.integrated_score` または `form_scores`）
 5. `zone_targets[training_type_category]` で HR ゾーン配分評価（`zone_percentages` + `hr_zones_detail`）。training_type 基準でゾーン配分を評価する
 6. `baseline_comparison` でトレンド評価（`form_baseline_trend.metrics` の delta_d/delta_b の正常/改善/要注意判定）。`form_baseline_trend.success=false` の場合**のみ**、データ不足として簡潔に記述してよい
@@ -166,7 +166,7 @@ Write(file_path="{ANALYSIS_TEMP_DIR}/{section}.json", content=json.dumps({
 
 ```python
 analysis_data = {
-    "efficiency": "...（5-9文：GCT/VO/VR + パワー効率 + ケイデンス + 統合スコア。末尾に「統合スコアは XX.X/100点（★★★★☆）」形式）",
+    "efficiency": "...（5-9文：GCT/VO/VR + パワー効率の自己ベースライン比（同等/上回る/下回る。★にしない）+ ケイデンス + 統合スコア。統合スコアは GCT/VO/VR の★指標ベースで power を含まない。末尾に「統合スコアは XX.X/100点（★★★★☆）」形式）",
     "evaluation": "...（3-5文：training_type + ゾーン配分評価。HR zone 評価の**権威的ソース**）",
     "form_trend": "...（2-4文：1ヶ月前との係数比較。前向きトーン。success=true 時は skip 文言禁止＝上記ルール7。比較不能な個別指標は「係数が得られず評価対象外」と書く）",
 }
