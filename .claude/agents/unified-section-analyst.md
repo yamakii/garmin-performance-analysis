@@ -155,7 +155,7 @@ Write(file_path="{ANALYSIS_TEMP_DIR}/{section}.json", content=json.dumps({
 
 1. `form_ranges` で GCT/VO/VR の絶対値評価（値は `form_evaluation` から、**star_rating は手動計算せず `form_evaluation.{metric}.star_rating` を使用**）
 2. **ケイデンス評価はペース依存**（`form_evaluation.cadence`、null なら対象外）。**star_rating は手動計算せず `form_evaluation.cadence.star_rating` を使用し、絶対180spm目標で「未達」と評価しない**。文言は `form_evaluation.cadence.evaluation_text`（ペース依存の期待値ベース）を参照
-3. **パワー効率は自己ベースライン比の相対記述**（`form_evaluation.power` がある場合のみ）。`form_evaluation.power.label`（`同等`/`上回る`/`下回る`）をそのまま使い、「パワー効率（自己ベースライン比）: 同等/上回る/下回る」の形で記述する。**★評価はしない（power は★指標ではない）**。`label` が `下回る` でも安易に非効率と断定せず、疲労/環境/路面の影響の可能性に留める（efficiency_score の正負を★や優劣の断定に使わない）
+3. **パワー効率は自己ベースライン比の相対記述**（`form_evaluation.power` がある場合のみ）。**必ず `form_evaluation.power.label`（`同等`/`上回る`/`下回る`）の語を主語にして書く**（例:「パワー効率は自己ベースライン比で『同等』」）。ラベルは次のように**前向きに解釈**する: **`同等`＝自分の平均どおりで問題なし（良好）／`上回る`＝平均より良い／`下回る`＝平均よりやや低め（ただし断定しない）**。**`efficiency_score` の生値（例 -2.5%）や「◯%下回り／上回り」を主表現・見出しにしない**（触れる場合は補足の括弧内に留め、優劣・良し悪しの断定に使わない）。**★評価はしない（power は★指標ではない）**。`label` が `下回る` でも安易に非効率と断定せず、疲労/環境/路面の影響の可能性に留める
 4. `integrated_score_stars` で統合スコアの星評価（`form_evaluation.integrated_score` または `form_scores`）
 5. `zone_targets[training_type_category]` で HR ゾーン配分評価（`zone_percentages` + `hr_zones_detail`）。training_type 基準でゾーン配分を評価する
 6. `baseline_comparison` でトレンド評価（`form_baseline_trend.metrics` の delta_d/delta_b の正常/改善/要注意判定）。`form_baseline_trend.success=false` の場合**のみ**、データ不足として簡潔に記述してよい
@@ -166,7 +166,7 @@ Write(file_path="{ANALYSIS_TEMP_DIR}/{section}.json", content=json.dumps({
 
 ```python
 analysis_data = {
-    "efficiency": "...（5-9文：GCT/VO/VR + パワー効率の自己ベースライン比（同等/上回る/下回る。★にしない）+ ケイデンス + 統合スコア。統合スコアは GCT/VO/VR の★指標ベースで power を含まない。末尾に「統合スコアは XX.X/100点（★★★★☆）」形式）",
+    "efficiency": "...（5-9文：GCT/VO/VR + パワー効率の自己ベースライン比（**ラベル語『同等/上回る/下回る』を主語に。同等＝平均どおりで良好。生スコア(◯%)や『下回り/上回り』を見出しにしない。★にしない**）+ ケイデンス + 統合スコア。統合スコアは GCT/VO/VR の★指標ベースで power を含まない。末尾に「統合スコアは XX.X/100点（★★★★☆）」形式）",
     "evaluation": "...（3-5文：training_type + ゾーン配分評価。HR zone 評価の**権威的ソース**）",
     "form_trend": "...（2-4文：1ヶ月前との係数比較。前向きトーン。success=true 時は skip 文言禁止＝上記ルール7。比較不能な個別指標は「係数が得られず評価対象外」と書く）",
 }
