@@ -84,6 +84,14 @@ function narrationPrompt(ctx) {
     `生の符号付き値から自分で優劣を導出しない（0 に近い＝良い、ではない）。\n` +
     `pace_fade は遂行の記述（負＝後半が速い/ネガティブスプリット）であって優劣軸ではない。大きな負値を無条件に「良い」「粘れた」と表現しない。` +
     `理想かどうかは training_type の意図（steady aerobic か progression/fast-finish か）と併記し、意図が不明なら断定しないこと。\n` +
+    `【durability の傾き判定は絶対水準・頑健性と併せて語る（#845）】durability_trend.trend には ` +
+    `absolute_assessment（band=strong/moderate/poor, all_within_strong_band, recent_decoupling_pct）と ` +
+    `fragile / direction_caveat が決定的に付与されている。direction は傾き（slope）の記述にすぎず、それ単独で` +
+    `「粘りが落ちた」と断じないこと。次を厳守する:\n` +
+    `  ・direction="worsening" でも all_within_strong_band=true なら「絶対的な粘りは優秀レンジ（decoupling<5%）を維持」と明記する。\n` +
+    `  ・direction_caveat が非null なら、その内容（頑健性・レバレッジ点・絶対水準）を必ず散文に反映して緩衝する。\n` +
+    `  ・fragile=true の direction は「単一点のレバレッジに依存し統計的に頑健でない（例外的に良い初回ロング走がアンカーになっている等）」ものとして扱い、` +
+    `absolute_assessment.band が poor でない限り、worsening を根拠にロング走の距離制限・ペース抑制などの強い介入を推奨しないこと。\n` +
     `fitness_curve は 90 日窓の指標で、今週はその曲線上の現在位置として扱うこと（1週で崩壊/急伸したと解釈しない）。\n` +
     `headline_metrics / fusion_flags は CONTEXT の値をそのまま analysis_data に転記し、それと矛盾する主張をしないこと。\n` +
     `出力 JSON 構造:\n` +
