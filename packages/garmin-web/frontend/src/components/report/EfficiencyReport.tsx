@@ -56,7 +56,6 @@ type Tile = {
   digits: number;
   rating: string | null;
   note: string | null;
-  subValue?: string | null;
 };
 
 /**
@@ -116,63 +115,71 @@ export default function EfficiencyReport({
       ]
     : [];
 
-  // Power tile only when the activity has power data (#292).
+  const stats = tiles.filter((tile) => tile.value != null);
+
+  // Power efficiency is a self-baseline-relative descriptor, not a star tile in
+  // the GCT/VO/VR row (#836). It gets its own subsection: the descriptor label
+  // (power_efficiency_rating) as the headline, with power and actual-vs-expected
+  // speed as supporting evidence. Shown only when the activity has power data.
   const powerAvg = asNumber(fe?.power_avg_w);
   const powerWkg = asNumber(fe?.power_wkg);
-  if (powerAvg != null) {
-    tiles.push({
-      label: "パワー",
-      value: powerAvg,
-      unit: "W",
-      digits: 0,
-      rating: asString(fe?.power_efficiency_rating),
-      note: null,
-      subValue: powerWkg != null ? `${powerWkg.toFixed(2)} W/kg` : null,
-    });
-  }
-
-  const stats = tiles.filter((tile) => tile.value != null);
+  const powerLabel = asString(fe?.power_efficiency_rating);
+  const speedActual = asNumber(fe?.speed_actual_mps);
+  const speedExpected = asNumber(fe?.speed_expected_mps);
+  const hasPower = powerAvg != null;
 
   return (
     <ReportCard title="効率分析" section={section}>
       {(data) => (
         <>
           {stats.length > 0 && (
-            // Columns track tile count so 4 tiles (with power) fit one row
-            // and 3 tiles (no power) stay balanced without an empty cell.
-            <dl
-              className={`mb-4 grid grid-cols-2 gap-3 ${
-                stats.length >= 4 ? "sm:grid-cols-4" : "sm:grid-cols-3"
-              }`}
-            >
-              {stats.map(
-                ({ label, value, unit, digits, rating, note, subValue }) => (
-                  <div key={label} className={SUBCARD}>
-                    <dt className={META_LABEL}>
-                      {label}
-                    </dt>
-                    {/* GCT / VO / VR / power share the violet form-metric color (#214). */}
-                    <dd className="mt-0.5 font-numeric text-2xl leading-none font-semibold tabular-nums text-metric-form">
-                      {value!.toFixed(digits)}
-                      <span className="ml-0.5 text-xs font-normal text-slate-500">
-                        {unit}
-                      </span>
+            // GCT / VO / VR are three fixed form-metric tiles (#836).
+            <dl className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {stats.map(({ label, value, unit, digits, rating, note }) => (
+                <div key={label} className={SUBCARD}>
+                  <dt className={META_LABEL}>{label}</dt>
+                  {/* GCT / VO / VR share the violet form-metric color (#214). */}
+                  <dd className="mt-0.5 font-numeric text-2xl leading-none font-semibold tabular-nums text-metric-form">
+                    {value!.toFixed(digits)}
+                    <span className="ml-0.5 text-xs font-normal text-slate-500">
+                      {unit}
+                    </span>
+                  </dd>
+                  {rating && (
+                    <dd className="text-xs text-slate-500">{rating}</dd>
+                  )}
+                  {note && (
+                    <dd className="text-[11px] leading-tight text-slate-400">
+                      {note}
                     </dd>
-                    {subValue && (
-                      <dd className="text-xs text-slate-500">{subValue}</dd>
-                    )}
-                    {rating && (
-                      <dd className="text-xs text-slate-500">{rating}</dd>
-                    )}
-                    {note && (
-                      <dd className="text-[11px] leading-tight text-slate-400">
-                        {note}
-                      </dd>
-                    )}
-                  </div>
-                ),
-              )}
+                  )}
+                </div>
+              ))}
             </dl>
+          )}
+          {hasPower && (
+            <div className="mb-4">
+              <h3 className={`mb-1 ${SUBHEADING}`}>
+                パワー効率（自己ベースライン比）
+              </h3>
+              <dl className={SUBCARD}>
+                {powerLabel && (
+                  <dd className="text-base font-semibold text-metric-form">
+                    {powerLabel}
+                  </dd>
+                )}
+                <dd className="mt-0.5 text-xs text-slate-500">
+                  {powerAvg.toFixed(0)} W
+                  {powerWkg != null && ` / ${powerWkg.toFixed(2)} W/kg`}
+                </dd>
+                {speedActual != null && speedExpected != null && (
+                  <dd className="text-[11px] leading-tight text-slate-400">
+                    実測 {speedActual.toFixed(2)} m/s / 期待{" "}
+                    {speedExpected.toFixed(2)} m/s
+                  </dd>
+                )}
+              </dl>
+            </div>
           )}
           {FIELDS.map(({ key, label }) => {
             const text = data[key];
