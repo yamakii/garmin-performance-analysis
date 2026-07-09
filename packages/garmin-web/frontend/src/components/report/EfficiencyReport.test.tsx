@@ -26,6 +26,8 @@ const formEvaluations = {
   power_avg_w: null,
   power_wkg: null,
   power_efficiency_rating: null,
+  speed_actual_mps: null,
+  speed_expected_mps: null,
 };
 
 describe("EfficiencyReport", () => {
@@ -43,27 +45,55 @@ describe("EfficiencyReport", () => {
     expect(screen.queryByText(/269\.20834/)).not.toBeInTheDocument();
   });
 
-  it("test_power_tile_shown_when_present", () => {
+  it("test_power_not_in_star_row", () => {
     const withPower = {
       ...formEvaluations,
       power_avg_w: 234.7,
       power_wkg: 2.95,
-      power_efficiency_rating: "★★★★☆",
+      power_efficiency_rating: "同等",
+      speed_actual_mps: 3.15,
+      speed_expected_mps: 3.1,
     };
     render(<EfficiencyReport section={section} formEvaluations={withPower} />);
 
-    expect(screen.getByText("パワー")).toBeInTheDocument();
-    expect(screen.getByText("235")).toBeInTheDocument();
-    expect(screen.getByText("2.95 W/kg")).toBeInTheDocument();
-    expect(screen.getByText("★★★★☆")).toBeInTheDocument();
+    // GCT/VO/VR remain three form-metric tiles; power is no longer among them.
+    const tiles = screen.getAllByText(
+      /^(接地時間|上下動|上下動比|パワー)$/,
+    );
+    expect(tiles).toHaveLength(3);
+    expect(screen.queryByText("パワー")).not.toBeInTheDocument();
   });
 
-  it("test_power_tile_hidden_when_null", () => {
+  it("test_power_baseline_descriptor_rendered", () => {
+    const withPower = {
+      ...formEvaluations,
+      power_avg_w: 234.7,
+      power_wkg: 2.95,
+      power_efficiency_rating: "同等",
+      speed_actual_mps: 3.15,
+      speed_expected_mps: 3.1,
+    };
+    render(<EfficiencyReport section={section} formEvaluations={withPower} />);
+
+    // Descriptor subsection: label headline + power + actual-vs-expected speed.
+    expect(
+      screen.getByText("パワー効率（自己ベースライン比）"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("同等")).toBeInTheDocument();
+    expect(screen.getByText(/235\s*W\s*\/\s*2\.95\s*W\/kg/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/実測\s*3\.15\s*m\/s.*期待\s*3\.10\s*m\/s/),
+    ).toBeInTheDocument();
+  });
+
+  it("test_power_descriptor_hidden_when_null", () => {
     render(
       <EfficiencyReport section={section} formEvaluations={formEvaluations} />,
     );
 
-    expect(screen.queryByText("パワー")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("パワー効率（自己ベースライン比）"),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText(/W\/kg/)).not.toBeInTheDocument();
   });
 
