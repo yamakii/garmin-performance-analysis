@@ -197,7 +197,10 @@ class FormReader(BaseDBReader):
                         "speed_actual_mps": result[28],
                         "speed_expected_mps": result[29],
                         "efficiency_score": result[30],
-                        "star_rating": result[31],
+                        # power_efficiency_rating stores the self-baseline
+                        # descriptor label ("同等"/"上回る"/"下回る"), not a star
+                        # rating (Epic #833).
+                        "label": result[31],
                         "needs_improvement": result[32],
                     },
                     "integrated_score": result[33],

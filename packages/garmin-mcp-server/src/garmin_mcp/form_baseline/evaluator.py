@@ -300,7 +300,7 @@ def evaluate_and_store(
                 "speed_actual_mps": power_result["speed_actual_mps"],
                 "speed_expected_mps": power_result["speed_expected_mps"],
                 "efficiency_score": power_result["efficiency_score"],
-                "star_rating": power_result["star_rating"],
+                "label": power_result["label"],
                 "needs_improvement": power_result["needs_improvement"],
             }
             evaluation["integrated_score"] = power_result["integrated_score"]
@@ -428,7 +428,9 @@ def evaluate_and_store(
                 evaluation.get("power", {}).get("speed_actual_mps"),
                 evaluation.get("power", {}).get("speed_expected_mps"),
                 evaluation.get("power", {}).get("efficiency_score"),
-                evaluation.get("power", {}).get("star_rating"),
+                # power_efficiency_rating column now stores the descriptor label
+                # ("同等"/"上回る"/"下回る"), not a star string (Epic #833).
+                evaluation.get("power", {}).get("label"),
                 evaluation.get("power", {}).get("needs_improvement"),
                 evaluation.get("integrated_score"),
                 evaluation.get("training_mode"),

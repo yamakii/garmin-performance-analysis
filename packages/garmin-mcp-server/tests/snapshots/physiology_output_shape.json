@@ -121,10 +121,10 @@
     "power": {
       "avg_w": "float",
       "efficiency_score": "float",
+      "label": "str",
       "needs_improvement": "bool",
       "speed_actual_mps": "float",
       "speed_expected_mps": "float",
-      "star_rating": "str",
       "wkg": "float"
     },
     "training_mode": "str",

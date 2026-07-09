@@ -1,55 +1,52 @@
 """Power efficiency calculation for form baseline evaluation.
 
-Handles power efficiency scoring and star ratings.
+Power efficiency is a *self-relative* metric (regression against the runner's
+own rolling baseline), unlike GCT/VO/VR which are graded against ideal-form
+targets. To avoid a semantics mismatch where a self-relative "average" reads as
+a weakness among absolute strengths, power efficiency is presented as a
+3-level descriptor ("上回る"/"同等"/"下回る", above/at/below the runner's own
+baseline) rather than a star rating, and is excluded from the composite
+``integrated_score`` (Epic #833).
 """
 
 
-def calculate_power_efficiency_rating(
+def calculate_power_efficiency_label(
     score: float, rel_rmse: float | None = None
 ) -> str:
-    """Calculate star rating from power efficiency score.
+    """Return the self-baseline-relative descriptor for a power efficiency score.
 
-    Calibrates the star judgement against the baseline's own natural scatter
-    (``rel_rmse = power_rmse / speed_expected``) using a z-score. Deviations
-    within noise (|z| < 1, i.e. within ±1 RMSE) are treated as 3★ so that a
-    single-run power residual is not over-penalized.
+    Compares the run against the runner's own rolling baseline. Calibrates the
+    threshold against the baseline's own natural scatter
+    (``rel_rmse = power_rmse / speed_expected``) via a z-score so a single-run
+    residual within noise reads as "同等" (at baseline = as expected = good).
 
     Args:
         score: Power efficiency score (actual - expected) / expected
         rel_rmse: Baseline relative RMSE (power_rmse / speed_expected). When
             provided and non-zero, the score is normalized to a z-score:
-            z >= 2 → 5★ / 1 <= z < 2 → 4★ / -1 < z < 1 → 3★ /
-            -2 < z <= -1 → 2★ / z <= -2 → 1★.
+            z >= 1 → "上回る" / -1 < z < 1 → "同等" / z <= -1 → "下回る".
             When None or zero, falls back to fixed absolute bands:
-            >= 0.06 → 5★ / >= 0.03 → 4★ / (-0.03, 0.03) → 3★ /
-            (-0.06, -0.03] → 2★ / <= -0.06 → 1★.
+            >= 0.03 → "上回る" / -0.03 < score < 0.03 → "同等" /
+            <= -0.03 → "下回る".
 
     Returns:
-        Star rating string
+        Descriptor string: "上回る" (above), "同等" (at), or "下回る" (below).
     """
     if rel_rmse:
         z = score / rel_rmse
-        if z >= 2:
-            return "★★★★★"
-        elif z >= 1:
-            return "★★★★☆"
+        if z >= 1:
+            return "上回る"
         elif z > -1:
-            return "★★★☆☆"
-        elif z > -2:
-            return "★★☆☆☆"
+            return "同等"
         else:
-            return "★☆☆☆☆"
+            return "下回る"
 
-    if score >= 0.06:
-        return "★★★★★"
-    elif score >= 0.03:
-        return "★★★★☆"
+    if score >= 0.03:
+        return "上回る"
     elif score > -0.03:
-        return "★★★☆☆"
-    elif score > -0.06:
-        return "★★☆☆☆"
+        return "同等"
     else:
-        return "★☆☆☆☆"
+        return "下回る"
 
 
 def calculate_power_efficiency_internal(
@@ -150,15 +147,17 @@ def calculate_power_efficiency_internal(
         speed_expected = power_a + power_b * power_wkg
         score = (speed_actual - speed_expected) / speed_expected
         # Normalize by the baseline's own natural scatter (relative RMSE) so the
-        # star judgement and improvement flag are calibrated to noise, not a
-        # fixed absolute band. Fall back to fixed bands when RMSE is unavailable.
+        # descriptor is calibrated to noise, not a fixed absolute band. Fall
+        # back to fixed bands when RMSE is unavailable.
         rel_rmse = (
             (power_rmse / speed_expected) if (power_rmse and speed_expected) else None
         )
-        rating = calculate_power_efficiency_rating(score, rel_rmse)
-        needs_improvement = (score <= -2 * rel_rmse) if rel_rmse else (score < -0.06)
+        label = calculate_power_efficiency_label(score, rel_rmse)
 
-        # Calculate integrated score if form penalties provided
+        # Calculate integrated score if form penalties provided.
+        # Power is a self-relative metric and is *excluded* from the composite
+        # score (Epic #833): pass power=None so calculate_integrated_score
+        # re-normalizes the gct/vo/vr weights and the score is power-independent.
         integrated_score = None
         if form_penalties and all(
             p is not None
@@ -173,14 +172,11 @@ def calculate_power_efficiency_internal(
             vo_penalty_ratio = form_penalties["vo"] / 100.0
             vr_penalty_ratio = form_penalties["vr"] / 100.0
 
-            # Power penalty: negative score means better than expected
-            power_penalty_ratio = -score
-
             penalties = {
                 "gct": gct_penalty_ratio,
                 "vo": vo_penalty_ratio,
                 "vr": vr_penalty_ratio,
-                "power": power_penalty_ratio,
+                "power": None,
             }
 
             integrated_score = calculate_integrated_score(penalties, training_mode)
@@ -191,8 +187,9 @@ def calculate_power_efficiency_internal(
             "speed_actual_mps": speed_actual,
             "speed_expected_mps": speed_expected,
             "efficiency_score": score,
-            "star_rating": rating,
-            "needs_improvement": needs_improvement,
+            "label": label,
+            # Power is not a quality axis; it never drives improvement items.
+            "needs_improvement": False,
             "integrated_score": integrated_score,
             "training_mode": training_mode,
         }
