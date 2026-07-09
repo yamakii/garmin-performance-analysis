@@ -92,8 +92,9 @@ def test_durability_endpoint_includes_form_fade(durability_db_path):
 
     trend = payload["trend"]
     assert set(trend) >= {"gct_fade_slope_per_day", "form_direction"}
-    # Both runs have GCT data -> form regression is computed.
-    assert isinstance(trend["gct_fade_slope_per_day"], (int, float))
+    # Only 2 form-bearing runs in range; the >=3-point gate (a5a9b66) yields
+    # insufficient_data rather than a degenerate 2-point regression.
+    assert trend["gct_fade_slope_per_day"] is None
     assert trend["form_direction"] in {
         "improving",
         "worsening",
