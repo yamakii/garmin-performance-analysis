@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **54 tools** (52 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **55 tools** (53 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -21,7 +21,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Performance](#performance) (4)
 - [Time Series](#time-series) (4)
 - [Training Plan](#training-plan) (2)
-- [Athlete](#athlete) (4)
+- [Athlete](#athlete) (5)
 - [Race](#race) (1)
 - [Training Load](#training-load) (3)
 - [Durability](#durability) (2)
@@ -532,6 +532,17 @@ Get a single weekly review (the latest version of its week). When week_start_dat
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `week_start_date` | string | optional | Week start date (YYYY-MM-DD). When omitted, returns the most recent review. |
+| `user_id` | string | optional | Profile owner identifier (default: 'default') |
+
+### `prefetch_weekly_review_context`
+
+CLI: `garmin-db athlete prefetch-weekly-review-context`
+
+Pre-fetch the shared weekly-review CONTEXT bundle in a single call: resolves the target week W (and prior week W-1) and returns both weeks' activities (with performance_trends + weather), the fitness summary (Garmin native hr_zones), multi-week load_trend/acwr, recovery (trend/status/baseline_deviation), strength sessions, the Garmin scheduled_workouts for W, the athlete_profile, goals with weeks_to_race, and the last past_review. Every collector is null-on-error (additive). Excludes catch_up_ingest (a write); run that separately before this.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `target` | string | optional | Target week W selector: omit for the smart default (today == last day of the week -> next week, else this week), 'this' for the week containing today, 'next' for the following week, or a YYYY-MM-DD date within the desired week. |
 | `user_id` | string | optional | Profile owner identifier (default: 'default') |
 
 ## Race
