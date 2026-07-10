@@ -544,7 +544,7 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 
 ### Calculation Logic
 - **primary_zone**: zone with max time.
-- **zone_distribution_rating** (training-type-aware): Recovery Z1+Z2 ≥80%; Base Z2 ≥60%; Tempo Z3+Z4 ≥50%; Threshold Z4 ≥40%; Interval Z4+Z5 ≥60% = Excellent.
+- **zone_distribution_rating** (training-type-aware): Recovery Z1+Z2 ≥80%; Base Z2 ≥60%; Tempo Z3+Z4 ≥50%; Threshold Z4 ≥40%; Interval Z4+Z5 ≥60% = Excellent. An easy/unknown-labelled run that is actually Zone3-dominant (primary=Zone 3, Z3 ≥50%, Z4+Z5 <15%) is re-categorised as **moderate** and scored on the aerobic Z2+Z3 band (Excellent ≥80%), so a controlled Zone3 effort is credited instead of failing the Zone1-2 test.
 - **aerobic_efficiency** (by Z1+Z2 %): Excellent ≥80% · Good 60–79% · Fair 40–59% · Poor <40%.
 - **training_quality**: combines distribution rating + primary zone + training type.
 - **zone2_focus**: true if Z2 ≥50%. **zone4_threshold_work**: true if Z4+Z5 ≥20%.

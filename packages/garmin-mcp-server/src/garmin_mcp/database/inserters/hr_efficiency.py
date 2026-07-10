@@ -54,6 +54,43 @@ def _canonical_training_category(training_type: str | None) -> str:
     return "unknown"
 
 
+# A Zone3-dominant run with negligible Zone4-5 is a controlled MODERATE aerobic
+# effort, not a failed easy run. The label alone (e.g. "aerobic_base") cannot tell
+# these apart, so refine the label-category with the actual zone distribution.
+_MODERATE_ZONE3_MIN = 50.0  # Zone3 % that marks a run as Zone3-dominant
+_MODERATE_ZONE45_MAX = 15.0  # Zone4+5 % below which it is not threshold/VO2 work
+
+
+def _resolve_intensity_category(
+    training_type: str | None,
+    zone1_pct: float,
+    zone2_pct: float,
+    zone3_pct: float,
+    zone4_pct: float,
+    zone5_pct: float,
+    primary_zone: str | None,
+) -> str:
+    """label-category を base に、実ゾーン分布で強度カテゴリを解決する。
+
+    returns: "easy" | "moderate" | "tempo" | "threshold" | "vo2max" | "unknown"
+
+    easy/unknown 系ラベルでも Zone3 優勢（primary=Zone3 かつ zone3 >= 50%）で
+    Zone4+5 < 15%（閾値/無酸素練でない）なら "moderate" に refine する。
+    これにより制御された中強度走が easy(Zone1-2)基準で不当に Poor になるのを防ぐ。
+    tempo/threshold/vo2max ラベルは意図が明確なので refine しない。
+    """
+    base = _canonical_training_category(training_type)
+    if base in ("easy", "unknown"):
+        zone45_pct = zone4_pct + zone5_pct
+        if (
+            primary_zone == "Zone 3"
+            and zone3_pct >= _MODERATE_ZONE3_MIN
+            and zone45_pct < _MODERATE_ZONE45_MAX
+        ):
+            return "moderate"
+    return base
+
+
 def _extract_hr_efficiency_from_raw(
     hr_zones_file: str | None, activity_file: str | None
 ) -> dict:
@@ -152,13 +189,23 @@ def _extract_hr_efficiency_from_raw(
 
     # 2. Calculate zone_distribution_rating based on the canonical intensity
     #    category, scoring each category against its own correct HR-zone band.
-    category = _canonical_training_category(training_type)
-
     zone1_pct = zone_percentages.get("zone1_percentage", 0)
     zone2_pct = zone_percentages.get("zone2_percentage", 0)
     zone3_pct = zone_percentages.get("zone3_percentage", 0)
     zone4_pct = zone_percentages.get("zone4_percentage", 0)
     zone5_pct = zone_percentages.get("zone5_percentage", 0)
+
+    # Resolve the intensity category from the label refined by the actual zone
+    # distribution (Zone3-dominant controlled runs become "moderate").
+    category = _resolve_intensity_category(
+        training_type,
+        zone1_pct,
+        zone2_pct,
+        zone3_pct,
+        zone4_pct,
+        zone5_pct,
+        primary_zone,
+    )
 
     if category == "easy":
         # Easy/recovery: judged on Zone1-2 (staying low = success).
@@ -168,6 +215,19 @@ def _extract_hr_efficiency_from_raw(
         elif band_pct >= 75:
             zone_distribution_rating = "Good"
         elif band_pct >= 60:
+            zone_distribution_rating = "Fair"
+        else:
+            zone_distribution_rating = "Poor"
+    elif category == "moderate":
+        # Moderate/steady: controlled Zone3 effort judged on the aerobic
+        # Zone2-3 band (same band as aerobic_efficiency), so a well-run
+        # Zone3-dominant session is credited instead of failing the Zone1-2 test.
+        band_pct = zone2_pct + zone3_pct
+        if band_pct >= 80:
+            zone_distribution_rating = "Excellent"
+        elif band_pct >= 60:
+            zone_distribution_rating = "Good"
+        elif band_pct >= 40:
             zone_distribution_rating = "Fair"
         else:
             zone_distribution_rating = "Poor"
@@ -224,6 +284,8 @@ def _extract_hr_efficiency_from_raw(
     elif primary_zone:
         if category == "easy":
             primary_zone_aligned = "Zone 1" in primary_zone or "Zone 2" in primary_zone
+        elif category == "moderate":
+            primary_zone_aligned = "Zone 2" in primary_zone or "Zone 3" in primary_zone
         elif category in ("tempo", "threshold"):
             primary_zone_aligned = "Zone 3" in primary_zone or "Zone 4" in primary_zone
         elif category == "vo2max":
