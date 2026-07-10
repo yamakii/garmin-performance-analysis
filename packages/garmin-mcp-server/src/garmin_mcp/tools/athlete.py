@@ -81,6 +81,23 @@ class GetWeeklyReviewParams(BaseModel):
     )
 
 
+class PrefetchWeeklyReviewContextParams(BaseModel):
+    """Arguments for ``prefetch_weekly_review_context``."""
+
+    target: str | None = Field(
+        default=None,
+        description=(
+            "Target week W selector: omit for the smart default (today == last "
+            "day of the week -> next week, else this week), 'this' for the week "
+            "containing today, 'next' for the following week, or a YYYY-MM-DD "
+            "date within the desired week."
+        ),
+    )
+    user_id: str | None = Field(
+        default=None, description="Profile owner identifier (default: 'default')"
+    )
+
+
 # ----------------------------------------------------------------------------
 # Handlers
 # ----------------------------------------------------------------------------
@@ -146,6 +163,19 @@ def _get_weekly_review(reader: GarminDBReader, p: GetWeeklyReviewParams) -> Any:
         return {"error": str(e)}
 
 
+def _prefetch_weekly_review_context(
+    reader: GarminDBReader, p: PrefetchWeeklyReviewContextParams
+) -> Any:
+    from garmin_mcp.scripts.prefetch_weekly_review_context import (
+        prefetch_weekly_review_context,
+    )
+
+    return prefetch_weekly_review_context(
+        target=p.target,
+        user_id=p.user_id if p.user_id is not None else _DEFAULT_USER_ID,
+    )
+
+
 ATHLETE_TOOLS: list[ToolDef] = [
     ToolDef(
         name="save_athlete_profile",
@@ -199,6 +229,24 @@ ATHLETE_TOOLS: list[ToolDef] = [
         handler=_get_weekly_review,
         cli_group="athlete",
         cli_name="get-review",
+    ),
+    ToolDef(
+        name="prefetch_weekly_review_context",
+        description=(
+            "Pre-fetch the shared weekly-review CONTEXT bundle in a single call: "
+            "resolves the target week W (and prior week W-1) and returns both "
+            "weeks' activities (with performance_trends + weather), the fitness "
+            "summary (Garmin native hr_zones), multi-week load_trend/acwr, "
+            "recovery (trend/status/baseline_deviation), strength sessions, the "
+            "Garmin scheduled_workouts for W, the athlete_profile, goals with "
+            "weeks_to_race, and the last past_review. Every collector is "
+            "null-on-error (additive). Excludes catch_up_ingest (a write); run "
+            "that separately before this."
+        ),
+        params=PrefetchWeeklyReviewContextParams,
+        handler=_prefetch_weekly_review_context,
+        cli_group="athlete",
+        cli_name="prefetch-weekly-review-context",
     ),
 ]
 
