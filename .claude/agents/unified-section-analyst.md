@@ -145,11 +145,11 @@ Write(file_path="{ANALYSIS_TEMP_DIR}/{section}.json", content=json.dumps({
 | GCT/VO/VR + power + cadence 評価 | `form_evaluation`（各指標の `actual`/`expected`/`delta_pct`/`star_rating`/`score`/`needs_improvement`/`evaluation_text`） |
 | 統合スコア | `form_evaluation.integrated_score` ／ `form_scores`（`integrated_score`, `overall_score`, `overall_star_rating`） |
 | 心拍ゾーン分布評価 | `zone_percentages` + `hr_zones_detail`（ゾーン境界・時間分布）+ `training_type` + `zone_distribution_rating` + `primary_zone` + `hr_stability` + `aerobic_efficiency` + `training_quality` |
-| 1ヶ月フォームトレンド | `form_baseline_trend`（`metrics.{metric}.delta_d`/`delta_b`、`current`/`previous` 係数） |
+| 1ヶ月フォームトレンド | `form_baseline_trend`（GCT/VO/VR/cadence は `metrics.{metric}.delta_d`/`delta_b`；**power は `metrics.power.{power_a, power_b}` と `delta_power_a`/`delta_power_b`**、`current`/`previous` 係数） |
 
 `form_evaluation` のネスト: 各指標は `form_evaluation.gct.{actual, expected, delta_pct, star_rating, score, needs_improvement, evaluation_text}` 等。`cadence` は pace 依存フィールドが null なら評価対象外。`power` は `{avg_w, wkg, speed_actual_mps, speed_expected_mps, efficiency_score, label, needs_improvement}`（パワーデータがある場合のみ）。**`label` は自己ベースライン比の相対記述子（`同等`/`上回る`/`下回る`）。power は★指標ではないため、パワー効率の記述にはこの `label` を使い、★評価はしない**。
 `hr_zones_detail.zones[]` の各要素: `{zone_number, low_boundary, high_boundary, time_in_zone_seconds, zone_percentage}`。
-`form_baseline_trend`: `success`（bool）、`metrics.{metric}.delta_d`/`.delta_b`、`.current.{coef_d, coef_b, period}` / `.previous`。
+`form_baseline_trend`: `success`（bool）、`metrics.{metric}.delta_d`/`.delta_b`、`.current.{coef_d, coef_b, power_a, power_b, period}` / `.previous`。**GCT/VO/VR/cadence の傾向は `coef_d`/`coef_b`（→ `delta_d`/`delta_b`）、パワー効率は `power_a`（切片）/`power_b`（傾き）（→ `delta_power_a`/`delta_power_b`）に入る**（power モデルは `speed = power_a + power_b·W/kg`）。各 delta は前後期間ともその係数を持つときだけ存在する（power は前月に比較対象が無いことがある）。
 
 ### 評価ルール（`get_analysis_contract("efficiency")` の evaluation_policy 参照）
 
@@ -158,9 +158,9 @@ Write(file_path="{ANALYSIS_TEMP_DIR}/{section}.json", content=json.dumps({
 3. **パワー効率は自己ベースライン比の相対記述**（`form_evaluation.power` がある場合のみ）。**必ず `form_evaluation.power.label`（`同等`/`上回る`/`下回る`）の語を主語にして書く**（例:「パワー効率は自己ベースライン比で『同等』」）。ラベルは次のように**前向きに解釈**する: **`同等`＝自分の平均どおりで問題なし（良好）／`上回る`＝平均より良い／`下回る`＝平均よりやや低め（ただし断定しない）**。**`efficiency_score` の生値（例 -2.5%）や「◯%下回り／上回り」を主表現・見出しにしない**（触れる場合は補足の括弧内に留め、優劣・良し悪しの断定に使わない）。**★評価はしない（power は★指標ではない）**。`label` が `下回る` でも安易に非効率と断定せず、疲労/環境/路面の影響の可能性に留める
 4. `integrated_score_stars` で統合スコアの星評価（`form_evaluation.integrated_score` または `form_scores`）
 5. `zone_targets[training_type_category]` で HR ゾーン配分評価（`zone_percentages` + `hr_zones_detail`）。training_type 基準でゾーン配分を評価する
-6. `baseline_comparison` でトレンド評価（`form_baseline_trend.metrics` の delta_d/delta_b の正常/改善/要注意判定）。`form_baseline_trend.success=false` の場合**のみ**、データ不足として簡潔に記述してよい
+6. `baseline_comparison` でトレンド評価（GCT/VO/VR/cadence は `form_baseline_trend.metrics` の delta_d/delta_b の正常/改善/要注意判定）。**パワー効率のトレンドは `delta_power_a`（切片）と `delta_power_b`（傾き）の concordance で判定する**（power モデルは `speed = power_a + power_b·W/kg`。切片と傾きは回帰で逆相関するため、どちらか単独の delta では方向を断定しない）: **両方が同符号で正 → 上向き（同じ出力あたりで速い方向）／両方が同符号で負 → やや低下方向／符号が食い違う or どちらもほぼゼロ → 横ばい（明確な方向性なし）**。低下方向でも疲労/暑熱/路面の影響の可能性に留め断定しない。`form_baseline_trend.success=false` の場合**のみ**、データ不足として簡潔に記述してよい
 7. **skip 文言は `success=false` のときだけ許される**。`form_baseline_trend.success=true`（1ヶ月比較あり）の場合、form_trend に次の skip 文言を**一切含めない**（文全体だけでなく**個別指標の説明でも禁止**）: 「省略」「含まれていない」「含まれておらず」「データ不足」「ベースラインがない」「ベースラインが存在しない」「比較できません」「蓄積されれば」。merge の `check_form_trend_consistency` ゲートが success=true 時にこれらを**文字列一致**で検出し、**efficiency セクション全体を却下**する（1指標の記述に混ぜても全体が落ちる）。
-   - 個別指標（例: パワー）の `current`/`previous` 係数が両方 null で比較できないときは、上記 skip 文言を使わず「**前後期間とも比較対象の係数が得られず評価対象外**」「**係数が算出されておらず今回は対象外**」のように、係数の不在を明示して評価から外す表現にする。
+   - **パワー効率**は `delta_power_a`/`delta_power_b` があるとき上記ルール6の concordance で方向（上向き/やや低下/横ばい）を述べる（**数値%・★は付けない**。当該回の経済性判定は `form_evaluation.power.label` が担い、ここは月次ベースラインの方向のみ）。**power の `previous` が無く `delta_power_*` が得られないとき**は、上記 skip 文言を使わず「**パワー係数は前月の比較対象が算出されておらず今回は評価対象外**」のように係数の不在を明示して評価から外す（禁止語を含めない）。GCT/VO/VR/cadence でも `current`/`previous` 係数が両方 null の個別指標は同様に「**係数が算出されておらず今回は対象外**」と表現する。
 
 ### 出力構成
 
@@ -168,7 +168,7 @@ Write(file_path="{ANALYSIS_TEMP_DIR}/{section}.json", content=json.dumps({
 analysis_data = {
     "efficiency": "...（5-9文：GCT/VO/VR + パワー効率の自己ベースライン比（**ラベル語『同等/上回る/下回る』を主語に。同等＝平均どおりで良好。生スコア(◯%)や『下回り/上回り』を見出しにしない。★にしない**）+ ケイデンス + 統合スコア。統合スコアは GCT/VO/VR の★指標ベースで power を含まない。末尾に「統合スコアは XX.X/100点（★★★★☆）」形式）",
     "evaluation": "...（3-5文：training_type + ゾーン配分評価。HR zone 評価の**権威的ソース**）",
-    "form_trend": "...（2-4文：1ヶ月前との係数比較。前向きトーン。success=true 時は skip 文言禁止＝上記ルール7。比較不能な個別指標は「係数が得られず評価対象外」と書く）",
+    "form_trend": "...（2-4文：1ヶ月前との係数比較。GCT/VO/VR/cadence は delta_d/delta_b、**パワー効率は delta_power_a/delta_power_b の concordance で方向（上向き/やや低下/横ばい、数値%・★なし、低下は要因の可能性を添える）**。前向きトーン。success=true 時は skip 文言禁止＝上記ルール7。比較不能な個別指標は「係数が算出されておらず今回は対象外」と書く）",
 }
 ```
 
