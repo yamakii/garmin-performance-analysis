@@ -366,7 +366,8 @@ class GarminDBWriter:
                     cooldown_avg_hr DOUBLE,
                     cooldown_avg_cadence DOUBLE,
                     cooldown_avg_power DOUBLE,
-                    cooldown_evaluation VARCHAR
+                    cooldown_evaluation VARCHAR,
+                    pace_consistency_full DOUBLE
                     -- FK constraint removed (2025-11-01): Data integrity enforced at application layer
                 )
             """)

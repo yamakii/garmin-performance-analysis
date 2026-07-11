@@ -15,6 +15,8 @@ from garmin_mcp.database.inserters.performance_trends import (
     _classify_workout_structure,
     _compute_rep_matched_drift,
     _compute_steady_decoupling,
+    _cv,
+    _representative_run_paces,
     insert_performance_trends,
 )
 from garmin_mcp.database.readers.performance import PerformanceReader
@@ -819,3 +821,119 @@ class TestWorkoutStructureBranchIntegration:
         drift = trends["hr_drift_percentage"]
         assert drift is not None
         assert isinstance(drift, float)
+
+
+class TestRepresentativeRunPacesAndCV:
+    """Unit tests for representative-lap CV helpers (#852)."""
+
+    @pytest.mark.unit
+    def test_representative_run_paces_excludes_short_fragment(self):
+        """A 16 m GPS-fragment lap is excluded; the 4 full laps remain."""
+        paces = [461.6, 450.1, 456.6, 437.9, 415.2]
+        distances = [1.0, 1.0, 1.0, 1.0, 0.016]
+        run_laps = [
+            {"pace": p, "distance_km": d} for p, d in zip(paces, distances, strict=True)
+        ]
+        assert _representative_run_paces(run_laps) == [461.6, 450.1, 456.6, 437.9]
+
+    @pytest.mark.unit
+    def test_representative_run_paces_all_full_distance_unchanged(self):
+        """Uniform 1 km laps all pass the median filter (behavior unchanged)."""
+        paces = [400.0, 410.0, 405.0, 398.0]
+        run_laps = [{"pace": p, "distance_km": 1.0} for p in paces]
+        assert _representative_run_paces(run_laps) == paces
+
+    @pytest.mark.unit
+    def test_representative_run_paces_fallback_under_two(self):
+        """Filter leaving <2 laps falls back to all paces."""
+        run_laps = [
+            {"pace": 400.0, "distance_km": 1.0},
+            {"pace": 900.0, "distance_km": 0.01},
+        ]
+        assert _representative_run_paces(run_laps) == [400.0, 900.0]
+
+    @pytest.mark.unit
+    def test_cv_helper(self):
+        """CV = stdev/mean; single value -> 0.0; empty -> None."""
+        cv_two = _cv([400.0, 500.0])
+        assert cv_two is not None
+        assert abs(cv_two - 0.157135) < 0.001
+        assert _cv([440.0]) == 0.0
+        assert _cv([]) is None
+
+    @pytest.mark.unit
+    def test_pace_consistency_representative_vs_full(self):
+        """Representative CV drops the fragment; full CV keeps it (#852)."""
+        paces = [461.6, 450.1, 456.6, 437.9, 415.2]
+        distances = [1.0, 1.0, 1.0, 1.0, 0.016]
+        run_laps = [
+            {"pace": p, "distance_km": d} for p, d in zip(paces, distances, strict=True)
+        ]
+        pace_consistency = _cv(_representative_run_paces(run_laps))
+        pace_consistency_full = _cv(paces)
+        assert pace_consistency is not None
+        assert pace_consistency_full is not None
+        assert abs(pace_consistency - 0.0227) < 0.001
+        assert abs(pace_consistency_full - 0.0417) < 0.001
+
+
+class TestPaceConsistencyFullPersistence:
+    """Integration: pace_consistency_full is persisted and read back (#852)."""
+
+    @pytest.fixture
+    def fragment_run_splits_file(self, tmp_path):
+        """Single-phase run: 4 full laps + a 16 m trailing GPS fragment."""
+        # paces (s/km): 461.6, 450.1, 456.6, 437.9, 415.2
+        specs = [
+            (1000.0, 461.6),
+            (1000.0, 450.1),
+            (1000.0, 456.6),
+            (1000.0, 437.9),
+            (16.0, 415.2 * 0.016),  # fragment: 16 m -> pace 415.2 s/km
+        ]
+        lap_dtos = [
+            {
+                "lapIndex": i + 1,
+                "distance": dist,
+                "duration": dur,
+                "intensityType": "ACTIVE",
+                "averageHR": 150,
+                "averageRunCadence": 180.0,
+                "averagePower": 250,
+            }
+            for i, (dist, dur) in enumerate(specs)
+        ]
+        raw_splits_data = {"activityId": 23554970343, "lapDTOs": lap_dtos}
+        raw_splits_file = tmp_path / "fragment_splits.json"
+        with open(raw_splits_file, "w", encoding="utf-8") as f:
+            json.dump(raw_splits_data, f, ensure_ascii=False, indent=2)
+        return raw_splits_file
+
+    @pytest.mark.integration
+    def test_pace_consistency_full_persisted_and_read(
+        self, fragment_run_splits_file, initialized_db_path
+    ):
+        """insert_performance_trends persists both CVs; reader returns both."""
+        db_path = initialized_db_path
+        conn = duckdb.connect(str(db_path))
+
+        result = insert_performance_trends(
+            activity_id=23554970343,
+            conn=conn,
+            raw_splits_file=str(fragment_run_splits_file),
+        )
+        assert result is True
+        conn.close()
+
+        reader = PerformanceReader(db_path=str(db_path))
+        trends = reader.get_performance_trends(23554970343)
+        assert trends is not None
+
+        pace_consistency = trends["pace_consistency"]
+        pace_consistency_full = trends["pace_consistency_full"]
+        assert pace_consistency is not None
+        assert pace_consistency_full is not None
+        # Representative CV excludes the 16 m fragment -> ~2.27%.
+        assert abs(pace_consistency - 0.0227) < 0.001
+        # Full CV includes the fragment -> ~4.17%.
+        assert abs(pace_consistency_full - 0.0417) < 0.001

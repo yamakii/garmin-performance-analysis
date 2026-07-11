@@ -60,6 +60,7 @@
     "fatigue_pattern": "str",
     "hr_drift_percentage": "NoneType",
     "pace_consistency": "float",
+    "pace_consistency_full": "NoneType",
     "recovery_phase": {
       "avg_hr": "NoneType",
       "avg_pace": "NoneType"

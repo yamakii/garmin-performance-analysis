@@ -84,10 +84,12 @@ class TestBuildPhaseDict:
             "7:12/km",  # cooldown_avg_pace_str
             140.0,  # cooldown_avg_hr
             "6,7",  # cooldown_splits
+            0.041,  # pace_consistency_full
         )
         result = _build_phase_dict(row, has_recovery=False)
 
         assert result["pace_consistency"] == 0.017
+        assert result["pace_consistency_full"] == 0.041
         assert result["hr_drift_percentage"] == 2.5
         assert result["cadence_consistency"] == "stable"
         assert result["fatigue_pattern"] == "none"
@@ -115,6 +117,7 @@ class TestBuildPhaseDict:
             "9:27/km",  # cooldown
             135.0,
             "6,7,8",
+            0.038,  # pace_consistency_full
         )
         result = _build_phase_dict(row, has_recovery=True)
 
@@ -140,6 +143,7 @@ class TestBuildPhaseDict:
             None,
             None,
             None,
+            None,  # pace_consistency_full
         )
         result = _build_phase_dict(row, has_recovery=False)
 
@@ -215,6 +219,7 @@ class TestPrefetchActivityContext:
                 "7:12/km",
                 140.0,
                 "7,8",
+                0.041,  # pace_consistency_full
             ),
         ]
 
@@ -481,6 +486,7 @@ class TestPrefetchActivityContext:
                 "7:12/km",
                 140.0,
                 "7,8",
+                0.041,  # pace_consistency_full
             ),
         ]
 
