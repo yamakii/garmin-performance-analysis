@@ -51,6 +51,14 @@ logger = logging.getLogger(__name__)
 # Significance threshold for declaring a non-stable durability trend.
 _P_VALUE_THRESHOLD = 0.05
 
+# Absolute-level decoupling bands (lower = better aerobic durability). ``>5%`` is
+# a common rule of thumb for insufficient aerobic durability (see module
+# docstring), so ``<5%`` = strong, ``5-10%`` = moderate, ``>=10%`` = poor. These
+# let the narration frame a slope-based direction against the actual level
+# rather than crying "worsening" while every long run is still excellent (#845).
+_STRONG_BAND_MAX = 5.0
+_MODERATE_BAND_MAX = 10.0
+
 
 class DurabilityReader(BaseDBReader):
     """Reads long-run cardiac decoupling / pace fade from DuckDB."""
@@ -241,6 +249,15 @@ class DurabilityReader(BaseDBReader):
                         "best_run": {...} | None,   # lowest decoupling
                         "worst_run": {...} | None,  # highest decoupling
                         "metric_directions": {...}, # sign-convention labels
+                        "absolute_assessment": {    # level, not slope
+                            "recent_decoupling_pct": float,
+                            "window_median_decoupling_pct": float,
+                            "band": "strong" | "moderate" | "poor",
+                            "all_within_strong_band": bool,
+                        } | None,
+                        "fragile": bool,            # direction hinges on 1 point
+                        "fragile_reason": {...} | None,
+                        "direction_caveat": str | None,  # English; None if none
                     },
                 }
 
@@ -260,6 +277,17 @@ class DurabilityReader(BaseDBReader):
             regression (over activities with a non-null ``gct_fade_pct``).
             ``gct_fade_slope_per_day`` is ``None`` (and ``form_direction`` is
             ``insufficient_data``) when fewer than 3 such activities exist.
+
+            ``absolute_assessment`` describes the window's *level* (not slope) so
+            a worsening slope can be read against the actual band; it is ``None``
+            only for an empty window. ``fragile`` is ``True`` when the significant
+            direction hinges on a single leverage point (a removal that flips the
+            classification); ``fragile_reason`` names the most slope-influential
+            run and how significance changes without it (or, at exactly 3 points,
+            a not-gate-testable note). ``direction_caveat`` is an English one-line
+            caveat (rendered to Japanese by the narration layer) present only when
+            the slope direction may mislead — a worsening slope while every run is
+            in the strong band, or a fragile direction; otherwise ``None`` (#845).
         """
         long_run_ids = self._long_run_ids(start_date, end_date, min_distance_km)
 
@@ -350,6 +378,8 @@ class DurabilityReader(BaseDBReader):
         False, so a 2-point regression would skip the significance gate and
         confidently classify a direction from just two observations.
         """
+        absolute_assessment = self._build_absolute_assessment(activities)
+
         if len(activities) < 3:
             return {
                 "decoupling_slope_per_day": 0.0,
@@ -357,6 +387,10 @@ class DurabilityReader(BaseDBReader):
                 "direction": "insufficient_data",
                 "gct_fade_slope_per_day": None,
                 "form_direction": "insufficient_data",
+                "absolute_assessment": absolute_assessment,
+                "fragile": False,
+                "fragile_reason": None,
+                "direction_caveat": None,
             }
 
         ordinals = [
@@ -378,13 +412,208 @@ class DurabilityReader(BaseDBReader):
 
         gct_slope, form_direction = self._regress_form(activities, ordinals, base)
 
+        # A slope-based direction can be dominated by a single leverage point
+        # (e.g. an exceptional early run) and can flag "worsening" while every
+        # long run is still excellent in absolute terms. Surface both so the
+        # narration frames the direction correctly rather than crying wolf (#845).
+        fragile, fragile_reason = self._assess_fragility(
+            x, y, float(slope), direction, activities
+        )
+        direction_caveat = self._build_direction_caveat(
+            direction, absolute_assessment, fragile, fragile_reason
+        )
+
         return {
             "decoupling_slope_per_day": float(slope),
             "data_points": len(activities),
             "direction": direction,
             "gct_fade_slope_per_day": gct_slope,
             "form_direction": form_direction,
+            "absolute_assessment": absolute_assessment,
+            "fragile": fragile,
+            "fragile_reason": fragile_reason,
+            "direction_caveat": direction_caveat,
         }
+
+    @staticmethod
+    def _classify_band(decoupling_pct: float) -> str:
+        """Classify a decoupling value into an absolute durability band.
+
+        ``<5%`` = ``strong`` (good aerobic durability), ``5-10%`` = ``moderate``,
+        ``>=10%`` = ``poor``. Lower decoupling (incl. negatives) is better.
+        """
+        if decoupling_pct < _STRONG_BAND_MAX:
+            return "strong"
+        if decoupling_pct < _MODERATE_BAND_MAX:
+            return "moderate"
+        return "poor"
+
+    @classmethod
+    def _build_absolute_assessment(
+        cls, activities: list[dict[str, Any]]
+    ) -> dict[str, Any] | None:
+        """Summarize the window's *absolute* decoupling level (not its slope).
+
+        ``activities`` are chronological (date ascending), so the last element is
+        the most recent run. Returns ``None`` for an empty list. ``band`` is
+        classified on the window median (representative level);
+        ``all_within_strong_band`` is ``True`` only when every run is ``<5%``.
+        """
+        if not activities:
+            return None
+        decouplings = [float(a["decoupling_pct"]) for a in activities]
+        median = float(np.median(decouplings))
+        return {
+            "recent_decoupling_pct": round(decouplings[-1], 2),
+            "window_median_decoupling_pct": round(median, 2),
+            "band": cls._classify_band(median),
+            "all_within_strong_band": all(d < _STRONG_BAND_MAX for d in decouplings),
+        }
+
+    def _assess_fragility(
+        self,
+        x: Any,
+        y: list[float],
+        slope: float,
+        direction: str,
+        activities: list[dict[str, Any]],
+    ) -> tuple[bool, dict[str, Any] | None]:
+        """Flag when a significant direction hinges on a single leverage point.
+
+        Only meaningful for a significant ``direction`` (``worsening`` /
+        ``improving``); ``stable`` / ``insufficient_data`` are never fragile.
+
+        With ``n >= 4`` we run leave-one-out: drop each point, re-regress the
+        remaining ``n-1`` (``>=3``, so the significance gate is valid) and check
+        whether the classified direction changes. If any single removal flips it,
+        the trend is fragile. The reported leverage point is the removal that most
+        influences the slope itself (largest ``|slope - slope_without|``, i.e. the
+        DFBETA-style most influential run) — the point the direction leans on,
+        which is typically an exceptional outlier rather than whichever removal
+        merely nudges the p-value furthest. ``single_removals_that_flip`` /
+        ``n_points`` let the caveat say "any single run" when every removal flips.
+
+        With exactly ``n == 3`` a single removal leaves 2 points (``p == nan``,
+        not gate-testable), so a significant 3-point trend is reported fragile
+        with an explanatory note and no leverage point.
+        """
+        if direction not in ("worsening", "improving"):
+            return False, None
+
+        n = len(y)
+        if n == 3:
+            return True, {
+                "leverage_point": None,
+                "direction_without_leverage_point": None,
+                "p_without_leverage_point": None,
+                "slope_without_leverage_point": None,
+                "single_removals_that_flip": None,
+                "n_points": n,
+                "note": (
+                    "significant direction from only 3 long runs; removing any "
+                    "single run leaves 2 points (p undefined), so significance "
+                    "is not gate-testable and the trend is inherently fragile"
+                ),
+            }
+
+        # For each single removal record (index, slope, p, direction) so we can
+        # both count flips and pick the most slope-influential one.
+        flips: list[tuple[int, float, float, str]] = []
+        for i in range(n):
+            xr = np.delete(x, i)
+            yr = [v for j, v in enumerate(y) if j != i]
+            slope_i, _intercept, _r, p_i, _std_err = stats.linregress(xr, yr)
+            if p_i > _P_VALUE_THRESHOLD:
+                dir_i = "stable"
+            elif slope_i < 0:
+                dir_i = "improving"
+            else:
+                dir_i = "worsening"
+            if dir_i != direction:
+                flips.append((i, float(slope_i), float(p_i), dir_i))
+
+        if not flips:
+            return False, None
+
+        # Leverage point = the flipping removal that moves the slope the most
+        # (|slope - slope_without|); this is the run the direction actually leans
+        # on (the exceptional outlier), not merely the largest resulting p-value.
+        idx, slope_without, p_without, dir_without = max(
+            flips, key=lambda e: abs(slope - e[1])
+        )
+        lever = activities[idx]
+        return True, {
+            "leverage_point": {
+                "activity_id": lever.get("activity_id"),
+                "activity_date": lever["activity_date"],
+                "decoupling_pct": lever["decoupling_pct"],
+            },
+            "direction_without_leverage_point": dir_without,
+            "p_without_leverage_point": round(p_without, 3),
+            "slope_without_leverage_point": round(slope_without, 4),
+            "single_removals_that_flip": len(flips),
+            "n_points": n,
+            "note": None,
+        }
+
+    @staticmethod
+    def _build_direction_caveat(
+        direction: str,
+        absolute_assessment: dict[str, Any] | None,
+        fragile: bool,
+        fragile_reason: dict[str, Any] | None,
+    ) -> str | None:
+        """Build an English caveat when the slope direction may mislead.
+
+        English (like ``recovery_trend_note``); the narration layer renders it in
+        Japanese. Returns ``None`` when the direction stands on its own (a
+        genuine worsening with a poor absolute level, or a robust trend).
+        """
+        if direction not in ("worsening", "improving"):
+            return None
+
+        parts: list[str] = []
+        strong = bool(
+            absolute_assessment and absolute_assessment.get("all_within_strong_band")
+        )
+        if direction == "worsening" and strong:
+            parts.append(
+                "decoupling slope is worsening but every long run in the window "
+                f"is within the strong band (<{_STRONG_BAND_MAX:.0f}% decoupling), "
+                "so absolute aerobic durability remains strong"
+            )
+
+        if fragile and fragile_reason:
+            lever = fragile_reason.get("leverage_point")
+            if lever:
+                n_pts = fragile_reason.get("n_points")
+                n_flip = fragile_reason.get("single_removals_that_flip")
+                if n_pts is not None and n_flip == n_pts:
+                    # Maximally fragile: every single removal kills significance,
+                    # so the direction rests on all N runs jointly.
+                    parts.append(
+                        f"the {direction} direction is fragile: removing any single "
+                        f"long run makes it non-significant (p>{_P_VALUE_THRESHOLD}); "
+                        f"it rests on all {n_pts} runs jointly and leans most on "
+                        f"{lever['activity_date']} ({lever['decoupling_pct']}% "
+                        "decoupling)"
+                    )
+                else:
+                    parts.append(
+                        f"the {direction} direction is fragile: removing a single "
+                        f"leverage point ({lever['activity_date']}, "
+                        f"{lever['decoupling_pct']}% decoupling) changes the trend "
+                        f"to '{fragile_reason['direction_without_leverage_point']}' "
+                        f"(p={fragile_reason['p_without_leverage_point']})"
+                    )
+            elif fragile_reason.get("note"):
+                parts.append(
+                    f"the {direction} direction is fragile: {fragile_reason['note']}"
+                )
+
+        if not parts:
+            return None
+        return "; ".join(parts) + "."
 
     def _regress_form(
         self,
