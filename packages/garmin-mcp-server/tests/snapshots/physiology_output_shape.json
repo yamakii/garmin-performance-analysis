@@ -7,59 +7,77 @@
         "current": {
           "coef_b": "float",
           "coef_d": "NoneType",
-          "period": "str"
+          "period": "str",
+          "power_a": "NoneType",
+          "power_b": "NoneType"
         },
         "delta_b": "float",
         "previous": {
           "coef_b": "float",
           "coef_d": "NoneType",
-          "period": "str"
+          "period": "str",
+          "power_a": "NoneType",
+          "power_b": "NoneType"
         }
       },
       "gct": {
         "current": {
           "coef_b": "NoneType",
           "coef_d": "float",
-          "period": "str"
+          "period": "str",
+          "power_a": "NoneType",
+          "power_b": "NoneType"
         },
         "delta_d": "float",
         "previous": {
           "coef_b": "NoneType",
           "coef_d": "float",
-          "period": "str"
+          "period": "str",
+          "power_a": "NoneType",
+          "power_b": "NoneType"
         }
       },
       "power": {
         "current": {
           "coef_b": "NoneType",
           "coef_d": "NoneType",
-          "period": "str"
+          "period": "str",
+          "power_a": "float",
+          "power_b": "float"
         }
       },
       "vo": {
         "current": {
           "coef_b": "float",
           "coef_d": "NoneType",
-          "period": "str"
+          "period": "str",
+          "power_a": "NoneType",
+          "power_b": "NoneType"
         },
         "delta_b": "float",
         "previous": {
           "coef_b": "float",
           "coef_d": "NoneType",
-          "period": "str"
+          "period": "str",
+          "power_a": "NoneType",
+          "power_b": "NoneType"
         }
       },
       "vr": {
         "current": {
           "coef_b": "float",
           "coef_d": "NoneType",
-          "period": "str"
+          "period": "str",
+          "power_a": "NoneType",
+          "power_b": "NoneType"
         },
         "delta_b": "float",
         "previous": {
           "coef_b": "float",
           "coef_d": "NoneType",
-          "period": "str"
+          "period": "str",
+          "power_a": "NoneType",
+          "power_b": "NoneType"
         }
       }
     },

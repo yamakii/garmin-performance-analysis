@@ -336,6 +336,84 @@ class TestGetFormBaselineTrend:
         assert "delta_d" not in gct
         assert gct["delta_b"] == pytest.approx(260.0 - 265.0)
 
+    def test_power_delta_both_periods(self, reader_db_path: Path):
+        # Power stores its trend in power_a/power_b (coef_d/coef_b are NULL).
+        conn = duckdb.connect(str(reader_db_path))
+        rows = [
+            # (hid, metric, coef_d, coef_b, power_a, power_b, start, end)
+            (0, "power", None, None, 0.24, 0.63, "2025-10-01", "2025-10-31"),
+            (1, "power", None, None, 0.20, 0.55, "2025-09-01", "2025-09-30"),
+        ]
+        for hid, metric, cd, cb, pa, pb, ps, pe in rows:
+            conn.execute(
+                """
+                INSERT INTO form_baseline_history
+                    (history_id, user_id, condition_group, metric,
+                     coef_d, coef_b, power_a, power_b, period_start, period_end)
+                VALUES (?, 'default', 'flat_road', ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [hid, metric, cd, cb, pa, pb, ps, pe],
+            )
+        conn.close()
+        reader = PhysiologyReader(db_path=str(reader_db_path))
+        result = reader.get_form_baseline_trend(12345, "2025-10-15")
+
+        assert result["success"] is True
+        power = result["metrics"]["power"]
+        assert power["current"]["power_a"] == pytest.approx(0.24)
+        assert power["current"]["power_b"] == pytest.approx(0.63)
+        assert power["previous"]["power_a"] == pytest.approx(0.20)
+        assert power["delta_power_a"] == pytest.approx(0.24 - 0.20)
+        assert power["delta_power_b"] == pytest.approx(0.63 - 0.55)
+        # coef_* are NULL for power → no coef deltas emitted.
+        assert power["current"]["coef_d"] is None
+        assert power["current"]["coef_b"] is None
+        assert "delta_d" not in power
+        assert "delta_b" not in power
+
+    def test_power_no_previous_omits_delta(self, reader_db_path: Path):
+        # Current power row exists but no previous power row. A previous GCT row
+        # keeps the overall comparison successful; power just gets no delta.
+        conn = duckdb.connect(str(reader_db_path))
+        rows = [
+            (0, "GCT", -0.15, 260.0, None, None, "2025-10-01", "2025-10-31"),
+            (1, "GCT", -0.12, 265.0, None, None, "2025-09-01", "2025-09-30"),
+            (2, "power", None, None, 0.24, 0.63, "2025-10-01", "2025-10-31"),
+        ]
+        for hid, metric, cd, cb, pa, pb, ps, pe in rows:
+            conn.execute(
+                """
+                INSERT INTO form_baseline_history
+                    (history_id, user_id, condition_group, metric,
+                     coef_d, coef_b, power_a, power_b, period_start, period_end)
+                VALUES (?, 'default', 'flat_road', ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [hid, metric, cd, cb, pa, pb, ps, pe],
+            )
+        conn.close()
+        reader = PhysiologyReader(db_path=str(reader_db_path))
+        result = reader.get_form_baseline_trend(12345, "2025-10-15")
+
+        assert result["success"] is True
+        power = result["metrics"]["power"]
+        assert power["current"]["power_a"] == pytest.approx(0.24)
+        assert "previous" not in power
+        assert "delta_power_a" not in power
+        assert "delta_power_b" not in power
+
+    def test_power_a_b_keys_present_all_metrics(self, reader_db_path: Path):
+        # Non-power metrics carry power_a/power_b keys (value None), mirroring
+        # how power rows carry coef_d/coef_b as None.
+        _seed_baseline_history(reader_db_path)
+        reader = PhysiologyReader(db_path=str(reader_db_path))
+        result = reader.get_form_baseline_trend(12345, "2025-10-15")
+
+        gct = result["metrics"]["GCT"]
+        assert gct["current"]["power_a"] is None
+        assert gct["current"]["power_b"] is None
+        assert gct["previous"]["power_a"] is None
+        assert gct["previous"]["power_b"] is None
+
     def test_baseline_reader_matches_handler(self, reader_db_path: Path):
         """Extracted reader returns the exact dict the old handler produced.
 
