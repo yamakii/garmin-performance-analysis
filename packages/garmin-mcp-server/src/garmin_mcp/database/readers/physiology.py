@@ -243,7 +243,11 @@ class PhysiologyReader(BaseDBReader):
 
         Reads coefficient baselines from form_baseline_history for the period
         containing ``activity_date`` and the period one month earlier, then
-        computes per-metric deltas.
+        computes per-metric deltas. GCT/VO/VR/cadence expose their trend via
+        ``coef_d``/``coef_b`` (emitting ``delta_d``/``delta_b``); the
+        power-efficiency model exposes it via ``power_a``/``power_b`` (emitting
+        ``delta_power_a``/``delta_power_b``). Each delta is present only when
+        both the current and previous periods have that coefficient.
 
         Args:
             activity_id: Activity ID (echoed in the result).
@@ -253,8 +257,9 @@ class PhysiologyReader(BaseDBReader):
 
         Returns:
             Dict with keys ``success`` (bool) and either ``error`` (str) or
-            ``activity_id``/``activity_date``/``metrics`` (dict). Mirrors the
-            previous handler implementation exactly.
+            ``activity_id``/``activity_date``/``metrics`` (dict). Each metric's
+            ``current``/``previous`` block carries ``coef_d``/``coef_b`` and
+            ``power_a``/``power_b`` (null for the models that do not use them).
         """
         from datetime import datetime
 
@@ -265,7 +270,8 @@ class PhysiologyReader(BaseDBReader):
                 # Get current period baseline
                 current_baselines = conn.execute(
                     """
-                    SELECT metric, coef_d, coef_b, period_start, period_end
+                    SELECT metric, coef_d, coef_b, power_a, power_b,
+                           period_start, period_end
                     FROM form_baseline_history
                     WHERE user_id = ?
                       AND condition_group = ?
@@ -284,7 +290,7 @@ class PhysiologyReader(BaseDBReader):
 
                 # Calculate 1 month before the current period start
                 current_period_start = datetime.strptime(
-                    str(current_baselines[0][3]), "%Y-%m-%d"
+                    str(current_baselines[0][5]), "%Y-%m-%d"
                 )
                 one_month_before = current_period_start - relativedelta(months=1)
                 target_date = one_month_before.strftime("%Y-%m-%d")
@@ -292,7 +298,8 @@ class PhysiologyReader(BaseDBReader):
                 # Get previous period baseline (1 month before)
                 previous_baselines = conn.execute(
                     """
-                    SELECT metric, coef_d, coef_b, period_start, period_end
+                    SELECT metric, coef_d, coef_b, power_a, power_b,
+                           period_start, period_end
                     FROM form_baseline_history
                     WHERE user_id = ?
                       AND condition_group = ?
@@ -320,33 +327,41 @@ class PhysiologyReader(BaseDBReader):
                     "current": {
                         "coef_d": curr[1],
                         "coef_b": curr[2],
-                        "period": f"{curr[3]} to {curr[4]}",
+                        "power_a": curr[3],
+                        "power_b": curr[4],
+                        "period": f"{curr[5]} to {curr[6]}",
                     }
                 }
 
+            # Coefficient columns differ by model: GCT/VO/VR/cadence store their
+            # trend in coef_d/coef_b; the power-efficiency model stores it in
+            # power_a/power_b. Emit a delta for whichever pair is populated.
+            coef_specs = (
+                ("coef_d", "delta_d", 1),
+                ("coef_b", "delta_b", 2),
+                ("power_a", "delta_power_a", 3),
+                ("power_b", "delta_power_b", 4),
+            )
             for prev in previous_baselines:
                 metric = prev[0]
                 if metric in metrics_data:
+                    current_vals = metrics_data[metric]["current"]
                     metrics_data[metric]["previous"] = {
                         "coef_d": prev[1],
                         "coef_b": prev[2],
-                        "period": f"{prev[3]} to {prev[4]}",
+                        "power_a": prev[3],
+                        "power_b": prev[4],
+                        "period": f"{prev[5]} to {prev[6]}",
                     }
                     # Calculate deltas
-                    if (
-                        metrics_data[metric]["current"]["coef_d"] is not None
-                        and prev[1] is not None
-                    ):
-                        metrics_data[metric]["delta_d"] = (
-                            metrics_data[metric]["current"]["coef_d"] - prev[1]
-                        )
-                    if (
-                        metrics_data[metric]["current"]["coef_b"] is not None
-                        and prev[2] is not None
-                    ):
-                        metrics_data[metric]["delta_b"] = (
-                            metrics_data[metric]["current"]["coef_b"] - prev[2]
-                        )
+                    for curr_key, delta_key, prev_idx in coef_specs:
+                        if (
+                            current_vals[curr_key] is not None
+                            and prev[prev_idx] is not None
+                        ):
+                            metrics_data[metric][delta_key] = (
+                                current_vals[curr_key] - prev[prev_idx]
+                            )
 
             return {
                 "success": True,
