@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from garmin_mcp.analysis.derivations import compute_weighted_star_rating
+from garmin_mcp.analysis.derivations import weighted_star_rating_raw
 from garmin_mcp.validation.models import ActivityRecord, SplitRecord
 
 # Summary star_rating must look like ``★★★★☆ 4.2/5.0``: 1-5 filled stars,
@@ -144,9 +144,14 @@ def check_narration_numeric_consistency(
 # Sections whose star_rating is a weighted average the guard can recompute.
 _WEIGHTED_STAR_SECTIONS = frozenset({"summary", "phase", "environment"})
 
-# Max tolerated |recomputed - stated| difference. round(x, 1) on both sides
-# means anything beyond one decimal place of drift is an LLM arithmetic error.
+# Max tolerated |raw_mean - stated| difference: half a display step (0.05) plus
+# a float epsilon (Issue #859). The stated rating is compared against the
+# *unrounded* weighted mean, not a re-rounded value: a correctly-rounded
+# 1-decimal display is at most 0.05 from the true mean, so both roundings of an
+# ``X.X5`` boundary pass, while genuine arithmetic errors (>= 0.1 off) still
+# fail. The epsilon absorbs binary float representation error at the boundary.
 _STAR_WEIGHTING_TOLERANCE = 0.05
+_FLOAT_EPS = 1e-9
 
 
 def check_star_weighting_consistency(
@@ -160,9 +165,9 @@ def check_star_weighting_consistency(
 
         {"axis_scores": {...}, "weights": {...}, "star_rating": 3.7}
 
-    the rating is recomputed with
-    :func:`garmin_mcp.analysis.derivations.compute_weighted_star_rating` and
-    compared against the stated value. The stated value is the breakdown's
+    the true weighted mean is computed with
+    :func:`garmin_mcp.analysis.derivations.weighted_star_rating_raw` (unrounded)
+    and compared against the stated value. The stated value is the breakdown's
     numeric ``star_rating`` when present, otherwise the numeric part of the
     top-level ``star_rating`` string (``★★★★☆ 3.7/5.0``).
 
@@ -176,8 +181,9 @@ def check_star_weighting_consistency(
         (summary / phase / environment) the breakdown is **mandatory** and the
         check is fail-closed (Issue #751): ``(False, reason)`` when the
         breakdown is missing, not an object, lacks ``axis_scores`` / ``weights``
-        objects, is malformed, or the recomputed rating differs from the stated
-        one by more than 0.05. A weighted-star section whose breakdown carries
+        objects, is malformed, or the stated rating differs from the true
+        weighted mean by more than half a display step (0.05). A weighted-star
+        section whose breakdown carries
         valid axis scores + weights but no stated rating still passes (nothing
         to compare against).
     """
@@ -210,14 +216,14 @@ def check_star_weighting_consistency(
         return True, None
 
     try:
-        recomputed = compute_weighted_star_rating(axis_scores, weights)
+        raw_mean = weighted_star_rating_raw(axis_scores, weights)
     except (TypeError, ValueError) as e:
         return False, f"star_rating_breakdown is malformed: {e}"
 
-    if abs(recomputed - stated) > _STAR_WEIGHTING_TOLERANCE:
+    if abs(raw_mean - stated) > _STAR_WEIGHTING_TOLERANCE + _FLOAT_EPS:
         return False, (
-            f"star_rating {stated} does not match the weighted recomputation "
-            f"{recomputed} from star_rating_breakdown "
+            f"star_rating {stated} does not match the weighted mean "
+            f"{raw_mean} from star_rating_breakdown "
             f"(axis_scores={axis_scores}, weights={weights})"
         )
     return True, None

@@ -172,16 +172,16 @@ def _easy_target(
     return result
 
 
-def compute_weighted_star_rating(
+def weighted_star_rating_raw(
     axis_scores: dict[str, float], weights: dict[str, float]
 ) -> float:
-    """Recompute a weighted star rating from per-axis scores (Issue #706).
+    """Weighted star rating as the unrounded, clamped weighted mean (Issue #859).
 
     ``rating = sum(axis_scores[k] * weights[k]) / sum(weights.values())``,
-    clamped to [0.0, 5.0] and returned as ``round(rating, 1)``. This is the
-    deterministic core behind the summary 4-axis rating and the phase /
-    environment weighted ratings, so the merge guard can verify the LLM's
-    stated ``star_rating`` instead of trusting its arithmetic.
+    clamped to [0.0, 5.0] with **no rounding**. This is the true weighted mean
+    the merge guard compares against, so a ``X.X5`` boundary (where the LLM's
+    half-up rounding and Python's round-half-to-even can legitimately disagree
+    by one display notch) does not false-fail the consistency check.
 
     Raises:
         ValueError: When ``weights`` keys do not exactly match ``axis_scores``
@@ -199,8 +199,25 @@ def compute_weighted_star_rating(
         raise ValueError(f"weights must sum to a positive value, got {total_weight}")
 
     rating = sum(axis_scores[key] * weights[key] for key in axis_scores) / total_weight
-    clamped = min(5.0, max(0.0, rating))
-    return round(clamped, 1)
+    return min(5.0, max(0.0, rating))
+
+
+def compute_weighted_star_rating(
+    axis_scores: dict[str, float], weights: dict[str, float]
+) -> float:
+    """Recompute a weighted star rating from per-axis scores (Issue #706).
+
+    ``round(weighted_star_rating_raw(axis_scores, weights), 1)``: the clamped
+    weighted mean displayed to 1 decimal. This is the deterministic core behind
+    the summary 4-axis rating and the phase / environment weighted ratings, so
+    the merge guard can verify the LLM's stated ``star_rating`` instead of
+    trusting its arithmetic.
+
+    Raises:
+        ValueError: When ``weights`` keys do not exactly match ``axis_scores``
+            keys, when either dict is empty, or when the weights sum to <= 0.
+    """
+    return round(weighted_star_rating_raw(axis_scores, weights), 1)
 
 
 # --- training_type -> category mapping for phase / environment (Issue #673) ---

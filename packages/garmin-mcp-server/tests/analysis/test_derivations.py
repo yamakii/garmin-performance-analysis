@@ -7,6 +7,7 @@ from garmin_mcp.analysis.derivations import (
     compute_weighted_star_rating,
     map_environment_category,
     map_phase_category,
+    weighted_star_rating_raw,
 )
 
 
@@ -18,6 +19,20 @@ def test_compute_weighted_star_rating_basic() -> None:
     )
 
     assert rating == 3.7
+
+
+@pytest.mark.unit
+def test_weighted_star_rating_raw_no_rounding() -> None:
+    # Issue #859: the raw weighted mean must NOT be rounded. This breakdown
+    # lands exactly on the 3.15 (X.X5) boundary where compute_weighted_star_rating
+    # would round to 3.1 (half-to-even) but the true mean is 3.15.
+    raw = weighted_star_rating_raw(
+        {"temperature": 2.5, "humidity": 3.0, "terrain": 4.0, "wind": 4.0},
+        {"temperature": 0.4, "humidity": 0.25, "terrain": 0.2, "wind": 0.15},
+    )
+
+    assert raw == pytest.approx(3.15)
+    assert raw != 3.1
 
 
 @pytest.mark.unit

@@ -24,6 +24,25 @@ _BREAKDOWN_3_7 = {
     },
 }
 
+# Weighted mean = 2.5*0.4 + 3.0*0.25 + 4.0*0.2 + 4.0*0.15 = 3.15 (an X.X5
+# boundary). round(3.15, 1) -> 3.1 (half-to-even) but the LLM half-up rounds
+# to 3.2; both are within 0.05 of the true mean (Issue #859, activity
+# 23534377199 environment section).
+_BREAKDOWN_3_15 = {
+    "axis_scores": {
+        "temperature": 2.5,
+        "humidity": 3.0,
+        "terrain": 4.0,
+        "wind": 4.0,
+    },
+    "weights": {
+        "temperature": 0.4,
+        "humidity": 0.25,
+        "terrain": 0.2,
+        "wind": 0.15,
+    },
+}
+
 
 @pytest.mark.unit
 class TestCheckFormTrendConsistency:
@@ -196,6 +215,35 @@ class TestCheckStarWeightingConsistency:
         )
         assert ok is False
         assert reason is not None
+
+    def test_guard_accepts_half_step_boundary_rounding(self):
+        # Issue #859: raw weighted mean is exactly 3.15 (an X.X5 boundary).
+        # The LLM half-up rounds to 3.2, the old validator round()d to 3.1;
+        # both are correct 1-decimal displays and must pass against the
+        # unrounded mean (each within 0.05 of 3.15).
+        for stated in ("★★★☆☆ 3.2/5.0", "★★★☆☆ 3.1/5.0"):
+            ok, reason = check_star_weighting_consistency(
+                "environment",
+                {
+                    "star_rating": stated,
+                    "star_rating_breakdown": _BREAKDOWN_3_15,
+                },
+            )
+            assert ok is True, stated
+            assert reason is None, stated
+
+    def test_guard_rejects_real_arithmetic_error(self):
+        # Issue #859: 3.5 is 0.35 off the true mean (3.15) -> genuine error.
+        ok, reason = check_star_weighting_consistency(
+            "environment",
+            {
+                "star_rating": "★★★☆☆ 3.5/5.0",
+                "star_rating_breakdown": _BREAKDOWN_3_15,
+            },
+        )
+        assert ok is False
+        assert reason is not None
+        assert "3.5" in reason
 
     def test_check_star_weighting_malformed_breakdown_fails(self):
         breakdown = {
