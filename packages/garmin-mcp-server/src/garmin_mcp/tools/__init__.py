@@ -30,6 +30,7 @@ from garmin_mcp.tools.strength import STRENGTH_TOOLS
 from garmin_mcp.tools.time_series import TIME_SERIES_TOOLS
 from garmin_mcp.tools.training_load import LOAD_TOOLS
 from garmin_mcp.tools.training_plan import TRAINING_PLAN_TOOLS
+from garmin_mcp.tools.workout_scheduling import WORKOUT_SCHEDULING_TOOLS
 
 # Order mirrors the legacy get_tool_definitions() concatenation, with later
 # additions (race, load, then durability) appended last; the golden snapshot is
@@ -51,6 +52,7 @@ ALL_DEFS: list[ToolDef] = (
     + INGEST_TOOLS
     + BODY_COMPOSITION_TOOLS
     + RECOVERY_TOOLS
+    + WORKOUT_SCHEDULING_TOOLS
 )
 
 ALL_DEFS_BY_NAME: dict[str, ToolDef] = {d.name: d for d in ALL_DEFS}

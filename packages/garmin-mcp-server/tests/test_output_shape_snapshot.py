@@ -173,8 +173,8 @@ def test_cli_groups_cover_all_domains() -> None:
     assert top.exit_code == 0, top.output
 
     expected_groups = {d.cli_group for d in ALL_DEFS}
-    # All 14 domains must be present (12 prior + strength added in #450 +
-    # ingest added in #463).
+    # All 15 domains must be present (12 prior + strength added in #450 +
+    # ingest added in #463 + workout added in #851).
     assert expected_groups == {
         "export",
         "metadata",
@@ -190,6 +190,7 @@ def test_cli_groups_cover_all_domains() -> None:
         "durability",
         "strength",
         "ingest",
+        "workout",
     }
 
     for group in sorted(expected_groups):

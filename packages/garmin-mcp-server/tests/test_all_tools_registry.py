@@ -119,11 +119,11 @@ def test_kept_tools_present() -> None:
 
 
 @pytest.mark.unit
-def test_tool_count_is_55() -> None:
-    """The live MCP surface is exactly 55 tools (54 -> 55 after #849)."""
-    assert len(ALL_DEFS) + len(_SERVER_TOOLS) == 55
+def test_tool_count_is_57() -> None:
+    """The live MCP surface is exactly 57 tools (55 -> 57 after #851)."""
+    assert len(ALL_DEFS) + len(_SERVER_TOOLS) == 57
     golden = json.loads(_GOLDEN_PATH.read_text(encoding="utf-8"))
-    assert len(golden) == 55
+    assert len(golden) == 57
 
 
 @pytest.mark.unit
