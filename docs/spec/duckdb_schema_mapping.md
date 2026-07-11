@@ -328,9 +328,10 @@ Combines wind + temperature bands: Negligible (both ideal) → Low → Moderate 
 | cooldown_avg_cadence | DOUBLE |
 | cooldown_avg_power | DOUBLE |
 | cooldown_evaluation | VARCHAR |
+| pace_consistency_full | DOUBLE |
 <!-- END GENERATED: schema:performance_trends -->
 
-**Units & notes**: `hr_drift_percentage` (%); `*_splits` columns are comma-separated split indices; `*_avg_pace_seconds_per_km` (sec/km); `*_avg_pace_str` (mm:ss); `*_avg_hr` / `*_avg_cadence` / `*_avg_power` are per-phase averages (power NULL when no power data). The four phase prefixes are `warmup` / `run` / `recovery` / `cooldown`, each with a `*_evaluation` quality string.
+**Units & notes**: `pace_consistency` is the coefficient of variation (stdev/mean) of pace over **representative** run laps only — laps whose distance is below 0.5x the median run-lap distance (GPS fragment laps) are excluded so a tiny trailing lap cannot inflate it (#852); `pace_consistency_full` is the raw CV over every run lap, kept for transparency. `hr_drift_percentage` (%); `*_splits` columns are comma-separated split indices; `*_avg_pace_seconds_per_km` (sec/km); `*_avg_pace_str` (mm:ss); `*_avg_hr` / `*_avg_cadence` / `*_avg_power` are per-phase averages (power NULL when no power data). The four phase prefixes are `warmup` / `run` / `recovery` / `cooldown`, each with a `*_evaluation` quality string.
 
 ### Calculation Logic
 

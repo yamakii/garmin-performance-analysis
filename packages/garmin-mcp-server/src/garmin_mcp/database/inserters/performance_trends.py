@@ -59,6 +59,51 @@ def _compute_steady_decoupling(run_splits: list[dict]) -> float | None:
     return (ratio_first - ratio_second) / ratio_first * 100
 
 
+def _cv(paces: list[float]) -> float | None:
+    """変動係数 stdev/mean。len>1 で CV、len==1 で 0.0、空で None。"""
+    import statistics
+
+    if not paces:
+        return None
+    if len(paces) == 1:
+        return 0.0
+    mean = statistics.mean(paces)
+    if mean <= 0:
+        return None
+    return statistics.stdev(paces) / mean
+
+
+def _representative_run_paces(run_laps: list[dict]) -> list[float]:
+    """CV 用の代表 run ラップペースを返す。
+
+    ラップ距離が run ラップ距離の中央値 * 0.5 未満のラップ（GPS 端数等）を除外。
+    除外後に 2 本未満しか残らない場合は全ペースにフォールバック。
+    run_laps 要素: {"pace": float|None, "distance_km": float|None}
+    """
+    import statistics
+
+    all_paces = [float(lap["pace"]) for lap in run_laps if lap.get("pace") is not None]
+    distances = [
+        float(lap["distance_km"])
+        for lap in run_laps
+        if lap.get("distance_km") is not None
+    ]
+    if not distances:
+        return all_paces
+
+    threshold = statistics.median(distances) * 0.5
+    representative = [
+        float(lap["pace"])
+        for lap in run_laps
+        if lap.get("pace") is not None
+        and lap.get("distance_km") is not None
+        and float(lap["distance_km"]) >= threshold
+    ]
+    if len(representative) < 2:
+        return all_paces
+    return representative
+
+
 # intensityType buckets used to classify work vs rest reps.
 _WORK_INTENSITIES = {"ACTIVE", "INTERVAL"}
 _REST_INTENSITIES = {"REST", "RECOVERY"}
@@ -199,6 +244,7 @@ def _extract_performance_trends_from_raw(raw_splits_file: str) -> dict | None:
         lap_data = {
             "lap_index": lap_index,
             "pace": pace,
+            "distance_km": distance_km,
             "hr": hr,
             "cadence": cadence,
             "power": power,
@@ -251,15 +297,16 @@ def _extract_performance_trends_from_raw(raw_splits_file: str) -> dict | None:
     if cooldown_stats:
         result["cooldown_phase"] = cooldown_stats
 
-    # Calculate pace consistency (if we have run phase)
+    # Calculate pace consistency (if we have run phase).
+    # pace_consistency uses only representative run laps (GPS fragment laps whose
+    # distance is < 0.5x the median run-lap distance are excluded) so a tiny
+    # trailing lap cannot inflate the CV. pace_consistency_full keeps the raw CV
+    # over every run lap for transparency (#852).
     if run_stats and run_splits:
-        run_paces = [s["pace"] for s in run_splits if s["pace"] is not None]
-        if len(run_paces) > 1:
-            pace_std = statistics.stdev(run_paces)
-            pace_mean = statistics.mean(run_paces)
-            result["pace_consistency"] = pace_std / pace_mean if pace_mean > 0 else None
-        else:
-            result["pace_consistency"] = 0.0
+        result["pace_consistency"] = _cv(_representative_run_paces(run_splits))
+        result["pace_consistency_full"] = _cv(
+            [s["pace"] for s in run_splits if s["pace"] is not None]
+        )
 
     # Calculate HR drift, branching on workout structure.
     # - steady (single-intensity continuous run): Pa:HR decoupling over the
@@ -440,6 +487,7 @@ def insert_performance_trends(
                 INSERT INTO performance_trends (
                     activity_id,
                     pace_consistency,
+                    pace_consistency_full,
                     hr_drift_percentage,
                     cadence_consistency,
                     fatigue_pattern,
@@ -471,11 +519,12 @@ def insert_performance_trends(
                     cooldown_avg_cadence,
                     cooldown_avg_power,
                     cooldown_evaluation
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     activity_id,
                     perf_trends.get("pace_consistency"),
+                    perf_trends.get("pace_consistency_full"),
                     perf_trends.get("hr_drift_percentage"),
                     perf_trends.get("cadence_consistency"),
                     perf_trends.get("fatigue_pattern"),
