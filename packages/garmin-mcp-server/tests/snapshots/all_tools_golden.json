@@ -1151,6 +1151,49 @@
     }
   },
   {
+    "name": "schedule_custom_workout",
+    "description": "Build a Garmin running workout from a generic steps array, force-prefix its title with '[MCP] ', replace any same-title [MCP] template (delete -> recreate), upload it and schedule it on date. Each step is an executable step (step_type warmup/run/recovery/cooldown; one of duration_minutes, duration_seconds or distance_m; optional hr_low/hr_high for a custom heart-rate-range target) or a repeat group (repeat_count + nested steps). Returns {workout_id, schedule_id, date, title, replaced_workout_ids}.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string",
+          "description": "Target date to schedule on (YYYY-MM-DD)"
+        },
+        "title": {
+          "type": "string",
+          "description": "Workout title. A '[MCP] ' prefix is force-added (not doubled) so the cleanup tool can distinguish self-authored workouts."
+        },
+        "steps": {
+          "type": "array",
+          "description": "Ordered workout steps. Each entry is either an executable step (step_type of warmup/run/recovery/cooldown, one of duration_minutes, duration_seconds or distance_m, and optional hr_low/hr_high for a custom HR-range target) or a repeat group (repeat_count + nested steps).",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "required": [
+        "date",
+        "title",
+        "steps"
+      ]
+    }
+  },
+  {
+    "name": "cleanup_generated_workouts",
+    "description": "Tidy self-authored [MCP] workouts: unschedule past-dated [MCP] calendar assignments and delete [MCP] templates that have no future schedule. Never touches manual (non-[MCP]) workouts. Pass dry_run=True to only list what would be removed.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "dry_run": {
+          "type": "boolean",
+          "description": "When True, only report the assignments/templates that would be removed without performing any write.",
+          "default": false
+        }
+      }
+    }
+  },
+  {
     "name": "get_server_info",
     "description": "Get diagnostic info about the running MCP server (server_dir). Use to verify which directory the server is running from.",
     "inputSchema": {

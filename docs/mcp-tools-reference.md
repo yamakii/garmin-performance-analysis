@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **55 tools** (53 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **57 tools** (55 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -27,6 +27,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Durability](#durability) (2)
 - [strength](#strength) (2)
 - [ingest](#ingest) (1)
+- [Workout Scheduling](#workout-scheduling) (2)
 - [Server](#server) (2)
 
 ## Export
@@ -652,6 +653,30 @@ Differential catch-up ingest across the running, weight, strength and wellness d
 | `start_date` | string | optional | Inclusive shared window start date (YYYY-MM-DD). When omitted, each domain resolves its own start from its latest stored date (or end_date - 30 days when that domain is empty). |
 | `end_date` | string | optional | Inclusive window end date (YYYY-MM-DD). Defaults to today when omitted. |
 | `domains` | array[string] | optional | Subset of domains to ingest. Defaults to all of running, weight, strength, wellness. Domains not listed are skipped. |
+
+## Workout Scheduling
+
+### `schedule_custom_workout`
+
+CLI: `garmin-db workout schedule`
+
+Build a Garmin running workout from a generic steps array, force-prefix its title with '[MCP] ', replace any same-title [MCP] template (delete -> recreate), upload it and schedule it on date. Each step is an executable step (step_type warmup/run/recovery/cooldown; one of duration_minutes, duration_seconds or distance_m; optional hr_low/hr_high for a custom heart-rate-range target) or a repeat group (repeat_count + nested steps). Returns {workout_id, schedule_id, date, title, replaced_workout_ids}.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `date` | string | **required** | Target date to schedule on (YYYY-MM-DD) |
+| `title` | string | **required** | Workout title. A '[MCP] ' prefix is force-added (not doubled) so the cleanup tool can distinguish self-authored workouts. |
+| `steps` | array[object] | **required** | Ordered workout steps. Each entry is either an executable step (step_type of warmup/run/recovery/cooldown, one of duration_minutes, duration_seconds or distance_m, and optional hr_low/hr_high for a custom HR-range target) or a repeat group (repeat_count + nested steps). |
+
+### `cleanup_generated_workouts`
+
+CLI: `garmin-db workout cleanup`
+
+Tidy self-authored [MCP] workouts: unschedule past-dated [MCP] calendar assignments and delete [MCP] templates that have no future schedule. Never touches manual (non-[MCP]) workouts. Pass dry_run=True to only list what would be removed.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `dry_run` | boolean | optional (default `False`) | When True, only report the assignments/templates that would be removed without performing any write. |
 
 ## Server
 
