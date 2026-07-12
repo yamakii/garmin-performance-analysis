@@ -245,6 +245,7 @@ def _extract_performance_trends_from_raw(raw_splits_file: str) -> dict | None:
             "lap_index": lap_index,
             "pace": pace,
             "distance_km": distance_km,
+            "duration": duration,
             "hr": hr,
             "cadence": cadence,
             "power": power,
@@ -259,23 +260,61 @@ def _extract_performance_trends_from_raw(raw_splits_file: str) -> dict | None:
         elif phase == "cooldown":
             cooldown_splits.append(lap_data)
 
-    # Calculate phase statistics
+    # Calculate phase statistics.
+    #
+    # Averages are *size-weighted*, not a plain per-split mean: a tiny trailing
+    # GPS fragment (e.g. a 0.04 km last split) must not count the same as a full
+    # 1 km split. avg_pace is distance-weighted (= total time / total distance);
+    # avg_hr / avg_cadence / avg_power are time-weighted by lap duration (they are
+    # per-time rates). Equal-length laps reduce to the old simple mean, so only
+    # phases containing short fragment laps change. Mirrors the fragment-robust
+    # handling already applied to pace_consistency (#852).
+    def _duration_of(split):
+        # Prefer the recorded lap duration; fall back to distance * pace so a lap
+        # with a valid pace but missing duration still contributes its real time.
+        dur = split.get("duration")
+        if dur:
+            return dur
+        if split["pace"] is not None and split["distance_km"]:
+            return split["pace"] * split["distance_km"]
+        return None
+
+    def _time_weighted(splits, key):
+        pairs = [
+            (s[key], _duration_of(s))
+            for s in splits
+            if s[key] is not None and _duration_of(s)
+        ]
+        if not pairs:
+            vals = [s[key] for s in splits if s[key] is not None]
+            return statistics.mean(vals) if vals else None
+        total_w = sum(w for _, w in pairs)
+        return sum(v * w for v, w in pairs) / total_w if total_w else None
+
     def calc_phase_stats(splits):
         if not splits:
             return None
 
         lap_indices = [s["lap_index"] for s in splits]
-        paces = [s["pace"] for s in splits if s["pace"] is not None]
-        hrs = [s["hr"] for s in splits if s["hr"] is not None]
-        cadences = [s["cadence"] for s in splits if s["cadence"] is not None]
-        powers = [s["power"] for s in splits if s["power"] is not None]
+
+        # Distance-weighted average pace = total duration / total distance.
+        pace_laps = [s for s in splits if s["pace"] is not None and s["distance_km"]]
+        total_dist = sum(s["distance_km"] for s in pace_laps)
+        avg_pace = (
+            sum(s["pace"] * s["distance_km"] for s in pace_laps) / total_dist
+            if total_dist
+            else None
+        )
+
+        avg_hr = _time_weighted(splits, "hr")
 
         return {
             "splits": lap_indices,
-            "avg_pace": statistics.mean(paces) if paces else None,
-            "avg_hr": statistics.mean(hrs) if hrs else None,
-            "avg_cadence": statistics.mean(cadences) if cadences else None,
-            "avg_power": statistics.mean(powers) if powers else None,
+            "avg_pace": avg_pace,
+            # HR rounded to 1 decimal, consistent with the prefetch read path.
+            "avg_hr": round(avg_hr, 1) if avg_hr is not None else None,
+            "avg_cadence": _time_weighted(splits, "cadence"),
+            "avg_power": _time_weighted(splits, "power"),
         }
 
     result = {}

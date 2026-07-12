@@ -168,6 +168,70 @@ class TestPerformanceTrendsInserter:
 
         conn.close()
 
+    @pytest.mark.unit
+    def test_phase_avg_size_weighted_not_plain_mean(
+        self, tmp_path, initialized_db_path
+    ):
+        """A tiny trailing GPS-fragment lap must not distort the phase averages.
+
+        Regression for the phase-average bug: avg_pace/avg_hr were a plain mean
+        over splits, so a sub-40 m fragment counted the same as a full 1 km lap.
+        Averages must be size-weighted (pace by distance, HR by duration).
+        """
+        # Run phase: one full 1 km lap + a 40 m fragment with an extreme fast pace.
+        raw_splits_data = {
+            "activityId": 30303030303,
+            "lapDTOs": [
+                {
+                    "lapIndex": 1,
+                    "distance": 1000.0,
+                    "duration": 480.0,  # pace 480 s/km
+                    "intensityType": "ACTIVE",
+                    "averageHR": 145,
+                    "averageRunCadence": 180.0,
+                    "averagePower": 240,
+                },
+                {
+                    "lapIndex": 2,
+                    "distance": 40.0,
+                    "duration": 15.0,  # pace 375 s/km (noisy fragment)
+                    "intensityType": "ACTIVE",
+                    "averageHR": 150,
+                    "averageRunCadence": 174.0,
+                    "averagePower": 270,
+                },
+            ],
+        }
+        raw_splits_file = tmp_path / "splits.json"
+        with open(raw_splits_file, "w", encoding="utf-8") as f:
+            json.dump(raw_splits_data, f, ensure_ascii=False, indent=2)
+
+        conn = duckdb.connect(str(initialized_db_path))
+        assert (
+            insert_performance_trends(
+                activity_id=30303030303,
+                conn=conn,
+                raw_splits_file=str(raw_splits_file),
+            )
+            is True
+        )
+
+        data = conn.execute("""
+            SELECT run_avg_pace_seconds_per_km, run_avg_hr
+            FROM performance_trends
+            WHERE activity_id = 30303030303
+            """).fetchone()
+        conn.close()
+
+        assert data is not None
+        # Distance-weighted pace = (480 + 15) / (1.0 + 0.04) = 476.0 s/km,
+        # NOT the plain mean (480 + 375) / 2 = 427.5 that the fragment would force.
+        assert abs(data[0] - 476.0) < 0.5
+        assert abs(data[0] - 427.5) > 40.0
+        # Time-weighted HR = (145*480 + 150*15) / 495 = 145.15 -> 145.2,
+        # NOT the plain mean (145 + 150) / 2 = 147.5.
+        assert abs(data[1] - 145.2) < 0.2
+
     @pytest.fixture
     def sample_raw_splits_file(self, tmp_path):
         """Create sample raw splits.json with intensityType for phase detection."""
