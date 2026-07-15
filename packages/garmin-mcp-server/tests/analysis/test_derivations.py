@@ -149,6 +149,107 @@ def test_next_run_target_works_without_plan() -> None:
     assert "insufficient_data" not in result
 
 
+# --- easy/recovery target anchored to Garmin native zones (Issue #863) ---
+
+_NATIVE_ZONES = {
+    "zones": [
+        {"zone_number": 1, "low_boundary": 123, "high_boundary": 139},
+        {"zone_number": 2, "low_boundary": 140, "high_boundary": 152},
+        {"zone_number": 3, "low_boundary": 153, "high_boundary": 169},
+    ]
+}
+
+
+@pytest.mark.unit
+def test_easy_target_uses_garmin_zone2_band() -> None:
+    result = compute_next_run_target(
+        training_type="aerobic_base",
+        planned_workout=None,
+        vo2_max=None,
+        lactate_threshold=None,
+        avg_hr=136,
+        avg_pace_s_per_km=441,
+        hr_zones_detail=_NATIVE_ZONES,
+    )
+
+    assert result["recommended_type"] == "easy"
+    assert result["target_hr_low"] == 140
+    assert result["target_hr_high"] == 152
+    assert result["target_zone"] == "Zone2"
+    assert result["hr_basis"] == "garmin_native_zone"
+    assert result["typical_hr"] == 136
+
+
+@pytest.mark.unit
+def test_recovery_target_uses_zone1_band() -> None:
+    result = compute_next_run_target(
+        training_type="recovery",
+        planned_workout=None,
+        vo2_max=None,
+        lactate_threshold=None,
+        avg_hr=130,
+        avg_pace_s_per_km=460,
+        hr_zones_detail=_NATIVE_ZONES,
+    )
+
+    assert result["recommended_type"] == "recovery"
+    assert result["target_hr_low"] == 123
+    assert result["target_hr_high"] == 139
+    assert result["target_zone"] == "Zone1"
+    assert result["hr_basis"] == "garmin_native_zone"
+
+
+@pytest.mark.unit
+def test_easy_target_falls_back_to_avg_pm5_without_zones() -> None:
+    result = compute_next_run_target(
+        training_type="aerobic_base",
+        planned_workout=None,
+        vo2_max=None,
+        lactate_threshold=None,
+        avg_hr=140,
+        avg_pace_s_per_km=405,
+        hr_zones_detail=None,
+    )
+
+    assert result["target_hr_low"] == 135
+    assert result["target_hr_high"] == 145
+    assert result["hr_basis"] == "recent_avg_hr"
+    assert "target_zone" not in result
+
+
+@pytest.mark.unit
+def test_easy_target_insufficient_when_avg_hr_none() -> None:
+    result = compute_next_run_target(
+        training_type="aerobic_base",
+        planned_workout=None,
+        vo2_max=None,
+        lactate_threshold=None,
+        avg_hr=None,
+        avg_pace_s_per_km=405,
+        hr_zones_detail=_NATIVE_ZONES,
+    )
+
+    assert result["insufficient_data"] is True
+    assert result["recommended_type"] == "easy"
+
+
+@pytest.mark.unit
+def test_easy_target_reference_pace_preserved() -> None:
+    result = compute_next_run_target(
+        training_type="aerobic_base",
+        planned_workout=None,
+        vo2_max=None,
+        lactate_threshold=None,
+        avg_hr=136,
+        avg_pace_s_per_km=441,
+        hr_zones_detail=_NATIVE_ZONES,
+    )
+
+    assert result["reference_pace_formatted"] == "7:21/km"
+    assert result["reference_pace_fast_formatted"] == "7:16/km"
+    assert result["reference_pace_slow_formatted"] == "7:26/km"
+
+
 # --- map_phase_category (Issue #673) ---
 
 

@@ -190,9 +190,10 @@ class TestPrefetchBundleExpansion:
     ) -> None:
         """next_run_target is a deterministic dict with recommended_type.
 
-        The fixture training_type is aerobic_base → HR-based "easy" target,
-        computed from the activity's avg_heart_rate with no LLM involved
-        (Issue #672).
+        The fixture training_type is aerobic_base → HR-based "easy" target.
+        Issue #863: when the athlete's Garmin native zones are available the
+        band is the Zone2 band; otherwise it falls back to the legacy
+        avg_heart_rate ± 5 (Issue #672). No LLM involved either way.
         """
         _patch_db_path(monkeypatch, verification_db_path)
 
@@ -202,9 +203,19 @@ class TestPrefetchBundleExpansion:
         nrt = result["next_run_target"]
         assert isinstance(nrt, dict)
         assert nrt["recommended_type"] == "easy"
-        # HR-based target derives from the fixture avg_heart_rate (148 bpm).
-        assert nrt["target_hr_low"] == 143
-        assert nrt["target_hr_high"] == 153
+        if nrt.get("hr_basis") == "garmin_native_zone":
+            # Band equals the athlete's own Garmin native Zone2 bounds.
+            zone2 = next(
+                z for z in result["hr_zones_detail"]["zones"] if z["zone_number"] == 2
+            )
+            assert nrt["target_hr_low"] == int(zone2["low_boundary"])
+            assert nrt["target_hr_high"] == int(zone2["high_boundary"])
+            assert nrt["target_zone"] == "Zone2"
+            assert "typical_hr" in nrt
+        else:
+            # Legacy fallback: avg_heart_rate (148 bpm) ± 5.
+            assert nrt["target_hr_low"] == 143
+            assert nrt["target_hr_high"] == 153
 
     def test_prefetch_bundle_is_json_serializable(
         self, verification_db_path: Path, monkeypatch: pytest.MonkeyPatch
