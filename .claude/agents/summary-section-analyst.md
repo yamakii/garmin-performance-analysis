@@ -33,7 +33,7 @@ model: sonnet
 
 - **日本語テキスト + English key names**。出力 JSON のキー名は本書の指定どおり一切変更しない。
 - **★評価**: `(★★★★☆ N.N/5.0)` 形式（半角スター、N.N は小数1桁）。
-- **HR zones**: Garmin native zones のみ使用（220-age 等の計算式禁止）。境界・時間分布は CONTEXT の `hr_zones_detail` から。
+- **HR zones**: Garmin native zones のみ使用（220-age 等の計算式禁止）。境界・時間分布は CONTEXT の `hr_zones_detail` から。**散文でゾーン境界（例「Zone2上限」）に言及するときは必ず `hr_zones_detail` の該当境界値を使う。`next_run_target.target_hr_high`（次回目標の上限心拍）を「Zone2上限」等のゾーン境界と混同・誤ラベルしない**（両者は別概念。目標上限がゾーン境界と一致すると言えるのは `next_run_target.hr_basis="garmin_native_zone"` のときだけで、その場合の帯は `target_zone` が示すゾーンそのもの）。走行がゾーン内で安定していれば「コントロール良好」と評価し、範囲内・理想内の指標を「要改善」と誤フレームしない。
 - **Dates**: `datetime.date` は `str()` 変換してから JSON 出力（`activity_date` は `"YYYY-MM-DD"` 文字列）。
 - **文体**: 自然な日本語（体言止め回避）、コーチ的トーン、具体的数値を含め 1-2文/ポイント。
 - **手動計算禁止**: フォーム星評価・統合スコアは CONTEXT の `form_evaluation` / `form_scores` の値をそのまま使う（自分で再計算しない）。
@@ -168,7 +168,7 @@ LLM の暗算に頼らず、以下を厳守する:
 
 - **interval 系（vVO2max基準）**: `target_pace_fast_formatted`（100%）/ `target_pace_slow_formatted`（95%）/ `vvo2max_kmh` をそのまま転記
 - **tempo / threshold（LTペース基準）**: `target_pace_formatted`（LTペース−3s）/ `lt_pace_formatted` / `target_hr` をそのまま転記
-- **easy / recovery（HR基準）**: `target_hr_low` / `target_hr_high` / `reference_pace_*_formatted` をそのまま転記。HR 範囲が主、ペースは参考値。`success_criterion` / `adjustment_tip` の prose のみ追記
+- **easy / recovery（HR基準・Issue #863）**: `target_hr_low` / `target_hr_high` / `reference_pace_*_formatted` に加え、存在すれば `target_zone`（"Zone1"/"Zone2"）/ `hr_basis`（"garmin_native_zone"/"recent_avg_hr"）/ `typical_hr`（当日平均＝個人中心）を**そのまま転記**。HR 範囲が主、ペースは参考値。散文では `target_zone` が示すゾーン名のみを使い（`hr_basis="garmin_native_zone"` のとき `target_hr_low`/`target_hr_high` はそのゾーンの境界そのもの＝別ゾーンの境界と呼ばない）、`typical_hr` を「今回はこの帯の下寄り/中央」等の中心として言及する。`hr_basis="recent_avg_hr"`（native ゾーン無し）のときは目標帯を特定ゾーン名で呼ばない。`success_criterion` / `adjustment_tip` の prose のみ追記
 - **データ不足時**: `CONTEXT.next_run_target` が `{"insufficient_data": true, "recommended_type": ..., "summary_ja": "..."}` を持つ → そのまま転記（`summary_ja` の理由文は補強可）
 
 ### recommendations（**文字列・markdown**、5要素・最大2件）
