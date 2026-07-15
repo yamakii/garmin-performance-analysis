@@ -485,6 +485,7 @@ def prefetch_activity_context(activity_id: int) -> dict:
             lactate_threshold,
             avg_heart_rate,
             avg_pace_s_per_km,
+            hr_zones_detail,
         ),
         # --- S1 bundle expansion (Issue #235, additive) ---
         "form_evaluation": form_evaluation,

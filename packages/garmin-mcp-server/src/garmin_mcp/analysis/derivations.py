@@ -58,6 +58,7 @@ def compute_next_run_target(
     lactate_threshold: dict | None,
     avg_hr: int | None,
     avg_pace_s_per_km: float | None,
+    hr_zones_detail: dict | None = None,
 ) -> dict:
     """Deterministic numeric core of next_run_target (prose left to agent).
 
@@ -74,9 +75,14 @@ def compute_next_run_target(
     - tempo / threshold (LT-pace-based):
       ``lt_pace_s = 1000 / lactate_threshold["speed_mps"]``;
       ``target = lt_pace_s - 3`` -> ``target_pace_formatted``, ``target_hr``.
-    - easy / recovery / base (HR-based): ``target_hr_low`` / ``target_hr_high``
-      from ``avg_hr`` (±5bpm); reference pace = ``avg_pace`` (±5s) ->
-      ``reference_pace_*_formatted``.
+    - easy / recovery / base (HR-based, Issue #863): the target band is the
+      athlete's **Garmin native HR zone** for the training-type family --
+      recovery -> Zone1, easy/base -> Zone2 -- read from ``hr_zones_detail``.
+      This preserves training-type intent and pins the ceiling to the real
+      Zone2 upper (not the last run's ``avg_hr``). The run's own ``avg_hr`` is
+      attached as ``typical_hr`` (personal observed center for prose). When
+      native zones are unavailable the legacy ``avg_hr ± 5bpm`` band is used as
+      a fallback. Reference pace = ``avg_pace`` (±5s) -> ``reference_pace_*``.
 
     Missing source data for the relevant family returns
     ``{"insufficient_data": True, "recommended_type": ..., "summary_ja": ...}``.
@@ -92,7 +98,7 @@ def compute_next_run_target(
         return _interval_target(effective_type, vo2_max)
     if effective_type in _TEMPO_TRAINING_TYPES:
         return _tempo_target(effective_type, lactate_threshold, avg_hr)
-    return _easy_target(effective_type, avg_hr, avg_pace_s_per_km)
+    return _easy_target(effective_type, avg_hr, avg_pace_s_per_km, hr_zones_detail)
 
 
 def _interval_target(training_type: str | None, vo2_max: dict | None) -> dict:
@@ -145,10 +151,33 @@ def _tempo_target(
     }
 
 
+def _zone_band(
+    hr_zones_detail: dict | None, zone_number: int
+) -> tuple[int, int] | None:
+    """Return the ``(low, high)`` bpm bounds of a Garmin native HR zone.
+
+    Reads ``hr_zones_detail`` (shape ``{"zones": [{"zone_number", "low_boundary",
+    "high_boundary", ...}]}`` from ``heart_rate_zones``). Returns ``None`` when
+    the detail is missing or the requested zone has no usable bounds, so callers
+    can fall back to a legacy band.
+    """
+    if not hr_zones_detail:
+        return None
+    for zone in hr_zones_detail.get("zones", []):
+        if zone.get("zone_number") == zone_number:
+            low = zone.get("low_boundary")
+            high = zone.get("high_boundary")
+            if low is None or high is None:
+                return None
+            return int(low), int(high)
+    return None
+
+
 def _easy_target(
     training_type: str | None,
     avg_hr: int | None,
     avg_pace_s_per_km: float | None,
+    hr_zones_detail: dict | None = None,
 ) -> dict:
     recommended_type = (
         "recovery" if training_type in _RECOVERY_TRAINING_TYPES else "easy"
@@ -160,11 +189,29 @@ def _easy_target(
             "summary_ja": ("平均心拍データがないため、次回の目標心拍を算出できない。"),
         }
 
-    result: dict = {
-        "recommended_type": recommended_type,
-        "target_hr_low": avg_hr - 5,
-        "target_hr_high": avg_hr + 5,
-    }
+    # Training-type-anchored band from Garmin native zones (Issue #863):
+    # recovery -> Zone1, easy/base -> Zone2. This preserves the training intent
+    # and pins the ceiling to the real Zone2 upper instead of the last run's
+    # avg_hr. Fall back to the legacy avg_hr +/- 5 band when zones are absent.
+    target_zone_number = 1 if recommended_type == "recovery" else 2
+    band = _zone_band(hr_zones_detail, target_zone_number)
+    if band is not None:
+        low, high = band
+        result: dict = {
+            "recommended_type": recommended_type,
+            "target_hr_low": low,
+            "target_hr_high": high,
+            "target_zone": f"Zone{target_zone_number}",
+            "hr_basis": "garmin_native_zone",
+            "typical_hr": avg_hr,
+        }
+    else:
+        result = {
+            "recommended_type": recommended_type,
+            "target_hr_low": avg_hr - 5,
+            "target_hr_high": avg_hr + 5,
+            "hr_basis": "recent_avg_hr",
+        }
     if avg_pace_s_per_km is not None:
         result["reference_pace_formatted"] = _format_pace_km(avg_pace_s_per_km)
         result["reference_pace_fast_formatted"] = _format_pace_km(avg_pace_s_per_km - 5)
