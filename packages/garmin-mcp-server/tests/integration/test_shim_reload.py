@@ -159,6 +159,110 @@ async def test_rpc_after_worker_crash_recovers(worker_env: Path) -> None:
         await client.aclose()
 
 
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_rpc_large_payload_over_default_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A response line larger than asyncio's 64 KiB default round-trips intact.
+
+    Proves ``start()`` raises the StreamReader limit: a probe worker echoing a
+    ~300 KB payload (well past the 64 KiB default that used to overrun
+    ``readline()``) is read back whole via a single ``rpc``.
+    """
+    pkg_dir = tmp_path / "big_pkg"
+    pkg_dir.mkdir()
+    probe = pkg_dir / "probe_worker.py"
+    probe.write_text(textwrap.dedent("""
+        import json, sys
+        for line in sys.stdin:
+            line = line.strip()
+            if not line:
+                continue
+            req = json.loads(line)
+            resp = {"id": req.get("id"), "ok": True, "data": "x" * 300_000}
+            sys.stdout.write(json.dumps(resp) + "\\n")
+            sys.stdout.flush()
+        """))
+
+    monkeypatch.setenv(
+        "PYTHONPATH",
+        os.pathsep.join([str(pkg_dir), os.environ.get("PYTHONPATH", "")]),
+    )
+
+    client = WorkerClient(module="probe_worker")
+    try:
+        await client.start()
+        resp = await client.rpc("call", "x", {})
+    finally:
+        await client.aclose()
+
+    assert resp["ok"] is True, f"large payload failed: {resp.get('error')}"
+    assert len(resp["data"]) == 300_000
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_rpc_oversized_line_returns_error_and_recovers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An overrun past the stream limit degrades to one clean error, then recovers.
+
+    With ``_STREAM_LIMIT`` monkeypatched down to 1 KiB, a probe worker that first
+    replies with a ~10 KB line overruns ``readline()`` (``LimitOverrunError`` ->
+    ``ValueError``): ``rpc`` must return ``ok=False`` with a non-empty error and
+    respawn. A following ``rpc`` whose reply is small (< 1 KiB) must succeed,
+    proving the pipe was not left desynchronized.
+    """
+    import garmin_mcp.worker_client as worker_client
+
+    monkeypatch.setattr(worker_client, "_STREAM_LIMIT", 1024)
+
+    pkg_dir = tmp_path / "overrun_pkg"
+    pkg_dir.mkdir()
+    # File-based flag so the "serve oversized once" decision survives the respawn
+    # (a fresh worker process would otherwise reset any in-memory state).
+    flag = pkg_dir / "served.flag"
+    probe = pkg_dir / "probe_worker.py"
+    probe.write_text(textwrap.dedent(f"""
+        import json, os, sys
+        flag = {str(flag)!r}
+        for line in sys.stdin:
+            line = line.strip()
+            if not line:
+                continue
+            req = json.loads(line)
+            if not os.path.exists(flag):
+                # First reply across all workers: oversized (~10 KB) line.
+                open(flag, "w").close()
+                data = "x" * 10_000
+            else:
+                data = "ok"
+            resp = {{"id": req.get("id"), "ok": True, "data": data}}
+            sys.stdout.write(json.dumps(resp) + "\\n")
+            sys.stdout.flush()
+        """))
+
+    monkeypatch.setenv(
+        "PYTHONPATH",
+        os.pathsep.join([str(pkg_dir), os.environ.get("PYTHONPATH", "")]),
+    )
+
+    client = WorkerClient(module="probe_worker")
+    try:
+        await client.start()
+        first = await client.rpc("call", "x", {})
+        assert first["ok"] is False
+        assert first["error"]
+
+        # Respawned worker: its first reply is small and must round-trip.
+        second = await client.rpc("call", "x", {})
+        assert second["ok"] is True, f"recovery call failed: {second.get('error')}"
+        assert second["data"] == "ok"
+    finally:
+        await client.aclose()
+
+
 # --------------------------------------------------------------------------- #
 # shim (server.py)
 # --------------------------------------------------------------------------- #

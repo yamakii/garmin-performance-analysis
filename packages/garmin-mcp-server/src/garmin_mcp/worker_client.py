@@ -25,6 +25,13 @@ import sys
 from itertools import count
 from typing import Any
 
+# Max size (bytes) of a single newline-delimited worker response line. asyncio's
+# StreamReader defaults to a 64 KiB buffer, which ``readline()`` overruns on large
+# tool payloads (e.g. ``prefetch_weekly_review_context`` serializes to well over
+# 64 KiB), raising ``LimitOverrunError``. 32 MiB comfortably covers every realistic
+# payload (100s of KB to a few MB) while still bounding memory.
+_STREAM_LIMIT: int = 32 * 1024 * 1024
+
 
 class WorkerClient:
     """Owns and talks to a single fresh-process worker over JSON-line IPC.
@@ -55,6 +62,7 @@ class WorkerClient:
             self._module,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
+            limit=_STREAM_LIMIT,
         )
 
     async def rpc(
@@ -66,6 +74,13 @@ class WorkerClient:
         their writes/reads on the shared pipe. If the worker has died (or dies
         mid-call), it is respawned and the call returns an ``ok=False`` error
         rather than propagating an exception that could take down the shim.
+
+        Recovery also covers a corrupt/oversized response line: an overrun past
+        ``_STREAM_LIMIT`` (``LimitOverrunError``) or an undecodable line
+        (``json.JSONDecodeError``) both subclass ``ValueError``. Rather than let
+        that propagate and leave the pipe desynchronized (a partially consumed
+        line), we respawn the worker and degrade to a single clean ``ok=False``
+        error, so the next call reads from a fresh, in-sync pipe.
 
         Args:
             op: One of ``"schema"``, ``"call"``, ``"info"``.
@@ -80,8 +95,10 @@ class WorkerClient:
             req = {"id": next(self._ids), "op": op, "tool": tool, "args": args or {}}
             try:
                 return await self._roundtrip(req)
-            except (BrokenPipeError, ConnectionResetError) as e:
-                # Pipe died before/while writing: respawn and report the error.
+            except (BrokenPipeError, ConnectionResetError, ValueError) as e:
+                # Pipe died (broken/reset) or the response line was oversized /
+                # corrupt (ValueError: LimitOverrunError / JSONDecodeError).
+                # Either way the pipe may be desynchronized: respawn and report.
                 await self._respawn()
                 return {"ok": False, "error": repr(e)}
 
@@ -91,6 +108,10 @@ class WorkerClient:
         Raises:
             BrokenPipeError/ConnectionResetError: propagated to ``rpc`` for
                 respawn handling.
+            ValueError: ``readline()`` raises ``LimitOverrunError`` on a response
+                line larger than ``_STREAM_LIMIT``, and ``json.loads`` raises
+                ``JSONDecodeError`` on a corrupt line; both propagate to ``rpc``
+                for respawn handling.
         """
         await self.start()
         assert self._proc is not None
