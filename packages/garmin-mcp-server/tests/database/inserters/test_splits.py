@@ -79,6 +79,104 @@ class TestSplitsInserter:
 
         assert result is False
 
+    @staticmethod
+    def _eight_lap_splits_data(activity_id: int, invalid_lap_cadence=None) -> dict:
+        """Build raw splits.json data with 8 laps.
+
+        Lap 5 (index 4) is a short walk/recovery lap. When ``invalid_lap_cadence``
+        is provided it is applied to lap 5's ``averageRunCadence``.
+        """
+        laps = []
+        for i in range(1, 9):
+            lap = {
+                "lapIndex": i,
+                "distance": 1000.0 if i != 5 else 118.0,
+                "duration": 390.0 if i != 5 else 105.0,
+                "startTimeGMT": f"2026-07-24T00:{i:02d}:00.0",
+                "intensityType": "INTERVAL",
+                "averageHR": 140,
+                "averageRunCadence": 180.0 if i != 5 else 92.95,
+            }
+            laps.append(lap)
+        if invalid_lap_cadence is not None:
+            laps[4]["averageRunCadence"] = invalid_lap_cadence
+        return {"activityId": activity_id, "lapDTOs": laps}
+
+    @pytest.mark.unit
+    def test_insert_splits_skips_invalid_split_and_inserts_rest(
+        self, tmp_path, initialized_db_path, caplog
+    ):
+        """A single below-floor-cadence split is skipped; the rest are inserted."""
+        activity_id = 869001
+        raw_data = self._eight_lap_splits_data(activity_id, invalid_lap_cadence=5)
+        raw_file = tmp_path / "splits.json"
+        with open(raw_file, "w", encoding="utf-8") as f:
+            json.dump(raw_data, f)
+
+        conn = duckdb.connect(str(initialized_db_path))
+
+        with caplog.at_level("WARNING"):
+            result = insert_splits(
+                activity_id=activity_id,
+                conn=conn,
+                raw_splits_file=str(raw_file),
+            )
+
+        assert result is True
+
+        count = conn.execute(
+            "SELECT COUNT(*) FROM splits WHERE activity_id = ?", [activity_id]
+        ).fetchone()
+        assert count is not None
+        assert count[0] == 7  # lap 5 skipped, 7 remain
+
+        # The skipped split (split_index 5) must be absent
+        indexes = conn.execute(
+            "SELECT split_index FROM splits WHERE activity_id = ? ORDER BY split_index",
+            [activity_id],
+        ).fetchall()
+        assert 5 not in [row[0] for row in indexes]
+
+        # A warning was logged for the skipped split
+        assert any("Skipping invalid split" in rec.message for rec in caplog.records)
+
+        conn.close()
+
+    @pytest.mark.unit
+    def test_insert_splits_all_valid_inserts_all(self, tmp_path, initialized_db_path):
+        """8 valid splits including a 92.95 spm walk lap all insert."""
+        activity_id = 869002
+        raw_data = self._eight_lap_splits_data(activity_id)
+        raw_file = tmp_path / "splits.json"
+        with open(raw_file, "w", encoding="utf-8") as f:
+            json.dump(raw_data, f)
+
+        conn = duckdb.connect(str(initialized_db_path))
+
+        result = insert_splits(
+            activity_id=activity_id,
+            conn=conn,
+            raw_splits_file=str(raw_file),
+        )
+
+        assert result is True
+
+        count = conn.execute(
+            "SELECT COUNT(*) FROM splits WHERE activity_id = ?", [activity_id]
+        ).fetchone()
+        assert count is not None
+        assert count[0] == 8
+
+        # The walk lap (split_index 5) is stored with its low cadence
+        walk = conn.execute(
+            "SELECT cadence FROM splits WHERE activity_id = ? AND split_index = 5",
+            [activity_id],
+        ).fetchone()
+        assert walk is not None
+        assert walk[0] == pytest.approx(92.95, rel=0.01)
+
+        conn.close()
+
     @pytest.mark.integration
     def test_insert_splits_db_integration(
         self, sample_raw_splits_file, initialized_db_path

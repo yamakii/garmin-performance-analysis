@@ -16,6 +16,7 @@ Helper logic has been extracted to splits_helpers/ package:
 import logging
 
 import duckdb
+from pydantic import ValidationError
 
 from garmin_mcp.database.inserters.splits_helpers.extractor import SplitsExtractor
 from garmin_mcp.database.inserters.splits_helpers.phase_mapping import PhaseMapper
@@ -104,32 +105,43 @@ def _insert_splits_with_connection(
         if split_number is None:
             continue
 
-        # Validate physical constraints before insertion
-        validate_split(
-            {
-                "activity_id": activity_id,
-                "split_index": split_number,
-                "distance": split.get("distance_km"),
-                "duration_seconds": split.get("duration_seconds"),
-                "pace_seconds_per_km": split.get("pace_seconds_per_km")
-                or split.get("avg_pace_seconds_per_km"),
-                "heart_rate": split.get("avg_heart_rate"),
-                "cadence": split.get("avg_cadence"),
-                "ground_contact_time": split.get("ground_contact_time_ms"),
-                "vertical_oscillation": split.get("vertical_oscillation_cm"),
-                "vertical_ratio": split.get("vertical_ratio_percent"),
-                "elevation_gain": split.get("elevation_gain_m"),
-                "elevation_loss": split.get("elevation_loss_m"),
-                "power": split.get("avg_power"),
-                "stride_length": split.get("stride_length_cm"),
-                "max_heart_rate": split.get("max_heart_rate"),
-                "max_cadence": split.get("max_cadence"),
-                "max_power": split.get("max_power"),
-                "normalized_power": split.get("normalized_power"),
-                "average_speed": split.get("average_speed_mps"),
-                "grade_adjusted_speed": split.get("grade_adjusted_speed_mps"),
-            }
-        )
+        # Validate physical constraints before insertion. A single corrupt
+        # split must never abort the remaining splits after the DELETE has run
+        # (Issue #869): skip only the invalid split and continue.
+        try:
+            validate_split(
+                {
+                    "activity_id": activity_id,
+                    "split_index": split_number,
+                    "distance": split.get("distance_km"),
+                    "duration_seconds": split.get("duration_seconds"),
+                    "pace_seconds_per_km": split.get("pace_seconds_per_km")
+                    or split.get("avg_pace_seconds_per_km"),
+                    "heart_rate": split.get("avg_heart_rate"),
+                    "cadence": split.get("avg_cadence"),
+                    "ground_contact_time": split.get("ground_contact_time_ms"),
+                    "vertical_oscillation": split.get("vertical_oscillation_cm"),
+                    "vertical_ratio": split.get("vertical_ratio_percent"),
+                    "elevation_gain": split.get("elevation_gain_m"),
+                    "elevation_loss": split.get("elevation_loss_m"),
+                    "power": split.get("avg_power"),
+                    "stride_length": split.get("stride_length_cm"),
+                    "max_heart_rate": split.get("max_heart_rate"),
+                    "max_cadence": split.get("max_cadence"),
+                    "max_power": split.get("max_power"),
+                    "normalized_power": split.get("normalized_power"),
+                    "average_speed": split.get("average_speed_mps"),
+                    "grade_adjusted_speed": split.get("grade_adjusted_speed_mps"),
+                }
+            )
+        except ValidationError as e:
+            logger.warning(
+                "Skipping invalid split for activity %s split_number=%s: %s",
+                activity_id,
+                split_number,
+                e,
+            )
+            continue
 
         conn.execute(
             """
