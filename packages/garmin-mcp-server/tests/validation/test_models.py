@@ -94,8 +94,17 @@ class TestSplitRecord:
         with pytest.raises(ValidationError, match="vertical_ratio"):
             validate_split(valid_split_data)
 
-    def test_cadence_out_of_range_low(self, valid_split_data: dict) -> None:
-        valid_split_data["cadence"] = 50.0
+    def test_split_record_accepts_walk_cadence(self, valid_split_data: dict) -> None:
+        # Walk/recovery laps at 60-100 spm are real data (Issue #869): the floor
+        # was relaxed from 100 to 30, so a 92.95 spm walk lap must validate.
+        valid_split_data["cadence"] = 92.95
+        record = validate_split(valid_split_data)
+        assert record.cadence == 92.95
+
+    def test_split_record_rejects_below_floor_cadence(
+        self, valid_split_data: dict
+    ) -> None:
+        valid_split_data["cadence"] = 10
         with pytest.raises(ValidationError, match="cadence"):
             validate_split(valid_split_data)
 

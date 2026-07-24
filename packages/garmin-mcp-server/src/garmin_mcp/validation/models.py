@@ -39,7 +39,7 @@ class SplitRecord(BaseModel):
     duration_seconds: float | None = Field(default=None, ge=0)
     pace_seconds_per_km: float | None = Field(default=None, ge=60, le=1200)
     heart_rate: int | None = Field(default=None, ge=30, le=250)
-    cadence: float | None = Field(default=None, ge=100, le=250)
+    cadence: float | None = Field(default=None, ge=30, le=250)
     ground_contact_time: float | None = Field(default=None, ge=100, le=500)
     vertical_oscillation: float | None = Field(default=None, ge=0, le=30)
     vertical_ratio: float | None = Field(default=None, ge=0, le=30)
