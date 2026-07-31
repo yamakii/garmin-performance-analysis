@@ -15,8 +15,8 @@ export const meta = {
 // CONTEXT handoff: workflow agentTypes only reliably receive their declared MCP
 // tools + Write (built-in Read/Bash are NOT granted to the unified analyst), so
 // CONTEXT is fetched ONCE by the Fetch agent and passed INLINE into each section
-// prompt. The section agents never read files; the merge dir (temp_dir) holds
-// only {section}.json outputs.
+// prompt. The section agents never read files; the merge dir (built here by
+// buildTempDir, not supplied by the agent) holds only {section}.json outputs.
 //
 // ── pure logic (side-effect-free; extracted & unit-tested in CI) ─────────
 // The block between the markers below is evaluated by
@@ -66,6 +66,30 @@ function shouldAnalyze(fetch) {
   return !!(fetch && fetch.has_run)
 }
 
+// The 5 section JSONs must all land in ONE directory or the merge sees an empty
+// dir and drops the whole analysis. The fetch agent has returned an unexpanded
+// shell expression (`/tmp/analysis_<id>_$(cat ... || true)`) and a literal
+// "placeholder" for that path before (#871): Bash-using agents expanded it and
+// Write-using agents did not, scattering the outputs across three directories.
+// So the workflow — not the agent — builds the path; the agent only supplies a
+// plain epoch suffix, and anything else fails fast BEFORE the expensive analysis.
+const TEMP_SUFFIX_PATTERN = '^[0-9]{6,}$'
+
+function buildTempDir(activityId, tempSuffix) {
+  const id = String(activityId ?? '')
+  if (!/^[0-9]+$/.test(id)) {
+    throw new Error(`invalid activity_id for temp dir: ${JSON.stringify(activityId ?? null)}`)
+  }
+  const suffix = String(tempSuffix ?? '')
+  if (!new RegExp(TEMP_SUFFIX_PATTERN).test(suffix)) {
+    throw new Error(
+      `invalid temp_suffix ${JSON.stringify(tempSuffix ?? null)}: expected the digits printed by ` +
+        `\`date +%s\`, not a shell expression or placeholder`
+    )
+  }
+  return `/tmp/analysis_${id}_${suffix}`
+}
+
 // All four unified sections (efficiency/phase/environment/summary) plus `split`
 // run in ONE parallel barrier. summary derives cross-section consistency from the
 // shared CONTEXT (not from sibling outputs), so it does not wait for the other
@@ -86,13 +110,16 @@ function fetchPrompt(date) {
     `ランニング・体重・補強の差分を取り込む。短い要約を catch_up_summary に（例「ラン1/体重0/補強0」「差分なし」）。\n` +
     `2. mcp__garmin-db__ingest_activity(date=${d}) で当日ランを取り込み、activity_id と activity_date を取得。\n` +
     `   - ランニング activity が無い（activity_id が返らない）→ has_run=false で即返す。\n` +
-    `3. ランがある場合のみ has_run=true。Bash で次を実行し、出力（1行 JSON）を取得する:\n` +
-    `   TS=$(date +%s); TD=/tmp/analysis_<activity_id>_$TS; mkdir -p "$TD"   # セクション JSON の出力先\n` +
+    `3. ランがある場合のみ has_run=true。Bash で次の2コマンドを実行し、それぞれの出力を取得する:\n` +
+    `   date +%s   # 10桁の epoch。出力された数字をそのまま temp_suffix に入れる\n` +
     `   uv run --directory packages/garmin-mcp-server python -m garmin_mcp.scripts.prefetch_activity_context <activity_id>\n` +
-    `   - 出力が非空かつ "error" を含まないことを確認（含む/空なら fail として報告）。\n` +
-    `4. schema で {activity_id, activity_date, has_run, temp_dir, context_json, catch_up_summary} を返す。\n` +
+    `   - prefetch 出力が非空かつ "error" を含まないことを確認（含む/空なら fail として報告）。\n` +
+    `4. schema で {activity_id, activity_date, has_run, temp_suffix, context_json, catch_up_summary} を返す。\n` +
     `   **context_json には手順3の prefetch 出力（1行 JSON 文字列）を「一字一句そのまま」格納すること**` +
-    `（要約・整形・キー削除をしない。後段のセクション分析がこの実データのみを使う）。temp_dir=$TD。`
+    `（要約・整形・キー削除をしない。後段のセクション分析がこの実データのみを使う）。\n` +
+    `   **temp_suffix には実際に実行した \`date +%s\` の出力（数字のみ）を格納すること**。` +
+    `\`$(...)\` のような未展開シェル式や "placeholder" 等の仮値は禁止（数字以外はワークフローが拒否して中断する）。` +
+    `出力先ディレクトリはワークフローが組み立てるため、mkdir は不要。`
   )
 }
 
@@ -135,8 +162,11 @@ function proofreadPrompt(ctx) {
 
 function mergePrompt(ctx) {
   return (
-    `分析結果を DuckDB に登録します。Bash で次を実行し、その JSON 出力をそのまま schema で返してください:\n` +
+    `分析結果を DuckDB に登録します。Bash で次を順に実行し、merge の JSON 出力をそのまま schema で返してください:\n` +
+    `ls -1 ${ctx.tempDir}\n` +
     `uv run --directory packages/garmin-mcp-server python -m garmin_mcp.scripts.merge_section_analyses ${ctx.tempDir}\n` +
+    `ls -1 の一覧に efficiency/phase/environment/summary/split の .json が揃っているか確認し、` +
+    `欠けているセクション名（およびディレクトリ自体が無い場合はその旨）を errors に列挙してください。\n` +
     `出力は {succeeded:[...], failed:[...], errors:[...]} 形式。failed が空なら temp は自動削除されます。`
   )
 }
@@ -153,7 +183,8 @@ const FETCH_SCHEMA = {
     activity_id: { type: ['integer', 'null'] },
     activity_date: { type: ['string', 'null'] },
     has_run: { type: 'boolean' },
-    temp_dir: { type: ['string', 'null'] },
+    // digits only — the workflow builds the path from this (see buildTempDir).
+    temp_suffix: { type: ['string', 'null'], pattern: TEMP_SUFFIX_PATTERN },
     context_json: { type: ['string', 'null'] },
     catch_up_summary: { type: 'string' },
   },
@@ -191,8 +222,10 @@ async function runOneDay(date) {
     return { status: 'no_run', activity_date: fetched?.activity_date ?? date ?? null, catch_up_summary: fetched?.catch_up_summary ?? null }
   }
 
+  // Path is derived here (not taken from the agent) so every section, the
+  // proofreader and the merge all address the exact same directory (#871).
   const ctx = {
-    tempDir: fetched.temp_dir,
+    tempDir: buildTempDir(fetched.activity_id, fetched.temp_suffix),
     contextJson: fetched.context_json,
     activityId: fetched.activity_id,
     activityDate: fetched.activity_date,
