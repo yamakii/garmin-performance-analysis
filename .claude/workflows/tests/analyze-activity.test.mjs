@@ -19,8 +19,10 @@ const {
   sectionPlan,
   buildSectionPrompt,
   buildSummaryPrompt,
+  buildTempDir,
+  TEMP_SUFFIX_PATTERN,
 } = new Function(
-  `${m[1]}\nreturn { normalizeArgs, planBackfill, shouldAnalyze, sectionPlan, buildSectionPrompt, buildSummaryPrompt }`,
+  `${m[1]}\nreturn { normalizeArgs, planBackfill, shouldAnalyze, sectionPlan, buildSectionPrompt, buildSummaryPrompt, buildTempDir, TEMP_SUFFIX_PATTERN }`,
 )()
 
 test('normalizeArgs accepts a bare date string', () => {
@@ -86,6 +88,39 @@ test('buildSectionPrompt inlines CONTEXT and targets only the named section', ()
   assert.match(out, /ONLY efficiency/)
   assert.match(out, /\/tmp\/analysis_1_2\/efficiency\.json/)
   assert.doesNotMatch(out, /Read\(/) // no file-read dependency
+})
+
+test('test_build_temp_dir_deterministic_path: workflow builds the path from id + suffix', () => {
+  assert.equal(buildTempDir(23799768761, '1785501612'), '/tmp/analysis_23799768761_1785501612')
+  // a numeric-string activity_id (harness JSON round-trip) yields the same path.
+  assert.equal(buildTempDir('23799768761', '1785501612'), '/tmp/analysis_23799768761_1785501612')
+})
+
+test('test_build_temp_dir_rejects_shell_expression: unexpanded shell never becomes a path', () => {
+  // the exact value the fetch agent returned in #871, which scattered the outputs.
+  assert.throws(() => buildTempDir(1, '$(cat /tmp/td_1.txt 2>/dev/null || true)'), /temp_suffix/)
+  assert.throws(() => buildTempDir(1, '`date +%s`'), /temp_suffix/)
+  assert.throws(() => buildTempDir(1, '$TS'), /temp_suffix/)
+})
+
+test('test_build_temp_dir_rejects_placeholder_empty_null: no fallback values', () => {
+  for (const bad of ['placeholder', '', ' ', null, undefined, '1785501612 ']) {
+    assert.throws(() => buildTempDir(1, bad), /temp_suffix/)
+  }
+})
+
+test('test_build_temp_dir_rejects_invalid_activity_id: fail fast before analysis', () => {
+  for (const bad of [null, undefined, '', 'abc', '12a']) {
+    assert.throws(() => buildTempDir(bad, '1785501612'), /activity_id/)
+  }
+})
+
+test('test_temp_suffix_pattern_matches_digits_only: schema pattern mirrors buildTempDir', () => {
+  const re = new RegExp(TEMP_SUFFIX_PATTERN)
+  assert.ok(re.test('1785501612'))
+  assert.ok(!re.test('placeholder'))
+  assert.ok(!re.test('17855_1'))
+  assert.ok(!re.test('123')) // shorter than 6 digits => not an epoch
 })
 
 test('buildSummaryPrompt inlines CONTEXT and derives consistency from it (no siblings)', () => {
