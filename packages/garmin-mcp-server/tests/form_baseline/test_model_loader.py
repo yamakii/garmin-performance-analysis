@@ -56,7 +56,8 @@ def _create_baseline_table(conn: duckdb.DuckDBPyConnection) -> None:
             n_samples INTEGER,
             rmse DOUBLE,
             speed_range_min DOUBLE,
-            speed_range_max DOUBLE
+            speed_range_max DOUBLE,
+            model_type VARCHAR
         )
     """)
 
@@ -76,11 +77,13 @@ def _insert_baseline_row(
     n_samples: int = 100,
     speed_min: float = 2.5,
     speed_max: float = 4.5,
+    model_type: str = "linear",
 ) -> None:
     """Insert a single baseline row."""
     conn.execute(
         """
-        INSERT INTO form_baseline_history VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO form_baseline_history
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             user_id,
@@ -96,6 +99,7 @@ def _insert_baseline_row(
             rmse,
             speed_min,
             speed_max,
+            model_type,
         ],
     )
 
@@ -219,6 +223,42 @@ class TestLoadModelsFromDbIncompleteBaseline:
 
         with pytest.raises(ValueError, match="Incomplete baseline data"):
             load_models_from_db(db_path, "2025-10-15")
+
+
+@pytest.mark.integration
+class TestLoadModelsFromDbDegenerateFlag:
+    """Test load_models_from_db restores the degenerate (flat model) flag."""
+
+    def test_load_models_from_db_restores_degenerate_flag(self, tmp_path: Path) -> None:
+        """model_type='linear_flat' should come back as degenerate=True (#873)."""
+        db_path = str(tmp_path / "test.duckdb")
+        conn = duckdb.connect(db_path)
+        _create_baseline_table(conn)
+
+        _insert_baseline_row(conn, "gct", "2025-10-01", model_type="power")
+        _insert_baseline_row(conn, "vo", "2025-10-01", a=11.0, b=-0.4)
+        _insert_baseline_row(conn, "vr", "2025-10-01", a=9.0, b=-0.2)
+        _insert_baseline_row(
+            conn,
+            "cadence",
+            "2025-10-01",
+            a=178.0,
+            b=0.0,
+            model_type="linear_flat",
+        )
+        conn.close()
+
+        result = load_models_from_db(db_path, "2025-10-15")
+
+        cadence = result["cadence"]
+        assert isinstance(cadence, LinearModel)
+        assert cadence.degenerate is True
+        assert cadence.predict(3.33) == 178.0
+
+        # Healthy 'linear' rows keep degenerate=False
+        vo = result["vo"]
+        assert isinstance(vo, LinearModel)
+        assert vo.degenerate is False
 
 
 @pytest.mark.integration
