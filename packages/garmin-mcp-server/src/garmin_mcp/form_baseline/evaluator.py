@@ -109,6 +109,7 @@ def evaluate_and_store(
         pace_s_per_km=splits_data["pace_s_per_km"],
         star_rating=gct_rating["star_rating"],
         score=gct_rating["score"],
+        sigma_pct=score_result["gct_sigma_pct"],
     )
 
     vo_text = generate_evaluation_text(
@@ -119,6 +120,7 @@ def evaluate_and_store(
         pace_s_per_km=splits_data["pace_s_per_km"],
         star_rating=vo_rating["star_rating"],
         score=vo_rating["score"],
+        sigma_pct=score_result["vo_sigma_pct"],
     )
 
     vr_text = generate_evaluation_text(
@@ -129,6 +131,7 @@ def evaluate_and_store(
         pace_s_per_km=splits_data["pace_s_per_km"],
         star_rating=vr_rating["star_rating"],
         score=vr_rating["score"],
+        sigma_pct=score_result["vr_sigma_pct"],
     )
 
     # Compute overall score (average of 3 metrics)
@@ -153,6 +156,7 @@ def evaluate_and_store(
             pace_s_per_km=splits_data["pace_s_per_km"],
             star_rating=cadence_rating["star_rating"],
             score=cadence_rating["score"],
+            sigma_pct=score_result["cadence_sigma_pct"],
         )
         cadence_eval = {
             "actual": score_result["cadence_actual"],
