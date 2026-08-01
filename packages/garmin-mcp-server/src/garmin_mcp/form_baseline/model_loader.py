@@ -122,7 +122,7 @@ def load_models_from_db(
                   AND condition_group = ?
                   AND period_end <= ?
             )
-            SELECT metric, coef_alpha, coef_d, coef_a, coef_b,
+            SELECT metric, model_type, coef_alpha, coef_d, coef_a, coef_b,
                    n_samples, rmse, speed_range_min, speed_range_max
             FROM form_baseline_history
             WHERE user_id = ?
@@ -142,7 +142,22 @@ def load_models_from_db(
         # Parse baselines by metric
         models: dict[str, GCTPowerModel | LinearModel] = {}
         for row in baselines:
-            metric, alpha, d, a, b, n_samples, rmse, speed_min, speed_max = row
+            (
+                metric,
+                model_type,
+                alpha,
+                d,
+                a,
+                b,
+                n_samples,
+                rmse,
+                speed_min,
+                speed_max,
+            ) = row
+
+            # 'linear_flat' marks a slope-suppressed (intercept-only) model
+            # persisted by the trainer (#873). Older rows have NULL/'linear'.
+            degenerate = model_type == "linear_flat"
 
             if metric == "gct":
                 models["gct"] = GCTPowerModel(
@@ -159,6 +174,7 @@ def load_models_from_db(
                     rmse=float(rmse),
                     n_samples=int(n_samples),
                     speed_range=(float(speed_min), float(speed_max)),
+                    degenerate=degenerate,
                 )
             elif metric == "vr":
                 models["vr"] = LinearModel(
@@ -167,6 +183,7 @@ def load_models_from_db(
                     rmse=float(rmse),
                     n_samples=int(n_samples),
                     speed_range=(float(speed_min), float(speed_max)),
+                    degenerate=degenerate,
                 )
             elif metric == "cadence":
                 # Cadence is optional (backward compatible: absent in old DBs)
@@ -176,6 +193,7 @@ def load_models_from_db(
                     rmse=float(rmse),
                     n_samples=int(n_samples),
                     speed_range=(float(speed_min), float(speed_max)),
+                    degenerate=degenerate,
                 )
 
         # Validate core metrics present (cadence is optional)

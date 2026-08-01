@@ -10,6 +10,14 @@ from sklearn.linear_model import HuberRegressor, RANSACRegressor
 
 from garmin_mcp.form_baseline.utils import drop_outliers
 
+# Minimum split distance (km) accepted into the baseline training window.
+# Manual lap presses leave 5-11 m GPS fragments in ``splits``; their pace is a
+# measurement artifact (as fast as 4:04/km) while their cadence is that of a
+# walk, so an unfiltered fit learns "faster => lower cadence" and inverts the
+# cadence slope (#873). 0.4 km keeps every real lap (including deliberate
+# sub-km ones) while dropping the fragments.
+MIN_TRAINING_SPLIT_KM = 0.4
+
 
 @dataclass
 class GCTPowerModel:
@@ -54,9 +62,13 @@ class GCTPowerModel:
 @dataclass
 class LinearModel:
     """
-    Linear model for VO/VR: y = a + b * v
+    Linear model for VO/VR/cadence: y = a + b * v
 
-    Typically b <= 0 for running metrics.
+    Typically b <= 0 for VO/VR and b > 0 for cadence.
+
+    ``degenerate`` marks a model whose slope was suppressed because it had the
+    physiologically wrong sign (see :func:`fit_linear`). Such a model is
+    intercept-only (b = 0) and is persisted with ``model_type='linear_flat'``.
     """
 
     a: float  # Intercept
@@ -64,6 +76,7 @@ class LinearModel:
     rmse: float  # Root Mean Squared Error
     n_samples: int  # Number of training samples
     speed_range: tuple[float, float]  # (min, max) speed in m/s
+    degenerate: bool = False  # Slope suppressed -> flat (intercept-only) model
 
     def predict(self, speed_mps: float) -> float:
         """
@@ -73,8 +86,11 @@ class LinearModel:
             speed_mps: Speed in m/s
 
         Returns:
-            Predicted metric value (VO in cm, VR in %)
+            Predicted metric value (VO in cm, VR in %, cadence in spm).
+            Degenerate (flat) models return the intercept for every speed.
         """
+        if self.degenerate:
+            return self.a
         return self.a + self.b * speed_mps
 
 
@@ -149,11 +165,14 @@ def fit_linear(df: pd.DataFrame, metric: Literal["vo", "vr", "cadence"]) -> Line
         df: DataFrame with columns ['{metric}_value', 'speed_mps']
         metric: 'vo' (Vertical Oscillation), 'vr' (Vertical Ratio) or
             'cadence' (Step cadence). For cadence, b > 0 is expected
-            (faster speed -> higher cadence), but no monotonicity check
-            is enforced (linear fit only).
+            (faster speed -> higher cadence); a fitted negative slope is
+            physiologically backwards and is suppressed (see below). No
+            monotonicity check is enforced for vo/vr (linear fit only).
 
     Returns:
-        LinearModel
+        LinearModel. For cadence, a negative fitted slope is replaced by an
+        intercept-only model (b = 0, ``degenerate=True``) so that an inverted
+        expectation curve can never be persisted silently (#873).
 
     Raises:
         ValueError: If insufficient data
@@ -183,23 +202,45 @@ def fit_linear(df: pd.DataFrame, metric: Literal["vo", "vr", "cadence"]) -> Line
 
     huber = HuberRegressor()
     huber.fit(x_speed, y_metric)
-    a = huber.intercept_
-    b = huber.coef_[0]
+    a = float(huber.intercept_)
+    b = float(huber.coef_[0])
+    degenerate = False
+
+    # Defense in depth: cadence must not fall as speed rises. A negative slope
+    # means the training window is contaminated (the root cause fixed in #873
+    # was GPS-fragment splits), so fall back to a flat, intercept-only model
+    # rather than persisting an inverted expectation curve. The intercept-only
+    # least-squares solution is the sample mean.
+    if metric == "cadence" and b < 0:
+        a = float(np.mean(y_metric))
+        b = 0.0
+        degenerate = True
 
     # Calculate RMSE
-    y_pred = huber.predict(x_speed)
+    y_pred = a + b * x_speed.flatten()
     rmse = np.sqrt(np.mean((y_metric - y_pred) ** 2))
 
     return LinearModel(
-        a=float(a),
-        b=float(b),
+        a=a,
+        b=b,
         rmse=float(rmse),
         n_samples=len(df_clean),
         speed_range=(
             float(df_clean["speed_mps"].min()),
             float(df_clean["speed_mps"].max()),
         ),
+        degenerate=degenerate,
     )
+
+
+def _linear_model_type(model: LinearModel) -> str:
+    """Return the ``model_type`` value persisted for a linear baseline.
+
+    Degenerate (slope-suppressed) models are tagged ``linear_flat`` so the flag
+    survives the round-trip through ``form_baseline_history`` and can be
+    restored by ``model_loader.load_models_from_db``.
+    """
+    return "linear_flat" if model.degenerate else "linear"
 
 
 def train_power_efficiency_baseline(
@@ -427,7 +468,11 @@ def train_form_baselines(
 
     try:
         with get_write_connection(db_path) as conn:
-            # Query with date filter for 2-month window
+            # Query with date filter for 2-month window.
+            # ``s.distance >= ?`` drops GPS-fragment laps (5-11 m manual lap
+            # presses) whose pace is a measurement artifact; they otherwise
+            # train the models with the same weight as full 1 km splits and
+            # invert the cadence slope (#873).
             query = """
             SELECT
                 s.pace_seconds_per_km,
@@ -445,9 +490,12 @@ def train_form_baselines(
               AND s.pace_seconds_per_km < 600
               AND a.activity_date >= ?
               AND a.activity_date <= ?
+              AND s.distance >= ?
         """
 
-            df = conn.execute(query, [period_start, period_end]).df()
+            df = conn.execute(
+                query, [period_start, period_end, MIN_TRAINING_SPLIT_KM]
+            ).df()
 
             if len(df) < min_samples:
                 # Insufficient data
@@ -549,7 +597,7 @@ def train_form_baselines(
                     user_id,
                     condition_group,
                     "vo",
-                    "linear",
+                    _linear_model_type(vo_model),
                     None,
                     None,
                     vo_model.a,
@@ -589,7 +637,7 @@ def train_form_baselines(
                     user_id,
                     condition_group,
                     "vr",
-                    "linear",
+                    _linear_model_type(vr_model),
                     None,
                     None,
                     vr_model.a,
@@ -629,7 +677,7 @@ def train_form_baselines(
                     user_id,
                     condition_group,
                     "cadence",
-                    "linear",
+                    _linear_model_type(cadence_model),
                     None,
                     None,
                     cadence_model.a,

@@ -62,6 +62,20 @@ class TestLinearModel:
         result = model.predict(3.0)
         assert abs(result - 7.0) < 0.01
 
+    def test_linear_model_predict_flat_returns_intercept(self):
+        """A degenerate (flat) model returns the intercept at any speed."""
+        model = LinearModel(
+            a=178.0,
+            b=0.0,
+            rmse=4.0,
+            n_samples=150,
+            speed_range=(2.0, 4.0),
+            degenerate=True,
+        )
+
+        assert model.predict(3.33) == 178.0
+        assert model.predict(2.0) == 178.0
+
 
 @pytest.mark.unit
 class TestFitGCTPower:
@@ -249,6 +263,42 @@ class TestFitLinear:
         assert model.speed_range[0] == 2.5
         assert model.speed_range[1] == 5.0
 
+    def test_fit_linear_cadence_clamps_negative_slope(self):
+        """An inverted cadence slope is suppressed to a flat model (#873)."""
+        # Cadence falling with speed is physiologically backwards.
+        df = pd.DataFrame(
+            {"cadence_value": [180.0, 174.0], "speed_mps": [2.0, 3.0]},
+        )
+
+        model = fit_linear(df, metric="cadence")
+
+        assert model.b == 0.0
+        assert model.degenerate is True
+        # Intercept-only least-squares solution = sample mean
+        assert abs(model.a - 177.0) < 0.01
+
+    def test_fit_linear_cadence_keeps_positive_slope(self):
+        """A physiologically correct cadence slope is preserved unchanged."""
+        df = pd.DataFrame(
+            {"cadence_value": [175.0, 185.0], "speed_mps": [2.0, 3.0]},
+        )
+
+        model = fit_linear(df, metric="cadence")
+
+        assert model.b > 0
+        assert model.degenerate is False
+
+    def test_fit_linear_vo_negative_slope_preserved(self):
+        """VO legitimately falls with speed: the clamp must not apply."""
+        df = pd.DataFrame(
+            {"vo_value": [9.0, 7.0], "speed_mps": [2.0, 3.0]},
+        )
+
+        model = fit_linear(df, metric="vo")
+
+        assert model.b < 0
+        assert model.degenerate is False
+
 
 def _seed_baseline_db(db_path: str) -> None:
     """Seed a real DuckDB with splits/activities for train_form_baselines.
@@ -256,8 +306,9 @@ def _seed_baseline_db(db_path: str) -> None:
     Creates 20 activities x 5 splits = 100 rows within a 60-day window.
     Each split carries GCT/VO/VR/cadence that vary with speed (so the
     linear/power fits are well-conditioned) and stay inside the trainer's
-    outlier bounds. Power + base_weight_kg are included so the trailing
-    power-efficiency training also has data.
+    outlier bounds. Splits are full 1 km laps (distance = 1.0) so they pass
+    the GPS-fragment filter. Power + base_weight_kg are included so the
+    trailing power-efficiency training also has data.
     """
     conn = duckdb.connect(db_path)
 
@@ -281,7 +332,8 @@ def _seed_baseline_db(db_path: str) -> None:
             average_speed FLOAT,
             grade_adjusted_speed FLOAT,
             power FLOAT,
-            role_phase VARCHAR
+            role_phase VARCHAR,
+            distance FLOAT
         )
         """)
     conn.execute("CREATE SEQUENCE seq_history_id START 1")
@@ -349,12 +401,13 @@ def _seed_baseline_db(db_path: str) -> None:
                     speed,  # grade_adjusted_speed mirrors average_speed
                     power,
                     "run",
+                    1.0,  # full 1 km lap
                 )
             )
 
     conn.executemany("INSERT INTO activities VALUES (?, ?, ?)", activity_rows)
     conn.executemany(
-        "INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", split_rows
+        "INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", split_rows
     )
     conn.close()
 
@@ -445,7 +498,8 @@ def _create_baseline_schema(conn: duckdb.DuckDBPyConnection) -> None:
             average_speed FLOAT,
             grade_adjusted_speed FLOAT,
             power FLOAT,
-            role_phase VARCHAR
+            role_phase VARCHAR,
+            distance FLOAT
         )
         """)
     conn.execute("CREATE SEQUENCE seq_history_id START 1")
@@ -477,7 +531,7 @@ def _create_baseline_schema(conn: duckdb.DuckDBPyConnection) -> None:
 
 
 def _make_splits(activity_id: int) -> list[tuple]:
-    """Return 5 well-conditioned splits (within outlier bounds) for an activity."""
+    """Return 5 well-conditioned full 1 km splits (within outlier bounds)."""
     rows = []
     for j in range(5):
         split_id = activity_id * 10 + j
@@ -504,6 +558,7 @@ def _make_splits(activity_id: int) -> list[tuple]:
                 speed,  # grade_adjusted_speed mirrors average_speed
                 power,
                 "run",
+                1.0,  # full 1 km lap
             )
         )
     return rows
@@ -541,7 +596,8 @@ def _seed_two_month_window(db_path: str, activity_date: str, splits_per_month: i
         conn.executemany("INSERT INTO activities VALUES (?, ?, ?)", activity_rows)
     if split_rows:
         conn.executemany(
-            "INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", split_rows
+            "INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            split_rows,
         )
     conn.close()
 
@@ -648,7 +704,7 @@ def test_train_form_baselines_respects_min_samples(tmp_path):
         split_rows.extend(_make_splits(activity_id))
     conn.executemany("INSERT INTO activities VALUES (?, ?, ?)", activity_rows)
     conn.executemany(
-        "INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", split_rows
+        "INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", split_rows
     )
     conn.close()
 
@@ -666,6 +722,114 @@ def test_train_form_baselines_respects_min_samples(tmp_path):
     )
     assert result is not None
     assert "cadence" in result
+
+
+# ---------------------------------------------------------------------------
+# Issue #873: GPS-fragment splits must not train the baselines
+# ---------------------------------------------------------------------------
+
+FRAGMENT_END_DATE = "2026-03-31"  # 2-month window: 2026-02-01 .. 2026-03-31
+FULL_SPLIT_COUNT = 60  # 12 activities x 5 full 1 km laps
+
+
+def _seed_fragment_contaminated_db(db_path: str) -> None:
+    """Seed 60 full 1 km splits plus 12 GPS-fragment laps in one window.
+
+    The full laps follow the physiological relation ``cadence = 160 + 5 *
+    speed`` at 3.03-3.70 m/s. The fragments are 8 m manual-lap-press artifacts
+    whose pace (4:04/km) is a measurement artifact while their cadence is
+    walk-like; unfiltered they drag the fitted cadence slope negative (#873).
+    """
+    conn = duckdb.connect(db_path)
+    _create_baseline_schema(conn)
+
+    activity_rows = []
+    split_rows = []
+    for k in range(12):
+        activity_id = 5000 + k
+        act_date = date(2026, 3, 1) + timedelta(days=k)
+        activity_rows.append((activity_id, act_date, 70.0))
+        split_rows.extend(_make_splits(activity_id))
+
+        # One 8 m GPS fragment per activity, at an impossible 4:04/km.
+        fragment_pace = 244.0
+        fragment_speed = 1000.0 / fragment_pace
+        split_rows.append(
+            (
+                activity_id * 10 + 5,
+                activity_id,
+                fragment_pace,
+                300.0 - 20.0 * fragment_speed,
+                12.0 - 1.0 * fragment_speed,
+                11.0 - 1.0 * fragment_speed,
+                1.0 + 0.1 * fragment_speed,
+                170.0,  # walk-like cadence at an artifact "sprint" pace
+                fragment_speed,
+                fragment_speed,
+                180.0 + 30.0 * fragment_speed,
+                "run",
+                0.008,  # 8 m
+            )
+        )
+
+    conn.executemany("INSERT INTO activities VALUES (?, ?, ?)", activity_rows)
+    conn.executemany(
+        "INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", split_rows
+    )
+    conn.close()
+
+
+@pytest.mark.integration
+def test_train_form_baselines_excludes_fragment_splits(tmp_path):
+    """GPS fragments must not invert the cadence slope (#873).
+
+    Without the minimum-distance filter the 8 m fragments pull the Huber fit
+    negative (faster => lower cadence), which is physiologically backwards.
+    """
+    db_path = str(tmp_path / "fragments_slope.duckdb")
+    _seed_fragment_contaminated_db(db_path)
+
+    result = train_form_baselines(
+        end_date=FRAGMENT_END_DATE, window_months=2, db_path=db_path
+    )
+
+    assert result is not None
+    assert result["cadence"]["b"] > 0, (
+        "cadence slope must stay positive once GPS fragments are excluded, "
+        f"got b={result['cadence']['b']}"
+    )
+
+    conn = duckdb.connect(db_path, read_only=True)
+    try:
+        row = conn.execute("""
+            SELECT model_type, coef_b FROM form_baseline_history
+            WHERE metric = 'cadence'
+            """).fetchone()
+        assert row is not None
+        # A healthy fit is persisted as 'linear' (not the 'linear_flat'
+        # fallback used when the slope had to be suppressed).
+        assert row[0] == "linear"
+        assert row[1] > 0
+    finally:
+        conn.close()
+
+
+@pytest.mark.integration
+def test_train_form_baselines_fragment_splits_excluded_from_n_samples(tmp_path):
+    """Fragment laps are filtered out of the training window entirely."""
+    db_path = str(tmp_path / "fragments_n.duckdb")
+    _seed_fragment_contaminated_db(db_path)
+
+    result = train_form_baselines(
+        end_date=FRAGMENT_END_DATE, window_months=2, db_path=db_path
+    )
+
+    assert result is not None
+    for metric in ("gct", "vo", "vr", "cadence"):
+        assert result[metric]["n_samples"] == FULL_SPLIT_COUNT, (
+            f"{metric} trained on {result[metric]['n_samples']} samples; "
+            f"only the {FULL_SPLIT_COUNT} full 1 km splits are eligible"
+        )
 
 
 @pytest.mark.integration
