@@ -3,8 +3,10 @@
 import pytest
 
 from garmin_mcp.form_baseline.scorer import (
+    IMPROVEMENT_FACTOR,
     _compute_consistency_adjustment,
     _compute_penalty,
+    _sigma_pct,
     compute_star_rating,
     score_observation,
 )
@@ -12,21 +14,42 @@ from garmin_mcp.form_baseline.trainer import GCTPowerModel, LinearModel
 
 
 @pytest.fixture
-def models_with_cadence() -> dict:
+def models_with_cadence(sample_models: dict) -> dict:
     """Sample models including a constant cadence model (expected = 180spm)."""
     return {
+        **sample_models,
+        # b=0 -> predict(speed) == 180 for any speed
+        # rmse 4.6spm -> sigma = 100 * 4.6 / 180 = 2.56% (matches the real model)
+        "cadence": LinearModel(
+            a=180.0, b=0.0, rmse=4.6, n_samples=100, speed_range=(3.0, 5.0)
+        ),
+    }
+
+
+@pytest.fixture
+def models_2026_07_31() -> dict:
+    """Real baselines trained on the window ending 2026-07-31 (n=256).
+
+    gct/vo carry the production coefficients; vr/cadence are set so that the
+    2026-08-01 observation reproduces the measured deviations
+    (vr +1.72% = 1.28 sigma, cadence -2.34% = -0.92 sigma).
+    """
+    return {
         "gct": GCTPowerModel(
-            alpha=5.3, d=-0.15, rmse=5.0, n_samples=100, speed_range=(3.0, 5.0)
+            alpha=12.2656,
+            d=-2.0602,
+            rmse=0.0417,
+            n_samples=256,
+            speed_range=(1.5, 4.0),
         ),
         "vo": LinearModel(
-            a=10.0, b=-2.0, rmse=0.5, n_samples=100, speed_range=(3.0, 5.0)
+            a=4.416, b=1.175, rmse=0.2098, n_samples=256, speed_range=(1.5, 4.0)
         ),
         "vr": LinearModel(
-            a=10.0, b=-0.5, rmse=0.3, n_samples=100, speed_range=(3.0, 5.0)
+            a=11.146, b=-0.6, rmse=0.1328, n_samples=256, speed_range=(1.5, 4.0)
         ),
-        # b=0 -> predict(speed) == 180 for any speed
         "cadence": LinearModel(
-            a=180.0, b=0.0, rmse=2.0, n_samples=100, speed_range=(3.0, 5.0)
+            a=173.273, b=3.0, rmse=4.5676, n_samples=256, speed_range=(1.5, 4.0)
         ),
     }
 
@@ -95,7 +118,8 @@ class TestScoreObservation:
         assert 0.15 < result["vo_delta_cm"] < 0.25
         assert 2.0 < result["vr_delta_pct"] < 4.0
 
-        # Degradation penalties use full factor (1.0), same as before
+        # Degradation penalties use full factor (1.0) and are scaled by sigma:
+        # gct +3% / 2.02% = 1.5 sigma, vr +3% / 1.35% = 2.2 sigma
         assert result["gct_penalty"] < 50.0
         assert 50.0 < result["vo_penalty"] <= 100.0  # 0.2cm is ~12% when vo_exp ~1.7cm
         assert result["vr_penalty"] < 50.0
@@ -182,7 +206,8 @@ class TestScoreCadence:
         # delta_pct = (172 - 180) / 180 * 100 = -4.44% (degradation for cadence)
         assert result["cadence_actual"] == 172.0
         assert result["cadence_delta_pct"] < 0
-        # Degradation uses full factor: 4.44 * 1.0 * 10 = ~44.4 -> > 20
+        # Degradation uses full factor, scaled by sigma (2.56%):
+        # 4.44 / 2.56 = 1.74 sigma * 20 = ~34.8 -> > 20
         assert result["cadence_penalty"] > 20.0
         assert result["cadence_needs_improvement"] is True
 
@@ -203,7 +228,8 @@ class TestScoreCadence:
         # delta_pct = (185 - 180) / 180 * 100 = +2.78% (improvement for cadence)
         assert result["cadence_actual"] == 185.0
         assert result["cadence_delta_pct"] > 0
-        # Improvement uses reduced factor: 2.78 * 0.3 * 10 = ~8.3 -> < 10
+        # Improvement uses reduced factor, scaled by sigma (2.56%):
+        # 2.78 / 2.56 = 1.09 sigma * 20 * 0.3 = ~6.5 -> < 10
         assert result["cadence_penalty"] < 10.0
         assert result["cadence_needs_improvement"] is False
 
@@ -312,6 +338,7 @@ class TestComputePenalty:
     def test_improvement_lower_penalty(self) -> None:
         """Improvement direction (delta < 0) should receive reduced penalty.
 
+        Legacy (no sigma) formula:
         VO -8.3% with factor 0.3: 8.3 * 0.3 * 10 = 24.9 (4 stars)
         vs symmetric: 8.3 * 1.0 * 10 = 83.0 (1 star)
         """
@@ -326,17 +353,19 @@ class TestComputePenalty:
         penalty = _compute_penalty("vo", 8.0)
         assert penalty == pytest.approx(80.0)
 
-    def test_vr_has_lowest_improvement_factor(self) -> None:
-        """VR improvement factor (0.2) should be lower than GCT/VO (0.3).
+    def test_improvement_factor_vr_unified(self) -> None:
+        """VR improvement factor is unified with GCT/VO/cadence (0.3).
 
-        VR -5%: 5.0 * 0.2 * 10 = 10.0
-        GCT -5%: 5.0 * 0.3 * 10 = 15.0
+        A separate 0.2 for VR graded the better-than-expected side on a
+        different curve per metric (#876).
         """
-        vr_penalty = _compute_penalty("vr", -5.0)
-        gct_penalty = _compute_penalty("gct", -5.0)
-        assert vr_penalty < gct_penalty
-        assert vr_penalty == pytest.approx(10.0)
-        assert gct_penalty == pytest.approx(15.0)
+        assert IMPROVEMENT_FACTOR["vr"] == 0.3
+        assert len(set(IMPROVEMENT_FACTOR.values())) == 1
+
+        # Same relative improvement -> same penalty for VR and GCT
+        assert _compute_penalty("vr", -5.0) == pytest.approx(
+            _compute_penalty("gct", -5.0)
+        )
 
     def test_zero_delta_zero_penalty(self) -> None:
         """Zero delta should produce zero penalty."""
@@ -352,6 +381,108 @@ class TestComputePenalty:
         """GCT improvement (shorter contact time) should use factor 0.3."""
         penalty = _compute_penalty("gct", -3.0)
         assert penalty == pytest.approx(9.0)  # 3.0 * 0.3 * 10
+
+
+@pytest.mark.unit
+class TestSigmaScaledPenalty:
+    """Tests for sigma-scaled penalties (#876).
+
+    Each metric's model has a different prediction error, so deviations are
+    graded in units of that error rather than in fixed percentages.
+    """
+
+    def test_compute_penalty_one_sigma_gives_twenty(self) -> None:
+        """One sigma of degradation costs exactly PENALTY_PER_SIGMA (20)."""
+        assert _compute_penalty("vo", 3.05, 3.05) == pytest.approx(20.0)
+
+    def test_compute_penalty_equal_sigma_equal_penalty_across_metrics(self) -> None:
+        """Equal deviations in sigma get equal penalties despite different %."""
+        vo_penalty = _compute_penalty("vo", 3.05, 3.05)
+        vr_penalty = _compute_penalty("vr", 1.35, 1.35)
+        assert vo_penalty == pytest.approx(20.0)
+        assert vr_penalty == pytest.approx(20.0)
+        assert vo_penalty == pytest.approx(vr_penalty)
+
+    def test_compute_penalty_improvement_side_discounted(self) -> None:
+        """One sigma of improvement costs 20 * 0.3 = 6.0."""
+        assert _compute_penalty("vo", -3.05, 3.05) == pytest.approx(6.0)
+
+    def test_compute_penalty_falls_back_when_sigma_missing(self) -> None:
+        """No sigma (old baseline) -> legacy fixed-percentage formula."""
+        assert _compute_penalty("vo", 3.8, None) == pytest.approx(38.0)
+
+    def test_compute_penalty_falls_back_when_sigma_zero(self) -> None:
+        """Zero sigma must not divide by zero; legacy formula is used."""
+        assert _compute_penalty("vo", 3.8, 0.0) == pytest.approx(38.0)
+
+    def test_sigma_pct_linear_model(self) -> None:
+        """Linear model sigma is rmse as a percentage of the expected value."""
+        model = LinearModel(
+            a=4.416, b=1.175, rmse=0.2098, n_samples=256, speed_range=(1.5, 4.0)
+        )
+        assert _sigma_pct("vo", model, 6.899) == pytest.approx(3.04, abs=0.02)
+
+    def test_sigma_pct_gct_power_model(self) -> None:
+        """GCT rmse lives in log-speed space -> 100 * (exp(rmse / |d|) - 1)."""
+        model = GCTPowerModel(
+            alpha=12.2656,
+            d=-2.0602,
+            rmse=0.0417,
+            n_samples=256,
+            speed_range=(1.5, 4.0),
+        )
+        assert _sigma_pct("gct", model, 268.8) == pytest.approx(2.04, abs=0.02)
+
+    def test_sigma_pct_none_when_rmse_missing(self) -> None:
+        """A zero rmse yields no usable sigma (legacy baselines)."""
+        model = LinearModel(
+            a=10.0, b=-0.5, rmse=0.0, n_samples=10, speed_range=(1.5, 4.0)
+        )
+        assert _sigma_pct("vr", model, 7.9) is None
+
+
+@pytest.mark.integration
+class TestScoreObservationSigmaRanking:
+    """Star ratings must follow the statistical order, not the percentage order."""
+
+    def test_score_observation_ranks_by_sigma_not_pct(
+        self, models_2026_07_31: dict
+    ) -> None:
+        """2026-08-01 activity: equal sigma deviations get equal stars.
+
+        Percentage deltas (vr +1.72% < vo +3.82%) previously rated vr higher
+        than vo even though vr sat further from its own model (1.28 vs 1.25
+        sigma), and cadence (-0.92 sigma, the most ordinary reading) was rated
+        lowest. Scaling by sigma puts vo and vr together and lifts cadence.
+        """
+        obs = {
+            "pace_s_per_km": 473.2,
+            "gct_ms": 271.16,
+            "vo_cm": 7.163,
+            "vr_pct": 10.048,
+            "cadence": 175.41,
+        }
+
+        result = score_observation(models_2026_07_31, obs)
+
+        stars = {
+            metric: compute_star_rating(
+                penalty=result[f"{metric}_penalty"],
+                delta_pct=result[f"{metric}_delta_pct"],
+            )["score"]
+            for metric in ("gct", "vo", "vr", "cadence")
+        }
+
+        assert stars["gct"] == 4.0
+        assert stars["vo"] == 3.0
+        assert stars["vr"] == 3.0
+        assert stars["cadence"] == 4.0
+
+        # vr sits further from its model than vo, so it can no longer outrank it
+        assert abs(result["vr_delta_pct"] / result["vr_sigma_pct"]) > abs(
+            result["vo_delta_pct"] / result["vo_sigma_pct"]
+        )
+        assert result["vr_delta_pct"] < result["vo_delta_pct"]
 
 
 @pytest.mark.unit

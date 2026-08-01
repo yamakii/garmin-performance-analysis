@@ -260,6 +260,78 @@ class TestGenerateEvaluationText:
 
 
 @pytest.mark.unit
+class TestSigmaScaledBands:
+    """Wording bands must follow the model error, not fixed percentages (#876)."""
+
+    def test_generate_text_has_no_hardcoded_two_percent_band(self):
+        """The ideal band for VO reports its own sigma, not a fixed 2%."""
+        text = generate_evaluation_text(
+            metric="vo",
+            actual=7.1,
+            expected=7.0,
+            delta_pct=1.43,
+            pace_s_per_km=431.0,
+            star_rating="★★★★★",
+            score=5.0,
+            sigma_pct=3.05,
+        )
+        assert "±2%" not in text
+        assert "±3.0%" in text  # 1 sigma = 3.05% of expected
+        assert "理想範囲" in text
+
+    def test_ideal_band_widens_with_sigma(self):
+        """A 2.5% delta is ideal for a noisy metric, off-band for a tight one."""
+
+        def text_for(sigma_pct: float):
+            return generate_evaluation_text(
+                metric="vo",
+                actual=7.2,
+                expected=7.0,
+                delta_pct=2.5,
+                pace_s_per_km=431.0,
+                star_rating="★★★★☆",
+                score=4.0,
+                sigma_pct=sigma_pct,
+            )
+
+        noisy = text_for(3.05)
+        tight = text_for(1.35)
+
+        assert "理想範囲" in noisy
+        assert "理想範囲" not in tight
+        assert "やや外れ" in tight
+
+    def test_cadence_band_follows_sigma(self):
+        """Cadence text uses the same sigma-derived bands."""
+        text = generate_evaluation_text(
+            metric="cadence",
+            actual=175.0,
+            expected=179.6,
+            delta_pct=-2.34,
+            pace_s_per_km=473.0,
+            star_rating="★★★★☆",
+            score=4.0,
+            sigma_pct=2.56,
+        )
+        assert "±2%" not in text
+        assert "理想範囲" in text
+
+    def test_legacy_bands_when_sigma_missing(self):
+        """Without sigma the legacy fixed 2%/5% bands are kept."""
+        text = generate_evaluation_text(
+            metric="vo",
+            actual=7.1,
+            expected=7.0,
+            delta_pct=1.43,
+            pace_s_per_km=431.0,
+            star_rating="★★★★★",
+            score=5.0,
+        )
+        assert "±2.0%" in text
+        assert "理想範囲" in text
+
+
+@pytest.mark.unit
 class TestGenerateOverallText:
     """Test cases for generate_overall_text function."""
 
