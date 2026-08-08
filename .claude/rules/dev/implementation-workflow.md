@@ -130,7 +130,11 @@ Phase 2 + Phase 2.9 完了後のみ実行可能（手動経路）:
 4. `ci-guard` が completed になるまでポーリング（`pull_request_read(method="get_check_runs")`）
 5. **auto-merge ゲート**: 検証(L1/L2) PASS + `ci-guard` success + mergeable + **Phase 2.9 の検証完了**を満たせば
    `merge_pull_request` で自動マージ（テスト・検証の充実が前提, #395）。
-   `/implement` ではこの判定を `implement-tier` Workflow が担う
+   `/implement` ではこの判定を `implement-tier` Workflow が担う。
+   **リポジトリオーナーの恒久承認（2026-08-09, #886）**: このゲートを満たす PR は PR ごとの確認を取らずに
+   マージしてよい。バックグラウンドジョブ・非対話セッションにも適用し、セッションごとに承認を得直さない。
+   承認の範囲は PR のマージのみで、main / master への直接 push、force push、および step 6 の例外に
+   該当する PR のマージは引き続き対象外
 6. **例外は人間ゲート**: 検証 FAIL / 内容チェック WARNING / CI 失敗 / コンフリクト / L3 は
    auto-merge せず（`implement-tier` も escalate）、PR URL と理由を報告して判断を仰ぐ。
    `.claude/workflows`・`.claude/hooks` 変更は `meta-checks`（`node --test` / `bash -n`）が CI でロジックをゲートするため、
