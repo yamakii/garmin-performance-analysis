@@ -184,18 +184,20 @@ afterEach(() => {
 });
 
 describe("Dashboard", () => {
-  it("renders 状態 → 行動 → 進捗 sections from the mocked APIs", async () => {
+  it("test_dashboard_renders_all_blocks_on_success", async () => {
     mockAll();
     renderDashboard();
 
     // ① 状態: verdict hero + snapshot tiles
     expect(await screen.findByText("イージー推奨")).toBeInTheDocument();
     expect(await screen.findByText("1.02")).toBeInTheDocument();
+    expect(screen.getByText("訓練負荷 (ACWR)")).toBeInTheDocument();
     // ② 行動: this week's plan and next action
     expect(await screen.findByText("Long Run")).toBeInTheDocument();
     expect(screen.getByText("ロング走は時間×HRで管理")).toBeInTheDocument();
     // ③ 進捗: race strip + recent runs
     expect(screen.getByText("レースへの道")).toBeInTheDocument();
+    expect(screen.getByText("さいたまマラソン")).toBeInTheDocument();
     expect(screen.getByText("イージーラン")).toBeInTheDocument();
   });
 
@@ -227,11 +229,22 @@ describe("Dashboard", () => {
     expect(screen.queryByText("レースへの道")).not.toBeInTheDocument();
   });
 
-  it("shows the error banner when a core endpoint fails", async () => {
+  it("test_dashboard_card_error_isolated", async () => {
     mockAll();
-    vi.mocked(fetchRecoveryStatus).mockRejectedValue(new Error("db down"));
+    vi.mocked(fetchTrainingLoad).mockRejectedValue(new Error("db down"));
     renderDashboard();
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("db down");
+    // The failing endpoint degrades into a retryable alert inside its own card…
+    expect(
+      await screen.findByText(/状態スナップショットの読み込みに失敗しました/),
+    ).toHaveTextContent("db down");
+    expect(screen.getByRole("button", { name: "再試行" })).toBeInTheDocument();
+
+    // …while every other block still renders (no page-level banner).
+    expect(await screen.findByText("イージー推奨")).toBeInTheDocument();
+    expect(screen.getByText("Long Run")).toBeInTheDocument();
+    expect(screen.getByText("レースへの道")).toBeInTheDocument();
+    expect(screen.getByText("イージーラン")).toBeInTheDocument();
+    expect(screen.queryByText("エラー: db down")).not.toBeInTheDocument();
   });
 });

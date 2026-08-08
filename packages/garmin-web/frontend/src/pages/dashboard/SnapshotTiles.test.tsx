@@ -118,21 +118,28 @@ describe("SnapshotTiles", () => {
     expect(screen.getAllByText("—")).toHaveLength(4);
   });
 
-  it("タイルが該当ページへリンクする", () => {
-    renderTiles();
+  it("test_tiles_link_to_condition_anchors", () => {
+    const { container } = renderTiles();
 
-    // Each tile deep-links to its matching Trends anchor.
+    // Each tile deep-links to its matching /condition anchor (#892).
+    const loadTile = screen.getByText("訓練負荷 (ACWR)").closest("a");
+    expect(loadTile).toHaveAttribute("href", "/condition#training-load");
+
     const recoveryTile = screen.getByText("HRV (夜間)").closest("a");
-    expect(recoveryTile).toHaveAttribute("href", "/trends#recovery");
+    expect(recoveryTile).toHaveAttribute("href", "/condition#recovery");
 
     const rhrTile = screen.getByText("安静時心拍").closest("a");
-    expect(rhrTile).toHaveAttribute("href", "/trends#recovery");
-
-    const loadTile = screen.getByText("訓練負荷 (ACWR)").closest("a");
-    expect(loadTile).toHaveAttribute("href", "/trends#training-load");
+    expect(rhrTile).toHaveAttribute("href", "/condition#recovery");
 
     const flagsTile = screen.getByText("フォーム注意点").closest("a");
-    expect(flagsTile).toHaveAttribute("href", "/trends#form-anomaly");
+    expect(flagsTile).toHaveAttribute("href", "/condition#form-anomaly");
+
+    // The retired /trends page is no longer referenced anywhere in the row.
+    const hrefs = [...container.querySelectorAll("a")].map((a) =>
+      a.getAttribute("href"),
+    );
+    expect(hrefs).toHaveLength(4);
+    expect(hrefs.filter((href) => href?.startsWith("/trends"))).toEqual([]);
   });
 
   it("shows a dash for ACWR when data is insufficient", () => {

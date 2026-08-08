@@ -44,7 +44,9 @@ interface SnapshotTilesProps {
 /**
  * Compact state row: training load (ACWR + weekly-km mini bars), HRV and RHR
  * (each its own single-series sparkline — never a dual-axis chart), and the
- * form-anomaly caution count. Every tile links to the page with the full view.
+ * form-anomaly caution count. Every tile deep-links straight to its section on
+ * `/condition` (the anchors the `/trends` split kept alive, #892) so the home
+ * page never has to restate what that page already owns.
  */
 export default function SnapshotTiles({
   load,
@@ -111,7 +113,7 @@ function AcwrTile({ load }: { load: AcwrTrend | null }) {
     <Tile
       title="訓練負荷 (ACWR)"
       badge={current != null ? ACWR_META[current.status] : null}
-      to="/trends#training-load"
+      to="/condition#training-load"
     >
       <BigValue value={insufficient ? "—" : formatNumber(current.acwr, 2)} />
       {weeks.length > 1 && (
@@ -142,7 +144,7 @@ function HrvTile({ recovery }: { recovery: RecoveryTrend | null }) {
   const values = series.map((p) => p.hrv_overnight_ms);
 
   return (
-    <Tile title="HRV (夜間)" badge={badge} to="/trends#recovery">
+    <Tile title="HRV (夜間)" badge={badge} to="/condition#recovery">
       <BigValue
         value={hrv?.latest_ms != null ? formatNumber(hrv.latest_ms, 0) : "—"}
         unit="ms"
@@ -172,7 +174,7 @@ function RhrTile({ recovery }: { recovery: RecoveryTrend | null }) {
     <Tile
       title="安静時心拍"
       badge={rhr?.rhr_trend != null ? RHR_META[rhr.rhr_trend] : null}
-      to="/trends#recovery"
+      to="/condition#recovery"
     >
       <BigValue
         value={rhr?.median_7d != null ? formatNumber(rhr.median_7d, 0) : "—"}
@@ -203,7 +205,7 @@ function FlagsTile({ flags }: { flags: FormAnomalyFlagsResponse | null }) {
   const top = flags?.flags[0]?.top_recommendation ?? null;
 
   return (
-    <Tile title="フォーム注意点" badge={badge} to="/trends#form-anomaly">
+    <Tile title="フォーム注意点" badge={badge} to="/condition#form-anomaly">
       <BigValue value={count != null ? String(count) : "—"} unit="件" />
       <p className="mt-1 line-clamp-3 text-[11px] leading-relaxed text-slate-500">
         {count === 0
