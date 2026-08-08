@@ -1,7 +1,7 @@
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "../test/utils";
-import Goal, { daysUntil, formatGap, formatTargetTime } from "./Goal";
+import Goal from "./Goal";
 
 const FIXTURE_READINESS = {
   current_vdot: 48.5,
@@ -103,32 +103,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("formatTargetTime", () => {
-  it("formats seconds as H:MM:SS", () => {
-    expect(formatTargetTime(16200)).toBe("4:30:00");
-    expect(formatTargetTime(7200)).toBe("2:00:00");
-    expect(formatTargetTime(null)).toBe("-");
-  });
-});
-
-describe("daysUntil", () => {
-  it("returns whole days to a future date and null for missing/invalid", () => {
-    const today = new Date(2026, 0, 1); // 2026-01-01 local
-    expect(daysUntil("2026-01-11", today)).toBe(10);
-    expect(daysUntil("2025-12-31", today)).toBe(-1);
-    expect(daysUntil(null, today)).toBeNull();
-    expect(daysUntil("not-a-date", today)).toBeNull();
-  });
-});
-
-describe("formatGap", () => {
-  it("formats signed gaps as ±M:SS / ±H:MM:SS", () => {
-    expect(formatGap(-900)).toBe("−15:00");
-    expect(formatGap(900)).toBe("+15:00");
-    expect(formatGap(0)).toBe("±0:00");
-    expect(formatGap(3661)).toBe("+1:01:01");
-  });
-});
+// The pure formatters (formatTargetTime / daysUntil / formatGap) now live in
+// src/utils/race.ts and are covered by src/utils/race.test.ts.
 
 describe("Goal", () => {
   it("test_Goal_renders_race_prediction_card", async () => {
