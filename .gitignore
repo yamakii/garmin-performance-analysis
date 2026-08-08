@@ -73,9 +73,15 @@ tmp/*
 !tmp/.gitkeep
 
 # Project specific - Local settings
-.claude/settings.local.json
-.claude/tasks/
-.claude/worktrees/
+# `**/` is required: a pattern containing a slash is anchored to this .gitignore's
+# directory, so the bare `.claude/...` forms only matched the repo root and left
+# packages/*/.claude/ local settings showing as untracked (#882). The patterns stay
+# narrow (settings.local.json / tasks/ / worktrees/) so tracked .claude assets --
+# agents/, skills/, rules/, workflows/, hooks/ -- are never ignored.
+# `.mcp.json` has no slash, so it already matches at every level; leave it as is.
+**/.claude/settings.local.json
+**/.claude/tasks/
+**/.claude/worktrees/
 .mcp.json
 
 # Package-level data (runtime-generated)
