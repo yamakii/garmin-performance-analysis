@@ -46,6 +46,48 @@ npm --prefix packages/garmin-web/frontend run dev
 
 Open http://localhost:5173 during development.
 
+## Pages
+
+The SPA follows one information-architecture rule: **one page answers one
+question** (Epic #890). The six nav entries are the six questions; detail and
+fallback routes hang off a list page and stay out of the nav. Page components
+live in `packages/garmin-web/frontend/src/pages/`.
+
+| Route | Nav label | Question | Main content |
+|-------|-----------|----------|--------------|
+| `/` | ホーム | 今日どう動く? | Today's verdict hero → snapshot tiles (訓練負荷 / HRV / 安静時心拍 / フォーム注意点, each deep-linking into `/condition`) → this week's plan and next actions → race progress (compact) → recent runs |
+| `/activities` | アクティビティ | 走った記録は? | Month-grouped run list with a date-range preset (直近4週 / 3ヶ月 / 1年 / 全期間) and a name search |
+| `/condition` | コンディション | 今の体の状態は? | This week's cautions (form anomalies) as a full-width alert band, then today's condition, RHR/HRV recovery trend, personal-baseline deviation, training load (ACWR), body composition |
+| `/performance` | パフォーマンス | 速くなっているか? | Coach narration and a page-level 週/月 toggle, then volume, physiology, efficiency, critical speed, objective fitness, climate-neutral HR, form score, durability, weight × economy |
+| `/goal` | 目標 | 目標に届く? | Countdown hero, current phase, registered races, last season's retrospective |
+| `/weekly-reviews` | 週次レビュー | 今週の振り返りは? | Weekly review list, latest version per week |
+
+Detail and fallback routes (no nav entry):
+
+| Route | Reached from | Content |
+|-------|--------------|---------|
+| `/activities/:id` | activity list, recent runs | One run: section analyses, time series, GPS track, past-run version switch |
+| `/weekly-reviews/:weekStart` | review list, home plan card | One week's review plus its version switch |
+| `*` | mistyped or stale URLs | 404 page rendered inside the layout, so the nav stays one click away |
+
+Cross-cutting behaviour worth knowing before editing a page:
+
+- **`/trends` is retired.** The 16-card mega-page was split into `/condition`
+  and `/performance` (#892); `/trends` now redirects to `/condition` and carries
+  the hash and query string across, so old bookmarks and the home tiles'
+  `#training-load` / `#recovery` / `#form-anomaly` deep links still land on
+  their card.
+- **Filters live in the URL.** `/activities` keeps its range preset and search
+  text in `?range=` / `?q=`, so a filtered view survives reload, back
+  navigation and bookmarking (#893).
+- **Failures are per card, not per page.** Each card owns its query behind a
+  `QueryBoundary`, which shows a skeleton while pending and a retryable in-card
+  alert on error, so one broken endpoint no longer blanks a whole page.
+- **No duplicated answers.** A number is owned by exactly one page: the home
+  tiles link to the `/condition` card instead of restating it, and the race
+  prediction sits in the `/goal` countdown tile rather than in a second card
+  below it (#894, #895).
+
 ## API
 
 All endpoints are read-only `GET` under `/api`.
