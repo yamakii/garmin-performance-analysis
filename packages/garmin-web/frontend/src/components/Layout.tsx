@@ -15,7 +15,7 @@ function navLinkClass({ isActive }: { isActive: boolean }): string {
  *
  * Narrow-width strategy (#652): the brand shrinks to "Garmin" below the `sm`
  * breakpoint and the nav becomes horizontally scrollable (`overflow-x-auto`)
- * so all five links stay reachable without wrapping or cramping on ~360px
+ * so all six links stay reachable without wrapping or cramping on ~360px
  * screens.
  */
 export default function Layout({ children }: { children: ReactNode }) {
@@ -41,8 +41,11 @@ export default function Layout({ children }: { children: ReactNode }) {
             <NavLink to="/activities" className={navLinkClass}>
               アクティビティ
             </NavLink>
-            <NavLink to="/trends" className={navLinkClass}>
-              トレンド
+            <NavLink to="/condition" className={navLinkClass}>
+              コンディション
+            </NavLink>
+            <NavLink to="/performance" className={navLinkClass}>
+              パフォーマンス
             </NavLink>
             <NavLink to="/goal" className={navLinkClass}>
               目標
