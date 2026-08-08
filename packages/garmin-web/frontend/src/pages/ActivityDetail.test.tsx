@@ -188,6 +188,20 @@ function timeSeriesCalls(
   ).length;
 }
 
+describe("ActivityDetail back link", () => {
+  it("test_activity_detail_back_link_targets_activities", async () => {
+    stubFetch({ detail: BASE_DETAIL, sections: {}, track: [] });
+    renderDetail();
+
+    // The report is reached from the activity list, so the back link must
+    // return there rather than to the home dashboard.
+    const back = await screen.findByRole("link", {
+      name: "← アクティビティ一覧",
+    });
+    expect(back).toHaveAttribute("href", "/activities");
+  });
+});
+
 describe("ActivityDetail panel errors", () => {
   it('time-series fetch 失敗で role="alert" を表示する', async () => {
     stubFetchWithErrors({ failTimeSeries: 1 });

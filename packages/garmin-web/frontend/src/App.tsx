@@ -9,6 +9,7 @@ const TrendsDashboard = lazy(() => import("./pages/TrendsDashboard"));
 const Goal = lazy(() => import("./pages/Goal"));
 const WeeklyReviews = lazy(() => import("./pages/WeeklyReviews"));
 const WeeklyReviewDetail = lazy(() => import("./pages/WeeklyReviewDetail"));
+const NotFound = lazy(() => import("./pages/NotFound"));
 
 export default function App() {
   return (
@@ -32,6 +33,8 @@ export default function App() {
               path="/weekly-reviews/:weekStart"
               element={<WeeklyReviewDetail />}
             />
+            {/* Catch-all: unknown URLs land on 404 instead of a blank page. */}
+            <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>
       </Layout>

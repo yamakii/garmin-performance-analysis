@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import StatusBadge, { type StatusTone } from "../../components/StatusBadge";
 import type { GoalRace, RaceReadiness } from "../../types";
-import { daysUntil, formatGap, formatTargetTime } from "../Goal";
+import { daysUntil, formatGap, formatTargetTime } from "../../utils/race";
 
 type RaceStatus = NonNullable<RaceReadiness["progress"]>["status"];
 

@@ -253,7 +253,7 @@ export default function ActivityDetail() {
       {/* Report hero: back link, display headline, gold stars, KPI strip */}
       <div>
         <Link
-          to="/"
+          to="/activities"
           className="text-sm font-medium text-ink/70 hover:text-ink"
         >
           ← アクティビティ一覧
