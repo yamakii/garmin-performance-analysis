@@ -271,12 +271,18 @@ def _collect_mcp_assignments(
     Garmin calendar-service (garminconnect's ``get_scheduled_workouts`` takes a
     1-indexed month) and returns workout-type items whose title carries the
     ``[MCP]`` prefix, each as ``{schedule_id, workout_id, date, title}``.
+
+    The calendar service repeats the same item within a single month payload
+    (every entry of a real 2026-07/08 query came back exactly twice), so results
+    are de-duplicated by ``schedule_id`` in first-seen order. Without that the
+    caller unschedules one id twice and the second call 404s (#880). Items
+    without a ``schedule_id`` are dropped: they cannot be unscheduled.
     """
     today = date.today()
     start = today - timedelta(days=window_days)
     end = today + timedelta(days=window_days)
 
-    assignments: list[dict[str, Any]] = []
+    assignments: dict[Any, dict[str, Any]] = {}
     for year, month in _enumerate_year_months(start, end):
         payload = client.get_scheduled_workouts(year, month)
         items = (payload or {}).get("calendarItems") or []
@@ -286,15 +292,16 @@ def _collect_mcp_assignments(
             title = item.get("title") or ""
             if not title.startswith(MCP_PREFIX):
                 continue
-            assignments.append(
-                {
-                    "schedule_id": item.get("id"),
-                    "workout_id": item.get("workoutId"),
-                    "date": item.get("date"),
-                    "title": title,
-                }
-            )
-    return assignments
+            schedule_id = item.get("id")
+            if schedule_id is None or schedule_id in assignments:
+                continue
+            assignments[schedule_id] = {
+                "schedule_id": schedule_id,
+                "workout_id": item.get("workoutId"),
+                "date": item.get("date"),
+                "title": title,
+            }
+    return list(assignments.values())
 
 
 def _plan_cleanup(
@@ -433,20 +440,38 @@ def _cleanup_generated_workouts(
                 ],
             }
 
+        # Each removal is isolated: one stale id (already dropped in the Garmin
+        # app, or a duplicate that slipped through) must not abort the rest of
+        # the cleanup, which previously left the template deletions unexecuted
+        # (#880).
         unscheduled: list[Any] = []
+        failed_unschedule: list[dict[str, Any]] = []
         for assignment in to_unschedule:
-            client.unschedule_workout(assignment.get("schedule_id"))
-            unscheduled.append(assignment.get("schedule_id"))
+            schedule_id = assignment.get("schedule_id")
+            try:
+                client.unschedule_workout(schedule_id)
+                unscheduled.append(schedule_id)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("unschedule_workout(%r) failed: %s", schedule_id, e)
+                failed_unschedule.append({"schedule_id": schedule_id, "error": str(e)})
 
         deleted: list[Any] = []
+        failed_delete: list[dict[str, Any]] = []
         for workout in to_delete:
-            client.delete_workout(workout.get("workoutId"))
-            deleted.append(workout.get("workoutId"))
+            workout_id = workout.get("workoutId")
+            try:
+                client.delete_workout(workout_id)
+                deleted.append(workout_id)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("delete_workout(%r) failed: %s", workout_id, e)
+                failed_delete.append({"workout_id": workout_id, "error": str(e)})
 
         return {
             "dry_run": False,
             "unscheduled_schedule_ids": unscheduled,
             "deleted_workout_ids": deleted,
+            "failed_unschedule": failed_unschedule,
+            "failed_delete": failed_delete,
         }
     except Exception as e:  # noqa: BLE001
         logger.error(f"cleanup_generated_workouts failed: {e}")

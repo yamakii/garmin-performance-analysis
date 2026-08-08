@@ -16,6 +16,7 @@ from garmin_mcp.tools.workout_scheduling import (
     CleanupGeneratedWorkoutsParams,
     ScheduleCustomWorkoutParams,
     _cleanup_generated_workouts,
+    _collect_mcp_assignments,
     _schedule_custom_workout,
     build_workout_json,
 )
@@ -242,3 +243,164 @@ def test_cleanup_dry_run_no_writes() -> None:
     assert result["dry_run"] is True
     assert len(result["would_unschedule"]) == 1
     assert result["would_delete"] == [{"workout_id": 10, "title": "[MCP] Orphan"}]
+
+
+# ----------------------------------------------------------------------------
+# _collect_mcp_assignments de-duplication (#880)
+# ----------------------------------------------------------------------------
+
+
+def _payload(*items: dict) -> dict:
+    return {"calendarItems": list(items)}
+
+
+def _mcp_item(schedule_id, workout_id, day: str, title: str = "[MCP] Long") -> dict:
+    return {
+        "itemType": "workout",
+        "id": schedule_id,
+        "workoutId": workout_id,
+        "date": day,
+        "title": title,
+    }
+
+
+@pytest.mark.unit
+def test_collect_mcp_assignments_dedupes_duplicate_schedule_ids() -> None:
+    """The calendar service repeats items; the same schedule_id is kept once."""
+    client = MagicMock()
+    client.get_scheduled_workouts.return_value = _payload(
+        _mcp_item(1729244755, 1648964877, "2026-08-01"),
+        _mcp_item(1729244755, 1648964877, "2026-08-01"),
+    )
+
+    assignments = _collect_mcp_assignments(client, window_days=0)
+
+    assert len(assignments) == 1
+    assert assignments[0]["schedule_id"] == 1729244755
+
+
+@pytest.mark.unit
+def test_collect_mcp_assignments_keeps_distinct_schedule_ids() -> None:
+    """Distinct assignments survive de-duplication, in first-seen order."""
+    client = MagicMock()
+    client.get_scheduled_workouts.return_value = _payload(
+        _mcp_item(1, 10, "2026-08-01"),
+        _mcp_item(2, 20, "2026-08-02"),
+        _mcp_item(1, 10, "2026-08-01"),
+    )
+
+    assignments = _collect_mcp_assignments(client, window_days=0)
+
+    assert [a["schedule_id"] for a in assignments] == [1, 2]
+
+
+@pytest.mark.unit
+def test_collect_mcp_assignments_skips_missing_schedule_id() -> None:
+    """An item without an id cannot be unscheduled, so it is dropped."""
+    client = MagicMock()
+    client.get_scheduled_workouts.return_value = _payload(
+        _mcp_item(None, 10, "2026-08-01"),
+        _mcp_item(2, 20, "2026-08-02"),
+    )
+
+    assignments = _collect_mcp_assignments(client, window_days=0)
+
+    assert [a["schedule_id"] for a in assignments] == [2]
+
+
+# ----------------------------------------------------------------------------
+# cleanup error isolation (#880)
+# ----------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_cleanup_continues_when_one_unschedule_fails() -> None:
+    """A failing unschedule must not abort the remaining template deletions."""
+    client = MagicMock()
+    client.get_workouts.return_value = [
+        {"workoutName": "[MCP] Orphan", "workoutId": 77},
+    ]
+    client.unschedule_workout.side_effect = [
+        Exception("API Error 404 - No workout found for workout schedule = 1"),
+        None,
+    ]
+    assignments = [
+        {"schedule_id": 1, "workout_id": 10, "date": "2026-07-01", "title": "[MCP] A"},
+        {"schedule_id": 2, "workout_id": 20, "date": "2026-07-02", "title": "[MCP] B"},
+    ]
+
+    with (
+        patch("garmin_mcp.ingest.api_client.get_garmin_client", return_value=client),
+        patch(f"{_MODULE}._collect_mcp_assignments", return_value=assignments),
+        patch(f"{_MODULE}.date") as date_mock,
+    ):
+        date_mock.today.return_value = date(2026, 7, 11)
+        date_mock.fromisoformat.side_effect = date.fromisoformat
+        result = _cleanup_generated_workouts(
+            MagicMock(), CleanupGeneratedWorkoutsParams(dry_run=False)
+        )
+
+    # The second unschedule still ran, and the template deletion was reached.
+    assert result["unscheduled_schedule_ids"] == [2]
+    assert result["deleted_workout_ids"] == [77]
+    client.delete_workout.assert_called_once_with(77)
+
+    assert len(result["failed_unschedule"]) == 1
+    assert result["failed_unschedule"][0]["schedule_id"] == 1
+    assert "404" in result["failed_unschedule"][0]["error"]
+    assert "error" not in result
+
+
+@pytest.mark.unit
+def test_cleanup_continues_when_one_delete_fails() -> None:
+    """A failing template delete is recorded without stopping the others."""
+    client = MagicMock()
+    client.get_workouts.return_value = [
+        {"workoutName": "[MCP] A", "workoutId": 10},
+        {"workoutName": "[MCP] B", "workoutId": 20},
+    ]
+    client.delete_workout.side_effect = [Exception("boom"), None]
+
+    with (
+        patch("garmin_mcp.ingest.api_client.get_garmin_client", return_value=client),
+        patch(f"{_MODULE}._collect_mcp_assignments", return_value=[]),
+        patch(f"{_MODULE}.date") as date_mock,
+    ):
+        date_mock.today.return_value = date(2026, 7, 11)
+        date_mock.fromisoformat.side_effect = date.fromisoformat
+        result = _cleanup_generated_workouts(
+            MagicMock(), CleanupGeneratedWorkoutsParams(dry_run=False)
+        )
+
+    assert result["deleted_workout_ids"] == [20]
+    assert len(result["failed_delete"]) == 1
+    assert result["failed_delete"][0]["workout_id"] == 10
+    assert "error" not in result
+
+
+@pytest.mark.unit
+def test_cleanup_reports_empty_failure_lists_on_success() -> None:
+    """A fully successful cleanup reports both failure lists as empty."""
+    client = MagicMock()
+    client.get_workouts.return_value = [
+        {"workoutName": "[MCP] Orphan", "workoutId": 10},
+    ]
+    assignments = [
+        {"schedule_id": 1, "workout_id": 99, "date": "2026-07-01", "title": "[MCP] A"},
+    ]
+
+    with (
+        patch("garmin_mcp.ingest.api_client.get_garmin_client", return_value=client),
+        patch(f"{_MODULE}._collect_mcp_assignments", return_value=assignments),
+        patch(f"{_MODULE}.date") as date_mock,
+    ):
+        date_mock.today.return_value = date(2026, 7, 11)
+        date_mock.fromisoformat.side_effect = date.fromisoformat
+        result = _cleanup_generated_workouts(
+            MagicMock(), CleanupGeneratedWorkoutsParams(dry_run=False)
+        )
+
+    assert result["unscheduled_schedule_ids"] == [1]
+    assert result["deleted_workout_ids"] == [10]
+    assert result["failed_unschedule"] == []
+    assert result["failed_delete"] == []
