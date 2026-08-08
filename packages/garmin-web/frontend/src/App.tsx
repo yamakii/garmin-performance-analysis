@@ -1,15 +1,33 @@
 import { lazy, Suspense } from "react";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+} from "react-router-dom";
 import Layout from "./components/Layout";
 
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const ActivityList = lazy(() => import("./pages/ActivityList"));
 const ActivityDetail = lazy(() => import("./pages/ActivityDetail"));
-const TrendsDashboard = lazy(() => import("./pages/TrendsDashboard"));
+const Condition = lazy(() => import("./pages/Condition"));
+const Performance = lazy(() => import("./pages/Performance"));
 const Goal = lazy(() => import("./pages/Goal"));
 const WeeklyReviews = lazy(() => import("./pages/WeeklyReviews"));
 const WeeklyReviewDetail = lazy(() => import("./pages/WeeklyReviewDetail"));
 const NotFound = lazy(() => import("./pages/NotFound"));
+
+/**
+ * `/trends` was split into `/condition` and `/performance` (#892). Old
+ * bookmarks and the Home snapshot tiles' deep links (`/trends#recovery`) land
+ * on the condition page; the hash and query string are carried across so the
+ * anchor still resolves.
+ */
+function TrendsRedirect() {
+  const { hash, search } = useLocation();
+  return <Navigate to={{ pathname: "/condition", hash, search }} replace />;
+}
 
 export default function App() {
   return (
@@ -26,7 +44,9 @@ export default function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/activities" element={<ActivityList />} />
             <Route path="/activities/:id" element={<ActivityDetail />} />
-            <Route path="/trends" element={<TrendsDashboard />} />
+            <Route path="/condition" element={<Condition />} />
+            <Route path="/performance" element={<Performance />} />
+            <Route path="/trends" element={<TrendsRedirect />} />
             <Route path="/goal" element={<Goal />} />
             <Route path="/weekly-reviews" element={<WeeklyReviews />} />
             <Route
