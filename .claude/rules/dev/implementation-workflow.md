@@ -135,9 +135,12 @@ Phase 2 + Phase 2.9 完了後のみ実行可能（手動経路）:
    マージしてよい。バックグラウンドジョブ・非対話セッションにも適用し、セッションごとに承認を得直さない。
    承認の範囲は PR のマージのみで、main / master への直接 push、force push、および step 6 の例外に
    該当する PR のマージは引き続き対象外
-6. **例外は人間ゲート**: 検証 FAIL / 内容チェック WARNING / CI 失敗 / コンフリクト / L3 は
+6. **例外は人間ゲート**: 検証 FAIL / 内容チェック WARNING / CI 失敗 / コンフリクト は
    auto-merge せず（`implement-tier` も escalate）、PR URL と理由を報告して判断を仰ぐ。
    `.claude/workflows`・`.claude/hooks` 変更は `meta-checks`（`node --test` / `bash -n`）が CI でロジックをゲートするため、
-   green であれば他カテゴリと同じく auto-merge する。agent 定義（`.claude/agents/*-analyst.md`）は L3 のため
-   引き続き escalate し、メインセッションが **diff レビュー後に**手動マージ（`/ship --pr N --validated`）→
-   **マージ後に新規セッションで L3 挙動検証**（同一セッション検証は無効 #742、不合格なら revert）。
+   green であれば他カテゴリと同じく auto-merge する。
+   **L3（agent 定義 `.claude/agents/*-analyst.md`）も例外ではない**（#888）: メインセッションによる
+   **diff レビュー（必須）**を通し `ci-guard` green なら auto-merge する。ただし挙動検証は原理的に
+   pre-merge 不可のため（#742）、**マージ後の新規セッションでの E2E が必須の追跡義務**となり、
+   不合格なら revert する。手順の正本は `worktree-validation-protocol.md` の L3 節。
+   diff レビューで問題を検出した場合のみ escalate する。

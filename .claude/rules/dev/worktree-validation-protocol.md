@@ -163,11 +163,20 @@ L3（agent 定義 = `.claude/agents/*-analyst.md` の変更）は agent コー�
 
 agent 定義変更は **pre-merge に同一セッションで挙動検証できない**（原理的制約）。したがって:
 
-1. **Pre-merge（人間ゲート）**: メインセッションが worktree の `.md` 差分を Read で精査する。プロンプトは人間可読なので、構造・意図・出力キー整合・アンチ捏造ガード・[[]] 参照等をレビューで担保する。`implement-tier` は L3 を auto-merge せず escalate 済み。
-2. **Merge**: レビュー通過後、人間判断でマージ（`/ship --pr N --validated` 相当）。
-3. **Post-merge fresh-session E2E**: **変更が main の on-disk にある状態で開始した新規セッション**で `/analyze-activity {fixture_date}` を実行し、下記検証基準をチェックする（fresh session でないとキャッシュに載らないため必須）。
+1. **Pre-merge: メインセッションによる diff レビュー（必須）**: メインセッションが worktree の `.md` 差分を Read で精査する。プロンプトは人間可読なので、構造・意図・出力キー整合・アンチ捏造ガード・[[]] 参照等をレビューで担保する。**実行主体はメインセッションであり、人間への確認往復は不要**（#888。「人間ゲート」という旧ラベルは主体の誤読を招いていた）。レビューで問題を検出した場合のみ escalate する。
+2. **Merge**: diff レビュー通過 + `ci-guard` success で **auto-merge**（#886 の恒久承認が L3 にも適用される）。
+   - **`implement-tier` Workflow は L3 を escalate し続ける**。これは L3 が auto-merge 不可だからではなく、
+     **Workflow が step 1 の diff レビューを実行できない**ため（Stage 2 で L3 検証を short-circuit している）。
+     escalate を受けたメインセッションが diff レビューを行い、**人間への往復なしで**マージする。
+     Workflow のまま auto-merge させると diff レビューも挙動検証もゼロでマージされるため、この分担は維持する。
+3. **Post-merge fresh-session E2E（必須の追跡義務）**: **変更が main の on-disk にある状態で開始した新規セッション**で `/analyze-activity {fixture_date}` を実行し、下記検証基準をチェックする（fresh session でないとキャッシュに載らないため必須）。
    - 構造/内容/Fixture 基準は `dev-reference.md` §3 の L3 検証基準を参照。
+   - **マージしたセッションは、E2E が未実施であることを完了報告に明記する**（「検証未了」と分かる形で残す）。
+   - **次に開始するセッションは、他の分析作業より先にこの E2E を実行する。**
+   - **検証が未了の間は、同じ agent 定義へ追加の変更を重ねない**（不良の切り分けが不能になるため）。
 4. **不合格なら revert**: 構造チェック失敗なら該当 agent 定義変更を revert（**merge-first-verify-later; revert-if-bad**）。
+
+> **なぜ人間ゲートを外して E2E を必須化したか（#888）**: L3 は pre-merge の挙動検証が原理的に不可能で、CI も agent 定義の挙動を一切 exercise しない。したがって**唯一の挙動検証は step 3 だけ**であり、ここが実行されなければ不良プロンプトが main に残る。step 1 の主体は元から人間ではなくメインセッションだったため往復は外せるが、その代わりに step 3 を任意の推奨から必須の追跡義務へ格上げして相殺する。なお実装者とレビュアーが同一セッションになるため独立レビューは失われる。この低下を許容できるのは、step 3 + step 4（revert）が挙動側の安全網として機能する限りにおいてである。
 
 > なぜ fresh session が必須か: agentType レジストリは（本文含め）セッション開始時に一度だけ登録され、以後 spawn ごとに再読込されない（#586/#593/#742）。ゆえに「新規/変更 agent 定義を **pre-merge に** E2E 検証する」ことは原理的に不可能で、挙動検証は必ずマージ後の新規セッションに回る。pre-merge ゲートは diff レビュー、behavioral 検証は post-merge fresh session、が唯一成立する分担。
 
