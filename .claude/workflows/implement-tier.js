@@ -76,7 +76,12 @@ function mergeDecision(acc) {
   const v = acc.validation ?? {}
   const s = acc.ship ?? {}
   const m = acc.manifest ?? {}
-  if (v.level === 'L3') return { ok: false, reason: 'L3 (agent 定義変更) はメインセッション担当。auto-merge 対象外' }
+  // L3 is auto-mergeable in principle (#888), but its required pre-merge gate is
+  // a diff review of the prompt text, which this Workflow cannot perform (Stage 2
+  // short-circuits L3). Hand it to the main session, which does the review and
+  // then merges without a further human round-trip.
+  if (v.level === 'L3')
+    return { ok: false, reason: 'L3 (agent 定義変更): Workflow は diff レビュー不能。メインセッションがレビューしてマージする (#888)' }
   // Guard against an under-declared Validation Level: re-derive the level from
   // changed_files (developer self-report is untrusted — mirrors Phase 2b's
   // "サブエージェントの報告を信じない"). If the machine verdict is HIGHER than

@@ -29,9 +29,10 @@
   ```
 - **Plan承認後**: Issue作成(TBD時) → Issue sync（`design-approved` 付与）→ 既定で `/implement <issue>` 実装 or `/decompose`。再確認不要
 - **Review Gates**: Design → Test Plan → Code(CI) → Validation → Merge
-  - **既定経路 = `/implement <issue番号>`**（**単発 Issue / Epic を問わず**）: 検証(L1/L2) PASS + `ci-guard` success + mergeable なら **auto-merge**（`implement-tier` Workflow）。例外（FAIL / 内容チェック WARNING / CI 失敗 / コンフリクト / L3）のみ人間が `/ship --pr N --validated`
+  - **既定経路 = `/implement <issue番号>`**（**単発 Issue / Epic を問わず**）: 検証(L1/L2) PASS + `ci-guard` success + mergeable なら **auto-merge**（`implement-tier` Workflow）。例外（FAIL / 内容チェック WARNING / CI 失敗 / コンフリクト）のみ人間が `/ship --pr N --validated`
   - **手動 developer 委任 + `/ship --pr N` は例外（フォールバック）**: L3（agent 定義変更）/ Workflow 不可環境 / skip-level の docs・rules 微修正のみ。**「単発だから手動」ではない**（単発でも既定は /implement）
-  - **経路選択とマージ可否は独立**: 「例外（フォールバック）」は**どの経路で実装するか**の話であり、マージ判断とは無関係。手動経路であること自体は人間ゲートの理由にならない。auto-merge を止める条件は `implementation-workflow.md` Phase 3 step 6 の列挙（検証 FAIL / 内容チェック WARNING / CI 失敗 / コンフリクト / L3）**のみ**で、これに該当しなければ手動経路でも auto-merge する
+  - **経路選択とマージ可否は独立**: 「例外（フォールバック）」は**どの経路で実装するか**の話であり、マージ判断とは無関係。手動経路であること自体は人間ゲートの理由にならない。auto-merge を止める条件は `implementation-workflow.md` Phase 3 step 6 の列挙（検証 FAIL / 内容チェック WARNING / CI 失敗 / コンフリクト）**のみ**で、これに該当しなければ手動経路でも auto-merge する
+  - **L3 も auto-merge 対象**（#888）: メインセッションによる **diff レビュー（必須）**を通し `ci-guard` green なら auto-merge する。ただし挙動検証は pre-merge 不可（#742）のため、**マージ後の新規セッションでの E2E が必須の追跡義務**となり不合格なら revert。diff レビューで問題を検出した場合のみ escalate
 
 ### Issue Sync
 
@@ -86,7 +87,7 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 
 - **L1**: worktree コードを subprocess で import → 下層関数を `verification_activity_id` で呼び出し、非null・型一致・値範囲 (pace 3:00-9:00, HR 80-200)・`json.dumps` 可能を検証（`reload_server` は使わない）
 - **L2**: L1 + worktree 内で `uv run --directory <worktree> bash scripts/ci-check.sh`（CI 同一: unit+integration+型+lint+doc-guard、web 変更時は web チェック）exit 0。ci-check.sh 一発で CI 同等（integration も既定で実行）。tool/table 追加時の doc-sync/unit 漏れを ci-guard 前に検出
-- **L3**: agent 定義変更は **pre-merge に同一セッションで挙動検証できない**（agent 定義は本文ごとセッション開始時にキャッシュされ mid-session の `cp` 差し替えは無効。#742 で実証）。ゆえに pre-merge は **diff レビュー**（人間ゲート）→ merge → **新規セッションで `/analyze-activity` 実行**して構造/内容チェック → 不合格なら revert（merge-first-verify-later）。旧「一時適用→同一セッション実行」手順は偽ゲートとして棄却。正本手順は `worktree-validation-protocol.md`
+- **L3**: agent 定義変更は **pre-merge に同一セッションで挙動検証できない**（agent 定義は本文ごとセッション開始時にキャッシュされ mid-session の `cp` 差し替えは無効。#742 で実証）。ゆえに pre-merge は **メインセッションによる diff レビュー（必須・人間への往復は不要, #888）** → `ci-guard` green で **auto-merge** → **新規セッションで `/analyze-activity` 実行**して構造/内容チェック（**必須の追跡義務**。未了の間は同じ agent 定義へ追加変更を重ねない）→ 不合格なら revert（merge-first-verify-later）。旧「一時適用→同一セッション実行」手順は偽ゲートとして棄却。正本手順は `worktree-validation-protocol.md`
 - L1/L2 は subprocess 分離のため**並列起動が安全**（複数 worktree の L1/L2 を同時検証可）。直列必須は L3 のみ。経緯（旧 FIFO 直列前提）は正本を参照
 
 ### L3 検証基準
