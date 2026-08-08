@@ -8,15 +8,11 @@ import numpy as np
 import pandas as pd
 from sklearn.linear_model import HuberRegressor, RANSACRegressor
 
+from garmin_mcp.form_baseline.split_filter import (
+    running_split_params,
+    running_split_sql,
+)
 from garmin_mcp.form_baseline.utils import drop_outliers
-
-# Minimum split distance (km) accepted into the baseline training window.
-# Manual lap presses leave 5-11 m GPS fragments in ``splits``; their pace is a
-# measurement artifact (as fast as 4:04/km) while their cadence is that of a
-# walk, so an unfiltered fit learns "faster => lower cadence" and inverts the
-# cadence slope (#873). 0.4 km keeps every real lap (including deliberate
-# sub-km ones) while dropping the fragments.
-MIN_TRAINING_SPLIT_KM = 0.4
 
 
 @dataclass
@@ -468,12 +464,13 @@ def train_form_baselines(
 
     try:
         with get_write_connection(db_path) as conn:
-            # Query with date filter for 2-month window.
-            # ``s.distance >= ?`` drops GPS-fragment laps (5-11 m manual lap
-            # presses) whose pace is a measurement artifact; they otherwise
-            # train the models with the same weight as full 1 km splits and
-            # invert the cadence slope (#873).
-            query = """
+            # Query with date filter for 2-month window. The running-split
+            # predicate (walk breaks + GPS fragments) is shared with the
+            # evaluation side so the models are applied to the same population
+            # they were fitted on (#878); it drops 5-11 m manual-lap fragments
+            # whose pace is a measurement artifact and would otherwise invert
+            # the cadence slope (#873).
+            query = f"""
             SELECT
                 s.pace_seconds_per_km,
                 s.ground_contact_time,
@@ -486,15 +483,13 @@ def train_form_baselines(
             WHERE s.ground_contact_time IS NOT NULL
               AND s.vertical_oscillation IS NOT NULL
               AND s.vertical_ratio IS NOT NULL
-              AND s.pace_seconds_per_km > 0
-              AND s.pace_seconds_per_km < 600
               AND a.activity_date >= ?
               AND a.activity_date <= ?
-              AND s.distance >= ?
+              AND {running_split_sql("s")}
         """
 
             df = conn.execute(
-                query, [period_start, period_end, MIN_TRAINING_SPLIT_KM]
+                query, [period_start, period_end, *running_split_params()]
             ).df()
 
             if len(df) < min_samples:
