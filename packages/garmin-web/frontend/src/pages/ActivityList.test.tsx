@@ -1,7 +1,7 @@
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "../test/utils";
-import ActivityList from "./ActivityList";
+import { fireEvent, render, screen, waitFor, within } from "../test/utils";
+import ActivityList, { presetToRange } from "./ActivityList";
 
 const FIXTURE_ACTIVITIES = [
   {
@@ -24,20 +24,71 @@ const FIXTURE_ACTIVITIES = [
   },
 ];
 
+/** 10 rows whose names exercise the text filter: 2 contain 閾値走, 1 contains ロング. */
+const NAMED_ACTIVITIES = [
+  "イージーラン",
+  "閾値走 6km",
+  "ロング走 18km",
+  "リカバリージョグ",
+  "朝の閾値走",
+  "ペース走 10km",
+  "イージーラン",
+  "ビルドアップ走",
+  "インターバル 400m",
+  "ジョグ",
+].map((activity_name, index) => ({
+  activity_id: 9100000000 + index,
+  activity_date: `2026-06-${String(index + 1).padStart(2, "0")}`,
+  activity_name,
+  total_distance_km: 10.0,
+  total_time_seconds: 3600,
+  avg_pace_seconds_per_km: 360.0,
+  avg_heart_rate: 140,
+}));
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 function stubFetch(activities: typeof FIXTURE_ACTIVITIES) {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn().mockResolvedValue(
+  const fetchMock = vi.fn().mockImplementation(
+    () =>
       new Response(JSON.stringify(activities), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }),
-    ),
   );
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
+/** Exposes the current query string so URL sync is assertable. */
+function LocationProbe() {
+  const location = useLocation();
+  return <span data-testid="location-search">{location.search}</span>;
+}
+
+function renderList(initialEntry = "/activities") {
+  return render(
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <ActivityList />
+      <LocationProbe />
+    </MemoryRouter>,
+  );
+}
+
+function currentSearch(): URLSearchParams {
+  return new URLSearchParams(
+    screen.getByTestId("location-search").textContent ?? "",
+  );
+}
+
+function searchBox(): HTMLInputElement {
+  return screen.getByLabelText("アクティビティ名で検索") as HTMLInputElement;
+}
+
+function lastFetchUrl(fetchMock: ReturnType<typeof vi.fn>): string {
+  return String(fetchMock.mock.calls[fetchMock.mock.calls.length - 1][0]);
 }
 
 describe("ActivityList", () => {
@@ -232,5 +283,108 @@ describe("ActivityList", () => {
     expect(screen.getByText(/2本 ・ 合計 13\.7 km/)).toBeInTheDocument();
     // Rows still rendered as list items
     expect(screen.getAllByRole("listitem")).toHaveLength(2);
+  });
+});
+
+describe("ActivityList filters (Issue #893)", () => {
+  it("test_preset_to_range_counts_back_days", () => {
+    const today = new Date(2026, 7, 9); // 2026-08-09, local time
+
+    expect(presetToRange("4w", today)).toEqual({ from: "2026-07-12" });
+    expect(presetToRange("3m", today)).toEqual({ from: "2026-05-09" });
+    expect(presetToRange("1y", today)).toEqual({ from: "2025-08-09" });
+    // "全期間" keeps the request unbounded.
+    expect(presetToRange("all", today)).toEqual({});
+  });
+
+  it("test_range_preset_updates_url_and_query", async () => {
+    const fetchMock = stubFetch(FIXTURE_ACTIVITIES);
+
+    renderList();
+    await screen.findByText("2025-10-09");
+
+    // Default (no range param) keeps the historical unbounded request.
+    expect(lastFetchUrl(fetchMock)).toBe("/api/activities");
+
+    fireEvent.click(screen.getByRole("button", { name: "直近3ヶ月" }));
+
+    await waitFor(() => {
+      expect(currentSearch().get("range")).toBe("3m");
+    });
+    await waitFor(() => {
+      expect(lastFetchUrl(fetchMock)).toBe(
+        `/api/activities?from=${presetToRange("3m").from}`,
+      );
+    });
+    expect(
+      screen.getByRole("button", { name: "直近3ヶ月" }),
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("test_search_filters_by_name", async () => {
+    stubFetch(NAMED_ACTIVITIES);
+
+    renderList();
+    await screen.findByText("閾値走 6km");
+    expect(screen.getAllByRole("listitem")).toHaveLength(10);
+
+    fireEvent.change(searchBox(), { target: { value: "閾値" } });
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    });
+    expect(screen.getByText("閾値走 6km")).toBeInTheDocument();
+    expect(screen.getByText("朝の閾値走")).toBeInTheDocument();
+    expect(screen.queryByText("ロング走 18km")).not.toBeInTheDocument();
+    // The query is mirrored into the URL so the filtered view is shareable.
+    expect(currentSearch().get("q")).toBe("閾値");
+  });
+
+  it("test_url_params_restore_state", async () => {
+    const fetchMock = stubFetch(NAMED_ACTIVITIES);
+
+    renderList("/activities?range=1y&q=ロング");
+    await screen.findByText("ロング走 18km");
+
+    // Preset restored from the URL...
+    expect(screen.getByRole("button", { name: "直近1年" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "全期間" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    // ...and applied to the request.
+    expect(lastFetchUrl(fetchMock)).toBe(
+      `/api/activities?from=${presetToRange("1y").from}`,
+    );
+
+    // Text query restored into the box and already applied to the rows.
+    expect(searchBox().value).toBe("ロング");
+    const rows = screen.getAllByRole("listitem");
+    expect(rows).toHaveLength(1);
+    expect(within(rows[0]).getByText("ロング走 18km")).toBeInTheDocument();
+  });
+
+  it("test_empty_filter_result_shows_empty_state", async () => {
+    stubFetch(NAMED_ACTIVITIES);
+
+    renderList();
+    await screen.findByText("閾値走 6km");
+
+    fireEvent.change(searchBox(), { target: { value: "存在しない名前" } });
+
+    await screen.findByText("条件に一致するアクティビティがありません");
+    expect(screen.queryAllByRole("listitem")).toHaveLength(0);
+
+    // The escape hatch clears every filter and brings the full list back.
+    fireEvent.click(screen.getByRole("button", { name: "フィルタを解除" }));
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("listitem")).toHaveLength(10);
+    });
+    expect(searchBox().value).toBe("");
+    expect(currentSearch().get("q")).toBeNull();
   });
 });

@@ -126,10 +126,26 @@ export function useTrack(
 
 // --- Activity list --------------------------------------------------------
 
-export function useActivities(): UseQueryResult<ActivitySummary[], Error> {
+/** Inclusive `YYYY-MM-DD` bounds forwarded to `GET /api/activities`. */
+export interface ActivityRange {
+  from?: string;
+  to?: string;
+}
+
+/**
+ * Activity list, optionally bounded by a date range.
+ *
+ * The bounds are part of the query key, so each range keeps its own cache
+ * entry and switching back to a previously viewed range is instant. Omitting
+ * `range` keeps the unbounded request (and the plain `["activities"]`-shaped
+ * key) that callers without a filter rely on.
+ */
+export function useActivities(
+  range?: ActivityRange,
+): UseQueryResult<ActivitySummary[], Error> {
   return useQuery({
-    queryKey: ["activities"],
-    queryFn: () => fetchActivities(),
+    queryKey: ["activities", range?.from ?? null, range?.to ?? null],
+    queryFn: () => fetchActivities(range),
   });
 }
 

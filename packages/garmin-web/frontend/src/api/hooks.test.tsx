@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useActivityDetail } from "./hooks";
+import { useActivities, useActivityDetail } from "./hooks";
 
 /** A fresh, retry-free QueryClient wrapper so each test starts with an empty cache. */
 function createWrapper() {
@@ -95,5 +95,37 @@ describe("useActivityDetail", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(DETAIL);
     expect(detailCalls(fetchMock)).toBe(2);
+  });
+});
+
+describe("useActivities", () => {
+  it("test_use_activities_passes_from_to", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([]));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(
+      () => useActivities({ from: "2026-05-01", to: "2026-08-01" }),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(String(fetchMock.mock.calls[0][0])).toBe(
+      "/api/activities?from=2026-05-01&to=2026-08-01",
+    );
+  });
+
+  it("test_use_activities_no_range_omits_params", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([]));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useActivities(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    // Callers without a filter keep the unbounded request they always made.
+    expect(String(fetchMock.mock.calls[0][0])).toBe("/api/activities");
   });
 });
