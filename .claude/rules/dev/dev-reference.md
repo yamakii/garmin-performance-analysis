@@ -31,6 +31,7 @@
 - **Review Gates**: Design → Test Plan → Code(CI) → Validation → Merge
   - **既定経路 = `/implement <issue番号>`**（**単発 Issue / Epic を問わず**）: 検証(L1/L2) PASS + `ci-guard` success + mergeable なら **auto-merge**（`implement-tier` Workflow）。例外（FAIL / 内容チェック WARNING / CI 失敗 / コンフリクト / L3）のみ人間が `/ship --pr N --validated`
   - **手動 developer 委任 + `/ship --pr N` は例外（フォールバック）**: L3（agent 定義変更）/ Workflow 不可環境 / skip-level の docs・rules 微修正のみ。**「単発だから手動」ではない**（単発でも既定は /implement）
+  - **経路選択とマージ可否は独立**: 「例外（フォールバック）」は**どの経路で実装するか**の話であり、マージ判断とは無関係。手動経路であること自体は人間ゲートの理由にならない。auto-merge を止める条件は `implementation-workflow.md` Phase 3 step 6 の列挙（検証 FAIL / 内容チェック WARNING / CI 失敗 / コンフリクト / L3）**のみ**で、これに該当しなければ手動経路でも auto-merge する
 
 ### Issue Sync
 
