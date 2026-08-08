@@ -5,6 +5,7 @@ import { useGoal, useRaceReadiness } from "../api/hooks";
 import type {
   GoalRace,
   RaceReadiness,
+  RaceReadinessProgress,
   SeasonRetrospective,
 } from "../types";
 import { parseFocusNotes } from "../utils/focusNotes";
@@ -63,30 +64,50 @@ function isPriorityB(race: GoalRace): boolean {
  */
 const CONTOUR_PATTERN = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280' viewBox='0 0 280 280' fill='none' stroke='%2316213a' stroke-width='1'%3E%3Cpath d='M0 40c46-22 94 16 140-6s94-26 140-2'/%3E%3Cpath d='M0 90c46-24 94 18 140-8s94-28 140-2'/%3E%3Cpath d='M0 140c46-20 94 14 140-6s94-24 140-2'/%3E%3Cpath d='M0 190c46-26 94 20 140-8s94-30 140-2'/%3E%3Cpath d='M0 240c46-22 94 16 140-6s94-26 140-2'/%3E%3Cellipse cx='70' cy='66' rx='34' ry='13'/%3E%3Cellipse cx='70' cy='66' rx='20' ry='7'/%3E%3Cellipse cx='204' cy='214' rx='38' ry='15'/%3E%3Cellipse cx='204' cy='214' rx='22' ry='8'/%3E%3C/svg%3E")`;
 
-/** Single big "あと N日" countdown tile inside the hero. */
+type RaceStatus = RaceReadinessProgress["status"];
+
+const STATUS_META: Record<RaceStatus, { label: string; tone: StatusTone }> = {
+  ahead: { label: "前倒し", tone: "good" },
+  on_track: { label: "順調", tone: "info" },
+  behind: { label: "遅れ", tone: "warn" },
+};
+
+/**
+ * Single "あと N日" countdown tile inside the hero. When the VDOT prediction
+ * belongs to this race, the predicted time / gap to target / status badge are
+ * rendered inline here rather than in a second card further down the page.
+ */
 function CountdownTile({
   race,
   tone,
+  prediction,
 }: {
   race: GoalRace;
   tone: "primary" | "secondary";
+  prediction: RaceReadinessProgress | null;
 }) {
   const days = daysUntil(race.race_date);
   const accent = tone === "primary" ? "text-signal" : "text-gold";
   const tagBg =
     tone === "primary" ? "bg-signal/15 text-signal" : "bg-gold/15 text-amber-700";
+  const statusMeta = prediction != null ? STATUS_META[prediction.status] : null;
 
   return (
     <div className="relative">
-      <div className="flex items-center gap-2">
-        <span
-          className={`rounded-md px-2 py-0.5 font-numeric text-sm font-bold tracking-wide ${tagBg}`}
-        >
-          {race.priority ?? "?"}
-        </span>
-        <span className="font-display text-base font-semibold text-ink">
-          {race.race_name ?? "レース未設定"}
-        </span>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span
+            className={`rounded-md px-2 py-0.5 font-numeric text-sm font-bold tracking-wide ${tagBg}`}
+          >
+            {race.priority ?? "?"}
+          </span>
+          <span className="font-display text-base font-semibold text-ink">
+            {race.race_name ?? "レース未設定"}
+          </span>
+        </div>
+        {statusMeta != null && (
+          <StatusBadge tone={statusMeta.tone}>{statusMeta.label}</StatusBadge>
+        )}
       </div>
 
       <div className="mt-3 flex items-end gap-2">
@@ -125,6 +146,17 @@ function CountdownTile({
           </div>
         )}
         <div>
+          <dt className="sr-only">種別</dt>
+          <dd className="text-slate-500">
+            {goalTypeLabel(race.goal_type)}
+            {race.distance_km != null && (
+              <span className="ml-1.5 font-numeric tabular-nums text-slate-400">
+                {formatDistanceKm(race.distance_km)}
+              </span>
+            )}
+          </dd>
+        </div>
+        <div>
           <dt className="sr-only">目標タイム</dt>
           <dd>
             <span className="text-xs text-slate-400">目標 </span>
@@ -134,21 +166,74 @@ function CountdownTile({
           </dd>
         </div>
       </dl>
+
+      {race.notes != null && race.notes.trim() !== "" && (
+        <p className="mt-3 text-sm text-slate-600">{race.notes}</p>
+      )}
+
+      {prediction != null && (
+        <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-200 pt-3">
+          <div>
+            <dt className="text-xs tracking-wide text-slate-400">予測タイム</dt>
+            <dd className="mt-0.5 font-numeric text-base font-semibold tabular-nums text-ink">
+              {formatTargetTime(prediction.predicted_time_seconds)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs tracking-wide text-slate-400">目標との差</dt>
+            <dd className="mt-0.5 font-numeric text-base font-semibold tabular-nums text-ink">
+              {formatGap(prediction.gap_seconds)}
+            </dd>
+          </div>
+        </dl>
+      )}
     </div>
   );
 }
 
-/** Hero band with countdowns to the A (primary) and B (secondary) races. */
-function CountdownHero({ goals }: { goals: GoalRace[] }) {
-  const primary = goals.find(isPriorityA) ?? null;
-  const secondary = goals.find(isPriorityB) ?? null;
-  const featured = [primary, secondary].filter(
-    (race): race is GoalRace => race != null,
-  );
-
-  if (featured.length === 0) {
+/**
+ * Which featured race the readiness prediction belongs to. The API computes
+ * readiness against a single goal race, so the prediction is attached to the
+ * tile whose name matches; when the payload carries no usable name we fall back
+ * to the primary (A) race so the prediction is never orphaned.
+ */
+function findPredictionRace(
+  races: GoalRace[],
+  readiness: RaceReadiness | null,
+): GoalRace | null {
+  if (readiness?.progress == null) {
     return null;
   }
+  const name = readiness.goal?.race_name ?? null;
+  if (name != null) {
+    const byName = races.find((race) => race.race_name === name);
+    if (byName != null) {
+      return byName;
+    }
+  }
+  return races.find(isPriorityA) ?? races[0] ?? null;
+}
+
+/**
+ * Hero band with countdowns to the A (primary) and B (secondary) races, with
+ * the VDOT prediction folded into the matching tile. These races are the only
+ * place the A/B races are featured — the list below covers everything else.
+ */
+function CountdownHero({
+  races,
+  readiness,
+}: {
+  races: GoalRace[];
+  readiness: RaceReadiness | null;
+}) {
+  const vdot = readiness?.current_vdot ?? null;
+
+  if (races.length === 0 && vdot == null) {
+    return null;
+  }
+
+  const predictionRace = findPredictionRace(races, readiness);
+  const progress = readiness?.progress ?? null;
 
   return (
     <header className="relative overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-slate-100 shadow-sm">
@@ -158,35 +243,59 @@ function CountdownHero({ goals }: { goals: GoalRace[] }) {
         style={{ backgroundImage: CONTOUR_PATTERN }}
       />
       <div className="relative px-6 py-7 md:px-8">
-        <SectionHeading eyebrow="Countdown" title="目標レースまで" />
-        <div className="mt-6 grid gap-8 md:grid-cols-2 md:gap-12">
-          {featured.map((race) => (
-            <CountdownTile
-              key={race.goal_id}
-              race={race}
-              tone={isPriorityA(race) ? "primary" : "secondary"}
-            />
-          ))}
-        </div>
+        <SectionHeading
+          eyebrow="Countdown"
+          title={races.length > 0 ? "目標レースまで" : "現在のフィットネス"}
+        />
+        {races.length > 0 && (
+          <div className="mt-6 grid gap-8 md:grid-cols-2 md:gap-12">
+            {races.map((race) => (
+              <CountdownTile
+                key={race.goal_id}
+                race={race}
+                tone={isPriorityA(race) ? "primary" : "secondary"}
+                prediction={
+                  race.goal_id === predictionRace?.goal_id ? progress : null
+                }
+              />
+            ))}
+          </div>
+        )}
+
+        {vdot != null && (
+          <div className="mt-6 border-t border-slate-200 pt-4">
+            <dl className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+              <div>
+                <dt className="inline text-xs text-slate-400">現在 VDOT </dt>
+                <dd className="inline font-numeric font-semibold tabular-nums text-ink">
+                  {vdot.toFixed(1)}
+                </dd>
+              </div>
+            </dl>
+            {races.length === 0 && (
+              <p className="mt-1.5 text-xs text-slate-500">
+                目標レースが未登録のため、距離別の予測タイムのみ算出しています。
+              </p>
+            )}
+          </div>
+        )}
+        {vdot == null && readiness != null && (
+          <p className="mt-6 border-t border-slate-200 pt-4 text-xs text-slate-500">
+            直近のランニングデータが不足しているため、予測タイムは算出できませんでした。
+          </p>
+        )}
       </div>
     </header>
   );
 }
 
 /**
- * Card for one target race. Priority A is visually featured, except when the
- * same race is already headlined in the CountdownHero: passing
- * `deemphasizeFeatured` drops the signal ring / left bar so the race is not
- * featured twice on the page.
+ * Card for one registered race. The hero already headlines the first A and B
+ * races, so this list only ever receives the remaining races; a leftover
+ * priority-A race (a second A) still gets the featured treatment.
  */
-function RaceCard({
-  race,
-  deemphasizeFeatured,
-}: {
-  race: GoalRace;
-  deemphasizeFeatured?: boolean;
-}) {
-  const featured = isPriorityA(race) && deemphasizeFeatured !== true;
+function RaceCard({ race }: { race: GoalRace }) {
+  const featured = isPriorityA(race);
   const border = featured
     ? "border-signal/40 ring-1 ring-signal/20"
     : "border-slate-200";
@@ -344,99 +453,10 @@ function RetrospectiveCard({ retro }: { retro: SeasonRetrospective }) {
   );
 }
 
-type RaceStatus = NonNullable<RaceReadiness["progress"]>["status"];
-
-const STATUS_META: Record<RaceStatus, { label: string; tone: StatusTone }> = {
-  ahead: { label: "前倒し", tone: "good" },
-  on_track: { label: "順調", tone: "info" },
-  behind: { label: "遅れ", tone: "warn" },
-};
-
-/**
- * Race prediction card: current VDOT, the goal-distance predicted time, the gap
- * to target, and a status badge. Falls back to an explanatory line when VDOT or
- * the goal is missing.
- */
-function RacePredictionCard({ readiness }: { readiness: RaceReadiness }) {
-  const { current_vdot, goal, progress } = readiness;
-
-  if (current_vdot == null) {
-    return (
-      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <EmptyState
-          message="現在のフィットネスを推定できませんでした"
-          hint="直近のランニングデータが不足しています"
-        />
-      </div>
-    );
-  }
-
-  const weeksRemaining = progress?.weeks_remaining ?? null;
-  const statusMeta = progress != null ? STATUS_META[progress.status] : null;
-
-  return (
-    <article className="relative overflow-hidden rounded-xl border border-signal/40 bg-white p-5 shadow-sm ring-1 ring-signal/20">
-      <span
-        aria-hidden="true"
-        className="absolute inset-y-0 left-0 w-1 bg-signal"
-      />
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="font-display text-lg font-semibold text-ink">
-            {goal?.race_name ?? "目標レース未設定"}
-          </h3>
-          {weeksRemaining != null && (
-            <p className="mt-0.5 font-numeric text-sm tabular-nums text-slate-500">
-              残り {weeksRemaining} 週
-            </p>
-          )}
-        </div>
-        {statusMeta != null && (
-          <StatusBadge tone={statusMeta.tone}>{statusMeta.label}</StatusBadge>
-        )}
-      </div>
-
-      <dl className="mt-4 grid grid-cols-3 gap-3 border-t border-slate-100 pt-4">
-        <div>
-          <dt className="text-xs tracking-wide text-slate-400">現在 VDOT</dt>
-          <dd className="mt-0.5 font-numeric text-base font-semibold tabular-nums text-ink">
-            {current_vdot.toFixed(1)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-xs tracking-wide text-slate-400">予測タイム</dt>
-          <dd className="mt-0.5 font-numeric text-base font-semibold tabular-nums text-ink">
-            {progress != null
-              ? formatTargetTime(progress.predicted_time_seconds)
-              : "-"}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-xs tracking-wide text-slate-400">目標との差</dt>
-          <dd className="mt-0.5 font-numeric text-base font-semibold tabular-nums text-ink">
-            {progress != null ? formatGap(progress.gap_seconds) : "-"}
-          </dd>
-        </div>
-      </dl>
-
-      {goal != null && goal.target_time_seconds != null && (
-        <p className="mt-4 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
-          目標タイム {formatTargetTime(goal.target_time_seconds)} に対する現在の予測です。
-        </p>
-      )}
-      {goal == null && (
-        <p className="mt-4 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
-          目標レースが未登録のため、距離別の予測タイムのみ算出しています。
-        </p>
-      )}
-    </article>
-  );
-}
-
 export default function Goal() {
   const goalQuery = useGoal();
   // Race readiness is supplementary: a failure here must not block the page,
-  // so its error is ignored and the prediction card is simply hidden.
+  // so its error is ignored and the hero simply omits the prediction.
   const readinessQuery = useRaceReadiness();
 
   const goal = goalQuery.data ?? null;
@@ -473,56 +493,22 @@ export default function Goal() {
   const hasProfile =
     profile.current_focus != null || profile.focus_notes != null;
   const focusSections = parseFocusNotes(profile.focus_notes);
-  // The hero headlines the first priority-A and first priority-B race; those
-  // same races are de-emphasized in the list below to avoid double-featuring.
-  const heroRaceIds = new Set(
-    [goals.find(isPriorityA), goals.find(isPriorityB)]
-      .filter((race): race is GoalRace => race != null)
-      .map((race) => race.goal_id),
-  );
-  const hasFeaturedRace = heroRaceIds.size > 0;
+  // The hero headlines the first priority-A and first priority-B race (with the
+  // VDOT prediction folded in); the list below carries every other race, so no
+  // race is featured twice on the page.
+  const featuredRaces = [
+    goals.find(isPriorityA),
+    goals.find(isPriorityB),
+  ].filter((race): race is GoalRace => race != null);
+  const featuredIds = new Set(featuredRaces.map((race) => race.goal_id));
+  const otherRaces = goals.filter((race) => !featuredIds.has(race.goal_id));
 
   return (
     <div className="stagger-in space-y-8">
-      {/* 1. Race countdown hero */}
-      {hasFeaturedRace && <CountdownHero goals={goals} />}
+      {/* 1. Race countdown + VDOT prediction */}
+      <CountdownHero races={featuredRaces} readiness={readiness} />
 
-      {/* 1b. Race prediction (VDOT-based gap to the goal) */}
-      {readiness != null && (
-        <section className="space-y-4">
-          <SectionHeading eyebrow="Race prediction" title="レース予測" as="h2" />
-          <RacePredictionCard readiness={readiness} />
-        </section>
-      )}
-
-      {/* 2. Target races as cards */}
-      <section className="space-y-4">
-        <SectionHeading eyebrow="Target races" title="目標レース" as="h2" />
-        {goals.length > 0 ? (
-          <div className="grid gap-4 md:grid-cols-2">
-            {goals.map((race) => (
-              <RaceCard
-                key={race.goal_id}
-                race={race}
-                deemphasizeFeatured={heroRaceIds.has(race.goal_id)}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <EmptyState
-              message="目標レースが登録されていません"
-              hint={
-                <>
-                  CLI <CliCommand>/set-goal</CliCommand> で登録できます
-                </>
-              }
-            />
-          </div>
-        )}
-      </section>
-
-      {/* 3. Current phase as a structured accordion */}
+      {/* 2. Current phase as a structured accordion */}
       <section className="space-y-4">
         <SectionHeading eyebrow="Current phase" title="現フェーズ" as="h2" />
         {hasProfile ? (
@@ -554,6 +540,38 @@ export default function Goal() {
           <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <EmptyState
               message="現フェーズが登録されていません"
+              hint={
+                <>
+                  CLI <CliCommand>/set-goal</CliCommand> で登録できます
+                </>
+              }
+            />
+          </div>
+        )}
+      </section>
+
+      {/* 3. Registered races (everything the hero does not headline) */}
+      <section className="space-y-4">
+        <SectionHeading eyebrow="Races" title="レース登録" as="h2" />
+        {featuredRaces.length > 0 && (
+          <p className="text-xs text-slate-400">
+            A / B レースはページ上部のカウントダウンに表示しています。
+          </p>
+        )}
+        {otherRaces.length > 0 ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            {otherRaces.map((race) => (
+              <RaceCard key={race.goal_id} race={race} />
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <EmptyState
+              message={
+                featuredRaces.length > 0
+                  ? "A / B 以外のレースは登録されていません"
+                  : "目標レースが登録されていません"
+              }
               hint={
                 <>
                   CLI <CliCommand>/set-goal</CliCommand> で登録できます
