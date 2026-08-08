@@ -4,10 +4,19 @@ import { describe, expect, it } from "vitest";
 import type { GoalRace, RaceReadiness } from "../../types";
 import RaceProgress from "./RaceProgress";
 
+/** ISO date `days` from today in local time, so countdowns stay deterministic. */
+function isoDaysFromToday(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate(),
+  ).padStart(2, "0")}`;
+}
+
 const GOAL_A: GoalRace = {
   goal_id: 25,
   race_name: "さいたまマラソン",
-  race_date: null,
+  race_date: isoDaysFromToday(120),
   priority: "A",
   goal_type: "marathon",
   distance_km: 42.195,
@@ -19,11 +28,11 @@ const GOAL_A: GoalRace = {
 const GOAL_B: GoalRace = {
   goal_id: 26,
   race_name: "新潟シティマラソン",
-  race_date: "2020-10-11", // past date -> deterministic "開催済み"
+  race_date: isoDaysFromToday(30),
   priority: "B",
   goal_type: "marathon",
   distance_km: 42.195,
-  target_time_seconds: 16200,
+  target_time_seconds: 12600,
   status: "active",
   notes: null,
 };
@@ -58,33 +67,50 @@ function renderProgress(
 }
 
 describe("RaceProgress", () => {
-  it("renders the A/B races with countdown states and target times", () => {
+  it("test_race_progress_compact_single_row", () => {
     renderProgress();
 
+    // Only the A race is counted down; the B tile and the four-metric
+    // prediction grid moved to the Goal page (#895).
     expect(screen.getByText("さいたまマラソン")).toBeInTheDocument();
-    expect(screen.getByText("新潟シティマラソン")).toBeInTheDocument();
-    // A race has no date; B race date is in the past.
-    expect(screen.getByText("日程未定")).toBeInTheDocument();
-    expect(screen.getByText("開催済み")).toBeInTheDocument();
-    expect(screen.getAllByText("4:30:00")).toHaveLength(2);
+    expect(screen.getByText("あと")).toBeInTheDocument();
+    expect(screen.getByText("120")).toBeInTheDocument();
+    expect(screen.queryByText("新潟シティマラソン")).not.toBeInTheDocument();
+    expect(screen.queryByText("目標との差")).not.toBeInTheDocument();
+    expect(screen.queryByText("−57:46")).not.toBeInTheDocument();
   });
 
-  it("renders VDOT, prediction, gap and the status badge", () => {
+  it("test_race_progress_links_to_goal", () => {
+    renderProgress();
+
+    const links = screen.getAllByRole("link");
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveAttribute("href", "/goal");
+    expect(screen.getByText("目標へ →")).toBeInTheDocument();
+  });
+
+  it("summarises VDOT, prediction and target on one line", () => {
     renderProgress();
 
     expect(screen.getByText("44.0")).toBeInTheDocument();
     expect(screen.getByText("3:32:14")).toBeInTheDocument();
-    expect(screen.getByText("−57:46")).toBeInTheDocument();
+    expect(screen.getByText("4:30:00")).toBeInTheDocument();
     expect(screen.getByText("前倒し")).toBeInTheDocument();
   });
 
-  it("links to the goal page", () => {
-    renderProgress();
+  it("falls back to the nearest upcoming race without an A race", () => {
+    renderProgress(READINESS, [GOAL_B]);
 
-    expect(screen.getByRole("link", { name: "目標ページ →" })).toHaveAttribute(
-      "href",
-      "/goal",
-    );
+    expect(screen.getByText("新潟シティマラソン")).toBeInTheDocument();
+    expect(screen.getByText("30")).toBeInTheDocument();
+  });
+
+  it("labels a missing or past race date instead of a countdown", () => {
+    renderProgress(READINESS, [{ ...GOAL_A, race_date: null }]);
+    expect(screen.getByText("日程未定")).toBeInTheDocument();
+
+    renderProgress(READINESS, [{ ...GOAL_A, race_date: "2020-10-11" }]);
+    expect(screen.getByText("開催済み")).toBeInTheDocument();
   });
 
   it("renders nothing when there are no goals and no VDOT", () => {
