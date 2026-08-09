@@ -1,4 +1,5 @@
 import type { SectionResult } from "../../types";
+import Disclosure from "../Disclosure";
 import FallbackFields from "./FallbackFields";
 import MarkdownText from "./MarkdownText";
 import { isRecord, ParseErrorNotice, SUBCARD, SUBHEADING } from "./ReportCard";
@@ -19,6 +20,10 @@ function splitLabel(key: string): string {
  * Per-split narrative from `analyses.split_N` (dynamic, distance-dependent
  * keys per Spike #198), rendered in ascending split order with a number
  * badge. Designed to be embedded directly under the splits table.
+ *
+ * `highlights` is already a 60-120 character summary, so it stays visible;
+ * the one-or-two sentences per split are a wall of text under a long run and
+ * fold into a disclosure instead (#905).
  */
 export default function SplitNarrative({
   section,
@@ -55,25 +60,27 @@ export default function SplitNarrative({
         </div>
       )}
       {entries.length > 0 && (
-        <ol className="mt-3 space-y-2.5">
-          {entries.map(([key, text]) => (
-            <li key={key} className="flex items-start gap-3">
-              <span
-                className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink/10 font-numeric text-xs font-semibold tabular-nums text-ink"
-                aria-label={`スプリット ${splitLabel(key)}`}
-              >
-                {splitLabel(key)}
-              </span>
-              <div className="min-w-0">
-                {typeof text === "string" ? (
-                  <MarkdownText text={text} />
-                ) : (
-                  String(text)
-                )}
-              </div>
-            </li>
-          ))}
-        </ol>
+        <Disclosure title="スプリット別の解説" className="mt-3">
+          <ol className="space-y-2.5 pt-1">
+            {entries.map(([key, text]) => (
+              <li key={key} className="flex items-start gap-3">
+                <span
+                  className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink/10 font-numeric text-xs font-semibold tabular-nums text-ink"
+                  aria-label={`スプリット ${splitLabel(key)}`}
+                >
+                  {splitLabel(key)}
+                </span>
+                <div className="min-w-0">
+                  {typeof text === "string" ? (
+                    <MarkdownText text={text} />
+                  ) : (
+                    String(text)
+                  )}
+                </div>
+              </li>
+            ))}
+          </ol>
+        </Disclosure>
       )}
       <FallbackFields data={data} exclude={KNOWN_KEYS} />
     </div>

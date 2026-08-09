@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import SplitNarrative from "./SplitNarrative";
 
@@ -40,6 +40,43 @@ describe("SplitNarrative", () => {
     // Number badges are derived from the dynamic split_N keys
     expect(screen.getByLabelText("スプリット 1")).toHaveTextContent("1");
     expect(screen.getByLabelText("スプリット 3")).toHaveTextContent("3");
+  });
+
+  it("test_split_narrative_collapsed_by_default", () => {
+    const analyses = Object.fromEntries(
+      Array.from({ length: 10 }, (_, i) => [
+        `split_${i + 1}`,
+        `${i + 1}km目の解説テキストです。`,
+      ]),
+    );
+    render(
+      <SplitNarrative
+        section={{
+          data: {
+            highlights: "2km地点で最速ペース 6:19/km を記録しました。",
+            analyses,
+          },
+          parse_error: false,
+          raw: null,
+        }}
+      />,
+    );
+
+    // highlights stays visible: it is already the 60-120 character summary.
+    const highlights = screen.getByText(
+      "2km地点で最速ペース 6:19/km を記録しました。",
+    );
+    expect(highlights.closest("details")).toBeNull();
+
+    // Every per-split line is folded away behind a collapsed disclosure...
+    const details = screen.getByText("スプリット別の解説").closest("details");
+    expect(details).not.toBeNull();
+    expect(details?.hasAttribute("open")).toBe(false);
+
+    // ...and all ten lines are there once it is expanded.
+    const items = within(details as HTMLElement).getAllByRole("listitem");
+    expect(items).toHaveLength(10);
+    expect(items[9]).toHaveTextContent("10km目の解説テキストです。");
   });
 
   it("renders nothing when the section is missing", () => {

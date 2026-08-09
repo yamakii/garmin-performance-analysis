@@ -258,6 +258,111 @@ describe("ActivityDetail panel errors", () => {
   });
 });
 
+/** Split row helper: 1 km unless `distance` says otherwise. */
+function splitRow(
+  split_index: number,
+  pace_seconds_per_km: number,
+  heart_rate: number,
+  distance = 1.0,
+) {
+  return {
+    activity_id: 123,
+    split_index,
+    distance,
+    duration_seconds: Math.round(pace_seconds_per_km * distance),
+    pace_seconds_per_km,
+    heart_rate,
+    cadence: 168,
+    power: 250,
+  };
+}
+
+/** The inline bar of a cell (aria-hidden span), or null when it has none. */
+function barOf(cell: HTMLElement): HTMLElement | null {
+  return cell.querySelector<HTMLElement>('span[aria-hidden="true"]');
+}
+
+function barWidth(cell: HTMLElement): number {
+  const bar = barOf(cell);
+  expect(bar).not.toBeNull();
+  return Number.parseFloat((bar as HTMLElement).style.width);
+}
+
+async function renderSplits(splits: ReturnType<typeof splitRow>[]) {
+  stubFetch({
+    detail: { ...BASE_DETAIL, splits },
+    sections: {},
+    track: [],
+  });
+  renderDetail();
+  await screen.findByRole("navigation", { name: "セクション目次" });
+  // Row 0 is the header; the body rows follow in split order.
+  return screen.getAllByRole("row").slice(1);
+}
+
+describe("ActivityDetail splits table bars", () => {
+  it("test_split_table_inline_bars", async () => {
+    // 5:30 (fastest) .. 6:30 (slowest), HR rising with the pace.
+    const rows = await renderSplits([
+      splitRow(1, 390, 138),
+      splitRow(2, 360, 142),
+      splitRow(3, 345, 146),
+      splitRow(4, 330, 150),
+      splitRow(5, 375, 144),
+    ]);
+    expect(rows).toHaveLength(5);
+
+    const paceCell = (row: HTMLElement) =>
+      within(row).getAllByRole("cell")[2];
+    const hrCell = (row: HTMLElement) => within(row).getAllByRole("cell")[3];
+
+    // Every pace cell is backed by a bar.
+    for (const row of rows) {
+      expect(barOf(paceCell(row))).not.toBeNull();
+      expect(barOf(hrCell(row))).not.toBeNull();
+    }
+
+    // Pace is inverted: the fastest split (5:30, row 4) has the longest bar
+    // and the slowest (6:30, row 1) the shortest.
+    const paceWidths = rows.map((row) => barWidth(paceCell(row)));
+    expect(Math.max(...paceWidths)).toBe(paceWidths[3]);
+    expect(Math.min(...paceWidths)).toBe(paceWidths[0]);
+
+    // Heart rate is not inverted: the highest HR gets the longest bar.
+    const hrWidths = rows.map((row) => barWidth(hrCell(row)));
+    expect(Math.max(...hrWidths)).toBe(hrWidths[3]);
+    expect(Math.min(...hrWidths)).toBe(hrWidths[0]);
+  });
+
+  it("test_split_table_fragment_no_bar", async () => {
+    // A 10 m manual-lap fragment at an artifact pace (4:04/km) is mixed into
+    // the same 5:30-6:30 field as above.
+    const rows = await renderSplits([
+      splitRow(1, 390, 138),
+      splitRow(2, 360, 142),
+      splitRow(3, 345, 146),
+      splitRow(4, 330, 150),
+      splitRow(5, 375, 144),
+      splitRow(6, 244, 120, 0.01),
+    ]);
+    expect(rows).toHaveLength(6);
+
+    // The fragment row shows its numbers but draws no bar at all.
+    const fragmentCells = within(rows[5]).getAllByRole("cell");
+    expect(fragmentCells[2]).toHaveTextContent("4:04/km");
+    expect(barOf(fragmentCells[2])).toBeNull();
+    expect(barOf(fragmentCells[3])).toBeNull();
+
+    // The fragment is excluded from the normalization, so the real rows are
+    // still spread over 330-390 s/km (12% floor .. 100%) rather than being
+    // squashed toward the artifact's 244 s/km.
+    const widths = rows
+      .slice(0, 5)
+      .map((row) => barWidth(within(row).getAllByRole("cell")[2]));
+    expect(widths).toEqual([12, 56, 78, 100, 34]);
+  });
+});
+
 describe("ActivityDetail version selector", () => {
   const OLD_STAMP = "2025-10-09 12:00:00";
   const NEW_STAMP = "2025-10-09 13:00:00";

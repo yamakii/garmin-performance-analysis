@@ -107,4 +107,61 @@ describe("EfficiencyReport", () => {
     expect(screen.getByText("フォーム効率")).toBeInTheDocument();
     expect(screen.getByText(/フォーム効率は良好。/)).toBeInTheDocument();
   });
+
+  it("test_efficiency_prose_behind_disclosure", () => {
+    render(
+      <EfficiencyReport
+        section={{
+          data: {
+            efficiency: "フォーム効率は良好。(★★★★☆ 4.0/5.0)",
+            evaluation:
+              "心拍効率は良好です。平均144bpmでZone2中心の負荷に収まりました。",
+            form_trend: "直近5本と比べて接地時間が2%短縮しています。",
+          },
+          parse_error: false,
+          raw: null,
+        }}
+        formEvaluations={formEvaluations}
+      />,
+    );
+
+    // The three prose fields sit inside a collapsed disclosure...
+    const details = screen.getByText("分析の詳細").closest("details");
+    expect(details).not.toBeNull();
+    expect(details?.hasAttribute("open")).toBe(false);
+    expect(details?.textContent).toContain("フォームトレンド");
+    expect(details?.textContent).toContain(
+      "直近5本と比べて接地時間が2%短縮しています。",
+    );
+
+    // ...while the evaluation's first sentence leads outside the fold.
+    const lead = screen.getByText("心拍効率は良好です。");
+    expect(lead.closest("details")).toBeNull();
+
+    // Tiles stay in the open: they are the headline of this card.
+    expect(screen.getByText("接地時間").closest("details")).toBeNull();
+    expect(screen.getByText("269").closest("details")).toBeNull();
+  });
+
+  it("test_efficiency_star_badge_from_suffix", () => {
+    render(
+      <EfficiencyReport
+        section={{
+          data: { efficiency: "フォーム効率は良好。(★★★★☆ 4.0/5.0)" },
+          parse_error: false,
+          raw: null,
+        }}
+        formEvaluations={null}
+      />,
+    );
+
+    // The rating is lifted out of the prose into a heading badge...
+    const badge = screen.getByText("★ 4.0");
+    expect(badge).toBeInTheDocument();
+    expect(screen.getByText("効率分析").parentElement).toContainElement(badge);
+
+    // ...and no longer trails the sentence.
+    expect(screen.getByText("フォーム効率は良好。")).toBeInTheDocument();
+    expect(screen.queryByText(/4\.0\/5\.0/)).not.toBeInTheDocument();
+  });
 });

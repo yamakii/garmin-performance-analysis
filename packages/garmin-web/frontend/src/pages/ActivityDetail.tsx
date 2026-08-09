@@ -19,7 +19,7 @@ import ReportCard, { isRecord } from "../components/report/ReportCard";
 import SplitNarrative from "../components/report/SplitNarrative";
 import SummaryReport from "../components/report/SummaryReport";
 import TimeSeriesChart from "../components/TimeSeriesChart";
-import type { SectionsResponse } from "../types";
+import type { SectionsResponse, SplitRow } from "../types";
 import { formatNumber } from "../utils/formatNumber";
 import { formatCadence, formatDistance, formatPace } from "./ActivityList";
 
@@ -68,6 +68,94 @@ export function nearestTimestampIndex(
     return low - 1;
   }
   return low;
+}
+
+/**
+ * Splits shorter than this are lap-press fragments, not real kilometers: a
+ * 5-11 m "split" reports an artifact pace (e.g. 4:04/km) that sits at the fast
+ * extreme and would flatten every other bar (#873). They are excluded from the
+ * normalization population and get no bar of their own.
+ */
+export const BAR_MIN_SPLIT_KM = 0.4;
+
+/** Shortest bar, in percent — a floor so the extreme row still reads as a bar. */
+const BAR_MIN_PCT = 12;
+
+export interface BarScale {
+  min: number;
+  max: number;
+}
+
+/** Min/max of a split column over real (non-fragment) splits, or null. */
+export function splitBarScale(
+  splits: SplitRow[],
+  key: "pace_seconds_per_km" | "heart_rate",
+): BarScale | null {
+  const values = splits
+    .filter(
+      (split) =>
+        typeof split.distance === "number" &&
+        split.distance >= BAR_MIN_SPLIT_KM,
+    )
+    .map((split) => split[key])
+    .filter(
+      (value): value is number =>
+        typeof value === "number" && Number.isFinite(value) && value > 0,
+    );
+  if (values.length < 2) {
+    return null;
+  }
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  // A flat column carries no comparison, so it gets no bars at all.
+  return max > min ? { min, max } : null;
+}
+
+/**
+ * Bar width for one cell, or null when it should render bare.
+ *
+ * `invert` maps the smaller value to the longer bar, which is what pace needs:
+ * faster is better, so the fastest split should read as the longest bar.
+ */
+export function barWidthPct(
+  value: number | null,
+  scale: BarScale | null,
+  invert: boolean,
+): number | null {
+  if (scale == null || typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+  const clamped = Math.min(scale.max, Math.max(scale.min, value));
+  const position = (clamped - scale.min) / (scale.max - scale.min);
+  const ratio = invert ? 1 - position : position;
+  return BAR_MIN_PCT + ratio * (100 - BAR_MIN_PCT);
+}
+
+/** Numeric split cell backed by a subtle proportional bar (#905). */
+function BarCell({
+  widthPct,
+  color,
+  children,
+}: {
+  widthPct: number | null;
+  color: string;
+  children: string;
+}) {
+  return (
+    <td className="relative px-2 py-2 text-right tabular-nums">
+      {widthPct != null && (
+        <span
+          aria-hidden="true"
+          className="absolute inset-y-1 left-0 rounded-sm"
+          style={{
+            width: `${widthPct.toFixed(1)}%`,
+            backgroundColor: `${color}1f`,
+          }}
+        />
+      )}
+      <span className="relative">{children}</span>
+    </td>
+  );
 }
 
 /** Shared hover state in the seq_no / timestamp_s domain. */
@@ -198,6 +286,11 @@ export default function ActivityDetail() {
   }
 
   const { splits } = detail;
+
+  // Inline bars let the splits table be read as a shape (#905). Both columns
+  // are min-max normalized over the real splits only.
+  const paceScale = splitBarScale(splits, "pace_seconds_per_km");
+  const hrScale = splitBarScale(splits, "heart_rate");
 
   // Bidirectional hover sync: chart data index <-> track seq_no, matched
   // through the nearest timestamp / seq_no value.
@@ -421,28 +514,53 @@ export default function ActivityDetail() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-numeric text-[15px]">
-                {splits.map((split) => (
-                  <tr key={split.split_index} className="hover:bg-slate-50">
-                    <td className="px-2 py-2 text-left tabular-nums text-slate-500">
-                      {split.split_index}
-                    </td>
-                    <td className="px-2 py-2 text-right tabular-nums">
-                      {formatDistance(split.distance)}
-                    </td>
-                    <td className="px-2 py-2 text-right tabular-nums">
-                      {formatPace(split.pace_seconds_per_km)}
-                    </td>
-                    <td className="px-2 py-2 text-right tabular-nums">
-                      {formatNumber(split.heart_rate, 0)}
-                    </td>
-                    <td className="px-2 py-2 text-right tabular-nums">
-                      {formatCadence(split.cadence)}
-                    </td>
-                    <td className="px-2 py-2 text-right tabular-nums">
-                      {formatNumber(split.power, 0)}
-                    </td>
-                  </tr>
-                ))}
+                {splits.map((split) => {
+                  // Fragment rows keep their numbers but never draw a bar:
+                  // their pace is an artifact of a manual lap press.
+                  const isFragment =
+                    typeof split.distance !== "number" ||
+                    split.distance < BAR_MIN_SPLIT_KM;
+                  return (
+                    <tr key={split.split_index} className="hover:bg-slate-50">
+                      <td className="px-2 py-2 text-left tabular-nums text-slate-500">
+                        {split.split_index}
+                      </td>
+                      <td className="px-2 py-2 text-right tabular-nums">
+                        {formatDistance(split.distance)}
+                      </td>
+                      <BarCell
+                        widthPct={
+                          isFragment
+                            ? null
+                            : barWidthPct(
+                                split.pace_seconds_per_km,
+                                paceScale,
+                                true,
+                              )
+                        }
+                        color={METRIC_COLORS.speed}
+                      >
+                        {formatPace(split.pace_seconds_per_km)}
+                      </BarCell>
+                      <BarCell
+                        widthPct={
+                          isFragment
+                            ? null
+                            : barWidthPct(split.heart_rate, hrScale, false)
+                        }
+                        color={METRIC_COLORS.heart_rate}
+                      >
+                        {formatNumber(split.heart_rate, 0)}
+                      </BarCell>
+                      <td className="px-2 py-2 text-right tabular-nums">
+                        {formatCadence(split.cadence)}
+                      </td>
+                      <td className="px-2 py-2 text-right tabular-nums">
+                        {formatNumber(split.power, 0)}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
