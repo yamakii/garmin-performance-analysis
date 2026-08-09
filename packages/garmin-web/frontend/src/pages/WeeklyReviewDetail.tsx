@@ -1,8 +1,12 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useWeeklyReviewVersions } from "../api/hooks";
+import ClampedProse from "../components/ClampedProse";
+import Disclosure from "../components/Disclosure";
 import SectionHeading from "../components/SectionHeading";
 import SectionNav, { type NavItem } from "../components/SectionNav";
+import StatusBadge, { type StatusTone } from "../components/StatusBadge";
+import { META_LABEL, SUBCARD } from "../components/report/ReportCard";
 import type { WeeklyReview } from "../types";
 
 function Section({
@@ -65,6 +69,79 @@ function versionLabel(version: WeeklyReview, isLatest: boolean): string {
   return isLatest ? `${stamp}（最新）` : stamp;
 }
 
+/**
+ * Clamp shared by every prose section on this page (#906): three lines carry
+ * the verdict, the rest is one click away via `ClampedProse`'s toggle.
+ */
+const PROSE_CLAMP_LINES = 3;
+
+type StatTile = { label: string; value: number; unit?: string };
+
+/** A measured number becomes a tile; anything else is dropped. */
+function tile(label: string, value: unknown, unit?: string): StatTile | null {
+  return typeof value === "number" && Number.isFinite(value)
+    ? { label, value, unit }
+    : null;
+}
+
+/**
+ * Number-first tile grid, matching the EfficiencyReport form-metric tiles: the
+ * figure is the headline and the label is the caption, so the week's volume and
+ * body numbers read at a glance instead of hiding inside `label: value` prose.
+ */
+function StatTiles({ tiles }: { tiles: (StatTile | null)[] }) {
+  const shown = tiles.filter((t): t is StatTile => t !== null);
+  if (shown.length === 0) {
+    return null;
+  }
+  return (
+    <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      {shown.map(({ label, value, unit }) => (
+        <div key={label} className={SUBCARD}>
+          <dt className={META_LABEL}>{label}</dt>
+          <dd className="mt-0.5 font-numeric text-2xl leading-none font-semibold tabular-nums text-ink">
+            {value}
+            {unit != null && (
+              <span className="ml-0.5 text-xs font-normal text-slate-500">
+                {unit}
+              </span>
+            )}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** Verdict marks the weekly-review agent emits, mapped onto status tones. */
+const RATING_TONES: [string, StatusTone][] = [
+  ["✅", "good"],
+  ["🟡", "warn"],
+  ["🔴", "bad"],
+];
+
+/**
+ * Tone for a verdict rating. The mark is matched by containment so a decorated
+ * rating ("✅ 完了") still colors correctly; unknown marks stay neutral.
+ */
+function ratingTone(rating: string): StatusTone {
+  return RATING_TONES.find(([mark]) => rating.includes(mark))?.[1] ?? "info";
+}
+
+/** "Aレース（フルマラソン）まで 12週" countdown label, or null when unknown. */
+function raceCountdown(
+  label: string,
+  race: string | null | undefined,
+  weeks: number | null | undefined,
+): string | null {
+  if (race == null && weeks == null) {
+    return null;
+  }
+  const name = race != null ? `（${race}）` : "";
+  const remaining = typeof weeks === "number" ? `${weeks}週` : "残り週数 未確定";
+  return `${label}レース${name}まで ${remaining}`;
+}
+
 export default function WeeklyReviewDetail() {
   const { weekStart } = useParams<{ weekStart: string }>();
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -113,6 +190,17 @@ export default function WeeklyReviewDetail() {
   const weightTracking = data?.weight_tracking;
   const recovery = data?.recovery;
   const weeklyRamp = data?.weekly_ramp;
+  const expectedPhase = periodization?.expected_phase;
+  const garminPhase = periodization?.garmin_phase;
+  // The two phase chips already carry the comparison, so the gap sentence only
+  // earns a line of its own when they disagree (or one of them is missing).
+  const showPhaseGap =
+    periodization?.gap != null && expectedPhase !== garminPhase;
+  const raceCountdowns = [
+    raceCountdown("A", periodization?.a_race, periodization?.weeks_to_a_race),
+    raceCountdown("B", periodization?.b_race, periodization?.weeks_to_b_race),
+  ].filter((label): label is string => label != null);
+  const [firstRecommendation, ...moreRecommendations] = recommendations;
   const hasNextActions =
     recommendations.length > 0 ||
     garminNextWeek.length > 0 ||
@@ -207,38 +295,21 @@ export default function WeeklyReviewDetail() {
             {/* This-week actuals */}
             <Section id="wr-actuals" title="実績サマリー">
               {thisWeek != null ? (
-                <div className="space-y-1 text-sm text-slate-700">
-                  {thisWeek.volume_km != null && (
-                    <p>
-                      <span className="font-medium text-slate-500">
-                        走行距離: </span>
-                      {thisWeek.volume_km} km
-                    </p>
-                  )}
-                  {thisWeek.run_count != null && (
-                    <p>
-                      <span className="font-medium text-slate-500">
-                        ラン回数: </span>
-                      {thisWeek.run_count} 回
-                    </p>
-                  )}
-                  {thisWeek.hr_discipline != null && (
-                    <p>
-                      <span className="font-medium text-slate-500">
-                        心拍管理: </span>
-                      {thisWeek.hr_discipline}
-                    </p>
-                  )}
-                  {Array.isArray(thisWeek.highlights) &&
-                    thisWeek.highlights.length > 0 && (
-                      <ul className="list-disc space-y-0.5 pl-5 text-slate-600">
-                        {thisWeek.highlights.map((h, i) => (
-                          <li key={i}>{h}</li>
-                        ))}
-                      </ul>
-                    )}
-                  {intensityEntries.length > 0 && (
-                    <div className="flex flex-wrap gap-2 pt-1">
+                <div className="space-y-3 text-sm text-slate-700">
+                  <StatTiles
+                    tiles={[
+                      tile("走行距離", thisWeek.volume_km, "km"),
+                      tile("ラン回数", thisWeek.run_count, "回"),
+                    ]}
+                  />
+                  {(thisWeek.hr_discipline != null ||
+                    intensityEntries.length > 0) && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {thisWeek.hr_discipline != null && (
+                        <StatusBadge tone="info">
+                          {thisWeek.hr_discipline}
+                        </StatusBadge>
+                      )}
                       {intensityEntries.map(([k, v]) => (
                         <span
                           key={k}
@@ -249,6 +320,14 @@ export default function WeeklyReviewDetail() {
                       ))}
                     </div>
                   )}
+                  {Array.isArray(thisWeek.highlights) &&
+                    thisWeek.highlights.length > 0 && (
+                      <ul className="list-disc space-y-0.5 pl-5 text-slate-600">
+                        {thisWeek.highlights.map((h, i) => (
+                          <li key={i}>{h}</li>
+                        ))}
+                      </ul>
+                    )}
                 </div>
               ) : (
                 <p className="text-sm text-slate-500">実績データがありません</p>
@@ -258,44 +337,38 @@ export default function WeeklyReviewDetail() {
             {/* Weight tracking (#597) */}
             {weightTracking != null && (
               <Section id="wr-weight" title="体重トラッキング">
-                <div className="space-y-1 text-sm text-slate-700">
-                  {weightTracking.recent_median_kg != null && (
-                    <p>
-                      <span className="font-medium text-slate-500">
-                        直近中央値: </span>
-                      {weightTracking.recent_median_kg} kg
-                    </p>
-                  )}
-                  {weightTracking.bmi != null && (
-                    <p>
-                      <span className="font-medium text-slate-500">BMI: </span>
-                      {weightTracking.bmi}
-                    </p>
-                  )}
-                  {weightTracking.trend != null && (
-                    <p>
-                      <span className="font-medium text-slate-500">傾向: </span>
-                      {weightTracking.trend}
-                    </p>
-                  )}
-                  {weightTracking.week_classification != null && (
-                    <p>
-                      <span className="font-medium text-slate-500">
-                        週分類: </span>
-                      {weightTracking.week_classification}
-                    </p>
-                  )}
-                  {weightTracking.flag != null && (
-                    <p>
-                      <span className="font-medium text-slate-500">注意: </span>
-                      {weightTracking.flag}
-                    </p>
+                <div className="space-y-3 text-sm text-slate-700">
+                  <StatTiles
+                    tiles={[
+                      tile("直近中央値", weightTracking.recent_median_kg, "kg"),
+                      tile("BMI", weightTracking.bmi),
+                    ]}
+                  />
+                  {(weightTracking.trend != null ||
+                    weightTracking.week_classification != null ||
+                    weightTracking.flag != null) && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {weightTracking.trend != null && (
+                        <StatusBadge tone="info">
+                          {weightTracking.trend}
+                        </StatusBadge>
+                      )}
+                      {weightTracking.week_classification != null && (
+                        <StatusBadge tone="info">
+                          {weightTracking.week_classification}
+                        </StatusBadge>
+                      )}
+                      {/* A flag is the agent raising a concern — warn tone. */}
+                      {weightTracking.flag != null && (
+                        <StatusBadge tone="warn">
+                          {weightTracking.flag}
+                        </StatusBadge>
+                      )}
+                    </div>
                   )}
                   {weightTracking.target_first != null && (
-                    <p>
-                      <span className="font-medium text-slate-500">
-                        第一目標: </span>
-                      {weightTracking.target_first}
+                    <p className="text-xs text-slate-500">
+                      第一目標: {weightTracking.target_first}
                     </p>
                   )}
                 </div>
@@ -305,7 +378,7 @@ export default function WeeklyReviewDetail() {
             {/* Recovery (#597) — string only for now */}
             {typeof recovery === "string" && (
               <Section id="wr-recovery" title="リカバリー">
-                <p className="text-sm text-slate-700">{recovery}</p>
+                <ClampedProse text={recovery} lines={PROSE_CLAMP_LINES} />
               </Section>
             )}
           </Group>
@@ -337,8 +410,14 @@ export default function WeeklyReviewDetail() {
                         <td className="px-2 py-2 text-left text-slate-700">
                           {v.session ?? "-"}
                         </td>
-                        <td className="px-2 py-2 text-center text-base">
-                          {v.rating ?? "-"}
+                        <td className="px-2 py-2 text-center">
+                          {v.rating != null ? (
+                            <StatusBadge tone={ratingTone(v.rating)}>
+                              {v.rating}
+                            </StatusBadge>
+                          ) : (
+                            "-"
+                          )}
                         </td>
                         <td className="px-2 py-2 text-left text-slate-600">
                           {v.comment ?? "-"}
@@ -355,53 +434,43 @@ export default function WeeklyReviewDetail() {
             {/* Goal alignment */}
             {data.goal_alignment != null && (
               <Section id="wr-goal" title="目標との整合">
-                <p className="text-sm text-slate-700">{data.goal_alignment}</p>
+                <ClampedProse
+                  text={data.goal_alignment}
+                  lines={PROSE_CLAMP_LINES}
+                />
               </Section>
             )}
 
             {/* Periodization (#286) — render only when present */}
             {periodization != null && (
               <Section id="wr-periodization" title="目標逆算フェーズ">
-                <div className="space-y-1 text-sm text-slate-700">
-                  {periodization.a_race != null && (
-                    <p>
-                      <span className="font-medium text-slate-500">
-                        A レース: </span>
-                      {periodization.a_race}
-                      {periodization.weeks_to_a_race != null
-                        ? `（残り ${periodization.weeks_to_a_race} 週）`
-                        : "（残り週数 未確定）"}
-                    </p>
+                <div className="space-y-3 text-sm text-slate-700">
+                  {raceCountdowns.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {raceCountdowns.map((label) => (
+                        <StatusBadge key={label} tone="info">
+                          {label}
+                        </StatusBadge>
+                      ))}
+                    </div>
                   )}
-                  {periodization.b_race != null && (
-                    <p>
-                      <span className="font-medium text-slate-500">
-                        B レース: </span>
-                      {periodization.b_race}
-                      {periodization.weeks_to_b_race != null
-                        ? `（残り ${periodization.weeks_to_b_race} 週）`
-                        : "（残り週数 未確定）"}
-                    </p>
+                  {(expectedPhase != null || garminPhase != null) && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {expectedPhase != null && (
+                        <StatusBadge tone="info">
+                          想定 {expectedPhase}
+                        </StatusBadge>
+                      )}
+                      {garminPhase != null && (
+                        <StatusBadge tone={showPhaseGap ? "warn" : "info"}>
+                          Garmin {garminPhase}
+                        </StatusBadge>
+                      )}
+                    </div>
                   )}
-                  {periodization.expected_phase != null && (
-                    <p>
-                      <span className="font-medium text-slate-500">
-                        あるべきフェーズ: </span>
-                      {periodization.expected_phase}
-                    </p>
-                  )}
-                  {periodization.garmin_phase != null && (
-                    <p>
-                      <span className="font-medium text-slate-500">
-                        Garmin フェーズ: </span>
-                      {periodization.garmin_phase}
-                    </p>
-                  )}
-                  {periodization.gap != null && (
-                    <p>
-                      <span className="font-medium text-slate-500">
-                        ギャップ: </span>
-                      {periodization.gap}
+                  {showPhaseGap && (
+                    <p className="text-xs text-slate-500">
+                      ギャップ: {periodization.gap}
                     </p>
                   )}
                 </div>
@@ -411,7 +480,7 @@ export default function WeeklyReviewDetail() {
             {/* Weekly ramp (#597) — string only for now */}
             {typeof weeklyRamp === "string" && (
               <Section id="wr-ramp" title="週次ランプ">
-                <p className="text-sm text-slate-700">{weeklyRamp}</p>
+                <ClampedProse text={weeklyRamp} lines={PROSE_CLAMP_LINES} />
               </Section>
             )}
           </Group>
@@ -422,11 +491,23 @@ export default function WeeklyReviewDetail() {
               {/* Recommendations */}
               {recommendations.length > 0 && (
                 <Section id="wr-recommendations" title="推奨アクション">
-                  <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
-                    {recommendations.map((rec, i) => (
-                      <li key={i}>{rec}</li>
-                    ))}
-                  </ul>
+                  {/* The lead action is the one to act on; the rest are folded
+                      away so the card states a single next step (#906). */}
+                  <p className="text-sm font-medium text-slate-800">
+                    {firstRecommendation}
+                  </p>
+                  {moreRecommendations.length > 0 && (
+                    <Disclosure
+                      title={`他の推奨 ${moreRecommendations.length}件`}
+                      className="mt-3"
+                    >
+                      <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
+                        {moreRecommendations.map((rec, i) => (
+                          <li key={i}>{rec}</li>
+                        ))}
+                      </ul>
+                    </Disclosure>
+                  )}
                 </Section>
               )}
 
@@ -469,9 +550,10 @@ export default function WeeklyReviewDetail() {
               {/* Continuity with the previous review (#597) */}
               {data.continuity_note != null && (
                 <Section id="wr-continuity" title="前回からの継続性">
-                  <p className="text-sm text-slate-700">
-                    {data.continuity_note}
-                  </p>
+                  <ClampedProse
+                    text={data.continuity_note}
+                    lines={PROSE_CLAMP_LINES}
+                  />
                 </Section>
               )}
             </Group>
@@ -480,7 +562,7 @@ export default function WeeklyReviewDetail() {
           {/* Overall — closing verdict, standalone */}
           {data.overall != null && (
             <Section id="wr-overall" title="総評">
-              <p className="text-sm text-slate-700">{data.overall}</p>
+              <ClampedProse text={data.overall} lines={PROSE_CLAMP_LINES} />
             </Section>
           )}
         </>
