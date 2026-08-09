@@ -153,7 +153,7 @@ function HrvTile({ recovery }: { recovery: RecoveryTrend | null }) {
         <Sparkline
           data={values}
           labels={series.map((p) => p.date)}
-          color={METRIC_COLORS.power}
+          color={METRIC_COLORS.hrv}
           ariaLabel="HRVミニグラフ"
           unit=" ms"
         />

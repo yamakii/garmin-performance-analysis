@@ -3,7 +3,6 @@ import EChart from "../../components/EChart";
 import {
   AXIS_STYLE,
   BASE_CHART_OPTION,
-  INK_COLOR,
   METRIC_COLORS,
 } from "../../components/chartTheme";
 import { axisTooltipFormatter } from "../../utils/formatNumber";
@@ -27,11 +26,20 @@ export default function PhysiologyBlock({ data }: PhysiologyBlockProps) {
         data: data.vo2max.map((p) => p.date),
         ...AXIS_STYLE,
       },
+      // Each axis name is painted in its series' color so the reader can tell
+      // at a glance which scale a line belongs to (Issue #913).
       yAxis: [
-        { type: "value" as const, name: "VO2max", scale: true, ...AXIS_STYLE },
+        {
+          type: "value" as const,
+          name: "VO2max",
+          nameTextStyle: { color: METRIC_COLORS.vo2max },
+          scale: true,
+          ...AXIS_STYLE,
+        },
         {
           type: "value" as const,
           name: "LT心拍 (bpm)",
+          nameTextStyle: { color: METRIC_COLORS.heart_rate },
           scale: true,
           ...AXIS_STYLE,
           splitLine: { show: false },
@@ -41,8 +49,9 @@ export default function PhysiologyBlock({ data }: PhysiologyBlockProps) {
         {
           name: "VO2max",
           type: "line" as const,
-          itemStyle: { color: INK_COLOR },
-          lineStyle: { color: INK_COLOR },
+          // Same token as ObjectiveFitnessBlock's Garmin VO2max line.
+          itemStyle: { color: METRIC_COLORS.vo2max },
+          lineStyle: { color: METRIC_COLORS.vo2max },
           data: data.vo2max.map((p) => p.value),
         },
         {

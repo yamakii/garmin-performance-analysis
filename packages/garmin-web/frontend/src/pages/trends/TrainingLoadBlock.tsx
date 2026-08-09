@@ -7,6 +7,7 @@ import {
   METRIC_COLORS,
 } from "../../components/chartTheme";
 import { axisTooltipFormatter } from "../../utils/formatNumber";
+import type { EChartsOption } from "../../lib/echarts";
 import type { AcwrStatus, AcwrTrend } from "../../types";
 
 interface TrainingLoadBlockProps {
@@ -26,29 +27,44 @@ const STATUS_META: Record<AcwrStatus, { label: string; className: string }> = {
 
 /** ACWR warning line: ratios above 1.5 carry elevated injury risk. */
 const ACWR_WARNING_LINE = 1.5;
+/** The 0.8-1.3 sweet spot: enough stimulus without an injury-risk spike. */
+const ACWR_OPTIMAL_MIN = 0.8;
+const ACWR_OPTIMAL_MAX = 1.3;
+
+const LOAD_SERIES = "週間距離 (km)";
+const ACWR_SERIES = "ACWR";
 
 export default function TrainingLoadBlock({ data }: TrainingLoadBlockProps) {
   const { current, trend } = data;
   const weeks = trend.weeks;
 
-  const option = useMemo(
+  // Annotated so the markArea band checks as a [start, end] tuple.
+  const option = useMemo<EChartsOption>(
     () => ({
       ...BASE_CHART_OPTION,
       tooltip: {
         trigger: "axis" as const,
-        formatter: axisTooltipFormatter({ "週間距離 (km)": 1, ACWR: 2 }),
+        formatter: axisTooltipFormatter({ [LOAD_SERIES]: 1, [ACWR_SERIES]: 2 }),
       },
-      legend: { data: ["週間距離 (km)", "ACWR"] },
+      legend: { data: [LOAD_SERIES, ACWR_SERIES] },
       xAxis: {
         type: "category" as const,
         data: weeks.map((w) => w.week_start),
         ...AXIS_STYLE,
       },
+      // Each axis name is painted in its series' color so the reader can tell
+      // at a glance which scale a line belongs to (Issue #913).
       yAxis: [
-        { type: "value" as const, name: "km", ...AXIS_STYLE },
+        {
+          type: "value" as const,
+          name: "km",
+          nameTextStyle: { color: INK_COLOR },
+          ...AXIS_STYLE,
+        },
         {
           type: "value" as const,
           name: "ACWR",
+          nameTextStyle: { color: METRIC_COLORS.acwr },
           scale: true,
           ...AXIS_STYLE,
           splitLine: { show: false },
@@ -56,24 +72,47 @@ export default function TrainingLoadBlock({ data }: TrainingLoadBlockProps) {
       ],
       series: [
         {
-          name: "週間距離 (km)",
+          name: LOAD_SERIES,
           type: "bar" as const,
           data: weeks.map((w) => w.load_km),
           itemStyle: { color: INK_COLOR, borderRadius: [3, 3, 0, 0] },
         },
         {
-          name: "ACWR",
+          name: ACWR_SERIES,
           type: "line" as const,
           yAxisIndex: 1,
-          itemStyle: { color: METRIC_COLORS.heart_rate },
-          lineStyle: { color: METRIC_COLORS.heart_rate },
+          itemStyle: { color: METRIC_COLORS.acwr },
+          lineStyle: { color: METRIC_COLORS.acwr },
           data: weeks.map((w) => w.acwr),
+          // The optimal band gives the ACWR line a reference to be read
+          // against: inside the green area is "on target", above 1.5 is risk.
+          markArea: {
+            silent: true,
+            data: [
+              [
+                {
+                  yAxis: ACWR_OPTIMAL_MIN,
+                  itemStyle: { color: "rgba(16,185,129,0.10)" },
+                },
+                { yAxis: ACWR_OPTIMAL_MAX },
+              ],
+            ],
+          },
           markLine: {
             silent: true,
             symbol: "none",
-            lineStyle: { color: "#f87171", type: "dashed" as const },
-            label: { formatter: "高リスク 1.5", color: "#ef4444" },
-            data: [{ yAxis: ACWR_WARNING_LINE }],
+            data: [
+              {
+                yAxis: ACWR_OPTIMAL_MIN,
+                lineStyle: { color: "#6ee7b7", type: "dotted" as const },
+                label: { formatter: "下限 0.8", color: "#047857" },
+              },
+              {
+                yAxis: ACWR_WARNING_LINE,
+                lineStyle: { color: "#f87171", type: "dashed" as const },
+                label: { formatter: "高リスク 1.5", color: "#ef4444" },
+              },
+            ],
           },
         },
       ],

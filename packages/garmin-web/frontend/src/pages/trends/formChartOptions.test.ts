@@ -1,8 +1,10 @@
+import { MarkAreaComponent } from "echarts/components";
 import { describe, expect, it } from "vitest";
 import {
   buildDeltaChartOption,
   buildScoreChartOption,
 } from "./formChartOptions";
+import { REGISTERED_ECHARTS_MODULES } from "../../lib/echarts";
 import type { FormTrendPoint } from "../../api/trends";
 
 function point(overrides: Partial<FormTrendPoint> = {}): FormTrendPoint {
@@ -30,6 +32,14 @@ type Series = {
   markArea?: MarkArea;
   markLine?: MarkLine;
 };
+
+describe("echarts registration", () => {
+  it("test_markarea_component_registered", () => {
+    // The score panel's quality bands are markAreas: without the component
+    // registered they are configured, accepted and silently never painted.
+    expect(REGISTERED_ECHARTS_MODULES).toContain(MarkAreaComponent);
+  });
+});
 
 describe("buildScoreChartOption", () => {
   it("test_buildScoreChartOption_axis_has_headroom", () => {

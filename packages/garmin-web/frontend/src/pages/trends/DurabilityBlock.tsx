@@ -28,10 +28,12 @@ const DIRECTION_META: Record<
   },
 };
 
-/** Decoupling above 5% is the common threshold for insufficient durability. */
-const DECOUPLING_WARNING_LINE = 5;
-/** GCT fade above 5% in the second half flags muscular fade (same convention). */
-const GCT_FADE_WARNING_LINE = 5;
+/**
+ * 5% is the shared threshold for both plotted series: decoupling above it means
+ * insufficient durability, GCT fade above it flags muscular fade. One line, not
+ * two coincident ones at the same height (Issue #913).
+ */
+const FADE_WARNING_LINE = 5;
 
 const DECOUPLING_SERIES = "デカップリング (%)";
 const GCT_FADE_SERIES = "GCT後半失速 (%)";
@@ -57,12 +59,12 @@ export default function DurabilityBlock({ data }: DurabilityBlockProps) {
           const axisValue = first?.axisValue ?? "";
           const activity = byDate.get(axisValue);
           if (!activity) return axisValue;
+          // Only the two plotted series: VO / VR fades are not on this chart,
+          // so listing them made the tooltip describe invisible lines (#913).
           return [
             `<strong>${axisValue}</strong>`,
             `デカップリング: ${formatFade(activity.decoupling_pct)}`,
             `GCT後半失速: ${formatFade(activity.gct_fade_pct)}`,
-            `上下動後半失速: ${formatFade(activity.vo_fade_pct)}`,
-            `上下動比後半失速: ${formatFade(activity.vr_fade_pct)}`,
           ].join("<br/>");
         },
       },
@@ -84,12 +86,13 @@ export default function DurabilityBlock({ data }: DurabilityBlockProps) {
           itemStyle: { color: METRIC_COLORS.heart_rate },
           lineStyle: { color: METRIC_COLORS.heart_rate },
           data: activities.map((a) => a.decoupling_pct),
+          // Single shared threshold line for both series.
           markLine: {
             silent: true,
             symbol: "none",
             lineStyle: { color: "#f87171", type: "dashed" as const },
-            label: { formatter: "警告 5%", color: "#ef4444" },
-            data: [{ yAxis: DECOUPLING_WARNING_LINE }],
+            label: { formatter: "5% 目安", color: "#ef4444" },
+            data: [{ yAxis: FADE_WARNING_LINE }],
           },
         },
         {
@@ -100,13 +103,6 @@ export default function DurabilityBlock({ data }: DurabilityBlockProps) {
           lineStyle: { color: METRIC_COLORS.ground_contact_time },
           // null form fades render as gaps (connectNulls: false).
           data: activities.map((a) => a.gct_fade_pct),
-          markLine: {
-            silent: true,
-            symbol: "none",
-            lineStyle: { color: "#fbbf24", type: "dashed" as const },
-            label: { formatter: "GCT 5%", color: "#d97706" },
-            data: [{ yAxis: GCT_FADE_WARNING_LINE }],
-          },
         },
       ],
     };
