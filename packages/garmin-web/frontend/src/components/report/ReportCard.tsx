@@ -41,14 +41,19 @@ export function ParseErrorNotice({ raw }: { raw: string | null }) {
  * - section missing -> renders nothing (the report omits the block)
  * - parse_error -> warning + raw JSON for inspection
  * - non-object data -> "no data" placeholder
+ *
+ * `badge` renders beside the heading — the slot for a verdict (a star rating
+ * pulled out of the prose) so the conclusion is readable before any sentence.
  */
 export default function ReportCard({
   title,
   section,
+  badge,
   children,
 }: {
   title: string;
   section: SectionResult | undefined;
+  badge?: ReactNode;
   children: (data: Record<string, unknown>) => ReactNode;
 }) {
   if (!section) {
@@ -64,9 +69,12 @@ export default function ReportCard({
   }
   return (
     <section className={REPORT_CARD_CLASS}>
-      <h2 className="mb-3 font-display text-base font-semibold text-ink">
-        {title}
-      </h2>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <h2 className="font-display text-base font-semibold text-ink">
+          {title}
+        </h2>
+        {badge}
+      </div>
       {body}
     </section>
   );

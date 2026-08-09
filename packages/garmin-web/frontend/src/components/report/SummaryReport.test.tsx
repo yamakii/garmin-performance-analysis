@@ -22,11 +22,16 @@ function section(data: Record<string, unknown>) {
   return { data, parse_error: false, raw: null };
 }
 
+/** The <details> whose summary label is `title`. */
+function detailsFor(title: string): HTMLDetailsElement {
+  const details = screen.getByText(title).closest("details");
+  expect(details).not.toBeNull();
+  return details as HTMLDetailsElement;
+}
+
 describe("SummaryReport", () => {
   it("renders strengths, improvements and recommendations", () => {
-    const { container } = render(
-      <SummaryReport section={section(baseData)} />,
-    );
+    render(<SummaryReport section={section(baseData)} />);
 
     // Large star rating parsed from the star_rating string
     expect(screen.getByLabelText("評価 4.3 / 5.0")).toBeInTheDocument();
@@ -34,22 +39,94 @@ describe("SummaryReport", () => {
       screen.getByText("有酸素ベースの安定したランでした。"),
     ).toBeInTheDocument();
 
-    expect(screen.getByText("強み")).toBeInTheDocument();
-    expect(screen.getByText("心拍の安定（平均144bpm）")).toBeInTheDocument();
-    expect(screen.getByText("ケイデンス維持")).toBeInTheDocument();
+    // Full lists live inside the "すべて見る" disclosure; the first item of
+    // each also shows in the always-visible preview.
+    const all = detailsFor("強み・改善点をすべて見る");
+    expect(all.textContent).toContain("強み");
+    expect(all.textContent).toContain("ケイデンス維持");
+    expect(all.textContent).toContain("改善ポイント");
+    expect(all.textContent).toContain("ウォームアップ不足");
+    expect(screen.getAllByText("心拍の安定（平均144bpm）")).toHaveLength(2);
+    expect(screen.getAllByText("後半のペース低下")).toHaveLength(2);
 
-    expect(screen.getByText("改善ポイント")).toBeInTheDocument();
-    expect(screen.getByText("後半のペース低下")).toBeInTheDocument();
+    // recommendations live inside their own collapsed <details>
+    const recommendations = detailsFor("詳しい改善ポイント");
+    expect(recommendations.textContent).toContain(
+      "次回は HR 135-145 を維持してイージーランを実施しましょう。",
+    );
+  });
 
-    // recommendations now live inside a collapsed <details> ("詳しい改善ポイント")
-    expect(screen.getByText("詳しい改善ポイント")).toBeInTheDocument();
-    const details = container.querySelector("details");
-    expect(details).not.toBeNull();
+  it("test_summary_shows_lead_and_clamps_body", () => {
+    const lead = "有酸素ベースの狙いどおりに走り切れた一本でした。";
+    const body = [
+      "平均心拍は144bpmでZone2の中央に収まり、終始安定した強度で走れています。",
+      "ペースは6:26/kmで推移し、前半と後半の差は3秒に留まって崩れませんでした。",
+      "接地時間269msは期待値をわずかに上回り、フォーム面でも良好な水準でした。",
+      "気温18度・湿度62%という条件も走行には有利に働いたと考えられます。",
+    ].join("");
+    render(
+      <SummaryReport section={section({ ...baseData, summary: lead + body })} />,
+    );
+
+    // The verdict sentence reads on its own, outside any fold.
+    const leadNode = screen.getByText(lead);
+    expect(leadNode.closest("details")).toBeNull();
+    // The remaining prose is clamped with a reveal toggle, and the lead is
+    // not repeated inside it.
     expect(
-      screen.getByText(
-        "次回は HR 135-145 を維持してイージーランを実施しましょう。",
-      ),
+      screen.getByRole("button", { name: "続きを読む" }),
     ).toBeInTheDocument();
+    expect(screen.getByText(body)).toBeInTheDocument();
+    expect(screen.queryByText(lead + body)).not.toBeInTheDocument();
+  });
+
+  it("test_strengths_collapsed_with_count_chips", () => {
+    const strengths = [
+      "心拍の安定（平均144bpm）",
+      "ケイデンス維持",
+      "接地時間の改善",
+      "上下動比の安定",
+    ];
+    render(
+      <SummaryReport
+        section={section({
+          ...baseData,
+          key_strengths: strengths,
+          improvement_areas: ["後半のペース低下", "ウォームアップ不足"],
+        })}
+      />,
+    );
+
+    // Count chips carry the totals up front.
+    expect(screen.getByText("✓ 強み 4")).toBeInTheDocument();
+    expect(screen.getByText("! 改善 2")).toBeInTheDocument();
+
+    // Only the first item of each list shows outside the disclosure.
+    const all = detailsFor("強み・改善点をすべて見る");
+    expect(all.hasAttribute("open")).toBe(false);
+    for (const later of ["ケイデンス維持", "接地時間の改善", "上下動比の安定"]) {
+      expect(screen.getByText(later).closest("details")).toBe(all);
+    }
+    expect(screen.getByText("ウォームアップ不足").closest("details")).toBe(all);
+
+    // Expanding reveals every strength and improvement.
+    expect(all.textContent).toContain("上下動比の安定");
+    expect(all.textContent).toContain("ウォームアップ不足");
+  });
+
+  it("test_next_action_always_visible", () => {
+    render(
+      <SummaryReport
+        section={section({
+          ...baseData,
+          next_action: "次回はHR 135-145でイージーランを実施",
+        })}
+      />,
+    );
+
+    // The one thing to do next is never folded away.
+    const action = screen.getByText("次回はHR 135-145でイージーランを実施");
+    expect(action.closest("details")).toBeNull();
   });
 
   it("highlights next_action when present", () => {
@@ -94,7 +171,7 @@ describe("SummaryReport", () => {
   });
 
   it("collapses recommendations into details", () => {
-    const { container } = render(
+    render(
       <SummaryReport
         section={section({
           ...baseData,
@@ -103,11 +180,11 @@ describe("SummaryReport", () => {
       />,
     );
 
-    // recommendations are rendered inside a <details> element
-    const details = container.querySelector("details");
-    expect(details).not.toBeNull();
+    // recommendations are rendered inside their own <details>
+    const details = detailsFor("詳しい改善ポイント");
+    expect(details.hasAttribute("open")).toBe(false);
     expect(
-      details?.textContent?.includes(
+      details.textContent?.includes(
         "次回は HR 135-145 を維持してイージーランを実施しましょう。",
       ),
     ).toBe(true);

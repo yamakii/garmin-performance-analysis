@@ -1,7 +1,16 @@
 import type { SectionResult } from "../../types";
+import { splitLead } from "../../utils/leadSentence";
+import { extractStarSuffix } from "../../utils/starSuffix";
+import Disclosure from "../Disclosure";
 import FallbackFields from "./FallbackFields";
 import MarkdownText from "./MarkdownText";
-import ReportCard, { META_LABEL, SUBCARD, SUBHEADING } from "./ReportCard";
+import ReportCard, {
+  isRecord,
+  META_LABEL,
+  SUBCARD,
+  SUBHEADING,
+} from "./ReportCard";
+import StarBadge from "./StarBadge";
 
 const FIELDS: { key: string; label: string }[] = [
   { key: "efficiency", label: "フォーム効率" },
@@ -58,6 +67,26 @@ type Tile = {
   note: string | null;
 };
 
+function sectionField(
+  section: SectionResult | undefined,
+  key: "efficiency" | "evaluation",
+): string {
+  const data = isRecord(section?.data) ? section.data : null;
+  return typeof data?.[key] === "string" ? (data[key] as string) : "";
+}
+
+/** The prose field whose trailing star rating is the section's verdict. */
+function sectionRating(section: SectionResult | undefined) {
+  return extractStarSuffix(sectionField(section, "efficiency")).rating;
+}
+
+/** First sentence of the HR-efficiency evaluation: the card's lead line. */
+function evaluationLead(section: SectionResult | undefined): string | null {
+  const { body } = extractStarSuffix(sectionField(section, "evaluation"));
+  const { lead } = splitLead(body);
+  return lead !== "" ? lead : null;
+}
+
 /**
  * Efficiency analysis: structured form metrics as stat tiles alongside the
  * analyst's prose evaluation.
@@ -65,6 +94,11 @@ type Tile = {
  * Tiles read the authoritative, pace-based, expectation-relative evaluation
  * (form_evaluations table) so the values and stars match the prose. The
  * CV-based form_efficiency table is no longer used here (#292).
+ *
+ * The tiles are the headline (#905): the star rating is lifted out of the
+ * efficiency prose into a heading badge, the HR evaluation's opening sentence
+ * becomes a one-line verdict, and the three prose fields fold into a
+ * disclosure so the numbers are never buried under paragraphs.
  */
 export default function EfficiencyReport({
   section,
@@ -74,6 +108,8 @@ export default function EfficiencyReport({
   formEvaluations?: Record<string, unknown> | null;
 }) {
   const fe = formEvaluations;
+  const rating = sectionRating(section);
+  const lead = evaluationLead(section);
 
   // form_evaluations may be null for unevaluated activities; show prose only.
   const tiles: Tile[] = fe
@@ -129,7 +165,11 @@ export default function EfficiencyReport({
   const hasPower = powerAvg != null;
 
   return (
-    <ReportCard title="効率分析" section={section}>
+    <ReportCard
+      title="効率分析"
+      section={section}
+      badge={rating && <StarBadge score={rating.score} />}
+    >
       {(data) => (
         <>
           {stats.length > 0 && (
@@ -181,18 +221,29 @@ export default function EfficiencyReport({
               </dl>
             </div>
           )}
-          {FIELDS.map(({ key, label }) => {
-            const text = data[key];
-            if (typeof text !== "string") {
-              return null;
-            }
-            return (
-              <div key={key} className="mt-3 first:mt-0">
-                <h3 className={`mb-1 ${SUBHEADING}`}>{label}</h3>
-                <MarkdownText text={text} />
-              </div>
-            );
-          })}
+          {lead != null && (
+            <p className="mb-3 text-sm leading-relaxed font-medium text-ink">
+              {lead}
+            </p>
+          )}
+          <Disclosure title="分析の詳細">
+            {FIELDS.map(({ key, label }) => {
+              const text = data[key];
+              if (typeof text !== "string") {
+                return null;
+              }
+              // The efficiency verdict already shows as a heading badge, so
+              // its star suffix is stripped from the paragraph.
+              const prose =
+                key === "efficiency" ? extractStarSuffix(text).body : text;
+              return (
+                <div key={key} className="mt-3 first:mt-1">
+                  <h3 className={`mb-1 ${SUBHEADING}`}>{label}</h3>
+                  <MarkdownText text={prose} />
+                </div>
+              );
+            })}
+          </Disclosure>
           <FallbackFields data={data} exclude={KNOWN_KEYS} />
         </>
       )}
