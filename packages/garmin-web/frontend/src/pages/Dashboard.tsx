@@ -11,6 +11,7 @@ import {
 } from "../api/hooks";
 import QueryBoundary, { type QueryLike } from "../components/QueryBoundary";
 import SectionHeading from "../components/SectionHeading";
+import { usePageTitle } from "../hooks/usePageTitle";
 import type {
   AcwrTrend,
   FormAnomalyFlagsResponse,
@@ -41,6 +42,7 @@ interface SnapshotData {
  * in-card alert instead of replacing the whole cockpit with one banner.
  */
 export default function Dashboard() {
+  usePageTitle("ホーム");
   // Each block is fed by an independent query so one slow endpoint never blocks
   // the whole cockpit; every card swaps its skeleton for content as its own
   // data lands.

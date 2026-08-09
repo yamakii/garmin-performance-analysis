@@ -19,6 +19,7 @@ import ReportCard, { isRecord } from "../components/report/ReportCard";
 import SplitNarrative from "../components/report/SplitNarrative";
 import SummaryReport from "../components/report/SummaryReport";
 import TimeSeriesChart from "../components/TimeSeriesChart";
+import { usePageTitle } from "../hooks/usePageTitle";
 import type { SectionsResponse, SplitRow } from "../types";
 import { formatNumber } from "../utils/formatNumber";
 import { formatCadence, formatDistance, formatPace } from "./ActivityList";
@@ -219,6 +220,8 @@ export default function ActivityDetail() {
   const fatalError = detailQuery.error ?? sectionsQuery.error;
   const detail = detailQuery.data ?? null;
   const sections = sectionsQuery.data ?? null;
+  // The activity names the tab; until it lands the previous title stands.
+  usePageTitle(detail?.activity.activity_name ?? undefined);
   const versions = versionsQuery.data ?? [];
   // The selected run index: 0 (latest) unless a past run_id is pinned.
   const selectedVersionIndex =
@@ -261,7 +264,7 @@ export default function ActivityDetail() {
       <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
         <span
           aria-hidden="true"
-          className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-ink"
+          className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-ink motion-reduce:animate-none"
         />
         読み込み中...
       </div>
@@ -369,7 +372,10 @@ export default function ActivityDetail() {
             id="section-version-select"
             value={selectedVersionIndex}
             onChange={(e) => handleVersionChange(Number(e.target.value))}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-ink shadow-sm focus:border-ink focus:outline-none"
+            // A visible focus indicator, not a removed one (#912): the old
+            // `focus:outline-none` dropped the UA ring and replaced it with a
+            // border tint that barely reads. The ring is keyboard-only.
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-ink shadow-sm focus-visible:border-ink focus-visible:ring-2 focus-visible:ring-ink/50 focus-visible:outline-none"
           >
             {versions.map((version, i) => (
               <option key={version.run_id} value={i}>
@@ -503,69 +509,98 @@ export default function ActivityDetail() {
             スプリット
           </h2>
           {splits.length > 0 && (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-xs tracking-wide text-slate-500 uppercase">
-                  <th className="px-2 py-2 text-left font-medium">#</th>
-                  <th className="px-2 py-2 text-right font-medium">距離</th>
-                  <th className="px-2 py-2 text-right font-medium">ペース</th>
-                  <th className="px-2 py-2 text-right font-medium">心拍</th>
-                  <th className="px-2 py-2 text-right font-medium">
-                    ケイデンス
-                  </th>
-                  <th className="px-2 py-2 text-right font-medium">パワー</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-numeric text-[15px]">
-                {splits.map((split) => {
-                  // Fragment rows keep their numbers but never draw a bar:
-                  // their pace is an artifact of a manual lap press.
-                  const isFragment =
-                    typeof split.distance !== "number" ||
-                    split.distance < BAR_MIN_SPLIT_KM;
-                  return (
-                    <tr key={split.split_index} className="hover:bg-slate-50">
-                      <td className="px-2 py-2 text-left tabular-nums text-slate-500">
-                        {split.split_index}
-                      </td>
-                      <td className="px-2 py-2 text-right tabular-nums">
-                        {formatDistance(split.distance)}
-                      </td>
-                      <BarCell
-                        widthPct={
-                          isFragment
-                            ? null
-                            : barWidthPct(
-                                split.pace_seconds_per_km,
-                                paceScale,
-                                true,
-                              )
-                        }
-                        color={METRIC_COLORS.speed}
-                      >
-                        {formatPace(split.pace_seconds_per_km)}
-                      </BarCell>
-                      <BarCell
-                        widthPct={
-                          isFragment
-                            ? null
-                            : barWidthPct(split.heart_rate, hrScale, false)
-                        }
-                        color={METRIC_COLORS.heart_rate}
-                      >
-                        {formatNumber(split.heart_rate, 0)}
-                      </BarCell>
-                      <td className="px-2 py-2 text-right tabular-nums">
-                        {formatCadence(split.cadence)}
-                      </td>
-                      <td className="px-2 py-2 text-right tabular-nums">
-                        {formatNumber(split.power, 0)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            // Six numeric columns overflow a ~360px screen: the wrapper scrolls
+            // the table instead of letting the page scroll sideways (#912).
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs tracking-wide text-slate-500 uppercase">
+                    <th scope="col" className="px-2 py-2 text-left font-medium">
+                      #
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-2 py-2 text-right font-medium"
+                    >
+                      距離
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-2 py-2 text-right font-medium"
+                    >
+                      ペース
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-2 py-2 text-right font-medium"
+                    >
+                      心拍
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-2 py-2 text-right font-medium"
+                    >
+                      ケイデンス
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-2 py-2 text-right font-medium"
+                    >
+                      パワー
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-numeric text-[15px]">
+                  {splits.map((split) => {
+                    // Fragment rows keep their numbers but never draw a bar:
+                    // their pace is an artifact of a manual lap press.
+                    const isFragment =
+                      typeof split.distance !== "number" ||
+                      split.distance < BAR_MIN_SPLIT_KM;
+                    return (
+                      <tr key={split.split_index} className="hover:bg-slate-50">
+                        <td className="px-2 py-2 text-left tabular-nums text-slate-500">
+                          {split.split_index}
+                        </td>
+                        <td className="px-2 py-2 text-right tabular-nums">
+                          {formatDistance(split.distance)}
+                        </td>
+                        <BarCell
+                          widthPct={
+                            isFragment
+                              ? null
+                              : barWidthPct(
+                                  split.pace_seconds_per_km,
+                                  paceScale,
+                                  true,
+                                )
+                          }
+                          color={METRIC_COLORS.speed}
+                        >
+                          {formatPace(split.pace_seconds_per_km)}
+                        </BarCell>
+                        <BarCell
+                          widthPct={
+                            isFragment
+                              ? null
+                              : barWidthPct(split.heart_rate, hrScale, false)
+                          }
+                          color={METRIC_COLORS.heart_rate}
+                        >
+                          {formatNumber(split.heart_rate, 0)}
+                        </BarCell>
+                        <td className="px-2 py-2 text-right tabular-nums">
+                          {formatCadence(split.cadence)}
+                        </td>
+                        <td className="px-2 py-2 text-right tabular-nums">
+                          {formatNumber(split.power, 0)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
           <SplitNarrative section={sections?.split} />
         </section>

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "./test/utils";
+import { render, screen, waitFor } from "./test/utils";
 import App from "./App";
 
 // echarts requires a real canvas; mock the modular wrapper out for jsdom
@@ -69,5 +69,28 @@ describe("App routing", () => {
     // ...at the new URL, with the deep-link hash carried across.
     expect(window.location.pathname).toBe("/condition");
     expect(window.location.hash).toBe("#recovery");
+  });
+
+  it("test_page_titles_per_route", async () => {
+    stubFailingApi();
+    window.history.pushState({}, "", "/activities");
+
+    const { unmount } = render(<App />);
+
+    // An SPA never reloads the document, so each route has to name the tab
+    // itself — otherwise every page shares one meaningless title (#912).
+    await waitFor(() => {
+      expect(document.title).toContain("アクティビティ");
+    });
+    expect(document.title).toContain("Garmin Performance");
+    unmount();
+
+    // A second route proves the title tracks navigation, not just first paint.
+    window.history.pushState({}, "", "/condition");
+    render(<App />);
+
+    await waitFor(() => {
+      expect(document.title).toContain("コンディション");
+    });
   });
 });

@@ -53,7 +53,10 @@ export default function ClampedProse({
         <button
           type="button"
           onClick={() => setExpanded((prev) => !prev)}
-          className="text-xs font-medium text-slate-500 underline underline-offset-2 hover:text-ink"
+          // The padding is the target, not decoration (#912): xs text alone is
+          // a ~16px tap target, short of the 24px minimum (WCAG 2.5.8). The
+          // negative margin keeps the label optically flush with the prose.
+          className="-mx-2 px-2 py-1.5 text-xs font-medium text-slate-500 underline underline-offset-2 hover:text-ink"
         >
           {expanded ? "閉じる" : "続きを読む"}
         </button>

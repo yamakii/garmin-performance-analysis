@@ -6,6 +6,10 @@ import type { JSX } from "react";
  * lived only on the Goal page. Use `as="h1"` (default) for the page headline
  * and `as="h2"` for in-page section headers — the eyebrow stays the same while
  * the heading scales from `text-2xl` to `text-xl`.
+ *
+ * The eyebrow is decorative (#912): it restates the Japanese heading below it
+ * in English, so it is hidden from assistive tech instead of being announced
+ * as a stray fragment ahead of every heading.
  */
 export default function SectionHeading({
   eyebrow,
@@ -20,7 +24,10 @@ export default function SectionHeading({
   const titleSize = as === "h1" ? "text-2xl" : "text-xl";
   return (
     <div>
-      <p className="text-xs font-semibold tracking-[0.2em] text-slate-500 uppercase">
+      <p
+        aria-hidden="true"
+        className="text-xs font-semibold tracking-[0.2em] text-slate-500 uppercase"
+      >
         {eyebrow}
       </p>
       <Heading

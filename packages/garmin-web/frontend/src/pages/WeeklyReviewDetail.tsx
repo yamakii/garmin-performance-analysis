@@ -5,27 +5,37 @@ import ClampedProse from "../components/ClampedProse";
 import Disclosure from "../components/Disclosure";
 import SectionHeading from "../components/SectionHeading";
 import SectionNav, { type NavItem } from "../components/SectionNav";
-import StatusBadge, { type StatusTone } from "../components/StatusBadge";
+import StatusBadge from "../components/StatusBadge";
 import { META_LABEL, SUBCARD } from "../components/report/ReportCard";
+import { usePageTitle } from "../hooks/usePageTitle";
 import type { WeeklyReview } from "../types";
+import { ratingMeta } from "../utils/verdictRating";
 
+/**
+ * One card. Its title is an h3 because the card lives inside a `Group` whose
+ * title is the h2 (#912); the standalone 総評 card belongs to no group and
+ * passes `level={2}` so the outline never claims it as a child of 次アクション.
+ */
 function Section({
   id,
   title,
+  level = 3,
   children,
 }: {
   id?: string;
   title: string;
+  level?: 2 | 3;
   children: React.ReactNode;
 }) {
+  const Heading = level === 2 ? "h2" : "h3";
   return (
     <section
       id={id}
       className="scroll-mt-20 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
     >
-      <h2 className="mb-3 font-display text-base font-semibold text-ink">
+      <Heading className="mb-3 font-display text-base font-semibold text-ink">
         {title}
-      </h2>
+      </Heading>
       {children}
     </section>
   );
@@ -41,6 +51,11 @@ const SECTION_HEADING =
  * `aria-label` mirrors the Japanese title so the region (and its membership)
  * is addressable in tests and assistive tech. Until #648 lands, this is the
  * local simple heading; it can be swapped for the shared `SectionHeading`.
+ *
+ * The Japanese title is the page's h2 and each member card is an h3 (#912):
+ * rendering both as `<p>` left the page as an h1 followed by a flat run of
+ * h2 cards, so the grouping existed visually but not in the heading outline.
+ * The English eyebrow restates the title, so it stays decorative.
  */
 function Group({
   eyebrow,
@@ -54,10 +69,12 @@ function Group({
   return (
     <section aria-label={title} className="space-y-4">
       <div>
-        <p className={SECTION_HEADING}>{eyebrow}</p>
-        <p className="mt-1 font-display text-xl font-bold tracking-tight text-ink">
-          {title}
+        <p aria-hidden="true" className={SECTION_HEADING}>
+          {eyebrow}
         </p>
+        <h2 className="mt-1 font-display text-xl font-bold tracking-tight text-ink">
+          {title}
+        </h2>
       </div>
       {children}
     </section>
@@ -113,19 +130,21 @@ function StatTiles({ tiles }: { tiles: (StatTile | null)[] }) {
   );
 }
 
-/** Verdict marks the weekly-review agent emits, mapped onto status tones. */
-const RATING_TONES: [string, StatusTone][] = [
-  ["✅", "good"],
-  ["🟡", "warn"],
-  ["🔴", "bad"],
-];
-
 /**
- * Tone for a verdict rating. The mark is matched by containment so a decorated
- * rating ("✅ 完了") still colors correctly; unknown marks stay neutral.
+ * Verdict cell: the emoji stays for scanning but is decorative, and the word it
+ * stands for is the text that is actually announced and read (#912). An
+ * unrecognized rating is shown as-is, since its text is all we know.
  */
-function ratingTone(rating: string): StatusTone {
-  return RATING_TONES.find(([mark]) => rating.includes(mark))?.[1] ?? "info";
+function VerdictBadge({ rating }: { rating: string }) {
+  const { tone, label } = ratingMeta(rating);
+  if (label === rating) {
+    return <StatusBadge tone={tone}>{rating}</StatusBadge>;
+  }
+  return (
+    <StatusBadge tone={tone}>
+      <span aria-hidden="true">{rating}</span> {label}
+    </StatusBadge>
+  );
 }
 
 /** "Aレース（フルマラソン）まで 12週" countdown label, or null when unknown. */
@@ -144,6 +163,7 @@ function raceCountdown(
 
 export default function WeeklyReviewDetail() {
   const { weekStart } = useParams<{ weekStart: string }>();
+  usePageTitle(weekStart != null ? `週次レビュー ${weekStart}` : "週次レビュー");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const versionsQuery = useWeeklyReviewVersions(weekStart);
   const versions = versionsQuery.data ?? [];
@@ -153,7 +173,7 @@ export default function WeeklyReviewDetail() {
       <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
         <span
           aria-hidden="true"
-          className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-ink"
+          className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-ink motion-reduce:animate-none"
         />
         読み込み中...
       </div>
@@ -267,7 +287,8 @@ export default function WeeklyReviewDetail() {
             id="version-select"
             value={selectedIndex}
             onChange={(e) => setSelectedIndex(Number(e.target.value))}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-ink shadow-sm focus:border-ink focus:outline-none"
+            // Keyboard-visible focus ring instead of a stripped outline (#912).
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-ink shadow-sm focus-visible:border-ink focus-visible:ring-2 focus-visible:ring-ink/50 focus-visible:outline-none"
           >
             {versions.map((v, i) => (
               <option key={v.review_id} value={i}>
@@ -391,12 +412,19 @@ export default function WeeklyReviewDetail() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-xs tracking-wide text-slate-500 uppercase">
-                      <th className="px-2 py-2 text-left font-medium">日付</th>
-                      <th className="px-2 py-2 text-left font-medium">
+                      <th scope="col" className="px-2 py-2 text-left font-medium">
+                        日付
+                      </th>
+                      <th scope="col" className="px-2 py-2 text-left font-medium">
                         セッション
                       </th>
-                      <th className="px-2 py-2 text-center font-medium">評価</th>
-                      <th className="px-2 py-2 text-left font-medium">
+                      <th
+                        scope="col"
+                        className="px-2 py-2 text-center font-medium"
+                      >
+                        評価
+                      </th>
+                      <th scope="col" className="px-2 py-2 text-left font-medium">
                         コメント
                       </th>
                     </tr>
@@ -412,9 +440,7 @@ export default function WeeklyReviewDetail() {
                         </td>
                         <td className="px-2 py-2 text-center">
                           {v.rating != null ? (
-                            <StatusBadge tone={ratingTone(v.rating)}>
-                              {v.rating}
-                            </StatusBadge>
+                            <VerdictBadge rating={v.rating} />
                           ) : (
                             "-"
                           )}
@@ -517,13 +543,22 @@ export default function WeeklyReviewDetail() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-xs tracking-wide text-slate-500 uppercase">
-                        <th className="px-2 py-2 text-left font-medium">
+                        <th
+                          scope="col"
+                          className="px-2 py-2 text-left font-medium"
+                        >
                           日付
                         </th>
-                        <th className="px-2 py-2 text-left font-medium">
+                        <th
+                          scope="col"
+                          className="px-2 py-2 text-left font-medium"
+                        >
                           種別
                         </th>
-                        <th className="px-2 py-2 text-left font-medium">
+                        <th
+                          scope="col"
+                          className="px-2 py-2 text-left font-medium"
+                        >
                           タイトル
                         </th>
                       </tr>
@@ -559,9 +594,9 @@ export default function WeeklyReviewDetail() {
             </Group>
           )}
 
-          {/* Overall — closing verdict, standalone */}
+          {/* Overall — closing verdict, standalone (no parent Group → h2) */}
           {data.overall != null && (
-            <Section id="wr-overall" title="総評">
+            <Section id="wr-overall" title="総評" level={2}>
               <ClampedProse text={data.overall} lines={PROSE_CLAMP_LINES} />
             </Section>
           )}

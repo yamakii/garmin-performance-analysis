@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useActivities, type ActivityRange } from "../api/hooks";
 import EmptyState from "../components/EmptyState";
 import SectionHeading from "../components/SectionHeading";
+import { usePageTitle } from "../hooks/usePageTitle";
 import type { ActivitySummary } from "../types";
 
 export function formatPace(secondsPerKm: number | null): string {
@@ -134,6 +135,7 @@ function toggleClass(active: boolean): string {
 }
 
 export default function ActivityList() {
+  usePageTitle("アクティビティ一覧");
   // The filter state lives in the URL so it survives a reload, a back
   // navigation and a bookmark — nothing is mirrored in component state.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -216,7 +218,7 @@ export default function ActivityList() {
         <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
           <span
             aria-hidden="true"
-            className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-ink"
+            className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-ink motion-reduce:animate-none"
           />
           読み込み中...
         </div>

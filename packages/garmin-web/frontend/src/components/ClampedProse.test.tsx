@@ -33,6 +33,17 @@ describe("ClampedProse", () => {
     expect(screen.getByText(/10行目の解説テキストです。/)).toBeInTheDocument();
   });
 
+  it("test_clamped_prose_toggle_target_size", () => {
+    render(<ClampedProse text={LONG_TEXT} lines={3} />);
+
+    // xs text alone is a ~16px tap target; the vertical padding lifts it past
+    // the 24px minimum without moving the label (#912).
+    const toggle = screen.getByRole("button", { name: "続きを読む" });
+    expect(toggle.className).toMatch(/(^|\s)py-1\.5(\s|$)/);
+    expect(toggle).toHaveClass("px-2");
+    expect(toggle).toHaveClass("-mx-2");
+  });
+
   it("test_clamped_prose_markdown_mode", () => {
     const { container } = render(
       <ClampedProse text="ペースは**安定**しています。" markdown />,

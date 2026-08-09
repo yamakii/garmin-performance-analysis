@@ -15,6 +15,7 @@ import QueryBoundary from "../components/QueryBoundary";
 import SectionHeading from "../components/SectionHeading";
 import SectionNav from "../components/SectionNav";
 import TrendNarrationCard from "../components/TrendNarrationCard";
+import { usePageTitle } from "../hooks/usePageTitle";
 import CriticalSpeedPanel from "./trends/CriticalSpeedPanel";
 import DurabilityBlock from "./trends/DurabilityBlock";
 import EfficiencyBlock from "./trends/EfficiencyBlock";
@@ -85,6 +86,7 @@ function GranularityToggle({
 }
 
 export default function Performance() {
+  usePageTitle("パフォーマンス");
   const [granularity, setGranularity] = useState<Granularity>("week");
 
   const volumeQuery = useVolumeTrend(granularity);

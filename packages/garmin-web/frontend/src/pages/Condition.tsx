@@ -8,6 +8,7 @@ import {
 } from "../api/hooks";
 import QueryBoundary from "../components/QueryBoundary";
 import SectionHeading from "../components/SectionHeading";
+import { usePageTitle } from "../hooks/usePageTitle";
 import BodyCompositionChart from "./trends/BodyCompositionChart";
 import ConditionCard from "./trends/ConditionCard";
 import FormAnomalyFlagsCard from "./trends/FormAnomalyFlagsCard";
@@ -30,6 +31,7 @@ import WellnessBaselineChart from "./trends/WellnessBaselineChart";
  */
 
 export default function Condition() {
+  usePageTitle("コンディション");
   const formAnomalyFlagsQuery = useFormAnomalyFlags();
   const recoveryStatusQuery = useRecoveryStatus();
   const recoveryQuery = useRecoveryTrend();

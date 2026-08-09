@@ -17,10 +17,21 @@ function navLinkClass({ isActive }: { isActive: boolean }): string {
  * breakpoint and the nav becomes horizontally scrollable (`overflow-x-auto`)
  * so all six links stay reachable without wrapping or cramping on ~360px
  * screens.
+ *
+ * The skip link is the first focusable element on every page (WCAG 2.4.1): it
+ * is visually hidden until focused, and jumps past the six nav links straight
+ * to `#main`, which takes focus itself (`tabIndex={-1}`) so the next Tab
+ * continues inside the content.
  */
 export default function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-4 focus:z-[1200] focus:rounded-md focus:bg-white focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-ink focus:shadow-md focus:ring-2 focus:ring-signal/50"
+      >
+        本文へスキップ
+      </a>
       <header className="sticky top-0 z-[1100] border-b border-slate-200 bg-white shadow-sm">
         <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4">
           <NavLink
@@ -56,7 +67,9 @@ export default function Layout({ children }: { children: ReactNode }) {
           </nav>
         </div>
       </header>
-      <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
+      <main id="main" tabIndex={-1} className="mx-auto max-w-5xl px-4 py-6">
+        {children}
+      </main>
     </div>
   );
 }

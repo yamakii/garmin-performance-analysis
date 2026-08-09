@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 /**
  * Catch-all page for unknown URLs. Rendered inside the app Layout so the header
@@ -6,6 +7,7 @@ import { Link } from "react-router-dom";
  * a real page instead of a blank screen.
  */
 export default function NotFound() {
+  usePageTitle("ページが見つかりません");
   return (
     <div className="flex flex-col items-center gap-3 py-20 text-center">
       {/*
