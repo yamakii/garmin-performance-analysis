@@ -94,6 +94,28 @@ describe("TrendNarrationCard", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("test_narration_clamped_with_toggle", async () => {
+    // A long write-up is folded to its first lines; the version switcher above
+    // it must keep working exactly as before.
+    const longNarrative = Array.from(
+      { length: 12 },
+      (_, i) => `${i + 1}段落目の詳細な解説テキストです。`,
+    ).join("\n");
+    const v2 = makeNarration(longNarrative, "2025-10-14 10:00:00");
+    const v1 = makeNarration("旧版の解説テキストです。", "2025-10-13 10:00:00");
+    stubNarrationFetch(v2, [v2, v1]);
+
+    render(<TrendNarrationCard granularity="week" />);
+
+    const toggle = await screen.findByRole("button", { name: "続きを読む" });
+    expect(await screen.findByLabelText("版を選択:")).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+
+    expect(screen.getByRole("button", { name: "閉じる" })).toBeInTheDocument();
+    expect(screen.getByText(/12段落目の詳細な解説テキストです。/)).toBeInTheDocument();
+  });
+
   it("test_hides_switcher_with_single_version", async () => {
     const narration = makeNarration(
       "単一版の解説テキストです。",

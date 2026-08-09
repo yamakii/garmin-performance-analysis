@@ -359,6 +359,35 @@ describe("Goal", () => {
     expect(cards[0].querySelector(".bg-signal")).not.toBeNull();
   });
 
+  it("test_goal_focus_sections_still_first_three_open", async () => {
+    // Four titled sections: after the switch to the shared `Disclosure`, the
+    // first three must still be expanded and the fourth collapsed.
+    stubFetch({
+      profile: {
+        current_focus: "持久力強化",
+        focus_notes:
+          "【ボトルネック】脚の耐久性【ロング走】月2回 30km【ポイント練】週1回【補強】週2回",
+        updated_at: null,
+      },
+      goals: [],
+      retrospectives: [],
+    });
+
+    const { container } = renderGoal();
+
+    expect(await screen.findByText("ボトルネック")).toBeInTheDocument();
+
+    const sections = Array.from(container.querySelectorAll("details"));
+    expect(sections).toHaveLength(4);
+    expect(sections.map((section) => section.hasAttribute("open"))).toEqual([
+      true,
+      true,
+      true,
+      false,
+    ]);
+    expect(screen.getByText("補強")).toBeInTheDocument();
+  });
+
   it("test_Goal_focus_notes_fallback_without_brackets", async () => {
     stubFetch({
       profile: {

@@ -1,3 +1,4 @@
+import Disclosure from "../components/Disclosure";
 import EmptyState, { CliCommand } from "../components/EmptyState";
 import SectionHeading from "../components/SectionHeading";
 import StatusBadge, { type StatusTone } from "../components/StatusBadge";
@@ -363,7 +364,7 @@ function RaceCard({ race }: { race: GoalRace }) {
 
 /**
  * One focus section. Untitled sections (preamble) render as a plain lead
- * paragraph; titled sections render as a collapsible <details> card. The first
+ * paragraph; titled sections render as a shared `Disclosure` card. The first
  * few titled sections are open by default; later ones stay collapsed.
  */
 function FocusSectionCard({
@@ -384,29 +385,22 @@ function FocusSectionCard({
   }
 
   return (
-    <details
-      open={defaultOpen}
-      className="group rounded-lg border border-slate-200 bg-white open:border-ink/20 open:shadow-sm"
-    >
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
-        <span className="flex items-center gap-2 font-display text-sm font-semibold text-ink">
+    <Disclosure
+      defaultOpen={defaultOpen}
+      title={
+        <>
           <span
             aria-hidden="true"
             className="h-3 w-3 shrink-0 rounded-full bg-signal/70"
           />
           {title}
-        </span>
-        <span
-          aria-hidden="true"
-          className="text-slate-400 transition-transform group-open:rotate-90"
-        >
-          ›
-        </span>
-      </summary>
-      <p className="px-4 pb-4 text-sm leading-relaxed whitespace-pre-line text-slate-600">
+        </>
+      }
+    >
+      <p className="text-sm leading-relaxed whitespace-pre-line text-slate-600">
         {body}
       </p>
-    </details>
+    </Disclosure>
   );
 }
 
@@ -434,20 +428,16 @@ function RetrospectiveCard({ retro }: { retro: SeasonRetrospective }) {
         </p>
       )}
       {retro.key_learnings != null && retro.key_learnings.trim() !== "" && (
-        <details className="group mt-2 rounded-lg bg-gold/5 px-3 py-2">
-          <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-semibold tracking-wide text-amber-700">
-            <span
-              aria-hidden="true"
-              className="transition-transform group-open:rotate-90"
-            >
-              ›
-            </span>
-            学び
-          </summary>
-          <p className="mt-1.5 text-sm leading-relaxed whitespace-pre-line text-slate-700">
+        <Disclosure
+          className="mt-2"
+          title={
+            <span className="tracking-wide text-amber-700">学び</span>
+          }
+        >
+          <p className="text-sm leading-relaxed whitespace-pre-line text-slate-700">
             {retro.key_learnings}
           </p>
-        </details>
+        </Disclosure>
       )}
     </li>
   );
