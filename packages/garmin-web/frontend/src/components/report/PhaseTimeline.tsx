@@ -78,7 +78,7 @@ function PhaseNode({
         <MarkdownText text={parts ? parts.evaluation : body} />
       </div>
       {parts && (
-        <p className="mt-1 text-xs leading-relaxed text-slate-400">
+        <p className="mt-1 text-xs leading-relaxed text-slate-500">
           {`実際: ${parts.actual}`}
         </p>
       )}

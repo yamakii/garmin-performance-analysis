@@ -6,12 +6,15 @@ const MAX_SCORE = 5;
  * Unlike `StarRating` — the hero five-star display of the summary section —
  * this is a one-glance marker for a section heading or a timeline node, where
  * the score has to sit next to a label without dominating it.
+ *
+ * The gold tint stays, but the score itself is amber-800: `text-gold` on
+ * `bg-gold/10` measures 1.99:1, far under AA (Issue #911).
  */
 export default function StarBadge({ score }: { score: number }) {
   return (
     <span
       aria-label={`評価 ${score.toFixed(1)} / ${MAX_SCORE.toFixed(1)}`}
-      className="inline-flex shrink-0 items-center rounded-full bg-gold/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-gold"
+      className="inline-flex shrink-0 items-center rounded-full bg-gold/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-amber-800"
     >
       {`★ ${score.toFixed(1)}`}
     </span>

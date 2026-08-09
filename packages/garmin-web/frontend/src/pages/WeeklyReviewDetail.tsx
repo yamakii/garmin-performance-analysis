@@ -33,7 +33,7 @@ function Section({
 
 /** Eyebrow style shared with the Trends/Goal page section headers. */
 const SECTION_HEADING =
-  "text-xs font-semibold tracking-[0.2em] text-slate-400 uppercase";
+  "text-xs font-semibold tracking-[0.2em] text-slate-500 uppercase";
 
 /**
  * One meaning group: an English eyebrow + Japanese heading above the member

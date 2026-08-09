@@ -88,9 +88,15 @@ function CountdownTile({
   prediction: RaceReadinessProgress | null;
 }) {
   const days = daysUntil(race.race_date);
-  const accent = tone === "primary" ? "text-signal" : "text-gold";
+  // The countdown numeral is 6xl/7xl bold — large text, so the vivid signal
+  // orange still clears the 3:1 large-text threshold. Gold does not (2.15:1),
+  // so the B race uses amber-700 (5.05:1). The A/B tags are small text and
+  // take the text-safe `signal-ink` / amber-800 pair instead (Issue #911).
+  const accent = tone === "primary" ? "text-signal" : "text-amber-700";
   const tagBg =
-    tone === "primary" ? "bg-signal/15 text-signal" : "bg-gold/15 text-amber-700";
+    tone === "primary"
+      ? "bg-signal/15 text-signal-ink"
+      : "bg-gold/15 text-amber-800";
   const statusMeta = prediction != null ? STATUS_META[prediction.status] : null;
 
   return (
@@ -113,12 +119,12 @@ function CountdownTile({
 
       <div className="mt-3 flex items-end gap-2">
         {days == null ? (
-          <span className="rounded-md bg-slate-100 px-3 py-1.5 font-display text-sm font-medium text-slate-500">
+          <span className="rounded-md bg-slate-100 px-3 py-1.5 font-display text-sm font-medium text-slate-600">
             日程未定
           </span>
         ) : days >= 0 ? (
           <>
-            <span className="font-display text-xs font-medium tracking-wide text-slate-400">
+            <span className="font-display text-xs font-medium tracking-wide text-slate-600">
               あと
             </span>
             <span
@@ -131,27 +137,34 @@ function CountdownTile({
             </span>
           </>
         ) : (
-          <span className="rounded-md bg-slate-100 px-3 py-1.5 font-display text-sm font-medium text-slate-500">
+          <span className="rounded-md bg-slate-100 px-3 py-1.5 font-display text-sm font-medium text-slate-600">
             開催済み
           </span>
         )}
       </div>
 
+      {/*
+       * Muted copy inside the hero is slate-600, not the slate-500 used on the
+       * white cards below: this band is `from-white via-slate-50
+       * to-slate-100`, and slate-500 slips to 4.35:1 at the slate-100 end
+       * (Issue #911). Uniform here so the unit suffix never outweighs the
+       * value it trails.
+       */}
       <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
         {race.race_date != null && (
           <div>
             <dt className="sr-only">開催日</dt>
-            <dd className="font-numeric tabular-nums text-slate-500">
+            <dd className="font-numeric tabular-nums text-slate-600">
               {race.race_date}
             </dd>
           </div>
         )}
         <div>
           <dt className="sr-only">種別</dt>
-          <dd className="text-slate-500">
+          <dd className="text-slate-600">
             {goalTypeLabel(race.goal_type)}
             {race.distance_km != null && (
-              <span className="ml-1.5 font-numeric tabular-nums text-slate-400">
+              <span className="ml-1.5 font-numeric tabular-nums text-slate-600">
                 {formatDistanceKm(race.distance_km)}
               </span>
             )}
@@ -160,7 +173,7 @@ function CountdownTile({
         <div>
           <dt className="sr-only">目標タイム</dt>
           <dd>
-            <span className="text-xs text-slate-400">目標 </span>
+            <span className="text-xs text-slate-600">目標 </span>
             <span className="font-numeric text-lg font-semibold tabular-nums text-ink">
               {formatTargetTime(race.target_time_seconds)}
             </span>
@@ -175,13 +188,13 @@ function CountdownTile({
       {prediction != null && (
         <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-200 pt-3">
           <div>
-            <dt className="text-xs tracking-wide text-slate-400">予測タイム</dt>
+            <dt className="text-xs tracking-wide text-slate-600">予測タイム</dt>
             <dd className="mt-0.5 font-numeric text-base font-semibold tabular-nums text-ink">
               {formatTargetTime(prediction.predicted_time_seconds)}
             </dd>
           </div>
           <div>
-            <dt className="text-xs tracking-wide text-slate-400">目標との差</dt>
+            <dt className="text-xs tracking-wide text-slate-600">目標との差</dt>
             <dd className="mt-0.5 font-numeric text-base font-semibold tabular-nums text-ink">
               {formatGap(prediction.gap_seconds)}
             </dd>
@@ -267,7 +280,7 @@ function CountdownHero({
           <div className="mt-6 border-t border-slate-200 pt-4">
             <dl className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
               <div>
-                <dt className="inline text-xs text-slate-400">現在 VDOT </dt>
+                <dt className="inline text-xs text-slate-600">現在 VDOT </dt>
                 <dd className="inline font-numeric font-semibold tabular-nums text-ink">
                   {vdot.toFixed(1)}
                 </dd>
@@ -315,7 +328,7 @@ function RaceCard({ race }: { race: GoalRace }) {
         <div>
           <span
             className={`inline-block rounded-md px-2 py-0.5 font-numeric text-sm font-bold tracking-wide ${
-              featured ? "bg-signal/15 text-signal" : "bg-ink/5 text-ink"
+              featured ? "bg-signal/15 text-signal-ink" : "bg-ink/5 text-ink"
             }`}
           >
             {race.priority ?? "-"}
@@ -334,19 +347,19 @@ function RaceCard({ race }: { race: GoalRace }) {
 
       <dl className="mt-4 grid grid-cols-3 gap-3 border-t border-slate-100 pt-4">
         <div>
-          <dt className="text-xs tracking-wide text-slate-400">種別</dt>
+          <dt className="text-xs tracking-wide text-slate-500">種別</dt>
           <dd className="mt-0.5 text-sm font-medium text-slate-700">
             {goalTypeLabel(race.goal_type)}
           </dd>
         </div>
         <div>
-          <dt className="text-xs tracking-wide text-slate-400">距離</dt>
+          <dt className="text-xs tracking-wide text-slate-500">距離</dt>
           <dd className="mt-0.5 font-numeric text-sm tabular-nums text-slate-700">
             {formatDistanceKm(race.distance_km)}
           </dd>
         </div>
         <div>
-          <dt className="text-xs tracking-wide text-slate-400">目標タイム</dt>
+          <dt className="text-xs tracking-wide text-slate-500">目標タイム</dt>
           <dd className="mt-0.5 font-numeric text-base font-semibold tabular-nums text-ink">
             {formatTargetTime(race.target_time_seconds)}
           </dd>
@@ -417,7 +430,7 @@ function RetrospectiveCard({ retro }: { retro: SeasonRetrospective }) {
           {retro.season_label ?? "シーズン"}
         </h3>
         {(retro.period_start != null || retro.period_end != null) && (
-          <span className="font-numeric text-xs tabular-nums text-slate-400">
+          <span className="font-numeric text-xs tabular-nums text-slate-500">
             {retro.period_start ?? "?"} 〜 {retro.period_end ?? "?"}
           </span>
         )}
@@ -523,7 +536,7 @@ export default function Goal() {
               </div>
             )}
             {profile.updated_at != null && (
-              <p className="text-xs text-slate-400">更新: {profile.updated_at}</p>
+              <p className="text-xs text-slate-500">更新: {profile.updated_at}</p>
             )}
           </div>
         ) : (
@@ -544,7 +557,7 @@ export default function Goal() {
       <section className="space-y-4">
         <SectionHeading eyebrow="Races" title="レース登録" as="h2" />
         {featuredRaces.length > 0 && (
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-slate-500">
             A / B レースはページ上部のカウントダウンに表示しています。
           </p>
         )}

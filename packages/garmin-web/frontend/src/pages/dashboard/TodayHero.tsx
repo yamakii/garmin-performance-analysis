@@ -46,7 +46,7 @@ const TONE_TEXT: Record<VerdictMeta["tone"], string> = {
   info: "text-status-info",
   warn: "text-status-warn",
   bad: "text-status-bad",
-  neutral: "text-slate-400",
+  neutral: "text-slate-600",
 };
 
 /** Left accent-bar color per tone. */
@@ -89,12 +89,17 @@ export default function TodayHero({ status, baseline }: TodayHeroProps) {
         className={`absolute inset-y-0 left-0 w-1.5 ${TONE_BAR[meta.tone]}`}
       />
       <div className="relative px-6 py-6 md:px-8">
+        {/*
+         * Muted copy on this band is slate-600, not the slate-500 used on the
+         * white cards: the hero runs `from-white via-slate-50 to-slate-100`,
+         * where slate-500 drops to 4.35:1 (Issue #911).
+         */}
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <p className="text-xs font-semibold tracking-[0.2em] text-slate-400 uppercase">
+          <p className="text-xs font-semibold tracking-[0.2em] text-slate-600 uppercase">
             Today&apos;s Verdict
           </p>
           {date != null && (
-            <p className="font-numeric text-sm tabular-nums text-slate-500">
+            <p className="font-numeric text-sm tabular-nums text-slate-600">
               {date}
             </p>
           )}

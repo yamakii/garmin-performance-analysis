@@ -20,7 +20,7 @@ export default function SectionHeading({
   const titleSize = as === "h1" ? "text-2xl" : "text-xl";
   return (
     <div>
-      <p className="text-xs font-semibold tracking-[0.2em] text-slate-400 uppercase">
+      <p className="text-xs font-semibold tracking-[0.2em] text-slate-500 uppercase">
         {eyebrow}
       </p>
       <Heading
