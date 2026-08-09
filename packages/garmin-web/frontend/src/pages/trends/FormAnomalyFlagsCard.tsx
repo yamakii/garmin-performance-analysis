@@ -61,7 +61,7 @@ export default function FormAnomalyFlagsCard({
         </p>
       )}
 
-      <p className="mt-3 text-xs text-slate-400">
+      <p className="mt-3 text-xs text-slate-500">
         直近{data.weeks}週・{data.scanned}件のランを走査
         {data.limited ? "（上限により一部のみ）" : ""}
       </p>

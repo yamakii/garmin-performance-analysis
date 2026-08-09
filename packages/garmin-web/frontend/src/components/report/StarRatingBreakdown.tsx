@@ -70,7 +70,7 @@ function AxisRow({
         {score.toFixed(1)}
       </span>
       {weight != null && (
-        <span className="w-12 shrink-0 text-right text-xs tabular-nums text-slate-400">
+        <span className="w-12 shrink-0 text-right text-xs tabular-nums text-slate-500">
           {Math.round(weight * 100)}%
         </span>
       )}
@@ -134,7 +134,7 @@ export default function StarRatingBreakdown({
       {showTotal && total != null && (
         <div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-2">
           <span className="text-sm font-medium text-slate-600">加重総合</span>
-          <span className="rounded-full bg-gold/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-gold">
+          <span className="rounded-full bg-gold/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-amber-800">
             {total.toFixed(1)} / {MAX_SCORE.toFixed(1)}
           </span>
         </div>

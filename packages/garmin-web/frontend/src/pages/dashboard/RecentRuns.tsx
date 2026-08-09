@@ -57,18 +57,18 @@ export default function RecentRuns({ activities }: RecentRunsProps) {
                       " km",
                       "",
                     )}
-                    <span className="ml-0.5 text-xs text-slate-400">km</span>
+                    <span className="ml-0.5 text-xs text-slate-500">km</span>
                   </span>
                   <span>
                     {formatPace(activity.avg_pace_seconds_per_km).replace(
                       "/km",
                       "",
                     )}
-                    <span className="ml-0.5 text-xs text-slate-400">/km</span>
+                    <span className="ml-0.5 text-xs text-slate-500">/km</span>
                   </span>
                   <span>
                     {activity.avg_heart_rate ?? "-"}
-                    <span className="ml-0.5 text-xs text-slate-400">bpm</span>
+                    <span className="ml-0.5 text-xs text-slate-500">bpm</span>
                   </span>
                 </span>
               </Link>

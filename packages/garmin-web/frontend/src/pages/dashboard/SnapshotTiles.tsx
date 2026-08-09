@@ -95,7 +95,7 @@ function BigValue({ value, unit }: { value: string; unit?: string }) {
     <p className="mt-1 font-numeric text-2xl font-semibold tabular-nums text-ink">
       {value}
       {unit != null && (
-        <span className="ml-0.5 text-sm font-normal text-slate-400">{unit}</span>
+        <span className="ml-0.5 text-sm font-normal text-slate-500">{unit}</span>
       )}
     </p>
   );
@@ -127,7 +127,7 @@ function AcwrTile({ load }: { load: AcwrTrend | null }) {
           unit=" km"
         />
       )}
-      <p className="mt-1 text-[11px] text-slate-400">週間距離 直近{weeks.length}週</p>
+      <p className="mt-1 text-[11px] text-slate-500">週間距離 直近{weeks.length}週</p>
     </Tile>
   );
 }
@@ -158,7 +158,7 @@ function HrvTile({ recovery }: { recovery: RecoveryTrend | null }) {
           unit=" ms"
         />
       )}
-      <p className="mt-1 text-[11px] text-slate-400">
+      <p className="mt-1 text-[11px] text-slate-500">
         基準割れ {hrv?.hrv_below_baseline_days ?? 0}日連続
       </p>
     </Tile>
@@ -189,7 +189,7 @@ function RhrTile({ recovery }: { recovery: RecoveryTrend | null }) {
           unit=" bpm"
         />
       )}
-      <p className="mt-1 text-[11px] text-slate-400">7日中央値</p>
+      <p className="mt-1 text-[11px] text-slate-500">7日中央値</p>
     </Tile>
   );
 }

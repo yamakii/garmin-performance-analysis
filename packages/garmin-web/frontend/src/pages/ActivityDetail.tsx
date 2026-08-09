@@ -7,7 +7,7 @@ import {
   useTimeSeries,
   useTrack,
 } from "../api/hooks";
-import { METRIC_COLORS } from "../components/chartTheme";
+import { METRIC_COLORS, METRIC_TEXT_COLORS } from "../components/chartTheme";
 import HeroHeader from "../components/HeroHeader";
 import MapPanel from "../components/MapPanel";
 import SectionNav, { type NavItem } from "../components/SectionNav";
@@ -407,8 +407,11 @@ export default function ActivityDetail() {
           {AVAILABLE_METRICS.map(({ key, label }) => {
             const checked = selectedMetrics.includes(key);
             // Active toggles carry the metric's semantic color (Issue #214),
-            // matching its line color in the chart below.
+            // matching its line color in the chart below. Tint, border and the
+            // checkbox keep the vivid chart hue (non-text, >=3:1); the label
+            // takes the darkened on-light variant so it clears AA (#911).
             const color = METRIC_COLORS[key] ?? "#16213a";
+            const textColor = METRIC_TEXT_COLORS[key] ?? "#16213a";
             return (
               <label
                 key={key}
@@ -420,7 +423,7 @@ export default function ActivityDetail() {
                 style={
                   checked
                     ? {
-                        color,
+                        color: textColor,
                         borderColor: `${color}4d`,
                         backgroundColor: `${color}14`,
                       }

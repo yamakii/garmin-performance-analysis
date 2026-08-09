@@ -189,7 +189,7 @@ export default function EfficiencyReport({
                     <dd className="text-xs text-slate-500">{rating}</dd>
                   )}
                   {note && (
-                    <dd className="text-[11px] leading-tight text-slate-400">
+                    <dd className="text-[11px] leading-tight text-slate-500">
                       {note}
                     </dd>
                   )}
@@ -213,7 +213,7 @@ export default function EfficiencyReport({
                   {powerWkg != null && ` / ${powerWkg.toFixed(2)} W/kg`}
                 </dd>
                 {speedActual != null && speedExpected != null && (
-                  <dd className="text-[11px] leading-tight text-slate-400">
+                  <dd className="text-[11px] leading-tight text-slate-500">
                     実測 {speedActual.toFixed(2)} m/s / 期待{" "}
                     {speedExpected.toFixed(2)} m/s
                   </dd>

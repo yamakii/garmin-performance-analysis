@@ -25,6 +25,27 @@ export const METRIC_COLORS: Record<string, string> = {
   vertical_ratio: "#8b5cf6",
 };
 
+/**
+ * On-light text variant of each metric color (Issue #911).
+ *
+ * `METRIC_COLORS` is tuned for canvas strokes on white, where the 3:1 non-text
+ * threshold applies; as *text* those hues run 2.93-4.41:1 and miss AA. Wherever
+ * a metric color has to letter something on a light surface — the time-series
+ * toggles paint their label over an 8% tint of the metric — use this map. Each
+ * entry keeps its metric's hue so the toggle still reads as the chart line it
+ * controls, and clears 4.5:1 on that tint (4.75:1 worst case, cadence).
+ */
+export const METRIC_TEXT_COLORS: Record<string, string> = {
+  heart_rate: "#be123c",
+  speed: "#0f766e",
+  cadence: "#b45309",
+  power: "#6d28d9",
+  elevation: "#57534e",
+  ground_contact_time: "#6d28d9",
+  vertical_oscillation: "#6d28d9",
+  vertical_ratio: "#6d28d9",
+};
+
 /** Decimal places per time-series metric. speed (pace) is excluded
  *  because it uses a dedicated mm:ss formatter. */
 export const METRIC_DECIMALS: Record<string, number> = {

@@ -32,7 +32,7 @@ export default function StarRating({
 }) {
   const parsed = parseStarRating(text);
   if (!parsed) {
-    return <span className="text-sm text-gold">{text}</span>;
+    return <span className="text-sm text-amber-800">{text}</span>;
   }
   const filled = Math.min(
     STAR_COUNT,
@@ -44,11 +44,17 @@ export default function StarRating({
       className="inline-flex items-center gap-2"
       aria-label={`評価 ${parsed.score.toFixed(1)} / ${parsed.max.toFixed(1)}`}
     >
+      {/*
+       * The glyph row is decorative (aria-hidden, duplicated by the numeric
+       * pill and the aria-label), so it keeps the vivid gold/slate pair. The
+       * pill carries the actual score as text and so must clear AA — gold is
+       * 1.99:1 on its own tint, amber-800 is 6.75:1 (Issue #911).
+       */}
       <span aria-hidden="true" className={`${starClass} leading-none`}>
         <span className="text-gold">{"★".repeat(filled)}</span>
         <span className="text-slate-300">{"★".repeat(STAR_COUNT - filled)}</span>
       </span>
-      <span className="rounded-full bg-gold/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-gold">
+      <span className="rounded-full bg-gold/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-amber-800">
         {parsed.score.toFixed(1)} / {parsed.max.toFixed(1)}
       </span>
     </span>

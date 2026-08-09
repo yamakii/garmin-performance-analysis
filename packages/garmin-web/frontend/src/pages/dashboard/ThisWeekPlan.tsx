@@ -86,7 +86,7 @@ export default function ThisWeekPlan({
         <h2 className="font-display text-base font-semibold text-ink">
           {isCurrentWeek ? "今週のプラン" : "直近レビューのプラン"}
         </h2>
-        <span className="font-numeric text-xs tabular-nums text-slate-400">
+        <span className="font-numeric text-xs tabular-nums text-slate-500">
           {review.week_start_date} 〜 {review.week_end_date}
         </span>
       </div>
@@ -114,7 +114,7 @@ export default function ThisWeekPlan({
                   <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-800">
                     {row.session ?? "-"}
                     {isToday && (
-                      <span className="rounded-full bg-signal/15 px-2 py-0.5 text-[10px] font-bold text-signal">
+                      <span className="rounded-full bg-signal/15 px-2 py-0.5 text-[10px] font-bold text-signal-ink">
                         今日
                       </span>
                     )}
@@ -135,7 +135,7 @@ export default function ThisWeekPlan({
 
       {recommendations.length > 0 && (
         <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
-          <h3 className="text-xs font-semibold tracking-[0.2em] text-slate-400 uppercase">
+          <h3 className="text-xs font-semibold tracking-[0.2em] text-slate-500 uppercase">
             Next Actions
           </h3>
           {recommendations.map((rec, i) => (

@@ -242,7 +242,7 @@ export default function ActivityList() {
                   onClick={() =>
                     updateParams({ range: DEFAULT_PRESET, q: "" })
                   }
-                  className="cursor-pointer text-signal underline underline-offset-2 hover:text-ink"
+                  className="cursor-pointer font-medium text-signal-ink underline underline-offset-2 hover:text-ink"
                 >
                   フィルタを解除
                 </button>
@@ -280,7 +280,7 @@ export default function ActivityList() {
                             "",
                           )}
                         </span>
-                        <span className="ml-0.5 text-xs font-normal text-slate-400">
+                        <span className="ml-0.5 text-xs font-normal text-slate-500">
                           km
                         </span>
                       </span>
@@ -291,7 +291,7 @@ export default function ActivityList() {
                             "",
                           )}
                         </span>
-                        <span className="ml-0.5 text-xs text-slate-400">
+                        <span className="ml-0.5 text-xs text-slate-500">
                           /km
                         </span>
                       </span>
@@ -299,7 +299,7 @@ export default function ActivityList() {
                         <span className="text-base">
                           {activity.avg_heart_rate ?? "-"}
                         </span>
-                        <span className="ml-0.5 text-xs text-slate-400">
+                        <span className="ml-0.5 text-xs text-slate-500">
                           bpm
                         </span>
                       </span>

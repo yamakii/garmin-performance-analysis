@@ -15,7 +15,7 @@ export default function EmptyState({
   return (
     <div className="py-4 text-center">
       <p className="text-sm text-slate-500">{message}</p>
-      {hint != null && <p className="mt-1 text-xs text-slate-400">{hint}</p>}
+      {hint != null && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
     </div>
   );
 }

@@ -36,7 +36,7 @@ export default function Disclosure({
         </span>
         <span
           aria-hidden="true"
-          className="shrink-0 text-slate-400 transition-transform group-open:rotate-90"
+          className="shrink-0 text-slate-500 transition-transform group-open:rotate-90"
         >
           ›
         </span>

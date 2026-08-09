@@ -18,16 +18,34 @@
   --color-gold: #f59e0b;
 
   /*
+   * Text-safe companion to --color-signal (Issue #911). The brand orange is
+   * only 3.10:1 on white: fine as a fill, border or large display numeral
+   * (>=3:1 non-text / large-text), but below AA 4.5:1 for body-sized text.
+   * Use signal-ink whenever the accent has to carry small text — including on
+   * a signal tint: 5.60:1 on white, 5.03:1 on `bg-signal/15`, 4.61:1 on that
+   * same tint over slate-100 (the darkest end of the hero gradients).
+   */
+  --color-signal-ink: #bf360c;
+
+  /*
    * Status semantics (良 / 注意 / 悪 / 情報) — Issue #650.
    * Use as the "on" (text/icon) color over a soft tint of the same hue
    * (e.g. `bg-status-good/10 text-status-good`) so good/warn/bad badges
    * follow the same token discipline as ink/signal/gold instead of ad-hoc
    * amber-100 / emerald-100 / sky-100 utility pairs.
+   *
+   * All four clear AA 4.5:1 as text on white, slate-50 and slate-100 — and on
+   * their own /10 tint over each of those (Issue #911). The previous values
+   * (#059669 / #d97706 / #dc2626 / #0284c7) failed at 3.19-4.83:1 on white.
+   * `--color-status-warn` is one step darker than the amber the audit
+   * proposed (#b45309), which measured 4.42:1 on `bg-status-warn/10` over
+   * slate-50 — the badge's real background — and so missed AA.
+   * Ratios below are vs white / on own /10 tint over slate-100 (worst case).
    */
-  --color-status-good: #059669; /* emerald — 良 / on-track positive */
-  --color-status-warn: #d97706; /* amber — 注意 / caution */
-  --color-status-bad: #dc2626; /* red — 悪 / problem */
-  --color-status-info: #0284c7; /* sky — 情報 / neutral progress */
+  --color-status-good: #047857; /* emerald — 良 — 5.48:1 / 4.60:1 */
+  --color-status-warn: #92400e; /* amber — 注意 — 7.09:1 / 5.92:1 */
+  --color-status-bad: #b91c1c; /* red — 悪 — 6.47:1 / 5.41:1 */
+  --color-status-info: #0369a1; /* sky — 情報 — 5.93:1 / 4.97:1 */
 
   /* Metric semantic colors (chartTheme.ts METRIC_COLORS mirrors these) */
   --color-metric-hr: #e11d48;

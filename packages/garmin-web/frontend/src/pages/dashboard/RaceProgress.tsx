@@ -125,7 +125,7 @@ function Countdown({ days }: { days: number | null }) {
   }
   return (
     <span className="flex items-baseline gap-1">
-      <span className="text-xs text-slate-400">あと</span>
+      <span className="text-xs text-slate-500">あと</span>
       <span className="font-numeric text-2xl leading-none font-bold tabular-nums text-signal">
         {days}
       </span>

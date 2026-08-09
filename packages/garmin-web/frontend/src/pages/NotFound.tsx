@@ -8,7 +8,12 @@ import { Link } from "react-router-dom";
 export default function NotFound() {
   return (
     <div className="flex flex-col items-center gap-3 py-20 text-center">
-      <p className="font-numeric text-5xl font-bold text-slate-300">404</p>
+      {/*
+       * Decorative-scale numeral, but still real text: slate-300 (1.48:1) and
+       * slate-400 (2.63:1) both miss even the 3:1 large-text floor, so the 404
+       * uses slate-500 (4.77:1) — Issue #911.
+       */}
+      <p className="font-numeric text-5xl font-bold text-slate-500">404</p>
       <h1 className="font-display text-xl font-semibold text-ink">
         ページが見つかりません
       </h1>
