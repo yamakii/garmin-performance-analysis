@@ -1,6 +1,6 @@
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "../test/utils";
+import { fireEvent, render, screen, within } from "../test/utils";
 import WeeklyReviewDetail from "./WeeklyReviewDetail";
 import type { WeeklyReviewData } from "../types";
 
@@ -21,20 +21,29 @@ const fullReview: WeeklyReviewData = {
   overall: "総じて順調です。",
 };
 
+/** 10 lines — past both the line and the character budget of `lines={3}`. */
+const LONG_OVERALL = Array.from(
+  { length: 10 },
+  (_, i) => `${i + 1}行目の総評テキストです。`,
+).join("\n");
+
 function renderDetail(reviewData: WeeklyReviewData) {
-  const versions = [
-    {
-      review_id: 1,
-      user_id: "default",
-      week_start_date: "2026-06-15",
-      week_end_date: "2026-06-21",
-      review_date: "2026-06-22",
-      review_data: reviewData,
-      created_at: null,
-      agent_name: "weekly-review",
-      agent_version: "1.0",
-    },
-  ];
+  return renderVersions([reviewData]);
+}
+
+/** Renders the page with one saved version per review payload (newest first). */
+function renderVersions(reviewDataList: WeeklyReviewData[]) {
+  const versions = reviewDataList.map((reviewData, i) => ({
+    review_id: i + 1,
+    user_id: "default",
+    week_start_date: "2026-06-15",
+    week_end_date: "2026-06-21",
+    review_date: "2026-06-22",
+    review_data: reviewData,
+    created_at: `2026-06-2${2 - i}T09:00:00`,
+    agent_name: "weekly-review",
+    agent_version: "1.0",
+  }));
   vi.stubGlobal(
     "fetch",
     vi.fn().mockResolvedValue(
@@ -238,5 +247,133 @@ describe("WeeklyReviewDetail", () => {
     // ...and it is the last Section card heading in DOM order.
     const cardHeadings = screen.getAllByRole("heading", { level: 2 });
     expect(cardHeadings[cardHeadings.length - 1]).toHaveTextContent("総評");
+  });
+
+  it("test_actuals_rendered_as_stat_tiles", async () => {
+    renderDetail({ this_week: { volume_km: 42.5, run_count: 4 } });
+
+    await screen.findByRole("heading", { level: 2, name: "実績サマリー" });
+
+    // Each figure is a <dd> inside the tile grid, with its unit as a suffix.
+    const volume = screen.getByText("42.5");
+    expect(volume.tagName).toBe("DD");
+    expect(volume.closest("dl")).not.toBeNull();
+    expect(volume.textContent).toBe("42.5km");
+
+    const runs = screen.getByText("4");
+    expect(runs.tagName).toBe("DD");
+    expect(runs.textContent).toBe("4回");
+
+    // The label is a tile caption now, not a "走行距離: 42.5 km" prose row.
+    expect(screen.getByText("走行距離").tagName).toBe("DT");
+    expect(screen.queryByText(/走行距離:/)).not.toBeInTheDocument();
+  });
+
+  it("test_weight_flag_renders_warn_chip", async () => {
+    renderDetail({
+      weight_tracking: { recent_median_kg: 79.6, flag: "増加傾向" },
+    });
+
+    await screen.findByRole("heading", { level: 2, name: "体重トラッキング" });
+
+    const flag = screen.getByText("増加傾向");
+    expect(flag).toHaveClass("bg-status-warn/10");
+    expect(flag).toHaveClass("text-status-warn");
+  });
+
+  it("test_periodization_countdown_chips", async () => {
+    renderDetail({
+      periodization: { weeks_to_a_race: 12, expected_phase: "基礎構築" },
+    });
+
+    await screen.findByRole("heading", { level: 2, name: "目標逆算フェーズ" });
+
+    expect(screen.getByText(/Aレースまで 12週/)).toBeInTheDocument();
+    expect(screen.getByText(/基礎構築/)).toBeInTheDocument();
+
+    // The five prose rows are gone: the card is chips only.
+    const card = document.getElementById("wr-periodization");
+    expect(card?.querySelectorAll("p")).toHaveLength(0);
+    expect(screen.queryByText(/あるべきフェーズ/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/ギャップ/)).not.toBeInTheDocument();
+  });
+
+  it("test_verdict_ratings_as_badges", async () => {
+    renderDetail({
+      verdict: [
+        { date: "2026-06-16", session: "Easy Run", rating: "✅" },
+        { date: "2026-06-18", session: "Tempo", rating: "🟡" },
+        { date: "2026-06-20", session: "Long Run", rating: "🔴" },
+      ],
+    });
+
+    await screen.findByRole("heading", { level: 2, name: "対象週プラン評価" });
+
+    expect(screen.getByText("✅")).toHaveClass("text-status-good");
+    expect(screen.getByText("🟡")).toHaveClass("text-status-warn");
+    expect(screen.getByText("🔴")).toHaveClass("text-status-bad");
+  });
+
+  it("test_prose_sections_clamped", async () => {
+    renderDetail({ overall: LONG_OVERALL });
+
+    await screen.findByRole("heading", { level: 2, name: "総評" });
+
+    const toggle = screen.getByRole("button", { name: "続きを読む" });
+    fireEvent.click(toggle);
+
+    expect(screen.getByRole("button", { name: "閉じる" })).toBeInTheDocument();
+    expect(screen.getByText(/10行目の総評テキストです。/)).toBeInTheDocument();
+  });
+
+  it("test_recommendations_first_visible_rest_collapsed", async () => {
+    renderDetail({
+      recommendations: [
+        "月曜は休養に充てる",
+        "水曜はテンポ走を20分",
+        "日曜はロング走を90分",
+      ],
+    });
+
+    await screen.findByRole("heading", { level: 2, name: "推奨アクション" });
+
+    // The lead action stands on its own, outside the disclosure.
+    expect(screen.getByText("月曜は休養に充てる").closest("details")).toBeNull();
+
+    const details = screen.getByText("他の推奨 2件").closest("details");
+    expect(details).not.toBeNull();
+    expect(details!.hasAttribute("open")).toBe(false);
+    expect(within(details!).getByText("水曜はテンポ走を20分")).toBeInTheDocument();
+    expect(within(details!).getByText("日曜はロング走を90分")).toBeInTheDocument();
+
+    // Opening it reveals every remaining action.
+    fireEvent.click(details!.querySelector("summary")!);
+    expect(details!.hasAttribute("open")).toBe(true);
+  });
+
+  it("test_version_select_and_sections_nav_unchanged", async () => {
+    renderVersions([
+      { ...fullReview, overall: "最新版の総評です。" },
+      { ...fullReview, overall: "旧版の総評です。" },
+    ]);
+
+    const select = await screen.findByLabelText("版を選択:");
+    expect(screen.getByText("全2版")).toBeInTheDocument();
+    expect(screen.getByText("最新版の総評です。")).toBeInTheDocument();
+
+    // The in-page nav still links every rendered Section card.
+    const nav = screen.getByRole("navigation", { name: "セクション目次" });
+    expect(
+      within(nav).getByRole("link", { name: "実績サマリー" }),
+    ).toHaveAttribute("href", "#wr-actuals");
+    expect(within(nav).getByRole("link", { name: "総評" })).toHaveAttribute(
+      "href",
+      "#wr-overall",
+    );
+
+    // Switching versions still swaps the rendered payload.
+    fireEvent.change(select, { target: { value: "1" } });
+    expect(screen.getByText("旧版の総評です。")).toBeInTheDocument();
+    expect(screen.queryByText("最新版の総評です。")).not.toBeInTheDocument();
   });
 });
