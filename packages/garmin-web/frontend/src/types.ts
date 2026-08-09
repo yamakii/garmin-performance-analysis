@@ -446,9 +446,23 @@ export interface EnvironmentSectionData {
   [key: string]: unknown;
 }
 
+/**
+ * Weighted star-rating payload emitted by the section agents (Issue #706):
+ * per-axis 0-5 scores, the weight each axis carries, and the weighted total.
+ * `weights` / `star_rating` are optional because older saved analyses predate
+ * them, and the index signature keeps forward-compatible keys readable.
+ */
+export interface StarRatingBreakdown {
+  axis_scores: Record<string, number>;
+  weights?: Record<string, number>;
+  star_rating?: number;
+  [key: string]: unknown;
+}
+
 export interface SummarySectionData {
   metadata?: SectionMetadata;
   star_rating?: string; // "★★★★☆ 4.3/5.0" format
+  star_rating_breakdown?: StarRatingBreakdown;
   summary?: AnalysisText;
   key_strengths?: string[];
   improvement_areas?: string[];

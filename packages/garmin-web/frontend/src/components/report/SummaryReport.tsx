@@ -1,9 +1,10 @@
 import type { SectionResult } from "../../types";
 import { formatNumber } from "../../utils/formatNumber";
+import Disclosure from "../Disclosure";
 import FallbackFields from "./FallbackFields";
 import MarkdownText from "./MarkdownText";
 import NextRunTarget from "./NextRunTarget";
-import ReportCard, { SUBCARD } from "./ReportCard";
+import ReportCard from "./ReportCard";
 import StarRating from "./StarRating";
 import StarRatingBreakdown from "./StarRatingBreakdown";
 
@@ -138,14 +139,9 @@ export default function SummaryReport({
                   />
                 )}
               {typeof data.recommendations === "string" && (
-                <details className={SUBCARD}>
-                  <summary className="cursor-pointer text-sm font-medium text-slate-600">
-                    詳しい改善ポイント
-                  </summary>
-                  <div className="mt-2">
-                    <MarkdownText text={data.recommendations} />
-                  </div>
-                </details>
+                <Disclosure title="詳しい改善ポイント">
+                  <MarkdownText text={data.recommendations} />
+                </Disclosure>
               )}
             </div>
           )}

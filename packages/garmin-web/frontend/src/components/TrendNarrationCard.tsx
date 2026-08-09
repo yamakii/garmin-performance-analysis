@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTrendNarration, useTrendNarrationVersions } from "../api/hooks";
 import type { Granularity, TrendNarration } from "../api/trends";
+import ClampedProse from "./ClampedProse";
 
 /**
  * Full-width coach-narration card for the Trends dashboard (#791).
@@ -9,8 +10,9 @@ import type { Granularity, TrendNarration } from "../api/trends";
  * then loads every saved version of that period so the reader can switch
  * between past write-ups (modeled on `WeeklyReviewDetail`'s `版を選択:` select).
  * The free-form `analysis_data` payload is rendered as prose: string values
- * become paragraphs and string arrays become bullet lists. Renders nothing
- * until a narration exists (a 404 / empty table simply hides the card).
+ * become clamped paragraphs (first few lines, with a 続きを読む toggle) and
+ * string arrays become bullet lists. Renders nothing until a narration exists
+ * (a 404 / empty table simply hides the card).
  */
 
 interface TrendNarrationCardProps {
@@ -22,19 +24,21 @@ function versionLabel(version: TrendNarration, isLatest: boolean): string {
   return isLatest ? `${stamp}（最新）` : stamp;
 }
 
+/** Default clamp for a narration paragraph: long enough to carry the verdict. */
+const NARRATIVE_CLAMP_LINES = 6;
+
 function NarrativeBody({ data }: { data: Record<string, unknown> }) {
   const entries = Object.entries(data);
   return (
     <div className="space-y-3 text-sm leading-relaxed text-slate-700">
       {entries.map(([key, value]) => {
         if (typeof value === "string") {
-          const lines = value.split("\n").filter((line) => line.trim() !== "");
           return (
-            <div key={key} className="space-y-1">
-              {lines.map((line, i) => (
-                <p key={i}>{line}</p>
-              ))}
-            </div>
+            <ClampedProse
+              key={key}
+              text={value}
+              lines={NARRATIVE_CLAMP_LINES}
+            />
           );
         }
         if (
