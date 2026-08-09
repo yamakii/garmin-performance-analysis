@@ -7,6 +7,7 @@ import {
 } from "../../components/chartTheme";
 import { axisTooltipFormatter, formatNumber } from "../../utils/formatNumber";
 import type { HrvStatus, RecoveryTrend, RhrTrend } from "../../types";
+import { CARD_CLASS } from "../../components/Card";
 
 interface RecoveryPanelProps {
   data: RecoveryTrend;
@@ -118,7 +119,7 @@ export default function RecoveryPanel({ data }: RecoveryPanelProps) {
   return (
     <section
       aria-label="回復トレンド (RHR / HRV)"
-      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+      className={CARD_CLASS}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="font-display text-base font-semibold text-ink">

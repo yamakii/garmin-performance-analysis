@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useActivities, type ActivityRange } from "../api/hooks";
 import EmptyState from "../components/EmptyState";
+import { PageError, PageLoading } from "../components/PageState";
 import SectionHeading from "../components/SectionHeading";
 import { usePageTitle } from "../hooks/usePageTitle";
 import type { ActivitySummary } from "../types";
@@ -145,7 +146,7 @@ export default function ActivityList() {
   // The date range is a server-side bound (fewer rows over the wire); the text
   // query filters what came back, so typing never triggers a refetch.
   const range = useMemo(() => presetToRange(preset), [preset]);
-  const { data, isPending, error } = useActivities(range);
+  const { data, isPending, error, refetch } = useActivities(range);
   const activities = data ?? [];
   const visible = filterByName(activities, search);
   const isFiltered = preset !== DEFAULT_PRESET || search.trim() !== "";
@@ -215,20 +216,9 @@ export default function ActivityList() {
       </div>
 
       {isPending ? (
-        <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
-          <span
-            aria-hidden="true"
-            className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-ink motion-reduce:animate-none"
-          />
-          読み込み中...
-        </div>
+        <PageLoading />
       ) : error ? (
-        <p
-          role="alert"
-          className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-        >
-          エラー: {error.message}
-        </p>
+        <PageError error={error} onRetry={() => void refetch()} />
       ) : visible.length === 0 ? (
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-8 shadow-sm">
           <EmptyState

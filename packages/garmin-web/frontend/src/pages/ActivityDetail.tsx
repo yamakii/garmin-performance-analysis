@@ -7,9 +7,11 @@ import {
   useTimeSeries,
   useTrack,
 } from "../api/hooks";
+import { CARD_CLASS } from "../components/Card";
 import { METRIC_COLORS, METRIC_TEXT_COLORS } from "../components/chartTheme";
 import HeroHeader from "../components/HeroHeader";
 import MapPanel from "../components/MapPanel";
+import { PageError, PageLoading } from "../components/PageState";
 import SectionNav, { type NavItem } from "../components/SectionNav";
 import EfficiencyReport from "../components/report/EfficiencyReport";
 import EnvironmentReport from "../components/report/EnvironmentReport";
@@ -260,24 +262,19 @@ export default function ActivityDetail() {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
-        <span
-          aria-hidden="true"
-          className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-ink motion-reduce:animate-none"
-        />
-        読み込み中...
-      </div>
-    );
+    return <PageLoading />;
   }
   if (fatalError) {
     return (
-      <p
-        role="alert"
-        className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-      >
-        エラー: {fatalError.message}
-      </p>
+      <PageError
+        error={fatalError}
+        // Either fetch can be the failing one, and both are required for the
+        // page to render — so a retry re-runs the pair.
+        onRetry={() => {
+          void detailQuery.refetch();
+          void sectionsQuery.refetch();
+        }}
+      />
     );
   }
   if (!detail) {
@@ -404,7 +401,7 @@ export default function ActivityDetail() {
       {/* Time series chart with metric toggles */}
       <section
         id="section-timeseries"
-        className="scroll-mt-20 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+        className={`scroll-mt-20 ${CARD_CLASS}`}
       >
         <h2 className="mb-3 font-display text-base font-semibold text-ink">
           タイムシリーズ
@@ -503,7 +500,7 @@ export default function ActivityDetail() {
       {hasSplits && (
         <section
           id="section-splits"
-          className="scroll-mt-20 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+          className={`scroll-mt-20 ${CARD_CLASS}`}
         >
           <h2 className="mb-3 font-display text-base font-semibold text-ink">
             スプリット

@@ -1,8 +1,6 @@
 import type { ReactNode } from "react";
 import type { SectionResult } from "../../types";
-
-export const REPORT_CARD_CLASS =
-  "rounded-xl border border-slate-200 bg-white p-5 shadow-sm";
+import { CARD_CLASS } from "../Card";
 
 /** Neutral gray sub-box nested on a white report card. */
 export const SUBCARD = "rounded-lg bg-slate-50 px-3 py-2";
@@ -68,7 +66,7 @@ export default function ReportCard({
     body = <p className="text-sm text-slate-500">分析データがありません。</p>;
   }
   return (
-    <section className={REPORT_CARD_CLASS}>
+    <section className={CARD_CLASS}>
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <h2 className="font-display text-base font-semibold text-ink">
           {title}

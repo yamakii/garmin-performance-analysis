@@ -1,5 +1,6 @@
 import { formatNumber } from "../../utils/formatNumber";
 import type { MetricBaseline, WellnessBaselineDeviation } from "../../types";
+import { CARD_CLASS } from "../../components/Card";
 
 interface WellnessBaselineChartProps {
   data: WellnessBaselineDeviation;
@@ -34,7 +35,7 @@ export default function WellnessBaselineChart({
   return (
     <section
       aria-label="ウェルネス個人ベースライン逸脱"
-      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm md:col-span-2"
+      className={`${CARD_CLASS} md:col-span-2`}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="font-display text-base font-semibold text-ink">

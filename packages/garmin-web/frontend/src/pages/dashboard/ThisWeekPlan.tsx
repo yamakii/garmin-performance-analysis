@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import EmptyState, { CliCommand } from "../../components/EmptyState";
 import type { WeeklyReview, WeeklyReviewVerdict } from "../../types";
 import { ratingMeta } from "../../utils/verdictRating";
+import { CARD_CLASS } from "../../components/Card";
 
 /** Local-date ISO string (YYYY-MM-DD) — avoids UTC shift from toISOString(). */
 export function toIsoDate(date: Date): string {
@@ -44,7 +45,7 @@ export default function ThisWeekPlan({
     return (
       <section
         aria-label="今週のプランと次の行動"
-        className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+        className={CARD_CLASS}
       >
         <h2 className="mb-2 font-display text-base font-semibold text-ink">
           今週のプランと次の行動
@@ -81,7 +82,7 @@ export default function ThisWeekPlan({
   return (
     <section
       aria-label="今週のプランと次の行動"
-      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+      className={CARD_CLASS}
     >
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="font-display text-base font-semibold text-ink">

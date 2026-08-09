@@ -1,5 +1,6 @@
 import StatusBadge from "../../components/StatusBadge";
 import type { FormAnomalyFlagsResponse } from "../../types";
+import { CARD_CLASS } from "../../components/Card";
 
 interface FormAnomalyFlagsCardProps {
   data: FormAnomalyFlagsResponse;
@@ -20,7 +21,7 @@ export default function FormAnomalyFlagsCard({
   return (
     <section
       aria-label="今週の注意点"
-      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+      className={CARD_CLASS}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="font-display text-base font-semibold text-ink">

@@ -7,6 +7,7 @@ import {
 } from "../../components/chartTheme";
 import { axisTooltipFormatter, formatNumber } from "../../utils/formatNumber";
 import type { BodyCompositionTrend } from "../../types";
+import { CARD_CLASS } from "../../components/Card";
 
 interface BodyCompositionChartProps {
   data: BodyCompositionTrend;
@@ -77,7 +78,7 @@ export default function BodyCompositionChart({ data }: BodyCompositionChartProps
   return (
     <section
       aria-label="体組成 (体重内訳)"
-      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+      className={CARD_CLASS}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="font-display text-base font-semibold text-ink">

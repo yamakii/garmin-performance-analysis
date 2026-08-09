@@ -1,6 +1,8 @@
 import { Link } from "react-router-dom";
 import EmptyState, { CliCommand } from "../components/EmptyState";
 import SectionHeading from "../components/SectionHeading";
+import { CARD_CLASS } from "../components/Card";
+import { PageError, PageLoading } from "../components/PageState";
 import { useWeeklyReviews } from "../api/hooks";
 import { usePageTitle } from "../hooks/usePageTitle";
 import type { WeeklyReview } from "../types";
@@ -34,40 +36,24 @@ export function overallExcerpt(review: WeeklyReview): string {
 }
 
 export default function WeeklyReviews() {
-  const { data, isPending, error } = useWeeklyReviews();
-  const reviews = data ?? null;
+  const { data, isPending, error, refetch } = useWeeklyReviews();
+  // A resolved-but-absent list reads the same as an empty one; it used to
+  // return null instead, rendering a white page with no explanation (#914).
+  const reviews = data ?? [];
   usePageTitle("週次レビュー");
 
   if (isPending) {
-    return (
-      <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
-        <span
-          aria-hidden="true"
-          className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-ink motion-reduce:animate-none"
-        />
-        読み込み中...
-      </div>
-    );
+    return <PageLoading />;
   }
   if (error) {
-    return (
-      <p
-        role="alert"
-        className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-      >
-        エラー: {error.message}
-      </p>
-    );
-  }
-  if (reviews == null) {
-    return null;
+    return <PageError error={error} onRetry={() => void refetch()} />;
   }
 
   return (
     <div className="stagger-in space-y-6">
       <SectionHeading eyebrow="Weekly Review" title="週次レビュー" />
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section className={CARD_CLASS}>
         {reviews.length > 0 ? (
           <ul className="divide-y divide-slate-100">
             {reviews.map((review) => {

@@ -7,6 +7,7 @@ import {
 } from "../../components/chartTheme";
 import { axisTooltipFormatter } from "../../utils/formatNumber";
 import type { EfficiencyTrendPoint } from "../../api/trends";
+import { CARD_CLASS } from "../../components/Card";
 
 interface EfficiencyBlockProps {
   data: EfficiencyTrendPoint[];
@@ -49,7 +50,7 @@ export default function EfficiencyBlock({ data }: EfficiencyBlockProps) {
   return (
     <section
       aria-label="効率"
-      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+      className={CARD_CLASS}
     >
       <h2 className="mb-3 font-display text-base font-semibold text-ink">
         効率推移 (HRゾーン分布)

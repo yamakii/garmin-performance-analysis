@@ -10,6 +10,7 @@ import type {
   DurabilityDirection,
   DurabilityTrend,
 } from "../../types";
+import { CARD_CLASS } from "../../components/Card";
 
 interface DurabilityBlockProps {
   data: DurabilityTrend;
@@ -121,7 +122,7 @@ export default function DurabilityBlock({ data }: DurabilityBlockProps) {
   return (
     <section
       aria-label="耐久性 (心拍デカップリング)"
-      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+      className={CARD_CLASS}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="font-display text-base font-semibold text-ink">

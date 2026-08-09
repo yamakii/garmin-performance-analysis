@@ -367,6 +367,30 @@ describe("ActivityList filters (Issue #893)", () => {
     expect(within(rows[0]).getByText("ロング走 18km")).toBeInTheDocument();
   });
 
+  it("test_page_error_has_retry", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ detail: "db down" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderList();
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("読み込みに失敗しました");
+
+    // A failed load is recoverable in place: the retry re-runs the request
+    // instead of leaving a browser reload as the only way forward.
+    const attempts = fetchMock.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "再試行" }));
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.length).toBeGreaterThan(attempts);
+    });
+  });
+
   it("test_empty_filter_result_shows_empty_state", async () => {
     stubFetch(NAMED_ACTIVITIES);
 

@@ -116,6 +116,21 @@ describe("TrendNarrationCard", () => {
     expect(screen.getByText(/12段落目の詳細な解説テキストです。/)).toBeInTheDocument();
   });
 
+  it("test_narration_card_shows_skeleton_while_pending", () => {
+    // A fetch that never settles keeps the narration query pending.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise<Response>(() => {})),
+    );
+
+    render(<TrendNarrationCard granularity="week" />);
+
+    // Pending is not "no narration": the card holds its space so the cards
+    // below it do not jump once the text arrives.
+    const skeleton = screen.getByRole("status", { name: "トレンド解説" });
+    expect(skeleton).toHaveAttribute("aria-busy", "true");
+  });
+
   it("test_hides_switcher_with_single_version", async () => {
     const narration = makeNarration(
       "単一版の解説テキストです。",

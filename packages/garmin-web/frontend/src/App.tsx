@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import {
   BrowserRouter,
   Navigate,
@@ -7,6 +7,7 @@ import {
   useLocation,
 } from "react-router-dom";
 import Layout from "./components/Layout";
+import { PageLoading } from "./components/PageState";
 
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const ActivityList = lazy(() => import("./pages/ActivityList"));
@@ -29,17 +30,34 @@ function TrendsRedirect() {
   return <Navigate to={{ pathname: "/condition", hash, search }} replace />;
 }
 
+/**
+ * Scroll restoration for the SPA (#914).
+ *
+ * A browser resets the scroll position on every document load; a client-side
+ * route change does not, so following a link from halfway down the activity
+ * list used to open the next page already scrolled past its heading. Landing
+ * at the top on navigation is what the reader expects from a page change.
+ *
+ * A hash navigation is the exception: the anchor target owns the position, and
+ * scrolling to the top would undo the jump to the linked section.
+ */
+export function ScrollToTop() {
+  const { pathname, hash } = useLocation();
+  useEffect(() => {
+    if (hash !== "") {
+      return;
+    }
+    window.scrollTo(0, 0);
+  }, [pathname, hash]);
+  return null;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <Layout>
-        <Suspense
-          fallback={
-            <div className="py-12 text-center text-sm text-slate-500">
-              読み込み中...
-            </div>
-          }
-        >
+        <Suspense fallback={<PageLoading />}>
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/activities" element={<ActivityList />} />

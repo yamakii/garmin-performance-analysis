@@ -7,6 +7,7 @@ import {
 } from "../../components/chartTheme";
 import { axisTooltipFormatter } from "../../utils/formatNumber";
 import type { PhysiologyTrend } from "../../api/trends";
+import { CARD_CLASS } from "../../components/Card";
 
 interface PhysiologyBlockProps {
   data: PhysiologyTrend;
@@ -74,7 +75,7 @@ export default function PhysiologyBlock({ data }: PhysiologyBlockProps) {
   return (
     <section
       aria-label="生理指標"
-      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+      className={CARD_CLASS}
     >
       <h2 className="mb-3 font-display text-base font-semibold text-ink">
         生理指標 (VO2max / 乳酸閾値)
