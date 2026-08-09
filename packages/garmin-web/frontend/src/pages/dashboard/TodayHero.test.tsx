@@ -59,6 +59,20 @@ describe("verdictMeta", () => {
 });
 
 describe("TodayHero", () => {
+  it("test_today_hero_verdict_is_heading", () => {
+    render(<TodayHero status={makeStatus()} baseline={makeBaseline()} />);
+
+    // The one thing the hero exists to say belongs in the page outline, not in
+    // an anonymous paragraph (#912).
+    expect(
+      screen.getByRole("heading", { level: 2, name: "イージー推奨" }),
+    ).toBeInTheDocument();
+    // The English eyebrow only restates it, so it stays out of the outline.
+    expect(
+      screen.queryByRole("heading", { name: /Today/ }),
+    ).not.toBeInTheDocument();
+  });
+
   it("renders the verdict, leading rationale and wellness chips", () => {
     render(<TodayHero status={makeStatus()} baseline={makeBaseline()} />);
 

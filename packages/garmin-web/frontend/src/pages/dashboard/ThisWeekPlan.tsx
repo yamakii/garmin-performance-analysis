@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import EmptyState, { CliCommand } from "../../components/EmptyState";
 import type { WeeklyReview, WeeklyReviewVerdict } from "../../types";
+import { ratingMeta } from "../../utils/verdictRating";
 
 /** Local-date ISO string (YYYY-MM-DD) — avoids UTC shift from toISOString(). */
 export function toIsoDate(date: Date): string {
@@ -107,9 +108,22 @@ export default function ThisWeekPlan({
                 <span className="w-20 shrink-0 pt-0.5 font-numeric text-sm tabular-nums text-slate-500">
                   {row.date != null ? formatDayLabel(row.date) : "—"}
                 </span>
-                <span aria-hidden="true" className="shrink-0 pt-0.5 text-sm">
-                  {row.rating ?? "・"}
-                </span>
+                {row.rating != null ? (
+                  // The rating is the row's verdict, so it needs a name a
+                  // screen reader can use — "large red circle" is not one
+                  // (#912). Rows without a rating keep the decorative bullet.
+                  <span
+                    role="img"
+                    aria-label={ratingMeta(row.rating).label}
+                    className="shrink-0 pt-0.5 text-sm"
+                  >
+                    {row.rating}
+                  </span>
+                ) : (
+                  <span aria-hidden="true" className="shrink-0 pt-0.5 text-sm">
+                    ・
+                  </span>
+                )}
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-800">
                     {row.session ?? "-"}

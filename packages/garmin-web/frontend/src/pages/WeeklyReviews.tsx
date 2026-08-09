@@ -2,12 +2,26 @@ import { Link } from "react-router-dom";
 import EmptyState, { CliCommand } from "../components/EmptyState";
 import SectionHeading from "../components/SectionHeading";
 import { useWeeklyReviews } from "../api/hooks";
+import { usePageTitle } from "../hooks/usePageTitle";
 import type { WeeklyReview } from "../types";
+import { ratingMarks } from "../utils/verdictRating";
 
 /** Count verdict entries with a given emoji rating. */
 export function countRating(review: WeeklyReview, rating: string): number {
   const verdict = review.review_data?.verdict ?? [];
   return verdict.filter((v) => v.rating === rating).length;
+}
+
+/** "良好 4件 注意 2件 要改善 1件" — the emoji tally in words. */
+function ratingSummary(
+  green: number,
+  yellow: number,
+  red: number,
+): string {
+  const counts = [green, yellow, red];
+  return ratingMarks()
+    .map(({ label }, i) => `${label} ${counts[i]}件`)
+    .join(" ");
 }
 
 /** Short excerpt of the overall text (first ~60 chars). */
@@ -22,13 +36,14 @@ export function overallExcerpt(review: WeeklyReview): string {
 export default function WeeklyReviews() {
   const { data, isPending, error } = useWeeklyReviews();
   const reviews = data ?? null;
+  usePageTitle("週次レビュー");
 
   if (isPending) {
     return (
       <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
         <span
           aria-hidden="true"
-          className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-ink"
+          className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-ink motion-reduce:animate-none"
         />
         読み込み中...
       </div>
@@ -69,10 +84,22 @@ export default function WeeklyReviews() {
                       <span className="font-display text-sm font-semibold text-ink">
                         {review.week_start_date} 〜 {review.week_end_date}
                       </span>
+                      {/*
+                       * The emoji tally is a visual scan aid; the words behind
+                       * it are what the link announces (#912), so the counts
+                       * are not read out as three unnamed circles.
+                       */}
                       <span className="font-numeric text-xs tabular-nums text-slate-500">
-                        <span className="mr-2">✅ {greenCount}</span>
-                        <span className="mr-2">🟡 {yellowCount}</span>
-                        <span>🔴 {redCount}</span>
+                        <span aria-hidden="true" className="mr-2">
+                          ✅ {greenCount}
+                        </span>
+                        <span aria-hidden="true" className="mr-2">
+                          🟡 {yellowCount}
+                        </span>
+                        <span aria-hidden="true">🔴 {redCount}</span>
+                        <span className="sr-only">
+                          {ratingSummary(greenCount, yellowCount, redCount)}
+                        </span>
                       </span>
                     </div>
                     <p className="text-sm text-slate-600">

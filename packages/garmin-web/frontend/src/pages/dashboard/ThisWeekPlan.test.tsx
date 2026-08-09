@@ -59,6 +59,28 @@ describe("ThisWeekPlan", () => {
     expect(screen.getByText("今日")).toBeInTheDocument();
   });
 
+  it("test_this_week_plan_rating_accessible", () => {
+    const review = makeReview({
+      verdict: [
+        { date: "2026-07-01", session: "Tempo", rating: "🟡" },
+        { date: "2026-07-05", session: "Long Run", rating: "✅" },
+        { date: "2026-07-06", session: "Rest" },
+      ],
+    });
+
+    renderPlan(review, new Date(2026, 6, 2));
+
+    // The rating carried the row's verdict while being hidden from assistive
+    // tech; it is exposed with the word it stands for now (#912).
+    const warn = screen.getByRole("img", { name: "注意" });
+    expect(warn).toHaveTextContent("🟡");
+    expect(warn).not.toHaveAttribute("aria-hidden");
+    expect(screen.getByRole("img", { name: "良好" })).toHaveTextContent("✅");
+
+    // The placeholder bullet on a rating-less row stays decorative.
+    expect(screen.getAllByRole("img")).toHaveLength(2);
+  });
+
   it("titles the card 直近レビューのプラン when today is outside the week", () => {
     const review = makeReview({
       verdict: [{ date: "2026-06-30", session: "Tempo", rating: "✅" }],

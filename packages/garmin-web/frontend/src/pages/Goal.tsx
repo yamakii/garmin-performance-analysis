@@ -3,6 +3,7 @@ import EmptyState, { CliCommand } from "../components/EmptyState";
 import SectionHeading from "../components/SectionHeading";
 import StatusBadge, { type StatusTone } from "../components/StatusBadge";
 import { useGoal, useRaceReadiness } from "../api/hooks";
+import { usePageTitle } from "../hooks/usePageTitle";
 import type {
   GoalRace,
   RaceReadiness,
@@ -457,6 +458,7 @@ function RetrospectiveCard({ retro }: { retro: SeasonRetrospective }) {
 }
 
 export default function Goal() {
+  usePageTitle("目標");
   const goalQuery = useGoal();
   // Race readiness is supplementary: a failure here must not block the page,
   // so its error is ignored and the hero simply omits the prediction.
@@ -472,7 +474,7 @@ export default function Goal() {
       <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
         <span
           aria-hidden="true"
-          className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-ink"
+          className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-ink motion-reduce:animate-none"
         />
         読み込み中...
       </div>
@@ -505,11 +507,20 @@ export default function Goal() {
   ].filter((race): race is GoalRace => race != null);
   const featuredIds = new Set(featuredRaces.map((race) => race.goal_id));
   const otherRaces = goals.filter((race) => !featuredIds.has(race.goal_id));
+  // The hero carries this page's only h1, and it renders nothing when there is
+  // neither a featured race nor a VDOT — which left the empty page headless
+  // under a run of h2 sections (#912). Mirrors CountdownHero's own guard.
+  const hasHero =
+    featuredRaces.length > 0 || readiness?.current_vdot != null;
 
   return (
     <div className="stagger-in space-y-8">
       {/* 1. Race countdown + VDOT prediction */}
-      <CountdownHero races={featuredRaces} readiness={readiness} />
+      {hasHero ? (
+        <CountdownHero races={featuredRaces} readiness={readiness} />
+      ) : (
+        <SectionHeading eyebrow="Goal" title="目標" />
+      )}
 
       {/* 2. Current phase as a structured accordion */}
       <section className="space-y-4">

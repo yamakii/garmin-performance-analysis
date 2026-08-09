@@ -35,10 +35,18 @@ export default function CriticalSpeedPanel({ data }: CriticalSpeedPanelProps) {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-slate-500">
-              <th className="py-1 font-medium">四半期</th>
-              <th className="py-1 font-medium">CSペース</th>
-              <th className="py-1 font-medium">R²</th>
-              <th className="py-1 font-medium">n</th>
+              <th scope="col" className="py-1 font-medium">
+                四半期
+              </th>
+              <th scope="col" className="py-1 font-medium">
+                CSペース
+              </th>
+              <th scope="col" className="py-1 font-medium">
+                R²
+              </th>
+              <th scope="col" className="py-1 font-medium">
+                n
+              </th>
             </tr>
           </thead>
           <tbody>

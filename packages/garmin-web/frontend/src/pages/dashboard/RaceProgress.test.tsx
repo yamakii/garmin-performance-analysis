@@ -89,6 +89,19 @@ describe("RaceProgress", () => {
     expect(screen.getByText("目標へ →")).toBeInTheDocument();
   });
 
+  it("test_race_progress_link_exposes_content", () => {
+    renderProgress();
+
+    const link = screen.getByRole("link");
+    // The old `aria-label="レースへの道"` replaced the strip's whole accessible
+    // name, so link-by-link navigation heard the title and nothing else (#912).
+    expect(link).not.toHaveAttribute("aria-label");
+    const name = link.textContent ?? "";
+    expect(name).toContain("あと");
+    expect(name).toContain("120");
+    expect(name).toContain("さいたまマラソン");
+  });
+
   it("summarises VDOT, prediction and target on one line", () => {
     renderProgress();
 

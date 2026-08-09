@@ -301,6 +301,23 @@ async function renderSplits(splits: ReturnType<typeof splitRow>[]) {
 }
 
 describe("ActivityDetail splits table bars", () => {
+  it("test_splits_table_scrollable_and_scoped", async () => {
+    await renderSplits([splitRow(1, 390, 138), splitRow(2, 360, 142)]);
+
+    // Six numeric columns do not fit a ~360px screen, so the table scrolls
+    // inside its own wrapper instead of pushing the page sideways (#912).
+    const table = screen.getAllByRole("table")[0];
+    expect(table.parentElement).toHaveClass("overflow-x-auto");
+
+    // Every header cell declares the column it labels, so a screen reader can
+    // announce "ペース 6:30/km" per cell instead of a bare number.
+    const headers = within(table).getAllByRole("columnheader");
+    expect(headers).toHaveLength(6);
+    for (const header of headers) {
+      expect(header).toHaveAttribute("scope", "col");
+    }
+  });
+
   it("test_split_table_inline_bars", async () => {
     // 5:30 (fastest) .. 6:30 (slowest), HR rising with the pace.
     const rows = await renderSplits([
@@ -409,6 +426,20 @@ describe("ActivityDetail version selector", () => {
     vi.stubGlobal("fetch", fetchMock);
     return fetchMock;
   }
+
+  it("test_version_select_has_focus_ring", async () => {
+    stubVersionedFetch();
+    renderDetail();
+
+    const select = await screen.findByLabelText("分析版を選択:");
+
+    // Keyboard focus must stay visible: the old style removed the UA outline
+    // and offered only a border tint in exchange (#912).
+    const classes = select.className.split(" ");
+    expect(select.className).toContain("focus-visible:ring-2");
+    expect(classes).not.toContain("focus:outline-none");
+    expect(classes).not.toContain("outline-none");
+  });
 
   it("バージョンセレクタが2版を表示し切替できる", async () => {
     const fetchMock = stubVersionedFetch();

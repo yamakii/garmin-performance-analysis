@@ -113,34 +113,38 @@ export default function MapPanel({
   };
 
   return (
-    <MapContainer
-      bounds={bounds}
-      scrollWheelZoom={false}
-      style={{ width: "100%", height: 400 }}
-    >
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
-      <Polyline
-        positions={positions}
-        pathOptions={{ color: INK_COLOR, weight: 4 }}
-        eventHandlers={{
-          mousemove: handleMouseMove,
-          mouseout: () => onHoverSeqNo?.(null),
-        }}
-      />
-      {hoverPoint && (
-        <CircleMarker
-          center={[hoverPoint.lat, hoverPoint.lon]}
-          radius={7}
-          pathOptions={{
-            color: HOVER_MARKER_COLOR,
-            fillColor: HOVER_MARKER_COLOR,
-            fillOpacity: 0.9,
+    // The map is a landmark with a name (#912): its tiles and polyline carry no
+    // text, so without a label it is an unnamed 400px hole to a screen reader.
+    <div role="region" aria-label="コース地図">
+      <MapContainer
+        bounds={bounds}
+        scrollWheelZoom={false}
+        style={{ width: "100%", height: 400 }}
+      >
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        <Polyline
+          positions={positions}
+          pathOptions={{ color: INK_COLOR, weight: 4 }}
+          eventHandlers={{
+            mousemove: handleMouseMove,
+            mouseout: () => onHoverSeqNo?.(null),
           }}
         />
-      )}
-    </MapContainer>
+        {hoverPoint && (
+          <CircleMarker
+            center={[hoverPoint.lat, hoverPoint.lon]}
+            radius={7}
+            pathOptions={{
+              color: HOVER_MARKER_COLOR,
+              fillColor: HOVER_MARKER_COLOR,
+              fillOpacity: 0.9,
+            }}
+          />
+        )}
+      </MapContainer>
+    </div>
   );
 }

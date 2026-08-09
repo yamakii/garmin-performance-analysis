@@ -95,7 +95,11 @@ export default function TodayHero({ status, baseline }: TodayHeroProps) {
          * where slate-500 drops to 4.35:1 (Issue #911).
          */}
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <p className="text-xs font-semibold tracking-[0.2em] text-slate-600 uppercase">
+          {/* Decorative eyebrow: the verdict heading below says the same (#912). */}
+          <p
+            aria-hidden="true"
+            className="text-xs font-semibold tracking-[0.2em] text-slate-600 uppercase"
+          >
             Today&apos;s Verdict
           </p>
           {date != null && (
@@ -105,11 +109,16 @@ export default function TodayHero({ status, baseline }: TodayHeroProps) {
           )}
         </div>
 
-        <p
+        {/*
+         * The verdict word is the hero's heading, not a stray paragraph (#912):
+         * it is the one thing this card exists to say, so it belongs in the
+         * page outline under the Home h1. Styling is unchanged.
+         */}
+        <h2
           className={`mt-2 font-display text-4xl leading-tight font-bold tracking-tight md:text-5xl ${TONE_TEXT[meta.tone]}`}
         >
           {meta.label}
-        </p>
+        </h2>
         <p className="mt-1 text-sm font-medium text-slate-600">
           {rationale ?? meta.gloss}
         </p>

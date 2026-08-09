@@ -106,7 +106,8 @@ export default function TrendNarrationCard({
             id="trend-narration-version-select"
             value={selectedIndex}
             onChange={(e) => setSelectedIndex(Number(e.target.value))}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-ink shadow-sm focus:border-ink focus:outline-none"
+            // Keyboard-visible focus ring instead of a stripped outline (#912).
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-ink shadow-sm focus-visible:border-ink focus-visible:ring-2 focus-visible:ring-ink/50 focus-visible:outline-none"
           >
             {versions.map((v, i) => (
               <option key={v.created_at ?? i} value={i}>

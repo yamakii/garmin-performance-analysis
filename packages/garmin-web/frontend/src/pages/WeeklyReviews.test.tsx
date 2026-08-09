@@ -106,6 +106,33 @@ describe("WeeklyReviews", () => {
     expect(hrefs).toContain("/weekly-reviews/2026-06-08");
   });
 
+  it("test_review_list_counts_have_text", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(FIXTURE_REVIEWS), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    render(
+      <MemoryRouter>
+        <WeeklyReviews />
+      </MemoryRouter>,
+    );
+
+    // The newest week is 0 ✅ / 0 🟡 / 2 🔴. The emoji tally is decorative;
+    // the words behind it ride along in the link's name (#912).
+    const link = (
+      await screen.findByText("2026-06-15 〜 2026-06-21")
+    ).closest("a");
+    expect(link).not.toBeNull();
+    expect(link).toHaveTextContent("良好 0件 注意 0件 要改善 2件");
+    expect(screen.getByText("🔴 2")).toHaveAttribute("aria-hidden", "true");
+  });
+
   it("shows a /weekly-review CLI hint when there are no reviews", async () => {
     vi.stubGlobal(
       "fetch",

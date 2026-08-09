@@ -60,9 +60,11 @@ export default function RaceProgress({ readiness, goals }: RaceProgressProps) {
   }
 
   return (
+    // No `aria-label` (#912): it replaced the whole strip's accessible name
+    // with three words, hiding the countdown, VDOT and prediction from anyone
+    // navigating by link. The content names the link instead.
     <Link
       to="/goal"
-      aria-label="レースへの道"
       className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-[box-shadow,border-color] hover:border-signal/50 hover:shadow-md focus-visible:ring-2 focus-visible:ring-signal/50 focus-visible:outline-none"
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">

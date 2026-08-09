@@ -90,7 +90,7 @@ describe("WeeklyReviewDetail", () => {
 
     expect(
       await screen.findByRole("heading", {
-        level: 2,
+        level: 3,
         name: "来週のGarminワークアウト",
       }),
     ).toBeInTheDocument();
@@ -111,7 +111,7 @@ describe("WeeklyReviewDetail", () => {
     });
 
     expect(
-      await screen.findByRole("heading", { level: 2, name: "実績サマリー" }),
+      await screen.findByRole("heading", { level: 3, name: "実績サマリー" }),
     ).toBeInTheDocument();
     expect(screen.getByText("easy_z1_z2: 4")).toBeInTheDocument();
     expect(screen.getByText("long_run: 1")).toBeInTheDocument();
@@ -128,7 +128,7 @@ describe("WeeklyReviewDetail", () => {
 
     expect(
       await screen.findByRole("heading", {
-        level: 2,
+        level: 3,
         name: "体重トラッキング",
       }),
     ).toBeInTheDocument();
@@ -144,7 +144,7 @@ describe("WeeklyReviewDetail", () => {
 
     expect(
       await screen.findByRole("heading", {
-        level: 2,
+        level: 3,
         name: "前回からの継続性",
       }),
     ).toBeInTheDocument();
@@ -161,7 +161,7 @@ describe("WeeklyReviewDetail", () => {
 
     // 実績サマリー is always present; the optional sections must not render.
     expect(
-      await screen.findByRole("heading", { level: 2, name: "実績サマリー" }),
+      await screen.findByRole("heading", { level: 3, name: "実績サマリー" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByText("来週のGarminワークアウト"),
@@ -184,6 +184,33 @@ describe("WeeklyReviewDetail", () => {
     ).toBeInTheDocument();
   });
 
+  it("test_weekly_group_headings", async () => {
+    renderDetail(fullReview);
+
+    // The groups are the page's h2s...
+    for (const name of ["今週の実績", "評価", "次アクション"]) {
+      expect(
+        await screen.findByRole("heading", { level: 2, name }),
+      ).toBeInTheDocument();
+    }
+
+    // ...and every card inside a group is an h3 under it, so the outline
+    // reflects the grouping instead of one flat run of h2 cards (#912).
+    const group = screen.getByRole("region", { name: "今週の実績" });
+    expect(
+      within(group).getByRole("heading", { level: 3, name: "実績サマリー" }),
+    ).toBeInTheDocument();
+    expect(
+      within(group).getByRole("heading", { level: 3, name: "体重トラッキング" }),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("region", { name: "評価" })).getByRole("heading", {
+        level: 3,
+        name: "対象週プラン評価",
+      }),
+    ).toBeInTheDocument();
+  });
+
   it("places 実績サマリー under 今週の実績 group", async () => {
     renderDetail(fullReview);
 
@@ -202,7 +229,7 @@ describe("WeeklyReviewDetail", () => {
     renderDetail({ this_week: { volume_km: 30 } });
 
     expect(
-      await screen.findByRole("heading", { level: 2, name: "実績サマリー" }),
+      await screen.findByRole("heading", { level: 3, name: "実績サマリー" }),
     ).toBeInTheDocument();
     expect(screen.queryByText("目標逆算フェーズ")).not.toBeInTheDocument();
   });
@@ -252,7 +279,7 @@ describe("WeeklyReviewDetail", () => {
   it("test_actuals_rendered_as_stat_tiles", async () => {
     renderDetail({ this_week: { volume_km: 42.5, run_count: 4 } });
 
-    await screen.findByRole("heading", { level: 2, name: "実績サマリー" });
+    await screen.findByRole("heading", { level: 3, name: "実績サマリー" });
 
     // Each figure is a <dd> inside the tile grid, with its unit as a suffix.
     const volume = screen.getByText("42.5");
@@ -274,7 +301,7 @@ describe("WeeklyReviewDetail", () => {
       weight_tracking: { recent_median_kg: 79.6, flag: "増加傾向" },
     });
 
-    await screen.findByRole("heading", { level: 2, name: "体重トラッキング" });
+    await screen.findByRole("heading", { level: 3, name: "体重トラッキング" });
 
     const flag = screen.getByText("増加傾向");
     expect(flag).toHaveClass("bg-status-warn/10");
@@ -286,7 +313,7 @@ describe("WeeklyReviewDetail", () => {
       periodization: { weeks_to_a_race: 12, expected_phase: "基礎構築" },
     });
 
-    await screen.findByRole("heading", { level: 2, name: "目標逆算フェーズ" });
+    await screen.findByRole("heading", { level: 3, name: "目標逆算フェーズ" });
 
     expect(screen.getByText(/Aレースまで 12週/)).toBeInTheDocument();
     expect(screen.getByText(/基礎構築/)).toBeInTheDocument();
@@ -307,11 +334,33 @@ describe("WeeklyReviewDetail", () => {
       ],
     });
 
-    await screen.findByRole("heading", { level: 2, name: "対象週プラン評価" });
+    await screen.findByRole("heading", { level: 3, name: "対象週プラン評価" });
 
-    expect(screen.getByText("✅")).toHaveClass("text-status-good");
-    expect(screen.getByText("🟡")).toHaveClass("text-status-warn");
-    expect(screen.getByText("🔴")).toHaveClass("text-status-bad");
+    // The mark now sits in its own decorative span inside the badge, so the
+    // tone class lives one level up.
+    expect(screen.getByText("✅").parentElement).toHaveClass("text-status-good");
+    expect(screen.getByText("🟡").parentElement).toHaveClass("text-status-warn");
+    expect(screen.getByText("🔴").parentElement).toHaveClass("text-status-bad");
+  });
+
+  it("test_verdict_emoji_has_text", async () => {
+    renderDetail({
+      verdict: [
+        { date: "2026-06-16", session: "Easy Run", rating: "✅" },
+        { date: "2026-06-18", session: "Tempo", rating: "🟡" },
+        { date: "2026-06-20", session: "Long Run", rating: "🔴" },
+      ],
+    });
+
+    await screen.findByRole("heading", { level: 3, name: "対象週プラン評価" });
+
+    // Each mark is paired with the word it stands for, and the mark itself is
+    // decorative — color and emoji alone never carry the verdict (#912).
+    const bad = screen.getByText("要改善");
+    expect(bad).toHaveTextContent("🔴");
+    expect(within(bad).getByText("🔴")).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByText("良好")).toHaveTextContent("✅");
+    expect(screen.getByText("注意")).toHaveTextContent("🟡");
   });
 
   it("test_prose_sections_clamped", async () => {
@@ -335,7 +384,7 @@ describe("WeeklyReviewDetail", () => {
       ],
     });
 
-    await screen.findByRole("heading", { level: 2, name: "推奨アクション" });
+    await screen.findByRole("heading", { level: 3, name: "推奨アクション" });
 
     // The lead action stands on its own, outside the disclosure.
     expect(screen.getByText("月曜は休養に充てる").closest("details")).toBeNull();

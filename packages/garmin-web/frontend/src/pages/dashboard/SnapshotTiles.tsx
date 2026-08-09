@@ -82,7 +82,12 @@ function Tile({
       className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-[box-shadow,border-color] hover:border-signal/50 hover:shadow-md focus-visible:ring-2 focus-visible:ring-signal/50 focus-visible:outline-none"
     >
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold text-slate-500">{title}</h3>
+        {/*
+         * h2, matching every other card on the Home page (#912): as an h3 the
+         * tiles claimed to be children of a section that does not exist, so the
+         * outline jumped h1 → h3.
+         */}
+        <h2 className="text-xs font-semibold text-slate-500">{title}</h2>
         {badge != null && <StatusBadge tone={badge.tone}>{badge.label}</StatusBadge>}
       </div>
       {children}

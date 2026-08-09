@@ -85,6 +85,21 @@ describe("Layout", () => {
     }
   });
 
+  it("test_skip_link_first_focusable", () => {
+    renderLayout();
+
+    // Before the brand and the six nav links: a keyboard user reaches the
+    // content in one Tab instead of eight (#912).
+    const first = screen.getAllByRole("link")[0];
+    expect(first).toHaveTextContent("本文へスキップ");
+    expect(first).toHaveAttribute("href", "#main");
+
+    // ...and the target exists and can take focus.
+    const main = screen.getByRole("main");
+    expect(main).toHaveAttribute("id", "main");
+    expect(main).toHaveAttribute("tabindex", "-1");
+  });
+
   it("brand link points to root", () => {
     renderLayout();
 

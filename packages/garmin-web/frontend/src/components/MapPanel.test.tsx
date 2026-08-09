@@ -36,6 +36,16 @@ describe("MapPanel", () => {
     expect(screen.queryByText("GPSデータがありません")).not.toBeInTheDocument();
   });
 
+  it("test_map_has_accessible_name", () => {
+    render(<MapPanel points={POINTS} />);
+
+    // Tiles and a polyline carry no text, so without a name the map is an
+    // unlabeled 400px hole in the page (#912).
+    expect(
+      screen.getByRole("region", { name: "コース地図" }),
+    ).toBeInTheDocument();
+  });
+
   it("shows hover marker for the nearest seq_no", () => {
     render(<MapPanel points={POINTS} hoverSeqNo={6} />);
 
