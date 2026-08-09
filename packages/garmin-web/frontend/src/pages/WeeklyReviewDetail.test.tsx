@@ -113,8 +113,20 @@ describe("WeeklyReviewDetail", () => {
     expect(
       await screen.findByRole("heading", { level: 3, name: "実績サマリー" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("easy_z1_z2: 4")).toBeInTheDocument();
-    expect(screen.getByText("long_run: 1")).toBeInTheDocument();
+    // Payload keys are humanized, never shown as raw snake_case (#915).
+    expect(screen.getByText("easy z1 z2: 4")).toBeInTheDocument();
+    expect(screen.getByText("long run: 1")).toBeInTheDocument();
+  });
+
+  it("test_stat_tiles_rounded", async () => {
+    renderDetail({ this_week: { volume_km: 42.53333333333333, run_count: 4 } });
+
+    expect(
+      await screen.findByRole("heading", { level: 3, name: "実績サマリー" }),
+    ).toBeInTheDocument();
+    // The raw payload carries float noise; a weekly total needs one decimal.
+    expect(screen.getByText("42.5")).toBeInTheDocument();
+    expect(screen.queryByText(/42\.53/)).not.toBeInTheDocument();
   });
 
   it("test_renders_weight_tracking_section", async () => {

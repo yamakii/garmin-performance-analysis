@@ -1,15 +1,9 @@
 import type { CriticalSpeedPoint } from "../../api/trends";
 import { CARD_CLASS } from "../../components/Card";
+import { formatPace } from "../../utils/format";
 
 interface CriticalSpeedPanelProps {
   data: CriticalSpeedPoint[];
-}
-
-function formatPace(secondsPerKm: number): string {
-  const total = Math.round(secondsPerKm);
-  const minutes = Math.floor(total / 60);
-  const seconds = total % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}/km`;
 }
 
 export default function CriticalSpeedPanel({ data }: CriticalSpeedPanelProps) {

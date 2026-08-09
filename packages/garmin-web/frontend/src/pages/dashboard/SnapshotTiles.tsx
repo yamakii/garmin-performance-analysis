@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import StatusBadge, { type StatusTone } from "../../components/StatusBadge";
 import { INK_COLOR, METRIC_COLORS } from "../../components/chartTheme";
+import { HRV_STATUS_LABELS, RHR_TREND_LABELS } from "../../labels/recovery";
 import { formatNumber } from "../../utils/formatNumber";
 import type {
   AcwrStatus,
@@ -23,16 +24,17 @@ const ACWR_META: Record<AcwrStatus, { label: string; tone: StatusTone }> = {
   insufficient_data: { label: "データ不足", tone: "info" },
 };
 
-const HRV_META: Record<Exclude<HrvStatus, null>, { label: string; tone: StatusTone }> = {
-  balanced: { label: "標準", tone: "good" },
-  low: { label: "低め", tone: "warn" },
-  high: { label: "高め", tone: "info" },
+/** Tone per enum value; the wording comes from the shared label maps (#915). */
+const HRV_TONE: Record<Exclude<HrvStatus, null>, StatusTone> = {
+  balanced: "good",
+  low: "warn",
+  high: "info",
 };
 
-const RHR_META: Record<Exclude<RhrTrend, null>, { label: string; tone: StatusTone }> = {
-  improving: { label: "改善", tone: "good" },
-  stable: { label: "安定", tone: "info" },
-  fatigued: { label: "疲労", tone: "warn" },
+const RHR_TONE: Record<Exclude<RhrTrend, null>, StatusTone> = {
+  improving: "good",
+  stable: "info",
+  fatigued: "warn",
 };
 
 interface SnapshotTilesProps {
@@ -143,7 +145,7 @@ function HrvTile({ recovery }: { recovery: RecoveryTrend | null }) {
     hrv?.under_recovery === true
       ? { label: "回復不足", tone: "bad" as StatusTone }
       : hrv?.status != null
-        ? HRV_META[hrv.status]
+        ? { label: HRV_STATUS_LABELS[hrv.status], tone: HRV_TONE[hrv.status] }
         : null;
   const series = (recovery?.series ?? []).slice(-SPARK_POINTS * 2);
   const values = series.map((p) => p.hrv_overnight_ms);
@@ -178,7 +180,14 @@ function RhrTile({ recovery }: { recovery: RecoveryTrend | null }) {
   return (
     <Tile
       title="安静時心拍"
-      badge={rhr?.rhr_trend != null ? RHR_META[rhr.rhr_trend] : null}
+      badge={
+        rhr?.rhr_trend != null
+          ? {
+              label: RHR_TREND_LABELS[rhr.rhr_trend],
+              tone: RHR_TONE[rhr.rhr_trend],
+            }
+          : null
+      }
       to="/condition#recovery"
     >
       <BigValue

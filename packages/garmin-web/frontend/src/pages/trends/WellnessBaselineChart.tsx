@@ -1,3 +1,4 @@
+import { formatDate } from "../../utils/format";
 import { formatNumber } from "../../utils/formatNumber";
 import type { MetricBaseline, WellnessBaselineDeviation } from "../../types";
 import { CARD_CLASS } from "../../components/Card";
@@ -42,7 +43,9 @@ export default function WellnessBaselineChart({
           個人ベースライン逸脱 (HRV / Readiness / RHR)
         </h2>
         {data.date != null && (
-          <span className="shrink-0 text-xs text-slate-500">{data.date}</span>
+          <span className="shrink-0 text-xs text-slate-500">
+            {formatDate(data.date)}
+          </span>
         )}
       </div>
       {data.overall_flag && (

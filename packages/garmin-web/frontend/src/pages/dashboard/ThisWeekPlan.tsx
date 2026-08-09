@@ -3,14 +3,7 @@ import EmptyState, { CliCommand } from "../../components/EmptyState";
 import type { WeeklyReview, WeeklyReviewVerdict } from "../../types";
 import { ratingMeta } from "../../utils/verdictRating";
 import { CARD_CLASS } from "../../components/Card";
-
-/** Local-date ISO string (YYYY-MM-DD) — avoids UTC shift from toISOString(). */
-export function toIsoDate(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
+import { formatDate, toIsoDate } from "../../utils/format";
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -89,7 +82,8 @@ export default function ThisWeekPlan({
           {isCurrentWeek ? "今週のプラン" : "直近レビューのプラン"}
         </h2>
         <span className="font-numeric text-xs tabular-nums text-slate-500">
-          {review.week_start_date} 〜 {review.week_end_date}
+          {formatDate(review.week_start_date)} 〜{" "}
+          {formatDate(review.week_end_date)}
         </span>
       </div>
 

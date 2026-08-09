@@ -1,7 +1,32 @@
 import type { ReactNode } from "react";
+import { humanizeKey } from "../../utils/format";
 import { formatNumber } from "../../utils/formatNumber";
 import MarkdownText from "./MarkdownText";
 import { META_LABEL } from "./ReportCard";
+
+/**
+ * Japanese names for payload keys that show up often enough to be worth
+ * naming. Everything else is humanized (Issue #915) rather than shown raw —
+ * `easy_z1_z2` reads as "easy z1 z2", not as a database column.
+ */
+const FIELD_LABELS: Record<string, string> = {
+  activity_type: "アクティビティ種別",
+  assessment: "評価",
+  conclusion: "結論",
+  evaluation: "評価",
+  highlights: "ハイライト",
+  next_run_target: "次回への処方",
+  overall: "総評",
+  rating: "評価",
+  recommendations: "推奨アクション",
+  summary: "サマリー",
+  training_type: "トレーニング種別",
+};
+
+/** Display name for a payload key: known label, else humanized key. */
+export function fieldLabel(key: string): string {
+  return FIELD_LABELS[key] ?? humanizeKey(key);
+}
 
 export function renderValue(value: unknown): ReactNode {
   if (value == null) {
@@ -61,7 +86,7 @@ export default function FallbackFields({
     <dl className={frame}>
       {entries.map(([key, value]) => (
         <div key={key} className="py-2">
-          <dt className={META_LABEL}>{key}</dt>
+          <dt className={META_LABEL}>{fieldLabel(key)}</dt>
           <dd className="mt-0.5 text-sm text-slate-700">{renderValue(value)}</dd>
         </div>
       ))}

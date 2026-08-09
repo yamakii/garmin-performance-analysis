@@ -37,10 +37,11 @@ describe("ConditionCard", () => {
     expect(screen.getByText("81")).toBeInTheDocument();
   });
 
-  it("falls back to データ無し when the recommendation is unknown", () => {
+  it("falls back to データなし when the recommendation is unknown", () => {
     render(<ConditionCard data={UNKNOWN} />);
 
-    expect(screen.getByText("データ無し")).toBeInTheDocument();
+    // Same wording as the home hero's verdict (#915).
+    expect(screen.getByText("データなし")).toBeInTheDocument();
     expect(
       screen.getByText(/データ無し・感覚優先で判断してください/),
     ).toBeInTheDocument();

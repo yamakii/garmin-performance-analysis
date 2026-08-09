@@ -13,14 +13,8 @@ import type {
   SeasonRetrospective,
 } from "../types";
 import { parseFocusNotes } from "../utils/focusNotes";
+import { formatDate, formatDistanceKm } from "../utils/format";
 import { daysUntil, formatGap, formatTargetTime } from "../utils/race";
-
-function formatDistanceKm(km: number | null): string {
-  if (km == null) {
-    return "-";
-  }
-  return `${km.toFixed(2)} km`;
-}
 
 const GOAL_TYPE_LABELS: Record<string, string> = {
   marathon: "フルマラソン",
@@ -158,7 +152,7 @@ function CountdownTile({
           <div>
             <dt className="sr-only">開催日</dt>
             <dd className="font-numeric tabular-nums text-slate-600">
-              {race.race_date}
+              {formatDate(race.race_date)}
             </dd>
           </div>
         )}

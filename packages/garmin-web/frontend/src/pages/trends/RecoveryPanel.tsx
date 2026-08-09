@@ -8,6 +8,7 @@ import {
 import { axisTooltipFormatter, formatNumber } from "../../utils/formatNumber";
 import type { HrvStatus, RecoveryTrend, RhrTrend } from "../../types";
 import { CARD_CLASS } from "../../components/Card";
+import { HRV_STATUS_LABELS, RHR_TREND_LABELS } from "../../labels/recovery";
 
 interface RecoveryPanelProps {
   data: RecoveryTrend;
@@ -16,22 +17,17 @@ interface RecoveryPanelProps {
 const RHR_SERIES = "安静時心拍 (bpm)";
 const HRV_SERIES = "夜間HRV (ms)";
 
-const RHR_TREND_META: Record<
-  Exclude<RhrTrend, null>,
-  { label: string; className: string }
-> = {
-  improving: { label: "改善", className: "bg-emerald-100 text-emerald-700" },
-  stable: { label: "安定", className: "bg-sky-100 text-sky-700" },
-  fatigued: { label: "疲労", className: "bg-red-100 text-red-700" },
+/** Badge color family; the wording comes from the shared label maps (#915). */
+const RHR_TREND_CLASS: Record<Exclude<RhrTrend, null>, string> = {
+  improving: "bg-emerald-100 text-emerald-700",
+  stable: "bg-sky-100 text-sky-700",
+  fatigued: "bg-red-100 text-red-700",
 };
 
-const HRV_STATUS_META: Record<
-  Exclude<HrvStatus, null>,
-  { label: string; className: string }
-> = {
-  high: { label: "高め", className: "bg-emerald-100 text-emerald-700" },
-  balanced: { label: "バランス", className: "bg-sky-100 text-sky-700" },
-  low: { label: "低下", className: "bg-amber-100 text-amber-700" },
+const HRV_STATUS_CLASS: Record<Exclude<HrvStatus, null>, string> = {
+  high: "bg-emerald-100 text-emerald-700",
+  balanced: "bg-sky-100 text-sky-700",
+  low: "bg-amber-100 text-amber-700",
 };
 
 export default function RecoveryPanel({ data }: RecoveryPanelProps) {
@@ -112,8 +108,20 @@ export default function RecoveryPanel({ data }: RecoveryPanelProps) {
     [dateAxis, series],
   );
 
-  const rhrMeta = rhr.rhr_trend != null ? RHR_TREND_META[rhr.rhr_trend] : null;
-  const hrvMeta = hrv.status != null ? HRV_STATUS_META[hrv.status] : null;
+  const rhrMeta =
+    rhr.rhr_trend != null
+      ? {
+          label: RHR_TREND_LABELS[rhr.rhr_trend],
+          className: RHR_TREND_CLASS[rhr.rhr_trend],
+        }
+      : null;
+  const hrvMeta =
+    hrv.status != null
+      ? {
+          label: HRV_STATUS_LABELS[hrv.status],
+          className: HRV_STATUS_CLASS[hrv.status],
+        }
+      : null;
   const isEmpty = series.length === 0;
 
   return (

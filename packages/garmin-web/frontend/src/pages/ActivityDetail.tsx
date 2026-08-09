@@ -21,10 +21,17 @@ import ReportCard, { isRecord } from "../components/report/ReportCard";
 import SplitNarrative from "../components/report/SplitNarrative";
 import SummaryReport from "../components/report/SummaryReport";
 import TimeSeriesChart from "../components/TimeSeriesChart";
+import VersionSelect from "../components/VersionSelect";
 import { usePageTitle } from "../hooks/usePageTitle";
 import type { SectionsResponse, SplitRow } from "../types";
+import {
+  formatBpmValue,
+  formatCadence,
+  formatDistanceKm,
+  formatPace,
+  humanizeKey,
+} from "../utils/format";
 import { formatNumber } from "../utils/formatNumber";
-import { formatCadence, formatDistance, formatPace } from "./ActivityList";
 
 const AVAILABLE_METRICS: { key: string; label: string }[] = [
   { key: "heart_rate", label: "心拍数" },
@@ -51,6 +58,23 @@ const KNOWN_SECTION_TYPES = [
   "efficiency",
   "environment",
 ];
+
+/**
+ * Japanese heading for a section type. Analyses saved with a type this build
+ * has no component for still get a readable title instead of the raw wire key
+ * ("next_run_target" -> "next run target", Issue #915).
+ */
+const SECTION_TITLES: Record<string, string> = {
+  summary: "総合評価",
+  split: "スプリット",
+  phase: "フェーズ評価",
+  efficiency: "効率",
+  environment: "環境影響",
+};
+
+export function sectionTitle(type: string): string {
+  return SECTION_TITLES[type] ?? humanizeKey(type);
+}
 
 /** Binary search: index of the timestamp nearest to target (ascending). */
 export function nearestTimestampIndex(
@@ -347,9 +371,9 @@ export default function ActivityDetail() {
       <div>
         <Link
           to="/activities"
-          className="text-sm font-medium text-ink/70 hover:text-ink"
+          className="text-sm font-medium text-slate-500 hover:text-ink"
         >
-          ← アクティビティ一覧
+          ← 一覧へ
         </Link>
         <div className="mt-2">
           <HeroHeader detail={detail} starRating={starRating} />
@@ -357,36 +381,15 @@ export default function ActivityDetail() {
       </div>
 
       {/* Analysis version selector — shown only when a re-analysis exists (#720) */}
-      {versions.length > 1 && (
-        <div className="flex flex-wrap items-center gap-3">
-          <label
-            htmlFor="section-version-select"
-            className="text-sm font-medium text-slate-500"
-          >
-            分析版を選択:
-          </label>
-          <select
-            id="section-version-select"
-            value={selectedVersionIndex}
-            onChange={(e) => handleVersionChange(Number(e.target.value))}
-            // A visible focus indicator, not a removed one (#912): the old
-            // `focus:outline-none` dropped the UA ring and replaced it with a
-            // border tint that barely reads. The ring is keyboard-only.
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-ink shadow-sm focus-visible:border-ink focus-visible:ring-2 focus-visible:ring-ink/50 focus-visible:outline-none"
-          >
-            {versions.map((version, i) => (
-              <option key={version.run_id} value={i}>
-                {i === 0
-                  ? `${version.created_at}（最新）`
-                  : version.created_at}
-              </option>
-            ))}
-          </select>
-          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-            全{versions.length}版
-          </span>
-        </div>
-      )}
+      <VersionSelect
+        id="section-version-select"
+        options={versions.map((version) => ({
+          key: String(version.run_id),
+          stamp: version.created_at,
+        }))}
+        selectedIndex={selectedVersionIndex}
+        onSelect={handleVersionChange}
+      />
 
       {/* Sticky in-page table of contents (rendered sections only) */}
       <SectionNav items={navItems} />
@@ -560,7 +563,7 @@ export default function ActivityDetail() {
                           {split.split_index}
                         </td>
                         <td className="px-2 py-2 text-right tabular-nums">
-                          {formatDistance(split.distance)}
+                          {formatDistanceKm(split.distance)}
                         </td>
                         <BarCell
                           widthPct={
@@ -584,7 +587,7 @@ export default function ActivityDetail() {
                           }
                           color={METRIC_COLORS.heart_rate}
                         >
-                          {formatNumber(split.heart_rate, 0)}
+                          {formatBpmValue(split.heart_rate)}
                         </BarCell>
                         <td className="px-2 py-2 text-right tabular-nums">
                           {formatCadence(split.cadence)}
@@ -630,7 +633,7 @@ export default function ActivityDetail() {
       {/* Unknown section types degrade to key-value cards */}
       {sections &&
         unknownSectionTypes.map((type) => (
-          <ReportCard key={type} title={type} section={sections[type]}>
+          <ReportCard key={type} title={sectionTitle(type)} section={sections[type]}>
             {(data) => <FallbackFields data={data} exclude={["metadata"]} />}
           </ReportCard>
         ))}

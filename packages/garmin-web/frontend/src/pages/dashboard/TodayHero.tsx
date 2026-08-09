@@ -1,4 +1,6 @@
 import type { StatusTone } from "../../components/StatusBadge";
+import { RECOMMENDATION_LABELS } from "../../labels/recovery";
+import { formatDate } from "../../utils/format";
 import { formatNumber } from "../../utils/formatNumber";
 import type {
   MetricBaseline,
@@ -21,23 +23,29 @@ export interface VerdictMeta {
   tone: StatusTone | "neutral";
 }
 
+/** Coaching gloss + tone per recommendation; the word itself is shared. */
+const VERDICT_DETAIL: Record<
+  RecoveryRecommendation,
+  { gloss: string; tone: VerdictMeta["tone"] }
+> = {
+  quality: { gloss: "回復良好。質の高い練習が可能です", tone: "good" },
+  moderate: { gloss: "中程度の練習まで問題ありません", tone: "info" },
+  easy: { gloss: "今日は強度を抑えて回復を優先", tone: "warn" },
+  rest: { gloss: "走らない勇気を。回復が最優先です", tone: "bad" },
+  unknown: { gloss: "感覚を優先して判断してください", tone: "neutral" },
+};
+
 /**
  * Map the reader's morning recommendation to the hero verdict. Exported so the
- * mapping is unit-testable without rendering.
+ * mapping is unit-testable without rendering. The verdict word comes from the
+ * shared label map so the condition page says the same thing (#915).
  */
 export function verdictMeta(rec: RecoveryRecommendation): VerdictMeta {
-  switch (rec) {
-    case "quality":
-      return { label: "質練OK", gloss: "回復良好。質の高い練習が可能です", tone: "good" };
-    case "moderate":
-      return { label: "通常ラン OK", gloss: "中程度の練習まで問題ありません", tone: "info" };
-    case "easy":
-      return { label: "イージー推奨", gloss: "今日は強度を抑えて回復を優先", tone: "warn" };
-    case "rest":
-      return { label: "休養推奨", gloss: "走らない勇気を。回復が最優先です", tone: "bad" };
-    default:
-      return { label: "データなし", gloss: "感覚を優先して判断してください", tone: "neutral" };
-  }
+  const detail = VERDICT_DETAIL[rec] ?? VERDICT_DETAIL.unknown;
+  return {
+    label: RECOMMENDATION_LABELS[rec] ?? RECOMMENDATION_LABELS.unknown,
+    ...detail,
+  };
 }
 
 /** Verdict-word text color per tone (status tokens; neutral = slate). */
@@ -104,7 +112,7 @@ export default function TodayHero({ status, baseline }: TodayHeroProps) {
           </p>
           {date != null && (
             <p className="font-numeric text-sm tabular-nums text-slate-600">
-              {date}
+              {formatDate(date)}
             </p>
           )}
         </div>
