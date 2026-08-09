@@ -1,24 +1,31 @@
 import type { RecoveryRecommendation, RecoveryStatus } from "../../types";
 import { CARD_CLASS } from "../../components/Card";
+import { RECOMMENDATION_LABELS } from "../../labels/recovery";
 
 interface ConditionCardProps {
   data: RecoveryStatus;
 }
 
-/** Recommended-intensity badge metadata (label + color family). */
-const RECOMMENDATION_META: Record<
-  RecoveryRecommendation,
-  { label: string; className: string }
-> = {
-  quality: { label: "質練OK", className: "bg-emerald-100 text-emerald-700" },
-  moderate: { label: "中程度", className: "bg-sky-100 text-sky-700" },
-  easy: { label: "イージー", className: "bg-amber-100 text-amber-700" },
-  rest: { label: "休養", className: "bg-red-100 text-red-700" },
-  unknown: { label: "データ無し", className: "bg-slate-100 text-slate-600" },
+/**
+ * Badge color family per recommendation. The wording comes from the shared
+ * label map so the home hero and this card name the same verdict alike (#915).
+ */
+const RECOMMENDATION_CLASS: Record<RecoveryRecommendation, string> = {
+  quality: "bg-emerald-100 text-emerald-700",
+  moderate: "bg-sky-100 text-sky-700",
+  easy: "bg-amber-100 text-amber-700",
+  rest: "bg-red-100 text-red-700",
+  unknown: "bg-slate-100 text-slate-600",
 };
 
 export default function ConditionCard({ data }: ConditionCardProps) {
-  const meta = RECOMMENDATION_META[data.recommendation] ?? RECOMMENDATION_META.unknown;
+  const meta = {
+    label:
+      RECOMMENDATION_LABELS[data.recommendation] ??
+      RECOMMENDATION_LABELS.unknown,
+    className:
+      RECOMMENDATION_CLASS[data.recommendation] ?? RECOMMENDATION_CLASS.unknown,
+  };
   const isUnknown = data.recommendation === "unknown";
   // The reader always ships a reasons[]; show the leading rationale line.
   const rationale = data.reasons[0] ?? "データ無し・感覚優先";

@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import type { WeeklyReview } from "../../types";
-import ThisWeekPlan, { toIsoDate } from "./ThisWeekPlan";
+import ThisWeekPlan from "./ThisWeekPlan";
 
 function makeReview(
   reviewData: WeeklyReview["review_data"],
@@ -29,13 +29,6 @@ function renderPlan(review: WeeklyReview | null, today?: Date) {
     </MemoryRouter>,
   );
 }
-
-describe("toIsoDate", () => {
-  it("formats a local date without UTC shift", () => {
-    expect(toIsoDate(new Date(2026, 6, 2))).toBe("2026-07-02");
-    expect(toIsoDate(new Date(2026, 0, 5))).toBe("2026-01-05");
-  });
-});
 
 describe("ThisWeekPlan", () => {
   it("renders verdict rows and highlights today's session", () => {

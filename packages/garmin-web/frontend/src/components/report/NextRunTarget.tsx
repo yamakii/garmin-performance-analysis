@@ -1,4 +1,5 @@
 import type { JSX, ReactNode } from "react";
+import { PACE_UNIT } from "../../utils/format";
 
 /** Japanese labels for known training types; unknown types fall through to raw. */
 const TYPE_LABELS: Record<string, string> = {
@@ -18,22 +19,22 @@ function asNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-/** Builds a "low–high" / "low" / "high" range string, or null when both absent. */
+/**
+ * Builds a "low–high" / "low" / "high" range string, or null when both absent.
+ * `/km` is written tight against the number, matching `formatPace` everywhere
+ * else; worded units keep their space (#915).
+ */
 function formatRange(
   low: string | number | null,
   high: string | number | null,
   unit: string,
 ): string | null {
-  if (low != null && high != null) {
-    return `${low}–${high} ${unit}`;
+  const span =
+    low != null && high != null ? `${low}–${high}` : (low ?? high ?? null);
+  if (span == null) {
+    return null;
   }
-  if (low != null) {
-    return `${low} ${unit}`;
-  }
-  if (high != null) {
-    return `${high} ${unit}`;
-  }
-  return null;
+  return unit === PACE_UNIT ? `${span}${unit}` : `${span} ${unit}`;
 }
 
 function Chip({ label, value }: { label: string; value: string }) {
@@ -84,7 +85,7 @@ export default function NextRunTarget({
   const paceRange = formatRange(
     asString(data.reference_pace_low_formatted),
     asString(data.reference_pace_high_formatted),
-    "/km",
+    PACE_UNIT,
   );
 
   const successCriterion = asString(data.success_criterion);

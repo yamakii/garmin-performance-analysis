@@ -244,12 +244,13 @@ describe("SummaryReport", () => {
       />,
     );
 
-    // Unknown keys (schema evolution without version bump) -> fallback list
-    expect(screen.getByText("training_type_assessment")).toBeInTheDocument();
+    // Unknown keys (schema evolution without version bump) -> fallback list,
+    // humanized rather than shown as raw snake_case (#915).
+    expect(screen.getByText("training type assessment")).toBeInTheDocument();
     expect(
       screen.getByText("テンポ走としての完成度は高い水準です。"),
     ).toBeInTheDocument();
-    expect(screen.getByText("some_future_field")).toBeInTheDocument();
+    expect(screen.getByText("some future field")).toBeInTheDocument();
     expect(screen.getByText("42")).toBeInTheDocument();
 
     // metadata boilerplate is consumed, never dumped as key-value

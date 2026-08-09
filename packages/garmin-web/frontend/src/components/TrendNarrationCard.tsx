@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { useTrendNarration, useTrendNarrationVersions } from "../api/hooks";
-import type { Granularity, TrendNarration } from "../api/trends";
+import type { Granularity } from "../api/trends";
+import { formatDate } from "../utils/format";
 import { CARD_CLASS } from "./Card";
 import CardSkeleton from "./CardSkeleton";
 import ClampedProse from "./ClampedProse";
+import VersionSelect from "./VersionSelect";
 
 /**
  * Full-width coach-narration card for the Trends dashboard (#791).
@@ -19,11 +21,6 @@ import ClampedProse from "./ClampedProse";
 
 interface TrendNarrationCardProps {
   granularity: Granularity;
-}
-
-function versionLabel(version: TrendNarration, isLatest: boolean): string {
-  const stamp = version.created_at ?? "日時不明";
-  return isLatest ? `${stamp}（最新）` : stamp;
 }
 
 /** Default clamp for a narration paragraph: long enough to carry the verdict. */
@@ -99,34 +96,22 @@ export default function TrendNarrationCard({
           トレンド解説
         </h2>
         <span className="font-numeric text-sm tabular-nums text-slate-500">
-          {label}: {selected.period_start} 〜 {selected.period_end}
+          {label}: {formatDate(selected.period_start)} 〜{" "}
+          {formatDate(selected.period_end)}
         </span>
       </div>
 
       {versions.length > 1 && (
-        <div className="mb-4 flex flex-wrap items-center gap-3">
-          <label
-            htmlFor="trend-narration-version-select"
-            className="text-sm font-medium text-slate-500"
-          >
-            版を選択:
-          </label>
-          <select
+        <div className="mb-4">
+          <VersionSelect
             id="trend-narration-version-select"
-            value={selectedIndex}
-            onChange={(e) => setSelectedIndex(Number(e.target.value))}
-            // Keyboard-visible focus ring instead of a stripped outline (#912).
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-ink shadow-sm focus-visible:border-ink focus-visible:ring-2 focus-visible:ring-ink/50 focus-visible:outline-none"
-          >
-            {versions.map((v, i) => (
-              <option key={v.created_at ?? i} value={i}>
-                {versionLabel(v, i === 0)}
-              </option>
-            ))}
-          </select>
-          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-            全{versions.length}版
-          </span>
+            options={versions.map((v, i) => ({
+              key: v.created_at ?? String(i),
+              stamp: v.created_at,
+            }))}
+            selectedIndex={selectedIndex}
+            onSelect={setSelectedIndex}
+          />
         </div>
       )}
 

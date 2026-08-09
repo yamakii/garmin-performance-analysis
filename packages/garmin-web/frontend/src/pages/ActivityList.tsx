@@ -6,33 +6,14 @@ import { PageError, PageLoading } from "../components/PageState";
 import SectionHeading from "../components/SectionHeading";
 import { usePageTitle } from "../hooks/usePageTitle";
 import type { ActivitySummary } from "../types";
-
-export function formatPace(secondsPerKm: number | null): string {
-  if (secondsPerKm == null || secondsPerKm <= 0) {
-    return "-";
-  }
-  let minutes = Math.floor(secondsPerKm / 60);
-  let seconds = Math.round(secondsPerKm % 60);
-  if (seconds === 60) {
-    minutes += 1;
-    seconds = 0;
-  }
-  return `${minutes}:${String(seconds).padStart(2, "0")}/km`;
-}
-
-export function formatDistance(km: number | null): string {
-  if (km == null) {
-    return "-";
-  }
-  return `${km.toFixed(2)} km`;
-}
-
-export function formatCadence(cadence: number | null): string {
-  if (cadence == null) {
-    return "-";
-  }
-  return String(Math.round(cadence));
-}
+import {
+  formatBpmValue,
+  formatDate,
+  formatDistanceKm,
+  formatDistanceKmValue,
+  formatPaceValue,
+  toIsoDate,
+} from "../utils/format";
 
 /** "N本 ・ 合計 XX.X km" summary for a month heading (Issue #214). */
 export function monthSummary(activities: ActivitySummary[]): string {
@@ -40,7 +21,7 @@ export function monthSummary(activities: ActivitySummary[]): string {
     (sum, activity) => sum + (activity.total_distance_km ?? 0),
     0,
   );
-  return `${activities.length}本 ・ 合計 ${totalKm.toFixed(1)} km`;
+  return `${activities.length}本 ・ 合計 ${formatDistanceKm(totalKm, 1)}`;
 }
 
 function groupByMonth(
@@ -78,12 +59,6 @@ const PRESETS: { value: RangePreset; label: string }[] = [
   { value: "1y", label: "直近1年" },
   { value: "all", label: "全期間" },
 ];
-
-function toIsoDate(date: Date): string {
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${date.getFullYear()}-${month}-${day}`;
-}
 
 /**
  * Turn a preset into the API's inclusive `from` bound, counted back from
@@ -259,7 +234,7 @@ export default function ActivityList() {
                     className="flex items-center gap-4 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition-[box-shadow,border-color] hover:border-signal/50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
                   >
                     <span className="shrink-0 rounded-md bg-ink/5 px-2 py-1 font-numeric text-sm font-semibold tabular-nums text-ink">
-                      {activity.activity_date}
+                      {formatDate(activity.activity_date)}
                     </span>
                     <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">
                       {activity.activity_name ?? "-"}
@@ -267,10 +242,7 @@ export default function ActivityList() {
                     <span className="flex shrink-0 items-baseline divide-x divide-slate-200 text-right font-numeric tabular-nums text-slate-700">
                       <span className="pr-3">
                         <span className="text-base font-semibold text-slate-800">
-                          {formatDistance(activity.total_distance_km).replace(
-                            " km",
-                            "",
-                          )}
+                          {formatDistanceKmValue(activity.total_distance_km)}
                         </span>
                         <span className="ml-0.5 text-xs font-normal text-slate-500">
                           km
@@ -278,10 +250,7 @@ export default function ActivityList() {
                       </span>
                       <span className="px-3">
                         <span className="text-base">
-                          {formatPace(activity.avg_pace_seconds_per_km).replace(
-                            "/km",
-                            "",
-                          )}
+                          {formatPaceValue(activity.avg_pace_seconds_per_km)}
                         </span>
                         <span className="ml-0.5 text-xs text-slate-500">
                           /km
@@ -289,7 +258,7 @@ export default function ActivityList() {
                       </span>
                       <span className="pl-3">
                         <span className="text-base">
-                          {activity.avg_heart_rate ?? "-"}
+                          {formatBpmValue(activity.avg_heart_rate)}
                         </span>
                         <span className="ml-0.5 text-xs text-slate-500">
                           bpm

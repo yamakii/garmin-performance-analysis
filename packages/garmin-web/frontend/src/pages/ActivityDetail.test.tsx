@@ -196,7 +196,7 @@ describe("ActivityDetail back link", () => {
     // The report is reached from the activity list, so the back link must
     // return there rather than to the home dashboard.
     const back = await screen.findByRole("link", {
-      name: "← アクティビティ一覧",
+      name: "← 一覧へ",
     });
     expect(back).toHaveAttribute("href", "/activities");
   });
@@ -431,7 +431,7 @@ describe("ActivityDetail version selector", () => {
     stubVersionedFetch();
     renderDetail();
 
-    const select = await screen.findByLabelText("分析版を選択:");
+    const select = await screen.findByLabelText("版を選択:");
 
     // Keyboard focus must stay visible: the old style removed the UA outline
     // and offered only a border tint in exchange (#912).
@@ -447,7 +447,7 @@ describe("ActivityDetail version selector", () => {
 
     // Selector shows both versions with the total-count badge.
     const select = (await screen.findByLabelText(
-      "分析版を選択:",
+      "版を選択:",
     )) as HTMLSelectElement;
     expect(within(select).getAllByRole("option")).toHaveLength(2);
     expect(screen.getByText("全2版")).toBeInTheDocument();

@@ -5,7 +5,7 @@ import {
   BASE_CHART_OPTION,
   METRIC_COLORS,
 } from "../../components/chartTheme";
-import { axisTooltipFormatter } from "../../utils/formatNumber";
+import { axisTooltipFormatter, formatNumber } from "../../utils/formatNumber";
 import type { ObjectiveFitnessTrend } from "../../api/trends";
 import { CARD_CLASS } from "../../components/Card";
 
@@ -107,8 +107,8 @@ export default function ObjectiveFitnessBlock({
           </p>
           {optimism_gap != null && (
             <p className="mb-1 text-sm text-amber-700">
-              楽観ギャップ: {optimism_gap.gap_vdot.toFixed(1)} VDOT（実走比 約{" "}
-              {optimism_gap.gap_pace_sec_per_km.toFixed(0)} s/km 速く見積もり）
+              楽観ギャップ: {formatNumber(optimism_gap.gap_vdot, 1)} VDOT（実走比 約{" "}
+              {formatNumber(optimism_gap.gap_pace_sec_per_km, 0)} s/km 速く見積もり）
             </p>
           )}
           <EChart

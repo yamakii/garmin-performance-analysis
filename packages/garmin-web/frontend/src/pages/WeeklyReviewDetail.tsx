@@ -9,9 +9,11 @@ import { PageError, PageLoading } from "../components/PageState";
 import SectionHeading from "../components/SectionHeading";
 import SectionNav, { type NavItem } from "../components/SectionNav";
 import StatusBadge from "../components/StatusBadge";
+import VersionSelect from "../components/VersionSelect";
 import { META_LABEL, SUBCARD } from "../components/report/ReportCard";
 import { usePageTitle } from "../hooks/usePageTitle";
-import type { WeeklyReview } from "../types";
+import { formatDate, humanizeKey } from "../utils/format";
+import { formatNumber } from "../utils/formatNumber";
 import { ratingMeta } from "../utils/verdictRating";
 
 /**
@@ -84,11 +86,6 @@ function Group({
   );
 }
 
-function versionLabel(version: WeeklyReview, isLatest: boolean): string {
-  const stamp = version.created_at ?? version.review_date ?? "日時不明";
-  return isLatest ? `${stamp}（最新）` : stamp;
-}
-
 /**
  * Clamp shared by every prose section on this page (#906): three lines carry
  * the verdict, the rest is one click away via `ClampedProse`'s toggle.
@@ -120,7 +117,9 @@ function StatTiles({ tiles }: { tiles: (StatTile | null)[] }) {
         <div key={label} className={SUBCARD}>
           <dt className={META_LABEL}>{label}</dt>
           <dd className="mt-0.5 font-numeric text-2xl leading-none font-semibold tabular-nums text-ink">
-            {value}
+            {/* Raw payload numbers carry float noise (volume_km 42.5333…);
+                one decimal is all a weekly total needs (#915). */}
+            {formatNumber(value, 1)}
             {unit != null && (
               <span className="ml-0.5 text-xs font-normal text-slate-500">
                 {unit}
@@ -292,35 +291,18 @@ export default function WeeklyReviewDetail() {
     <div className="stagger-in space-y-6">
       <PageHeader />
       <p className="font-numeric text-sm tabular-nums text-slate-500">
-        {review.week_start_date} 〜 {review.week_end_date}
+        {formatDate(review.week_start_date)} 〜 {formatDate(review.week_end_date)}
       </p>
 
-      {versions.length > 1 && (
-        <div className="flex flex-wrap items-center gap-3">
-          <label
-            htmlFor="version-select"
-            className="text-sm font-medium text-slate-500"
-          >
-            版を選択:
-          </label>
-          <select
-            id="version-select"
-            value={selectedIndex}
-            onChange={(e) => setSelectedIndex(Number(e.target.value))}
-            // Keyboard-visible focus ring instead of a stripped outline (#912).
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-ink shadow-sm focus-visible:border-ink focus-visible:ring-2 focus-visible:ring-ink/50 focus-visible:outline-none"
-          >
-            {versions.map((v, i) => (
-              <option key={v.review_id} value={i}>
-                {versionLabel(v, i === 0)}
-              </option>
-            ))}
-          </select>
-          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-            全{versions.length}版
-          </span>
-        </div>
-      )}
+      <VersionSelect
+        id="version-select"
+        options={versions.map((v) => ({
+          key: String(v.review_id),
+          stamp: v.created_at ?? v.review_date,
+        }))}
+        selectedIndex={selectedIndex}
+        onSelect={setSelectedIndex}
+      />
 
       {data == null ? (
         <p className="py-4 text-center text-sm text-slate-500">
@@ -356,7 +338,7 @@ export default function WeeklyReviewDetail() {
                           key={k}
                           className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600"
                         >
-                          {k}: {String(v)}
+                          {humanizeKey(k)}: {String(v)}
                         </span>
                       ))}
                     </div>

@@ -27,7 +27,8 @@ describe("NextRunTarget", () => {
     expect(screen.getByText("目標HR")).toBeInTheDocument();
     expect(screen.getByText("140–150 bpm")).toBeInTheDocument();
     expect(screen.getByText("参考ペース")).toBeInTheDocument();
-    expect(screen.getByText("6:52–7:02 /km")).toBeInTheDocument();
+    // "/km" sits tight against the number, as everywhere else (#915).
+    expect(screen.getByText("6:52–7:02/km")).toBeInTheDocument();
     // Labeled success criterion / adjustment tip
     expect(screen.getByText("成功条件")).toBeInTheDocument();
     expect(screen.getByText(fullData.success_criterion)).toBeInTheDocument();
