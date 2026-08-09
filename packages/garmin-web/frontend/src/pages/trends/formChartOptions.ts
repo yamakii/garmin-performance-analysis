@@ -2,7 +2,7 @@ import {
   AXIS_STYLE,
   BASE_CHART_OPTION,
   FORM_DELTA_COLORS,
-  FORM_LINE_COLORS,
+  FORM_SCORE_COLOR,
 } from "../../components/chartTheme";
 import { axisTooltipFormatter } from "../../utils/formatNumber";
 import { robustAxisBounds } from "../../utils/robustBounds";
@@ -30,8 +30,8 @@ function dateAxis(data: FormTrendPoint[]) {
 export function buildScoreChartOption(data: FormTrendPoint[]): EChartsOption {
   return {
     ...BASE_CHART_OPTION,
-    // Overall score = ink (first of the form palette).
-    color: [FORM_LINE_COLORS[0]],
+    // Overall score = ink.
+    color: [FORM_SCORE_COLOR],
     tooltip: {
       trigger: "axis" as const,
       formatter: axisTooltipFormatter({ [SCORE_SERIES]: 1 }),
@@ -92,7 +92,7 @@ export function buildDeltaChartOption(data: FormTrendPoint[]): EChartsOption {
 
   return {
     ...BASE_CHART_OPTION,
-    // Distinct teal/amber/violet so the three deltas read apart at a glance.
+    // Distinct violet/teal/amber so the three deltas read apart at a glance.
     color: [...FORM_DELTA_COLORS],
     tooltip: {
       trigger: "axis" as const,

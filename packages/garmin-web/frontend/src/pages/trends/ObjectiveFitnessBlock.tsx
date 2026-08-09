@@ -3,9 +3,9 @@ import EChart from "../../components/EChart";
 import {
   AXIS_STYLE,
   BASE_CHART_OPTION,
-  INK_COLOR,
   METRIC_COLORS,
 } from "../../components/chartTheme";
+import { axisTooltipFormatter } from "../../utils/formatNumber";
 import type { ObjectiveFitnessTrend } from "../../api/trends";
 
 interface ObjectiveFitnessBlockProps {
@@ -40,7 +40,13 @@ export default function ObjectiveFitnessBlock({
   const option = useMemo(
     () => ({
       ...BASE_CHART_OPTION,
-      tooltip: { trigger: "axis" as const },
+      tooltip: {
+        trigger: "axis" as const,
+        formatter: axisTooltipFormatter({
+          [GARMIN_SERIES]: 1,
+          [OBJECTIVE_SERIES]: 1,
+        }),
+      },
       legend: { data: [GARMIN_SERIES, OBJECTIVE_SERIES] },
       xAxis: {
         type: "category" as const,
@@ -58,16 +64,17 @@ export default function ObjectiveFitnessBlock({
       series: [
         {
           name: GARMIN_SERIES,
+          // Same VO2max token as PhysiologyBlock: one metric, one color.
           type: "line" as const,
-          itemStyle: { color: METRIC_COLORS.heart_rate },
-          lineStyle: { color: METRIC_COLORS.heart_rate },
+          itemStyle: { color: METRIC_COLORS.vo2max },
+          lineStyle: { color: METRIC_COLORS.vo2max },
           data: garmin_vo2max.map((p) => [p.date, p.value]),
         },
         {
           name: OBJECTIVE_SERIES,
           type: "line" as const,
-          itemStyle: { color: INK_COLOR },
-          lineStyle: { color: INK_COLOR },
+          itemStyle: { color: METRIC_COLORS.objective_vdot },
+          lineStyle: { color: METRIC_COLORS.objective_vdot },
           data: objective_curve.map((p) => [p.date, p.vdot]),
         },
       ],

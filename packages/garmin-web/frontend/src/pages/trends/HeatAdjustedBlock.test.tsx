@@ -56,8 +56,10 @@ describe("HeatAdjustedBlock", () => {
     // Raw + neutral series labels appear in the descriptive caption.
     expect(screen.getByText("生HR")).toBeInTheDocument();
     expect(screen.getByText("気候中立HR")).toBeInTheDocument();
-    // The fitted beta_heat coefficient is surfaced as a caption.
-    expect(screen.getByText(/β_heat 0\.35 bpm\/°C/)).toBeInTheDocument();
+    // The fitted heat coefficient is surfaced as a caption, in Japanese
+    // (the internal `beta_heat` / `heat_cost` names stay out of the UI).
+    expect(screen.getByText(/0\.35 bpm\/°C/)).toBeInTheDocument();
+    expect(screen.getByText(/暑熱コスト係数/)).toBeInTheDocument();
     // The overlay chart is rendered.
     expect(
       screen.getByLabelText("生HRと気候中立HRの推移グラフ"),

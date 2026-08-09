@@ -69,6 +69,13 @@ export default function TimeSeriesChart({
 
   const metricNames = Object.keys(data.metrics);
   const height = GRID_TOP + metricNames.length * (GRID_HEIGHT + GRID_GAP) + 60;
+  // Canvas charts are opaque to assistive tech, so the container carries the
+  // same role/label contract as EChart (Issue #913).
+  const seriesLabels = metricNames.map((name) => metricLabels[name] ?? name);
+  const ariaLabel =
+    seriesLabels.length > 0
+      ? `${seriesLabels.join("・")}の時系列グラフ`
+      : "時系列グラフ";
 
   useEffect(() => {
     const container = containerRef.current;
@@ -216,5 +223,12 @@ export default function TimeSeriesChart({
     };
   }, []);
 
-  return <div ref={containerRef} style={{ width: "100%", height }} />;
+  return (
+    <div
+      ref={containerRef}
+      role="img"
+      aria-label={ariaLabel}
+      style={{ width: "100%", height }}
+    />
+  );
 }

@@ -5,7 +5,7 @@ import {
   BASE_CHART_OPTION,
   METRIC_COLORS,
 } from "../../components/chartTheme";
-import { formatNumber } from "../../utils/formatNumber";
+import { axisTooltipFormatter, formatNumber } from "../../utils/formatNumber";
 import type { HrvStatus, RecoveryTrend, RhrTrend } from "../../types";
 
 interface RecoveryPanelProps {
@@ -36,45 +36,80 @@ const HRV_STATUS_META: Record<
 export default function RecoveryPanel({ data }: RecoveryPanelProps) {
   const { rhr, hrv, series } = data;
 
-  const option = useMemo(() => {
-    // HRV baseline band drawn as a shaded area between the latest low/high.
-    return {
+  // RHR and HRV are read in opposite directions (low RHR = good, high HRV =
+  // good), so overlaying them on a dual axis made every crossing meaningless.
+  // Each metric gets its own single-axis panel instead, following the form
+  // score/delta split of Issue #691.
+  const dateAxis = useMemo(
+    () => ({
+      type: "category" as const,
+      data: series.map((p) => p.date),
+      ...AXIS_STYLE,
+    }),
+    [series],
+  );
+
+  const rhrOption = useMemo(
+    () => ({
       ...BASE_CHART_OPTION,
-      tooltip: { trigger: "axis" as const },
-      legend: { data: [RHR_SERIES, HRV_SERIES] },
-      xAxis: {
-        type: "category" as const,
-        data: series.map((p) => p.date),
+      tooltip: {
+        trigger: "axis" as const,
+        formatter: axisTooltipFormatter({ [RHR_SERIES]: 0 }),
+      },
+      legend: { data: [RHR_SERIES] },
+      xAxis: dateAxis,
+      yAxis: {
+        type: "value" as const,
+        name: "bpm",
+        nameTextStyle: { color: METRIC_COLORS.heart_rate },
+        scale: true,
         ...AXIS_STYLE,
       },
-      yAxis: [
-        { type: "value" as const, name: "bpm", ...AXIS_STYLE },
-        { type: "value" as const, name: "ms", ...AXIS_STYLE },
-      ],
       series: [
         {
           name: RHR_SERIES,
           type: "line" as const,
-          yAxisIndex: 0,
           smooth: true,
           connectNulls: false,
           itemStyle: { color: METRIC_COLORS.heart_rate },
           lineStyle: { color: METRIC_COLORS.heart_rate },
           data: series.map((p) => p.resting_hr),
         },
+      ],
+    }),
+    [dateAxis, series],
+  );
+
+  const hrvOption = useMemo(
+    () => ({
+      ...BASE_CHART_OPTION,
+      tooltip: {
+        trigger: "axis" as const,
+        formatter: axisTooltipFormatter({ [HRV_SERIES]: 0 }),
+      },
+      legend: { data: [HRV_SERIES] },
+      xAxis: dateAxis,
+      yAxis: {
+        type: "value" as const,
+        name: "ms",
+        nameTextStyle: { color: METRIC_COLORS.hrv },
+        scale: true,
+        ...AXIS_STYLE,
+      },
+      series: [
         {
           name: HRV_SERIES,
           type: "line" as const,
-          yAxisIndex: 1,
           smooth: true,
           connectNulls: false,
-          itemStyle: { color: METRIC_COLORS.speed },
-          lineStyle: { color: METRIC_COLORS.speed },
+          itemStyle: { color: METRIC_COLORS.hrv },
+          lineStyle: { color: METRIC_COLORS.hrv },
           data: series.map((p) => p.hrv_overnight_ms),
         },
       ],
-    };
-  }, [series]);
+    }),
+    [dateAxis, series],
+  );
 
   const rhrMeta = rhr.rhr_trend != null ? RHR_TREND_META[rhr.rhr_trend] : null;
   const hrvMeta = hrv.status != null ? HRV_STATUS_META[hrv.status] : null;
@@ -128,7 +163,28 @@ export default function RecoveryPanel({ data }: RecoveryPanelProps) {
               </span>
             )}
           </p>
-          <EChart option={option} ariaLabel="RHRとHRVの推移グラフ" />
+          <div className="space-y-4">
+            <div>
+              <h3 className="mb-1 text-sm font-medium text-slate-600">
+                安静時心拍 (bpm・低いほど良い)
+              </h3>
+              <EChart
+                option={rhrOption}
+                ariaLabel="安静時心拍の推移グラフ"
+                height={220}
+              />
+            </div>
+            <div>
+              <h3 className="mb-1 text-sm font-medium text-slate-600">
+                夜間HRV (ms・高いほど良い)
+              </h3>
+              <EChart
+                option={hrvOption}
+                ariaLabel="夜間HRVの推移グラフ"
+                height={220}
+              />
+            </div>
+          </div>
         </>
       )}
     </section>

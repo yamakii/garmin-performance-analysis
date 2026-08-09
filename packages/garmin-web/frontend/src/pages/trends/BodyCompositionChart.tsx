@@ -1,7 +1,11 @@
 import { useMemo } from "react";
 import EChart from "../../components/EChart";
-import { AXIS_STYLE, BASE_CHART_OPTION } from "../../components/chartTheme";
-import { formatNumber } from "../../utils/formatNumber";
+import {
+  AXIS_STYLE,
+  BASE_CHART_OPTION,
+  METRIC_COLORS,
+} from "../../components/chartTheme";
+import { axisTooltipFormatter, formatNumber } from "../../utils/formatNumber";
 import type { BodyCompositionTrend } from "../../types";
 
 interface BodyCompositionChartProps {
@@ -11,8 +15,8 @@ interface BodyCompositionChartProps {
 const FAT_SERIES = "脂肪 (kg)";
 const LEAN_SERIES = "除脂肪 (kg)";
 
-const FAT_COLOR = "#fbbf24";
-const LEAN_COLOR = "#0d9488";
+const FAT_COLOR = METRIC_COLORS.fat_mass;
+const LEAN_COLOR = METRIC_COLORS.lean_mass;
 
 /** Latest weight from the date-ascending series (null when empty). */
 function latestWeight(data: BodyCompositionTrend): number | null {
@@ -33,7 +37,13 @@ export default function BodyCompositionChart({ data }: BodyCompositionChartProps
   const option = useMemo(
     () => ({
       ...BASE_CHART_OPTION,
-      tooltip: { trigger: "axis" as const },
+      tooltip: {
+        trigger: "axis" as const,
+        formatter: axisTooltipFormatter({
+          [LEAN_SERIES]: 1,
+          [FAT_SERIES]: 1,
+        }),
+      },
       legend: { data: [FAT_SERIES, LEAN_SERIES] },
       xAxis: {
         type: "category" as const,

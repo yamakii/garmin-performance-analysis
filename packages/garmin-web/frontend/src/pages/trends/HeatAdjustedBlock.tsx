@@ -3,8 +3,10 @@ import EChart from "../../components/EChart";
 import {
   AXIS_STYLE,
   BASE_CHART_OPTION,
+  INK_COLOR,
   METRIC_COLORS,
 } from "../../components/chartTheme";
+import { axisTooltipFormatter } from "../../utils/formatNumber";
 import type { HeatAdjustedTrend } from "../../api/trends";
 
 interface HeatAdjustedBlockProps {
@@ -13,11 +15,12 @@ interface HeatAdjustedBlockProps {
 
 const RAW_HR_SERIES = "生HR";
 const NEUTRAL_HR_SERIES = "気候中立HR";
-const HEAT_COST_SERIES = "heat_cost (bpm)";
+/** Japanese label: "heat_cost" is an internal column name, not reader-facing. */
+const HEAT_COST_SERIES = "暑熱コスト (bpm)";
 
-/** Neutral HR uses the editorial ink navy; heat_cost uses a warm amber. */
-const NEUTRAL_COLOR = "#16213a";
-const HEAT_COST_COLOR = "#d97706";
+/** Neutral HR uses the editorial ink navy; heat_cost its own warm orange. */
+const NEUTRAL_COLOR = INK_COLOR;
+const HEAT_COST_COLOR = METRIC_COLORS.heat_cost;
 
 function formatBpmPerC(value: number | null | undefined): string {
   return value == null ? "—" : value.toFixed(2);
@@ -33,16 +36,30 @@ export default function HeatAdjustedBlock({ data }: HeatAdjustedBlockProps) {
   const option = useMemo(() => {
     return {
       ...BASE_CHART_OPTION,
-      tooltip: { trigger: "axis" as const },
+      tooltip: {
+        trigger: "axis" as const,
+        formatter: axisTooltipFormatter({
+          [RAW_HR_SERIES]: 0,
+          [NEUTRAL_HR_SERIES]: 1,
+          [HEAT_COST_SERIES]: 1,
+        }),
+      },
       legend: { data: [RAW_HR_SERIES, NEUTRAL_HR_SERIES, HEAT_COST_SERIES] },
       xAxis: {
         type: "category" as const,
         data: points.map((p) => p.date),
         ...AXIS_STYLE,
       },
+      // The bpm axis carries both HR series, so it stays neutral; the second
+      // axis takes the heat_cost color it exclusively scales (Issue #913).
       yAxis: [
         { type: "value" as const, name: "bpm", scale: true, ...AXIS_STYLE },
-        { type: "value" as const, name: "heat_cost", ...AXIS_STYLE },
+        {
+          type: "value" as const,
+          name: HEAT_COST_SERIES,
+          nameTextStyle: { color: HEAT_COST_COLOR },
+          ...AXIS_STYLE,
+        },
       ],
       series: [
         {
@@ -93,9 +110,9 @@ export default function HeatAdjustedBlock({ data }: HeatAdjustedBlockProps) {
             <span className="font-semibold text-ink">{RAW_HR_SERIES}</span>{" "}
             (実線) と{" "}
             <span className="font-semibold text-ink">{NEUTRAL_HR_SERIES}</span>{" "}
-            (破線) の重ね描き。暑熱係数{" "}
+            (破線) の重ね描き。暑熱コスト係数{" "}
             <span className="font-semibold text-ink">
-              β_heat {formatBpmPerC(coefficients?.beta_heat)} bpm/°C
+              {formatBpmPerC(coefficients?.beta_heat)} bpm/°C
             </span>{" "}
             ・ 基準温度 {formatTemp(coefficients?.ref_temp_c)}
           </p>

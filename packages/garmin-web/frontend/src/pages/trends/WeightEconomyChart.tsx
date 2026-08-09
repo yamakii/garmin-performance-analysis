@@ -5,7 +5,7 @@ import {
   BASE_CHART_OPTION,
   METRIC_COLORS,
 } from "../../components/chartTheme";
-import { formatNumber } from "../../utils/formatNumber";
+import { axisTooltipFormatter, formatNumber } from "../../utils/formatNumber";
 import type { WeightEconomyCoupling } from "../../types";
 
 interface WeightEconomyChartProps {
@@ -15,8 +15,8 @@ interface WeightEconomyChartProps {
 const WEIGHT_SERIES = "体重 (kg)";
 const EF_SERIES = "EF (易ラン)";
 
-const WEIGHT_COLOR = "#16213a";
-const EF_COLOR = METRIC_COLORS.speed;
+const WEIGHT_COLOR = METRIC_COLORS.weight;
+const EF_COLOR = METRIC_COLORS.ef;
 
 export default function WeightEconomyChart({ data }: WeightEconomyChartProps) {
   const { series, model, note } = data;
@@ -24,16 +24,37 @@ export default function WeightEconomyChart({ data }: WeightEconomyChartProps) {
   const option = useMemo(
     () => ({
       ...BASE_CHART_OPTION,
-      tooltip: { trigger: "axis" as const },
+      tooltip: {
+        trigger: "axis" as const,
+        // EF moves in the 4th decimal, so it needs more precision than weight.
+        formatter: axisTooltipFormatter({
+          [WEIGHT_SERIES]: 1,
+          [EF_SERIES]: 4,
+        }),
+      },
       legend: { data: [WEIGHT_SERIES, EF_SERIES] },
       xAxis: {
         type: "category" as const,
         data: series.map((p) => p.run_date),
         ...AXIS_STYLE,
       },
+      // Each axis name is painted in its series' color so the reader can tell
+      // at a glance which scale a line belongs to (Issue #913).
       yAxis: [
-        { type: "value" as const, name: "kg", scale: true, ...AXIS_STYLE },
-        { type: "value" as const, name: "EF", scale: true, ...AXIS_STYLE },
+        {
+          type: "value" as const,
+          name: "kg",
+          nameTextStyle: { color: WEIGHT_COLOR },
+          scale: true,
+          ...AXIS_STYLE,
+        },
+        {
+          type: "value" as const,
+          name: "EF",
+          nameTextStyle: { color: EF_COLOR },
+          scale: true,
+          ...AXIS_STYLE,
+        },
       ],
       series: [
         {

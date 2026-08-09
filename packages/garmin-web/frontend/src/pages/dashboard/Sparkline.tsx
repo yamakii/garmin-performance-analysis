@@ -49,7 +49,10 @@ export default function Sparkline({
         data: labels,
         show: false,
       },
-      yAxis: { type: "value" as const, show: false, scale: true },
+      // Bars encode magnitude by length, so they must keep the zero baseline:
+      // `scale` crops it and turns a 26.4 -> 6.5 km week into a near-total
+      // collapse (Issue #913). Lines only encode shape, so they may zoom.
+      yAxis: { type: "value" as const, show: false, scale: type !== "bar" },
       series: [
         type === "line"
           ? {
