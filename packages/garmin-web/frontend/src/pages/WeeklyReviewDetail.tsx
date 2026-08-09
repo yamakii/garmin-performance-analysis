@@ -1,8 +1,11 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useWeeklyReviewVersions } from "../api/hooks";
+import { CARD_CLASS } from "../components/Card";
 import ClampedProse from "../components/ClampedProse";
 import Disclosure from "../components/Disclosure";
+import EmptyState from "../components/EmptyState";
+import { PageError, PageLoading } from "../components/PageState";
 import SectionHeading from "../components/SectionHeading";
 import SectionNav, { type NavItem } from "../components/SectionNav";
 import StatusBadge from "../components/StatusBadge";
@@ -31,7 +34,7 @@ function Section({
   return (
     <section
       id={id}
-      className="scroll-mt-20 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+      className={`scroll-mt-20 ${CARD_CLASS}`}
     >
       <Heading className="mb-3 font-display text-base font-semibold text-ink">
         {title}
@@ -161,6 +164,24 @@ function raceCountdown(
   return `${label}レース${name}まで ${remaining}`;
 }
 
+/**
+ * Page title + the way back to the list. Shared with the empty state so an
+ * unknown week is still a navigable page rather than a dead end.
+ */
+function PageHeader() {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <SectionHeading eyebrow="Weekly Review" title="週次レビュー" />
+      <Link
+        to="/weekly-reviews"
+        className="text-sm font-medium text-slate-500 hover:text-ink"
+      >
+        ← 一覧へ
+      </Link>
+    </div>
+  );
+}
+
 export default function WeeklyReviewDetail() {
   const { weekStart } = useParams<{ weekStart: string }>();
   usePageTitle(weekStart != null ? `週次レビュー ${weekStart}` : "週次レビュー");
@@ -169,28 +190,35 @@ export default function WeeklyReviewDetail() {
   const versions = versionsQuery.data ?? [];
 
   if (versionsQuery.isPending) {
-    return (
-      <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
-        <span
-          aria-hidden="true"
-          className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-ink motion-reduce:animate-none"
-        />
-        読み込み中...
-      </div>
-    );
+    return <PageLoading />;
   }
   if (versionsQuery.error) {
     return (
-      <p
-        role="alert"
-        className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-      >
-        エラー: {versionsQuery.error.message}
-      </p>
+      <PageError
+        error={versionsQuery.error}
+        onRetry={() => void versionsQuery.refetch()}
+      />
     );
   }
+  // An unreviewed (or mistyped) week has no versions. It used to render
+  // nothing at all — a white page with no explanation and no way back (#914).
   if (versions.length === 0) {
-    return null;
+    return (
+      <div className="stagger-in space-y-6">
+        <PageHeader />
+        <EmptyState
+          message="この週のレビューはありません"
+          hint={
+            <Link
+              to="/weekly-reviews"
+              className="font-medium text-signal-ink underline underline-offset-2 hover:text-ink"
+            >
+              週次レビュー一覧へ
+            </Link>
+          }
+        />
+      </div>
+    );
   }
 
   const review = versions[Math.min(selectedIndex, versions.length - 1)];
@@ -262,15 +290,7 @@ export default function WeeklyReviewDetail() {
 
   return (
     <div className="stagger-in space-y-6">
-      <div className="flex items-start justify-between gap-3">
-        <SectionHeading eyebrow="Weekly Review" title="週次レビュー" />
-        <Link
-          to="/weekly-reviews"
-          className="text-sm font-medium text-slate-500 hover:text-ink"
-        >
-          ← 一覧へ
-        </Link>
-      </div>
+      <PageHeader />
       <p className="font-numeric text-sm tabular-nums text-slate-500">
         {review.week_start_date} 〜 {review.week_end_date}
       </p>

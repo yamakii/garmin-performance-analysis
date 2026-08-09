@@ -1,7 +1,9 @@
+import { CARD_CLASS } from "./Card";
+
 /**
  * Card-shaped loading placeholder shown while a TrendsDashboard card's data is
- * still resolving. It mirrors the card shell (`rounded-xl border ... shadow-sm`)
- * so the real card drops in without a layout shift once its fetch resolves.
+ * still resolving. It wears the shared card shell (`CARD_CLASS`) so the real
+ * card drops in without a layout shift once its fetch resolves.
  *
  * The pulsing bars use `animate-pulse`, which is disabled under
  * `prefers-reduced-motion` via `motion-reduce:animate-none`. The element is a
@@ -14,7 +16,7 @@ export default function CardSkeleton({ label }: { label?: string }) {
       role="status"
       aria-busy="true"
       aria-label={label ?? "読み込み中"}
-      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+      className={CARD_CLASS}
     >
       <div className="animate-pulse space-y-3 motion-reduce:animate-none">
         <div className="h-4 w-1/3 rounded bg-slate-200" />

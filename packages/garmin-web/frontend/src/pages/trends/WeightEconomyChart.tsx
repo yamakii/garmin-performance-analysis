@@ -7,6 +7,7 @@ import {
 } from "../../components/chartTheme";
 import { axisTooltipFormatter, formatNumber } from "../../utils/formatNumber";
 import type { WeightEconomyCoupling } from "../../types";
+import { CARD_CLASS } from "../../components/Card";
 
 interface WeightEconomyChartProps {
   data: WeightEconomyCoupling;
@@ -87,7 +88,7 @@ export default function WeightEconomyChart({ data }: WeightEconomyChartProps) {
   return (
     <section
       aria-label="体重 × ランニングエコノミー (EF)"
-      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+      className={CARD_CLASS}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="font-display text-base font-semibold text-ink">

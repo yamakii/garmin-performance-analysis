@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useTrendNarration, useTrendNarrationVersions } from "../api/hooks";
 import type { Granularity, TrendNarration } from "../api/trends";
+import { CARD_CLASS } from "./Card";
+import CardSkeleton from "./CardSkeleton";
 import ClampedProse from "./ClampedProse";
 
 /**
@@ -73,6 +75,13 @@ export default function TrendNarrationCard({
     ? versions[Math.min(selectedIndex, versions.length - 1)]
     : narrationQuery.data;
 
+  // Still fetching: hold the card's space with a skeleton instead of rendering
+  // nothing, so the surrounding cards do not jump when the narration lands
+  // (a pending fetch is indistinguishable from "no narration" otherwise).
+  if (narrationQuery.isPending) {
+    return <CardSkeleton label="トレンド解説" />;
+  }
+
   // No narration saved yet (404 / empty) — hide the card entirely.
   if (selected == null) {
     return null;
@@ -83,7 +92,7 @@ export default function TrendNarrationCard({
   return (
     <section
       aria-label="トレンド解説"
-      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+      className={CARD_CLASS}
     >
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-display text-base font-semibold text-ink">

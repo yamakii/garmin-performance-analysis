@@ -400,6 +400,38 @@ describe("WeeklyReviewDetail", () => {
     expect(details!.hasAttribute("open")).toBe(true);
   });
 
+  it("test_unknown_week_shows_empty_state", async () => {
+    // A week nobody reviewed (or a mistyped URL): the API answers 200 [].
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response("[]", {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/weekly-reviews/2020-01-01"]}>
+        <Routes>
+          <Route
+            path="/weekly-reviews/:weekStart"
+            element={<WeeklyReviewDetail />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    // Previously this rendered nothing at all — a white page (#914).
+    expect(
+      await screen.findByText("この週のレビューはありません"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "週次レビュー一覧へ" }),
+    ).toHaveAttribute("href", "/weekly-reviews");
+  });
+
   it("test_version_select_and_sections_nav_unchanged", async () => {
     renderVersions([
       { ...fullReview, overall: "最新版の総評です。" },

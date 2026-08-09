@@ -1,5 +1,7 @@
+import { CARD_CLASS } from "../components/Card";
 import Disclosure from "../components/Disclosure";
 import EmptyState, { CliCommand } from "../components/EmptyState";
+import { PageError, PageLoading } from "../components/PageState";
 import SectionHeading from "../components/SectionHeading";
 import StatusBadge, { type StatusTone } from "../components/StatusBadge";
 import { useGoal, useRaceReadiness } from "../api/hooks";
@@ -470,28 +472,27 @@ export default function Goal() {
   const error = goalQuery.error;
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
-        <span
-          aria-hidden="true"
-          className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-ink motion-reduce:animate-none"
-        />
-        読み込み中...
-      </div>
-    );
+    return <PageLoading />;
   }
   if (error) {
-    return (
-      <p
-        role="alert"
-        className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-      >
-        エラー: {error.message}
-      </p>
-    );
+    return <PageError error={error} onRetry={() => void goalQuery.refetch()} />;
   }
+  // Resolved with nothing to show: the page has no header of its own to fall
+  // back on, so returning null left a white screen (#914).
   if (goal == null) {
-    return null;
+    return (
+      <div className="stagger-in space-y-6">
+        <SectionHeading eyebrow="Goal" title="目標" />
+        <EmptyState
+          message="目標データがありません"
+          hint={
+            <>
+              CLI <CliCommand>/set-goal</CliCommand> で登録できます
+            </>
+          }
+        />
+      </div>
+    );
   }
 
   const { profile, goals, retrospectives } = goal;
@@ -551,7 +552,7 @@ export default function Goal() {
             )}
           </div>
         ) : (
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className={CARD_CLASS}>
             <EmptyState
               message="現フェーズが登録されていません"
               hint={
@@ -579,7 +580,7 @@ export default function Goal() {
             ))}
           </div>
         ) : (
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className={CARD_CLASS}>
             <EmptyState
               message={
                 featuredRaces.length > 0
@@ -606,7 +607,7 @@ export default function Goal() {
             ))}
           </ol>
         ) : (
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className={CARD_CLASS}>
             <EmptyState
               message="振り返りが登録されていません"
               hint={

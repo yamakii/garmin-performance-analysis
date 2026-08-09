@@ -1,6 +1,7 @@
+import { MemoryRouter, useNavigate } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "./test/utils";
-import App from "./App";
+import { fireEvent, render, screen, waitFor } from "./test/utils";
+import App, { ScrollToTop } from "./App";
 
 // echarts requires a real canvas; mock the modular wrapper out for jsdom
 vi.mock("./lib/echarts", () => ({
@@ -34,6 +35,48 @@ function stubFailingApi(): void {
     ),
   );
 }
+
+/** Two navigations to drive `ScrollToTop`: a plain one and an anchor one. */
+function Navigator() {
+  const navigate = useNavigate();
+  return (
+    <>
+      <button type="button" onClick={() => navigate("/condition")}>
+        go
+      </button>
+      <button type="button" onClick={() => navigate("/performance#form")}>
+        go-anchor
+      </button>
+    </>
+  );
+}
+
+describe("ScrollToTop", () => {
+  it("test_scroll_to_top_on_navigation", () => {
+    const scrollTo = vi.fn();
+    vi.stubGlobal("scrollTo", scrollTo);
+
+    render(
+      <MemoryRouter initialEntries={["/activities"]}>
+        <ScrollToTop />
+        <Navigator />
+      </MemoryRouter>,
+    );
+
+    // Only the navigation is under test, not the initial mount.
+    scrollTo.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "go" }));
+
+    expect(scrollTo).toHaveBeenCalledWith(0, 0);
+
+    // An in-page anchor owns the scroll position: jumping to the top here
+    // would undo the jump to the linked section.
+    scrollTo.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "go-anchor" }));
+
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+});
 
 describe("App routing", () => {
   it("test_unknown_route_renders_not_found", async () => {

@@ -1,4 +1,5 @@
 import type { CriticalSpeedPoint } from "../../api/trends";
+import { CARD_CLASS } from "../../components/Card";
 
 interface CriticalSpeedPanelProps {
   data: CriticalSpeedPoint[];
@@ -19,7 +20,7 @@ export default function CriticalSpeedPanel({ data }: CriticalSpeedPanelProps) {
   return (
     <section
       aria-label="クリティカルスピード"
-      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+      className={CARD_CLASS}
     >
       <h2 className="mb-1 font-display text-base font-semibold text-ink">
         クリティカルスピード (四半期)

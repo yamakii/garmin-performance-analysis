@@ -5,6 +5,7 @@ import {
   buildScoreChartOption,
 } from "./formChartOptions";
 import type { FormTrendPoint } from "../../api/trends";
+import { CARD_CLASS } from "../../components/Card";
 
 interface FormBlockProps {
   data: FormTrendPoint[];
@@ -20,7 +21,7 @@ export default function FormBlock({ data }: FormBlockProps) {
   return (
     <section
       aria-label="フォーム"
-      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+      className={CARD_CLASS}
     >
       <h2 className="mb-3 font-display text-base font-semibold text-ink">
         フォームスコア推移

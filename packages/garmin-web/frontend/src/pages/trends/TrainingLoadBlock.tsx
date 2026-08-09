@@ -9,6 +9,7 @@ import {
 import { axisTooltipFormatter } from "../../utils/formatNumber";
 import type { EChartsOption } from "../../lib/echarts";
 import type { AcwrStatus, AcwrTrend } from "../../types";
+import { CARD_CLASS } from "../../components/Card";
 
 interface TrainingLoadBlockProps {
   data: AcwrTrend;
@@ -127,7 +128,7 @@ export default function TrainingLoadBlock({ data }: TrainingLoadBlockProps) {
   return (
     <section
       aria-label="訓練負荷 (ACWR)"
-      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+      className={CARD_CLASS}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="font-display text-base font-semibold text-ink">

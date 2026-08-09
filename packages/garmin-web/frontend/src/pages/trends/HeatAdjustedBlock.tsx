@@ -8,6 +8,7 @@ import {
 } from "../../components/chartTheme";
 import { axisTooltipFormatter } from "../../utils/formatNumber";
 import type { HeatAdjustedTrend } from "../../api/trends";
+import { CARD_CLASS } from "../../components/Card";
 
 interface HeatAdjustedBlockProps {
   data: HeatAdjustedTrend;
@@ -93,7 +94,7 @@ export default function HeatAdjustedBlock({ data }: HeatAdjustedBlockProps) {
   return (
     <section
       aria-label="気候中立HRトレンド (暑熱補正)"
-      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+      className={CARD_CLASS}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="font-display text-base font-semibold text-ink">
