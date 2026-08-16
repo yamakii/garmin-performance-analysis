@@ -57,8 +57,9 @@ def test_server_startup_applies_migrations(tmp_path: Path) -> None:
         "drop_plan_tables",
         "add_analysis_runs_table",
         "add_pace_consistency_full",
+        "add_hiking_sessions",
     ]
-    assert MigrationRunner(db_path).get_current_version() == 19
+    assert MigrationRunner(db_path).get_current_version() == 20
 
 
 @pytest.mark.integration

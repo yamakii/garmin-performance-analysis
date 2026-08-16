@@ -161,14 +161,14 @@ class GarminDBWriter:
         self._run_migrations()
 
     def _ensure_tables(self):
-        """Create the base DuckDB schema (the 15 core tables).
+        """Create the base DuckDB schema (the 17 core tables).
 
         This method owns the *base* schema only. It is the first step of
         ``__init__`` and is immediately followed by ``_run_migrations()``,
         which applies incremental migrations (column additions, the
         athlete-centric tables, index drops, etc.).
 
-        Creates (15 base tables):
+        Creates (17 base tables):
         - activities: Base activity metadata (19 columns)
         - splits: Split-by-split metrics (28 columns, NO FK)
         - form_efficiency: Form efficiency summary (GCT, VO, VR, NO FK)
@@ -182,6 +182,10 @@ class GarminDBWriter:
         - form_evaluations: Form evaluation results (NO FK)
         - form_baseline_history: Baseline trend history (independent table)
         - time_series_metrics: Second-by-second metrics (26 metrics)
+        - daily_wellness: Daily recovery metrics (independent table)
+        - analysis_runs: Allocated analysis run_id audit log
+        - strength_sessions: Strength-training (補強) summaries
+        - hiking_sessions: Hiking (山行) summaries
 
         Tables owned exclusively by migrations (NOT created here):
         - athlete_profile / athlete_goals / season_retrospectives /
@@ -626,6 +630,28 @@ class GarminDBWriter:
                     active_sets INTEGER,
                     total_sets INTEGER,
                     category_counts JSON,
+                    ingested_at TIMESTAMP
+                )
+            """)
+
+            # Create hiking_sessions table (mirrors
+            # migrations/add_hiking_sessions.py; hiking is stored at summary
+            # granularity, kept out of ``activities`` so its distance/elevation
+            # profile never distorts run aggregations -- issue #921).
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS hiking_sessions (
+                    activity_id BIGINT PRIMARY KEY,
+                    activity_date DATE,
+                    start_time_local TIMESTAMP,
+                    activity_name VARCHAR,
+                    duration_seconds INTEGER,
+                    elapsed_duration_seconds INTEGER,
+                    distance_km DOUBLE,
+                    elevation_gain_m DOUBLE,
+                    elevation_loss_m DOUBLE,
+                    avg_heart_rate INTEGER,
+                    max_heart_rate INTEGER,
+                    calories INTEGER,
                     ingested_at TIMESTAMP
                 )
             """)

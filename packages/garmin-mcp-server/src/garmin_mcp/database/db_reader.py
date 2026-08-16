@@ -16,6 +16,7 @@ from garmin_mcp.database.readers import (
     ExportReader,
     FitnessCurveReader,
     FormReader,
+    HikingSessionsReader,
     MetadataReader,
     PerformanceReader,
     PhysiologyReader,
@@ -89,6 +90,7 @@ class GarminDBReader:
         self.durability = DurabilityReader(db_path)
         self.fitness_curve = FitnessCurveReader(db_path)
         self.strength_sessions = StrengthSessionsReader(db_path)
+        self.hiking_sessions = HikingSessionsReader(db_path)
         self.trends_narration = TrendNarrationReader(db_path)
         self.utility = UtilityReader(db_path)
 
@@ -262,6 +264,21 @@ class GarminDBReader:
         rows = self.execute_read_query(
             "SELECT MAX(activity_date) FROM strength_sessions"
         )
+        if rows and rows[0][0] is not None:
+            return str(rows[0][0])
+        return None
+
+    def get_latest_hiking_date(self) -> str | None:
+        """Return the most recent hiking-session date stored in DuckDB.
+
+        Used by catch-up window resolution. No Garmin access; reads only the
+        ``hiking_sessions`` table.
+
+        Returns:
+            Latest ``activity_date`` as ``YYYY-MM-DD``, or ``None`` when the
+            table is empty.
+        """
+        rows = self.execute_read_query("SELECT MAX(activity_date) FROM hiking_sessions")
         if rows and rows[0][0] is not None:
             return str(rows[0][0])
         return None
@@ -1374,6 +1391,24 @@ class GarminDBReader:
             no session falls in the range. No Garmin access.
         """
         return self.strength_sessions.get_strength_sessions(start_date, end_date)
+
+    # ========== Hiking Session Methods ==========
+
+    def get_hiking_sessions(
+        self, start_date: str, end_date: str
+    ) -> list[dict[str, Any]]:
+        """Get hiking (山行) summaries with date in ``[start, end]``.
+
+        Args:
+            start_date: Inclusive window start (``YYYY-MM-DD``).
+            end_date: Inclusive window end (``YYYY-MM-DD``).
+
+        Returns:
+            List of hiking-session dicts (``activity_date`` ascending) with
+            dates as strings. Empty list when no hike falls in the range. No
+            Garmin access.
+        """
+        return self.hiking_sessions.get_hiking_sessions(start_date, end_date)
 
     # ========== Heat Adjustment Methods ==========
 

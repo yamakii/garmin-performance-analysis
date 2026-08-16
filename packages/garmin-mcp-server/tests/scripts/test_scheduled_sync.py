@@ -34,6 +34,7 @@ _ALL_OK = {
     "running": {"activities_ingested": 2},
     "weight": {"days_ingested": 3},
     "strength": {"sessions_ingested": 1},
+    "hiking": {"sessions_ingested": 0},
     "wellness": {"days_ingested": 4},
     "window": {"running": {"start": "2025-10-01", "end": "2025-10-09"}},
 }
@@ -54,7 +55,7 @@ def test_run_sync_records_success(initialized_db_path: Path) -> None:
 
     assert len(rows) == 1
     assert rows[0][0] == outcome["run_id"]
-    assert rows[0][1] == "running,weight,strength,wellness"
+    assert rows[0][1] == "running,weight,strength,hiking,wellness"
     assert rows[0][2] == "success"
 
 
@@ -81,7 +82,7 @@ def test_run_sync_partial_on_domain_error(initialized_db_path: Path) -> None:
 
 @pytest.mark.unit
 def test_run_sync_default_domains_all(initialized_db_path: Path) -> None:
-    """domains=None -> catch_up_ingest receives all four default domains."""
+    """domains=None -> catch_up_ingest receives all five default domains."""
     with patch.object(
         scheduled_sync, "catch_up_ingest", return_value=dict(_ALL_OK)
     ) as mock_catch:
@@ -92,6 +93,7 @@ def test_run_sync_default_domains_all(initialized_db_path: Path) -> None:
         "running",
         "weight",
         "strength",
+        "hiking",
         "wellness",
     ]
 

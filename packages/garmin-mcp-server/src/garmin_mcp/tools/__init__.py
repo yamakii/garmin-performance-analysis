@@ -18,6 +18,7 @@ from garmin_mcp.tools.athlete import ATHLETE_TOOLS
 from garmin_mcp.tools.body_composition import BODY_COMPOSITION_TOOLS
 from garmin_mcp.tools.durability import DURABILITY_TOOLS
 from garmin_mcp.tools.export import EXPORT_TOOLS
+from garmin_mcp.tools.hiking import HIKING_TOOLS
 from garmin_mcp.tools.ingest import INGEST_TOOLS
 from garmin_mcp.tools.metadata import METADATA_TOOLS
 from garmin_mcp.tools.performance import PERFORMANCE_TOOLS
@@ -53,6 +54,7 @@ ALL_DEFS: list[ToolDef] = (
     + BODY_COMPOSITION_TOOLS
     + RECOVERY_TOOLS
     + WORKOUT_SCHEDULING_TOOLS
+    + HIKING_TOOLS
 )
 
 ALL_DEFS_BY_NAME: dict[str, ToolDef] = {d.name: d for d in ALL_DEFS}
