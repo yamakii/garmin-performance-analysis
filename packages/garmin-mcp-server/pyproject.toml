@@ -2,7 +2,7 @@
 name = "garmin-mcp-server"
 version = "0.2.0"
 description = "Garmin running performance analysis MCP server with DuckDB backend"
-readme = "../../README.md"
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "garminconnect>=0.3.0",
