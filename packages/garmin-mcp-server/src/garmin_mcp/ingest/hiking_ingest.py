@@ -9,8 +9,9 @@ form baselines). This mirrors the ``strength_sessions`` design (issue #450).
 
 Discovery uses ``get_activities_by_date(start, end)`` **without** an
 ``activitytype`` filter and then keeps only entries whose
-``activityType.typeKey == 'hiking'`` (a type-filtered call returns HTTP 400 for
-sub-types).
+``activityType.typeKey`` is in ``{'hiking', 'mountaineering'}`` — Garmin
+records alpine outings as ``mountaineering`` (issue #925) — (a type-filtered
+call returns HTTP 400 for sub-types).
 
 Unlike strength, no per-activity detail call is made: every persisted field
 (distance, movingDuration, elevationGain/Loss, averageHR, ...) is already
@@ -34,7 +35,7 @@ from garmin_mcp.ingest.api_client import get_garmin_client
 
 logger = logging.getLogger(__name__)
 
-_HIKING_TYPE_KEY = "hiking"
+_HIKING_TYPE_KEYS = {"hiking", "mountaineering"}
 _EMPTY_DB_FLOOR_DAYS = 30
 
 
@@ -144,13 +145,13 @@ def ingest_hiking_sessions(
 
 
 def _is_hiking(activity: dict[str, Any]) -> bool:
-    """Return True for a ``hiking`` activity-list entry.
+    """Return True for a ``hiking``/``mountaineering`` activity-list entry.
 
     No distance guard (unlike strength): a hike legitimately carries distance;
     the type key alone decides.
     """
     type_key = (activity.get("activityType") or {}).get("typeKey")
-    return bool(type_key == _HIKING_TYPE_KEY)
+    return type_key in _HIKING_TYPE_KEYS
 
 
 def _build_row(activity: dict[str, Any]) -> dict[str, Any]:
