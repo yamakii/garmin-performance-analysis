@@ -5,7 +5,8 @@ longitudinal trend reader (load / metric / fitness-curve / recovery /
 durability / ACWR / heat-adjusted) plus the deterministic derivations into a
 single JSON bundle keyed by period. The trend-narration LLM consumes this
 bundle and only writes prose — all accuracy-sensitive numbers (period deltas,
-build streaks, cross-signal fusion flags) are computed here (Issue #790).
+volume / long-run build streaks, cross-signal fusion flags) are computed here
+(Issue #790, #927).
 
 Usage:
     uv run python -m garmin_mcp.scripts.prefetch_trend_context \
@@ -19,7 +20,7 @@ Output (JSON to stdout, one line):
       "user_id": "default",
       "activity_ids": [123, 124],
       "headline_metrics": {"load_delta_pct": ..., "build_weeks": ...,
-                            "fusion_flags": {...}},
+                            "long_run_build_weeks": ..., "fusion_flags": {...}},
       "fusion_flags": {...},
       "load_trend": {...},
       "metric_trends": {"pace": {...}, "heart_rate": {...}},

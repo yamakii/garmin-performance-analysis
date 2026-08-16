@@ -70,7 +70,8 @@ Step 1 の `prefetch_weekly_review_context` バンドルから、以下のキー
 
 - **実績（ラン）**: `activity_ids.{prev_week, current_week}` と `activities[]`（各 `{activity_id, activity_date, activity_name, distance_km, duration_seconds, performance_trends, weather}`）。走行距離・ラン回数・強度分布・心拍規律（HR discipline）・ハイライトは **主に W-1（`prev_week`）をベースに評価** し、W 進行中分（`current_week`）は「今週ここまで」の補足として扱う。`performance_trends` から pace_consistency / hr_drift / run_phase{avg_pace, avg_hr} を、暑熱・高湿度でペース解釈が要る場合のみ `weather`（気温・湿度）を読む。補強 activity にはラン用の解釈（ペース/フォーム）を適用しない。
 - **フィットネスサマリー**: `fitness_summary`（vdot / Garmin native `hr_zones` / weekly_volume / recent_runs）。処方の HR ゾーン(bpm) は必ずここから引用する（計算式禁止）。
-- **負荷トレンド（Step 5-A-4 のカットバック周期判定の材料）**: `load_trend.weeks`（古い→新しい、各 `{week_start, load_km(その週の総距離), acwr, status}`）と `acwr`（`{acute_load_7d, chronic_load_28d_weekly, acwr, status}`）。`status` は undertraining(<0.8) / optimal(0.8-1.3) / caution(1.3-1.5) / high_risk(>1.5) / insufficient_data（距離ベース・HR 非依存）。週量ランプ（例: 19.94→28.82→30.99km）・ACWR 推移・連続 build 週数をこの系列から読む。
+- **負荷トレンド（Step 5-A-4 のカットバック周期判定の材料）**: `load_trend.weeks`（古い→新しい、各 `{week_start, load_km(その週の総距離), acwr, status, longest_run_sec(その週の最長ラン秒。ラン無し週は null)}`）と `acwr`（`{acute_load_7d, chronic_load_28d_weekly, acwr, status}`）。`status` は undertraining(<0.8) / optimal(0.8-1.3) / caution(1.3-1.5) / high_risk(>1.5) / insufficient_data（距離ベース・HR 非依存）。週量ランプ（例: 19.94→28.82→30.99km）・ACWR 推移・連続 build 週数をこの系列から読む。
+- **ロング走の連続伸長（Step 5-A-4 の主ゲート）**: `load_trend.long_run`（`{weekly_longest_sec(古い→新しい、ラン無し週は null), long_run_build_weeks(整数), cutback_due_long_run(bool)}`）。**決定的に算出済みなので再計算しない**（伸長判定 = 前週比 +3% 以上、据え置き = 前週比 75%〜103% で streak 保持、−25% 超の低下またはラン無し週でリセット。`cutback_due_long_run` = `long_run_build_weeks >= 3`）。なお最新週が進行中（`week_in_progress = true`）でロング未実施の場合、`weekly_longest_sec` の末尾は暫定値なので、確定済みの W-1 までの系列も併せて確認する。
 - **回復指標（Step 5-A-5 の回復サブ分析の材料）**: `recovery.trend`（`{weeks, rhr:{median_7d, median_30d, rhr_trend}, hrv:{latest_ms, status, hrv_below_baseline_days, under_recovery}, series:[{date, resting_hr, hrv_overnight_ms}]}`）、`recovery.status`（`{date, recommendation, score, reasons, training_readiness, body_battery_high, sleep_score}`、`recommendation` は rest/easy/moderate/quality/unknown）、`recovery.baseline_deviation`（#555 HRV/readiness/RHR の個人ベースライン z 逸脱）。
   - `rhr_trend`: 7日中央値が 30日中央値より **2bpm 以上低ければ `improving`**、**3bpm 以上高ければ `fatigued`**、それ以外 `stable`。
   - `hrv.under_recovery`: **HRV ベースライン割れが 2夜以上連続**で `true`。これと `acwr` の高値を **AND して「積み過ぎ・回復不足」を判定**する。
@@ -139,20 +140,20 @@ Step 3 で取得した対象週 W プラン（`training_plan_name` / `training_p
 
 **4. カットバック周期サブ分析（必須）— トレンドで increase/deload を判定**
 
-バンドルの `load_trend` / `acwr`（Step 2）を使い、対象週 W が **積み上げを続ける番か、カットバック（deload）の番か**を判定します。ロング・週量の伸長可否は **2つのゲート両方** で決めます:
+バンドルの `load_trend`（`long_run` ブロック含む）/ `acwr`（Step 2）を使い、対象週 W が **積み上げを続ける番か、カットバック（deload）の番か**を判定します。ロング・週量の伸長可否は **2つのゲート両方** で決めます:
 
 1. **進行ゲート**（脚が崩れていないか）: 直近ロングの後半で GCT+10ms 以上 / ケイデンス5以上低下 / ペース大幅低下が無ければ「伸ばせる条件」を満たす（[[long-run-progression-two-gates]]）。
-2. **カットバック周期ゲート**: `load_trend.weeks` から以下を算出する。
-   - **連続 build 週数**: 直近で週量（`load_km`）が概ね非減少（前週比プラス〜横ばい）で積み上がっている連続週数。
-   - **最後のカットバック週からの経過**: 前週比 −30〜40% 以上に落ちた週からの経過週数。
-   - **ACWR / status**: caution(≥1.3) は ramp 過多の注意、high_risk(>1.5) は強い警告。
+2. **カットバック周期ゲート**: 主ゲート（ロング軸）と副ゲート（週総量軸）を OR で読む。
+   - **主ゲート = ロング走の連続伸長**: `load_trend.long_run.long_run_build_weeks`（`weekly_longest_sec` から決定的に算出済み）と `cutback_due_long_run`。ユーザーはロングを最優先で積むため、**軽量週でリセットされる週総量 streak ではロングのストレス蓄積を系統的に過小評価する**（実例: ロング 130→135→143 分と3週連続伸長でも週総量ベースは build 2週）。腱・骨のストレスは HRV/RHR/ACWR に現れないので、ロング軸の周期を主軸に置く。
+   - **副ゲート = 週総量 / ACWR**: 週量（`load_km`）が概ね非減少で積み上がっている連続週数、前週比 −30〜40% 以上に落ちた最後のカットバック週からの経過週数、`acwr` の caution(≥1.3) / high_risk(>1.5)。
    - これを「**カットバック2-3週ごと・週まるごと −30〜40%**」ルールと照合する。
 
 **判定**: 次のいずれかなら `cutback_due = true`（= W は deload の番）とする:
-- 連続 build 週数が **3週以上**、または
+- **`cutback_due_long_run = true`（ロング連続伸長 3週以上）** — 主ゲート、または
+- 週総量の連続 build 週数が **3週以上**、または
 - ACWR `status` が **caution / high_risk**（≥1.3）、かつ週量や最長ロングが直近ピークを更新した直後
 
-**重要**: 進行ゲートが GREEN（脚は崩れていない）でも、`cutback_due = true` なら **deload を優先**する。新ピーク直後＋3週連続 build で「もう1週積む」助言をしてはいけない（2026-06-21 の見落としを構造的に防ぐための分岐）。`cutback_due = true` のときの W への処方は: 週量 −30〜40%、ロングは短縮（直近ロングから −25〜35%）、質ゼロ、休養を1日増やす。`cutback_due = false`（直近にカットバック済み／ACWR optimal で連続2週以内）なら、進行ゲート GREEN を条件に小刻みな漸進（時間 +5〜10% 程度、+10〜15% を上限）を許可する。
+**重要**: 進行ゲートが GREEN（脚は崩れていない）でも、回復指標（RHR/HRV/睡眠）が全て緑でも、`cutback_due = true` を **上書きしない**（ロングの腱・骨ストレスはこれらの指標に現れないため）。新ピーク直後＋3週連続 build で「もう1週積む」助言をしてはいけない（2026-06-21 の見落としを構造的に防ぐための分岐）。`cutback_due = true` のときの W への処方は: **ロングを直近ピーク比 −30〜40% に短縮**、週量 −20〜30%、質ゼロ、休養を1日増やす。`cutback_due = false`（直近にカットバック済み／ACWR optimal で連続2週以内）なら、進行ゲート GREEN を条件に小刻みな漸進（時間 +5〜10% 程度、+10〜15% を上限）を許可する。
 
 この結果は Step 6 の表示と Step 7 の `periodization.load_trend` に反映します。
 
@@ -191,7 +192,7 @@ Step 3 で取得した対象週 W プラン（`training_plan_name` / `training_p
     - 「流し: 100m×4-6 本（疾走 20-25 秒 / 休 60 秒 jog）」
     - 「テンポ: 閾値心拍域で 15-20 分（暑熱時はペース固定せず心拍上限で）」
 - **ロング走の有無を最重要チェック**: ロング走はマラソン筋持久力の核。**対象週 W プランにロング走が無ければ必ず指摘**し、`overall` でも触れる。欠落時の代替提案も具体値（時間/距離/HR）で添える。
-- **伸長可否はトレンドで判定（W-1 単独で決めない）**: ロング・週量を「来週も伸ばすか」は、進行ゲート（脚崩れ）だけでなく **Step 5-A-4 のカットバック周期** も必ず照合する。`cutback_due = true`（3週連続 build／ACWR caution+・新ピーク直後）なら、進行ゲートが GREEN でも **deload を優先**して処方する（[[long-run-progression-two-gates]]）。
+- **伸長可否はトレンドで判定（W-1 単独で決めない）**: ロング・週量を「来週も伸ばすか」は、進行ゲート（脚崩れ）だけでなく **Step 5-A-4 のカットバック周期** も必ず照合する。`cutback_due = true`（**ロング連続伸長3週以上**／週総量3週連続 build／ACWR caution+・新ピーク直後）なら、進行ゲートが GREEN でも、回復指標が全て緑でも **deload を優先**して処方する（[[long-run-progression-two-gates]]）。
 - **暑熱期の管理**: 気温・湿度が高い時期は、ペース目標ではなく **心拍／努力度（RPE）で管理する** よう助言する。
 - **回復の質を負荷と複合で講評**: Step 5-A-5 の回復サブ分析を踏まえ、**負荷（ACWR）と回復（RHR/HRV/睡眠）を掛け合わせて** 講評する。RHR `fatigued` や HRV `under_recovery` が ACWR caution+ と重なれば「積み過ぎ・回復不足」として deload を優先。ACWR optimal × RHR `improving` なら「順調に吸収」として漸進を許可する根拠にする。睡眠スコアが低い週は回復不足の主因候補として言及する。回復データ欠損週は「回復データ不足のため負荷ベースで講評」と明示する（[[user-running-goal]] の回復力重視に直結）。
 - **過去レビューとの連続性**: `get_weekly_review()` の前回指摘がどうなったか（改善した／継続課題か）に言及する。
@@ -216,7 +217,7 @@ Step 3 で取得した対象週 W プラン（`training_plan_name` / `training_p
   - W に **本来あるべきフェーズ/テーマ**（`expected_phase`）
   - Garmin Coach の **実フェーズ/構成傾向**（`garmin_phase`、`training_plan_name` に言及）
   - 両者の **ギャップ**（`gap`、A=さいたま視点 / B=新潟視点で分けて）
-  - **負荷トレンド / カットバック判定**（`load_trend`、Step 5-A-4）: 週量ランプ（直近数週の `load_km`）・ACWR/status・連続 build 週数を示し、**今週が積み上げか deload か**（`cutback_due`）を明示する。`cutback_due = true` なら W への処方を deload（週量 −30〜40%・ロング短縮・質ゼロ）として表に反映する。
+  - **負荷トレンド / カットバック判定**（`load_trend`、Step 5-A-4）: **ロング連続伸長週数**（`long_run.long_run_build_weeks` と直近数週の最長ラン分）を主軸に、週量ランプ（直近数週の `load_km`）・ACWR/status・週総量の連続 build 週数を添えて示し、**今週が積み上げか deload か**（`cutback_due`）を明示する。`cutback_due = true` なら W への処方を deload（ロング直近ピーク比 −30〜40%・週量 −20〜30%・質ゼロ）として表に反映する。
 - **先週の回復の質（recovery、Step 5-A-5）**: RHR トレンド（`improving`/`stable`/`fatigued` と `median_7d` vs `median_30d` の bpm）、HRV ベースライン割れ日数（`hrv_below_baseline_days`）と `under_recovery`、当日の `recommendation` / 睡眠スコアを示し、**負荷×回復の複合判定**（ACWR 高×HRV割れ→「積み過ぎ・回復不足」、ACWR 適正×RHR改善→「順調に吸収」）を一文で明示する。回復データ欠損週は「回復データ不足のため負荷ベースで講評」と明示する。
 - **対象週 W プランの評価**（表形式）。コメントには時間/距離/HR ゾーン(bpm) または ペースの具体値を含める:
 
@@ -311,7 +312,7 @@ mcp__garmin-db__save_weekly_review(review)
 - `periodization` は Step 5-A の目標逆算フェーズ分析の結果を格納する:
   - `weeks_to_a_race` / `weeks_to_b_race` は **整数 or null**（null = race_date 未確定で算出不能）。`a_race` / `b_race` はレース名。
   - `expected_phase` は W にあるべきマクロフェーズ/テーマ（日本語短文）。`garmin_phase` は Garmin Coach 実プランのフェーズ/構成傾向（日本語短文）。`gap` は両者のギャップ（日本語短文、A=さいたま / B=新潟 の観点を含める）。
-  - `load_trend` は Step 5-A-4 のカットバック周期サブ分析の結果。`consecutive_build_weeks`（整数）/ `last_cutback_weeks_ago`（整数 or null）/ `acwr`（数値 or null）/ `acwr_status`（文字列）/ `cutback_due`（bool）/ `weekly_ramp`（直近数週の `{week, load_km}` 配列）。`cutback_due=true` のときは `expected_phase` を deload として記述し、`recommendations` / `verdict` も deload 処方（週量 −30〜40%・ロング短縮・質ゼロ）に揃える。
+  - `load_trend` は Step 5-A-4 のカットバック周期サブ分析の結果。`long_run_build_weeks`（整数、主ゲート）/ `cutback_due_long_run`（bool、主ゲート）/ `consecutive_build_weeks`（整数）/ `last_cutback_weeks_ago`（整数 or null）/ `acwr`（数値 or null）/ `acwr_status`（文字列）/ `cutback_due`（bool、主ゲート OR 副ゲート）/ `weekly_ramp`（直近数週の `{week, load_km, longest_run_sec}` 配列）。`long_run_build_weeks` / `cutback_due_long_run` はバンドルの `load_trend.long_run` の値をそのまま転記する（再計算しない）。`cutback_due=true` のときは `expected_phase` を deload として記述し、`recommendations` / `verdict` も deload 処方（ロング直近ピーク比 −30〜40%・週量 −20〜30%・質ゼロ）に揃える。
 - `recovery` は Step 5-A-5 の回復サブ分析の結果。`rhr_trend`（`improving`/`stable`/`fatigued`）/ `rhr_median_7d` / `rhr_median_30d`（bpm、null 可）/ `hrv_below_baseline_days`（整数、null 可）/ `hrv_under_recovery`（bool）/ `sleep_score`（null 可）/ `recommendation`（`recovery.status.recommendation` の go/no-go）/ `load_recovery_verdict`（負荷×回復の複合講評の短文）/ `data_available`（bool）/ `early_warning_flag`（bool）/ `early_warning_note`（str or null）。回復データ欠損週は `data_available=false` とし、`load_recovery_verdict` を「回復データ不足のため負荷ベースで講評」とする。`hrv_under_recovery=true` かつ ACWR caution+ のときは `load_recovery_verdict` を「積み過ぎ・回復不足」とし、`recommendations` / `verdict` を deload 処方に揃える。`early_warning_flag` は Step 5-A-5 の個人ベースライン逸脱の early-warning ノート（`recovery.baseline_deviation` の逸脱や HRV ベースライン割れ）が出た場合に `true`、`early_warning_note` にその帰結＋予防アクションの短文を入れる。逸脱が無ければ `early_warning_flag=false`・`early_warning_note=null`。
 
 ### Step 8: 未生成トレンドの自動生成 ＋ 完了報告
@@ -336,7 +337,7 @@ Workflow(name="trend-narration", args=trend_pending)
 - **具体的処方を必須化**: 各セッション評価・recommendations に時間/距離/HR ゾーン(bpm) または ペースの具体値を含める。曖昧表現は禁止。HR ゾーンはバンドルの `fitness_summary` の Garmin native zones から引用する。
 - **recommendations は最大2件**、次回アクションは具体的に絞る。
 - **ロング走の有無を必ずチェック**: マラソン筋持久力の核のため、欠落していれば指摘する。
-- **トレンドで判定（W-1 単独で increase/cutback を決めない）**: バンドルの `load_trend`/`acwr` で複数週の負荷ランプ・ACWR・連続 build 週数を読み、Step 5-A-4 でカットバック周期を判定する。進行ゲート（脚崩れ）が GREEN でも `cutback_due=true` なら deload を優先（[[long-run-progression-two-gates]]）。
+- **トレンドで判定（W-1 単独で increase/cutback を決めない）**: バンドルの `load_trend.long_run`（**主ゲート**: ロング連続伸長週数）と `load_trend.weeks`/`acwr`（副ゲート: 負荷ランプ・ACWR・週総量の連続 build 週数）を読み、Step 5-A-4 でカットバック周期を判定する。進行ゲート（脚崩れ）が GREEN でも、回復指標が全て緑でも `cutback_due=true` なら deload を優先（[[long-run-progression-two-gates]]）。
 - **回復指標を負荷と複合で講評**: バンドルの `recovery.trend`/`recovery.status` で RHR トレンド・HRV ベースライン割れ・睡眠スコア・training readiness を読み、Step 5-A-5 で **負荷（ACWR）×回復（HRV/RHR）の複合講評**を行う。ACWR 高×HRV割れ→「積み過ぎ・回復不足」、ACWR 適正×RHR改善→「順調に吸収」。睡眠スコアが低い週は回復不足の主因候補として言及。回復データ欠損週は「回復データ不足のため負荷ベースで講評」と明示する。
 - **目標観点を最優先**: 回復力・筋持久力・故障再発防止。高強度の価値は低い前提で評価する。
 - **profile 未登録時**: `/set-goal` の実行を促して停止する。

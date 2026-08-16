@@ -431,6 +431,55 @@ def count_consecutive_build_weeks(weekly_loads: list[float]) -> int:
     return count
 
 
+# --- Long-run extension streak (Issue #927) --------------------------------
+# The cutback cycle's primary gate is the *long run* (the week's longest on-feet
+# time), not weekly volume. The athlete extends the long run even in light
+# weeks, so a volume-based streak resets on those weeks and systematically
+# under-counts the accumulated tendon / bone stress the long run drives.
+#
+# A week extends the streak at >= +3% over the previous week's longest run; a
+# hold (75%-103%) neither extends nor resets it (the streak keeps walking back);
+# a drop below 75% is a real cutback and ends the walk.
+_LONG_RUN_EXT_RATIO = 1.03
+_LONG_RUN_RESET_RATIO = 0.75
+
+# Trailing long-run extension streak at which a cutback becomes due (primary
+# gate; the weekly-volume / ACWR gates stay as secondary OR conditions).
+LONG_RUN_CUTBACK_TRIGGER_WEEKS = 3
+
+
+def count_long_run_build_weeks(weekly_longest_sec: list[float | None]) -> int:
+    """Trailing streak of >=+3% weekly longest-run extensions.
+
+    Walks backward from the last week: ``ratio >= 1.03`` -> +1; ratio in
+    ``[0.75, 1.03)`` -> skip (a hold preserves the streak without extending it);
+    ``ratio < 0.75`` or a ``None`` / missing week -> stop (reset boundary; a
+    week with no run counts as a reset). ``[]`` or a single week -> ``0``.
+
+    Args:
+        weekly_longest_sec: Weekly longest-run durations in seconds, oldest ->
+            newest. ``None`` marks a week with no run.
+
+    Examples:
+        ``[3250, 7819, 8125, 8562]``  -> ``3`` (three straight extensions)
+        ``[7200, 7500, 7480, 7800]``  -> ``2`` (7480 is a hold, not a reset)
+        ``[8000, 3000, 7000]``        -> ``1`` (0.375 ratio ends the walk)
+    """
+    count = 0
+    for i in range(len(weekly_longest_sec) - 1, 0, -1):
+        current = weekly_longest_sec[i]
+        prior = weekly_longest_sec[i - 1]
+        if current is None or prior is None or prior <= 0:
+            break
+        ratio = current / prior
+        if ratio >= _LONG_RUN_EXT_RATIO:
+            count += 1
+        elif ratio < _LONG_RUN_RESET_RATIO:
+            break
+        # else: a hold -- neither extends nor resets; keep walking back.
+    return count
+
+
 def compute_fusion_flags(
     acwr_status: str | None,
     hrv_state: str | None,
@@ -474,7 +523,8 @@ def compute_trend_headline_metrics(context: dict[str, Any]) -> dict[str, Any]:
 
     Args:
         context: A trend CONTEXT bundle. Reads ``load_trend.weeks[*].load_km``
-            (weekly loads, oldest -> newest), ``acwr.status``,
+            (weekly loads, oldest -> newest),
+            ``load_trend.weeks[*].longest_run_sec``, ``acwr.status``,
             ``recovery_trend.hrv`` and ``form_delta_pct`` when present.
 
     Returns:
@@ -483,11 +533,15 @@ def compute_trend_headline_metrics(context: dict[str, Any]) -> dict[str, Any]:
           prior week (``None`` when fewer than two weekly loads exist).
         - ``build_weeks``: trailing week-over-week build streak (``None`` when no
           weekly loads exist).
+        - ``long_run_build_weeks``: trailing streak of >=+3% longest-run
+          extensions (:func:`count_long_run_build_weeks`; ``0`` when absent).
         - ``fusion_flags``: :func:`compute_fusion_flags` output (always a dict).
     """
     load_trend = context.get("load_trend") or {}
     weeks = load_trend.get("weeks") or []
     loads = [w.get("load_km") for w in weeks if w.get("load_km") is not None]
+    # Keep the Nones: a week with no run is a reset boundary for the streak.
+    weekly_longest_sec = [w.get("longest_run_sec") for w in weeks]
 
     load_delta_pct: float | None = None
     build_weeks: int | None = None
@@ -511,5 +565,6 @@ def compute_trend_headline_metrics(context: dict[str, Any]) -> dict[str, Any]:
     return {
         "load_delta_pct": load_delta_pct,
         "build_weeks": build_weeks,
+        "long_run_build_weeks": count_long_run_build_weeks(weekly_longest_sec),
         "fusion_flags": compute_fusion_flags(acwr_status, hrv_state, form_delta_pct),
     }

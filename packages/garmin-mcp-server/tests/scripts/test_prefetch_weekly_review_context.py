@@ -205,6 +205,23 @@ def test_prefetch_bundle_has_hiking_key() -> None:
 
 
 @pytest.mark.unit
+def test_prefetch_bundle_long_run_gate() -> None:
+    """load_trend.long_run carries the deterministic cutback gate (#927)."""
+    weekly_longest = [3250, 7819, 8125, 8562]
+    with _mock_prefetch() as reader:
+        reader.get_load_trend.return_value = {
+            "weeks": [{"longest_run_sec": sec} for sec in weekly_longest]
+        }
+        result = prefetch_weekly_review_context("this", today="2026-07-10")
+
+    long_run = result["load_trend"]["long_run"]
+    assert long_run["weekly_longest_sec"] == weekly_longest
+    # Three straight >= +3% extensions -> the primary cutback gate fires.
+    assert long_run["long_run_build_weeks"] == 3
+    assert long_run["cutback_due_long_run"] is True
+
+
+@pytest.mark.unit
 def test_prefetch_invalid_target_returns_error() -> None:
     """An unparseable target -> a fatal error bundle."""
     with (
