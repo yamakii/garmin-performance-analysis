@@ -104,9 +104,25 @@ def test_is_hiking_matches_type_key_without_distance_guard() -> None:
 
 
 @pytest.mark.unit
+def test_is_hiking_accepts_mountaineering() -> None:
+    """Garmin records alpine outings as ``mountaineering`` (issue #925)."""
+    assert (
+        _is_hiking(_hiking_summary(activityType={"typeKey": "mountaineering"})) is True
+    )
+    assert _is_hiking(_hiking_summary(activityType={"typeKey": "walking"})) is False
+
+
+@pytest.mark.unit
 def test_ingest_hiking_sessions_filters_typekey(temp_db_path: Path) -> None:
-    """hiking + running + strength discovered -> only the hike is stored."""
-    client = _make_client([_run_summary(), _hiking_summary(), _strength_summary()])
+    """hiking + mountaineering + running + strength -> both hikes are stored."""
+    mountaineering = _hiking_summary(
+        activityId=_HIKING_ACTIVITY_ID + 1,
+        activityName="Hakuba Mountaineering",
+        activityType={"typeKey": "mountaineering"},
+    )
+    client = _make_client(
+        [_run_summary(), _hiking_summary(), mountaineering, _strength_summary()]
+    )
     with patch(
         "garmin_mcp.ingest.hiking_ingest.get_garmin_client", return_value=client
     ):
@@ -114,20 +130,22 @@ def test_ingest_hiking_sessions_filters_typekey(temp_db_path: Path) -> None:
             "2026-08-01", "2026-08-31", db_path=str(temp_db_path)
         )
 
-    assert result["discovered"] == 1
-    assert result["ingested"] == 1
+    assert result["discovered"] == 2
+    assert result["ingested"] == 2
     assert result["skipped_existing"] == 0
-    assert result["activity_ids"] == [_HIKING_ACTIVITY_ID]
+    assert result["activity_ids"] == [_HIKING_ACTIVITY_ID, _HIKING_ACTIVITY_ID + 1]
 
     conn = duckdb.connect(str(temp_db_path))
     try:
         ids = [
             r[0]
-            for r in conn.execute("SELECT activity_id FROM hiking_sessions").fetchall()
+            for r in conn.execute(
+                "SELECT activity_id FROM hiking_sessions ORDER BY activity_id"
+            ).fetchall()
         ]
     finally:
         conn.close()
-    assert ids == [_HIKING_ACTIVITY_ID]
+    assert ids == [_HIKING_ACTIVITY_ID, _HIKING_ACTIVITY_ID + 1]
 
 
 @pytest.mark.unit
