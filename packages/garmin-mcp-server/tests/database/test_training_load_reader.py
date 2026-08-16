@@ -300,6 +300,67 @@ def test_load_trend_latest_bucket_is_partial_week(reader_db_path: Path) -> None:
 
 
 @pytest.mark.unit
+def test_load_trend_includes_longest_run_sec(mocker) -> None:
+    """Each weekly bucket carries max(total_time_seconds); no-run weeks -> None."""
+    from datetime import date
+
+    reader = TrainingLoadReader.__new__(TrainingLoadReader)
+    reader.db_path = mocker.MagicMock()
+    mocker.patch.object(reader, "_get_connection")
+    mocker.patch(
+        "garmin_mcp.database.readers.training_load.get_week_start_day",
+        return_value=0,  # Monday-start weeks.
+    )
+    # Week Mon 06-15..21 has two runs (1800s and 6000s); the newest bucket
+    # (Mon 06-22 .. Wed 06-24) has no run at all.
+    mocker.patch.object(
+        reader,
+        "_daily_loads",
+        return_value={date(2026, 6, 16): 5.0, date(2026, 6, 18): 15.0},
+    )
+    mocker.patch.object(
+        reader,
+        "_daily_longest_run_sec",
+        return_value={date(2026, 6, 16): 1800, date(2026, 6, 18): 6000},
+    )
+
+    result = reader.get_load_trend(lookback_weeks=2, end_date="2026-06-24")
+
+    weeks = result["weeks"]
+    assert [w["week_start"] for w in weeks] == ["2026-06-15", "2026-06-22"]
+    # The week's longest run wins over the other run in the same week.
+    assert weeks[0]["longest_run_sec"] == 6000
+    # A week with no run reports None (a reset boundary for the streak).
+    assert weeks[1]["longest_run_sec"] is None
+
+
+@pytest.mark.integration
+def test_load_trend_longest_run_sec_from_db(reader_db_path: Path) -> None:
+    """End-to-end: longest_run_sec is read from activities.total_time_seconds."""
+    # _insert_activity derives total_time_seconds = distance_km * 300.
+    _insert_activity(
+        reader_db_path,
+        activity_id=9270001,
+        activity_date="2026-06-16",
+        distance_km=6.0,  # 1800s
+    )
+    _insert_activity(
+        reader_db_path,
+        activity_id=9270002,
+        activity_date="2026-06-18",
+        distance_km=20.0,  # 6000s
+    )
+
+    result = TrainingLoadReader(db_path=str(reader_db_path)).get_load_trend(
+        lookback_weeks=2, end_date="2026-06-24"
+    )
+
+    weeks = result["weeks"]
+    assert weeks[0]["longest_run_sec"] == 6000
+    assert weeks[1]["longest_run_sec"] is None
+
+
+@pytest.mark.unit
 def test_acwr_unchanged_rolling(mocker) -> None:
     """get_acwr stays rolling: acute = last 7 days, chronic = last 28 days / 4.
 

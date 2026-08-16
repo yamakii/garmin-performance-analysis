@@ -133,6 +133,12 @@ class TrainingLoadReader(BaseDBReader):
         from the 28 days ending on that bucket's last day. The rolling ACWR
         windows themselves (see :meth:`get_acwr`) are unchanged.
 
+        Each bucket also carries ``longest_run_sec``: that week's longest run
+        (``max(total_time_seconds)``, ``None`` when the week has no run). It is
+        the long-run axis of the cutback cycle (Issue #927) -- the long run is
+        extended even in light weeks, so the volume series alone under-counts
+        the accumulated long-run stress.
+
         Args:
             lookback_weeks: Number of trailing weekly buckets (default 12).
             end_date: ``YYYY-MM-DD`` reference day. Defaults to the latest
@@ -141,7 +147,8 @@ class TrainingLoadReader(BaseDBReader):
         Returns:
             Dict with keys:
             - ``weeks``: list of {week_start (YYYY-MM-DD), load_km, acwr
-              (float | None), status} ordered oldest -> newest
+              (float | None), status, longest_run_sec (int | None)} ordered
+              oldest -> newest
             - ``load_metric``: ``"distance_km"``
         """
         resolved_end = self._resolve_end_date(end_date)
@@ -161,6 +168,9 @@ class TrainingLoadReader(BaseDBReader):
         # last day (for that bucket's chronic window) through resolved_end.
         history_start = oldest_week_start - timedelta(days=27)
         daily = self._daily_loads(history_start, resolved_end)
+        # Long-run axis (Issue #927): only the buckets themselves need it, so
+        # this window starts at the oldest bucket (no chronic prelude).
+        daily_longest = self._daily_longest_run_sec(oldest_week_start, resolved_end)
 
         weeks: list[dict[str, Any]] = []
         # Iterate oldest -> newest so the array reads chronologically.
@@ -179,12 +189,19 @@ class TrainingLoadReader(BaseDBReader):
             )
             acwr = _acwr_from_loads(acute_total, chronic_total)
 
+            bucket_longest = [
+                sec
+                for day, sec in daily_longest.items()
+                if bucket_start <= day <= bucket_end
+            ]
+
             weeks.append(
                 {
                     "week_start": bucket_start.strftime("%Y-%m-%d"),
                     "load_km": round(acute_total, 2),
                     "acwr": round(acwr, 2) if acwr is not None else None,
                     "status": _classify(acwr),
+                    "longest_run_sec": max(bucket_longest) if bucket_longest else None,
                 }
             )
 
@@ -237,3 +254,33 @@ class TrainingLoadReader(BaseDBReader):
             )
             loads[day] = float(total_km or 0.0)
         return loads
+
+    def _daily_longest_run_sec(self, start: date, end: date) -> dict[date, int]:
+        """Longest run duration (seconds) per day in ``[start, end]``.
+
+        ``max(total_time_seconds)`` per ``activity_date`` (single query). Days
+        with no run -- and days whose runs all have a null duration -- are
+        absent from the mapping, so callers report ``None`` for that week.
+        """
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT activity_date, max(total_time_seconds)
+                FROM activities
+                WHERE activity_date BETWEEN ? AND ?
+                GROUP BY activity_date
+                """,
+                [start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")],
+            ).fetchall()
+
+        longest: dict[date, int] = {}
+        for activity_date, max_seconds in rows:
+            if max_seconds is None:
+                continue
+            day = (
+                activity_date
+                if isinstance(activity_date, date)
+                else datetime.strptime(str(activity_date), "%Y-%m-%d").date()
+            )
+            longest[day] = int(max_seconds)
+        return longest

@@ -27,7 +27,9 @@ Output (JSON to stdout, one line):
          "duration_seconds", "performance_trends": {...}|null, "weather": {...}|null}
       ],
       "fitness_summary": {...}|null,      # includes Garmin native hr_zones
-      "load_trend": {...}|null,
+      "load_trend": {...}|null,           # + long_run: {weekly_longest_sec,
+                                          #   long_run_build_weeks,
+                                          #   cutback_due_long_run}
       "acwr": {...}|null,
       "recovery": {"trend": {...}|null, "status": {...}|null,
                    "baseline_deviation": {...}|null},
@@ -60,6 +62,10 @@ from datetime import date, datetime, timedelta
 from functools import partial
 from typing import Any
 
+from garmin_mcp.analysis.derivations import (
+    LONG_RUN_CUTBACK_TRIGGER_WEEKS,
+    count_long_run_build_weeks,
+)
 from garmin_mcp.database.connection import get_connection, get_db_path
 from garmin_mcp.utils.week import get_week_start_day, week_bounds
 
@@ -141,6 +147,34 @@ def _weeks_to_race(race_date: str | None, week_start: date) -> int | None:
     except (ValueError, TypeError):
         return None
     return math.ceil((rd - week_start).days / 7)
+
+
+def _long_run_gate(load_trend: dict[str, Any]) -> dict[str, Any]:
+    """Compute the long-run cutback gate from a ``get_load_trend`` bundle.
+
+    The cutback cycle's **primary** gate is the long-run extension streak, not
+    weekly volume (Issue #927): the long run is extended even in light weeks, so
+    a volume streak resets there and under-counts the accumulated stress. This
+    is computed here (deterministically) rather than left to the reviewing LLM.
+
+    Args:
+        load_trend: A ``get_load_trend`` result; reads
+            ``weeks[*].longest_run_sec`` (oldest -> newest).
+
+    Returns:
+        ``{"weekly_longest_sec": [int|None, ...], "long_run_build_weeks": int,
+        "cutback_due_long_run": bool}`` where the flag is the streak reaching
+        :data:`LONG_RUN_CUTBACK_TRIGGER_WEEKS`.
+    """
+    weeks = load_trend.get("weeks") or []
+    # Keep the Nones: a week with no run is a reset boundary for the streak.
+    weekly_longest_sec = [w.get("longest_run_sec") for w in weeks]
+    build_weeks = count_long_run_build_weeks(weekly_longest_sec)
+    return {
+        "weekly_longest_sec": weekly_longest_sec,
+        "long_run_build_weeks": build_weeks,
+        "cutback_due_long_run": build_weeks >= LONG_RUN_CUTBACK_TRIGGER_WEEKS,
+    }
 
 
 def _resolve_activities(conn: Any, start: str, end: str) -> list[dict[str, Any]]:
@@ -267,6 +301,10 @@ def prefetch_weekly_review_context(
     load_trend = _safe(
         lambda: reader.get_load_trend(_LOAD_LOOKBACK_WEEKS, end_date=str(today_d))
     )
+    # Primary cutback gate: the long-run extension streak (Issue #927). Folded
+    # into the bundle deterministically so the review never re-derives it.
+    if isinstance(load_trend, dict):
+        load_trend["long_run"] = _long_run_gate(load_trend)
     acwr = _safe(lambda: reader.get_acwr(end_date=str(today_d)))
 
     # Recovery: RHR/HRV trend, morning go/no-go status, personal-baseline z.
