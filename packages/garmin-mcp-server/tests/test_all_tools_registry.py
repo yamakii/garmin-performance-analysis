@@ -119,11 +119,53 @@ def test_kept_tools_present() -> None:
 
 
 @pytest.mark.unit
-def test_tool_count_is_57() -> None:
-    """The live MCP surface is exactly 57 tools (55 -> 57 after #851)."""
-    assert len(ALL_DEFS) + len(_SERVER_TOOLS) == 57
+def test_tool_count_is_59() -> None:
+    """The live MCP surface is exactly 59 tools (57 -> 59 after #921)."""
+    assert len(ALL_DEFS) + len(_SERVER_TOOLS) == 59
     golden = json.loads(_GOLDEN_PATH.read_text(encoding="utf-8"))
-    assert len(golden) == 57
+    assert len(golden) == 59
+
+
+@pytest.mark.integration
+def test_hiking_tools_registered() -> None:
+    """The two hiking tools are registered, dispatch cleanly and are in golden."""
+    for name in ("ingest_hiking_sessions", "get_hiking_sessions"):
+        assert name in ALL_DEFS_BY_NAME
+
+    golden_names = {
+        t["name"] for t in json.loads(_GOLDEN_PATH.read_text(encoding="utf-8"))
+    }
+    assert {"ingest_hiking_sessions", "get_hiking_sessions"} <= golden_names
+    assert len(golden_names) == 59
+
+    # get_hiking_sessions -> GarminDBReader.get_hiking_sessions
+    reader = MagicMock()
+    reader.get_hiking_sessions.return_value = []
+    result = dispatch(
+        ALL_DEFS_BY_NAME,
+        reader,
+        "get_hiking_sessions",
+        {"start_date": "2026-08-10", "end_date": "2026-08-16"},
+    )
+    reader.get_hiking_sessions.assert_called_once_with("2026-08-10", "2026-08-16")
+    assert result == []
+
+    # ingest_hiking_sessions -> ingest.hiking_ingest.ingest_hiking_sessions
+    with patch(
+        "garmin_mcp.ingest.hiking_ingest.ingest_hiking_sessions",
+        return_value={"discovered": 0, "ingested": 0},
+    ) as ingest_mock:
+        dispatch(
+            ALL_DEFS_BY_NAME,
+            reader,
+            "ingest_hiking_sessions",
+            {"start_date": "2026-08-10", "end_date": "2026-08-16"},
+        )
+    ingest_mock.assert_called_once_with(
+        start_date="2026-08-10",
+        end_date="2026-08-16",
+        db_path=str(reader.db_path),
+    )
 
 
 @pytest.mark.unit

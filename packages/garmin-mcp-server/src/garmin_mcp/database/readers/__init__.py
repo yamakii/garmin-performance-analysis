@@ -13,6 +13,7 @@ This package provides specialized reader classes for accessing DuckDB data:
 - DurabilityReader: Long-run cardiac decoupling / pace fade trend
 - FitnessCurveReader: Objective fitness curve + Garmin VO2max optimism gap
 - StrengthSessionsReader: Strength-training (補強) summaries
+- HikingSessionsReader: Hiking (山行) summaries
 - UtilityReader: Profiling and histogram operations
 - TimeSeriesReader: Time series data and anomaly detection
 - ExportReader: Query result export functionality
@@ -23,6 +24,7 @@ from garmin_mcp.database.readers.durability import DurabilityReader
 from garmin_mcp.database.readers.export import ExportReader
 from garmin_mcp.database.readers.fitness_curve import FitnessCurveReader
 from garmin_mcp.database.readers.form import FormReader
+from garmin_mcp.database.readers.hiking_sessions import HikingSessionsReader
 from garmin_mcp.database.readers.metadata import MetadataReader
 from garmin_mcp.database.readers.performance import PerformanceReader
 from garmin_mcp.database.readers.physiology import PhysiologyReader
@@ -46,6 +48,7 @@ __all__ = [
     "DurabilityReader",
     "FitnessCurveReader",
     "StrengthSessionsReader",
+    "HikingSessionsReader",
     "TrendNarrationReader",
     "UtilityReader",
     "TimeSeriesReader",

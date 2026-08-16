@@ -121,6 +121,13 @@ def _wrap_add_strength_sessions(conn: duckdb.DuckDBPyConnection) -> None:
     add_strength_sessions(conn)
 
 
+def _wrap_add_hiking_sessions(conn: duckdb.DuckDBPyConnection) -> None:
+    """Wrap the hiking_sessions table migration on an existing connection."""
+    from .add_hiking_sessions import add_hiking_sessions
+
+    add_hiking_sessions(conn)
+
+
 def _wrap_add_daily_wellness_table(conn: duckdb.DuckDBPyConnection) -> None:
     """Wrap the daily_wellness table migration on an existing connection."""
     from .add_daily_wellness_table import add_daily_wellness_table
@@ -245,4 +252,5 @@ MIGRATIONS: list[tuple[int, str, Callable[[duckdb.DuckDBPyConnection], None]]] =
     (17, "drop_plan_tables", _wrap_drop_plan_tables),
     (18, "add_analysis_runs_table", _wrap_add_analysis_runs_table),
     (19, "add_pace_consistency_full", _wrap_add_pace_consistency_full),
+    (20, "add_hiking_sessions", _wrap_add_hiking_sessions),
 ]

@@ -1,9 +1,9 @@
 # DuckDB Schema Mapping Specification
 
-**Version**: 2.6
-**Last Updated**: 2026-07-03
+**Version**: 2.7
+**Last Updated**: 2026-08-16
 **Database**: `garmin_performance.duckdb`
-**Total Tables**: 21 domain tables (+ `schema_version` migration bookkeeping)
+**Total Tables**: 23 domain tables (+ `schema_version` migration bookkeeping)
 
 This document provides comprehensive schema documentation for all DuckDB tables in the Garmin performance analysis system. Every column name, type, and primary key below is verified against the live schema (`PRAGMA table_info`). Where prose describes derived/calculated logic, that logic lives in the inserters / form-baseline modules and is documented here because it is not otherwise discoverable from the column definitions.
 
@@ -20,9 +20,12 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 > A drift test (`tests/scripts/test_generate_schema_doc.py`) fails CI if a schema change
 > lands without regenerating.
 
-> **Schema bookkeeping**: a 23rd table, `schema_version` (`version INTEGER PK`, `name`, `applied_at`), tracks applied migrations and is **not** a domain table. The migration runner (`database/migrations/registry.py`) applies numbered migrations after `_ensure_tables()` and records them there.
+> **Schema bookkeeping**: a 24th table, `schema_version` (`version INTEGER PK`, `name`, `applied_at`), tracks applied migrations and is **not** a domain table. The migration runner (`database/migrations/registry.py`) applies numbered migrations after `_ensure_tables()` and records them there.
 
 ## Change History
+
+### Version 2.7 (2026-08-16)
+- **`hiking_sessions` table added** (migration `add_hiking_sessions`, version 20; also created in `_ensure_tables()`). Persists hiking (山行) summaries at session granularity, kept out of `activities` so a hike's distance/elevation never distorts run-centric aggregations (ACWR, load trend, form baselines). Populated by `ingest_hiking_sessions` and read via `get_hiking_sessions` (issue #921).
 
 ### Version 2.6 (2026-07-03)
 - **`sync_runs` table added** (migration `add_sync_runs_table`, version 14). Records one row per scheduled catch-up sync run (requested domains, `catch_up_ingest` result payload, and overall `success`/`partial`/`error` status), written by `garmin_mcp.scripts.scheduled_sync:run_sync`. Makes the previously manual catch-up/backfill flows callable unattended from cron/systemd with an auditable trail (issue #712, parent #701). DDL is owned exclusively by the migration (not `_ensure_tables()`).
@@ -55,7 +58,7 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 
 ---
 
-## Table of Contents (24 domain tables by category)
+## Table of Contents (23 domain tables by category)
 
 | # | Table | Category | Primary Key | Row scale |
 |---|-------|----------|-------------|-----------|
@@ -81,6 +84,7 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 | 22 | [sync_runs](#22-sync_runs) | Operations | `run_id` | per scheduled sync run |
 | 23 | [trend_analyses](#23-trend_analyses) | Analysis | `analysis_id` | per week/month trend narration |
 | 24 | [analysis_runs](#24-analysis_runs) | Operations | `run_id` | per analysis run |
+| 25 | [hiking_sessions](#25-hiking_sessions) | Training | `activity_id` | per hiking session |
 
 ---
 
@@ -889,6 +893,36 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 <!-- END GENERATED: schema:analysis_runs -->
 
 **Units & notes**: `started_at` is `CURRENT_TIMESTAMP` at allocation time. One row per `next_run_id()` call. The re-analysis fallback path in `insert_section_analysis` (`run_id is None`) allocates on its own insert connection (already durable) and intentionally does not log here.
+
+---
+
+## 25. hiking_sessions
+
+**Purpose**: Hiking (山行) summaries at session granularity. Kept separate from `activities` so a hike — long, slow, with a large elevation profile — never distorts the run-centric aggregations (ACWR, load trend, form baselines) that read `activities` (issue #921). Mirrors the `strength_sessions` design.
+**Primary Key**: `activity_id`
+**Source**: Garmin Connect activity list filtered to `activityType.typeKey == 'hiking'`. Populated by `ingest/hiking_ingest.py` (`ingest_hiking_sessions`); created by both migration `add_hiking_sessions` (version 20) and `_ensure_tables()`. No per-activity detail call is made — every persisted field is already in the activity-list summary.
+
+### Schema
+
+<!-- BEGIN GENERATED: schema:hiking_sessions -->
+| Column | Type |
+|--------|------|
+| activity_id (PK) | BIGINT |
+| activity_date | DATE |
+| start_time_local | TIMESTAMP |
+| activity_name | VARCHAR |
+| duration_seconds | INTEGER |
+| elapsed_duration_seconds | INTEGER |
+| distance_km | DOUBLE |
+| elevation_gain_m | DOUBLE |
+| elevation_loss_m | DOUBLE |
+| avg_heart_rate | INTEGER |
+| max_heart_rate | INTEGER |
+| calories | INTEGER |
+| ingested_at | TIMESTAMP |
+<!-- END GENERATED: schema:hiking_sessions -->
+
+**Units & notes**: `duration_seconds` = Garmin `movingDuration`, `elapsed_duration_seconds` = `duration`. `distance_km` is the summary `distance` (metres) divided by 1000; `elevation_gain_m` / `elevation_loss_m` come straight from the summary and may be null when the device did not report them. Read via `get_hiking_sessions(start_date, end_date)` (no Garmin access) and surfaced in the weekly-review bundle under `hiking`, for load / recovery context only — run pace and form interpretation do not apply.
 
 ---
 

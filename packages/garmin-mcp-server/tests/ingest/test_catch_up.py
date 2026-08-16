@@ -67,6 +67,10 @@ def test_catch_up_resolves_per_domain_window(temp_db_path: Path) -> None:
             return_value={"discovered": 0, "ingested": 0, "skipped_existing": 0},
         ) as strength_mock,
         patch(
+            "garmin_mcp.ingest.hiking_ingest.ingest_hiking_sessions",
+            return_value={"discovered": 0, "ingested": 0, "skipped_existing": 0},
+        ),
+        patch(
             "garmin_mcp.ingest.wellness_ingest.ingest_wellness_range",
             return_value={"ingested_days": 0, "with_data": 0, "dates": []},
         ) as wellness_mock,
@@ -76,6 +80,7 @@ def test_catch_up_resolves_per_domain_window(temp_db_path: Path) -> None:
     assert result["window"] == {
         "running": {"start": "2026-06-18", "end": "2026-06-20"},
         "strength": {"start": "2026-06-10", "end": "2026-06-20"},
+        "hiking": {"start": "2026-05-21", "end": "2026-06-20"},
         "weight": {"start": "2026-05-21", "end": "2026-06-20"},
         "wellness": {"start": "2026-05-21", "end": "2026-06-20"},
     }
@@ -115,13 +120,17 @@ def test_catch_up_end_defaults_today(temp_db_path: Path) -> None:
             return_value={},
         ),
         patch(
+            "garmin_mcp.ingest.hiking_ingest.ingest_hiking_sessions",
+            return_value={},
+        ),
+        patch(
             "garmin_mcp.ingest.wellness_ingest.ingest_wellness_range",
             return_value={},
         ),
     ):
         result = catch_up_ingest(db_path=str(temp_db_path))
 
-    for domain in ("running", "weight", "strength", "wellness"):
+    for domain in ("running", "weight", "strength", "hiking", "wellness"):
         assert result["window"][domain]["end"] == today
 
 
@@ -181,6 +190,10 @@ def test_catch_up_domain_error_isolated(temp_db_path: Path) -> None:
             return_value={"discovered": 2, "ingested": 2, "skipped_existing": 0},
         ),
         patch(
+            "garmin_mcp.ingest.hiking_ingest.ingest_hiking_sessions",
+            return_value={"discovered": 0, "ingested": 0, "skipped_existing": 0},
+        ),
+        patch(
             "garmin_mcp.ingest.wellness_ingest.ingest_wellness_range",
             return_value={"ingested_days": 0, "with_data": 0, "dates": []},
         ),
@@ -196,6 +209,38 @@ def test_catch_up_domain_error_isolated(temp_db_path: Path) -> None:
     }
     # Window is still recorded for the failed domain.
     assert result["window"]["running"] == {"start": "2026-06-18", "end": "2026-06-20"}
+
+
+# ---------------------------------------------------------------------------
+# hiking domain (issue #921)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_catch_up_hiking_domain_window(temp_db_path: Path) -> None:
+    """domains=['hiking'] resolves its window from get_latest_hiking_date."""
+    GarminDBWriter(db_path=str(temp_db_path))
+    with get_write_connection(str(temp_db_path)) as conn:
+        conn.execute(
+            "INSERT INTO hiking_sessions (activity_id, activity_date) VALUES (?, ?)",
+            [3001, "2026-08-11"],
+        )
+
+    with patch(
+        "garmin_mcp.ingest.hiking_ingest.ingest_hiking_sessions",
+        return_value={"discovered": 0, "ingested": 0, "skipped_existing": 0},
+    ) as hiking_mock:
+        result = catch_up_ingest(
+            end_date="2026-08-16",
+            domains=["hiking"],
+            db_path=str(temp_db_path),
+        )
+
+    hiking_mock.assert_called_once_with(
+        "2026-08-11", "2026-08-16", db_path=str(temp_db_path)
+    )
+    assert "hiking" in result
+    assert result["window"]["hiking"] == {"start": "2026-08-11", "end": "2026-08-16"}
 
 
 # ---------------------------------------------------------------------------

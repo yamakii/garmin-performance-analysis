@@ -1,8 +1,8 @@
 """Pre-fetch a shared weekly-review CONTEXT bundle for the /weekly-review skill.
 
 The weekly review weighs a *target week W* (the plan week ahead) against the
-prior completed week W-1's actuals, multi-week load, recovery, strength, the
-Garmin plan, athlete goals and the last review — then the main session's single
+prior completed week W-1's actuals, multi-week load, recovery, strength, hiking,
+the Garmin plan, athlete goals and the last review — then the main session's single
 coach judgement fuses it all into one prescription. That coach judgement is *not*
 fanned out (the review's value is holistic reconciliation, not parallel section
 work), so this script only consolidates the ~15 read MCP calls the skill made in
@@ -32,6 +32,7 @@ Output (JSON to stdout, one line):
       "recovery": {"trend": {...}|null, "status": {...}|null,
                    "baseline_deviation": {...}|null},
       "strength": {"prev_week": [...]|null, "current_week": [...]|null},
+      "hiking": {"prev_week": [...]|null, "current_week": [...]|null},
       "scheduled_workouts": {...}|null,   # network (Garmin Connect); _safe/null-on-error
       "athlete_profile": {...}|null,
       "goals_with_weeks_to_race": [{...goal, "weeks_to_race": int|null}],
@@ -285,6 +286,17 @@ def prefetch_weekly_review_context(
         ),
     }
 
+    # Hiking sessions for both windows (DB only, no Garmin access). Hikes live
+    # outside ``activities``, so the review only sees them through this key.
+    hiking = {
+        "prev_week": _safe(
+            lambda: reader.get_hiking_sessions(prev_start_s, prev_end_s)
+        ),
+        "current_week": _safe(
+            lambda: reader.get_hiking_sessions(week_start_s, week_end_s)
+        ),
+    }
+
     # Garmin plan for W (network / Garmin Connect). _safe so a live-HTTP failure
     # nulls this key; the skill keeps a direct-MCP fallback for that case.
     def _scheduled_workouts() -> dict[str, Any]:
@@ -330,6 +342,7 @@ def prefetch_weekly_review_context(
         "acwr": acwr,
         "recovery": recovery,
         "strength": strength,
+        "hiking": hiking,
         "scheduled_workouts": scheduled_workouts,
         "athlete_profile": athlete_profile,
         "goals_with_weeks_to_race": goals_with_weeks_to_race,

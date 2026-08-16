@@ -30,6 +30,7 @@ _ALL_DOMAIN_MOCKS = {
     "garmin_mcp.ingest.running_ingest.ingest_running_activities": {"ingested": 0},
     "garmin_mcp.ingest.weight_ingest.ingest_weight_range": {"ingested_days": 0},
     "garmin_mcp.ingest.strength_ingest.ingest_strength_sessions": {"ingested": 0},
+    "garmin_mcp.ingest.hiking_ingest.ingest_hiking_sessions": {"ingested": 0},
     "garmin_mcp.ingest.wellness_ingest.ingest_wellness_range": {"ingested_days": 0},
 }
 
@@ -66,6 +67,10 @@ def test_catch_up_omits_trend_pending_on_domain_error(temp_db_path: Path) -> Non
         ),
         patch(
             "garmin_mcp.ingest.strength_ingest.ingest_strength_sessions",
+            return_value={"ingested": 0},
+        ),
+        patch(
+            "garmin_mcp.ingest.hiking_ingest.ingest_hiking_sessions",
             return_value={"ingested": 0},
         ),
         patch(

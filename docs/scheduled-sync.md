@@ -1,7 +1,7 @@
 # Scheduled Auto-Sync
 
 The scheduled sync entrypoint runs a catch-up ingest across every domain
-(running / weight / strength / wellness) and records the run in the `sync_runs`
+(running / weight / strength / hiking / wellness) and records the run in the `sync_runs`
 table. It replaces the previously manual `catch-up` / `backfill` invocations
 with a single command that is safe to trigger unattended from cron or a systemd
 timer (issue #712, parent #701).

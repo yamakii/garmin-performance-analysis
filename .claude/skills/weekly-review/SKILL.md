@@ -60,11 +60,11 @@ mcp__garmin-db__catch_up_ingest(end_date=today)
 mcp__garmin-db__prefetch_weekly_review_context(target=$ARGUMENTS)   # None | "this" | "next" | "YYYY-MM-DD"
 ```
 
-この1発が、以前 Step 1-4 で個別に叩いていた read 系ツール（`get_athlete_profile` / 各日 `get_activity_by_date` / `get_performance_trends` / `get_weather_data` / `get_current_fitness_summary` / `get_load_trend` / `get_acwr` / `get_recovery_trend` / `get_recovery_status` / `get_wellness_baseline_deviation` / `get_strength_sessions` / `get_garmin_scheduled_workouts` / `get_weekly_review`）を **DuckDB 1往復 ＋ Garmin カレンダー1回** にまとめて返します。`target` は skill 引数と同じ規約で W を確定します（省略時のスマート既定＝today が週の最終日なら翌週・それ以外は今週、`this` / `next` / `YYYY-MM-DD` も同じ）。週の開始曜日は `athlete_profile.week_start_day`（0=月〜6=日、既定=月曜フォールバック）に従います。各コレクタは **null-on-error（additive）** なので、一部が null でも講評を破綻させないこと。
+この1発が、以前 Step 1-4 で個別に叩いていた read 系ツール（`get_athlete_profile` / 各日 `get_activity_by_date` / `get_performance_trends` / `get_weather_data` / `get_current_fitness_summary` / `get_load_trend` / `get_acwr` / `get_recovery_trend` / `get_recovery_status` / `get_wellness_baseline_deviation` / `get_strength_sessions` / `get_hiking_sessions` / `get_garmin_scheduled_workouts` / `get_weekly_review`）を **DuckDB 1往復 ＋ Garmin カレンダー1回** にまとめて返します。`target` は skill 引数と同じ規約で W を確定します（省略時のスマート既定＝today が週の最終日なら翌週・それ以外は今週、`this` / `next` / `YYYY-MM-DD` も同じ）。週の開始曜日は `athlete_profile.week_start_day`（0=月〜6=日、既定=月曜フォールバック）に従います。各コレクタは **null-on-error（additive）** なので、一部が null でも講評を破綻させないこと。
 
 確定した対象週 W（`week_start_date`〜`week_end_date`）と実績週 W-1（`prev_start`〜`prev_end`）、開始曜日、および `week_in_progress`（today が W 内か）をユーザーに一言で提示してから次に進んでください。
 
-### Step 2: バンドルから実績・負荷・回復・補強を読む（W-1 主軸 ＋ W 進行中分）
+### Step 2: バンドルから実績・負荷・回復・補強・山行を読む（W-1 主軸 ＋ W 進行中分）
 
 Step 1 の `prefetch_weekly_review_context` バンドルから、以下のキーを読んで実績を把握します（**追加の MCP 呼びは原則不要**。各キーは null-on-error なので欠損は破綻させず、その旨を講評に明示する）。
 
@@ -75,6 +75,7 @@ Step 1 の `prefetch_weekly_review_context` バンドルから、以下のキー
   - `rhr_trend`: 7日中央値が 30日中央値より **2bpm 以上低ければ `improving`**、**3bpm 以上高ければ `fatigued`**、それ以外 `stable`。
   - `hrv.under_recovery`: **HRV ベースライン割れが 2夜以上連続**で `true`。これと `acwr` の高値を **AND して「積み過ぎ・回復不足」を判定**する。
   - **データ欠損時**（中央値・HRV が軒並み null、または `recommendation = unknown`）は「回復データ不足のため負荷ベースで講評」と明示する（破綻させない）。
+- **山行（hiking）**: `hiking.{prev_week, current_week}`（各 `{activity_id, activity_date, duration_seconds, elapsed_duration_seconds, distance_km, elevation_gain_m, elevation_loss_m, avg_heart_rate, ...}` の配列）。山行は `activities` に入らない別ドメインなので、**週間走行距離・ACWR・フォーム評価には一切含めない**。**行動時間（`duration_seconds`）・獲得標高（`elevation_gain_m`）・平均 HR** を、**回復（脚のダメージ・疲労の持ち越し）と週全体の負荷文脈** としてのみ扱い、ラン用の解釈（ペース評価・フォーム・強度分布）は適用しない。0件なら言及不要。
 - **補強（strength）**: `strength.{prev_week, current_week}`（各 `{activity_id, activity_date, active_duration_seconds, avg_heart_rate, active_sets, total_sets, category_counts, ...}` の配列。`category_counts` は `{"CRUNCH":4,"PLANK":7,...}` = ACTIVE セットのカテゴリ別本数）。**回数・実施日・所要時間（`active_duration_seconds`）・HR・セット数（`active_sets`）・カテゴリ構成** を、回復・補強遵守・故障予防の文脈でのみ扱う。0件なら「補強記録なし」。
 
 ### Step 3: W の Garmin プラン（レビュー対象）

@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **57 tools** (55 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **59 tools** (57 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -28,6 +28,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [strength](#strength) (2)
 - [ingest](#ingest) (1)
 - [Workout Scheduling](#workout-scheduling) (2)
+- [hiking](#hiking) (2)
 - [Server](#server) (2)
 
 ## Export
@@ -646,13 +647,13 @@ Get persisted strength_training (補強) summaries with activity_date in [start_
 
 CLI: `garmin-db ingest catch-up`
 
-Differential catch-up ingest across the running, weight, strength and wellness domains in a single call. Resolves an independent window per domain (each table advances at its own pace): end_date or today as the shared end, and per-domain start = start_date (when given) or that domain's latest stored date, or end_date - 30 days when the domain is empty. running delegates to ingest_running_activities, weight to ingest_weight_range, strength to ingest_strength_sessions, wellness to ingest_wellness_range. Pass domains to ingest a subset (default: all four). A failure in one domain is isolated (its entry carries an error) while the others complete. Returns each requested domain's result plus a window map of {domain: {start, end}}. On a fully-successful run (no domain error), if the most-recently-completed week still lacks a trend narration, the result also carries trend_pending: {granularity, period_start, period_end} so callers can fire trend-narration for it (idempotent: omitted once that week is narrated).
+Differential catch-up ingest across the running, weight, strength, hiking and wellness domains in a single call. Resolves an independent window per domain (each table advances at its own pace): end_date or today as the shared end, and per-domain start = start_date (when given) or that domain's latest stored date, or end_date - 30 days when the domain is empty. running delegates to ingest_running_activities, weight to ingest_weight_range, strength to ingest_strength_sessions, hiking to ingest_hiking_sessions, wellness to ingest_wellness_range. Pass domains to ingest a subset (default: all five). A failure in one domain is isolated (its entry carries an error) while the others complete. Returns each requested domain's result plus a window map of {domain: {start, end}}. On a fully-successful run (no domain error), if the most-recently-completed week still lacks a trend narration, the result also carries trend_pending: {granularity, period_start, period_end} so callers can fire trend-narration for it (idempotent: omitted once that week is narrated).
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `start_date` | string | optional | Inclusive shared window start date (YYYY-MM-DD). When omitted, each domain resolves its own start from its latest stored date (or end_date - 30 days when that domain is empty). |
 | `end_date` | string | optional | Inclusive window end date (YYYY-MM-DD). Defaults to today when omitted. |
-| `domains` | array[string] | optional | Subset of domains to ingest. Defaults to all of running, weight, strength, wellness. Domains not listed are skipped. |
+| `domains` | array[string] | optional | Subset of domains to ingest. Defaults to all of running, weight, strength, hiking, wellness. Domains not listed are skipped. |
 
 ## Workout Scheduling
 
@@ -677,6 +678,30 @@ Tidy self-authored [MCP] workouts: unschedule past-dated [MCP] calendar assignme
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `dry_run` | boolean | optional (default `False`) | When True, only report the assignments/templates that would be removed without performing any write. |
+
+## hiking
+
+### `ingest_hiking_sessions`
+
+CLI: `garmin-db hiking ingest`
+
+Discover hiking (山行) activities from the Garmin Connect API in a date window and insert summary rows into the hiking_sessions table. Catch-up aware: omit start_date to ingest from the latest stored hiking date, or end_date - 30 days when none exist yet; omit end_date to default to today. Discovery uses the activity list filtered to typeKey == 'hiking'; hikes are kept out of the run-centric activities table so they never distort ACWR, load trend or form baselines. Sessions already stored are skipped. Returns discovered, ingested, skipped_existing, activity_ids, and the resolved window {start, end}.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `start_date` | string | optional | Inclusive window start date (YYYY-MM-DD). When omitted, catch-up resolution is used: the latest stored hiking date, or end_date - 30 days when no hiking session exists yet. |
+| `end_date` | string | optional | Inclusive window end date (YYYY-MM-DD). Defaults to today when omitted. |
+
+### `get_hiking_sessions`
+
+CLI: `garmin-db hiking list`
+
+Get persisted hiking (山行) summaries with activity_date in [start_date, end_date] from the hiking_sessions table (no Garmin access). Returns a list (activity_date ascending) of summaries with activity_id, activity_date, start_time_local, activity_name, duration_seconds (moving) / elapsed_duration_seconds, distance_km, elevation_gain_m, elevation_loss_m, avg/max heart rate and calories. Use it for load/recovery context only — do not apply run pace or form interpretation. Returns an empty list when none match.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `start_date` | string | **required** | Inclusive window start date (YYYY-MM-DD). |
+| `end_date` | string | **required** | Inclusive window end date (YYYY-MM-DD). |
 
 ## Server
 

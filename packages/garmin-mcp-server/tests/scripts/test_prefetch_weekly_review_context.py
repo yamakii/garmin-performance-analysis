@@ -117,6 +117,7 @@ def _mock_prefetch(load_trend_raises: bool = False) -> Iterator[MagicMock]:
     reader.get_recovery_status.return_value = {"recommendation": "easy"}
     reader.get_wellness_baseline_deviation.return_value = {"overall_flag": False}
     reader.get_strength_sessions.return_value = []
+    reader.get_hiking_sessions.return_value = []
 
     athlete_reader = MagicMock()
     athlete_reader.get_athlete_profile.return_value = {"goals": []}
@@ -175,11 +176,32 @@ def test_prefetch_bundle_safe_null_on_reader_error() -> None:
         "fitness_summary",
         "recovery",
         "strength",
+        "hiking",
         "athlete_profile",
         "goals_with_weeks_to_race",
         "past_review",
     ):
         assert key in result
+
+
+@pytest.mark.unit
+def test_prefetch_bundle_has_hiking_key() -> None:
+    """The bundle carries hiking.{prev_week, current_week} (issue #921)."""
+    with _mock_prefetch() as reader:
+        result = prefetch_weekly_review_context("this", today="2026-07-10")
+
+    assert set(result["hiking"]) == {"prev_week", "current_week"}
+    assert result["hiking"] == {"prev_week": [], "current_week": []}
+    # Both windows are read from the hiking reader (W-1 and W).
+    assert reader.get_hiking_sessions.call_count == 2
+    assert reader.get_hiking_sessions.call_args_list[0].args == (
+        "2026-06-29",
+        "2026-07-05",
+    )
+    assert reader.get_hiking_sessions.call_args_list[1].args == (
+        "2026-07-06",
+        "2026-07-12",
+    )
 
 
 @pytest.mark.unit
@@ -303,6 +325,7 @@ def test_prefetch_weekly_review_context_end_to_end(db_path: Path) -> None:
         "acwr",
         "recovery",
         "strength",
+        "hiking",
         "scheduled_workouts",
         "athlete_profile",
         "goals_with_weeks_to_race",
