@@ -15,6 +15,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -204,14 +205,21 @@ def test_prefetch_bundle_has_hiking_key() -> None:
     )
 
 
+def _weeks(series: list[tuple[str, int | None]]) -> dict[str, Any]:
+    """Build a minimal ``get_load_trend`` result from (week_start, longest) pairs."""
+    return {"weeks": [{"week_start": ws, "longest_run_sec": sec} for ws, sec in series]}
+
+
 @pytest.mark.unit
 def test_prefetch_bundle_long_run_gate() -> None:
     """load_trend.long_run carries the deterministic cutback gate (#927)."""
     weekly_longest = [3250, 7819, 8125, 8562]
+    # Four completed weeks, all before W (2026-07-06).
+    week_starts = ["2026-06-08", "2026-06-15", "2026-06-22", "2026-06-29"]
     with _mock_prefetch() as reader:
-        reader.get_load_trend.return_value = {
-            "weeks": [{"longest_run_sec": sec} for sec in weekly_longest]
-        }
+        reader.get_load_trend.return_value = _weeks(
+            list(zip(week_starts, weekly_longest, strict=True))
+        )
         result = prefetch_weekly_review_context("this", today="2026-07-10")
 
     long_run = result["load_trend"]["long_run"]
@@ -219,6 +227,52 @@ def test_prefetch_bundle_long_run_gate() -> None:
     # Three straight >= +3% extensions -> the primary cutback gate fires.
     assert long_run["long_run_build_weeks"] == 3
     assert long_run["cutback_due_long_run"] is True
+
+
+@pytest.mark.unit
+def test_long_run_gate_excludes_in_progress_week() -> None:
+    """W's own partial bucket must not reset the streak (#929).
+
+    ``get_load_trend`` ends at today, so a Monday review sees W's bucket with
+    ``longest_run_sec: None`` (the week's long run has not happened yet). That
+    ``None`` used to read as a no-run week and zero the gate.
+    """
+    with _mock_prefetch() as reader:
+        reader.get_load_trend.return_value = _weeks(
+            [
+                ("2026-07-20", 3250),
+                ("2026-07-27", 7819),
+                ("2026-08-03", 8125),
+                ("2026-08-10", 8562),
+                ("2026-08-17", None),  # W itself, still in progress
+            ]
+        )
+        result = prefetch_weekly_review_context("this", today="2026-08-17")
+
+    assert result["week_start_date"] == "2026-08-17"
+    long_run = result["load_trend"]["long_run"]
+    assert long_run["weekly_longest_sec"] == [3250, 7819, 8125, 8562]
+    assert long_run["long_run_build_weeks"] == 3
+    assert long_run["cutback_due_long_run"] is True
+
+
+@pytest.mark.unit
+def test_long_run_gate_keeps_none_for_completed_norun_week() -> None:
+    """A completed week with no run is still a reset boundary (#929)."""
+    with _mock_prefetch() as reader:
+        reader.get_load_trend.return_value = _weeks(
+            [
+                ("2026-07-27", 7200),
+                ("2026-08-03", None),  # completed week, genuinely no run
+                ("2026-08-10", 7500),
+            ]
+        )
+        result = prefetch_weekly_review_context("this", today="2026-08-17")
+
+    long_run = result["load_trend"]["long_run"]
+    assert long_run["weekly_longest_sec"] == [7200, None, 7500]
+    assert long_run["long_run_build_weeks"] == 0
+    assert long_run["cutback_due_long_run"] is False
 
 
 @pytest.mark.unit
