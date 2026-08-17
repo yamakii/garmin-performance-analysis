@@ -29,7 +29,8 @@ Output (JSON to stdout, one line):
       "fitness_summary": {...}|null,      # includes Garmin native hr_zones
       "load_trend": {...}|null,           # + long_run: {weekly_longest_sec,
                                           #   long_run_build_weeks,
-                                          #   cutback_due_long_run}
+                                          #   cutback_due_long_run} over the
+                                          #   weeks completed before W
       "acwr": {...}|null,
       "recovery": {"trend": {...}|null, "status": {...}|null,
                    "baseline_deviation": {...}|null},
@@ -149,25 +150,42 @@ def _weeks_to_race(race_date: str | None, week_start: date) -> int | None:
     return math.ceil((rd - week_start).days / 7)
 
 
-def _long_run_gate(load_trend: dict[str, Any]) -> dict[str, Any]:
-    """Compute the long-run cutback gate from a ``get_load_trend`` bundle.
+def _long_run_gate(load_trend: dict[str, Any], week_start_date: str) -> dict[str, Any]:
+    """Compute the long-run cutback gate over the weeks **completed** before W.
 
     The cutback cycle's **primary** gate is the long-run extension streak, not
     weekly volume (Issue #927): the long run is extended even in light weeks, so
     a volume streak resets there and under-counts the accumulated stress. This
     is computed here (deterministically) rather than left to the reviewing LLM.
 
+    Only buckets starting strictly **before** ``week_start_date`` are counted:
+    the gate asks "how many consecutive weeks did the long run grow *entering*
+    W", so W's own bucket must be excluded. ``get_load_trend`` ends at today, so
+    when the review runs mid-week that newest bucket is a partial week whose
+    ``longest_run_sec`` is still ``None`` for anyone who runs long late in the
+    week -- and a ``None`` reads as a no-run week, resetting the streak to 0
+    (Issue #929). ``None``s inside the retained range are kept: a *completed*
+    week with no run really is a reset boundary.
+
     Args:
-        load_trend: A ``get_load_trend`` result; reads
-            ``weeks[*].longest_run_sec`` (oldest -> newest).
+        load_trend: A ``get_load_trend`` result; reads ``weeks[*].week_start``
+            and ``weeks[*].longest_run_sec`` (oldest -> newest).
+        week_start_date: Target week W's start (``YYYY-MM-DD``). Compared as an
+            ISO string, which orders identically to the underlying dates.
 
     Returns:
         ``{"weekly_longest_sec": [int|None, ...], "long_run_build_weeks": int,
         "cutback_due_long_run": bool}`` where the flag is the streak reaching
         :data:`LONG_RUN_CUTBACK_TRIGGER_WEEKS`.
     """
-    weeks = load_trend.get("weeks") or []
-    # Keep the Nones: a week with no run is a reset boundary for the streak.
+    weeks = [
+        w
+        for w in (load_trend.get("weeks") or [])
+        # A bucket with no week_start cannot be identified as W's own, so it is
+        # kept (never silently dropped from the series).
+        if str(w.get("week_start") or "") < week_start_date
+    ]
+    # Keep the Nones: a completed week with no run is a reset boundary.
     weekly_longest_sec = [w.get("longest_run_sec") for w in weeks]
     build_weeks = count_long_run_build_weeks(weekly_longest_sec)
     return {
@@ -302,9 +320,11 @@ def prefetch_weekly_review_context(
         lambda: reader.get_load_trend(_LOAD_LOOKBACK_WEEKS, end_date=str(today_d))
     )
     # Primary cutback gate: the long-run extension streak (Issue #927). Folded
-    # into the bundle deterministically so the review never re-derives it.
+    # into the bundle deterministically so the review never re-derives it. Only
+    # the weeks completed before W count, so W's own in-progress bucket cannot
+    # zero the streak (Issue #929).
     if isinstance(load_trend, dict):
-        load_trend["long_run"] = _long_run_gate(load_trend)
+        load_trend["long_run"] = _long_run_gate(load_trend, week_start_s)
     acwr = _safe(lambda: reader.get_acwr(end_date=str(today_d)))
 
     # Recovery: RHR/HRV trend, morning go/no-go status, personal-baseline z.
