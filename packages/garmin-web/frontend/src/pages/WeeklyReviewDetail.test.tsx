@@ -4,8 +4,16 @@ import { fireEvent, render, screen, within } from "../test/utils";
 import WeeklyReviewDetail from "./WeeklyReviewDetail";
 import type { WeeklyReviewData } from "../types";
 
+/**
+ * Accessible name of the actuals group for `fullReview`: the label states the
+ * week the numbers come from (W-1 of the reviewed plan week), not 今週 (#931).
+ */
+const ACTUALS_GROUP = "実績（2026-06-08 〜 2026-06-14）";
+
 /** Full review touching every meaning group + 総評. */
 const fullReview: WeeklyReviewData = {
+  // A saved review always records which week its actuals cover.
+  actuals_week_start: "2026-06-08",
   this_week: { volume_km: 35.5, run_count: 4 },
   weight_tracking: { recent_median_kg: 79.6, bmi: 24.1 },
   recovery: "回復は良好です。",
@@ -184,11 +192,11 @@ describe("WeeklyReviewDetail", () => {
     expect(screen.queryByText("週次ランプ")).not.toBeInTheDocument();
   });
 
-  it("renders three group headings 今週の実績 / 評価 / 次アクション", async () => {
+  it("renders three group headings 実績 / 評価 / 次アクション", async () => {
     renderDetail(fullReview);
 
     expect(
-      await screen.findByRole("region", { name: "今週の実績" }),
+      await screen.findByRole("region", { name: ACTUALS_GROUP }),
     ).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "評価" })).toBeInTheDocument();
     expect(
@@ -200,7 +208,7 @@ describe("WeeklyReviewDetail", () => {
     renderDetail(fullReview);
 
     // The groups are the page's h2s...
-    for (const name of ["今週の実績", "評価", "次アクション"]) {
+    for (const name of [ACTUALS_GROUP, "評価", "次アクション"]) {
       expect(
         await screen.findByRole("heading", { level: 2, name }),
       ).toBeInTheDocument();
@@ -208,7 +216,7 @@ describe("WeeklyReviewDetail", () => {
 
     // ...and every card inside a group is an h3 under it, so the outline
     // reflects the grouping instead of one flat run of h2 cards (#912).
-    const group = screen.getByRole("region", { name: "今週の実績" });
+    const group = screen.getByRole("region", { name: ACTUALS_GROUP });
     expect(
       within(group).getByRole("heading", { level: 3, name: "実績サマリー" }),
     ).toBeInTheDocument();
@@ -223,11 +231,38 @@ describe("WeeklyReviewDetail", () => {
     ).toBeInTheDocument();
   });
 
-  it("places 実績サマリー under 今週の実績 group", async () => {
+  it("places 実績サマリー under the actuals group", async () => {
     renderDetail(fullReview);
 
-    const group = await screen.findByRole("region", { name: "今週の実績" });
+    const group = await screen.findByRole("region", { name: ACTUALS_GROUP });
     expect(within(group).getByText("実績サマリー")).toBeInTheDocument();
+  });
+
+  it("test_actuals_group_title_shows_range", async () => {
+    renderDetail({
+      actuals_week_start: "2026-08-10",
+      this_week: { volume_km: 35.5, run_count: 4 },
+    });
+
+    // The heading names the week the numbers came from...
+    expect(
+      await screen.findByRole("heading", {
+        level: 2,
+        name: "実績（2026-08-10 〜 2026-08-16）",
+      }),
+    ).toBeInTheDocument();
+    // ...instead of claiming they are the week being viewed (#931).
+    expect(screen.queryByText("今週の実績")).not.toBeInTheDocument();
+  });
+
+  it("test_actuals_group_title_fallback", async () => {
+    // A review saved before the field existed still gets a truthful label.
+    renderDetail({ this_week: { volume_km: 35.5, run_count: 4 } });
+
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "実績" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("今週の実績")).not.toBeInTheDocument();
   });
 
   it("places 対象週プラン評価 under 評価 group", async () => {

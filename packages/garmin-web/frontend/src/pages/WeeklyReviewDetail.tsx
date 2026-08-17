@@ -12,7 +12,7 @@ import StatusBadge from "../components/StatusBadge";
 import VersionSelect from "../components/VersionSelect";
 import { META_LABEL, SUBCARD } from "../components/report/ReportCard";
 import { usePageTitle } from "../hooks/usePageTitle";
-import { formatDate, humanizeKey } from "../utils/format";
+import { formatDate, humanizeKey, weekEndIso } from "../utils/format";
 import { formatNumber } from "../utils/formatNumber";
 import { ratingMeta } from "../utils/verdictRating";
 
@@ -247,6 +247,17 @@ export default function WeeklyReviewDetail() {
     raceCountdown("A", periodization?.a_race, periodization?.weeks_to_a_race),
     raceCountdown("B", periodization?.b_race, periodization?.weeks_to_b_race),
   ].filter((label): label is string => label != null);
+  // `this_week` is always the *previous* week's actuals — the material the
+  // plan week is judged against (the key keeps its old name for
+  // compatibility). Labelling it 今週の実績 read as "this week" no matter which
+  // week was open (#931), so the saved `actuals_week_start` names the week it
+  // really covers. Older records without that field keep the bare label.
+  const actualsWeekStart = data?.actuals_week_start;
+  const actualsWeekEnd = weekEndIso(actualsWeekStart);
+  const actualsTitle =
+    actualsWeekStart != null && actualsWeekEnd != null
+      ? `実績（${formatDate(actualsWeekStart)} 〜 ${formatDate(actualsWeekEnd)}）`
+      : "実績";
   const [firstRecommendation, ...moreRecommendations] = recommendations;
   const hasNextActions =
     recommendations.length > 0 ||
@@ -313,9 +324,9 @@ export default function WeeklyReviewDetail() {
           {/* Sticky in-page table of contents (rendered sections only) */}
           <SectionNav items={navItems} />
 
-          {/* ① This week — actuals, body, recovery */}
-          <Group eyebrow="This Week" title="今週の実績">
-            {/* This-week actuals */}
+          {/* ① Actuals week (W-1) — actuals, body, recovery */}
+          <Group eyebrow="Actuals" title={actualsTitle}>
+            {/* Actuals-week totals */}
             <Section id="wr-actuals" title="実績サマリー">
               {thisWeek != null ? (
                 <div className="space-y-3 text-sm text-slate-700">
