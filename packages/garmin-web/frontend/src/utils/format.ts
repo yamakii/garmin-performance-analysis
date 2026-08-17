@@ -117,6 +117,36 @@ export function formatDateTime(iso: string | null | undefined): string {
 }
 
 /**
+ * "2026-08-16" — the last day (start + 6 days) of the week beginning at
+ * `weekStartIso`; null when the input is missing or is not a calendar day.
+ *
+ * The arithmetic runs through `Date.UTC` so the week end never lands a day
+ * early or late for a reader east of Greenwich (#920): a week boundary is a
+ * calendar fact, not an instant, so it must not pass through a local timezone.
+ */
+export function weekEndIso(
+  weekStartIso: string | null | undefined,
+): string | null {
+  const day = weekStartIso != null ? ISO_DATE.exec(weekStartIso)?.[1] : null;
+  if (day == null) {
+    return null;
+  }
+  const [year, month, dayOfMonth] = day.split("-").map(Number);
+  // `Date.UTC` silently rolls a nonexistent day over ("2026-02-30" ->
+  // March 2), so the start day is round-tripped before it is trusted.
+  const start = new Date(Date.UTC(year, month - 1, dayOfMonth));
+  if (
+    Number.isNaN(start.getTime()) ||
+    start.toISOString().slice(0, 10) !== day
+  ) {
+    return null;
+  }
+  // The same rollover carries the end across a month or year boundary.
+  const end = new Date(Date.UTC(year, month - 1, dayOfMonth + 6));
+  return end.toISOString().slice(0, 10);
+}
+
+/**
  * Local-date ISO string (YYYY-MM-DD).
  *
  * `Date.toISOString()` reports the UTC day, which is the previous day for any

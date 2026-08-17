@@ -19,6 +19,7 @@ import {
   formatPaceValue,
   humanizeKey,
   toIsoDate,
+  weekEndIso,
 } from "./format";
 
 const SRC_DIR = fileURLToPath(new URL("..", import.meta.url));
@@ -91,6 +92,28 @@ describe("dates", () => {
     // The instant really is the previous UTC day — i.e. the old implementation
     // would have returned "2026-08-08" here.
     expect(jstMorning.toISOString().slice(0, 10)).toBe("2026-08-08");
+  });
+
+  /**
+   * The suite runs under JST, so a week end derived from local time would slip
+   * a day; the helper stays on `Date.UTC` for exactly that reason (#931).
+   */
+  it("test_weekEndIso_adds_six_days", () => {
+    expect(weekEndIso("2026-08-10")).toBe("2026-08-16");
+    // The end rolls into the next month, and the next year, on its own.
+    expect(weekEndIso("2026-08-28")).toBe("2026-09-03");
+    expect(weekEndIso("2026-12-28")).toBe("2027-01-03");
+    // A stored datetime is accepted; only its calendar day matters.
+    expect(weekEndIso("2026-08-10T00:00:00")).toBe("2026-08-16");
+  });
+
+  it("test_weekEndIso_invalid_returns_null", () => {
+    expect(weekEndIso(null)).toBeNull();
+    expect(weekEndIso(undefined)).toBeNull();
+    expect(weekEndIso("")).toBeNull();
+    expect(weekEndIso("not-a-date")).toBeNull();
+    // A day that does not exist must not be rolled over into a real one.
+    expect(weekEndIso("2026-02-30")).toBeNull();
   });
 });
 
