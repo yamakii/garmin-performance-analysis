@@ -163,6 +163,17 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         raise
 
 
+def _serialize_result(payload: Any) -> str:
+    """Serialize a tool result for the MCP boundary.
+
+    ``ensure_ascii=False`` keeps Japanese text raw instead of ``\\uXXXX`` escapes
+    (3-4x smaller for Japanese-heavy payloads); compact separators match
+    ``handlers/base.py``. ``default=str`` keeps DuckDB ``date``/``datetime``
+    values serializable.
+    """
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str)
+
+
 async def _dispatch_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """Route a tool call: server tools inline, everything else to the worker.
 
@@ -181,7 +192,7 @@ async def _dispatch_tool(name: str, arguments: dict[str, Any]) -> list[TextConte
         payload = resp.get("data")
     else:
         payload = {"error": resp.get("error", "worker call failed")}
-    return [TextContent(type="text", text=json.dumps(payload, default=str))]
+    return [TextContent(type="text", text=_serialize_result(payload))]
 
 
 async def _handle_get_server_info() -> list[TextContent]:
@@ -211,7 +222,7 @@ async def _handle_get_server_info() -> list[TextContent]:
         info["table_count"] = None
         info["last_ingest_date"] = None
 
-    return [TextContent(type="text", text=json.dumps(info, default=str))]
+    return [TextContent(type="text", text=_serialize_result(info))]
 
 
 async def _handle_reload_server() -> list[TextContent]:
@@ -242,7 +253,7 @@ async def _handle_reload_server() -> list[TextContent]:
     return [
         TextContent(
             type="text",
-            text=json.dumps(
+            text=_serialize_result(
                 {"success": True, "message": msg, "list_changed_sent": notified}
             ),
         )

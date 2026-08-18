@@ -8,6 +8,7 @@ tools/list_changed, no process suicide).
 """
 
 import json
+from datetime import date
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -17,6 +18,7 @@ from garmin_mcp.server import (
     _dispatch_tool,
     _handle_get_server_info,
     _handle_reload_server,
+    _serialize_result,
     list_tools,
 )
 
@@ -256,3 +258,33 @@ class TestDispatchTool:
         data = json.loads(result[0].text)
         assert "started_at" in data
         assert data["ready"] is True
+
+    @pytest.mark.asyncio
+    async def test_dispatch_tool_result_unescaped(self) -> None:
+        """Japanese in a worker payload reaches the client raw, not \\uXXXX escaped."""
+        worker = _mock_worker(rpc_return={"ok": True, "data": {"note": "評価"}})
+        with patch.object(server, "worker", worker):
+            result = await _dispatch_tool("get_section_analyses", {"activity_id": 7})
+
+        text = result[0].text
+        assert "評価" in text
+        assert "\\u" not in text
+        assert json.loads(text) == {"note": "評価"}
+
+
+@pytest.mark.unit
+class TestSerializeResult:
+    """Tests for _serialize_result (MCP boundary serialization)."""
+
+    def test_serialize_result_keeps_japanese_unescaped(self) -> None:
+        """Japanese stays raw (no \\uXXXX escapes) so payloads stay ~3-4x smaller."""
+        text = _serialize_result({"msg": "日本語テスト"})
+
+        assert "日本語テスト" in text
+        assert "\\u" not in text
+
+    def test_serialize_result_compact_and_default_str(self) -> None:
+        """Compact separators are used and dates fall back to str()."""
+        text = _serialize_result({"a": 1, "d": date(2026, 8, 19)})
+
+        assert text == '{"a":1,"d":"2026-08-19"}'
