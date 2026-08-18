@@ -1,11 +1,9 @@
 """Athlete domain tool definitions.
 
-Descriptions are copied verbatim from the previous hand-written schemas in
-``tool_schemas.py`` to guarantee byte-for-byte MCP parity.
-
-All four tools use ``input_schema_override``: ``profile`` / ``review`` are
-free-form ``object`` params, and the optional ``user_id`` / ``week_start_date``
-fields were declared without JSON ``default`` keys in the hand schemas.
+``profile`` / ``review`` are free-form ``object`` params, and the optional
+``user_id`` / ``week_start_date`` / ``limit`` fields are modeled as
+``T | None = None`` so the derived schema emits no JSON ``default`` key; the
+runtime defaults are applied in the handlers below.
 """
 
 from __future__ import annotations
@@ -50,6 +48,17 @@ class GetAthleteProfileParams(BaseModel):
 
     user_id: str | None = Field(
         default=None, description="Profile owner identifier (default: 'default')"
+    )
+
+
+class ListAthleteProfileVersionsParams(BaseModel):
+    """Arguments for ``list_athlete_profile_versions``."""
+
+    user_id: str | None = Field(
+        default=None, description="Profile owner identifier (default: 'default')"
+    )
+    limit: int | None = Field(
+        default=None, description="Maximum number of versions to return (default: 5)"
     )
 
 
@@ -133,6 +142,25 @@ def _get_athlete_profile(reader: GarminDBReader, p: GetAthleteProfileParams) -> 
         return {"error": str(e)}
 
 
+_DEFAULT_VERSION_LIMIT = 5
+
+
+def _list_athlete_profile_versions(
+    reader: GarminDBReader, p: ListAthleteProfileVersionsParams
+) -> Any:
+    from garmin_mcp.database.readers.athlete import AthleteReader
+
+    try:
+        athlete_reader = AthleteReader(db_path=str(reader.db_path))
+        return athlete_reader.list_athlete_profile_versions(
+            user_id=p.user_id if p.user_id is not None else _DEFAULT_USER_ID,
+            limit=p.limit if p.limit is not None else _DEFAULT_VERSION_LIMIT,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"List athlete profile versions failed: {e}")
+        return {"error": str(e)}
+
+
 def _save_weekly_review(reader: GarminDBReader, p: SaveWeeklyReviewParams) -> Any:
     from garmin_mcp.database.inserters.athlete import insert_weekly_review
 
@@ -183,7 +211,10 @@ ATHLETE_TOOLS: list[ToolDef] = [
             "Save the athlete profile (current focus, race goals, and season "
             "retrospectives) as a single object to DuckDB. The profile row is "
             "upserted on user_id; goals and retrospectives are fully replaced per "
-            "user_id."
+            "user_id, so the normalized tables always hold the latest state. Each "
+            "save additionally appends a JSON snapshot of the whole profile as a "
+            "new version, keeping overwritten content (e.g. the previous "
+            "focus_notes) recoverable via list_athlete_profile_versions."
         ),
         params=SaveAthleteProfileParams,
         handler=_save_athlete_profile,
@@ -202,6 +233,20 @@ ATHLETE_TOOLS: list[ToolDef] = [
         handler=_get_athlete_profile,
         cli_group="athlete",
         cli_name="get-profile",
+    ),
+    ToolDef(
+        name="list_athlete_profile_versions",
+        description=(
+            "List recent athlete profile snapshots (newest first). Every "
+            "save_athlete_profile appends the whole profile as a new version, so "
+            "this returns the overwritten history: each entry has version_id, "
+            "user_id, created_at, and profile_data (the snapshot decoded back "
+            "into an object). Returns an empty list when no version exists."
+        ),
+        params=ListAthleteProfileVersionsParams,
+        handler=_list_athlete_profile_versions,
+        cli_group="athlete",
+        cli_name="list-profile-versions",
     ),
     ToolDef(
         name="save_weekly_review",

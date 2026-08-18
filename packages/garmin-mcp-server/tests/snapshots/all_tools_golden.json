@@ -828,7 +828,7 @@
   },
   {
     "name": "save_athlete_profile",
-    "description": "Save the athlete profile (current focus, race goals, and season retrospectives) as a single object to DuckDB. The profile row is upserted on user_id; goals and retrospectives are fully replaced per user_id.",
+    "description": "Save the athlete profile (current focus, race goals, and season retrospectives) as a single object to DuckDB. The profile row is upserted on user_id; goals and retrospectives are fully replaced per user_id, so the normalized tables always hold the latest state. Each save additionally appends a JSON snapshot of the whole profile as a new version, keeping overwritten content (e.g. the previous focus_notes) recoverable via list_athlete_profile_versions.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -851,6 +851,23 @@
         "user_id": {
           "type": "string",
           "description": "Profile owner identifier (default: 'default')"
+        }
+      }
+    }
+  },
+  {
+    "name": "list_athlete_profile_versions",
+    "description": "List recent athlete profile snapshots (newest first). Every save_athlete_profile appends the whole profile as a new version, so this returns the overwritten history: each entry has version_id, user_id, created_at, and profile_data (the snapshot decoded back into an object). Returns an empty list when no version exists.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Profile owner identifier (default: 'default')"
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Maximum number of versions to return (default: 5)"
         }
       }
     }

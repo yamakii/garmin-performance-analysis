@@ -191,6 +191,13 @@ def _wrap_add_pace_consistency_full(conn: duckdb.DuckDBPyConnection) -> None:
     add_pace_consistency_full(conn)
 
 
+def _wrap_add_athlete_profile_versions(conn: duckdb.DuckDBPyConnection) -> None:
+    """Wrap the athlete_profile_versions table migration on an existing connection."""
+    from .add_athlete_profile_versions import add_athlete_profile_versions
+
+    add_athlete_profile_versions(conn)
+
+
 def _wrap_plan_versioning(conn: duckdb.DuckDBPyConnection) -> None:
     """Wrap plan versioning migration to run on an existing connection."""
     from .add_plan_versioning import _column_exists, _table_exists
@@ -253,4 +260,5 @@ MIGRATIONS: list[tuple[int, str, Callable[[duckdb.DuckDBPyConnection], None]]] =
     (18, "add_analysis_runs_table", _wrap_add_analysis_runs_table),
     (19, "add_pace_consistency_full", _wrap_add_pace_consistency_full),
     (20, "add_hiking_sessions", _wrap_add_hiking_sessions),
+    (21, "add_athlete_profile_versions", _wrap_add_athlete_profile_versions),
 ]
