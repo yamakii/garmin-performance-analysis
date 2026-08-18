@@ -72,7 +72,7 @@ Step 1 の `prefetch_weekly_review_context` バンドルから、以下のキー
 - **フィットネスサマリー**: `fitness_summary`（vdot / Garmin native `hr_zones` / weekly_volume / recent_runs）。処方の HR ゾーン(bpm) は必ずここから引用する（計算式禁止）。
 - **負荷トレンド（Step 5-A-4 のカットバック周期判定の材料）**: `load_trend.weeks`（古い→新しい、各 `{week_start, load_km(その週の総距離), acwr, status, longest_run_sec(その週の最長ラン秒。ラン無し週は null)}`）と `acwr`（`{acute_load_7d, chronic_load_28d_weekly, acwr, status}`）。`status` は undertraining(<0.8) / optimal(0.8-1.3) / caution(1.3-1.5) / high_risk(>1.5) / insufficient_data（距離ベース・HR 非依存）。週量ランプ（例: 19.94→28.82→30.99km）・ACWR 推移・連続 build 週数をこの系列から読む。
 - **ロング走の連続伸長（Step 5-A-4 の主ゲート）**: `load_trend.long_run`（`{weekly_longest_sec(古い→新しい、ラン無し週は null), long_run_build_weeks(整数), cutback_due_long_run(bool)}`）。**決定的に算出済みなので再計算しない**（伸長判定 = 前週比 +3% 以上、据え置き = 前週比 75%〜103% で streak 保持、−25% 超の低下またはラン無し週でリセット。`cutback_due_long_run` = `long_run_build_weeks >= 3`）。なお最新週が進行中（`week_in_progress = true`）でロング未実施の場合、`weekly_longest_sec` の末尾は暫定値なので、確定済みの W-1 までの系列も併せて確認する。
-- **回復指標（Step 5-A-5 の回復サブ分析の材料）**: `recovery.trend`（`{weeks, rhr:{median_7d, median_30d, rhr_trend}, hrv:{latest_ms, status, hrv_below_baseline_days, under_recovery}, series:[{date, resting_hr, hrv_overnight_ms}]}`）、`recovery.status`（`{date, recommendation, score, reasons, training_readiness, body_battery_high, sleep_score}`、`recommendation` は rest/easy/moderate/quality/unknown）、`recovery.baseline_deviation`（#555 HRV/readiness/RHR の個人ベースライン z 逸脱）。
+- **回復指標（Step 5-A-5 の回復サブ分析の材料）**: `recovery.trend`（`{weeks, rhr:{median_7d, median_30d, rhr_trend}, hrv:{latest_ms, status, hrv_below_baseline_days, under_recovery}, series:[{date, resting_hr, hrv_overnight_ms}]}`。**`series` は直近14日分のみ**（「HRV 割れが2夜連続か」等の直近確認用）。中央値・`rhr_trend`・`hrv_below_baseline_days`・`under_recovery` は **8週窓で算出済みの値**なので、短い `series` から再計算しない）、`recovery.status`（`{date, recommendation, score, reasons, training_readiness, body_battery_high, sleep_score}`、`recommendation` は rest/easy/moderate/quality/unknown）、`recovery.baseline_deviation`（#555 HRV/readiness/RHR の個人ベースライン z 逸脱）。
   - `rhr_trend`: 7日中央値が 30日中央値より **2bpm 以上低ければ `improving`**、**3bpm 以上高ければ `fatigued`**、それ以外 `stable`。
   - `hrv.under_recovery`: **HRV ベースライン割れが 2夜以上連続**で `true`。これと `acwr` の高値を **AND して「積み過ぎ・回復不足」を判定**する。
   - **データ欠損時**（中央値・HRV が軒並み null、または `recommendation = unknown`）は「回復データ不足のため負荷ベースで講評」と明示する（破綻させない）。
@@ -91,12 +91,12 @@ mcp__garmin-db__get_garmin_scheduled_workouts(start_date=week_start_date, end_da
 
 ### Step 4: 目標・過去レビュー（バンドルから）
 
-バンドルの `athlete_profile`（`goals` / `retrospectives` / 現フェーズ）、`goals_with_weeks_to_race[]`、`past_review`（直近の過去レビュー、無ければ null）を読みます。
+バンドルの `athlete_profile`（`retrospectives` / 現フェーズ）、`goals_with_weeks_to_race[]`、`past_review`（直近の過去レビュー、無ければ null）を読みます。
 
-- `athlete_profile.goals` は `{race_name, race_date, priority, goal_type, distance_km, target_time_seconds, status, notes}` の配列。`race_date` は **null になり得ます**（本命さいたまのように開催日が未確定の場合）。各レースの `priority`（A=本命 / B=中間）と `race_date` を控え、Step 5-A のフェーズ逆算で使う。
-- `goals_with_weeks_to_race[]` は各 goal に **W 開始日基準の `weeks_to_race`（=`ceil((race_date − week_start_date) / 7)`、`race_date` 未確定は `null`）** を事前算出済み。Step 5-A-1 の残り週数はこの値をそのまま使う（null はさいたまのように未確定として扱う）。
+- **目標はバンドル内で `goals_with_weeks_to_race[]` の1箇所だけ**にあります（重複していた `athlete_profile.goals` は除去済み）。各要素は `{race_name, race_date, priority, goal_type, distance_km, target_time_seconds, status, notes}` に **W 開始日基準の `weeks_to_race`（=`ceil((race_date − week_start_date) / 7)`、`race_date` 未確定は `null`）** を事前算出して加えたもの。`race_date` は **null になり得ます**（本命さいたまのように開催日が未確定の場合）。各レースの `priority`（A=本命 / B=中間）と `race_date` を控えて Step 5-A のフェーズ逆算で使い、Step 5-A-1 の残り週数は `weeks_to_race` をそのまま使う（null はさいたまのように未確定として扱う）。
+- `past_review.review_data` には **前回指摘との連続性に使うキーだけ**が載ります（`verdict` / `recommendations` / `overall` / `goal_alignment` / `periodization` / `recovery`）。前回時点の実績サマリ（`this_week`）と前回時点のプラン（`garmin_next_week`）は、今回のバンドルに同等の最新値（`activities` / `scheduled_workouts`）があるため除去済みです。
 
-**profile が未登録の場合**（`athlete_profile.current_focus` が null かつ `goals` が空）は、レビューを生成せず「先に `/set-goal` を実行して目標を登録してください」とユーザーに促して停止してください。
+**profile が未登録の場合**（`athlete_profile.current_focus` が null かつ `goals_with_weeks_to_race` が空）は、レビューを生成せず「先に `/set-goal` を実行して目標を登録してください」とユーザーに促して停止してください。
 
 ### Step 5: コーチ視点でレビューを生成（このコマンドの核）
 
@@ -108,7 +108,7 @@ mcp__garmin-db__get_garmin_scheduled_workouts(start_date=week_start_date, end_da
 
 **1. 各レースの残り週数を算出**
 
-`goals` の各レース（A=本命さいたま / B=中間 新潟）について、**対象週 W の開始日（`week_start_date`）時点での残り週数**を求めます:
+`goals_with_weeks_to_race[]` の各レース（A=本命さいたま / B=中間 新潟）について、**対象週 W の開始日（`week_start_date`）時点での残り週数**を求めます:
 
 - `race_date` が確定している場合（例: 新潟シティマラソン 2026-10-11）:
   - `weeks_to_race = ceil((race_date − week_start_date) / 7)`（整数。週単位に切り上げ）
@@ -196,7 +196,7 @@ Step 3 で取得した対象週 W プラン（`training_plan_name` / `training_p
 - **暑熱期の管理**: 気温・湿度が高い時期は、ペース目標ではなく **心拍／努力度（RPE）で管理する** よう助言する。
 - **回復の質を負荷と複合で講評**: Step 5-A-5 の回復サブ分析を踏まえ、**負荷（ACWR）と回復（RHR/HRV/睡眠）を掛け合わせて** 講評する。RHR `fatigued` や HRV `under_recovery` が ACWR caution+ と重なれば「積み過ぎ・回復不足」として deload を優先。ACWR optimal × RHR `improving` なら「順調に吸収」として漸進を許可する根拠にする。睡眠スコアが低い週は回復不足の主因候補として言及する。回復データ欠損週は「回復データ不足のため負荷ベースで講評」と明示する（[[user-running-goal]] の回復力重視に直結）。
 - **過去レビューとの連続性**: `get_weekly_review()` の前回指摘がどうなったか（改善した／継続課題か）に言及する。
-- **中間レースの扱い**: 新潟など priority=B の中間レースは、**全力 PB を狙わず制御された練習として扱う** 方針との整合をチェックする。profile の goals に中間レースがあれば、対象週 W プランがそれを過度に意識した高強度になっていないか確認する。
+- **中間レースの扱い**: 新潟など priority=B の中間レースは、**全力 PB を狙わず制御された練習として扱う** 方針との整合をチェックする。`goals_with_weeks_to_race[]` に中間レースがあれば、対象週 W プランがそれを過度に意識した高強度になっていないか確認する。
 - **補強（strength）の考慮**: バンドルの `strength`（Step 2）で参照した補強セッションを、主に **Execution（補強メニュー遵守）** と **回復・故障予防** の観点で考慮する。ユーザー目標（**回復力・筋持久力重視／故障歴あり**, [[user-running-goal]]）に直結するため、補強の継続は積極評価する。
   - **補強がある週**: 頻度（回数）と **週内配置**（ラン高強度日と同日/連続に重なっていないか）にコメントする。`category_counts` から中身（体幹中心か等）に触れ、回復・故障予防に資するかを一言添える。高強度ランと補強が重なって回復を圧迫している場合は配置調整を助言する。
   - **補強が無い週**: 「今週は補強記録なし」と明示し、故障予防・筋持久力の観点から補強の空白を指摘する（破綻させない）。

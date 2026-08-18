@@ -32,15 +32,24 @@ Output (JSON to stdout, one line):
                                           #   cutback_due_long_run} over the
                                           #   weeks completed before W
       "acwr": {...}|null,
-      "recovery": {"trend": {...}|null, "status": {...}|null,
+      "recovery": {"trend": {...}|null,   # trend.series trimmed to the last
+                                          #   _RECOVERY_SERIES_KEEP_DAYS days
+                                          #   (aggregates stay 8-week)
+                   "status": {...}|null,
                    "baseline_deviation": {...}|null},
       "strength": {"prev_week": [...]|null, "current_week": [...]|null},
       "hiking": {"prev_week": [...]|null, "current_week": [...]|null},
       "scheduled_workouts": {...}|null,   # network (Garmin Connect); _safe/null-on-error
-      "athlete_profile": {...}|null,
+      "athlete_profile": {...}|null,      # without "goals" (see below)
       "goals_with_weeks_to_race": [{...goal, "weeks_to_race": int|null}],
-      "past_review": {...}|null
+      "past_review": {...}|null           # review_data without this_week /
+                                          #   garmin_next_week (replayed keys)
     }
+
+Three redundant slices are trimmed before returning (~18% smaller bundle,
+Issue #933): goals ship only in ``goals_with_weeks_to_race``, the recovery
+series keeps just its recent tail, and the past review drops the keys this
+bundle already carries fresher. See ``_slim_*`` below.
 
 Every reader is wrapped in ``_safe`` so a single failing collector yields
 ``null`` for its key rather than aborting the whole bundle (additive keys, like
@@ -76,6 +85,17 @@ _LOAD_LOOKBACK_WEEKS = 10
 _RECOVERY_TREND_WEEKS = 8
 # Fitness summary lookback (the skill uses lookback_weeks=1 for a one-week view).
 _FITNESS_LOOKBACK_WEEKS = 1
+# Daily RHR/HRV rows kept in ``recovery.trend.series``. The review reads the
+# aggregates (medians / rhr_trend / hrv_below_baseline_days / under_recovery),
+# which the reader still derives over the full 8-week window; the raw series is
+# only needed for a recent "HRV below baseline 2 nights running" spot check, so
+# the full 57-day series is trimmed to its tail (Issue #933).
+_RECOVERY_SERIES_KEEP_DAYS = 14
+# ``past_review.review_data`` keys that replay the *previous* review's snapshot
+# of the actuals and the Garmin plan. This bundle carries fresher equivalents
+# (``activities`` / ``scheduled_workouts``), and the review only needs the past
+# record for continuity of its judgements, so these are dropped (Issue #933).
+_PAST_REVIEW_REPLAY_KEYS = ("this_week", "garmin_next_week")
 
 
 def _safe[T](fn: Callable[[], T]) -> T | None:
@@ -192,6 +212,65 @@ def _long_run_gate(load_trend: dict[str, Any], week_start_date: str) -> dict[str
         "weekly_longest_sec": weekly_longest_sec,
         "long_run_build_weeks": build_weeks,
         "cutback_due_long_run": build_weeks >= LONG_RUN_CUTBACK_TRIGGER_WEEKS,
+    }
+
+
+def _slim_athlete_profile(profile: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Drop the profile's ``goals`` copy (Issue #933).
+
+    ``goals_with_weeks_to_race`` holds the same goal dicts plus the pre-computed
+    ``weeks_to_race``, so ``athlete_profile.goals`` was a pure duplicate. The
+    caller must derive ``goals_with_weeks_to_race`` from the *un-slimmed*
+    profile first.
+
+    Returns a copy; the reader's dict is never mutated. ``None`` passes through.
+    """
+    if profile is None:
+        return None
+    return {key: value for key, value in profile.items() if key != "goals"}
+
+
+def _slim_recovery_trend(trend: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Trim ``series`` to its most recent :data:`_RECOVERY_SERIES_KEEP_DAYS` days.
+
+    The aggregates already computed by the reader over the full window (medians,
+    ``rhr_trend``, ``hrv_below_baseline_days``, ``under_recovery``) are kept
+    as-is -- they are **not** recomputed from the shortened series.
+
+    Returns a copy; the reader's dict is never mutated. A missing / non-list
+    ``series`` (and ``None``) passes through unchanged.
+    """
+    if trend is None:
+        return None
+    series = trend.get("series")
+    if not isinstance(series, list):
+        return trend
+    return {**trend, "series": series[-_RECOVERY_SERIES_KEEP_DAYS:]}
+
+
+def _slim_past_review(review: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Drop :data:`_PAST_REVIEW_REPLAY_KEYS` from the past review's payload.
+
+    The past review is carried for continuity with its previous judgements
+    (``verdict`` / ``recommendations`` / ``overall`` / ``goal_alignment`` /
+    ``periodization`` / ``recovery``), not to replay its stale snapshot of the
+    actuals and the plan.
+
+    Returns a copy; the reader's dict is never mutated. ``None`` and a
+    non-dict ``review_data`` pass through unchanged.
+    """
+    if review is None:
+        return None
+    review_data = review.get("review_data")
+    if not isinstance(review_data, dict):
+        return review
+    return {
+        **review,
+        "review_data": {
+            key: value
+            for key, value in review_data.items()
+            if key not in _PAST_REVIEW_REPLAY_KEYS
+        },
     }
 
 
@@ -379,11 +458,19 @@ def prefetch_weekly_review_context(
     past_review = _safe(lambda: athlete_reader.get_weekly_review(user_id=user_id))
 
     # Goals with weeks-to-race pre-computed against W's start (ceil, null-safe).
+    # Derived *before* the profile is slimmed: this list is the only copy of the
+    # goals that ships in the bundle.
     goals = (athlete_profile or {}).get("goals") or []
     goals_with_weeks_to_race = [
         {**goal, "weeks_to_race": _weeks_to_race(goal.get("race_date"), week_start)}
         for goal in goals
     ]
+
+    # Trim the redundant slices (Issue #933). Copies only -- reader results are
+    # never mutated.
+    athlete_profile = _slim_athlete_profile(athlete_profile)
+    recovery["trend"] = _slim_recovery_trend(recovery["trend"])
+    past_review = _slim_past_review(past_review)
 
     return {
         "week_start_date": week_start_s,
