@@ -119,11 +119,11 @@ def test_kept_tools_present() -> None:
 
 
 @pytest.mark.unit
-def test_tool_count_is_60() -> None:
-    """The live MCP surface is exactly 60 tools (59 -> 60 after #934)."""
-    assert len(ALL_DEFS) + len(_SERVER_TOOLS) == 60
+def test_tool_count_is_61() -> None:
+    """The live MCP surface is exactly 61 tools (60 -> 61 after #937)."""
+    assert len(ALL_DEFS) + len(_SERVER_TOOLS) == 61
     golden = json.loads(_GOLDEN_PATH.read_text(encoding="utf-8"))
-    assert len(golden) == 60
+    assert len(golden) == 61
 
 
 @pytest.mark.integration
@@ -136,7 +136,7 @@ def test_hiking_tools_registered() -> None:
         t["name"] for t in json.loads(_GOLDEN_PATH.read_text(encoding="utf-8"))
     }
     assert {"ingest_hiking_sessions", "get_hiking_sessions"} <= golden_names
-    assert len(golden_names) == 60
+    assert len(golden_names) == 61
 
     # get_hiking_sessions -> GarminDBReader.get_hiking_sessions
     reader = MagicMock()
@@ -184,6 +184,24 @@ def test_list_athlete_profile_versions_tool_registered() -> None:
             user_id="default", limit=3
         )
         assert result == []
+
+
+@pytest.mark.unit
+def test_get_athlete_profile_version_tool_registered() -> None:
+    """The single-version tool is registered and wired to the athlete reader."""
+    assert "get_athlete_profile_version" in ALL_DEFS_BY_NAME
+
+    reader = MagicMock()
+    reader.db_path = ":memory:"
+    with patch("garmin_mcp.database.readers.athlete.AthleteReader") as athlete_cls:
+        athlete_cls.return_value.get_athlete_profile_version.return_value = None
+        result = dispatch(
+            ALL_DEFS_BY_NAME, reader, "get_athlete_profile_version", {"version_id": 7}
+        )
+        athlete_cls.return_value.get_athlete_profile_version.assert_called_once_with(
+            version_id=7, user_id="default"
+        )
+        assert result is None
 
 
 @pytest.mark.unit

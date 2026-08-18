@@ -83,31 +83,65 @@ class AthleteReader(BaseDBReader):
     def list_athlete_profile_versions(
         self, user_id: str = "default", limit: int = 5
     ) -> list[dict[str, Any]]:
-        """List recent athlete profile snapshots, newest first.
+        """List recent athlete profile snapshots (metadata only), newest first.
 
         Every ``save_athlete_profile`` appends a JSON snapshot of the whole
         profile to ``athlete_profile_versions``; the normalized tables keep the
-        latest canonical state. This exposes the overwritten history.
+        latest canonical state. This exposes the overwritten history as a
+        lightweight index: the snapshots themselves are large (tens of thousands
+        of characters), so ``profile_data`` is deliberately not returned here.
+        Fetch one version in full via :meth:`get_athlete_profile_version`.
 
         Args:
             user_id: Profile owner identifier (defaults to ``"default"``).
             limit: Maximum number of versions to return (default 5).
 
         Returns:
-            A list of ``{version_id, user_id, profile_data, created_at}`` dicts
-            ordered ``created_at`` DESC (ties broken by ``version_id`` DESC).
-            ``profile_data`` is JSON-decoded back into a dict and ``created_at``
-            is converted to ``str``. Empty when no version exists.
+            A list of ``{version_id, user_id, created_at, current_focus,
+            focus_notes_chars, n_goals, n_retrospectives}`` dicts ordered
+            ``created_at`` DESC (ties broken by ``version_id`` DESC).
+            ``created_at`` is converted to ``str``; the summary fields are
+            derived from the decoded snapshot and fall back to ``0``/``None``
+            when a key is missing. Empty when no version exists.
         """
         with self._get_connection() as conn:
             rows = conn.execute(
-                "SELECT version_id, user_id, profile_data, created_at "
+                "SELECT version_id, user_id, created_at, profile_data "
                 "FROM athlete_profile_versions WHERE user_id = ? "
                 "ORDER BY created_at DESC, version_id DESC LIMIT ?",
                 [user_id, limit],
             ).fetchall()
+            return [self._profile_version_summary(row) for row in rows]
+
+    def get_athlete_profile_version(
+        self, version_id: int, user_id: str = "default"
+    ) -> dict[str, Any] | None:
+        """Get one athlete profile snapshot in full.
+
+        Args:
+            version_id: Version identifier from
+                :meth:`list_athlete_profile_versions`.
+            user_id: Profile owner identifier (defaults to ``"default"``).
+
+        Returns:
+            ``{version_id, user_id, created_at, profile_data}`` where
+            ``profile_data`` is the snapshot JSON-decoded back into a dict and
+            ``created_at`` is converted to ``str``, or ``None`` when no such
+            version exists for the user.
+        """
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT version_id, user_id, created_at, profile_data "
+                "FROM athlete_profile_versions "
+                "WHERE version_id = ? AND user_id = ?",
+                [version_id, user_id],
+            ).fetchone()
+
+            if row is None:
+                return None
+
             columns = [desc[0] for desc in conn.description]
-            return [self._profile_version_row_to_dict(columns, row) for row in rows]
+            return self._profile_version_row_to_dict(columns, row)
 
     def get_weekly_review(
         self, week_start_date: str | None = None, user_id: str = "default"
@@ -217,6 +251,36 @@ class AthleteReader(BaseDBReader):
         raw = record.get("profile_data")
         record["profile_data"] = json.loads(raw) if raw is not None else None
         return record
+
+    @classmethod
+    def _profile_version_summary(cls, row: tuple) -> dict[str, Any]:
+        """Summarize a ``(version_id, user_id, created_at, profile_data)`` row.
+
+        The snapshot is decoded only to derive size/shape hints; sparse or
+        unexpected payloads degrade to ``0``/``None`` instead of raising.
+        """
+        version_id, user_id, created_at, raw = row
+        snapshot = json.loads(raw) if raw is not None else None
+        if not isinstance(snapshot, dict):
+            snapshot = {}
+
+        focus_notes = snapshot.get("focus_notes")
+        goals = snapshot.get("goals")
+        retrospectives = snapshot.get("retrospectives")
+
+        return {
+            "version_id": version_id,
+            "user_id": user_id,
+            "created_at": str(created_at) if created_at is not None else None,
+            "current_focus": snapshot.get("current_focus"),
+            "focus_notes_chars": (
+                len(focus_notes) if isinstance(focus_notes, str) else 0
+            ),
+            "n_goals": len(goals) if isinstance(goals, list) else 0,
+            "n_retrospectives": (
+                len(retrospectives) if isinstance(retrospectives, list) else 0
+            ),
+        }
 
     @classmethod
     def _review_row_to_dict(cls, columns: list[str], row: tuple) -> dict[str, Any]:
