@@ -80,6 +80,35 @@ class AthleteReader(BaseDBReader):
 
             return result
 
+    def list_athlete_profile_versions(
+        self, user_id: str = "default", limit: int = 5
+    ) -> list[dict[str, Any]]:
+        """List recent athlete profile snapshots, newest first.
+
+        Every ``save_athlete_profile`` appends a JSON snapshot of the whole
+        profile to ``athlete_profile_versions``; the normalized tables keep the
+        latest canonical state. This exposes the overwritten history.
+
+        Args:
+            user_id: Profile owner identifier (defaults to ``"default"``).
+            limit: Maximum number of versions to return (default 5).
+
+        Returns:
+            A list of ``{version_id, user_id, profile_data, created_at}`` dicts
+            ordered ``created_at`` DESC (ties broken by ``version_id`` DESC).
+            ``profile_data`` is JSON-decoded back into a dict and ``created_at``
+            is converted to ``str``. Empty when no version exists.
+        """
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT version_id, user_id, profile_data, created_at "
+                "FROM athlete_profile_versions WHERE user_id = ? "
+                "ORDER BY created_at DESC, version_id DESC LIMIT ?",
+                [user_id, limit],
+            ).fetchall()
+            columns = [desc[0] for desc in conn.description]
+            return [self._profile_version_row_to_dict(columns, row) for row in rows]
+
     def get_weekly_review(
         self, week_start_date: str | None = None, user_id: str = "default"
     ) -> dict[str, Any] | None:
@@ -178,6 +207,16 @@ class AthleteReader(BaseDBReader):
             ).fetchall()
             columns = [desc[0] for desc in conn.description]
             return [self._review_row_to_dict(columns, row) for row in rows]
+
+    @classmethod
+    def _profile_version_row_to_dict(
+        cls, columns: list[str], row: tuple
+    ) -> dict[str, Any]:
+        """Convert an athlete_profile_versions row, JSON-decoding the snapshot."""
+        record = cls._row_to_dict(columns, row)
+        raw = record.get("profile_data")
+        record["profile_data"] = json.loads(raw) if raw is not None else None
+        return record
 
     @classmethod
     def _review_row_to_dict(cls, columns: list[str], row: tuple) -> dict[str, Any]:

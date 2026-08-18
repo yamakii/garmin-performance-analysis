@@ -126,6 +126,85 @@ def test_get_profile_empty(initialized_db_path) -> None:
     assert result["retrospectives"] == []
 
 
+def _profile_with_notes(focus_notes: str) -> dict:
+    return {
+        "user_id": "default",
+        "current_focus": "脚の耐久性",
+        "focus_notes": focus_notes,
+        "week_start_day": 0,
+        "goals": [],
+        "retrospectives": [],
+    }
+
+
+@pytest.mark.unit
+def test_save_profile_appends_version(initialized_db_path) -> None:
+    """Two saves append two versions; the newest snapshot holds the latest notes."""
+    db_path = str(initialized_db_path)
+    insert_athlete_profile(_profile_with_notes("v1"), db_path=db_path)
+    insert_athlete_profile(_profile_with_notes("v2"), db_path=db_path)
+
+    reader = AthleteReader(db_path=db_path)
+    versions = reader.list_athlete_profile_versions()
+
+    assert len(versions) == 2
+    assert versions[0]["profile_data"]["focus_notes"] == "v2"
+    assert versions[1]["profile_data"]["focus_notes"] == "v1"
+    # The normalized (canonical) profile still reflects the latest save.
+    assert reader.get_athlete_profile()["focus_notes"] == "v2"
+
+
+@pytest.mark.unit
+def test_list_athlete_profile_versions_newest_first(initialized_db_path) -> None:
+    """limit=2 returns the 2 newest versions with decoded profile_data dicts."""
+    db_path = str(initialized_db_path)
+    for notes in ("v1", "v2", "v3"):
+        insert_athlete_profile(_profile_with_notes(notes), db_path=db_path)
+
+    versions = AthleteReader(db_path=db_path).list_athlete_profile_versions(limit=2)
+
+    assert len(versions) == 2
+    assert [v["profile_data"]["focus_notes"] for v in versions] == ["v3", "v2"]
+    assert all(isinstance(v["profile_data"], dict) for v in versions)
+    assert all(isinstance(v["created_at"], str) for v in versions)
+    assert versions[0]["version_id"] > versions[1]["version_id"]
+    assert all(v["user_id"] == "default" for v in versions)
+
+
+@pytest.mark.unit
+def test_get_athlete_profile_unchanged_shape(initialized_db_path) -> None:
+    """Versioning does not change the get_athlete_profile response shape."""
+    db_path = str(initialized_db_path)
+    insert_athlete_profile(_profile_with_two_goals(), db_path=db_path)
+
+    result = AthleteReader(db_path=db_path).get_athlete_profile()
+
+    assert set(result) == {
+        "user_id",
+        "current_focus",
+        "focus_notes",
+        "week_start_day",
+        "updated_at",
+        "goals",
+        "retrospectives",
+    }
+    assert result["current_focus"] == "回復力と筋持久力"
+    assert len(result["goals"]) == 2
+    assert len(result["retrospectives"]) == 1
+
+
+@pytest.mark.unit
+def test_list_athlete_profile_versions_empty(initialized_db_path) -> None:
+    """An unregistered user_id has no versions."""
+    db_path = str(initialized_db_path)
+    insert_athlete_profile(_profile_with_notes("v1"), db_path=db_path)
+
+    versions = AthleteReader(db_path=db_path).list_athlete_profile_versions(
+        user_id="ghost"
+    )
+    assert versions == []
+
+
 def _weekly_review(
     week_start_date: str = "2026-06-08", volume_km: float = 28.8
 ) -> dict:

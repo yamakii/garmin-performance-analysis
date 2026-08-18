@@ -1,9 +1,9 @@
 # DuckDB Schema Mapping Specification
 
-**Version**: 2.7
-**Last Updated**: 2026-08-16
+**Version**: 2.8
+**Last Updated**: 2026-08-18
 **Database**: `garmin_performance.duckdb`
-**Total Tables**: 23 domain tables (+ `schema_version` migration bookkeeping)
+**Total Tables**: 24 domain tables (+ `schema_version` migration bookkeeping)
 
 This document provides comprehensive schema documentation for all DuckDB tables in the Garmin performance analysis system. Every column name, type, and primary key below is verified against the live schema (`PRAGMA table_info`). Where prose describes derived/calculated logic, that logic lives in the inserters / form-baseline modules and is documented here because it is not otherwise discoverable from the column definitions.
 
@@ -20,9 +20,12 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 > A drift test (`tests/scripts/test_generate_schema_doc.py`) fails CI if a schema change
 > lands without regenerating.
 
-> **Schema bookkeeping**: a 24th table, `schema_version` (`version INTEGER PK`, `name`, `applied_at`), tracks applied migrations and is **not** a domain table. The migration runner (`database/migrations/registry.py`) applies numbered migrations after `_ensure_tables()` and records them there.
+> **Schema bookkeeping**: a 25th table, `schema_version` (`version INTEGER PK`, `name`, `applied_at`), tracks applied migrations and is **not** a domain table. The migration runner (`database/migrations/registry.py`) applies numbered migrations after `_ensure_tables()` and records them there.
 
 ## Change History
+
+### Version 2.8 (2026-08-18)
+- **`athlete_profile_versions` table added** (migration `add_athlete_profile_versions`, version 21). Append-only JSON snapshots of the whole athlete profile: `save_athlete_profile` overwrote the canonical state (profile UPSERT + goals/retrospectives DELETE→INSERT), so previous `focus_notes` content was lost on every save. The normalized tables still hold the latest canonical state (all readers unchanged) and each save now appends a version, readable via `list_athlete_profile_versions`. The migration seeds the profile that exists at migration time as version 1, so the pre-versioning state is preserved (issue #934).
 
 ### Version 2.7 (2026-08-16)
 - **`hiking_sessions` table added** (migration `add_hiking_sessions`, version 20; also created in `_ensure_tables()`). Persists hiking (山行) summaries at session granularity, kept out of `activities` so a hike's distance/elevation never distorts run-centric aggregations (ACWR, load trend, form baselines). Populated by `ingest_hiking_sessions` and read via `get_hiking_sessions` (issue #921).
@@ -58,7 +61,7 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 
 ---
 
-## Table of Contents (23 domain tables by category)
+## Table of Contents (24 domain tables by category)
 
 | # | Table | Category | Primary Key | Row scale |
 |---|-------|----------|-------------|-----------|
@@ -85,6 +88,7 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 | 23 | [trend_analyses](#23-trend_analyses) | Analysis | `analysis_id` | per week/month trend narration |
 | 24 | [analysis_runs](#24-analysis_runs) | Operations | `run_id` | per analysis run |
 | 25 | [hiking_sessions](#25-hiking_sessions) | Training | `activity_id` | per hiking session |
+| 26 | [athlete_profile_versions](#26-athlete_profile_versions) | Athlete | `version_id` | per profile save |
 
 ---
 
@@ -923,6 +927,27 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 <!-- END GENERATED: schema:hiking_sessions -->
 
 **Units & notes**: `duration_seconds` = Garmin `movingDuration`, `elapsed_duration_seconds` = `duration`. `distance_km` is the summary `distance` (metres) divided by 1000; `elevation_gain_m` / `elevation_loss_m` come straight from the summary and may be null when the device did not report them. Read via `get_hiking_sessions(start_date, end_date)` (no Garmin access) and surfaced in the weekly-review bundle under `hiking`, for load / recovery context only — run pace and form interpretation do not apply.
+
+---
+
+## 26. athlete_profile_versions
+
+**Purpose**: Append-only history of the athlete profile. `save_athlete_profile` overwrites the canonical state across `athlete_profile` / `athlete_goals` / `season_retrospectives`, so long-form content (notably `focus_notes`) used to be lost on every save. Each save now also appends a JSON snapshot of the whole profile here, keeping prior versions recoverable (issue #934).
+**Primary Key**: `version_id` (from `seq_athlete_profile_versions_id`)
+**Source**: `save_athlete_profile` (`database/inserters/athlete.py`), inside the same write transaction as the canonical upsert. Owned by migration `add_athlete_profile_versions` (version 21), which also seeds the profile that existed at migration time as the first version.
+
+### Schema
+
+<!-- BEGIN GENERATED: schema:athlete_profile_versions -->
+| Column | Type |
+|--------|------|
+| version_id (PK) | INTEGER |
+| user_id | VARCHAR |
+| profile_data | VARCHAR |
+| created_at | TIMESTAMP |
+<!-- END GENERATED: schema:athlete_profile_versions -->
+
+**Units & notes**: `profile_data` is the full profile object (`current_focus`, `focus_notes`, `week_start_day`, `goals`, `retrospectives`) serialized with `ensure_ascii=False`; the reader JSON-decodes it back into an object. Rows are never updated or deleted — the newest version is only a read ordering (`created_at` DESC, `version_id` DESC), never a canonical source. Read via `list_athlete_profile_versions(user_id, limit)`; the canonical profile keeps coming from `get_athlete_profile`.
 
 ---
 

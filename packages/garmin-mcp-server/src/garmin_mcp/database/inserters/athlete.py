@@ -10,9 +10,13 @@ Write semantics:
 - ``athlete_goals`` and ``season_retrospectives`` are fully replaced per
   ``user_id`` (DELETE then INSERT), so each save reflects the supplied lists
   exactly without duplication.
+- ``athlete_profile_versions`` receives an append-only JSON snapshot of the
+  whole profile on every save, so overwritten content (e.g. a compressed
+  ``focus_notes``) stays recoverable as history.
 - Surrogate keys are drawn from ``seq_athlete_goals_id`` /
-  ``seq_season_retrospectives_id`` via ``nextval``, mirroring the
-  ``seq_section_analyses_id`` pattern in ``db_writer.py``.
+  ``seq_season_retrospectives_id`` / ``seq_athlete_profile_versions_id`` via
+  ``nextval``, mirroring the ``seq_section_analyses_id`` pattern in
+  ``db_writer.py``.
 """
 
 from __future__ import annotations
@@ -26,6 +30,10 @@ logger = logging.getLogger(__name__)
 
 def insert_athlete_profile(profile: dict[str, Any], db_path: str | None = None) -> None:
     """Insert (or update) an athlete profile with its goals and retrospectives.
+
+    The normalized tables keep the latest canonical state, and the full profile
+    is additionally appended to ``athlete_profile_versions`` as a JSON snapshot
+    so every save is preserved as a new version.
 
     Args:
         profile: Profile dict with keys ``user_id`` (defaults to ``"default"``),
@@ -118,6 +126,16 @@ def insert_athlete_profile(profile: dict[str, Any], db_path: str | None = None) 
                     retro.get("key_learnings"),
                 ],
             )
+
+        # Append an immutable snapshot of the whole profile as a new version.
+        # created_at is left to the table DEFAULT (CURRENT_TIMESTAMP).
+        conn.execute(
+            """
+            INSERT INTO athlete_profile_versions (version_id, user_id, profile_data)
+            VALUES (nextval('seq_athlete_profile_versions_id'), ?, ?)
+            """,
+            [user_id, json.dumps(profile, ensure_ascii=False, default=str)],
+        )
 
         logger.info(
             "Saved athlete profile user_id=%s (%d goals, %d retrospectives)",
