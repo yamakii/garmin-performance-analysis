@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **60 tools** (58 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **61 tools** (59 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -21,7 +21,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Performance](#performance) (4)
 - [Time Series](#time-series) (4)
 - [Training Plan](#training-plan) (2)
-- [Athlete](#athlete) (6)
+- [Athlete](#athlete) (7)
 - [Race](#race) (1)
 - [Training Load](#training-load) (3)
 - [Durability](#durability) (2)
@@ -499,7 +499,7 @@ Fetch scheduled workouts (including adaptive plan workouts) from the Garmin Conn
 
 CLI: `garmin-db athlete save-profile`
 
-Save the athlete profile (current focus, race goals, and season retrospectives) as a single object to DuckDB. The profile row is upserted on user_id; goals and retrospectives are fully replaced per user_id, so the normalized tables always hold the latest state. Each save additionally appends a JSON snapshot of the whole profile as a new version, keeping overwritten content (e.g. the previous focus_notes) recoverable via list_athlete_profile_versions.
+Save the athlete profile (current focus, race goals, and season retrospectives) as a single object to DuckDB. The profile row is upserted on user_id; goals and retrospectives are fully replaced per user_id, so the normalized tables always hold the latest state. Each save additionally appends a JSON snapshot of the whole profile as a new version, keeping overwritten content (e.g. the previous focus_notes) recoverable via list_athlete_profile_versions + get_athlete_profile_version.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -519,12 +519,23 @@ Get the athlete profile (current focus, goals, and retrospectives) merged into a
 
 CLI: `garmin-db athlete list-profile-versions`
 
-List recent athlete profile snapshots (newest first). Every save_athlete_profile appends the whole profile as a new version, so this returns the overwritten history: each entry has version_id, user_id, created_at, and profile_data (the snapshot decoded back into an object). Returns an empty list when no version exists.
+List recent athlete profile snapshots as metadata only (newest first). Every save_athlete_profile appends the whole profile as a new version; this indexes that history without the bulky snapshot: each entry has version_id, user_id, created_at, current_focus, focus_notes_chars, n_goals, and n_retrospectives. Use get_athlete_profile_version to read one snapshot in full. Returns an empty list when no version exists.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `user_id` | string | optional | Profile owner identifier (default: 'default') |
 | `limit` | integer | optional | Maximum number of versions to return (default: 5) |
+
+### `get_athlete_profile_version`
+
+CLI: `garmin-db athlete get-profile-version`
+
+Get one athlete profile snapshot in full: version_id, user_id, created_at, and profile_data (the snapshot decoded back into an object). Pick version_id from list_athlete_profile_versions; snapshots are large, so fetch one at a time. Returns null when no such version exists for the user.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `version_id` | integer | **required** | Version identifier from list_athlete_profile_versions |
+| `user_id` | string | optional | Profile owner identifier (default: 'default') |
 
 ### `save_weekly_review`
 

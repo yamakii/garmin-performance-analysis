@@ -828,7 +828,7 @@
   },
   {
     "name": "save_athlete_profile",
-    "description": "Save the athlete profile (current focus, race goals, and season retrospectives) as a single object to DuckDB. The profile row is upserted on user_id; goals and retrospectives are fully replaced per user_id, so the normalized tables always hold the latest state. Each save additionally appends a JSON snapshot of the whole profile as a new version, keeping overwritten content (e.g. the previous focus_notes) recoverable via list_athlete_profile_versions.",
+    "description": "Save the athlete profile (current focus, race goals, and season retrospectives) as a single object to DuckDB. The profile row is upserted on user_id; goals and retrospectives are fully replaced per user_id, so the normalized tables always hold the latest state. Each save additionally appends a JSON snapshot of the whole profile as a new version, keeping overwritten content (e.g. the previous focus_notes) recoverable via list_athlete_profile_versions + get_athlete_profile_version.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -857,7 +857,7 @@
   },
   {
     "name": "list_athlete_profile_versions",
-    "description": "List recent athlete profile snapshots (newest first). Every save_athlete_profile appends the whole profile as a new version, so this returns the overwritten history: each entry has version_id, user_id, created_at, and profile_data (the snapshot decoded back into an object). Returns an empty list when no version exists.",
+    "description": "List recent athlete profile snapshots as metadata only (newest first). Every save_athlete_profile appends the whole profile as a new version; this indexes that history without the bulky snapshot: each entry has version_id, user_id, created_at, current_focus, focus_notes_chars, n_goals, and n_retrospectives. Use get_athlete_profile_version to read one snapshot in full. Returns an empty list when no version exists.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -870,6 +870,26 @@
           "description": "Maximum number of versions to return (default: 5)"
         }
       }
+    }
+  },
+  {
+    "name": "get_athlete_profile_version",
+    "description": "Get one athlete profile snapshot in full: version_id, user_id, created_at, and profile_data (the snapshot decoded back into an object). Pick version_id from list_athlete_profile_versions; snapshots are large, so fetch one at a time. Returns null when no such version exists for the user.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "version_id": {
+          "type": "integer",
+          "description": "Version identifier from list_athlete_profile_versions"
+        },
+        "user_id": {
+          "type": "string",
+          "description": "Profile owner identifier (default: 'default')"
+        }
+      },
+      "required": [
+        "version_id"
+      ]
     }
   },
   {

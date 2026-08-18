@@ -6,6 +6,7 @@ via file copy) to avoid per-test GarminDBWriter DDL overhead.
 
 import pytest
 
+from garmin_mcp.database.connection import get_write_connection
 from garmin_mcp.database.inserters.athlete import (
     insert_athlete_profile,
     insert_weekly_review,
@@ -148,27 +149,113 @@ def test_save_profile_appends_version(initialized_db_path) -> None:
     versions = reader.list_athlete_profile_versions()
 
     assert len(versions) == 2
-    assert versions[0]["profile_data"]["focus_notes"] == "v2"
-    assert versions[1]["profile_data"]["focus_notes"] == "v1"
+    newest = reader.get_athlete_profile_version(versions[0]["version_id"])
+    oldest = reader.get_athlete_profile_version(versions[1]["version_id"])
+    assert newest is not None and oldest is not None
+    assert newest["profile_data"]["focus_notes"] == "v2"
+    assert oldest["profile_data"]["focus_notes"] == "v1"
     # The normalized (canonical) profile still reflects the latest save.
     assert reader.get_athlete_profile()["focus_notes"] == "v2"
 
 
 @pytest.mark.unit
 def test_list_athlete_profile_versions_newest_first(initialized_db_path) -> None:
-    """limit=2 returns the 2 newest versions with decoded profile_data dicts."""
+    """limit=2 returns the 2 newest versions as metadata rows."""
     db_path = str(initialized_db_path)
-    for notes in ("v1", "v2", "v3"):
+    for notes in ("a", "bb", "ccc"):
         insert_athlete_profile(_profile_with_notes(notes), db_path=db_path)
 
     versions = AthleteReader(db_path=db_path).list_athlete_profile_versions(limit=2)
 
     assert len(versions) == 2
-    assert [v["profile_data"]["focus_notes"] for v in versions] == ["v3", "v2"]
-    assert all(isinstance(v["profile_data"], dict) for v in versions)
+    # Newest first: 3-char notes ("ccc") then the 2-char ones ("bb").
+    assert [v["focus_notes_chars"] for v in versions] == [3, 2]
     assert all(isinstance(v["created_at"], str) for v in versions)
     assert versions[0]["version_id"] > versions[1]["version_id"]
     assert all(v["user_id"] == "default" for v in versions)
+
+
+@pytest.mark.unit
+def test_list_profile_versions_metadata_only(initialized_db_path) -> None:
+    """The listing carries size/shape metadata and never the bulky snapshot."""
+    db_path = str(initialized_db_path)
+    insert_athlete_profile(_profile_with_notes("v1"), db_path=db_path)
+    profile = _profile_with_two_goals()
+    profile["focus_notes"] = "abcde"
+    insert_athlete_profile(profile, db_path=db_path)
+
+    versions = AthleteReader(db_path=db_path).list_athlete_profile_versions()
+
+    assert len(versions) == 2
+    for version in versions:
+        assert "profile_data" not in version
+        assert set(version) == {
+            "version_id",
+            "user_id",
+            "created_at",
+            "current_focus",
+            "focus_notes_chars",
+            "n_goals",
+            "n_retrospectives",
+        }
+    newest = versions[0]
+    assert newest["current_focus"] == "回復力と筋持久力"
+    assert newest["focus_notes_chars"] == 5
+    assert newest["n_goals"] == 2
+    assert newest["n_retrospectives"] == 1
+
+
+@pytest.mark.unit
+def test_list_profile_versions_tolerates_sparse_snapshot(initialized_db_path) -> None:
+    """A snapshot with no profile keys degrades to zeros/None instead of raising."""
+    db_path = str(initialized_db_path)
+    with get_write_connection(db_path) as conn:
+        conn.execute(
+            "INSERT INTO athlete_profile_versions (version_id, user_id, profile_data) "
+            "VALUES (nextval('seq_athlete_profile_versions_id'), ?, ?)",
+            ["default", "{}"],
+        )
+
+    versions = AthleteReader(db_path=db_path).list_athlete_profile_versions()
+
+    assert len(versions) == 1
+    assert versions[0]["current_focus"] is None
+    assert versions[0]["focus_notes_chars"] == 0
+    assert versions[0]["n_goals"] == 0
+    assert versions[0]["n_retrospectives"] == 0
+
+
+@pytest.mark.unit
+def test_get_profile_version_returns_full_snapshot(initialized_db_path) -> None:
+    """Fetching an older version_id returns that snapshot decoded in full."""
+    db_path = str(initialized_db_path)
+    insert_athlete_profile(_profile_with_notes("old"), db_path=db_path)
+    insert_athlete_profile(_profile_with_notes("new"), db_path=db_path)
+
+    reader = AthleteReader(db_path=db_path)
+    older_version_id = reader.list_athlete_profile_versions()[1]["version_id"]
+
+    version = reader.get_athlete_profile_version(older_version_id)
+
+    assert version is not None
+    assert version["version_id"] == older_version_id
+    assert version["user_id"] == "default"
+    assert isinstance(version["created_at"], str)
+    assert isinstance(version["profile_data"], dict)
+    assert version["profile_data"]["focus_notes"] == "old"
+
+
+@pytest.mark.unit
+def test_get_profile_version_missing_returns_none(initialized_db_path) -> None:
+    """An unknown version_id (or another user's) resolves to None."""
+    db_path = str(initialized_db_path)
+    insert_athlete_profile(_profile_with_notes("v1"), db_path=db_path)
+
+    reader = AthleteReader(db_path=db_path)
+    existing_version_id = reader.list_athlete_profile_versions()[0]["version_id"]
+
+    assert reader.get_athlete_profile_version(999999) is None
+    assert reader.get_athlete_profile_version(existing_version_id, "ghost") is None
 
 
 @pytest.mark.unit

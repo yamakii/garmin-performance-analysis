@@ -62,6 +62,17 @@ class ListAthleteProfileVersionsParams(BaseModel):
     )
 
 
+class GetAthleteProfileVersionParams(BaseModel):
+    """Arguments for ``get_athlete_profile_version``."""
+
+    version_id: int = Field(
+        description="Version identifier from list_athlete_profile_versions"
+    )
+    user_id: str | None = Field(
+        default=None, description="Profile owner identifier (default: 'default')"
+    )
+
+
 class SaveWeeklyReviewParams(BaseModel):
     """Arguments for ``save_weekly_review``."""
 
@@ -161,6 +172,22 @@ def _list_athlete_profile_versions(
         return {"error": str(e)}
 
 
+def _get_athlete_profile_version(
+    reader: GarminDBReader, p: GetAthleteProfileVersionParams
+) -> Any:
+    from garmin_mcp.database.readers.athlete import AthleteReader
+
+    try:
+        athlete_reader = AthleteReader(db_path=str(reader.db_path))
+        return athlete_reader.get_athlete_profile_version(
+            version_id=p.version_id,
+            user_id=p.user_id if p.user_id is not None else _DEFAULT_USER_ID,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Get athlete profile version failed: {e}")
+        return {"error": str(e)}
+
+
 def _save_weekly_review(reader: GarminDBReader, p: SaveWeeklyReviewParams) -> Any:
     from garmin_mcp.database.inserters.athlete import insert_weekly_review
 
@@ -214,7 +241,8 @@ ATHLETE_TOOLS: list[ToolDef] = [
             "user_id, so the normalized tables always hold the latest state. Each "
             "save additionally appends a JSON snapshot of the whole profile as a "
             "new version, keeping overwritten content (e.g. the previous "
-            "focus_notes) recoverable via list_athlete_profile_versions."
+            "focus_notes) recoverable via list_athlete_profile_versions + "
+            "get_athlete_profile_version."
         ),
         params=SaveAthleteProfileParams,
         handler=_save_athlete_profile,
@@ -237,16 +265,32 @@ ATHLETE_TOOLS: list[ToolDef] = [
     ToolDef(
         name="list_athlete_profile_versions",
         description=(
-            "List recent athlete profile snapshots (newest first). Every "
-            "save_athlete_profile appends the whole profile as a new version, so "
-            "this returns the overwritten history: each entry has version_id, "
-            "user_id, created_at, and profile_data (the snapshot decoded back "
-            "into an object). Returns an empty list when no version exists."
+            "List recent athlete profile snapshots as metadata only (newest "
+            "first). Every save_athlete_profile appends the whole profile as a "
+            "new version; this indexes that history without the bulky snapshot: "
+            "each entry has version_id, user_id, created_at, current_focus, "
+            "focus_notes_chars, n_goals, and n_retrospectives. Use "
+            "get_athlete_profile_version to read one snapshot in full. Returns "
+            "an empty list when no version exists."
         ),
         params=ListAthleteProfileVersionsParams,
         handler=_list_athlete_profile_versions,
         cli_group="athlete",
         cli_name="list-profile-versions",
+    ),
+    ToolDef(
+        name="get_athlete_profile_version",
+        description=(
+            "Get one athlete profile snapshot in full: version_id, user_id, "
+            "created_at, and profile_data (the snapshot decoded back into an "
+            "object). Pick version_id from list_athlete_profile_versions; "
+            "snapshots are large, so fetch one at a time. Returns null when no "
+            "such version exists for the user."
+        ),
+        params=GetAthleteProfileVersionParams,
+        handler=_get_athlete_profile_version,
+        cli_group="athlete",
+        cli_name="get-profile-version",
     ),
     ToolDef(
         name="save_weekly_review",

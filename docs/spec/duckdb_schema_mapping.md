@@ -947,7 +947,7 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 | created_at | TIMESTAMP |
 <!-- END GENERATED: schema:athlete_profile_versions -->
 
-**Units & notes**: `profile_data` is the full profile object (`current_focus`, `focus_notes`, `week_start_day`, `goals`, `retrospectives`) serialized with `ensure_ascii=False`; the reader JSON-decodes it back into an object. Rows are never updated or deleted — the newest version is only a read ordering (`created_at` DESC, `version_id` DESC), never a canonical source. Read via `list_athlete_profile_versions(user_id, limit)`; the canonical profile keeps coming from `get_athlete_profile`.
+**Units & notes**: `profile_data` is the full profile object (`current_focus`, `focus_notes`, `week_start_day`, `goals`, `retrospectives`) serialized with `ensure_ascii=False`; the reader JSON-decodes it back into an object. Rows are never updated or deleted — the newest version is only a read ordering (`created_at` DESC, `version_id` DESC), never a canonical source. Because a snapshot runs to tens of thousands of characters, reads are split in two: `list_athlete_profile_versions(user_id, limit)` returns metadata only (`version_id`, `created_at`, `current_focus`, `focus_notes_chars`, `n_goals`, `n_retrospectives`) and `get_athlete_profile_version(version_id, user_id)` returns one decoded snapshot. The canonical profile keeps coming from `get_athlete_profile`.
 
 ---
 
