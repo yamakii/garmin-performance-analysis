@@ -1,0 +1,106 @@
+name: Security audit
+
+# Weekly vulnerability scan of the locked dependency set (Python via pip-audit,
+# npm via `npm audit`). Runs independently of Dependabot so an advisory that
+# Dependabot cannot fix automatically (e.g. no fixed version, or a transitive
+# dep pinned by a parent) still surfaces as a GitHub Issue.
+#
+# Also runs on PRs that change a lockfile, so a dependency update PR cannot
+# introduce a known vulnerability. See docs/maintenance.md.
+
+on:
+  schedule:
+    - cron: "0 0 * * 1" # Monday 09:00 JST
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "uv.lock"
+      - "packages/garmin-web/frontend/package-lock.json"
+      - ".github/workflows/security-audit.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  python-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Export locked requirements
+        # --no-emit-workspace drops the local workspace packages (not on PyPI).
+        run: |
+          uv export --frozen --no-hashes --all-packages --no-emit-workspace \
+            --format requirements-txt -o requirements-audit.txt
+
+      - name: pip-audit
+        # --no-deps: audit exactly the locked set, do not re-resolve.
+        # --strict: fail on packages pip-audit cannot look up, not just on vulns.
+        run: uvx pip-audit -r requirements-audit.txt --no-deps --strict --desc on
+
+  npm-audit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/garmin-web/frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: packages/garmin-web/frontend/package-lock.json
+
+      - name: npm audit (high and above, prod + dev)
+        run: npm audit --audit-level=high
+
+  report:
+    # Open (or update) a tracking issue when a scheduled/manual run finds a
+    # vulnerability. PR runs just fail the check.
+    needs: [python-audit, npm-audit]
+    if: failure() && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      PYTHON_RESULT: ${{ needs.python-audit.result }}
+      NPM_RESULT: ${{ needs.npm-audit.result }}
+    steps:
+      - name: Create or update tracking issue
+        run: |
+          set -euo pipefail
+          gh label create security-audit --color B60205 \
+            --description "Opened automatically by the weekly security-audit workflow" \
+            --force >/dev/null
+
+          title="Security audit: vulnerable dependencies detected"
+          body="The scheduled security audit found at least one known vulnerability in the locked dependency set.
+
+          | scan | result |
+          |------|--------|
+          | pip-audit (uv.lock) | ${PYTHON_RESULT} |
+          | npm audit (frontend) | ${NPM_RESULT} |
+
+          Run: ${RUN_URL}
+
+          How to fix: see docs/maintenance.md (run /maintenance in Claude Code, or update the affected package and re-run this workflow via *Run workflow*). This issue is updated on every failing run; close it once the audit is green."
+
+          existing="$(gh issue list --label security-audit --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+            echo "updated issue #$existing"
+          else
+            gh issue create --title "$title" --body "$body" --label security-audit
+          fi
