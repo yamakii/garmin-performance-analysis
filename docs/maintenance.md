@@ -14,6 +14,11 @@ in `.claude/rules/dev/maintenance-policy.md`; the interactive pass is the
 | Security audit | `.github/workflows/security-audit.yml` | weekly (Monday 09:00 JST), on lockfile PRs, and on demand (*Run workflow*) | `pip-audit` over the exported `uv.lock` and `npm audit --audit-level=high` over the frontend lockfile. A scheduled failure opens (or comments on) an issue labelled `security-audit`. |
 | CI | `.github/workflows/ci.yml` | every PR / push to main | Lint, type-check, tests, build. `uv.lock` is in the path filter, so a lockfile-only PR still runs `lint-and-test`. Runs with a read-only `GITHUB_TOKEN`. |
 
+> `astral-sh/setup-uv` publishes no major/minor tags since v8, so it must be
+> referenced by full version (`@v10.0.1`), not `@v10`. Dependabot's
+> github-actions updates keep full versions, so this only matters when a
+> workflow is edited by hand.
+
 ## One-time repository settings
 
 These cannot be committed; check them once in **Settings**:
