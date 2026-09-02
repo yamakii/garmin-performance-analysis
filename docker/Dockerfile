@@ -25,14 +25,17 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ="${TZ}"
 
 # ---- system packages ----
-#  python3.12(+venv)        : project runtime (uv uses the system interpreter; no managed-Python downloads)
+#  python3                  : the DISTRO python, only for OS-level scripting (the
+#                             .claude/hooks/*.sh `python3 -c` JSON one-liners). The
+#                             project interpreter is uv-managed (see below), so this
+#                             may be whatever version the base image ships.
 #  build-essential, libgomp1: native wheel safety net (scipy/scikit-learn OpenMP runtime)
 #  iptables/ipset/iproute2  : egress firewall (init-firewall.sh)
 #  dnsutils/aggregate/jq    : firewall domain resolution + GitHub meta range processing
 #  git/curl/ca-certificates : tooling + `uvx serena` (installs from git)
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl git unzip gnupg \
-      python3.12 python3.12-venv python3-pip \
+      python3 \
       build-essential libgomp1 \
       iptables ipset iproute2 dnsutils aggregate jq \
     && rm -rf /var/lib/apt/lists/*
@@ -44,6 +47,17 @@ RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
 
 # ---- uv (Astral) into /usr/local/bin (on PATH for every user) ----
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+
+# ---- project Python: uv-managed, downloaded at BUILD time only ----
+# Decouples the project interpreter from the base image's apt Python, so the
+# Ubuntu release can move without touching `requires-python` (and vice versa).
+# The install lands in a world-readable system dir (not root's ~/.local) so the
+# unprivileged `claude` user finds it; at runtime UV_PYTHON_DOWNLOADS=never (set
+# below) keeps uv from ever fetching an interpreter, so the egress allowlist in
+# init-firewall.sh does not change.
+ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python
+RUN uv python install 3.12 \
+    && chmod -R a+rX /opt/uv
 
 # ---- Claude Code CLI ----
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
@@ -66,8 +80,9 @@ RUN if getent group "${USER_GID}" >/dev/null; then \
 
 # ---- environment ----
 # Keep the container's uv venv OUTSIDE the bind-mounted /workspace so it never
-# clobbers the host .venv. Use the system Python (no managed downloads at runtime
-# = smaller egress surface).
+# clobbers the host .venv. UV_PYTHON=3.12 resolves to the uv-managed interpreter
+# installed above; UV_PYTHON_DOWNLOADS=never means no managed downloads at
+# runtime (= smaller egress surface).
 # DISABLE_AUTOUPDATER=1: Claude Code is npm-global-installed as root but runs as
 # the non-root `claude` user (cap-drop ALL, no-new-privileges), so the in-place
 # auto-updater can't write the global npm dir and fails on startup. Updating is
@@ -80,7 +95,7 @@ RUN if getent group "${USER_GID}" >/dev/null; then \
 # $CLAUDE_CONFIG_DIR/… so no data moves; the atomic rewrite stays within the mount.
 ENV UV_PROJECT_ENVIRONMENT=/home/claude/uv-venv \
     UV_PYTHON_DOWNLOADS=never \
-    UV_PYTHON=python3.12 \
+    UV_PYTHON=3.12 \
     PATH=/usr/local/bin:$PATH \
     SHELL=/bin/bash \
     DISABLE_AUTOUPDATER=1 \

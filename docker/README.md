@@ -111,6 +111,20 @@ Subsequent runs can skip the rebuild:
 NO_BUILD=1 docker/run.sh
 ```
 
+### Python inside the image
+
+The project interpreter is **uv-managed** (`uv python install 3.12` at build
+time, stored under `/opt/uv/python`), not the base image's apt Python. This
+decouples the Ubuntu release from `requires-python`: bumping `FROM ubuntu:…`
+does not change which Python the project runs on, and vice versa. The distro
+`python3` is still installed, but only for OS-level scripting (the
+`.claude/hooks/*.sh` JSON one-liners). At runtime `UV_PYTHON_DOWNLOADS=never`
+stays in effect, so the egress allowlist needs no Python download host.
+
+To change the project Python version, edit the `uv python install <version>`
+line (and `UV_PYTHON`) in the Dockerfile together with `requires-python` and CI,
+then rebuild.
+
 ### Updating Claude Code
 
 Claude Code's in-container auto-updater is **disabled** (`DISABLE_AUTOUPDATER=1`):
