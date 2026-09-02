@@ -61,8 +61,12 @@ export default function TimeSeriesChart({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
+  // "Latest callback" ref: synced in an effect (not during render) so the
+  // chart's hover handler, registered once, always sees the current prop.
   const onHoverIndexRef = useRef(onHoverIndex);
-  onHoverIndexRef.current = onHoverIndex;
+  useEffect(() => {
+    onHoverIndexRef.current = onHoverIndex;
+  }, [onHoverIndex]);
   // Last index dispatched from the outside; suppresses re-emitting it.
   const externalIndexRef = useRef<number | null>(null);
   const lastEmitRef = useRef(0);
