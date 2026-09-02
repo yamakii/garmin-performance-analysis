@@ -1,0 +1,40 @@
+name: Dependabot auto-merge
+
+# Enables GitHub auto-merge on Dependabot PRs for minor / patch updates, so the
+# PR merges by itself once `ci-guard` (the required check) is green. Major
+# updates are left for a human: they may need code changes or a migration.
+#
+# Requires "Allow auto-merge" in the repository settings (Settings → General →
+# Pull Requests). If it is off, the enable step fails loudly instead of
+# silently leaving PRs open. See docs/maintenance.md.
+
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: dependabot/fetch-metadata@v3
+        id: meta
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable auto-merge (minor / patch only)
+        if: steps.meta.outputs.update-type != 'version-update:semver-major'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --merge "$PR_URL"
+
+      - name: Major update — leave for human review
+        if: steps.meta.outputs.update-type == 'version-update:semver-major'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          gh pr comment "$PR_URL" --body "Major version update — not auto-merged. Review the changelog / migration notes, run scripts/ci-check.sh locally if code changes are needed, then merge manually (see docs/maintenance.md)."
