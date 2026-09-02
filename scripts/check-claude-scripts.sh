@@ -104,6 +104,18 @@ if [ -e scripts/tests/test-ci-check-flags.sh ]; then
   fi
 fi
 
+# Behavioral self-test for the format-python hook scoping: it must never call
+# `uv` for files outside <checkout>/packages/** (a stubbed `uv` on PATH records
+# any call), and must run with --no-sync + the package --directory otherwise.
+if [ -e scripts/tests/test-format-python-hook.sh ]; then
+  if bash scripts/tests/test-format-python-hook.sh; then
+    echo "ok (script test): format-python-hook"
+  else
+    echo "FAIL (script test): format-python-hook" >&2
+    status=1
+  fi
+fi
+
 if [ "$status" -ne 0 ]; then
   echo "check-claude-scripts: FAILED" >&2
 else

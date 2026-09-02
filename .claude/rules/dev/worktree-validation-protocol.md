@@ -1,3 +1,11 @@
+---
+paths:
+  - "packages/**"
+  - ".claude/agents/**"
+  - ".claude/workflows/**"
+  - "scripts/**"
+---
+
 # Worktree Validation Protocol
 
 ## Overview

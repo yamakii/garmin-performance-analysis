@@ -1,3 +1,9 @@
+---
+paths:
+  - ".claude/workflows/**"
+  - ".claude/agents/**"
+---
+
 # Workflow Agent Model Gate
 
 `.claude/workflows/*.js` の各 `agent()` 呼び出しは **許可モデル（最大 opus）を明示解決できること**を
