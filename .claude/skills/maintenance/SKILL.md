@@ -1,6 +1,6 @@
 ---
 name: maintenance
-description: Run the repository maintenance pass — audit dependencies for vulnerabilities and outdated versions, apply security + minor/patch updates in a worktree, sync pre-commit revs, verify with ci-check, and ship a PR; majors and runtime changes are reported for a human decision. Use when the user asks for maintenance / dependency updates / security check (例:「メンテナンスして」「依存を更新」「脆弱性チェック」), or when the weekly security-audit issue is open. Optional argument: --dry-run (audit + report only).
+description: "Run the repository maintenance pass — audit dependencies for vulnerabilities and outdated versions, apply security + minor/patch updates in a worktree, sync pre-commit revs, verify with ci-check, and ship a PR; majors and runtime changes are reported for a human decision. Use when the user asks for maintenance / dependency updates / security check (例:「メンテナンスして」「依存を更新」「脆弱性チェック」), or when the weekly security-audit issue is open. Optional argument --dry-run (audit + report only)."
 argument-hint: [--dry-run]
 allowed-tools: Bash, Read, Edit, Write, Glob, Grep, mcp__github__issue_read, mcp__github__issue_write, mcp__github__list_issues, mcp__github__list_pull_requests, mcp__github__pull_request_read, mcp__github__create_pull_request, mcp__github__merge_pull_request, mcp__github__add_issue_comment
 ---

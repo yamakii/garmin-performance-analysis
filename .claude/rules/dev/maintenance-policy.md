@@ -1,3 +1,13 @@
+---
+paths:
+  - "pyproject.toml"
+  - "uv.lock"
+  - "**/package.json"
+  - ".pre-commit-config.yaml"
+  - ".github/**"
+  - "docker/**"
+---
+
 # Maintenance Policy（依存更新・セキュリティ）
 
 継続メンテナンスの仕組みと判断基準。運用ランブックは `docs/maintenance.md`、実行手順は `/maintenance` skill。

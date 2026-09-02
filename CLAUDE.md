@@ -113,68 +113,7 @@ Validation Agent 方式（L1/L2 は subprocess で並列起動可、L3 のみメ
 
 **Pipeline:** API → Raw JSON → DuckDB → MCP Tools → Analysis (viewed via Web app)
 
-**Key Modules:**
-
-| Module | Role |
-|---|---|
-| `GarminIngestWorker` | Thin orchestrator delegating to 3 modules below |
-| `ApiClient` | Garmin Connect API authentication singleton |
-| `RawDataFetcher` | Cache-first raw data collection |
-| `DuckDBSaver` | Transaction-batched DuckDB insertion |
-| `GarminDBWriter` | DuckDB write operations (24 tables, 12 inserters) |
-| `GarminDBReader` | DuckDB read operations (query builders) |
-| `tools/` registry | Domain tools + 2 server tools declared as `ToolDef` (see `docs/mcp-tools-reference.md`). `server.py` dispatches directly from `ALL_DEFS_BY_NAME` (O(1) lookup) |
-
-**DuckDB Schema (24 domain tables):**
-- Metadata: `activities`, `body_composition`
-- Performance: `splits`, `performance_trends`, `time_series_metrics` (26 metrics x 1000-2000 rows)
-- Physiology: `form_efficiency`, `form_evaluations`, `form_baseline_history`, `hr_efficiency`, `heart_rate_zones`, `vo2_max`, `lactate_threshold`, `daily_wellness`
-- Training: `strength_sessions`, `hiking_sessions` (山行 summaries, kept out of `activities`)
-- Athlete: `athlete_profile`, `athlete_goals`, `season_retrospectives`, `weekly_reviews`, `athlete_profile_versions` (append-only JSON snapshot per profile save)
-- Analysis: `section_analyses` (5 section results per activity: efficiency/phase/environment/summary/split), `trend_analyses` (weekly/monthly longitudinal trend narration)
-- Operations: `sync_runs` (scheduled auto-sync execution log), `analysis_runs` (allocated analysis run_id audit log; its INSERT makes run_id allocation durable)
-
-> See `docs/spec/duckdb_schema_mapping.md` for the full column-level schema.
-
-### Directory Structure
-
-```
-garmin-performance-analysis/
-├── packages/
-│   ├── garmin-mcp-server/
-│       ├── pyproject.toml
-│       ├── src/garmin_mcp/
-│       │   ├── ingest/             # API → Raw data (ApiClient, RawDataFetcher, DuckDBSaver)
-│       │   ├── database/
-│       │   │   ├── inserters/      # 12 table-specific inserters
-│       │   │   ├── readers/        # Query builders (SplitsQueryBuilder etc.)
-│       │   │   └── migrations/     # Schema migrations
-│       │   ├── handlers/           # base.py only (shared response helpers); domain dispatch lives in tools/ + server.py
-│       │   ├── form_baseline/      # Form baseline training
-│       │   ├── scripts/
-│       │   │   └── regenerate/     # DuckDB regeneration utilities
-│       │   ├── tools/              # ToolDef registry (single source for all MCP tools)
-│       │   ├── tool_schemas.py     # thin wrapper: registry tools + 2 server tools
-│       │   └── validation/         # Data validation
-│       └── tests/
-│   └── garmin-web/                 # Web app (see docs/garmin-web.md)
-│       ├── src/garmin_web/         # FastAPI backend (api/, queries/, cli.py)
-│       ├── frontend/               # Vite + React SPA
-│       └── tests/
-├── .claude/
-│   ├── agents/                     # 6 agent defs: 3 analysis (unified+split+summary) + developer/proofreader/validation
-│   ├── skills/                     # 8 user-invocable skills (/analyze-activity, /decompose, /implement, /maintenance, /project-status, /set-goal, /ship, /weekly-review)
-│   ├── rules/                      # Shared rules (auto-loaded)
-│   ├── workflows/                  # Workflow scripts (implement-tier.js = /implement tier orchestration)
-│   ├── tasks/                      # todo.md, lessons.md (session tracking)
-│   └── settings.local.json
-├── data/                           # GARMIN_DATA_DIR (configurable via .env)
-│   ├── raw/                        # API responses (8 files/activity)
-│   └── database/                   # garmin_performance.duckdb
-├── result/                         # GARMIN_RESULT_DIR (configurable via .env)
-├── docs/
-└── CLAUDE.md
-```
+> Module layout: `packages/garmin-mcp-server/src/garmin_mcp/` (ingest/, database/, tools/ registry, worker) and `packages/garmin-web/` (FastAPI + Vite SPA, see `docs/garmin-web.md`). Full column-level DuckDB schema: `docs/spec/duckdb_schema_mapping.md`. Design rationale: `docs/architecture.md`.
 
 ### Agent System
 
@@ -207,13 +146,3 @@ garmin-performance-analysis/
 **Elevation:**
 - Source: `lapDTOs` → DuckDB
 - Classification: flat/undulating/hilly/mountainous
-
----
-
-## Quick Reference
-
-**Environment:**
-```bash
-cp .env.example .env  # Configure GARMIN_DATA_DIR, GARMIN_RESULT_DIR
-direnv allow          # Auto-load environment
-```

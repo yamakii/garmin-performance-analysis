@@ -1,3 +1,9 @@
+---
+paths:
+  - "packages/**"
+  - ".worktrees/**"
+---
+
 # Worktree Commands
 
 ## `cd <path> && ...` を使わない
