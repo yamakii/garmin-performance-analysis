@@ -42,7 +42,7 @@ def _hand_schema_to_tool(schema: dict) -> Tool:
     return Tool(
         name=schema["name"],
         description=schema["description"],
-        inputSchema=schema["inputSchema"],
+        input_schema=schema["inputSchema"],
     )
 
 

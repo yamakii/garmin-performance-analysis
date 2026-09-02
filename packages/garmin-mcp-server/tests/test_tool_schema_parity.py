@@ -66,7 +66,7 @@ def test_schema_parity_physiology() -> None:
         t.name: {
             "name": t.name,
             "description": t.description,
-            "inputSchema": t.inputSchema,
+            "inputSchema": t.input_schema,
         }
         for t in built
     }
@@ -186,7 +186,7 @@ def test_schema_parity_physiology() -> None:
         t.name: {
             "name": t.name,
             "description": t.description,
-            "inputSchema": t.inputSchema,
+            "inputSchema": t.input_schema,
         }
         for t in tool_schemas.get_tool_definitions()
         if t.name in hand_schemas

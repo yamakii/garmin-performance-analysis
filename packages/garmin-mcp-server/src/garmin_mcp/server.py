@@ -12,7 +12,8 @@ Responsibilities:
 - ``call_tool``  -- ``get_server_info``/``reload_server`` handled inline; every
   other tool is delegated to ``worker.rpc("call", name, args)``.
 - ``reload_server`` -- ``worker.restart()`` (fresh process = latest on-disk
-  code) followed by ``notifications/tools/list_changed``. There is **no**
+  code) followed by ``notifications/tools/list_changed``, pushed through the
+  calling request's ``ctx.session``. There is **no**
   ``os._exit`` / client-respawn dependency: the shim process stays alive, so the
   MCP session (and subagent tool access) survives a reload.
 
@@ -30,9 +31,18 @@ import signal
 from datetime import UTC, datetime
 from typing import Any
 
-from mcp.server import Server
+from mcp.server import Server, ServerRequestContext
+from mcp.server.session import ServerSession
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.types import (
+    CallToolRequestParams,
+    CallToolResult,
+    ContentBlock,
+    ListToolsResult,
+    PaginatedRequestParams,
+    TextContent,
+    Tool,
+)
 
 from garmin_mcp.worker_client import WorkerClient
 
@@ -52,7 +62,7 @@ _SERVER_TOOLS: list[Tool] = [
             "Get diagnostic info about the running MCP server (shim started_at "
             "plus worker DB diagnostics). Use to verify readiness."
         ),
-        inputSchema={"type": "object", "properties": {}},
+        input_schema={"type": "object", "properties": {}},
     ),
     Tool(
         name="reload_server",
@@ -63,14 +73,14 @@ _SERVER_TOOLS: list[Tool] = [
             "changes apply with no reconnect; schema changes (added/removed "
             "tools or changed args) need one /mcp reconnect."
         ),
-        inputSchema={"type": "object", "properties": {}},
+        input_schema={"type": "object", "properties": {}},
     ),
 ]
 _SERVER_TOOL_NAMES = {t.name for t in _SERVER_TOOLS}
 
 
-# Initialize server + the single worker the shim delegates to.
-mcp: Server = Server("garmin-db")
+# The single worker the shim delegates to. The ``Server`` itself is created
+# below the handlers, which mcp 2.x registers via constructor kwargs.
 worker = WorkerClient()
 
 
@@ -109,8 +119,9 @@ def _count_warnings(result: list) -> int:
     return 0
 
 
-@mcp.list_tools()
-async def list_tools() -> list[Tool]:
+async def list_tools(
+    ctx: ServerRequestContext, params: PaginatedRequestParams | None = None
+) -> ListToolsResult:
     """List available tools: worker-provided domain tools + 2 server tools.
 
     The domain schema comes from the worker (so it always reflects the latest
@@ -124,43 +135,63 @@ async def list_tools() -> list[Tool]:
                 Tool(
                     name=spec["name"],
                     description=spec.get("description", ""),
-                    inputSchema=spec.get("inputSchema", {"type": "object"}),
+                    input_schema=spec.get("inputSchema", {"type": "object"}),
                 )
             )
     else:
         logger.error("worker schema failed: %s", resp.get("error"))
-    return domain_tools + _SERVER_TOOLS
+    return ListToolsResult(tools=domain_tools + _SERVER_TOOLS)
 
 
-@mcp.call_tool()
-async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-    """Handle a tool call by dispatching to the shim handler or the worker."""
+async def call_tool(
+    ctx: ServerRequestContext, params: CallToolRequestParams
+) -> CallToolResult:
+    """Handle a tool call by dispatching to the shim handler or the worker.
+
+    mcp 2.x turns handler exceptions into JSON-RPC errors instead of
+    ``is_error`` results, so a failing dispatch is caught here and returned as
+    ``CallToolResult(is_error=True)`` carrying an ``{"error": ...}`` payload.
+    """
     import time
 
+    name = params.name
+    arguments = params.arguments or {}
     start = time.monotonic()
     try:
-        result = await _dispatch_tool(name, arguments)
+        result = await _dispatch_tool(name, arguments, session=ctx.session)
         duration_ms = (time.monotonic() - start) * 1000
-        ctx = _extract_log_context(arguments)
+        log_ctx = _extract_log_context(arguments)
         if _detect_tool_error(result):
             logger.warning(
                 "tool=%s %sduration_ms=%.1f status=tool_error",
                 name,
-                ctx,
+                log_ctx,
                 duration_ms,
             )
         else:
-            logger.info("tool=%s %sduration_ms=%.1f status=ok", name, ctx, duration_ms)
+            logger.info(
+                "tool=%s %sduration_ms=%.1f status=ok", name, log_ctx, duration_ms
+            )
         warning_count = _count_warnings(result)
         if warning_count > 0:
-            logger.info("tool=%s %swarning_count=%d", name, ctx, warning_count)
-        return result
+            logger.info("tool=%s %swarning_count=%d", name, log_ctx, warning_count)
+        content: list[ContentBlock] = list(result)
+        return CallToolResult(content=content)
     except Exception as e:
         duration_ms = (time.monotonic() - start) * 1000
         logger.error(
             "tool=%s duration_ms=%.1f status=error error=%s", name, duration_ms, e
         )
-        raise
+        return CallToolResult(
+            content=[
+                TextContent(type="text", text=_serialize_result({"error": str(e)}))
+            ],
+            is_error=True,
+        )
+
+
+# Register the handlers above on the server (mcp 2.x constructor kwargs).
+mcp: Server = Server("garmin-db", on_list_tools=list_tools, on_call_tool=call_tool)
 
 
 def _serialize_result(payload: Any) -> str:
@@ -174,16 +205,24 @@ def _serialize_result(payload: Any) -> str:
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str)
 
 
-async def _dispatch_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
+async def _dispatch_tool(
+    name: str,
+    arguments: dict[str, Any],
+    *,
+    session: ServerSession | None = None,
+) -> list[TextContent]:
     """Route a tool call: server tools inline, everything else to the worker.
 
     Domain tools are delegated to ``worker.rpc("call", ...)``; the result (or a
     structured error) is serialized into a single ``TextContent``. The shim does
     not import the registry, so unknown names are surfaced by the worker as an
-    ``ok=False`` error rather than raised here.
+    ``ok=False`` error rather than raised here. ``session`` (the calling
+    request's ``ctx.session``) is only needed by ``reload_server`` to push
+    ``tools/list_changed``; it stays optional so the dispatcher remains callable
+    outside a live MCP session.
     """
     if name == "reload_server":
-        return await _handle_reload_server()
+        return await _handle_reload_server(session)
     if name == "get_server_info":
         return await _handle_get_server_info()
 
@@ -225,25 +264,31 @@ async def _handle_get_server_info() -> list[TextContent]:
     return [TextContent(type="text", text=_serialize_result(info))]
 
 
-async def _handle_reload_server() -> list[TextContent]:
+async def _handle_reload_server(
+    session: ServerSession | None = None,
+) -> list[TextContent]:
     """Swap the worker for a fresh process and notify clients of tool changes.
 
     No process suicide: the shim restarts only the worker (latest on-disk code)
-    then sends ``notifications/tools/list_changed`` so connected clients refetch
-    the tool list. The shim PID is unchanged, so the MCP session is preserved.
+    then sends ``notifications/tools/list_changed`` through ``session`` (the
+    calling request's ``ctx.session``) so connected clients refetch the tool
+    list. The shim PID is unchanged, so the MCP session is preserved. Without a
+    session (called outside a live MCP request) the restart still happens and
+    only the notification is skipped.
     """
     await worker.restart()
 
     notified = False
-    try:
-        await mcp.request_context.session.send_tool_list_changed()
-        notified = True
-    except LookupError:
-        # No active request context (e.g. called outside a live session): the
-        # restart still succeeded, we just can't push a notification.
-        logger.debug("reload_server: no request context, skipping list_changed")
-    except Exception as e:  # pragma: no cover - defensive
-        logger.warning("reload_server: send_tool_list_changed failed: %s", e)
+    if session is None:
+        # Called outside a live MCP request: the restart still succeeded, we
+        # just have no session to push a notification through.
+        logger.debug("reload_server: no session, skipping list_changed")
+    else:
+        try:
+            await session.send_tool_list_changed()
+            notified = True
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning("reload_server: send_tool_list_changed failed: %s", e)
 
     msg = (
         "Worker restarted with the latest on-disk code. The shim process is "

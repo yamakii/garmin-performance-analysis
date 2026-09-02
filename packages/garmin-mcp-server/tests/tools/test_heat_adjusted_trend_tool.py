@@ -131,14 +131,14 @@ def test_tool_registered_in_all_defs() -> None:
     tool = next(
         t for t in build_mcp_tools(ALL_DEFS) if t.name == "get_heat_adjusted_trend"
     )
-    assert tool.inputSchema["required"] == [
+    assert tool.input_schema["required"] == [
         "start_date",
         "end_date",
         "activity_ids",
     ]
     # ref_temp_c is optional (present as a property but not required).
-    assert "ref_temp_c" in tool.inputSchema["properties"]
-    assert "ref_temp_c" not in tool.inputSchema["required"]
+    assert "ref_temp_c" in tool.input_schema["properties"]
+    assert "ref_temp_c" not in tool.input_schema["required"]
 
 
 @pytest.mark.unit

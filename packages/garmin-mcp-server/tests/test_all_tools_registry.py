@@ -40,7 +40,7 @@ def _as_dicts(tools: Any) -> list[dict[str, Any]]:
         {
             "name": t.name,
             "description": t.description,
-            "inputSchema": t.inputSchema,
+            "inputSchema": t.input_schema,
         }
         for t in tools
     ]
@@ -324,7 +324,7 @@ def test_export_derived_schema() -> None:
     ``input_schema_override``) yet remains byte-identical to the hand schema."""
     assert ALL_DEFS_BY_NAME["export"].input_schema_override is None
     export_tool = next(t for t in build_mcp_tools(ALL_DEFS) if t.name == "export")
-    assert export_tool.inputSchema == {
+    assert export_tool.input_schema == {
         "type": "object",
         "properties": {
             "query": {
@@ -484,9 +484,9 @@ def test_reload_server_schema_has_no_server_dir() -> None:
     empty (the override ``server_dir`` argument was removed in #481)."""
     tools = {t.name: t for t in get_tool_definitions()}
     reload_tool = tools["reload_server"]
-    assert reload_tool.inputSchema == {"type": "object", "properties": {}}
-    assert reload_tool.inputSchema["properties"] == {}
-    assert "server_dir" not in reload_tool.inputSchema["properties"]
+    assert reload_tool.input_schema == {"type": "object", "properties": {}}
+    assert reload_tool.input_schema["properties"] == {}
+    assert "server_dir" not in reload_tool.input_schema["properties"]
 
 
 @pytest.mark.unit

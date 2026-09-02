@@ -10,24 +10,30 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from mcp.server import Server
+from mcp.server import Server, ServerRequestContext
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.types import (
+    CallToolRequestParams,
+    CallToolResult,
+    ContentBlock,
+    ListToolsResult,
+    PaginatedRequestParams,
+    TextContent,
+    Tool,
+)
 
 logger = logging.getLogger(__name__)
 
-# Initialize server
-mcp = Server("json-utils")
 
-
-@mcp.list_tools()
-async def list_tools() -> list[Tool]:
+async def list_tools(
+    ctx: ServerRequestContext, params: PaginatedRequestParams | None = None
+) -> ListToolsResult:
     """List available JSON utility tools."""
-    return [
+    tools = [
         Tool(
             name="json_read",
             description="Read JSON file with encoding auto-detection",
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "file_path": {"type": "string"},
@@ -39,7 +45,7 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="json_write",
             description="Write JSON file atomically (temp → rename)",
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "file_path": {"type": "string"},
@@ -52,7 +58,7 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="json_validate",
             description="Validate JSON file integrity",
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "file_path": {"type": "string"},
@@ -63,7 +69,7 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="json_get",
             description="Get nested value using dot notation",
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "file_path": {"type": "string"},
@@ -75,7 +81,7 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="json_update",
             description="Update JSON file (shallow or deep merge)",
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "file_path": {"type": "string"},
@@ -86,11 +92,11 @@ async def list_tools() -> list[Tool]:
             },
         ),
     ]
+    return ListToolsResult(tools=tools)
 
 
-@mcp.call_tool()
-async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-    """Handle tool calls."""
+async def _dispatch(name: str, arguments: dict[str, Any]) -> list[TextContent]:
+    """Run the named tool and return its content blocks."""
     if name == "json_read":
         file_path = Path(arguments["file_path"])
         encoding = arguments.get("encoding", "utf-8")
@@ -219,6 +225,32 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
     else:
         raise ValueError(f"Unknown tool: {name}")
+
+
+async def call_tool(
+    ctx: ServerRequestContext, params: CallToolRequestParams
+) -> CallToolResult:
+    """Handle a tool call, reporting failures as an is_error result.
+
+    mcp 2.x turns handler exceptions into JSON-RPC errors, so unknown tools and
+    unexpected failures are caught here and returned as ``is_error`` results.
+    """
+    try:
+        content: list[ContentBlock] = list(
+            await _dispatch(params.name, params.arguments or {})
+        )
+    except Exception as e:
+        return CallToolResult(
+            content=[
+                TextContent(type="text", text=json.dumps({"error": str(e)}, indent=2))
+            ],
+            is_error=True,
+        )
+    return CallToolResult(content=content)
+
+
+# Register the handlers above on the server (mcp 2.x constructor kwargs).
+mcp = Server("json-utils", on_list_tools=list_tools, on_call_tool=call_tool)
 
 
 async def main() -> None:

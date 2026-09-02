@@ -10,12 +10,27 @@ call_tool forwards args + serializes the worker's response.
 """
 
 import json
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from mcp.types import CallToolRequestParams, CallToolResult, TextContent
 
 import garmin_mcp.server as server
 from garmin_mcp.server import call_tool, list_tools
+
+
+def _text(result: CallToolResult) -> str:
+    """Return the text of a tool result's single content block."""
+    block = result.content[0]
+    assert isinstance(block, TextContent)
+    return block.text
+
+
+def _ctx(session: Any = None) -> Any:
+    """Minimal stand-in for the ``ServerRequestContext`` mcp 2.x passes handlers."""
+    return SimpleNamespace(session=session)
 
 
 @pytest.fixture
@@ -62,7 +77,7 @@ class TestRagIntervalToolsShim:
             "compare_similar_workouts",
         )
         with patch.object(server, "worker", worker):
-            tools = await list_tools()
+            tools = (await list_tools(_ctx(), None)).tools
 
         names = {t.name for t in tools}
         for expected in (
@@ -94,14 +109,17 @@ class TestRagIntervalToolsShim:
         }
         with patch.object(server, "worker", worker):
             result = await call_tool(
-                name="get_interval_analysis",
-                arguments={"activity_id": fixture_activity_id},
+                _ctx(),
+                CallToolRequestParams(
+                    name="get_interval_analysis",
+                    arguments={"activity_id": fixture_activity_id},
+                ),
             )
 
         worker.rpc.assert_awaited_once_with(
             "call", "get_interval_analysis", {"activity_id": fixture_activity_id}
         )
-        response_data = json.loads(result[0].text)
+        response_data = json.loads(_text(result))
         assert response_data["activity_id"] == fixture_activity_id
         assert "segments" in response_data
 
@@ -120,12 +138,15 @@ class TestRagIntervalToolsShim:
         }
         with patch.object(server, "worker", worker):
             result = await call_tool(
-                name="compare_similar_workouts",
-                arguments={"activity_id": fixture_activity_id},
+                _ctx(),
+                CallToolRequestParams(
+                    name="compare_similar_workouts",
+                    arguments={"activity_id": fixture_activity_id},
+                ),
             )
 
-        assert len(result) == 1
-        response_data = json.loads(result[0].text)
+        assert len(result.content) == 1
+        response_data = json.loads(_text(result))
         assert response_data["target_activity"]["activity_id"] == fixture_activity_id
         assert len(response_data["similar_activities"]) == 1
 
@@ -140,8 +161,11 @@ class TestRagIntervalToolsShim:
             "error": "Invalid parameter: activity_id field required",
         }
         with patch.object(server, "worker", worker):
-            result = await call_tool(name="get_interval_analysis", arguments={})
+            result = await call_tool(
+                _ctx(),
+                CallToolRequestParams(name="get_interval_analysis", arguments={}),
+            )
 
-        response = json.loads(result[0].text)
+        response = json.loads(_text(result))
         assert "Invalid parameter" in response["error"]
         assert "activity_id" in response["error"]
