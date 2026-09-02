@@ -7,7 +7,7 @@ mounted secrets from being exfiltrated even if a dependency or a prompt-injectio
 compromises the container.
 
 This is a self-contained `docker run` setup (no devcontainer / VS Code required),
-adapted for this project's full toolchain (Python 3.12 + uv + Node 22 + the three
+adapted for this project's full toolchain (Python 3.12 + uv + Node 24 + the three
 MCP servers). The firewall is based on the official
 [`anthropics/claude-code` devcontainer](https://github.com/anthropics/claude-code/tree/main/.devcontainer),
 extended with the hosts this project needs.

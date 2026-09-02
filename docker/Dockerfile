@@ -7,14 +7,14 @@
 # the writable scope is the mounted repo, and init-firewall.sh restricts egress to
 # an allowlist (see entrypoint.sh / init-firewall.sh).
 #
-# Full dev environment: Python 3.12 + uv + Node 22 + native libs + Claude Code,
+# Full dev environment: Python 3.12 + uv + Node 24 + native libs + Claude Code,
 # so analysis, implementation, tests and all three MCP servers run inside.
 
 FROM ubuntu:24.04
 
 # ---- build args ----
 ARG CLAUDE_CODE_VERSION=latest
-ARG NODE_MAJOR=22
+ARG NODE_MAJOR=24
 # Match the host uid/gid so the bind-mounted repo + data/ stay correctly owned.
 # run.sh passes the caller's id; 1000 is the typical first Linux user.
 ARG USER_UID=1000
@@ -37,7 +37,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       iptables ipset iproute2 dnsutils aggregate jq \
     && rm -rf /var/lib/apt/lists/*
 
-# ---- Node.js (NodeSource, matches repo .nvmrc=22) ----
+# ---- Node.js (NodeSource, matches repo .nvmrc=24) ----
 RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
