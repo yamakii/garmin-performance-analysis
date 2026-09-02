@@ -163,7 +163,7 @@ garmin-performance-analysis/
 │       └── tests/
 ├── .claude/
 │   ├── agents/                     # 6 agent defs: 3 analysis (unified+split+summary) + developer/proofreader/validation
-│   ├── skills/                     # 7 user-invocable skills (/analyze-activity, /decompose, /implement, /project-status, /set-goal, /ship, /weekly-review)
+│   ├── skills/                     # 8 user-invocable skills (/analyze-activity, /decompose, /implement, /maintenance, /project-status, /set-goal, /ship, /weekly-review)
 │   ├── rules/                      # Shared rules (auto-loaded)
 │   ├── workflows/                  # Workflow scripts (implement-tier.js = /implement tier orchestration)
 │   ├── tasks/                      # todo.md, lessons.md (session tracking)
