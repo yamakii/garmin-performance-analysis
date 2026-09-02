@@ -14,7 +14,9 @@ dependencies = [
     "scipy>=1.11.0",
     "scikit-learn>=1.5.0",
     "python-dotenv>=1.0.0",
-    "mcp>=1.28.1,<2",
+    # Upper bound: the servers use the low-level `Server` API, whose handler
+    # registration changed in 2.x (#953); a 3.x bump needs the same assessment.
+    "mcp>=2.1.1,<3",
     "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0",
     "python-multipart>=0.0.12",
