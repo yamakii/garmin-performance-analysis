@@ -70,6 +70,29 @@ def test_dependabot_covers_all_ecosystems() -> None:
 
 
 @pytest.mark.unit
+def test_ci_docker_filter_and_job_present() -> None:
+    """A docker/** change must build the sandbox image and gate ci-guard on it."""
+    text = _CI_YML.read_text(encoding="utf-8")
+    filters = re.search(r"filters:\s*\|\n((?:[ \t]+.*\n)+)", text)
+    assert filters, "paths-filter `filters:` block not found"
+    docker_block = re.search(
+        r"^\s+docker:\n((?:\s+-.*\n|\s+#.*\n)+)", filters.group(1), re.MULTILINE
+    )
+    assert docker_block, "`docker:` filter not found"
+    assert "'docker/**'" in docker_block.group(1)
+    # The filter result must be exported, or `needs.changes.outputs.docker`
+    # is always empty and the job silently never runs.
+    assert "docker: ${{ steps.filter.outputs.docker }}" in text
+    assert re.search(r"^  docker-build:\n", text, re.MULTILINE), "docker-build job"
+    assert "docker build" in text
+    guard_needs = re.search(
+        r"^  ci-guard:\n\s+needs:\s*\[([^\]]+)\]", text, re.MULTILINE
+    )
+    assert guard_needs and "docker-build" in guard_needs.group(1)
+    assert "needs.docker-build.result" in text
+
+
+@pytest.mark.unit
 def test_security_audit_scans_both_lockfiles() -> None:
     """The weekly audit covers uv.lock (pip-audit) and the frontend lock (npm audit)."""
     text = _SECURITY_AUDIT_YML.read_text(encoding="utf-8")
