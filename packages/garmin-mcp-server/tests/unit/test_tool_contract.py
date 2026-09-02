@@ -60,4 +60,4 @@ class TestToolContract:
         for tool in tools:
             assert tool.name, "Tool missing name"
             assert tool.description, f"Tool '{tool.name}' missing description"
-            assert tool.inputSchema, f"Tool '{tool.name}' missing inputSchema"
+            assert tool.input_schema, f"Tool '{tool.name}' missing inputSchema"

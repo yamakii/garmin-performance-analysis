@@ -166,7 +166,7 @@ def build_mcp_tools(defs: list[ToolDef]) -> list[Tool]:
             Tool(
                 name=d.name,
                 description=d.description,
-                inputSchema=input_schema,
+                input_schema=input_schema,
             )
         )
     return tools

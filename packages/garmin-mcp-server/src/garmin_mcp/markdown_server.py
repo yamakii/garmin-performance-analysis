@@ -11,24 +11,30 @@ import re
 from pathlib import Path
 from typing import Any
 
-from mcp.server import Server
+from mcp.server import Server, ServerRequestContext
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.types import (
+    CallToolRequestParams,
+    CallToolResult,
+    ContentBlock,
+    ListToolsResult,
+    PaginatedRequestParams,
+    TextContent,
+    Tool,
+)
 
 logger = logging.getLogger(__name__)
 
-# Initialize server
-mcp = Server("markdown-utils")
 
-
-@mcp.list_tools()
-async def list_tools() -> list[Tool]:
+async def list_tools(
+    ctx: ServerRequestContext, params: PaginatedRequestParams | None = None
+) -> ListToolsResult:
     """List available Markdown utility tools."""
-    return [
+    tools = [
         Tool(
             name="markdown_read",
             description="Read Markdown file with encoding auto-detection",
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "file_path": {"type": "string"},
@@ -40,7 +46,7 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="markdown_write",
             description="Write Markdown file atomically",
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "file_path": {"type": "string"},
@@ -52,7 +58,7 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="markdown_list_headings",
             description="List all headings with levels and line numbers",
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "file_path": {"type": "string"},
@@ -63,7 +69,7 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="markdown_get_section",
             description="Extract specific section by heading",
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "file_path": {"type": "string"},
@@ -76,7 +82,7 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="markdown_update_section",
             description="Update specific section by heading",
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "file_path": {"type": "string"},
@@ -90,7 +96,7 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="markdown_append",
             description="Append content to file",
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "file_path": {"type": "string"},
@@ -100,11 +106,11 @@ async def list_tools() -> list[Tool]:
             },
         ),
     ]
+    return ListToolsResult(tools=tools)
 
 
-@mcp.call_tool()
-async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-    """Handle tool calls."""
+async def _dispatch(name: str, arguments: dict[str, Any]) -> list[TextContent]:
+    """Run the named tool and return its content blocks."""
     if name == "markdown_read":
         file_path = Path(arguments["file_path"])
         encoding = arguments.get("encoding", "utf-8")
@@ -276,6 +282,32 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
     else:
         raise ValueError(f"Unknown tool: {name}")
+
+
+async def call_tool(
+    ctx: ServerRequestContext, params: CallToolRequestParams
+) -> CallToolResult:
+    """Handle a tool call, reporting failures as an is_error result.
+
+    mcp 2.x turns handler exceptions into JSON-RPC errors, so unknown tools and
+    unexpected failures are caught here and returned as ``is_error`` results.
+    """
+    try:
+        content: list[ContentBlock] = list(
+            await _dispatch(params.name, params.arguments or {})
+        )
+    except Exception as e:
+        return CallToolResult(
+            content=[
+                TextContent(type="text", text=json.dumps({"error": str(e)}, indent=2))
+            ],
+            is_error=True,
+        )
+    return CallToolResult(content=content)
+
+
+# Register the handlers above on the server (mcp 2.x constructor kwargs).
+mcp = Server("markdown-utils", on_list_tools=list_tools, on_call_tool=call_tool)
 
 
 async def main() -> None:

@@ -16,7 +16,7 @@
 - **security（advisory あり）**: 即時。fix 版があれば patch/minor/major を問わず当週中に適用。fix 版が無ければ影響評価を Issue に残す
 - **minor / patch**: 自動（Dependabot + auto-merge）。`ci-guard` が唯一のゲートなので、**CI が exercise しない挙動変更は人が拾う前提を置かない**（テストで守る）
 - **major**: 人間判断。Dependabot の PR に changelog / migration の要点をコメントし、必要ならコード変更を伴う Issue に切り出す。「単に最新だから」で上げない
-- **上限ピン（`<N`）**: 例外扱い。理由（移行未調査 / 既知の破壊的変更）を pyproject のコメント or Issue に残し、`/maintenance` の度に解除可否を再判定する。現行: `mcp>=1.28.1,<2`（低レベル `Server`/`stdio_server` API 移行が未調査、#942）
+- **上限ピン（`<N`）**: 例外扱い。理由（移行未調査 / 既知の破壊的変更）を pyproject のコメント or Issue に残し、`/maintenance` の度に解除可否を再判定する。現行: `mcp>=2.1.1,<3`（低レベル `Server` のハンドラ登録が major で変わるため、次の major も同様に調査が要る、#953）
 - **ランタイム major（Python / Node LTS）**: 体験・環境に影響するため必ず人間に確認してから変更する
 
 ## 実行時の注意（sandbox / worktree）

@@ -60,7 +60,7 @@ Current deliberate upper bounds:
 
 | Package | Bound | Reason | Re-evaluate |
 |---------|-------|--------|-------------|
-| `mcp` (garmin-mcp-server) | `>=1.28.1,<2` | The server uses the low-level `mcp.server.Server` + `stdio_server` API in `server.py`, `json_server.py`, `markdown_server.py`; the 2.x migration has not been assessed. | Issue #942 follow-up |
+| `mcp` (garmin-mcp-server) | `>=2.1.1,<3` | The servers use the low-level `mcp.server.Server` + `stdio_server` API in `server.py`, `json_server.py`, `markdown_server.py`, whose handler registration changed in 2.x (#953); a 3.x bump needs the same assessment. | When mcp 3.0 ships |
 
 ## Runtime versions (human decision)
 

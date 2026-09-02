@@ -9,9 +9,17 @@ tools/list_changed, no process suicide).
 
 import json
 from datetime import date
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from mcp.types import (
+    CallToolRequestParams,
+    CallToolResult,
+    ListToolsResult,
+    TextContent,
+)
 
 import garmin_mcp.server as server
 from garmin_mcp.server import (
@@ -19,8 +27,21 @@ from garmin_mcp.server import (
     _handle_get_server_info,
     _handle_reload_server,
     _serialize_result,
+    call_tool,
     list_tools,
 )
+
+
+def _text(result: CallToolResult) -> str:
+    """Return the text of a tool result's single content block."""
+    block = result.content[0]
+    assert isinstance(block, TextContent)
+    return block.text
+
+
+def _ctx(session: Any = None) -> Any:
+    """Minimal stand-in for the ``ServerRequestContext`` mcp 2.x passes handlers."""
+    return SimpleNamespace(session=session)
 
 
 def _mock_worker(rpc_side_effect=None, rpc_return=None) -> AsyncMock:
@@ -53,7 +74,7 @@ class TestListTools:
             }
         )
         with patch.object(server, "worker", worker):
-            tools = await list_tools()
+            tools = (await list_tools(_ctx(), None)).tools
 
         names = [t.name for t in tools]
         assert names == [
@@ -68,10 +89,45 @@ class TestListTools:
         """If the worker schema rpc fails, the 2 server tools are still listed."""
         worker = _mock_worker(rpc_return={"ok": False, "error": "boom"})
         with patch.object(server, "worker", worker):
-            tools = await list_tools()
+            tools = (await list_tools(_ctx(), None)).tools
 
         names = {t.name for t in tools}
         assert names == {"get_server_info", "reload_server"}
+
+    @pytest.mark.asyncio
+    async def test_list_tools_returns_list_tools_result(self) -> None:
+        """The handler returns a ListToolsResult whose tools carry input_schema."""
+        worker = _mock_worker(
+            rpc_return={
+                "ok": True,
+                "data": [
+                    {
+                        "name": "get_performance_trends",
+                        "description": "d1",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {"activity_id": {"type": "integer"}},
+                        },
+                    },
+                    {
+                        "name": "get_splits_comprehensive",
+                        "description": "d2",
+                        "inputSchema": {"type": "object", "properties": {}},
+                    },
+                ],
+            }
+        )
+        with patch.object(server, "worker", worker):
+            result = await list_tools(_ctx(), None)
+
+        assert isinstance(result, ListToolsResult)
+        # 2 worker domain tools + the 2 server tools.
+        assert len(result.tools) == 4
+        assert result.tools[0].input_schema == {
+            "type": "object",
+            "properties": {"activity_id": {"type": "integer"}},
+        }
+        assert result.tools[1].input_schema == {"type": "object", "properties": {}}
 
 
 @pytest.mark.unit
@@ -146,20 +202,12 @@ class TestHandleReloadServer:
     """Tests for _handle_reload_server (restart worker, notify, stay alive)."""
 
     @pytest.mark.asyncio
-    async def test_restarts_worker_and_sends_list_changed(self) -> None:
-        """reload_server restarts the worker and emits tools/list_changed."""
+    async def test_reload_server_sends_list_changed_via_ctx_session(self) -> None:
+        """reload_server restarts the worker and notifies via the call's session."""
         worker = AsyncMock()
         mock_session = AsyncMock()
-        fake_ctx = type("Ctx", (), {"session": mock_session})()
-        with (
-            patch.object(server, "worker", worker),
-            patch.object(
-                type(server.mcp),
-                "request_context",
-                property(lambda self: fake_ctx),
-            ),
-        ):
-            result = await _handle_reload_server()
+        with patch.object(server, "worker", worker):
+            result = await _handle_reload_server(mock_session)
 
         worker.restart.assert_awaited_once()
         mock_session.send_tool_list_changed.assert_awaited_once()
@@ -168,17 +216,10 @@ class TestHandleReloadServer:
         assert data["list_changed_sent"] is True
 
     @pytest.mark.asyncio
-    async def test_no_request_context_still_restarts(self) -> None:
-        """Without a live request context, restart succeeds but notify is skipped."""
+    async def test_reload_server_without_session_still_restarts(self) -> None:
+        """Without a session, the restart succeeds but the notify is skipped."""
         worker = AsyncMock()
-
-        def _raise(self):
-            raise LookupError("no context")
-
-        with (
-            patch.object(server, "worker", worker),
-            patch.object(type(server.mcp), "request_context", property(_raise)),
-        ):
+        with patch.object(server, "worker", worker):
             result = await _handle_reload_server()
 
         worker.restart.assert_awaited_once()
@@ -188,26 +229,18 @@ class TestHandleReloadServer:
 
     @pytest.mark.asyncio
     async def test_takes_no_server_dir_argument(self) -> None:
-        """reload_server no longer accepts a server_dir argument."""
+        """reload_server takes only the notification session, no server_dir."""
         import inspect
 
         sig = inspect.signature(_handle_reload_server)
-        assert list(sig.parameters) == []
+        assert list(sig.parameters) == ["session"]
 
     @pytest.mark.asyncio
     async def test_response_is_valid_json(self) -> None:
         """reload_server response is always valid JSON."""
         worker = AsyncMock()
-        fake_ctx = type("Ctx", (), {"session": AsyncMock()})()
-        with (
-            patch.object(server, "worker", worker),
-            patch.object(
-                type(server.mcp),
-                "request_context",
-                property(lambda self: fake_ctx),
-            ),
-        ):
-            result = await _handle_reload_server()
+        with patch.object(server, "worker", worker):
+            result = await _handle_reload_server(AsyncMock())
 
         data = json.loads(result[0].text)
         assert data["success"] is True
@@ -270,6 +303,42 @@ class TestDispatchTool:
         assert "評価" in text
         assert "\\u" not in text
         assert json.loads(text) == {"note": "評価"}
+
+
+@pytest.mark.unit
+class TestCallTool:
+    """Tests for the mcp 2.x call_tool handler (params in, CallToolResult out)."""
+
+    @pytest.mark.asyncio
+    async def test_call_tool_wraps_dispatch_exception_as_is_error(self) -> None:
+        """A dispatch exception becomes an is_error result, not a JSON-RPC error."""
+        with patch.object(
+            server, "_dispatch_tool", AsyncMock(side_effect=RuntimeError("boom"))
+        ):
+            result = await call_tool(
+                _ctx(), CallToolRequestParams(name="get_server_info", arguments={})
+            )
+
+        assert result.is_error is True
+        assert "boom" in _text(result)
+
+    @pytest.mark.asyncio
+    async def test_call_tool_none_arguments_defaults_to_empty(self) -> None:
+        """``arguments=None`` is normalized to an empty dict (no TypeError)."""
+        worker = _mock_worker(
+            rpc_return={
+                "ok": True,
+                "data": {"table_count": 1, "started_at": "t", "last_ingest_date": None},
+            }
+        )
+        with patch.object(server, "worker", worker):
+            result = await call_tool(
+                _ctx(), CallToolRequestParams(name="get_server_info", arguments=None)
+            )
+
+        assert not result.is_error
+        data = json.loads(_text(result))
+        assert data["ready"] is True
 
 
 @pytest.mark.unit

@@ -21,12 +21,20 @@ import os
 import shutil
 import textwrap
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 import garmin_mcp.server as server
 from garmin_mcp.worker_client import WorkerClient
+
+
+def _ctx(session: Any = None) -> Any:
+    """Minimal stand-in for the ``ServerRequestContext`` mcp 2.x passes handlers."""
+    return SimpleNamespace(session=session)
+
 
 # Activity id present in the generated verification DB.
 FIXTURE_ACTIVITY_ID = 12345678901
@@ -275,7 +283,7 @@ async def test_list_tools_includes_worker_and_server_tools(worker_env: Path) -> 
     client = WorkerClient()
     try:
         with patch.object(server, "worker", client):
-            tools = await server.list_tools()
+            tools = (await server.list_tools(_ctx(), None)).tools
     finally:
         await client.aclose()
 
@@ -297,20 +305,12 @@ async def test_reload_keeps_shim_process_alive(worker_env: Path) -> None:
     client = WorkerClient()
     shim_pid = os.getpid()
     mock_session = AsyncMock()
-    fake_ctx = type("Ctx", (), {"session": mock_session})()
 
     try:
         await client.start()
-        with (
-            patch.object(server, "worker", client),
-            patch.object(
-                type(server.mcp),
-                "request_context",
-                property(lambda self: fake_ctx),
-            ),
-        ):
+        with patch.object(server, "worker", client):
             old_worker_pid = client._proc.pid  # type: ignore[union-attr]
-            result = await server._handle_reload_server()
+            result = await server._handle_reload_server(mock_session)
             new_worker_pid = client._proc.pid  # type: ignore[union-attr]
     finally:
         await client.aclose()
@@ -336,18 +336,10 @@ async def test_call_after_reload_serves_new_code(worker_env: Path) -> None:
     the shim returns a valid result from the new process (same shim session).
     """
     client = WorkerClient()
-    fake_ctx = type("Ctx", (), {"session": AsyncMock()})()
     try:
         await client.start()
-        with (
-            patch.object(server, "worker", client),
-            patch.object(
-                type(server.mcp),
-                "request_context",
-                property(lambda self: fake_ctx),
-            ),
-        ):
-            await server._handle_reload_server()
+        with patch.object(server, "worker", client):
+            await server._handle_reload_server(AsyncMock())
             result = await server._dispatch_tool(
                 "get_date_by_activity_id",
                 {"activity_id": FIXTURE_ACTIVITY_ID},

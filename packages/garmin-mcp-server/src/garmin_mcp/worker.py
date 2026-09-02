@@ -95,7 +95,7 @@ def build_schema() -> list[dict[str, Any]]:
         {
             "name": tool.name,
             "description": tool.description,
-            "inputSchema": tool.inputSchema,
+            "inputSchema": tool.input_schema,
         }
         for tool in tools
     ]

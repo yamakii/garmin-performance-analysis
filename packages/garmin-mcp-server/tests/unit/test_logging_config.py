@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import logging
 from logging.handlers import RotatingFileHandler
-from typing import TYPE_CHECKING
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, Any
 
 import pytest
+from mcp.types import CallToolRequestParams, CallToolResult, TextContent
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -114,6 +116,18 @@ class TestSetupMcpLogging:
         self._clear_garmin_logger()
 
 
+def _text(result: CallToolResult) -> str:
+    """Return the text of a tool result's single content block."""
+    block = result.content[0]
+    assert isinstance(block, TextContent)
+    return block.text
+
+
+def _ctx(session: Any = None) -> Any:
+    """Minimal stand-in for the ``ServerRequestContext`` mcp 2.x passes handlers."""
+    return SimpleNamespace(session=session)
+
+
 @pytest.mark.unit
 class TestCallToolLogging:
     """Tests for tool call logging in call_tool()."""
@@ -143,7 +157,9 @@ class TestCallToolLogging:
         from garmin_mcp.server import call_tool
 
         with caplog.at_level(logging.INFO, logger="garmin_mcp.server"):
-            await call_tool("test_tool", {})
+            await call_tool(
+                _ctx(), CallToolRequestParams(name="test_tool", arguments={})
+            )
 
         assert any(
             "tool=test_tool" in r.message and "status=ok" in r.message
@@ -157,7 +173,9 @@ class TestCallToolLogging:
         from garmin_mcp.server import call_tool
 
         with caplog.at_level(logging.INFO, logger="garmin_mcp.server"):
-            await call_tool("test_tool", {})
+            await call_tool(
+                _ctx(), CallToolRequestParams(name="test_tool", arguments={})
+            )
 
         assert any("duration_ms=" in r.message for r in caplog.records)
 
@@ -166,15 +184,16 @@ class TestCallToolLogging:
     async def test_logs_error_on_exception(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """call_tool logs error with tool name and error message on exception."""
+        """call_tool logs the error and returns an is_error result on exception."""
         from garmin_mcp.server import call_tool
 
-        with (
-            caplog.at_level(logging.ERROR, logger="garmin_mcp.server"),
-            pytest.raises(RuntimeError, match="test error"),
-        ):
-            await call_tool("failing_tool", {})
+        with caplog.at_level(logging.ERROR, logger="garmin_mcp.server"):
+            result = await call_tool(
+                _ctx(), CallToolRequestParams(name="failing_tool", arguments={})
+            )
 
+        assert result.is_error is True
+        assert "test error" in _text(result)
         assert any(
             "tool=failing_tool" in r.message
             and "status=error" in r.message
