@@ -80,6 +80,9 @@ def test_ci_docker_filter_and_job_present() -> None:
     )
     assert docker_block, "`docker:` filter not found"
     assert "'docker/**'" in docker_block.group(1)
+    # The filter result must be exported, or `needs.changes.outputs.docker`
+    # is always empty and the job silently never runs.
+    assert "docker: ${{ steps.filter.outputs.docker }}" in text
     assert re.search(r"^  docker-build:\n", text, re.MULTILINE), "docker-build job"
     assert "docker build" in text
     guard_needs = re.search(
