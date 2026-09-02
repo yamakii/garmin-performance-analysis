@@ -31,7 +31,7 @@ import signal
 from datetime import UTC, datetime
 from typing import Any
 
-from mcp.server import Server, ServerRequestContext
+from mcp.server import NotificationOptions, Server, ServerRequestContext
 from mcp.server.session import ServerSession
 from mcp.server.stdio import stdio_server
 from mcp.types import (
@@ -329,7 +329,13 @@ async def main() -> None:
     try:
         async with stdio_server() as (read_stream, write_stream):
             await mcp.run(
-                read_stream, write_stream, mcp.create_initialization_options()
+                read_stream,
+                write_stream,
+                # Advertise tools.listChanged so clients honour the
+                # notifications/tools/list_changed pushed by reload_server.
+                mcp.create_initialization_options(
+                    notification_options=NotificationOptions(tools_changed=True)
+                ),
             )
     finally:
         await worker.aclose()
