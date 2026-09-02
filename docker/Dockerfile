@@ -10,7 +10,7 @@
 # Full dev environment: Python 3.12 + uv + Node 24 + native libs + Claude Code,
 # so analysis, implementation, tests and all three MCP servers run inside.
 
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 # ---- build args ----
 ARG CLAUDE_CODE_VERSION=latest
