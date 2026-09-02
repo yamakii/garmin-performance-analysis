@@ -12,7 +12,7 @@ in `.claude/rules/dev/maintenance-policy.md`; the interactive pass is the
 | Dependabot | `.github/dependabot.yml` | weekly (uv, npm) / monthly (actions, docker), Monday 09:00 JST | Opens update PRs. Minor + patch updates are grouped into one PR per ecosystem; each major gets its own PR. Security advisories trigger PRs outside the schedule. |
 | Dependabot auto-merge | `.github/workflows/dependabot-auto-merge.yml` | on each Dependabot PR | Enables GitHub auto-merge for minor/patch PRs, so they merge once the required `ci-guard` check is green. Major PRs only get a comment asking for review. |
 | Security audit | `.github/workflows/security-audit.yml` | weekly (Monday 09:00 JST), on lockfile PRs, and on demand (*Run workflow*) | `pip-audit` over the exported `uv.lock` and `npm audit --audit-level=high` over the frontend lockfile. A scheduled failure opens (or comments on) an issue labelled `security-audit`. |
-| CI | `.github/workflows/ci.yml` | every PR / push to main | Lint, type-check, tests, build. `uv.lock` is in the path filter, so a lockfile-only PR still runs `lint-and-test`. Runs with a read-only `GITHUB_TOKEN`. |
+| CI | `.github/workflows/ci.yml` | every PR / push to main | Lint, type-check, tests, build. `uv.lock` is in the path filter, so a lockfile-only PR still runs `lint-and-test`. A `docker/**` change additionally runs `docker-build` (builds the sandbox image and smokes uv / Python / Node / Claude Code inside it), so Dependabot base-image bumps are actually exercised. Runs with a read-only `GITHUB_TOKEN`. |
 
 > `astral-sh/setup-uv` publishes no major/minor tags since v8, so it must be
 > referenced by full version (`@v10.0.1`), not `@v10`. Dependabot's
@@ -68,7 +68,8 @@ Python (`requires-python`, `uv python install 3.12` in CI) and Node
 (`.nvmrc`, `engines` in `package.json`) are **not** bumped by automation.
 Changing them affects every contributor's environment and the Docker sandbox
 image, so decide explicitly, then update CI, `docker/Dockerfile`, and docs in
-one PR.
+one PR. The `docker-build` CI job validates the image on every `docker/**`
+change; there is no Docker inside the sandbox, so CI is the only build check.
 
 ## Running the audit locally
 

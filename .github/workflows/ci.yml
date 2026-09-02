@@ -43,6 +43,9 @@ jobs:
               - '.claude/agents/**'
               - '.claude/settings.json'
               - 'scripts/**'
+            docker:
+              - 'docker/**'
+              - '.github/workflows/**'
 
   lint-and-test:
     needs: changes
@@ -157,16 +160,51 @@ jobs:
       - name: Syntax-smoke .claude scripts
         run: bash scripts/check-claude-scripts.sh
 
+  # The sandbox image is not exercised anywhere else, so a docker/** change
+  # (Dependabot base-image bumps included) must at least build and boot.
+  # The entrypoint needs root + NET_ADMIN for the egress firewall, so the smoke
+  # bypasses it and only checks the toolchain the image promises.
+  docker-build:
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build sandbox image
+        run: |
+          docker build \
+            --build-arg CLAUDE_CODE_VERSION=latest \
+            --build-arg USER_UID=1000 \
+            --build-arg USER_GID=1000 \
+            -t garmin-claude-sandbox:ci \
+            docker/
+
+      - name: Smoke the toolchain inside the image
+        run: |
+          docker run --rm --entrypoint bash --user 1000:1000 garmin-claude-sandbox:ci -c '
+            set -euo pipefail
+            uv --version
+            uv python find 3.12
+            node --version
+            claude --version
+          '
+
   ci-guard:
-    needs: [changes, lint-and-test, web-backend, web-frontend, meta-checks]
+    needs: [changes, lint-and-test, web-backend, web-frontend, meta-checks, docker-build]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Check CI result
         run: |
-          if [ "${{ needs.changes.outputs.code }}" == "false" ] && [ "${{ needs.changes.outputs.web }}" == "false" ] && [ "${{ needs.changes.outputs.meta }}" == "false" ]; then
-            echo "No code/doc/meta changes — skipping CI"
+          if [ "${{ needs.changes.outputs.code }}" == "false" ] && [ "${{ needs.changes.outputs.web }}" == "false" ] && [ "${{ needs.changes.outputs.meta }}" == "false" ] && [ "${{ needs.changes.outputs.docker }}" == "false" ]; then
+            echo "No code/doc/meta/docker changes — skipping CI"
             exit 0
+          fi
+          if [ "${{ needs.changes.outputs.docker }}" == "true" ] && [ "${{ needs.docker-build.result }}" != "success" ]; then
+            echo "docker-build failed"
+            exit 1
           fi
           if [ "${{ needs.changes.outputs.code }}" == "true" ] && [ "${{ needs.lint-and-test.result }}" != "success" ]; then
             echo "lint-and-test failed"
