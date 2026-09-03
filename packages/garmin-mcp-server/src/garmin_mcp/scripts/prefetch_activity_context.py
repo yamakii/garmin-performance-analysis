@@ -39,7 +39,6 @@ Output (JSON to stdout):
       },
       "phase_structure": {
         "pace_consistency": 0.017,
-        "pace_consistency_full": 0.041,
         "hr_drift_percentage": 2.5,
         "cadence_consistency": "stable",
         "fatigue_pattern": "none",
@@ -151,11 +150,10 @@ def _build_phase_dict(row: tuple, has_recovery: bool) -> dict:
     0: pace_consistency, 1: hr_drift_percentage, 2: cadence_consistency,
     3: fatigue_pattern, 4-6: warmup (pace_str, hr, splits),
     7-9: run (pace_str, hr, splits), 10-12: recovery (pace_str, hr, splits),
-    13-15: cooldown (pace_str, hr, splits), 16: pace_consistency_full
+    13-15: cooldown (pace_str, hr, splits)
     """
     result: dict = {
         "pace_consistency": row[0],
-        "pace_consistency_full": row[16],
         "hr_drift_percentage": row[1],
         "cadence_consistency": row[2],
         "fatigue_pattern": row[3],
@@ -365,8 +363,7 @@ def prefetch_activity_context(activity_id: int) -> dict:
                     recovery_splits,
                     cooldown_avg_pace_str,
                     cooldown_avg_hr,
-                    cooldown_splits,
-                    pace_consistency_full
+                    cooldown_splits
                 FROM performance_trends
                 WHERE activity_id = ?
                 """,

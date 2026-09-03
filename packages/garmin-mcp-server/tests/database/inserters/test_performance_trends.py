@@ -16,6 +16,7 @@ from garmin_mcp.database.inserters.performance_trends import (
     _compute_rep_matched_drift,
     _compute_steady_decoupling,
     _cv,
+    _extract_performance_trends_from_raw,
     _representative_run_paces,
     insert_performance_trends,
 )
@@ -926,34 +927,31 @@ class TestRepresentativeRunPacesAndCV:
         assert _cv([]) is None
 
     @pytest.mark.unit
-    def test_pace_consistency_representative_vs_full(self):
-        """Representative CV drops the fragment; full CV keeps it (#852)."""
+    def test_pace_consistency_representative_drops_fragment(self):
+        """Representative CV drops the fragment lap entirely (#852)."""
         paces = [461.6, 450.1, 456.6, 437.9, 415.2]
         distances = [1.0, 1.0, 1.0, 1.0, 0.016]
         run_laps = [
             {"pace": p, "distance_km": d} for p, d in zip(paces, distances, strict=True)
         ]
         pace_consistency = _cv(_representative_run_paces(run_laps))
-        pace_consistency_full = _cv(paces)
         assert pace_consistency is not None
-        assert pace_consistency_full is not None
         assert abs(pace_consistency - 0.0227) < 0.001
-        assert abs(pace_consistency_full - 0.0417) < 0.001
 
 
-class TestPaceConsistencyFullPersistence:
-    """Integration: pace_consistency_full is persisted and read back (#852)."""
+class TestPaceConsistencyNoFullVariant:
+    """The fragment-inclusive raw CV is gone from every layer (#972)."""
 
     @pytest.fixture
     def fragment_run_splits_file(self, tmp_path):
-        """Single-phase run: 4 full laps + a 16 m trailing GPS fragment."""
-        # paces (s/km): 461.6, 450.1, 456.6, 437.9, 415.2
+        """Single-phase run: 4 x 1 km laps + an 85 m trailing GPS fragment."""
+        # paces (s/km): 445, 451, 459, 457, and 418 for the fragment
         specs = [
-            (1000.0, 461.6),
-            (1000.0, 450.1),
-            (1000.0, 456.6),
-            (1000.0, 437.9),
-            (16.0, 415.2 * 0.016),  # fragment: 16 m -> pace 415.2 s/km
+            (1000.0, 445.0),
+            (1000.0, 451.0),
+            (1000.0, 459.0),
+            (1000.0, 457.0),
+            (85.0, 418.0 * 0.085),  # fragment: 85 m -> pace 418 s/km
         ]
         lap_dtos = [
             {
@@ -967,22 +965,34 @@ class TestPaceConsistencyFullPersistence:
             }
             for i, (dist, dur) in enumerate(specs)
         ]
-        raw_splits_data = {"activityId": 23554970343, "lapDTOs": lap_dtos}
+        raw_splits_data = {"activityId": 24221548903, "lapDTOs": lap_dtos}
         raw_splits_file = tmp_path / "fragment_splits.json"
         with open(raw_splits_file, "w", encoding="utf-8") as f:
             json.dump(raw_splits_data, f, ensure_ascii=False, indent=2)
         return raw_splits_file
 
+    @pytest.mark.unit
+    def test_pace_consistency_excludes_fragment_only(self, fragment_run_splits_file):
+        """Extraction keeps the representative CV and emits no raw-CV key."""
+        result = _extract_performance_trends_from_raw(str(fragment_run_splits_file))
+
+        assert result is not None
+        pace_consistency = result["pace_consistency"]
+        assert pace_consistency is not None
+        # 4 x 1 km laps only (85 m fragment excluded) -> ~1.4%.
+        assert abs(pace_consistency - 0.014) < 0.001
+        assert "pace_consistency_full" not in result
+
     @pytest.mark.integration
-    def test_pace_consistency_full_persisted_and_read(
+    def test_get_performance_trends_has_no_full_key(
         self, fragment_run_splits_file, initialized_db_path
     ):
-        """insert_performance_trends persists both CVs; reader returns both."""
+        """The representative CV round-trips; the raw-CV key is absent."""
         db_path = initialized_db_path
         conn = duckdb.connect(str(db_path))
 
         result = insert_performance_trends(
-            activity_id=23554970343,
+            activity_id=24221548903,
             conn=conn,
             raw_splits_file=str(fragment_run_splits_file),
         )
@@ -990,14 +1000,10 @@ class TestPaceConsistencyFullPersistence:
         conn.close()
 
         reader = PerformanceReader(db_path=str(db_path))
-        trends = reader.get_performance_trends(23554970343)
+        trends = reader.get_performance_trends(24221548903)
         assert trends is not None
 
         pace_consistency = trends["pace_consistency"]
-        pace_consistency_full = trends["pace_consistency_full"]
         assert pace_consistency is not None
-        assert pace_consistency_full is not None
-        # Representative CV excludes the 16 m fragment -> ~2.27%.
-        assert abs(pace_consistency - 0.0227) < 0.001
-        # Full CV includes the fragment -> ~4.17%.
-        assert abs(pace_consistency_full - 0.0417) < 0.001
+        assert abs(pace_consistency - 0.014) < 0.001
+        assert "pace_consistency_full" not in trends

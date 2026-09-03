@@ -84,12 +84,10 @@ class TestBuildPhaseDict:
             "7:12/km",  # cooldown_avg_pace_str
             140.0,  # cooldown_avg_hr
             "6,7",  # cooldown_splits
-            0.041,  # pace_consistency_full
         )
         result = _build_phase_dict(row, has_recovery=False)
 
         assert result["pace_consistency"] == 0.017
-        assert result["pace_consistency_full"] == 0.041
         assert result["hr_drift_percentage"] == 2.5
         assert result["cadence_consistency"] == "stable"
         assert result["fatigue_pattern"] == "none"
@@ -117,7 +115,6 @@ class TestBuildPhaseDict:
             "9:27/km",  # cooldown
             135.0,
             "6,7,8",
-            0.038,  # pace_consistency_full
         )
         result = _build_phase_dict(row, has_recovery=True)
 
@@ -143,13 +140,45 @@ class TestBuildPhaseDict:
             None,
             None,
             None,
-            None,  # pace_consistency_full
         )
         result = _build_phase_dict(row, has_recovery=False)
 
         assert "warmup" not in result
         assert "run" in result
         assert "cooldown" not in result
+
+    def test_build_phase_dict_omits_full(self) -> None:
+        """The fragment-inclusive raw CV key is gone from the bundle (#972)."""
+        row = (
+            0.017,  # pace_consistency
+            2.5,  # hr_drift_percentage
+            "stable",  # cadence_consistency
+            "none",  # fatigue_pattern
+            "6:33/km",  # warmup_avg_pace_str
+            134.0,  # warmup_avg_hr
+            "1,2",  # warmup_splits
+            "5:45/km",  # run_avg_pace_str
+            155.0,  # run_avg_hr
+            "3,4,5",  # run_splits
+            None,  # recovery_avg_pace_str
+            None,  # recovery_avg_hr
+            None,  # recovery_splits
+            "7:12/km",  # cooldown_avg_pace_str
+            140.0,  # cooldown_avg_hr
+            "6,7",  # cooldown_splits
+        )
+        result = _build_phase_dict(row, has_recovery=False)
+
+        assert set(result) == {
+            "pace_consistency",
+            "hr_drift_percentage",
+            "cadence_consistency",
+            "fatigue_pattern",
+            "warmup",
+            "run",
+            "cooldown",
+        }
+        assert "pace_consistency_full" not in result
 
 
 @pytest.mark.unit
@@ -219,7 +248,6 @@ class TestPrefetchActivityContext:
                 "7:12/km",
                 140.0,
                 "7,8",
-                0.041,  # pace_consistency_full
             ),
         ]
 
@@ -486,7 +514,6 @@ class TestPrefetchActivityContext:
                 "7:12/km",
                 140.0,
                 "7,8",
-                0.041,  # pace_consistency_full
             ),
         ]
 

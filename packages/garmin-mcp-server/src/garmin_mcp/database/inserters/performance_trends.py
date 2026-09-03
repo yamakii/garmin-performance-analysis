@@ -339,13 +339,11 @@ def _extract_performance_trends_from_raw(raw_splits_file: str) -> dict | None:
     # Calculate pace consistency (if we have run phase).
     # pace_consistency uses only representative run laps (GPS fragment laps whose
     # distance is < 0.5x the median run-lap distance are excluded) so a tiny
-    # trailing lap cannot inflate the CV. pace_consistency_full keeps the raw CV
-    # over every run lap for transparency (#852).
+    # trailing lap cannot inflate the CV (#852). The fragment-inclusive raw CV
+    # (pace_consistency_full) was dropped in #972: it has no analytical meaning
+    # and was mistaken for the real consistency figure during scoring.
     if run_stats and run_splits:
         result["pace_consistency"] = _cv(_representative_run_paces(run_splits))
-        result["pace_consistency_full"] = _cv(
-            [s["pace"] for s in run_splits if s["pace"] is not None]
-        )
 
     # Calculate HR drift, branching on workout structure.
     # - steady (single-intensity continuous run): Pa:HR decoupling over the
@@ -526,7 +524,6 @@ def insert_performance_trends(
                 INSERT INTO performance_trends (
                     activity_id,
                     pace_consistency,
-                    pace_consistency_full,
                     hr_drift_percentage,
                     cadence_consistency,
                     fatigue_pattern,
@@ -558,12 +555,11 @@ def insert_performance_trends(
                     cooldown_avg_cadence,
                     cooldown_avg_power,
                     cooldown_evaluation
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     activity_id,
                     perf_trends.get("pace_consistency"),
-                    perf_trends.get("pace_consistency_full"),
                     perf_trends.get("hr_drift_percentage"),
                     perf_trends.get("cadence_consistency"),
                     perf_trends.get("fatigue_pattern"),

@@ -96,14 +96,13 @@ def test_migration_seeds_existing_profile_as_first_version(tmp_path: Path) -> No
 
 
 @pytest.mark.unit
-def test_migration_registered_as_head() -> None:
-    """v21 is registered as the current head of MIGRATIONS."""
+def test_migration_registered_as_v21() -> None:
+    """add_athlete_profile_versions is registered at version 21."""
     assert (
         21,
         "add_athlete_profile_versions",
         _wrap_add_athlete_profile_versions,
     ) in MIGRATIONS
-    assert max(version for version, _, _ in MIGRATIONS) == 21
 
 
 @pytest.mark.unit

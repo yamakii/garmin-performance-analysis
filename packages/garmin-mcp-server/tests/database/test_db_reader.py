@@ -190,8 +190,7 @@ class TestGarminDBReader:
                 recovery_avg_hr DOUBLE,
                 cooldown_splits VARCHAR,
                 cooldown_avg_pace_seconds_per_km DOUBLE,
-                cooldown_avg_hr DOUBLE,
-                pace_consistency_full DOUBLE
+                cooldown_avg_hr DOUBLE
             )
         """)
 
@@ -214,8 +213,7 @@ class TestGarminDBReader:
                 NULL,
                 '6',
                 390.0,
-                150.0,
-                6.1
+                150.0
             )
         """)
 
@@ -276,8 +274,7 @@ class TestGarminDBReader:
                 recovery_avg_hr DOUBLE,
                 cooldown_splits VARCHAR,
                 cooldown_avg_pace_seconds_per_km DOUBLE,
-                cooldown_avg_hr DOUBLE,
-                pace_consistency_full DOUBLE
+                cooldown_avg_hr DOUBLE
             )
         """)
 
@@ -300,8 +297,7 @@ class TestGarminDBReader:
                 140.0,
                 '7',
                 450.0,
-                145.0,
-                9.0
+                145.0
             )
         """)
 
