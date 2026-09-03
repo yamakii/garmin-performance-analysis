@@ -7,6 +7,7 @@ Consolidated reference for all analysis rules.
 - **MCP tools only**: `mcp__garmin-db__*` を使う。直接 `duckdb.connect()`, SQL, `.duckdb` ファイルアクセス禁止
 - **Token optimization**: `statistics_only=True` 優先 (67-80% 削減)。`get_splits_comprehensive()` で12フィールド一括取得
 - **10+ activities**: Export workflow — PLAN(SQL設計) → EXPORT(parquet) → CODE(Python) → RESULT → INTERPRET
+- **数値は当該テーブルから**: VO2max / LTHR / 体重 / HR ゾーン境界などの数値は、`athlete_profile.focus_notes` 等のプロフィール散文ではなく該当ツール（`get_vo2_max_data`、`get_lactate_threshold_data`、`get_body_composition_trend`、`get_heart_rate_zones_detail`）から取る。プロフィール記述は執筆時点のスナップショットで陳腐化する（"now 44" と書かれた VO2max の実値は 45.8 だった）
 
 ## 2. Agent Rules
 
@@ -41,6 +42,8 @@ Consolidated reference for all analysis rules.
 - `recommendations` 最大2件。次回アクションは1つに絞る（数値+成功判定条件付き）
 - Easy run の提案 → HR 範囲で提示（ペースではなく）。例外条件を1つ添える
 - 一般的助言禁止（「もっと練習しましょう」→ 具体数値必須）
+- **`success_criterion` は次回の refinement 目安であり今回の合否ではない**。目的を達したランには「成功条件」「失敗」の表現を使わず、「維持目標」「改善余地」として提示する（agent の prose・会話での引用の双方）
+- **過敏な評価は閾値緩和ではなくカテゴリ分離で解く**: 「厳しすぎる」フィードバックの最初の一手は「一律に測っているものを training_type / 文脈で分けられないか」を問う（例: ペース CV はテンポ走はシビアに、LSD / 時間重視ロングは緩く）。既存の category 分離を確認し、閾値変更ではなく category 別の評価方針で分岐させる
 
 ### エージェント間の一貫性
 

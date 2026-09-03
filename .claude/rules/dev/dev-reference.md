@@ -27,6 +27,7 @@
   - [ ] test_method_happy_path [unit] -- x=5 → "5"
   - [ ] test_method_edge_case [unit] -- x=-1 → raises ValueError
   ```
+- **Garmin API 依存機能の Risks は実応答で確認**: 取り込み・判定が Garmin API の値（`typeKey`、フィールド名、単位）に依存する設計は、プラン作成前に対象アクティビティの実データを取得して確認し、観測値を Risks に `[検証済]` として記載する。確認できないときは `[未検証]` のまま実装せず、実データ確認を先行させる（hiking を `typeKey=="hiking"` 前提で設計し実際は `"mountaineering"` で 0 件になった #921 の再発防止）
 - **Plan承認後**: Issue作成(TBD時) → Issue sync（`design-approved` 付与）→ 既定で `/implement <issue>` 実装 or `/decompose`。再確認不要
 - **Review Gates**: Design → Test Plan → Code(CI) → Validation → Merge
   - **既定経路 = `/implement <issue番号>`**（**単発 Issue / Epic を問わず**）: 検証(L1/L2) PASS + `ci-guard` success + mergeable なら **auto-merge**（`implement-tier` Workflow）。例外（FAIL / 内容チェック WARNING / CI 失敗 / コンフリクト）のみ人間が `/ship --pr N --validated`
@@ -118,6 +119,7 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 
 - **Filter at ingest**: データ変換は ingest 時に実行。query 側の WHERE フィルタで汚いデータをマスクしない
 - **Garmin native HR zones**: `heart_rate_zones` テーブルから読む。計算式(220-age等)やハードコード禁止
+- **評価ロジックと契約の同期**: データ層の評価ロジック（閾値・期待値・カテゴリ分け）を変えたら、`contracts.py`（`get_analysis_contract` が返す thresholds / instructions）も同じ PR で更新し、Test Plan に契約側のテストを含める。agent はデータではなく契約を読んで評価するため、両者の齟齬はテストが通ったまま出力品質だけが落ちる silent regression になる（#215 → #252）
 - **DuckDB connections**: `get_connection()` / `get_write_connection()` のみ使用。raw `duckdb.connect()` 禁止
 - **DuckDB concurrency**: single writer。locked エラー → リトライ(3回, 2s backoff)
 - **DuckDB dates**: `datetime.date` で返る → MCP/JSON前に `str()` で変換
