@@ -32,6 +32,16 @@
 - Failing CI: fix without being told. Point at logs → resolve.
 - Zero context switching required from the user.
 
+## Autonomy Boundaries
+- **外部副作用は毎回確認する**。PR マージの恒久承認（#886）はマージにしか及ばない。以下は別枠で、実行前にユーザーの確認を取る:
+  - Garmin Connect への書き込み（`schedule_custom_workout` / `cleanup_generated_workouts(dry_run=False)` 等のカレンダー・ワークアウト変更）
+  - cloud routine / scheduled agent / cron の作成・変更（`/schedule`, `/loop`, CronCreate）
+  - GitHub リポジトリ設定の変更（branch protection, auto-merge, Dependabot, Actions 設定, secrets）
+  - DB の削除・全件再生成（`--delete-db`, テーブル drop, `rm` を伴う data/ の操作）
+- ユーザーの直接依頼がその操作自体であれば（例:「今日のロングランを Garmin に登録して」）、その **1 操作だけ**は依頼をもって承認済みとみなす。付随して発生する他の書き込み・削除・設定変更は都度確認する
+- 背景ジョブ・非対話セッションでも同じ。確認が取れないなら、その操作を残して他を完了し、報告で `needs input:` として明示する
+- 根拠: 2026-09-02 の保守セッションでユーザーが「定期ルーチン化以外は進めて」と明示的に切り分けた（cloud routine 作成は恒久承認の範囲外）
+
 ## Task Tracking
 - Multi-step tasks: plan in `.claude/tasks/todo.md` with checkboxes, track progress, document results.
 - Explain changes at each step (high-level summary).
