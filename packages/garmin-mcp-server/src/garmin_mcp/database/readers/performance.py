@@ -46,8 +46,7 @@ class PerformanceReader(BaseDBReader):
                         recovery_avg_pace_seconds_per_km,
                         recovery_avg_hr,
                         cooldown_avg_pace_seconds_per_km,
-                        cooldown_avg_hr,
-                        pace_consistency_full
+                        cooldown_avg_hr
                     FROM performance_trends
                     WHERE activity_id = ?
                     """,
@@ -59,7 +58,6 @@ class PerformanceReader(BaseDBReader):
 
                 trends_data = {
                     "pace_consistency": result[0],
-                    "pace_consistency_full": result[13],
                     "hr_drift_percentage": result[1],
                     "cadence_consistency": result[2],
                     "fatigue_pattern": result[3],

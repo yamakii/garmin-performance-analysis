@@ -59,8 +59,9 @@ def test_server_startup_applies_migrations(tmp_path: Path) -> None:
         "add_pace_consistency_full",
         "add_hiking_sessions",
         "add_athlete_profile_versions",
+        "drop_pace_consistency_full",
     ]
-    assert MigrationRunner(db_path).get_current_version() == 21
+    assert MigrationRunner(db_path).get_current_version() == 22
 
 
 @pytest.mark.integration
