@@ -237,7 +237,8 @@ const results = await pipeline(
         `worktree_path=${m.worktree_path}, branch=${m.branch}, issue=#${issue.number}。\n\n` +
         `1. ${pushCmd(m.worktree_path, m.branch)}（必要なら origin/main へ rebase してから。コンフリクト時は mergeable=false で報告）。\n` +
         `2. mcp__github__create_pull_request(${repoCtx()}, head="${m.branch}", base="main", title=コミット要約, body="Closes #${issue.number}\\nPart of the tier")。\n` +
-        `3. mcp__github__pull_request_read(method="get_check_runs", ${repoCtx()}, pullNumber=PR番号) を ci-guard が completed になるまでポーリング（数回・間隔を空けて）。\n` +
+        `3. リポジトリルートで bash scripts/wait-for-ci.sh PR番号 --timeout 900 を実行して ci-guard の完了を 1 コマンドで待つ（exit 0=success / 1=failure / 2=timeout）。` +
+        `exit 3（GITHUB_TOKEN 無し等）のときだけ mcp__github__pull_request_read(method="get_check_runs", ${repoCtx()}, pullNumber=PR番号) を間隔を空けて数回ポーリングする。\n` +
         `4. ci-guard の conclusion を ci_conclusion に（success/failure/pending）。web-backend/web-frontend/lint-and-test の skipped は無視。\n` +
         `5. PR が main に対して mergeable か（コンフリクトなし）を mergeable に。\n` +
         `schema で {pr_number, pr_url, ci_conclusion, mergeable, head_sha} を返す。`,

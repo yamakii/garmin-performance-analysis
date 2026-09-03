@@ -116,6 +116,18 @@ if [ -e scripts/tests/test-format-python-hook.sh ]; then
   fi
 fi
 
+# Behavioral self-test for wait-for-ci.sh: a PATH-shimmed `curl` serves canned
+# pulls / check-runs responses, so exit codes (0 success / 1 failure / 2 timeout
+# / 3 env error) are asserted without network or a real token.
+if [ -e scripts/tests/test-wait-for-ci.sh ]; then
+  if bash scripts/tests/test-wait-for-ci.sh; then
+    echo "ok (script test): wait-for-ci"
+  else
+    echo "FAIL (script test): wait-for-ci" >&2
+    status=1
+  fi
+fi
+
 if [ "$status" -ne 0 ]; then
   echo "check-claude-scripts: FAILED" >&2
 else

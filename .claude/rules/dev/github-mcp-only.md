@@ -28,6 +28,9 @@
 - required check は **`ci-guard`** — `conclusion: "success"` ならマージ可。
 - `web-backend` / `web-frontend` は `packages/garmin-web/**` 変更時のみ走り、それ以外は `conclusion: "skipped"`（正常）。
 - 旧 `get_pull_request_status` は commit statuses API（GitHub Actions の check-runs は見えず常に空）だったため使わない。
+- **完了待ちは `bash scripts/wait-for-ci.sh <PR>` を使う**（唯一の非 MCP 例外）。read-only の REST 取得を `GITHUB_TOKEN` で行い、
+  `ci-guard` が completed になるまで 1 コマンドでブロックする（`sleep` → `get_check_runs` の LLM ループ禁止、dev-reference §8）。
+  書き込み（merge / comment / issue）は引き続き MCP のみ。exit 3（token 無し等）のときだけ `get_check_runs` で手動ポーリングする。
 
 ### 引数の注意
 

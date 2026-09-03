@@ -127,7 +127,8 @@ Phase 2 + Phase 2.9 完了後のみ実行可能（手動経路）:
 1. worktree ブランチを main repo に fetch
 2. remote に push
 3. `mcp__github__create_pull_request` (Closes #{issue}, 本文に `## Verification` を記録)
-4. `ci-guard` が completed になるまでポーリング（`pull_request_read(method="get_check_runs")`）
+4. `ci-guard` の完了を **`bash scripts/wait-for-ci.sh <PR> --timeout 900`（1 コマンド・`run_in_background` 推奨）** で待つ。
+   exit 0 = success / 1 = failure / 2 = timeout / 3 = 環境エラー。exit 3 のときだけ `pull_request_read(method="get_check_runs")` で手動ポーリング（`sleep` → 再取得の LLM ループは組まない）
 5. **auto-merge ゲート**: 検証(L1/L2) PASS + `ci-guard` success + mergeable + **Phase 2.9 の検証完了**を満たせば
    `merge_pull_request` で自動マージ（テスト・検証の充実が前提, #395）。
    `/implement` ではこの判定を `implement-tier` Workflow が担う。

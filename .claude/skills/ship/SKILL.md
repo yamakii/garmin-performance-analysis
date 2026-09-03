@@ -39,6 +39,15 @@ Run the full ship workflow for the current changes.
 
 ### Step 1-PR: CI 確認
 
+まず **1 コマンドで ci-guard の完了を待つ**（`sleep` → `get_check_runs` の手動ループは使わない）:
+
+```bash
+bash scripts/wait-for-ci.sh {PR_NUMBER} --timeout 900   # run_in_background=true 推奨（CI は 5〜10 分）
+```
+
+exit 0 = `ci-guard` success、1 = failure 系、2 = timeout、3 = 環境エラー（`GITHUB_TOKEN` 無し等）。
+exit 3 のときだけ従来どおり MCP でポーリングする:
+
 ```
 mcp__github__pull_request_read(method="get_check_runs", owner="yamakii", repo="garmin-performance-analysis", pullNumber={PR_NUMBER})
 mcp__github__pull_request_read(method="get", owner="yamakii", repo="garmin-performance-analysis", pullNumber={PR_NUMBER})
