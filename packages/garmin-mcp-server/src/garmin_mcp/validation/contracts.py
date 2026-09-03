@@ -10,6 +10,36 @@ from __future__ import annotations
 
 from typing import Any
 
+# Pace coefficient-of-variation bands, shared by the phase and summary
+# contracts (#973). Easy / long / LSD runs are HR-governed and run on 1 km
+# auto-laps, so hills, signals and walk breaks make their CV structurally
+# larger than a tempo run held at a target pace. Every low_moderate band must
+# therefore be >= the corresponding tempo_threshold band.
+CV_THRESHOLDS: dict[str, dict[str, str]] = {
+    "low_moderate": {
+        "excellent": "<5%",
+        "good": "<8%",
+        "fair": "<12%",
+        "poor": ">=12%",
+    },
+    "tempo_threshold": {
+        "excellent": "<3%",
+        "good": "<5%",
+        "fair": "<7%",
+        "poor": ">=7%",
+    },
+    "interval_sprint": {
+        "work": "<5%",
+        "recovery": "<10%",
+    },
+}
+
+
+def _cv_band(category: str, grade: str) -> str:
+    """Return one pace-CV band string from the shared CV_THRESHOLDS table."""
+    return CV_THRESHOLDS[category][grade]
+
+
 _CONTRACTS: dict[str, dict[str, Any]] = {
     "split": {
         "schema_version": "1.0",
@@ -108,24 +138,7 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                     },
                 },
             },
-            "cv_thresholds": {
-                "low_moderate": {
-                    "excellent": "<2%",
-                    "good": "<3%",
-                    "fair": "<5%",
-                    "poor": ">=5%",
-                },
-                "tempo_threshold": {
-                    "excellent": "<3%",
-                    "good": "<5%",
-                    "fair": "<7%",
-                    "poor": ">=7%",
-                },
-                "interval_sprint": {
-                    "work": "<5%",
-                    "recovery": "<10%",
-                },
-            },
+            "cv_thresholds": CV_THRESHOLDS,
             "warmup_criteria": {
                 "low_moderate": {
                     "not_needed": "Warmup not required for low intensity",
@@ -517,11 +530,11 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "training_type_criteria": {
                 "base": {
                     "hr_zone_1_2": ">=80%",
-                    "pace_cv": "<3%",
+                    "pace_cv": _cv_band("low_moderate", "good"),
                 },
                 "tempo": {
                     "hr_zone_3_4": ">=60%",
-                    "pace_cv": "<5%",
+                    "pace_cv": _cv_band("tempo_threshold", "good"),
                     "hr_drift": "10-15% allowed",
                 },
                 "interval": {

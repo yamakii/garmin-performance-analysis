@@ -4,7 +4,11 @@ import re
 
 import pytest
 
-from garmin_mcp.validation.contracts import VALID_SECTION_TYPES, get_contract
+from garmin_mcp.validation.contracts import (
+    CV_THRESHOLDS,
+    VALID_SECTION_TYPES,
+    get_contract,
+)
 
 
 @pytest.mark.unit
@@ -48,6 +52,67 @@ def test_phase_contract_has_cv_thresholds():
     assert len(cv) == 3
     for category in ["low_moderate", "tempo_threshold", "interval_sprint"]:
         assert category in cv
+
+
+def _cv_percent(band: str) -> float:
+    """Parse a CV band string ("<8%" / ">=12%") into its numeric bound."""
+    match = re.fullmatch(r"(<|>=)(\d+)%", band)
+    assert match is not None, f"unparsable CV band: {band!r}"
+    return float(match.group(2))
+
+
+@pytest.mark.unit
+def test_cv_thresholds_low_moderate_looser_than_tempo():
+    """Regression test for #973: easy/long must never be stricter than tempo.
+
+    The contract used to grade low_moderate (easy / long / LSD) at <2/3/5%
+    while tempo got <3/5/7%, i.e. HR-governed easy runs were held to a
+    tighter pace CV than a target-pace tempo run.
+    """
+    cv = get_contract("phase")["evaluation_policy"]["cv_thresholds"]
+    for grade in ["excellent", "good", "fair", "poor"]:
+        low = _cv_percent(cv["low_moderate"][grade])
+        tempo = _cv_percent(cv["tempo_threshold"][grade])
+        assert low >= tempo, (
+            f"low_moderate {grade} ({low}%) must be >= "
+            f"tempo_threshold {grade} ({tempo}%)"
+        )
+
+
+@pytest.mark.unit
+def test_cv_thresholds_pinned_values():
+    cv = get_contract("phase")["evaluation_policy"]["cv_thresholds"]
+    assert cv["low_moderate"] == {
+        "excellent": "<5%",
+        "good": "<8%",
+        "fair": "<12%",
+        "poor": ">=12%",
+    }
+    assert cv["tempo_threshold"] == {
+        "excellent": "<3%",
+        "good": "<5%",
+        "fair": "<7%",
+        "poor": ">=7%",
+    }
+    assert cv["interval_sprint"] == {"work": "<5%", "recovery": "<10%"}
+
+
+@pytest.mark.unit
+def test_summary_pace_cv_derived_from_phase_good_band():
+    """Summary and phase must not carry independent copies of the bands."""
+    cv = get_contract("phase")["evaluation_policy"]["cv_thresholds"]
+    criteria = get_contract("summary")["evaluation_policy"]["training_type_criteria"]
+    assert criteria["base"]["pace_cv"] == cv["low_moderate"]["good"] == "<8%"
+    assert criteria["tempo"]["pace_cv"] == cv["tempo_threshold"]["good"] == "<5%"
+
+
+@pytest.mark.unit
+def test_cv_threshold_band_format():
+    for category, bands in CV_THRESHOLDS.items():
+        for grade, band in bands.items():
+            assert re.fullmatch(
+                r"(<|>=)\d+%", band
+            ), f"CV_THRESHOLDS[{category!r}][{grade!r}] = {band!r} is malformed"
 
 
 @pytest.mark.unit
