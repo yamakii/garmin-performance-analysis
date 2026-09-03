@@ -74,6 +74,18 @@ Run inside Claude Code — ingests the data, runs the section-analysis agents in
 
 ```
 /analyze-activity <date>      # e.g. /analyze-activity 2025-10-15 (defaults to today)
+/analyze-activity missing 14  # catch up every run of the last 14 days still missing analyses
+```
+
+### Coaching Skills
+
+Conversational coaching runs through dedicated skills so the same data set is read every time:
+
+```
+/daily-checkin [date]         # pre-run: today's recovery + load + this week's prescription
+/run-debrief [date]           # post-run: why a run felt hard / form slipped / a split degraded
+/schedule-workout [date]      # push the weekly-review prescription to the Garmin calendar ([MCP] workout)
+/weekly-review [week]         # coach review of the target week, saved to DuckDB
 ```
 
 ### Fetch Raw Data
