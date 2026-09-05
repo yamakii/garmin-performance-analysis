@@ -18,6 +18,11 @@ The window is resolved per domain because each table advances at its own pace:
 
 A failure in one domain does not abort the others: the offending domain's entry
 carries an ``error`` string while the remaining domains complete normally.
+
+Once the ``running`` domain succeeds, the freshly ingested range is also handed
+to :func:`~garmin_mcp.analysis.prescription_reconcile.reconcile_prescriptions`
+(issue #980) so prescribed sessions are linked to the runs that happened; the
+counts land under ``prescriptions_reconciled`` (``None`` when that step failed).
 """
 
 from __future__ import annotations
@@ -199,6 +204,9 @@ def catch_up_ingest(
         Dict keyed by each requested domain (its ingest result, or
         ``{"error": str}`` when that domain raised), plus a ``"window"`` key
         mapping each requested domain to its resolved ``{"start", "end"}``.
+        When the ``running`` domain succeeded, ``prescriptions_reconciled``
+        carries ``reconcile_prescriptions``' counts over the running window
+        (``None`` when reconciliation itself failed).
     """
     resolved_path = str(get_db_path(db_path))
     resolved_end = end_date if end_date is not None else date.today().isoformat()
@@ -228,6 +236,29 @@ def catch_up_ingest(
             results[domain] = {"error": str(exc)}
 
     results["window"] = window
+
+    # Fresh runs are now in the DB, so the prescribed sessions covering the same
+    # range can be linked to what actually happened (Issue #980): adherence is
+    # bookkeeping, not an LLM judgement, and running it here means the weekly
+    # review and the daily check-in always read reconciled statuses. Gated on
+    # the running domain succeeding (nothing new to match otherwise) and
+    # isolated like every other side effect: a failure nulls the key instead of
+    # failing the ingest. A range with no open prescriptions is a cheap no-op.
+    running_result = results.get("running")
+    if isinstance(running_result, dict) and "error" not in running_result:
+        try:
+            from garmin_mcp.analysis.prescription_reconcile import (
+                reconcile_prescriptions,
+            )
+
+            results["prescriptions_reconciled"] = reconcile_prescriptions(
+                window["running"]["start"],
+                window["running"]["end"],
+                db_path=resolved_path,
+            )
+        except Exception:  # noqa: BLE001 - reconciliation must not fail ingest
+            logger.exception("catch_up_ingest: prescription reconciliation failed")
+            results["prescriptions_reconciled"] = None
 
     # On a fully-successful run (no requested domain reported an error), detect
     # whether the most-recently-completed week still lacks a trend narration and

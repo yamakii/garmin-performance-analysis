@@ -7,7 +7,10 @@ adds the prose ``evaluation`` field. Leaving range comparison or label lookup to
 the LLM risks hallucinated "achieved" verdicts (Issue #671).
 """
 
+from datetime import date, datetime
 from typing import Any
+
+from garmin_mcp.utils.week import week_bounds
 
 # Fallback Japanese labels by workout_type when planned_workouts.description_ja
 # is null. Mirrors the mapping the agent previously held inline (Issue #671).
@@ -568,3 +571,172 @@ def compute_trend_headline_metrics(context: dict[str, Any]) -> dict[str, Any]:
         "long_run_build_weeks": count_long_run_build_weeks(weekly_longest_sec),
         "fusion_flags": compute_fusion_flags(acwr_status, hrv_state, form_delta_pct),
     }
+
+
+# ---------------------------------------------------------------------------
+# Weekly-review plan backbone (Issue #980)
+# ---------------------------------------------------------------------------
+# The review's backbone is the stored mesocycle (training block + long-run
+# ladder step), not the Garmin adaptive plan. Garmin's calendar is demoted to a
+# *conflict* signal: it is only worth mentioning where it contradicts the block.
+# Deciding "does this Garmin item conflict?" and "how well was last week's
+# prescription followed?" is pure bookkeeping, so both are computed here rather
+# than left to the reviewing LLM (see #714 ADR §4).
+
+#: Lowercased title tokens that mark a Garmin calendar item as a quality (hard)
+#: session. Matched as substrings, so "Tempo Run" / "VO2 Max" both hit.
+QUALITY_TITLE_TOKENS: tuple[str, ...] = (
+    "tempo",
+    "threshold",
+    "anaerobic",
+    "sprint",
+    "vo2",
+    "speed",
+    "interval",
+)
+
+#: Block phases in which *any* quality session conflicts with the plan.
+_NO_QUALITY_PHASES = frozenset({"cutback", "recovery", "taper"})
+
+#: Days around the long-run day within which a quality session conflicts with
+#: it (1 = the day before / the day after also collide).
+_LONG_RUN_ADJACENCY_DAYS = 1
+
+#: Prescription statuses that are still open (the session has not been resolved
+#: against an actual run yet).
+_PENDING_PRESCRIPTION_STATUSES = frozenset({"prescribed", "registered"})
+
+#: Prescription statuses reconciliation resolves a row into.
+_RESOLVED_PRESCRIPTION_STATUSES = ("done", "replaced", "skipped")
+
+
+def is_quality_title(title: str | None) -> bool:
+    """Return whether a Garmin calendar title names a quality (hard) session.
+
+    Matching is case-insensitive substring matching against
+    :data:`QUALITY_TITLE_TOKENS`; a missing title is never quality.
+    """
+    if not title:
+        return False
+    lowered = str(title).lower()
+    return any(token in lowered for token in QUALITY_TITLE_TOKENS)
+
+
+def detect_garmin_conflicts(
+    scheduled_workouts: list[dict[str, Any]],
+    ladder_step: dict[str, Any] | None,
+    quality_sessions_per_week: int | None,
+    block_phase: str | None,
+    week_start_date: str,
+    week_start_day: int = 0,
+) -> list[dict[str, Any]]:
+    """List the Garmin calendar items that contradict the week's training block.
+
+    Only *quality* items (:func:`is_quality_title`) inside the target week can
+    conflict; easy / base / rest items are ignored entirely. Each conflicting
+    item yields exactly one row, using the first rule that matches:
+
+    1. ``quality_in_cutback_week`` — the block's ``phase`` is cutback / recovery
+       / taper, where any quality session is off-plan.
+    2. ``quality_on_long_day`` — the item lands on the long-run day (the last
+       day of the week) or the day before / after, colliding with the ladder
+       step. Only applied when the week actually has a ladder step
+       (``ladder_step["current"]``); without one there is no known long run to
+       collide with.
+    3. ``second_quality_session`` — the item exceeds the block's
+       ``quality_sessions_per_week`` budget. Items are counted in date order, so
+       the *extra* ones (index >= the budget) are flagged, not the first.
+
+    Args:
+        scheduled_workouts: ``GarminCalendarReader.get_scheduled_workouts`` rows
+            (``{date, title, ...}``). Items outside the week, without a date or
+            with an unparseable date are skipped.
+        ladder_step: ``{"current", "previous", "next"}`` from
+            ``PlanReader.get_ladder_step_for_week``, or ``None``.
+        quality_sessions_per_week: The block's quality budget. ``None`` disables
+            rule 3 (no budget declared).
+        block_phase: The block's ``phase``, or ``None``.
+        week_start_date: The target week's start (``YYYY-MM-DD``).
+        week_start_day: Weekday the week begins on (0=Monday … 6=Sunday), used
+            to derive the week's inclusive bounds.
+
+    Returns:
+        ``[{"date", "garmin_title", "reason"}, ...]`` in date order. Empty when
+        nothing conflicts (the common case for an all-base week).
+
+    Raises:
+        ValueError: If ``week_start_date`` is not a ``YYYY-MM-DD`` date.
+    """
+    week_start, week_end = week_bounds(
+        datetime.strptime(week_start_date, "%Y-%m-%d").date(), week_start_day
+    )
+
+    quality_items: list[tuple[date, dict[str, Any]]] = []
+    for item in scheduled_workouts or []:
+        if not is_quality_title(item.get("title")):
+            continue
+        try:
+            item_date = date.fromisoformat(str(item.get("date")))
+        except (TypeError, ValueError):
+            continue
+        if not (week_start <= item_date <= week_end):
+            continue
+        quality_items.append((item_date, item))
+    quality_items.sort(key=lambda pair: pair[0])
+
+    # No ladder step -> the week has no known long run to collide with.
+    long_run_day = week_end if (ladder_step or {}).get("current") else None
+    no_quality_phase = str(block_phase or "").lower() in _NO_QUALITY_PHASES
+
+    conflicts: list[dict[str, Any]] = []
+    for index, (item_date, item) in enumerate(quality_items):
+        if no_quality_phase:
+            reason = "quality_in_cutback_week"
+        elif (
+            long_run_day is not None
+            and abs((item_date - long_run_day).days) <= _LONG_RUN_ADJACENCY_DAYS
+        ):
+            reason = "quality_on_long_day"
+        elif (
+            quality_sessions_per_week is not None and index >= quality_sessions_per_week
+        ):
+            reason = "second_quality_session"
+        else:
+            continue
+        conflicts.append(
+            {
+                "date": item_date.isoformat(),
+                "garmin_title": item.get("title"),
+                "reason": reason,
+            }
+        )
+    return conflicts
+
+
+def summarize_adherence(rows: list[dict[str, Any]]) -> dict[str, int]:
+    """Count how a week's prescriptions ended up, for the review's adherence line.
+
+    Args:
+        rows: ``weekly_prescriptions`` rows (only ``status`` is read).
+
+    Returns:
+        ``{"prescribed": total, "done": n, "replaced": n, "skipped": n,
+        "pending": n}`` where ``prescribed`` is the row count (how many sessions
+        were prescribed) and ``pending`` counts everything reconciliation has
+        not resolved yet (``prescribed`` / ``registered``, plus any unknown
+        status, which is treated as unresolved rather than silently dropped).
+    """
+    summary = {
+        "prescribed": len(rows or []),
+        "done": 0,
+        "replaced": 0,
+        "skipped": 0,
+        "pending": 0,
+    }
+    for row in rows or []:
+        status = str(row.get("status") or "")
+        if status in _RESOLVED_PRESCRIPTION_STATUSES:
+            summary[status] += 1
+        else:
+            summary["pending"] += 1
+    return summary

@@ -774,6 +774,8 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 
 **Units & notes**: `week_start_date` / `week_end_date` bound the reviewed week; `review_date` is when it was written; `review_data` is the JSON payload; `agent_name` / `agent_version` identify the producing agent. The former UNIQUE index was dropped (migration `drop_weekly_review_index`) to allow multiple revisions per week.
 
+`review_data` keys (free-form JSON, no migration needed to extend): `this_week` (W-1 actuals summary), `prev_week_adherence` (W-1 prescription counts, copied from the prefetch bundle), `block_alignment` (how W sits in its training block), `periodization` (`expected_phase` / `block_phase` / `ladder_step_km` / `weeks_to_block_end` / `gap` — the gap is measured against the **stored training block**, not the Garmin adaptive plan), `recovery`, `verdict` (one row per prescribed session), `goal_alignment`, `recommendations`, `overall`, plus the Garmin-side `garmin_conflicts` (`{date, garmin_title, reason}` — only calendar items that contradict the block) and `garmin_next_week`, which is kept for the Web detail page but filled from the conflict list only. `save_weekly_review` returns the new `review_id`, which `/weekly-review` passes to `save_weekly_prescriptions` so the week's structured rows (`weekly_prescriptions.review_id`) point back at this exact review version.
+
 ---
 
 ## 20. strength_sessions

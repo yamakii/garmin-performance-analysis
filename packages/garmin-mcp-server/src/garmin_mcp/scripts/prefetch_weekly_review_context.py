@@ -39,7 +39,23 @@ Output (JSON to stdout, one line):
                    "baseline_deviation": {...}|null},
       "strength": {"prev_week": [...]|null, "current_week": [...]|null},
       "hiking": {"prev_week": [...]|null, "current_week": [...]|null},
+      "training_block": {                  # review backbone (Issue #980)
+        "block": {...}|null,              #   the block covering W (mesocycle ledger)
+        "ladder_step": {"current": step|null, "previous": ..., "next": ...},
+        "weeks_to_block_end": int|null,   #   whole weeks from W to the block's end
+        "weight_mode": str|null,
+        "quality_sessions_per_week": int|null,
+        "quality_types": [...]
+      },
+      "prescriptions_prev_week": {        # W-1 rows + deterministic adherence
+        "rows": [...],
+        "adherence": {"prescribed": n, "done": n, "replaced": n,
+                      "skipped": n, "pending": n}
+      },
       "scheduled_workouts": {...}|null,   # network (Garmin Connect); _safe/null-on-error
+      "garmin_conflicts": [               # Garmin items contradicting the block
+        {"date": "...", "garmin_title": "Tempo", "reason": "..."}
+      ],
       "athlete_profile": {...}|null,      # without "goals" (see below)
       "goals_with_weeks_to_race": [{...goal, "weeks_to_race": int|null}],
       "past_review": {...}|null           # review_data without this_week /
@@ -75,6 +91,8 @@ from typing import Any
 from garmin_mcp.analysis.derivations import (
     LONG_RUN_CUTBACK_TRIGGER_WEEKS,
     count_long_run_build_weeks,
+    detect_garmin_conflicts,
+    summarize_adherence,
 )
 from garmin_mcp.database.connection import get_connection, get_db_path
 from garmin_mcp.utils.week import get_week_start_day, week_bounds
@@ -213,6 +231,89 @@ def _long_run_gate(load_trend: dict[str, Any], week_start_date: str) -> dict[str
         "long_run_build_weeks": build_weeks,
         "cutback_due_long_run": build_weeks >= LONG_RUN_CUTBACK_TRIGGER_WEEKS,
     }
+
+
+def _weeks_to_block_end(
+    block: dict[str, Any] | None, week_start_date: str
+) -> int | None:
+    """Whole weeks from W's start to the end of the block covering it.
+
+    ``0`` means W is the block's last week, ``2`` means two more weeks follow W.
+    Returns ``None`` when there is no block or its ``end_date`` is missing /
+    unparseable (a partially filled ledger must not break the bundle).
+    """
+    if not block:
+        return None
+    try:
+        end = datetime.strptime(str(block.get("end_date")), "%Y-%m-%d").date()
+        start = datetime.strptime(week_start_date, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+    return (end - start).days // 7
+
+
+def _collect_training_block(
+    plan_reader: Any, week_start_date: str, user_id: str
+) -> dict[str, Any]:
+    """Collect the review's backbone: W's training block and its ladder step.
+
+    Each reader call is individually ``_safe``, so a half-broken ledger degrades
+    to ``None`` fields rather than nulling the whole key: the shape is always
+    present and the skill can say "no block registered" instead of failing.
+
+    Args:
+        plan_reader: A ``PlanReader``.
+        week_start_date: Target week W's start (``YYYY-MM-DD``).
+        user_id: Ledger owner identifier.
+
+    Returns:
+        ``{"block", "ladder_step", "weeks_to_block_end", "weight_mode",
+        "quality_sessions_per_week", "quality_types"}``. ``block`` is ``None``
+        when no block covers W (nothing is registered, or W falls in a gap).
+    """
+    block = _safe(
+        lambda: plan_reader.get_block_for_date(week_start_date, user_id=user_id)
+    )
+    ladder_step = _safe(
+        lambda: plan_reader.get_ladder_step_for_week(week_start_date, user_id=user_id)
+    ) or {"current": None, "previous": None, "next": None}
+
+    return {
+        "block": block,
+        "ladder_step": ladder_step,
+        "weeks_to_block_end": _weeks_to_block_end(block, week_start_date),
+        "weight_mode": (block or {}).get("weight_mode"),
+        "quality_sessions_per_week": (block or {}).get("quality_sessions_per_week"),
+        "quality_types": (block or {}).get("quality_types") or [],
+    }
+
+
+def _collect_prev_week_prescriptions(
+    plan_reader: Any, prev_start_date: str, user_id: str
+) -> dict[str, Any]:
+    """Collect W-1's prescriptions with their deterministic adherence summary.
+
+    The rows carry the status ``reconcile_prescriptions`` wrote during ingest,
+    so the review reads adherence rather than re-deriving it from activities.
+
+    Args:
+        plan_reader: A ``PlanReader``.
+        prev_start_date: Previous week W-1's start (``YYYY-MM-DD``).
+        user_id: Ledger owner identifier.
+
+    Returns:
+        ``{"rows": [...], "adherence": {...}}``; both empty / all-zero when W-1
+        was never prescribed.
+    """
+    rows = (
+        _safe(
+            lambda: plan_reader.get_weekly_prescriptions(
+                prev_start_date, user_id=user_id
+            )
+        )
+        or []
+    )
+    return {"rows": rows, "adherence": summarize_adherence(rows)}
 
 
 def _slim_athlete_profile(profile: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -450,6 +551,33 @@ def prefetch_weekly_review_context(
 
     scheduled_workouts = _safe(_scheduled_workouts)
 
+    # Review backbone (Issue #980): the stored mesocycle block + ladder step for
+    # W, and how W-1's prescriptions were actually followed. The Garmin plan is
+    # demoted to a conflict signal derived from the block below.
+    from garmin_mcp.database.readers.plan import PlanReader
+
+    plan_reader = PlanReader(db_path=db_path_str)
+    training_block = _collect_training_block(plan_reader, week_start_s, user_id)
+    prescriptions_prev_week = _collect_prev_week_prescriptions(
+        plan_reader, prev_start_s, user_id
+    )
+
+    # Garmin calendar items that contradict W's block (deterministic; empty list
+    # rather than null so the skill can treat "no conflicts" and "no plan" alike).
+    garmin_conflicts = (
+        _safe(
+            lambda: detect_garmin_conflicts(
+                (scheduled_workouts or {}).get("workouts") or [],
+                training_block["ladder_step"],
+                training_block["quality_sessions_per_week"],
+                (training_block["block"] or {}).get("phase"),
+                week_start_s,
+                week_start_day,
+            )
+        )
+        or []
+    )
+
     # Athlete profile (goals / focus) + last review, via AthleteReader.
     from garmin_mcp.database.readers.athlete import AthleteReader
 
@@ -488,7 +616,10 @@ def prefetch_weekly_review_context(
         "recovery": recovery,
         "strength": strength,
         "hiking": hiking,
+        "training_block": training_block,
+        "prescriptions_prev_week": prescriptions_prev_week,
         "scheduled_workouts": scheduled_workouts,
+        "garmin_conflicts": garmin_conflicts,
         "athlete_profile": athlete_profile,
         "goals_with_weeks_to_race": goals_with_weeks_to_race,
         "past_review": past_review,
