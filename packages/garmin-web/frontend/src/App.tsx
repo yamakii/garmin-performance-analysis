@@ -15,6 +15,7 @@ const ActivityDetail = lazy(() => import("./pages/ActivityDetail"));
 const Condition = lazy(() => import("./pages/Condition"));
 const Performance = lazy(() => import("./pages/Performance"));
 const Goal = lazy(() => import("./pages/Goal"));
+const Plan = lazy(() => import("./pages/Plan"));
 const WeeklyReviews = lazy(() => import("./pages/WeeklyReviews"));
 const WeeklyReviewDetail = lazy(() => import("./pages/WeeklyReviewDetail"));
 const NotFound = lazy(() => import("./pages/NotFound"));
@@ -66,6 +67,9 @@ export default function App() {
             <Route path="/performance" element={<Performance />} />
             <Route path="/trends" element={<TrendsRedirect />} />
             <Route path="/goal" element={<Goal />} />
+            <Route path="/plan" element={<Plan />} />
+            {/* The review list left the nav for /plan (#983) but stays
+                routable: the grid links into it and into each week. */}
             <Route path="/weekly-reviews" element={<WeeklyReviews />} />
             <Route
               path="/weekly-reviews/:weekStart"

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { useWeeklyReviewVersions } from "../api/hooks";
+import { useMonthPlan, useWeeklyReviewVersions } from "../api/hooks";
 import { CARD_CLASS } from "../components/Card";
 import ClampedProse from "../components/ClampedProse";
 import Disclosure from "../components/Disclosure";
@@ -10,6 +10,12 @@ import SectionHeading from "../components/SectionHeading";
 import SectionNav, { type NavItem } from "../components/SectionNav";
 import StatusBadge from "../components/StatusBadge";
 import VersionSelect from "../components/VersionSelect";
+import {
+  sessionLabel,
+  statusLabel,
+  statusTone,
+  targetSummary,
+} from "../components/plan/DayCell";
 import { META_LABEL, SUBCARD } from "../components/report/ReportCard";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { formatDate, humanizeKey, weekEndIso } from "../utils/format";
@@ -187,6 +193,9 @@ export default function WeeklyReviewDetail() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const versionsQuery = useWeeklyReviewVersions(weekStart);
   const versions = versionsQuery.data ?? [];
+  // The week's structured prescriptions live in the month grid's payload
+  // (#983); the review page shows them with the coach's verdict merged in.
+  const monthPlanQuery = useMonthPlan(weekStart?.slice(0, 7));
 
   if (versionsQuery.isPending) {
     return <PageLoading />;
@@ -227,6 +236,25 @@ export default function WeeklyReviewDetail() {
   const verdict = data?.verdict ?? [];
   const recommendations = data?.recommendations ?? [];
   const garminNextWeek = data?.garmin_next_week ?? [];
+  // Only calendar items that contradict the block are saved (#980), so the
+  // Garmin card states the conflicts. Reviews written before the block ledger
+  // keep their raw planned-workout table.
+  const garminConflicts = data?.garmin_conflicts ?? [];
+  const showConflicts = garminConflicts.length > 0;
+  const planWeeks = monthPlanQuery.data?.weeks;
+  const planWeek = Array.isArray(planWeeks)
+    ? (planWeeks.find((week) => week.week_start === weekStart) ?? null)
+    : null;
+  const prescriptions = (planWeek?.days ?? []).flatMap((day) =>
+    day.prescriptions.map((prescription) => ({ ...prescription, date: day.date })),
+  );
+  // The verdict is per day, so it merges onto the prescription of that day
+  // instead of being replaced by it.
+  const verdictByDate = new Map(
+    verdict
+      .filter((row) => row.date != null)
+      .map((row) => [row.date as string, row]),
+  );
   const intensityDistribution = thisWeek?.intensity_distribution;
   const intensityEntries =
     intensityDistribution != null
@@ -262,6 +290,7 @@ export default function WeeklyReviewDetail() {
   const hasNextActions =
     recommendations.length > 0 ||
     garminNextWeek.length > 0 ||
+    showConflicts ||
     data?.continuity_note != null;
 
   // In-page nav: list only the Section cards that actually render below.
@@ -289,9 +318,11 @@ export default function WeeklyReviewDetail() {
           recommendations.length > 0
             ? { id: "wr-recommendations", label: "推奨アクション" }
             : null,
-          garminNextWeek.length > 0
-            ? { id: "wr-garmin", label: "来週のGarminワークアウト" }
-            : null,
+          showConflicts
+            ? { id: "wr-garmin", label: "Garmin との衝突" }
+            : garminNextWeek.length > 0
+              ? { id: "wr-garmin", label: "来週のGarminワークアウト" }
+              : null,
           data.continuity_note != null
             ? { id: "wr-continuity", label: "前回からの継続性" }
             : null,
@@ -419,9 +450,79 @@ export default function WeeklyReviewDetail() {
 
           {/* ② Assessment — plan verdict, goal alignment, periodization, ramp */}
           <Group eyebrow="Assessment" title="評価">
-            {/* Verdict table — target-week plan evaluation */}
+            {/* Prescriptions (with the verdict merged in) — target-week plan
+                evaluation. Weeks that predate the structured rows keep the
+                verdict-only table below. */}
             <Section id="wr-verdict" title="対象週プラン評価">
-              {verdict.length > 0 ? (
+              {prescriptions.length > 0 ? (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs tracking-wide text-slate-500 uppercase">
+                      <th scope="col" className="px-2 py-2 text-left font-medium">
+                        日付
+                      </th>
+                      <th scope="col" className="px-2 py-2 text-left font-medium">
+                        セッション
+                      </th>
+                      <th scope="col" className="px-2 py-2 text-left font-medium">
+                        目標
+                      </th>
+                      <th
+                        scope="col"
+                        className="px-2 py-2 text-center font-medium"
+                      >
+                        状態
+                      </th>
+                      <th
+                        scope="col"
+                        className="px-2 py-2 text-center font-medium"
+                      >
+                        評価
+                      </th>
+                      <th scope="col" className="px-2 py-2 text-left font-medium">
+                        コメント
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {prescriptions.map((prescription) => {
+                      const graded = verdictByDate.get(prescription.date);
+                      return (
+                        <tr
+                          key={prescription.prescription_id}
+                          className="hover:bg-slate-50"
+                        >
+                          <td className="px-2 py-2 text-left font-numeric tabular-nums text-slate-700">
+                            {prescription.date}
+                          </td>
+                          <td className="px-2 py-2 text-left text-slate-700">
+                            {prescription.title ||
+                              sessionLabel(prescription.session_type)}
+                          </td>
+                          <td className="px-2 py-2 text-left font-numeric tabular-nums text-slate-600">
+                            {targetSummary(prescription) || "-"}
+                          </td>
+                          <td className="px-2 py-2 text-center">
+                            <StatusBadge tone={statusTone(prescription.status)}>
+                              {statusLabel(prescription.status)}
+                            </StatusBadge>
+                          </td>
+                          <td className="px-2 py-2 text-center">
+                            {graded?.rating != null ? (
+                              <VerdictBadge rating={graded.rating} />
+                            ) : (
+                              "-"
+                            )}
+                          </td>
+                          <td className="px-2 py-2 text-left text-slate-600">
+                            {graded?.comment ?? "-"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              ) : verdict.length > 0 ? (
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-xs tracking-wide text-slate-500 uppercase">
@@ -550,8 +651,54 @@ export default function WeeklyReviewDetail() {
                 </Section>
               )}
 
-              {/* Garmin next-week planned workouts (#597) */}
-              {garminNextWeek.length > 0 && (
+              {/* Garmin conflicts (#980): only the calendar items that
+                  contradict the block are worth acting on. */}
+              {showConflicts && (
+                <Section id="wr-garmin" title="Garmin との衝突">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-xs tracking-wide text-slate-500 uppercase">
+                        <th
+                          scope="col"
+                          className="px-2 py-2 text-left font-medium"
+                        >
+                          日付
+                        </th>
+                        <th
+                          scope="col"
+                          className="px-2 py-2 text-left font-medium"
+                        >
+                          Garmin の予定
+                        </th>
+                        <th
+                          scope="col"
+                          className="px-2 py-2 text-left font-medium"
+                        >
+                          理由
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {garminConflicts.map((conflict, i) => (
+                        <tr key={i} className="hover:bg-slate-50">
+                          <td className="px-2 py-2 text-left font-numeric tabular-nums text-slate-700">
+                            {conflict.date ?? "-"}
+                          </td>
+                          <td className="px-2 py-2 text-left text-slate-700">
+                            {conflict.garmin_title ?? "-"}
+                          </td>
+                          <td className="px-2 py-2 text-left text-slate-600">
+                            {conflict.reason ?? "-"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </Section>
+              )}
+
+              {/* Garmin next-week planned workouts (#597) — pre-ledger reviews */}
+              {!showConflicts && garminNextWeek.length > 0 && (
                 <Section id="wr-garmin" title="来週のGarminワークアウト">
                   <table className="w-full text-sm">
                     <thead>

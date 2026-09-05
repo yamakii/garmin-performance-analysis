@@ -3,11 +3,13 @@ import {
   fetchActivities,
   fetchActivityDetail,
   fetchGoal,
+  fetchMonthPlan,
   fetchRaceReadiness,
   fetchSections,
   fetchSectionVersions,
   fetchTimeSeries,
   fetchTrack,
+  fetchTrainingBlocks,
   fetchWeeklyReviews,
   fetchWeeklyReviewVersions,
 } from "./client";
@@ -49,6 +51,7 @@ import type {
   DurabilityTrend,
   FormAnomalyFlagsResponse,
   GoalResponse,
+  MonthPlan,
   RaceReadiness,
   RecoveryStatus,
   RecoveryTrend,
@@ -56,6 +59,7 @@ import type {
   SectionVersion,
   TimeSeriesResponse,
   TrackResponse,
+  TrainingBlock,
   WeeklyReview,
   WeightEconomyCoupling,
   WellnessBaselineDeviation,
@@ -180,6 +184,27 @@ export function useWeeklyReviewVersions(
     queryKey: ["weeklyReviewVersions", weekStart],
     queryFn: () => fetchWeeklyReviewVersions(weekStart as string),
     enabled: weekStart != null,
+  });
+}
+
+// --- Monthly plan ---------------------------------------------------------
+
+/**
+ * The month grid. `month` is part of the key, so paging back and forth between
+ * months is instant after the first visit; omitting it asks the server for the
+ * current month (keyed separately, since the answer is clock-dependent).
+ */
+export function useMonthPlan(month?: string): UseQueryResult<MonthPlan, Error> {
+  return useQuery({
+    queryKey: ["monthPlan", month ?? null],
+    queryFn: () => fetchMonthPlan(month),
+  });
+}
+
+export function useTrainingBlocks(): UseQueryResult<TrainingBlock[], Error> {
+  return useQuery({
+    queryKey: ["trainingBlocks"],
+    queryFn: () => fetchTrainingBlocks(),
   });
 }
 

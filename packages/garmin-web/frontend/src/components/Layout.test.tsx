@@ -9,7 +9,7 @@ const NAV_LINKS = [
   "コンディション",
   "パフォーマンス",
   "目標",
-  "週次レビュー",
+  "計画",
 ];
 
 function renderLayout(initialPath = "/") {
@@ -34,6 +34,13 @@ describe("Layout", () => {
       expect(within(nav).getByRole("link", { name })).toBeInTheDocument();
     }
     expect(screen.queryByRole("link", { name: "トレンド" })).toBeNull();
+    // 計画 took the sixth slot from 週次レビュー (#983), which is now reached
+    // from the grid instead of the nav.
+    expect(within(nav).getByRole("link", { name: "計画" })).toHaveAttribute(
+      "href",
+      "/plan",
+    );
+    expect(screen.queryByRole("link", { name: "週次レビュー" })).toBeNull();
 
     // Children render inside the content container.
     expect(screen.getByText("コンテンツ")).toBeInTheDocument();

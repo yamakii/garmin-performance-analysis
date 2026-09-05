@@ -1663,3 +1663,276 @@ def heat_db_path(tmp_path: Path) -> Path:
     dates = [(today - _dt.timedelta(days=20 * i + 5)).isoformat() for i in range(12)]
     _seed_heat_db(db_path, _heat_rows(dates))
     return db_path
+
+
+# --- Monthly plan page fixtures (Issue #983) ---------------------------
+# Mirror the ledger schema in
+# garmin_mcp/database/migrations/add_training_blocks_tables.py (#977) and
+# add_weekly_prescriptions_table.py (#980). The month under test is September
+# 2026: 9/1 is a Tuesday, so with a Monday week start the grid runs
+# 2026-08-31 .. 2026-10-04 (5 rows).
+
+_CREATE_TRAINING_BLOCKS = """
+    CREATE TABLE training_blocks (
+        block_id INTEGER PRIMARY KEY,
+        user_id VARCHAR DEFAULT 'default',
+        sequence INTEGER NOT NULL,
+        phase VARCHAR NOT NULL,
+        title VARCHAR NOT NULL,
+        start_date DATE NOT NULL,
+        end_date DATE NOT NULL,
+        purpose VARCHAR,
+        weight_mode VARCHAR,
+        quality_sessions_per_week INTEGER,
+        quality_types VARCHAR,
+        long_run_ladder VARCHAR,
+        cutback_rule VARCHAR,
+        notes VARCHAR,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+"""
+
+_CREATE_WEEKLY_PRESCRIPTIONS = """
+    CREATE TABLE weekly_prescriptions (
+        prescription_id INTEGER PRIMARY KEY,
+        batch_id INTEGER NOT NULL,
+        user_id VARCHAR DEFAULT 'default',
+        review_id INTEGER,
+        week_start_date DATE NOT NULL,
+        date DATE NOT NULL,
+        session_type VARCHAR NOT NULL,
+        title VARCHAR NOT NULL,
+        target_minutes INTEGER,
+        target_km DOUBLE,
+        hr_low INTEGER,
+        hr_high INTEGER,
+        pace_low_s_per_km INTEGER,
+        pace_high_s_per_km INTEGER,
+        rationale VARCHAR,
+        status VARCHAR NOT NULL DEFAULT 'prescribed',
+        garmin_workout_id BIGINT,
+        garmin_schedule_id BIGINT,
+        actual_activity_id BIGINT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP
+    )
+"""
+
+# The ladder the build block declares, one step per week (#977).
+_LONG_RUN_LADDER = [
+    {"week_start": "2026-08-31", "target_km": 19.0, "kind": "build"},
+    {"week_start": "2026-09-07", "target_km": 22.0, "hr_ceiling": 150, "kind": "build"},
+    {"week_start": "2026-09-14", "target_km": 25.0, "kind": "build"},
+    {"week_start": "2026-09-21", "target_km": 16.0, "kind": "cutback"},
+]
+
+# (block_id, sequence, phase, title, start, end, weight_mode, quality/week, ladder)
+_TRAINING_BLOCK_ROWS = [
+    (1, 1, "base", "夏の有酸素ベース", "2026-07-01", "2026-08-23", "維持", 1, []),
+    (
+        2,
+        2,
+        "build",
+        "新潟マラソン ビルド",
+        "2026-08-24",
+        "2026-10-11",
+        "微減",
+        2,
+        _LONG_RUN_LADDER,
+    ),
+]
+
+# (prescription_id, batch_id, week_start, date, session_type, title,
+#  target_km, target_minutes, hr_high, status)
+_PRESCRIPTION_ROWS = [
+    # Week 9/7: the long run is done and has a matching activity.
+    (1, 1, "2026-09-07", "2026-09-08", "easy", "イージー 8km", 8.0, None, 145, "done"),
+    (
+        2,
+        1,
+        "2026-09-07",
+        "2026-09-13",
+        "long",
+        "ロング 22km",
+        22.0,
+        150,
+        150,
+        "done",
+    ),
+    # Week 9/14, superseded batch — must never surface.
+    (
+        3,
+        2,
+        "2026-09-14",
+        "2026-09-20",
+        "long",
+        "ロング 25km (旧案)",
+        25.0,
+        None,
+        150,
+        "prescribed",
+    ),
+    # Week 9/14, canonical batch: done / done / skipped / pending.
+    (4, 3, "2026-09-14", "2026-09-15", "easy", "イージー 8km", 8.0, None, 145, "done"),
+    (5, 3, "2026-09-14", "2026-09-17", "tempo", "テンポ 6km", 6.0, None, 168, "done"),
+    (
+        6,
+        3,
+        "2026-09-14",
+        "2026-09-18",
+        "easy",
+        "イージー 6km",
+        6.0,
+        None,
+        145,
+        "skipped",
+    ),
+    (
+        7,
+        3,
+        "2026-09-14",
+        "2026-09-20",
+        "long",
+        "ロング 25km",
+        25.0,
+        170,
+        150,
+        "prescribed",
+    ),
+]
+
+# (activity_id, date, name, distance_km, seconds, pace_s_per_km, avg_hr)
+_PLAN_ACTIVITY_ROWS = [
+    (9000000101, "2026-08-31", "イージーラン", 6.02, 2200, 365.0, 139),
+    (9000000102, "2026-09-08", "イージーラン", 8.02, 2900, 361.0, 138),
+    (9000000103, "2026-09-13", "ロングラン", 21.4, 8100, 378.5, 146),
+]
+
+
+def _create_plan_tables(conn: duckdb.DuckDBPyConnection) -> None:
+    """Create the plan-page tables and seed the September 2026 fixture."""
+    conn.execute(_CREATE_ATHLETE_PROFILE_WEEK_START)
+    conn.execute(_CREATE_ACTIVITIES)
+    conn.execute(_CREATE_WEEKLY_REVIEWS)
+    conn.execute(_CREATE_TRAINING_BLOCKS)
+    conn.execute(_CREATE_WEEKLY_PRESCRIPTIONS)
+    conn.execute(
+        "INSERT INTO athlete_profile (user_id, week_start_day) VALUES (?, ?)",
+        ["default", 0],
+    )
+
+
+def _insert_plan_rows(conn: duckdb.DuckDBPyConnection) -> None:
+    conn.executemany(
+        "INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?, ?)", _PLAN_ACTIVITY_ROWS
+    )
+    for block in _TRAINING_BLOCK_ROWS:
+        block_id, sequence, phase, title, start, end, weight_mode, quality, ladder = (
+            block
+        )
+        conn.execute(
+            "INSERT INTO training_blocks (block_id, user_id, sequence, phase, title,"
+            " start_date, end_date, weight_mode, quality_sessions_per_week,"
+            " long_run_ladder) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                block_id,
+                "default",
+                sequence,
+                phase,
+                title,
+                start,
+                end,
+                weight_mode,
+                quality,
+                json.dumps(ladder, ensure_ascii=False),
+            ],
+        )
+    for row in _PRESCRIPTION_ROWS:
+        (
+            prescription_id,
+            batch_id,
+            week_start,
+            day,
+            session_type,
+            title,
+            target_km,
+            target_minutes,
+            hr_high,
+            status,
+        ) = row
+        conn.execute(
+            "INSERT INTO weekly_prescriptions (prescription_id, batch_id, user_id,"
+            " review_id, week_start_date, date, session_type, title, target_minutes,"
+            " target_km, hr_high, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                prescription_id,
+                batch_id,
+                "default",
+                1,
+                week_start,
+                day,
+                session_type,
+                title,
+                target_minutes,
+                target_km,
+                hr_high,
+                status,
+            ],
+        )
+    conn.execute(
+        "INSERT INTO weekly_reviews (review_id, user_id, week_start_date,"
+        " week_end_date, review_date, review_data, agent_name, agent_version)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            1,
+            "default",
+            "2026-09-07",
+            "2026-09-13",
+            "2026-09-14",
+            json.dumps(_review_data("9/7週", 0), ensure_ascii=False),
+            "weekly-review",
+            "1.0",
+        ],
+    )
+
+
+@pytest.fixture
+def plan_conn():
+    """In-memory DuckDB with the September 2026 plan fixture (blocks + rx)."""
+    conn = duckdb.connect(":memory:")
+    _create_plan_tables(conn)
+    _insert_plan_rows(conn)
+    yield conn
+    conn.close()
+
+
+@pytest.fixture
+def plan_empty_conn():
+    """In-memory DuckDB with the plan tables present but empty."""
+    conn = duckdb.connect(":memory:")
+    _create_plan_tables(conn)
+    yield conn
+    conn.close()
+
+
+@pytest.fixture
+def plan_legacy_conn():
+    """In-memory DuckDB predating the ledger migrations (no plan tables)."""
+    conn = duckdb.connect(":memory:")
+    conn.execute(_CREATE_ATHLETE_PROFILE_WEEK_START)
+    conn.execute(_CREATE_ACTIVITIES)
+    yield conn
+    conn.close()
+
+
+@pytest.fixture
+def plan_db_path(tmp_path: Path) -> Path:
+    """File DuckDB with the September 2026 plan fixture (for the API tests)."""
+    db_path = tmp_path / "test_garmin_web_plan.duckdb"
+    conn = duckdb.connect(str(db_path))
+    try:
+        _create_plan_tables(conn)
+        _insert_plan_rows(conn)
+    finally:
+        conn.close()
+    return db_path

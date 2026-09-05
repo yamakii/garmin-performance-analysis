@@ -61,8 +61,11 @@ export default function Layout({ children }: { children: ReactNode }) {
             <NavLink to="/goal" className={navLinkClass}>
               目標
             </NavLink>
-            <NavLink to="/weekly-reviews" className={navLinkClass}>
-              週次レビュー
+            {/* The month grid replaced the review list here (#983): the list
+                was only an index over weeks, which the grid now is. Both
+                review routes stay reachable from the grid. */}
+            <NavLink to="/plan" className={navLinkClass}>
+              計画
             </NavLink>
           </nav>
         </div>

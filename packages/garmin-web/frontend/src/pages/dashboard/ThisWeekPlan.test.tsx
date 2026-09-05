@@ -1,8 +1,19 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
-import type { WeeklyReview } from "../../types";
+import type { PlanWeek, WeeklyReview } from "../../types";
+import { makeMonthPlan } from "../../test/planFixture";
 import ThisWeekPlan from "./ThisWeekPlan";
+
+/** The 2026-09-07 week of the shared fixture: two prescriptions, both done. */
+function prescribedWeek(): PlanWeek {
+  return makeMonthPlan().weeks[1];
+}
+
+/** The 2026-08-31 week: inside the grid, but with no prescription rows. */
+function unprescribedWeek(): PlanWeek {
+  return makeMonthPlan().weeks[0];
+}
 
 function makeReview(
   reviewData: WeeklyReview["review_data"],
@@ -22,10 +33,14 @@ function makeReview(
   };
 }
 
-function renderPlan(review: WeeklyReview | null, today?: Date) {
+function renderPlan(
+  review: WeeklyReview | null,
+  today?: Date,
+  week: PlanWeek | null = null,
+) {
   return render(
     <MemoryRouter>
-      <ThisWeekPlan review={review} today={today} />
+      <ThisWeekPlan review={review} week={week} today={today} />
     </MemoryRouter>,
   );
 }
@@ -121,6 +136,39 @@ describe("ThisWeekPlan", () => {
       "href",
       "/weekly-reviews/2026-06-29",
     );
+  });
+
+  it("test_this_week_plan_prefers_prescriptions", () => {
+    const review = makeReview({
+      verdict: [{ date: "2026-09-08", session: "Tempo", rating: "✅" }],
+      recommendations: ["ロング走は時間×HRで管理"],
+    });
+
+    renderPlan(review, new Date(2026, 8, 8), prescribedWeek());
+
+    // The structured rows replace the prose verdict...
+    expect(screen.getByText("イージー 8km")).toBeInTheDocument();
+    expect(screen.getByText("ロング 22km")).toBeInTheDocument();
+    expect(screen.queryByText("Tempo")).not.toBeInTheDocument();
+    // ...with their target and lifecycle status.
+    expect(screen.getByText("22km 150分 ≤150")).toBeInTheDocument();
+    expect(screen.getAllByText("実施")).toHaveLength(2);
+    // The week range comes from the plan week, and today is still marked.
+    expect(screen.getByText("今週のプラン")).toBeInTheDocument();
+    expect(screen.getByText("2026-09-07 〜 2026-09-13")).toBeInTheDocument();
+    expect(screen.getByText("今日")).toBeInTheDocument();
+    // Recommendations still come from the review.
+    expect(screen.getByText("ロング走は時間×HRで管理")).toBeInTheDocument();
+  });
+
+  it("test_this_week_plan_falls_back_to_verdict_without_prescriptions", () => {
+    const review = makeReview({
+      verdict: [{ date: "2026-07-01", session: "Tempo", rating: "🟡" }],
+    });
+
+    renderPlan(review, new Date(2026, 6, 2), unprescribedWeek());
+
+    expect(screen.getByText("Tempo")).toBeInTheDocument();
   });
 
   it("shows the CLI hint when no review exists", () => {
