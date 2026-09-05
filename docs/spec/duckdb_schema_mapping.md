@@ -1,9 +1,9 @@
 # DuckDB Schema Mapping Specification
 
-**Version**: 2.8
-**Last Updated**: 2026-08-18
+**Version**: 2.9
+**Last Updated**: 2026-09-05
 **Database**: `garmin_performance.duckdb`
-**Total Tables**: 24 domain tables (+ `schema_version` migration bookkeeping)
+**Total Tables**: 27 domain tables (+ `schema_version` migration bookkeeping)
 
 This document provides comprehensive schema documentation for all DuckDB tables in the Garmin performance analysis system. Every column name, type, and primary key below is verified against the live schema (`PRAGMA table_info`). Where prose describes derived/calculated logic, that logic lives in the inserters / form-baseline modules and is documented here because it is not otherwise discoverable from the column definitions.
 
@@ -20,9 +20,12 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 > A drift test (`tests/scripts/test_generate_schema_doc.py`) fails CI if a schema change
 > lands without regenerating.
 
-> **Schema bookkeeping**: a 25th table, `schema_version` (`version INTEGER PK`, `name`, `applied_at`), tracks applied migrations and is **not** a domain table. The migration runner (`database/migrations/registry.py`) applies numbered migrations after `_ensure_tables()` and records them there.
+> **Schema bookkeeping**: a 28th table, `schema_version` (`version INTEGER PK`, `name`, `applied_at`), tracks applied migrations and is **not** a domain table. The migration runner (`database/migrations/registry.py`) applies numbered migrations after `_ensure_tables()` and records them there.
 
 ## Change History
+
+### Version 2.9 (2026-09-05)
+- **Plan storage tables added**: `training_blocks` + `training_block_versions` (migration `add_training_blocks_tables`, version 23) and `weekly_prescriptions` (migration `add_weekly_prescriptions_table`, version 24). The mesocycle plan (phase, date range, quality density, long-run ladder, cutback rule) and the weekly prescriptions it produces used to live only as prose in `athlete_profile.focus_notes` and in each weekly-review narrative, so "what was planned" could not be queried or compared against what happened. The ledger is 洗い替え + snapshot (like `athlete_profile`), prescriptions are append-only per `batch_id` (latest batch per week wins), and `reconcile_prescriptions` links prescriptions to activities deterministically (issue #977, Epic #976). DDL is owned exclusively by the migrations (not `_ensure_tables()`).
 
 ### Version 2.8 (2026-08-18)
 - **`athlete_profile_versions` table added** (migration `add_athlete_profile_versions`, version 21). Append-only JSON snapshots of the whole athlete profile: `save_athlete_profile` overwrote the canonical state (profile UPSERT + goals/retrospectives DELETE→INSERT), so previous `focus_notes` content was lost on every save. The normalized tables still hold the latest canonical state (all readers unchanged) and each save now appends a version, readable via `list_athlete_profile_versions`. The migration seeds the profile that exists at migration time as version 1, so the pre-versioning state is preserved (issue #934).
@@ -61,7 +64,7 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 
 ---
 
-## Table of Contents (24 domain tables by category)
+## Table of Contents (27 domain tables by category)
 
 | # | Table | Category | Primary Key | Row scale |
 |---|-------|----------|-------------|-----------|
@@ -89,6 +92,9 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 | 24 | [analysis_runs](#24-analysis_runs) | Operations | `run_id` | per analysis run |
 | 25 | [hiking_sessions](#25-hiking_sessions) | Training | `activity_id` | per hiking session |
 | 26 | [athlete_profile_versions](#26-athlete_profile_versions) | Athlete | `version_id` | per profile save |
+| 27 | [training_blocks](#27-training_blocks) | Plan | `block_id` | ~10 blocks/season |
+| 28 | [training_block_versions](#28-training_block_versions) | Plan | `version_id` | per ledger save |
+| 29 | [weekly_prescriptions](#29-weekly_prescriptions) | Plan | `prescription_id` | ~5-7 rows/week × batches |
 
 ---
 
@@ -947,6 +953,97 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 <!-- END GENERATED: schema:athlete_profile_versions -->
 
 **Units & notes**: `profile_data` is the full profile object (`current_focus`, `focus_notes`, `week_start_day`, `goals`, `retrospectives`) serialized with `ensure_ascii=False`; the reader JSON-decodes it back into an object. Rows are never updated or deleted — the newest version is only a read ordering (`created_at` DESC, `version_id` DESC), never a canonical source. Because a snapshot runs to tens of thousands of characters, reads are split in two: `list_athlete_profile_versions(user_id, limit)` returns metadata only (`version_id`, `created_at`, `current_focus`, `focus_notes_chars`, `n_goals`, `n_retrospectives`) and `get_athlete_profile_version(version_id, user_id)` returns one decoded snapshot. The canonical profile keeps coming from `get_athlete_profile`.
+
+---
+
+## 27. training_blocks
+
+**Purpose**: The mesocycle plan ledger (≈10 rows per season). One row per training block: phase, date range, purpose, quality density, weight mode, cutback rule and the **long-run ladder** (one entry per week). Keeps the mid-term plan as structured data instead of prose buried in `athlete_profile.focus_notes` (issue #977).
+**Primary Key**: `block_id` (from `seq_training_blocks_id`)
+**Source**: `save_training_blocks` (`database/inserters/plan.py`), edited conversationally by the `/plan-block` skill. Owned by migration `add_training_blocks_tables` (version 23).
+
+### Schema
+
+<!-- BEGIN GENERATED: schema:training_blocks -->
+| Column | Type |
+|--------|------|
+| block_id (PK) | INTEGER |
+| user_id | VARCHAR |
+| sequence | INTEGER |
+| phase | VARCHAR |
+| title | VARCHAR |
+| start_date | DATE |
+| end_date | DATE |
+| purpose | VARCHAR |
+| weight_mode | VARCHAR |
+| quality_sessions_per_week | INTEGER |
+| quality_types | VARCHAR |
+| long_run_ladder | VARCHAR |
+| cutback_rule | VARCHAR |
+| notes | VARCHAR |
+| created_at | TIMESTAMP |
+<!-- END GENERATED: schema:training_blocks -->
+
+**Units & notes**: `phase` ∈ `base | build | peak | taper | race | recovery | cutback`; `weight_mode` is `絞る` / `維持` / NULL; `quality_sessions_per_week` is 0–2. `sequence` is the display order within the season and follows the saved list order. `quality_types` (e.g. `["threshold_cruise","strides"]`), `long_run_ladder` and `cutback_rule` (e.g. `{"trigger":"long_run_streak>=3","long_run_pct":-35,"volume_pct":-25}`) are JSON stored as VARCHAR and decoded by `PlanReader`. A ladder step is `{"week_start":"2026-09-07","target_km":22.0,"target_minutes":null,"hr_ceiling":150,"kind":"build|hold|cutback|race|taper","note":"…"}` and must carry `week_start` plus exactly one of `target_km` / `target_minutes` (validated at insert). Saves are 洗い替え: all rows for the `user_id` are replaced, so the caller always passes the full list.
+
+---
+
+## 28. training_block_versions
+
+**Purpose**: Append-only history of the block ledger. Because `save_training_blocks` replaces the canonical rows wholesale, every save also snapshots the whole list here so a previous plan stays recoverable (mirrors `athlete_profile_versions`).
+**Primary Key**: `version_id` (from `seq_training_block_versions_id`)
+**Source**: `save_training_blocks` (`database/inserters/plan.py`), inside the same write transaction as the replacement. Owned by migration `add_training_blocks_tables` (version 23).
+
+### Schema
+
+<!-- BEGIN GENERATED: schema:training_block_versions -->
+| Column | Type |
+|--------|------|
+| version_id (PK) | INTEGER |
+| user_id | VARCHAR |
+| blocks_data | VARCHAR |
+| created_at | TIMESTAMP |
+<!-- END GENERATED: schema:training_block_versions -->
+
+**Units & notes**: `blocks_data` is the full block list serialized with `ensure_ascii=False`. Rows are never updated or deleted; the newest version is only a read ordering (`created_at` DESC, `version_id` DESC), never a canonical source. `list_training_block_versions(user_id, limit)` returns metadata only (`version_id`, `created_at`, `n_blocks`, `titles`) — the canonical ledger keeps coming from `get_training_blocks`.
+
+---
+
+## 29. weekly_prescriptions
+
+**Purpose**: Structured weekly prescriptions — one row per prescribed session per day. Produced by the weekly review and consumed by the daily check-in, workout scheduling, activity analysis and the monthly plan view, so "what was planned" is queryable rather than restated in prose each week (issue #977).
+**Primary Key**: `prescription_id` (from `seq_weekly_prescriptions_id`)
+**Source**: `save_weekly_prescriptions` (`database/inserters/plan.py`); `status` and the id columns are mutated by `update_prescription_status` and `reconcile_prescriptions` (`analysis/prescription_reconcile.py`). Owned by migration `add_weekly_prescriptions_table` (version 24).
+
+### Schema
+
+<!-- BEGIN GENERATED: schema:weekly_prescriptions -->
+| Column | Type |
+|--------|------|
+| prescription_id (PK) | INTEGER |
+| batch_id | INTEGER |
+| user_id | VARCHAR |
+| review_id | INTEGER |
+| week_start_date | DATE |
+| date | DATE |
+| session_type | VARCHAR |
+| title | VARCHAR |
+| target_minutes | INTEGER |
+| target_km | DOUBLE |
+| hr_low | INTEGER |
+| hr_high | INTEGER |
+| pace_low_s_per_km | INTEGER |
+| pace_high_s_per_km | INTEGER |
+| rationale | VARCHAR |
+| status | VARCHAR |
+| garmin_workout_id | BIGINT |
+| garmin_schedule_id | BIGINT |
+| actual_activity_id | BIGINT |
+| created_at | TIMESTAMP |
+| updated_at | TIMESTAMP |
+<!-- END GENERATED: schema:weekly_prescriptions -->
+
+**Units & notes**: rows are **append-only per `batch_id`** (one save = one batch from `seq_weekly_prescription_batches`); the highest `batch_id` for a week is canonical and superseded batches are never returned by the readers. `session_type` ∈ `long | easy | recovery | threshold | tempo | strides | rest | strength | cross`; `status` ∈ `prescribed | registered | done | replaced | skipped`. `hr_high` is a **ceiling** and is the only HR bound for easy/long sessions (a restrictive `hr_low` nags on hot long runs); `target_minutes` (min) and `target_km` (km) are alternatives, `pace_low_s_per_km` / `pace_high_s_per_km` are sec/km. `review_id` links the batch to `weekly_reviews` when a review produced it. `reconcile_prescriptions` fills `actual_activity_id` and moves `status` to done / replaced / skipped using a ±15% / +30% tolerance band around the targets; `updated_at` is NULL until a row is first mutated.
 
 ---
 

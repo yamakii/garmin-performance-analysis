@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **61 tools** (59 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **67 tools** (65 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -29,6 +29,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [ingest](#ingest) (1)
 - [Workout Scheduling](#workout-scheduling) (2)
 - [hiking](#hiking) (2)
+- [Training Plan Ledger](#training-plan-ledger) (6)
 - [Server](#server) (2)
 
 ## Export
@@ -724,6 +725,81 @@ Get persisted hiking (山行) summaries with activity_date in [start_date, end_d
 |-----------|------|----------|-------------|
 | `start_date` | string | **required** | Inclusive window start date (YYYY-MM-DD). |
 | `end_date` | string | **required** | Inclusive window end date (YYYY-MM-DD). |
+
+## Training Plan Ledger
+
+### `save_training_blocks`
+
+CLI: `garmin-db plan save-blocks`
+
+Save the mesocycle ledger (training blocks) to DuckDB. Blocks are replaced wholesale per user_id (洗い替え, same as the athlete profile), so always pass the full list including unchanged blocks; sequence follows list order. Every save also appends a JSON snapshot of the whole list, so a previous plan stays recoverable. Validates the date range (start_date <= end_date), the phase, and that each long-run ladder step carries week_start plus exactly one of target_km / target_minutes. Returns {status, count, version_id}.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `blocks` | array[object] | **required** | Full ordered list of training blocks (洗い替え — unchanged blocks must be included). Each block: phase (base|build|peak|taper|race|recovery|cutback), title, start_date, end_date (YYYY-MM-DD), and optionally purpose, weight_mode (絞る|維持), quality_sessions_per_week, quality_types (list), long_run_ladder (list of {week_start, target_km OR target_minutes, hr_ceiling, kind, note}), cutback_rule (object), notes. |
+| `user_id` | string | optional | Ledger owner identifier (default: 'default') |
+
+### `get_training_blocks`
+
+CLI: `garmin-db plan get-blocks`
+
+Get the mesocycle ledger with the block that is active on a given date. Returns {blocks (ordered by sequence, JSON columns decoded), active_block (the block covering on_date, or null), ladder_step ({current, previous, next} long-run ladder steps for the week containing on_date, or null when no block covers it), on_date, week_start_date}. on_date defaults to today; the week is resolved with the athlete's week_start_day.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `on_date` | string | optional | Reference date (YYYY-MM-DD) used to resolve active_block and ladder_step. Defaults to today. |
+| `user_id` | string | optional | Ledger owner identifier (default: 'default') |
+
+### `save_weekly_prescriptions`
+
+CLI: `garmin-db plan save-prescriptions`
+
+Save one batch of prescribed sessions for a week (append-only). All rows get a fresh batch_id and the latest batch per week is canonical, so re-prescribing a week supersedes rather than mutates the earlier batch. Validates that each date falls inside the week, the session_type is known, and hr_low <= hr_high. Returns {status, week_start_date, batch_id, count, prescription_ids}.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `week_start_date` | string | **required** | Week start date (YYYY-MM-DD); every row must fall in this week. |
+| `prescriptions` | array[object] | **required** | Prescribed sessions for the week. Each row: date (YYYY-MM-DD), session_type (long|easy|recovery|threshold|tempo|strides|rest|strength|cross), title, and optionally target_minutes, target_km, hr_low, hr_high (ceiling — the only bound for easy/long), pace_low_s_per_km, pace_high_s_per_km, rationale. |
+| `review_id` | integer | optional | weekly_reviews.review_id when saved by a weekly review. |
+| `user_id` | string | optional | Ledger owner identifier (default: 'default') |
+
+### `get_weekly_prescriptions`
+
+CLI: `garmin-db plan get-prescriptions`
+
+Get the canonical (latest batch) prescribed sessions for a week or a single day. Give exactly one of week_start_date / date — date resolves its week with the athlete's week_start_day. Rows are ordered by date and carry targets (target_km / target_minutes), HR and pace bounds, status (prescribed|registered|done|replaced|skipped), the Garmin workout/schedule ids and actual_activity_id. Returns an empty list when nothing is prescribed.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `week_start_date` | string | optional | Week start date (YYYY-MM-DD). Give exactly one of week_start_date / date. |
+| `date` | string | optional | Single day (YYYY-MM-DD). Give exactly one of week_start_date / date. |
+| `user_id` | string | optional | Ledger owner identifier (default: 'default') |
+
+### `update_prescription_status`
+
+CLI: `garmin-db plan update-status`
+
+Update one prescription's status and optionally its Garmin workout / schedule ids and linked activity id, refreshing updated_at. Only the ids you pass are written, so registering a Garmin workout and later linking the actual activity are independent updates. Returns {updated: false} when the prescription_id does not exist.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `prescription_id` | integer | **required** | Prescription row identifier from get_weekly_prescriptions. |
+| `status` | string | **required** | New lifecycle state: prescribed | registered | done | replaced | skipped. |
+| `garmin_workout_id` | integer | optional | Garmin workout id to record (optional). |
+| `garmin_schedule_id` | integer | optional | Garmin schedule id to record (optional). |
+| `actual_activity_id` | integer | optional | Linked actual activity id to record (optional). |
+
+### `reconcile_prescriptions`
+
+CLI: `garmin-db plan reconcile`
+
+Deterministically link prescribed sessions in a date range to the activities that actually happened, so adherence needs no LLM. For each open (prescribed / registered) latest-batch row with a past date: an activity on that date within tolerance (0.85x-1.30x of target_km / target_minutes) marks it done, any other activity marks it replaced (a rest day with a run is always replaced), and no activity marks it skipped (rest with no activity is done). Future dates and superseded batches are never touched. Returns {updated, done, replaced, skipped}.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `start_date` | string | **required** | Inclusive range start (YYYY-MM-DD). |
+| `end_date` | string | **required** | Inclusive range end (YYYY-MM-DD). |
+| `user_id` | string | optional | Ledger owner identifier (default: 'default') |
 
 ## Server
 

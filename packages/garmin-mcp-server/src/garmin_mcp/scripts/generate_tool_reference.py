@@ -49,6 +49,7 @@ GROUP_TITLES: dict[str, str] = {
     "load": "Training Load",
     "durability": "Durability",
     "workout": "Workout Scheduling",
+    "plan": "Training Plan Ledger",
 }
 
 

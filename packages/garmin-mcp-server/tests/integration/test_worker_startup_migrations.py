@@ -11,7 +11,10 @@ import duckdb
 import pytest
 
 from garmin_mcp import worker
-from garmin_mcp.database.migrations.runner import MigrationRunner
+from garmin_mcp.database.migrations.runner import (
+    MigrationRunner,
+    ensure_schema_current,
+)
 from garmin_mcp.database.readers.athlete import AthleteReader
 
 
@@ -60,8 +63,39 @@ def test_server_startup_applies_migrations(tmp_path: Path) -> None:
         "add_hiking_sessions",
         "add_athlete_profile_versions",
         "drop_pace_consistency_full",
+        "add_training_blocks_tables",
+        "add_weekly_prescriptions_table",
     ]
-    assert MigrationRunner(db_path).get_current_version() == 22
+    assert MigrationRunner(db_path).get_current_version() == 24
+
+
+@pytest.mark.integration
+def test_worker_startup_applies_migrations_23_24(tmp_path: Path) -> None:
+    """The plan-storage tables exist after the startup hook brings a DB current."""
+    db_path = tmp_path / "garmin_performance.duckdb"
+    _create_schema_only_db(db_path)
+
+    ensure_schema_current(db_path)
+
+    conn = duckdb.connect(str(db_path), read_only=True)
+    try:
+        version_row = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT table_name FROM information_schema.tables"
+            ).fetchall()
+        }
+    finally:
+        conn.close()
+
+    assert version_row is not None
+    assert version_row[0] == 24
+    assert {
+        "training_blocks",
+        "training_block_versions",
+        "weekly_prescriptions",
+    }.issubset(tables)
 
 
 @pytest.mark.integration

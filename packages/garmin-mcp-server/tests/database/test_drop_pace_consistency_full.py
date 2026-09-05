@@ -77,10 +77,11 @@ def test_drop_pace_consistency_full_no_table(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 def test_drop_pace_consistency_full_registered_as_v22() -> None:
-    """drop_pace_consistency_full is registered at version 22 (current head)."""
+    """drop_pace_consistency_full stays registered at version 22."""
     assert (
         22,
         "drop_pace_consistency_full",
         _wrap_drop_pace_consistency_full,
     ) in MIGRATIONS
-    assert max(version for version, _, _ in MIGRATIONS) == 22
+    # Head moved to 24 when the plan-storage migrations landed (#977).
+    assert max(version for version, _, _ in MIGRATIONS) == 24
