@@ -18,6 +18,21 @@ from garmin_mcp.database.readers.export import ExportReader
 from garmin_mcp.database.readers.utility import UtilityReader
 from garmin_mcp.mcp_server.view_manager import ViewManager
 
+# Aggregation shared by the materialization tests below.
+AGGREGATE_QUERY = """
+    SELECT
+        activity_id,
+        AVG(pace) as avg_pace,
+        AVG(heart_rate) as avg_hr,
+        STDDEV(pace) as pace_std,
+        COUNT(*) as split_count
+    FROM splits
+    GROUP BY activity_id
+"""
+
+# Below this, a wall-clock benchmark measures scheduler noise rather than the query.
+MEASURABLE_BENCHMARK_SECONDS = 0.05
+
 
 @pytest.fixture(scope="module")
 def test_db(tmp_path_factory):
@@ -248,36 +263,50 @@ class TestPhase1Integration:
         assert histogram_result["total_count"] == 0
         assert histogram_result["bins"] == []
 
-    def test_performance_comparison_materialized_vs_raw(self, test_db):
-        """Test that materialized views improve performance for repeated queries."""
-        import time
-
+    def test_materialized_view_matches_raw_query(self, test_db):
+        """A materialized view returns exactly what the raw query returns."""
         view_manager = ViewManager(db_path=str(test_db))
-
-        # Complex query
-        query = """
-            SELECT
-                activity_id,
-                AVG(pace) as avg_pace,
-                AVG(heart_rate) as avg_hr,
-                STDDEV(pace) as pace_std,
-                COUNT(*) as split_count
-            FROM splits
-            GROUP BY activity_id
-        """
-
-        # Benchmark: Raw query (3 times)
-        conn = duckdb.connect(str(test_db))
-        start_raw = time.time()
-        for _ in range(3):
-            conn.execute(query).fetchall()
-        raw_time = time.time() - start_raw
-        conn.close()
-
-        # Benchmark: Materialized view (create once, query 3 times)
-        view_result = view_manager.create_view(query)
+        view_result = view_manager.create_view(AGGREGATE_QUERY)
         view_name = view_result["view"]
 
+        try:
+            conn = duckdb.connect(str(test_db))
+            raw_rows = sorted(conn.execute(AGGREGATE_QUERY).fetchall())
+            view_rows = sorted(conn.execute(f"SELECT * FROM {view_name}").fetchall())
+            conn.close()
+
+            assert raw_rows, "fixture should produce at least one aggregated row"
+            assert view_rows == raw_rows
+        finally:
+            view_manager.cleanup_view(view_name)
+
+
+@pytest.mark.performance
+def test_performance_comparison_materialized_vs_raw(test_db):
+    """Materialized views are not significantly slower than repeating the raw query.
+
+    Marked `performance`, not `integration`: the assertion is a wall-clock
+    comparison, and on the tiny fixture both sides land in single-digit
+    milliseconds where scheduler noise alone can flip the result. CI selects
+    `-m "unit or integration"`, so this stays out of the required checks.
+    """
+    import time
+
+    view_manager = ViewManager(db_path=str(test_db))
+
+    # Benchmark: raw query (3 times)
+    conn = duckdb.connect(str(test_db))
+    start_raw = time.time()
+    for _ in range(3):
+        conn.execute(AGGREGATE_QUERY).fetchall()
+    raw_time = time.time() - start_raw
+    conn.close()
+
+    # Benchmark: materialized view (create once, query 3 times)
+    view_result = view_manager.create_view(AGGREGATE_QUERY)
+    view_name = view_result["view"]
+
+    try:
         conn = duckdb.connect(str(test_db))
         start_materialized = time.time()
         for _ in range(3):
@@ -285,9 +314,12 @@ class TestPhase1Integration:
         materialized_time = time.time() - start_materialized
         conn.close()
 
-        # Materialized should be faster (or at least not significantly slower)
-        # Note: With small dataset, difference may be minimal
+        # Only compare when the raw benchmark is long enough to out-measure noise.
+        if raw_time < MEASURABLE_BENCHMARK_SECONDS:
+            pytest.skip(
+                f"raw benchmark too short to compare ({raw_time:.4f}s < "
+                f"{MEASURABLE_BENCHMARK_SECONDS}s)"
+            )
         assert materialized_time <= raw_time * 2.0  # Allow 2x tolerance
-
-        # Cleanup
+    finally:
         view_manager.cleanup_view(view_name)
