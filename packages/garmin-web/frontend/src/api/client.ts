@@ -2,11 +2,13 @@ import type {
   ActivityDetailResponse,
   ActivitySummary,
   GoalResponse,
+  MonthPlan,
   RaceReadiness,
   SectionsResponse,
   SectionVersion,
   TimeSeriesResponse,
   TrackResponse,
+  TrainingBlock,
   WeeklyReview,
 } from "../types";
 
@@ -44,6 +46,27 @@ export async function fetchWeeklyReviewVersions(
     );
   }
   return (await response.json()) as WeeklyReview[];
+}
+
+/**
+ * The month grid. Omitting `month` lets the server pick the current one, so a
+ * first render never depends on the browser's clock agreeing with the API's.
+ */
+export async function fetchMonthPlan(month?: string): Promise<MonthPlan> {
+  const query = month != null ? `?month=${month}` : "";
+  const response = await fetch(`/api/plan/month${query}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch month plan: ${response.status}`);
+  }
+  return (await response.json()) as MonthPlan;
+}
+
+export async function fetchTrainingBlocks(): Promise<TrainingBlock[]> {
+  const response = await fetch("/api/plan/blocks");
+  if (!response.ok) {
+    throw new Error(`Failed to fetch training blocks: ${response.status}`);
+  }
+  return (await response.json()) as TrainingBlock[];
 }
 
 export async function fetchActivities(params?: {

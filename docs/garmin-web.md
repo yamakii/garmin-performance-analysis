@@ -60,14 +60,15 @@ live in `packages/garmin-web/frontend/src/pages/`.
 | `/condition` | コンディション | 今の体の状態は? | This week's cautions (form anomalies) as a full-width alert band, then today's condition, RHR/HRV recovery trend, personal-baseline deviation, training load (ACWR), body composition |
 | `/performance` | パフォーマンス | 速くなっているか? | Coach narration and a page-level 週/月 toggle, then volume, physiology, efficiency, critical speed, objective fitness, climate-neutral HR, form score, durability, weight × economy |
 | `/goal` | 目標 | 目標に届く? | Countdown hero, current phase, registered races, last season's retrospective |
-| `/weekly-reviews` | 週次レビュー | 今週の振り返りは? | Weekly review list, latest version per week |
+| `/plan` | 計画 | この1ヶ月どう積むか? | Training-block bands over a month grid (rows = weeks, columns ordered from `week_start_day`, so the Sunday long run is last), each day showing its prescription vs the actual run, a per-week adherence chip linking to that week's review, and the month total |
 
 Detail and fallback routes (no nav entry):
 
 | Route | Reached from | Content |
 |-------|--------------|---------|
 | `/activities/:id` | activity list, recent runs | One run: section analyses, time series, GPS track, past-run version switch |
-| `/weekly-reviews/:weekStart` | review list, home plan card | One week's review plus its version switch |
+| `/weekly-reviews` | plan grid | Weekly review list, latest version per week |
+| `/weekly-reviews/:weekStart` | plan grid, review list, home plan card | One week's review plus its version switch |
 | `*` | mistyped or stale URLs | 404 page rendered inside the layout, so the nav stays one click away |
 
 Cross-cutting behaviour worth knowing before editing a page:
@@ -87,6 +88,11 @@ Cross-cutting behaviour worth knowing before editing a page:
   tiles link to the `/condition` card instead of restating it, and the race
   prediction sits in the `/goal` countdown tile rather than in a second card
   below it (#894, #895).
+- **The review list is a detail route.** `/plan` replaced 週次レビュー in the nav
+  (#983): the list was only an index over weeks, which the month grid now is, so
+  the sixth question became 「この1ヶ月どう積むか?」. Both review routes stay
+  reachable — the grid links each week row to `/weekly-reviews/:weekStart`, and
+  the list links back to `/plan`.
 
 ## API
 
@@ -111,6 +117,8 @@ parameters are documented in each handler's docstring.
 | `/api/durability-trend` | Return the long-run decoupling trend over a date window. |
 | `/api/form-anomaly-flags` | "今週の注意点": form-anomaly flags across the trailing ``weeks`` runs (#636). |
 | `/api/goal` | Return the athlete goal payload (profile + goals + retrospectives). |
+| `/api/plan/blocks` | Return the mesocycle block ledger in display order. |
+| `/api/plan/month` | Return the monthly plan grid: weeks x days, prescriptions vs actuals. |
 | `/api/race-readiness` | Return current VDOT, race-time predictions, and goal progress. |
 | `/api/recovery-status` | Morning go/no-go recovery status for ``date`` (#500). |
 | `/api/recovery-trend` | RHR / HRV recovery trend over the trailing ``weeks`` weeks (#499). |

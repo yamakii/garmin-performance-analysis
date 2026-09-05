@@ -292,10 +292,22 @@ export interface WeeklyReviewWeightTracking {
   [key: string]: unknown;
 }
 
+/**
+ * A Garmin calendar item that contradicts the training block (#980): only
+ * conflicts are saved, so the list is the whole story the reader needs.
+ */
+export interface WeeklyReviewGarminConflict {
+  date?: string;
+  garmin_title?: string;
+  reason?: string;
+  [key: string]: unknown;
+}
+
 export interface WeeklyReviewData {
   plan_week_start?: string | null;
   actuals_week_start?: string | null;
   this_week?: WeeklyReviewThisWeek;
+  garmin_conflicts?: WeeklyReviewGarminConflict[];
   garmin_next_week?: WeeklyReviewPlanItem[];
   periodization?: WeeklyReviewPeriodization;
   verdict?: WeeklyReviewVerdict[];
@@ -512,4 +524,88 @@ export interface WeightEconomyCoupling {
   model: WeightEconomyModel | null;
   series: WeightEconomySeriesPoint[];
   note: string;
+}
+
+// --- Monthly plan (Issue #983) ---
+
+/** Lifecycle of a prescribed session (`weekly_prescriptions.status`). */
+export type PrescriptionStatus =
+  | "prescribed"
+  | "registered"
+  | "done"
+  | "replaced"
+  | "skipped";
+
+export interface Prescription {
+  prescription_id: number;
+  session_type: string;
+  title: string;
+  target_km: number | null;
+  target_minutes: number | null;
+  hr_high: number | null;
+  status: PrescriptionStatus | string;
+}
+
+/** The run that actually happened on a plan day. */
+export interface PlanActivity {
+  activity_id: number;
+  activity_name: string | null;
+  total_distance_km: number | null;
+  avg_pace_seconds_per_km: number | null;
+  avg_heart_rate: number | null;
+}
+
+export interface PlanDay {
+  date: string;
+  in_month: boolean;
+  prescriptions: Prescription[];
+  activities: PlanActivity[];
+}
+
+/** How a set of prescriptions ended up. `prescribed` is the row count. */
+export interface Adherence {
+  prescribed: number;
+  done: number;
+  replaced: number;
+  skipped: number;
+  pending: number;
+}
+
+/** One week of a block's long-run ladder (#977). */
+export interface LadderStep {
+  week_start?: string;
+  target_km?: number | null;
+  target_minutes?: number | null;
+  hr_ceiling?: number | null;
+  kind?: string | null;
+  note?: string | null;
+}
+
+export interface PlanWeek {
+  week_start: string;
+  week_end: string;
+  in_month: boolean;
+  ladder_step: LadderStep | null;
+  review_exists: boolean;
+  adherence: Adherence;
+  days: PlanDay[];
+}
+
+export interface TrainingBlock {
+  block_id: number;
+  phase: string | null;
+  title: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  weight_mode: string | null;
+  quality_sessions_per_week: number | null;
+}
+
+export interface MonthPlan {
+  month: string;
+  /** 0=Mon .. 6=Sun, the athlete's configured week start (#605). */
+  week_start_day: number;
+  weeks: PlanWeek[];
+  blocks: TrainingBlock[];
+  adherence: Adherence;
 }

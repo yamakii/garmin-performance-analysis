@@ -17,6 +17,7 @@ vi.mock("../lib/echarts", () => ({
 vi.mock("../api/client", () => ({
   fetchActivities: vi.fn(),
   fetchGoal: vi.fn(),
+  fetchMonthPlan: vi.fn(),
   fetchRaceReadiness: vi.fn(),
   fetchWeeklyReviews: vi.fn(),
 }));
@@ -35,6 +36,7 @@ vi.mock("../api/training_load", () => ({
 import {
   fetchActivities,
   fetchGoal,
+  fetchMonthPlan,
   fetchRaceReadiness,
   fetchWeeklyReviews,
 } from "../api/client";
@@ -157,7 +159,17 @@ const ACTIVITIES = [
   },
 ];
 
+/** No prescriptions for the current week, so the plan card keeps its verdict. */
+const EMPTY_MONTH_PLAN = {
+  month: "2026-07",
+  week_start_day: 0,
+  weeks: [],
+  blocks: [],
+  adherence: { prescribed: 0, done: 0, replaced: 0, skipped: 0, pending: 0 },
+};
+
 function mockAll() {
+  vi.mocked(fetchMonthPlan).mockResolvedValue(EMPTY_MONTH_PLAN as never);
   vi.mocked(fetchRecoveryStatus).mockResolvedValue(RECOVERY_STATUS as never);
   vi.mocked(fetchWellnessBaselineDeviation).mockResolvedValue(
     BASELINE as never,

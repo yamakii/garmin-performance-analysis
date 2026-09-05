@@ -51,7 +51,16 @@ export default function WeeklyReviews() {
 
   return (
     <div className="stagger-in space-y-6">
-      <SectionHeading eyebrow="Weekly Review" title="週次レビュー" />
+      {/* The list left the nav for /plan (#983), so it states its way back. */}
+      <div className="flex items-start justify-between gap-3">
+        <SectionHeading eyebrow="Weekly Review" title="週次レビュー" />
+        <Link
+          to="/plan"
+          className="text-sm font-medium text-slate-600 hover:text-ink"
+        >
+          ← 計画へ
+        </Link>
+      </div>
 
       <section className={CARD_CLASS}>
         {reviews.length > 0 ? (

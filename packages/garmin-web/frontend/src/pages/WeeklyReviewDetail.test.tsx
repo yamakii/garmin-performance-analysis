@@ -35,12 +35,54 @@ const LONG_OVERALL = Array.from(
   (_, i) => `${i + 1}行目の総評テキストです。`,
 ).join("\n");
 
-function renderDetail(reviewData: WeeklyReviewData) {
-  return renderVersions([reviewData]);
+/** An empty month grid: the week has no structured prescriptions (#983). */
+const EMPTY_MONTH_ADHERENCE = {
+  prescribed: 0,
+  done: 0,
+  replaced: 0,
+  skipped: 0,
+  pending: 0,
+};
+
+function monthPlan(prescriptions: unknown[] = []) {
+  return {
+    month: "2026-06",
+    week_start_day: 0,
+    weeks: [
+      {
+        week_start: "2026-06-15",
+        week_end: "2026-06-21",
+        in_month: true,
+        ladder_step: null,
+        review_exists: true,
+        adherence: EMPTY_MONTH_ADHERENCE,
+        days: [
+          {
+            date: "2026-06-16",
+            in_month: true,
+            prescriptions,
+            activities: [],
+          },
+        ],
+      },
+    ],
+    blocks: [],
+    adherence: EMPTY_MONTH_ADHERENCE,
+  };
+}
+
+function renderDetail(
+  reviewData: WeeklyReviewData,
+  prescriptions: unknown[] = [],
+) {
+  return renderVersions([reviewData], prescriptions);
 }
 
 /** Renders the page with one saved version per review payload (newest first). */
-function renderVersions(reviewDataList: WeeklyReviewData[]) {
+function renderVersions(
+  reviewDataList: WeeklyReviewData[],
+  prescriptions: unknown[] = [],
+) {
   const versions = reviewDataList.map((reviewData, i) => ({
     review_id: i + 1,
     user_id: "default",
@@ -52,14 +94,22 @@ function renderVersions(reviewDataList: WeeklyReviewData[]) {
     agent_name: "weekly-review",
     agent_version: "1.0",
   }));
+  // A fresh Response per call: a Response body can only be read once, and the
+  // page now fetches the month plan alongside the review versions.
   vi.stubGlobal(
     "fetch",
-    vi.fn().mockResolvedValue(
-      new Response(JSON.stringify(versions), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    ),
+    vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const payload = url.includes("/api/plan/month")
+        ? monthPlan(prescriptions)
+        : versions;
+      return Promise.resolve(
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    }),
   );
   return render(
     <MemoryRouter initialEntries={["/weekly-reviews/2026-06-15"]}>
@@ -108,6 +158,59 @@ describe("WeeklyReviewDetail", () => {
     expect(screen.getByText("2026-06-24")).toBeInTheDocument();
     expect(screen.getByText("Interval")).toBeInTheDocument();
     expect(screen.getByText("anaerobic")).toBeInTheDocument();
+  });
+
+  it("test_renders_garmin_conflicts_table", async () => {
+    renderDetail({
+      ...fullReview,
+      garmin_conflicts: [
+        {
+          date: "2026-06-20",
+          garmin_title: "Anaerobic Base",
+          reason: "ロング走の前日に高強度が入っています",
+        },
+      ],
+    });
+
+    // The conflicts replace the raw planned-workout table (#980).
+    expect(
+      await screen.findByRole("heading", {
+        level: 3,
+        name: "Garmin との衝突",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Anaerobic Base")).toBeInTheDocument();
+    expect(
+      screen.getByText("ロング走の前日に高強度が入っています"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "来週のGarminワークアウト" }),
+    ).toBeNull();
+  });
+
+  it("test_renders_prescriptions_with_status_chips", async () => {
+    renderDetail(fullReview, [
+      {
+        prescription_id: 11,
+        session_type: "long",
+        title: "ロング 22km",
+        target_km: 22,
+        target_minutes: null,
+        hr_high: 150,
+        status: "done",
+      },
+    ]);
+
+    // The structured row replaces the prose verdict row for that day, keeping
+    // the coach's rating and comment alongside the target and status.
+    expect(await screen.findByText("ロング 22km")).toBeInTheDocument();
+    expect(screen.getByText("22km ≤150")).toBeInTheDocument();
+    expect(screen.getByText("実施")).toBeInTheDocument();
+    // The 2026-06-16 verdict merged onto the prescription of that day.
+    expect(screen.getByText("good")).toBeInTheDocument();
+    expect(
+      screen.getByRole("columnheader", { name: "目標" }),
+    ).toBeInTheDocument();
   });
 
   it("test_renders_intensity_distribution", async () => {

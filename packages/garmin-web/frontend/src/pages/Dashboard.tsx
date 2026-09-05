@@ -2,6 +2,7 @@ import {
   useActivities,
   useFormAnomalyFlags,
   useGoal,
+  useMonthPlan,
   useRaceReadiness,
   useRecoveryStatus,
   useRecoveryTrend,
@@ -17,6 +18,7 @@ import type {
   FormAnomalyFlagsResponse,
   RecoveryTrend,
 } from "../types";
+import { toIsoDate } from "../utils/format";
 import RaceProgress from "./dashboard/RaceProgress";
 import RecentRuns from "./dashboard/RecentRuns";
 import SnapshotTiles from "./dashboard/SnapshotTiles";
@@ -58,6 +60,16 @@ export default function Dashboard() {
   const baselineQuery = useWellnessBaselineDeviation();
   const readinessQuery = useRaceReadiness();
   const goalQuery = useGoal();
+  // The plan card prefers the week's structured prescriptions (#983); the
+  // month grid is the same request /plan makes, so it is usually cached.
+  const monthPlanQuery = useMonthPlan();
+  const todayIso = toIsoDate(new Date());
+  const weeks = monthPlanQuery.data?.weeks;
+  const currentWeek = Array.isArray(weeks)
+    ? (weeks.find(
+        (week) => week.week_start <= todayIso && todayIso <= week.week_end,
+      ) ?? null)
+    : null;
 
   // The snapshot row reads as one card, so it gets one boundary: it shows the
   // first tile failure (retrying all three) and otherwise renders as soon as
@@ -102,7 +114,9 @@ export default function Dashboard() {
 
         {/* ② 行動: 今週のプラン + 次の行動 */}
         <QueryBoundary label="今週のプランと次の行動" query={reviewsQuery}>
-          {(reviews) => <ThisWeekPlan review={reviews[0] ?? null} />}
+          {(reviews) => (
+            <ThisWeekPlan review={reviews[0] ?? null} week={currentWeek} />
+          )}
         </QueryBoundary>
 
         {/* ③ 進捗: レースへの道 (supplementary — degrades away on failure) */}

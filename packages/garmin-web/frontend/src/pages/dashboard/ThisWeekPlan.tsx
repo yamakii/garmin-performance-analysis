@@ -1,45 +1,88 @@
 import { Link } from "react-router-dom";
 import EmptyState, { CliCommand } from "../../components/EmptyState";
-import type { WeeklyReview, WeeklyReviewVerdict } from "../../types";
+import StatusBadge from "../../components/StatusBadge";
+import {
+  sessionLabel,
+  statusLabel,
+  statusTone,
+  targetSummary,
+} from "../../components/plan/DayCell";
+import type { PlanWeek, WeeklyReview } from "../../types";
 import { ratingMeta } from "../../utils/verdictRating";
 import { CARD_CLASS } from "../../components/Card";
 import { formatDate, toIsoDate } from "../../utils/format";
+import { formatDayLabel } from "../../utils/week";
 
-const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+/** One line of the plan list, whatever it was derived from. */
+interface PlanRow {
+  date?: string;
+  /** The session name ("ロング 22km", "Tempo"). */
+  label: string;
+  /** Prescription lifecycle status, rendered as a chip. */
+  status?: string;
+  /** Coach verdict emoji, rendered as a named image. */
+  rating?: string;
+  /** Target summary or the coach's comment. */
+  detail?: string;
+}
 
-/** "MM/DD (曜)" from a YYYY-MM-DD string; returns the input when unparseable. */
-function formatDayLabel(isoDate: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(isoDate);
-  if (match == null) {
-    return isoDate;
+/** Structured prescriptions win over the coach verdict; both beat Garmin. */
+function planRows(week: PlanWeek | null, review: WeeklyReview | null): PlanRow[] {
+  const prescriptions = (week?.days ?? []).flatMap((day) =>
+    day.prescriptions.map((prescription) => ({
+      date: day.date,
+      label: prescription.title || sessionLabel(prescription.session_type),
+      status: prescription.status,
+      detail: targetSummary(prescription),
+    })),
+  );
+  if (prescriptions.length > 0) {
+    return prescriptions;
   }
-  const [, y, m, d] = match;
-  const weekday =
-    WEEKDAYS[new Date(Number(y), Number(m) - 1, Number(d)).getDay()];
-  return `${m}/${d} (${weekday})`;
+
+  const data = review?.review_data;
+  const verdict = data?.verdict ?? [];
+  if (verdict.length > 0) {
+    return verdict.map((row) => ({
+      date: row.date,
+      label: row.session ?? "-",
+      rating: row.rating,
+      detail: row.comment,
+    }));
+  }
+  return (data?.garmin_next_week ?? []).map((item) => ({
+    date: item.date,
+    label: item.title ?? "-",
+  }));
 }
 
 interface ThisWeekPlanProps {
   review: WeeklyReview | null;
+  /** The current week of the month plan, when it has prescriptions (#983). */
+  week?: PlanWeek | null;
   /** Injectable clock for tests. */
   today?: Date;
 }
 
 /**
- * "次の行動" card: the latest weekly review's day-by-day plan (coach verdict
- * table, today's row highlighted) plus its top-2 recommendations. Falls back
- * to the raw Garmin schedule when the review has no verdict rows.
+ * "次の行動" card: the week's day-by-day plan (today's row highlighted) plus
+ * the latest review's top-2 recommendations.
+ *
+ * The structured prescriptions are the plan when the week has them (#983) —
+ * they carry the target and the lifecycle status, which the prose verdict
+ * cannot. A week that predates them falls back to the coach verdict table, and
+ * a review that predates *that* falls back to the raw Garmin schedule.
  */
 export default function ThisWeekPlan({
   review,
+  week = null,
   today = new Date(),
 }: ThisWeekPlanProps) {
-  if (review?.review_data == null) {
+  const rows = planRows(week, review);
+
+  if (review?.review_data == null && rows.length === 0) {
     return (
-      <section
-        aria-label="今週のプランと次の行動"
-        className={CARD_CLASS}
-      >
+      <section aria-label="今週のプランと次の行動" className={CARD_CLASS}>
         <h2 className="mb-2 font-display text-base font-semibold text-ink">
           今週のプランと次の行動
         </h2>
@@ -55,36 +98,30 @@ export default function ThisWeekPlan({
     );
   }
 
-  const data = review.review_data;
   const todayIso = toIsoDate(today);
+  const weekStart = week?.week_start ?? review?.week_start_date ?? null;
+  const weekEnd = week?.week_end ?? review?.week_end_date ?? null;
   const isCurrentWeek =
-    review.week_start_date <= todayIso && todayIso <= review.week_end_date;
-
-  // The coach verdict table is the primary plan view; fall back to the raw
-  // Garmin schedule when a review predates the verdict format.
-  const rows: WeeklyReviewVerdict[] =
-    data.verdict != null && data.verdict.length > 0
-      ? data.verdict
-      : (data.garmin_next_week ?? []).map((item) => ({
-          date: item.date,
-          session: item.title,
-        }));
-
-  const recommendations = (data.recommendations ?? []).slice(0, 2);
+    weekStart != null &&
+    weekEnd != null &&
+    weekStart <= todayIso &&
+    todayIso <= weekEnd;
+  const recommendations = (review?.review_data?.recommendations ?? []).slice(
+    0,
+    2,
+  );
 
   return (
-    <section
-      aria-label="今週のプランと次の行動"
-      className={CARD_CLASS}
-    >
+    <section aria-label="今週のプランと次の行動" className={CARD_CLASS}>
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="font-display text-base font-semibold text-ink">
           {isCurrentWeek ? "今週のプラン" : "直近レビューのプラン"}
         </h2>
-        <span className="font-numeric text-xs tabular-nums text-slate-500">
-          {formatDate(review.week_start_date)} 〜{" "}
-          {formatDate(review.week_end_date)}
-        </span>
+        {weekStart != null && weekEnd != null && (
+          <span className="font-numeric text-xs tabular-nums text-slate-500">
+            {formatDate(weekStart)} 〜 {formatDate(weekEnd)}
+          </span>
+        )}
       </div>
 
       {rows.length > 0 ? (
@@ -114,6 +151,12 @@ export default function ThisWeekPlan({
                   >
                     {row.rating}
                   </span>
+                ) : row.status != null ? (
+                  <span className="shrink-0 pt-0.5">
+                    <StatusBadge tone={statusTone(row.status)}>
+                      {statusLabel(row.status)}
+                    </StatusBadge>
+                  </span>
                 ) : (
                   <span aria-hidden="true" className="shrink-0 pt-0.5 text-sm">
                     ・
@@ -121,16 +164,16 @@ export default function ThisWeekPlan({
                 )}
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-800">
-                    {row.session ?? "-"}
+                    {row.label}
                     {isToday && (
                       <span className="rounded-full bg-signal/15 px-2 py-0.5 text-[10px] font-bold text-signal-ink">
                         今日
                       </span>
                     )}
                   </span>
-                  {row.comment != null && row.comment !== "" && (
+                  {row.detail != null && row.detail !== "" && (
                     <span className="mt-0.5 block text-xs leading-relaxed text-slate-500">
-                      {row.comment}
+                      {row.detail}
                     </span>
                   )}
                 </span>
@@ -159,14 +202,16 @@ export default function ThisWeekPlan({
         </div>
       )}
 
-      <div className="mt-4 text-right">
-        <Link
-          to={`/weekly-reviews/${review.week_start_date}`}
-          className="text-sm font-medium text-status-info hover:underline"
-        >
-          レビュー全文 →
-        </Link>
-      </div>
+      {weekStart != null && (
+        <div className="mt-4 text-right">
+          <Link
+            to={`/weekly-reviews/${weekStart}`}
+            className="text-sm font-medium text-status-info hover:underline"
+          >
+            レビュー全文 →
+          </Link>
+        </div>
+      )}
     </section>
   );
 }
