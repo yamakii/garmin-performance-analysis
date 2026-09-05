@@ -81,7 +81,7 @@ Step 1 の `prefetch_weekly_review_context` バンドルから、以下のキー
 
 ### Step 3: W の Garmin プラン（レビュー対象）
 
-バンドルの `scheduled_workouts`（`{start_date, end_date, count, workouts:[{date, title, item_type, training_plan_id, training_plan_name, workout_uuid}]}`）が **レビュー対象** の対象週 W プランです。
+バンドルの `scheduled_workouts`（`{start_date, end_date, count, workouts:[{date, title, item_type, schedule_id, training_plan_id, training_plan_name, workout_uuid}]}`）が **レビュー対象** の対象週 W プランです。
 
 **フォールバック**: `scheduled_workouts` が **null の場合のみ**（Garmin カレンダーの live HTTP 失敗）、直接 MCP で取得し直してください:
 
