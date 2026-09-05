@@ -18,6 +18,7 @@ from garmin_mcp.tools.workout_scheduling import (
     _cleanup_generated_workouts,
     _collect_mcp_assignments,
     _schedule_custom_workout,
+    _target_fields,
     build_workout_json,
 )
 
@@ -121,6 +122,64 @@ def test_title_prefix_enforced() -> None:
         "[MCP] Long 120min", [{"step_type": "run", "distance_m": 1}]
     )
     assert already["workoutName"] == "[MCP] Long 120min"
+
+
+# ----------------------------------------------------------------------------
+# _target_fields (ceiling-only HR prescriptions, #979)
+# ----------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_target_fields_hr_high_only_defaults_floor() -> None:
+    """A ceiling-only step still gets an HR-range target, with a non-alerting
+    floor of 80 bpm so the low-HR alert can never push the pace up."""
+    fields = _target_fields({"hr_high": 150})
+
+    assert fields["targetType"]["workoutTargetTypeId"] == 4
+    assert fields["targetType"]["workoutTargetTypeKey"] == "heart.rate.zone"
+    assert fields["targetValueOne"] == 80
+    assert fields["targetValueTwo"] == 150
+
+
+@pytest.mark.unit
+def test_target_fields_both_bounds_unchanged() -> None:
+    """An explicit floor (quality sessions) is passed through untouched."""
+    fields = _target_fields({"hr_low": 162, "hr_high": 169})
+
+    assert fields["targetType"]["workoutTargetTypeKey"] == "heart.rate.zone"
+    assert fields["targetValueOne"] == 162
+    assert fields["targetValueTwo"] == 169
+
+
+@pytest.mark.unit
+def test_target_fields_hr_low_only_is_no_target() -> None:
+    """A floor without a ceiling carries no target (unchanged behaviour)."""
+    fields = _target_fields({"hr_low": 130})
+
+    assert fields["targetType"]["workoutTargetTypeKey"] == "no.target"
+    assert "targetValueOne" not in fields
+    assert "targetValueTwo" not in fields
+
+
+@pytest.mark.unit
+def test_build_workout_json_long_run_ceiling_only_has_hr_target_on_body_step() -> None:
+    """A ceiling-governed long run uploads with an 80-150 bpm target on the body
+    step, while the untargeted warmup/cooldown stay on no.target."""
+    result = build_workout_json(
+        "Long 120min (Z2 ceiling 150)",
+        [
+            {"step_type": "warmup", "duration_minutes": 10},
+            {"step_type": "run", "duration_minutes": 120, "hr_high": 150},
+            {"step_type": "cooldown", "duration_minutes": 5},
+        ],
+    )
+
+    warmup, body, cooldown = result["workoutSegments"][0]["workoutSteps"]
+    assert body["targetType"]["workoutTargetTypeKey"] == "heart.rate.zone"
+    assert body["targetValueOne"] == 80
+    assert body["targetValueTwo"] == 150
+    assert warmup["targetType"]["workoutTargetTypeKey"] == "no.target"
+    assert cooldown["targetType"]["workoutTargetTypeKey"] == "no.target"
 
 
 # ----------------------------------------------------------------------------
