@@ -190,14 +190,26 @@ class TestPrefetchActivityContext:
         """Create a mock DB connection."""
         return MagicMock()
 
-    def _setup_basic_queries(self, mock_conn: MagicMock) -> None:
+    def _setup_basic_queries(
+        self, mock_conn: MagicMock, distance_km: float = 8.2
+    ) -> None:
         """Set up mock return values for all 5 queries."""
         import datetime
 
         mock_conn.execute.return_value.fetchone.side_effect = [
             # Query 1: activity metadata
-            # (date, temp, humidity, wind, direction, avg_hr, avg_pace_s_per_km)
-            (datetime.date(2026, 2, 16), 7.8, 84, 4.0, "NW", 148, 330.0),
+            # (date, temp, humidity, wind, direction, avg_hr,
+            #  avg_pace_s_per_km, total_distance_km)
+            (
+                datetime.date(2026, 2, 16),
+                7.8,
+                84,
+                4.0,
+                "NW",
+                148,
+                330.0,
+                distance_km,
+            ),
             # Query 2: hr_efficiency (C1 expanded)
             (
                 "aerobic_base",  # training_type
@@ -354,7 +366,8 @@ class TestPrefetchActivityContext:
         mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
         mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
         mock_conn.execute.return_value.fetchone.side_effect = [
-            (datetime.date(2026, 2, 16), 7.8, 84, 4.0, "NW", 148, 330.0),  # activity
+            # activity
+            (datetime.date(2026, 2, 16), 7.8, 84, 4.0, "NW", 148, 330.0, 8.2),
             None,  # hr_efficiency missing
             (None, None, 0, None, None, None),  # elevation (no splits)
             None,  # form_evaluations missing
@@ -396,6 +409,7 @@ class TestPrefetchActivityContext:
                     "NW",
                     148,
                     330.0,
+                    8.2,
                 )
             elif call_count == 2:  # hr_efficiency missing
                 mock_result.fetchone.return_value = None
@@ -446,6 +460,7 @@ class TestPrefetchActivityContext:
                     "NW",
                     148,
                     330.0,
+                    8.2,
                 )
             elif call_count == 3:  # elevation
                 mock_result.fetchone.return_value = (None, None, 0, None, None, None)
@@ -475,7 +490,7 @@ class TestPrefetchActivityContext:
         mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
         mock_conn.execute.return_value.fetchone.side_effect = [
             # Query 1: activity metadata
-            (datetime.date(2026, 2, 16), 7.8, 84, 4.0, "NW", 148, 330.0),
+            (datetime.date(2026, 2, 16), 7.8, 84, 4.0, "NW", 148, 330.0, 8.2),
             # Query 2: hr_efficiency
             (
                 "aerobic_base",
@@ -532,3 +547,51 @@ class TestPrefetchActivityContext:
         assert result["activity_date"] == "2026-02-16"
         assert result["training_type"] == "aerobic_base"
         assert result["terrain_category"] == "flat"
+
+    @patch("garmin_mcp.scripts.prefetch_activity_context.get_db_path")
+    @patch("garmin_mcp.scripts.prefetch_activity_context.get_connection")
+    def test_prefetch_activity_context_long_run_gate_only_for_long_runs(
+        self, mock_get_conn: MagicMock, mock_get_db: MagicMock, mock_conn: MagicMock
+    ) -> None:
+        """long_run_gate is null below 10 km and a verdict at/above it (#982)."""
+        mock_get_db.return_value = "/fake/db.duckdb"
+        mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
+
+        # 5 km run -> the gate has no basis, so the key stays null.
+        self._setup_basic_queries(mock_conn, distance_km=5.0)
+        with patch(
+            "garmin_mcp.analysis.progression_gate.build_long_run_progression_gate"
+        ) as build:
+            short_run = prefetch_activity_context(12345)
+        assert short_run["long_run_gate"] is None
+        build.assert_not_called()
+
+        # 19 km run -> the deterministic verdict rides along in the bundle.
+        self._setup_basic_queries(mock_conn, distance_km=19.0)
+        gate = {
+            "activity_id": 12345,
+            "current": {"gct_fade_ms": 4.0},
+            "reference": None,
+            "verdict": "green",
+            "recommendation": "extend",
+            "triggers": [],
+            "decoupling_contaminated": False,
+            "reference_activity_id": None,
+            "reason_ja": "後半の脚の崩れは基準内です。次のロングは延長できます。",
+        }
+        with (
+            patch(
+                "garmin_mcp.database.readers.durability.DurabilityReader"
+            ) as reader_cls,
+            patch(
+                "garmin_mcp.analysis.progression_gate."
+                "build_long_run_progression_gate",
+                return_value=gate,
+            ) as build,
+        ):
+            long_run = prefetch_activity_context(12345)
+
+        assert long_run["long_run_gate"]["verdict"] == "green"
+        assert long_run["long_run_gate"]["recommendation"] == "extend"
+        build.assert_called_once_with(reader_cls.return_value, 12345)

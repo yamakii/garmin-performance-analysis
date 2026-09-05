@@ -51,8 +51,14 @@ Output (JSON to stdout):
       "form_baseline_trend": {"success": true, "metrics": {...}},
       "similar_workouts": {"target_activity": {...}, "similar_activities": [...]},
       "vo2_max": null,               # training-type conditional (or data dict)
-      "lactate_threshold": null      # training-type conditional (or data dict)
+      "lactate_threshold": null,     # training-type conditional (or data dict)
+      "long_run_gate": null          # long runs only (>= 10 km); see below
     }
+
+``long_run_gate`` carries the deterministic long-run progression verdict
+(extend / repeat / shorten) for runs of at least
+``_LONG_RUN_GATE_MIN_KM``; it is ``null`` for shorter runs and on any error, so
+the summary transcribes the same judgement the weekly review sees (#982).
 
 Bundle keys form_evaluation..lactate_threshold are additive (Issue #235);
 existing keys above are never modified. vo2_max / lactate_threshold are
@@ -86,6 +92,10 @@ _VO2_TRAINING_TYPES = {"vo2max", "vo2_max", "interval", "speed"}
 # Sourced from TerrainClassifier's 丘陵 (hilly) cutoff so the local-bump
 # sensitivity stays in sync with per-split terrain labeling (see Issue #473).
 _SPLIT_UNDULATION_THRESHOLD = 15.0  # m, == TerrainClassifier 丘陵 cutoff
+
+# Minimum distance for the long-run progression gate to apply. Matches the
+# long-run definition used by the durability reader / get_durability_trend.
+_LONG_RUN_GATE_MIN_KM = 10.0
 
 
 def _should_include_vo2_max(training_type: str | None) -> bool:
@@ -207,7 +217,8 @@ def prefetch_activity_context(activity_id: int) -> dict:
                 wind_speed_kmh,
                 wind_direction,
                 avg_heart_rate,
-                avg_pace_seconds_per_km
+                avg_pace_seconds_per_km,
+                total_distance_km
             FROM activities
             WHERE activity_id = ?
             """,
@@ -224,6 +235,7 @@ def prefetch_activity_context(activity_id: int) -> dict:
         wind_direction = activity_row[4]
         avg_heart_rate = activity_row[5]
         avg_pace_s_per_km = activity_row[6]
+        total_distance_km = activity_row[7]
         wind_mps = round(wind_kmh / 3.6, 1) if wind_kmh else None
 
         # 2. HR efficiency (C1: expanded from training_type only)
@@ -433,6 +445,26 @@ def prefetch_activity_context(activity_id: int) -> dict:
         else None
     )
 
+    # Long-run progression gate (Issue #982): may the next long run be
+    # extended? Only meaningful for long runs, so shorter runs keep the key at
+    # null rather than shipping a verdict with no basis. Null on error.
+    long_run_gate: dict | None = None
+    if (
+        total_distance_km is not None
+        and float(total_distance_km) >= _LONG_RUN_GATE_MIN_KM
+    ):
+        try:
+            from garmin_mcp.analysis.progression_gate import (
+                build_long_run_progression_gate,
+            )
+            from garmin_mcp.database.readers.durability import DurabilityReader
+
+            long_run_gate = build_long_run_progression_gate(
+                DurabilityReader(db_path_str), activity_id
+            )
+        except Exception:
+            logger.debug("long-run progression gate failed; leaving it as None")
+
     # Similar past workouts (own connection via WorkoutComparator). Called once,
     # outside the read transaction above. Key is always present (null on error).
     similar_workouts: dict | None
@@ -492,6 +524,9 @@ def prefetch_activity_context(activity_id: int) -> dict:
         "similar_workouts": similar_workouts,
         "vo2_max": vo2_max,
         "lactate_threshold": lactate_threshold,
+        # Deterministic long-run progression verdict (Issue #982); null for
+        # runs below _LONG_RUN_GATE_MIN_KM.
+        "long_run_gate": long_run_gate,
     }
 
 

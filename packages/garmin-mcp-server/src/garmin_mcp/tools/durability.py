@@ -1,9 +1,11 @@
 """Durability (cardiac-decoupling) tool definitions.
 
-Exposes long-run durability as two tools: ``get_activity_durability`` (one
-activity's first-half vs second-half decoupling) and ``get_durability_trend``
-(the decoupling trend across long runs in a date window). Both delegate to
-``DurabilityReader``.
+Exposes long-run durability as three tools: ``get_activity_durability`` (one
+activity's first-half vs second-half decoupling), ``get_durability_trend``
+(the decoupling trend across long runs in a date window) and
+``get_long_run_progression_gate`` (may the next long run be extended?). All
+delegate to ``DurabilityReader``; the gate additionally runs the deterministic
+verdict in ``garmin_mcp.analysis.progression_gate`` (#982).
 
 Both tools also surface second-half *form* decay (#368): per-activity
 ``gct_fade_pct`` / ``vo_fade_pct`` / ``vr_fade_pct`` (nullable; back-vs-front
@@ -20,6 +22,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from garmin_mcp.analysis.progression_gate import build_long_run_progression_gate
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.tools.registry import ToolDef
 
@@ -52,10 +55,27 @@ class GetDurabilityTrendParams(BaseModel):
     )
 
 
+class GetLongRunProgressionGateParams(BaseModel):
+    """Arguments for ``get_long_run_progression_gate``."""
+
+    activity_id: int = Field(
+        description=(
+            "Long-run activity ID to judge (compared against a comparable "
+            "earlier practice long run)."
+        ),
+    )
+
+
 def _get_activity_durability(
     reader: GarminDBReader, p: GetActivityDurabilityParams
 ) -> Any:
     return reader.get_activity_durability(p.activity_id)
+
+
+def _get_long_run_progression_gate(
+    reader: GarminDBReader, p: GetLongRunProgressionGateParams
+) -> Any:
+    return build_long_run_progression_gate(reader, p.activity_id)
 
 
 def _get_durability_trend(reader: GarminDBReader, p: GetDurabilityTrendParams) -> Any:
@@ -99,6 +119,26 @@ DURABILITY_TOOLS: list[ToolDef] = [
         handler=_get_durability_trend,
         cli_group="durability",
         cli_name="trend",
+    ),
+    ToolDef(
+        name="get_long_run_progression_gate",
+        description=(
+            "Judge whether the next long run may be extended. Compares this "
+            "long run's second-half decay against a comparable earlier "
+            "practice long run (similar distance, within 8 weeks, similar "
+            "temperature, races excluded) and returns verdict "
+            "(green/yellow/red/insufficient_data), recommendation "
+            "(extend/repeat/shorten), the triggers that fired (gct_fade_ms "
+            ">= 10, cadence_fade_spm <= -5, pace_fade_pct >= 8, each with the "
+            "reference value and whether it is clearly worse), "
+            "reference_activity_id, decoupling_contaminated (current run at "
+            ">= 30C, where decoupling is thermal drift) and a Japanese "
+            "reason_ja, alongside the current and reference durability blocks."
+        ),
+        params=GetLongRunProgressionGateParams,
+        handler=_get_long_run_progression_gate,
+        cli_group="durability",
+        cli_name="progression-gate",
     ),
 ]
 

@@ -28,17 +28,26 @@ Definitions (per activity, using ``time_series_metrics``):
   ratio respectively. Positive means form worsened in the second half. These
   are **independent and nullable**: older devices lack GCT/VO/VR, so a null
   form metric is reported as ``None`` and never blocks decoupling computation.
+- ``gct_fade_ms`` = ``back_gct - front_gct`` (milliseconds) and
+  ``cadence_fade_spm`` = ``back_cadence - front_cadence`` (steps per minute,
+  negative = cadence dropped). The long-run progression gate is stated in
+  absolute units ("GCT +10 ms / cadence -5 spm"), so these sit alongside the
+  ratio-based fades rather than replacing them (#982).
 
 Returns ``None`` for an activity when HR or speed is missing or the midpoint
 cannot split the series into two non-empty halves (HR-data-dependent). Form
 fades are computed independently within that activity and may individually be
 ``None`` without affecting decoupling.
+
+:meth:`DurabilityReader.find_reference_long_run` picks the like-for-like
+earlier long run the gate compares against: same-ish distance, recent, not a
+race, and preferably run in a similar temperature band.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import numpy as np
@@ -58,6 +67,27 @@ _P_VALUE_THRESHOLD = 0.05
 # rather than crying "worsening" while every long run is still excellent (#845).
 _STRONG_BAND_MAX = 5.0
 _MODERATE_BAND_MAX = 10.0
+
+# Minimum distance for an activity to count as a long run (matches the default
+# used by ``get_durability_trend`` / the progression gate).
+_LONG_RUN_MIN_KM = 10.0
+
+# Activity-name fragments that mark a race. Races are paced and fuelled unlike a
+# practice long run, so they are never used as the gate's reference (#982).
+_RACE_NAME_FRAGMENTS = ("マラソン", "レース", "race")
+
+
+def _as_date_str(value: Any) -> str | None:
+    """Render a DuckDB DATE column as ``YYYY-MM-DD`` (or ``None``)."""
+    if value is None:
+        return None
+    # DuckDB returns datetime.date for a DATE column.
+    return value.strftime("%Y-%m-%d") if isinstance(value, date) else str(value)
+
+
+def _as_float(value: Any) -> float | None:
+    """Coerce a numeric column to ``float`` (or ``None`` when absent)."""
+    return None if value is None else float(value)
 
 
 class DurabilityReader(BaseDBReader):
@@ -86,11 +116,19 @@ class DurabilityReader(BaseDBReader):
                     "gct_fade_pct": float | None,  # (back_gct/front_gct-1), %
                     "vo_fade_pct": float | None,   # (back_vo/front_vo-1), %
                     "vr_fade_pct": float | None,   # (back_vr/front_vr-1), %
+                    "gct_fade_ms": float | None,       # back_gct - front_gct
+                    "cadence_fade_spm": float | None,  # back_cad - front_cad
+                    "temperature_c": float | None,
+                    "avg_hr": float | None,
+                    "avg_pace_s_per_km": float | None,
                 }
 
-            The three form-fade fields are ``None`` when either half lacks a
-            non-null average for that metric (older devices), independently of
-            the always-present decoupling/pace-fade fields.
+            The form-fade fields (ratio and absolute alike) are ``None`` when
+            either half lacks a non-null average for that metric (older
+            devices), independently of the always-present decoupling/pace-fade
+            fields. ``temperature_c`` / ``avg_hr`` / ``avg_pace_s_per_km`` come
+            from ``activities`` and let a consumer judge comparability (heat,
+            effort) without a second query.
         """
         with self._get_connection() as conn:
             bounds = conn.execute(
@@ -135,14 +173,18 @@ class DurabilityReader(BaseDBReader):
                     avg(CASE WHEN timestamp_s < ? THEN vertical_ratio END)
                         AS front_vr,
                     avg(CASE WHEN timestamp_s >= ? THEN vertical_ratio END)
-                        AS back_vr
+                        AS back_vr,
+                    avg(CASE WHEN timestamp_s < ? THEN cadence END)
+                        AS front_cadence,
+                    avg(CASE WHEN timestamp_s >= ? THEN cadence END)
+                        AS back_cadence
                 FROM time_series_metrics
                 WHERE activity_id = ?
                   AND heart_rate IS NOT NULL
                   AND speed IS NOT NULL
                   AND speed > 0
                 """,
-                [midpoint] * 10 + [activity_id],
+                [midpoint] * 12 + [activity_id],
             ).fetchone()
 
         if halves is None:
@@ -159,6 +201,8 @@ class DurabilityReader(BaseDBReader):
             back_vo,
             front_vr,
             back_vr,
+            front_cadence,
+            back_cadence,
         ) = halves
 
         # Decoupling/pace fade require all four HR/speed averages (HR-dependent).
@@ -186,19 +230,35 @@ class DurabilityReader(BaseDBReader):
         # pace = 1 / speed, so back_pace / front_pace = front_speed / back_speed.
         pace_fade_pct = (front_speed / back_speed - 1.0) * 100.0
 
-        activity_date = self._activity_date(activity_id)
-        distance_km = self._distance_km(activity_id)
+        meta = self._activity_meta(activity_id)
 
         return {
             "activity_id": activity_id,
-            "activity_date": activity_date,
-            "distance_km": distance_km,
+            "activity_date": meta["activity_date"],
+            "distance_km": meta["distance_km"],
             "decoupling_pct": round(decoupling_pct, 2),
             "pace_fade_pct": round(pace_fade_pct, 2),
             "gct_fade_pct": self._fade_pct(front_gct, back_gct),
             "vo_fade_pct": self._fade_pct(front_vo, back_vo),
             "vr_fade_pct": self._fade_pct(front_vr, back_vr),
+            "gct_fade_ms": self._fade_delta(front_gct, back_gct),
+            "cadence_fade_spm": self._fade_delta(front_cadence, back_cadence),
+            "temperature_c": meta["temperature_c"],
+            "avg_hr": meta["avg_hr"],
+            "avg_pace_s_per_km": meta["avg_pace_s_per_km"],
         }
+
+    @staticmethod
+    def _fade_delta(front: Any, back: Any) -> float | None:
+        """Return ``back - front`` (rounded) in the metric's own unit, or ``None``.
+
+        Unlike :meth:`_fade_pct` this keeps the absolute difference, because the
+        progression gate's thresholds are stated in ms / spm rather than as
+        ratios. ``None`` when either half average is null.
+        """
+        if front is None or back is None:
+            return None
+        return round(float(back) - float(front), 2)
 
     @staticmethod
     def _fade_pct(front: Any, back: Any) -> float | None:
@@ -669,26 +729,128 @@ class DurabilityReader(BaseDBReader):
             ).fetchall()
         return [int(row[0]) for row in rows]
 
-    def _activity_date(self, activity_id: int) -> str | None:
-        """Return the activity's date as a ``YYYY-MM-DD`` string (or None)."""
-        with self._get_connection() as conn:
-            row = conn.execute(
-                "SELECT activity_date FROM activities WHERE activity_id = ?",
-                [activity_id],
-            ).fetchone()
-        if row is None or row[0] is None:
-            return None
-        value = row[0]
-        # DuckDB returns datetime.date for a DATE column.
-        return value.strftime("%Y-%m-%d") if isinstance(value, date) else str(value)
+    def _activity_meta(self, activity_id: int) -> dict[str, Any]:
+        """Return the activity row's date / distance / temperature / effort.
 
-    def _distance_km(self, activity_id: int) -> float | None:
-        """Return the activity's total distance in km (or None)."""
+        One query for every ``activities`` column the durability payload needs.
+        Missing row or column -> all values ``None`` (the caller still returns a
+        result: durability itself comes from the time series).
+        """
         with self._get_connection() as conn:
             row = conn.execute(
-                "SELECT total_distance_km FROM activities WHERE activity_id = ?",
+                """
+                SELECT activity_date, total_distance_km, temp_celsius,
+                       avg_heart_rate, avg_pace_seconds_per_km
+                FROM activities
+                WHERE activity_id = ?
+                """,
                 [activity_id],
             ).fetchone()
-        if row is None or row[0] is None:
+
+        if row is None:
+            row = (None, None, None, None, None)
+        return {
+            "activity_date": _as_date_str(row[0]),
+            "distance_km": _as_float(row[1]),
+            "temperature_c": _as_float(row[2]),
+            "avg_hr": _as_float(row[3]),
+            "avg_pace_s_per_km": _as_float(row[4]),
+        }
+
+    def find_reference_long_run(
+        self,
+        activity_id: int,
+        *,
+        lookback_days: int = 56,
+        distance_tolerance: float = 0.25,
+        temp_band_c: float = 5.0,
+    ) -> dict[str, Any] | None:
+        """Find the comparable earlier long run to judge ``activity_id`` against.
+
+        "Comparable" mirrors how the athlete applies the rule by hand: a recent
+        *practice* long run of roughly the same distance, ideally run in similar
+        heat. Races are excluded by name (they are paced and fuelled unlike a
+        training long run), as are runs below
+        :data:`_LONG_RUN_MIN_KM`.
+
+        Args:
+            activity_id: The long run being judged.
+            lookback_days: How far back a candidate may sit (default 56 days:
+                two mesocycles, long enough to find a peer after a cutback).
+            distance_tolerance: Allowed fractional distance difference
+                (default 0.25 = ±25% of the target's distance).
+            temp_band_c: Temperature difference (°C) within which a candidate
+                counts as "same conditions". Candidates inside the band win on
+                recency; outside it, the nearest temperature wins.
+
+        Returns:
+            :meth:`get_activity_durability` of the chosen run plus
+            ``"temp_diff_c"`` (candidate minus target temperature, ``None``
+            when either temperature is missing), or ``None`` when no candidate
+            qualifies (or none of them has usable time-series data).
+        """
+        target = self._activity_meta(activity_id)
+        target_date, target_distance = target["activity_date"], target["distance_km"]
+        if target_date is None or target_distance is None:
             return None
-        return float(row[0])
+
+        start_date = str(
+            datetime.strptime(target_date, "%Y-%m-%d").date()
+            - timedelta(days=lookback_days)
+        )
+        min_km = max(_LONG_RUN_MIN_KM, target_distance * (1.0 - distance_tolerance))
+        max_km = target_distance * (1.0 + distance_tolerance)
+
+        race_filter = " OR ".join(
+            "lower(coalesce(activity_name, '')) LIKE ?" for _ in _RACE_NAME_FRAGMENTS
+        )
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT activity_id, temp_celsius
+                FROM activities
+                WHERE activity_date >= ?
+                  AND activity_date < ?
+                  AND activity_id != ?
+                  AND total_distance_km >= ?
+                  AND total_distance_km <= ?
+                  AND NOT ({race_filter})
+                ORDER BY activity_date DESC, activity_id DESC
+                """,
+                [
+                    start_date,
+                    target_date,
+                    activity_id,
+                    min_km,
+                    max_km,
+                    *(f"%{fragment.lower()}%" for fragment in _RACE_NAME_FRAGMENTS),
+                ],
+            ).fetchall()
+
+        target_temp = target["temperature_c"]
+        candidates = [
+            (
+                int(row[0]),
+                (
+                    None
+                    if target_temp is None or row[1] is None
+                    else round(float(row[1]) - target_temp, 2)
+                ),
+            )
+            for row in rows
+        ]
+        # Same conditions first (recency order preserved), then nearest
+        # temperature; unknown temperatures sort last.
+        in_band = [
+            c for c in candidates if c[1] is not None and abs(c[1]) <= temp_band_c
+        ]
+        out_of_band = sorted(
+            (c for c in candidates if c not in in_band),
+            key=lambda c: float("inf") if c[1] is None else abs(c[1]),
+        )
+
+        for reference_id, temp_diff_c in [*in_band, *out_of_band]:
+            durability = self.get_activity_durability(reference_id)
+            if durability is not None:
+                return {**durability, "temp_diff_c": temp_diff_c}
+        return None

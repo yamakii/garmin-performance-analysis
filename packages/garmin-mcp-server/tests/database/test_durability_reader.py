@@ -26,6 +26,8 @@ def _insert_activity(
     activity_id: int,
     activity_date: str,
     distance_km: float,
+    temp_celsius: float | None = None,
+    activity_name: str | None = None,
 ) -> None:
     """Insert one running activity row with a given distance."""
     conn = duckdb.connect(str(db_path))
@@ -33,19 +35,62 @@ def _insert_activity(
         conn.execute(
             """
             INSERT INTO activities (
-                activity_id, activity_date, total_distance_km,
-                total_time_seconds, avg_pace_seconds_per_km, avg_heart_rate
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                activity_id, activity_date, activity_name, total_distance_km,
+                total_time_seconds, avg_pace_seconds_per_km, avg_heart_rate,
+                temp_celsius
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 activity_id,
                 activity_date,
+                activity_name,
                 distance_km,
                 int(distance_km * 300),
                 300.0,
                 150,
+                temp_celsius,
             ],
         )
+    finally:
+        conn.close()
+
+
+def _insert_time_series_with_cadence(
+    db_path: Path,
+    *,
+    activity_id: int,
+    front_cadence: float,
+    back_cadence: float,
+    front_gct: float,
+    back_gct: float,
+    points_per_half: int = 5,
+) -> None:
+    """Insert a constant-per-half series carrying cadence and GCT.
+
+    HR/speed are constant (150 bpm @ 3.0 m/s) so decoupling and pace fade are
+    zero and only the cadence / GCT deltas are under test.
+    """
+    conn = duckdb.connect(str(db_path))
+    try:
+        for seq_no in range(2 * points_per_half):
+            front = seq_no < points_per_half
+            conn.execute(
+                """
+                INSERT INTO time_series_metrics (
+                    activity_id, seq_no, timestamp_s, heart_rate, speed,
+                    cadence, ground_contact_time
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    activity_id,
+                    seq_no,
+                    seq_no,
+                    150.0,
+                    3.0,
+                    front_cadence if front else back_cadence,
+                    front_gct if front else back_gct,
+                ],
+            )
     finally:
         conn.close()
 
@@ -191,6 +236,11 @@ def test_activity_durability_basic(reader_db_path: Path) -> None:
         "gct_fade_pct",
         "vo_fade_pct",
         "vr_fade_pct",
+        "gct_fade_ms",
+        "cadence_fade_spm",
+        "temperature_c",
+        "avg_hr",
+        "avg_pace_s_per_km",
     }
     assert result["activity_id"] == 5001
     assert result["activity_date"] == "2025-09-01"
@@ -369,6 +419,11 @@ def test_activity_durability_includes_form_fade(reader_db_path: Path) -> None:
         "gct_fade_pct",
         "vo_fade_pct",
         "vr_fade_pct",
+        "gct_fade_ms",
+        "cadence_fade_spm",
+        "temperature_c",
+        "avg_hr",
+        "avg_pace_s_per_km",
     }
     # (270/250 - 1) * 100 = 8.0
     assert result["gct_fade_pct"] == pytest.approx(8.0)
@@ -1050,3 +1105,177 @@ def test_build_trend_backward_compat_keys(tmp_path: Path) -> None:
     ):
         assert key in trend
     assert trend["data_points"] == 5
+
+
+# ── Long-run progression gate inputs (#982) ──────────────────────────────
+
+
+@pytest.mark.integration
+def test_get_activity_durability_includes_cadence_and_gct_ms(
+    reader_db_path: Path,
+) -> None:
+    """Absolute half-split deltas: cadence 172->168 spm, GCT 258->266 ms."""
+    _insert_activity(
+        reader_db_path,
+        activity_id=5201,
+        activity_date="2026-08-23",
+        distance_km=19.0,
+        temp_celsius=27.4,
+    )
+    _insert_time_series_with_cadence(
+        reader_db_path,
+        activity_id=5201,
+        front_cadence=172.0,
+        back_cadence=168.0,
+        front_gct=258.0,
+        back_gct=266.0,
+    )
+
+    result = DurabilityReader(db_path=str(reader_db_path)).get_activity_durability(5201)
+
+    assert result is not None
+    assert result["cadence_fade_spm"] == pytest.approx(-4.0)
+    assert result["gct_fade_ms"] == pytest.approx(8.0)
+    # Activity-level context ships alongside so the gate needs no extra query.
+    assert result["temperature_c"] == pytest.approx(27.4)
+    assert result["avg_hr"] == pytest.approx(150.0)
+    assert result["avg_pace_s_per_km"] == pytest.approx(300.0)
+    # The ratio-based fade is unchanged: (266/258 - 1) * 100 = 3.1%.
+    assert result["gct_fade_pct"] == pytest.approx(3.1, abs=0.01)
+
+
+@pytest.mark.integration
+def test_find_reference_long_run_prefers_temperature_band(
+    reader_db_path: Path,
+) -> None:
+    """A cooler 21-day-old peer beats a hotter 14-day-old one (34 C is +7)."""
+    _insert_activity(
+        reader_db_path,
+        activity_id=6001,
+        activity_date="2026-08-30",
+        distance_km=19.0,
+        temp_celsius=27.0,
+    )
+    # 14 days earlier, 18 km but 34 C -> outside the +/-5 C band.
+    _insert_activity(
+        reader_db_path,
+        activity_id=6002,
+        activity_date="2026-08-16",
+        distance_km=18.0,
+        temp_celsius=34.0,
+    )
+    # 21 days earlier, 17 km at 26 C -> same conditions.
+    _insert_activity(
+        reader_db_path,
+        activity_id=6003,
+        activity_date="2026-08-09",
+        distance_km=17.0,
+        temp_celsius=26.0,
+    )
+    for activity_id in (6002, 6003):
+        _insert_time_series_with_cadence(
+            reader_db_path,
+            activity_id=activity_id,
+            front_cadence=172.0,
+            back_cadence=170.0,
+            front_gct=255.0,
+            back_gct=259.0,
+        )
+
+    reference = DurabilityReader(db_path=str(reader_db_path)).find_reference_long_run(
+        6001
+    )
+
+    assert reference is not None
+    assert reference["activity_id"] == 6003
+    assert reference["temp_diff_c"] == pytest.approx(-1.0)
+    assert reference["gct_fade_ms"] == pytest.approx(4.0)
+
+
+@pytest.mark.integration
+def test_find_reference_long_run_excludes_races_and_short_runs(
+    reader_db_path: Path,
+) -> None:
+    """Races (by name) and sub-10 km jogs are never the reference."""
+    _insert_activity(
+        reader_db_path,
+        activity_id=6101,
+        activity_date="2026-10-25",
+        distance_km=19.0,
+        temp_celsius=15.0,
+    )
+    # A race at a comparable distance: excluded by name, not by distance.
+    _insert_activity(
+        reader_db_path,
+        activity_id=6102,
+        activity_date="2026-10-11",
+        distance_km=20.0,
+        temp_celsius=16.0,
+        activity_name="新潟シティマラソン 30k走",
+    )
+    _insert_activity(
+        reader_db_path,
+        activity_id=6103,
+        activity_date="2026-10-04",
+        distance_km=42.2,
+        temp_celsius=15.5,
+        activity_name="新潟シティマラソン",
+    )
+    _insert_activity(
+        reader_db_path,
+        activity_id=6104,
+        activity_date="2026-10-18",
+        distance_km=6.0,
+        temp_celsius=15.0,
+        activity_name="朝ジョグ",
+    )
+    for activity_id in (6102, 6103, 6104):
+        _insert_time_series_with_cadence(
+            reader_db_path,
+            activity_id=activity_id,
+            front_cadence=172.0,
+            back_cadence=170.0,
+            front_gct=255.0,
+            back_gct=259.0,
+        )
+
+    reference = DurabilityReader(db_path=str(reader_db_path)).find_reference_long_run(
+        6101
+    )
+
+    assert reference is None
+
+
+@pytest.mark.integration
+def test_find_reference_long_run_respects_lookback(reader_db_path: Path) -> None:
+    """A comparable run 70 days back is outside the 56-day window."""
+    _insert_activity(
+        reader_db_path,
+        activity_id=6201,
+        activity_date="2026-09-01",
+        distance_km=19.0,
+        temp_celsius=25.0,
+    )
+    _insert_activity(
+        reader_db_path,
+        activity_id=6202,
+        activity_date="2026-06-23",  # 70 days earlier
+        distance_km=19.0,
+        temp_celsius=25.0,
+    )
+    _insert_time_series_with_cadence(
+        reader_db_path,
+        activity_id=6202,
+        front_cadence=172.0,
+        back_cadence=170.0,
+        front_gct=255.0,
+        back_gct=259.0,
+    )
+
+    reader = DurabilityReader(db_path=str(reader_db_path))
+
+    assert reader.find_reference_long_run(6201) is None
+    # Widening the window past 70 days finds it again.
+    assert (reader.find_reference_long_run(6201, lookback_days=90) or {}).get(
+        "activity_id"
+    ) == 6202

@@ -1048,6 +1048,22 @@
     }
   },
   {
+    "name": "get_long_run_progression_gate",
+    "description": "Judge whether the next long run may be extended. Compares this long run's second-half decay against a comparable earlier practice long run (similar distance, within 8 weeks, similar temperature, races excluded) and returns verdict (green/yellow/red/insufficient_data), recommendation (extend/repeat/shorten), the triggers that fired (gct_fade_ms >= 10, cadence_fade_spm <= -5, pace_fade_pct >= 8, each with the reference value and whether it is clearly worse), reference_activity_id, decoupling_contaminated (current run at >= 30C, where decoupling is thermal drift) and a Japanese reason_ja, alongside the current and reference durability blocks.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "activity_id": {
+          "type": "integer",
+          "description": "Long-run activity ID to judge (compared against a comparable earlier practice long run)."
+        }
+      },
+      "required": [
+        "activity_id"
+      ]
+    }
+  },
+  {
     "name": "ingest_strength_sessions",
     "description": "Discover strength_training (補強) activities from the Garmin Connect API in a date window and insert summary rows into the strength_sessions table. Catch-up aware: omit start_date to ingest from the latest stored strength date, or end_date - 30 days when none exist yet; omit end_date to default to today. Discovery uses the activity list filtered to typeKey == 'strength_training' (runs with distance are excluded). Each session's ACTIVE exercise sets are aggregated into a category_counts map (e.g. {\"CRUNCH\": 4, \"PLANK\": 7}). Sessions already stored are skipped without an exercise_sets API call. Returns discovered, ingested, skipped_existing, activity_ids, and the resolved window {start, end}.",
     "inputSchema": {
