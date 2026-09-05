@@ -395,7 +395,7 @@ Get weather data (temperature, humidity, wind) from activity
 
 CLI: `garmin-db performance prefetch-context`
 
-Pre-fetch shared activity context for analysis agents. Returns training_type, weather, terrain, HR efficiency (zone_percentages), form evaluation scores, phase structure, and planned workout in a single call. Auto-generates the form baseline for the activity's month (and prior month) if missing.
+Pre-fetch shared activity context for analysis agents. Returns training_type, weather, terrain, HR efficiency (zone_percentages), form evaluation scores, phase structure, and the prescription vs actual layer (that day's prescription, week_position, previous_same_type + vs_previous, morning_wellness and the deterministic prescription_verdict) in a single call. Auto-generates the form baseline for the activity's month (and prior month) if missing.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

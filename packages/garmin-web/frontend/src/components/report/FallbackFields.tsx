@@ -17,10 +17,12 @@ const FIELD_LABELS: Record<string, string> = {
   highlights: "ハイライト",
   next_run_target: "次回への処方",
   overall: "総評",
+  prescription_verdict: "処方との比較",
   rating: "評価",
   recommendations: "推奨アクション",
   summary: "サマリー",
   training_type: "トレーニング種別",
+  vs_previous: "前回比",
 };
 
 /** Display name for a payload key: known label, else humanized key. */

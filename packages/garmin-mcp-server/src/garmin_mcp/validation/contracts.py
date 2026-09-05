@@ -466,8 +466,46 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "type": "string",
                 "description": "Max 2 in structured markdown",
             },
+            "prescription_verdict": {
+                "type": "object",
+                "description": (
+                    "Transcribe CONTEXT.prescription_verdict verbatim "
+                    "({verdict, prescription_title, reasons}); omit when the "
+                    "day had no prescription. Never recompute the verdict"
+                ),
+                "optional": True,
+            },
+            "vs_previous": {
+                "type": "object",
+                "description": (
+                    "Transcribe CONTEXT.vs_previous verbatim (deltas vs the "
+                    "last same-type run); omit when no comparable run exists"
+                ),
+                "optional": True,
+            },
         },
         "evaluation_policy": {
+            "prescription_vs_actual": {
+                "verdicts": {
+                    "✅": "ran the prescribed session",
+                    "🟡": "one deviation (volume, HR or a lower intensity class)",
+                    "🔴": "risk-side deviation (higher intensity, rest day run, "
+                    "HR over ceiling by >10bpm, volume >1.50x)",
+                },
+                "rules": [
+                    "Transcribe prescription_verdict / vs_previous; never "
+                    "recompute or soften them",
+                    "next_action must follow week_position.ladder_step.next "
+                    "when it exists (never propose extending distance on top "
+                    "of the ladder)",
+                    "A 🔴 verdict is addressed by next_action first",
+                    "Mention morning_wellness when readiness < 50 or rhr_z > 1.0",
+                    "vs_previous form deltas within noise (|gct| < 5ms, "
+                    "|cadence| < 2spm) are not problems",
+                ],
+                "form_delta_noise": {"gct_ms": 5, "cadence_spm": 2},
+                "wellness_mention_thresholds": {"readiness": 50, "rhr_z": 1.0},
+            },
             "star_rating": {
                 "weights": {
                     "form_efficiency": 0.30,
@@ -565,6 +603,9 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "Easy run suggestions use HR range, not pace",
             "Use summary_structure for summary text format",
             "Use next_run_target_variants[type] for target calculation",
+            "Transcribe CONTEXT.prescription_verdict and CONTEXT.vs_previous "
+            "verbatim; follow prescription_vs_actual.rules for next_action, "
+            "wellness mentions and form-delta noise",
         ],
     },
 }

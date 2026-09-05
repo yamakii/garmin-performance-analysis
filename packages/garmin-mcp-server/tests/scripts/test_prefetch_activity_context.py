@@ -1,5 +1,6 @@
 """Tests for prefetch_activity_context module."""
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import duckdb
@@ -199,7 +200,7 @@ class TestPrefetchActivityContext:
         mock_conn.execute.return_value.fetchone.side_effect = [
             # Query 1: activity metadata
             # (date, temp, humidity, wind, direction, avg_hr,
-            #  avg_pace_s_per_km, total_distance_km)
+            #  avg_pace_s_per_km, total_distance_km, total_time_seconds)
             (
                 datetime.date(2026, 2, 16),
                 7.8,
@@ -209,6 +210,7 @@ class TestPrefetchActivityContext:
                 148,
                 330.0,
                 distance_km,
+                2706,
             ),
             # Query 2: hr_efficiency (C1 expanded)
             (
@@ -367,7 +369,7 @@ class TestPrefetchActivityContext:
         mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
         mock_conn.execute.return_value.fetchone.side_effect = [
             # activity
-            (datetime.date(2026, 2, 16), 7.8, 84, 4.0, "NW", 148, 330.0, 8.2),
+            (datetime.date(2026, 2, 16), 7.8, 84, 4.0, "NW", 148, 330.0, 8.2, 2706),
             None,  # hr_efficiency missing
             (None, None, 0, None, None, None),  # elevation (no splits)
             None,  # form_evaluations missing
@@ -410,6 +412,7 @@ class TestPrefetchActivityContext:
                     148,
                     330.0,
                     8.2,
+                    2706,
                 )
             elif call_count == 2:  # hr_efficiency missing
                 mock_result.fetchone.return_value = None
@@ -461,6 +464,7 @@ class TestPrefetchActivityContext:
                     148,
                     330.0,
                     8.2,
+                    2706,
                 )
             elif call_count == 3:  # elevation
                 mock_result.fetchone.return_value = (None, None, 0, None, None, None)
@@ -490,7 +494,7 @@ class TestPrefetchActivityContext:
         mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
         mock_conn.execute.return_value.fetchone.side_effect = [
             # Query 1: activity metadata
-            (datetime.date(2026, 2, 16), 7.8, 84, 4.0, "NW", 148, 330.0, 8.2),
+            (datetime.date(2026, 2, 16), 7.8, 84, 4.0, "NW", 148, 330.0, 8.2, 2706),
             # Query 2: hr_efficiency
             (
                 "aerobic_base",
@@ -595,3 +599,113 @@ class TestPrefetchActivityContext:
         assert long_run["long_run_gate"]["verdict"] == "green"
         assert long_run["long_run_gate"]["recommendation"] == "extend"
         build.assert_called_once_with(reader_cls.return_value, 12345)
+
+    @patch("garmin_mcp.scripts.prefetch_activity_context.get_db_path")
+    @patch("garmin_mcp.scripts.prefetch_activity_context.get_connection")
+    def test_prefetch_activity_context_includes_prescription_layer(
+        self, mock_get_conn: MagicMock, mock_get_db: MagicMock, mock_conn: MagicMock
+    ) -> None:
+        """A prescribed day carries the verdict, week position and deltas (#984)."""
+        mock_get_db.return_value = "/fake/db.duckdb"
+        mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
+        self._setup_basic_queries(mock_conn, distance_km=8.2)
+
+        plan_reader = MagicMock()
+        plan_reader.get_prescriptions_for_date.return_value = [
+            {
+                "date": "2026-02-16",
+                "session_type": "easy",
+                "title": "イージー 8km",
+                "target_km": 8.0,
+                "hr_high": 150,
+            }
+        ]
+        plan_reader.resolve_week_start.return_value = "2026-02-16"
+        plan_reader.get_block_for_date.return_value = {"phase": "base"}
+        plan_reader.get_ladder_step_for_week.return_value = {
+            "current": {"week_start": "2026-02-16", "target_km": 19.0, "kind": "build"},
+            "previous": None,
+            "next": {"week_start": "2026-02-23", "target_km": 22.0, "kind": "build"},
+        }
+        previous = {
+            "activity_id": 12000,
+            "activity_date": "2026-02-09",
+            "pace_s_per_km": 340.0,
+            "avg_hr": 151,
+            "gct_ms": 266.0,
+            "cadence_spm": 170.0,
+            "decoupling_pct": None,
+        }
+        wellness = {
+            "date": "2026-02-16",
+            "readiness": 72,
+            "resting_hr": 46,
+            "hrv_ms": 58.0,
+            "sleep_score": 81,
+            "readiness_z": 0.4,
+            "rhr_z": -0.2,
+            "hrv_z": 0.1,
+            "adverse": False,
+        }
+
+        with (
+            patch(
+                "garmin_mcp.database.readers.plan.PlanReader",
+                return_value=plan_reader,
+            ),
+            patch(
+                "garmin_mcp.scripts.prefetch_activity_context."
+                "_fetch_previous_same_type",
+                return_value=previous,
+            ),
+            patch(
+                "garmin_mcp.scripts.prefetch_activity_context._fetch_morning_wellness",
+                return_value=wellness,
+            ),
+        ):
+            result = prefetch_activity_context(12345)
+
+        assert "error" not in result
+        # 8.2 km against an 8.0 km easy prescription at 148 bpm under a 150 bpm
+        # ceiling: the run answered the plan.
+        assert result["prescription_verdict"]["verdict"] == "✅"
+        assert result["prescription_verdict"]["prescription_title"] == "イージー 8km"
+        assert result["prescription"][0]["session_type"] == "easy"
+        assert result["week_position"]["week_start"] == "2026-02-16"
+        assert result["week_position"]["ladder_step"]["next"]["target_km"] == 22.0
+        assert result["week_position"]["block_phase"] == "base"
+        assert result["previous_same_type"]["activity_id"] == 12000
+        assert result["vs_previous"]["avg_hr"]["delta"] == -3
+        assert result["vs_previous"]["days_ago"] == 7
+        assert result["morning_wellness"]["readiness"] == 72
+
+    @patch("garmin_mcp.scripts.prefetch_activity_context.get_db_path")
+    @patch("garmin_mcp.scripts.prefetch_activity_context.get_connection")
+    def test_prefetch_activity_context_layer_null_without_data(
+        self,
+        mock_get_conn: MagicMock,
+        mock_get_db: MagicMock,
+        mock_conn: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """No plan ledger and no wellness row -> empty layer, never an error."""
+        # A DB path that does not exist: every layer reader fails, and the
+        # bundle must still come back whole (null-on-error, Issue #235).
+        mock_get_db.return_value = str(tmp_path / "absent.duckdb")
+        mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
+        self._setup_basic_queries(mock_conn, distance_km=8.2)
+
+        result = prefetch_activity_context(12345)
+
+        assert "error" not in result
+        assert result["prescription"] == []
+        for key in (
+            "week_position",
+            "previous_same_type",
+            "vs_previous",
+            "morning_wellness",
+            "prescription_verdict",
+        ):
+            assert result[key] is None, key

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -60,6 +60,19 @@ class NextRunTarget(BaseModel):
     insufficient_data: bool | None = None
 
 
+class PrescriptionVerdict(BaseModel):
+    """How the run answered the session prescribed for that day (Issue #984).
+
+    Computed by ``analysis.derivations.compute_prescription_verdict`` and
+    transcribed verbatim by the summary agent, so the verdict symbol is typed
+    to the three allowed values rather than left as free text.
+    """
+
+    verdict: Literal["✅", "🟡", "🔴"]
+    prescription_title: str
+    reasons: list[str]
+
+
 class SummaryAnalysisData(BaseModel):
     """Schema for summary section analysis data."""
 
@@ -71,6 +84,11 @@ class SummaryAnalysisData(BaseModel):
     next_action: str = Field(min_length=10)
     next_run_target: NextRunTarget | dict[str, Any]
     recommendations: str = Field(min_length=5)
+    # Prescription vs actual (Issue #984). Transcribed from the prefetch
+    # CONTEXT, so both stay absent on unprescribed days, when no comparable
+    # same-type run exists, and in every summary stored before this layer.
+    prescription_verdict: PrescriptionVerdict | None = None
+    vs_previous: dict[str, Any] | None = None
 
 
 SECTION_SCHEMAS: dict[str, type[BaseModel]] = {

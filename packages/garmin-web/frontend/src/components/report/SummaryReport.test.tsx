@@ -233,6 +233,83 @@ describe("SummaryReport", () => {
     expect(screen.queryByText("plan_achievement")).not.toBeInTheDocument();
   });
 
+  // --- Prescription vs actual layer (Issue #984) ---
+
+  const prescriptionData = {
+    ...baseData,
+    next_action: "次回は9/20のカットバック週として14kmに留めましょう。",
+    prescription_verdict: {
+      verdict: "🟡",
+      prescription_title: "ロング 22km",
+      reasons: ["処方 22.0km に対し実施 17.0km（77%）で不足しています。"],
+    },
+    vs_previous: {
+      pace_s_per_km: { current: 430, previous: 440, delta: -10 },
+      avg_hr: { current: 142, previous: 145, delta: -3 },
+      gct_ms: { current: 262, previous: 258, delta: 4 },
+      cadence_spm: { current: 172, previous: 174, delta: -2 },
+      previous_activity_id: 987,
+      previous_date: "2026-09-06",
+      days_ago: 7,
+    },
+  };
+
+  it("renders prescription verdict line and delta chips", () => {
+    const { unmount } = render(
+      <SummaryReport section={section(prescriptionData)} />,
+    );
+
+    // The verdict reads as one line: mark + prescription title + the word the
+    // mark stands for, with the first reason underneath.
+    const line = screen.getByText("処方「ロング 22km」・注意", {
+      exact: false,
+    });
+    expect(line.textContent).toContain("🟡");
+    expect(line.closest("details")).toBeNull();
+    expect(
+      screen.getByText("処方 22.0km に対し実施 17.0km（77%）で不足しています。"),
+    ).toBeInTheDocument();
+
+    // Four signed delta chips against the last same-type run, with the gap.
+    expect(screen.getByText("前回比（7日前）")).toBeInTheDocument();
+    for (const [label, value] of [
+      ["ペース", "-10 秒/km"],
+      ["HR", "-3 bpm"],
+      ["GCT", "+4 ms"],
+      ["ケイデンス", "-2 spm"],
+    ]) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+      expect(screen.getByText(value)).toBeInTheDocument();
+    }
+
+    // The verdict is read before the action it justifies.
+    const action = screen.getByText(
+      "次回は9/20のカットバック週として14kmに留めましょう。",
+    );
+    expect(
+      line.compareDocumentPosition(action) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    unmount();
+
+    // Legacy summaries (no prescription layer) render exactly as before.
+    render(<SummaryReport section={section(baseData)} />);
+    expect(screen.queryByText(/処方「/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/前回比/)).not.toBeInTheDocument();
+  });
+
+  it("FallbackFields does not duplicate the new keys", () => {
+    render(<SummaryReport section={section(prescriptionData)} />);
+
+    // Both keys have dedicated UI, so the key-value fallback must not repeat
+    // them under their own labels (nor as humanized raw keys).
+    expect(screen.queryByText("処方との比較")).not.toBeInTheDocument();
+    expect(screen.queryByText("prescription verdict")).not.toBeInTheDocument();
+    expect(screen.queryByText("vs previous")).not.toBeInTheDocument();
+    // The verdict title appears once — in the dedicated line only.
+    expect(screen.getAllByText(/ロング 22km/)).toHaveLength(1);
+  });
+
   it("unknown fields fall back to key-value", () => {
     render(
       <SummaryReport
