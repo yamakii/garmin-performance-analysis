@@ -110,6 +110,10 @@ def _mock_prefetch(
     load_trend_raises: bool = False,
     profile: dict[str, Any] | None = None,
     past_review: dict[str, Any] | None = None,
+    block: dict[str, Any] | None = None,
+    ladder_step: dict[str, Any] | None = None,
+    prev_prescriptions: list[dict[str, Any]] | None = None,
+    scheduled: list[dict[str, Any]] | None = None,
 ) -> Iterator[MagicMock]:
     """Patch every prefetch collaborator so the bundle can run without a DB.
 
@@ -119,6 +123,13 @@ def _mock_prefetch(
             goal-less profile).
         past_review: Past review the ``AthleteReader`` returns (defaults to
             ``None``, i.e. no previous review).
+        block: Training block the ``PlanReader`` returns for W (defaults to
+            ``None``, i.e. no block registered).
+        ladder_step: ``{"current", "previous", "next"}`` the ``PlanReader``
+            returns for W (defaults to ``None``).
+        prev_prescriptions: W-1 prescription rows (defaults to none).
+        scheduled: Garmin calendar items for W. ``None`` keeps the default
+            "calendar unreachable" behaviour (the reader raises).
 
     Yields the ``GarminDBReader`` mock so a test can flip one reader to raise
     and assert the additive null-on-error contract.
@@ -144,6 +155,24 @@ def _mock_prefetch(
     assessor = MagicMock()
     assessor.assess.return_value.model_dump.return_value = {"vdot": 50.0}
 
+    plan_reader = MagicMock()
+    plan_reader.get_block_for_date.return_value = block
+    plan_reader.get_ladder_step_for_week.return_value = ladder_step
+    plan_reader.get_weekly_prescriptions.return_value = prev_prescriptions or []
+
+    if scheduled is None:
+        calendar_patch = patch(
+            "garmin_mcp.fitness.garmin_calendar.GarminCalendarReader",
+            side_effect=RuntimeError("no network"),
+        )
+    else:
+        calendar_reader = MagicMock()
+        calendar_reader.get_scheduled_workouts.return_value = scheduled
+        calendar_patch = patch(
+            "garmin_mcp.fitness.garmin_calendar.GarminCalendarReader",
+            return_value=calendar_reader,
+        )
+
     with (
         patch(f"{_MODULE}.get_db_path", return_value=Path("/tmp/wr_unit.duckdb")),
         patch(f"{_MODULE}.get_connection"),
@@ -158,13 +187,14 @@ def _mock_prefetch(
             return_value=athlete_reader,
         ),
         patch(
+            "garmin_mcp.database.readers.plan.PlanReader",
+            return_value=plan_reader,
+        ),
+        patch(
             "garmin_mcp.fitness.fitness_assessor.FitnessAssessor",
             return_value=assessor,
         ),
-        patch(
-            "garmin_mcp.fitness.garmin_calendar.GarminCalendarReader",
-            side_effect=RuntimeError("no network"),
-        ),
+        calendar_patch,
     ):
         yield reader
 
@@ -195,6 +225,9 @@ def test_prefetch_bundle_safe_null_on_reader_error() -> None:
         "recovery",
         "strength",
         "hiking",
+        "training_block",
+        "prescriptions_prev_week",
+        "garmin_conflicts",
         "athlete_profile",
         "goals_with_weeks_to_race",
         "past_review",
@@ -220,6 +253,118 @@ def test_prefetch_bundle_has_hiking_key() -> None:
         "2026-07-06",
         "2026-07-12",
     )
+
+
+# ── Unit: plan backbone keys (Issue #980) ────────────────────────────────
+
+
+def _block(
+    phase: str = "build",
+    end_date: str = "2026-09-27",
+    quality_sessions_per_week: int | None = 1,
+) -> dict[str, Any]:
+    """A training block covering the 2026-09-07 week, with a 3-step ladder."""
+    return {
+        "block_id": 1,
+        "phase": phase,
+        "title": "新潟ビルド",
+        "start_date": "2026-08-31",
+        "end_date": end_date,
+        "weight_mode": "維持",
+        "quality_sessions_per_week": quality_sessions_per_week,
+        "quality_types": ["threshold"],
+        "long_run_ladder": [
+            {"week_start": "2026-08-31", "target_km": 19.0},
+            {"week_start": "2026-09-07", "target_km": 22.0},
+            {"week_start": "2026-09-14", "target_km": 25.0},
+        ],
+    }
+
+
+def _ladder(current_km: float = 22.0) -> dict[str, Any]:
+    """The ladder step trio the PlanReader derives for the 2026-09-07 week."""
+    return {
+        "current": {"week_start": "2026-09-07", "target_km": current_km},
+        "previous": {"week_start": "2026-08-31", "target_km": 19.0},
+        "next": {"week_start": "2026-09-14", "target_km": 25.0},
+    }
+
+
+@pytest.mark.unit
+def test_prefetch_includes_training_block_and_ladder_step() -> None:
+    """The bundle carries W's block, its ladder step and the block runway."""
+    with _mock_prefetch(block=_block(), ladder_step=_ladder()) as reader:
+        result = prefetch_weekly_review_context("2026-09-07", today="2026-09-07")
+
+    training_block = result["training_block"]
+    assert training_block["block"]["title"] == "新潟ビルド"
+    assert training_block["ladder_step"]["current"]["target_km"] == 22.0
+    assert training_block["ladder_step"]["previous"]["target_km"] == 19.0
+    # 2026-09-07 -> block end 2026-09-27 is two further weeks.
+    assert training_block["weeks_to_block_end"] == 2
+    assert training_block["weight_mode"] == "維持"
+    assert training_block["quality_sessions_per_week"] == 1
+    assert training_block["quality_types"] == ["threshold"]
+    # The other readers still ran (additive key, not a replacement).
+    assert reader.get_acwr.called
+
+
+@pytest.mark.unit
+def test_prefetch_training_block_null_when_none() -> None:
+    """No block registered -> the key is present with null fields, no exception."""
+    with _mock_prefetch():
+        result = prefetch_weekly_review_context("2026-09-07", today="2026-09-07")
+
+    training_block = result["training_block"]
+    assert training_block["block"] is None
+    assert training_block["ladder_step"] == {
+        "current": None,
+        "previous": None,
+        "next": None,
+    }
+    assert training_block["weeks_to_block_end"] is None
+    assert training_block["quality_sessions_per_week"] is None
+    assert training_block["quality_types"] == []
+
+
+@pytest.mark.unit
+def test_prefetch_prev_week_adherence() -> None:
+    """W-1's prescriptions ship with their deterministic adherence counts."""
+    rows = [
+        {"date": "2026-09-01", "session_type": "easy", "status": "done"},
+        {"date": "2026-09-03", "session_type": "threshold", "status": "done"},
+        {"date": "2026-09-06", "session_type": "long", "status": "replaced"},
+    ]
+    with _mock_prefetch(prev_prescriptions=rows):
+        result = prefetch_weekly_review_context("2026-09-07", today="2026-09-07")
+
+    prev = result["prescriptions_prev_week"]
+    assert prev["rows"] == rows
+    assert prev["adherence"]["done"] == 2
+    assert prev["adherence"]["replaced"] == 1
+    assert prev["adherence"]["prescribed"] == 3
+
+
+@pytest.mark.unit
+def test_prefetch_garmin_conflicts_present() -> None:
+    """Garmin items beyond the block's quality budget surface as conflicts."""
+    with _mock_prefetch(
+        block=_block(),
+        ladder_step=_ladder(),
+        scheduled=[
+            {"date": "2026-09-08", "title": "Tempo"},
+            {"date": "2026-09-10", "title": "Threshold"},
+        ],
+    ):
+        result = prefetch_weekly_review_context("2026-09-07", today="2026-09-07")
+
+    assert result["scheduled_workouts"]["count"] == 2
+    assert len(result["garmin_conflicts"]) == 1
+    assert result["garmin_conflicts"][0] == {
+        "date": "2026-09-10",
+        "garmin_title": "Threshold",
+        "reason": "second_quality_session",
+    }
 
 
 def _weeks(series: list[tuple[str, int | None]]) -> dict[str, Any]:
@@ -609,12 +754,20 @@ def test_prefetch_weekly_review_context_end_to_end(db_path: Path) -> None:
         "recovery",
         "strength",
         "hiking",
+        "training_block",
+        "prescriptions_prev_week",
         "scheduled_workouts",
+        "garmin_conflicts",
         "athlete_profile",
         "goals_with_weeks_to_race",
         "past_review",
     ):
         assert key in result
+
+    # Plan backbone against an empty ledger: shapes are present, values empty.
+    assert result["training_block"]["block"] is None
+    assert result["prescriptions_prev_week"]["adherence"]["prescribed"] == 0
+    assert result["garmin_conflicts"] == []
 
     assert result["activity_ids"]["prev_week"] == [849000001]
     assert result["activity_ids"]["current_week"] == [849000002]

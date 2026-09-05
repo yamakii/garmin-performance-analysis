@@ -193,11 +193,12 @@ def _save_weekly_review(reader: GarminDBReader, p: SaveWeeklyReviewParams) -> An
 
     try:
         review = p.review
-        insert_weekly_review(review=review, db_path=str(reader.db_path))
+        review_id = insert_weekly_review(review=review, db_path=str(reader.db_path))
         return {
             "status": "saved",
             "user_id": review.get("user_id", "default"),
             "week_start_date": review.get("week_start_date"),
+            "review_id": review_id,
         }
     except Exception as e:  # noqa: BLE001
         logger.error(f"Save weekly review failed: {e}")
@@ -299,7 +300,9 @@ ATHLETE_TOOLS: list[ToolDef] = [
             "version for (user_id, week_start_date) instead of overwriting, so "
             "re-running the same week keeps prior versions as history; the latest "
             "version is treated as canonical. The free-form review_data payload is "
-            "stored as JSON."
+            "stored as JSON. Returns {status, user_id, week_start_date, "
+            "review_id}; pass review_id to save_weekly_prescriptions to link the "
+            "week's prescribed sessions to this review version."
         ),
         params=SaveWeeklyReviewParams,
         handler=_save_weekly_review,
@@ -327,10 +330,13 @@ ATHLETE_TOOLS: list[ToolDef] = [
             "weeks' activities (with performance_trends + weather), the fitness "
             "summary (Garmin native hr_zones), multi-week load_trend/acwr, "
             "recovery (trend/status/baseline_deviation), strength sessions, the "
-            "Garmin scheduled_workouts for W, the athlete_profile, goals with "
-            "weeks_to_race, and the last past_review. Every collector is "
-            "null-on-error (additive). Excludes catch_up_ingest (a write); run "
-            "that separately before this."
+            "training_block backbone (W's block + long-run ladder step + weeks "
+            "to the block's end + quality budget), prescriptions_prev_week (W-1 "
+            "rows + adherence counts), the Garmin scheduled_workouts for W with "
+            "the garmin_conflicts they raise against the block, the "
+            "athlete_profile, goals with weeks_to_race, and the last "
+            "past_review. Every collector is null-on-error (additive). Excludes "
+            "catch_up_ingest (a write); run that separately before this."
         ),
         params=PrefetchWeeklyReviewContextParams,
         handler=_prefetch_weekly_review_context,

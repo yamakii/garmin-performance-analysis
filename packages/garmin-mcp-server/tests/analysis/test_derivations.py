@@ -5,8 +5,10 @@ import pytest
 from garmin_mcp.analysis.derivations import (
     compute_next_run_target,
     compute_weighted_star_rating,
+    detect_garmin_conflicts,
     map_environment_category,
     map_phase_category,
+    summarize_adherence,
     weighted_star_rating_raw,
 )
 
@@ -318,3 +320,117 @@ def test_env_category_tempo() -> None:
 @pytest.mark.unit
 def test_env_category_interval() -> None:
     assert map_environment_category("interval") == "interval_sprint"
+
+
+# --- detect_garmin_conflicts / summarize_adherence (Issue #980) ---
+
+
+def _ladder_step(week_start: str = "2026-09-07", target_km: float = 25.0) -> dict:
+    """A ladder step for the given week (marks the week as having a long run)."""
+    return {
+        "current": {"week_start": week_start, "target_km": target_km},
+        "previous": None,
+        "next": None,
+    }
+
+
+@pytest.mark.unit
+def test_detect_garmin_conflicts_flags_quality_on_long_day() -> None:
+    """A Garmin quality item on the long-run day collides with the ladder step."""
+    conflicts = detect_garmin_conflicts(
+        [{"date": "2026-09-13", "title": "Threshold"}],
+        _ladder_step(),
+        1,
+        "build",
+        "2026-09-07",
+    )
+
+    assert conflicts == [
+        {
+            "date": "2026-09-13",
+            "garmin_title": "Threshold",
+            "reason": "quality_on_long_day",
+        }
+    ]
+
+
+@pytest.mark.unit
+def test_detect_garmin_conflicts_flags_second_quality() -> None:
+    """With a 1-quality budget, only the *extra* quality item is flagged."""
+    conflicts = detect_garmin_conflicts(
+        [
+            {"date": "2026-09-08", "title": "Tempo"},
+            {"date": "2026-09-10", "title": "Threshold"},
+        ],
+        _ladder_step(),
+        1,
+        "build",
+        "2026-09-07",
+    )
+
+    assert conflicts == [
+        {
+            "date": "2026-09-10",
+            "garmin_title": "Threshold",
+            "reason": "second_quality_session",
+        }
+    ]
+
+
+@pytest.mark.unit
+def test_detect_garmin_conflicts_cutback_phase() -> None:
+    """Any quality item conflicts while the block is in its cutback phase."""
+    conflicts = detect_garmin_conflicts(
+        [{"date": "2026-09-16", "title": "Tempo"}],
+        _ladder_step(week_start="2026-09-14", target_km=16.0),
+        1,
+        "cutback",
+        "2026-09-14",
+    )
+
+    assert conflicts == [
+        {
+            "date": "2026-09-16",
+            "garmin_title": "Tempo",
+            "reason": "quality_in_cutback_week",
+        }
+    ]
+
+
+@pytest.mark.unit
+def test_detect_garmin_conflicts_base_only_is_empty() -> None:
+    """Base / easy items never conflict, however many there are."""
+    conflicts = detect_garmin_conflicts(
+        [
+            {"date": "2026-09-08", "title": "Base"},
+            {"date": "2026-09-10", "title": "Base"},
+            {"date": "2026-09-12", "title": "Base"},
+        ],
+        _ladder_step(),
+        1,
+        "build",
+        "2026-09-07",
+    )
+
+    assert conflicts == []
+
+
+@pytest.mark.unit
+def test_summarize_adherence_counts_statuses() -> None:
+    """Resolved statuses are counted; open rows fall into ``pending``."""
+    summary = summarize_adherence(
+        [
+            {"status": "done"},
+            {"status": "done"},
+            {"status": "replaced"},
+            {"status": "prescribed"},
+        ]
+    )
+
+    assert summary == {
+        "prescribed": 4,
+        "done": 2,
+        "replaced": 1,
+        "skipped": 0,
+        "pending": 1,
+    }

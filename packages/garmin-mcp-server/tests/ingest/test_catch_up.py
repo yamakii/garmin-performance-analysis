@@ -212,6 +212,122 @@ def test_catch_up_domain_error_isolated(temp_db_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# prescription reconciliation (issue #980)
+# ---------------------------------------------------------------------------
+
+
+def _seed_prescriptions(db_path: Path) -> None:
+    """Prescribe the two seeded runs (2026-06-15 easy 5km, 2026-06-18 long 8km)."""
+    from garmin_mcp.database.inserters.plan import insert_weekly_prescriptions
+
+    insert_weekly_prescriptions(
+        "2026-06-15",
+        [
+            {
+                "date": "2026-06-15",
+                "session_type": "easy",
+                "title": "イージー5km",
+                "target_km": 5.0,
+            },
+            {
+                "date": "2026-06-18",
+                "session_type": "long",
+                "title": "ロング8km",
+                "target_km": 8.0,
+            },
+        ],
+        db_path=str(db_path),
+    )
+
+
+@pytest.mark.integration
+def test_catch_up_ingest_calls_reconcile_for_range(temp_db_path: Path) -> None:
+    """After running ingests, the same window's prescriptions are reconciled."""
+    from garmin_mcp.analysis import prescription_reconcile
+
+    _seed(temp_db_path)
+    _seed_prescriptions(temp_db_path)
+
+    with (
+        patch(
+            "garmin_mcp.ingest.running_ingest.ingest_running_activities",
+            return_value={"discovered": 2, "ingested": 2},
+        ),
+        patch(
+            "garmin_mcp.analysis.prescription_reconcile.reconcile_prescriptions",
+            wraps=prescription_reconcile.reconcile_prescriptions,
+        ) as reconcile_spy,
+    ):
+        result = catch_up_ingest(
+            start_date="2026-06-14",
+            end_date="2026-06-20",
+            domains=["running"],
+            db_path=str(temp_db_path),
+        )
+
+    reconcile_spy.assert_called_once_with(
+        "2026-06-14", "2026-06-20", db_path=str(temp_db_path)
+    )
+    # Both prescribed sessions match a seeded activity within tolerance.
+    assert result["prescriptions_reconciled"] == {
+        "updated": 2,
+        "done": 2,
+        "replaced": 0,
+        "skipped": 0,
+    }
+
+
+@pytest.mark.integration
+def test_catch_up_ingest_reconcile_failure_is_isolated(temp_db_path: Path) -> None:
+    """A reconciliation failure nulls its key without failing the ingest."""
+    _seed(temp_db_path)
+
+    with (
+        patch(
+            "garmin_mcp.ingest.running_ingest.ingest_running_activities",
+            return_value={"discovered": 0, "ingested": 0},
+        ),
+        patch(
+            "garmin_mcp.analysis.prescription_reconcile.reconcile_prescriptions",
+            side_effect=RuntimeError("ledger boom"),
+        ),
+    ):
+        result = catch_up_ingest(
+            start_date="2026-06-14",
+            end_date="2026-06-20",
+            domains=["running"],
+            db_path=str(temp_db_path),
+        )
+
+    assert result["running"] == {"discovered": 0, "ingested": 0}
+    assert result["prescriptions_reconciled"] is None
+
+
+@pytest.mark.integration
+def test_catch_up_skips_reconcile_when_running_failed(temp_db_path: Path) -> None:
+    """A failed running ingest means nothing new to match: no reconcile call."""
+    _seed(temp_db_path)
+
+    with (
+        patch(
+            "garmin_mcp.ingest.running_ingest.ingest_running_activities",
+            side_effect=RuntimeError("garmin boom"),
+        ),
+        patch(
+            "garmin_mcp.analysis.prescription_reconcile.reconcile_prescriptions",
+        ) as reconcile_mock,
+    ):
+        result = catch_up_ingest(
+            end_date="2026-06-20",
+            domains=["running"],
+            db_path=str(temp_db_path),
+        )
+
+    reconcile_mock.assert_not_called()
+    assert "prescriptions_reconciled" not in result
+
+
+# ---------------------------------------------------------------------------
 # hiking domain (issue #921)
 # ---------------------------------------------------------------------------
 

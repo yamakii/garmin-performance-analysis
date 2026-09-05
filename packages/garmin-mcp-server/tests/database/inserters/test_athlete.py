@@ -326,7 +326,7 @@ def test_save_then_get_weekly_review(initialized_db_path) -> None:
     """Save a weekly review, then get it back with review_data JSON restored."""
     db_path = str(initialized_db_path)
     review = _weekly_review()
-    assert insert_weekly_review(review, db_path=db_path) is True
+    assert insert_weekly_review(review, db_path=db_path) > 0
 
     result = AthleteReader(db_path=db_path).get_weekly_review()
 
@@ -366,6 +366,40 @@ def _latest_review_id(db_path: str) -> int:
         ).fetchone()
     assert row is not None
     return int(row[0])
+
+
+@pytest.mark.integration
+def test_insert_weekly_review_returns_review_id(initialized_db_path) -> None:
+    """The insert returns the new review_id, and the tool surfaces it (#980).
+
+    The weekly review saves its prescriptions right after saving itself, so the
+    id has to come back through both layers to link the two.
+    """
+    from unittest.mock import MagicMock
+
+    from garmin_mcp.tools import ALL_DEFS_BY_NAME
+    from garmin_mcp.tools.registry import dispatch
+
+    db_path = str(initialized_db_path)
+
+    review_id = insert_weekly_review(_weekly_review(), db_path=db_path)
+    assert isinstance(review_id, int)
+    assert review_id > 0
+
+    reader = MagicMock()
+    reader.db_path = db_path
+    result = dispatch(
+        ALL_DEFS_BY_NAME,
+        reader,
+        "save_weekly_review",
+        {"review": _weekly_review(week_start_date="2026-06-15")},
+    )
+
+    assert isinstance(result, dict)
+    assert result["status"] == "saved"
+    assert result["week_start_date"] == "2026-06-15"
+    # A second save draws the next id from the sequence.
+    assert result["review_id"] > review_id
 
 
 @pytest.mark.integration
