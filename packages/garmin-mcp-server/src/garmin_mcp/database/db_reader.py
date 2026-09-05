@@ -5,6 +5,7 @@ Provides unified read-only access to DuckDB for querying performance data.
 Delegates to specialized readers for different data domains.
 """
 
+import logging
 from pathlib import Path
 from typing import Any, Literal
 
@@ -43,6 +44,8 @@ from garmin_mcp.rag.queries.form_anomaly_detector import (
 # hit the cache and return immediately. Cleared on process restart -- raw
 # re-fetch staleness is acceptable because raw re-fetch is rare.
 _MATERIAL_EVENT_MEMO: dict[tuple[Path, int], tuple[int, int, str | None]] = {}
+
+logger = logging.getLogger(__name__)
 
 
 class GarminDBReader:
@@ -522,8 +525,14 @@ class GarminDBReader:
         try:
             model = fit_weight_economy_model(coupled, fitness_by_activity=fitness)
         except ValueError as exc:
+            # This dict is returned verbatim by GET
+            # /api/recovery/weight-economy-coupling, so the exception text must
+            # not ride along into the HTTP response (CodeQL
+            # py/stack-trace-exposure). Keep the detail in the server log and
+            # answer with a stable reason code.
+            logger.info("weight-economy regression not fitted: %s", exc)
             result["model"] = None
-            result["reason"] = str(exc)
+            result["reason"] = "insufficient_matched_runs"
             result["note"] = (
                 "insufficient matched runs for the longitudinal regression; "
                 "no association estimated"
