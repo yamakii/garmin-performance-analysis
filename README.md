@@ -195,6 +195,11 @@ MCP servers are configured per-user in a local, git-ignored `.mcp.json`:
 
 - **garmin-db**: DuckDB-based performance data queries and section analysis storage (see [tool reference](docs/mcp-tools-reference.md))
 - **serena**: Symbol-aware code navigation and editing operations
+- **github**: Issues, pull requests and CI inspection via the hosted GitHub MCP server
+
+The GitHub server needs `"X-MCP-Toolsets": "default,actions"` alongside its `Authorization`
+header, otherwise CI job logs are unreadable from a sandbox (the REST log endpoint redirects
+to a blob host that sandboxes cannot reach). See `.claude/rules/dev/github-mcp-only.md`.
 
 ## Configuration
 
