@@ -116,7 +116,9 @@ Workflow 内部の流れ（`implement-tier.js`）:
    schema 付き構造化出力で返す（`/tmp/validation_queue` ファイルは使わない）
 2. **Validate**（並列）: validation-agent が L1/L2 を subprocess で検証。`skip` は pass 扱い、
    `L3` は escalate（メインセッション担当のため Workflow では検証しない）
-3. **Ship**: push → PR 作成（`Closes #{issue}`）→ `ci-guard` が completed になるまでポーリング
+3. **Ship**: push → PR 作成（`Closes #{issue}`）→ `bash scripts/wait-for-ci.sh` を**フォアグラウンドで 1 回**実行して
+   `ci-guard` の完了を待つ（`run_in_background` / Monitor / `pgrep` / `kill` は使わない — ask ルールで権限プロンプトが出て
+   ティアが止まる, #993）
 4. **Merge**（auto-merge ゲート）: **L1/L2 PASS かつ `ci-guard` success かつ mergeable** の PR のみ
    `merge_pull_request` で自動マージ。条件を満たさないものは merge せず escalate
 
