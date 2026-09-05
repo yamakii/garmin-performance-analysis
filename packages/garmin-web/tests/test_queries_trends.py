@@ -10,7 +10,11 @@ from garmin_web.queries.trends import (
     get_volume_trend,
 )
 
-_INSERT_ACTIVITY = "INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?, ?)"
+_INSERT_ACTIVITY = (
+    "INSERT INTO activities (activity_id, activity_date, activity_name, "
+    "total_distance_km, total_time_seconds, avg_pace_seconds_per_km, "
+    "avg_heart_rate) VALUES (?, ?, ?, ?, ?, ?, ?)"
+)
 
 
 @pytest.mark.unit
