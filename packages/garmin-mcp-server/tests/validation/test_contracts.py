@@ -107,6 +107,26 @@ def test_summary_pace_cv_derived_from_phase_good_band():
 
 
 @pytest.mark.unit
+def test_contract_summary_lists_new_optional_keys():
+    """The prescription layer keys are declared, and declared as optional.
+
+    The agent transcribes them only when the CONTEXT carries them (Issue
+    #984), so a run on an unprescribed day must not be pushed into inventing
+    a verdict to satisfy the contract.
+    """
+    contract = get_contract("summary")
+    required_fields = contract["required_fields"]
+    for key in ("prescription_verdict", "vs_previous"):
+        assert key in required_fields
+        assert required_fields[key]["optional"] is True
+
+    policy = contract["evaluation_policy"]["prescription_vs_actual"]
+    assert set(policy["verdicts"]) == {"✅", "🟡", "🔴"}
+    assert policy["form_delta_noise"] == {"gct_ms": 5, "cadence_spm": 2}
+    assert policy["wellness_mention_thresholds"] == {"readiness": 50, "rhr_z": 1.0}
+
+
+@pytest.mark.unit
 def test_cv_threshold_band_format():
     for category, bands in CV_THRESHOLDS.items():
         for grade, band in bands.items():

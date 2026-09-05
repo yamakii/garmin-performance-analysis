@@ -740,3 +740,446 @@ def summarize_adherence(rows: list[dict[str, Any]]) -> dict[str, int]:
         else:
             summary["pending"] += 1
     return summary
+
+
+# ---------------------------------------------------------------------------
+# Prescription vs actual (Issue #984)
+# ---------------------------------------------------------------------------
+# Per-activity analysis used to be plan-blind: it praised or nagged a run
+# without knowing what was prescribed for that day, where the day sits in the
+# week, or how the same session went last time. Those three judgements are pure
+# bookkeeping, so they are computed here and merely transcribed by the summary
+# agent (#714 ADR §4) rather than re-derived in prose.
+
+#: Intensity ordinal shared by prescription ``session_type`` and activity
+#: ``training_type`` names. A prescribed session and the run that answered it
+#: "match" when they land on the same ordinal, so ``long`` / ``easy`` /
+#: ``recovery`` all answer each other (they are the same aerobic intent), while
+#: running a tempo on an easy day is a class *above* the prescription.
+_INTENSITY_CLASS_BY_NAME: dict[str, int] = {
+    # rest
+    "rest": 0,
+    "rest_day": 0,
+    "off": 0,
+    # easy / aerobic family
+    "easy": 1,
+    "easy_run": 1,
+    "recovery": 1,
+    "recovery_run": 1,
+    "jog": 1,
+    "base": 1,
+    "aerobic_base": 1,
+    "endurance": 1,
+    "long": 1,
+    "long_run": 1,
+    # tempo / threshold family
+    "tempo": 2,
+    "threshold": 2,
+    "lactate_threshold": 2,
+    "marathon_pace": 2,
+    "progression": 2,
+    # interval family
+    "interval": 3,
+    "intervals": 3,
+    "vo2max": 3,
+    "vo2_max": 3,
+    "speed": 3,
+    "repetition": 3,
+    "fartlek": 3,
+    "hill": 3,
+    "hills": 3,
+    # race
+    "race": 4,
+}
+
+#: Japanese label per intensity ordinal, for the verdict's ``reasons`` prose.
+_INTENSITY_CLASS_LABEL_JA: dict[int, str] = {
+    0: "休養",
+    1: "イージー/ロング",
+    2: "テンポ/閾値",
+    3: "インターバル",
+    4: "レース",
+}
+
+#: The ordinal that marks a rest prescription (running it at all is a deviation).
+_REST_INTENSITY_CLASS = 0
+
+#: Volume ratio (actual / target) bands. Inside [low, high] the session hit its
+#: prescribed volume; outside the yellow floor / red ceiling it is a deviation.
+_VOLUME_OK_LOW = 0.85
+_VOLUME_OK_HIGH = 1.30
+_VOLUME_YELLOW_LOW = 0.70
+_VOLUME_RED_HIGH = 1.50
+
+#: Overshoot (bpm) above the prescribed HR ceiling at which a deviation turns
+#: red rather than yellow.
+_HR_RED_OVER_BPM = 10
+
+#: Verdict symbols, ordered by severity (index == severity).
+_VERDICT_BY_SEVERITY = ("✅", "🟡", "🔴")
+
+#: Descriptive pace-per-HR exchange rate (s/km per bpm) used to restate the
+#: current run's pace at the previous run's average HR. It is a *descriptive*
+#: normalization for like-for-like reading, not a physiological model.
+PACE_S_PER_BPM = 1.0
+
+
+def _as_float(value: Any) -> float | None:
+    """Coerce ``value`` to ``float``, or ``None`` when absent / non-numeric."""
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _intensity_class(name: str | None) -> int | None:
+    """Intensity ordinal for a session_type / training_type (``None`` if unknown)."""
+    if not name:
+        return None
+    return _INTENSITY_CLASS_BY_NAME.get(str(name).strip().lower())
+
+
+def _class_label(intensity_class: int | None, fallback: str | None) -> str:
+    """Japanese label for an intensity ordinal, falling back to the raw name."""
+    if intensity_class is not None:
+        return _INTENSITY_CLASS_LABEL_JA[intensity_class]
+    return str(fallback or "不明")
+
+
+def _normalize_ladder_step(ladder_step: dict[str, Any] | None) -> dict[str, Any]:
+    """Accept either a ladder *neighbourhood* or a bare step.
+
+    ``PlanReader.get_ladder_step_for_week`` returns
+    ``{"current", "previous", "next"}``; a caller holding just the week's step
+    may pass it directly. Both normalize to the neighbourhood shape.
+    """
+    if not isinstance(ladder_step, dict):
+        return {"current": None, "next": None}
+    if any(key in ladder_step for key in ("current", "previous", "next")):
+        return {
+            "current": ladder_step.get("current"),
+            "next": ladder_step.get("next"),
+        }
+    return {"current": ladder_step, "next": None}
+
+
+def compute_week_position(
+    activity_date: str,
+    week_start_day: int,
+    ladder_step: dict[str, Any] | None,
+    block: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Locate a run inside its training week (long-run relative day + plan phase).
+
+    The long run is the week's last day by convention (the week is defined by
+    the athlete's ``week_start_day``), so "two days before the long run" and
+    "the day after the long run" are derived from the day index rather than
+    guessed from the calendar.
+
+    Args:
+        activity_date: The run's date (``YYYY-MM-DD``).
+        week_start_day: Weekday the week begins on (0=Monday … 6=Sunday).
+        ladder_step: ``{"current", "previous", "next"}`` from
+            ``PlanReader.get_ladder_step_for_week`` (a bare step dict is also
+            accepted), or ``None``.
+        block: The training block covering the week, or ``None``.
+
+    Returns:
+        ``{"week_start", "day_index" (0-6), "is_long_run_day",
+        "days_to_long_run" (0-6), "is_day_after_long_run", "block_phase",
+        "cutback_week", "ladder_step": {"current", "next"}}``.
+
+    Raises:
+        ValueError: If ``activity_date`` is not a ``YYYY-MM-DD`` date.
+    """
+    day = date.fromisoformat(activity_date)
+    start, _end = week_bounds(day, week_start_day)
+    day_index = (day - start).days
+
+    steps = _normalize_ladder_step(ladder_step)
+    current_step = steps["current"] if isinstance(steps["current"], dict) else None
+    cutback_week = str((current_step or {}).get("kind") or "").lower() == "cutback"
+
+    return {
+        "week_start": start.isoformat(),
+        "day_index": day_index,
+        "is_long_run_day": day_index == 6,
+        "days_to_long_run": 6 - day_index,
+        # The day after the long run is the first day of the following week.
+        "is_day_after_long_run": day_index == 0,
+        "block_phase": (block or {}).get("phase"),
+        "cutback_week": cutback_week,
+        "ladder_step": steps,
+    }
+
+
+def _volume_comparison(
+    prescription: dict[str, Any], actual: dict[str, Any]
+) -> tuple[float, str, float, float] | None:
+    """Compare the run's volume against the prescribed one.
+
+    Distance is preferred when the prescription names ``target_km``; otherwise
+    the prescribed ``target_minutes`` is compared against the run's duration.
+
+    Returns:
+        ``(ratio, unit, target, actual)`` or ``None`` when the prescription
+        names no volume (or the run has no matching measurement).
+    """
+    target_km = _as_float(prescription.get("target_km"))
+    distance_km = _as_float(actual.get("distance_km"))
+    if target_km and target_km > 0 and distance_km is not None:
+        return distance_km / target_km, "km", target_km, distance_km
+
+    target_min = _as_float(prescription.get("target_minutes"))
+    duration_min = _as_float(actual.get("duration_min"))
+    if target_min and target_min > 0 and duration_min is not None:
+        return duration_min / target_min, "分", target_min, duration_min
+    return None
+
+
+def _format_volume(value: float, unit: str) -> str:
+    """Format a volume for prose: ``22.0km`` / ``45分``."""
+    return f"{value:.1f}{unit}" if unit == "km" else f"{value:.0f}{unit}"
+
+
+def compute_prescription_verdict(
+    prescription: dict[str, Any] | None,
+    actual: dict[str, Any],
+    *,
+    hr_tolerance_bpm: int = 3,
+) -> dict[str, Any] | None:
+    """Judge a run against the session prescribed for that day.
+
+    The verdict is the worst of three deterministic checks -- intensity class,
+    volume and the HR ceiling -- so the summary agent never has to decide
+    whether a run "followed the plan":
+
+    - ``✅`` the run answers the prescription: same intensity class, volume in
+      ``[0.85, 1.30]`` of target, and ``avg_hr <= hr_high + hr_tolerance_bpm``.
+    - ``🟡`` one deviation: volume ``0.70-0.85`` or ``1.30-1.50`` of target (or
+      below 0.70), HR over the ceiling by ``hr_tolerance_bpm+1 … 10`` bpm, or a
+      *lower* intensity class than prescribed (easy instead of threshold).
+    - ``🔴`` a risk-side deviation: a higher intensity class than prescribed, a
+      run on a rest day, ``avg_hr > hr_high + 10``, or volume above
+      ``1.50 x`` target.
+
+    When the intensity class differs, the volume check is skipped: the target
+    described a different session, so comparing its km / minutes is meaningless
+    (a 45-minute easy run replacing 20 minutes of threshold is a substitution,
+    not a 225% overload).
+
+    Args:
+        prescription: A ``weekly_prescriptions`` row (``session_type``,
+            ``title``, ``target_km`` / ``target_minutes``, ``hr_high``), or
+            ``None`` when the day was not prescribed.
+        actual: ``{"distance_km", "duration_min", "avg_hr", "training_type"}``
+            of the run being judged (all optional / null-safe).
+        hr_tolerance_bpm: Overshoot above ``hr_high`` still counted as on-plan.
+
+    Returns:
+        ``{"verdict", "prescription_title", "reasons": [str, ...]}`` with
+        Japanese, numeric reasons, or ``None`` when ``prescription`` is ``None``.
+    """
+    if not prescription:
+        return None
+
+    session_type = prescription.get("session_type")
+    title = str(prescription.get("title") or session_type or "処方")
+    prescribed_class = _intensity_class(session_type)
+    actual_class = _intensity_class(actual.get("training_type"))
+    distance_km = _as_float(actual.get("distance_km"))
+    duration_min = _as_float(actual.get("duration_min"))
+    avg_hr = _as_float(actual.get("avg_hr"))
+
+    severity = 0
+    reasons: list[str] = []
+
+    # 1. A rest prescription: running at all is the deviation, and nothing else
+    #    (volume / HR against a rest target) is meaningful.
+    if prescribed_class == _REST_INTENSITY_CLASS:
+        ran = (distance_km or 0) > 0 or (duration_min or 0) > 0
+        if ran:
+            done = (
+                f"{distance_km:.1f}km"
+                if distance_km
+                else f"{duration_min:.0f}分" if duration_min else "ラン"
+            )
+            return {
+                "verdict": _VERDICT_BY_SEVERITY[2],
+                "prescription_title": title,
+                "reasons": [f"休養処方「{title}」の日に{done}を実施しました。"],
+            }
+        return {
+            "verdict": _VERDICT_BY_SEVERITY[0],
+            "prescription_title": title,
+            "reasons": [f"休養処方「{title}」どおりに休めています。"],
+        }
+
+    # 2. Intensity class.
+    class_mismatch = False
+    if prescribed_class is not None and actual_class is not None:
+        if actual_class > prescribed_class:
+            class_mismatch = True
+            severity = 2
+            reasons.append(
+                f"処方は{_class_label(prescribed_class, session_type)}ですが、"
+                f"実施は{_class_label(actual_class, actual.get('training_type'))}で"
+                "処方より高い強度になりました。"
+            )
+        elif actual_class < prescribed_class:
+            class_mismatch = True
+            severity = max(severity, 1)
+            reasons.append(
+                f"処方は{_class_label(prescribed_class, session_type)}ですが、"
+                f"実施は{_class_label(actual_class, actual.get('training_type'))}で"
+                "強度を下げています。"
+            )
+
+    # 3. Volume (only meaningful when the session type matched).
+    volume = None if class_mismatch else _volume_comparison(prescription, actual)
+    if volume is not None:
+        ratio, unit, target, done_value = volume
+        pct = round(ratio * 100)
+        target_s = _format_volume(target, unit)
+        done_s = _format_volume(done_value, unit)
+        if ratio > _VOLUME_RED_HIGH:
+            severity = 2
+            reasons.append(
+                f"処方 {target_s} に対し実施 {done_s}（{pct}%）で大幅に超過しました。"
+            )
+        elif ratio > _VOLUME_OK_HIGH:
+            severity = max(severity, 1)
+            reasons.append(
+                f"処方 {target_s} に対し実施 {done_s}（{pct}%）で目標を超えています。"
+            )
+        elif ratio < _VOLUME_YELLOW_LOW:
+            severity = max(severity, 1)
+            reasons.append(
+                f"処方 {target_s} に対し実施 {done_s}（{pct}%）で大きく下回りました。"
+            )
+        elif ratio < _VOLUME_OK_LOW:
+            severity = max(severity, 1)
+            reasons.append(
+                f"処方 {target_s} に対し実施 {done_s}（{pct}%）で不足しています。"
+            )
+
+    # 4. HR ceiling.
+    hr_high = _as_float(prescription.get("hr_high"))
+    if hr_high is not None and avg_hr is not None:
+        over = avg_hr - hr_high
+        if over > _HR_RED_OVER_BPM:
+            severity = 2
+            reasons.append(
+                f"平均HR {avg_hr:.0f}bpm が処方上限 {hr_high:.0f}bpm を "
+                f"{over:.0f}bpm 超えました。"
+            )
+        elif over > hr_tolerance_bpm:
+            severity = max(severity, 1)
+            reasons.append(
+                f"平均HR {avg_hr:.0f}bpm が処方上限 {hr_high:.0f}bpm を "
+                f"{over:.0f}bpm 上回りました。"
+            )
+
+    if severity == 0:
+        details: list[str] = []
+        if volume is not None:
+            details.append(f"量 {round(volume[0] * 100)}%")
+        if hr_high is not None and avg_hr is not None:
+            details.append(f"平均HR {avg_hr:.0f}bpm ≦ 上限 {hr_high:.0f}bpm")
+        suffix = f"（{'、'.join(details)}）" if details else ""
+        reasons.append(f"処方「{title}」どおりに実施できています{suffix}。")
+
+    return {
+        "verdict": _VERDICT_BY_SEVERITY[severity],
+        "prescription_title": title,
+        "reasons": reasons,
+    }
+
+
+def _delta_block(current: Any, previous: Any, *, digits: int = 1) -> dict[str, Any]:
+    """``{"current", "previous", "delta"}`` for one metric (null-safe)."""
+    current_f = _as_float(current)
+    previous_f = _as_float(previous)
+    delta = (
+        round(current_f - previous_f, digits)
+        if current_f is not None and previous_f is not None
+        else None
+    )
+    return {
+        "current": round(current_f, digits) if current_f is not None else None,
+        "previous": round(previous_f, digits) if previous_f is not None else None,
+        "delta": delta,
+    }
+
+
+def _days_between(current_date: str | None, previous_date: str | None) -> int | None:
+    """Whole days from ``previous_date`` to ``current_date`` (``None`` if unknown)."""
+    try:
+        return (
+            date.fromisoformat(str(current_date))
+            - date.fromisoformat(str(previous_date))
+        ).days
+    except (TypeError, ValueError):
+        return None
+
+
+def compute_vs_previous(
+    current: dict[str, Any], previous: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """Delta chips against the last run of the same training type.
+
+    Every metric block is ``{"current", "previous", "delta"}`` with
+    ``delta = current - previous`` (so a negative pace delta means faster and a
+    negative HR delta means easier). ``pace_at_hr`` restates the current pace at
+    the previous run's average HR using :data:`PACE_S_PER_BPM` -- a descriptive
+    normalization so a faster-and-higher-HR run is not read as an efficiency
+    gain, not a physiological model.
+
+    Args:
+        current: ``{"activity_date", "pace_s_per_km", "avg_hr", "gct_ms",
+            "cadence_spm", "decoupling_pct"}`` for the run being analysed.
+        previous: The same keys plus ``activity_id`` / ``activity_date`` for the
+            previous same-type run, or ``None`` when there is none.
+
+    Returns:
+        The delta blocks plus ``{"previous_activity_id", "previous_date",
+        "days_ago"}``, or ``None`` when ``previous`` is ``None``.
+    """
+    if not previous:
+        return None
+
+    result: dict[str, Any] = {
+        metric: _delta_block(current.get(metric), previous.get(metric))
+        for metric in (
+            "pace_s_per_km",
+            "avg_hr",
+            "gct_ms",
+            "cadence_spm",
+            "decoupling_pct",
+        )
+    }
+
+    current_pace = _as_float(current.get("pace_s_per_km"))
+    previous_pace = _as_float(previous.get("pace_s_per_km"))
+    current_hr = _as_float(current.get("avg_hr"))
+    previous_hr = _as_float(previous.get("avg_hr"))
+    if (
+        current_pace is not None
+        and previous_pace is not None
+        and current_hr is not None
+        and previous_hr is not None
+    ):
+        pace_at_previous_hr = current_pace - (previous_hr - current_hr) * PACE_S_PER_BPM
+        result["pace_at_hr"] = _delta_block(pace_at_previous_hr, previous_pace)
+    else:
+        result["pace_at_hr"] = _delta_block(None, None)
+
+    result["previous_activity_id"] = previous.get("activity_id")
+    result["previous_date"] = previous.get("activity_date") or previous.get("date")
+    result["days_ago"] = _days_between(
+        current.get("activity_date") or current.get("date"),
+        result["previous_date"],
+    )
+    return result

@@ -17,6 +17,11 @@ from garmin_mcp.validation.models import ActivityRecord, SplitRecord
 # numeric rating, which must additionally fall within [0.0, 5.0].
 _STAR_RATING_PATTERN = re.compile(r"^★{1,5}☆{0,4}\s*(\d+(?:\.\d+)?)/5\.0$")
 
+# Verdict marks a transcribed ``prescription_verdict`` may carry (Issue #984),
+# and the subset that asserts a deviation and therefore owes reasons.
+_PRESCRIPTION_VERDICTS = frozenset({"✅", "🟡", "🔴"})
+_PRESCRIPTION_DEVIATION_VERDICTS = frozenset({"🟡", "🔴"})
+
 # Skip phrases that indicate "no baseline / data unavailable" narration.
 # When form_baseline_trend.success is True (comparison data exists), any of
 # these in the efficiency section's form_trend is an inconsistency (the LLM
@@ -99,6 +104,10 @@ def check_narration_numeric_consistency(
         - ``integrated_score`` ∈ [0.0, 100.0]
         - ``star_rating`` matches ``★{1,5}☆{0,4} N.N/5.0`` and the extracted
           numeric rating ∈ [0.0, 5.0]
+        - ``prescription_verdict`` (Issue #984) carries one of the three
+          verdict marks, and a 🟡 / 🔴 verdict states at least one reason —
+          a deviation asserted without its numbers is exactly the unsupported
+          narration this guard exists to keep out of DuckDB
 
     Args:
         analysis_data: The summary section's ``analysis_data`` dict.
@@ -138,7 +147,40 @@ def check_narration_numeric_consistency(
                     "range [0.0, 5.0]"
                 )
 
+    verdict_block = analysis_data.get("prescription_verdict")
+    errors.extend(_prescription_verdict_errors(verdict_block))
+
     return (not errors), errors
+
+
+def _prescription_verdict_errors(verdict_block: Any) -> list[str]:
+    """Errors in a transcribed ``prescription_verdict`` (empty when absent/ok).
+
+    The block is computed by ``compute_prescription_verdict`` and only
+    transcribed by the agent, so anything outside the deterministic shape means
+    the transcription drifted.
+    """
+    if verdict_block is None:
+        return []
+    if not isinstance(verdict_block, dict):
+        return [f"prescription_verdict must be an object, got {verdict_block!r}"]
+
+    errors: list[str] = []
+    verdict = verdict_block.get("verdict")
+    if verdict not in _PRESCRIPTION_VERDICTS:
+        errors.append(
+            f"prescription_verdict.verdict {verdict!r} is not one of "
+            f"{sorted(_PRESCRIPTION_VERDICTS)}"
+        )
+
+    reasons = verdict_block.get("reasons")
+    stated = [r for r in reasons if str(r).strip()] if isinstance(reasons, list) else []
+    if verdict in _PRESCRIPTION_DEVIATION_VERDICTS and not stated:
+        errors.append(
+            f"prescription_verdict.verdict={verdict} states no reasons "
+            "(a deviation must say which of volume / HR / intensity deviated)"
+        )
+    return errors
 
 
 # Sections whose star_rating is a weighted average the guard can recompute.

@@ -128,6 +128,42 @@ def test_summary_valid_minimal():
 
 
 @pytest.mark.unit
+def test_summary_schema_accepts_prescription_verdict():
+    """The typed verdict passes; an untyped mark fails (Issue #984)."""
+    data = {
+        "star_rating": "★★★★☆ 4.2/5.0",
+        "summary": "全体的に良いランニングでした。",
+        "key_strengths": ["安定したペース配分"],
+        "improvement_areas": [],
+        "next_action": "次回はHR Zone 2を維持して走りましょう。",
+        "next_run_target": {"recommended_type": "easy_run"},
+        "recommendations": "週3回のランニングを継続してください。",
+        "prescription_verdict": {
+            "verdict": "✅",
+            "prescription_title": "ロング 22km",
+            "reasons": ["処方「ロング 22km」どおりに実施できています（量 97%）。"],
+        },
+        "vs_previous": {
+            "pace_s_per_km": {"current": 430, "previous": 440, "delta": -10}
+        },
+    }
+    valid, errors = validate_section_data("summary", data)
+    assert valid is True
+    assert errors == []
+
+    # The verdict is an enum, not free text: "OK" is not a verdict.
+    invalid = dict(data)
+    invalid["prescription_verdict"] = {
+        "verdict": "OK",
+        "prescription_title": "ロング 22km",
+        "reasons": ["処方どおりです。"],
+    }
+    valid, errors = validate_section_data("summary", invalid)
+    assert valid is False
+    assert any("prescription_verdict" in e for e in errors)
+
+
+@pytest.mark.unit
 def test_section_schema_rejects_plan_achievement():
     """Plan vs actual removed: SummaryAnalysisData no longer declares the field.
 

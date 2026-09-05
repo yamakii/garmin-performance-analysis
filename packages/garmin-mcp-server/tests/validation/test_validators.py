@@ -117,6 +117,47 @@ class TestCheckNarrationNumericConsistency:
         assert ok is True
         assert errors == []
 
+    def test_narration_check_rejects_yellow_without_reasons(self):
+        """A stated deviation must say what deviated (Issue #984)."""
+        ok, errors = check_narration_numeric_consistency(
+            {
+                "star_rating": "★★★☆☆ 3.4/5.0",
+                "prescription_verdict": {
+                    "verdict": "🟡",
+                    "prescription_title": "ロング 22km",
+                    "reasons": [],
+                },
+            }
+        )
+        assert ok is False
+        assert any("reasons" in e for e in errors)
+
+    def test_narration_check_accepts_green_verdict(self):
+        """✅ needs no deviation reasons, and the mark itself is validated."""
+        ok, errors = check_narration_numeric_consistency(
+            {
+                "prescription_verdict": {
+                    "verdict": "✅",
+                    "prescription_title": "ロング 22km",
+                    "reasons": [],
+                }
+            }
+        )
+        assert ok is True
+        assert errors == []
+
+        ok, errors = check_narration_numeric_consistency(
+            {
+                "prescription_verdict": {
+                    "verdict": "OK",
+                    "prescription_title": "ロング 22km",
+                    "reasons": ["処方どおりです。"],
+                }
+            }
+        )
+        assert ok is False
+        assert any("verdict" in e for e in errors)
+
 
 @pytest.mark.unit
 class TestCheckStarWeightingConsistency:

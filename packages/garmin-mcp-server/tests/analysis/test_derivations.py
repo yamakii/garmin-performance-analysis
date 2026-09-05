@@ -4,6 +4,9 @@ import pytest
 
 from garmin_mcp.analysis.derivations import (
     compute_next_run_target,
+    compute_prescription_verdict,
+    compute_vs_previous,
+    compute_week_position,
     compute_weighted_star_rating,
     detect_garmin_conflicts,
     map_environment_category,
@@ -434,3 +437,181 @@ def test_summarize_adherence_counts_statuses() -> None:
         "skipped": 0,
         "pending": 1,
     }
+
+
+# ---------------------------------------------------------------------------
+# Prescription vs actual (Issue #984)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_week_position_long_run_day() -> None:
+    """The week's last day is the long-run day (Monday-start week)."""
+    position = compute_week_position("2026-09-13", 0, None, None)
+
+    assert position["week_start"] == "2026-09-07"
+    assert position["day_index"] == 6
+    assert position["is_long_run_day"] is True
+    assert position["days_to_long_run"] == 0
+
+
+@pytest.mark.unit
+def test_week_position_two_days_before_long() -> None:
+    """Friday sits two days before the Sunday long run."""
+    position = compute_week_position("2026-09-11", 0, None, None)
+
+    assert position["day_index"] == 4
+    assert position["days_to_long_run"] == 2
+    assert position["is_long_run_day"] is False
+    assert position["is_day_after_long_run"] is False
+
+
+@pytest.mark.unit
+def test_week_position_cutback_week() -> None:
+    """A cutback ladder step marks the whole week as a cutback."""
+    ladder = {
+        "current": {"week_start": "2026-09-07", "kind": "cutback", "target_km": 14.0},
+        "previous": None,
+        "next": {"week_start": "2026-09-14", "kind": "build", "target_km": 28.0},
+    }
+
+    position = compute_week_position(
+        "2026-09-13", 0, ladder, {"phase": "build", "title": "9月ビルド"}
+    )
+
+    assert position["cutback_week"] is True
+    assert position["block_phase"] == "build"
+    assert position["ladder_step"]["next"]["target_km"] == 28.0
+
+
+@pytest.mark.unit
+def test_verdict_green_long_within_tolerance() -> None:
+    """A long run at 97% of target under its HR ceiling answers the plan."""
+    verdict = compute_prescription_verdict(
+        {
+            "session_type": "long",
+            "title": "ロング 22km",
+            "target_km": 22.0,
+            "hr_high": 150,
+        },
+        {
+            "distance_km": 21.4,
+            "duration_min": 150.0,
+            "avg_hr": 146,
+            "training_type": "aerobic_base",
+        },
+    )
+
+    assert verdict is not None
+    assert verdict["verdict"] == "✅"
+    assert verdict["prescription_title"] == "ロング 22km"
+    assert verdict["reasons"]
+
+
+@pytest.mark.unit
+def test_verdict_yellow_volume_short() -> None:
+    """17 km against a 22 km prescription is one deviation, stated in percent."""
+    verdict = compute_prescription_verdict(
+        {"session_type": "long", "title": "ロング 22km", "target_km": 22.0},
+        {"distance_km": 17.0, "avg_hr": 144, "training_type": "long_run"},
+    )
+
+    assert verdict is not None
+    assert verdict["verdict"] == "🟡"
+    assert any("77%" in reason for reason in verdict["reasons"])
+
+
+@pytest.mark.unit
+def test_verdict_red_hr_over_ceiling() -> None:
+    """13 bpm over the prescribed easy ceiling is a risk-side deviation."""
+    verdict = compute_prescription_verdict(
+        {"session_type": "easy", "title": "イージー 8km", "hr_high": 150},
+        {"distance_km": 8.0, "avg_hr": 163, "training_type": "aerobic_base"},
+    )
+
+    assert verdict is not None
+    assert verdict["verdict"] == "🔴"
+    assert any("163" in reason for reason in verdict["reasons"])
+
+
+@pytest.mark.unit
+def test_verdict_red_rest_day_run() -> None:
+    """Running a prescribed rest day is red on its own."""
+    verdict = compute_prescription_verdict(
+        {"session_type": "rest", "title": "休養"},
+        {"distance_km": 6.0, "avg_hr": 138, "training_type": "aerobic_base"},
+    )
+
+    assert verdict is not None
+    assert verdict["verdict"] == "🔴"
+    assert verdict["reasons"][0].startswith("休養処方")
+
+
+@pytest.mark.unit
+def test_verdict_yellow_easy_instead_of_threshold() -> None:
+    """Substituting easy for threshold is a downgrade, not a 225% overload."""
+    verdict = compute_prescription_verdict(
+        {"session_type": "threshold", "title": "閾値 20分", "target_minutes": 20.0},
+        {
+            "distance_km": 8.0,
+            "duration_min": 45.0,
+            "avg_hr": 140,
+            "training_type": "aerobic_base",
+        },
+    )
+
+    assert verdict is not None
+    assert verdict["verdict"] == "🟡"
+    # The volume ratio (225%) must not be reported: the target described a
+    # different session.
+    assert not any("225" in reason for reason in verdict["reasons"])
+
+
+@pytest.mark.unit
+def test_verdict_none_without_prescription() -> None:
+    """An unprescribed day yields no verdict at all."""
+    assert (
+        compute_prescription_verdict(
+            None, {"distance_km": 10.0, "training_type": "aerobic_base"}
+        )
+        is None
+    )
+
+
+@pytest.mark.unit
+def test_vs_previous_deltas() -> None:
+    """Deltas read current minus previous, with the gap in days."""
+    result = compute_vs_previous(
+        {
+            "activity_date": "2026-09-13",
+            "pace_s_per_km": 430,
+            "avg_hr": 142,
+            "gct_ms": 262,
+            "cadence_spm": 172,
+        },
+        {
+            "activity_id": 987,
+            "activity_date": "2026-09-06",
+            "pace_s_per_km": 440,
+            "avg_hr": 145,
+            "gct_ms": 258,
+            "cadence_spm": 174,
+        },
+    )
+
+    assert result is not None
+    assert result["pace_s_per_km"]["delta"] == -10
+    assert result["avg_hr"]["delta"] == -3
+    assert result["gct_ms"]["delta"] == 4
+    assert result["cadence_spm"]["delta"] == -2
+    assert result["previous_activity_id"] == 987
+    assert result["previous_date"] == "2026-09-06"
+    assert result["days_ago"] == 7
+    # Faster at a lower HR: restated at the previous run's HR it is faster still.
+    assert result["pace_at_hr"]["delta"] == -13
+
+
+@pytest.mark.unit
+def test_vs_previous_none() -> None:
+    """Without a comparable previous run there is nothing to compare."""
+    assert compute_vs_previous({"pace_s_per_km": 430}, None) is None
