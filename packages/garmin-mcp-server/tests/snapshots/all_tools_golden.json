@@ -1233,6 +1233,37 @@
     }
   },
   {
+    "name": "schedule_weekly_prescriptions",
+    "description": "Register a whole week of saved prescriptions to the Garmin calendar in one batch. Steps are derived in code from each row (10min warmup, body on target_minutes or target_km with hr_high as a ceiling and hr_low only when prescribed, 5min cooldown; strides become 5x20s pickups); rest/strength/cross rows and rows already registered are skipped, and naming an id in prescription_ids re-registers it. dry_run=True (default) returns {dry_run, week_start_date, items ({prescription_id, date, title, steps, existing_same_day, already_registered}), skipped} so the plan can be confirmed first. dry_run=False registers each item (delete same-title [MCP] template -> upload -> schedule), records the workout/schedule ids with status=registered on the row, isolates per-item failures and returns {dry_run, week_start_date, registered, failed, skipped}.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "week_start_date": {
+          "type": "string",
+          "description": "Week start date (YYYY-MM-DD) of the prescriptions to register."
+        },
+        "prescription_ids": {
+          "type": "array",
+          "description": "Register only these prescription_ids (subset of the week). Naming an already-registered row re-registers it. Defaults to every registrable row of the week's latest batch.",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "dry_run": {
+          "type": "boolean",
+          "description": "When True (the default), return the plan (titles, steps, same-day Garmin conflicts) without writing anything to Garmin."
+        },
+        "user_id": {
+          "type": "string",
+          "description": "Ledger owner identifier (default: 'default')"
+        }
+      },
+      "required": [
+        "week_start_date"
+      ]
+    }
+  },
+  {
     "name": "cleanup_generated_workouts",
     "description": "Tidy self-authored [MCP] workouts: unschedule past-dated [MCP] calendar assignments and delete [MCP] templates that have no future schedule. Never touches manual (non-[MCP]) workouts. Pass dry_run=True to only list what would be removed.",
     "inputSchema": {
