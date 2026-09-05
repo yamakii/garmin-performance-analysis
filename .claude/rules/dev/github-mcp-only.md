@@ -29,9 +29,12 @@
 - required check は **`ci-guard`** — `conclusion: "success"` ならマージ可。
 - `web-backend` / `web-frontend` は `packages/garmin-web/**` 変更時のみ走り、それ以外は `conclusion: "skipped"`（正常）。
 - 旧 `get_pull_request_status` は commit statuses API（GitHub Actions の check-runs は見えず常に空）だったため使わない。
-- **完了待ちは `bash scripts/wait-for-ci.sh <PR>` を使う**（唯一の非 MCP 例外）。read-only の REST 取得を `GITHUB_TOKEN` で行い、
+- **完了待ちは `bash scripts/wait-for-ci.sh <PR>` を使う**（非 MCP の例外）。read-only の REST 取得を `GITHUB_TOKEN` で行い、
   `ci-guard` が completed になるまで 1 コマンドでブロックする（`sleep` → `get_check_runs` の LLM ループ禁止、dev-reference §8）。
   書き込み（merge / comment / issue）は引き続き MCP のみ。exit 3（token 無し等）のときだけ `get_check_runs` で手動ポーリングする。
+  **例外の理由は「MCP では check-runs が取れない」ではない**（`pull_request_read(get_check_runs)` で普通に取れる）。
+  MCP に**ブロッキング待機がない**ため、LLM から `sleep` → 再取得を回すと 1 PR あたり 3-6 往復かかる、という
+  往復コストの話であり、shell script は MCP を呼べないので REST になる。能力の欠如と読み替えないこと。
 - **サブエージェント / Workflow 内ではフォアグラウンドで 1 回実行する**（Bash tool の timeout を 960000 ms 以上に）。
   `run_in_background` にして `Monitor` や `pgrep` / `kill -0` で終了を見張る書き方は、`Bash(kill:*)` の ask ルールに
   当たって権限プロンプトで止まり自律実行が壊れる（#993）。メインセッションが自分で待つときだけ `run_in_background` 可。
@@ -62,13 +65,41 @@ check-run から辿る。
   "url": "https://api.githubcopilot.com/mcp/",
   "headers": {
     "Authorization": "Bearer ${GITHUB_TOKEN}",
-    "X-MCP-Toolsets": "default,actions"
+    "X-MCP-Toolsets": "default,actions,code_security,dependabot,secret_protection"
   }
 }
 ```
 
-`default,actions` は既定 44 tool を1つも失わずに 4 tool を足す（`all` は 93 tool でコンテキスト肥大のため不採用）。
+既定 44 tool を1つも失わずに必要な toolset だけを足す（`all` は 93 tool でコンテキスト肥大のため不採用）。
 **反映にはセッション再接続が必要**（既存セッションは `/mcp`、または新規セッション起動）。
+
+### toolset 一覧（有効化しないとツールが「存在しない」）
+
+| toolset | 主なツール | 用途 |
+|---------|-----------|------|
+| `default` | issue / PR / repo / user 系 44 tool | 既定 |
+| `actions` | `actions_list`, `actions_get`, `get_job_logs`, `actions_run_trigger` | CI 実行とログ本文 |
+| `code_security` | `list_code_scanning_alerts`, `get_code_scanning_alert` | CodeQL / code scanning alert |
+| `dependabot` | `list_dependabot_alerts`, `get_dependabot_alert` | 依存の脆弱性 alert |
+| `secret_protection` | `list_secret_scanning_alerts`, `get_secret_scanning_alert` | secret scanning alert |
+
+> `code_security` 系は `security_events` スコープを持つ `GITHUB_TOKEN` が要る。403 が返るときは
+> toolset ではなくトークンのスコープを疑う。
+
+### 「MCP ではできない」と判断する前に toolset を疑う
+
+**ツールが見つからない ≠ MCP で不可能。** 既定では 44 tool しか露出しておらず、未有効の toolset の
+ツールは名前ごと存在しないように見える。これを能力の欠如と誤読して `curl` / `gh` の回避策を
+書くのが定番の失敗で、実際に 2 回起きている:
+
+1. **GHA ログ**（#330 以降）: 「sandbox の egress で blob が取れない」は事実だが、`actions` を
+   有効化すればサーバ側がログ本文を返して構造的に解決する。
+2. **code scanning alert**（2026-09-05）: `X-MCP-Toolsets` が `default,actions` だったため
+   `list_code_scanning_alerts` が生えておらず、REST への fallback を書きかけた。`code_security` を
+   足して解決（#996）。
+
+手順: ツールが無い → 上表と上流 README（`github/github-mcp-server`）で toolset を確認 →
+`.mcp.json` に追記 → `/mcp` 再接続。**それでも無い場合に限り**非 MCP 経路を検討する。
 
 `actions_run_trigger`（re-run / cancel）は write tool。`workflow-orchestration.md` の Autonomy Boundaries に
 従い実行前に確認する。read-only に固定したいなら `settings.local.json` の deny に
