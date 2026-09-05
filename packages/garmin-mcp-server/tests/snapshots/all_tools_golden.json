@@ -1269,6 +1269,157 @@
     }
   },
   {
+    "name": "save_training_blocks",
+    "description": "Save the mesocycle ledger (training blocks) to DuckDB. Blocks are replaced wholesale per user_id (洗い替え, same as the athlete profile), so always pass the full list including unchanged blocks; sequence follows list order. Every save also appends a JSON snapshot of the whole list, so a previous plan stays recoverable. Validates the date range (start_date <= end_date), the phase, and that each long-run ladder step carries week_start plus exactly one of target_km / target_minutes. Returns {status, count, version_id}.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "blocks": {
+          "type": "array",
+          "description": "Full ordered list of training blocks (洗い替え — unchanged blocks must be included). Each block: phase (base|build|peak|taper|race|recovery|cutback), title, start_date, end_date (YYYY-MM-DD), and optionally purpose, weight_mode (絞る|維持), quality_sessions_per_week, quality_types (list), long_run_ladder (list of {week_start, target_km OR target_minutes, hr_ceiling, kind, note}), cutback_rule (object), notes.",
+          "items": {
+            "type": "object"
+          }
+        },
+        "user_id": {
+          "type": "string",
+          "description": "Ledger owner identifier (default: 'default')"
+        }
+      },
+      "required": [
+        "blocks"
+      ]
+    }
+  },
+  {
+    "name": "get_training_blocks",
+    "description": "Get the mesocycle ledger with the block that is active on a given date. Returns {blocks (ordered by sequence, JSON columns decoded), active_block (the block covering on_date, or null), ladder_step ({current, previous, next} long-run ladder steps for the week containing on_date, or null when no block covers it), on_date, week_start_date}. on_date defaults to today; the week is resolved with the athlete's week_start_day.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "on_date": {
+          "type": "string",
+          "description": "Reference date (YYYY-MM-DD) used to resolve active_block and ladder_step. Defaults to today."
+        },
+        "user_id": {
+          "type": "string",
+          "description": "Ledger owner identifier (default: 'default')"
+        }
+      }
+    }
+  },
+  {
+    "name": "save_weekly_prescriptions",
+    "description": "Save one batch of prescribed sessions for a week (append-only). All rows get a fresh batch_id and the latest batch per week is canonical, so re-prescribing a week supersedes rather than mutates the earlier batch. Validates that each date falls inside the week, the session_type is known, and hr_low <= hr_high. Returns {status, week_start_date, batch_id, count, prescription_ids}.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "week_start_date": {
+          "type": "string",
+          "description": "Week start date (YYYY-MM-DD); every row must fall in this week."
+        },
+        "prescriptions": {
+          "type": "array",
+          "description": "Prescribed sessions for the week. Each row: date (YYYY-MM-DD), session_type (long|easy|recovery|threshold|tempo|strides|rest|strength|cross), title, and optionally target_minutes, target_km, hr_low, hr_high (ceiling — the only bound for easy/long), pace_low_s_per_km, pace_high_s_per_km, rationale.",
+          "items": {
+            "type": "object"
+          }
+        },
+        "review_id": {
+          "type": "integer",
+          "description": "weekly_reviews.review_id when saved by a weekly review."
+        },
+        "user_id": {
+          "type": "string",
+          "description": "Ledger owner identifier (default: 'default')"
+        }
+      },
+      "required": [
+        "week_start_date",
+        "prescriptions"
+      ]
+    }
+  },
+  {
+    "name": "get_weekly_prescriptions",
+    "description": "Get the canonical (latest batch) prescribed sessions for a week or a single day. Give exactly one of week_start_date / date — date resolves its week with the athlete's week_start_day. Rows are ordered by date and carry targets (target_km / target_minutes), HR and pace bounds, status (prescribed|registered|done|replaced|skipped), the Garmin workout/schedule ids and actual_activity_id. Returns an empty list when nothing is prescribed.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "week_start_date": {
+          "type": "string",
+          "description": "Week start date (YYYY-MM-DD). Give exactly one of week_start_date / date."
+        },
+        "date": {
+          "type": "string",
+          "description": "Single day (YYYY-MM-DD). Give exactly one of week_start_date / date."
+        },
+        "user_id": {
+          "type": "string",
+          "description": "Ledger owner identifier (default: 'default')"
+        }
+      }
+    }
+  },
+  {
+    "name": "update_prescription_status",
+    "description": "Update one prescription's status and optionally its Garmin workout / schedule ids and linked activity id, refreshing updated_at. Only the ids you pass are written, so registering a Garmin workout and later linking the actual activity are independent updates. Returns {updated: false} when the prescription_id does not exist.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "prescription_id": {
+          "type": "integer",
+          "description": "Prescription row identifier from get_weekly_prescriptions."
+        },
+        "status": {
+          "type": "string",
+          "description": "New lifecycle state: prescribed | registered | done | replaced | skipped."
+        },
+        "garmin_workout_id": {
+          "type": "integer",
+          "description": "Garmin workout id to record (optional)."
+        },
+        "garmin_schedule_id": {
+          "type": "integer",
+          "description": "Garmin schedule id to record (optional)."
+        },
+        "actual_activity_id": {
+          "type": "integer",
+          "description": "Linked actual activity id to record (optional)."
+        }
+      },
+      "required": [
+        "prescription_id",
+        "status"
+      ]
+    }
+  },
+  {
+    "name": "reconcile_prescriptions",
+    "description": "Deterministically link prescribed sessions in a date range to the activities that actually happened, so adherence needs no LLM. For each open (prescribed / registered) latest-batch row with a past date: an activity on that date within tolerance (0.85x-1.30x of target_km / target_minutes) marks it done, any other activity marks it replaced (a rest day with a run is always replaced), and no activity marks it skipped (rest with no activity is done). Future dates and superseded batches are never touched. Returns {updated, done, replaced, skipped}.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "start_date": {
+          "type": "string",
+          "description": "Inclusive range start (YYYY-MM-DD)."
+        },
+        "end_date": {
+          "type": "string",
+          "description": "Inclusive range end (YYYY-MM-DD)."
+        },
+        "user_id": {
+          "type": "string",
+          "description": "Ledger owner identifier (default: 'default')"
+        }
+      },
+      "required": [
+        "start_date",
+        "end_date"
+      ]
+    }
+  },
+  {
     "name": "get_server_info",
     "description": "Get diagnostic info about the running MCP server (server_dir). Use to verify which directory the server is running from.",
     "inputSchema": {

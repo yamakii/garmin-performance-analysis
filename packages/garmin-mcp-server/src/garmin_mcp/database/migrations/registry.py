@@ -205,6 +205,20 @@ def _wrap_add_athlete_profile_versions(conn: duckdb.DuckDBPyConnection) -> None:
     add_athlete_profile_versions(conn)
 
 
+def _wrap_add_training_blocks_tables(conn: duckdb.DuckDBPyConnection) -> None:
+    """Wrap the training block ledger migration on an existing connection."""
+    from .add_training_blocks_tables import add_training_blocks_tables
+
+    add_training_blocks_tables(conn)
+
+
+def _wrap_add_weekly_prescriptions_table(conn: duckdb.DuckDBPyConnection) -> None:
+    """Wrap the weekly_prescriptions table migration on an existing connection."""
+    from .add_weekly_prescriptions_table import add_weekly_prescriptions_table
+
+    add_weekly_prescriptions_table(conn)
+
+
 def _wrap_plan_versioning(conn: duckdb.DuckDBPyConnection) -> None:
     """Wrap plan versioning migration to run on an existing connection."""
     from .add_plan_versioning import _column_exists, _table_exists
@@ -269,4 +283,6 @@ MIGRATIONS: list[tuple[int, str, Callable[[duckdb.DuckDBPyConnection], None]]] =
     (20, "add_hiking_sessions", _wrap_add_hiking_sessions),
     (21, "add_athlete_profile_versions", _wrap_add_athlete_profile_versions),
     (22, "drop_pace_consistency_full", _wrap_drop_pace_consistency_full),
+    (23, "add_training_blocks_tables", _wrap_add_training_blocks_tables),
+    (24, "add_weekly_prescriptions_table", _wrap_add_weekly_prescriptions_table),
 ]

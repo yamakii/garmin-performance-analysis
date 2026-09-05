@@ -91,10 +91,10 @@ class TestMigrationRunner:
         runner = MigrationRunner(db_path)
         applied = runner.run_pending()
 
-        assert len(applied) == 22
+        assert len(applied) == 24
         assert applied[0] == "phase0_power_prep"
-        assert applied[-1] == "drop_pace_consistency_full"
-        assert runner.get_current_version() == 22
+        assert applied[-1] == "add_weekly_prescriptions_table"
+        assert runner.get_current_version() == 24
 
     def test_run_pending_skips_applied(self, db_path: Path) -> None:
         """Running twice applies nothing the second time."""
@@ -102,7 +102,7 @@ class TestMigrationRunner:
         first = runner.run_pending()
         second = runner.run_pending()
 
-        assert len(first) == 22
+        assert len(first) == 24
         assert second == []
 
     def test_run_pending_partial(self, db_path: Path) -> None:
@@ -129,7 +129,7 @@ class TestMigrationRunner:
         runner = MigrationRunner(db_path)
         applied = runner.run_pending()
 
-        assert runner.get_current_version() == 22
+        assert runner.get_current_version() == 24
         assert applied == [
             "remove_fk_constraints",
             "add_plan_versioning",
@@ -150,6 +150,8 @@ class TestMigrationRunner:
             "add_hiking_sessions",
             "add_athlete_profile_versions",
             "drop_pace_consistency_full",
+            "add_training_blocks_tables",
+            "add_weekly_prescriptions_table",
         ]
 
     def test_migration_records_applied_at(self, db_path: Path) -> None:
@@ -163,7 +165,7 @@ class TestMigrationRunner:
         ).fetchall()
         conn.close()
 
-        assert len(rows) == 22
+        assert len(rows) == 24
         for version, name, applied_at in rows:
             assert applied_at is not None
             assert isinstance(name, str)
@@ -175,7 +177,7 @@ class TestEnsureSchemaCurrent:
     """Tests for the ensure_schema_current startup helper."""
 
     def test_ensure_schema_current_applies_pending(self, tmp_path: Path) -> None:
-        """A DB at version 11 is migrated to 22 and gains week_start_day."""
+        """A DB at version 11 is migrated to 24 and gains week_start_day."""
         db_path = tmp_path / "v11.duckdb"
         _make_v11_db(db_path)
         runner = MigrationRunner(db_path)
@@ -195,8 +197,10 @@ class TestEnsureSchemaCurrent:
             "add_hiking_sessions",
             "add_athlete_profile_versions",
             "drop_pace_consistency_full",
+            "add_training_blocks_tables",
+            "add_weekly_prescriptions_table",
         ]
-        assert runner.get_current_version() == 22
+        assert runner.get_current_version() == 24
 
         conn = duckdb.connect(str(db_path), read_only=True)
         columns = [
@@ -209,11 +213,11 @@ class TestEnsureSchemaCurrent:
     def test_ensure_schema_current_noop_when_uptodate(self, db_path: Path) -> None:
         """An up-to-date DB yields no applied migrations and re-runs cleanly."""
         MigrationRunner(db_path).run_pending()
-        assert MigrationRunner(db_path).get_current_version() == 22
+        assert MigrationRunner(db_path).get_current_version() == 24
 
         first = ensure_schema_current(db_path)
         second = ensure_schema_current(db_path)
 
         assert first == []
         assert second == []
-        assert MigrationRunner(db_path).get_current_version() == 22
+        assert MigrationRunner(db_path).get_current_version() == 24
