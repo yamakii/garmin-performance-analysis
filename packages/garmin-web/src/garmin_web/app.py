@@ -1,6 +1,7 @@
 """FastAPI application factory for garmin-web."""
 
 import logging
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -70,6 +71,30 @@ def create_app(
     return app
 
 
+def _resolve_static_file(static_root: Path, full_path: str) -> Path | None:
+    """Return the file under ``static_root`` named by ``full_path``, or ``None``.
+
+    ``full_path`` is attacker-controlled (it is the request URL), so containment
+    is established *before* any filesystem access: the joined path is normalised
+    -- which collapses ``..`` segments and lets an absolute path override the
+    root -- and only a result that still sits under ``static_root`` is stat-ed.
+
+    Checking containment after the stat would leave an existence oracle for
+    arbitrary filesystem paths even though the file contents never escape
+    (CodeQL ``py/path-injection``).
+    """
+    if not full_path:
+        return None
+
+    root = str(static_root)
+    candidate = os.path.normpath(os.path.join(root, full_path))
+    if not candidate.startswith(root + os.sep):
+        return None
+
+    resolved = Path(candidate)
+    return resolved if resolved.is_file() else None
+
+
 def _mount_spa(app: FastAPI, static_dir: Path) -> None:
     """Serve the built SPA with an index.html fallback for client routes.
 
@@ -92,8 +117,7 @@ def _mount_spa(app: FastAPI, static_dir: Path) -> None:
         # Never shadow the API: unknown /api paths must stay 404, not HTML.
         if full_path == "api" or full_path.startswith("api/"):
             raise HTTPException(status_code=404, detail="Not Found")
-        if full_path:
-            candidate = (static_root / full_path).resolve()
-            if candidate.is_file() and candidate.is_relative_to(static_root):
-                return FileResponse(candidate)
+        asset = _resolve_static_file(static_root, full_path)
+        if asset is not None:
+            return FileResponse(asset)
         return FileResponse(index_file)
