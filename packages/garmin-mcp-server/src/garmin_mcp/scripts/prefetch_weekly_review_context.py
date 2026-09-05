@@ -30,7 +30,10 @@ Output (JSON to stdout, one line):
       "load_trend": {...}|null,           # + long_run: {weekly_longest_sec,
                                           #   long_run_build_weeks,
                                           #   cutback_due_long_run} over the
-                                          #   weeks completed before W
+                                          #   weeks completed before W, plus
+                                          #   gate: the progression verdict for
+                                          #   W-1's longest run (null when none
+                                          #   reached _LONG_RUN_GATE_MIN_KM)
       "acwr": {...}|null,
       "recovery": {"trend": {...}|null,   # trend.series trimmed to the last
                                           #   _RECOVERY_SERIES_KEEP_DAYS days
@@ -76,6 +79,7 @@ from garmin_mcp.analysis.derivations import (
     LONG_RUN_CUTBACK_TRIGGER_WEEKS,
     count_long_run_build_weeks,
 )
+from garmin_mcp.analysis.progression_gate import build_long_run_progression_gate
 from garmin_mcp.database.connection import get_connection, get_db_path
 from garmin_mcp.utils.week import get_week_start_day, week_bounds
 
@@ -96,6 +100,9 @@ _RECOVERY_SERIES_KEEP_DAYS = 14
 # (``activities`` / ``scheduled_workouts``), and the review only needs the past
 # record for continuity of its judgements, so these are dropped (Issue #933).
 _PAST_REVIEW_REPLAY_KEYS = ("this_week", "garmin_next_week")
+# Minimum distance for W-1's longest run to be gated for progression (Issue
+# #982). Matches the long-run definition used by the durability reader.
+_LONG_RUN_GATE_MIN_KM = 10.0
 
 
 def _safe[T](fn: Callable[[], T]) -> T | None:
@@ -213,6 +220,30 @@ def _long_run_gate(load_trend: dict[str, Any], week_start_date: str) -> dict[str
         "long_run_build_weeks": build_weeks,
         "cutback_due_long_run": build_weeks >= LONG_RUN_CUTBACK_TRIGGER_WEEKS,
     }
+
+
+def _longest_long_run(activities: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Return the longest activity of at least :data:`_LONG_RUN_GATE_MIN_KM`.
+
+    Ties break on the later date then the higher id, so the pick is
+    deterministic. ``None`` when the week held no long run.
+    """
+    long_runs = [
+        a
+        for a in activities
+        if a.get("distance_km") is not None
+        and float(a["distance_km"]) >= _LONG_RUN_GATE_MIN_KM
+    ]
+    if not long_runs:
+        return None
+    return max(
+        long_runs,
+        key=lambda a: (
+            float(a["distance_km"]),
+            str(a.get("activity_date") or ""),
+            a["activity_id"],
+        ),
+    )
 
 
 def _slim_athlete_profile(profile: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -404,6 +435,21 @@ def prefetch_weekly_review_context(
     # zero the streak (Issue #929).
     if isinstance(load_trend, dict):
         load_trend["long_run"] = _long_run_gate(load_trend, week_start_s)
+        # Secondary gate (Issue #982): did W-1's long run hold the legs
+        # together? The review reads the same deterministic verdict the
+        # activity summary shows, instead of eyeballing the fade itself.
+        reference_run = _longest_long_run(prev_activities)
+        load_trend["long_run"]["gate"] = (
+            _safe(
+                partial(
+                    build_long_run_progression_gate,
+                    reader,
+                    reference_run["activity_id"],
+                )
+            )
+            if reference_run is not None
+            else None
+        )
     acwr = _safe(lambda: reader.get_acwr(end_date=str(today_d)))
 
     # Recovery: RHR/HRV trend, morning go/no-go status, personal-baseline z.

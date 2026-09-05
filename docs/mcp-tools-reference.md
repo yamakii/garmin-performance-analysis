@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **67 tools** (65 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **68 tools** (66 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -24,7 +24,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Athlete](#athlete) (7)
 - [Race](#race) (1)
 - [Training Load](#training-load) (3)
-- [Durability](#durability) (2)
+- [Durability](#durability) (3)
 - [strength](#strength) (2)
 - [ingest](#ingest) (1)
 - [Workout Scheduling](#workout-scheduling) (2)
@@ -639,6 +639,16 @@ Get the longitudinal cardiac-decoupling trend across long runs in a date window.
 | `start_date` | string | **required** | Inclusive window start date (YYYY-MM-DD). |
 | `end_date` | string | **required** | Inclusive window end date (YYYY-MM-DD). |
 | `min_distance_km` | number | optional (default `10.0`) | Minimum total_distance_km for an activity to qualify as a long run (default: 10.0). Shorter runs are excluded. |
+
+### `get_long_run_progression_gate`
+
+CLI: `garmin-db durability progression-gate`
+
+Judge whether the next long run may be extended. Compares this long run's second-half decay against a comparable earlier practice long run (similar distance, within 8 weeks, similar temperature, races excluded) and returns verdict (green/yellow/red/insufficient_data), recommendation (extend/repeat/shorten), the triggers that fired (gct_fade_ms >= 10, cadence_fade_spm <= -5, pace_fade_pct >= 8, each with the reference value and whether it is clearly worse), reference_activity_id, decoupling_contaminated (current run at >= 30C, where decoupling is thermal drift) and a Japanese reason_ja, alongside the current and reference durability blocks.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `activity_id` | integer | **required** | Long-run activity ID to judge (compared against a comparable earlier practice long run). |
 
 ## strength
 

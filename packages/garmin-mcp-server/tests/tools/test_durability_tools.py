@@ -128,3 +128,76 @@ def test_durability_tool_serializes_form_fields() -> None:
     trend_payload = json.loads(json.dumps(trend_result, default=str))
     assert trend_payload["trend"]["gct_fade_slope_per_day"] is None
     assert trend_payload["trend"]["form_direction"] == "insufficient_data"
+
+
+@pytest.mark.unit
+def test_get_long_run_progression_gate_dispatch() -> None:
+    """The gate tool fuses both reader calls into one JSON-safe verdict (#982)."""
+    assert "get_long_run_progression_gate" in ALL_DEFS_BY_NAME
+
+    reader = MagicMock()
+    reader.get_activity_durability.return_value = {
+        "activity_id": 5301,
+        "activity_date": "2026-08-30",
+        "distance_km": 19.0,
+        "decoupling_pct": 4.0,
+        "pace_fade_pct": 2.0,
+        "gct_fade_ms": 14.0,
+        "cadence_fade_spm": -1.0,
+        "temperature_c": 27.0,
+    }
+    reader.find_reference_long_run.return_value = {
+        "activity_id": 5302,
+        "activity_date": "2026-08-09",
+        "distance_km": 18.0,
+        "gct_fade_ms": 3.0,
+        "cadence_fade_spm": -1.0,
+        "pace_fade_pct": 1.0,
+        "temperature_c": 26.0,
+        "temp_diff_c": -1.0,
+    }
+
+    result = dispatch(
+        ALL_DEFS_BY_NAME,
+        reader,
+        "get_long_run_progression_gate",
+        {"activity_id": 5301},
+    )
+    reader.get_activity_durability.assert_called_once_with(5301)
+    reader.find_reference_long_run.assert_called_once_with(5301)
+
+    payload = json.loads(json.dumps(result, default=str))
+    assert payload["activity_id"] == 5301
+    assert payload["verdict"] == "red"
+    assert payload["recommendation"] == "shorten"
+    assert payload["reference_activity_id"] == 5302
+    assert payload["current"]["gct_fade_ms"] == 14.0
+    assert payload["reference"]["activity_id"] == 5302
+    assert [t["metric"] for t in payload["triggers"]] == ["gct_fade_ms"]
+
+
+@pytest.mark.unit
+def test_get_long_run_progression_gate_without_reference() -> None:
+    """No comparable long run -> the reference block and id are null."""
+    reader = MagicMock()
+    reader.get_activity_durability.return_value = {
+        "activity_id": 5303,
+        "gct_fade_ms": 2.0,
+        "cadence_fade_spm": -1.0,
+        "pace_fade_pct": 1.0,
+        "temperature_c": 18.0,
+    }
+    reader.find_reference_long_run.return_value = None
+
+    result = dispatch(
+        ALL_DEFS_BY_NAME,
+        reader,
+        "get_long_run_progression_gate",
+        {"activity_id": 5303},
+    )
+
+    payload = json.loads(json.dumps(result, default=str))
+    assert payload["reference"] is None
+    assert payload["reference_activity_id"] is None
+    assert payload["verdict"] == "green"
+    assert payload["recommendation"] == "extend"

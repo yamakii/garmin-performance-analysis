@@ -1040,10 +1040,25 @@ class GarminDBReader:
 
         Returns:
             Dict with activity_id, activity_date, distance_km, decoupling_pct,
-            and pace_fade_pct, or None when HR/speed data is missing or the
-            timestamp midpoint cannot split the series.
+            pace_fade_pct, the second-half form fades (ratio ``*_fade_pct`` plus
+            absolute ``gct_fade_ms`` / ``cadence_fade_spm``) and the run's
+            temperature_c / avg_hr / avg_pace_s_per_km, or None when HR/speed
+            data is missing or the timestamp midpoint cannot split the series.
         """
         return self.durability.get_activity_durability(activity_id)
+
+    def find_reference_long_run(self, activity_id: int) -> dict[str, Any] | None:
+        """Get the comparable earlier long run for the progression gate.
+
+        Args:
+            activity_id: The long run being judged.
+
+        Returns:
+            The reference run's durability dict plus ``temp_diff_c``, or None
+            when no like-for-like practice long run exists in the lookback
+            window.
+        """
+        return self.durability.find_reference_long_run(activity_id)
 
     def get_durability_trend(
         self, start_date: str, end_date: str, min_distance_km: float = 10.0
