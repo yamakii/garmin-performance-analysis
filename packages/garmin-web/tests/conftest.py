@@ -1834,9 +1834,9 @@ def _create_plan_tables(conn: duckdb.DuckDBPyConnection) -> None:
 
 
 def _insert_plan_rows(conn: duckdb.DuckDBPyConnection) -> None:
-    conn.executemany(
-        "INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?, ?)", _PLAN_ACTIVITY_ROWS
-    )
+    # Column list on purpose: the shared activities DDL gained temp_celsius
+    # (#997), so a positional 7-value INSERT no longer matches the 8 columns.
+    conn.executemany(_INSERT_ACTIVITY_CORE, _PLAN_ACTIVITY_ROWS)
     for block in _TRAINING_BLOCK_ROWS:
         block_id, sequence, phase, title, start, end, weight_mode, quality, ladder = (
             block
