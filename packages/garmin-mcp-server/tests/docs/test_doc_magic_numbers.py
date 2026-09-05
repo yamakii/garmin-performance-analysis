@@ -88,13 +88,13 @@ def test_readme_tool_count_matches_registry() -> None:
 
 
 @pytest.mark.unit
-def test_doc_magic_numbers_tools_68() -> None:
-    """After #982 the live MCP surface is 68 tools; docs/registry must agree."""
-    assert _expected_tool_count() == 68
+def test_doc_magic_numbers_tools_69() -> None:
+    """After #981 the live MCP surface is 69 tools; docs/registry must agree."""
+    assert _expected_tool_count() == 69
     for doc in _DOC_PATHS:
         text = doc.read_text(encoding="utf-8")
         for count in _numbers_before(r"(?:MCP )?tools", text):
-            assert count == 68, f"{doc.name}: doc says {count} tools, expected 68"
+            assert count == 69, f"{doc.name}: doc says {count} tools, expected 69"
 
 
 @pytest.mark.integration

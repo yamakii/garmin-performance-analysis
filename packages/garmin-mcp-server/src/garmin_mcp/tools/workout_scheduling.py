@@ -1,13 +1,20 @@
-"""Custom-workout scheduling tools (issue #851).
+"""Custom-workout scheduling tools (issues #851, #981).
 
-Two generic write tools let the weekly-review prescription (LLM layer) register a
-session to the Garmin calendar in one call, while lifecycle management lives in
-code so the self-authored library never sprawls:
+Three generic write tools let the weekly-review prescription (LLM layer) register
+sessions to the Garmin calendar, while lifecycle management lives in code so the
+self-authored library never sprawls:
 
 - ``schedule_custom_workout(date, title, steps)`` builds a Garmin workout JSON
   from a generic ``steps`` array, force-prefixes the title with ``[MCP] ``,
   deletes any same-title ``[MCP]`` template (delete -> recreate), uploads it and
   schedules it on ``date``.
+- ``schedule_weekly_prescriptions(week_start_date, ...)`` does the same for a
+  whole week of ``weekly_prescriptions`` rows: it derives the steps from each
+  row in code (``build_steps_from_prescription``), registers every registrable
+  session and records ``garmin_workout_id`` / ``garmin_schedule_id`` plus
+  ``status=registered`` back on the row. ``dry_run=True`` (the default) returns
+  the exact plan — titles, steps and same-day Garmin conflicts — so the skill can
+  show it before the single confirmation the batch needs.
 - ``cleanup_generated_workouts(dry_run=False)`` unschedules past ``[MCP]``
   assignments and deletes ``[MCP]`` templates that have no future schedule.
   Manual (non-``[MCP]``) workouts are never touched.
@@ -41,6 +48,27 @@ MCP_PREFIX = "[MCP] "
 # needs some floor; 80 bpm sits below any running heart rate, so the low-HR
 # alert can never fire and the ceiling still governs (#979).
 _DEFAULT_HR_FLOOR = 80
+
+# Ledger owner used when the caller does not name one.
+_DEFAULT_USER_ID = "default"
+
+# Shape of a prescription-derived workout: every session gets the same easy
+# warmup / cooldown bookends so the body step carries the prescribed target only.
+_WARMUP_MINUTES = 10
+_COOLDOWN_MINUTES = 5
+
+# Strides are prescribed as a shape, not as a target: 5 x 20s pickups with 90s
+# easy recovery, none of which carries an HR target (they are too short for HR
+# to settle).
+_STRIDES_REPEAT_COUNT = 5
+_STRIDES_RUN_SECONDS = 20
+_STRIDES_RECOVERY_SECONDS = 90
+
+# Prescription session types that map onto a Garmin running workout. rest /
+# strength / cross are prescribed but never registered as a run.
+_REGISTRABLE_TYPES = frozenset(
+    {"long", "easy", "recovery", "threshold", "tempo", "strides"}
+)
 
 # Running sport type (the only sport this tool schedules).
 _RUNNING_SPORT_TYPE: dict[str, Any] = {
@@ -256,6 +284,85 @@ def build_workout_json(title: str, steps: list[dict[str, Any]]) -> dict[str, Any
     }
 
 
+def build_steps_from_prescription(p: dict[str, Any]) -> list[dict[str, Any]]:
+    """Derive the generic ``steps`` array from one ``weekly_prescriptions`` row.
+
+    Pure function, so the whole prescription -> workout mapping is unit-tested
+    without touching Garmin. Every session is bookended by a 10-minute warmup and
+    a 5-minute cooldown with no target; only the body step carries the
+    prescription's own bounds:
+
+    - ``long`` / ``easy`` / ``recovery``: one body step ending on
+      ``target_minutes`` (preferred, time-managed runs) or ``target_km``
+      converted to meters, with ``hr_high`` as a ceiling. ``hr_low`` is written
+      only when the row actually prescribes a floor, so ceiling-only easy/long
+      runs never get a low-HR alert (#979).
+    - ``threshold`` / ``tempo``: the same shape; these rows carry both bounds, so
+      the body step becomes a real HR range.
+    - ``strides``: a 5x(20s run / 90s recovery) repeat group instead of a body
+      step (no distance/duration target needed).
+
+    Args:
+        p: A prescription row (``session_type``, ``target_minutes`` /
+            ``target_km``, ``hr_low`` / ``hr_high``).
+
+    Returns:
+        Steps ready for ``build_workout_json`` / ``schedule_custom_workout``.
+
+    Raises:
+        ValueError: When ``session_type`` is not registrable as a run, or when a
+            non-strides session prescribes neither ``target_minutes`` nor
+            ``target_km``.
+    """
+    session_type = str(p.get("session_type") or "")
+    if session_type not in _REGISTRABLE_TYPES:
+        raise ValueError(
+            f"session_type {session_type!r} is not registrable as a run "
+            f"(registrable: {sorted(_REGISTRABLE_TYPES)})"
+        )
+
+    warmup = {"step_type": "warmup", "duration_minutes": _WARMUP_MINUTES}
+    cooldown = {"step_type": "cooldown", "duration_minutes": _COOLDOWN_MINUTES}
+
+    if session_type == "strides":
+        return [
+            warmup,
+            {
+                "repeat_count": _STRIDES_REPEAT_COUNT,
+                "steps": [
+                    {"step_type": "run", "duration_seconds": _STRIDES_RUN_SECONDS},
+                    {
+                        "step_type": "recovery",
+                        "duration_seconds": _STRIDES_RECOVERY_SECONDS,
+                    },
+                ],
+            },
+            cooldown,
+        ]
+
+    body: dict[str, Any] = {"step_type": "run"}
+    target_minutes = p.get("target_minutes")
+    target_km = p.get("target_km")
+    if target_minutes is not None:
+        body["duration_minutes"] = target_minutes
+    elif target_km is not None:
+        body["distance_m"] = round(float(target_km) * 1000)
+    else:
+        raise ValueError(
+            f"session_type {session_type!r} needs target_minutes or target_km "
+            "to build a workout"
+        )
+
+    hr_low = p.get("hr_low")
+    hr_high = p.get("hr_high")
+    if hr_low is not None:
+        body["hr_low"] = hr_low
+    if hr_high is not None:
+        body["hr_high"] = hr_high
+
+    return [warmup, body, cooldown]
+
+
 # ----------------------------------------------------------------------------
 # Calendar assignment collection + cleanup planning
 # ----------------------------------------------------------------------------
@@ -352,6 +459,154 @@ def _plan_cleanup(
 
 
 # ----------------------------------------------------------------------------
+# Registration (shared by the single-session and weekly-batch tools)
+# ----------------------------------------------------------------------------
+
+
+def _register_workout(
+    client: Any,
+    *,
+    on_date: str,
+    title: str,
+    steps: list[dict[str, Any]],
+    templates: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Replace any same-title ``[MCP]`` template, upload and schedule a workout.
+
+    Args:
+        client: Authenticated Garmin client.
+        on_date: Target date (``YYYY-MM-DD``).
+        title: Workout title (the ``[MCP] `` prefix is force-added).
+        steps: Generic steps array for ``build_workout_json``.
+        templates: Pre-fetched ``client.get_workouts()`` payload. The weekly
+            batch fetches the library once and reuses it across items; passing
+            ``None`` fetches it here.
+
+    Returns:
+        ``{workout_id, schedule_id, date, title, replaced_workout_ids}``.
+    """
+    full_title = _ensure_prefix(title)
+
+    # Delete any same-title [MCP] template first (delete -> recreate) so the
+    # self-authored library keeps at most one template per title.
+    library = templates if templates is not None else (client.get_workouts() or [])
+    replaced: list[Any] = []
+    for workout in library:
+        if workout.get("workoutName") == full_title:
+            client.delete_workout(workout.get("workoutId"))
+            replaced.append(workout.get("workoutId"))
+
+    uploaded = client.upload_workout(build_workout_json(title, steps))
+    workout_id = uploaded.get("workoutId") if isinstance(uploaded, dict) else None
+
+    scheduled = client.schedule_workout(workout_id, on_date)
+    schedule_id = None
+    if isinstance(scheduled, dict):
+        schedule_id = scheduled.get("workoutScheduleId") or scheduled.get("id")
+
+    return {
+        "workout_id": workout_id,
+        "schedule_id": schedule_id,
+        "date": on_date,
+        "title": full_title,
+        "replaced_workout_ids": replaced,
+    }
+
+
+def _plan_week_registrations(
+    rows: list[dict[str, Any]], explicit_ids: set[int]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split a week's prescriptions into registrable items and skipped rows.
+
+    Pure decision function (no Garmin, no DB). A row is skipped when its
+    ``session_type`` is not a run, when its targets cannot build a workout, or
+    when it is already registered on Garmin — the last case only unless the
+    caller named it in ``explicit_ids``, which means "re-register / replace".
+
+    Args:
+        rows: Canonical prescriptions for the week (reader order).
+        explicit_ids: ``prescription_ids`` the caller asked for. When non-empty,
+            rows outside the set are not considered at all.
+
+    Returns:
+        ``(items, skipped)`` where each item is ``{prescription_id, date, title,
+        steps, already_registered}`` and each skip is ``{prescription_id,
+        reason}``.
+    """
+    items: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+
+    for row in rows:
+        prescription_id = row.get("prescription_id")
+        if explicit_ids and prescription_id not in explicit_ids:
+            continue
+
+        session_type = str(row.get("session_type") or "")
+        already_registered = (
+            row.get("status") == "registered"
+            and row.get("garmin_schedule_id") is not None
+        )
+        if already_registered and prescription_id not in explicit_ids:
+            skipped.append(
+                {
+                    "prescription_id": prescription_id,
+                    "reason": (
+                        "already registered on Garmin (pass its prescription_id "
+                        "to re-register)"
+                    ),
+                }
+            )
+            continue
+
+        try:
+            steps = build_steps_from_prescription(row)
+        except ValueError as e:
+            skipped.append({"prescription_id": prescription_id, "reason": str(e)})
+            continue
+
+        items.append(
+            {
+                "prescription_id": prescription_id,
+                "date": str(row.get("date")),
+                "title": str(row.get("title") or session_type),
+                "steps": steps,
+                "already_registered": already_registered,
+            }
+        )
+
+    return items, skipped
+
+
+def _existing_titles_by_date(week_start_date: str) -> dict[str, list[str]]:
+    """Map each day of the week to the non-``[MCP]`` Garmin items scheduled on it.
+
+    Garmin Coach / adaptive / manual assignments are reported as conflicts, never
+    deleted: only same-title ``[MCP]`` templates are replaced.
+
+    Args:
+        week_start_date: Week start (``YYYY-MM-DD``).
+
+    Returns:
+        ``{date: [title, ...]}`` for the 7 days starting at ``week_start_date``.
+    """
+    from garmin_mcp.fitness.garmin_calendar import GarminCalendarReader
+
+    start = date.fromisoformat(week_start_date)
+    end = start + timedelta(days=6)
+    scheduled = GarminCalendarReader().get_scheduled_workouts(
+        start.isoformat(), end.isoformat()
+    )
+
+    by_date: dict[str, list[str]] = {}
+    for item in scheduled:
+        title = str(item.get("title") or "")
+        if title.startswith(MCP_PREFIX):
+            continue
+        by_date.setdefault(str(item.get("date")), []).append(title)
+    return by_date
+
+
+# ----------------------------------------------------------------------------
 # Params models
 # ----------------------------------------------------------------------------
 
@@ -374,6 +629,32 @@ class ScheduleCustomWorkoutParams(BaseModel):
             "custom HR-range target) or a repeat group (repeat_count + nested "
             "steps)."
         )
+    )
+
+
+class ScheduleWeeklyPrescriptionsParams(BaseModel):
+    """Arguments for ``schedule_weekly_prescriptions``."""
+
+    week_start_date: str = Field(
+        description="Week start date (YYYY-MM-DD) of the prescriptions to register."
+    )
+    prescription_ids: list[int] | None = Field(
+        default=None,
+        description=(
+            "Register only these prescription_ids (subset of the week). Naming "
+            "an already-registered row re-registers it. Defaults to every "
+            "registrable row of the week's latest batch."
+        ),
+    )
+    dry_run: bool | None = Field(
+        default=None,
+        description=(
+            "When True (the default), return the plan (titles, steps, same-day "
+            "Garmin conflicts) without writing anything to Garmin."
+        ),
+    )
+    user_id: str | None = Field(
+        default=None, description="Ledger owner identifier (default: 'default')"
     )
 
 
@@ -401,35 +682,102 @@ def _schedule_custom_workout(
 
     try:
         client = get_garmin_client()
-        title = _ensure_prefix(p.title)
-
-        # Delete any same-title [MCP] template first (delete -> recreate) so the
-        # self-authored library keeps at most one template per title.
-        replaced: list[Any] = []
-        for workout in client.get_workouts() or []:
-            if workout.get("workoutName") == title:
-                client.delete_workout(workout.get("workoutId"))
-                replaced.append(workout.get("workoutId"))
-
-        workout_json = build_workout_json(p.title, p.steps)
-        uploaded = client.upload_workout(workout_json)
-        workout_id = uploaded.get("workoutId") if isinstance(uploaded, dict) else None
-
-        scheduled = client.schedule_workout(workout_id, p.date)
-        schedule_id = None
-        if isinstance(scheduled, dict):
-            schedule_id = scheduled.get("workoutScheduleId") or scheduled.get("id")
-
-        return {
-            "workout_id": workout_id,
-            "schedule_id": schedule_id,
-            "date": p.date,
-            "title": title,
-            "replaced_workout_ids": replaced,
-        }
+        return _register_workout(client, on_date=p.date, title=p.title, steps=p.steps)
     except Exception as e:  # noqa: BLE001
         logger.error(f"schedule_custom_workout failed: {e}")
         return {"error": str(e)}
+
+
+def _schedule_weekly_prescriptions(
+    reader: GarminDBReader, p: ScheduleWeeklyPrescriptionsParams
+) -> Any:
+    from garmin_mcp.database.inserters.plan import update_prescription_status
+    from garmin_mcp.database.readers.plan import PlanReader
+    from garmin_mcp.ingest.api_client import get_garmin_client
+
+    dry_run = True if p.dry_run is None else p.dry_run
+    user_id = p.user_id if p.user_id is not None else _DEFAULT_USER_ID
+
+    try:
+        rows = PlanReader(db_path=str(reader.db_path)).get_weekly_prescriptions(
+            p.week_start_date, user_id=user_id
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"schedule_weekly_prescriptions failed to read the week: {e}")
+        return {"error": str(e)}
+
+    items, skipped = _plan_week_registrations(rows, set(p.prescription_ids or []))
+
+    if dry_run:
+        result: dict[str, Any] = {
+            "dry_run": True,
+            "week_start_date": p.week_start_date,
+            "items": items,
+            "skipped": skipped,
+        }
+        try:
+            existing = _existing_titles_by_date(p.week_start_date)
+        except Exception as e:  # noqa: BLE001
+            # A calendar hiccup must not hide the plan; report it instead of
+            # silently claiming there are no conflicts.
+            logger.warning("Could not read the Garmin calendar: %s", e)
+            existing = {}
+            result["calendar_error"] = str(e)
+        for item in items:
+            item["existing_same_day"] = existing.get(item["date"], [])
+        return result
+
+    try:
+        client = get_garmin_client()
+        templates = client.get_workouts() or []
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"schedule_weekly_prescriptions failed to reach Garmin: {e}")
+        return {"error": str(e)}
+
+    # Each item is isolated: one upload failure (rate limit, bad target) must
+    # leave the already-registered days in place and let the rest proceed.
+    registered: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
+    for item in items:
+        prescription_id = item["prescription_id"]
+        try:
+            outcome = _register_workout(
+                client,
+                on_date=item["date"],
+                title=item["title"],
+                steps=item["steps"],
+                templates=templates,
+            )
+            update_prescription_status(
+                prescription_id=prescription_id,
+                status="registered",
+                garmin_workout_id=outcome["workout_id"],
+                garmin_schedule_id=outcome["schedule_id"],
+                db_path=str(reader.db_path),
+            )
+            registered.append(
+                {
+                    "prescription_id": prescription_id,
+                    "workout_id": outcome["workout_id"],
+                    "schedule_id": outcome["schedule_id"],
+                    "date": outcome["date"],
+                    "title": outcome["title"],
+                }
+            )
+        except Exception as e:  # noqa: BLE001
+            # The row id stays out of the log line: CodeQL treats anything named
+            # "prescription" as private data (py/clear-text-logging-sensitive-data).
+            # The id is returned to the caller in `failed` instead.
+            logger.warning("Registering one weekly prescription failed: %s", e)
+            failed.append({"prescription_id": prescription_id, "error": str(e)})
+
+    return {
+        "dry_run": False,
+        "week_start_date": p.week_start_date,
+        "registered": registered,
+        "failed": failed,
+        "skipped": skipped,
+    }
 
 
 def _cleanup_generated_workouts(
@@ -508,6 +856,29 @@ WORKOUT_SCHEDULING_TOOLS: list[ToolDef] = [
         handler=_schedule_custom_workout,
         cli_group="workout",
         cli_name="schedule",
+    ),
+    ToolDef(
+        name="schedule_weekly_prescriptions",
+        description=(
+            "Register a whole week of saved prescriptions to the Garmin "
+            "calendar in one batch. Steps are derived in code from each row "
+            "(10min warmup, body on target_minutes or target_km with hr_high as "
+            "a ceiling and hr_low only when prescribed, 5min cooldown; strides "
+            "become 5x20s pickups); rest/strength/cross rows and rows already "
+            "registered are skipped, and naming an id in prescription_ids "
+            "re-registers it. dry_run=True (default) returns {dry_run, "
+            "week_start_date, items ({prescription_id, date, title, steps, "
+            "existing_same_day, already_registered}), skipped} so the plan can "
+            "be confirmed first. dry_run=False registers each item (delete "
+            "same-title [MCP] template -> upload -> schedule), records the "
+            "workout/schedule ids with status=registered on the row, isolates "
+            "per-item failures and returns {dry_run, week_start_date, "
+            "registered, failed, skipped}."
+        ),
+        params=ScheduleWeeklyPrescriptionsParams,
+        handler=_schedule_weekly_prescriptions,
+        cli_group="workout",
+        cli_name="schedule-week",
     ),
     ToolDef(
         name="cleanup_generated_workouts",
