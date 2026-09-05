@@ -36,6 +36,12 @@ logger = logging.getLogger(__name__)
 # apart from manually-created / Garmin Coach workouts.
 MCP_PREFIX = "[MCP] "
 
+# Non-alerting floor used when a step prescribes a ceiling (``hr_high``) only.
+# Garmin's heart-rate target is always a range, so a ceiling-only prescription
+# needs some floor; 80 bpm sits below any running heart rate, so the low-HR
+# alert can never fire and the ceiling still governs (#979).
+_DEFAULT_HR_FLOOR = 80
+
 # Running sport type (the only sport this tool schedules).
 _RUNNING_SPORT_TYPE: dict[str, Any] = {
     "sportTypeId": 1,
@@ -115,20 +121,26 @@ def _end_condition(step: dict[str, Any]) -> tuple[dict[str, Any], float | None]:
 def _target_fields(step: dict[str, Any]) -> dict[str, Any]:
     """Build the target-type fields for an executable step.
 
-    When both ``hr_low`` and ``hr_high`` are present the step targets a custom
-    heart-rate range (``heart.rate.zone`` with ``targetValueOne/Two`` in bpm);
-    otherwise it carries no target.
+    ``hr_low`` + ``hr_high`` -> a custom heart-rate range (``heart.rate.zone``
+    with ``targetValueOne/Two`` in bpm).
+
+    ``hr_high`` alone -> the same range target with ``_DEFAULT_HR_FLOOR`` as the
+    floor. Ceiling-only prescriptions (Z2 / easy / long runs, which must never be
+    pushed by a low-HR alert) previously fell through to ``no.target``, so the
+    ceiling never reached the watch (#979).
+
+    ``hr_low`` alone or neither bound -> no target.
     """
     hr_low = step.get("hr_low")
     hr_high = step.get("hr_high")
-    if hr_low is not None and hr_high is not None:
+    if hr_high is not None:
         return {
             "targetType": {
                 "workoutTargetTypeId": 4,
                 "workoutTargetTypeKey": "heart.rate.zone",
                 "displayOrder": 4,
             },
-            "targetValueOne": hr_low,
+            "targetValueOne": hr_low if hr_low is not None else _DEFAULT_HR_FLOOR,
             "targetValueTwo": hr_high,
         }
     return {
@@ -219,7 +231,8 @@ def build_workout_json(title: str, steps: list[dict[str, Any]]) -> dict[str, Any
     with ``[MCP] ``; ``steps`` is an ordered list where each entry is either an
     executable step (``step_type`` + one of ``duration_minutes`` /
     ``duration_seconds`` / ``distance_m``, optional ``hr_low`` / ``hr_high``) or
-    a repeat group (``repeat_count`` + nested ``steps``).
+    a repeat group (``repeat_count`` + nested ``steps``). Giving ``hr_high``
+    alone yields a ceiling-governed HR target (see ``_target_fields``).
     """
     workout_steps: list[dict[str, Any]] = []
     order = 1
