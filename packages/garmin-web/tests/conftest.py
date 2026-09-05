@@ -1314,6 +1314,29 @@ def _insert_durability_series(
     )
 
 
+# The durability reader also reads the run's temperature to pick a like-for-like
+# reference long run (#982); the production `activities` table has it, the
+# minimal shared DDL above does not. Column list mirrors _CREATE_ACTIVITIES plus
+# temp_celsius, so the positional inserts below stay valid via explicit columns.
+_CREATE_ACTIVITIES_WITH_TEMP = """
+    CREATE TABLE activities (
+        activity_id BIGINT PRIMARY KEY,
+        activity_date DATE NOT NULL,
+        activity_name VARCHAR,
+        total_distance_km DOUBLE,
+        total_time_seconds INTEGER,
+        avg_pace_seconds_per_km DOUBLE,
+        avg_heart_rate INTEGER,
+        temp_celsius DOUBLE
+    )
+"""
+
+_INSERT_ACTIVITY_CORE = (
+    "INSERT INTO activities (activity_id, activity_date, activity_name,"
+    " total_distance_km, total_time_seconds, avg_pace_seconds_per_km,"
+    " avg_heart_rate) VALUES (?, ?, ?, ?, ?, ?, ?)"
+)
+
 # (activity_id, date, name, distance_km, front_hr, back_hr, front_spd, back_spd,
 #  front_gct, back_gct)
 _DURABILITY_LONG_RUNS = [
@@ -1332,7 +1355,7 @@ def durability_db_path(tmp_path: Path) -> Path:
     db_path = tmp_path / "test_garmin_web_durability.duckdb"
     conn = duckdb.connect(str(db_path))
     try:
-        conn.execute(_CREATE_ACTIVITIES)
+        conn.execute(_CREATE_ACTIVITIES_WITH_TEMP)
         conn.execute(_CREATE_TIME_SERIES_METRICS)
 
         activity_rows = [
@@ -1345,10 +1368,7 @@ def durability_db_path(tmp_path: Path) -> Path:
         activity_rows.append(
             (9000005003, "2025-10-12", "Short Run", 8.0, 2400, 300.0, 140)
         )
-        conn.executemany(
-            "INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?, ?)",
-            activity_rows,
-        )
+        conn.executemany(_INSERT_ACTIVITY_CORE, activity_rows)
 
         for (
             aid,
@@ -1383,10 +1403,10 @@ def durability_empty_db_path(tmp_path: Path) -> Path:
     db_path = tmp_path / "test_garmin_web_durability_empty.duckdb"
     conn = duckdb.connect(str(db_path))
     try:
-        conn.execute(_CREATE_ACTIVITIES)
+        conn.execute(_CREATE_ACTIVITIES_WITH_TEMP)
         conn.execute(_CREATE_TIME_SERIES_METRICS)
         conn.executemany(
-            "INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?, ?)",
+            _INSERT_ACTIVITY_CORE,
             [
                 (9000005101, "2025-10-05", "Easy Run", 8.0, 2400, 300.0, 140),
                 (9000005102, "2025-10-12", "Easy Run", 6.0, 1800, 300.0, 138),
