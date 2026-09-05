@@ -145,7 +145,7 @@ def insert_athlete_profile(profile: dict[str, Any], db_path: str | None = None) 
         )
 
 
-def insert_weekly_review(review: dict[str, Any], db_path: str | None = None) -> bool:
+def insert_weekly_review(review: dict[str, Any], db_path: str | None = None) -> int:
     """Insert a weekly review record, appending a new version (no overwrite).
 
     Every save inserts a fresh row: re-saving the same
@@ -156,6 +156,9 @@ def insert_weekly_review(review: dict[str, Any], db_path: str | None = None) -> 
     Surrogate keys are drawn from ``seq_weekly_reviews_id`` via ``nextval`` and
     ``created_at`` is left to the table DEFAULT (``CURRENT_TIMESTAMP``).
 
+    The generated ``review_id`` is returned so the caller can link the weekly
+    prescriptions it saves next to this exact review version (Issue #980).
+
     Args:
         review: Review dict with keys ``user_id`` (defaults to ``"default"``),
             ``week_start_date``, ``week_end_date``, ``review_date``,
@@ -164,7 +167,7 @@ def insert_weekly_review(review: dict[str, Any], db_path: str | None = None) -> 
         db_path: Path to DuckDB database. If None, uses default.
 
     Returns:
-        ``True`` on success.
+        The new row's ``review_id``.
     """
     if db_path is None:
         from garmin_mcp.utils.paths import get_database_dir
@@ -177,6 +180,10 @@ def insert_weekly_review(review: dict[str, Any], db_path: str | None = None) -> 
     review_data_json = json.dumps(review.get("review_data"), ensure_ascii=False)
 
     with get_write_connection(db_path) as conn:
+        # Draw the surrogate key first so it can be returned to the caller.
+        id_row = conn.execute("SELECT nextval('seq_weekly_reviews_id')").fetchone()
+        review_id = int(id_row[0]) if id_row is not None else 0
+
         # Always INSERT a new version; same-week re-saves append rather than
         # overwrite. created_at is left to the table DEFAULT (CURRENT_TIMESTAMP).
         conn.execute(
@@ -185,10 +192,11 @@ def insert_weekly_review(review: dict[str, Any], db_path: str | None = None) -> 
                 review_id, user_id, week_start_date, week_end_date,
                 review_date, review_data, agent_name, agent_version
             ) VALUES (
-                nextval('seq_weekly_reviews_id'), ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?
             )
             """,
             [
+                review_id,
                 user_id,
                 review.get("week_start_date"),
                 review.get("week_end_date"),
@@ -200,9 +208,10 @@ def insert_weekly_review(review: dict[str, Any], db_path: str | None = None) -> 
         )
 
         logger.info(
-            "Saved weekly review user_id=%s week_start_date=%s",
+            "Saved weekly review user_id=%s week_start_date=%s (review_id=%d)",
             user_id,
             review.get("week_start_date"),
+            review_id,
         )
 
-    return True
+    return review_id

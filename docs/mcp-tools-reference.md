@@ -542,7 +542,7 @@ Get one athlete profile snapshot in full: version_id, user_id, created_at, and p
 
 CLI: `garmin-db athlete save-review`
 
-Save a weekly training review to DuckDB. Each save appends a new version for (user_id, week_start_date) instead of overwriting, so re-running the same week keeps prior versions as history; the latest version is treated as canonical. The free-form review_data payload is stored as JSON.
+Save a weekly training review to DuckDB. Each save appends a new version for (user_id, week_start_date) instead of overwriting, so re-running the same week keeps prior versions as history; the latest version is treated as canonical. The free-form review_data payload is stored as JSON. Returns {status, user_id, week_start_date, review_id}; pass review_id to save_weekly_prescriptions to link the week's prescribed sessions to this review version.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -563,7 +563,7 @@ Get a single weekly review (the latest version of its week). When week_start_dat
 
 CLI: `garmin-db athlete prefetch-weekly-review-context`
 
-Pre-fetch the shared weekly-review CONTEXT bundle in a single call: resolves the target week W (and prior week W-1) and returns both weeks' activities (with performance_trends + weather), the fitness summary (Garmin native hr_zones), multi-week load_trend/acwr, recovery (trend/status/baseline_deviation), strength sessions, the Garmin scheduled_workouts for W, the athlete_profile, goals with weeks_to_race, and the last past_review. Every collector is null-on-error (additive). Excludes catch_up_ingest (a write); run that separately before this.
+Pre-fetch the shared weekly-review CONTEXT bundle in a single call: resolves the target week W (and prior week W-1) and returns both weeks' activities (with performance_trends + weather), the fitness summary (Garmin native hr_zones), multi-week load_trend/acwr, recovery (trend/status/baseline_deviation), strength sessions, the training_block backbone (W's block + long-run ladder step + weeks to the block's end + quality budget), prescriptions_prev_week (W-1 rows + adherence counts), the Garmin scheduled_workouts for W with the garmin_conflicts they raise against the block, the athlete_profile, goals with weeks_to_race, and the last past_review. Every collector is null-on-error (additive). Excludes catch_up_ingest (a write); run that separately before this.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -670,7 +670,7 @@ Get persisted strength_training (補強) summaries with activity_date in [start_
 
 CLI: `garmin-db ingest catch-up`
 
-Differential catch-up ingest across the running, weight, strength, hiking and wellness domains in a single call. Resolves an independent window per domain (each table advances at its own pace): end_date or today as the shared end, and per-domain start = start_date (when given) or that domain's latest stored date, or end_date - 30 days when the domain is empty. running delegates to ingest_running_activities, weight to ingest_weight_range, strength to ingest_strength_sessions, hiking to ingest_hiking_sessions, wellness to ingest_wellness_range. Pass domains to ingest a subset (default: all five). A failure in one domain is isolated (its entry carries an error) while the others complete. Returns each requested domain's result plus a window map of {domain: {start, end}}. On a fully-successful run (no domain error), if the most-recently-completed week still lacks a trend narration, the result also carries trend_pending: {granularity, period_start, period_end} so callers can fire trend-narration for it (idempotent: omitted once that week is narrated).
+Differential catch-up ingest across the running, weight, strength, hiking and wellness domains in a single call. Resolves an independent window per domain (each table advances at its own pace): end_date or today as the shared end, and per-domain start = start_date (when given) or that domain's latest stored date, or end_date - 30 days when the domain is empty. running delegates to ingest_running_activities, weight to ingest_weight_range, strength to ingest_strength_sessions, hiking to ingest_hiking_sessions, wellness to ingest_wellness_range. Pass domains to ingest a subset (default: all five). A failure in one domain is isolated (its entry carries an error) while the others complete. Returns each requested domain's result plus a window map of {domain: {start, end}}. When the running domain succeeds, the prescribed sessions in its window are also reconciled against the ingested runs and the counts are returned as prescriptions_reconciled (null when that step failed). On a fully-successful run (no domain error), if the most-recently-completed week still lacks a trend narration, the result also carries trend_pending: {granularity, period_start, period_end} so callers can fire trend-narration for it (idempotent: omitted once that week is narrated).
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
