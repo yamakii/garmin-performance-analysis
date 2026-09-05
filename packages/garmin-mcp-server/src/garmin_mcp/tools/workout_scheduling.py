@@ -765,7 +765,10 @@ def _schedule_weekly_prescriptions(
                 }
             )
         except Exception as e:  # noqa: BLE001
-            logger.warning("Registering prescription %s failed: %s", prescription_id, e)
+            # The row id stays out of the log line: CodeQL treats anything named
+            # "prescription" as private data (py/clear-text-logging-sensitive-data).
+            # The id is returned to the caller in `failed` instead.
+            logger.warning("Registering one weekly prescription failed: %s", e)
             failed.append({"prescription_id": prescription_id, "error": str(e)})
 
     return {

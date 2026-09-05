@@ -402,9 +402,10 @@ def update_prescription_status(
             [prescription_id],
         ).fetchone()
         if exists is None:
-            logger.warning(
-                "Prescription %s not found; no status update", prescription_id
-            )
+            # No id in the log line: CodeQL flags anything named "prescription"
+            # as private data (py/clear-text-logging-sensitive-data). The caller
+            # gets False and already knows which id it asked for.
+            logger.warning("Prescription row not found; no status update")
             return False
 
         conn.execute(
