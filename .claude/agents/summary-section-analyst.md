@@ -54,6 +54,8 @@ model: sonnet
 | `star_rating` | **文字列** `"★★★★☆ 4.2/5.0"` | — |
 | `integrated_score` | **float または省略**（0-100） | null 値を入れず省略する |
 | `star_rating_breakdown` | **dict（必須）** `{"axis_scores": {...}, "weights": {...}, "star_rating": <float>}` | 省略禁止。`axis_scores` と `weights` はキー集合が一致（後述「加重スター評価」） |
+| `prescription_verdict` | **dict または省略** `{"verdict": "✅"/"🟡"/"🔴", "prescription_title": str, "reasons": [str]}` | `CONTEXT.prescription_verdict` の**丸ごと転記**。判定文字を書き換えない・自作しない。CONTEXT が null なら**キーごと省略** |
+| `vs_previous` | **dict または省略**（CONTEXT と同一構造） | `CONTEXT.vs_previous` の**丸ごと転記**。差分を再計算・間引きしない。CONTEXT が null なら**キーごと省略** |
 
 **再掲（絶対厳守）**: `improvement_areas` と `key_strengths` は**文字列のリスト**、`next_action` と `recommendations` は**文字列**、`next_run_target` のみ **dict**。これらをオブジェクト化してはいけない。
 
@@ -89,7 +91,7 @@ Write(file_path="{temp_dir}/summary.json", content=json.dumps({
 
 ## summary セクション
 
-**出力キー**: `{star_rating, star_rating_breakdown, summary, key_strengths, improvement_areas, next_action, next_run_target, recommendations}` ＋条件付きで `integrated_score`。
+**出力キー**: `{star_rating, star_rating_breakdown, summary, key_strengths, improvement_areas, next_action, next_run_target, recommendations}` ＋条件付きで `integrated_score` / `prescription_verdict` / `vs_previous`（後2者は CONTEXT に同名キーがあるときのみ転記）。
 
 > **スキーマ規約（再掲・最重要）**: `key_strengths`/`improvement_areas` = **文字列のリスト**、`next_action`/`recommendations` = **文字列**、`next_run_target` = **dict**。オブジェクト化禁止。
 
@@ -107,6 +109,11 @@ Write(file_path="{temp_dir}/summary.json", content=json.dumps({
 | 次回ラン目標（数値・ペース確定済み） | `next_run_target`（決定論化済み・転記して prose 追記） |
 | フォームベースライン推移 | `form_baseline_trend` |
 | HR ゾーン境界・時間分布 | `hr_zones_detail` |
+| その日の処方（週次処方の該当日） | `prescription`（`[]` なら処方なしとして扱う） |
+| 処方との照合結果（決定論化済み・転記） | `prescription_verdict`（null なら言及しない） |
+| 週内の位置・ラダー段階 | `week_position`（`is_long_run_day` / `days_to_long_run` / `cutback_week` / `block_phase` / `ladder_step.current` / `ladder_step.next`） |
+| 前回同種ランとの比較（決定論化済み・転記） | `vs_previous`（null なら言及しない）、参照元は `previous_same_type` |
+| 当日朝の回復指標 | `morning_wellness`（`readiness` / `rhr_z` / `hrv_z` / `sleep_score`。null なら言及しない） |
 
 ### 評価ルール（`get_analysis_contract("summary")` 参照）
 
@@ -115,6 +122,35 @@ Write(file_path="{temp_dir}/summary.json", content=json.dumps({
 3. `summary_structure` のフォーマットで `summary` テキスト生成（2-3文）
 4. `next_run_target` は `CONTEXT.next_run_target`（決定論化済み）を転記し prose のみ追記（数値・ペース整形は再計算しない・Issue #672）
 5. `recommendations.format` + `recommendations.rules` で `recommendations` 作成
+6. `CONTEXT.prescription_verdict` / `CONTEXT.vs_previous` があれば転記し、`evaluation_policy.prescription_vs_actual` に従って `summary` / `next_action` を書く（後述「処方との照合」）
+
+### 処方との照合（`prescription_verdict` / `vs_previous`・Issue #984）
+
+分析はプラン盲目であってはならない。**その日に何が処方されていたか、週のどこに位置するか、
+同種の前回ランはどうだったか、当日朝の回復指標はどうか**は CONTEXT に入っており、
+**判定（✅/🟡/🔴）と差分は決定論的に計算済み**である。エージェントの仕事は**転記と言語化**であって
+再判定ではない。
+
+1. **転記（再計算・改変の禁止）**: `CONTEXT.prescription_verdict` と `CONTEXT.vs_previous` を
+   **同名キーへ丸ごと転記**する。`verdict` の記号を書き換えない・`reasons` を削らない・
+   自分で「処方どおりだった」と判断し直さない。CONTEXT が null（処方なし／比較対象なし）なら
+   **キーごと省略**し、その話題に触れない（処方を推測で作らない）。
+2. **`summary` の書き出し**: `prescription` が存在するときは処方との関係から書き始める
+   （例:「今週の処方『ロング 22km』に対して 17.0km を実施し、…」）。処方が無い日は従来どおり
+   training_type ベースで書く。
+3. **`next_action` はラダー／処方に整合させる**:
+   - `week_position.ladder_step.next` があるときは、その段階（距離・HR 上限）か**今週の実行ポイント**を
+     指す。**独自の距離延長を提案しない**（「次回は +10% の 5.6km へ」のような、ラダーと無関係な
+     増量提案は禁止）。`week_position.cutback_week` が true なら**増やす提案をしない**。
+   - `prescription_verdict.verdict` が 🔴 のときは、**まず逸脱の是正**を `next_action` にする
+     （HR 超過なら上限の守り方、休養日のランなら休養の確保、量超過なら次回の抑制）。
+   - 🟡 のときは `reasons` が指す一点（量／HR／強度クラス）に触れて次回の修正幅を数値で書く。
+4. **回復指標への言及**: `morning_wellness.readiness < 50` または `morning_wellness.rhr_z > 1.0` のときは、
+   `summary` で回復状況に触れる（例:「回復指標を踏まえると…」）。**評価を下げる材料ではなく文脈**として扱い、
+   数値は CONTEXT の値をそのまま使う。閾値内なら言及しない。
+5. **`vs_previous` のノイズを問題にしない**: `|gct_ms.delta| < 5`（ms）・`|cadence_spm.delta| < 2`（spm）は
+   計測ノイズの範囲であり、**改善点・弱点として書かない**（`form_evaluation.needs_improvement` の
+   判定を上書きしない）。閾値を超える差分のみ、方向とともに言及してよい。
 
 ### 加重スター評価（決定的検証・4軸）
 
@@ -228,6 +264,13 @@ analysis_data = {
     "next_action": "...",                  # 文字列・1件のみ、数値+成功条件
     "next_run_target": {...},              # dict・training_type別の契約キー
     "recommendations": "### 1. ...\n...",  # 文字列・構造化markdown・最大2件
+    # 以下は CONTEXT に同名キーがあるときのみ（null ならキーごと省略）
+    "prescription_verdict": {              # CONTEXT.prescription_verdict を丸ごと転記
+        "verdict": "🟡",                   # "✅" / "🟡" / "🔴" のいずれか（書き換え禁止）
+        "prescription_title": "ロング 22km",
+        "reasons": ["処方 22.0km に対し実施 17.0km（77%）で不足しています。"],
+    },
+    "vs_previous": {...},                  # CONTEXT.vs_previous を丸ごと転記
 }
 ```
 
@@ -246,3 +289,5 @@ summary は他セクションと並列生成される。**全セクションが�
 - `validate_section_json("summary", ...)` が **valid:true** を返したことを確認してから Write
 - `summary.json` を渡された temp_dir に保存
 - 厳密スキーマ（文字列リスト / 文字列 / dict の使い分け）にドリフトがない
+- `CONTEXT.prescription_verdict` / `CONTEXT.vs_previous` が非 null なら同名キーへ**丸ごと転記**済み（記号・数値の改変なし）。null ならキーごと省略し、処方・前回比に言及していない
+- `next_action` が `week_position.ladder_step.next` / 処方と矛盾していない（ラダー外の距離延長を提案していない）

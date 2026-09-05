@@ -498,8 +498,7 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                     "next_action must follow week_position.ladder_step.next "
                     "when it exists (never propose extending distance on top "
                     "of the ladder)",
-                    "A 🔴 verdict is addressed by next_action before anything "
-                    "else",
+                    "A 🔴 verdict is addressed by next_action first",
                     "Mention morning_wellness when readiness < 50 or rhr_z > 1.0",
                     "vs_previous form deltas within noise (|gct| < 5ms, "
                     "|cadence| < 2spm) are not problems",
