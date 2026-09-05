@@ -185,3 +185,33 @@ def test_reader_insufficient_matches(reader_db_path: Path) -> None:
     assert isinstance(result["reason"], str) and result["reason"]
     assert result["series"] == []
     json.dumps(result, default=str)
+
+
+@pytest.mark.unit
+def test_weight_economy_reason_is_stable_code(reader_db_path):
+    """`reason` is an enumerated code, never the raw exception text (#996).
+
+    The dict is returned verbatim by GET /api/recovery/weight-economy-coupling,
+    so leaking `str(exc)` into it is a stack-trace exposure
+    (CodeQL py/stack-trace-exposure).
+    """
+    today = datetime.now()
+    # Two matched runs: enough to join, too few for the regression to fit.
+    for i in range(2):
+        d = (today - timedelta(weeks=2 - i)).strftime("%Y-%m-%d")
+        _insert_run(
+            reader_db_path,
+            activity_id=5542000 + i,
+            activity_date=d,
+            avg_speed_ms=4.1,
+            avg_heart_rate=140,
+        )
+        _insert_weight(reader_db_path, measurement_id=i + 1, date=d, weight_kg=72.0)
+
+    reader = GarminDBReader(db_path=str(reader_db_path))
+    result = reader.get_weight_economy_coupling(weeks=200)
+
+    assert result["model"] is None
+    assert result["reason"] == "insufficient_matched_runs"
+    # The ValueError message from fit_weight_economy_model must not ride along.
+    assert "Too few records" not in json.dumps(result, default=str)

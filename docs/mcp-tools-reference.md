@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **68 tools** (66 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **69 tools** (67 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -27,7 +27,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Durability](#durability) (3)
 - [strength](#strength) (2)
 - [ingest](#ingest) (1)
-- [Workout Scheduling](#workout-scheduling) (2)
+- [Workout Scheduling](#workout-scheduling) (3)
 - [hiking](#hiking) (2)
 - [Training Plan Ledger](#training-plan-ledger) (6)
 - [Server](#server) (2)
@@ -701,6 +701,19 @@ Build a Garmin running workout from a generic steps array, force-prefix its titl
 | `date` | string | **required** | Target date to schedule on (YYYY-MM-DD) |
 | `title` | string | **required** | Workout title. A '[MCP] ' prefix is force-added (not doubled) so the cleanup tool can distinguish self-authored workouts. |
 | `steps` | array[object] | **required** | Ordered workout steps. Each entry is either an executable step (step_type of warmup/run/recovery/cooldown, one of duration_minutes, duration_seconds or distance_m, and optional hr_low/hr_high for a custom HR-range target) or a repeat group (repeat_count + nested steps). |
+
+### `schedule_weekly_prescriptions`
+
+CLI: `garmin-db workout schedule-week`
+
+Register a whole week of saved prescriptions to the Garmin calendar in one batch. Steps are derived in code from each row (10min warmup, body on target_minutes or target_km with hr_high as a ceiling and hr_low only when prescribed, 5min cooldown; strides become 5x20s pickups); rest/strength/cross rows and rows already registered are skipped, and naming an id in prescription_ids re-registers it. dry_run=True (default) returns {dry_run, week_start_date, items ({prescription_id, date, title, steps, existing_same_day, already_registered}), skipped} so the plan can be confirmed first. dry_run=False registers each item (delete same-title [MCP] template -> upload -> schedule), records the workout/schedule ids with status=registered on the row, isolates per-item failures and returns {dry_run, week_start_date, registered, failed, skipped}.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `week_start_date` | string | **required** | Week start date (YYYY-MM-DD) of the prescriptions to register. |
+| `prescription_ids` | array[integer] | optional | Register only these prescription_ids (subset of the week). Naming an already-registered row re-registers it. Defaults to every registrable row of the week's latest batch. |
+| `dry_run` | boolean | optional | When True (the default), return the plan (titles, steps, same-day Garmin conflicts) without writing anything to Garmin. |
+| `user_id` | string | optional | Ledger owner identifier (default: 'default') |
 
 ### `cleanup_generated_workouts`
 

@@ -20,7 +20,10 @@ _CREATE_ACTIVITIES = """
         total_distance_km DOUBLE,
         total_time_seconds INTEGER,
         avg_pace_seconds_per_km DOUBLE,
-        avg_heart_rate INTEGER
+        avg_heart_rate INTEGER,
+        -- DurabilityReader._activity_meta selects this column; without it the
+        -- query raises BinderException instead of degrading to None.
+        temp_celsius DOUBLE
     )
 """
 
@@ -38,7 +41,9 @@ def fixture_db_path(tmp_path: Path) -> Path:
     try:
         conn.execute(_CREATE_ACTIVITIES)
         conn.executemany(
-            "INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO activities (activity_id, activity_date, activity_name, "
+            "total_distance_km, total_time_seconds, avg_pace_seconds_per_km, "
+            "avg_heart_rate) VALUES (?, ?, ?, ?, ?, ?, ?)",
             _FIXTURE_ROWS,
         )
     finally:
@@ -151,7 +156,9 @@ def trends_db_path(tmp_path: Path) -> Path:
     try:
         _create_trends_tables(conn)
         conn.executemany(
-            "INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO activities (activity_id, activity_date, activity_name, "
+            "total_distance_km, total_time_seconds, avg_pace_seconds_per_km, "
+            "avg_heart_rate) VALUES (?, ?, ?, ?, ?, ?, ?)",
             _TRENDS_ACTIVITY_ROWS,
         )
         conn.executemany(
@@ -1156,7 +1163,9 @@ def _build_race_readiness_db(db_path: Path, *, with_goal: bool) -> Path:
             (9000003003, recent_dates[2], "Long Run", 16.0, 6240, 390.0, 145),
         ]
         conn.executemany(
-            "INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO activities (activity_id, activity_date, activity_name, "
+            "total_distance_km, total_time_seconds, avg_pace_seconds_per_km, "
+            "avg_heart_rate) VALUES (?, ?, ?, ?, ?, ?, ?)",
             activity_rows,
         )
         # vo2_max drives VDOT (FitnessAssessor prefers precise_value).
@@ -1249,7 +1258,9 @@ def _build_training_load_db(db_path: Path, *, spike: bool) -> Path:
     try:
         conn.execute(_CREATE_ACTIVITIES)
         conn.executemany(
-            "INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO activities (activity_id, activity_date, activity_name, "
+            "total_distance_km, total_time_seconds, avg_pace_seconds_per_km, "
+            "avg_heart_rate) VALUES (?, ?, ?, ?, ?, ?, ?)",
             activity_rows,
         )
     finally:
@@ -1346,7 +1357,9 @@ def durability_db_path(tmp_path: Path) -> Path:
             (9000005003, "2025-10-12", "Short Run", 8.0, 2400, 300.0, 140)
         )
         conn.executemany(
-            "INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO activities (activity_id, activity_date, activity_name, "
+            "total_distance_km, total_time_seconds, avg_pace_seconds_per_km, "
+            "avg_heart_rate) VALUES (?, ?, ?, ?, ?, ?, ?)",
             activity_rows,
         )
 
@@ -1386,7 +1399,9 @@ def durability_empty_db_path(tmp_path: Path) -> Path:
         conn.execute(_CREATE_ACTIVITIES)
         conn.execute(_CREATE_TIME_SERIES_METRICS)
         conn.executemany(
-            "INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO activities (activity_id, activity_date, activity_name, "
+            "total_distance_km, total_time_seconds, avg_pace_seconds_per_km, "
+            "avg_heart_rate) VALUES (?, ?, ?, ?, ?, ?, ?)",
             [
                 (9000005101, "2025-10-05", "Easy Run", 8.0, 2400, 300.0, 140),
                 (9000005102, "2025-10-12", "Easy Run", 6.0, 1800, 300.0, 138),

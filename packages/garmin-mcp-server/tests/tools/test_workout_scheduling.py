@@ -1,13 +1,18 @@
-"""Unit tests for the custom-workout scheduling tools (issue #851).
+"""Unit tests for the custom-workout scheduling tools (issues #851, #981).
 
-The JSON assembly (``build_workout_json``) is pure and tested exhaustively. The
-live-write orchestration (delete -> recreate, past-only unschedule, dry-run) goes
-through a mocked Garmin client so CI never writes to Garmin.
+The JSON assembly (``build_workout_json``) and the prescription -> steps mapping
+(``build_steps_from_prescription``) are pure and tested exhaustively. The
+live-write orchestration (delete -> recreate, past-only unschedule, dry-run,
+weekly batch) goes through a mocked Garmin client so CI never writes to Garmin;
+the weekly batch reads/writes a throwaway DuckDB copy.
 """
 
 from __future__ import annotations
 
+import shutil
 from datetime import date
+from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,10 +20,13 @@ import pytest
 from garmin_mcp.tools.workout_scheduling import (
     CleanupGeneratedWorkoutsParams,
     ScheduleCustomWorkoutParams,
+    ScheduleWeeklyPrescriptionsParams,
     _cleanup_generated_workouts,
     _collect_mcp_assignments,
     _schedule_custom_workout,
+    _schedule_weekly_prescriptions,
     _target_fields,
+    build_steps_from_prescription,
     build_workout_json,
 )
 
@@ -463,3 +471,297 @@ def test_cleanup_reports_empty_failure_lists_on_success() -> None:
     assert result["deleted_workout_ids"] == [10]
     assert result["failed_unschedule"] == []
     assert result["failed_delete"] == []
+
+
+# ----------------------------------------------------------------------------
+# build_steps_from_prescription (pure, #981)
+# ----------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_build_steps_long_km_ceiling_only() -> None:
+    """A distance-prescribed long run becomes warmup / body / cooldown with a
+    ceiling-only HR target on the body step."""
+    steps = build_steps_from_prescription(
+        {"session_type": "long", "target_km": 22.0, "hr_high": 150}
+    )
+
+    assert len(steps) == 3
+    warmup, body, cooldown = steps
+    assert warmup == {"step_type": "warmup", "duration_minutes": 10}
+    assert cooldown == {"step_type": "cooldown", "duration_minutes": 5}
+    assert body["distance_m"] == 22000
+    assert body["hr_high"] == 150
+    assert "hr_low" not in body
+
+
+@pytest.mark.unit
+def test_build_steps_easy_minutes() -> None:
+    """A time-prescribed easy run ends its body step on duration, not distance."""
+    steps = build_steps_from_prescription(
+        {"session_type": "easy", "target_minutes": 45, "hr_high": 150}
+    )
+
+    body = steps[1]
+    assert body["duration_minutes"] == 45
+    assert "distance_m" not in body
+    assert body["hr_high"] == 150
+
+
+@pytest.mark.unit
+def test_build_steps_threshold_both_bounds() -> None:
+    """A quality session keeps its prescribed floor as well as its ceiling."""
+    steps = build_steps_from_prescription(
+        {
+            "session_type": "threshold",
+            "target_minutes": 20,
+            "hr_low": 162,
+            "hr_high": 169,
+        }
+    )
+
+    body = steps[1]
+    assert body["hr_low"] == 162
+    assert body["hr_high"] == 169
+
+
+@pytest.mark.unit
+def test_build_steps_strides_repeat_group() -> None:
+    """Strides need no target: they become a 5x(20s / 90s) repeat group."""
+    steps = build_steps_from_prescription({"session_type": "strides"})
+
+    group = steps[1]
+    assert group["repeat_count"] == 5
+    assert group["steps"] == [
+        {"step_type": "run", "duration_seconds": 20},
+        {"step_type": "recovery", "duration_seconds": 90},
+    ]
+
+
+@pytest.mark.unit
+def test_build_steps_rejects_rest() -> None:
+    """A rest day is prescribed but never registered as a run."""
+    with pytest.raises(ValueError, match="not registrable"):
+        build_steps_from_prescription({"session_type": "rest"})
+
+
+@pytest.mark.unit
+def test_build_steps_rejects_no_target() -> None:
+    """A run without any target cannot become a workout."""
+    with pytest.raises(ValueError, match="target_minutes or target_km"):
+        build_steps_from_prescription({"session_type": "easy"})
+
+
+# ----------------------------------------------------------------------------
+# schedule_weekly_prescriptions (mocked client + throwaway DuckDB, #981)
+# ----------------------------------------------------------------------------
+
+WEEK_START = "2026-09-07"
+_CALENDAR = "garmin_mcp.fitness.garmin_calendar.GarminCalendarReader"
+
+
+@pytest.fixture(scope="module")
+def _week_db_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Module-scoped DuckDB with the full schema pre-initialized."""
+    from garmin_mcp.database.db_writer import GarminDBWriter
+
+    db_path = tmp_path_factory.mktemp("week_schedule_template") / "template.duckdb"
+    GarminDBWriter(db_path=str(db_path))
+    return Path(db_path)
+
+
+@pytest.fixture
+def week_reader(_week_db_template: Path, tmp_path: Path) -> MagicMock:
+    """A stand-in GarminDBReader whose db_path points at a fresh schema copy."""
+    dest = tmp_path / "week_schedule.duckdb"
+    shutil.copy2(str(_week_db_template), str(dest))
+    mock = MagicMock()
+    mock.db_path = dest
+    return mock
+
+
+def _seed(reader: MagicMock, rows: list[dict[str, Any]]) -> list[int]:
+    """Save one batch of prescriptions and return their ids (reader order)."""
+    from garmin_mcp.database.inserters.plan import insert_weekly_prescriptions
+
+    saved = insert_weekly_prescriptions(
+        week_start_date=WEEK_START,
+        prescriptions=rows,
+        db_path=str(reader.db_path),
+    )
+    return list(saved["prescription_ids"])
+
+
+def _stored(reader: MagicMock) -> dict[int, dict[str, Any]]:
+    """Read the week's canonical rows back, keyed by prescription_id."""
+    from garmin_mcp.database.readers.plan import PlanReader
+
+    rows = PlanReader(db_path=str(reader.db_path)).get_weekly_prescriptions(WEEK_START)
+    return {row["prescription_id"]: row for row in rows}
+
+
+def _long_row() -> dict[str, Any]:
+    return {
+        "date": "2026-09-13",
+        "session_type": "long",
+        "title": "ロング 22km (Z2上限150)",
+        "target_km": 22.0,
+        "hr_high": 150,
+    }
+
+
+def _easy_row() -> dict[str, Any]:
+    return {
+        "date": "2026-09-09",
+        "session_type": "easy",
+        "title": "イージー 45分",
+        "target_minutes": 45,
+        "hr_high": 150,
+    }
+
+
+def _rest_row() -> dict[str, Any]:
+    return {"date": "2026-09-11", "session_type": "rest", "title": "休養"}
+
+
+def _garmin_client(schedule_id: int = 2001, workout_id: int = 1001) -> MagicMock:
+    client = MagicMock()
+    client.get_workouts.return_value = []
+    client.upload_workout.return_value = {"workoutId": workout_id}
+    client.schedule_workout.return_value = {"workoutScheduleId": schedule_id}
+    return client
+
+
+@pytest.mark.unit
+def test_schedule_week_dry_run_lists_items_and_conflicts(
+    week_reader: MagicMock,
+) -> None:
+    """The dry run plans every registrable row, skips rest and reports the
+    non-[MCP] Garmin items already sitting on those days."""
+    ids = _seed(week_reader, [_long_row(), _easy_row(), _rest_row()])
+    long_id, easy_id, rest_id = ids[0], ids[1], ids[2]
+
+    calendar = MagicMock()
+    calendar.return_value.get_scheduled_workouts.return_value = [
+        {"date": "2026-09-09", "title": "Tempo"},
+        {"date": "2026-09-13", "title": "[MCP] 先週のロング"},
+    ]
+
+    with patch(_CALENDAR, calendar):
+        result = _schedule_weekly_prescriptions(
+            week_reader, ScheduleWeeklyPrescriptionsParams(week_start_date=WEEK_START)
+        )
+
+    assert result["dry_run"] is True
+    assert result["week_start_date"] == WEEK_START
+    assert len(result["items"]) == 2
+
+    by_id = {item["prescription_id"]: item for item in result["items"]}
+    assert by_id[easy_id]["existing_same_day"] == ["Tempo"]
+    assert by_id[easy_id]["steps"][1]["duration_minutes"] == 45
+    # The same-title [MCP] template is replaced automatically, so it is not a
+    # conflict the user has to resolve.
+    assert by_id[long_id]["existing_same_day"] == []
+    assert by_id[long_id]["already_registered"] is False
+
+    assert [s["prescription_id"] for s in result["skipped"]] == [rest_id]
+    assert "not registrable" in result["skipped"][0]["reason"]
+
+
+@pytest.mark.unit
+def test_schedule_week_live_registers_and_updates_status(
+    week_reader: MagicMock,
+) -> None:
+    """A live batch registers every item and records the ids on its row."""
+    ids = _seed(week_reader, [_long_row(), _easy_row()])
+    client = _garmin_client()
+
+    with patch("garmin_mcp.ingest.api_client.get_garmin_client", return_value=client):
+        result = _schedule_weekly_prescriptions(
+            week_reader,
+            ScheduleWeeklyPrescriptionsParams(
+                week_start_date=WEEK_START, dry_run=False
+            ),
+        )
+
+    assert result["dry_run"] is False
+    assert len(result["registered"]) == 2
+    assert result["failed"] == []
+    assert {r["schedule_id"] for r in result["registered"]} == {2001}
+    assert all(r["title"].startswith("[MCP] ") for r in result["registered"])
+
+    stored = _stored(week_reader)
+    for prescription_id in ids:
+        row = stored[prescription_id]
+        assert row["status"] == "registered"
+        assert row["garmin_workout_id"] == 1001
+        assert row["garmin_schedule_id"] == 2001
+
+
+@pytest.mark.unit
+def test_schedule_week_isolates_failures(week_reader: MagicMock) -> None:
+    """One failing upload never aborts the batch or the rows already written."""
+    ids = _seed(week_reader, [_long_row(), _easy_row()])
+    client = _garmin_client()
+    # Reader order is by date: the easy run (09-09) is registered first.
+    easy_id, long_id = ids[1], ids[0]
+    client.upload_workout.side_effect = [
+        {"workoutId": 1001},
+        Exception("API Error 429 - Too Many Requests"),
+    ]
+
+    with patch("garmin_mcp.ingest.api_client.get_garmin_client", return_value=client):
+        result = _schedule_weekly_prescriptions(
+            week_reader,
+            ScheduleWeeklyPrescriptionsParams(
+                week_start_date=WEEK_START, dry_run=False
+            ),
+        )
+
+    assert [r["prescription_id"] for r in result["registered"]] == [easy_id]
+    assert [f["prescription_id"] for f in result["failed"]] == [long_id]
+    assert "429" in result["failed"][0]["error"]
+
+    stored = _stored(week_reader)
+    assert stored[easy_id]["status"] == "registered"
+    assert stored[long_id]["status"] == "prescribed"
+    assert stored[long_id]["garmin_schedule_id"] is None
+
+
+@pytest.mark.unit
+def test_schedule_week_skips_already_registered_unless_explicit(
+    week_reader: MagicMock,
+) -> None:
+    """An already-registered row is left alone unless its id is named."""
+    from garmin_mcp.database.inserters.plan import update_prescription_status
+
+    (long_id,) = _seed(week_reader, [_long_row()])
+    update_prescription_status(
+        prescription_id=long_id,
+        status="registered",
+        garmin_workout_id=111,
+        garmin_schedule_id=222,
+        db_path=str(week_reader.db_path),
+    )
+
+    calendar = MagicMock()
+    calendar.return_value.get_scheduled_workouts.return_value = []
+
+    with patch(_CALENDAR, calendar):
+        default = _schedule_weekly_prescriptions(
+            week_reader, ScheduleWeeklyPrescriptionsParams(week_start_date=WEEK_START)
+        )
+        explicit = _schedule_weekly_prescriptions(
+            week_reader,
+            ScheduleWeeklyPrescriptionsParams(
+                week_start_date=WEEK_START, prescription_ids=[long_id]
+            ),
+        )
+
+    assert default["items"] == []
+    assert [s["prescription_id"] for s in default["skipped"]] == [long_id]
+    assert "already registered" in default["skipped"][0]["reason"]
+
+    assert explicit["skipped"] == []
+    assert [item["prescription_id"] for item in explicit["items"]] == [long_id]
+    assert explicit["items"][0]["already_registered"] is True
