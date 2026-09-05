@@ -144,6 +144,104 @@ class TestGarminCalendarReader:
         assert result[0]["date"] == "2026-06-18"
         assert result[0]["title"] == "In Range"
 
+    def test_get_scheduled_workouts_dedupes_repeated_items_by_schedule_id(self, mocker):
+        """The calendar repeats each item in one payload; the copy is dropped."""
+        item = {
+            "id": 111,
+            "date": "2026-09-06",
+            "title": "Long Run",
+            "itemType": "workout",
+            "workoutUuid": "uuid-long",
+        }
+        calendar = {
+            "/calendar-service/year/2026/month/8": {
+                "calendarItems": [dict(item), dict(item)]
+            }
+        }
+        reader, _ = _make_reader_with_calendar(mocker, calendar)
+
+        result = reader.get_scheduled_workouts("2026-09-01", "2026-09-30")
+
+        assert len(result) == 1
+        assert result[0]["schedule_id"] == 111
+        assert result[0]["date"] == "2026-09-06"
+        assert result[0]["title"] == "Long Run"
+
+    def test_get_scheduled_workouts_keeps_distinct_schedule_ids_same_title(
+        self, mocker
+    ):
+        """Two real assignments carry distinct ids and are both kept."""
+        calendar = {
+            "/calendar-service/year/2026/month/8": {
+                "calendarItems": [
+                    {
+                        "id": 111,
+                        "date": "2026-09-06",
+                        "title": "Long Run",
+                        "itemType": "workout",
+                        "workoutUuid": "uuid-long",
+                    },
+                    {
+                        "id": 222,
+                        "date": "2026-09-06",
+                        "title": "Long Run",
+                        "itemType": "workout",
+                        "workoutUuid": "uuid-long",
+                    },
+                ]
+            }
+        }
+        reader, _ = _make_reader_with_calendar(mocker, calendar)
+
+        result = reader.get_scheduled_workouts("2026-09-01", "2026-09-30")
+
+        assert len(result) == 2
+        assert [r["schedule_id"] for r in result] == [111, 222]
+
+    def test_get_scheduled_workouts_dedupes_without_id_by_tuple(self, mocker):
+        """Without ``id``, identical (date, type, uuid, title) rows collapse."""
+        item = {
+            "date": "2026-09-06",
+            "title": "Long Run",
+            "itemType": "workout",
+            "workoutUuid": "uuid-long",
+        }
+        calendar = {
+            "/calendar-service/year/2026/month/8": {
+                "calendarItems": [dict(item), dict(item)]
+            }
+        }
+        reader, _ = _make_reader_with_calendar(mocker, calendar)
+
+        result = reader.get_scheduled_workouts("2026-09-01", "2026-09-30")
+
+        assert len(result) == 1
+        assert result[0]["schedule_id"] is None
+        assert result[0]["title"] == "Long Run"
+
+    def test_get_scheduled_workouts_result_has_schedule_id_key(self, mocker):
+        """Every row surfaces ``schedule_id`` (None when the payload lacks it)."""
+        calendar = {
+            "/calendar-service/year/2026/month/8": {
+                "calendarItems": [
+                    {
+                        "id": 555,
+                        "date": "2026-09-08",
+                        "title": "[MCP] Tempo",
+                        "itemType": "workout",
+                        "workoutUuid": "uuid-tempo",
+                    },
+                ]
+            }
+        }
+        reader, _ = _make_reader_with_calendar(mocker, calendar)
+
+        result = reader.get_scheduled_workouts("2026-09-01", "2026-09-30")
+
+        assert len(result) == 1
+        assert "schedule_id" in result[0]
+        assert result[0]["schedule_id"] == 555
+
 
 @pytest.mark.garmin_api
 def test_get_scheduled_workouts_live():

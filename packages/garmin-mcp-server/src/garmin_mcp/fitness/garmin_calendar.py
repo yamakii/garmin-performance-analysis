@@ -64,13 +64,20 @@ class GarminCalendarReader:
         keeps only workout-type items within the date range, and returns them
         sorted by date ascending.
 
+        The calendar service repeats the same item within a single month payload
+        (every entry of a real 2026-08/09 query came back exactly twice, #880), so
+        rows are de-duplicated in first-seen order by ``schedule_id`` when present,
+        falling back to (date, item_type, workout_uuid, title) otherwise. Two
+        genuinely distinct assignments carry different ids and are both kept.
+
         Args:
             start_date: Inclusive start date "YYYY-MM-DD"
             end_date: Inclusive end date "YYYY-MM-DD"
 
         Returns:
-            List of dicts: {date, title, item_type, training_plan_id,
-            training_plan_name, workout_uuid}. Missing keys are None.
+            List of dicts: {date, title, item_type, schedule_id,
+            training_plan_id, training_plan_name, workout_uuid}. Missing keys
+            are None.
         """
         start = date.fromisoformat(start_date)
         end = date.fromisoformat(end_date)
@@ -78,6 +85,7 @@ class GarminCalendarReader:
         client = self._get_garmin_client()
 
         results: list[dict[str, Any]] = []
+        seen: set[tuple[Any, ...]] = set()
         for year, month in self._enumerate_months(start, end):
             path = f"/calendar-service/year/{year}/month/{month}"
             payload = self._connectapi_get(client, path)
@@ -100,14 +108,27 @@ class GarminCalendarReader:
                 if not (start <= item_date <= end):
                     continue
 
+                schedule_id = item.get("id")
+                title = item.get("title")
+                workout_uuid = item.get("workoutUuid")
+                key: tuple[Any, ...] = (
+                    ("id", schedule_id)
+                    if schedule_id is not None
+                    else ("row", date_str, item_type, workout_uuid, title)
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+
                 results.append(
                     {
                         "date": date_str,
-                        "title": item.get("title"),
+                        "title": title,
                         "item_type": item_type,
+                        "schedule_id": schedule_id,
                         "training_plan_id": item.get("trainingPlanId"),
                         "training_plan_name": item.get("trainingPlanName"),
-                        "workout_uuid": item.get("workoutUuid"),
+                        "workout_uuid": workout_uuid,
                     }
                 )
 
