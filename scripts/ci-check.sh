@@ -143,14 +143,18 @@ fi
 # answered with SIGKILL(137) on whole sessions (daemon.log 09-05 22:27Z, 09-06
 # 03:31Z / 07:29Z / 07:47Z); each restarted session then relaunched ci-check, so
 # the kills cascaded. Two guards:
-#   1. a container-wide flock, so ci-check runs strictly one at a time — the
-#      "parallel L1/L2" of worktree-validation-protocol.md now queues here;
+#   1. a container-wide flock, so ci-check runs strictly one at a time — but only
+#      while the container is small (memory.max < CI_CHECK_LOCK_BELOW, or unknown).
+#      On a large cgroup two runs coexist comfortably and the owner wants parallel
+#      validation to actually be parallel (#1011), so there the lock is skipped and
+#      guard 2 is the only brake;
 #   2. before each heavy step, wait until the cgroup has enough headroom, and size
 #      the pytest worker pool from what is actually free.
 # Everything is overridable (tests, other hosts). Without cgroup v2 memory
 # accounting (memory.max=max, non-Linux, no /sys/fs/cgroup) the gate is a no-op.
 CI_CHECK_LOCK="${CI_CHECK_LOCK-/tmp/ci-check.lock}"   # empty → no lock
 CI_CHECK_LOCK_WAIT="${CI_CHECK_LOCK_WAIT:-1800}"      # seconds
+CI_CHECK_LOCK_BELOW="${CI_CHECK_LOCK_BELOW:-$((16 * 1024 * 1024 * 1024))}"  # bytes of memory.max
 CI_CHECK_CGROUP_DIR="${CI_CHECK_CGROUP_DIR:-/sys/fs/cgroup}"
 # `nproc` clamps to OMP_NUM_THREADS (exported to 1 above for the BLAS pools), so
 # unset it for the query; the affinity-aware count is what xdist would pick.
@@ -160,6 +164,33 @@ CI_CHECK_MEM_PYTEST_BASE="${CI_CHECK_MEM_PYTEST_BASE:-$((700 * 1024 * 1024))}" #
 CI_CHECK_MEM_PER_WORKER="${CI_CHECK_MEM_PER_WORKER:-$((500 * 1024 * 1024))}"   # per xdist worker
 CI_CHECK_MEM_WAIT="${CI_CHECK_MEM_WAIT:-600}"         # seconds
 CI_CHECK_MEM_POLL="${CI_CHECK_MEM_POLL:-10}"          # seconds
+
+# cgroup_memory_max — memory.max in bytes, or "unknown" (no cgroup v2 / "max").
+cgroup_memory_max() {
+  local max
+  if [ ! -r "$CI_CHECK_CGROUP_DIR/memory.max" ]; then
+    echo unknown
+    return 0
+  fi
+  max="$(cat "$CI_CHECK_CGROUP_DIR/memory.max")"
+  case "$max" in
+    ''|*[!0-9]*) echo unknown ;;
+    *) echo "$max" ;;
+  esac
+}
+
+# lock_enforced — "yes" when the container is too small for two ci-checks to
+# coexist (memory.max < CI_CHECK_LOCK_BELOW) or its size is unknown; "no" on a
+# large cgroup, where the headroom gate alone is protection enough.
+lock_enforced() {
+  local max
+  max="$(cgroup_memory_max)"
+  if [ "$max" = unknown ] || [ "$max" -lt "$CI_CHECK_LOCK_BELOW" ]; then
+    echo yes
+  else
+    echo no
+  fi
+}
 
 # cgroup_headroom_bytes — bytes the cgroup can still allocate before memory.max,
 # counting only what reclaim cannot give back (anon + kernel + shmem + swap).
@@ -234,13 +265,14 @@ if [ "$RESOURCES_ONLY" -eq 1 ]; then
   echo "cpus=$CI_CHECK_CPUS"
   echo "workers=$(pick_pytest_workers "$HEADROOM" "$CI_CHECK_CPUS")"
   echo "lock=${CI_CHECK_LOCK:-none}"
+  echo "lock_enforced=$(lock_enforced)"
   exit 0
 fi
 
 # The lock fd is inherited by every child, so a pytest worker that outlives a
 # killed session keeps the lock — deliberately: that orphan is still eating
 # memory, which is exactly when the next run must wait.
-if [ -n "$CI_CHECK_LOCK" ]; then
+if [ -n "$CI_CHECK_LOCK" ] && [ "$(lock_enforced)" = yes ]; then
   exec 9>"$CI_CHECK_LOCK"
   if ! flock -n 9; then
     echo "▶ another ci-check holds $CI_CHECK_LOCK — waiting (max ${CI_CHECK_LOCK_WAIT}s)"
