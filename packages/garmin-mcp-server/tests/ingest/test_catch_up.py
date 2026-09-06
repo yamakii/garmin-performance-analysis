@@ -9,6 +9,7 @@ empty) so the #460 ``get_latest_*_date`` readers return the seeded cursors.
 
 from __future__ import annotations
 
+import json
 from datetime import date
 from pathlib import Path
 from unittest.mock import patch
@@ -200,7 +201,10 @@ def test_catch_up_domain_error_isolated(temp_db_path: Path) -> None:
     ):
         result = catch_up_ingest(end_date="2026-06-20", db_path=str(temp_db_path))
 
-    assert result["running"] == {"error": "garmin boom"}
+    # Only the exception TYPE is recorded: this dict is printed to stdout and
+    # persisted into sync_runs.results by scheduled_sync (#1007).
+    assert result["running"] == {"error": "RuntimeError"}
+    assert "garmin boom" not in json.dumps(result, default=str)
     assert result["weight"] == {"ingested_days": 1, "with_data": 1}
     assert result["strength"] == {
         "discovered": 2,
@@ -209,6 +213,23 @@ def test_catch_up_domain_error_isolated(temp_db_path: Path) -> None:
     }
     # Window is still recorded for the failed domain.
     assert result["window"]["running"] == {"start": "2026-06-18", "end": "2026-06-20"}
+
+
+@pytest.mark.unit
+def test_catch_up_unknown_domain_message_preserved(temp_db_path: Path) -> None:
+    """Our own error strings stay verbatim -- only caught exceptions are typed.
+
+    Boundary guard for #1007: the redaction must not creep into messages this
+    module authors itself, which carry no third-party content and are the only
+    hint the caller gets about a typo'd domain.
+    """
+    result = catch_up_ingest(
+        end_date="2026-06-20",
+        domains=["bogus"],
+        db_path=str(temp_db_path),
+    )
+
+    assert result["bogus"] == {"error": "unknown domain: bogus"}
 
 
 # ---------------------------------------------------------------------------

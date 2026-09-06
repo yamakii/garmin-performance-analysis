@@ -202,7 +202,9 @@ def catch_up_ingest(
 
     Returns:
         Dict keyed by each requested domain (its ingest result, or
-        ``{"error": str}`` when that domain raised), plus a ``"window"`` key
+        ``{"error": "<ExceptionClassName>"}`` when that domain raised -- the
+        exception text stays in the service log, see #1007), plus a ``"window"``
+        key
         mapping each requested domain to its resolved ``{"start", "end"}``.
         When the ``running`` domain succeeded, ``prescriptions_reconciled``
         carries ``reconcile_prescriptions``' counts over the running window
@@ -232,8 +234,16 @@ def catch_up_ingest(
                 window_start, window_end, resolved_path
             )
         except Exception as exc:  # noqa: BLE001 - isolate per-domain failures
+            # Record the exception TYPE, never its text. This dict travels out as
+            # outcome["results"][domain] in scheduled_sync, which prints it to
+            # stdout (the systemd journal) and persists it into
+            # sync_runs.results — so a third-party message from the Garmin API or
+            # login path would be copied verbatim into a log and a database
+            # column. #1005 closed the same hole one level up and wrongly scoped
+            # this one out; the traceback stays in the service log via
+            # logger.exception above (#1007).
             logger.exception("catch_up_ingest: domain %s failed", domain)
-            results[domain] = {"error": str(exc)}
+            results[domain] = {"error": type(exc).__name__}
 
     results["window"] = window
 
