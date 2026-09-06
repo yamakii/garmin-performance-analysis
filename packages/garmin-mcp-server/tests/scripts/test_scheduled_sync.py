@@ -80,6 +80,48 @@ def test_run_sync_partial_on_domain_error(initialized_db_path: Path) -> None:
     assert "boom" in row[1]
 
 
+_SECRETISH_MESSAGE = "login failed for someone@example.com"
+
+
+@pytest.mark.unit
+def test_run_sync_error_records_exception_type_only(initialized_db_path: Path) -> None:
+    """A raised exception -> status 'error' and only the class name is kept (#1005).
+
+    The raw message is a third-party string with no contract; it must not reach
+    the returned dict, which is printed to stdout and persisted.
+    """
+    with patch.object(
+        scheduled_sync,
+        "catch_up_ingest",
+        side_effect=RuntimeError(_SECRETISH_MESSAGE),
+    ):
+        outcome = scheduled_sync.run_sync(db_path=str(initialized_db_path))
+
+    assert outcome["status"] == "error"
+    assert outcome["results"] == {"error": "RuntimeError"}
+
+
+@pytest.mark.unit
+def test_run_sync_error_message_not_persisted(initialized_db_path: Path) -> None:
+    """The exception text must not land in sync_runs.results either (#1005)."""
+    with patch.object(
+        scheduled_sync,
+        "catch_up_ingest",
+        side_effect=RuntimeError(_SECRETISH_MESSAGE),
+    ):
+        scheduled_sync.run_sync(db_path=str(initialized_db_path))
+
+    conn = duckdb.connect(str(initialized_db_path), read_only=True)
+    row = conn.execute("SELECT status, results FROM sync_runs").fetchone()
+    conn.close()
+
+    assert row is not None
+    assert row[0] == "error"
+    assert "someone@example.com" not in row[1]
+    assert "login failed" not in row[1]
+    assert "RuntimeError" in row[1]
+
+
 @pytest.mark.unit
 def test_run_sync_default_domains_all(initialized_db_path: Path) -> None:
     """domains=None -> catch_up_ingest receives all five default domains."""

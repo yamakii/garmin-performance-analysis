@@ -121,8 +121,17 @@ def run_sync(
         results = catch_up_ingest(domains=resolved_domains, db_path=resolved_path)
         status = _classify_status(results)
     except Exception as exc:  # noqa: BLE001 - record the failure, do not crash cron
+        # Record the exception TYPE, never its text. This dict is printed to
+        # stdout (the systemd journal, for the 09:00 JST timer) and persisted
+        # into sync_runs.results, so a third-party message would be copied
+        # verbatim into a log and a database column. Nothing constrains what
+        # that message contains — a failure in the Garmin login path could carry
+        # the account identifier into both. The class name is a controlled value
+        # and is what actually drives triage; the full traceback is already in
+        # the service log via logger.exception (CodeQL
+        # py/clear-text-logging-sensitive-data, #1005).
         logger.exception("scheduled sync failed")
-        results = {"error": str(exc)}
+        results = {"error": type(exc).__name__}
         status = "error"
 
     finished_at = datetime.now()
