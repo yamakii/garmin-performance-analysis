@@ -1,0 +1,72 @@
+name: CodeQL
+
+# Advanced setup, replacing GitHub's default setup (#1013).
+#
+# The only reason this file exists is the config file: default setup cannot read
+# one on a personally-owned repo (it needs the `github-codeql-config-file`
+# repository property, which is an organization-settings feature), and we need
+# `query-filters` to drop a query that fires on this repo's health-domain
+# vocabulary rather than on real defects. See .github/codeql/codeql-config.yml
+# for the evidence behind that exclusion.
+#
+# Language set and build modes mirror exactly what default setup was running, so
+# coverage is unchanged apart from the one excluded query.
+#
+# NOTE: GitHub rejects advanced-setup results while default setup is enabled, so
+# default setup must be switched off in repository settings before this lands.
+#
+# CodeQL is NOT the required check — `ci-guard` is (see ci.yml) — so a CodeQL
+# failure does not block merges by itself.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Monday 09:15 JST. Off the hour and off :00/:30 to avoid the scheduling
+    # stampede; security-audit already occupies Monday 09:00 JST.
+    - cron: "15 0 * * 1"
+  workflow_dispatch:
+
+# Least-privilege by default; the analyze job adds what it needs.
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write # upload SARIF
+      actions: read # read workflow run metadata for the actions language
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # `build-mode: none` for all three — matches the default setup this
+          # replaces (observed in the alert instances' `environment` field).
+          - language: actions
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+          - language: python
+            build-mode: none
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"

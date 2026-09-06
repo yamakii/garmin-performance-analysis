@@ -12,6 +12,7 @@ in `.claude/rules/dev/maintenance-policy.md`; the interactive pass is the
 | Dependabot | `.github/dependabot.yml` | weekly (uv, npm) / monthly (actions, docker), Monday 09:00 JST | Opens update PRs. Minor + patch updates are grouped into one PR per ecosystem; each major gets its own PR. Security advisories trigger PRs outside the schedule. |
 | Dependabot auto-merge | `.github/workflows/dependabot-auto-merge.yml` | on each Dependabot PR | Enables GitHub auto-merge for minor/patch PRs, so they merge once the required `ci-guard` check is green. Major PRs only get a comment asking for review. |
 | Security audit | `.github/workflows/security-audit.yml` | weekly (Monday 09:00 JST), on lockfile PRs, and on demand (*Run workflow*) | `pip-audit` over the exported `uv.lock` and `npm audit --audit-level=high` over the frontend lockfile. A scheduled failure opens (or comments on) an issue labelled `security-audit`. |
+| CodeQL | `.github/workflows/codeql.yml` + `.github/codeql/codeql-config.yml` | every PR / push to main, weekly (Monday 09:15 JST), and on demand | Static analysis for python / javascript-typescript / actions. **Advanced setup**, not default setup — see below. Not the required check, so a CodeQL failure does not block merges on its own. |
 | CI | `.github/workflows/ci.yml` | every PR / push to main | Lint, type-check, tests, build. `uv.lock` is in the path filter, so a lockfile-only PR still runs `lint-and-test`. A `docker/**` change additionally runs `docker-build` (builds the sandbox image and smokes uv / Python / Node / Claude Code inside it), so Dependabot base-image bumps are actually exercised. Runs with a read-only `GITHUB_TOKEN`. |
 
 > `astral-sh/setup-uv` publishes no major/minor tags since v8, so it must be
@@ -29,6 +30,34 @@ These cannot be committed; check them once in **Settings**:
    raises security PRs immediately instead of waiting for the weekly schedule.
 3. Branch protection on `main` must keep `ci-guard` as the required check
    (auto-merge waits for required checks only).
+4. **Code security → Code scanning → CodeQL analysis must stay on _Advanced_.**
+   Switching it back to default setup silently overrides
+   `.github/workflows/codeql.yml`, and GitHub then rejects that workflow's
+   results ("analyses from advanced configurations cannot be processed when the
+   default setup is enabled"). See below for why advanced setup is required.
+
+## Why CodeQL uses advanced setup
+
+Default setup cannot read a CodeQL config file on a personally-owned repository:
+it takes one only through the `github-codeql-config-file` repository property,
+and custom properties are defined in *organization* settings. We need a config
+file for exactly one thing — a `query-filters` exclusion.
+
+`py/clear-text-logging-sensitive-data` classifies data by **identifier name**,
+not by value. In a health-and-fitness codebase that means it fires on ordinary
+CLI output indefinitely: `backfill_body_mass` is flagged twice while printing
+three integers (`total` / `populated` / `still_null`), and the rest came from
+`weight`, `wellness`, `prefetch_*` and `prescription_id`. Every alert it raised
+was judged non-actionable — four dismissed as false positive, two as won't fix —
+and it produced no true positive. Its threat model (a multi-tenant server whose
+logs a third party reads) does not hold for a single-user local tool where the
+data subject, the operator and the log reader are the same person.
+
+The query is therefore excluded repo-wide in
+`.github/codeql/codeql-config.yml`. **Every other query still runs** —
+`py/path-injection` and `py/stack-trace-exposure` found four real defects
+(fixed in #997). To re-assess, delete the `query-filters` block; the moment to
+do that is if `garmin-web` ever becomes multi-user or hosted.
 
 ## Weekly routine (mostly hands-off)
 
