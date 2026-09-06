@@ -125,9 +125,14 @@ done
 # peaks ~2 GB on top (mypy +0.6 GB, pytest +1.4 GB). With `--memory 4g`, three
 # sessions (fleet + spare + /rc) plus one ci-check reached memory.max and Docker
 # SIGKILLed whole sessions (daemon.log `SIGKILL (137)`, 2026-09-05/06); pids
-# peaked at 421 of 512 in the same windows. 8g / 1024 leave room for ~4 sessions
-# and one ci-check; ci-check.sh additionally serializes itself and waits for
-# cgroup headroom. A new value only applies to the next container launch.
+# peaked at 421 of 512 in the same windows.
+#
+# Sized for the host (#1011): Ryzen 7 5700G, 8C/16T, 63 GB RAM, otherwise idle.
+# 12 CPUs / 32g / 4096 pids give the owner room to run several sessions, workflows
+# and ci-checks in parallel while leaving 4 threads and half the RAM to the host.
+# `--memory` is a cap, not a reservation. ci-check.sh waits for cgroup headroom
+# and, below 16 GiB, also serializes itself (above that it runs in parallel).
+# A new value only applies to the next container launch.
 echo "▶ Launching $CONTAINER ..."
 exec docker run --rm -it \
     --name "$CONTAINER" \
@@ -141,7 +146,7 @@ exec docker run --rm -it \
     --cap-add SETUID \
     --cap-add SETGID \
     --security-opt no-new-privileges \
-    --pids-limit 1024 \
-    --memory 8g \
-    --cpus 2 \
+    --pids-limit 4096 \
+    --memory 32g \
+    --cpus 12 \
     "$IMAGE" "$@"

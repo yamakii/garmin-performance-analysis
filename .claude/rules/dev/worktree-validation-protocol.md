@@ -18,10 +18,12 @@ subprocess はプロセス分離されており**並列実行が安全**なた�
 > **メモリ上の注意（#1009）**: 「並列が安全」は正しさの話であり、リソースの話ではない。sandbox は
 > `docker/run.sh` の `--memory` で上限が固定されたコンテナで、`scripts/ci-check.sh` 1 本が約 2 GB
 > （mypy +0.6 GB / pytest +1.4 GB）、live セッション 1 つが約 0.6 GB を使う。上限に達すると Docker が
-> セッションごと `SIGKILL (137)` する（2026-09-05/06 に多発）。そのため ci-check.sh は **コンテナ内で
-> flock により 1 本ずつ直列化され、重い工程の前に cgroup のメモリ余裕を待つ**。複数の Validation
-> Agent を並列起動しても L2 の ci-check 部分は順番待ちになる — これは仕様であり、待ちを外さないこと。
-> `analyze-activity` workflow 等の重い処理と同時に ci-check を回すのも避ける。
+> セッションごと `SIGKILL (137)` する（2026-09-05/06 に多発）。そのため ci-check.sh は **重い工程の前に
+> cgroup のメモリ余裕を待ち**、さらに **コンテナが 16 GiB 未満（または不明）のときは flock で 1 本ずつ
+> 直列化する**。現行の `docker/run.sh`（`--memory 32g --cpus 12`, #1011）ではロックは掛からず、
+> 複数の Validation Agent の ci-check は実際に並列で走る（メモリゲートだけが効く）。小さいコンテナで
+> 順番待ちになるのは仕様であり、待ちを外さないこと。`bash scripts/ci-check.sh --resources-only` で
+> 現在の判断（headroom / workers / lock_enforced）を確認できる。
 
 > **正本マップ**: 本書は**検証メカニクス（L1/L2/L3 の実行手順）の正本**。**Validation Level 判定表**は `dev-reference.md §3`、**auto-merge ゲート / Ship 手順**は `implementation-workflow.md` Phase 3 を正本とする。各書の再掲は参照用で、矛盾時は各正本を優先する。
 

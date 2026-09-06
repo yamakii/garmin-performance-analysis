@@ -13,6 +13,7 @@
 #   cpus=<n>
 #   workers=<n>
 #   lock=<path|none>
+#   lock_enforced=<yes|no>      (yes: memory.max < CI_CHECK_LOCK_BELOW or unknown)
 #
 # Usage: bash scripts/tests/test-ci-check-resources.sh   (run from repo root)
 # Exit 0 if all cases pass; prints failing expectations and exits 1 otherwise.
@@ -123,6 +124,57 @@ test_lock_held_times_out_with_exit_1() {
   fi
 }
 
+test_lock_enforced_on_small_cgroup() {
+  echo "test_lock_enforced_on_small_cgroup"
+  local cg lock out rc
+  cg="$(mktemp -d)/cg"
+  make_cgroup "$cg" $((4 * GiB)) $((1 * GiB))
+  lock="$(mktemp)"
+  exec 8>"$lock"
+  flock 8 || fail "test setup: could not take the lock"
+  out="$(CI_CHECK_LOCK="$lock" CI_CHECK_LOCK_WAIT=1 CI_CHECK_CGROUP_DIR="$cg" \
+    bash "$CI_CHECK" 8>&- 2>&1)"
+  rc=$?
+  exec 8>&-
+  expect "4 GiB cgroup + held lock → exit 1" "$rc" 1
+  echo "$out" | grep -q "lock" || fail "held lock must be reported (got: $out)"
+}
+
+test_lock_skipped_on_large_cgroup() {
+  echo "test_lock_skipped_on_large_cgroup"
+  local cg lock shims out rc
+  cg="$(mktemp -d)/cg"
+  make_cgroup "$cg" $((32 * GiB)) $((1 * GiB))
+  lock="$(mktemp)"
+  shims="$(setup_shims)"
+  exec 8>"$lock"
+  flock 8 || fail "test setup: could not take the lock"
+  out="$(CI_CHECK_LOCK="$lock" CI_CHECK_LOCK_WAIT=1 CI_CHECK_CGROUP_DIR="$cg" CI_CHECK_CPUS=2 \
+    PATH="$shims:$PATH" bash "$CI_CHECK" 8>&- 2>&1)"
+  rc=$?
+  exec 8>&-
+  expect "32 GiB cgroup + held lock → runs anyway, exit 0" "$rc" 0
+  echo "$out" | grep -q "pytest -m unit or integration --tb=short -n 2 " \
+    || fail "pytest step must run with all cpus on a large cgroup (got: $(echo "$out" | grep 'pytest -m' || true))"
+  if echo "$out" | grep -q "waiting"; then
+    fail "a large cgroup must not queue on the lock or the memory gate"
+  fi
+}
+
+test_lock_enforced_when_cgroup_unknown() {
+  echo "test_lock_enforced_when_cgroup_unknown"
+  expect "absent cgroup → lock enforced" "$(resources /nonexistent/cgroup lock_enforced)" yes
+}
+
+test_resources_reports_lock_enforced() {
+  echo "test_resources_reports_lock_enforced"
+  local small large
+  small="$(mktemp -d)/cg"; make_cgroup "$small" $((4 * GiB)) $((1 * GiB))
+  large="$(mktemp -d)/cg"; make_cgroup "$large" $((32 * GiB)) $((1 * GiB))
+  expect "4 GiB → enforced" "$(resources "$small" lock_enforced)" yes
+  expect "32 GiB → not enforced" "$(resources "$large" lock_enforced)" no
+}
+
 test_lock_free_runs_and_releases() {
   echo "test_lock_free_runs_and_releases"
   local lock shims out rc
@@ -179,6 +231,10 @@ test_resources_over_limit_reports_zero_headroom
 test_resources_unlimited_cgroup_reports_unknown
 test_resources_missing_cgroup_reports_unknown
 test_lock_held_times_out_with_exit_1
+test_lock_enforced_on_small_cgroup
+test_lock_skipped_on_large_cgroup
+test_lock_enforced_when_cgroup_unknown
+test_resources_reports_lock_enforced
 test_lock_free_runs_and_releases
 test_tight_headroom_runs_pytest_with_one_worker
 test_ample_headroom_runs_pytest_with_all_cpus
