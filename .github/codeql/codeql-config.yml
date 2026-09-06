@@ -1,0 +1,38 @@
+# CodeQL configuration (advanced setup) — see .github/workflows/codeql.yml.
+#
+# Only reachable from advanced setup: default setup reads a config file only via
+# the `github-codeql-config-file` repository property, and custom properties are
+# an organization-settings feature unavailable to personally-owned repos (#1013).
+name: "garmin-performance-analysis"
+
+query-filters:
+  # py/clear-text-logging-sensitive-data classifies data by IDENTIFIER NAME, not
+  # by value, and this is a health-and-fitness codebase — so it fires on ordinary
+  # CLI output more or less indefinitely. Every alert it produced was judged
+  # non-actionable (#1001):
+  #
+  #   * backfill_body_mass  — flagged TWICE while printing three integers
+  #                           (total / populated / still_null). No personal data
+  #                           is in that output at all; the name is the trigger.
+  #   * merge_section_analyses — prints section names and error strings
+  #   * scheduled_sync      — prints ingest counts and window dates
+  #   * prefetch_*          — genuinely emits personal health data, by design:
+  #                           that stdout IS the contract with the analysis
+  #                           agents, so "fixing" it means deleting the feature
+  #   * prescription_id     — an opaque row id, flagged because "prescription"
+  #                           reads as medical
+  #
+  # The rule's threat model is a multi-tenant server whose logs a third party
+  # reads. Here the data subject, the operator and the log reader are the same
+  # person, and anyone who can read the log already has the DuckDB file. Keeping
+  # the query buys a recurring red check and a dismissal ritual on every new CLI
+  # script, and has produced no true positive.
+  #
+  # This is deliberately repo-wide rather than scoped to prescription paths: the
+  # alerts came from body_mass, weight and wellness as much as from prescription,
+  # so a path filter would leave most of the surface open.
+  #
+  # To re-assess (e.g. if garmin-web ever becomes multi-user or hosted, which is
+  # the scenario where this rule starts being right), delete this block.
+  - exclude:
+      id: py/clear-text-logging-sensitive-data
