@@ -128,6 +128,20 @@ if [ -e scripts/tests/test-wait-for-ci.sh ]; then
   fi
 fi
 
+# Behavioral self-test for ci-check.sh change detection: throwaway git repos
+# assert that an uncommitted or untracked web change is seen (it was not — the
+# run reported success with the web tree untested) and that a stale local `main`
+# does not resurrect an upstream web commit. `--detect-only` exits before any
+# check runs, so no venv or toolchain is needed.
+if [ -e scripts/tests/test-ci-check-detection.sh ]; then
+  if bash scripts/tests/test-ci-check-detection.sh; then
+    echo "ok (script test): ci-check-detection"
+  else
+    echo "FAIL (script test): ci-check-detection" >&2
+    status=1
+  fi
+fi
+
 if [ "$status" -ne 0 ]; then
   echo "check-claude-scripts: FAILED" >&2
 else
