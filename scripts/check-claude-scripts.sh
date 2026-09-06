@@ -142,6 +142,19 @@ if [ -e scripts/tests/test-ci-check-detection.sh ]; then
   fi
 fi
 
+# Behavioral self-test for the ci-check.sh container-resource guards (#1009):
+# a fake cgroup dir drives the pytest worker count (`--resources-only`), and a
+# private lock file asserts that a second ci-check waits / gives up instead of
+# running alongside the first. Shims stand in for uv/git, so nothing heavy runs.
+if [ -e scripts/tests/test-ci-check-resources.sh ]; then
+  if bash scripts/tests/test-ci-check-resources.sh; then
+    echo "ok (script test): ci-check-resources"
+  else
+    echo "FAIL (script test): ci-check-resources" >&2
+    status=1
+  fi
+fi
+
 if [ "$status" -ne 0 ]; then
   echo "check-claude-scripts: FAILED" >&2
 else

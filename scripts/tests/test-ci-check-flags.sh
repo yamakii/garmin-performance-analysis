@@ -44,10 +44,13 @@ EOF
 
 # Run ci-check.sh with the shims taking precedence on PATH. Echoes combined
 # stdout+stderr. Passes through any args ($@ after the first).
+# A private lock file and a non-existent cgroup dir keep the run hermetic: it
+# must never queue behind a real ci-check or wait for the host's memory (#1009).
 run_ci_check() {
   local shims="$1"
   shift
-  PATH="$shims:$PATH" bash "$CI_CHECK" "$@" 2>&1
+  CI_CHECK_LOCK="$(mktemp)" CI_CHECK_CGROUP_DIR=/nonexistent \
+    PATH="$shims:$PATH" bash "$CI_CHECK" "$@" 2>&1
 }
 
 # ---------------------------------------------------------------------------
@@ -74,7 +77,7 @@ test_unit_only_skips_integration() {
 test_unknown_flag_rejected() {
   echo "test_unknown_flag_rejected"
   local shims; shims="$(setup_shims)"
-  PATH="$shims:$PATH" bash "$CI_CHECK" --bogus >/dev/null 2>&1
+  CI_CHECK_LOCK="" PATH="$shims:$PATH" bash "$CI_CHECK" --bogus >/dev/null 2>&1
   [ "$?" -eq 2 ] || fail "unknown flag must exit 2"
 }
 

@@ -89,12 +89,16 @@ markers = [
     "slow: Slow tests (deselected by default)",
     "garmin_api: Tests that require Garmin API authentication (rate limited)",
 ]
+# `-n auto` (not a fixed 4): xdist sizes the pool from the CPUs actually granted
+# (sched_getaffinity → 2 in the docker sandbox), and each worker costs ~500 MB.
+# A hard-coded 4 spawned 5 processes in a 2-CPU / 4 GiB container (#1009).
+# CI passes its own explicit `-n 4` on the command line.
 addopts = """
     -m 'not garmin_api and not slow and not performance'
     --strict-markers
     --tb=short
     --disable-warnings
-    -n 4
+    -n auto
     --maxfail=5
     --durations=10
 """
