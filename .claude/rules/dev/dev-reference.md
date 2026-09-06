@@ -89,7 +89,7 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 - **L1**: worktree コードを subprocess で import → 下層関数を `verification_activity_id` で呼び出し、非null・型一致・値範囲 (pace 3:00-9:00, HR 80-200)・`json.dumps` 可能を検証（`reload_server` は使わない）
 - **L2**: L1 + worktree 内で `uv run --directory <worktree> bash scripts/ci-check.sh`（CI 同一: unit+integration+型+lint+doc-guard、web 変更時は web チェック）exit 0。ci-check.sh 一発で CI 同等（integration も既定で実行）。tool/table 追加時の doc-sync/unit 漏れを ci-guard 前に検出
 - **L3**: agent 定義変更は **pre-merge に同一セッションで挙動検証できない**（agent 定義は本文ごとセッション開始時にキャッシュされ mid-session の `cp` 差し替えは無効。#742 で実証）。ゆえに pre-merge は **メインセッションによる diff レビュー（必須・人間への往復は不要, #888）** → `ci-guard` green で **auto-merge** → **新規セッションで `/analyze-activity` 実行**して構造/内容チェック（**必須の追跡義務**。未了の間は同じ agent 定義へ追加変更を重ねない）→ 不合格なら revert（merge-first-verify-later）。旧「一時適用→同一セッション実行」手順は偽ゲートとして棄却。正本手順は `worktree-validation-protocol.md`
-- L1/L2 は subprocess 分離のため**並列起動が安全**（複数 worktree の L1/L2 を同時検証可）。直列必須は L3 のみ。経緯（旧 FIFO 直列前提）は正本を参照
+- L1/L2 は subprocess 分離のため**並列起動が安全**（複数 worktree の L1/L2 を同時検証可）。直列必須は L3 のみ。経緯（旧 FIFO 直列前提）は正本を参照。ただし **`ci-check.sh` はコンテナ内で flock により 1 本ずつ直列化され、cgroup のメモリ余裕を待ってから mypy/pytest を回す**（#1009: 4 GiB sandbox で同時実行がセッションの `SIGKILL (137)` を招いた）。並列起動しても L2 は順番待ちになる
 
 ### L3 検証基準
 

@@ -120,6 +120,14 @@ done
 [ -n "${GITHUB_TOKEN:-}" ] || echo "WARN: GITHUB_TOKEN unset — github MCP won't authenticate." >&2
 
 # ---- run ----
+# Resource caps (#1009). Every live Claude session inside costs ~600 MB (the
+# claude process + its own garmin-mcp-server shim/worker), and scripts/ci-check.sh
+# peaks ~2 GB on top (mypy +0.6 GB, pytest +1.4 GB). With `--memory 4g`, three
+# sessions (fleet + spare + /rc) plus one ci-check reached memory.max and Docker
+# SIGKILLed whole sessions (daemon.log `SIGKILL (137)`, 2026-09-05/06); pids
+# peaked at 421 of 512 in the same windows. 8g / 1024 leave room for ~4 sessions
+# and one ci-check; ci-check.sh additionally serializes itself and waits for
+# cgroup headroom. A new value only applies to the next container launch.
 echo "▶ Launching $CONTAINER ..."
 exec docker run --rm -it \
     --name "$CONTAINER" \
@@ -133,7 +141,7 @@ exec docker run --rm -it \
     --cap-add SETUID \
     --cap-add SETGID \
     --security-opt no-new-privileges \
-    --pids-limit 512 \
-    --memory 4g \
+    --pids-limit 1024 \
+    --memory 8g \
     --cpus 2 \
     "$IMAGE" "$@"

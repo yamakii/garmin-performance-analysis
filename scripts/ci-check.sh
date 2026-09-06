@@ -7,7 +7,11 @@
 #   scripts/ci-check.sh               → runs unit + integration (CI-identical)
 #   scripts/ci-check.sh --unit-only   → skips integration (faster, for iteration)
 #   scripts/ci-check.sh --detect-only → print the change-detection decision, exit 0
-# exit 0 (all pass) / exit 1 (something failed) / exit 2 (bad usage)
+#   scripts/ci-check.sh --resources-only → print the memory/worker/lock decision, exit 0
+# exit 0 (all pass) / exit 1 (something failed, or lock wait timed out) / exit 2 (bad usage)
+#
+# Only ONE ci-check runs per container at a time (flock on CI_CHECK_LOCK), and the
+# heavy steps wait for cgroup memory headroom — see "container resources" below.
 #
 # The default pytest marker is `unit or integration`, exactly mirroring the CI
 # `lint-and-test` job (.github/workflows/ci.yml). This keeps ci-check.sh a
@@ -20,6 +24,7 @@ set -uo pipefail
 # --- flag parsing ---
 PYTEST_MARKER="unit or integration"
 DETECT_ONLY=0
+RESOURCES_ONLY=0
 for arg in "$@"; do
   case "$arg" in
     --unit-only)
@@ -28,9 +33,12 @@ for arg in "$@"; do
     --detect-only)
       DETECT_ONLY=1
       ;;
+    --resources-only)
+      RESOURCES_ONLY=1
+      ;;
     *)
       echo "unknown argument: $arg" >&2
-      echo "usage: ci-check.sh [--unit-only] [--detect-only]" >&2
+      echo "usage: ci-check.sh [--unit-only] [--detect-only] [--resources-only]" >&2
       exit 2
       ;;
   esac
@@ -126,6 +134,123 @@ if [ "$DETECT_ONLY" -eq 1 ]; then
   exit 0
 fi
 
+# --- container resources: one ci-check at a time + memory headroom gate (#1009) ---
+# The sandbox is a small container (docker/run.sh: --memory / --cpus / --pids-limit).
+# Measured 2026-09-06 in the 4 GiB / 2-CPU box: `mypy .` peaks +600 MB, `pytest
+# -n auto` +1.4 GB (2 workers + controller), and every live Claude session already
+# costs ~600 MB (claude + its own MCP servers). Two ci-checks — or one ci-check
+# next to an analyze-activity workflow — drove the cgroup to memory.max and Docker
+# answered with SIGKILL(137) on whole sessions (daemon.log 09-05 22:27Z, 09-06
+# 03:31Z / 07:29Z / 07:47Z); each restarted session then relaunched ci-check, so
+# the kills cascaded. Two guards:
+#   1. a container-wide flock, so ci-check runs strictly one at a time — the
+#      "parallel L1/L2" of worktree-validation-protocol.md now queues here;
+#   2. before each heavy step, wait until the cgroup has enough headroom, and size
+#      the pytest worker pool from what is actually free.
+# Everything is overridable (tests, other hosts). Without cgroup v2 memory
+# accounting (memory.max=max, non-Linux, no /sys/fs/cgroup) the gate is a no-op.
+CI_CHECK_LOCK="${CI_CHECK_LOCK-/tmp/ci-check.lock}"   # empty → no lock
+CI_CHECK_LOCK_WAIT="${CI_CHECK_LOCK_WAIT:-1800}"      # seconds
+CI_CHECK_CGROUP_DIR="${CI_CHECK_CGROUP_DIR:-/sys/fs/cgroup}"
+# `nproc` clamps to OMP_NUM_THREADS (exported to 1 above for the BLAS pools), so
+# unset it for the query; the affinity-aware count is what xdist would pick.
+CI_CHECK_CPUS="${CI_CHECK_CPUS:-$(env -u OMP_NUM_THREADS -u OMP_THREAD_LIMIT nproc 2>/dev/null || echo 2)}"
+CI_CHECK_MEM_MYPY="${CI_CHECK_MEM_MYPY:-$((800 * 1024 * 1024))}"               # bytes
+CI_CHECK_MEM_PYTEST_BASE="${CI_CHECK_MEM_PYTEST_BASE:-$((700 * 1024 * 1024))}" # controller
+CI_CHECK_MEM_PER_WORKER="${CI_CHECK_MEM_PER_WORKER:-$((500 * 1024 * 1024))}"   # per xdist worker
+CI_CHECK_MEM_WAIT="${CI_CHECK_MEM_WAIT:-600}"         # seconds
+CI_CHECK_MEM_POLL="${CI_CHECK_MEM_POLL:-10}"          # seconds
+
+# cgroup_headroom_bytes — bytes the cgroup can still allocate before memory.max,
+# counting only what reclaim cannot give back (anon + kernel + shmem + swap).
+# Page cache is excluded on purpose: memory.current includes it, and a box that
+# just synced a venv would look full while being fine. Prints "unknown" when the
+# cgroup v2 files are missing or the limit is "max".
+cgroup_headroom_bytes() {
+  local max stat anon kernel shmem swap used
+  if [ ! -r "$CI_CHECK_CGROUP_DIR/memory.max" ] || [ ! -r "$CI_CHECK_CGROUP_DIR/memory.stat" ]; then
+    echo unknown
+    return 0
+  fi
+  max="$(cat "$CI_CHECK_CGROUP_DIR/memory.max")"
+  case "$max" in
+    ''|*[!0-9]*) echo unknown; return 0 ;;
+  esac
+  stat="$(cat "$CI_CHECK_CGROUP_DIR/memory.stat")"
+  anon="$(sed -n 's/^anon //p' <<<"$stat")"
+  kernel="$(sed -n 's/^kernel //p' <<<"$stat")"
+  shmem="$(sed -n 's/^shmem //p' <<<"$stat")"
+  swap=0
+  if [ -r "$CI_CHECK_CGROUP_DIR/memory.swap.current" ]; then
+    swap="$(cat "$CI_CHECK_CGROUP_DIR/memory.swap.current")"
+  fi
+  used=$(( ${anon:-0} + ${kernel:-0} + ${shmem:-0} + ${swap:-0} ))
+  if [ "$max" -gt "$used" ]; then
+    echo $(( max - used ))
+  else
+    echo 0
+  fi
+}
+
+# pick_pytest_workers <headroom|unknown> <cpus> — min(cpus, what fits), never < 1.
+pick_pytest_workers() {
+  local headroom="$1" cpus="$2" fit
+  if [ "$headroom" = unknown ]; then
+    echo "$cpus"
+    return 0
+  fi
+  fit=$(( (headroom - CI_CHECK_MEM_PYTEST_BASE) / CI_CHECK_MEM_PER_WORKER ))
+  [ "$fit" -lt 1 ] && fit=1
+  [ "$fit" -gt "$cpus" ] && fit="$cpus"
+  echo "$fit"
+}
+
+# wait_for_headroom <bytes> <label> — poll until the cgroup has `bytes` free or
+# CI_CHECK_MEM_WAIT expires, then continue either way: the caller has already
+# sized itself to the minimum, and blocking forever would only move the hang.
+# One line per decision so the log shows why a run waited.
+wait_for_headroom() {
+  local need="$1" label="$2" waited=0 headroom
+  headroom="$(cgroup_headroom_bytes)"
+  [ "$headroom" = unknown ] && return 0
+  while [ "$headroom" -lt "$need" ]; do
+    if [ "$waited" -ge "$CI_CHECK_MEM_WAIT" ]; then
+      echo "  ↳ WARNING: only $((headroom / 1048576)) MB free after ${waited}s — running $label anyway" >&2
+      return 0
+    fi
+    if [ "$waited" -eq 0 ]; then
+      echo "▶ $label needs $((need / 1048576)) MB, cgroup has $((headroom / 1048576)) MB free — waiting (max ${CI_CHECK_MEM_WAIT}s)"
+    fi
+    sleep "$CI_CHECK_MEM_POLL"
+    waited=$((waited + CI_CHECK_MEM_POLL))
+    headroom="$(cgroup_headroom_bytes)"
+  done
+  return 0
+}
+
+if [ "$RESOURCES_ONLY" -eq 1 ]; then
+  HEADROOM="$(cgroup_headroom_bytes)"
+  echo "headroom=$HEADROOM"
+  echo "cpus=$CI_CHECK_CPUS"
+  echo "workers=$(pick_pytest_workers "$HEADROOM" "$CI_CHECK_CPUS")"
+  echo "lock=${CI_CHECK_LOCK:-none}"
+  exit 0
+fi
+
+# The lock fd is inherited by every child, so a pytest worker that outlives a
+# killed session keeps the lock — deliberately: that orphan is still eating
+# memory, which is exactly when the next run must wait.
+if [ -n "$CI_CHECK_LOCK" ]; then
+  exec 9>"$CI_CHECK_LOCK"
+  if ! flock -n 9; then
+    echo "▶ another ci-check holds $CI_CHECK_LOCK — waiting (max ${CI_CHECK_LOCK_WAIT}s)"
+    if ! flock -w "$CI_CHECK_LOCK_WAIT" 9; then
+      echo "❌ ci-check: gave up waiting for lock $CI_CHECK_LOCK after ${CI_CHECK_LOCK_WAIT}s" >&2
+      exit 1
+    fi
+  fi
+fi
+
 echo "▶ change detection: base=${BASE_REF:-none} + working tree → web=$WEB_CHANGED"
 
 # --- bootstrap (garmin-mcp-server) ---
@@ -139,14 +264,20 @@ echo "▶ server venv: $UV_PROJECT_ENVIRONMENT"
 run uv sync --directory "$SERVER" --extra dev
 
 # --- lint-and-test (garmin-mcp-server, whole-package) ---
-# `-n auto` instead of CI's `-n 4`: this sandbox has 2 CPUs and a hard
-# pids.max=512, so 4 workers buy no speed and add pid/thread pressure behind the
-# `can't start new thread` flake (#740). Parity here is about WHICH checks,
+# Worker count instead of CI's `-n 4`: this sandbox has 2 CPUs and a hard
+# pids.max, so 4 workers buy no speed and add pid/thread pressure behind the
+# `can't start new thread` flake (#740); and each worker costs ~500 MB, so the
+# pool is sized from cgroup headroom (#1009). Parity here is about WHICH checks,
 # markers and thresholds run — not the worker count.
 run uv run --directory "$SERVER" ruff check .
 run uv run --directory "$SERVER" black --check .
+wait_for_headroom "$CI_CHECK_MEM_MYPY" "mypy"
 run uv run --directory "$SERVER" mypy .
-run uv run --directory "$SERVER" pytest -m "$PYTEST_MARKER" --tb=short -n auto --maxfail=5 \
+wait_for_headroom $((CI_CHECK_MEM_PYTEST_BASE + CI_CHECK_MEM_PER_WORKER)) "pytest"
+HEADROOM="$(cgroup_headroom_bytes)"
+PYTEST_WORKERS="$(pick_pytest_workers "$HEADROOM" "$CI_CHECK_CPUS")"
+echo "▶ pytest workers: $PYTEST_WORKERS (cpus=$CI_CHECK_CPUS, headroom=$HEADROOM)"
+run uv run --directory "$SERVER" pytest -m "$PYTEST_MARKER" --tb=short -n "$PYTEST_WORKERS" --maxfail=5 \
   --cov=garmin_mcp --cov-report=term-missing --cov-fail-under=60
 
 # --- web checks: only when packages/garmin-web/ changed ---
