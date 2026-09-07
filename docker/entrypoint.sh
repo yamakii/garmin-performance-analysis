@@ -9,12 +9,6 @@
 # Set SANDBOX_FIREWALL=0 to start WITHOUT the egress allowlist (debugging only —
 # this removes the exfiltration protection that makes dangerouslyDisableSandbox
 # acceptable inside the container).
-#
-# Claude Code's built-in Bash sandbox (#1028) is configured through managed
-# settings written here on every boot (docker/lib/gen-managed-settings.sh):
-#   CLAUDE_SANDBOX=0          write an explicit off (default: on)
-#   CLAUDE_CREDENTIAL_MASK=1  mask GARMIN_PASSWORD / GITHUB_TOKEN for sandboxed
-#                             commands (default: off — see docker/README.md)
 set -euo pipefail
 
 if [ "$(id -u)" -eq 0 ]; then
@@ -30,27 +24,6 @@ if [ "$(id -u)" -eq 0 ]; then
 
   uid="$(id -u claude)"
   gid="$(id -g claude)"
-
-  # Can bubblewrap create a user namespace as the claude user? Under Docker's
-  # default seccomp + AppArmor and Ubuntu's apparmor_restrict_unprivileged_userns
-  # it cannot, and then Claude Code does NOT fall back: with bwrap installed,
-  # every sandboxed Bash command fails with the bwrap error. So the policy is
-  # only enabled when the probe passes (docker/README.md, "Why it still falls
-  # back"; sandbox-smoke.sh prints the exact blocker).
-  if setpriv --reuid "$uid" --regid "$gid" --init-groups -- \
-       bwrap --unshare-user --ro-bind / / --dev /dev --bind /proc /proc true 2>/dev/null; then
-    export SANDBOX_USERNS_OK=1
-  else
-    export SANDBOX_USERNS_OK=0
-    echo "INFO: bubblewrap cannot create a user namespace in this container —" >&2
-    echo "      writing Claude Code sandbox.enabled=false (Docker stays the boundary)." >&2
-  fi
-
-  # Managed settings are the only tier Claude Code honours for credential masking
-  # and they win over the bind-mounted project/user settings, so the policy is
-  # container-only and repo-controlled. Root-owned, world-readable.
-  bash /usr/local/lib/sandbox/gen-managed-settings.sh \
-      /etc/sandbox/allowed-domains.txt /etc/claude-code/managed-settings.json
   # setpriv (unlike `su -`/`login`) does NOT reset HOME, so it would stay /root
   # (root-owned, unwritable post-drop) and bash would read /root/.bashrc while
   # uv/npm caches landed in /root/.cache — both Permission denied. Set HOME (and
