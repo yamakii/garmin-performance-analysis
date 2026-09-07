@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **69 tools** (67 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **70 tools** (68 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -26,7 +26,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Training Load](#training-load) (3)
 - [Durability](#durability) (3)
 - [strength](#strength) (2)
-- [ingest](#ingest) (1)
+- [ingest](#ingest) (2)
 - [Workout Scheduling](#workout-scheduling) (3)
 - [hiking](#hiking) (2)
 - [Training Plan Ledger](#training-plan-ledger) (6)
@@ -680,13 +680,24 @@ Get persisted strength_training (補強) summaries with activity_date in [start_
 
 CLI: `garmin-db ingest catch-up`
 
-Differential catch-up ingest across the running, weight, strength, hiking and wellness domains in a single call. Resolves an independent window per domain (each table advances at its own pace): end_date or today as the shared end, and per-domain start = start_date (when given) or that domain's latest stored date, or end_date - 30 days when the domain is empty. running delegates to ingest_running_activities, weight to ingest_weight_range, strength to ingest_strength_sessions, hiking to ingest_hiking_sessions, wellness to ingest_wellness_range. Pass domains to ingest a subset (default: all five). A failure in one domain is isolated (its entry carries an error) while the others complete. Returns each requested domain's result plus a window map of {domain: {start, end}}. When the running domain succeeds, the prescribed sessions in its window are also reconciled against the ingested runs and the counts are returned as prescriptions_reconciled (null when that step failed). On a fully-successful run (no domain error), if the most-recently-completed week still lacks a trend narration, the result also carries trend_pending: {granularity, period_start, period_end} so callers can fire trend-narration for it (idempotent: omitted once that week is narrated).
+Differential catch-up ingest across the running, weight, strength, hiking and wellness domains in a single call. Resolves an independent window per domain (each table advances at its own pace): end_date or today as the shared end, and per-domain start = start_date (when given) or that domain's latest stored date, or end_date - 30 days when the domain is empty. running delegates to ingest_running_activities, weight to ingest_weight_range, strength to ingest_strength_sessions, hiking to ingest_hiking_sessions, wellness to ingest_wellness_range. Pass domains to ingest a subset (default: all five). A failure in one domain is isolated (its entry carries an error) while the others complete. Returns each requested domain's result plus a window map of {domain: {start, end}}. When the running domain succeeds, the prescribed sessions in its window are also reconciled against the ingested runs and the counts are returned as prescriptions_reconciled (null when that step failed). On a fully-successful run (no domain error), if any of the last 4 completed weeks still lacks a trend narration, the result also carries trend_pending: {granularity, period_start, period_end} for the oldest such week so callers can fire trend-narration for it (idempotent: omitted once every scanned week is narrated). Use get_pending_trend_period to ask the same question without running an ingest.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `start_date` | string | optional | Inclusive shared window start date (YYYY-MM-DD). When omitted, each domain resolves its own start from its latest stored date (or end_date - 30 days when that domain is empty). |
 | `end_date` | string | optional | Inclusive window end date (YYYY-MM-DD). Defaults to today when omitted. |
 | `domains` | array[string] | optional | Subset of domains to ingest. Defaults to all of running, weight, strength, hiking, wellness. Domains not listed are skipped. |
+
+### `get_pending_trend_period`
+
+CLI: `garmin-db ingest pending-trend`
+
+Read-only check for a completed week that still lacks a longitudinal trend narration (trend_analyses row). Scans the lookback_weeks (default 4) most-recently-completed weeks relative to end_date (default today), oldest first, using the athlete's configured week-start day, and returns {granularity, period_start, period_end} for the first week with no narration, or null when all of them are narrated. Unlike catch_up_ingest's trend_pending field, this runs no ingest and is not gated on ingest success, so a caller (e.g. the weekly-review skill) can trigger trend-narration for the returned period even in a session that did not run catch-up.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `end_date` | string | optional | Reference date (YYYY-MM-DD) whose completed weeks are scanned. Defaults to today when omitted. |
+| `lookback_weeks` | integer | optional | How many completed weeks to scan, oldest first. Defaults to 4; pass 1 to look only at the week that just ended. |
 
 ## Workout Scheduling
 

@@ -52,7 +52,7 @@ argument-hint: [target week]
 mcp__garmin-db__catch_up_ingest(end_date=today)
 ```
 
-**日次運用なら差分は小さく、Garmin 呼び出しはわずかです（内部スロットル済み）**。`catch_up_ingest` の返却に `trend_pending`（全ドメイン成功かつ直前完了週の縦断トレンド未生成のときのみ返る `{granularity, period_start, period_end}`）があれば控えておく（Step 8 で使用）。無ければ何もしません。
+**日次運用なら差分は小さく、Garmin 呼び出しはわずかです（内部スロットル済み）**。`catch_up_ingest` の返却に `trend_pending`（全ドメイン成功かつ直近4完了週のいずれかで縦断トレンド未生成のときに返る `{granularity, period_start, period_end}`）があれば控えておいてかまいませんが、**これは補助的なヒント**です。Step 8 は Step 1 の実行有無に依存せず `get_pending_trend_period` を直接呼んで判定します。
 
 `catch_up_ingest` は running ドメイン成功時に、その取込範囲の**処方と実績の突き合わせ**も行い `prescriptions_reconciled`（`{updated, done, replaced, skipped}`、失敗時 null）を返します。W-1 の遵守状況はこの結果が反映された `prescriptions_prev_week.adherence`（Step 3）から読むので、**この場で個別に照合し直す必要はありません**。
 
@@ -386,13 +386,19 @@ mcp__garmin-db__save_weekly_prescriptions(
 
 ### Step 8: 未生成トレンドの自動生成 ＋ 完了報告
 
-**未生成トレンドの自動生成（`trend_pending` があるときのみ）**: Step 1 の `catch_up_ingest` 返却に `trend_pending` があった場合は、直前完了週の縦断トレンドナレーションが未生成なので、ここで自動生成します。`trend_pending`（`{granularity, period_start, period_end}`）をそのまま引数に `trend-narration` Workflow を起動してください:
+**未生成トレンドの自動生成**: まず **必ず**未生成の週を直接問い合わせます（Step 1 を実行しないセッション—レビューの再保存・改訂など—でも取りこぼさないため。Step 1 の `trend_pending` は使わない）:
 
 ```
-Workflow(name="trend-narration", args=trend_pending)
+mcp__garmin-db__get_pending_trend_period(end_date=today)
 ```
 
-`trend-narration` は fetch → narrate → save の3ステージで縦断トレンドを生成し DuckDB の `trend_analyses` に保存します（`saved=true` で成功）。`trend_pending` が無ければこのステップは省略します。ローカル cron の `scheduled_sync` は `trend_pending` を検出するだけで LLM ナレーション生成はできないため、weekly-review 実行がこの生成トリガーを兼ねます。
+`null` が返ればこのステップは省略します。`{granularity, period_start, period_end}`（直近4完了週のうち**最も古い未生成週**）が返ったら、そのまま引数に `trend-narration` Workflow を起動してください:
+
+```
+Workflow(name="trend-narration", args=pending)
+```
+
+`trend-narration` は fetch → narrate → save の3ステージで縦断トレンドを生成し DuckDB の `trend_analyses` に保存します（`saved=true` で成功）。ローカル cron の `scheduled_sync` は pending を検出するだけで LLM ナレーション生成はできないため、weekly-review 実行がこの生成トリガーを兼ねます。日曜実行では直前完了週が既に生成済みで `null` になることが多い一方、4週遡及するので前々週以前の取りこぼしはここで拾えます。複数週が未生成なら古い順に1週ずつ埋まるので、必要なら次回以降の実行で残りが生成されます。
 
 **完了報告**: 保存完了をユーザーに報告してください。どの対象週 W のプランをどの実績週 W-1 で評価したかと、**構造化保存した処方の件数**（`save_weekly_prescriptions` の `count`）を一言添え、レビューは **Web で参照可能**（一覧は週ごと最新版、詳細ページで同一週の過去版を切り替えて閲覧）になる旨も添えてください。同じ W で再実行した場合は新しい版が追記された旨も伝えてください。`trend-narration` を起動した場合は、どの期間（`period_start`〜`period_end`）のトレンドを自動生成したか（`saved` の成否）も完了報告に含めてください。
 
