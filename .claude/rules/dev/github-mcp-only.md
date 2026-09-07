@@ -109,8 +109,9 @@ check-run から辿る。
 ### sandbox から `gh` / `curl` でログを取れない理由
 
 `GET /repos/{o}/{r}/actions/jobs/{id}/logs` は **302 で Azure Blob**
-（`productionresultssa*.blob.core.windows.net`）にリダイレクトする。sandbox の egress allowlist は
-GitHub API ホストのみで、blob ホストは DNS は引けても TCP 443 が `No route to host` になる。
+（`productionresultssa*.blob.core.windows.net`）にリダイレクトする。sandbox の egress allowlist
+（`docker/allowed-domains.txt`）に blob ホストは無く、名前解決の段階で拒否される（#1027 以前は DNS は
+引けても TCP 443 が `No route to host` だった）。
 
 - run / job の **metadata は取れるがログ本文だけ取れない**
 - `gh` は sandbox に未インストールで、入れても同じ blob を取りに行くため解決しない（deny `Bash(gh:*)` を緩める意味は無い）

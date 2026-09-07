@@ -8,9 +8,30 @@ compromises the container.
 
 This is a self-contained `docker run` setup (no devcontainer / VS Code required),
 adapted for this project's full toolchain (Python 3.12 + uv + Node 24 + the three
-MCP servers). The firewall is based on the official
-[`anthropics/claude-code` devcontainer](https://github.com/anthropics/claude-code/tree/main/.devcontainer),
-extended with the hosts this project needs.
+MCP servers). The firewall started from the official
+[`anthropics/claude-code` devcontainer](https://github.com/anthropics/claude-code/tree/main/.devcontainer)
+and now gates on **DNS** instead of startup-resolved IPs (see below).
+
+### How the egress gate works
+
+The allowlist is [`allowed-domains.txt`](./allowed-domains.txt) (one domain per
+line; an entry covers the domain and all its subdomains). At container start,
+`init-firewall.sh`:
+
+1. starts **dnsmasq as the only resolver** (`/etc/resolv.conf` → `127.0.0.1`),
+   configured to forward *only* allowlisted names to the upstream DNS server and to
+   add every IPv4 it returns to the `allowed-domains` ipset **at resolution time**;
+2. **refuses every other name locally** — it never reaches the upstream resolver
+   (no DNS tunnelling) and never obtains an IP to connect to;
+3. installs iptables rules that accept loopback, dnsmasq's own upstream queries
+   (matched by uid), the Docker host network, established flows and the ipset —
+   and reject everything else, including port 53 / 22 towards arbitrary hosts.
+
+Nothing on the client side changes: `WebFetch`, the MCP servers, `uv`, `git` and
+`curl` all resolve through the normal resolver and just work for listed hosts.
+Because IPs enter the set when they are resolved, CDN rotation mid-session is no
+longer a problem, and the old `api.github.com/meta` CIDR prefetch (with its
+rate-limit fail-closed mode) is gone — `github.com` is simply an allowlisted name.
 
 ## Threat model — what this does and does not protect
 
@@ -26,7 +47,7 @@ are assumed realistic:
 | Layer | Protects against | Does **not** protect against |
 |-------|------------------|------------------------------|
 | `--cap-drop ALL`, `--security-opt no-new-privileges`, non-root `claude`, `--pids-limit`/`--memory`/`--cpus` | privilege escalation, host access, fork bombs, resource abuse | a process reading a mounted secret and `curl`-ing it out |
-| **egress allowlist** (`init-firewall.sh`) | sending secrets / data to an arbitrary host | exfiltration to an **allowlisted** host (e.g. a malicious GitHub repo) |
+| **egress allowlist** (`init-firewall.sh` + dnsmasq, `allowed-domains.txt`) | sending secrets / data to an arbitrary host, DNS tunnelling, SSH/DNS to arbitrary hosts | exfiltration to an **allowlisted** host (a malicious GitHub repo, or a GET with a query string to a docs-tier host); a direct connection to an IP that happens to be in the set because an allowlisted CDN neighbour resolved to it |
 | bind-mount scope (`/workspace` only) | touching files outside the repo + `data/` | corrupting/altering the mounted repo + `data/` (rw) |
 
 > Capabilities: `--cap-drop ALL` removes every Linux capability, then only four
@@ -149,31 +170,57 @@ docker/run.sh claude
 
 ## Extending the egress allowlist
 
-If a service you need is blocked, add its host to the `for domain in …` loop in
-[`init-firewall.sh`](./init-firewall.sh) and rebuild (`docker/run.sh`). GitHub
-itself is covered dynamically via `api.github.com/meta`, so most GitHub hosts work
-out of the box.
+If a service you need is blocked, add its domain to
+[`allowed-domains.txt`](./allowed-domains.txt) and rebuild (`docker/run.sh`). An
+entry covers the domain **and all its subdomains** (`github.com` already covers
+`api.github.com`, `codeload.github.com`, …), so list the apex when the whole
+vendor is trusted and a specific host when it is not. The file is validated at
+boot (a malformed line refuses to start the container) and on the host by
+`scripts/tests/test-sandbox-allowlist.sh`.
+
+A read-only **documentation tier** (python.org, duckdb.org, docs.astral.sh, …) is
+included so `WebFetch` can read upstream docs. Keep additions to vendors whose docs
+the project actually reads: a GET with a query string can still carry data out.
 
 Common signs you need to add a host:
+- **`WebFetch` fails with `Command failed with no output`** — that is what a
+  blocked host looks like from the tool. Confirm from a container shell with
+  `getent hosts <host>` (unlisted → no result) or
+  `curl -s -o /dev/null -w '%{http_code}' --connect-timeout 4 https://<host>`
+  (`000` = blocked, anything else = reachable).
 - `uv sync` fails to reach an index → add the index host.
 - A `401`/timeout on Claude login → add the relevant `*.anthropic.com` / `claude.ai` host.
 
+## Verifying the sandbox
+
+After a rebuild (or whenever egress behaves oddly), boot a throwaway container
+straight into the smoke test; it runs as the unprivileged `claude` user after the
+firewall is up and proves the gate from the inside:
+
+```bash
+NO_BUILD=1 docker/run.sh sandbox-smoke.sh
+```
+
+It checks that allowlisted names resolve and connect, that unlisted names are
+refused by the resolver, that DNS/SSH to foreign hosts and direct connections to
+non-allowlisted IPs are rejected, and that the docs tier is reachable. The same
+script runs in CI (`docker-build` job) on every `docker/**` change.
+
 ## Known limitations
 
-- **DNS at startup**: non-GitHub hosts are resolved once when the firewall is
-  installed. If a CDN rotates IPs mid-session, that host may become unreachable —
-  **restart the container** (`docker/run.sh`) to re-resolve. GitHub uses published
-  CIDR ranges and is unaffected.
+- **Name-based, not content-based**: the gate decides on the resolved name. It
+  does not inspect TLS, so a process that already holds an allowlisted IP can talk
+  to any port on it, and a GET to an allowlisted host can carry data in its URL.
+  Treat every entry in `allowed-domains.txt` as a host you are willing to send
+  data to.
+- **IPv6 is filtered** (`filter-AAAA`): the container has no IPv6 egress and the
+  ipset is IPv4-only, so AAAA answers are dropped to avoid connect timeouts.
 - **node_modules / .venv are not shared** with the host (the container uses its own
   `UV_PROJECT_ENVIRONMENT=/home/claude/uv-venv`). For frontend work run
   `npm install` inside `packages/garmin-web/frontend` in the container.
 - **`SANDBOX_FIREWALL=0`** (passed as a container env var) starts the container with
   the firewall disabled — debugging only; it removes the exfiltration protection.
-- The container fails to start if the firewall cannot be installed (fail-closed):
-  it will not run with an open network unless you explicitly set `SANDBOX_FIREWALL=0`.
-- **GitHub API rate limit**: the firewall's `api.github.com/meta` fetch (which builds
-  the GitHub allowlist) is authenticated with `GITHUB_TOKEN` when present, raising the
-  limit from the unauthenticated 60/hr per IP to 5000/hr. Without a token, a spent 60/hr
-  budget makes startup fail-close (`failed to fetch usable GitHub IP ranges`) until the
-  window resets — set `GITHUB_TOKEN` (`run.sh` forwards it, deriving from `gh auth token`)
-  or wait for the reset.
+- The container fails to start if the firewall cannot be installed or its
+  self-check fails (fail-closed — e.g. a malformed `allowed-domains.txt`, dnsmasq
+  not starting, or `api.github.com` unreachable): it will not run with an open
+  network unless you explicitly set `SANDBOX_FIREWALL=0`.
