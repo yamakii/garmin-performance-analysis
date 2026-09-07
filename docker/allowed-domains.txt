@@ -1,0 +1,52 @@
+# Egress allowlist for the Claude Code sandbox container — single source of truth.
+#
+# One domain per line; `#` starts a comment. An entry allows the domain AND every
+# subdomain (dnsmasq suffix match): `github.com` covers api.github.com, codeload…
+# Only names listed here resolve inside the container (dnsmasq refuses the rest),
+# and only the IPs they resolve to are reachable (init-firewall.sh ipset).
+# The file is baked into the image: after editing, rebuild with docker/run.sh.
+
+# --- Claude Code / Anthropic: API, subscription OAuth refresh, telemetry ---
+api.anthropic.com
+claude.ai
+console.anthropic.com
+statsig.anthropic.com
+statsig.com
+sentry.io
+# Claude Code + API docs (WebFetch). docs.anthropic.com → docs.claude.com → code.claude.com
+docs.anthropic.com
+docs.claude.com
+code.claude.com
+
+# --- Package indexes: `uv sync` (PyPI) and npm ---
+pypi.org
+files.pythonhosted.org
+registry.npmjs.org
+
+# --- GitHub: git over https, REST API, raw/objects/codeload, hosted github MCP ---
+github.com
+githubusercontent.com
+api.githubcopilot.com
+
+# --- Garmin: garmin-db ingest (garth / garminconnect) + developer docs ---
+connect.garmin.com
+connectapi.garmin.com
+sso.garmin.com
+diauth.garmin.com
+developer.garmin.com
+www8.garmin.com
+
+# --- Read-only documentation tier (WebFetch) ---
+# GET-only in practice, but a GET with a query string can still carry data out:
+# keep this to vendors whose docs the project actually reads.
+python.org
+docs.astral.sh
+duckdb.org
+docs.pydantic.dev
+fastapi.tiangolo.com
+nodejs.org
+react.dev
+vite.dev
+vitest.dev
+modelcontextprotocol.io
+stackoverflow.com

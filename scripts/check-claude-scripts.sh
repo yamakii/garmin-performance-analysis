@@ -155,6 +155,31 @@ if [ -e scripts/tests/test-ci-check-resources.sh ]; then
   fi
 fi
 
+# docker/ shell scripts: the entrypoint / firewall / smoke run only inside the
+# sandbox container (root + NET_ADMIN), so at least parse them here. Their
+# behaviour is exercised by the CI docker-build job (docker/sandbox-smoke.sh).
+for f in docker/*.sh docker/lib/*.sh; do
+  if bash -n "$f"; then
+    echo "ok (docker script syntax): $f"
+  else
+    echo "FAIL (docker script syntax): $f" >&2
+    status=1
+  fi
+done
+
+# Behavioral self-test for the sandbox egress allowlist logic (#1027): the
+# allowed-domains.txt parser and the dnsmasq config generator are pure functions
+# in docker/lib/allowlist.sh, so a bad entry or a bare `server=` line (which would
+# forward every name upstream) is caught here, not at container boot.
+if [ -e scripts/tests/test-sandbox-allowlist.sh ]; then
+  if bash scripts/tests/test-sandbox-allowlist.sh; then
+    echo "ok (script test): sandbox-allowlist"
+  else
+    echo "FAIL (script test): sandbox-allowlist" >&2
+    status=1
+  fi
+fi
+
 if [ "$status" -ne 0 ]; then
   echo "check-claude-scripts: FAILED" >&2
 else
