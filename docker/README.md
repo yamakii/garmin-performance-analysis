@@ -237,6 +237,28 @@ Two switches, forwarded from your shell by `docker/run.sh`:
 Verify from a Claude session with `/sandbox`: the panel shows whether the
 sandbox is active and which policy is in force.
 
+### Why it still falls back on a hardened host
+
+bubblewrap needs an unprivileged **user namespace**. Probed in CI (Ubuntu 24.04
+runner, same `docker run` flags as `run.sh`), every hardening layer blocks it,
+and relaxing one only exposes the next:
+
+| Relaxed | `bwrap` error |
+|---------|---------------|
+| nothing (default) | `No permissions to create a new namespace` — Docker's default seccomp profile refuses `unshare(CLONE_NEWUSER)` |
+| `--security-opt seccomp=unconfined` | `Failed to make / slave: Permission denied` — the `docker-default` AppArmor profile denies `mount` |
+| `--security-opt apparmor=unconfined` | `No permissions to create a new namespace` — seccomp again |
+| both | `setting up uid map: Permission denied` — the **host** sysctl `kernel.apparmor_restrict_unprivileged_userns=1` (Ubuntu 24.04 default) gives an unconfined process no capabilities inside its new namespace |
+
+So an effective built-in sandbox needs a custom seccomp profile, an AppArmor
+profile that permits `mount`, **and** turning off Ubuntu's unprivileged-userns
+restriction on the host — three deliberate reductions of the outer hardening,
+to gain an inner layer that covers only Bash. Until that trade is made on
+purpose, the managed policy is in force but Claude Code falls back to
+unsandboxed Bash, `sandbox-smoke.sh` prints the exact `bwrap` error and the
+seccomp / AppArmor / sysctl state, and Docker remains the boundary. With the
+fallback in effect, `CLAUDE_CREDENTIAL_MASK=1` has nothing to act on either.
+
 ## Verifying the sandbox
 
 After a rebuild (or whenever egress behaves oddly), boot a throwaway container
