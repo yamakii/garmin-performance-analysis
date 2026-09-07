@@ -203,6 +203,28 @@ jobs:
             --security-opt no-new-privileges \
             garmin-claude-sandbox:ci sandbox-smoke.sh
 
+      # [probe, #1028 follow-up] Which hardening layer blocks bubblewrap's user
+      # namespace? Same smoke with one layer relaxed at a time; compare the
+      # `bubblewrap` lines of each run in the job log. Not a gate.
+      - name: "[probe] smoke with seccomp=unconfined"
+        run: |
+          docker run --rm --cap-drop ALL --cap-add NET_ADMIN --cap-add NET_RAW \
+            --cap-add SETUID --cap-add SETGID --security-opt no-new-privileges \
+            --security-opt seccomp=unconfined \
+            garmin-claude-sandbox:ci sandbox-smoke.sh | grep -E 'bwrap|bubblewrap|seccomp='
+      - name: "[probe] smoke with apparmor=unconfined"
+        run: |
+          docker run --rm --cap-drop ALL --cap-add NET_ADMIN --cap-add NET_RAW \
+            --cap-add SETUID --cap-add SETGID --security-opt no-new-privileges \
+            --security-opt apparmor=unconfined \
+            garmin-claude-sandbox:ci sandbox-smoke.sh | grep -E 'bwrap|bubblewrap|seccomp='
+      - name: "[probe] smoke with seccomp+apparmor unconfined"
+        run: |
+          docker run --rm --cap-drop ALL --cap-add NET_ADMIN --cap-add NET_RAW \
+            --cap-add SETUID --cap-add SETGID --security-opt no-new-privileges \
+            --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
+            garmin-claude-sandbox:ci sandbox-smoke.sh | grep -E 'bwrap|bubblewrap|seccomp='
+
   ci-guard:
     needs: [changes, lint-and-test, web-backend, web-frontend, meta-checks, docker-build]
     if: always()
