@@ -180,6 +180,18 @@ if [ -e scripts/tests/test-sandbox-allowlist.sh ]; then
   fi
 fi
 
+# Behavioral self-test for the WebFetch allowlist pre-check hook (#1035): hook
+# JSON on stdin against a temp allowlist, asserting allow / block / no-op exit
+# codes and that the block message names the host and the allowlist file.
+if [ -e scripts/tests/test-guard-webfetch-allowlist.sh ]; then
+  if bash scripts/tests/test-guard-webfetch-allowlist.sh; then
+    echo "ok (script test): guard-webfetch-allowlist"
+  else
+    echo "FAIL (script test): guard-webfetch-allowlist" >&2
+    status=1
+  fi
+fi
+
 if [ "$status" -ne 0 ]; then
   echo "check-claude-scripts: FAILED" >&2
 else

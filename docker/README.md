@@ -183,8 +183,15 @@ included so `WebFetch` can read upstream docs. Keep additions to vendors whose d
 the project actually reads: a GET with a query string can still carry data out.
 
 Common signs you need to add a host:
-- **`WebFetch` fails with `Command failed with no output`** — that is what a
-  blocked host looks like from the tool. Confirm from a container shell with
+- **`WebFetch` is blocked by the hook** — inside the container a `PreToolUse`
+  hook ([`.claude/hooks/guard-webfetch-allowlist.sh`](../.claude/hooks/guard-webfetch-allowlist.sh))
+  checks the URL host against the image-baked allowlist *before* the fetch and
+  stops unlisted hosts with a message naming the host and this file, so the model
+  sees the reason instead of a bare `Command failed with no output`. WebSearch
+  results routinely point at unlisted hosts (it runs server-side and sees the
+  whole web); that is expected, not a fault.
+- **Anything else that reaches the network** (`curl`, `uv`, the MCP servers)
+  still fails silently. Confirm from a container shell with
   `getent hosts <host>` (unlisted → no result) or
   `curl -s -o /dev/null -w '%{http_code}' --connect-timeout 4 https://<host>`
   (`000` = blocked, anything else = reachable).
