@@ -6,10 +6,13 @@ Persists the two plan concepts introduced in issue #977:
   INSERT per ``user_id``, ``sequence`` following list order), mirroring
   ``athlete_goals``; every save also appends a JSON snapshot of the whole list
   to ``training_block_versions`` so overwritten plans stay recoverable.
-- ``weekly_prescriptions`` — one row per prescribed session per day. Saves are
-  append-only per ``batch_id`` (one save = one batch, latest batch per week is
-  canonical); only ``status`` and the Garmin / activity ids are mutated later,
-  via :func:`update_prescription_status`.
+- ``weekly_prescriptions`` — one row per prescribed session per day, and the
+  single source of the per-day plan including its coach verdict (``rating`` /
+  ``rationale``, Issue #1021). Saves are append-only per ``batch_id`` (one save
+  = one batch, latest batch per week is canonical) and a revision must be
+  paired with a new review version (:func:`_check_revision_guard`); only
+  ``status`` and the Garmin / activity ids are mutated later, via
+  :func:`update_prescription_status`.
 
 Validation is deliberately strict and raises ``ValueError`` up front: these rows
 are written by an LLM-driven skill, so a malformed date range or session type
@@ -49,6 +52,9 @@ ALLOWED_SESSION_TYPES = frozenset(
 ALLOWED_STATUSES = frozenset(
     {"prescribed", "registered", "done", "replaced", "skipped"}
 )
+
+#: Coach verdicts a prescription row may carry (``None`` = ungraded).
+ALLOWED_RATINGS = frozenset({"✅", "🟡", "🔴"})
 
 
 def _default_db_path() -> str:
@@ -213,6 +219,78 @@ def insert_training_blocks(
     return {"count": len(blocks), "version_id": version_id}
 
 
+def _check_revision_guard(
+    conn: Any, week_start: date, review_id: int | None, user_id: str
+) -> None:
+    """Reject a prescription batch that is not paired with a review version.
+
+    The prescriptions are the per-day plan (verdict included), so revising them
+    without re-issuing the review prose is what let the two stores drift
+    (Issue #1021). Once a week has a review, a batch must carry that week's
+    latest ``review_id`` and each review version may own at most one batch.
+
+    Args:
+        conn: Open write connection.
+        week_start: Week start of the batch being saved.
+        review_id: ``review_id`` supplied by the caller (may be ``None``).
+        user_id: Ledger owner identifier.
+
+    Raises:
+        ValueError: When the batch would supersede the week's plan without a
+            new review version, or when ``review_id`` does not exist.
+    """
+    if review_id is not None:
+        known = conn.execute(
+            "SELECT 1 FROM weekly_reviews WHERE review_id = ? AND user_id = ?",
+            [review_id, user_id],
+        ).fetchone()
+        if known is None:
+            raise ValueError(
+                f"review_id {review_id} does not exist for user {user_id!r}; "
+                "save the review first (save_weekly_review) and pass the "
+                "review_id it returns"
+            )
+
+    latest_row = conn.execute(
+        "SELECT review_id FROM weekly_reviews "
+        "WHERE user_id = ? AND week_start_date = ? "
+        "ORDER BY created_at DESC, review_id DESC LIMIT 1",
+        [user_id, week_start],
+    ).fetchone()
+    if latest_row is None:
+        # No review for the week: an unlinked batch stays allowed.
+        return
+
+    latest_review_id = int(latest_row[0])
+    if review_id is None:
+        raise ValueError(
+            f"week {week_start} already has a weekly review (review_id "
+            f"{latest_review_id}); save a new review version "
+            "(save_weekly_review) with the revised recommendations/overall "
+            "first, then pass its review_id"
+        )
+    if review_id != latest_review_id:
+        raise ValueError(
+            f"review_id {review_id} is not the latest review of week "
+            f"{week_start} (latest is {latest_review_id}); save a new review "
+            "version (save_weekly_review) with the revised "
+            "recommendations/overall first, then pass its review_id"
+        )
+
+    batch_row = conn.execute(
+        "SELECT MAX(batch_id) FROM weekly_prescriptions "
+        "WHERE user_id = ? AND week_start_date = ? AND review_id = ?",
+        [user_id, week_start, review_id],
+    ).fetchone()
+    if batch_row is not None and batch_row[0] is not None:
+        raise ValueError(
+            f"week {week_start} already has prescription batch {int(batch_row[0])} "
+            f"for review {review_id}; save a new review version "
+            "(save_weekly_review) with the revised recommendations/overall "
+            "first, then pass its review_id"
+        )
+
+
 def insert_weekly_prescriptions(
     week_start_date: str,
     prescriptions: list[dict[str, Any]],
@@ -227,13 +305,20 @@ def insert_weekly_prescriptions(
     same week stay untouched and are simply superseded (the reader returns the
     highest ``batch_id`` per week).
 
+    These rows are the single source of the per-day plan, verdict included
+    (``rating`` / ``rationale``), so a revision must re-issue the review prose
+    with it: once a week has a review, every batch must point at that week's
+    **latest** review version and each version may own only one batch (Issue
+    #1021). Weeks without a review keep accepting unlinked batches.
+
     Args:
         week_start_date: Week start (``YYYY-MM-DD``); every row's ``date`` must
             fall in ``[week_start_date, week_start_date + 6]``.
         prescriptions: Row dicts with ``date``, ``session_type``, ``title``
             (required) plus optional ``target_minutes``, ``target_km``,
             ``hr_low``, ``hr_high``, ``pace_low_s_per_km``,
-            ``pace_high_s_per_km``, ``rationale`` and ``status``.
+            ``pace_high_s_per_km``, ``rationale``, ``rating`` (``✅`` / ``🟡``
+            / ``🔴``) and ``status``.
         review_id: ``weekly_reviews.review_id`` when saved by a weekly review.
         user_id: Ledger owner identifier (defaults to ``"default"``).
         db_path: Path to DuckDB database. If None, uses the default path.
@@ -242,8 +327,9 @@ def insert_weekly_prescriptions(
         ``{"batch_id": int, "count": int, "prescription_ids": list[int]}``.
 
     Raises:
-        ValueError: On a date outside the week, an unknown ``session_type`` or
-            ``status``, or ``hr_low`` above ``hr_high``.
+        ValueError: On a date outside the week, an unknown ``session_type``,
+            ``status`` or ``rating``, ``hr_low`` above ``hr_high``, or a
+            revision that skips the review (see the revision guard above).
     """
     if db_path is None:
         db_path = _default_db_path()
@@ -282,10 +368,18 @@ def insert_weekly_prescriptions(
             raise ValueError(
                 f"prescription {title!r}: hr_low {hr_low} is above hr_high {hr_high}"
             )
+        rating = row.get("rating")
+        if rating is not None and rating not in ALLOWED_RATINGS:
+            raise ValueError(
+                f"prescription {title!r}: rating must be one of "
+                f"{sorted(ALLOWED_RATINGS)} or null, got {rating!r}"
+            )
         validated.append((row, row_date))
 
     prescription_ids: list[int] = []
     with get_write_connection(db_path) as conn:
+        _check_revision_guard(conn, week_start, review_id, user_id)
+
         batch_row = conn.execute(
             "SELECT nextval('seq_weekly_prescription_batches')"
         ).fetchone()
@@ -302,9 +396,9 @@ def insert_weekly_prescriptions(
                     prescription_id, batch_id, user_id, review_id,
                     week_start_date, date, session_type, title, target_minutes,
                     target_km, hr_low, hr_high, pace_low_s_per_km,
-                    pace_high_s_per_km, rationale, status
+                    pace_high_s_per_km, rationale, rating, status
                 ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 [
@@ -323,6 +417,7 @@ def insert_weekly_prescriptions(
                     row.get("pace_low_s_per_km"),
                     row.get("pace_high_s_per_km"),
                     row.get("rationale"),
+                    row.get("rating"),
                     row.get("status") or "prescribed",
                 ],
             )

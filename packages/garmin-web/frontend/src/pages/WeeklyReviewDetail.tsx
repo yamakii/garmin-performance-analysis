@@ -486,7 +486,12 @@ export default function WeeklyReviewDetail() {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {prescriptions.map((prescription) => {
+                      // The prescription row is the canonical plan, rating and
+                      // comment included (#1021); the stored verdict is only a
+                      // fallback for weeks saved before the split.
                       const graded = verdictByDate.get(prescription.date);
+                      const rating = prescription.rating ?? graded?.rating;
+                      const comment = prescription.rationale ?? graded?.comment;
                       return (
                         <tr
                           key={prescription.prescription_id}
@@ -508,14 +513,14 @@ export default function WeeklyReviewDetail() {
                             </StatusBadge>
                           </td>
                           <td className="px-2 py-2 text-center">
-                            {graded?.rating != null ? (
-                              <VerdictBadge rating={graded.rating} />
+                            {rating != null ? (
+                              <VerdictBadge rating={rating} />
                             ) : (
                               "-"
                             )}
                           </td>
                           <td className="px-2 py-2 text-left text-slate-600">
-                            {graded?.comment ?? "-"}
+                            {comment ?? "-"}
                           </td>
                         </tr>
                       );

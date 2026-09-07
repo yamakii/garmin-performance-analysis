@@ -202,6 +202,129 @@ def test_insert_weekly_prescriptions_rejects_hr_low_above_high(
         )
 
 
+def _save_review(db_path: str, week_start_date: str = "2026-09-07") -> int:
+    """Save a bare weekly review for a week and return its review_id."""
+    from garmin_mcp.database.inserters.athlete import insert_weekly_review
+
+    review = {
+        "user_id": "default",
+        "week_start_date": week_start_date,
+        "week_end_date": "2026-09-13",
+        "review_date": "2026-09-07",
+        "review_data": {"overall": "順調"},
+        "agent_name": "weekly-review",
+        "agent_version": "1.0",
+    }
+    return int(insert_weekly_review(review, db_path=db_path))
+
+
+@pytest.mark.unit
+def test_insert_prescriptions_stores_rating(initialized_db_path: Path) -> None:
+    """The coach verdict is stored on the prescription row (#1021)."""
+    db_path = str(initialized_db_path)
+    insert_weekly_prescriptions(
+        "2026-09-07",
+        [_prescription("2026-09-10", "threshold", rating="🟡")],
+        db_path=db_path,
+    )
+
+    with get_connection(db_path) as conn:
+        row = conn.execute("SELECT rating FROM weekly_prescriptions").fetchone()
+
+    assert row is not None
+    assert row[0] == "🟡"
+
+
+@pytest.mark.unit
+def test_insert_prescriptions_rejects_unknown_rating(
+    initialized_db_path: Path,
+) -> None:
+    """A rating outside ✅ / 🟡 / 🔴 is rejected."""
+    with pytest.raises(ValueError, match="rating must be one of"):
+        insert_weekly_prescriptions(
+            "2026-09-07",
+            [_prescription("2026-09-09", rating="★")],
+            db_path=str(initialized_db_path),
+        )
+
+
+@pytest.mark.unit
+def test_insert_prescriptions_rejects_second_batch_for_same_review(
+    initialized_db_path: Path,
+) -> None:
+    """A revision must pair with a new review version, not a second batch."""
+    db_path = str(initialized_db_path)
+    review_id = _save_review(db_path)
+    insert_weekly_prescriptions(
+        "2026-09-07",
+        [_prescription("2026-09-09")],
+        review_id=review_id,
+        db_path=db_path,
+    )
+
+    with pytest.raises(ValueError, match="new review version"):
+        insert_weekly_prescriptions(
+            "2026-09-07",
+            [_prescription("2026-09-09", title="Z2 25分")],
+            review_id=review_id,
+            db_path=db_path,
+        )
+
+
+@pytest.mark.unit
+def test_insert_prescriptions_requires_latest_review_id(
+    initialized_db_path: Path,
+) -> None:
+    """Once a week has reviews, the batch must carry the latest review_id."""
+    db_path = str(initialized_db_path)
+    first_review_id = _save_review(db_path)
+    _save_review(db_path)
+
+    with pytest.raises(ValueError, match="is not the latest review"):
+        insert_weekly_prescriptions(
+            "2026-09-07",
+            [_prescription("2026-09-09")],
+            review_id=first_review_id,
+            db_path=db_path,
+        )
+
+    with pytest.raises(ValueError, match="already has a weekly review"):
+        insert_weekly_prescriptions(
+            "2026-09-07",
+            [_prescription("2026-09-09")],
+            db_path=db_path,
+        )
+
+
+@pytest.mark.unit
+def test_insert_prescriptions_rejects_unknown_review_id(
+    initialized_db_path: Path,
+) -> None:
+    """A review_id that does not exist is rejected before anything is written."""
+    with pytest.raises(ValueError, match="does not exist"):
+        insert_weekly_prescriptions(
+            "2026-09-07",
+            [_prescription("2026-09-09")],
+            review_id=999,
+            db_path=str(initialized_db_path),
+        )
+
+
+@pytest.mark.unit
+def test_insert_prescriptions_without_review_allowed(
+    initialized_db_path: Path,
+) -> None:
+    """A week without any review still accepts an unlinked batch."""
+    result = insert_weekly_prescriptions(
+        "2026-09-07",
+        [_prescription("2026-09-09")],
+        db_path=str(initialized_db_path),
+    )
+
+    assert result["batch_id"] > 0
+    assert result["count"] == 1
+
+
 @pytest.mark.unit
 def test_update_prescription_status_sets_ids_and_updated_at(
     initialized_db_path: Path,

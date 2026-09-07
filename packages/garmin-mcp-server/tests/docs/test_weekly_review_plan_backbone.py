@@ -87,3 +87,29 @@ def test_daily_checkin_reads_prescriptions_as_backbone(
     assert "date=<対象日>" in daily_checkin_text
     # get_weekly_review stays, demoted to context.
     assert "get_weekly_review" in daily_checkin_text
+
+
+@pytest.mark.integration
+def test_weekly_review_saves_rating_in_prescriptions_not_verdict(
+    weekly_review_text: str,
+) -> None:
+    """The per-day rating/comment is saved as prescription fields, not verdict."""
+    assert '"rating"' in weekly_review_text
+    assert "rationale" in weekly_review_text
+    # The review JSON example must not carry per-day verdict rows any more.
+    assert '"verdict"' not in weekly_review_text
+
+
+@pytest.mark.integration
+def test_weekly_review_has_mid_week_revision_step(weekly_review_text: str) -> None:
+    """A mid-week revision re-issues the review version with the new batch."""
+    assert "プランを改訂" in weekly_review_text
+    assert "revision_note" in weekly_review_text
+    assert "schedule_weekly_prescriptions" in weekly_review_text
+
+
+@pytest.mark.integration
+def test_daily_checkin_matches_review_id(daily_checkin_text: str) -> None:
+    """The check-in only layers the review prose when the review_id matches."""
+    assert "review_id" in daily_checkin_text
+    assert "fbtAdaptiveWorkout" in daily_checkin_text

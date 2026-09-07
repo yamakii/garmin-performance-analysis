@@ -55,6 +55,11 @@ Output (JSON to stdout, one line):
         "adherence": {"prescribed": n, "done": n, "replaced": n,
                       "skipped": n, "pending": n}
       },
+      "prescriptions_current_week": {     # W's canonical batch (the plan in force)
+        "rows": [...],
+        "batch_id": int|null,
+        "review_id": int|null
+      },
       "scheduled_workouts": {...}|null,   # network (Garmin Connect); _safe/null-on-error
       "garmin_conflicts": [               # Garmin items contradicting the block
         {"date": "...", "garmin_title": "Tempo", "reason": "..."}
@@ -347,6 +352,41 @@ def _collect_prev_week_prescriptions(
     return {"rows": rows, "adherence": summarize_adherence(rows)}
 
 
+def _collect_current_week_prescriptions(
+    plan_reader: Any, week_start_date: str, user_id: str
+) -> dict[str, Any]:
+    """Collect W's canonical prescription batch — the plan currently in force.
+
+    The prescriptions are the single source of the per-day plan (Issue #1021),
+    so a review that revises W has to see what is already registered for it
+    (including the ``review_id`` it must supersede) rather than trusting the
+    prose of the last review version.
+
+    Args:
+        plan_reader: A ``PlanReader``.
+        week_start_date: Target week W's start (``YYYY-MM-DD``).
+        user_id: Ledger owner identifier.
+
+    Returns:
+        ``{"rows": [...], "batch_id": int|None, "review_id": int|None}``;
+        ``rows`` empty and both ids ``None`` when W has no prescriptions yet.
+    """
+    rows = (
+        _safe(
+            lambda: plan_reader.get_weekly_prescriptions(
+                week_start_date, user_id=user_id
+            )
+        )
+        or []
+    )
+    first = rows[0] if rows else {}
+    return {
+        "rows": rows,
+        "batch_id": first.get("batch_id"),
+        "review_id": first.get("review_id"),
+    }
+
+
 def _slim_athlete_profile(profile: dict[str, Any] | None) -> dict[str, Any] | None:
     """Drop the profile's ``goals`` copy (Issue #933).
 
@@ -607,6 +647,9 @@ def prefetch_weekly_review_context(
     prescriptions_prev_week = _collect_prev_week_prescriptions(
         plan_reader, prev_start_s, user_id
     )
+    prescriptions_current_week = _collect_current_week_prescriptions(
+        plan_reader, week_start_s, user_id
+    )
 
     # Garmin calendar items that contradict W's block (deterministic; empty list
     # rather than null so the skill can treat "no conflicts" and "no plan" alike).
@@ -664,6 +707,7 @@ def prefetch_weekly_review_context(
         "hiking": hiking,
         "training_block": training_block,
         "prescriptions_prev_week": prescriptions_prev_week,
+        "prescriptions_current_week": prescriptions_current_week,
         "scheduled_workouts": scheduled_workouts,
         "garmin_conflicts": garmin_conflicts,
         "athlete_profile": athlete_profile,

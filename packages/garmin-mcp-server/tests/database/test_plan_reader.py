@@ -177,3 +177,79 @@ def test_list_prescriptions_spans_weeks(reader_db_path: Path) -> None:
 
     assert [r["title"] for r in rows] == ["前週 ロング", "今週 火"]
     assert all("2026-09-01" <= r["date"] <= "2026-09-10" for r in rows)
+
+
+@pytest.mark.unit
+def test_get_prescriptions_for_review_returns_rows(reader_db_path: Path) -> None:
+    """The rows a review version owns are read back by its review_id (#1021)."""
+    db_path = str(reader_db_path)
+    from garmin_mcp.database.inserters.athlete import insert_weekly_review
+
+    review_id = int(
+        insert_weekly_review(
+            {
+                "week_start_date": "2026-09-07",
+                "week_end_date": "2026-09-13",
+                "review_date": "2026-09-07",
+                "review_data": {"overall": "順調"},
+            },
+            db_path=db_path,
+        )
+    )
+    insert_weekly_prescriptions(
+        "2026-09-07",
+        [
+            _prescription("2026-09-08", "easy", "火 easy"),
+            _prescription("2026-09-13", "long", "ロング 25km"),
+        ],
+        review_id=review_id,
+        db_path=db_path,
+    )
+
+    reader = PlanReader(db_path=db_path)
+    rows = reader.get_prescriptions_for_review(review_id)
+
+    assert [r["title"] for r in rows] == ["火 easy", "ロング 25km"]
+    assert {r["review_id"] for r in rows} == {review_id}
+    assert reader.get_prescriptions_for_review(review_id + 999) == []
+
+
+@pytest.mark.unit
+def test_verdict_from_prescriptions_shape() -> None:
+    """Rows project onto the review's verdict shape; empty input stays empty."""
+    from garmin_mcp.database.readers.plan import verdict_from_prescriptions
+
+    assert verdict_from_prescriptions([]) == []
+
+    rows = verdict_from_prescriptions(
+        [
+            {
+                "prescription_id": 7,
+                "date": "2026-09-13",
+                "session_type": "long",
+                "title": "ロング 25km",
+                "rationale": "ラダー3段目",
+                "target_km": 25.0,
+                "target_minutes": None,
+                "hr_low": None,
+                "hr_high": 150,
+                "status": "prescribed",
+            }
+        ]
+    )
+
+    assert rows == [
+        {
+            "date": "2026-09-13",
+            "session": "ロング 25km",
+            "rating": None,
+            "comment": "ラダー3段目",
+            "session_type": "long",
+            "target_km": 25.0,
+            "target_minutes": None,
+            "hr_low": None,
+            "hr_high": 150,
+            "status": "prescribed",
+            "prescription_id": 7,
+        }
+    ]

@@ -4,6 +4,8 @@ Uses the module-scoped ``initialized_db_path`` fixture (schema pre-initialized
 via file copy) to avoid per-test GarminDBWriter DDL overhead.
 """
 
+import json
+
 import pytest
 
 from garmin_mcp.database.connection import get_write_connection
@@ -305,14 +307,6 @@ def _weekly_review(
             "garmin_next_week": [
                 {"date": "2026-06-16", "title": "Tempo", "type": "fbtAdaptiveWorkout"}
             ],
-            "verdict": [
-                {
-                    "date": "2026-06-20",
-                    "session": "Anaerobic",
-                    "rating": "🔴",
-                    "comment": "強度過多に注意",
-                }
-            ],
             "recommendations": ["Z2を維持する"],
             "overall": "順調に積み上げ",
         },
@@ -337,9 +331,11 @@ def test_save_then_get_weekly_review(initialized_db_path) -> None:
     assert result["review_date"] == "2026-06-14"
     assert result["agent_name"] == "weekly-review"
     assert result["agent_version"] == "1.0"
-    assert result["review_data"] == review["review_data"]
     assert result["review_data"]["this_week"]["volume_km"] == 28.8
-    assert result["review_data"]["verdict"][0]["rating"] == "🔴"
+    assert result["review_data"]["recommendations"] == ["Z2を維持する"]
+    # No prescriptions for the week -> the (empty) stored verdict is kept.
+    assert result["review_data"]["verdict_source"] == "stored"
+    assert result["review_data"]["prescription_batch_id"] is None
 
 
 def _set_review_created_at(db_path: str, review_id: int, created_at: str) -> None:
@@ -519,3 +515,200 @@ def test_list_weekly_review_versions_empty(initialized_db_path) -> None:
 
     versions = AthleteReader(db_path=db_path).list_weekly_review_versions("2099-01-04")
     assert versions == []
+
+
+# ---------------------------------------------------------------------------
+# Derived verdict (#1021): the per-day plan lives in weekly_prescriptions only
+# ---------------------------------------------------------------------------
+
+
+def _prescription(
+    on_date: str,
+    title: str,
+    *,
+    session_type: str = "long",
+    rating: str | None = None,
+    rationale: str | None = None,
+) -> dict:
+    return {
+        "date": on_date,
+        "session_type": session_type,
+        "title": title,
+        "target_km": 25.0,
+        "hr_high": 150,
+        "rating": rating,
+        "rationale": rationale,
+    }
+
+
+def _save_prescriptions(
+    db_path: str, review_id: int, rows: list[dict], week: str = "2026-06-08"
+) -> int:
+    """Save one batch for a week and return its batch_id."""
+    from garmin_mcp.database.inserters.plan import insert_weekly_prescriptions
+
+    result = insert_weekly_prescriptions(
+        week, rows, review_id=review_id, db_path=db_path
+    )
+    return int(result["batch_id"])
+
+
+@pytest.mark.unit
+def test_insert_weekly_review_rejects_verdict(initialized_db_path) -> None:
+    """A review carrying per-day plan rows is rejected; an empty list is fine."""
+    db_path = str(initialized_db_path)
+    review = _weekly_review()
+    review["review_data"] = {
+        **review["review_data"],
+        "verdict": [{"date": "2026-06-09", "session": "ロング", "rating": "✅"}],
+    }
+
+    with pytest.raises(ValueError, match="save_weekly_prescriptions"):
+        insert_weekly_review(review, db_path=db_path)
+
+    review["review_data"]["verdict"] = []
+    assert insert_weekly_review(review, db_path=db_path) > 0
+
+
+@pytest.mark.unit
+def test_get_weekly_review_derives_verdict_from_linked_batch(
+    initialized_db_path,
+) -> None:
+    """The verdict rows are projected from the batch linked to the review."""
+    db_path = str(initialized_db_path)
+    review_id = insert_weekly_review(_weekly_review(), db_path=db_path)
+    batch_id = _save_prescriptions(
+        db_path,
+        review_id,
+        [
+            _prescription(
+                "2026-06-13", "ロング25km", rating="✅", rationale="ラダー3段目"
+            )
+        ],
+    )
+
+    result = AthleteReader(db_path=db_path).get_weekly_review("2026-06-08")
+
+    assert result is not None
+    review_data = result["review_data"]
+    assert review_data["verdict_source"] == "prescriptions"
+    assert review_data["prescription_batch_id"] == batch_id
+    assert review_data["verdict"] == [
+        {
+            "date": "2026-06-13",
+            "session": "ロング25km",
+            "rating": "✅",
+            "comment": "ラダー3段目",
+            "session_type": "long",
+            "target_km": 25.0,
+            "target_minutes": None,
+            "hr_low": None,
+            "hr_high": 150,
+            "status": "prescribed",
+            "prescription_id": review_data["verdict"][0]["prescription_id"],
+        }
+    ]
+
+
+@pytest.mark.unit
+def test_get_weekly_review_uses_max_batch_for_legacy_multi_batch_review(
+    initialized_db_path,
+) -> None:
+    """Legacy weeks with several batches on one review use the highest batch."""
+    db_path = str(initialized_db_path)
+    review_id = insert_weekly_review(_weekly_review(), db_path=db_path)
+    first_batch = _save_prescriptions(
+        db_path, review_id, [_prescription("2026-06-13", "ロング22km")]
+    )
+
+    # Pre-guard history: a second batch on the same review, inserted directly.
+
+    with get_write_connection(db_path) as conn:
+        conn.execute(
+            "INSERT INTO weekly_prescriptions (prescription_id, batch_id, user_id, "
+            "review_id, week_start_date, date, session_type, title, status) VALUES "
+            "(nextval('seq_weekly_prescriptions_id'), ?, 'default', ?, "
+            "DATE '2026-06-08', DATE '2026-06-13', 'long', 'ロング25km', 'prescribed')",
+            [first_batch + 1, review_id],
+        )
+
+    result = AthleteReader(db_path=db_path).get_weekly_review("2026-06-08")
+
+    assert result is not None
+    verdict = result["review_data"]["verdict"]
+    assert [row["session"] for row in verdict] == ["ロング25km"]
+    assert result["review_data"]["prescription_batch_id"] == first_batch + 1
+
+
+@pytest.mark.unit
+def test_get_weekly_review_falls_back_to_week_canonical_batch(
+    initialized_db_path,
+) -> None:
+    """A prose-only new version inherits the week's canonical batch."""
+    db_path = str(initialized_db_path)
+    first_id = insert_weekly_review(_weekly_review(), db_path=db_path)
+    batch_id = _save_prescriptions(
+        db_path, first_id, [_prescription("2026-06-13", "ロング25km", rating="✅")]
+    )
+    _set_review_created_at(db_path, first_id, "2026-06-08 09:00:00")
+
+    second_id = insert_weekly_review(_weekly_review(volume_km=31.0), db_path=db_path)
+    _set_review_created_at(db_path, second_id, "2026-06-09 09:00:00")
+
+    result = AthleteReader(db_path=db_path).get_weekly_review("2026-06-08")
+
+    assert result is not None
+    assert result["review_id"] == second_id
+    assert result["review_data"]["verdict_source"] == "prescriptions"
+    assert result["review_data"]["prescription_batch_id"] == batch_id
+    assert result["review_data"]["verdict"][0]["session"] == "ロング25km"
+
+
+@pytest.mark.unit
+def test_get_weekly_review_keeps_stored_verdict_when_no_batch(
+    initialized_db_path,
+) -> None:
+    """A pre-split review without prescriptions keeps its stored verdict."""
+    db_path = str(initialized_db_path)
+    stored = [
+        {"date": f"2026-06-{day}", "session": "ジョグ", "rating": "✅", "comment": "-"}
+        for day in (9, 11, 13)
+    ]
+
+    with get_write_connection(db_path) as conn:
+        conn.execute(
+            "INSERT INTO weekly_reviews (review_id, user_id, week_start_date, "
+            "week_end_date, review_date, review_data, agent_name, agent_version) "
+            "VALUES (nextval('seq_weekly_reviews_id'), 'default', "
+            "DATE '2026-06-08', DATE '2026-06-14', DATE '2026-06-14', ?, "
+            "'weekly-review', '1.0')",
+            [json.dumps({"verdict": stored}, ensure_ascii=False)],
+        )
+
+    result = AthleteReader(db_path=db_path).get_weekly_review("2026-06-08")
+
+    assert result is not None
+    assert result["review_data"]["verdict"] == stored
+    assert result["review_data"]["verdict_source"] == "stored"
+    assert result["review_data"]["prescription_batch_id"] is None
+
+
+@pytest.mark.unit
+def test_list_weekly_review_versions_verdict_per_version(
+    initialized_db_path,
+) -> None:
+    """Each version renders the batch its own review_id owns."""
+    db_path = str(initialized_db_path)
+    first_id = insert_weekly_review(_weekly_review(), db_path=db_path)
+    _save_prescriptions(db_path, first_id, [_prescription("2026-06-13", "ロング22km")])
+    _set_review_created_at(db_path, first_id, "2026-06-08 09:00:00")
+
+    second_id = insert_weekly_review(_weekly_review(volume_km=31.0), db_path=db_path)
+    _save_prescriptions(db_path, second_id, [_prescription("2026-06-13", "ロング25km")])
+    _set_review_created_at(db_path, second_id, "2026-06-09 09:00:00")
+
+    versions = AthleteReader(db_path=db_path).list_weekly_review_versions("2026-06-08")
+
+    assert [v["review_id"] for v in versions] == [second_id, first_id]
+    sessions = [v["review_data"]["verdict"][0]["session"] for v in versions]
+    assert sessions == ["ロング25km", "ロング22km"]

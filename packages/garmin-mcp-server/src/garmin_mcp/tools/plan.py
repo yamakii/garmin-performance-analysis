@@ -77,11 +77,15 @@ class SaveWeeklyPrescriptionsParams(BaseModel):
     )
     prescriptions: list[dict[str, Any]] = Field(
         description=(
-            "Prescribed sessions for the week. Each row: date (YYYY-MM-DD), "
+            "Prescribed sessions for the week — the single source of the "
+            "per-day plan, verdict included. Each row: date (YYYY-MM-DD), "
             "session_type (long|easy|recovery|threshold|tempo|strides|rest|"
             "strength|cross), title, and optionally target_minutes, target_km, "
             "hr_low, hr_high (ceiling — the only bound for easy/long), "
-            "pace_low_s_per_km, pace_high_s_per_km, rationale."
+            "pace_low_s_per_km, pace_high_s_per_km, rationale (the comment) "
+            "and rating (✅ | 🟡 | 🔴). Revising a week means saving a new "
+            "review version first and passing its review_id: a second batch "
+            "for the same review is rejected."
         )
     )
     review_id: int | None = Field(
@@ -309,11 +313,16 @@ PLAN_TOOLS: list[ToolDef] = [
         name="save_weekly_prescriptions",
         description=(
             "Save one batch of prescribed sessions for a week (append-only). "
+            "These rows are the single source of the per-day plan including its "
+            "rating/comment; the weekly review derives its verdict from them. "
             "All rows get a fresh batch_id and the latest batch per week is "
             "canonical, so re-prescribing a week supersedes rather than mutates "
             "the earlier batch. Validates that each date falls inside the week, "
-            "the session_type is known, and hr_low <= hr_high. Returns {status, "
-            "week_start_date, batch_id, count, prescription_ids}."
+            "the session_type and rating are known, and hr_low <= hr_high. Once "
+            "the week has a review, review_id must be that week's latest review "
+            "version and may own only one batch — revise by saving a new review "
+            "version first. Returns {status, week_start_date, batch_id, count, "
+            "prescription_ids}."
         ),
         params=SaveWeeklyPrescriptionsParams,
         handler=_save_weekly_prescriptions,

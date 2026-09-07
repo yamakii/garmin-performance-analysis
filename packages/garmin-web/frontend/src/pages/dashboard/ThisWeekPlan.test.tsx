@@ -150,15 +150,30 @@ describe("ThisWeekPlan", () => {
     expect(screen.getByText("イージー 8km")).toBeInTheDocument();
     expect(screen.getByText("ロング 22km")).toBeInTheDocument();
     expect(screen.queryByText("Tempo")).not.toBeInTheDocument();
-    // ...with their target and lifecycle status.
+    // ...with their target, and the lifecycle status where no rating exists.
     expect(screen.getByText("22km 150分 ≤150")).toBeInTheDocument();
-    expect(screen.getAllByText("実施")).toHaveLength(2);
+    expect(screen.getAllByText("実施")).toHaveLength(1);
     // The week range comes from the plan week, and today is still marked.
     expect(screen.getByText("今週のプラン")).toBeInTheDocument();
     expect(screen.getByText("2026-09-07 〜 2026-09-13")).toBeInTheDocument();
     expect(screen.getByText("今日")).toBeInTheDocument();
     // Recommendations still come from the review.
     expect(screen.getByText("ロング走は時間×HRで管理")).toBeInTheDocument();
+  });
+
+  it("renders the rating badge from prescription.rating", () => {
+    const review = makeReview({
+      verdict: [{ date: "2026-09-13", session: "Tempo", rating: "🔴" }],
+    });
+
+    renderPlan(review, new Date(2026, 8, 8), prescribedWeek());
+
+    // The rating comes from the prescription row (✅ 良好), not the stale
+    // stored verdict (🔴 要改善) for the same day.
+    expect(screen.getByRole("img", { name: "良好" })).toHaveTextContent("✅");
+    expect(
+      screen.queryByRole("img", { name: "要改善" }),
+    ).not.toBeInTheDocument();
   });
 
   it("test_this_week_plan_falls_back_to_verdict_without_prescriptions", () => {

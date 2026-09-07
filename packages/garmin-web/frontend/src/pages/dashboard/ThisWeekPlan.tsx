@@ -33,6 +33,9 @@ function planRows(week: PlanWeek | null, review: WeeklyReview | null): PlanRow[]
       date: day.date,
       label: prescription.title || sessionLabel(prescription.session_type),
       status: prescription.status,
+      // The rating lives on the prescription row itself (#1021); rows saved
+      // before it keep the status chip.
+      rating: prescription.rating ?? undefined,
       detail: targetSummary(prescription),
     })),
   );

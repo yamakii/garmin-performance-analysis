@@ -64,6 +64,8 @@ _PRESCRIPTION_KEYS = (
     "target_km",
     "target_minutes",
     "hr_high",
+    "rating",
+    "rationale",
     "status",
 )
 
@@ -84,7 +86,7 @@ _SELECT_PRESCRIPTIONS = """
         GROUP BY week_start_date
     )
     SELECT p.prescription_id, p.date, p.session_type, p.title, p.target_km,
-           p.target_minutes, p.hr_high, p.status
+           p.target_minutes, p.hr_high, p.rating, p.rationale, p.status
     FROM weekly_prescriptions p
     JOIN latest l ON p.week_start_date = l.week_start_date
                  AND p.batch_id = l.batch_id

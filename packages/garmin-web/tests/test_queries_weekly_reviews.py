@@ -173,3 +173,63 @@ def test_get_weekly_review_returns_latest_version(weekly_reviews_db_path):
     assert review is not None
     assert review["review_id"] == 301
     assert review["review_data"]["marker"] == "latest"
+
+
+@pytest.mark.integration
+def test_get_weekly_review_keeps_stored_verdict_without_prescriptions(
+    weekly_reviews_db_path,
+):
+    """A DB without the prescription table keeps the stored verdict (#1021)."""
+    with get_connection(weekly_reviews_db_path) as conn:
+        review = get_weekly_review(conn, "2026-06-15")
+
+    assert review is not None
+    assert review["review_data"]["verdict_source"] == "stored"
+    assert review["review_data"]["prescription_batch_id"] is None
+
+
+@pytest.mark.integration
+def test_get_weekly_review_derives_verdict(plan_conn):
+    """The verdict is projected from the batch linked to the review (#1021)."""
+    review = get_weekly_review(plan_conn, "2026-09-07")
+
+    assert review is not None
+    data = review["review_data"]
+    assert data["verdict_source"] == "prescriptions"
+    assert data["prescription_batch_id"] == 1
+    assert [row["session"] for row in data["verdict"]] == [
+        "イージー 8km",
+        "ロング 22km",
+    ]
+    long_row = data["verdict"][1]
+    assert long_row["rating"] == "✅"
+    assert long_row["comment"] == "ラダー2段目。HR 150 を超えないように。"
+    assert long_row["status"] == "done"
+
+
+@pytest.mark.integration
+def test_list_weekly_review_versions_verdict_per_version(plan_conn):
+    """Each version renders the batch its own review_id owns (#1021)."""
+    plan_conn.execute(
+        "INSERT INTO weekly_reviews (review_id, user_id, week_start_date,"
+        " week_end_date, review_date, review_data, created_at, agent_name,"
+        " agent_version) VALUES (2, 'default', DATE '2026-09-07',"
+        " DATE '2026-09-13', DATE '2026-09-14', ?, TIMESTAMP '2099-01-01 00:00:00',"
+        " 'weekly-review', '1.0')",
+        [json.dumps({"overall": "改訂版"}, ensure_ascii=False)],
+    )
+    plan_conn.execute(
+        "INSERT INTO weekly_prescriptions (prescription_id, batch_id, user_id,"
+        " review_id, week_start_date, date, session_type, title, rating, status)"
+        " VALUES (99, 9, 'default', 2, DATE '2026-09-07', DATE '2026-09-13',"
+        " 'long', 'ロング 18km (改訂)', '🟡', 'prescribed')"
+    )
+
+    versions = list_weekly_review_versions(plan_conn, "2026-09-07")
+
+    assert [v["review_id"] for v in versions] == [2, 1]
+    assert [v["review_data"]["verdict"][0]["session"] for v in versions] == [
+        "ロング 18km (改訂)",
+        "イージー 8km",
+    ]
+    assert [v["review_data"]["prescription_batch_id"] for v in versions] == [9, 1]

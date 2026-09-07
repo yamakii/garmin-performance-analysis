@@ -113,6 +113,7 @@ def _mock_prefetch(
     block: dict[str, Any] | None = None,
     ladder_step: dict[str, Any] | None = None,
     prev_prescriptions: list[dict[str, Any]] | None = None,
+    prescriptions_by_week: dict[str, list[dict[str, Any]]] | None = None,
     scheduled: list[dict[str, Any]] | None = None,
 ) -> Iterator[MagicMock]:
     """Patch every prefetch collaborator so the bundle can run without a DB.
@@ -127,7 +128,10 @@ def _mock_prefetch(
             ``None``, i.e. no block registered).
         ladder_step: ``{"current", "previous", "next"}`` the ``PlanReader``
             returns for W (defaults to ``None``).
-        prev_prescriptions: W-1 prescription rows (defaults to none).
+        prev_prescriptions: W-1 prescription rows (defaults to none). Returned
+            for every week; use ``prescriptions_by_week`` to differentiate.
+        prescriptions_by_week: Rows keyed by week start, so W and W-1 can carry
+            different batches (overrides ``prev_prescriptions``).
         scheduled: Garmin calendar items for W. ``None`` keeps the default
             "calendar unreachable" behaviour (the reader raises).
 
@@ -158,7 +162,15 @@ def _mock_prefetch(
     plan_reader = MagicMock()
     plan_reader.get_block_for_date.return_value = block
     plan_reader.get_ladder_step_for_week.return_value = ladder_step
-    plan_reader.get_weekly_prescriptions.return_value = prev_prescriptions or []
+    if prescriptions_by_week is not None:
+        by_week = prescriptions_by_week
+        plan_reader.get_weekly_prescriptions.side_effect = (
+            lambda week_start_date, user_id="default": list(
+                by_week.get(week_start_date, [])
+            )
+        )
+    else:
+        plan_reader.get_weekly_prescriptions.return_value = prev_prescriptions or []
 
     if scheduled is None:
         calendar_patch = patch(
@@ -227,6 +239,7 @@ def test_prefetch_bundle_safe_null_on_reader_error() -> None:
         "hiking",
         "training_block",
         "prescriptions_prev_week",
+        "prescriptions_current_week",
         "garmin_conflicts",
         "athlete_profile",
         "goals_with_weeks_to_race",
@@ -343,6 +356,48 @@ def test_prefetch_prev_week_adherence() -> None:
     assert prev["adherence"]["done"] == 2
     assert prev["adherence"]["replaced"] == 1
     assert prev["adherence"]["prescribed"] == 3
+
+
+@pytest.mark.unit
+def test_bundle_has_prescriptions_current_week() -> None:
+    """W's canonical batch ships with its batch_id / review_id (#1021)."""
+    current = [
+        {
+            "date": "2026-09-09",
+            "session_type": "easy",
+            "title": "Z2ジョグ 計25分",
+            "batch_id": 4,
+            "review_id": 59,
+            "rating": "🟡",
+        },
+        {
+            "date": "2026-09-13",
+            "session_type": "long",
+            "title": "ロング 22km",
+            "batch_id": 4,
+            "review_id": 59,
+            "rating": "✅",
+        },
+    ]
+    with _mock_prefetch(
+        prescriptions_by_week={"2026-09-07": current, "2026-08-31": []}
+    ):
+        result = prefetch_weekly_review_context("2026-09-07", today="2026-09-07")
+
+    bundle = result["prescriptions_current_week"]
+    assert len(bundle["rows"]) == 2
+    assert bundle["batch_id"] == 4
+    assert bundle["review_id"] == 59
+    assert bundle["rows"][0]["rating"] == "🟡"
+
+    with _mock_prefetch(prescriptions_by_week={}):
+        empty = prefetch_weekly_review_context("2026-09-07", today="2026-09-07")
+
+    assert empty["prescriptions_current_week"] == {
+        "rows": [],
+        "batch_id": None,
+        "review_id": None,
+    }
 
 
 @pytest.mark.unit
@@ -756,6 +811,7 @@ def test_prefetch_weekly_review_context_end_to_end(db_path: Path) -> None:
         "hiking",
         "training_block",
         "prescriptions_prev_week",
+        "prescriptions_current_week",
         "scheduled_workouts",
         "garmin_conflicts",
         "athlete_profile",
@@ -782,6 +838,55 @@ def test_prefetch_weekly_review_context_end_to_end(db_path: Path) -> None:
     assert len(goals) == 1
     assert goals[0]["weeks_to_race"] == _weeks_to_race("2026-10-11", date(2026, 7, 6))
     assert "goals" not in result["athlete_profile"]
+
+
+@pytest.mark.unit
+def test_past_review_verdict_is_derived(db_path: Path) -> None:
+    """The past review's verdict comes from its prescription batch (#1021)."""
+    from garmin_mcp.database.inserters.athlete import insert_weekly_review
+    from garmin_mcp.database.inserters.plan import insert_weekly_prescriptions
+
+    _seed_profile_and_goal(db_path)
+    review_id = int(
+        insert_weekly_review(
+            {
+                "week_start_date": "2026-07-06",
+                "week_end_date": "2026-07-12",
+                "review_date": "2026-07-10",
+                "review_data": {"overall": "順調"},
+            },
+            db_path=str(db_path),
+        )
+    )
+    saved = insert_weekly_prescriptions(
+        "2026-07-06",
+        [
+            {
+                "date": "2026-07-12",
+                "session_type": "long",
+                "title": "ロング 22km",
+                "target_km": 22.0,
+                "rating": "✅",
+                "rationale": "ラダー2段目",
+            }
+        ],
+        review_id=review_id,
+        db_path=str(db_path),
+    )
+
+    with _no_network(db_path):
+        result = prefetch_weekly_review_context("this", today="2026-07-10")
+
+    review_data = result["past_review"]["review_data"]
+    assert review_data["verdict_source"] == "prescriptions"
+    assert review_data["prescription_batch_id"] == saved["batch_id"]
+    assert review_data["verdict"][0]["session"] == "ロング 22km"
+    assert review_data["verdict"][0]["rating"] == "✅"
+
+    current = result["prescriptions_current_week"]
+    assert current["review_id"] == review_id
+    assert current["batch_id"] == saved["batch_id"]
+    assert [row["title"] for row in current["rows"]] == ["ロング 22km"]
 
 
 @pytest.mark.integration

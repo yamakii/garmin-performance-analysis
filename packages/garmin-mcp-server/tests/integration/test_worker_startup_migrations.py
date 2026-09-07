@@ -65,8 +65,9 @@ def test_server_startup_applies_migrations(tmp_path: Path) -> None:
         "drop_pace_consistency_full",
         "add_training_blocks_tables",
         "add_weekly_prescriptions_table",
+        "add_prescription_rating",
     ]
-    assert MigrationRunner(db_path).get_current_version() == 24
+    assert MigrationRunner(db_path).get_current_version() == 25
 
 
 @pytest.mark.integration
@@ -90,7 +91,7 @@ def test_worker_startup_applies_migrations_23_24(tmp_path: Path) -> None:
         conn.close()
 
     assert version_row is not None
-    assert version_row[0] == 24
+    assert version_row[0] == 25
     assert {
         "training_blocks",
         "training_block_versions",

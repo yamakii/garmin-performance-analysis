@@ -542,17 +542,17 @@ Get one athlete profile snapshot in full: version_id, user_id, created_at, and p
 
 CLI: `garmin-db athlete save-review`
 
-Save a weekly training review to DuckDB. Each save appends a new version for (user_id, week_start_date) instead of overwriting, so re-running the same week keeps prior versions as history; the latest version is treated as canonical. The free-form review_data payload is stored as JSON. Returns {status, user_id, week_start_date, review_id}; pass review_id to save_weekly_prescriptions to link the week's prescribed sessions to this review version.
+Save a weekly training review to DuckDB. Each save appends a new version for (user_id, week_start_date) instead of overwriting, so re-running the same week keeps prior versions as history; the latest version is treated as canonical. The free-form review_data payload is stored as JSON, minus the per-day plan: a non-empty review_data.verdict is rejected because those rows live in save_weekly_prescriptions (rating/rationale) and the verdict is derived from them on read. Returns {status, user_id, week_start_date, review_id}; pass review_id to save_weekly_prescriptions to link the week's prescribed sessions to this review version.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `review` | object | **required** | Review JSON with user_id (default 'default'), week_start_date, week_end_date, review_date, review_data (object, e.g. {this_week, garmin_next_week, verdict, recommendations, overall}), agent_name, and agent_version. |
+| `review` | object | **required** | Review JSON with user_id (default 'default'), week_start_date, week_end_date, review_date, review_data (object, e.g. {this_week, garmin_next_week, recommendations, overall}), agent_name, and agent_version. review_data must NOT carry verdict rows: the per-day plan (rating/rationale) belongs to save_weekly_prescriptions and the verdict is derived from it. |
 
 ### `get_weekly_review`
 
 CLI: `garmin-db athlete get-review`
 
-Get a single weekly review (the latest version of its week). When week_start_date is omitted, the latest version of the most recent week is returned. review_data is JSON-decoded back into an object. Returns null when no matching review exists.
+Get a single weekly review (the latest version of its week). When week_start_date is omitted, the latest version of the most recent week is returned. review_data is JSON-decoded back into an object; its verdict is derived from the week's canonical weekly_prescriptions batch (verdict_source='prescriptions' with prescription_batch_id, or 'stored' for reviews written before the split). Returns null when no matching review exists.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -563,7 +563,7 @@ Get a single weekly review (the latest version of its week). When week_start_dat
 
 CLI: `garmin-db athlete prefetch-weekly-review-context`
 
-Pre-fetch the shared weekly-review CONTEXT bundle in a single call: resolves the target week W (and prior week W-1) and returns both weeks' activities (with performance_trends + weather), the fitness summary (Garmin native hr_zones), multi-week load_trend/acwr, recovery (trend/status/baseline_deviation), strength sessions, the training_block backbone (W's block + long-run ladder step + weeks to the block's end + quality budget), prescriptions_prev_week (W-1 rows + adherence counts), the Garmin scheduled_workouts for W with the garmin_conflicts they raise against the block, the athlete_profile, goals with weeks_to_race, and the last past_review. Every collector is null-on-error (additive). Excludes catch_up_ingest (a write); run that separately before this.
+Pre-fetch the shared weekly-review CONTEXT bundle in a single call: resolves the target week W (and prior week W-1) and returns both weeks' activities (with performance_trends + weather), the fitness summary (Garmin native hr_zones), multi-week load_trend/acwr, recovery (trend/status/baseline_deviation), strength sessions, the training_block backbone (W's block + long-run ladder step + weeks to the block's end + quality budget), prescriptions_prev_week (W-1 rows + adherence counts), prescriptions_current_week (W's canonical batch with its batch_id / review_id), the Garmin scheduled_workouts for W with the garmin_conflicts they raise against the block, the athlete_profile, goals with weeks_to_race, and the last past_review. Every collector is null-on-error (additive). Excludes catch_up_ingest (a write); run that separately before this.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -777,12 +777,12 @@ Get the mesocycle ledger with the block that is active on a given date. Returns 
 
 CLI: `garmin-db plan save-prescriptions`
 
-Save one batch of prescribed sessions for a week (append-only). All rows get a fresh batch_id and the latest batch per week is canonical, so re-prescribing a week supersedes rather than mutates the earlier batch. Validates that each date falls inside the week, the session_type is known, and hr_low <= hr_high. Returns {status, week_start_date, batch_id, count, prescription_ids}.
+Save one batch of prescribed sessions for a week (append-only). These rows are the single source of the per-day plan including its rating/comment; the weekly review derives its verdict from them. All rows get a fresh batch_id and the latest batch per week is canonical, so re-prescribing a week supersedes rather than mutates the earlier batch. Validates that each date falls inside the week, the session_type and rating are known, and hr_low <= hr_high. Once the week has a review, review_id must be that week's latest review version and may own only one batch — revise by saving a new review version first. Returns {status, week_start_date, batch_id, count, prescription_ids}.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `week_start_date` | string | **required** | Week start date (YYYY-MM-DD); every row must fall in this week. |
-| `prescriptions` | array[object] | **required** | Prescribed sessions for the week. Each row: date (YYYY-MM-DD), session_type (long|easy|recovery|threshold|tempo|strides|rest|strength|cross), title, and optionally target_minutes, target_km, hr_low, hr_high (ceiling — the only bound for easy/long), pace_low_s_per_km, pace_high_s_per_km, rationale. |
+| `prescriptions` | array[object] | **required** | Prescribed sessions for the week — the single source of the per-day plan, verdict included. Each row: date (YYYY-MM-DD), session_type (long|easy|recovery|threshold|tempo|strides|rest|strength|cross), title, and optionally target_minutes, target_km, hr_low, hr_high (ceiling — the only bound for easy/long), pace_low_s_per_km, pace_high_s_per_km, rationale (the comment) and rating (✅ | 🟡 | 🔴). Revising a week means saving a new review version first and passing its review_id: a second batch for the same review is rejected. |
 | `review_id` | integer | optional | weekly_reviews.review_id when saved by a weekly review. |
 | `user_id` | string | optional | Ledger owner identifier (default: 'default') |
 

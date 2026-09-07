@@ -1720,6 +1720,7 @@ _CREATE_WEEKLY_PRESCRIPTIONS = """
         pace_low_s_per_km INTEGER,
         pace_high_s_per_km INTEGER,
         rationale VARCHAR,
+        rating VARCHAR,
         status VARCHAR NOT NULL DEFAULT 'prescribed',
         garmin_workout_id BIGINT,
         garmin_schedule_id BIGINT,
@@ -1812,6 +1813,14 @@ _PRESCRIPTION_ROWS = [
     ),
 ]
 
+# The coach verdict lives on the prescription row (#1021): prescription_id ->
+# (rating, rationale). Rows left out stay ungraded (NULL), like a legacy batch.
+_PRESCRIPTION_GRADES = {
+    2: ("✅", "ラダー2段目。HR 150 を超えないように。"),
+    5: ("🟡", "週の質練枠は1本。脚が重ければ Base 40 分へ。"),
+    7: ("✅", "ラダー3段目。進行ゲート緑。"),
+}
+
 # (activity_id, date, name, distance_km, seconds, pace_s_per_km, avg_hr)
 _PLAN_ACTIVITY_ROWS = [
     (9000000101, "2026-08-31", "イージーラン", 6.02, 2200, 365.0, 139),
@@ -1879,7 +1888,9 @@ def _insert_plan_rows(conn: duckdb.DuckDBPyConnection) -> None:
                 prescription_id,
                 batch_id,
                 "default",
-                1,
+                # Only the reviewed week (9/7) is linked to review 1; the 9/14
+                # batches were saved without a review, like an unreviewed week.
+                1 if week_start == "2026-09-07" else None,
                 week_start,
                 day,
                 session_type,
@@ -1889,6 +1900,12 @@ def _insert_plan_rows(conn: duckdb.DuckDBPyConnection) -> None:
                 hr_high,
                 status,
             ],
+        )
+    for prescription_id, (rating, rationale) in _PRESCRIPTION_GRADES.items():
+        conn.execute(
+            "UPDATE weekly_prescriptions SET rating = ?, rationale = ?"
+            " WHERE prescription_id = ?",
+            [rating, rationale, prescription_id],
         )
     conn.execute(
         "INSERT INTO weekly_reviews (review_id, user_id, week_start_date,"
