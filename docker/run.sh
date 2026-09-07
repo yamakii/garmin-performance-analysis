@@ -111,12 +111,10 @@ if [ -z "${GITHUB_TOKEN:-}" ] && command -v gh >/dev/null 2>&1; then
     GITHUB_TOKEN="$(gh auth token 2>/dev/null || true)"; export GITHUB_TOKEN
 fi
 
-# Plain (non-path) passthrough. A value-less `-e VAR` pulls VAR from this
-# script's env (OS env, possibly augmented by .env) and overrides any same-named
-# entry from --env-file. Keep creds in your shell instead of .env.
-# CLAUDE_SANDBOX / CLAUDE_CREDENTIAL_MASK are the built-in-sandbox switches read
-# by entrypoint.sh (see docker/README.md).
-for v in GARMIN_EMAIL GARMIN_PASSWORD GITHUB_TOKEN CLAUDE_SANDBOX CLAUDE_CREDENTIAL_MASK; do
+# Plain (non-path) credential passthrough. A value-less `-e VAR` pulls VAR from
+# this script's env (OS env, possibly augmented by .env) and overrides any
+# same-named entry from --env-file. Keep creds in your shell instead of .env.
+for v in GARMIN_EMAIL GARMIN_PASSWORD GITHUB_TOKEN; do
     [ -n "${!v:-}" ] && env_args+=( -e "$v" )
 done
 [ -n "${GITHUB_TOKEN:-}" ] || echo "WARN: GITHUB_TOKEN unset — github MCP won't authenticate." >&2

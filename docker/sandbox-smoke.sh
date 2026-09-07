@@ -13,7 +13,6 @@ set -uo pipefail
 
 failures=0
 ok()   { echo "  ok:   $*"; }
-warn() { echo "  warn: $*"; }
 fail() { echo "  FAIL: $*" >&2; failures=$((failures + 1)); }
 
 http_code() {
@@ -81,63 +80,22 @@ for host in duckdb.org developer.garmin.com; do
     fi
 done
 
-# --- Claude Code built-in sandbox (#1028) -----------------------------------
-if command -v bwrap >/dev/null && command -v socat >/dev/null; then
-    ok "bubblewrap + socat present"
-else
-    fail "bubblewrap/socat missing — Claude Code's built-in sandbox cannot start"
-fi
-
-# Can bubblewrap create a user namespace here? Same probe the entrypoint runs
-# before deciding sandbox.enabled. With bwrap present but unable to unshare,
-# Claude Code does NOT fall back — every sandboxed Bash command fails — so the
-# managed policy must say enabled=false in that case.
-userns=none
-if bwrap_err=$(bwrap --unshare-user --ro-bind / / --dev /dev --proc /proc true 2>&1); then
-    userns=fresh-proc
-elif bwrap_err=$(bwrap --unshare-user --ro-bind / / --dev /dev --bind /proc /proc true 2>&1); then
-    userns=bind-proc
-fi
-blocker_detail() {
-    echo "  ..    bwrap: $(printf '%s' "$bwrap_err" | head -1)"
-    echo "  ..    seccomp=$(awk '/^Seccomp:/{print $2}' /proc/self/status) apparmor=$(tr -d '\n' </proc/self/attr/current 2>/dev/null) max_user_namespaces=$(cat /proc/sys/user/max_user_namespaces 2>/dev/null) apparmor_restrict_userns=$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo n/a)"
-}
-
+# --- Claude Code built-in sandbox: pinned OFF (#1033) -------------------------
+# The bind-mounted .claude/settings.local.json says sandbox.enabled=true (saved on
+# the host). Inside the container that must never take effect: bubblewrap is not
+# installed and could not create a user namespace here anyway, and with bwrap
+# present-but-failing every sandboxed Bash command errors (#1032). The static
+# managed-settings file overrides the project setting.
 ms=/etc/claude-code/managed-settings.json
-if [ -r "$ms" ] && jq -e '.sandbox | has("enabled")' "$ms" >/dev/null 2>&1; then
-    enabled=$(jq -r '.sandbox.enabled' "$ms")
-    case "$enabled/$userns" in
-        true/none)
-            fail "managed settings enable the sandbox but bubblewrap cannot create namespaces — every sandboxed Bash command would fail"
-            blocker_detail
-            ;;
-        true/*)
-            ok "managed settings enable the sandbox and bubblewrap can create namespaces ($userns)"
-            # shellcheck source=lib/allowlist.sh
-            . /usr/local/lib/sandbox/allowlist.sh
-            n_list=$(allowlist_domains /etc/sandbox/allowed-domains.txt | wc -l)
-            n_allow=$(jq '.sandbox.network.allowedDomains | length' "$ms")
-            if [ "$n_allow" -eq $((n_list * 2)) ]; then
-                ok "sandbox allowedDomains mirror the allowlist ($n_list domains → $n_allow entries)"
-            else
-                fail "sandbox allowedDomains ($n_allow) do not mirror the allowlist ($n_list domains)"
-            fi
-            if jq -e '.sandbox.filesystem.allowWrite | index("/home/claude/uv-venv")' "$ms" >/dev/null; then
-                ok "sandbox allowWrite covers the uv venv"
-            else
-                fail "sandbox allowWrite misses /home/claude/uv-venv (uv sync would fail)"
-            fi
-            ;;
-        false/none)
-            ok "built-in sandbox disabled: bubblewrap cannot create namespaces here (Docker stays the boundary)"
-            blocker_detail
-            ;;
-        *)
-            warn "built-in sandbox disabled although bubblewrap works here ($userns) — CLAUDE_SANDBOX=0?"
-            ;;
-    esac
+if [ -r "$ms" ] && [ "$(jq -r '.sandbox.enabled' "$ms" 2>/dev/null)" = "false" ]; then
+    ok "built-in Claude sandbox pinned off by managed settings (Docker is the boundary)"
 else
-    fail "managed settings missing or invalid at $ms"
+    fail "managed settings missing or not pinning the built-in sandbox off at $ms"
+fi
+if command -v bwrap >/dev/null 2>&1; then
+    fail "bubblewrap is installed — a present-but-failing bwrap breaks every sandboxed Bash command (#1032)"
+else
+    ok "bubblewrap not installed (nothing for a stray sandbox.enabled=true to break)"
 fi
 
 echo
