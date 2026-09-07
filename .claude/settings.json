@@ -25,6 +25,15 @@
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-push.sh\""
           }
         ]
+      },
+      {
+        "matcher": "WebFetch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-webfetch-allowlist.sh\""
+          }
+        ]
       }
     ],
     "PostToolUse": [
