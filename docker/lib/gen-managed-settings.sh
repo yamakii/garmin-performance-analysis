@@ -16,6 +16,13 @@
 #   CLAUDE_SANDBOX=1|0          default 1. Enable Claude Code's built-in Bash
 #                               sandbox (bubblewrap + socat are in the image).
 #                               0 writes an explicit off.
+#   SANDBOX_USERNS_OK=1|0       default 1. Set by entrypoint.sh from a boot-time
+#                               probe: can bubblewrap create a user namespace as
+#                               the claude user? 0 forces an explicit off, because
+#                               with bwrap present but unable to unshare, Claude
+#                               Code does NOT fall back — every sandboxed Bash
+#                               command fails with the bwrap error (observed on
+#                               the hardened container, 2026-09-07).
 #   CLAUDE_CREDENTIAL_MASK=1|0  default 0. Mask GARMIN_PASSWORD / GITHUB_TOKEN for
 #                               sandboxed commands: they see a placeholder and the
 #                               sandbox proxy injects the real value only towards
@@ -34,7 +41,7 @@ gen_managed_settings() {
   local allowlist="$1"
   local home="${SANDBOX_HOME:-/home/claude}"
 
-  if [ "${CLAUDE_SANDBOX:-1}" != "1" ]; then
+  if [ "${CLAUDE_SANDBOX:-1}" != "1" ] || [ "${SANDBOX_USERNS_OK:-1}" != "1" ]; then
     printf '{"sandbox":{"enabled":false}}\n'
     return 0
   fi

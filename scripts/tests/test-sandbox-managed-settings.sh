@@ -92,6 +92,22 @@ else
   fail "test_managed_settings_disabled: got '$off'"
 fi
 
+# --- test_managed_settings_disabled_when_userns_unavailable -------------------
+# entrypoint.sh sets SANDBOX_USERNS_OK=0 when bubblewrap cannot create a user
+# namespace; the policy must then be an explicit off (bwrap present but failing
+# breaks every sandboxed Bash command instead of falling back).
+no_userns="$(run_gen SANDBOX_USERNS_OK=0)"
+if [ "$(jq -c . <<<"$no_userns")" = '{"sandbox":{"enabled":false}}' ]; then
+  echo "  ok: test_managed_settings_disabled_when_userns_unavailable"
+else
+  fail "test_managed_settings_disabled_when_userns_unavailable: got '$no_userns'"
+fi
+if jq -e '.sandbox.enabled == true' <<<"$(run_gen SANDBOX_USERNS_OK=1)" >/dev/null; then
+  echo "  ok: test_managed_settings_disabled_when_userns_unavailable (probe ok → enabled)"
+else
+  fail "test_managed_settings_disabled_when_userns_unavailable: SANDBOX_USERNS_OK=1 did not enable"
+fi
+
 # --- test_managed_settings_executed_writes_file ------------------------------
 if bash "$GEN" "$tmp/one.txt" "$tmp/out/managed-settings.json" \
    && jq -e '.sandbox.enabled == true' "$tmp/out/managed-settings.json" >/dev/null \

@@ -214,9 +214,13 @@ Managed settings are the tier Claude Code honours for credential masking and
 their booleans override the bind-mounted project/user settings, so the policy is
 **container-only and repo-controlled**; the `sandbox` block in
 `.claude/settings.local.json` keeps applying on the host and is superseded in the
-container. `failIfUnavailable` is deliberately not set: if bubblewrap cannot
-start, Claude falls back to unsandboxed Bash and Docker remains the boundary
-(`sandbox-smoke.sh` reports which case you are in).
+container. Before writing the file, the entrypoint **probes whether bubblewrap
+can create a user namespace** as the `claude` user; if it cannot, the file says
+`enabled: false` and a boot log line says why. This matters because Claude Code
+only falls back to unsandboxed Bash when bubblewrap is *missing* — with
+bubblewrap installed but unable to unshare, **every sandboxed Bash command fails**
+with the bwrap error (observed on the hardened container). `sandbox-smoke.sh`
+reports which case you are in and fails if the policy and the probe disagree.
 
 Two switches, forwarded from your shell by `docker/run.sh`:
 
@@ -254,10 +258,12 @@ So an effective built-in sandbox needs a custom seccomp profile, an AppArmor
 profile that permits `mount`, **and** turning off Ubuntu's unprivileged-userns
 restriction on the host — three deliberate reductions of the outer hardening,
 to gain an inner layer that covers only Bash. Until that trade is made on
-purpose, the managed policy is in force but Claude Code falls back to
-unsandboxed Bash, `sandbox-smoke.sh` prints the exact `bwrap` error and the
-seccomp / AppArmor / sysctl state, and Docker remains the boundary. With the
-fallback in effect, `CLAUDE_CREDENTIAL_MASK=1` has nothing to act on either.
+purpose, the entrypoint's probe fails, the managed policy says
+`enabled: false`, Bash runs unsandboxed as before, `sandbox-smoke.sh` prints the
+exact `bwrap` error and the seccomp / AppArmor / sysctl state, and Docker remains
+the boundary. In that state `CLAUDE_CREDENTIAL_MASK=1` has nothing to act on
+either. Once the host allows the namespace, the same boot flips the policy on
+without any config change.
 
 ## Verifying the sandbox
 
