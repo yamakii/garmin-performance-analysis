@@ -110,12 +110,14 @@ if [ -r "$ms" ] && jq -e '.sandbox | has("enabled")' "$ms" >/dev/null 2>&1; then
         # Namespaces are what bubblewrap needs; under --cap-drop ALL + the Docker
         # default seccomp profile this may be refused, in which case Claude Code
         # falls back to unsandboxed Bash (Docker stays the boundary). Informational.
-        if bwrap --unshare-user --ro-bind / / --dev /dev --proc /proc true 2>/dev/null; then
+        if bwrap_err=$(bwrap --unshare-user --ro-bind / / --dev /dev --proc /proc true 2>&1); then
             ok "bubblewrap can create namespaces here (fresh /proc works)"
-        elif bwrap --unshare-user --ro-bind / / --dev /dev --bind /proc /proc true 2>/dev/null; then
+        elif bwrap_err=$(bwrap --unshare-user --ro-bind / / --dev /dev --bind /proc /proc true 2>&1); then
             ok "bubblewrap can create namespaces here (needs enableWeakerNestedSandbox, which is set)"
         else
             warn "bubblewrap cannot create namespaces in this container — Claude Code will fall back to unsandboxed Bash"
+            warn "  bwrap: $(printf '%s' "$bwrap_err" | head -1)"
+            warn "  seccomp=$(awk '/^Seccomp:/{print $2}' /proc/self/status) apparmor=$(cat /proc/self/attr/current 2>/dev/null | tr -d '\n') max_user_namespaces=$(cat /proc/sys/user/max_user_namespaces 2>/dev/null) apparmor_restrict_userns=$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo n/a)"
         fi
     fi
 else
