@@ -9,6 +9,12 @@
 # Set SANDBOX_FIREWALL=0 to start WITHOUT the egress allowlist (debugging only —
 # this removes the exfiltration protection that makes dangerouslyDisableSandbox
 # acceptable inside the container).
+#
+# Claude Code's built-in Bash sandbox (#1028) is configured through managed
+# settings written here on every boot (docker/lib/gen-managed-settings.sh):
+#   CLAUDE_SANDBOX=0          write an explicit off (default: on)
+#   CLAUDE_CREDENTIAL_MASK=1  mask GARMIN_PASSWORD / GITHUB_TOKEN for sandboxed
+#                             commands (default: off — see docker/README.md)
 set -euo pipefail
 
 if [ "$(id -u)" -eq 0 ]; then
@@ -21,6 +27,12 @@ if [ "$(id -u)" -eq 0 ]; then
   else
     echo "WARN: SANDBOX_FIREWALL=0 — starting WITHOUT the egress allowlist (network is open)." >&2
   fi
+
+  # Managed settings are the only tier Claude Code honours for credential masking
+  # and they win over the bind-mounted project/user settings, so the policy is
+  # container-only and repo-controlled. Root-owned, world-readable.
+  bash /usr/local/lib/sandbox/gen-managed-settings.sh \
+      /etc/sandbox/allowed-domains.txt /etc/claude-code/managed-settings.json
 
   uid="$(id -u claude)"
   gid="$(id -g claude)"

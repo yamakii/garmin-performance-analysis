@@ -180,6 +180,19 @@ if [ -e scripts/tests/test-sandbox-allowlist.sh ]; then
   fi
 fi
 
+# Behavioral self-test for the managed-settings generator (#1028): the policy for
+# Claude Code's built-in sandbox is built with jq from allowed-domains.txt + env,
+# so a wrong key, a missing allowWrite path or a mask leaking into the default
+# output is caught here, not after a rebuild.
+if [ -e scripts/tests/test-sandbox-managed-settings.sh ]; then
+  if bash scripts/tests/test-sandbox-managed-settings.sh; then
+    echo "ok (script test): sandbox-managed-settings"
+  else
+    echo "FAIL (script test): sandbox-managed-settings" >&2
+    status=1
+  fi
+fi
+
 if [ "$status" -ne 0 ]; then
   echo "check-claude-scripts: FAILED" >&2
 else
