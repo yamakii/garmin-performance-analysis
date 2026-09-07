@@ -159,6 +159,12 @@ def insert_weekly_review(review: dict[str, Any], db_path: str | None = None) -> 
     The generated ``review_id`` is returned so the caller can link the weekly
     prescriptions it saves next to this exact review version (Issue #980).
 
+    The per-day plan does **not** belong here: the prescribed sessions with
+    their rating and comment live in ``weekly_prescriptions`` alone, and the
+    readers derive ``review_data.verdict`` from that batch at read time. A
+    payload that still carries its own ``verdict`` rows is rejected so the two
+    stores cannot drift again (Issue #1021).
+
     Args:
         review: Review dict with keys ``user_id`` (defaults to ``"default"``),
             ``week_start_date``, ``week_end_date``, ``review_date``,
@@ -168,7 +174,17 @@ def insert_weekly_review(review: dict[str, Any], db_path: str | None = None) -> 
 
     Returns:
         The new row's ``review_id``.
+
+    Raises:
+        ValueError: When ``review_data.verdict`` is non-empty.
     """
+    review_data = review.get("review_data")
+    if isinstance(review_data, dict) and review_data.get("verdict"):
+        raise ValueError(
+            "per-day plan rows belong in save_weekly_prescriptions "
+            "(rating/rationale); verdict is derived"
+        )
+
     if db_path is None:
         from garmin_mcp.utils.paths import get_database_dir
 

@@ -64,3 +64,11 @@ Consolidated reference for all analysis rules.
 - 削除前: `ls -la` で中身確認 → ユーザーデータ有無判断 → ユーザー確認
 - `rm -rf` をファイル有無未確認で実行禁止
 - 誤配置ファイル → 正しいパスに移動してから削除
+
+## 6. 週次プランの正本
+
+- **日別プランの正本は `weekly_prescriptions` の最新バッチだけ**（セッション・目標値・判定 `rating`・コメント `rationale`）。週次レビューの散文（`recommendations` / `overall`）は**同じ `review_id` に対する背景**であって、日別プランの別ソースではない
+- `get_weekly_review()` の `review_data.verdict` は保存値ではなく**処方バッチから導出**される（`verdict_source` = `prescriptions` / `stored`、`prescription_batch_id` 併記）。レビューに `verdict` を保存しようとすると拒否される
+- **プランを改訂するときは必ず版をペアで更新**: 新しいレビュー版（`save_weekly_review`、`review_data.revision_note` に理由）→ その `review_id` で `save_weekly_prescriptions` の順。処方だけの再保存は拒否される。Garmin 登録済みなら `schedule_weekly_prescriptions(dry_run=False)` で作り直す
+- **読む側の版チェック**: 処方行の `review_id` とレビューの `review_id` が一致しないときは**処方が正**。そのレビューの日別の言及は使わない
+- **Garmin カレンダー**: `[MCP]` 項目はこちらの処方の写し（正本は処方行）、`fbtAdaptiveWorkout` は参考情報にとどめる

@@ -1,7 +1,8 @@
-"""Tests for migration v24 (add_weekly_prescriptions_table).
+"""Tests for migrations v24 / v25 on weekly_prescriptions.
 
-Verifies that applying v24 creates the prescription table with the
-``status`` default and that re-applying it is a no-op.
+Verifies that applying v24 creates the prescription table with the ``status``
+default, that v25 adds the nullable ``rating`` column (the coach verdict moved
+out of the review prose, Issue #1021), and that re-applying either is a no-op.
 """
 
 from pathlib import Path
@@ -9,6 +10,9 @@ from pathlib import Path
 import duckdb
 import pytest
 
+from garmin_mcp.database.migrations.add_prescription_rating import (
+    add_prescription_rating,
+)
 from garmin_mcp.database.migrations.add_weekly_prescriptions_table import (
     add_weekly_prescriptions_table,
 )
@@ -55,5 +59,50 @@ def test_add_weekly_prescriptions_table_creates_table(tmp_path: Path) -> None:
         assert row[0] == "prescribed"
         assert row[1] is None
         assert row[2] is None
+    finally:
+        conn.close()
+
+
+@pytest.mark.unit
+def test_add_prescription_rating_idempotent(tmp_path: Path) -> None:
+    """v25 adds a single nullable rating column and re-applying is a no-op."""
+    conn = duckdb.connect(str(tmp_path / "rating.duckdb"))
+    try:
+        add_weekly_prescriptions_table(conn)
+        add_prescription_rating(conn)
+        # Idempotent: a second application must not raise.
+        add_prescription_rating(conn)
+
+        columns = [
+            row[0]
+            for row in conn.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'weekly_prescriptions' AND column_name = 'rating'"
+            ).fetchall()
+        ]
+        assert columns == ["rating"]
+
+        conn.execute(
+            "INSERT INTO weekly_prescriptions "
+            "(prescription_id, batch_id, user_id, week_start_date, date, "
+            "session_type, title, rating) VALUES "
+            "(nextval('seq_weekly_prescriptions_id'), "
+            "nextval('seq_weekly_prescription_batches'), 'default', "
+            "DATE '2026-09-07', DATE '2026-09-13', 'long', 'ロング 25km', '✅')"
+        )
+        row = conn.execute("SELECT rating FROM weekly_prescriptions").fetchone()
+        assert row is not None
+        assert row[0] == "✅"
+    finally:
+        conn.close()
+
+
+@pytest.mark.unit
+def test_add_prescription_rating_without_table_is_noop(tmp_path: Path) -> None:
+    """v25 on a DB without weekly_prescriptions does nothing (no crash)."""
+    conn = duckdb.connect(str(tmp_path / "no_table.duckdb"))
+    try:
+        add_prescription_rating(conn)
+        assert "weekly_prescriptions" not in _table_names(conn)
     finally:
         conn.close()

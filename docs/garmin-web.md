@@ -141,6 +141,8 @@ parameters are documented in each handler's docstring.
 
 > Weekly reviews are versioned: re-running `/weekly-review` for the same week appends a new row instead of overwriting (Epic #311). The list view de-duplicates to the latest version per week; the detail page fetches `/versions` to switch between past versions.
 
+> The per-day plan is **not** stored on the review: `review_data.verdict` is derived from `weekly_prescriptions` at read time (#1021) — the batch linked to that review version, else the week's canonical batch, else the stored payload for pre-split weeks (`verdict_source` = `prescriptions` / `stored`, plus `prescription_batch_id`). The review detail table therefore reads the rating and comment from the prescription row (`rating` / `rationale`) and only falls back to the stored verdict.
+
 > Section analyses are versioned by **`run_id`** (#776): one analysis run shares a single `run_id` across its sections, so a full-activity analysis of 5 sections is one version, not five. `/sections/versions` returns one entry per run (newest first); the detail page pins `/sections?run_id=N` to view an older run (each section's latest version at or before that run).
 
 ## Architecture

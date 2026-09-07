@@ -11,6 +11,10 @@ Two conventions apply throughout:
 - ``weekly_prescriptions`` is append-only per ``batch_id``: the highest
   ``batch_id`` for a week is canonical and superseded batches are never
   returned.
+
+These rows are also the single source of the per-day plan's coach verdict
+(``rating`` / ``rationale``); :func:`verdict_from_prescriptions` projects them
+into the shape the weekly review used to store (Issue #1021).
 """
 
 from __future__ import annotations
@@ -49,6 +53,7 @@ _PRESCRIPTION_COLUMN_NAMES = (
     "pace_low_s_per_km",
     "pace_high_s_per_km",
     "rationale",
+    "rating",
     "status",
     "garmin_workout_id",
     "garmin_schedule_id",
@@ -262,6 +267,36 @@ class PlanReader(BaseDBReader):
             if row.get("date") == on_date
         ]
 
+    def get_prescriptions_for_review(
+        self, review_id: int, user_id: str = "default"
+    ) -> list[dict[str, Any]]:
+        """Get the prescription rows a review version owns.
+
+        A review version normally owns exactly one batch (the revision guard in
+        ``insert_weekly_prescriptions`` enforces it), but weeks saved before
+        that guard may have several, so the highest ``batch_id`` wins here too.
+
+        Args:
+            review_id: ``weekly_reviews.review_id`` the batch points at.
+            user_id: Ledger owner identifier (defaults to ``"default"``).
+
+        Returns:
+            Rows of the highest ``batch_id`` pointing at ``review_id``, ordered
+            by ``date``. Empty when no batch is linked to the review.
+        """
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                f"SELECT {_PRESCRIPTION_COLUMNS} FROM weekly_prescriptions "
+                "WHERE user_id = ? AND review_id = ? "
+                "AND batch_id = ("
+                "  SELECT MAX(batch_id) FROM weekly_prescriptions "
+                "  WHERE user_id = ? AND review_id = ?"
+                ") ORDER BY date, prescription_id",
+                [user_id, review_id, user_id, review_id],
+            ).fetchall()
+            columns = [desc[0] for desc in conn.description]
+            return [_row_to_dict(columns, row) for row in rows]
+
     def list_prescriptions(
         self, start_date: str, end_date: str, user_id: str = "default"
     ) -> list[dict[str, Any]]:
@@ -298,6 +333,39 @@ class PlanReader(BaseDBReader):
             ).fetchall()
             columns = [desc[0] for desc in conn.description]
             return [_row_to_dict(columns, row) for row in rows]
+
+
+def verdict_from_prescriptions(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Render prescription rows as the review's per-day verdict rows.
+
+    The prescriptions are the single source of the per-day plan (Issue #1021),
+    so the review's ``verdict`` is projected from them at read time. The shape
+    is a superset of the verdict rows reviews used to store
+    (``date`` / ``session`` / ``rating`` / ``comment``), so existing consumers
+    keep working while gaining the target and the lifecycle status.
+
+    Args:
+        rows: Prescription dicts as returned by the reader.
+
+    Returns:
+        One dict per row, ordered as given. Empty for an empty input.
+    """
+    return [
+        {
+            "date": row.get("date"),
+            "session": row.get("title"),
+            "rating": row.get("rating"),
+            "comment": row.get("rationale"),
+            "session_type": row.get("session_type"),
+            "target_km": row.get("target_km"),
+            "target_minutes": row.get("target_minutes"),
+            "hr_low": row.get("hr_low"),
+            "hr_high": row.get("hr_high"),
+            "status": row.get("status"),
+            "prescription_id": row.get("prescription_id"),
+        }
+        for row in rows
+    ]
 
 
 def _row_to_dict(columns: list[str], row: tuple) -> dict[str, Any]:

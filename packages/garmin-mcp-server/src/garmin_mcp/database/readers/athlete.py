@@ -1,4 +1,10 @@
-"""Athlete profile DB reader."""
+"""Athlete profile DB reader.
+
+Weekly reviews carry a derived per-day plan: ``review_data.verdict`` is not
+read from the stored payload but projected from the week's canonical
+``weekly_prescriptions`` batch (Issue #1021), so a mid-week revision of the
+prescriptions can never leave a stale plan behind in the review prose.
+"""
 
 from __future__ import annotations
 
@@ -6,9 +12,18 @@ import json
 import logging
 from typing import Any
 
+import duckdb
+
 from garmin_mcp.database.readers.base import BaseDBReader
+from garmin_mcp.database.readers.plan import verdict_from_prescriptions
 
 logger = logging.getLogger(__name__)
+
+#: Prescription columns needed to render a review's per-day verdict rows.
+_VERDICT_PRESCRIPTION_COLUMNS = (
+    "prescription_id, batch_id, date, session_type, title, target_minutes, "
+    "target_km, hr_low, hr_high, rationale, rating, status"
+)
 
 
 class AthleteReader(BaseDBReader):
@@ -161,7 +176,8 @@ class AthleteReader(BaseDBReader):
         Returns:
             A dict with the review columns (date/timestamp values converted to
             ``str``) where ``review_data`` is JSON-decoded back into a dict, or
-            ``None`` when no matching review exists.
+            ``None`` when no matching review exists. ``review_data.verdict`` is
+            derived from the week's prescriptions (see :meth:`_attach_verdict`).
         """
         with self._get_connection() as conn:
             select_cols = (
@@ -186,7 +202,7 @@ class AthleteReader(BaseDBReader):
                 return None
 
             columns = [desc[0] for desc in conn.description]
-            return self._review_row_to_dict(columns, row)
+            return self._attach_verdict(conn, self._review_row_to_dict(columns, row))
 
     def list_weekly_reviews(
         self, limit: int = 8, user_id: str = "default"
@@ -202,7 +218,8 @@ class AthleteReader(BaseDBReader):
 
         Returns:
             A list of review dicts (newest week first, latest version per week).
-            Each ``review_data`` is JSON-decoded back into a dict.
+            Each ``review_data`` is JSON-decoded back into a dict and its
+            ``verdict`` is derived from the week's prescriptions.
         """
         with self._get_connection() as conn:
             rows = conn.execute(
@@ -215,7 +232,10 @@ class AthleteReader(BaseDBReader):
                 [user_id, limit],
             ).fetchall()
             columns = [desc[0] for desc in conn.description]
-            return [self._review_row_to_dict(columns, row) for row in rows]
+            return [
+                self._attach_verdict(conn, self._review_row_to_dict(columns, row))
+                for row in rows
+            ]
 
     def list_weekly_review_versions(
         self, week_start_date: str, user_id: str = "default"
@@ -229,7 +249,9 @@ class AthleteReader(BaseDBReader):
         Returns:
             A list of every version saved for the week, newest first
             (``created_at`` DESC). Each ``review_data`` is JSON-decoded back into
-            a dict. Empty when no review exists for the week.
+            a dict and carries the verdict of *its own* prescription batch (the
+            week's canonical batch when the version has none). Empty when no
+            review exists for the week.
         """
         with self._get_connection() as conn:
             rows = conn.execute(
@@ -240,7 +262,86 @@ class AthleteReader(BaseDBReader):
                 [user_id, week_start_date],
             ).fetchall()
             columns = [desc[0] for desc in conn.description]
-            return [self._review_row_to_dict(columns, row) for row in rows]
+            return [
+                self._attach_verdict(conn, self._review_row_to_dict(columns, row))
+                for row in rows
+            ]
+
+    def _prescription_rows(
+        self, conn: Any, where: str, params: list[Any]
+    ) -> list[dict[str, Any]]:
+        """Fetch the highest-batch prescription rows matching ``where``.
+
+        Args:
+            conn: Open connection (the caller's, so no extra file handle).
+            where: Predicate after ``user_id = ?`` (``?`` placeholders).
+            params: Parameters for the outer and the inner (MAX) query.
+
+        Returns:
+            Row dicts ordered by ``date``; empty when nothing matches or the
+            table/column is missing (databases older than the migration).
+        """
+        try:
+            result = conn.execute(
+                f"SELECT {_VERDICT_PRESCRIPTION_COLUMNS} FROM weekly_prescriptions "
+                f"WHERE user_id = ? AND {where} AND batch_id = ("
+                "  SELECT MAX(batch_id) FROM weekly_prescriptions "
+                f"  WHERE user_id = ? AND {where}"
+                ") ORDER BY date, prescription_id",
+                params,
+            )
+            rows = result.fetchall()
+        except duckdb.Error:
+            logger.debug("weekly_prescriptions unavailable; verdict stays stored")
+            return []
+        columns = [desc[0] for desc in result.description]
+        return [self._row_to_dict(columns, row) for row in rows]
+
+    def _attach_verdict(self, conn: Any, record: dict[str, Any]) -> dict[str, Any]:
+        """Derive ``review_data.verdict`` from the week's prescriptions.
+
+        The per-day plan lives in ``weekly_prescriptions`` only (Issue #1021),
+        so the verdict is resolved in three steps: the batch linked to this
+        review version, else the week's canonical batch (a prose-only revision
+        appends a version without a new batch), else the stored payload for
+        reviews written before the split.
+
+        Args:
+            conn: Open connection (the caller's).
+            record: A decoded review row; mutated in place and returned.
+
+        Returns:
+            ``record`` with ``review_data.verdict``, ``verdict_source``
+            (``"prescriptions"`` / ``"stored"``) and ``prescription_batch_id``
+            set. A ``None`` ``review_data`` is left untouched.
+        """
+        review_data = record.get("review_data")
+        if not isinstance(review_data, dict):
+            return record
+
+        user_id = record.get("user_id") or "default"
+        rows: list[dict[str, Any]] = []
+        review_id = record.get("review_id")
+        if review_id is not None:
+            rows = self._prescription_rows(
+                conn, "review_id = ?", [user_id, review_id, user_id, review_id]
+            )
+        week_start_date = record.get("week_start_date")
+        if not rows and week_start_date is not None:
+            rows = self._prescription_rows(
+                conn,
+                "week_start_date = CAST(? AS DATE)",
+                [user_id, week_start_date, user_id, week_start_date],
+            )
+
+        if rows:
+            review_data["verdict"] = verdict_from_prescriptions(rows)
+            review_data["verdict_source"] = "prescriptions"
+            review_data["prescription_batch_id"] = rows[0].get("batch_id")
+        else:
+            review_data["verdict_source"] = "stored"
+            review_data["prescription_batch_id"] = None
+        return record
 
     @classmethod
     def _profile_version_row_to_dict(

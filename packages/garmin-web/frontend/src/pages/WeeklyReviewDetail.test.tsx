@@ -213,6 +213,30 @@ describe("WeeklyReviewDetail", () => {
     ).toBeInTheDocument();
   });
 
+  it("prefers prescription.rating/rationale over the stored verdict", async () => {
+    renderDetail(fullReview, [
+      {
+        prescription_id: 12,
+        session_type: "long",
+        title: "ロング 22km",
+        target_km: 22,
+        target_minutes: null,
+        hr_high: 150,
+        rating: "✅",
+        rationale: "ラダー2段目。HR 150 を超えないように。",
+        status: "done",
+      },
+    ]);
+
+    // The prescription row is canonical (#1021): its rating and comment win
+    // over the same day's stored verdict ("◎" / "good").
+    expect(
+      await screen.findByText("ラダー2段目。HR 150 を超えないように。"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("良好")).toBeInTheDocument();
+    expect(screen.queryByText("good")).not.toBeInTheDocument();
+  });
+
   it("test_renders_intensity_distribution", async () => {
     renderDetail({
       this_week: {

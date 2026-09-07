@@ -38,7 +38,7 @@ mcp__garmin-db__catch_up_ingest(domains=["wellness"], end_date=<対象日>)
 | `get_recovery_trend` | `weeks=2` | RHR 7d/30d 中央値、HRV 連続割れ、under_recovery |
 | `get_activity_by_date` | `date=<前日>` と `date=<対象日>` | 直近ラン（距離・時間・ペース・HR）、今日すでに走ったか |
 | `get_garmin_scheduled_workouts` | `start_date=<対象日>`, `end_date=<対象日+6>` | 今日〜1 週間の予定（[MCP] 登録分を含む） |
-| `get_weekly_prescriptions` | `date=<対象日>` | **今日の処方**（session_type / target_km / target_minutes / hr_high / rationale / status）。これが判定の背骨 |
+| `get_weekly_prescriptions` | `date=<対象日>` | **今日の処方**（session_type / target_km / target_minutes / hr_high / rating / rationale / status / review_id）。これが判定の背骨 |
 | `get_weekly_review` | 引数なし | 今週の文脈（カットバック判定・回復ゲート・recommendations の言い回し）。処方の**背景**として読む |
 
 `get_load_trend(lookback_weeks=6)` は「今週何 km」「ロングを伸ばしていいか」など**週単位の量**を聞かれたときだけ追加します。
@@ -47,9 +47,11 @@ mcp__garmin-db__catch_up_ingest(domains=["wellness"], end_date=<対象日>)
 
 ## Step 3: 判定の組み立て
 
-1. **背骨は今日の構造化処方**。`get_weekly_prescriptions(date=<対象日>)` の行（`session_type` / `target_km` / `target_minutes` / `hr_high` / `rationale`）を出発点にし、`get_weekly_review` の recommendations・カットバック判定・回復ゲートをその背景として重ねる。処方と矛盾する提案をする場合は、その旨と理由を明示する（黙って別案を出さない）
+1. **背骨は今日の構造化処方**。`get_weekly_prescriptions(date=<対象日>)` の行（`session_type` / `target_km` / `target_minutes` / `hr_high` / `rating` / `rationale`）を出発点にし、`get_weekly_review` の recommendations・カットバック判定・回復ゲートをその背景として重ねる。処方と矛盾する提案をする場合は、その旨と理由を明示する（黙って別案を出さない）
+   - **散文を重ねてよいのは版が一致するときだけ**: 処方行の `review_id` が `get_weekly_review()` の `review_id` と**等しいときだけ**、そのレビューの散文（recommendations・週次方針）を背景として使う。**一致しない場合は処方行が正**で、そのレビューの**日別の言及は使わない**（週の途中で処方が改訂され、散文が追いついていない状態。「プランが改訂されており、レビュー本文は前版です」と一言添えて、必要なら `/weekly-review` での改訂反映を促す）
    - 処方が **空**（その日に行が無い / 週がまだ処方されていない）なら「今週はまだ処方が登録されていません」と明示し、`get_weekly_review` の週次方針で代替する。`/weekly-review` の実行を1文で促してよい
    - 行の `status` が `done` / `replaced` なら **今日はすでに消化済み**として扱い、追加で走るかどうかの相談に切り替える
+   - **Garmin カレンダー（`get_garmin_scheduled_workouts`）は参照情報**: `[MCP]` 接頭辞の項目はこちらが登録した処方の写しなので処方行が正本、`fbtAdaptiveWorkout`（Garmin の適応プラン）は**参考にとどめ**、処方と食い違っても処方を優先する
 2. **回復ゲートを読む順**: `recovery_status.recommendation` → `baseline_deviation.overall_flag`（adverse なら理由） → `recovery_trend.hrv.under_recovery` と `acwr.status` の AND（両方点灯で「積み過ぎ」）
 3. **今日の距離・強度の答えは帯で出す**（例: 6〜8 km、HR 上限 150）。ぴったりの数字に意味を持たせない
 4. **暑熱期（気温 28℃ 以上が見込まれる時期）**: HR 上限（ceiling）で管理し、ペースは結果として扱う。HR floor や「涼しい朝に効率テスト」を提案しない

@@ -543,6 +543,10 @@ export interface Prescription {
   target_km: number | null;
   target_minutes: number | null;
   hr_high: number | null;
+  /** Coach verdict of the prescribed session (✅ / 🟡 / 🔴), the canonical one. */
+  rating?: string | null;
+  /** The coach's one-line comment on the session. */
+  rationale?: string | null;
   status: PrescriptionStatus | string;
 }
 

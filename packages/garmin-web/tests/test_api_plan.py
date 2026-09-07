@@ -75,6 +75,21 @@ def test_get_month_plan_merges_prescriptions_and_activities(plan_conn) -> None:
 
 
 @pytest.mark.integration
+def test_month_plan_prescription_has_rating_and_rationale(plan_conn) -> None:
+    """The prescription row carries the coach verdict and comment (#1021)."""
+    plan = get_month_plan(plan_conn, "2026-09")
+
+    graded = _day(plan, "2026-09-13")["prescriptions"][0]
+    assert graded["rating"] == "✅"
+    assert graded["rationale"] == "ラダー2段目。HR 150 を超えないように。"
+
+    # An ungraded row keeps both fields as null rather than dropping them.
+    ungraded = _day(plan, "2026-09-08")["prescriptions"][0]
+    assert ungraded["rating"] is None
+    assert ungraded["rationale"] is None
+
+
+@pytest.mark.integration
 def test_get_month_plan_week_adherence(plan_conn) -> None:
     """Week 9/14 (done / done / skipped / pending) counts as 4 prescribed."""
     plan = get_month_plan(plan_conn, "2026-09")

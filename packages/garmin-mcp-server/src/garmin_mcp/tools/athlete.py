@@ -80,8 +80,10 @@ class SaveWeeklyReviewParams(BaseModel):
         description=(
             "Review JSON with user_id (default 'default'), week_start_date, "
             "week_end_date, review_date, review_data (object, e.g. {this_week, "
-            "garmin_next_week, verdict, recommendations, overall}), agent_name, "
-            "and agent_version."
+            "garmin_next_week, recommendations, overall}), agent_name, and "
+            "agent_version. review_data must NOT carry verdict rows: the "
+            "per-day plan (rating/rationale) belongs to "
+            "save_weekly_prescriptions and the verdict is derived from it."
         )
     )
 
@@ -300,9 +302,13 @@ ATHLETE_TOOLS: list[ToolDef] = [
             "version for (user_id, week_start_date) instead of overwriting, so "
             "re-running the same week keeps prior versions as history; the latest "
             "version is treated as canonical. The free-form review_data payload is "
-            "stored as JSON. Returns {status, user_id, week_start_date, "
-            "review_id}; pass review_id to save_weekly_prescriptions to link the "
-            "week's prescribed sessions to this review version."
+            "stored as JSON, minus the per-day plan: a non-empty review_data."
+            "verdict is rejected because those rows live in "
+            "save_weekly_prescriptions (rating/rationale) and the verdict is "
+            "derived from them on read. Returns {status, user_id, "
+            "week_start_date, review_id}; pass review_id to "
+            "save_weekly_prescriptions to link the week's prescribed sessions "
+            "to this review version."
         ),
         params=SaveWeeklyReviewParams,
         handler=_save_weekly_review,
@@ -314,8 +320,11 @@ ATHLETE_TOOLS: list[ToolDef] = [
         description=(
             "Get a single weekly review (the latest version of its week). When "
             "week_start_date is omitted, the latest version of the most recent "
-            "week is returned. review_data is JSON-decoded back into an object. "
-            "Returns null when no matching review exists."
+            "week is returned. review_data is JSON-decoded back into an object; "
+            "its verdict is derived from the week's canonical weekly_prescriptions "
+            "batch (verdict_source='prescriptions' with prescription_batch_id, or "
+            "'stored' for reviews written before the split). Returns null when no "
+            "matching review exists."
         ),
         params=GetWeeklyReviewParams,
         handler=_get_weekly_review,
@@ -332,7 +341,9 @@ ATHLETE_TOOLS: list[ToolDef] = [
             "recovery (trend/status/baseline_deviation), strength sessions, the "
             "training_block backbone (W's block + long-run ladder step + weeks "
             "to the block's end + quality budget), prescriptions_prev_week (W-1 "
-            "rows + adherence counts), the Garmin scheduled_workouts for W with "
+            "rows + adherence counts), prescriptions_current_week (W's canonical "
+            "batch with its batch_id / review_id), the Garmin "
+            "scheduled_workouts for W with "
             "the garmin_conflicts they raise against the block, the "
             "athlete_profile, goals with weeks_to_race, and the last "
             "past_review. Every collector is null-on-error (additive). Excludes "
