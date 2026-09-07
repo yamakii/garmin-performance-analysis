@@ -14,11 +14,14 @@ export const meta = {
 // granularity defaults to 'week'. Invoked by cron (after scheduled_sync detects
 // a pending period via find_pending_trend_period) or manually for backfill.
 //
-// CONTEXT handoff mirrors analyze-activity: the deterministic layer
-// (prefetch_trend_context, #790) is fetched ONCE by the Fetch agent and passed
-// INLINE into the narration prompt. All accuracy-sensitive values (deltas, trend
-// direction, fusion flags, headline_metrics) are precomputed in the CONTEXT — the
-// LLM only writes prose, so no fabricated "load is up 12%" verdicts (#714 ADR §4).
+// CONTEXT handoff is FILE-BASED (#1023): the deterministic layer
+// (prefetch_trend_context, #790) is fetched ONCE by the Fetch agent, written to
+// <temp_dir>/context.json, and read by the narration agent from there. Unlike
+// analyze-activity's inline handoff, this bundle is ~60KB (fitness_curve alone is
+// ~43KB), and making the Fetch agent re-emit it verbatim stalled that stage for
+// minutes. All accuracy-sensitive values (deltas, trend direction, fusion flags,
+// headline_metrics) are precomputed in the CONTEXT — the LLM only writes prose,
+// so no fabricated "load is up 12%" verdicts (#714 ADR §4).
 //
 // ── pure logic (side-effect-free; extracted & unit-tested in CI) ─────────
 // The block between the markers is evaluated by
@@ -53,24 +56,26 @@ function normalizeTrendArgs(raw) {
 function fetchTrendPrompt(a) {
   return (
     `あなたはトレンド分析パイプラインの fetch ステージです。期間 ${a.period_start} 〜 ${a.period_end}` +
-    `（granularity=${a.granularity}）の縦断トレンド CONTEXT を取得し、**返却値 context_json に格納**します。\n\n` +
-    `1. Bash で次を実行し、出力（1行 JSON）を取得する:\n` +
-    `   TS=$(date +%s); TD=/tmp/trend_${a.granularity}_${a.period_start}_$TS; mkdir -p "$TD"   # trend.json の出力先\n` +
+    `（granularity=${a.granularity}）の縦断トレンド CONTEXT を **ファイルに書き出し**、そのディレクトリを返します。\n\n` +
+    `1. Bash で次を実行する（CONTEXT は数十 KB になるため、必ずファイルへリダイレクトする。` +
+    `出力を自分で読み上げたり返却値に転記したりしないこと）:\n` +
+    `   TS=$(date +%s); TD=/tmp/trend_${a.granularity}_${a.period_start}_$TS; mkdir -p "$TD"   # context.json / trend.json の置き場\n` +
     `   uv run --directory packages/garmin-mcp-server python -m garmin_mcp.scripts.prefetch_trend_context ` +
-    `--period-start ${a.period_start} --period-end ${a.period_end} --granularity ${a.granularity}\n` +
-    `   - 出力が非空かつ "error" を含まないことを確認（含む/空なら fail として報告）。\n` +
-    `2. schema で {period_start, period_end, granularity, temp_dir, context_json} を返す。\n` +
-    `   **context_json には手順1の prefetch 出力（1行 JSON 文字列）を「一字一句そのまま」格納すること**` +
-    `（要約・整形・キー削除をしない。後段のナレーションがこの実データのみを使う）。temp_dir=$TD。`
+    `--period-start ${a.period_start} --period-end ${a.period_end} --granularity ${a.granularity} > "$TD/context.json"\n` +
+    `2. 書き出しを検証する:\n` +
+    `   wc -c "$TD/context.json"; head -c 200 "$TD/context.json"\n` +
+    `   - サイズが 0 でなく、先頭が JSON（"{"）で、"error" キーを含まないことを確認（空 / error なら fail として報告）。\n` +
+    `3. schema で {period_start, period_end, granularity, temp_dir} を返す（temp_dir=$TD）。` +
+    `**CONTEXT の中身は返却値に含めない**（後段のナレーションが $TD/context.json を直接読む）。`
   )
 }
 
 function narrationPrompt(ctx) {
   return (
     `期間 ${ctx.periodStart} 〜 ${ctx.periodEnd}（${ctx.granularity}）の縦断トレンドを、ランニングコーチとして解説してください。\n` +
-    `CONTEXT（prefetch バンドル, JSON）は以下です。トレンド値・回帰・融合フラグ・headline_metrics は全て決定的に計算済みです。` +
-    `この実データのみに基づき、値の再計算・捏造をしないこと:\n` +
-    `<CONTEXT>\n${ctx.contextJson}\n</CONTEXT>\n` +
+    `**まず Read で ${ctx.tempDir}/context.json を読むこと**。これが CONTEXT（prefetch バンドル, JSON）で、` +
+    `トレンド値・回帰・融合フラグ・headline_metrics は全て決定的に計算済みです。` +
+    `この実データのみに基づき、値の再計算・捏造をしないこと。CONTEXT の全文を出力へ書き写す必要はありません:\n` +
     `散文フィールドのみを書く: narrative（なぜトレンドが動いているか・シグナル相互関係）, ` +
     `key_learnings（配列）, recommendations（最大2件、具体的な次アクション）。\n` +
     `【小Nガード（統計的誠実性, #813）】status="insufficient_data" もしくは data_points < 3 の成分は、` +
@@ -124,13 +129,12 @@ const A = normalizeTrendArgs(args)
 // ── schemas ───────────────────────────────────────────────────────────
 const FETCH_SCHEMA = {
   type: 'object',
-  required: ['temp_dir', 'context_json'],
+  required: ['temp_dir'],
   properties: {
     period_start: { type: ['string', 'null'] },
     period_end: { type: ['string', 'null'] },
     granularity: { type: ['string', 'null'] },
     temp_dir: { type: 'string' },
-    context_json: { type: 'string' },
   },
 }
 
@@ -149,15 +153,14 @@ phase('Fetch')
 const fetched = await agent(fetchTrendPrompt(A), {
   label: 'fetch',
   phase: 'Fetch',
-  // orchestration (bash + JSON echo), but context_json must be copied verbatim
-  // ("一字一句そのまま") — pin sonnet for reliable transcription of the large bundle.
-  model: 'sonnet',
+  // pure orchestration (bash redirect + path echo) — the bundle never passes
+  // through the model, so haiku suffices (#1023).
+  model: 'haiku',
   schema: FETCH_SCHEMA,
 })
 
 const ctx = {
   tempDir: fetched.temp_dir,
-  contextJson: fetched.context_json,
   periodStart: A.period_start,
   periodEnd: A.period_end,
   granularity: A.granularity,

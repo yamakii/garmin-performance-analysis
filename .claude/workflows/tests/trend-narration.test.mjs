@@ -37,25 +37,25 @@ test('test_normalize_preserves_month', () => {
   })
 })
 
-test('test_narration_prompt_embeds_context', () => {
+test('test_narration_prompt_reads_context_file', () => {
   const ctx = {
     tempDir: '/tmp/trend_week_2026-06-15_1',
-    contextJson: '{"headline_metrics":{"load_delta_pct":12.0}}',
     periodStart: '2026-06-15',
     periodEnd: '2026-06-21',
     granularity: 'week',
   }
   const out = narrationPrompt(ctx)
-  assert.match(out, /<CONTEXT>/)
+  // The ~60KB bundle is handed over as a file, never inlined into the prompt (#1023).
+  assert.match(out, /\/tmp\/trend_week_2026-06-15_1\/context\.json/)
+  assert.match(out, /Read/)
+  assert.doesNotMatch(out, /<CONTEXT>/)
   assert.match(out, /2026-06-15/)
-  assert.match(out, /"load_delta_pct":12\.0/) // real data inlined
   assert.match(out, /trend\.json/)
 })
 
 test('narrationPrompt includes small-N guard', () => {
   const ctx = {
     tempDir: '/tmp/trend_week_2026-06-15_1',
-    contextJson: '{"metric_trends":{"pace":{"mode":"descriptive"}}}',
     periodStart: '2026-06-15',
     periodEnd: '2026-06-21',
     granularity: 'week',
@@ -71,7 +71,6 @@ test('narrationPrompt includes small-N guard', () => {
 test('narrationPrompt includes durability decoupling-ranking guard', () => {
   const ctx = {
     tempDir: '/tmp/trend_week_2026-06-15_1',
-    contextJson: '{"durability_trend":{"trend":{"best_run":{"decoupling_pct":-6.8}}}}',
     periodStart: '2026-06-15',
     periodEnd: '2026-06-21',
     granularity: 'week',
@@ -97,5 +96,21 @@ test('test_fetch_prompt_invokes_prefetch_trend_context', () => {
   const out = fetchTrendPrompt({ period_start: '2026-06-15', period_end: '2026-06-21', granularity: 'week' })
   assert.match(out, /prefetch_trend_context/)
   assert.match(out, /--period-start 2026-06-15 --period-end 2026-06-21 --granularity week/)
-  assert.match(out, /一字一句そのまま/) // verbatim CONTEXT handoff
+})
+
+test('test_fetch_prompt_writes_context_to_file', () => {
+  const out = fetchTrendPrompt({ period_start: '2026-06-15', period_end: '2026-06-21', granularity: 'week' })
+  // stdout is redirected into the temp dir; the model must never transcribe the
+  // ~60KB bundle into its return value (#1023 — that stalled the Fetch stage).
+  assert.match(out, /> "\$TD\/context\.json"/)
+  assert.doesNotMatch(out, /一字一句そのまま/)
+  assert.doesNotMatch(out, /context_json/)
+})
+
+test('test_fetch_schema_drops_context_json', () => {
+  // The schema lives outside the testable block, so assert on the source text.
+  const schema = src.match(/const FETCH_SCHEMA = \{[\s\S]*?\n\}/)
+  assert.ok(schema, 'FETCH_SCHEMA not found in trend-narration.js')
+  assert.doesNotMatch(schema[0], /context_json/)
+  assert.match(schema[0], /required: \['temp_dir'\]/)
 })
