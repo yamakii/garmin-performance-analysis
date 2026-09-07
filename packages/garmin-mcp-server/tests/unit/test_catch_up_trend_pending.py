@@ -11,8 +11,10 @@ against a seeded DuckDB keyed on ``date.fromisoformat(resolved_end)``.
 from __future__ import annotations
 
 from contextlib import ExitStack
+from datetime import date, timedelta
 from pathlib import Path
-from unittest.mock import patch
+from typing import Any
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -22,9 +24,12 @@ from garmin_mcp.ingest import catch_up
 from garmin_mcp.ingest.catch_up import catch_up_ingest
 
 # 2026-06-24 is a Wednesday; with the default Monday week start the current week
-# begins 2026-06-22, so the last completed week begins 2026-06-15.
+# begins 2026-06-22, so the completed weeks scanned by the detector (newest
+# first) begin 2026-06-15, 2026-06-08, 2026-06-01 and 2026-05-25. Detection walks
+# them oldest-first (issue #1025), so an empty table surfaces 2026-05-25.
 _BASE = "2026-06-24"
-_EXPECTED_PENDING_START = "2026-06-15"
+_COMPLETED_WEEK_STARTS = ("2026-05-25", "2026-06-01", "2026-06-08", "2026-06-15")
+_EXPECTED_PENDING_START = _COMPLETED_WEEK_STARTS[0]
 
 _ALL_DOMAIN_MOCKS = {
     "garmin_mcp.ingest.running_ingest.ingest_running_activities": {"ingested": 0},
@@ -86,17 +91,19 @@ def test_catch_up_omits_trend_pending_on_domain_error(temp_db_path: Path) -> Non
 
 @pytest.mark.integration
 def test_catch_up_omits_trend_pending_when_narrated(temp_db_path: Path) -> None:
-    """An existing narration row for the last completed week -> no trend_pending."""
+    """Narration rows for every scanned completed week -> no trend_pending."""
     GarminDBWriter(db_path=str(temp_db_path))
-    insert_trend_analysis(
-        {
-            "granularity": "week",
-            "period_start": _EXPECTED_PENDING_START,
-            "period_end": "2026-06-21",
-            "analysis_data": {"narrative": "既存"},
-        },
-        db_path=str(temp_db_path),
-    )
+    for period_start in _COMPLETED_WEEK_STARTS:
+        start = date.fromisoformat(period_start)
+        insert_trend_analysis(
+            {
+                "granularity": "week",
+                "period_start": period_start,
+                "period_end": str(start + timedelta(days=6)),
+                "analysis_data": {"narrative": "既存"},
+            },
+            db_path=str(temp_db_path),
+        )
 
     with ExitStack() as stack:
         for target, value in _ALL_DOMAIN_MOCKS.items():
@@ -134,3 +141,68 @@ def test_detection_failure_does_not_fail_ingest() -> None:
     for domain in catch_up.DEFAULT_DOMAINS:
         assert result[domain] == {"ingested": 0}
     assert "trend_pending" not in result
+
+
+# --- lookback window detection (issue #1025) -------------------------------
+#
+# 2026-09-14 is a Monday, so with the default Monday week start the completed
+# weeks (newest first) are 2026-09-07, 2026-08-31, 2026-08-24 and 2026-08-17.
+_LOOKBACK_TODAY = date(2026, 9, 14)
+
+
+def _find_pending(narrated: set[str], **kwargs: Any) -> Any:
+    """Run the detector with the DB layer mocked (no I/O).
+
+    ``narrated`` holds the ``period_start`` values that already have a
+    ``trend_analyses`` row; every other week reads as missing.
+    """
+    reader = MagicMock()
+    reader.get_trend_analysis.side_effect = lambda granularity, period_start, user_id: (
+        {"narrative": "既存"} if period_start in narrated else None
+    )
+
+    with (
+        patch.object(catch_up, "get_db_path", return_value="/tmp/no-such.duckdb"),
+        patch.object(catch_up, "get_connection", MagicMock()),
+        patch.object(catch_up, "get_week_start_day", return_value=0),
+        patch.object(catch_up, "TrendNarrationReader", return_value=reader),
+    ):
+        return catch_up.find_pending_trend_period(None, _LOOKBACK_TODAY, **kwargs)
+
+
+@pytest.mark.unit
+def test_find_pending_returns_oldest_missing_within_lookback() -> None:
+    """Only 2026-08-31 lacks a narration -> it is returned, not the newest week."""
+    result = _find_pending({"2026-09-07", "2026-08-24", "2026-08-17"})
+
+    assert result == {
+        "granularity": "week",
+        "period_start": "2026-08-31",
+        "period_end": "2026-09-06",
+    }
+
+
+@pytest.mark.unit
+def test_find_pending_returns_none_when_all_narrated() -> None:
+    """Every week in the 4-week window has a row -> nothing pending."""
+    result = _find_pending({"2026-09-07", "2026-08-31", "2026-08-24", "2026-08-17"})
+
+    assert result is None
+
+
+@pytest.mark.unit
+def test_find_pending_lookback_one_matches_legacy() -> None:
+    """lookback_weeks=1 only inspects the week that just ended (old behaviour)."""
+    result = _find_pending({"2026-09-07"}, lookback_weeks=1)
+
+    assert result is None
+
+
+@pytest.mark.unit
+def test_find_pending_default_lookback_is_four_weeks() -> None:
+    """The default window reaches back 4 completed weeks (to 2026-08-17)."""
+    result = _find_pending({"2026-09-07", "2026-08-31", "2026-08-24"})
+
+    assert result is not None
+    assert result["period_start"] == "2026-08-17"
+    assert result["period_end"] == "2026-08-23"

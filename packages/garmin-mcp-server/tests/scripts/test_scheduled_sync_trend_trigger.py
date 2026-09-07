@@ -39,7 +39,11 @@ TODAY = date(2026, 6, 24)
 
 @pytest.mark.integration
 def test_pending_returns_period_on_gap(initialized_db_path: Path) -> None:
-    """No narration row -> the immediately-preceding completed week is returned."""
+    """No narration row -> the OLDEST completed week in the window is returned.
+
+    Detection scans the last 4 completed weeks oldest-first (issue #1025), so an
+    empty ``trend_analyses`` surfaces the 4th-most-recent completed week.
+    """
     result = find_pending_trend_period(str(initialized_db_path), TODAY)
 
     assert result is not None
@@ -50,26 +54,50 @@ def test_pending_returns_period_on_gap(initialized_db_path: Path) -> None:
     assert start.weekday() == 0
     # ...spans exactly 7 days (Mon..Sun)...
     assert (end - start).days == 6
-    # ...and is the week immediately before the one containing TODAY.
+    # ...and is the 4th completed week before the one containing TODAY.
+    assert start.toordinal() + 28 <= TODAY.toordinal() < start.toordinal() + 35
+
+
+@pytest.mark.integration
+def test_pending_returns_last_completed_week_with_lookback_one(
+    initialized_db_path: Path,
+) -> None:
+    """lookback_weeks=1 keeps the legacy "week that just ended" behaviour."""
+    result = find_pending_trend_period(
+        str(initialized_db_path), TODAY, lookback_weeks=1
+    )
+
+    assert result is not None
+    start = date.fromisoformat(result["period_start"])
+    assert start.weekday() == 0
     assert start.toordinal() + 7 <= TODAY.toordinal() < start.toordinal() + 14
 
 
 @pytest.mark.integration
 def test_pending_skips_when_row_exists(initialized_db_path: Path) -> None:
-    """An existing (week, period_start) row makes detection return None (idempotent)."""
-    pending = find_pending_trend_period(str(initialized_db_path), TODAY)
-    assert pending is not None
+    """Narrating each surfaced week walks the window and then returns None.
 
-    insert_trend_analysis(
-        {
-            "granularity": "week",
-            "period_start": pending["period_start"],
-            "period_end": pending["period_end"],
-            "analysis_data": {"narrative": "既存"},
-        },
-        db_path=str(initialized_db_path),
-    )
+    Detection is idempotent per week: inserting the returned period's row makes
+    the next-newer pending week surface, and once all 4 scanned weeks have rows
+    the detector returns None.
+    """
+    narrated: list[str] = []
+    for _ in range(4):
+        pending = find_pending_trend_period(str(initialized_db_path), TODAY)
+        assert pending is not None
+        narrated.append(pending["period_start"])
+        insert_trend_analysis(
+            {
+                "granularity": "week",
+                "period_start": pending["period_start"],
+                "period_end": pending["period_end"],
+                "analysis_data": {"narrative": "既存"},
+            },
+            db_path=str(initialized_db_path),
+        )
 
+    # Oldest first, one week apart, ending on the week that just completed.
+    assert narrated == sorted(narrated)
     assert find_pending_trend_period(str(initialized_db_path), TODAY) is None
 
 
@@ -82,7 +110,9 @@ def test_pending_uses_week_start_day(initialized_db_path: Path) -> None:
     )
     conn.close()
 
-    result = find_pending_trend_period(str(initialized_db_path), TODAY)
+    result = find_pending_trend_period(
+        str(initialized_db_path), TODAY, lookback_weeks=1
+    )
 
     assert result is not None
     start = date.fromisoformat(result["period_start"])

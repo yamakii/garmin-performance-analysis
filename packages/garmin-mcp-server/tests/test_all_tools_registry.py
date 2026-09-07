@@ -10,6 +10,7 @@ surface, dispatch must route each domain to the correct underlying call, and the
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 from typing import Annotated, Any, Literal
 from unittest.mock import MagicMock, patch
@@ -119,11 +120,11 @@ def test_kept_tools_present() -> None:
 
 
 @pytest.mark.unit
-def test_tool_count_is_69() -> None:
-    """The live MCP surface is exactly 69 tools (68 -> 69 after #981)."""
-    assert len(ALL_DEFS) + len(_SERVER_TOOLS) == 69
+def test_tool_count_is_70() -> None:
+    """The live MCP surface is exactly 70 tools (69 -> 70 after #1025)."""
+    assert len(ALL_DEFS) + len(_SERVER_TOOLS) == 70
     golden = json.loads(_GOLDEN_PATH.read_text(encoding="utf-8"))
-    assert len(golden) == 69
+    assert len(golden) == 70
 
 
 @pytest.mark.integration
@@ -136,7 +137,7 @@ def test_hiking_tools_registered() -> None:
         t["name"] for t in json.loads(_GOLDEN_PATH.read_text(encoding="utf-8"))
     }
     assert {"ingest_hiking_sessions", "get_hiking_sessions"} <= golden_names
-    assert len(golden_names) == 69
+    assert len(golden_names) == 70
 
     # get_hiking_sessions -> GarminDBReader.get_hiking_sessions
     reader = MagicMock()
@@ -506,3 +507,53 @@ def test_server_tools_retained_by_name() -> None:
     assert len(live_names) == len(ALL_DEFS) + len(_SERVER_TOOLS)
     assert "reload_server" in live_names
     assert "get_server_info" in live_names
+
+
+@pytest.mark.unit
+def test_get_pending_trend_period_dispatches() -> None:
+    """get_pending_trend_period delegates to find_pending_trend_period (#1025).
+
+    The tool is read-only: it forwards the reference date and returns the
+    detector's value verbatim (a period dict, or ``None`` when every scanned
+    week is already narrated).
+    """
+    assert "get_pending_trend_period" in ALL_DEFS_BY_NAME
+
+    reader = MagicMock()
+    reader.db_path = "/tmp/test.duckdb"
+    pending = {
+        "granularity": "week",
+        "period_start": "2026-08-31",
+        "period_end": "2026-09-06",
+    }
+
+    with patch(
+        "garmin_mcp.ingest.catch_up.find_pending_trend_period",
+        return_value=pending,
+    ) as detector:
+        result = dispatch(
+            ALL_DEFS_BY_NAME,
+            reader,
+            "get_pending_trend_period",
+            {"end_date": "2026-09-14"},
+        )
+
+    detector.assert_called_once_with("/tmp/test.duckdb", date(2026, 9, 14))
+    assert result == pending
+
+    # None (all scanned weeks narrated) is passed through unchanged.
+    with patch(
+        "garmin_mcp.ingest.catch_up.find_pending_trend_period",
+        return_value=None,
+    ) as detector:
+        result = dispatch(
+            ALL_DEFS_BY_NAME,
+            reader,
+            "get_pending_trend_period",
+            {"end_date": "2026-09-14", "lookback_weeks": 1},
+        )
+
+    detector.assert_called_once_with(
+        "/tmp/test.duckdb", date(2026, 9, 14), lookback_weeks=1
+    )
+    assert result is None

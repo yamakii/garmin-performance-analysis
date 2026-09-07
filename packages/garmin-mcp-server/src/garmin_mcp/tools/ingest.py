@@ -1,14 +1,16 @@
-"""Catch-up ingest orchestrator tool definition (issue #463).
+"""Catch-up ingest orchestrator tool definitions (issues #463, #1025).
 
-Exposes a single ``catch_up_ingest`` tool that fills
-running/weight/strength/hiking/wellness gaps in one call by resolving an
-independent window per domain and delegating to each domain's ingest primitive.
-Delegates to ``ingest.catch_up``.
+Exposes ``catch_up_ingest``, which fills running/weight/strength/hiking/wellness
+gaps in one call by resolving an independent window per domain and delegating to
+each domain's ingest primitive, plus the read-only ``get_pending_trend_period``,
+which answers "which completed week still lacks a trend narration?" independently
+of any ingest run. Both delegate to ``ingest.catch_up``.
 """
 
 from __future__ import annotations
 
 import logging
+from datetime import date
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -59,6 +61,37 @@ def _catch_up_ingest(reader: GarminDBReader, p: CatchUpIngestParams) -> Any:
     )
 
 
+class PendingTrendPeriodParams(BaseModel):
+    """Arguments for ``get_pending_trend_period``."""
+
+    end_date: str | None = Field(
+        default=None,
+        description=(
+            "Reference date (YYYY-MM-DD) whose completed weeks are scanned. "
+            "Defaults to today when omitted."
+        ),
+    )
+    lookback_weeks: int | None = Field(
+        default=None,
+        description=(
+            "How many completed weeks to scan, oldest first. Defaults to 4; "
+            "pass 1 to look only at the week that just ended."
+        ),
+    )
+
+
+def _get_pending_trend_period(
+    reader: GarminDBReader, p: PendingTrendPeriodParams
+) -> Any:
+    from garmin_mcp.ingest.catch_up import find_pending_trend_period
+
+    today = date.fromisoformat(p.end_date) if p.end_date else date.today()
+    kwargs: dict[str, Any] = {}
+    if p.lookback_weeks is not None:
+        kwargs["lookback_weeks"] = p.lookback_weeks
+    return find_pending_trend_period(str(reader.db_path), today, **kwargs)
+
+
 INGEST_TOOLS: list[ToolDef] = [
     ToolDef(
         name="catch_up_ingest",
@@ -80,15 +113,36 @@ INGEST_TOOLS: list[ToolDef] = [
             "ingested runs and the counts are returned as "
             "prescriptions_reconciled (null when that step failed). On a "
             "fully-successful run (no domain "
-            "error), if the most-recently-completed week still lacks a trend "
+            "error), if any of the last 4 completed weeks still lacks a trend "
             "narration, the result also carries trend_pending: {granularity, "
-            "period_start, period_end} so callers can fire trend-narration for "
-            "it (idempotent: omitted once that week is narrated)."
+            "period_start, period_end} for the oldest such week so callers can "
+            "fire trend-narration for it (idempotent: omitted once every "
+            "scanned week is narrated). Use get_pending_trend_period to ask the "
+            "same question without running an ingest."
         ),
         params=CatchUpIngestParams,
         handler=_catch_up_ingest,
         cli_group="ingest",
         cli_name="catch-up",
+    ),
+    ToolDef(
+        name="get_pending_trend_period",
+        description=(
+            "Read-only check for a completed week that still lacks a longitudinal "
+            "trend narration (trend_analyses row). Scans the lookback_weeks "
+            "(default 4) most-recently-completed weeks relative to end_date "
+            "(default today), oldest first, using the athlete's configured "
+            "week-start day, and returns {granularity, period_start, period_end} "
+            "for the first week with no narration, or null when all of them are "
+            "narrated. Unlike catch_up_ingest's trend_pending field, this runs no "
+            "ingest and is not gated on ingest success, so a caller (e.g. the "
+            "weekly-review skill) can trigger trend-narration for the returned "
+            "period even in a session that did not run catch-up."
+        ),
+        params=PendingTrendPeriodParams,
+        handler=_get_pending_trend_period,
+        cli_group="ingest",
+        cli_name="pending-trend",
     ),
 ]
 

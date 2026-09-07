@@ -47,6 +47,11 @@ DEFAULT_DOMAINS: tuple[str, ...] = (
 )
 _EMPTY_DB_FLOOR_DAYS = 30
 
+# How many completed weeks ``find_pending_trend_period`` scans by default
+# (issue #1025): a week whose narration was missed on its Monday stays
+# detectable for a few more weeks instead of being lost forever.
+DEFAULT_TREND_LOOKBACK_WEEKS = 4
+
 # Reader method used to find each domain's latest stored date (issue #460).
 _LATEST_DATE_METHOD: dict[str, str] = {
     "running": "get_latest_activity_date",
@@ -62,15 +67,21 @@ def find_pending_trend_period(
     today: date,
     granularity: str = "week",
     user_id: str = "default",
+    lookback_weeks: int = DEFAULT_TREND_LOOKBACK_WEEKS,
 ) -> dict[str, Any] | None:
-    """Return the most-recently-completed period lacking a trend narration.
+    """Return the OLDEST completed week within the lookback window lacking a narration.
 
-    Computes the last fully-completed week relative to ``today`` using the
-    athlete's configured week-start day (``utils.week``; never a hardcoded ISO
-    week), then checks ``trend_analyses`` for an existing row keyed by
-    ``(granularity, period_start)``. Returns ``None`` when a row already exists
+    Computes completed weeks relative to ``today`` using the athlete's configured
+    week-start day (``utils.week``; never a hardcoded ISO week), scans the
+    ``lookback_weeks`` most-recently-completed weeks oldest-first and returns the
+    first one with no ``trend_analyses`` row keyed by ``(granularity,
+    period_start)``. Scanning a window (rather than only the week that just
+    ended) means a week missed on its Monday — e.g. because the weekly review ran
+    on a Sunday, when the only completed week is already narrated — is still
+    backfilled later (issue #1025). ``lookback_weeks=1`` reproduces the previous
+    single-week behaviour. Returns ``None`` when every scanned week is narrated
     (idempotent — a repeat catch-up must not re-fire narration for a period
-    already narrated), else the pending period descriptor.
+    already narrated).
 
     Only ``week`` granularity is detected here; monthly detection is a follow-up
     (the readers' monthly support is partial — see #790).
@@ -80,29 +91,32 @@ def find_pending_trend_period(
         today: The reference date (the catch-up run's resolved end date).
         granularity: Currently only ``"week"`` is supported.
         user_id: Athlete profile key.
+        lookback_weeks: How many completed weeks to scan (oldest first). Values
+            below 1 are clamped to 1.
 
     Returns:
-        ``{"granularity", "period_start", "period_end"}`` for the pending period,
-        or ``None`` when it already has a narration row.
+        ``{"granularity", "period_start", "period_end"}`` for the oldest pending
+        period in the window, or ``None`` when all of them are narrated.
     """
     resolved_path = str(get_db_path(db_path))
     with get_connection(resolved_path) as conn:
         start_day = get_week_start_day(conn, user_id)
 
     current_week_start = week_start(today, start_day)
-    period_start = current_week_start - timedelta(days=7)
-    period_end = period_start + timedelta(days=6)
-
     reader = TrendNarrationReader(resolved_path)
-    existing = reader.get_trend_analysis(granularity, str(period_start), user_id)
-    if existing is not None:
-        return None
 
-    return {
-        "granularity": granularity,
-        "period_start": str(period_start),
-        "period_end": str(period_end),
-    }
+    # Oldest first: offset N weeks back .. 1 week back (the week that just ended).
+    for offset in range(max(1, lookback_weeks), 0, -1):
+        period_start = current_week_start - timedelta(days=7 * offset)
+        existing = reader.get_trend_analysis(granularity, str(period_start), user_id)
+        if existing is None:
+            return {
+                "granularity": granularity,
+                "period_start": str(period_start),
+                "period_end": str(period_start + timedelta(days=6)),
+            }
+
+    return None
 
 
 def _resolve_domain_window(
@@ -271,9 +285,10 @@ def catch_up_ingest(
             results["prescriptions_reconciled"] = None
 
     # On a fully-successful run (no requested domain reported an error), detect
-    # whether the most-recently-completed week still lacks a trend narration and
-    # surface it as ``trend_pending`` so callers (scheduled_sync's cron, the
-    # weekly-review skill) can fire trend-narration for it. Detection is keyed on
+    # whether any of the last few completed weeks still lacks a trend narration
+    # (oldest first, issue #1025) and surface it as ``trend_pending`` so callers
+    # (scheduled_sync's cron, the weekly-review skill) can fire trend-narration
+    # for it. Detection is keyed on
     # ``date.fromisoformat(resolved_end)`` and is best-effort: any failure is
     # swallowed so it never fails the ingest.
     all_ok = not any(
