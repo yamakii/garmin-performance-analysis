@@ -5,7 +5,11 @@ session to what actually happened is pure arithmetic over the ``activities``
 table:
 
 - an activity on the prescribed date within tolerance (±15% short / +30% long of
-  ``target_km`` and ``target_minutes``) marks the row ``done``;
+  ``target_km`` and ``target_minutes``) marks the row ``done``. Quality sessions
+  are registered with warmup/cooldown bookends around the prescribed body
+  (``prescription_shape.bookend_minutes``), so their minutes band is widened by
+  exactly those bookends — an easy run, registered as a single body step, gets
+  no such allowance (#1039);
 - an activity outside tolerance — or any activity on a ``rest`` day — marks it
   ``replaced`` (the session happened, just not as prescribed);
 - a past date with no activity marks it ``skipped``, except ``rest`` days, where
@@ -22,6 +26,8 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime
 from typing import Any
+
+from garmin_mcp.analysis.prescription_shape import bookend_minutes
 
 logger = logging.getLogger(__name__)
 
@@ -42,23 +48,35 @@ def _default_db_path() -> str:
     return str(get_database_dir() / "garmin_performance.duckdb")
 
 
-def _within_tolerance(target: float | None, actual: float | None) -> bool:
+def _within_tolerance(
+    target: float | None, actual: float | None, *, extra: float = 0.0
+) -> bool:
     """Return whether ``actual`` sits inside the tolerance band around ``target``.
 
     A missing target imposes no constraint (``True``); a present target with a
     missing actual value cannot be verified (``False``).
+
+    Args:
+        target: Prescribed amount (km or minutes).
+        actual: What the activity actually recorded.
+        extra: Amount added to the target before the band is applied — the
+            warmup/cooldown minutes a registered quality workout carries on top
+            of the prescribed body.
     """
     if target is None:
         return True
     if actual is None:
         return False
-    return TOLERANCE_LOW * target <= actual <= TOLERANCE_HIGH * target
+    expected = target + extra
+    return TOLERANCE_LOW * expected <= actual <= TOLERANCE_HIGH * expected
 
 
 def _pick_activity(
     candidates: list[dict[str, Any]],
     target_km: float | None,
     target_minutes: float | None,
+    *,
+    extra_minutes: float = 0.0,
 ) -> dict[str, Any]:
     """Pick the activity that best matches a prescription on a multi-run day.
 
@@ -67,7 +85,7 @@ def _pick_activity(
     """
     for candidate in candidates:
         if _within_tolerance(target_km, candidate["distance_km"]) and _within_tolerance(
-            target_minutes, candidate["duration_min"]
+            target_minutes, candidate["duration_min"], extra=extra_minutes
         ):
             return candidate
     return candidates[0]
@@ -146,15 +164,21 @@ def reconcile_prescriptions(
                     new_status = "replaced"
                     actual_activity_id = candidates[0]["activity_id"]
                 else:
+                    extra_minutes = float(bookend_minutes(session_type))
                     match = _pick_activity(
-                        candidates, row.get("target_km"), row.get("target_minutes")
+                        candidates,
+                        row.get("target_km"),
+                        row.get("target_minutes"),
+                        extra_minutes=extra_minutes,
                     )
                     actual_activity_id = match["activity_id"]
                     new_status = (
                         "done"
                         if _within_tolerance(row.get("target_km"), match["distance_km"])
                         and _within_tolerance(
-                            row.get("target_minutes"), match["duration_min"]
+                            row.get("target_minutes"),
+                            match["duration_min"],
+                            extra=extra_minutes,
                         )
                         else "replaced"
                     )
