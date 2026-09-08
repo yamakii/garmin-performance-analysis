@@ -21,13 +21,13 @@ Run the full ship workflow for the current changes.
 
    c. **Unpushed commits**: Run `git log origin/$(git branch --show-current)..HEAD --oneline`. If there are commits → go to Step 3 (Push).
 
-   d. **Unmerged feature branch**: If currently on a `feature/*` branch, or `git branch --list 'feature/*'` shows unmerged feature branches → go to Step 4 (Merge & cleanup).
+   d. **Pushed feature branch without a PR**: If the current branch is not `main` and has no open PR → create the PR (Step 3 note) and go to Step 1-PR.
 
    e. **Unclosed Issue**: Extract issue numbers from recent commits:
       ```bash
       git log --oneline -5 | grep -oP '\(#\K[0-9]+(?=\))'
       ```
-      For each extracted number, check if the issue is still open using `mcp__github__issue_read(method="get", owner="yamakii", repo="garmin-performance-analysis", issue_number=N)`. If any issue state is "open" → execute Step 5 (Close Issue) with that number.
+      For each extracted number, check if the issue is still open using `mcp__github__issue_read(method="get", owner="yamakii", repo="garmin-performance-analysis", issue_number=N)`. If any issue state is "open" → execute Step 4 (Close Issue) with that number.
 
    f. **All complete**: If none of the above apply → report 「全ステップ完了済みです。未完了の作業はありません。」 and stop.
 
@@ -97,7 +97,7 @@ git remote prune origin 2>/dev/null || true
 
 If `--close` is specified, or PR body contains `Closes #N`:
 - Extract issue number from PR body if not specified
-- Execute Step 5 (Close Issue) with that number
+- Execute Step 4 (Close Issue) with that number
 
 ---
 
@@ -107,42 +107,26 @@ If `--close` is specified, or PR body contains `Closes #N`:
 
 2. **Commit**: Create a commit using Conventional Commits format. If the user provided a commit message as argument (before `--close`/`--pr`), use it. Otherwise, auto-generate from the diff.
 
-   Format:
+   Format (the session attribution trailers are given by the harness at session start; use them verbatim):
    ```
    <type>: <description>
 
-   Co-Authored-By: Claude <noreply@anthropic.com>
+   Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
    ```
 
    If `--close` is used with an issue number, include it in the commit message:
    ```
    <type>: <description> (#issue-number)
 
-   Co-Authored-By: Claude <noreply@anthropic.com>
+   Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
    ```
 
 3. **Push**: Run `git push` to push to remote. If no upstream is set, use `git push -u origin <branch>`.
+   Pushing to `main` directly is blocked (branch protection + guard-push): a feature branch is merged only
+   through a PR (PR Flow above). If no PR exists yet, create one with `mcp__github__create_pull_request`
+   (body: `Closes #N` + `## Verification`) and continue with Step 1-PR.
 
-4. **Merge & cleanup** (if on a feature branch):
-   ```bash
-   # Merge to main
-   cd $(git rev-parse --show-toplevel)
-   git merge --no-ff feature/{name}
-
-   # Push main
-   git push
-
-   # Delete remote and local feature branch
-   git push origin --delete feature/{name}
-   git branch -d feature/{name}
-
-   # Remove worktree if it exists
-   git worktree remove ../garmin-{name} 2>/dev/null || true
-   ```
-
-   If on main branch (no feature branch), skip this step.
-
-5. **Close Issue** (if `--close` specified): After successful push:
+4. **Close Issue** (if `--close` specified): After successful push:
 
    a. **Change Log guard**: Check if the Issue body has a `## Change Log` section using `mcp__github__issue_read(method="get", owner="yamakii", repo="garmin-performance-analysis", issue_number={number})`.
       - If Change Log exists → proceed to close

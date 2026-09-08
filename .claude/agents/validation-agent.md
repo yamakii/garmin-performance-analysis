@@ -18,11 +18,9 @@ Worktree で実装されたコード変更を検証するエージェント。
 
 ## Step 0: Manifest 受領
 
-1. **既定経路**: manifest は orchestrator（`implement-tier` Workflow）から**プロンプトにインラインで
-   渡される**（`manifest: {...JSON...}`）。プロンプト内の JSON をそのまま使う
-   - **手動フォールバック経路のみ**: プロンプトに manifest が無い場合に限り
-     `/tmp/validation_queue/{branch}.json` を Read で取得。既定経路では `/tmp` ファイルは存在しない
-     ため Read しに行かない
+1. manifest は orchestrator（`implement-tier` Workflow）から**プロンプトにインラインで
+   渡される**（`manifest: {...JSON...}`）。プロンプト内の JSON をそのまま使う。プロンプトに無ければ
+   orchestrator に要求して終了する（`/tmp` のファイルを探しに行かない）
 2. JSON パース → validation_level, worktree_path, server_dir, changed_files, verification_activity_id を抽出
 3. validation_level が skip → 即座に PASS を返却して終了
 4. validation_level が L3 → このエージェントでは実行しない。L3 はメインセッションが担当する旨を報告して終了（下記「L3」節参照）
@@ -100,7 +98,7 @@ L2 は L1（in-process import check）に加え、**CI と対称な品質ゲー�
 
 ### L3: Full E2E
 
-**L3 はこのサブエージェントでは実行しない。** L3（agent 定義 = `*-analyst.md` の変更）は、worktree の `.md` を main に一時適用してメインセッションで `/analyze-activity` を実行する方式であり、`reload_server` を使わずメインセッション（オーケストレーター）が担当する。詳細は `worktree-validation-protocol.md` の「L3: Full E2E（メインセッション担当）」を参照。
+**L3 はこのサブエージェントでは実行しない。** L3（agent 定義 = `*-analyst.md` の変更）は pre-merge の diff レビューをメインセッションが行い、E2E はマージ後の新規セッションで実行する（`worktree-validation-protocol.md` §4）。
 
 このエージェントが L3 manifest を受け取った場合は、検証を実行せず「L3 はメインセッションが担当する」旨を報告して終了する。
 
@@ -110,7 +108,7 @@ L2 は L1（in-process import check）に加え、**CI と対称な品質ゲー�
 - Content check ranges:
   - Pace: 6:00-6:45/km (360-405 sec/km)
   - HR: 120-160 bpm
-- 詳細は `dev-reference.md` §3 を参照
+- 詳細は `worktree-validation-protocol.md` §4 を参照
 
 ## 判定基準
 

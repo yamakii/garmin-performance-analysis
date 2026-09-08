@@ -192,6 +192,18 @@ if [ -e scripts/tests/test-guard-webfetch-allowlist.sh ]; then
   fi
 fi
 
+# Stale-phrase guard for the harness docs (#1045): rules / skills / agent defs
+# must not re-describe a retired procedure (the list lives in the guard script).
+# The self-test also runs the guard over the real tree.
+if [ -e scripts/tests/test-harness-docs-phrases.sh ]; then
+  if bash scripts/tests/test-harness-docs-phrases.sh; then
+    echo "ok (script test): harness-docs-phrases"
+  else
+    echo "FAIL (script test): harness-docs-phrases" >&2
+    status=1
+  fi
+fi
+
 if [ "$status" -ne 0 ]; then
   echo "check-claude-scripts: FAILED" >&2
 else
