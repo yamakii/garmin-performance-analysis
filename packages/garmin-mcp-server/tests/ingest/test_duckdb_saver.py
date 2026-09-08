@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -12,29 +11,11 @@ from unittest.mock import MagicMock, call
 import duckdb
 import pytest
 
-from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.ingest.duckdb_saver import (
     _insert_activities,
     save_data,
     should_insert_table,
 )
-
-
-@pytest.fixture(scope="module")
-def _schema_template_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Module-scoped DuckDB template with schema pre-initialized."""
-    tmp_path = tmp_path_factory.mktemp("duckdb_saver_template")
-    db_path = tmp_path / "template.duckdb"
-    GarminDBWriter(db_path=str(db_path))
-    return db_path
-
-
-@pytest.fixture
-def initialized_db_path(_schema_template_path: Path, tmp_path: Path) -> Path:
-    """Function-scoped DuckDB with schema pre-initialized via file copy."""
-    db_path = tmp_path / "test.duckdb"
-    shutil.copy2(str(_schema_template_path), str(db_path))
-    return db_path
 
 
 @pytest.mark.unit

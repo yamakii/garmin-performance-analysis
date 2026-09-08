@@ -23,8 +23,8 @@ from garmin_mcp.analysis.running_economy import (
     join_runs_with_weight,
 )
 from garmin_mcp.database.db_reader import GarminDBReader
-from garmin_mcp.database.db_writer import GarminDBWriter
 from tests.fixtures.weight_economy_synthetic import make_coupled_dataset
+from tests.support.schema import init_schema
 
 
 @pytest.mark.unit
@@ -89,7 +89,7 @@ def _seed_synthetic_db(db_path: Path) -> int:
     rng = np.random.default_rng(11)
     vo2_values = 52.0 + rng.normal(0.0, 1.0, len(runs))
 
-    GarminDBWriter(db_path=str(db_path))  # initialize schema
+    init_schema(db_path)  # initialize schema
     conn = duckdb.connect(str(db_path))
     try:
         conn.executemany(

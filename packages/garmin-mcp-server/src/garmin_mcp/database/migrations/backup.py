@@ -14,7 +14,7 @@ from pathlib import Path
 
 import duckdb
 
-from garmin_mcp.database.connection import get_connection
+from garmin_mcp.database.connection import get_connection, is_memory_db_path
 from garmin_mcp.database.migrations.registry import MIGRATIONS
 from garmin_mcp.utils.paths import get_database_dir
 
@@ -47,8 +47,9 @@ def backup_if_pending(db_path: str | Path) -> Path | None:
     Returns the backup Path, or None if skipped (memory / temp / fresh /
     already up-to-date). Raises RuntimeError if the backup copy fails.
     """
-    # 1. In-memory DB has nothing to back up.
-    if str(db_path) == ":memory:":
+    # 1. In-memory DB (":memory:" or a named ":memory:<name>") has nothing
+    #    to back up.
+    if is_memory_db_path(db_path):
         return None
 
     path = Path(db_path)

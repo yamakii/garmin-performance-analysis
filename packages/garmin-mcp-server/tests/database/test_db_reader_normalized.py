@@ -16,8 +16,8 @@ import duckdb
 import pytest
 
 from garmin_mcp.database.db_reader import GarminDBReader
-from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.activities import insert_activities
+from tests.support.schema import init_schema
 
 
 class TestGarminDBReaderNormalized:
@@ -87,7 +87,7 @@ class TestGarminDBReaderNormalized:
         activity_file.write_text(json.dumps(activity_data, indent=2))
 
         # Insert activity metadata first (required for foreign key constraint)
-        GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        init_schema(db_path)  # Initialize schema
         conn = duckdb.connect(str(db_path))
         insert_activities(
             activity_id=test_activity_id,
@@ -249,7 +249,7 @@ class TestGetHeartRateZonesDetail:
         hr_zones_file.write_text(json.dumps(hr_zones_data, indent=2))
 
         # Insert activity metadata and heart_rate_zones
-        GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        init_schema(db_path)  # Initialize schema
         conn = duckdb.connect(str(db_path))
         insert_activities(
             activity_id=test_activity_id,
@@ -356,7 +356,7 @@ class TestGetVO2MaxData:
         vo2_max_file.write_text(json.dumps(vo2_max_data, indent=2))
 
         # Insert activity metadata and vo2_max
-        GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        init_schema(db_path)  # Initialize schema
         conn = duckdb.connect(str(db_path))
         insert_activities(
             activity_id=test_activity_id,
@@ -440,7 +440,7 @@ class TestGetLactateThresholdData:
         lactate_threshold_file.write_text(json.dumps(lactate_threshold_data, indent=2))
 
         # Insert activity metadata and lactate_threshold
-        GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        init_schema(db_path)  # Initialize schema
         conn = duckdb.connect(str(db_path))
         insert_activities(
             activity_id=test_activity_id,
@@ -548,7 +548,7 @@ class TestGetSplitsAll:
         splits_file.write_text(json.dumps(splits_data, indent=2))
 
         # Insert activity metadata and splits
-        GarminDBWriter(db_path=str(db_path))  # Initialize schema
+        init_schema(db_path)  # Initialize schema
         conn = duckdb.connect(str(db_path))
         insert_activities(
             activity_id=test_activity_id,

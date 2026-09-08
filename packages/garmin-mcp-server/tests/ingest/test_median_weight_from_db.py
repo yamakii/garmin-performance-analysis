@@ -7,7 +7,6 @@ single source of truth:
 """
 
 import json
-import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock
@@ -15,25 +14,7 @@ from unittest.mock import Mock
 import duckdb
 import pytest
 
-from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.ingest.garmin_worker import GarminIngestWorker
-
-
-@pytest.fixture(scope="module")
-def _schema_template_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Module-scoped DuckDB template with schema pre-initialized."""
-    tmp_path = tmp_path_factory.mktemp("median_template")
-    db_path = tmp_path / "template.duckdb"
-    GarminDBWriter(db_path=str(db_path))
-    return db_path
-
-
-@pytest.fixture
-def initialized_db_path(_schema_template_path: Path, tmp_path: Path) -> Path:
-    """Function-scoped DuckDB with schema pre-initialized via file copy."""
-    db_path = tmp_path / "test.duckdb"
-    shutil.copy2(str(_schema_template_path), str(db_path))
-    return db_path
 
 
 @pytest.fixture

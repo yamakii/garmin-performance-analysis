@@ -18,6 +18,40 @@ from garmin_mcp.database.readers.training_load import TrainingLoadReader
 END_DATE = "2025-10-28"
 
 
+_INSERT_SQL = """
+    INSERT INTO activities (
+        activity_id, activity_date, total_distance_km,
+        total_time_seconds, avg_pace_seconds_per_km, avg_heart_rate
+    ) VALUES (?, ?, ?, ?, ?, ?)
+"""
+
+
+def _row(
+    activity_id: int, activity_date: str, distance_km: float, avg_heart_rate: int | None
+) -> list[object]:
+    return [
+        activity_id,
+        activity_date,
+        distance_km,
+        int(distance_km * 300),
+        300.0,
+        avg_heart_rate,
+    ]
+
+
+def _insert_activities(db_path: Path, rows: list[list[object]]) -> None:
+    """Insert many running activities through ONE connection (#1062).
+
+    One connect/close per row cost ~60 ms each on the overlay /tmp and made
+    these the slowest tests in CI (84 rows -> ~5 s per test).
+    """
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.executemany(_INSERT_SQL, rows)
+    finally:
+        conn.close()
+
+
 def _insert_activity(
     db_path: Path,
     *,
@@ -27,26 +61,37 @@ def _insert_activity(
     avg_heart_rate: int | None = 150,
 ) -> None:
     """Insert one running activity with a given distance (HR optional)."""
-    conn = duckdb.connect(str(db_path))
-    try:
-        conn.execute(
-            """
-            INSERT INTO activities (
-                activity_id, activity_date, total_distance_km,
-                total_time_seconds, avg_pace_seconds_per_km, avg_heart_rate
-            ) VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            [
-                activity_id,
-                activity_date,
-                distance_km,
-                int(distance_km * 300),
-                300.0,
-                avg_heart_rate,
-            ],
+    _insert_activities(
+        db_path, [_row(activity_id, activity_date, distance_km, avg_heart_rate)]
+    )
+
+
+def _seed_daily(
+    db_path: Path,
+    *,
+    end_date: str,
+    days: range,
+    first_id: int,
+    distance_km: float,
+    avg_heart_rate: int | None = 150,
+) -> None:
+    """Insert one ``distance_km`` activity per day for each ``i`` in ``days``.
+
+    Day ``i`` is ``end_date - i`` days and gets ``activity_id = first_id + i``.
+    """
+    from datetime import datetime, timedelta
+
+    end = datetime.strptime(end_date, "%Y-%m-%d").date()
+    rows = [
+        _row(
+            first_id + i,
+            (end - timedelta(days=i)).strftime("%Y-%m-%d"),
+            distance_km,
+            avg_heart_rate,
         )
-    finally:
-        conn.close()
+        for i in days
+    ]
+    _insert_activities(db_path, rows)
 
 
 def _seed_even_load(db_path: Path, *, daily_km: float, days: int = 28) -> None:
@@ -55,17 +100,13 @@ def _seed_even_load(db_path: Path, *, daily_km: float, days: int = 28) -> None:
     With equal daily load, acute (7d) and chronic-weekly (28d/4) are equal, so
     ACWR == 1.0 (optimal).
     """
-    from datetime import datetime, timedelta
-
-    end = datetime.strptime(END_DATE, "%Y-%m-%d").date()
-    for i in range(days):
-        day = (end - timedelta(days=i)).strftime("%Y-%m-%d")
-        _insert_activity(
-            db_path,
-            activity_id=1000 + i,
-            activity_date=day,
-            distance_km=daily_km,
-        )
+    _seed_daily(
+        db_path,
+        end_date=END_DATE,
+        days=range(days),
+        first_id=1000,
+        distance_km=daily_km,
+    )
 
 
 @pytest.mark.integration
@@ -87,27 +128,22 @@ def test_acwr_optimal_range(reader_db_path: Path) -> None:
 @pytest.mark.integration
 def test_acwr_high_risk_spike(reader_db_path: Path) -> None:
     """A big recent spike on a small chronic base -> acwr>1.5, high_risk."""
-    from datetime import datetime, timedelta
-
-    end = datetime.strptime(END_DATE, "%Y-%m-%d").date()
     # Small chronic base: 2 km on each of days 8-28 (outside the acute window).
-    for i in range(7, 28):
-        day = (end - timedelta(days=i)).strftime("%Y-%m-%d")
-        _insert_activity(
-            reader_db_path,
-            activity_id=2000 + i,
-            activity_date=day,
-            distance_km=2.0,
-        )
+    _seed_daily(
+        reader_db_path,
+        end_date=END_DATE,
+        days=range(7, 28),
+        first_id=2000,
+        distance_km=2.0,
+    )
     # Large acute load: 20 km on each of the last 7 days.
-    for i in range(7):
-        day = (end - timedelta(days=i)).strftime("%Y-%m-%d")
-        _insert_activity(
-            reader_db_path,
-            activity_id=2100 + i,
-            activity_date=day,
-            distance_km=20.0,
-        )
+    _seed_daily(
+        reader_db_path,
+        end_date=END_DATE,
+        days=range(7),
+        first_id=2100,
+        distance_km=20.0,
+    )
 
     result = TrainingLoadReader(db_path=str(reader_db_path)).get_acwr(end_date=END_DATE)
 
@@ -134,23 +170,19 @@ def test_acwr_distance_only_no_hr_dependency(reader_db_path: Path) -> None:
     """Activities with NULL avg_heart_rate still yield a distance-based ACWR."""
     _seed_even_load(reader_db_path, daily_km=8.0, days=28)
     # Overwrite the HR-bearing rows with NULL HR rows on the same days.
-    from datetime import datetime, timedelta
-
     conn = duckdb.connect(str(reader_db_path))
     try:
         conn.execute("DELETE FROM activities")
     finally:
         conn.close()
-    end = datetime.strptime(END_DATE, "%Y-%m-%d").date()
-    for i in range(28):
-        day = (end - timedelta(days=i)).strftime("%Y-%m-%d")
-        _insert_activity(
-            reader_db_path,
-            activity_id=3000 + i,
-            activity_date=day,
-            distance_km=8.0,
-            avg_heart_rate=None,
-        )
+    _seed_daily(
+        reader_db_path,
+        end_date=END_DATE,
+        days=range(28),
+        first_id=3000,
+        distance_km=8.0,
+        avg_heart_rate=None,
+    )
 
     result = TrainingLoadReader(db_path=str(reader_db_path)).get_acwr(end_date=END_DATE)
 
@@ -172,15 +204,13 @@ def test_get_load_trend_weekly_buckets(reader_db_path: Path) -> None:
     # Seed even 5 km/day load over the whole lookback span so each bucket is
     # populated. 12 calendar weeks span more than 12 * 7 days once partial weeks
     # are involved, so seed a generous window.
-    end = datetime.strptime(END_DATE, "%Y-%m-%d").date()
-    for i in range(13 * 7):
-        day = (end - timedelta(days=i)).strftime("%Y-%m-%d")
-        _insert_activity(
-            reader_db_path,
-            activity_id=4000 + i,
-            activity_date=day,
-            distance_km=5.0,
-        )
+    _seed_daily(
+        reader_db_path,
+        end_date=END_DATE,
+        days=range(13 * 7),
+        first_id=4000,
+        distance_km=5.0,
+    )
 
     result = TrainingLoadReader(db_path=str(reader_db_path)).get_load_trend(
         lookback_weeks=12, end_date=END_DATE
@@ -209,18 +239,16 @@ def test_get_load_trend_weekly_buckets(reader_db_path: Path) -> None:
 @pytest.mark.integration
 def test_load_trend_weeks_align_to_monday(reader_db_path: Path) -> None:
     """With the default config (no profile row) every week_start is a Monday."""
-    from datetime import datetime, timedelta
+    from datetime import datetime
 
     end_date = "2026-06-24"  # a Wednesday
-    end = datetime.strptime(end_date, "%Y-%m-%d").date()
-    for i in range(12 * 7):
-        day = (end - timedelta(days=i)).strftime("%Y-%m-%d")
-        _insert_activity(
-            reader_db_path,
-            activity_id=5000 + i,
-            activity_date=day,
-            distance_km=5.0,
-        )
+    _seed_daily(
+        reader_db_path,
+        end_date=end_date,
+        days=range(12 * 7),
+        first_id=5000,
+        distance_km=5.0,
+    )
 
     result = TrainingLoadReader(db_path=str(reader_db_path)).get_load_trend(
         lookback_weeks=12, end_date=end_date
@@ -236,7 +264,7 @@ def test_load_trend_weeks_align_to_monday(reader_db_path: Path) -> None:
 @pytest.mark.integration
 def test_load_trend_weeks_align_to_configured_day(reader_db_path: Path) -> None:
     """With week_start_day=6 (Sunday) every week_start is a Sunday."""
-    from datetime import datetime, timedelta
+    from datetime import datetime
 
     # Configure Sunday-start weeks.
     conn = duckdb.connect(str(reader_db_path))
@@ -249,15 +277,13 @@ def test_load_trend_weeks_align_to_configured_day(reader_db_path: Path) -> None:
         conn.close()
 
     end_date = "2026-06-24"  # a Wednesday
-    end = datetime.strptime(end_date, "%Y-%m-%d").date()
-    for i in range(12 * 7):
-        day = (end - timedelta(days=i)).strftime("%Y-%m-%d")
-        _insert_activity(
-            reader_db_path,
-            activity_id=6000 + i,
-            activity_date=day,
-            distance_km=5.0,
-        )
+    _seed_daily(
+        reader_db_path,
+        end_date=end_date,
+        days=range(12 * 7),
+        first_id=6000,
+        distance_km=5.0,
+    )
 
     result = TrainingLoadReader(db_path=str(reader_db_path)).get_load_trend(
         lookback_weeks=12, end_date=end_date
@@ -275,19 +301,16 @@ def test_load_trend_weeks_align_to_configured_day(reader_db_path: Path) -> None:
 @pytest.mark.integration
 def test_load_trend_latest_bucket_is_partial_week(reader_db_path: Path) -> None:
     """The newest bucket aggregates only week-start day .. end_date (partial)."""
-    from datetime import datetime, timedelta
 
     end_date = "2026-06-24"  # Wednesday -> Monday-week starts 2026-06-22
-    end = datetime.strptime(end_date, "%Y-%m-%d").date()
     # Seed 5 km/day across the partial week (Mon 06-22 .. Wed 06-24) and earlier.
-    for i in range(12 * 7):
-        day = (end - timedelta(days=i)).strftime("%Y-%m-%d")
-        _insert_activity(
-            reader_db_path,
-            activity_id=7000 + i,
-            activity_date=day,
-            distance_km=5.0,
-        )
+    _seed_daily(
+        reader_db_path,
+        end_date=end_date,
+        days=range(12 * 7),
+        first_id=7000,
+        distance_km=5.0,
+    )
 
     result = TrainingLoadReader(db_path=str(reader_db_path)).get_load_trend(
         lookback_weeks=12, end_date=end_date

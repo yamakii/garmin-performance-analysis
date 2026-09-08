@@ -15,8 +15,8 @@ from pathlib import Path
 import pytest
 
 from garmin_mcp.database.connection import get_connection, get_write_connection
-from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.scripts import backfill_base_weight as bbw
+from tests.support.schema import init_schema
 
 # ---------------------------------------------------------------------------
 # Schema fixtures (module-scoped template + function-scoped copy)
@@ -28,7 +28,7 @@ def _schema_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Module-scoped DuckDB with the full production schema initialized."""
     tmp_path = tmp_path_factory.mktemp("backfill_bw_template")
     db_path = tmp_path / "template.duckdb"
-    GarminDBWriter(db_path=str(db_path))
+    init_schema(db_path)
     return Path(db_path)
 
 

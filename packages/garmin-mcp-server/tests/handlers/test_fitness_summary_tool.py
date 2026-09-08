@@ -8,7 +8,6 @@ expected assessment shape, with ``FitnessAssessor`` sourced from ``fitness/``.
 from __future__ import annotations
 
 import json
-import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -16,23 +15,7 @@ import pytest
 
 from garmin_mcp.database.connection import get_write_connection
 from garmin_mcp.database.db_reader import GarminDBReader
-from garmin_mcp.database.db_writer import GarminDBWriter
 from tests.handlers.conftest import dispatch_tool
-
-
-@pytest.fixture(scope="module")
-def _schema_template_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    tmp_path: Path = tmp_path_factory.mktemp("db_template")
-    db_path = tmp_path / "template.duckdb"
-    GarminDBWriter(db_path=str(db_path))
-    return db_path
-
-
-@pytest.fixture
-def initialized_db_path(_schema_template_path: Path, tmp_path: Path) -> Path:
-    db_path = tmp_path / "test.duckdb"
-    shutil.copy2(str(_schema_template_path), str(db_path))
-    return db_path
 
 
 @pytest.mark.integration

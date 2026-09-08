@@ -17,8 +17,8 @@ from unittest.mock import patch
 import pytest
 
 from garmin_mcp.database.connection import get_write_connection
-from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.ingest.catch_up import catch_up_ingest
+from tests.support.schema import init_schema
 
 
 def _seed(db_path: Path) -> None:
@@ -26,7 +26,7 @@ def _seed(db_path: Path) -> None:
 
     body_composition is left empty so weight falls back to the 30-day floor.
     """
-    GarminDBWriter(db_path=str(db_path))
+    init_schema(db_path)
     with get_write_connection(str(db_path)) as conn:
         conn.execute(
             "INSERT INTO activities (activity_id, activity_date, total_distance_km) "
@@ -104,7 +104,7 @@ def test_catch_up_resolves_per_domain_window(temp_db_path: Path) -> None:
 def test_catch_up_end_defaults_today(temp_db_path: Path) -> None:
     """Omitting end_date resolves the shared window end to today."""
     # Create the (empty) schema so the latest-date readers can open the DB.
-    GarminDBWriter(db_path=str(temp_db_path))
+    init_schema(temp_db_path)
     today = date.today().isoformat()
 
     with (
@@ -356,7 +356,7 @@ def test_catch_up_skips_reconcile_when_running_failed(temp_db_path: Path) -> Non
 @pytest.mark.unit
 def test_catch_up_hiking_domain_window(temp_db_path: Path) -> None:
     """domains=['hiking'] resolves its window from get_latest_hiking_date."""
-    GarminDBWriter(db_path=str(temp_db_path))
+    init_schema(temp_db_path)
     with get_write_connection(str(temp_db_path)) as conn:
         conn.execute(
             "INSERT INTO hiking_sessions (activity_id, activity_date) VALUES (?, ?)",
@@ -397,7 +397,7 @@ def _insert_wellness(db_path: Path, *, wellness_id: int, date: str) -> None:
 @pytest.mark.unit
 def test_catch_up_includes_wellness_by_default(temp_db_path: Path) -> None:
     """Omitting domains runs wellness too: results and window carry it."""
-    GarminDBWriter(db_path=str(temp_db_path))
+    init_schema(temp_db_path)
 
     with (
         patch(
@@ -427,7 +427,7 @@ def test_catch_up_includes_wellness_by_default(temp_db_path: Path) -> None:
 @pytest.mark.unit
 def test_catch_up_wellness_window_from_latest(temp_db_path: Path) -> None:
     """start_date omitted -> wellness start resolves to its latest stored date."""
-    GarminDBWriter(db_path=str(temp_db_path))
+    init_schema(temp_db_path)
     _insert_wellness(temp_db_path, wellness_id=1, date="2026-06-20")
 
     with (
@@ -448,7 +448,7 @@ def test_catch_up_wellness_window_from_latest(temp_db_path: Path) -> None:
 @pytest.mark.unit
 def test_catch_up_wellness_empty_db_floor(temp_db_path: Path) -> None:
     """Empty daily_wellness + no start_date -> floor at end - 30 days."""
-    GarminDBWriter(db_path=str(temp_db_path))
+    init_schema(temp_db_path)
 
     with (
         patch(
@@ -468,7 +468,7 @@ def test_catch_up_wellness_empty_db_floor(temp_db_path: Path) -> None:
 @pytest.mark.unit
 def test_catch_up_wellness_explicit_start_backfill(temp_db_path: Path) -> None:
     """Explicit start_date -> wellness window uses it (backfill path)."""
-    GarminDBWriter(db_path=str(temp_db_path))
+    init_schema(temp_db_path)
 
     with (
         patch(
@@ -498,7 +498,7 @@ def test_catch_up_wellness_ingests_range(tmp_path: Path) -> None:
     wellness_dir = tmp_path / "wellness"
     wellness_dir.mkdir(parents=True, exist_ok=True)
 
-    GarminDBWriter(db_path=str(db_path))
+    init_schema(db_path)
 
     dates = ["2026-06-20", "2026-06-21", "2026-06-22"]
     payload = {

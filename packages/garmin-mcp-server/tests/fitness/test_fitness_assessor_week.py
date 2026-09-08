@@ -14,8 +14,8 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.fitness.fitness_assessor import FitnessAssessor
+from tests.support.schema import init_schema
 
 
 @pytest.fixture(scope="module")
@@ -23,7 +23,7 @@ def _fitness_schema_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Module-scoped DuckDB with full schema pre-initialized."""
     tmp_path = tmp_path_factory.mktemp("fitness_template")
     db_path = tmp_path / "template.duckdb"
-    GarminDBWriter(db_path=str(db_path))
+    init_schema(db_path)
     return Path(db_path)
 
 

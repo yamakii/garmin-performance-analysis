@@ -23,6 +23,7 @@ from garmin_mcp.ingest.strength_ingest import (
     _resolve_window,
     ingest_strength_sessions,
 )
+from tests.support.schema import init_schema
 
 _STRENGTH_ACTIVITY_ID = 23315203017
 
@@ -244,9 +245,8 @@ def test_ingest_strength_sessions_filters_non_strength(temp_db_path: Path) -> No
 
 def _seed_strength_row(db_path: Path, activity_id: int, activity_date: str) -> None:
     """Insert a minimal strength_sessions row so the latest date is set."""
-    from garmin_mcp.database.db_writer import GarminDBWriter
 
-    GarminDBWriter(db_path=str(db_path))
+    init_schema(db_path)
     conn = duckdb.connect(str(db_path))
     try:
         conn.execute(
@@ -263,9 +263,8 @@ def _seed_strength_row(db_path: Path, activity_id: int, activity_date: str) -> N
 @pytest.mark.integration
 def test_resolve_window_empty_db_uses_30d_floor(temp_db_path: Path) -> None:
     """No stored strength date → start is end - 30 days."""
-    from garmin_mcp.database.db_writer import GarminDBWriter
 
-    GarminDBWriter(db_path=str(temp_db_path))
+    init_schema(temp_db_path)
     assert _resolve_window(None, "2026-06-20", str(temp_db_path)) == (
         "2026-05-21",
         "2026-06-20",

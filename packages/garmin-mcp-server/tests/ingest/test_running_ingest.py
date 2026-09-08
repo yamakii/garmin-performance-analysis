@@ -17,8 +17,8 @@ from unittest.mock import MagicMock, patch
 import duckdb
 import pytest
 
-from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.ingest.running_ingest import ingest_running_activities
+from tests.support.schema import init_schema
 
 _RUN_A = 30000000001
 _RUN_B = 30000000002
@@ -66,7 +66,7 @@ def _make_client(activities: list[dict[str, Any]]) -> MagicMock:
 def _seed_existing(db_path: Path, activity_id: int, date: str = "2026-06-15") -> None:
     """Insert a minimal pre-existing row into the ``activities`` table."""
     # Ensure the schema exists before seeding (mirrors ingest_running_activities).
-    GarminDBWriter(db_path=str(db_path))
+    init_schema(db_path)
     conn = duckdb.connect(str(db_path))
     try:
         conn.execute(
