@@ -222,6 +222,54 @@ test_ample_headroom_runs_pytest_with_all_cpus() {
   fi
 }
 
+# --- worker cap (#1061): more than 4 xdist workers is slower on this suite ---
+
+# resources_with <cgroup_dir> <key> <extra env...> — like `resources`, but the
+# caller supplies CI_CHECK_CPUS (and anything else) explicitly.
+resources_with() {
+  local cg="$1" key="$2" out
+  shift 2
+  out="$(env "$@" CI_CHECK_CGROUP_DIR="$cg" CI_CHECK_LOCK="" \
+    bash "$CI_CHECK" --resources-only 2>/dev/null)"
+  sed -n "s/^$key=//p" <<<"$out"
+}
+
+test_resources_many_cpus_capped_at_max_workers() {
+  echo "test_resources_many_cpus_capped_at_max_workers"
+  local cg; cg="$(mktemp -d)/cg"
+  make_cgroup "$cg" $((32 * GiB)) $((1 * GiB))   # headroom fits far more than 12
+  expect "12 cpus → capped" "$(resources_with "$cg" workers CI_CHECK_CPUS=12)" 4
+  expect "cap is reported" "$(resources_with "$cg" max_workers CI_CHECK_CPUS=12)" 4
+}
+
+test_resources_max_workers_override() {
+  echo "test_resources_max_workers_override"
+  local cg; cg="$(mktemp -d)/cg"
+  make_cgroup "$cg" $((32 * GiB)) $((1 * GiB))
+  expect "CI_CHECK_MAX_WORKERS=8 → 8" \
+    "$(resources_with "$cg" workers CI_CHECK_CPUS=12 CI_CHECK_MAX_WORKERS=8)" 8
+  expect "cap never exceeds cpus" \
+    "$(resources_with "$cg" workers CI_CHECK_CPUS=2 CI_CHECK_MAX_WORKERS=8)" 2
+}
+
+test_resources_unknown_headroom_still_capped() {
+  echo "test_resources_unknown_headroom_still_capped"
+  expect "absent cgroup + 12 cpus → capped" \
+    "$(resources_with /nonexistent/cgroup workers CI_CHECK_CPUS=12)" 4
+}
+
+test_full_path_uses_capped_workers() {
+  echo "test_full_path_uses_capped_workers"
+  local cg shims out
+  cg="$(mktemp -d)/cg"
+  make_cgroup "$cg" $((32 * GiB)) $((1 * GiB))
+  shims="$(setup_shims)"
+  out="$(CI_CHECK_LOCK="" CI_CHECK_CGROUP_DIR="$cg" CI_CHECK_CPUS=12 \
+    PATH="$shims:$PATH" bash "$CI_CHECK" 2>&1)"
+  echo "$out" | grep -q "pytest -m unit or integration --tb=short -n 4 " \
+    || fail "12 cpus must run pytest with -n 4 (got: $(echo "$out" | grep 'pytest -m' || true))"
+}
+
 # ---------------------------------------------------------------------------
 
 test_resources_ample_headroom_uses_all_cpus
@@ -238,6 +286,10 @@ test_resources_reports_lock_enforced
 test_lock_free_runs_and_releases
 test_tight_headroom_runs_pytest_with_one_worker
 test_ample_headroom_runs_pytest_with_all_cpus
+test_resources_many_cpus_capped_at_max_workers
+test_resources_max_workers_override
+test_resources_unknown_headroom_still_capped
+test_full_path_uses_capped_workers
 
 if [ "$failures" -ne 0 ]; then
   echo "test-ci-check-resources: FAILED ($failures failure(s))" >&2
