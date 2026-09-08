@@ -1,21 +1,25 @@
 ---
 name: implement
-description: Parallel implementation orchestrator for an approved issue (single) or an Epic's design-approved sub-issues. Use when the user wants to auto-implement a plan-approved issue, or the issues under an Epic in dependency order, with worktree-isolated agents. Argument is the Epic number or a list of issue numbers.
+description: Parallel implementation orchestrator for an Epic whose design-approved sub-issues form two or more dependency tiers. Use only when the user wants the issues under an Epic auto-implemented in dependency order with worktree-isolated agents; a single issue or a few independent issues go through the single-session worktree→PR flow instead. Argument is the Epic number or a list of issue numbers with Blocked-by dependencies.
 argument-hint: <epic-number | issue-numbers>
 allowed-tools: Bash, Read, Glob, Grep, Task, Workflow, AskUserQuestion, mcp__github__issue_read
 ---
 
 # /implement — Parallel Implementation Orchestrator
 
-プラン承認済みの**単発 Issue**、または **Epic 配下**の design-approved Issue を依存順に自動実装する。
+**Epic 配下**の design-approved Issue を依存順（ティア）に自動実装する。
+
+**使いどころは依存ティアが 2 段以上ある Epic だけ。** 単発 Issue や依存の無い数件は
+`implementation-workflow.md` Phase 1 の既定経路（そのセッションが worktree で実装 → PR → マージ）で
+直列に処理する。ティアが 1 段しかない場合は起動せず、既定経路を案内して終了する。
 
 ## Arguments
 
-$ARGUMENTS — Epic 番号、または個別 Issue 番号のリスト。
+$ARGUMENTS — Epic 番号、または `Blocked by` で依存し合う Issue 番号のリスト。
 
 Examples:
 - `/implement #91` — Epic #91 配下の design-approved Issue を依存順に自動実装
-- `/implement #51 #52` — 指定 Issue のみ並列実装（依存チェックあり）
+- `/implement #51 #52 #53` — 指定 Issue を依存グラフに従って実装（#53 が #51/#52 に依存）
 
 ## Steps
 
@@ -35,8 +39,10 @@ mcp__github__issue_read(method="get", owner="yamakii", repo="garmin-performance-
 1. **State**: OPEN の Issue のみ対象（CLOSED はスキップ）
 2. **Label / 承認判定**:
    - **Epic 展開のサブ Issue**: `design-approved` ラベル必須。ラベルなし → スキップし報告: 「#{N} は design-approved がありません」（品質ゲート維持）
-   - **明示指定された個別 Issue 番号**（`/implement #N` で直接渡された単発/複数）: `design-approved` が無くても、body に **Design ＋ Test Plan セクションがあれば対象**とし、その場で `mcp__github__issue_write` で `design-approved` を付与してから進む。**Design か Test Plan が欠落**している場合のみスキップし、補完を依頼する
+   - **明示指定された Issue 番号**: `design-approved` が無くても、body に **Design ＋ Test Plan セクションがあれば対象**とし、その場で `mcp__github__issue_write` で `design-approved` を付与してから進む。**Design か Test Plan が欠落**している場合のみスキップし、補完を依頼する
 3. **Dependencies**: Issue body の `Blocked by: #N` から依存関係を抽出
+4. **ティア数チェック**: 依存グラフのティアが 1 段だけ（全 Issue が独立）なら Workflow を起動せず、
+   「既定経路（`implementation-workflow.md` Phase 1）で直列に実装してください」と案内して終了する
 
 ### Step 3: 依存グラフからティア分類
 

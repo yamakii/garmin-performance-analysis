@@ -24,57 +24,42 @@ Risks セクション（任意）:
 - [検証済] / [未検証] タグで区別し、spike 推奨があればユーザーに判断を仰ぐ
 - リスクなしなら省略可
 
-## Phase 1: Delegate (実装委任)
+## Phase 1: 既定経路 — 1 セッション = 1 worktree = 1 PR
 
-> **既定経路は `/implement <issue番号>`**（**単発 Issue / Epic を問わず**）。プラン承認後、Issue に
-> `design-approved` を付与し（Phase 0 完全性で Design/Test Plan は担保済み）、`/implement <issue>` を
-> 起動すれば `implement-tier` Workflow が **developer 実装 → L1/L2 検証 → push/PR → 条件付き
-> auto-merge** を一括で回す（Phase 2〜3 を内包）。**この場合、以下の Phase 1〜3 を手で行う必要はない。**
->
-> **各ティア起動前は origin 同期（`git fetch origin` → behind なら `git merge --ff-only origin/main`）が必須**
-> — 初回ティアだけでなく **tier 間（前ティアの auto-merge 完了後、次ティア起動前）にも毎回**実行する。
-> fetch を怠ると次ティアの worktree が前ティアのマージ済み土台を含まないベースから切られ、add/add
-> コンフリクトの原因になる（手順は `.claude/skills/implement/SKILL.md` Step 3.5 が正本）。
->
-> 以下の **手動 developer 委任は例外（フォールバック）**: L3（agent 定義変更）/ Workflow 不可環境 /
-> skip-level の docs・rules 微修正。**「単発だから手動」ではない**。手動経路を取るときのみ次の手順に従う。
+承認済みの Issue は、**そのセッション自身が** worktree で実装し PR を作ってマージまで進める。
+サブエージェントへの委任も Workflow も既定では使わない（直近 30 日の PR のほぼ全てがこの経路で、
+`implement-tier` は 25 本に 1 本。#1046）。各ステップは 1 コマンド。
 
-サブエージェント(developer, worktree isolation)に以下を含めて委任:
-- Issue 番号と `mcp__github__issue_read` (method="get") 実行指示
-- プランの実装手順（そのまま渡す）
-- 実装前確認（コードを書く前に出力させる）:
-  1. 変更対象ファイル一覧
-  2. Test Plan のテスト関数名一覧
-  3. Validation Level 確認
-- テスト実行指示: `uv run pytest {test_path} -m unit -v`
-- lint 実行指示: `uv run ruff check {changed_files}`
-- commit 指示: ブランチ名、コミットメッセージ形式
-- **push しない**指示
-- **Manifest 返却指示**: commit 後に manifest を構造化出力で返すこと（developer.md Step 5.5）
+1. **origin 同期**: `git fetch origin` → behind なら `git merge --ff-only origin/main`。失敗したら報告して止まる（stash / reset はしない）
+2. **worktree**: 背景ジョブは `EnterWorktree`、対話セッションは `git worktree add -b <type>/<issue>-<slug> .claude/worktrees/<slug> origin/main`。ブランチ名は `feat|fix|docs|chore/<issue>-<slug>`
+3. **実装 + テスト**: Issue の Design / Test Plan どおりに実装。`worktree-commands.md` の `--directory` / `-C` 形式でコマンドを打つ
+4. **完了ゲート**: `packages/` を変えたら `uv run --directory <worktree> bash scripts/ci-check.sh` exit 0。`.claude/` `scripts/` `docker/` を変えたら `bash scripts/check-claude-scripts.sh` exit 0
+5. **commit**: Conventional Commits、本文に `Closes #<issue>`、ハーネス指定の attribution trailer
+6. **push**: `git -C <worktree> -c credential.helper='!f(){ echo username=x-access-token; echo password=$GITHUB_TOKEN; };f' push -u origin <branch>`
+7. **PR**: `mcp__github__create_pull_request`（body: `Closes #<issue>` + `## Verification` に実行した検証コマンドと結果）
+8. **CI 待ち**: `bash scripts/wait-for-ci.sh <PR> --timeout 900`（メインセッションは `run_in_background` 可。サブエージェント内ならフォアグラウンド 1 回）
+9. **マージ**: `worktree-validation-protocol.md` §6 のゲートを満たせば `mcp__github__merge_pull_request(merge_method="merge")`。例外（検証 FAIL / WARNING / CI 失敗 / コンフリクト）は PR URL と理由を報告して止まる
+10. **後片付け**: `git fetch origin && git merge --ff-only origin/main`（ローカル main）→ `bash scripts/cleanup-merged-worktrees.sh`。MCP サーバコードを変えたら `mcp__garmin-db__reload_server()`
+11. **報告**: PR 番号、マージ SHA、実行した検証、未了の追跡義務（L3 の post-merge E2E など）
 
-## Phase 2: Verify (独立検証)
+複数 Issue を続けて扱うときは Issue ごとに 2〜11 を繰り返す。同じ worktree で次のブランチを切るなら
+`git fetch origin && git checkout -b <branch> origin/main`（前の PR がマージ済みの場合）。
 
-サブエージェント完了後、オーケストレーターが**自分で**以下を実行:
+### Epic（依存ティアが 2 段以上）だけ `/implement`
 
-### 2a. コードレビュー
-- worktree の全変更ファイルを Read で読む（diff ではなく全文）
-- プランの各ステップと照合:
-  - [ ] 新規ファイル: クラス名、メソッドシグネチャ、出力形式がプランと一致
-  - [ ] 変更ファイル: 変更箇所がプランの指定位置と一致
-  - [ ] テスト: プランのテスト名が全て存在
+Issue 間に `Blocked by` の依存があり並列に進める価値があるときだけ `/implement <epic>` を使う。
+`implement-tier` Workflow が developer / validation-agent を並列に回し、同じゲートで auto-merge する。
+単発 Issue や依存の無い 2〜3 件は既定経路（上記）で直列に処理する方が速く、失敗の型も少ない。
 
-### 2b. 検証実行
+## Phase 2: Verify
 
-Validation Level の判定と L1/L2/L3/skip の手順・完了条件は `worktree-validation-protocol.md` §1〜§5。
-`packages/` を変更した PR は `scripts/ci-check.sh` exit 0 が完了条件。
+自分で実装した場合も、サブエージェントに委任した場合も、マージ前に:
 
-**CRITICAL**: テスト結果は自分のターンで確認する。サブエージェントの報告を信じない。
+- 変更ファイルを Read で読み直し、Issue の Files / Interface / Test Plan と照合する（テスト名が全て存在するか）
+- Validation Level ごとの手順・完了条件は `worktree-validation-protocol.md` §1〜§5
+- **CRITICAL**: テスト結果とマージ状態は自分のターンで確認する。サブエージェントや Workflow の報告を信じない（GitHub の `pull_request_read` が ground truth）
 
-### 2c. 判定
-- 全チェック通過 → Phase 3 へ
-- 失敗あり → サブエージェントを resume して修正指示、再度 Phase 2
-
-## Phase 3: Ship (PR作成 + 条件付き auto-merge)
+## Phase 3: Ship
 
 手順・auto-merge ゲート・例外・恒久承認（#886）の範囲は `worktree-validation-protocol.md` §6 が正本。
-`/implement` 経由では `implement-tier` Workflow が同じゲートを内包するので手動 push/PR/merge は不要。
+既定経路では Phase 1 の 6〜10 がそれに当たる。`/implement` 経由では Workflow が同じゲートを内包する。

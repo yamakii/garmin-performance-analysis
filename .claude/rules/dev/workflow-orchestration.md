@@ -6,8 +6,8 @@
 - Use plan mode for verification steps, not just building
 
 ## Implementation
-- プラン承認後は `implementation-workflow.md` に従って実行する
-- 委任・検証・Ship の手順はすべてそちらに定義
+- プラン承認後は `implementation-workflow.md` Phase 1 のチェックリスト（そのセッションが worktree で実装 → PR → マージ）に従う
+- `/implement` は依存ティアが 2 段以上の Epic 専用
 - **全変更で Worktree → PR が必須**。Validation Level: skip は検証方法の指定であり、ワークフロー省略の許可ではない
 - 検証レベルと auto-merge ゲートは `worktree-validation-protocol.md` のみに書く。他所に再掲しない
 
