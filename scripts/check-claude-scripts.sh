@@ -180,6 +180,18 @@ if [ -e scripts/tests/test-sandbox-allowlist.sh ]; then
   fi
 fi
 
+# Behavioral self-test for the per-checkout uv venv mapping (#1047): the pure
+# helpers in docker/lib/uv-venv.sh and the /usr/local/bin/uv wrapper, run with
+# temp git repos and a fake real `uv` so no environment is ever synced.
+if [ -e scripts/tests/test-uv-venv.sh ]; then
+  if bash scripts/tests/test-uv-venv.sh; then
+    echo "ok (script test): uv-venv"
+  else
+    echo "FAIL (script test): uv-venv" >&2
+    status=1
+  fi
+fi
+
 # Behavioral self-test for the WebFetch allowlist pre-check hook (#1035): hook
 # JSON on stdin against a temp allowlist, asserting allow / block / no-op exit
 # codes and that the block message names the host and the allowlist file.

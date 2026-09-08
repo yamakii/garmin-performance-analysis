@@ -122,7 +122,7 @@ docker/run.sh            # build the image, then drop into a shell in the contai
 Inside the container (first run):
 
 ```bash
-uv sync --extra dev      # build the project venv at /home/claude/uv-venv (not the host .venv)
+uv sync --extra dev      # build this checkout's venv under /home/claude/uv-venvs (not the host .venv)
 claude                   # start Claude Code; MCP servers auto-start from .mcp.json
 ```
 
@@ -259,9 +259,14 @@ script runs in CI (`docker-build` job) on every `docker/**` change.
   data to.
 - **IPv6 is filtered** (`filter-AAAA`): the container has no IPv6 egress and the
   ipset is IPv4-only, so AAAA answers are dropped to avoid connect timeouts.
-- **node_modules / .venv are not shared** with the host (the container uses its own
-  `UV_PROJECT_ENVIRONMENT=/home/claude/uv-venv`). For frontend work run
-  `npm install` inside `packages/garmin-web/frontend` in the container.
+- **node_modules / .venv are not shared** with the host. `/usr/local/bin/uv` is a
+  wrapper (`docker/uv-wrapper.sh` + `docker/lib/uv-venv.sh`) that gives every
+  (checkout, package) pair its own venv under `/home/claude/uv-venvs`, keyed by the
+  checkout root — so a `uv run --directory <worktree>` never touches the venv the
+  MCP server runs from, and two worktrees can `uv sync` at the same time. An
+  explicit `UV_PROJECT_ENVIRONMENT` in the environment wins; outside a git checkout
+  the wrapper is a no-op. For frontend work run `npm install` inside
+  `packages/garmin-web/frontend` in the container.
 - **`SANDBOX_FIREWALL=0`** (passed as a container env var) starts the container with
   the firewall disabled — debugging only; it removes the exfiltration protection.
 - The container fails to start if the firewall cannot be installed or its

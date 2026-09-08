@@ -56,8 +56,15 @@ RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# ---- uv (Astral) into /usr/local/bin (on PATH for every user) ----
-RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+# ---- uv (Astral) ----
+# The real binaries live in /usr/local/lib/uv; /usr/local/bin/uv is the wrapper
+# below (#1047), which derives UV_PROJECT_ENVIRONMENT per checkout so a worktree
+# command never re-syncs the MCP server's venv. uvx is untouched (symlink).
+RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/lib/uv sh \
+    && ln -s /usr/local/lib/uv/uvx /usr/local/bin/uvx
+COPY lib/uv-venv.sh /usr/local/lib/sandbox/uv-venv.sh
+COPY uv-wrapper.sh /usr/local/bin/uv
+RUN chmod +x /usr/local/bin/uv
 
 # ---- project Python: uv-managed, downloaded at BUILD time only ----
 # Decouples the project interpreter from the base image's apt Python, so the
@@ -86,14 +93,16 @@ RUN if getent group "${USER_GID}" >/dev/null; then \
     else \
         useradd -m -u "${USER_UID}" -g "${USER_GID}" -s /bin/bash claude; \
     fi \
-    && mkdir -p /home/claude/.claude /home/claude/uv-venv /workspace \
+    && mkdir -p /home/claude/.claude /home/claude/uv-venvs /workspace \
     && chown -R "${USER_UID}:${USER_GID}" /home/claude /workspace
 
 # ---- environment ----
-# Keep the container's uv venv OUTSIDE the bind-mounted /workspace so it never
-# clobbers the host .venv. UV_PYTHON=3.12 resolves to the uv-managed interpreter
-# installed above; UV_PYTHON_DOWNLOADS=never means no managed downloads at
-# runtime (= smaller egress surface).
+# The container's uv venvs live OUTSIDE the bind-mounted /workspace so they never
+# clobber the host .venv: one per (checkout, package) under /home/claude/uv-venvs,
+# chosen by the /usr/local/bin/uv wrapper (docker/lib/uv-venv.sh) — there is
+# deliberately NO global UV_PROJECT_ENVIRONMENT any more (#1047). UV_PYTHON=3.12
+# resolves to the uv-managed interpreter installed above; UV_PYTHON_DOWNLOADS=never
+# means no managed downloads at runtime (= smaller egress surface).
 # DISABLE_AUTOUPDATER=1: Claude Code is npm-global-installed as root but runs as
 # the non-root `claude` user (cap-drop ALL, no-new-privileges), so the in-place
 # auto-updater can't write the global npm dir and fails on startup. Updating is
@@ -104,8 +113,7 @@ RUN if getent group "${USER_GID}" >/dev/null; then \
 # Pointing CLAUDE_CONFIG_DIR at the mounted dir relocates .claude.json (and all
 # config) inside it, so auth/trust/MCP state persists. Sessions already live at
 # $CLAUDE_CONFIG_DIR/… so no data moves; the atomic rewrite stays within the mount.
-ENV UV_PROJECT_ENVIRONMENT=/home/claude/uv-venv \
-    UV_PYTHON_DOWNLOADS=never \
+ENV UV_PYTHON_DOWNLOADS=never \
     UV_PYTHON=3.12 \
     PATH=/usr/local/bin:$PATH \
     SHELL=/bin/bash \

@@ -58,26 +58,17 @@ export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
 
-# --- per-package, per-worktree virtualenvs (#1003) ---
-# The image sets UV_PROJECT_ENVIRONMENT=/home/claude/uv-venv — ONE venv shared by
-# every package AND every worktree. `uv sync --directory $SERVER --extra dev`
-# followed later by `uv sync --directory $WEB` therefore evicts the server's dev
-# extras, and every `uv run --directory X` implicitly re-syncs (the endless
-# "Uninstalled 1 package / Installed N packages" churn). Worse,
-# worktree-validation-protocol.md explicitly allows PARALLEL L1/L2 validation
-# agents: two ci-check runs against one shared venv uninstall dependencies out
-# from under each other mid-check.
-#
-# Give each (package, worktree) pair its own environment so there is no shared
-# mutable resource to race over. The base stays OUTSIDE the bind-mounted repo,
-# preserving the reason docker/Dockerfile set UV_PROJECT_ENVIRONMENT in the first
-# place (no .venv inside /workspace). The global default is left untouched for
-# the MCP server and ad-hoc commands. `cksum` keeps the directory name short —
-# a long venv path would overflow the 127-byte shebang limit in its bin/ scripts.
-VENV_BASE="${CI_CHECK_VENV_BASE:-${HOME:-/home/claude}/uv-venvs}"
-ROOT_ID="$(printf '%s' "$ROOT" | cksum | cut -d' ' -f1)"
-SERVER_VENV="$VENV_BASE/$ROOT_ID-server"
-WEB_VENV="$VENV_BASE/$ROOT_ID-web"
+# --- per-package, per-worktree virtualenvs (#1003, #1047) ---
+# One venv per (checkout, package), outside the bind-mounted repo, so parallel
+# ci-check runs and the MCP server never share a mutable environment. The
+# mapping lives in docker/lib/uv-venv.sh — the same code the sandbox's
+# /usr/local/bin/uv wrapper uses — so this script and every other `uv` call in
+# the container agree on the path. CI_CHECK_VENV_BASE is kept for the tests.
+export UV_VENV_BASE="${CI_CHECK_VENV_BASE:-${UV_VENV_BASE:-${HOME:-/home/claude}/uv-venvs}}"
+# shellcheck source=../docker/lib/uv-venv.sh
+. "$ROOT/docker/lib/uv-venv.sh"
+SERVER_VENV="$(uv_venv_path "$SERVER" 2>/dev/null || printf '%s/%s-server' "$UV_VENV_BASE" "$(printf '%s' "$ROOT" | cksum | cut -d' ' -f1)")"
+WEB_VENV="$(uv_venv_path "$WEB" 2>/dev/null || printf '%s/%s-web' "$UV_VENV_BASE" "$(printf '%s' "$ROOT" | cksum | cut -d' ' -f1)")"
 
 run() {
   echo "▶ $*"

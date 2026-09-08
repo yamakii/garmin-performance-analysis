@@ -120,14 +120,18 @@ Then apply updates in a worktree and verify with `scripts/ci-check.sh`.
 Keep `.pre-commit-config.yaml` revs for `ruff` and `black` equal to the
 versions in `uv.lock` so local hooks and CI agree.
 
-### Shared uv environment caveat
+### uv environments are per checkout and per package
 
-When `UV_PROJECT_ENVIRONMENT` is set (the Docker sandbox sets it to
-`/home/claude/uv-venv`), every worktree and both workspace packages share one
-virtualenv. Running `uv sync` for `packages/garmin-web` while the server checks
-are running removes the server's dev extras (pytest-xdist, pytest-cov, mypy's
-typeshed) mid-run. Run the checks sequentially, exactly as `scripts/ci-check.sh`
-does; do not parallelise `uv sync` across packages.
+In the Docker sandbox `/usr/local/bin/uv` is a wrapper (`docker/uv-wrapper.sh`,
+logic in `docker/lib/uv-venv.sh`) that sets `UV_PROJECT_ENVIRONMENT` to
+`/home/claude/uv-venvs/<checkout-id>-<server|web>` for the checkout a command
+targets (`--directory`, `--project`, or the cwd). `scripts/ci-check.sh` sources
+the same helper. Worktrees, the main checkout and the two workspace packages
+therefore never share a virtualenv: parallel `uv sync` calls cannot evict each
+other's extras, and a worktree command cannot re-point the MCP server's
+editable install. Do not set a global `UV_PROJECT_ENVIRONMENT` in the image or
+in `.envrc`; an explicit value in the environment overrides the wrapper for that
+one command only.
 
 ## Ignoring an advisory
 
