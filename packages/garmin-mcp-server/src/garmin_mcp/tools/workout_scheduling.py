@@ -475,8 +475,21 @@ def _register_workout(
     title: str,
     steps: list[dict[str, Any]],
     templates: list[dict[str, Any]] | None = None,
+    replace_workout_id: int | None = None,
 ) -> dict[str, Any]:
-    """Replace any same-title ``[MCP]`` template, upload and schedule a workout.
+    """Replace the superseded ``[MCP]`` workouts, upload and schedule a new one.
+
+    Two replacement rules run together (deduped, so one workout is deleted at
+    most once):
+
+    1. any ``[MCP]`` template whose title equals the new one — keeps the
+       self-authored library at one template per title;
+    2. ``replace_workout_id`` — the workout a caller previously recorded for
+       this slot. Re-registering a revised row under a *new* title would
+       otherwise leave the old template scheduled on the same day (#1042).
+
+    Only ``[MCP]``-prefixed workouts are ever deleted: an id that is unknown to
+    the library or carries a manual title is skipped and reported instead.
 
     Args:
         client: Authenticated Garmin client.
@@ -486,20 +499,39 @@ def _register_workout(
         templates: Pre-fetched ``client.get_workouts()`` payload. The weekly
             batch fetches the library once and reuses it across items; passing
             ``None`` fetches it here.
+        replace_workout_id: Workout id recorded for this slot, deleted before
+            the upload when it names an ``[MCP]`` template.
 
     Returns:
-        ``{workout_id, schedule_id, date, title, replaced_workout_ids}``.
+        ``{workout_id, schedule_id, date, title, replaced_workout_ids,
+        skipped_replace_ids}``.
     """
     full_title = _ensure_prefix(title)
 
-    # Delete any same-title [MCP] template first (delete -> recreate) so the
-    # self-authored library keeps at most one template per title.
+    # Decide the deletions first (delete -> recreate), then perform them, so an
+    # id that is also the same-title template is never deleted twice.
     library = templates if templates is not None else (client.get_workouts() or [])
+    to_delete: list[Any] = [
+        w.get("workoutId") for w in library if w.get("workoutName") == full_title
+    ]
+    skipped_replace_ids: list[Any] = []
+
+    if replace_workout_id is not None:
+        recorded = next(
+            (w for w in library if w.get("workoutId") == replace_workout_id), None
+        )
+        recorded_name = str((recorded or {}).get("workoutName") or "")
+        if recorded is not None and recorded_name.startswith(MCP_PREFIX):
+            if replace_workout_id not in to_delete:
+                to_delete.append(replace_workout_id)
+        else:
+            # Foreign or already-gone id: never delete a workout we did not author.
+            skipped_replace_ids.append(replace_workout_id)
+
     replaced: list[Any] = []
-    for workout in library:
-        if workout.get("workoutName") == full_title:
-            client.delete_workout(workout.get("workoutId"))
-            replaced.append(workout.get("workoutId"))
+    for workout_id in to_delete:
+        client.delete_workout(workout_id)
+        replaced.append(workout_id)
 
     uploaded = client.upload_workout(build_workout_json(title, steps))
     workout_id = uploaded.get("workoutId") if isinstance(uploaded, dict) else None
@@ -515,6 +547,7 @@ def _register_workout(
         "date": on_date,
         "title": full_title,
         "replaced_workout_ids": replaced,
+        "skipped_replace_ids": skipped_replace_ids,
     }
 
 
@@ -535,8 +568,11 @@ def _plan_week_registrations(
 
     Returns:
         ``(items, skipped)`` where each item is ``{prescription_id, date, title,
-        steps, already_registered}`` and each skip is ``{prescription_id,
-        reason}``.
+        steps, already_registered, replace_workout_id}`` and each skip is
+        ``{prescription_id, reason}``. ``replace_workout_id`` carries the
+        workout recorded on an explicitly re-registered row so the old item
+        leaves the calendar even when the revised title differs (#1042); it is
+        ``None`` on the default (all rows) path, which never re-registers.
     """
     items: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
@@ -569,6 +605,10 @@ def _plan_week_registrations(
             skipped.append({"prescription_id": prescription_id, "reason": str(e)})
             continue
 
+        recorded_workout_id = (
+            row.get("garmin_workout_id") if prescription_id in explicit_ids else None
+        )
+
         items.append(
             {
                 "prescription_id": prescription_id,
@@ -576,6 +616,7 @@ def _plan_week_registrations(
                 "title": str(row.get("title") or session_type),
                 "steps": steps,
                 "already_registered": already_registered,
+                "replace_workout_id": recorded_workout_id,
             }
         )
 
@@ -730,6 +771,8 @@ def _schedule_weekly_prescriptions(
             result["calendar_error"] = str(e)
         for item in items:
             item["existing_same_day"] = existing.get(item["date"], [])
+            # A dry run replaces nothing: report the id instead of promising it.
+            item["would_replace_workout_id"] = item.pop("replace_workout_id", None)
         return result
 
     try:
@@ -752,6 +795,7 @@ def _schedule_weekly_prescriptions(
                 title=item["title"],
                 steps=item["steps"],
                 templates=templates,
+                replace_workout_id=item.get("replace_workout_id"),
             )
             update_prescription_status(
                 prescription_id=prescription_id,
@@ -767,6 +811,8 @@ def _schedule_weekly_prescriptions(
                     "schedule_id": outcome["schedule_id"],
                     "date": outcome["date"],
                     "title": outcome["title"],
+                    "replaced_workout_ids": outcome["replaced_workout_ids"],
+                    "skipped_replace_ids": outcome["skipped_replace_ids"],
                 }
             )
         except Exception as e:  # noqa: BLE001
@@ -855,7 +901,8 @@ WORKOUT_SCHEDULING_TOOLS: list[ToolDef] = [
             "cooldown; one of duration_minutes, duration_seconds or distance_m; "
             "optional hr_low/hr_high for a custom heart-rate-range target) or a "
             "repeat group (repeat_count + nested steps). Returns {workout_id, "
-            "schedule_id, date, title, replaced_workout_ids}."
+            "schedule_id, date, title, replaced_workout_ids, "
+            "skipped_replace_ids}."
         ),
         params=ScheduleCustomWorkoutParams,
         handler=_schedule_custom_workout,
@@ -876,9 +923,12 @@ WORKOUT_SCHEDULING_TOOLS: list[ToolDef] = [
             "registered are skipped, and naming an id in prescription_ids "
             "re-registers it. dry_run=True (default) returns {dry_run, "
             "week_start_date, items ({prescription_id, date, title, steps, "
-            "existing_same_day, already_registered}), skipped} so the plan can "
-            "be confirmed first. dry_run=False registers each item (delete "
-            "same-title [MCP] template -> upload -> schedule), records the "
+            "existing_same_day, already_registered, "
+            "would_replace_workout_id}), skipped} so the plan can "
+            "be confirmed first. dry_run=False registers each item (delete the "
+            "same-title [MCP] template AND the [MCP] workout already recorded "
+            "on a re-registered row, so a revised title never leaves the old "
+            "item on the calendar -> upload -> schedule), records the "
             "workout/schedule ids with status=registered on the row, isolates "
             "per-item failures and returns {dry_run, week_start_date, "
             "registered, failed, skipped}."
