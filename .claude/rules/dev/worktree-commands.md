@@ -34,7 +34,8 @@ worktree 内でコマンドを実行する際、`cd <path> && <cmd>` は compoun
 
 ## Worktree Environment Bootstrap
 
-新規 worktree は `.venv` を共有しない（空の環境から始まる）。`uv run` は default 依存と
+新規 worktree は venv を共有しない（空の環境から始まる。sandbox では `uv` wrapper が checkout ごとに
+`/home/claude/uv-venvs/<id>-<server|web>` を割り当てる, #1047）。`uv run` は default 依存と
 `[dependency-groups] dev` は自動同期するが、**`[project.optional-dependencies] dev`
 （pytest / black / mypy 本体）は `--extra dev` を明示しない限りインストールされない**。
 そのため fresh worktree でいきなり `uv run pytest` / `ruff` / `black` / `mypy` を回すと
