@@ -1222,7 +1222,7 @@
   },
   {
     "name": "schedule_custom_workout",
-    "description": "Build a Garmin running workout from a generic steps array, force-prefix its title with '[MCP] ', replace any same-title [MCP] template (delete -> recreate), upload it and schedule it on date. Each step is an executable step (step_type warmup/run/recovery/cooldown; one of duration_minutes, duration_seconds or distance_m; optional hr_low/hr_high for a custom heart-rate-range target) or a repeat group (repeat_count + nested steps). Returns {workout_id, schedule_id, date, title, replaced_workout_ids}.",
+    "description": "Build a Garmin running workout from a generic steps array, force-prefix its title with '[MCP] ', replace any same-title [MCP] template (delete -> recreate), upload it and schedule it on date. Each step is an executable step (step_type warmup/run/recovery/cooldown; one of duration_minutes, duration_seconds or distance_m; optional hr_low/hr_high for a custom heart-rate-range target) or a repeat group (repeat_count + nested steps). Returns {workout_id, schedule_id, date, title, replaced_workout_ids, skipped_replace_ids}.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1251,7 +1251,7 @@
   },
   {
     "name": "schedule_weekly_prescriptions",
-    "description": "Register a whole week of saved prescriptions to the Garmin calendar in one batch. Steps are derived in code from each row: long/easy/recovery become a single body step on target_minutes or target_km (hr_high as a ceiling, hr_low only when prescribed) so the watch asks for exactly what was prescribed, while quality sessions (threshold/tempo/strides) keep a 10min warmup and a 5min cooldown around the body (strides become 5x20s pickups); rest/strength/cross rows and rows already registered are skipped, and naming an id in prescription_ids re-registers it. dry_run=True (default) returns {dry_run, week_start_date, items ({prescription_id, date, title, steps, existing_same_day, already_registered}), skipped} so the plan can be confirmed first. dry_run=False registers each item (delete same-title [MCP] template -> upload -> schedule), records the workout/schedule ids with status=registered on the row, isolates per-item failures and returns {dry_run, week_start_date, registered, failed, skipped}.",
+    "description": "Register a whole week of saved prescriptions to the Garmin calendar in one batch. Steps are derived in code from each row: long/easy/recovery become a single body step on target_minutes or target_km (hr_high as a ceiling, hr_low only when prescribed) so the watch asks for exactly what was prescribed, while quality sessions (threshold/tempo/strides) keep a 10min warmup and a 5min cooldown around the body (strides become 5x20s pickups); rest/strength/cross rows and rows already registered are skipped, and naming an id in prescription_ids re-registers it. dry_run=True (default) returns {dry_run, week_start_date, items ({prescription_id, date, title, steps, existing_same_day, already_registered, would_replace_workout_id}), skipped} so the plan can be confirmed first. dry_run=False registers each item (delete the same-title [MCP] template AND the [MCP] workout already recorded on a re-registered row, so a revised title never leaves the old item on the calendar -> upload -> schedule), records the workout/schedule ids with status=registered on the row, isolates per-item failures and returns {dry_run, week_start_date, registered, failed, skipped}.",
     "inputSchema": {
       "type": "object",
       "properties": {

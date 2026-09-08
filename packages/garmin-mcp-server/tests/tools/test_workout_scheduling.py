@@ -23,6 +23,7 @@ from garmin_mcp.tools.workout_scheduling import (
     ScheduleWeeklyPrescriptionsParams,
     _cleanup_generated_workouts,
     _collect_mcp_assignments,
+    _register_workout,
     _schedule_custom_workout,
     _schedule_weekly_prescriptions,
     _target_fields,
@@ -227,6 +228,72 @@ def test_schedule_replaces_same_title_template() -> None:
     assert result["schedule_id"] == 555
     assert result["title"] == "[MCP] Long 120min"
     assert result["replaced_workout_ids"] == [111]
+
+
+@pytest.mark.unit
+def test_schedule_one_replaces_recorded_workout_id_with_new_title() -> None:
+    """The workout recorded for a slot is deleted even when the new title
+    differs, so the revised item does not sit next to the old one (#1042)."""
+    client = MagicMock()
+    client.upload_workout.return_value = {"workoutId": 999}
+    client.schedule_workout.return_value = {"workoutScheduleId": 555}
+
+    result = _register_workout(
+        client,
+        on_date="2026-09-10",
+        title="new",
+        steps=[{"step_type": "run", "duration_minutes": 25}],
+        templates=[{"workoutName": "[MCP] old", "workoutId": 111}],
+        replace_workout_id=111,
+    )
+
+    client.delete_workout.assert_called_once_with(111)
+    method_calls = [c[0] for c in client.method_calls]
+    assert method_calls.index("delete_workout") < method_calls.index("upload_workout")
+
+    assert result["replaced_workout_ids"] == [111]
+    assert result["skipped_replace_ids"] == []
+
+
+@pytest.mark.unit
+def test_schedule_one_does_not_double_delete_same_title_and_id() -> None:
+    """An id that is also the same-title template is deleted exactly once."""
+    client = MagicMock()
+    client.upload_workout.return_value = {"workoutId": 999}
+    client.schedule_workout.return_value = {"workoutScheduleId": 555}
+
+    result = _register_workout(
+        client,
+        on_date="2026-09-10",
+        title="same",
+        steps=[{"step_type": "run", "duration_minutes": 25}],
+        templates=[{"workoutName": "[MCP] same", "workoutId": 111}],
+        replace_workout_id=111,
+    )
+
+    client.delete_workout.assert_called_once_with(111)
+    assert result["replaced_workout_ids"] == [111]
+
+
+@pytest.mark.unit
+def test_schedule_one_skips_non_mcp_replace_id() -> None:
+    """A recorded id pointing at a manual workout is reported, never deleted."""
+    client = MagicMock()
+    client.upload_workout.return_value = {"workoutId": 999}
+    client.schedule_workout.return_value = {"workoutScheduleId": 555}
+
+    result = _register_workout(
+        client,
+        on_date="2026-09-10",
+        title="new",
+        steps=[{"step_type": "run", "duration_minutes": 25}],
+        templates=[{"workoutName": "Coach Tempo", "workoutId": 222}],
+        replace_workout_id=222,
+    )
+
+    client.delete_workout.assert_not_called()
+    assert result["replaced_workout_ids"] == []
+    assert result["skipped_replace_ids"] == [222]
 
 
 # ----------------------------------------------------------------------------
@@ -790,3 +857,83 @@ def test_schedule_week_skips_already_registered_unless_explicit(
     assert explicit["skipped"] == []
     assert [item["prescription_id"] for item in explicit["items"]] == [long_id]
     assert explicit["items"][0]["already_registered"] is True
+
+
+@pytest.mark.unit
+def test_schedule_week_reregister_passes_recorded_workout_id(
+    week_reader: MagicMock,
+) -> None:
+    """Re-registering a row hands its recorded workout id to the registration so
+    the superseded [MCP] item leaves the calendar (#1042)."""
+    from garmin_mcp.database.inserters.plan import update_prescription_status
+
+    (long_id,) = _seed(week_reader, [_long_row()])
+    update_prescription_status(
+        prescription_id=long_id,
+        status="registered",
+        garmin_workout_id=333,
+        garmin_schedule_id=444,
+        db_path=str(week_reader.db_path),
+    )
+
+    calendar = MagicMock()
+    calendar.return_value.get_scheduled_workouts.return_value = []
+    with patch(_CALENDAR, calendar):
+        planned = _schedule_weekly_prescriptions(
+            week_reader,
+            ScheduleWeeklyPrescriptionsParams(
+                week_start_date=WEEK_START, prescription_ids=[long_id]
+            ),
+        )
+
+    assert planned["items"][0]["would_replace_workout_id"] == 333
+
+    client = _garmin_client()
+    register = MagicMock(
+        return_value={
+            "workout_id": 1001,
+            "schedule_id": 2001,
+            "date": "2026-09-13",
+            "title": "[MCP] ロング 22km (Z2上限150)",
+            "replaced_workout_ids": [333],
+            "skipped_replace_ids": [],
+        }
+    )
+
+    with (
+        patch("garmin_mcp.ingest.api_client.get_garmin_client", return_value=client),
+        patch(f"{_MODULE}._register_workout", register),
+    ):
+        live = _schedule_weekly_prescriptions(
+            week_reader,
+            ScheduleWeeklyPrescriptionsParams(
+                week_start_date=WEEK_START,
+                prescription_ids=[long_id],
+                dry_run=False,
+            ),
+        )
+
+    assert register.call_args.kwargs["replace_workout_id"] == 333
+    assert live["registered"][0]["replaced_workout_ids"] == [333]
+
+
+@pytest.mark.unit
+def test_schedule_week_default_path_never_replaces_by_id(
+    week_reader: MagicMock,
+) -> None:
+    """Rows registered on the default (all rows) path carry no recorded id, so
+    the id-based delete never fires there."""
+    _seed(week_reader, [_long_row(), _easy_row()])
+    client = _garmin_client()
+
+    with patch("garmin_mcp.ingest.api_client.get_garmin_client", return_value=client):
+        result = _schedule_weekly_prescriptions(
+            week_reader,
+            ScheduleWeeklyPrescriptionsParams(
+                week_start_date=WEEK_START, dry_run=False
+            ),
+        )
+
+    assert len(result["registered"]) == 2
+    client.delete_workout.assert_not_called()
+    assert all(r["skipped_replace_ids"] == [] for r in result["registered"])
