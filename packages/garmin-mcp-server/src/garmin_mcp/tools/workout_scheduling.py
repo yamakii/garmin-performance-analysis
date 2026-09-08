@@ -34,6 +34,11 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from garmin_mcp.analysis.prescription_shape import (
+    BOOKENDED_TYPES,
+    COOLDOWN_MINUTES,
+    WARMUP_MINUTES,
+)
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.tools.registry import ToolDef
 
@@ -51,11 +56,6 @@ _DEFAULT_HR_FLOOR = 80
 
 # Ledger owner used when the caller does not name one.
 _DEFAULT_USER_ID = "default"
-
-# Shape of a prescription-derived workout: every session gets the same easy
-# warmup / cooldown bookends so the body step carries the prescribed target only.
-_WARMUP_MINUTES = 10
-_COOLDOWN_MINUTES = 5
 
 # Strides are prescribed as a shape, not as a target: 5 x 20s pickups with 90s
 # easy recovery, none of which carries an HR target (they are too short for HR
@@ -288,19 +288,22 @@ def build_steps_from_prescription(p: dict[str, Any]) -> list[dict[str, Any]]:
     """Derive the generic ``steps`` array from one ``weekly_prescriptions`` row.
 
     Pure function, so the whole prescription -> workout mapping is unit-tested
-    without touching Garmin. Every session is bookended by a 10-minute warmup and
-    a 5-minute cooldown with no target; only the body step carries the
-    prescription's own bounds:
+    without touching Garmin. Only quality sessions get warmup/cooldown bookends
+    (:data:`~garmin_mcp.analysis.prescription_shape.BOOKENDED_TYPES`); easy-effort
+    runs are registered as exactly what was prescribed, so the watch never asks
+    for more than the ledger says (#1039):
 
-    - ``long`` / ``easy`` / ``recovery``: one body step ending on
+    - ``long`` / ``easy`` / ``recovery``: a **single** body step ending on
       ``target_minutes`` (preferred, time-managed runs) or ``target_km``
-      converted to meters, with ``hr_high`` as a ceiling. ``hr_low`` is written
-      only when the row actually prescribes a floor, so ceiling-only easy/long
-      runs never get a low-HR alert (#979).
-    - ``threshold`` / ``tempo``: the same shape; these rows carry both bounds, so
-      the body step becomes a real HR range.
-    - ``strides``: a 5x(20s run / 90s recovery) repeat group instead of a body
-      step (no distance/duration target needed).
+      converted to meters, with ``hr_high`` as a ceiling. The whole run is
+      warmup intensity, so a separate warmup step would only inflate the
+      session. ``hr_low`` is written only when the row actually prescribes a
+      floor, so ceiling-only easy/long runs never get a low-HR alert (#979).
+    - ``threshold`` / ``tempo``: a 10-minute warmup and a 5-minute cooldown
+      around the body step; these rows carry both bounds, so the body step
+      becomes a real HR range.
+    - ``strides``: the same bookends around a 5x(20s run / 90s recovery) repeat
+      group instead of a body step (no distance/duration target needed).
 
     Args:
         p: A prescription row (``session_type``, ``target_minutes`` /
@@ -321,8 +324,8 @@ def build_steps_from_prescription(p: dict[str, Any]) -> list[dict[str, Any]]:
             f"(registrable: {sorted(_REGISTRABLE_TYPES)})"
         )
 
-    warmup = {"step_type": "warmup", "duration_minutes": _WARMUP_MINUTES}
-    cooldown = {"step_type": "cooldown", "duration_minutes": _COOLDOWN_MINUTES}
+    warmup = {"step_type": "warmup", "duration_minutes": WARMUP_MINUTES}
+    cooldown = {"step_type": "cooldown", "duration_minutes": COOLDOWN_MINUTES}
 
     if session_type == "strides":
         return [
@@ -360,7 +363,9 @@ def build_steps_from_prescription(p: dict[str, Any]) -> list[dict[str, Any]]:
     if hr_high is not None:
         body["hr_high"] = hr_high
 
-    return [warmup, body, cooldown]
+    if session_type in BOOKENDED_TYPES:
+        return [warmup, body, cooldown]
+    return [body]
 
 
 # ----------------------------------------------------------------------------
@@ -861,10 +866,13 @@ WORKOUT_SCHEDULING_TOOLS: list[ToolDef] = [
         name="schedule_weekly_prescriptions",
         description=(
             "Register a whole week of saved prescriptions to the Garmin "
-            "calendar in one batch. Steps are derived in code from each row "
-            "(10min warmup, body on target_minutes or target_km with hr_high as "
-            "a ceiling and hr_low only when prescribed, 5min cooldown; strides "
-            "become 5x20s pickups); rest/strength/cross rows and rows already "
+            "calendar in one batch. Steps are derived in code from each row: "
+            "long/easy/recovery become a single body step on target_minutes or "
+            "target_km (hr_high as a ceiling, hr_low only when prescribed) so "
+            "the watch asks for exactly what was prescribed, while quality "
+            "sessions (threshold/tempo/strides) keep a 10min warmup and a 5min "
+            "cooldown around the body (strides become 5x20s pickups); "
+            "rest/strength/cross rows and rows already "
             "registered are skipped, and naming an id in prescription_ids "
             "re-registers it. dry_run=True (default) returns {dry_run, "
             "week_start_date, items ({prescription_id, date, title, steps, "

@@ -480,16 +480,15 @@ def test_cleanup_reports_empty_failure_lists_on_success() -> None:
 
 @pytest.mark.unit
 def test_build_steps_long_km_ceiling_only() -> None:
-    """A distance-prescribed long run becomes warmup / body / cooldown with a
-    ceiling-only HR target on the body step."""
+    """A distance-prescribed long run is a single body step with a ceiling-only
+    HR target — no bookends inflating the prescribed distance (#1039)."""
     steps = build_steps_from_prescription(
         {"session_type": "long", "target_km": 22.0, "hr_high": 150}
     )
 
-    assert len(steps) == 3
-    warmup, body, cooldown = steps
-    assert warmup == {"step_type": "warmup", "duration_minutes": 10}
-    assert cooldown == {"step_type": "cooldown", "duration_minutes": 5}
+    assert len(steps) == 1
+    (body,) = steps
+    assert body["step_type"] == "run"
     assert body["distance_m"] == 22000
     assert body["hr_high"] == 150
     assert "hr_low" not in body
@@ -497,20 +496,40 @@ def test_build_steps_long_km_ceiling_only() -> None:
 
 @pytest.mark.unit
 def test_build_steps_easy_minutes() -> None:
-    """A time-prescribed easy run ends its body step on duration, not distance."""
+    """A time-prescribed easy run is one step ending on duration, not distance."""
     steps = build_steps_from_prescription(
         {"session_type": "easy", "target_minutes": 45, "hr_high": 150}
     )
 
-    body = steps[1]
+    assert len(steps) == 1
+    body = steps[0]
     assert body["duration_minutes"] == 45
     assert "distance_m" not in body
     assert body["hr_high"] == 150
 
 
 @pytest.mark.unit
+def test_build_steps_recovery_single_step_keeps_floor_when_prescribed() -> None:
+    """A recovery run stays single-step but keeps a floor when one is prescribed."""
+    steps = build_steps_from_prescription(
+        {
+            "session_type": "recovery",
+            "target_minutes": 30,
+            "hr_low": 110,
+            "hr_high": 140,
+        }
+    )
+
+    assert len(steps) == 1
+    body = steps[0]
+    assert body["duration_minutes"] == 30
+    assert body["hr_low"] == 110
+    assert body["hr_high"] == 140
+
+
+@pytest.mark.unit
 def test_build_steps_threshold_both_bounds() -> None:
-    """A quality session keeps its prescribed floor as well as its ceiling."""
+    """A quality session keeps its bookends and its prescribed floor + ceiling."""
     steps = build_steps_from_prescription(
         {
             "session_type": "threshold",
@@ -520,7 +539,11 @@ def test_build_steps_threshold_both_bounds() -> None:
         }
     )
 
+    assert len(steps) == 3
+    assert steps[0] == {"step_type": "warmup", "duration_minutes": 10}
+    assert steps[2] == {"step_type": "cooldown", "duration_minutes": 5}
     body = steps[1]
+    assert body["duration_minutes"] == 20
     assert body["hr_low"] == 162
     assert body["hr_high"] == 169
 
@@ -658,7 +681,9 @@ def test_schedule_week_dry_run_lists_items_and_conflicts(
 
     by_id = {item["prescription_id"]: item for item in result["items"]}
     assert by_id[easy_id]["existing_same_day"] == ["Tempo"]
-    assert by_id[easy_id]["steps"][1]["duration_minutes"] == 45
+    assert by_id[easy_id]["steps"] == [
+        {"step_type": "run", "duration_minutes": 45, "hr_high": 150}
+    ]
     # The same-title [MCP] template is replaced automatically, so it is not a
     # conflict the user has to resolve.
     assert by_id[long_id]["existing_same_day"] == []

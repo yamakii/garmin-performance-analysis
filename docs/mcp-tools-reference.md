@@ -717,7 +717,7 @@ Build a Garmin running workout from a generic steps array, force-prefix its titl
 
 CLI: `garmin-db workout schedule-week`
 
-Register a whole week of saved prescriptions to the Garmin calendar in one batch. Steps are derived in code from each row (10min warmup, body on target_minutes or target_km with hr_high as a ceiling and hr_low only when prescribed, 5min cooldown; strides become 5x20s pickups); rest/strength/cross rows and rows already registered are skipped, and naming an id in prescription_ids re-registers it. dry_run=True (default) returns {dry_run, week_start_date, items ({prescription_id, date, title, steps, existing_same_day, already_registered}), skipped} so the plan can be confirmed first. dry_run=False registers each item (delete same-title [MCP] template -> upload -> schedule), records the workout/schedule ids with status=registered on the row, isolates per-item failures and returns {dry_run, week_start_date, registered, failed, skipped}.
+Register a whole week of saved prescriptions to the Garmin calendar in one batch. Steps are derived in code from each row: long/easy/recovery become a single body step on target_minutes or target_km (hr_high as a ceiling, hr_low only when prescribed) so the watch asks for exactly what was prescribed, while quality sessions (threshold/tempo/strides) keep a 10min warmup and a 5min cooldown around the body (strides become 5x20s pickups); rest/strength/cross rows and rows already registered are skipped, and naming an id in prescription_ids re-registers it. dry_run=True (default) returns {dry_run, week_start_date, items ({prescription_id, date, title, steps, existing_same_day, already_registered}), skipped} so the plan can be confirmed first. dry_run=False registers each item (delete same-title [MCP] template -> upload -> schedule), records the workout/schedule ids with status=registered on the row, isolates per-item failures and returns {dry_run, week_start_date, registered, failed, skipped}.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -827,7 +827,7 @@ Update one prescription's status and optionally its Garmin workout / schedule id
 
 CLI: `garmin-db plan reconcile`
 
-Deterministically link prescribed sessions in a date range to the activities that actually happened, so adherence needs no LLM. For each open (prescribed / registered) latest-batch row with a past date: an activity on that date within tolerance (0.85x-1.30x of target_km / target_minutes) marks it done, any other activity marks it replaced (a rest day with a run is always replaced), and no activity marks it skipped (rest with no activity is done). Future dates and superseded batches are never touched. Returns {updated, done, replaced, skipped}.
+Deterministically link prescribed sessions in a date range to the activities that actually happened, so adherence needs no LLM. For each open (prescribed / registered) latest-batch row with a past date: an activity on that date within tolerance (0.85x-1.30x of target_km / target_minutes, with quality sessions (threshold/tempo/strides) allowed the 15min of warmup/cooldown their registered workout adds) marks it done, any other activity marks it replaced (a rest day with a run is always replaced), and no activity marks it skipped (rest with no activity is done). Future dates and superseded batches are never touched. Returns {updated, done, replaced, skipped}.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
