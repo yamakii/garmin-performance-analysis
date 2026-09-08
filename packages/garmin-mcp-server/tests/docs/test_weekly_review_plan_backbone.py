@@ -17,6 +17,7 @@ plan or the structured save is dropped back to prose-only ``verdict`` rows.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -113,3 +114,38 @@ def test_daily_checkin_matches_review_id(daily_checkin_text: str) -> None:
     """The check-in only layers the review prose when the review_id matches."""
     assert "review_id" in daily_checkin_text
     assert "fbtAdaptiveWorkout" in daily_checkin_text
+
+
+@pytest.mark.unit
+def test_weekly_review_skill_states_target_minutes_convention(
+    weekly_review_text: str,
+) -> None:
+    """``target_minutes`` is the whole run except for quality bodies (#1041).
+
+    The builder registers long/easy/recovery as a single step of exactly
+    ``target_minutes`` and the reconciler compares it with no allowance, so the
+    skill has to say the number is the total. Quality sessions keep the
+    body-only convention (the tool adds the 10+5 min bookends).
+    """
+    assert "`target_minutes` の定義" in weekly_review_text
+    # Quality sessions: body only.
+    assert "本体のみ" in weekly_review_text
+    # long / easy / recovery: the whole run.
+    assert "全体（総量）" in weekly_review_text
+    assert "本体だけの分数を入れてはいけない" in weekly_review_text
+    # The title must not advertise a different total than target_minutes.
+    assert "別の総量を名乗らない" in weekly_review_text
+
+
+@pytest.mark.unit
+def test_weekly_review_skill_has_no_bookend_split_example(
+    weekly_review_text: str,
+) -> None:
+    """No example row splits an easy run into W/U + body + C/D minutes (#1041).
+
+    Batch 6 rows such as ``計35分（W/U10分＋本体20分＋C/D5分）`` with
+    ``target_minutes=20`` are exactly what the convention forbids; the skill
+    must not model that shape anywhere.
+    """
+    bookend_split = re.compile(r"W/U\s*\d+\s*分\s*[＋+]\s*本体")
+    assert bookend_split.search(weekly_review_text) is None
