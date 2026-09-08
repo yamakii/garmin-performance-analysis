@@ -34,4 +34,4 @@ paths:
 - `UV_PROJECT_ENVIRONMENT` が設定された環境（Docker sandbox 等）では **全 worktree・全パッケージが1つの venv を共有する**。`uv sync` を並列で走らせると互いの依存を消し合う（`packages/garmin-web` の sync が server の dev extras を消し、mypy/pytest-xdist が壊れる）。`scripts/ci-check.sh` の順序どおり**直列**で回すこと
 - `uv lock --upgrade` は pyproject の制約内で最新に上げる。制約が `>=` のみのパッケージは major も上がるため、差分の `Update x vA -> vB` を必ず目視し major を分離判断する
 - pre-commit の `ruff-pre-commit` / `black` rev は uv.lock の ruff / black と同じバージョンに揃える（ローカル pre-commit と CI の lint 結果を一致させるため）
-- 変更後の検証は `scripts/ci-check.sh` exit 0 が完了条件（`dev-reference.md` §3 の L2 相当）。lockfile-only の PR でも CI は `uv.lock` をフィルタに含めているため lint-and-test が走る
+- 変更後の検証は `scripts/ci-check.sh` exit 0 が完了条件（`worktree-validation-protocol.md` の L2 相当）。lockfile-only の PR でも CI は `uv.lock` をフィルタに含めているため lint-and-test が走る

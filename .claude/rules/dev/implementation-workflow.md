@@ -17,8 +17,7 @@ thin plan の例（不足とみなす）:
 - Interface なしで新規クラス導入
 
 例外: プロンプト変更のみ（.claude/agents/, .claude/rules/）→ Interface 省略可。Test Plan は必須。
-※ これは Interface 省略の条件であり、Validation Level とは無関係。
-agents は L3、rules は skip（dev-reference.md §3 参照）。
+※ これは Interface 省略の条件であり、Validation Level とは無関係（判定表は `worktree-validation-protocol.md` §1）。
 
 Risks セクション（任意）:
 - 計画時点で不確実な技術的判断・未検証の前提があれば記載する
@@ -51,7 +50,7 @@ Risks セクション（任意）:
 - lint 実行指示: `uv run ruff check {changed_files}`
 - commit 指示: ブランチ名、コミットメッセージ形式
 - **push しない**指示
-- **Manifest 書き出し指示**: commit 後に `/tmp/validation_queue/{branch}.json` へ manifest を書き出すこと（developer.md Step 5.5 参照）
+- **Manifest 返却指示**: commit 後に manifest を構造化出力で返すこと（developer.md Step 5.5）
 
 ## Phase 2: Verify (独立検証)
 
@@ -64,21 +63,10 @@ Risks セクション（任意）:
   - [ ] 変更ファイル: 変更箇所がプランの指定位置と一致
   - [ ] テスト: プランのテスト名が全て存在
 
-### 2b. テスト実行
+### 2b. 検証実行
 
-> L1/L2 は subprocess 検証でプロセス分離されているため**並列起動が安全**（FIFO で1つずつ待つ必要はない）。直列が必須なのは L3（メインセッション担当・reload 非依存）のみ。詳細・経緯は `worktree-validation-protocol.md` / `dev-reference.md §3` を参照。
-
-プランの Validation Level に応じて（`dev-reference.md` §3 参照）:
-
-| Level | 実行内容 | 完了条件 |
-|-------|---------|---------|
-| L1 | `uv run pytest {test_path} -m unit -v` | 0 failures |
-| L2 | `uv run --directory <worktree> bash scripts/ci-check.sh`（unit+integration+型+lint+doc-guard を一発で実行） | exit 0 |
-| L3 | pre-merge は **diff レビュー**のみ（同一セッション temp-apply は無効=偽ゲート #742）→ merge 後に**新規セッション**で `/analyze-activity` 実行、不合格なら revert。正本: `worktree-validation-protocol.md` | (post-merge) analysis_data 非null + 必須フィールド存在 |
-| skip | Validation Agent スキップ。コードレビュー(Phase 2a)のみ | 2a チェック通過 |
-
-CI 同一コマンド（whole-package の `black --check .` / `mypy .` / `pytest -m "unit or integration" ... --cov-fail-under=60`、web 変更時は web-backend/web-frontend）を再現する正典コマンドは `scripts/ci-check.sh`（integration も既定で実行。反復時は `--unit-only` で integration をスキップ可）。
-Phase 2b の完了条件は **`scripts/ci-check.sh` が exit 0（0 failures）** とする。per-file の pre-commit では捕まらない型エラー・他モジュール破壊を CI 前に検出するため、commit 前に必ず実行する。
+Validation Level の判定と L1/L2/L3/skip の手順・完了条件は `worktree-validation-protocol.md` §1〜§5。
+`packages/` を変更した PR は `scripts/ci-check.sh` exit 0 が完了条件。
 
 **CRITICAL**: テスト結果は自分のターンで確認する。サブエージェントの報告を信じない。
 
@@ -86,62 +74,7 @@ Phase 2b の完了条件は **`scripts/ci-check.sh` が exit 0（0 failures）**
 - 全チェック通過 → Phase 3 へ
 - 失敗あり → サブエージェントを resume して修正指示、再度 Phase 2
 
-## Phase 2 と /implement の対応
-
-- `/implement` の Step 5 が Phase 2 に相当する
-- developer agent 完了 → Validation Agent 起動（Step 5）→ Phase 3 (Ship)
-- Validation Agent は `/implement` が自動起動する（手動で別途起動する必要はない）
-- skip レベルの場合は Phase 2a（コードレビュー）のみ実施し Phase 3 へ（Validation Agent はスキップ）
-
-## Phase 2.9: Pre-merge verification (全 PR 必須)
-
-> **`ci-guard` green は「CI が検証できた範囲が通った」だけ。検証完了の証明ではない。**
-> 原則: **変更した挙動を自動テストで exercise し、CI でゲートする**。手動確認は
-> 自動化が原理的に困難な領域（分析の品質、web の見た目）に限定し、その場合のみ
-> PR 本文の `## Verification` に記録する。「人がマージ前に workflow を手動起動して
-> 目視」は検証手段として不可（再現性なし・ロジックバグを見落とす）。
-
-カテゴリ別の必須検証（マージ前）:
-
-| 変更カテゴリ | 必須検証（自動が原則） | CI が実行 |
-|----------|----------------------|----------|
-| `packages/` コード | unit + L1/L2（subprocess import + 実 activity_id + integration）| `lint-and-test`（unit/型/lint）+ Validation Agent |
-| `packages/garmin-web/` | pytest + vitest + build（CI）。**UI の見た目はマージ後の確認で可**（pre-merge ブロッカーにしない） | `web-backend` / `web-frontend` |
-| `.claude/agents/*-analyst.md` | L3: pre-merge は **diff レビュー**のみ。behavioral 検証は**マージ後の新規セッション**で `/analyze-activity`（構造/内容チェック）— 同一セッション検証は無効（#742） | なし（メインセッションが post-merge 実行） |
-| `.claude/workflows/*.js` | **純粋ロジックを `// >>> testable` ブロックに置き、`node --test .claude/workflows/tests/` で自動検証**。プロンプト/構造変更はレビュー | `meta-checks`（構文 smoke + `node --test`） |
-| `.claude/hooks/*.sh` | hook を代表入力で発火させ exit code を検証する自動テスト（理想）。当面は `bash -n` + レビュー | `meta-checks`（`bash -n`） |
-| `.claude/skills/*.md` / `rules/` | 該当 skill / ルール手順を実行して挙動確認（記録） | なし |
-| `docs/**` / `*.md` / `.env.example` | docs-integrity / magic-number テスト + リンク・コマンド目視 | `lint-and-test`（doc-guard テスト） |
-
-`scripts/check-claude-scripts.sh`（`meta-checks` が CI 実行）= `.claude/workflows`・`.claude/hooks` の構文 smoke + workflow 純粋ロジックの `node --test`。**ロジックは必ず testable ブロックに切り出してテストを足す**（#441 のような args 取り違えを CI で捕捉するため）。
-
 ## Phase 3: Ship (PR作成 + 条件付き auto-merge)
 
-> **既定経路（`/implement`）では Ship＋auto-merge を `implement-tier` Workflow が内包する**ため、
-> この手動 Phase 3 は**フォールバック経路（手動 developer 委任）専用**。`/implement` を使ったら
-> 手動 push/PR/merge は不要（Workflow の返り値で merged/escalated を確認するだけ）。
-
-> **正本マップ**: 本 Phase 3 が **auto-merge ゲート / Ship 手順の正本**。**検証メカニクス**は `worktree-validation-protocol.md`、**Validation Level 判定表**は `dev-reference.md §3` を正本とする。
-
-Phase 2 + Phase 2.9 完了後のみ実行可能（手動経路）:
-1. worktree ブランチを main repo に fetch
-2. remote に push
-3. `mcp__github__create_pull_request` (Closes #{issue}, 本文に `## Verification` を記録)
-4. `ci-guard` の完了を **`bash scripts/wait-for-ci.sh <PR> --timeout 900`（1 コマンド・`run_in_background` 推奨）** で待つ。
-   exit 0 = success / 1 = failure / 2 = timeout / 3 = 環境エラー。exit 3 のときだけ `pull_request_read(method="get_check_runs")` で手動ポーリング（`sleep` → 再取得の LLM ループは組まない）
-5. **auto-merge ゲート**: 検証(L1/L2) PASS + `ci-guard` success + mergeable + **Phase 2.9 の検証完了**を満たせば
-   `merge_pull_request` で自動マージ（テスト・検証の充実が前提, #395）。
-   `/implement` ではこの判定を `implement-tier` Workflow が担う。
-   **リポジトリオーナーの恒久承認（2026-08-09, #886）**: このゲートを満たす PR は PR ごとの確認を取らずに
-   マージしてよい。バックグラウンドジョブ・非対話セッションにも適用し、セッションごとに承認を得直さない。
-   承認の範囲は PR のマージのみで、main / master への直接 push、force push、および step 6 の例外に
-   該当する PR のマージは引き続き対象外
-6. **例外は人間ゲート**: 検証 FAIL / 内容チェック WARNING / CI 失敗 / コンフリクト は
-   auto-merge せず（`implement-tier` も escalate）、PR URL と理由を報告して判断を仰ぐ。
-   `.claude/workflows`・`.claude/hooks` 変更は `meta-checks`（`node --test` / `bash -n`）が CI でロジックをゲートするため、
-   green であれば他カテゴリと同じく auto-merge する。
-   **L3（agent 定義 `.claude/agents/*-analyst.md`）も例外ではない**（#888）: メインセッションによる
-   **diff レビュー（必須）**を通し `ci-guard` green なら auto-merge する。ただし挙動検証は原理的に
-   pre-merge 不可のため（#742）、**マージ後の新規セッションでの E2E が必須の追跡義務**となり、
-   不合格なら revert する。手順の正本は `worktree-validation-protocol.md` の L3 節。
-   diff レビューで問題を検出した場合のみ escalate する。
+手順・auto-merge ゲート・例外・恒久承認（#886）の範囲は `worktree-validation-protocol.md` §6 が正本。
+`/implement` 経由では `implement-tier` Workflow が同じゲートを内包するので手動 push/PR/merge は不要。

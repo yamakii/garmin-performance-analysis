@@ -29,11 +29,7 @@
   ```
 - **Garmin API 依存機能の Risks は実応答で確認**: 取り込み・判定が Garmin API の値（`typeKey`、フィールド名、単位）に依存する設計は、プラン作成前に対象アクティビティの実データを取得して確認し、観測値を Risks に `[検証済]` として記載する。確認できないときは `[未検証]` のまま実装せず、実データ確認を先行させる（hiking を `typeKey=="hiking"` 前提で設計し実際は `"mountaineering"` で 0 件になった #921 の再発防止）
 - **Plan承認後**: Issue作成(TBD時) → Issue sync（`design-approved` 付与）→ 既定で `/implement <issue>` 実装 or `/decompose`。再確認不要
-- **Review Gates**: Design → Test Plan → Code(CI) → Validation → Merge
-  - **既定経路 = `/implement <issue番号>`**（**単発 Issue / Epic を問わず**）: 検証(L1/L2) PASS + `ci-guard` success + mergeable なら **auto-merge**（`implement-tier` Workflow）。例外（FAIL / 内容チェック WARNING / CI 失敗 / コンフリクト）のみ人間が `/ship --pr N --validated`
-  - **手動 developer 委任 + `/ship --pr N` は例外（フォールバック）**: L3（agent 定義変更）/ Workflow 不可環境 / skip-level の docs・rules 微修正のみ。**「単発だから手動」ではない**（単発でも既定は /implement）
-  - **経路選択とマージ可否は独立**: 「例外（フォールバック）」は**どの経路で実装するか**の話であり、マージ判断とは無関係。手動経路であること自体は人間ゲートの理由にならない。auto-merge を止める条件は `implementation-workflow.md` Phase 3 step 6 の列挙（検証 FAIL / 内容チェック WARNING / CI 失敗 / コンフリクト）**のみ**で、これに該当しなければ手動経路でも auto-merge する
-  - **L3 も auto-merge 対象**（#888）: メインセッションによる **diff レビュー（必須）**を通し `ci-guard` green なら auto-merge する。ただし挙動検証は pre-merge 不可（#742）のため、**マージ後の新規セッションでの E2E が必須の追跡義務**となり不合格なら revert。diff レビューで問題を検出した場合のみ escalate
+- **Review Gates**: Design → Test Plan → Code(CI) → Validation → Merge。検証レベル・auto-merge の条件・例外は `worktree-validation-protocol.md` が唯一の正本（経路が手動でも Workflow でも同じゲート）
 
 ### Issue Sync
 
@@ -63,42 +59,7 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 
 ## 3. Validation
 
-> **正本マップ（検証の単一ソース）**: **Validation Level 判定表** = 本節(§3) / **検証メカニクス（L1/L2/L3 の実行手順）** = `worktree-validation-protocol.md` / **auto-merge ゲート・Ship 手順** = `implementation-workflow.md` Phase 3。他ファイルの再掲は参照用で、矛盾時は各正本を優先する。
-
-### Validation Level 判定
-
-> **Validation Level は PR マージ前の検証方法を決めるもの。
-> skip は「Validation Agent をスキップ」であり「ワークフロー(Issue/Plan/Worktree/PR)をスキップ」ではない。**
-
-変更対象の**全ファイル**を以下と照合し、最も高いレベルを採用:
-
-| 変更対象 | Level |
-|----------|-------|
-| `.claude/agents/*-analyst.md` | L3 |
-| `tools/` (ToolDef), `handlers/`, `database/readers/` | L1 |
-| `reporting/`, `ingest/`, `database/migrations/` | L2 |
-| `packages/garmin-web/` | L2 |
-| `.claude/rules/`, `docs/`, `CLAUDE.md` | skip |
-
-迷ったら L2。L3 は agent 定義変更時のみ。
-
-### 検証フロー (Validation Agent)
-
-> **正本: `worktree-validation-protocol.md`**（L1/L2/L3 の実行手順・根拠の詳細）。本節は辞書用の要約で、矛盾時は正本を優先する。
-
-- **L1**: worktree コードを subprocess で import → 下層関数を `verification_activity_id` で呼び出し、非null・型一致・値範囲 (pace 3:00-9:00, HR 80-200)・`json.dumps` 可能を検証（`reload_server` は使わない）
-- **L2**: L1 + worktree 内で `uv run --directory <worktree> bash scripts/ci-check.sh`（CI 同一: unit+integration+型+lint+doc-guard、web 変更時は web チェック）exit 0。ci-check.sh 一発で CI 同等（integration も既定で実行）。tool/table 追加時の doc-sync/unit 漏れを ci-guard 前に検出
-- **L3**: agent 定義変更は **pre-merge に同一セッションで挙動検証できない**（agent 定義は本文ごとセッション開始時にキャッシュされ mid-session の `cp` 差し替えは無効。#742 で実証）。ゆえに pre-merge は **メインセッションによる diff レビュー（必須・人間への往復は不要, #888）** → `ci-guard` green で **auto-merge** → **新規セッションで `/analyze-activity` 実行**して構造/内容チェック（**必須の追跡義務**。未了の間は同じ agent 定義へ追加変更を重ねない）→ 不合格なら revert（merge-first-verify-later）。旧「一時適用→同一セッション実行」手順は偽ゲートとして棄却。正本手順は `worktree-validation-protocol.md`
-- L1/L2 は subprocess 分離のため**並列起動が安全**（複数 worktree の L1/L2 を同時検証可）。直列必須は L3 のみ。経緯（旧 FIFO 直列前提）は正本を参照。ただし **`ci-check.sh` は cgroup のメモリ余裕を待ってから mypy/pytest を回し、コンテナが 16 GiB 未満なら flock で 1 本ずつ直列化する**（#1009: 4 GiB sandbox で同時実行がセッションの `SIGKILL (137)` を招いた）。現行の 32g コンテナ（#1011）ではロック無しで並列に走る。判断は `ci-check.sh --resources-only` で確認
-
-### L3 検証基準
-
-- **構造 (FAIL=致命的)**: 全5セクションの `analysis_data` 非null、必須フィールド存在、merge → DuckDB `section_analyses` 登録成功
-- **内容 (WARNING)**: ペース/HR が fixture 範囲と整合、セクション間の矛盾なし
-- **Fixture**: Activity `20636804823` (2025-10-09, aerobic_base 5.66km, ~6:26/km, HR avg 144bpm)
-- **Content check ranges**:
-  - Pace: 6:00-6:45/km (360-405 sec/km)
-  - HR: 120-160 bpm
+**正本は `worktree-validation-protocol.md`**（Level 判定表 / L1・L2・L3 の手順 / Ship と auto-merge ゲート / L3 検証基準）。ここには再掲しない。
 
 ## 4. Testing
 
@@ -146,7 +107,5 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 
 ## 9. Real Data Validation
 
-- worktree コード変更の検証は in-process / subprocess（`uv run --directory <worktree> ...`）で行う。`reload_server` は使わない（サブエージェントは reload を跨ぐと tool 一覧を再取得できず `mcp__garmin-db__*` を見失う。spike #243）。live MCP 確認が要る稀なケースのみメインセッションが reload + `get_server_info` の ready ポーリング
-- **reload モデル（Epic #478）**: MCP サーバは安定 shim（MCP セッション保持）+ 差し替え可能 worker（fresh プロセスで最新コードを import し `dispatch` 実行）。`reload_server` は **worker のみ再起動 + `tools/list_changed` 送出**で、shim は死なない＝接続は切れない（旧 `os._exit` 自殺 + クライアント respawn 依存・`server_dir` 引数は撤去済み）。**シグネチャ不変変更は zero-touch 反映、スキーマ形変更（tool 追加/削除・引数変更）のみ `/mcp` 再接続が1回必要**
+- worktree コードの検証は subprocess（`uv run --directory <worktree> ...`）で行い、`reload_server` は使わない。reload モデルと live 確認の手順は `worktree-validation-protocol.md` §7
 - MCP tool 変更 → 実 activity_id で `statistics_only=True/False` 両方テスト
-- Agent 定義変更 → fixture データで E2E 検証

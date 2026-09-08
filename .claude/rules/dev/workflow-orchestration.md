@@ -9,6 +9,7 @@
 - プラン承認後は `implementation-workflow.md` に従って実行する
 - 委任・検証・Ship の手順はすべてそちらに定義
 - **全変更で Worktree → PR が必須**。Validation Level: skip は検証方法の指定であり、ワークフロー省略の許可ではない
+- 検証レベルと auto-merge ゲートは `worktree-validation-protocol.md` のみに書く。他所に再掲しない
 
 ## Self-Improvement Loop
 - After ANY user correction: append to `.claude/tasks/lessons.md`

@@ -91,10 +91,8 @@ Key rules (auto-loaded from `.claude/rules/dev/`):
 
 ### Worktree 検証
 
-Validation Agent 方式（L1/L2 は subprocess で並列起動可、L3 のみメインセッション直列）。
-`/implement` は `implement-tier` Workflow でティアを実装し、検証 PASS + `ci-guard` green の PR を auto-merge する。
-プラン承認済みの実装は**単発 Issue でも既定で `/implement <issue>`**（承認時に `design-approved` 付与）。手動 developer 委任＋`/ship` は例外（L3／Workflow 不可／docs・rules の skip 微修正）。
-詳細は `.claude/rules/dev/worktree-validation-protocol.md` を参照。
+検証レベル（L1/L2/L3/skip）、Ship 手順、auto-merge ゲートの正本は
+`.claude/rules/dev/worktree-validation-protocol.md`。プラン承認済みの実装は既定で `/implement <issue>`（承認時に `design-approved` 付与）。
 
 ### Quick Commands
 | Command | Purpose |

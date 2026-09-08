@@ -113,7 +113,7 @@ Workflow(
 
 Workflow 内部の流れ（`implement-tier.js`）:
 1. **Implement**（並列）: 各 Issue を developer agent（`isolation: 'worktree'`）で実装。manifest を
-   schema 付き構造化出力で返す（`/tmp/validation_queue` ファイルは使わない）
+   schema 付き構造化出力で返す
 2. **Validate**（並列）: validation-agent が L1/L2 を subprocess で検証。`skip` は pass 扱い、
    `L3` は escalate（メインセッション担当のため Workflow では検証しない）
 3. **Ship**: push → PR 作成（`Closes #{issue}`）→ `bash scripts/wait-for-ci.sh` を**フォアグラウンドで 1 回**実行して
@@ -139,7 +139,7 @@ Workflow の返り値:
   - `検証 FAIL` → developer agent を resume して修正、再度 Workflow（該当 Issue のみ）
   - `内容チェック WARNING` → ユーザーに報告し判断を仰ぐ（マージするなら `/ship --pr N --validated`）
   - `ci-guard が failure` → CI ログを確認して修正
-  - `L3` → メインセッションが worktree の `.md` を main に一時適用して L3 検証（`worktree-validation-protocol.md`）→ 手動マージ
+  - `L3` → メインセッションが worktree の `.md` 差分を diff レビューし、`ci-guard` green ならマージ。E2E はマージ後の新規セッションで実行（`worktree-validation-protocol.md` §4）
   - `コンフリクト` → `git -C <worktree> rebase origin/main` → push → 再度 Step 4
 - **dropped**: agent 死亡 or skip。エラーを報告
 
@@ -204,9 +204,6 @@ Cleanup: removed N worktree(s), deleted M branch(es); skipped K (理由)
 
 ## Notes
 
-- **auto-merge ゲート**: 検証（L1/L2）PASS + `ci-guard` success + mergeable を満たす PR のみ
-  Workflow が自動マージする。テスト・検証の充実がこの緩和の前提（#395）
-- **人間ゲートが残る例外**: 検証 FAIL / 内容チェック WARNING / CI 失敗 / コンフリクト / L3 含み
-- **L3 は Workflow に載せない**: agent 定義変更はメインセッションが reload 非依存で担当
-- 各 PR の結果（merged/escalated）は Workflow 返り値からユーザーに提示
-- branch protection は維持（auto-merge も `ci-guard` 成功が前提）
+- auto-merge ゲートと例外（人間ゲート）は `worktree-validation-protocol.md` §6 が正本。Workflow はそれを実装しているだけ
+- **L3 は Workflow に載せない**: diff レビューはメインセッションが行う（同 §4）
+- 各 PR の結果（merged/escalated）は Workflow 返り値からユーザーに提示し、GitHub で実際のマージ状態を確認する

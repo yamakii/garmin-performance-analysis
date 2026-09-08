@@ -86,7 +86,7 @@ uv run --directory {worktree_path} ruff check {changed_files}
 **完了ゲート（commit / manifest 返却の前提）:** `uv run pytest -m unit` だけでは
 doc-sync 漏れ・他モジュール破壊・型エラーを見逃す（per-file の pre-commit でも捕まらない）。
 `packages/` 配下を変更した場合は、commit 前に **CI 同一コマンドの正典**を回し exit 0 を確認する
-（`implementation-workflow.md` Phase 2b の完了条件）:
+（`worktree-validation-protocol.md` §3 L2 の完了条件）:
 
 ```bash
 uv run --directory {worktree_path} bash scripts/ci-check.sh
@@ -107,24 +107,21 @@ git -C {worktree_path} commit -m "{conventional commit message}
 
 Closes #{issue_number}
 
-Co-Authored-By: Claude <noreply@anthropic.com>"
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
+
+（attribution trailer はセッション開始時にハーネスが指定する文言をそのまま使う）
 
 ### Step 5.5: Validation Manifest 返却
 
 commit 完了後、Validation Agent 用の manifest を返す。
 manifest は L1/L2 検証（subprocess・並列起動可）の入力になる。
 
-**既定経路（`/implement` の `implement-tier` Workflow）では、manifest を `/tmp` に書き出さず、
-この呼び出しの構造化出力（schema 準拠）として返す。** Workflow が構造化出力を受け取り、
-そのまま validation-agent へインラインで渡す。`/tmp/validation_queue/{branch}.json` への Write は
-**行わない**（デッドファイルとなりトークンを浪費するため）。
+manifest は**この呼び出しの構造化出力（schema 準拠）として返す**。Workflow が受け取り、
+そのまま validation-agent へインラインで渡す。ファイルには書き出さない。構造化出力の schema が
+使えない環境でのみ、メッセージ末尾に同じ JSON をコードブロックで添える。
 
-構造化出力の schema が使えない環境（手動 developer 委任のフォールバック経路）でのみ、
-メッセージ末尾に同じ JSON をコードブロックで添える。`/tmp` ファイル方式は
-`worktree-validation-protocol.md` の「手動フォールバック経路」節を参照（既定では使わない）。
-
-1. Validation Level 判定（`dev-reference.md` §3 の判定表で changed_files の最高レベルを採用）
+1. Validation Level 判定（`worktree-validation-protocol.md` §1 の判定表で changed_files の最高レベルを採用）
 2. 以下の manifest を構造化出力として返す（親ディレクトリ作成・Write は不要）:
    ```json
    {
@@ -164,5 +161,5 @@ manifest は L1/L2 検証（subprocess・並列起動可）の入力になる。
 - [ ] （`packages/` 変更時）`scripts/ci-check.sh` が exit 0（unit + integration + 型 + lint + doc-guard、web 変更時は web チェック）
 - [ ] tool/table を追加した場合、Step 3.5 の doc-sync チェックリストを完了
 - [ ] commit 完了（push はしない）
-- [ ] Manifest を構造化出力として返却（`/tmp` への書き出しは行わない）
+- [ ] Manifest を構造化出力として返却
 - [ ] 変更ファイル一覧と commit hash を報告
