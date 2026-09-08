@@ -50,7 +50,10 @@ Risks セクション（任意）:
 7. **PR**: `mcp__github__create_pull_request`（body: `Closes #<issue>` + `## Verification` に実行した検証コマンドと結果）
 8. **CI 待ち**: `bash scripts/wait-for-ci.sh <PR> --timeout 900`（メインセッションは `run_in_background` 可。サブエージェント内ならフォアグラウンド 1 回）
 9. **マージ**: `worktree-validation-protocol.md` §6 のゲートを満たせば `mcp__github__merge_pull_request(merge_method="merge")`。例外（検証 FAIL / WARNING / CI 失敗 / コンフリクト）は PR URL と理由を報告して止まる
-10. **後片付け**: `git fetch origin && git merge --ff-only origin/main`（ローカル main）→ `bash scripts/cleanup-merged-worktrees.sh`。MCP サーバコードを変えたら `mcp__garmin-db__reload_server()`
+10. **後片付け**: `git fetch origin && git merge --ff-only origin/main`（ローカル main）→ `bash scripts/cleanup-merged-worktrees.sh`。MCP サーバコードを変えたら `mcp__garmin-db__reload_server()`。
+    **背景ジョブ（`EnterWorktree` 中）でも必ず実行する**: worktree セッションの Bash guard は他 checkout への git 操作を拒むので、
+    最後の PR をマージしたら `ExitWorktree(action="remove")`（未マージの変更が無いことが条件）で `/workspace` に戻り、
+    そこで上の 2 コマンドを実行する。「worktree からは同期できない」と報告して人に回すのは禁止（オーナー指摘 2026-09-08）
 11. **報告**: PR 番号、マージ SHA、実行した検証、未了の追跡義務（L3 の post-merge E2E など）
 
 複数 Issue を続けて扱うときは Issue ごとに 2〜11 を繰り返す。同じ worktree で次のブランチを切るなら
