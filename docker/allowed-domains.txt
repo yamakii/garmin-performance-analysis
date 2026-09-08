@@ -7,9 +7,15 @@
 # The file is baked into the image: after editing, rebuild with docker/run.sh.
 
 # --- Claude Code / Anthropic: API, subscription OAuth refresh, telemetry ---
+# The OAuth/console host moved console.anthropic.com -> platform.claude.com with the
+# Console rebrand; both are listed. Entries are suffix matches, so the docs-tier
+# docs.claude.com / code.claude.com below do NOT cover it — without this line the
+# login fails as `OAuth error: getaddrinfo ETIMEOUT platform.claude.com` (dnsmasq
+# refuses the name; the IP itself is already in the set via console.anthropic.com).
 api.anthropic.com
 claude.ai
 console.anthropic.com
+platform.claude.com
 statsig.anthropic.com
 statsig.com
 sentry.io
