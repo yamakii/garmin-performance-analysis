@@ -1,5 +1,9 @@
 # Claude Code Docker sandbox
 
+> **Frozen (#1050).** This directory changes only for a reproducible failure
+> recorded as an Issue, a security advisory, or a Dependabot base-image bump —
+> see `docs/maintenance.md` § Sandbox freeze.
+
 Run Claude Code on this project inside a Docker container so that
 `dangerouslyDisableSandbox` (letting the agent run arbitrary bash) is acceptable:
 **Docker is the trust boundary**, and an **egress allowlist firewall** prevents

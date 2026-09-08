@@ -133,6 +133,19 @@ editable install. Do not set a global `UV_PROJECT_ENVIRONMENT` in the image or
 in `.envrc`; an explicit value in the environment overrides the wrapper for that
 one command only.
 
+## Sandbox freeze
+
+The Docker sandbox (`docker/**`, `managed-settings.json`, the hooks that touch
+it) is considered finished. It changes only for (1) a reproducible failure
+recorded as an Issue with the failing command and its output, (2) a security
+advisory against the base image or a bundled tool, or (3) a Dependabot
+base-image bump, which the `docker-build` CI job and `sandbox-smoke.sh` gate.
+No speculative hardening, spikes or "while we are here" refactors: on
+2026-09-07 six sandbox PRs (#1029–#1036) introduced and removed bubblewrap
+within a day, and the 32 GB container (#1011) had already removed the SIGKILL
+problem. Policy text for Claude sessions: `.claude/rules/dev/maintenance-policy.md`
+§ Sandbox freeze.
+
 ## Ignoring an advisory
 
 Only when the vulnerable code path is provably unused. Add
