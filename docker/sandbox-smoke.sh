@@ -70,6 +70,21 @@ for host in api.github.com pypi.org registry.npmjs.org connect.garmin.com; do
     fi
 done
 
+# --- Claude Code's own control plane (API + OAuth) ---------------------------
+# The container exists to run Claude Code, so its API and login hosts are as
+# load-bearing as the toolchain ones — and nothing else here covered them, which is
+# how a missing platform.claude.com shipped: the OAuth/console host moved off
+# console.anthropic.com and the login broke with `getaddrinfo ETIMEOUT` while this
+# smoke stayed green (#1037).
+for host in api.anthropic.com platform.claude.com claude.ai; do
+    code=$(http_code "$host")
+    if [ "$code" != "000" ]; then
+        ok "claude control plane: $host reachable (HTTP $code)"
+    else
+        fail "claude control plane: $host unreachable"
+    fi
+done
+
 # --- documentation tier (the WebFetch case that motivated #1027) ------------
 for host in duckdb.org developer.garmin.com; do
     code=$(http_code "$host")
