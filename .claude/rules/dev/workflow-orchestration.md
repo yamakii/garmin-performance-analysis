@@ -19,7 +19,7 @@ paths:
 ## Implementation
 - プラン承認後は `implementation-workflow.md` Phase 1 のチェックリスト（そのセッションが worktree で実装 → PR → マージ）に従う
 - `/implement` は依存ティアが 2 段以上の Epic 専用
-- **全変更で Worktree → PR が必須**。Validation Level: skip は検証方法の指定であり、ワークフロー省略の許可ではない
+- **全変更で Worktree → PR が必須**。Validation Level: skip は検証方法の指定であり、Worktree/PR 省略の許可ではない。skip レベルの docs/rules 変更で省略できるのは Issue だけ（`dev-reference.md` §1）
 - 検証レベルと auto-merge ゲートは `worktree-validation-protocol.md` のみに書く。他所に再掲しない
 
 ## Self-Improvement Loop

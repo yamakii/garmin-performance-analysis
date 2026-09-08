@@ -8,7 +8,7 @@
 - 日本語の問題報告 → バグレポートとして扱う。コマンドとして実行しない
 
 ### Development Task Routing (IMPORTANT)
-全ての開発タスクで Issue を作成する（Issue なし実装は禁止）:
+コードを変える開発タスクは Issue を作成してから実装する（例外: `.claude/rules/` `.claude/skills/` `docs/` `CLAUDE.md` だけの skip レベル変更は Issue 不要、PR 本文が記録。Worktree + PR は必須）:
 - **Issue 番号あり**: → 探索フェーズで `mcp__github__issue_read` (method="get") → 設計をベースにプラン作成
 - **Issue 番号なし**: → `Issue: TBD` でプラン作成 → 承認後に Issue 作成
 - **分解が必要** (複数の独立した作業単位): → プラン内で `/decompose` を推奨

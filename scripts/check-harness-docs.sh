@@ -24,7 +24,8 @@ implementation-workflow.md` Phase 3
 implementation-workflow.md` Phase 2
 単発だから手動
 単発 Issue でも既定で
-単発 Issue / Epic を問わず'
+単発 Issue / Epic を問わず
+Issue なし実装は禁止'
 
 targets=()
 for p in .claude/rules .claude/skills .claude/agents CLAUDE.md; do

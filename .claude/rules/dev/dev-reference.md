@@ -15,7 +15,8 @@ paths:
 
 ## 1. Project Workflow
 
-- **Issue必須**: 全開発タスクで Issue 作成。Issue なし実装は禁止
+- **Issue必須**: コードを変える開発タスクは Issue（Design + Test Plan）を作ってから実装する
+- **skip レベルの例外（#1051）**: 変更が `.claude/rules/` `.claude/skills/` `docs/` `CLAUDE.md` だけ（`packages/` `scripts/` `docker/` `.github/` `.claude/agents/` `.claude/hooks/` `.claude/workflows/` を含まない）なら Issue は不要。Worktree + PR は変わらず必須で、PR 本文に Background / Change / Verification を書く（PR が設計記録になる）。lessons.md の昇格もこの例外に入る
 - **Plan構造**（thin plan は Phase 0 でブロック）:
   ```
   Issue: #{number} | TBD
@@ -60,7 +61,7 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 
 - **Serena activate**: コード調査前に必ず `mcp__serena__activate_project()` 実行
 - **Stale recovery**: Serena → activate、garmin-db → `reload_server()`、それでもダメなら `/mcp`
-- **全変更**: Issue → Plan → Worktree → PR（branch protection により必須）
+- **全変更**: Issue → Plan → Worktree → PR（branch protection により Worktree + PR は必須。Issue は skip レベルの docs/rules 変更のみ省略可, §1）
 - **Planning**: main branch (read-only)
 - **PR**: merge commit --no-ff、1 PR = 1 Sub-issue、title は Conventional Commits、body に `Closes #{issue}`
 - **Commit**: Conventional Commits + Co-Authored-By。単一の関心事のみ（"and" が必要なら分割）
@@ -106,7 +107,8 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 - ルールを CLAUDE.md に直接記述 (`.claude/rules/` を使う)
 - 本番データ依存テスト
 - 複数の無関係な変更を1コミットに混在
-- Validation Level: skip を理由に Issue/Plan/Worktree/PR をスキップ
+- Validation Level: skip を理由に Worktree/PR をスキップ（skip レベルで省略できるのは Issue だけ, §1）
+- コード変更（`packages/` `scripts/` `docker/` `.github/` `.claude/agents|hooks|workflows/`）を Issue なしで実装
 
 ## 8. LLM Round-Trip Optimization
 

@@ -180,6 +180,16 @@ if [ -e scripts/tests/test-sandbox-allowlist.sh ]; then
   fi
 fi
 
+# Skip-level docs/rules changes may ship without an Issue; the rules must say so (#1051).
+if [ -e scripts/tests/test-skip-level-issue-exception.sh ]; then
+  if bash scripts/tests/test-skip-level-issue-exception.sh; then
+    echo "ok (script test): skip-level-issue-exception"
+  else
+    echo "FAIL (script test): skip-level-issue-exception" >&2
+    status=1
+  fi
+fi
+
 # The sandbox freeze policy must be stated in rule, runbook and docker/README (#1050).
 if [ -e scripts/tests/test-sandbox-freeze-docs.sh ]; then
   if bash scripts/tests/test-sandbox-freeze-docs.sh; then
