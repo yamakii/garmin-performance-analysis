@@ -35,7 +35,7 @@ Issue / Plan / Worktree / PR を省く許可ではない。
 | L1 | worktree コードを subprocess で import し、下層関数を `verification_activity_id` で呼ぶ | 非 null・型一致・値範囲・`json.dumps` 可・exit 0 |
 | L2 | L1 + `uv run --directory <worktree> bash scripts/ci-check.sh` | exit 0 |
 | L3 | pre-merge は diff レビュー、post-merge に新規セッションで E2E（§4） | 構造チェック通過 |
-| skip | コードレビューのみ。CI（doc-guard / meta-checks）が品質ゲート | レビュー通過 |
+| skip | コードレビューのみ。CI（`docs-guard` / `meta-checks`）が品質ゲート | レビュー通過 |
 
 ## 2. 実行原則
 
@@ -108,7 +108,7 @@ L3 検証基準:
 | `.claude/workflows/*.js` | 純粋ロジックを `// >>> testable` ブロックに置き `node --test` で検証。プロンプト変更はレビュー | `meta-checks` |
 | `.claude/hooks/*.sh` | 代表入力で exit code を検証する `scripts/tests/*.sh` | `meta-checks` |
 | `.claude/skills/`, `.claude/rules/` | 手順を実行して挙動確認 | `meta-checks`（stale-phrase guard） |
-| `docs/**`, `*.md` | doc-guard テスト + リンク・コマンド目視 | `lint-and-test` |
+| `docs/**`, `*.md`, `.claude/**` | doc-guard テスト（`tests/docs`）+ リンク・コマンド目視 | `docs-guard`（code も変わる PR は `lint-and-test` が兼ねる） |
 
 ## 6. Ship と auto-merge ゲート
 

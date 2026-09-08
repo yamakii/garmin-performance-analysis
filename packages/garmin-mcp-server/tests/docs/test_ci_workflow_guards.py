@@ -56,6 +56,53 @@ def test_ci_changes_filter_includes_uv_lock() -> None:
     assert "'packages/**'" in code_block.group(1)
 
 
+def _filter_block(text: str, name: str) -> str:
+    """Return the entries of one paths-filter list (``code:``, ``docs:`` ...)."""
+    filters = re.search(r"filters:\s*\|\n((?:[ \t]+.*\n)+)", text)
+    assert filters, "paths-filter `filters:` block not found"
+    block = re.search(
+        rf"^\s+{name}:\n((?:\s+-.*\n|\s+#.*\n)+)", filters.group(1), re.MULTILINE
+    )
+    assert block, f"`{name}:` filter not found"
+    return block.group(1)
+
+
+@pytest.mark.unit
+def test_ci_code_filter_excludes_docs() -> None:
+    """A docs-only PR must not pay for the whole lint-and-test job (#1060)."""
+    text = _CI_YML.read_text(encoding="utf-8")
+    code_block = _filter_block(text, "code")
+    assert "'docs/**'" not in code_block
+    assert "'**/*.md'" not in code_block
+    assert "'.env.example'" not in code_block
+
+
+@pytest.mark.unit
+def test_ci_docs_guard_job_gates_ci_guard() -> None:
+    """Docs/rules/markdown changes run tests/docs via docs-guard and gate ci-guard."""
+    text = _CI_YML.read_text(encoding="utf-8")
+    docs_block = _filter_block(text, "docs")
+    for entry in ("'docs/**'", "'**/*.md'", "'.claude/**'", "'.nvmrc'"):
+        assert entry in docs_block, f"{entry} missing from `docs:` filter"
+    assert "docs: ${{ steps.filter.outputs.docs }}" in text
+    assert re.search(r"^  docs-guard:\n", text, re.MULTILINE), "docs-guard job"
+    assert "pytest tests/docs -n 0" in text
+    guard_needs = re.search(
+        r"^  ci-guard:\n\s+needs:\s*\[([^\]]+)\]", text, re.MULTILINE
+    )
+    assert guard_needs and "docs-guard" in guard_needs.group(1)
+    assert "needs.docs-guard.result" in text
+
+
+@pytest.mark.unit
+def test_ci_concurrency_cancels_superseded_runs() -> None:
+    """A re-push cancels the PR run it supersedes; main runs key on the SHA."""
+    text = _CI_YML.read_text(encoding="utf-8")
+    concurrency = _top_level_block(text, "concurrency")
+    assert re.search(r"cancel-in-progress:\s*true", concurrency)
+    assert "github.event.pull_request.number || github.sha" in concurrency
+
+
 @pytest.mark.unit
 def test_dependabot_covers_all_ecosystems() -> None:
     """Every manifest type in the repo has a Dependabot entry."""
