@@ -12,8 +12,11 @@ Tests live in two packages, each with its own `pyproject.toml` pytest config:
 - `packages/garmin-web/tests/`
 
 Run them via `uv run --directory <package> pytest ...`. The canonical CI
-command set is `scripts/ci-check.sh` (server: `pytest -m unit`; web:
-`pytest -m "unit or integration"`).
+command set is `scripts/ci-check.sh` (server and web: `pytest -m "unit or
+integration"`, mirroring the GitHub `lint-and-test` / `web-backend` jobs). The
+server run uses at most 4 xdist workers (`CI_CHECK_MAX_WORKERS`, #1061): on
+this suite more workers are slower because every test writes its own DuckDB
+file.
 
 ## Test Markers
 
@@ -33,7 +36,7 @@ Defined in each package's `pyproject.toml` (`[tool.pytest.ini_options]`):
 `garmin_api`, `slow`, and `performance`:
 
 ```toml
-addopts = "-m 'not garmin_api and not slow and not performance' --strict-markers -n 4 ..."
+addopts = "-m 'not garmin_api and not slow and not performance' --strict-markers -n auto ..."
 ```
 
 ```bash

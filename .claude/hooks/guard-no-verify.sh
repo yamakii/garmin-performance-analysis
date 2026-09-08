@@ -1,7 +1,8 @@
 #!/bin/bash
 # `git commit --no-verify` をブロックする。
-# pre-commit を迂回すると CI (whole-package black --check . / mypy . / pytest -m unit)
-# で落ちる実績があるため、明示 ack (CI_CHECKED=1) なしの --no-verify を止める。
+# pre-commit を迂回すると CI (whole-package black --check . / mypy . /
+# pytest -m "unit or integration") で落ちる実績があるため、明示 ack
+# (CI_CHECKED=1) なしの --no-verify を止める。
 
 set -euo pipefail
 input=$(cat)
@@ -22,6 +23,6 @@ echo "$command" | grep -q -- "--no-verify" || exit 0
 echo "$command" | grep -q "CI_CHECKED=1" && exit 0
 
 # --no-verify だが ack なし → ブロック
-echo "BLOCKED: --no-verify は pre-commit を迂回します。CI は whole-package で black --check . / mypy . / pytest -m unit を回します。" >&2
+echo "BLOCKED: --no-verify は pre-commit を迂回します。CI は whole-package で black --check . / mypy . / pytest -m \"unit or integration\" を回します。" >&2
 echo "まず scripts/ci-check.sh を実行し、pass を確認してから: CI_CHECKED=1 git commit --no-verify ..." >&2
 exit 2
