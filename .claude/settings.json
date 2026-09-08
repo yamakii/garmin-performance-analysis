@@ -10,10 +10,6 @@
           },
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/readonly-auto-approve.sh\""
-          },
-          {
-            "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-no-verify.sh\""
           },
           {

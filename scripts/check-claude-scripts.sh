@@ -180,6 +180,18 @@ if [ -e scripts/tests/test-sandbox-allowlist.sh ]; then
   fi
 fi
 
+# Table-driven self-test for the Bash guard hooks (#1048): hook JSON on stdin,
+# temp git repos on main / a feature branch, asserting pass-through (0) vs block
+# (2) per representative command, plus the settings.json wiring.
+if [ -e scripts/tests/test-guard-hooks.sh ]; then
+  if bash scripts/tests/test-guard-hooks.sh; then
+    echo "ok (script test): guard-hooks"
+  else
+    echo "FAIL (script test): guard-hooks" >&2
+    status=1
+  fi
+fi
+
 # Behavioral self-test for the per-checkout uv venv mapping (#1047): the pure
 # helpers in docker/lib/uv-venv.sh and the /usr/local/bin/uv wrapper, run with
 # temp git repos and a fake real `uv` so no environment is ever synced.
