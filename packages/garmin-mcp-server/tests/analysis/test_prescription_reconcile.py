@@ -16,8 +16,8 @@ import pytest
 
 from garmin_mcp.analysis.prescription_reconcile import reconcile_prescriptions
 from garmin_mcp.database.connection import get_connection, get_write_connection
-from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.plan import insert_weekly_prescriptions
+from tests.support.schema import init_schema
 
 TODAY = date(2026, 9, 12)
 WEEK_START = "2026-09-07"
@@ -27,7 +27,7 @@ WEEK_START = "2026-09-07"
 def _plan_schema_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Module-scoped DuckDB with the full schema pre-initialized."""
     db_path = tmp_path_factory.mktemp("plan_reconcile_template") / "template.duckdb"
-    GarminDBWriter(db_path=str(db_path))
+    init_schema(db_path)
     return Path(db_path)
 
 

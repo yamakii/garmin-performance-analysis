@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 from datetime import date
 from pathlib import Path
 from unittest.mock import patch
@@ -10,28 +9,9 @@ from unittest.mock import patch
 import duckdb
 import pytest
 
-from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.trend_analyses import insert_trend_analysis
 from garmin_mcp.ingest.catch_up import find_pending_trend_period
 from garmin_mcp.scripts import scheduled_sync
-
-
-@pytest.fixture(scope="module")
-def _schema_template_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Module-scoped DuckDB template with full schema (base + migrations)."""
-    tmp_path = tmp_path_factory.mktemp("trend_trigger_template")
-    db_path = tmp_path / "template.duckdb"
-    GarminDBWriter(db_path=str(db_path))
-    return db_path
-
-
-@pytest.fixture
-def initialized_db_path(_schema_template_path: Path, tmp_path: Path) -> Path:
-    """Function-scoped DuckDB copy with schema pre-initialized."""
-    db_path = tmp_path / "test.duckdb"
-    shutil.copy2(str(_schema_template_path), str(db_path))
-    return db_path
-
 
 # A fixed reference date so the detector's "last completed week" is deterministic.
 TODAY = date(2026, 6, 24)

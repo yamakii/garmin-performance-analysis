@@ -16,11 +16,11 @@ from pathlib import Path
 import pytest
 
 from garmin_mcp.database.connection import get_write_connection
-from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.scripts.reevaluate_all_activities import (
     get_activities_to_reevaluate,
 )
 from garmin_mcp.scripts.regenerate.validator import find_missing_form_evaluations
+from tests.support.schema import init_schema
 
 # ---------------------------------------------------------------------------
 # Schema fixtures (module-scoped template + function-scoped copy)
@@ -32,7 +32,7 @@ def _schema_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Module-scoped DuckDB with the full production schema initialized."""
     tmp_path = tmp_path_factory.mktemp("form_eval_template")
     db_path = tmp_path / "template.duckdb"
-    GarminDBWriter(db_path=str(db_path))
+    init_schema(db_path)
     return Path(db_path)
 
 

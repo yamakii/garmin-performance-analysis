@@ -46,6 +46,15 @@ def _resolve_db_path(db_path: str | Path | None = None) -> Path:
     return get_database_dir() / "garmin_performance.duckdb"
 
 
+def is_memory_db_path(db_path: str | Path | None) -> bool:
+    """True for DuckDB in-memory database names (``:memory:`` or ``:memory:<name>``).
+
+    ``Path(":memory:x")`` round-trips through ``str()`` unchanged, so the same
+    check works on the raw argument and on the resolved ``Path``.
+    """
+    return db_path is not None and str(db_path).startswith(":memory:")
+
+
 def _connect_with_retry(
     path: Path,
     *,
@@ -71,6 +80,13 @@ def _connect_with_retry(
         duckdb.IOException: If lock cannot be acquired after all retries,
             or if the error is not lock-related.
     """
+    if is_memory_db_path(path):
+        # A named in-memory database (":memory:<name>") is shared by every
+        # connection in this process for as long as one connection stays
+        # open, but DuckDB rejects opening it read-only once a read-write
+        # connection exists ("different configuration"). Memory paths are a
+        # test-only device (#1062), so there is no lock to retry on either.
+        return duckdb.connect(str(path))
     for attempt in range(retries + 1):
         try:
             return duckdb.connect(str(path), read_only=read_only)

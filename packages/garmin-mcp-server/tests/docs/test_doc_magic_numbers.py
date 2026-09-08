@@ -98,8 +98,8 @@ def test_doc_magic_numbers_tools_70() -> None:
 
 
 @pytest.mark.integration
-def test_doc_table_count_matches_schema(tmp_path: Path) -> None:
-    expected = _expected_table_count(str(tmp_path / "fresh.duckdb"))
+def test_doc_table_count_matches_schema(memory_db_path: str) -> None:
+    expected = _expected_table_count(memory_db_path)
     found_any = False
     for doc in _DOC_PATHS:
         text = doc.read_text(encoding="utf-8")

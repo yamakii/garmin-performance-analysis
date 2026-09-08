@@ -11,8 +11,8 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.hr_efficiency import insert_hr_efficiency
+from tests.support.schema import init_schema
 
 
 @pytest.mark.unit
@@ -50,7 +50,7 @@ class TestHREfficiencyInserter:
             activity_id = 12345
 
             # Act
-            GarminDBWriter(db_path=str(db_path))
+            init_schema(db_path)
             conn = duckdb.connect(str(db_path))
             result = insert_hr_efficiency(
                 activity_id=activity_id,
@@ -109,7 +109,7 @@ class TestHREfficiencyInserter:
             activity_id = 67890
 
             # Act
-            GarminDBWriter(db_path=str(db_path))
+            init_schema(db_path)
             conn = duckdb.connect(str(db_path))
             result = insert_hr_efficiency(
                 activity_id=activity_id,
@@ -168,7 +168,7 @@ class TestHREfficiencyInserter:
             activity_id = 11111
 
             # Act - First insertion
-            GarminDBWriter(db_path=str(db_path))
+            init_schema(db_path)
             conn = duckdb.connect(str(db_path))
             result1 = insert_hr_efficiency(
                 activity_id=activity_id,
@@ -248,7 +248,7 @@ class TestHREfficiencyInserter:
             activity_id = 22222
 
             # Act
-            GarminDBWriter(db_path=str(db_path))
+            init_schema(db_path)
             conn = duckdb.connect(str(db_path))
             result = insert_hr_efficiency(
                 activity_id=activity_id,

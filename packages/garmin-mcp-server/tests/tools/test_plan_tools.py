@@ -15,9 +15,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from garmin_mcp.database.connection import get_write_connection
-from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.tools import ALL_DEFS_BY_NAME
 from garmin_mcp.tools.registry import dispatch
+from tests.support.schema import init_schema
 
 WEEK_START = "2026-09-07"
 
@@ -31,7 +31,7 @@ def _call(reader: MagicMock, name: str, arguments: dict[str, Any]) -> Any:
 def _plan_tools_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Module-scoped DuckDB with the full schema pre-initialized."""
     db_path = tmp_path_factory.mktemp("plan_tools_template") / "template.duckdb"
-    GarminDBWriter(db_path=str(db_path))
+    init_schema(db_path)
     return Path(db_path)
 
 

@@ -8,12 +8,13 @@ import pytest
 from tests.generate_verification_db import generate_verification_db
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def _verification_db_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Generate verification DB once per module.
+    """Generate verification DB once per session (per xdist worker).
 
     Uses generate_verification_db() to create the DB via production code path.
-    The result is cached for the module scope so tests share the same template.
+    Every test copies the template (``verification_db_path``), so the template
+    itself is never mutated and can live for the whole session (#1062).
 
     Returns:
         Path to the template verification.duckdb file.

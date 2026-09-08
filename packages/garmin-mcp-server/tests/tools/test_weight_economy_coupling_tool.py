@@ -11,10 +11,10 @@ import duckdb
 import pytest
 
 from garmin_mcp.database.db_reader import GarminDBReader
-from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.tool_schemas import get_tool_definitions
 from garmin_mcp.tools import ALL_DEFS_BY_NAME
 from garmin_mcp.tools.registry import dispatch
+from tests.support.schema import init_schema
 
 
 @pytest.mark.unit
@@ -102,7 +102,7 @@ def test_e2e_dispatch_through_registry(tmp_path: Path) -> None:
     """End-to-end: real-schema DB -> registry dispatch -> documented structure
     and JSON-serializable payload."""
     db_path = tmp_path / "e2e.duckdb"
-    GarminDBWriter(db_path=str(db_path))  # initialize full schema
+    init_schema(db_path)  # initialize full schema
     _seed(db_path)
     reader = GarminDBReader(db_path=str(db_path))
 

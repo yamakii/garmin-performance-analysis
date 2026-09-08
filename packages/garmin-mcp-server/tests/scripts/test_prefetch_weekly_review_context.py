@@ -21,7 +21,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from garmin_mcp.database.connection import get_write_connection
-from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.scripts.prefetch_weekly_review_context import (
     _RECOVERY_SERIES_KEEP_DAYS,
     _resolve_target_week,
@@ -31,6 +30,7 @@ from garmin_mcp.scripts.prefetch_weekly_review_context import (
     _weeks_to_race,
     prefetch_weekly_review_context,
 )
+from tests.support.schema import init_schema
 
 _MODULE = "garmin_mcp.scripts.prefetch_weekly_review_context"
 
@@ -709,7 +709,7 @@ def _schema_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Module-scoped DuckDB with the full production schema initialized."""
     tmp_path = tmp_path_factory.mktemp("prefetch_wr_template")
     db_path = tmp_path / "template.duckdb"
-    GarminDBWriter(db_path=str(db_path))
+    init_schema(db_path)
     return Path(db_path)
 
 

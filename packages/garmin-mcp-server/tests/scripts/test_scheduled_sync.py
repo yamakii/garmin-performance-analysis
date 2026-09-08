@@ -2,33 +2,14 @@
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from unittest.mock import patch
 
 import duckdb
 import pytest
 
-from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.scripts import scheduled_sync
-
-
-@pytest.fixture(scope="module")
-def _schema_template_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Module-scoped DuckDB template with full schema (base + migrations)."""
-    tmp_path = tmp_path_factory.mktemp("sync_template")
-    db_path = tmp_path / "template.duckdb"
-    GarminDBWriter(db_path=str(db_path))
-    return db_path
-
-
-@pytest.fixture
-def initialized_db_path(_schema_template_path: Path, tmp_path: Path) -> Path:
-    """Function-scoped DuckDB copy with schema pre-initialized."""
-    db_path = tmp_path / "test.duckdb"
-    shutil.copy2(str(_schema_template_path), str(db_path))
-    return db_path
-
+from tests.support.schema import init_schema
 
 _ALL_OK = {
     "running": {"activities_ingested": 2},
@@ -160,7 +141,7 @@ def test_main_exit_code_nonzero_on_partial(initialized_db_path: Path) -> None:
 def test_sync_runs_migration_creates_table(tmp_path: Path) -> None:
     """Fresh DB gets the sync_runs table via migration; insert/select works."""
     db_path = tmp_path / "fresh.duckdb"
-    GarminDBWriter(db_path=str(db_path))
+    init_schema(db_path)
 
     conn = duckdb.connect(str(db_path))
     run_id_row = conn.execute("SELECT nextval('seq_sync_runs_id')").fetchone()

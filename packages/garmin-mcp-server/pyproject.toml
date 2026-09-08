@@ -35,6 +35,7 @@ dev = [
     "pytest-cov>=6.0.0",
     "pytest-mock>=3.14.0",
     "pytest-xdist>=3.5.0",
+    "pytest-timeout>=2.3.0",
     "black>=26.0.0",
     "ruff>=0.15.0",
     "mypy>=2.0",
@@ -105,6 +106,12 @@ addopts = """
 cache_dir = ".pytest_cache"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+# pytest-timeout (#1062): the slowest CI test is ~5 s, so 120 s only ever
+# fires on a hang (a stuck subprocess / lock) instead of letting the run wait
+# for the job timeout. `signal` interrupts the test itself and keeps the
+# worker alive for the rest of the run.
+timeout = 120
+timeout_method = "signal"
 
 [tool.coverage.run]
 source = ["src/garmin_mcp"]

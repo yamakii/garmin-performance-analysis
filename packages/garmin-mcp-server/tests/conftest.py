@@ -19,17 +19,60 @@ for _thread_env_var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THRE
     os.environ.setdefault(_thread_env_var, "1")
 
 import json
+import uuid
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
+import duckdb
 import pytest
+
+from tests.support.schema import init_schema
 
 
 @pytest.fixture(autouse=True)
 def isolate_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Redirect GARMIN_DATA_DIR to tmp_path to prevent real directory creation."""
     monkeypatch.setenv("GARMIN_DATA_DIR", str(tmp_path / "data"))
+
+
+# ---------------------------------------------------------------------------
+# DuckDB fixtures (#1062). One schema template per process, copied per test;
+# schema-verification tests use a named in-memory database instead.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def initialized_db_path(tmp_path: Path) -> Path:
+    """Function-scoped DuckDB file with the full schema (template copy, ~ms).
+
+    Equivalent to ``GarminDBWriter(db_path)`` on a fresh path, without the DDL.
+    """
+    return init_schema(tmp_path / "test.duckdb")
+
+
+@pytest.fixture
+def reader_db_path(initialized_db_path: Path) -> Path:
+    """Alias of ``initialized_db_path`` kept for the reader tests' wording."""
+    return initialized_db_path
+
+
+@pytest.fixture
+def memory_db_path() -> Iterator[str]:
+    """A named in-memory DuckDB (``:memory:<unique>``) for schema-only tests.
+
+    DuckDB shares a named in-memory database between every connection in the
+    process while at least one connection is open; this fixture holds that
+    anchor for the test's lifetime, so ``GarminDBWriter`` / readers / the
+    migration runner can open and close their own connections on the name.
+    """
+    name = f":memory:t{uuid.uuid4().hex}"
+    anchor = duckdb.connect(name)
+    try:
+        yield name
+    finally:
+        anchor.close()
 
 
 @pytest.fixture

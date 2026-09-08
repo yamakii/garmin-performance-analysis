@@ -13,7 +13,7 @@ import duckdb
 import pytest
 
 from garmin_mcp.database.db_reader import GarminDBReader
-from garmin_mcp.database.db_writer import GarminDBWriter
+from tests.support.schema import init_schema
 
 
 class TestGarminDBReaderStatistics:
@@ -52,7 +52,7 @@ class TestGarminDBReaderStatistics:
         # Insert splits into DuckDB
         from garmin_mcp.database.inserters.splits import insert_splits
 
-        GarminDBWriter(db_path=str(db_path))
+        init_schema(db_path)
         conn = duckdb.connect(str(db_path))
         insert_splits(
             activity_id=20615445009,

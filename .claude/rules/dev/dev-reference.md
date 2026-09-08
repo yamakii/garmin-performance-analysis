@@ -76,7 +76,7 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 - **本番データ依存禁止**。全テストに pytest marker 必須 (`unit`/`integration`/`performance`/`garmin_api`)
 - **Markers**: unit = mock+no I/O+<100ms、integration = mock DuckDB、performance = real data OK (skip if unavailable)
 - **Budget**: unit <200ms。Read-only fixture は `scope="class"`/`scope="module"`
-- **DB fixture**: `initialized_db_path` (~0.6ms) を使う。`GarminDBWriter()` per test (~50ms) 禁止
+- **DB fixture（#1062）**: スキーマ付きファイル DB は root conftest の `initialized_db_path`（= `tests.support.schema.init_schema(path)` のテンプレートコピー、fixture を使えない helper 関数からは `init_schema(path)` を直接呼ぶ）。スキーマ検証だけのテストは `memory_db_path`（名前付き in-memory DuckDB、ファイルを作らない）。`GarminDBWriter()` を直接呼んでよいのは旧スキーマからの migration 挙動を検証するテストと `memory_db_path` 上の DDL 検証だけ（テストごとに ~3.5 MB のファイルと 1-2 s の DDL を作り、687 ファイル / 2.2 GB per run で I/O 停止の原因になった）
 - **並列安全**: 実行順序非依存、テストごとに unique `activity_id`
 - **Test名**: Issue Test Plan の `test_xxx` をそのまま使用
 

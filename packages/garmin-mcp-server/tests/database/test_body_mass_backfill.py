@@ -11,36 +11,12 @@ production DB and use unique activity_ids so parallel runs stay deterministic.
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 import duckdb
 import pytest
 
-from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.scripts.backfill_body_mass import backfill_body_mass
-
-
-@pytest.fixture(scope="module")
-def _schema_template_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Module-scoped DuckDB template with schema + migrations pre-initialized.
-
-    ``GarminDBWriter.__init__`` runs ``_ensure_tables`` then ``_run_migrations``,
-    so the ``body_mass_kg`` column (added by migration ``phase0_power_prep``) is
-    present on this template.
-    """
-    tmp_path = tmp_path_factory.mktemp("body_mass_template")
-    db_path = tmp_path / "template.duckdb"
-    GarminDBWriter(db_path=str(db_path))
-    return db_path
-
-
-@pytest.fixture
-def initialized_db_path(_schema_template_path: Path, tmp_path: Path) -> Path:
-    """Function-scoped DuckDB with schema pre-initialized via file copy."""
-    db_path = tmp_path / "test.duckdb"
-    shutil.copy2(str(_schema_template_path), str(db_path))
-    return db_path
 
 
 def _seed_activities(db_path: Path, rows: list[tuple[int, str]]) -> None:

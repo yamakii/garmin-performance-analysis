@@ -20,6 +20,7 @@ from garmin_mcp.ingest.hiking_ingest import (
     _resolve_window,
     ingest_hiking_sessions,
 )
+from tests.support.schema import init_schema
 
 _HIKING_ACTIVITY_ID = 24100000001
 
@@ -228,9 +229,8 @@ def test_ingest_hiking_handles_missing_elevation_loss(temp_db_path: Path) -> Non
 
 def _seed_hiking_row(db_path: Path, activity_id: int, activity_date: str) -> None:
     """Insert a minimal hiking_sessions row so the latest date is set."""
-    from garmin_mcp.database.db_writer import GarminDBWriter
 
-    GarminDBWriter(db_path=str(db_path))
+    init_schema(db_path)
     conn = duckdb.connect(str(db_path))
     try:
         conn.execute(
@@ -253,9 +253,8 @@ def test_resolve_window_explicit_range_passthrough() -> None:
 @pytest.mark.integration
 def test_resolve_window_empty_db_uses_30d_floor(temp_db_path: Path) -> None:
     """No stored hiking date -> start is end - 30 days."""
-    from garmin_mcp.database.db_writer import GarminDBWriter
 
-    GarminDBWriter(db_path=str(temp_db_path))
+    init_schema(temp_db_path)
     assert _resolve_window(None, "2026-08-16", str(temp_db_path)) == (
         "2026-07-17",
         "2026-08-16",

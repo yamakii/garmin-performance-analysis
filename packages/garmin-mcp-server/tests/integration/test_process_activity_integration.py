@@ -4,9 +4,6 @@ Integration tests for GarminIngestWorker.process_activity()
 Tests the complete workflow: data collection → performance.json → DuckDB insertion
 """
 
-import tempfile
-from pathlib import Path
-
 import duckdb
 import pytest
 
@@ -15,23 +12,22 @@ class TestProcessActivityIntegration:
     """Integration tests for process_activity() with DuckDB schema"""
 
     @pytest.mark.integration
-    def test_db_schema_supports_inserters(self):
+    def test_db_schema_supports_inserters(self, memory_db_path: str):
         """Test that db_writer creates tables compatible with all inserters"""
         # This test verifies that _ensure_tables() creates the correct schema
-        # so that individual inserters can insert data without FK errors
+        # so that individual inserters can insert data without FK errors.
+        # Schema verification only -> named in-memory DuckDB (#1062).
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = Path(tmpdir) / "test.duckdb"
+        # Import here to avoid circular dependency
+        from garmin_mcp.database.db_writer import GarminDBWriter
 
-            # Import here to avoid circular dependency
-            from garmin_mcp.database.db_writer import GarminDBWriter
+        # Create database with new schema
+        writer = GarminDBWriter(db_path=memory_db_path)
+        writer._ensure_tables()
 
-            # Create database with new schema
-            writer = GarminDBWriter(db_path=str(db_path))
-            writer._ensure_tables()
-
-            # Verify all normalized tables exist
-            conn = duckdb.connect(str(db_path))
+        # Verify all normalized tables exist
+        conn = duckdb.connect(memory_db_path)
+        try:
             tables = conn.execute(
                 "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
             ).fetchall()
@@ -92,5 +88,5 @@ class TestProcessActivityIntegration:
             assert (
                 orphaned_count == 1
             ), "Orphaned records should be allowed (no FK constraint)"
-
+        finally:
             conn.close()

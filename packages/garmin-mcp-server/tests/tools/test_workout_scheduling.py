@@ -30,6 +30,7 @@ from garmin_mcp.tools.workout_scheduling import (
     build_steps_from_prescription,
     build_workout_json,
 )
+from tests.support.schema import init_schema
 
 _MODULE = "garmin_mcp.tools.workout_scheduling"
 
@@ -653,10 +654,9 @@ _CALENDAR = "garmin_mcp.fitness.garmin_calendar.GarminCalendarReader"
 @pytest.fixture(scope="module")
 def _week_db_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Module-scoped DuckDB with the full schema pre-initialized."""
-    from garmin_mcp.database.db_writer import GarminDBWriter
 
     db_path = tmp_path_factory.mktemp("week_schedule_template") / "template.duckdb"
-    GarminDBWriter(db_path=str(db_path))
+    init_schema(db_path)
     return Path(db_path)
 
 

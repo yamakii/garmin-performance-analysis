@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from garmin_mcp.database.db_writer import GarminDBWriter
@@ -72,13 +70,12 @@ def test_render_table_block_marks_pk() -> None:
 
 
 @pytest.mark.integration
-def test_schema_doc_in_sync(tmp_path: Path) -> None:
+def test_schema_doc_in_sync(memory_db_path: str) -> None:
     """Committed doc equals render_doc(fresh_db, committed_doc)."""
-    db_path = str(tmp_path / "schema_probe.duckdb")
-    GarminDBWriter(db_path=db_path)
+    GarminDBWriter(db_path=memory_db_path)  # real DDL: this is a schema check
 
     committed = DOC_PATH.read_text(encoding="utf-8")
-    rendered = render_doc(db_path, committed)
+    rendered = render_doc(memory_db_path, committed)
 
     assert committed == rendered, (
         "docs/spec/duckdb_schema_mapping.md is out of sync with the live schema. "

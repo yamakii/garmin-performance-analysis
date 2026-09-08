@@ -18,10 +18,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.database.inserters.trend_analyses import insert_trend_analysis
 from garmin_mcp.ingest import catch_up
 from garmin_mcp.ingest.catch_up import catch_up_ingest
+from tests.support.schema import init_schema
 
 # 2026-06-24 is a Wednesday; with the default Monday week start the current week
 # begins 2026-06-22, so the completed weeks scanned by the detector (newest
@@ -43,7 +43,7 @@ _ALL_DOMAIN_MOCKS = {
 @pytest.mark.integration
 def test_catch_up_appends_trend_pending_on_clean_run(temp_db_path: Path) -> None:
     """All domains succeed + empty trend_analyses -> trend_pending is attached."""
-    GarminDBWriter(db_path=str(temp_db_path))
+    init_schema(temp_db_path)
 
     with ExitStack() as stack:
         for target, value in _ALL_DOMAIN_MOCKS.items():
@@ -59,7 +59,7 @@ def test_catch_up_appends_trend_pending_on_clean_run(temp_db_path: Path) -> None
 @pytest.mark.integration
 def test_catch_up_omits_trend_pending_on_domain_error(temp_db_path: Path) -> None:
     """A raising domain runner -> status is not clean, so no trend_pending."""
-    GarminDBWriter(db_path=str(temp_db_path))
+    init_schema(temp_db_path)
 
     with (
         patch(
@@ -92,7 +92,7 @@ def test_catch_up_omits_trend_pending_on_domain_error(temp_db_path: Path) -> Non
 @pytest.mark.integration
 def test_catch_up_omits_trend_pending_when_narrated(temp_db_path: Path) -> None:
     """Narration rows for every scanned completed week -> no trend_pending."""
-    GarminDBWriter(db_path=str(temp_db_path))
+    init_schema(temp_db_path)
     for period_start in _COMPLETED_WEEK_STARTS:
         start = date.fromisoformat(period_start)
         insert_trend_analysis(

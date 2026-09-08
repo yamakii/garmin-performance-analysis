@@ -6,7 +6,6 @@ Covers :func:`_wellness_row` field mapping / null-safety and
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 import pytest
@@ -38,23 +37,6 @@ def _full_wellness() -> dict:
         },
         "training_readiness": [{"score": 74}],
     }
-
-
-@pytest.fixture(scope="module")
-def _schema_template_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Module-scoped DuckDB template with schema pre-initialized."""
-    tmp_path: Path = tmp_path_factory.mktemp("wellness_db_template")
-    db_path = tmp_path / "template.duckdb"
-    GarminDBWriter(db_path=str(db_path))
-    return db_path
-
-
-@pytest.fixture
-def initialized_db_path(_schema_template_path: Path, tmp_path: Path) -> Path:
-    """Function-scoped DuckDB copied from the schema template."""
-    db_path = tmp_path / "test.duckdb"
-    shutil.copy2(str(_schema_template_path), str(db_path))
-    return db_path
 
 
 @pytest.mark.unit
