@@ -1,3 +1,10 @@
+---
+paths:
+  - "packages/**"
+  - ".claude/**"
+  - "scripts/**"
+---
+
 # Explore Agent: Serena 活用ガイドライン
 
 ## シンボル探索では Serena を優先使用する

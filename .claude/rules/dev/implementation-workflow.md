@@ -1,3 +1,14 @@
+---
+paths:
+  - "packages/**"
+  - ".claude/**"
+  - "scripts/**"
+  - "docker/**"
+  - ".github/**"
+  - "docs/**"
+  - "CLAUDE.md"
+---
+
 # Implementation Workflow
 
 プラン承認後のフロー。各ステップの完了条件を満たさないと次に進めない。

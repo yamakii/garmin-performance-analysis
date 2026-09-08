@@ -1,3 +1,14 @@
+---
+paths:
+  - "packages/**"
+  - ".claude/**"
+  - "scripts/**"
+  - "docker/**"
+  - ".github/**"
+  - "docs/**"
+  - "CLAUDE.md"
+---
+
 # GitHub MCP Only
 
 ## GitHub 操作は `mcp__github__*` ツールを使用すること
