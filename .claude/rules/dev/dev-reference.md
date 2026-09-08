@@ -1,3 +1,14 @@
+---
+paths:
+  - "packages/**"
+  - ".claude/**"
+  - "scripts/**"
+  - "docker/**"
+  - ".github/**"
+  - "docs/**"
+  - "CLAUDE.md"
+---
+
 # Development Reference
 
 参照用辞書。手続き的ワークフローは `implementation-workflow.md` を参照。

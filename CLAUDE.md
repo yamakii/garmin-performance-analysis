@@ -84,10 +84,18 @@ See `.claude/rules/analysis/analysis-standards.md` for workflow details and `doc
 
 **Workflow:** Plan mode → Issue → Worktree → Implement → Ship
 
-Key rules (auto-loaded from `.claude/rules/dev/`):
-- `workflow-orchestration.md` — plan-first, elegance check, core principles
-- `implementation-workflow.md` — delegate → verify → ship (手続き的ワークフロー)
-- `dev-reference.md` — git, testing, code quality, architecture, validation (参照辞書)
+Three things hold before any file is opened (the detailed rules below load once you touch
+`packages/`, `.claude/`, `scripts/`, `docker/`, `.github/` or `docs/`):
+- Every code change needs an Issue with Design + Test Plan, a plan-mode plan for anything non-trivial, and a worktree + PR (never commit on `main`).
+- GitHub is operated only through `mcp__github__*` tools; `gh` is denied.
+- Code investigation starts with `mcp__serena__activate_project()`.
+
+Key rules (path-scoped, under `.claude/rules/dev/`):
+- `workflow-orchestration.md` — plan-first, elegance check, autonomy boundaries, core principles
+- `implementation-workflow.md` — the default single-session worktree → PR checklist
+- `dev-reference.md` — git, testing, code quality, architecture (参照辞書)
+- `worktree-validation-protocol.md` — validation levels, ship steps, auto-merge gate
+- `github-mcp-only.md` — gh → MCP tool mapping, CI log access
 
 ### Worktree 検証
 

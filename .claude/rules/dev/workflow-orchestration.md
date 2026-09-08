@@ -1,3 +1,14 @@
+---
+paths:
+  - "packages/**"
+  - ".claude/**"
+  - "scripts/**"
+  - "docker/**"
+  - ".github/**"
+  - "docs/**"
+  - "CLAUDE.md"
+---
+
 # Workflow Orchestration
 
 ## Plan-First

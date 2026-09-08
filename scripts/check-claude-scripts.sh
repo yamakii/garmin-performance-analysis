@@ -180,6 +180,17 @@ if [ -e scripts/tests/test-sandbox-allowlist.sh ]; then
   fi
 fi
 
+# Dev rules must be path-scoped and the unconditional context must stay under
+# budget (#1049).
+if [ -e scripts/tests/test-rules-frontmatter.sh ]; then
+  if bash scripts/tests/test-rules-frontmatter.sh; then
+    echo "ok (script test): rules-frontmatter"
+  else
+    echo "FAIL (script test): rules-frontmatter" >&2
+    status=1
+  fi
+fi
+
 # Table-driven self-test for the Bash guard hooks (#1048): hook JSON on stdin,
 # temp git repos on main / a feature branch, asserting pass-through (0) vs block
 # (2) per representative command, plus the settings.json wiring.
