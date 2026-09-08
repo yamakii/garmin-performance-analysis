@@ -204,6 +204,16 @@ if [ -e scripts/tests/test-harness-docs-phrases.sh ]; then
   fi
 fi
 
+# The default implementation checklist must only name scripts that exist (#1046).
+if [ -e scripts/tests/test-implementation-checklist.sh ]; then
+  if bash scripts/tests/test-implementation-checklist.sh; then
+    echo "ok (script test): implementation-checklist"
+  else
+    echo "FAIL (script test): implementation-checklist" >&2
+    status=1
+  fi
+fi
+
 if [ "$status" -ne 0 ]; then
   echo "check-claude-scripts: FAILED" >&2
 else

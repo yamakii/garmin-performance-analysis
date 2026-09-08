@@ -21,7 +21,10 @@ merge --no-ff feature/
 dev-reference.md §3
 dev-reference.md` §3
 implementation-workflow.md` Phase 3
-implementation-workflow.md` Phase 2'
+implementation-workflow.md` Phase 2
+単発だから手動
+単発 Issue でも既定で
+単発 Issue / Epic を問わず'
 
 targets=()
 for p in .claude/rules .claude/skills .claude/agents CLAUDE.md; do
