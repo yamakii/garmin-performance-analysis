@@ -14,6 +14,11 @@ argument-hint: [YYYY-MM-DD | week [YYYY-MM-DD] | cleanup]
 | `week [YYYY-MM-DD]` | 週まとめ | その週の登録可能な処方を `schedule_weekly_prescriptions` で **1 回の確認**で一括登録（Step W） |
 | `cleanup` | 掃除のみ | 登録せず Step 4 だけ実行 |
 
+**掃除は登録のたびにツール側で自動実行されます**（#1065）。`schedule_custom_workout` /
+`schedule_weekly_prescriptions(dry_run=False)` は、アップロードの前に「過去日付の [MCP] 予定を解除 →
+予定の無い [MCP] テンプレートを削除」を実行し、結果を `cleanup` として返します。掃除の失敗で登録が
+止まることはありません。`cleanup` 引数（Step 4）は**登録せずに掃除だけしたいとき**に使います。
+
 **Garmin への書き込みは必ず確認の後**（Autonomy Boundaries）。週モードでも確認は 1 回だけです。
 
 ## Step 0: 準備
@@ -50,9 +55,9 @@ ToolSearch(query="select:mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db
 1. 同日に **Garmin Coach / 手動の予定**がある場合は、上書きせずユーザーに「両方残す / 差し替える」を確認する（[MCP] 同名は自動差し替えなので確認不要）
 2. `recovery_status.recommendation` が `rest` / `easy`、または週次レビューの回復ゲートを満たさない場合は **登録前に一言確認**する（処方どおり登録 / 短縮版に変更 / 見送り）
 3. 問題なければ `schedule_custom_workout(date, title, steps)` を 1 回呼ぶ
-4. 返り値の `workout_id` / `schedule_id` / `replaced_workout_ids` を確認する
+4. 返り値の `workout_id` / `schedule_id` / `replaced_workout_ids` / `cleanup` を確認する（`cleanup` は登録前に自動実行された掃除の結果。`error` や `failed_delete` が空でなければ報告に添える）
 5. 処方行がある場合は `update_prescription_status(prescription_id, status="registered", garmin_workout_id=<workout_id>, garmin_schedule_id=<schedule_id>)` を呼び、台帳を Garmin と一致させる（これを飛ばすと `/daily-checkin` や月次ビューが「未登録」と表示し続ける）
-6. ユーザーに「日付・タイトル・本体の量・HR 上限・回復ゲートの結果」を短く報告する
+6. ユーザーに「日付・タイトル・本体の量・HR 上限・回復ゲートの結果」を短く報告する。`cleanup` で解除・削除された項目があれば 1 行添える
 
 ## Step W: 週まとめ登録（`week [YYYY-MM-DD]`）
 
@@ -61,14 +66,14 @@ ToolSearch(query="select:mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db
 1. **週開始日を解決**: `get_training_blocks(on_date=<対象日>)` の `week_start_date` を使う（athlete_profile の週開始曜日に従う）
 2. **処方を確認**: `get_weekly_prescriptions(week_start_date=<週開始日>)` で行を読む。空なら「先に `/weekly-review` を実行してください」と伝えて止まる
 3. **計画を取得**: `schedule_weekly_prescriptions(week_start_date=<週開始日>)`（`dry_run` 既定 True。Garmin には何も書かない）
-4. **表で見せる**: `items` を `日付 / タイトル / 本体（時間 or 距離）/ HR 上限 / 同日の既存 Garmin 項目` の表にする。`skipped`（休養・筋トレ・登録済みなど）は理由付きで 1 行にまとめる。`existing_same_day` が空でない日は競合として明示する（ツールは同名 [MCP] しか置き換えないので、Garmin Coach / 手動の予定は残る）
+4. **表で見せる**: `items` を `日付 / タイトル / 本体（時間 or 距離）/ HR 上限 / 同日の既存 Garmin 項目` の表にする。`skipped`（休養・筋トレ・登録済みなど）は理由付きで 1 行にまとめる。`existing_same_day` が空でない日は競合として明示する（ツールは同名 [MCP] しか置き換えないので、Garmin Coach / 手動の予定は残る）。`would_cleanup`（登録時に自動で解除・削除される過去の [MCP] 項目）が空でなければ 1 行添える
 5. **確認は 1 回だけ**: `AskUserQuestion` で「登録する / 一部を除外して登録する / 見送る」を聞く。一部除外なら残す行の `prescription_id` を集める
 6. **登録**: `schedule_weekly_prescriptions(week_start_date=<週開始日>, dry_run=False[, prescription_ids=[...]])`。ツールが 1 件ずつ登録し、成功した行に `garmin_workout_id` / `garmin_schedule_id` / `status="registered"` を記録する（`update_prescription_status` を別途呼ぶ必要はない）
-7. **報告**: `registered` を日付順に列挙し、`failed` があれば理由付きで示して「その行だけ再実行できます」と添える（`prescription_ids` に失敗分だけ渡す）。既に登録済みの行を上書きしたいときも、その `prescription_id` を明示的に渡す
+7. **報告**: `registered` を日付順に列挙し、`failed` があれば理由付きで示して「その行だけ再実行できます」と添える（`prescription_ids` に失敗分だけ渡す）。既に登録済みの行を上書きしたいときも、その `prescription_id` を明示的に渡す。`cleanup`（登録前に自動実行された掃除）で解除・削除された項目、および `error` / `failed_unschedule` / `failed_delete` があれば 1 行で添える
 
 **当日分の回復ゲートは単日モードと同じ**: 対象週に today が含まれるなら `get_recovery_status(date=<today>)` を確認し、`rest` / `easy` なら Step W-5 の確認でその旨を添える（週全体を止める必要はない）。
 
-## Step 4: 掃除（`cleanup` 引数、または登録後に 1 回）
+## Step 4: 掃除だけしたいとき（`cleanup` 引数）
 
 ```
 mcp__garmin-db__cleanup_generated_workouts(dry_run=True)
@@ -76,6 +81,9 @@ mcp__garmin-db__cleanup_generated_workouts(dry_run=True)
 
 過去日付の [MCP] 予定と、予定の無い [MCP] テンプレートが列挙されます。**空でなければ内容を見せてから** `dry_run=False` で実行します。
 手動・Garmin Coach のワークアウトには触りません。
+
+**登録の後にこれを呼ぶ必要はありません**: 同じ掃除が登録の直前にツール側で自動実行され、結果は `cleanup` に入っています（#1065）。
+このモードは「今週は何も登録しないが古い [MCP] を消したい」ときのためのものです。
 
 ## やらないこと
 

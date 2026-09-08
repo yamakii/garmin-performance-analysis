@@ -19,6 +19,14 @@ self-authored library never sprawls:
   assignments and deletes ``[MCP]`` templates that have no future schedule.
   Manual (non-``[MCP]``) workouts are never touched.
 
+Both scheduling tools run that same tidy (``_run_cleanup``) *before* uploading
+anything, so a stale ``[MCP]`` item can no longer survive on the watch just
+because nobody remembered the manual cleanup (#1065); a cleanup failure is
+reported but never aborts the registration, and dry runs report what would be
+cleaned instead. Every library read pages through ``get_workouts``
+(``_fetch_library``): the default ``limit=100`` used to hide any template past
+position 100 from replacement and cleanup.
+
 Run type is expressed purely as differences in ``steps`` (not as extra tools), so
 the MCP ``inputSchema`` stays stable and new target kinds (pace, ...) remain a
 zero-touch reload. The JSON assembly is a pure function (``build_workout_json``)
@@ -47,6 +55,12 @@ logger = logging.getLogger(__name__)
 # All self-authored workouts carry this title prefix so cleanup can tell them
 # apart from manually-created / Garmin Coach workouts.
 MCP_PREFIX = "[MCP] "
+
+# Page size for the workout-library listing. ``get_workouts`` defaults to
+# ``limit=100`` while the real library holds a few hundred workouts, so every
+# read pages through it (:func:`_fetch_library`); a bare call would hide every
+# template past position 100 from replacement and cleanup (#1065).
+_LIBRARY_PAGE_SIZE = 100
 
 # Non-alerting floor used when a step prescribes a ceiling (``hr_high``) only.
 # Garmin's heart-rate target is always a range, so a ceiling-only prescription
@@ -463,6 +477,145 @@ def _plan_cleanup(
     return to_unschedule, to_delete
 
 
+def _fetch_library(client: Any) -> list[dict[str, Any]]:
+    """Return **every** workout in the Garmin library.
+
+    ``client.get_workouts()`` serves one page (default ``limit=100``) of a
+    library that really holds a few hundred workouts, so a bare call silently
+    hides everything past position 100: a same-title replacement, an id-based
+    replacement (#1042) or a cleanup scan would never see an ``[MCP]`` template
+    that drifted down the list (#1065). Pages ``get_workouts(start, 100)`` from
+    0 until a page shorter than the page size (or empty) comes back, which is
+    robust even if the service does not guarantee a stable order across pages.
+    """
+    library: list[dict[str, Any]] = []
+    start = 0
+    while True:
+        page = client.get_workouts(start, _LIBRARY_PAGE_SIZE) or []
+        library.extend(page)
+        if len(page) < _LIBRARY_PAGE_SIZE:
+            return library
+        start += _LIBRARY_PAGE_SIZE
+
+
+def _preview_cleanup(
+    client: Any,
+    today: date,
+    *,
+    templates: list[dict[str, Any]] | None = None,
+    assignments: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Report what a cleanup would remove, without writing anything."""
+    library = templates if templates is not None else _fetch_library(client)
+    scheduled = (
+        assignments if assignments is not None else _collect_mcp_assignments(client)
+    )
+    to_unschedule, to_delete = _plan_cleanup(library, scheduled, today)
+    return {
+        "would_unschedule": to_unschedule,
+        "would_delete": [
+            {"workout_id": w.get("workoutId"), "title": w.get("workoutName")}
+            for w in to_delete
+        ],
+    }
+
+
+def _run_cleanup(
+    client: Any,
+    today: date,
+    *,
+    templates: list[dict[str, Any]] | None = None,
+    assignments: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Unschedule past ``[MCP]`` assignments and delete orphan ``[MCP]`` templates.
+
+    The live body shared by ``cleanup_generated_workouts`` (the manual entry
+    point) and the pre-registration hook both scheduling tools run, so the tidy
+    never depends on a human remembering it (#1065).
+
+    Each removal is isolated: one stale id (already dropped in the Garmin app,
+    or a duplicate that slipped through) must not abort the rest of the cleanup,
+    which previously left the template deletions unexecuted (#880).
+
+    Args:
+        client: Authenticated Garmin client.
+        today: Reference date. ``scheduled_date < today`` is "past", so today's
+            own assignment is never unscheduled.
+        templates: Pre-fetched library (see :func:`_fetch_library`); the weekly
+            batch fetches it once and reuses it for the registrations.
+        assignments: Pre-fetched ``[MCP]`` calendar assignments.
+
+    Returns:
+        ``{unscheduled_schedule_ids, deleted_workout_ids, failed_unschedule,
+        failed_delete}``.
+    """
+    library = templates if templates is not None else _fetch_library(client)
+    scheduled = (
+        assignments if assignments is not None else _collect_mcp_assignments(client)
+    )
+    to_unschedule, to_delete = _plan_cleanup(library, scheduled, today)
+
+    unscheduled: list[Any] = []
+    failed_unschedule: list[dict[str, Any]] = []
+    for assignment in to_unschedule:
+        schedule_id = assignment.get("schedule_id")
+        try:
+            client.unschedule_workout(schedule_id)
+            unscheduled.append(schedule_id)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("unschedule_workout(%r) failed: %s", schedule_id, e)
+            failed_unschedule.append({"schedule_id": schedule_id, "error": str(e)})
+
+    deleted: list[Any] = []
+    failed_delete: list[dict[str, Any]] = []
+    for workout in to_delete:
+        workout_id = workout.get("workoutId")
+        try:
+            client.delete_workout(workout_id)
+            deleted.append(workout_id)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("delete_workout(%r) failed: %s", workout_id, e)
+            failed_delete.append({"workout_id": workout_id, "error": str(e)})
+
+    return {
+        "unscheduled_schedule_ids": unscheduled,
+        "deleted_workout_ids": deleted,
+        "failed_unschedule": failed_unschedule,
+        "failed_delete": failed_delete,
+    }
+
+
+def _cleanup_before_registration(
+    client: Any,
+    *,
+    templates: list[dict[str, Any]] | None = None,
+    assignments: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Run :func:`_run_cleanup` before a registration, never raising.
+
+    A cleanup hiccup (calendar fetch failure, an id that vanished) must never
+    abort the registration the user actually asked for: the error is reported in
+    the result instead.
+    """
+    try:
+        return _run_cleanup(
+            client, date.today(), templates=templates, assignments=assignments
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Pre-registration [MCP] cleanup failed: %s", e)
+        return {"error": str(e)}
+
+
+def _library_without(
+    templates: list[dict[str, Any]], deleted_workout_ids: Any
+) -> list[dict[str, Any]]:
+    """Drop the workouts a cleanup just deleted from a pre-fetched library."""
+    deleted = set(deleted_workout_ids or [])
+    if not deleted:
+        return templates
+    return [w for w in templates if w.get("workoutId") not in deleted]
+
+
 # ----------------------------------------------------------------------------
 # Registration (shared by the single-session and weekly-batch tools)
 # ----------------------------------------------------------------------------
@@ -496,9 +649,9 @@ def _register_workout(
         on_date: Target date (``YYYY-MM-DD``).
         title: Workout title (the ``[MCP] `` prefix is force-added).
         steps: Generic steps array for ``build_workout_json``.
-        templates: Pre-fetched ``client.get_workouts()`` payload. The weekly
+        templates: Pre-fetched library (:func:`_fetch_library`). The weekly
             batch fetches the library once and reuses it across items; passing
-            ``None`` fetches it here.
+            ``None`` fetches (and pages) it here.
         replace_workout_id: Workout id recorded for this slot, deleted before
             the upload when it names an ``[MCP]`` template.
 
@@ -510,7 +663,7 @@ def _register_workout(
 
     # Decide the deletions first (delete -> recreate), then perform them, so an
     # id that is also the same-title template is never deleted twice.
-    library = templates if templates is not None else (client.get_workouts() or [])
+    library = templates if templates is not None else _fetch_library(client)
     to_delete: list[Any] = [
         w.get("workoutId") for w in library if w.get("workoutName") == full_title
     ]
@@ -728,7 +881,19 @@ def _schedule_custom_workout(
 
     try:
         client = get_garmin_client()
-        return _register_workout(client, on_date=p.date, title=p.title, steps=p.steps)
+        # Tidy first, so a stale [MCP] template/assignment never survives a
+        # registration just because nobody ran the cleanup tool (#1065).
+        templates = _fetch_library(client)
+        cleanup = _cleanup_before_registration(client, templates=templates)
+        result = _register_workout(
+            client,
+            on_date=p.date,
+            title=p.title,
+            steps=p.steps,
+            templates=_library_without(templates, cleanup.get("deleted_workout_ids")),
+        )
+        result["cleanup"] = cleanup
+        return result
     except Exception as e:  # noqa: BLE001
         logger.error(f"schedule_custom_workout failed: {e}")
         return {"error": str(e)}
@@ -769,6 +934,15 @@ def _schedule_weekly_prescriptions(
             logger.warning("Could not read the Garmin calendar: %s", e)
             existing = {}
             result["calendar_error"] = str(e)
+        try:
+            # A dry run writes nothing, so the cleanup the live run would
+            # perform first is reported instead of executed.
+            result["would_cleanup"] = _preview_cleanup(
+                get_garmin_client(), date.today()
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Could not preview the [MCP] cleanup: %s", e)
+            result["would_cleanup"] = {"error": str(e)}
         for item in items:
             item["existing_same_day"] = existing.get(item["date"], [])
             # A dry run replaces nothing: report the id instead of promising it.
@@ -777,10 +951,16 @@ def _schedule_weekly_prescriptions(
 
     try:
         client = get_garmin_client()
-        templates = client.get_workouts() or []
+        templates = _fetch_library(client)
     except Exception as e:  # noqa: BLE001
         logger.error(f"schedule_weekly_prescriptions failed to reach Garmin: {e}")
         return {"error": str(e)}
+
+    # Tidy before uploading anything, so stale [MCP] items never survive a
+    # registration just because nobody ran the cleanup tool (#1065). The library
+    # is reused for the registrations minus whatever the cleanup just deleted.
+    cleanup = _cleanup_before_registration(client, templates=templates)
+    templates = _library_without(templates, cleanup.get("deleted_workout_ids"))
 
     # Each item is isolated: one upload failure (rate limit, bad target) must
     # leave the already-registered days in place and let the rest proceed.
@@ -825,6 +1005,7 @@ def _schedule_weekly_prescriptions(
     return {
         "dry_run": False,
         "week_start_date": p.week_start_date,
+        "cleanup": cleanup,
         "registered": registered,
         "failed": failed,
         "skipped": skipped,
@@ -838,53 +1019,11 @@ def _cleanup_generated_workouts(
 
     try:
         client = get_garmin_client()
-        templates = client.get_workouts() or []
-        assignments = _collect_mcp_assignments(client)
-        to_unschedule, to_delete = _plan_cleanup(templates, assignments, date.today())
-
         if p.dry_run:
-            return {
-                "dry_run": True,
-                "would_unschedule": to_unschedule,
-                "would_delete": [
-                    {"workout_id": w.get("workoutId"), "title": w.get("workoutName")}
-                    for w in to_delete
-                ],
-            }
-
-        # Each removal is isolated: one stale id (already dropped in the Garmin
-        # app, or a duplicate that slipped through) must not abort the rest of
-        # the cleanup, which previously left the template deletions unexecuted
-        # (#880).
-        unscheduled: list[Any] = []
-        failed_unschedule: list[dict[str, Any]] = []
-        for assignment in to_unschedule:
-            schedule_id = assignment.get("schedule_id")
-            try:
-                client.unschedule_workout(schedule_id)
-                unscheduled.append(schedule_id)
-            except Exception as e:  # noqa: BLE001
-                logger.warning("unschedule_workout(%r) failed: %s", schedule_id, e)
-                failed_unschedule.append({"schedule_id": schedule_id, "error": str(e)})
-
-        deleted: list[Any] = []
-        failed_delete: list[dict[str, Any]] = []
-        for workout in to_delete:
-            workout_id = workout.get("workoutId")
-            try:
-                client.delete_workout(workout_id)
-                deleted.append(workout_id)
-            except Exception as e:  # noqa: BLE001
-                logger.warning("delete_workout(%r) failed: %s", workout_id, e)
-                failed_delete.append({"workout_id": workout_id, "error": str(e)})
-
-        return {
-            "dry_run": False,
-            "unscheduled_schedule_ids": unscheduled,
-            "deleted_workout_ids": deleted,
-            "failed_unschedule": failed_unschedule,
-            "failed_delete": failed_delete,
-        }
+            return {"dry_run": True, **_preview_cleanup(client, date.today())}
+        # Same runner the scheduling tools invoke before every registration; this
+        # tool stays the manual entry point for tidying without registering.
+        return {"dry_run": False, **_run_cleanup(client, date.today())}
     except Exception as e:  # noqa: BLE001
         logger.error(f"cleanup_generated_workouts failed: {e}")
         return {"error": str(e)}
@@ -897,12 +1036,15 @@ WORKOUT_SCHEDULING_TOOLS: list[ToolDef] = [
             "Build a Garmin running workout from a generic steps array, force-"
             "prefix its title with '[MCP] ', replace any same-title [MCP] "
             "template (delete -> recreate), upload it and schedule it on date. "
-            "Each step is an executable step (step_type warmup/run/recovery/"
-            "cooldown; one of duration_minutes, duration_seconds or distance_m; "
-            "optional hr_low/hr_high for a custom heart-rate-range target) or a "
-            "repeat group (repeat_count + nested steps). Returns {workout_id, "
-            "schedule_id, date, title, replaced_workout_ids, "
-            "skipped_replace_ids}."
+            "Runs the [MCP] cleanup first (unschedule past-dated [MCP] "
+            "assignments, delete [MCP] templates with no future schedule), so "
+            "stale items never linger; a cleanup failure never aborts the "
+            "registration. Each step is an executable step (step_type warmup/run/"
+            "recovery/cooldown; one of duration_minutes, duration_seconds or "
+            "distance_m; optional hr_low/hr_high for a custom heart-rate-range "
+            "target) or a repeat group (repeat_count + nested steps). Returns "
+            "{workout_id, schedule_id, date, title, replaced_workout_ids, "
+            "skipped_replace_ids, cleanup}."
         ),
         params=ScheduleCustomWorkoutParams,
         handler=_schedule_custom_workout,
@@ -924,13 +1066,16 @@ WORKOUT_SCHEDULING_TOOLS: list[ToolDef] = [
             "re-registers it. dry_run=True (default) returns {dry_run, "
             "week_start_date, items ({prescription_id, date, title, steps, "
             "existing_same_day, already_registered, "
-            "would_replace_workout_id}), skipped} so the plan can "
-            "be confirmed first. dry_run=False registers each item (delete the "
+            "would_replace_workout_id}), would_cleanup, skipped} so the plan "
+            "can be confirmed first. dry_run=False runs the [MCP] cleanup "
+            "first (unschedule past-dated [MCP] assignments, delete [MCP] "
+            "templates with no future schedule; a cleanup failure never aborts "
+            "the batch), then registers each item (delete the "
             "same-title [MCP] template AND the [MCP] workout already recorded "
             "on a re-registered row, so a revised title never leaves the old "
             "item on the calendar -> upload -> schedule), records the "
             "workout/schedule ids with status=registered on the row, isolates "
-            "per-item failures and returns {dry_run, week_start_date, "
+            "per-item failures and returns {dry_run, week_start_date, cleanup, "
             "registered, failed, skipped}."
         ),
         params=ScheduleWeeklyPrescriptionsParams,
@@ -943,8 +1088,11 @@ WORKOUT_SCHEDULING_TOOLS: list[ToolDef] = [
         description=(
             "Tidy self-authored [MCP] workouts: unschedule past-dated [MCP] "
             "calendar assignments and delete [MCP] templates that have no future "
-            "schedule. Never touches manual (non-[MCP]) workouts. Pass "
-            "dry_run=True to only list what would be removed."
+            "schedule. Never touches manual (non-[MCP]) workouts. The same tidy "
+            "runs automatically before every schedule_custom_workout / "
+            "schedule_weekly_prescriptions registration, so this tool is only "
+            "needed to tidy without registering. Pass dry_run=True to only list "
+            "what would be removed."
         ),
         params=CleanupGeneratedWorkoutsParams,
         handler=_cleanup_generated_workouts,
