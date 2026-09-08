@@ -99,6 +99,9 @@ If `--close` is specified, or PR body contains `Closes #N`:
 - Extract issue number from PR body if not specified
 - Execute Step 4 (Close Issue) with that number
 
+If neither is present (a skip-level docs/rules PR shipped without an Issue, `dev-reference.md` §1),
+there is nothing to close: report the merge and stop.
+
 ---
 
 ## Normal Flow (no PR)
