@@ -150,12 +150,15 @@ CI_CHECK_CGROUP_DIR="${CI_CHECK_CGROUP_DIR:-/sys/fs/cgroup}"
 # `nproc` clamps to OMP_NUM_THREADS (exported to 1 above for the BLAS pools), so
 # unset it for the query; the affinity-aware count is what xdist would pick.
 CI_CHECK_CPUS="${CI_CHECK_CPUS:-$(env -u OMP_NUM_THREADS -u OMP_THREAD_LIMIT nproc 2>/dev/null || echo 2)}"
-# Hard cap on the xdist pool, whatever the CPU count (#1061). Measured 2026-09-08
-# on the 12-CPU sandbox with the same 2,223-test suite: 4 workers 51-56 s,
-# 8 workers 186 s, 12 workers 97-131 s. Every test writes its own ~3.5 MB DuckDB
-# file to the overlay /tmp (687 files / 2.2 GB per run), and past 4 workers the
-# I/O contention outweighs the extra CPUs. 4 is also what CI's `-n 4` uses.
-CI_CHECK_MAX_WORKERS="${CI_CHECK_MAX_WORKERS:-4}"
+# Hard cap on the xdist pool, whatever the CPU count (#1061, raised in #1080).
+# The cap exists because every test writes its own DuckDB file: on the overlay
+# /tmp (2026-09-08) more workers were slower (4 → 51-56 s, 8 → 186 s, 12 →
+# 97-131 s). With /tmp on tmpfs (#1078, measured 2026-09-09 on the 12-CPU
+# sandbox, host I/O pressure 28-54 %): 4 workers 32-36 s, 8 workers 24 s,
+# 12 workers 26 s — 8 is the knee, 12 only adds ~2 GB of worker memory.
+# Each worker costs ~500 MB; pick_pytest_workers still sizes down from cgroup
+# headroom when the box is busy.
+CI_CHECK_MAX_WORKERS="${CI_CHECK_MAX_WORKERS:-8}"
 CI_CHECK_MEM_MYPY="${CI_CHECK_MEM_MYPY:-$((800 * 1024 * 1024))}"               # bytes
 CI_CHECK_MEM_PYTEST_BASE="${CI_CHECK_MEM_PYTEST_BASE:-$((700 * 1024 * 1024))}" # controller
 CI_CHECK_MEM_PER_WORKER="${CI_CHECK_MEM_PER_WORKER:-$((500 * 1024 * 1024))}"   # per xdist worker
@@ -296,11 +299,11 @@ echo "▶ server venv: $UV_PROJECT_ENVIRONMENT"
 run uv sync --directory "$SERVER" --extra dev
 
 # --- lint-and-test (garmin-mcp-server, whole-package) ---
-# Worker count: min(cpus, cgroup headroom, CI_CHECK_MAX_WORKERS=4). Each worker
+# Worker count: min(cpus, cgroup headroom, CI_CHECK_MAX_WORKERS=8). Each worker
 # costs ~500 MB (#1009), a hard pids.max sits behind the `can't start new thread`
-# flake (#740), and beyond 4 workers the per-test DuckDB file churn makes the
-# run slower, not faster (#1061). Parity with CI's `-n 4` is about WHICH checks,
-# markers and thresholds run — the cap just happens to match it.
+# flake (#740), and beyond 8 workers the per-test DuckDB files stop paying off
+# even on tmpfs (#1061 → #1080). Parity with CI's `-n 4` is about WHICH checks,
+# markers and thresholds run — not the worker count.
 run uv run --directory "$SERVER" ruff check .
 run uv run --directory "$SERVER" black --check .
 wait_for_headroom "$CI_CHECK_MEM_MYPY" "mypy"
