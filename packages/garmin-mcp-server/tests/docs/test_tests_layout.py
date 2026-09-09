@@ -58,6 +58,21 @@ def test_no_phase_named_test_files() -> None:
     assert not offenders, f"phase-named test files: {offenders}"
 
 
+_SIZE_BUDGET_LINES = 900
+
+
+@pytest.mark.unit
+def test_test_files_under_size_budget() -> None:
+    """A test file that reaches 900 lines is split into a themed subpackage
+    (#1069) instead of growing further; the eight that had passed it were."""
+    over = {
+        str(p.relative_to(_TESTS)): n
+        for p in _test_files()
+        if (n := p.read_text(encoding="utf-8").count("\n") + 1) >= _SIZE_BUDGET_LINES
+    }
+    assert not over, f"test files at or over {_SIZE_BUDGET_LINES} lines: {over}"
+
+
 @pytest.mark.unit
 def test_test_basenames_unique_within_package() -> None:
     """Under a directory that already names the layer (migrations/, readers/),
