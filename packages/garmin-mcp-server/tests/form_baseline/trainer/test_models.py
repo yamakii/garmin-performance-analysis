@@ -4,9 +4,15 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from garmin_mcp.form_baseline.scorer import (
+    _compute_penalty,
+    _extrapolation_factor,
+    compute_star_rating,
+)
 from garmin_mcp.form_baseline.trainer import (
     GCTPowerModel,
     LinearModel,
+    _effective_speed_range,
     fit_gct_power,
     fit_linear,
 )
@@ -350,3 +356,104 @@ class TestFitLinear:
 
         assert model.b < 0
         assert model.degenerate is False
+
+
+def _self_included_window() -> pd.DataFrame:
+    """A summer window: 100 easy splits plus one fast workout's 4 splits.
+
+    Mirrors the real 2026-07-31..09-30 baseline, where every split above
+    2.55 m/s came from the very activity being scored (#1096).
+    """
+    rng = np.random.default_rng(1096)
+    # Matches the real window's spread (p05 1.976 / p95 2.410, raw max 2.99)
+    easy = rng.uniform(1.95, 2.45, size=273)
+    fast = np.array([2.65, 2.80, 2.93, 2.99])
+    speed = np.concatenate([easy, fast])
+    return pd.DataFrame(
+        {
+            "speed_mps": speed,
+            "gct_ms": 300.0 * speed**-0.30,
+            "vr_value": 14.4 - 2.15 * speed,
+            "vo_value": 6.5 + 0.28 * speed,
+        }
+    )
+
+
+@pytest.mark.unit
+class TestEffectiveSpeedRange:
+    """speed_range reports the trusted band, not the furthest point (#1096)."""
+
+    def test_effective_speed_range_uses_percentiles(self):
+        """A lone fast outlier must not stretch the reported range."""
+        speeds = np.append(np.linspace(2.0, 2.5, 100), 3.5)
+
+        low, high = _effective_speed_range(speeds)
+
+        assert high < 2.6
+        assert low >= 2.0
+
+    def test_effective_speed_range_falls_back_for_small_sample(self):
+        """Below the sample floor the percentile band is meaningless."""
+        speeds = np.linspace(2.0, 3.0, 10)
+
+        assert _effective_speed_range(speeds) == (2.0, 3.0)
+
+    def test_effective_speed_range_falls_back_when_band_collapses(self):
+        """Identical speeds give p05 == p95, so report the raw range."""
+        speeds = np.full(50, 2.5)
+
+        assert _effective_speed_range(speeds) == (2.5, 2.5)
+
+    def test_fit_gct_power_speed_range_excludes_lone_fast_point(self):
+        """GCT model's range reflects where the data actually is."""
+        df = _self_included_window()
+
+        model = fit_gct_power(df[["gct_ms", "speed_mps"]], fallback_ransac=False)
+
+        assert model.speed_range[1] < 2.6
+
+    def test_fit_linear_speed_range_excludes_lone_fast_point(self):
+        """VR model's range likewise."""
+        df = _self_included_window()
+
+        model = fit_linear(df[["vr_value", "speed_mps"]], metric="vr")
+
+        assert model.speed_range[1] < 2.6
+
+    @pytest.mark.integration
+    def test_extrapolation_guard_fires_for_self_included_fast_run(self):
+        """The guard fires at 2.719 m/s and lifts a +3.2% VR by a full star.
+
+        With the raw min/max range (2.99, stretched by the scored activity's
+        own splits) the guard stayed silent and the same deviation was scored
+        at full confidence.
+        """
+        df = _self_included_window()
+        model = fit_linear(df[["vr_value", "speed_mps"]], metric="vr")
+
+        factor = _extrapolation_factor(model, 2.719)
+        assert factor > 2.0
+
+        raw_range_model = LinearModel(
+            a=model.a,
+            b=model.b,
+            rmse=model.rmse,
+            n_samples=model.n_samples,
+            speed_range=(
+                float(df["speed_mps"].min()),
+                float(df["speed_mps"].max()),
+            ),
+        )
+        assert _extrapolation_factor(raw_range_model, 2.719) == 1.0
+
+        delta_pct = 3.2
+        sigma_pct = 1.47
+        guarded = compute_star_rating(
+            penalty=_compute_penalty("vr", delta_pct, sigma_pct * factor),
+            delta_pct=delta_pct,
+        )
+        unguarded = compute_star_rating(
+            penalty=_compute_penalty("vr", delta_pct, sigma_pct),
+            delta_pct=delta_pct,
+        )
+        assert guarded["score"] >= unguarded["score"] + 1.0
