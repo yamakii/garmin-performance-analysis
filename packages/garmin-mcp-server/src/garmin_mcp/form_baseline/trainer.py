@@ -20,6 +20,52 @@ from garmin_mcp.form_baseline.utils import drop_outliers
 # provenance only -- the loader reads the same columns either way.
 GCT_MODEL_TYPE = "power_gct"
 
+# Below this many samples the 5-95 percentile band is itself unreliable, so
+# ``_effective_speed_range`` reports the observed min/max instead.
+_MIN_SAMPLES_FOR_PERCENTILE = 20
+
+
+def _effective_speed_range(
+    speeds: "np.ndarray | pd.Series",
+    min_samples_for_percentile: int = _MIN_SAMPLES_FOR_PERCENTILE,
+) -> tuple[float, float]:
+    """Speed band the model can actually be trusted over.
+
+    Returns the 5-95 percentile of the training speeds rather than their raw
+    min/max. The extrapolation guard in
+    :mod:`~garmin_mcp.form_baseline.scorer` is the only consumer of
+    ``speed_range``, and what it needs to know is where the data thins out --
+    not the single furthest point.
+
+    The distinction matters because of self-inclusion (#1096): the baseline
+    covering an activity may be trained on splits from that very activity, so
+    one fast workout can stretch the raw maximum well past everything else
+    (2026-07-31..09-30: 277 splits, exactly 4 above 2.55 m/s, all four from the
+    activity being scored, raw max 2.99 vs p95 2.41). The guard then sees the
+    run as "in range" and stays silent, while the fitted slope -- which those
+    four points barely move -- keeps extrapolating.
+
+    Args:
+        speeds: Training speeds in m/s
+        min_samples_for_percentile: Below this count the percentile band is
+            not meaningful and the raw min/max is returned instead
+
+    Returns:
+        ``(low, high)`` in m/s. Falls back to ``(min, max)`` for small samples
+        or when the percentile band collapses (every speed identical).
+    """
+    values = np.asarray(speeds, dtype=float)
+    raw = (float(values.min()), float(values.max()))
+
+    if len(values) < min_samples_for_percentile:
+        return raw
+
+    low, high = (float(x) for x in np.percentile(values, [5, 95]))
+    if high <= low:
+        return raw
+
+    return (low, high)
+
 
 @dataclass
 class GCTPowerModel:
@@ -41,7 +87,7 @@ class GCTPowerModel:
     d: float  # slope in log-log space (should be < 0)
     rmse: float  # Root Mean Squared Error
     n_samples: int  # Number of training samples
-    speed_range: tuple[float, float]  # (min, max) speed in m/s
+    speed_range: tuple[float, float]  # trusted band, m/s (_effective_speed_range)
 
     def predict(self, gct_ms: float) -> float:
         """
@@ -84,7 +130,7 @@ class LinearModel:
     b: float  # Slope
     rmse: float  # Root Mean Squared Error
     n_samples: int  # Number of training samples
-    speed_range: tuple[float, float]  # (min, max) speed in m/s
+    speed_range: tuple[float, float]  # trusted band, m/s (_effective_speed_range)
     degenerate: bool = False  # Slope suppressed -> flat (intercept-only) model
 
     def predict(self, speed_mps: float) -> float:
@@ -183,10 +229,7 @@ def fit_gct_power(df: pd.DataFrame, fallback_ransac: bool = True) -> GCTPowerMod
         d=float(d),
         rmse=float(sigma_gct * abs(d)),
         n_samples=len(df_clean),
-        speed_range=(
-            float(df_clean["speed_mps"].min()),
-            float(df_clean["speed_mps"].max()),
-        ),
+        speed_range=_effective_speed_range(df_clean["speed_mps"]),
     )
 
 
@@ -258,10 +301,7 @@ def fit_linear(df: pd.DataFrame, metric: Literal["vo", "vr", "cadence"]) -> Line
         b=b,
         rmse=float(rmse),
         n_samples=len(df_clean),
-        speed_range=(
-            float(df_clean["speed_mps"].min()),
-            float(df_clean["speed_mps"].max()),
-        ),
+        speed_range=_effective_speed_range(df_clean["speed_mps"]),
         degenerate=degenerate,
     )
 
