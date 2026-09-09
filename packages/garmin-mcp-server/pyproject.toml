@@ -112,6 +112,11 @@ asyncio_default_fixture_loop_scope = "function"
 # worker alive for the rest of the run.
 timeout = 120
 timeout_method = "signal"
+# Temp-dir retention (#1078): the sandbox backs /tmp with RAM, so the default
+# "keep the last 3 basetemps" (4.8 GB of per-test DuckDB copies) would sit in
+# memory. Keep only the dirs of tests that failed, and only for the last run.
+tmp_path_retention_count = 1
+tmp_path_retention_policy = "failed"
 
 [tool.coverage.run]
 source = ["src/garmin_mcp"]

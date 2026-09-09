@@ -53,6 +53,7 @@ are assumed realistic:
 | `--cap-drop ALL`, `--security-opt no-new-privileges`, non-root `claude`, `--pids-limit`/`--memory`/`--cpus` | privilege escalation, host access, fork bombs, resource abuse | a process reading a mounted secret and `curl`-ing it out |
 | **egress allowlist** (`init-firewall.sh` + dnsmasq, `allowed-domains.txt`) | sending secrets / data to an arbitrary host, DNS tunnelling, SSH/DNS to arbitrary hosts | exfiltration to an **allowlisted** host (a malicious GitHub repo, or a GET with a query string to a docs-tier host); a direct connection to an IP that happens to be in the set because an allowlisted CDN neighbour resolved to it |
 | bind-mount scope (`/workspace` only) | touching files outside the repo + `data/` | corrupting/altering the mounted repo + `data/` (rw) |
+| `--tmpfs /tmp:size=8g` (#1078) | test temp files (per-test DuckDB copies) queuing behind the saturated host disk — the suite ran 44 s or 150 s at random | anything: it is a performance setting. 8 GiB is a cap charged to `--memory`, not a reservation; pytest keeps only failed tests' temp dirs |
 
 > Capabilities: `--cap-drop ALL` removes every Linux capability, then only four
 > are added back — `NET_ADMIN` + `NET_RAW` (so the entrypoint can install the
