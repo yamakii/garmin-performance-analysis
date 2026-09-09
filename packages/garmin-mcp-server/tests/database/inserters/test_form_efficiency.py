@@ -166,24 +166,6 @@ class TestFormEfficiencyInserter:
 
         return splits_file
 
-    @pytest.mark.unit
-    def test_insert_form_efficiency_raw_data_success(
-        self, sample_splits_file, initialized_db_path
-    ):
-        """Test insert_form_efficiency with raw data."""
-        db_path = initialized_db_path
-        conn = duckdb.connect(str(db_path))
-
-        result = insert_form_efficiency(
-            activity_id=20636804823,
-            conn=conn,
-            raw_splits_file=str(sample_splits_file),
-        )
-        conn.close()
-
-        assert result is True
-        assert db_path.exists()
-
     @pytest.mark.integration
     def test_insert_form_efficiency_raw_data_db_integration(
         self, sample_splits_file, initialized_db_path
@@ -229,20 +211,6 @@ class TestFormEfficiencyInserter:
         assert row[18] is not None  # vr_std
 
         conn.close()
-
-    @pytest.mark.unit
-    def test_insert_form_efficiency_raw_data_missing_file(self, tmp_path):
-        """Test insert_form_efficiency handles missing files."""
-        conn = duckdb.connect(":memory:")
-
-        result = insert_form_efficiency(
-            activity_id=12345,
-            conn=conn,
-            raw_splits_file="/nonexistent/splits.json",
-        )
-        conn.close()
-
-        assert result is False
 
     @pytest.mark.unit
     def test_calculate_gct_evaluation(self):

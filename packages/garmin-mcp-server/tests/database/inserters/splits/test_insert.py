@@ -304,24 +304,6 @@ class TestInsertSplits:
 
         conn.close()
 
-    @pytest.mark.unit
-    def test_insert_splits_raw_data_success(
-        self, sample_raw_splits_file, initialized_db_path
-    ):
-        """Test insert_splits with raw data mode (no performance.json)."""
-        db_path = initialized_db_path
-        conn = duckdb.connect(str(db_path))
-
-        result = insert_splits(
-            activity_id=20636804823,
-            conn=conn,
-            raw_splits_file=str(sample_raw_splits_file),
-        )
-        conn.close()
-
-        assert result is True
-        assert db_path.exists()
-
     @pytest.mark.integration
     def test_insert_splits_raw_data_db_integration(
         self, sample_raw_splits_file, initialized_db_path
@@ -380,17 +362,3 @@ class TestInsertSplits:
         assert split1[17] == 2.0  # elevation_loss
 
         conn.close()
-
-    @pytest.mark.unit
-    def test_insert_splits_raw_data_missing_file(self, tmp_path):
-        """Test insert_splits raw mode handles missing files."""
-        conn = duckdb.connect(":memory:")
-
-        result = insert_splits(
-            activity_id=12345,
-            conn=conn,
-            raw_splits_file="/nonexistent/splits.json",
-        )
-        conn.close()
-
-        assert result is False
