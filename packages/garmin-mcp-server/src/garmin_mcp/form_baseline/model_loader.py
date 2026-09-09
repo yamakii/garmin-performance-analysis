@@ -95,8 +95,21 @@ def load_models_from_db(
 ) -> dict[str, GCTPowerModel | LinearModel]:
     """Load trained models from DuckDB form_baseline_history.
 
-    Selects the baseline period that covers the activity_date
-    (where period_end <= activity_date).
+    Selects the baseline period that *covers* the activity date
+    (``period_start <= activity_date <= period_end``), preferring the most
+    recently started one, and falls back to the newest period that already
+    ended (``period_end <= activity_date``) when nothing covers it.
+
+    Covering periods must be preferred because ``period_end`` is the nominal
+    end of the training window, not the cut-off of the data behind it:
+    ``trainer.ensure_form_baselines_for_date`` deliberately trains a baseline
+    whose ``period_end`` is the activity's own month end, and an
+    ended-periods-only rule could never select it. Before #1088 that made a
+    September run get graded by the July-August model -- i.e. midsummer
+    easy-only data judging faster autumn running, worth about 5% of expected
+    GCT. The trade-off is mild self-inclusion (the activity may be among the
+    ~130-260 splits behind its own baseline), which is negligible at that
+    sample size.
 
     Args:
         db_path: Path to DuckDB database
@@ -115,28 +128,50 @@ def load_models_from_db(
     with get_connection(db_path) as conn:
         baselines = conn.execute(
             """
-            WITH latest_baseline AS (
-                SELECT MAX(period_end) as max_period_end
+            WITH candidates AS (
+                SELECT period_start, period_end,
+                       -- 0 = the period covers the activity date, 1 = it ended
+                       CASE WHEN period_end >= ? THEN 0 ELSE 1 END AS tier,
+                       -- covering periods rank by the most recent training
+                       -- window start, ended ones by the latest end (the
+                       -- pre-#1088 rule)
+                       CASE WHEN period_end >= ? THEN period_start
+                            ELSE period_end END AS sort_key
                 FROM form_baseline_history
                 WHERE user_id = ?
                   AND condition_group = ?
-                  AND period_end <= ?
+                  AND period_start <= ?
+            ),
+            selected AS (
+                SELECT period_start, period_end
+                FROM candidates
+                ORDER BY tier, sort_key DESC, period_end DESC
+                LIMIT 1
             )
             SELECT metric, model_type, coef_alpha, coef_d, coef_a, coef_b,
                    n_samples, rmse, speed_range_min, speed_range_max
             FROM form_baseline_history
             WHERE user_id = ?
               AND condition_group = ?
-              AND period_end = (SELECT max_period_end FROM latest_baseline)
+              AND period_start = (SELECT period_start FROM selected)
+              AND period_end = (SELECT period_end FROM selected)
             """,
-            [user_id, condition_group, activity_date, user_id, condition_group],
+            [
+                activity_date,
+                activity_date,
+                user_id,
+                condition_group,
+                activity_date,
+                user_id,
+                condition_group,
+            ],
         ).fetchall()
 
         if not baselines:
             raise ValueError(
                 f"No baseline found for activity_date={activity_date}, "
                 f"user_id={user_id}, condition_group={condition_group}. "
-                f"Train a baseline model with period_end <= {activity_date}"
+                f"Train a baseline model with period_start <= {activity_date}"
             )
 
         # Parse baselines by metric

@@ -57,6 +57,8 @@ def generate_evaluation_text(
     star_rating: str,
     score: float,
     sigma_pct: float | None = None,
+    speed_range: tuple[float, float] | None = None,
+    extrapolated: bool = False,
 ) -> str:
     """Generate Japanese evaluation text for a single metric.
 
@@ -74,6 +76,11 @@ def generate_evaluation_text(
         sigma_pct: Model error as a percentage of the expected value. The wording
             bands scale with it so the text matches the sigma-scaled star rating.
             Falls back to the legacy fixed 2%/5% bands when None or non-positive.
+        speed_range: (min, max) speed the model was trained on, used only for the
+            extrapolation note.
+        extrapolated: True when the pace sits outside ``speed_range``. The text
+            then says the expectation is indicative only, so a reader does not
+            treat an extrapolated deviation as a measured form problem (#1088).
 
     Returns:
         Japanese evaluation text
@@ -87,12 +94,17 @@ def generate_evaluation_text(
     # Cadence has REVERSED semantics (higher cadence = better), so it is
     # handled separately from the GCT/VO/VR efficiency metrics.
     if metric == "cadence":
-        return _generate_cadence_text(
-            actual=actual,
-            expected=expected,
-            delta_pct=delta_pct,
+        return _append_extrapolation_note(
+            _generate_cadence_text(
+                actual=actual,
+                expected=expected,
+                delta_pct=delta_pct,
+                star_rating=star_rating,
+                sigma_pct=sigma_pct,
+            ),
             star_rating=star_rating,
-            sigma_pct=sigma_pct,
+            speed_range=speed_range,
+            extrapolated=extrapolated,
         )
 
     # Metric-specific labels
@@ -177,7 +189,31 @@ def generate_evaluation_text(
             f"フォームの不安定さが見られます。{label['improvement_action']}を推奨します。{star_rating}"
         )
 
-    return text
+    return _append_extrapolation_note(
+        text,
+        star_rating=star_rating,
+        speed_range=speed_range,
+        extrapolated=extrapolated,
+    )
+
+
+def _append_extrapolation_note(
+    text: str,
+    star_rating: str,
+    speed_range: tuple[float, float] | None,
+    extrapolated: bool,
+) -> str:
+    """Insert the "outside the trained range" caveat before the trailing stars.
+
+    Every branch of the evaluation text ends with ``star_rating``, so the note
+    is spliced in just ahead of it and the stars stay last.
+    """
+    if not extrapolated or speed_range is None:
+        return text
+
+    lo, hi = speed_range
+    note = f"（学習範囲{lo:.2f}-{hi:.2f} m/s 外のため参考値）"
+    return text.removesuffix(star_rating) + note + star_rating
 
 
 def _generate_cadence_text(

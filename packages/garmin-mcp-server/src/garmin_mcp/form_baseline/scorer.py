@@ -86,6 +86,53 @@ def _sigma_pct(
     return 100.0 * rmse / abs(expected)
 
 
+def _extrapolation_factor(
+    model: GCTPowerModel | LinearModel,
+    speed_mps: float,
+) -> float:
+    """Sigma inflation factor for predicting outside the model's speed range.
+
+    A baseline only knows the speed band it was trained on; ``rmse`` is the
+    in-sample fit error and says nothing about how the curve behaves beyond the
+    data. Before #1088 nothing consulted ``speed_range`` at all, so a run faster
+    than every split in the training window was scored with full confidence --
+    a 5 km build-up reaching 2.99 m/s was graded by a model that had never seen
+    anything above 2.55 m/s.
+
+    Inside the trained range the factor is 1.0. Outside it grows with the
+    log-distance past the nearest boundary, normalized by half the trained
+    range, so that going half a training range beyond the edge doubles sigma
+    (and therefore halves the deviation in sigma units).
+
+    Args:
+        model: Trained model carrying ``speed_range``
+        speed_mps: Speed the prediction is being made at
+
+    Returns:
+        Factor >= 1.0. Always 1.0 for a degenerate or unusable speed range.
+    """
+    lo, hi = model.speed_range
+    if not lo or not hi or hi <= lo or speed_mps <= 0.0:
+        return 1.0
+
+    if lo <= speed_mps <= hi:
+        return 1.0
+
+    bound = hi if speed_mps > hi else lo
+    half_range_log = 0.5 * math.log(hi / lo)
+    if half_range_log <= 0.0:
+        return 1.0
+
+    return 1.0 + abs(math.log(speed_mps / bound)) / half_range_log
+
+
+def _inflate(sigma_pct: float | None, factor: float) -> float | None:
+    """Scale a sigma by an extrapolation factor, passing ``None`` through."""
+    if sigma_pct is None:
+        return None
+    return sigma_pct * factor
+
+
 def _compute_penalty(
     metric: str,
     delta_pct: float,
@@ -188,8 +235,15 @@ def score_observation(
         Dictionary containing:
             - All fields from predict_expectations
             - gct_delta_pct: Percentage difference from expected
-            - gct_sigma_pct: Model error as % of expected (None if unavailable)
+            - gct_sigma_pct: Model error as % of expected, inflated when the
+              prediction falls outside the model's trained speed range
+              (None if unavailable)
             - gct_penalty: Penalty score for GCT (asymmetric, sigma-scaled)
+            - gct_extrapolated: True when the pace is outside the trained range
+            - gct_extrapolation_factor: Sigma inflation applied (>= 1.0)
+            - gct_speed_range: (min, max) speed the model was trained on
+            - the same ``_extrapolated`` / ``_extrapolation_factor`` /
+              ``_speed_range`` triple for vo, vr and (when scored) cadence
             - vo_delta_cm: Absolute difference from expected (cm)
             - vo_delta_pct: Percentage difference from expected
             - vo_sigma_pct: Model error as % of expected (None if unavailable)
@@ -229,10 +283,23 @@ def score_observation(
     ) * 100.0
 
     # Model error per metric (sigma), used to scale the penalties so that an
-    # equal statistical deviation earns an equal rating across metrics.
-    gct_sigma_pct = _sigma_pct("gct", models["gct"], expectations["gct_ms_exp"])
-    vo_sigma_pct = _sigma_pct("vo", models["vo"], expectations["vo_cm_exp"])
-    vr_sigma_pct = _sigma_pct("vr", models["vr"], expectations["vr_pct_exp"])
+    # equal statistical deviation earns an equal rating across metrics. Outside
+    # a model's trained speed range the in-sample rmse understates the real
+    # uncertainty, so sigma is inflated and the rating stays conservative.
+    speed_mps = expectations["speed_mps"]
+    gct_factor = _extrapolation_factor(models["gct"], speed_mps)
+    vo_factor = _extrapolation_factor(models["vo"], speed_mps)
+    vr_factor = _extrapolation_factor(models["vr"], speed_mps)
+
+    gct_sigma_pct = _inflate(
+        _sigma_pct("gct", models["gct"], expectations["gct_ms_exp"]), gct_factor
+    )
+    vo_sigma_pct = _inflate(
+        _sigma_pct("vo", models["vo"], expectations["vo_cm_exp"]), vo_factor
+    )
+    vr_sigma_pct = _inflate(
+        _sigma_pct("vr", models["vr"], expectations["vr_pct_exp"]), vr_factor
+    )
 
     # Calculate asymmetric penalties
     gct_penalty = _compute_penalty("gct", gct_delta_pct, gct_sigma_pct)
@@ -259,13 +326,22 @@ def score_observation(
         "gct_delta_pct": gct_delta_pct,
         "gct_sigma_pct": gct_sigma_pct,
         "gct_penalty": gct_penalty,
+        "gct_extrapolated": gct_factor > 1.0,
+        "gct_extrapolation_factor": gct_factor,
+        "gct_speed_range": models["gct"].speed_range,
         "vo_delta_cm": vo_delta_cm,
         "vo_delta_pct": vo_delta_pct,
         "vo_sigma_pct": vo_sigma_pct,
         "vo_penalty": vo_penalty,
+        "vo_extrapolated": vo_factor > 1.0,
+        "vo_extrapolation_factor": vo_factor,
+        "vo_speed_range": models["vo"].speed_range,
         "vr_delta_pct": vr_delta_pct,
         "vr_sigma_pct": vr_sigma_pct,
         "vr_penalty": vr_penalty,
+        "vr_extrapolated": vr_factor > 1.0,
+        "vr_extrapolation_factor": vr_factor,
+        "vr_speed_range": models["vr"].speed_range,
         "score": overall_score,
         "gct_needs_improvement": gct_needs_improvement,
         "vo_needs_improvement": vo_needs_improvement,
@@ -279,7 +355,10 @@ def score_observation(
     if cadence_exp is not None and obs.get("cadence") is not None:
         cadence_actual = obs["cadence"]
         cadence_delta_pct = ((cadence_actual - cadence_exp) / cadence_exp) * 100.0
-        cadence_sigma_pct = _sigma_pct("cadence", models["cadence"], cadence_exp)
+        cadence_factor = _extrapolation_factor(models["cadence"], speed_mps)
+        cadence_sigma_pct = _inflate(
+            _sigma_pct("cadence", models["cadence"], cadence_exp), cadence_factor
+        )
         cadence_penalty = _compute_penalty(
             "cadence", cadence_delta_pct, cadence_sigma_pct
         )
@@ -288,6 +367,9 @@ def score_observation(
         result["cadence_sigma_pct"] = cadence_sigma_pct
         result["cadence_penalty"] = cadence_penalty
         result["cadence_needs_improvement"] = cadence_penalty > 20.0
+        result["cadence_extrapolated"] = cadence_factor > 1.0
+        result["cadence_extrapolation_factor"] = cadence_factor
+        result["cadence_speed_range"] = models["cadence"].speed_range
 
     return result
 

@@ -14,6 +14,12 @@ from garmin_mcp.form_baseline.split_filter import (
 )
 from garmin_mcp.form_baseline.utils import drop_outliers
 
+# ``model_type`` persisted for GCT baselines fitted in the GCT-on-speed
+# direction (#1088). Rows written before that fix carry the legacy value
+# ``"power"`` and are systematically too demanding at fast paces; the value is
+# provenance only -- the loader reads the same columns either way.
+GCT_MODEL_TYPE = "power_gct"
+
 
 @dataclass
 class GCTPowerModel:
@@ -22,6 +28,13 @@ class GCTPowerModel:
 
     In log-log space: log(v) = alpha + d * log(GCT)
     where alpha = log(c) and d < 0 for monotonicity.
+
+    The stored parameterization is speed-on-GCT, but the fit itself is done in
+    the direction the model is actually *used* -- GCT predicted from speed --
+    and converted back (see :func:`fit_gct_power`). ``rmse`` is kept in
+    log-speed space so that ``rmse / abs(d)`` remains the residual sigma in
+    log-GCT space, which is what :func:`~garmin_mcp.form_baseline.scorer`
+    turns into a percentage error.
     """
 
     alpha: float  # log(c) - intercept in log-log space
@@ -94,6 +107,25 @@ def fit_gct_power(df: pd.DataFrame, fallback_ransac: bool = True) -> GCTPowerMod
     """
     Train GCT power law model using robust regression.
 
+    The model is always *used* to predict GCT from speed, so the fit minimizes
+    error in log-GCT: ``log(gct) = a_g + k * log(v)``. Fitting the other way
+    round (log-speed on log-GCT) and inverting it algebraically -- which this
+    function used to do -- suffers regression attenuation: the inverted slope
+    is ``slope_yx / r**2``, so the implied GCT-vs-speed curve is always steeper
+    than the data supports, and increasingly so the narrower the training speed
+    range. That made expected GCT far too short at fast paces (#1088: expected
+    233.6 ms vs an empirical 248 ms at 2.70 m/s, scoring a normal run 2 stars).
+
+    The fitted coefficients are converted back to the stored speed-on-GCT
+    parameterization so that persistence, ``predict``/``predict_inverse`` and
+    the ``coef_d`` trend comparison are unchanged:
+
+        log(gct) = a_g + k * log(v)   <=>   log(v) = alpha + d * log(gct)
+        d = 1 / k,  alpha = -a_g / k
+
+    ``rmse`` is likewise stored in log-speed space (``sigma_gct * abs(d)``) so
+    that the scorer's ``rmse / abs(d)`` keeps yielding the log-GCT sigma.
+
     Args:
         df: DataFrame with columns ['gct_ms', 'speed_mps']
         fallback_ransac: Use RANSAC if Huber fails monotonicity check
@@ -113,38 +145,43 @@ def fit_gct_power(df: pd.DataFrame, fallback_ransac: bool = True) -> GCTPowerMod
             f"Insufficient data after outlier removal: {len(df_clean)} samples"
         )
 
-    # Log-log transformation
-    x_log = np.log(df_clean["gct_ms"].values).reshape(-1, 1)
-    y_log = np.log(df_clean["speed_mps"].values)
+    # Log-log transformation, fitted in the prediction direction:
+    # x = log(speed), y = log(gct)
+    x_log = np.log(df_clean["speed_mps"].values).reshape(-1, 1)
+    y_log = np.log(df_clean["gct_ms"].values)
 
     # Try Huber regression first (robust to outliers)
     huber = HuberRegressor()
     huber.fit(x_log, y_log)
-    alpha = huber.intercept_
-    d = huber.coef_[0]
+    a_g = huber.intercept_
+    k = huber.coef_[0]
 
-    # Check monotonicity (d < 0 expected: faster speed -> shorter GCT)
-    if d >= 0:
+    # Check monotonicity (k < 0 expected: faster speed -> shorter GCT)
+    if k >= 0:
         if not fallback_ransac:
-            raise ValueError(f"Non-monotonic GCT model: d={d:.3f} >= 0")
+            raise ValueError(f"Non-monotonic GCT model: k={k:.3f} >= 0")
 
         # Fallback to RANSAC
         ransac = RANSACRegressor(min_samples=max(3, int(0.8 * len(df_clean))))
         ransac.fit(x_log, y_log)
-        alpha = ransac.estimator_.intercept_
-        d = ransac.estimator_.coef_[0]
+        a_g = ransac.estimator_.intercept_
+        k = ransac.estimator_.coef_[0]
 
-        if d >= 0:
-            raise ValueError(f"RANSAC failed to find monotonic model: d={d:.3f} >= 0")
+        if k >= 0:
+            raise ValueError(f"RANSAC failed to find monotonic model: k={k:.3f} >= 0")
 
-    # Calculate RMSE
-    y_pred = alpha + d * x_log.flatten()
-    rmse = np.sqrt(np.mean((y_log - y_pred) ** 2))
+    # RMSE of the fit, in log-GCT space
+    y_pred = a_g + k * x_log.flatten()
+    sigma_gct = np.sqrt(np.mean((y_log - y_pred) ** 2))
+
+    # Convert to the stored speed-on-GCT parameterization
+    d = 1.0 / k
+    alpha = -a_g / k
 
     return GCTPowerModel(
         alpha=float(alpha),
         d=float(d),
-        rmse=float(rmse),
+        rmse=float(sigma_gct * abs(d)),
         n_samples=len(df_clean),
         speed_range=(
             float(df_clean["speed_mps"].min()),
@@ -552,7 +589,7 @@ def train_form_baselines(
                     user_id,
                     condition_group,
                     "gct",
-                    "power",
+                    GCT_MODEL_TYPE,
                     gct_model.alpha,
                     gct_model.d,
                     None,

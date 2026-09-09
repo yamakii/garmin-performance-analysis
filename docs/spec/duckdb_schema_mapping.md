@@ -513,10 +513,12 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 | speed_range_max | FLOAT |
 <!-- END GENERATED: schema:form_baseline_history -->
 
-**Units & notes**: `user_id` defaults to `'default'`, `condition_group` to `'flat_road'`; `metric` is `gct` / `vo` / `vr`; `model_type` distinguishes power vs linear. GCT power-model coefficients `coef_alpha` (α, `log(v)` intercept) and `coef_d` (exponent, d < 0); VO/VR linear-model `coef_a` (intercept) and `coef_b` (slope). `period_start`/`period_end` bound the (inclusive) training window; `n_samples` is the sample count; `rmse` the error; `speed_range_min`/`speed_range_max` (m/s). `power_a`/`power_b` are the speed-from-power coefficients and `power_rmse` its error.
+**Units & notes**: `user_id` defaults to `'default'`, `condition_group` to `'flat_road'`; `metric` is `gct` / `vo` / `vr`; `model_type` distinguishes power vs linear. GCT power-model coefficients `coef_alpha` (α, `log(v)` intercept) and `coef_d` (exponent, d < 0); VO/VR linear-model `coef_a` (intercept) and `coef_b` (slope). `period_start`/`period_end` bound the (inclusive) training window; `n_samples` is the sample count; `rmse` the error; `speed_range_min`/`speed_range_max` (m/s) — the band the model was trained on; predictions outside it inflate the metric's sigma so the star rating stays conservative, and the evaluation carries `extrapolated: true` (#1088). `power_a`/`power_b` are the speed-from-power coefficients and `power_rmse` its error.
+
+`model_type` values: `power_gct` (GCT, fitted in the prediction direction), `power` (legacy GCT rows written before #1088, systematically too demanding at fast paces — retrain to replace), `linear` (VO/VR/cadence), `linear_flat` (slope-suppressed linear, see #873).
 
 ### Model Types
-- **GCT**: power regression `v = exp((log(GCT) - α) / d)`, constrained `d < 0` so faster pace → shorter GCT. Trained with Huber regression + IQR outlier removal.
+- **GCT**: power law stored as `log(v) = α + d·log(GCT)` (so `GCT = exp((log(v) - α) / d)`), constrained `d < 0` so faster pace → shorter GCT. **Fitted in the prediction direction** — Huber on `log(GCT) = a_g + k·log(v)` + IQR outlier removal — then converted (`d = 1/k`, `α = -a_g/k`). Fitting `log(v)` on `log(GCT)` and inverting it is attenuated (the inverted slope is `slope_yx / r²`), which made expected GCT far too short at fast paces (#1088). `rmse` is stored in log-speed space, so `rmse / |d|` is the residual sigma in log-GCT space.
 - **VO / VR**: linear regression `y = a + b·v` (Huber + IQR outlier removal).
 - **Power**: speed-from-power relationship (`power_a`, `power_b`) used for power-efficiency scoring in `form_evaluations`.
 

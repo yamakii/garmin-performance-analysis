@@ -46,7 +46,10 @@ def evaluate_and_store(
         Evaluation dictionary containing:
             - activity_id: int
             - gct: {actual, expected, delta_pct, star_rating, score,
-                    needs_improvement, evaluation_text}
+                    needs_improvement, extrapolated, evaluation_text}
+                    ``extrapolated`` is True when the activity's pace lies
+                    outside the speed range the baseline was trained on, in
+                    which case the expected value is indicative only (#1088)
             - vo: {same structure as gct}
             - vr: {same structure as gct}
             - cadence: pace-dependent {actual, expected, delta_pct, star_rating,
@@ -110,6 +113,8 @@ def evaluate_and_store(
         star_rating=gct_rating["star_rating"],
         score=gct_rating["score"],
         sigma_pct=score_result["gct_sigma_pct"],
+        speed_range=score_result.get("gct_speed_range"),
+        extrapolated=score_result.get("gct_extrapolated", False),
     )
 
     vo_text = generate_evaluation_text(
@@ -121,6 +126,8 @@ def evaluate_and_store(
         star_rating=vo_rating["star_rating"],
         score=vo_rating["score"],
         sigma_pct=score_result["vo_sigma_pct"],
+        speed_range=score_result.get("vo_speed_range"),
+        extrapolated=score_result.get("vo_extrapolated", False),
     )
 
     vr_text = generate_evaluation_text(
@@ -132,6 +139,8 @@ def evaluate_and_store(
         star_rating=vr_rating["star_rating"],
         score=vr_rating["score"],
         sigma_pct=score_result["vr_sigma_pct"],
+        speed_range=score_result.get("vr_speed_range"),
+        extrapolated=score_result.get("vr_extrapolated", False),
     )
 
     # Compute overall score (average of 3 metrics)
@@ -157,6 +166,8 @@ def evaluate_and_store(
             star_rating=cadence_rating["star_rating"],
             score=cadence_rating["score"],
             sigma_pct=score_result["cadence_sigma_pct"],
+            speed_range=score_result.get("cadence_speed_range"),
+            extrapolated=score_result.get("cadence_extrapolated", False),
         )
         cadence_eval = {
             "actual": score_result["cadence_actual"],
@@ -165,6 +176,7 @@ def evaluate_and_store(
             "star_rating": cadence_rating["star_rating"],
             "score": cadence_rating["score"],
             "needs_improvement": score_result["cadence_needs_improvement"],
+            "extrapolated": score_result.get("cadence_extrapolated", False),
             "evaluation_text": cadence_text,
         }
     else:
@@ -178,6 +190,7 @@ def evaluate_and_store(
             "star_rating": None,
             "score": None,
             "needs_improvement": splits_data["cadence"] < 180.0,
+            "extrapolated": False,
             "evaluation_text": (
                 "ケイデンスベースライン未学習のため固定180spm基準で判定"
             ),
@@ -193,6 +206,7 @@ def evaluate_and_store(
             "star_rating": gct_rating["star_rating"],
             "score": gct_rating["score"],
             "needs_improvement": score_result["gct_needs_improvement"],
+            "extrapolated": score_result.get("gct_extrapolated", False),
             "evaluation_text": gct_text,
         },
         "vo": {
@@ -204,6 +218,7 @@ def evaluate_and_store(
             "star_rating": vo_rating["star_rating"],
             "score": vo_rating["score"],
             "needs_improvement": score_result["vo_needs_improvement"],
+            "extrapolated": score_result.get("vo_extrapolated", False),
             "evaluation_text": vo_text,
         },
         "vr": {
@@ -213,6 +228,7 @@ def evaluate_and_store(
             "star_rating": vr_rating["star_rating"],
             "score": vr_rating["score"],
             "needs_improvement": score_result["vr_needs_improvement"],
+            "extrapolated": score_result.get("vr_extrapolated", False),
             "evaluation_text": vr_text,
         },
         "cadence": cadence_eval,

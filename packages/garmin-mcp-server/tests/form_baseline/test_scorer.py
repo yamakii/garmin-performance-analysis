@@ -6,6 +6,7 @@ from garmin_mcp.form_baseline.scorer import (
     IMPROVEMENT_FACTOR,
     _compute_consistency_adjustment,
     _compute_penalty,
+    _extrapolation_factor,
     _sigma_pct,
     compute_star_rating,
     score_observation,
@@ -529,3 +530,121 @@ class TestConsistencyAdjustment:
         # VO improved -10%, VR degraded +6% = 16% spread (> 15)
         adj = _compute_consistency_adjustment(-5.0, -10.0, 6.0)
         assert adj == -10.0
+
+
+@pytest.mark.unit
+class TestExtrapolationGuard:
+    """Predicting outside a baseline's trained speed range (#1088)."""
+
+    def test_extrapolation_factor_inside_range_is_one(self) -> None:
+        """A speed within the trained range gets no sigma inflation."""
+        model = LinearModel(
+            a=10.0, b=-1.0, rmse=0.2, n_samples=100, speed_range=(2.0, 2.5)
+        )
+
+        assert _extrapolation_factor(model, 2.2) == 1.0
+
+    def test_extrapolation_factor_above_range_scales_with_distance(self) -> None:
+        """The real 2026-09-09 case inflates sigma by ~1.42x.
+
+        speed_range 1.9248-2.5476 m/s (the midsummer baseline), observed
+        2.7025 m/s: 1 + ln(2.7025/2.5476) / (0.5 * ln(2.5476/1.9248)).
+        """
+        model = GCTPowerModel(
+            alpha=10.49,
+            d=-1.741,
+            rmse=0.0395,
+            n_samples=154,
+            speed_range=(1.9248, 2.5476),
+        )
+
+        assert abs(_extrapolation_factor(model, 2.7025) - 1.42) < 0.03
+
+    def test_extrapolation_factor_below_range(self) -> None:
+        """Slower than anything trained on also inflates sigma."""
+        model = LinearModel(
+            a=10.0, b=-1.0, rmse=0.2, n_samples=100, speed_range=(2.0, 2.5)
+        )
+
+        assert _extrapolation_factor(model, 1.8) > 1.0
+
+    def test_extrapolation_factor_degenerate_range_returns_one(self) -> None:
+        """A zero-width speed range cannot normalize a distance -> no inflation."""
+        model = LinearModel(
+            a=10.0, b=-1.0, rmse=0.2, n_samples=100, speed_range=(2.5, 2.5)
+        )
+
+        assert _extrapolation_factor(model, 3.0) == 1.0
+
+    @staticmethod
+    def _narrowed(models: dict) -> dict:
+        """Same coefficients, but trained only up to 4.0 m/s (obs is 4.1667)."""
+        return {
+            "gct": GCTPowerModel(
+                alpha=models["gct"].alpha,
+                d=models["gct"].d,
+                rmse=models["gct"].rmse,
+                n_samples=models["gct"].n_samples,
+                speed_range=(3.0, 4.0),
+            ),
+            "vo": LinearModel(
+                a=models["vo"].a,
+                b=models["vo"].b,
+                rmse=models["vo"].rmse,
+                n_samples=models["vo"].n_samples,
+                speed_range=(3.0, 4.0),
+            ),
+            "vr": LinearModel(
+                a=models["vr"].a,
+                b=models["vr"].b,
+                rmse=models["vr"].rmse,
+                n_samples=models["vr"].n_samples,
+                speed_range=(3.0, 4.0),
+            ),
+        }
+
+    @staticmethod
+    def _degraded_obs(models: dict, pace_s_per_km: float = 240.0) -> dict:
+        speed_mps = 1000.0 / pace_s_per_km
+        return {
+            "pace_s_per_km": pace_s_per_km,
+            "gct_ms": models["gct"].predict_inverse(speed_mps) * 1.03,
+            "vo_cm": models["vo"].predict(speed_mps) * 1.03,
+            "vr_pct": models["vr"].predict(speed_mps) * 1.03,
+        }
+
+    def test_score_observation_flags_extrapolation(self, sample_models: dict) -> None:
+        """An out-of-range pace is reported as extrapolated on every metric."""
+        narrowed = self._narrowed(sample_models)
+
+        result = score_observation(narrowed, self._degraded_obs(narrowed))
+
+        assert result["gct_extrapolated"] is True
+        assert result["vo_extrapolated"] is True
+        assert result["vr_extrapolated"] is True
+        assert result["gct_extrapolation_factor"] > 1.0
+        assert result["gct_speed_range"] == (3.0, 4.0)
+
+    def test_score_observation_extrapolation_softens_star(
+        self, sample_models: dict
+    ) -> None:
+        """The same deviation scores no worse when it is extrapolated."""
+        narrowed = self._narrowed(sample_models)
+        obs = self._degraded_obs(sample_models)
+
+        in_range = score_observation(sample_models, obs)
+        out_of_range = score_observation(narrowed, obs)
+
+        # Same expectation curve -> identical deviation, only sigma differs
+        assert abs(in_range["gct_delta_pct"] - out_of_range["gct_delta_pct"]) < 1e-9
+        assert in_range["gct_extrapolated"] is False
+        assert out_of_range["gct_extrapolated"] is True
+        assert out_of_range["gct_penalty"] < in_range["gct_penalty"]
+
+        in_star = compute_star_rating(
+            penalty=in_range["gct_penalty"], delta_pct=in_range["gct_delta_pct"]
+        )
+        out_star = compute_star_rating(
+            penalty=out_of_range["gct_penalty"], delta_pct=out_of_range["gct_delta_pct"]
+        )
+        assert out_star["score"] >= in_star["score"]
