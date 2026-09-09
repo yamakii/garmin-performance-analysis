@@ -5,7 +5,6 @@ import {
   formatDate,
   formatDistanceKmValue,
   formatDuration,
-  formatPace,
   formatPaceValue,
   PACE_UNIT,
 } from "../utils/format";
@@ -22,7 +21,8 @@ const CONTOUR_PATTERN = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org
  * Editorial Sport report hero (Issue #214): display headline, inline date +
  * gold star rating, and a rhythmic strip of big condensed KPI numerals with
  * small units — like a record table in a sports yearbook. Physiology
- * metrics (VO2max / lactate threshold) appear as a quiet sub-row.
+ * metrics (VO2max / lactate threshold) appear as a quiet sub-row; the
+ * threshold shown there is the configured one, not Garmin's estimate (#1098).
  */
 export default function HeroHeader({
   detail,
@@ -60,16 +60,23 @@ export default function HeroHeader({
   if (detail.vo2_max?.value != null) {
     subMetrics.push({ label: "VO2 Max", value: detail.vo2_max.value.toFixed(1) });
   }
-  const lt = detail.lactate_threshold;
-  if (lt && (lt.heart_rate != null || lt.speed_mps != null)) {
-    const parts: string[] = [];
-    if (lt.heart_rate != null) {
-      parts.push(formatBpm(lt.heart_rate));
-    }
-    if (lt.speed_mps != null && lt.speed_mps > 0) {
-      parts.push(formatPace(1000 / lt.speed_mps));
-    }
-    subMetrics.push({ label: "乳酸閾値", value: parts.join(" / ") });
+  // The threshold worth showing is the one configured on the watch — the value
+  // the zones, the prescriptions and the athlete all run to. The zone table
+  // records it as the lower bound of zone 5, which starts at 100% LTHR.
+  //
+  // Garmin's own auto-detected estimate in `lactate_threshold` is deliberately
+  // NOT shown: it disagrees with the configured value (164 vs 170), it can sit
+  // frozen for months (date_hr stuck at 2026-07-11), and displaying it next to
+  // a zone table built from 170 leaves the reader unable to tell which number
+  // is their threshold (#1098).
+  const configuredLthr = detail.hr_zones.find(
+    (zone) => zone.zone_number === 5,
+  )?.zone_low_boundary;
+  if (configuredLthr != null) {
+    subMetrics.push({
+      label: "乳酸閾値（設定値）",
+      value: formatBpm(configuredLthr),
+    });
   }
 
   return (
