@@ -1,8 +1,12 @@
 """Pytest configuration and fixtures for test data.
 
 Shared fixtures for all tests. Specialized fixtures live in:
-- tests/database/conftest.py (DuckDB-specific)
+- tests/database/conftest.py (DuckDB sample data)
 - tests/handlers/conftest.py (Handler mock fixtures)
+
+Layout (#1068): ``tests/`` mirrors ``src/garmin_mcp/`` — one directory per
+src package, every directory a package, file names describe the subject.
+The unit / integration distinction is carried by markers, not directories.
 """
 
 # Cap BLAS/OpenMP thread pools BEFORE any module (numpy/scipy/duckdb) is
@@ -19,6 +23,7 @@ for _thread_env_var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THRE
     os.environ.setdefault(_thread_env_var, "1")
 
 import json
+import shutil
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
@@ -28,7 +33,30 @@ from unittest.mock import MagicMock
 import duckdb
 import pytest
 
+from tests.generate_verification_db import generate_verification_db
 from tests.support.schema import init_schema
+
+
+@pytest.fixture(scope="session")
+def _verification_db_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Generate the verification DB once per session (per xdist worker).
+
+    Uses generate_verification_db() to create the DB via the production code
+    path. Every test copies the template (``verification_db_path``), so the
+    template itself is never mutated (#1062).
+    """
+    tmp_dir = tmp_path_factory.mktemp("verification_db_template")
+    db_path = tmp_dir / "verification.duckdb"
+    generate_verification_db(output_path=db_path)
+    return db_path
+
+
+@pytest.fixture
+def verification_db_path(_verification_db_template: Path, tmp_path: Path) -> Path:
+    """Provide an isolated copy of the verification DB for each test."""
+    dest = tmp_path / "verification.duckdb"
+    shutil.copy2(_verification_db_template, dest)
+    return dest
 
 
 @pytest.fixture(autouse=True)

@@ -27,7 +27,9 @@ from garmin_mcp.tools.registry import (
     to_mcp_input_schema,
 )
 
-_GOLDEN_PATH = Path(__file__).parent / "snapshots" / "all_tools_golden.json"
+_GOLDEN_PATH = (
+    Path(__file__).resolve().parents[1] / "snapshots" / "all_tools_golden.json"
+)
 
 # Tools allowed to keep an ``input_schema_override`` (documented exceptions).
 # ``extract_insights`` keeps one because its params model carries an internal
