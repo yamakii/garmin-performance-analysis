@@ -146,6 +146,10 @@ within a day, and the 32 GB container (#1011) had already removed the SIGKILL
 problem. Policy text for Claude sessions: `.claude/rules/dev/maintenance-policy.md`
 § Sandbox freeze.
 
+Exception (1) used so far: #1078 — the same test suite took 150 s and 44 s one
+minute apart with `/proc/pressure/io` at ~80 % while idle; `run.sh` now mounts
+`/tmp` as tmpfs (8 GiB cap) so per-test DuckDB files never wait on the host disk.
+
 ## Ignoring an advisory
 
 Only when the vulnerable code path is provably unused. Add
