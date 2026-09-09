@@ -813,7 +813,7 @@ Get the canonical (latest batch) prescribed sessions for a week or a single day.
 
 CLI: `garmin-db plan update-status`
 
-Update one prescription's status and optionally its Garmin workout / schedule ids and linked activity id, refreshing updated_at. Only the ids you pass are written, so registering a Garmin workout and later linking the actual activity are independent updates. Returns {updated: false} when the prescription_id does not exist.
+Update one prescription's status and optionally its Garmin workout / schedule ids, linked activity id and registered bookend minutes, refreshing updated_at. Only the values you pass are written, so registering a Garmin workout and later linking the actual activity are independent updates. Returns {updated: false} when the prescription_id does not exist.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -822,12 +822,13 @@ Update one prescription's status and optionally its Garmin workout / schedule id
 | `garmin_workout_id` | integer | optional | Garmin workout id to record (optional). |
 | `garmin_schedule_id` | integer | optional | Garmin schedule id to record (optional). |
 | `actual_activity_id` | integer | optional | Linked actual activity id to record (optional). |
+| `registered_bookend_minutes` | integer | optional | Warmup + cooldown minutes the registered workout actually carries (optional). schedule_custom_workout returns it as bookend_minutes — pass it through when linking a hand-built quality workout so reconcile_prescriptions judges against the real bookends instead of the standard 15min. schedule_weekly_prescriptions records it on its own. |
 
 ### `reconcile_prescriptions`
 
 CLI: `garmin-db plan reconcile`
 
-Deterministically link prescribed sessions in a date range to the activities that actually happened, so adherence needs no LLM. For each open (prescribed / registered) latest-batch row with a past date: an activity on that date within tolerance (0.85x-1.30x of target_km / target_minutes, with quality sessions (threshold/tempo/strides) allowed the 15min of warmup/cooldown their registered workout adds) marks it done, any other activity marks it replaced (a rest day with a run is always replaced), and no activity marks it skipped (rest with no activity is done). Future dates and superseded batches are never touched. Returns {updated, done, replaced, skipped}.
+Deterministically link prescribed sessions in a date range to the activities that actually happened, so adherence needs no LLM. For each open (prescribed / registered) latest-batch row with a past date: an activity on that date within tolerance (0.85x-1.30x of target_km / target_minutes, with quality sessions (threshold/tempo/strides) allowed the warmup/cooldown their registered workout adds — the row's registered_bookend_minutes when recorded, else the standard 15min) marks it done, any other activity marks it replaced (a rest day with a run is always replaced), and no activity marks it skipped (rest with no activity is done). Future dates and superseded batches are never touched. Returns {updated, done, replaced, skipped}.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

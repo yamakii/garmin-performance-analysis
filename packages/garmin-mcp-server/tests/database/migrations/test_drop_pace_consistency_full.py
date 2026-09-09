@@ -83,5 +83,5 @@ def test_drop_pace_consistency_full_registered_as_v22() -> None:
         "drop_pace_consistency_full",
         _wrap_drop_pace_consistency_full,
     ) in MIGRATIONS
-    # Head moved to 25 when the prescription rating column landed (#1021).
-    assert max(version for version, _, _ in MIGRATIONS) == 25
+    # Head moved to 26 when registered_bookend_minutes landed (#1087).
+    assert max(version for version, _, _ in MIGRATIONS) == 26

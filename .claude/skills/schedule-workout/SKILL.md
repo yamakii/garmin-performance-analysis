@@ -55,8 +55,8 @@ ToolSearch(query="select:mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db
 1. 同日に **Garmin Coach / 手動の予定**がある場合は、上書きせずユーザーに「両方残す / 差し替える」を確認する（[MCP] 同名は自動差し替えなので確認不要）
 2. `recovery_status.recommendation` が `rest` / `easy`、または週次レビューの回復ゲートを満たさない場合は **登録前に一言確認**する（処方どおり登録 / 短縮版に変更 / 見送り）
 3. 問題なければ `schedule_custom_workout(date, title, steps)` を 1 回呼ぶ
-4. 返り値の `workout_id` / `schedule_id` / `replaced_workout_ids` / `cleanup` を確認する（`cleanup` は登録前に自動実行された掃除の結果。`error` や `failed_delete` が空でなければ報告に添える）
-5. 処方行がある場合は `update_prescription_status(prescription_id, status="registered", garmin_workout_id=<workout_id>, garmin_schedule_id=<schedule_id>)` を呼び、台帳を Garmin と一致させる（これを飛ばすと `/daily-checkin` や月次ビューが「未登録」と表示し続ける）
+4. 返り値の `workout_id` / `schedule_id` / `replaced_workout_ids` / `cleanup` / `bookend_minutes` を確認する（`cleanup` は登録前に自動実行された掃除の結果。`error` や `failed_delete` が空でなければ報告に添える）
+5. 処方行がある場合は `update_prescription_status(prescription_id, status="registered", garmin_workout_id=<workout_id>, garmin_schedule_id=<schedule_id>, registered_bookend_minutes=<bookend_minutes>)` を呼び、台帳を Garmin と一致させる（これを飛ばすと `/daily-checkin` や月次ビューが「未登録」と表示し続ける）。**`registered_bookend_minutes` は返り値の `bookend_minutes` をそのまま渡す**: 手組みの質練は前後の長さが標準形（W/U 10分＋C/D 5分＝15分）と違うことがあり、渡さないと `reconcile_prescriptions` が定数 15 分で判定して処方どおり走っても `replaced` に倒れる余地が残る（#1087）
 6. ユーザーに「日付・タイトル・本体の量・HR 上限・回復ゲートの結果」を短く報告する。`cleanup` で解除・削除された項目があれば 1 行添える
 
 ## Step W: 週まとめ登録（`week [YYYY-MM-DD]`）

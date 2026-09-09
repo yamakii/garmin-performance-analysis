@@ -46,6 +46,7 @@ from garmin_mcp.analysis.prescription_shape import (
     BOOKENDED_TYPES,
     COOLDOWN_MINUTES,
     WARMUP_MINUTES,
+    bookend_minutes_from_steps,
 )
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.tools.registry import ToolDef
@@ -893,6 +894,9 @@ def _schedule_custom_workout(
             templates=_library_without(templates, cleanup.get("deleted_workout_ids")),
         )
         result["cleanup"] = cleanup
+        # Hand-built steps are exactly the case the constant cannot describe, so
+        # hand the caller the real figure to record on the row (Issue #1087).
+        result["bookend_minutes"] = bookend_minutes_from_steps(p.steps)
         return result
     except Exception as e:  # noqa: BLE001
         logger.error(f"schedule_custom_workout failed: {e}")
@@ -982,6 +986,7 @@ def _schedule_weekly_prescriptions(
                 status="registered",
                 garmin_workout_id=outcome["workout_id"],
                 garmin_schedule_id=outcome["schedule_id"],
+                registered_bookend_minutes=bookend_minutes_from_steps(item["steps"]),
                 db_path=str(reader.db_path),
             )
             registered.append(

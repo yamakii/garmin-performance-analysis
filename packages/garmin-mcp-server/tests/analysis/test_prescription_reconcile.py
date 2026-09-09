@@ -270,3 +270,66 @@ def test_reconcile_ignores_superseded_batches(db_path: str) -> None:
     assert result["updated"] == 1
     assert statuses["easy 2026-09-09"] == ("prescribed", None)
     assert statuses["threshold 2026-09-10"] == ("skipped", None)
+
+
+def _record_bookends(db_path: str, title: str, minutes: int) -> None:
+    """Record registered_bookend_minutes on the seeded row named ``title``."""
+    from garmin_mcp.database.inserters.plan import update_prescription_status
+
+    with get_connection(db_path) as conn:
+        row = conn.execute(
+            "SELECT prescription_id FROM weekly_prescriptions WHERE title = ?",
+            [title],
+        ).fetchone()
+    assert row is not None
+    update_prescription_status(
+        prescription_id=int(row[0]),
+        status="registered",
+        registered_bookend_minutes=minutes,
+        db_path=db_path,
+    )
+
+
+@pytest.mark.unit
+def test_reconcile_uses_recorded_bookends_over_the_constant(db_path: str) -> None:
+    """A hand-built tempo is judged against the bookends it really carries (#1087).
+
+    40min body + the recorded 25min of bookends expects 65min (band 55.3-84.5),
+    so an 80min session is done. Under the constant 15min the expectation would
+    be 55min (band 46.8-71.5) and the same run would read as replaced — see the
+    paired test below.
+    """
+    insert_weekly_prescriptions(
+        WEEK_START,
+        [_prescription("2026-09-09", "tempo", target_minutes=40)],
+        db_path=db_path,
+    )
+    _record_bookends(db_path, "tempo 2026-09-09", 25)
+    _add_activity(db_path, 555, "2026-09-09", 12.0, 80.0)
+
+    result = reconcile_prescriptions(
+        "2026-09-07", "2026-09-13", today=TODAY, db_path=db_path
+    )
+
+    assert result["done"] == 1
+    assert _statuses(db_path)["tempo 2026-09-09"] == ("done", 555)
+
+
+@pytest.mark.unit
+def test_reconcile_falls_back_to_the_constant_without_recorded_bookends(
+    db_path: str,
+) -> None:
+    """A row with no recorded bookends keeps the pre-#1087 behaviour."""
+    insert_weekly_prescriptions(
+        WEEK_START,
+        [_prescription("2026-09-09", "tempo", target_minutes=40)],
+        db_path=db_path,
+    )
+    _add_activity(db_path, 666, "2026-09-09", 12.0, 80.0)
+
+    result = reconcile_prescriptions(
+        "2026-09-07", "2026-09-13", today=TODAY, db_path=db_path
+    )
+
+    assert result["replaced"] == 1
+    assert _statuses(db_path)["tempo 2026-09-09"] == ("replaced", 666)

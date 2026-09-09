@@ -16,6 +16,8 @@ their reconciliation band is widened by exactly those minutes.
 
 from __future__ import annotations
 
+from typing import Any
+
 #: Minutes of untargeted warmup prepended to a bookended session.
 WARMUP_MINUTES: int = 10
 
@@ -40,3 +42,44 @@ def bookend_minutes(session_type: str | None) -> int:
     if session_type in BOOKENDED_TYPES:
         return WARMUP_MINUTES + COOLDOWN_MINUTES
     return 0
+
+
+#: Step types that bookend a session rather than being part of its body.
+_BOOKEND_STEP_TYPES: frozenset[str] = frozenset({"warmup", "cooldown"})
+
+
+def bookend_minutes_from_steps(steps: list[dict[str, Any]] | None) -> int | None:
+    """Return the warmup/cooldown minutes carried by a concrete steps array.
+
+    :func:`bookend_minutes` answers the same question from the session type
+    alone, which is right only for the workout
+    ``tools.workout_scheduling.build_steps_from_prescription`` builds. A
+    hand-built registration — a buildup with a different HR zone per kilometre
+    cannot be expressed as one body step — may carry different bookends, and
+    the 2026-09-09 tempo did: a 10-minute cooldown, so 20 minutes rather than
+    the constant 15 (Issue #1087). Recording this on the row lets the
+    reconciler judge against what was actually registered.
+
+    Only top-level ``warmup`` / ``cooldown`` steps count, and only their time:
+    a distance-based bookend has no minutes to add, and a repeat group is body
+    work whatever it contains.
+
+    Args:
+        steps: The generic steps array a workout was registered from.
+
+    Returns:
+        Whole minutes of warmup + cooldown, or ``None`` when ``steps`` is empty
+        or missing — the caller then has nothing to record and the constant
+        stays in charge.
+    """
+    if not steps:
+        return None
+    total_seconds = 0.0
+    for step in steps:
+        if str(step.get("step_type", "")) not in _BOOKEND_STEP_TYPES:
+            continue
+        if "duration_minutes" in step:
+            total_seconds += float(step["duration_minutes"]) * 60
+        elif "duration_seconds" in step:
+            total_seconds += float(step["duration_seconds"])
+    return int(round(total_seconds / 60))

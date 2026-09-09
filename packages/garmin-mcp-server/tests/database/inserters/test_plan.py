@@ -466,3 +466,46 @@ def test_update_prescription_status_rejects_unknown_status() -> None:
     """An unknown lifecycle state raises before touching the database."""
     with pytest.raises(ValueError, match="status must be one of"):
         update_prescription_status(1, "maybe", db_path="unused.duckdb")
+
+
+@pytest.mark.unit
+def test_update_prescription_status_records_registered_bookend_minutes(
+    initialized_db_path: Path,
+) -> None:
+    """The registered bookends are stored, and omitting them keeps the value (#1087).
+
+    The column starts null so a row that was never registered falls back to the
+    constant in reconcile_prescriptions.
+    """
+    db_path = str(initialized_db_path)
+    saved = insert_weekly_prescriptions(
+        "2026-09-07", [_prescription("2026-09-10", "tempo")], db_path=db_path
+    )
+    prescription_id = saved["prescription_ids"][0]
+
+    def _stored() -> Any:
+        with get_connection(db_path) as conn:
+            row = conn.execute(
+                "SELECT registered_bookend_minutes FROM weekly_prescriptions "
+                "WHERE prescription_id = ?",
+                [prescription_id],
+            ).fetchone()
+        assert row is not None
+        return row[0]
+
+    assert _stored() is None
+
+    update_prescription_status(
+        prescription_id,
+        "registered",
+        garmin_workout_id=123,
+        registered_bookend_minutes=20,
+        db_path=db_path,
+    )
+    assert _stored() == 20
+
+    # A later, unrelated update must not wipe what registration recorded.
+    update_prescription_status(
+        prescription_id, "done", actual_activity_id=999, db_path=db_path
+    )
+    assert _stored() == 20
