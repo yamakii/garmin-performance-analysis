@@ -141,20 +141,33 @@ def load_models_from_db(
                 WHERE user_id = ?
                   AND condition_group = ?
                   AND period_start <= ?
+                  -- The power-efficiency baseline is trained on its own window
+                  -- (period_start can differ by a day) and is loaded elsewhere.
+                  -- Letting it compete here made it win the covering sort and
+                  -- return a row set with no form metrics at all (#1092).
+                  AND metric IN ('gct', 'vo', 'vr', 'cadence')
             ),
             selected AS (
                 SELECT period_start, period_end
                 FROM candidates
-                ORDER BY tier, sort_key DESC, period_end DESC
+                -- (tier, sort_key, period_end, period_start) identifies exactly
+                -- one window, so the pick is deterministic even when two
+                -- windows share a period_end.
+                ORDER BY tier, sort_key DESC, period_end DESC, period_start DESC
                 LIMIT 1
             )
-            SELECT metric, model_type, coef_alpha, coef_d, coef_a, coef_b,
-                   n_samples, rmse, speed_range_min, speed_range_max
-            FROM form_baseline_history
-            WHERE user_id = ?
-              AND condition_group = ?
-              AND period_start = (SELECT period_start FROM selected)
-              AND period_end = (SELECT period_end FROM selected)
+            SELECT f.metric, f.model_type, f.coef_alpha, f.coef_d,
+                   f.coef_a, f.coef_b, f.n_samples, f.rmse,
+                   f.speed_range_min, f.speed_range_max
+            FROM form_baseline_history f
+            -- JOIN, not two scalar subqueries: with ties in the ordering above
+            -- those could resolve to different rows and yield an impossible
+            -- (period_start, period_end) pair, matching nothing (#1092).
+            JOIN selected s
+              ON f.period_start = s.period_start
+             AND f.period_end = s.period_end
+            WHERE f.user_id = ?
+              AND f.condition_group = ?
             """,
             [
                 activity_date,

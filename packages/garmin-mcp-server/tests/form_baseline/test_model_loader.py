@@ -413,3 +413,86 @@ class TestLoadModelsFromDbSelectsLatest:
         result = load_models_from_db(db_path, "2026-09-09")
 
         assert result["gct"].alpha == 9.0  # type: ignore[union-attr]
+
+    def test_ignores_power_window_when_selecting_period(self, tmp_path: Path) -> None:
+        """The power baseline's own window must not drive the form-model pick.
+
+        power is trained on a window whose period_start can differ by a day
+        (2026-08-01 vs 2026-07-31). It used to win the covering sort and leave
+        the loader with no form metrics at all (#1092).
+        """
+        db_path = str(tmp_path / "test.duckdb")
+        conn = duckdb.connect(db_path)
+        _create_baseline_table(conn)
+
+        for metric, kwargs in (
+            ("gct", {"alpha": 13.42}),
+            ("vo", {"a": 6.51, "b": 0.28}),
+            ("vr", {"a": 16.85, "b": -3.25}),
+        ):
+            _insert_baseline_row(
+                conn,
+                metric,
+                "2026-09-30",
+                period_start="2026-07-31",
+                **kwargs,  # type: ignore[arg-type]
+            )
+        _insert_baseline_row(
+            conn, "power", "2026-09-30", period_start="2026-08-01", alpha=99.0
+        )
+
+        conn.close()
+
+        result = load_models_from_db(db_path, "2026-09-09")
+
+        assert set(result.keys()) == {"gct", "vo", "vr"}
+        assert result["gct"].alpha == 13.42  # type: ignore[union-attr]
+
+    def test_returns_consistent_period_pair_with_duplicate_period_end(
+        self, tmp_path: Path
+    ) -> None:
+        """All returned models come from one and the same training window.
+
+        Two windows share period_end 2026-02-28. Resolving period_start and
+        period_end through separate scalar subqueries could pick different
+        rows and match nothing (#1092).
+        """
+        db_path = str(tmp_path / "test.duckdb")
+        conn = duckdb.connect(db_path)
+        _create_baseline_table(conn)
+
+        for metric, kwargs in (
+            ("gct", {"alpha": 1.0}),
+            ("vo", {"a": 1.0, "b": -0.1}),
+            ("vr", {"a": 1.0, "b": -0.1}),
+        ):
+            _insert_baseline_row(
+                conn,
+                metric,
+                "2026-02-28",
+                period_start="2025-12-29",
+                **kwargs,  # type: ignore[arg-type]
+            )
+
+        for metric, kwargs in (
+            ("gct", {"alpha": 2.0}),
+            ("vo", {"a": 2.0, "b": -0.2}),
+            ("vr", {"a": 2.0, "b": -0.2}),
+        ):
+            _insert_baseline_row(
+                conn,
+                metric,
+                "2026-02-28",
+                period_start="2026-01-01",
+                **kwargs,  # type: ignore[arg-type]
+            )
+
+        conn.close()
+
+        result = load_models_from_db(db_path, "2026-02-15")
+
+        assert set(result.keys()) == {"gct", "vo", "vr"}
+        # Every model must come from the same window, not a mix of the two
+        assert result["gct"].alpha == 2.0  # type: ignore[union-attr]
+        assert result["vo"].a == 2.0  # type: ignore[union-attr]
+        assert result["vr"].a == 2.0  # type: ignore[union-attr]
