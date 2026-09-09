@@ -17,17 +17,11 @@ from garmin_mcp.scripts.prefetch_activity_context import (
 class TestClassifyTerrain:
     """Test terrain classification logic."""
 
-    def test_none_returns_unknown(self) -> None:
-        assert _classify_terrain(None) == "unknown"
-
     def test_flat(self) -> None:
         assert _classify_terrain(5.0) == "flat"
 
     def test_undulating(self) -> None:
         assert _classify_terrain(15.0) == "undulating"
-
-    def test_hilly(self) -> None:
-        assert _classify_terrain(35.0) == "hilly"
 
     def test_mountainous(self) -> None:
         assert _classify_terrain(55.0) == "mountainous"

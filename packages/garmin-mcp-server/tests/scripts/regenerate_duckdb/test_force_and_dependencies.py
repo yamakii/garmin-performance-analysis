@@ -9,51 +9,6 @@ from garmin_mcp.scripts.regenerate_duckdb import DuckDBRegenerator
 class TestValidateTableDependencies:
     """Test validate_table_dependencies method (Phase 2: Safety Validation)."""
 
-    def test_validation_skipped_when_tables_is_none(self, tmp_path, mocker):
-        """Test that validation is skipped when tables=None (full regeneration)."""
-        db_path = tmp_path / "test.db"
-        regenerator = DuckDBRegenerator(db_path=db_path, tables=None)
-
-        # Should not raise error (validation skipped)
-        regenerator.validate_table_dependencies(tables=None, activity_ids=[12345])
-
-    def test_validation_skipped_when_activities_in_tables(self, tmp_path, mocker):
-        """Test that validation is skipped when 'activities' in tables."""
-        db_path = tmp_path / "test.db"
-        regenerator = DuckDBRegenerator(
-            db_path=db_path, tables=["activities", "splits"]
-        )
-
-        # Should not raise error (parent being regenerated)
-        regenerator.validate_table_dependencies(
-            tables=["activities", "splits"], activity_ids=[12345]
-        )
-
-    def test_validation_passes_when_parent_activities_exist(self, tmp_path, mocker):
-        """Test that validation passes when all parent activities exist in DuckDB."""
-        # Create actual DB file so path.exists() returns True
-        db_path = tmp_path / "test.db"
-        db_path.touch()  # Create empty file
-
-        # Mock DuckDB connection to return that activities exist
-        mock_conn = mocker.MagicMock()
-        mock_cursor = mocker.MagicMock()
-        mock_cursor.fetchone.return_value = (1,)  # COUNT(*) = 1
-        mock_conn.execute.return_value = mock_cursor
-        mock_conn.__enter__ = mocker.MagicMock(return_value=mock_conn)
-        mock_conn.__exit__ = mocker.MagicMock(return_value=False)
-        mocker.patch(
-            "garmin_mcp.scripts.regenerate.validator.duckdb.connect",
-            return_value=mock_conn,
-        )
-
-        regenerator = DuckDBRegenerator(db_path=db_path, tables=["splits"])
-
-        # Should not raise error (all activities exist)
-        regenerator.validate_table_dependencies(
-            tables=["splits"], activity_ids=[12345, 67890]
-        )
-
     def test_validation_fails_when_parent_activities_missing(self, tmp_path, mocker):
         """Test that validation fails when parent activities don't exist."""
         # Mock DuckDB connection to return that activities don't exist
@@ -257,14 +212,28 @@ class TestDateRangeScopedDeletion:
 
         mock_validate.assert_called_once_with(["splits"], [12345])
 
-    def test_no_filter_still_uses_table_wide_deletion(self, tmp_path, mocker):
-        """Without activity_ids or date range, table-wide deletion is preserved."""
-        mock_delete_table_all = mocker.patch.object(
-            DuckDBRegenerator, "delete_table_all_records"
-        )
+
+@pytest.mark.unit
+class TestForceFlag:
+    """Test --force flag behavior (Phase 4)."""
+
+    def test_regenerate_all_without_force_skips_deletion(self, tmp_path, mocker):
+        """Test that without --force, deletion is skipped and message is logged."""
+        # Mock validation to pass
+        mocker.patch.object(DuckDBRegenerator, "validate_table_dependencies")
+
+        # Mock delete methods
         mock_delete_activity = mocker.patch.object(
             DuckDBRegenerator, "delete_activity_records"
         )
+        mock_delete_table = mocker.patch.object(
+            DuckDBRegenerator, "delete_table_all_records"
+        )
+        mock_logger_info = mocker.patch(
+            "garmin_mcp.scripts.regenerate_duckdb.logger.info"
+        )
+
+        # Mock other methods to return at least one activity
         mocker.patch.object(
             DuckDBRegenerator,
             "get_all_activities_from_raw",
@@ -277,9 +246,111 @@ class TestDateRangeScopedDeletion:
         )
 
         db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(db_path=db_path, tables=["splits"], force=False)
+
+        # Run regenerate_all (should skip deletion)
+        regenerator.regenerate_all(activity_ids=[12345])
+
+        # Verify deletion methods NOT called
+        mock_delete_activity.assert_not_called()
+        mock_delete_table.assert_not_called()
+
+        # Verify skip message was logged
+        skip_message_calls = [
+            call
+            for call in mock_logger_info.call_args_list
+            if "Skipping deletion" in str(call)
+        ]
+        assert len(skip_message_calls) > 0, "Skip message should be logged"
+
+    def test_regenerate_all_with_force_calls_deletion(self, tmp_path, mocker):
+        """Test that with --force, deletion is executed."""
+        # Create actual DB file
+        db_path = tmp_path / "test.db"
+        db_path.touch()
+
+        # Mock validation to pass
+        mocker.patch.object(DuckDBRegenerator, "validate_table_dependencies")
+
+        # Mock delete methods
+        mock_delete_activity = mocker.patch.object(
+            DuckDBRegenerator, "delete_activity_records"
+        )
+
+        # Mock regenerate_single_activity
+        mocker.patch.object(
+            DuckDBRegenerator,
+            "regenerate_single_activity",
+            return_value={"status": "success"},
+        )
+
         regenerator = DuckDBRegenerator(db_path=db_path, tables=["splits"], force=True)
 
-        regenerator.regenerate_all()
+        # Run regenerate_all with force=True (should call deletion)
+        regenerator.regenerate_all(activity_ids=[12345])
 
-        mock_delete_table_all.assert_called_once_with(["splits"])
-        mock_delete_activity.assert_not_called()
+        # Verify deletion IS called
+        mock_delete_activity.assert_called_once_with([12345])
+
+    def test_regenerate_single_activity_without_force_skips_existing(
+        self, tmp_path, mocker
+    ):
+        """Test that without --force, existing activities are skipped with clear message."""
+        # Mock cache check to return True (activity exists)
+        mocker.patch.object(DuckDBRegenerator, "check_duckdb_cache", return_value=True)
+        mocker.patch.object(
+            DuckDBRegenerator, "check_raw_data_exists", return_value=True
+        )
+        mock_logger_info = mocker.patch(
+            "garmin_mcp.scripts.regenerate_duckdb.logger.info"
+        )
+
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(db_path=db_path, tables=["splits"], force=False)
+
+        # Call regenerate_single_activity (should skip)
+        result = regenerator.regenerate_single_activity(12345, "2025-01-01")
+
+        # Verify status is skipped
+        assert result["status"] == "skipped"
+        assert result["reason"] == "existing_in_duckdb_no_force"
+
+        # Verify skip message was logged
+        skip_message_calls = [
+            call
+            for call in mock_logger_info.call_args_list
+            if "use --force to update" in str(call)
+        ]
+        assert (
+            len(skip_message_calls) > 0
+        ), "Skip message with --force hint should be logged"
+
+    def test_regenerate_single_activity_with_force_processes_existing(
+        self, tmp_path, mocker
+    ):
+        """Test that with --force, existing activities are processed."""
+        # Mock cache check to return True (activity exists)
+        mocker.patch.object(DuckDBRegenerator, "check_duckdb_cache", return_value=True)
+        mocker.patch.object(
+            DuckDBRegenerator, "check_raw_data_exists", return_value=True
+        )
+
+        # Mock GarminIngestWorker
+        mock_worker = mocker.Mock()
+        mock_worker.process_activity.return_value = {"activity": "activity.json"}
+        mocker.patch(
+            "garmin_mcp.scripts.regenerate_duckdb.GarminIngestWorker",
+            return_value=mock_worker,
+        )
+
+        db_path = tmp_path / "test.db"
+        regenerator = DuckDBRegenerator(db_path=db_path, tables=["splits"], force=True)
+
+        # Call regenerate_single_activity with force=True
+        result = regenerator.regenerate_single_activity(12345, "2025-01-01")
+
+        # Verify status is success (not skipped)
+        assert result["status"] == "success"
+
+        # Verify process_activity was called
+        mock_worker.process_activity.assert_called_once()

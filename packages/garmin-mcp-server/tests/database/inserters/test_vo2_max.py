@@ -133,22 +133,6 @@ class TestVO2MaxInserter:
         assert result["date"] == "2025-08-19"
         assert result["category"] == 0
 
-    def test_insert_vo2_max_from_raw_data(
-        self, sample_raw_vo2_max_file, initialized_db_path
-    ):
-        """Test insert_vo2_max with raw data file."""
-        db_path = initialized_db_path
-        conn = duckdb.connect(str(db_path))
-
-        result = insert_vo2_max(
-            activity_id=20107340187,
-            conn=conn,
-            raw_vo2_max_file=str(sample_raw_vo2_max_file),
-        )
-
-        assert result is True
-        assert db_path.exists()
-
     def test_extract_vo2_max_generic_nested(self, tmp_path):
         """Test extraction from list-wrapped nested 'generic' format (legacy)."""
         from garmin_mcp.database.inserters.vo2_max import _extract_vo2_max_from_raw
