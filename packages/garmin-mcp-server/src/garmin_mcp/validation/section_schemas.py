@@ -71,6 +71,10 @@ class PrescriptionVerdict(BaseModel):
     verdict: Literal["✅", "🟡", "🔴"]
     prescription_title: str
     reasons: list[str]
+    # Axes the run answered as prescribed -- "intensity_class" | "volume" |
+    # "hr_ceiling" | "rest" (Issue #1086). The summary agent must not recycle an
+    # on-plan axis as an improvement area.
+    on_plan: list[str] = Field(default_factory=list)
 
 
 class SummaryAnalysisData(BaseModel):

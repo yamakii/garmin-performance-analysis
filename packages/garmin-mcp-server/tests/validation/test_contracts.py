@@ -38,8 +38,13 @@ def test_get_contract_phase():
 def test_phase_contract_has_evaluation_criteria():
     contract = get_contract("phase")
     criteria = contract["evaluation_policy"]["evaluation_criteria"]
-    assert len(criteria) == 3
-    for category in ["low_moderate", "tempo_threshold", "interval_sprint"]:
+    assert len(criteria) == 4
+    for category in [
+        "low_moderate",
+        "tempo_threshold",
+        "progression",
+        "interval_sprint",
+    ]:
         assert category in criteria
         assert "hr_target" in criteria[category]
         assert "weights" in criteria[category]
@@ -49,8 +54,13 @@ def test_phase_contract_has_evaluation_criteria():
 def test_phase_contract_has_cv_thresholds():
     contract = get_contract("phase")
     cv = contract["evaluation_policy"]["cv_thresholds"]
-    assert len(cv) == 3
-    for category in ["low_moderate", "tempo_threshold", "interval_sprint"]:
+    assert len(cv) == 4
+    for category in [
+        "low_moderate",
+        "tempo_threshold",
+        "progression",
+        "interval_sprint",
+    ]:
         assert category in cv
 
 
@@ -95,6 +105,66 @@ def test_cv_thresholds_pinned_values():
         "poor": ">=7%",
     }
     assert cv["interval_sprint"] == {"work": "<5%", "recovery": "<10%"}
+    assert cv["progression"] == {
+        "excellent": "<8%",
+        "good": "<12%",
+        "fair": "<18%",
+        "poor": ">=18%",
+    }
+
+
+@pytest.mark.unit
+def test_cv_thresholds_progression_is_wider_than_tempo():
+    """Issue #1086: a build-up ramps its pace on purpose.
+
+    Grading a prescribed Z2->Z4 build with the steady-tempo band scored the
+    athlete down for executing the prescription, so the category -- not the
+    shared threshold -- is what separates them.
+    """
+    cv = get_contract("phase")["evaluation_policy"]["cv_thresholds"]
+    for grade in ["excellent", "good", "fair", "poor"]:
+        progression = _cv_percent(cv["progression"][grade])
+        tempo = _cv_percent(cv["tempo_threshold"][grade])
+        assert progression > tempo, (
+            f"progression {grade} ({progression}%) must be > "
+            f"tempo_threshold {grade} ({tempo}%)"
+        )
+
+
+@pytest.mark.unit
+def test_phase_contract_exposes_progression_category():
+    """The phase section can select build-up criteria, weights summing to 1."""
+    policy = get_contract("phase")["evaluation_policy"]
+    progression = policy["evaluation_criteria"]["progression"]
+    assert sum(progression["weights"].values()) == pytest.approx(1.0)
+    # Pace stability is replaced, not merely relaxed.
+    assert "progression_quality" in progression["weights"]
+    assert "pace_stability" not in progression["weights"]
+    assert "progression" in policy["warmup_criteria"]
+    assert "progression" in policy["cooldown_criteria"]
+    assert "progression" in policy["hr_drift_by_type"]
+
+
+@pytest.mark.unit
+def test_summary_contract_exposes_progression_criteria():
+    """The whole-run Zone3-4 share is not the test for a build-up."""
+    criteria = get_contract("summary")["evaluation_policy"]["training_type_criteria"]
+    cv = get_contract("phase")["evaluation_policy"]["cv_thresholds"]
+    progression = criteria["progression"]
+    assert progression["pace_cv"] == cv["progression"]["good"] == "<12%"
+    assert "peak segment" in progression["hr_zone_3_4"]
+
+
+@pytest.mark.unit
+def test_summary_contract_has_on_plan_rule():
+    """An axis the verdict calls on-plan may not resurface as a weakness."""
+    rules = get_contract("summary")["evaluation_policy"]["prescription_vs_actual"][
+        "rules"
+    ]
+    assert any("on_plan" in rule for rule in rules)
+    assert any("improvement_areas" in rule for rule in rules)
+    # next_run_target is transcribed, never re-derived from the run's average.
+    assert any("next_run_target" in rule for rule in rules)
 
 
 @pytest.mark.unit
@@ -353,8 +423,8 @@ def test_summary_contract_has_no_plan_achievement():
 def test_summary_contract_has_training_type_criteria():
     contract = get_contract("summary")
     criteria = contract["evaluation_policy"]["training_type_criteria"]
-    assert len(criteria) == 5
-    for t in ["base", "tempo", "interval", "recovery", "race"]:
+    assert len(criteria) == 6
+    for t in ["base", "tempo", "progression", "interval", "recovery", "race"]:
         assert t in criteria
 
 
