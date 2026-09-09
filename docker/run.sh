@@ -134,15 +134,19 @@ done
 # and, below 16 GiB, also serializes itself (above that it runs in parallel).
 # A new value only applies to the next container launch.
 #
-# /tmp on tmpfs (#1078). The host disk under the overlay /tmp is saturated by
-# other tenants (`/proc/pressure/io` full avg300 ~78 % while idle), and every
-# test writes a 1.3-7.5 MB DuckDB file whose close() checkpoints + fsyncs into
-# that queue: the same suite took 150 s and 44 s one minute apart (2026-09-09),
-# with random tests stalled 30-40 s. Backing /tmp with RAM removes the stall.
+# /tmp on tmpfs (#1078). Every test writes a 1.3-7.5 MB DuckDB file whose
+# close() checkpoints + fsyncs on the overlay /tmp, and that fsync path stalled:
+# the same suite took 150 s and 44 s one minute apart (2026-09-09), with random
+# tests stalled 30-40 s; on tmpfs it is 32-36 s run after run. (The high
+# /proc/pressure/io reading seen at the time was ghostty's io_uring, not disk
+# saturation — owner's investigation 2026-09-09; the fsync latency itself was
+# not root-caused, the fix is measured.)
 # 8g is a cap, not a reservation; the pages are charged to --memory. Two
 # parallel ci-checks peak at ~3.2 GB (pytest keeps only failed tests' temp
 # dirs, see pyproject `tmp_path_retention_policy`); everything else in /tmp
-# is < 30 MB. /tmp was already discarded with the container (--rm).
+# is < 30 MB. /tmp was already discarded with the container (--rm). `exec` is
+# explicit because docker's --tmpfs default is noexec, which broke every
+# self-test that runs a PATH shim out of `mktemp -d` (#1082).
 echo "▶ Launching $CONTAINER ..."
 exec docker run --rm -it \
     --name "$CONTAINER" \
@@ -159,5 +163,5 @@ exec docker run --rm -it \
     --pids-limit 4096 \
     --memory 32g \
     --cpus 12 \
-    --tmpfs /tmp:rw,size=8g,mode=1777 \
+    --tmpfs /tmp:rw,exec,size=8g,mode=1777 \
     "$IMAGE" "$@"

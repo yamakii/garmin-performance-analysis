@@ -21,11 +21,18 @@ _PYPROJECT = _REPO_ROOT / "packages" / "garmin-mcp-server" / "pyproject.toml"
 
 @pytest.mark.unit
 def test_run_sh_mounts_tmp_as_tmpfs() -> None:
-    """docker/run.sh passes `--tmpfs /tmp:...` with a size cap and world-writable mode."""
+    """docker/run.sh passes `--tmpfs /tmp:...` with exec, a size cap and mode 1777.
+
+    ``exec`` must be explicit: docker's ``--tmpfs`` default is ``noexec``, which
+    stops the script self-tests from running their PATH shims out of
+    ``mktemp -d`` (#1082).
+    """
     text = _RUN_SH.read_text(encoding="utf-8")
     match = re.search(r"--tmpfs\s+/tmp:(\S+)", text)
     assert match, "docker/run.sh must mount /tmp as tmpfs (#1078)"
     options = match.group(1).split(",")
+    assert "exec" in options, options
+    assert "noexec" not in options, options
     assert any(o.startswith("size=") for o in options), options
     assert "mode=1777" in options, options
 
