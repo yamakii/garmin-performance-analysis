@@ -375,7 +375,7 @@ mcp__garmin-db__save_weekly_prescriptions(
 - `target_km` / `target_minutes` は **時間優先のロングなら分、距離指定なら km**（両方あれば両方入れてよい。無ければ null）。
 - **`target_minutes` の定義（規約・必ず守る）**:
   - `long` / `easy` / `recovery` は **その日走る全体（総量）**を入れる。Garmin にはこの値が**1ステップ**として登録され、`reconcile_prescriptions` も**この値と実績の総量**を突き合わせる（前後の追加分を足し引きしない）。したがって「W/U ＋ 本体 ＋ C/D」に分けた**本体だけの分数を入れてはいけない**。入りをイージーにする等の走り方は `rationale` の散文にだけ書く。
-  - `threshold` / `tempo` は **本体のみの分数**（ツールが前後にウォームアップ 10 分・クールダウン 5 分を足し、判定でもその 15 分を許容する）。
+  - `threshold` / `tempo` は **本体のみの分数**（ツールが前後にウォームアップ 10 分・クールダウン 5 分を足し、判定でもその 15 分を許容する）。ここに総量を書くと `reconcile_prescriptions` が 15 分多い期待値で判定して、処方どおり走っても `replaced` に落ちる。**保存時に検出して拒否する**（`target_minutes + 15 分` を `target_km` で割った全体平均ペースが 3:00-8:00/km を外れる行は `save_weekly_prescriptions` が `ValueError`。総量を書くとイージージョグより遅い値になるため引っかかる。#1084）。
   - `target_km` は**どのセッションでも全体の距離**（本体だけの距離を入れない）。
   - `strides` は目標を入れない（`target_km` / `target_minutes` とも null）。
 - **タイトル・コメントは `target_minutes` と別の総量を名乗らない**: `target_minutes=20` で「Z2ジョグ 計35分」のようなタイトル／`rationale` は禁止。総量 35 分で走らせたいなら `target_minutes=35` と書く（表示・時計・判定の3者が同じ数字を指すこと）。

@@ -56,6 +56,16 @@ ALLOWED_STATUSES = frozenset(
 #: Coach verdicts a prescription row may carry (``None`` = ungraded).
 ALLOWED_RATINGS = frozenset({"✅", "🟡", "🔴"})
 
+#: Slowest plausible average pace (seconds per km) for a registered bookended
+#: session — body plus its warmup/cooldown minutes over the whole distance. A
+#: Z3-Z4 body wrapped in easy jogging never averages slower than this, so a row
+#: above it wrote ``target_minutes`` as the session total (Issue #1084).
+BOOKENDED_PACE_SLOW_S_PER_KM = 480.0
+
+#: Fastest plausible average pace (seconds per km) for the same figure; below it
+#: the two targets disagree by more than a mis-encoded total can explain.
+BOOKENDED_PACE_FAST_S_PER_KM = 180.0
+
 
 def _default_db_path() -> str:
     """Resolve the default DuckDB path (never hard-coded by callers)."""
@@ -78,6 +88,68 @@ def _parse_date(value: Any, field: str) -> date:
                 f"{field} must be a YYYY-MM-DD date, got {value!r}"
             ) from exc
     raise ValueError(f"{field} is required and must be a YYYY-MM-DD date")
+
+
+def _format_pace(seconds_per_km: float) -> str:
+    """Render a seconds-per-km pace as ``m:ss`` for an error message."""
+    total = int(round(seconds_per_km))
+    return f"{total // 60}:{total % 60:02d}"
+
+
+def _validate_bookended_targets(
+    title: str, session_type: str, target_minutes: Any, target_km: Any
+) -> None:
+    """Reject a quality row whose ``target_minutes`` was written as the total.
+
+    ``threshold`` / ``tempo`` rows prescribe the **body** in ``target_minutes``
+    — the builder wraps it in :func:`~garmin_mcp.analysis.prescription_shape.
+    bookend_minutes` of warmup/cooldown — while ``target_km`` always describes
+    the **whole** session. Both conventions are documented, but nothing enforced
+    them, so a row written entirely as totals (55 min / 8.0 km) stayed
+    self-consistent on its face and only surfaced later as a bogus ``replaced``
+    verdict out of ``reconcile_prescriptions`` (Issue #1084).
+
+    The discriminator is the implied average pace of the workout that actually
+    gets registered: body plus bookends over the whole distance. A Z3-Z4 body
+    wrapped in easy jogging cannot average slower than
+    :data:`BOOKENDED_PACE_SLOW_S_PER_KM`, and a total-encoded row always does.
+
+    Rows that cannot be compared are left alone: non-bookended session types
+    (whose ``target_minutes`` is the total by convention), rows missing either
+    target, and a non-positive ``target_km``.
+
+    Args:
+        title: Row title, quoted into the error message.
+        session_type: The row's session type.
+        target_minutes: Prescribed minutes (the body, by convention).
+        target_km: Prescribed distance (the whole session, by convention).
+
+    Raises:
+        ValueError: When the implied pace falls outside the plausible band.
+    """
+    from garmin_mcp.analysis.prescription_shape import bookend_minutes
+
+    if target_minutes is None or target_km is None:
+        return
+    bookends = bookend_minutes(session_type)
+    if not bookends:
+        return
+    km = float(target_km)
+    if km <= 0:
+        return
+
+    implied = (float(target_minutes) + bookends) * 60.0 / km
+    if BOOKENDED_PACE_FAST_S_PER_KM <= implied <= BOOKENDED_PACE_SLOW_S_PER_KM:
+        return
+    raise ValueError(
+        f"prescription {title!r}: target_minutes {target_minutes} with "
+        f"target_km {target_km} implies {_format_pace(implied)}/km across the "
+        f"whole registered session (body + {bookends}min warmup/cooldown), "
+        f"outside the plausible {_format_pace(BOOKENDED_PACE_FAST_S_PER_KM)}-"
+        f"{_format_pace(BOOKENDED_PACE_SLOW_S_PER_KM)}/km band. For "
+        f"{session_type} rows target_minutes is the BODY only, while target_km "
+        f"is the WHOLE session — a total written into both is the usual cause"
+    )
 
 
 def _validate_ladder(ladder: Any, block_title: str) -> list[dict[str, Any]]:
@@ -328,8 +400,11 @@ def insert_weekly_prescriptions(
 
     Raises:
         ValueError: On a date outside the week, an unknown ``session_type``,
-            ``status`` or ``rating``, ``hr_low`` above ``hr_high``, or a
-            revision that skips the review (see the revision guard above).
+            ``status`` or ``rating``, ``hr_low`` above ``hr_high``, a
+            ``threshold`` / ``tempo`` row whose ``target_minutes`` reads as the
+            session total rather than the body (:func:`
+            _validate_bookended_targets`), or a revision that skips the review
+            (see the revision guard above).
     """
     if db_path is None:
         db_path = _default_db_path()
@@ -374,6 +449,9 @@ def insert_weekly_prescriptions(
                 f"prescription {title!r}: rating must be one of "
                 f"{sorted(ALLOWED_RATINGS)} or null, got {rating!r}"
             )
+        _validate_bookended_targets(
+            title, str(session_type), row.get("target_minutes"), row.get("target_km")
+        )
         validated.append((row, row_date))
 
     prescription_ids: list[int] = []

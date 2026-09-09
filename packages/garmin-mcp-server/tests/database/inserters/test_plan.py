@@ -202,6 +202,93 @@ def test_insert_weekly_prescriptions_rejects_hr_low_above_high(
         )
 
 
+@pytest.mark.unit
+@pytest.mark.parametrize("session_type", ["tempo", "threshold"])
+def test_insert_prescriptions_rejects_bookended_target_minutes_as_total(
+    initialized_db_path: Path, session_type: str
+) -> None:
+    """A quality row whose target_minutes is the session total is rejected (#1084).
+
+    55min + 15min of bookends over 8.0km implies 8:45/km for a Z3-Z4 session,
+    which only happens when the body-only convention was ignored.
+    """
+    with pytest.raises(ValueError, match="8:45/km"):
+        insert_weekly_prescriptions(
+            "2026-09-07",
+            [
+                _prescription(
+                    "2026-09-09",
+                    session_type=session_type,
+                    target_minutes=55,
+                    target_km=8.0,
+                    hr_low=162,
+                    hr_high=169,
+                )
+            ],
+            db_path=str(initialized_db_path),
+        )
+
+
+@pytest.mark.unit
+def test_insert_prescriptions_accepts_bookended_body_only_minutes(
+    initialized_db_path: Path,
+) -> None:
+    """The same row written to convention (body minutes) is accepted (#1084)."""
+    result = insert_weekly_prescriptions(
+        "2026-09-07",
+        [
+            _prescription(
+                "2026-09-09",
+                session_type="tempo",
+                target_minutes=31,
+                target_km=8.0,
+                hr_low=162,
+                hr_high=169,
+            )
+        ],
+        db_path=str(initialized_db_path),
+    )
+    assert result["count"] == 1
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("session_type", "target_minutes", "target_km"),
+    [
+        ("easy", 55, 8.0),
+        ("long", 55, 8.0),
+        ("recovery", 55, 8.0),
+        ("tempo", 55, None),
+        ("tempo", None, 8.0),
+        ("tempo", None, None),
+    ],
+)
+def test_insert_prescriptions_bookend_guard_leaves_other_rows_alone(
+    initialized_db_path: Path,
+    session_type: str,
+    target_minutes: int | None,
+    target_km: float | None,
+) -> None:
+    """Non-bookended types and half-specified rows are out of the guard's scope.
+
+    easy / long / recovery prescribe the total in target_minutes by convention,
+    and a row missing either target gives the check no basis to compare (#1084).
+    """
+    result = insert_weekly_prescriptions(
+        "2026-09-07",
+        [
+            _prescription(
+                "2026-09-09",
+                session_type=session_type,
+                target_minutes=target_minutes,
+                target_km=target_km,
+            )
+        ],
+        db_path=str(initialized_db_path),
+    )
+    assert result["count"] == 1
+
+
 def _save_review(db_path: str, week_start_date: str = "2026-09-07") -> int:
     """Save a bare weekly review for a week and return its review_id."""
     from garmin_mcp.database.inserters.athlete import insert_weekly_review
