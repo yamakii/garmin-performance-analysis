@@ -131,10 +131,10 @@ Run migration tests:
 
 ```bash
 # Unit tests
-uv run pytest tests/unit/test_weight_data_migrator.py -v
+uv run pytest tests/batch/test_weight_data_migrator.py -v
 
 # Integration tests with new structure
-uv run pytest tests/unit/test_garmin_worker_weight_migration.py -v
+uv run pytest tests/ingest/garmin_worker/test_weight_path_migration.py -v
 uv run pytest tests/ingest/test_body_composition.py -v
 
 # All weight-related tests
@@ -215,11 +215,11 @@ Indicates potential data corruption. Do NOT run cleanup until resolved.
 
 - Project planning: `docs/project/2025-10-09_weight_data_migration/planning.md`
 - Main documentation: `CLAUDE.md` (Data Files Naming Convention section)
-- Test documentation: `tests/unit/test_weight_data_migrator.py`
+- Test documentation: `tests/batch/test_weight_data_migrator.py`
 
 ## Support
 
 For issues or questions:
 1. Check `docs/project/2025-10-09_weight_data_migration/planning.md`
-2. Review test cases in `tests/unit/test_weight_data_migrator.py`
+2. Review test cases in `tests/batch/test_weight_data_migrator.py`
 3. Run verification: `uv run python tools/migrate_weight_data.py --verify`

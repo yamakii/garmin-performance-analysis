@@ -15,7 +15,7 @@ def test_garmin_worker_no_dead_legacy_methods():
     """Removed legacy methods must not exist on GarminIngestWorker.
 
     `_calculate_hr_efficiency_analysis` is intentionally excluded: it is still
-    exercised by tests/unit/test_hr_zone_percentage.py and is therefore kept.
+    exercised by tests/ingest/garmin_worker/test_hr_zone_percentage.py and is therefore kept.
     """
     removed_methods = (
         "_calculate_form_efficiency_summary",
