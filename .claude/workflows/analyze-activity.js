@@ -146,9 +146,66 @@ function buildSummaryPrompt(ctx) {
   )
 }
 
+// The split agent holds no prescription / HR-zone tool, so without this subset
+// it can neither judge a split against the step prescribed for it nor source a
+// zone label -- it wrote "HR164bpm(Zone4)" from inference (#1093). Only the
+// keys it needs are forwarded: the full bundle is what "split needs no CONTEXT"
+// was avoiding, and per-split form data it already fetches itself.
+function buildSplitContext(contextJson) {
+  let bundle
+  try {
+    bundle = JSON.parse(contextJson)
+  } catch {
+    return ''
+  }
+  if (bundle == null || typeof bundle !== 'object') return ''
+
+  const p = bundle.prescription_for_run
+  const v = bundle.prescription_verdict
+  const zones = bundle.hr_zones_detail && bundle.hr_zones_detail.zones
+  return JSON.stringify({
+    activity_id: bundle.activity_id ?? null,
+    activity_date: bundle.activity_date ?? null,
+    training_type: bundle.training_type ?? null,
+    phase_category: bundle.phase_category ?? null,
+    progression_session: bundle.progression_session ?? null,
+    prescription_for_run: p
+      ? {
+          title: p.title ?? null,
+          session_type: p.session_type ?? null,
+          target_km: p.target_km ?? null,
+          target_minutes: p.target_minutes ?? null,
+          hr_low: p.hr_low ?? null,
+          hr_high: p.hr_high ?? null,
+          rationale: p.rationale ?? null,
+        }
+      : null,
+    prescription_verdict: v
+      ? { verdict: v.verdict ?? null, reasons: v.reasons ?? [], on_plan: v.on_plan ?? [] }
+      : null,
+    hr_zones_detail: Array.isArray(zones)
+      ? {
+          zones: zones.map((z) => ({
+            zone_number: z.zone_number,
+            low_boundary: z.low_boundary,
+            high_boundary: z.high_boundary,
+          })),
+        }
+      : null,
+  })
+}
+
 function buildSplitPrompt(ctx) {
+  const splitContext = buildSplitContext(ctx.contextJson)
+  const contextBlock = splitContext
+    ? `処方とHRゾーン境界（CONTEXT のサブセット, JSON）は以下です。この実データのみに基づき、` +
+      `ゾーン名は hr_zones_detail の境界からのみラベルし、処方があるスプリットはその段階に対する` +
+      `達成度で評価してください（推測でゾーン名・LTHR を書かない）:\n` +
+      `<CONTEXT>\n${splitContext}\n</CONTEXT>\n`
+    : ''
   return (
     `Activity ID ${ctx.activityId} (${ctx.activityDate}) の全スプリットを詳細分析してください。\n` +
+    contextBlock +
     `結果は ${ctx.tempDir}/split.json に保存してください。`
   )
 }

@@ -134,8 +134,10 @@ Key rules (path-scoped, under `.claude/rules/dev/`):
    summary call does not load the full unified def (perf).
 3. **split-section-analyst**: 1km split analysis (pace, HR, form)
 
-> Section agents receive prefetched CONTEXT inline in the prompt (no file reads); split needs
-> no CONTEXT. Each section is written as a separate `{section}.json` consumed by
+> Section agents receive prefetched CONTEXT inline in the prompt (no file reads); split receives
+> only a subset of it (処方 / HR ゾーン境界 / progression フラグ) because it fetches its own split
+> data but has no tool that can reach the prescription or the zone boundaries (#1093). Each
+> section is written as a separate `{section}.json` consumed by
 > `merge_section_analyses`. summary derives cross-section consistency from the shared CONTEXT
 > (it runs in parallel with the others, not after them).
 

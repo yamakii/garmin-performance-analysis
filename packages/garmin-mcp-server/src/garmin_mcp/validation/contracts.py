@@ -84,11 +84,34 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "pace_too_fast": "< 3:00/km (180 sec/km)",
                 "hr_too_high": "> 200 bpm",
             },
+            # The split agent holds no HR-zone tool of its own, so a zone label
+            # it writes unaided is inference. It said "HR164bpm(Zone4)" and
+            # "max171bpm is near LTHR170" with nothing behind it (Issue #1093);
+            # correct that day, silently wrong after the next zone revision.
+            "hr_zone_labeling": (
+                "Name a zone ONLY from the boundaries in CONTEXT.hr_zones_detail "
+                "(Garmin native zones). Without those boundaries, state the bpm "
+                "and say nothing about zones, LTHR or thresholds -- never infer "
+                "a zone from the number"
+            ),
+            # Splits are where a prescribed ramp is actually visible, so this is
+            # the section that should say whether each kilometre answered the
+            # step prescribed for it.
+            "prescription_alignment": (
+                "With CONTEXT.prescription_for_run present, judge each split "
+                "against the step prescribed for it (its HR band / target) and "
+                "say whether it answered that step -- description alone is not "
+                "an evaluation. Axes in prescription_verdict.on_plan came out on "
+                "plan and must never be written as deviations. With no "
+                "prescription, fall back to describing the splits on their own"
+            ),
         },
         "instructions": [
             "Analyze every 1km split without exception",
             "Compare first-half vs second-half metrics for drift detection",
             "Flag measurement anomalies (pace < 3:00/km, HR > 200)",
+            "Follow prescription_alignment when the CONTEXT carries a "
+            "prescription, and hr_zone_labeling whenever naming a zone",
             "Use Japanese coaching tone with specific numbers",
         ],
     },
