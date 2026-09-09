@@ -523,6 +523,7 @@ def update_prescription_status(
     garmin_workout_id: int | None = None,
     garmin_schedule_id: int | None = None,
     actual_activity_id: int | None = None,
+    registered_bookend_minutes: int | None = None,
     db_path: str | None = None,
 ) -> bool:
     """Set a prescription's status (and optional ids), refreshing ``updated_at``.
@@ -538,6 +539,12 @@ def update_prescription_status(
         garmin_workout_id: Garmin workout id to record (optional).
         garmin_schedule_id: Garmin schedule id to record (optional).
         actual_activity_id: Linked activity id to record (optional).
+        registered_bookend_minutes: Warmup + cooldown minutes the registered
+            workout actually carries, from
+            :func:`~garmin_mcp.analysis.prescription_shape.
+            bookend_minutes_from_steps`. Recorded at registration time so
+            ``reconcile_prescriptions`` judges a hand-built quality session
+            against its real bookends instead of the constant (Issue #1087).
         db_path: Path to DuckDB database. If None, uses the default path.
 
     Returns:
@@ -567,6 +574,9 @@ def update_prescription_status(
     if actual_activity_id is not None:
         assignments.append("actual_activity_id = ?")
         params.append(actual_activity_id)
+    if registered_bookend_minutes is not None:
+        assignments.append("registered_bookend_minutes = ?")
+        params.append(registered_bookend_minutes)
     params.append(prescription_id)
 
     with get_write_connection(db_path) as conn:

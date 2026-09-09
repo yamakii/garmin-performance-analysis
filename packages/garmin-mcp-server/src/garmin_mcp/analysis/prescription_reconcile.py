@@ -7,7 +7,9 @@ table:
 - an activity on the prescribed date within tolerance (±15% short / +30% long of
   ``target_km`` and ``target_minutes``) marks the row ``done``. Quality sessions
   are registered with warmup/cooldown bookends around the prescribed body
-  (``prescription_shape.bookend_minutes``), so their minutes band is widened by
+  (``prescription_shape.bookend_minutes``, or the row's
+  ``registered_bookend_minutes`` when a hand-built registration recorded what it
+  really carries — Issue #1087), so their minutes band is widened by
   exactly those bookends — an easy run, registered as a single body step, gets
   no such allowance (#1039);
 - an activity outside tolerance — or any activity on a ``rest`` day — marks it
@@ -69,6 +71,32 @@ def _within_tolerance(
         return False
     expected = target + extra
     return TOLERANCE_LOW * expected <= actual <= TOLERANCE_HIGH * expected
+
+
+def _extra_minutes_for(row: dict[str, Any]) -> float:
+    """Return the warmup/cooldown minutes to allow on top of ``target_minutes``.
+
+    Prefers ``registered_bookend_minutes`` — what the workout that was actually
+    put on the calendar carries — over the constant
+    :func:`~garmin_mcp.analysis.prescription_shape.bookend_minutes`, which only
+    describes the shape the standard builder produces. A hand-built quality
+    session can differ (the 2026-09-09 tempo carried a 10-minute cooldown, so
+    20 minutes rather than 15), and judging it against the constant leaves the
+    band centred short of what was asked for (Issue #1087).
+
+    Rows registered before the column existed, and rows that were never
+    registered, hold ``None`` and fall back to the constant.
+
+    Args:
+        row: A ``weekly_prescriptions`` row.
+
+    Returns:
+        Minutes to add to the prescribed body before the tolerance band.
+    """
+    recorded = row.get("registered_bookend_minutes")
+    if recorded is not None:
+        return float(recorded)
+    return float(bookend_minutes(row.get("session_type")))
 
 
 def _pick_activity(
@@ -164,7 +192,7 @@ def reconcile_prescriptions(
                     new_status = "replaced"
                     actual_activity_id = candidates[0]["activity_id"]
                 else:
-                    extra_minutes = float(bookend_minutes(session_type))
+                    extra_minutes = _extra_minutes_for(row)
                     match = _pick_activity(
                         candidates,
                         row.get("target_km"),

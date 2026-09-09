@@ -58,6 +58,7 @@ _PRESCRIPTION_COLUMN_NAMES = (
     "garmin_workout_id",
     "garmin_schedule_id",
     "actual_activity_id",
+    "registered_bookend_minutes",
     "created_at",
     "updated_at",
 )

@@ -226,6 +226,17 @@ def _wrap_add_prescription_rating(conn: duckdb.DuckDBPyConnection) -> None:
     add_prescription_rating(conn)
 
 
+def _wrap_add_prescription_registered_bookend_minutes(
+    conn: duckdb.DuckDBPyConnection,
+) -> None:
+    """Wrap the weekly_prescriptions registered_bookend_minutes migration."""
+    from .add_prescription_registered_bookend_minutes import (
+        add_prescription_registered_bookend_minutes,
+    )
+
+    add_prescription_registered_bookend_minutes(conn)
+
+
 def _wrap_plan_versioning(conn: duckdb.DuckDBPyConnection) -> None:
     """Wrap plan versioning migration to run on an existing connection."""
     from .add_plan_versioning import _column_exists, _table_exists
@@ -293,4 +304,9 @@ MIGRATIONS: list[tuple[int, str, Callable[[duckdb.DuckDBPyConnection], None]]] =
     (23, "add_training_blocks_tables", _wrap_add_training_blocks_tables),
     (24, "add_weekly_prescriptions_table", _wrap_add_weekly_prescriptions_table),
     (25, "add_prescription_rating", _wrap_add_prescription_rating),
+    (
+        26,
+        "add_prescription_registered_bookend_minutes",
+        _wrap_add_prescription_registered_bookend_minutes,
+    ),
 ]

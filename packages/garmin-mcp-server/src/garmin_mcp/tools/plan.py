@@ -134,6 +134,17 @@ class UpdatePrescriptionStatusParams(BaseModel):
     actual_activity_id: int | None = Field(
         default=None, description="Linked actual activity id to record (optional)."
     )
+    registered_bookend_minutes: int | None = Field(
+        default=None,
+        description=(
+            "Warmup + cooldown minutes the registered workout actually carries "
+            "(optional). schedule_custom_workout returns it as bookend_minutes "
+            "— pass it through when linking a hand-built quality workout so "
+            "reconcile_prescriptions judges against the real bookends instead "
+            "of the standard 15min. schedule_weekly_prescriptions records it "
+            "on its own."
+        ),
+    )
 
 
 class ReconcilePrescriptionsParams(BaseModel):
@@ -245,6 +256,7 @@ def _update_prescription_status(
             garmin_workout_id=p.garmin_workout_id,
             garmin_schedule_id=p.garmin_schedule_id,
             actual_activity_id=p.actual_activity_id,
+            registered_bookend_minutes=p.registered_bookend_minutes,
             db_path=str(reader.db_path),
         )
         return {
@@ -349,10 +361,11 @@ PLAN_TOOLS: list[ToolDef] = [
         name="update_prescription_status",
         description=(
             "Update one prescription's status and optionally its Garmin workout "
-            "/ schedule ids and linked activity id, refreshing updated_at. Only "
-            "the ids you pass are written, so registering a Garmin workout and "
-            "later linking the actual activity are independent updates. Returns "
-            "{updated: false} when the prescription_id does not exist."
+            "/ schedule ids, linked activity id and registered bookend minutes, "
+            "refreshing updated_at. Only the values you pass are written, so "
+            "registering a Garmin workout and later linking the actual activity "
+            "are independent updates. Returns {updated: false} when the "
+            "prescription_id does not exist."
         ),
         params=UpdatePrescriptionStatusParams,
         handler=_update_prescription_status,
@@ -367,8 +380,10 @@ PLAN_TOOLS: list[ToolDef] = [
             "each open (prescribed / registered) latest-batch row with a past "
             "date: an activity on that date within tolerance (0.85x-1.30x of "
             "target_km / target_minutes, with quality sessions "
-            "(threshold/tempo/strides) allowed the 15min of warmup/cooldown "
-            "their registered workout adds) marks it done, any other activity "
+            "(threshold/tempo/strides) allowed the warmup/cooldown their "
+            "registered workout adds — the row's registered_bookend_minutes "
+            "when recorded, else the standard 15min) marks it done, any other "
+            "activity "
             "marks it replaced (a rest day with a run is always replaced), and "
             "no activity marks it skipped (rest with no activity is done). "
             "Future dates and superseded batches are never touched. Returns "
