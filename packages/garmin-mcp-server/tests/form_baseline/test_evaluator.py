@@ -432,6 +432,7 @@ CADENCE_EVAL_KEYS = {
     "star_rating",
     "score",
     "needs_improvement",
+    "extrapolated",
     "evaluation_text",
 }
 
@@ -594,6 +595,16 @@ class TestCadenceEvalShape:
         cadence = result["cadence"]
         assert set(cadence.keys()) == CADENCE_EVAL_KEYS
         assert all(value is not None for value in cadence.values())
+
+    @pytest.mark.integration
+    def test_evaluate_and_store_includes_extrapolation_fields(self, mocker):
+        """Every metric block carries a boolean ``extrapolated`` flag (#1088)."""
+        self._patch_with_model(mocker, cadence=176.0)
+        result = self._run(mocker)
+
+        for metric in ("gct", "vo", "vr", "cadence"):
+            assert "extrapolated" in result[metric]
+            assert isinstance(result[metric]["extrapolated"], bool)
 
     def test_needs_improvement_below_180(self, mocker):
         """No model: 175spm flags improvement, 185spm does not."""

@@ -378,3 +378,45 @@ class TestGenerateOverallText:
         assert "★★☆☆☆" in text
         assert "2.0" in text
         assert "総合評価" in text
+
+
+@pytest.mark.unit
+class TestExtrapolationNote:
+    """The "outside the trained speed range" caveat (#1088)."""
+
+    def test_generate_evaluation_text_notes_extrapolation(self):
+        """An extrapolated expectation is labelled as indicative only."""
+        text = generate_evaluation_text(
+            metric="gct",
+            actual=246.4,
+            expected=233.6,
+            delta_pct=5.5,
+            pace_s_per_km=370.0,
+            star_rating="★★★☆☆",
+            score=3.0,
+            sigma_pct=3.26,
+            speed_range=(1.92, 2.55),
+            extrapolated=True,
+        )
+
+        assert "参考値" in text
+        assert "1.92" in text
+        # The stars stay at the very end
+        assert text.endswith("★★★☆☆")
+
+    def test_generate_evaluation_text_no_note_when_in_range(self):
+        """No caveat when the pace sits inside the trained range."""
+        text = generate_evaluation_text(
+            metric="gct",
+            actual=246.4,
+            expected=245.0,
+            delta_pct=0.6,
+            pace_s_per_km=370.0,
+            star_rating="★★★★★",
+            score=5.0,
+            sigma_pct=2.3,
+            speed_range=(1.92, 2.55),
+            extrapolated=False,
+        )
+
+        assert "参考値" not in text

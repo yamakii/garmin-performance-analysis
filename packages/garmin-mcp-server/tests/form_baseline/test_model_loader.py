@@ -78,6 +78,7 @@ def _insert_baseline_row(
     speed_min: float = 2.5,
     speed_max: float = 4.5,
     model_type: str = "linear",
+    period_start: str = "2025-01-01",
 ) -> None:
     """Insert a single baseline row."""
     conn.execute(
@@ -89,7 +90,7 @@ def _insert_baseline_row(
             user_id,
             condition_group,
             metric,
-            "2025-01-01",
+            period_start,
             period_end,
             alpha,
             d,
@@ -289,3 +290,126 @@ class TestLoadModelsFromDbSelectsLatest:
         assert result["gct"].alpha == 5.0  # type: ignore[union-attr]
         assert result["vo"].a == 12.0  # type: ignore[union-attr]
         assert result["vr"].a == 10.0  # type: ignore[union-attr]
+
+    def test_selects_covering_period_over_earlier_period(self, tmp_path: Path) -> None:
+        """A baseline whose window contains the activity date wins (#1088).
+
+        Reproduces the real 2026-09-09 case: an ended Jul-Aug window and a
+        still-open Jul31-Sep30 window. The old ``period_end <= date`` rule
+        could only ever pick the midsummer one.
+        """
+        db_path = str(tmp_path / "test.duckdb")
+        conn = duckdb.connect(db_path)
+        _create_baseline_table(conn)
+
+        for metric, kwargs in (
+            ("gct", {"alpha": 10.49}),
+            ("vo", {"a": 4.45, "b": 1.17}),
+            ("vr", {"a": 15.41, "b": -2.61}),
+        ):
+            _insert_baseline_row(
+                conn,
+                metric,
+                "2026-08-31",
+                period_start="2026-07-01",
+                **kwargs,  # type: ignore[arg-type]
+            )
+
+        for metric, kwargs in (
+            ("gct", {"alpha": 13.42}),
+            ("vo", {"a": 6.51, "b": 0.28}),
+            ("vr", {"a": 16.85, "b": -3.25}),
+        ):
+            _insert_baseline_row(
+                conn,
+                metric,
+                "2026-09-30",
+                period_start="2026-07-31",
+                **kwargs,  # type: ignore[arg-type]
+            )
+
+        conn.close()
+
+        result = load_models_from_db(db_path, "2026-09-09")
+
+        assert result["gct"].alpha == 13.42  # type: ignore[union-attr]
+        assert result["vo"].a == 6.51  # type: ignore[union-attr]
+        assert result["vr"].a == 16.85  # type: ignore[union-attr]
+
+    def test_falls_back_to_latest_ended_period_when_none_covers(
+        self, tmp_path: Path
+    ) -> None:
+        """With no covering window, the newest ended one is used as before."""
+        db_path = str(tmp_path / "test.duckdb")
+        conn = duckdb.connect(db_path)
+        _create_baseline_table(conn)
+
+        for metric, kwargs in (
+            ("gct", {"alpha": 3.0}),
+            ("vo", {"a": 10.0, "b": -0.3}),
+            ("vr", {"a": 8.0, "b": -0.1}),
+        ):
+            _insert_baseline_row(
+                conn,
+                metric,
+                "2026-06-30",
+                period_start="2026-05-01",
+                **kwargs,  # type: ignore[arg-type]
+            )
+
+        for metric, kwargs in (
+            ("gct", {"alpha": 7.0}),
+            ("vo", {"a": 12.0, "b": -0.5}),
+            ("vr", {"a": 10.0, "b": -0.3}),
+        ):
+            _insert_baseline_row(
+                conn,
+                metric,
+                "2026-08-31",
+                period_start="2026-07-01",
+                **kwargs,  # type: ignore[arg-type]
+            )
+
+        conn.close()
+
+        result = load_models_from_db(db_path, "2026-09-09")
+
+        assert result["gct"].alpha == 7.0  # type: ignore[union-attr]
+
+    def test_selects_most_recent_when_multiple_cover(self, tmp_path: Path) -> None:
+        """Among covering windows, the most recent period_start wins."""
+        db_path = str(tmp_path / "test.duckdb")
+        conn = duckdb.connect(db_path)
+        _create_baseline_table(conn)
+
+        for metric, kwargs in (
+            ("gct", {"alpha": 4.0}),
+            ("vo", {"a": 10.0, "b": -0.3}),
+            ("vr", {"a": 8.0, "b": -0.1}),
+        ):
+            _insert_baseline_row(
+                conn,
+                metric,
+                "2026-09-30",
+                period_start="2026-06-01",
+                **kwargs,  # type: ignore[arg-type]
+            )
+
+        for metric, kwargs in (
+            ("gct", {"alpha": 9.0}),
+            ("vo", {"a": 12.0, "b": -0.5}),
+            ("vr", {"a": 10.0, "b": -0.3}),
+        ):
+            _insert_baseline_row(
+                conn,
+                metric,
+                "2026-09-30",
+                period_start="2026-08-01",
+                **kwargs,  # type: ignore[arg-type]
+            )
+
+        conn.close()
+
+        result = load_models_from_db(db_path, "2026-09-09")
+
+        assert result["gct"].alpha == 9.0  # type: ignore[union-attr]

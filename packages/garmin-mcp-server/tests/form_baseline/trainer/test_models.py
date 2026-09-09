@@ -101,14 +101,20 @@ class TestFitGCTPower:
         assert model.speed_range[1] > model.speed_range[0]
 
     def test_fit_gct_power_with_noise(self):
-        """Test GCT power model with noisy data."""
-        np.random.seed(42)
-        gct_values = np.linspace(200, 300, 20)
+        """Test GCT power model with noisy data.
+
+        Speed is the predictor and GCT the response, so the scatter is put on
+        GCT. (Perturbing speed instead would inject error into the regressor
+        and bias any fit -- that was how this test used to be written, back
+        when the model was fitted in the speed direction.)
+        """
+        rng = np.random.default_rng(42)
         alpha_true = 4.6
         d_true = -0.6
-        speed_values = np.exp(alpha_true + d_true * np.log(gct_values))
-        # Add noise
-        speed_values += np.random.normal(0, 0.1, size=len(speed_values))
+        speed_values = np.linspace(3.1, 4.2, 20)
+        gct_values = np.exp((np.log(speed_values) - alpha_true) / d_true)
+        # Add multiplicative noise to the measured GCT
+        gct_values = gct_values * np.exp(rng.normal(0, 0.02, size=len(gct_values)))
 
         df = pd.DataFrame({"gct_ms": gct_values, "speed_mps": speed_values})
 
@@ -117,8 +123,8 @@ class TestFitGCTPower:
         # Should still be monotonic
         assert model.d < 0
         # Should be reasonably close to true values (relaxed tolerance for noisy data)
-        assert abs(model.alpha - alpha_true) < 0.8
-        assert abs(model.d - d_true) < 0.3
+        assert abs(model.alpha - alpha_true) < 0.4
+        assert abs(model.d - d_true) < 0.1
 
     def test_fit_gct_power_ransac_fallback(self):
         """Test RANSAC fallback when Huber fails monotonicity."""
@@ -139,6 +145,59 @@ class TestFitGCTPower:
 
         # Should still be monotonic
         assert model.d < 0
+
+    @staticmethod
+    def _noisy_gct_frame(
+        k_true: float = -0.30,
+        c_true: float = 300.0,
+        sigma_log: float = 0.03,
+        n: int = 200,
+        v_lo: float = 1.9,
+        v_hi: float = 2.6,
+    ) -> pd.DataFrame:
+        """Synthetic splits following gct = c * v**k with noise on GCT.
+
+        Noise lives on GCT because that is where the measurement scatter
+        actually is: at a given pace the same runner's contact time varies.
+        """
+        rng = np.random.default_rng(20260909)
+        speed = rng.uniform(v_lo, v_hi, size=n)
+        gct = c_true * speed**k_true * np.exp(rng.normal(0.0, sigma_log, size=n))
+        return pd.DataFrame({"gct_ms": gct, "speed_mps": speed})
+
+    def test_fit_gct_power_recovers_known_exponent_with_noise(self):
+        """The effective GCT-vs-speed exponent 1/d matches the generating one.
+
+        Regression guard for #1088: fitting log(speed) on log(GCT) and
+        inverting it recovers roughly -0.45 here instead of -0.30, i.e. an
+        expectation curve far too steep at fast paces.
+        """
+        df = self._noisy_gct_frame()
+
+        model = fit_gct_power(df, fallback_ransac=False)
+
+        assert model.d < 0
+        assert abs(1.0 / model.d - (-0.30)) < 0.05
+
+    def test_fit_gct_power_is_unbiased_at_range_edges(self):
+        """No systematic residual tilt at the fast end of the training range."""
+        df = self._noisy_gct_frame()
+        model = fit_gct_power(df, fallback_ransac=False)
+
+        cutoff = df["speed_mps"].quantile(0.9)
+        fast = df[df["speed_mps"] >= cutoff]
+        predicted = np.array([model.predict_inverse(v) for v in fast["speed_mps"]])
+        residual_pct = ((fast["gct_ms"].values - predicted) / predicted) * 100.0
+
+        assert abs(float(np.mean(residual_pct))) < 1.5
+
+    def test_fit_gct_power_rmse_maps_to_log_gct_sigma(self):
+        """``rmse / abs(d)`` is the log-GCT residual sigma the scorer expects."""
+        df = self._noisy_gct_frame(sigma_log=0.03)
+
+        model = fit_gct_power(df, fallback_ransac=False)
+
+        assert abs(model.rmse / abs(model.d) - 0.03) < 0.01
 
     def test_fit_gct_power_insufficient_data(self):
         """Test error with insufficient data."""
