@@ -147,7 +147,7 @@ problem. Policy text for Claude sessions: `.claude/rules/dev/maintenance-policy.
 § Sandbox freeze.
 
 Exception (1) used so far: #1078 — the same test suite took 150 s and 44 s one
-minute apart with `/proc/pressure/io` at ~80 % while idle; `run.sh` now mounts
+minute apart (DuckDB checkpoint + fsync on the overlay `/tmp`; the high I/O-pressure reading turned out to be ghostty's io_uring, not the disk); `run.sh` now mounts
 `/tmp` as tmpfs (8 GiB cap) so per-test DuckDB files never wait on the host disk.
 Follow-up #1082: the mount needs an explicit `exec` (docker defaults `--tmpfs` to
 `noexec`), or the script self-tests cannot run their PATH shims from `mktemp -d`.
