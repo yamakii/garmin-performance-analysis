@@ -142,7 +142,9 @@ done
 # 8g is a cap, not a reservation; the pages are charged to --memory. Two
 # parallel ci-checks peak at ~3.2 GB (pytest keeps only failed tests' temp
 # dirs, see pyproject `tmp_path_retention_policy`); everything else in /tmp
-# is < 30 MB. /tmp was already discarded with the container (--rm).
+# is < 30 MB. /tmp was already discarded with the container (--rm). `exec` is
+# explicit because docker's --tmpfs default is noexec, which broke every
+# self-test that runs a PATH shim out of `mktemp -d` (#1082).
 echo "▶ Launching $CONTAINER ..."
 exec docker run --rm -it \
     --name "$CONTAINER" \
@@ -159,5 +161,5 @@ exec docker run --rm -it \
     --pids-limit 4096 \
     --memory 32g \
     --cpus 12 \
-    --tmpfs /tmp:rw,size=8g,mode=1777 \
+    --tmpfs /tmp:rw,exec,size=8g,mode=1777 \
     "$IMAGE" "$@"
