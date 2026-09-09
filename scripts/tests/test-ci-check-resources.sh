@@ -222,7 +222,7 @@ test_ample_headroom_runs_pytest_with_all_cpus() {
   fi
 }
 
-# --- worker cap (#1061): more than 4 xdist workers is slower on this suite ---
+# --- worker cap (#1061, 8 since #1080): past 8 xdist workers the suite stops speeding up ---
 
 # resources_with <cgroup_dir> <key> <extra env...> — like `resources`, but the
 # caller supplies CI_CHECK_CPUS (and anything else) explicitly.
@@ -238,16 +238,18 @@ test_resources_many_cpus_capped_at_max_workers() {
   echo "test_resources_many_cpus_capped_at_max_workers"
   local cg; cg="$(mktemp -d)/cg"
   make_cgroup "$cg" $((32 * GiB)) $((1 * GiB))   # headroom fits far more than 12
-  expect "12 cpus → capped" "$(resources_with "$cg" workers CI_CHECK_CPUS=12)" 4
-  expect "cap is reported" "$(resources_with "$cg" max_workers CI_CHECK_CPUS=12)" 4
+  expect "12 cpus → capped" "$(resources_with "$cg" workers CI_CHECK_CPUS=12)" 8
+  expect "cap is reported" "$(resources_with "$cg" max_workers CI_CHECK_CPUS=12)" 8
 }
 
 test_resources_max_workers_override() {
   echo "test_resources_max_workers_override"
   local cg; cg="$(mktemp -d)/cg"
   make_cgroup "$cg" $((32 * GiB)) $((1 * GiB))
-  expect "CI_CHECK_MAX_WORKERS=8 → 8" \
-    "$(resources_with "$cg" workers CI_CHECK_CPUS=12 CI_CHECK_MAX_WORKERS=8)" 8
+  expect "CI_CHECK_MAX_WORKERS=3 → 3 (below the default)" \
+    "$(resources_with "$cg" workers CI_CHECK_CPUS=12 CI_CHECK_MAX_WORKERS=3)" 3
+  expect "CI_CHECK_MAX_WORKERS=12 → 12 (above the default)" \
+    "$(resources_with "$cg" workers CI_CHECK_CPUS=12 CI_CHECK_MAX_WORKERS=12)" 12
   expect "cap never exceeds cpus" \
     "$(resources_with "$cg" workers CI_CHECK_CPUS=2 CI_CHECK_MAX_WORKERS=8)" 2
 }
@@ -255,7 +257,7 @@ test_resources_max_workers_override() {
 test_resources_unknown_headroom_still_capped() {
   echo "test_resources_unknown_headroom_still_capped"
   expect "absent cgroup + 12 cpus → capped" \
-    "$(resources_with /nonexistent/cgroup workers CI_CHECK_CPUS=12)" 4
+    "$(resources_with /nonexistent/cgroup workers CI_CHECK_CPUS=12)" 8
 }
 
 test_full_path_uses_capped_workers() {
@@ -266,8 +268,8 @@ test_full_path_uses_capped_workers() {
   shims="$(setup_shims)"
   out="$(CI_CHECK_LOCK="" CI_CHECK_CGROUP_DIR="$cg" CI_CHECK_CPUS=12 \
     PATH="$shims:$PATH" bash "$CI_CHECK" 2>&1)"
-  echo "$out" | grep -q "pytest -m unit or integration --tb=short -n 4 " \
-    || fail "12 cpus must run pytest with -n 4 (got: $(echo "$out" | grep 'pytest -m' || true))"
+  echo "$out" | grep -q "pytest -m unit or integration --tb=short -n 8 " \
+    || fail "12 cpus must run pytest with -n 8 (got: $(echo "$out" | grep 'pytest -m' || true))"
 }
 
 # ---------------------------------------------------------------------------

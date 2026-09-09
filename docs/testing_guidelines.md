@@ -14,8 +14,8 @@ Tests live in two packages, each with its own `pyproject.toml` pytest config:
 Run them via `uv run --directory <package> pytest ...`. The canonical CI
 command set is `scripts/ci-check.sh` (server and web: `pytest -m "unit or
 integration"`, mirroring the GitHub `lint-and-test` / `web-backend` jobs). The
-server run uses at most 4 xdist workers (`CI_CHECK_MAX_WORKERS`, #1061): on
-this suite more workers are slower because every test writes its own DuckDB
+server run uses at most 8 xdist workers (`CI_CHECK_MAX_WORKERS`, #1061 → #1080): on
+this suite more than 8 workers stops paying off because every test writes its own DuckDB (kept in RAM since #1078)
 file.
 
 ## Test Markers
