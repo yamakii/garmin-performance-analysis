@@ -58,12 +58,12 @@ def test_no_phase_named_test_files() -> None:
     assert not offenders, f"phase-named test files: {offenders}"
 
 
-_SIZE_BUDGET_LINES = 900
+_SIZE_BUDGET_LINES = 800
 
 
 @pytest.mark.unit
 def test_test_files_under_size_budget() -> None:
-    """A test file that reaches 900 lines is split into a themed subpackage
+    """A test file that reaches 800 lines is split into a themed subpackage
     (#1069) instead of growing further; the eight that had passed it were."""
     over = {
         str(p.relative_to(_TESTS)): n
