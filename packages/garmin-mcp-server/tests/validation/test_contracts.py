@@ -22,6 +22,30 @@ def test_get_contract_split():
 
 
 @pytest.mark.unit
+def test_split_contract_has_hr_zone_labeling_policy():
+    """Issue #1093: a zone label needs the Garmin boundaries behind it."""
+    policy = get_contract("split")["evaluation_policy"]
+    assert "hr_zones_detail" in policy["hr_zone_labeling"]
+    assert "never infer" in policy["hr_zone_labeling"]
+
+
+@pytest.mark.unit
+def test_split_contract_has_prescription_alignment_policy():
+    """Splits are where a prescribed ramp shows, so they must judge it."""
+    policy = get_contract("split")["evaluation_policy"]
+    alignment = policy["prescription_alignment"]
+    assert "prescription_for_run" in alignment
+    assert "on_plan" in alignment
+
+
+@pytest.mark.unit
+def test_split_contract_instructions_mention_prescription():
+    instructions = get_contract("split")["instructions"]
+    assert any("prescription_alignment" in line for line in instructions)
+    assert any("hr_zone_labeling" in line for line in instructions)
+
+
+@pytest.mark.unit
 def test_get_contract_phase():
     contract = get_contract("phase")
     policy = contract["evaluation_policy"]
