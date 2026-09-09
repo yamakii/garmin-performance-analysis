@@ -95,7 +95,10 @@ def test_next_target_tempo_from_lt() -> None:
     # 1000 / 3.333 = 300.03s/km LT pace; target = -3s -> 297s = 4:57.
     assert result["recommended_type"] == "tempo"
     assert result["target_pace_formatted"] == "4:57/km"
-    assert result["target_hr"] == 158
+    # With neither a prescription nor native zones, the HR band falls back to
+    # avg_hr +/- 5 -- never the bare average as a target (Issue #1086).
+    assert (result["target_hr_low"], result["target_hr_high"]) == (153, 163)
+    assert result["hr_basis"] == "recent_avg_hr"
     assert "insufficient_data" not in result
 
 

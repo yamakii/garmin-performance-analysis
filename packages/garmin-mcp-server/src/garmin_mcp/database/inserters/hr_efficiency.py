@@ -59,6 +59,10 @@ def _canonical_training_category(training_type: str | None) -> str:
 # these apart, so refine the label-category with the actual zone distribution.
 _MODERATE_ZONE3_MIN = 50.0  # Zone3 % that marks a run as Zone3-dominant
 _MODERATE_ZONE45_MAX = 15.0  # Zone4+5 % below which it is not threshold/VO2 work
+# Zone4+5 % above which the session actually did threshold work. Also the
+# alignment evidence for a quality session whose modal zone is the warmup's
+# (Issue #1086).
+_THRESHOLD_WORK_MIN_PCT = 20.0
 
 
 def _resolve_intensity_category(
@@ -287,7 +291,17 @@ def _extract_hr_efficiency_from_raw(
         elif category == "moderate":
             primary_zone_aligned = "Zone 2" in primary_zone or "Zone 3" in primary_zone
         elif category in ("tempo", "threshold"):
-            primary_zone_aligned = "Zone 3" in primary_zone or "Zone 4" in primary_zone
+            # A quality session carries the warmup / cooldown its prescription
+            # registers (10min + 5min) and a build-up opens in Zone2, so the
+            # modal zone is routinely Zone1-2 even when the threshold work was
+            # done exactly as prescribed. Spending real time at Zone4-5 is the
+            # evidence that the session met its intent, so it counts as
+            # alignment on its own (Issue #1086).
+            primary_zone_aligned = (
+                "Zone 3" in primary_zone
+                or "Zone 4" in primary_zone
+                or (zone4_pct + zone5_pct) > _THRESHOLD_WORK_MIN_PCT
+            )
         elif category == "vo2max":
             primary_zone_aligned = "Zone 4" in primary_zone or "Zone 5" in primary_zone
 
@@ -310,7 +324,7 @@ def _extract_hr_efficiency_from_raw(
     zone4_pct = zone_percentages.get("zone4_percentage", 0)
     zone5_pct = zone_percentages.get("zone5_percentage", 0)
     zone45_pct = zone4_pct + zone5_pct
-    zone4_threshold_work = zone45_pct > 20
+    zone4_threshold_work = zone45_pct > _THRESHOLD_WORK_MIN_PCT
 
     # Calculate HR stability (simplified)
     avg_hr = summary_dto.get("averageHR", 0)

@@ -412,11 +412,13 @@ class TestPrefetchActivityContext:
                 mock_result.fetchone.return_value = None
             elif call_count == 3:  # elevation
                 mock_result.fetchone.return_value = (None, None, 0, None, None, None)
-            elif call_count == 4:  # form_evaluations table missing
+            elif call_count == 4:  # run-phase splits (progression detection)
+                mock_result.fetchall.return_value = []
+            elif call_count == 5:  # form_evaluations table missing
                 raise duckdb.CatalogException(
                     "Table with name form_evaluations does not exist"
                 )
-            elif call_count == 5:  # performance_trends table missing
+            elif call_count == 6:  # performance_trends table missing
                 raise duckdb.CatalogException(
                     "Table with name performance_trends does not exist"
                 )
@@ -462,7 +464,9 @@ class TestPrefetchActivityContext:
                 )
             elif call_count == 3:  # elevation
                 mock_result.fetchone.return_value = (None, None, 0, None, None, None)
-            elif call_count == 4:  # form_evaluations query is broken
+            elif call_count == 4:  # run-phase splits (progression detection)
+                mock_result.fetchall.return_value = []
+            elif call_count == 5:  # form_evaluations query is broken
                 raise duckdb.BinderException(
                     'Referenced column "gct_star_rating" not found'
                 )

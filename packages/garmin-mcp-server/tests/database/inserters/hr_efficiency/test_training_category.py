@@ -178,3 +178,34 @@ class TestCanonicalTrainingCategory:
 
         if result["aerobic_efficiency"].startswith("Excellent"):
             assert result["zone_distribution_rating"] != "Poor"
+
+    @pytest.mark.unit
+    def test_training_quality_good_when_threshold_work_done_despite_zone2_primary(
+        self, tmp_path
+    ):
+        """Issue #1086 (activity 24294972923): a prescribed 5km build-up.
+
+        Its warmup, cooldown and Zone2 opening make Zone2 the modal zone even
+        though 24.4% of the session was spent at Zone4-5 exactly as prescribed.
+        Demanding a Zone3/4 primary zone demoted a Good distribution to Fair.
+        """
+        hr_zones_file, activity_file = _write_raw_files(
+            tmp_path, {1: 17.0, 2: 37.9, 3: 20.7, 4: 22.0, 5: 2.4}, "TEMPO"
+        )
+        result = _extract_hr_efficiency_from_raw(hr_zones_file, activity_file)
+
+        assert result["primary_zone"] == "Zone 2"
+        assert result["zone_distribution_rating"] == "Good"
+        assert result["training_quality"] == "Good"
+
+    @pytest.mark.unit
+    def test_training_quality_stays_fair_without_threshold_work(self, tmp_path):
+        """A tempo that never reached Zone4 keeps the demotion it earns."""
+        hr_zones_file, activity_file = _write_raw_files(
+            tmp_path, {1: 20.0, 2: 35.0, 3: 25.0, 4: 17.0, 5: 3.0}, "TEMPO"
+        )
+        result = _extract_hr_efficiency_from_raw(hr_zones_file, activity_file)
+
+        assert result["primary_zone"] == "Zone 2"
+        assert result["zone_distribution_rating"] == "Good"
+        assert result["training_quality"] == "Fair"

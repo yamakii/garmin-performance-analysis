@@ -62,6 +62,7 @@ def compute_next_run_target(
     avg_hr: int | None,
     avg_pace_s_per_km: float | None,
     hr_zones_detail: dict | None = None,
+    prescription: dict | None = None,
 ) -> dict:
     """Deterministic numeric core of next_run_target (prose left to agent).
 
@@ -77,7 +78,12 @@ def compute_next_run_target(
       (100%).
     - tempo / threshold (LT-pace-based):
       ``lt_pace_s = 1000 / lactate_threshold["speed_mps"]``;
-      ``target = lt_pace_s - 3`` -> ``target_pace_formatted``, ``target_hr``.
+      ``target = lt_pace_s - 3`` -> ``target_pace_formatted``. The HR band is
+      **never** the run's own ``avg_hr`` (Issue #1086): a tempo run's average
+      includes its warmup and cooldown, so using it told the athlete to run the
+      next tempo in Zone2. The band is taken from the day's prescription
+      (``hr_low`` / ``hr_high``), else from the Garmin native Zone3-Zone4 span,
+      and only falls back to ``avg_hr ± 5`` when neither exists.
     - easy / recovery / base (HR-based, Issue #863): the target band is the
       athlete's **Garmin native HR zone** for the training-type family --
       recovery -> Zone1, easy/base -> Zone2 -- read from ``hr_zones_detail``.
@@ -100,7 +106,9 @@ def compute_next_run_target(
     if effective_type in _INTERVAL_TRAINING_TYPES:
         return _interval_target(effective_type, vo2_max)
     if effective_type in _TEMPO_TRAINING_TYPES:
-        return _tempo_target(effective_type, lactate_threshold, avg_hr)
+        return _tempo_target(
+            effective_type, lactate_threshold, avg_hr, hr_zones_detail, prescription
+        )
     return _easy_target(effective_type, avg_hr, avg_pace_s_per_km, hr_zones_detail)
 
 
@@ -128,10 +136,40 @@ def _interval_target(training_type: str | None, vo2_max: dict | None) -> dict:
     }
 
 
+def _tempo_hr_band(
+    avg_hr: int | None,
+    hr_zones_detail: dict | None,
+    prescription: dict | None,
+) -> tuple[int, int, str] | None:
+    """Resolve the ``(low, high, basis)`` HR band of the next tempo session.
+
+    Priority (Issue #1086): the prescribed band the athlete is actually working
+    to > the Garmin native Zone3-Zone4 span > the legacy ``avg_hr ± 5``. The
+    run's own average is the weakest source because a tempo session's average
+    is dragged down by its prescribed warmup and cooldown.
+    """
+    if prescription:
+        low = prescription.get("hr_low")
+        high = prescription.get("hr_high")
+        if low is not None and high is not None and int(low) <= int(high):
+            return int(low), int(high), "prescription"
+
+    zone3 = _zone_band(hr_zones_detail, 3)
+    zone4 = _zone_band(hr_zones_detail, 4)
+    if zone3 is not None and zone4 is not None:
+        return zone3[0], zone4[1], "garmin_native_zone"
+
+    if avg_hr is not None:
+        return avg_hr - 5, avg_hr + 5, "recent_avg_hr"
+    return None
+
+
 def _tempo_target(
     training_type: str | None,
     lactate_threshold: dict | None,
     avg_hr: int | None,
+    hr_zones_detail: dict | None = None,
+    prescription: dict | None = None,
 ) -> dict:
     recommended_type = "tempo"
     speed_mps = lactate_threshold.get("speed_mps") if lactate_threshold else None
@@ -146,12 +184,24 @@ def _tempo_target(
 
     lt_pace_s = 1000 / speed_mps
     target_pace_s = lt_pace_s - 3
-    return {
+    result: dict = {
         "recommended_type": recommended_type,
         "lt_pace_formatted": _format_pace_km(lt_pace_s),
         "target_pace_formatted": _format_pace_km(target_pace_s),
-        "target_hr": avg_hr,
+        # Same key names as the easy family so the web card renders the pace
+        # chip for quality sessions too (low = faster end).
+        "reference_pace_low_formatted": _format_pace_km(target_pace_s),
+        "reference_pace_high_formatted": _format_pace_km(lt_pace_s),
     }
+    band = _tempo_hr_band(avg_hr, hr_zones_detail, prescription)
+    if band is not None:
+        low, high, basis = band
+        result["target_hr_low"] = low
+        result["target_hr_high"] = high
+        result["hr_basis"] = basis
+    if avg_hr is not None:
+        result["typical_hr"] = avg_hr
+    return result
 
 
 def _zone_band(
@@ -218,6 +268,9 @@ def _easy_target(
     if avg_pace_s_per_km is not None:
         result["reference_pace_formatted"] = _format_pace_km(avg_pace_s_per_km)
         result["reference_pace_fast_formatted"] = _format_pace_km(avg_pace_s_per_km - 5)
+        # low/high aliases: the web card reads these key names (Issue #1086).
+        result["reference_pace_low_formatted"] = _format_pace_km(avg_pace_s_per_km - 5)
+        result["reference_pace_high_formatted"] = _format_pace_km(avg_pace_s_per_km + 5)
         result["reference_pace_slow_formatted"] = _format_pace_km(avg_pace_s_per_km + 5)
     return result
 
@@ -309,8 +362,113 @@ _PHASE_TRAINING_TYPE_CATEGORY: dict[str, str] = {
 # explicit number; 160bpm marks the lower edge of tempo/threshold HR.
 _LONG_RUN_TEMPO_HR_THRESHOLD = 160
 
+# --- Progression (build-up) detection (Issue #1086) -------------------------
+# A prescribed build-up ramps HR and pace on purpose, so the steady-tempo
+# criteria (pace CV, whole-run Zone3-4 share) punish it for being executed
+# correctly. Detecting it deterministically lets the contracts hand the agents
+# a category of their own instead of loosening everyone's thresholds.
 
-def map_phase_category(training_type: str | None, planned_workout: dict | None) -> str:
+# Keywords that mark a prescription as a build-up / progression session.
+_PROGRESSION_KEYWORDS: tuple[str, ...] = (
+    "ビルドアップ",
+    "ビルドUP",
+    "プログレッション",
+    "漸増",
+    "progression",
+    "progressive",
+    "build-up",
+    "build up",
+    "buildup",
+)
+
+# HR gain from the first to the last run-phase split that counts as a ramp.
+_PROGRESSION_HR_GAIN_BPM = 12
+# A single dip this small does not break monotonicity (traffic, a hill, a bridge).
+_PROGRESSION_HR_DIP_TOLERANCE_BPM = 3
+# Pace gain (seconds/km faster) from the first to the last run-phase split.
+# Required on top of the HR ramp for an unmarked session, so an even-paced
+# tempo whose HR simply drifted up is not misread as a build-up.
+_PROGRESSION_PACE_GAIN_S = 10
+# Fewer splits than this cannot show a ramp.
+_PROGRESSION_MIN_SPLITS = 3
+
+
+def _prescription_marks_progression(prescription: dict | None) -> bool:
+    """True when the prescription's title / rationale names a build-up."""
+    if not prescription:
+        return False
+    text = " ".join(
+        str(prescription.get(key) or "") for key in ("title", "rationale")
+    ).lower()
+    return any(keyword.lower() in text for keyword in _PROGRESSION_KEYWORDS)
+
+
+def _hr_ramps(hrs: list[float]) -> bool:
+    """True when HR climbs monotonically (one small dip allowed) by enough."""
+    if hrs[-1] - hrs[0] < _PROGRESSION_HR_GAIN_BPM:
+        return False
+    dips = 0
+    for previous, current in zip(hrs, hrs[1:], strict=False):
+        drop = previous - current
+        if drop > _PROGRESSION_HR_DIP_TOLERANCE_BPM:
+            return False
+        if drop > 0:
+            dips += 1
+    return dips <= 1
+
+
+def detect_progression_session(
+    prescription: dict | None,
+    run_splits: list[dict] | None,
+) -> bool:
+    """Whether the run-phase splits show a prescribed build-up (Issue #1086).
+
+    A session counts as a progression when its run-phase HR ramps (>= 12bpm
+    from the first to the last split, monotonic bar one <= 3bpm dip) **and**
+    the last split is >= 10 s/km faster than the first. When the prescription
+    itself names a build-up, the HR ramp alone is enough -- the athlete may hold
+    pace on a hill or into wind while the effort still steps up as prescribed.
+
+    Args:
+        prescription: The day's ``weekly_prescriptions`` row, or ``None``.
+        run_splits: Run-phase splits in running order, each with
+            ``avg_heart_rate`` and ``avg_pace_seconds_per_km``.
+
+    Returns:
+        ``True`` for a build-up / progression session, ``False`` otherwise
+        (including when there are too few splits or the metrics are missing).
+    """
+    if not run_splits or len(run_splits) < _PROGRESSION_MIN_SPLITS:
+        return False
+
+    hrs = [
+        _as_float(split.get("avg_heart_rate"))
+        for split in run_splits
+        if _as_float(split.get("avg_heart_rate")) is not None
+    ]
+    paces = [
+        _as_float(split.get("avg_pace_seconds_per_km"))
+        for split in run_splits
+        if _as_float(split.get("avg_pace_seconds_per_km")) is not None
+    ]
+    if len(hrs) < _PROGRESSION_MIN_SPLITS:
+        return False
+
+    hr_ramp = _hr_ramps([hr for hr in hrs if hr is not None])
+    if not hr_ramp:
+        return False
+    if _prescription_marks_progression(prescription):
+        return True
+    if len(paces) < _PROGRESSION_MIN_SPLITS:
+        return False
+    return (paces[0] or 0) - (paces[-1] or 0) >= _PROGRESSION_PACE_GAIN_S
+
+
+def map_phase_category(
+    training_type: str | None,
+    planned_workout: dict | None,
+    is_progression: bool = False,
+) -> str:
     """Map training_type / planned_workout to a phase evaluation category.
 
     Ports the unified-section-analyst.md L179-191 decision table so the phase
@@ -319,9 +477,25 @@ def map_phase_category(training_type: str | None, planned_workout: dict | None) 
     activity's own ``training_type``.
 
     Returns one of ``'low_moderate'`` | ``'tempo_threshold'`` |
-    ``'interval_sprint'`` (default ``'tempo_threshold'`` when neither source
-    resolves a category).
+    ``'interval_sprint'`` | ``'progression'`` (default ``'tempo_threshold'``
+    when neither source resolves a category).
+
+    ``is_progression`` (from :func:`detect_progression_session`) overrides a
+    continuous-effort category with ``'progression'`` so a prescribed build-up
+    is judged on its ramp instead of on steady-tempo pace stability (Issue
+    #1086). Interval sessions keep their own category: their structure is
+    work/recovery, not a ramp.
     """
+    category = _resolve_phase_category(training_type, planned_workout)
+    if is_progression and category in ("tempo_threshold", "low_moderate"):
+        return "progression"
+    return category
+
+
+def _resolve_phase_category(
+    training_type: str | None, planned_workout: dict | None
+) -> str:
+    """The training_type / planned_workout half of :func:`map_phase_category`."""
     if planned_workout is not None:
         workout_type = planned_workout.get("workout_type")
         if workout_type == "long_run":
@@ -841,6 +1015,23 @@ def _intensity_class(name: str | None) -> int | None:
     return _INTENSITY_CLASS_BY_NAME.get(str(name).strip().lower())
 
 
+def select_prescription_for_run(rows: list[dict] | None) -> dict | None:
+    """The row a run should be judged against, out of a day's prescriptions.
+
+    A day can carry more than one prescribed session (a run plus 補強, say).
+    Rows whose ``session_type`` has no running intensity class -- strength,
+    cross-training -- can never be answered by a run, so the first row with a
+    class (rest included: running on a rest day is a real deviation) wins.
+    Falls back to the first row when none of them classify (Issue #1086).
+    """
+    if not rows:
+        return None
+    for row in rows:
+        if _intensity_class(row.get("session_type")) is not None:
+            return row
+    return rows[0]
+
+
 def _class_label(intensity_class: int | None, fallback: str | None) -> str:
     """Japanese label for an intensity ordinal, falling back to the raw name."""
     if intensity_class is not None:
@@ -979,8 +1170,13 @@ def compute_prescription_verdict(
         hr_tolerance_bpm: Overshoot above ``hr_high`` still counted as on-plan.
 
     Returns:
-        ``{"verdict", "prescription_title", "reasons": [str, ...]}`` with
-        Japanese, numeric reasons, or ``None`` when ``prescription`` is ``None``.
+        ``{"verdict", "prescription_title", "reasons": [str, ...], "on_plan":
+        [str, ...]}`` with Japanese, numeric reasons, or ``None`` when
+        ``prescription`` is ``None``. ``on_plan`` names the axes the run
+        answered as prescribed (``intensity_class`` / ``volume`` /
+        ``hr_ceiling``, or ``rest`` for a rest day taken), so the narration
+        layer can tell "89% of target" inside the tolerance band from a real
+        shortfall (Issue #1086).
     """
     if not prescription:
         return None
@@ -1010,11 +1206,13 @@ def compute_prescription_verdict(
                 "verdict": _VERDICT_BY_SEVERITY[2],
                 "prescription_title": title,
                 "reasons": [f"休養処方「{title}」の日に{done}を実施しました。"],
+                "on_plan": [],
             }
         return {
             "verdict": _VERDICT_BY_SEVERITY[0],
             "prescription_title": title,
             "reasons": [f"休養処方「{title}」どおりに休めています。"],
+            "on_plan": ["rest"],
         }
 
     # 2. Intensity class.
@@ -1082,10 +1280,32 @@ def compute_prescription_verdict(
                 f"{over:.0f}bpm 上回りました。"
             )
 
+    # 5. Which axes came out on plan. The narration layer needs this
+    #    explicitly: reading "量 89%" without its tolerance band, the summary
+    #    agent turned a ✅ volume into an improvement area and invented a cause
+    #    for it (Issue #1086).
+    on_plan: list[str] = []
+    if not class_mismatch:
+        on_plan.append("intensity_class")
+    volume_on_plan = volume is not None and _VOLUME_OK_LOW <= volume[0] <= (
+        _VOLUME_OK_HIGH
+    )
+    if volume_on_plan:
+        on_plan.append("volume")
+    if (
+        hr_high is not None
+        and avg_hr is not None
+        and (avg_hr - hr_high) <= hr_tolerance_bpm
+    ):
+        on_plan.append("hr_ceiling")
+
     if severity == 0:
         details: list[str] = []
         if volume is not None:
-            details.append(f"量 {round(volume[0] * 100)}%")
+            details.append(
+                f"量 {round(volume[0] * 100)}%"
+                f"（許容 {round(_VOLUME_OK_LOW * 100)}-{round(_VOLUME_OK_HIGH * 100)}%）"
+            )
         if hr_high is not None and avg_hr is not None:
             details.append(f"平均HR {avg_hr:.0f}bpm ≦ 上限 {hr_high:.0f}bpm")
         suffix = f"（{'、'.join(details)}）" if details else ""
@@ -1095,6 +1315,7 @@ def compute_prescription_verdict(
         "verdict": _VERDICT_BY_SEVERITY[severity],
         "prescription_title": title,
         "reasons": reasons,
+        "on_plan": on_plan,
     }
 
 

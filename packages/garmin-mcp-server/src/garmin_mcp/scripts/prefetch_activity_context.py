@@ -54,6 +54,8 @@ Output (JSON to stdout):
       "lactate_threshold": null,     # training-type conditional (or data dict)
       "long_run_gate": null,         # long runs only (>= 10 km); see below
       "prescription": [],            # that day's weekly_prescriptions rows
+      "prescription_for_run": {...}|null,  # the row the run is judged against
+      "progression_session": false,  # run-phase splits show a prescribed build-up
       "week_position": {...}|null,   # where the day sits in the training week
       "previous_same_type": {...}|null,  # last same-type run within 21 days
       "vs_previous": {...}|null,     # deterministic deltas against it
@@ -95,8 +97,10 @@ from garmin_mcp.analysis.derivations import (
     compute_prescription_verdict,
     compute_vs_previous,
     compute_week_position,
+    detect_progression_session,
     map_environment_category,
     map_phase_category,
+    select_prescription_for_run,
 )
 from garmin_mcp.database.connection import get_connection, get_db_path
 
@@ -140,6 +144,7 @@ def _empty_prescription_layer() -> dict[str, Any]:
     """The prescription layer's keys with no data (shape is always present)."""
     return {
         "prescription": [],
+        "prescription_for_run": None,
         "week_position": None,
         "previous_same_type": None,
         "vs_previous": None,
@@ -327,10 +332,13 @@ def _collect_prescription_layer(
             or []
         )
         layer["prescription"] = rows
-        # The day's canonical session is its first row (a day carries one
-        # prescribed session; ties are already ordered by prescription_id).
+        # The row a run answers: the first with a running intensity class, so a
+        # 補強 row filed earlier the same day is not what the run is judged
+        # against (Issue #1086).
+        run_row = select_prescription_for_run(rows)
+        layer["prescription_for_run"] = run_row
         layer["prescription_verdict"] = _safe(
-            lambda: compute_prescription_verdict(rows[0] if rows else None, actual)
+            lambda: compute_prescription_verdict(run_row, actual)
         )
 
         week_start = _safe(
@@ -581,6 +589,30 @@ def prefetch_activity_context(activity_id: int) -> dict:
             [activity_id],
         ).fetchone()
 
+        # 3b. Run-phase splits, for the deterministic build-up detection
+        #     (Issue #1086). Sub-400m fragments left by manual lap presses have
+        #     artifact paces, so they never take part in the ramp test.
+        run_splits: list[dict[str, Any]] = []
+        try:
+            run_split_rows = conn.execute(
+                """
+                SELECT heart_rate AS avg_heart_rate,
+                       pace_seconds_per_km AS avg_pace_seconds_per_km
+                FROM splits
+                WHERE activity_id = ?
+                  AND role_phase = 'run'
+                  AND distance >= 0.4
+                ORDER BY split_index
+                """,
+                [activity_id],
+            ).fetchall()
+            run_splits = [
+                {"avg_heart_rate": row[0], "avg_pace_seconds_per_km": row[1]}
+                for row in run_split_rows
+            ]
+        except duckdb.CatalogException:
+            logger.debug("splits table not found; skipping progression detection")
+
         total_gain = elev_row[0] if elev_row and elev_row[0] else 0.0
         total_loss = elev_row[1] if elev_row and elev_row[1] else 0.0
         split_count = elev_row[2] if elev_row else 0
@@ -783,6 +815,11 @@ def prefetch_activity_context(activity_id: int) -> dict:
         },
     )
 
+    # Build-up detection needs the prescription, so it runs after the layer.
+    progression_session = detect_progression_session(
+        prescription_layer.get("prescription_for_run"), run_splits
+    )
+
     return {
         "activity_id": activity_id,
         "activity_date": activity_date,
@@ -810,8 +847,14 @@ def prefetch_activity_context(activity_id: int) -> dict:
         # Deterministic training_type -> category mapping (Issue #673). Moves
         # the phase / environment classification tables out of the agent prose
         # so both sections select evaluation criteria without re-deriving.
-        "phase_category": map_phase_category(training_type, None),
+        "phase_category": map_phase_category(
+            training_type, None, is_progression=progression_session
+        ),
         "environment_category": map_environment_category(training_type),
+        # Whether the run-phase splits show the prescribed build-up (Issue
+        # #1086). Drives phase_category and tells the agents that a large pace
+        # CV / a Zone2-dominant distribution is the design, not a defect.
+        "progression_session": progression_session,
         # Deterministic next_run_target numeric core (Issue #672). The agent
         # transcribes these values and adds only prose (summary_ja / tip).
         "next_run_target": compute_next_run_target(
@@ -822,6 +865,7 @@ def prefetch_activity_context(activity_id: int) -> dict:
             avg_heart_rate,
             avg_pace_s_per_km,
             hr_zones_detail,
+            prescription_layer.get("prescription_for_run"),
         ),
         # --- S1 bundle expansion (Issue #235, additive) ---
         "form_evaluation": form_evaluation,

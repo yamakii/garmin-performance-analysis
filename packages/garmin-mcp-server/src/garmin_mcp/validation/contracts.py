@@ -28,6 +28,17 @@ CV_THRESHOLDS: dict[str, dict[str, str]] = {
         "fair": "<7%",
         "poor": ">=7%",
     },
+    # A prescribed build-up spans Zone2 to Zone4 on purpose, so its pace CV is
+    # structurally the largest of any continuous session -- a Z2->Z4 ramp over
+    # 5km moves ~60-90 sec/km by design (#1086). Judging it with the
+    # steady-tempo band penalised the athlete for executing the prescription,
+    # so the band is separated by category rather than loosened for everyone.
+    "progression": {
+        "excellent": "<8%",
+        "good": "<12%",
+        "fair": "<18%",
+        "poor": ">=18%",
+    },
     "interval_sprint": {
         "work": "<5%",
         "recovery": "<10%",
@@ -128,6 +139,24 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                         "pace_stability": 0.30,
                     },
                 },
+                "progression": {
+                    "hr_target": "the prescribed ramp (e.g. Z2->Z3->Z4)",
+                    "pace_focus": (
+                        "monotonic build: each segment at or faster than the "
+                        "previous one, fastest at the end. High pace CV is the "
+                        "design, not a defect"
+                    ),
+                    "weights": {
+                        "target_pace": 0.40,
+                        "hr_control": 0.30,
+                        "progression_quality": 0.30,
+                    },
+                    "progression_quality": (
+                        "Score the ramp itself: did HR step through the "
+                        "prescribed zones in order and stop at the prescribed "
+                        "ceiling? Do NOT score pace stability for this category"
+                    ),
+                },
                 "interval_sprint": {
                     "hr_target": "Zone 4-5",
                     "pace_focus": "work/recovery consistency",
@@ -152,6 +181,17 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                     "3_star": "Present but HR spikes or too short",
                     "star_if_absent": "3.0",
                 },
+                # A build-up starts easy by design, so its opening segment IS
+                # the warmup: a large pace gap to the (fast) closing segment is
+                # expected and is not a warmup defect (#1086).
+                "progression": {
+                    "5_star": (
+                        "Opens in the prescribed starting zone with no HR spike"
+                    ),
+                    "4_star": "Opens one zone off the prescribed start",
+                    "3_star": "Starts above the prescribed zone (skipped the ramp)",
+                    "star_if_absent": "4.0",
+                },
                 "interval_sprint": {
                     "5_star": (
                         "2km+, HR to Zone 2 gradually, " "dynamic stretching implied"
@@ -169,6 +209,14 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "tempo_threshold": {
                     "5_star": (
                         "Last 1km at main +20-40sec/km, " "HR drops to Zone 1-2"
+                    ),
+                    "4_star": "Pace drops but HR stays elevated",
+                    "3_star": "Abrupt stop or absent",
+                    "star_if_absent": "3.0",
+                },
+                "progression": {
+                    "5_star": (
+                        "Cooldown follows the peak segment, HR drops to Zone 1-2"
                     ),
                     "4_star": "Pace drops but HR stays elevated",
                     "3_star": "Abrupt stop or absent",
@@ -201,6 +249,14 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                     "mild": "8-12%",
                     "excessive": ">12%",
                 },
+                # Intensity rises through the session by design, so the first /
+                # second half comparison overstates decoupling. Only a large
+                # positive value is informative.
+                "progression": {
+                    "good_coupling": "<12%",
+                    "mild": "12-18%",
+                    "excessive": ">18%",
+                },
                 "interval_sprint": ("N/A (not applicable for interval structure)"),
             },
             "phase_structures": {
@@ -214,8 +270,9 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
         "instructions": [
             "Evaluate each phase independently using criteria from " "this contract",
             "Include star rating on its own line in parentheses",
-            "Base evaluation on training_type mapped to "
-            "evaluation_criteria category",
+            "Base evaluation on CONTEXT.phase_category (already mapped from "
+            "training_type / prescription; 'progression' means a prescribed "
+            "build-up -- score the ramp, never pace stability)",
             "Use cv_thresholds for pace stability assessment " "per training type",
             "Apply warmup/cooldown criteria based on " "training type category",
             "Use hr_drift_by_type for HR drift assessment " "(skip for interval)",
@@ -495,6 +552,18 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "rules": [
                     "Transcribe prescription_verdict / vs_previous; never "
                     "recompute or soften them",
+                    "Axes named in prescription_verdict.on_plan (intensity_class"
+                    " / volume / hr_ceiling / rest) came out ON PLAN: never list"
+                    " them in improvement_areas or recommendations, never call "
+                    "them a shortfall, and never invent a cause for them -- a "
+                    "volume of 89% inside the 85-130% band is the plan met, not "
+                    "a distance the athlete failed to finish",
+                    "A ✅ verdict must appear in key_strengths, and next_action "
+                    "builds on the plan (the next prescribed step) instead of "
+                    "correcting a session that was executed as prescribed",
+                    "next_run_target is deterministic: transcribe its HR band "
+                    "and paces verbatim and never restate the run's own average "
+                    "HR as the next target",
                     "next_action must follow week_position.ladder_step.next "
                     "when it exists (never propose extending distance on top "
                     "of the ladder)",
@@ -535,7 +604,11 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "tempo": {
                     "distance": "same or +1km",
                     "pace": "-3sec/km (gradual improvement)",
-                    "hr_zone": "Zone 3-4 time +5%",
+                    "hr_band": (
+                        "transcribe next_run_target.target_hr_low/high "
+                        "(prescription > Garmin Zone3-4 > recent average); "
+                        "never the run's own avg_hr"
+                    ),
                 },
                 "interval": {
                     "sets": "same or +1 rep",
@@ -573,6 +646,19 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "tempo": {
                     "hr_zone_3_4": ">=60%",
                     "pace_cv": _cv_band("tempo_threshold", "good"),
+                    "hr_drift": "10-15% allowed",
+                },
+                # A prescribed build-up spends its opening kilometres in Zone2
+                # on purpose and carries the warmup / cooldown its registered
+                # workout adds, so the whole-run Zone3-4 share is the wrong
+                # test: what matters is that the peak segment reached the
+                # prescribed zone (#1086).
+                "progression": {
+                    "hr_zone_3_4": (
+                        "not applicable -- judge whether the peak segment "
+                        "reached the prescribed zone"
+                    ),
+                    "pace_cv": _cv_band("progression", "good"),
                     "hr_drift": "10-15% allowed",
                 },
                 "interval": {
