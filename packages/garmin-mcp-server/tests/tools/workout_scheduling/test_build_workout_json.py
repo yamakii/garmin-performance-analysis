@@ -101,3 +101,20 @@ def test_title_prefix_enforced() -> None:
         "[MCP] Long 120min", [{"step_type": "run", "distance_m": 1}]
     )
     assert already["workoutName"] == "[MCP] Long 120min"
+
+
+@pytest.mark.unit
+def test_build_workout_json_stamps_street_sub_sport() -> None:
+    """Every upload carries subSportType=2 (FIT STREET) so the watch stops asking
+    which activity type to use when a scheduled workout is started (#1100).
+
+    The workout-service takes this field as a bare FIT ``sub_sport`` integer --
+    a dict is rejected with HTTP 500 and a string with HTTP 400 -- so it must
+    not be wrapped the way ``sportType`` is.
+    """
+    result = build_workout_json(
+        "Long 120min", [{"step_type": "run", "duration_minutes": 120, "hr_high": 150}]
+    )
+
+    assert result["subSportType"] == 2
+    assert result["sportType"]["sportTypeKey"] == "running"

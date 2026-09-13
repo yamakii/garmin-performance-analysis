@@ -69,6 +69,16 @@ _LIBRARY_PAGE_SIZE = 100
 # alert can never fire and the ceiling still governs (#979).
 _DEFAULT_HR_FLOOR = 80
 
+# Sub-sport stamped on every uploaded workout. Unlike ``sportType`` (a dict),
+# the workout-service takes ``subSportType`` as a bare FIT ``sub_sport``
+# integer: 0=GENERIC, 1=TREADMILL, 2=STREET, 3=TRAIL, 4=TRACK (a dict is
+# rejected with HTTP 500, a string with HTTP 400, and this is NOT the
+# activity-service id space -- 7 there is ``street_running`` but stores as the
+# cycling sub-sport ``ROAD``). Leaving it unset stores ``null``, and the watch
+# then asks which activity type to run every time a scheduled workout is
+# started (#1100). These are road runs, so STREET.
+_STREET_SUB_SPORT = 2
+
 # Ledger owner used when the caller does not name one.
 _DEFAULT_USER_ID = "default"
 
@@ -288,6 +298,7 @@ def build_workout_json(title: str, steps: list[dict[str, Any]]) -> dict[str, Any
     return {
         "workoutName": _ensure_prefix(title),
         "sportType": dict(_RUNNING_SPORT_TYPE),
+        "subSportType": _STREET_SUB_SPORT,
         "estimatedDurationInSecs": int(estimated),
         "workoutSegments": [
             {
