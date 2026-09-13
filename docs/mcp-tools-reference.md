@@ -644,7 +644,7 @@ Get the longitudinal cardiac-decoupling trend across long runs in a date window.
 
 CLI: `garmin-db durability progression-gate`
 
-Judge whether the next long run may be extended. Compares this long run's second-half decay against a comparable earlier practice long run (similar distance, within 8 weeks, similar temperature, races excluded) and returns verdict (green/yellow/red/insufficient_data), recommendation (extend/repeat/shorten), the triggers that fired (gct_fade_ms >= 10, cadence_fade_spm <= -5, pace_fade_pct >= 8, each with the reference value and whether it is clearly worse), reference_activity_id, decoupling_contaminated (current run at >= 30C, where decoupling is thermal drift) and a Japanese reason_ja, alongside the current and reference durability blocks.
+Judge whether the next long run may be extended. Compares this long run's second-half decay against a comparable earlier practice long run (similar distance, within 8 weeks, similar temperature, races excluded) and returns verdict (green/yellow/red/insufficient_data), recommendation (extend/repeat/shorten), the triggers that fired (gct_fade_ms >= 10, cadence_fade_spm <= -5 (running samples only, so prescribed walk/fuel breaks never read as a cadence collapse), pace_fade_pct >= 8, each with the reference value and whether it is clearly worse), reference_activity_id, decoupling_contaminated (current run at >= 30C, where decoupling is thermal drift) and a Japanese reason_ja, alongside the current and reference durability blocks.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

@@ -82,6 +82,34 @@ def _insert_time_series_with_cadence(
         conn.close()
 
 
+def _insert_time_series_rows(
+    db_path: Path,
+    *,
+    activity_id: int,
+    rows: list[tuple[int, float | None, float | None, float | None, float | None]],
+) -> None:
+    """Insert explicit ``(timestamp_s, heart_rate, speed, cadence, gct)`` rows.
+
+    Unlike ``_insert_time_series_with_cadence`` the caller controls every
+    sample, which is what the walk-break tests need: a half that mixes running
+    samples with walking ones (low cadence, low speed, null running dynamics).
+    """
+    conn = duckdb.connect(str(db_path))
+    try:
+        for seq_no, (timestamp_s, hr, speed, cadence, gct) in enumerate(rows):
+            conn.execute(
+                """
+                INSERT INTO time_series_metrics (
+                    activity_id, seq_no, timestamp_s, heart_rate, speed,
+                    cadence, ground_contact_time
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                [activity_id, seq_no, timestamp_s, hr, speed, cadence, gct],
+            )
+    finally:
+        conn.close()
+
+
 def _insert_time_series(
     db_path: Path,
     *,
