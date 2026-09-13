@@ -13,10 +13,25 @@ from tests.database.readers.durability._helpers import (
     _form_series,
     _insert_activity,
     _insert_time_series,
+    _insert_time_series_rows,
     _insert_time_series_with_cadence,
     _insert_time_series_with_form,
     _series,
 )
+
+# Walk breaks: low cadence, walking speed, and no running dynamics (the device
+# stops emitting GCT while walking), matching what the fuel stops on the
+# 2026-09-13 long run actually recorded (#1102).
+_WALK_SAMPLE = (130.0, 1.2, 110.0, None)
+_RUN_FRONT_SAMPLE = (150.0, 3.0, 180.0, 260.0)
+_RUN_BACK_SAMPLE = (150.0, 3.0, 176.0, 264.0)
+
+
+def _rows(
+    *samples: tuple[range, tuple[float, float, float, float | None]],
+) -> list[tuple[int, float | None, float | None, float | None, float | None]]:
+    """Expand ``(timestamps, sample)`` pairs into time-series rows."""
+    return [(ts, *sample) for timestamps, sample in samples for ts in timestamps]
 
 
 @pytest.mark.integration
@@ -211,3 +226,124 @@ def test_get_activity_durability_includes_cadence_and_gct_ms(
     assert result["avg_pace_s_per_km"] == pytest.approx(300.0)
     # The ratio-based fade is unchanged: (266/258 - 1) * 100 = 3.1%.
     assert result["gct_fade_pct"] == pytest.approx(3.1, abs=0.01)
+
+
+@pytest.mark.integration
+def test_cadence_fade_excludes_walk_breaks(reader_db_path: Path) -> None:
+    """Walk breaks in the second half must not read as a cadence collapse (#1102).
+
+    Front: 10 running samples at 180 spm. Back: 6 running at 176 spm plus 4
+    walking at 110 spm. Averaging every sample gives a back cadence of 149.6
+    (fade -30.4, far past the gate's -5 trigger); averaging only the running
+    samples gives 176 (fade -4.0), which is what the athlete's form actually did.
+    """
+    _insert_activity(
+        reader_db_path,
+        activity_id=5301,
+        activity_date="2026-09-13",
+        distance_km=25.1,
+    )
+    _insert_time_series_rows(
+        reader_db_path,
+        activity_id=5301,
+        rows=_rows(
+            (range(0, 10), _RUN_FRONT_SAMPLE),
+            (range(10, 16), _RUN_BACK_SAMPLE),
+            (range(16, 20), _WALK_SAMPLE),
+        ),
+    )
+
+    result = DurabilityReader(db_path=str(reader_db_path)).get_activity_durability(5301)
+
+    assert result is not None
+    assert result["cadence_fade_spm"] == pytest.approx(-4.0)
+
+
+@pytest.mark.integration
+def test_walk_breaks_still_counted_for_decoupling_and_pace(
+    reader_db_path: Path,
+) -> None:
+    """The walk filter is scoped to cadence: HR/speed/GCT aggregate unchanged (#1102).
+
+    Same series as the cadence test. Decoupling and pace fade keep averaging
+    every sample -- walking biases them *against* the athlete, so leaving them
+    alone can only understate durability, never wave a bad run through.
+    """
+    _insert_activity(
+        reader_db_path,
+        activity_id=5302,
+        activity_date="2026-09-13",
+        distance_km=25.1,
+    )
+    _insert_time_series_rows(
+        reader_db_path,
+        activity_id=5302,
+        rows=_rows(
+            (range(0, 10), _RUN_FRONT_SAMPLE),
+            (range(10, 16), _RUN_BACK_SAMPLE),
+            (range(16, 20), _WALK_SAMPLE),
+        ),
+    )
+
+    result = DurabilityReader(db_path=str(reader_db_path)).get_activity_durability(5302)
+
+    assert result is not None
+    # back_hr = (6*150 + 4*130)/10 = 142; back_speed = (6*3.0 + 4*1.2)/10 = 2.28.
+    # (142/2.28)/(150/3.0) - 1 = 24.56%
+    assert result["decoupling_pct"] == pytest.approx(24.56, abs=0.01)
+    # 3.0/2.28 - 1 = 31.58%
+    assert result["pace_fade_pct"] == pytest.approx(31.58, abs=0.01)
+    # GCT is null while walking, so its average was never contaminated: 264-260.
+    assert result["gct_fade_ms"] == pytest.approx(4.0)
+
+
+@pytest.mark.integration
+def test_cadence_fade_unchanged_without_walk_breaks(reader_db_path: Path) -> None:
+    """A run with no walking is unaffected by the filter (#1102 regression guard)."""
+    _insert_activity(
+        reader_db_path,
+        activity_id=5303,
+        activity_date="2026-08-30",
+        distance_km=19.0,
+    )
+    _insert_time_series_rows(
+        reader_db_path,
+        activity_id=5303,
+        rows=_rows(
+            (range(0, 10), _RUN_FRONT_SAMPLE),
+            (range(10, 20), _RUN_BACK_SAMPLE),
+        ),
+    )
+
+    result = DurabilityReader(db_path=str(reader_db_path)).get_activity_durability(5303)
+
+    assert result is not None
+    assert result["cadence_fade_spm"] == pytest.approx(-4.0)
+    assert result["decoupling_pct"] == pytest.approx(0.0)
+    assert result["pace_fade_pct"] == pytest.approx(0.0)
+
+
+@pytest.mark.integration
+def test_cadence_fade_none_when_a_half_is_all_walking(reader_db_path: Path) -> None:
+    """No running sample in a half -> cadence_fade_spm is None, not a bogus number."""
+    _insert_activity(
+        reader_db_path,
+        activity_id=5304,
+        activity_date="2026-09-20",
+        distance_km=12.0,
+    )
+    _insert_time_series_rows(
+        reader_db_path,
+        activity_id=5304,
+        rows=_rows(
+            (range(0, 10), _WALK_SAMPLE),
+            (range(10, 20), _RUN_BACK_SAMPLE),
+        ),
+    )
+
+    result = DurabilityReader(db_path=str(reader_db_path)).get_activity_durability(5304)
+
+    # HR/speed are present throughout, so the activity still reports durability.
+    assert result is not None
+    assert result["decoupling_pct"] is not None
+    assert result["cadence_fade_spm"] is None

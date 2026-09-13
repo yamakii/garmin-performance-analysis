@@ -33,6 +33,12 @@ Definitions (per activity, using ``time_series_metrics``):
   negative = cadence dropped). The long-run progression gate is stated in
   absolute units ("GCT +10 ms / cadence -5 spm"), so these sit alongside the
   ratio-based fades rather than replacing them (#982).
+  ``cadence_fade_spm`` averages **running samples only** (cadence at or above
+  :data:`_WALK_CADENCE_MAX_SPM`): walking is prescribed on these long runs (fuel
+  stops) and permitted on race day, so counting a walk break as a cadence
+  collapse penalised the athlete for following the plan (#1102). GCT/VO/VR need
+  no such filter -- the device stops emitting running dynamics while walking, so
+  those samples are already null.
 
 Returns ``None`` for an activity when HR or speed is missing or the midpoint
 cannot split the series into two non-empty halves (HR-data-dependent). Form
@@ -76,6 +82,16 @@ _LONG_RUN_MIN_KM = 10.0
 # practice long run, so they are never used as the gate's reference (#982).
 _RACE_NAME_FRAGMENTS = ("マラソン", "レース", "race")
 
+# Below this cadence the athlete is walking (or standing still), not running, so
+# the sample says nothing about running form and is excluded from the cadence
+# fade. Gait is discontinuous across this line -- on the run that motivated the
+# fix, walking peaked at 131 spm and running bottomed out at 165 spm with zero
+# samples in between -- so the exact value is not sensitive (140/150/160/165 all
+# give the same fade). Fuelling walk breaks cluster in the second half and grow
+# with the long run's length, so counting them made the gate progressively more
+# likely to cry "broken-down leg" the further the ladder climbed (#1102).
+_WALK_CADENCE_MAX_SPM = 140.0
+
 
 def _as_date_str(value: Any) -> str | None:
     """Render a DuckDB DATE column as ``YYYY-MM-DD`` (or ``None``)."""
@@ -117,7 +133,8 @@ class DurabilityReader(BaseDBReader):
                     "vo_fade_pct": float | None,   # (back_vo/front_vo-1), %
                     "vr_fade_pct": float | None,   # (back_vr/front_vr-1), %
                     "gct_fade_ms": float | None,       # back_gct - front_gct
-                    "cadence_fade_spm": float | None,  # back_cad - front_cad
+                    # back_cad - front_cad, running samples only (walk excluded)
+                    "cadence_fade_spm": float | None,
                     "temperature_c": float | None,
                     "avg_hr": float | None,
                     "avg_pace_s_per_km": float | None,
@@ -174,9 +191,9 @@ class DurabilityReader(BaseDBReader):
                         AS front_vr,
                     avg(CASE WHEN timestamp_s >= ? THEN vertical_ratio END)
                         AS back_vr,
-                    avg(CASE WHEN timestamp_s < ? THEN cadence END)
+                    avg(CASE WHEN timestamp_s < ? AND cadence >= ? THEN cadence END)
                         AS front_cadence,
-                    avg(CASE WHEN timestamp_s >= ? THEN cadence END)
+                    avg(CASE WHEN timestamp_s >= ? AND cadence >= ? THEN cadence END)
                         AS back_cadence
                 FROM time_series_metrics
                 WHERE activity_id = ?
@@ -184,7 +201,11 @@ class DurabilityReader(BaseDBReader):
                   AND speed IS NOT NULL
                   AND speed > 0
                 """,
-                [midpoint] * 12 + [activity_id],
+                # 10 midpoints for the HR/speed/GCT/VO/VR halves, then the two
+                # cadence halves which each take (midpoint, walk threshold).
+                [midpoint] * 10
+                + [midpoint, _WALK_CADENCE_MAX_SPM, midpoint, _WALK_CADENCE_MAX_SPM]
+                + [activity_id],
             ).fetchone()
 
         if halves is None:
