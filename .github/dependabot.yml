@@ -7,6 +7,14 @@
 # - major updates get their own PR and always wait for a human decision.
 # - security updates are raised as soon as an advisory is published (separate
 #   from the schedule) and are also covered by the weekly security-audit workflow.
+# - `open-pull-requests-limit` must stay comfortably above the number of majors
+#   we are deliberately sitting on: once the limit is reached Dependabot stops
+#   opening NEW version-update PRs, and the weekly minor/patch group goes
+#   missing without any notification (#1112). Raise the limit rather than
+#   silencing a dependency, so a blocked major stays visible.
+# - `ignore` is a last resort: it suppresses security updates for the ignored
+#   versions too. Only use it where the pin is a deliberate, dated decision and
+#   the package cannot carry a vulnerability of its own.
 version: 2
 updates:
   # Python — uv workspace (root uv.lock covers garmin-mcp-server + garmin-web)
@@ -30,10 +38,24 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "Asia/Tokyo"
-    open-pull-requests-limit: 5
+    # 10, not 5: eslint 10 (#1105) and TypeScript 7 are parked on upstream peer
+    # ranges and @eslint/js 10 is still to come, so 5 slots would be filled by
+    # majors alone and the weekly minor/patch group would silently stop (#1112).
+    open-pull-requests-limit: 10
     groups:
       npm-minor-patch:
         update-types: ["minor", "patch"]
+    ignore:
+      # @types/node tracks the runtime, not the newest release: .nvmrc and
+      # engines.node pin Node 24, so types for 25 (non-LTS) or 26 would describe
+      # APIs the runtime does not have. Lift this in the same PR that moves
+      # .nvmrc once Node 26 enters LTS (~late 2026-10) — see #1106.
+      # Safe to ignore rather than park as an open PR: types are compile-time
+      # only, so suppressing its security updates costs nothing. Do NOT extend
+      # this to eslint or typescript (eslint 9 is EOL upstream — we want to hear
+      # about a CVE there, and only a major would fix it).
+      - dependency-name: "@types/node"
+        versions: [">=25.0.0"]
 
   # GitHub Actions used by ci.yml / security-audit.yml / dependabot-auto-merge.yml
   - package-ecosystem: "github-actions"

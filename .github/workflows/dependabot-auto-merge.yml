@@ -4,6 +4,14 @@ name: Dependabot auto-merge
 # PR merges by itself once `ci-guard` (the required check) is green. Major
 # updates are left for a human: they may need code changes or a migration.
 #
+# The gate is written as an ALLOW-LIST (== minor || == patch), not as
+# `!= major`, so it fails closed: if fetch-metadata cannot determine the update
+# type and `update-type` comes back empty, the PR waits for a human instead of
+# auto-merging. That is a real failure mode, not a hypothetical —
+# fetch-metadata v3.1.0 fixed `update-type` returning null for Python /
+# Composer / Terraform PRs, and a `!= major` gate would have merged those
+# unattended (#1112).
+#
 # Requires "Allow auto-merge" in the repository settings (Settings → General →
 # Pull Requests). If it is off, the enable step fails loudly instead of
 # silently leaving PRs open. See docs/maintenance.md.
@@ -25,16 +33,21 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Enable auto-merge (minor / patch only)
-        if: steps.meta.outputs.update-type != 'version-update:semver-major'
+        if: |
+          steps.meta.outputs.update-type == 'version-update:semver-minor' ||
+          steps.meta.outputs.update-type == 'version-update:semver-patch'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: gh pr merge --auto --merge "$PR_URL"
 
-      - name: Major update — leave for human review
-        if: steps.meta.outputs.update-type == 'version-update:semver-major'
+      - name: Major or unknown update — leave for human review
+        if: |
+          steps.meta.outputs.update-type != 'version-update:semver-minor' &&
+          steps.meta.outputs.update-type != 'version-update:semver-patch'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
+          UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
         run: |
-          gh pr comment "$PR_URL" --body "Major version update — not auto-merged. Review the changelog / migration notes, run scripts/ci-check.sh locally if code changes are needed, then merge manually (see docs/maintenance.md)."
+          gh pr comment "$PR_URL" --body "Not auto-merged (update type: \`${UPDATE_TYPE:-unknown}\`). Major updates — and any PR whose update type could not be determined — wait for a human. Review the changelog / migration notes, run scripts/ci-check.sh locally if code changes are needed, then merge manually (see docs/maintenance.md)."

@@ -17,7 +17,7 @@ paths:
 | 経路 | トリガー | 役割 |
 |------|----------|------|
 | Dependabot (`.github/dependabot.yml`) | 毎週月曜 09:00 JST（actions/docker は月次） | uv / npm / GitHub Actions / Docker の更新 PR。minor+patch は ecosystem ごとに1 PR にグループ化、major は個別 PR |
-| `dependabot-auto-merge.yml` | Dependabot PR 作成時 | minor/patch PR に GitHub auto-merge を有効化（`ci-guard` green で自動マージ）。major はコメントのみ |
+| `dependabot-auto-merge.yml` | Dependabot PR 作成時 | minor/patch PR に GitHub auto-merge を有効化（`ci-guard` green で自動マージ）。major と **update-type 不明**はコメントのみ（条件は許可リスト形式で fail-closed、#1112） |
 | `security-audit.yml` | 毎週月曜 + lockfile 変更 PR + 手動 | `pip-audit`（uv.lock）+ `npm audit --audit-level=high`。検出時は `security-audit` ラベルの Issue を自動起票/更新 |
 | `/maintenance` skill | 人間 or 定期ルーチンが起動 | 上記で拾えない残り（major の判断材料整理、pre-commit rev 同期、上限ピンの見直し）を1セッションで処理 |
 
@@ -28,6 +28,8 @@ paths:
 - **major**: 人間判断。Dependabot の PR に changelog / migration の要点をコメントし、必要ならコード変更を伴う Issue に切り出す。「単に最新だから」で上げない
 - **上限ピン（`<N`）**: 例外扱い。理由（移行未調査 / 既知の破壊的変更）を pyproject のコメント or Issue に残し、`/maintenance` の度に解除可否を再判定する。現行: `mcp>=2.1.1,<3`（低レベル `Server` のハンドラ登録が major で変わるため、次の major も同様に調査が要る、#953）
 - **ランタイム major（Python / Node LTS）**: 体験・環境に影響するため必ず人間に確認してから変更する
+- **据え置きメジャーと PR 枠（#1112）**: 判断待ちの major PR を開けたままにするのは原則 OK（赤い PR が「決めていない」ことの可視化になる）。ただし `open-pull-requests-limit` は *version update* の枠で、**埋まると新規 PR が作られず週次 minor/patch グループが無通知で消える**。据え置きが増えたら **ignore ではなく上限を上げる**（現行 npm = 10）。security update は上限の対象外
+- **`ignore` は最後の手段**: ignore した版は **security update も止まる**。使ってよいのは「解除条件が日付・イベントで確定していて、その package 自体が脆弱性を持ち得ない」場合だけで、理由と解除条件を `dependabot.yml` のコメントに書く。現行: `@types/node >=25.0.0`（型のみ・ランタイム追従が正しく、`.nvmrc` の Node 26 LTS 化と同じ PR で解除）。eslint / typescript には入れない（eslint 9 は upstream EOL のため CVE は必ず届かせる）
 
 ## Sandbox freeze（#1050）
 
