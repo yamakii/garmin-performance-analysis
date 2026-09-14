@@ -10,15 +10,36 @@ in `.claude/rules/dev/maintenance-policy.md`; the interactive pass is the
 | Component | File | Schedule | What it does |
 |-----------|------|----------|--------------|
 | Dependabot | `.github/dependabot.yml` | weekly (uv, npm) / monthly (actions, docker), Monday 09:00 JST | Opens update PRs. Minor + patch updates are grouped into one PR per ecosystem; each major gets its own PR. Security advisories trigger PRs outside the schedule. |
-| Dependabot auto-merge | `.github/workflows/dependabot-auto-merge.yml` | on each Dependabot PR | Enables GitHub auto-merge for minor/patch PRs, so they merge once the required `ci-guard` check is green. Major PRs only get a comment asking for review. |
+| Dependabot auto-merge | `.github/workflows/dependabot-auto-merge.yml` | on each Dependabot PR | Enables GitHub auto-merge for minor/patch PRs, so they merge once the required `ci-guard` check is green. Majors — and any PR whose update type cannot be determined — only get a comment asking for review. |
 | Security audit | `.github/workflows/security-audit.yml` | weekly (Monday 09:00 JST), on lockfile PRs, and on demand (*Run workflow*) | `pip-audit` over the exported `uv.lock` and `npm audit --audit-level=high` over the frontend lockfile. A scheduled failure opens (or comments on) an issue labelled `security-audit`. |
 | CodeQL | `.github/workflows/codeql.yml` + `.github/codeql/codeql-config.yml` | every PR / push to main, weekly (Monday 09:15 JST), and on demand | Static analysis for python / javascript-typescript / actions. **Advanced setup**, not default setup — see below. Not the required check, so a CodeQL failure does not block merges on its own. |
 | CI | `.github/workflows/ci.yml` | every PR / push to main | Lint, type-check, tests, build. `uv.lock` is in the path filter, so a lockfile-only PR still runs `lint-and-test`. A `docker/**` change additionally runs `docker-build` (builds the sandbox image and smokes uv / Python / Node / Claude Code inside it), so Dependabot base-image bumps are actually exercised. Runs with a read-only `GITHUB_TOKEN`. |
 
 > `astral-sh/setup-uv` publishes no major/minor tags since v8, so it must be
-> referenced by full version (`@v10.0.1`), not `@v10`. Dependabot's
+> referenced by full version (currently `@v10.1.0`), not `@v10`. Dependabot's
 > github-actions updates keep full versions, so this only matters when a
 > workflow is edited by hand.
+
+### PR slots and `ignore` (#1112)
+
+Two settings in `dependabot.yml` exist for one reason — a major we are
+deliberately sitting on must not cost us the automatic updates:
+
+- **`open-pull-requests-limit` (npm: 10)** — the limit counts *version update*
+  PRs. Once it is reached Dependabot stops opening new ones, so parked majors
+  (eslint 10, TypeScript 7, `@eslint/js` 10 …) can crowd out the weekly
+  minor/patch group, and nothing announces that it went missing. Security
+  updates are exempt from the limit, so they still arrive. When majors
+  accumulate, **raise the limit** instead of silencing a dependency: a blocked
+  major sitting in the PR list is the reminder that we owe it a decision.
+- **`ignore`** — last resort, because it suppresses *security* updates for the
+  ignored versions as well. Use it only for a dated decision on a package that
+  cannot carry a vulnerability of its own. The one current entry is
+  `@types/node >=25.0.0`: types are compile-time only and must track the
+  runtime, which `.nvmrc` pins to Node 24. It comes off in the same PR that
+  moves `.nvmrc` to Node 26 at LTS. eslint is deliberately *not* ignored — it
+  is EOL upstream on 9.x, so a CVE there must reach us even though only a major
+  would fix it.
 
 ## One-time repository settings
 
