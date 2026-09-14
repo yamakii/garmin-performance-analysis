@@ -239,6 +239,38 @@ def test_weekly_durability_trailing_window() -> None:
 
 
 @pytest.mark.unit
+def test_weekly_load_trend_lookback_floor() -> None:
+    """A 7-day period still fetches 10 weekly buckets (Issue #1110).
+
+    The derived lookback is 2 for a week, which caps long_run_build_weeks at 1
+    and build_weeks at 2 no matter how long the real streak is.
+    """
+    with _mock_prefetch({("2026-06-15", "2026-06-21"): [10, 11]}) as (reader, _a):
+        prefetch_trend_context("2026-06-15", "2026-06-21", "week")
+
+    reader.get_load_trend.assert_called_once_with(10, end_date="2026-06-21")
+
+
+@pytest.mark.unit
+def test_monthly_load_trend_lookback_floor() -> None:
+    """A month derives 6 buckets, which the floor lifts to 10 (Issue #1110)."""
+    with _mock_prefetch({("2026-06-01", "2026-06-30"): [1, 2, 3]}) as (reader, _a):
+        prefetch_trend_context("2026-06-01", "2026-06-30", "month")
+
+    reader.get_load_trend.assert_called_once_with(10, end_date="2026-06-30")
+
+
+@pytest.mark.unit
+def test_long_period_keeps_derived_lookback() -> None:
+    """A window wider than the floor keeps its derived lookback (no clamp down)."""
+    # 2026-01-01..2026-06-30 = 181 days -> (181+6)//7 + 1 = 27 buckets.
+    with _mock_prefetch({("2026-01-01", "2026-06-30"): [1]}) as (reader, _a):
+        prefetch_trend_context("2026-01-01", "2026-06-30", "month")
+
+    reader.get_load_trend.assert_called_once_with(27, end_date="2026-06-30")
+
+
+@pytest.mark.unit
 def test_fitness_curve_window_fixed_90d() -> None:
     """Fitness curve is pinned to 90d for both week and month granularities."""
     for granularity, start, end in (

@@ -97,6 +97,12 @@ function narrationPrompt(ctx) {
     `  ・direction_caveat が非null なら、その内容（頑健性・レバレッジ点・絶対水準）を必ず散文に反映して緩衝する。\n` +
     `  ・fragile=true の direction は「単一点のレバレッジに依存し統計的に頑健でない（例外的に良い初回ロング走がアンカーになっている等）」ものとして扱い、` +
     `absolute_assessment.band が poor でない限り、worsening を根拠にロング走の距離制限・ペース抑制などの強い介入を推奨しないこと。\n` +
+    `【カットバック判定（#927 / #1110）】headline_metrics.cutback_due_long_run は、ロング走の連続延伸が` +
+    `カットバック閾値に達したかを決定的に判定済みのフラグ。true のときは recommendations に次週のディロード` +
+    `（ロング走 −30〜40%、週間量 −20〜30%、質セッションはゼロ）を具体的な数値で明記すること。` +
+    `「距離を据え置く」「増加を +10% 以内に抑える」といった、より弱い代替で置き換えないこと。` +
+    `false のときはディロードを推奨しない。long_run_build_weeks / cutback_due_long_run は CONTEXT の値を転記し、` +
+    `自分で数え直さないこと。\n` +
     `fitness_curve は 90 日窓の指標で、今週はその曲線上の現在位置として扱うこと（1週で崩壊/急伸したと解釈しない）。\n` +
     `headline_metrics / fusion_flags は CONTEXT の値をそのまま analysis_data に転記し、それと矛盾する主張をしないこと。\n` +
     `出力 JSON 構造:\n` +
