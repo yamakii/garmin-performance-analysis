@@ -70,3 +70,56 @@ def test_headline_metrics_long_run_build_weeks() -> None:
     assert "long_run_build_weeks" in result
     assert result["long_run_build_weeks"] == 3
     assert result["long_run_build_weeks"] >= LONG_RUN_CUTBACK_TRIGGER_WEEKS
+
+
+@pytest.mark.unit
+def test_headline_metrics_cutback_due_long_run_true() -> None:
+    """A streak reaching the trigger sets cutback_due_long_run (Issue #1110).
+
+    The narration does not know the trigger threshold, so the gate is decided
+    in the fold rather than left to prose.
+    """
+    context = {
+        "load_trend": {
+            "weeks": [
+                {"week_start": "2026-07-20", "load_km": 20.0, "longest_run_sec": 3250},
+                {"week_start": "2026-07-27", "load_km": 30.0, "longest_run_sec": 7819},
+                {"week_start": "2026-08-03", "load_km": 28.0, "longest_run_sec": 8125},
+                {"week_start": "2026-08-10", "load_km": 34.0, "longest_run_sec": 8562},
+            ]
+        }
+    }
+
+    result = compute_trend_headline_metrics(context)
+
+    assert result["long_run_build_weeks"] == 3
+    assert result["cutback_due_long_run"] is True
+
+
+@pytest.mark.unit
+def test_headline_metrics_cutback_due_long_run_false() -> None:
+    """A streak short of the trigger leaves the flag False."""
+    context = {
+        "load_trend": {
+            "weeks": [
+                {"week_start": "2026-07-20", "load_km": 20.0, "longest_run_sec": 7200},
+                {"week_start": "2026-07-27", "load_km": 30.0, "longest_run_sec": 7500},
+                {"week_start": "2026-08-03", "load_km": 28.0, "longest_run_sec": 7480},
+                {"week_start": "2026-08-10", "load_km": 34.0, "longest_run_sec": 7800},
+            ]
+        }
+    }
+
+    result = compute_trend_headline_metrics(context)
+
+    assert result["long_run_build_weeks"] == 2
+    assert result["cutback_due_long_run"] is False
+
+
+@pytest.mark.unit
+def test_headline_metrics_cutback_flag_on_empty_context() -> None:
+    """An empty context yields the flag as False rather than raising."""
+    result = compute_trend_headline_metrics({})
+
+    assert result["long_run_build_weeks"] == 0
+    assert result["cutback_due_long_run"] is False

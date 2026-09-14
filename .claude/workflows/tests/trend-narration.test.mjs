@@ -85,6 +85,22 @@ test('narrationPrompt includes durability decoupling-ranking guard', () => {
   assert.match(out, /優劣軸ではない/)
 })
 
+test('narrationPrompt includes long-run cutback guard', () => {
+  const ctx = {
+    tempDir: '/tmp/trend_week_2026-06-15_1',
+    periodStart: '2026-06-15',
+    periodEnd: '2026-06-21',
+    granularity: 'week',
+  }
+  const out = narrationPrompt(ctx)
+  // The cutback gate is decided deterministically and only transcribed (#1110).
+  assert.match(out, /cutback_due_long_run/)
+  assert.match(out, /long_run_build_weeks/)
+  // A due cutback must be stated as a deload, not softened to a hold.
+  assert.match(out, /ディロード/)
+  assert.match(out, /据え置く/)
+})
+
 test('test_merge_prompt_references_save_script', () => {
   const ctx = { tempDir: '/tmp/trend_week_x' }
   const out = mergeTrendPrompt(ctx)

@@ -20,7 +20,8 @@ Output (JSON to stdout, one line):
       "user_id": "default",
       "activity_ids": [123, 124],
       "headline_metrics": {"load_delta_pct": ..., "build_weeks": ...,
-                            "long_run_build_weeks": ..., "fusion_flags": {...}},
+                            "long_run_build_weeks": ...,
+                            "cutback_due_long_run": ..., "fusion_flags": {...}},
       "fusion_flags": {...},
       "load_trend": {...},
       "metric_trends": {"pace": {...}, "heart_rate": {...}},
@@ -81,6 +82,16 @@ _RECOVERY_TREND_WEEKS = 8
 _FITNESS_CURVE_WINDOW_DAYS = 90
 _DURABILITY_TREND_WEEKS = 8
 _HEAT_FIT_WEEKS = 12
+
+# Minimum trailing weekly buckets fetched for load_trend (Issue #1110). The
+# headline build streaks are counted off load_trend.weeks[*], so the number of
+# buckets is a hard ceiling on them: a 7-day period derives only two buckets,
+# which caps long_run_build_weeks at 1 and build_weeks at 2 regardless of the
+# real streak. That silently hid a 3-week long-run extension ladder -- the
+# cutback trigger (LONG_RUN_CUTBACK_TRIGGER_WEEKS, #927). Matches the
+# weekly-review prefetch's _LOAD_LOOKBACK_WEEKS so both paths count the same
+# streak. Widening the window does not move load_delta_pct (last two buckets).
+_STREAK_LOOKBACK_WEEKS = 10
 
 
 def _safe[T](fn: Callable[[], T]) -> T | None:
@@ -178,9 +189,11 @@ def prefetch_trend_context(
             heat_activity_ids = _resolve_activity_ids(conn, heat_start, period_end)
 
     # Number of trailing weekly buckets that fully cover the window (plus one so
-    # the prior week is available for a period-over-period delta).
+    # the prior week is available for a period-over-period delta), floored at
+    # _STREAK_LOOKBACK_WEEKS so the headline build streaks are not truncated by
+    # the window itself (Issue #1110).
     window_days = (end_d - start_d).days + 1
-    lookback_weeks = (window_days + 6) // 7 + 1
+    lookback_weeks = max((window_days + 6) // 7 + 1, _STREAK_LOOKBACK_WEEKS)
 
     # Build a single reader (facade) that fans out to every specialized reader.
     from garmin_mcp.database.db_reader import GarminDBReader

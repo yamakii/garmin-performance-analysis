@@ -712,7 +712,17 @@ def compute_trend_headline_metrics(context: dict[str, Any]) -> dict[str, Any]:
           weekly loads exist).
         - ``long_run_build_weeks``: trailing streak of >=+3% longest-run
           extensions (:func:`count_long_run_build_weeks`; ``0`` when absent).
+        - ``cutback_due_long_run``: whether that streak has reached
+          :data:`LONG_RUN_CUTBACK_TRIGGER_WEEKS` (always a ``bool``). The
+          narration cannot be expected to know the trigger threshold, so the
+          gate is decided here and only transcribed downstream (Issue #1110).
         - ``fusion_flags``: :func:`compute_fusion_flags` output (always a dict).
+
+    Note:
+        The streak counters are bounded by how many weekly buckets the caller
+        put in ``load_trend``; a caller that fetches only the period's own weeks
+        will read a truncated streak (see ``_STREAK_LOOKBACK_WEEKS`` in
+        ``prefetch_trend_context``).
     """
     load_trend = context.get("load_trend") or {}
     weeks = load_trend.get("weeks") or []
@@ -739,10 +749,13 @@ def compute_trend_headline_metrics(context: dict[str, Any]) -> dict[str, Any]:
 
     form_delta_pct = context.get("form_delta_pct")
 
+    long_run_build_weeks = count_long_run_build_weeks(weekly_longest_sec)
+
     return {
         "load_delta_pct": load_delta_pct,
         "build_weeks": build_weeks,
-        "long_run_build_weeks": count_long_run_build_weeks(weekly_longest_sec),
+        "long_run_build_weeks": long_run_build_weeks,
+        "cutback_due_long_run": long_run_build_weeks >= LONG_RUN_CUTBACK_TRIGGER_WEEKS,
         "fusion_flags": compute_fusion_flags(acwr_status, hrv_state, form_delta_pct),
     }
 
