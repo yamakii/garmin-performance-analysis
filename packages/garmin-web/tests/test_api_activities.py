@@ -18,6 +18,9 @@ def test_api_activities_returns_200(fixture_db_path):
         assert "activity_id" in item
         assert "activity_date" in item
         assert "total_distance_km" in item
+        # Latest summary rating / lead, null for unanalysed runs (#1131).
+        assert "star_rating" in item
+        assert "summary_lead" in item
 
 
 @pytest.mark.unit

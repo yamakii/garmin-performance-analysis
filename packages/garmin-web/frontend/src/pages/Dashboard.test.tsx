@@ -139,6 +139,8 @@ const ACTIVITIES = [
     total_time_seconds: 2940,
     avg_pace_seconds_per_km: 454,
     avg_heart_rate: 145,
+    star_rating: "★★★★☆ 4.2/5.0",
+    summary_lead: "有酸素ベースとして安定しました。",
   },
 ];
 
@@ -278,6 +280,11 @@ describe("Dashboard", () => {
       await screen.findByText("さいたまマラソン · A"),
     ).toBeInTheDocument();
     expect(screen.getByText(/前回 · 06\/30 TUE · イージーラン/)).toBeInTheDocument();
+    // The last run's verdict, joined in from its latest summary section (#1131).
+    expect(screen.getByLabelText("評価 4.2 / 5.0")).toBeInTheDocument();
+    expect(
+      screen.getByText(/有酸素ベースとして安定しました。/),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: "すべてのラン →" }),
     ).toBeInTheDocument();

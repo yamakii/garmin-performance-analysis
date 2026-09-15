@@ -27,6 +27,22 @@ _CREATE_ACTIVITIES = """
     )
 """
 
+# Shared by the list fixtures (list_activities joins the latest summary section,
+# #1131) and by the detail fixtures further down.
+_CREATE_SECTION_ANALYSES = """
+    CREATE TABLE section_analyses (
+        analysis_id INTEGER PRIMARY KEY,
+        activity_id BIGINT NOT NULL,
+        activity_date DATE NOT NULL,
+        section_type VARCHAR NOT NULL,
+        analysis_data VARCHAR,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        agent_name VARCHAR,
+        agent_version VARCHAR,
+        run_id BIGINT
+    )
+"""
+
 _FIXTURE_ROWS = [
     (9000000001, "2025-10-09", "Morning Run", 5.66, 2186, 386.0, 144),
     (9000000002, "2025-10-07", "Easy Run", 8.01, 2900, 362.0, 138),
@@ -35,11 +51,17 @@ _FIXTURE_ROWS = [
 
 @pytest.fixture
 def fixture_db_path(tmp_path: Path) -> Path:
-    """DuckDB with activities table and 2 rows (2025-10-09, 2025-10-07)."""
+    """DuckDB with activities table and 2 rows (2025-10-09, 2025-10-07).
+
+    ``section_analyses`` is created but stays empty: ``list_activities`` joins
+    it for the latest summary rating (#1131), so the table has to exist, and no
+    rows is the "never analysed" case.
+    """
     db_path = tmp_path / "test_garmin_web.duckdb"
     conn = duckdb.connect(str(db_path))
     try:
         conn.execute(_CREATE_ACTIVITIES)
+        conn.execute(_CREATE_SECTION_ANALYSES)
         conn.executemany(
             "INSERT INTO activities (activity_id, activity_date, activity_name, "
             "total_distance_km, total_time_seconds, avg_pace_seconds_per_km, "
@@ -53,11 +75,12 @@ def fixture_db_path(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def empty_db_path(tmp_path: Path) -> Path:
-    """DuckDB with empty activities table."""
+    """DuckDB with empty activities and section_analyses tables."""
     db_path = tmp_path / "test_garmin_web_empty.duckdb"
     conn = duckdb.connect(str(db_path))
     try:
         conn.execute(_CREATE_ACTIVITIES)
+        conn.execute(_CREATE_SECTION_ANALYSES)
     finally:
         conn.close()
     return db_path
@@ -482,21 +505,6 @@ _CREATE_TIME_SERIES_METRICS = """
         PRIMARY KEY (activity_id, seq_no)
     )
 """
-
-_CREATE_SECTION_ANALYSES = """
-    CREATE TABLE section_analyses (
-        analysis_id INTEGER PRIMARY KEY,
-        activity_id BIGINT NOT NULL,
-        activity_date DATE NOT NULL,
-        section_type VARCHAR NOT NULL,
-        analysis_data VARCHAR,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        agent_name VARCHAR,
-        agent_version VARCHAR,
-        run_id BIGINT
-    )
-"""
-
 
 @pytest.fixture
 def track_conn():

@@ -53,6 +53,8 @@ const ACTIVITY: ActivitySummary = {
   total_time_seconds: 8100,
   avg_pace_seconds_per_km: 378,
   avg_heart_rate: 146,
+  star_rating: null,
+  summary_lead: null,
 };
 
 function renderRow(props: Partial<Parameters<typeof ProgressRow>[0]> = {}) {
@@ -95,6 +97,34 @@ describe("ProgressRow", () => {
     expect(
       screen.getByRole("link", { name: "すべてのラン →" }),
     ).toHaveAttribute("href", "/activities");
+  });
+
+  it("test_progress_row_last_run_rating_line", () => {
+    const { rerender } = renderRow({
+      activities: [
+        {
+          ...ACTIVITY,
+          star_rating: "★★★★☆ 4.2/5.0",
+          summary_lead: "目標ペース内で完走。",
+        },
+      ],
+    });
+
+    expect(screen.getByText(/評価/)).toBeInTheDocument();
+    expect(screen.getByText(/目標ペース内で完走。/)).toBeInTheDocument();
+    expect(screen.getByLabelText("評価 4.2 / 5.0")).toBeInTheDocument();
+
+    // Never analysed: the line is dropped rather than shown empty.
+    rerender(
+      <MemoryRouter>
+        <ProgressRow
+          readiness={READINESS}
+          goals={[goal()]}
+          activities={[ACTIVITY]}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByText(/評価/)).not.toBeInTheDocument();
   });
 
   it("falls back to 日程未定 / 開催済み and the VDOT-only column", () => {
