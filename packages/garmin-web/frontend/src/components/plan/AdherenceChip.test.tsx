@@ -16,15 +16,18 @@ function adherence(overrides: Partial<Adherence> = {}): Adherence {
 
 describe("AdherenceChip", () => {
   it("test_adherence_chip_good_tone", () => {
-    // 3 of 4 prescribed, the 4th still ahead: every resolved session was done.
+    // 3 of 4 prescribed, the 4th still ahead: every resolved session was done,
+    // and a week still running says so rather than claiming "3/4 実施".
     render(
       <AdherenceChip
         adherence={adherence({ prescribed: 4, done: 3, pending: 1 })}
       />,
     );
 
-    const chip = screen.getByText("3/4 実施");
+    const chip = screen.getByText("3/4 · 進行中");
     expect(chip).toHaveAttribute("data-tone", "good");
+    // Good is the ordinary case, so it carries no colour.
+    expect(chip.className).not.toContain("text-status");
   });
 
   it("test_adherence_chip_bad_tone", () => {
@@ -36,6 +39,7 @@ describe("AdherenceChip", () => {
 
     const chip = screen.getByText("1/4 実施");
     expect(chip).toHaveAttribute("data-tone", "bad");
+    expect(chip.className).toContain("text-status-bad");
   });
 
   it("warns in between and stays neutral before anything resolves", () => {

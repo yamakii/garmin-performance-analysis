@@ -48,25 +48,50 @@ describe("MonthGrid", () => {
   it("test_month_grid_highlights_today", () => {
     renderGrid(0, new Date(2026, 8, 13));
 
-    const marker = screen.getByText("今日");
-    // The marker sits in the 9/13 cell, next to that day's prescription.
-    const cell = marker.closest("td");
+    const marker = screen.getByText("TODAY");
+    const cell = marker.closest('[role="cell"]') as HTMLElement;
     expect(cell).not.toBeNull();
-    expect(within(cell as HTMLElement).getByText("ロング")).toBeInTheDocument();
-    expect(within(cell as HTMLElement).getByText("13")).toBeInTheDocument();
+    expect(cell.className).toContain("bg-accent-tint");
+    // The session that was run states its name in bold and what it came to.
+    expect(within(cell).getByText("ロング").className).toContain("font-bold");
+    expect(within(cell).getByText("21.4 · 6:19 · 146")).toBeInTheDocument();
+    expect(within(cell).getByText("13")).toBeInTheDocument();
   });
 
-  it("links every week row to its review and states adherence", () => {
+  it("test_week_header_adherence_text", () => {
+    renderGrid();
+
+    // 9/7: both prescribed sessions done, so nothing is coloured.
+    const reviewed = screen.getByText("2/2 実施");
+    expect(reviewed).toHaveAttribute("data-tone", "good");
+    expect(reviewed.className).not.toContain("text-status");
+    // 9/14: two done, one skipped, one still ahead — an unfinished week.
+    expect(screen.getByText("2/4 · 進行中")).toBeInTheDocument();
+    // A prescribed week states the distance it adds up to (8+6+6+25).
+    expect(screen.getByText("計画 45km")).toBeInTheDocument();
+
+    // 9/21 is a cutback week that so far exists only as a ladder step.
+    const cutback = screen
+      .getByRole("link", { name: "9/21週" })
+      .closest('[role="rowheader"]') as HTMLElement;
+    expect(within(cutback).getByText("未処方")).toBeInTheDocument();
+    expect(within(cutback).getByText("ロング 16km")).toBeInTheDocument();
+  });
+
+  it("links every week row to its review", () => {
     renderGrid();
 
     expect(screen.getByRole("link", { name: "9/7週" })).toHaveAttribute(
       "href",
       "/weekly-reviews/2026-09-07",
     );
-    // 9/7 week: both prescribed sessions done.
-    expect(screen.getByText("2/2 実施")).toBeInTheDocument();
-    // 9/14 week: two done, one skipped, one still pending.
-    expect(screen.getByText("2/4 実施")).toBeInTheDocument();
+    // The reviewed week is the one carrying the accent.
+    expect(screen.getByRole("link", { name: "9/7週" }).className).toContain(
+      "text-accent",
+    );
+    expect(screen.getByRole("link", { name: "9/14週" }).className).toContain(
+      "text-ink",
+    );
   });
 
   it("shows the ladder target on a long-run day with no prescription", () => {
@@ -80,9 +105,9 @@ describe("MonthGrid", () => {
     expect(screen.getByText("19km")).toBeInTheDocument();
   });
 
-  it("renders the actual run beside the prescription", () => {
+  it("explains the grid's states in one legend line", () => {
     renderGrid();
 
-    expect(screen.getByText("21.4km 6:19/km")).toBeInTheDocument();
+    expect(screen.getByText(/太字 \+ 実績行/)).toBeInTheDocument();
   });
 });
