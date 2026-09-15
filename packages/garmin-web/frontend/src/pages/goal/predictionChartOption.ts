@@ -10,6 +10,11 @@ import {
   X_AXIS_STYLE,
 } from "../../components/chartTheme";
 import { formatTargetTime } from "../../utils/race";
+import {
+  formatDateLabel,
+  formatFullDateLabel,
+  toIsoDate,
+} from "../../utils/format";
 import type { EChartsOption } from "../../lib/echarts";
 import type { RacePredictionHistory } from "../../types";
 
@@ -20,12 +25,13 @@ const REQUIRED_SERIES = "必要な傾き";
  * "予測の推移": the goal-race time each day's fitness implied, read against
  * the target (Issue #1133).
  *
- * The x axis is categorical (one slot per fitness day), so race day is not a
- * position on it — it is appended as one extra category at the end, with the
- * prediction line stopping short of it (a `null` in its last slot). That gives
- * the vertical race marker something to sit on and lets the "必要な傾き" line
- * run from the latest prediction to the target on race day: the improvement
- * still to find, drawn as the hairline it is compared against.
+ * The x axis is a *time* axis, so every day sits at its real distance from
+ * every other one. That is the whole point of the panel: race day is typically
+ * months past the last fitness day, and the "必要な傾き" hairline from the
+ * latest prediction to the target on race day only reads as a slope when that
+ * gap is drawn to scale. On the category axis this started with, race day was
+ * one extra slot at the end — 152 days squeezed into one tick, which turned
+ * the hairline into a near-vertical stub (Issue #1152).
  *
  * Returns null when there is nothing to plot, so the caller can omit the whole
  * section rather than render an empty frame.
@@ -38,20 +44,13 @@ export function buildPredictionChartOption(
     return null;
   }
 
-  const dates = points.map((point) => point.date);
   const raceDate = history.goal?.race_date ?? null;
-  // Race day only earns its own slot when it is not already a fitness day.
-  const raceCategory =
-    raceDate != null && !dates.includes(raceDate) ? raceDate : null;
-  const categories = raceCategory != null ? [...dates, raceCategory] : dates;
-
   const target = history.goal?.target_time_seconds ?? null;
-  const predicted: (number | null)[] = points.map(
-    (point) => point.predicted_time_seconds,
-  );
-  if (raceCategory != null) {
-    predicted.push(null);
-  }
+  const latest = points[points.length - 1];
+  // ISO days compare lexicographically, so a race already run keeps the whole
+  // series on screen instead of cropping it.
+  const lastDay =
+    raceDate != null && raceDate > latest.date ? raceDate : latest.date;
 
   const markLineData: Record<string, unknown>[] = [];
   if (target != null) {
@@ -86,7 +85,7 @@ export function buildPredictionChartOption(
       symbolSize: 4,
       lineStyle: { width: 2.5 },
       connectNulls: false,
-      data: predicted,
+      data: points.map((point) => [point.date, point.predicted_time_seconds]),
       markLine: {
         silent: true,
         symbol: "none" as const,
@@ -95,7 +94,6 @@ export function buildPredictionChartOption(
     },
   ];
 
-  const latest = points[points.length - 1];
   if (raceDate != null && target != null) {
     series.push({
       name: REQUIRED_SERIES,
@@ -117,13 +115,22 @@ export function buildPredictionChartOption(
     grid: { ...CHART_GRID },
     tooltip: {
       trigger: "axis" as const,
-      valueFormatter: (value: unknown) =>
-        typeof value === "number" ? formatTargetTime(value) : "-",
+      // A time axis would otherwise head the tooltip with a full timestamp
+      // ("2026-09-15 00:00:00") for what is only ever a calendar day.
+      formatter: formatTooltip,
     },
     xAxis: {
-      type: "category" as const,
-      data: categories,
+      type: "time" as const,
+      min: points[0].date,
+      max: lastDay,
       ...X_AXIS_STYLE,
+      axisLabel: {
+        ...X_AXIS_STYLE.axisLabel,
+        formatter: (value: number) => {
+          const day = isoDay(value);
+          return day != null ? formatDateLabel(day).slice(0, 5) : "";
+        },
+      },
     },
     yAxis: {
       type: "value" as const,
@@ -139,4 +146,42 @@ export function buildPredictionChartOption(
     },
     series,
   } as EChartsOption;
+}
+
+/**
+ * The calendar day of an axis value. Series data carries the original ISO day
+ * string; axis ticks arrive as epoch milliseconds, which ECharts derives in
+ * the reader's timezone (the same one it parsed the day string in).
+ */
+function isoDay(value: unknown): string | null {
+  if (typeof value === "string") {
+    return value.slice(0, 10);
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return toIsoDate(new Date(value));
+  }
+  return null;
+}
+
+type TooltipParam = {
+  seriesName?: string;
+  marker?: string;
+  value?: unknown;
+};
+
+function formatTooltip(params: unknown): string {
+  const rows = (Array.isArray(params) ? params : [params]) as TooltipParam[];
+  const lines: string[] = [];
+  let day: string | null = null;
+  for (const row of rows) {
+    if (!Array.isArray(row.value)) {
+      continue;
+    }
+    day = day ?? isoDay(row.value[0]);
+    const seconds = row.value[1];
+    const shown = typeof seconds === "number" ? formatTargetTime(seconds) : "-";
+    lines.push(`${row.marker ?? ""}${row.seriesName ?? ""} ${shown}`);
+  }
+  const head = day != null ? formatFullDateLabel(day) : "";
+  return [head, ...lines].filter((line) => line !== "").join("<br/>");
 }
