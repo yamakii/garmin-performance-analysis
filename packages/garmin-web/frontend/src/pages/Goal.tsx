@@ -102,8 +102,40 @@ function findPredictionRace(
 }
 
 /**
- * "現在 VDOT 49.2 · 予測 フル 3:26:00 · ハーフ 1:38:30" — the fitness the
- * verdict's prediction rests on, or why there is none.
+ * "客観VDOT換算" / "Garmin VO2max 換算" — the fitness behind `current_vdot`,
+ * worded exactly as the prediction chart's note so the two read as one source.
+ */
+function vdotSourceLabel(readiness: RaceReadiness | null): string | null {
+  switch (readiness?.vdot_source ?? null) {
+    case "objective":
+      return "客観VDOT換算";
+    case "garmin_vo2max":
+      return "Garmin VO2max 換算";
+    default:
+      return null;
+  }
+}
+
+/**
+ * "予測 (客観VDOT 31.1)" — the prediction's label, naming the fitness it was
+ * computed from. Before #1146 the headline silently used Garmin's optimistic
+ * VO2max conversion while the chart below plotted the objective curve, so the
+ * source now travels with the number.
+ */
+function predictionLabel(readiness: RaceReadiness | null): string {
+  const vdot = readiness?.current_vdot ?? null;
+  if (readiness?.vdot_source === "garmin_vo2max") {
+    return "予測 (Garmin VO2max 換算)";
+  }
+  if (readiness?.vdot_source === "objective" && vdot != null) {
+    return `予測 (客観VDOT ${vdot.toFixed(1)})`;
+  }
+  return vdot != null ? `予測 (VDOT ${vdot.toFixed(1)})` : "予測";
+}
+
+/**
+ * "現在 VDOT 49.2 (客観VDOT換算) · 予測 フル 3:26:00 · ハーフ 1:38:30" — the
+ * fitness the verdict's prediction rests on, or why there is none.
  */
 function fitnessLead(readiness: RaceReadiness | null): string | null {
   if (readiness == null) {
@@ -113,7 +145,10 @@ function fitnessLead(readiness: RaceReadiness | null): string | null {
   if (vdot == null) {
     return "直近のランニングデータが不足しているため、予測タイムは算出できませんでした。";
   }
-  const parts = [`現在 VDOT ${vdot.toFixed(1)}`];
+  const sourceLabel = vdotSourceLabel(readiness);
+  const parts = [
+    `現在 VDOT ${vdot.toFixed(1)}${sourceLabel != null ? ` (${sourceLabel})` : ""}`,
+  ];
   const full = readiness.predicted_times.full;
   const half = readiness.predicted_times.half;
   if (full != null) {
@@ -137,12 +172,12 @@ function RaceColumns({
   races,
   predictionRaceId,
   progress,
-  vdot,
+  label,
 }: {
   races: GoalRace[];
   predictionRaceId: number | null;
   progress: RaceReadinessProgress | null;
-  vdot: number | null;
+  label: string;
 }): JSX.Element {
   return (
     <section
@@ -155,7 +190,7 @@ function RaceColumns({
           race={race}
           first={index === 0}
           progress={race.goal_id === predictionRaceId ? progress : null}
-          vdot={vdot}
+          label={label}
         />
       ))}
     </section>
@@ -166,12 +201,12 @@ function RaceColumn({
   race,
   first,
   progress,
-  vdot,
+  label,
 }: {
   race: GoalRace;
   first: boolean;
   progress: RaceReadinessProgress | null;
-  vdot: number | null;
+  label: string;
 }): JSX.Element {
   const days = daysUntil(race.race_date);
   const priority = (race.priority ?? "?").toUpperCase();
@@ -216,7 +251,7 @@ function RaceColumn({
           <>
             <div>
               <dt className="font-mono text-xs text-ink-muted">
-                予測{vdot != null ? ` (VDOT ${vdot.toFixed(1)})` : ""}
+                {label}
               </dt>
               <dd className="mt-0.5 font-mono text-[15px] text-ink">
                 {formatTargetTime(progress.predicted_time_seconds)}
@@ -462,7 +497,7 @@ export default function Goal() {
           races={featuredRaces}
           predictionRaceId={predictionRace?.goal_id ?? null}
           progress={readiness?.progress ?? null}
-          vdot={readiness?.current_vdot ?? null}
+          label={predictionLabel(readiness)}
         />
       )}
 

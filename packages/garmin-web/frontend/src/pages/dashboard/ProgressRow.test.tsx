@@ -29,6 +29,7 @@ function goal(overrides: Partial<GoalRace> = {}): GoalRace {
 
 const READINESS: RaceReadiness = {
   current_vdot: 44,
+  vdot_source: "objective",
   predicted_times: { full: 12734 },
   goal: {
     race_name: "さいたまマラソン",
@@ -77,8 +78,9 @@ describe("ProgressRow", () => {
     // Left: the featured (A) race, its countdown and the prediction.
     expect(screen.getByText("さいたまマラソン · A")).toBeInTheDocument();
     expect(screen.getByText(/^60/)).toHaveTextContent("60日");
-    expect(screen.getByText(/予測 3:32:14/, { selector: "p" })).toHaveTextContent(
-      "予測 3:32:14 · 目標 4:30:00 · −57:46",
+    // The prediction carries the fitness it came from (#1146).
+    expect(screen.getByText(/3:32:14/, { selector: "p" })).toHaveTextContent(
+      "予測 (客観) 3:32:14 · 目標 4:30:00 · −57:46",
     );
     expect(screen.getByRole("link", { name: /さいたまマラソン/ })).toHaveAttribute(
       "href",
@@ -125,6 +127,16 @@ describe("ProgressRow", () => {
       </MemoryRouter>,
     );
     expect(screen.queryByText(/評価/)).not.toBeInTheDocument();
+  });
+
+  it("test_progress_row_prediction_names_the_garmin_fallback", () => {
+    renderRow({
+      readiness: { ...READINESS, vdot_source: "garmin_vo2max" },
+    });
+
+    expect(screen.getByText(/3:32:14/, { selector: "p" })).toHaveTextContent(
+      "予測 (Garmin換算) 3:32:14",
+    );
   });
 
   it("falls back to 日程未定 / 開催済み and the VDOT-only column", () => {

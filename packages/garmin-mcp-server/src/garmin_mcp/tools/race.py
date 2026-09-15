@@ -38,14 +38,17 @@ RACE_TOOLS: list[ToolDef] = [
     ToolDef(
         name="get_race_readiness",
         description=(
-            "Get race readiness: the athlete's current VDOT (from recent "
-            "fitness), VDOT-based race-time predictions (5k/10k/half/full in "
-            "seconds), the active race goal (priority A / active preferred, else "
-            "the nearest future race), and a progress block with the predicted "
-            "goal-distance time, gap to target (seconds; positive = behind "
-            "target), pace gap (sec/km), weeks remaining, and a status "
-            "(ahead/on_track/behind). Returns empty predictions when no VDOT can "
-            "be derived and a null goal/progress when no goal is registered."
+            "Get race readiness: the athlete's current VDOT (the objective "
+            "fitness curve's latest point when it is at most 90 days old, else "
+            "Garmin's optimistic VO2max conversion; vdot_source names which of "
+            "'objective' / 'garmin_vo2max' was used), VDOT-based race-time "
+            "predictions (5k/10k/half/full in seconds), the active race goal "
+            "(priority A / active preferred, else the nearest future race), and "
+            "a progress block with the predicted goal-distance time, gap to "
+            "target (seconds; positive = behind target), pace gap (sec/km), "
+            "weeks remaining, and a status (ahead/on_track/behind). Returns "
+            "empty predictions when no VDOT can be derived and a null "
+            "goal/progress when no goal is registered."
         ),
         params=GetRaceReadinessParams,
         handler=_get_race_readiness,

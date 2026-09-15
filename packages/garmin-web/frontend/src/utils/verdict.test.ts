@@ -276,6 +276,7 @@ function readiness(
 ): RaceReadiness {
   return {
     current_vdot: currentVdot,
+    vdot_source: "objective",
     predicted_times: { full: progress?.predicted_time_seconds ?? 0 },
     goal: null,
     progress,
