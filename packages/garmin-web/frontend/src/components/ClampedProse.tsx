@@ -55,12 +55,17 @@ export default function ClampedProse({
         <button
           type="button"
           onClick={() => setExpanded((prev) => !prev)}
-          // The padding is the target, not decoration (#912): xs text alone is
-          // a ~16px tap target, short of the 24px minimum (WCAG 2.5.8). The
-          // negative margin keeps the label optically flush with the prose.
-          className="-mx-2 px-2 py-1.5 text-xs font-medium text-ink-muted underline underline-offset-2 hover:text-ink"
+          aria-expanded={expanded}
+          // Matches the Disclosure trigger style (mono, accent, hover
+          // underline, "… ↓/↑") so every progressive-disclosure control on
+          // the site reads the same way (#1177). The padding is still the
+          // tap target, not decoration (#912): text alone is a ~16px tap
+          // target, short of the 24px minimum (WCAG 2.5.8). The negative
+          // margin keeps the label optically flush with the prose.
+          className="-mx-2 px-2 py-1.5 font-mono text-[13px] text-accent hover:underline"
         >
           {expanded ? "閉じる" : "続きを読む"}
+          <span aria-hidden="true">{expanded ? "↑" : "↓"}</span>
         </button>
       )}
     </div>
