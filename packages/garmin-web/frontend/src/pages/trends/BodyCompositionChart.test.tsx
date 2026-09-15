@@ -22,8 +22,13 @@ interface ChartOption {
   grid: { right?: number };
   legend?: unknown;
   xAxis: { axisLabel?: { hideOverlap?: boolean } };
-  yAxis: { scale?: boolean }[];
-  series: { type?: string; stack?: string }[];
+  yAxis: { scale?: boolean };
+  series: {
+    type?: string;
+    stack?: string;
+    yAxisIndex?: number;
+    markLine?: { data: { yAxis: number }[] };
+  }[];
 }
 
 /** The option object of the most recent `setOption` call. */
@@ -104,12 +109,30 @@ describe("BodyCompositionChart", () => {
       expect(series.type).toBe("line");
       expect(series.stack).toBeUndefined();
     }
-    for (const axis of option.yAxis) {
-      expect(axis.scale).toBe(true);
-    }
+    expect(option.yAxis.scale).toBe(true);
     // No legend box: it used to be drawn over the bars and the date labels,
     // and the readings above already carry the color key.
     expect(option.legend).toBeUndefined();
+  });
+
+  it("test_body_composition_option_single_delta_axis", () => {
+    render(<BodyCompositionChart data={TWELVE_WEEKS} />);
+
+    const option = lastOption();
+    // One shared y-axis (not an array of two): every series reads its change
+    // from the window's first reading, all to the same 0-anchored scale
+    // (#1167).
+    expect(Array.isArray(option.yAxis)).toBe(false);
+    for (const series of option.series) {
+      expect(
+        series.yAxisIndex === undefined || series.yAxisIndex === 0,
+      ).toBe(true);
+    }
+    // A hairline at 0 marks "no change yet".
+    const markLines = option.series.flatMap(
+      (series) => series.markLine?.data ?? [],
+    );
+    expect(markLines.some((mark) => mark.yAxis === 0)).toBe(true);
   });
 
   it("test_body_composition_last_label_fits", () => {
@@ -122,5 +145,14 @@ describe("BodyCompositionChart", () => {
       (option.grid.right ?? 0) >= 16 ||
         option.xAxis.axisLabel?.hideOverlap === true,
     ).toBe(true);
+  });
+
+  it("test_body_composition_chart_height_160", () => {
+    render(<BodyCompositionChart data={TREND} />);
+
+    // The Morning Brief spec (§7) sizes this chart at 160, not the shared
+    // 180px Performance charts use (#1167).
+    const container = screen.getByRole("img");
+    expect(container.style.height).toBe("160px");
   });
 });
