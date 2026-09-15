@@ -4,24 +4,25 @@ import { useActivities, type ActivityRange } from "../api/hooks";
 import EmptyState from "../components/EmptyState";
 import { PageError, PageLoading } from "../components/PageState";
 import SectionHeading from "../components/SectionHeading";
+import Segment, { type SegmentOption } from "../components/Segment";
 import { usePageTitle } from "../hooks/usePageTitle";
 import type { ActivitySummary } from "../types";
 import {
   formatBpmValue,
-  formatDate,
+  formatDateLabel,
   formatDistanceKm,
   formatDistanceKmValue,
   formatPaceValue,
   toIsoDate,
 } from "../utils/format";
 
-/** "N本 ・ 合計 XX.X km" summary for a month heading (Issue #214). */
+/** "N本 · 合計 XX.X km" summary for a month heading (Issue #214). */
 export function monthSummary(activities: ActivitySummary[]): string {
   const totalKm = activities.reduce(
     (sum, activity) => sum + (activity.total_distance_km ?? 0),
     0,
   );
-  return `${activities.length}本 ・ 合計 ${formatDistanceKm(totalKm, 1)}`;
+  return `${activities.length}本 · 合計 ${formatDistanceKm(totalKm, 1)}`;
 }
 
 function groupByMonth(
@@ -53,7 +54,7 @@ export type RangePreset = keyof typeof PRESET_DAYS;
 /** No range param in the URL means "no date bound" — the historical behaviour. */
 const DEFAULT_PRESET: RangePreset = "all";
 
-const PRESETS: { value: RangePreset; label: string }[] = [
+const PRESETS: SegmentOption<RangePreset>[] = [
   { value: "4w", label: "直近4週" },
   { value: "3m", label: "直近3ヶ月" },
   { value: "1y", label: "直近1年" },
@@ -100,14 +101,6 @@ export function filterByName(
   return activities.filter((activity) =>
     (activity.activity_name ?? "").toLowerCase().includes(needle),
   );
-}
-
-function toggleClass(active: boolean): string {
-  const base =
-    "rounded-md px-3 py-1 text-sm font-medium transition-colors cursor-pointer";
-  return active
-    ? `${base} text-ink`
-    : `${base} text-ink-muted hover:text-ink`;
 }
 
 export default function ActivityList() {
@@ -157,25 +150,16 @@ export default function ActivityList() {
       </div>
 
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div
-          role="group"
-          aria-label="期間"
-          className="inline-flex rounded-md border border-hairline bg-well p-0.5"
-        >
-          {PRESETS.map(({ value, label }) => (
-            <button
-              key={value}
-              type="button"
-              aria-pressed={preset === value}
-              className={toggleClass(preset === value)}
-              // A preset change is a navigation step: pushed, so "back"
-              // returns to the previous range.
-              onClick={() => updateParams({ range: value })}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        {/*
+          A preset change is a navigation step: pushed, so "back" returns to
+          the previous range.
+        */}
+        <Segment
+          options={PRESETS}
+          value={preset}
+          onChange={(range) => updateParams({ range })}
+          ariaLabel="期間"
+        />
         <input
           type="search"
           value={search}
@@ -186,7 +170,7 @@ export default function ActivityList() {
           onChange={(event) =>
             updateParams({ q: event.target.value }, { replace: true })
           }
-          className="w-full rounded-md border border-hairline px-3 py-1.5 text-sm text-ink transition-colors focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:w-64"
+          className="w-full rounded-sm border border-hairline bg-paper px-3 py-1.5 font-mono text-[13px] text-ink focus-visible:border-ink focus-visible:ring-2 focus-visible:ring-ink focus-visible:outline-none sm:w-64"
         />
       </div>
 
@@ -195,7 +179,7 @@ export default function ActivityList() {
       ) : error ? (
         <PageError error={error} onRetry={() => void refetch()} />
       ) : visible.length === 0 ? (
-        <div className="rounded-md border border-hairline px-4 py-8">
+        <div className="border border-hairline px-4 py-8">
           <EmptyState
             message={
               isFiltered
@@ -220,53 +204,62 @@ export default function ActivityList() {
       ) : (
         [...groups.entries()].map(([month, monthActivities]) => (
           <section key={month} className="mb-8">
-            <h2 className="mb-2 flex items-baseline gap-3 text-sm font-semibold text-ink-muted">
-              <span className="font-mono text-base text-ink">{month}</span>
-              <span className="font-normal">
+            <h2 className="mb-2 flex items-baseline gap-3 border-b border-ink pb-2">
+              <span className="font-mono text-[13px] font-semibold text-ink">
+                {month}
+              </span>
+              <span className="font-mono text-xs text-ink-muted">
                 {monthSummary(monthActivities)}
               </span>
             </h2>
-            <ul className="space-y-2">
+            <ul>
               {monthActivities.map((activity) => (
                 <li key={activity.activity_id}>
+                  {/*
+                    A rule row, not a card: the month's runs read as one
+                    ledger, and only the hairline under each row separates
+                    them (#1185).
+
+                    Below `sm` the date + metrics already fill the row, so the
+                    name drops to its own second line spanning both columns
+                    instead of being squeezed to 0px (#1145). From `sm` up it
+                    is the middle column again.
+                  */}
                   <Link
                     to={`/activities/${activity.activity_id}`}
-                    className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-hairline px-4 py-3 transition-[box-,border-color] hover:border-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:flex-nowrap"
+                    className="grid grid-cols-[72px_auto] items-baseline gap-x-4 border-b border-hairline py-3 text-inherit hover:bg-surface hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink sm:grid-cols-[72px_minmax(0,1fr)_auto]"
                   >
-                    <span className="shrink-0 rounded-md bg-well px-2 py-1 font-mono text-sm font-semibold text-ink">
-                      {formatDate(activity.activity_date)}
+                    <span className="col-start-1 row-start-1 font-mono text-xs text-ink-muted">
+                      {formatDateLabel(activity.activity_date)}
                     </span>
-                    {/*
-                      Below `sm` the date + metrics already fill the row, so the
-                      name is pushed onto its own second line instead of being
-                      squeezed to 0px (#1145). From `sm` up it is the middle
-                      column again.
-                    */}
-                    <span className="order-last min-w-0 basis-full truncate text-sm font-medium text-ink-soft sm:order-none sm:flex-1 sm:basis-auto">
+                    <span className="col-span-2 row-start-2 truncate text-sm font-bold text-ink sm:col-span-1 sm:col-start-2 sm:row-start-1">
                       {activity.activity_name ?? "-"}
                     </span>
-                    <span className="flex shrink-0 items-baseline divide-x divide-hairline text-right font-mono text-ink-soft">
-                      <span className="pr-3">
-                        <span className="text-base font-semibold text-ink-soft">
+                    {/*
+                      Value and unit stay separate elements (#649): the figure
+                      is what the eye scans down the column, the unit is a
+                      muted suffix that must not join it into one text run.
+                    */}
+                    <span className="col-start-2 row-start-1 flex justify-self-end gap-4 font-mono text-sm text-ink sm:col-start-3">
+                      <span>
+                        <span>
                           {formatDistanceKmValue(activity.total_distance_km)}
                         </span>
-                        <span className="ml-0.5 text-xs font-normal text-ink-muted">
+                        <span className="ml-[3px] text-xs text-ink-muted">
                           km
                         </span>
                       </span>
-                      <span className="px-3">
-                        <span className="text-base">
+                      <span>
+                        <span>
                           {formatPaceValue(activity.avg_pace_seconds_per_km)}
                         </span>
-                        <span className="ml-0.5 text-xs text-ink-muted">
+                        <span className="ml-[3px] text-xs text-ink-muted">
                           /km
                         </span>
                       </span>
-                      <span className="pl-3">
-                        <span className="text-base">
-                          {formatBpmValue(activity.avg_heart_rate)}
-                        </span>
-                        <span className="ml-0.5 text-xs text-ink-muted">
+                      <span>
+                        <span>{formatBpmValue(activity.avg_heart_rate)}</span>
+                        <span className="ml-[3px] text-xs text-ink-muted">
                           bpm
                         </span>
                       </span>
