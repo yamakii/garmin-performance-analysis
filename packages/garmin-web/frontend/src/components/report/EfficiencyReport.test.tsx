@@ -45,6 +45,37 @@ describe("EfficiencyReport", () => {
     expect(screen.queryByText(/269\.20834/)).not.toBeInTheDocument();
   });
 
+  it("test_efficiency_vitals_warn_direction", () => {
+    // GCT above its pace-based expectation is the adverse direction; VO below
+    // it is the favourable one. Only the adverse note takes the warn colour.
+    render(
+      <EfficiencyReport
+        section={section}
+        formEvaluations={{
+          ...formEvaluations,
+          gct_ms_actual: 251,
+          gct_ms_expected: 244,
+          gct_delta_pct: 2.9,
+          vo_cm_actual: 8.4,
+          vo_cm_expected: 8.6,
+          vo_delta_cm: -0.2,
+        }}
+      />,
+    );
+
+    const noteOf = (label: string) =>
+      screen.getByText(label).parentElement?.querySelector("p:last-child");
+
+    const gct = noteOf("接地時間");
+    expect(gct?.textContent).toContain("期待244ms");
+    expect(gct).toHaveClass("text-status-warn");
+
+    const vo = noteOf("上下動");
+    expect(vo?.textContent).toContain("期待8.6cm");
+    expect(vo).toHaveClass("text-ink-muted");
+    expect(vo).not.toHaveClass("text-status-warn");
+  });
+
   it("test_power_not_in_star_row", () => {
     const withPower = {
       ...formEvaluations,

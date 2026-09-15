@@ -1,8 +1,12 @@
 import type { ReactNode } from "react";
 
 /**
- * Emphasized callout for actionable recommendations
+ * Titled callout for actionable recommendations
  * (recommendations / next_action / next_run_target).
+ *
+ * Same rule as `CoachNote` (Morning Brief, #1118): an instruction is marked by
+ * an ink rule beside it, not by a tinted panel — the tints in this system are
+ * reserved for 注意 / 悪.
  */
 export default function ActionCallout({
   title,
@@ -12,11 +16,11 @@ export default function ActionCallout({
   children: ReactNode;
 }) {
   return (
-    <div className="-lg border-l-4 border-accent bg-accent-tint px-4 py-3">
-      <h3 className="text-xs font-semibold tracking-wide text-accent">
-        {title}
-      </h3>
-      <div className="mt-1 text-sm text-ink-soft">{children}</div>
+    <div className="border-l-2 border-ink py-0.5 pl-4">
+      <h3 className="font-mono text-xs text-ink-muted">{title}</h3>
+      <div className="mt-1 text-[15px] leading-[1.7] text-ink-soft">
+        {children}
+      </div>
     </div>
   );
 }

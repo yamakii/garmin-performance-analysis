@@ -191,6 +191,31 @@ export function formatDateLabel(iso: string): string {
 }
 
 /**
+ * "2025-10-09 THU" — the full date of a record, in the same
+ * `YYYY-MM-DD DDD` shape the page header uses (#1118).
+ *
+ * {@link formatHeaderDate} says this about "now" (a `Date`); this says it
+ * about a stored day, so a report's date line and the site header read
+ * identically. Unparseable input is returned as-is rather than hidden, and the
+ * weekday is computed in UTC so a calendar day never shifts with the reader's
+ * timezone (#920).
+ */
+export function formatFullDateLabel(iso: string | null | undefined): string {
+  if (iso == null || iso === "") {
+    return MISSING;
+  }
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (match == null) {
+    return iso;
+  }
+  const [, year, month, day] = match;
+  const weekday = new Date(
+    Date.UTC(Number(year), Number(month) - 1, Number(day)),
+  ).getUTCDay();
+  return `${year}-${month}-${day} ${WEEKDAY_ABBR[weekday]}`;
+}
+
+/**
  * "easy_z1_z2" -> "easy z1 z2".
  *
  * Payload keys reach the UI whenever a schema grows a field no component
