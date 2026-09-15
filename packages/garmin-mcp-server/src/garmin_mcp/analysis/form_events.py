@@ -11,7 +11,9 @@ inevitably missed a consumer. This module is the *one* place that decides:
   (``count_material_events``),
 - how many of those are **high-severity** (``count_high_severity``), and
 - whether a run should **flag** given its event count, running hours and the
-  athlete's personal baseline rate (``should_flag_run``).
+  athlete's personal baseline rate (``should_flag_run``), and
+- which split an anomaly timestamp belongs to
+  (``split_index_for_timestamp``, #1132).
 
 Both the injury-risk signal and the caution card consume these functions via
 ``GarminDBReader`` so the web layer never re-derives the aggregation (enforced by
@@ -99,6 +101,49 @@ def count_high_severity(anomalies: list[dict[str, Any]]) -> int:
         if abs(float(z)) > _HIGH_SEVERITY_Z:
             total += 1
     return total
+
+
+def split_index_for_timestamp(
+    splits: list[dict[str, Any]], timestamp: int
+) -> int | None:
+    """Locate the 1-based split a form-anomaly timestamp falls in (#1132).
+
+    Anomaly timestamps are 1 Hz indices (seconds from activity start), the same
+    domain as the ``splits`` table's ``start_time_s`` / ``end_time_s``. A split
+    owns ``start_time_s <= timestamp <= end_time_s``; the first matching row
+    wins, so overlapping boundary seconds are attributed to the earlier split.
+
+    Rows whose ``start_time_s`` / ``end_time_s`` are missing (older ingests) have
+    their bounds reconstructed from ``duration_seconds``, laid end to end from
+    the previous row's end + 1. A row with neither bounds nor a duration is
+    skipped without consuming time.
+
+    Args:
+        splits: Split rows in ascending ``split_index`` order, each with
+            ``split_index`` and (optionally) ``start_time_s`` / ``end_time_s`` /
+            ``duration_seconds``.
+        timestamp: Seconds from activity start.
+
+    Returns:
+        The ``split_index`` covering ``timestamp``, or ``None`` when the
+        timestamp falls outside every split (e.g. a pause gap or past the end).
+    """
+    cursor = 0
+    for split in splits:
+        start = split.get("start_time_s")
+        end = split.get("end_time_s")
+        if start is None or end is None:
+            duration = split.get("duration_seconds")
+            if duration is None:
+                continue
+            start = cursor
+            end = cursor + int(round(float(duration))) - 1
+        start = int(start)
+        end = int(end)
+        cursor = end + 1
+        if start <= timestamp <= end:
+            return int(split["split_index"])
+    return None
 
 
 def should_flag_run(events: int, hours: float, baseline_rate: float | None) -> bool:

@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useActivities, useActivityDetail } from "./hooks";
+import { useActivities, useActivityDetail, useSplitAnomalies } from "./hooks";
 
 /** A fresh, retry-free QueryClient wrapper so each test starts with an empty cache. */
 function createWrapper() {
@@ -127,5 +127,29 @@ describe("useActivities", () => {
 
     // Callers without a filter keep the unbounded request they always made.
     expect(String(fetchMock.mock.calls[0][0])).toBe("/api/activities");
+  });
+});
+
+describe("useSplitAnomalies", () => {
+  it("test_use_split_anomalies_url", async () => {
+    const payload = {
+      activity_id: 123,
+      total: 0,
+      material: 0,
+      splits: [],
+    };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(payload));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useSplitAnomalies("123"), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(String(fetchMock.mock.calls[0][0])).toBe(
+      "/api/activities/123/split-anomalies",
+    );
+    expect(result.current.data).toEqual(payload);
   });
 });

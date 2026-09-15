@@ -7,6 +7,7 @@ import {
   fetchRaceReadiness,
   fetchSections,
   fetchSectionVersions,
+  fetchSplitAnomalies,
   fetchTimeSeries,
   fetchTrack,
   fetchTrainingBlocks,
@@ -57,6 +58,7 @@ import type {
   RecoveryTrend,
   SectionsResponse,
   SectionVersion,
+  SplitAnomaliesResponse,
   TimeSeriesResponse,
   TrackResponse,
   TrainingBlock,
@@ -93,6 +95,23 @@ export function useSections(
   return useQuery({
     queryKey: ["sections", id, runId ?? null],
     queryFn: () => fetchSections(id as string, runId),
+    enabled: id != null,
+  });
+}
+
+/**
+ * Per-split form-anomaly counts for one activity (#1132).
+ *
+ * Feeds the splits table's row highlighting. A failure is not fatal for the
+ * page — the caller treats it as "nothing to highlight" — so no retry or error
+ * surface is wired here.
+ */
+export function useSplitAnomalies(
+  id: string | undefined,
+): UseQueryResult<SplitAnomaliesResponse, Error> {
+  return useQuery({
+    queryKey: ["splitAnomalies", id],
+    queryFn: () => fetchSplitAnomalies(id as string),
     enabled: id != null,
   });
 }

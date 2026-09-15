@@ -4,6 +4,7 @@ import {
   useActivityDetail,
   useSections,
   useSectionVersions,
+  useSplitAnomalies,
   useTimeSeries,
   useTrack,
 } from "../api/hooks";
@@ -28,6 +29,7 @@ import { usePageTitle } from "../hooks/usePageTitle";
 import type {
   ActivityDetailResponse,
   SectionsResponse,
+  SplitAnomaliesResponse,
   SplitRow,
   TimeSeriesResponse,
 } from "../types";
@@ -45,7 +47,6 @@ import {
 } from "../utils/format";
 import { formatNumber } from "../utils/formatNumber";
 import { splitLead } from "../utils/leadSentence";
-import { flaggedSplitIndices } from "../utils/splitAnomalies";
 
 const AVAILABLE_METRICS: { key: string; label: string }[] = [
   { key: "heart_rate", label: "心拍数" },
@@ -464,10 +465,34 @@ const SPLIT_COLUMNS = [
 ];
 
 /**
+ * Splits worth the reader's eye, keyed to the metrics that moved (#1132).
+ *
+ * Only *material* anomalies (identifiable cause, |z| > 3.5) tint a row — the
+ * detector's low-severity spikes fire at their chance base rate even on healthy
+ * form, so highlighting them would tint half the table. A missing or failed
+ * response yields an empty map: a table with nothing to highlight is the normal
+ * case, not an error.
+ */
+export function flaggedSplitMetrics(
+  anomalies: SplitAnomaliesResponse | undefined,
+): Map<number, string[]> {
+  const flagged = new Map<number, string[]>();
+  for (const split of anomalies?.splits ?? []) {
+    if (split.material > 0) {
+      flagged.set(split.split_index, split.metrics);
+    }
+  }
+  return flagged;
+}
+
+/**
  * The splits table (Morning Brief, #1118): mono figures between rules, with
  * the inline pace / HR bars kept so the run reads as a shape, and the
- * kilometres the analyst flagged tinted so the exceptions can be found without
- * reading every row.
+ * kilometres whose form actually moved tinted so the exceptions can be found
+ * without reading every row.
+ *
+ * `flagged` maps a split number to the form metrics the detector flagged there
+ * (#1132), which become the row's tooltip.
  */
 function SplitsTable({
   splits,
@@ -479,7 +504,7 @@ function SplitsTable({
   splits: SplitRow[];
   paceScale: BarScale | null;
   hrScale: BarScale | null;
-  flagged: Set<number>;
+  flagged: Map<number, string[]>;
   caption: string;
 }) {
   return (
@@ -510,13 +535,19 @@ function SplitsTable({
             const isFragment =
               typeof split.distance !== "number" ||
               split.distance < BAR_MIN_SPLIT_KM;
-            const isFlagged = flagged.has(split.split_index);
+            const flaggedMetrics = flagged.get(split.split_index);
+            const isFlagged = flaggedMetrics != null;
             return (
               <tr
                 key={split.split_index}
                 className={`border-b border-hairline ${
                   isFlagged ? "bg-warn-tint" : "hover:bg-surface"
                 }`}
+                title={
+                  isFlagged
+                    ? `フォーム異常: ${flaggedMetrics.join(", ")}`
+                    : undefined
+                }
               >
                 <td className="px-2 py-2 text-left text-ink-muted">
                   {split.split_index}
@@ -582,6 +613,9 @@ export default function ActivityDetail() {
   // otherwise it stays idle and the chart shows its empty-state placeholder.
   const timeSeriesQuery = useTimeSeries(id, selectedMetrics);
   const trackQuery = useTrack(id);
+  // Splits-table highlighting only; a failure leaves the table plain rather
+  // than blocking the page (#1132).
+  const splitAnomaliesQuery = useSplitAnomalies(id);
 
   const loading = detailQuery.isPending || sectionsQuery.isPending;
   // A failed activity / sections fetch is fatal (full-page error); the
@@ -658,7 +692,7 @@ export default function ActivityDetail() {
   // are min-max normalized over the real splits only.
   const paceScale = splitBarScale(splits, "pace_seconds_per_km");
   const hrScale = splitBarScale(splits, "heart_rate");
-  const flaggedSplits = flaggedSplitIndices(sections?.split);
+  const flaggedSplits = flaggedSplitMetrics(splitAnomaliesQuery.data);
 
   // Bidirectional hover sync: chart data index <-> track seq_no, matched
   // through the nearest timestamp / seq_no value.

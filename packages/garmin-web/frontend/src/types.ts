@@ -422,6 +422,30 @@ export interface SectionResult {
 
 export type SectionsResponse = Record<string, SectionResult>;
 
+/**
+ * One split whose form metrics moved (`GET /api/activities/{id}/split-anomalies`).
+ *
+ * `material` counts the anomalies with an identifiable cause and |z| > 3.5 —
+ * the ones worth the reader's eye; `metrics` are the short names (`gct` / `vo`
+ * / `vr`) of whatever moved.
+ */
+export interface SplitAnomalyRow {
+  split_index: number;
+  anomalies: number;
+  material: number;
+  severity_high: number;
+  max_z: number;
+  metrics: string[];
+}
+
+/** Per-split form-anomaly counts for one activity (#1132). */
+export interface SplitAnomaliesResponse {
+  activity_id: number;
+  total: number;
+  material: number;
+  splits: SplitAnomalyRow[];
+}
+
 /** One saved analysis run (a version); run_id groups its sections (#776). */
 export interface SectionVersion {
   run_id: number;
