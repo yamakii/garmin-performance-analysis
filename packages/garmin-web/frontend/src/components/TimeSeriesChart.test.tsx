@@ -37,10 +37,13 @@ const LABELS = { heart_rate: "心拍", speed: "ペース" };
 interface AxisOption {
   splitLine?: { show?: boolean };
   axisLine?: { show?: boolean };
-  splitNumber?: number;
-  axisLabel?: { hideOverlap?: boolean };
+  axisLabel?: {
+    hideOverlap?: boolean;
+    formatter?: (value: number) => string;
+  };
   min?: number;
   max?: number;
+  interval?: number;
 }
 
 interface SeriesOption {
@@ -106,16 +109,66 @@ describe("TimeSeriesChart", () => {
     }
   });
 
-  it("test_time_series_y_axes_are_sparse", () => {
-    render(<TimeSeriesChart data={DATA} metricLabels={LABELS} />);
+  it("test_time_series_axes_show_three_labels", () => {
+    render(
+      <TimeSeriesChart
+        data={{
+          timestamps: [0, 1, 2],
+          metrics: { heart_rate: [100, 130, 160], speed: [3.0, 3.1, 3.05] },
+        }}
+        metricLabels={LABELS}
+      />,
+    );
 
     const option = lastOption();
-    // A 64px grid only fits 2-3 labels; the default tick count crowded
-    // 11px labels ~11px apart (Issue #1167).
+    // Every band shows exactly three labels (min, mid, max) on round
+    // values, not ECharts' own tick choice (Issue #1170).
     for (const axis of option.yAxis) {
-      expect(axis.splitNumber).toBe(2);
       expect(axis.axisLabel?.hideOverlap).toBe(true);
+      expect(axis.min).toBeDefined();
+      expect(axis.max).toBeDefined();
+      expect(axis.interval).toBeDefined();
+      expect((axis.max! - axis.min!) / axis.interval!).toBe(2);
     }
+    const [hr] = option.yAxis;
+    expect(hr).toMatchObject({ min: 100, max: 160, interval: 30 });
+  });
+
+  it("test_pace_axis_labels_on_half_minutes", () => {
+    const speeds = [2.5, 2.0, 1.6, 2.2, 1.9, 2.1, 2.4, 1.8, 2.3, 2.0];
+    render(
+      <TimeSeriesChart
+        data={{
+          timestamps: speeds.map((_, i) => i),
+          metrics: { heart_rate: speeds.map(() => 140), speed: speeds },
+        }}
+        metricLabels={LABELS}
+      />,
+    );
+
+    const [, pace] = lastOption().yAxis;
+    // Pace's unit is 30 seconds, so every labelled value lands on a whole
+    // or half minute — never the 7:04-style ragged split (Issue #1170).
+    expect(pace.min! % 30).toBe(0);
+    expect(pace.interval! % 30).toBe(0);
+    expect(pace.axisLabel?.formatter?.(420)).toBe("7:00");
+  });
+
+  it("test_hr_ceiling_inside_axis", () => {
+    render(
+      <TimeSeriesChart
+        data={{
+          timestamps: [0, 1, 2],
+          metrics: { heart_rate: [120, 135, 145], speed: [3.0, 3.1, 3.05] },
+        }}
+        metricLabels={LABELS}
+        hrCeiling={150}
+      />,
+    );
+
+    const [hr] = lastOption().yAxis;
+    // The dashed ceiling line must always land inside the plotted range.
+    expect(hr.max!).toBeGreaterThanOrEqual(150);
   });
 
   it("test_hr_ceiling_marks_the_heart_rate_grid", () => {
@@ -143,27 +196,31 @@ describe("TimeSeriesChart", () => {
   });
 
   it("test_pace_axis_bounded_only_on_the_pace_grid", () => {
-    // 8:20/km throughout, with one traffic-light stop at 16:40/km.
+    // 8:20/km throughout, with one traffic-light stop at 16:40/km; heart
+    // rate holds steady except one spike, so the two axes can be told
+    // apart.
     const speeds = Array.from({ length: 40 }, () => 2.0);
     speeds[20] = 1.0;
+    const heartRates = Array.from({ length: 40 }, () => 130);
+    heartRates[25] = 220;
     render(
       <TimeSeriesChart
         data={{
           timestamps: speeds.map((_, i) => i),
-          metrics: { heart_rate: speeds.map(() => 130), speed: speeds },
+          metrics: { heart_rate: heartRates, speed: speeds },
         }}
         metricLabels={LABELS}
       />,
     );
 
     const [hr, pace] = lastOption().yAxis;
-    // The stop sits outside the plotted range, so the running paces get the
-    // whole grid (#1148)...
+    // The stop sits outside the plotted range, so the robust bounds keep
+    // the running paces filling the whole grid (#1148)...
     expect(pace.max).toBeLessThan(700);
     expect(pace.min).toBeGreaterThan(300);
-    // ...while heart rate keeps ECharts' own scaling.
-    expect(hr.min).toBeUndefined();
-    expect(hr.max).toBeUndefined();
+    // ...while heart rate keeps its plain min/max span, spike included:
+    // only the pace band clips outliers via the robust range.
+    expect(hr.max).toBeGreaterThanOrEqual(220);
   });
 });
 
