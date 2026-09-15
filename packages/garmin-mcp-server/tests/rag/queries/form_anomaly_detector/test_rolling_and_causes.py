@@ -66,7 +66,7 @@ def test_context_extraction_edge_cases(detector: FormAnomalyDetector) -> None:
 
     # Test at start (timestamp = 0)
     context_start = detector._extract_context(
-        timestamp=0,
+        index=0,
         metric_series=metric_series,
         elevation_series=elevation_series,
         window=2,
@@ -77,7 +77,7 @@ def test_context_extraction_edge_cases(detector: FormAnomalyDetector) -> None:
 
     # Test at end (timestamp = 4)
     context_end = detector._extract_context(
-        timestamp=4,
+        index=4,
         metric_series=metric_series,
         elevation_series=elevation_series,
         window=2,
@@ -360,7 +360,7 @@ def test_context_extraction_with_none_values(detector: FormAnomalyDetector) -> N
     elevation_series = [10.0, None, 12.0, None, 14.0, None, 16.0, None, 18.0, None]
 
     context = detector._extract_context(
-        timestamp=5,
+        index=5,
         metric_series=metric_series,
         elevation_series=elevation_series,
         window=3,

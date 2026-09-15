@@ -5,13 +5,14 @@ and analyze their probable causes (elevation change, pace change, fatigue).
 
 Key features:
 - Z-score based anomaly detection
-- Rolling statistics calculation (60-second window)
+- Rolling statistics calculation (60-sample baseline window)
 - Cause classification (elevation, pace, fatigue)
 - Context window extraction (before/after anomaly)
 - Correlation analysis for cause confidence
 - Recommendation generation
 """
 
+import bisect
 import statistics
 from pathlib import Path
 from typing import Any
@@ -71,6 +72,70 @@ MIN_SUSTAINED_SECONDS: int = 5
 # treated as belonging to the same sustained run, bridging brief 1-second data
 # dropouts inside an otherwise continuous degradation (#820).
 SUSTAINED_ADJACENCY_TOLERANCE_SEC: int = 2
+
+# Raw descriptor keys carrying each sample's elapsed seconds from the activity
+# start, in preference order. Garmin downsamples long activities to one sample
+# every 2 seconds, so the sample index is NOT the elapsed second and must never
+# be reported as a timestamp (#1137).
+DURATION_DESCRIPTOR_KEYS: tuple[str, ...] = ("sumDuration", "sumElapsedDuration")
+
+
+def _median_sample_interval(elapsed_s: list[float] | None) -> float:
+    """Median seconds between consecutive samples (1.0 when unknown).
+
+    Args:
+        elapsed_s: Per-sample elapsed seconds, ascending.
+
+    Returns:
+        The median positive gap between consecutive samples, or 1.0 when the
+        series is absent or carries no usable gap (1 Hz assumption).
+    """
+    if not elapsed_s or len(elapsed_s) < 2:
+        return 1.0
+
+    gaps = [b - a for a, b in zip(elapsed_s, elapsed_s[1:], strict=False) if b > a]
+    if not gaps:
+        return 1.0
+
+    return float(statistics.median(gaps))
+
+
+def _window_slice(
+    elapsed_s: list[float] | None,
+    index: int,
+    before_seconds: float,
+    after_seconds: float,
+    series_len: int,
+) -> tuple[int, int]:
+    """Sample-index slice covering ``[t - before, t + after)`` seconds.
+
+    Windows are expressed in seconds everywhere in this module; on a 2 s-sampled
+    activity a 30-sample slice is 60 seconds of running, so the bounds are
+    resolved against the elapsed-seconds series rather than the sample index
+    (#1137). Without an elapsed series (callers passing bare time series) the
+    1 Hz index arithmetic is used, which is the historical behaviour.
+
+    Args:
+        elapsed_s: Per-sample elapsed seconds, ascending (None when unknown).
+        index: Sample index the window is centred on.
+        before_seconds: Seconds of context before the sample (inclusive bound).
+        after_seconds: Seconds of context after the sample (exclusive bound).
+        series_len: Length of the series being sliced.
+
+    Returns:
+        Tuple of (start_index, end_index) suitable for list slicing.
+    """
+    if elapsed_s is None or index >= len(elapsed_s):
+        start = max(0, index - int(before_seconds))
+        end = min(series_len, index + int(after_seconds))
+        return start, max(start, end)
+
+    center = elapsed_s[index]
+    start = bisect.bisect_left(elapsed_s, center - before_seconds)
+    end = bisect.bisect_left(elapsed_s, center + after_seconds)
+    start = max(0, min(start, series_len))
+    end = max(start, min(end, series_len))
+    return start, end
 
 
 def generate_recommendations(anomalies: list[dict[str, Any]]) -> list[str]:
@@ -151,9 +216,17 @@ class FormAnomalyDetector:
     ) -> tuple[list[float], list[float]]:
         """Calculate rolling mean and standard deviation.
 
+        The baseline window is measured in **samples**, deliberately not in
+        seconds (#1137): on a 2 s-sampled activity a true 60-second window holds
+        only 30 samples, and a 5-second (3-sample) degradation would then make up
+        10% of its own baseline, inflating the window std enough to suppress
+        every z-score. Keeping 60 samples preserves the historical sensitivity
+        (60 s at 1 Hz, 120 s when Garmin downsamples).
+
         Args:
             time_series: List of metric values.
-            window_size: Rolling window size in seconds (default: 60).
+            window_size: Rolling window size in samples (default: 60, i.e. 60 s
+                at 1 Hz sampling).
 
         Returns:
             Tuple of (rolling_means, rolling_stds).
@@ -221,6 +294,7 @@ class FormAnomalyDetector:
         rolling_means: list[float],
         rolling_stds: list[float],
         z_threshold: float = DEFAULT_Z_THRESHOLD,
+        elapsed_s: list[float] | None = None,
     ) -> list[dict[str, Any]]:
         """Detect anomalies using z-score method with rolling statistics.
 
@@ -243,9 +317,14 @@ class FormAnomalyDetector:
             rolling_means: List of rolling mean values.
             rolling_stds: List of rolling standard deviation values.
             z_threshold: Z-score threshold for anomaly detection (default: 3.0).
+            elapsed_s: Per-sample elapsed seconds. When given, each anomaly's
+                ``timestamp`` is the sample's elapsed second instead of its
+                index, which differ by a factor of ~2 on downsampled long
+                activities (#1137).
 
         Returns:
-            List of anomaly dictionaries with timestamp, value, z-score.
+            List of anomaly dictionaries with ``timestamp`` (elapsed seconds),
+            ``index`` (sample index, for slicing the series), value and z-score.
         """
         anomalies = []
         magnitude_gate = MAGNITUDE_GATES.get(metric_name)
@@ -274,9 +353,15 @@ class FormAnomalyDetector:
             if magnitude_gate is not None and deviation < magnitude_gate:
                 continue
 
+            if elapsed_s is not None and idx < len(elapsed_s):
+                timestamp = int(round(elapsed_s[idx]))
+            else:
+                timestamp = idx
+
             anomalies.append(
                 {
-                    "timestamp": idx,
+                    "timestamp": timestamp,
+                    "index": idx,
                     "metric": metric_name,
                     "value": value,
                     "baseline": mean_val,
@@ -291,25 +376,38 @@ class FormAnomalyDetector:
         anomalies: list[dict[str, Any]],
         min_seconds: int = MIN_SUSTAINED_SECONDS,
         adjacency_tol: int = SUSTAINED_ADJACENCY_TOLERANCE_SEC,
+        sample_interval: float = 1.0,
     ) -> list[dict[str, Any]]:
         """Keep only anomalies belonging to a sustained run.
 
         single-metric・timestamp 昇順の anomalies を、連続フラグ秒の差が
-        adjacency_tol 以下の run にグルーピングし、span(last-first+1) >= min_seconds
-        の run のみ残す。1秒スパイク・短い過渡クラスタを落とす。
+        adjacency_tol 秒以下の run にグルーピングし、run が覆う時間
+        (last - first + sample_interval) >= min_seconds の run のみ残す。
+        1サンプルのスパイク・短い過渡クラスタを落とす。
+
+        Timestamps are elapsed seconds (#1137), so each flagged sample covers
+        ``sample_interval`` seconds of running: three samples of a 2 s-sampled
+        activity cover 6 s, not 3 s. At 1 Hz this reduces to the historical
+        ``last - first + 1`` rule.
 
         Args:
             anomalies: Single-metric anomaly records in ascending timestamp order.
-            min_seconds: Minimum span (last - first + 1) for a run to be kept.
-            adjacency_tol: Max timestamp gap between consecutive flagged seconds
-                that still counts as the same run (bridges brief data dropouts).
+            min_seconds: Minimum covered time for a run to be kept.
+            adjacency_tol: Max timestamp gap in seconds between consecutive
+                flagged samples that still counts as the same run (bridges brief
+                data dropouts).
+            sample_interval: Seconds covered by one sample (default: 1.0).
 
         Returns:
-            The subset of ``anomalies`` that belong to a run spanning at least
+            The subset of ``anomalies`` that belong to a run covering at least
             ``min_seconds`` seconds. Order is preserved; input order is trusted.
         """
         if not anomalies:
             return []
+
+        def _covers_min_span(run: list[dict[str, Any]]) -> bool:
+            span = run[-1]["timestamp"] - run[0]["timestamp"] + sample_interval
+            return bool(span >= min_seconds)
 
         sustained: list[dict[str, Any]] = []
         run: list[dict[str, Any]] = [anomalies[0]]
@@ -318,11 +416,11 @@ class FormAnomalyDetector:
             if cur["timestamp"] - prev["timestamp"] <= adjacency_tol:
                 run.append(cur)
             else:
-                if run[-1]["timestamp"] - run[0]["timestamp"] + 1 >= min_seconds:
+                if _covers_min_span(run):
                     sustained.extend(run)
                 run = [cur]
 
-        if run[-1]["timestamp"] - run[0]["timestamp"] + 1 >= min_seconds:
+        if _covers_min_span(run):
             sustained.extend(run)
 
         return sustained
@@ -334,6 +432,7 @@ class FormAnomalyDetector:
         pace_series: list[float | None],
         hr_series: list[float | None],
         sustained_degradation: bool = False,
+        elapsed_s: list[float] | None = None,
     ) -> tuple[str, dict[str, Any]]:
         """Analyze probable cause of anomaly using correlation analysis.
 
@@ -353,18 +452,25 @@ class FormAnomalyDetector:
             sustained_degradation: Whether the metric for this anomaly shows a
                 persistent first-half vs second-half degradation exceeding its
                 form_degradation_trigger. Required for a ``fatigue`` label.
+            elapsed_s: Per-sample elapsed seconds, used to resolve the
+                elevation / pace / HR windows in seconds on downsampled
+                activities (#1137).
 
         Returns:
             Tuple of (probable_cause, cause_details).
             Probable causes: "elevation_change", "pace_change", "fatigue",
             "isolated" (no identifiable cause).
         """
-        timestamp = anomaly["timestamp"]
+        # Sample index of the anomaly: series are sliced by index, while
+        # ``timestamp`` is the elapsed second (#1137). Records without an
+        # ``index`` (hand-built in tests) are 1 Hz, where the two coincide.
+        index = int(anomaly.get("index", anomaly["timestamp"]))
 
         # Calculate changes in contextual metrics
         # Elevation change (5 seconds window)
-        elev_start = max(0, timestamp - 5)
-        elev_end = min(len(elevation_series), timestamp + 5)
+        elev_start, elev_end = _window_slice(
+            elapsed_s, index, 5, 5, len(elevation_series)
+        )
         elev_values = [
             e for e in elevation_series[elev_start:elev_end] if e is not None
         ]
@@ -373,18 +479,25 @@ class FormAnomalyDetector:
         )
 
         # Pace change (10 seconds window)
-        pace_start = max(0, timestamp - 10)
-        pace_end = min(len(pace_series), timestamp + 10)
+        pace_start, pace_end = _window_slice(elapsed_s, index, 10, 10, len(pace_series))
         pace_values = [p for p in pace_series[pace_start:pace_end] if p is not None]
         pace_change = (
             max(pace_values) - min(pace_values) if len(pace_values) > 1 else 0.0
         )
 
         # HR drift (calculate from start to this point)
-        hr_baseline_end = min(300, len(hr_series))  # First 5 minutes
+        if elapsed_s is not None:
+            # First 5 minutes of running, not the first 300 samples.
+            hr_baseline_end = min(bisect.bisect_left(elapsed_s, 300.0), len(hr_series))
+        else:
+            hr_baseline_end = min(300, len(hr_series))
         hr_baseline = [h for h in hr_series[:hr_baseline_end] if h is not None]
-        hr_current_start = max(0, timestamp - 60)
-        hr_current = [h for h in hr_series[hr_current_start:timestamp] if h is not None]
+        hr_current_start, hr_current_end = _window_slice(
+            elapsed_s, index, 60, 0, len(hr_series)
+        )
+        hr_current = [
+            h for h in hr_series[hr_current_start:hr_current_end] if h is not None
+        ]
 
         hr_drift_percent = 0.0
         if len(hr_baseline) > 0 and len(hr_current) > 0:
@@ -426,18 +539,22 @@ class FormAnomalyDetector:
 
     def _extract_context(
         self,
-        timestamp: int,
+        index: int,
         metric_series: list[float | None],
         elevation_series: list[float | None],
         window: int = 30,
+        elapsed_s: list[float] | None = None,
     ) -> dict[str, dict[str, float]]:
-        """Extract before/after context around anomaly timestamp.
+        """Extract before/after context around an anomaly sample.
 
         Args:
-            timestamp: Anomaly timestamp.
+            index: Sample index of the anomaly (not its elapsed second: the two
+                differ on downsampled activities, #1137).
             metric_series: Form metric time series (GCT, VO, VR).
             elevation_series: Elevation time series.
             window: Context window size in seconds (default: 30).
+            elapsed_s: Per-sample elapsed seconds, used to size the window in
+                seconds. Without it the 1 Hz index arithmetic is used.
 
         Returns:
             Dictionary with before_30s and after_30s context:
@@ -447,12 +564,14 @@ class FormAnomalyDetector:
             }
         """
         # Before window
-        before_start = max(0, timestamp - window)
+        before_start, before_end = _window_slice(
+            elapsed_s, index, window, 0, len(metric_series)
+        )
         before_values = [
-            v for v in metric_series[before_start:timestamp] if v is not None
+            v for v in metric_series[before_start:before_end] if v is not None
         ]
         before_elev = [
-            e for e in elevation_series[before_start:timestamp] if e is not None
+            e for e in elevation_series[before_start:before_end] if e is not None
         ]
 
         before_ctx = {
@@ -463,9 +582,15 @@ class FormAnomalyDetector:
         }
 
         # After window
-        after_end = min(len(metric_series), timestamp + window)
-        after_values = [v for v in metric_series[timestamp:after_end] if v is not None]
-        after_elev = [e for e in elevation_series[timestamp:after_end] if e is not None]
+        after_start, after_end = _window_slice(
+            elapsed_s, index, 0, window, len(metric_series)
+        )
+        after_values = [
+            v for v in metric_series[after_start:after_end] if v is not None
+        ]
+        after_elev = [
+            e for e in elevation_series[after_start:after_end] if e is not None
+        ]
 
         after_ctx = {
             "metric_avg": (
@@ -502,7 +627,8 @@ class FormAnomalyDetector:
             Tuple of:
             - metric_map: Metric descriptor map
             - form_metrics: Dict of form metric time series
-            - context_metrics: Dict with elevation, pace, hr time series
+            - context_metrics: Dict with elevation, pace, hr and ``elapsed_s``
+              (per-sample elapsed seconds) time series
         """
         # Default metrics if not specified
         if metrics is None:
@@ -528,10 +654,38 @@ class FormAnomalyDetector:
         elevation_series: list[float | None] = []
         pace_series: list[float | None] = []
         hr_series: list[float | None] = []
+        elapsed_series: list[float | None] = []
+
+        # Per-sample elapsed seconds: Garmin stores long activities at one
+        # sample every 2 seconds, so the sample index is not the elapsed second
+        # (#1137). The duration descriptors already carry seconds (verified on
+        # activity 24342314956: last sumDuration 12694 vs summary duration
+        # 12694.554 s), so no unit factor is applied.
+        duration_key = next(
+            (key for key in DURATION_DESCRIPTOR_KEYS if key in metric_map), None
+        )
+        duration_idx = metric_map[duration_key]["index"] if duration_key else None
 
         # Extract all time series
-        for measurement in metrics_data:
+        for sample_index, measurement in enumerate(metrics_data):
             values = measurement["metrics"]
+
+            # Elapsed seconds
+            elapsed_val: float | None = None
+            if duration_idx is not None and duration_idx < len(values):
+                raw_elapsed = values[duration_idx]
+                if raw_elapsed is not None:
+                    elapsed_val = float(raw_elapsed)
+            if elapsed_val is None:
+                # Missing value: hold the previous second so the series stays
+                # ascending; without any duration descriptor assume 1 Hz.
+                previous = elapsed_series[-1] if elapsed_series else None
+                elapsed_val = (
+                    float(previous)
+                    if duration_idx is not None and previous is not None
+                    else float(sample_index)
+                )
+            elapsed_series.append(elapsed_val)
 
             # Extract form metrics
             for metric_name in metrics:
@@ -590,13 +744,43 @@ class FormAnomalyDetector:
             else:
                 hr_series.append(None)
 
-        context_metrics = {
+        # A non-ascending duration series cannot be bisected for second-based
+        # windows; fall back to the sample index in that (unobserved) case.
+        if any(
+            b < a
+            for a, b in zip(elapsed_series, elapsed_series[1:], strict=False)
+            if a is not None and b is not None
+        ):
+            elapsed_series = [float(i) for i in range(len(elapsed_series))]
+
+        context_metrics: dict[str, list[float | None]] = {
             "elevation": elevation_series,
             "pace": pace_series,
             "hr": hr_series,
+            # Never None: falls back to the sample index (#1137).
+            "elapsed_s": elapsed_series,
         }
 
         return metric_map, form_metrics, context_metrics
+
+    @staticmethod
+    def _elapsed_seconds(
+        context_metrics: dict[str, list[float | None]],
+    ) -> list[float] | None:
+        """Per-sample elapsed seconds from ``_extract_time_series`` output.
+
+        Args:
+            context_metrics: Context series dict, optionally carrying
+                ``elapsed_s``.
+
+        Returns:
+            The elapsed-seconds series, or None when absent (1 Hz assumption).
+        """
+        raw = context_metrics.get("elapsed_s")
+        if not raw:
+            return None
+        # Built without None entries in _extract_time_series (#1137).
+        return [float(value) for value in raw if value is not None]
 
     def _detect_all_anomalies(
         self,
@@ -606,6 +790,7 @@ class FormAnomalyDetector:
         hr_series: list[float | None],
         z_threshold: float = DEFAULT_Z_THRESHOLD,
         context_window: int = 30,
+        elapsed_s: list[float] | None = None,
     ) -> list[dict[str, Any]]:
         """Detect anomalies for all form metrics.
 
@@ -616,12 +801,16 @@ class FormAnomalyDetector:
             hr_series: Heart rate time series.
             z_threshold: Z-score threshold.
             context_window: Context window size in seconds.
+            elapsed_s: Per-sample elapsed seconds. Drives the reported
+                ``timestamp`` and every seconds-based window; without it the
+                series is assumed to be 1 Hz (#1137).
 
         Returns:
             List of anomaly records with full details.
         """
         all_anomalies = []
         anomaly_counter = 1
+        sample_interval = _median_sample_interval(elapsed_s)
 
         for metric_name, metric_series in form_metrics.items():
             if not metric_series:
@@ -645,13 +834,16 @@ class FormAnomalyDetector:
                 rolling_means,
                 rolling_stds,
                 z_threshold,
+                elapsed_s,
             )
 
             # Keep only sustained runs: transient start/finish spikes and
             # single-second outliers are not form problems (#820). raw_anomalies
             # is single-metric and timestamp-ascending, as _filter_sustained
             # requires.
-            raw_anomalies = self._filter_sustained(raw_anomalies)
+            raw_anomalies = self._filter_sustained(
+                raw_anomalies, sample_interval=sample_interval
+            )
 
             # Analyze causes and add context
             for raw_anomaly in raw_anomalies:
@@ -661,13 +853,15 @@ class FormAnomalyDetector:
                     pace_series,
                     hr_series,
                     sustained_degradation,
+                    elapsed_s,
                 )
 
                 context = self._extract_context(
-                    raw_anomaly["timestamp"],
+                    raw_anomaly["index"],
                     metric_series,
                     elevation_series,
                     context_window,
+                    elapsed_s,
                 )
 
                 anomaly_record = {
@@ -885,7 +1079,7 @@ class FormAnomalyDetector:
                 },
                 "top_anomalies": [  # Top 5 most severe
                     {
-                        "timestamp": int,
+                        "timestamp": int,  # elapsed seconds (#1137)
                         "metric": str,
                         "z_score": float,
                         "probable_cause": str
@@ -908,6 +1102,7 @@ class FormAnomalyDetector:
             context_metrics["hr"],
             z_threshold,
             context_window=30,  # Not used in summary, but needed for full detection
+            elapsed_s=self._elapsed_seconds(context_metrics),
         )
 
         # Generate summary statistics
@@ -1008,7 +1203,7 @@ class FormAnomalyDetector:
                 "anomalies": [
                     {
                         "anomaly_id": int,
-                        "timestamp": int,
+                        "timestamp": int,  # elapsed seconds (#1137)
                         "metric": str,
                         "value": float,
                         "baseline": float,
@@ -1053,6 +1248,7 @@ class FormAnomalyDetector:
             context_metrics["hr"],
             z_threshold,
             context_window,
+            elapsed_s=self._elapsed_seconds(context_metrics),
         )
 
         # Apply filters if provided

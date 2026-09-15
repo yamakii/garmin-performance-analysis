@@ -18,13 +18,24 @@
         "medium": "int"
       },
       "temporal_clusters": [
-        "list"
+        "list",
+        {
+          "count": "int",
+          "end": "int",
+          "start": "int"
+        }
       ],
       "vo_anomalies": "int",
       "vr_anomalies": "int"
     },
     "top_anomalies": [
-      "list"
+      "list",
+      {
+        "metric": "str",
+        "probable_cause": "str",
+        "timestamp": "int",
+        "z_score": "float"
+      }
     ]
   },
   "get_interval_analysis": {
