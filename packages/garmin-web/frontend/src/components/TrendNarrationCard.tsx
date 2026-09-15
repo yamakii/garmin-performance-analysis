@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useTrendNarration, useTrendNarrationVersions } from "../api/hooks";
 import type { Granularity, TrendNarration } from "../api/trends";
-import CardSkeleton from "./CardSkeleton";
 import Disclosure from "./Disclosure";
 import VersionSelect from "./VersionSelect";
 
@@ -92,11 +91,14 @@ export default function TrendNarrationCard({
     ? versions[Math.min(selectedIndex, versions.length - 1)]
     : narrationQuery.data;
 
-  // Still fetching: hold the space with a skeleton instead of rendering
-  // nothing, so the blocks below do not jump when the narration lands (a
-  // pending fetch is indistinguishable from "no narration" otherwise).
+  // Still fetching: render nothing. Holding the space made sense when this
+  // card carried the write-up's opening paragraph, but the lead moved to the
+  // page (`Performance.tsx` reads it from the narration itself), so all that
+  // is left here is a disclosure — and a "——" skeleton for it was landing
+  // between the verdict line and the vitals row, in the middle of the two
+  // things the page is read for (#1193).
   if (narrationQuery.isPending) {
-    return <CardSkeleton label="トレンド解説" />;
+    return null;
   }
 
   // No narration saved yet (404 / empty) — hide it entirely.
