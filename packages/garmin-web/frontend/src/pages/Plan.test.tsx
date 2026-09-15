@@ -123,6 +123,21 @@ describe("Plan", () => {
     );
   });
 
+  it("test_plan_bands_inside_month_grid_scroller", async () => {
+    stubFetch();
+    renderPlan();
+
+    // The band and the days it labels scroll together: a band drawn outside
+    // the grid's scroller keeps its place while the days move under it, so a
+    // phase change lands on the wrong day (#1143).
+    const band = await screen.findByText(/新潟マラソン ビルド/);
+    const scroller = band.closest(".overflow-x-auto");
+    expect(scroller).not.toBeNull();
+    expect(scroller).toContainElement(
+      screen.getByRole("table", { name: "月間プラン" }),
+    );
+  });
+
   it("falls back to the current month when the URL month is malformed", async () => {
     const fetchMock = stubFetch();
     renderPlan("/plan?month=2026-9");
