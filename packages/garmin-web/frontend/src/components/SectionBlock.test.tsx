@@ -40,4 +40,29 @@ describe("SectionBlock", () => {
       "効率 ★★★★☆",
     );
   });
+
+  it("test_section_block_columns_do_not_grow_with_content", () => {
+    render(
+      <SectionBlock id="split" title="スプリット">
+        <p>本文</p>
+      </SectionBlock>,
+    );
+
+    const section = screen
+      .getByRole("heading", { level: 2, name: "スプリット" })
+      .closest("section");
+    expect(section).toHaveClass("grid-cols-[minmax(0,1fr)]");
+    expect(section).toHaveClass("md:grid-cols-[160px_minmax(0,1fr)]");
+    expect(section?.className).not.toContain("md:grid-cols-[160px_1fr]");
+  });
+
+  it("test_section_block_content_min_w_0", () => {
+    render(
+      <SectionBlock title="スプリット">
+        <p>本文</p>
+      </SectionBlock>,
+    );
+
+    expect(screen.getByText("本文").parentElement).toHaveClass("min-w-0");
+  });
 });

@@ -29,7 +29,7 @@ export default function SectionBlock({
   return (
     <section
       id={id}
-      className="grid scroll-mt-[60px] gap-x-8 gap-y-4 md:grid-cols-[160px_1fr]"
+      className="grid scroll-mt-[60px] grid-cols-[minmax(0,1fr)] gap-x-8 gap-y-4 md:grid-cols-[160px_minmax(0,1fr)]"
     >
       <div>
         <h2 className="text-lg font-bold text-ink">
@@ -48,7 +48,7 @@ export default function SectionBlock({
           </p>
         )}
       </div>
-      <div>{children}</div>
+      <div className="min-w-0">{children}</div>
     </section>
   );
 }
