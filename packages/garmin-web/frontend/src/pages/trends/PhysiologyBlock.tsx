@@ -4,13 +4,33 @@ import {
   AXIS_STYLE,
   BASE_CHART_OPTION,
   METRIC_COLORS,
+  X_AXIS_STYLE,
 } from "../../components/chartTheme";
 import { axisTooltipFormatter } from "../../utils/formatNumber";
 import type { PhysiologyTrend } from "../../api/trends";
-import { CARD_CLASS } from "../../components/Card";
+import { BLOCK_SUMMARY_CLASS, BlockEmpty, CHART_HEIGHT } from "./blockShell";
 
 interface PhysiologyBlockProps {
   data: PhysiologyTrend;
+}
+
+/** "VO2max 50.1 · LT心拍 168bpm · 2025-10-13" — the latest of each estimate. */
+export function physiologySummaryLine(data: PhysiologyTrend): string {
+  const vo2max = data.vo2max.filter((p) => p.value != null).at(-1) ?? null;
+  const threshold =
+    data.lactate_threshold.filter((p) => p.heart_rate != null).at(-1) ?? null;
+  const parts: string[] = [];
+  if (vo2max?.value != null) {
+    parts.push(`VO2max ${vo2max.value.toFixed(1)}`);
+  }
+  if (threshold?.heart_rate != null) {
+    parts.push(`LT心拍 ${threshold.heart_rate.toFixed(0)}bpm`);
+  }
+  const latestDate = vo2max?.date ?? threshold?.date ?? null;
+  if (latestDate != null) {
+    parts.push(latestDate);
+  }
+  return parts.join(" · ");
 }
 
 export default function PhysiologyBlock({ data }: PhysiologyBlockProps) {
@@ -21,14 +41,14 @@ export default function PhysiologyBlock({ data }: PhysiologyBlockProps) {
         trigger: "axis" as const,
         formatter: axisTooltipFormatter({ VO2max: 1, LT心拍: 0 }),
       },
-      legend: { data: ["VO2max", "LT心拍"] },
       xAxis: {
         type: "category" as const,
         data: data.vo2max.map((p) => p.date),
-        ...AXIS_STYLE,
+        ...X_AXIS_STYLE,
       },
       // Each axis name is painted in its series' color so the reader can tell
-      // at a glance which scale a line belongs to (Issue #913).
+      // at a glance which scale a line belongs to (Issue #913); the names are
+      // the labels, so the chart carries no legend box.
       yAxis: [
         {
           type: "value" as const,
@@ -50,7 +70,7 @@ export default function PhysiologyBlock({ data }: PhysiologyBlockProps) {
         {
           name: "VO2max",
           type: "line" as const,
-          // Same token as ObjectiveFitnessBlock's Garmin VO2max line.
+          // The primary series of this block: ink.
           itemStyle: { color: METRIC_COLORS.vo2max },
           lineStyle: { color: METRIC_COLORS.vo2max },
           data: data.vo2max.map((p) => p.value),
@@ -68,32 +88,17 @@ export default function PhysiologyBlock({ data }: PhysiologyBlockProps) {
     [data],
   );
 
-  const latestVo2max = data.vo2max.at(-1);
-  const isEmpty =
-    data.vo2max.length === 0 && data.lactate_threshold.length === 0;
-
+  if (data.vo2max.length === 0 && data.lactate_threshold.length === 0) {
+    return <BlockEmpty message="データがありません" />;
+  }
   return (
-    <section
-      aria-label="生理指標"
-      className={CARD_CLASS}
-    >
-      <h2 className="mb-3 text-base font-semibold text-ink">
-        生理指標 (VO2max / 乳酸閾値)
-      </h2>
-      {isEmpty ? (
-        <p className="py-8 text-center text-sm text-ink-muted">
-          データがありません
-        </p>
-      ) : (
-        <>
-          {latestVo2max?.value != null && (
-            <p className="mb-2 text-sm text-ink-muted">
-              最新VO2max: {latestVo2max.value.toFixed(1)} ({latestVo2max.date})
-            </p>
-          )}
-          <EChart option={option} ariaLabel="VO2maxと乳酸閾値の折れ線グラフ" />
-        </>
-      )}
-    </section>
+    <div className="flex flex-col gap-3">
+      <p className={BLOCK_SUMMARY_CLASS}>{physiologySummaryLine(data)}</p>
+      <EChart
+        option={option}
+        ariaLabel="VO2maxと乳酸閾値の折れ線グラフ"
+        height={CHART_HEIGHT}
+      />
+    </div>
   );
 }

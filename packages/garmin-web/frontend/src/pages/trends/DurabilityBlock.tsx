@@ -3,15 +3,17 @@ import EChart from "../../components/EChart";
 import {
   AXIS_STYLE,
   BASE_CHART_OPTION,
+  INK_COLOR,
   METRIC_COLORS,
   THRESHOLD_LINE,
+  X_AXIS_STYLE,
 } from "../../components/chartTheme";
 import type {
   DurabilityActivity,
   DurabilityDirection,
   DurabilityTrend,
 } from "../../types";
-import { CARD_CLASS } from "../../components/Card";
+import { BLOCK_SUMMARY_CLASS, BlockEmpty, CHART_HEIGHT } from "./blockShell";
 
 interface DurabilityBlockProps {
   data: DurabilityTrend;
@@ -21,13 +23,10 @@ const DIRECTION_META: Record<
   DurabilityDirection,
   { label: string; className: string }
 > = {
-  improving: { label: "改善傾向", className: " text-status-good" },
-  worsening: { label: "悪化傾向", className: "bg-bad-tint text-status-bad" },
-  stable: { label: "横ばい", className: " text-ink-soft" },
-  insufficient_data: {
-    label: "データ不足",
-    className: "bg-well text-ink-muted",
-  },
+  improving: { label: "改善傾向", className: "text-status-good" },
+  worsening: { label: "悪化傾向", className: "font-bold text-status-warn" },
+  stable: { label: "横ばい", className: "text-ink-soft" },
+  insufficient_data: { label: "データ不足", className: "text-ink-muted" },
 };
 
 /**
@@ -42,6 +41,22 @@ const GCT_FADE_SERIES = "GCT後半失速 (%)";
 
 function formatFade(value: number | null): string {
   return value == null ? "—" : `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
+}
+
+/**
+ * "ロング 5本 · 直近デカップリング 6.3% · GCT後半失速 +5.8%" — how the last long
+ * run held together, against how many runs the trend is drawn from.
+ */
+export function durabilitySummaryLine(data: DurabilityTrend): string {
+  const latest = data.activities[data.activities.length - 1] ?? null;
+  if (latest == null) {
+    return "";
+  }
+  return [
+    `ロング ${data.trend.data_points}本`,
+    `直近デカップリング ${formatFade(latest.decoupling_pct)}`,
+    `GCT後半失速 ${formatFade(latest.gct_fade_pct)}`,
+  ].join(" · ");
 }
 
 export default function DurabilityBlock({ data }: DurabilityBlockProps) {
@@ -70,11 +85,10 @@ export default function DurabilityBlock({ data }: DurabilityBlockProps) {
           ].join("<br/>");
         },
       },
-      legend: { data: [DECOUPLING_SERIES, GCT_FADE_SERIES] },
       xAxis: {
         type: "category" as const,
         data: activities.map((a) => a.activity_date),
-        ...AXIS_STYLE,
+        ...X_AXIS_STYLE,
       },
       yAxis: {
         type: "value" as const,
@@ -85,15 +99,21 @@ export default function DurabilityBlock({ data }: DurabilityBlockProps) {
         {
           name: DECOUPLING_SERIES,
           type: "line" as const,
-          itemStyle: { color: METRIC_COLORS.heart_rate },
-          lineStyle: { color: METRIC_COLORS.heart_rate },
+          // Decoupling is the durability read this block is named after: ink.
+          itemStyle: { color: INK_COLOR },
+          lineStyle: { color: INK_COLOR },
           data: activities.map((a) => a.decoupling_pct),
-          // Single shared threshold line for both series.
+          // Single shared threshold line for both series: a 注意 marker, not a
+          // failure — 5% is where a long run starts to fade (§Charts).
           markLine: {
             silent: true,
             symbol: "none",
-            lineStyle: { color: THRESHOLD_LINE.bad, type: "dotted" as const },
-            label: { formatter: "5% 目安", color: THRESHOLD_LINE.bad },
+            lineStyle: { color: THRESHOLD_LINE.warn, type: "dotted" as const },
+            label: {
+              formatter: "5% 目安",
+              color: THRESHOLD_LINE.warn,
+              fontSize: 11,
+            },
             data: [{ yAxis: FADE_WARNING_LINE }],
           },
         },
@@ -113,52 +133,35 @@ export default function DurabilityBlock({ data }: DurabilityBlockProps) {
   const directionMeta =
     DIRECTION_META[trend.direction] ?? DIRECTION_META.insufficient_data;
   // form_direction is optional on empty/older payloads; fall back safely so the
-  // badge never reads an undefined meta.
+  // line never reads an undefined meta.
   const formDirectionMeta =
     (trend.form_direction != null
       ? DIRECTION_META[trend.form_direction]
       : undefined) ?? DIRECTION_META.insufficient_data;
-  const isEmpty = activities.length === 0;
 
+  if (activities.length === 0) {
+    return (
+      <BlockEmpty message="10km以上のロングランがないため、耐久性トレンドを算出できません" />
+    );
+  }
   return (
-    <section
-      aria-label="耐久性 (心拍デカップリング)"
-      className={CARD_CLASS}
-    >
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-base font-semibold text-ink">
-          耐久性 (心拍デカップリング・フォーム失速)
-        </h2>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <span
-            className={`rounded-sm px-2.5 py-1 text-xs font-semibold ${directionMeta.className}`}
-          >
-            心拍 {directionMeta.label}
-          </span>
-          <span
-            className={`rounded-sm px-2.5 py-1 text-xs font-semibold ${formDirectionMeta.className}`}
-          >
-            フォーム {formDirectionMeta.label}
-          </span>
-        </div>
-      </div>
-      {isEmpty ? (
-        <p className="py-8 text-center text-sm text-ink-muted">
-          10km以上のロングランがないため、耐久性トレンドを算出できません
-        </p>
-      ) : (
-        <>
-          <p className="mb-1 text-sm text-ink-muted">
-            ロングラン{" "}
-            <span className="font-semibold text-ink">{trend.data_points}</span>{" "}
-            本のデカップリングとGCT後半失速の推移 (いずれも5%超で後半失速の目安)
-          </p>
-          <EChart
-            option={option}
-            ariaLabel="ロングランのデカップリング・GCT失速推移グラフ"
-          />
-        </>
-      )}
-    </section>
+    <div className="flex flex-col gap-3">
+      <p className={BLOCK_SUMMARY_CLASS}>
+        {durabilitySummaryLine(data)}
+        {" · "}
+        <span className={directionMeta.className}>
+          心拍 {directionMeta.label}
+        </span>
+        {" / "}
+        <span className={formDirectionMeta.className}>
+          フォーム {formDirectionMeta.label}
+        </span>
+      </p>
+      <EChart
+        option={option}
+        ariaLabel="ロングランのデカップリング・GCT失速推移グラフ"
+        height={CHART_HEIGHT}
+      />
+    </div>
   );
 }

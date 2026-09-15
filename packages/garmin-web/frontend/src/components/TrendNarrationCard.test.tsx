@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "../test/utils";
-import TrendNarrationCard from "./TrendNarrationCard";
+import TrendNarrationCard, { narrationLead } from "./TrendNarrationCard";
 import type { TrendNarration } from "../api/trends";
 
 function jsonResponse(payload: unknown, status = 200): Response {
@@ -64,9 +64,12 @@ describe("TrendNarrationCard", () => {
         "今週は有酸素ベースが順調に積み上がっています。",
       ),
     ).toBeInTheDocument();
+    // The prose lives behind the disclosure, not under a heading of its own:
+    // the page's only h1 is its verdict and the metric blocks own the h2s.
     expect(
-      screen.getByRole("heading", { level: 2, name: "トレンド解説" }),
+      screen.getByText("コーチ解説の全文"),
     ).toBeInTheDocument();
+    expect(screen.queryByRole("heading")).toBeNull();
   });
 
   it("test_version_switcher_swaps_content", async () => {
@@ -94,9 +97,10 @@ describe("TrendNarrationCard", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("test_narration_clamped_with_toggle", async () => {
-    // A long write-up is folded to its first lines; the version switcher above
-    // it must keep working exactly as before.
+  it("test_narration_full_text_behind_disclosure", async () => {
+    // A long write-up is carried in full behind the disclosure — it is the
+    // "全文", so nothing in it is clamped away; the version switcher sits
+    // inside the same fold.
     const longNarrative = Array.from(
       { length: 12 },
       (_, i) => `${i + 1}段落目の詳細な解説テキストです。`,
@@ -107,13 +111,29 @@ describe("TrendNarrationCard", () => {
 
     render(<TrendNarrationCard granularity="week" />);
 
-    const toggle = await screen.findByRole("button", { name: "続きを読む" });
+    expect(await screen.findByText("コーチ解説の全文")).toBeInTheDocument();
     expect(await screen.findByLabelText("版を選択:")).toBeInTheDocument();
+    expect(
+      screen.getByText(/12段落目の詳細な解説テキストです。/),
+    ).toBeInTheDocument();
+    // The old 続きを読む clamp is gone: the fold is the progressive disclosure.
+    expect(screen.queryByRole("button", { name: "続きを読む" })).toBeNull();
+  });
 
-    fireEvent.click(toggle);
-
-    expect(screen.getByRole("button", { name: "閉じる" })).toBeInTheDocument();
-    expect(screen.getByText(/12段落目の詳細な解説テキストです。/)).toBeInTheDocument();
+  it("test_narration_lead_first_paragraph", () => {
+    expect(
+      narrationLead(makeNarration("一段落目。\n\n二段落目", "2025-10-14")),
+    ).toBe("一段落目。");
+    // Nothing quotable in the payload -> an empty lead, not "undefined".
+    expect(
+      narrationLead({
+        granularity: "week",
+        period_start: "2025-10-06",
+        period_end: "2025-10-12",
+        analysis_data: { points: ["箇条書きは見出しにしない"] },
+        created_at: null,
+      }),
+    ).toBe("");
   });
 
   it("test_narration_card_shows_skeleton_while_pending", () => {

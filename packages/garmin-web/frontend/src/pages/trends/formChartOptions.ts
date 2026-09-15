@@ -5,6 +5,8 @@ import {
   COMPARE_COLOR,
   FORM_DELTA_COLORS,
   FORM_SCORE_COLOR,
+  THRESHOLD_LINE,
+  X_AXIS_STYLE,
 } from "../../components/chartTheme";
 import { axisTooltipFormatter } from "../../utils/formatNumber";
 import { robustAxisBounds } from "../../utils/robustBounds";
@@ -19,7 +21,7 @@ function dateAxis(data: FormTrendPoint[]) {
   return {
     type: "category" as const,
     data: data.map((p) => p.date),
-    ...AXIS_STYLE,
+    ...X_AXIS_STYLE,
   };
 }
 
@@ -38,7 +40,6 @@ export function buildScoreChartOption(data: FormTrendPoint[]): EChartsOption {
       trigger: "axis" as const,
       formatter: axisTooltipFormatter({ [SCORE_SERIES]: 1 }),
     },
-    legend: { data: [SCORE_SERIES] },
     xAxis: dateAxis(data),
     yAxis: {
       type: "value" as const,
@@ -56,7 +57,9 @@ export function buildScoreChartOption(data: FormTrendPoint[]): EChartsOption {
         showSymbol: true,
         lineStyle: { width: 2.5 },
         data: data.map((p) => p.overall_score),
-        // Faint quality zones behind the line (good / ok / watch).
+        // The good band as a faint ink wash, and the two quality thresholds as
+        // dotted status lines — three stacked tints read as a gradient, which
+        // is not what "3.5 and 2.0 are the marks" means (§Charts).
         markArea: {
           silent: true,
           data: [
@@ -64,14 +67,36 @@ export function buildScoreChartOption(data: FormTrendPoint[]): EChartsOption {
               { yAxis: 3.5, itemStyle: { color: BASELINE_BAND_COLOR } },
               { yAxis: 5.5 },
             ],
-            [
-              { yAxis: 2, itemStyle: { color: "rgba(154,91,18,0.08)" } },
-              { yAxis: 3.5 },
-            ],
-            [
-              { yAxis: 0.5, itemStyle: { color: "rgba(168,58,46,0.08)" } },
-              { yAxis: 2 },
-            ],
+          ],
+        },
+        markLine: {
+          silent: true,
+          symbol: "none" as const,
+          data: [
+            {
+              yAxis: 3.5,
+              lineStyle: {
+                type: "dotted" as const,
+                color: THRESHOLD_LINE.warn,
+              },
+              label: {
+                formatter: "3.5 注意",
+                color: THRESHOLD_LINE.warn,
+                fontSize: 11,
+              },
+            },
+            {
+              yAxis: 2,
+              lineStyle: {
+                type: "dotted" as const,
+                color: THRESHOLD_LINE.bad,
+              },
+              label: {
+                formatter: "2.0 要改善",
+                color: THRESHOLD_LINE.bad,
+                fontSize: 11,
+              },
+            },
           ],
         },
       },

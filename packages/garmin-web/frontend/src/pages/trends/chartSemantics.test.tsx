@@ -3,16 +3,26 @@ import { render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import BodyCompositionChart from "./BodyCompositionChart";
 import DurabilityBlock from "./DurabilityBlock";
+import EfficiencyBlock from "./EfficiencyBlock";
 import HeatAdjustedBlock from "./HeatAdjustedBlock";
 import ObjectiveFitnessBlock from "./ObjectiveFitnessBlock";
 import PhysiologyBlock from "./PhysiologyBlock";
 import RecoveryPanel from "./RecoveryPanel";
 import TrainingLoadBlock from "./TrainingLoadBlock";
+import VolumeBlock from "./VolumeBlock";
 import WeightEconomyChart from "./WeightEconomyChart";
+import {
+  COMPARE_COLOR,
+  INK_COLOR,
+  THRESHOLD_LINE,
+  ZONE_COLORS,
+} from "../../components/chartTheme";
 import type {
+  EfficiencyTrendPoint,
   HeatAdjustedTrend,
   ObjectiveFitnessTrend,
   PhysiologyTrend,
+  VolumeTrendPoint,
 } from "../../api/trends";
 import type {
   AcwrTrend,
@@ -42,10 +52,11 @@ type MarkPoint = {
 };
 type Series = {
   name?: string;
-  itemStyle?: ColorStyle;
+  type?: string;
+  itemStyle?: ColorStyle & { borderRadius?: number | number[] };
   lineStyle?: ColorStyle;
   markArea?: { data?: MarkPoint[][] };
-  markLine?: { data?: MarkPoint[] };
+  markLine?: { data?: MarkPoint[]; lineStyle?: ColorStyle };
 };
 type Axis = { name?: string; nameTextStyle?: ColorStyle };
 type ChartOption = {
@@ -87,6 +98,34 @@ const PHYSIOLOGY: PhysiologyTrend = {
   ],
   lactate_threshold: [{ date: "2026-06-01", heart_rate: 168, speed_mps: 3.5 }],
 };
+
+const VOLUME: VolumeTrendPoint[] = [
+  {
+    bucket: "2026-06-22",
+    distance_km: 42.5,
+    duration_seconds: 15_000,
+    run_count: 5,
+  },
+  {
+    bucket: "2026-06-29",
+    distance_km: 48.1,
+    duration_seconds: 17_000,
+    run_count: 5,
+  },
+];
+
+const EFFICIENCY: EfficiencyTrendPoint[] = [
+  {
+    date: "2026-06-29",
+    aerobic_efficiency: "good",
+    primary_zone: "Zone 2",
+    zone1_percentage: 10,
+    zone2_percentage: 60,
+    zone3_percentage: 20,
+    zone4_percentage: 8,
+    zone5_percentage: 2,
+  },
+];
 
 const OBJECTIVE: ObjectiveFitnessTrend = {
   objective_curve: [
@@ -241,30 +280,41 @@ describe("TrainingLoadBlock", () => {
   });
 });
 
-describe("VO2max color", () => {
-  it("test_vo2max_color_consistent", () => {
-    const [physiology] = optionsOf(<PhysiologyBlock data={PHYSIOLOGY} />);
+describe("Morning Brief chart semantics", () => {
+  it("test_chart_semantics_primary_ink_compare_hairline", () => {
+    // The real-run curve is what the objective-fitness block exists to show, so
+    // it is ink; Garmin's estimate is what it is read against, so it is the
+    // hairline compare color (§Charts). The pre-#1121 rule ("one metric, one
+    // color") is superseded: the role in the chart decides the color.
     const [objective] = optionsOf(<ObjectiveFitnessBlock data={OBJECTIVE} />);
+    const primary = objective.series?.find((s) => s.name === "客観VDOT");
+    const compare = objective.series?.find((s) => s.name === "Garmin VO2max");
+    expect(primary?.lineStyle?.color).toBe(INK_COLOR);
+    expect(primary?.itemStyle?.color).toBe(INK_COLOR);
+    expect(compare?.lineStyle?.color).toBe(COMPARE_COLOR);
+    expect(compare?.itemStyle?.color).toBe(COMPARE_COLOR);
 
-    const physiologyVo2max = physiology.series?.find(
-      (s) => s.name === "VO2max",
+    // Bars are square, and the volume bar is the ink primary of its chart.
+    const [volume] = optionsOf(
+      <VolumeBlock data={VOLUME} granularity="week" />,
     );
-    const garminVo2max = objective.series?.find(
-      (s) => s.name === "Garmin VO2max",
-    );
-    const objectiveVdot = objective.series?.find((s) => s.name === "客観VDOT");
+    const bar = volume.series?.[0];
+    expect(bar?.itemStyle?.color).toBe(INK_COLOR);
+    expect(bar?.itemStyle?.borderRadius).toBe(0);
 
-    // One metric, one color across the two pages that plot it.
-    expect(physiologyVo2max?.lineStyle?.color).toBe(
-      garminVo2max?.lineStyle?.color,
-    );
-    expect(physiologyVo2max?.itemStyle?.color).toBe(
-      garminVo2max?.itemStyle?.color,
-    );
-    // Its comparison partner owns a different token (no borrowing).
-    expect(objectiveVdot?.lineStyle?.color).not.toBe(
-      garminVo2max?.lineStyle?.color,
-    );
+    // Zone bars keep the zone ramp, still square.
+    const [efficiency] = optionsOf(<EfficiencyBlock data={EFFICIENCY} />);
+    (efficiency.series ?? []).forEach((zone, index) => {
+      expect(zone.itemStyle?.color).toBe(ZONE_COLORS[index]);
+      expect(zone.itemStyle?.borderRadius).toBe(0);
+    });
+
+    // Thresholds are dotted status lines, not another data color.
+    const [durability] = optionsOf(<DurabilityBlock data={DURABILITY} />);
+    const threshold = (durability.series ?? []).find(
+      (s) => s.markLine != null,
+    )?.markLine;
+    expect(threshold?.lineStyle?.color).toBe(THRESHOLD_LINE.warn);
   });
 });
 

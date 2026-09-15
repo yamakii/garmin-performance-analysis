@@ -5,10 +5,35 @@ import {
   buildScoreChartOption,
 } from "./formChartOptions";
 import type { FormTrendPoint } from "../../api/trends";
-import { CARD_CLASS } from "../../components/Card";
+import { BLOCK_SUMMARY_CLASS, BlockEmpty, CHART_HEIGHT } from "./blockShell";
 
 interface FormBlockProps {
   data: FormTrendPoint[];
+}
+
+/** "±0.4" — a delta that always states its sign, or "—" when missing. */
+function delta(value: number | null, unit: string): string {
+  if (value == null) {
+    return "—";
+  }
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "±";
+  return `${sign}${Math.abs(value).toFixed(1)}${unit}`;
+}
+
+/** "スコア 4.2 · GCT +2.5% · VO +0.4cm · VR +0.3%" — the latest run's form. */
+export function formSummaryLine(data: FormTrendPoint[]): string {
+  const latest = data[data.length - 1] ?? null;
+  if (latest == null) {
+    return "";
+  }
+  const score =
+    latest.overall_score != null ? latest.overall_score.toFixed(1) : "—";
+  return [
+    `スコア ${score}`,
+    `GCT ${delta(latest.gct_delta, "%")}`,
+    `VO ${delta(latest.vo_delta, "cm")}`,
+    `VR ${delta(latest.vr_delta, "%")}`,
+  ].join(" · ");
 }
 
 export default function FormBlock({ data }: FormBlockProps) {
@@ -18,42 +43,30 @@ export default function FormBlock({ data }: FormBlockProps) {
   const scoreOption = useMemo(() => buildScoreChartOption(data), [data]);
   const deltaOption = useMemo(() => buildDeltaChartOption(data), [data]);
 
+  if (data.length === 0) {
+    return <BlockEmpty message="データがありません" />;
+  }
   return (
-    <section
-      aria-label="フォーム"
-      className={CARD_CLASS}
-    >
-      <h2 className="mb-3 text-base font-semibold text-ink">
-        フォームスコア推移
-      </h2>
-      {data.length === 0 ? (
-        <p className="py-8 text-center text-sm text-ink-muted">
-          データがありません
+    <div className="flex flex-col gap-4">
+      <p className={BLOCK_SUMMARY_CLASS}>{formSummaryLine(data)}</p>
+      <div className="flex flex-col gap-1">
+        <p className="font-mono text-xs text-ink-muted">
+          フォームスコア (1〜5)
         </p>
-      ) : (
-        <div className="space-y-4">
-          <div>
-            <h3 className="mb-1 text-sm font-medium text-ink-muted">
-              フォームスコア (1〜5)
-            </h3>
-            <EChart
-              option={scoreOption}
-              ariaLabel="フォームスコアの折れ線グラフ"
-              height={220}
-            />
-          </div>
-          <div>
-            <h3 className="mb-1 text-sm font-medium text-ink-muted">
-              フォーム偏差 (Δ)
-            </h3>
-            <EChart
-              option={deltaOption}
-              ariaLabel="フォーム偏差の折れ線グラフ"
-              height={220}
-            />
-          </div>
-        </div>
-      )}
-    </section>
+        <EChart
+          option={scoreOption}
+          ariaLabel="フォームスコアの折れ線グラフ"
+          height={CHART_HEIGHT}
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <p className="font-mono text-xs text-ink-muted">フォーム偏差 (Δ)</p>
+        <EChart
+          option={deltaOption}
+          ariaLabel="フォーム偏差の折れ線グラフ"
+          height={CHART_HEIGHT}
+        />
+      </div>
+    </div>
   );
 }

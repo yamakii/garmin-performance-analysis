@@ -3,12 +3,14 @@ import EChart from "../../components/EChart";
 import {
   AXIS_STYLE,
   BASE_CHART_OPTION,
+  COMPARE_COLOR,
   INK_COLOR,
   METRIC_COLORS,
+  X_AXIS_STYLE,
 } from "../../components/chartTheme";
 import { axisTooltipFormatter } from "../../utils/formatNumber";
 import type { HeatAdjustedTrend } from "../../api/trends";
-import { CARD_CLASS } from "../../components/Card";
+import { BLOCK_SUMMARY_CLASS, BlockEmpty, CHART_HEIGHT } from "./blockShell";
 
 interface HeatAdjustedBlockProps {
   data: HeatAdjustedTrend;
@@ -19,8 +21,13 @@ const NEUTRAL_HR_SERIES = "気候中立HR";
 /** Japanese label: "heat_cost" is an internal column name, not reader-facing. */
 const HEAT_COST_SERIES = "暑熱コスト (bpm)";
 
-/** Neutral HR uses the editorial ink navy; heat_cost its own warm orange. */
+/**
+ * The climate-neutral line is the point of the block, so it takes the ink and
+ * the raw HR it is corrected from takes the hairline compare color; the heat
+ * cost keeps its own warm token because it scales a second axis.
+ */
 const NEUTRAL_COLOR = INK_COLOR;
+const RAW_COLOR = COMPARE_COLOR;
 const HEAT_COST_COLOR = METRIC_COLORS.heat_cost;
 
 function formatBpmPerC(value: number | null | undefined): string {
@@ -31,8 +38,28 @@ function formatTemp(value: number | null | undefined): string {
   return value == null ? "—" : `${value.toFixed(0)}°C`;
 }
 
+/**
+ * "気候中立HR 145 · 生HR 150 · 暑熱コスト係数 0.35 bpm/°C · 基準 15°C" — the
+ * latest corrected reading and the model that corrected it.
+ */
+export function heatAdjustedSummaryLine(data: HeatAdjustedTrend): string {
+  const latest = data.points.at(-1) ?? null;
+  const parts: string[] = [];
+  if (latest?.neutral_hr != null) {
+    parts.push(`${NEUTRAL_HR_SERIES} ${latest.neutral_hr.toFixed(0)}`);
+  }
+  if (latest?.raw_hr != null) {
+    parts.push(`${RAW_HR_SERIES} ${latest.raw_hr.toFixed(0)}`);
+  }
+  parts.push(
+    `暑熱コスト係数 ${formatBpmPerC(data.coefficients?.beta_heat)} bpm/°C`,
+    `基準 ${formatTemp(data.coefficients?.ref_temp_c)}`,
+  );
+  return parts.join(" · ");
+}
+
 export default function HeatAdjustedBlock({ data }: HeatAdjustedBlockProps) {
-  const { points, coefficients, status } = data;
+  const { points, status } = data;
 
   const option = useMemo(() => {
     return {
@@ -45,11 +72,10 @@ export default function HeatAdjustedBlock({ data }: HeatAdjustedBlockProps) {
           [HEAT_COST_SERIES]: 1,
         }),
       },
-      legend: { data: [RAW_HR_SERIES, NEUTRAL_HR_SERIES, HEAT_COST_SERIES] },
       xAxis: {
         type: "category" as const,
         data: points.map((p) => p.date),
-        ...AXIS_STYLE,
+        ...X_AXIS_STYLE,
       },
       // The bpm axis carries both HR series, so it stays neutral; the second
       // axis takes the heat_cost color it exclusively scales (Issue #913).
@@ -60,69 +86,52 @@ export default function HeatAdjustedBlock({ data }: HeatAdjustedBlockProps) {
           name: HEAT_COST_SERIES,
           nameTextStyle: { color: HEAT_COST_COLOR },
           ...AXIS_STYLE,
+          splitLine: { show: false },
         },
       ],
       series: [
         {
           name: RAW_HR_SERIES,
           type: "line" as const,
-          itemStyle: { color: METRIC_COLORS.heart_rate },
-          lineStyle: { color: METRIC_COLORS.heart_rate },
+          itemStyle: { color: RAW_COLOR },
+          lineStyle: { color: RAW_COLOR },
           data: points.map((p) => p.raw_hr),
         },
         {
           name: NEUTRAL_HR_SERIES,
           type: "line" as const,
           itemStyle: { color: NEUTRAL_COLOR },
-          // Dashed line distinguishes the climate-neutral (reprojected) HR.
-          lineStyle: { color: NEUTRAL_COLOR, type: "dashed" as const },
+          lineStyle: { color: NEUTRAL_COLOR },
           data: points.map((p) => p.neutral_hr),
         },
         {
           name: HEAT_COST_SERIES,
           type: "bar" as const,
           yAxisIndex: 1,
-          itemStyle: { color: HEAT_COST_COLOR, opacity: 0.4 },
+          itemStyle: {
+            color: HEAT_COST_COLOR,
+            opacity: 0.4,
+            borderRadius: 0,
+          },
           data: points.map((p) => p.heat_cost),
         },
       ],
     };
   }, [points]);
 
-  const isEmpty = status !== "ok" || points.length === 0;
-
+  if (status !== "ok" || points.length === 0) {
+    return (
+      <BlockEmpty message="暑熱補正トレンドを算出するにはランが不足しています" />
+    );
+  }
   return (
-    <section
-      aria-label="気候中立HRトレンド (暑熱補正)"
-      className={CARD_CLASS}
-    >
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-base font-semibold text-ink">
-          気候中立HRトレンド (暑熱補正)
-        </h2>
-      </div>
-      {isEmpty ? (
-        <p className="py-8 text-center text-sm text-ink-muted">
-          暑熱補正トレンドを算出するにはランが不足しています
-        </p>
-      ) : (
-        <>
-          <p className="mb-1 text-sm text-ink-muted">
-            <span className="font-semibold text-ink">{RAW_HR_SERIES}</span>{" "}
-            (実線) と{" "}
-            <span className="font-semibold text-ink">{NEUTRAL_HR_SERIES}</span>{" "}
-            (破線) の重ね描き。暑熱コスト係数{" "}
-            <span className="font-semibold text-ink">
-              {formatBpmPerC(coefficients?.beta_heat)} bpm/°C
-            </span>{" "}
-            ・ 基準温度 {formatTemp(coefficients?.ref_temp_c)}
-          </p>
-          <EChart
-            option={option}
-            ariaLabel="生HRと気候中立HRの推移グラフ"
-          />
-        </>
-      )}
-    </section>
+    <div className="flex flex-col gap-3">
+      <p className={BLOCK_SUMMARY_CLASS}>{heatAdjustedSummaryLine(data)}</p>
+      <EChart
+        option={option}
+        ariaLabel="生HRと気候中立HRの推移グラフ"
+        height={CHART_HEIGHT}
+      />
+    </div>
   );
 }

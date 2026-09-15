@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "../test/utils";
 import Performance from "./Performance";
@@ -124,12 +125,13 @@ const CRITICAL_SPEED = [
 ];
 
 const OBJECTIVE_FITNESS = {
+  // Six weeks apart, so the page can read a four-week VDOT delta (+0.7).
   objective_curve: [
-    { date: "2025-10-06", vdot: 34.5, source_distance_km: 5.0 },
+    { date: "2025-09-01", vdot: 34.5, source_distance_km: 5.0 },
     { date: "2025-10-13", vdot: 35.2, source_distance_km: 5.0 },
   ],
   garmin_vo2max: [
-    { date: "2025-10-06", value: 44.6 },
+    { date: "2025-09-01", value: 44.6 },
     { date: "2025-10-13", value: 45.1 },
   ],
   optimism_gap: {
@@ -197,10 +199,11 @@ const WEIGHT_ECONOMY = {
     collinearity_flag: false,
     note: "association with effect-size estimate (no collinearity detected)",
   },
+  // Seven weeks apart, so the page can read a four-week EF delta (+2.8%).
   series: [
     {
       activity_id: 1,
-      run_date: "2025-10-06",
+      run_date: "2025-09-01",
       weight_kg: 80.0,
       ef: 0.0176,
       weight_gap_days: 0,
@@ -216,20 +219,8 @@ const WEIGHT_ECONOMY = {
   note: "association with effect-size estimate (no collinearity detected)",
 };
 
-/** Every metric card heading on the page (the narration card is separate). */
-const METRIC_CARD_HEADINGS = [
-  "走行量",
-  "生理指標 (VO2max / 乳酸閾値)",
-  "効率推移 (HRゾーン分布)",
-  "クリティカルスピード (四半期)",
-  "客観フィットネス曲線 (実走VDOT vs Garmin VO2max)",
-  "気候中立HRトレンド (暑熱補正)",
-  "フォームスコア推移",
-  "耐久性 (心拍デカップリング・フォーム失速)",
-  "体重 × ランニングエコノミー (EF)",
-];
-
-/** The in-page table of contents: chip label -> card anchor id. */
+/** The in-page table of contents: nav label -> block anchor id. The section
+ *  headings are the same labels — one list drives nav and blocks alike. */
 const SECTIONS = [
   { id: "volume", label: "走行量" },
   { id: "physiology", label: "生理指標" },
@@ -242,9 +233,9 @@ const SECTIONS = [
   { id: "weight-economy", label: "体重 × エコノミー" },
 ];
 
-function jsonResponse(payload: unknown): Response {
+function jsonResponse(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), {
-    status: 200,
+    status,
     headers: { "Content-Type": "application/json" },
   });
 }
@@ -252,9 +243,15 @@ function jsonResponse(payload: unknown): Response {
 function stubPerformanceFetch({
   durability = DURABILITY_WORSENING,
   // When set, any endpoint whose URL starts with this prefix never resolves,
-  // simulating a slow card that must not block the rest of the page.
+  // simulating a slow block that must not block the rest of the page.
   slowPrefix,
-}: { durability?: unknown; slowPrefix?: string } = {}): void {
+  // No narration has been generated yet for this period.
+  narration404 = false,
+}: {
+  durability?: unknown;
+  slowPrefix?: string;
+  narration404?: boolean;
+} = {}): void {
   vi.stubGlobal(
     "fetch",
     vi.fn().mockImplementation((url: string) => {
@@ -262,9 +259,24 @@ function stubPerformanceFetch({
         return new Promise<Response>(() => {});
       }
       if (url.startsWith("/api/trends/narration/versions")) {
-        return Promise.resolve(jsonResponse([]));
+        if (narration404) {
+          return Promise.resolve(jsonResponse({ detail: "not found" }, 404));
+        }
+        const latest = url.includes("granularity=month")
+          ? NARRATION_MONTH
+          : NARRATION_WEEK;
+        // Two saved versions, newest first — the page's "解説 v2".
+        return Promise.resolve(
+          jsonResponse([
+            latest,
+            { ...latest, created_at: "2025-10-12T09:00:00" },
+          ]),
+        );
       }
       if (url.startsWith("/api/trends/narration")) {
+        if (narration404) {
+          return Promise.resolve(jsonResponse({ detail: "not found" }, 404));
+        }
         return Promise.resolve(
           jsonResponse(
             url.includes("granularity=month") ? NARRATION_MONTH : NARRATION_WEEK,
@@ -307,93 +319,114 @@ function stubPerformanceFetch({
   );
 }
 
+/** The page links its vitals cells to in-page anchors, so it needs a router. */
+function renderPerformance() {
+  return render(
+    <MemoryRouter>
+      <Performance />
+    </MemoryRouter>,
+  );
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe("Performance", () => {
-  it("test_performance_renders_ten_cards", async () => {
+  it("test_performance_page_single_column_and_segment", async () => {
     stubPerformanceFetch();
 
-    render(<Performance />);
+    const { container } = renderPerformance();
 
+    // The verdict is the page's h1: the reader lands on the judgement.
+    expect(await screen.findByText("速くなっている。")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+      "速くなっている。4週で客観VDOT +0.7 · EF +2.8% · デカップリング 6.3%。",
+    );
+    // The coach's opening paragraph is the rationale under it, and the rest of
+    // the write-up is folded away.
+    // Twice: once as the verdict's lead, once inside the folded full text.
     expect(
-      await screen.findByRole("heading", {
-        level: 1,
-        name: "速くなっているか",
-      }),
+      screen.getAllByText(/今週は距離を維持しながらHRを抑えられています/),
+    ).toHaveLength(2);
+    expect(screen.getByText("コーチ解説の全文")).toBeInTheDocument();
+    expect(
+      await screen.findByText(/週次トレンド · 10\/06 – 10\/12 · 解説 v2/),
     ).toBeInTheDocument();
 
-    // Coach narration leads the page...
-    expect(
-      await screen.findByRole("heading", { level: 2, name: "トレンド解説" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/今週は距離を維持しながらHRを抑えられています/),
-    ).toBeInTheDocument();
+    // Nine section blocks, one column: no two-up grid anywhere on the page.
+    const headings = await screen.findAllByRole("heading", { level: 2 });
+    expect(headings.map((h) => h.textContent)).toEqual(
+      SECTIONS.map(({ label }) => label),
+    );
+    expect(container.innerHTML).not.toContain("md:grid-cols-2");
 
-    // ...followed by the nine metric cards.
-    for (const name of METRIC_CARD_HEADINGS) {
-      expect(
-        await screen.findByRole("heading", { level: 2, name }),
-      ).toBeInTheDocument();
-    }
-
-    // Content from the mocked payloads reaches the cards.
-    expect(screen.getByText(/最新VO2max: 50\.1/)).toBeInTheDocument();
+    // Content from the mocked payloads reaches the blocks.
+    expect(screen.getByText(/VO2max 50\.1/)).toBeInTheDocument();
     expect(screen.getByText(/63 s\/km/)).toBeInTheDocument();
     expect(screen.getByText("心拍 悪化傾向")).toBeInTheDocument();
 
-    // Condition-page cards do not leak onto the performance page.
+    // Condition-page blocks do not leak onto the performance page.
     expect(
       screen.queryByRole("heading", { level: 2, name: "訓練負荷 (ACWR)" }),
     ).toBeNull();
-  });
 
-  it("test_performance_granularity_toggle_updates_narration_and_volume", async () => {
-    stubPerformanceFetch();
-
-    render(<Performance />);
-
-    // Weekly is the default: weekly narration + weekly volume bucket.
-    expect(
-      await screen.findByText(
-        /今週は距離を維持しながらHRを抑えられています/,
-      ),
-    ).toBeInTheDocument();
-    expect(await screen.findByText(/直近週 \(2025-09-29\)/)).toBeInTheDocument();
-
-    // The toggle lives on the page, not inside the volume card.
-    const toggle = screen.getByRole("group", { name: "集計単位" });
-    const monthButton = within(toggle).getByRole("button", { name: "月" });
-    expect(within(toggle).getByRole("button", { name: "週" })).toHaveAttribute(
+    // The week/month segment lives on the page, not inside the volume block.
+    const segment = screen.getByRole("group", { name: "集計単位" });
+    const monthButton = within(segment).getByRole("button", { name: "月" });
+    expect(within(segment).getByRole("button", { name: "週" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
 
     fireEvent.click(monthButton);
 
-    // granularity="month" propagates to the narration card (monthly fetch)...
+    // granularity="month" propagates to the narration (monthly fetch)...
     expect(
-      await screen.findByText(
+      await screen.findAllByText(
         /今月は月間走行量が前月から積み上がっています/,
       ),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/月次トレンド: 2025-10-01/)).toBeInTheDocument();
+    ).toHaveLength(2);
+    expect(screen.getByText(/月次トレンド · 10\/01 – 10\/31/)).toBeInTheDocument();
 
-    // ...and to the volume card (monthly buckets).
-    expect(await screen.findByText(/直近月 \(2025-10\)/)).toBeInTheDocument();
-    expect(screen.getByText(/120\.0 km/)).toBeInTheDocument();
+    // ...and to the volume block (monthly buckets).
+    expect(await screen.findByText(/今月 120\.0km/)).toBeInTheDocument();
     expect(monthButton).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("test_performance_vitals_row", async () => {
+    stubPerformanceFetch();
+
+    renderPerformance();
+
+    const vitals = await screen.findByRole("region", { name: "客観指標" });
+    for (const label of [
+      "客観 VDOT",
+      "効率 EF",
+      "クリティカルスピード",
+      "耐久性 デカップリング",
+    ]) {
+      expect(within(vitals).getByText(label)).toBeInTheDocument();
+    }
+
+    // The objective readings and their four-week moves.
+    expect(await within(vitals).findByText("35.2")).toBeInTheDocument();
+    expect(within(vitals).getByText("4週 +0.7")).toBeInTheDocument();
+    expect(within(vitals).getByText("5:53")).toBeInTheDocument();
+
+    // 6.3% decoupling misses the 3.5% target, so its note is the warn tone.
+    expect(within(vitals).getByText("6.3")).toBeInTheDocument();
+    const decouplingNote = within(vitals).getByText(/目標 3\.5% 未満を超過/);
+    expect(decouplingNote.className).toContain("text-status-warn");
   });
 
   it("test_performance_has_section_nav", async () => {
     stubPerformanceFetch();
 
-    const { container } = render(<Performance />);
+    const { container } = renderPerformance();
 
     const nav = screen.getByRole("navigation", { name: "セクション目次" });
-    // Each chip links to one card section...
+    // Each entry links to one block...
     for (const { id, label } of SECTIONS) {
       expect(within(nav).getByRole("link", { name: label })).toHaveAttribute(
         "href",
@@ -401,7 +434,7 @@ describe("Performance", () => {
       );
     }
 
-    // ...and every target anchor is actually rendered, so no chip is a dead
+    // ...and every target anchor is actually rendered, so no entry is a dead
     // link (the anchors wrap the skeletons too, before the data lands).
     await screen.findByRole("heading", { level: 2, name: "走行量" });
     for (const { id } of SECTIONS) {
@@ -409,40 +442,40 @@ describe("Performance", () => {
     }
   });
 
+  it("test_performance_hides_narration_when_absent", async () => {
+    stubPerformanceFetch({ narration404: true });
+
+    renderPerformance();
+
+    // The verdict still stands on its numbers; only the prose is missing.
+    expect(await screen.findByText("速くなっている。")).toBeInTheDocument();
+    expect(screen.queryByText("コーチ解説の全文")).toBeNull();
+    expect(screen.getByText("週次トレンド")).toBeInTheDocument();
+  });
+
   it("falls back when durability data is insufficient", async () => {
     stubPerformanceFetch({ durability: DURABILITY_EMPTY });
 
-    render(<Performance />);
+    renderPerformance();
 
     expect(
-      await screen.findByRole("heading", {
-        level: 2,
-        name: "耐久性 (心拍デカップリング・フォーム失速)",
-      }),
+      await screen.findByRole("heading", { level: 2, name: "耐久性" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("心拍 データ不足")).toBeInTheDocument();
-    expect(screen.getByText("フォーム データ不足")).toBeInTheDocument();
     expect(
-      screen.getByText(/10km以上のロングランがないため/),
+      await screen.findByText(/10km以上のロングランがないため/),
     ).toBeInTheDocument();
   });
 
-  it("renders resolved cards independently of slow ones", async () => {
+  it("renders resolved blocks independently of slow ones", async () => {
     stubPerformanceFetch({ slowPrefix: "/api/trends/physiology" });
 
-    render(<Performance />);
+    renderPerformance();
 
-    // A fast card resolves even though physiology never does.
+    // A fast block resolves even though physiology never does.
     expect(
-      await screen.findByRole("heading", { level: 2, name: "走行量" }),
+      await screen.findByText(/今週 8\.0km/),
     ).toBeInTheDocument();
 
-    expect(
-      screen.queryByRole("heading", {
-        level: 2,
-        name: "生理指標 (VO2max / 乳酸閾値)",
-      }),
-    ).toBeNull();
     const skeletons = screen.getAllByRole("status");
     expect(
       skeletons.some((el) => el.getAttribute("aria-label") === "生理指標"),

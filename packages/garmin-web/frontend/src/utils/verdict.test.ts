@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { makeMonthPlan } from "../test/planFixture";
+import type { TrendNarration } from "../api/trends";
 import type {
   FormAnomalyFlagsResponse,
   GoalRace,
@@ -13,7 +14,9 @@ import {
   conditionVerdict,
   goalVerdict,
   homeVerdict,
+  performanceVerdict,
   todayPrescription,
+  type PerformanceKpis,
 } from "./verdict";
 
 function status(
@@ -89,6 +92,25 @@ describe("homeVerdict", () => {
   });
 });
 
+const NARRATION: TrendNarration = {
+  granularity: "week",
+  period_start: "2026-09-07",
+  period_end: "2026-09-13",
+  analysis_data: { narrative: "今週は積み上げが続いています。" },
+  created_at: "2026-09-14 09:00:00",
+};
+
+function kpis(overrides: Partial<PerformanceKpis> = {}): PerformanceKpis {
+  return {
+    objectiveVdot: null,
+    vdotDelta4w: null,
+    ef: null,
+    efDeltaPct4w: null,
+    decouplingPct: null,
+    ...overrides,
+  };
+}
+
 function metric(
   name: MetricBaseline["metric"],
   overrides: Partial<MetricBaseline> = {},
@@ -105,6 +127,60 @@ function metric(
     ...overrides,
   };
 }
+
+describe("performanceVerdict", () => {
+  it("test_performance_verdict_improving", () => {
+    expect(
+      performanceVerdict(
+        NARRATION,
+        kpis({ vdotDelta4w: 0.8, efDeltaPct4w: 3 }),
+      ),
+    ).toEqual({
+      verdict: "速くなっている。",
+      tone: "neutral",
+      rest: "4週で客観VDOT +0.8 · EF +3.0%。",
+    });
+
+    const declining = performanceVerdict(
+      NARRATION,
+      kpis({ vdotDelta4w: -0.5 }),
+    );
+    expect(declining.verdict).toBe("落ちている。");
+    expect(declining.tone).toBe("warn");
+
+    // No numbers at all: the page still has prose, so it says the numbers are
+    // missing rather than claiming a direction.
+    expect(performanceVerdict(NARRATION, kpis())).toEqual({
+      verdict: "停滞。",
+      tone: "neutral",
+      rest: "判断材料が不足。",
+    });
+    // Neither numbers nor prose: nothing has been generated yet.
+    expect(performanceVerdict(null, kpis()).rest).toBe(
+      "データがまだありません。",
+    );
+  });
+
+  it("reads moves inside the noise band as 停滞", () => {
+    expect(
+      performanceVerdict(NARRATION, kpis({ vdotDelta4w: 0.2, efDeltaPct4w: 1 }))
+        .verdict,
+    ).toBe("停滞。");
+    // Disagreeing measures establish nothing either.
+    expect(
+      performanceVerdict(
+        NARRATION,
+        kpis({ vdotDelta4w: 0.8, efDeltaPct4w: -3 }),
+      ).verdict,
+    ).toBe("停滞。");
+  });
+
+  it("names the decoupling reading among the evidence", () => {
+    expect(
+      performanceVerdict(NARRATION, kpis({ decouplingPct: 4.25 })).rest,
+    ).toBe("デカップリング 4.3%。");
+  });
+});
 
 function baseline(
   overrides: Partial<WellnessBaselineDeviation> = {},

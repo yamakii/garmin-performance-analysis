@@ -53,9 +53,10 @@ describe("HeatAdjustedBlock", () => {
   it("test_heat_adjusted_block_renders_points", () => {
     render(<HeatAdjustedBlock data={OK_TREND} />);
 
-    // Raw + neutral series labels appear in the descriptive caption.
-    expect(screen.getByText("生HR")).toBeInTheDocument();
-    expect(screen.getByText("気候中立HR")).toBeInTheDocument();
+    // Raw + neutral series are named, with their latest values, in the one
+    // mono summary line above the chart.
+    expect(screen.getByText(/気候中立HR 148/)).toBeInTheDocument();
+    expect(screen.getByText(/生HR 154/)).toBeInTheDocument();
     // The fitted heat coefficient is surfaced as a caption, in Japanese
     // (the internal `beta_heat` / `heat_cost` names stay out of the UI).
     expect(screen.getByText(/0\.35 bpm\/°C/)).toBeInTheDocument();
