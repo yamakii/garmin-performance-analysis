@@ -14,6 +14,7 @@ import {
   conditionVerdict,
   goalVerdict,
   homeVerdict,
+  isBehindTarget,
   performanceVerdict,
   todayPrescription,
   type PerformanceKpis,
@@ -283,11 +284,13 @@ function readiness(
 
 describe("goalVerdict", () => {
   it("test_goal_verdict_on_track", () => {
+    // Inside the backend's ±60 s band, so the prediction trails the target by
+    // half a minute and the plan is still on schedule.
     const verdict = goalVerdict(
       readiness({
-        predicted_time_seconds: 12250, // 3:24:10
-        gap_seconds: 250,
-        pace_gap_sec_per_km: 5.9,
+        predicted_time_seconds: 12030, // 3:20:30
+        gap_seconds: 30,
+        pace_gap_sec_per_km: 0.7,
         weeks_remaining: 10,
         status: "on_track",
       }),
@@ -295,10 +298,26 @@ describe("goalVerdict", () => {
       TODAY,
     );
 
-    expect(verdict.verdict).toBe("目標 3:20:00 に対して予測 3:24:10。");
-    expect(verdict.rest).toBe("あと 76 日、順調。差 +4:10。");
-    // The prediction still trails the target, so the line is marked even
-    // though the status word says the plan is on schedule.
+    expect(verdict.verdict).toBe("目標 3:20:00 に対して予測 3:20:30。");
+    expect(verdict.rest).toBe("あと 76 日、順調。差 +0:30。");
+    // 順調 and a warning colour would contradict each other (#1151).
+    expect(verdict.tone).toBe("neutral");
+  });
+
+  it("test_goal_verdict_behind", () => {
+    const verdict = goalVerdict(
+      readiness({
+        predicted_time_seconds: 12600, // 3:30:00
+        gap_seconds: 600,
+        pace_gap_sec_per_km: 14.2,
+        weeks_remaining: 10,
+        status: "behind",
+      }),
+      goalRace(),
+      TODAY,
+    );
+
+    expect(verdict.rest).toBe("あと 76 日、遅れ。差 +10:00。");
     expect(verdict.tone).toBe("warn");
   });
 
@@ -316,20 +335,21 @@ describe("goalVerdict", () => {
     });
   });
 
-  it("stays neutral when the prediction beats the target", () => {
+  it("test_goal_verdict_ahead", () => {
+    // The live 2026-09-15 figures: an hour inside a 4:30:00 target.
     const verdict = goalVerdict(
       readiness({
-        predicted_time_seconds: 11700, // 3:15:00
-        gap_seconds: -300,
-        pace_gap_sec_per_km: -7.1,
+        predicted_time_seconds: 12589, // 3:29:49
+        gap_seconds: -3611,
+        pace_gap_sec_per_km: -85.6,
         weeks_remaining: 10,
         status: "ahead",
       }),
-      goalRace(),
+      goalRace({ target_time_seconds: 16200 }),
       TODAY,
     );
 
-    expect(verdict.rest).toBe("あと 76 日、前倒し。差 −5:00。");
+    expect(verdict.rest).toBe("あと 76 日、前倒し。差 −1:00:11。");
     expect(verdict.tone).toBe("neutral");
   });
 
@@ -343,5 +363,43 @@ describe("goalVerdict", () => {
     expect(
       goalVerdict(null, goalRace({ target_time_seconds: null }), TODAY).verdict,
     ).toBe("目標タイム未設定。");
+  });
+});
+
+describe("isBehindTarget", () => {
+  it("test_is_behind_target", () => {
+    expect(
+      isBehindTarget({
+        predicted_time_seconds: 12600,
+        gap_seconds: 600,
+        pace_gap_sec_per_km: 14.2,
+        weeks_remaining: 10,
+        status: "behind",
+      }),
+    ).toBe(true);
+
+    // A positive gap inside the on-track band is not a warning.
+    expect(
+      isBehindTarget({
+        predicted_time_seconds: 12030,
+        gap_seconds: 30,
+        pace_gap_sec_per_km: 0.7,
+        weeks_remaining: 10,
+        status: "on_track",
+      }),
+    ).toBe(false);
+
+    expect(
+      isBehindTarget({
+        predicted_time_seconds: 12589,
+        gap_seconds: -3611,
+        pace_gap_sec_per_km: -85.6,
+        weeks_remaining: 10,
+        status: "ahead",
+      }),
+    ).toBe(false);
+
+    expect(isBehindTarget(null)).toBe(false);
+    expect(isBehindTarget(undefined)).toBe(false);
   });
 });

@@ -224,6 +224,52 @@ describe("Goal", () => {
     ).toBeInTheDocument();
   });
 
+  it("test_goal_gap_color_follows_status", async () => {
+    // Inside the backend's ±60 s band the line reads 順調, so the gap stays
+    // ink even though the prediction trails the target (#1151).
+    stubFetch(
+      { profile: EMPTY_PROFILE, goals: [A_RACE], retrospectives: [] },
+      {
+        ...FIXTURE_READINESS,
+        progress: {
+          predicted_time_seconds: 16230, // 4:30:30 against a 4:30:00 target
+          gap_seconds: 30,
+          pace_gap_sec_per_km: 0.7,
+          weeks_remaining: 18,
+          status: "on_track",
+        },
+      },
+    );
+
+    const { unmount } = renderGoal();
+
+    const onTrack = await screen.findByText("+0:30");
+    expect(onTrack.className).not.toContain("text-status-warn");
+    expect(onTrack.className).toContain("text-ink");
+    unmount();
+
+    // 遅れ is the one state worth a colour.
+    stubFetch(
+      { profile: EMPTY_PROFILE, goals: [A_RACE], retrospectives: [] },
+      {
+        ...FIXTURE_READINESS,
+        progress: {
+          predicted_time_seconds: 16800, // 4:40:00
+          gap_seconds: 600,
+          pace_gap_sec_per_km: 14.2,
+          weeks_remaining: 18,
+          status: "behind",
+        },
+      },
+    );
+
+    renderGoal();
+
+    const behind = await screen.findByText("+10:00");
+    expect(behind.className).toContain("text-status-warn");
+    expect(behind.className).toContain("font-bold");
+  });
+
   it("test_goal_focus_rows_and_disclosure", async () => {
     stubFetch({
       profile: {
