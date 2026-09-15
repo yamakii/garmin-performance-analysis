@@ -118,7 +118,14 @@ export default function WeekStrip({
                       {target !== "" && ` ${target}`}
                     </s>
                   </p>
-                  <p className="font-mono text-xs text-status-warn">→ 代替</p>
+                  {/* What replaced it, when we know: the same shape DayCell
+                      uses, so the two surfaces state a swapped session the
+                      same way instead of the strip saying only "代替" (#1192). */}
+                  <p className="font-mono text-xs text-status-warn">
+                    {activity != null
+                      ? `→ ${actualSummary(activity)}`
+                      : "→ 代替"}
+                  </p>
                 </>
               ) : (
                 <>
