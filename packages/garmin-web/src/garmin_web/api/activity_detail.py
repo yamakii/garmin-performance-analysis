@@ -7,6 +7,7 @@ from garmin_mcp.database.connection import get_connection
 
 from garmin_web.queries.detail import get_activity_detail
 from garmin_web.queries.sections import get_sections, list_section_versions
+from garmin_web.queries.split_anomalies import get_split_form_anomalies
 from garmin_web.queries.time_series import get_time_series
 from garmin_web.queries.track import get_track
 
@@ -88,3 +89,18 @@ def get_activity_sections(
     db_path = getattr(request.app.state, "db_path", None)
     with get_connection(db_path) as conn:
         return get_sections(conn, activity_id, run_id=run_id)
+
+
+@router.get("/activities/{activity_id}/split-anomalies")
+def get_activity_split_anomalies(request: Request, activity_id: int) -> dict:
+    """Return per-split form-anomaly counts for an activity (empty when no raw details).
+
+    Each listed split carries its anomaly / material / high-severity counts, the
+    maximum z-score and the short metric names (``gct`` / ``vo`` / ``vr``) that
+    moved; splits with no anomaly are omitted. An unknown activity, a missing
+    raw ``activity_details.json`` and an activity without split rows all return
+    200 with an empty list rather than an error.
+    """
+    db_path = getattr(request.app.state, "db_path", None)
+    with get_connection(db_path) as conn:
+        return get_split_form_anomalies(conn, activity_id)

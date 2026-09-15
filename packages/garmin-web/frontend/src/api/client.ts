@@ -6,6 +6,7 @@ import type {
   RaceReadiness,
   SectionsResponse,
   SectionVersion,
+  SplitAnomaliesResponse,
   TimeSeriesResponse,
   TrackResponse,
   TrainingBlock,
@@ -134,6 +135,18 @@ export async function fetchSections(
     throw new Error(`Failed to fetch sections: ${response.status}`);
   }
   return (await response.json()) as SectionsResponse;
+}
+
+export async function fetchSplitAnomalies(
+  activityId: string | number,
+): Promise<SplitAnomaliesResponse> {
+  const response = await fetch(
+    `/api/activities/${activityId}/split-anomalies`,
+  );
+  if (!response.ok) {
+    throw new Error(`Failed to fetch split anomalies: ${response.status}`);
+  }
+  return (await response.json()) as SplitAnomaliesResponse;
 }
 
 export async function fetchSectionVersions(

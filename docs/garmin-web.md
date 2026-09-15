@@ -79,7 +79,7 @@ Detail and fallback routes (no nav entry):
 
 | Route | Reached from | Content |
 |-------|--------------|---------|
-| `/activities/:id` | activity list, recent runs | One run: section analyses, time series, GPS track, past-run version switch |
+| `/activities/:id` | activity list, recent runs | One run: section analyses, time series, GPS track, past-run version switch。フォーム異常のあるスプリット行を強調（`/split-anomalies`） |
 | `/weekly-reviews` | plan grid | Weekly review list, latest version per week |
 | `/weekly-reviews/:weekStart` | plan grid, review list, home plan card | One week's review plus its version switch |
 | `*` | mistyped or stale URLs | 404 page rendered inside the layout, so the nav stays one click away |
@@ -124,6 +124,7 @@ parameters are documented in each handler's docstring.
 | `/api/activities/{activity_id}` | Return aggregated detail for one activity, or 404 if unknown. |
 | `/api/activities/{activity_id}/sections` | Return section analyses keyed by section_type. |
 | `/api/activities/{activity_id}/sections/versions` | Return saved analysis runs for an activity (newest first). |
+| `/api/activities/{activity_id}/split-anomalies` | Return per-split form-anomaly counts for an activity (empty when no raw details). |
 | `/api/activities/{activity_id}/time-series` | Return downsampled time series for the requested metrics. |
 | `/api/activities/{activity_id}/track` | Return the GPS track for an activity. |
 | `/api/body-composition-trend` | Body-composition trend over the trailing ``weeks`` weeks (#501). |

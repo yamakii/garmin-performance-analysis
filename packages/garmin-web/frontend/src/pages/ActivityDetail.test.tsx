@@ -11,6 +11,7 @@ import ActivityDetail, { secondsOverCeiling } from "./ActivityDetail";
 import type {
   ActivityDetailResponse,
   SectionsResponse,
+  SplitAnomaliesResponse,
   TrackPoint,
 } from "../types";
 
@@ -58,21 +59,34 @@ const BASE_DETAIL: ActivityDetailResponse = {
   lactate_threshold: null,
 };
 
+const NO_SPLIT_ANOMALIES: SplitAnomaliesResponse = {
+  activity_id: 123,
+  total: 0,
+  material: 0,
+  splits: [],
+};
+
 function stubFetch(opts: {
   detail: ActivityDetailResponse;
   sections: SectionsResponse;
   track: TrackPoint[];
   timeSeries?: unknown;
+  splitAnomalies?: SplitAnomaliesResponse;
+  splitAnomaliesStatus?: number;
 }) {
   vi.stubGlobal(
     "fetch",
     vi.fn((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
       let body: unknown;
+      let status = 200;
       if (url.includes("/sections/versions")) {
         body = [];
       } else if (url.includes("/sections")) {
         body = opts.sections;
+      } else if (url.includes("/split-anomalies")) {
+        body = opts.splitAnomalies ?? NO_SPLIT_ANOMALIES;
+        status = opts.splitAnomaliesStatus ?? 200;
       } else if (url.includes("/time-series")) {
         body = opts.timeSeries ?? { timestamps: [], metrics: {} };
       } else if (url.includes("/track")) {
@@ -82,7 +96,7 @@ function stubFetch(opts: {
       }
       return Promise.resolve(
         new Response(JSON.stringify(body), {
-          status: 200,
+          status,
           headers: { "Content-Type": "application/json" },
         }),
       );
@@ -515,11 +529,14 @@ function barWidth(cell: HTMLElement): number {
 async function renderSplits(
   splits: ReturnType<typeof splitRow>[],
   sections: SectionsResponse = {},
+  anomalies?: { response?: SplitAnomaliesResponse; status?: number },
 ) {
   stubFetch({
     detail: { ...BASE_DETAIL, splits },
     sections,
     track: [],
+    splitAnomalies: anomalies?.response,
+    splitAnomaliesStatus: anomalies?.status,
   });
   renderDetail();
   await screen.findByRole("navigation", { name: "セクション目次" });
@@ -616,31 +633,73 @@ describe("ActivityDetail splits table reading aids", () => {
   );
 
   it("test_flagged_split_rows_highlighted", async () => {
-    const rows = await renderSplits(LONG_SPLITS, {
-      split: {
-        data: {
-          analyses: {
-            split_20: "接地時間が異常に伸びています。",
-            split_21: "ペースは安定していました。",
-          },
+    const rows = await renderSplits(
+      LONG_SPLITS,
+      {},
+      {
+        response: {
+          activity_id: 123,
+          total: 2,
+          material: 1,
+          splits: [
+            {
+              split_index: 20,
+              anomalies: 2,
+              material: 1,
+              severity_high: 0,
+              max_z: 3.9,
+              metrics: ["gct"],
+            },
+          ],
         },
-        parse_error: false,
-        raw: null,
       },
-    });
+    );
 
-    // The kilometre the analyst wrote a warning about is tinted, so the table
-    // can be scanned for exceptions instead of read end to end.
+    // The note lands with the response, so waiting for it settles the query.
+    expect(await screen.findByText("注意 1本")).toBeInTheDocument();
+
+    // The kilometre the detector actually flagged is tinted, so the table can
+    // be scanned for exceptions instead of read end to end (#1132).
     const flagged = rows.find(
       (row) => within(row).getAllByRole("cell")[0].textContent === "20",
     );
     expect(flagged).toHaveClass("bg-warn-tint");
+    // Hovering names the metric that moved rather than just "something here".
+    expect(flagged).toHaveAttribute("title", expect.stringContaining("gct"));
 
     // Its neighbours stay plain.
     const plain = rows.find(
       (row) => within(row).getAllByRole("cell")[0].textContent === "21",
     );
     expect(plain).not.toHaveClass("bg-warn-tint");
+    expect(plain).not.toHaveAttribute("title");
+  });
+
+  it("test_flagged_splits_degrade_on_error", async () => {
+    const rows = await renderSplits(LONG_SPLITS, {}, { status: 500 });
+
+    // The lookup really was attempted (and rejected) before we assert absence.
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([input]) =>
+          String(input).includes("/split-anomalies"),
+        ),
+      ).toBe(true),
+    );
+
+    // The highlight is an aid, not the content: a failed lookup leaves the
+    // table plain and stays silent instead of raising an error panel.
+    for (const row of rows) {
+      expect(row).not.toHaveClass("bg-warn-tint");
+    }
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText(/注意 \d+本/)).not.toBeInTheDocument();
+
+    // The rest of the page still renders.
+    expect(screen.getByRole("navigation", { name: "セクション目次" }))
+      .toBeInTheDocument();
+    expect(rows.length).toBeGreaterThan(0);
   });
 
   it("test_splits_disclosure_over_ten", async () => {

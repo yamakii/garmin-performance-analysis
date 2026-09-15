@@ -16,6 +16,7 @@ from garmin_mcp.analysis.form_events import (
     count_material_events,
     is_material_severe,
     should_flag_run,
+    split_index_for_timestamp,
 )
 
 
@@ -109,3 +110,39 @@ def test_should_flag_run_no_baseline_fallback() -> None:
     """With no baseline, fall back to the conservative fixed floor (>= 3 events)."""
     assert should_flag_run(events=3, hours=0.5, baseline_rate=None) is True
     assert should_flag_run(events=2, hours=0.5, baseline_rate=None) is False
+
+
+@pytest.mark.unit
+def test_split_index_for_timestamp() -> None:
+    """Explicit start/end bounds own their seconds inclusively (#1132).
+
+    Splits 1 (0-300), 2 (301-610), 3 (611-900): 305 sits in split 2, the very
+    first second belongs to split 1, the last second to split 3, and a second
+    past the end of the run maps nowhere.
+    """
+    splits = [
+        {"split_index": 1, "start_time_s": 0, "end_time_s": 300},
+        {"split_index": 2, "start_time_s": 301, "end_time_s": 610},
+        {"split_index": 3, "start_time_s": 611, "end_time_s": 900},
+    ]
+
+    assert split_index_for_timestamp(splits, 305) == 2
+    assert split_index_for_timestamp(splits, 0) == 1
+    assert split_index_for_timestamp(splits, 900) == 3
+    assert split_index_for_timestamp(splits, 901) is None
+
+
+@pytest.mark.unit
+def test_split_index_for_timestamp_duration_fallback() -> None:
+    """Rows without stored bounds are laid end to end from duration_seconds.
+
+    Durations 300 / 310 / 290 reconstruct as 0-299, 300-609, 610-899, so 305
+    falls in split 2 and the run's last second (899) in split 3.
+    """
+    splits: list[dict[str, Any]] = [
+        {"split_index": index, "duration_seconds": duration}
+        for index, duration in enumerate([300, 310, 290], start=1)
+    ]
+
+    assert split_index_for_timestamp(splits, 305) == 2
+    assert split_index_for_timestamp(splits, 899) == 3

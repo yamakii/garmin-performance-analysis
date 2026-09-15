@@ -37,13 +37,25 @@ from garmin_mcp.rag.queries.form_anomaly_detector import (
     generate_recommendations,
 )
 
-# Per-activity memo for the shared material-event scan (#809), keyed by
-# ``(db_path, activity_id)``. Running the form-anomaly detector over a raw
-# activity is expensive (~0.5s/activity), so the first 90-day sweep costs ~17s;
-# subsequent caution-card / injury-risk reads (and incremental new activities)
-# hit the cache and return immediately. Cleared on process restart -- raw
-# re-fetch staleness is acceptable because raw re-fetch is rare.
-_MATERIAL_EVENT_MEMO: dict[tuple[Path, int], tuple[int, int, str | None]] = {}
+# Per-activity memo of the *raw* detector output (#809, widened in #1132),
+# keyed by ``(db_path, activity_id)``. Running the form-anomaly detector over a
+# raw activity is expensive (~0.5s/activity), so the first 90-day sweep costs
+# ~17s; subsequent caution-card / injury-risk / per-split reads (and incremental
+# new activities) hit the cache and return immediately. The anomaly list rather
+# than the derived counts is memoized so every consumer (material events,
+# high-severity counts, per-split mapping) can derive its own aggregation from
+# one detector run. Cleared on process restart -- raw re-fetch staleness is
+# acceptable because raw re-fetch is rare.
+_FORM_ANOMALY_MEMO: dict[tuple[Path, int], list[dict[str, Any]]] = {}
+
+# Short display names for the three form metrics the detector reports, used by
+# the per-split anomaly map so the Web layer never carries the raw Garmin metric
+# keys into a tooltip (#1132).
+_FORM_METRIC_SHORT_NAMES: dict[str, str] = {
+    "directGroundContactTime": "gct",
+    "directVerticalOscillation": "vo",
+    "directVerticalRatio": "vr",
+}
 
 logger = logging.getLogger(__name__)
 
@@ -1171,6 +1183,159 @@ class GarminDBReader:
         """
         return Path(self.db_path).parent.parent
 
+    def _form_anomalies_for_activity(
+        self, activity_id: int, detector: FormAnomalyDetector | None = None
+    ) -> list[dict[str, Any]] | None:
+        """One memoized form-anomaly detector run for a single activity (#1132).
+
+        The single place that pays the detector cost. Every consumer -- the
+        material-event scan (caution card / injury risk) and the per-split
+        anomaly map -- goes through here, so an activity is scanned at most once
+        per process and the aggregations are derived from the same raw anomaly
+        list. Results are memoized on ``(db_path, activity_id)``
+        (``_FORM_ANOMALY_MEMO``).
+
+        Args:
+            activity_id: Activity to scan.
+            detector: An already-built detector to reuse (a sweep builds one for
+                the whole loop). When ``None`` a detector is built on demand.
+
+        Returns:
+            The activity's full anomaly list (possibly empty), or ``None`` when
+            the raw ``activity_details.json`` is missing or unparseable --
+            failures are not memoized, so a later raw fetch is picked up.
+        """
+        key = (self.db_path, int(activity_id))
+        memoized = _FORM_ANOMALY_MEMO.get(key)
+        if memoized is not None:
+            return memoized
+
+        if detector is None:
+            detector = FormAnomalyDetector(base_path=self._detector_base_path())
+        try:
+            details = detector.get_form_anomaly_details(
+                int(activity_id), filters={"limit": 1_000_000}
+            )
+        except Exception:
+            return None
+
+        anomalies = list(details.get("anomalies", []))
+        _FORM_ANOMALY_MEMO[key] = anomalies
+        return anomalies
+
+    def get_split_form_anomalies(self, activity_id: int) -> dict[str, Any]:
+        """Per-split form-anomaly counts for one activity (#1132).
+
+        Maps the form-anomaly detector's 1 Hz ``timestamp`` onto the ``splits``
+        table's ``start_time_s`` / ``end_time_s`` ranges
+        (``split_index_for_timestamp``), so the Web splits table can highlight
+        exactly the kilometres whose form actually moved instead of the old
+        prose-keyword approximation. Shares the memoized detector run with the
+        material-event scan.
+
+        Missing raw detail, a detector failure and an activity without split
+        rows all return the empty payload rather than raising -- an activity
+        with nothing to highlight is the normal case, not an error.
+
+        Args:
+            activity_id: Activity to map.
+
+        Returns:
+            ``{"activity_id": int, "total": int, "material": int, "splits": [
+            {"split_index": int, "anomalies": int, "material": int,
+            "severity_high": int, "max_z": float, "metrics": [str]}]}``.
+            Only splits with at least one anomaly are listed, ascending by
+            ``split_index``; ``total`` / ``material`` sum the listed splits (an
+            anomaly that falls in no split, e.g. a pause gap, is dropped).
+            ``material`` counts anomalies passing ``is_material_severe``
+            (identifiable cause and ``|z| > 3.5``); ``severity_high`` counts the
+            detector's high stratum (``|z| > 4.5``). ``metrics`` are the deduped,
+            sorted short names (``gct`` / ``vo`` / ``vr``).
+        """
+        from garmin_mcp.analysis.form_events import (
+            _HIGH_SEVERITY_Z,
+            is_material_severe,
+            split_index_for_timestamp,
+        )
+
+        empty: dict[str, Any] = {
+            "activity_id": int(activity_id),
+            "total": 0,
+            "material": 0,
+            "splits": [],
+        }
+
+        try:
+            rows = self.execute_read_query(
+                "SELECT split_index, start_time_s, end_time_s, duration_seconds "
+                "FROM splits WHERE activity_id = ? ORDER BY split_index",
+                (int(activity_id),),
+            )
+        except Exception:
+            return empty
+        if not rows:
+            return empty
+
+        splits = [
+            {
+                "split_index": int(row[0]),
+                "start_time_s": row[1],
+                "end_time_s": row[2],
+                "duration_seconds": row[3],
+            }
+            for row in rows
+        ]
+
+        anomalies = self._form_anomalies_for_activity(int(activity_id))
+        if not anomalies:
+            return empty
+
+        buckets: dict[int, dict[str, Any]] = {}
+        for anomaly in anomalies:
+            timestamp = anomaly.get("timestamp")
+            if timestamp is None:
+                continue
+            index = split_index_for_timestamp(splits, int(timestamp))
+            if index is None:
+                continue
+            bucket = buckets.setdefault(
+                index,
+                {
+                    "split_index": index,
+                    "anomalies": 0,
+                    "material": 0,
+                    "severity_high": 0,
+                    "max_z": 0.0,
+                    "metrics": set(),
+                },
+            )
+            z = abs(float(anomaly.get("z_score") or 0.0))
+            bucket["anomalies"] += 1
+            if is_material_severe(anomaly):
+                bucket["material"] += 1
+            if z > _HIGH_SEVERITY_Z:
+                bucket["severity_high"] += 1
+            bucket["max_z"] = max(bucket["max_z"], z)
+            short = _FORM_METRIC_SHORT_NAMES.get(anomaly.get("metric", ""))
+            if short is not None:
+                bucket["metrics"].add(short)
+
+        split_rows = [
+            {
+                **bucket,
+                "max_z": round(bucket["max_z"], 2),
+                "metrics": sorted(bucket["metrics"]),
+            }
+            for _, bucket in sorted(buckets.items())
+        ]
+
+        return {
+            "activity_id": int(activity_id),
+            "total": sum(row["anomalies"] for row in split_rows),
+            "material": sum(row["material"] for row in split_rows),
+            "splits": split_rows,
+        }
+
     def _material_event_scan(
         self, start_date: str, end_date: str
     ) -> list[dict[str, Any]] | None:
@@ -1184,9 +1349,10 @@ class GarminDBReader:
         of the material-event semantics -- the injury-risk signal and the web
         caution card -- so neither re-implements the aggregation.
 
-        Each per-activity detector result is memoized on
-        ``(db_path, activity_id)`` (``_MATERIAL_EVENT_MEMO``): the first 90-day
-        sweep is the only expensive pass; later reads and incremental new
+        Each per-activity detector run goes through
+        ``_form_anomalies_for_activity``, which memoizes the raw anomaly list on
+        ``(db_path, activity_id)``: the first 90-day sweep is the only expensive
+        pass; later reads (including the per-split map) and incremental new
         activities hit the cache.
 
         Args:
@@ -1220,24 +1386,20 @@ class GarminDBReader:
         for activity_id, activity_date, total_time_seconds in rows:
             if total_time_seconds is None or total_time_seconds <= 0:
                 continue
-            key = (self.db_path, int(activity_id))
-            if key in _MATERIAL_EVENT_MEMO:
-                events, severity_high, top_recommendation = _MATERIAL_EVENT_MEMO[key]
-            else:
-                if detector is None:
-                    detector = FormAnomalyDetector(base_path=self._detector_base_path())
-                try:
-                    details = detector.get_form_anomaly_details(
-                        int(activity_id), filters={"limit": 1_000_000}
-                    )
-                except Exception:
-                    continue
-                anomalies = details.get("anomalies", [])
-                events = count_material_events(anomalies)
-                severity_high = count_high_severity(anomalies)
-                recs = generate_recommendations(anomalies)
-                top_recommendation = recs[0] if recs else None
-                _MATERIAL_EVENT_MEMO[key] = (events, severity_high, top_recommendation)
+            # One detector instance is built lazily and reused for every
+            # cache-missing activity in the sweep.
+            if (
+                detector is None
+                and (self.db_path, int(activity_id)) not in _FORM_ANOMALY_MEMO
+            ):
+                detector = FormAnomalyDetector(base_path=self._detector_base_path())
+            anomalies = self._form_anomalies_for_activity(int(activity_id), detector)
+            if anomalies is None:
+                continue
+            events = count_material_events(anomalies)
+            severity_high = count_high_severity(anomalies)
+            recs = generate_recommendations(anomalies)
+            top_recommendation = recs[0] if recs else None
 
             scanned.append(
                 {
