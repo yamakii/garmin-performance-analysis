@@ -15,6 +15,7 @@ function makeStatus(recommendation: RecoveryRecommendation): RecoveryStatus {
     training_readiness: 72,
     body_battery_high: 88,
     sleep_score: 74,
+    sleep_seconds: 25920,
   };
 }
 

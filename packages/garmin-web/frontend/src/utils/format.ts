@@ -89,6 +89,27 @@ export function formatDuration(
   return hours > 0 ? `${hours}:${mmss}` : mmss;
 }
 
+/** Shown in place of a night the device did not record. */
+const MISSING_SLEEP = "—";
+
+/**
+ * "7時間12分" — how long a night lasted, from its length in seconds.
+ *
+ * Sleep is the one duration on the brief that is read in hours, not in the
+ * `h:mm:ss` a run is timed in, so it gets its own words rather than
+ * {@link formatDuration}. A missing or negative night reads as an em dash.
+ */
+export function formatSleepDuration(
+  seconds: number | null | undefined,
+): string {
+  if (!isMeasured(seconds) || seconds < 0) {
+    return MISSING_SLEEP;
+  }
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return `${hours}時間${minutes}分`;
+}
+
 /** Leading `YYYY-MM-DD` of an ISO date or datetime string. */
 const ISO_DATE = /^(\d{4}-\d{2}-\d{2})/;
 
@@ -114,6 +135,18 @@ export function formatDate(iso: string | null | undefined): string {
 export function formatDateTime(iso: string | null | undefined): string {
   const match = iso != null ? ISO_DATE_TIME.exec(iso) : null;
   return match != null ? `${match[1]} ${match[2]}` : formatDate(iso);
+}
+
+/**
+ * "13:45" — the wall-clock time an ISO datetime names, or null when the input
+ * carries no time (a date-only string, or nothing at all).
+ *
+ * Null rather than a dash: a header line drops the time it never had instead
+ * of printing a placeholder for it (#1153).
+ */
+export function formatTimeOfDay(iso: string | null | undefined): string | null {
+  const match = iso != null ? ISO_DATE_TIME.exec(iso) : null;
+  return match != null ? match[2] : null;
 }
 
 /**

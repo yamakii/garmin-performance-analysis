@@ -225,7 +225,12 @@ export default function EfficiencyReport({
         <div className="flex flex-col gap-4">
           {vitals.length > 0 && (
             // GCT / VO / VR are the three fixed form metrics (#836).
-            <VitalsRow ariaLabel="フォーム指標" items={vitals} columns={3} />
+            <VitalsRow
+              ariaLabel="フォーム指標"
+              items={vitals}
+              columns={3}
+              size="sm"
+            />
           )}
           {hasPower && (
             <div className="border-t border-hairline pt-3">

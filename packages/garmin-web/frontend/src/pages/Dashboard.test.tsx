@@ -56,6 +56,7 @@ const RECOVERY_STATUS = {
   training_readiness: 59,
   body_battery_high: 80,
   sleep_score: 61,
+  sleep_seconds: 25920,
 };
 
 const BASELINE = {
@@ -308,6 +309,20 @@ describe("Dashboard", () => {
     const strong = await screen.findByText("長丈のインナー");
     expect(strong.tagName).toBe("STRONG");
     expect(document.body.textContent).not.toContain("**");
+  });
+
+  it("test_home_sleep_note_shows_duration", async () => {
+    mockAll();
+    renderDashboard();
+
+    // The sleep cell's supporting line is how long the night was — the number
+    // a low score is read against. Body Battery lives on Condition and no
+    // longer spends this line (#1153).
+    const sleep = await screen.findByText("睡眠 / 準備度");
+    const cell = sleep.parentElement;
+    expect(cell?.textContent).toContain("睡眠 7時間12分");
+    expect(cell?.textContent).not.toContain("Body Battery");
+    expect(document.body.textContent).not.toContain("Body Battery");
   });
 
   it("test_dashboard_no_duplicate_vitals", async () => {

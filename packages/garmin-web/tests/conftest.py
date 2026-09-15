@@ -1510,13 +1510,14 @@ def recovery_db_path(tmp_path: Path) -> Path:
     """
     db_path = tmp_path / "test_garmin_web_recovery.duckdb"
     dates = _recent_dates(5)
-    # (resting_hr, hrv_overnight_ms, hrv_low, hrv_high, sleep, readiness, bb_high)
+    # (resting_hr, hrv_overnight_ms, hrv_low, hrv_high, sleep, readiness,
+    #  bb_high, sleep_seconds)
     rows = [
-        (48, 65.0, 55.0, 80.0, 82, 78, 90),
-        (47, 68.0, 55.0, 80.0, 80, 80, 92),
-        (49, 70.0, 55.0, 80.0, 78, 76, 88),
-        (50, 52.0, 55.0, 80.0, 70, 70, 75),  # below baseline (night -1)
-        (51, 50.0, 55.0, 80.0, 72, 72, 78),  # below baseline (latest night)
+        (48, 65.0, 55.0, 80.0, 82, 78, 90, 27000),
+        (47, 68.0, 55.0, 80.0, 80, 80, 92, 26400),
+        (49, 70.0, 55.0, 80.0, 78, 76, 88, 25200),
+        (50, 52.0, 55.0, 80.0, 70, 70, 75, 22800),  # below baseline (night -1)
+        (51, 50.0, 55.0, 80.0, 72, 72, 78, 25920),  # below baseline (latest)
     ]
     conn = duckdb.connect(str(db_path))
     try:
@@ -1525,8 +1526,8 @@ def recovery_db_path(tmp_path: Path) -> Path:
             "INSERT INTO daily_wellness ("
             "wellness_id, date, resting_hr, hrv_overnight_ms, hrv_status,"
             " hrv_baseline_low, hrv_baseline_high, sleep_score,"
-            " training_readiness, body_battery_high"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " training_readiness, body_battery_high, sleep_seconds"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     idx + 1,
@@ -1539,6 +1540,7 @@ def recovery_db_path(tmp_path: Path) -> Path:
                     sleep,
                     readiness,
                     bb_high,
+                    sleep_seconds,
                 )
                 for idx, (
                     rhr,
@@ -1548,6 +1550,7 @@ def recovery_db_path(tmp_path: Path) -> Path:
                     sleep,
                     readiness,
                     bb_high,
+                    sleep_seconds,
                 ) in enumerate(rows)
             ],
         )

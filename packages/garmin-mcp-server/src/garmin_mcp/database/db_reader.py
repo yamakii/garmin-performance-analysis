@@ -629,10 +629,13 @@ class GarminDBReader:
 
         Returns:
             ``{"date", "recommendation", "score", "reasons",
-            "training_readiness", "body_battery_high", "sleep_score"}``. When the
-            day has no data (device off) ``recommendation`` is ``"unknown"`` with
-            a "go by feel" reason (null-safe). ``date`` is ``None`` only when the
-            table is empty. Dates are ``YYYY-MM-DD`` strings.
+            "training_readiness", "body_battery_high", "sleep_score",
+            "sleep_seconds"}``. ``sleep_seconds`` is how long the night lasted
+            (the score says how good it was, not how long it was), so a reader
+            can show "睡眠 7時間12分" without a second query. When the day has no
+            data (device off) ``recommendation`` is ``"unknown"`` with a "go by
+            feel" reason (null-safe). ``date`` is ``None`` only when the table is
+            empty. Dates are ``YYYY-MM-DD`` strings.
         """
         from garmin_mcp.analysis.recovery import (
             classify_recovery_status,
@@ -652,11 +655,13 @@ class GarminDBReader:
                 "training_readiness": None,
                 "body_battery_high": None,
                 "sleep_score": None,
+                "sleep_seconds": None,
             }
 
         day_rows = self.execute_read_query(
             """
-            SELECT training_readiness, body_battery_high, sleep_score
+            SELECT training_readiness, body_battery_high, sleep_score,
+                   sleep_seconds
             FROM daily_wellness
             WHERE date = ?
             """,
@@ -665,8 +670,9 @@ class GarminDBReader:
         readiness: int | None = None
         body_battery_high: int | None = None
         sleep_score: int | None = None
+        sleep_seconds: int | None = None
         if day_rows:
-            readiness, body_battery_high, sleep_score = day_rows[0]
+            readiness, body_battery_high, sleep_score, sleep_seconds = day_rows[0]
 
         # Derive the HRV under-recovery flag from the trailing window up to date.
         hrv_window = self.execute_read_query(
@@ -694,6 +700,7 @@ class GarminDBReader:
             "training_readiness": readiness,
             "body_battery_high": body_battery_high,
             "sleep_score": sleep_score,
+            "sleep_seconds": sleep_seconds,
         }
 
     def get_wellness_baseline_deviation(

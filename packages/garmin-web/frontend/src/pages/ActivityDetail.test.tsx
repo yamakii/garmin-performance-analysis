@@ -10,6 +10,7 @@ import {
 import ActivityDetail, { BarCell, secondsOverCeiling } from "./ActivityDetail";
 import type {
   ActivityDetailResponse,
+  ActivitySummary,
   SectionsResponse,
   SplitAnomaliesResponse,
   TrackPoint,
@@ -66,6 +67,9 @@ const NO_SPLIT_ANOMALIES: SplitAnomaliesResponse = {
   splits: [],
 };
 
+/** `/api/activities` (the list) as opposed to `/api/activities/123`. */
+const ACTIVITY_LIST_URL = /\/api\/activities(\?|$)/;
+
 function stubFetch(opts: {
   detail: ActivityDetailResponse;
   sections: SectionsResponse;
@@ -73,6 +77,8 @@ function stubFetch(opts: {
   timeSeries?: unknown;
   splitAnomalies?: SplitAnomaliesResponse;
   splitAnomaliesStatus?: number;
+  /** The list the "前回比" head reads the comparison run's distance from. */
+  activities?: ActivitySummary[];
 }) {
   vi.stubGlobal(
     "fetch",
@@ -91,6 +97,8 @@ function stubFetch(opts: {
         body = opts.timeSeries ?? { timestamps: [], metrics: {} };
       } else if (url.includes("/track")) {
         body = { points: opts.track };
+      } else if (ACTIVITY_LIST_URL.test(url)) {
+        body = opts.activities ?? [];
       } else {
         body = opts.detail;
       }
@@ -181,6 +189,8 @@ function stubFetchWithErrors(opts: {
       } else {
         body = { points: opts.track ?? [] };
       }
+    } else if (ACTIVITY_LIST_URL.test(url)) {
+      body = [];
     } else {
       body = BASE_DETAIL;
     }
@@ -373,6 +383,124 @@ describe("ActivityDetail header", () => {
       screen.getByText(
         "前回比（7日前）: ペース -10秒/km · HR -3bpm · GCT +4ms · ケイデンス -2spm",
       ),
+    ).toBeInTheDocument();
+  });
+
+  it("test_activity_kpi_row_uses_large_values", async () => {
+    stubFetch({
+      detail: {
+        ...LONG_RUN_DETAIL,
+        activity: { ...LONG_RUN_DETAIL.activity, total_distance_km: 25.07 },
+      },
+      sections: SUMMARY_SECTIONS,
+      track: [],
+    });
+    renderDetail();
+
+    // These four are what the page is opened for, so they take the KPI size
+    // the brief reserves for a page's own numbers (#1153).
+    expect(await screen.findByText("25.07")).toHaveClass("text-[40px]");
+  });
+
+  it("test_activity_title_is_36px", async () => {
+    stubFetch({
+      detail: LONG_RUN_DETAIL,
+      sections: SUMMARY_SECTIONS,
+      track: [],
+    });
+    renderDetail();
+
+    // The run's name is a heading, not a verdict: it stays at 36px instead of
+    // growing into the home page's 40px on a wide screen (#1153).
+    const heading = await screen.findByRole("heading", {
+      level: 1,
+      name: /Morning Run/,
+    });
+    expect(heading.className).toContain("text-[36px]");
+    expect(heading.className).not.toContain("md:text-[40px]");
+  });
+
+  it("test_meta_line_includes_start_time", async () => {
+    const dated = {
+      ...LONG_RUN_DETAIL,
+      activity: {
+        ...LONG_RUN_DETAIL.activity,
+        activity_date: "2026-09-13",
+        start_time_local: "2026-09-13 13:45:19",
+      },
+    };
+    stubFetch({ detail: dated, sections: SUMMARY_SECTIONS, track: [] });
+    const { unmount } = renderDetail();
+
+    // A 13:45 start and a 06:00 start are different runs in the same day's
+    // heat, so the hour sits next to the date (#1153).
+    const meta = await screen.findByText(/^2026-09-13 SUN · 13:45 · /);
+    expect(meta).toHaveTextContent("処方「ロング 22km」");
+    unmount();
+
+    // A run with no recorded start omits the time rather than padding it.
+    stubFetch({
+      detail: {
+        ...dated,
+        activity: { ...dated.activity, start_time_local: null },
+      },
+      sections: SUMMARY_SECTIONS,
+      track: [],
+    });
+    renderDetail();
+
+    expect(
+      await screen.findByText(/^2026-09-13 SUN · 処方「ロング 22km」/),
+    ).toBeInTheDocument();
+  });
+
+  it("test_vs_previous_line_with_distance", async () => {
+    const summary = SUMMARY_SECTIONS.summary;
+    const sections: SectionsResponse = {
+      summary: {
+        ...summary,
+        data: {
+          ...summary.data,
+          vs_previous: {
+            pace_s_per_km: { current: 423, previous: 348, delta: 75.1 },
+            days_ago: 5,
+            previous_activity_id: 456,
+          },
+        },
+      },
+    };
+    const previous: ActivitySummary = {
+      activity_id: 456,
+      activity_date: "2025-10-04",
+      activity_name: "Evening Run",
+      total_distance_km: 5.07,
+      total_time_seconds: 1958,
+      avg_pace_seconds_per_km: 348,
+      avg_heart_rate: 151,
+      star_rating: null,
+      summary_lead: null,
+    };
+    stubFetch({
+      detail: LONG_RUN_DETAIL,
+      sections,
+      track: [],
+      activities: [previous],
+    });
+    const { unmount } = renderDetail();
+
+    // The same pace delta means different things against a 5km and a 22km, so
+    // the comparison run is named by its distance as well as its age (#1153).
+    expect(
+      await screen.findByText("前回比（5日前・5.07km）: ペース +75.1秒/km"),
+    ).toBeInTheDocument();
+    unmount();
+
+    // A comparison run outside the list keeps the line, minus the distance.
+    stubFetch({ detail: LONG_RUN_DETAIL, sections, track: [], activities: [] });
+    renderDetail();
+
+    expect(
+      await screen.findByText("前回比（5日前）: ペース +75.1秒/km"),
     ).toBeInTheDocument();
   });
 

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
+  useActivities,
   useActivityDetail,
   useSections,
   useSectionVersions,
@@ -28,6 +29,7 @@ import VitalsRow, { type VitalItem } from "../components/VitalsRow";
 import { usePageTitle } from "../hooks/usePageTitle";
 import type {
   ActivityDetailResponse,
+  ActivitySummary,
   SectionsResponse,
   SplitAnomaliesResponse,
   SplitRow,
@@ -42,6 +44,7 @@ import {
   formatFullDateLabel,
   formatPace,
   formatPaceValue,
+  formatTimeOfDay,
   humanizeKey,
   PACE_UNIT,
 } from "../utils/format";
@@ -313,14 +316,24 @@ const VS_PREVIOUS_METRICS: { key: string; label: string; unit: string }[] = [
 ];
 
 /**
- * "前回比(7日前): ペース -10秒/km · HR -3bpm · GCT +4ms · ケイデンス -2spm"
+ * "前回比(7日前・5.07km): ペース -10秒/km · HR -3bpm · GCT +4ms · ケイデンス -2spm"
  *
  * One mono line under the numbers instead of a row of chips (#1118): the
  * deltas are context for the KPIs above them, and they stay uncolored —
  * whether a delta is good depends on the metric and on the session's intent,
  * and that reading belongs to the prose.
+ *
+ * The comparison run is named by how long ago it was and how far it went: a
+ * pace delta against a 5km means something different from the same delta
+ * against a 22km, and the saved payload carries only the id and the gap in
+ * days (#1153). The distance is looked up in the activity list; when the run
+ * is outside the list the head falls back to the days alone rather than
+ * blocking the line.
  */
-function vsPreviousLine(sections: SectionsResponse | null): string | null {
+function vsPreviousLine(
+  sections: SectionsResponse | null,
+  activities: ActivitySummary[],
+): string | null {
   const data = summaryData(sections)?.vs_previous;
   if (!isRecord(data)) {
     return null;
@@ -338,7 +351,16 @@ function vsPreviousLine(sections: SectionsResponse | null): string | null {
     return null;
   }
   const daysAgo = typeof data.days_ago === "number" ? data.days_ago : null;
-  const head = daysAgo != null ? `前回比（${daysAgo}日前）` : "前回比";
+  const previousId =
+    typeof data.previous_activity_id === "number"
+      ? data.previous_activity_id
+      : null;
+  const previousKm = activities.find(
+    (activity) => activity.activity_id === previousId,
+  )?.total_distance_km;
+  const distance =
+    previousKm != null ? `・${formatDistanceKmValue(previousKm)}km` : "";
+  const head = daysAgo != null ? `前回比（${daysAgo}日前${distance}）` : "前回比";
   return `${head}: ${parts.join(" · ")}`;
 }
 
@@ -358,6 +380,16 @@ function metaLine(
   sections: SectionsResponse | null,
 ): string {
   const parts = [formatFullDateLabel(detail.activity.activity_date)];
+  // When the run started, in local time: the same day can hold a 06:00 easy
+  // and a 13:45 long, and heat, HR and the prescription all read differently
+  // for each (#1153). A run without a recorded start simply omits it.
+  const startedAt = detail.activity.start_time_local;
+  const clock = formatTimeOfDay(
+    typeof startedAt === "string" ? startedAt : null,
+  );
+  if (clock != null) {
+    parts.push(clock);
+  }
   const verdict = summaryData(sections)?.prescription_verdict;
   const title = isRecord(verdict) ? verdict.prescription_title : null;
   if (typeof title === "string" && title !== "") {
@@ -626,6 +658,10 @@ export default function ActivityDetail() {
   // Splits-table highlighting only; a failure leaves the table plain rather
   // than blocking the page (#1132).
   const splitAnomaliesQuery = useSplitAnomalies(id);
+  // The list is read only to name the comparison run's distance; it is the
+  // same cached query the activity list uses, so this costs nothing on a
+  // reader who arrived from there, and a failure only drops the distance.
+  const activitiesQuery = useActivities();
 
   const loading = detailQuery.isPending || sectionsQuery.isPending;
   // A failed activity / sections fetch is fatal (full-page error); the
@@ -729,7 +765,7 @@ export default function ActivityDetail() {
   const lead = summaryLead(sections);
   const hrCeiling = hrCeilingOf(detail, sections);
   const overSeconds = secondsOverCeiling(timeSeries, hrCeiling);
-  const vsPrevious = vsPreviousLine(sections);
+  const vsPrevious = vsPreviousLine(sections, activitiesQuery.data ?? []);
   const unknownSectionTypes = sections
     ? Object.keys(sections).filter(
         (type) => !KNOWN_SECTION_TYPES.includes(type),
@@ -785,7 +821,9 @@ export default function ActivityDetail() {
         <p className="font-mono text-[13px] text-ink-muted">
           {metaLine(detail, sections)}
         </p>
-        <h1 className="flex flex-wrap items-baseline gap-x-4 gap-y-2 text-[36px] leading-[1.15] font-bold tracking-[-0.01em] text-ink md:text-[40px]">
+        {/* 36px at every width: 40px is the home page's verdict size, and a
+            run's name is a heading, not the page's conclusion (#1153). */}
+        <h1 className="flex flex-wrap items-baseline gap-x-4 gap-y-2 text-[36px] leading-[1.15] font-bold tracking-[-0.01em] text-ink">
           {detail.activity.activity_name ?? "アクティビティ"}
           {starRating != null && <StarRating text={starRating} size="lg" />}
         </h1>
@@ -797,6 +835,7 @@ export default function ActivityDetail() {
         <VitalsRow
           ariaLabel="このランの数値"
           items={kpiItems(detail, hrCeiling, overSeconds)}
+          size="lg"
         />
         {vsPrevious != null && (
           <p className="font-mono text-[13px] text-ink-muted">{vsPrevious}</p>

@@ -38,6 +38,10 @@ def get_recovery_status_endpoint(
 
     ``date`` defaults to the latest day in ``daily_wellness``. A device-off day
     returns ``recommendation="unknown"`` with a "go by feel" reason.
+
+    Alongside ``sleep_score`` the payload carries ``sleep_seconds`` -- how long
+    the night lasted, as opposed to how good it was -- so the home page can
+    state the duration without a second request (#1153).
     """
     with get_connection(_db_path(request)) as conn:
         return recovery_queries.get_recovery_status(conn, date)
