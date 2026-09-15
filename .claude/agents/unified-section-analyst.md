@@ -282,6 +282,7 @@ analysis_data = {
 - 末尾の `(★★★★☆ N.N/5.0)` の N.N は `star_rating_breakdown.star_rating`（加重平均の計算結果）と**同一値**にする
 - **複合効果**: 気温+湿度+風の相乗効果を評価
 - **実測値優先**: 推定ではなく CONTEXT の実測環境データを使用
+- **記録天候は「開始時点の 1 点」**: `temperature_c` / `humidity_pct` / `wind_mps` は外部観測所の**スタート時点のスナップショット**であり、ラン全体の条件ではない。長時間のランほど後半の実条件とずれる（夏は上振れ、雨・風のある日は下振れ）ため、**「穏やかな条件だった」「終始走りやすかった」のようにラン全体を断定しない**。「開始時点は〜」と時点を限定して書き、後半の条件変化は断定せず可能性として述べる
 - **地形記述の整合**: 地形の記述は `terrain_category` と `total_elevation_gain` / `max_split_elevation_gain` に整合させる。`terrain_category != "flat"` または `total_elevation_gain >= 20m` のときは「完全フラット」「標高負荷ゼロ/ほぼなし」等の断定表現を禁止し、累積獲得標高と主要な起伏区間（最大区間の獲得 `max_split_elevation_gain` / 下降 `max_split_elevation_loss`）に言及する
 - 星評価形式 `(★★★★☆ N.N/5.0)` を**テキスト末尾**に配置
 
