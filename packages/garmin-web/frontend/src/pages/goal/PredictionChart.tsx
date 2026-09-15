@@ -30,8 +30,8 @@ export default function PredictionChart(): JSX.Element | null {
       title="予測の推移"
       note={
         data.source === "objective"
-          ? "客観VDOT換算 · 90日"
-          : "Garmin VO2max 換算"
+          ? "客観VDOT換算 · 直近1年"
+          : "Garmin VO2max 換算 · 直近1年"
       }
       noteMono
     >

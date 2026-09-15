@@ -11,7 +11,7 @@ from __future__ import annotations
 import functools
 import logging
 from collections.abc import Iterable
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from garmin_mcp.analysis.race_prediction import predict_race_times
@@ -115,7 +115,9 @@ class RaceReader(BaseDBReader):
             "progress": progress,
         }
 
-    def get_race_prediction_history(self, user_id: str = "default") -> dict[str, Any]:
+    def get_race_prediction_history(
+        self, user_id: str = "default", days: int = 365
+    ) -> dict[str, Any]:
         """Dated race-time predictions for the active goal race.
 
         There is no stored prediction history, so the series is derived: the
@@ -127,8 +129,17 @@ class RaceReader(BaseDBReader):
         optimistic — hence the ``source`` tag, so the caller can say which
         fitness the line rests on.
 
+        The curve runs back to the athlete's first logged run (485 daily points
+        on the live database), which is neither readable as a chart nor useful
+        as a read on current fitness, so the series is bounded to a trailing
+        window. The window applies to whichever source is in play; the source
+        itself is still chosen on the full curve, so a stale-splits athlete does
+        not silently switch to the optimistic Garmin line.
+
         Args:
             user_id: Profile owner identifier (defaults to ``"default"``).
+            days: Trailing window in days (default 365). Points dated before
+                ``today - days`` are dropped.
 
         Returns:
             Dict with keys:
@@ -137,9 +148,10 @@ class RaceReader(BaseDBReader):
             - ``source``: ``"objective"`` | ``"garmin_vo2max"`` | None (None
               whenever ``series`` is empty).
             - ``series``: ``[{"date", "vdot", "predicted_time_seconds",
-              "gap_seconds"}, ...]`` ascending by date, one point per day.
-              ``gap_seconds`` is ``predicted_time_seconds - target`` (positive
-              means the prediction is slower than the target).
+              "gap_seconds"}, ...]`` ascending by date, one point per day
+              within the trailing window. ``gap_seconds`` is
+              ``predicted_time_seconds - target`` (positive means the
+              prediction is slower than the target).
         """
         goal = self._active_goal(user_id)
         if goal is None:
@@ -152,7 +164,10 @@ class RaceReader(BaseDBReader):
         if not distance_km or target is None:
             return {"goal": goal, "source": None, "series": []}
 
-        source, vdot_by_date = self._history_vdot_by_date()
+        # One "today" for the whole read, so a midnight rollover cannot put two
+        # different cutoffs into one series.
+        cutoff = (date.today() - timedelta(days=days)).strftime("%Y-%m-%d")
+        source, vdot_by_date = self._history_vdot_by_date(cutoff)
         if not vdot_by_date:
             return {"goal": goal, "source": None, "series": []}
 
@@ -170,33 +185,39 @@ class RaceReader(BaseDBReader):
             )
         return {"goal": goal, "source": source, "series": series}
 
-    def _history_vdot_by_date(self) -> tuple[str | None, dict[str, float]]:
+    def _history_vdot_by_date(self, cutoff: str) -> tuple[str | None, dict[str, float]]:
         """Pick the dated VDOT series behind the prediction history.
 
         Prefers the objective curve; falls back to Garmin's VO2max series
         converted to VDOT. Both are ascending with at most one plotted point
         per day, so a date seen twice keeps its last (highest-rolling) value.
+        Which source is used is decided on the *full* curve, but only points
+        on or after ``cutoff`` (``YYYY-MM-DD``) are kept.
         """
         curve = self._objective_fitness_curve() or {}
 
         objective = curve.get("objective_curve") or []
         if objective:
             return "objective", self._vdot_by_date(
-                (point.get("date"), point.get("vdot")) for point in objective
+                ((point.get("date"), point.get("vdot")) for point in objective),
+                cutoff,
             )
 
         garmin = curve.get("garmin_vo2max") or []
         if garmin:
             return "garmin_vo2max", self._vdot_by_date(
                 (
-                    point.get("date"),
                     (
-                        VDOTCalculator.vdot_from_vo2max(float(point["value"]))
-                        if point.get("value") is not None
-                        else None
-                    ),
-                )
-                for point in garmin
+                        point.get("date"),
+                        (
+                            VDOTCalculator.vdot_from_vo2max(float(point["value"]))
+                            if point.get("value") is not None
+                            else None
+                        ),
+                    )
+                    for point in garmin
+                ),
+                cutoff,
             )
 
         return None, {}
@@ -204,13 +225,20 @@ class RaceReader(BaseDBReader):
     @staticmethod
     def _vdot_by_date(
         points: Iterable[tuple[Any, Any]],
+        cutoff: str,
     ) -> dict[str, float]:
-        """Collapse ``(date, vdot)`` pairs to one rounded VDOT per date."""
+        """Collapse in-window ``(date, vdot)`` pairs to one rounded VDOT per date.
+
+        Dates are ISO (``YYYY-MM-DD``), so the window test is a string compare.
+        """
         by_date: dict[str, float] = {}
         for day, vdot in points:
             if day is None or vdot is None:
                 continue
-            by_date[str(day)] = round(float(vdot), _HISTORY_VDOT_DECIMALS)
+            day_str = str(day)
+            if day_str < cutoff:
+                continue
+            by_date[day_str] = round(float(vdot), _HISTORY_VDOT_DECIMALS)
         return by_date
 
     def _objective_fitness_curve(self) -> dict[str, Any] | None:

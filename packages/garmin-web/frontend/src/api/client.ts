@@ -30,8 +30,12 @@ export async function fetchRaceReadiness(): Promise<RaceReadiness> {
   return (await response.json()) as RaceReadiness;
 }
 
-export async function fetchRacePredictionHistory(): Promise<RacePredictionHistory> {
-  const response = await fetch("/api/race-prediction-history");
+/** `days` bounds the series to a trailing window; omitting it takes the API default. */
+export async function fetchRacePredictionHistory(
+  days?: number,
+): Promise<RacePredictionHistory> {
+  const query = days != null ? `?days=${days}` : "";
+  const response = await fetch(`/api/race-prediction-history${query}`);
   if (!response.ok) {
     throw new Error(
       `Failed to fetch race prediction history: ${response.status}`,

@@ -84,6 +84,15 @@ def test_api_race_prediction_history_shape(race_readiness_db_path):
 
 
 @pytest.mark.integration
+def test_api_race_prediction_history_days_validation(race_readiness_db_path):
+    client = TestClient(create_app(db_path=race_readiness_db_path))
+
+    # Below the 30-day floor: rejected by FastAPI validation, not silently clamped.
+    assert client.get("/api/race-prediction-history?days=10").status_code == 422
+    assert client.get("/api/race-prediction-history?days=3650").status_code == 200
+
+
+@pytest.mark.integration
 def test_api_race_prediction_history_no_goal(race_readiness_no_goal_db_path):
     client = TestClient(create_app(db_path=race_readiness_no_goal_db_path))
     response = client.get("/api/race-prediction-history")

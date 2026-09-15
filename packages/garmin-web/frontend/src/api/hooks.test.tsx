@@ -187,8 +187,9 @@ describe("useRacePredictionHistory", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
+    // The default trailing window travels in the URL (and in the query key).
     expect(String(fetchMock.mock.calls[0][0])).toBe(
-      "/api/race-prediction-history",
+      "/api/race-prediction-history?days=365",
     );
     expect(result.current.data).toEqual(payload);
   });

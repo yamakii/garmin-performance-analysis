@@ -187,13 +187,13 @@ export function useRaceReadiness(): UseQueryResult<RaceReadiness, Error> {
   });
 }
 
-export function useRacePredictionHistory(): UseQueryResult<
-  RacePredictionHistory,
-  Error
-> {
+/** The prediction series over the trailing `days` (one cache entry per window). */
+export function useRacePredictionHistory(
+  days = 365,
+): UseQueryResult<RacePredictionHistory, Error> {
   return useQuery({
-    queryKey: ["racePredictionHistory"],
-    queryFn: () => fetchRacePredictionHistory(),
+    queryKey: ["racePredictionHistory", days],
+    queryFn: () => fetchRacePredictionHistory(days),
   });
 }
 

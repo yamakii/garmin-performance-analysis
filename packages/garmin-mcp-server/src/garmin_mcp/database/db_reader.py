@@ -1020,17 +1020,20 @@ class GarminDBReader:
         """
         return self.race.get_race_readiness(user_id, lookback_weeks)
 
-    def get_race_prediction_history(self, user_id: str = "default") -> dict[str, Any]:
+    def get_race_prediction_history(
+        self, user_id: str = "default", days: int = 365
+    ) -> dict[str, Any]:
         """Get the dated race-time prediction series for the active goal race.
 
         Args:
             user_id: Profile owner identifier (defaults to ``"default"``)
+            days: Trailing window in days (default 365)
 
         Returns:
             Dict with goal, source ("objective" / "garmin_vo2max" / None), and
             a date-ascending series of predicted times and target gaps.
         """
-        return self.race.get_race_prediction_history(user_id)
+        return self.race.get_race_prediction_history(user_id, days)
 
     # ========== Training Load Methods ==========
 

@@ -130,7 +130,11 @@ def test_race_prediction_history_from_objective_curve(reader_db_path: Path) -> N
         )
     _insert_goal(reader_db_path, target_time_seconds=12000)
 
-    result = RaceReader(db_path=str(reader_db_path)).get_race_prediction_history()
+    # Fixed dates + the widest window, so the assertion does not decay as the
+    # calendar moves past the default trailing year.
+    result = RaceReader(db_path=str(reader_db_path)).get_race_prediction_history(
+        days=3650
+    )
 
     assert result["source"] == "objective"
     assert result["goal"]["target_time_seconds"] == 12000
@@ -156,7 +160,9 @@ def test_race_prediction_history_falls_back_to_garmin(reader_db_path: Path) -> N
     )
     _insert_goal(reader_db_path, target_time_seconds=12000)
 
-    result = RaceReader(db_path=str(reader_db_path)).get_race_prediction_history()
+    result = RaceReader(db_path=str(reader_db_path)).get_race_prediction_history(
+        days=3650
+    )
 
     assert result["source"] == "garmin_vo2max"
     series = result["series"]
@@ -167,6 +173,26 @@ def test_race_prediction_history_falls_back_to_garmin(reader_db_path: Path) -> N
     expected = VDOTCalculator.predict_race_time(point["vdot"], _MARATHON_KM)
     assert point["predicted_time_seconds"] == expected
     assert point["gap_seconds"] == expected - 12000
+
+
+@pytest.mark.integration
+def test_race_prediction_history_trailing_window(reader_db_path: Path) -> None:
+    """Only points inside the trailing window are plotted."""
+    old_date = (date.today() - timedelta(days=400)).isoformat()
+    recent_date = (date.today() - timedelta(days=10)).isoformat()
+    _insert_vo2max(reader_db_path, activity_id=7301, value=48.0, measured_on=old_date)
+    _insert_vo2max(
+        reader_db_path, activity_id=7302, value=52.0, measured_on=recent_date
+    )
+    _insert_goal(reader_db_path, target_time_seconds=12000)
+
+    reader = RaceReader(db_path=str(reader_db_path))
+
+    windowed = reader.get_race_prediction_history(days=365)
+    assert [point["date"] for point in windowed["series"]] == [recent_date]
+
+    full = reader.get_race_prediction_history(days=3650)
+    assert [point["date"] for point in full["series"]] == [old_date, recent_date]
 
 
 @pytest.mark.unit

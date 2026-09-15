@@ -421,7 +421,7 @@ describe("Goal", () => {
     expect(screen.getByRole("img")).toHaveAccessibleName(
       "レース予測タイムの推移グラフ",
     );
-    expect(screen.getByText("客観VDOT換算 · 90日")).toBeInTheDocument();
+    expect(screen.getByText("客観VDOT換算 · 直近1年")).toBeInTheDocument();
     unmount();
 
     // Nothing derivable: the section is absent rather than an empty frame.
