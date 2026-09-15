@@ -5,6 +5,7 @@ import {
   AXIS_STYLE,
   BASELINE_BAND_COLOR,
   BASE_CHART_OPTION,
+  INK_COLOR,
   METRIC_COLORS,
   THRESHOLD_LINE,
   X_AXIS_STYLE,
@@ -151,7 +152,10 @@ export default function RecoveryPanel({ data, baseline }: RecoveryPanelProps) {
       panelOption(
         RHR_SERIES,
         "bpm",
-        METRIC_COLORS.heart_rate,
+        // Single-series charts draw their primary in ink (chartTheme). RHR
+        // used to take METRIC_COLORS.heart_rate, and the 注意 dots marking an
+        // out-of-band night were nearly invisible on that red line (#1189).
+        INK_COLOR,
         series.map((point) => point.resting_hr),
         dates,
         rhrBand,
