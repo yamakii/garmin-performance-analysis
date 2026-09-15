@@ -235,7 +235,9 @@ const results = await pipeline(
     return agent(
       `次の worktree ブランチを ship してください（merge はまだしない）。\n` +
         `worktree_path=${m.worktree_path}, branch=${m.branch}, issue=#${issue.number}。\n\n` +
-        `1. ${pushCmd(m.worktree_path, m.branch)}（必要なら origin/main へ rebase してから。コンフリクト時は mergeable=false で報告）。\n` +
+        `1. origin/main より遅れていれば先に \`git -C ${m.worktree_path} fetch origin\` → \`git -C ${m.worktree_path} merge --no-edit origin/main\`` +
+        `（rebase は使わない: \`git rebase\` は ask ルールに当たり Workflow が止まる）。merge がコンフリクトしたら ` +
+        `\`git -C ${m.worktree_path} merge --abort\` して mergeable=false で報告。それから ${pushCmd(m.worktree_path, m.branch)}。\n` +
         `2. mcp__github__create_pull_request(${repoCtx()}, head="${m.branch}", base="main", title=コミット要約, body="Closes #${issue.number}\\nPart of the tier")。\n` +
         `3. リポジトリルートで bash scripts/wait-for-ci.sh PR番号 --timeout 900 を **フォアグラウンドで 1 回** 実行して ci-guard の完了を待つ` +
         `（Bash tool の timeout を 960000 ms 以上にする。run_in_background・Monitor・pgrep・kill・sleep ループは使わない: ` +

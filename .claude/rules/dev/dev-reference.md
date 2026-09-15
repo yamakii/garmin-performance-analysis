@@ -65,7 +65,7 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 - **Planning**: main branch (read-only)
 - **PR**: merge commit --no-ff、1 PR = 1 Sub-issue、title は Conventional Commits、body に `Closes #{issue}`
 - **Commit**: Conventional Commits + Co-Authored-By。単一の関心事のみ（"and" が必要なら分割）
-- **Parallel**: 各 worktree = 1 branch = 1 PR。依存関係 → 先の PR マージ後に rebase
+- **Parallel**: 各 worktree = 1 branch = 1 PR。依存関係 → 先の PR マージ後に `git merge origin/main`（rebase は使わない）
 
 ## 3. Validation
 

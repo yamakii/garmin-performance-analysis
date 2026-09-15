@@ -25,3 +25,14 @@ test('ship prompt forbids background/process-watcher workarounds', () => {
   }
   assert.match(prompt, /使わない/)
 })
+
+// Regression guard for #1130: catching up with origin/main must be a merge.
+// `git rebase` (and the `--abort` after a conflicting one) trips the
+// `Bash(git rebase:*)` ask rule in a worktree session, so a tier whose sibling
+// PRs merged first stalled on permission prompts (Epic #1115 Tier 2).
+test('test_ship_prompt_merges_instead_of_rebasing', () => {
+  assert.match(prompt, /merge --no-edit origin\/main/)
+  assert.match(prompt, /merge --abort/)
+  assert.doesNotMatch(prompt, /rebase してから/)
+  assert.doesNotMatch(prompt, /git rebase origin/)
+})

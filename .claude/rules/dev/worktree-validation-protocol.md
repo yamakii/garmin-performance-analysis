@@ -112,7 +112,7 @@ L3 検証基準:
 
 ## 6. Ship と auto-merge ゲート
 
-1. `git fetch origin` し、必要なら `origin/main` へ rebase または merge（force push は禁止）。
+1. `git fetch origin` し、遅れていれば `git merge --no-edit origin/main` で追いつく（rebase は使わない: worktree セッションの ask ルールで止まる。force push は禁止）。
 2. push（worktree では `GITHUB_TOKEN` の inline credential helper を使う。`implement-tier.js` の `pushCmd` が正典）。
 3. `mcp__github__create_pull_request`（body に `Closes #{issue}` と `## Verification`）。
 4. `bash scripts/wait-for-ci.sh <PR> --timeout 900` を**フォアグラウンドで 1 回**（Bash timeout 960000 ms 以上）。`run_in_background` / Monitor / `pgrep` / `kill` / `sleep` ループは使わない（ask ルールで止まる, #993）。exit 3 のときだけ `pull_request_read(method="get_check_runs")` で数回ポーリング。
