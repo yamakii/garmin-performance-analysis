@@ -340,8 +340,9 @@ describe("Performance", () => {
 
     // The verdict is the page's h1: the reader lands on the judgement.
     expect(await screen.findByText("速くなっている。")).toBeInTheDocument();
+    // The tail is qualitative: the figures live in the VitalsRow below (#1190).
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
-      "速くなっている。4週で客観VDOT +0.7 · EF +2.8% · デカップリング 6.3%。",
+      "速くなっている。VDOT・EF ともに 4 週で上昇。",
     );
     // The coach's opening paragraph is the rationale under it, and the rest of
     // the write-up is folded away.

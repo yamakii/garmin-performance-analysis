@@ -140,7 +140,9 @@ describe("performanceVerdict", () => {
     ).toEqual({
       verdict: "速くなっている。",
       tone: "neutral",
-      rest: "4週で客観VDOT +0.8 · EF +3.0%。",
+      // The rest is qualitative: the figures behind it are the VitalsRow
+      // directly beneath the line, so the line no longer repeats them (#1190).
+      rest: "VDOT・EF ともに 4 週で上昇。",
     });
 
     const declining = performanceVerdict(
@@ -149,6 +151,15 @@ describe("performanceVerdict", () => {
     );
     expect(declining.verdict).toBe("落ちている。");
     expect(declining.tone).toBe("warn");
+    // Only VDOT moved, so only VDOT is named.
+    expect(declining.rest).toBe("客観VDOT が 4 週で低下。");
+    expect(
+      performanceVerdict(NARRATION, kpis({ efDeltaPct4w: 3 })).rest,
+    ).toBe("EF が 4 週で上昇。");
+    expect(
+      performanceVerdict(NARRATION, kpis({ vdotDelta4w: -0.5, efDeltaPct4w: -3 }))
+        .rest,
+    ).toBe("VDOT・EF ともに 4 週で低下。");
 
     // No numbers at all: the page still has prose, so it says the numbers are
     // missing rather than claiming a direction.
@@ -164,23 +175,40 @@ describe("performanceVerdict", () => {
   });
 
   it("reads moves inside the noise band as 停滞", () => {
-    expect(
-      performanceVerdict(NARRATION, kpis({ vdotDelta4w: 0.2, efDeltaPct4w: 1 }))
-        .verdict,
-    ).toBe("停滞。");
-    // Disagreeing measures establish nothing either.
-    expect(
-      performanceVerdict(
-        NARRATION,
-        kpis({ vdotDelta4w: 0.8, efDeltaPct4w: -3 }),
-      ).verdict,
-    ).toBe("停滞。");
+    const flat = performanceVerdict(
+      NARRATION,
+      kpis({ vdotDelta4w: 0.2, efDeltaPct4w: 1 }),
+    );
+    expect(flat.verdict).toBe("停滞。");
+    expect(flat.rest).toBe("4 週で有意な変化なし。");
+
+    // Disagreeing measures establish nothing either — and the rest says so
+    // instead of pretending to a direction.
+    const mixed = performanceVerdict(
+      NARRATION,
+      kpis({ vdotDelta4w: 0.8, efDeltaPct4w: -3 }),
+    );
+    expect(mixed.verdict).toBe("停滞。");
+    expect(mixed.rest).toBe("VDOT と EF の向きが不一致。");
   });
 
-  it("names the decoupling reading among the evidence", () => {
+  it("test_performance_rest_omits_the_vitals_numbers", () => {
+    // Decoupling is a VitalsRow cell, not part of the sentence: with no VDOT
+    // and no EF the line reports missing evidence rather than quoting it.
     expect(
       performanceVerdict(NARRATION, kpis({ decouplingPct: 4.25 })).rest,
-    ).toBe("デカップリング 4.3%。");
+    ).toBe("判断材料が不足。");
+
+    // No 4-week delta, no percentage and no ± figure survives in the rest.
+    const rests = [
+      performanceVerdict(NARRATION, kpis({ vdotDelta4w: 0.8, efDeltaPct4w: 3 })),
+      performanceVerdict(NARRATION, kpis({ vdotDelta4w: -0.5 })),
+      performanceVerdict(NARRATION, kpis({ vdotDelta4w: 0.2, efDeltaPct4w: 1 })),
+    ].map((v) => v.rest);
+    for (const rest of rests) {
+      expect(rest).not.toMatch(/[+−±]|%/);
+      expect(rest).not.toContain("デカップリング");
+    }
   });
 });
 
@@ -301,7 +329,7 @@ describe("goalVerdict", () => {
     );
 
     expect(verdict.verdict).toBe("目標 3:20:00 に対して予測 3:20:30。");
-    expect(verdict.rest).toBe("あと 76 日、順調。差 +0:30。");
+    expect(verdict.rest).toBe("あと 76 日、順調。");
     // 順調 and a warning colour would contradict each other (#1151).
     expect(verdict.tone).toBe("neutral");
   });
@@ -319,7 +347,7 @@ describe("goalVerdict", () => {
       TODAY,
     );
 
-    expect(verdict.rest).toBe("あと 76 日、遅れ。差 +10:00。");
+    expect(verdict.rest).toBe("あと 76 日、遅れ。");
     expect(verdict.tone).toBe("warn");
   });
 
@@ -351,7 +379,7 @@ describe("goalVerdict", () => {
       TODAY,
     );
 
-    expect(verdict.rest).toBe("あと 76 日、前倒し。差 −1:00:11。");
+    expect(verdict.rest).toBe("あと 76 日、前倒し。");
     expect(verdict.tone).toBe("neutral");
   });
 
