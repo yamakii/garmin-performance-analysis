@@ -15,7 +15,7 @@ import type {
   WellnessBaselineDeviation,
 } from "../types";
 import { adverseMetricLabels } from "./baselineZ";
-import { daysUntil, formatGap, formatTargetTime } from "./race";
+import { daysUntil, formatTargetTime } from "./race";
 
 /**
  * The home page's opening sentence, as data (Morning Brief, #1117).
@@ -168,10 +168,54 @@ export interface PerformanceKpis {
 const VDOT_MOVE = 0.3;
 const EF_MOVE_PCT = 2;
 
-/** "+0.8" / "-0.5" / "±0.0" — a delta that always states its sign. */
-function signedDelta(value: number, digits: number): string {
-  const sign = value > 0 ? "+" : value < 0 ? "-" : "±";
-  return `${sign}${Math.abs(value).toFixed(digits)}`;
+/**
+ * The qualitative half of the performance verdict.
+ *
+ * It says which way the two measures moved and nothing more: the numbers behind
+ * it are already in the VitalsRow directly beneath the line (`Performance.tsx`
+ * `vitalsItems`), so spelling them out here printed the same three figures
+ * twice and pushed the line to three rows at 40px (#1190).
+ *
+ * "有意な" is the page's own threshold (VDOT_MOVE / EF_MOVE_PCT), not a
+ * statistical claim.
+ */
+function performanceRest(
+  vdotDelta4w: number | null,
+  efDeltaPct4w: number | null,
+  narration: TrendNarration | null,
+): string {
+  const vdotUp = vdotDelta4w != null && vdotDelta4w > VDOT_MOVE;
+  const vdotDown = vdotDelta4w != null && vdotDelta4w < -VDOT_MOVE;
+  const efUp = efDeltaPct4w != null && efDeltaPct4w > EF_MOVE_PCT;
+  const efDown = efDeltaPct4w != null && efDeltaPct4w < -EF_MOVE_PCT;
+
+  if (vdotDelta4w == null && efDeltaPct4w == null) {
+    return narration != null ? "判断材料が不足。" : "データがまだありません。";
+  }
+  if (vdotUp && efUp) {
+    return "VDOT・EF ともに 4 週で上昇。";
+  }
+  if (vdotDown && efDown) {
+    return "VDOT・EF ともに 4 週で低下。";
+  }
+  // One measure moved while the other held: name the one that did.
+  if (vdotUp && !efDown) {
+    return "客観VDOT が 4 週で上昇。";
+  }
+  if (vdotDown && !efUp) {
+    return "客観VDOT が 4 週で低下。";
+  }
+  if (efUp && !vdotDown) {
+    return "EF が 4 週で上昇。";
+  }
+  if (efDown && !vdotUp) {
+    return "EF が 4 週で低下。";
+  }
+  // Both moved, in opposite directions — the disagreement is the finding.
+  if (vdotUp || vdotDown || efUp || efDown) {
+    return "VDOT と EF の向きが不一致。";
+  }
+  return "4 週で有意な変化なし。";
 }
 
 /**
@@ -191,7 +235,7 @@ export function performanceVerdict(
   narration: TrendNarration | null,
   kpis: PerformanceKpis,
 ): Verdict {
-  const { vdotDelta4w, efDeltaPct4w, decouplingPct } = kpis;
+  const { vdotDelta4w, efDeltaPct4w } = kpis;
   const improving =
     (vdotDelta4w != null && vdotDelta4w > VDOT_MOVE) ||
     (efDeltaPct4w != null && efDeltaPct4w > EF_MOVE_PCT);
@@ -199,23 +243,7 @@ export function performanceVerdict(
     (vdotDelta4w != null && vdotDelta4w < -VDOT_MOVE) ||
     (efDeltaPct4w != null && efDeltaPct4w < -EF_MOVE_PCT);
 
-  const evidence: string[] = [];
-  if (vdotDelta4w != null) {
-    evidence.push(`4週で客観VDOT ${signedDelta(vdotDelta4w, 1)}`);
-  }
-  if (efDeltaPct4w != null) {
-    evidence.push(`EF ${signedDelta(efDeltaPct4w, 1)}%`);
-  }
-  if (decouplingPct != null) {
-    evidence.push(`デカップリング ${decouplingPct.toFixed(1)}%`);
-  }
-
-  const rest =
-    evidence.length > 0
-      ? `${evidence.join(" · ")}。`
-      : narration != null
-        ? "判断材料が不足。"
-        : "データがまだありません。";
+  const rest = performanceRest(vdotDelta4w, efDeltaPct4w, narration);
 
   if (improving && !declining) {
     return { verdict: "速くなっている。", tone: "neutral", rest };
@@ -297,12 +325,12 @@ export function goalVerdict(
     verdict = "目標タイム未設定。";
   }
 
+  // The gap in seconds is stated in RaceColumn's dl right below this line, so
+  // repeating it here said the same number twice (#1190).
   const countdown = countdownText(daysUntil(race.race_date, today));
   const rest =
     progress != null
-      ? `${countdown}、${RACE_STATUS_LABELS[progress.status]}。差 ${formatGap(
-          progress.gap_seconds,
-        )}。`
+      ? `${countdown}、${RACE_STATUS_LABELS[progress.status]}。`
       : `${countdown}。`;
 
   return {

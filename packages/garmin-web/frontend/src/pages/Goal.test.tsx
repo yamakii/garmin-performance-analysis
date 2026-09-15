@@ -176,7 +176,10 @@ describe("Goal", () => {
     expect(heading.textContent).toContain(
       "目標 4:30:00 に対して予測 4:15:00。",
     );
-    expect(heading.textContent).toContain("前倒し。差 −15:00。");
+    // The gap is RaceColumn's dl, not the heading — it used to be said twice
+    // on the same screen (#1190).
+    expect(heading.textContent).toContain("前倒し。");
+    expect(heading.textContent).not.toContain("差 ");
     // The lead carries the fitness the prediction rests on.
     expect(screen.getByText(/現在 VDOT 48\.5/)).toBeInTheDocument();
   });
