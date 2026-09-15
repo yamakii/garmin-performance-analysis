@@ -2,6 +2,7 @@ import { echarts, type EChartsOption } from "../lib/echarts";
 import { useEffect, useRef } from "react";
 import type { TimeSeriesResponse } from "../types";
 import { formatNumber } from "../utils/formatNumber";
+import { robustAxisBounds, type AxisBounds } from "../utils/robustBounds";
 import {
   AXIS_LABEL_COLOR,
   CHART_FONT_SIZE,
@@ -36,6 +37,26 @@ function speedToPace(value: number | null): number | null {
     return null;
   }
   return Math.round(1000 / value);
+}
+
+/**
+ * Plot range for the pace axis, with stops trimmed off (Issue #1148).
+ *
+ * A run holds still at traffic lights and water stops, and those samples reach
+ * the series as 16:00/km-ish paces. Auto-scaling to them squeezed the running
+ * paces — the reason the chart exists — into the top quarter of the grid, so
+ * the axis is bounded by the robust percentile/IQR range instead. ECharts
+ * clips the spikes at the top edge; the data itself is untouched, so tooltips
+ * still report the real pace of a stopped sample.
+ *
+ * Returns null for a series with fewer than two paces, where there is no
+ * spread to speak of and `scale: true` is the better default.
+ */
+export function paceAxisBounds(paces: (number | null)[]): AxisBounds | null {
+  const finite = paces.filter(
+    (v): v is number => typeof v === "number" && Number.isFinite(v),
+  );
+  return finite.length < 2 ? null : robustAxisBounds(finite);
 }
 
 const HOVER_THROTTLE_MS = 50;
@@ -122,6 +143,8 @@ export default function TimeSeriesChart({
     const elapsedLabels = data.timestamps.map((t) => formatElapsed(t - base));
     const lastIndex = metricNames.length - 1;
     const allXAxisIndices = metricNames.map((_, i) => i);
+    const paceValues = (data.metrics.speed ?? []).map(speedToPace);
+    const paceBounds = paceAxisBounds(paceValues);
 
     const option: EChartsOption = {
       animation: false,
@@ -158,6 +181,11 @@ export default function TimeSeriesChart({
           nameTextStyle: { color: AXIS_LABEL_COLOR, fontSize: CHART_FONT_SIZE },
           scale: true,
           inverse: isPace,
+          // Stops are clipped off the pace axis so the running range fills the
+          // grid; every other metric keeps plain auto-scaling (#1148).
+          ...(isPace && paceBounds != null
+            ? { min: paceBounds.min, max: paceBounds.max }
+            : {}),
           axisLabel: {
             color: AXIS_LABEL_COLOR,
             fontSize: CHART_FONT_SIZE,
@@ -172,9 +200,7 @@ export default function TimeSeriesChart({
       }),
       series: metricNames.map((name, i) => {
         const isPace = name === "speed";
-        const values = isPace
-          ? data.metrics[name].map(speedToPace)
-          : data.metrics[name];
+        const values = isPace ? paceValues : data.metrics[name];
         // Each line carries its metric's semantic color (Issue #214),
         // matching the active toggle pill in ActivityDetail.
         const color = METRIC_COLORS[name] ?? INK_COLOR;
