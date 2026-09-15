@@ -92,7 +92,7 @@ describe("SectionNav", () => {
 
     const splits = screen.getByRole("link", { name: "スプリット" });
     expect(splits).toHaveAttribute("aria-current", "location");
-    expect(splits).toHaveClass("font-bold", "border-b-2");
+    expect(splits).toHaveClass("font-bold");
     expect(screen.getByRole("link", { name: "総合評価" })).not.toHaveAttribute(
       "aria-current",
     );
@@ -136,5 +136,64 @@ describe("SectionNav", () => {
     expect(scrollIntoView.mock.contexts[0]).toBe(
       screen.getByRole("link", { name: "スプリット" }),
     );
+  });
+
+  it("test_section_nav_list_hides_vertical_overflow", () => {
+    render(
+      <SectionNav
+        items={[
+          { id: "overview", label: "総合評価" },
+          { id: "split", label: "スプリット" },
+          { id: "form", label: "フォーム" },
+        ]}
+      />,
+    );
+
+    const list = screen.getByRole("list");
+    expect(list).toHaveClass("overflow-x-auto", "overflow-y-hidden");
+  });
+
+  it("test_section_nav_active_underline_is_a_pseudo_element", () => {
+    const { callbacks } = installObserver();
+    render(
+      <>
+        <div id="overview" />
+        <div id="split" />
+        <SectionNav
+          items={[
+            { id: "overview", label: "総合評価" },
+            { id: "split", label: "スプリット" },
+          ]}
+        />
+      </>,
+    );
+
+    act(() => {
+      callbacks[0]([
+        {
+          target: document.getElementById("split") as Element,
+          isIntersecting: true,
+        },
+      ]);
+    });
+
+    const current = screen.getByRole("link", { name: "スプリット" });
+    expect(current).toHaveAttribute("aria-current", "location");
+    expect(current).toHaveClass("after:h-0.5", "after:bg-ink");
+    expect(current).not.toHaveClass("-mb-px", "border-b-2");
+  });
+
+  it("test_section_nav_inactive_link_has_no_underline", () => {
+    render(
+      <SectionNav
+        items={[
+          { id: "overview", label: "総合評価" },
+          { id: "split", label: "スプリット" },
+        ]}
+      />,
+    );
+
+    const inactive = screen.getByRole("link", { name: "総合評価" });
+    expect(inactive).not.toHaveClass("after:bg-ink");
   });
 });

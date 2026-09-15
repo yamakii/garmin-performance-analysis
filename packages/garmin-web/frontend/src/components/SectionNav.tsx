@@ -89,7 +89,7 @@ export default function SectionNav({
       aria-label="セクション目次"
       className="sticky top-0 z-20 border-b border-hairline bg-paper"
     >
-      <ul className="flex gap-5 overflow-x-auto text-sm">
+      <ul className="flex gap-5 overflow-x-auto overflow-y-hidden text-sm">
         {items.map((item) => {
           const isCurrent = item.id === current;
           return (
@@ -104,9 +104,9 @@ export default function SectionNav({
                   }
                 }}
                 aria-current={isCurrent ? "location" : undefined}
-                className={`block pt-2.5 pb-3 whitespace-nowrap hover:text-ink hover:no-underline ${
+                className={`relative block pt-2.5 pb-3 whitespace-nowrap hover:text-ink hover:no-underline ${
                   isCurrent
-                    ? "-mb-px border-b-2 border-ink font-bold text-ink"
+                    ? "font-bold text-ink after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-ink"
                     : "text-ink-muted"
                 }`}
               >
