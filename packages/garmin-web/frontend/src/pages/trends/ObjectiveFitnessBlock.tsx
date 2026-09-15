@@ -3,11 +3,13 @@ import EChart from "../../components/EChart";
 import {
   AXIS_STYLE,
   BASE_CHART_OPTION,
-  METRIC_COLORS,
+  COMPARE_COLOR,
+  INK_COLOR,
+  X_AXIS_STYLE,
 } from "../../components/chartTheme";
 import { axisTooltipFormatter, formatNumber } from "../../utils/formatNumber";
 import type { ObjectiveFitnessTrend } from "../../api/trends";
-import { CARD_CLASS } from "../../components/Card";
+import { BLOCK_SUMMARY_CLASS, BlockEmpty, CHART_HEIGHT } from "./blockShell";
 
 interface ObjectiveFitnessBlockProps {
   data: ObjectiveFitnessTrend;
@@ -17,14 +19,45 @@ const GARMIN_SERIES = "Garmin VO2max";
 const OBJECTIVE_SERIES = "客観VDOT";
 
 /**
+ * "客観VDOT 35.2 · Garmin VO2max 45.1 · 楽観ギャップ 9.4 (約 63 s/km)" — what
+ * the runner's own races say against what the watch believes.
+ */
+export function objectiveFitnessSummaryLine(
+  data: ObjectiveFitnessTrend,
+): string {
+  const objective = data.objective_curve.at(-1) ?? null;
+  const garmin = data.garmin_vo2max.at(-1) ?? null;
+  const parts: string[] = [];
+  if (objective != null) {
+    parts.push(`${OBJECTIVE_SERIES} ${formatNumber(objective.vdot, 1)}`);
+  }
+  if (garmin != null) {
+    parts.push(`${GARMIN_SERIES} ${formatNumber(garmin.value, 1)}`);
+  }
+  if (data.optimism_gap != null) {
+    parts.push(
+      `楽観ギャップ ${formatNumber(data.optimism_gap.gap_vdot, 1)} (約 ${formatNumber(
+        data.optimism_gap.gap_pace_sec_per_km,
+        0,
+      )} s/km 速い見積もり)`,
+    );
+  }
+  return parts.join(" · ");
+}
+
+/**
  * Overlays the objective (real-run derived) fitness curve on Garmin's VO2max
  * series on a shared VDOT/VO2max axis, surfacing the optimism gap (how much
  * faster Garmin's estimate looks than actual best-effort performance).
+ *
+ * The real-run curve is what this block exists to show, so it takes the ink;
+ * Garmin's estimate is the thing it is read against and takes the hairline
+ * compare color (Morning Brief §Charts).
  */
 export default function ObjectiveFitnessBlock({
   data,
 }: ObjectiveFitnessBlockProps) {
-  const { objective_curve, garmin_vo2max, optimism_gap } = data;
+  const { objective_curve, garmin_vo2max } = data;
 
   // Shared category axis: union of both series' dates, ascending.
   const dates = useMemo(
@@ -48,11 +81,10 @@ export default function ObjectiveFitnessBlock({
           [OBJECTIVE_SERIES]: 1,
         }),
       },
-      legend: { data: [GARMIN_SERIES, OBJECTIVE_SERIES] },
       xAxis: {
         type: "category" as const,
         data: dates,
-        ...AXIS_STYLE,
+        ...X_AXIS_STYLE,
       },
       yAxis: [
         {
@@ -65,17 +97,16 @@ export default function ObjectiveFitnessBlock({
       series: [
         {
           name: GARMIN_SERIES,
-          // Same VO2max token as PhysiologyBlock: one metric, one color.
           type: "line" as const,
-          itemStyle: { color: METRIC_COLORS.vo2max },
-          lineStyle: { color: METRIC_COLORS.vo2max },
+          itemStyle: { color: COMPARE_COLOR },
+          lineStyle: { color: COMPARE_COLOR },
           data: garmin_vo2max.map((p) => [p.date, p.value]),
         },
         {
           name: OBJECTIVE_SERIES,
           type: "line" as const,
-          itemStyle: { color: METRIC_COLORS.objective_vdot },
-          lineStyle: { color: METRIC_COLORS.objective_vdot },
+          itemStyle: { color: INK_COLOR },
+          lineStyle: { color: INK_COLOR },
           data: objective_curve.map((p) => [p.date, p.vdot]),
         },
       ],
@@ -83,40 +114,17 @@ export default function ObjectiveFitnessBlock({
     [dates, garmin_vo2max, objective_curve],
   );
 
-  const isEmpty =
-    garmin_vo2max.length === 0 && objective_curve.length === 0;
-
+  if (garmin_vo2max.length === 0 && objective_curve.length === 0) {
+    return <BlockEmpty message="データがありません" />;
+  }
   return (
-    <section
-      aria-label="客観フィットネス曲線"
-      className={CARD_CLASS}
-    >
-      <h2 className="mb-1 text-base font-semibold text-ink">
-        客観フィットネス曲線 (実走VDOT vs Garmin VO2max)
-      </h2>
-      {isEmpty ? (
-        <p className="py-8 text-center text-sm text-ink-muted">
-          データがありません
-        </p>
-      ) : (
-        <>
-          <p className="mb-1 text-sm text-ink-muted">
-            <span className="font-semibold text-ink">{GARMIN_SERIES}</span> と{" "}
-            <span className="font-semibold text-ink">{OBJECTIVE_SERIES}</span>{" "}
-            (rolling 90日 best-effort) の重ね描き。
-          </p>
-          {optimism_gap != null && (
-            <p className="mb-1 text-sm text-status-warn">
-              楽観ギャップ: {formatNumber(optimism_gap.gap_vdot, 1)} VDOT（実走比 約{" "}
-              {formatNumber(optimism_gap.gap_pace_sec_per_km, 0)} s/km 速く見積もり）
-            </p>
-          )}
-          <EChart
-            option={option}
-            ariaLabel="実走VDOTとGarmin VO2maxの推移グラフ"
-          />
-        </>
-      )}
-    </section>
+    <div className="flex flex-col gap-3">
+      <p className={BLOCK_SUMMARY_CLASS}>{objectiveFitnessSummaryLine(data)}</p>
+      <EChart
+        option={option}
+        ariaLabel="実走VDOTとGarmin VO2maxの推移グラフ"
+        height={CHART_HEIGHT}
+      />
+    </div>
   );
 }

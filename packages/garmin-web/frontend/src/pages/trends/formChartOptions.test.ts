@@ -50,10 +50,13 @@ describe("buildScoreChartOption", () => {
     expect(yAxis.interval).toBe(1);
   });
 
-  it("test_buildScoreChartOption_has_three_quality_bands", () => {
+  it("test_buildScoreChartOption_band_and_threshold_lines", () => {
+    // One faint band for the good zone, and the two quality marks as dotted
+    // threshold lines (Morning Brief §Charts) instead of three stacked tints.
     const option = buildScoreChartOption([point()]);
     const series = option.series as Series[];
-    expect(series[0].markArea?.data).toHaveLength(3);
+    expect(series[0].markArea?.data).toHaveLength(1);
+    expect(series[0].markLine?.data?.map((d) => d.yAxis)).toEqual([3.5, 2]);
   });
 
   it("test_buildScoreChartOption_maps_overall_score", () => {

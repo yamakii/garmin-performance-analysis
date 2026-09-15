@@ -4,10 +4,11 @@ import {
   AXIS_STYLE,
   BASE_CHART_OPTION,
   INK_COLOR,
+  X_AXIS_STYLE,
 } from "../../components/chartTheme";
 import { axisTooltipFormatter } from "../../utils/formatNumber";
 import type { Granularity, VolumeTrendPoint } from "../../api/trends";
-import { CARD_CLASS } from "../../components/Card";
+import { BLOCK_SUMMARY_CLASS, BlockEmpty, CHART_HEIGHT } from "./blockShell";
 
 interface VolumeBlockProps {
   data: VolumeTrendPoint[];
@@ -15,9 +16,35 @@ interface VolumeBlockProps {
    * Display-only: which bucket the data is aggregated by. The control that
    * changes it lives at the page level (Performance), because the same choice
    * also drives the coach narration at the top of the page — a switch hidden
-   * inside this card would silently rewrite content far above it (#892).
+   * inside this block would silently rewrite content far above it (#892).
    */
   granularity: Granularity;
+}
+
+/** How many buckets the trailing average covers. */
+const AVERAGE_BUCKETS = 4;
+
+/**
+ * "今週 62.7km · 4週平均 58.1" — the latest bucket against its recent normal.
+ *
+ * A single week means nothing on its own: the trailing average is what says
+ * whether the week was a build, a hold or a cutback, so both numbers travel
+ * together in the one line above the chart.
+ */
+export function volumeSummaryLine(
+  data: VolumeTrendPoint[],
+  granularity: Granularity,
+): string {
+  if (data.length === 0) {
+    return "";
+  }
+  const latest = data[data.length - 1];
+  const window = data.slice(-AVERAGE_BUCKETS);
+  const average =
+    window.reduce((sum, point) => sum + point.distance_km, 0) / window.length;
+  const bucketLabel = granularity === "week" ? "今週" : "今月";
+  const averageLabel = granularity === "week" ? "4週平均" : "4ヶ月平均";
+  return `${bucketLabel} ${latest.distance_km.toFixed(1)}km · ${averageLabel} ${average.toFixed(1)}`;
 }
 
 export default function VolumeBlock({ data, granularity }: VolumeBlockProps) {
@@ -31,7 +58,7 @@ export default function VolumeBlock({ data, granularity }: VolumeBlockProps) {
       xAxis: {
         type: "category" as const,
         data: data.map((p) => p.bucket),
-        ...AXIS_STYLE,
+        ...X_AXIS_STYLE,
       },
       yAxis: { type: "value" as const, name: "km", ...AXIS_STYLE },
       series: [
@@ -39,35 +66,29 @@ export default function VolumeBlock({ data, granularity }: VolumeBlockProps) {
           name: "距離 (km)",
           type: "bar" as const,
           data: data.map((p) => p.distance_km),
-          itemStyle: { color: INK_COLOR, borderRadius: [3, 3, 0, 0] },
+          // Square bars: a rounded cap reads as decoration on a value that is
+          // meant to be compared bar to bar (Morning Brief §Charts).
+          itemStyle: { color: INK_COLOR, borderRadius: 0 },
         },
       ],
     }),
     [data],
   );
 
+  if (data.length === 0) {
+    return <BlockEmpty message="データがありません" />;
+  }
   return (
-    <section
-      aria-label="走行量"
-      className={CARD_CLASS}
-    >
-      <h2 className="mb-3 text-base font-semibold text-ink">
-        走行量
-      </h2>
-      {data.length === 0 ? (
-        <p className="py-8 text-center text-sm text-ink-muted">
-          データがありません
-        </p>
-      ) : (
-        <>
-          <p className="mb-2 text-sm text-ink-muted">
-            直近{granularity === "week" ? "週" : "月"} ({data[data.length - 1].bucket}
-            ): {data[data.length - 1].distance_km.toFixed(1)} km /{" "}
-            {data[data.length - 1].run_count} 回
-          </p>
-          <EChart option={option} ariaLabel="走行量の棒グラフ" />
-        </>
-      )}
-    </section>
+    <div className="flex flex-col gap-3">
+      <p className={BLOCK_SUMMARY_CLASS}>
+        {volumeSummaryLine(data, granularity)} ·{" "}
+        {data[data.length - 1].run_count}回
+      </p>
+      <EChart
+        option={option}
+        ariaLabel="走行量の棒グラフ"
+        height={CHART_HEIGHT}
+      />
+    </div>
   );
 }

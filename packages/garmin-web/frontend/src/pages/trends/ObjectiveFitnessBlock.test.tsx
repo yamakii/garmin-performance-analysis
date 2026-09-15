@@ -45,9 +45,10 @@ describe("ObjectiveFitnessBlock", () => {
   it("test_objective_fitness_block_renders_both_series", () => {
     render(<ObjectiveFitnessBlock data={DATA} />);
 
-    // Both overlaid series labels appear in the descriptive caption.
-    expect(screen.getByText("Garmin VO2max")).toBeInTheDocument();
-    expect(screen.getByText("客観VDOT")).toBeInTheDocument();
+    // Both overlaid series are named, with their latest values, in the one
+    // mono summary line above the chart.
+    expect(screen.getByText(/客観VDOT 35\.2/)).toBeInTheDocument();
+    expect(screen.getByText(/Garmin VO2max 45\.1/)).toBeInTheDocument();
     // The overlay chart is rendered.
     expect(
       screen.getByLabelText("実走VDOTとGarmin VO2maxの推移グラフ"),

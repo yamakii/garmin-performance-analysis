@@ -71,7 +71,7 @@ live in `packages/garmin-web/frontend/src/pages/`.
 | `/` | ホーム | 今日どう動く? | Verdict line (判定 + 今日の処方) → vitals row (HRV / RHR / 睡眠・準備度 / ACWR, each deep-linking into `/condition`) → this week's 7-day strip + coach note → progress (featured race countdown, last run) |
 | `/activities` | アクティビティ | 走った記録は? | Month-grouped run list with a date-range preset (直近4週 / 3ヶ月 / 1年 / 全期間) and a name search |
 | `/condition` | コンディション | 今の体の状態は? | This week's cautions (form anomalies) as a full-width alert band, then today's condition, RHR/HRV recovery trend, personal-baseline deviation, training load (ACWR), body composition |
-| `/performance` | パフォーマンス | 速くなっているか? | Coach narration and a page-level 週/月 toggle, then volume, physiology, efficiency, critical speed, objective fitness, climate-neutral HR, form score, durability, weight × economy |
+| `/performance` | パフォーマンス | 速くなっているか? | Verdict line (速くなっている / 停滞 / 落ちている) with the coach narration's opening paragraph as its lead and the full write-up behind a disclosure, a page-level 週/月 segment, then a vitals row (客観VDOT / EF / クリティカルスピード / デカップリング) and nine single-column blocks: volume, physiology, efficiency, critical speed, objective fitness, climate-neutral HR, form score, durability, weight × economy |
 | `/goal` | 目標 | 目標に届く? | Countdown hero, current phase, registered races, last season's retrospective |
 | `/plan` | 計画 | この1ヶ月どう積むか? | Training-block bands over a month grid (rows = weeks, columns ordered from `week_start_day`, so the Sunday long run is last), each day showing its prescription vs the actual run, a per-week adherence chip linking to that week's review, and the month total |
 

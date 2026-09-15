@@ -1,43 +1,63 @@
 import { useState } from "react";
 import { useTrendNarration, useTrendNarrationVersions } from "../api/hooks";
-import type { Granularity } from "../api/trends";
-import { formatDate } from "../utils/format";
-import { CARD_CLASS } from "./Card";
+import type { Granularity, TrendNarration } from "../api/trends";
 import CardSkeleton from "./CardSkeleton";
-import ClampedProse from "./ClampedProse";
+import Disclosure from "./Disclosure";
 import VersionSelect from "./VersionSelect";
 
 /**
- * Full-width coach-narration card for the Trends dashboard (#791).
+ * The coach's longitudinal write-up, folded away (#791, restyled in #1121).
  *
- * Reads the latest longitudinal trend narration for the current granularity,
- * then loads every saved version of that period so the reader can switch
- * between past write-ups (modeled on `WeeklyReviewDetail`'s `版を選択:` select).
- * The free-form `analysis_data` payload is rendered as prose: string values
- * become clamped paragraphs (first few lines, with a 続きを読む toggle) and
- * string arrays become bullet lists. Renders nothing until a narration exists
- * (a 404 / empty table simply hides the card).
+ * `/performance` now opens with the verdict and the narration's first
+ * paragraph as its lead (see {@link narrationLead}); the rest of the write-up —
+ * and the picker for past versions of it — lives behind this disclosure, so the
+ * page leads with the judgement instead of a wall of prose. The free-form
+ * `analysis_data` payload is rendered as it comes: string values become
+ * paragraphs, string arrays become bullet lists. Renders nothing until a
+ * narration exists (a 404 / empty table simply hides it).
  */
 
 interface TrendNarrationCardProps {
   granularity: Granularity;
 }
 
-/** Default clamp for a narration paragraph: long enough to carry the verdict. */
-const NARRATIVE_CLAMP_LINES = 6;
+/** The disclosure's trigger; the arrow is appended by `Disclosure`. */
+const FULL_TEXT_LABEL = "コーチ解説の全文";
+
+/**
+ * The narration's opening paragraph — the one sentence-or-two the page uses as
+ * the rationale under its verdict.
+ *
+ * The payload is free-form, so the lead is the first non-empty string value in
+ * it, cut at its first line break: these write-ups are stored one paragraph per
+ * line, and the opening paragraph is the summary the coach wrote first.
+ */
+export function narrationLead(narration: TrendNarration): string {
+  for (const value of Object.values(narration.analysis_data)) {
+    if (typeof value !== "string") {
+      continue;
+    }
+    const paragraph = value
+      .split(/\n+/)
+      .map((part) => part.trim())
+      .find((part) => part !== "");
+    if (paragraph != null) {
+      return paragraph;
+    }
+  }
+  return "";
+}
 
 function NarrativeBody({ data }: { data: Record<string, unknown> }) {
   const entries = Object.entries(data);
   return (
-    <div className="space-y-3 text-sm leading-relaxed text-ink-soft">
+    <div className="flex flex-col gap-3 text-[15px] leading-[1.7] text-ink-soft">
       {entries.map(([key, value]) => {
         if (typeof value === "string") {
           return (
-            <ClampedProse
-              key={key}
-              text={value}
-              lines={NARRATIVE_CLAMP_LINES}
-            />
+            <p key={key} className="whitespace-pre-line">
+              {value}
+            </p>
           );
         }
         if (
@@ -72,50 +92,36 @@ export default function TrendNarrationCard({
     ? versions[Math.min(selectedIndex, versions.length - 1)]
     : narrationQuery.data;
 
-  // Still fetching: hold the card's space with a skeleton instead of rendering
-  // nothing, so the surrounding cards do not jump when the narration lands
-  // (a pending fetch is indistinguishable from "no narration" otherwise).
+  // Still fetching: hold the space with a skeleton instead of rendering
+  // nothing, so the blocks below do not jump when the narration lands (a
+  // pending fetch is indistinguishable from "no narration" otherwise).
   if (narrationQuery.isPending) {
     return <CardSkeleton label="トレンド解説" />;
   }
 
-  // No narration saved yet (404 / empty) — hide the card entirely.
+  // No narration saved yet (404 / empty) — hide it entirely.
   if (selected == null) {
     return null;
   }
 
-  const label = granularity === "month" ? "月次トレンド" : "週次トレンド";
-
   return (
-    <section
-      aria-label="トレンド解説"
-      className={CARD_CLASS}
-    >
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-base font-semibold text-ink">
-          トレンド解説
-        </h2>
-        <span className="font-mono text-sm text-ink-muted">
-          {label}: {formatDate(selected.period_start)} 〜{" "}
-          {formatDate(selected.period_end)}
-        </span>
-      </div>
-
-      {versions.length > 1 && (
-        <div className="mb-4">
-          <VersionSelect
-            id="trend-narration-version-select"
-            options={versions.map((v, i) => ({
-              key: v.created_at ?? String(i),
-              stamp: v.created_at,
-            }))}
-            selectedIndex={selectedIndex}
-            onSelect={setSelectedIndex}
-          />
+    <section aria-label="トレンド解説">
+      <Disclosure title={FULL_TEXT_LABEL}>
+        <div className="flex flex-col gap-4">
+          {versions.length > 1 && (
+            <VersionSelect
+              id="trend-narration-version-select"
+              options={versions.map((v, i) => ({
+                key: v.created_at ?? String(i),
+                stamp: v.created_at,
+              }))}
+              selectedIndex={selectedIndex}
+              onSelect={setSelectedIndex}
+            />
+          )}
+          <NarrativeBody data={selected.analysis_data} />
         </div>
-      )}
-
-      <NarrativeBody data={selected.analysis_data} />
+      </Disclosure>
     </section>
   );
 }
