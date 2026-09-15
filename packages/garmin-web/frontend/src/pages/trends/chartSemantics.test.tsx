@@ -370,6 +370,49 @@ describe("RecoveryPanel", () => {
       expect(option.series?.[0].markArea).toBeUndefined();
     }
   });
+
+  it("test_recovery_rhr_series_is_ink", () => {
+    const [rhr] = optionsOf(
+      <RecoveryPanel data={RECOVERY} baseline={BASELINE} />,
+    );
+
+    // The recovery panels are the documented exception to METRIC_COLORS: each
+    // is a SINGLE-series chart, and chartTheme's rule is that a single series
+    // draws in ink. RHR used to take METRIC_COLORS.heart_rate (#b8433f), which
+    // left the 注意 dots for an out-of-band night nearly invisible on a red
+    // line (#1189). The axis name follows the series, as it does everywhere.
+    const series = rhr.series?.[0];
+    expect(series?.lineStyle?.color).toBe(INK_COLOR);
+    expect(series?.itemStyle?.color).toBe(INK_COLOR);
+    expect((rhr.yAxis as Axis).nameTextStyle?.color).toBe(INK_COLOR);
+
+    // A night above the band (50 > 47) stays in the 注意 hue — the whole point
+    // of moving the line to ink is that this dot is now legible against it.
+    const [spiked] = optionsOf(
+      <RecoveryPanel
+        data={{
+          ...RECOVERY,
+          series: [
+            { date: "2026-06-30", resting_hr: 45, hrv_overnight_ms: 47 },
+            { date: "2026-07-01", resting_hr: 50, hrv_overnight_ms: 51 },
+          ],
+        }}
+        baseline={BASELINE}
+      />,
+    );
+    // The local `Series` helper models only what these tests assert on, and
+    // per-point data is not part of it — read it through its own shape.
+    const points =
+      (spiked.series?.[0] as unknown as { data?: unknown[] }).data ?? [];
+    const marked = points.filter(
+      (point: unknown) =>
+        typeof point === "object" && point !== null && "itemStyle" in point,
+    );
+    expect(marked).toHaveLength(1);
+    expect(
+      (marked[0] as { itemStyle: { color: string } }).itemStyle.color,
+    ).toBe(THRESHOLD_LINE.warn);
+  });
 });
 
 describe("dual-axis charts", () => {
