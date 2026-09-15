@@ -136,19 +136,21 @@ describe("TrendNarrationCard", () => {
     ).toBe("");
   });
 
-  it("test_narration_card_shows_skeleton_while_pending", () => {
+  it("test_narration_card_renders_nothing_while_pending", () => {
     // A fetch that never settles keeps the narration query pending.
     vi.stubGlobal(
       "fetch",
       vi.fn(() => new Promise<Response>(() => {})),
     );
 
-    render(<TrendNarrationCard granularity="week" />);
+    const { container } = render(<TrendNarrationCard granularity="week" />);
 
-    // Pending is not "no narration": the card holds its space so the cards
-    // below it do not jump once the text arrives.
-    const skeleton = screen.getByRole("status", { name: "トレンド解説" });
-    expect(skeleton).toHaveAttribute("aria-busy", "true");
+    // This card is only a disclosure now — the lead moved to the page — so a
+    // placeholder for it would sit between the verdict line and the vitals
+    // row while loading, splitting the two things the page is read for
+    // (#1193). It renders nothing instead.
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("test_hides_switcher_with_single_version", async () => {
