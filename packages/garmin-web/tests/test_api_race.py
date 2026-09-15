@@ -1,4 +1,5 @@
-"""API tests for GET /api/race-readiness (Issue #362)."""
+"""API tests for GET /api/race-readiness (#362) and /api/race-prediction-history
+(#1133)."""
 
 import pytest
 from fastapi.testclient import TestClient
@@ -55,3 +56,51 @@ def test_race_readiness_no_goal(race_readiness_no_goal_db_path):
     # VDOT is still computed, so predictions stay non-empty.
     assert payload["current_vdot"] is not None
     assert payload["predicted_times"] != {}
+
+
+@pytest.mark.integration
+def test_api_race_prediction_history_shape(race_readiness_db_path):
+    client = TestClient(create_app(db_path=race_readiness_db_path))
+    response = client.get("/api/race-prediction-history")
+
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert set(payload) == {"goal", "source", "series"}
+    assert payload["goal"]["race_name"] == "さいたまマラソン"
+    # The fixture has no laps, so the curve is empty and Garmin's VO2max row
+    # (52.0) carries the single plotted point.
+    assert payload["source"] == "garmin_vo2max"
+
+    series = payload["series"]
+    assert len(series) >= 1
+    assert set(series[0]) == {
+        "date",
+        "vdot",
+        "predicted_time_seconds",
+        "gap_seconds",
+    }
+    assert series[0]["gap_seconds"] == series[0]["predicted_time_seconds"] - 16200
+
+
+@pytest.mark.integration
+def test_api_race_prediction_history_days_validation(race_readiness_db_path):
+    client = TestClient(create_app(db_path=race_readiness_db_path))
+
+    # Below the 30-day floor: rejected by FastAPI validation, not silently clamped.
+    assert client.get("/api/race-prediction-history?days=10").status_code == 422
+    assert client.get("/api/race-prediction-history?days=3650").status_code == 200
+
+
+@pytest.mark.integration
+def test_api_race_prediction_history_no_goal(race_readiness_no_goal_db_path):
+    client = TestClient(create_app(db_path=race_readiness_no_goal_db_path))
+    response = client.get("/api/race-prediction-history")
+
+    assert response.status_code == 200
+    payload = response.json()
+
+    # No goal row -> nothing to predict against.
+    assert payload["goal"] is None
+    assert payload["source"] is None
+    assert payload["series"] == []

@@ -1,7 +1,21 @@
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "../test/utils";
+import { render, screen, waitFor, within } from "../test/utils";
 import Goal from "./Goal";
+
+// echarts needs a real canvas; jsdom has none, so the prediction chart's
+// renderer is stubbed. The section's presence (heading + labelled figure) is
+// what this page asserts — the option itself is covered by
+// goal/predictionChartOption.test.ts.
+vi.mock("../lib/echarts", () => ({
+  echarts: {
+    init: () => ({
+      setOption: vi.fn(),
+      resize: vi.fn(),
+      dispose: vi.fn(),
+    }),
+  },
+}));
 
 /** A race date comfortably in the future so the countdown is positive. */
 const FUTURE_DATE = "2099-02-01";
@@ -98,15 +112,31 @@ function jsonResponse(payload: unknown): Response {
   });
 }
 
+/** What /api/race-prediction-history returns when a test says nothing: an
+ *  athlete with no derivable series, so the chart section stays away. */
+const EMPTY_PREDICTION = { goal: null, source: null, series: [] };
+
 /**
  * Route by URL: /api/goal -> goal payload, /api/race-readiness -> readiness
- * payload (defaults to a 404 so the prediction stays hidden).
+ * payload (defaults to a 404 so the prediction stays hidden),
+ * /api/race-prediction-history -> `prediction` (a number stands for an error
+ * status; omitted means the empty series).
  */
-function stubFetch(goalPayload: unknown, readiness?: unknown) {
+function stubFetch(
+  goalPayload: unknown,
+  readiness?: unknown,
+  prediction: unknown = EMPTY_PREDICTION,
+) {
   vi.stubGlobal(
     "fetch",
     vi.fn().mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/race-prediction-history")) {
+        if (typeof prediction === "number") {
+          return Promise.resolve(new Response(null, { status: prediction }));
+        }
+        return Promise.resolve(jsonResponse(prediction));
+      }
       if (url.includes("/api/race-readiness")) {
         if (readiness === undefined) {
           return Promise.resolve(new Response(null, { status: 404 }));
@@ -349,6 +379,71 @@ describe("Goal", () => {
     expect(
       screen.getByText("故障なく走り込めた一方、後半の失速が課題でした。"),
     ).toBeInTheDocument();
+  });
+
+  it("test_goal_prediction_chart_section", async () => {
+    const prediction = {
+      goal: {
+        race_name: "さいたまマラソン",
+        race_date: FUTURE_DATE,
+        distance_km: 42.195,
+        target_time_seconds: 16200,
+      },
+      source: "objective",
+      series: [
+        {
+          date: "2026-09-01",
+          vdot: 47.1,
+          predicted_time_seconds: 16800,
+          gap_seconds: 600,
+        },
+        {
+          date: "2026-09-08",
+          vdot: 47.8,
+          predicted_time_seconds: 16500,
+          gap_seconds: 300,
+        },
+        {
+          date: "2026-09-15",
+          vdot: 48.5,
+          predicted_time_seconds: 16200,
+          gap_seconds: 0,
+        },
+      ],
+    };
+    stubFetch(FIXTURE_GOAL, FIXTURE_READINESS, prediction);
+
+    const { unmount } = renderGoal();
+
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "予測の推移" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("img")).toHaveAccessibleName(
+      "レース予測タイムの推移グラフ",
+    );
+    expect(screen.getByText("客観VDOT換算 · 直近1年")).toBeInTheDocument();
+    unmount();
+
+    // Nothing derivable: the section is absent rather than an empty frame.
+    stubFetch(FIXTURE_GOAL, FIXTURE_READINESS, {
+      goal: null,
+      source: null,
+      series: [],
+    });
+    const empty = renderGoal();
+    await screen.findByText("現フェーズ");
+    expect(screen.queryByText("予測の推移")).toBeNull();
+    empty.unmount();
+
+    // A failed fetch is supplementary too: the page renders and stays quiet.
+    stubFetch(FIXTURE_GOAL, FIXTURE_READINESS, 500);
+    renderGoal();
+    await screen.findByText("現フェーズ");
+    await waitFor(() =>
+      expect(screen.getByText("その他のレース")).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("予測の推移")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("test_Goal_focus_notes_fallback_without_brackets", async () => {

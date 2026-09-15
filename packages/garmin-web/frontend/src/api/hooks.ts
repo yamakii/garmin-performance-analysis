@@ -4,6 +4,7 @@ import {
   fetchActivityDetail,
   fetchGoal,
   fetchMonthPlan,
+  fetchRacePredictionHistory,
   fetchRaceReadiness,
   fetchSections,
   fetchSectionVersions,
@@ -53,6 +54,7 @@ import type {
   FormAnomalyFlagsResponse,
   GoalResponse,
   MonthPlan,
+  RacePredictionHistory,
   RaceReadiness,
   RecoveryStatus,
   RecoveryTrend,
@@ -182,6 +184,16 @@ export function useRaceReadiness(): UseQueryResult<RaceReadiness, Error> {
   return useQuery({
     queryKey: ["raceReadiness"],
     queryFn: () => fetchRaceReadiness(),
+  });
+}
+
+/** The prediction series over the trailing `days` (one cache entry per window). */
+export function useRacePredictionHistory(
+  days = 365,
+): UseQueryResult<RacePredictionHistory, Error> {
+  return useQuery({
+    queryKey: ["racePredictionHistory", days],
+    queryFn: () => fetchRacePredictionHistory(days),
   });
 }
 
