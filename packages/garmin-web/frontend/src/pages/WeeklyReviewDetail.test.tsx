@@ -586,6 +586,35 @@ describe("WeeklyReviewDetail", () => {
     expect(details!.hasAttribute("open")).toBe(true);
   });
 
+  it("test_weekly_review_recommendation_markdown", async () => {
+    renderDetail({
+      recommendations: ["**26km を既定**とする", "補強は **25分**"],
+    });
+
+    await screen.findByRole("heading", { level: 3, name: "推奨アクション" });
+
+    // The lead action and the folded ones are markdown, not raw asterisks.
+    expect(screen.getByText("26km を既定").tagName).toBe("STRONG");
+    const details = screen.getByText("他の推奨 1件").closest("details");
+    expect(within(details!).getByText("25分").tagName).toBe("STRONG");
+    expect(document.body.textContent).not.toContain("**");
+  });
+
+  it("test_weekly_review_gap_markdown", async () => {
+    renderDetail({
+      periodization: {
+        expected_phase: "デロード",
+        garmin_phase: "ベース",
+        gap: "従い **9/27 は 26km を既定**とし",
+      },
+    });
+
+    await screen.findByRole("heading", { level: 3, name: "目標逆算フェーズ" });
+
+    expect(screen.getByText("9/27 は 26km を既定").tagName).toBe("STRONG");
+    expect(document.body.textContent).not.toContain("**");
+  });
+
   it("test_unknown_week_shows_empty_state", async () => {
     // A week nobody reviewed (or a mistyped URL): the API answers 200 [].
     vi.stubGlobal(

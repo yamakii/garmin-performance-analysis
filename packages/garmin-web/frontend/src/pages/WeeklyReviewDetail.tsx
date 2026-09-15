@@ -16,6 +16,7 @@ import {
   statusTone,
   targetSummary,
 } from "../components/plan/DayCell";
+import MarkdownText from "../components/report/MarkdownText";
 import { META_LABEL, SUBCARD } from "../components/report/ReportCard";
 import { usePageTitle } from "../hooks/usePageTitle";
 import {
@@ -288,8 +289,8 @@ export default function WeeklyReviewDetail() {
   const garminPhase = periodization?.garmin_phase;
   // The two phase chips already carry the comparison, so the gap sentence only
   // earns a line of its own when they disagree (or one of them is missing).
-  const showPhaseGap =
-    periodization?.gap != null && expectedPhase !== garminPhase;
+  const phaseGap = periodization?.gap;
+  const showPhaseGap = phaseGap != null && expectedPhase !== garminPhase;
   const raceCountdowns = [
     raceCountdown("A", periodization?.a_race, periodization?.weeks_to_a_race),
     raceCountdown("B", periodization?.b_race, periodization?.weeks_to_b_race),
@@ -465,7 +466,11 @@ export default function WeeklyReviewDetail() {
             {/* Recovery (#597) — string only for now */}
             {typeof recovery === "string" && (
               <Section id="wr-recovery" title="リカバリー">
-                <ClampedProse text={recovery} lines={PROSE_CLAMP_LINES} />
+                <ClampedProse
+                  text={recovery}
+                  lines={PROSE_CLAMP_LINES}
+                  markdown
+                />
               </Section>
             )}
           </Group>
@@ -625,6 +630,7 @@ export default function WeeklyReviewDetail() {
                 <ClampedProse
                   text={data.goal_alignment}
                   lines={PROSE_CLAMP_LINES}
+                  markdown
                 />
               </Section>
             )}
@@ -657,9 +663,9 @@ export default function WeeklyReviewDetail() {
                       </StatusBadge>
                     </div>
                   )}
-                  {showPhaseGap && (
+                  {showPhaseGap && phaseGap != null && (
                     <p className="text-xs text-ink-muted">
-                      ギャップ: {periodization.gap}
+                      ギャップ: <MarkdownText inline>{phaseGap}</MarkdownText>
                     </p>
                   )}
                 </div>
@@ -669,7 +675,11 @@ export default function WeeklyReviewDetail() {
             {/* Weekly ramp (#597) — string only for now */}
             {typeof weeklyRamp === "string" && (
               <Section id="wr-ramp" title="週次ランプ">
-                <ClampedProse text={weeklyRamp} lines={PROSE_CLAMP_LINES} />
+                <ClampedProse
+                  text={weeklyRamp}
+                  lines={PROSE_CLAMP_LINES}
+                  markdown
+                />
               </Section>
             )}
           </Group>
@@ -683,7 +693,7 @@ export default function WeeklyReviewDetail() {
                   {/* The lead action is the one to act on; the rest are folded
                       away so the card states a single next step (#906). */}
                   <p className="text-sm font-medium text-ink-soft">
-                    {firstRecommendation}
+                    <MarkdownText inline>{firstRecommendation}</MarkdownText>
                   </p>
                   {moreRecommendations.length > 0 && (
                     <Disclosure
@@ -692,7 +702,9 @@ export default function WeeklyReviewDetail() {
                     >
                       <ul className="list-disc space-y-1 pl-5 text-sm text-ink-soft">
                         {moreRecommendations.map((rec, i) => (
-                          <li key={i}>{rec}</li>
+                          <li key={i}>
+                            <MarkdownText inline>{rec}</MarkdownText>
+                          </li>
                         ))}
                       </ul>
                     </Disclosure>
@@ -803,6 +815,7 @@ export default function WeeklyReviewDetail() {
                   <ClampedProse
                     text={data.continuity_note}
                     lines={PROSE_CLAMP_LINES}
+                    markdown
                   />
                 </Section>
               )}
@@ -812,7 +825,11 @@ export default function WeeklyReviewDetail() {
           {/* Overall — closing verdict, standalone (no parent Group → h2) */}
           {data.overall != null && (
             <Section id="wr-overall" title="総評" level={2}>
-              <ClampedProse text={data.overall} lines={PROSE_CLAMP_LINES} />
+              <ClampedProse
+                text={data.overall}
+                lines={PROSE_CLAMP_LINES}
+                markdown
+              />
             </Section>
           )}
         </>

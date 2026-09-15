@@ -267,7 +267,7 @@ export default function EfficiencyReport({
               return (
                 <div key={key} className="mt-3 first:mt-1">
                   <h3 className={`mb-1 ${SUBHEADING}`}>{label}</h3>
-                  <MarkdownText text={prose} />
+                  <MarkdownText>{prose}</MarkdownText>
                 </div>
               );
             })}

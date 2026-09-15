@@ -27,6 +27,32 @@ describe("CoachNote", () => {
     expect(note).toHaveClass("border-l-2", "border-ink", "text-ink-soft");
   });
 
+  it("test_coach_note_renders_bold_markdown", () => {
+    render(
+      <MemoryRouter>
+        <CoachNote>装備は **股を覆う長丈のインナー** で走る</CoachNote>
+      </MemoryRouter>,
+    );
+
+    // The coach writes markdown; the asterisks are emphasis, not characters.
+    const strong = screen.getByText("股を覆う長丈のインナー");
+    expect(strong.tagName).toBe("STRONG");
+    expect(document.body.textContent).not.toContain("**");
+  });
+
+  it("test_coach_note_keeps_react_node_children", () => {
+    render(
+      <MemoryRouter>
+        <CoachNote>
+          <span data-testid="composed">x</span>
+        </CoachNote>
+      </MemoryRouter>,
+    );
+
+    // Callers that compose their own nodes are passed through untouched.
+    expect(screen.getByTestId("composed")).toHaveTextContent("x");
+  });
+
   it("emphasises the line when strong is set", () => {
     render(
       <MemoryRouter>

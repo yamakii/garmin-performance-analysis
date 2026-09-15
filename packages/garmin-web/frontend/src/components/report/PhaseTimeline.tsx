@@ -82,7 +82,7 @@ function PhaseRow({ label, text }: { label: string; text: string }) {
       */}
       <div className="col-span-2 mt-1 min-w-0 md:col-span-1 md:mt-0">
         <div className="text-sm leading-[1.7] text-ink-soft">
-          <MarkdownText text={parts ? parts.evaluation : body} />
+          <MarkdownText>{parts ? parts.evaluation : body}</MarkdownText>
         </div>
         {parts && (
           <p className="mt-1 font-mono text-xs leading-relaxed text-ink-muted">
@@ -134,7 +134,7 @@ export default function PhaseTimeline({
               )}
             {typeof data.evaluation_criteria === "string" && (
               <Disclosure title="評価基準" className="mt-4">
-                <MarkdownText text={data.evaluation_criteria} />
+                <MarkdownText>{data.evaluation_criteria}</MarkdownText>
               </Disclosure>
             )}
             <FallbackFields data={data} exclude={KNOWN_KEYS} />

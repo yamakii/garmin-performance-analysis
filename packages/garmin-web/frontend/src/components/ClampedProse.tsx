@@ -42,7 +42,9 @@ export default function ClampedProse({
     <div className="space-y-1">
       <div style={clamped ? clampStyle(lines) : undefined}>
         {markdown ? (
-          <MarkdownText text={text} />
+          // `whitespace-pre-line` keeps the author's own line breaks, which
+          // markdown would otherwise collapse into spaces (#1150).
+          <MarkdownText className="whitespace-pre-line">{text}</MarkdownText>
         ) : (
           <p className="text-sm leading-relaxed whitespace-pre-line text-ink-soft">
             {text}

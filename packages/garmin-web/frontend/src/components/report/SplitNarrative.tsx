@@ -56,7 +56,7 @@ export default function SplitNarrative({
       <h3 className={SUBHEADING}>スプリット解説</h3>
       {typeof data.highlights === "string" && (
         <div className={`mt-2 ${SUBCARD}`}>
-          <MarkdownText text={data.highlights} />
+          <MarkdownText>{data.highlights}</MarkdownText>
         </div>
       )}
       {entries.length > 0 && (
@@ -72,7 +72,7 @@ export default function SplitNarrative({
                 </span>
                 <div className="min-w-0">
                   {typeof text === "string" ? (
-                    <MarkdownText text={text} />
+                    <MarkdownText>{text}</MarkdownText>
                   ) : (
                     String(text)
                   )}

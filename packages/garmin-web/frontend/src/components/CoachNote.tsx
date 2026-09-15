@@ -1,5 +1,6 @@
 import type { JSX, ReactNode } from "react";
 import { Link } from "react-router-dom";
+import MarkdownText from "./report/MarkdownText";
 
 /**
  * The coach's sentence (Morning Brief, #1117): body text behind a 2px ink
@@ -26,7 +27,14 @@ export default function CoachNote({
         strong ? "font-bold text-ink" : "text-ink-soft"
       }`}
     >
-      {children}
+      {/* The sentence is written by an agent in markdown, so `**強調**` is
+          rendered rather than printed (#1150); a caller that composes its own
+          nodes keeps them untouched. */}
+      {typeof children === "string" ? (
+        <MarkdownText inline>{children}</MarkdownText>
+      ) : (
+        children
+      )}
       {source != null && (
         <Link
           to={source.to}
