@@ -1,7 +1,11 @@
 import type { JSX } from "react";
-import StatusBadge, { type StatusTone } from "../StatusBadge";
-import type { LadderStep, PlanDay, Prescription } from "../../types";
-import { formatDistanceKmValue, formatPace } from "../../utils/format";
+import type { StatusTone } from "../StatusBadge";
+import type { LadderStep, PlanActivity, PlanDay, Prescription } from "../../types";
+import {
+  formatBpmValue,
+  formatDistanceKmValue,
+  formatPaceValue,
+} from "../../utils/format";
 import { formatNumber } from "../../utils/formatNumber";
 import { dayOfMonthLabel } from "../../utils/week";
 
@@ -71,34 +75,92 @@ export function targetSummary(target: {
   return parts.join(" ");
 }
 
-function PrescriptionRow({ prescription }: { prescription: Prescription }) {
+/** "21.4 · 6:19 · 146" — what actually happened, in one mono line. */
+function actualSummary(activity: PlanActivity): string {
+  return [
+    formatDistanceKmValue(activity.total_distance_km, 1),
+    formatPaceValue(activity.avg_pace_seconds_per_km),
+    formatBpmValue(activity.avg_heart_rate),
+  ].join(" · ");
+}
+
+/**
+ * One prescribed session inside a day cell.
+ *
+ * The status is carried by the shape of the rows rather than by a badge
+ * (Morning Brief, #1119): a session that happened states what was run under a
+ * bold name, a session that did not is struck through, and a replaced one
+ * keeps its original line struck with the substitute after an arrow. Only the
+ * two exceptions a reader has to act on take colour.
+ */
+function PrescriptionRow({
+  prescription,
+  activity,
+}: {
+  prescription: Prescription;
+  activity: PlanActivity | null;
+}) {
+  const name = sessionLabel(prescription.session_type);
   const target = targetSummary(prescription);
-  return (
-    <div className="space-y-0.5">
-      <div className="flex flex-wrap items-center gap-1">
-        <span className="text-xs font-semibold text-ink">
-          {sessionLabel(prescription.session_type)}
-        </span>
-        <StatusBadge tone={statusTone(prescription.status)}>
-          {statusLabel(prescription.status)}
-        </StatusBadge>
-      </div>
-      {target !== "" && (
-        <p className="font-mono text-xs text-ink-muted">
-          {target}
+  const status = prescription.status;
+
+  if (status === "replaced") {
+    return (
+      <div className="flex flex-col gap-0.5 text-status-warn">
+        <p className="text-[13px] font-bold">
+          <s>
+            {name}
+            {target !== "" && ` ${target}`}
+          </s>
         </p>
+        <p className="font-mono text-xs">
+          → {activity != null ? actualSummary(activity) : "代替"}
+        </p>
+      </div>
+    );
+  }
+
+  const isRest = prescription.session_type === "rest";
+  const isSkipped = status === "skipped";
+  return (
+    <div className="flex flex-col gap-0.5">
+      <p
+        className={`text-[13px] font-bold ${
+          isRest
+            ? "text-status-warn"
+            : isSkipped
+              ? "text-ink-muted line-through"
+              : ""
+        }`}
+      >
+        {name}
+      </p>
+      {isRest && prescription.rationale != null ? (
+        <p className="text-xs text-status-warn">{prescription.rationale}</p>
+      ) : activity != null ? (
+        <p className="font-mono text-xs">{actualSummary(activity)}</p>
+      ) : (
+        target !== "" && (
+          <p
+            className={`font-mono text-xs ${
+              isSkipped ? "text-ink-muted line-through" : "text-ink-muted"
+            }`}
+          >
+            {target}
+          </p>
+        )
       )}
     </div>
   );
 }
 
 /**
- * One day of the month grid: what was prescribed (type + target + status)
- * above what was actually run (distance + pace).
+ * One day of the month grid: what was prescribed above what was actually run.
  *
  * A long-run day with no prescription row yet still states the block's ladder
  * target, so the month reads as a plan before the week is prescribed. Days
- * outside the month are muted rather than blank — the grid keeps its shape.
+ * outside the month keep their place in the grid but drop to `ink-faint` —
+ * the shape of the calendar survives, the content stops competing.
  */
 export default function DayCell({
   day,
@@ -114,54 +176,65 @@ export default function DayCell({
     day.prescriptions.length === 0 && ladderStep != null
       ? targetSummary(ladderStep)
       : "";
+  const prescriptions = day.prescriptions;
+  const replaced = prescriptions.some(
+    (prescription) => prescription.status === "replaced",
+  );
+  const rest = prescriptions.some(
+    (prescription) => prescription.session_type === "rest",
+  );
+  // A day's runs pair up with its prescriptions in order; anything left over
+  // was run without one and is listed on its own below.
+  const extraActivities = day.activities.slice(prescriptions.length);
+
   return (
-    <td
-      className={`h-full min-w-[6.5rem] align-top ${
- isToday ? "rounded-md ring-2 ring-accent ring-inset" : ""
- } ${day.in_month ? "" : "bg-well"}`}
+    <div
+      role="cell"
+      className={`flex min-h-[96px] flex-col gap-1 border-r border-hairline p-2.5 pr-2 ${
+        isToday
+          ? "bg-accent-tint"
+          : replaced || rest
+            ? "bg-warn-tint"
+            : ""
+      } ${day.in_month ? "text-ink" : "text-ink-faint"}`}
     >
-      <div className="space-y-1 p-1.5">
-        <div className="flex items-baseline gap-1">
-          <span
-            className={`font-mono text-xs ${
- day.in_month ? "font-semibold text-ink" : "text-ink-muted"
- }`}
-          >
-            {dayOfMonthLabel(day.date)}
-          </span>
-          {isToday && (
-            <span className="rounded-sm bg-accent-tint px-1.5 py-0.5 text-[10px] font-bold text-accent">
-              今日
-            </span>
-          )}
-        </div>
-
-        {day.prescriptions.map((prescription) => (
-          <PrescriptionRow
-            key={prescription.prescription_id}
-            prescription={prescription}
-          />
-        ))}
-
-        {ladderTarget !== "" && (
-          <p className="font-mono text-xs text-ink-muted">
-            <span className="mr-1 text-[10px] font-semibold tracking-wide text-ink-muted">
-              ロング目標
-            </span>
-            {ladderTarget}
-          </p>
+      <p
+        className={`font-mono text-xs ${
+          !day.in_month
+            ? "text-ink-faint"
+            : isToday
+              ? "font-semibold text-accent"
+              : replaced || rest
+                ? "text-status-warn"
+                : "text-ink-muted"
+        }`}
+      >
+        {dayOfMonthLabel(day.date)}
+        {isToday && (
+          <span className="ml-1 text-[10px] tracking-[0.06em]">TODAY</span>
         )}
+      </p>
 
-        {day.activities.map((activity) => (
-          <p
-            key={activity.activity_id}
-            className="font-mono text-xs text-ink-muted"
-          >
-            {formatDistanceKmValue(activity.total_distance_km, 1)}km{" "}
-            {formatPace(activity.avg_pace_seconds_per_km)}
-          </p>
-        ))}
-      </div>
-    </td>
+      {prescriptions.map((prescription, index) => (
+        <PrescriptionRow
+          key={prescription.prescription_id}
+          prescription={prescription}
+          activity={day.activities[index] ?? null}
+        />
+      ))}
+
+      {ladderTarget !== "" && (
+        <div className="flex flex-col gap-0.5">
+          <p className="text-[13px] text-ink-muted">ロング目標</p>
+          <p className="font-mono text-xs text-ink-muted">{ladderTarget}</p>
+        </div>
+      )}
+
+      {extraActivities.map((activity) => (
+        <p key={activity.activity_id} className="font-mono text-xs">
+          {actualSummary(activity)}
+        </p>
+      ))}
+    </div>
   );
 }

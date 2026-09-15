@@ -130,104 +130,160 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// The pure formatters (formatTargetTime / daysUntil / formatGap) now live in
-// src/utils/race.ts and are covered by src/utils/race.test.ts.
+// The pure formatters (formatTargetTime / daysUntil / formatGap) live in
+// src/utils/race.ts; the verdict sentence in src/utils/verdict.ts. Both are
+// covered by their own unit tests.
 
 describe("Goal", () => {
-  it("test_featured_race_rendered_once", async () => {
-    // One A race + one non-featured race: the A race is headlined by the hero
-    // and must not appear a second time as a list card.
-    stubFetch({
-      profile: EMPTY_PROFILE,
-      goals: [A_RACE, OTHER_RACE],
-      retrospectives: [],
-    });
+  it("test_goal_verdict_line_opens_the_page", async () => {
+    stubFetch(FIXTURE_GOAL, FIXTURE_READINESS);
 
-    const { container } = renderGoal();
+    renderGoal();
 
-    await screen.findByText("目標レースまで");
-
-    const matches = screen.getAllByText("さいたまマラソン");
-    expect(matches).toHaveLength(1);
-
-    const hero = container.querySelector("header");
-    expect(hero).not.toBeNull();
-    expect(hero?.contains(matches[0])).toBe(true);
-
-    // The remaining race is the only one rendered as a card.
-    const cards = Array.from(container.querySelectorAll("article"));
-    expect(cards).toHaveLength(1);
-    expect(cards[0].textContent).toContain("谷川真理ハーフ");
+    const heading = await screen.findByRole("heading", { level: 1 });
+    // Target 4:30:00 against a 4:15:00 prediction, 15 minutes ahead.
+    expect(heading.textContent).toContain(
+      "目標 4:30:00 に対して予測 4:15:00。",
+    );
+    expect(heading.textContent).toContain("前倒し。差 −15:00。");
+    // The lead carries the fitness the prediction rests on.
+    expect(screen.getByText(/現在 VDOT 48\.5/)).toBeInTheDocument();
   });
 
-  it("test_hero_shows_prediction_inline", async () => {
-    // Predicted 3:45:00 against a 3:40:00 target => +5:00 behind.
+  it("test_goal_ab_columns", async () => {
     stubFetch(
       {
         profile: EMPTY_PROFILE,
-        goals: [{ ...A_RACE, target_time_seconds: 13200 }],
+        goals: [A_RACE, B_RACE],
         retrospectives: [],
       },
-      {
-        current_vdot: 50.2,
-        predicted_times: { full: 13500 },
-        goal: {
-          race_name: "さいたまマラソン",
-          race_date: FUTURE_DATE,
-          distance_km: 42.195,
-          target_time_seconds: 13200,
-        },
-        progress: {
-          predicted_time_seconds: 13500,
-          gap_seconds: 300,
-          pace_gap_sec_per_km: 7.1,
-          weeks_remaining: 18,
-          status: "behind",
-        },
-      },
+      FIXTURE_READINESS,
     );
 
     const { container } = renderGoal();
 
-    await screen.findByText("目標レースまで");
+    const band = await screen.findByLabelText("目標レース");
+    const inBand = within(band);
 
-    const hero = container.querySelector("header");
-    expect(hero).not.toBeNull();
-    const inHero = within(hero as HTMLElement);
+    // Filled A tag, outlined B tag — the whole hierarchy of the band.
+    expect(inBand.getByText("A").className).toContain("bg-ink");
+    expect(inBand.getByText("B").className).toContain("border-ink");
 
-    expect(inHero.getByText("3:45:00")).toBeInTheDocument(); // predicted
-    expect(inHero.getByText("3:40:00")).toBeInTheDocument(); // target
-    expect(inHero.getByText("+5:00")).toBeInTheDocument(); // gap to target
-    expect(inHero.getByText("遅れ")).toBeInTheDocument(); // status badge
-    expect(inHero.getByText("50.2")).toBeInTheDocument(); // current VDOT
+    // Each column carries its own countdown and target; the B race has no
+    // date, so it says so instead of showing a numeral.
+    expect(inBand.getAllByText("目標")).toHaveLength(2);
+    expect(inBand.getByText("4:30:00")).toBeInTheDocument();
+    expect(inBand.getByText("2:00:00")).toBeInTheDocument();
+    expect(inBand.getByText("日程未定")).toBeInTheDocument();
+    expect(
+      container.querySelector(".text-\\[64px\\]")?.textContent,
+    ).toContain("日");
 
-    // The prediction lives in the hero only — no separate prediction section.
-    expect(screen.queryByText("レース予測")).toBeNull();
+    // The prediction belongs to the A race only.
+    expect(inBand.getAllByText(/^予測/)).toHaveLength(1);
+    expect(inBand.getByText("予測 (VDOT 48.5)")).toBeInTheDocument();
+    expect(inBand.getByText("4:15:00")).toBeInTheDocument();
+    expect(inBand.getByText("−15:00")).toBeInTheDocument();
+
+    // Neither featured race is repeated in the list below.
+    expect(screen.getAllByText("さいたまマラソン", { exact: false })).toHaveLength(
+      1,
+    );
+    expect(
+      screen.getByText("A / B 以外のレースは登録されていません"),
+    ).toBeInTheDocument();
   });
 
-  it("test_race_list_excludes_featured", async () => {
+  it("test_goal_focus_rows_and_disclosure", async () => {
+    stubFetch({
+      profile: {
+        current_focus: "持久力強化",
+        focus_notes:
+          "【ボトルネック】脚の耐久性【ロング走】月2回 30km【ポイント練】週1回【補強】週2回【睡眠】7時間",
+        updated_at: null,
+      },
+      goals: [],
+      retrospectives: [],
+    });
+
+    renderGoal();
+
+    expect(await screen.findByText("ボトルネック")).toBeInTheDocument();
+    expect(screen.getByText("ロング走")).toBeInTheDocument();
+    expect(screen.getByText("ポイント練")).toBeInTheDocument();
+
+    // The fourth rule onwards folds away behind one trigger.
+    const disclosure = screen.getByText("ルール(2件) 展開");
+    expect(disclosure).toBeInTheDocument();
+    expect(disclosure.closest("details")?.hasAttribute("open")).toBe(false);
+    expect(screen.getByText("補強")).toBeInTheDocument();
+    expect(screen.getByText("睡眠")).toBeInTheDocument();
+  });
+
+  it("test_goal_other_races_rows", async () => {
     stubFetch({
       profile: EMPTY_PROFILE,
       goals: [
         A_RACE,
-        B_RACE,
         OTHER_RACE,
         { ...OTHER_RACE, goal_id: 4, race_name: "青梅マラソン" },
       ],
       retrospectives: [],
     });
 
-    const { container } = renderGoal();
+    renderGoal();
 
-    await screen.findByText("レース登録");
+    const name = await screen.findByText("谷川真理ハーフ");
+    expect(name.className).toContain("font-bold");
+    expect(screen.getByText("青梅マラソン")).toBeInTheDocument();
 
-    const cards = Array.from(container.querySelectorAll("article"));
-    expect(cards).toHaveLength(2);
-    const cardText = cards.map((el) => el.textContent ?? "").join(" ");
-    expect(cardText).toContain("谷川真理ハーフ");
-    expect(cardText).toContain("青梅マラソン");
-    expect(cardText).not.toContain("さいたまマラソン");
-    expect(cardText).not.toContain("新潟ハーフ");
+    // Date is mono, and the priority / status pair closes the row.
+    const dates = screen.getAllByText(FUTURE_DATE);
+    expect(dates[0].className).toContain("font-mono");
+    expect(screen.getAllByText("C · 予定")).toHaveLength(2);
+
+    // No cards: the list is ruled rows now.
+    expect(document.querySelectorAll("article")).toHaveLength(0);
+  });
+
+  it("test_goal_retro_learning_disclosure", async () => {
+    stubFetch({
+      profile: EMPTY_PROFILE,
+      goals: [],
+      retrospectives: [
+        {
+          retro_id: 1,
+          season_label: "2025秋シーズン",
+          period_start: "2025-09-01",
+          period_end: "2025-12-31",
+          narrative: "故障なく走り込めました。",
+          key_learnings: "ロング走でのペース管理を重視する",
+        },
+        {
+          retro_id: 2,
+          season_label: "2024秋シーズン",
+          period_start: "2024-09-01",
+          period_end: "2024-12-31",
+          narrative: "距離を踏めませんでした。",
+          key_learnings: "週2回の補強を継続する",
+        },
+      ],
+    });
+
+    renderGoal();
+
+    // The latest season's learning is shown; the older one folds away.
+    const learnings = await screen.findAllByText("学び:");
+    expect(learnings).toHaveLength(2);
+    expect(learnings[0].closest("details")).toBeNull();
+    expect(learnings[1].closest("details")).not.toBeNull();
+    expect(
+      screen.getByText("ロング走でのペース管理を重視する"),
+    ).toBeInTheDocument();
+
+    const trigger = screen.getByText("学びを表示");
+    expect(trigger.closest("details")?.hasAttribute("open")).toBe(false);
+    expect(screen.getByText("週2回の補強を継続する")).toBeInTheDocument();
   });
 
   it("test_sections_order", async () => {
@@ -235,17 +291,17 @@ describe("Goal", () => {
 
     const { container } = renderGoal();
 
-    await screen.findByText("目標レースまで");
+    await screen.findByText("現フェーズ");
 
     const headings = Array.from(container.querySelectorAll("h1, h2")).map(
       (el) => el.textContent,
     );
-    expect(headings).toEqual([
-      "目標レースまで",
+    expect(headings.slice(1)).toEqual([
       "現フェーズ",
-      "レース登録",
+      "その他のレース",
       "昨季の振り返り",
     ]);
+    expect(headings[0]).toContain("目標 4:30:00");
   });
 
   it("test_empty_goal_shows_cli_hint", async () => {
@@ -269,42 +325,11 @@ describe("Goal", () => {
 
     // All three empty sections point the user at the CLI command.
     expect(screen.getAllByText("/set-goal")).toHaveLength(3);
-  });
 
-  it("test_Goal_renders_race_countdown", async () => {
-    stubFetch(FIXTURE_GOAL);
-
-    renderGoal();
-
-    // Hero shows the A race name and the countdown scaffolding.
-    expect(await screen.findByText("目標レースまで")).toBeInTheDocument();
-    expect(screen.getAllByText("さいたまマラソン")).toHaveLength(1);
-    expect(screen.getAllByText("あと").length).toBeGreaterThan(0);
-
-    // Target time formatted via formatTargetTime is shown.
-    expect(screen.getAllByText("4:30:00").length).toBeGreaterThan(0);
-
-    // B race with null date shows the "日程未定" badge.
-    expect(screen.getAllByText("日程未定").length).toBeGreaterThan(0);
-  });
-
-  it("test_Goal_renders_focus_accordion", async () => {
-    stubFetch(FIXTURE_GOAL);
-
-    renderGoal();
-
-    // current_focus lead line.
+    // With no race at all the page still opens with a sentence.
     expect(
-      await screen.findByText("サブ4達成に向けた持久力強化"),
-    ).toBeInTheDocument();
-
-    // focus_notes 【…】 headings become section card titles.
-    expect(screen.getByText("ボトルネック")).toBeInTheDocument();
-    expect(screen.getByText("ロング走")).toBeInTheDocument();
-    expect(screen.getByText("後半の失速を抑える")).toBeInTheDocument();
-
-    // Preamble before the first heading is shown as a lead paragraph.
-    expect(screen.getByText("全体方針は積み上げ。")).toBeInTheDocument();
+      (await screen.findByRole("heading", { level: 1 })).textContent,
+    ).toContain("目標レース未登録。");
   });
 
   it("test_Goal_renders_notes_and_retrospectives", async () => {
@@ -312,80 +337,18 @@ describe("Goal", () => {
 
     renderGoal();
 
-    await screen.findByText("レース登録");
+    await screen.findByText("その他のレース");
 
-    // Notes render for the featured races (hero) and the listed race (card).
+    // Notes render for the featured races; the list rows carry the essentials.
     expect(screen.getByText("メインターゲット")).toBeInTheDocument();
     expect(screen.getByText("調整レース")).toBeInTheDocument();
-    expect(screen.getByText("練習レース")).toBeInTheDocument();
+    expect(screen.getByText("谷川真理ハーフ")).toBeInTheDocument();
 
-    // Retrospective timeline.
+    // Retrospective row.
     expect(screen.getByText("2025秋シーズン")).toBeInTheDocument();
     expect(
       screen.getByText("故障なく走り込めた一方、後半の失速が課題でした。"),
     ).toBeInTheDocument();
-  });
-
-  it("test_Goal_second_a_race_keeps_list_emphasis", async () => {
-    // Two priority-A races: the hero only headlines the first one, so the
-    // second A race lands in the list and keeps its accent ring + left bar.
-    stubFetch({
-      profile: EMPTY_PROFILE,
-      goals: [
-        { ...A_RACE, notes: null },
-        {
-          goal_id: 5,
-          race_name: "別大マラソン",
-          race_date: FUTURE_DATE,
-          priority: "A",
-          goal_type: "marathon",
-          distance_km: 42.195,
-          target_time_seconds: 15600,
-          status: "active",
-          notes: null,
-        },
-      ],
-      retrospectives: [],
-    });
-
-    const { container } = renderGoal();
-
-    await screen.findByText("レース登録");
-
-    const cards = Array.from(container.querySelectorAll("article"));
-    expect(cards).toHaveLength(1);
-    expect(cards[0].textContent).toContain("別大マラソン");
-    expect(cards[0].className).toContain("ring-accent");
-    expect(cards[0].querySelector(".bg-accent")).not.toBeNull();
-  });
-
-  it("test_goal_focus_sections_still_first_three_open", async () => {
-    // Four titled sections: after the switch to the shared `Disclosure`, the
-    // first three must still be expanded and the fourth collapsed.
-    stubFetch({
-      profile: {
-        current_focus: "持久力強化",
-        focus_notes:
-          "【ボトルネック】脚の耐久性【ロング走】月2回 30km【ポイント練】週1回【補強】週2回",
-        updated_at: null,
-      },
-      goals: [],
-      retrospectives: [],
-    });
-
-    const { container } = renderGoal();
-
-    expect(await screen.findByText("ボトルネック")).toBeInTheDocument();
-
-    const sections = Array.from(container.querySelectorAll("details"));
-    expect(sections).toHaveLength(4);
-    expect(sections.map((section) => section.hasAttribute("open"))).toEqual([
-      true,
-      true,
-      true,
-      false,
-    ]);
-    expect(screen.getByText("補強")).toBeInTheDocument();
   });
 
   it("test_Goal_focus_notes_fallback_without_brackets", async () => {
@@ -407,5 +370,7 @@ describe("Goal", () => {
         "見出しの無い自由記述メモ。これを丸ごと1ブロックで出す。",
       ),
     ).toBeInTheDocument();
+    // …and the preamble of a note that does have headings leads the rows.
+    expect(screen.queryByText(/ルール\(/)).toBeNull();
   });
 });

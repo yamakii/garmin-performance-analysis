@@ -12,7 +12,8 @@ const baseData = {
     timestamp: "2025-10-09T12:00:00+09:00",
   },
   star_rating: "★★★★☆ 4.3/5.0",
-  summary: "有酸素ベースの安定したランでした。",
+  summary:
+    "有酸素ベースの安定したランでした。平均心拍144bpmでZone2の中央に収まっています。",
   key_strengths: ["心拍の安定（平均144bpm）", "ケイデンス維持"],
   improvement_areas: ["後半のペース低下", "ウォームアップ不足"],
   recommendations: "次回は HR 135-145 を維持してイージーランを実施しましょう。",
@@ -29,63 +30,74 @@ function detailsFor(title: string): HTMLDetailsElement {
   return details as HTMLDetailsElement;
 }
 
+/** Every `✓` / `!` marker rendered, in document order. */
+function markers(): string[] {
+  return Array.from(document.querySelectorAll('li > span[aria-hidden="true"]'))
+    .map((node) => node.textContent ?? "")
+    .filter((text) => text === "✓" || text === "!");
+}
+
 describe("SummaryReport", () => {
-  it("renders strengths, improvements and recommendations", () => {
+  it("test_summary_strengths_and_next_action", () => {
+    render(
+      <SummaryReport
+        section={section({
+          ...baseData,
+          key_strengths: ["心拍の安定", "ケイデンス維持", "後半の粘り"],
+          improvement_areas: ["序盤の突っ込み", "給水の遅れ"],
+          next_action: "次回は最初の3kmを7:00/kmより遅く入りましょう。",
+        })}
+      />,
+    );
+
+    // Every strength and every improvement is listed, each behind its marker:
+    // ink ✓ for what worked, warn ! for what did not.
+    expect(markers()).toEqual(["✓", "✓", "✓", "!", "!"]);
+    expect(screen.getByText("後半の粘り")).toBeInTheDocument();
+    expect(screen.getByText("給水の遅れ")).toBeInTheDocument();
+    // Five points is not a fold: the disclosure only appears past four per list.
+    expect(
+      screen.queryByText(/強み・改善点をすべて見る/),
+    ).not.toBeInTheDocument();
+
+    // The one thing to do next is the coach's note: bold, behind an ink rule,
+    // and never folded away.
+    const action = screen.getByText(
+      "次回は最初の3kmを7:00/kmより遅く入りましょう。",
+    );
+    expect(action).toHaveClass("border-l-2");
+    expect(action).toHaveClass("font-bold");
+    expect(action.closest("details")).toBeNull();
+  });
+
+  it("test_summary_body_without_the_lead", () => {
     render(<SummaryReport section={section(baseData)} />);
 
-    // Large star rating parsed from the star_rating string
-    expect(screen.getByLabelText("評価 4.3 / 5.0")).toBeInTheDocument();
+    // The opening sentence is the page's conclusion line (rendered by the
+    // header), so this section starts at what follows it.
     expect(
-      screen.getByText("有酸素ベースの安定したランでした。"),
+      screen.getByText(
+        "平均心拍144bpmでZone2の中央に収まっています。",
+      ),
     ).toBeInTheDocument();
-
-    // Full lists live inside the "すべて見る" disclosure; the first item of
-    // each also shows in the always-visible preview.
-    const all = detailsFor("強み・改善点をすべて見る");
-    expect(all.textContent).toContain("強み");
-    expect(all.textContent).toContain("ケイデンス維持");
-    expect(all.textContent).toContain("改善ポイント");
-    expect(all.textContent).toContain("ウォームアップ不足");
-    expect(screen.getAllByText("心拍の安定（平均144bpm）")).toHaveLength(2);
-    expect(screen.getAllByText("後半のペース低下")).toHaveLength(2);
-
+    expect(
+      screen.queryByText("有酸素ベースの安定したランでした。"),
+    ).not.toBeInTheDocument();
     // recommendations live inside their own collapsed <details>
     const recommendations = detailsFor("詳しい改善ポイント");
+    expect(recommendations.hasAttribute("open")).toBe(false);
     expect(recommendations.textContent).toContain(
       "次回は HR 135-145 を維持してイージーランを実施しましょう。",
     );
   });
 
-  it("test_summary_shows_lead_and_clamps_body", () => {
-    const lead = "有酸素ベースの狙いどおりに走り切れた一本でした。";
-    const body = [
-      "平均心拍は144bpmでZone2の中央に収まり、終始安定した強度で走れています。",
-      "ペースは6:26/kmで推移し、前半と後半の差は3秒に留まって崩れませんでした。",
-      "接地時間269msは期待値をわずかに上回り、フォーム面でも良好な水準でした。",
-      "気温18度・湿度62%という条件も走行には有利に働いたと考えられます。",
-    ].join("");
-    render(
-      <SummaryReport section={section({ ...baseData, summary: lead + body })} />,
-    );
-
-    // The verdict sentence reads on its own, outside any fold.
-    const leadNode = screen.getByText(lead);
-    expect(leadNode.closest("details")).toBeNull();
-    // The remaining prose is clamped with a reveal toggle, and the lead is
-    // not repeated inside it.
-    expect(
-      screen.getByRole("button", { name: "続きを読む" }),
-    ).toBeInTheDocument();
-    expect(screen.getByText(body)).toBeInTheDocument();
-    expect(screen.queryByText(lead + body)).not.toBeInTheDocument();
-  });
-
-  it("test_strengths_collapsed_with_count_chips", () => {
+  it("test_long_lists_fold_past_four", () => {
     const strengths = [
       "心拍の安定（平均144bpm）",
       "ケイデンス維持",
       "接地時間の改善",
       "上下動比の安定",
+      "終盤の再加速",
     ];
     render(
       <SummaryReport
@@ -97,62 +109,17 @@ describe("SummaryReport", () => {
       />,
     );
 
-    // Count chips carry the totals up front.
-    expect(screen.getByText("✓ 強み 4")).toBeInTheDocument();
-    expect(screen.getByText("! 改善 2")).toBeInTheDocument();
-
-    // Only the first item of each list shows outside the disclosure.
-    const all = detailsFor("強み・改善点をすべて見る");
+    // The disclosure names how many of each list it stands for.
+    const all = detailsFor("強み・改善点をすべて見る(5 / 2)");
     expect(all.hasAttribute("open")).toBe(false);
-    for (const later of ["ケイデンス維持", "接地時間の改善", "上下動比の安定"]) {
-      expect(screen.getByText(later).closest("details")).toBe(all);
+
+    // The first four strengths read outside the fold; the fifth is inside it.
+    for (const shown of strengths.slice(0, 4)) {
+      expect(screen.getByText(shown).closest("details")).toBeNull();
     }
-    expect(screen.getByText("ウォームアップ不足").closest("details")).toBe(all);
-
-    // Expanding reveals every strength and improvement.
-    expect(all.textContent).toContain("上下動比の安定");
-    expect(all.textContent).toContain("ウォームアップ不足");
-  });
-
-  it("test_next_action_always_visible", () => {
-    render(
-      <SummaryReport
-        section={section({
-          ...baseData,
-          next_action: "次回はHR 135-145でイージーランを実施",
-        })}
-      />,
-    );
-
-    // The one thing to do next is never folded away.
-    const action = screen.getByText("次回はHR 135-145でイージーランを実施");
-    expect(action.closest("details")).toBeNull();
-  });
-
-  it("highlights next_action when present", () => {
-    const { unmount } = render(
-      <SummaryReport
-        section={section({
-          ...baseData,
-          next_action: "次回はHR 135-145でイージーランを実施",
-          integrated_score: 4.1,
-        })}
-      />,
-    );
-
-    // next_action renders as a single lead heading, not a key-value row
-    const leads = screen.getAllByText("次回はHR 135-145でイージーランを実施");
-    expect(leads).toHaveLength(1);
-    expect(screen.queryByText("next_action")).not.toBeInTheDocument();
-    // integrated_score renders as a badge
-    expect(screen.getByText("統合スコア 4.1")).toBeInTheDocument();
-    unmount();
-
-    // Absent next_action -> lead heading is not rendered
-    render(<SummaryReport section={section(baseData)} />);
-    expect(
-      screen.queryByText("次回はHR 135-145でイージーランを実施"),
-    ).not.toBeInTheDocument();
+    expect(screen.getByText("終盤の再加速").closest("details")).toBe(all);
+    // The short list is not folded at all.
+    expect(screen.getByText("ウォームアップ不足").closest("details")).toBeNull();
   });
 
   it("test_summary_report_integrated_score_precision", () => {
@@ -168,29 +135,6 @@ describe("SummaryReport", () => {
 
     expect(screen.getByText("統合スコア 4.2")).toBeInTheDocument();
     expect(screen.queryByText(/4\.20000/)).not.toBeInTheDocument();
-  });
-
-  it("collapses recommendations into details", () => {
-    render(
-      <SummaryReport
-        section={section({
-          ...baseData,
-          next_action: "次回はZone 2を維持",
-        })}
-      />,
-    );
-
-    // recommendations are rendered inside their own <details>
-    const details = detailsFor("詳しい改善ポイント");
-    expect(details.hasAttribute("open")).toBe(false);
-    expect(
-      details.textContent?.includes(
-        "次回は HR 135-145 を維持してイージーランを実施しましょう。",
-      ),
-    ).toBe(true);
-
-    // next_action appears exactly once (as the lead heading)
-    expect(screen.getAllByText("次回はZone 2を維持")).toHaveLength(1);
   });
 
   it("renders next_run_target as a prescription card, not a key dump", () => {
@@ -221,12 +165,9 @@ describe("SummaryReport", () => {
     // Summary without plan_achievement (Issue #782: plan-vs-actual UI removed).
     render(<SummaryReport section={section(baseData)} />);
 
-    // Core sections still render as before.
-    expect(
-      screen.getByText("有酸素ベースの安定したランでした。"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("強み")).toBeInTheDocument();
-    expect(screen.getByText("改善ポイント")).toBeInTheDocument();
+    // Core content still renders as before.
+    expect(screen.getByText("心拍の安定（平均144bpm）")).toBeInTheDocument();
+    expect(screen.getByText("後半のペース低下")).toBeInTheDocument();
 
     // No dedicated plan-achievement card is rendered.
     expect(screen.queryByText("プラン達成度")).not.toBeInTheDocument();
@@ -254,7 +195,7 @@ describe("SummaryReport", () => {
     },
   };
 
-  it("renders prescription verdict line and delta chips", () => {
+  it("renders the prescription verdict before the action it justifies", () => {
     const { unmount } = render(
       <SummaryReport section={section(prescriptionData)} />,
     );
@@ -270,18 +211,6 @@ describe("SummaryReport", () => {
       screen.getByText("処方 22.0km に対し実施 17.0km（77%）で不足しています。"),
     ).toBeInTheDocument();
 
-    // Four signed delta chips against the last same-type run, with the gap.
-    expect(screen.getByText("前回比（7日前）")).toBeInTheDocument();
-    for (const [label, value] of [
-      ["ペース", "-10 秒/km"],
-      ["HR", "-3 bpm"],
-      ["GCT", "+4 ms"],
-      ["ケイデンス", "-2 spm"],
-    ]) {
-      expect(screen.getByText(label)).toBeInTheDocument();
-      expect(screen.getByText(value)).toBeInTheDocument();
-    }
-
     // The verdict is read before the action it justifies.
     const action = screen.getByText(
       "次回は9/20のカットバック週として14kmに留めましょう。",
@@ -295,17 +224,17 @@ describe("SummaryReport", () => {
     // Legacy summaries (no prescription layer) render exactly as before.
     render(<SummaryReport section={section(baseData)} />);
     expect(screen.queryByText(/処方「/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/前回比/)).not.toBeInTheDocument();
   });
 
-  it("FallbackFields does not duplicate the new keys", () => {
+  it("leaves the previous-run deltas to the page header", () => {
     render(<SummaryReport section={section(prescriptionData)} />);
 
-    // Both keys have dedicated UI, so the key-value fallback must not repeat
-    // them under their own labels (nor as humanized raw keys).
-    expect(screen.queryByText("処方との比較")).not.toBeInTheDocument();
-    expect(screen.queryByText("prescription verdict")).not.toBeInTheDocument();
+    // `vs_previous` is one mono line in the header (#1118); repeating it here
+    // as chips would state the same comparison twice...
+    expect(screen.queryByText(/前回比/)).not.toBeInTheDocument();
+    // ...and it must not fall through to the raw key-value dump either.
     expect(screen.queryByText("vs previous")).not.toBeInTheDocument();
+    expect(screen.queryByText("prescription verdict")).not.toBeInTheDocument();
     // The verdict title appears once — in the dedicated line only.
     expect(screen.getAllByText(/ロング 22km/)).toHaveLength(1);
   });
@@ -332,5 +261,7 @@ describe("SummaryReport", () => {
 
     // metadata boilerplate is consumed, never dumped as key-value
     expect(screen.queryByText("metadata")).not.toBeInTheDocument();
+    // The star rating belongs to the page headline, not to this section.
+    expect(screen.queryByLabelText(/評価 4\.3/)).not.toBeInTheDocument();
   });
 });

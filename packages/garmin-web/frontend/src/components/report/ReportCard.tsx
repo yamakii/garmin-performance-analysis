@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import type { SectionResult } from "../../types";
-import { CARD_CLASS } from "../Card";
+import SectionBlock from "../SectionBlock";
 
-/** Neutral gray sub-box nested on a white report card. */
-export const SUBCARD = "rounded-md bg-well px-3 py-2";
+/** Sub-block nested inside a report section: a rule and the figures under it. */
+export const SUBCARD = "border-t border-hairline pt-2";
 
 /** Subsection heading inside a report card (h3). */
 export const SUBHEADING = "text-sm font-semibold text-ink-soft";
@@ -26,7 +26,7 @@ export function ParseErrorNotice({ raw }: { raw: string | null }) {
         分析データのJSON解析に失敗しました。
       </p>
       {raw != null && (
-        <pre className="mt-2 overflow-x-auto rounded-md bg-well p-3 text-xs text-ink-soft">
+        <pre className="mt-2 overflow-x-auto border-t border-hairline pt-3 text-xs text-ink-soft">
           {raw}
         </pre>
       )}
@@ -35,20 +35,28 @@ export function ParseErrorNotice({ raw }: { raw: string | null }) {
 }
 
 /**
- * Card shell for one analysis report section. Degrades gracefully:
+ * Shell for one analysis report section (Morning Brief, #1118).
+ *
+ * The white card is gone: a report section is a `SectionBlock` — its title in
+ * the left label column, its content in the measure — so the activity report
+ * reads as one document with a spine instead of a stack of boxes. Degrades
+ * gracefully:
  * - section missing -> renders nothing (the report omits the block)
  * - parse_error -> warning + raw JSON for inspection
  * - non-object data -> "no data" placeholder
  *
- * `badge` renders beside the heading — the slot for a verdict (a star rating
+ * `badge` renders inside the heading — the slot for a verdict (a star rating
  * pulled out of the prose) so the conclusion is readable before any sentence.
  */
 export default function ReportCard({
+  id,
   title,
   section,
   badge,
   children,
 }: {
+  /** Anchor id, so the section nav can jump to this block. */
+  id?: string;
   title: string;
   section: SectionResult | undefined;
   badge?: ReactNode;
@@ -66,14 +74,12 @@ export default function ReportCard({
     body = <p className="text-sm text-ink-muted">分析データがありません。</p>;
   }
   return (
-    <section className={CARD_CLASS}>
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h2 className="text-base font-semibold text-ink">
-          {title}
-        </h2>
-        {badge}
-      </div>
+    <SectionBlock
+      id={id}
+      title={title}
+      headingExtra={badge != null ? <span className="ml-2">{badge}</span> : undefined}
+    >
       {body}
-    </section>
+    </SectionBlock>
   );
 }

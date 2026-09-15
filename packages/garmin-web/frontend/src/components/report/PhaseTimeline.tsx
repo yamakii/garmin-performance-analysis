@@ -3,16 +3,15 @@ import { extractStarSuffix } from "../../utils/starSuffix";
 import Disclosure from "../Disclosure";
 import FallbackFields from "./FallbackFields";
 import MarkdownText from "./MarkdownText";
-import ReportCard, { SUBHEADING } from "./ReportCard";
-import StarBadge from "./StarBadge";
+import ReportCard from "./ReportCard";
 import StarRatingBreakdown from "./StarRatingBreakdown";
 
-const PHASES: { key: string; label: string; dot: string }[] = [
-  { key: "warmup_evaluation", label: "ウォームアップ", dot: "bg-accent" },
-  { key: "run_evaluation", label: "メインラン", dot: "bg-ink" },
+const PHASES: { key: string; label: string }[] = [
+  { key: "warmup_evaluation", label: "ウォームアップ" },
+  { key: "run_evaluation", label: "メインラン" },
   // Interval training only (5.6% of rows per Spike #198).
-  { key: "recovery_evaluation", label: "リカバリー", dot: "bg-violet-400" },
-  { key: "cooldown_evaluation", label: "クールダウン", dot: "bg-status-good" },
+  { key: "recovery_evaluation", label: "リカバリー" },
+  { key: "cooldown_evaluation", label: "クールダウン" },
 ];
 
 const KNOWN_KEYS = [
@@ -21,6 +20,8 @@ const KNOWN_KEYS = [
   "star_rating_breakdown",
   ...PHASES.map((phase) => phase.key),
 ];
+
+const MAX_SCORE = 5;
 
 const ACTUAL_MARKER = /\*\*実際\*\*\s*[:：]\s*/;
 const EVALUATION_MARKER = /\*\*評価\*\*\s*[:：]\s*/;
@@ -52,53 +53,57 @@ function splitPhaseProse(
   return { actual: actualText, evaluation: evaluationText };
 }
 
-/** One timeline node: label + score badge, verdict, then muted measurements. */
-function PhaseNode({
-  label,
-  dot,
-  text,
-}: {
-  label: string;
-  dot: string;
-  text: string;
-}) {
+/**
+ * One phase as a rule-separated row: name, score, verdict (Morning Brief,
+ * #1118). The old vertical timeline drew a dot and a rail for a sequence the
+ * reader already knows — warmup comes before the run — so the ink now goes to
+ * the three columns that differ between phases instead.
+ */
+function PhaseRow({ label, text }: { label: string; text: string }) {
   const { body, rating } = extractStarSuffix(text);
   const parts = splitPhaseProse(body);
   return (
-    <li className="relative">
-      <span
-        aria-hidden="true"
-        className={`absolute top-1 -left-[27px] h-3 w-3 rounded-sm ring-4 ring-white ${dot}`}
-      />
-      <div className="flex flex-wrap items-center gap-2">
-        <h3 className={SUBHEADING}>{label}</h3>
-        {rating && <StarBadge score={rating.score} />}
+    <div className="grid grid-cols-[120px_80px_1fr] items-start gap-x-2 border-b border-hairline py-3">
+      <h3 className="text-[15px] font-bold text-ink">{label}</h3>
+      <div>
+        {rating && (
+          <span
+            aria-label={`評価 ${rating.score.toFixed(1)} / ${MAX_SCORE.toFixed(1)}`}
+            className="font-mono text-[13px] font-medium text-star"
+          >
+            <span aria-hidden="true">★</span> {rating.score.toFixed(1)}
+          </span>
+        )}
       </div>
-      <div className="mt-1">
-        <MarkdownText text={parts ? parts.evaluation : body} />
+      <div className="min-w-0">
+        <div className="text-sm leading-[1.7] text-ink-soft">
+          <MarkdownText text={parts ? parts.evaluation : body} />
+        </div>
+        {parts && (
+          <p className="mt-1 font-mono text-xs leading-relaxed text-ink-muted">
+            {`実際: ${parts.actual}`}
+          </p>
+        )}
       </div>
-      {parts && (
-        <p className="mt-1 text-xs leading-relaxed text-ink-muted">
-          {`実際: ${parts.actual}`}
-        </p>
-      )}
-    </li>
+    </div>
   );
 }
 
 /**
- * Vertical timeline of phase evaluations (warmup / run / cooldown, plus
- * recovery when present). Each node leads with its score badge and verdict
- * (#905); the measured detail is a muted footnote and the shared
+ * Phase evaluations (warmup / run / cooldown, plus recovery when present) as
+ * one rule-separated table: each row leads with its score and its verdict
+ * (#905), the measured detail is a mono footnote, and the shared
  * evaluation_criteria folds into a disclosure.
  */
 export default function PhaseTimeline({
   section,
+  id,
 }: {
   section: SectionResult | undefined;
+  id?: string;
 }) {
   return (
-    <ReportCard title="フェーズ評価" section={section}>
+    <ReportCard id={id} title="フェーズ評価" section={section}>
       {(data) => {
         const phases = PHASES.filter(
           ({ key }) => typeof data[key] === "string",
@@ -106,16 +111,15 @@ export default function PhaseTimeline({
         return (
           <>
             {phases.length > 0 && (
-              <ol className="relative ml-1.5 space-y-5 border-l-2 border-hairline pl-5">
-                {phases.map(({ key, label, dot }) => (
-                  <PhaseNode
+              <div className="border-t border-ink">
+                {phases.map(({ key, label }) => (
+                  <PhaseRow
                     key={key}
                     label={label}
-                    dot={dot}
                     text={data[key] as string}
                   />
                 ))}
-              </ol>
+              </div>
             )}
             {data.star_rating_breakdown != null &&
               typeof data.star_rating_breakdown === "object" && (

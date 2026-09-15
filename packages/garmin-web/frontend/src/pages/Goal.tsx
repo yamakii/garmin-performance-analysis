@@ -1,10 +1,11 @@
-import { CARD_CLASS } from "../components/Card";
+import type { JSX } from "react";
+import { useGoal, useRaceReadiness } from "../api/hooks";
 import Disclosure from "../components/Disclosure";
 import EmptyState, { CliCommand } from "../components/EmptyState";
 import { PageError, PageLoading } from "../components/PageState";
+import SectionBlock from "../components/SectionBlock";
 import SectionHeading from "../components/SectionHeading";
-import StatusBadge, { type StatusTone } from "../components/StatusBadge";
-import { useGoal, useRaceReadiness } from "../api/hooks";
+import VerdictLine from "../components/VerdictLine";
 import { usePageTitle } from "../hooks/usePageTitle";
 import type {
   GoalRace,
@@ -12,9 +13,15 @@ import type {
   RaceReadinessProgress,
   SeasonRetrospective,
 } from "../types";
-import { parseFocusNotes } from "../utils/focusNotes";
-import { formatDate, formatDistanceKm } from "../utils/format";
-import { daysUntil, formatGap, formatTargetTime } from "../utils/race";
+import { type FocusSection, parseFocusNotes } from "../utils/focusNotes";
+import { formatDate, formatDateLabel, formatDistanceKm } from "../utils/format";
+import {
+  daysUntil,
+  formatGap,
+  formatTargetTime,
+  pickFeaturedRace,
+} from "../utils/race";
+import { goalVerdict } from "../utils/verdict";
 
 const GOAL_TYPE_LABELS: Record<string, string> = {
   marathon: "フルマラソン",
@@ -55,151 +62,21 @@ function isPriorityB(race: GoalRace): boolean {
   return (race.priority ?? "").toUpperCase() === "B";
 }
 
-type RaceStatus = RaceReadinessProgress["status"];
-
-const STATUS_META: Record<RaceStatus, { label: string; tone: StatusTone }> = {
-  ahead: { label: "前倒し", tone: "good" },
-  on_track: { label: "順調", tone: "info" },
-  behind: { label: "遅れ", tone: "warn" },
-};
-
-/**
- * Single "あと N日" countdown tile inside the hero. When the VDOT prediction
- * belongs to this race, the predicted time / gap to target / status badge are
- * rendered inline here rather than in a second card further down the page.
- */
-function CountdownTile({
-  race,
-  tone,
-  prediction,
-}: {
-  race: GoalRace;
-  tone: "primary" | "secondary";
-  prediction: RaceReadinessProgress | null;
-}) {
-  const days = daysUntil(race.race_date);
-  // The countdown numeral is 6xl/7xl bold — large text, so the vivid signal
-  // orange still clears the 3:1 large-text threshold. Gold does not (2.15:1),
-  // so the B race uses amber-700 (5.05:1). The A/B tags are small text and
-  // take the text-safe `signal-ink` / amber-800 pair instead (Issue #911).
-  const accent = tone === "primary" ? "text-accent" : "text-status-warn";
-  const tagBg =
-    tone === "primary"
-      ? "bg-accent-tint text-accent"
-      : " text-status-warn";
-  const statusMeta = prediction != null ? STATUS_META[prediction.status] : null;
-
-  return (
-    <div className="relative">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <span
-            className={`rounded-md px-2 py-0.5 font-mono text-sm font-bold tracking-wide ${tagBg}`}
-          >
-            {race.priority ?? "?"}
-          </span>
-          <span className="text-base font-semibold text-ink">
-            {race.race_name ?? "レース未設定"}
-          </span>
-        </div>
-        {statusMeta != null && (
-          <StatusBadge tone={statusMeta.tone}>{statusMeta.label}</StatusBadge>
-        )}
-      </div>
-
-      <div className="mt-3 flex items-end gap-2">
-        {days == null ? (
-          <span className="rounded-md bg-well px-3 py-1.5 text-sm font-medium text-ink-muted">
-            日程未定
-          </span>
-        ) : days >= 0 ? (
-          <>
-            <span className="text-xs font-medium tracking-wide text-ink-muted">
-              あと
-            </span>
-            <span
-              className={`font-mono text-6xl leading-[0.85] font-bold md:text-7xl ${accent}`}
-            >
-              {days}
-            </span>
-            <span className="pb-1 text-lg font-semibold text-ink">
-              日
-            </span>
-          </>
-        ) : (
-          <span className="rounded-md bg-well px-3 py-1.5 text-sm font-medium text-ink-muted">
-            開催済み
-          </span>
-        )}
-      </div>
-
-      {/*
-       * Muted copy inside the hero is slate-600, not the slate-500 used on the
-       * white cards below: this band is the old hero gradient
-       * (now removed, #1116), and slate-500 slips to 4.35:1 at the slate-100 end
-       * (Issue #911). Uniform here so the unit suffix never outweighs the
-       * value it trails.
-       */}
-      <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
-        {race.race_date != null && (
-          <div>
-            <dt className="sr-only">開催日</dt>
-            <dd className="font-mono text-ink-muted">
-              {formatDate(race.race_date)}
-            </dd>
-          </div>
-        )}
-        <div>
-          <dt className="sr-only">種別</dt>
-          <dd className="text-ink-muted">
-            {goalTypeLabel(race.goal_type)}
-            {race.distance_km != null && (
-              <span className="ml-1.5 font-mono text-ink-muted">
-                {formatDistanceKm(race.distance_km)}
-              </span>
-            )}
-          </dd>
-        </div>
-        <div>
-          <dt className="sr-only">目標タイム</dt>
-          <dd>
-            <span className="text-xs text-ink-muted">目標 </span>
-            <span className="font-mono text-lg font-semibold text-ink">
-              {formatTargetTime(race.target_time_seconds)}
-            </span>
-          </dd>
-        </div>
-      </dl>
-
-      {race.notes != null && race.notes.trim() !== "" && (
-        <p className="mt-3 text-sm text-ink-muted">{race.notes}</p>
-      )}
-
-      {prediction != null && (
-        <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-hairline pt-3">
-          <div>
-            <dt className="text-xs tracking-wide text-ink-muted">予測タイム</dt>
-            <dd className="mt-0.5 font-mono text-base font-semibold text-ink">
-              {formatTargetTime(prediction.predicted_time_seconds)}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs tracking-wide text-ink-muted">目標との差</dt>
-            <dd className="mt-0.5 font-mono text-base font-semibold text-ink">
-              {formatGap(prediction.gap_seconds)}
-            </dd>
-          </div>
-        </dl>
-      )}
-    </div>
-  );
+/** "2099-02-01 SUN" — the header-style date the brief uses for a race day. */
+function raceDateLabel(iso: string | null): string {
+  if (iso == null) {
+    return "日程未定";
+  }
+  const weekday = formatDateLabel(iso).split(" ")[1];
+  const day = formatDate(iso);
+  return weekday == null || weekday === "" ? day : `${day} ${weekday}`;
 }
 
 /**
  * Which featured race the readiness prediction belongs to. The API computes
  * readiness against a single goal race, so the prediction is attached to the
- * tile whose name matches; when the payload carries no usable name we fall back
- * to the primary (A) race so the prediction is never orphaned.
+ * column whose name matches; when the payload carries no usable name we fall
+ * back to the primary (A) race so the prediction is never orphaned.
  */
 function findPredictionRace(
   races: GoalRace[],
@@ -219,225 +96,288 @@ function findPredictionRace(
 }
 
 /**
- * Hero band with countdowns to the A (primary) and B (secondary) races, with
- * the VDOT prediction folded into the matching tile. These races are the only
- * place the A/B races are featured — the list below covers everything else.
+ * "現在 VDOT 49.2 · 予測 フル 3:26:00 · ハーフ 1:38:30" — the fitness the
+ * verdict's prediction rests on, or why there is none.
  */
-function CountdownHero({
-  races,
-  readiness,
-}: {
-  races: GoalRace[];
-  readiness: RaceReadiness | null;
-}) {
-  const vdot = readiness?.current_vdot ?? null;
-
-  if (races.length === 0 && vdot == null) {
+function fitnessLead(readiness: RaceReadiness | null): string | null {
+  if (readiness == null) {
     return null;
   }
-
-  const predictionRace = findPredictionRace(races, readiness);
-  const progress = readiness?.progress ?? null;
-
-  return (
-    <header className="relative overflow-hidden rounded-md border border-hairline">
-      <div className="relative px-6 py-7 md:px-8">
-        <SectionHeading
-         
-          title={races.length > 0 ? "目標レースまで" : "現在のフィットネス"}
-        />
-        {races.length > 0 && (
-          <div className="mt-6 grid gap-8 md:grid-cols-2 md:gap-12">
-            {races.map((race) => (
-              <CountdownTile
-                key={race.goal_id}
-                race={race}
-                tone={isPriorityA(race) ? "primary" : "secondary"}
-                prediction={
-                  race.goal_id === predictionRace?.goal_id ? progress : null
-                }
-              />
-            ))}
-          </div>
-        )}
-
-        {vdot != null && (
-          <div className="mt-6 border-t border-hairline pt-4">
-            <dl className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-              <div>
-                <dt className="inline text-xs text-ink-muted">現在 VDOT </dt>
-                <dd className="inline font-mono font-semibold text-ink">
-                  {vdot.toFixed(1)}
-                </dd>
-              </div>
-            </dl>
-            {races.length === 0 && (
-              <p className="mt-1.5 text-xs text-ink-muted">
-                目標レースが未登録のため、距離別の予測タイムのみ算出しています。
-              </p>
-            )}
-          </div>
-        )}
-        {vdot == null && readiness != null && (
-          <p className="mt-6 border-t border-hairline pt-4 text-xs text-ink-muted">
-            直近のランニングデータが不足しているため、予測タイムは算出できませんでした。
-          </p>
-        )}
-      </div>
-    </header>
-  );
+  const vdot = readiness.current_vdot;
+  if (vdot == null) {
+    return "直近のランニングデータが不足しているため、予測タイムは算出できませんでした。";
+  }
+  const parts = [`現在 VDOT ${vdot.toFixed(1)}`];
+  const full = readiness.predicted_times.full;
+  const half = readiness.predicted_times.half;
+  if (full != null) {
+    parts.push(`予測 フル ${formatTargetTime(full)}`);
+  }
+  if (half != null) {
+    parts.push(`ハーフ ${formatTargetTime(half)}`);
+  }
+  return `${parts.join(" · ")}。`;
 }
 
 /**
- * Card for one registered race. The hero already headlines the first A and B
- * races, so this list only ever receives the remaining races; a leftover
- * priority-A race (a second A) still gets the featured treatment.
+ * The A / B band: two columns, one countdown each, with the VDOT prediction
+ * folded into the column it was computed against.
+ *
+ * The A tag is filled and the B tag outlined, which is the whole hierarchy the
+ * band needs — the numeral already carries the urgency, so the second race
+ * does not have to be shouted in a different colour (#1122).
  */
-function RaceCard({ race }: { race: GoalRace }) {
-  const featured = isPriorityA(race);
-  const border = featured
-    ? "border-accent ring-1 ring-accent"
-    : "border-hairline";
+function RaceColumns({
+  races,
+  predictionRaceId,
+  progress,
+  vdot,
+}: {
+  races: GoalRace[];
+  predictionRaceId: number | null;
+  progress: RaceReadinessProgress | null;
+  vdot: number | null;
+}): JSX.Element {
+  return (
+    <section
+      aria-label="目標レース"
+      className="grid border-t border-b border-t-ink border-b-hairline md:grid-cols-2"
+    >
+      {races.map((race, index) => (
+        <RaceColumn
+          key={race.goal_id}
+          race={race}
+          first={index === 0}
+          progress={race.goal_id === predictionRaceId ? progress : null}
+          vdot={vdot}
+        />
+      ))}
+    </section>
+  );
+}
+
+function RaceColumn({
+  race,
+  first,
+  progress,
+  vdot,
+}: {
+  race: GoalRace;
+  first: boolean;
+  progress: RaceReadinessProgress | null;
+  vdot: number | null;
+}): JSX.Element {
+  const days = daysUntil(race.race_date);
+  const priority = (race.priority ?? "?").toUpperCase();
+  const tagClass =
+    priority === "A"
+      ? "rounded-sm bg-ink px-1.5 py-[3px] font-medium text-paper"
+      : "rounded-sm border border-ink px-1.5 py-[3px] font-medium text-ink";
 
   return (
-    <article
-      className={`relative overflow-hidden rounded-md border p-5 ${border}`}
+    <div
+      className={`flex flex-col gap-3 py-5 ${
+        first ? "md:border-r md:border-hairline md:pr-8" : "md:pl-8"
+      }`}
     >
-      {featured && (
-        <span
-          aria-hidden="true"
-          className="absolute inset-y-0 left-0 w-1 bg-accent"
-        />
-      )}
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <span
-            className={`inline-block rounded-md px-2 py-0.5 font-mono text-sm font-bold tracking-wide ${
- featured ? "bg-accent-tint text-accent" : "bg-well text-ink"
- }`}
-          >
-            {race.priority ?? "-"}
-          </span>
-          <h3 className="mt-2 text-lg font-semibold text-ink">
-            {race.race_name ?? "-"}
-          </h3>
-          <p className="mt-0.5 font-mono text-sm text-ink-muted">
-            {race.race_date ?? "日程未定"}
-          </p>
-        </div>
-        <span className="shrink-0 rounded-sm bg-well px-2.5 py-1 text-xs font-medium text-ink-muted">
-          {statusLabel(race.status)}
+      <p className="flex flex-wrap items-center gap-2 font-mono text-xs text-ink-muted">
+        <span className={tagClass}>{priority}</span>
+        <span>
+          {race.race_name ?? "レース未設定"} · {raceDateLabel(race.race_date)} ·{" "}
+          {goalTypeLabel(race.goal_type)} {formatDistanceKm(race.distance_km, 1)}
         </span>
-      </div>
+      </p>
 
-      <dl className="mt-4 grid grid-cols-3 gap-3 border-t border-hairline pt-4">
+      {days == null ? (
+        <p className="text-sm text-ink-muted">日程未定</p>
+      ) : days < 0 ? (
+        <p className="text-sm text-ink-muted">開催済み</p>
+      ) : (
+        <p className="font-mono text-[64px] leading-none font-medium text-ink">
+          {days}
+          <span className="ml-1 font-sans text-lg font-bold">日</span>
+        </p>
+      )}
+
+      <dl className="grid grid-cols-3 gap-x-4 gap-y-1">
         <div>
-          <dt className="text-xs tracking-wide text-ink-muted">種別</dt>
-          <dd className="mt-0.5 text-sm font-medium text-ink-soft">
-            {goalTypeLabel(race.goal_type)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-xs tracking-wide text-ink-muted">距離</dt>
-          <dd className="mt-0.5 font-mono text-sm text-ink-soft">
-            {formatDistanceKm(race.distance_km)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-xs tracking-wide text-ink-muted">目標タイム</dt>
-          <dd className="mt-0.5 font-mono text-base font-semibold text-ink">
+          <dt className="font-mono text-xs text-ink-muted">目標</dt>
+          <dd className="mt-0.5 font-mono text-[15px] text-ink">
             {formatTargetTime(race.target_time_seconds)}
           </dd>
         </div>
+        {progress != null && (
+          <>
+            <div>
+              <dt className="font-mono text-xs text-ink-muted">
+                予測{vdot != null ? ` (VDOT ${vdot.toFixed(1)})` : ""}
+              </dt>
+              <dd className="mt-0.5 font-mono text-[15px] text-ink">
+                {formatTargetTime(progress.predicted_time_seconds)}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-mono text-xs text-ink-muted">差</dt>
+              {/*
+               * A positive gap means the prediction is slower than the target,
+               * which is the only direction the reader has to act on.
+               */}
+              <dd
+                className={`mt-0.5 font-mono text-[15px] ${
+                  progress.gap_seconds > 0
+                    ? "font-bold text-status-warn"
+                    : "text-ink"
+                }`}
+              >
+                {formatGap(progress.gap_seconds)}
+              </dd>
+            </div>
+          </>
+        )}
       </dl>
 
       {race.notes != null && race.notes.trim() !== "" && (
-        <p className="mt-4 rounded-md bg-well px-3 py-2 text-sm text-ink-muted">
-          {race.notes}
-        </p>
+        <p className="text-[13px] leading-[1.6] text-ink-muted">{race.notes}</p>
       )}
-    </article>
+    </div>
+  );
+}
+
+/** One `【見出し】本文` section of `focus_notes`, as a ruled row. */
+function FocusRow({ section }: { section: FocusSection }): JSX.Element {
+  return (
+    <div className="grid gap-x-8 gap-y-1 border-b border-hairline py-3 md:grid-cols-[160px_1fr]">
+      <p className="text-[13px] font-bold text-ink">{section.title}</p>
+      <p className="text-sm leading-[1.7] whitespace-pre-line text-ink-soft">
+        {section.body}
+      </p>
+    </div>
   );
 }
 
 /**
- * One focus section. Untitled sections (preamble) render as a plain lead
- * paragraph; titled sections render as a shared `Disclosure` card. The first
- * few titled sections are open by default; later ones stay collapsed.
+ * The current phase: the one-line focus, then its rules as ruled rows.
+ *
+ * Only the first three rules stay open. The rest are a footnote behind a
+ * disclosure — a phase is defined by its headline constraint, and a wall of
+ * rules buries it (#1122).
  */
-function FocusSectionCard({
-  title,
-  body,
-  defaultOpen,
-}: {
-  title: string | null;
-  body: string;
-  defaultOpen: boolean;
-}) {
-  if (title == null) {
-    return (
-      <p className="text-[15px] leading-relaxed font-medium text-ink-soft">
-        {body}
-      </p>
-    );
-  }
+function FocusRows({ sections }: { sections: FocusSection[] }): JSX.Element {
+  // An untitled section is the preamble before the first 【…】 (or the whole
+  // note when it carries no headings): prose, not a rule, so it leads.
+  const preamble = sections.filter((section) => section.title == null);
+  const rules = sections.filter((section) => section.title != null);
+  const shown = rules.slice(0, 3);
+  const folded = rules.slice(3);
 
   return (
-    <Disclosure
-      defaultOpen={defaultOpen}
-      title={
-        <>
-          <span
-            aria-hidden="true"
-            className="h-3 w-3 shrink-0 rounded-sm bg-accent"
-          />
-          {title}
-        </>
-      }
-    >
-      <p className="text-sm leading-relaxed whitespace-pre-line text-ink-muted">
-        {body}
-      </p>
-    </Disclosure>
+    <div className="flex flex-col gap-3">
+      {preamble.map((section, index) => (
+        <p
+          // Sections are positional and have no stable id.
+          // eslint-disable-next-line react/no-array-index-key
+          key={index}
+          className="text-[15px] leading-[1.7] whitespace-pre-line text-ink-soft"
+        >
+          {section.body}
+        </p>
+      ))}
+      {rules.length > 0 && (
+        <div className="border-t border-hairline">
+          {shown.map((section, index) => (
+            // eslint-disable-next-line react/no-array-index-key
+            <FocusRow key={index} section={section} />
+          ))}
+          {folded.length > 0 && (
+            <Disclosure title={`ルール(${folded.length}件) 展開`}>
+              <div className="border-t border-hairline">
+                {folded.map((section, index) => (
+                  // eslint-disable-next-line react/no-array-index-key
+                  <FocusRow key={index} section={section} />
+                ))}
+              </div>
+            </Disclosure>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
-/** Card for one season retrospective on the vertical timeline. */
-function RetrospectiveCard({ retro }: { retro: SeasonRetrospective }) {
+/** One registered race that the A / B band does not headline. */
+function OtherRaceRow({ race }: { race: GoalRace }): JSX.Element {
   return (
-    <li className="relative">
-      <span
-        aria-hidden="true"
-        className="absolute top-1.5 -left-[27px] h-3 w-3 rounded-sm bg-ink ring-4 ring-white"
-      />
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-        <h3 className="text-base font-semibold text-ink">
+    <div className="grid items-baseline gap-x-4 gap-y-0.5 border-b border-hairline py-2.5 md:grid-cols-[120px_1fr_100px_90px_70px]">
+      <span className="font-mono text-[13px] text-ink-muted">
+        {race.race_date ?? "日程未定"}
+      </span>
+      <span className="text-sm font-bold text-ink">
+        {race.race_name ?? "-"}
+      </span>
+      <span className="text-[13px] text-ink-soft">
+        {goalTypeLabel(race.goal_type)}
+      </span>
+      <span className="font-mono text-[13px] text-ink-soft">
+        {formatTargetTime(race.target_time_seconds)}
+      </span>
+      <span className="font-mono text-[11px] text-ink-muted">
+        {`${race.priority ?? "-"} · ${statusLabel(race.status)}`}
+      </span>
+    </div>
+  );
+}
+
+/** The `key_learnings` of a season, as the quoted line it is. */
+function Learning({ text }: { text: string }): JSX.Element {
+  return (
+    <p className="border-l-2 border-ink pl-3 text-sm leading-[1.7] whitespace-pre-line text-ink-soft">
+      <span className="font-bold text-ink">学び:</span> {text}
+    </p>
+  );
+}
+
+/**
+ * One past season. The latest season's learning is the one still worth acting
+ * on, so it is shown; older ones fold away behind their own trigger.
+ */
+function RetrospectiveRow({
+  retro,
+  showLearning,
+}: {
+  retro: SeasonRetrospective;
+  showLearning: boolean;
+}): JSX.Element {
+  const learning = retro.key_learnings;
+  const hasLearning = learning != null && learning.trim() !== "";
+
+  return (
+    <div className="grid gap-x-8 gap-y-2 border-b border-hairline py-4 md:grid-cols-[120px_1fr]">
+      <div>
+        <p className="text-sm font-bold text-ink">
           {retro.season_label ?? "シーズン"}
-        </h3>
+        </p>
         {(retro.period_start != null || retro.period_end != null) && (
-          <span className="font-mono text-xs text-ink-muted">
-            {retro.period_start ?? "?"} 〜 {retro.period_end ?? "?"}
-          </span>
+          <p className="mt-0.5 font-mono text-xs text-ink-muted">
+            {retro.period_start ?? "?"} – {retro.period_end ?? "?"}
+          </p>
         )}
       </div>
-      {retro.narrative != null && (
-        <p className="mt-1.5 text-sm leading-relaxed whitespace-pre-line text-ink-soft">
-          {retro.narrative}
-        </p>
-      )}
-      {retro.key_learnings != null && retro.key_learnings.trim() !== "" && (
-        <Disclosure
-          className="mt-2"
-          title={
-            <span className="tracking-wide text-status-warn">学び</span>
-          }
-        >
-          <p className="text-sm leading-relaxed whitespace-pre-line text-ink-soft">
-            {retro.key_learnings}
+      <div className="flex flex-col gap-2">
+        {retro.narrative != null && (
+          <p className="text-sm leading-[1.7] whitespace-pre-line text-ink-soft">
+            {retro.narrative}
           </p>
-        </Disclosure>
-      )}
-    </li>
+        )}
+        {hasLearning &&
+          (showLearning ? (
+            <Learning text={learning} />
+          ) : (
+            <Disclosure title="学びを表示">
+              <Learning text={learning} />
+            </Disclosure>
+          ))}
+      </div>
+    </div>
   );
 }
 
@@ -445,7 +385,7 @@ export default function Goal() {
   usePageTitle("目標");
   const goalQuery = useGoal();
   // Race readiness is supplementary: a failure here must not block the page,
-  // so its error is ignored and the hero simply omits the prediction.
+  // so its error is ignored and the brief simply omits the prediction.
   const readinessQuery = useRaceReadiness();
 
   const goal = goalQuery.data ?? null;
@@ -463,7 +403,7 @@ export default function Goal() {
   // back on, so returning null left a white screen (#914).
   if (goal == null) {
     return (
-      <div className="space-y-6">
+      <div className="flex flex-col gap-6">
         <SectionHeading title="目標" />
         <EmptyState
           message="目標データがありません"
@@ -481,126 +421,120 @@ export default function Goal() {
   const hasProfile =
     profile.current_focus != null || profile.focus_notes != null;
   const focusSections = parseFocusNotes(profile.focus_notes);
-  // The hero headlines the first priority-A and first priority-B race (with the
-  // VDOT prediction folded in); the list below carries every other race, so no
-  // race is featured twice on the page.
+  // The A / B band headlines the first priority-A and first priority-B race
+  // (with the VDOT prediction folded in); the list below carries every other
+  // race, so no race appears twice on the page.
   const featuredRaces = [
     goals.find(isPriorityA),
     goals.find(isPriorityB),
   ].filter((race): race is GoalRace => race != null);
   const featuredIds = new Set(featuredRaces.map((race) => race.goal_id));
   const otherRaces = goals.filter((race) => !featuredIds.has(race.goal_id));
-  // The hero carries this page's only h1, and it renders nothing when there is
-  // neither a featured race nor a VDOT — which left the empty page headless
-  // under a run of h2 sections (#912). Mirrors CountdownHero's own guard.
-  const hasHero =
-    featuredRaces.length > 0 || readiness?.current_vdot != null;
+  const predictionRace = findPredictionRace(featuredRaces, readiness);
+  // The verdict counts down to the A race when there is one; a season with
+  // only lower-priority races still gets a countdown rather than "未登録".
+  const verdict = goalVerdict(
+    readiness,
+    featuredRaces[0] ?? pickFeaturedRace(goals),
+  );
+  const lead = fitnessLead(readiness);
 
   return (
-    <div className="space-y-8">
-      {/* 1. Race countdown + VDOT prediction */}
-      {hasHero ? (
-        <CountdownHero races={featuredRaces} readiness={readiness} />
-      ) : (
-        <SectionHeading title="目標" />
+    <div className="flex flex-col gap-12">
+      {/* 1. The one line: target vs prediction, and how long there is left */}
+      <VerdictLine
+        verdict={verdict.verdict}
+        verdictTone={verdict.tone}
+        rest={verdict.rest}
+        lead={lead}
+      />
+
+      {/* 2. A / B countdowns, prediction folded into the race it belongs to */}
+      {featuredRaces.length > 0 && (
+        <RaceColumns
+          races={featuredRaces}
+          predictionRaceId={predictionRace?.goal_id ?? null}
+          progress={readiness?.progress ?? null}
+          vdot={readiness?.current_vdot ?? null}
+        />
       )}
 
-      {/* 2. Current phase as a structured accordion */}
-      <section className="space-y-4">
-        <SectionHeading title="現フェーズ" as="h2" />
+      {/* 3. What this phase asks for */}
+      <SectionBlock
+        title="現フェーズ"
+        note={profile.updated_at != null ? `更新 ${profile.updated_at}` : undefined}
+        noteMono
+      >
         {hasProfile ? (
-          <div className="space-y-3">
+          <div className="flex flex-col gap-4">
             {profile.current_focus != null && (
-              <p className="border-l-4 border-accent pl-4 text-lg leading-snug font-semibold text-ink">
+              <p className="text-xl leading-snug font-bold text-ink">
                 {profile.current_focus}
               </p>
             )}
             {focusSections.length > 0 && (
-              <div className="space-y-2">
-                {focusSections.map((section, i) => (
-                  <FocusSectionCard
-                    // Sections are positional and have no stable id.
-                    // eslint-disable-next-line react/no-array-index-key
-                    key={i}
-                    title={section.title}
-                    body={section.body}
-                    defaultOpen={section.title == null || i < 3}
-                  />
-                ))}
-              </div>
-            )}
-            {profile.updated_at != null && (
-              <p className="text-xs text-ink-muted">更新: {profile.updated_at}</p>
+              <FocusRows sections={focusSections} />
             )}
           </div>
         ) : (
-          <div className={CARD_CLASS}>
-            <EmptyState
-              message="現フェーズが登録されていません"
-              hint={
-                <>
-                  CLI <CliCommand>/set-goal</CliCommand> で登録できます
-                </>
-              }
-            />
-          </div>
+          <EmptyState
+            message="現フェーズが登録されていません"
+            hint={
+              <>
+                CLI <CliCommand>/set-goal</CliCommand> で登録できます
+              </>
+            }
+          />
         )}
-      </section>
+      </SectionBlock>
 
-      {/* 3. Registered races (everything the hero does not headline) */}
-      <section className="space-y-4">
-        <SectionHeading title="レース登録" as="h2" />
-        {featuredRaces.length > 0 && (
-          <p className="text-xs text-ink-muted">
-            A / B レースはページ上部のカウントダウンに表示しています。
-          </p>
-        )}
+      {/* 4. Every race the band does not headline */}
+      <SectionBlock title="その他のレース">
         {otherRaces.length > 0 ? (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="border-t border-hairline">
             {otherRaces.map((race) => (
-              <RaceCard key={race.goal_id} race={race} />
+              <OtherRaceRow key={race.goal_id} race={race} />
             ))}
           </div>
         ) : (
-          <div className={CARD_CLASS}>
-            <EmptyState
-              message={
-                featuredRaces.length > 0
-                  ? "A / B 以外のレースは登録されていません"
-                  : "目標レースが登録されていません"
-              }
-              hint={
-                <>
-                  CLI <CliCommand>/set-goal</CliCommand> で登録できます
-                </>
-              }
-            />
-          </div>
+          <EmptyState
+            message={
+              featuredRaces.length > 0
+                ? "A / B 以外のレースは登録されていません"
+                : "目標レースが登録されていません"
+            }
+            hint={
+              <>
+                CLI <CliCommand>/set-goal</CliCommand> で登録できます
+              </>
+            }
+          />
         )}
-      </section>
+      </SectionBlock>
 
-      {/* 4. Season retrospectives as a timeline */}
-      <section className="space-y-4">
-        <SectionHeading title="昨季の振り返り" as="h2" />
+      {/* 5. What last season taught */}
+      <SectionBlock title="昨季の振り返り">
         {retrospectives.length > 0 ? (
-          <ol className="relative ml-1.5 space-y-6 border-l-2 border-hairline pl-6">
-            {retrospectives.map((retro) => (
-              <RetrospectiveCard key={retro.retro_id} retro={retro} />
+          <div className="border-t border-hairline">
+            {retrospectives.map((retro, index) => (
+              <RetrospectiveRow
+                key={retro.retro_id}
+                retro={retro}
+                showLearning={index === 0}
+              />
             ))}
-          </ol>
-        ) : (
-          <div className={CARD_CLASS}>
-            <EmptyState
-              message="振り返りが登録されていません"
-              hint={
-                <>
-                  CLI <CliCommand>/set-goal</CliCommand> で登録できます
-                </>
-              }
-            />
           </div>
+        ) : (
+          <EmptyState
+            message="振り返りが登録されていません"
+            hint={
+              <>
+                CLI <CliCommand>/set-goal</CliCommand> で登録できます
+              </>
+            }
+          />
         )}
-      </section>
+      </SectionBlock>
     </div>
   );
 }

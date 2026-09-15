@@ -84,6 +84,29 @@ describe("PhaseTimeline", () => {
     expect(screen.queryByText(/\*\*評価\*\*/)).not.toBeInTheDocument();
   });
 
+  it("test_phase_rows_grid", () => {
+    const { container } = render(<PhaseTimeline section={section(markedData)} />);
+
+    // Three phases, three rule-separated rows in the same 120/80/1fr grid.
+    const rows = container.querySelectorAll(
+      ".grid-cols-\\[120px_80px_1fr\\]",
+    );
+    expect(rows).toHaveLength(3);
+
+    for (const row of rows) {
+      // Each row states its score in the star colour...
+      const star = row.querySelector(".text-star");
+      expect(star).not.toBeNull();
+      // ...and the measurements behind it as a mono footnote.
+      const actual = row.querySelector(".font-mono.text-xs");
+      expect(actual?.textContent).toMatch(/^実際: /);
+    }
+
+    // The timeline's dots and rail are gone: the rows carry the structure.
+    expect(container.querySelector(".rounded-full")).toBeNull();
+    expect(container.querySelector("ol")).toBeNull();
+  });
+
   it("test_phase_fallback_without_markers", () => {
     render(<PhaseTimeline section={section(baseData)} />);
 
