@@ -202,9 +202,14 @@ export default function TimeSeriesChart({
           ...(isPace && paceBounds != null
             ? { min: paceBounds.min, max: paceBounds.max }
             : {}),
+          // Two ticks instead of ECharts' default five: 260px / two grids
+          // left 11px labels ~11px apart (Issue #1167). hideOverlap drops
+          // whichever one still collides once the axis snaps to real ticks.
+          splitNumber: 2,
           axisLabel: {
             color: AXIS_LABEL_COLOR,
             fontSize: CHART_FONT_SIZE,
+            hideOverlap: true,
             ...(isPace
               ? { formatter: (value: number) => formatPaceLabel(value) }
               : {}),

@@ -4,22 +4,30 @@ import {
   BASE_CHART_OPTION,
   CHART_FONT_SIZE,
   CHART_GRID,
-  CHART_SPLIT_NUMBER,
   COMPARE_COLOR,
   INK_COLOR,
   X_AXIS_STYLE,
 } from "../../components/chartTheme";
 import { formatTargetTime } from "../../utils/race";
-import {
-  formatDateLabel,
-  formatFullDateLabel,
-  toIsoDate,
-} from "../../utils/format";
+import { formatFullDateLabel, toIsoDate } from "../../utils/format";
 import type { EChartsOption } from "../../lib/echarts";
 import type { RacePredictionHistory } from "../../types";
 
 const PREDICTION_SERIES = "予測タイム";
 const REQUIRED_SERIES = "必要な傾き";
+
+/** 30 minutes, in seconds — the y-axis tick spacing (Issue #1167). */
+const HALF_HOUR_SECONDS = 1800;
+
+/** Rounds an axis extent down to the half-hour at or below it. */
+export function halfHourFloor(seconds: number): number {
+  return Math.floor(seconds / HALF_HOUR_SECONDS) * HALF_HOUR_SECONDS;
+}
+
+/** Rounds an axis extent up to the half-hour at or above it. */
+export function halfHourCeil(seconds: number): number {
+  return Math.ceil(seconds / HALF_HOUR_SECONDS) * HALF_HOUR_SECONDS;
+}
 
 /**
  * "予測の推移": the goal-race time each day's fitness implied, read against
@@ -107,6 +115,15 @@ export function buildPredictionChartOption(
     });
   }
 
+  // Snap the y extent to whole half-hours so a 4:30:00 target always lands on
+  // a gridline instead of a `scale: true` extent that drifts off it (#1167).
+  const yValues = points.map((point) => point.predicted_time_seconds);
+  if (target != null) {
+    yValues.push(target);
+  }
+  const yMin = halfHourFloor(Math.min(...yValues));
+  const yMax = halfHourCeil(Math.max(...yValues));
+
   return {
     ...BASE_CHART_OPTION,
     // The prediction is the primary series; everything it is measured against
@@ -123,21 +140,23 @@ export function buildPredictionChartOption(
       type: "time" as const,
       min: points[0].date,
       max: lastDay,
+      // Force month-granularity ticks: at day granularity "11/01" and "01/01"
+      // each repeat across years with nothing to tell them apart (#1167).
+      minInterval: 30 * 24 * 3600 * 1000,
       ...X_AXIS_STYLE,
       axisLabel: {
         ...X_AXIS_STYLE.axisLabel,
         formatter: (value: number) => {
           const day = isoDay(value);
-          return day != null ? formatDateLabel(day).slice(0, 5) : "";
+          return day != null ? day.slice(0, 7) : "";
         },
       },
     },
     yAxis: {
       type: "value" as const,
-      scale: true,
-      // hh:mm:ss labels are wide and the panel is short: four of them is all
-      // that fits without stacking (#1142).
-      splitNumber: CHART_SPLIT_NUMBER,
+      min: yMin,
+      max: yMax,
+      interval: HALF_HOUR_SECONDS,
       ...AXIS_STYLE,
       axisLabel: {
         ...AXIS_STYLE.axisLabel,

@@ -37,6 +37,8 @@ const LABELS = { heart_rate: "心拍", speed: "ペース" };
 interface AxisOption {
   splitLine?: { show?: boolean };
   axisLine?: { show?: boolean };
+  splitNumber?: number;
+  axisLabel?: { hideOverlap?: boolean };
   min?: number;
   max?: number;
 }
@@ -101,6 +103,18 @@ describe("TimeSeriesChart", () => {
     for (const axis of option.yAxis) {
       expect(axis.axisLine?.show).toBe(false);
       expect(axis.splitLine?.show).not.toBe(false);
+    }
+  });
+
+  it("test_time_series_y_axes_are_sparse", () => {
+    render(<TimeSeriesChart data={DATA} metricLabels={LABELS} />);
+
+    const option = lastOption();
+    // A 64px grid only fits 2-3 labels; the default tick count crowded
+    // 11px labels ~11px apart (Issue #1167).
+    for (const axis of option.yAxis) {
+      expect(axis.splitNumber).toBe(2);
+      expect(axis.axisLabel?.hideOverlap).toBe(true);
     }
   });
 

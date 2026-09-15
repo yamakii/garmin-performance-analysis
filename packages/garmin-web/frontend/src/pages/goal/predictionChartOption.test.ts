@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildPredictionChartOption } from "./predictionChartOption";
+import {
+  buildPredictionChartOption,
+  halfHourCeil,
+  halfHourFloor,
+} from "./predictionChartOption";
 import type { RacePredictionHistory, RacePredictionPoint } from "../../types";
 
 const RACE_DATE = "2027-02-14";
@@ -38,8 +42,14 @@ function history(
   };
 }
 
-type TimeAxis = { type?: string; min?: string; max?: string };
-type ValueAxis = { splitNumber?: number };
+type TimeAxis = {
+  type?: string;
+  min?: string;
+  max?: string;
+  minInterval?: number;
+  axisLabel?: { formatter?: (value: number) => string };
+};
+type ValueAxis = { interval?: number; min?: number; max?: number };
 type Grid = { top?: number; bottom?: number };
 type MarkLine = { data?: { yAxis?: number; xAxis?: string }[] };
 type Series = { name?: string; data?: unknown[]; markLine?: MarkLine };
@@ -131,9 +141,34 @@ describe("buildPredictionChartOption", () => {
     const grid = option.grid as Grid;
     expect(grid).toBeDefined();
     expect((grid.top ?? 0) + (grid.bottom ?? 0)).toBeLessThanOrEqual(60);
+  });
 
-    // Time labels are the widest in the app; four of them is what fits.
+  it("test_prediction_x_axis_labels_include_year", () => {
+    const option = buildPredictionChartOption(history())!;
+
+    const xAxis = option.xAxis as TimeAxis;
+    // MM/DD repeats "11/01" and "01/01" across the 2025-09 -> 2027-02 range
+    // with no year to tell them apart (#1167).
+    expect(xAxis.axisLabel?.formatter?.(Date.parse("2025-11-01T00:00:00"))).toBe(
+      "2025-11",
+    );
+    expect(xAxis.axisLabel?.formatter?.(Date.parse("2027-01-01T00:00:00"))).toBe(
+      "2027-01",
+    );
+    // Forces month-granularity ticks so the axis doesn't sprout a day-level
+    // tick between two labelled months.
+    expect(xAxis.minInterval).toBe(2592000000);
+  });
+
+  it("test_prediction_y_axis_half_hour_ticks", () => {
+    const option = buildPredictionChartOption(history())!;
+
     const yAxis = option.yAxis as ValueAxis;
-    expect(yAxis.splitNumber).toBe(3);
+    expect(yAxis.interval).toBe(1800);
+
+    // The target 4:30:00 (16200s) must land on a gridline.
+    expect(halfHourFloor(15845)).toBe(14400);
+    expect(halfHourCeil(21200)).toBe(21600);
+    expect(halfHourFloor(16200)).toBe(16200);
   });
 });
