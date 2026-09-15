@@ -7,7 +7,7 @@ import {
   waitFor,
   within,
 } from "../test/utils";
-import ActivityDetail, { secondsOverCeiling } from "./ActivityDetail";
+import ActivityDetail, { BarCell, secondsOverCeiling } from "./ActivityDetail";
 import type {
   ActivityDetailResponse,
   SectionsResponse,
@@ -623,6 +623,34 @@ describe("ActivityDetail splits table bars", () => {
       .slice(0, 5)
       .map((row) => barWidth(within(row).getAllByRole("cell")[2]));
     expect(widths).toEqual([12, 56, 78, 100, 34]);
+  });
+
+  it("test_split_bar_positioned_in_inner_box", () => {
+    render(
+      <table>
+        <tbody>
+          <tr>
+            <BarCell widthPct={100} color="#1f6f6b" flagged={false}>
+              6:30/km
+            </BarCell>
+          </tr>
+        </tbody>
+      </table>,
+    );
+
+    const cell = screen.getByRole("cell");
+    const bar = barOf(cell) as HTMLElement;
+    expect(bar).not.toBeNull();
+
+    // A full-width bar must stop at the cell's padding, so the box it is
+    // positioned against is the inner div, not the padded cell itself (#1145):
+    // otherwise the pace and HR bars touch and read as one band.
+    const positioned = bar.parentElement as HTMLElement;
+    expect(positioned.tagName).toBe("DIV");
+    expect(positioned).toHaveClass("relative");
+    expect(cell).not.toHaveClass("relative");
+    expect(cell).toHaveClass("px-2");
+    expect(barWidth(cell)).toBe(100);
   });
 });
 

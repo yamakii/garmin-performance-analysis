@@ -21,8 +21,19 @@ function installObserver(): { callbacks: ObserverCallback[]; observed: string[] 
   return { callbacks, observed };
 }
 
+/**
+ * jsdom has no layout, so `scrollIntoView` is not implemented at all. It is
+ * assigned (not spied on) for that reason, and removed again afterwards.
+ */
+function stubScrollIntoView() {
+  const scrollIntoView = vi.fn();
+  Element.prototype.scrollIntoView = scrollIntoView;
+  return scrollIntoView;
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
+  delete (Element.prototype as Partial<Element>).scrollIntoView;
 });
 
 describe("SectionNav", () => {
@@ -84,6 +95,46 @@ describe("SectionNav", () => {
     expect(splits).toHaveClass("font-bold", "border-b-2");
     expect(screen.getByRole("link", { name: "総合評価" })).not.toHaveAttribute(
       "aria-current",
+    );
+  });
+
+  it("test_section_nav_scrolls_active_into_view", () => {
+    const { callbacks } = installObserver();
+    const scrollIntoView = stubScrollIntoView();
+    render(
+      <>
+        <div id="overview" />
+        <div id="split" />
+        <SectionNav
+          items={[
+            { id: "overview", label: "総合評価" },
+            { id: "split", label: "スプリット" },
+          ]}
+        />
+      </>,
+    );
+
+    // Nothing is current yet, so the strip has not been scrolled.
+    expect(scrollIntoView).not.toHaveBeenCalled();
+
+    act(() => {
+      callbacks[0]([
+        {
+          target: document.getElementById("split") as Element,
+          isIntersecting: true,
+        },
+      ]);
+    });
+
+    // The item that just became current is brought into the strip — `nearest`
+    // on both axes so the page itself never moves.
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      block: "nearest",
+      inline: "nearest",
+    });
+    expect(scrollIntoView.mock.contexts[0]).toBe(
+      screen.getByRole("link", { name: "スプリット" }),
     );
   });
 });
