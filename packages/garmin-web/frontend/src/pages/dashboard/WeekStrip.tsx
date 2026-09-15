@@ -66,95 +66,104 @@ export default function WeekStrip({
   );
 
   return (
-    <div
-      role="list"
-      className="grid grid-cols-7 border-t border-l border-ink border-l-hairline"
-    >
-      {days.map((date) => {
-        const day = byDate.get(date) ?? null;
-        const prescription = day?.prescriptions[0] ?? null;
-        const activity = day?.activities[0] ?? null;
-        const isToday = date === today;
-        const isRest = prescription?.session_type === "rest";
-        const isReplaced = prescription?.status === "replaced";
-        const isSkipped = prescription?.status === "skipped";
-        const tinted = isRest || isReplaced;
-        const name = prescription != null ? nameOf(prescription) : null;
-        const target = prescription != null ? targetSummary(prescription) : "";
+    // Seven cells never fit a phone's width, so the strip scrolls sideways
+    // rather than squeezing each cell down to a few characters, where the
+    // labels break one character per line (#1143).
+    <div className="overflow-x-auto">
+      <div
+        role="list"
+        className="grid min-w-[640px] grid-cols-7 border-t border-l border-ink border-l-hairline"
+      >
+        {days.map((date) => {
+          const day = byDate.get(date) ?? null;
+          const prescription = day?.prescriptions[0] ?? null;
+          const activity = day?.activities[0] ?? null;
+          const isToday = date === today;
+          const isRest = prescription?.session_type === "rest";
+          const isReplaced = prescription?.status === "replaced";
+          const isSkipped = prescription?.status === "skipped";
+          const tinted = isRest || isReplaced;
+          const name = prescription != null ? nameOf(prescription) : null;
+          const target =
+            prescription != null ? targetSummary(prescription) : "";
 
-        return (
-          <div
-            role="listitem"
-            key={date}
-            className={`flex min-h-[118px] flex-col gap-1.5 border-r border-b border-hairline p-3 ${
-              isToday ? "bg-accent-tint" : tinted ? "bg-warn-tint" : ""
-            }`}
-          >
-            <p
-              className={`font-mono text-xs ${
-                isToday ? "font-semibold text-accent" : "text-ink-muted"
+          return (
+            <div
+              role="listitem"
+              key={date}
+              className={`flex min-h-[118px] min-w-0 flex-col gap-1.5 border-r border-b border-hairline p-3 ${
+                isToday ? "bg-accent-tint" : tinted ? "bg-warn-tint" : ""
               }`}
             >
-              {dayOfMonthLabel(date)} {weekdayChar(date)}
-              {isToday && (
-                <span className="ml-1 text-[10px] tracking-[0.06em]">
-                  TODAY
-                </span>
-              )}
-            </p>
+              <p
+                className={`font-mono text-xs ${
+                  isToday ? "font-semibold text-accent" : "text-ink-muted"
+                }`}
+              >
+                {dayOfMonthLabel(date)} {weekdayChar(date)}
+                {isToday && (
+                  <span className="ml-1 text-[10px] tracking-[0.06em]">
+                    TODAY
+                  </span>
+                )}
+              </p>
 
-            {prescription == null ? (
-              <p className="text-sm text-ink-muted">休養</p>
-            ) : isReplaced ? (
-              <>
-                <p className="text-sm font-bold text-status-warn">
-                  <s>
-                    {name}
-                    {target !== "" && ` ${target}`}
-                  </s>
-                </p>
-                <p className="font-mono text-xs text-status-warn">→ 代替</p>
-              </>
-            ) : (
-              <>
-                <p
-                  className={`text-sm font-bold ${
-                    isRest
-                      ? "text-status-warn"
-                      : isSkipped
-                        ? "text-ink-muted line-through"
-                        : "text-ink"
-                  }`}
-                >
-                  {name}
-                </p>
-                {isRest && prescription.rationale != null && (
-                  <p className="text-xs text-status-warn">
-                    {prescription.rationale}
+              {prescription == null ? (
+                <p className="text-sm text-ink-muted">休養</p>
+              ) : isReplaced ? (
+                <>
+                  <p className="text-sm font-bold text-status-warn [overflow-wrap:anywhere]">
+                    <s>
+                      {name}
+                      {target !== "" && ` ${target}`}
+                    </s>
                   </p>
-                )}
-                {activity != null ? (
-                  <p className="font-mono text-xs text-ink">
-                    {actualSummary(activity)}
-                  </p>
-                ) : (
-                  target !== "" && (
-                    <p
-                      className={`font-mono text-xs ${
-                        isSkipped
+                  <p className="font-mono text-xs text-status-warn">→ 代替</p>
+                </>
+              ) : (
+                <>
+                  <p
+                    className={`text-sm font-bold [overflow-wrap:anywhere] ${
+                      isRest
+                        ? "text-status-warn"
+                        : isSkipped
                           ? "text-ink-muted line-through"
-                          : "text-ink-muted"
-                      }`}
-                    >
-                      {target}
+                          : "text-ink"
+                    }`}
+                  >
+                    {name}
+                  </p>
+                  {isRest && prescription.rationale != null && (
+                    // A rationale quotes the rule it came from
+                    // (`extra_rest_days=1`), which has no break opportunity of
+                    // its own and would otherwise cross into the next cell.
+                    <p className="text-xs text-status-warn [overflow-wrap:anywhere]">
+                      {prescription.rationale}
                     </p>
-                  )
-                )}
-              </>
-            )}
-          </div>
-        );
-      })}
+                  )}
+                  {activity != null ? (
+                    <p className="font-mono text-xs text-ink">
+                      {actualSummary(activity)}
+                    </p>
+                  ) : (
+                    target !== "" && (
+                      <p
+                        className={`font-mono text-xs [overflow-wrap:anywhere] ${
+                          isSkipped
+                            ? "text-ink-muted line-through"
+                            : "text-ink-muted"
+                        }`}
+                      >
+                        {target}
+                      </p>
+                    )
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

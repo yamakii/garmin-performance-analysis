@@ -1,4 +1,4 @@
-import type { JSX } from "react";
+import type { JSX, ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type { MonthPlan, PlanDay, PlanWeek } from "../../types";
 import { toIsoDate } from "../../utils/format";
@@ -31,8 +31,16 @@ function emptyDay(date: string): PlanDay {
   return { date, in_month: false, prescriptions: [], activities: [] };
 }
 
-/** The shared column geometry: the week header, then the seven days. */
-const ROW_CLASS = "grid grid-cols-[96px_repeat(7,1fr)]";
+/**
+ * The shared column geometry: the week header, then the seven days.
+ *
+ * Every row is its own grid, so the seven day columns only line up while they
+ * resolve to the same width on every row. `1fr` is `minmax(auto, 1fr)`, which
+ * lets a row holding one unbreakable token (`extra_rest_days=1`) widen that
+ * column and knock the whole row out of step with the header (#1143);
+ * `minmax(0, 1fr)` keeps the track free to shrink, and the cells wrap instead.
+ */
+const ROW_CLASS = "grid grid-cols-[96px_repeat(7,minmax(0,1fr))]";
 
 /**
  * "計画 38km" / "ロング 16km" — what the week asks for in one line.
@@ -71,10 +79,17 @@ function weekTargetLine(week: PlanWeek): string {
 export default function MonthGrid({
   plan,
   today = new Date(),
+  bands = null,
 }: {
   plan: MonthPlan;
   /** Injectable clock for tests. */
   today?: Date;
+  /**
+   * The block bands, drawn above the header row *inside* the grid's own
+   * horizontal scroller: they share the day columns, so they have to share
+   * the scroll offset too or they drift apart on a narrow screen (#1143).
+   */
+  bands?: ReactNode;
 }): JSX.Element {
   const labels = weekdayLabels(plan.week_start_day);
   const rows = weekRowsForMonth(plan.month, plan.week_start_day);
@@ -85,72 +100,77 @@ export default function MonthGrid({
   const todayIso = toIsoDate(today);
 
   return (
-    <div className="flex flex-col gap-2 overflow-x-auto">
-      <div role="table" aria-label="月間プラン" className="min-w-[720px]">
-        <div role="rowgroup">
-          <div role="row" className={`${ROW_CLASS} border-b border-ink`}>
-            <div
-              role="columnheader"
-              className="pb-2 font-mono text-xs text-ink-muted"
-            >
-              週
-            </div>
-            {labels.map((label) => (
-              <div
-                key={label}
-                role="columnheader"
-                className="pb-2 pl-2.5 font-mono text-xs text-ink-muted"
-              >
-                {label}
-              </div>
-            ))}
-          </div>
-        </div>
-        <div role="rowgroup">
-          {rows.map((row) => {
-            const week =
-              weekByStart.get(row.weekStart) ??
-              emptyWeek(row.weekStart, row.days);
-            const targetLine = weekTargetLine(week);
-            return (
-              <div
-                key={row.weekStart}
-                role="row"
-                className={`${ROW_CLASS} border-b border-hairline`}
-              >
+    <div className="flex flex-col gap-2">
+      <div className="overflow-x-auto">
+        <div className="flex min-w-[720px] flex-col gap-2">
+          {bands}
+          <div role="table" aria-label="月間プラン">
+            <div role="rowgroup">
+              <div role="row" className={`${ROW_CLASS} border-b border-ink`}>
                 <div
-                  role="rowheader"
-                  className="flex flex-col gap-1 border-r border-hairline py-2.5 pr-2.5"
+                  role="columnheader"
+                  className="pb-2 font-mono text-xs text-ink-muted"
                 >
-                  <Link
-                    to={`/weekly-reviews/${row.weekStart}`}
-                    className={`font-mono text-[13px] font-semibold ${
-                      week.review_exists ? "text-accent" : "text-ink"
-                    }`}
-                  >
-                    {weekRowLabel(row.weekStart)}
-                  </Link>
-                  <AdherenceChip adherence={week.adherence} />
-                  {targetLine !== "" && (
-                    <p className="font-mono text-xs text-ink-muted">
-                      {targetLine}
-                    </p>
-                  )}
+                  週
                 </div>
-                {row.days.map((date, index) => (
-                  <DayCell
-                    key={date}
-                    day={dayByDate.get(date) ?? emptyDay(date)}
-                    isToday={date === todayIso}
-                    // The long run sits on the last column of the row, so the
-                    // ladder target lands there even before the week is
-                    // prescribed.
-                    ladderStep={index === 6 ? week.ladder_step : null}
-                  />
+                {labels.map((label) => (
+                  <div
+                    key={label}
+                    role="columnheader"
+                    className="pb-2 pl-2.5 font-mono text-xs text-ink-muted"
+                  >
+                    {label}
+                  </div>
                 ))}
               </div>
-            );
-          })}
+            </div>
+            <div role="rowgroup">
+              {rows.map((row) => {
+                const week =
+                  weekByStart.get(row.weekStart) ??
+                  emptyWeek(row.weekStart, row.days);
+                const targetLine = weekTargetLine(week);
+                return (
+                  <div
+                    key={row.weekStart}
+                    role="row"
+                    className={`${ROW_CLASS} border-b border-hairline`}
+                  >
+                    <div
+                      role="rowheader"
+                      className="flex flex-col gap-1 border-r border-hairline py-2.5 pr-2.5"
+                    >
+                      <Link
+                        to={`/weekly-reviews/${row.weekStart}`}
+                        className={`font-mono text-[13px] font-semibold ${
+                          week.review_exists ? "text-accent" : "text-ink"
+                        }`}
+                      >
+                        {weekRowLabel(row.weekStart)}
+                      </Link>
+                      <AdherenceChip adherence={week.adherence} />
+                      {targetLine !== "" && (
+                        <p className="font-mono text-xs text-ink-muted">
+                          {targetLine}
+                        </p>
+                      )}
+                    </div>
+                    {row.days.map((date, index) => (
+                      <DayCell
+                        key={date}
+                        day={dayByDate.get(date) ?? emptyDay(date)}
+                        isToday={date === todayIso}
+                        // The long run sits on the last column of the row, so
+                        // the ladder target lands there even before the week
+                        // is prescribed.
+                        ladderStep={index === 6 ? week.ladder_step : null}
+                      />
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
       <p className="font-mono text-xs text-ink-muted">

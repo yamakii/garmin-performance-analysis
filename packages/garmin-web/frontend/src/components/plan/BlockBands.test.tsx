@@ -64,6 +64,42 @@ describe("BlockBands", () => {
     expect(band.className).toContain("bg-ink");
   });
 
+  it("test_block_bands_use_minmax_columns", () => {
+    render(<BlockBands blocks={[block()]} days={DAYS} />);
+
+    // The bands carry the grid's geometry, so they need the grid's fix: a
+    // `1fr` day track can be widened by its content and stop matching the
+    // calendar row underneath it (#1143).
+    const row = screen.getAllByRole("listitem")[0];
+    expect(row.className).toContain("minmax(0,1fr)");
+    expect(row.className).not.toContain("repeat(7,1fr)");
+  });
+
+  it("test_block_band_caption_has_title", () => {
+    render(
+      <BlockBands
+        blocks={[
+          block({
+            phase: "taper",
+            title: "新潟テーパー+本番",
+            start_date: null,
+            end_date: null,
+            quality_sessions_per_week: null,
+            weight_mode: null,
+          }),
+        ]}
+        days={DAYS}
+      />,
+    );
+
+    // A band is as wide as its block, not as its caption, so a caption that
+    // does not fit ends in an ellipsis and states itself in full on hover.
+    const band = screen.getByText(/新潟テーパー/);
+    expect(band.textContent).toBe("テーパー · 新潟テーパー+本番");
+    expect(band).toHaveAttribute("title", "テーパー · 新潟テーパー+本番");
+    expect(band.className).toContain("text-ellipsis");
+  });
+
   it("tints an easing phase and renders nothing when no block is visible", () => {
     const { rerender } = render(
       <BlockBands

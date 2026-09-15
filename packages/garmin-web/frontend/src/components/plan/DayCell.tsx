@@ -190,7 +190,10 @@ export default function DayCell({
   return (
     <div
       role="cell"
-      className={`flex min-h-[96px] flex-col gap-1 border-r border-hairline p-2.5 pr-2 ${
+      // `min-w-0` keeps the cell from widening its grid column, and the
+      // inherited `overflow-wrap` breaks the one token a rationale can carry
+      // that has no break opportunity at all (`extra_rest_days=1`, #1143).
+      className={`flex min-h-[96px] min-w-0 flex-col gap-1 border-r border-hairline p-2.5 pr-2 [overflow-wrap:anywhere] ${
         isToday
           ? "bg-accent-tint"
           : replaced || rest
