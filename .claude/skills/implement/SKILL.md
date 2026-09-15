@@ -146,7 +146,7 @@ Workflow の返り値:
   - `内容チェック WARNING` → ユーザーに報告し判断を仰ぐ（マージするなら `/ship --pr N --validated`）
   - `ci-guard が failure` → CI ログを確認して修正
   - `L3` → メインセッションが worktree の `.md` 差分を diff レビューし、`ci-guard` green ならマージ。E2E はマージ後の新規セッションで実行（`worktree-validation-protocol.md` §4）
-  - `コンフリクト` → `git -C <worktree> rebase origin/main` → push → 再度 Step 4
+  - `コンフリクト` → メインセッションが `git -C <worktree> merge --no-edit origin/main` で解消（rebase は使わない: ask ルールで止まる）→ push → CI 待ち → マージ。同一ティアの Issue が同じファイル（`utils/verdict.ts` のような集約ファイルや docs の同一表）を共有すると兄弟マージ後に必ずここに来るので、次回は Issue 分割の時点で共有ファイルを持たせないか直列化する
 - **dropped**: agent 死亡 or skip。エラーを報告
 
 ### Step 6: 次のティアへ進行
