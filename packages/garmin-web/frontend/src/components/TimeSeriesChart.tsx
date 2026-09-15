@@ -12,6 +12,7 @@ import {
   METRIC_DECIMALS,
   THRESHOLD_LINE,
 } from "./chartTheme";
+import { axisUnitFor, threeTickAxis } from "./timeSeriesAxis";
 
 const GRID_HEIGHT = 64;
 const GRID_GAP = 36;
@@ -190,22 +191,39 @@ export default function TimeSeriesChart({
       })),
       yAxis: metricNames.map((name, i) => {
         const isPace = name === "speed";
+        // The plot range: the robust (stop-clipped) bounds for pace
+        // (#1148), otherwise the plain min/max of that metric's finite
+        // values. Heart rate additionally grows to cover the prescribed
+        // ceiling, so the dashed cap line always lands inside the axis.
+        let lo: number;
+        let hi: number;
+        if (isPace && paceBounds != null) {
+          lo = paceBounds.min;
+          hi = paceBounds.max;
+        } else {
+          const finite = (isPace ? paceValues : data.metrics[name]).filter(
+            (v): v is number => typeof v === "number" && Number.isFinite(v),
+          );
+          lo = finite.length > 0 ? Math.min(...finite) : 0;
+          hi = finite.length > 0 ? Math.max(...finite) : 0;
+        }
+        if (name === "heart_rate" && hrCeiling != null) {
+          lo = Math.min(lo, hrCeiling);
+          hi = Math.max(hi, hrCeiling);
+        }
+        // Snapped to exactly three round-number labels (min/mid/max)
+        // instead of ECharts' own tick choice, which crowded 4 labels on
+        // heart rate and ragged mm:ss values on pace (Issue #1170).
+        const axis = threeTickAxis(lo, hi, axisUnitFor(name, lo, hi));
         return {
           type: "value",
           gridIndex: i,
           name: metricLabels[name] ?? name,
           nameTextStyle: { color: AXIS_LABEL_COLOR, fontSize: CHART_FONT_SIZE },
-          scale: true,
           inverse: isPace,
-          // Stops are clipped off the pace axis so the running range fills the
-          // grid; every other metric keeps plain auto-scaling (#1148).
-          ...(isPace && paceBounds != null
-            ? { min: paceBounds.min, max: paceBounds.max }
-            : {}),
-          // Two ticks instead of ECharts' default five: 260px / two grids
-          // left 11px labels ~11px apart (Issue #1167). hideOverlap drops
-          // whichever one still collides once the axis snaps to real ticks.
-          splitNumber: 2,
+          min: axis.min,
+          max: axis.max,
+          interval: axis.interval,
           axisLabel: {
             color: AXIS_LABEL_COLOR,
             fontSize: CHART_FONT_SIZE,
