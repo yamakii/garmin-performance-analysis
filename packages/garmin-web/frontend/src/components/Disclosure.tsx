@@ -24,16 +24,24 @@ export default function Disclosure({
   className?: string;
 }) {
   return (
-    <details
-      open={defaultOpen}
-      className={`group${className != null ? ` ${className}` : ""}`}
-    >
+    <details open={defaultOpen} className={className}>
       <summary className="flex cursor-pointer list-none items-center gap-1.5 py-1 font-mono text-[13px] text-accent hover:underline">
         <span className="min-w-0">{title}</span>
-        <span aria-hidden="true" className="group-open:hidden">
+        {/*
+         * `group-open:` matches ANY open ancestor `.group`, not just this
+         * `<details>` — nesting Disclosures (e.g. ActivityDetail's split
+         * table around SplitNarrative) flipped the inner arrow permanently
+         * once the outer one opened (#1177). The arbitrary variant below
+         * anchors the match to `details[open] > summary > &` so it only
+         * responds to this element's own `<details>`.
+         */}
+        <span aria-hidden="true" className="[details[open]>summary>&]:hidden">
           ↓
         </span>
-        <span aria-hidden="true" className="hidden group-open:inline">
+        <span
+          aria-hidden="true"
+          className="hidden [details[open]>summary>&]:inline"
+        >
           ↑
         </span>
       </summary>

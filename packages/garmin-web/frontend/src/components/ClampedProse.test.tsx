@@ -53,4 +53,34 @@ describe("ClampedProse", () => {
     expect(strong).not.toBeNull();
     expect(strong?.textContent).toBe("安定");
   });
+
+  it("test_clamped_prose_toggle_matches_disclosure_trigger", () => {
+    const text = "あ".repeat(200);
+    render(<ClampedProse text={text} lines={3} />);
+
+    const toggle = screen.getByRole("button", { name: "続きを読む" });
+
+    expect(toggle.className).toMatch(/(^|\s)font-mono(\s|$)/);
+    expect(toggle.className).toMatch(/(^|\s)text-\[13px\](\s|$)/);
+    expect(toggle.className).toMatch(/(^|\s)text-accent(\s|$)/);
+    expect(toggle.className).toMatch(/(^|\s)hover:underline(\s|$)/);
+    expect(toggle.className).not.toMatch(/text-ink-muted/);
+    // A standalone `underline` class (not `hover:underline`) would show the
+    // underline at rest, which the Disclosure trigger does not.
+    expect(toggle.className).not.toMatch(/(^|\s)underline(\s|$)/);
+
+    expect(toggle.textContent).toBe("続きを読む↓");
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("test_clamped_prose_toggle_label_after_expand", () => {
+    const text = "あ".repeat(200);
+    render(<ClampedProse text={text} lines={3} />);
+
+    const toggle = screen.getByRole("button", { name: "続きを読む" });
+    fireEvent.click(toggle);
+
+    expect(toggle.textContent).toBe("閉じる↑");
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+  });
 });
