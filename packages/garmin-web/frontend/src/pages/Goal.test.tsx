@@ -446,6 +446,24 @@ describe("Goal", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("test_goal_focus_updated_at_formatted", async () => {
+    stubFetch({
+      profile: {
+        current_focus: "サブ4達成に向けた持久力強化",
+        focus_notes: null,
+        // DuckDB hands the timestamp over with microseconds attached.
+        updated_at: "2026-09-15 00:38:46.745998",
+      },
+      goals: [],
+      retrospectives: [],
+    });
+
+    renderGoal();
+
+    expect(await screen.findByText("更新 2026-09-15 00:38")).toBeInTheDocument();
+    expect(screen.queryByText(/745998/)).toBeNull();
+  });
+
   it("test_Goal_focus_notes_fallback_without_brackets", async () => {
     stubFetch({
       profile: {
