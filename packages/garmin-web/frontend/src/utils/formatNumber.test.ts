@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { axisTooltipFormatter, formatNumber } from "./formatNumber";
+import {
+  axisTooltipFormatter,
+  formatNumber,
+  formatSigned,
+} from "./formatNumber";
 
 describe("formatNumber", () => {
   it("test_formatNumber_strips_floating_point_noise", () => {
@@ -22,6 +26,31 @@ describe("formatNumber", () => {
   it("test_formatNumber_null_and_nan_return_dash", () => {
     expect(formatNumber(null)).toBe("-");
     expect(formatNumber(NaN)).toBe("-");
+  });
+});
+
+describe("formatSigned", () => {
+  it("test_format_signed", () => {
+    expect(formatSigned(-0.0015, 4)).toBe("-0.0015");
+    expect(formatSigned(0.0012, 4)).toBe("+0.0012");
+    expect(formatSigned(0, 4)).toBe("±0.0000");
+  });
+
+  it("test_format_signed_keeps_trailing_decimals", () => {
+    expect(formatSigned(1.5, 2)).toBe("+1.50");
+    expect(formatSigned(-2, 1)).toBe("-2.0");
+  });
+
+  it("test_format_signed_rounded_away_value_is_neutral", () => {
+    // -0.00004 rounds to 0.0000, so a "-" in front of zeros would mislead.
+    expect(formatSigned(-0.00004, 4)).toBe("±0.0000");
+    expect(formatSigned(-0, 1)).toBe("±0.0");
+  });
+
+  it("test_format_signed_null_and_nan_return_dash", () => {
+    expect(formatSigned(null, 4)).toBe("-");
+    expect(formatSigned(undefined, 4)).toBe("-");
+    expect(formatSigned(NaN, 4)).toBe("-");
   });
 });
 

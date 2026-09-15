@@ -22,6 +22,28 @@ export function formatNumber(
 }
 
 /**
+ * Signed fixed-decimal string for a delta, e.g. "-0.0015" / "+0.0012" /
+ * "±0.0000". The sign is part of the formatter so a caller never writes one
+ * into its template: a hard-coded "+" turns a negative delta into "+-0.0015"
+ * (Issue #1147). Decimals are kept (not stripped) because a delta is read
+ * against its siblings, which need the same width.
+ * null / undefined / NaN render as "-", as in {@link formatNumber}.
+ */
+export function formatSigned(
+  value: number | null | undefined,
+  decimals = 1,
+): string {
+  if (value == null || Number.isNaN(value)) {
+    return "-";
+  }
+  const magnitude = Math.abs(value).toFixed(decimals);
+  // Compare the rounded magnitude, so a value that rounds away (and -0) reads
+  // as "no change" rather than carrying a sign the digits do not show.
+  const sign = Number(magnitude) === 0 ? "±" : value > 0 ? "+" : "-";
+  return `${sign}${magnitude}`;
+}
+
+/**
  * ECharts axis-tooltip formatter. Maps a series name to its decimal
  * precision; series not in the map fall back to `fallback`.
  * Preserves the default marker (param.marker) and axis label

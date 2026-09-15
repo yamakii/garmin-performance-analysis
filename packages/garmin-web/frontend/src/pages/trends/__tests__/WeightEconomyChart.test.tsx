@@ -68,7 +68,19 @@ describe("WeightEconomyChart", () => {
 
     // delta_ef_per_5kg_loss 0.0022 surfaces as the effect-size note.
     expect(screen.getAllByText(/約5kg減/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/0\.0022/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/\+0\.0022/).length).toBeGreaterThan(0);
+  });
+
+  it("test_weight_economy_header_negative_delta", () => {
+    render(
+      <WeightEconomyChart
+        data={buildData(buildModel({ delta_ef_per_5kg_loss: -0.0015 }))}
+      />,
+    );
+
+    // A negative effect size keeps one sign: "+-0.0015" was the bug (#1147).
+    expect(screen.getByText(/約5kg減 → -0\.0015 EF/)).toBeInTheDocument();
+    expect(screen.queryByText(/\+-/)).toBeNull();
   });
 
   it("renders the collinearity (association, not causal) caveat", () => {
