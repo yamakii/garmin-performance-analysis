@@ -335,6 +335,19 @@ describe("Dashboard", () => {
     expect(screen.getAllByText("51")).toHaveLength(1);
   });
 
+  it("test_dashboard_condition_link_is_mono_13", async () => {
+    mockAll();
+    renderDashboard();
+
+    // Mono 13 is the brief's secondary-link step; text-sm (14px) left this one
+    // link a notch louder than the same link elsewhere (#1194).
+    const link = await screen.findByRole("link", {
+      name: "判定の根拠 → コンディション",
+    });
+    expect(link).toHaveClass("font-mono", "text-[13px]");
+    expect(link.className).not.toContain("text-sm");
+  });
+
   it("keeps the page alive when supplementary endpoints fail", async () => {
     mockAll();
     vi.mocked(fetchRaceReadiness).mockRejectedValue(new Error("boom"));
