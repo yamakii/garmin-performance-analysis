@@ -1,3 +1,5 @@
+import { robustAxisBounds } from "../utils/robustBounds";
+
 /**
  * Sparse, round-number Y axes for the time-series bands (Issue #1170).
  *
@@ -88,4 +90,78 @@ export function axisUnitFor(metric: string, lo: number, hi: number): number {
     return known;
   }
   return niceStepAtLeast((hi - lo) / 4);
+}
+
+/**
+ * Metrics whose axis range ignores stop-time zeros and one-off spikes
+ * (Issue #1176).
+ *
+ * A run holds still at traffic lights and water stops, so cadence and power
+ * samples drop to 0; ground contact time can carry a single-sample sensor
+ * spike. Auto-scaling to those squeezes the running values into a sliver of
+ * the band, so these metrics get the same robust percentile/IQR range pace
+ * has used since #1148.
+ */
+export const ROBUST_RANGE_METRICS: ReadonlySet<string> = new Set([
+  "speed",
+  "cadence",
+  "power",
+  "ground_contact_time",
+  "vertical_oscillation",
+  "vertical_ratio",
+]);
+
+/** Finite values of `values`, dropping null/undefined/NaN. */
+function finiteValues(values: (number | null)[]): number[] {
+  return values.filter(
+    (v): v is number => typeof v === "number" && Number.isFinite(v),
+  );
+}
+
+/** Plain min/max over the finite values of `values`; `{ lo: 0, hi: 0 }` when none. */
+function plainMinMax(values: (number | null)[]): { lo: number; hi: number } {
+  const finite = finiteValues(values);
+  return {
+    lo: finite.length > 0 ? Math.min(...finite) : 0,
+    hi: finite.length > 0 ? Math.max(...finite) : 0,
+  };
+}
+
+/**
+ * The `[lo, hi]` a band's axis should cover before snapping to three ticks
+ * (`threeTickAxis`).
+ *
+ * `ROBUST_RANGE_METRICS` get the percentile/IQR robust range
+ * (`robustAxisBounds`), falling back to the plain finite min/max when there
+ * are fewer than two finite values to compute percentiles from. `heart_rate`
+ * uses the plain min/max, stretched to include `hrCeiling` when given so the
+ * prescribed-cap line always lands inside the axis. Every other metric
+ * (including `elevation`, where the terrain change is real data, not an
+ * outlier) uses the plain finite min/max.
+ *
+ * `values` for "speed" are already pace in seconds per km (Issue #1148).
+ */
+export function axisRangeFor(
+  metric: string,
+  values: (number | null)[],
+  hrCeiling?: number | null,
+): { lo: number; hi: number } {
+  if (ROBUST_RANGE_METRICS.has(metric)) {
+    if (finiteValues(values).length >= 2) {
+      const bounds = robustAxisBounds(values);
+      if (bounds != null) {
+        return { lo: bounds.min, hi: bounds.max };
+      }
+    }
+    return plainMinMax(values);
+  }
+
+  const range = plainMinMax(values);
+  if (metric === "heart_rate" && hrCeiling != null) {
+    return {
+      lo: Math.min(range.lo, hrCeiling),
+      hi: Math.max(range.hi, hrCeiling),
+    };
+  }
+  return range;
 }

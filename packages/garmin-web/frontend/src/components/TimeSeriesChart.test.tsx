@@ -1,9 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import TimeSeriesChart, {
-  paceAxisBounds,
-  timeSeriesHeight,
-} from "./TimeSeriesChart";
+import TimeSeriesChart, { timeSeriesHeight } from "./TimeSeriesChart";
 import type { TimeSeriesResponse } from "../types";
 
 // echarts needs a real canvas; mock the modular wrapper out for jsdom and
@@ -44,6 +41,7 @@ interface AxisOption {
   min?: number;
   max?: number;
   interval?: number;
+  nameLocation?: string;
 }
 
 interface SeriesOption {
@@ -218,9 +216,43 @@ describe("TimeSeriesChart", () => {
     // the running paces filling the whole grid (#1148)...
     expect(pace.max).toBeLessThan(700);
     expect(pace.min).toBeGreaterThan(300);
-    // ...while heart rate keeps its plain min/max span, spike included:
-    // only the pace band clips outliers via the robust range.
+    // ...while heart rate is not in ROBUST_RANGE_METRICS, so it keeps its
+    // plain min/max span, spike included (#1176).
     expect(hr.max).toBeGreaterThanOrEqual(220);
+  });
+
+  it("test_power_axis_excludes_stop_zeros", () => {
+    // A run holds still at traffic lights: power samples drop to 0 while
+    // stopped. Those stops must not stretch the axis around the ~220W the
+    // run was actually held at (#1176).
+    const powers = [
+      ...Array.from({ length: 40 }, () => 220),
+      ...Array.from({ length: 3 }, () => 0),
+    ];
+    render(
+      <TimeSeriesChart
+        data={{
+          timestamps: powers.map((_, i) => i),
+          metrics: { heart_rate: powers.map(() => 140), power: powers },
+        }}
+        metricLabels={{ ...LABELS, power: "パワー" }}
+      />,
+    );
+
+    const [, power] = lastOption().yAxis;
+    expect(power.min!).toBeGreaterThan(0);
+    expect((power.max! - power.min!) / power.interval!).toBe(2);
+  });
+
+  it("test_pace_axis_name_sits_above_band", () => {
+    render(<TimeSeriesChart data={DATA} metricLabels={LABELS} />);
+
+    const [hr, pace] = lastOption().yAxis;
+    // Pace is inverse, so ECharts' default nameLocation ("end" = max side)
+    // would draw its name at the bottom, colliding with the next band's
+    // name below it. "start" keeps it above the pace band instead (#1176).
+    expect(pace.nameLocation).toBe("start");
+    expect([undefined, "end"]).toContain(hr.nameLocation);
   });
 });
 
@@ -234,28 +266,5 @@ describe("timeSeriesHeight", () => {
     expect(timeSeriesHeight(3) - timeSeriesHeight(2)).toBe(
       timeSeriesHeight(4) - timeSeriesHeight(3),
     );
-  });
-});
-
-describe("paceAxisBounds", () => {
-  it("test_pace_axis_bounds_ignores_stop_spikes", () => {
-    const paces = [
-      ...Array.from({ length: 200 }, () => 500),
-      ...Array.from({ length: 3 }, () => 1000),
-    ];
-
-    const bounds = paceAxisBounds(paces);
-
-    // The three 16:40/km stops must not stretch the axis around the 8:20/km
-    // the run was actually held at.
-    expect(bounds).not.toBeNull();
-    expect(bounds!.max).toBeLessThan(700);
-    expect(bounds!.min).toBeGreaterThan(300);
-  });
-
-  it("test_pace_axis_bounds_insufficient_data", () => {
-    // Nothing to bound: the axis falls back to `scale: true`.
-    expect(paceAxisBounds([null, null])).toBeNull();
-    expect(paceAxisBounds([500])).toBeNull();
   });
 });

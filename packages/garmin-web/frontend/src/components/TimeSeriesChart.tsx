@@ -2,7 +2,6 @@ import { echarts, type EChartsOption } from "../lib/echarts";
 import { useEffect, useRef } from "react";
 import type { TimeSeriesResponse } from "../types";
 import { formatNumber } from "../utils/formatNumber";
-import { robustAxisBounds, type AxisBounds } from "../utils/robustBounds";
 import {
   AXIS_LABEL_COLOR,
   CHART_FONT_SIZE,
@@ -12,7 +11,7 @@ import {
   METRIC_DECIMALS,
   THRESHOLD_LINE,
 } from "./chartTheme";
-import { axisUnitFor, threeTickAxis } from "./timeSeriesAxis";
+import { axisRangeFor, axisUnitFor, threeTickAxis } from "./timeSeriesAxis";
 
 const GRID_HEIGHT = 64;
 const GRID_GAP = 36;
@@ -54,26 +53,6 @@ function speedToPace(value: number | null): number | null {
     return null;
   }
   return Math.round(1000 / value);
-}
-
-/**
- * Plot range for the pace axis, with stops trimmed off (Issue #1148).
- *
- * A run holds still at traffic lights and water stops, and those samples reach
- * the series as 16:00/km-ish paces. Auto-scaling to them squeezed the running
- * paces — the reason the chart exists — into the top quarter of the grid, so
- * the axis is bounded by the robust percentile/IQR range instead. ECharts
- * clips the spikes at the top edge; the data itself is untouched, so tooltips
- * still report the real pace of a stopped sample.
- *
- * Returns null for a series with fewer than two paces, where there is no
- * spread to speak of and `scale: true` is the better default.
- */
-export function paceAxisBounds(paces: (number | null)[]): AxisBounds | null {
-  const finite = paces.filter(
-    (v): v is number => typeof v === "number" && Number.isFinite(v),
-  );
-  return finite.length < 2 ? null : robustAxisBounds(finite);
 }
 
 const HOVER_THROTTLE_MS = 50;
@@ -161,7 +140,6 @@ export default function TimeSeriesChart({
     const lastIndex = metricNames.length - 1;
     const allXAxisIndices = metricNames.map((_, i) => i);
     const paceValues = (data.metrics.speed ?? []).map(speedToPace);
-    const paceBounds = paceAxisBounds(paceValues);
 
     const option: EChartsOption = {
       animation: false,
@@ -191,26 +169,14 @@ export default function TimeSeriesChart({
       })),
       yAxis: metricNames.map((name, i) => {
         const isPace = name === "speed";
-        // The plot range: the robust (stop-clipped) bounds for pace
-        // (#1148), otherwise the plain min/max of that metric's finite
-        // values. Heart rate additionally grows to cover the prescribed
-        // ceiling, so the dashed cap line always lands inside the axis.
-        let lo: number;
-        let hi: number;
-        if (isPace && paceBounds != null) {
-          lo = paceBounds.min;
-          hi = paceBounds.max;
-        } else {
-          const finite = (isPace ? paceValues : data.metrics[name]).filter(
-            (v): v is number => typeof v === "number" && Number.isFinite(v),
-          );
-          lo = finite.length > 0 ? Math.min(...finite) : 0;
-          hi = finite.length > 0 ? Math.max(...finite) : 0;
-        }
-        if (name === "heart_rate" && hrCeiling != null) {
-          lo = Math.min(lo, hrCeiling);
-          hi = Math.max(hi, hrCeiling);
-        }
+        const values = isPace ? paceValues : data.metrics[name];
+        // The plot range: the robust (stop/spike-clipped) bounds for
+        // metrics prone to stop-time zeros or one-off sensor spikes
+        // (#1148, #1176), otherwise the plain min/max of that metric's
+        // finite values. Heart rate additionally grows to cover the
+        // prescribed ceiling, so the dashed cap line always lands inside
+        // the axis.
+        const { lo, hi } = axisRangeFor(name, values, hrCeiling);
         // Snapped to exactly three round-number labels (min/mid/max)
         // instead of ECharts' own tick choice, which crowded 4 labels on
         // heart rate and ragged mm:ss values on pace (Issue #1170).
@@ -220,6 +186,11 @@ export default function TimeSeriesChart({
           gridIndex: i,
           name: metricLabels[name] ?? name,
           nameTextStyle: { color: AXIS_LABEL_COLOR, fontSize: CHART_FONT_SIZE },
+          // Pace is inverted (faster at the top), which also flips ECharts'
+          // default `nameLocation: "end"` (max side) to the bottom of the
+          // band, colliding with the next band's name below it. "start" (min
+          // side) keeps the pace label above its own band instead (#1176).
+          ...(isPace ? { nameLocation: "start" as const } : {}),
           inverse: isPace,
           min: axis.min,
           max: axis.max,
