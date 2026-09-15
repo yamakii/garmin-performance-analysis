@@ -133,8 +133,8 @@ describe("ActivityList", () => {
     );
 
     // Wait for the data rows to appear
-    expect(await screen.findByText("2025-10-09")).toBeInTheDocument();
-    expect(screen.getByText("2025-10-07")).toBeInTheDocument();
+    expect(await screen.findByText("10/09 THU")).toBeInTheDocument();
+    expect(screen.getByText("10/07 TUE")).toBeInTheDocument();
 
     // 2 activity row cards in the single 2025-10 month group
     const rows = screen.getAllByRole("listitem");
@@ -146,7 +146,7 @@ describe("ActivityList", () => {
       screen.getByRole("heading", { level: 2, name: /2025-10/ }),
     ).toBeInTheDocument();
     // Month summary: 2 runs totalling 5.66 + 8.01 = 13.7 km
-    expect(screen.getByText(/2本 ・ 合計 13\.7 km/)).toBeInTheDocument();
+    expect(screen.getByText(/2本 · 合計 13\.7 km/)).toBeInTheDocument();
 
     // Distance and pace values are now rendered split from their units
     // (Issue #649): the numeric value and the unit live in separate elements.
@@ -165,7 +165,7 @@ describe("ActivityList", () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText("2025-10-09");
+    await screen.findByText("10/09 THU");
 
     // The numeric distance value and the "km" unit are distinct elements.
     const value = screen.getByText("5.66");
@@ -185,7 +185,7 @@ describe("ActivityList", () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText("2025-10-09");
+    await screen.findByText("10/09 THU");
 
     // Pace value (without unit) and the "/km" unit are distinct elements.
     const value = screen.getByText("6:26");
@@ -204,7 +204,7 @@ describe("ActivityList", () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText("2025-10-09");
+    await screen.findByText("10/09 THU");
 
     // Heart-rate value and the "bpm" unit are distinct elements; one per row.
     const value = screen.getByText("144");
@@ -223,7 +223,7 @@ describe("ActivityList", () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText("2025-10-09");
+    await screen.findByText("10/09 THU");
 
     // Distance, pace and heart-rate for a row are individually addressable
     // DOM nodes (not a single merged text run), enabling visual separation.
@@ -244,7 +244,7 @@ describe("ActivityList", () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText("2025-10-09");
+    await screen.findByText("10/09 THU");
 
     const links = screen.getAllByRole("link");
     expect(links).toHaveLength(2);
@@ -261,7 +261,7 @@ describe("ActivityList", () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText("2025-10-09");
+    await screen.findByText("10/09 THU");
 
     // Anchors with href are natively focusable; getByRole("link") only
     // matches elements exposed in the accessibility tree as links.
@@ -279,14 +279,14 @@ describe("ActivityList", () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText("2025-10-09");
+    await screen.findByText("10/09 THU");
 
     // Month heading preserved
     expect(
       screen.getByRole("heading", { level: 2, name: /2025-10/ }),
     ).toBeInTheDocument();
     // Run-count / total-distance summary preserved (Issue #214)
-    expect(screen.getByText(/2本 ・ 合計 13\.7 km/)).toBeInTheDocument();
+    expect(screen.getByText(/2本 · 合計 13\.7 km/)).toBeInTheDocument();
     // Rows still rendered as list items
     expect(screen.getAllByRole("listitem")).toHaveLength(2);
   });
@@ -307,7 +307,7 @@ describe("ActivityList filters (Issue #893)", () => {
     const fetchMock = stubFetch(FIXTURE_ACTIVITIES);
 
     renderList();
-    await screen.findByText("2025-10-09");
+    await screen.findByText("10/09 THU");
 
     // Default (no range param) keeps the historical unbounded request.
     expect(lastFetchUrl(fetchMock)).toBe("/api/activities");
@@ -424,14 +424,65 @@ describe("ActivityList filters (Issue #893)", () => {
     renderList();
     const name = await screen.findByText("Morning Run");
 
-    // At 390px the date + metrics already fill the row, so the row wraps and
-    // the name takes a full second line instead of being squeezed to 0px.
+    // At 390px the date + metrics already fill the row, so the name takes a
+    // full second line spanning both columns instead of being squeezed to 0px.
     const row = name.closest("a") as HTMLElement;
-    expect(row).toHaveClass("flex-wrap");
-    expect(name).toHaveClass("basis-full", "order-last");
+    expect(row).toHaveClass("grid", "grid-cols-[72px_auto]");
+    expect(name).toHaveClass("col-span-2", "row-start-2");
 
     // From `sm` up the layout is unchanged: name back in the middle column.
-    expect(row).toHaveClass("sm:flex-nowrap");
-    expect(name).toHaveClass("sm:basis-auto", "sm:order-none", "sm:flex-1");
+    expect(row).toHaveClass("sm:grid-cols-[72px_minmax(0,1fr)_auto]");
+    expect(name).toHaveClass(
+      "sm:col-span-1",
+      "sm:col-start-2",
+      "sm:row-start-1",
+    );
+  });
+
+  it("test_activity_list_row_is_a_rule_row_not_a_card", async () => {
+    stubFetch(FIXTURE_ACTIVITIES);
+
+    renderList();
+    const name = await screen.findByText("Morning Run");
+    const row = name.closest("a") as HTMLElement;
+
+    // The row is separated by a hairline rule, not boxed as a card (#1185):
+    // no radius, no surrounding border, no `bg-well` date chip.
+    expect(row).toHaveClass("border-b", "border-hairline");
+    expect(row.className).not.toMatch(/rounded/);
+    expect(
+      document.querySelector(".rounded-md, .bg-well, .divide-x"),
+    ).toBeNull();
+  });
+
+  it("test_activity_list_month_heading_is_ruled", async () => {
+    stubFetch(FIXTURE_ACTIVITIES);
+
+    renderList();
+    await screen.findByText("10/09 THU");
+
+    // The month heading sits on an ink rule, with the month in mono and its
+    // summary muted beside it — the separator is "·", not "・".
+    const heading = screen.getByRole("heading", { level: 2, name: /2025-10/ });
+    expect(heading).toHaveClass("border-b", "border-ink");
+    expect(heading).toHaveTextContent("2本 · 合計 13.7 km");
+    expect(heading.textContent).not.toContain("・");
+  });
+
+  it("test_activity_list_range_segment_marks_selection", async () => {
+    stubFetch(FIXTURE_ACTIVITIES);
+
+    renderList("/activities?range=3m");
+    await screen.findByText("10/09 THU");
+
+    // The shared Segment inverts the selected option to ink-on-paper and
+    // states the choice through aria-pressed rather than the fill alone.
+    const selected = screen.getByRole("button", { name: "直近3ヶ月" });
+    expect(selected).toHaveAttribute("aria-pressed", "true");
+    expect(selected).toHaveClass("bg-ink", "text-paper");
+
+    const unselected = screen.getByRole("button", { name: "全期間" });
+    expect(unselected).toHaveAttribute("aria-pressed", "false");
+    expect(unselected).toHaveClass("text-ink-muted");
   });
 });
