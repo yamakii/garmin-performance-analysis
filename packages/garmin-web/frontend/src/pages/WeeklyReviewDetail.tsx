@@ -217,7 +217,7 @@ export default function WeeklyReviewDetail() {
   // nothing at all — a white page with no explanation and no way back (#914).
   if (versions.length === 0) {
     return (
-      <div className="space-y-6">
+      <div className="flex flex-col gap-8">
         <PageHeader />
         <EmptyState
           message="この週のレビューはありません"
