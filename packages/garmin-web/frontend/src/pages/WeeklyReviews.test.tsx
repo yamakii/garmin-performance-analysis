@@ -1,7 +1,7 @@
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "../test/utils";
-import WeeklyReviews from "./WeeklyReviews";
+import WeeklyReviews, { ratingTally, tallyToneClass } from "./WeeklyReviews";
 
 const FIXTURE_REVIEWS = [
   {
@@ -123,14 +123,53 @@ describe("WeeklyReviews", () => {
       </MemoryRouter>,
     );
 
-    // The newest week is 0 ✅ / 0 🟡 / 2 🔴. The emoji tally is decorative;
-    // the words behind it ride along in the link's name (#912).
+    // The newest week has two 要改善 sessions and nothing else. The tally is
+    // the words themselves now (#1186): no emoji, and the empty rows are
+    // dropped rather than printed as "良好 0".
     const link = (
       await screen.findByText("2026-06-15 〜 2026-06-21")
     ).closest("a");
     expect(link).not.toBeNull();
-    expect(link).toHaveTextContent("良好 0件 注意 0件 要改善 2件");
-    expect(screen.getByText("🔴 2")).toHaveAttribute("aria-hidden", "true");
+    expect(link).toHaveTextContent("要改善 2");
+    expect(link?.textContent).not.toMatch(/良好|注意 /);
+    expect(link?.textContent).not.toMatch(/[✅🟡🔴]/u);
+  });
+
+  it("test_weekly_reviews_tally_takes_the_worst_tone", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(FIXTURE_REVIEWS), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    render(
+      <MemoryRouter>
+        <WeeklyReviews />
+      </MemoryRouter>,
+    );
+
+    // Two 要改善 → the tally reads in the 要改善 hue, not the milder 注意 one.
+    await screen.findByText("2026-06-15 〜 2026-06-21");
+    expect(screen.getByText("要改善 2")).toHaveClass("text-status-bad");
+
+    // An all-良好 week stays quiet: muted ink, no status colour.
+    const calm = screen.getByText("良好 1");
+    expect(calm).toHaveClass("text-ink-muted");
+    expect(calm.className).not.toMatch(/text-status/);
+  });
+
+  it("test_weekly_reviews_tally_says_評価なし_when_empty", () => {
+    expect(ratingTally([0, 0, 0])).toBe("評価なし");
+    expect(tallyToneClass([0, 0, 0])).toBe("text-ink-muted");
+
+    // Order is ratingMarks() order: good, warn, bad.
+    expect(ratingTally([4, 2, 1])).toBe("良好 4 · 注意 2 · 要改善 1");
+    expect(tallyToneClass([4, 2, 0])).toBe("text-status-warn");
+    expect(tallyToneClass([4, 0, 1])).toBe("text-status-bad");
   });
 
   it("shows a /weekly-review CLI hint when there are no reviews", async () => {

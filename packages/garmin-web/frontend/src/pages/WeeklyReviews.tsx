@@ -8,22 +8,52 @@ import { usePageTitle } from "../hooks/usePageTitle";
 import type { WeeklyReview } from "../types";
 import { ratingMarks } from "../utils/verdictRating";
 
-/** Count verdict entries with a given emoji rating. */
+/** Count verdict entries with a given rating mark. */
 export function countRating(review: WeeklyReview, rating: string): number {
   const verdict = review.review_data?.verdict ?? [];
   return verdict.filter((v) => v.rating === rating).length;
 }
 
-/** "良好 4件 注意 2件 要改善 1件" — the emoji tally in words. */
-function ratingSummary(
-  green: number,
-  yellow: number,
-  red: number,
-): string {
-  const counts = [green, yellow, red];
-  return ratingMarks()
-    .map(({ label }, i) => `${label} ${counts[i]}件`)
-    .join(" ");
+/**
+ * The week's verdict counts, in `ratingMarks()` order (good → warn → bad).
+ *
+ * The marks come from {@link ratingMarks} rather than being written out here:
+ * the agent stores an emoji in `rating`, but this page must not render one, so
+ * the only emoji left in the flow is the key it matches on.
+ */
+export function ratingCounts(review: WeeklyReview): number[] {
+  return ratingMarks().map(({ mark }) => countRating(review, mark));
+}
+
+/**
+ * "良好 4 · 注意 2 · 要改善 1" — the tally in words (#1186).
+ *
+ * The page used to draw the three verdict emoji with the words hidden in an
+ * `sr-only` span. A screen reader announced the red one as "large red circle",
+ * and the row read as three unnamed counts to everyone else too, so the words
+ * are the tally itself now (#912). Zero rows are dropped: what did not happen
+ * is not worth a column.
+ */
+export function ratingTally(counts: number[]): string {
+  const parts = ratingMarks()
+    .map(({ label }, i) => (counts[i] > 0 ? `${label} ${counts[i]}` : null))
+    .filter((part) => part != null);
+  return parts.length > 0 ? parts.join(" · ") : "評価なし";
+}
+
+/**
+ * Colour of the tally: the worst thing in the week decides it, so a week with
+ * both 注意 and 要改善 reads as 要改善 rather than softening to the milder hue.
+ */
+export function tallyToneClass(counts: number[]): string {
+  const [, warn = 0, bad = 0] = counts;
+  if (bad > 0) {
+    return "text-status-bad";
+  }
+  if (warn > 0) {
+    return "text-status-warn";
+  }
+  return "text-ink-muted";
 }
 
 /** Short excerpt of the overall text (first ~60 chars). */
@@ -64,37 +94,24 @@ export default function WeeklyReviews() {
 
       <section className={CARD_CLASS}>
         {reviews.length > 0 ? (
-          <ul className="divide-y divide-hairline">
+          // Each row draws its own hairline, so the list adds no divider.
+          <ul>
             {reviews.map((review) => {
-              const redCount = countRating(review, "🔴");
-              const yellowCount = countRating(review, "🟡");
-              const greenCount = countRating(review, "✅");
+              const counts = ratingCounts(review);
               return (
                 <li key={review.week_start_date}>
                   <Link
                     to={`/weekly-reviews/${review.week_start_date}`}
-                    className="-mx-2 flex flex-col gap-1 rounded-md px-2 py-3 transition-colors hover:bg-surface"
+                    className="flex flex-col gap-1 border-b border-hairline py-3 transition-colors hover:bg-surface"
                   >
                     <div className="flex items-baseline justify-between gap-3">
-                      <span className="text-sm font-semibold text-ink">
+                      <span className="font-mono text-[13px] font-semibold text-ink">
                         {review.week_start_date} 〜 {review.week_end_date}
                       </span>
-                      {/*
-                       * The emoji tally is a visual scan aid; the words behind
-                       * it are what the link announces (#912), so the counts
-                       * are not read out as three unnamed circles.
-                       */}
-                      <span className="font-mono text-xs text-ink-muted">
-                        <span aria-hidden="true" className="mr-2">
-                          ✅ {greenCount}
-                        </span>
-                        <span aria-hidden="true" className="mr-2">
-                          🟡 {yellowCount}
-                        </span>
-                        <span aria-hidden="true">🔴 {redCount}</span>
-                        <span className="sr-only">
-                          {ratingSummary(greenCount, yellowCount, redCount)}
-                        </span>
+                      <span
+                        className={`font-mono text-xs ${tallyToneClass(counts)}`}
+                      >
+                        {ratingTally(counts)}
                       </span>
                     </div>
                     <p className="text-sm text-ink-muted">
