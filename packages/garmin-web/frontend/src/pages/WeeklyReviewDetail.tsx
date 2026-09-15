@@ -9,6 +9,7 @@ import { PageError, PageLoading } from "../components/PageState";
 import SectionHeading from "../components/SectionHeading";
 import SectionNav, { type NavItem } from "../components/SectionNav";
 import StatusBadge from "../components/StatusBadge";
+import VitalsRow, { type VitalItem } from "../components/VitalsRow";
 import VersionSelect from "../components/VersionSelect";
 import {
   sessionLabel,
@@ -17,7 +18,7 @@ import {
   targetSummary,
 } from "../components/plan/DayCell";
 import MarkdownText from "../components/report/MarkdownText";
-import { META_LABEL, SUBCARD } from "../components/report/ReportCard";
+
 import { usePageTitle } from "../hooks/usePageTitle";
 import {
   formatDate,
@@ -78,7 +79,7 @@ function Group({
   children: React.ReactNode;
 }) {
   return (
-    <section aria-label={title} className="space-y-4">
+    <section aria-label={title} className="flex flex-col gap-4">
       <h2 className="text-lg font-bold text-ink">{title}</h2>
       {children}
     </section>
@@ -118,61 +119,45 @@ function ScrollTable({
 /** Badge and date cells must never wrap mid-label; prose cells may. */
 const NOWRAP_CELL = "whitespace-nowrap";
 
-type StatTile = { label: string; value: number; unit?: string };
-
-/** A measured number becomes a tile; anything else is dropped. */
-function tile(label: string, value: unknown, unit?: string): StatTile | null {
+/**
+ * A measured number becomes a vitals cell; anything else is dropped.
+ *
+ * Raw payload numbers carry float noise (volume_km 42.5333…); one decimal is
+ * all a weekly total needs (#915).
+ */
+function tile(label: string, value: unknown, unit?: string): VitalItem | null {
   return typeof value === "number" && Number.isFinite(value)
-    ? { label, value, unit }
+    ? { label, value: formatNumber(value, 1), unit }
     : null;
 }
 
-/**
- * Number-first tile grid, matching the EfficiencyReport form-metric tiles: the
- * figure is the headline and the label is the caption, so the week's volume and
- * body numbers read at a glance instead of hiding inside `label: value` prose.
- */
-function StatTiles({ tiles }: { tiles: (StatTile | null)[] }) {
-  const shown = tiles.filter((t): t is StatTile => t !== null);
+/** The measured cells of one group, as the shared vitals row (#1187). */
+function StatVitals({
+  items,
+  ariaLabel,
+}: {
+  items: (VitalItem | null)[];
+  ariaLabel: string;
+}) {
+  const shown = items.filter((item): item is VitalItem => item !== null);
   if (shown.length === 0) {
     return null;
   }
-  return (
-    <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-      {shown.map(({ label, value, unit }) => (
-        <div key={label} className={SUBCARD}>
-          <dt className={META_LABEL}>{label}</dt>
-          <dd className="mt-0.5 font-mono text-2xl leading-none font-semibold text-ink">
-            {/* Raw payload numbers carry float noise (volume_km 42.5333…);
-                one decimal is all a weekly total needs (#915). */}
-            {formatNumber(value, 1)}
-            {unit != null && (
-              <span className="ml-0.5 text-xs font-normal text-ink-muted">
-                {unit}
-              </span>
-            )}
-          </dd>
-        </div>
-      ))}
-    </dl>
-  );
+  return <VitalsRow items={shown} ariaLabel={ariaLabel} columns={3} size="sm" />;
 }
 
 /**
- * Verdict cell: the emoji stays for scanning but is decorative, and the word it
- * stands for is the text that is actually announced and read (#912). An
- * unrecognized rating is shown as-is, since its text is all we know.
+ * Verdict cell: the word the rating stands for, and nothing else (#1187).
+ *
+ * The emoji used to ride along as a decorative scanning aid, but the word is
+ * what is announced and read, and a page of coloured circles is exactly the
+ * noise the brief is trying to remove. `good` is the badge's unfilled default,
+ * so an ordinary week stays quiet. An unrecognized rating is shown as-is, since
+ * its text is all we know.
  */
 function VerdictBadge({ rating }: { rating: string }) {
   const { tone, label } = ratingMeta(rating);
-  if (label === rating) {
-    return <StatusBadge tone={tone}>{rating}</StatusBadge>;
-  }
-  return (
-    <StatusBadge tone={tone}>
-      <span aria-hidden="true">{rating}</span> {label}
-    </StatusBadge>
-  );
+  return <StatusBadge tone={tone}>{label}</StatusBadge>;
 }
 
 /** "Aレース（フルマラソン）まで 12週" countdown label, or null when unknown. */
@@ -199,7 +184,7 @@ function PageHeader() {
       <SectionHeading title="週次レビュー" />
       <Link
         to="/weekly-reviews"
-        className="text-sm font-medium text-ink-muted hover:text-ink"
+        className="font-mono text-[13px]"
       >
         ← 一覧へ
       </Link>
@@ -232,7 +217,7 @@ export default function WeeklyReviewDetail() {
   // nothing at all — a white page with no explanation and no way back (#914).
   if (versions.length === 0) {
     return (
-      <div className="space-y-6">
+      <div className="flex flex-col gap-8">
         <PageHeader />
         <EmptyState
           message="この週のレビューはありません"
@@ -350,7 +335,7 @@ export default function WeeklyReviewDetail() {
         ].filter((item): item is NavItem => item !== null);
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-8">
       <PageHeader />
       <p className="font-mono text-sm text-ink-muted">
         {formatDate(review.week_start_date)} 〜 {formatDate(review.week_end_date)}
@@ -381,8 +366,9 @@ export default function WeeklyReviewDetail() {
             <Section id="wr-actuals" title="実績サマリー">
               {thisWeek != null ? (
                 <div className="space-y-3 text-sm text-ink-soft">
-                  <StatTiles
-                    tiles={[
+                  <StatVitals
+                    ariaLabel="今週の数値"
+                    items={[
                       tile("走行距離", thisWeek.volume_km, "km"),
                       tile("ラン回数", thisWeek.run_count, "回"),
                     ]}
@@ -426,8 +412,9 @@ export default function WeeklyReviewDetail() {
             {weightTracking != null && (
               <Section id="wr-weight" title="体重トラッキング">
                 <div className="space-y-3 text-sm text-ink-soft">
-                  <StatTiles
-                    tiles={[
+                  <StatVitals
+                    ariaLabel="体重の数値"
+                    items={[
                       tile("直近中央値", weightTracking.recent_median_kg, "kg"),
                       tile("BMI", weightTracking.bmi),
                     ]}
@@ -435,24 +422,30 @@ export default function WeeklyReviewDetail() {
                   {(weightTracking.trend != null ||
                     weightTracking.week_classification != null ||
                     weightTracking.flag != null) && (
-                    <div className="flex flex-wrap items-center gap-2">
-                      {weightTracking.trend != null && (
-                        <StatusBadge tone="info">
-                          {weightTracking.trend}
-                        </StatusBadge>
-                      )}
-                      {weightTracking.week_classification != null && (
-                        <StatusBadge tone="info">
-                          {weightTracking.week_classification}
-                        </StatusBadge>
-                      )}
-                      {/* A flag is the agent raising a concern — warn tone. */}
+                    /*
+                      Trend and classification are descriptions, not states:
+                      as badges they read like three alerts of equal weight
+                      (#1187). They are one muted mono line now, and only the
+                      flag — the agent actually raising a concern — is marked.
+                    */
+                    <p className="font-mono text-xs text-ink-soft">
+                      {[
+                        weightTracking.trend,
+                        weightTracking.week_classification,
+                      ]
+                        .filter((part) => part != null)
+                        .join(" · ")}
                       {weightTracking.flag != null && (
-                        <StatusBadge tone="warn">
-                          {weightTracking.flag}
-                        </StatusBadge>
+                        <>
+                          {(weightTracking.trend != null ||
+                            weightTracking.week_classification != null) &&
+                            " · "}
+                          <span className="font-bold text-status-warn">
+                            {weightTracking.flag}
+                          </span>
+                        </>
                       )}
-                    </div>
+                    </p>
                   )}
                   {weightTracking.target_first != null && (
                     <p className="text-xs text-ink-muted">
@@ -484,7 +477,7 @@ export default function WeeklyReviewDetail() {
               {prescriptions.length > 0 ? (
                 <ScrollTable>
                   <thead>
-                    <tr className="text-xs tracking-wide text-ink-muted">
+                    <tr className="border-b border-ink font-mono text-[11px] tracking-[0.04em] text-ink-muted">
                       <th
                         scope="col"
                         className={`px-2 py-2 text-left font-medium ${NOWRAP_CELL}`}
@@ -570,7 +563,7 @@ export default function WeeklyReviewDetail() {
               ) : verdict.length > 0 ? (
                 <ScrollTable minWidthClass="min-w-[32rem]">
                   <thead>
-                    <tr className="text-xs tracking-wide text-ink-muted">
+                    <tr className="border-b border-ink font-mono text-[11px] tracking-[0.04em] text-ink-muted">
                       <th
                         scope="col"
                         className={`px-2 py-2 text-left font-medium ${NOWRAP_CELL}`}
@@ -639,29 +632,32 @@ export default function WeeklyReviewDetail() {
             {periodization != null && (
               <Section id="wr-periodization" title="目標逆算フェーズ">
                 <div className="space-y-3 text-sm text-ink-soft">
-                  {raceCountdowns.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-2">
-                      {raceCountdowns.map((label) => (
-                        <StatusBadge key={label} tone="info">
-                          {label}
-                        </StatusBadge>
-                      ))}
-                    </div>
-                  )}
+                  {/* A countdown is a reading, not a state: one muted line
+                      each, rather than a row of neutral badges (#1187). */}
+                  {raceCountdowns.map((label) => (
+                    <p key={label} className="font-mono text-xs text-ink-soft">
+                      {label}
+                    </p>
+                  ))}
                   {/* The expected phase is often a whole sentence of reasoning
                       ("テーパー前の最終デロード。ロングを…"), so it wraps as
-                      prose; only the Garmin phase stays a tag (#1144). */}
+                      prose (#1144). The Garmin phase now reads as prose too,
+                      and is marked only when it disagrees with the plan. */}
                   {expectedPhase != null && (
                     <p className="font-mono text-xs break-words text-ink-soft">
                       想定 {expectedPhase}
                     </p>
                   )}
                   {garminPhase != null && (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <StatusBadge tone={showPhaseGap ? "warn" : "info"}>
-                        Garmin {garminPhase}
-                      </StatusBadge>
-                    </div>
+                    <p
+                      className={`font-mono text-xs ${
+                        showPhaseGap
+                          ? "font-bold text-status-warn"
+                          : "text-ink-soft"
+                      }`}
+                    >
+                      Garmin {garminPhase}
+                    </p>
                   )}
                   {showPhaseGap && phaseGap != null && (
                     <p className="text-xs text-ink-muted">
@@ -718,7 +714,7 @@ export default function WeeklyReviewDetail() {
                 <Section id="wr-garmin" title="Garmin との衝突">
                   <ScrollTable minWidthClass="min-w-[28rem]">
                     <thead>
-                      <tr className="text-xs tracking-wide text-ink-muted">
+                      <tr className="border-b border-ink font-mono text-[11px] tracking-[0.04em] text-ink-muted">
                         <th
                           scope="col"
                           className={`px-2 py-2 text-left font-medium ${NOWRAP_CELL}`}
@@ -765,7 +761,7 @@ export default function WeeklyReviewDetail() {
                 <Section id="wr-garmin" title="来週のGarminワークアウト">
                   <ScrollTable minWidthClass="min-w-[28rem]">
                     <thead>
-                      <tr className="text-xs tracking-wide text-ink-muted">
+                      <tr className="border-b border-ink font-mono text-[11px] tracking-[0.04em] text-ink-muted">
                         <th
                           scope="col"
                           className={`px-2 py-2 text-left font-medium ${NOWRAP_CELL}`}

@@ -466,31 +466,49 @@ describe("WeeklyReviewDetail", () => {
 
     await screen.findByRole("heading", { level: 3, name: "実績サマリー" });
 
-    // Each figure is a <dd> inside the tile grid, with its unit as a suffix.
-    const volume = screen.getByText("42.5");
-    expect(volume.tagName).toBe("DD");
-    expect(volume.closest("dl")).not.toBeNull();
+    // The figures are the shared VitalsRow now, not SUBCARD tiles (#1187):
+    // one rule-separated row of mono numbers with muted unit suffixes.
+    const row = screen.getByLabelText("今週の数値");
+    expect(row).toHaveClass("grid", "md:grid-cols-3");
+
+    const volume = within(row).getByText("42.5");
+    expect(volume.tagName).toBe("P");
     expect(volume.textContent).toBe("42.5km");
+    expect(within(row).getByText("4").textContent).toBe("4回");
 
-    const runs = screen.getByText("4");
-    expect(runs.tagName).toBe("DD");
-    expect(runs.textContent).toBe("4回");
-
-    // The label is a tile caption now, not a "走行距離: 42.5 km" prose row.
-    expect(screen.getByText("走行距離").tagName).toBe("DT");
+    // The label is the cell caption, not a "走行距離: 42.5 km" prose row.
+    expect(within(row).getByText("走行距離")).toBeInTheDocument();
     expect(screen.queryByText(/走行距離:/)).not.toBeInTheDocument();
+
+    // No card chrome left behind.
+    expect(document.querySelector(".rounded-md")).toBeNull();
   });
 
   it("test_weight_flag_renders_warn_chip", async () => {
     renderDetail({
-      weight_tracking: { recent_median_kg: 79.6, flag: "増加傾向" },
+      weight_tracking: {
+        recent_median_kg: 79.6,
+        trend: "微増",
+        week_classification: "維持週",
+        flag: "増加傾向",
+      },
     });
 
     await screen.findByRole("heading", { level: 3, name: "体重トラッキング" });
 
+    // trend / week_classification are descriptions, so they are one muted mono
+    // line — no badge. Only the flag, the agent's actual concern, is marked.
     const flag = screen.getByText("増加傾向");
-    expect(flag).toHaveAttribute("data-tone", "warn");
-    expect(flag).toHaveClass("bg-warn-tint", "text-status-warn");
+    expect(flag.tagName).toBe("SPAN");
+    expect(flag).toHaveClass("font-bold", "text-status-warn");
+    expect(flag).not.toHaveAttribute("data-tone");
+
+    const line = flag.closest("p") as HTMLElement;
+    expect(line).toHaveClass("font-mono", "text-xs", "text-ink-soft");
+    expect(line).toHaveTextContent("微増 · 維持週 · 増加傾向");
+
+    // 微増 / 維持週 are no longer badges.
+    expect(screen.getByText(/微増/).closest("[data-tone]")).toBeNull();
   });
 
   it("test_periodization_countdown_chips", async () => {
@@ -503,12 +521,31 @@ describe("WeeklyReviewDetail", () => {
     expect(screen.getByText(/Aレースまで 12週/)).toBeInTheDocument();
     expect(screen.getByText(/基礎構築/)).toBeInTheDocument();
 
-    // The five label rows are gone: the countdown is a chip and the phase is
-    // the card's one paragraph (it carries a sentence, #1144).
+    // The countdown is a muted mono line now, not a neutral badge (#1187), so
+    // the card holds two paragraphs: the countdown and the expected phase.
     const card = document.getElementById("wr-periodization");
-    expect(card?.querySelectorAll("p")).toHaveLength(1);
+    expect(card?.querySelectorAll("p")).toHaveLength(2);
+    expect(card?.querySelector("[data-tone]")).toBeNull();
     expect(screen.queryByText(/あるべきフェーズ/)).not.toBeInTheDocument();
     expect(screen.queryByText(/ギャップ/)).not.toBeInTheDocument();
+  });
+
+  it("test_periodization_garmin_phase_marked_only_on_gap", async () => {
+    renderDetail({
+      periodization: {
+        expected_phase: "基礎構築",
+        garmin_phase: "BASE",
+        gap: "1 フェーズ先行",
+      },
+    });
+
+    await screen.findByRole("heading", { level: 3, name: "目標逆算フェーズ" });
+
+    // expected ("基礎構築") and Garmin ("BASE") disagree → the line is marked.
+    const phase = screen.getByText("Garmin BASE");
+    expect(phase.tagName).toBe("P");
+    expect(phase).toHaveClass("font-bold", "text-status-warn");
+    expect(phase).not.toHaveAttribute("data-tone");
   });
 
   it("test_verdict_ratings_as_badges", async () => {
@@ -522,11 +559,11 @@ describe("WeeklyReviewDetail", () => {
 
     await screen.findByRole("heading", { level: 3, name: "対象週プラン評価" });
 
-    // The mark now sits in its own decorative span inside the badge, so the
-    // tone class lives one level up.
-    expect(screen.getByText("✅").parentElement).toHaveAttribute("data-tone", "good");
-    expect(screen.getByText("🟡").parentElement).toHaveAttribute("data-tone", "warn");
-    expect(screen.getByText("🔴").parentElement).toHaveAttribute("data-tone", "bad");
+    // The badge is the word alone now, so the tone sits on the element that
+    // carries the text.
+    expect(screen.getByText("良好")).toHaveAttribute("data-tone", "good");
+    expect(screen.getByText("注意")).toHaveAttribute("data-tone", "warn");
+    expect(screen.getByText("要改善")).toHaveAttribute("data-tone", "bad");
   });
 
   it("test_verdict_emoji_has_text", async () => {
@@ -540,13 +577,32 @@ describe("WeeklyReviewDetail", () => {
 
     await screen.findByRole("heading", { level: 3, name: "対象週プラン評価" });
 
-    // Each mark is paired with the word it stands for, and the mark itself is
-    // decorative — color and emoji alone never carry the verdict (#912).
-    const bad = screen.getByText("要改善");
-    expect(bad).toHaveTextContent("🔴");
-    expect(within(bad).getByText("🔴")).toHaveAttribute("aria-hidden", "true");
-    expect(screen.getByText("良好")).toHaveTextContent("✅");
-    expect(screen.getByText("注意")).toHaveTextContent("🟡");
+    // The word is the whole verdict: the decorative mark is gone from the DOM
+    // entirely, so colour and emoji can no longer be the only carrier (#912).
+    expect(screen.getByText("要改善").textContent).toBe("要改善");
+    expect(document.body.textContent).not.toMatch(/[✅🟡🔴]/u);
+  });
+
+  it("test_verdict_table_header_matches_splits", async () => {
+    renderDetail({
+      verdict: [{ date: "2026-06-16", session: "Easy Run", rating: "✅" }],
+    });
+
+    await screen.findByRole("heading", { level: 3, name: "対象週プラン評価" });
+
+    // Every table head on the page wears the ActivityDetail Splits styling.
+    const heads = document.querySelectorAll("thead tr");
+    expect(heads.length).toBeGreaterThan(0);
+    for (const head of heads) {
+      expect(head).toHaveClass(
+        "border-b",
+        "border-ink",
+        "font-mono",
+        "text-[11px]",
+        "tracking-[0.04em]",
+        "text-ink-muted",
+      );
+    }
   });
 
   it("test_prose_sections_clamped", async () => {
