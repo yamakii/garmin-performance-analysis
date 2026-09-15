@@ -29,6 +29,14 @@ const fullReview: WeeklyReviewData = {
   overall: "総じて順調です。",
 };
 
+/** 80+ characters of HR narration, as the agent actually writes it (#1144). */
+const LONG_HR_DISCIPLINE =
+  "25km ロングを平均 HR145.7・上限 150bpm 以内で通し、HR ドリフトは終盤の 5km でも 3% 以内に収まっています。";
+
+/** The expected phase is a sentence of reasoning, not a one-word label. */
+const LONG_PHASE =
+  "テーパー前の最終デロード。ロングを直近ピーク比 −35% に落とし、質練はゼロにします。";
+
 /** 10 lines — past both the line and the character budget of `lines={3}`. */
 const LONG_OVERALL = Array.from(
   { length: 10 },
@@ -241,16 +249,19 @@ describe("WeeklyReviewDetail", () => {
     renderDetail({
       this_week: {
         volume_km: 35.5,
-        intensity_distribution: { easy_z1_z2: 4, long_run: 1 },
+        intensity_distribution: { aerobic_base: 0.5, tempo: 0.25, foo_bar: 0.25 },
       },
     });
 
     expect(
       await screen.findByRole("heading", { level: 3, name: "実績サマリー" }),
     ).toBeInTheDocument();
-    // Payload keys are humanized, never shown as raw snake_case (#915).
-    expect(screen.getByText("easy z1 z2: 4")).toBeInTheDocument();
-    expect(screen.getByText("long run: 1")).toBeInTheDocument();
+    // Buckets read as Japanese shares, not "aerobic base: 0.5" (#1144)...
+    expect(screen.getByText("有酸素ベース 50%")).toBeInTheDocument();
+    expect(screen.getByText("テンポ 25%")).toBeInTheDocument();
+    // ...and an unknown bucket still loses its underscores (#915).
+    expect(screen.getByText("foo bar 25%")).toBeInTheDocument();
+    expect(screen.queryByText(/aerobic_base|: 0\.5/)).not.toBeInTheDocument();
   });
 
   it("test_stat_tiles_rounded", async () => {
@@ -492,9 +503,10 @@ describe("WeeklyReviewDetail", () => {
     expect(screen.getByText(/Aレースまで 12週/)).toBeInTheDocument();
     expect(screen.getByText(/基礎構築/)).toBeInTheDocument();
 
-    // The five prose rows are gone: the card is chips only.
+    // The five label rows are gone: the countdown is a chip and the phase is
+    // the card's one paragraph (it carries a sentence, #1144).
     const card = document.getElementById("wr-periodization");
-    expect(card?.querySelectorAll("p")).toHaveLength(0);
+    expect(card?.querySelectorAll("p")).toHaveLength(1);
     expect(screen.queryByText(/あるべきフェーズ/)).not.toBeInTheDocument();
     expect(screen.queryByText(/ギャップ/)).not.toBeInTheDocument();
   });
@@ -604,6 +616,69 @@ describe("WeeklyReviewDetail", () => {
     expect(
       screen.getByRole("link", { name: "週次レビュー一覧へ" }),
     ).toHaveAttribute("href", "/weekly-reviews");
+  });
+
+  it("test_weekly_review_hr_discipline_wraps", async () => {
+    renderDetail({
+      this_week: { volume_km: 35.5, hr_discipline: LONG_HR_DISCIPLINE },
+    });
+
+    await screen.findByRole("heading", { level: 3, name: "実績サマリー" });
+
+    // The sentence is prose, not a tag: as a `shrink-0` mono chip it kept one
+    // line and ran 100px past the content width, widening the page (#1144).
+    const text = screen.getByText(LONG_HR_DISCIPLINE);
+    expect(text.tagName).toBe("P");
+    expect(text).not.toHaveClass("shrink-0");
+    expect(text).not.toHaveAttribute("data-tone");
+  });
+
+  it("test_weekly_review_expected_phase_wraps", async () => {
+    renderDetail({ periodization: { expected_phase: LONG_PHASE } });
+
+    await screen.findByRole("heading", { level: 3, name: "目標逆算フェーズ" });
+
+    const text = screen.getByText(`想定 ${LONG_PHASE}`);
+    expect(text.tagName).toBe("P");
+    expect(text).not.toHaveClass("shrink-0");
+    expect(text).not.toHaveAttribute("data-tone");
+  });
+
+  it("test_weekly_review_tables_have_scroll_wrapper", async () => {
+    renderDetail(
+      {
+        ...fullReview,
+        garmin_conflicts: [
+          {
+            date: "2026-06-20",
+            garmin_title: "Anaerobic Base",
+            reason: "ロング走の前日に高強度が入っています",
+          },
+        ],
+      },
+      [
+        {
+          prescription_id: 11,
+          session_type: "rest",
+          title: "完全休養（ロング翌日）",
+          target_km: null,
+          target_minutes: null,
+          hr_high: null,
+          status: "registered",
+        },
+      ],
+    );
+
+    await screen.findByRole("heading", { level: 3, name: "対象週プラン評価" });
+
+    // On a 390px screen the comment column used to fall off the page with no
+    // way to reach it: every table scrolls inside its own wrapper (#1144).
+    const tables = document.querySelectorAll("table");
+    expect(tables.length).toBeGreaterThan(0);
+    for (const table of tables) {
+      expect(table.parentElement).toHaveClass("overflow-x-auto");
+      expect(table.className).toMatch(/min-w-\[/);
+    }
   });
 
   it("test_version_select_and_sections_nav_unchanged", async () => {
