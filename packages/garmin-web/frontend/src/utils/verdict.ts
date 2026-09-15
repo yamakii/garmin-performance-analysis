@@ -1,6 +1,14 @@
 import { sessionLabel } from "../components/plan/DayCell";
 import { RECOMMENDATION_LABELS } from "../labels/recovery";
-import type { PlanWeek, Prescription, RecoveryStatus } from "../types";
+import type {
+  GoalRace,
+  PlanWeek,
+  Prescription,
+  RaceReadiness,
+  RaceReadinessProgress,
+  RecoveryStatus,
+} from "../types";
+import { daysUntil, formatGap, formatTargetTime } from "./race";
 
 /**
  * The home page's opening sentence, as data (Morning Brief, #1117).
@@ -81,4 +89,76 @@ export function todayPrescription(
 ): Prescription | null {
   const day = week?.days.find((planDay) => planDay.date === todayIso) ?? null;
   return day?.prescriptions[0] ?? null;
+}
+
+/** Progress status → the Japanese word the goal line uses for it. */
+export const RACE_STATUS_LABELS: Record<
+  RaceReadinessProgress["status"],
+  string
+> = {
+  ahead: "前倒し",
+  on_track: "順調",
+  behind: "遅れ",
+};
+
+/** "あと 76 日" / "日程未定" / "開催済み" — the countdown half of the line. */
+function countdownText(days: number | null): string {
+  if (days == null) {
+    return "日程未定";
+  }
+  return days >= 0 ? `あと ${days} 日` : "開催済み";
+}
+
+/**
+ * The goal page's opening sentence (Morning Brief, #1122): the target time
+ * against the current VDOT prediction, then how far out the race is and
+ * whether the plan is on schedule.
+ *
+ * The tone keys on the sign of the gap rather than on `status`: a positive gap
+ * means the prediction is *slower* than the target, which is the one case the
+ * reader has to act on. `status` only names the direction in words, so an
+ * "順調" race whose prediction still trails the target is marked all the same.
+ */
+export function goalVerdict(
+  readiness: RaceReadiness | null,
+  race: GoalRace | null,
+  today: Date = new Date(),
+): Verdict {
+  // Nothing to count down to: the page opens by saying so rather than
+  // inventing a target out of the distance predictions.
+  if (race == null) {
+    return { verdict: "目標レース未登録。", tone: "neutral", rest: "" };
+  }
+
+  const progress = readiness?.progress ?? null;
+  const target =
+    race.target_time_seconds ?? readiness?.goal?.target_time_seconds ?? null;
+  const targetText = target != null ? formatTargetTime(target) : null;
+  const predictionText =
+    progress != null ? formatTargetTime(progress.predicted_time_seconds) : null;
+
+  let verdict: string;
+  if (targetText != null && predictionText != null) {
+    verdict = `目標 ${targetText} に対して予測 ${predictionText}。`;
+  } else if (targetText != null) {
+    verdict = `目標 ${targetText}。`;
+  } else if (predictionText != null) {
+    verdict = `予測 ${predictionText}。`;
+  } else {
+    verdict = "目標タイム未設定。";
+  }
+
+  const countdown = countdownText(daysUntil(race.race_date, today));
+  const rest =
+    progress != null
+      ? `${countdown}、${RACE_STATUS_LABELS[progress.status]}。差 ${formatGap(
+          progress.gap_seconds,
+        )}。`
+      : `${countdown}。`;
+
+  return {
+    verdict,
+    tone: progress != null && progress.gap_seconds > 0 ? "warn" : "neutral",
+    rest,
+  };
 }

@@ -72,7 +72,7 @@ live in `packages/garmin-web/frontend/src/pages/`.
 | `/activities` | アクティビティ | 走った記録は? | Month-grouped run list with a date-range preset (直近4週 / 3ヶ月 / 1年 / 全期間) and a name search |
 | `/condition` | コンディション | 今の体の状態は? | This week's cautions (form anomalies) as a full-width alert band, then today's condition, RHR/HRV recovery trend, personal-baseline deviation, training load (ACWR), body composition |
 | `/performance` | パフォーマンス | 速くなっているか? | Coach narration and a page-level 週/月 toggle, then volume, physiology, efficiency, critical speed, objective fitness, climate-neutral HR, form score, durability, weight × economy |
-| `/goal` | 目標 | 目標に届く? | Countdown hero, current phase, registered races, last season's retrospective |
+| `/goal` | 目標 | 目標に届く? | Verdict line (目標タイム vs 予測 + あと N 日) → A / B race columns (countdown, target, prediction folded into the race it was computed against) → current phase (focus + rules, 4 件目以降は Disclosure) → other registered races as ruled rows → last season's retrospective |
 | `/plan` | 計画 | この1ヶ月どう積むか? | Training-block bands over a month grid (rows = weeks, columns ordered from `week_start_day`, so the Sunday long run is last), each day showing its prescription vs the actual run, a per-week adherence chip linking to that week's review, and the month total |
 
 Detail and fallback routes (no nav entry):
@@ -99,7 +99,7 @@ Cross-cutting behaviour worth knowing before editing a page:
   alert on error, so one broken endpoint no longer blanks a whole page.
 - **No duplicated answers.** A number is owned by exactly one page: the home
   tiles link to the `/condition` card instead of restating it, and the race
-  prediction sits in the `/goal` countdown tile rather than in a second card
+  prediction sits in the `/goal` A / B race column rather than in a second card
   below it (#894, #895).
 - **The review list is a detail route.** `/plan` replaced 週次レビュー in the nav
   (#983): the list was only an index over weeks, which the month grid now is, so
