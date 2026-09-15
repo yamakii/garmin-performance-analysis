@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import StatusBadge, { type StatusTone } from "../StatusBadge";
+import type { StatusTone } from "../StatusBadge";
 import type { Adherence } from "../../types";
 
 /**
@@ -22,17 +22,38 @@ export function adherenceTone(adherence: Adherence): StatusTone {
   return ratio >= 0.5 ? "warn" : "bad";
 }
 
+/** Only the two tones a reader has to act on take colour (#1119). */
+const TONE_CLASS: Record<StatusTone, string> = {
+  good: "text-ink-soft",
+  info: "text-ink-muted",
+  warn: "text-status-warn",
+  bad: "text-status-bad",
+  today: "text-accent",
+};
+
+/**
+ * Mono text rather than a pill (Morning Brief, #1119): the week header is a
+ * column of small facts, and a filled badge on every row would read as five
+ * alarms. A week still running says so — "2/4 · 進行中" is not the same claim
+ * as "2/4 実施", which is what an unfinished week used to look like.
+ */
 export default function AdherenceChip({
   adherence,
 }: {
   adherence: Adherence;
 }): JSX.Element {
   if (adherence.prescribed === 0) {
-    return <StatusBadge tone="info">未処方</StatusBadge>;
+    return (
+      <p data-tone="info" className="font-mono text-xs text-ink-muted">
+        未処方
+      </p>
+    );
   }
+  const tone = adherenceTone(adherence);
+  const count = `${adherence.done}/${adherence.prescribed}`;
   return (
-    <StatusBadge tone={adherenceTone(adherence)}>
-      {adherence.done}/{adherence.prescribed} 実施
-    </StatusBadge>
+    <p data-tone={tone} className={`font-mono text-xs ${TONE_CLASS[tone]}`}>
+      {adherence.pending > 0 ? `${count} · 進行中` : `${count} 実施`}
+    </p>
   );
 }
