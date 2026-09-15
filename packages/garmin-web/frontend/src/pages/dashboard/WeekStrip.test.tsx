@@ -81,7 +81,7 @@ describe("WeekStrip", () => {
     });
     render(<WeekStrip week={week} days={DAYS} today="2026-09-13" />);
 
-    // Replaced: struck through, tinted 注意, with what happened instead.
+    // Replaced with nothing recorded: the strip can only say it was swapped.
     const replaced = cellFor("2026-09-09");
     expect(replaced).toHaveClass("bg-warn-tint");
     expect(replaced.querySelector("s")).toHaveTextContent("テンポ 6km 6km ≤168");
@@ -97,6 +97,52 @@ describe("WeekStrip", () => {
     expect(within(rest).getByText("HRVが2夜連続で基準割れ")).toHaveClass(
       "text-status-warn",
     );
+  });
+
+  it("test_week_strip_replaced_states_what_was_run", () => {
+    // A swapped session with a recorded run: the strip states what actually
+    // happened, the same `km · pace · hr` shape DayCell uses, rather than the
+    // bare "代替" that left the reader with no idea what replaced it (#1192).
+    const week = weekWith({
+      "2026-09-09": [
+        {
+          prescription_id: 11,
+          session_type: "tempo",
+          title: "テンポ 6km",
+          target_km: 6,
+          target_minutes: null,
+          hr_high: 168,
+          status: "replaced",
+        },
+      ],
+    });
+    const withActual: PlanWeek = {
+      ...week,
+      days: week.days.map((day) =>
+        day.date === "2026-09-09"
+          ? {
+              ...day,
+              activities: [
+                {
+                  activity_id: 555,
+                  activity_date: "2026-09-09",
+                  activity_name: "Easy Run",
+                  total_distance_km: 8.2,
+                  avg_pace_seconds_per_km: 402,
+                  avg_heart_rate: 139,
+                },
+              ],
+            }
+          : day,
+      ),
+    };
+    render(<WeekStrip week={withActual} days={DAYS} today="2026-09-13" />);
+
+    const replaced = cellFor("2026-09-09");
+    expect(within(replaced).getByText("→ 8.2km · 6:42 · 139")).toBeInTheDocument();
+    expect(within(replaced).queryByText("→ 代替")).not.toBeInTheDocument();
+    // The prescription it replaced is still struck through above it.
+    expect(replaced.querySelector("s")).toHaveTextContent("テンポ 6km");
   });
 
   it("test_week_strip_scrolls_horizontally", () => {
