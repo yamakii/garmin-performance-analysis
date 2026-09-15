@@ -11,11 +11,11 @@ interface ConditionCardProps {
  * label map so the home hero and this card name the same verdict alike (#915).
  */
 const RECOMMENDATION_CLASS: Record<RecoveryRecommendation, string> = {
-  quality: "bg-emerald-100 text-emerald-700",
-  moderate: "bg-sky-100 text-sky-700",
-  easy: "bg-amber-100 text-amber-700",
-  rest: "bg-red-100 text-red-700",
-  unknown: "bg-slate-100 text-slate-600",
+  quality: " text-status-good",
+  moderate: " text-ink-soft",
+  easy: "bg-warn-tint text-status-warn",
+  rest: "bg-bad-tint text-status-bad",
+  unknown: "bg-well text-ink-muted",
 };
 
 export default function ConditionCard({ data }: ConditionCardProps) {
@@ -36,22 +36,22 @@ export default function ConditionCard({ data }: ConditionCardProps) {
       className={CARD_CLASS}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="font-display text-base font-semibold text-ink">
+        <h2 className="text-base font-semibold text-ink">
           当日コンディション
         </h2>
         <span
-          className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${meta.className}`}
+          className={`shrink-0 rounded-sm px-2.5 py-1 text-xs font-semibold ${meta.className}`}
         >
           {meta.label}
         </span>
       </div>
       {isUnknown ? (
-        <p className="py-4 text-sm text-slate-500">
+        <p className="py-4 text-sm text-ink-muted">
           データ無し・感覚優先で判断してください
         </p>
       ) : (
         <>
-          <p className="mb-2 text-sm text-slate-600">{rationale}</p>
+          <p className="mb-2 text-sm text-ink-muted">{rationale}</p>
           <dl className="grid grid-cols-3 gap-2 text-center">
             <Stat label="準備度" value={data.training_readiness} />
             <Stat label="睡眠スコア" value={data.sleep_score} />
@@ -65,8 +65,8 @@ export default function ConditionCard({ data }: ConditionCardProps) {
 
 function Stat({ label, value }: { label: string; value: number | null }) {
   return (
-    <div className="rounded-lg bg-slate-50 px-2 py-2">
-      <dt className="text-xs text-slate-500">{label}</dt>
+    <div className="rounded-md bg-well px-2 py-2">
+      <dt className="text-xs text-ink-muted">{label}</dt>
       <dd className="font-semibold text-ink">{value ?? "—"}</dd>
     </div>
   );

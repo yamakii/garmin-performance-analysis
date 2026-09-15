@@ -91,22 +91,22 @@ export default function ObjectiveFitnessBlock({
       aria-label="客観フィットネス曲線"
       className={CARD_CLASS}
     >
-      <h2 className="mb-1 font-display text-base font-semibold text-ink">
+      <h2 className="mb-1 text-base font-semibold text-ink">
         客観フィットネス曲線 (実走VDOT vs Garmin VO2max)
       </h2>
       {isEmpty ? (
-        <p className="py-8 text-center text-sm text-slate-500">
+        <p className="py-8 text-center text-sm text-ink-muted">
           データがありません
         </p>
       ) : (
         <>
-          <p className="mb-1 text-sm text-slate-600">
+          <p className="mb-1 text-sm text-ink-muted">
             <span className="font-semibold text-ink">{GARMIN_SERIES}</span> と{" "}
             <span className="font-semibold text-ink">{OBJECTIVE_SERIES}</span>{" "}
             (rolling 90日 best-effort) の重ね描き。
           </p>
           {optimism_gap != null && (
-            <p className="mb-1 text-sm text-amber-700">
+            <p className="mb-1 text-sm text-status-warn">
               楽観ギャップ: {formatNumber(optimism_gap.gap_vdot, 1)} VDOT（実走比 約{" "}
               {formatNumber(optimism_gap.gap_pace_sec_per_km, 0)} s/km 速く見積もり）
             </p>

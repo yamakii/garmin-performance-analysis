@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 
 /**
- * Empty-state placeholder for read-only pages. Shows a message plus an
- * optional hint. Registration/edits are owned by CLI commands (the web app
- * is read-only), so the hint points the user at the relevant command.
+ * Empty-state placeholder for read-only pages: one muted sentence saying what
+ * would fill the space. Registration/edits are owned by CLI commands (the web
+ * app is read-only), so the hint points the user at the relevant command.
  */
 export default function EmptyState({
   message,
@@ -13,9 +13,9 @@ export default function EmptyState({
   hint?: ReactNode;
 }) {
   return (
-    <div className="py-4 text-center">
-      <p className="text-sm text-slate-500">{message}</p>
-      {hint != null && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
+    <div className="py-4 text-sm text-ink-muted">
+      <p>{message}</p>
+      {hint != null && <p className="mt-1">{hint}</p>}
     </div>
   );
 }
@@ -23,7 +23,7 @@ export default function EmptyState({
 /** Inline `<code>` for a CLI command shown inside an EmptyState hint. */
 export function CliCommand({ children }: { children: ReactNode }) {
   return (
-    <code className="rounded bg-slate-100 px-1 py-0.5 text-slate-600">
+    <code className="rounded-sm bg-well px-1.5 py-0.5 font-mono text-ink">
       {children}
     </code>
   );

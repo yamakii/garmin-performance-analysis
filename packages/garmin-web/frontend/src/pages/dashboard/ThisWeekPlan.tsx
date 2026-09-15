@@ -86,7 +86,7 @@ export default function ThisWeekPlan({
   if (review?.review_data == null && rows.length === 0) {
     return (
       <section aria-label="今週のプランと次の行動" className={CARD_CLASS}>
-        <h2 className="mb-2 font-display text-base font-semibold text-ink">
+        <h2 className="mb-2 text-base font-semibold text-ink">
           今週のプランと次の行動
         </h2>
         <EmptyState
@@ -117,18 +117,18 @@ export default function ThisWeekPlan({
   return (
     <section aria-label="今週のプランと次の行動" className={CARD_CLASS}>
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="font-display text-base font-semibold text-ink">
+        <h2 className="text-base font-semibold text-ink">
           {isCurrentWeek ? "今週のプラン" : "直近レビューのプラン"}
         </h2>
         {weekStart != null && weekEnd != null && (
-          <span className="font-numeric text-xs tabular-nums text-slate-500">
+          <span className="font-mono text-xs text-ink-muted">
             {formatDate(weekStart)} 〜 {formatDate(weekEnd)}
           </span>
         )}
       </div>
 
       {rows.length > 0 ? (
-        <ul className="divide-y divide-slate-100">
+        <ul className="divide-y divide-hairline">
           {rows.map((row, i) => {
             const isToday = row.date === todayIso;
             return (
@@ -137,10 +137,10 @@ export default function ThisWeekPlan({
                 // eslint-disable-next-line react/no-array-index-key
                 key={i}
                 className={`flex items-start gap-3 px-2 py-2 ${
-                  isToday ? "rounded-lg bg-signal/5 ring-1 ring-signal/20" : ""
-                }`}
+ isToday ? "rounded-md bg-accent-tint ring-1 ring-accent" : ""
+ }`}
               >
-                <span className="w-20 shrink-0 pt-0.5 font-numeric text-sm tabular-nums text-slate-500">
+                <span className="w-20 shrink-0 pt-0.5 font-mono text-sm text-ink-muted">
                   {row.date != null ? formatDayLabel(row.date) : "—"}
                 </span>
                 {row.rating != null ? (
@@ -166,16 +166,16 @@ export default function ThisWeekPlan({
                   </span>
                 )}
                 <span className="min-w-0 flex-1">
-                  <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-800">
+                  <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-ink-soft">
                     {row.label}
                     {isToday && (
-                      <span className="rounded-full bg-signal/15 px-2 py-0.5 text-[10px] font-bold text-signal-ink">
+                      <span className="rounded-sm bg-accent-tint px-2 py-0.5 text-[10px] font-bold text-accent">
                         今日
                       </span>
                     )}
                   </span>
                   {row.detail != null && row.detail !== "" && (
-                    <span className="mt-0.5 block text-xs leading-relaxed text-slate-500">
+                    <span className="mt-0.5 block text-xs leading-relaxed text-ink-muted">
                       {row.detail}
                     </span>
                   )}
@@ -189,15 +189,15 @@ export default function ThisWeekPlan({
       )}
 
       {recommendations.length > 0 && (
-        <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
-          <h3 className="text-xs font-semibold tracking-[0.2em] text-slate-500 uppercase">
+        <div className="mt-4 space-y-2 border-t border-hairline pt-4">
+          <h3 className="text-xs font-semibold font-mono text-ink-muted">
             Next Actions
           </h3>
           {recommendations.map((rec, i) => (
             <p
               // eslint-disable-next-line react/no-array-index-key
               key={i}
-              className="rounded-lg border-l-4 border-signal bg-slate-50 px-3 py-2 text-sm leading-relaxed text-slate-700"
+              className="rounded-md border-l-4 border-accent bg-well px-3 py-2 text-sm leading-relaxed text-ink-soft"
             >
               {rec}
             </p>
@@ -209,7 +209,7 @@ export default function ThisWeekPlan({
         <div className="mt-4 text-right">
           <Link
             to={`/weekly-reviews/${weekStart}`}
-            className="text-sm font-medium text-status-info hover:underline"
+            className="text-sm font-medium text-accent hover:underline"
           >
             レビュー全文 →
           </Link>

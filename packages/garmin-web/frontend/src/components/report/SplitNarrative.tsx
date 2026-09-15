@@ -35,7 +35,7 @@ export default function SplitNarrative({
   }
   if (section.parse_error) {
     return (
-      <div className="mt-4 border-t border-slate-100 pt-4">
+      <div className="mt-4 border-t border-hairline pt-4">
         <ParseErrorNotice raw={section.raw} />
       </div>
     );
@@ -52,7 +52,7 @@ export default function SplitNarrative({
     : [];
 
   return (
-    <div className="mt-4 border-t border-slate-100 pt-4">
+    <div className="mt-4 border-t border-hairline pt-4">
       <h3 className={SUBHEADING}>スプリット解説</h3>
       {typeof data.highlights === "string" && (
         <div className={`mt-2 ${SUBCARD}`}>
@@ -65,7 +65,7 @@ export default function SplitNarrative({
             {entries.map(([key, text]) => (
               <li key={key} className="flex items-start gap-3">
                 <span
-                  className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink/10 font-numeric text-xs font-semibold tabular-nums text-ink"
+                  className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-sm bg-well font-mono text-xs font-semibold text-ink"
                   aria-label={`スプリット ${splitLabel(key)}`}
                 >
                   {splitLabel(key)}

@@ -50,13 +50,13 @@ export default function WeeklyReviews() {
   }
 
   return (
-    <div className="stagger-in space-y-6">
+    <div className="space-y-6">
       {/* The list left the nav for /plan (#983), so it states its way back. */}
       <div className="flex items-start justify-between gap-3">
-        <SectionHeading eyebrow="Weekly Review" title="週次レビュー" />
+        <SectionHeading title="週次レビュー" />
         <Link
           to="/plan"
-          className="text-sm font-medium text-slate-600 hover:text-ink"
+          className="text-sm font-medium text-ink-muted hover:text-ink"
         >
           ← 計画へ
         </Link>
@@ -64,7 +64,7 @@ export default function WeeklyReviews() {
 
       <section className={CARD_CLASS}>
         {reviews.length > 0 ? (
-          <ul className="divide-y divide-slate-100">
+          <ul className="divide-y divide-hairline">
             {reviews.map((review) => {
               const redCount = countRating(review, "🔴");
               const yellowCount = countRating(review, "🟡");
@@ -73,10 +73,10 @@ export default function WeeklyReviews() {
                 <li key={review.week_start_date}>
                   <Link
                     to={`/weekly-reviews/${review.week_start_date}`}
-                    className="-mx-2 flex flex-col gap-1 rounded-lg px-2 py-3 transition-colors hover:bg-slate-50"
+                    className="-mx-2 flex flex-col gap-1 rounded-md px-2 py-3 transition-colors hover:bg-surface"
                   >
                     <div className="flex items-baseline justify-between gap-3">
-                      <span className="font-display text-sm font-semibold text-ink">
+                      <span className="text-sm font-semibold text-ink">
                         {review.week_start_date} 〜 {review.week_end_date}
                       </span>
                       {/*
@@ -84,7 +84,7 @@ export default function WeeklyReviews() {
                        * it are what the link announces (#912), so the counts
                        * are not read out as three unnamed circles.
                        */}
-                      <span className="font-numeric text-xs tabular-nums text-slate-500">
+                      <span className="font-mono text-xs text-ink-muted">
                         <span aria-hidden="true" className="mr-2">
                           ✅ {greenCount}
                         </span>
@@ -97,7 +97,7 @@ export default function WeeklyReviews() {
                         </span>
                       </span>
                     </div>
-                    <p className="text-sm text-slate-600">
+                    <p className="text-sm text-ink-muted">
                       {overallExcerpt(review)}
                     </p>
                   </Link>

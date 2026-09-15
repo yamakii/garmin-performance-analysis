@@ -328,7 +328,7 @@ describe("Goal", () => {
 
   it("test_Goal_second_a_race_keeps_list_emphasis", async () => {
     // Two priority-A races: the hero only headlines the first one, so the
-    // second A race lands in the list and keeps its signal ring + left bar.
+    // second A race lands in the list and keeps its accent ring + left bar.
     stubFetch({
       profile: EMPTY_PROFILE,
       goals: [
@@ -355,8 +355,8 @@ describe("Goal", () => {
     const cards = Array.from(container.querySelectorAll("article"));
     expect(cards).toHaveLength(1);
     expect(cards[0].textContent).toContain("別大マラソン");
-    expect(cards[0].className).toContain("ring-signal");
-    expect(cards[0].querySelector(".bg-signal")).not.toBeNull();
+    expect(cards[0].className).toContain("ring-accent");
+    expect(cards[0].querySelector(".bg-accent")).not.toBeNull();
   });
 
   it("test_goal_focus_sections_still_first_three_open", async () => {

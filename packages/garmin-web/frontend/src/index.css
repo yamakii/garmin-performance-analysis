@@ -1,123 +1,81 @@
 @import "tailwindcss";
 
+/*
+ * "Morning Brief" design tokens (Epic #1115, spec: docs/design/morning-brief-handoff.md).
+ *
+ * Two faces only: BIZ UDPGothic for prose and headings, IBM Plex Mono for every
+ * number, date and label. Paper ground, near-black ink, one accent (teal) for
+ * today / links / the primary action, and status colors that are text-only for
+ * 良 and tinted only for 注意 / 悪. No shadows, no large radii, no gradients —
+ * hierarchy comes from type scale, hairlines and whitespace.
+ *
+ * Contrast (index.css.test.ts recomputes these): every text token clears WCAG
+ * AA 4.5:1 on paper and on its own tint. `ink-faint` (2.67:1) is reserved for
+ * disabled cells (days outside the month); `star` (3.30:1) is reserved for the
+ * ★ glyphs, a non-text symbol under the 3:1 rule.
+ */
 @theme {
   --font-sans:
-    "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui,
-    -apple-system, "Segoe UI", sans-serif;
-  /* Editorial display face for headings (Issue #214). */
-  --font-display:
-    "Zen Kaku Gothic New", "Hiragino Sans", "Hiragino Kaku Gothic ProN",
-    "Noto Sans JP", system-ui, sans-serif;
-  /* Condensed numerals for KPI / record-table numbers. */
-  --font-numeric:
-    "Barlow Condensed", "Avenir Next Condensed", "Arial Narrow", sans-serif;
+    "BIZ UDPGothic", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 
-  /* Editorial Sport palette (Issue #214) */
-  --color-ink: #16213a;
-  --color-signal: #ff5a36;
-  --color-gold: #f59e0b;
+  /* ground / ink */
+  --color-paper: #f4f1ea;
+  --color-surface: #fbfaf7;
+  --color-hairline: #dcd7cc;
+  --color-ink: #1c1b18;
+  --color-ink-soft: #3d3a34;
+  --color-ink-muted: #6b675e;
+  --color-ink-faint: #9a9489;
+  --color-well: #ebe7de;
 
-  /*
-   * Text-safe companion to --color-signal (Issue #911). The brand orange is
-   * only 3.10:1 on white: fine as a fill, border or large display numeral
-   * (>=3:1 non-text / large-text), but below AA 4.5:1 for body-sized text.
-   * Use signal-ink whenever the accent has to carry small text — including on
-   * a signal tint: 5.60:1 on white, 5.03:1 on `bg-signal/15`, 4.61:1 on that
-   * same tint over slate-100 (the darkest end of the hero gradients).
-   */
-  --color-signal-ink: #bf360c;
+  /* accent / status */
+  --color-accent: #1f6f6b;
+  --color-accent-tint: #e6f0ef;
+  --color-status-good: #2f7a45;
+  --color-status-warn: #9a5b12;
+  --color-warn-tint: #fdf1e4;
+  --color-warn-line: #e7c9a4;
+  --color-status-bad: #a83a2e;
+  --color-bad-tint: #fbe7e3;
+  --color-bad-line: #e6b3ab;
+  --color-star: #b07a1d;
 
-  /*
-   * Status semantics (良 / 注意 / 悪 / 情報) — Issue #650.
-   * Use as the "on" (text/icon) color over a soft tint of the same hue
-   * (e.g. `bg-status-good/10 text-status-good`) so good/warn/bad badges
-   * follow the same token discipline as ink/signal/gold instead of ad-hoc
-   * amber-100 / emerald-100 / sky-100 utility pairs.
-   *
-   * All four clear AA 4.5:1 as text on white, slate-50 and slate-100 — and on
-   * their own /10 tint over each of those (Issue #911). The previous values
-   * (#059669 / #d97706 / #dc2626 / #0284c7) failed at 3.19-4.83:1 on white.
-   * `--color-status-warn` is one step darker than the amber the audit
-   * proposed (#b45309), which measured 4.42:1 on `bg-status-warn/10` over
-   * slate-50 — the badge's real background — and so missed AA.
-   * Ratios below are vs white / on own /10 tint over slate-100 (worst case).
-   */
-  --color-status-good: #047857; /* emerald — 良 — 5.48:1 / 4.60:1 */
-  --color-status-warn: #92400e; /* amber — 注意 — 7.09:1 / 5.92:1 */
-  --color-status-bad: #b91c1c; /* red — 悪 — 6.47:1 / 5.41:1 */
-  --color-status-info: #0369a1; /* sky — 情報 — 5.93:1 / 4.97:1 */
+  /* metric colors (chartTheme.ts METRIC_COLORS mirrors these) */
+  --color-metric-hr: #b8433f;
+  --color-metric-pace: #1f6f6b;
+  --color-metric-cadence: #b07a1d;
+  --color-metric-power: #6a4fb3;
+  --color-metric-form: #6a4fb3;
+  --color-metric-elevation: #6b675e;
+  --color-metric-compare: #c9c3b6;
 
-  /* Metric semantic colors (chartTheme.ts METRIC_COLORS mirrors these) */
-  --color-metric-hr: #e11d48;
-  --color-metric-pace: #0d9488;
-  --color-metric-cadence: #d97706;
-  --color-metric-power: #7c3aed;
-  --color-metric-elevation: #78716c;
-  --color-metric-form: #8b5cf6;
+  /* Garmin HR zones z1-z5: single-hue lightness ramp */
+  --color-zone-1: #e8c9c7;
+  --color-zone-2: #d49c98;
+  --color-zone-3: #c2716c;
+  --color-zone-4: #b8433f;
+  --color-zone-5: #8a2e2a;
 
-  /* Garmin HR zone colors z1-z5 */
-  --color-zone-1: #94a3b8;
-  --color-zone-2: #38bdf8;
-  --color-zone-3: #34d399;
-  --color-zone-4: #fbbf24;
-  --color-zone-5: #f87171;
+  --radius-sm: 2px;
+  --radius-md: 4px;
 }
 
 @layer base {
   body {
-    @apply bg-slate-50 font-sans text-slate-800 antialiased;
+    @apply bg-paper font-sans text-ink antialiased;
+  }
+  a {
+    @apply text-accent;
+  }
+  a:hover {
+    @apply underline;
   }
 }
 
-/*
- * Stagger entrance (Issue #214): direct children of .stagger-in fade in and
- * rise 8px, 80ms apart. Delay is capped at the 8th child so long lists do
- * not keep the reader waiting. Disabled under prefers-reduced-motion.
- */
-@keyframes stagger-rise {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.stagger-in > * {
-  animation: stagger-rise 0.4s ease-out both;
-}
-
-.stagger-in > *:nth-child(1) {
-  animation-delay: 0ms;
-}
-.stagger-in > *:nth-child(2) {
-  animation-delay: 80ms;
-}
-.stagger-in > *:nth-child(3) {
-  animation-delay: 160ms;
-}
-.stagger-in > *:nth-child(4) {
-  animation-delay: 240ms;
-}
-.stagger-in > *:nth-child(5) {
-  animation-delay: 320ms;
-}
-.stagger-in > *:nth-child(6) {
-  animation-delay: 400ms;
-}
-.stagger-in > *:nth-child(7) {
-  animation-delay: 480ms;
-}
-.stagger-in > *:nth-child(n + 8) {
-  animation-delay: 560ms;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .stagger-in > * {
-    animation: none;
-  }
+/* Leaflet tiles are desaturated so the ink track is the only figure. */
+.grayscale-tiles {
+  filter: grayscale(1) opacity(0.85);
 }
 
 /*
@@ -148,13 +106,14 @@
 }
 
 .markdown-body strong {
-  font-weight: 600;
-  color: var(--color-slate-900);
+  font-weight: 700;
+  color: var(--color-ink);
 }
 
 .markdown-body code {
-  border-radius: 0.25rem;
-  background-color: var(--color-slate-100);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-well);
   padding: 0.0625rem 0.25rem;
+  font-family: var(--font-mono);
   font-size: 0.85em;
 }

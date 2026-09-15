@@ -3,32 +3,35 @@ import { describe, expect, it } from "vitest";
 import SectionHeading from "./SectionHeading";
 
 describe("SectionHeading", () => {
-  it("renders eyebrow and title text", () => {
-    render(<SectionHeading eyebrow="Trends" title="トレンド" />);
+  it("test_section_heading_no_eyebrow", () => {
+    const { container } = render(
+      <SectionHeading title="今週" note="09/14 – 09/20" />,
+    );
 
-    expect(screen.getByText("Trends")).toBeInTheDocument();
-    expect(screen.getByText("トレンド")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "今週" }),
+    ).toBeInTheDocument();
+    // The note is a mono caption beside the heading...
+    expect(screen.getByText("09/14 – 09/20")).toHaveClass("font-mono");
+    // ...and nothing restates the heading in tracked-out English (#1116).
+    expect(container.querySelector(".uppercase")).toBeNull();
   });
 
   it("renders title as h1 by default and h2 when as=h2", () => {
-    const { rerender } = render(
-      <SectionHeading eyebrow="Trends" title="トレンド" />,
-    );
+    const { rerender } = render(<SectionHeading title="トレンド" />);
     expect(
       screen.getByRole("heading", { level: 1, name: "トレンド" }),
     ).toBeInTheDocument();
 
-    rerender(<SectionHeading eyebrow="Trends" title="トレンド" as="h2" />);
+    rerender(<SectionHeading title="トレンド" as="h2" />);
     expect(
       screen.getByRole("heading", { level: 2, name: "トレンド" }),
     ).toBeInTheDocument();
   });
 
-  it("eyebrow uses uppercase tracking style", () => {
-    render(<SectionHeading eyebrow="Trends" title="トレンド" />);
+  it("omits the note element when none is given", () => {
+    const { container } = render(<SectionHeading title="目標" />);
 
-    const eyebrow = screen.getByText("Trends");
-    expect(eyebrow).toHaveClass("uppercase");
-    expect(eyebrow).toHaveClass("tracking-[0.2em]");
+    expect(container.querySelectorAll("p")).toHaveLength(0);
   });
 });

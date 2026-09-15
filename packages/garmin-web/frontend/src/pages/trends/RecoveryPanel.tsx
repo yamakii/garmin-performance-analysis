@@ -19,15 +19,15 @@ const HRV_SERIES = "夜間HRV (ms)";
 
 /** Badge color family; the wording comes from the shared label maps (#915). */
 const RHR_TREND_CLASS: Record<Exclude<RhrTrend, null>, string> = {
-  improving: "bg-emerald-100 text-emerald-700",
-  stable: "bg-sky-100 text-sky-700",
-  fatigued: "bg-red-100 text-red-700",
+  improving: " text-status-good",
+  stable: " text-ink-soft",
+  fatigued: "bg-bad-tint text-status-bad",
 };
 
 const HRV_STATUS_CLASS: Record<Exclude<HrvStatus, null>, string> = {
-  high: "bg-emerald-100 text-emerald-700",
-  balanced: "bg-sky-100 text-sky-700",
-  low: "bg-amber-100 text-amber-700",
+  high: " text-status-good",
+  balanced: " text-ink-soft",
+  low: "bg-warn-tint text-status-warn",
 };
 
 export default function RecoveryPanel({ data }: RecoveryPanelProps) {
@@ -130,20 +130,20 @@ export default function RecoveryPanel({ data }: RecoveryPanelProps) {
       className={CARD_CLASS}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="font-display text-base font-semibold text-ink">
+        <h2 className="text-base font-semibold text-ink">
           回復トレンド (RHR / HRV)
         </h2>
         <div className="flex shrink-0 items-center gap-1.5">
           {rhrMeta && (
             <span
-              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${rhrMeta.className}`}
+              className={`rounded-sm px-2.5 py-1 text-xs font-semibold ${rhrMeta.className}`}
             >
               RHR {rhrMeta.label}
             </span>
           )}
           {hrvMeta && (
             <span
-              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${hrvMeta.className}`}
+              className={`rounded-sm px-2.5 py-1 text-xs font-semibold ${hrvMeta.className}`}
             >
               HRV {hrvMeta.label}
             </span>
@@ -151,12 +151,12 @@ export default function RecoveryPanel({ data }: RecoveryPanelProps) {
         </div>
       </div>
       {isEmpty ? (
-        <p className="py-8 text-center text-sm text-slate-500">
+        <p className="py-8 text-center text-sm text-ink-muted">
           回復データ (RHR / HRV) の記録がありません
         </p>
       ) : (
         <>
-          <p className="mb-1 text-sm text-slate-600">
+          <p className="mb-1 text-sm text-ink-muted">
             7日RHR中央値{" "}
             <span className="font-semibold text-ink">
               {formatNumber(rhr.median_7d)}
@@ -167,14 +167,14 @@ export default function RecoveryPanel({ data }: RecoveryPanelProps) {
             </span>{" "}
             ms
             {hrv.under_recovery && (
-              <span className="ml-1 font-semibold text-red-600">
+              <span className="ml-1 font-semibold text-status-bad">
                 （HRV連夜低下→回復優先）
               </span>
             )}
           </p>
           <div className="space-y-4">
             <div>
-              <h3 className="mb-1 text-sm font-medium text-slate-600">
+              <h3 className="mb-1 text-sm font-medium text-ink-muted">
                 安静時心拍 (bpm・低いほど良い)
               </h3>
               <EChart
@@ -184,7 +184,7 @@ export default function RecoveryPanel({ data }: RecoveryPanelProps) {
               />
             </div>
             <div>
-              <h3 className="mb-1 text-sm font-medium text-slate-600">
+              <h3 className="mb-1 text-sm font-medium text-ink-muted">
                 夜間HRV (ms・高いほど良い)
               </h3>
               <EChart

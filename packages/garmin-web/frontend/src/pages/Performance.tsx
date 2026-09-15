@@ -47,8 +47,8 @@ function toggleClass(active: boolean): string {
   const base =
     "rounded-md px-3 py-1 text-sm font-medium transition-colors cursor-pointer";
   return active
-    ? `${base} bg-white text-ink shadow-sm`
-    : `${base} text-slate-600 hover:text-ink`;
+    ? `${base} text-ink`
+    : `${base} text-ink-muted hover:text-ink`;
 }
 
 /** Page-level week/month switch driving both the narration and the volume card. */
@@ -63,7 +63,7 @@ function GranularityToggle({
     <div
       role="group"
       aria-label="集計単位"
-      className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5"
+      className="inline-flex rounded-md border border-hairline bg-well p-0.5"
     >
       <button
         type="button"
@@ -194,7 +194,7 @@ export default function Performance() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <SectionHeading eyebrow="Performance" title="速くなっているか" />
+        <SectionHeading title="速くなっているか" />
         <GranularityToggle
           granularity={granularity}
           onChange={setGranularity}
@@ -210,7 +210,7 @@ export default function Performance() {
       */}
       <TrendNarrationCard granularity={granularity} />
 
-      <div className="stagger-in grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2">
         {cards.map(({ id, card }) => (
           <div key={id} id={id} className="scroll-mt-20">
             {card}

@@ -81,7 +81,7 @@ export default function BodyCompositionChart({ data }: BodyCompositionChartProps
       className={CARD_CLASS}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="font-display text-base font-semibold text-ink">
+        <h2 className="text-base font-semibold text-ink">
           体組成 (体重内訳)
         </h2>
         {weight != null && (
@@ -91,19 +91,19 @@ export default function BodyCompositionChart({ data }: BodyCompositionChartProps
         )}
       </div>
       {isEmpty ? (
-        <p className="py-8 text-center text-sm text-slate-500">
+        <p className="py-8 text-center text-sm text-ink-muted">
           体組成の記録がないため、内訳を表示できません
         </p>
       ) : (
         <>
-          <p className="mb-1 text-sm text-slate-600">
+          <p className="mb-1 text-sm text-ink-muted">
             今期 <span className="font-semibold text-ink">{signedKg(change.delta_weight)}</span>
             （脂肪 {signedKg(change.delta_fat)} / 除脂肪 {signedKg(change.delta_lean)}）
           </p>
           {change.muscle_loss_warning && (
             <p
               role="alert"
-              className="mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"
+              className="mb-2 rounded-md border border-bad-line bg-bad-tint px-3 py-2 text-xs text-status-bad"
             >
               除脂肪量の減少が大きめです。減量ペースを緩めてください
             </p>

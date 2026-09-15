@@ -15,16 +15,16 @@ export default function NotFound() {
        * slate-400 (2.63:1) both miss even the 3:1 large-text floor, so the 404
        * uses slate-500 (4.77:1) — Issue #911.
        */}
-      <p className="font-numeric text-5xl font-bold text-slate-500">404</p>
-      <h1 className="font-display text-xl font-semibold text-ink">
+      <p className="font-mono text-5xl font-bold text-ink-muted">404</p>
+      <h1 className="text-xl font-semibold text-ink">
         ページが見つかりません
       </h1>
-      <p className="text-sm text-slate-500">
+      <p className="text-sm text-ink-muted">
         URL が変わったか、削除された可能性があります。
       </p>
       <Link
         to="/"
-        className="mt-2 rounded-lg border border-slate-300 bg-white px-4 py-1.5 text-sm font-medium text-ink transition-colors hover:bg-slate-100"
+        className="mt-2 rounded-md border border-hairline px-4 py-1.5 text-sm font-medium text-ink transition-colors hover:bg-surface"
       >
         ホームへ戻る
       </Link>

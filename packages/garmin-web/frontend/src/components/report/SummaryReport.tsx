@@ -32,19 +32,19 @@ type Tone = "emerald" | "amber" | "rose";
 const PALETTES: Record<Tone, { frame: string; title: string; marker: string }> =
   {
     emerald: {
-      frame: "border-emerald-100 bg-emerald-50/60",
-      title: "text-emerald-800",
-      marker: "text-emerald-500",
+      frame: "border-hairline",
+      title: "text-status-good",
+      marker: "text-status-good",
     },
     amber: {
-      frame: "border-amber-100 bg-amber-50/60",
-      title: "text-amber-800",
-      marker: "text-amber-500",
+      frame: "border-warn-line bg-warn-tint",
+      title: "text-status-warn",
+      marker: "text-status-warn",
     },
     rose: {
-      frame: "border-rose-100 bg-rose-50/60",
-      title: "text-rose-800",
-      marker: "text-rose-500",
+      frame: "border-bad-line bg-bad-tint",
+      title: "text-status-bad",
+      marker: "text-status-bad",
     },
   };
 
@@ -68,7 +68,7 @@ function Bullet({
   marker: string;
 }) {
   return (
-    <li className="flex gap-2 text-sm text-slate-700">
+    <li className="flex gap-2 text-sm text-ink-soft">
       <span aria-hidden="true" className={`shrink-0 ${PALETTES[tone].marker}`}>
         {marker}
       </span>
@@ -90,7 +90,7 @@ function StringList({
 }) {
   const palette = PALETTES[tone];
   return (
-    <div className={`rounded-lg border p-4 ${palette.frame}`}>
+    <div className={`rounded-md border p-4 ${palette.frame}`}>
       <h3 className={`text-sm font-semibold ${palette.title}`}>{title}</h3>
       <ul className="mt-2 space-y-1.5">
         {items.map((item, index) => (
@@ -117,7 +117,7 @@ function CountChip({
   const palette = PALETTES[tone];
   return (
     <span
-      className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${palette.frame} ${palette.title}`}
+      className={`rounded-sm border px-2.5 py-1 text-xs font-semibold ${palette.frame} ${palette.title}`}
     >
       {`${marker} ${label} ${count}`}
     </span>
@@ -155,12 +155,12 @@ function PrescriptionVerdictLine({ data }: { data: Record<string, unknown> }) {
   const reasons = asStringArray(data.reasons);
   const reason = reasons.length > 0 ? String(reasons[0]) : null;
   return (
-    <div className={`rounded-lg border p-3 ${palette.frame}`}>
+    <div className={`rounded-md border p-3 ${palette.frame}`}>
       <p className={`text-sm font-semibold ${palette.title}`}>
         <span aria-hidden="true">{verdict}</span>{" "}
         {title != null ? `処方「${title}」・${label}` : `処方との比較・${label}`}
       </p>
-      {reason != null && <p className="mt-1 text-sm text-slate-700">{reason}</p>}
+      {reason != null && <p className="mt-1 text-sm text-ink-soft">{reason}</p>}
     </div>
   );
 }
@@ -181,9 +181,9 @@ function formatDelta(delta: number, unit: string): string {
 
 function DeltaChip({ label, value }: { label: string; value: string }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-      <span className="text-slate-500">{label}</span>
-      <span className="tabular-nums">{value}</span>
+    <span className="inline-flex items-center gap-1.5 rounded-sm bg-well px-3 py-1 text-xs font-medium text-ink-soft">
+      <span className="text-ink-muted">{label}</span>
+      <span className="">{value}</span>
     </span>
   );
 }
@@ -207,7 +207,7 @@ function VsPreviousChips({ data }: { data: Record<string, unknown> }) {
   const daysAgo = typeof data.days_ago === "number" ? data.days_ago : null;
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-xs font-semibold text-slate-500">
+      <span className="text-xs font-semibold text-ink-muted">
         {daysAgo != null ? `前回比（${daysAgo}日前）` : "前回比"}
       </span>
       {chips.map((chip) => (
@@ -251,7 +251,7 @@ export default function SummaryReport({
                   <StarRating text={data.star_rating} size="lg" />
                 )}
                 {typeof data.integrated_score === "number" && (
-                  <span className="rounded-full bg-ink/5 px-3 py-1 text-xs font-semibold tabular-nums text-ink">
+                  <span className="rounded-sm bg-well px-3 py-1 text-xs font-semibold text-ink">
                     統合スコア {formatNumber(data.integrated_score, 1)}
                   </span>
                 )}
@@ -342,7 +342,7 @@ export default function SummaryReport({
                 {verdict != null && <PrescriptionVerdictLine data={verdict} />}
                 {vsPrevious != null && <VsPreviousChips data={vsPrevious} />}
                 {typeof data.next_action === "string" && (
-                  <p className="text-sm font-semibold text-slate-800">
+                  <p className="text-sm font-semibold text-ink-soft">
                     {data.next_action}
                   </p>
                 )}

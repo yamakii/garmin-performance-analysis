@@ -10,30 +10,31 @@ describe("StarRating", () => {
   });
 
   /**
-   * `text-gold` on `bg-gold/10` measures 1.99:1 (Issue #911) — the score is
-   * real text, so it has to carry an AA-safe amber instead. The star glyphs
-   * stay gold: they are aria-hidden decoration duplicated by this very pill.
+   * The `star` token is a 3:1 non-text color, so only the aria-hidden glyphs
+   * may wear it; the score is real text and stays in ink (#911, #1116).
    */
-  it("test_star_score_not_gold_text", () => {
+  it("test_star_score_not_star_colored", () => {
     const { unmount } = render(<StarRating text="★★★★☆ 4.2/5.0" />);
 
     const score = screen.getByText("4.2 / 5.0");
-    expect(score).not.toHaveClass("text-gold");
-    expect(score).toHaveClass("text-amber-800");
+    expect(score).not.toHaveClass("text-star");
+    expect(score).toHaveClass("text-ink-soft");
+    expect(screen.getByLabelText("評価 4.2 / 5.0")).toHaveClass("font-mono");
     unmount();
 
     render(<StarBadge score={3.5} />);
 
-    const badge = screen.getByText("★ 3.5");
-    expect(badge).not.toHaveClass("text-gold");
-    expect(badge).toHaveClass("text-amber-800");
+    const badge = screen.getByLabelText("評価 3.5 / 5.0");
+    expect(badge).toHaveTextContent("★ 3.5");
+    expect(badge).toHaveClass("text-ink-soft");
+    expect(badge.querySelector(".text-star")).not.toBeNull();
   });
 
   it("test_star_rating_unparseable_falls_back_to_plain_text", () => {
     render(<StarRating text="評価なし" />);
 
     const fallback = screen.getByText("評価なし");
-    expect(fallback).not.toHaveClass("text-gold");
-    expect(fallback).toHaveClass("text-amber-800");
+    expect(fallback).not.toHaveClass("text-star");
+    expect(fallback).toHaveClass("text-ink-soft");
   });
 });

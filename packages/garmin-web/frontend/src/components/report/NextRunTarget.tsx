@@ -39,16 +39,16 @@ function formatRange(
 
 function Chip({ label, value }: { label: string; value: string }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">
+    <span className="inline-flex items-center gap-1.5 rounded-sm bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">
       <span className="text-indigo-500">{label}</span>
-      <span className="tabular-nums">{value}</span>
+      <span className="">{value}</span>
     </span>
   );
 }
 
 function LabeledLine({ label, value }: { label: string; value: string }) {
   return (
-    <p className="text-sm text-slate-700">
+    <p className="text-sm text-ink-soft">
       <span className="font-semibold text-indigo-700">{label}</span>
       <span className="ml-1.5">{value}</span>
     </p>
@@ -100,19 +100,19 @@ export default function NextRunTarget({
   }
 
   return (
-    <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-4">
+    <div className="rounded-md border border-indigo-100 bg-indigo-50/40 p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <h3 className="text-xs font-semibold tracking-wide text-indigo-700 uppercase">
+        <h3 className="text-xs font-semibold tracking-wide text-indigo-700">
           次回への処方
         </h3>
         {typeLabel != null && (
-          <span className="rounded-full bg-indigo-600 px-2.5 py-0.5 text-xs font-semibold text-white">
+          <span className="rounded-sm bg-indigo-600 px-2.5 py-0.5 text-xs font-semibold text-white">
             {typeLabel}
           </span>
         )}
       </div>
       {summaryJa != null && (
-        <p className="mt-2 text-sm leading-relaxed text-slate-700">{summaryJa}</p>
+        <p className="mt-2 text-sm leading-relaxed text-ink-soft">{summaryJa}</p>
       )}
       {chips.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">{chips}</div>

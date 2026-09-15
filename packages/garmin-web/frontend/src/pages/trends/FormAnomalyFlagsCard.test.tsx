@@ -14,8 +14,8 @@ describe("FormAnomalyFlagsCard", () => {
     render(<FormAnomalyFlagsCard data={buildResponse([])} />);
 
     const badge = screen.getByText("問題なし");
-    expect(badge).toHaveClass("bg-status-good/10");
-    expect(badge).toHaveClass("text-status-good");
+    expect(badge).toHaveAttribute("data-tone", "good");
+    expect(badge.className).not.toMatch(/(^|\s)bg-/);
   });
 
   it("FormAnomalyFlagsCard shows count badge when flags exist", () => {
@@ -38,7 +38,7 @@ describe("FormAnomalyFlagsCard", () => {
     render(<FormAnomalyFlagsCard data={buildResponse(flags)} />);
 
     const badge = screen.getByText("2件");
-    expect(badge).toHaveClass("bg-status-warn/10");
-    expect(badge).toHaveClass("text-status-warn");
+    expect(badge).toHaveAttribute("data-tone", "warn");
+    expect(badge).toHaveClass("bg-warn-tint", "text-status-warn");
   });
 });

@@ -1,31 +1,53 @@
 /**
- * Whole-page loading and failure states (#914).
+ * Whole-page loading and failure states (#914), restyled for Morning Brief
+ * (#1116).
  *
  * A route that fetches one all-or-nothing payload (the activity list, a goal,
  * a weekly review) can only be in one of three states, and every page used to
- * spell out the first two itself: six copies of the spinner markup and five
- * error banners reading `エラー: {message}` with no way out other than a manual
- * browser reload. These two components are that markup, once — so the wording
- * is uniform and a failed fetch always offers a retry.
+ * spell out the first two itself. These components are that markup, once — so
+ * the wording is uniform and a failed fetch always offers a retry.
  *
  * Per-card failures are a different problem and keep their own local handling
- * (`QueryBoundary`), because one dead card must not blank the whole page.
+ * (`QueryBoundary`), because one dead card must not blank the whole page —
+ * but they share `ErrorPanel` so every failure looks the same.
  */
 
-/** Spinner + label shown while a page's primary fetch is still pending. */
+/** Secondary button: an ink outline, used for "再試行" and month paging. */
+export const SECONDARY_BUTTON_CLASS =
+  "inline-block rounded-sm border border-ink px-3 py-[7px] text-[13px] font-bold text-ink transition-colors hover:bg-surface";
+
+/** Label shown while a page's primary fetch is still pending. */
 export function PageLoading() {
   return (
     <div
       role="status"
-      className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500"
+      className="py-16 text-center font-mono text-sm text-ink-muted"
     >
-      {/* Decorative: the adjacent text is what gets announced. The animation
-          is dropped under prefers-reduced-motion. */}
-      <span
-        aria-hidden="true"
-        className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-ink motion-reduce:animate-none"
-      />
-      読み込み中...
+      読み込み中…
+    </div>
+  );
+}
+
+/**
+ * A fetch failure with a retry: the one tinted block the system allows for
+ * 悪. `message` is the full sentence ("走行量の読み込みに失敗しました: 500").
+ */
+export function ErrorPanel({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div
+      role="alert"
+      className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-bad-line bg-bad-tint px-4 py-3 text-sm text-status-bad"
+    >
+      <p>{message}</p>
+      <button type="button" onClick={onRetry} className={SECONDARY_BUTTON_CLASS}>
+        再試行
+      </button>
     </div>
   );
 }
@@ -45,18 +67,9 @@ export function PageError({
   onRetry: () => void;
 }) {
   return (
-    <div
-      role="alert"
-      className="flex flex-col items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-8 text-sm text-red-700"
-    >
-      <p>読み込みに失敗しました: {error.message}</p>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="rounded-lg border border-red-300 bg-white px-4 py-1.5 font-medium text-red-700 transition-colors hover:bg-red-100"
-      >
-        再試行
-      </button>
-    </div>
+    <ErrorPanel
+      message={`読み込みに失敗しました: ${error.message}`}
+      onRetry={onRetry}
+    />
   );
 }

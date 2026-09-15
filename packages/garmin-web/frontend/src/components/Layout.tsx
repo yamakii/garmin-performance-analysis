@@ -1,50 +1,61 @@
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
+import { formatHeaderDate } from "../utils/format";
 
 function navLinkClass({ isActive }: { isActive: boolean }): string {
   const base =
-    "shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors";
+    "flex items-center pt-1.5 pb-2.5 transition-colors hover:text-ink hover:no-underline";
   return isActive
-    ? `${base} bg-ink/5 text-ink`
-    : `${base} text-slate-600 hover:bg-slate-100 hover:text-ink`;
+    ? `${base} -mb-px border-b-2 border-ink font-bold text-ink`
+    : `${base} text-ink-muted`;
 }
 
 /**
- * App shell: sticky white header (brand + nav with active state) and a
- * centered content container. Purely presentational.
+ * App shell (Morning Brief, #1116): a two-row header — brand with today's
+ * date on the first row, the six nav links on the second — over a centred
+ * 880px column. Purely presentational.
  *
- * Narrow-width strategy (#652): the brand shrinks to "Garmin" below the `sm`
- * breakpoint and the nav becomes horizontally scrollable (`overflow-x-auto`)
- * so all six links stay reachable without wrapping or cramping on ~360px
- * screens.
+ * The header is a hairline rule, not a sticky white bar: the page reads like a
+ * printed brief, and the in-page `SectionNav` is the only thing that sticks.
+ * The nav wraps instead of scrolling sideways so all six links stay reachable
+ * on a narrow screen without a hidden overflow.
  *
  * The skip link is the first focusable element on every page (WCAG 2.4.1): it
  * is visually hidden until focused, and jumps past the six nav links straight
  * to `#main`, which takes focus itself (`tabIndex={-1}`) so the next Tab
  * continues inside the content.
  */
-export default function Layout({ children }: { children: ReactNode }) {
+export default function Layout({
+  children,
+  today = new Date(),
+}: {
+  children: ReactNode;
+  /** Injectable clock for tests. */
+  today?: Date;
+}) {
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800">
+    <div className="min-h-screen bg-paper text-ink">
       <a
         href="#main"
-        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-4 focus:z-[1200] focus:rounded-md focus:bg-white focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-ink focus:shadow-md focus:ring-2 focus:ring-signal/50"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-4 focus:z-[1200] focus:rounded-sm focus:border focus:border-ink focus:bg-paper focus:px-3 focus:py-2 focus:text-sm focus:font-bold focus:text-ink"
       >
         本文へスキップ
       </a>
-      <header className="sticky top-0 z-[1100] border-b border-slate-200 bg-white shadow-sm">
-        <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4">
+      <header className="border-b border-hairline">
+        <div className="mx-auto flex min-h-[52px] max-w-[880px] flex-wrap items-center gap-x-6 px-6">
           <NavLink
             to="/"
             aria-label="Garmin Performance ホーム"
-            className="shrink-0 font-display text-lg font-bold tracking-tight text-ink"
+            className="shrink-0 py-3.5 text-[15px] font-bold tracking-[-0.01em] text-ink hover:no-underline"
           >
-            <span className="sm:hidden">Garmin</span>
-            <span className="hidden sm:inline">Garmin Performance</span>
+            Garmin Performance
           </NavLink>
+          <span className="order-1 ml-auto shrink-0 py-3.5 font-mono text-xs text-ink-muted">
+            {formatHeaderDate(today)}
+          </span>
           <nav
             aria-label="メインナビゲーション"
-            className="flex min-w-0 flex-1 justify-end gap-1 overflow-x-auto"
+            className="order-2 -mt-1.5 flex basis-full flex-wrap gap-x-5 text-sm"
           >
             <NavLink to="/" end className={navLinkClass}>
               ホーム
@@ -70,7 +81,11 @@ export default function Layout({ children }: { children: ReactNode }) {
           </nav>
         </div>
       </header>
-      <main id="main" tabIndex={-1} className="mx-auto max-w-5xl px-4 py-6">
+      <main
+        id="main"
+        tabIndex={-1}
+        className="mx-auto flex max-w-[880px] flex-col gap-12 px-6 pt-10 pb-24"
+      >
         {children}
       </main>
     </div>

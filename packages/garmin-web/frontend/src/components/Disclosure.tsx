@@ -4,13 +4,13 @@ import type { ReactNode } from "react";
  * Shared collapsible section built on `<details>` (uncontrolled: the browser
  * owns the open state, `defaultOpen` only seeds it).
  *
- * The look follows the Goal page's focus accordion — a rounded card that gains
- * a stronger border and shadow while open, with a chevron that rotates via
- * `group-open:`. Every progressive-disclosure block on the site funnels through
- * here so the interaction is identical wherever prose is folded away.
+ * The trigger is a mono text link ("分析の詳細 ↓", "↑" once open) rather than
+ * a card with a chevron (Morning Brief, #1116): folded-away prose is a
+ * footnote, not a panel. Every progressive-disclosure block on the site
+ * funnels through here so the interaction is identical wherever prose is
+ * folded away.
  *
- * `className` is for layout tweaks (margins) only: surface classes would fight
- * the base card styling, and the point of this component is one look everywhere.
+ * `className` is for layout tweaks (margins) only.
  */
 export default function Disclosure({
   title,
@@ -26,22 +26,18 @@ export default function Disclosure({
   return (
     <details
       open={defaultOpen}
-      className={`group rounded-lg border border-slate-200 bg-white open:border-ink/20 open:shadow-sm${
-        className != null ? ` ${className}` : ""
-      }`}
+      className={`group${className != null ? ` ${className}` : ""}`}
     >
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
-        <span className="flex min-w-0 items-center gap-2 font-display text-sm font-semibold text-ink">
-          {title}
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 py-1 font-mono text-[13px] text-accent hover:underline">
+        <span className="min-w-0">{title}</span>
+        <span aria-hidden="true" className="group-open:hidden">
+          ↓
         </span>
-        <span
-          aria-hidden="true"
-          className="shrink-0 text-slate-500 transition-transform group-open:rotate-90"
-        >
-          ›
+        <span aria-hidden="true" className="hidden group-open:inline">
+          ↑
         </span>
       </summary>
-      <div className="px-4 pb-4">{children}</div>
+      <div className="pt-3">{children}</div>
     </details>
   );
 }

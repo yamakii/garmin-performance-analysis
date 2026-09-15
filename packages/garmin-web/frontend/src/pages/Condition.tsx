@@ -41,7 +41,7 @@ export default function Condition() {
 
   return (
     <div className="space-y-8">
-      <SectionHeading eyebrow="Condition" title="今の体の状態" />
+      <SectionHeading title="今の体の状態" />
 
       {/*
         Alert band: "今, 何を見るべきか" leads the page, full width and outside
@@ -56,7 +56,7 @@ export default function Condition() {
         </QueryBoundary>
       </div>
 
-      <div className="stagger-in grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2">
         <QueryBoundary label="当日コンディション" query={recoveryStatusQuery}>
           {(data) => <ConditionCard data={data} />}
         </QueryBoundary>

@@ -22,6 +22,10 @@ const STAR_COUNT = 5;
 /**
  * Visual star rating parsed from the summary section's star_rating string.
  * Unparseable strings are rendered as-is (graceful degradation).
+ *
+ * The glyph row is decorative (aria-hidden, duplicated by the numeric score
+ * and the aria-label) and takes the `star` token, which is a 3:1 non-text
+ * color; the score is real text and so stays in ink (#911, #1116).
  */
 export default function StarRating({
   text,
@@ -32,29 +36,26 @@ export default function StarRating({
 }) {
   const parsed = parseStarRating(text);
   if (!parsed) {
-    return <span className="text-sm text-amber-800">{text}</span>;
+    return <span className="font-mono text-sm text-ink-soft">{text}</span>;
   }
   const filled = Math.min(
     STAR_COUNT,
     Math.max(0, Math.round((parsed.score / parsed.max) * STAR_COUNT)),
   );
-  const starClass = size === "lg" ? "text-2xl" : "text-base";
+  const starClass = size === "lg" ? "text-[28px]" : "text-base";
   return (
     <span
-      className="inline-flex items-center gap-2"
+      className="inline-flex items-baseline gap-2 font-mono"
       aria-label={`評価 ${parsed.score.toFixed(1)} / ${parsed.max.toFixed(1)}`}
     >
-      {/*
-       * The glyph row is decorative (aria-hidden, duplicated by the numeric
-       * pill and the aria-label), so it keeps the vivid gold/slate pair. The
-       * pill carries the actual score as text and so must clear AA — gold is
-       * 1.99:1 on its own tint, amber-800 is 6.75:1 (Issue #911).
-       */}
-      <span aria-hidden="true" className={`${starClass} leading-none`}>
-        <span className="text-gold">{"★".repeat(filled)}</span>
-        <span className="text-slate-300">{"★".repeat(STAR_COUNT - filled)}</span>
+      <span
+        aria-hidden="true"
+        className={`${starClass} leading-none font-medium tracking-[0.05em]`}
+      >
+        <span className="text-star">{"★".repeat(filled)}</span>
+        <span className="text-metric-compare">{"★".repeat(STAR_COUNT - filled)}</span>
       </span>
-      <span className="rounded-full bg-gold/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-amber-800">
+      <span className="text-xs font-medium text-ink-soft">
         {parsed.score.toFixed(1)} / {parsed.max.toFixed(1)}
       </span>
     </span>

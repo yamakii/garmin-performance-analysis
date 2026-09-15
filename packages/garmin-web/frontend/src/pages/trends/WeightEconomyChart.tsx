@@ -91,7 +91,7 @@ export default function WeightEconomyChart({ data }: WeightEconomyChartProps) {
       className={CARD_CLASS}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="font-display text-base font-semibold text-ink">
+        <h2 className="text-base font-semibold text-ink">
           体重 × ランニングエコノミー (EF)
         </h2>
         {model != null && (
@@ -101,13 +101,13 @@ export default function WeightEconomyChart({ data }: WeightEconomyChartProps) {
         )}
       </div>
       {isEmpty ? (
-        <p className="py-8 text-center text-sm text-slate-500">
+        <p className="py-8 text-center text-sm text-ink-muted">
           易しいランと体重を結び付けられるデータがまだ不足しています
         </p>
       ) : (
         <>
           {model != null && (
-            <p className="mb-1 text-sm text-slate-600">
+            <p className="mb-1 text-sm text-ink-muted">
               易ラン {model.n} 本の縦断回帰: 体重 約5kg減で EF{" "}
               <span className="font-semibold text-ink">
                 +{formatNumber(model.delta_ef_per_5kg_loss, 4)}
@@ -118,7 +118,7 @@ export default function WeightEconomyChart({ data }: WeightEconomyChartProps) {
           {model != null && model.collinearity_flag && (
             <p
               role="alert"
-              className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700"
+              className="mb-2 rounded-md border border-warn-line bg-warn-tint px-3 py-2 text-xs text-status-warn"
             >
               共線性のため、これは関連であってクリーンな因果係数ではありません。
               {note ? `（${note}）` : ""}

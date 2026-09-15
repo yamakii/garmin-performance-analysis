@@ -9,9 +9,9 @@ import { formatDate } from "../../utils/format";
  * No new colour tokens: every band reuses an existing one (#911).
  */
 const PHASE_STYLE: Record<string, string> = {
-  base: "border-signal/40 bg-signal/5 text-ink",
-  build: "border-signal/40 bg-signal/5 text-ink",
-  peak: "border-signal/40 bg-signal/5 text-ink",
+  base: "border-accent bg-accent-tint text-ink",
+  build: "border-accent bg-accent-tint text-ink",
+  peak: "border-accent bg-accent-tint text-ink",
   cutback: "border-status-warn/30 bg-status-warn/10 text-status-warn",
   recovery: "border-status-warn/30 bg-status-warn/10 text-status-warn",
   taper: "border-status-warn/30 bg-status-warn/10 text-status-warn",
@@ -29,7 +29,7 @@ const PHASE_LABEL: Record<string, string> = {
 };
 
 export function phaseStyle(phase: string | null): string {
-  return PHASE_STYLE[phase ?? ""] ?? "border-slate-200 bg-slate-50 text-ink";
+  return PHASE_STYLE[phase ?? ""] ?? "border-hairline bg-well text-ink";
 }
 
 export function phaseLabel(phase: string | null): string {
@@ -56,26 +56,26 @@ export default function BlockBands({
       {blocks.map((block) => (
         <li
           key={block.block_id}
-          className={`flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg border-l-4 px-3 py-2 ${phaseStyle(
-            block.phase,
-          )}`}
+          className={`flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-md border-l-4 px-3 py-2 ${phaseStyle(
+ block.phase,
+ )}`}
         >
           <span className="text-xs font-bold tracking-wide">
             {phaseLabel(block.phase)}
           </span>
-          <span className="font-display text-sm font-semibold text-ink">
+          <span className="text-sm font-semibold text-ink">
             {block.title ?? "-"}
           </span>
-          <span className="font-numeric text-xs tabular-nums text-slate-600">
+          <span className="font-mono text-xs text-ink-muted">
             {formatDate(block.start_date)} 〜 {formatDate(block.end_date)}
           </span>
           {block.quality_sessions_per_week != null && (
-            <span className="text-xs text-slate-600">
+            <span className="text-xs text-ink-muted">
               ポイント練 週{block.quality_sessions_per_week}回
             </span>
           )}
           {block.weight_mode != null && (
-            <span className="text-xs text-slate-600">
+            <span className="text-xs text-ink-muted">
               体重 {block.weight_mode}
             </span>
           )}

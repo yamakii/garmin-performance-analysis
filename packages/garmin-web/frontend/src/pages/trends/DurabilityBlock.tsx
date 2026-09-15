@@ -4,6 +4,7 @@ import {
   AXIS_STYLE,
   BASE_CHART_OPTION,
   METRIC_COLORS,
+  THRESHOLD_LINE,
 } from "../../components/chartTheme";
 import type {
   DurabilityActivity,
@@ -20,12 +21,12 @@ const DIRECTION_META: Record<
   DurabilityDirection,
   { label: string; className: string }
 > = {
-  improving: { label: "改善傾向", className: "bg-emerald-100 text-emerald-700" },
-  worsening: { label: "悪化傾向", className: "bg-red-100 text-red-700" },
-  stable: { label: "横ばい", className: "bg-sky-100 text-sky-700" },
+  improving: { label: "改善傾向", className: " text-status-good" },
+  worsening: { label: "悪化傾向", className: "bg-bad-tint text-status-bad" },
+  stable: { label: "横ばい", className: " text-ink-soft" },
   insufficient_data: {
     label: "データ不足",
-    className: "bg-slate-100 text-slate-600",
+    className: "bg-well text-ink-muted",
   },
 };
 
@@ -91,8 +92,8 @@ export default function DurabilityBlock({ data }: DurabilityBlockProps) {
           markLine: {
             silent: true,
             symbol: "none",
-            lineStyle: { color: "#f87171", type: "dashed" as const },
-            label: { formatter: "5% 目安", color: "#ef4444" },
+            lineStyle: { color: THRESHOLD_LINE.bad, type: "dotted" as const },
+            label: { formatter: "5% 目安", color: THRESHOLD_LINE.bad },
             data: [{ yAxis: FADE_WARNING_LINE }],
           },
         },
@@ -125,29 +126,29 @@ export default function DurabilityBlock({ data }: DurabilityBlockProps) {
       className={CARD_CLASS}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="font-display text-base font-semibold text-ink">
+        <h2 className="text-base font-semibold text-ink">
           耐久性 (心拍デカップリング・フォーム失速)
         </h2>
         <div className="flex shrink-0 items-center gap-1.5">
           <span
-            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${directionMeta.className}`}
+            className={`rounded-sm px-2.5 py-1 text-xs font-semibold ${directionMeta.className}`}
           >
             心拍 {directionMeta.label}
           </span>
           <span
-            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${formDirectionMeta.className}`}
+            className={`rounded-sm px-2.5 py-1 text-xs font-semibold ${formDirectionMeta.className}`}
           >
             フォーム {formDirectionMeta.label}
           </span>
         </div>
       </div>
       {isEmpty ? (
-        <p className="py-8 text-center text-sm text-slate-500">
+        <p className="py-8 text-center text-sm text-ink-muted">
           10km以上のロングランがないため、耐久性トレンドを算出できません
         </p>
       ) : (
         <>
-          <p className="mb-1 text-sm text-slate-600">
+          <p className="mb-1 text-sm text-ink-muted">
             ロングラン{" "}
             <span className="font-semibold text-ink">{trend.data_points}</span>{" "}
             本のデカップリングとGCT後半失速の推移 (いずれも5%超で後半失速の目安)

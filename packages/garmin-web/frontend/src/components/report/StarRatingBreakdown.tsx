@@ -56,21 +56,21 @@ function AxisRow({
   const pct = Math.min(100, Math.max(0, (score / MAX_SCORE) * 100));
   return (
     <div className="flex items-center gap-3">
-      <span className="w-24 shrink-0 text-sm text-slate-700">{label}</span>
+      <span className="w-24 shrink-0 text-sm text-ink-soft">{label}</span>
       <span
         aria-hidden="true"
-        className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100"
+        className="h-1.5 flex-1 overflow-hidden rounded-sm bg-well"
       >
         <span
-          className="block h-full rounded-full bg-gold"
+          className="block h-full rounded-sm bg-star"
           style={{ width: `${pct}%` }}
         />
       </span>
-      <span className="w-10 shrink-0 text-right text-sm font-semibold tabular-nums text-slate-700">
+      <span className="w-10 shrink-0 text-right text-sm font-semibold text-ink-soft">
         {score.toFixed(1)}
       </span>
       {weight != null && (
-        <span className="w-12 shrink-0 text-right text-xs tabular-nums text-slate-500">
+        <span className="w-12 shrink-0 text-right text-xs text-ink-muted">
           {Math.round(weight * 100)}%
         </span>
       )}
@@ -119,7 +119,7 @@ export default function StarRatingBreakdown({
   }
   const total = asFiniteNumber(breakdown.star_rating);
   return (
-    <div className="rounded-lg bg-slate-50 p-4">
+    <div className="rounded-md bg-well p-4">
       <h3 className={META_LABEL}>評価内訳</h3>
       <div className="mt-2 space-y-2">
         {rows.map((row) => (
@@ -132,9 +132,9 @@ export default function StarRatingBreakdown({
         ))}
       </div>
       {showTotal && total != null && (
-        <div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-2">
-          <span className="text-sm font-medium text-slate-600">加重総合</span>
-          <span className="rounded-full bg-gold/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-amber-800">
+        <div className="mt-3 flex items-center justify-between border-t border-hairline pt-2">
+          <span className="text-sm font-medium text-ink-muted">加重総合</span>
+          <span className="rounded-sm px-2 py-0.5 text-xs font-semibold text-status-warn">
             {total.toFixed(1)} / {MAX_SCORE.toFixed(1)}
           </span>
         </div>

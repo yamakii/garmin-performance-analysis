@@ -22,10 +22,10 @@ const FLAG_META: Record<
   MetricBaseline["flag"],
   { label: string; className: string }
 > = {
-  low: { label: "低い", className: "bg-amber-100 text-amber-700" },
-  high: { label: "高い", className: "bg-amber-100 text-amber-700" },
-  within: { label: "範囲内", className: "bg-emerald-100 text-emerald-700" },
-  insufficient: { label: "データ不足", className: "bg-slate-100 text-slate-600" },
+  low: { label: "低い", className: "bg-warn-tint text-status-warn" },
+  high: { label: "高い", className: "bg-warn-tint text-status-warn" },
+  within: { label: "範囲内", className: " text-status-good" },
+  insufficient: { label: "データ不足", className: "bg-well text-ink-muted" },
 };
 
 const METRIC_ORDER: MetricBaseline["metric"][] = ["hrv", "readiness", "rhr"];
@@ -39,11 +39,11 @@ export default function WellnessBaselineChart({
       className={`${CARD_CLASS} md:col-span-2`}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="font-display text-base font-semibold text-ink">
+        <h2 className="text-base font-semibold text-ink">
           個人ベースライン逸脱 (HRV / Readiness / RHR)
         </h2>
         {data.date != null && (
-          <span className="shrink-0 text-xs text-slate-500">
+          <span className="shrink-0 text-xs text-ink-muted">
             {formatDate(data.date)}
           </span>
         )}
@@ -51,7 +51,7 @@ export default function WellnessBaselineChart({
       {data.overall_flag && (
         <p
           role="alert"
-          className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700"
+          className="mb-3 rounded-md border border-warn-line bg-warn-tint px-3 py-2 text-sm text-status-warn"
         >
           個人ベースラインから不利な方向に逸脱しています。強度・回復を見直してください。
         </p>
@@ -81,34 +81,34 @@ function MetricCard({ baseline }: { baseline: MetricBaseline }) {
   const zText = baseline.z != null ? `z ${formatNumber(baseline.z, 2)}` : "—";
 
   return (
-    <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+    <div className="rounded-md border border-hairline bg-well p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="text-sm font-semibold text-ink">{meta.label}</span>
         <span
-          className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${
-            baseline.adverse ? "bg-red-100 text-red-700" : flagMeta.className
-          }`}
+          className={`shrink-0 rounded-sm px-2 py-0.5 text-xs font-semibold ${
+ baseline.adverse ? "bg-bad-tint text-status-bad" : flagMeta.className
+ }`}
         >
           {flagMeta.label}
         </span>
       </div>
       {insufficient ? (
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-ink-muted">
           ベースライン構築に必要なデータが不足しています
         </p>
       ) : (
         <dl className="space-y-1 text-sm">
           <div className="flex items-center justify-between">
-            <dt className="text-xs text-slate-500">今日</dt>
+            <dt className="text-xs text-ink-muted">今日</dt>
             <dd className="font-semibold text-ink">{todayText}</dd>
           </div>
           <div className="flex items-center justify-between">
-            <dt className="text-xs text-slate-500">基準帯 (平均±SD)</dt>
-            <dd className="text-slate-600">{bandText}</dd>
+            <dt className="text-xs text-ink-muted">基準帯 (平均±SD)</dt>
+            <dd className="text-ink-muted">{bandText}</dd>
           </div>
           <div className="flex items-center justify-between">
-            <dt className="text-xs text-slate-500">逸脱</dt>
-            <dd className="text-slate-600">{zText}</dd>
+            <dt className="text-xs text-ink-muted">逸脱</dt>
+            <dd className="text-ink-muted">{zText}</dd>
           </div>
         </dl>
       )}

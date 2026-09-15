@@ -97,17 +97,17 @@ export default function HeatAdjustedBlock({ data }: HeatAdjustedBlockProps) {
       className={CARD_CLASS}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="font-display text-base font-semibold text-ink">
+        <h2 className="text-base font-semibold text-ink">
           気候中立HRトレンド (暑熱補正)
         </h2>
       </div>
       {isEmpty ? (
-        <p className="py-8 text-center text-sm text-slate-500">
+        <p className="py-8 text-center text-sm text-ink-muted">
           暑熱補正トレンドを算出するにはランが不足しています
         </p>
       ) : (
         <>
-          <p className="mb-1 text-sm text-slate-600">
+          <p className="mb-1 text-sm text-ink-muted">
             <span className="font-semibold text-ink">{RAW_HR_SERIES}</span>{" "}
             (実線) と{" "}
             <span className="font-semibold text-ink">{NEUTRAL_HR_SERIES}</span>{" "}

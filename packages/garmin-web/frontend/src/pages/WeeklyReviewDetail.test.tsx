@@ -478,8 +478,8 @@ describe("WeeklyReviewDetail", () => {
     await screen.findByRole("heading", { level: 3, name: "体重トラッキング" });
 
     const flag = screen.getByText("増加傾向");
-    expect(flag).toHaveClass("bg-status-warn/10");
-    expect(flag).toHaveClass("text-status-warn");
+    expect(flag).toHaveAttribute("data-tone", "warn");
+    expect(flag).toHaveClass("bg-warn-tint", "text-status-warn");
   });
 
   it("test_periodization_countdown_chips", async () => {
@@ -512,9 +512,9 @@ describe("WeeklyReviewDetail", () => {
 
     // The mark now sits in its own decorative span inside the badge, so the
     // tone class lives one level up.
-    expect(screen.getByText("✅").parentElement).toHaveClass("text-status-good");
-    expect(screen.getByText("🟡").parentElement).toHaveClass("text-status-warn");
-    expect(screen.getByText("🔴").parentElement).toHaveClass("text-status-bad");
+    expect(screen.getByText("✅").parentElement).toHaveAttribute("data-tone", "good");
+    expect(screen.getByText("🟡").parentElement).toHaveAttribute("data-tone", "warn");
+    expect(screen.getByText("🔴").parentElement).toHaveAttribute("data-tone", "bad");
   });
 
   it("test_verdict_emoji_has_text", async () => {

@@ -44,7 +44,7 @@ function Section({
       id={id}
       className={`scroll-mt-20 ${CARD_CLASS}`}
     >
-      <Heading className="mb-3 font-display text-base font-semibold text-ink">
+      <Heading className="mb-3 text-base font-semibold text-ink">
         {title}
       </Heading>
       {children}
@@ -52,41 +52,28 @@ function Section({
   );
 }
 
-/** Eyebrow style shared with the Trends/Goal page section headers. */
-const SECTION_HEADING =
-  "text-xs font-semibold tracking-[0.2em] text-slate-500 uppercase";
-
 /**
- * One meaning group: an English eyebrow + Japanese heading above the member
- * Section cards (mirrors the TrendsDashboard regrouping pattern, #645). The
- * `aria-label` mirrors the Japanese title so the region (and its membership)
- * is addressable in tests and assistive tech. Until #648 lands, this is the
- * local simple heading; it can be swapped for the shared `SectionHeading`.
+ * One meaning group: a Japanese heading above the member Section cards
+ * (mirrors the TrendsDashboard regrouping pattern, #645). The `aria-label`
+ * mirrors the title so the region (and its membership) is addressable in
+ * tests and assistive tech.
  *
- * The Japanese title is the page's h2 and each member card is an h3 (#912):
- * rendering both as `<p>` left the page as an h1 followed by a flat run of
- * h2 cards, so the grouping existed visually but not in the heading outline.
- * The English eyebrow restates the title, so it stays decorative.
+ * The title is the page's h2 and each member card is an h3 (#912): rendering
+ * both as `<p>` left the page as an h1 followed by a flat run of h2 cards, so
+ * the grouping existed visually but not in the heading outline. The English
+ * eyebrow that used to sit above it is gone with the Morning Brief system
+ * (#1116).
  */
 function Group({
-  eyebrow,
   title,
   children,
 }: {
-  eyebrow: string;
   title: string;
   children: React.ReactNode;
 }) {
   return (
     <section aria-label={title} className="space-y-4">
-      <div>
-        <p aria-hidden="true" className={SECTION_HEADING}>
-          {eyebrow}
-        </p>
-        <h2 className="mt-1 font-display text-xl font-bold tracking-tight text-ink">
-          {title}
-        </h2>
-      </div>
+      <h2 className="text-lg font-bold text-ink">{title}</h2>
       {children}
     </section>
   );
@@ -122,12 +109,12 @@ function StatTiles({ tiles }: { tiles: (StatTile | null)[] }) {
       {shown.map(({ label, value, unit }) => (
         <div key={label} className={SUBCARD}>
           <dt className={META_LABEL}>{label}</dt>
-          <dd className="mt-0.5 font-numeric text-2xl leading-none font-semibold tabular-nums text-ink">
+          <dd className="mt-0.5 font-mono text-2xl leading-none font-semibold text-ink">
             {/* Raw payload numbers carry float noise (volume_km 42.5333…);
                 one decimal is all a weekly total needs (#915). */}
             {formatNumber(value, 1)}
             {unit != null && (
-              <span className="ml-0.5 text-xs font-normal text-slate-500">
+              <span className="ml-0.5 text-xs font-normal text-ink-muted">
                 {unit}
               </span>
             )}
@@ -176,10 +163,10 @@ function raceCountdown(
 function PageHeader() {
   return (
     <div className="flex items-start justify-between gap-3">
-      <SectionHeading eyebrow="Weekly Review" title="週次レビュー" />
+      <SectionHeading title="週次レビュー" />
       <Link
         to="/weekly-reviews"
-        className="text-sm font-medium text-slate-500 hover:text-ink"
+        className="text-sm font-medium text-ink-muted hover:text-ink"
       >
         ← 一覧へ
       </Link>
@@ -212,14 +199,14 @@ export default function WeeklyReviewDetail() {
   // nothing at all — a white page with no explanation and no way back (#914).
   if (versions.length === 0) {
     return (
-      <div className="stagger-in space-y-6">
+      <div className="space-y-6">
         <PageHeader />
         <EmptyState
           message="この週のレビューはありません"
           hint={
             <Link
               to="/weekly-reviews"
-              className="font-medium text-signal-ink underline underline-offset-2 hover:text-ink"
+              className="font-medium text-accent underline underline-offset-2 hover:text-ink"
             >
               週次レビュー一覧へ
             </Link>
@@ -330,9 +317,9 @@ export default function WeeklyReviewDetail() {
         ].filter((item): item is NavItem => item !== null);
 
   return (
-    <div className="stagger-in space-y-6">
+    <div className="space-y-6">
       <PageHeader />
-      <p className="font-numeric text-sm tabular-nums text-slate-500">
+      <p className="font-mono text-sm text-ink-muted">
         {formatDate(review.week_start_date)} 〜 {formatDate(review.week_end_date)}
       </p>
 
@@ -347,7 +334,7 @@ export default function WeeklyReviewDetail() {
       />
 
       {data == null ? (
-        <p className="py-4 text-center text-sm text-slate-500">
+        <p className="py-4 text-center text-sm text-ink-muted">
           レビューデータがありません
         </p>
       ) : (
@@ -356,11 +343,11 @@ export default function WeeklyReviewDetail() {
           <SectionNav items={navItems} />
 
           {/* ① Actuals week (W-1) — actuals, body, recovery */}
-          <Group eyebrow="Actuals" title={actualsTitle}>
+          <Group title={actualsTitle}>
             {/* Actuals-week totals */}
             <Section id="wr-actuals" title="実績サマリー">
               {thisWeek != null ? (
-                <div className="space-y-3 text-sm text-slate-700">
+                <div className="space-y-3 text-sm text-ink-soft">
                   <StatTiles
                     tiles={[
                       tile("走行距離", thisWeek.volume_km, "km"),
@@ -378,7 +365,7 @@ export default function WeeklyReviewDetail() {
                       {intensityEntries.map(([k, v]) => (
                         <span
                           key={k}
-                          className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600"
+                          className="rounded-sm bg-well px-2.5 py-1 text-xs font-medium text-ink-muted"
                         >
                           {humanizeKey(k)}: {String(v)}
                         </span>
@@ -387,7 +374,7 @@ export default function WeeklyReviewDetail() {
                   )}
                   {Array.isArray(thisWeek.highlights) &&
                     thisWeek.highlights.length > 0 && (
-                      <ul className="list-disc space-y-0.5 pl-5 text-slate-600">
+                      <ul className="list-disc space-y-0.5 pl-5 text-ink-muted">
                         {thisWeek.highlights.map((h, i) => (
                           <li key={i}>{h}</li>
                         ))}
@@ -395,14 +382,14 @@ export default function WeeklyReviewDetail() {
                     )}
                 </div>
               ) : (
-                <p className="text-sm text-slate-500">実績データがありません</p>
+                <p className="text-sm text-ink-muted">実績データがありません</p>
               )}
             </Section>
 
             {/* Weight tracking (#597) */}
             {weightTracking != null && (
               <Section id="wr-weight" title="体重トラッキング">
-                <div className="space-y-3 text-sm text-slate-700">
+                <div className="space-y-3 text-sm text-ink-soft">
                   <StatTiles
                     tiles={[
                       tile("直近中央値", weightTracking.recent_median_kg, "kg"),
@@ -432,7 +419,7 @@ export default function WeeklyReviewDetail() {
                     </div>
                   )}
                   {weightTracking.target_first != null && (
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-ink-muted">
                       第一目標: {weightTracking.target_first}
                     </p>
                   )}
@@ -449,7 +436,7 @@ export default function WeeklyReviewDetail() {
           </Group>
 
           {/* ② Assessment — plan verdict, goal alignment, periodization, ramp */}
-          <Group eyebrow="Assessment" title="評価">
+          <Group title="評価">
             {/* Prescriptions (with the verdict merged in) — target-week plan
                 evaluation. Weeks that predate the structured rows keep the
                 verdict-only table below. */}
@@ -457,7 +444,7 @@ export default function WeeklyReviewDetail() {
               {prescriptions.length > 0 ? (
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-xs tracking-wide text-slate-500 uppercase">
+                    <tr className="text-xs tracking-wide text-ink-muted">
                       <th scope="col" className="px-2 py-2 text-left font-medium">
                         日付
                       </th>
@@ -484,7 +471,7 @@ export default function WeeklyReviewDetail() {
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-hairline">
                     {prescriptions.map((prescription) => {
                       // The prescription row is the canonical plan, rating and
                       // comment included (#1021); the stored verdict is only a
@@ -495,16 +482,16 @@ export default function WeeklyReviewDetail() {
                       return (
                         <tr
                           key={prescription.prescription_id}
-                          className="hover:bg-slate-50"
+                          className="hover:bg-surface"
                         >
-                          <td className="px-2 py-2 text-left font-numeric tabular-nums text-slate-700">
+                          <td className="px-2 py-2 text-left font-mono text-ink-soft">
                             {prescription.date}
                           </td>
-                          <td className="px-2 py-2 text-left text-slate-700">
+                          <td className="px-2 py-2 text-left text-ink-soft">
                             {prescription.title ||
                               sessionLabel(prescription.session_type)}
                           </td>
-                          <td className="px-2 py-2 text-left font-numeric tabular-nums text-slate-600">
+                          <td className="px-2 py-2 text-left font-mono text-ink-muted">
                             {targetSummary(prescription) || "-"}
                           </td>
                           <td className="px-2 py-2 text-center">
@@ -519,7 +506,7 @@ export default function WeeklyReviewDetail() {
                               "-"
                             )}
                           </td>
-                          <td className="px-2 py-2 text-left text-slate-600">
+                          <td className="px-2 py-2 text-left text-ink-muted">
                             {comment ?? "-"}
                           </td>
                         </tr>
@@ -530,7 +517,7 @@ export default function WeeklyReviewDetail() {
               ) : verdict.length > 0 ? (
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-xs tracking-wide text-slate-500 uppercase">
+                    <tr className="text-xs tracking-wide text-ink-muted">
                       <th scope="col" className="px-2 py-2 text-left font-medium">
                         日付
                       </th>
@@ -548,13 +535,13 @@ export default function WeeklyReviewDetail() {
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-hairline">
                     {verdict.map((v, i) => (
-                      <tr key={i} className="hover:bg-slate-50">
-                        <td className="px-2 py-2 text-left font-numeric tabular-nums text-slate-700">
+                      <tr key={i} className="hover:bg-surface">
+                        <td className="px-2 py-2 text-left font-mono text-ink-soft">
                           {v.date ?? "-"}
                         </td>
-                        <td className="px-2 py-2 text-left text-slate-700">
+                        <td className="px-2 py-2 text-left text-ink-soft">
                           {v.session ?? "-"}
                         </td>
                         <td className="px-2 py-2 text-center">
@@ -564,7 +551,7 @@ export default function WeeklyReviewDetail() {
                             "-"
                           )}
                         </td>
-                        <td className="px-2 py-2 text-left text-slate-600">
+                        <td className="px-2 py-2 text-left text-ink-muted">
                           {v.comment ?? "-"}
                         </td>
                       </tr>
@@ -572,7 +559,7 @@ export default function WeeklyReviewDetail() {
                   </tbody>
                 </table>
               ) : (
-                <p className="text-sm text-slate-500">評価データがありません</p>
+                <p className="text-sm text-ink-muted">評価データがありません</p>
               )}
             </Section>
 
@@ -589,7 +576,7 @@ export default function WeeklyReviewDetail() {
             {/* Periodization (#286) — render only when present */}
             {periodization != null && (
               <Section id="wr-periodization" title="目標逆算フェーズ">
-                <div className="space-y-3 text-sm text-slate-700">
+                <div className="space-y-3 text-sm text-ink-soft">
                   {raceCountdowns.length > 0 && (
                     <div className="flex flex-wrap items-center gap-2">
                       {raceCountdowns.map((label) => (
@@ -614,7 +601,7 @@ export default function WeeklyReviewDetail() {
                     </div>
                   )}
                   {showPhaseGap && (
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-ink-muted">
                       ギャップ: {periodization.gap}
                     </p>
                   )}
@@ -632,13 +619,13 @@ export default function WeeklyReviewDetail() {
 
           {/* ③ Next — recommendations, planned workouts, continuity */}
           {hasNextActions && (
-            <Group eyebrow="Next" title="次アクション">
+            <Group title="次アクション">
               {/* Recommendations */}
               {recommendations.length > 0 && (
                 <Section id="wr-recommendations" title="推奨アクション">
                   {/* The lead action is the one to act on; the rest are folded
                       away so the card states a single next step (#906). */}
-                  <p className="text-sm font-medium text-slate-800">
+                  <p className="text-sm font-medium text-ink-soft">
                     {firstRecommendation}
                   </p>
                   {moreRecommendations.length > 0 && (
@@ -646,7 +633,7 @@ export default function WeeklyReviewDetail() {
                       title={`他の推奨 ${moreRecommendations.length}件`}
                       className="mt-3"
                     >
-                      <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
+                      <ul className="list-disc space-y-1 pl-5 text-sm text-ink-soft">
                         {moreRecommendations.map((rec, i) => (
                           <li key={i}>{rec}</li>
                         ))}
@@ -662,7 +649,7 @@ export default function WeeklyReviewDetail() {
                 <Section id="wr-garmin" title="Garmin との衝突">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-xs tracking-wide text-slate-500 uppercase">
+                      <tr className="text-xs tracking-wide text-ink-muted">
                         <th
                           scope="col"
                           className="px-2 py-2 text-left font-medium"
@@ -683,16 +670,16 @@ export default function WeeklyReviewDetail() {
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-hairline">
                       {garminConflicts.map((conflict, i) => (
-                        <tr key={i} className="hover:bg-slate-50">
-                          <td className="px-2 py-2 text-left font-numeric tabular-nums text-slate-700">
+                        <tr key={i} className="hover:bg-surface">
+                          <td className="px-2 py-2 text-left font-mono text-ink-soft">
                             {conflict.date ?? "-"}
                           </td>
-                          <td className="px-2 py-2 text-left text-slate-700">
+                          <td className="px-2 py-2 text-left text-ink-soft">
                             {conflict.garmin_title ?? "-"}
                           </td>
-                          <td className="px-2 py-2 text-left text-slate-600">
+                          <td className="px-2 py-2 text-left text-ink-muted">
                             {conflict.reason ?? "-"}
                           </td>
                         </tr>
@@ -707,7 +694,7 @@ export default function WeeklyReviewDetail() {
                 <Section id="wr-garmin" title="来週のGarminワークアウト">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-xs tracking-wide text-slate-500 uppercase">
+                      <tr className="text-xs tracking-wide text-ink-muted">
                         <th
                           scope="col"
                           className="px-2 py-2 text-left font-medium"
@@ -728,16 +715,16 @@ export default function WeeklyReviewDetail() {
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-hairline">
                       {garminNextWeek.map((w, i) => (
-                        <tr key={i} className="hover:bg-slate-50">
-                          <td className="px-2 py-2 text-left font-numeric tabular-nums text-slate-700">
+                        <tr key={i} className="hover:bg-surface">
+                          <td className="px-2 py-2 text-left font-mono text-ink-soft">
                             {w.date ?? "-"}
                           </td>
-                          <td className="px-2 py-2 text-left text-slate-700">
+                          <td className="px-2 py-2 text-left text-ink-soft">
                             {w.type ?? "-"}
                           </td>
-                          <td className="px-2 py-2 text-left text-slate-600">
+                          <td className="px-2 py-2 text-left text-ink-muted">
                             {w.title ?? "-"}
                           </td>
                         </tr>

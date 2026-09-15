@@ -29,8 +29,8 @@ describe("ConditionCard", () => {
 
     const badge = screen.getByText("質練OK");
     expect(badge).toBeInTheDocument();
-    // Quality recommendation -> emerald (green) badge family.
-    expect(badge.className).toContain("emerald");
+    // Quality recommendation -> the 良 status token (text only, no fill).
+    expect(badge.className).toContain("text-status-good");
     // Rationale + the three condition markers are shown.
     expect(screen.getByText(QUALITY.reasons[0])).toBeInTheDocument();
     expect(screen.getByText("準備度")).toBeInTheDocument();

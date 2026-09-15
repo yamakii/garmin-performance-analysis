@@ -11,13 +11,6 @@ import {
 import StarRating from "./report/StarRating";
 
 /**
- * Faint topographic-contour pattern (inline SVG data URI) for the hero
- * background. Stroked in ink and rendered at ~4% opacity so it reads as
- * paper texture, not decoration.
- */
-const CONTOUR_PATTERN = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280' viewBox='0 0 280 280' fill='none' stroke='%2316213a' stroke-width='1'%3E%3Cpath d='M0 40c46-22 94 16 140-6s94-26 140-2'/%3E%3Cpath d='M0 90c46-24 94 18 140-8s94-28 140-2'/%3E%3Cpath d='M0 140c46-20 94 14 140-6s94-24 140-2'/%3E%3Cpath d='M0 190c46-26 94 20 140-8s94-30 140-2'/%3E%3Cpath d='M0 240c46-22 94 16 140-6s94-26 140-2'/%3E%3Cellipse cx='70' cy='66' rx='34' ry='13'/%3E%3Cellipse cx='70' cy='66' rx='20' ry='7'/%3E%3Cellipse cx='204' cy='214' rx='38' ry='15'/%3E%3Cellipse cx='204' cy='214' rx='22' ry='8'/%3E%3C/svg%3E")`;
-
-/**
  * Editorial Sport report hero (Issue #214): display headline, inline date +
  * gold star rating, and a rhythmic strip of big condensed KPI numerals with
  * small units — like a record table in a sports yearbook. Physiology
@@ -80,18 +73,13 @@ export default function HeroHeader({
   }
 
   return (
-    <header className="relative overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-slate-100 shadow-sm">
-      <div
-        aria-hidden="true"
-        className="absolute inset-0 opacity-[0.04]"
-        style={{ backgroundImage: CONTOUR_PATTERN }}
-      />
+    <header className="relative overflow-hidden rounded-md border border-hairline">
       <div className="relative px-6 py-6 md:px-8 md:py-7">
         <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-          <h1 className="font-display text-3xl font-bold tracking-tight text-ink md:text-4xl">
+          <h1 className="text-3xl font-bold tracking-tight text-ink md:text-4xl">
             {activity.activity_name ?? "アクティビティ"}
           </h1>
-          <span className="font-numeric text-lg tabular-nums text-slate-500">
+          <span className="font-mono text-lg text-ink-muted">
             {formatDate(activity.activity_date)}
           </span>
           {starRating && <StarRating text={starRating} />}
@@ -99,13 +87,13 @@ export default function HeroHeader({
         <dl className="mt-6 flex flex-wrap gap-x-10 gap-y-4">
           {kpis.map(({ label, value, unit }) => (
             <div key={label}>
-              <dt className="text-xs font-medium tracking-widest text-slate-500">
+              <dt className="text-xs font-medium tracking-widest text-ink-muted">
                 {label}
               </dt>
-              <dd className="mt-1 font-numeric text-5xl leading-none font-semibold tabular-nums text-ink">
+              <dd className="mt-1 font-mono text-5xl leading-none font-semibold text-ink">
                 {value}
                 {unit && (
-                  <span className="ml-1 align-baseline font-numeric text-lg font-normal text-slate-500">
+                  <span className="ml-1 align-baseline font-mono text-lg font-normal text-ink-muted">
                     {unit}
                   </span>
                 )}
@@ -114,11 +102,11 @@ export default function HeroHeader({
           ))}
         </dl>
         {subMetrics.length > 0 && (
-          <p className="mt-5 flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-600">
+          <p className="mt-5 flex flex-wrap gap-x-6 gap-y-1 text-sm text-ink-muted">
             {subMetrics.map(({ label, value }) => (
               <span key={label}>
                 {label}{" "}
-                <span className="font-numeric text-base font-semibold tabular-nums text-ink">
+                <span className="font-mono text-base font-semibold text-ink">
                   {value}
                 </span>
               </span>

@@ -46,6 +46,19 @@ npm --prefix packages/garmin-web/frontend run dev
 
 Open http://localhost:5173 during development.
 
+## Design system
+
+The frontend follows the **Morning Brief** design system (Epic #1115; spec in
+`docs/design/morning-brief-handoff.md`, mocks in the Claude Design project it
+links). Two faces (BIZ UDPGothic for prose, IBM Plex Mono for every number,
+date and label), a paper ground with near-black ink, one accent (teal) for
+today / links / the primary action, and status colors that tint only 注意 / 悪.
+Blocks are hairline rules and whitespace, never cards with shadows; the tokens
+live in `frontend/src/index.css` (`@theme`) and `components/chartTheme.ts`, and
+`components/Card.test.ts` fails the build if a retired decoration class
+(`rounded-xl`, `shadow-*`, `bg-gradient`, raw `slate-*` hues, the old display /
+numeric faces) reappears.
+
 ## Pages
 
 The SPA follows one information-architecture rule: **one page answers one

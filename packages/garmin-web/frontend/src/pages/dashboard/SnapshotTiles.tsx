@@ -81,7 +81,7 @@ function Tile({
   return (
     <Link
       to={to}
-      className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-[box-shadow,border-color] hover:border-signal/50 hover:shadow-md focus-visible:ring-2 focus-visible:ring-signal/50 focus-visible:outline-none"
+      className="block rounded-md border border-hairline p-4 transition-[box-,border-color] hover:border-ink focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
     >
       <div className="flex items-center justify-between gap-2">
         {/*
@@ -89,7 +89,7 @@ function Tile({
          * tiles claimed to be children of a section that does not exist, so the
          * outline jumped h1 → h3.
          */}
-        <h2 className="text-xs font-semibold text-slate-500">{title}</h2>
+        <h2 className="text-xs font-semibold text-ink-muted">{title}</h2>
         {badge != null && <StatusBadge tone={badge.tone}>{badge.label}</StatusBadge>}
       </div>
       {children}
@@ -99,10 +99,10 @@ function Tile({
 
 function BigValue({ value, unit }: { value: string; unit?: string }) {
   return (
-    <p className="mt-1 font-numeric text-2xl font-semibold tabular-nums text-ink">
+    <p className="mt-1 font-mono text-2xl font-semibold text-ink">
       {value}
       {unit != null && (
-        <span className="ml-0.5 text-sm font-normal text-slate-500">{unit}</span>
+        <span className="ml-0.5 text-sm font-normal text-ink-muted">{unit}</span>
       )}
     </p>
   );
@@ -134,7 +134,7 @@ function AcwrTile({ load }: { load: AcwrTrend | null }) {
           unit=" km"
         />
       )}
-      <p className="mt-1 text-[11px] text-slate-500">週間距離 直近{weeks.length}週</p>
+      <p className="mt-1 text-[11px] text-ink-muted">週間距離 直近{weeks.length}週</p>
     </Tile>
   );
 }
@@ -165,7 +165,7 @@ function HrvTile({ recovery }: { recovery: RecoveryTrend | null }) {
           unit=" ms"
         />
       )}
-      <p className="mt-1 text-[11px] text-slate-500">
+      <p className="mt-1 text-[11px] text-ink-muted">
         基準割れ {hrv?.hrv_below_baseline_days ?? 0}日連続
       </p>
     </Tile>
@@ -203,7 +203,7 @@ function RhrTile({ recovery }: { recovery: RecoveryTrend | null }) {
           unit=" bpm"
         />
       )}
-      <p className="mt-1 text-[11px] text-slate-500">7日中央値</p>
+      <p className="mt-1 text-[11px] text-ink-muted">7日中央値</p>
     </Tile>
   );
 }
@@ -221,7 +221,7 @@ function FlagsTile({ flags }: { flags: FormAnomalyFlagsResponse | null }) {
   return (
     <Tile title="フォーム注意点" badge={badge} to="/condition#form-anomaly">
       <BigValue value={count != null ? String(count) : "—"} unit="件" />
-      <p className="mt-1 line-clamp-3 text-[11px] leading-relaxed text-slate-500">
+      <p className="mt-1 line-clamp-3 text-[11px] leading-relaxed text-ink-muted">
         {count === 0
           ? `直近${flags?.weeks ?? 2}週のランに異常なし`
           : (top ?? `直近${flags?.weeks ?? 2}週のフォーム異常検出`)}

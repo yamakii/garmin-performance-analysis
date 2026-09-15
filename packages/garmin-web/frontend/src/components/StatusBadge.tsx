@@ -1,24 +1,30 @@
 import type { JSX, ReactNode } from "react";
 
-/** Status tone vocabulary shared across cards (良 / 注意 / 悪 / 情報). */
-export type StatusTone = "good" | "warn" | "bad" | "info";
+/**
+ * Status tone vocabulary shared across the app (良 / 注意 / 悪 / 情報 / 今日).
+ * `today` marks the current day in a week or month grid.
+ */
+export type StatusTone = "good" | "warn" | "bad" | "info" | "today";
 
 /**
- * Each tone maps to the soft-tint + on-color pair of its `--color-status-*`
- * token (Issue #650). Centralizing the mapping here replaces the per-card
- * `bg-emerald-100 text-emerald-700` ad-hoc utilities so every 良/注意/悪 badge
- * stays on the same palette discipline as ink/signal/gold.
+ * Color is for exceptions only (Morning Brief, #1116): a good or neutral tag
+ * is an outlined mono label with no fill, so a page full of 良 badges stays
+ * quiet; 注意 and 悪 get their tint, and 今日 is the one accent-filled tag.
+ * Each pair is AA-checked in `index.css.test.ts`.
  */
 const TONE_CLASSES: Record<StatusTone, string> = {
-  good: "bg-status-good/10 text-status-good",
-  warn: "bg-status-warn/10 text-status-warn",
-  bad: "bg-status-bad/10 text-status-bad",
-  info: "bg-status-info/10 text-status-info",
+  good: "border-hairline text-ink-soft",
+  info: "border-hairline text-ink-soft",
+  warn: "border-warn-line bg-warn-tint text-status-warn",
+  bad: "border-bad-line bg-bad-tint text-status-bad",
+  today: "border-accent bg-accent text-paper",
 };
 
 /**
- * Pill badge for a status signal. `tone` selects the token-backed color pair;
- * `children` is the label (e.g. "問題なし", "2件", "順調").
+ * Small mono status tag. `tone` selects the token-backed color pair and is
+ * echoed as `data-tone` so tests and styling hooks can read the meaning
+ * without parsing class names; `children` is the label (e.g. "問題なし",
+ * "2件", "順調").
  */
 export default function StatusBadge({
   tone,
@@ -29,7 +35,8 @@ export default function StatusBadge({
 }): JSX.Element {
   return (
     <span
-      className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${TONE_CLASSES[tone]}`}
+      data-tone={tone}
+      className={`inline-block shrink-0 rounded-sm border px-1.5 py-[3px] font-mono text-[11px] font-medium tracking-[0.04em] ${TONE_CLASSES[tone]}`}
     >
       {children}
     </span>

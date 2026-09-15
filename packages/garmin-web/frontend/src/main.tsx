@@ -2,12 +2,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
-// Editorial Sport faces (Issue #214) — only the weights actually used,
-// to keep the bundle lean: display headings (700) + condensed KPI numerals
-// (400 for units / 600 SemiBold for the big numbers).
-import "@fontsource/zen-kaku-gothic-new/700.css";
-import "@fontsource/barlow-condensed/400.css";
-import "@fontsource/barlow-condensed/600.css";
+// Morning Brief faces (Epic #1115) — only the weights the type scale uses:
+// BIZ UDPGothic 400/700 for prose and headings, IBM Plex Mono 400/500/600
+// for numerals, dates and labels.
+import "@fontsource/biz-udpgothic/400.css";
+import "@fontsource/biz-udpgothic/700.css";
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
+import "@fontsource/ibm-plex-mono/600.css";
 import "./index.css";
 
 const rootElement = document.getElementById("root");

@@ -66,11 +66,11 @@ describe("PhaseTimeline", () => {
     render(<PhaseTimeline section={section(markedData)} />);
 
     // Every node carries its score as a badge next to the phase label.
-    expect(screen.getByText("★ 4.0")).toBeInTheDocument();
-    expect(screen.getByText("★ 3.5")).toBeInTheDocument();
-    expect(screen.getByText("★ 4.8")).toBeInTheDocument();
+    expect(screen.getByLabelText("評価 4.0 / 5.0")).toBeInTheDocument();
+    expect(screen.getByLabelText("評価 3.5 / 5.0")).toBeInTheDocument();
+    expect(screen.getByLabelText("評価 4.8 / 5.0")).toBeInTheDocument();
     expect(screen.getByText("ウォームアップ").parentElement).toContainElement(
-      screen.getByText("★ 4.0"),
+      screen.getByLabelText("評価 4.0 / 5.0"),
     );
 
     // The verdict is the default line; the measurements are a muted footnote.

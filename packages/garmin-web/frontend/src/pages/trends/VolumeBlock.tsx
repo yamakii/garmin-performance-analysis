@@ -51,16 +51,16 @@ export default function VolumeBlock({ data, granularity }: VolumeBlockProps) {
       aria-label="走行量"
       className={CARD_CLASS}
     >
-      <h2 className="mb-3 font-display text-base font-semibold text-ink">
+      <h2 className="mb-3 text-base font-semibold text-ink">
         走行量
       </h2>
       {data.length === 0 ? (
-        <p className="py-8 text-center text-sm text-slate-500">
+        <p className="py-8 text-center text-sm text-ink-muted">
           データがありません
         </p>
       ) : (
         <>
-          <p className="mb-2 text-sm text-slate-600">
+          <p className="mb-2 text-sm text-ink-muted">
             直近{granularity === "week" ? "週" : "月"} ({data[data.length - 1].bucket}
             ): {data[data.length - 1].distance_km.toFixed(1)} km /{" "}
             {data[data.length - 1].run_count} 回

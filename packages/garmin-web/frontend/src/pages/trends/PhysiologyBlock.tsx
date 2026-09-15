@@ -77,17 +77,17 @@ export default function PhysiologyBlock({ data }: PhysiologyBlockProps) {
       aria-label="生理指標"
       className={CARD_CLASS}
     >
-      <h2 className="mb-3 font-display text-base font-semibold text-ink">
+      <h2 className="mb-3 text-base font-semibold text-ink">
         生理指標 (VO2max / 乳酸閾値)
       </h2>
       {isEmpty ? (
-        <p className="py-8 text-center text-sm text-slate-500">
+        <p className="py-8 text-center text-sm text-ink-muted">
           データがありません
         </p>
       ) : (
         <>
           {latestVo2max?.value != null && (
-            <p className="mb-2 text-sm text-slate-600">
+            <p className="mb-2 text-sm text-ink-muted">
               最新VO2max: {latestVo2max.value.toFixed(1)} ({latestVo2max.date})
             </p>
           )}

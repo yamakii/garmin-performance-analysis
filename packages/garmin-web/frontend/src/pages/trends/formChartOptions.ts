@@ -1,6 +1,8 @@
 import {
   AXIS_STYLE,
+  BASELINE_BAND_COLOR,
   BASE_CHART_OPTION,
+  COMPARE_COLOR,
   FORM_DELTA_COLORS,
   FORM_SCORE_COLOR,
 } from "../../components/chartTheme";
@@ -59,15 +61,15 @@ export function buildScoreChartOption(data: FormTrendPoint[]): EChartsOption {
           silent: true,
           data: [
             [
-              { yAxis: 3.5, itemStyle: { color: "rgba(16,185,129,0.08)" } },
+              { yAxis: 3.5, itemStyle: { color: BASELINE_BAND_COLOR } },
               { yAxis: 5.5 },
             ],
             [
-              { yAxis: 2, itemStyle: { color: "rgba(251,191,36,0.08)" } },
+              { yAxis: 2, itemStyle: { color: "rgba(154,91,18,0.08)" } },
               { yAxis: 3.5 },
             ],
             [
-              { yAxis: 0.5, itemStyle: { color: "rgba(239,68,68,0.08)" } },
+              { yAxis: 0.5, itemStyle: { color: "rgba(168,58,46,0.08)" } },
               { yAxis: 2 },
             ],
           ],
@@ -124,11 +126,11 @@ export function buildDeltaChartOption(data: FormTrendPoint[]): EChartsOption {
           silent: true,
           symbol: "none" as const,
           data: [{ yAxis: 0 }],
-          lineStyle: { type: "dashed" as const, color: "#94a3b8", width: 1 },
+          lineStyle: { type: "dashed" as const, color: COMPARE_COLOR, width: 1 },
           label: {
             formatter: "基準",
             position: "insideStartTop" as const,
-            color: "#94a3b8",
+            color: COMPARE_COLOR,
             fontSize: 11,
           },
         },

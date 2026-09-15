@@ -9,12 +9,6 @@ import type {
   WellnessBaselineDeviation,
 } from "../../types";
 
-/**
- * Faint topographic-contour texture (inline SVG data URI), matching the
- * HeroHeader / Goal countdown hero background.
- */
-const CONTOUR_PATTERN = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280' viewBox='0 0 280 280' fill='none' stroke='%2316213a' stroke-width='1'%3E%3Cpath d='M0 40c46-22 94 16 140-6s94-26 140-2'/%3E%3Cpath d='M0 90c46-24 94 18 140-8s94-28 140-2'/%3E%3Cpath d='M0 140c46-20 94 14 140-6s94-24 140-2'/%3E%3Cpath d='M0 190c46-26 94 20 140-8s94-30 140-2'/%3E%3Cpath d='M0 240c46-22 94 16 140-6s94-26 140-2'/%3E%3Cellipse cx='70' cy='66' rx='34' ry='13'/%3E%3Cellipse cx='70' cy='66' rx='20' ry='7'/%3E%3Cellipse cx='204' cy='214' rx='38' ry='15'/%3E%3Cellipse cx='204' cy='214' rx='22' ry='8'/%3E%3C/svg%3E")`;
-
 export interface VerdictMeta {
   /** Big verdict word shown in the hero. */
   label: string;
@@ -50,20 +44,22 @@ export function verdictMeta(rec: RecoveryRecommendation): VerdictMeta {
 
 /** Verdict-word text color per tone (status tokens; neutral = slate). */
 const TONE_TEXT: Record<VerdictMeta["tone"], string> = {
+  today: "text-accent",
   good: "text-status-good",
-  info: "text-status-info",
+  info: "text-accent",
   warn: "text-status-warn",
   bad: "text-status-bad",
-  neutral: "text-slate-600",
+  neutral: "text-ink-muted",
 };
 
 /** Left accent-bar color per tone. */
 const TONE_BAR: Record<VerdictMeta["tone"], string> = {
+  today: "bg-accent",
   good: "bg-status-good",
-  info: "bg-status-info",
+  info: "bg-accent",
   warn: "bg-status-warn",
   bad: "bg-status-bad",
-  neutral: "bg-slate-300",
+  neutral: "bg-well",
 };
 
 interface TodayHeroProps {
@@ -85,13 +81,8 @@ export default function TodayHero({ status, baseline }: TodayHeroProps) {
   return (
     <header
       aria-label="今日の判定"
-      className="relative overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-slate-100 shadow-sm"
+      className="relative overflow-hidden rounded-md border border-hairline"
     >
-      <div
-        aria-hidden="true"
-        className="absolute inset-0 opacity-[0.04]"
-        style={{ backgroundImage: CONTOUR_PATTERN }}
-      />
       <span
         aria-hidden="true"
         className={`absolute inset-y-0 left-0 w-1.5 ${TONE_BAR[meta.tone]}`}
@@ -99,19 +90,19 @@ export default function TodayHero({ status, baseline }: TodayHeroProps) {
       <div className="relative px-6 py-6 md:px-8">
         {/*
          * Muted copy on this band is slate-600, not the slate-500 used on the
-         * white cards: the hero runs `from-white via-slate-50 to-slate-100`,
+         * white cards: the hero runs the old hero gradient,
          * where slate-500 drops to 4.35:1 (Issue #911).
          */}
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
           {/* Decorative eyebrow: the verdict heading below says the same (#912). */}
           <p
             aria-hidden="true"
-            className="text-xs font-semibold tracking-[0.2em] text-slate-600 uppercase"
+            className="text-xs font-semibold font-mono text-ink-muted"
           >
             Today&apos;s Verdict
           </p>
           {date != null && (
-            <p className="font-numeric text-sm tabular-nums text-slate-600">
+            <p className="font-mono text-sm text-ink-muted">
               {formatDate(date)}
             </p>
           )}
@@ -123,18 +114,18 @@ export default function TodayHero({ status, baseline }: TodayHeroProps) {
          * page outline under the Home h1. Styling is unchanged.
          */}
         <h2
-          className={`mt-2 font-display text-4xl leading-tight font-bold tracking-tight md:text-5xl ${TONE_TEXT[meta.tone]}`}
+          className={`mt-2 text-4xl leading-tight font-bold tracking-tight md:text-5xl ${TONE_TEXT[meta.tone]}`}
         >
           {meta.label}
         </h2>
-        <p className="mt-1 text-sm font-medium text-slate-600">
+        <p className="mt-1 text-sm font-medium text-ink-muted">
           {rationale ?? meta.gloss}
         </p>
 
         {baseline?.overall_flag === true && (
           <p
             role="alert"
-            className="mt-3 inline-block rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700"
+            className="mt-3 inline-block rounded-md border border-warn-line bg-warn-tint px-3 py-1.5 text-xs font-medium text-status-warn"
           >
             個人ベースラインから不利な方向に逸脱中 — 強度より回復を優先
           </p>
@@ -181,19 +172,19 @@ function ChipStat({
 }) {
   return (
     <div
-      className={`rounded-lg border px-3 py-2 ${
-        adverse ? "border-amber-200 bg-amber-50" : "border-slate-100 bg-white/70"
-      }`}
+      className={`rounded-md border px-3 py-2 ${
+ adverse ? "border-warn-line bg-warn-tint" : "border-hairline"
+ }`}
     >
-      <dt className="flex items-center gap-1 text-xs text-slate-500">
+      <dt className="flex items-center gap-1 text-xs text-ink-muted">
         {label}
         {adverse && (
-          <span className="rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-700">
+          <span className="rounded-sm bg-warn-tint px-1.5 text-[10px] font-semibold text-status-warn">
             基準外
           </span>
         )}
       </dt>
-      <dd className="mt-0.5 font-numeric text-lg font-semibold tabular-nums text-ink">
+      <dd className="mt-0.5 font-mono text-lg font-semibold text-ink">
         {value}
       </dd>
     </div>

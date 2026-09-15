@@ -179,17 +179,17 @@ export default function EfficiencyReport({
                 <div key={label} className={SUBCARD}>
                   <dt className={META_LABEL}>{label}</dt>
                   {/* GCT / VO / VR share the violet form-metric color (#214). */}
-                  <dd className="mt-0.5 font-numeric text-2xl leading-none font-semibold tabular-nums text-metric-form">
+                  <dd className="mt-0.5 font-mono text-2xl leading-none font-semibold text-metric-form">
                     {value!.toFixed(digits)}
-                    <span className="ml-0.5 text-xs font-normal text-slate-500">
+                    <span className="ml-0.5 text-xs font-normal text-ink-muted">
                       {unit}
                     </span>
                   </dd>
                   {rating && (
-                    <dd className="text-xs text-slate-500">{rating}</dd>
+                    <dd className="text-xs text-ink-muted">{rating}</dd>
                   )}
                   {note && (
-                    <dd className="text-[11px] leading-tight text-slate-500">
+                    <dd className="text-[11px] leading-tight text-ink-muted">
                       {note}
                     </dd>
                   )}
@@ -208,12 +208,12 @@ export default function EfficiencyReport({
                     {powerLabel}
                   </dd>
                 )}
-                <dd className="mt-0.5 text-xs text-slate-500">
+                <dd className="mt-0.5 text-xs text-ink-muted">
                   {powerAvg.toFixed(0)} W
                   {powerWkg != null && ` / ${powerWkg.toFixed(2)} W/kg`}
                 </dd>
                 {speedActual != null && speedExpected != null && (
-                  <dd className="text-[11px] leading-tight text-slate-500">
+                  <dd className="text-[11px] leading-tight text-ink-muted">
                     実測 {speedActual.toFixed(2)} m/s / 期待{" "}
                     {speedExpected.toFixed(2)} m/s
                   </dd>
