@@ -1,4 +1,4 @@
-import { useEffect, useState, type JSX } from "react";
+import { useEffect, useRef, useState, type JSX } from "react";
 
 export interface NavItem {
   id: string;
@@ -31,6 +31,7 @@ export default function SectionNav({
   items: NavItem[];
 }): JSX.Element | null {
   const [current, setCurrent] = useState<string | null>(null);
+  const links = useRef(new Map<string, HTMLAnchorElement>());
   const idsKey = items.map((item) => item.id).join("|");
 
   useEffect(() => {
@@ -65,6 +66,21 @@ export default function SectionNav({
     return () => observer.disconnect();
   }, [idsKey]);
 
+  // The list scrolls sideways when the sections do not fit, so the section
+  // being read can end up marked as current while sitting outside the strip.
+  // `nearest` scrolls the strip only as far as it has to, and never the page.
+  // jsdom has no layout and therefore no scrollIntoView, so guard on it the
+  // same way the observer above is guarded.
+  useEffect(() => {
+    if (current == null) {
+      return;
+    }
+    const link = links.current.get(current);
+    if (typeof link?.scrollIntoView === "function") {
+      link.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+  }, [current]);
+
   if (items.length === 0) {
     return null;
   }
@@ -80,6 +96,13 @@ export default function SectionNav({
             <li key={item.id} className="shrink-0">
               <a
                 href={`#${item.id}`}
+                ref={(node) => {
+                  if (node == null) {
+                    links.current.delete(item.id);
+                  } else {
+                    links.current.set(item.id, node);
+                  }
+                }}
                 aria-current={isCurrent ? "location" : undefined}
                 className={`block pt-2.5 pb-3 whitespace-nowrap hover:text-ink hover:no-underline ${
                   isCurrent

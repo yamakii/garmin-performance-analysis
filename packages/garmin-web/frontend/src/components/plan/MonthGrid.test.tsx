@@ -105,6 +105,41 @@ describe("MonthGrid", () => {
     expect(screen.getByText("19km")).toBeInTheDocument();
   });
 
+  it("test_month_grid_rows_use_minmax_columns", () => {
+    renderGrid();
+
+    // Header row + five week rows: every one of them is its own grid, so they
+    // only line up while their day tracks are free to shrink. `1fr` is
+    // `minmax(auto, 1fr)`, which lets one unbreakable token widen a column on
+    // a single row and knock that row out of step with the header (#1143).
+    const rows = screen.getAllByRole("row");
+    expect(rows).toHaveLength(6);
+    for (const row of rows) {
+      expect(row.className).toContain("minmax(0,1fr)");
+      expect(row.className).not.toContain("repeat(7,1fr)");
+    }
+  });
+
+  it("test_month_grid_scrolls_its_bands_with_the_days", () => {
+    render(
+      <MemoryRouter>
+        <MonthGrid
+          plan={makeMonthPlan("2026-09", 0)}
+          today={new Date(2026, 8, 13)}
+          bands={<p>ビルド · 新潟マラソン ビルド</p>}
+        />
+      </MemoryRouter>,
+    );
+
+    // The bands share the grid's columns, so they share its scroller.
+    const band = screen.getByText("ビルド · 新潟マラソン ビルド");
+    const scroller = band.closest(".overflow-x-auto");
+    expect(scroller).not.toBeNull();
+    expect(scroller).toContainElement(
+      screen.getByRole("table", { name: "月間プラン" }),
+    );
+  });
+
   it("explains the grid's states in one legend line", () => {
     renderGrid();
 

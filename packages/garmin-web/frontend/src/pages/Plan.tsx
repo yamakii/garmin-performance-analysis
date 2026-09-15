@@ -166,10 +166,16 @@ export default function Plan() {
                 <MonthFigures summary={summary} />
               </div>
 
-              <div className="flex flex-col gap-2">
-                <BlockBands blocks={plan.blocks} days={days} />
-                <MonthGrid plan={plan} />
-              </div>
+              {/*
+               * The bands go through the grid rather than beside it: they
+               * share its day columns, so they have to share its horizontal
+               * scroller too or the two drift apart on a narrow screen
+               * (#1143).
+               */}
+              <MonthGrid
+                plan={plan}
+                bands={<BlockBands blocks={plan.blocks} days={days} />}
+              />
             </div>
           );
         }}

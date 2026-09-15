@@ -15,7 +15,12 @@ import type {
   SeasonRetrospective,
 } from "../types";
 import { type FocusSection, parseFocusNotes } from "../utils/focusNotes";
-import { formatDate, formatDateLabel, formatDistanceKm } from "../utils/format";
+import {
+  formatDate,
+  formatDateLabel,
+  formatDateTime,
+  formatDistanceKm,
+} from "../utils/format";
 import {
   daysUntil,
   formatGap,
@@ -501,7 +506,13 @@ export default function Goal() {
       {/* 4. What this phase asks for */}
       <SectionBlock
         title="現フェーズ"
-        note={profile.updated_at != null ? `更新 ${profile.updated_at}` : undefined}
+        // The stored timestamp carries microseconds ("… 00:38:46.745998"); a
+        // reader only needs the day and the minute (Issue #1147).
+        note={
+          profile.updated_at != null
+            ? `更新 ${formatDateTime(profile.updated_at)}`
+            : undefined
+        }
         noteMono
       >
         {hasProfile ? (
