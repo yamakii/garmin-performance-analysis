@@ -231,12 +231,18 @@ export default function ActivityList() {
                 <li key={activity.activity_id}>
                   <Link
                     to={`/activities/${activity.activity_id}`}
-                    className="flex items-center gap-4 rounded-md border border-hairline px-4 py-3 transition-[box-,border-color] hover:border-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-hairline px-4 py-3 transition-[box-,border-color] hover:border-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:flex-nowrap"
                   >
                     <span className="shrink-0 rounded-md bg-well px-2 py-1 font-mono text-sm font-semibold text-ink">
                       {formatDate(activity.activity_date)}
                     </span>
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink-soft">
+                    {/*
+                      Below `sm` the date + metrics already fill the row, so the
+                      name is pushed onto its own second line instead of being
+                      squeezed to 0px (#1145). From `sm` up it is the middle
+                      column again.
+                    */}
+                    <span className="order-last min-w-0 basis-full truncate text-sm font-medium text-ink-soft sm:order-none sm:flex-1 sm:basis-auto">
                       {activity.activity_name ?? "-"}
                     </span>
                     <span className="flex shrink-0 items-baseline divide-x divide-hairline text-right font-mono text-ink-soft">

@@ -1,3 +1,4 @@
+import { Fragment, type ReactNode } from "react";
 import type { SectionResult } from "../../types";
 import { splitLead } from "../../utils/leadSentence";
 import { extractStarSuffix } from "../../utils/starSuffix";
@@ -49,9 +50,25 @@ function deltaNote(
   return `偏差${sign}${delta.toFixed(digits)}${unit}`;
 }
 
-function joinNotes(...parts: (string | null)[]): string | null {
+/**
+ * The note parts as one node, each part unbreakable.
+ *
+ * CJK wraps at any character, so a plain `"期待276ms / 偏差-1.8%"` string
+ * happily breaks inside 「偏差」 when the tile is narrow (#1145). Each part is
+ * therefore its own `whitespace-nowrap` span and only the " / " between them
+ * is a break opportunity.
+ */
+function joinNotes(...parts: (string | null)[]): ReactNode | null {
   const kept = parts.filter((part): part is string => part != null);
-  return kept.length > 0 ? kept.join(" / ") : null;
+  if (kept.length === 0) {
+    return null;
+  }
+  return kept.map((part, index) => (
+    <Fragment key={part}>
+      {index > 0 && " / "}
+      <span className="whitespace-nowrap">{part}</span>
+    </Fragment>
+  ));
 }
 
 type Tile = {
@@ -61,7 +78,7 @@ type Tile = {
   unit: string;
   digits: number;
   rating: string | null;
-  note: string | null;
+  note: ReactNode | null;
 };
 
 function sectionField(

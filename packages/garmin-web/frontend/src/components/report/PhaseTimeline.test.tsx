@@ -87,9 +87,10 @@ describe("PhaseTimeline", () => {
   it("test_phase_rows_grid", () => {
     const { container } = render(<PhaseTimeline section={section(markedData)} />);
 
-    // Three phases, three rule-separated rows in the same 120/80/1fr grid.
+    // Three phases, three rule-separated rows in the same 120/80/1fr grid
+    // (from `md` up; below that the verdict stacks, see the test below).
     const rows = container.querySelectorAll(
-      ".grid-cols-\\[120px_80px_1fr\\]",
+      ".md\\:grid-cols-\\[120px_80px_minmax\\(0\\,1fr\\)\\]",
     );
     expect(rows).toHaveLength(3);
 
@@ -120,5 +121,25 @@ describe("PhaseTimeline", () => {
     // Nothing is invented: no badge and no 実際 footnote for this payload.
     expect(screen.queryByText(/^★ /)).not.toBeInTheDocument();
     expect(screen.queryByText(/^実際: /)).not.toBeInTheDocument();
+  });
+
+  it("test_phase_timeline_stacks_below_md", () => {
+    render(<PhaseTimeline section={section(markedData)} />);
+
+    const row = screen.getByText("ウォームアップ").parentElement as HTMLElement;
+
+    // The three fixed columns only apply from `md` up; at 390px the verdict
+    // would otherwise be stuck in a ~130px column (#1145).
+    expect(row.className).toContain("md:grid-cols-[120px_80px_minmax(0,1fr)]");
+    expect(row.className).not.toContain("grid-cols-[120px_80px_1fr]");
+    expect(row).toHaveClass("grid-cols-[1fr_auto]");
+
+    // Below `md` the verdict spans both columns of the folded grid.
+    const verdict = screen
+      .getByText("立ち上がりは適切でした。")
+      .closest(".col-span-2") as HTMLElement;
+    expect(verdict).not.toBeNull();
+    expect(verdict).toHaveClass("md:col-span-1", "min-w-0");
+    expect(row).toContainElement(verdict);
   });
 });

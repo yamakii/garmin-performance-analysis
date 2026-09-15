@@ -417,4 +417,21 @@ describe("ActivityList filters (Issue #893)", () => {
     expect(searchBox().value).toBe("");
     expect(currentSearch().get("q")).toBeNull();
   });
+
+  it("test_activity_list_row_wraps_name_below_sm", async () => {
+    stubFetch(FIXTURE_ACTIVITIES);
+
+    renderList();
+    const name = await screen.findByText("Morning Run");
+
+    // At 390px the date + metrics already fill the row, so the row wraps and
+    // the name takes a full second line instead of being squeezed to 0px.
+    const row = name.closest("a") as HTMLElement;
+    expect(row).toHaveClass("flex-wrap");
+    expect(name).toHaveClass("basis-full", "order-last");
+
+    // From `sm` up the layout is unchanged: name back in the middle column.
+    expect(row).toHaveClass("sm:flex-nowrap");
+    expect(name).toHaveClass("sm:basis-auto", "sm:order-none", "sm:flex-1");
+  });
 });

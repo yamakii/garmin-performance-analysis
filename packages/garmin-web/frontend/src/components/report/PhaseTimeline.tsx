@@ -63,7 +63,7 @@ function PhaseRow({ label, text }: { label: string; text: string }) {
   const { body, rating } = extractStarSuffix(text);
   const parts = splitPhaseProse(body);
   return (
-    <div className="grid grid-cols-[120px_80px_1fr] items-start gap-x-2 border-b border-hairline py-3">
+    <div className="grid grid-cols-[1fr_auto] items-start gap-x-2 border-b border-hairline py-3 md:grid-cols-[120px_80px_minmax(0,1fr)]">
       <h3 className="text-[15px] font-bold text-ink">{label}</h3>
       <div>
         {rating && (
@@ -75,7 +75,12 @@ function PhaseRow({ label, text }: { label: string; text: string }) {
           </span>
         )}
       </div>
-      <div className="min-w-0">
+      {/*
+        Below `md` the verdict gets the full width under the name + score row:
+        at 390px a third fixed column left it about 130px wide, which turned one
+        paragraph into dozens of lines (#1145).
+      */}
+      <div className="col-span-2 mt-1 min-w-0 md:col-span-1 md:mt-0">
         <div className="text-sm leading-[1.7] text-ink-soft">
           <MarkdownText text={parts ? parts.evaluation : body} />
         </div>
