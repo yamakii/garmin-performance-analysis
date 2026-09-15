@@ -2,6 +2,7 @@ import type { JSX } from "react";
 import { Link } from "react-router-dom";
 import type { MonthPlan, PlanDay, PlanWeek } from "../../types";
 import { toIsoDate } from "../../utils/format";
+import { formatNumber } from "../../utils/formatNumber";
 import { weekRowLabel, weekRowsForMonth, weekdayLabels } from "../../utils/week";
 import AdherenceChip from "./AdherenceChip";
 import DayCell, { targetSummary } from "./DayCell";
@@ -30,12 +31,36 @@ function emptyDay(date: string): PlanDay {
   return { date, in_month: false, prescriptions: [], activities: [] };
 }
 
-const HEADER_CELL =
-  "px-1.5 pb-2 text-xs font-semibold tracking-wide text-ink-muted";
+/** The shared column geometry: the week header, then the seven days. */
+const ROW_CLASS = "grid grid-cols-[96px_repeat(7,1fr)]";
+
+/**
+ * "計画 38km" / "ロング 16km" — what the week asks for in one line.
+ *
+ * A prescribed week states the distance it adds up to; an unprescribed one
+ * still has the block's ladder step, which is the only commitment that exists
+ * that far ahead.
+ */
+function weekTargetLine(week: PlanWeek): string {
+  const planned = week.days
+    .flatMap((day) => day.prescriptions)
+    .reduce((sum, prescription) => sum + (prescription.target_km ?? 0), 0);
+  if (planned > 0) {
+    return `計画 ${formatNumber(planned, 1)}km`;
+  }
+  const ladder =
+    week.ladder_step != null ? targetSummary(week.ladder_step) : "";
+  return ladder !== "" ? `ロング ${ladder}` : "";
+}
 
 /**
  * The month as a calendar: one row per week, columns ordered from the athlete's
  * `week_start_day` (Monday start → the Sunday long run is the last column).
+ *
+ * It is a CSS grid carrying table roles rather than a `<table>` (Morning
+ * Brief, #1119): the cells have to share their column geometry with the block
+ * bands drawn above them, which a table cannot do, while the roles keep the
+ * grid navigable as the table it reads as.
  *
  * The geometry comes from `weekRowsForMonth` — the same rule the API uses to
  * build its grid range — and the payload only fills the cells, so a row always
@@ -60,52 +85,58 @@ export default function MonthGrid({
   const todayIso = toIsoDate(today);
 
   return (
-    <div className="overflow-x-auto">
-      <table
-        aria-label="月間プラン"
-        className="w-full border-separate border-spacing-1 text-left"
-      >
-        <thead>
-          <tr>
-            <th scope="col" className={HEADER_CELL}>
+    <div className="flex flex-col gap-2 overflow-x-auto">
+      <div role="table" aria-label="月間プラン" className="min-w-[720px]">
+        <div role="rowgroup">
+          <div role="row" className={`${ROW_CLASS} border-b border-ink`}>
+            <div
+              role="columnheader"
+              className="pb-2 font-mono text-xs text-ink-muted"
+            >
               週
-            </th>
+            </div>
             {labels.map((label) => (
-              <th key={label} scope="col" className={HEADER_CELL}>
+              <div
+                key={label}
+                role="columnheader"
+                className="pb-2 pl-2.5 font-mono text-xs text-ink-muted"
+              >
                 {label}
-              </th>
+              </div>
             ))}
-          </tr>
-        </thead>
-        <tbody>
+          </div>
+        </div>
+        <div role="rowgroup">
           {rows.map((row) => {
             const week =
               weekByStart.get(row.weekStart) ??
               emptyWeek(row.weekStart, row.days);
-            const ladderTarget =
-              week.ladder_step != null ? targetSummary(week.ladder_step) : "";
+            const targetLine = weekTargetLine(week);
             return (
-              <tr key={row.weekStart}>
-                <th scope="row" className="min-w-[6rem] align-top">
-                  <div className="space-y-1 p-1.5">
-                    <Link
-                      to={`/weekly-reviews/${row.weekStart}`}
-                      className={`block font-mono text-xs font-semibold ${
- week.review_exists
- ? "text-accent hover:underline"
- : "text-ink-muted hover:text-ink hover:underline"
- }`}
-                    >
-                      {weekRowLabel(row.weekStart)}
-                    </Link>
-                    <AdherenceChip adherence={week.adherence} />
-                    {ladderTarget !== "" && (
-                      <p className="font-mono text-xs text-ink-muted">
-                        ロング {ladderTarget}
-                      </p>
-                    )}
-                  </div>
-                </th>
+              <div
+                key={row.weekStart}
+                role="row"
+                className={`${ROW_CLASS} border-b border-hairline`}
+              >
+                <div
+                  role="rowheader"
+                  className="flex flex-col gap-1 border-r border-hairline py-2.5 pr-2.5"
+                >
+                  <Link
+                    to={`/weekly-reviews/${row.weekStart}`}
+                    className={`font-mono text-[13px] font-semibold ${
+                      week.review_exists ? "text-accent" : "text-ink"
+                    }`}
+                  >
+                    {weekRowLabel(row.weekStart)}
+                  </Link>
+                  <AdherenceChip adherence={week.adherence} />
+                  {targetLine !== "" && (
+                    <p className="font-mono text-xs text-ink-muted">
+                      {targetLine}
+                    </p>
+                  )}
+                </div>
                 {row.days.map((date, index) => (
                   <DayCell
                     key={date}
@@ -117,11 +148,15 @@ export default function MonthGrid({
                     ladderStep={index === 6 ? week.ladder_step : null}
                   />
                 ))}
-              </tr>
+              </div>
             );
           })}
-        </tbody>
-      </table>
+        </div>
+      </div>
+      <p className="font-mono text-xs text-ink-muted">
+        太字 + 実績行 = 実施 ／ 取り消し線 = 未実施 ／ 注意色 = 代替・休養指示 ／
+        淡色 = 月外
+      </p>
     </div>
   );
 }

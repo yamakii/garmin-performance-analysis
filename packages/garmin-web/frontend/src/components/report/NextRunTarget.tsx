@@ -39,17 +39,17 @@ function formatRange(
 
 function Chip({ label, value }: { label: string; value: string }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-sm bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">
-      <span className="text-indigo-500">{label}</span>
-      <span className="">{value}</span>
+    <span className="inline-flex items-center gap-1.5 font-mono text-xs text-ink">
+      <span className="text-ink-muted">{label}</span>
+      <span>{value}</span>
     </span>
   );
 }
 
 function LabeledLine({ label, value }: { label: string; value: string }) {
   return (
-    <p className="text-sm text-ink-soft">
-      <span className="font-semibold text-indigo-700">{label}</span>
+    <p className="text-[15px] leading-[1.7] text-ink-soft">
+      <span className="font-bold text-ink">{label}</span>
       <span className="ml-1.5">{value}</span>
     </p>
   );
@@ -100,22 +100,22 @@ export default function NextRunTarget({
   }
 
   return (
-    <div className="rounded-md border border-indigo-100 bg-indigo-50/40 p-4">
+    <div className="border-t border-hairline pt-3">
       <div className="flex flex-wrap items-center gap-2">
-        <h3 className="text-xs font-semibold tracking-wide text-indigo-700">
-          次回への処方
-        </h3>
+        <h3 className="font-mono text-xs text-ink-muted">次回への処方</h3>
         {typeLabel != null && (
-          <span className="rounded-sm bg-indigo-600 px-2.5 py-0.5 text-xs font-semibold text-white">
+          <span className="rounded-sm bg-ink px-1.5 py-[3px] font-mono text-[11px] font-medium tracking-[0.04em] text-paper">
             {typeLabel}
           </span>
         )}
       </div>
       {summaryJa != null && (
-        <p className="mt-2 text-sm leading-relaxed text-ink-soft">{summaryJa}</p>
+        <p className="mt-2 text-[15px] leading-[1.7] text-ink-soft">
+          {summaryJa}
+        </p>
       )}
       {chips.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-2">{chips}</div>
+        <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1">{chips}</div>
       )}
       {(successCriterion != null || adjustmentTip != null) && (
         <div className="mt-3 space-y-1.5">

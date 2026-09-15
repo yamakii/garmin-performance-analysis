@@ -9,6 +9,7 @@ import {
   INK_COLOR,
   METRIC_COLORS,
   METRIC_DECIMALS,
+  THRESHOLD_LINE,
 } from "./chartTheme";
 
 const GRID_HEIGHT = 140;
@@ -47,17 +48,25 @@ const HOVER_THROTTLE_MS = 50;
  * Hover sync (Issue #200): onHoverIndex reports the hovered data index
  * (throttled 50ms); hoverIndex shows the tooltip at an externally chosen
  * index (e.g. driven by the GPS map).
+ *
+ * The frame follows the Morning Brief chart rules (#1118): horizontal grid
+ * lines only, no axis lines, and the prescribed HR ceiling drawn as a dotted
+ * `markLine` on the heart-rate grid, so a stretch spent over the cap is
+ * visible in the shape of the line instead of only in the prose.
  */
 export default function TimeSeriesChart({
   data,
   metricLabels,
   hoverIndex = null,
   onHoverIndex,
+  hrCeiling = null,
 }: {
   data: TimeSeriesResponse;
   metricLabels: Record<string, string>;
   hoverIndex?: number | null;
   onHoverIndex?: (index: number | null) => void;
+  /** Prescribed HR cap for the day; drawn on the heart-rate grid only. */
+  hrCeiling?: number | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
@@ -134,7 +143,10 @@ export default function TimeSeriesChart({
           color: AXIS_LABEL_COLOR,
           fontSize: CHART_FONT_SIZE,
         },
-        axisLine: { lineStyle: { color: GRID_LINE_COLOR } },
+        // The frame is the data: no axis line, no vertical grid (#1118).
+        axisLine: { show: false },
+        axisTick: { show: false },
+        splitLine: { show: false },
         axisPointer: { show: true },
       })),
       yAxis: metricNames.map((name, i) => {
@@ -153,6 +165,8 @@ export default function TimeSeriesChart({
               ? { formatter: (value: number) => formatPaceLabel(value) }
               : {}),
           },
+          axisLine: { show: false },
+          axisTick: { show: false },
           splitLine: { lineStyle: { color: GRID_LINE_COLOR } },
         };
       }),
@@ -164,6 +178,9 @@ export default function TimeSeriesChart({
         // Each line carries its metric's semantic color (Issue #214),
         // matching the active toggle pill in ActivityDetail.
         const color = METRIC_COLORS[name] ?? INK_COLOR;
+        // The prescribed cap belongs to heart rate, and only on a day that
+        // carried a prescription to be capped by.
+        const ceiling = name === "heart_rate" ? hrCeiling : null;
         return {
           name: metricLabels[name] ?? name,
           type: "line" as const,
@@ -174,6 +191,26 @@ export default function TimeSeriesChart({
           lineStyle: { color },
           showSymbol: false,
           connectNulls: false,
+          ...(ceiling != null
+            ? {
+                markLine: {
+                  silent: true,
+                  symbol: "none" as const,
+                  lineStyle: {
+                    type: "dashed" as const,
+                    color: THRESHOLD_LINE.warn,
+                  },
+                  label: {
+                    formatter: `上限 ${Math.round(ceiling)}`,
+                    position: "insideEndTop" as const,
+                    color: THRESHOLD_LINE.warn,
+                    fontSize: CHART_FONT_SIZE,
+                    fontFamily: "IBM Plex Mono",
+                  },
+                  data: [{ yAxis: ceiling }],
+                },
+              }
+            : {}),
           tooltip: isPace
             ? {
                 valueFormatter: (value) =>
@@ -197,7 +234,7 @@ export default function TimeSeriesChart({
     chartRef.current.setOption(option, true);
     chartRef.current.resize({ height });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, metricLabels, height]);
+  }, [data, metricLabels, height, hrCeiling]);
 
   // Externally driven hover (map -> chart): show/hide the tooltip.
   useEffect(() => {
