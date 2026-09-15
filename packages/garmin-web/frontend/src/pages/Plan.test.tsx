@@ -138,6 +138,26 @@ describe("Plan", () => {
     );
   });
 
+  it("test_plan_bleeds_out_only_from_lg", async () => {
+    stubFetch();
+    const { container } = renderPlan();
+
+    await screen.findByRole("table", { name: "月間プラン" });
+
+    // The page pulls 40px out of each margin so the month grid can breathe.
+    // At `md` (768px) that made the content 880 + 80 wide and the whole page
+    // scrolled sideways; `lg` (1024) is the first breakpoint where 960 + 48
+    // of padding actually fits it (#1191).
+    const root = container.firstElementChild as HTMLElement;
+    expect(root).toHaveClass("lg:-mx-10");
+    expect(root.className).not.toContain("md:-mx-10");
+
+    // The grid keeps its own sideways scroll: that one is intended.
+    const scroller = container.querySelector(".overflow-x-auto");
+    expect(scroller).not.toBeNull();
+    expect(scroller?.querySelector(".min-w-\\[720px\\]")).not.toBeNull();
+  });
+
   it("falls back to the current month when the URL month is malformed", async () => {
     const fetchMock = stubFetch();
     renderPlan("/plan?month=2026-9");
