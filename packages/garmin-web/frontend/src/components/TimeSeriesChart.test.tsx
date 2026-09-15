@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import TimeSeriesChart from "./TimeSeriesChart";
+import TimeSeriesChart, { paceAxisBounds } from "./TimeSeriesChart";
 import type { TimeSeriesResponse } from "../types";
 
 // echarts needs a real canvas; mock the modular wrapper out for jsdom and
@@ -34,6 +34,8 @@ const LABELS = { heart_rate: "心拍", speed: "ペース" };
 interface AxisOption {
   splitLine?: { show?: boolean };
   axisLine?: { show?: boolean };
+  min?: number;
+  max?: number;
 }
 
 interface SeriesOption {
@@ -121,5 +123,52 @@ describe("TimeSeriesChart", () => {
     for (const series of lastOption().series) {
       expect(series.markLine).toBeUndefined();
     }
+  });
+
+  it("test_pace_axis_bounded_only_on_the_pace_grid", () => {
+    // 8:20/km throughout, with one traffic-light stop at 16:40/km.
+    const speeds = Array.from({ length: 40 }, () => 2.0);
+    speeds[20] = 1.0;
+    render(
+      <TimeSeriesChart
+        data={{
+          timestamps: speeds.map((_, i) => i),
+          metrics: { heart_rate: speeds.map(() => 130), speed: speeds },
+        }}
+        metricLabels={LABELS}
+      />,
+    );
+
+    const [hr, pace] = lastOption().yAxis;
+    // The stop sits outside the plotted range, so the running paces get the
+    // whole grid (#1148)...
+    expect(pace.max).toBeLessThan(700);
+    expect(pace.min).toBeGreaterThan(300);
+    // ...while heart rate keeps ECharts' own scaling.
+    expect(hr.min).toBeUndefined();
+    expect(hr.max).toBeUndefined();
+  });
+});
+
+describe("paceAxisBounds", () => {
+  it("test_pace_axis_bounds_ignores_stop_spikes", () => {
+    const paces = [
+      ...Array.from({ length: 200 }, () => 500),
+      ...Array.from({ length: 3 }, () => 1000),
+    ];
+
+    const bounds = paceAxisBounds(paces);
+
+    // The three 16:40/km stops must not stretch the axis around the 8:20/km
+    // the run was actually held at.
+    expect(bounds).not.toBeNull();
+    expect(bounds!.max).toBeLessThan(700);
+    expect(bounds!.min).toBeGreaterThan(300);
+  });
+
+  it("test_pace_axis_bounds_insufficient_data", () => {
+    // Nothing to bound: the axis falls back to `scale: true`.
+    expect(paceAxisBounds([null, null])).toBeNull();
+    expect(paceAxisBounds([500])).toBeNull();
   });
 });

@@ -1,18 +1,41 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import BodyCompositionChart from "./BodyCompositionChart";
 import type { BodyCompositionTrend } from "../../types";
 
-// echarts requires a real canvas; mock the modular wrapper out for jsdom.
+// echarts requires a real canvas; mock the modular wrapper out for jsdom and
+// keep the option it was handed so the chart contract can be asserted.
+const { setOption } = vi.hoisted(() => ({ setOption: vi.fn() }));
+
 vi.mock("../../lib/echarts", () => ({
   echarts: {
     init: () => ({
-      setOption: vi.fn(),
+      setOption,
       resize: vi.fn(),
       dispose: vi.fn(),
     }),
   },
 }));
+
+/** The slice of the ECharts option this chart's contract covers. */
+interface ChartOption {
+  grid: { right?: number };
+  legend?: unknown;
+  xAxis: { axisLabel?: { hideOverlap?: boolean } };
+  yAxis: { scale?: boolean }[];
+  series: { type?: string; stack?: string }[];
+}
+
+/** The option object of the most recent `setOption` call. */
+function lastOption(): ChartOption {
+  const calls = setOption.mock.calls;
+  expect(calls.length).toBeGreaterThan(0);
+  return calls[calls.length - 1][0] as ChartOption;
+}
+
+beforeEach(() => {
+  setOption.mockClear();
+});
 
 // Latest weight 78.847 must render via formatNumber as "78.8".
 const TREND: BodyCompositionTrend = {
@@ -27,6 +50,29 @@ const TREND: BodyCompositionTrend = {
     delta_lean: -0.2,
     lean_loss_ratio: 0.17,
     muscle_loss_warning: false,
+  },
+  lean_pwr: 4.0,
+};
+
+/** 12 weekly points: 80.0 -> 78.0kg, fat 21.0 -> 20.4kg. */
+const TWELVE_WEEKS: BodyCompositionTrend = {
+  weeks: 12,
+  series: Array.from({ length: 12 }, (_, i) => {
+    const weight = 80.0 - (2.0 * i) / 11;
+    const fat = 21.0 - (0.6 * i) / 11;
+    return {
+      date: `2025-10-${String(i + 6).padStart(2, "0")}`,
+      weight_kg: weight,
+      fat_mass: fat,
+      lean_mass: weight - fat,
+    };
+  }),
+  change: {
+    delta_weight: -2.0,
+    delta_fat: -0.6,
+    delta_lean: -1.4,
+    lean_loss_ratio: 0.7,
+    muscle_loss_warning: true,
   },
   lean_pwr: 4.0,
 };
@@ -46,5 +92,35 @@ describe("BodyCompositionChart", () => {
     expect(screen.queryByText(/78\.847/)).not.toBeInTheDocument();
     // Each reading carries the period's change under it.
     expect(screen.getByText("今期 -1.2kg")).toBeInTheDocument();
+  });
+
+  it("test_body_composition_option_uses_scaled_lines", () => {
+    render(<BodyCompositionChart data={TWELVE_WEEKS} />);
+
+    const option = lastOption();
+    // A 2kg drift on a 0-based stacked bar is invisible; scaled lines spend
+    // the plot height on it instead (#1148).
+    for (const series of option.series) {
+      expect(series.type).toBe("line");
+      expect(series.stack).toBeUndefined();
+    }
+    for (const axis of option.yAxis) {
+      expect(axis.scale).toBe(true);
+    }
+    // No legend box: it used to be drawn over the bars and the date labels,
+    // and the readings above already carry the color key.
+    expect(option.legend).toBeUndefined();
+  });
+
+  it("test_body_composition_last_label_fits", () => {
+    render(<BodyCompositionChart data={TWELVE_WEEKS} />);
+
+    const option = lastOption();
+    // The centred last date label must not be cut off at the right edge:
+    // either there is margin for it, or colliding labels are dropped.
+    expect(
+      (option.grid.right ?? 0) >= 16 ||
+        option.xAxis.axisLabel?.hideOverlap === true,
+    ).toBe(true);
   });
 });
