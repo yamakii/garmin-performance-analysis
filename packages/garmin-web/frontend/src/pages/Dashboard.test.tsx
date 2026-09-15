@@ -1,6 +1,7 @@
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "../test/utils";
+import { toIsoDate, weekEndIso } from "../utils/format";
 import Dashboard from "./Dashboard";
 
 // echarts requires a real canvas; mock the modular wrapper out for jsdom.
@@ -41,7 +42,6 @@ import {
   fetchWeeklyReviews,
 } from "../api/client";
 import {
-  fetchFormAnomalyFlags,
   fetchRecoveryStatus,
   fetchRecoveryTrend,
   fetchWellnessBaselineDeviation,
@@ -64,21 +64,6 @@ const BASELINE = {
   readiness: { metric: "readiness", mean: 70, std: 8, today: 59, z: -1.3, flag: "within", adverse: false, n: 30 },
   rhr: { metric: "rhr", mean: 45, std: 2, today: 48, z: 1.24, flag: "high", adverse: true, n: 30 },
   overall_flag: true,
-};
-
-const REVIEW = {
-  review_id: 24,
-  user_id: "default",
-  week_start_date: "2026-06-29",
-  week_end_date: "2026-07-05",
-  review_date: "2026-06-30",
-  review_data: {
-    verdict: [{ date: "2026-07-05", session: "Long Run", rating: "✅" }],
-    recommendations: ["ロング走は時間×HRで管理"],
-  },
-  created_at: "2026-06-30",
-  agent_name: "weekly-review",
-  agent_version: "1.3",
 };
 
 const LOAD = {
@@ -108,8 +93,6 @@ const RECOVERY_TREND = {
     { date: "2026-07-01", resting_hr: 48, hrv_overnight_ms: 51 },
   ],
 };
-
-const FLAGS = { weeks: 2, scanned: 6, limited: false, flags: [] };
 
 const READINESS = {
   current_vdot: 44.0,
@@ -159,17 +142,77 @@ const ACTIVITIES = [
   },
 ];
 
-/** No prescriptions for the current week, so the plan card keeps its verdict. */
-const EMPTY_MONTH_PLAN = {
-  month: "2026-07",
+/**
+ * A plan week built around the real "today", so the verdict, the TODAY cell
+ * and the week caption are all exercised without pinning the clock.
+ */
+function makeCurrentWeek() {
+  const today = new Date();
+  const weekStart = new Date(today);
+  weekStart.setDate(weekStart.getDate() - 3);
+  const weekStartIso = toIsoDate(weekStart);
+  const todayIso = toIsoDate(today);
+  const days = Array.from({ length: 7 }, (_, offset) => {
+    const day = new Date(weekStart);
+    day.setDate(day.getDate() + offset);
+    const date = toIsoDate(day);
+    return {
+      date,
+      in_month: true,
+      prescriptions:
+        date === todayIso
+          ? [
+              {
+                prescription_id: 1,
+                session_type: "easy",
+                title: "イージー 10km",
+                target_km: 10,
+                target_minutes: null,
+                hr_high: 145,
+                status: "prescribed",
+              },
+            ]
+          : [],
+      activities: [],
+    };
+  });
+  return {
+    week_start: weekStartIso,
+    week_end: weekEndIso(weekStartIso) ?? todayIso,
+    in_month: true,
+    ladder_step: null,
+    review_exists: true,
+    adherence: { prescribed: 1, done: 0, replaced: 0, skipped: 0, pending: 1 },
+    days,
+  };
+}
+
+const CURRENT_WEEK = makeCurrentWeek();
+
+const MONTH_PLAN = {
+  month: CURRENT_WEEK.week_start.slice(0, 7),
   week_start_day: 0,
-  weeks: [],
+  weeks: [CURRENT_WEEK],
   blocks: [],
-  adherence: { prescribed: 0, done: 0, replaced: 0, skipped: 0, pending: 0 },
+  adherence: { prescribed: 1, done: 0, replaced: 0, skipped: 0, pending: 1 },
+};
+
+const REVIEW = {
+  review_id: 24,
+  user_id: "default",
+  week_start_date: CURRENT_WEEK.week_start,
+  week_end_date: CURRENT_WEEK.week_end,
+  review_date: CURRENT_WEEK.week_start,
+  review_data: {
+    recommendations: ["ロング走は時間×HRで管理"],
+  },
+  created_at: CURRENT_WEEK.week_start,
+  agent_name: "weekly-review",
+  agent_version: "1.3",
 };
 
 function mockAll() {
-  vi.mocked(fetchMonthPlan).mockResolvedValue(EMPTY_MONTH_PLAN as never);
+  vi.mocked(fetchMonthPlan).mockResolvedValue(MONTH_PLAN as never);
   vi.mocked(fetchRecoveryStatus).mockResolvedValue(RECOVERY_STATUS as never);
   vi.mocked(fetchWellnessBaselineDeviation).mockResolvedValue(
     BASELINE as never,
@@ -177,7 +220,6 @@ function mockAll() {
   vi.mocked(fetchWeeklyReviews).mockResolvedValue([REVIEW] as never);
   vi.mocked(fetchTrainingLoad).mockResolvedValue(LOAD as never);
   vi.mocked(fetchRecoveryTrend).mockResolvedValue(RECOVERY_TREND as never);
-  vi.mocked(fetchFormAnomalyFlags).mockResolvedValue(FLAGS as never);
   vi.mocked(fetchRaceReadiness).mockResolvedValue(READINESS as never);
   vi.mocked(fetchGoal).mockResolvedValue(GOAL as never);
   vi.mocked(fetchActivities).mockResolvedValue(ACTIVITIES as never);
@@ -200,30 +242,55 @@ describe("Dashboard", () => {
     mockAll();
     renderDashboard();
 
-    // ① 状態: verdict hero + snapshot tiles
-    expect(await screen.findByText("イージー推奨")).toBeInTheDocument();
-    expect(await screen.findByText("1.02")).toBeInTheDocument();
-    expect(screen.getByText("訓練負荷 (ACWR)")).toBeInTheDocument();
-    // ② 行動: this week's plan and next action
-    expect(await screen.findByText("Long Run")).toBeInTheDocument();
+    // ① 判定: the verdict is the page heading and carries today's session.
+    expect(await screen.findByText("イージー推奨。")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+      "イージー推奨。今日はイージー 10km、心拍 145 以下。",
+    );
+    expect(
+      screen.getByText("HRVが2夜連続でベースラインを下回っています"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "今日のメニュー詳細" }),
+    ).toHaveAttribute("href", "/plan");
+
+    // ② 今朝の数値: four readings, each linked into /condition.
+    expect(await screen.findByText("HRV 夜間")).toBeInTheDocument();
+    expect(screen.getByText("安静時心拍")).toBeInTheDocument();
+    expect(screen.getByText("睡眠 / 準備度")).toBeInTheDocument();
+    expect(screen.getByText("負荷 ACWR")).toBeInTheDocument();
+    expect(screen.getByText("1.02")).toBeInTheDocument();
+    expect(screen.getByText("基準割れ 2日連続")).toHaveClass(
+      "text-status-warn",
+    );
+    expect(screen.getByText("最適 · 週 6.5km")).toBeInTheDocument();
+
+    // ③ 今週: the 7-day strip with today highlighted, plus the coach note.
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "今週" }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem")).toHaveLength(7);
+    expect(screen.getByText("TODAY")).toBeInTheDocument();
     expect(screen.getByText("ロング走は時間×HRで管理")).toBeInTheDocument();
-    // ③ 進捗: race strip + recent runs
-    expect(screen.getByText("レースへの道")).toBeInTheDocument();
-    expect(screen.getByText("さいたまマラソン")).toBeInTheDocument();
-    expect(screen.getByText("イージーラン")).toBeInTheDocument();
+
+    // ④ 進捗: the featured race and the last run.
+    expect(
+      await screen.findByText("さいたまマラソン · A"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/前回 · 06\/30 TUE · イージーラン/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "すべてのラン →" }),
+    ).toBeInTheDocument();
   });
 
-  it("test_dashboard_renders_without_today_plan_card", async () => {
+  it("test_dashboard_no_duplicate_vitals", async () => {
     mockAll();
     renderDashboard();
 
-    // ThisWeekPlan (Garmin-native plan) still renders...
-    expect(await screen.findByText("Long Run")).toBeInTheDocument();
-    // ...but the removed plan-vs-actual TodayPlanCard does not.
-    expect(screen.queryByText("今日の予定と実績")).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("region", { name: "今日の予定と実績" }),
-    ).not.toBeInTheDocument();
+    // The HRV reading is stated once: the hero chips and the tile row that
+    // used to repeat it are gone (#1117).
+    expect(await screen.findByText("51")).toBeInTheDocument();
+    expect(screen.getAllByText("51")).toHaveLength(1);
   });
 
   it("keeps the page alive when supplementary endpoints fail", async () => {
@@ -235,10 +302,14 @@ describe("Dashboard", () => {
     );
     renderDashboard();
 
-    expect(await screen.findByText("イージー推奨")).toBeInTheDocument();
+    expect(await screen.findByText("イージー推奨。")).toBeInTheDocument();
+    expect(await screen.findByText("HRV 夜間")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    // Race strip degrades away without an error banner.
-    expect(screen.queryByText("レースへの道")).not.toBeInTheDocument();
+    // The race column degrades away; the last run still renders.
+    expect(screen.queryByText("さいたまマラソン · A")).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(/前回 · 06\/30 TUE · イージーラン/),
+    ).toBeInTheDocument();
   });
 
   it("test_dashboard_card_error_isolated", async () => {
@@ -246,17 +317,21 @@ describe("Dashboard", () => {
     vi.mocked(fetchTrainingLoad).mockRejectedValue(new Error("db down"));
     renderDashboard();
 
-    // The failing endpoint degrades into a retryable alert inside its own card…
-    expect(
-      await screen.findByText(/状態スナップショットの読み込みに失敗しました/),
-    ).toHaveTextContent("db down");
+    // The failing endpoint degrades into a retryable alert in place of the
+    // vitals row…
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "今朝の数値の読み込みに失敗しました: db down",
+    );
+    expect(alert).toHaveClass("bg-bad-tint");
     expect(screen.getByRole("button", { name: "再試行" })).toBeInTheDocument();
 
     // …while every other block still renders (no page-level banner).
-    expect(await screen.findByText("イージー推奨")).toBeInTheDocument();
-    expect(screen.getByText("Long Run")).toBeInTheDocument();
-    expect(screen.getByText("レースへの道")).toBeInTheDocument();
-    expect(screen.getByText("イージーラン")).toBeInTheDocument();
-    expect(screen.queryByText("エラー: db down")).not.toBeInTheDocument();
+    expect(await screen.findByText("イージー推奨。")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "今週" })).toBeInTheDocument();
+    expect(
+      await screen.findByText(/前回 · 06\/30 TUE · イージーラン/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("HRV 夜間")).not.toBeInTheDocument();
   });
 });

@@ -68,7 +68,7 @@ live in `packages/garmin-web/frontend/src/pages/`.
 
 | Route | Nav label | Question | Main content |
 |-------|-----------|----------|--------------|
-| `/` | ホーム | 今日どう動く? | Today's verdict hero → snapshot tiles (訓練負荷 / HRV / 安静時心拍 / フォーム注意点, each deep-linking into `/condition`) → this week's plan and next actions → race progress (compact) → recent runs |
+| `/` | ホーム | 今日どう動く? | Verdict line (判定 + 今日の処方) → vitals row (HRV / RHR / 睡眠・準備度 / ACWR, each deep-linking into `/condition`) → this week's 7-day strip + coach note → progress (featured race countdown, last run) |
 | `/activities` | アクティビティ | 走った記録は? | Month-grouped run list with a date-range preset (直近4週 / 3ヶ月 / 1年 / 全期間) and a name search |
 | `/condition` | コンディション | 今の体の状態は? | This week's cautions (form anomalies) as a full-width alert band, then today's condition, RHR/HRV recovery trend, personal-baseline deviation, training load (ACWR), body composition |
 | `/performance` | パフォーマンス | 速くなっているか? | Coach narration and a page-level 週/月 toggle, then volume, physiology, efficiency, critical speed, objective fitness, climate-neutral HR, form score, durability, weight × economy |
