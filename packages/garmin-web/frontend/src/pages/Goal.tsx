@@ -27,7 +27,7 @@ import {
   formatTargetTime,
   pickFeaturedRace,
 } from "../utils/race";
-import { goalVerdict } from "../utils/verdict";
+import { goalVerdict, isBehindTarget } from "../utils/verdict";
 
 const GOAL_TYPE_LABELS: Record<string, string> = {
   marathon: "フルマラソン",
@@ -225,12 +225,13 @@ function RaceColumn({
             <div>
               <dt className="font-mono text-xs text-ink-muted">差</dt>
               {/*
-               * A positive gap means the prediction is slower than the target,
-               * which is the only direction the reader has to act on.
+               * Only a race the backend calls 遅れ is marked: inside the
+               * on-track band the gap can be positive while the plan is fine,
+               * and warning there would contradict the verdict line (#1151).
                */}
               <dd
                 className={`mt-0.5 font-mono text-[15px] ${
-                  progress.gap_seconds > 0
+                  isBehindTarget(progress)
                     ? "font-bold text-status-warn"
                     : "text-ink"
                 }`}
