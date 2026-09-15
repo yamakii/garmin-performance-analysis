@@ -352,7 +352,7 @@ Get the RHR / HRV recovery trend over the trailing window (default 8 weeks) from
 
 CLI: `garmin-db physiology recovery-status`
 
-Get today's morning go/no-go recovery status from daily_wellness (defaults to the latest day; pass date=YYYY-MM-DD for a specific day). Synthesizes Training Readiness, Body Battery and sleep score with the HRV under_recovery flag into a recommendation: 'rest' / 'easy' when readiness<50 or sleep<50 or HRV is under-recovered (>=2 nights below baseline), 'quality' (tempo allowed) when readiness>=75 and HRV is normal, else 'moderate'. Device-off days (no readiness and no sleep) return recommendation='unknown' with a 'go by feel' reason. Returns date, recommendation, score (mean of available markers), reasons, and the raw training_readiness, body_battery_high, sleep_score (all null-safe).
+Get today's morning go/no-go recovery status from daily_wellness (defaults to the latest day; pass date=YYYY-MM-DD for a specific day). Synthesizes Training Readiness, Body Battery and sleep score with the HRV under_recovery flag into a recommendation: 'rest' / 'easy' when readiness<50 or sleep<50 or HRV is under-recovered (>=2 nights below baseline), 'quality' (tempo allowed) when readiness>=75 and HRV is normal, else 'moderate'. Device-off days (no readiness and no sleep) return recommendation='unknown' with a 'go by feel' reason. Returns date, recommendation, score (mean of available markers), reasons, and the raw training_readiness, body_battery_high, sleep_score, sleep_seconds (how long the night lasted, as opposed to how good it was; all null-safe).
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

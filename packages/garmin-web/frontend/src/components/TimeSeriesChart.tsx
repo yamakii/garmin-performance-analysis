@@ -13,9 +13,25 @@ import {
   THRESHOLD_LINE,
 } from "./chartTheme";
 
-const GRID_HEIGHT = 140;
-const GRID_GAP = 50;
-const GRID_TOP = 40;
+const GRID_HEIGHT = 64;
+const GRID_GAP = 36;
+const GRID_TOP = 20;
+/** Room under the last grid for its x labels and the zoom slider. */
+const SLIDER_BAND = 40;
+
+/**
+ * Chart height for `metricCount` stacked grids — 260px at the default two
+ * metrics (#1153).
+ *
+ * The chart used to be sized at 140px per grid plus 50px of gap, which put the
+ * two default metrics at 480px: a screenful of chrome for two lines, and the
+ * run's shape pushed below the fold. The Morning Brief spec sizes the pair at
+ * 260px instead, so each extra metric the reader toggles on adds exactly one
+ * grid band (100px) rather than re-proportioning the ones already drawn.
+ */
+export function timeSeriesHeight(metricCount: number): number {
+  return GRID_TOP + metricCount * (GRID_HEIGHT + GRID_GAP) + SLIDER_BAND;
+}
 
 export function formatElapsed(totalSeconds: number): string {
   const hours = Math.floor(totalSeconds / 3600);
@@ -102,7 +118,7 @@ export default function TimeSeriesChart({
   const lastEmitRef = useRef(0);
 
   const metricNames = Object.keys(data.metrics);
-  const height = GRID_TOP + metricNames.length * (GRID_HEIGHT + GRID_GAP) + 60;
+  const height = timeSeriesHeight(metricNames.length);
   // Canvas charts are opaque to assistive tech, so the container carries the
   // same role/label contract as EChart (Issue #913).
   const seriesLabels = metricNames.map((name) => metricLabels[name] ?? name);

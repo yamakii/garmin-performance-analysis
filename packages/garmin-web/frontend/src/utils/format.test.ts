@@ -19,6 +19,8 @@ import {
   formatPace,
   formatIntensityShare,
   formatPaceValue,
+  formatSleepDuration,
+  formatTimeOfDay,
   humanizeKey,
   toIsoDate,
   weekEndIso,
@@ -66,6 +68,14 @@ describe("pace / distance / bpm", () => {
     expect(formatDuration(2186)).toBe("36:26");
     expect(formatDuration(3733)).toBe("1:02:13");
     expect(formatDuration(null)).toBe("-");
+  });
+
+  it("test_format_sleep_duration", () => {
+    // A night is read in hours and minutes, not in a run's h:mm:ss (#1153).
+    expect(formatSleepDuration(25920)).toBe("7時間12分");
+    // A whole hour still names its minutes, so the column stays one shape.
+    expect(formatSleepDuration(3600)).toBe("1時間0分");
+    expect(formatSleepDuration(null)).toBe("—");
   });
 });
 
@@ -117,6 +127,15 @@ describe("dates", () => {
     expect(formatFullDateLabel(null)).toBe("-");
     // Unparseable input is shown rather than hidden.
     expect(formatFullDateLabel("not-a-date")).toBe("not-a-date");
+  });
+
+  it("test_format_time_of_day", () => {
+    // The header line names when the run started; a date without a time gets
+    // no placeholder at all (#1153).
+    expect(formatTimeOfDay("2026-09-13 13:45:19")).toBe("13:45");
+    expect(formatTimeOfDay("2026-09-13T06:12:00")).toBe("06:12");
+    expect(formatTimeOfDay("2026-09-13")).toBeNull();
+    expect(formatTimeOfDay(null)).toBeNull();
   });
 
   it("test_weekEndIso_invalid_returns_null", () => {

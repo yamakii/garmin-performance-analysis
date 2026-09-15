@@ -1,6 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import TimeSeriesChart, { paceAxisBounds } from "./TimeSeriesChart";
+import TimeSeriesChart, {
+  paceAxisBounds,
+  timeSeriesHeight,
+} from "./TimeSeriesChart";
 import type { TimeSeriesResponse } from "../types";
 
 // echarts needs a real canvas; mock the modular wrapper out for jsdom and
@@ -147,6 +150,19 @@ describe("TimeSeriesChart", () => {
     // ...while heart rate keeps ECharts' own scaling.
     expect(hr.min).toBeUndefined();
     expect(hr.max).toBeUndefined();
+  });
+});
+
+describe("timeSeriesHeight", () => {
+  it("test_time_series_height", () => {
+    // The default pair fits the Morning Brief's 260px (#1153)...
+    expect(timeSeriesHeight(2)).toBe(260);
+    expect(timeSeriesHeight(3)).toBe(360);
+    // ...and every metric toggled on adds exactly one grid band, instead of
+    // re-proportioning the grids already drawn.
+    expect(timeSeriesHeight(3) - timeSeriesHeight(2)).toBe(
+      timeSeriesHeight(4) - timeSeriesHeight(3),
+    );
   });
 });
 

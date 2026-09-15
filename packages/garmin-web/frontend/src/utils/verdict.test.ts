@@ -31,6 +31,7 @@ function status(
     training_readiness: 70,
     body_battery_high: 80,
     sleep_score: 74,
+    sleep_seconds: 25920,
   };
 }
 

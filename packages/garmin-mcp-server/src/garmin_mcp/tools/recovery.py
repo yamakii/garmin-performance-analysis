@@ -104,7 +104,8 @@ RECOVERY_TOOLS: list[ToolDef] = [
             "(no readiness and no sleep) return recommendation='unknown' with a "
             "'go by feel' reason. Returns date, recommendation, score (mean of "
             "available markers), reasons, and the raw training_readiness, "
-            "body_battery_high, sleep_score (all null-safe)."
+            "body_battery_high, sleep_score, sleep_seconds (how long the night "
+            "lasted, as opposed to how good it was; all null-safe)."
         ),
         params=GetRecoveryStatusParams,
         handler=_get_recovery_status,

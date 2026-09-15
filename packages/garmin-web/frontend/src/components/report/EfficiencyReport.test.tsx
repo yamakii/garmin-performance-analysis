@@ -45,6 +45,16 @@ describe("EfficiencyReport", () => {
     expect(screen.queryByText(/269\.20834/)).not.toBeInTheDocument();
   });
 
+  it("test_efficiency_vitals_use_small_size", () => {
+    render(
+      <EfficiencyReport section={section} formEvaluations={formEvaluations} />,
+    );
+
+    // These three sit inside a report card, below the page's own KPI row, so
+    // they read one step quieter than it (#1153).
+    expect(screen.getByText("269")).toHaveClass("text-[28px]");
+  });
+
   it("test_efficiency_vitals_warn_direction", () => {
     // GCT above its pace-based expectation is the adverse direction; VO below
     // it is the favourable one. Only the adverse note takes the warn colour.

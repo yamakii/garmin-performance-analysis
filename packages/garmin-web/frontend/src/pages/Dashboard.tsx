@@ -30,7 +30,11 @@ import type {
   WellnessBaselineDeviation,
 } from "../types";
 import { BASELINE_METRIC_LABELS, baselineBand } from "../utils/baselineZ";
-import { formatDateLabel, toIsoDate } from "../utils/format";
+import {
+  formatDateLabel,
+  formatSleepDuration,
+  toIsoDate,
+} from "../utils/format";
 import { formatNumber } from "../utils/formatNumber";
 import { homeVerdict, todayPrescription } from "../utils/verdict";
 import ProgressRow from "./dashboard/ProgressRow";
@@ -210,11 +214,11 @@ function vitalsItems(
             : "—"}
         </>
       ),
-      note: `Body Battery ${
-        status?.body_battery_high != null
-          ? formatNumber(status.body_battery_high, 0)
-          : "—"
-      }`,
+      // The cell already carries the sleep score; what it was missing is how
+      // long the night was, which is the number a reader checks a low score
+      // against. Body Battery has its own cell on Condition, so repeating it
+      // here spent the line on a number shown elsewhere (#1153).
+      note: `睡眠 ${formatSleepDuration(status?.sleep_seconds)}`,
       to: "/condition#today",
     },
     {

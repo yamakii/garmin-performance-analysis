@@ -20,10 +20,18 @@ const NOTE_CLASS: Record<"muted" | "warn" | "bad", string> = {
 };
 
 /** Value size per variant (the type scale's KPI steps). */
-const VALUE_SIZE: Record<"md" | "lg", string> = {
+const VALUE_SIZE: Record<VitalsSize, string> = {
+  sm: "text-[28px]",
   md: "text-[30px]",
   lg: "text-[40px]",
 };
+
+/**
+ * How loud the numbers are: `lg` for the KPIs a page is read for, `md` for a
+ * secondary row, `sm` for a row nested inside a report card, where the numbers
+ * support the prose around them rather than heading the page (#1153).
+ */
+export type VitalsSize = "sm" | "md" | "lg";
 
 /** Static class per column count — Tailwind cannot see a computed name. */
 const COLUMNS_CLASS: Record<3 | 4, string> = {
@@ -55,7 +63,7 @@ export default function VitalsRow({
   ariaLabel: string;
   id?: string;
   columns?: 3 | 4;
-  size?: "md" | "lg";
+  size?: VitalsSize;
 }): JSX.Element {
   return (
     <section

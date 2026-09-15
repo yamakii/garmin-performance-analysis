@@ -161,6 +161,18 @@ def test_recovery_endpoint_regression(recovery_db_path):
     assert payload["recommendation"] in {"rest", "easy", "moderate", "quality"}
 
 
+@pytest.mark.integration
+def test_api_recovery_status_has_sleep_seconds(recovery_db_path):
+    """The endpoint carries the night's length, not only its score (#1153)."""
+    client = TestClient(create_app(db_path=recovery_db_path))
+    response = client.get("/api/recovery-status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "sleep_seconds" in payload
+    assert payload["sleep_seconds"] == 25920
+
+
 @pytest.mark.unit
 def test_no_dbpath_reader_construction_left():
     """No direct ``GarminDBReader(...)`` construction remains in queries/.

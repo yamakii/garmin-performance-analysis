@@ -74,4 +74,21 @@ describe("VitalsRow", () => {
     expect(row).toHaveClass("md:grid-cols-3");
     expect(screen.getByText("74 / 68")).toHaveClass("text-[40px]");
   });
+
+  it("test_vitals_row_small_size", () => {
+    render(
+      <MemoryRouter>
+        <VitalsRow
+          items={ITEMS.slice(0, 3)}
+          ariaLabel="フォーム指標"
+          columns={3}
+          size="sm"
+        />
+      </MemoryRouter>,
+    );
+
+    // Nested in a report card, the numbers support the prose around them
+    // rather than heading the page (#1153).
+    expect(screen.getByText("74 / 68")).toHaveClass("text-[28px]", "font-mono");
+  });
 });

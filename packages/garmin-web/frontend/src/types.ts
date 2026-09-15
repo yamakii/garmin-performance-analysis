@@ -226,6 +226,8 @@ export interface RecoveryStatus {
   training_readiness: number | null;
   body_battery_high: number | null;
   sleep_score: number | null;
+  /** How long the night lasted; the score says how good it was (#1153). */
+  sleep_seconds: number | null;
 }
 
 /** One metric's personal baseline band and today's position within it (#555). */

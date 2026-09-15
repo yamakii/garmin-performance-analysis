@@ -24,6 +24,7 @@ def _insert_wellness(
     training_readiness: int | None = None,
     body_battery_high: int | None = None,
     sleep_score: int | None = None,
+    sleep_seconds: int | None = None,
     hrv_overnight_ms: float | None = None,
     hrv_baseline_low: float | None = None,
     hrv_baseline_high: float | None = None,
@@ -33,14 +34,16 @@ def _insert_wellness(
         conn.execute(
             "INSERT INTO daily_wellness "
             "(wellness_id, date, training_readiness, body_battery_high, "
-            "sleep_score, hrv_overnight_ms, hrv_baseline_low, hrv_baseline_high) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "sleep_score, sleep_seconds, hrv_overnight_ms, hrv_baseline_low, "
+            "hrv_baseline_high) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 wellness_id,
                 date,
                 training_readiness,
                 body_battery_high,
                 sleep_score,
+                sleep_seconds,
                 hrv_overnight_ms,
                 hrv_baseline_low,
                 hrv_baseline_high,
@@ -91,6 +94,7 @@ def test_get_recovery_status_latest(reader_db_path: Path) -> None:
         "training_readiness",
         "body_battery_high",
         "sleep_score",
+        "sleep_seconds",
     }
     assert result["date"] == "2026-06-23"
     assert result["recommendation"] in {
@@ -109,6 +113,31 @@ def test_get_recovery_status_latest(reader_db_path: Path) -> None:
 
 
 @pytest.mark.integration
+def test_recovery_status_includes_sleep_seconds(reader_db_path: Path) -> None:
+    """The night's length travels with its score (#1153).
+
+    The sleep score says how good the night was, not how long it lasted, so the
+    morning brief needs the duration from the same row rather than a second
+    query. A day with no wellness row reports it as ``None``.
+    """
+    _insert_wellness(
+        reader_db_path,
+        wellness_id=1,
+        date="2026-09-15",
+        training_readiness=70,
+        body_battery_high=85,
+        sleep_score=80,
+        sleep_seconds=25920,
+    )
+
+    reader = GarminDBReader(db_path=str(reader_db_path))
+
+    assert reader.get_recovery_status()["sleep_seconds"] == 25920
+    # A day the device was off has a score and a duration of nothing at all.
+    assert reader.get_recovery_status("2026-09-14")["sleep_seconds"] is None
+
+
+@pytest.mark.integration
 def test_get_recovery_status_empty(reader_db_path: Path) -> None:
     """Empty daily_wellness -> unknown recommendation, null markers, json-able."""
     reader = GarminDBReader(db_path=str(reader_db_path))
@@ -118,4 +147,5 @@ def test_get_recovery_status_empty(reader_db_path: Path) -> None:
     assert result["recommendation"] == "unknown"
     assert result["reasons"]
     assert result["training_readiness"] is None
+    assert result["sleep_seconds"] is None
     json.dumps(result, default=str)
