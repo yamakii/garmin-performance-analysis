@@ -17,6 +17,7 @@ import {
   formatDuration,
   formatFullDateLabel,
   formatPace,
+  formatIntensityShare,
   formatPaceValue,
   humanizeKey,
   toIsoDate,
@@ -133,6 +134,25 @@ describe("humanizeKey", () => {
     expect(humanizeKey("easy_z1_z2")).toBe("easy z1 z2");
     expect(humanizeKey("next-run-target")).toBe("next run target");
     expect(humanizeKey("easy_z1_z2")).not.toContain("_");
+  });
+});
+
+describe("formatIntensityShare", () => {
+  it("test_format_intensity_share", () => {
+    // A saved distribution is a fraction of the week, so the card reads it as
+    // a percentage under a Japanese label — not "aerobic base: 0.5" (#1144).
+    expect(formatIntensityShare("aerobic_base", 0.5)).toBe("有酸素ベース 50%");
+    expect(formatIntensityShare("tempo", 0.25)).toBe("テンポ 25%");
+    expect(formatIntensityShare("long", 0.25)).toBe("ロング 25%");
+    // An unknown bucket still loses its underscores.
+    expect(formatIntensityShare("foo_bar", 0.1)).toBe("foo bar 10%");
+  });
+
+  it("keeps an out-of-range value as a plain number", () => {
+    // Older payloads stored run counts rather than shares: 4 runs is not 400%.
+    expect(formatIntensityShare("easy_z1_z2", 4)).toBe("イージー（Z1-Z2） 4");
+    // The boundary is still read as a share — a whole week of one bucket.
+    expect(formatIntensityShare("long_run", 1)).toBe("ロング 100%");
   });
 });
 

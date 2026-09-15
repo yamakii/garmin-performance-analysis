@@ -25,6 +25,12 @@ const TONE_CLASSES: Record<StatusTone, string> = {
  * echoed as `data-tone` so tests and styling hooks can read the meaning
  * without parsing class names; `children` is the label (e.g. "問題なし",
  * "2件", "順調").
+ *
+ * Short labels only. The tag is `shrink-0` so a row of chips keeps its words
+ * together, and `whitespace-nowrap` makes that explicit: a CJK label like
+ * 登録済 used to break into 登/録/済 inside a narrow table cell (#1144). A
+ * sentence must not be passed in here — it would push past the content width
+ * instead of wrapping; render prose in a plain `<p>`.
  */
 export default function StatusBadge({
   tone,
@@ -36,7 +42,7 @@ export default function StatusBadge({
   return (
     <span
       data-tone={tone}
-      className={`inline-block shrink-0 rounded-sm border px-1.5 py-[3px] font-mono text-[11px] font-medium tracking-[0.04em] ${TONE_CLASSES[tone]}`}
+      className={`inline-block shrink-0 rounded-sm border px-1.5 py-[3px] font-mono text-[11px] font-medium tracking-[0.04em] whitespace-nowrap ${TONE_CLASSES[tone]}`}
     >
       {children}
     </span>

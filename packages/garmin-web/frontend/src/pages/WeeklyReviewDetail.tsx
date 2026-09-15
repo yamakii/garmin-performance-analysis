@@ -18,7 +18,12 @@ import {
 } from "../components/plan/DayCell";
 import { META_LABEL, SUBCARD } from "../components/report/ReportCard";
 import { usePageTitle } from "../hooks/usePageTitle";
-import { formatDate, humanizeKey, weekEndIso } from "../utils/format";
+import {
+  formatDate,
+  formatIntensityShare,
+  intensityLabel,
+  weekEndIso,
+} from "../utils/format";
 import { formatNumber } from "../utils/formatNumber";
 import { ratingMeta } from "../utils/verdictRating";
 
@@ -84,6 +89,33 @@ function Group({
  * the verdict, the rest is one click away via `ClampedProse`'s toggle.
  */
 const PROSE_CLAMP_LINES = 3;
+
+/**
+ * Every table on this page, wrapped so it scrolls on its own (#1144).
+ *
+ * Six columns of Japanese — date, session, target, status, rating, comment —
+ * do not fit a 390px screen. Without the wrapper the columns were squeezed
+ * until the badges broke into 登/録/済 and the comment column fell off the
+ * page, with no way to scroll to it. `min-w` keeps the columns at a readable
+ * width and the wrapper, not the page, takes the sideways scroll (the shape
+ * `ActivityDetail`'s split table already uses).
+ */
+function ScrollTable({
+  minWidthClass = "min-w-[640px]",
+  children,
+}: {
+  minWidthClass?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="overflow-x-auto">
+      <table className={`w-full ${minWidthClass} text-sm`}>{children}</table>
+    </div>
+  );
+}
+
+/** Badge and date cells must never wrap mid-label; prose cells may. */
+const NOWRAP_CELL = "whitespace-nowrap";
 
 type StatTile = { label: string; value: number; unit?: string };
 
@@ -354,20 +386,23 @@ export default function WeeklyReviewDetail() {
                       tile("ラン回数", thisWeek.run_count, "回"),
                     ]}
                   />
-                  {(thisWeek.hr_discipline != null ||
-                    intensityEntries.length > 0) && (
+                  {/* HR discipline is a sentence, not a tag: as a chip it kept
+                      its one line and ran past the content width (#1144). */}
+                  {thisWeek.hr_discipline != null && (
+                    <p className="font-mono text-xs break-words text-ink-soft">
+                      {thisWeek.hr_discipline}
+                    </p>
+                  )}
+                  {intensityEntries.length > 0 && (
                     <div className="flex flex-wrap items-center gap-2">
-                      {thisWeek.hr_discipline != null && (
-                        <StatusBadge tone="info">
-                          {thisWeek.hr_discipline}
-                        </StatusBadge>
-                      )}
                       {intensityEntries.map(([k, v]) => (
                         <span
                           key={k}
-                          className="rounded-sm bg-well px-2.5 py-1 text-xs font-medium text-ink-muted"
+                          className="rounded-sm bg-well px-2.5 py-1 text-xs font-medium whitespace-nowrap text-ink-muted"
                         >
-                          {humanizeKey(k)}: {String(v)}
+                          {typeof v === "number"
+                            ? formatIntensityShare(k, v)
+                            : `${intensityLabel(k)} ${String(v)}`}
                         </span>
                       ))}
                     </div>
@@ -442,27 +477,36 @@ export default function WeeklyReviewDetail() {
                 verdict-only table below. */}
             <Section id="wr-verdict" title="対象週プラン評価">
               {prescriptions.length > 0 ? (
-                <table className="w-full text-sm">
+                <ScrollTable>
                   <thead>
                     <tr className="text-xs tracking-wide text-ink-muted">
-                      <th scope="col" className="px-2 py-2 text-left font-medium">
+                      <th
+                        scope="col"
+                        className={`px-2 py-2 text-left font-medium ${NOWRAP_CELL}`}
+                      >
                         日付
                       </th>
-                      <th scope="col" className="px-2 py-2 text-left font-medium">
+                      <th
+                        scope="col"
+                        className={`min-w-[8rem] px-2 py-2 text-left font-medium ${NOWRAP_CELL}`}
+                      >
                         セッション
                       </th>
-                      <th scope="col" className="px-2 py-2 text-left font-medium">
+                      <th
+                        scope="col"
+                        className={`px-2 py-2 text-left font-medium ${NOWRAP_CELL}`}
+                      >
                         目標
                       </th>
                       <th
                         scope="col"
-                        className="px-2 py-2 text-center font-medium"
+                        className={`px-2 py-2 text-center font-medium ${NOWRAP_CELL}`}
                       >
                         状態
                       </th>
                       <th
                         scope="col"
-                        className="px-2 py-2 text-center font-medium"
+                        className={`px-2 py-2 text-center font-medium ${NOWRAP_CELL}`}
                       >
                         評価
                       </th>
@@ -484,22 +528,26 @@ export default function WeeklyReviewDetail() {
                           key={prescription.prescription_id}
                           className="hover:bg-surface"
                         >
-                          <td className="px-2 py-2 text-left font-mono text-ink-soft">
+                          <td
+                            className={`px-2 py-2 text-left font-mono text-ink-soft ${NOWRAP_CELL}`}
+                          >
                             {prescription.date}
                           </td>
-                          <td className="px-2 py-2 text-left text-ink-soft">
+                          <td className="min-w-[8rem] px-2 py-2 text-left text-ink-soft">
                             {prescription.title ||
                               sessionLabel(prescription.session_type)}
                           </td>
-                          <td className="px-2 py-2 text-left font-mono text-ink-muted">
+                          <td
+                            className={`px-2 py-2 text-left font-mono text-ink-muted ${NOWRAP_CELL}`}
+                          >
                             {targetSummary(prescription) || "-"}
                           </td>
-                          <td className="px-2 py-2 text-center">
+                          <td className={`px-2 py-2 text-center ${NOWRAP_CELL}`}>
                             <StatusBadge tone={statusTone(prescription.status)}>
                               {statusLabel(prescription.status)}
                             </StatusBadge>
                           </td>
-                          <td className="px-2 py-2 text-center">
+                          <td className={`px-2 py-2 text-center ${NOWRAP_CELL}`}>
                             {rating != null ? (
                               <VerdictBadge rating={rating} />
                             ) : (
@@ -513,20 +561,26 @@ export default function WeeklyReviewDetail() {
                       );
                     })}
                   </tbody>
-                </table>
+                </ScrollTable>
               ) : verdict.length > 0 ? (
-                <table className="w-full text-sm">
+                <ScrollTable minWidthClass="min-w-[32rem]">
                   <thead>
                     <tr className="text-xs tracking-wide text-ink-muted">
-                      <th scope="col" className="px-2 py-2 text-left font-medium">
+                      <th
+                        scope="col"
+                        className={`px-2 py-2 text-left font-medium ${NOWRAP_CELL}`}
+                      >
                         日付
                       </th>
-                      <th scope="col" className="px-2 py-2 text-left font-medium">
+                      <th
+                        scope="col"
+                        className={`min-w-[8rem] px-2 py-2 text-left font-medium ${NOWRAP_CELL}`}
+                      >
                         セッション
                       </th>
                       <th
                         scope="col"
-                        className="px-2 py-2 text-center font-medium"
+                        className={`px-2 py-2 text-center font-medium ${NOWRAP_CELL}`}
                       >
                         評価
                       </th>
@@ -538,13 +592,15 @@ export default function WeeklyReviewDetail() {
                   <tbody className="divide-y divide-hairline">
                     {verdict.map((v, i) => (
                       <tr key={i} className="hover:bg-surface">
-                        <td className="px-2 py-2 text-left font-mono text-ink-soft">
+                        <td
+                          className={`px-2 py-2 text-left font-mono text-ink-soft ${NOWRAP_CELL}`}
+                        >
                           {v.date ?? "-"}
                         </td>
-                        <td className="px-2 py-2 text-left text-ink-soft">
+                        <td className="min-w-[8rem] px-2 py-2 text-left text-ink-soft">
                           {v.session ?? "-"}
                         </td>
-                        <td className="px-2 py-2 text-center">
+                        <td className={`px-2 py-2 text-center ${NOWRAP_CELL}`}>
                           {v.rating != null ? (
                             <VerdictBadge rating={v.rating} />
                           ) : (
@@ -557,7 +613,7 @@ export default function WeeklyReviewDetail() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </ScrollTable>
               ) : (
                 <p className="text-sm text-ink-muted">評価データがありません</p>
               )}
@@ -586,18 +642,19 @@ export default function WeeklyReviewDetail() {
                       ))}
                     </div>
                   )}
-                  {(expectedPhase != null || garminPhase != null) && (
+                  {/* The expected phase is often a whole sentence of reasoning
+                      ("テーパー前の最終デロード。ロングを…"), so it wraps as
+                      prose; only the Garmin phase stays a tag (#1144). */}
+                  {expectedPhase != null && (
+                    <p className="font-mono text-xs break-words text-ink-soft">
+                      想定 {expectedPhase}
+                    </p>
+                  )}
+                  {garminPhase != null && (
                     <div className="flex flex-wrap items-center gap-2">
-                      {expectedPhase != null && (
-                        <StatusBadge tone="info">
-                          想定 {expectedPhase}
-                        </StatusBadge>
-                      )}
-                      {garminPhase != null && (
-                        <StatusBadge tone={showPhaseGap ? "warn" : "info"}>
-                          Garmin {garminPhase}
-                        </StatusBadge>
-                      )}
+                      <StatusBadge tone={showPhaseGap ? "warn" : "info"}>
+                        Garmin {garminPhase}
+                      </StatusBadge>
                     </div>
                   )}
                   {showPhaseGap && (
@@ -647,18 +704,18 @@ export default function WeeklyReviewDetail() {
                   contradict the block are worth acting on. */}
               {showConflicts && (
                 <Section id="wr-garmin" title="Garmin との衝突">
-                  <table className="w-full text-sm">
+                  <ScrollTable minWidthClass="min-w-[28rem]">
                     <thead>
                       <tr className="text-xs tracking-wide text-ink-muted">
                         <th
                           scope="col"
-                          className="px-2 py-2 text-left font-medium"
+                          className={`px-2 py-2 text-left font-medium ${NOWRAP_CELL}`}
                         >
                           日付
                         </th>
                         <th
                           scope="col"
-                          className="px-2 py-2 text-left font-medium"
+                          className={`min-w-[8rem] px-2 py-2 text-left font-medium ${NOWRAP_CELL}`}
                         >
                           Garmin の予定
                         </th>
@@ -673,10 +730,12 @@ export default function WeeklyReviewDetail() {
                     <tbody className="divide-y divide-hairline">
                       {garminConflicts.map((conflict, i) => (
                         <tr key={i} className="hover:bg-surface">
-                          <td className="px-2 py-2 text-left font-mono text-ink-soft">
+                          <td
+                            className={`px-2 py-2 text-left font-mono text-ink-soft ${NOWRAP_CELL}`}
+                          >
                             {conflict.date ?? "-"}
                           </td>
-                          <td className="px-2 py-2 text-left text-ink-soft">
+                          <td className="min-w-[8rem] px-2 py-2 text-left text-ink-soft">
                             {conflict.garmin_title ?? "-"}
                           </td>
                           <td className="px-2 py-2 text-left text-ink-muted">
@@ -685,25 +744,25 @@ export default function WeeklyReviewDetail() {
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                  </ScrollTable>
                 </Section>
               )}
 
               {/* Garmin next-week planned workouts (#597) — pre-ledger reviews */}
               {!showConflicts && garminNextWeek.length > 0 && (
                 <Section id="wr-garmin" title="来週のGarminワークアウト">
-                  <table className="w-full text-sm">
+                  <ScrollTable minWidthClass="min-w-[28rem]">
                     <thead>
                       <tr className="text-xs tracking-wide text-ink-muted">
                         <th
                           scope="col"
-                          className="px-2 py-2 text-left font-medium"
+                          className={`px-2 py-2 text-left font-medium ${NOWRAP_CELL}`}
                         >
                           日付
                         </th>
                         <th
                           scope="col"
-                          className="px-2 py-2 text-left font-medium"
+                          className={`px-2 py-2 text-left font-medium ${NOWRAP_CELL}`}
                         >
                           種別
                         </th>
@@ -718,10 +777,14 @@ export default function WeeklyReviewDetail() {
                     <tbody className="divide-y divide-hairline">
                       {garminNextWeek.map((w, i) => (
                         <tr key={i} className="hover:bg-surface">
-                          <td className="px-2 py-2 text-left font-mono text-ink-soft">
+                          <td
+                            className={`px-2 py-2 text-left font-mono text-ink-soft ${NOWRAP_CELL}`}
+                          >
                             {w.date ?? "-"}
                           </td>
-                          <td className="px-2 py-2 text-left text-ink-soft">
+                          <td
+                            className={`px-2 py-2 text-left text-ink-soft ${NOWRAP_CELL}`}
+                          >
                             {w.type ?? "-"}
                           </td>
                           <td className="px-2 py-2 text-left text-ink-muted">
@@ -730,7 +793,7 @@ export default function WeeklyReviewDetail() {
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                  </ScrollTable>
                 </Section>
               )}
 

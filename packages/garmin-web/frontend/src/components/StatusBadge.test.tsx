@@ -28,6 +28,14 @@ describe("StatusBadge", () => {
     expect(screen.getByText("今日")).toHaveClass("bg-accent", "text-paper");
   });
 
+  it("test_status_badge_is_nowrap", () => {
+    render(<StatusBadge tone="info">登録済</StatusBadge>);
+
+    // A narrow table cell used to break 登録済 into 登/録/済, one character per
+    // line, because CJK wraps anywhere (#1144). A tag is one line by contract.
+    expect(screen.getByText("登録済")).toHaveClass("whitespace-nowrap");
+  });
+
   it("renders as a mono tag, not a pill", () => {
     render(<StatusBadge tone="info">順調</StatusBadge>);
 

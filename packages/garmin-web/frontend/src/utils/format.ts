@@ -226,3 +226,52 @@ export function formatFullDateLabel(iso: string | null | undefined): string {
 export function humanizeKey(key: string): string {
   return key.replace(/[_-]+/g, " ").trim();
 }
+
+/**
+ * Japanese wording for the intensity buckets a weekly review distributes its
+ * volume over. The keys come from the agent's payload, so the map is open:
+ * an unknown bucket falls back to `humanizeKey`.
+ */
+const INTENSITY_LABELS: Record<string, string> = {
+  aerobic_base: "有酸素ベース",
+  base: "ベース",
+  easy: "イージー",
+  easy_z1_z2: "イージー（Z1-Z2）",
+  recovery: "リカバリー",
+  long: "ロング",
+  long_run: "ロング",
+  tempo: "テンポ",
+  threshold: "閾値",
+  interval: "インターバル",
+  repetition: "レペティション",
+  quality: "質練",
+  race: "レース",
+  strength: "筋トレ",
+  cross: "クロス",
+};
+
+/** "aerobic_base" -> "有酸素ベース"; an unknown bucket keeps its words. */
+export function intensityLabel(key: string): string {
+  return INTENSITY_LABELS[key] ?? humanizeKey(key);
+}
+
+/**
+ * "aerobic_base", 0.5 -> "有酸素ベース 50%".
+ *
+ * The weekly review card used to print the payload verbatim — "aerobic base:
+ * 0.5" — which is the wire format wearing a space instead of an underscore,
+ * and a share nobody reads as a half (#1144). A distribution is saved as a
+ * fraction of the week, so it is shown as a percentage; a value outside 0..1
+ * is a count (older payloads store run counts), and a count is kept as-is
+ * rather than being multiplied into a nonsense 400%.
+ */
+export function formatIntensityShare(key: string, share: number): string {
+  const label = intensityLabel(key);
+  if (!Number.isFinite(share)) {
+    return `${label} ${MISSING}`;
+  }
+  if (share < 0 || share > 1) {
+    return `${label} ${share}`;
+  }
+  return `${label} ${Math.round(share * 100)}%`;
+}
