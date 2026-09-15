@@ -41,6 +41,14 @@ Risks セクション（任意）:
 サブエージェントへの委任も Workflow も既定では使わない（直近 30 日の PR のほぼ全てがこの経路で、
 `implement-tier` は 25 本に 1 本。#1046）。各ステップは 1 コマンド。
 
+**実装だけを委譲する場合**: 変更ファイルが概ね 15 以上、またはページ / モジュール丸ごとの書き換えは、
+そのセッションが `Agent(subagent_type="developer", isolation="worktree")` に**実装（下記 3〜4）を委譲**する。
+メインセッションは Issue の Design / Test Plan との照合・diff レビュー・push（developer は push しない）・
+PR 作成・CI 待ち・マージ・後片付け（下記 5〜11）だけを行い、実装や全ソース読み込みでコンテキストを消費しない。
+調査は Explore エージェントに出す。委譲しても経路は同じ「1 セッション = 1 worktree = 1 PR」で、
+Workflow（`/implement`）を使うのは依存ティアが 2 段以上の Epic のときだけ（#1115: 3 ティア Epic を
+メインセッションで直列実装し、コストとコンテキストを逼迫させた再発防止）。
+
 1. **origin 同期**: `git fetch origin` → behind なら `git merge --ff-only origin/main`。失敗したら報告して止まる（stash / reset はしない）
 2. **worktree**: 背景ジョブは `EnterWorktree`、対話セッションは `git worktree add -b <type>/<issue>-<slug> .claude/worktrees/<slug> origin/main`。ブランチ名は `feat|fix|docs|chore/<issue>-<slug>`
 3. **実装 + テスト**: Issue の Design / Test Plan どおりに実装。`worktree-commands.md` の `--directory` / `-C` 形式でコマンドを打つ
