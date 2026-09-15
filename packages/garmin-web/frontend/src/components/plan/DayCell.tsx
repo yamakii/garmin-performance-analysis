@@ -84,7 +84,7 @@ function PrescriptionRow({ prescription }: { prescription: Prescription }) {
         </StatusBadge>
       </div>
       {target !== "" && (
-        <p className="font-numeric text-xs tabular-nums text-slate-600">
+        <p className="font-mono text-xs text-ink-muted">
           {target}
         </p>
       )}
@@ -117,20 +117,20 @@ export default function DayCell({
   return (
     <td
       className={`h-full min-w-[6.5rem] align-top ${
-        isToday ? "rounded-lg ring-2 ring-signal/60 ring-inset" : ""
-      } ${day.in_month ? "" : "bg-slate-50/60"}`}
+ isToday ? "rounded-md ring-2 ring-accent ring-inset" : ""
+ } ${day.in_month ? "" : "bg-well"}`}
     >
       <div className="space-y-1 p-1.5">
         <div className="flex items-baseline gap-1">
           <span
-            className={`font-numeric text-xs tabular-nums ${
-              day.in_month ? "font-semibold text-ink" : "text-slate-500"
-            }`}
+            className={`font-mono text-xs ${
+ day.in_month ? "font-semibold text-ink" : "text-ink-muted"
+ }`}
           >
             {dayOfMonthLabel(day.date)}
           </span>
           {isToday && (
-            <span className="rounded-full bg-signal/15 px-1.5 py-0.5 text-[10px] font-bold text-signal-ink">
+            <span className="rounded-sm bg-accent-tint px-1.5 py-0.5 text-[10px] font-bold text-accent">
               今日
             </span>
           )}
@@ -144,8 +144,8 @@ export default function DayCell({
         ))}
 
         {ladderTarget !== "" && (
-          <p className="font-numeric text-xs tabular-nums text-slate-500">
-            <span className="mr-1 text-[10px] font-semibold tracking-wide text-slate-600">
+          <p className="font-mono text-xs text-ink-muted">
+            <span className="mr-1 text-[10px] font-semibold tracking-wide text-ink-muted">
               ロング目標
             </span>
             {ladderTarget}
@@ -155,7 +155,7 @@ export default function DayCell({
         {day.activities.map((activity) => (
           <p
             key={activity.activity_id}
-            className="font-numeric text-xs tabular-nums text-slate-600"
+            className="font-mono text-xs text-ink-muted"
           >
             {formatDistanceKmValue(activity.total_distance_km, 1)}km{" "}
             {formatPace(activity.avg_pace_seconds_per_km)}

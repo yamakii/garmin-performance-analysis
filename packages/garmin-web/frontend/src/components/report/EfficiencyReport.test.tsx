@@ -156,7 +156,7 @@ describe("EfficiencyReport", () => {
     );
 
     // The rating is lifted out of the prose into a heading badge...
-    const badge = screen.getByText("★ 4.0");
+    const badge = screen.getByLabelText("評価 4.0 / 5.0");
     expect(badge).toBeInTheDocument();
     expect(screen.getByText("効率分析").parentElement).toContainElement(badge);
 

@@ -16,20 +16,20 @@ export default function CriticalSpeedPanel({ data }: CriticalSpeedPanelProps) {
       aria-label="クリティカルスピード"
       className={CARD_CLASS}
     >
-      <h2 className="mb-1 font-display text-base font-semibold text-ink">
+      <h2 className="mb-1 text-base font-semibold text-ink">
         クリティカルスピード (四半期)
       </h2>
-      <p className="mb-3 text-xs text-amber-700">
+      <p className="mb-3 text-xs text-status-warn">
         {caveat} — LT速度プロキシとして提示（無酸素容量は解釈不可）
       </p>
       {isEmpty ? (
-        <p className="py-8 text-center text-sm text-slate-500">
+        <p className="py-8 text-center text-sm text-ink-muted">
           データがありません
         </p>
       ) : (
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-slate-500">
+            <tr className="text-left text-ink-muted">
               <th scope="col" className="py-1 font-medium">
                 四半期
               </th>
@@ -46,7 +46,7 @@ export default function CriticalSpeedPanel({ data }: CriticalSpeedPanelProps) {
           </thead>
           <tbody>
             {data.map((row) => (
-              <tr key={row.quarter} className="border-t border-slate-100">
+              <tr key={row.quarter} className="border-t border-hairline">
                 <td className="py-1">{row.quarter}</td>
                 <td className="py-1">{formatPace(row.cs_pace_sec_per_km)}</td>
                 <td className="py-1">{row.r_squared.toFixed(4)}</td>

@@ -24,7 +24,7 @@ describe("AdherenceChip", () => {
     );
 
     const chip = screen.getByText("3/4 実施");
-    expect(chip).toHaveClass("text-status-good");
+    expect(chip).toHaveAttribute("data-tone", "good");
   });
 
   it("test_adherence_chip_bad_tone", () => {
@@ -35,7 +35,7 @@ describe("AdherenceChip", () => {
     );
 
     const chip = screen.getByText("1/4 実施");
-    expect(chip).toHaveClass("text-status-bad");
+    expect(chip).toHaveAttribute("data-tone", "bad");
   });
 
   it("warns in between and stays neutral before anything resolves", () => {

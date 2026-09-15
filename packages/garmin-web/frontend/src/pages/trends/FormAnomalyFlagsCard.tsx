@@ -24,7 +24,7 @@ export default function FormAnomalyFlagsCard({
       className={CARD_CLASS}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="font-display text-base font-semibold text-ink">
+        <h2 className="text-base font-semibold text-ink">
           今週の注意点
         </h2>
         <StatusBadge tone={hasFlags ? "warn" : "good"}>
@@ -37,19 +37,19 @@ export default function FormAnomalyFlagsCard({
           {data.flags.map((flag) => (
             <li
               key={flag.activity_id}
-              className="rounded-lg bg-slate-50 px-3 py-2"
+              className="rounded-md bg-well px-3 py-2"
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm font-semibold text-ink">
                   {flag.activity_date}
                 </span>
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-ink-muted">
                   異常イベント {flag.anomalies_detected}件
                   {flag.severity_high > 0 ? `（高 ${flag.severity_high}）` : ""}
                 </span>
               </div>
               {flag.top_recommendation ? (
-                <p className="mt-1 text-sm text-slate-600">
+                <p className="mt-1 text-sm text-ink-muted">
                   {flag.top_recommendation}
                 </p>
               ) : null}
@@ -57,12 +57,12 @@ export default function FormAnomalyFlagsCard({
           ))}
         </ul>
       ) : (
-        <p className="py-4 text-sm text-slate-500">
+        <p className="py-4 text-sm text-ink-muted">
           直近のランでフォームの異常は検出されていません。
         </p>
       )}
 
-      <p className="mt-3 text-xs text-slate-500">
+      <p className="mt-3 text-xs text-ink-muted">
         直近{data.weeks}週・{data.scanned}件のランを走査
         {data.limited ? "（上限により一部のみ）" : ""}
       </p>

@@ -82,14 +82,14 @@ export default function FallbackFields({
     return null;
   }
   const frame = flush
-    ? "divide-y divide-slate-100"
-    : "mt-4 divide-y divide-slate-100 border-t border-slate-100";
+    ? "divide-y divide-hairline"
+    : "mt-4 divide-y divide-hairline border-t border-hairline";
   return (
     <dl className={frame}>
       {entries.map(([key, value]) => (
         <div key={key} className="py-2">
           <dt className={META_LABEL}>{fieldLabel(key)}</dt>
-          <dd className="mt-0.5 text-sm text-slate-700">{renderValue(value)}</dd>
+          <dd className="mt-0.5 text-sm text-ink-soft">{renderValue(value)}</dd>
         </div>
       ))}
     </dl>

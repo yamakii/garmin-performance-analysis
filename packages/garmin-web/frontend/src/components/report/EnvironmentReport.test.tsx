@@ -45,7 +45,7 @@ describe("EnvironmentReport", () => {
     ).toBeInTheDocument();
 
     // The trailing rating becomes a heading badge.
-    expect(screen.getByText("★ 3.8")).toBeInTheDocument();
+    expect(screen.getByLabelText("評価 3.8 / 5.0")).toBeInTheDocument();
     expect(screen.queryByText(/3\.8\/5\.0/)).not.toBeInTheDocument();
   });
 

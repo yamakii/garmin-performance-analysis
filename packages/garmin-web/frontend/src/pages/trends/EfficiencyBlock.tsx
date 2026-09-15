@@ -52,11 +52,11 @@ export default function EfficiencyBlock({ data }: EfficiencyBlockProps) {
       aria-label="効率"
       className={CARD_CLASS}
     >
-      <h2 className="mb-3 font-display text-base font-semibold text-ink">
+      <h2 className="mb-3 text-base font-semibold text-ink">
         効率推移 (HRゾーン分布)
       </h2>
       {data.length === 0 ? (
-        <p className="py-8 text-center text-sm text-slate-500">
+        <p className="py-8 text-center text-sm text-ink-muted">
           データがありません
         </p>
       ) : (

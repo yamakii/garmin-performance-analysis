@@ -23,17 +23,17 @@ export default function FormBlock({ data }: FormBlockProps) {
       aria-label="フォーム"
       className={CARD_CLASS}
     >
-      <h2 className="mb-3 font-display text-base font-semibold text-ink">
+      <h2 className="mb-3 text-base font-semibold text-ink">
         フォームスコア推移
       </h2>
       {data.length === 0 ? (
-        <p className="py-8 text-center text-sm text-slate-500">
+        <p className="py-8 text-center text-sm text-ink-muted">
           データがありません
         </p>
       ) : (
         <div className="space-y-4">
           <div>
-            <h3 className="mb-1 text-sm font-medium text-slate-600">
+            <h3 className="mb-1 text-sm font-medium text-ink-muted">
               フォームスコア (1〜5)
             </h3>
             <EChart
@@ -43,7 +43,7 @@ export default function FormBlock({ data }: FormBlockProps) {
             />
           </div>
           <div>
-            <h3 className="mb-1 text-sm font-medium text-slate-600">
+            <h3 className="mb-1 text-sm font-medium text-ink-muted">
               フォーム偏差 (Δ)
             </h3>
             <EChart

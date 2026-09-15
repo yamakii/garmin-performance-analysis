@@ -12,11 +12,11 @@ export default function ActionCallout({
   children: ReactNode;
 }) {
   return (
-    <div className="rounded-r-lg border-l-4 border-signal bg-signal/5 px-4 py-3">
-      <h3 className="text-xs font-semibold tracking-wide text-signal-ink uppercase">
+    <div className="-lg border-l-4 border-accent bg-accent-tint px-4 py-3">
+      <h3 className="text-xs font-semibold tracking-wide text-accent">
         {title}
       </h3>
-      <div className="mt-1 text-sm text-slate-700">{children}</div>
+      <div className="mt-1 text-sm text-ink-soft">{children}</div>
     </div>
   );
 }

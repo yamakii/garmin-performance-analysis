@@ -8,11 +8,11 @@ import StarBadge from "./StarBadge";
 import StarRatingBreakdown from "./StarRatingBreakdown";
 
 const PHASES: { key: string; label: string; dot: string }[] = [
-  { key: "warmup_evaluation", label: "ウォームアップ", dot: "bg-sky-400" },
+  { key: "warmup_evaluation", label: "ウォームアップ", dot: "bg-accent" },
   { key: "run_evaluation", label: "メインラン", dot: "bg-ink" },
   // Interval training only (5.6% of rows per Spike #198).
   { key: "recovery_evaluation", label: "リカバリー", dot: "bg-violet-400" },
-  { key: "cooldown_evaluation", label: "クールダウン", dot: "bg-emerald-400" },
+  { key: "cooldown_evaluation", label: "クールダウン", dot: "bg-status-good" },
 ];
 
 const KNOWN_KEYS = [
@@ -68,7 +68,7 @@ function PhaseNode({
     <li className="relative">
       <span
         aria-hidden="true"
-        className={`absolute top-1 -left-[27px] h-3 w-3 rounded-full ring-4 ring-white ${dot}`}
+        className={`absolute top-1 -left-[27px] h-3 w-3 rounded-sm ring-4 ring-white ${dot}`}
       />
       <div className="flex flex-wrap items-center gap-2">
         <h3 className={SUBHEADING}>{label}</h3>
@@ -78,7 +78,7 @@ function PhaseNode({
         <MarkdownText text={parts ? parts.evaluation : body} />
       </div>
       {parts && (
-        <p className="mt-1 text-xs leading-relaxed text-slate-500">
+        <p className="mt-1 text-xs leading-relaxed text-ink-muted">
           {`実際: ${parts.actual}`}
         </p>
       )}
@@ -106,7 +106,7 @@ export default function PhaseTimeline({
         return (
           <>
             {phases.length > 0 && (
-              <ol className="relative ml-1.5 space-y-5 border-l-2 border-slate-200 pl-5">
+              <ol className="relative ml-1.5 space-y-5 border-l-2 border-hairline pl-5">
                 {phases.map(({ key, label, dot }) => (
                   <PhaseNode
                     key={key}

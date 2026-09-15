@@ -7,8 +7,8 @@ import { INK_COLOR } from "./chartTheme";
 
 const HOVER_THROTTLE_MS = 50;
 
-/** Gold (#214 --color-gold): the hover marker echoes the star-rating accent. */
-const HOVER_MARKER_COLOR = "#f59e0b";
+/** Accent teal (--color-accent): the hover marker is the one colored figure. */
+const HOVER_MARKER_COLOR = "#1f6f6b";
 
 /** Binary search: index of the point whose seq_no is nearest to target. */
 export function nearestPointIndex(points: TrackPoint[], target: number): number {
@@ -86,7 +86,7 @@ export default function MapPanel({
 
   if (points.length === 0 || bounds == null) {
     return (
-      <p className="px-5 py-8 text-center text-sm text-slate-500">
+      <p className="px-5 py-8 text-center text-sm text-ink-muted">
         GPSデータがありません
       </p>
     );
@@ -122,12 +122,15 @@ export default function MapPanel({
         style={{ width: "100%", height: 400 }}
       >
         <TileLayer
+          // Desaturated tiles (index.css .grayscale-tiles): the ink track is
+          // the only figure on the map (#1116).
+          className="grayscale-tiles"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <Polyline
           positions={positions}
-          pathOptions={{ color: INK_COLOR, weight: 4 }}
+          pathOptions={{ color: INK_COLOR, weight: 2 }}
           eventHandlers={{
             mousemove: handleMouseMove,
             mouseout: () => onHoverSeqNo?.(null),

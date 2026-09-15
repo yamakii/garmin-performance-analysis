@@ -15,7 +15,7 @@ const NAV_LINKS = [
 function renderLayout(initialPath = "/") {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
-      <Layout>
+      <Layout today={new Date(2026, 8, 15)}>
         <p>コンテンツ</p>
       </Layout>
     </MemoryRouter>,
@@ -76,20 +76,27 @@ describe("Layout", () => {
     );
   });
 
-  it("nav remains reachable at narrow width", () => {
+  it("test_layout_header_date_and_wrap_nav", () => {
     renderLayout();
 
-    // Lightweight strategy: the nav scrolls horizontally instead of wrapping
-    // or cramping the five links on narrow screens.
+    // The nav wraps at narrow widths instead of scrolling sideways (#1116).
     const nav = screen.getByRole("navigation", {
       name: "メインナビゲーション",
     });
-    expect(nav).toHaveClass("overflow-x-auto");
+    expect(nav).toHaveClass("flex-wrap");
+    expect(nav).not.toHaveClass("overflow-x-auto");
 
-    // Links stay full-size (do not compress) so they remain tappable.
-    for (const name of NAV_LINKS) {
-      expect(screen.getByRole("link", { name })).toHaveClass("shrink-0");
-    }
+    // The active link is the underlined bold one; the others stay muted.
+    expect(screen.getByRole("link", { name: "ホーム" })).toHaveClass(
+      "font-bold",
+      "border-b-2",
+    );
+    expect(screen.getByRole("link", { name: "目標" })).toHaveClass(
+      "text-ink-muted",
+    );
+
+    // Today's date sits at the right of the brand row as `YYYY-MM-DD DDD`.
+    expect(screen.getByText("2026-09-15 TUE")).toHaveClass("font-mono");
   });
 
   it("test_skip_link_first_focusable", () => {

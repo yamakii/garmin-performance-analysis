@@ -31,7 +31,7 @@ function emptyDay(date: string): PlanDay {
 }
 
 const HEADER_CELL =
-  "px-1.5 pb-2 text-xs font-semibold tracking-wide text-slate-600";
+  "px-1.5 pb-2 text-xs font-semibold tracking-wide text-ink-muted";
 
 /**
  * The month as a calendar: one row per week, columns ordered from the athlete's
@@ -90,17 +90,17 @@ export default function MonthGrid({
                   <div className="space-y-1 p-1.5">
                     <Link
                       to={`/weekly-reviews/${row.weekStart}`}
-                      className={`block font-numeric text-xs font-semibold tabular-nums ${
-                        week.review_exists
-                          ? "text-status-info hover:underline"
-                          : "text-slate-600 hover:text-ink hover:underline"
-                      }`}
+                      className={`block font-mono text-xs font-semibold ${
+ week.review_exists
+ ? "text-accent hover:underline"
+ : "text-ink-muted hover:text-ink hover:underline"
+ }`}
                     >
                       {weekRowLabel(row.weekStart)}
                     </Link>
                     <AdherenceChip adherence={week.adherence} />
                     {ladderTarget !== "" && (
-                      <p className="font-numeric text-xs tabular-nums text-slate-600">
+                      <p className="font-mono text-xs text-ink-muted">
                         ロング {ladderTarget}
                       </p>
                     )}

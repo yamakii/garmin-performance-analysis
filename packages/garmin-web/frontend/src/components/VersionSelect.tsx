@@ -1,3 +1,4 @@
+import StatusBadge from "./StatusBadge";
 import { formatDateTime } from "../utils/format";
 
 /** One saved version: a stable React key plus its creation stamp. */
@@ -29,11 +30,11 @@ export const STALE_VERSION_BADGE = "旧版を表示中";
  * Version picker shared by the activity report, the weekly review and the
  * trend narration (Issue #915).
  *
- * All three used to inline their own select with a different label ("分析版を
- * 選択:" vs "版を選択:") and a raw ISO datetime in the options, and none of
- * them said anything once a reader had switched away from the latest run — so
- * a stale write-up looked exactly like the current one. Renders nothing when
- * there is only one version to choose from.
+ * All three used to inline their own select with a different label and a raw
+ * ISO datetime in the options, and none of them said anything once a reader
+ * had switched away from the latest run — so a stale write-up looked exactly
+ * like the current one. Renders nothing when there is only one version to
+ * choose from.
  */
 export default function VersionSelect({
   id,
@@ -47,16 +48,14 @@ export default function VersionSelect({
   const isStale = selectedIndex > 0;
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <label htmlFor={id} className="text-sm font-medium text-slate-500">
-        {VERSION_SELECT_LABEL}
-      </label>
+    <div className="flex flex-wrap items-center gap-3 font-mono text-xs text-ink-muted">
+      <label htmlFor={id}>{VERSION_SELECT_LABEL}</label>
       <select
         id={id}
         value={selectedIndex}
         onChange={(e) => onSelect(Number(e.target.value))}
         // Keyboard-visible focus ring instead of a stripped outline (#912).
-        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-ink shadow-sm focus-visible:border-ink focus-visible:ring-2 focus-visible:ring-ink/50 focus-visible:outline-none"
+        className="rounded-sm border border-hairline bg-paper px-2 py-1 font-mono text-xs text-ink focus-visible:border-ink focus-visible:ring-2 focus-visible:ring-ink focus-visible:outline-none"
       >
         {options.map(({ key, stamp }, i) => {
           const text = stamp != null ? formatDateTime(stamp) : NO_STAMP;
@@ -67,14 +66,8 @@ export default function VersionSelect({
           );
         })}
       </select>
-      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-        全{options.length}版
-      </span>
-      {isStale && (
-        <span className="rounded-full bg-status-warn/10 px-2.5 py-1 text-xs font-semibold text-status-warn">
-          {STALE_VERSION_BADGE}
-        </span>
-      )}
+      <span>全{options.length}版</span>
+      {isStale && <StatusBadge tone="warn">{STALE_VERSION_BADGE}</StatusBadge>}
     </div>
   );
 }

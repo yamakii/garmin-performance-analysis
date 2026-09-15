@@ -9,24 +9,18 @@ describe("CardSkeleton", () => {
     const status = screen.getByRole("status");
     expect(status).toBeInTheDocument();
     expect(status).toHaveAttribute("aria-busy", "true");
-    // The label names which card is pending for assistive tech.
+    // The label names which block is pending for assistive tech.
     expect(status).toHaveAttribute("aria-label", "走行量");
   });
 
-  it("applies card shell classes", () => {
+  it("test_card_skeleton_dash_placeholder", () => {
     render(<CardSkeleton />);
 
     const status = screen.getByRole("status");
-    // Same shell as the resolved cards so swapping in content causes no shift.
-    for (const cls of [
-      "rounded-xl",
-      "border",
-      "border-slate-200",
-      "bg-white",
-      "p-5",
-      "shadow-sm",
-    ]) {
-      expect(status.className).toContain(cls);
-    }
+    // Same shell as the resolved block so swapping in content causes no shift.
+    expect(status).toHaveClass("border-t", "border-hairline");
+    // A mono dash stands in for the number; nothing pulses (#1116).
+    expect(status).toHaveTextContent("——");
+    expect(status.querySelector(".animate-pulse")).toBeNull();
   });
 });

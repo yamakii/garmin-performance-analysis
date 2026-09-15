@@ -1,40 +1,37 @@
 import type { JSX } from "react";
 
 /**
- * Editorial section heading: an uppercase English eyebrow stacked above a
- * Japanese heading, matching the "Editorial Sport" pattern that previously
- * lived only on the Goal page. Use `as="h1"` (default) for the page headline
- * and `as="h2"` for in-page section headers — the eyebrow stays the same while
- * the heading scales from `text-2xl` to `text-xl`.
+ * Page / section heading (Morning Brief, #1116): a single Japanese heading,
+ * optionally with a mono note (a date range, a window, a version) at its right.
  *
- * The eyebrow is decorative (#912): it restates the Japanese heading below it
- * in English, so it is hidden from assistive tech instead of being announced
- * as a stray fragment ahead of every heading.
+ * The English eyebrow the previous design stacked above the title is gone —
+ * it only restated the heading and was already hidden from assistive tech
+ * (#912), which is the proof it was not needed by readers either.
+ *
+ * Use `as="h1"` (default) for the page headline (28px) and `as="h2"` for
+ * in-page section headers (18px).
  */
 export default function SectionHeading({
-  eyebrow,
   title,
   as = "h1",
+  note,
 }: {
-  eyebrow: string;
   title: string;
   as?: "h1" | "h2";
+  /** Mono caption at the right of the heading, e.g. "09/14 – 09/20". */
+  note?: string;
 }): JSX.Element {
   const Heading = as;
-  const titleSize = as === "h1" ? "text-2xl" : "text-xl";
+  const headingClass =
+    as === "h1"
+      ? "text-[28px] leading-tight font-bold text-ink"
+      : "text-lg font-bold text-ink";
   return (
-    <div>
-      <p
-        aria-hidden="true"
-        className="text-xs font-semibold tracking-[0.2em] text-slate-500 uppercase"
-      >
-        {eyebrow}
-      </p>
-      <Heading
-        className={`mt-1 font-display ${titleSize} font-bold tracking-tight text-ink`}
-      >
-        {title}
-      </Heading>
+    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+      <Heading className={headingClass}>{title}</Heading>
+      {note != null && note !== "" && (
+        <p className="font-mono text-xs text-ink-muted">{note}</p>
+      )}
     </div>
   );
 }

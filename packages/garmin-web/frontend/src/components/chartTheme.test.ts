@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { METRIC_COLORS, METRIC_TEXT_COLORS, ZONE_COLORS } from "./chartTheme";
+import {
+  BASE_CHART_OPTION,
+  CHART_FONT_SIZE,
+  COMPARE_COLOR,
+  INK_COLOR,
+  METRIC_COLORS,
+  ZONE_COLORS,
+} from "./chartTheme";
 
 /** #rrggbb -> HSL, hue in degrees and lightness in 0-1. */
 function hexToHsl(hex: string): { hue: number; lightness: number } {
@@ -39,13 +46,18 @@ describe("ZONE_COLORS", () => {
   });
 });
 
-describe("METRIC_TEXT_COLORS", () => {
-  it("test_metric_text_colors_track_metric_colors", () => {
-    // The on-light text variants exist only for metrics that have a chart
-    // color; a stray key would mean a toggle painting a metric that no line
-    // uses.
-    for (const key of Object.keys(METRIC_TEXT_COLORS)) {
-      expect(METRIC_COLORS).toHaveProperty(key);
-    }
+describe("chart typography", () => {
+  it("test_chart_theme_mono_font", () => {
+    // Every axis label and tooltip is a numeral, so the chart face is the
+    // mono face at the caption size (#1116).
+    expect(BASE_CHART_OPTION.textStyle.fontFamily).toBe("IBM Plex Mono");
+    expect(CHART_FONT_SIZE).toBe(11);
+  });
+
+  it("test_primary_and_compare_colors_distinct", () => {
+    // A comparison series must never be mistaken for the primary one.
+    expect(COMPARE_COLOR).not.toBe(INK_COLOR);
+    expect(METRIC_COLORS.vo2max).toBe(INK_COLOR);
+    expect(METRIC_COLORS.objective_vdot).not.toBe(METRIC_COLORS.vo2max);
   });
 });

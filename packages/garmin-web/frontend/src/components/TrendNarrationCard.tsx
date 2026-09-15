@@ -29,7 +29,7 @@ const NARRATIVE_CLAMP_LINES = 6;
 function NarrativeBody({ data }: { data: Record<string, unknown> }) {
   const entries = Object.entries(data);
   return (
-    <div className="space-y-3 text-sm leading-relaxed text-slate-700">
+    <div className="space-y-3 text-sm leading-relaxed text-ink-soft">
       {entries.map(([key, value]) => {
         if (typeof value === "string") {
           return (
@@ -45,7 +45,7 @@ function NarrativeBody({ data }: { data: Record<string, unknown> }) {
           value.every((item) => typeof item === "string")
         ) {
           return (
-            <ul key={key} className="list-disc space-y-1 pl-5 text-slate-600">
+            <ul key={key} className="list-disc space-y-1 pl-5 text-ink-muted">
               {(value as string[]).map((item, i) => (
                 <li key={i}>{item}</li>
               ))}
@@ -92,10 +92,10 @@ export default function TrendNarrationCard({
       className={CARD_CLASS}
     >
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-display text-base font-semibold text-ink">
+        <h2 className="text-base font-semibold text-ink">
           トレンド解説
         </h2>
-        <span className="font-numeric text-sm tabular-nums text-slate-500">
+        <span className="font-mono text-sm text-ink-muted">
           {label}: {formatDate(selected.period_start)} 〜{" "}
           {formatDate(selected.period_end)}
         </span>

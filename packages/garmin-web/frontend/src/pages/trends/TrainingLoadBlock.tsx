@@ -1,10 +1,13 @@
 import { useMemo } from "react";
 import EChart from "../../components/EChart";
 import {
+  AXIS_LABEL_COLOR,
   AXIS_STYLE,
+  BASELINE_BAND_COLOR,
   BASE_CHART_OPTION,
   INK_COLOR,
   METRIC_COLORS,
+  THRESHOLD_LINE,
 } from "../../components/chartTheme";
 import { axisTooltipFormatter } from "../../utils/formatNumber";
 import type { EChartsOption } from "../../lib/echarts";
@@ -16,13 +19,13 @@ interface TrainingLoadBlockProps {
 }
 
 const STATUS_META: Record<AcwrStatus, { label: string; className: string }> = {
-  undertraining: { label: "負荷不足", className: "bg-sky-100 text-sky-700" },
-  optimal: { label: "最適", className: "bg-emerald-100 text-emerald-700" },
-  caution: { label: "注意", className: "bg-amber-100 text-amber-700" },
-  high_risk: { label: "高リスク", className: "bg-red-100 text-red-700" },
+  undertraining: { label: "負荷不足", className: " text-ink-soft" },
+  optimal: { label: "最適", className: " text-status-good" },
+  caution: { label: "注意", className: "bg-warn-tint text-status-warn" },
+  high_risk: { label: "高リスク", className: "bg-bad-tint text-status-bad" },
   insufficient_data: {
     label: "データ不足",
-    className: "bg-slate-100 text-slate-600",
+    className: "bg-well text-ink-muted",
   },
 };
 
@@ -93,7 +96,7 @@ export default function TrainingLoadBlock({ data }: TrainingLoadBlockProps) {
               [
                 {
                   yAxis: ACWR_OPTIMAL_MIN,
-                  itemStyle: { color: "rgba(16,185,129,0.10)" },
+                  itemStyle: { color: BASELINE_BAND_COLOR },
                 },
                 { yAxis: ACWR_OPTIMAL_MAX },
               ],
@@ -105,13 +108,13 @@ export default function TrainingLoadBlock({ data }: TrainingLoadBlockProps) {
             data: [
               {
                 yAxis: ACWR_OPTIMAL_MIN,
-                lineStyle: { color: "#6ee7b7", type: "dotted" as const },
-                label: { formatter: "下限 0.8", color: "#047857" },
+                lineStyle: { color: AXIS_LABEL_COLOR, type: "dotted" as const },
+                label: { formatter: "下限 0.8", color: AXIS_LABEL_COLOR },
               },
               {
                 yAxis: ACWR_WARNING_LINE,
-                lineStyle: { color: "#f87171", type: "dashed" as const },
-                label: { formatter: "高リスク 1.5", color: "#ef4444" },
+                lineStyle: { color: THRESHOLD_LINE.bad, type: "dotted" as const },
+                label: { formatter: "高リスク 1.5", color: THRESHOLD_LINE.bad },
               },
             ],
           },
@@ -131,22 +134,22 @@ export default function TrainingLoadBlock({ data }: TrainingLoadBlockProps) {
       className={CARD_CLASS}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="font-display text-base font-semibold text-ink">
+        <h2 className="text-base font-semibold text-ink">
           訓練負荷 (ACWR)
         </h2>
         <span
-          className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${statusMeta.className}`}
+          className={`shrink-0 rounded-sm px-2.5 py-1 text-xs font-semibold ${statusMeta.className}`}
         >
           {statusMeta.label}
         </span>
       </div>
       {isInsufficient ? (
-        <p className="py-8 text-center text-sm text-slate-500">
+        <p className="py-8 text-center text-sm text-ink-muted">
           ACWRを算出するためのデータが不足しています
         </p>
       ) : (
         <>
-          <p className="mb-1 text-sm text-slate-600">
+          <p className="mb-1 text-sm text-ink-muted">
             現在のACWR:{" "}
             <span className="font-semibold text-ink">
               {current.acwr?.toFixed(2)}
@@ -157,7 +160,7 @@ export default function TrainingLoadBlock({ data }: TrainingLoadBlockProps) {
           {current.status === "high_risk" && (
             <p
               role="alert"
-              className="mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+              className="mb-2 rounded-md border border-bad-line bg-bad-tint px-3 py-2 text-sm text-status-bad"
             >
               急性負荷が慢性負荷を大きく上回っています。故障リスクが高いため、ボリュームを抑えてください。
             </p>

@@ -1,14 +1,14 @@
 import { CARD_CLASS } from "./Card";
 
 /**
- * Card-shaped loading placeholder shown while a TrendsDashboard card's data is
- * still resolving. It wears the shared card shell (`CARD_CLASS`) so the real
- * card drops in without a layout shift once its fetch resolves.
+ * Loading placeholder shown while a block's data is still resolving: the
+ * block's hairline rule and a mono "——" where the number will land, so the
+ * real block drops in without a layout shift. No pulse animation — the page
+ * is a quiet brief, and a static dash reads as "not yet" on its own.
  *
- * The pulsing bars use `animate-pulse`, which is disabled under
- * `prefers-reduced-motion` via `motion-reduce:animate-none`. The element is a
- * `role="status"` / `aria-busy="true"` region so assistive tech announces the
- * card as loading; `label` lets the caller name which card is pending.
+ * The element is a `role="status"` / `aria-busy="true"` region so assistive
+ * tech announces the block as loading; `label` lets the caller name which
+ * block is pending.
  */
 export default function CardSkeleton({ label }: { label?: string }) {
   return (
@@ -18,11 +18,12 @@ export default function CardSkeleton({ label }: { label?: string }) {
       aria-label={label ?? "読み込み中"}
       className={CARD_CLASS}
     >
-      <div className="animate-pulse space-y-3 motion-reduce:animate-none">
-        <div className="h-4 w-1/3 rounded bg-slate-200" />
-        <div className="h-3 w-2/3 rounded bg-slate-100" />
-        <div className="h-40 w-full rounded bg-slate-100" />
-      </div>
+      <p
+        aria-hidden="true"
+        className="font-mono text-[28px] leading-none text-metric-compare tracking-[0.1em]"
+      >
+        ——
+      </p>
       <span className="sr-only">読み込み中</span>
     </section>
   );

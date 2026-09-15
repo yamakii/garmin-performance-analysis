@@ -65,10 +65,10 @@ export default function RaceProgress({ readiness, goals }: RaceProgressProps) {
     // navigating by link. The content names the link instead.
     <Link
       to="/goal"
-      className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-[box-shadow,border-color] hover:border-signal/50 hover:shadow-md focus-visible:ring-2 focus-visible:ring-signal/50 focus-visible:outline-none"
+      className="block rounded-md border border-hairline p-4 transition-[box-,border-color] hover:border-ink focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <h2 className="font-display text-xs font-semibold text-slate-500">
+        <h2 className="text-xs font-semibold text-ink-muted">
           レースへの道
         </h2>
 
@@ -82,15 +82,15 @@ export default function RaceProgress({ readiness, goals }: RaceProgressProps) {
         )}
 
         {readiness?.current_vdot != null && (
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-ink-muted">
             VDOT{" "}
-            <span className="font-numeric font-semibold tabular-nums text-ink">
+            <span className="font-mono font-semibold text-ink">
               {readiness.current_vdot.toFixed(1)}
             </span>
             {progress != null && (
               <>
                 {" ・ 予測 "}
-                <span className="font-numeric font-semibold tabular-nums text-ink">
+                <span className="font-mono font-semibold text-ink">
                   {formatTargetTime(progress.predicted_time_seconds)}
                 </span>
               </>
@@ -98,7 +98,7 @@ export default function RaceProgress({ readiness, goals }: RaceProgressProps) {
             {targetSeconds != null && (
               <>
                 {" / 目標 "}
-                <span className="font-numeric font-semibold tabular-nums text-ink">
+                <span className="font-mono font-semibold text-ink">
                   {formatTargetTime(targetSeconds)}
                 </span>
               </>
@@ -110,7 +110,7 @@ export default function RaceProgress({ readiness, goals }: RaceProgressProps) {
           <StatusBadge tone={statusMeta.tone}>{statusMeta.label}</StatusBadge>
         )}
 
-        <span className="ml-auto text-sm font-medium text-status-info">
+        <span className="ml-auto text-sm font-medium text-accent">
           目標へ →
         </span>
       </div>
@@ -120,15 +120,15 @@ export default function RaceProgress({ readiness, goals }: RaceProgressProps) {
 
 function Countdown({ days }: { days: number | null }) {
   if (days == null) {
-    return <span className="text-sm font-medium text-slate-500">日程未定</span>;
+    return <span className="text-sm font-medium text-ink-muted">日程未定</span>;
   }
   if (days < 0) {
-    return <span className="text-sm font-medium text-slate-500">開催済み</span>;
+    return <span className="text-sm font-medium text-ink-muted">開催済み</span>;
   }
   return (
     <span className="flex items-baseline gap-1">
-      <span className="text-xs text-slate-500">あと</span>
-      <span className="font-numeric text-2xl leading-none font-bold tabular-nums text-signal">
+      <span className="text-xs text-ink-muted">あと</span>
+      <span className="font-mono text-2xl leading-none font-bold text-accent">
         {days}
       </span>
       <span className="text-sm font-semibold text-ink">日</span>

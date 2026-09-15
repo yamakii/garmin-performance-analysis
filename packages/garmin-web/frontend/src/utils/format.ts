@@ -161,6 +161,35 @@ export function toIsoDate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+/** Three-letter English weekday, indexed by `Date.getDay()` (0=Sun). */
+const WEEKDAY_ABBR = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+
+/**
+ * "2026-09-15 TUE" — the header date of the Morning Brief layout (#1116).
+ * Local calendar day, same reasoning as {@link toIsoDate}.
+ */
+export function formatHeaderDate(date: Date): string {
+  return `${toIsoDate(date)} ${WEEKDAY_ABBR[date.getDay()]}`;
+}
+
+/**
+ * "09/13 SUN" — the short date label used across the brief (week strips,
+ * flag rows, "前回 · 09/13 SUN"). Unparseable input is returned as-is rather
+ * than hidden. The weekday is computed in UTC so a calendar day never shifts
+ * through the reader's timezone (#920).
+ */
+export function formatDateLabel(iso: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (match == null) {
+    return iso;
+  }
+  const [, year, month, day] = match;
+  const weekday = new Date(
+    Date.UTC(Number(year), Number(month) - 1, Number(day)),
+  ).getUTCDay();
+  return `${month}/${day} ${WEEKDAY_ABBR[weekday]}`;
+}
+
 /**
  * "easy_z1_z2" -> "easy z1 z2".
  *

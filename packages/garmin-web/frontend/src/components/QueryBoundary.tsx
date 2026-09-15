@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import CardSkeleton from "./CardSkeleton";
+import { ErrorPanel } from "./PageState";
 
 /**
  * The slice of a TanStack Query result this boundary needs. Kept structural
@@ -33,21 +34,10 @@ export default function QueryBoundary<T>({
 }) {
   if (query.error != null) {
     return (
-      <div
-        role="alert"
-        className="flex flex-col items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-8 text-sm text-red-700"
-      >
-        <p>
-          {label}の読み込みに失敗しました: {query.error.message}
-        </p>
-        <button
-          type="button"
-          onClick={() => query.refetch()}
-          className="rounded-lg border border-red-300 bg-white px-4 py-1.5 font-medium text-red-700 transition-colors hover:bg-red-100"
-        >
-          再試行
-        </button>
-      </div>
+      <ErrorPanel
+        message={`${label}の読み込みに失敗しました: ${query.error.message}`}
+        onRetry={() => query.refetch()}
+      />
     );
   }
 

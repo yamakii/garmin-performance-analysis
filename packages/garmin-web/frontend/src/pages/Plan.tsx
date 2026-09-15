@@ -18,7 +18,7 @@ function monthOf(date: Date): string {
 }
 
 const NAV_BUTTON =
-  "rounded-md border border-slate-200 bg-white px-2.5 py-1 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-ink";
+  "rounded-md border border-hairline px-2.5 py-1 text-sm font-medium text-ink-muted transition-colors hover:bg-surface hover:text-ink";
 
 /**
  * "この1ヶ月どう積むか?" — the plan page (#983).
@@ -50,12 +50,12 @@ export default function Plan() {
   }
 
   return (
-    <div className="stagger-in space-y-6">
+    <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <SectionHeading eyebrow="Plan" title="計画" />
+        <SectionHeading title="計画" />
         <Link
           to="/weekly-reviews"
-          className="text-sm font-medium text-slate-600 hover:text-ink"
+          className="text-sm font-medium text-ink-muted hover:text-ink"
         >
           週次レビュー一覧 →
         </Link>
@@ -70,7 +70,7 @@ export default function Plan() {
         >
           ‹
         </button>
-        <h2 className="font-display text-lg font-semibold text-ink">
+        <h2 className="text-lg font-semibold text-ink">
           {formatMonthLabel(month)}
         </h2>
         <button
@@ -89,11 +89,11 @@ export default function Plan() {
             <BlockBands blocks={plan.blocks} />
             <section className={CARD_CLASS}>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <h3 className="font-display text-base font-semibold text-ink">
+                <h3 className="text-base font-semibold text-ink">
                   週ごとの計画と実績
                 </h3>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-600">今月の実施</span>
+                  <span className="text-xs text-ink-muted">今月の実施</span>
                   <AdherenceChip adherence={plan.adherence} />
                 </div>
               </div>

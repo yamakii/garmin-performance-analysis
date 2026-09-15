@@ -95,9 +95,9 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <SectionHeading eyebrow="Home" title="今日のコックピット" />
+      <SectionHeading title="今日のコックピット" />
 
-      <div className="stagger-in space-y-6">
+      <div className="space-y-6">
         {/* ① 状態: 今日の判定 */}
         <QueryBoundary label="今日の判定" query={recoveryStatusQuery}>
           {(status) => (
