@@ -22,6 +22,7 @@ const FUTURE_DATE = "2099-02-01";
 
 const FIXTURE_READINESS = {
   current_vdot: 48.5,
+  vdot_source: "objective",
   predicted_times: {
     race_5k: 1290,
     race_10k: 2670,
@@ -180,6 +181,34 @@ describe("Goal", () => {
     expect(screen.getByText(/現在 VDOT 48\.5/)).toBeInTheDocument();
   });
 
+  it("test_goal_prediction_label_shows_source", async () => {
+    // The objective curve: the same fitness the 予測の推移 chart plots.
+    stubFetch(FIXTURE_GOAL, { ...FIXTURE_READINESS, current_vdot: 31.1 });
+
+    const { unmount } = renderGoal();
+
+    expect(await screen.findByText("予測 (客観VDOT 31.1)")).toBeInTheDocument();
+    expect(screen.getByText(/現在 VDOT 31\.1 \(客観VDOT換算\)/)).toBeInTheDocument();
+    unmount();
+
+    // The Garmin VO2max conversion is optimistic, so it is named rather than
+    // passed off as the objective number (#1146).
+    stubFetch(FIXTURE_GOAL, {
+      ...FIXTURE_READINESS,
+      current_vdot: 44.6,
+      vdot_source: "garmin_vo2max",
+    });
+
+    renderGoal();
+
+    expect(
+      await screen.findByText("予測 (Garmin VO2max 換算)"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/現在 VDOT 44\.6 \(Garmin VO2max 換算\)/),
+    ).toBeInTheDocument();
+  });
+
   it("test_goal_ab_columns", async () => {
     stubFetch(
       {
@@ -211,7 +240,7 @@ describe("Goal", () => {
 
     // The prediction belongs to the A race only.
     expect(inBand.getAllByText(/^予測/)).toHaveLength(1);
-    expect(inBand.getByText("予測 (VDOT 48.5)")).toBeInTheDocument();
+    expect(inBand.getByText("予測 (客観VDOT 48.5)")).toBeInTheDocument();
     expect(inBand.getByText("4:15:00")).toBeInTheDocument();
     expect(inBand.getByText("−15:00")).toBeInTheDocument();
 

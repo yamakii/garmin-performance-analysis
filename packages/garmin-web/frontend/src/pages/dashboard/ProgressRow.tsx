@@ -47,6 +47,26 @@ export default function ProgressRow({
   );
 }
 
+/**
+ * " (客観)" / " (Garmin換算)" — which fitness the predicted time came from.
+ *
+ * The home card has one line for the whole race, so the source is a short tag
+ * rather than /goal's full label; without it the optimistic Garmin fallback
+ * reads as the same number the objective curve would give (#1146).
+ */
+function predictionSourceSuffix(
+  source: RaceReadiness["vdot_source"] | null,
+): string {
+  switch (source) {
+    case "objective":
+      return " (客観)";
+    case "garmin_vo2max":
+      return " (Garmin換算)";
+    default:
+      return "";
+  }
+}
+
 function RaceColumn({
   readiness,
   goals,
@@ -84,7 +104,10 @@ function RaceColumn({
       {(progress != null || targetSeconds != null) && (
         <p className="font-mono text-[13px] text-ink-soft">
           {progress != null && (
-            <>予測 {formatTargetTime(progress.predicted_time_seconds)}</>
+            <>
+              予測{predictionSourceSuffix(readiness?.vdot_source ?? null)}{" "}
+              {formatTargetTime(progress.predicted_time_seconds)}
+            </>
           )}
           {progress != null && targetSeconds != null && " · "}
           {targetSeconds != null && <>目標 {formatTargetTime(targetSeconds)}</>}

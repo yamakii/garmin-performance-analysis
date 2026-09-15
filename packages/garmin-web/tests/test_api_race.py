@@ -42,6 +42,24 @@ def test_race_readiness_endpoint_shape(race_readiness_db_path):
 
 
 @pytest.mark.integration
+def test_api_race_readiness_has_vdot_source(race_readiness_db_path):
+    """The headline names the fitness it rests on (#1146).
+
+    The fixture has no laps, so there is no objective curve and the read falls
+    back to the Garmin VO2max conversion — the same source the prediction
+    history reports, which is the point of the key.
+    """
+    client = TestClient(create_app(db_path=race_readiness_db_path))
+    payload = client.get("/api/race-readiness").json()
+
+    assert payload["vdot_source"] == "garmin_vo2max"
+    assert (
+        payload["vdot_source"]
+        == client.get("/api/race-prediction-history").json()["source"]
+    )
+
+
+@pytest.mark.integration
 def test_race_readiness_no_goal(race_readiness_no_goal_db_path):
     client = TestClient(create_app(db_path=race_readiness_no_goal_db_path))
     response = client.get("/api/race-readiness")
