@@ -105,7 +105,7 @@ export default function VitalsRow({
           <Link
             key={item.label}
             to={item.to}
-            className={`${cellClass} block text-inherit hover:bg-surface hover:no-underline`}
+            className={`${cellClass} block text-inherit hover:bg-surface`}
           >
             {body}
           </Link>

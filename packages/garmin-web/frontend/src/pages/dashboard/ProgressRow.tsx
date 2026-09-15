@@ -129,7 +129,7 @@ function RaceColumn({
     // race, the countdown and the prediction from anyone browsing by link.
     <Link
       to="/goal"
-      className="flex flex-col gap-2 text-inherit hover:no-underline"
+      className="flex flex-col gap-2 text-inherit"
     >
       {body}
     </Link>
@@ -169,7 +169,7 @@ function LastRun({
       </p>
       <Link
         to={`/activities/${activity.activity_id}`}
-        className="flex flex-col gap-2 text-inherit hover:no-underline"
+        className="flex flex-col gap-2 text-inherit"
       >
         <span className="font-mono text-[44px] leading-none font-medium text-ink">
           {formatDistanceKmValue(activity.total_distance_km, 1)}

@@ -4,7 +4,7 @@ import { formatHeaderDate } from "../utils/format";
 
 function navLinkClass({ isActive }: { isActive: boolean }): string {
   const base =
-    "flex items-center pt-1.5 pb-2.5 transition-colors hover:text-ink hover:no-underline";
+    "flex items-center pt-1.5 pb-2.5 transition-colors hover:text-ink";
   return isActive
     ? `${base} -mb-px border-b-2 border-ink font-bold text-ink`
     : `${base} text-ink-muted`;
@@ -46,7 +46,7 @@ export default function Layout({
           <NavLink
             to="/"
             aria-label="Garmin Performance ホーム"
-            className="shrink-0 py-3.5 text-[15px] font-bold tracking-[-0.01em] text-ink hover:no-underline"
+            className="shrink-0 py-3.5 text-[15px] font-bold tracking-[-0.01em] text-ink"
           >
             Garmin Performance
           </NavLink>

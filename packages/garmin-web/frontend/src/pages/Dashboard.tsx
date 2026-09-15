@@ -329,7 +329,7 @@ export default function Dashboard() {
                 <>
                   <Link
                     to="/plan"
-                    className="inline-block rounded-sm bg-ink px-4 py-2.5 text-sm font-bold text-paper hover:no-underline"
+                    className="inline-block rounded-sm bg-ink px-4 py-2.5 text-sm font-bold text-paper"
                   >
                     今日のメニュー詳細
                   </Link>

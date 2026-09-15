@@ -134,6 +134,40 @@ describe("palette contrast", () => {
   });
 });
 
+describe("link underlines", () => {
+  /**
+   * Hover underline belongs to links inside running text, where it separates
+   * the link from the prose. A global `a:hover` made every navigational
+   * anchor — nav tabs, a vitals cell, a progress row, a button-shaped link —
+   * wrong by default and forced a `hover:no-underline` on each (#1195).
+   */
+  it("test_hover_underline_scoped_to_body_links", () => {
+    expect(INDEX_CSS).toMatch(
+      /main p a:hover,\s*main li a:hover,\s*main dd a:hover\s*\{[^}]*@apply underline;/,
+    );
+    // The unscoped rule is gone: no selector line is a bare `a:hover`
+    // (the scoped ones all begin with `main`).
+    expect(INDEX_CSS).not.toMatch(/^\s*a:hover\s*[,{]/m);
+  });
+
+  /**
+   * The cancels that survive are the two anchors the scoped rule still
+   * reaches — both are `<a>` inside `<li>` inside `<main>`. Everything else
+   * was removed with the global rule, and a new one would be a smell.
+   */
+  it("test_only_list_anchors_still_cancel_the_underline", () => {
+    const offenders = componentSources()
+      .filter(({ text }) => text.includes("hover:no-underline"))
+      .map(({ path }) => path.split("\\").join("/"))
+      .sort();
+
+    expect(offenders).toEqual([
+      "components/SectionNav.tsx",
+      "pages/ActivityList.tsx",
+    ]);
+  });
+});
+
 describe("markdown prose wrapping", () => {
   /**
    * Analysis prose carries runs like `GCT★4.0/VO★5.0/VR★5.0` that have no
