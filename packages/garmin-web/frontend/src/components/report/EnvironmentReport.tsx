@@ -26,12 +26,15 @@ function environmentalProse(section: SectionResult | undefined) {
  */
 export default function EnvironmentReport({
   section,
+  id,
 }: {
   section: SectionResult | undefined;
+  id?: string;
 }) {
   const { body, rating } = environmentalProse(section);
   return (
     <ReportCard
+      id={id}
       title="環境影響"
       section={section}
       badge={rating && <StarBadge score={rating.score} />}

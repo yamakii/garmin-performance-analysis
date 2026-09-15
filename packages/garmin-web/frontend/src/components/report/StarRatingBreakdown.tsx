@@ -119,7 +119,7 @@ export default function StarRatingBreakdown({
   }
   const total = asFiniteNumber(breakdown.star_rating);
   return (
-    <div className="rounded-md bg-well p-4">
+    <div className="border-t border-hairline pt-3">
       <h3 className={META_LABEL}>評価内訳</h3>
       <div className="mt-2 space-y-2">
         {rows.map((row) => (
@@ -134,7 +134,7 @@ export default function StarRatingBreakdown({
       {showTotal && total != null && (
         <div className="mt-3 flex items-center justify-between border-t border-hairline pt-2">
           <span className="text-sm font-medium text-ink-muted">加重総合</span>
-          <span className="rounded-sm px-2 py-0.5 text-xs font-semibold text-status-warn">
+          <span className="font-mono text-xs font-medium text-ink">
             {total.toFixed(1)} / {MAX_SCORE.toFixed(1)}
           </span>
         </div>

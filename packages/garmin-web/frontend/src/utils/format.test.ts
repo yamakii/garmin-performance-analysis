@@ -15,6 +15,7 @@ import {
   formatDistanceKm,
   formatDistanceKmValue,
   formatDuration,
+  formatFullDateLabel,
   formatPace,
   formatPaceValue,
   humanizeKey,
@@ -105,6 +106,16 @@ describe("dates", () => {
     expect(weekEndIso("2026-12-28")).toBe("2027-01-03");
     // A stored datetime is accepted; only its calendar day matters.
     expect(weekEndIso("2026-08-10T00:00:00")).toBe("2026-08-16");
+  });
+
+  it("test_format_full_date_label", () => {
+    // The report header reads "YYYY-MM-DD DDD", the same shape as the site
+    // header (#1118); the weekday is a calendar fact, not a local instant.
+    expect(formatFullDateLabel("2025-10-09")).toBe("2025-10-09 THU");
+    expect(formatFullDateLabel("2025-10-09T06:12:00")).toBe("2025-10-09 THU");
+    expect(formatFullDateLabel(null)).toBe("-");
+    // Unparseable input is shown rather than hidden.
+    expect(formatFullDateLabel("not-a-date")).toBe("not-a-date");
   });
 
   it("test_weekEndIso_invalid_returns_null", () => {
