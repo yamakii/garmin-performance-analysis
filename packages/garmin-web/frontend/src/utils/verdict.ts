@@ -1,6 +1,16 @@
 import { sessionLabel } from "../components/plan/DayCell";
-import { RECOMMENDATION_LABELS } from "../labels/recovery";
-import type { PlanWeek, Prescription, RecoveryStatus } from "../types";
+import {
+  RECOMMENDATION_LABELS,
+  RECOVERY_STATE_LABELS,
+} from "../labels/recovery";
+import type {
+  FormAnomalyFlagsResponse,
+  PlanWeek,
+  Prescription,
+  RecoveryStatus,
+  WellnessBaselineDeviation,
+} from "../types";
+import { adverseMetricLabels } from "./baselineZ";
 
 /**
  * The home page's opening sentence, as data (Morning Brief, #1117).
@@ -67,6 +77,49 @@ export function homeVerdict(
       prescription != null
         ? prescriptionText(prescription)
         : "今日の処方はありません。",
+  };
+}
+
+/**
+ * The condition page's opening sentence (#1120): how recovered the body is,
+ * then the two things that qualify the answer — which readings sit outside the
+ * personal baseline, and how many cautions the recent runs raised.
+ *
+ * The verdict word is the recommendation read as a state (`回復不足。`), not
+ * the prescription word the home page uses (`休養推奨。`): the same value, said
+ * in the tense of the question each page asks. Both wordings live in the
+ * shared label maps, so a third one cannot appear in a component (#915).
+ *
+ * A missing reading is not an all-clear: `baseline` / `flags` that failed to
+ * load simply drop out of the sentence rather than being reported as 基準内.
+ */
+export function conditionVerdict(
+  status: RecoveryStatus,
+  baseline: WellnessBaselineDeviation | null,
+  flags: FormAnomalyFlagsResponse | null,
+): Verdict {
+  const label =
+    RECOVERY_STATE_LABELS[status.recommendation] ??
+    RECOVERY_STATE_LABELS.unknown;
+  const parts: string[] = [];
+
+  const adverse = adverseMetricLabels(baseline);
+  if (adverse.length > 0) {
+    parts.push(`${adverse.join("・")}が基準外`);
+  } else if (baseline != null) {
+    parts.push("基準外の項目なし");
+  }
+
+  if (flags != null) {
+    parts.push(
+      flags.flags.length > 0 ? `${flags.flags.length} 件の注意点` : "注意点なし",
+    );
+  }
+
+  return {
+    verdict: `${label}。`,
+    tone: TONE_BY_RECOMMENDATION[status.recommendation] ?? "neutral",
+    rest: parts.length > 0 ? `${parts.join("、")}。` : "",
   };
 }
 

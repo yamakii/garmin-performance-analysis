@@ -1,117 +1,70 @@
-import { formatDate } from "../../utils/format";
+import type { WellnessBaselineDeviation } from "../../types";
 import { formatNumber } from "../../utils/formatNumber";
-import type { MetricBaseline, WellnessBaselineDeviation } from "../../types";
-import { CARD_CLASS } from "../../components/Card";
+import { baselineZRows, zBarStyle, type ZRow } from "../../utils/baselineZ";
 
 interface WellnessBaselineChartProps {
   data: WellnessBaselineDeviation;
 }
 
-/** Display label + unit for each personal-baseline metric. */
-const METRIC_META: Record<
-  MetricBaseline["metric"],
-  { label: string; unit: string }
-> = {
-  hrv: { label: "HRV (夜間)", unit: "ms" },
-  readiness: { label: "Training Readiness", unit: "" },
-  rhr: { label: "安静時心拍", unit: "bpm" },
-};
-
-/** Flag badge metadata: label + color family. */
-const FLAG_META: Record<
-  MetricBaseline["flag"],
-  { label: string; className: string }
-> = {
-  low: { label: "低い", className: "bg-warn-tint text-status-warn" },
-  high: { label: "高い", className: "bg-warn-tint text-status-warn" },
-  within: { label: "範囲内", className: " text-status-good" },
-  insufficient: { label: "データ不足", className: "bg-well text-ink-muted" },
-};
-
-const METRIC_ORDER: MetricBaseline["metric"][] = ["hrv", "readiness", "rhr"];
-
+/**
+ * 個人基準との差: how far HRV, resting HR and readiness sit from the personal
+ * baseline, as one bar per metric hanging off a centre line.
+ *
+ * The three boxed cards this replaces restated mean, σ and today's value for
+ * each metric — nine numbers to answer one question. A bar chart of z scores
+ * answers it in a glance, and the polarity is normalised so every bar to the
+ * right of the line is the unfavourable direction, whichever way the metric
+ * itself reads (#1120).
+ */
 export default function WellnessBaselineChart({
   data,
 }: WellnessBaselineChartProps) {
+  const rows = baselineZRows(data);
+
   return (
-    <section
-      aria-label="ウェルネス個人ベースライン逸脱"
-      className={`${CARD_CLASS} md:col-span-2`}
-    >
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-base font-semibold text-ink">
-          個人ベースライン逸脱 (HRV / Readiness / RHR)
-        </h2>
-        {data.date != null && (
-          <span className="shrink-0 text-xs text-ink-muted">
-            {formatDate(data.date)}
-          </span>
-        )}
-      </div>
+    <div className="flex flex-col gap-4">
       {data.overall_flag && (
         <p
           role="alert"
-          className="mb-3 rounded-md border border-warn-line bg-warn-tint px-3 py-2 text-sm text-status-warn"
+          className="rounded-md border border-warn-line bg-warn-tint px-4 py-3 text-sm text-status-warn"
         >
           個人ベースラインから不利な方向に逸脱しています。強度・回復を見直してください。
         </p>
       )}
-      <div className="grid gap-3 sm:grid-cols-3">
-        {METRIC_ORDER.map((metric) => (
-          <MetricCard key={metric} baseline={data[metric]} />
+      <ul className="flex flex-col gap-3">
+        {rows.map((row) => (
+          <ZBar key={row.key} row={row} />
         ))}
-      </div>
-    </section>
+      </ul>
+      <p className="font-mono text-xs leading-[1.6] text-ink-muted">
+        基準 = 直近 28 日の中央値 ± MAD。|z| &gt; 1.5 を「基準外」とする。
+      </p>
+    </div>
   );
 }
 
-function MetricCard({ baseline }: { baseline: MetricBaseline }) {
-  const meta = METRIC_META[baseline.metric];
-  const flagMeta = FLAG_META[baseline.flag] ?? FLAG_META.insufficient;
-  const insufficient = baseline.flag === "insufficient";
-
-  const bandText =
-    baseline.mean != null && baseline.std != null
-      ? `${formatNumber(baseline.mean, 1)} ± ${formatNumber(baseline.std, 1)}${meta.unit}`
-      : "—";
-  const todayText =
-    baseline.today != null
-      ? `${formatNumber(baseline.today, 1)}${meta.unit}`
-      : "—";
-  const zText = baseline.z != null ? `z ${formatNumber(baseline.z, 2)}` : "—";
-
+function ZBar({ row }: { row: ZRow }) {
+  const style = zBarStyle(row);
   return (
-    <div className="rounded-md border border-hairline bg-well p-3">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="text-sm font-semibold text-ink">{meta.label}</span>
+    <li className="grid grid-cols-[110px_1fr_90px] items-center gap-3">
+      <span className="text-[13px] text-ink-soft">{row.label}</span>
+      <span className="relative block h-2.5 bg-well">
+        {/* The centre line is the baseline itself: left of it is favourable. */}
+        <span className="absolute inset-y-0 left-1/2 w-px bg-ink" />
         <span
-          className={`shrink-0 rounded-sm px-2 py-0.5 text-xs font-semibold ${
- baseline.adverse ? "bg-bad-tint text-status-bad" : flagMeta.className
- }`}
-        >
-          {flagMeta.label}
-        </span>
-      </div>
-      {insufficient ? (
-        <p className="text-xs text-ink-muted">
-          ベースライン構築に必要なデータが不足しています
-        </p>
-      ) : (
-        <dl className="space-y-1 text-sm">
-          <div className="flex items-center justify-between">
-            <dt className="text-xs text-ink-muted">今日</dt>
-            <dd className="font-semibold text-ink">{todayText}</dd>
-          </div>
-          <div className="flex items-center justify-between">
-            <dt className="text-xs text-ink-muted">基準帯 (平均±SD)</dt>
-            <dd className="text-ink-muted">{bandText}</dd>
-          </div>
-          <div className="flex items-center justify-between">
-            <dt className="text-xs text-ink-muted">逸脱</dt>
-            <dd className="text-ink-muted">{zText}</dd>
-          </div>
-        </dl>
-      )}
-    </div>
+          className={`absolute inset-y-0 ${
+            row.outside ? "bg-status-warn" : "bg-ink"
+          }`}
+          style={style}
+        />
+      </span>
+      <span
+        className={`text-right font-mono text-xs ${
+          row.outside ? "font-bold text-status-warn" : "text-ink-muted"
+        }`}
+      >
+        {row.z != null ? `z ${formatNumber(row.z, 2)}` : "データ不足"}
+      </span>
+    </li>
   );
 }

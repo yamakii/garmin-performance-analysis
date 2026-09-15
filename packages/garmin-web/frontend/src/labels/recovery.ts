@@ -24,6 +24,20 @@ export const RECOMMENDATION_LABELS: Record<RecoveryRecommendation, string> = {
   unknown: "データなし",
 };
 
+/**
+ * The same recommendation read as a state of recovery, which is the question
+ * `/condition` answers (#1120). Home says what to do today ("イージー推奨");
+ * the condition page says why ("回復に注意") — one value, two sentences, both
+ * written here so neither page invents a third wording.
+ */
+export const RECOVERY_STATE_LABELS: Record<RecoveryRecommendation, string> = {
+  quality: "回復は良好",
+  moderate: "回復はほぼ正常",
+  easy: "回復に注意",
+  rest: "回復不足",
+  unknown: "回復データなし",
+};
+
 /** Overnight HRV status against the personal baseline. */
 export const HRV_STATUS_LABELS: Record<Exclude<HrvStatus, null>, string> = {
   balanced: "標準",

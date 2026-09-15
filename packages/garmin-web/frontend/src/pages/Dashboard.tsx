@@ -22,7 +22,6 @@ import { usePageTitle } from "../hooks/usePageTitle";
 import type {
   AcwrStatus,
   AcwrTrend,
-  MetricBaseline,
   MonthPlan,
   PlanWeek,
   RecoveryStatus,
@@ -30,6 +29,7 @@ import type {
   WeeklyReview,
   WellnessBaselineDeviation,
 } from "../types";
+import { BASELINE_METRIC_LABELS, baselineBand } from "../utils/baselineZ";
 import { formatDateLabel, toIsoDate } from "../utils/format";
 import { formatNumber } from "../utils/formatNumber";
 import { homeVerdict, todayPrescription } from "../utils/verdict";
@@ -62,24 +62,6 @@ const ACWR_TONE: Partial<Record<AcwrStatus, "warn" | "bad">> = {
   caution: "warn",
   high_risk: "bad",
 };
-
-/** Japanese name per baseline metric, used when a reason omits it. */
-const METRIC_NAMES = {
-  hrv: "HRV",
-  rhr: "安静時心拍",
-  readiness: "準備度",
-} as const;
-
-/** "55–65" — the personal baseline band (mean ± 1σ) of a metric. */
-function baselineBand(metric: MetricBaseline | null): string | null {
-  if (metric?.mean == null || metric.std == null) {
-    return null;
-  }
-  return `${formatNumber(metric.mean - metric.std, 0)}–${formatNumber(
-    metric.mean + metric.std,
-    0,
-  )}`;
-}
 
 /** UTC epoch of a YYYY-MM-DD day; null when it is not a calendar day. */
 function utcDay(iso: string | null): number | null {
@@ -149,7 +131,7 @@ function verdictLead(
   const adverse = (["hrv", "rhr", "readiness"] as const).find(
     (metric) => baseline?.[metric].adverse === true,
   );
-  const name = adverse != null ? METRIC_NAMES[adverse] : null;
+  const name = adverse != null ? BASELINE_METRIC_LABELS[adverse] : null;
   const unmentioned = name != null && !(reason ?? "").includes(name);
   if (reason == null && !unmentioned) {
     return null;

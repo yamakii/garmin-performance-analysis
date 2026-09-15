@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "../test/utils";
 import Condition from "./Condition";
@@ -184,14 +185,13 @@ const FORM_ANOMALY_FLAGS_EMPTY = {
   flags: [],
 };
 
-/** The five card headings that are not the one under test in isolation checks. */
-const CARD_HEADINGS = {
+/** The five section headings of the brief, in page order (#1120). */
+const SECTION_HEADINGS = {
   formAnomaly: "今週の注意点",
-  condition: "当日コンディション",
-  recovery: "回復トレンド (RHR / HRV)",
-  wellnessBaseline: "個人ベースライン逸脱 (HRV / Readiness / RHR)",
-  trainingLoad: "訓練負荷 (ACWR)",
-  bodyComposition: "体組成 (体重内訳)",
+  recovery: "回復トレンド",
+  wellnessBaseline: "個人基準との差",
+  trainingLoad: "訓練負荷",
+  bodyComposition: "体組成",
 };
 
 function jsonResponse(payload: unknown): Response {
@@ -252,55 +252,73 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function renderCondition() {
+  return render(
+    <MemoryRouter>
+      <Condition />
+    </MemoryRouter>,
+  );
+}
+
 describe("Condition", () => {
-  it("test_condition_renders_six_cards", async () => {
+  it("test_condition_page_order_and_anchors", async () => {
     stubConditionFetch();
 
-    render(<Condition />);
+    const { container } = renderCondition();
 
+    // ① The verdict is the page heading: recovery state, then what qualifies
+    // it (nothing out of band, one caution from the recent runs).
+    const heading = await screen.findByRole("heading", { level: 1 });
+    expect(heading).toHaveTextContent("回復は良好。");
+    expect(heading).toHaveTextContent("1 件の注意点");
+    expect(screen.getByText(RECOVERY_STATUS.reasons[0])).toBeInTheDocument();
+
+    // ② The four numbers sit directly under it, at the `#today` anchor.
+    const today = container.querySelector("#today");
+    expect(today).not.toBeNull();
     expect(
-      await screen.findByRole("heading", { level: 1, name: "今の体の状態" }),
-    ).toBeInTheDocument();
+      heading.compareDocumentPosition(today as Node) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.getByText("HRV 夜間")).toBeInTheDocument();
+    expect(screen.getByText("負荷 ACWR")).toBeInTheDocument();
 
-    for (const name of Object.values(CARD_HEADINGS)) {
+    // ③ Five sections, each one reading; the old card wrapper is gone.
+    for (const name of Object.values(SECTION_HEADINGS)) {
       expect(
         await screen.findByRole("heading", { level: 2, name }),
       ).toBeInTheDocument();
     }
-
-    // Content from the mocked payloads reaches the cards.
-    expect(screen.getByText("2025-10-19")).toBeInTheDocument();
-    expect(screen.getByText("質練OK")).toBeInTheDocument();
-    expect(screen.getByText(/現在のACWR:/)).toBeInTheDocument();
-    expect(screen.getByText(/-1\.2kg/)).toBeInTheDocument();
-
-    // Performance-page cards do not leak onto the condition page.
+    expect(
+      screen.queryByRole("heading", { name: "当日コンディション" }),
+    ).toBeNull();
     expect(
       screen.queryByRole("heading", { level: 2, name: "走行量" }),
     ).toBeNull();
+
+    // The home vitals row and the /trends redirect deep-link into these.
+    for (const id of ["form-anomaly", "recovery", "training-load"]) {
+      expect(container.querySelector(`#${id}`)).not.toBeNull();
+    }
   });
 
   it("test_condition_card_error_is_isolated", async () => {
     stubConditionFetch({ failingPrefix: "/api/recovery-trend" });
 
-    render(<Condition />);
+    renderCondition();
 
-    // The broken card degrades to a retryable in-card alert...
+    // The broken section degrades to a retryable in-card alert...
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("回復トレンドの読み込みに失敗しました");
     expect(
       within(alert).getByRole("button", { name: "再試行" }),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("heading", {
-        level: 2,
-        name: CARD_HEADINGS.recovery,
-      }),
-    ).toBeNull();
+    // ...stated once: the vitals row keeps rendering what did land.
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(await screen.findByText("負荷 ACWR")).toBeInTheDocument();
 
-    // ...while the other five cards render normally.
-    for (const [key, name] of Object.entries(CARD_HEADINGS)) {
-      if (key === "recovery") continue;
+    // ...while every other section renders normally, heading included.
+    for (const name of Object.values(SECTION_HEADINGS)) {
       expect(
         await screen.findByRole("heading", { level: 2, name }),
       ).toBeInTheDocument();
@@ -310,23 +328,22 @@ describe("Condition", () => {
     expect(screen.queryByText(/^エラー: /)).toBeNull();
   });
 
-  it("test_condition_keeps_anchor_ids", async () => {
+  it("test_condition_anchors_exist_before_data_lands", async () => {
     stubConditionFetch();
 
-    const { container } = render(<Condition />);
+    const { container } = renderCondition();
 
-    // Anchors exist from first paint (they wrap the skeleton too), so the Home
-    // snapshot tiles' deep links resolve before the data lands.
+    // Anchors sit on the sections, which render before their queries settle,
+    // so a deep link lands even while the page is still skeletons.
     for (const id of ["training-load", "recovery", "form-anomaly"]) {
       const anchor = container.querySelector(`#${id}`);
       expect(anchor).not.toBeNull();
-      expect(anchor).toHaveClass("scroll-mt-20");
+      expect(anchor).toHaveClass("scroll-mt-[60px]");
     }
 
-    // ...and they survive the swap from skeleton to real card.
     await screen.findByRole("heading", {
       level: 2,
-      name: CARD_HEADINGS.formAnomaly,
+      name: SECTION_HEADINGS.formAnomaly,
     });
     for (const id of ["training-load", "recovery", "form-anomaly"]) {
       expect(container.querySelector(`#${id}`)).not.toBeNull();
@@ -336,65 +353,72 @@ describe("Condition", () => {
   it("renders a high-risk warning in the ACWR block", async () => {
     stubConditionFetch({ trainingLoad: TRAINING_LOAD_HIGH_RISK });
 
-    render(<Condition />);
+    renderCondition();
 
     expect(
       await screen.findByRole("heading", {
         level: 2,
-        name: CARD_HEADINGS.trainingLoad,
+        name: SECTION_HEADINGS.trainingLoad,
       }),
     ).toBeInTheDocument();
-    expect(screen.getByText("高リスク")).toBeInTheDocument();
+    expect(await screen.findByText("高リスク")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent(/故障リスクが高い/);
   });
 
   it("falls back when ACWR data is insufficient", async () => {
     stubConditionFetch({ trainingLoad: TRAINING_LOAD_INSUFFICIENT });
 
-    render(<Condition />);
+    renderCondition();
 
     expect(
       await screen.findByRole("heading", {
         level: 2,
-        name: CARD_HEADINGS.trainingLoad,
+        name: SECTION_HEADINGS.trainingLoad,
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/ACWRを算出するためのデータが不足しています/),
+      await screen.findByText(/ACWRを算出するためのデータが不足しています/),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/現在のACWR:/)).toBeNull();
+    expect(screen.queryByText(/急性 /)).toBeNull();
   });
 
   it("raises a wellness baseline alert when overall_flag is set", async () => {
     stubConditionFetch({ wellnessBaseline: WELLNESS_BASELINE_ADVERSE });
 
-    render(<Condition />);
+    renderCondition();
 
     expect(
       await screen.findByRole("heading", {
         level: 2,
-        name: CARD_HEADINGS.wellnessBaseline,
+        name: SECTION_HEADINGS.wellnessBaseline,
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/個人ベースラインから不利な方向に逸脱/),
+      await screen.findByText(/個人ベースラインから不利な方向に逸脱/),
     ).toBeInTheDocument();
+    // The HRV row is far outside the band, so its z value is flagged.
+    expect(await screen.findByText("z -6.25")).toHaveClass("text-status-warn");
   });
 
-  it("shows 問題なし in the form-anomaly card when no flags", async () => {
+  it("states a quiet week in one sentence when no flags", async () => {
     stubConditionFetch({ formAnomalyFlags: FORM_ANOMALY_FLAGS_EMPTY });
 
-    render(<Condition />);
+    renderCondition();
 
     expect(
       await screen.findByRole("heading", {
         level: 2,
-        name: CARD_HEADINGS.formAnomaly,
+        name: SECTION_HEADINGS.formAnomaly,
       }),
     ).toBeInTheDocument();
-    expect(screen.getByText("問題なし")).toBeInTheDocument();
     expect(
-      screen.getByText(/直近のランでフォームの異常は検出されていません/),
+      await screen.findByText(
+        /直近のランでフォームの異常は検出されていません/,
+      ),
     ).toBeInTheDocument();
+    // The verdict counts the same zero.
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent(
+      "注意点なし",
+    );
   });
 });
