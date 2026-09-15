@@ -121,7 +121,7 @@ export default function Plan() {
   const recommendation = review?.review_data?.recommendations?.[0] ?? null;
 
   return (
-    <div className="flex flex-col gap-8 md:-mx-10">
+    <div className="flex flex-col gap-8 lg:-mx-10">
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
