@@ -22,6 +22,7 @@ const FUTURE_DATE = "2099-02-01";
 
 const FIXTURE_READINESS = {
   current_vdot: 48.5,
+  vdot_source: "objective",
   predicted_times: {
     race_5k: 1290,
     race_10k: 2670,
@@ -180,6 +181,34 @@ describe("Goal", () => {
     expect(screen.getByText(/現在 VDOT 48\.5/)).toBeInTheDocument();
   });
 
+  it("test_goal_prediction_label_shows_source", async () => {
+    // The objective curve: the same fitness the 予測の推移 chart plots.
+    stubFetch(FIXTURE_GOAL, { ...FIXTURE_READINESS, current_vdot: 31.1 });
+
+    const { unmount } = renderGoal();
+
+    expect(await screen.findByText("予測 (客観VDOT 31.1)")).toBeInTheDocument();
+    expect(screen.getByText(/現在 VDOT 31\.1 \(客観VDOT換算\)/)).toBeInTheDocument();
+    unmount();
+
+    // The Garmin VO2max conversion is optimistic, so it is named rather than
+    // passed off as the objective number (#1146).
+    stubFetch(FIXTURE_GOAL, {
+      ...FIXTURE_READINESS,
+      current_vdot: 44.6,
+      vdot_source: "garmin_vo2max",
+    });
+
+    renderGoal();
+
+    expect(
+      await screen.findByText("予測 (Garmin VO2max 換算)"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/現在 VDOT 44\.6 \(Garmin VO2max 換算\)/),
+    ).toBeInTheDocument();
+  });
+
   it("test_goal_ab_columns", async () => {
     stubFetch(
       {
@@ -211,7 +240,7 @@ describe("Goal", () => {
 
     // The prediction belongs to the A race only.
     expect(inBand.getAllByText(/^予測/)).toHaveLength(1);
-    expect(inBand.getByText("予測 (VDOT 48.5)")).toBeInTheDocument();
+    expect(inBand.getByText("予測 (客観VDOT 48.5)")).toBeInTheDocument();
     expect(inBand.getByText("4:15:00")).toBeInTheDocument();
     expect(inBand.getByText("−15:00")).toBeInTheDocument();
 
@@ -222,6 +251,52 @@ describe("Goal", () => {
     expect(
       screen.getByText("A / B 以外のレースは登録されていません"),
     ).toBeInTheDocument();
+  });
+
+  it("test_goal_gap_color_follows_status", async () => {
+    // Inside the backend's ±60 s band the line reads 順調, so the gap stays
+    // ink even though the prediction trails the target (#1151).
+    stubFetch(
+      { profile: EMPTY_PROFILE, goals: [A_RACE], retrospectives: [] },
+      {
+        ...FIXTURE_READINESS,
+        progress: {
+          predicted_time_seconds: 16230, // 4:30:30 against a 4:30:00 target
+          gap_seconds: 30,
+          pace_gap_sec_per_km: 0.7,
+          weeks_remaining: 18,
+          status: "on_track",
+        },
+      },
+    );
+
+    const { unmount } = renderGoal();
+
+    const onTrack = await screen.findByText("+0:30");
+    expect(onTrack.className).not.toContain("text-status-warn");
+    expect(onTrack.className).toContain("text-ink");
+    unmount();
+
+    // 遅れ is the one state worth a colour.
+    stubFetch(
+      { profile: EMPTY_PROFILE, goals: [A_RACE], retrospectives: [] },
+      {
+        ...FIXTURE_READINESS,
+        progress: {
+          predicted_time_seconds: 16800, // 4:40:00
+          gap_seconds: 600,
+          pace_gap_sec_per_km: 14.2,
+          weeks_remaining: 18,
+          status: "behind",
+        },
+      },
+    );
+
+    renderGoal();
+
+    const behind = await screen.findByText("+10:00");
+    expect(behind.className).toContain("text-status-warn");
+    expect(behind.className).toContain("font-bold");
   });
 
   it("test_goal_focus_rows_and_disclosure", async () => {
@@ -444,6 +519,24 @@ describe("Goal", () => {
     );
     expect(screen.queryByText("予測の推移")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("test_goal_focus_updated_at_formatted", async () => {
+    stubFetch({
+      profile: {
+        current_focus: "サブ4達成に向けた持久力強化",
+        focus_notes: null,
+        // DuckDB hands the timestamp over with microseconds attached.
+        updated_at: "2026-09-15 00:38:46.745998",
+      },
+      goals: [],
+      retrospectives: [],
+    });
+
+    renderGoal();
+
+    expect(await screen.findByText("更新 2026-09-15 00:38")).toBeInTheDocument();
+    expect(screen.queryByText(/745998/)).toBeNull();
   });
 
   it("test_Goal_focus_notes_fallback_without_brackets", async () => {

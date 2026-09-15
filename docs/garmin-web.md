@@ -134,7 +134,7 @@ parameters are documented in each handler's docstring.
 | `/api/plan/blocks` | Return the mesocycle block ledger in display order. |
 | `/api/plan/month` | Return the monthly plan grid: weeks x days, prescriptions vs actuals. |
 | `/api/race-prediction-history` | Return the dated race-time prediction series for the active goal race. |
-| `/api/race-readiness` | Return current VDOT, race-time predictions, and goal progress. |
+| `/api/race-readiness` | Return current VDOT (+ its source), race-time predictions, goal progress. |
 | `/api/recovery-status` | Morning go/no-go recovery status for ``date`` (#500). |
 | `/api/recovery-trend` | RHR / HRV recovery trend over the trailing ``weeks`` weeks (#499). |
 | `/api/training-load` | Return the current ACWR snapshot plus the weekly load/ACWR trend. |

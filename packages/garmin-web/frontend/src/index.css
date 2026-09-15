@@ -83,6 +83,16 @@
  * Tailwind preflight strips list/paragraph styles, so restore a compact
  * reading style scoped to .markdown-body.
  */
+/*
+ * Analysis prose mixes CJK with unbreakable runs such as
+ * `GCT★4.0/VO★5.0/VR★5.0`. Without a break opportunity inside the run, a
+ * narrow column (the phase verdict at 390px) cannot shrink to its grid track
+ * and widens the whole page instead (#1145).
+ */
+.markdown-body {
+  overflow-wrap: anywhere;
+}
+
 .markdown-body p {
   margin: 0.25rem 0;
 }

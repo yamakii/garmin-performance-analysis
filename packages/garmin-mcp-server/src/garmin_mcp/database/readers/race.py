@@ -1,7 +1,8 @@
 """Race readiness DB reader.
 
 Exposes the rescued ``VDOTCalculator`` (#60) as a single aggregate read: it
-combines the athlete's current fitness (VDOT, via ``FitnessAssessor``), their
+combines the athlete's current fitness (VDOT, from the objective fitness curve
+with ``FitnessAssessor``'s Garmin-VO2max conversion as the fallback), their
 active race goal (``athlete_goals``), VDOT-derived race-time predictions, and a
 progress block measuring the gap to that goal.
 """
@@ -41,6 +42,11 @@ _ON_TRACK_THRESHOLD_S = 60
 # that round to the same VDOT share a cache entry).
 _HISTORY_VDOT_DECIMALS = 1
 
+# How old the objective curve's latest point may be before the readiness read
+# stops trusting it as "current fitness" and falls back to Garmin's VO2max
+# conversion. A 90-day-old best effort is no longer a read on today's form.
+_OBJECTIVE_VDOT_MAX_AGE_DAYS = 90
+
 
 @functools.lru_cache(maxsize=4096)
 def _predict_race_time_cached(vdot: float, distance_km: float) -> int:
@@ -62,11 +68,16 @@ class RaceReader(BaseDBReader):
     ) -> dict[str, Any]:
         """Aggregate current VDOT, race-time predictions, and goal progress.
 
-        Combines the athlete's current fitness (VDOT from ``FitnessAssessor``),
+        Combines the athlete's current fitness (VDOT, see ``_readiness_vdot``),
         the active race goal (``athlete_goals``; ``priority='A'`` / ``status=
         'active'`` preferred, otherwise the goal with the nearest future
         ``race_date``), VDOT-based race-time predictions, and a progress block
         comparing the predicted goal-distance time against the target.
+
+        The VDOT comes from the same curve the prediction history plots, so the
+        headline prediction and that chart's last point agree (#1146); the
+        Garmin VO2max conversion only stands in when the curve is missing or
+        stale, and ``vdot_source`` says which of the two was used.
 
         Args:
             user_id: Profile owner identifier (defaults to ``"default"``).
@@ -75,6 +86,8 @@ class RaceReader(BaseDBReader):
         Returns:
             Dict with keys:
             - ``current_vdot``: float | None
+            - ``vdot_source``: ``"objective"`` | ``"garmin_vo2max"`` | None
+              (None exactly when ``current_vdot`` is None)
             - ``predicted_times``: {race_5k, race_10k, half, full} in seconds
               (empty dict when ``current_vdot`` is None)
             - ``goal``: {race_name, race_date (str), distance_km,
@@ -88,7 +101,9 @@ class RaceReader(BaseDBReader):
               ``predicted_times`` (or ``{"insufficient_data": True}`` when
               neither source is available)
         """
-        current_vdot = self._current_vdot(lookback_weeks)
+        # Read once: the curve backs both the VDOT choice and the blend.
+        curve = self._objective_fitness_curve()
+        current_vdot, vdot_source = self._readiness_vdot(lookback_weeks, curve)
 
         predicted_times: dict[str, int] = {}
         if current_vdot is not None:
@@ -97,9 +112,7 @@ class RaceReader(BaseDBReader):
                 for key, distance_km in _PREDICTION_DISTANCES_KM.items()
             }
 
-        blended_predictions = predict_race_times(
-            current_vdot, self._objective_fitness_curve()
-        )
+        blended_predictions = predict_race_times(current_vdot, curve)
 
         goal = self._active_goal(user_id)
 
@@ -109,6 +122,7 @@ class RaceReader(BaseDBReader):
 
         return {
             "current_vdot": current_vdot,
+            "vdot_source": vdot_source,
             "predicted_times": predicted_times,
             "blended_predictions": blended_predictions,
             "goal": goal,
@@ -255,6 +269,71 @@ class RaceReader(BaseDBReader):
         except Exception as e:  # pragma: no cover - defensive
             logger.warning(f"Objective fitness curve unavailable: {e}")
             return None
+
+    def _readiness_vdot(
+        self, lookback_weeks: int, curve: dict[str, Any] | None
+    ) -> tuple[float | None, str | None]:
+        """Pick the VDOT the readiness read speaks with, and name its source.
+
+        The prediction history plots the objective fitness curve, while the
+        readiness read used to speak with ``FitnessAssessor``'s Garmin-VO2max
+        conversion — which runs ~10 VDOT optimistic — so the same page showed a
+        headline prediction an hour faster than its own chart (#1146). Both now
+        rest on the objective curve.
+
+        Selection rule:
+        1. the objective curve's latest point, when it is no older than
+           ``_OBJECTIVE_VDOT_MAX_AGE_DAYS`` (a stale best effort is not a read
+           on current fitness);
+        2. otherwise ``FitnessAssessor`` (Garmin VO2max conversion), which is
+           optimistic but always available while VO2max is recorded;
+        3. ``(None, None)`` when neither exists.
+
+        Args:
+            lookback_weeks: Lookback window for the ``FitnessAssessor``
+                fallback.
+            curve: An already-read objective fitness curve (as returned by
+                ``_objective_fitness_curve``), passed in so the readiness read
+                derives the curve once and shares it with the blend.
+
+        Returns:
+            ``(vdot, source)`` where ``source`` is ``"objective"``,
+            ``"garmin_vo2max"`` or None. ``vdot`` is rounded like the history
+            series, so a shared curve point yields an identical prediction.
+        """
+        objective_vdot = self._latest_objective_vdot(curve)
+        if objective_vdot is not None:
+            return objective_vdot, "objective"
+
+        garmin_vdot = self._current_vdot(lookback_weeks)
+        if garmin_vdot is not None:
+            return garmin_vdot, "garmin_vo2max"
+
+        return None, None
+
+    @staticmethod
+    def _latest_objective_vdot(curve: dict[str, Any] | None) -> float | None:
+        """Latest objective-curve VDOT, or None when absent or stale.
+
+        Dates are ISO (``YYYY-MM-DD``), so both "latest" and the staleness test
+        are string compares.
+        """
+        points = (curve or {}).get("objective_curve") or []
+        dated = [
+            (str(point["date"]), float(point["vdot"]))
+            for point in points
+            if point.get("date") is not None and point.get("vdot") is not None
+        ]
+        if not dated:
+            return None
+
+        day, vdot = max(dated)
+        cutoff = (date.today() - timedelta(days=_OBJECTIVE_VDOT_MAX_AGE_DAYS)).strftime(
+            "%Y-%m-%d"
+        )
+        if day < cutoff:
+            return None
+        return round(vdot, _HISTORY_VDOT_DECIMALS)
 
     def _current_vdot(self, lookback_weeks: int) -> float | None:
         """Return current VDOT from ``FitnessAssessor``, or None when unavailable.

@@ -112,6 +112,56 @@ def _insert_goal(
         conn.close()
 
 
+def _insert_run_with_splits(
+    db_path: Path,
+    *,
+    activity_id: int,
+    activity_date: str,
+    split_seconds: float,
+    n_splits: int = 2,
+) -> None:
+    """Insert one activity + ``n_splits`` 1 km laps (``splits.distance`` is km).
+
+    Splits are the only input to the objective fitness curve, so this is what
+    makes ``vdot_source == "objective"`` reachable. Two 1 km laps cover the
+    2 km best-effort bucket and nothing longer, which pins the derived VDOT to
+    ``vdot_from_race(2.0, 2 * split_seconds)``.
+    """
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(
+            """
+            INSERT INTO activities (
+                activity_id, activity_date, total_distance_km,
+                total_time_seconds, avg_pace_seconds_per_km, avg_heart_rate
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [
+                activity_id,
+                activity_date,
+                float(n_splits),
+                int(split_seconds * n_splits),
+                split_seconds,
+                150,
+            ],
+        )
+        for index in range(n_splits):
+            conn.execute(
+                """
+                INSERT INTO splits (
+                    activity_id, split_index, distance, duration_seconds
+                ) VALUES (?, ?, ?, ?)
+                """,
+                [activity_id, index, 1.0, split_seconds],
+            )
+    finally:
+        conn.close()
+
+
+def _days_ago(days: int) -> str:
+    return (date.today() - timedelta(days=days)).strftime("%Y-%m-%d")
+
+
 def _recent_date() -> str:
     """A date within the default 8-week lookback window."""
     return (date.today() - timedelta(days=7)).strftime("%Y-%m-%d")
@@ -226,3 +276,114 @@ def test_readiness_status_behind(reader_db_path: Path) -> None:
     assert progress is not None
     assert progress["gap_seconds"] > 0
     assert progress["status"] == "behind"
+
+
+# ---------------------------------------------------------------------------
+# VDOT source selection (#1146): the headline must rest on the same fitness
+# the prediction-history chart plots.
+# ---------------------------------------------------------------------------
+
+# Two 1 km laps of 338 s cover the 2 km bucket in 676 s -> performance VDOT
+# 31.10 (rounded to one decimal, as the readiness and history reads both do).
+_OBJECTIVE_SPLIT_SECONDS = 338.0
+_OBJECTIVE_VDOT = 31.1
+
+
+@pytest.mark.integration
+def test_race_readiness_prefers_objective_vdot(reader_db_path: Path) -> None:
+    """A fresh objective curve wins over Garmin's optimistic VO2max VDOT."""
+    _insert_run_with_splits(
+        reader_db_path,
+        activity_id=555,
+        activity_date=_days_ago(30),
+        split_seconds=_OBJECTIVE_SPLIT_SECONDS,
+    )
+    _insert_activity_with_vo2max(
+        reader_db_path, activity_id=556, activity_date=_recent_date(), vo2max=52.0
+    )
+    _insert_goal(
+        reader_db_path,
+        race_name="さいたまマラソン",
+        race_date=_future_date(),
+        distance_km=42.195,
+        target_time_seconds=16200,
+    )
+
+    result = RaceReader(db_path=str(reader_db_path)).get_race_readiness()
+
+    assert result["vdot_source"] == "objective"
+    assert result["current_vdot"] == _OBJECTIVE_VDOT
+    # The Garmin conversion would have been ~10 VDOT more optimistic.
+    assert result["current_vdot"] < VDOTCalculator.vdot_from_vo2max(52.0)
+
+    progress = result["progress"]
+    assert progress is not None
+    assert progress["predicted_time_seconds"] == VDOTCalculator.predict_race_time(
+        _OBJECTIVE_VDOT, 42.195
+    )
+
+
+@pytest.mark.integration
+def test_race_readiness_falls_back_to_garmin_vdot(reader_db_path: Path) -> None:
+    """Without splits there is no objective curve, so Garmin's VO2max stands in."""
+    _insert_activity_with_vo2max(
+        reader_db_path, activity_id=557, activity_date=_recent_date(), vo2max=52.0
+    )
+
+    result = RaceReader(db_path=str(reader_db_path)).get_race_readiness()
+
+    assert result["vdot_source"] == "garmin_vo2max"
+    assert result["current_vdot"] == round(VDOTCalculator.vdot_from_vo2max(52.0), 1)
+
+
+@pytest.mark.integration
+def test_race_readiness_falls_back_when_objective_curve_stale(
+    reader_db_path: Path,
+) -> None:
+    """A 120-day-old best effort is not current fitness: Garmin takes over."""
+    _insert_run_with_splits(
+        reader_db_path,
+        activity_id=558,
+        activity_date=_days_ago(120),
+        split_seconds=_OBJECTIVE_SPLIT_SECONDS,
+    )
+    _insert_activity_with_vo2max(
+        reader_db_path, activity_id=559, activity_date=_recent_date(), vo2max=52.0
+    )
+
+    result = RaceReader(db_path=str(reader_db_path)).get_race_readiness()
+
+    assert result["vdot_source"] == "garmin_vo2max"
+    assert result["current_vdot"] == round(VDOTCalculator.vdot_from_vo2max(52.0), 1)
+
+
+@pytest.mark.integration
+def test_race_readiness_matches_prediction_history_tail(reader_db_path: Path) -> None:
+    """The headline prediction equals the chart's last point (the #1146 bug)."""
+    _insert_run_with_splits(
+        reader_db_path,
+        activity_id=560,
+        activity_date=_days_ago(30),
+        split_seconds=_OBJECTIVE_SPLIT_SECONDS,
+    )
+    _insert_activity_with_vo2max(
+        reader_db_path, activity_id=561, activity_date=_recent_date(), vo2max=52.0
+    )
+    _insert_goal(
+        reader_db_path,
+        race_name="さいたまマラソン",
+        race_date=_future_date(),
+        distance_km=42.195,
+        target_time_seconds=16200,
+    )
+
+    reader = RaceReader(db_path=str(reader_db_path))
+    readiness = reader.get_race_readiness()
+    history = reader.get_race_prediction_history()
+
+    assert history["source"] == readiness["vdot_source"] == "objective"
+    assert history["series"][-1]["vdot"] == readiness["current_vdot"]
+    assert (
+        history["series"][-1]["predicted_time_seconds"]
+        == readiness["progress"]["predicted_time_seconds"]
+    )

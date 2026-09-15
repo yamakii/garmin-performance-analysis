@@ -236,6 +236,20 @@ export const RACE_STATUS_LABELS: Record<
   behind: "遅れ",
 };
 
+/**
+ * Whether the goal race is predicted to finish outside the on-track band —
+ * the one state the page marks in warning colour.
+ *
+ * The band is the backend's (±60 s around the target, `readers/race.py`), so a
+ * gap that is positive but small stays neutral: the plan is fine and the page
+ * says so in words (#1151).
+ */
+export function isBehindTarget(
+  progress: RaceReadinessProgress | null | undefined,
+): boolean {
+  return progress?.status === "behind";
+}
+
 /** "あと 76 日" / "日程未定" / "開催済み" — the countdown half of the line. */
 function countdownText(days: number | null): string {
   if (days == null) {
@@ -249,10 +263,10 @@ function countdownText(days: number | null): string {
  * against the current VDOT prediction, then how far out the race is and
  * whether the plan is on schedule.
  *
- * The tone keys on the sign of the gap rather than on `status`: a positive gap
- * means the prediction is *slower* than the target, which is the one case the
- * reader has to act on. `status` only names the direction in words, so an
- * "順調" race whose prediction still trails the target is marked all the same.
+ * The tone keys on `status`, the same field that supplies the word, so the
+ * colour and the sentence can never disagree: only "遅れ" is marked. A
+ * prediction a handful of seconds slower than the target is still on schedule
+ * to the backend, and warning there would contradict the line itself (#1151).
  */
 export function goalVerdict(
   readiness: RaceReadiness | null,
@@ -293,7 +307,7 @@ export function goalVerdict(
 
   return {
     verdict,
-    tone: progress != null && progress.gap_seconds > 0 ? "warn" : "neutral",
+    tone: isBehindTarget(progress) ? "warn" : "neutral",
     rest,
   };
 }

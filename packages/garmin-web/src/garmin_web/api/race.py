@@ -24,9 +24,12 @@ def get_race_readiness_endpoint(
     user_id: str = "default",
     lookback_weeks: int = 8,
 ) -> dict[str, Any]:
-    """Return current VDOT, race-time predictions, and goal progress.
+    """Return current VDOT (+ its source), race-time predictions, goal progress.
 
-    Read-only: delegates entirely to the reader (no Web-side VDOT logic).
+    Read-only: delegates entirely to the reader (no Web-side VDOT logic). The
+    reader also names the fitness the VDOT came from in ``vdot_source``
+    (``objective`` / ``garmin_vo2max``), so the page can say which line its
+    headline prediction shares with the prediction-history chart (#1146).
     """
     db_path = getattr(request.app.state, "db_path", None)
     reader = GarminDBReader(db_path=str(db_path) if db_path is not None else None)

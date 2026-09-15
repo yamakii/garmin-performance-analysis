@@ -85,6 +85,12 @@ export interface RaceReadinessProgress {
 
 export interface RaceReadiness {
   current_vdot: number | null;
+  /**
+   * The fitness `current_vdot` came from: `objective` (performance VDOT from
+   * splits, the same curve the prediction history plots) or the optimistic
+   * `garmin_vo2max` fallback. Null exactly when `current_vdot` is null.
+   */
+  vdot_source: "objective" | "garmin_vo2max" | null;
   predicted_times: RaceReadinessPredictedTimes;
   goal: RaceReadinessGoal | null;
   progress: RaceReadinessProgress | null;
