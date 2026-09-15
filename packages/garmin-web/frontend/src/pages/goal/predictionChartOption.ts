@@ -3,6 +3,8 @@ import {
   AXIS_STYLE,
   BASE_CHART_OPTION,
   CHART_FONT_SIZE,
+  CHART_GRID,
+  CHART_SPLIT_NUMBER,
   COMPARE_COLOR,
   INK_COLOR,
   X_AXIS_STYLE,
@@ -112,6 +114,7 @@ export function buildPredictionChartOption(
     // The prediction is the primary series; everything it is measured against
     // (target line, race marker, required slope) stays hairline.
     color: [INK_COLOR, COMPARE_COLOR],
+    grid: { ...CHART_GRID },
     tooltip: {
       trigger: "axis" as const,
       valueFormatter: (value: unknown) =>
@@ -125,6 +128,9 @@ export function buildPredictionChartOption(
     yAxis: {
       type: "value" as const,
       scale: true,
+      // hh:mm:ss labels are wide and the panel is short: four of them is all
+      // that fits without stacking (#1142).
+      splitNumber: CHART_SPLIT_NUMBER,
       ...AXIS_STYLE,
       axisLabel: {
         ...AXIS_STYLE.axisLabel,

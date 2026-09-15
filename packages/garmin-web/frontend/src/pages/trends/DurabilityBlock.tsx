@@ -3,6 +3,8 @@ import EChart from "../../components/EChart";
 import {
   AXIS_STYLE,
   BASE_CHART_OPTION,
+  CHART_GRID,
+  CHART_SPLIT_NUMBER,
   INK_COLOR,
   METRIC_COLORS,
   THRESHOLD_LINE,
@@ -68,6 +70,7 @@ export default function DurabilityBlock({ data }: DurabilityBlockProps) {
     );
     return {
       ...BASE_CHART_OPTION,
+      grid: { ...CHART_GRID },
       tooltip: {
         trigger: "axis" as const,
         formatter: (params: unknown) => {
@@ -93,6 +96,7 @@ export default function DurabilityBlock({ data }: DurabilityBlockProps) {
       yAxis: {
         type: "value" as const,
         name: "%",
+        splitNumber: CHART_SPLIT_NUMBER,
         ...AXIS_STYLE,
       },
       series: [

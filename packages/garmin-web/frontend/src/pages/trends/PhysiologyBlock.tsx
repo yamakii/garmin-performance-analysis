@@ -3,6 +3,8 @@ import EChart from "../../components/EChart";
 import {
   AXIS_STYLE,
   BASE_CHART_OPTION,
+  CHART_GRID_DUAL,
+  CHART_SPLIT_NUMBER,
   METRIC_COLORS,
   X_AXIS_STYLE,
 } from "../../components/chartTheme";
@@ -37,6 +39,7 @@ export default function PhysiologyBlock({ data }: PhysiologyBlockProps) {
   const option = useMemo(
     () => ({
       ...BASE_CHART_OPTION,
+      grid: { ...CHART_GRID_DUAL },
       tooltip: {
         trigger: "axis" as const,
         formatter: axisTooltipFormatter({ VO2max: 1, LT心拍: 0 }),
@@ -55,6 +58,7 @@ export default function PhysiologyBlock({ data }: PhysiologyBlockProps) {
           name: "VO2max",
           nameTextStyle: { color: METRIC_COLORS.vo2max },
           scale: true,
+          splitNumber: CHART_SPLIT_NUMBER,
           ...AXIS_STYLE,
         },
         {
@@ -62,6 +66,7 @@ export default function PhysiologyBlock({ data }: PhysiologyBlockProps) {
           name: "LT心拍 (bpm)",
           nameTextStyle: { color: METRIC_COLORS.heart_rate },
           scale: true,
+          splitNumber: CHART_SPLIT_NUMBER,
           ...AXIS_STYLE,
           splitLine: { show: false },
         },

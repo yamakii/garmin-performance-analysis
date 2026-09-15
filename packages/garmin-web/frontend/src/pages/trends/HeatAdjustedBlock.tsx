@@ -3,6 +3,8 @@ import EChart from "../../components/EChart";
 import {
   AXIS_STYLE,
   BASE_CHART_OPTION,
+  CHART_GRID_DUAL,
+  CHART_SPLIT_NUMBER,
   COMPARE_COLOR,
   INK_COLOR,
   METRIC_COLORS,
@@ -64,6 +66,7 @@ export default function HeatAdjustedBlock({ data }: HeatAdjustedBlockProps) {
   const option = useMemo(() => {
     return {
       ...BASE_CHART_OPTION,
+      grid: { ...CHART_GRID_DUAL },
       tooltip: {
         trigger: "axis" as const,
         formatter: axisTooltipFormatter({
@@ -80,11 +83,18 @@ export default function HeatAdjustedBlock({ data }: HeatAdjustedBlockProps) {
       // The bpm axis carries both HR series, so it stays neutral; the second
       // axis takes the heat_cost color it exclusively scales (Issue #913).
       yAxis: [
-        { type: "value" as const, name: "bpm", scale: true, ...AXIS_STYLE },
+        {
+          type: "value" as const,
+          name: "bpm",
+          scale: true,
+          splitNumber: CHART_SPLIT_NUMBER,
+          ...AXIS_STYLE,
+        },
         {
           type: "value" as const,
           name: HEAT_COST_SERIES,
           nameTextStyle: { color: HEAT_COST_COLOR },
+          splitNumber: CHART_SPLIT_NUMBER,
           ...AXIS_STYLE,
           splitLine: { show: false },
         },

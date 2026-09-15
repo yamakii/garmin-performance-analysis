@@ -3,6 +3,8 @@ import EChart from "../../components/EChart";
 import {
   AXIS_STYLE,
   BASE_CHART_OPTION,
+  CHART_GRID,
+  CHART_SPLIT_NUMBER,
   INK_COLOR,
   X_AXIS_STYLE,
 } from "../../components/chartTheme";
@@ -51,6 +53,7 @@ export default function VolumeBlock({ data, granularity }: VolumeBlockProps) {
   const option = useMemo(
     () => ({
       ...BASE_CHART_OPTION,
+      grid: { ...CHART_GRID },
       tooltip: {
         trigger: "axis" as const,
         formatter: axisTooltipFormatter({ "距離 (km)": 1 }),
@@ -60,7 +63,12 @@ export default function VolumeBlock({ data, granularity }: VolumeBlockProps) {
         data: data.map((p) => p.bucket),
         ...X_AXIS_STYLE,
       },
-      yAxis: { type: "value" as const, name: "km", ...AXIS_STYLE },
+      yAxis: {
+        type: "value" as const,
+        name: "km",
+        splitNumber: CHART_SPLIT_NUMBER,
+        ...AXIS_STYLE,
+      },
       series: [
         {
           name: "距離 (km)",
