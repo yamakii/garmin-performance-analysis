@@ -333,7 +333,7 @@ export default function Dashboard() {
                   >
                     今日のメニュー詳細
                   </Link>
-                  <Link to="/condition" className="font-mono text-sm">
+                  <Link to="/condition" className="font-mono text-[13px]">
                     判定の根拠 → コンディション
                   </Link>
                 </>
