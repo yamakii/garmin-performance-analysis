@@ -60,7 +60,9 @@ export default function FormBlock({ data }: FormBlockProps) {
         />
       </div>
       <div className="flex flex-col gap-1">
-        <p className="font-mono text-xs text-ink-muted">フォーム偏差 (Δ)</p>
+        <p className="font-mono text-xs text-ink-muted">
+          フォーム偏差 (Δ) · 直近365日 · 7走移動平均
+        </p>
         <EChart
           option={deltaOption}
           ariaLabel="フォーム偏差の折れ線グラフ"

@@ -315,7 +315,7 @@ export default function Performance() {
     {
       id: "efficiency",
       label: "効率推移",
-      note: "HRゾーン分布",
+      note: "HRゾーン分布 · 月次 · 直近12ヶ月",
       content: (
         <QueryBoundary label="効率推移" query={efficiencyQuery}>
           {(data) => <EfficiencyBlock data={data} />}

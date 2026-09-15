@@ -8,12 +8,16 @@ import {
   X_AXIS_STYLE,
   ZONE_COLORS,
 } from "../../components/chartTheme";
+import { toIsoDate } from "../../utils/format";
 import { axisTooltipFormatter } from "../../utils/formatNumber";
+import { aggregateZoneSharesByMonth } from "./efficiencyZones";
 import type { EfficiencyTrendPoint } from "../../api/trends";
 import { BLOCK_SUMMARY_CLASS, BlockEmpty, CHART_HEIGHT } from "./blockShell";
 
 interface EfficiencyBlockProps {
   data: EfficiencyTrendPoint[];
+  /** Injectable clock for tests; the chart window ends in today's month. */
+  today?: string;
 }
 
 const ZONE_KEYS = [
@@ -82,7 +86,17 @@ function ZoneBars({ point }: { point: EfficiencyTrendPoint }) {
   );
 }
 
-export default function EfficiencyBlock({ data }: EfficiencyBlockProps) {
+export default function EfficiencyBlock({
+  data,
+  today = toIsoDate(new Date()),
+}: EfficiencyBlockProps) {
+  // One bar per run drew ~1000 columns of barcode over six years; the shift in
+  // zone balance only becomes readable as a monthly mean over the last year
+  // (#1149). The bars beside the chart still carry the latest single run.
+  const monthly = useMemo(
+    () => aggregateZoneSharesByMonth(data, today),
+    [data, today],
+  );
   const option = useMemo(
     () => ({
       ...BASE_CHART_OPTION,
@@ -93,7 +107,7 @@ export default function EfficiencyBlock({ data }: EfficiencyBlockProps) {
       },
       xAxis: {
         type: "category" as const,
-        data: data.map((p) => p.date),
+        data: monthly.map((m) => m.month),
         ...X_AXIS_STYLE,
       },
       yAxis: {
@@ -103,17 +117,17 @@ export default function EfficiencyBlock({ data }: EfficiencyBlockProps) {
         splitNumber: CHART_SPLIT_NUMBER,
         ...AXIS_STYLE,
       },
-      series: ZONE_KEYS.map((key, i) => ({
+      series: ZONE_KEYS.map((_key, i) => ({
         name: `Zone ${i + 1}`,
         type: "bar" as const,
         stack: "zones",
         // Square bars, and the zone ramp instead of a legend: the bars beside
         // the chart name the zones (§Charts).
         itemStyle: { color: ZONE_COLORS[i], borderRadius: 0 },
-        data: data.map((p) => p[key]),
+        data: monthly.map((m) => m.shares[i]),
       })),
     }),
-    [data],
+    [monthly],
   );
 
   const latest = data[data.length - 1] ?? null;
@@ -126,7 +140,7 @@ export default function EfficiencyBlock({ data }: EfficiencyBlockProps) {
         <p className={BLOCK_SUMMARY_CLASS}>{efficiencySummaryLine(data)}</p>
         <EChart
           option={option}
-          ariaLabel="HRゾーン分布の積み上げ棒グラフ"
+          ariaLabel="月次HRゾーン分布の積み上げ棒グラフ"
           height={CHART_HEIGHT}
         />
       </div>

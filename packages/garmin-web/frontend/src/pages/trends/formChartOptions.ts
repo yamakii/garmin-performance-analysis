@@ -10,6 +10,7 @@ import {
   THRESHOLD_LINE,
   X_AXIS_STYLE,
 } from "../../components/chartTheme";
+import { toIsoDate } from "../../utils/format";
 import { axisTooltipFormatter } from "../../utils/formatNumber";
 import { robustAxisBounds } from "../../utils/robustBounds";
 import type { EChartsOption } from "../../lib/echarts";
@@ -18,6 +19,12 @@ import type { FormTrendPoint } from "../../api/trends";
 const SCORE_SERIES = "総合スコア";
 const DELTA_SERIES = ["GCT Δ%", "VO Δcm", "VR Δ%"] as const;
 
+/** Delta panel window: the trailing year, matching the other /performance charts. */
+export const DELTA_WINDOW_DAYS = 365;
+
+/** Delta panel smoothing: a run-to-run delta is noise, a week of them is a trend. */
+export const DELTA_SMOOTHING_RUNS = 7;
+
 /** Shared category X axis (dates) for both form panels. */
 function dateAxis(data: FormTrendPoint[]) {
   return {
@@ -25,6 +32,41 @@ function dateAxis(data: FormTrendPoint[]) {
     data: data.map((p) => p.date),
     ...X_AXIS_STYLE,
   };
+}
+
+/**
+ * Trailing mean over `window` values, aligned to the last value of each window.
+ *
+ * The first `window - 1` slots have no full window and read null, as does any
+ * window containing a null: averaging around a missing run would invent a
+ * value the athlete never ran.
+ */
+export function rollingMean(
+  values: (number | null)[],
+  window: number,
+): (number | null)[] {
+  return values.map((_, index) => {
+    if (index + 1 < window) {
+      return null;
+    }
+    const slice = values.slice(index + 1 - window, index + 1);
+    if (slice.some((value) => value == null)) {
+      return null;
+    }
+    return slice.reduce((sum, value) => sum! + value!, 0)! / window;
+  });
+}
+
+/** The points dated within `days` before `today`, inclusive. */
+function withinWindow(
+  data: FormTrendPoint[],
+  today: string,
+  days: number,
+): FormTrendPoint[] {
+  const start = new Date(`${today}T00:00:00`);
+  start.setDate(start.getDate() - days);
+  const cutoff = toIsoDate(start);
+  return data.filter((p) => p.date >= cutoff);
 }
 
 /**
@@ -108,16 +150,34 @@ export function buildScoreChartOption(data: FormTrendPoint[]): EChartsOption {
 }
 
 /**
- * Delta panel: GCT Δ% / VO Δcm / VR Δ% on a single value axis. The raw range is
- * dominated by rare VR Δ% outliers (e.g. +170%), so derive robust bounds that
- * push those off-screen while leaving the series data untouched (tooltips show
- * reals). Falls back to auto-scale when there is no finite data.
+ * Delta panel: GCT Δ% / VO Δcm / VR Δ% on a single value axis, over the
+ * trailing year, each series smoothed over {@link DELTA_SMOOTHING_RUNS} runs.
+ *
+ * Plotting every run since 2020 put three jagged six-year lines on one 180px
+ * panel — spaghetti in which no series could be followed (#1149). The window
+ * matches the neighbouring charts ("直近365日"), and the moving average is what
+ * makes the three lines separable; raw points are dropped rather than drawn
+ * underneath, since they were the noise.
+ *
+ * The raw range is dominated by rare VR Δ% outliers (e.g. +170%), so bounds are
+ * still derived robustly from the raw values in the window — they contain the
+ * smoothed lines while pushing the outliers off-screen. Falls back to
+ * auto-scale when there is no finite data.
  */
-export function buildDeltaChartOption(data: FormTrendPoint[]): EChartsOption {
+export function buildDeltaChartOption(
+  data: FormTrendPoint[],
+  today: string = toIsoDate(new Date()),
+): EChartsOption {
+  const recent = withinWindow(data, today, DELTA_WINDOW_DAYS);
+  // Fewer runs than the window would leave the panel blank; smooth over what
+  // there is instead.
+  const window = Math.min(DELTA_SMOOTHING_RUNS, Math.max(1, recent.length));
+  const smooth = (values: (number | null)[]) => rollingMean(values, window);
+
   const deltaBounds = robustAxisBounds([
-    ...data.map((p) => p.gct_delta),
-    ...data.map((p) => p.vo_delta),
-    ...data.map((p) => p.vr_delta),
+    ...recent.map((p) => p.gct_delta),
+    ...recent.map((p) => p.vo_delta),
+    ...recent.map((p) => p.vr_delta),
   ]);
 
   return {
@@ -137,7 +197,7 @@ export function buildDeltaChartOption(data: FormTrendPoint[]): EChartsOption {
     // ECharts 6 puts a legend at the bottom by default, which on a 180px chart
     // eats the margin the date labels need and collides with them (#1142).
     legend: { data: [...DELTA_SERIES], top: 0 },
-    xAxis: dateAxis(data),
+    xAxis: dateAxis(recent),
     yAxis: {
       type: "value" as const,
       splitNumber: CHART_SPLIT_NUMBER,
@@ -150,10 +210,10 @@ export function buildDeltaChartOption(data: FormTrendPoint[]): EChartsOption {
       {
         name: DELTA_SERIES[0],
         type: "line" as const,
-        symbol: "circle" as const,
-        symbolSize: 5,
+        // A moving average is a curve, not a set of measurements: no markers.
+        showSymbol: false,
         lineStyle: { width: 2 },
-        data: data.map((p) => p.gct_delta),
+        data: smooth(recent.map((p) => p.gct_delta)),
         // Zero-delta baseline: deltas above/below the form baseline read against it.
         markLine: {
           silent: true,
@@ -171,18 +231,16 @@ export function buildDeltaChartOption(data: FormTrendPoint[]): EChartsOption {
       {
         name: DELTA_SERIES[1],
         type: "line" as const,
-        symbol: "circle" as const,
-        symbolSize: 5,
+        showSymbol: false,
         lineStyle: { width: 2 },
-        data: data.map((p) => p.vo_delta),
+        data: smooth(recent.map((p) => p.vo_delta)),
       },
       {
         name: DELTA_SERIES[2],
         type: "line" as const,
-        symbol: "circle" as const,
-        symbolSize: 5,
+        showSymbol: false,
         lineStyle: { width: 2 },
-        data: data.map((p) => p.vr_delta),
+        data: smooth(recent.map((p) => p.vr_delta)),
       },
     ],
   };
