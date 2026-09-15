@@ -224,6 +224,10 @@ export default function ActivityList() {
                     name drops to its own second line spanning both columns
                     instead of being squeezed to 0px (#1145). From `sm` up it
                     is the middle column again.
+
+                    `hover:no-underline` is still required: the row is an `<a>`
+                    inside an `<li>` inside `<main>`, which the scoped body-link
+                    rule (`main li a:hover`) still matches (#1195).
                   */}
                   <Link
                     to={`/activities/${activity.activity_id}`}

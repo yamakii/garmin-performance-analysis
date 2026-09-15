@@ -104,6 +104,9 @@ export default function SectionNav({
                   }
                 }}
                 aria-current={isCurrent ? "location" : undefined}
+                // `hover:no-underline` is still required here: these tabs are
+                // `<li>` children inside `<main>`, which the scoped body-link
+                // rule (`main li a:hover`) still matches (#1195).
                 className={`relative block pt-2.5 pb-3 whitespace-nowrap hover:text-ink hover:no-underline ${
                   isCurrent
                     ? "font-bold text-ink after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-ink"

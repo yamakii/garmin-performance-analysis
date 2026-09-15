@@ -68,7 +68,19 @@
   a {
     @apply text-accent;
   }
-  a:hover {
+  /*
+   * Only body links underline on hover (#1195).
+   *
+   * A global `a:hover { underline }` meant every navigational anchor — the
+   * nav, the section nav, a vitals cell, a progress row, a button-shaped
+   * link — had to cancel it with `hover:no-underline`, and a new one was
+   * wrong by default. Underline is for links sitting inside running text,
+   * where it distinguishes the link from the prose around it; a whole cell
+   * or tab that is already obviously clickable does not need it.
+   */
+  main p a:hover,
+  main li a:hover,
+  main dd a:hover {
     @apply underline;
   }
 }
