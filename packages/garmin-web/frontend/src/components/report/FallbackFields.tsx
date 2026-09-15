@@ -35,7 +35,7 @@ export function renderValue(value: unknown): ReactNode {
     return "-";
   }
   if (typeof value === "string") {
-    return <MarkdownText text={value} />;
+    return <MarkdownText>{value}</MarkdownText>;
   }
   if (typeof value === "number") {
     // Strip floating-point noise / trailing zeros from un-consumed numeric

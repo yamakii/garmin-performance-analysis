@@ -291,6 +291,25 @@ describe("Dashboard", () => {
     ).toBeInTheDocument();
   });
 
+  it("test_dashboard_coach_note_markdown", async () => {
+    mockAll();
+    vi.mocked(fetchWeeklyReviews).mockResolvedValue([
+      {
+        ...REVIEW,
+        review_data: {
+          recommendations: ["装備は **長丈のインナー** で走る"],
+        },
+      },
+    ] as never);
+    renderDashboard();
+
+    // The weekly review's sentence is markdown (#1150), so the emphasis is
+    // rendered rather than printed as asterisks.
+    const strong = await screen.findByText("長丈のインナー");
+    expect(strong.tagName).toBe("STRONG");
+    expect(document.body.textContent).not.toContain("**");
+  });
+
   it("test_dashboard_no_duplicate_vitals", async () => {
     mockAll();
     renderDashboard();

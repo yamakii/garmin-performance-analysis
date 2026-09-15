@@ -59,7 +59,7 @@ function Point({ text, kind }: { text: string; kind: "strength" | "issue" }) {
       >
         {kind === "strength" ? "✓" : "!"}
       </span>
-      <MarkdownText text={text} />
+      <MarkdownText>{text}</MarkdownText>
     </li>
   );
 }
@@ -163,7 +163,7 @@ export default function SummaryReport({
           <div className="flex flex-col gap-4">
             {body !== "" && (
               <div className="text-[15px] leading-[1.7] text-ink-soft">
-                <MarkdownText text={body} />
+                <MarkdownText>{body}</MarkdownText>
               </div>
             )}
             {(strengths.length > 0 || improvements.length > 0) && (
@@ -206,7 +206,7 @@ export default function SummaryReport({
               )}
             {typeof data.recommendations === "string" && (
               <Disclosure title="詳しい改善ポイント">
-                <MarkdownText text={data.recommendations} />
+                <MarkdownText>{data.recommendations}</MarkdownText>
               </Disclosure>
             )}
             <FallbackFields data={data} exclude={KNOWN_KEYS} />
