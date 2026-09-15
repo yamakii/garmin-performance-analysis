@@ -1,4 +1,5 @@
-export interface ActivitySummary {
+/** The activities-table columns every activity response carries. */
+export interface ActivityCore {
   activity_id: number;
   activity_date: string;
   activity_name: string | null;
@@ -6,6 +7,20 @@ export interface ActivitySummary {
   total_time_seconds: number | null;
   avg_pace_seconds_per_km: number | null;
   avg_heart_rate: number | null;
+}
+
+/**
+ * A list row: the core columns plus the verdict of the latest summary section
+ * analysis, joined in by the list query so the home page can show 「評価 ★ —
+ * 要約」 without a second request (#1131). Both are null for a run that was
+ * never analysed. The detail response uses `ActivityCore` — it reads the
+ * activities table only and does not derive these.
+ */
+export interface ActivitySummary extends ActivityCore {
+  /** e.g. "★★★★☆ 4.2/5.0". */
+  star_rating: string | null;
+  /** First sentence of the summary paragraph. */
+  summary_lead: string | null;
 }
 
 // --- Goal page (Issue #282) ---
@@ -372,7 +387,7 @@ export interface LactateThresholdData {
 }
 
 export interface ActivityDetailResponse {
-  activity: ActivitySummary & Record<string, unknown>;
+  activity: ActivityCore & Record<string, unknown>;
   splits: SplitRow[];
   form_efficiency: Record<string, unknown> | null;
   hr_zones: HrZoneRow[];

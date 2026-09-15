@@ -34,8 +34,9 @@ FULL_ACTIVITY_ID = 9000000101
 # ``None`` is always tolerated here; "must be non-null" is enforced separately
 # via the *_NON_NULL key sets below.
 
-# ActivitySummary (types.ts L1-9): every key is required; 5 of them nullable.
-_ACTIVITY_SUMMARY_TYPES: dict[str, type | tuple[type, ...]] = {
+# ActivityCore (types.ts): the activities-table columns both the list and the
+# detail response carry. Every key is required; 5 of them nullable.
+_ACTIVITY_CORE_TYPES: dict[str, type | tuple[type, ...]] = {
     "activity_id": int,
     "activity_date": str,
     "activity_name": str,
@@ -43,6 +44,14 @@ _ACTIVITY_SUMMARY_TYPES: dict[str, type | tuple[type, ...]] = {
     "total_time_seconds": int,
     "avg_pace_seconds_per_km": (int, float),
     "avg_heart_rate": int,
+}
+# ActivitySummary = ActivityCore + the latest summary section's rating and lead
+# sentence (#1131). Both are derived by the list query only, so the detail
+# response (SELECT * of activities) is checked against ActivityCore.
+_ACTIVITY_SUMMARY_TYPES: dict[str, type | tuple[type, ...]] = {
+    **_ACTIVITY_CORE_TYPES,
+    "star_rating": str,
+    "summary_lead": str,
 }
 # Non-nullable in ActivitySummary.
 _ACTIVITY_SUMMARY_NON_NULL = {"activity_id", "activity_date"}
@@ -159,7 +168,7 @@ def test_activity_detail_response_contract(detail_db_path: Any) -> None:
     """GET /api/activities/{id} -> ActivityDetailResponse required shape.
 
     The ``activity`` block comes from ``SELECT *`` so only the
-    frontend-referenced ``ActivitySummary`` keys are asserted (subset existence),
+    frontend-referenced ``ActivityCore`` keys are asserted (subset existence),
     not every DB column.
     """
     client = TestClient(create_app(db_path=detail_db_path))
@@ -176,7 +185,7 @@ def test_activity_detail_response_contract(detail_db_path: Any) -> None:
     assert isinstance(activity, dict)
     _assert_typed_keys(
         activity,
-        _ACTIVITY_SUMMARY_TYPES,
+        _ACTIVITY_CORE_TYPES,
         _ACTIVITY_SUMMARY_NON_NULL,
         "ActivityDetailResponse.activity",
     )

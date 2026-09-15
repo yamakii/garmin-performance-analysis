@@ -1,5 +1,7 @@
 import type { JSX, ReactNode } from "react";
 import { Link } from "react-router-dom";
+import StarBadge from "../../components/report/StarBadge";
+import { parseStarRating } from "../../components/report/StarRating";
 import type { ActivitySummary, GoalRace, RaceReadiness } from "../../types";
 import {
   formatBpmValue,
@@ -155,11 +157,44 @@ function LastRun({
           {formatBpmValue(activity.avg_heart_rate)}bpm
         </span>
       </Link>
+      <LastRunVerdict activity={activity} />
       <p>
         <Link to="/activities" className="font-mono text-xs">
           すべてのラン →
         </Link>
       </p>
     </div>
+  );
+}
+
+/**
+ * 「評価 ★ 4.2 — 目標ペース内で完走。」 for the last run.
+ *
+ * The rating and the opening sentence come from the latest summary section
+ * analysis (#1131); a run that was never analysed has neither and the line is
+ * dropped rather than shown empty. It sits outside the link so the star is not
+ * read as part of the link text.
+ */
+function LastRunVerdict({
+  activity,
+}: {
+  activity: ActivitySummary;
+}): JSX.Element | null {
+  const parsed =
+    activity.star_rating != null ? parseStarRating(activity.star_rating) : null;
+  const lead = activity.summary_lead;
+  if (parsed == null && lead == null) {
+    return null;
+  }
+  return (
+    <p className="text-[13px] text-ink-soft">
+      {parsed != null && (
+        <>
+          評価 <StarBadge score={parsed.score} />
+          {lead != null && " — "}
+        </>
+      )}
+      {lead}
+    </p>
   );
 }
