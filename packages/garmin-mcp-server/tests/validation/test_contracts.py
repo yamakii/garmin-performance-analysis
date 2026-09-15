@@ -277,11 +277,29 @@ def test_get_contract_efficiency():
 def test_efficiency_contract_has_form_ranges():
     contract = get_contract("efficiency")
     form = contract["evaluation_policy"]["form_ranges"]
-    assert len(form) == 3
+    metrics = {k: v for k, v in form.items() if not k.startswith("_")}
+    assert len(metrics) == 3
     for metric in ["gct", "vo", "vr"]:
         assert metric in form
         assert "excellent" in form[metric]
         assert "needs_improvement" in form[metric]
+
+
+@pytest.mark.unit
+def test_form_ranges_note_states_pace_independence():
+    """Regression test for #1180: form_ranges carries no pace term.
+
+    The absolute GCT/VO/VR bands make the same runner read worse at slow
+    paces, so a "standard" label on a slow long run is a pace artifact. The
+    contract must say so and point the narration layer at the pace-corrected
+    form_evaluation instead, the way cadence_ranges already does.
+    """
+    contract = get_contract("efficiency")
+    note = contract["evaluation_policy"]["form_ranges"]["_note"]
+
+    assert "NO pace term" in note
+    assert "form_evaluation" in note
+    assert "star_rating" in note
 
 
 @pytest.mark.unit

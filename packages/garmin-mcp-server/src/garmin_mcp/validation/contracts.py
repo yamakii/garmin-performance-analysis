@@ -321,6 +321,17 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
         },
         "evaluation_policy": {
             "form_ranges": {
+                "_note": (
+                    "Absolute bands with NO pace term. The same runner reads "
+                    "worse at slow paces purely because ground contact and "
+                    "vertical ratio scale with speed, so a 'standard' label on "
+                    "a slow long run is a pace artifact, not a form flaw. The "
+                    "authoritative judgement is the pace-corrected "
+                    "form_evaluation.{metric}.star_rating / evaluation_text "
+                    "(deviation from the runner's own speed-matched baseline); "
+                    "use these bands only as supplementary absolute context and "
+                    "never call a band label a weakness on its own."
+                ),
                 "gct": {
                     "excellent": "<220ms",
                     "good": "220-260ms",
