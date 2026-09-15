@@ -32,14 +32,19 @@ const TREND: BodyCompositionTrend = {
 };
 
 describe("BodyCompositionChart", () => {
-  it("formats the latest weight via formatNumber (78.847 -> 78.8)", () => {
+  it("test_body_composition_readings_are_mono", () => {
     render(<BodyCompositionChart data={TREND} />);
 
-    // 78.847 is rounded to one decimal by formatNumber -> "78.8".
-    expect(screen.getByText(/最新 78\.8kg/)).toBeInTheDocument();
+    // The three readings are a definition list of mono numbers (#1120)…
+    for (const label of ["体重", "体脂肪", "除脂肪"]) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    }
+    // …and 78.847 is rounded to one decimal by formatNumber -> "78.8".
+    const weight = screen.getByText("78.8");
+    expect(weight).toHaveClass("font-mono");
     // The raw, unformatted value must never reach the DOM.
     expect(screen.queryByText(/78\.847/)).not.toBeInTheDocument();
-    // Net weight-loss summary is rendered from the change block.
-    expect(screen.getByText(/-1\.2kg/)).toBeInTheDocument();
+    // Each reading carries the period's change under it.
+    expect(screen.getByText("今期 -1.2kg")).toBeInTheDocument();
   });
 });

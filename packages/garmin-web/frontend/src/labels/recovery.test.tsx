@@ -2,10 +2,9 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import VerdictLine from "../components/VerdictLine";
-import ConditionCard from "../pages/trends/ConditionCard";
 import type { RecoveryRecommendation, RecoveryStatus } from "../types";
-import { homeVerdict } from "../utils/verdict";
-import { RECOMMENDATION_LABELS } from "./recovery";
+import { conditionVerdict, homeVerdict } from "../utils/verdict";
+import { RECOMMENDATION_LABELS, RECOVERY_STATE_LABELS } from "./recovery";
 
 function makeStatus(recommendation: RecoveryRecommendation): RecoveryStatus {
   return {
@@ -24,6 +23,10 @@ describe("recovery labels", () => {
    * The two surfaces that show a recommendation used to disagree about its
    * name ("イージー推奨" in the home hero, "イージー" on the condition page),
    * so the same morning read differently depending on where you looked (#915).
+   *
+   * They now say different *sentences* on purpose — home says what to do,
+   * `/condition` says how recovered the body is — but both sentences come from
+   * the label maps here, so neither page can invent a third wording (#1120).
    */
   it("test_recovery_labels_single_source", () => {
     const recommendations: RecoveryRecommendation[] = [
@@ -36,24 +39,27 @@ describe("recovery labels", () => {
 
     for (const recommendation of recommendations) {
       const status = makeStatus(recommendation);
-      const expected = RECOMMENDATION_LABELS[recommendation];
 
-      const verdict = homeVerdict(status, null);
-      const home = render(
+      const home = homeVerdict(status, null);
+      expect(home.verdict).toBe(`${RECOMMENDATION_LABELS[recommendation]}。`);
+      const rendered = render(
         <VerdictLine
-          verdict={verdict.verdict}
-          verdictTone={verdict.tone}
-          rest={verdict.rest}
+          verdict={home.verdict}
+          verdictTone={home.tone}
+          rest={home.rest}
         />,
       );
       expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
-        expected,
+        RECOMMENDATION_LABELS[recommendation],
       );
-      home.unmount();
+      rendered.unmount();
 
-      const card = render(<ConditionCard data={status} />);
-      expect(screen.getByText(expected)).toBeInTheDocument();
-      card.unmount();
+      const condition = conditionVerdict(status, null, null);
+      expect(condition.verdict).toBe(
+        `${RECOVERY_STATE_LABELS[recommendation]}。`,
+      );
+      // Same value, same tone, whichever sentence states it.
+      expect(condition.tone).toBe(home.tone);
     }
   });
 });

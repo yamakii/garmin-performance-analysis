@@ -1,12 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { makeMonthPlan } from "../test/planFixture";
 import type {
+  FormAnomalyFlagsResponse,
   GoalRace,
+  MetricBaseline,
   Prescription,
   RaceReadiness,
   RecoveryStatus,
+  WellnessBaselineDeviation,
 } from "../types";
-import { goalVerdict, homeVerdict, todayPrescription } from "./verdict";
+import {
+  conditionVerdict,
+  goalVerdict,
+  homeVerdict,
+  todayPrescription,
+} from "./verdict";
 
 function status(
   recommendation: RecoveryStatus["recommendation"],
@@ -78,6 +86,81 @@ describe("homeVerdict", () => {
         prescription({ session_type: "rest", target_km: null, hr_high: null }),
       ).rest,
     ).toBe("今日は休養日。");
+  });
+});
+
+function metric(
+  name: MetricBaseline["metric"],
+  overrides: Partial<MetricBaseline> = {},
+): MetricBaseline {
+  return {
+    metric: name,
+    mean: 50,
+    std: 4,
+    today: 50,
+    z: 0,
+    flag: "within",
+    adverse: false,
+    n: 30,
+    ...overrides,
+  };
+}
+
+function baseline(
+  overrides: Partial<WellnessBaselineDeviation> = {},
+): WellnessBaselineDeviation {
+  return {
+    date: "2026-09-13",
+    hrv: metric("hrv"),
+    rhr: metric("rhr"),
+    readiness: metric("readiness"),
+    overall_flag: false,
+    ...overrides,
+  };
+}
+
+function flagsResponse(count: number): FormAnomalyFlagsResponse {
+  return {
+    weeks: 2,
+    scanned: 6,
+    limited: false,
+    flags: Array.from({ length: count }, (_, index) => ({
+      activity_id: index + 1,
+      activity_date: "2026-09-12",
+      anomalies_detected: 2,
+      severity_high: 1,
+      top_recommendation: "後半のGCT増加に注意してください。",
+    })),
+  };
+}
+
+describe("conditionVerdict", () => {
+  it("test_condition_verdict_rhr_outside", () => {
+    const verdict = conditionVerdict(
+      status("moderate"),
+      baseline({
+        rhr: metric("rhr", { z: 1.8, flag: "high", adverse: true }),
+      }),
+      flagsResponse(1),
+    );
+
+    expect(verdict.verdict).toBe("回復はほぼ正常。");
+    expect(verdict.tone).toBe("neutral");
+    expect(verdict.rest).toContain("安静時心拍が基準外");
+    expect(verdict.rest).toContain("1 件の注意点");
+  });
+
+  it("test_condition_verdict_rest", () => {
+    const rest = conditionVerdict(status("rest"), null, null);
+    expect(rest.verdict).toBe("回復不足。");
+    expect(rest.tone).toBe("bad");
+    // Nothing loaded is not an all-clear: the sentence simply stops.
+    expect(rest.rest).toBe("");
+
+    const easy = conditionVerdict(status("easy"), baseline(), flagsResponse(0));
+    expect(easy.verdict).toBe("回復に注意。");
+    expect(easy.tone).toBe("warn");
+    expect(easy.rest).toBe("基準外の項目なし、注意点なし。");
   });
 });
 

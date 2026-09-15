@@ -20,6 +20,7 @@ import type {
   DurabilityTrend,
   RecoveryTrend,
   WeightEconomyCoupling,
+  WellnessBaselineDeviation,
 } from "../../types";
 
 // EChart is replaced by a collector: these are option-semantics tests, so what
@@ -34,7 +35,11 @@ vi.mock("../../components/EChart", () => ({
 }));
 
 type ColorStyle = { color?: string };
-type MarkPoint = { yAxis?: number };
+type MarkPoint = {
+  yAxis?: number;
+  itemStyle?: ColorStyle;
+  lineStyle?: ColorStyle;
+};
 type Series = {
   name?: string;
   itemStyle?: ColorStyle;
@@ -45,6 +50,7 @@ type Series = {
 type Axis = { name?: string; nameTextStyle?: ColorStyle };
 type ChartOption = {
   tooltip?: { formatter?: unknown };
+  legend?: unknown;
   yAxis?: Axis | Axis[];
   series?: Series[];
 };
@@ -103,6 +109,41 @@ const RECOVERY: RecoveryTrend = {
     { date: "2026-06-30", resting_hr: 45, hrv_overnight_ms: 47 },
     { date: "2026-07-01", resting_hr: 46, hrv_overnight_ms: 51 },
   ],
+};
+
+const BASELINE: WellnessBaselineDeviation = {
+  date: "2026-07-01",
+  hrv: {
+    metric: "hrv",
+    mean: 50,
+    std: 6,
+    today: 51,
+    z: 0.17,
+    flag: "within",
+    adverse: false,
+    n: 30,
+  },
+  rhr: {
+    metric: "rhr",
+    mean: 45,
+    std: 2,
+    today: 46,
+    z: 0.5,
+    flag: "within",
+    adverse: false,
+    n: 30,
+  },
+  readiness: {
+    metric: "readiness",
+    mean: 70,
+    std: 8,
+    today: 72,
+    z: 0.25,
+    flag: "within",
+    adverse: false,
+    n: 30,
+  },
+  overall_flag: false,
 };
 
 const WEIGHT_ECONOMY: WeightEconomyCoupling = {
@@ -182,16 +223,21 @@ const DURABILITY: DurabilityTrend = {
 };
 
 describe("TrainingLoadBlock", () => {
-  it("test_acwr_optimal_band_present", () => {
+  it("test_training_load_only_bad_line", () => {
     const [option] = optionsOf(<TrainingLoadBlock data={LOAD} />);
     const acwr = option.series?.find((s) => s.name === "ACWR");
 
-    // 0.8-1.3 shaded band: the line now has a target to be read against.
+    // 0.8-1.3 shaded band: the line has a target to be read against, drawn in
+    // the faint ink wash every baseline band uses.
     const band = acwr?.markArea?.data?.[0];
     expect(band?.[0].yAxis).toBe(0.8);
+    expect(band?.[0].itemStyle?.color).toBe("rgba(28,27,24,0.06)");
     expect(band?.[1].yAxis).toBe(1.3);
-    // Faint lower bound at 0.8, and the 1.5 high-risk line is kept.
-    expect(acwr?.markLine?.data?.map((d) => d.yAxis)).toEqual([0.8, 1.5]);
+    // One line only: the shaded band already states the lower bound, so 1.5 —
+    // the edge worth a colour — is the single threshold drawn (#1120).
+    expect(acwr?.markLine?.data).toHaveLength(1);
+    expect(acwr?.markLine?.data?.[0].yAxis).toBe(1.5);
+    expect(acwr?.markLine?.data?.[0].lineStyle?.color).toBe("#a83a2e");
   });
 });
 
@@ -223,14 +269,33 @@ describe("VO2max color", () => {
 });
 
 describe("RecoveryPanel", () => {
-  it("test_recovery_panel_two_charts", () => {
-    const options = optionsOf(<RecoveryPanel data={RECOVERY} />);
+  it("test_recovery_panel_two_charts_with_band", () => {
+    const options = optionsOf(
+      <RecoveryPanel data={RECOVERY} baseline={BASELINE} />,
+    );
 
     // RHR (low = good) and HRV (high = good) no longer share a dual axis.
     expect(options).toHaveLength(2);
     for (const option of options) {
       expect(Array.isArray(option.yAxis)).toBe(false);
       expect(option.series).toHaveLength(1);
+      // A single series needs no colour key: the ChartHeader names it.
+      expect(option.legend).toBeUndefined();
+    }
+
+    // Each panel is read against its own personal band (mean ± σ):
+    // RHR 45 ± 2 and HRV 50 ± 6.
+    const [rhr, hrv] = options;
+    expect(rhr.series?.[0].markArea?.data?.[0][0].yAxis).toBe(43);
+    expect(rhr.series?.[0].markArea?.data?.[0][1].yAxis).toBe(47);
+    expect(hrv.series?.[0].markArea?.data?.[0][0].yAxis).toBe(44);
+  });
+
+  it("omits the band when no baseline is served", () => {
+    const options = optionsOf(<RecoveryPanel data={RECOVERY} />);
+
+    for (const option of options) {
+      expect(option.series?.[0].markArea).toBeUndefined();
     }
   });
 });

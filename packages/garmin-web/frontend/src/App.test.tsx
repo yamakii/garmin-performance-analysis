@@ -105,9 +105,11 @@ describe("App routing", () => {
 
     render(<App />);
 
-    // The condition page renders in place of the retired trends dashboard...
+    // The condition page renders in place of the retired trends dashboard.
+    // Its sections render before (and independently of) their queries, so a
+    // section heading is the landmark that survives a dead API (#1120).
     expect(
-      await screen.findByRole("heading", { level: 1, name: "今の体の状態" }),
+      await screen.findByRole("heading", { level: 2, name: "回復トレンド" }),
     ).toBeInTheDocument();
     // ...at the new URL, with the deep-link hash carried across.
     expect(window.location.pathname).toBe("/condition");

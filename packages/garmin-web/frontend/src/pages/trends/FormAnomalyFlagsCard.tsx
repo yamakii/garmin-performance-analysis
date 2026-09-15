@@ -1,71 +1,61 @@
-import StatusBadge from "../../components/StatusBadge";
+import { Link } from "react-router-dom";
 import type { FormAnomalyFlagsResponse } from "../../types";
-import { CARD_CLASS } from "../../components/Card";
+import { formatDateLabel } from "../../utils/format";
 
 interface FormAnomalyFlagsCardProps {
   data: FormAnomalyFlagsResponse;
 }
 
 /**
- * "今週の注意点" card: surfaces recent runs whose form metrics flagged anomalies.
+ * "今週の注意点": the recent runs whose form metrics flagged an anomaly.
  *
- * The roll-up scans the trailing `weeks` of runs; an empty list is a positive
- * signal ("問題なし"). The scanned-count footnote makes any `max_activities`
- * truncation explicit instead of silently hiding older runs.
+ * An empty list is the normal morning, so it is one muted sentence rather than
+ * a card with a "問題なし" badge — the block only takes colour when there is
+ * something to act on (Morning Brief, #1120). Each flagged run states the
+ * coach's leading recommendation and links to the run itself, because the next
+ * question after "何かあった?" is always "どの走りで?".
+ *
+ * The scan window and the scanned count belong to the section heading, not
+ * here: they qualify the whole block, including the empty case.
  */
 export default function FormAnomalyFlagsCard({
   data,
 }: FormAnomalyFlagsCardProps) {
-  const hasFlags = data.flags.length > 0;
+  if (data.flags.length === 0) {
+    return (
+      <p className="text-[15px] leading-[1.7] text-ink-muted">
+        直近のランでフォームの異常は検出されていません。
+      </p>
+    );
+  }
 
   return (
-    <section
-      aria-label="今週の注意点"
-      className={CARD_CLASS}
-    >
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-base font-semibold text-ink">
-          今週の注意点
-        </h2>
-        <StatusBadge tone={hasFlags ? "warn" : "good"}>
-          {hasFlags ? `${data.flags.length}件` : "問題なし"}
-        </StatusBadge>
-      </div>
-
-      {hasFlags ? (
-        <ul className="flex flex-col gap-3">
-          {data.flags.map((flag) => (
-            <li
-              key={flag.activity_id}
-              className="rounded-md bg-well px-3 py-2"
+    <ul className="flex flex-col gap-3">
+      {data.flags.map((flag) => (
+        <li
+          key={flag.activity_id}
+          className="rounded-md border border-warn-line bg-warn-tint px-5 py-4"
+        >
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 font-mono text-[13px] text-status-warn">
+            <span>{formatDateLabel(flag.activity_date)}</span>
+            <span>
+              異常 {flag.anomalies_detected}件
+              {flag.severity_high > 0 ? `（高 ${flag.severity_high}）` : ""}
+            </span>
+            <Link
+              to={`/activities/${flag.activity_id}`}
+              className="ml-auto whitespace-nowrap"
             >
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-semibold text-ink">
-                  {flag.activity_date}
-                </span>
-                <span className="text-xs text-ink-muted">
-                  異常イベント {flag.anomalies_detected}件
-                  {flag.severity_high > 0 ? `（高 ${flag.severity_high}）` : ""}
-                </span>
-              </div>
-              {flag.top_recommendation ? (
-                <p className="mt-1 text-sm text-ink-muted">
-                  {flag.top_recommendation}
-                </p>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="py-4 text-sm text-ink-muted">
-          直近のランでフォームの異常は検出されていません。
-        </p>
-      )}
-
-      <p className="mt-3 text-xs text-ink-muted">
-        直近{data.weeks}週・{data.scanned}件のランを走査
-        {data.limited ? "（上限により一部のみ）" : ""}
-      </p>
-    </section>
+              ランを見る →
+            </Link>
+          </div>
+          {flag.top_recommendation != null && (
+            <p className="mt-2 text-[15px] leading-[1.7] text-ink">
+              {flag.top_recommendation}
+            </p>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
