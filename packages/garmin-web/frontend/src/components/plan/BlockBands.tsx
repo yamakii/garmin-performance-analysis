@@ -3,15 +3,19 @@ import type { TrainingBlock } from "../../types";
 import { formatDateLabel } from "../../utils/format";
 
 /**
- * Phase → band styling (Morning Brief, #1119). A building phase carries the
- * page's one filled band (`bg-ink`), an easing phase takes the 注意 tint and a
- * race takes the 悪 tint — it is the deadline everything bends around, not a
- * problem. No new colour tokens: every band reuses an existing one (#911).
+ * Phase → band styling (Morning Brief, #1119; revised #1172). Fill is
+ * reserved for exceptions: an easing phase takes the 注意 tint and a race
+ * takes the 悪 tint — it is the deadline everything bends around, not a
+ * problem. A building phase is the ordinary case, so it is an unfilled
+ * well-tinted band with a ruled hairline border and ink text, not the
+ * page's strongest element (#1172: the earlier `bg-ink` fill made routine
+ * building weeks compete with the exceptions for attention). No new colour
+ * tokens: every band reuses an existing one (#911).
  */
 const PHASE_STYLE: Record<string, string> = {
-  base: "bg-ink text-paper",
-  build: "bg-ink text-paper",
-  peak: "bg-ink text-paper",
+  base: "border border-hairline bg-well text-ink",
+  build: "border border-hairline bg-well text-ink",
+  peak: "border border-hairline bg-well text-ink",
   cutback: "border border-warn-line bg-warn-tint text-status-warn",
   recovery: "border border-warn-line bg-warn-tint text-status-warn",
   taper: "border border-warn-line bg-warn-tint text-status-warn",
@@ -29,7 +33,7 @@ const PHASE_LABEL: Record<string, string> = {
 };
 
 export function phaseStyle(phase: string | null): string {
-  return PHASE_STYLE[phase ?? ""] ?? "border border-hairline bg-well text-ink";
+  return PHASE_STYLE[phase ?? ""] ?? "border border-hairline text-ink-muted";
 }
 
 export function phaseLabel(phase: string | null): string {

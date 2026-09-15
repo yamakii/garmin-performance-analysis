@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { TrainingBlock } from "../../types";
 import { weekRowsForMonth } from "../../utils/week";
-import BlockBands, { bandSpan } from "./BlockBands";
+import BlockBands, { bandSpan, phaseStyle } from "./BlockBands";
 
 /** The 35 days a September 2026 grid shows: 08/31 .. 10/04. */
 const DAYS = weekRowsForMonth("2026-09", 0).flatMap((row) => row.days);
@@ -52,6 +52,47 @@ describe("bandSpan", () => {
   });
 });
 
+/**
+ * Exact-token membership, not substring search: `bg-ink` must not match a
+ * `bg-ink-soft`-style class (the codebase defines `ink-soft` / `ink-muted` /
+ * `ink-faint` tints, #1172).
+ */
+function classTokens(className: string): string[] {
+  return className.split(/\s+/).filter(Boolean);
+}
+
+describe("phaseStyle", () => {
+  it("test_build_phase_band_is_not_filled", () => {
+    for (const phase of ["build", "base", "peak"]) {
+      const tokens = classTokens(phaseStyle(phase));
+      expect(tokens).toContain("bg-well");
+      expect(tokens).toContain("text-ink");
+      expect(tokens).toContain("border-hairline");
+      expect(tokens).not.toContain("bg-ink");
+      expect(tokens).not.toContain("text-paper");
+    }
+  });
+
+  it("test_exception_phase_bands_keep_tints", () => {
+    const taperTokens = classTokens(phaseStyle("taper"));
+    expect(taperTokens).toContain("bg-warn-tint");
+    expect(taperTokens).toContain("text-status-warn");
+
+    const raceTokens = classTokens(phaseStyle("race"));
+    expect(raceTokens).toContain("bg-bad-tint");
+    expect(raceTokens).toContain("text-status-bad");
+  });
+
+  it("test_unknown_phase_band_is_unfilled", () => {
+    for (const phase of ["unknown", null]) {
+      const tokens = classTokens(phaseStyle(phase));
+      expect(tokens).toContain("text-ink-muted");
+      expect(tokens).not.toContain("bg-well");
+      expect(tokens).not.toContain("bg-ink");
+    }
+  });
+});
+
 describe("BlockBands", () => {
   it("states the phase, span and budget of each visible block", () => {
     render(<BlockBands blocks={[block()]} days={DAYS} />);
@@ -60,8 +101,9 @@ describe("BlockBands", () => {
     expect(band.textContent).toBe(
       "ビルド · 新潟マラソン ビルド · 08/24 – 10/11 · ポイント練 週2 · 体重 微減",
     );
-    // A building phase is the page's one filled band.
-    expect(band.className).toContain("bg-ink");
+    // A building phase is the ordinary case, so its band is unfilled (#1172).
+    expect(band.className).toContain("bg-well");
+    expect(band.className).not.toContain("bg-ink");
   });
 
   it("test_block_bands_use_minmax_columns", () => {
