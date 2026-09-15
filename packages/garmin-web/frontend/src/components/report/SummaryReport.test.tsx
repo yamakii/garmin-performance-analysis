@@ -200,12 +200,14 @@ describe("SummaryReport", () => {
       <SummaryReport section={section(prescriptionData)} />,
     );
 
-    // The verdict reads as one line: mark + prescription title + the word the
-    // mark stands for, with the first reason underneath.
+    // The verdict reads as one line: marker + prescription title + the word
+    // the rating stands for, with the first reason underneath. The marker is
+    // `!` / `✓`, the same vocabulary as `Point` — never an emoji (#1188).
     const line = screen.getByText("処方「ロング 22km」・注意", {
       exact: false,
     });
-    expect(line.textContent).toContain("🟡");
+    expect(line.textContent).toContain("!");
+    expect(line.textContent).not.toMatch(/[✅🟡🔴]/u);
     expect(line.closest("details")).toBeNull();
     expect(
       screen.getByText("処方 22.0km に対し実施 17.0km（77%）で不足しています。"),
@@ -224,6 +226,36 @@ describe("SummaryReport", () => {
     // Legacy summaries (no prescription layer) render exactly as before.
     render(<SummaryReport section={section(baseData)} />);
     expect(screen.queryByText(/処方「/)).not.toBeInTheDocument();
+  });
+
+  it("test_prescription_verdict_has_no_emoji", () => {
+    // Every verdict mark maps to an ink ✓ (met) or a warn ! (not met), and no
+    // verdict emoji reaches the DOM for any of the three ratings (#1188).
+    for (const [verdict, marker, word] of [
+      ["✅", "✓", "良好"],
+      ["🟡", "!", "注意"],
+      ["🔴", "!", "要改善"],
+    ] as const) {
+      const { unmount } = render(
+        <SummaryReport
+          section={section({
+            ...baseData,
+            prescription_verdict: {
+              verdict,
+              prescription_title: "ロング 22km",
+              reasons: ["理由。"],
+            },
+          })}
+        />,
+      );
+
+      const line = screen.getByText(`処方「ロング 22km」・${word}`, {
+        exact: false,
+      });
+      expect(line.textContent).toContain(marker);
+      expect(document.body.textContent).not.toMatch(/[✅🟡🔴]/u);
+      unmount();
+    }
   });
 
   it("leaves the previous-run deltas to the page header", () => {
