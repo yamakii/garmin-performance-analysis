@@ -91,6 +91,7 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 - **Filter at ingest**: データ変換は ingest 時に実行。query 側の WHERE フィルタで汚いデータをマスクしない
 - **Garmin native HR zones**: `heart_rate_zones` テーブルから読む。計算式(220-age等)やハードコード禁止
 - **評価ロジックと契約の同期**: データ層の評価ロジック（閾値・期待値・カテゴリ分け）を変えたら、`contracts.py`（`get_analysis_contract` が返す thresholds / instructions）も同じ PR で更新し、Test Plan に契約側のテストを含める。agent はデータではなく契約を読んで評価するため、両者の齟齬はテストが通ったまま出力品質だけが落ちる silent regression になる（#215 → #252）
+- **単位の境界を明示する（km vs m）**: DuckDB の `splits.distance` は **km**（`1.0` = 1km ラップ）だが、純粋モジュール `objective_fitness.segments`（`best_contiguous_segment` / `run_best_efforts`）は各スプリットの `distance` を **m** で受け取る前提（内部で `target_distance_km * 1000` と比較）。DB のスプリットをこのモジュールへ渡す reader / query は**必ず 1000 倍してから渡す**。忘れると例外は出ず `run_best_efforts` が全ランで 0 件を返し、客観フィットネス曲線・Critical Speed パネルが無言で空になる。**m 単位の fixture を使った純粋関数テストでは検出できない**ので、km 単位の DB を通して出力が非空であることを主張するテストを併せて置く
 - **DuckDB connections**: `get_connection()` / `get_write_connection()` のみ使用。raw `duckdb.connect()` 禁止
 - **DuckDB concurrency**: single writer。locked エラー → リトライ(3回, 2s backoff)
 - **DuckDB dates**: `datetime.date` で返る → MCP/JSON前に `str()` で変換
