@@ -2,7 +2,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useActivities, useActivityDetail, useSplitAnomalies } from "./hooks";
+import {
+  useActivities,
+  useActivityDetail,
+  useRacePredictionHistory,
+  useSplitAnomalies,
+} from "./hooks";
 
 /** A fresh, retry-free QueryClient wrapper so each test starts with an empty cache. */
 function createWrapper() {
@@ -149,6 +154,41 @@ describe("useSplitAnomalies", () => {
 
     expect(String(fetchMock.mock.calls[0][0])).toBe(
       "/api/activities/123/split-anomalies",
+    );
+    expect(result.current.data).toEqual(payload);
+  });
+});
+
+describe("useRacePredictionHistory", () => {
+  it("test_use_race_prediction_history_url", async () => {
+    const payload = {
+      goal: {
+        race_name: "さいたまマラソン",
+        race_date: "2026-11-30",
+        distance_km: 42.195,
+        target_time_seconds: 12000,
+      },
+      source: "objective",
+      series: [
+        {
+          date: "2026-09-01",
+          vdot: 48.2,
+          predicted_time_seconds: 11798,
+          gap_seconds: -202,
+        },
+      ],
+    };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(payload));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useRacePredictionHistory(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(String(fetchMock.mock.calls[0][0])).toBe(
+      "/api/race-prediction-history",
     );
     expect(result.current.data).toEqual(payload);
   });

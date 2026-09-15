@@ -7,6 +7,7 @@ import SectionBlock from "../components/SectionBlock";
 import SectionHeading from "../components/SectionHeading";
 import VerdictLine from "../components/VerdictLine";
 import { usePageTitle } from "../hooks/usePageTitle";
+import PredictionChart from "./goal/PredictionChart";
 import type {
   GoalRace,
   RaceReadiness,
@@ -459,7 +460,10 @@ export default function Goal() {
         />
       )}
 
-      {/* 3. What this phase asks for */}
+      {/* 3. Where the prediction has been heading, against the target */}
+      <PredictionChart />
+
+      {/* 4. What this phase asks for */}
       <SectionBlock
         title="現フェーズ"
         note={profile.updated_at != null ? `更新 ${profile.updated_at}` : undefined}
@@ -488,7 +492,7 @@ export default function Goal() {
         )}
       </SectionBlock>
 
-      {/* 4. Every race the band does not headline */}
+      {/* 5. Every race the band does not headline */}
       <SectionBlock title="その他のレース">
         {otherRaces.length > 0 ? (
           <div className="border-t border-hairline">
@@ -512,7 +516,7 @@ export default function Goal() {
         )}
       </SectionBlock>
 
-      {/* 5. What last season taught */}
+      {/* 6. What last season taught */}
       <SectionBlock title="昨季の振り返り">
         {retrospectives.length > 0 ? (
           <div className="border-t border-hairline">

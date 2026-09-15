@@ -1158,6 +1158,11 @@ def _build_race_readiness_db(db_path: Path, *, with_goal: bool) -> Path:
         conn.execute(_CREATE_ACTIVITIES)
         conn.execute(_CREATE_VO2_MAX)
         conn.execute(_CREATE_HEART_RATE_ZONES)
+        # The prediction history reads the objective fitness curve, which
+        # queries `splits`; an empty table (no laps to derive best efforts
+        # from) is what makes it fall back to the Garmin VO2max series, while
+        # a missing table would fail the whole curve read including VO2max.
+        conn.execute(_CREATE_OBJ_SPLITS)
         # FitnessAssessor reads hr_efficiency.training_type; left empty here.
         conn.execute(
             "CREATE TABLE hr_efficiency ("

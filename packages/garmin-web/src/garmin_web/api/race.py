@@ -5,12 +5,17 @@ prediction and goal-gap logic lives in the reader, so the Web layer never
 re-implements it.
 """
 
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, Request
+from garmin_mcp.database.connection import get_connection
 from garmin_mcp.database.db_reader import GarminDBReader
 
 router = APIRouter(prefix="/api")
+
+
+def _db_path(request: Request) -> Any:
+    return getattr(request.app.state, "db_path", None)
 
 
 @router.get("/race-readiness")
@@ -31,3 +36,20 @@ def get_race_readiness_endpoint(
         user_id=user_id, lookback_weeks=lookback_weeks
     )
     return readiness
+
+
+@router.get("/race-prediction-history")
+def get_race_prediction_history_endpoint(
+    request: Request,
+    user_id: str = "default",
+) -> dict[str, Any]:
+    """Return the dated race-time prediction series for the active goal race.
+
+    Read-only: the derivation (objective VDOT curve -> predicted goal time, or
+    the Garmin VO2max fallback) lives entirely in the reader.
+    """
+    with get_connection(_db_path(request)) as conn:
+        return cast(
+            "dict[str, Any]",
+            GarminDBReader.from_connection(conn).get_race_prediction_history(user_id),
+        )

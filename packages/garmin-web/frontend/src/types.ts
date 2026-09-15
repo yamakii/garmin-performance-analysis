@@ -90,6 +90,28 @@ export interface RaceReadiness {
   progress: RaceReadinessProgress | null;
 }
 
+// --- Race prediction history (Issue #1133) ---
+
+/** One day's fitness and the goal-race time it implies. */
+export interface RacePredictionPoint {
+  date: string;
+  vdot: number;
+  predicted_time_seconds: number;
+  /** predicted − target: positive means slower than the target. */
+  gap_seconds: number;
+}
+
+/**
+ * The derived prediction series. `source` names the fitness it rests on:
+ * `objective` (performance VDOT from splits) or the optimistic
+ * `garmin_vo2max` fallback. Both are null when there is nothing to plot.
+ */
+export interface RacePredictionHistory {
+  goal: RaceReadinessGoal | null;
+  source: "objective" | "garmin_vo2max" | null;
+  series: RacePredictionPoint[];
+}
+
 // --- Training load / ACWR (Issue #363) ---
 
 export type AcwrStatus =

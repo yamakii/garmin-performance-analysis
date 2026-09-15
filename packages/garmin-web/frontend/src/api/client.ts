@@ -3,6 +3,7 @@ import type {
   ActivitySummary,
   GoalResponse,
   MonthPlan,
+  RacePredictionHistory,
   RaceReadiness,
   SectionsResponse,
   SectionVersion,
@@ -27,6 +28,16 @@ export async function fetchRaceReadiness(): Promise<RaceReadiness> {
     throw new Error(`Failed to fetch race readiness: ${response.status}`);
   }
   return (await response.json()) as RaceReadiness;
+}
+
+export async function fetchRacePredictionHistory(): Promise<RacePredictionHistory> {
+  const response = await fetch("/api/race-prediction-history");
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch race prediction history: ${response.status}`,
+    );
+  }
+  return (await response.json()) as RacePredictionHistory;
 }
 
 export async function fetchWeeklyReviews(limit = 12): Promise<WeeklyReview[]> {
