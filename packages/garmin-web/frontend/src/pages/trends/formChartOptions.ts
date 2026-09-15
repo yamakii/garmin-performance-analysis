@@ -2,6 +2,8 @@ import {
   AXIS_STYLE,
   BASELINE_BAND_COLOR,
   BASE_CHART_OPTION,
+  CHART_GRID,
+  CHART_SPLIT_NUMBER,
   COMPARE_COLOR,
   FORM_DELTA_COLORS,
   FORM_SCORE_COLOR,
@@ -36,6 +38,7 @@ export function buildScoreChartOption(data: FormTrendPoint[]): EChartsOption {
     ...BASE_CHART_OPTION,
     // Overall score = ink.
     color: [FORM_SCORE_COLOR],
+    grid: { ...CHART_GRID },
     tooltip: {
       trigger: "axis" as const,
       formatter: axisTooltipFormatter({ [SCORE_SERIES]: 1 }),
@@ -129,10 +132,15 @@ export function buildDeltaChartOption(data: FormTrendPoint[]): EChartsOption {
         [DELTA_SERIES[2]]: 1,
       }),
     },
-    legend: { data: [...DELTA_SERIES] },
+    grid: { ...CHART_GRID },
+    // Pinned to the top, where `CHART_GRID.top` already reserves space for it.
+    // ECharts 6 puts a legend at the bottom by default, which on a 180px chart
+    // eats the margin the date labels need and collides with them (#1142).
+    legend: { data: [...DELTA_SERIES], top: 0 },
     xAxis: dateAxis(data),
     yAxis: {
       type: "value" as const,
+      splitNumber: CHART_SPLIT_NUMBER,
       ...(deltaBounds
         ? { min: deltaBounds.min, max: deltaBounds.max }
         : { scale: true }),

@@ -127,6 +127,31 @@ export const BASE_CHART_OPTION = {
 } as const;
 
 /**
+ * Plot-area margins for the 160-200px trend charts (Issue #1142).
+ *
+ * ECharts' own default grid — `left:'15%', top:65, right:'10%', bottom:80` —
+ * is sized for a full-page chart: on a 180px canvas it leaves a 35px plot
+ * area, which stacks five value labels on top of each other and wastes the
+ * rest as margin. These margins keep roughly 130px of plot instead.
+ *
+ * The sides are deliberately tiny: ECharts 6 lays axis labels *outside* the
+ * grid and then (`outerBoundsMode: 'auto'`) pushes the grid in just far enough
+ * for them to stay on the canvas, so a small `left` means "no margin beyond
+ * the labels", not clipped numbers. `top` is the one real reservation — it is
+ * where the axis `name` sits.
+ */
+export const CHART_GRID = { left: 8, right: 16, top: 28, bottom: 8 } as const;
+
+/** Same, with room for a right-hand value axis (dual-axis charts). */
+export const CHART_GRID_DUAL = { ...CHART_GRID, right: 8 } as const;
+
+/**
+ * Value-axis tick count for those charts. ECharts' default of 5 puts ~6 labels
+ * in 130px; three intervals keep them a readable distance apart.
+ */
+export const CHART_SPLIT_NUMBER = 3;
+
+/**
  * Spread into value axes: mono labels, no axis line, horizontal grid only.
  * Category (x) axes take `X_AXIS_STYLE`, which also drops the vertical grid.
  */
@@ -135,6 +160,9 @@ export const AXIS_STYLE = {
     color: AXIS_LABEL_COLOR,
     fontSize: CHART_FONT_SIZE,
     fontFamily: CHART_FONT_FAMILY,
+    // Short charts run out of vertical room before ECharts runs out of ticks;
+    // dropping a colliding label beats printing two on top of each other.
+    hideOverlap: true,
   },
   axisLine: { show: false },
   axisTick: { show: false },

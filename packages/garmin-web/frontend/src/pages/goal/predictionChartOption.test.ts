@@ -39,6 +39,8 @@ function history(
 }
 
 type CategoryAxis = { data?: string[] };
+type ValueAxis = { splitNumber?: number };
+type Grid = { top?: number; bottom?: number };
 type MarkLine = { data?: { yAxis?: number; xAxis?: string }[] };
 type Series = { name?: string; data?: unknown[]; markLine?: MarkLine };
 
@@ -90,5 +92,19 @@ describe("buildPredictionChartOption", () => {
     const markLine = series[0].markLine?.data ?? [];
     expect(markLine.every((mark) => mark.xAxis === undefined)).toBe(true);
     expect(markLine.map((mark) => mark.yAxis)).toEqual([TARGET]);
+  });
+
+  it("test_prediction_chart_option_grid", () => {
+    const option = buildPredictionChartOption(history())!;
+
+    // Without explicit margins ECharts' default grid leaves 35px of plot in
+    // this 180px panel, and the hh:mm:ss labels pile up on each other (#1142).
+    const grid = option.grid as Grid;
+    expect(grid).toBeDefined();
+    expect((grid.top ?? 0) + (grid.bottom ?? 0)).toBeLessThanOrEqual(60);
+
+    // Time labels are the widest in the app; four of them is what fits.
+    const yAxis = option.yAxis as ValueAxis;
+    expect(yAxis.splitNumber).toBe(3);
   });
 });

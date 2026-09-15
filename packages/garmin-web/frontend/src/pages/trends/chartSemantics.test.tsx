@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import BodyCompositionChart from "./BodyCompositionChart";
 import DurabilityBlock from "./DurabilityBlock";
 import EfficiencyBlock from "./EfficiencyBlock";
+import FormBlock from "./FormBlock";
 import HeatAdjustedBlock from "./HeatAdjustedBlock";
 import ObjectiveFitnessBlock from "./ObjectiveFitnessBlock";
 import PhysiologyBlock from "./PhysiologyBlock";
@@ -17,8 +18,10 @@ import {
   THRESHOLD_LINE,
   ZONE_COLORS,
 } from "../../components/chartTheme";
+import { CHART_HEIGHT } from "./blockShell";
 import type {
   EfficiencyTrendPoint,
+  FormTrendPoint,
   HeatAdjustedTrend,
   ObjectiveFitnessTrend,
   PhysiologyTrend,
@@ -59,7 +62,9 @@ type Series = {
   markLine?: { data?: MarkPoint[]; lineStyle?: ColorStyle };
 };
 type Axis = { name?: string; nameTextStyle?: ColorStyle };
+type Grid = { left?: number; right?: number; top?: number; bottom?: number };
 type ChartOption = {
+  grid?: Grid;
   tooltip?: { formatter?: unknown };
   legend?: unknown;
   yAxis?: Axis | Axis[];
@@ -239,6 +244,23 @@ const BODY: BodyCompositionTrend = {
   lean_pwr: null,
 };
 
+const FORM: FormTrendPoint[] = [
+  {
+    date: "2026-06-01",
+    overall_score: 4.2,
+    gct_delta: 2.5,
+    vo_delta: 0.4,
+    vr_delta: 0.3,
+  },
+  {
+    date: "2026-06-15",
+    overall_score: 3.8,
+    gct_delta: 3.1,
+    vo_delta: 0.2,
+    vr_delta: 0.5,
+  },
+];
+
 const DURABILITY: DurabilityTrend = {
   activities: [
     {
@@ -398,5 +420,37 @@ describe("DurabilityBlock", () => {
     expect(html).toContain("GCT後半失速");
     // VO / VR fades are not plotted here, so the tooltip must not list them.
     expect(html).not.toContain("上下動");
+  });
+});
+
+describe("plot area", () => {
+  it("test_trend_block_options_set_grid", () => {
+    // Every chart on /performance is CHART_HEIGHT tall. Left to ECharts'
+    // default grid (top 65 / bottom 80) that is a 35px plot, which stacked the
+    // value labels on top of each other (#1142). Each block must therefore
+    // state its own margins, and they must leave most of the canvas to plot.
+    const charts: [string, ReactElement][] = [
+      ["走行量", <VolumeBlock data={VOLUME} granularity="week" />],
+      ["生理指標", <PhysiologyBlock data={PHYSIOLOGY} />],
+      ["効率推移", <EfficiencyBlock data={EFFICIENCY} />],
+      ["客観フィットネス", <ObjectiveFitnessBlock data={OBJECTIVE} />],
+      ["気候中立HR", <HeatAdjustedBlock data={HEAT} />],
+      ["フォーム", <FormBlock data={FORM} />],
+      ["耐久性", <DurabilityBlock data={DURABILITY} />],
+      ["体重×エコノミー", <WeightEconomyChart data={WEIGHT_ECONOMY} />],
+    ];
+
+    // FormBlock draws two panels (score + delta), so nine options in all.
+    const seen = charts.flatMap(([label, chart]) =>
+      optionsOf(chart).map((option) => [label, option] as const),
+    );
+    expect(seen).toHaveLength(9);
+
+    for (const [label, option] of seen) {
+      expect(option.grid, `${label}: no grid`).toBeDefined();
+      const { top = 0, bottom = 0 } = option.grid!;
+      expect(top + bottom, `${label}: plot too short`).toBeLessThanOrEqual(60);
+      expect(CHART_HEIGHT - top - bottom).toBeGreaterThan(119);
+    }
   });
 });

@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  AXIS_STYLE,
   BASE_CHART_OPTION,
   CHART_FONT_SIZE,
+  CHART_GRID,
+  CHART_GRID_DUAL,
   COMPARE_COLOR,
   INK_COLOR,
   METRIC_COLORS,
+  X_AXIS_STYLE,
   ZONE_COLORS,
 } from "./chartTheme";
+import { CHART_HEIGHT } from "../pages/trends/blockShell";
 
 /** #rrggbb -> HSL, hue in degrees and lightness in 0-1. */
 function hexToHsl(hex: string): { hue: number; lightness: number } {
@@ -52,6 +57,28 @@ describe("chart typography", () => {
     // mono face at the caption size (#1116).
     expect(BASE_CHART_OPTION.textStyle.fontFamily).toBe("IBM Plex Mono");
     expect(CHART_FONT_SIZE).toBe(11);
+  });
+
+  it("test_chart_grid_leaves_plot_height", () => {
+    // The bug this replaces: ECharts' default grid (top 65 / bottom 80) left a
+    // 35px plot inside a 180px canvas, so the value labels stacked (#1142).
+    // Anything under ~120px puts the labels back on top of each other.
+    expect(CHART_HEIGHT - CHART_GRID.top - CHART_GRID.bottom).toBeGreaterThan(
+      119,
+    );
+    expect(
+      CHART_HEIGHT - CHART_GRID_DUAL.top - CHART_GRID_DUAL.bottom,
+    ).toBeGreaterThan(119);
+    // A dual-axis chart already pays for its right margin in axis labels,
+    // which ECharts adds outside the grid; the token must not stack a second
+    // margin on top of them.
+    expect(CHART_GRID_DUAL.right).toBeLessThanOrEqual(CHART_GRID.right);
+  });
+
+  it("test_axis_style_hides_overlapping_labels", () => {
+    // Short charts run out of height before ECharts runs out of ticks.
+    expect(AXIS_STYLE.axisLabel.hideOverlap).toBe(true);
+    expect(X_AXIS_STYLE.axisLabel.hideOverlap).toBe(true);
   });
 
   it("test_primary_and_compare_colors_distinct", () => {

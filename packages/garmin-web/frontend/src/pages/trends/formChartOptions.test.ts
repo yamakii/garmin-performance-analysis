@@ -24,6 +24,8 @@ type ValueAxis = {
   scale?: boolean;
   interval?: number;
 };
+type Grid = { top?: number; bottom?: number };
+type Legend = { top?: number };
 type MarkArea = { data?: unknown[] };
 type MarkLine = { data?: { yAxis?: number }[] };
 type Series = {
@@ -112,5 +114,20 @@ describe("buildDeltaChartOption", () => {
     expect(yAxis.scale).toBe(true);
     expect(yAxis.min).toBeUndefined();
     expect(yAxis.max).toBeUndefined();
+  });
+
+  it("test_form_delta_legend_does_not_overlap", () => {
+    // ECharts 6 puts a legend at the bottom by default. On a 180px panel that
+    // is the same strip the date labels need, so the key has to move to the
+    // top — and the grid has to leave room for it there (#1142).
+    const option = buildDeltaChartOption([point()]);
+    const legend = option.legend as Legend | undefined;
+    const grid = option.grid as Grid;
+
+    expect(grid).toBeDefined();
+    if (legend !== undefined) {
+      expect(legend.top).toBe(0);
+      expect(grid.top!).toBeGreaterThanOrEqual(28);
+    }
   });
 });

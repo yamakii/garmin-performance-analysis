@@ -3,6 +3,8 @@ import EChart from "../../components/EChart";
 import {
   AXIS_STYLE,
   BASE_CHART_OPTION,
+  CHART_GRID_DUAL,
+  CHART_SPLIT_NUMBER,
   METRIC_COLORS,
   X_AXIS_STYLE,
 } from "../../components/chartTheme";
@@ -47,6 +49,7 @@ export default function WeightEconomyChart({ data }: WeightEconomyChartProps) {
   const option = useMemo(
     () => ({
       ...BASE_CHART_OPTION,
+      grid: { ...CHART_GRID_DUAL },
       tooltip: {
         trigger: "axis" as const,
         // EF moves in the 4th decimal, so it needs more precision than weight.
@@ -69,6 +72,7 @@ export default function WeightEconomyChart({ data }: WeightEconomyChartProps) {
           name: "kg",
           nameTextStyle: { color: WEIGHT_COLOR },
           scale: true,
+          splitNumber: CHART_SPLIT_NUMBER,
           ...AXIS_STYLE,
         },
         {
@@ -76,6 +80,7 @@ export default function WeightEconomyChart({ data }: WeightEconomyChartProps) {
           name: "EF",
           nameTextStyle: { color: EF_COLOR },
           scale: true,
+          splitNumber: CHART_SPLIT_NUMBER,
           ...AXIS_STYLE,
           splitLine: { show: false },
         },

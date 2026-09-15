@@ -3,6 +3,8 @@ import EChart from "../../components/EChart";
 import {
   AXIS_STYLE,
   BASE_CHART_OPTION,
+  CHART_GRID,
+  CHART_SPLIT_NUMBER,
   COMPARE_COLOR,
   INK_COLOR,
   X_AXIS_STYLE,
@@ -74,6 +76,7 @@ export default function ObjectiveFitnessBlock({
   const option = useMemo(
     () => ({
       ...BASE_CHART_OPTION,
+      grid: { ...CHART_GRID },
       tooltip: {
         trigger: "axis" as const,
         formatter: axisTooltipFormatter({
@@ -91,6 +94,7 @@ export default function ObjectiveFitnessBlock({
           type: "value" as const,
           name: "VDOT / VO2max",
           scale: true,
+          splitNumber: CHART_SPLIT_NUMBER,
           ...AXIS_STYLE,
         },
       ],

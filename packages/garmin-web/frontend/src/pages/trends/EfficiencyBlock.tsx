@@ -3,6 +3,8 @@ import EChart from "../../components/EChart";
 import {
   AXIS_STYLE,
   BASE_CHART_OPTION,
+  CHART_GRID,
+  CHART_SPLIT_NUMBER,
   X_AXIS_STYLE,
   ZONE_COLORS,
 } from "../../components/chartTheme";
@@ -84,6 +86,7 @@ export default function EfficiencyBlock({ data }: EfficiencyBlockProps) {
   const option = useMemo(
     () => ({
       ...BASE_CHART_OPTION,
+      grid: { ...CHART_GRID },
       tooltip: {
         trigger: "axis" as const,
         formatter: axisTooltipFormatter({}),
@@ -93,7 +96,13 @@ export default function EfficiencyBlock({ data }: EfficiencyBlockProps) {
         data: data.map((p) => p.date),
         ...X_AXIS_STYLE,
       },
-      yAxis: { type: "value" as const, name: "%", max: 100, ...AXIS_STYLE },
+      yAxis: {
+        type: "value" as const,
+        name: "%",
+        max: 100,
+        splitNumber: CHART_SPLIT_NUMBER,
+        ...AXIS_STYLE,
+      },
       series: ZONE_KEYS.map((key, i) => ({
         name: `Zone ${i + 1}`,
         type: "bar" as const,
