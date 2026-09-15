@@ -20,6 +20,7 @@ import type {
 } from "../api/trends";
 import QueryBoundary from "../components/QueryBoundary";
 import SectionBlock from "../components/SectionBlock";
+import Segment, { type SegmentOption } from "../components/Segment";
 import SectionNav from "../components/SectionNav";
 import TrendNarrationCard, {
   narrationLead,
@@ -217,41 +218,10 @@ function metaLine(
 }
 
 /** Page-level week/month switch driving both the narration and the volume block. */
-function GranularitySegment({
-  granularity,
-  onChange,
-}: {
-  granularity: Granularity;
-  onChange: (granularity: Granularity) => void;
-}) {
-  const options: { value: Granularity; label: string }[] = [
-    { value: "week", label: "週" },
-    { value: "month", label: "月" },
-  ];
-  return (
-    <div
-      role="group"
-      aria-label="集計単位"
-      className="inline-flex rounded-sm border border-hairline font-mono text-[13px]"
-    >
-      {options.map(({ value, label }) => (
-        <button
-          key={value}
-          type="button"
-          aria-pressed={granularity === value}
-          className={
-            granularity === value
-              ? "cursor-pointer bg-ink px-3 py-1.5 text-paper"
-              : "cursor-pointer px-3 py-1.5 text-ink-muted hover:text-ink"
-          }
-          onClick={() => onChange(value)}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-}
+const GRANULARITY_OPTIONS: SegmentOption<Granularity>[] = [
+  { value: "week", label: "週" },
+  { value: "month", label: "月" },
+];
 
 export default function Performance() {
   usePageTitle("パフォーマンス");
@@ -397,9 +367,11 @@ export default function Performance() {
           <p className="font-mono text-[13px] text-ink-muted">
             {metaLine(granularity, narration, versionsQuery.data?.length ?? 0)}
           </p>
-          <GranularitySegment
-            granularity={granularity}
+          <Segment
+            options={GRANULARITY_OPTIONS}
+            value={granularity}
             onChange={setGranularity}
+            ariaLabel="集計単位"
           />
         </div>
 

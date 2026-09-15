@@ -30,13 +30,6 @@ const KNOWN_KEYS = [
 /** Items of one list shown before the fold; a longer list gets a disclosure. */
 const PREVIEW_LIMIT = 4;
 
-/** Verdict mark -> the colour its line is written in; unknown stays 注意. */
-const VERDICT_TONE: Record<string, "warn" | "bad" | "good"> = {
-  "✅": "good",
-  "🟡": "warn",
-  "🔴": "bad",
-};
-
 const TONE_CLASS = {
   good: "text-ink",
   warn: "text-status-warn",
@@ -107,8 +100,13 @@ function PrescriptionVerdictLine({ data }: { data: Record<string, unknown> }) {
   if (verdict == null) {
     return null;
   }
-  const tone = TONE_CLASS[VERDICT_TONE[verdict] ?? "warn"];
-  const { label } = ratingMeta(verdict);
+  // The tone comes from the shared rating table rather than a local emoji map,
+  // so this line, the review table and the list counts cannot disagree about
+  // what a mark means. `info` (an unrecognized rating) keeps the old 注意 fall-
+  // back, since an unreadable verdict is not something to call good.
+  const { tone: ratingTone, label } = ratingMeta(verdict);
+  const kind = ratingTone === "good" || ratingTone === "bad" ? ratingTone : "warn";
+  const tone = TONE_CLASS[kind];
   const title =
     typeof data.prescription_title === "string"
       ? data.prescription_title
@@ -118,7 +116,15 @@ function PrescriptionVerdictLine({ data }: { data: Record<string, unknown> }) {
   return (
     <div className="border-t border-hairline pt-3">
       <p className={`text-sm font-bold ${tone}`}>
-        <span aria-hidden="true">{verdict}</span>{" "}
+        {/* Same marker vocabulary as `Point`: an ink ✓ when the prescription
+            was met, a warn ! when it was not. Decorative — the sentence
+            carries the verdict (#912). */}
+        <span
+          aria-hidden="true"
+          className={`font-mono ${kind === "good" ? "text-ink" : "font-bold"}`}
+        >
+          {kind === "good" ? "✓" : "!"}
+        </span>{" "}
         {title != null ? `処方「${title}」・${label}` : `処方との比較・${label}`}
       </p>
       {reason != null && (
