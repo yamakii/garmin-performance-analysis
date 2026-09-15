@@ -1,9 +1,10 @@
 /**
- * Race-goal formatting helpers shared by the Goal page and the dashboard's
- * RaceProgress strip. They live here (rather than on a page module) so a
- * dashboard card never has to import from a page component just to format a
- * countdown or a gap.
+ * Race-goal helpers shared by the Goal page and the home page's 進捗 row.
+ * They live here (rather than on a page module) so a home block never has to
+ * import from a page component just to format a countdown or pick the race
+ * the brief counts down to.
  */
+import type { GoalRace } from "../types";
 
 /** Format a target time in seconds as H:MM:SS (e.g. 16200 -> "4:30:00"). */
 export function formatTargetTime(seconds: number | null): string {
@@ -42,6 +43,30 @@ export function daysUntil(
   );
   const now = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
   return Math.round((target - now) / 86_400_000);
+}
+
+function priorityOf(race: GoalRace): string {
+  return (race.priority ?? "").toUpperCase();
+}
+
+/**
+ * The one race the home page counts down to: the A race if there is one,
+ * otherwise the nearest upcoming race, otherwise the first registered goal.
+ */
+export function pickFeaturedRace(goals: GoalRace[]): GoalRace | null {
+  if (goals.length === 0) {
+    return null;
+  }
+  const aRace = goals.find((race) => priorityOf(race) === "A");
+  if (aRace != null) {
+    return aRace;
+  }
+  const upcoming = goals
+    .filter((race) => (daysUntil(race.race_date) ?? -1) >= 0)
+    .sort(
+      (a, b) => (daysUntil(a.race_date) ?? 0) - (daysUntil(b.race_date) ?? 0),
+    );
+  return upcoming[0] ?? goals[0];
 }
 
 /** Format a signed gap in seconds as ±H:MM:SS / ±M:SS (0 -> "±0:00"). */

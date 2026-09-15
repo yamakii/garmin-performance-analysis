@@ -1,5 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { daysUntil, formatGap, formatTargetTime } from "./race";
+import type { GoalRace } from "../types";
+import { toIsoDate } from "./format";
+import {
+  daysUntil,
+  formatGap,
+  formatTargetTime,
+  pickFeaturedRace,
+} from "./race";
+
+/** A goal race `days` days from today, so the sort is clock-independent. */
+function race(
+  goal_id: number,
+  priority: string | null,
+  days: number | null,
+): GoalRace {
+  const date = new Date();
+  date.setDate(date.getDate() + (days ?? 0));
+  return {
+    goal_id,
+    race_name: `レース${goal_id}`,
+    race_date: days == null ? null : toIsoDate(date),
+    priority,
+    goal_type: "marathon",
+    distance_km: 42.195,
+    target_time_seconds: 16200,
+    status: "active",
+    notes: null,
+  };
+}
 
 describe("formatTargetTime", () => {
   it("formats seconds as H:MM:SS", () => {
@@ -16,6 +44,26 @@ describe("daysUntil", () => {
     expect(daysUntil("2025-12-31", today)).toBe(-1);
     expect(daysUntil(null, today)).toBeNull();
     expect(daysUntil("not-a-date", today)).toBeNull();
+  });
+});
+
+describe("pickFeaturedRace", () => {
+  it("test_pick_featured_race", () => {
+    const b = race(1, "B", 30);
+    const a = race(2, "A", 120);
+
+    // The A race wins even when a B race is sooner.
+    expect(pickFeaturedRace([b, a])?.goal_id).toBe(2);
+    // Without an A race, the nearest upcoming one carries the countdown.
+    expect(pickFeaturedRace([b])?.goal_id).toBe(1);
+    expect(pickFeaturedRace([])).toBeNull();
+  });
+
+  it("falls back to the first goal when every race has passed", () => {
+    const past = race(3, "B", -10);
+    const older = race(4, "C", -40);
+
+    expect(pickFeaturedRace([past, older])?.goal_id).toBe(3);
   });
 });
 

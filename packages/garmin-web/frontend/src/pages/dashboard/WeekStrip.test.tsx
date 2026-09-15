@@ -1,0 +1,127 @@
+import { render, screen, within } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import { makeMonthPlan } from "../../test/planFixture";
+import type { PlanWeek, Prescription } from "../../types";
+import WeekStrip from "./WeekStrip";
+
+const WEEK = makeMonthPlan().weeks[1];
+const DAYS = WEEK.days.map((day) => day.date);
+
+/** A week of `WEEK`'s shape with the given prescriptions swapped in. */
+function weekWith(rows: Record<string, Prescription[]>): PlanWeek {
+  return {
+    ...WEEK,
+    days: WEEK.days.map((day) => ({
+      ...day,
+      prescriptions: rows[day.date] ?? [],
+      activities: [],
+    })),
+  };
+}
+
+function cellFor(date: string): HTMLElement {
+  const index = DAYS.indexOf(date);
+  return screen.getAllByRole("listitem")[index];
+}
+
+describe("WeekStrip", () => {
+  it("test_week_strip_seven_cells_today_and_rest", () => {
+    render(<WeekStrip week={WEEK} days={DAYS} today="2026-09-13" />);
+
+    expect(screen.getAllByRole("listitem")).toHaveLength(7);
+
+    // Today is the only tinted, accented cell.
+    const today = cellFor("2026-09-13");
+    expect(today).toHaveClass("bg-accent-tint");
+    expect(within(today).getByText("TODAY")).toBeInTheDocument();
+    const dateLine = today.querySelector("p");
+    expect(dateLine).toHaveTextContent("13 日");
+    expect(dateLine).toHaveClass("font-semibold", "text-accent");
+    // The long run was done, so the cell states the actual, not the target.
+    expect(within(today).getByText("ロング 22km")).toHaveClass("font-bold");
+    expect(within(today).getByText("21.4km · 6:19 · 146")).toHaveClass(
+      "text-ink",
+    );
+
+    // A day with no prescription is a rest day, stated but not shouted.
+    const rest = cellFor("2026-09-12");
+    expect(within(rest).getByText("休養")).toHaveClass("text-ink-muted");
+    expect(rest.className).not.toMatch(/bg-(accent|warn)-tint/);
+
+    // A prescribed easy day names the session and its target.
+    const easy = cellFor("2026-09-08");
+    expect(within(easy).getByText("イージー 8km")).toHaveClass("font-bold");
+  });
+
+  it("test_week_strip_replaced_and_rest_directive", () => {
+    const week = weekWith({
+      "2026-09-09": [
+        {
+          prescription_id: 11,
+          session_type: "tempo",
+          title: "テンポ 6km",
+          target_km: 6,
+          target_minutes: null,
+          hr_high: 168,
+          status: "replaced",
+        },
+      ],
+      "2026-09-10": [
+        {
+          prescription_id: 12,
+          session_type: "rest",
+          title: "完全休養",
+          target_km: null,
+          target_minutes: null,
+          hr_high: null,
+          rationale: "HRVが2夜連続で基準割れ",
+          status: "prescribed",
+        },
+      ],
+    });
+    render(<WeekStrip week={week} days={DAYS} today="2026-09-13" />);
+
+    // Replaced: struck through, tinted 注意, with what happened instead.
+    const replaced = cellFor("2026-09-09");
+    expect(replaced).toHaveClass("bg-warn-tint");
+    expect(replaced.querySelector("s")).toHaveTextContent("テンポ 6km 6km ≤168");
+    expect(within(replaced).getByText("→ 代替")).toBeInTheDocument();
+
+    // A rest directive is a decision, so it carries the same 注意 tint.
+    const rest = cellFor("2026-09-10");
+    expect(rest).toHaveClass("bg-warn-tint");
+    expect(within(rest).getByText("休養")).toHaveClass(
+      "font-bold",
+      "text-status-warn",
+    );
+    expect(within(rest).getByText("HRVが2夜連続で基準割れ")).toHaveClass(
+      "text-status-warn",
+    );
+  });
+
+  it("strikes a skipped session and renders an empty week", () => {
+    const week = weekWith({
+      "2026-09-11": [
+        {
+          prescription_id: 13,
+          session_type: "easy",
+          title: "イージー 6km",
+          target_km: 6,
+          target_minutes: null,
+          hr_high: 145,
+          status: "skipped",
+        },
+      ],
+    });
+    const { rerender } = render(
+      <WeekStrip week={week} days={DAYS} today="2026-09-13" />,
+    );
+    expect(within(cellFor("2026-09-11")).getByText("イージー 6km")).toHaveClass(
+      "line-through",
+    );
+
+    rerender(<WeekStrip week={null} days={DAYS} today="2026-09-13" />);
+    expect(screen.getAllByRole("listitem")).toHaveLength(7);
+    expect(screen.getAllByText("休養")).toHaveLength(7);
+  });
+});

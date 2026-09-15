@@ -1,9 +1,10 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
+import VerdictLine from "../components/VerdictLine";
 import ConditionCard from "../pages/trends/ConditionCard";
-import TodayHero from "../pages/dashboard/TodayHero";
 import type { RecoveryRecommendation, RecoveryStatus } from "../types";
+import { homeVerdict } from "../utils/verdict";
 import { RECOMMENDATION_LABELS } from "./recovery";
 
 function makeStatus(recommendation: RecoveryRecommendation): RecoveryStatus {
@@ -37,11 +38,18 @@ describe("recovery labels", () => {
       const status = makeStatus(recommendation);
       const expected = RECOMMENDATION_LABELS[recommendation];
 
-      const hero = render(<TodayHero status={status} baseline={null} />);
-      expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent(
+      const verdict = homeVerdict(status, null);
+      const home = render(
+        <VerdictLine
+          verdict={verdict.verdict}
+          verdictTone={verdict.tone}
+          rest={verdict.rest}
+        />,
+      );
+      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
         expected,
       );
-      hero.unmount();
+      home.unmount();
 
       const card = render(<ConditionCard data={status} />);
       expect(screen.getByText(expected)).toBeInTheDocument();
