@@ -131,7 +131,7 @@ export default function BlockBands({
       {bands.map(({ block, span }) => (
         <li
           key={block.block_id}
-          className="grid grid-cols-[96px_repeat(7,1fr)]"
+          className="grid grid-cols-[96px_repeat(7,minmax(0,1fr))]"
         >
           <div
             className="col-start-2 col-end-9 grid"
@@ -139,11 +139,18 @@ export default function BlockBands({
               gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))`,
             }}
           >
+            {/*
+             * A band is as wide as its block, not as its caption, so the
+             * caption has to survive being narrower than its text: it is a
+             * block box (not a flex row) so `text-ellipsis` applies, and the
+             * full line stays reachable on hover (#1143).
+             */}
             <div
-              className={`flex h-[22px] items-center overflow-hidden rounded-sm px-2 font-mono text-[11px] tracking-[0.02em] whitespace-nowrap ${phaseStyle(
+              className={`block h-[22px] overflow-hidden rounded-sm px-2 font-mono text-[11px] leading-[22px] tracking-[0.02em] text-ellipsis whitespace-nowrap ${phaseStyle(
                 block.phase,
               )}`}
               style={{ gridColumn: `${span.start} / span ${span.span}` }}
+              title={bandCaption(block)}
             >
               {bandCaption(block)}
             </div>

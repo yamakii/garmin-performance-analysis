@@ -1016,7 +1016,8 @@ class GarminDBReader:
             lookback_weeks: Lookback window for fitness assessment (default 8)
 
         Returns:
-            Dict with current_vdot, predicted_times, goal, and progress.
+            Dict with current_vdot, vdot_source ("objective" /
+            "garmin_vo2max"), predicted_times, goal, and progress.
         """
         return self.race.get_race_readiness(user_id, lookback_weeks)
 

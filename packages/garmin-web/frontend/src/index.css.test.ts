@@ -133,3 +133,18 @@ describe("palette contrast", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+describe("markdown prose wrapping", () => {
+  /**
+   * Analysis prose carries runs like `GCT★4.0/VO★5.0/VR★5.0` that have no
+   * break opportunity. In a narrow column they widened the whole page to
+   * 457px at a 390px viewport (#1145).
+   */
+  it("test_markdown_body_overflow_wrap", () => {
+    const block = /\.markdown-body\s*\{([^}]*)\}/.exec(INDEX_CSS);
+    expect(block, ".markdown-body rule not found in index.css").not.toBeNull();
+    expect((block as RegExpExecArray)[1]).toMatch(
+      /overflow-wrap:\s*anywhere;/,
+    );
+  });
+});

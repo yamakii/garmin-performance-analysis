@@ -96,6 +96,7 @@ const RECOVERY_TREND = {
 
 const READINESS = {
   current_vdot: 44.0,
+  vdot_source: "objective",
   predicted_times: { full: 12734 },
   goal: {
     race_name: "さいたまマラソン",

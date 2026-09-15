@@ -195,4 +195,28 @@ describe("EfficiencyReport", () => {
     expect(screen.getByText("フォーム効率は良好。")).toBeInTheDocument();
     expect(screen.queryByText(/4\.0\/5\.0/)).not.toBeInTheDocument();
   });
+
+  it("test_efficiency_note_parts_nowrap", () => {
+    render(
+      <EfficiencyReport
+        section={section}
+        formEvaluations={{
+          ...formEvaluations,
+          gct_ms_actual: 270,
+          gct_ms_expected: 276,
+          gct_delta_pct: -1.8,
+        }}
+      />,
+    );
+
+    // CJK breaks at any character, so each half of the note is its own
+    // unbreakable span: 「偏差」 must not split across lines (#1145).
+    const expected = screen.getByText("期待276ms");
+    const delta = screen.getByText("偏差-1.8%");
+    expect(expected).toHaveClass("whitespace-nowrap");
+    expect(delta).toHaveClass("whitespace-nowrap");
+
+    // The separator stays outside the spans, i.e. it is the one break point.
+    expect(expected.parentElement).toHaveTextContent("期待276ms / 偏差-1.8%");
+  });
 });

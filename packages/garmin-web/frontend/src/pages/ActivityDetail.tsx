@@ -416,8 +416,14 @@ function kpiItems(
   ];
 }
 
-/** Numeric split cell backed by a subtle proportional bar (#905). */
-function BarCell({
+/**
+ * Numeric split cell backed by a subtle proportional bar (#905).
+ *
+ * The bar is positioned against an inner box rather than the cell, so a 100%
+ * bar stops at the cell's padding instead of running into the neighbouring
+ * column's bar and reading as one continuous band (#1145).
+ */
+export function BarCell({
   widthPct,
   color,
   flagged,
@@ -429,22 +435,24 @@ function BarCell({
   children: string;
 }) {
   return (
-    <td className="relative px-2 py-2 text-right">
-      {widthPct != null && (
+    <td className="px-2 py-2 text-right">
+      <div className="relative">
+        {widthPct != null && (
+          <span
+            aria-hidden="true"
+            className="absolute -inset-y-1 left-0 rounded-sm"
+            style={{
+              width: `${widthPct.toFixed(1)}%`,
+              backgroundColor: `${color}24`,
+            }}
+          />
+        )}
         <span
-          aria-hidden="true"
-          className="absolute inset-y-1 left-0 rounded-sm"
-          style={{
-            width: `${widthPct.toFixed(1)}%`,
-            backgroundColor: `${color}24`,
-          }}
-        />
-      )}
-      <span
-        className={`relative ${flagged ? "font-semibold text-status-warn" : ""}`}
-      >
-        {children}
-      </span>
+          className={`relative ${flagged ? "font-semibold text-status-warn" : ""}`}
+        >
+          {children}
+        </span>
+      </div>
     </td>
   );
 }
@@ -509,9 +517,11 @@ function SplitsTable({
 }) {
   return (
     // Six numeric columns overflow a ~360px screen: the wrapper scrolls the
-    // table instead of letting the page scroll sideways (#912).
+    // table instead of letting the page scroll sideways (#912). The minimum
+    // width keeps the columns (and their bars) apart at 390px rather than
+    // letting them compress into each other (#1145).
     <div className="overflow-x-auto">
-      <table className="w-full font-mono text-sm">
+      <table className="w-full min-w-[520px] font-mono text-sm">
         <caption className="sr-only">{caption}</caption>
         <thead>
           <tr className="border-b border-ink text-[11px] tracking-[0.04em] text-ink-muted">

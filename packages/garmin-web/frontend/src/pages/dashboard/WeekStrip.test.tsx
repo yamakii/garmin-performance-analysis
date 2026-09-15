@@ -99,6 +99,41 @@ describe("WeekStrip", () => {
     );
   });
 
+  it("test_week_strip_scrolls_horizontally", () => {
+    render(<WeekStrip week={WEEK} days={DAYS} today="2026-09-13" />);
+
+    // Seven cells never fit a phone's width. The strip keeps its columns and
+    // scrolls sideways instead of squeezing a label down to one character per
+    // line (#1143).
+    const grid = screen.getByRole("list");
+    expect(grid).toHaveClass("grid", "grid-cols-7", "min-w-[640px]");
+    expect(grid.parentElement).toHaveClass("overflow-x-auto");
+  });
+
+  it("test_week_strip_rationale_wraps_anywhere", () => {
+    const week = weekWith({
+      "2026-09-10": [
+        {
+          prescription_id: 14,
+          session_type: "rest",
+          title: "完全休養",
+          target_km: null,
+          target_minutes: null,
+          hr_high: null,
+          rationale: "cutback_rule の extra_rest_days=1",
+          status: "prescribed",
+        },
+      ],
+    });
+    render(<WeekStrip week={week} days={DAYS} today="2026-09-13" />);
+
+    // `extra_rest_days=1` has no break opportunity of its own, so without
+    // this it runs across the next cell's border.
+    const rationale = screen.getByText("cutback_rule の extra_rest_days=1");
+    expect(rationale.tagName).toBe("P");
+    expect(rationale).toHaveClass("[overflow-wrap:anywhere]");
+  });
+
   it("strikes a skipped session and renders an empty week", () => {
     const week = weekWith({
       "2026-09-11": [

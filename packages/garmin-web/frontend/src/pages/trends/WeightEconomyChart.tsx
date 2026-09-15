@@ -8,7 +8,11 @@ import {
   METRIC_COLORS,
   X_AXIS_STYLE,
 } from "../../components/chartTheme";
-import { axisTooltipFormatter, formatNumber } from "../../utils/formatNumber";
+import {
+  axisTooltipFormatter,
+  formatNumber,
+  formatSigned,
+} from "../../utils/formatNumber";
 import type { WeightEconomyCoupling } from "../../types";
 import { BLOCK_SUMMARY_CLASS, BlockEmpty, CHART_HEIGHT } from "./blockShell";
 
@@ -24,7 +28,9 @@ const EF_COLOR = METRIC_COLORS.ef;
 
 /**
  * "体重 78.8kg · EF 0.0181 · 約5kg減 → +0.0022 EF (易ラン6本)" — the latest
- * pairing and the effect size fitted across the window.
+ * pairing and the effect size fitted across the window. The effect size can be
+ * negative (a lighter athlete fitted as less economical), so its sign comes
+ * from the formatter, not from the template.
  */
 export function weightEconomySummaryLine(data: WeightEconomyCoupling): string {
   const latest = data.series.at(-1) ?? null;
@@ -37,7 +43,7 @@ export function weightEconomySummaryLine(data: WeightEconomyCoupling): string {
   }
   if (data.model != null) {
     parts.push(
-      `約5kg減 → +${formatNumber(data.model.delta_ef_per_5kg_loss, 4)} EF (易ラン${data.model.n}本)`,
+      `約5kg減 → ${formatSigned(data.model.delta_ef_per_5kg_loss, 4)} EF (易ラン${data.model.n}本)`,
     );
   }
   return parts.join(" · ");
