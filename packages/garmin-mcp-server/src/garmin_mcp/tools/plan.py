@@ -386,6 +386,10 @@ PLAN_TOOLS: list[ToolDef] = [
             "activity "
             "marks it replaced (a rest day with a run is always replaced), and "
             "no activity marks it skipped (rest with no activity is done). "
+            "strength rows are matched against strength_sessions instead of "
+            "runs, on presence alone: a session on that date marks the row "
+            "done, none marks it skipped (Garmin records working time only, so "
+            "a duration band would reject a circuit done as prescribed). "
             "Future dates and superseded batches are never touched. Returns "
             "{updated, done, replaced, skipped}."
         ),

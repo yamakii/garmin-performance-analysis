@@ -1,8 +1,9 @@
-"""Deterministic reconciliation of weekly prescriptions against actual runs.
+"""Deterministic reconciliation of weekly prescriptions against what happened.
 
 Adherence must exist without an LLM in the loop, so linking a prescribed
 session to what actually happened is pure arithmetic over the ``activities``
-table:
+table (runs) — except for ``strength`` rows, which are matched against
+``strength_sessions`` instead (see below):
 
 - an activity on the prescribed date within tolerance (±15% short / +30% long of
   ``target_km`` and ``target_minutes``) marks the row ``done``. Quality sessions
@@ -16,6 +17,18 @@ table:
   ``replaced`` (the session happened, just not as prescribed);
 - a past date with no activity marks it ``skipped``, except ``rest`` days, where
   doing nothing is exactly compliance (``done``).
+
+``strength`` rows never look at runs (Issue #1211). Their evidence lives in
+``strength_sessions``, a separate domain table, so matching them against
+``activities`` let the day's run decide their status: a run inside the band
+confirmed a circuit that never happened, a run outside it marked a circuit that
+did happen ``replaced``, and a rest day — where the circuit is most often
+placed — guaranteed ``skipped`` because no run candidate exists at all. A
+strength session on the date is therefore the whole test, with **no duration
+comparison**: Garmin records ``active_duration_seconds`` (working time only,
+440 s for a 22-set circuit) while ``target_minutes`` is wall-clock intent
+including the rest between sets, so any tolerance band would reject a circuit
+executed exactly as prescribed.
 
 Only rows of the latest batch per week and only ``prescribed`` / ``registered``
 rows are touched: superseded batches are history, and ``done`` / ``replaced`` /
@@ -119,6 +132,32 @@ def _pick_activity(
     return candidates[0]
 
 
+def _load_strength_sessions(
+    conn: Any, start_date: str, end_date: str
+) -> dict[str, int]:
+    """Return ``{activity_date: activity_id}`` for strength sessions in range.
+
+    Only presence matters, so a day with several circuits keeps the first by
+    id — the row is confirmation that the session happened, not a measurement.
+
+    Args:
+        conn: Open DuckDB connection.
+        start_date: Inclusive range start (``YYYY-MM-DD``).
+        end_date: Inclusive range end (``YYYY-MM-DD``).
+    """
+    rows = conn.execute(
+        "SELECT activity_date, activity_id FROM strength_sessions "
+        "WHERE activity_date BETWEEN CAST(? AS DATE) AND CAST(? AS DATE) "
+        "ORDER BY activity_date, activity_id",
+        [start_date, end_date],
+    ).fetchall()
+
+    by_date: dict[str, int] = {}
+    for activity_date, activity_id in rows:
+        by_date.setdefault(str(activity_date), activity_id)
+    return by_date
+
+
 def reconcile_prescriptions(
     start_date: str,
     end_date: str,
@@ -178,6 +217,8 @@ def reconcile_prescriptions(
                 }
             )
 
+        strength_by_date = _load_strength_sessions(conn, start_date, end_date)
+
         for row in open_rows:
             row_date = datetime.strptime(str(row["date"]), "%Y-%m-%d").date()
             if row_date >= today:
@@ -187,7 +228,10 @@ def reconcile_prescriptions(
             candidates = by_date.get(str(row["date"]), [])
             actual_activity_id: int | None = None
 
-            if candidates:
+            if session_type == "strength":
+                actual_activity_id = strength_by_date.get(str(row["date"]))
+                new_status = "done" if actual_activity_id is not None else "skipped"
+            elif candidates:
                 if session_type == "rest":
                     new_status = "replaced"
                     actual_activity_id = candidates[0]["activity_id"]
