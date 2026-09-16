@@ -61,6 +61,18 @@ def _add_activity(
         )
 
 
+def _add_strength_session(
+    db_path: str, activity_id: int, on_date: str, active_seconds: int
+) -> None:
+    with get_write_connection(db_path) as conn:
+        conn.execute(
+            "INSERT INTO strength_sessions (activity_id, activity_date, "
+            "activity_name, active_duration_seconds) VALUES "
+            "(?, CAST(? AS DATE), ?, ?)",
+            [activity_id, on_date, f"circuit {on_date}", active_seconds],
+        )
+
+
 def _statuses(db_path: str) -> dict[str, tuple[str, int | None]]:
     with get_connection(db_path) as conn:
         rows = conn.execute(
@@ -229,6 +241,102 @@ def test_reconcile_rest_with_run_is_replaced(db_path: str) -> None:
 
     assert result["replaced"] == 1
     assert _statuses(db_path)["rest 2026-09-10"] == ("replaced", 333)
+
+
+@pytest.mark.unit
+def test_reconcile_strength_matches_strength_session(db_path: str) -> None:
+    """A strength row is confirmed by the circuit, not by the day's run (#1211).
+
+    ``active_duration_seconds`` (440 s of working time) is far outside any band
+    around ``target_minutes=25``, which is wall-clock intent -- presence alone
+    decides.
+    """
+    insert_weekly_prescriptions(
+        WEEK_START,
+        [_prescription("2026-09-10", "strength", target_minutes=25)],
+        db_path=db_path,
+    )
+    _add_activity(db_path, 111, "2026-09-10", 5.0, 35.0)
+    _add_strength_session(db_path, 901, "2026-09-10", 440)
+
+    result = reconcile_prescriptions(
+        "2026-09-07", "2026-09-13", today=TODAY, db_path=db_path
+    )
+
+    assert result == {"updated": 1, "done": 1, "replaced": 0, "skipped": 0}
+    assert _statuses(db_path)["strength 2026-09-10"] == ("done", 901)
+
+
+@pytest.mark.unit
+def test_reconcile_strength_ignores_the_days_run(db_path: str) -> None:
+    """A run can no longer confirm a circuit that never happened (#1211)."""
+    insert_weekly_prescriptions(
+        WEEK_START,
+        [_prescription("2026-09-10", "strength", target_minutes=25)],
+        db_path=db_path,
+    )
+    _add_activity(db_path, 111, "2026-09-10", 5.0, 35.0)
+
+    result = reconcile_prescriptions(
+        "2026-09-07", "2026-09-13", today=TODAY, db_path=db_path
+    )
+
+    assert result == {"updated": 1, "done": 0, "replaced": 0, "skipped": 1}
+    assert _statuses(db_path)["strength 2026-09-10"] == ("skipped", None)
+
+
+@pytest.mark.unit
+def test_reconcile_strength_is_done_on_a_rest_day(db_path: str) -> None:
+    """A circuit on a run-free day is done, where runs would force skipped."""
+    insert_weekly_prescriptions(
+        WEEK_START,
+        [_prescription("2026-09-10", "strength", target_minutes=25)],
+        db_path=db_path,
+    )
+    _add_strength_session(db_path, 902, "2026-09-10", 440)
+
+    result = reconcile_prescriptions(
+        "2026-09-07", "2026-09-13", today=TODAY, db_path=db_path
+    )
+
+    assert result == {"updated": 1, "done": 1, "replaced": 0, "skipped": 0}
+    assert _statuses(db_path)["strength 2026-09-10"] == ("done", 902)
+
+
+@pytest.mark.unit
+def test_reconcile_strength_without_session_is_skipped(db_path: str) -> None:
+    """Neither a run nor a circuit on a past date -> skipped."""
+    insert_weekly_prescriptions(
+        WEEK_START,
+        [_prescription("2026-09-10", "strength", target_minutes=25)],
+        db_path=db_path,
+    )
+
+    result = reconcile_prescriptions(
+        "2026-09-07", "2026-09-13", today=TODAY, db_path=db_path
+    )
+
+    assert result == {"updated": 1, "done": 0, "replaced": 0, "skipped": 1}
+    assert _statuses(db_path)["strength 2026-09-10"] == ("skipped", None)
+
+
+@pytest.mark.unit
+def test_reconcile_run_row_ignores_strength_session(db_path: str) -> None:
+    """A run row keeps matching runs even when a circuit shares the date."""
+    insert_weekly_prescriptions(
+        WEEK_START,
+        [_prescription("2026-09-10", "easy", target_minutes=30, target_km=4.1)],
+        db_path=db_path,
+    )
+    _add_activity(db_path, 112, "2026-09-10", 4.1, 30.0)
+    _add_strength_session(db_path, 903, "2026-09-10", 440)
+
+    result = reconcile_prescriptions(
+        "2026-09-07", "2026-09-13", today=TODAY, db_path=db_path
+    )
+
+    assert result == {"updated": 1, "done": 1, "replaced": 0, "skipped": 0}
+    assert _statuses(db_path)["easy 2026-09-10"] == ("done", 112)
 
 
 @pytest.mark.unit
