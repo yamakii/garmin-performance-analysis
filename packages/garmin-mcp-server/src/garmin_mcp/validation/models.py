@@ -29,6 +29,10 @@ class ActivityRecord(BaseModel):
     gear_model: str | None = None
     gear_nickname: str | None = None
     gear_uuid: str | None = None
+    gear_max_km: float | None = Field(default=None, ge=0)
+    gear_status: str | None = None
+    gear_since_date: str | None = None
+    gear_retired_date: str | None = None
     base_weight_kg: float | None = Field(default=None, ge=0)
 
 

@@ -584,6 +584,100 @@ def format_gear_label(gear_model: str | None, gear_nickname: str | None) -> str 
     return f"{model} ({nickname})"
 
 
+# --- Shoe replacement alert (Issue #1209) -----------------------------------
+#
+# Two independent axes, deliberately not fused into one score: mileage answers
+# "how much has this pair absorbed", age answers "has the foam degraded on the
+# shelf". Keeping them apart says *which* one fired.
+#
+# The mileage bands are a fraction of the athlete's OWN limit
+# (gear.json maximumMeters, which they curate per shoe), so no external
+# mileage rule is imposed.
+_GEAR_WEAR_MONITOR_PCT = 60.0
+_GEAR_WEAR_DUE_PCT = 80.0
+# The age bands, unlike the mileage limit, are a general rule of thumb: midsole
+# foam oxidises and hydrolyses regardless of use. Nothing in this athlete's data
+# calibrates them (no record ties shoe age to a problem), so they are stated
+# here to be adjusted in one place rather than dressed up as measured.
+_GEAR_AGE_AGING_MONTHS = 24
+_GEAR_AGE_AGED_MONTHS = 36
+
+_GEAR_REPLACE_WEAR_STATUSES = {"due_soon", "over"}
+_GEAR_REPLACE_AGE_STATUSES = {"aged"}
+
+
+def gear_wear_pct(km_on_gear: float | None, max_km: float | None) -> float | None:
+    """Percentage of a shoe's replacement limit already run.
+
+    Returns None when either side is unknown or the limit is not positive --
+    "no limit recorded" must not read as "worn out".
+    """
+    if km_on_gear is None or max_km is None or max_km <= 0:
+        return None
+    return round(float(km_on_gear) / float(max_km) * 100.0, 1)
+
+
+def classify_gear_wear(wear_pct: float | None) -> str | None:
+    """Band a wear percentage: ok | monitor | due_soon | over.
+
+    None passes through so an unknown limit stays unknown rather than 'ok'.
+    """
+    if wear_pct is None:
+        return None
+    if wear_pct >= 100.0:
+        return "over"
+    if wear_pct >= _GEAR_WEAR_DUE_PCT:
+        return "due_soon"
+    if wear_pct >= _GEAR_WEAR_MONITOR_PCT:
+        return "monitor"
+    return "ok"
+
+
+def gear_age_months(since_date: str | None, as_of: str | None = None) -> int | None:
+    """Whole months a shoe has been in service, or None without a start date.
+
+    Args:
+        since_date: In-service date, YYYY-MM-DD (gear.json ``dateBegin``).
+        as_of: Reference date, YYYY-MM-DD. Defaults to today.
+    """
+    if not since_date:
+        return None
+    try:
+        start = date.fromisoformat(str(since_date)[:10])
+        end = date.fromisoformat(str(as_of)[:10]) if as_of else date.today()
+    except ValueError:
+        return None
+
+    months = (end.year - start.year) * 12 + (end.month - start.month)
+    if end.day < start.day:
+        months -= 1
+    return max(months, 0)
+
+
+def classify_gear_age(age_months: int | None) -> str | None:
+    """Band a shoe's age: ok | aging | aged. None passes through."""
+    if age_months is None:
+        return None
+    if age_months >= _GEAR_AGE_AGED_MONTHS:
+        return "aged"
+    if age_months >= _GEAR_AGE_AGING_MONTHS:
+        return "aging"
+    return "ok"
+
+
+def replace_recommended(wear_status: str | None, age_status: str | None) -> bool:
+    """Whether either axis has reached its replacement band.
+
+    Takes the stricter of the two: a shoe past its mileage limit needs
+    replacing however new it is, and an old pair needs replacing however
+    little it has run.
+    """
+    return (
+        wear_status in _GEAR_REPLACE_WEAR_STATUSES
+        or age_status in _GEAR_REPLACE_AGE_STATUSES
+    )
+
+
 # ---------------------------------------------------------------------------
 # Trend derivations (Issue #790): deterministic layer for trend narration.
 #

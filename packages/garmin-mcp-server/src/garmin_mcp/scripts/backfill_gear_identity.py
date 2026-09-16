@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""Backfill ``activities.gear_nickname`` / ``gear_uuid`` from raw gear.json.
+"""Backfill the gear columns on ``activities`` from the raw gear.json files.
 
-Migration 27 adds both columns but leaves them NULL on existing rows. The
+Covers the identity columns added by migration 27 (``gear_nickname`` /
+``gear_uuid``) and the lifecycle columns added by migration 28
+(``gear_max_km`` / ``gear_status`` / ``gear_since_date`` /
+``gear_retired_date``). Both migrations leave existing rows NULL, but the
 values were already fetched -- every ingested activity has a ``gear.json``
 under ``data/raw/activity/{id}/`` -- so this reads those files and UPDATEs the
-two columns in place.
+columns in place.
 
 Unlike ``regenerate_duckdb --tables activities --force`` this never deletes a
-row: it only writes the two new columns, so an activity whose raw file has gone
+row: it only writes the gear columns, so an activity whose raw file has gone
 missing keeps the gear it already has rather than losing it.
 
 Runs offline (no Garmin API calls) and is idempotent -- re-running it rewrites
@@ -32,6 +35,7 @@ from garmin_mcp.database.connection import (
     get_db_path,
     get_write_connection,
 )
+from garmin_mcp.database.inserters.activities import _gear_date, _gear_max_km
 from garmin_mcp.utils.paths import get_raw_dir
 
 
@@ -77,7 +81,7 @@ def backfill_gear_identity(
             ).fetchall()
         ]
 
-    updates: list[tuple[str | None, str | None, int]] = []
+    updates: list[tuple[Any, ...]] = []
     no_raw_file = 0
     no_gear_registered = 0
 
@@ -90,14 +94,29 @@ def backfill_gear_identity(
         if entry is None:
             no_gear_registered += 1
             continue
-        updates.append((entry.get("displayName"), entry.get("uuid"), activity_id))
+        updates.append(
+            (
+                entry.get("displayName"),
+                entry.get("uuid"),
+                _gear_max_km(entry.get("maximumMeters")),
+                entry.get("gearStatusName"),
+                _gear_date(entry.get("dateBegin")),
+                _gear_date(entry.get("dateEnd")),
+                activity_id,
+            )
+        )
 
     if not dry_run and updates:
         with get_write_connection(str(resolved)) as conn:
             conn.executemany(
                 """
                 UPDATE activities
-                SET gear_nickname = ?, gear_uuid = ?
+                SET gear_nickname = ?,
+                    gear_uuid = ?,
+                    gear_max_km = ?,
+                    gear_status = ?,
+                    gear_since_date = ?,
+                    gear_retired_date = ?
                 WHERE activity_id = ?
                 """,
                 updates,

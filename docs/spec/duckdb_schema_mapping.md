@@ -132,6 +132,10 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 | gear_model | VARCHAR |
 | gear_nickname | VARCHAR |
 | gear_uuid | VARCHAR |
+| gear_max_km | DOUBLE |
+| gear_status | VARCHAR |
+| gear_since_date | DATE |
+| gear_retired_date | DATE |
 | base_weight_kg | DOUBLE |
 | body_mass_kg | DOUBLE |
 <!-- END GENERATED: schema:activities -->

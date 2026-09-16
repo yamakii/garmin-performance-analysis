@@ -262,3 +262,148 @@ def test_insert_activities_empty_gear_list(initialized_db_path, tmp_path):
 
     assert row == (None, None, None, None)
     conn.close()
+
+
+@pytest.mark.unit
+def test_insert_activities_stores_gear_lifecycle(initialized_db_path, tmp_path):
+    """Replacement limit, status and dates are ingested (Issue #1209).
+
+    maximumMeters is the athlete's own limit, so it is stored in km rather than
+    replaced by a generic mileage rule.
+    """
+    raw_gear = [
+        {
+            "uuid": "u-v15",
+            "gearTypeName": "Shoes",
+            "customMakeModel": "New Balance Fresh Foam X 1080",
+            "displayName": "v15",
+            "maximumMeters": 650000.0,
+            "gearStatusName": "active",
+            "dateBegin": "2026-09-08T00:00:00.0",
+            "dateEnd": None,
+        }
+    ]
+    raw_gear_file = tmp_path / "gear.json"
+    raw_gear_file.write_text(json.dumps(raw_gear))
+
+    conn = duckdb.connect(str(initialized_db_path))
+    assert (
+        insert_activities(
+            activity_id=66661,
+            date="2026-09-15",
+            conn=conn,
+            raw_gear_file=str(raw_gear_file),
+        )
+        is True
+    )
+
+    row = conn.execute("""
+        SELECT gear_max_km, gear_status, gear_since_date, gear_retired_date
+        FROM activities WHERE activity_id = 66661
+        """).fetchone()
+    conn.close()
+
+    assert row is not None
+    assert row[0] == 650.0
+    assert row[1] == "active"
+    assert str(row[2]) == "2026-09-08"
+    assert row[3] is None
+
+
+@pytest.mark.unit
+def test_insert_activities_stores_gear_retirement(initialized_db_path, tmp_path):
+    """A retired pair carries its end date so alerts can skip it."""
+    raw_gear = [
+        {
+            "uuid": "u-sk",
+            "gearTypeName": "Shoes",
+            "customMakeModel": "skechers go run maxroad 5",
+            "maximumMeters": 643737.6,
+            "gearStatusName": "retired",
+            "dateBegin": "2022-11-11T15:00:00.0",
+            "dateEnd": "2025-12-26T12:34:24.0",
+        }
+    ]
+    raw_gear_file = tmp_path / "gear.json"
+    raw_gear_file.write_text(json.dumps(raw_gear))
+
+    conn = duckdb.connect(str(initialized_db_path))
+    insert_activities(
+        activity_id=66662,
+        date="2025-11-17",
+        conn=conn,
+        raw_gear_file=str(raw_gear_file),
+    )
+
+    row = conn.execute("""
+        SELECT gear_max_km, gear_status, gear_since_date, gear_retired_date
+        FROM activities WHERE activity_id = 66662
+        """).fetchone()
+    conn.close()
+
+    assert row is not None
+    assert row[0] == 643.7
+    assert row[1] == "retired"
+    assert str(row[2]) == "2022-11-11"
+    assert str(row[3]) == "2025-12-26"
+
+
+@pytest.mark.unit
+def test_insert_activities_gear_lifecycle_missing_fields(initialized_db_path, tmp_path):
+    """Older gear.json files lack these keys entirely -- all four stay null."""
+    raw_gear = [
+        {
+            "uuid": "abc123-def456",
+            "gearTypeName": "Running Shoes",
+            "customMakeModel": "Nike Vaporfly 3",
+        }
+    ]
+    raw_gear_file = tmp_path / "gear.json"
+    raw_gear_file.write_text(json.dumps(raw_gear))
+
+    conn = duckdb.connect(str(initialized_db_path))
+    insert_activities(
+        activity_id=66663,
+        date="2026-09-15",
+        conn=conn,
+        raw_gear_file=str(raw_gear_file),
+    )
+
+    row = conn.execute("""
+        SELECT gear_model, gear_max_km, gear_status,
+               gear_since_date, gear_retired_date
+        FROM activities WHERE activity_id = 66663
+        """).fetchone()
+    conn.close()
+
+    assert row == ("Nike Vaporfly 3", None, None, None, None)
+
+
+@pytest.mark.unit
+def test_insert_activities_gear_zero_limit_is_unknown(initialized_db_path, tmp_path):
+    """maximumMeters of 0 means 'no limit set', not a worn-out shoe."""
+    raw_gear = [
+        {
+            "uuid": "u-zero",
+            "gearTypeName": "Shoes",
+            "customMakeModel": "No Limit Shoe",
+            "maximumMeters": 0,
+        }
+    ]
+    raw_gear_file = tmp_path / "gear.json"
+    raw_gear_file.write_text(json.dumps(raw_gear))
+
+    conn = duckdb.connect(str(initialized_db_path))
+    insert_activities(
+        activity_id=66664,
+        date="2026-09-15",
+        conn=conn,
+        raw_gear_file=str(raw_gear_file),
+    )
+
+    row = conn.execute(
+        "SELECT gear_max_km FROM activities WHERE activity_id = 66664"
+    ).fetchone()
+    conn.close()
+
+    assert row == (None,)

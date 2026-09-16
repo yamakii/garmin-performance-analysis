@@ -228,6 +228,10 @@ class GarminDBWriter:
                 gear_model VARCHAR,
                 gear_nickname VARCHAR,
                 gear_uuid VARCHAR,
+                gear_max_km DOUBLE,
+                gear_status VARCHAR,
+                gear_since_date DATE,
+                gear_retired_date DATE,
                 base_weight_kg DOUBLE
             )
         """)

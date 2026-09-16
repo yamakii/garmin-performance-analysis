@@ -206,8 +206,21 @@ class TestPrefetchActivityContext:
                 distance_km,
                 2706,
             ),
-            # Query 2: gear (type, model, nickname, first_use, runs, km)
-            ("Shoes", "Nike Vaporfly", None, datetime.date(2026, 2, 1), 3, 24.0),
+            # Query 2: gear (type, model, nickname, first_use, runs, km,
+            #  as_of, max_km, status, since, retired)
+            (
+                "Shoes",
+                "Nike Vaporfly",
+                None,
+                datetime.date(2026, 2, 1),
+                3,
+                24.0,
+                datetime.date(2026, 2, 16),
+                643.7,
+                "active",
+                datetime.date(2026, 2, 1),
+                None,
+            ),
             # Query 3: hr_efficiency (C1 expanded)
             (
                 "aerobic_base",  # training_type
@@ -496,8 +509,21 @@ class TestPrefetchActivityContext:
         mock_conn.execute.return_value.fetchone.side_effect = [
             # Query 1: activity metadata
             (datetime.date(2026, 2, 16), 7.8, 84, 4.0, "NW", 148, 330.0, 8.2, 2706),
-            # Query 2: gear (type, model, nickname, first_use, runs, km)
-            ("Shoes", "Nike Vaporfly", None, datetime.date(2026, 2, 1), 3, 24.0),
+            # Query 2: gear (type, model, nickname, first_use, runs, km,
+            #  as_of, max_km, status, since, retired)
+            (
+                "Shoes",
+                "Nike Vaporfly",
+                None,
+                datetime.date(2026, 2, 1),
+                3,
+                24.0,
+                datetime.date(2026, 2, 16),
+                643.7,
+                "active",
+                datetime.date(2026, 2, 1),
+                None,
+            ),
             # Query 3: hr_efficiency
             (
                 "aerobic_base",
