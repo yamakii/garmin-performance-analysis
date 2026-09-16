@@ -6,7 +6,7 @@ This inserter must be called FIRST before other inserters due to foreign key con
 Most fields are populated by other inserters; this inserter only handles:
 - Activity metadata (name, timestamps, location) from activity.json
 - Weather data (temperature, humidity, wind) from weather.json
-- Gear data (name, type) from gear.json
+- Gear data (type, model, nickname, uuid) from gear.json
 """
 
 import json
@@ -36,7 +36,7 @@ def insert_activities(
     Extracts 36 columns from raw API files:
     - activity.json: activityName, startTimeLocal, startTimeGMT, locationName
     - weather.json: temp, relativeHumidity, windSpeed, windDirectionCompassPoint
-    - gear.json: gearTypeName, customMakeModel
+    - gear.json: gearTypeName, customMakeModel, displayName, uuid
 
     Args:
         activity_id: Activity ID
@@ -155,6 +155,8 @@ def insert_activities(
         # Load gear data
         gear_type = None
         gear_model = None
+        gear_nickname = None
+        gear_uuid = None
 
         if raw_gear_file:
             raw_gear_path = Path(raw_gear_file)
@@ -172,6 +174,13 @@ def insert_activities(
                     if gear_data:
                         gear_type = gear_data.get("gearTypeName")
                         gear_model = gear_data.get("customMakeModel")
+                        # Garmin's newer gear form leaves customMakeModel as the
+                        # base model name, so successive generations of the same
+                        # shoe collide on it. displayName is the athlete's own
+                        # nickname (e.g. "v15") and uuid is stable per pair, so
+                        # both are kept: uuid identifies, nickname names.
+                        gear_nickname = gear_data.get("displayName")
+                        gear_uuid = gear_data.get("uuid")
 
         # Validate before insertion
         validate_activity(
@@ -191,6 +200,8 @@ def insert_activities(
                 "wind_direction": wind_direction,
                 "gear_type": gear_type,
                 "gear_model": gear_model,
+                "gear_nickname": gear_nickname,
+                "gear_uuid": gear_uuid,
                 "base_weight_kg": base_weight_kg,
             }
         )
@@ -215,6 +226,8 @@ def insert_activities(
             wind_direction,
             gear_type,
             gear_model,
+            gear_nickname,
+            gear_uuid,
             base_weight_kg,
         )
 
@@ -245,6 +258,8 @@ def _insert_with_connection(
     wind_direction: str | None,
     gear_type: str | None,
     gear_model: str | None,
+    gear_nickname: str | None,
+    gear_uuid: str | None,
     base_weight_kg: float | None,
 ) -> None:
     """Helper function to insert activity data with a given connection."""
@@ -272,8 +287,10 @@ def _insert_with_connection(
             wind_direction,
             gear_type,
             gear_model,
+            gear_nickname,
+            gear_uuid,
             base_weight_kg
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             activity_id,
@@ -294,6 +311,8 @@ def _insert_with_connection(
             wind_direction,
             gear_type,
             gear_model,
+            gear_nickname,
+            gear_uuid,
             base_weight_kg,
         ),
     )

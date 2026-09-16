@@ -130,11 +130,13 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 | wind_direction | VARCHAR |
 | gear_type | VARCHAR |
 | gear_model | VARCHAR |
+| gear_nickname | VARCHAR |
+| gear_uuid | VARCHAR |
 | base_weight_kg | DOUBLE |
 | body_mass_kg | DOUBLE |
 <!-- END GENERATED: schema:activities -->
 
-**Units & sources** (not derivable from column names): `total_distance_km` (km); `total_time_seconds` (s); `avg_speed_ms` (m/s); `avg_pace_seconds_per_km` (sec/km); `avg_heart_rate` / `max_heart_rate` (bpm). Weather fields come from `weather.json`: `temp_celsius` (°C), `relative_humidity_percent` (%), `wind_speed_kmh` (km/h), `wind_direction` (compass, e.g. N/NE/E). `gear_model` is the shoe/gear model name. `body_mass_kg` is the body mass at activity time, backfilled from `body_composition` (migration `phase0_power_prep`); `base_weight_kg` is the base/reference weight.
+**Units & sources** (not derivable from column names): `total_distance_km` (km); `total_time_seconds` (s); `avg_speed_ms` (m/s); `avg_pace_seconds_per_km` (sec/km); `avg_heart_rate` / `max_heart_rate` (bpm). Weather fields come from `weather.json`: `temp_celsius` (°C), `relative_humidity_percent` (%), `wind_speed_kmh` (km/h), `wind_direction` (compass, e.g. N/NE/E). Gear fields come from `gear.json`: `gear_model` is the shoe/gear model name (`customMakeModel`), `gear_nickname` the athlete's own name for the pair (`displayName`) and `gear_uuid` its stable id. **Identify a shoe by `gear_uuid`, not by `gear_model`**: Garmin's newer gear form leaves `gear_model` as the base model name, so successive generations of one shoe share the string and the version lives in `gear_nickname` (see `collect_activity_gear`). `body_mass_kg` is the body mass at activity time, backfilled from `body_composition` (migration `phase0_power_prep`); `base_weight_kg` is the base/reference weight.
 
 > **Common name traps** (the live schema differs from older drafts): it is `activity_date` (not `date`); `temp_celsius` (not `external_temp_c`); `relative_humidity_percent` (not `humidity`); `wind_speed_kmh` (not `wind_speed_ms`); `gear_model` (not `gear_name`). There are **no** `created_at`/`updated_at`, and **no** cadence/power/training-effect columns on this table — cadence/power live on `splits`, `time_series_metrics`, and the phase columns of `performance_trends`.
 

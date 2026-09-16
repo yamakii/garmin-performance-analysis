@@ -100,10 +100,12 @@ from garmin_mcp.analysis.derivations import (
     LONG_RUN_CUTBACK_TRIGGER_WEEKS,
     count_long_run_build_weeks,
     detect_garmin_conflicts,
+    format_gear_label,
     summarize_adherence,
 )
 from garmin_mcp.analysis.progression_gate import build_long_run_progression_gate
 from garmin_mcp.database.connection import get_connection, get_db_path
+from garmin_mcp.database.readers.metadata import collect_week_gear_usage
 from garmin_mcp.utils.week import get_week_start_day, week_bounds
 
 # Multi-week load lookback (matches the skill's get_load_trend(lookback_weeks=10)).
@@ -455,7 +457,8 @@ def _resolve_activities(conn: Any, start: str, end: str) -> list[dict[str, Any]]
     rows = conn.execute(
         """
         SELECT activity_id, activity_date, activity_name,
-               total_distance_km, total_time_seconds
+               total_distance_km, total_time_seconds,
+               gear_model, gear_nickname
         FROM activities
         WHERE activity_date BETWEEN ? AND ?
         ORDER BY activity_date ASC, activity_id ASC
@@ -469,6 +472,7 @@ def _resolve_activities(conn: Any, start: str, end: str) -> list[dict[str, Any]]
             "activity_name": row[2],
             "distance_km": row[3],
             "duration_seconds": row[4],
+            "gear_label": format_gear_label(row[5], row[6]),
         }
         for row in rows
     ]
@@ -530,6 +534,9 @@ def prefetch_weekly_review_context(
     with get_connection(db_path) as conn:
         prev_activities = _resolve_activities(conn, prev_start_s, prev_end_s)
         current_activities = _resolve_activities(conn, week_start_s, week_end_s)
+        # Which shoes carried the target week, and whether any is just out of
+        # the box (Issue #1207).
+        gear_usage = collect_week_gear_usage(conn, week_start_s, week_end_s)
 
     prev_ids = [a["activity_id"] for a in prev_activities]
     current_ids = [a["activity_id"] for a in current_activities]
@@ -699,6 +706,7 @@ def prefetch_weekly_review_context(
         "as_of": str(today_d),
         "activity_ids": {"prev_week": prev_ids, "current_week": current_ids},
         "activities": activities,
+        "gear_usage": gear_usage,
         "fitness_summary": fitness_summary,
         "load_trend": load_trend,
         "acwr": acwr,

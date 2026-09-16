@@ -32,7 +32,16 @@ class TestGetActivityByDate:
 
         mock_conn = MagicMock()
         mock_conn.execute.return_value.fetchall.return_value = [
-            (12345, "Morning Run", datetime(2025, 10, 15, 7, 30, 0), 10.5, 3600),
+            (
+                12345,
+                "Morning Run",
+                datetime(2025, 10, 15, 7, 30, 0),
+                10.5,
+                3600,
+                "Shoes",
+                "Nike Vaporfly",
+                None,
+            ),
         ]
 
         with patch("duckdb.connect", return_value=mock_conn):
@@ -47,6 +56,36 @@ class TestGetActivityByDate:
         assert data["distance_km"] == 10.5
         assert data["duration_seconds"] == 3600
         mock_conn.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_single_result_includes_gear(self, mock_db_reader: MagicMock) -> None:
+        """The shoe worn is part of a single activity's metadata (#1207)."""
+        mock_db_reader.db_path = "/fake/path.duckdb"
+
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value.fetchall.return_value = [
+            (
+                12345,
+                "Morning Run",
+                datetime(2025, 10, 15, 7, 30, 0),
+                10.5,
+                3600,
+                "Shoes",
+                "Nike Vaporfly",
+                "v15",
+            ),
+        ]
+
+        with patch("duckdb.connect", return_value=mock_conn):
+            result = dispatch_tool(
+                mock_db_reader, "get_activity_by_date", {"date": "2025-10-15"}
+            )
+
+        data = json.loads(result[0].text)
+        assert data["gear_type"] == "Shoes"
+        assert data["gear_model"] == "Nike Vaporfly"
+        assert data["gear_nickname"] == "v15"
+        assert data["gear_label"] == "Nike Vaporfly (v15)"
 
     @pytest.mark.asyncio
     async def test_no_results(self, mock_db_reader: MagicMock) -> None:
@@ -74,8 +113,26 @@ class TestGetActivityByDate:
 
         mock_conn = MagicMock()
         mock_conn.execute.return_value.fetchall.return_value = [
-            (11111, "Morning Run", datetime(2025, 10, 15, 7, 0, 0), 5.0, 1800),
-            (22222, "Evening Run", datetime(2025, 10, 15, 18, 0, 0), 8.0, 2700),
+            (
+                11111,
+                "Morning Run",
+                datetime(2025, 10, 15, 7, 0, 0),
+                5.0,
+                1800,
+                "Shoes",
+                "Nike Vaporfly",
+                "v15",
+            ),
+            (
+                22222,
+                "Evening Run",
+                datetime(2025, 10, 15, 18, 0, 0),
+                8.0,
+                2700,
+                "Shoes",
+                "asics novablast 4",
+                None,
+            ),
         ]
 
         with patch(
@@ -92,6 +149,47 @@ class TestGetActivityByDate:
         assert len(data["activities"]) == 2
         assert data["activities"][0]["activity_id"] == 11111
         assert data["activities"][1]["activity_id"] == 22222
+
+    @pytest.mark.asyncio
+    async def test_multiple_results_include_gear(
+        self, mock_db_reader: MagicMock
+    ) -> None:
+        """Each candidate activity carries its own shoe (#1207)."""
+        mock_db_reader.db_path = "/fake/path.duckdb"
+
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value.fetchall.return_value = [
+            (
+                11111,
+                "Morning Run",
+                datetime(2025, 10, 15, 7, 0, 0),
+                5.0,
+                1800,
+                "Shoes",
+                "Nike Vaporfly",
+                "v15",
+            ),
+            (
+                22222,
+                "Evening Run",
+                datetime(2025, 10, 15, 18, 0, 0),
+                8.0,
+                2700,
+                "Shoes",
+                "asics novablast 4",
+                None,
+            ),
+        ]
+
+        with patch("duckdb.connect", return_value=mock_conn):
+            result = dispatch_tool(
+                mock_db_reader, "get_activity_by_date", {"date": "2025-10-15"}
+            )
+
+        data = json.loads(result[0].text)
+        assert data["activities"][0]["gear_label"] == "Nike Vaporfly (v15)"
+        assert data["activities"][1]["gear_model"] == "asics novablast 4"
+        assert data["activities"][1]["gear_label"] == "asics novablast 4"
 
     @pytest.mark.asyncio
     async def test_exception_handling(self, mock_db_reader: MagicMock) -> None:
@@ -116,7 +214,7 @@ class TestGetActivityByDate:
 
         mock_conn = MagicMock()
         mock_conn.execute.return_value.fetchall.return_value = [
-            (99999, "Run", None, 5.0, 1500),
+            (99999, "Run", None, 5.0, 1500, None, None, None),
         ]
 
         with patch(

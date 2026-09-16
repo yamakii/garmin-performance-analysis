@@ -206,7 +206,9 @@ class TestPrefetchActivityContext:
                 distance_km,
                 2706,
             ),
-            # Query 2: hr_efficiency (C1 expanded)
+            # Query 2: gear (type, model, nickname, first_use, runs, km)
+            ("Shoes", "Nike Vaporfly", None, datetime.date(2026, 2, 1), 3, 24.0),
+            # Query 3: hr_efficiency (C1 expanded)
             (
                 "aerobic_base",  # training_type
                 "Zone 3",  # primary_zone
@@ -364,6 +366,7 @@ class TestPrefetchActivityContext:
         mock_conn.execute.return_value.fetchone.side_effect = [
             # activity
             (datetime.date(2026, 2, 16), 7.8, 84, 4.0, "NW", 148, 330.0, 8.2, 2706),
+            None,  # gear missing
             None,  # hr_efficiency missing
             (None, None, 0, None, None, None),  # elevation (no splits)
             None,  # form_evaluations missing
@@ -408,17 +411,17 @@ class TestPrefetchActivityContext:
                     8.2,
                     2706,
                 )
-            elif call_count == 2:  # hr_efficiency missing
+            elif call_count == 2 or call_count == 3:  # gear missing
                 mock_result.fetchone.return_value = None
-            elif call_count == 3:  # elevation
+            elif call_count == 4:  # elevation
                 mock_result.fetchone.return_value = (None, None, 0, None, None, None)
-            elif call_count == 4:  # run-phase splits (progression detection)
+            elif call_count == 5:  # run-phase splits (progression detection)
                 mock_result.fetchall.return_value = []
-            elif call_count == 5:  # form_evaluations table missing
+            elif call_count == 6:  # form_evaluations table missing
                 raise duckdb.CatalogException(
                     "Table with name form_evaluations does not exist"
                 )
-            elif call_count == 6:  # performance_trends table missing
+            elif call_count == 7:  # performance_trends table missing
                 raise duckdb.CatalogException(
                     "Table with name performance_trends does not exist"
                 )
@@ -462,11 +465,11 @@ class TestPrefetchActivityContext:
                     8.2,
                     2706,
                 )
-            elif call_count == 3:  # elevation
+            elif call_count == 4:  # elevation
                 mock_result.fetchone.return_value = (None, None, 0, None, None, None)
-            elif call_count == 4:  # run-phase splits (progression detection)
+            elif call_count == 5:  # run-phase splits (progression detection)
                 mock_result.fetchall.return_value = []
-            elif call_count == 5:  # form_evaluations query is broken
+            elif call_count == 6:  # form_evaluations query is broken
                 raise duckdb.BinderException(
                     'Referenced column "gct_star_rating" not found'
                 )
@@ -493,7 +496,9 @@ class TestPrefetchActivityContext:
         mock_conn.execute.return_value.fetchone.side_effect = [
             # Query 1: activity metadata
             (datetime.date(2026, 2, 16), 7.8, 84, 4.0, "NW", 148, 330.0, 8.2, 2706),
-            # Query 2: hr_efficiency
+            # Query 2: gear (type, model, nickname, first_use, runs, km)
+            ("Shoes", "Nike Vaporfly", None, datetime.date(2026, 2, 1), 3, 24.0),
+            # Query 3: hr_efficiency
             (
                 "aerobic_base",
                 "Zone 3",
