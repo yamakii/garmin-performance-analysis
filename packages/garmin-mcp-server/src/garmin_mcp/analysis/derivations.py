@@ -548,6 +548,42 @@ def map_environment_category(training_type: str | None) -> str:
     return "base_moderate"
 
 
+# A shoe is treated as "just out of the box" for its first few runs (Issue
+# #1207). The window is deliberately run-count based rather than mileage: the
+# question the analysis asks is "was this a break-in run", and a 5 km jog and a
+# 25 km long run both count as one outing on new shoes.
+_NEW_GEAR_RUN_THRESHOLD = 5
+
+
+def is_new_gear(runs_on_gear: int | None) -> bool:
+    """Whether a shoe is still inside its break-in window.
+
+    ``runs_on_gear`` counts the run being evaluated, so the first outing is 1.
+    Returns False for null (no gear recorded) and for non-positive counts.
+    """
+    if runs_on_gear is None or runs_on_gear <= 0:
+        return False
+    return runs_on_gear <= _NEW_GEAR_RUN_THRESHOLD
+
+
+def format_gear_label(gear_model: str | None, gear_nickname: str | None) -> str | None:
+    """Name a shoe the way the athlete does.
+
+    Garmin's newer gear form keeps only the base model name in
+    ``customMakeModel``, so the generation lives in the nickname. Appending it
+    ("New Balance Fresh Foam X 1080 (v15)") keeps successive pairs of the same
+    model distinguishable in prose. Falls back to whichever half exists, and
+    omits a nickname that merely repeats the model.
+    """
+    model = (gear_model or "").strip()
+    nickname = (gear_nickname or "").strip()
+    if not model:
+        return nickname or None
+    if not nickname or nickname.lower() == model.lower():
+        return model
+    return f"{model} ({nickname})"
+
+
 # ---------------------------------------------------------------------------
 # Trend derivations (Issue #790): deterministic layer for trend narration.
 #

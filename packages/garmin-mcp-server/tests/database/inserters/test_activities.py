@@ -157,3 +157,108 @@ def test_insert_activities_complete_data(initialized_db_path, tmp_path):
     assert row[12] is None  # avg_heart_rate
 
     conn.close()
+
+
+@pytest.mark.unit
+def test_insert_activities_stores_gear_nickname_and_uuid(initialized_db_path, tmp_path):
+    """Gear nickname and uuid are ingested alongside the model (Issue #1207).
+
+    Garmin's newer gear form leaves customMakeModel as the base model name, so
+    the generation lives in displayName and identity lives in uuid.
+    """
+    raw_gear = [
+        {
+            "uuid": "7590ed8bcce44327b9fb46278bb3686f",
+            "gearTypeName": "Shoes",
+            "customMakeModel": "New Balance Fresh Foam X 1080",
+            "displayName": "v15",
+        }
+    ]
+    raw_gear_file = tmp_path / "gear.json"
+    raw_gear_file.write_text(json.dumps(raw_gear))
+
+    conn = duckdb.connect(str(initialized_db_path))
+    assert (
+        insert_activities(
+            activity_id=55555,
+            date="2026-09-15",
+            conn=conn,
+            raw_gear_file=str(raw_gear_file),
+        )
+        is True
+    )
+
+    row = conn.execute("""
+        SELECT gear_type, gear_model, gear_nickname, gear_uuid
+        FROM activities WHERE activity_id = 55555
+        """).fetchone()
+
+    assert row == (
+        "Shoes",
+        "New Balance Fresh Foam X 1080",
+        "v15",
+        "7590ed8bcce44327b9fb46278bb3686f",
+    )
+    conn.close()
+
+
+@pytest.mark.unit
+def test_insert_activities_gear_without_nickname(initialized_db_path, tmp_path):
+    """Older gear entries have displayName null -- that must not break ingest."""
+    raw_gear = [
+        {
+            "uuid": "4a204ad6e293483e910d45081ac69301",
+            "gearTypeName": "Shoes",
+            "customMakeModel": "new balance fresh form x 1080 v14",
+            "displayName": None,
+        }
+    ]
+    raw_gear_file = tmp_path / "gear.json"
+    raw_gear_file.write_text(json.dumps(raw_gear))
+
+    conn = duckdb.connect(str(initialized_db_path))
+    assert (
+        insert_activities(
+            activity_id=55556,
+            date="2026-09-06",
+            conn=conn,
+            raw_gear_file=str(raw_gear_file),
+        )
+        is True
+    )
+
+    row = conn.execute(
+        "SELECT gear_nickname, gear_uuid FROM activities WHERE activity_id = 55556"
+    ).fetchone()
+
+    assert row == (None, "4a204ad6e293483e910d45081ac69301")
+    conn.close()
+
+
+@pytest.mark.unit
+def test_insert_activities_empty_gear_list(initialized_db_path, tmp_path):
+    """An empty gear.json means no shoe was registered, not an error.
+
+    Every run before 2021 in the real data has `[]` here.
+    """
+    raw_gear_file = tmp_path / "gear.json"
+    raw_gear_file.write_text("[]")
+
+    conn = duckdb.connect(str(initialized_db_path))
+    assert (
+        insert_activities(
+            activity_id=55557,
+            date="2020-06-01",
+            conn=conn,
+            raw_gear_file=str(raw_gear_file),
+        )
+        is True
+    )
+
+    row = conn.execute("""
+        SELECT gear_type, gear_model, gear_nickname, gear_uuid
+        FROM activities WHERE activity_id = 55557
+        """).fetchone()
+
+    assert row == (None, None, None, None)
+    conn.close()

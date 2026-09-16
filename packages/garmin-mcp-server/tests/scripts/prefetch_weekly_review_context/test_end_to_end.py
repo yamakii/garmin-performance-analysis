@@ -131,6 +131,56 @@ def test_past_review_verdict_is_derived(db_path: Path) -> None:
 
 
 @pytest.mark.integration
+def test_weekly_context_includes_gear_usage(db_path: Path) -> None:
+    """The week's shoes and whether any is new reach the review (Issue #1207).
+
+    W = 2026-07-06..07-12 for today=2026-07-10. The new pair debuts inside the
+    window, so it stays flagged as new; the older pair does not.
+    """
+    # Older pair: six outings, five of them before the target week.
+    for idx, day in enumerate(
+        ["2026-06-20", "2026-06-22", "2026-06-24", "2026-06-26", "2026-06-28"]
+    ):
+        _insert_activity(
+            db_path, 849000100 + idx, day, 10.0, "NB 1080", "v14", "uuid-v14"
+        )
+    _insert_activity(
+        db_path, 849000110, "2026-07-07", 10.0, "NB 1080", "v14", "uuid-v14"
+    )
+    # New pair: same model string, first two outings inside the window.
+    _insert_activity(
+        db_path, 849000120, "2026-07-08", 25.0, "NB 1080", "v15", "uuid-v15"
+    )
+    _insert_activity(
+        db_path, 849000121, "2026-07-10", 12.0, "NB 1080", "v15", "uuid-v15"
+    )
+
+    with _no_network(db_path):
+        result = prefetch_weekly_review_context("this", today="2026-07-10")
+
+    usage = result["gear_usage"]
+    assert [row["gear_label"] for row in usage] == ["NB 1080 (v15)", "NB 1080 (v14)"]
+
+    new_pair, old_pair = usage
+    assert new_pair["runs"] == 2
+    assert new_pair["km"] == 37.0
+    assert new_pair["runs_on_gear_total"] == 2
+    assert new_pair["is_new_gear"] is True
+    assert new_pair["first_use_date"] == "2026-07-08"
+
+    # The older pair shares the model string but not the mileage.
+    assert old_pair["runs"] == 1
+    assert old_pair["km"] == 10.0
+    assert old_pair["runs_on_gear_total"] == 6
+    assert old_pair["is_new_gear"] is False
+
+    # Per-activity label rides along on the activity rows too.
+    labels = {a["activity_id"]: a["gear_label"] for a in result["activities"]}
+    assert labels[849000120] == "NB 1080 (v15)"
+    assert labels[849000110] == "NB 1080 (v14)"
+
+
+@pytest.mark.integration
 def test_prefetch_is_read_only(db_path: Path) -> None:
     """Collection writes nothing (catch_up_ingest is intentionally excluded)."""
     _insert_activity(db_path, 849000010, "2026-07-01")

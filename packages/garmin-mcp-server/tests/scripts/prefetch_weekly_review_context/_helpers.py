@@ -156,17 +156,36 @@ def _weeks(series: list[tuple[str, int | None]]) -> dict[str, Any]:
     return {"weeks": [{"week_start": ws, "longest_run_sec": sec} for ws, sec in series]}
 
 
-def _insert_activity(db_path: Path, activity_id: int, activity_date: str) -> None:
+def _insert_activity(
+    db_path: Path,
+    activity_id: int,
+    activity_date: str,
+    distance_km: float = 8.0,
+    gear_model: str | None = None,
+    gear_nickname: str | None = None,
+    gear_uuid: str | None = None,
+) -> None:
     with get_write_connection(str(db_path)) as conn:
         conn.execute(
             """
             INSERT INTO activities (
                 activity_id, activity_date, activity_name,
-                total_distance_km, total_time_seconds
+                total_distance_km, total_time_seconds,
+                gear_type, gear_model, gear_nickname, gear_uuid
             )
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (activity_id, activity_date, "Run", 8.0, 2880),
+            (
+                activity_id,
+                activity_date,
+                "Run",
+                distance_km,
+                2880,
+                "Shoes" if gear_model else None,
+                gear_model,
+                gear_nickname,
+                gear_uuid,
+            ),
         )
 
 

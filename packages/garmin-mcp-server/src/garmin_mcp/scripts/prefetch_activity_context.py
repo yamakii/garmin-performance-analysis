@@ -103,6 +103,7 @@ from garmin_mcp.analysis.derivations import (
     select_prescription_for_run,
 )
 from garmin_mcp.database.connection import get_connection, get_db_path
+from garmin_mcp.database.readers.metadata import collect_activity_gear
 
 logger = logging.getLogger(__name__)
 
@@ -524,6 +525,9 @@ def prefetch_activity_context(activity_id: int) -> dict:
         total_time_seconds = activity_row[8]
         wind_mps = round(wind_kmh / 3.6, 1) if wind_kmh else None
 
+        # Which shoe, and how far into its life this run sits (Issue #1207).
+        gear = collect_activity_gear(conn, activity_id)
+
         # 2. HR efficiency (C1: expanded from training_type only)
         hr_row = conn.execute(
             """
@@ -828,6 +832,9 @@ def prefetch_activity_context(activity_id: int) -> dict:
         "humidity_pct": humidity,
         "wind_mps": wind_mps,
         "wind_direction": wind_direction,
+        # Shoe worn on this run plus its cumulative mileage (Issue #1207); null
+        # when no gear was registered in Garmin for the activity.
+        "gear": gear,
         "terrain_category": _classify_terrain(avg_gain_per_km, max_split_change),
         "avg_elevation_gain_per_km": avg_gain_per_km,
         "total_elevation_gain": round(total_gain, 1),

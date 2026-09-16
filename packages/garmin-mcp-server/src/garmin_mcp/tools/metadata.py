@@ -11,6 +11,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from garmin_mcp.analysis.derivations import format_gear_label
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.tools.registry import ToolDef
 
@@ -54,7 +55,10 @@ def _get_activity_by_date(
                     activity_name,
                     start_time_local,
                     total_distance_km,
-                    total_time_seconds
+                    total_time_seconds,
+                    gear_type,
+                    gear_model,
+                    gear_nickname
                 FROM activities
                 WHERE activity_date = ?
                 ORDER BY start_time_local
@@ -69,6 +73,10 @@ def _get_activity_by_date(
                 "start_time": str(row[2]) if row[2] else None,
                 "distance_km": row[3],
                 "duration_seconds": row[4],
+                "gear_type": row[5],
+                "gear_model": row[6],
+                "gear_nickname": row[7],
+                "gear_label": format_gear_label(row[6], row[7]),
             }
             for row in activities_result
         ]
@@ -87,6 +95,10 @@ def _get_activity_by_date(
                 "start_time": activities[0]["start_time"],
                 "distance_km": activities[0]["distance_km"],
                 "duration_seconds": activities[0]["duration_seconds"],
+                "gear_type": activities[0]["gear_type"],
+                "gear_model": activities[0]["gear_model"],
+                "gear_nickname": activities[0]["gear_nickname"],
+                "gear_label": activities[0]["gear_label"],
             }
         else:
             result = {

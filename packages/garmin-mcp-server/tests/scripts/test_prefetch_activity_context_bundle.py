@@ -248,3 +248,90 @@ class TestPrefetchBundleExpansion:
 
         assert result["phase_category"] == "low_moderate"
         assert result["environment_category"] == "base_moderate"
+
+    def test_bundle_includes_gear_block(
+        self, verification_db_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The shoe worn reaches the analysis CONTEXT (Issue #1207).
+
+        The fixture carries no gear, so this seeds one and checks the derived
+        history travels with it -- and that adding the key keeps the bundle
+        JSON-serializable.
+        """
+        conn = duckdb.connect(str(verification_db_path))
+        conn.execute(
+            """
+            UPDATE activities
+            SET gear_type = 'Shoes',
+                gear_model = 'Test Shoe',
+                gear_nickname = 'v15',
+                gear_uuid = 'uuid-test'
+            WHERE activity_id = ?
+            """,
+            [FIXTURE_ACTIVITY_ID],
+        )
+        conn.close()
+
+        _patch_db_path(monkeypatch, verification_db_path)
+
+        result = prefetch_activity_context(FIXTURE_ACTIVITY_ID)
+
+        gear = result["gear"]
+        assert gear is not None
+        assert gear["gear_model"] == "Test Shoe"
+        assert gear["gear_nickname"] == "v15"
+        assert gear["gear_label"] == "Test Shoe (v15)"
+        assert gear["runs_on_gear"] == 1
+        assert gear["is_new_gear"] is True
+        assert gear["first_use_date"] == FIXTURE_ACTIVITY_DATE
+
+        json.dumps(result, ensure_ascii=False)
+
+    def test_bundle_gear_none_without_gear(
+        self, verification_db_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No gear registered in Garmin yields an explicit null, not a crash.
+
+        Runs before 2021 have an empty gear.json in the real data. Existing
+        keys must survive the addition (backward compatibility).
+        """
+        conn = duckdb.connect(str(verification_db_path))
+        conn.execute(
+            """
+            UPDATE activities
+            SET gear_type = NULL,
+                gear_model = NULL,
+                gear_nickname = NULL,
+                gear_uuid = NULL
+            WHERE activity_id = ?
+            """,
+            [FIXTURE_ACTIVITY_ID],
+        )
+        conn.close()
+
+        _patch_db_path(monkeypatch, verification_db_path)
+
+        result = prefetch_activity_context(FIXTURE_ACTIVITY_ID)
+
+        assert result["gear"] is None
+        assert result["activity_id"] == FIXTURE_ACTIVITY_ID
+        assert result["phase_category"] == "low_moderate"
+
+    def test_bundle_gear_uses_fixture_gear_by_default(
+        self, verification_db_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The fixture's own gear.json reaches the bundle through ingest.
+
+        Guards the whole path: gear.json -> inserter -> activities -> CONTEXT.
+        The fixture predates nicknames, so gear_label is the bare model.
+        """
+        _patch_db_path(monkeypatch, verification_db_path)
+
+        result = prefetch_activity_context(FIXTURE_ACTIVITY_ID)
+
+        gear = result["gear"]
+        assert gear is not None
+        assert gear["gear_model"] == "Nike Vaporfly 3"
+        assert gear["gear_type"] == "Running Shoes"
+        assert gear["gear_nickname"] is None
+        assert gear["gear_label"] == "Nike Vaporfly 3"

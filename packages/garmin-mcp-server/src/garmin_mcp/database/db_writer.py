@@ -226,6 +226,8 @@ class GarminDBWriter:
                 wind_direction VARCHAR,
                 gear_type VARCHAR,
                 gear_model VARCHAR,
+                gear_nickname VARCHAR,
+                gear_uuid VARCHAR,
                 base_weight_kg DOUBLE
             )
         """)

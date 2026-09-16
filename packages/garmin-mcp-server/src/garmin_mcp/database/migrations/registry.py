@@ -237,6 +237,13 @@ def _wrap_add_prescription_registered_bookend_minutes(
     add_prescription_registered_bookend_minutes(conn)
 
 
+def _wrap_add_gear_identity_columns(conn: duckdb.DuckDBPyConnection) -> None:
+    """Wrap the activities gear identity (nickname + uuid) migration."""
+    from .add_gear_identity_columns import add_gear_identity_columns
+
+    add_gear_identity_columns(conn)
+
+
 def _wrap_plan_versioning(conn: duckdb.DuckDBPyConnection) -> None:
     """Wrap plan versioning migration to run on an existing connection."""
     from .add_plan_versioning import _column_exists, _table_exists
@@ -309,4 +316,5 @@ MIGRATIONS: list[tuple[int, str, Callable[[duckdb.DuckDBPyConnection], None]]] =
         "add_prescription_registered_bookend_minutes",
         _wrap_add_prescription_registered_bookend_minutes,
     ),
+    (27, "add_gear_identity_columns", _wrap_add_gear_identity_columns),
 ]

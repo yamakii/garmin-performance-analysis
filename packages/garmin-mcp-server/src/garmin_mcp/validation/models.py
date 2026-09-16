@@ -27,6 +27,8 @@ class ActivityRecord(BaseModel):
     wind_direction: str | None = None
     gear_type: str | None = None
     gear_model: str | None = None
+    gear_nickname: str | None = None
+    gear_uuid: str | None = None
     base_weight_kg: float | None = Field(default=None, ge=0)
 
 
