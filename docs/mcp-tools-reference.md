@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **70 tools** (68 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **71 tools** (69 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -30,6 +30,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Workout Scheduling](#workout-scheduling) (3)
 - [hiking](#hiking) (2)
 - [Training Plan Ledger](#training-plan-ledger) (6)
+- [gear](#gear) (1)
 - [Server](#server) (2)
 
 ## Export
@@ -835,6 +836,19 @@ Deterministically link prescribed sessions in a date range to the activities tha
 | `start_date` | string | **required** | Inclusive range start (YYYY-MM-DD). |
 | `end_date` | string | **required** | Inclusive range end (YYYY-MM-DD). |
 | `user_id` | string | optional | Ledger owner identifier (default: 'default') |
+
+## gear
+
+### `get_gear_wear`
+
+CLI: `garmin-db gear wear`
+
+Get every shoe with its lifetime mileage and whether it is due for replacement, most worn first. Wear is measured against the athlete's own per-shoe limit from Garmin (gear.json maximumMeters), not a generic mileage rule, so wear_status (ok <60% / monitor 60-80% / due_soon 80-100% / over >=100%) is null when no limit is recorded rather than assumed. A second, independent axis age_status (ok / aging >=24mo / aged >=36mo) covers midsole foam degrading on the shelf regardless of use; replace_recommended takes the stricter of the two. Shoes are identified by gear_uuid, so two generations sharing one model name keep separate mileage. Retired shoes are excluded unless include_retired is true. Returns gear (gear_label, gear_model, gear_nickname, gear_uuid, runs, km, max_km, wear_pct, wear_status, first_use_date, since_date, age_months, age_status, last_used, is_retired, replace_recommended) plus a replace_recommended list of the labels needing action.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `include_retired` | boolean | optional (default `False`) | Include shoes already retired in Garmin (default: false) |
+| `as_of` | string | optional | Reference date in YYYY-MM-DD for the age axis (default: today) |
 
 ## Server
 

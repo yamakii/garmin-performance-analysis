@@ -46,6 +46,10 @@ def seeded(initialized_db_path: Path, tmp_path: Path, monkeypatch) -> Path:
                 "gearTypeName": "Shoes",
                 "customMakeModel": "New Balance Fresh Foam X 1080",
                 "displayName": "v15",
+                "maximumMeters": 650000.0,
+                "gearStatusName": "active",
+                "dateBegin": "2026-09-08T00:00:00.0",
+                "dateEnd": None,
             }
         ],
     )
@@ -138,3 +142,28 @@ def test_backfill_is_idempotent(seeded: Path) -> None:
     conn.close()
 
     assert row == ("v15", "uuid-v15")
+
+
+@pytest.mark.integration
+def test_backfill_populates_lifecycle_columns(seeded: Path) -> None:
+    """The replacement limit / status / dates land too (Issue #1209)."""
+    backfill_gear_identity(db_path=str(seeded))
+
+    conn = duckdb.connect(str(seeded), read_only=True)
+    row = conn.execute("""
+        SELECT gear_max_km, gear_status, gear_since_date, gear_retired_date
+        FROM activities WHERE activity_id = 1
+        """).fetchone()
+    without_lifecycle = conn.execute("""
+        SELECT gear_max_km, gear_status, gear_since_date, gear_retired_date
+        FROM activities WHERE activity_id = 2
+        """).fetchone()
+    conn.close()
+
+    assert row is not None
+    assert row[0] == 650.0
+    assert row[1] == "active"
+    assert str(row[2]) == "2026-09-08"
+    assert row[3] is None
+    # Activity 2's gear.json predates these fields: null, not invented.
+    assert without_lifecycle == (None, None, None, None)

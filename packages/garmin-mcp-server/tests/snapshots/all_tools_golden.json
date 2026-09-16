@@ -1488,6 +1488,24 @@
     }
   },
   {
+    "name": "get_gear_wear",
+    "description": "Get every shoe with its lifetime mileage and whether it is due for replacement, most worn first. Wear is measured against the athlete's own per-shoe limit from Garmin (gear.json maximumMeters), not a generic mileage rule, so wear_status (ok <60% / monitor 60-80% / due_soon 80-100% / over >=100%) is null when no limit is recorded rather than assumed. A second, independent axis age_status (ok / aging >=24mo / aged >=36mo) covers midsole foam degrading on the shelf regardless of use; replace_recommended takes the stricter of the two. Shoes are identified by gear_uuid, so two generations sharing one model name keep separate mileage. Retired shoes are excluded unless include_retired is true. Returns gear (gear_label, gear_model, gear_nickname, gear_uuid, runs, km, max_km, wear_pct, wear_status, first_use_date, since_date, age_months, age_status, last_used, is_retired, replace_recommended) plus a replace_recommended list of the labels needing action.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "include_retired": {
+          "type": "boolean",
+          "description": "Include shoes already retired in Garmin (default: false)",
+          "default": false
+        },
+        "as_of": {
+          "type": "string",
+          "description": "Reference date in YYYY-MM-DD for the age axis (default: today)"
+        }
+      }
+    }
+  },
+  {
     "name": "get_server_info",
     "description": "Get diagnostic info about the running MCP server (server_dir). Use to verify which directory the server is running from.",
     "inputSchema": {

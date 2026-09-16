@@ -21,6 +21,26 @@ from garmin_mcp.validation.validators import validate_activity
 logger = logging.getLogger(__name__)
 
 
+def _gear_max_km(maximum_meters: object) -> float | None:
+    """Convert gear.json ``maximumMeters`` to km, or None when absent/unusable.
+
+    A zero limit means "no limit set" in Garmin, so it is treated as unknown
+    rather than as a shoe that is instantly worn out.
+    """
+    if not isinstance(maximum_meters, int | float) or isinstance(maximum_meters, bool):
+        return None
+    if maximum_meters <= 0:
+        return None
+    return round(float(maximum_meters) / 1000.0, 1)
+
+
+def _gear_date(value: object) -> str | None:
+    """Take the date half of a gear.json timestamp (``2026-09-08T00:00:00.0``)."""
+    if not isinstance(value, str) or not value:
+        return None
+    return value[:10]
+
+
 def insert_activities(
     activity_id: int,
     date: str,
@@ -157,6 +177,10 @@ def insert_activities(
         gear_model = None
         gear_nickname = None
         gear_uuid = None
+        gear_max_km = None
+        gear_status = None
+        gear_since_date = None
+        gear_retired_date = None
 
         if raw_gear_file:
             raw_gear_path = Path(raw_gear_file)
@@ -181,6 +205,15 @@ def insert_activities(
                         # both are kept: uuid identifies, nickname names.
                         gear_nickname = gear_data.get("displayName")
                         gear_uuid = gear_data.get("uuid")
+                        # Lifecycle snapshot as of this ingest (#1209). The
+                        # replacement limit is the athlete's own setting, so it
+                        # beats any generic mileage rule; status / dates can
+                        # change for the same pair over time, which is why a
+                        # reader takes them from the shoe's newest activity.
+                        gear_max_km = _gear_max_km(gear_data.get("maximumMeters"))
+                        gear_status = gear_data.get("gearStatusName")
+                        gear_since_date = _gear_date(gear_data.get("dateBegin"))
+                        gear_retired_date = _gear_date(gear_data.get("dateEnd"))
 
         # Validate before insertion
         validate_activity(
@@ -202,6 +235,10 @@ def insert_activities(
                 "gear_model": gear_model,
                 "gear_nickname": gear_nickname,
                 "gear_uuid": gear_uuid,
+                "gear_max_km": gear_max_km,
+                "gear_status": gear_status,
+                "gear_since_date": gear_since_date,
+                "gear_retired_date": gear_retired_date,
                 "base_weight_kg": base_weight_kg,
             }
         )
@@ -228,6 +265,10 @@ def insert_activities(
             gear_model,
             gear_nickname,
             gear_uuid,
+            gear_max_km,
+            gear_status,
+            gear_since_date,
+            gear_retired_date,
             base_weight_kg,
         )
 
@@ -260,6 +301,10 @@ def _insert_with_connection(
     gear_model: str | None,
     gear_nickname: str | None,
     gear_uuid: str | None,
+    gear_max_km: float | None,
+    gear_status: str | None,
+    gear_since_date: str | None,
+    gear_retired_date: str | None,
     base_weight_kg: float | None,
 ) -> None:
     """Helper function to insert activity data with a given connection."""
@@ -289,8 +334,12 @@ def _insert_with_connection(
             gear_model,
             gear_nickname,
             gear_uuid,
+            gear_max_km,
+            gear_status,
+            gear_since_date,
+            gear_retired_date,
             base_weight_kg
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             activity_id,
@@ -313,6 +362,10 @@ def _insert_with_connection(
             gear_model,
             gear_nickname,
             gear_uuid,
+            gear_max_km,
+            gear_status,
+            gear_since_date,
+            gear_retired_date,
             base_weight_kg,
         ),
     )
