@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **72 tools** (70 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **73 tools** (71 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -23,7 +23,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Training Plan](#training-plan) (2)
 - [Athlete](#athlete) (7)
 - [Race](#race) (1)
-- [Training Load](#training-load) (3)
+- [Training Load](#training-load) (4)
 - [Durability](#durability) (3)
 - [strength](#strength) (2)
 - [ingest](#ingest) (2)
@@ -626,6 +626,16 @@ Get a composite injury-risk score (0-100) with a low/moderate/high band and a pe
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `date` | string | optional | Reference day (YYYY-MM-DD) the injury-risk score is computed as of. Defaults to the latest activity_date. |
+
+### `get_post_event_window`
+
+CLI: `garmin-db load post-event-window`
+
+Get the 21-day protection window after the last race or comparably big stimulus, and whether the long runs since then stayed under the pre-event ceiling. The event comes from the race calendar first (athlete_goals at any status, plus kind='race' steps of the block's long-run ladder, mapped to that week's Sunday); a >=18 km run at or above its own Garmin zone-3 lower boundary is only a fallback proxy and never overrides a calendar event on the same day (a cold-weather half can average 141 bpm). ceiling_km = the longest run in the 56 days before the event. Verdicts: no_event / green (outside the window, or at or under the ceiling) / yellow (over the ceiling) / red (over it by more than 10%) / insufficient_data (in window, no ceiling). Returns date, last_event {date, source, label, activity_id}, days_since_event, in_window, ceiling_km, longest_since_km, longest_since_activity_id, overshoot_pct, verdict and a Japanese reason_ja. Defaults to the latest activity_date.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `date` | string | optional | Reference day (YYYY-MM-DD) the protection window is evaluated as of. Defaults to the latest activity_date. |
 
 ## Durability
 
