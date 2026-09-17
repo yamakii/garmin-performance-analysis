@@ -152,6 +152,67 @@ def test_prefetch_weekly_review_long_run_gate_null_without_long_run() -> None:
 
 
 @pytest.mark.unit
+def test_cutback_due_event_window_true_inside_window_yellow() -> None:
+    """An in-window 'yellow' fires the event-window cutback gate (#1222)."""
+    window = {
+        "date": "2026-07-10",
+        "last_event": {
+            "date": "2026-06-28",
+            "source": "goal",
+            "label": "ハーフマラソン",
+            "activity_id": None,
+        },
+        "days_since_event": 12,
+        "in_window": True,
+        "ceiling_km": 21.2,
+        "longest_since_km": 22.5,
+        "longest_since_activity_id": 9301,
+        "overshoot_pct": 6.1,
+        "verdict": "yellow",
+        "reason_ja": "保護期間中に上限を超えています。",
+    }
+
+    with _mock_prefetch(event_window=window) as reader:
+        result = prefetch_weekly_review_context("this", today="2026-07-10")
+
+    long_run = result["load_trend"]["long_run"]
+    assert long_run["cutback_due_event_window"] is True
+    # The streak gate is independent and stays false on an empty series.
+    assert long_run["cutback_due_long_run"] is False
+    # The slimmed block carries exactly the five fields the rule is stated in.
+    assert long_run["event_window"] == {
+        "last_event": window["last_event"],
+        "days_since_event": 12,
+        "in_window": True,
+        "ceiling_km": 21.2,
+        "verdict": "yellow",
+    }
+    # The window is judged as of today, not the week boundary.
+    assert reader.get_post_event_window.call_args.args == ("2026-07-10",)
+
+
+@pytest.mark.unit
+def test_cutback_due_event_window_false_when_no_event() -> None:
+    """No race on the calendar -> the event gate stays false (#1222)."""
+    with _mock_prefetch():
+        result = prefetch_weekly_review_context("this", today="2026-07-10")
+
+    long_run = result["load_trend"]["long_run"]
+    assert long_run["cutback_due_event_window"] is False
+    assert long_run["event_window"]["verdict"] == "no_event"
+    assert long_run["event_window"]["in_window"] is False
+
+    # A failing window reader nulls the block without breaking the gate.
+    with _mock_prefetch() as failing:
+        failing.get_post_event_window.side_effect = RuntimeError("no goals table")
+        degraded = prefetch_weekly_review_context("this", today="2026-07-10")
+
+    degraded_long_run = degraded["load_trend"]["long_run"]
+    assert degraded_long_run["cutback_due_event_window"] is False
+    assert degraded_long_run["event_window"] is None
+
+
+@pytest.mark.unit
 def test_prefetch_invalid_target_returns_error() -> None:
     """An unparseable target -> a fatal error bundle."""
     with (

@@ -70,8 +70,15 @@ def test_prefetch_weekly_review_context_end_to_end(db_path: Path) -> None:
     assert result["activity_ids"]["current_week"] == [849000002]
     assert {a["activity_id"] for a in result["activities"]} == {849000001, 849000002}
 
-    # recovery is a nested triple of collectors.
-    assert set(result["recovery"]) == {"trend", "status", "baseline_deviation"}
+    # recovery is a nested set of collectors (the morning cost of W-1's longest
+    # run joined the trio in #1222; W-1 held no long run here, so it is null).
+    assert set(result["recovery"]) == {
+        "trend",
+        "status",
+        "baseline_deviation",
+        "long_run_recovery_cost",
+    }
+    assert result["recovery"]["long_run_recovery_cost"] is None
 
     # goals_with_weeks_to_race carries the pre-computed ceiling, and is the
     # bundle's only copy of the goals (Issue #933).
@@ -178,6 +185,27 @@ def test_weekly_context_includes_gear_usage(db_path: Path) -> None:
     labels = {a["activity_id"]: a["gear_label"] for a in result["activities"]}
     assert labels[849000120] == "NB 1080 (v15)"
     assert labels[849000110] == "NB 1080 (v14)"
+
+
+@pytest.mark.integration
+def test_bundle_carries_recovery_cost_for_prev_week_longest(db_path: Path) -> None:
+    """``recovery.long_run_recovery_cost`` judges W-1's longest run (#1222).
+
+    W-1 = 2026-06-29..07-05 for today=2026-07-10. The 22 km long run is the
+    reference; the 5 km jog of the same week is not.
+    """
+    _insert_activity(db_path, 849000201, "2026-07-05", 22.0)
+    _insert_activity(db_path, 849000202, "2026-07-03", 5.0)
+
+    with _no_network(db_path):
+        result = prefetch_weekly_review_context("this", today="2026-07-10")
+
+    cost = result["recovery"]["long_run_recovery_cost"]
+    assert cost is not None
+    assert cost["activity_id"] == 849000201
+    # No wellness rows were seeded, so the read is honest about not knowing.
+    assert cost["insufficient_data"] is True
+    assert cost["cost_flag"] is False
 
 
 @pytest.mark.integration

@@ -126,13 +126,17 @@ LOAD_TOOLS: list[ToolDef] = [
         description=(
             "Get a composite injury-risk score (0-100) with a low/moderate/high "
             "band and a per-factor breakdown, live-computed (no LLM, no "
-            "backfill). Fuses four deterministic signals: ACWR (weight 0.40; "
-            "0.8-1.3 is the safe zone, 1.5 = 50%, 1.8+ = 100%), worsening "
-            "durability trend (0.25), personal wellness-baseline deviation of "
-            "HRV/readiness/RHR (0.20), and trailing-14-day form anomalies "
-            "(0.15). Missing signals are dropped and the rest renormalized; when "
-            "all are missing returns {insufficient_data: true}. Bands: <30 low / "
-            "30-60 moderate / >60 high. Defaults to the latest activity_date."
+            "backfill). Fuses seven deterministic signals: ACWR (weight 0.25; "
+            "0.8-1.3 is the safe zone, 1.5 = 50%, 1.8+ = 100%), the symptom-log "
+            "rule (0.25), the post-race protection window (0.15; inside the "
+            "window green = 25%, yellow = 60%, red = 100%), the latest long "
+            "run's next-morning recovery cost (0.10; criteria fired / 3), "
+            "worsening durability trend (0.10), personal wellness-baseline "
+            "deviation of HRV/readiness/RHR (0.10), and trailing-14-day form "
+            "anomalies (0.05). Missing signals are dropped and the rest "
+            "renormalized; when all are missing returns {insufficient_data: "
+            "true}. Bands: <30 low / 30-60 moderate / >60 high. Defaults to the "
+            "latest activity_date."
         ),
         params=GetInjuryRiskParams,
         handler=_get_injury_risk,

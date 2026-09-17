@@ -29,17 +29,24 @@ Output (JSON to stdout, one line):
       "fitness_summary": {...}|null,      # includes Garmin native hr_zones
       "load_trend": {...}|null,           # + long_run: {weekly_longest_sec,
                                           #   long_run_build_weeks,
-                                          #   cutback_due_long_run} over the
-                                          #   weeks completed before W, plus
-                                          #   gate: the progression verdict for
-                                          #   W-1's longest run (null when none
-                                          #   reached _LONG_RUN_GATE_MIN_KM)
+                                          #   cutback_due_long_run,
+                                          #   cutback_due_event_window,
+                                          #   event_window: {last_event,
+                                          #     days_since_event, in_window,
+                                          #     ceiling_km, verdict}|null}
+                                          #   over the weeks completed before W,
+                                          #   plus gate: the progression verdict
+                                          #   for W-1's longest run (null when
+                                          #   none reached _LONG_RUN_GATE_MIN_KM)
       "acwr": {...}|null,
       "recovery": {"trend": {...}|null,   # trend.series trimmed to the last
                                           #   _RECOVERY_SERIES_KEEP_DAYS days
                                           #   (aggregates stay 8-week)
                    "status": {...}|null,
-                   "baseline_deviation": {...}|null},
+                   "baseline_deviation": {...}|null,
+                   "long_run_recovery_cost": {...}|null},
+                                          #   next-morning cost of W-1's longest
+                                          #   run (null when W-1 had none)
       "symptoms": {"prev_week": [...],      # W-1 symptom reports (#1223)
                    "status": {...}}|null,   #   deterministic rule as of today
       "strength": {"prev_week": [...]|null, "current_week": [...]|null},
@@ -130,6 +137,9 @@ _PAST_REVIEW_REPLAY_KEYS = ("this_week", "garmin_next_week")
 # Minimum distance for W-1's longest run to be gated for progression (Issue
 # #982). Matches the long-run definition used by the durability reader.
 _LONG_RUN_GATE_MIN_KM = 10.0
+# Post-event window verdicts that force a cutback on their own (Issue #1222):
+# a long run past the pre-race ceiling while the protection window is open.
+_EVENT_WINDOW_CUTBACK = ("yellow", "red")
 
 
 def _safe[T](fn: Callable[[], T]) -> T | None:
@@ -204,7 +214,11 @@ def _weeks_to_race(race_date: str | None, week_start: date) -> int | None:
     return math.ceil((rd - week_start).days / 7)
 
 
-def _long_run_gate(load_trend: dict[str, Any], week_start_date: str) -> dict[str, Any]:
+def _long_run_gate(
+    load_trend: dict[str, Any],
+    week_start_date: str,
+    event_window: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Compute the long-run cutback gate over the weeks **completed** before W.
 
     The cutback cycle's **primary** gate is the long-run extension streak, not
@@ -221,16 +235,27 @@ def _long_run_gate(load_trend: dict[str, Any], week_start_date: str) -> dict[str
     (Issue #929). ``None``s inside the retained range are kept: a *completed*
     week with no run really is a reset boundary.
 
+    The post-event protection window is a **second primary** trigger (#1222):
+    inside the 21 days after a race, a long run past the pre-race ceiling is the
+    exact shape the 2025-12-29 injury took, so a ``yellow`` / ``red`` window
+    verdict forces a cutback on its own -- independently of the extension
+    streak, which a race week's taper can have reset to zero.
+
     Args:
         load_trend: A ``get_load_trend`` result; reads ``weeks[*].week_start``
             and ``weeks[*].longest_run_sec`` (oldest -> newest).
         week_start_date: Target week W's start (``YYYY-MM-DD``). Compared as an
             ISO string, which orders identically to the underlying dates.
+        event_window: A ``get_post_event_window`` result, or ``None`` when the
+            collector failed (the event gate then reads ``False`` and the
+            slimmed block is ``None``).
 
     Returns:
         ``{"weekly_longest_sec": [int|None, ...], "long_run_build_weeks": int,
-        "cutback_due_long_run": bool}`` where the flag is the streak reaching
-        :data:`LONG_RUN_CUTBACK_TRIGGER_WEEKS`.
+        "cutback_due_long_run": bool, "cutback_due_event_window": bool,
+        "event_window": {...}|None}`` where ``cutback_due_long_run`` is the
+        streak reaching :data:`LONG_RUN_CUTBACK_TRIGGER_WEEKS` and
+        ``cutback_due_event_window`` is an in-window ``yellow`` / ``red``.
     """
     weeks = [
         w
@@ -242,10 +267,34 @@ def _long_run_gate(load_trend: dict[str, Any], week_start_date: str) -> dict[str
     # Keep the Nones: a completed week with no run is a reset boundary.
     weekly_longest_sec = [w.get("longest_run_sec") for w in weeks]
     build_weeks = count_long_run_build_weeks(weekly_longest_sec)
+
+    window = event_window if isinstance(event_window, dict) else None
+    in_window = bool(window and window.get("in_window"))
+    verdict = str((window or {}).get("verdict") or "")
     return {
         "weekly_longest_sec": weekly_longest_sec,
         "long_run_build_weeks": build_weeks,
         "cutback_due_long_run": build_weeks >= LONG_RUN_CUTBACK_TRIGGER_WEEKS,
+        "cutback_due_event_window": in_window and verdict in _EVENT_WINDOW_CUTBACK,
+        "event_window": _slim_event_window(window),
+    }
+
+
+def _slim_event_window(window: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Keep only the fields the review quotes from the protection window.
+
+    The full reader result carries the ``reason_ja`` prose and the ceiling's
+    source activity, which the review re-words anyway; the bundle ships the five
+    fields the cutback rule is stated in.
+    """
+    if window is None:
+        return None
+    return {
+        "last_event": window.get("last_event"),
+        "days_since_event": window.get("days_since_event"),
+        "in_window": window.get("in_window"),
+        "ceiling_km": window.get("ceiling_km"),
+        "verdict": window.get("verdict"),
     }
 
 
@@ -579,16 +628,23 @@ def prefetch_weekly_review_context(
     load_trend = _safe(
         lambda: reader.get_load_trend(_LOAD_LOOKBACK_WEEKS, end_date=str(today_d))
     )
-    # Primary cutback gate: the long-run extension streak (Issue #927). Folded
-    # into the bundle deterministically so the review never re-derives it. Only
-    # the weeks completed before W count, so W's own in-progress bucket cannot
-    # zero the streak (Issue #929).
+    # Post-race protection window as of today (Issue #1222): the second primary
+    # cutback trigger, and the source of W's long-run ceiling while it is open.
+    event_window = _safe(lambda: reader.get_post_event_window(str(today_d)))
+
+    # W-1's longest long run: the reference for both the progression gate and
+    # the next-morning recovery cost below.
+    reference_run = _longest_long_run(prev_activities)
+
+    # Primary cutback gates: the long-run extension streak (Issue #927) and the
+    # post-event window (Issue #1222). Folded into the bundle deterministically
+    # so the review never re-derives them. Only the weeks completed before W
+    # count, so W's own in-progress bucket cannot zero the streak (Issue #929).
     if isinstance(load_trend, dict):
-        load_trend["long_run"] = _long_run_gate(load_trend, week_start_s)
+        load_trend["long_run"] = _long_run_gate(load_trend, week_start_s, event_window)
         # Secondary gate (Issue #982): did W-1's long run hold the legs
         # together? The review reads the same deterministic verdict the
         # activity summary shows, instead of eyeballing the fade itself.
-        reference_run = _longest_long_run(prev_activities)
         load_trend["long_run"]["gate"] = (
             _safe(
                 partial(
@@ -602,11 +658,19 @@ def prefetch_weekly_review_context(
         )
     acwr = _safe(lambda: reader.get_acwr(end_date=str(today_d)))
 
-    # Recovery: RHR/HRV trend, morning go/no-go status, personal-baseline z.
+    # Recovery: RHR/HRV trend, morning go/no-go status, personal-baseline z,
+    # and what W-1's longest run cost over the following two mornings (#1222).
     recovery = {
         "trend": _safe(lambda: reader.get_recovery_trend(_RECOVERY_TREND_WEEKS)),
         "status": _safe(lambda: reader.get_recovery_status()),
         "baseline_deviation": _safe(lambda: reader.get_wellness_baseline_deviation()),
+        "long_run_recovery_cost": (
+            _safe(
+                partial(reader.get_long_run_recovery_cost, reference_run["activity_id"])
+            )
+            if reference_run is not None
+            else None
+        ),
     }
 
     # Strength sessions for both windows (DB only, no Garmin access).
