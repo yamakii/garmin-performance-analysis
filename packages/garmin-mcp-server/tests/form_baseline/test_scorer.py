@@ -316,6 +316,38 @@ class TestComputeStarRating:
         rating2 = compute_star_rating(penalty=10.1, delta_pct=4.0)
         assert rating2["score"] == 4.0
 
+    def test_boundary_penalty_10_is_five_star(self) -> None:
+        """A penalty exactly on the 5/4 boundary keeps the better band."""
+        rating = compute_star_rating(penalty=10.0, delta_pct=0.0)
+
+        assert rating["score"] == 5.0
+        assert rating["star_rating"] == "★" * 5
+
+    def test_boundary_penalty_20_is_four_star(self) -> None:
+        """A penalty exactly on the 4/3 boundary keeps the better band.
+
+        This is the boundary ``overall_star_rating`` lands on whenever GCT, VO
+        and VR all rate 4 stars: ``(5.0 - 4.0) * 20.0 == 20.0`` (#1213).
+        """
+        rating = compute_star_rating(penalty=20.0, delta_pct=0.0)
+
+        assert rating["score"] == 4.0
+        assert rating["star_rating"] == "★" * 4 + "☆"
+
+    def test_boundary_penalty_40_is_three_star(self) -> None:
+        """A penalty exactly on the 3/2 boundary keeps the better band."""
+        rating = compute_star_rating(penalty=40.0, delta_pct=0.0)
+
+        assert rating["score"] == 3.0
+        assert rating["star_rating"] == "★" * 3 + "☆" * 2
+
+    def test_boundary_penalty_60_is_two_star(self) -> None:
+        """A penalty exactly on the 2/1 boundary keeps the better band."""
+        rating = compute_star_rating(penalty=60.0, delta_pct=0.0)
+
+        assert rating["score"] == 2.0
+        assert rating["star_rating"] == "★" * 2 + "☆" * 3
+
     def test_delta_pct_does_not_affect_rating(self) -> None:
         """Test that delta_pct is ignored in rating calculation.
 

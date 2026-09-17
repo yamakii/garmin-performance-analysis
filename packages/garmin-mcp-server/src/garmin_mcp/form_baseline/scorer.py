@@ -386,12 +386,13 @@ def compute_star_rating(
     used in the rating logic.
 
     Star rating logic (sigma equivalents are for the degradation side, where the
-    factor is 1.0, given PENALTY_PER_SIGMA = 20):
-    - 5 stars (5.0): Excellent - penalty < 10 (< 0.5 sigma)
-    - 4 stars (4.0): Good - penalty < 20 (< 1 sigma)
-    - 3 stars (3.0): Average - penalty < 40 (< 2 sigma)
-    - 2 stars (2.0): Below Average - penalty < 60 (< 3 sigma)
-    - 1 star (1.0): Poor - penalty >= 60 (>= 3 sigma)
+    factor is 1.0, given PENALTY_PER_SIGMA = 20). Bounds are inclusive, so a
+    penalty landing exactly on a boundary takes the better band (#1213):
+    - 5 stars (5.0): Excellent - penalty <= 10 (<= 0.5 sigma)
+    - 4 stars (4.0): Good - penalty <= 20 (<= 1 sigma)
+    - 3 stars (3.0): Average - penalty <= 40 (<= 2 sigma)
+    - 2 stars (2.0): Below Average - penalty <= 60 (<= 3 sigma)
+    - 1 star (1.0): Poor - penalty > 60 (> 3 sigma)
 
     Args:
         penalty: Penalty score (0-100, already asymmetric)
@@ -412,20 +413,25 @@ def compute_star_rating(
     filled_star = "\u2605"  # ★
     empty_star = "\u2606"  # ☆
 
-    # Determine rating based on penalty only (direction is encoded in penalty)
-    if penalty < 10.0:
+    # Determine rating based on penalty only (direction is encoded in penalty).
+    # Bounds are inclusive so an exact-boundary penalty takes the better band.
+    # ``overall_star_rating`` re-encodes an average of star scores as
+    # ``(5.0 - overall_score) * 20.0``; that value is quantised and lands on
+    # 20.0 / 40.0 / 60.0 exactly whenever the three metrics agree, so with
+    # exclusive bounds three 4-star metrics rendered a 3-star overall (#1213).
+    if penalty <= 10.0:
         star_rating = filled_star * 5
         score = 5.0
         category = "excellent"
-    elif penalty < 20.0:
+    elif penalty <= 20.0:
         star_rating = filled_star * 4 + empty_star
         score = 4.0
         category = "good"
-    elif penalty < 40.0:
+    elif penalty <= 40.0:
         star_rating = filled_star * 3 + empty_star * 2
         score = 3.0
         category = "average"
-    elif penalty < 60.0:
+    elif penalty <= 60.0:
         star_rating = filled_star * 2 + empty_star * 3
         score = 2.0
         category = "below_average"

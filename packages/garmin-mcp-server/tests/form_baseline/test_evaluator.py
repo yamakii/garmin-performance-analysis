@@ -120,6 +120,94 @@ class TestEvaluateAndStore:
         assert result["cadence"]["actual"] == 183.0
         assert result["cadence"]["needs_improvement"] is False
 
+    def test_uniform_four_star_metrics_yield_four_star_overall(self, mocker):
+        """Three 4-star metrics must render a 4-star overall, not 3 (#1213).
+
+        ``overall_score`` averages the GCT/VO/VR scores, so equal metrics give
+        an integer that maps to a penalty sitting exactly on a band boundary
+        (``(5.0 - 4.0) * 20.0 == 20.0``). ``compute_star_rating`` is
+        deliberately left unmocked here -- every other evaluator test stubs it
+        out, which is why the regression went unnoticed.
+        """
+        mock_load_models = mocker.patch(
+            "garmin_mcp.form_baseline.evaluator.load_models_from_file"
+        )
+        mock_load_models.return_value = {
+            "gct": mocker.Mock(),
+            "vo": mocker.Mock(),
+            "vr": mocker.Mock(),
+        }
+
+        mock_get_splits = mocker.patch(
+            "garmin_mcp.form_baseline.evaluator.get_splits_data"
+        )
+        mock_get_splits.return_value = {
+            "pace_s_per_km": 419.0,
+            "gct_ms": 259.7,
+            "vo_cm": 7.3,
+            "vr_pct": 9.22,
+            "cadence": 179.2,
+        }
+
+        # Penalty 15.0 is inside the 4-star band for each metric, so the
+        # average lands on exactly 4.0.
+        mock_score = mocker.patch(
+            "garmin_mcp.form_baseline.evaluator.score_observation"
+        )
+        mock_score.return_value = {
+            "pace": 419.0,
+            "speed_mps": 2.39,
+            "gct_ms_exp": 257.3,
+            "vo_cm_exp": 7.15,
+            "vr_pct_exp": 9.11,
+            "gct_ms_actual": 259.7,
+            "vo_cm_actual": 7.3,
+            "vr_pct_actual": 9.22,
+            "gct_delta_pct": 0.93,
+            "gct_sigma_pct": 1.0,
+            "gct_penalty": 15.0,
+            "vo_delta_cm": 0.15,
+            "vo_delta_pct": 2.06,
+            "vo_sigma_pct": 2.3,
+            "vo_penalty": 15.0,
+            "vr_delta_pct": 1.23,
+            "vr_sigma_pct": 1.3,
+            "vr_penalty": 15.0,
+            "score": 81.5,
+            "gct_needs_improvement": False,
+            "vo_needs_improvement": False,
+            "vr_needs_improvement": False,
+        }
+
+        mock_text = mocker.patch(
+            "garmin_mcp.form_baseline.evaluator.generate_evaluation_text"
+        )
+        mock_text.return_value = "評価文のテスト"
+
+        mock_overall = mocker.patch(
+            "garmin_mcp.form_baseline.evaluator.generate_overall_text"
+        )
+        mock_overall.return_value = "(総合評価: ★★★★☆ 4.0/5.0)"
+
+        mock_conn = mocker.MagicMock()
+        mocker.patch("duckdb.connect", return_value=mock_conn)
+
+        result = evaluate_and_store(
+            activity_id=24394775433,
+            activity_date="2026-09-17",
+            db_path=":memory:",
+            model_file=Path("/tmp/test_models.json"),
+        )
+
+        # Each metric earned 4 stars ...
+        assert result["gct"]["score"] == 4.0
+        assert result["vo"]["score"] == 4.0
+        assert result["vr"]["score"] == 4.0
+
+        # ... so the overall must not be demoted to 3.
+        assert result["overall_score"] == 4.0
+        assert result["overall_star_rating"] == "★" * 4 + "☆"
+
     def test_evaluate_missing_splits(self, mocker):
         """Test error handling when splits data is missing."""
         # Mock load_models_from_file to succeed
