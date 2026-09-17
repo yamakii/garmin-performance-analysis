@@ -33,7 +33,7 @@ All MCP tools have docstrings describing their parameters. Use `mcp__garmin-db__
 1. Get activity ID: mcp__garmin-db__get_activity_by_date(date="2025-10-15")
 2. Get performance: mcp__garmin-db__get_performance_trends(activity_id)
 3. Get splits: mcp__garmin-db__get_splits_pace_hr(activity_id, statistics_only=True)
-4. Get form: mcp__garmin-db__get_form_efficiency_summary(activity_id)
+4. Get form: mcp__garmin-db__get_form_evaluations(activity_id)
 5. Get HR zones: mcp__garmin-db__get_hr_efficiency_analysis(activity_id)
 ```
 

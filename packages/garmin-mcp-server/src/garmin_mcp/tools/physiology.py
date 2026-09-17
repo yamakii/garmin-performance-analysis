@@ -32,8 +32,13 @@ PHYSIOLOGY_TOOLS: list[ToolDef] = [
     ToolDef(
         name="get_form_efficiency_summary",
         description=(
-            "Get form efficiency summary (GCT, VO, VR metrics) from "
-            "form_efficiency table"
+            "Get raw form metric statistics (GCT, VO, VR averages, min/max, "
+            "std) from the form_efficiency table. NOT AUTHORITATIVE for "
+            "judging form: the star ratings here are absolute bands with no "
+            "pace term, so the same runner reads worse at slow paces purely "
+            "because ground contact and vertical ratio scale with speed. Use "
+            "get_form_evaluations for the pace-corrected verdict, and "
+            "get_form_baseline_trend for longitudinal comparison."
         ),
         params=ActivityIdParams,
         handler=lambda r, p: r.get_form_efficiency_summary(p.activity_id),

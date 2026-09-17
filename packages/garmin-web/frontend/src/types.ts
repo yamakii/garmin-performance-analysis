@@ -419,7 +419,6 @@ export interface LactateThresholdData {
 export interface ActivityDetailResponse {
   activity: ActivityCore & Record<string, unknown>;
   splits: SplitRow[];
-  form_efficiency: Record<string, unknown> | null;
   hr_zones: HrZoneRow[];
   performance_trends: Record<string, unknown> | null;
   form_evaluations: Record<string, unknown> | null;

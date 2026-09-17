@@ -14,7 +14,7 @@ argument-hint: [YYYY-MM-DD]
 ## Step 0: 準備
 
 ```
-ToolSearch(query="select:mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_splits_comprehensive,mcp__garmin-db__get_splits_elevation,mcp__garmin-db__get_weather_data,mcp__garmin-db__get_form_evaluations,mcp__garmin-db__get_form_efficiency_summary,mcp__garmin-db__get_split_time_series_detail,mcp__garmin-db__get_time_range_detail,mcp__garmin-db__get_recovery_status,mcp__garmin-db__get_wellness_baseline_deviation,mcp__garmin-db__get_performance_trends")
+ToolSearch(query="select:mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_splits_comprehensive,mcp__garmin-db__get_splits_elevation,mcp__garmin-db__get_weather_data,mcp__garmin-db__get_form_evaluations,mcp__garmin-db__get_form_baseline_trend,mcp__garmin-db__get_split_time_series_detail,mcp__garmin-db__get_time_range_detail,mcp__garmin-db__get_recovery_status,mcp__garmin-db__get_wellness_baseline_deviation,mcp__garmin-db__get_performance_trends")
 ```
 
 `get_activity_by_date(date=<対象日>)` で activity_id を取り、同日に複数アクティビティ（ラン＋補強）があればランを選びます。
@@ -24,9 +24,9 @@ ToolSearch(query="select:mcp__garmin-db__get_activity_by_date,mcp__garmin-db__ge
 | 質問タイプ | 必ず取る | 追加で取る |
 |---|---|---|
 | 「心拍以上に疲れた」「ペースが速すぎた？」 | `get_performance_trends`（pace/HR/drift）、`get_splits_comprehensive(statistics_only=True)`、`get_weather_data`、`get_recovery_status(date=<対象日>)`、`get_wellness_baseline_deviation(date=<対象日>)` | 比較対象ラン（直近の同種ラン）の `get_activity_by_date` + `get_weather_data` |
-| 「フォームが崩れた」「GCT/ケイデンス/上下動が悪い」 | `get_form_evaluations`、`get_form_efficiency_summary`、`get_splits_elevation`、`get_weather_data` | 区間指定で `get_time_range_detail(metrics=[ground_contact_time, cadence, heart_rate], statistics_only=True)` |
+| 「フォームが崩れた」「GCT/ケイデンス/上下動が悪い」 | `get_form_evaluations`、`get_splits_comprehensive`、`get_splits_elevation`、`get_weather_data` | 区間指定で `get_time_range_detail(metrics=[ground_contact_time, cadence, heart_rate], statistics_only=True)` |
 | 「split N で悪くなる」「このコースのこの区間」 | `get_splits_elevation`、`get_split_time_series_detail(split_number=N, statistics_only=True)`、比較用に良い split も 1 つ | `get_weather_data`（風向・気温） |
-| 「今日の◯◯は他の日と比べてどう？」 | 当日と比較日の `get_form_evaluations` / `get_form_efficiency_summary` | `get_form_baseline_trend(activity_id, activity_date)` |
+| 「今日の◯◯は他の日と比べてどう？」 | 当日と比較日の `get_form_evaluations` | `get_form_baseline_trend(activity_id, activity_date)` |
 
 ## Step 2: 帰属の順序（この順に潰す。飛ばさない）
 

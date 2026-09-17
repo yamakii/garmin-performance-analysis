@@ -60,7 +60,6 @@ _ACTIVITY_SUMMARY_NON_NULL = {"activity_id", "activity_date"}
 _DETAIL_TOP_LEVEL_KEYS = {
     "activity",
     "splits",
-    "form_efficiency",
     "hr_zones",
     "performance_trends",
     "form_evaluations",
