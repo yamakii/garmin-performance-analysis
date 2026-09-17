@@ -169,6 +169,21 @@ class GetSymptomsParams(BaseModel):
     )
 
 
+class GetSymptomStatusParams(BaseModel):
+    """Arguments for ``get_symptom_status``."""
+
+    date: str | None = Field(
+        default=None,
+        description=(
+            "Reference day (YYYY-MM-DD). When omitted, today is used (symptoms "
+            "describe how the legs are now, not on the last run's date)."
+        ),
+    )
+    user_id: str | None = Field(
+        default=None, description="Profile owner identifier (default: 'default')"
+    )
+
+
 class PrefetchWeeklyReviewContextParams(BaseModel):
     """Arguments for ``prefetch_weekly_review_context``."""
 
@@ -316,6 +331,17 @@ def _get_symptoms(reader: GarminDBReader, p: GetSymptomsParams) -> Any:
         return {"error": str(e)}
 
 
+def _get_symptom_status(reader: GarminDBReader, p: GetSymptomStatusParams) -> Any:
+    try:
+        return reader.get_symptom_status(
+            date=p.date,
+            user_id=p.user_id if p.user_id is not None else _DEFAULT_USER_ID,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Get symptom status failed: {e}")
+        return {"error": str(e)}
+
+
 def _prefetch_weekly_review_context(
     reader: GarminDBReader, p: PrefetchWeeklyReviewContextParams
 ) -> Any:
@@ -456,6 +482,25 @@ ATHLETE_TOOLS: list[ToolDef] = [
         handler=_get_symptoms,
         cli_group="athlete",
         cli_name="get-symptoms",
+    ),
+    ToolDef(
+        name="get_symptom_status",
+        description=(
+            "Get the deterministic symptom verdict for a day: reads the last 14 "
+            "days of symptom reports and flags a body region when its two most "
+            "recent reports are both severity 3+ (pain that comes and goes) or "
+            "when any report within 7 days hit severity 5+. Returns {date, flag, "
+            "flagged_regions (body_region, side, rule='consecutive'|'acute', "
+            "latest_severity, latest_date, reports), asked_today, clear_today, "
+            "recently_cleared, days_since_last_report, reason_ja}. Use this for "
+            "gates ('run only if no leg tightness'): clear_today distinguishes "
+            "an explicit all-clear from a question that was never asked, and "
+            "days_since_last_report is null when nothing was logged at all."
+        ),
+        params=GetSymptomStatusParams,
+        handler=_get_symptom_status,
+        cli_group="athlete",
+        cli_name="symptom-status",
     ),
     ToolDef(
         name="prefetch_weekly_review_context",

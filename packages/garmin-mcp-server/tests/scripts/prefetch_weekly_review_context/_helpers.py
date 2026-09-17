@@ -23,6 +23,7 @@ def _mock_prefetch(
     prev_prescriptions: list[dict[str, Any]] | None = None,
     prescriptions_by_week: dict[str, list[dict[str, Any]]] | None = None,
     scheduled: list[dict[str, Any]] | None = None,
+    symptoms_raise: bool = False,
 ) -> Iterator[MagicMock]:
     """Patch every prefetch collaborator so the bundle can run without a DB.
 
@@ -42,6 +43,8 @@ def _mock_prefetch(
             different batches (overrides ``prev_prescriptions``).
         scheduled: Garmin calendar items for W. ``None`` keeps the default
             "calendar unreachable" behaviour (the reader raises).
+        symptoms_raise: Make the symptom-status reader raise (null-on-error
+            probe for the ``symptoms`` collector).
 
     Yields the ``GarminDBReader`` mock so a test can flip one reader to raise
     and assert the additive null-on-error contract.
@@ -57,12 +60,17 @@ def _mock_prefetch(
     reader.get_wellness_baseline_deviation.return_value = {"overall_flag": False}
     reader.get_strength_sessions.return_value = []
     reader.get_hiking_sessions.return_value = []
+    if symptoms_raise:
+        reader.get_symptom_status.side_effect = RuntimeError("no symptom table")
+    else:
+        reader.get_symptom_status.return_value = {"flag": False}
 
     athlete_reader = MagicMock()
     athlete_reader.get_athlete_profile.return_value = (
         {"goals": []} if profile is None else profile
     )
     athlete_reader.get_weekly_review.return_value = past_review
+    athlete_reader.get_symptoms.return_value = []
 
     assessor = MagicMock()
     assessor.assess.return_value.model_dump.return_value = {"vdot": 50.0}

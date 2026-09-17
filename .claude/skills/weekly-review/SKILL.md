@@ -78,6 +78,7 @@ Step 1 の `prefetch_weekly_review_context` バンドルから、以下のキー
   - `rhr_trend`: 7日中央値が 30日中央値より **2bpm 以上低ければ `improving`**、**3bpm 以上高ければ `fatigued`**、それ以外 `stable`。
   - `hrv.under_recovery`: **HRV ベースライン割れが 2夜以上連続**で `true`。これと `acwr` の高値を **AND して「積み過ぎ・回復不足」を判定**する。
   - **データ欠損時**（中央値・HRV が軒並み null、または `recommendation = unknown`）は「回復データ不足のため負荷ベースで講評」と明示する（破綻させない）。
+- **症状ログ（Step 5-A-5 の回復サブ分析の材料）**: `symptoms`（`{prev_week: [{date, body_region, side, severity, phase, activity_id, note}], status: {flag, flagged_regions:[{body_region, side, rule, latest_severity, latest_date}], asked_today, clear_today, days_since_last_report, reason_ja}}`。`status` は**決定的に算出済み**なので再判定しない（`rule='consecutive'` = 同一部位の直近2回が severity 3 以上、`rule='acute'` = 7日以内に 5 以上）。W-1 に行が 1 つも無ければ「症状記録なし」と明示する（**黙って無視しない**）。collector が null のときは「症状ログ取得不可」と明示する。
 - **山行（hiking）**: `hiking.{prev_week, current_week}`（各 `{activity_id, activity_date, duration_seconds, elapsed_duration_seconds, distance_km, elevation_gain_m, elevation_loss_m, avg_heart_rate, ...}` の配列）。山行は `activities` に入らない別ドメインなので、**週間走行距離・ACWR・フォーム評価には一切含めない**。**行動時間（`duration_seconds`）・獲得標高（`elevation_gain_m`）・平均 HR** を、**回復（脚のダメージ・疲労の持ち越し）と週全体の負荷文脈** としてのみ扱い、ラン用の解釈（ペース評価・フォーム・強度分布）は適用しない。0件なら言及不要。
 - **補強（strength）**: `strength.{prev_week, current_week}`（各 `{activity_id, activity_date, active_duration_seconds, avg_heart_rate, active_sets, total_sets, category_counts, ...}` の配列。`category_counts` は `{"CRUNCH":4,"PLANK":7,...}` = ACTIVE セットのカテゴリ別本数）。**回数・実施日・所要時間（`active_duration_seconds`）・HR・セット数（`active_sets`）・カテゴリ構成** を、回復・補強遵守・故障予防の文脈でのみ扱う。0件なら「補強記録なし」。
 
@@ -187,6 +188,10 @@ Step 3 の `training_block`（`block.phase` / `block.purpose` / `ladder_step` / 
   - **ACWR 高（caution/high_risk, ≥1.3）× HRV `under_recovery=true`（または RHR `fatigued`）** → 「**積み過ぎ・回復不足**」。`cutback_due` 判定を補強し、deload を強く推す。
   - **ACWR 適正（optimal）× RHR `improving`（または HRV 正常）** → 「**順調に吸収できている**」。進行ゲート GREEN なら小刻みな漸進を許可する根拠にする。
   - **ACWR 適正 × HRV `under_recovery=true` / RHR `fatigued`** → 負荷は妥当でも回復が追いついていない。睡眠・生活要因を疑い、質練の前倒しを避ける。
+- **症状ログの扱い（必須）**: バンドルの `symptoms` を読み、**W-1 の申告と `status.flag` を必ず講評に入れる**。
+  - `status.flag=true` → **処方を修正する**: 該当部位に負荷が乗るセッション種別を落とす（ロングは**直近のクリーンな距離**＝フラグが立つ前に問題なく走れた最長距離で頭打ちにし、質練はゼロにする）。根拠は `status.reason_ja` を引用する。進行ゲートが GREEN でも回復指標が全て緑でも、この修正が優先する（`cutback_due` と同格の主ゲート）。
+  - `status.flag=false` かつ W-1 に行あり → 「申告あり・基準未満」または「申告なし（確認済み）」として一文で触れる。
+  - W-1 に行が 1 つも無い（`prev_week` が空、または `status.days_since_last_report` が null） → 「**症状記録なし**（記録が無いため症状面は判定不能）」と明示し、次週は `/daily-checkin` で毎朝 1 問記録するよう `recommendations` に入れる。
 - **睡眠スコアの扱い**: `recovery.status.sleep_score` が低い週（おおむね <60）は **回復不足の主因候補** として言及し、`recommendation`（rest/easy 等）と整合させる。
 - **データ欠損週**: `recommendation = unknown`、または RHR/HRV 中央値が軒並み null の場合は、「**回復データ不足のため負荷ベースで講評**」と明示し、ACWR/週量だけで講評を成立させる（回復を黙って無視しない）。
 - **個人ベースライン逸脱の early-warning ノート（必須）**: バンドルの `recovery.baseline_deviation`（#555）の個人ベースライン逸脱（HRV / readiness / RHR の個人比 z 逸脱）と、`hrv.under_recovery` / `hrv.hrv_below_baseline_days`（HRV ベースライン割れ日数）を取り込み、**逸脱の帰結（consequence）＋予防アクション**を1〜2文の early-warning ノートとして出す。逸脱が無ければ「ベースライン内」と明示し、ノートは出さない。例:
@@ -241,7 +246,7 @@ Step 3 の `training_block`（`block.phase` / `block.purpose` / `ladder_step` / 
   - 両者の **ギャップ**（`gap`、A=さいたま視点 / B=新潟視点で分けて）
   - **Garmin との衝突**（`garmin_conflicts` が空でないときのみ）: 日付・タイトル・理由と置換案を1〜2文。空なら Garmin に言及しない。
   - **負荷トレンド / カットバック判定**（`load_trend`、Step 5-A-4）: **ロング連続伸長週数**（`long_run.long_run_build_weeks` と直近数週の最長ラン分）を主軸に、週量ランプ（直近数週の `load_km`）・ACWR/status・週総量の連続 build 週数を添えて示し、**今週が積み上げか deload か**（`cutback_due`）を明示する。`cutback_due = true` なら W への処方を deload（ロング直近ピーク比 −30〜40%・週量 −20〜30%・質ゼロ）として表に反映する。
-- **先週の回復の質（recovery、Step 5-A-5）**: RHR トレンド（`improving`/`stable`/`fatigued` と `median_7d` vs `median_30d` の bpm）、HRV ベースライン割れ日数（`hrv_below_baseline_days`）と `under_recovery`、当日の `recommendation` / 睡眠スコアを示し、**負荷×回復の複合判定**（ACWR 高×HRV割れ→「積み過ぎ・回復不足」、ACWR 適正×RHR改善→「順調に吸収」）を一文で明示する。回復データ欠損週は「回復データ不足のため負荷ベースで講評」と明示する。
+- **先週の回復の質（recovery、Step 5-A-5）**: RHR トレンド（`improving`/`stable`/`fatigued` と `median_7d` vs `median_30d` の bpm）、HRV ベースライン割れ日数（`hrv_below_baseline_days`）と `under_recovery`、当日の `recommendation` / 睡眠スコアを示し、**負荷×回復の複合判定**（ACWR 高×HRV割れ→「積み過ぎ・回復不足」、ACWR 適正×RHR改善→「順調に吸収」）を一文で明示する。回復データ欠損週は「回復データ不足のため負荷ベースで講評」と明示する。**脚の症状**（`symptoms`）も同じブロックで示す: フラグが立っていれば部位・ルール・`reason_ja` と処方への反映（ロングの頭打ち距離・質練ゼロ）を、申告が基準未満なら一文で、記録が無ければ「症状記録なし」と明示する。
 - **対象週 W の処方**（表形式）。**各行は「W にこう走る」という処方**（Garmin の予定への採点ではない）。ラダー段・質練枠・カットバック判定に沿って**曜日ごとに1行**を組み、コメントには時間/距離/HR ゾーン(bpm) または ペースの具体値を含める:
 
   | 日付 | セッション | 判定 | コメント |
@@ -326,7 +331,9 @@ mcp__garmin-db__save_weekly_review(review)   # -> {status, user_id, week_start_d
       "load_recovery_verdict": "順調に吸収|積み過ぎ・回復不足|回復データ不足のため負荷ベースで講評|...",
       "data_available": true,
       "early_warning_flag": false,
-      "early_warning_note": "HRV ベースライン割れ2日連続、翌週は質練を見送り deload 推奨"
+      "early_warning_note": "HRV ベースライン割れ2日連続、翌週は質練を見送り deload 推奨",
+      "symptom_flag": false,
+      "symptom_note": "症状記録なし|申告あり・基準未満|右ふくらはぎ2回連続3以上のためロングは18kmで頭打ち"
     },
     "goal_alignment": "...",
     "recommendations": ["...", "..."],
@@ -349,7 +356,7 @@ mcp__garmin-db__save_weekly_review(review)   # -> {status, user_id, week_start_d
   - `weeks_to_a_race` / `weeks_to_b_race` は **整数 or null**（null = race_date 未確定で算出不能）。`a_race` / `b_race` はレース名。
   - `expected_phase` は W にあるべきマクロフェーズ/テーマ（日本語短文）。`block_phase` / `ladder_step_km` / `weeks_to_block_end` は `training_block` の値をそのまま転記する（ラダーが分ベースなら `ladder_step_km` を null にして `expected_phase` 側に分で書く）。`gap` は **あるべきフェーズと登録ブロックのギャップ**（日本語短文、A=さいたま / B=新潟 の観点を含める。Garmin プランとのギャップではない）。
   - `load_trend` は Step 5-A-4 のカットバック周期サブ分析の結果。`long_run_build_weeks`（整数、主ゲート）/ `cutback_due_long_run`（bool、主ゲート）/ `consecutive_build_weeks`（整数）/ `last_cutback_weeks_ago`（整数 or null）/ `acwr`（数値 or null）/ `acwr_status`（文字列）/ `cutback_due`（bool、主ゲート OR 副ゲート）/ `weekly_ramp`（直近数週の `{week, load_km, longest_run_sec}` 配列）。`long_run_build_weeks` / `cutback_due_long_run` はバンドルの `load_trend.long_run` の値をそのまま転記する（再計算しない）。`cutback_due=true` のときは `expected_phase` を deload として記述し、`recommendations` と Step 7 の処方行（`prescriptions[]`）も deload 処方（ロング直近ピーク比 −30〜40%・週量 −20〜30%・質ゼロ）に揃える。
-- `recovery` は Step 5-A-5 の回復サブ分析の結果。`rhr_trend`（`improving`/`stable`/`fatigued`）/ `rhr_median_7d` / `rhr_median_30d`（bpm、null 可）/ `hrv_below_baseline_days`（整数、null 可）/ `hrv_under_recovery`（bool）/ `sleep_score`（null 可）/ `recommendation`（`recovery.status.recommendation` の go/no-go）/ `load_recovery_verdict`（負荷×回復の複合講評の短文）/ `data_available`（bool）/ `early_warning_flag`（bool）/ `early_warning_note`（str or null）。回復データ欠損週は `data_available=false` とし、`load_recovery_verdict` を「回復データ不足のため負荷ベースで講評」とする。`hrv_under_recovery=true` かつ ACWR caution+ のときは `load_recovery_verdict` を「積み過ぎ・回復不足」とし、`recommendations` と Step 7 の処方行（`prescriptions[]`）を deload 処方に揃える。`early_warning_flag` は Step 5-A-5 の個人ベースライン逸脱の early-warning ノート（`recovery.baseline_deviation` の逸脱や HRV ベースライン割れ）が出た場合に `true`、`early_warning_note` にその帰結＋予防アクションの短文を入れる。逸脱が無ければ `early_warning_flag=false`・`early_warning_note=null`。
+- `recovery` は Step 5-A-5 の回復サブ分析の結果。`rhr_trend`（`improving`/`stable`/`fatigued`）/ `rhr_median_7d` / `rhr_median_30d`（bpm、null 可）/ `hrv_below_baseline_days`（整数、null 可）/ `hrv_under_recovery`（bool）/ `sleep_score`（null 可）/ `recommendation`（`recovery.status.recommendation` の go/no-go）/ `load_recovery_verdict`（負荷×回復の複合講評の短文）/ `data_available`（bool）/ `early_warning_flag`（bool）/ `early_warning_note`（str or null）。回復データ欠損週は `data_available=false` とし、`load_recovery_verdict` を「回復データ不足のため負荷ベースで講評」とする。`hrv_under_recovery=true` かつ ACWR caution+ のときは `load_recovery_verdict` を「積み過ぎ・回復不足」とし、`recommendations` と Step 7 の処方行（`prescriptions[]`）を deload 処方に揃える。`early_warning_flag` は Step 5-A-5 の個人ベースライン逸脱の early-warning ノート（`recovery.baseline_deviation` の逸脱や HRV ベースライン割れ）が出た場合に `true`、`early_warning_note` にその帰結＋予防アクションの短文を入れる。逸脱が無ければ `early_warning_flag=false`・`early_warning_note=null`。さらに **`symptom_flag`（bool）/ `symptom_note`（str or null）** を入れる: バンドルの `symptoms.status.flag` をそのまま `symptom_flag` に転記し（再判定しない）、`symptom_note` には部位・ルール・処方への反映を 1 文で書く（`true` の例:「右ふくらはぎが2回連続で3以上のため、ロングは直近クリーンの 18km で頭打ち・質練ゼロ」）。`flag=false` で申告がある週は `symptom_note` に「申告あり・基準未満」等を、W-1 に記録が無い週は `symptom_flag=false` ＋ `symptom_note="症状記録なし"` を入れる（null にして黙らせない）。
 
 **次に、Step 6 の処方表と同じ内容を構造化して保存します**（`save_weekly_review` が返した `review_id` を必ず渡す。散文だけだと日次チェックインや Garmin 登録から機械的に読めないため）:
 

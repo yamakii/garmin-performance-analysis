@@ -1241,9 +1241,9 @@ class GarminDBReader:
     def get_injury_risk(self, date: str | None = None) -> dict[str, Any]:
         """Get the composite injury-risk score as of ``date``.
 
-        Live-computes a 0-100 injury risk score by fusing four deterministic
-        signals -- ACWR, durability trend, personal wellness-baseline deviation
-        and trailing-14-day form anomalies -- via
+        Live-computes a 0-100 injury risk score by fusing five deterministic
+        signals -- ACWR, the symptom-log rule, durability trend, personal
+        wellness-baseline deviation and trailing-14-day form anomalies -- via
         ``garmin_mcp.analysis.injury_risk.compute_injury_risk`` (no LLM, no
         backfill). Any signal that cannot be gathered is dropped and the rest are
         renormalized; when all are missing the result is
@@ -1289,12 +1289,56 @@ class GarminDBReader:
             baseline_start=str(ref - timedelta(days=90)),
         )
 
+        symptom = self._safe_call(lambda: self.get_symptom_status(date))
+
         return compute_injury_risk(
             acwr=acwr,
             durability_trend=durability_trend,
             wellness_deviation=wellness_deviation,
             form_anomaly=form_anomaly,
+            symptom=symptom,
         )
+
+    # ========== Symptom Log Methods ==========
+
+    def get_symptom_status(
+        self, date: str | None = None, user_id: str = "default"
+    ) -> dict[str, Any]:
+        """Get the deterministic symptom verdict as of ``date``.
+
+        Reads the last :data:`~garmin_mcp.analysis.symptoms.CONSECUTIVE_WINDOW_DAYS`
+        days of ``athlete_symptoms`` and applies
+        ``garmin_mcp.analysis.symptoms.evaluate_symptom_rule``: two consecutive
+        reports at severity >= 3 for one region, or a single report at >= 5
+        within a week, flag the region (#1223).
+
+        Args:
+            date: ``YYYY-MM-DD`` reference day. ``None`` (default) uses
+                **today** -- symptoms describe how the legs are now, so the
+                verdict must not drift back to the last run's date.
+            user_id: Profile owner identifier (defaults to ``"default"``).
+
+        Returns:
+            ``json.dumps``-serializable dict with ``date``, ``flag``,
+            ``flagged_regions``, ``asked_today``, ``clear_today``,
+            ``recently_cleared``, ``days_since_last_report`` and ``reason_ja``.
+        """
+        from datetime import date as date_cls
+        from datetime import timedelta
+
+        from garmin_mcp.analysis.symptoms import (
+            CONSECUTIVE_WINDOW_DAYS,
+            evaluate_symptom_rule,
+        )
+        from garmin_mcp.database.readers.athlete import AthleteReader
+
+        ref = date_cls.today() if date is None else date_cls.fromisoformat(date)
+        rows = AthleteReader(db_path=str(self.db_path)).get_symptoms(
+            start_date=str(ref - timedelta(days=CONSECUTIVE_WINDOW_DAYS)),
+            end_date=str(ref),
+            user_id=user_id,
+        )
+        return evaluate_symptom_rule(rows, str(ref))
 
     # ========== Post-Event Window Methods ==========
 
