@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **71 tools** (69 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **72 tools** (70 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -17,7 +17,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Metadata](#metadata) (3)
 - [Splits](#splits) (5)
 - [Analysis](#analysis) (8)
-- [Physiology](#physiology) (12)
+- [Physiology](#physiology) (13)
 - [Performance](#performance) (4)
 - [Time Series](#time-series) (4)
 - [Training Plan](#training-plan) (2)
@@ -369,6 +369,16 @@ Judge today's HRV / Training Readiness / resting HR against the athlete's own ro
 |-----------|------|----------|-------------|
 | `date` | string | optional | Target day as YYYY-MM-DD. Omit to use the latest day in daily_wellness. |
 | `window_days` | integer | optional (default `30`) | Trailing window length in days used to build the personal baseline band (today excluded; default 30). |
+
+### `get_long_run_recovery_cost`
+
+CLI: `garmin-db physiology long-run-recovery-cost`
+
+Judge what one run cost over the following two mornings: joins the activity to the daily_wellness rows of d+1 / d+2 and compares them with the athlete's own trailing 14-day median (run day excluded). Three criteria: 'rhr_two_day' (resting HR >=+2 bpm over baseline on BOTH mornings -- a single elevated morning is the normal price of a long run; with no d+2 row it needs >=+3 on d+1 alone), 'readiness' (d+1 Training Readiness <35) and 'hrv' (d+1 overnight HRV <=-15% vs baseline). cost_flag is true when >=2 of the 3 fire -- one lone marker is noise. Returns activity_id, activity_date, distance_km, avg_heart_rate, temperature_c, baseline (rhr_median, hrv_median, n), d1 (rhr, rhr_delta, hrv, hrv_delta_pct, readiness, sleep_hours, body_battery_low), d2 (rhr, rhr_delta), criteria [{name, fired, value, threshold}], criteria_fired, cost_flag, insufficient_data (missing d+1 row or <5 baseline RHR samples -- cost_flag is then false) and a short Japanese reason_ja. Returns null for an unknown activity. No distance floor is applied; the thresholds were backtested on runs >=15 km, where the rule fires on the two 2026 injury-trigger long runs and on none of the ladder long runs.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `activity_id` | integer | **required** | Activity ID of the run whose next-morning cost to judge. |
 
 ## Performance
 

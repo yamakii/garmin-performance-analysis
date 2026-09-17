@@ -57,6 +57,14 @@ class GetWellnessBaselineDeviationParams(BaseModel):
     )
 
 
+class GetLongRunRecoveryCostParams(BaseModel):
+    """Arguments for ``get_long_run_recovery_cost``."""
+
+    activity_id: int = Field(
+        description="Activity ID of the run whose next-morning cost to judge.",
+    )
+
+
 def _get_recovery_trend(reader: GarminDBReader, p: GetRecoveryTrendParams) -> Any:
     return reader.get_recovery_trend(p.weeks)
 
@@ -69,6 +77,12 @@ def _get_wellness_baseline_deviation(
     reader: GarminDBReader, p: GetWellnessBaselineDeviationParams
 ) -> Any:
     return reader.get_wellness_baseline_deviation(p.date, p.window_days)
+
+
+def _get_long_run_recovery_cost(
+    reader: GarminDBReader, p: GetLongRunRecoveryCostParams
+) -> Any:
+    return reader.get_long_run_recovery_cost(p.activity_id)
 
 
 RECOVERY_TOOLS: list[ToolDef] = [
@@ -132,6 +146,33 @@ RECOVERY_TOOLS: list[ToolDef] = [
         handler=_get_wellness_baseline_deviation,
         cli_group="physiology",
         cli_name="wellness-baseline",
+    ),
+    ToolDef(
+        name="get_long_run_recovery_cost",
+        description=(
+            "Judge what one run cost over the following two mornings: joins the "
+            "activity to the daily_wellness rows of d+1 / d+2 and compares them "
+            "with the athlete's own trailing 14-day median (run day excluded). "
+            "Three criteria: 'rhr_two_day' (resting HR >=+2 bpm over baseline on "
+            "BOTH mornings -- a single elevated morning is the normal price of a "
+            "long run; with no d+2 row it needs >=+3 on d+1 alone), 'readiness' "
+            "(d+1 Training Readiness <35) and 'hrv' (d+1 overnight HRV <=-15% vs "
+            "baseline). cost_flag is true when >=2 of the 3 fire -- one lone "
+            "marker is noise. Returns activity_id, activity_date, distance_km, "
+            "avg_heart_rate, temperature_c, baseline (rhr_median, hrv_median, n), "
+            "d1 (rhr, rhr_delta, hrv, hrv_delta_pct, readiness, sleep_hours, "
+            "body_battery_low), d2 (rhr, rhr_delta), criteria [{name, fired, "
+            "value, threshold}], criteria_fired, cost_flag, insufficient_data "
+            "(missing d+1 row or <5 baseline RHR samples -- cost_flag is then "
+            "false) and a short Japanese reason_ja. Returns null for an unknown "
+            "activity. No distance floor is applied; the thresholds were "
+            "backtested on runs >=15 km, where the rule fires on the two 2026 "
+            "injury-trigger long runs and on none of the ladder long runs."
+        ),
+        params=GetLongRunRecoveryCostParams,
+        handler=_get_long_run_recovery_cost,
+        cli_group="physiology",
+        cli_name="long-run-recovery-cost",
     ),
 ]
 
