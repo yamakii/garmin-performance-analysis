@@ -163,7 +163,7 @@ Step 3 の `training_block`（`block.phase` / `block.purpose` / `ladder_step` / 
 
 バンドルの `load_trend`（`long_run` ブロック含む）/ `acwr`（Step 2）を使い、対象週 W が **積み上げを続ける番か、カットバック（deload）の番か**を判定します。ロング・週量の伸長可否は **2つのゲート両方** で決めます:
 
-1. **進行ゲート**（脚が崩れていないか）: 直近ロングの後半で GCT+10ms 以上 / ケイデンス5以上低下 / ペース大幅低下が無ければ「伸ばせる条件」を満たす（[[long-run-progression-two-gates]]）。
+1. **進行ゲート**（脚が崩れていないか＋翌朝のコストを払っていないか）: 直近ロングの後半で GCT+10ms 以上 / ケイデンス5以上低下 / ペース大幅低下が無く、かつ **`recovery_cost`（翌朝コスト）が出ていない**ことで「伸ばせる条件」を満たす（[[long-run-progression-two-gates]]）。`load_trend.long_run.gate` の `triggers` は上記3つに `recovery_cost` を加えた4種で、`recovery_cost` は `get_long_run_recovery_cost`（翌日・翌々日の RHR / Readiness / HRV を直前14日の個人中央値と比較）が 2/3 基準で発火したことを示す。**`recovery_cost` 単独で発火した場合は、後半の脚の崩れが全て緑でも延長しない**（`verdict = yellow` / `recommendation = repeat`）——同距離で反復し、回復コストが収まるかを次週に確認する。in-run トリガーと同時に出たときは `red` / `shorten`。`recovery_cost.insufficient_data = true`（翌朝のウェルネス欠測）は判定を変えないので、「翌朝コストは未評価」と明示したうえで in-run トリガーだけで判断する。
 2. **カットバック周期ゲート**: 主ゲート（ロング軸）と副ゲート（週総量軸）を OR で読む。
    - **主ゲート = ロング走の連続伸長**: `load_trend.long_run.long_run_build_weeks`（`weekly_longest_sec` から決定的に算出済み）と `cutback_due_long_run`。ユーザーはロングを最優先で積むため、**軽量週でリセットされる週総量 streak ではロングのストレス蓄積を系統的に過小評価する**（実例: ロング 130→135→143 分と3週連続伸長でも週総量ベースは build 2週）。腱・骨のストレスは HRV/RHR/ACWR に現れないので、ロング軸の周期を主軸に置く。
    - **副ゲート = 週総量 / ACWR**: 週量（`load_km`）が概ね非減少で積み上がっている連続週数、前週比 −30〜40% 以上に落ちた最後のカットバック週からの経過週数、`acwr` の caution(≥1.3) / high_risk(>1.5)。

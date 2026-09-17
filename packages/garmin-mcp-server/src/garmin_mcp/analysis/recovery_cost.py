@@ -252,15 +252,34 @@ def _reason_ja(
             "個人ベースラインを作れないため判定を保留します。"
         )
 
-    parts = [
-        f"RHR {_fmt_delta(d1.get('rhr_delta'))}/"
-        f"{_fmt_delta((d2 or {}).get('rhr_delta'))}",
-        f"Readiness {_fmt_value(d1.get('readiness'))}",
-        f"HRV {_fmt_pct(d1.get('hrv_delta_pct'))}",
-    ]
     head = "翌朝コスト" if cost_flag else "翌朝コストは通常範囲"
-    body = "、".join(parts)
+    body = format_cost_markers({"d1": d1, "d2": d2}, separator="、")
     return f"{head}: {body}（{criteria_fired}/{len(_CRITERIA_ORDER)} 基準）"
+
+
+def format_cost_markers(payload: dict[str, Any], separator: str = "・") -> str:
+    """The three morning markers of a cost payload rendered as one line.
+
+    Shared with the long-run progression gate (#1221) so both surfaces quote
+    the same numbers instead of each re-formatting the wellness rows.
+
+    Args:
+        payload: A :func:`compute_long_run_recovery_cost` result (only ``d1``
+            and ``d2`` are read; either may be missing).
+        separator: What to join the three markers with.
+
+    Returns:
+        ``"RHR +3/+4・Readiness 29・HRV -16%"``; unmeasured parts read ``欠測``.
+    """
+    d1 = payload.get("d1") or {}
+    d2 = payload.get("d2") or {}
+    return separator.join(
+        [
+            f"RHR {_fmt_delta(d1.get('rhr_delta'))}/{_fmt_delta(d2.get('rhr_delta'))}",
+            f"Readiness {_fmt_value(d1.get('readiness'))}",
+            f"HRV {_fmt_pct(d1.get('hrv_delta_pct'))}",
+        ]
+    )
 
 
 def _fmt_delta(value: float | None) -> str:

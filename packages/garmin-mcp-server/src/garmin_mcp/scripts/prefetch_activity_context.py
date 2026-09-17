@@ -66,7 +66,9 @@ Output (JSON to stdout):
 ``long_run_gate`` carries the deterministic long-run progression verdict
 (extend / repeat / shorten) for runs of at least
 ``_LONG_RUN_GATE_MIN_KM``; it is ``null`` for shorter runs and on any error, so
-the summary transcribes the same judgement the weekly review sees (#982).
+the summary transcribes the same judgement the weekly review sees (#982). Its
+``recovery_cost`` block prices the two mornings after the run, and a fired
+``cost_flag`` holds the distance even when the in-run fades are clean (#1221).
 
 The prescription layer (Issue #984) gives the analysis the four things a coach
 knows before reading the numbers: what was *prescribed* for that day, where the
@@ -761,7 +763,9 @@ def prefetch_activity_context(activity_id: int) -> dict:
 
     # Long-run progression gate (Issue #982): may the next long run be
     # extended? Only meaningful for long runs, so shorter runs keep the key at
-    # null rather than shipping a verdict with no basis. Null on error.
+    # null rather than shipping a verdict with no basis. Null on error. The
+    # unified reader (not DurabilityReader) because the gate also prices the
+    # next two mornings via get_long_run_recovery_cost (#1221).
     long_run_gate: dict | None = None
     if (
         total_distance_km is not None
@@ -771,10 +775,10 @@ def prefetch_activity_context(activity_id: int) -> dict:
             from garmin_mcp.analysis.progression_gate import (
                 build_long_run_progression_gate,
             )
-            from garmin_mcp.database.readers.durability import DurabilityReader
+            from garmin_mcp.database.db_reader import GarminDBReader
 
             long_run_gate = build_long_run_progression_gate(
-                DurabilityReader(db_path_str), activity_id
+                GarminDBReader(db_path_str), activity_id
             )
         except Exception:
             logger.debug("long-run progression gate failed; leaving it as None")

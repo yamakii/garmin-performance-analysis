@@ -16,6 +16,31 @@ from garmin_mcp.analysis.progression_gate import (
 )
 
 
+def _cost(
+    *,
+    cost_flag: bool = True,
+    criteria_fired: int = 2,
+    insufficient_data: bool = False,
+    rhr_d1: float | None = 3.0,
+    rhr_d2: float | None = 4.0,
+    readiness: int | None = 29,
+    hrv_delta_pct: float | None = -16.0,
+) -> dict[str, Any]:
+    """Build a ``get_long_run_recovery_cost``-shaped dict for the gate."""
+    return {
+        "cost_flag": cost_flag,
+        "criteria_fired": criteria_fired,
+        "insufficient_data": insufficient_data,
+        "reason_ja": "翌朝コスト: RHR +3/+4、Readiness 29、HRV -16%（2/3 基準）",
+        "d1": {
+            "rhr_delta": rhr_d1,
+            "readiness": readiness,
+            "hrv_delta_pct": hrv_delta_pct,
+        },
+        "d2": {"rhr_delta": rhr_d2},
+    }
+
+
 def _run(
     activity_id: int = 9001,
     *,
@@ -142,6 +167,101 @@ def test_gate_green_when_hot_but_reference_exists() -> None:
 
 
 @pytest.mark.unit
+def test_recovery_cost_alone_is_yellow_repeat() -> None:
+    """Clean in-run metrics but an expensive morning -> repeat, do not extend."""
+    current = _run(gct_fade_ms=4.0, cadence_fade_spm=-1.0, pace_fade_pct=2.0)
+    reference = _run(8006, gct_fade_ms=5.0)
+
+    gate = compute_long_run_progression_gate(current, reference, _cost())
+
+    assert gate["verdict"] == "yellow"
+    assert gate["recommendation"] == "repeat"
+    assert [t["metric"] for t in gate["triggers"]] == ["recovery_cost"]
+    trigger = gate["triggers"][0]
+    assert trigger["current"] == 2
+    assert trigger["reference"] is None
+    assert trigger["threshold"] == 2
+    assert trigger["worse_than_reference"] is True
+    assert gate["recovery_cost"]["cost_flag"] is True
+    assert gate["recovery_cost"]["criteria_fired"] == 2
+    assert "翌朝コスト（RHR +3/+4・Readiness 29・HRV -16%）" in gate["reason_ja"]
+    assert "反復" in gate["reason_ja"]
+
+
+@pytest.mark.unit
+def test_recovery_cost_plus_gct_fade_is_red_shorten() -> None:
+    """GCT +12 ms worse than the reference plus a morning cost -> shorten."""
+    current = _run(gct_fade_ms=12.0, cadence_fade_spm=-1.0, pace_fade_pct=2.0)
+    reference = _run(8007, gct_fade_ms=3.0)
+
+    gate = compute_long_run_progression_gate(current, reference, _cost())
+
+    assert gate["verdict"] == "red"
+    assert gate["recommendation"] == "shorten"
+    assert [t["metric"] for t in gate["triggers"]] == [
+        "gct_fade_ms",
+        "recovery_cost",
+    ]
+    assert gate["triggers"][0]["worse_than_reference"] is True
+    assert "接地時間" in gate["reason_ja"]
+    assert "翌朝コスト" in gate["reason_ja"]
+
+    # Even a fade the reference would have exonerated (12 vs 11 ms is noise)
+    # escalates to red once the mornings were expensive too.
+    escalated = compute_long_run_progression_gate(
+        current, _run(8007, gct_fade_ms=11.0), _cost()
+    )
+    assert escalated["verdict"] == "red"
+    assert escalated["triggers"][0]["worse_than_reference"] is False
+
+
+@pytest.mark.unit
+def test_recovery_cost_insufficient_keeps_green() -> None:
+    """No d+1 wellness row: the cost is reported, never a verdict driver."""
+    current = _run(gct_fade_ms=4.0, cadence_fade_spm=-1.0, pace_fade_pct=2.0)
+    reference = _run(8008, gct_fade_ms=5.0)
+    cost = _cost(cost_flag=False, criteria_fired=0, insufficient_data=True)
+
+    gate = compute_long_run_progression_gate(current, reference, cost)
+
+    assert gate["verdict"] == "green"
+    assert gate["recommendation"] == "extend"
+    assert gate["triggers"] == []
+    assert gate["recovery_cost"]["insufficient_data"] is True
+    assert "未評価" in gate["reason_ja"]
+
+
+@pytest.mark.unit
+def test_recovery_cost_none_is_backward_compatible() -> None:
+    """Omitting the cost reproduces the pre-#1221 payload (plus a null key)."""
+    current = _run(gct_fade_ms=14.0, cadence_fade_spm=-1.0, pace_fade_pct=2.0)
+    reference = _run(8009, gct_fade_ms=3.0)
+
+    gate = compute_long_run_progression_gate(current, reference)
+
+    assert gate["recovery_cost"] is None
+    assert {k: v for k, v in gate.items() if k != "recovery_cost"} == {
+        "verdict": "red",
+        "triggers": [
+            {
+                "metric": "gct_fade_ms",
+                "current": 14.0,
+                "reference": 3.0,
+                "threshold": 10.0,
+                "worse_than_reference": True,
+            }
+        ],
+        "decoupling_contaminated": False,
+        "reference_activity_id": 8009,
+        "recommendation": "shorten",
+        "reason_ja": (
+            "接地時間が基準を超え、前回の同条件ロング（8009）より"
+            "明確に悪化しています。次のロングは距離を落としてください。"
+        ),
+    }
+
+
+@pytest.mark.unit
 def test_build_long_run_progression_gate_wraps_reader() -> None:
     """The shared builder returns both runs alongside the verdict."""
 
@@ -152,10 +272,36 @@ def test_build_long_run_progression_gate_wraps_reader() -> None:
         def find_reference_long_run(self, activity_id: int) -> dict[str, Any]:
             return _run(8005, gct_fade_ms=5.0)
 
+        def get_long_run_recovery_cost(self, activity_id: int) -> dict[str, Any]:
+            return _cost()
+
     payload = build_long_run_progression_gate(_Source(), 7777)
 
     assert payload["activity_id"] == 7777
     assert payload["current"]["activity_id"] == 7777
     assert payload["reference"]["activity_id"] == 8005
-    assert payload["verdict"] == "green"
+    assert payload["verdict"] == "yellow"
+    assert payload["recommendation"] == "repeat"
     assert payload["reference_activity_id"] == 8005
+    assert payload["recovery_cost"]["cost_flag"] is True
+
+
+@pytest.mark.unit
+def test_build_calls_recovery_cost_and_tolerates_failure() -> None:
+    """A reader that raises on the cost leaves the in-run verdict standing."""
+
+    class _Source:
+        def get_activity_durability(self, activity_id: int) -> dict[str, Any]:
+            return _run(activity_id, gct_fade_ms=4.0, cadence_fade_spm=-1.0)
+
+        def find_reference_long_run(self, activity_id: int) -> dict[str, Any]:
+            return _run(8010, gct_fade_ms=5.0)
+
+        def get_long_run_recovery_cost(self, activity_id: int) -> dict[str, Any]:
+            raise RuntimeError("no wellness table")
+
+    payload = build_long_run_progression_gate(_Source(), 7778)
+
+    assert payload["recovery_cost"] is None
+    assert payload["verdict"] == "green"
+    assert payload["recommendation"] == "extend"
