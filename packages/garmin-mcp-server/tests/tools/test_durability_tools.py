@@ -146,6 +146,7 @@ def test_get_long_run_progression_gate_dispatch() -> None:
         "cadence_fade_spm": -1.0,
         "temperature_c": 27.0,
     }
+    reader.get_long_run_recovery_cost.return_value = None
     reader.find_reference_long_run.return_value = {
         "activity_id": 5302,
         "activity_date": "2026-08-09",
@@ -188,6 +189,7 @@ def test_get_long_run_progression_gate_without_reference() -> None:
         "temperature_c": 18.0,
     }
     reader.find_reference_long_run.return_value = None
+    reader.get_long_run_recovery_cost.return_value = None
 
     result = dispatch(
         ALL_DEFS_BY_NAME,
@@ -201,3 +203,49 @@ def test_get_long_run_progression_gate_without_reference() -> None:
     assert payload["reference_activity_id"] is None
     assert payload["verdict"] == "green"
     assert payload["recommendation"] == "extend"
+    assert payload["recovery_cost"] is None
+
+
+@pytest.mark.unit
+def test_gate_tool_payload_carries_recovery_cost() -> None:
+    """The morning cost rides in the tool payload and holds the distance (#1221)."""
+    reader = MagicMock()
+    reader.get_activity_durability.return_value = {
+        "activity_id": 5304,
+        "activity_date": "2026-09-13",
+        "distance_km": 24.0,
+        "gct_fade_ms": 3.0,
+        "cadence_fade_spm": -1.0,
+        "pace_fade_pct": 2.0,
+        "temperature_c": 22.0,
+    }
+    reader.find_reference_long_run.return_value = None
+    reader.get_long_run_recovery_cost.return_value = {
+        "activity_id": 5304,
+        "cost_flag": True,
+        "criteria_fired": 2,
+        "insufficient_data": False,
+        "reason_ja": "翌朝コスト: RHR +3/+4、Readiness 29、HRV -16%（2/3 基準）",
+        "d1": {"rhr_delta": 3.0, "readiness": 29, "hrv_delta_pct": -16.0},
+        "d2": {"rhr_delta": 4.0},
+    }
+
+    result = dispatch(
+        ALL_DEFS_BY_NAME,
+        reader,
+        "get_long_run_progression_gate",
+        {"activity_id": 5304},
+    )
+    reader.get_long_run_recovery_cost.assert_called_once_with(5304)
+
+    payload = json.loads(json.dumps(result, default=str))
+    assert payload["verdict"] == "yellow"
+    assert payload["recommendation"] == "repeat"
+    assert [t["metric"] for t in payload["triggers"]] == ["recovery_cost"]
+    assert payload["recovery_cost"] == {
+        "cost_flag": True,
+        "criteria_fired": 2,
+        "insufficient_data": False,
+        "reason_ja": "翌朝コスト: RHR +3/+4、Readiness 29、HRV -16%（2/3 基準）",
+    }
+    assert "翌朝コスト" in payload["reason_ja"]

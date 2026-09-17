@@ -5,7 +5,8 @@ activity's first-half vs second-half decoupling), ``get_durability_trend``
 (the decoupling trend across long runs in a date window) and
 ``get_long_run_progression_gate`` (may the next long run be extended?). All
 delegate to ``DurabilityReader``; the gate additionally runs the deterministic
-verdict in ``garmin_mcp.analysis.progression_gate`` (#982).
+verdict in ``garmin_mcp.analysis.progression_gate`` (#982) over four triggers --
+the three in-run fades plus the next-morning recovery cost (#1221).
 
 Both tools also surface second-half *form* decay (#368): per-activity
 ``gct_fade_pct`` / ``vo_fade_pct`` / ``vr_fade_pct`` (nullable; back-vs-front
@@ -132,10 +133,18 @@ DURABILITY_TOOLS: list[ToolDef] = [
             ">= 10, cadence_fade_spm <= -5 (running samples only, so prescribed "
             "walk/fuel breaks never read as a cadence collapse), "
             "pace_fade_pct >= 8, each with the "
-            "reference value and whether it is clearly worse), "
-            "reference_activity_id, decoupling_contaminated (current run at "
+            "reference value and whether it is clearly worse, plus a fourth "
+            "trigger 'recovery_cost' from get_long_run_recovery_cost -- what "
+            "the run cost over the next two mornings vs the athlete's own "
+            "14-day baseline; it fires with reference=null since no earlier "
+            "run can exonerate it), reference_activity_id, a recovery_cost "
+            "block (cost_flag, criteria_fired, insufficient_data, reason_ja; "
+            "null when unavailable), decoupling_contaminated (current run at "
             ">= 30C, where decoupling is thermal drift) and a Japanese "
-            "reason_ja, alongside the current and reference durability blocks."
+            "reason_ja, alongside the current and reference durability blocks. "
+            "A morning cost that fires ALONE is yellow/repeat (the legs held, "
+            "so hold the distance); together with any in-run trigger it is "
+            "red/shorten. An unevaluated cost never changes the verdict."
         ),
         params=GetLongRunProgressionGateParams,
         handler=_get_long_run_progression_gate,

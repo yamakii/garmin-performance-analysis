@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import duckdb
 import pytest
 
+from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.scripts.prefetch_activity_context import (
     _build_phase_dict,
     _classify_terrain,
@@ -611,23 +612,23 @@ class TestPrefetchActivityContext:
             "triggers": [],
             "decoupling_contaminated": False,
             "reference_activity_id": None,
+            "recovery_cost": None,
             "reason_ja": "後半の脚の崩れは基準内です。次のロングは延長できます。",
         }
-        with (
-            patch(
-                "garmin_mcp.database.readers.durability.DurabilityReader"
-            ) as reader_cls,
-            patch(
-                "garmin_mcp.analysis.progression_gate."
-                "build_long_run_progression_gate",
-                return_value=gate,
-            ) as build,
-        ):
+        with patch(
+            "garmin_mcp.analysis.progression_gate.build_long_run_progression_gate",
+            return_value=gate,
+        ) as build:
             long_run = prefetch_activity_context(12345)
 
         assert long_run["long_run_gate"]["verdict"] == "green"
         assert long_run["long_run_gate"]["recommendation"] == "extend"
-        build.assert_called_once_with(reader_cls.return_value, 12345)
+        assert long_run["long_run_gate"]["recovery_cost"] is None
+        build.assert_called_once()
+        source, called_activity_id = build.call_args.args
+        assert called_activity_id == 12345
+        # The unified reader, since the gate also prices the next two mornings.
+        assert isinstance(source, GarminDBReader)
 
     @patch("garmin_mcp.scripts.prefetch_activity_context.get_db_path")
     @patch("garmin_mcp.scripts.prefetch_activity_context.get_connection")
