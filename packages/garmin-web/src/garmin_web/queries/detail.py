@@ -31,13 +31,6 @@ _SPLITS_COLUMNS = (
     " normalized_power, average_speed, grade_adjusted_speed"
 )
 
-_FORM_EFFICIENCY_COLUMNS = (
-    "activity_id, gct_average, gct_min, gct_max, gct_std, gct_variability,"
-    " gct_rating, gct_evaluation, vo_average, vo_min, vo_max, vo_std, vo_trend,"
-    " vo_rating, vo_evaluation, vr_average, vr_min, vr_max, vr_std, vr_rating,"
-    " vr_evaluation"
-)
-
 _HR_ZONES_COLUMNS = (
     "activity_id, zone_number, zone_low_boundary, zone_high_boundary,"
     " time_in_zone_seconds, zone_percentage"
@@ -101,17 +94,21 @@ def get_activity_detail(
 ) -> dict | None:
     """Aggregate activity detail data into a single dict.
 
-    Combines activities, splits, form_efficiency, heart_rate_zones,
-    performance_trends, form_evaluations, vo2_max and lactate_threshold.
-    Splits are ordered by split_index ascending; HR zones by zone_number
-    ascending.
+    Combines activities, splits, heart_rate_zones, performance_trends,
+    form_evaluations, vo2_max and lactate_threshold. Splits are ordered by
+    split_index ascending; HR zones by zone_number ascending.
+
+    The ``form_efficiency`` table is deliberately absent: its ratings are
+    absolute bands with no pace term, and #292 stopped the UI from rendering
+    them in favour of the pace-corrected ``form_evaluations``. The table is
+    still written by ingest, it simply has no reader here (#1214).
 
     Args:
         conn: Open DuckDB connection (read-only is sufficient).
         activity_id: Target activity ID.
 
     Returns:
-        Dict with keys: activity, splits, form_efficiency, hr_zones,
+        Dict with keys: activity, splits, hr_zones,
         performance_trends, form_evaluations, vo2_max, lactate_threshold.
         Single-row tables that have no row for the activity are None;
         list tables are empty lists.
@@ -130,12 +127,6 @@ def get_activity_detail(
             conn,
             f"SELECT {_SPLITS_COLUMNS} FROM splits"
             " WHERE activity_id = ? ORDER BY split_index",
-            [activity_id],
-        ),
-        "form_efficiency": _fetch_one(
-            conn,
-            f"SELECT {_FORM_EFFICIENCY_COLUMNS} FROM form_efficiency"
-            " WHERE activity_id = ?",
             [activity_id],
         ),
         "hr_zones": _fetch_all(

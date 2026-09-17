@@ -71,30 +71,6 @@ _EXPECTED_SPLIT_KEYS = {
     "grade_adjusted_speed",
 }
 
-_EXPECTED_FORM_EFFICIENCY_KEYS = {
-    "activity_id",
-    "gct_average",
-    "gct_min",
-    "gct_max",
-    "gct_std",
-    "gct_variability",
-    "gct_rating",
-    "gct_evaluation",
-    "vo_average",
-    "vo_min",
-    "vo_max",
-    "vo_std",
-    "vo_trend",
-    "vo_rating",
-    "vo_evaluation",
-    "vr_average",
-    "vr_min",
-    "vr_max",
-    "vr_std",
-    "vr_rating",
-    "vr_evaluation",
-}
-
 _EXPECTED_HR_ZONE_KEYS = {
     "activity_id",
     "zone_number",
@@ -200,7 +176,6 @@ def test_detail_aggregates_tables(detail_db_path):
     for key in (
         "activity",
         "splits",
-        "form_efficiency",
         "hr_zones",
         "performance_trends",
         "form_evaluations",
@@ -215,7 +190,6 @@ def test_detail_aggregates_tables(detail_db_path):
     assert len(detail["splits"]) == 5
     assert [s["split_index"] for s in detail["splits"]] == [1, 2, 3, 4, 5]
 
-    assert detail["form_efficiency"]["gct_average"] == 248.0
     assert len(detail["hr_zones"]) == 5
     assert [z["zone_number"] for z in detail["hr_zones"]] == [1, 2, 3, 4, 5]
     assert detail["performance_trends"]["pace_consistency"] == 4.2
@@ -272,9 +246,6 @@ def test_get_activity_detail_column_keys_stable(detail_db_path):
     assert detail["splits"], "expected at least one split row"
     assert set(detail["splits"][0].keys()) == _EXPECTED_SPLIT_KEYS
 
-    assert detail["form_efficiency"] is not None
-    assert set(detail["form_efficiency"].keys()) == _EXPECTED_FORM_EFFICIENCY_KEYS
-
     assert detail["hr_zones"], "expected at least one HR zone row"
     assert set(detail["hr_zones"][0].keys()) == _EXPECTED_HR_ZONE_KEYS
 
@@ -286,12 +257,45 @@ def test_get_activity_detail_column_keys_stable(detail_db_path):
 
 
 @pytest.mark.unit
+def test_detail_has_no_form_efficiency_key(detail_db_path):
+    """The absolute-band table is not part of the detail payload (#1214).
+
+    ``form_efficiency`` holds absolute rating bands with no pace term. #292
+    stopped the UI rendering them in favour of the pace-corrected
+    ``form_evaluations``; this guards against the key creeping back into the
+    response. The fixture activity does have a ``form_efficiency`` row
+    (gct_average 248.0), so an empty table is not what makes this pass.
+    """
+    with get_connection(detail_db_path) as conn:
+        detail = get_activity_detail(conn, FULL_ACTIVITY_ID)
+
+    assert detail is not None
+    assert "form_efficiency" not in detail
+    # The authoritative, pace-corrected evaluation is still served.
+    assert detail["form_evaluations"] is not None
+
+
+@pytest.mark.unit
+def test_detail_partial_activity_unchanged(detail_db_path):
+    """Removing form_efficiency did not change null-handling elsewhere."""
+    with get_connection(detail_db_path) as conn:
+        detail = get_activity_detail(conn, PARTIAL_ACTIVITY_ID)
+
+    assert detail is not None
+    assert "form_efficiency" not in detail
+    assert detail["performance_trends"] is None
+    assert detail["form_evaluations"] is None
+    assert detail["hr_zones"] == []
+    assert detail["activity"]["activity_name"] == "Partial Run"
+    assert len(detail["splits"]) == 2
+
+
+@pytest.mark.unit
 def test_detail_partial_data(detail_db_path):
     with get_connection(detail_db_path) as conn:
         detail = get_activity_detail(conn, PARTIAL_ACTIVITY_ID)
 
     assert detail is not None
-    assert detail["form_efficiency"] is None
     assert detail["performance_trends"] is None
     assert detail["form_evaluations"] is None
     assert detail["hr_zones"] == []

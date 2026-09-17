@@ -77,9 +77,18 @@ def test_schema_parity_physiology() -> None:
     hand_schemas = {
         "get_form_efficiency_summary": {
             "name": "get_form_efficiency_summary",
+            # Description deliberately diverged from the pre-registry wording
+            # in #1214: the absolute bands are not authoritative and the tool
+            # now says so. The schema below is still the frozen contract.
             "description": (
-                "Get form efficiency summary (GCT, VO, VR metrics) from "
-                "form_efficiency table"
+                "Get raw form metric statistics (GCT, VO, VR averages, "
+                "min/max, std) from the form_efficiency table. NOT "
+                "AUTHORITATIVE for judging form: the star ratings here are "
+                "absolute bands with no pace term, so the same runner reads "
+                "worse at slow paces purely because ground contact and "
+                "vertical ratio scale with speed. Use get_form_evaluations "
+                "for the pace-corrected verdict, and get_form_baseline_trend "
+                "for longitudinal comparison."
             ),
             "inputSchema": {
                 "type": "object",

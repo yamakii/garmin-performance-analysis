@@ -52,7 +52,6 @@ const BASE_DETAIL: ActivityDetailResponse = {
       power: 250,
     },
   ],
-  form_efficiency: null,
   hr_zones: [],
   performance_trends: null,
   form_evaluations: null,

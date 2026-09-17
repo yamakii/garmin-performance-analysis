@@ -19,7 +19,6 @@ def test_api_detail_endpoints_200(detail_db_path):
     detail = response.json()
     assert detail["activity"]["activity_id"] == FULL_ACTIVITY_ID
     assert len(detail["splits"]) == 5
-    assert detail["form_efficiency"] is not None
     assert len(detail["hr_zones"]) == 5
 
     # Time-series endpoint (metrics required)
