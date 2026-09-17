@@ -122,11 +122,11 @@ def test_kept_tools_present() -> None:
 
 
 @pytest.mark.unit
-def test_tool_count_is_73() -> None:
-    """The live MCP surface is exactly 73 tools (71 -> 73 after #1220)."""
-    assert len(ALL_DEFS) + len(_SERVER_TOOLS) == 73
+def test_tool_count_is_75() -> None:
+    """The live MCP surface is exactly 75 tools (71 -> 75 after #1218 + #1219 + #1220)."""
+    assert len(ALL_DEFS) + len(_SERVER_TOOLS) == 75
     golden = json.loads(_GOLDEN_PATH.read_text(encoding="utf-8"))
-    assert len(golden) == 73
+    assert len(golden) == 75
 
 
 @pytest.mark.integration
@@ -139,7 +139,7 @@ def test_hiking_tools_registered() -> None:
         t["name"] for t in json.loads(_GOLDEN_PATH.read_text(encoding="utf-8"))
     }
     assert {"ingest_hiking_sessions", "get_hiking_sessions"} <= golden_names
-    assert len(golden_names) == 73
+    assert len(golden_names) == 75
 
     # get_hiking_sessions -> GarminDBReader.get_hiking_sessions
     reader = MagicMock()
@@ -559,3 +559,37 @@ def test_get_pending_trend_period_dispatches() -> None:
         "/tmp/test.duckdb", date(2026, 9, 14), lookback_weeks=1
     )
     assert result is None
+
+
+@pytest.mark.unit
+def test_get_post_event_window_registered_and_dispatches() -> None:
+    """get_post_event_window is in the registry/golden and forwards the date.
+
+    The tool is read-only: it delegates to
+    ``GarminDBReader.get_post_event_window`` and returns the verdict verbatim
+    (#1219).
+    """
+    assert "get_post_event_window" in ALL_DEFS_BY_NAME
+    golden_names = {
+        t["name"] for t in json.loads(_GOLDEN_PATH.read_text(encoding="utf-8"))
+    }
+    assert "get_post_event_window" in golden_names
+
+    window = {"verdict": "red", "days_since_event": 15}
+    reader = MagicMock()
+    reader.get_post_event_window.return_value = window
+
+    result = dispatch(
+        ALL_DEFS_BY_NAME,
+        reader,
+        "get_post_event_window",
+        {"date": "2025-12-29"},
+    )
+
+    reader.get_post_event_window.assert_called_once_with("2025-12-29")
+    assert result == window
+
+    # Omitting the date defaults to None (the latest activity_date).
+    reader.get_post_event_window.reset_mock()
+    dispatch(ALL_DEFS_BY_NAME, reader, "get_post_event_window", {})
+    reader.get_post_event_window.assert_called_once_with(None)

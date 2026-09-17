@@ -1,8 +1,11 @@
-"""Training-load (ACWR) tool definitions.
+"""Training-load and injury-precursor tool definitions.
 
-Exposes the distance-based Acute:Chronic Workload Ratio (ACWR) as two tools:
-``get_acwr`` (current snapshot) and ``get_load_trend`` (weekly history). Both
-delegate to ``TrainingLoadReader`` and are HR-independent (distance only).
+Exposes the distance-based Acute:Chronic Workload Ratio (ACWR) as ``get_acwr``
+(current snapshot) and ``get_load_trend`` (weekly history) -- both delegate to
+``TrainingLoadReader`` and are HR-independent (distance only) -- plus the two
+deterministic gates built on top of the same ``activities`` history:
+``get_injury_risk`` (composite score) and ``get_post_event_window`` (the
+21-day protection window after a race).
 """
 
 from __future__ import annotations
@@ -58,6 +61,18 @@ class GetInjuryRiskParams(BaseModel):
     )
 
 
+class GetPostEventWindowParams(BaseModel):
+    """Arguments for ``get_post_event_window``."""
+
+    date: str | None = Field(
+        default=None,
+        description=(
+            "Reference day (YYYY-MM-DD) the protection window is evaluated as "
+            "of. Defaults to the latest activity_date."
+        ),
+    )
+
+
 def _get_acwr(reader: GarminDBReader, p: GetAcwrParams) -> Any:
     return reader.get_acwr(p.end_date)
 
@@ -68,6 +83,10 @@ def _get_load_trend(reader: GarminDBReader, p: GetLoadTrendParams) -> Any:
 
 def _get_injury_risk(reader: GarminDBReader, p: GetInjuryRiskParams) -> Any:
     return reader.get_injury_risk(p.date)
+
+
+def _get_post_event_window(reader: GarminDBReader, p: GetPostEventWindowParams) -> Any:
+    return reader.get_post_event_window(p.date)
 
 
 LOAD_TOOLS: list[ToolDef] = [
@@ -119,6 +138,31 @@ LOAD_TOOLS: list[ToolDef] = [
         handler=_get_injury_risk,
         cli_group="load",
         cli_name="injury-risk",
+    ),
+    ToolDef(
+        name="get_post_event_window",
+        description=(
+            "Get the 21-day protection window after the last race or "
+            "comparably big stimulus, and whether the long runs since then "
+            "stayed under the pre-event ceiling. The event comes from the race "
+            "calendar first (athlete_goals at any status, plus kind='race' "
+            "steps of the block's long-run ladder, mapped to that week's "
+            "Sunday); a >=18 km run at or above its own Garmin zone-3 lower "
+            "boundary is only a fallback proxy and never overrides a calendar "
+            "event on the same day (a cold-weather half can average 141 bpm). "
+            "ceiling_km = the longest run in the 56 days before the event. "
+            "Verdicts: no_event / green (outside the window, or at or under "
+            "the ceiling) / yellow (over the ceiling) / red (over it by more "
+            "than 10%) / insufficient_data (in window, no ceiling). Returns "
+            "date, last_event {date, source, label, activity_id}, "
+            "days_since_event, in_window, ceiling_km, longest_since_km, "
+            "longest_since_activity_id, overshoot_pct, verdict and a Japanese "
+            "reason_ja. Defaults to the latest activity_date."
+        ),
+        params=GetPostEventWindowParams,
+        handler=_get_post_event_window,
+        cli_group="load",
+        cli_name="post-event-window",
     ),
 ]
 

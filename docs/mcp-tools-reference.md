@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **73 tools** (71 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **75 tools** (73 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -17,13 +17,13 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Metadata](#metadata) (3)
 - [Splits](#splits) (5)
 - [Analysis](#analysis) (8)
-- [Physiology](#physiology) (12)
+- [Physiology](#physiology) (13)
 - [Performance](#performance) (4)
 - [Time Series](#time-series) (4)
 - [Training Plan](#training-plan) (2)
 - [Athlete](#athlete) (9)
 - [Race](#race) (1)
-- [Training Load](#training-load) (3)
+- [Training Load](#training-load) (4)
 - [Durability](#durability) (3)
 - [strength](#strength) (2)
 - [ingest](#ingest) (2)
@@ -370,6 +370,16 @@ Judge today's HRV / Training Readiness / resting HR against the athlete's own ro
 | `date` | string | optional | Target day as YYYY-MM-DD. Omit to use the latest day in daily_wellness. |
 | `window_days` | integer | optional (default `30`) | Trailing window length in days used to build the personal baseline band (today excluded; default 30). |
 
+### `get_long_run_recovery_cost`
+
+CLI: `garmin-db physiology long-run-recovery-cost`
+
+Judge what one run cost over the following two mornings: joins the activity to the daily_wellness rows of d+1 / d+2 and compares them with the athlete's own trailing 14-day median (run day excluded). Three criteria: 'rhr_two_day' (resting HR >=+2 bpm over baseline on BOTH mornings -- a single elevated morning is the normal price of a long run; with no d+2 row it needs >=+3 on d+1 alone), 'readiness' (d+1 Training Readiness <35) and 'hrv' (d+1 overnight HRV <=-15% vs baseline). cost_flag is true when >=2 of the 3 fire -- one lone marker is noise. Returns activity_id, activity_date, distance_km, avg_heart_rate, temperature_c, baseline (rhr_median, hrv_median, n), d1 (rhr, rhr_delta, hrv, hrv_delta_pct, readiness, sleep_hours, body_battery_low), d2 (rhr, rhr_delta), criteria [{name, fired, value, threshold}], criteria_fired, cost_flag, insufficient_data (missing d+1 row or <5 baseline RHR samples -- cost_flag is then false) and a short Japanese reason_ja. Returns null for an unknown activity. No distance floor is applied; the thresholds were backtested on runs >=15 km, where the rule fires on the two 2026 injury-trigger long runs and on none of the ladder long runs.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `activity_id` | integer | **required** | Activity ID of the run whose next-morning cost to judge. |
+
 ## Performance
 
 ### `get_performance_trends`
@@ -646,6 +656,16 @@ Get a composite injury-risk score (0-100) with a low/moderate/high band and a pe
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `date` | string | optional | Reference day (YYYY-MM-DD) the injury-risk score is computed as of. Defaults to the latest activity_date. |
+
+### `get_post_event_window`
+
+CLI: `garmin-db load post-event-window`
+
+Get the 21-day protection window after the last race or comparably big stimulus, and whether the long runs since then stayed under the pre-event ceiling. The event comes from the race calendar first (athlete_goals at any status, plus kind='race' steps of the block's long-run ladder, mapped to that week's Sunday); a >=18 km run at or above its own Garmin zone-3 lower boundary is only a fallback proxy and never overrides a calendar event on the same day (a cold-weather half can average 141 bpm). ceiling_km = the longest run in the 56 days before the event. Verdicts: no_event / green (outside the window, or at or under the ceiling) / yellow (over the ceiling) / red (over it by more than 10%) / insufficient_data (in window, no ceiling). Returns date, last_event {date, source, label, activity_id}, days_since_event, in_window, ceiling_km, longest_since_km, longest_since_activity_id, overshoot_pct, verdict and a Japanese reason_ja. Defaults to the latest activity_date.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `date` | string | optional | Reference day (YYYY-MM-DD) the protection window is evaluated as of. Defaults to the latest activity_date. |
 
 ## Durability
 

@@ -1108,6 +1108,19 @@
     }
   },
   {
+    "name": "get_post_event_window",
+    "description": "Get the 21-day protection window after the last race or comparably big stimulus, and whether the long runs since then stayed under the pre-event ceiling. The event comes from the race calendar first (athlete_goals at any status, plus kind='race' steps of the block's long-run ladder, mapped to that week's Sunday); a >=18 km run at or above its own Garmin zone-3 lower boundary is only a fallback proxy and never overrides a calendar event on the same day (a cold-weather half can average 141 bpm). ceiling_km = the longest run in the 56 days before the event. Verdicts: no_event / green (outside the window, or at or under the ceiling) / yellow (over the ceiling) / red (over it by more than 10%) / insufficient_data (in window, no ceiling). Returns date, last_event {date, source, label, activity_id}, days_since_event, in_window, ceiling_km, longest_since_km, longest_since_activity_id, overshoot_pct, verdict and a Japanese reason_ja. Defaults to the latest activity_date.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string",
+          "description": "Reference day (YYYY-MM-DD) the protection window is evaluated as of. Defaults to the latest activity_date."
+        }
+      }
+    }
+  },
+  {
     "name": "get_activity_durability",
     "description": "Get one activity's cardiac decoupling: the second-half vs first-half HR/speed efficiency ratio (split at the time-series timestamp midpoint). Returns activity_id, activity_date, distance_km, decoupling_pct ((back HR/speed)/(front HR/speed)-1; >5% suggests insufficient aerobic durability), pace_fade_pct (back/front pace ratio), and nullable second-half form fades gct_fade_pct / vo_fade_pct / vr_fade_pct (back-vs-front ground-contact time / vertical oscillation / vertical ratio; null on devices lacking the metric). Returns null when HR or speed data is missing.",
     "inputSchema": {
@@ -1320,6 +1333,22 @@
           "default": 30
         }
       }
+    }
+  },
+  {
+    "name": "get_long_run_recovery_cost",
+    "description": "Judge what one run cost over the following two mornings: joins the activity to the daily_wellness rows of d+1 / d+2 and compares them with the athlete's own trailing 14-day median (run day excluded). Three criteria: 'rhr_two_day' (resting HR >=+2 bpm over baseline on BOTH mornings -- a single elevated morning is the normal price of a long run; with no d+2 row it needs >=+3 on d+1 alone), 'readiness' (d+1 Training Readiness <35) and 'hrv' (d+1 overnight HRV <=-15% vs baseline). cost_flag is true when >=2 of the 3 fire -- one lone marker is noise. Returns activity_id, activity_date, distance_km, avg_heart_rate, temperature_c, baseline (rhr_median, hrv_median, n), d1 (rhr, rhr_delta, hrv, hrv_delta_pct, readiness, sleep_hours, body_battery_low), d2 (rhr, rhr_delta), criteria [{name, fired, value, threshold}], criteria_fired, cost_flag, insufficient_data (missing d+1 row or <5 baseline RHR samples -- cost_flag is then false) and a short Japanese reason_ja. Returns null for an unknown activity. No distance floor is applied; the thresholds were backtested on runs >=15 km, where the rule fires on the two 2026 injury-trigger long runs and on none of the ladder long runs.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "activity_id": {
+          "type": "integer",
+          "description": "Activity ID of the run whose next-morning cost to judge."
+        }
+      },
+      "required": [
+        "activity_id"
+      ]
     }
   },
   {

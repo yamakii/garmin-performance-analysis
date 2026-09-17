@@ -761,6 +761,118 @@ class GarminDBReader:
         ]
         return compute_wellness_baseline_deviation(rows, window_days=window_days)
 
+    def _wellness_rows_between(self, start: str, end: str) -> list[dict[str, Any]]:
+        """``daily_wellness`` rows in ``[start, end]``, ascending by date.
+
+        One query for a whole window so callers that need several days (the
+        recovery-cost join needs the trailing baseline plus the two mornings
+        after a run) pay a single round trip. Dates come back as
+        ``YYYY-MM-DD`` strings; every metric is null-safe.
+        """
+        raw = self.execute_read_query(
+            """
+            SELECT date, resting_hr, hrv_overnight_ms, training_readiness,
+                   sleep_seconds, body_battery_low
+            FROM daily_wellness
+            WHERE date BETWEEN ? AND ?
+            ORDER BY date ASC
+            """,
+            (start, end),
+        )
+        return [
+            {
+                "date": str(d),
+                "resting_hr": resting_hr,
+                "hrv_overnight_ms": hrv_ms,
+                "training_readiness": readiness,
+                "sleep_seconds": sleep_seconds,
+                "body_battery_low": body_battery_low,
+            }
+            for (
+                d,
+                resting_hr,
+                hrv_ms,
+                readiness,
+                sleep_seconds,
+                body_battery_low,
+            ) in raw
+        ]
+
+    def get_long_run_recovery_cost(self, activity_id: int) -> dict[str, Any] | None:
+        """What the run cost over the following two mornings (#1218).
+
+        Joins one activity to the ``daily_wellness`` rows of the next two days
+        and judges resting HR / Training Readiness / overnight HRV against a
+        trailing 14-day personal median (run day excluded). Two of the three
+        criteria must fire before the run counts as expensive -- a single
+        elevated morning is the normal price of a long run.
+
+        No distance floor is applied: the caller (readiness gate / weekly
+        review) decides which runs are worth asking about. The backtest that
+        set the thresholds covered runs of 12 km and up.
+
+        Args:
+            activity_id: The run to judge.
+
+        Returns:
+            ``{"activity_id", "activity_date", "distance_km",
+            "avg_heart_rate", "temperature_c", "baseline", "d1", "d2",
+            "criteria", "criteria_fired", "cost_flag", "insufficient_data",
+            "reason_ja"}``, or ``None`` when the activity does not exist.
+            ``insufficient_data`` is ``True`` (and ``cost_flag`` ``False``)
+            when the d+1 morning is missing or the baseline has fewer than 5
+            resting-HR samples. Dates are ``YYYY-MM-DD`` strings.
+        """
+        from datetime import date as date_cls
+        from datetime import timedelta
+
+        from garmin_mcp.analysis.recovery_cost import (
+            BASELINE_WINDOW_DAYS,
+            compute_long_run_recovery_cost,
+        )
+
+        rows = self.execute_read_query(
+            """
+            SELECT activity_id, activity_date, total_distance_km, avg_heart_rate,
+                   temp_celsius
+            FROM activities
+            WHERE activity_id = ?
+            """,
+            (activity_id,),
+        )
+        if not rows:
+            return None
+
+        aid, activity_date, distance_km, avg_hr, temp_c = rows[0]
+        run_day = (
+            activity_date
+            if isinstance(activity_date, date_cls)
+            else date_cls.fromisoformat(str(activity_date))
+        )
+        d1_date = str(run_day + timedelta(days=1))
+        d2_date = str(run_day + timedelta(days=2))
+
+        wellness = {
+            row["date"]: row
+            for row in self._wellness_rows_between(
+                str(run_day - timedelta(days=BASELINE_WINDOW_DAYS)), d2_date
+            )
+        }
+        baseline_rows = [row for day, row in wellness.items() if day < str(run_day)]
+
+        return compute_long_run_recovery_cost(
+            {
+                "activity_id": aid,
+                "activity_date": str(run_day),
+                "distance_km": distance_km,
+                "avg_heart_rate": avg_hr,
+                "temperature_c": temp_c,
+            },
+            wellness.get(d1_date),
+            wellness.get(d2_date),
+            baseline_rows,
+        )
+
     # ========== Splits Methods ==========
 
     def get_splits_pace_hr(
@@ -1183,6 +1295,157 @@ class GarminDBReader:
             wellness_deviation=wellness_deviation,
             form_anomaly=form_anomaly,
         )
+
+    # ========== Post-Event Window Methods ==========
+
+    def get_post_event_window(self, date: str | None = None) -> dict[str, Any]:
+        """Get the post-race protection window as of ``date``.
+
+        Resolves the last big stimulus from the race calendar
+        (``athlete_goals`` at any status, plus ``kind == "race"`` steps of the
+        block ladder) with a distance+HR proxy as a fallback, then checks
+        whether any long run since then exceeded the pre-event ceiling (the
+        longest run in the 56 days before the event). See
+        ``garmin_mcp.analysis.event_window`` for the rules.
+
+        Args:
+            date: ``YYYY-MM-DD`` reference day. ``None`` (default) uses the
+                latest ``activity_date``.
+
+        Returns:
+            ``json.dumps``-serializable dict with ``date``, ``last_event``,
+            ``days_since_event``, ``in_window``, ``ceiling_km``,
+            ``longest_since_km``, ``longest_since_activity_id``,
+            ``overshoot_pct``, ``verdict`` and ``reason_ja``.
+        """
+        from datetime import date as date_cls
+        from datetime import timedelta
+
+        from garmin_mcp.analysis.event_window import (
+            PRE_EVENT_LOOKBACK_DAYS,
+            compute_post_event_window,
+            empty_post_event_window,
+            resolve_big_events,
+        )
+
+        if date is None:
+            latest = self.execute_read_query(
+                "SELECT MAX(activity_date) FROM activities", ()
+            )
+            date = str(latest[0][0]) if latest and latest[0][0] is not None else None
+
+        if date is None:
+            return empty_post_event_window()
+
+        events = resolve_big_events(
+            self._event_goals(),
+            self._event_ladder_race_steps(),
+            self._event_hr_proxy_runs(date),
+        )
+
+        past_dates = [str(e["date"]) for e in events if str(e["date"]) <= date]
+        if not past_dates:
+            return compute_post_event_window(events, [], None, date)
+
+        event_date = date_cls.fromisoformat(max(past_dates))
+        ceiling_start = str(event_date - timedelta(days=PRE_EVENT_LOOKBACK_DAYS))
+
+        ceiling_row = self.execute_read_query(
+            "SELECT MAX(total_distance_km) FROM activities "
+            "WHERE activity_date >= ? AND activity_date < ?",
+            (ceiling_start, event_date.isoformat()),
+        )
+        pre_event_longest_km = (
+            float(ceiling_row[0][0])
+            if ceiling_row and ceiling_row[0][0] is not None
+            else None
+        )
+
+        runs_since = [
+            {
+                "activity_id": row[0],
+                "activity_date": str(row[1]),
+                "distance_km": row[2],
+            }
+            for row in self.execute_read_query(
+                "SELECT activity_id, activity_date, total_distance_km FROM activities "
+                "WHERE activity_date > ? AND activity_date <= ? "
+                "AND total_distance_km IS NOT NULL",
+                (event_date.isoformat(), date),
+            )
+        ]
+
+        return compute_post_event_window(events, runs_since, pre_event_longest_km, date)
+
+    def _event_goals(self, user_id: str = "default") -> list[dict[str, Any]]:
+        """Read every dated ``athlete_goals`` row (any status) for ``user_id``.
+
+        Past races matter as much as upcoming ones here, so the status filter
+        used by the race-goal readers is deliberately absent.
+        """
+        return [
+            {"race_date": str(row[0]), "race_name": row[1], "status": row[2]}
+            for row in self.execute_read_query(
+                "SELECT race_date, race_name, status FROM athlete_goals "
+                "WHERE user_id = ? AND race_date IS NOT NULL ORDER BY race_date",
+                (user_id,),
+            )
+        ]
+
+    def _event_ladder_race_steps(
+        self, user_id: str = "default"
+    ) -> list[dict[str, Any]]:
+        """Read the ``kind == "race"`` steps of every block's long-run ladder."""
+        import json
+
+        steps: list[dict[str, Any]] = []
+        for (ladder_json,) in self.execute_read_query(
+            "SELECT long_run_ladder FROM training_blocks "
+            "WHERE user_id = ? AND long_run_ladder IS NOT NULL ORDER BY sequence",
+            (user_id,),
+        ):
+            try:
+                ladder = json.loads(ladder_json)
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(ladder, list):
+                continue
+            steps.extend(
+                step
+                for step in ladder
+                if isinstance(step, dict)
+                and str(step.get("kind") or "").lower() == "race"
+            )
+        return steps
+
+    def _event_hr_proxy_runs(self, end_date: str) -> list[dict[str, Any]]:
+        """Read long runs up to ``end_date`` with their Garmin zone-3 floor.
+
+        The HR proxy only fires for runs at or above
+        ``PROXY_MIN_KM``; the zone-3 lower boundary comes from that activity's
+        own ``heart_rate_zones`` row (Garmin native zones, never a formula).
+        """
+        from garmin_mcp.analysis.event_window import PROXY_MIN_KM
+
+        return [
+            {
+                "activity_id": row[0],
+                "activity_date": str(row[1]),
+                "distance_km": row[2],
+                "avg_heart_rate": row[3],
+                "zone3_lower": row[4],
+            }
+            for row in self.execute_read_query(
+                "SELECT a.activity_id, a.activity_date, a.total_distance_km, "
+                "a.avg_heart_rate, z.zone_low_boundary "
+                "FROM activities a "
+                "JOIN heart_rate_zones z "
+                "  ON z.activity_id = a.activity_id AND z.zone_number = 3 "
+                "WHERE a.activity_date <= ? AND a.total_distance_km >= ? "
+                "ORDER BY a.activity_date",
+                (end_date, PROXY_MIN_KM),
+            )
+        ]
 
     @staticmethod
     def _safe_call(fn: Any) -> dict[str, Any] | None:
