@@ -251,6 +251,13 @@ def _wrap_add_gear_lifecycle_columns(conn: duckdb.DuckDBPyConnection) -> None:
     add_gear_lifecycle_columns(conn)
 
 
+def _wrap_add_athlete_symptoms(conn: duckdb.DuckDBPyConnection) -> None:
+    """Wrap the athlete_symptoms table migration on an existing connection."""
+    from .add_athlete_symptoms import add_athlete_symptoms
+
+    add_athlete_symptoms(conn)
+
+
 def _wrap_plan_versioning(conn: duckdb.DuckDBPyConnection) -> None:
     """Wrap plan versioning migration to run on an existing connection."""
     from .add_plan_versioning import _column_exists, _table_exists
@@ -325,4 +332,5 @@ MIGRATIONS: list[tuple[int, str, Callable[[duckdb.DuckDBPyConnection], None]]] =
     ),
     (27, "add_gear_identity_columns", _wrap_add_gear_identity_columns),
     (28, "add_gear_lifecycle_columns", _wrap_add_gear_lifecycle_columns),
+    (29, "add_athlete_symptoms", _wrap_add_athlete_symptoms),
 ]

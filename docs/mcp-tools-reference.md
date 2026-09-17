@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **73 tools** (71 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **75 tools** (73 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -21,7 +21,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Performance](#performance) (4)
 - [Time Series](#time-series) (4)
 - [Training Plan](#training-plan) (2)
-- [Athlete](#athlete) (7)
+- [Athlete](#athlete) (9)
 - [Race](#race) (1)
 - [Training Load](#training-load) (4)
 - [Durability](#durability) (3)
@@ -568,6 +568,36 @@ Get a single weekly review (the latest version of its week). When week_start_dat
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `week_start_date` | string | optional | Week start date (YYYY-MM-DD). When omitted, returns the most recent review. |
+| `user_id` | string | optional | Profile owner identifier (default: 'default') |
+
+### `save_symptom`
+
+CLI: `garmin-db athlete save-symptom`
+
+Log one pain / tightness report to DuckDB: what was felt, where (one body region per call), how bad (severity 0-10), and when (during_run / after_run / morning / rest_day). Rows are append-only, so two sore spots on one day are two calls and a later report never overwrites an earlier one. Log severity 0 when the athlete was asked and reported nothing: that row is what lets a later read tell 'no pain' from 'never asked'. Returns {status, symptom_id}.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `date` | string | **required** | Date the symptom was felt (YYYY-MM-DD) |
+| `body_region` | enum: `foot`, `ankle`, `achilles`, `calf`, `shin`, `knee`, `hamstring`, `quad`, `hip`, `glute`, `groin`, `lower_back`, `other` | **required** | Where it was felt (one region per call; log two spots twice) |
+| `severity` | integer | **required** | 0-10, where 0 means asked and clear (worth logging: it separates 'no pain' from 'not asked'), 1-3 niggle, 4-6 pain that alters the run, 7-10 pain that stops it |
+| `phase` | enum: `during_run`, `after_run`, `morning`, `rest_day` | **required** | When it was felt: during_run, after_run, morning, rest_day |
+| `side` | enum: `left`, `right`, `both` | optional | Side of the body (omit when not applicable) |
+| `activity_id` | integer | optional | The run this refers to, when there is one |
+| `note` | string | optional | Free-form note in the athlete's own words |
+| `user_id` | string | optional | Profile owner identifier (default: 'default') |
+
+### `get_symptoms`
+
+CLI: `garmin-db athlete get-symptoms`
+
+Get the athlete's symptom (pain / niggle) reports in a date range, oldest first, optionally narrowed to one body_region. Each row carries date, body_region, side, severity, phase, activity_id and note; severity-0 rows are included because they record an explicit all-clear. Returns an empty list when nothing was logged.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `start_date` | string | **required** | Range start, inclusive (YYYY-MM-DD) |
+| `end_date` | string | **required** | Range end, inclusive (YYYY-MM-DD) |
+| `body_region` | string | optional | Optional region filter (e.g. 'calf'); omit for every region |
 | `user_id` | string | optional | Profile owner identifier (default: 'default') |
 
 ### `prefetch_weekly_review_context`

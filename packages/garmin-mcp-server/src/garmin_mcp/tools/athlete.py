@@ -9,7 +9,7 @@ runtime defaults are applied in the handlers below.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -22,6 +22,25 @@ logger = logging.getLogger(__name__)
 # modeled as ``str | None = None`` (so the derived schema emits no ``default``
 # key, matching the hand schema) and coalesced to this in the handlers.
 _DEFAULT_USER_ID = "default"
+
+# Controlled vocabulary for a symptom's location. Kept as a closed Literal so a
+# typo ("archilles") cannot silently create a region that no query will ever
+# match again; the column itself stays VARCHAR (issue #1220).
+_BODY_REGIONS = Literal[
+    "foot",
+    "ankle",
+    "achilles",
+    "calf",
+    "shin",
+    "knee",
+    "hamstring",
+    "quad",
+    "hip",
+    "glute",
+    "groin",
+    "lower_back",
+    "other",
+]
 
 
 # ----------------------------------------------------------------------------
@@ -97,6 +116,53 @@ class GetWeeklyReviewParams(BaseModel):
             "Week start date (YYYY-MM-DD). When omitted, returns the most recent "
             "review."
         ),
+    )
+    user_id: str | None = Field(
+        default=None, description="Profile owner identifier (default: 'default')"
+    )
+
+
+class SaveSymptomParams(BaseModel):
+    """Arguments for ``save_symptom``."""
+
+    date: str = Field(description="Date the symptom was felt (YYYY-MM-DD)")
+    body_region: _BODY_REGIONS = Field(
+        description="Where it was felt (one region per call; log two spots twice)"
+    )
+    severity: int = Field(
+        ge=0,
+        le=10,
+        description=(
+            "0-10, where 0 means asked and clear (worth logging: it separates "
+            "'no pain' from 'not asked'), 1-3 niggle, 4-6 pain that alters the "
+            "run, 7-10 pain that stops it"
+        ),
+    )
+    phase: Literal["during_run", "after_run", "morning", "rest_day"] = Field(
+        description="When it was felt: during_run, after_run, morning, rest_day"
+    )
+    side: Literal["left", "right", "both"] | None = Field(
+        default=None, description="Side of the body (omit when not applicable)"
+    )
+    activity_id: int | None = Field(
+        default=None, description="The run this refers to, when there is one"
+    )
+    note: str | None = Field(
+        default=None, description="Free-form note in the athlete's own words"
+    )
+    user_id: str | None = Field(
+        default=None, description="Profile owner identifier (default: 'default')"
+    )
+
+
+class GetSymptomsParams(BaseModel):
+    """Arguments for ``get_symptoms``."""
+
+    start_date: str = Field(description="Range start, inclusive (YYYY-MM-DD)")
+    end_date: str = Field(description="Range end, inclusive (YYYY-MM-DD)")
+    body_region: str | None = Field(
+        default=None,
+        description="Optional region filter (e.g. 'calf'); omit for every region",
     )
     user_id: str | None = Field(
         default=None, description="Profile owner identifier (default: 'default')"
@@ -221,6 +287,35 @@ def _get_weekly_review(reader: GarminDBReader, p: GetWeeklyReviewParams) -> Any:
         return {"error": str(e)}
 
 
+def _save_symptom(reader: GarminDBReader, p: SaveSymptomParams) -> Any:
+    from garmin_mcp.database.inserters.athlete import insert_symptom
+
+    try:
+        row = p.model_dump()
+        row["user_id"] = p.user_id if p.user_id is not None else _DEFAULT_USER_ID
+        symptom_id = insert_symptom(row=row, db_path=str(reader.db_path))
+        return {"status": "saved", "symptom_id": symptom_id}
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Save symptom failed: {e}")
+        return {"error": str(e)}
+
+
+def _get_symptoms(reader: GarminDBReader, p: GetSymptomsParams) -> Any:
+    from garmin_mcp.database.readers.athlete import AthleteReader
+
+    try:
+        athlete_reader = AthleteReader(db_path=str(reader.db_path))
+        return athlete_reader.get_symptoms(
+            start_date=p.start_date,
+            end_date=p.end_date,
+            user_id=p.user_id if p.user_id is not None else _DEFAULT_USER_ID,
+            body_region=p.body_region,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Get symptoms failed: {e}")
+        return {"error": str(e)}
+
+
 def _prefetch_weekly_review_context(
     reader: GarminDBReader, p: PrefetchWeeklyReviewContextParams
 ) -> Any:
@@ -330,6 +425,37 @@ ATHLETE_TOOLS: list[ToolDef] = [
         handler=_get_weekly_review,
         cli_group="athlete",
         cli_name="get-review",
+    ),
+    ToolDef(
+        name="save_symptom",
+        description=(
+            "Log one pain / tightness report to DuckDB: what was felt, where "
+            "(one body region per call), how bad (severity 0-10), and when "
+            "(during_run / after_run / morning / rest_day). Rows are "
+            "append-only, so two sore spots on one day are two calls and a "
+            "later report never overwrites an earlier one. Log severity 0 when "
+            "the athlete was asked and reported nothing: that row is what lets "
+            "a later read tell 'no pain' from 'never asked'. Returns "
+            "{status, symptom_id}."
+        ),
+        params=SaveSymptomParams,
+        handler=_save_symptom,
+        cli_group="athlete",
+        cli_name="save-symptom",
+    ),
+    ToolDef(
+        name="get_symptoms",
+        description=(
+            "Get the athlete's symptom (pain / niggle) reports in a date range, "
+            "oldest first, optionally narrowed to one body_region. Each row "
+            "carries date, body_region, side, severity, phase, activity_id and "
+            "note; severity-0 rows are included because they record an "
+            "explicit all-clear. Returns an empty list when nothing was logged."
+        ),
+        params=GetSymptomsParams,
+        handler=_get_symptoms,
+        cli_group="athlete",
+        cli_name="get-symptoms",
     ),
     ToolDef(
         name="prefetch_weekly_review_context",

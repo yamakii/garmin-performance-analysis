@@ -1,9 +1,9 @@
 # DuckDB Schema Mapping Specification
 
-**Version**: 2.9
-**Last Updated**: 2026-09-05
+**Version**: 2.11
+**Last Updated**: 2026-09-18
 **Database**: `garmin_performance.duckdb`
-**Total Tables**: 27 domain tables (+ `schema_version` migration bookkeeping)
+**Total Tables**: 28 domain tables (+ `schema_version` migration bookkeeping)
 
 This document provides comprehensive schema documentation for all DuckDB tables in the Garmin performance analysis system. Every column name, type, and primary key below is verified against the live schema (`PRAGMA table_info`). Where prose describes derived/calculated logic, that logic lives in the inserters / form-baseline modules and is documented here because it is not otherwise discoverable from the column definitions.
 
@@ -20,9 +20,12 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 > A drift test (`tests/scripts/test_generate_schema_doc.py`) fails CI if a schema change
 > lands without regenerating.
 
-> **Schema bookkeeping**: a 28th table, `schema_version` (`version INTEGER PK`, `name`, `applied_at`), tracks applied migrations and is **not** a domain table. The migration runner (`database/migrations/registry.py`) applies numbered migrations after `_ensure_tables()` and records them there.
+> **Schema bookkeeping**: a 29th table, `schema_version` (`version INTEGER PK`, `name`, `applied_at`), tracks applied migrations and is **not** a domain table. The migration runner (`database/migrations/registry.py`) applies numbered migrations after `_ensure_tables()` and records them there.
 
 ## Change History
+
+### Version 2.11 (2026-09-18)
+- **`athlete_symptoms` table added** (migration `add_athlete_symptoms`, version 29; also created in `_ensure_tables()`). The athlete's pain / tightness reports had no home, so the profile's rule that pain governs long-run progression could not be checked against anything and a stall (the March-2021 collapse 43 → 20 → 9.6 → 5.7 km/week) stayed unclassifiable after the fact. Rows are append-only, one per (date, `body_region`), written by `save_symptom` and read by `get_symptoms`. A `severity` of 0 is kept deliberately: it records "asked and clear", which is what separates "no pain" from "not asked" (issue #1220, Epic #1217).
 
 ### Version 2.10 (2026-09-07)
 - **`weekly_prescriptions.rating` added** (migration `add_prescription_rating`, version 25). The per-day plan used to live in two stores that drifted: the prescription rows and `weekly_reviews.review_data.verdict`. The rating now sits on the prescription row next to its `rationale`, `weekly_reviews` rejects a stored `verdict`, and the readers derive it from the week's canonical batch, so a mid-week revision cannot leave a stale plan behind (issue #1021).
@@ -67,7 +70,7 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 
 ---
 
-## Table of Contents (27 domain tables by category)
+## Table of Contents (28 domain tables by category)
 
 | # | Table | Category | Primary Key | Row scale |
 |---|-------|----------|-------------|-----------|
@@ -98,6 +101,7 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 | 27 | [training_blocks](#27-training_blocks) | Plan | `block_id` | ~10 blocks/season |
 | 28 | [training_block_versions](#28-training_block_versions) | Plan | `version_id` | per ledger save |
 | 29 | [weekly_prescriptions](#29-weekly_prescriptions) | Plan | `prescription_id` | ~5-7 rows/week × batches |
+| 30 | [athlete_symptoms](#30-athlete_symptoms) | Athlete | `symptom_id` | per reported niggle/day |
 
 ---
 
@@ -1064,13 +1068,40 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 
 ---
 
+## 30. athlete_symptoms
+
+**Purpose**: The athlete's pain / tightness log — the governor on long-run progression, recorded so a stall can be classified later
+**Primary Key**: `symptom_id` (from `athlete_symptoms_seq`)
+**Source**: Reported by the athlete, written by the `save_symptom` MCP tool (not API-derived)
+
+### Schema
+
+<!-- BEGIN GENERATED: schema:athlete_symptoms -->
+| Column | Type |
+|--------|------|
+| symptom_id (PK) | INTEGER |
+| user_id | VARCHAR |
+| date | DATE |
+| body_region | VARCHAR |
+| side | VARCHAR |
+| severity | INTEGER |
+| phase | VARCHAR |
+| activity_id | BIGINT |
+| note | VARCHAR |
+| created_at | TIMESTAMP |
+<!-- END GENERATED: schema:athlete_symptoms -->
+
+**Units & notes**: rows are **append-only**, one per (`date`, `body_region`), so two sore spots on one day are two rows and a later report never overwrites an earlier one. `body_region` is a controlled vocabulary enforced by the tool schema (`foot | ankle | achilles | calf | shin | knee | hamstring | quad | hip | glute | groin | lower_back | other`) and stored as VARCHAR; `side` ∈ `left | right | both` (NULL when not applicable); `phase` ∈ `during_run | after_run | morning | rest_day`. `severity` is a 0-10 scale and **0 is a meaningful row**: it records "asked and clear", which is what lets a gate distinguish "no pain" from "not asked" (issue #1220). `activity_id` links the report to the run it refers to when there is one. Read via `get_symptoms(start_date, end_date, body_region=None)`, which returns rows oldest-first with dates as strings.
+
+---
+
 ## Indexes & Constraints Summary
 
 - **No FOREIGN KEY constraints** anywhere (removed 2025-11-01, migration `remove_fk_constraints`). Referential integrity is enforced by the ingest pipeline.
 - UNIQUE: `idx_body_composition_date` on `body_composition(date)`; `idx_activity_section` on `section_analyses(activity_id, section_type)`.
 - Composite PKs: `splits(activity_id, split_index)`, `time_series_metrics(activity_id, seq_no)`, `heart_rate_zones(activity_id, zone_number)`.
 - Secondary indexes on `time_series_metrics`: `idx_time_series_activity(activity_id)`, `idx_time_series_timestamp(activity_id, timestamp_s)`.
-- Sequences back the surrogate keys for `form_evaluations` (`form_evaluations_seq`), `form_baseline_history` (`form_baseline_history_seq`), `section_analyses` (`seq_section_analyses_id`), `sync_runs` (`seq_sync_runs_id`), and analysis `run_id` allocation (`seq_analysis_run_id`, whose advance is persisted by the `analysis_runs` INSERT — issue #819).
+- Sequences back the surrogate keys for `form_evaluations` (`form_evaluations_seq`), `form_baseline_history` (`form_baseline_history_seq`), `section_analyses` (`seq_section_analyses_id`), `sync_runs` (`seq_sync_runs_id`), `athlete_symptoms` (`athlete_symptoms_seq`, also the column DEFAULT), and analysis `run_id` allocation (`seq_analysis_run_id`, whose advance is persisted by the `analysis_runs` INSERT — issue #819).
 
 ---
 

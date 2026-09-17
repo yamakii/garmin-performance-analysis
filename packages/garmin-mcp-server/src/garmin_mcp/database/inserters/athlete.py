@@ -17,6 +17,9 @@ Write semantics:
   ``seq_season_retrospectives_id`` / ``seq_athlete_profile_versions_id`` via
   ``nextval``, mirroring the ``seq_section_analyses_id`` pattern in
   ``db_writer.py``.
+- ``athlete_symptoms`` is append-only: every reported pain / niggle is a new
+  row, so the same day can carry one row per body region and a later report
+  never overwrites an earlier one.
 """
 
 from __future__ import annotations
@@ -231,3 +234,69 @@ def insert_weekly_review(review: dict[str, Any], db_path: str | None = None) -> 
         )
 
     return review_id
+
+
+def insert_symptom(row: dict[str, Any], db_path: str | None = None) -> int:
+    """Append one symptom report (pain / tightness) to ``athlete_symptoms``.
+
+    Rows are append-only and one report covers one body region, so a day with
+    two sore spots is two rows. A ``severity`` of 0 is stored like any other:
+    it records that the question was asked and the answer was "clear", which a
+    gate needs in order to tell "no pain" from "never asked" (issue #1220).
+
+    Args:
+        row: Symptom dict with keys ``user_id`` (defaults to ``"default"``),
+            ``date`` (``YYYY-MM-DD``), ``body_region``, ``severity`` (0-10),
+            ``phase``, and the optional ``side`` / ``activity_id`` / ``note``.
+        db_path: Path to DuckDB database. If None, uses default.
+
+    Returns:
+        The new row's ``symptom_id``.
+    """
+    if db_path is None:
+        from garmin_mcp.utils.paths import get_database_dir
+
+        db_path = str(get_database_dir() / "garmin_performance.duckdb")
+
+    from garmin_mcp.database.connection import get_write_connection
+
+    user_id = row.get("user_id") or "default"
+
+    with get_write_connection(db_path) as conn:
+        # Draw the surrogate key first so it can be returned to the caller.
+        id_row = conn.execute("SELECT nextval('athlete_symptoms_seq')").fetchone()
+        symptom_id = int(id_row[0]) if id_row is not None else 0
+
+        # created_at is left to the table DEFAULT (current_timestamp).
+        conn.execute(
+            """
+            INSERT INTO athlete_symptoms (
+                symptom_id, user_id, date, body_region, side,
+                severity, phase, activity_id, note
+            ) VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
+            """,
+            [
+                symptom_id,
+                user_id,
+                row.get("date"),
+                row.get("body_region"),
+                row.get("side"),
+                row.get("severity"),
+                row.get("phase"),
+                row.get("activity_id"),
+                row.get("note"),
+            ],
+        )
+
+        logger.info(
+            "Saved symptom user_id=%s date=%s region=%s severity=%s (symptom_id=%d)",
+            user_id,
+            row.get("date"),
+            row.get("body_region"),
+            row.get("severity"),
+            symptom_id,
+        )
+
+    return symptom_id

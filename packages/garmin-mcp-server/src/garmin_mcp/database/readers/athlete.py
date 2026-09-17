@@ -267,6 +267,54 @@ class AthleteReader(BaseDBReader):
                 for row in rows
             ]
 
+    def get_symptoms(
+        self,
+        start_date: str,
+        end_date: str,
+        user_id: str = "default",
+        body_region: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List the symptom (pain / niggle) reports in a date range.
+
+        Rows with ``severity`` 0 are returned like any other: they record that
+        the athlete was asked and reported nothing, which is what distinguishes
+        "no pain" from "not asked" (issue #1220).
+
+        Args:
+            start_date: Range start, inclusive (``YYYY-MM-DD``).
+            end_date: Range end, inclusive (``YYYY-MM-DD``).
+            user_id: Profile owner identifier (defaults to ``"default"``).
+            body_region: Optional region filter (e.g. ``"calf"``). When None,
+                every region is returned.
+
+        Returns:
+            Row dicts ordered by ``date`` ascending (then ``symptom_id``), with
+            date/timestamp values converted to ``str``. Empty when nothing
+            matches or the table is missing (databases older than the
+            migration).
+        """
+        where = "user_id = ? AND date BETWEEN ? AND ?"
+        params: list[Any] = [user_id, start_date, end_date]
+        if body_region is not None:
+            where += " AND body_region = ?"
+            params.append(body_region)
+
+        with self._get_connection() as conn:
+            try:
+                result = conn.execute(
+                    "SELECT symptom_id, user_id, date, body_region, side, "
+                    "severity, phase, activity_id, note, created_at "
+                    f"FROM athlete_symptoms WHERE {where} "
+                    "ORDER BY date, symptom_id",
+                    params,
+                )
+                rows = result.fetchall()
+            except duckdb.Error:
+                logger.debug("athlete_symptoms unavailable; returning no symptoms")
+                return []
+            columns = [desc[0] for desc in result.description]
+            return [self._row_to_dict(columns, row) for row in rows]
+
     def _prescription_rows(
         self, conn: Any, where: str, params: list[Any]
     ) -> list[dict[str, Any]]:
