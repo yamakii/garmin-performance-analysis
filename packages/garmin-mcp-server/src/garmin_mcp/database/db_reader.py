@@ -57,6 +57,14 @@ _FORM_METRIC_SHORT_NAMES: dict[str, str] = {
     "directVerticalRatio": "vr",
 }
 
+# Which run the injury-risk score asks the recovery-cost reader about (#1222):
+# the latest run of at least ``_RECENT_LONG_RUN_MIN_KM`` within the trailing
+# ``_RECENT_LONG_RUN_LOOKBACK_DAYS`` days. Older long runs have had their cost
+# paid off already, and shorter runs are not what the cost thresholds were
+# backtested on.
+_RECENT_LONG_RUN_MIN_KM = 15.0
+_RECENT_LONG_RUN_LOOKBACK_DAYS = 14
+
 logger = logging.getLogger(__name__)
 
 
@@ -1241,12 +1249,13 @@ class GarminDBReader:
     def get_injury_risk(self, date: str | None = None) -> dict[str, Any]:
         """Get the composite injury-risk score as of ``date``.
 
-        Live-computes a 0-100 injury risk score by fusing five deterministic
-        signals -- ACWR, the symptom-log rule, durability trend, personal
-        wellness-baseline deviation and trailing-14-day form anomalies -- via
-        ``garmin_mcp.analysis.injury_risk.compute_injury_risk`` (no LLM, no
-        backfill). Any signal that cannot be gathered is dropped and the rest are
-        renormalized; when all are missing the result is
+        Live-computes a 0-100 injury risk score by fusing seven deterministic
+        signals -- ACWR, the symptom-log rule, the post-event protection window,
+        the most recent long run's next-morning recovery cost, durability trend,
+        personal wellness-baseline deviation and trailing-14-day form anomalies
+        -- via ``garmin_mcp.analysis.injury_risk.compute_injury_risk`` (no LLM,
+        no backfill). Any signal that cannot be gathered is dropped and the rest
+        are renormalized; when all are missing the result is
         ``{"insufficient_data": True}``.
 
         Args:
@@ -1291,13 +1300,46 @@ class GarminDBReader:
 
         symptom = self._safe_call(lambda: self.get_symptom_status(date))
 
+        event_window = self._safe_call(lambda: self.get_post_event_window(date))
+        recovery_cost = self._safe_call(
+            lambda: self._recent_long_run_recovery_cost(date)
+        )
+
         return compute_injury_risk(
             acwr=acwr,
             durability_trend=durability_trend,
             wellness_deviation=wellness_deviation,
             form_anomaly=form_anomaly,
             symptom=symptom,
+            event_window=event_window,
+            recovery_cost=recovery_cost,
         )
+
+    def _recent_long_run_recovery_cost(self, date: str) -> dict[str, Any] | None:
+        """Morning cost of the latest long run in the 14 days up to ``date``.
+
+        "Long" is :data:`_RECENT_LONG_RUN_MIN_KM` and over -- the distance band
+        whose next-morning cost the backtest was built on -- and the window is
+        :data:`_RECENT_LONG_RUN_LOOKBACK_DAYS` days ending on ``date``
+        (inclusive), so an older long run stops counting once its cost has been
+        paid off. ``None`` when no such run exists, which drops the factor.
+        """
+        from datetime import date as date_cls
+        from datetime import timedelta
+
+        start = str(
+            date_cls.fromisoformat(date)
+            - timedelta(days=_RECENT_LONG_RUN_LOOKBACK_DAYS)
+        )
+        rows = self.execute_read_query(
+            "SELECT activity_id FROM activities "
+            "WHERE activity_date BETWEEN ? AND ? AND total_distance_km >= ? "
+            "ORDER BY activity_date DESC, activity_id DESC LIMIT 1",
+            (start, date, _RECENT_LONG_RUN_MIN_KM),
+        )
+        if not rows:
+            return None
+        return self.get_long_run_recovery_cost(int(rows[0][0]))
 
     # ========== Symptom Log Methods ==========
 

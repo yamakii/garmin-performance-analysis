@@ -13,6 +13,22 @@ from garmin_mcp.database.connection import get_write_connection
 _MODULE = "garmin_mcp.scripts.prefetch_weekly_review_context"
 
 
+def _no_event_window() -> dict[str, Any]:
+    """A post-event window with no race on the calendar (the quiet default)."""
+    return {
+        "date": "2026-07-10",
+        "last_event": None,
+        "days_since_event": None,
+        "in_window": False,
+        "ceiling_km": None,
+        "longest_since_km": None,
+        "longest_since_activity_id": None,
+        "overshoot_pct": None,
+        "verdict": "no_event",
+        "reason_ja": "レースなどの大きな刺激が登録されていません。",
+    }
+
+
 @contextmanager
 def _mock_prefetch(
     load_trend_raises: bool = False,
@@ -24,6 +40,7 @@ def _mock_prefetch(
     prescriptions_by_week: dict[str, list[dict[str, Any]]] | None = None,
     scheduled: list[dict[str, Any]] | None = None,
     symptoms_raise: bool = False,
+    event_window: dict[str, Any] | None = None,
 ) -> Iterator[MagicMock]:
     """Patch every prefetch collaborator so the bundle can run without a DB.
 
@@ -45,6 +62,8 @@ def _mock_prefetch(
             "calendar unreachable" behaviour (the reader raises).
         symptoms_raise: Make the symptom-status reader raise (null-on-error
             probe for the ``symptoms`` collector).
+        event_window: ``get_post_event_window`` result (defaults to the
+            no-event window, i.e. no protection period in force).
 
     Yields the ``GarminDBReader`` mock so a test can flip one reader to raise
     and assert the additive null-on-error contract.
@@ -64,6 +83,10 @@ def _mock_prefetch(
         reader.get_symptom_status.side_effect = RuntimeError("no symptom table")
     else:
         reader.get_symptom_status.return_value = {"flag": False}
+    reader.get_post_event_window.return_value = (
+        _no_event_window() if event_window is None else event_window
+    )
+    reader.get_long_run_recovery_cost.return_value = None
 
     athlete_reader = MagicMock()
     athlete_reader.get_athlete_profile.return_value = (

@@ -5,17 +5,25 @@ risk score with a ``low`` / ``moderate`` / ``high`` band and a per-factor
 breakdown:
 
 - **ACWR** (acute:chronic workload ratio) -- the dominant load driver
-  (weight 0.30).
+  (weight 0.25).
 - **Symptom log** -- the athlete's own pain / tightness reports put through the
   deterministic rule in ``garmin_mcp.analysis.symptoms`` (weight 0.25). It is
   the only input that can see a niggle before the load and form numbers move,
   which is why it carries as much weight as ACWR (#1223).
-- **Durability trend** -- worsening long-run cardiac decoupling (weight 0.20).
+- **Post-event window** -- the 21-day protection window after a race, from
+  ``garmin_mcp.analysis.event_window`` (weight 0.15). The window itself is a
+  risk state (a green in-window read still adds a quarter of the factor);
+  exceeding the pre-race ceiling is what the 2025-12-29 precursor looked like
+  and saturates it (#1222).
+- **Recovery cost** -- how much the most recent long run cost over the next two
+  mornings, from ``garmin_mcp.analysis.recovery_cost`` (weight 0.10). Scales
+  with how many of the three deterministic criteria fired.
+- **Durability trend** -- worsening long-run cardiac decoupling (weight 0.10).
 - **Wellness deviation** -- HRV / readiness / RHR outside the personal band
-  (weight 0.15).
+  (weight 0.10).
 - **Form anomalies** -- an acute:chronic ratio of *material* form-anomaly event
   rates: recent 14-day deduped-event rate over the personal 90-day baseline
-  rate (weight 0.10). A raw z>3 spike count saturated the factor at all times
+  rate (weight 0.05). A raw z>3 spike count saturated the factor at all times
   (~0.22% of samples deviate by chance, so tens of "anomalies" appear even on
   healthy form); the ratio form only adds risk when recent form movement
   *exceeds* the athlete's own baseline (#807).
@@ -37,20 +45,32 @@ from typing import Any
 # Relative weights of each factor before renormalization over available inputs.
 # They sum to 1.0; what a caller actually sees is a factor's *contribution*
 # (its weight over the total of the available factors), which is why tests pin
-# contributions rather than the absolute score. Interim table: #1222 adds
-# ``event_window`` / ``recovery_cost`` and reconciles these to the final
-# weights of Epic #1217.
+# contributions rather than the absolute score. Final table of Epic #1217: the
+# two inputs the athlete can act on directly (their own symptoms, their own
+# load) lead, the two event-shaped gates follow, and the indirect physiological
+# signals share the remainder.
 WEIGHTS: dict[str, float] = {
-    "acwr": 0.30,
+    "acwr": 0.25,
     "symptom": 0.25,
-    "durability": 0.20,
-    "wellness": 0.15,
-    "form_anomaly": 0.10,
+    "event_window": 0.15,
+    "recovery_cost": 0.10,
+    "durability": 0.10,
+    "wellness": 0.10,
+    "form_anomaly": 0.05,
 }
 
 # Symptom-rule risk fractions: a "comes and goes" consecutive pattern is a
 # strong warning, an acute (severity >= 5) report saturates the factor.
 _SYMPTOM_RULE_RISK: dict[str, float] = {"consecutive": 0.7, "acute": 1.0}
+
+# Post-event window verdict -> risk fraction *while inside the window*. Being
+# inside the window at all is a mild risk state (0.25) even when every run has
+# stayed under the pre-race ceiling; overshooting it is the actual precursor.
+_EVENT_WINDOW_RISK: dict[str, float] = {"green": 0.25, "yellow": 0.6, "red": 1.0}
+
+# Number of deterministic next-morning criteria the recovery-cost read judges;
+# the factor is simply the share of them that fired.
+_RECOVERY_COST_CRITERIA = 3
 
 # ACWR piecewise-linear anchors (ratio -> risk fraction). Below/at 1.3 is the
 # safe zone (0); 1.5 is half risk; 1.8+ saturates at full risk.
@@ -176,6 +196,72 @@ def _symptom_factor(symptom: dict[str, Any] | None) -> tuple[float | None, str]:
     return risk, f"症状ログ: {detail}" if detail else "症状ログ"
 
 
+def _event_window_factor(window: dict[str, Any] | None) -> tuple[float | None, str]:
+    """Risk fraction + detail for the post-event window (None => unavailable).
+
+    ``window`` is a ``GarminDBReader.get_post_event_window`` /
+    ``compute_post_event_window`` result. No event on the calendar, or an event
+    whose 21-day window has already closed, is 0 risk; inside the window the
+    verdict decides (``green`` 0.25 -- the window itself is a risk state --
+    ``yellow`` 0.6, ``red`` 1.0). ``insufficient_data`` (or a missing / unknown
+    verdict) drops the factor rather than reading as safe.
+    """
+    if window is None:
+        return None, ""
+
+    verdict = str(window.get("verdict") or "")
+    if verdict == "no_event":
+        return 0.0, "直近に大きな刺激（レース等）の登録なし"
+    if verdict not in _EVENT_WINDOW_RISK:
+        return None, ""
+
+    days = window.get("days_since_event")
+    day_label = f"レース後 {days} 日目" if days is not None else "レース後"
+    if not window.get("in_window"):
+        return 0.0, f"{day_label}・保護期間は終了"
+
+    risk = _EVENT_WINDOW_RISK[verdict]
+    longest = window.get("longest_since_km")
+    ceiling = window.get("ceiling_km")
+    if longest is None or ceiling is None:
+        return risk, f"{day_label}・保護期間中（{verdict}）"
+
+    overshoot = window.get("overshoot_pct")
+    overshoot_label = f"、{overshoot:+.0f}%" if overshoot is not None else ""
+    return (
+        risk,
+        f"{day_label}・ロング {longest:.1f} km"
+        f"（上限 {ceiling:.1f} km{overshoot_label}）",
+    )
+
+
+def _recovery_cost_factor(cost: dict[str, Any] | None) -> tuple[float | None, str]:
+    """Risk fraction + detail for the last long run's morning cost (None => n/a).
+
+    ``cost`` is a ``GarminDBReader.get_long_run_recovery_cost`` result. The risk
+    is the share of the three deterministic criteria that fired (0 / 0.33 /
+    0.67 / 1.0). A read flagged ``insufficient_data`` (missing d+1 morning or
+    too short a baseline) drops the factor: an unmeasured morning is not
+    evidence of a cheap long run.
+    """
+    if cost is None or cost.get("insufficient_data"):
+        return None, ""
+
+    fired = cost.get("criteria_fired")
+    if fired is None:
+        return None, ""
+
+    risk = min(float(fired) / _RECOVERY_COST_CRITERIA, 1.0)
+    distance = cost.get("distance_km")
+    activity_date = cost.get("activity_date")
+    head = "直近ロング"
+    if distance is not None:
+        head += f" {float(distance):.1f} km"
+    if activity_date:
+        head += f"（{activity_date}）"
+    return risk, f"{head}の翌朝コスト {fired}/{_RECOVERY_COST_CRITERIA} 基準"
+
+
 def _form_ratio_to_risk(ratio: float) -> float:
     """Piecewise-linear form event-rate ratio -> risk fraction in ``[0, 1]``.
 
@@ -221,8 +307,10 @@ def compute_injury_risk(
     wellness_deviation: dict[str, Any] | None,
     form_anomaly: dict[str, Any] | None,
     symptom: dict[str, Any] | None = None,
+    event_window: dict[str, Any] | None = None,
+    recovery_cost: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Fuse ACWR / symptom / durability / wellness / form into an injury-risk score.
+    """Fuse the seven deterministic signals into one injury-risk score.
 
     Args:
         acwr: ``TrainingLoadReader.get_acwr`` output (uses the ``acwr`` ratio).
@@ -238,6 +326,12 @@ def compute_injury_risk(
         symptom: ``GarminDBReader.get_symptom_status`` output (the deterministic
             symptom rule). ``None``, or no report at all in its 14-day window,
             drops the factor.
+        event_window: ``GarminDBReader.get_post_event_window`` output (uses
+            ``verdict`` / ``in_window``). ``None`` / ``insufficient_data``
+            drops it.
+        recovery_cost: ``GarminDBReader.get_long_run_recovery_cost`` output for
+            the most recent long run (uses ``criteria_fired``). ``None`` /
+            ``insufficient_data`` drops it.
 
     Returns:
         ``{"score": int(0-100), "band": "low"|"moderate"|"high", "factors":
@@ -249,6 +343,8 @@ def compute_injury_risk(
     raw_factors: list[tuple[str, float | None, str]] = [
         ("acwr", *_acwr_factor(acwr)),
         ("symptom", *_symptom_factor(symptom)),
+        ("event_window", *_event_window_factor(event_window)),
+        ("recovery_cost", *_recovery_cost_factor(recovery_cost)),
         ("durability", *_durability_factor(durability_trend)),
         ("wellness", *_wellness_factor(wellness_deviation)),
         ("form_anomaly", *_form_factor(form_anomaly)),

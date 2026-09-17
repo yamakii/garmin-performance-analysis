@@ -17,8 +17,10 @@ import pytest
 
 from garmin_mcp.analysis.injury_risk import (
     WEIGHTS,
+    _event_window_factor,
     _form_factor,
     _form_ratio_to_risk,
+    _recovery_cost_factor,
     _symptom_factor,
     classify_band,
     compute_injury_risk,
@@ -333,3 +335,250 @@ def test_symptom_clear_contributes_zero_but_stays_available() -> None:
 def test_weights_sum_to_one() -> None:
     """The weight table stays normalized as factors are added (#1222 / #1223)."""
     assert sum(WEIGHTS.values()) == pytest.approx(1.0)
+
+
+# ---------------------------------------------------------------------------
+# Post-event window + recovery cost factors (#1222)
+# ---------------------------------------------------------------------------
+
+
+def _event_window(
+    verdict: str, in_window: bool = True, **overrides: Any
+) -> dict[str, Any]:
+    """A ``get_post_event_window`` payload with the 2025-12-29 shape."""
+    payload: dict[str, Any] = {
+        "date": "2025-12-29",
+        "last_event": {
+            "date": "2025-12-14",
+            "source": "goal",
+            "label": "ハーフマラソン",
+            "activity_id": None,
+        },
+        "days_since_event": 15,
+        "in_window": in_window,
+        "ceiling_km": 21.2,
+        "longest_since_km": 28.6,
+        "longest_since_activity_id": 777001,
+        "overshoot_pct": 34.9,
+        "verdict": verdict,
+        "reason_ja": "保護期間中に上限を超えています。",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _recovery_cost(criteria_fired: int, **overrides: Any) -> dict[str, Any]:
+    """A ``get_long_run_recovery_cost`` payload with ``criteria_fired`` fired."""
+    payload: dict[str, Any] = {
+        "activity_id": 777001,
+        "activity_date": "2025-12-29",
+        "distance_km": 28.6,
+        "criteria_fired": criteria_fired,
+        "cost_flag": criteria_fired >= 2,
+        "insufficient_data": False,
+        "reason_ja": "翌朝コスト",
+    }
+    payload.update(overrides)
+    return payload
+
+
+@pytest.mark.unit
+def test_event_window_red_dominates() -> None:
+    """An in-window 'red' saturates its factor even with a safe ACWR.
+
+    ACWR 1.1 is inside the safe zone (0 risk), so the whole score comes from
+    the event window: its 0.15 weight renormalized over the 0.40 available
+    (acwr + event_window) times 1.0 -> 37.5 points, band 'moderate'.
+    """
+    risk, detail = _event_window_factor(_event_window("red"))
+    assert risk == 1.0
+    assert "28.6" in detail and "21.2" in detail
+
+    result = compute_injury_risk(
+        acwr={"acwr": 1.1, "status": "optimal"},
+        durability_trend=None,
+        wellness_deviation=None,
+        form_anomaly=None,
+        event_window=_event_window("red"),
+    )
+
+    assert set(result["available_inputs"]) == {"acwr", "event_window"}
+    window_factor = next(f for f in result["factors"] if f["name"] == "event_window")
+    expected = (
+        WEIGHTS["event_window"] / (WEIGHTS["event_window"] + WEIGHTS["acwr"]) * 100
+    )
+    assert window_factor["contribution"] == pytest.approx(round(expected, 1))
+    assert window_factor["contribution"] == pytest.approx(37.5)
+    assert window_factor["detail_ja"]
+    assert result["band"] == "moderate"
+
+
+@pytest.mark.unit
+def test_in_window_green_adds_quarter() -> None:
+    """Being inside the window is itself a risk state: green contributes 0.25."""
+    risk, _ = _event_window_factor(_event_window("green"))
+    assert risk == pytest.approx(0.25)
+
+    result = compute_injury_risk(
+        acwr=_ACWR_HEALTHY,
+        durability_trend=None,
+        wellness_deviation=None,
+        form_anomaly=None,
+        event_window=_event_window("green"),
+    )
+
+    expected = (
+        WEIGHTS["event_window"]
+        / (WEIGHTS["event_window"] + WEIGHTS["acwr"])
+        * 0.25
+        * 100
+    )
+    window_factor = next(f for f in result["factors"] if f["name"] == "event_window")
+    assert window_factor["contribution"] == pytest.approx(round(expected, 1))
+
+    # Outside the window (and with no event at all) the factor is present at 0.
+    assert _event_window_factor(_event_window("green", in_window=False))[0] == 0.0
+    assert _event_window_factor(_event_window("no_event"))[0] == 0.0
+    # An unjudgeable window drops out rather than reading as safe.
+    assert _event_window_factor(_event_window("insufficient_data")) == (None, "")
+    assert _event_window_factor(None) == (None, "")
+
+
+@pytest.mark.unit
+def test_recovery_cost_scales_with_criteria() -> None:
+    """The factor is the share of the three morning criteria that fired."""
+    assert _recovery_cost_factor(_recovery_cost(0))[0] == pytest.approx(0.0)
+    assert _recovery_cost_factor(_recovery_cost(2))[0] == pytest.approx(0.67, abs=0.01)
+    assert _recovery_cost_factor(_recovery_cost(3))[0] == pytest.approx(1.0)
+
+    risk, detail = _recovery_cost_factor(_recovery_cost(2))
+    assert "2/3" in detail
+
+    # An unmeasured morning is not evidence of a cheap long run.
+    assert _recovery_cost_factor(_recovery_cost(2, insufficient_data=True)) == (
+        None,
+        "",
+    )
+    assert _recovery_cost_factor(None) == (None, "")
+
+    result = compute_injury_risk(
+        acwr=_ACWR_HEALTHY,
+        durability_trend=None,
+        wellness_deviation=None,
+        form_anomaly=None,
+        recovery_cost=_recovery_cost(2),
+    )
+    expected = (
+        WEIGHTS["recovery_cost"]
+        / (WEIGHTS["recovery_cost"] + WEIGHTS["acwr"])
+        * (2 / 3)
+        * 100
+    )
+    cost_factor = next(f for f in result["factors"] if f["name"] == "recovery_cost")
+    assert cost_factor["contribution"] == pytest.approx(round(expected, 1))
+
+
+@pytest.mark.unit
+def test_new_inputs_default_none_keeps_legacy_score() -> None:
+    """Four legacy inputs only -> the pre-#1222 four-factor renormalization."""
+    legacy = compute_injury_risk(
+        acwr={"acwr": 1.5, "status": "caution"},
+        durability_trend={"trend": {"direction": "worsening"}},
+        wellness_deviation=_WELLNESS_HEALTHY,
+        form_anomaly=_FORM_HEALTHY,
+    )
+    explicit = compute_injury_risk(
+        acwr={"acwr": 1.5, "status": "caution"},
+        durability_trend={"trend": {"direction": "worsening"}},
+        wellness_deviation=_WELLNESS_HEALTHY,
+        form_anomaly=_FORM_HEALTHY,
+        event_window=None,
+        recovery_cost=None,
+    )
+
+    assert legacy == explicit
+    assert set(legacy["available_inputs"]) == {
+        "acwr",
+        "durability",
+        "wellness",
+        "form_anomaly",
+    }
+    # Only ACWR (0.5 risk) and durability (1.0) carry risk, renormalized over
+    # the four available weights.
+    available = sum(
+        WEIGHTS[name] for name in ("acwr", "durability", "wellness", "form_anomaly")
+    )
+    expected_score = (
+        WEIGHTS["acwr"] / available * 0.5 + WEIGHTS["durability"] / available * 1.0
+    ) * 100
+    assert legacy["score"] == int(round(expected_score))
+
+
+@pytest.mark.unit
+def test_2025_12_29_scenario_is_high() -> None:
+    """The 2025-12-29 precursor (post-race +35% long run) reads 'high'."""
+    result = compute_injury_risk(
+        acwr={"acwr": 1.8, "status": "high_risk"},
+        durability_trend=None,
+        wellness_deviation={
+            "date": "2025-12-30",
+            "hrv": {"flag": "below", "adverse": True},
+            "readiness": {"flag": "below", "adverse": True},
+            "rhr": {"flag": "within", "adverse": False},
+            "overall_flag": True,
+        },
+        form_anomaly=None,
+        event_window=_event_window("red"),
+        recovery_cost=_recovery_cost(3),
+    )
+
+    assert set(result["available_inputs"]) == {
+        "acwr",
+        "event_window",
+        "recovery_cost",
+        "wellness",
+    }
+    assert result["band"] == "high"
+    assert result["score"] > 90
+    assert {f["name"] for f in result["factors"][:3]} == {
+        "acwr",
+        "event_window",
+        "recovery_cost",
+    }
+
+
+@pytest.mark.integration
+def test_reader_picks_latest_long_run_within_14_days(initialized_db_path: Path) -> None:
+    """The recovery-cost factor follows the latest long run in the window."""
+    from datetime import date, timedelta
+
+    from garmin_mcp.database.connection import get_write_connection
+    from garmin_mcp.database.db_reader import GarminDBReader
+
+    ref = date(2026, 3, 1)
+    with get_write_connection(db_path=str(initialized_db_path)) as conn:
+        # A 25 km long run 12 days ago and a 5 km jog yesterday.
+        conn.execute(
+            "INSERT INTO activities (activity_id, activity_date, "
+            "total_distance_km) VALUES (?, ?, ?)",
+            (910001, str(ref - timedelta(days=12)), 25.0),
+        )
+        conn.execute(
+            "INSERT INTO activities (activity_id, activity_date, "
+            "total_distance_km) VALUES (?, ?, ?)",
+            (910002, str(ref - timedelta(days=1)), 5.0),
+        )
+
+    reader = GarminDBReader(db_path=str(initialized_db_path))
+    cost = reader._recent_long_run_recovery_cost(str(ref))
+
+    assert cost is not None
+    assert cost["activity_id"] == 910001
+
+    # With the long run outside the 14-day window there is nothing to judge, so
+    # the factor is absent from the score's inputs.
+    later = str(ref + timedelta(days=10))
+    assert reader._recent_long_run_recovery_cost(later) is None
+    assert "recovery_cost" not in reader.get_injury_risk(date=later).get(
+        "available_inputs", []
+    )
