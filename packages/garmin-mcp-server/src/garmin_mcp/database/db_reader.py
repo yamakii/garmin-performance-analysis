@@ -761,6 +761,118 @@ class GarminDBReader:
         ]
         return compute_wellness_baseline_deviation(rows, window_days=window_days)
 
+    def _wellness_rows_between(self, start: str, end: str) -> list[dict[str, Any]]:
+        """``daily_wellness`` rows in ``[start, end]``, ascending by date.
+
+        One query for a whole window so callers that need several days (the
+        recovery-cost join needs the trailing baseline plus the two mornings
+        after a run) pay a single round trip. Dates come back as
+        ``YYYY-MM-DD`` strings; every metric is null-safe.
+        """
+        raw = self.execute_read_query(
+            """
+            SELECT date, resting_hr, hrv_overnight_ms, training_readiness,
+                   sleep_seconds, body_battery_low
+            FROM daily_wellness
+            WHERE date BETWEEN ? AND ?
+            ORDER BY date ASC
+            """,
+            (start, end),
+        )
+        return [
+            {
+                "date": str(d),
+                "resting_hr": resting_hr,
+                "hrv_overnight_ms": hrv_ms,
+                "training_readiness": readiness,
+                "sleep_seconds": sleep_seconds,
+                "body_battery_low": body_battery_low,
+            }
+            for (
+                d,
+                resting_hr,
+                hrv_ms,
+                readiness,
+                sleep_seconds,
+                body_battery_low,
+            ) in raw
+        ]
+
+    def get_long_run_recovery_cost(self, activity_id: int) -> dict[str, Any] | None:
+        """What the run cost over the following two mornings (#1218).
+
+        Joins one activity to the ``daily_wellness`` rows of the next two days
+        and judges resting HR / Training Readiness / overnight HRV against a
+        trailing 14-day personal median (run day excluded). Two of the three
+        criteria must fire before the run counts as expensive -- a single
+        elevated morning is the normal price of a long run.
+
+        No distance floor is applied: the caller (readiness gate / weekly
+        review) decides which runs are worth asking about. The backtest that
+        set the thresholds covered runs of 12 km and up.
+
+        Args:
+            activity_id: The run to judge.
+
+        Returns:
+            ``{"activity_id", "activity_date", "distance_km",
+            "avg_heart_rate", "temperature_c", "baseline", "d1", "d2",
+            "criteria", "criteria_fired", "cost_flag", "insufficient_data",
+            "reason_ja"}``, or ``None`` when the activity does not exist.
+            ``insufficient_data`` is ``True`` (and ``cost_flag`` ``False``)
+            when the d+1 morning is missing or the baseline has fewer than 5
+            resting-HR samples. Dates are ``YYYY-MM-DD`` strings.
+        """
+        from datetime import date as date_cls
+        from datetime import timedelta
+
+        from garmin_mcp.analysis.recovery_cost import (
+            BASELINE_WINDOW_DAYS,
+            compute_long_run_recovery_cost,
+        )
+
+        rows = self.execute_read_query(
+            """
+            SELECT activity_id, activity_date, total_distance_km, avg_heart_rate,
+                   temp_celsius
+            FROM activities
+            WHERE activity_id = ?
+            """,
+            (activity_id,),
+        )
+        if not rows:
+            return None
+
+        aid, activity_date, distance_km, avg_hr, temp_c = rows[0]
+        run_day = (
+            activity_date
+            if isinstance(activity_date, date_cls)
+            else date_cls.fromisoformat(str(activity_date))
+        )
+        d1_date = str(run_day + timedelta(days=1))
+        d2_date = str(run_day + timedelta(days=2))
+
+        wellness = {
+            row["date"]: row
+            for row in self._wellness_rows_between(
+                str(run_day - timedelta(days=BASELINE_WINDOW_DAYS)), d2_date
+            )
+        }
+        baseline_rows = [row for day, row in wellness.items() if day < str(run_day)]
+
+        return compute_long_run_recovery_cost(
+            {
+                "activity_id": aid,
+                "activity_date": str(run_day),
+                "distance_km": distance_km,
+                "avg_heart_rate": avg_hr,
+                "temperature_c": temp_c,
+            },
+            wellness.get(d1_date),
+            wellness.get(d2_date),
+            baseline_rows,
+        )
+
     # ========== Splits Methods ==========
 
     def get_splits_pace_hr(
