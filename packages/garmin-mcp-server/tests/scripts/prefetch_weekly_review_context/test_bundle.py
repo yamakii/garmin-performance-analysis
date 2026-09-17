@@ -38,6 +38,7 @@ def test_prefetch_bundle_safe_null_on_reader_error() -> None:
         "activities",
         "fitness_summary",
         "recovery",
+        "symptoms",
         "strength",
         "hiking",
         "training_block",
@@ -69,6 +70,32 @@ def test_prefetch_bundle_has_hiking_key() -> None:
         "2026-07-06",
         "2026-07-12",
     )
+
+
+@pytest.mark.unit
+def test_bundle_symptoms_collector_null_on_error() -> None:
+    """A failing symptom reader nulls ``symptoms``; the bundle still builds."""
+    with _mock_prefetch(symptoms_raise=True):
+        result = prefetch_weekly_review_context("this", today="2026-07-10")
+
+    assert "error" not in result
+    assert result["symptoms"] is None
+    # Siblings are unaffected.
+    assert result["acwr"] == {"acwr": 1.0}
+    assert result["recovery"]["status"] == {"recommendation": "easy"}
+
+
+@pytest.mark.unit
+def test_bundle_carries_symptoms_rows_and_status() -> None:
+    """``symptoms`` carries W-1's rows plus the verdict as of today (#1223)."""
+    with _mock_prefetch() as reader:
+        result = prefetch_weekly_review_context("this", today="2026-07-10")
+
+    assert set(result["symptoms"]) == {"prev_week", "status"}
+    assert result["symptoms"]["prev_week"] == []
+    assert result["symptoms"]["status"] == {"flag": False}
+    # The verdict is evaluated for today, not for the week boundary.
+    assert reader.get_symptom_status.call_args.args == ("2026-07-10",)
 
 
 @pytest.mark.unit

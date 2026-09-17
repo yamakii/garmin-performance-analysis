@@ -40,6 +40,8 @@ Output (JSON to stdout, one line):
                                           #   (aggregates stay 8-week)
                    "status": {...}|null,
                    "baseline_deviation": {...}|null},
+      "symptoms": {"prev_week": [...],      # W-1 symptom reports (#1223)
+                   "status": {...}}|null,   #   deterministic rule as of today
       "strength": {"prev_week": [...]|null, "current_week": [...]|null},
       "hiking": {"prev_week": [...]|null, "current_week": [...]|null},
       "training_block": {                  # review backbone (Issue #980)
@@ -681,6 +683,18 @@ def prefetch_weekly_review_context(
     athlete_profile = _safe(lambda: athlete_reader.get_athlete_profile(user_id))
     past_review = _safe(lambda: athlete_reader.get_weekly_review(user_id=user_id))
 
+    # Symptom log (#1223): W-1's raw reports plus the deterministic verdict as
+    # of today. One _safe wraps both so a missing table nulls the whole key --
+    # "no reports" (an empty list) must stay distinguishable from "unreadable".
+    symptoms = _safe(
+        lambda: {
+            "prev_week": athlete_reader.get_symptoms(
+                start_date=prev_start_s, end_date=prev_end_s, user_id=user_id
+            ),
+            "status": reader.get_symptom_status(str(today_d), user_id=user_id),
+        }
+    )
+
     # Goals with weeks-to-race pre-computed against W's start (ceil, null-safe).
     # Derived *before* the profile is slimmed: this list is the only copy of the
     # goals that ships in the bundle.
@@ -711,6 +725,7 @@ def prefetch_weekly_review_context(
         "load_trend": load_trend,
         "acwr": acwr,
         "recovery": recovery,
+        "symptoms": symptoms,
         "strength": strength,
         "hiking": hiking,
         "training_block": training_block,

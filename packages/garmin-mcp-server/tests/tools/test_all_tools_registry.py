@@ -122,11 +122,11 @@ def test_kept_tools_present() -> None:
 
 
 @pytest.mark.unit
-def test_tool_count_is_75() -> None:
-    """The live MCP surface is exactly 75 tools (71 -> 75 after #1218 + #1219 + #1220)."""
-    assert len(ALL_DEFS) + len(_SERVER_TOOLS) == 75
+def test_tool_count_is_76() -> None:
+    """The live MCP surface is exactly 76 tools (75 -> 76 after #1223)."""
+    assert len(ALL_DEFS) + len(_SERVER_TOOLS) == 76
     golden = json.loads(_GOLDEN_PATH.read_text(encoding="utf-8"))
-    assert len(golden) == 75
+    assert len(golden) == 76
 
 
 @pytest.mark.integration
@@ -139,7 +139,7 @@ def test_hiking_tools_registered() -> None:
         t["name"] for t in json.loads(_GOLDEN_PATH.read_text(encoding="utf-8"))
     }
     assert {"ingest_hiking_sessions", "get_hiking_sessions"} <= golden_names
-    assert len(golden_names) == 75
+    assert len(golden_names) == 76
 
     # get_hiking_sessions -> GarminDBReader.get_hiking_sessions
     reader = MagicMock()
@@ -593,3 +593,39 @@ def test_get_post_event_window_registered_and_dispatches() -> None:
     reader.get_post_event_window.reset_mock()
     dispatch(ALL_DEFS_BY_NAME, reader, "get_post_event_window", {})
     reader.get_post_event_window.assert_called_once_with(None)
+
+
+@pytest.mark.unit
+def test_get_symptom_status_registered_and_dispatches() -> None:
+    """get_symptom_status is in the registry/golden and forwards date+user_id.
+
+    The tool is read-only: it delegates to
+    ``GarminDBReader.get_symptom_status`` and returns the verdict verbatim
+    (#1223).
+    """
+    assert "get_symptom_status" in ALL_DEFS_BY_NAME
+    golden_names = {
+        t["name"] for t in json.loads(_GOLDEN_PATH.read_text(encoding="utf-8"))
+    }
+    assert "get_symptom_status" in golden_names
+
+    status = {"flag": True, "reason_ja": "右ふくらはぎ"}
+    reader = MagicMock()
+    reader.get_symptom_status.return_value = status
+
+    result = dispatch(
+        ALL_DEFS_BY_NAME,
+        reader,
+        "get_symptom_status",
+        {"date": "2026-09-18"},
+    )
+
+    reader.get_symptom_status.assert_called_once_with(
+        date="2026-09-18", user_id="default"
+    )
+    assert result == status
+
+    # Omitting the date defaults to None (today, resolved by the reader).
+    reader.get_symptom_status.reset_mock()
+    dispatch(ALL_DEFS_BY_NAME, reader, "get_symptom_status", {})
+    reader.get_symptom_status.assert_called_once_with(date=None, user_id="default")

@@ -1,16 +1,21 @@
 """Composite injury-risk score (pure functions, no I/O).
 
-Fuses four already-available deterministic signals into a single 0-100 injury
+Fuses the already-available deterministic signals into a single 0-100 injury
 risk score with a ``low`` / ``moderate`` / ``high`` band and a per-factor
 breakdown:
 
-- **ACWR** (acute:chronic workload ratio) -- the dominant driver (weight 0.40).
-- **Durability trend** -- worsening long-run cardiac decoupling (weight 0.25).
+- **ACWR** (acute:chronic workload ratio) -- the dominant load driver
+  (weight 0.30).
+- **Symptom log** -- the athlete's own pain / tightness reports put through the
+  deterministic rule in ``garmin_mcp.analysis.symptoms`` (weight 0.25). It is
+  the only input that can see a niggle before the load and form numbers move,
+  which is why it carries as much weight as ACWR (#1223).
+- **Durability trend** -- worsening long-run cardiac decoupling (weight 0.20).
 - **Wellness deviation** -- HRV / readiness / RHR outside the personal band
-  (weight 0.20).
+  (weight 0.15).
 - **Form anomalies** -- an acute:chronic ratio of *material* form-anomaly event
   rates: recent 14-day deduped-event rate over the personal 90-day baseline
-  rate (weight 0.15). A raw z>3 spike count saturated the factor at all times
+  rate (weight 0.10). A raw z>3 spike count saturated the factor at all times
   (~0.22% of samples deviate by chance, so tens of "anomalies" appear even on
   healthy form); the ratio form only adds risk when recent form movement
   *exceeds* the athlete's own baseline (#807).
@@ -30,12 +35,22 @@ from __future__ import annotations
 from typing import Any
 
 # Relative weights of each factor before renormalization over available inputs.
+# They sum to 1.0; what a caller actually sees is a factor's *contribution*
+# (its weight over the total of the available factors), which is why tests pin
+# contributions rather than the absolute score. Interim table: #1222 adds
+# ``event_window`` / ``recovery_cost`` and reconciles these to the final
+# weights of Epic #1217.
 WEIGHTS: dict[str, float] = {
-    "acwr": 0.40,
-    "durability": 0.25,
-    "wellness": 0.20,
-    "form_anomaly": 0.15,
+    "acwr": 0.30,
+    "symptom": 0.25,
+    "durability": 0.20,
+    "wellness": 0.15,
+    "form_anomaly": 0.10,
 }
+
+# Symptom-rule risk fractions: a "comes and goes" consecutive pattern is a
+# strong warning, an acute (severity >= 5) report saturates the factor.
+_SYMPTOM_RULE_RISK: dict[str, float] = {"consecutive": 0.7, "acute": 1.0}
 
 # ACWR piecewise-linear anchors (ratio -> risk fraction). Below/at 1.3 is the
 # safe zone (0); 1.5 is half risk; 1.8+ saturates at full risk.
@@ -137,6 +152,30 @@ def _wellness_factor(
     )
 
 
+def _symptom_factor(symptom: dict[str, Any] | None) -> tuple[float | None, str]:
+    """Risk fraction + detail for the symptom log (None => unavailable).
+
+    ``symptom`` is an ``evaluate_symptom_rule`` / ``get_symptom_status``
+    result. The factor is dropped when it is missing or when nothing was
+    logged in the rule's 14-day window (``days_since_last_report`` is None):
+    an unasked question is not evidence of healthy legs, so it must not read
+    as zero risk. With reports present but no rule matched the risk is 0.0;
+    otherwise the worst flagged region decides (acute beats consecutive).
+    """
+    if symptom is None:
+        return None, ""
+    if symptom.get("days_since_last_report") is None:
+        return None, ""
+
+    flagged = symptom.get("flagged_regions") or []
+    risk = max(
+        (_SYMPTOM_RULE_RISK.get(str(region.get("rule")), 0.0) for region in flagged),
+        default=0.0,
+    )
+    detail = str(symptom.get("reason_ja") or "")
+    return risk, f"症状ログ: {detail}" if detail else "症状ログ"
+
+
 def _form_ratio_to_risk(ratio: float) -> float:
     """Piecewise-linear form event-rate ratio -> risk fraction in ``[0, 1]``.
 
@@ -181,8 +220,9 @@ def compute_injury_risk(
     durability_trend: dict[str, Any] | None,
     wellness_deviation: dict[str, Any] | None,
     form_anomaly: dict[str, Any] | None,
+    symptom: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Fuse ACWR / durability / wellness / form signals into an injury-risk score.
+    """Fuse ACWR / symptom / durability / wellness / form into an injury-risk score.
 
     Args:
         acwr: ``TrainingLoadReader.get_acwr`` output (uses the ``acwr`` ratio).
@@ -195,6 +235,9 @@ def compute_injury_risk(
         form_anomaly: ``_form_anomaly_signal`` output with ``recent_rate`` /
             ``baseline_rate`` (material-event rates, events/hour). ``None`` or a
             baseline rate below ``_FORM_BASELINE_MIN_RATE`` drops the factor.
+        symptom: ``GarminDBReader.get_symptom_status`` output (the deterministic
+            symptom rule). ``None``, or no report at all in its 14-day window,
+            drops the factor.
 
     Returns:
         ``{"score": int(0-100), "band": "low"|"moderate"|"high", "factors":
@@ -205,6 +248,7 @@ def compute_injury_risk(
     """
     raw_factors: list[tuple[str, float | None, str]] = [
         ("acwr", *_acwr_factor(acwr)),
+        ("symptom", *_symptom_factor(symptom)),
         ("durability", *_durability_factor(durability_trend)),
         ("wellness", *_wellness_factor(wellness_deviation)),
         ("form_anomaly", *_form_factor(form_anomaly)),

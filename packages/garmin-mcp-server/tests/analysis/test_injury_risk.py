@@ -16,8 +16,10 @@ from typing import Any
 import pytest
 
 from garmin_mcp.analysis.injury_risk import (
+    WEIGHTS,
     _form_factor,
     _form_ratio_to_risk,
+    _symptom_factor,
     classify_band,
     compute_injury_risk,
 )
@@ -205,3 +207,129 @@ def test_get_injury_risk_tool_returns_serializable(tmp_path: Path) -> None:
     assert "acwr" in payload["available_inputs"]
     assert payload["band"] in {"low", "moderate", "high"}
     assert isinstance(payload["score"], int)
+
+
+# ---------------------------------------------------------------------------
+# Symptom factor (#1223)
+# ---------------------------------------------------------------------------
+
+# A flagged status as the symptom rule returns it (right calf, acute).
+_SYMPTOM_ACUTE: dict[str, Any] = {
+    "date": "2026-09-18",
+    "flag": True,
+    "flagged_regions": [
+        {
+            "body_region": "calf",
+            "side": "right",
+            "rule": "acute",
+            "latest_severity": 6,
+            "latest_date": "2026-09-18",
+            "reports": [{"date": "2026-09-18", "severity": 6}],
+        }
+    ],
+    "asked_today": True,
+    "clear_today": False,
+    "recently_cleared": False,
+    "days_since_last_report": 0,
+    "reason_ja": "右ふくらはぎ: 9/18 6/10（7日以内に5以上）→ 処方の見直しを推奨",
+}
+
+# Asked and clear: reports exist in the window, none of them flag.
+_SYMPTOM_CLEAR: dict[str, Any] = {
+    "date": "2026-09-18",
+    "flag": False,
+    "flagged_regions": [],
+    "asked_today": True,
+    "clear_today": True,
+    "recently_cleared": True,
+    "days_since_last_report": 0,
+    "reason_ja": "今日の申告は痛みなし（フラグなし）",
+}
+
+
+@pytest.mark.unit
+def test_symptom_factor_unavailable_without_rows() -> None:
+    """Nothing logged in 14 days -> the factor is dropped, not read as zero."""
+    never_asked: dict[str, Any] = {
+        "date": "2026-09-18",
+        "flag": False,
+        "flagged_regions": [],
+        "asked_today": False,
+        "clear_today": False,
+        "recently_cleared": False,
+        "days_since_last_report": None,
+        "reason_ja": "直近14日の症状記録なし（未確認）",
+    }
+
+    assert _symptom_factor(never_asked) == (None, "")
+    assert _symptom_factor(None) == (None, "")
+
+    result = compute_injury_risk(
+        acwr=_ACWR_HEALTHY,
+        durability_trend=None,
+        wellness_deviation=None,
+        form_anomaly=None,
+        symptom=never_asked,
+    )
+    assert "symptom" not in result["available_inputs"]
+
+
+@pytest.mark.unit
+def test_symptom_acute_contribution() -> None:
+    """rule='acute' -> risk 1.0, contributing its renormalized weight."""
+    risk, detail = _symptom_factor(_SYMPTOM_ACUTE)
+    assert risk == 1.0
+    assert "右ふくらはぎ" in detail
+
+    result = compute_injury_risk(
+        acwr=_ACWR_HEALTHY,
+        durability_trend=None,
+        wellness_deviation=None,
+        form_anomaly=None,
+        symptom=_SYMPTOM_ACUTE,
+    )
+
+    assert set(result["available_inputs"]) == {"acwr", "symptom"}
+    expected = WEIGHTS["symptom"] / (WEIGHTS["symptom"] + WEIGHTS["acwr"]) * 1.0 * 100
+    symptom_factor = next(f for f in result["factors"] if f["name"] == "symptom")
+    assert symptom_factor["contribution"] == pytest.approx(round(expected, 1))
+    assert result["factors"][0]["name"] == "symptom"
+
+
+@pytest.mark.unit
+def test_symptom_consecutive_is_partial_risk() -> None:
+    """rule='consecutive' is a strong warning (0.7), not a saturated factor."""
+    consecutive: dict[str, Any] = {
+        **_SYMPTOM_ACUTE,
+        "flagged_regions": [
+            {**_SYMPTOM_ACUTE["flagged_regions"][0], "rule": "consecutive"}
+        ],
+    }
+
+    risk, _ = _symptom_factor(consecutive)
+    assert risk == pytest.approx(0.7)
+
+
+@pytest.mark.unit
+def test_symptom_clear_contributes_zero_but_stays_available() -> None:
+    """An explicit all-clear is evidence: risk 0.0 with the factor present."""
+    risk, detail = _symptom_factor(_SYMPTOM_CLEAR)
+
+    assert risk == 0.0
+    assert detail
+
+    result = compute_injury_risk(
+        acwr=_ACWR_HEALTHY,
+        durability_trend=None,
+        wellness_deviation=None,
+        form_anomaly=None,
+        symptom=_SYMPTOM_CLEAR,
+    )
+    assert "symptom" in result["available_inputs"]
+    assert result["score"] == 0
+
+
+@pytest.mark.unit
+def test_weights_sum_to_one() -> None:
+    """The weight table stays normalized as factors are added (#1222 / #1223)."""
+    assert sum(WEIGHTS.values()) == pytest.approx(1.0)

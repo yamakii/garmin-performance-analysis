@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **75 tools** (73 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **76 tools** (74 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -21,7 +21,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Performance](#performance) (4)
 - [Time Series](#time-series) (4)
 - [Training Plan](#training-plan) (2)
-- [Athlete](#athlete) (9)
+- [Athlete](#athlete) (10)
 - [Race](#race) (1)
 - [Training Load](#training-load) (4)
 - [Durability](#durability) (3)
@@ -598,6 +598,17 @@ Get the athlete's symptom (pain / niggle) reports in a date range, oldest first,
 | `start_date` | string | **required** | Range start, inclusive (YYYY-MM-DD) |
 | `end_date` | string | **required** | Range end, inclusive (YYYY-MM-DD) |
 | `body_region` | string | optional | Optional region filter (e.g. 'calf'); omit for every region |
+| `user_id` | string | optional | Profile owner identifier (default: 'default') |
+
+### `get_symptom_status`
+
+CLI: `garmin-db athlete symptom-status`
+
+Get the deterministic symptom verdict for a day: reads the last 14 days of symptom reports and flags a body region when its two most recent reports are both severity 3+ (pain that comes and goes) or when any report within 7 days hit severity 5+. Returns {date, flag, flagged_regions (body_region, side, rule='consecutive'|'acute', latest_severity, latest_date, reports), asked_today, clear_today, recently_cleared, days_since_last_report, reason_ja}. Use this for gates ('run only if no leg tightness'): clear_today distinguishes an explicit all-clear from a question that was never asked, and days_since_last_report is null when nothing was logged at all.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `date` | string | optional | Reference day (YYYY-MM-DD). When omitted, today is used (symptoms describe how the legs are now, not on the last run's date). |
 | `user_id` | string | optional | Profile owner identifier (default: 'default') |
 
 ### `prefetch_weekly_review_context`

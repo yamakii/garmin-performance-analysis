@@ -1028,6 +1028,23 @@
     }
   },
   {
+    "name": "get_symptom_status",
+    "description": "Get the deterministic symptom verdict for a day: reads the last 14 days of symptom reports and flags a body region when its two most recent reports are both severity 3+ (pain that comes and goes) or when any report within 7 days hit severity 5+. Returns {date, flag, flagged_regions (body_region, side, rule='consecutive'|'acute', latest_severity, latest_date, reports), asked_today, clear_today, recently_cleared, days_since_last_report, reason_ja}. Use this for gates ('run only if no leg tightness'): clear_today distinguishes an explicit all-clear from a question that was never asked, and days_since_last_report is null when nothing was logged at all.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string",
+          "description": "Reference day (YYYY-MM-DD). When omitted, today is used (symptoms describe how the legs are now, not on the last run's date)."
+        },
+        "user_id": {
+          "type": "string",
+          "description": "Profile owner identifier (default: 'default')"
+        }
+      }
+    }
+  },
+  {
     "name": "prefetch_weekly_review_context",
     "description": "Pre-fetch the shared weekly-review CONTEXT bundle in a single call: resolves the target week W (and prior week W-1) and returns both weeks' activities (with performance_trends + weather), the fitness summary (Garmin native hr_zones), multi-week load_trend/acwr, recovery (trend/status/baseline_deviation), strength sessions, the training_block backbone (W's block + long-run ladder step + weeks to the block's end + quality budget), prescriptions_prev_week (W-1 rows + adherence counts), prescriptions_current_week (W's canonical batch with its batch_id / review_id), the Garmin scheduled_workouts for W with the garmin_conflicts they raise against the block, the athlete_profile, goals with weeks_to_race, and the last past_review. Every collector is null-on-error (additive). Excludes catch_up_ingest (a write); run that separately before this.",
     "inputSchema": {

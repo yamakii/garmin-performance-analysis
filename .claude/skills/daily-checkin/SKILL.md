@@ -14,7 +14,7 @@ argument-hint: [YYYY-MM-DD]
 ## Step 0: 準備（1 回の ToolSearch でまとめてロード）
 
 ```
-ToolSearch(query="select:mcp__garmin-db__catch_up_ingest,mcp__garmin-db__get_recovery_status,mcp__garmin-db__get_wellness_baseline_deviation,mcp__garmin-db__get_acwr,mcp__garmin-db__get_recovery_trend,mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_garmin_scheduled_workouts,mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db__get_weekly_review,mcp__garmin-db__get_load_trend")
+ToolSearch(query="select:mcp__garmin-db__catch_up_ingest,mcp__garmin-db__get_recovery_status,mcp__garmin-db__get_wellness_baseline_deviation,mcp__garmin-db__get_acwr,mcp__garmin-db__get_recovery_trend,mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_garmin_scheduled_workouts,mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db__get_weekly_review,mcp__garmin-db__get_load_trend,mcp__garmin-db__save_symptom,mcp__garmin-db__get_symptom_status")
 ```
 
 ## Step 1: 今朝の wellness を取り込む（必須・単独ステップ）
@@ -25,6 +25,24 @@ write 系なので他の read より先に単独で実行します:
 ```
 mcp__garmin-db__catch_up_ingest(domains=["wellness"], end_date=<対象日>)
 ```
+
+## Step 1b: 脚の状態を 1 問だけ聞いて記録する（必須）
+
+wellness 取り込みの直後に、**質問を 1 つだけ**します（増やさない）:
+
+> 脚の張り・痛みはありますか？（部位・左右・0-10 でお願いします）
+
+答えを必ず `save_symptom` に記録します。**「なし」も記録する**（記録があって初めて「聞いて異常なし」と
+「聞いていない」を区別でき、Step 3 のゲートが計算できます）:
+
+| 回答 | 呼び方 |
+|---|---|
+| 部位を申告（例「右ふくらはぎ 3」） | `save_symptom(date=<対象日>, body_region="calf", side="right", severity=3, phase="morning", note=<本人の言葉>)` |
+| なし | `save_symptom(date=<対象日>, body_region="other", severity=0, phase="morning", note="なし")` |
+| 2 箇所以上 | 部位ごとに 1 回ずつ呼ぶ（append-only、上書きされない） |
+
+ユーザーが先回りして症状を書いている場合は質問を省き、その内容をそのまま記録します。
+質問に答えが返らないまま進む場合は記録せず、Step 3 のゲートでは「未確認」として扱います。
 
 ## Step 2: 固定セットを 1 ターンで並列取得
 
@@ -40,6 +58,7 @@ mcp__garmin-db__catch_up_ingest(domains=["wellness"], end_date=<対象日>)
 | `get_garmin_scheduled_workouts` | `start_date=<対象日>`, `end_date=<対象日+6>` | 今日〜1 週間の予定（[MCP] 登録分を含む） |
 | `get_weekly_prescriptions` | `date=<対象日>` | **今日の処方**（session_type / target_km / target_minutes / hr_high / rating / rationale / status / review_id）。これが判定の背骨 |
 | `get_weekly_review` | 引数なし | 今週の文脈（カットバック判定・回復ゲート・recommendations の言い回し）。処方の**背景**として読む |
+| `get_symptom_status` | `date=<対象日>` | 症状ルールの判定（`flag` / `flagged_regions` / `asked_today` / `clear_today` / `reason_ja`）。Step 1b の記録が反映された状態で読む |
 
 `get_load_trend(lookback_weeks=6)` は「今週何 km」「ロングを伸ばしていいか」など**週単位の量**を聞かれたときだけ追加します。
 週全体の並び（今日以外の日）が論点なら `get_weekly_prescriptions(week_start_date=<今週の開始日>)` に切り替えます。
@@ -53,6 +72,8 @@ mcp__garmin-db__catch_up_ingest(domains=["wellness"], end_date=<対象日>)
    - 行の `status` が `done` / `replaced` なら **今日はすでに消化済み**として扱い、追加で走るかどうかの相談に切り替える
    - **Garmin カレンダー（`get_garmin_scheduled_workouts`）は参照情報**: `[MCP]` 接頭辞の項目はこちらが登録した処方の写しなので処方行が正本、`fbtAdaptiveWorkout`（Garmin の適応プラン）は**参考にとどめ**、処方と食い違っても処方を優先する
 2. **回復ゲートを読む順**: `recovery_status.recommendation` → `baseline_deviation.overall_flag`（adverse なら理由） → `recovery_trend.hrv.under_recovery` と `acwr.status` の AND（両方点灯で「積み過ぎ」）
+2b. **症状ゲート**（`get_symptom_status`）: `flag=true` なら処方より症状が優先する。`rule='acute'` は当日を休養か完全 easy に落とし、`rule='consecutive'` はロング・質練を見送って距離を直近のクリーンな距離までに抑える。判定の根拠は `reason_ja` をそのまま引用する。`flag=false` でも `days_since_last_report=null`（＝ここ 14 日 1 度も記録なし）のときは「未確認」と明示し、症状ゼロとは扱わない
+   - **木曜の条件付き 6 本目**（プロフィールのルールを計算可能にしたもの。新しいルールではない）: `recovery_status.training_readiness >= 50` **かつ** `get_symptom_status().flag == false` **かつ** `clear_today == true`（今日聞いて異常なしの記録がある）の **3 つが揃ったときだけ**走る。1 つでも欠ける（readiness 不足 / フラグ点灯 / 今日まだ聞いていない）なら休養にする
 3. **今日の距離・強度の答えは帯で出す**（例: 6〜8 km、HR 上限 150）。ぴったりの数字に意味を持たせない
 4. **暑熱期（気温 28℃ 以上が見込まれる時期）**: HR 上限（ceiling）で管理し、ペースは結果として扱う。HR floor や「涼しい朝に効率テスト」を提案しない
 5. **ユーザーが仮説を先に述べていても**、まずデータから独立に判定し、「ご理解と一致しています / ここが違います」を明示する。相手の案に寄せた結論を先に決めない
@@ -61,7 +82,7 @@ mcp__garmin-db__catch_up_ingest(domains=["wellness"], end_date=<対象日>)
 ## Step 4: 回答フォーマット
 
 - 冒頭 1〜2 文で結論（走ってよい/抑える/休む、距離帯、HR 上限）
-- 回復指標の小さな表（指標 / 今日 / ベースライン / 判定）
+- 回復指標の小さな表（指標 / 今日 / ベースライン / 判定）。**脚の症状の行を必ず 1 行入れる**（例: 「脚の張り | 右ふくらはぎ 3/10 | 2回連続で3以上 | 🔴 ロングは見送り」。申告なしの日は「なし（本日確認済み）」、14 日記録が無ければ「未確認」）
 - 今日の処方との対応（処方のどこに沿っているか。ずらす場合はどうずらすか）
 - 注意点は最大 2 つ、次のアクションは 1 つ
 - 目的を達しているランや状態に対して「成功条件」「合否」の表現は使わない（維持目標・改善余地として述べる）
