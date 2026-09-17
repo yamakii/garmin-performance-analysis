@@ -186,6 +186,7 @@ class GarminDBWriter:
         - analysis_runs: Allocated analysis run_id audit log
         - strength_sessions: Strength-training (補強) summaries
         - hiking_sessions: Hiking (山行) summaries
+        - athlete_symptoms: Pain / niggle log (one row per date + body region)
 
         Tables owned exclusively by migrations (NOT created here):
         - athlete_profile / athlete_goals / season_retrospectives /
@@ -658,6 +659,28 @@ class GarminDBWriter:
                     max_heart_rate INTEGER,
                     calories INTEGER,
                     ingested_at TIMESTAMP
+                )
+            """)
+
+            # Create athlete_symptoms table (mirrors
+            # migrations/add_athlete_symptoms.py; the athlete's pain / niggle
+            # log, one row per (date, body_region). severity 0 means "asked and
+            # clear", which is what lets a gate tell "no pain" from "not asked"
+            # -- issue #1220).
+            conn.execute("CREATE SEQUENCE IF NOT EXISTS athlete_symptoms_seq START 1")
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS athlete_symptoms (
+                    symptom_id INTEGER PRIMARY KEY
+                        DEFAULT nextval('athlete_symptoms_seq'),
+                    user_id VARCHAR NOT NULL DEFAULT 'default',
+                    date DATE NOT NULL,
+                    body_region VARCHAR NOT NULL,
+                    side VARCHAR,
+                    severity INTEGER NOT NULL,
+                    phase VARCHAR NOT NULL,
+                    activity_id BIGINT,
+                    note VARCHAR,
+                    created_at TIMESTAMP DEFAULT current_timestamp
                 )
             """)
 

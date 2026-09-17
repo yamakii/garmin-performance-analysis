@@ -1,6 +1,6 @@
 """One schema-initialised DuckDB template per test process (#1062).
 
-``GarminDBWriter(db_path)`` builds the full 27-table schema and runs every
+``GarminDBWriter(db_path)`` builds the full 28-table schema and runs every
 migration: ~1-2 s of DDL and a ~3.5 MB file each time. The suite used to do
 that in 89 places, writing 687 files / 2.2 GB per run to the overlay ``/tmp``
 and stalling random tests for 40-57 s under load.
