@@ -1,6 +1,6 @@
 ---
 name: implement
-description: Parallel implementation orchestrator for an Epic whose design-approved sub-issues form two or more dependency tiers. Use only when the user wants the issues under an Epic auto-implemented in dependency order with worktree-isolated agents; a single issue or a few independent issues go through the single-session worktree→PR flow instead. Argument is the Epic number or a list of issue numbers with Blocked-by dependencies.
+description: Parallel implementation orchestrator for an Epic whose design-approved sub-issues form two or more dependency tiers, or four or more independent issues with no shared files. Use only when the user wants the issues under an Epic auto-implemented in dependency order with worktree-isolated agents; a single issue or a few independent issues go through the single-session worktree→PR flow instead. Argument is the Epic number or a list of issue numbers with Blocked-by dependencies.
 argument-hint: <epic-number | issue-numbers>
 allowed-tools: Bash, Read, Glob, Grep, Task, Workflow, AskUserQuestion, mcp__github__issue_read
 ---
@@ -9,9 +9,10 @@ allowed-tools: Bash, Read, Glob, Grep, Task, Workflow, AskUserQuestion, mcp__git
 
 **Epic 配下**の design-approved Issue を依存順（ティア）に自動実装する。
 
-**使いどころは依存ティアが 2 段以上ある Epic だけ。** 単発 Issue や依存の無い数件は
-`implementation-workflow.md` Phase 1 の既定経路（そのセッションが worktree で実装 → PR → マージ）で
-直列に処理する。ティアが 1 段しかない場合は起動せず、既定経路を案内して終了する。
+**起動条件は `implementation-workflow.md`「`/implement` の起動条件」が正本**: (a) 依存ティアが 2 段以上、
+または (b) 依存の無い Issue が 4 件以上で同じティアの Files to Create/Modify が重ならない。どちらにも当たらない
+単発 Issue・依存の無い 2〜3 件は Phase 1 の既定経路（そのセッションが worktree で実装 → PR → マージ）で
+直列に処理するよう案内して終了する。
 
 ## Arguments
 
@@ -41,8 +42,12 @@ mcp__github__issue_read(method="get", owner="yamakii", repo="garmin-performance-
    - **Epic 展開のサブ Issue**: `design-approved` ラベル必須。ラベルなし → スキップし報告: 「#{N} は design-approved がありません」（品質ゲート維持）
    - **明示指定された Issue 番号**: `design-approved` が無くても、body に **Design ＋ Test Plan セクションがあれば対象**とし、その場で `mcp__github__issue_write` で `design-approved` を付与してから進む。**Design か Test Plan が欠落**している場合のみスキップし、補完を依頼する
 3. **Dependencies**: Issue body の `Blocked by: #N` から依存関係を抽出
-4. **ティア数チェック**: 依存グラフのティアが 1 段だけ（全 Issue が独立）なら Workflow を起動せず、
-   「既定経路（`implementation-workflow.md` Phase 1）で直列に実装してください」と案内して終了する
+4. **ファイル重複チェック**: 各 Issue body の Files to Create/Modify からパスを抽出し、同じティアに入る Issue 同士で
+   重なるパスがあれば、番号の大きい方に暗黙の依存を足して次ティアへ送る（Step 3 のグラフ表示に
+   `#{N} → Tier k+1 (shares <path> with #{M})` と明記）。Files セクションが無い Issue は重複判定できないので
+   スキップし、補完を依頼する
+5. **起動条件チェック**: 4 の後のグラフで (a) ティアが 2 段以上、または (b) Tier 0 に 4 件以上、のどちらも満たさなければ
+   Workflow を起動せず、「既定経路（`implementation-workflow.md` Phase 1）で直列に実装してください」と案内して終了する
 
 ### Step 3: 依存グラフからティア分類
 

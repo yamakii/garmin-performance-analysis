@@ -38,16 +38,16 @@ Risks セクション（任意）:
 ## Phase 1: 既定経路 — 1 セッション = 1 worktree = 1 PR
 
 承認済みの Issue は、**そのセッション自身が** worktree で実装し PR を作ってマージまで進める。
-サブエージェントへの委任も Workflow も既定では使わない（直近 30 日の PR のほぼ全てがこの経路で、
-`implement-tier` は 25 本に 1 本。#1046）。各ステップは 1 コマンド。
+単発 Issue ではサブエージェントへの委任も Workflow も既定では使わない（2026-09-08 時点で直近 30 日の PR の
+ほぼ全てがこの経路で、`implement-tier` は 25 本に 1 本。#1046）。複数 Issue は下の「`/implement` の起動条件」で
+振り分ける。各ステップは 1 コマンド。
 
 **実装だけを委譲する場合**: 変更ファイルが概ね 15 以上、またはページ / モジュール丸ごとの書き換えは、
 そのセッションが `Agent(subagent_type="developer", isolation="worktree")` に**実装（下記 3〜4）を委譲**する。
 メインセッションは Issue の Design / Test Plan との照合・diff レビュー・push（developer は push しない）・
 PR 作成・CI 待ち・マージ・後片付け（下記 5〜11）だけを行い、実装や全ソース読み込みでコンテキストを消費しない。
-調査は Explore エージェントに出す。委譲しても経路は同じ「1 セッション = 1 worktree = 1 PR」で、
-Workflow（`/implement`）を使うのは依存ティアが 2 段以上の Epic のときだけ（#1115: 3 ティア Epic を
-メインセッションで直列実装し、コストとコンテキストを逼迫させた再発防止）。
+調査は Explore エージェントに出す。委譲しても経路は同じ「1 セッション = 1 worktree = 1 PR」。
+複数 Issue をまとめて流すかどうかは下の「`/implement` の起動条件」で決める。
 
 1. **origin 同期**: `git fetch origin` → behind なら `git merge --ff-only origin/main`。失敗したら報告して止まる（stash / reset はしない）
 2. **worktree**: 背景ジョブは `EnterWorktree`、対話セッションは `git worktree add -b <type>/<issue>-<slug> .claude/worktrees/<slug> origin/main`。ブランチ名は `feat|fix|docs|chore/<issue>-<slug>`
@@ -67,11 +67,26 @@ Workflow（`/implement`）を使うのは依存ティアが 2 段以上の Epic 
 複数 Issue を続けて扱うときは Issue ごとに 2〜11 を繰り返す。同じ worktree で次のブランチを切るなら
 `git fetch origin && git checkout -b <branch> origin/main`（前の PR がマージ済みの場合）。
 
-### Epic（依存ティアが 2 段以上）だけ `/implement`
+### `/implement` の起動条件
 
-Issue 間に `Blocked by` の依存があり並列に進める価値があるときだけ `/implement <epic>` を使う。
-`implement-tier` Workflow が developer / validation-agent を並列に回し、同じゲートで auto-merge する。
-単発 Issue や依存の無い 2〜3 件は既定経路（上記）で直列に処理する方が速く、失敗の型も少ない。
+作業が Epic 配下の複数 Issue（各 Issue に Design + Files to Create/Modify + Test Plan）に分かれ、次の
+**どちらか**を満たすなら `/implement <epic>` を使う。`implement-tier` Workflow が developer / validation-agent を
+並列に回し、同じゲートで auto-merge する。
+
+- **(a) 依存ティアが 2 段以上**: `Blocked by` の連鎖がある（#1115: 3 ティア Epic をメインセッションで直列実装し、
+  コストとコンテキストを逼迫させた再発防止）
+- **(b) 依存の無い Issue が 4 件以上**で、**同じティアの Issue 同士の Files to Create/Modify が 1 つも重ならない**
+
+どちらにも当たらない単発 Issue・依存の無い 2〜3 件は既定経路（上記）で直列に処理する方が速く、失敗の型も少ない。
+
+判断の前提:
+- **利点は並列による所要時間の短縮とメインのコンテキスト保護で、トークン節約ではない**。実装担当の `developer` は
+  opus で、Issue ごとに developer / validation / ship / merge の 4 エージェントがコールドスタートでルールとコードを
+  読み直し、escalate された PR はメインが処理する。コンテキスト保護だけが目的なら上の developer 委譲で足りる
+- **条件を満たすために Issue を細かく割らない・偽の `Blocked by` を作らない**。PR 数とコールドスタートが増えるだけ
+- **同じティアのファイル重複はコンフリクトの主因**（兄弟マージ後に必ず conflict で escalate する）。(a) でも同じ
+  ティアに重なりがあれば、後の Issue に `Blocked by` を付けて次ティアへ送る。`/decompose` の段階でファイル所有で
+  切っておくと両条件を満たしやすい
 
 ## Phase 2: Verify
 
