@@ -12,8 +12,9 @@ const FIXTURE_ACTIVITIES = [
     total_time_seconds: 2186,
     avg_pace_seconds_per_km: 386.0,
     avg_heart_rate: 144,
-    star_rating: "★★★★☆ 4.2/5.0",
-    summary_lead: "有酸素ベースとして安定しました。",
+    plan_label: "処方どおり",
+    flag_labels: [],
+    story_lead: "有酸素ベースとして安定しました。",
   },
   {
     activity_id: 9000000002,
@@ -23,8 +24,9 @@ const FIXTURE_ACTIVITIES = [
     total_time_seconds: 2900,
     avg_pace_seconds_per_km: 362.0,
     avg_heart_rate: 138,
-    star_rating: null,
-    summary_lead: null,
+    plan_label: null,
+    flag_labels: [],
+    story_lead: null,
   },
 ];
 
@@ -48,8 +50,9 @@ const NAMED_ACTIVITIES = [
   total_time_seconds: 3600,
   avg_pace_seconds_per_km: 360.0,
   avg_heart_rate: 140,
-  star_rating: null,
-  summary_lead: null,
+  plan_label: null,
+  flag_labels: [],
+  story_lead: null,
 }));
 
 afterEach(() => {

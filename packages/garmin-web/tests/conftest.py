@@ -22,13 +22,17 @@ _CREATE_ACTIVITIES = """
         avg_pace_seconds_per_km DOUBLE,
         avg_heart_rate INTEGER,
         -- DurabilityReader._activity_meta selects this column; without it the
-        -- query raises BinderException instead of degrading to None.
-        temp_celsius DOUBLE
+        -- query raises BinderException instead of degrading to None. The two
+        -- weather columns are selected by RunReportReader, which the list query
+        -- calls for the newest rows' headline (#1254).
+        temp_celsius DOUBLE,
+        relative_humidity_percent DOUBLE,
+        wind_speed_kmh DOUBLE
     )
 """
 
-# Shared by the list fixtures (list_activities joins the latest summary section,
-# #1131) and by the detail fixtures further down.
+# Shared by the list fixtures (list_activities joins the latest coach review and
+# the legacy summary section) and by the detail fixtures further down.
 _CREATE_SECTION_ANALYSES = """
     CREATE TABLE section_analyses (
         analysis_id INTEGER PRIMARY KEY,
@@ -54,7 +58,7 @@ def fixture_db_path(tmp_path: Path) -> Path:
     """DuckDB with activities table and 2 rows (2025-10-09, 2025-10-07).
 
     ``section_analyses`` is created but stays empty: ``list_activities`` joins
-    it for the latest summary rating (#1131), so the table has to exist, and no
+    it for the latest coach review (#1254), so the table has to exist, and no
     rows is the "never analysed" case.
     """
     db_path = tmp_path / "test_garmin_web.duckdb"

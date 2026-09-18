@@ -611,8 +611,9 @@ describe("ActivityDetail header", () => {
       total_time_seconds: 1958,
       avg_pace_seconds_per_km: 348,
       avg_heart_rate: 151,
-      star_rating: null,
-      summary_lead: null,
+      plan_label: null,
+      flag_labels: [],
+      story_lead: null,
     };
     stubFetch({
       detail: LONG_RUN_DETAIL,

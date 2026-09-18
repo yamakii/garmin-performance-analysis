@@ -54,8 +54,9 @@ const ACTIVITY: ActivitySummary = {
   total_time_seconds: 8100,
   avg_pace_seconds_per_km: 378,
   avg_heart_rate: 146,
-  star_rating: null,
-  summary_lead: null,
+  plan_label: null,
+  flag_labels: [],
+  story_lead: null,
 };
 
 function renderRow(props: Partial<Parameters<typeof ProgressRow>[0]> = {}) {
@@ -101,22 +102,24 @@ describe("ProgressRow", () => {
     ).toHaveAttribute("href", "/activities");
   });
 
-  it("test_progress_row_last_run_rating_line", () => {
+  it("test_progress_row_last_run_verdict_line", () => {
     const { rerender } = renderRow({
       activities: [
         {
           ...ACTIVITY,
-          star_rating: "★★★★☆ 4.2/5.0",
-          summary_lead: "目標ペース内で完走。",
+          plan_label: "処方どおり",
+          flag_labels: [],
+          story_lead: "足慣らしの35分でした。",
         },
       ],
     });
 
-    expect(screen.getByText(/評価/)).toBeInTheDocument();
-    expect(screen.getByText(/目標ペース内で完走。/)).toBeInTheDocument();
-    expect(screen.getByLabelText("評価 4.2 / 5.0")).toBeInTheDocument();
+    // The plan label and the coach's first sentence — no grade (#1247).
+    expect(screen.getByText("処方どおり")).toBeInTheDocument();
+    expect(screen.getByText("足慣らしの35分でした。")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/^評価 /)).not.toBeInTheDocument();
 
-    // Never analysed: the line is dropped rather than shown empty.
+    // Never analysed and unprescribed: the line is dropped rather than empty.
     rerender(
       <MemoryRouter>
         <ProgressRow
@@ -126,7 +129,26 @@ describe("ProgressRow", () => {
         />
       </MemoryRouter>,
     );
-    expect(screen.queryByText(/評価/)).not.toBeInTheDocument();
+    expect(screen.queryByText("処方どおり")).not.toBeInTheDocument();
+    expect(screen.queryByText("足慣らしの35分でした。")).not.toBeInTheDocument();
+  });
+
+  it("test_progress_row_last_run_flags_as_warn_badges", () => {
+    renderRow({
+      activities: [
+        {
+          ...ACTIVITY,
+          plan_label: "一部ずれ",
+          flag_labels: ["接地時間が長め"],
+          story_lead: "後半に接地が伸びました。",
+        },
+      ],
+    });
+
+    expect(screen.getByText("接地時間が長め")).toHaveAttribute(
+      "data-tone",
+      "warn",
+    );
   });
 
   it("test_progress_row_prediction_names_the_garmin_fallback", () => {

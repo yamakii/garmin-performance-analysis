@@ -1,7 +1,6 @@
 import type { JSX, ReactNode } from "react";
 import { Link } from "react-router-dom";
-import StarBadge from "../../components/report/StarBadge";
-import { parseStarRating } from "../../components/report/StarRating";
+import StatusBadge from "../../components/StatusBadge";
 import type { ActivitySummary, GoalRace, RaceReadiness } from "../../types";
 import {
   formatBpmValue,
@@ -191,33 +190,38 @@ function LastRun({
 }
 
 /**
- * 「評価 ★ 4.2 — 目標ペース内で完走。」 for the last run.
+ * 「処方どおり 接地時間が長め — 足慣らしの35分でした。」 for the last run.
  *
- * The rating and the opening sentence come from the latest summary section
- * analysis (#1131); a run that was never analysed has neither and the line is
- * dropped rather than shown empty. It sits outside the link so the star is not
- * read as part of the link text.
+ * The plan label and the flags come from the run report headline and the
+ * sentence from the coach review (#1254) — a single run gets no grade any more
+ * (#1247), so there is no star here. A run with none of the three drops the
+ * line rather than showing it empty. It sits outside the link so the badges are
+ * not read as part of the link text.
  */
 function LastRunVerdict({
   activity,
 }: {
   activity: ActivitySummary;
 }): JSX.Element | null {
-  const parsed =
-    activity.star_rating != null ? parseStarRating(activity.star_rating) : null;
-  const lead = activity.summary_lead;
-  if (parsed == null && lead == null) {
+  const {
+    plan_label: planLabel,
+    flag_labels: flags,
+    story_lead: lead,
+  } = activity;
+  if (planLabel == null && flags.length === 0 && lead == null) {
     return null;
   }
   return (
-    <p className="text-[13px] text-ink-soft">
-      {parsed != null && (
-        <>
-          評価 <StarBadge score={parsed.score} />
-          {lead != null && " — "}
-        </>
+    <p className="flex flex-wrap items-center gap-1.5 text-[13px] text-ink-soft">
+      {planLabel != null && (
+        <span className="font-medium text-ink">{planLabel}</span>
       )}
-      {lead}
+      {flags.map((flag) => (
+        <StatusBadge key={flag} tone="warn">
+          {flag}
+        </StatusBadge>
+      ))}
+      {lead != null && <span>{lead}</span>}
     </p>
   );
 }
