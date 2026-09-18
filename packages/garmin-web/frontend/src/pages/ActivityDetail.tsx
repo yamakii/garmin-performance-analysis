@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   useActivities,
   useActivityDetail,
+  useRunReport,
   useSections,
   useSectionVersions,
   useSplitAnomalies,
@@ -15,13 +16,18 @@ import MapPanel from "../components/MapPanel";
 import { ErrorPanel, PageError, PageLoading } from "../components/PageState";
 import SectionBlock from "../components/SectionBlock";
 import SectionNav, { type NavItem } from "../components/SectionNav";
+import VerdictLine from "../components/VerdictLine";
+import CoachReview, { parseRunNote } from "../components/run/CoachReview";
+import ConditionsStrip from "../components/run/ConditionsStrip";
+import NormalRangeRows from "../components/run/NormalRangeRows";
+import PlanCheck, { formatOverTime } from "../components/run/PlanCheck";
+import RunFlow, { SCENE_MARKERS } from "../components/run/RunFlow";
 import EfficiencyReport from "../components/report/EfficiencyReport";
 import EnvironmentReport from "../components/report/EnvironmentReport";
 import FallbackFields from "../components/report/FallbackFields";
 import PhaseTimeline from "../components/report/PhaseTimeline";
 import ReportCard, { isRecord } from "../components/report/ReportCard";
 import SplitNarrative from "../components/report/SplitNarrative";
-import StarRating from "../components/report/StarRating";
 import SummaryReport from "../components/report/SummaryReport";
 import TimeSeriesChart from "../components/TimeSeriesChart";
 import VersionSelect from "../components/VersionSelect";
@@ -30,10 +36,11 @@ import { usePageTitle } from "../hooks/usePageTitle";
 import type {
   ActivityDetailResponse,
   ActivitySummary,
-  SectionsResponse,
+  RunMoment,
+  RunPhaseRow,
+  RunReport,
   SplitAnomaliesResponse,
   SplitRow,
-  TimeSeriesResponse,
 } from "../types";
 import {
   formatBpm,
@@ -49,7 +56,6 @@ import {
   PACE_UNIT,
 } from "../utils/format";
 import { formatNumber } from "../utils/formatNumber";
-import { splitLead } from "../utils/leadSentence";
 
 const AVAILABLE_METRICS: { key: string; label: string }[] = [
   { key: "heart_rate", label: "心拍数" },
@@ -93,8 +99,21 @@ const MORE_METRICS_LABEL = `+ ${SECONDARY_METRICS.map(
 /** Split rows shown before the table folds into a disclosure. */
 const SPLIT_PREVIEW_ROWS = 10;
 
-// Section types with dedicated report components; others fall back.
+/**
+ * Section types the legacy disclosure has a dedicated component for, plus the
+ * coach's note, which is not a legacy section at all — it is the page.
+ */
 const KNOWN_SECTION_TYPES = [
+  "run_note",
+  "summary",
+  "split",
+  "phase",
+  "efficiency",
+  "environment",
+];
+
+/** The five sections the run report and the coach's note replaced (#1247). */
+const LEGACY_SECTION_TYPES = [
   "summary",
   "split",
   "phase",
@@ -118,6 +137,14 @@ const SECTION_TITLES: Record<string, string> = {
 export function sectionTitle(type: string): string {
   return SECTION_TITLES[type] ?? humanizeKey(type);
 }
+
+/** Japanese name per phase of a run, in the order a run executes them. */
+const PHASE_LABELS: Record<string, string> = {
+  warmup: "ウォームアップ",
+  run: "ラン",
+  recovery: "リカバリー",
+  cooldown: "クールダウン",
+};
 
 /** Binary search: index of the timestamp nearest to target (ascending). */
 export function nearestTimestampIndex(
@@ -201,110 +228,22 @@ export function barWidthPct(
   return BAR_MIN_PCT + ratio * (100 - BAR_MIN_PCT);
 }
 
-/** The summary section's data, when it parsed into an object. */
-function summaryData(
-  sections: SectionsResponse | null,
-): Record<string, unknown> | null {
-  const data = sections?.summary?.data;
-  return isRecord(data) ? data : null;
-}
-
-function summaryStarRating(sections: SectionsResponse | null): string | null {
-  const data = summaryData(sections);
-  return typeof data?.star_rating === "string" ? data.star_rating : null;
-}
-
-/** The summary's opening sentence: the page's conclusion line. */
-function summaryLead(sections: SectionsResponse | null): string | null {
-  const data = summaryData(sections);
-  if (typeof data?.summary !== "string") {
-    return null;
-  }
-  const { lead } = splitLead(data.summary);
-  return lead !== "" ? lead : null;
-}
-
-/** "上限 150bpm" / "処方上限 150bpm" as written in a verdict reason. */
-const HR_CEILING_IN_REASON = /上限\s*(\d+(?:\.\d+)?)\s*bpm/;
-
 /**
- * The HR ceiling the day was prescribed, or null when the day carried no
- * prescription (Morning Brief, #1118).
+ * The scene marker (①..⑤) each kilometre belongs to, keyed by split index.
  *
- * The number is not a column on the activity: `compute_prescription_verdict`
- * writes it into the Japanese reasons it hands the summary agent ("平均HR
- * 148bpm が処方上限 150bpm を …"), which is what reaches the browser. Reading
- * it back from there keeps the header, the chart's dotted cap line and the
- * verdict quoting one and the same number instead of three. A run without a
- * recorded heart rate has nothing to hold against a cap, so it gets none.
+ * The splits table is the same run the flow chart just drew, so a kilometre
+ * that sits inside a numbered scene carries that number — the reader can go
+ * from "what happened at ③" to the kilometres behind it without counting rows.
  */
-export function hrCeilingOf(
-  detail: ActivityDetailResponse,
-  sections: SectionsResponse | null,
-): number | null {
-  // A cap is only a reading when there are beats to read against it.
-  if (detail.activity.avg_heart_rate == null) {
-    return null;
-  }
-  const verdict = summaryData(sections)?.prescription_verdict;
-  if (!isRecord(verdict) || !Array.isArray(verdict.reasons)) {
-    return null;
-  }
-  for (const reason of verdict.reasons) {
-    const match =
-      typeof reason === "string" ? HR_CEILING_IN_REASON.exec(reason) : null;
-    if (match != null) {
-      return Number(match[1]);
+export function sceneMarkers(moments: RunMoment[]): Map<number, string> {
+  const markers = new Map<number, string>();
+  moments.forEach((moment, index) => {
+    const marker = SCENE_MARKERS[index] ?? String(index + 1);
+    for (let km = moment.km_from; km <= moment.km_to; km += 1) {
+      markers.set(km, marker);
     }
-  }
-  return null;
-}
-
-/**
- * Gaps longer than this are a pause or a dropout, not time spent running: a
- * sample on either side of one says nothing about the minutes between them.
- */
-const MAX_SAMPLE_GAP_S = 60;
-
-/**
- * Seconds spent above the prescribed HR ceiling, or null when either the
- * series or the ceiling is missing.
- *
- * "心拍が高め" is an impression; "上限 150 · 超過 12:34" is the same statement
- * with a size, and the size is what decides whether the run needs an answer.
- * Each sample contributes the gap to the next one, so an unevenly sampled
- * series is measured in seconds rather than in samples.
- */
-export function secondsOverCeiling(
-  series: TimeSeriesResponse | null,
-  ceiling: number | null,
-): number | null {
-  if (series == null || ceiling == null) {
-    return null;
-  }
-  const values = series.metrics.heart_rate;
-  if (values == null) {
-    return null;
-  }
-  const timestamps = series.timestamps;
-  let seconds = 0;
-  for (let i = 0; i < values.length; i += 1) {
-    const value = values[i];
-    if (value == null || value <= ceiling) {
-      continue;
-    }
-    const next = timestamps[i + 1];
-    const current = timestamps[i];
-    const gap =
-      next != null && current != null
-        ? next - current
-        : // The last sample stands for the same interval as the one before it.
-          (current ?? 0) - (timestamps[i - 1] ?? current ?? 0);
-    if (gap > 0 && gap <= MAX_SAMPLE_GAP_S) {
-      seconds += gap;
-    }
-  }
-  return seconds;
+  });
+  return markers;
 }
 
 /** Metrics compared against the last run of the same type, in reading order. */
@@ -325,16 +264,14 @@ const VS_PREVIOUS_METRICS: { key: string; label: string; unit: string }[] = [
  *
  * The comparison run is named by how long ago it was and how far it went: a
  * pace delta against a 5km means something different from the same delta
- * against a 22km, and the saved payload carries only the id and the gap in
- * days (#1153). The distance is looked up in the activity list; when the run
- * is outside the list the head falls back to the days alone rather than
- * blocking the line.
+ * against a 22km, and the report carries only the id and the gap in days. The
+ * distance is looked up in the activity list; when the run is outside the list
+ * the head falls back to the days alone rather than blocking the line.
  */
-function vsPreviousLine(
-  sections: SectionsResponse | null,
+export function vsPreviousLine(
+  data: Record<string, unknown> | null,
   activities: ActivitySummary[],
 ): string | null {
-  const data = summaryData(sections)?.vs_previous;
   if (!isRecord(data)) {
     return null;
   }
@@ -377,7 +314,7 @@ function vsPreviousLine(
  */
 function metaLine(
   detail: ActivityDetailResponse,
-  sections: SectionsResponse | null,
+  report: RunReport | null,
 ): string {
   const parts = [formatFullDateLabel(detail.activity.activity_date)];
   // When the run started, in local time: the same day can hold a 06:00 easy
@@ -390,9 +327,8 @@ function metaLine(
   if (clock != null) {
     parts.push(clock);
   }
-  const verdict = summaryData(sections)?.prescription_verdict;
-  const title = isRecord(verdict) ? verdict.prescription_title : null;
-  if (typeof title === "string" && title !== "") {
+  const title = report?.plan?.title;
+  if (title != null && title !== "") {
     parts.push(`処方「${title}」`);
   }
   if (detail.vo2_max?.value != null) {
@@ -407,19 +343,26 @@ function metaLine(
   return parts.join(" · ");
 }
 
-/** The four numbers of the run, with the prescribed cap read against them. */
+/**
+ * The four numbers of the run, with the prescribed cap read against them.
+ *
+ * Both the cap and the time spent above it come from the report, which reads
+ * the seconds off the HR zones the run already carries — no regex over the
+ * analyst's prose and no scan of the time series (#1252).
+ */
 function kpiItems(
   detail: ActivityDetailResponse,
-  ceiling: number | null,
-  overSeconds: number | null,
+  report: RunReport | null,
 ): VitalItem[] {
   const { activity } = detail;
+  const ceiling = report?.plan?.hr_ceiling ?? null;
+  const over = ceiling != null && ceiling.seconds_over > 0;
   const ceilingNote =
     ceiling == null
       ? undefined
-      : overSeconds != null && overSeconds > 0
-        ? `上限 ${formatNumber(ceiling, 0)} · 超過 ${formatDuration(overSeconds)}`
-        : `上限 ${formatNumber(ceiling, 0)}`;
+      : over
+        ? `上限 ${ceiling.bpm} · 超過 ${formatOverTime(ceiling.seconds_over)}`
+        : `上限 ${ceiling.bpm}`;
   return [
     {
       label: "距離",
@@ -440,10 +383,7 @@ function kpiItems(
       value: formatBpmValue(activity.avg_heart_rate),
       unit: "bpm",
       note: ceilingNote,
-      noteTone:
-        overSeconds != null && overSeconds > 0 && ceiling != null
-          ? "warn"
-          : "muted",
+      noteTone: over ? "warn" : "muted",
     },
   ];
 }
@@ -532,21 +472,27 @@ export function flaggedSplitMetrics(
  * without reading every row.
  *
  * `flagged` maps a split number to the form metrics the detector flagged there
- * (#1132), which become the row's tooltip.
+ * (#1132), which become the row's tooltip. `scenes` maps a kilometre to the
+ * scene it belongs to, and is empty when the run has fewer than two scenes —
+ * a column of the same marker on every row says nothing.
  */
 function SplitsTable({
   splits,
   paceScale,
   hrScale,
   flagged,
+  scenes,
   caption,
 }: {
   splits: SplitRow[];
   paceScale: BarScale | null;
   hrScale: BarScale | null;
   flagged: Map<number, string[]>;
+  scenes: Map<number, string>;
   caption: string;
 }) {
+  const columns =
+    scenes.size > 0 ? [...SPLIT_COLUMNS, "場面"] : SPLIT_COLUMNS;
   return (
     // Six numeric columns overflow a ~360px screen: the wrapper scrolls the
     // table instead of letting the page scroll sideways (#912). The minimum
@@ -557,7 +503,7 @@ function SplitsTable({
         <caption className="sr-only">{caption}</caption>
         <thead>
           <tr className="border-b border-ink text-[11px] tracking-[0.04em] text-ink-muted">
-            {SPLIT_COLUMNS.map((column, index) => (
+            {columns.map((column, index) => (
               <th
                 key={column}
                 scope="col"
@@ -625,6 +571,11 @@ function SplitsTable({
                 <td className="px-2 py-2 text-right">
                   {formatNumber(split.power, 0)}
                 </td>
+                {scenes.size > 0 && (
+                  <td className="px-2 py-2 text-right text-ink-muted">
+                    {scenes.get(split.split_index) ?? ""}
+                  </td>
+                )}
               </tr>
             );
           })}
@@ -634,10 +585,82 @@ function SplitsTable({
   );
 }
 
+/** How the run was structured, when it had more than one phase. */
+function PhasesTable({ phases }: { phases: RunPhaseRow[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full font-mono text-sm">
+        <caption className="sr-only">フェーズ別のペースと心拍</caption>
+        <thead>
+          <tr className="border-b border-ink text-[11px] tracking-[0.04em] text-ink-muted">
+            {["フェーズ", "ペース", "平均心拍"].map((column, index) => (
+              <th
+                key={column}
+                scope="col"
+                className={`px-2 py-2 font-medium ${
+                  index === 0 ? "text-left" : "text-right"
+                }`}
+              >
+                {column}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {phases.map((phase) => (
+            <tr key={phase.phase} className="border-b border-hairline">
+              <td className="px-2 py-2 text-left text-ink-muted">
+                {PHASE_LABELS[phase.phase] ?? phase.phase}
+              </td>
+              <td className="px-2 py-2 text-right">
+                {formatPace(phase.pace_s_per_km)}
+              </td>
+              <td className="px-2 py-2 text-right">
+                {formatBpmValue(phase.avg_hr)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** A labelled sub-block of the 記録 section. */
+function RecordBlock({
+  id,
+  title,
+  note,
+  children,
+}: {
+  id?: string;
+  title: string;
+  note?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div id={id} className="scroll-mt-[60px]">
+      <div className="flex flex-wrap items-baseline gap-x-3">
+        <h3 className="text-[13px] font-bold text-ink">{title}</h3>
+        {note != null && (
+          <span className="font-mono text-xs text-ink-muted">{note}</span>
+        )}
+      </div>
+      <div className="mt-3">{children}</div>
+    </div>
+  );
+}
+
 /**
- * One run, read top-down (Morning Brief, #1118): what it was and how it went
- * (header), the assessment, then the evidence — the series, the course, the
- * splits, the phases and the form numbers — each as a labelled section.
+ * One run, read in the order the questions come (#1247): what it was and how
+ * it went (header and verdict line), what the coach makes of it, how the run
+ * unfolded, whether it matched the plan, how it compares with this athlete's
+ * own normal — and only then the record the readings themselves live in.
+ *
+ * No stars, no points, no per-section grades: the page states what happened
+ * and what it means, and the prose is confined to the coach's review, the
+ * scene list, the reason under an out-of-range signal and the coach's
+ * question.
  */
 export default function ActivityDetail() {
   const { id } = useParams<{ id: string }>();
@@ -649,6 +672,10 @@ export default function ActivityDetail() {
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
 
   const detailQuery = useActivityDetail(id);
+  // The deterministic report: the verdict, the signals, the scenes and the
+  // conditions. A failure degrades the blocks built on it rather than the
+  // page — the record below them is served by the detail query.
+  const reportQuery = useRunReport(id);
   const versionsQuery = useSectionVersions(id);
   const sectionsQuery = useSections(id, selectedRunId ?? undefined);
   // The time-series query only runs when at least one metric is selected;
@@ -663,12 +690,14 @@ export default function ActivityDetail() {
   // reader who arrived from there, and a failure only drops the distance.
   const activitiesQuery = useActivities();
 
-  const loading = detailQuery.isPending || sectionsQuery.isPending;
+  const loading =
+    detailQuery.isPending || sectionsQuery.isPending || reportQuery.isPending;
   // A failed activity / sections fetch is fatal (full-page error); the
-  // time-series and track panels degrade individually instead.
+  // report, time-series and track panels degrade individually instead.
   const fatalError = detailQuery.error ?? sectionsQuery.error;
   const detail = detailQuery.data ?? null;
   const sections = sectionsQuery.data ?? null;
+  const report = reportQuery.data ?? null;
   // The activity names the tab; until it lands the previous title stands.
   usePageTitle(detail?.activity.activity_name ?? undefined);
   const versions = versionsQuery.data ?? [];
@@ -761,36 +790,37 @@ export default function ActivityDetail() {
     setHover(seqNo == null ? null : { source: "map", value: seqNo });
   };
 
-  const starRating = summaryStarRating(sections);
-  const lead = summaryLead(sections);
-  const hrCeiling = hrCeilingOf(detail, sections);
-  const overSeconds = secondsOverCeiling(timeSeries, hrCeiling);
-  const vsPrevious = vsPreviousLine(sections, activitiesQuery.data ?? []);
+  const runNote = parseRunNote(sections?.run_note);
+  const moments = report?.moments ?? [];
+  const hrCeiling = report?.plan?.hr_ceiling?.bpm ?? null;
+  const vsPrevious = vsPreviousLine(
+    report?.vs_previous ?? null,
+    activitiesQuery.data ?? [],
+  );
+  const flagLabels = report?.headline.flag_labels ?? [];
+  const legacySectionTypes = sections
+    ? LEGACY_SECTION_TYPES.filter((type) => sections[type])
+    : [];
   const unknownSectionTypes = sections
     ? Object.keys(sections).filter(
         (type) => !KNOWN_SECTION_TYPES.includes(type),
       )
     : [];
 
-  // In-page nav: list only the sections that actually render below, so the
+  // In-page nav: list only the blocks that actually render below, so the
   // table of contents never points at a missing anchor.
   const hasTrack = track != null && track.length > 0;
-  // The course section also renders (as an error panel) when the track
-  // fetch failed, so the nav anchor stays valid in that state too.
+  // The course block also renders (as an error panel) when the track fetch
+  // failed, so the nav anchor stays valid in that state too.
   const showCourse = hasTrack || trackError !== null;
-  const hasSplits = splits.length > 0 || Boolean(sections?.split);
+  const hasSignals = (report?.signals.length ?? 0) > 0;
+  const showFlow = splits.length > 0 || moments.length > 0;
   const navItems: NavItem[] = [
-    sections?.summary ? { id: "section-overview", label: "総合評価" } : null,
-    { id: "section-timeseries", label: "タイムシリーズ" },
-    showCourse ? { id: "section-course", label: "コース" } : null,
-    hasSplits ? { id: "section-splits", label: "スプリット" } : null,
-    sections?.phase ? { id: "section-phase", label: "フェーズ評価" } : null,
-    sections?.efficiency
-      ? { id: "section-efficiency", label: "効率分析" }
-      : null,
-    sections?.environment
-      ? { id: "section-environment", label: "環境影響" }
-      : null,
+    { id: "section-review", label: "コーチの総評" },
+    showFlow ? { id: "section-flow", label: "ランの流れ" } : null,
+    report?.plan ? { id: "section-plan", label: "計画との照合" } : null,
+    hasSignals ? { id: "section-signals", label: "いつもと比べて" } : null,
+    { id: "section-record", label: "記録" },
   ].filter((item): item is NavItem => item !== null);
 
   const visibleMetrics = showAllMetrics
@@ -798,6 +828,10 @@ export default function ActivityDetail() {
     : AVAILABLE_METRICS.filter(({ key }) => PRIMARY_METRICS.includes(key));
   const previewSplits = splits.slice(0, SPLIT_PREVIEW_ROWS);
   const foldedSplits = splits.slice(SPLIT_PREVIEW_ROWS);
+  // A single scene is the whole run: a column repeating one marker on every
+  // row costs width and says nothing.
+  const scenes =
+    moments.length >= 2 ? sceneMarkers(moments) : new Map<number, string>();
 
   return (
     <div className="flex flex-col gap-12">
@@ -819,22 +853,35 @@ export default function ActivityDetail() {
           />
         </div>
         <p className="font-mono text-[13px] text-ink-muted">
-          {metaLine(detail, sections)}
+          {metaLine(detail, report)}
         </p>
         {/* 36px at every width: 40px is the home page's verdict size, and a
             run's name is a heading, not the page's conclusion (#1153). */}
-        <h1 className="flex flex-wrap items-baseline gap-x-4 gap-y-2 text-[36px] leading-[1.15] font-bold tracking-[-0.01em] text-ink">
+        <h1 className="text-[36px] leading-[1.15] font-bold tracking-[-0.01em] text-ink">
           {detail.activity.activity_name ?? "アクティビティ"}
-          {starRating != null && <StarRating text={starRating} size="lg" />}
         </h1>
-        {lead != null && (
-          <p className="max-w-[720px] text-lg leading-[1.6] text-ink-soft">
-            {lead}
-          </p>
+        {/* The verdict line: how the day's plan went, and what — if anything —
+            is worth a second look. No stars: a run is not a score (#1247). */}
+        {report != null && (
+          <VerdictLine
+            verdict={report.headline.plan_label}
+            rest={
+              flagLabels.length === 0 ? (
+                <> · 特記なし</>
+              ) : (
+                <>
+                  {" · "}
+                  <span className="text-status-warn">
+                    注意 {flagLabels.length}件: {flagLabels.join(" · ")}
+                  </span>
+                </>
+              )
+            }
+          />
         )}
         <VitalsRow
           ariaLabel="このランの数値"
-          items={kpiItems(detail, hrCeiling, overSeconds)}
+          items={kpiItems(detail, report)}
           size="lg"
         />
         {vsPrevious != null && (
@@ -842,172 +889,211 @@ export default function ActivityDetail() {
         )}
       </header>
 
-      {/* Sticky in-page table of contents (rendered sections only) */}
+      {/* Sticky in-page table of contents (rendered blocks only) */}
       <SectionNav items={navItems} />
 
-      {/* Overall assessment report */}
-      <SummaryReport id="section-overview" section={sections?.summary} />
+      {/* The coach's review — the one block of prose on the page */}
+      <CoachReview
+        id="section-review"
+        note={runNote}
+        legacySummary={sections?.summary}
+        nextRunTarget={report?.next_run_target ?? null}
+      />
 
-      {/* Time series chart with metric toggles */}
-      <SectionBlock id="section-timeseries" title="タイムシリーズ">
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          {visibleMetrics.map(({ key, label }) => {
-            const checked = selectedMetrics.includes(key);
-            // An active toggle is ink-filled and carries a short bar in the
-            // metric's chart color, matching its line below; the label itself
-            // stays paper-on-ink so it clears AA (#911, #1116).
-            const color = METRIC_COLORS[key] ?? INK_COLOR;
-            return (
-              <label
-                key={key}
-                className={`inline-flex cursor-pointer items-center gap-1.5 rounded-sm px-2.5 py-1 font-mono text-xs transition-colors ${
-                  checked
-                    ? "bg-ink text-paper"
-                    : "border border-hairline text-ink-soft hover:bg-surface"
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  className="sr-only"
-                  checked={checked}
-                  onChange={() => toggleMetric(key)}
-                />
-                {checked && (
-                  <span
-                    aria-hidden="true"
-                    className="inline-block h-0.5 w-3.5"
-                    style={{ backgroundColor: color }}
-                  />
-                )}
-                {label}
-              </label>
-            );
-          })}
-          {!showAllMetrics && (
-            <button
-              type="button"
-              onClick={() => setShowAllMetrics(true)}
-              className="px-1 py-1 font-mono text-xs text-accent hover:underline"
-            >
-              {MORE_METRICS_LABEL}
-            </button>
-          )}
-        </div>
-        {timeSeriesError !== null ? (
-          <ErrorPanel
-            message={`読み込みに失敗しました: ${timeSeriesError}`}
-            onRetry={() => {
-              void timeSeriesQuery.refetch();
-            }}
-          />
-        ) : timeSeries && Object.keys(timeSeries.metrics).length > 0 ? (
-          <TimeSeriesChart
-            data={timeSeries}
-            metricLabels={METRIC_LABELS}
-            hoverIndex={chartHoverIndex}
-            onHoverIndex={handleChartHover}
-            hrCeiling={hrCeiling}
-          />
-        ) : (
-          <p className="py-8 text-center text-sm text-ink-muted">
-            表示する指標を選択してください
-          </p>
-        )}
-      </SectionBlock>
-
-      {/* GPS track map — omitted entirely when the activity has no GPS data
-          (successful empty fetch); shown as an error panel when the fetch failed */}
-      {showCourse && (
-        <SectionBlock id="section-course" title="コース">
-          {trackError === null && track != null ? (
-            <MapPanel
-              points={track}
-              hoverSeqNo={mapHoverSeqNo}
-              onHoverSeqNo={handleMapHover}
-            />
-          ) : (
-            <ErrorPanel
-              message={`読み込みに失敗しました: ${trackError ?? "不明なエラー"}`}
-              onRetry={() => {
-                void trackQuery.refetch();
-              }}
-            />
-          )}
-        </SectionBlock>
+      {/* How the run unfolded: the shape, its scenes, and what they were */}
+      {showFlow && (
+        <RunFlow
+          id="section-flow"
+          splits={splits}
+          moments={moments}
+          timeline={runNote?.timeline ?? []}
+          hrCeiling={hrCeiling}
+        />
       )}
 
-      {/* Splits: table + per-split narrative from the split analyst */}
-      {hasSplits && (
-        <SectionBlock
-          id="section-splits"
-          title="スプリット"
-          note={
-            flaggedSplits.size > 0
-              ? `注意 ${flaggedSplits.size}本`
-              : undefined
-          }
-          noteMono
-        >
-          {previewSplits.length > 0 && (
-            <SplitsTable
-              splits={previewSplits}
-              paceScale={paceScale}
-              hrScale={hrScale}
-              flagged={flaggedSplits}
-              caption={
-                foldedSplits.length > 0
-                  ? `スプリット 1–${previewSplits.length}`
-                  : "スプリット"
-              }
-            />
+      {/* What the day asked for, against what the run did */}
+      <PlanCheck id="section-plan" plan={report?.plan ?? null} />
+
+      {/* Every metric against this athlete's own normal range */}
+      <NormalRangeRows
+        id="section-signals"
+        signals={report?.signals ?? []}
+        zones={report?.zones ?? []}
+        notes={runNote?.notes ?? []}
+      />
+
+      {/* The record: the readings the blocks above were read off */}
+      <SectionBlock id="section-record" title="記録">
+        <div className="flex flex-col gap-8">
+          <ConditionsStrip conditions={report?.conditions ?? null} />
+
+          <RecordBlock id="section-timeseries" title="タイムシリーズ">
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              {visibleMetrics.map(({ key, label }) => {
+                const checked = selectedMetrics.includes(key);
+                // An active toggle is ink-filled and carries a short bar in
+                // the metric's chart color, matching its line below; the label
+                // itself stays paper-on-ink so it clears AA (#911, #1116).
+                const color = METRIC_COLORS[key] ?? INK_COLOR;
+                return (
+                  <label
+                    key={key}
+                    className={`inline-flex cursor-pointer items-center gap-1.5 rounded-sm px-2.5 py-1 font-mono text-xs transition-colors ${
+                      checked
+                        ? "bg-ink text-paper"
+                        : "border border-hairline text-ink-soft hover:bg-surface"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="sr-only"
+                      checked={checked}
+                      onChange={() => toggleMetric(key)}
+                    />
+                    {checked && (
+                      <span
+                        aria-hidden="true"
+                        className="inline-block h-0.5 w-3.5"
+                        style={{ backgroundColor: color }}
+                      />
+                    )}
+                    {label}
+                  </label>
+                );
+              })}
+              {!showAllMetrics && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllMetrics(true)}
+                  className="px-1 py-1 font-mono text-xs text-accent hover:underline"
+                >
+                  {MORE_METRICS_LABEL}
+                </button>
+              )}
+            </div>
+            {timeSeriesError !== null ? (
+              <ErrorPanel
+                message={`読み込みに失敗しました: ${timeSeriesError}`}
+                onRetry={() => {
+                  void timeSeriesQuery.refetch();
+                }}
+              />
+            ) : timeSeries && Object.keys(timeSeries.metrics).length > 0 ? (
+              <TimeSeriesChart
+                data={timeSeries}
+                metricLabels={METRIC_LABELS}
+                hoverIndex={chartHoverIndex}
+                onHoverIndex={handleChartHover}
+                hrCeiling={hrCeiling}
+              />
+            ) : (
+              <p className="py-8 text-center text-sm text-ink-muted">
+                表示する指標を選択してください
+              </p>
+            )}
+          </RecordBlock>
+
+          {/* GPS track map — omitted entirely when the activity has no GPS
+              data (successful empty fetch); an error panel when it failed */}
+          {showCourse && (
+            <RecordBlock id="section-course" title="コース">
+              {trackError === null && track != null ? (
+                <MapPanel
+                  points={track}
+                  hoverSeqNo={mapHoverSeqNo}
+                  onHoverSeqNo={handleMapHover}
+                />
+              ) : (
+                <ErrorPanel
+                  message={`読み込みに失敗しました: ${trackError ?? "不明なエラー"}`}
+                  onRetry={() => {
+                    void trackQuery.refetch();
+                  }}
+                />
+              )}
+            </RecordBlock>
           )}
-          {foldedSplits.length > 0 ? (
-            <Disclosure
-              className="mt-3"
-              title={`全 ${splits.length} スプリットと解説を表示`}
+
+          {splits.length > 0 && (
+            <RecordBlock
+              id="section-splits"
+              title="スプリット"
+              note={
+                flaggedSplits.size > 0
+                  ? `注意 ${flaggedSplits.size}本`
+                  : undefined
+              }
             >
               <SplitsTable
-                splits={foldedSplits}
+                splits={previewSplits}
                 paceScale={paceScale}
                 hrScale={hrScale}
                 flagged={flaggedSplits}
-                caption={`スプリット ${SPLIT_PREVIEW_ROWS + 1}–${splits.length}`}
+                scenes={scenes}
+                caption={
+                  foldedSplits.length > 0
+                    ? `スプリット 1–${previewSplits.length}`
+                    : "スプリット"
+                }
               />
-              <SplitNarrative section={sections?.split} />
-            </Disclosure>
-          ) : (
-            <SplitNarrative section={sections?.split} />
+              {foldedSplits.length > 0 && (
+                <Disclosure
+                  className="mt-3"
+                  title={`残り ${foldedSplits.length} スプリット（${
+                    SPLIT_PREVIEW_ROWS + 1
+                  }〜${splits.length} km）を表示`}
+                >
+                  <SplitsTable
+                    splits={foldedSplits}
+                    paceScale={paceScale}
+                    hrScale={hrScale}
+                    flagged={flaggedSplits}
+                    scenes={scenes}
+                    caption={`スプリット ${SPLIT_PREVIEW_ROWS + 1}–${splits.length}`}
+                  />
+                </Disclosure>
+              )}
+            </RecordBlock>
           )}
-        </SectionBlock>
-      )}
 
-      {/* Phase evaluation rows */}
-      <PhaseTimeline id="section-phase" section={sections?.phase} />
+          {(report?.phases.length ?? 0) > 1 && (
+            <RecordBlock title="フェーズ">
+              <PhasesTable phases={report?.phases ?? []} />
+            </RecordBlock>
+          )}
 
-      {/* Efficiency: structured form stats + analyst prose */}
-      <EfficiencyReport
-        id="section-efficiency"
-        section={sections?.efficiency}
-        formEvaluations={detail.form_evaluations}
-      />
-
-      {/* Environmental impact */}
-      <EnvironmentReport
-        id="section-environment"
-        section={sections?.environment}
-      />
-
-      {/* Unknown section types degrade to key-value cards */}
-      {sections &&
-        unknownSectionTypes.map((type) => (
-          <ReportCard
-            key={type}
-            title={sectionTitle(type)}
-            section={sections[type]}
-          >
-            {(data) => <FallbackFields data={data} exclude={["metadata"]} />}
-          </ReportCard>
-        ))}
+          {/* The five graded sections this page replaced. They are kept, and
+              kept readable, but they are no longer what the page says. */}
+          {(legacySectionTypes.length > 0 ||
+            unknownSectionTypes.length > 0) && (
+            <Disclosure title="以前の分析（旧形式）">
+              <div className="flex flex-col gap-8">
+                <SummaryReport section={sections?.summary} />
+                <SplitNarrative section={sections?.split} />
+                <PhaseTimeline section={sections?.phase} />
+                <EfficiencyReport
+                  section={sections?.efficiency}
+                  formEvaluations={detail.form_evaluations}
+                />
+                <EnvironmentReport section={sections?.environment} />
+                {/* Unknown section types degrade to key-value cards */}
+                {sections &&
+                  unknownSectionTypes.map((type) => (
+                    <ReportCard
+                      key={type}
+                      title={sectionTitle(type)}
+                      section={sections[type]}
+                    >
+                      {(data) => (
+                        <FallbackFields data={data} exclude={["metadata"]} />
+                      )}
+                    </ReportCard>
+                  ))}
+              </div>
+            </Disclosure>
+          )}
+        </div>
+      </SectionBlock>
     </div>
   );
 }

@@ -1,16 +1,18 @@
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  cleanup,
   fireEvent,
   render,
   screen,
   waitFor,
   within,
 } from "../test/utils";
-import ActivityDetail, { BarCell, secondsOverCeiling } from "./ActivityDetail";
+import ActivityDetail, { BarCell, sceneMarkers } from "./ActivityDetail";
 import type {
   ActivityDetailResponse,
   ActivitySummary,
+  RunReport,
   SectionsResponse,
   SplitAnomaliesResponse,
   TrackPoint,
@@ -59,6 +61,29 @@ const BASE_DETAIL: ActivityDetailResponse = {
   lactate_threshold: null,
 };
 
+/** A run with no prescription, no flagged signal and no scenes. */
+const BASE_REPORT: RunReport = {
+  activity_id: 123,
+  activity_date: "2025-10-09",
+  intensity_category: "easy",
+  headline: { plan_label: "処方なし", flag_count: 0, flag_labels: [] },
+  plan: null,
+  signals: [],
+  zones: [],
+  moments: [],
+  recurrence: [],
+  phases: [],
+  conditions: {
+    temp_c: null,
+    humidity_pct: null,
+    wind_mps: null,
+    terrain: null,
+    elevation_gain_m: null,
+  },
+  vs_previous: null,
+  next_run_target: null,
+};
+
 const NO_SPLIT_ANOMALIES: SplitAnomaliesResponse = {
   activity_id: 123,
   total: 0,
@@ -73,6 +98,7 @@ function stubFetch(opts: {
   detail: ActivityDetailResponse;
   sections: SectionsResponse;
   track: TrackPoint[];
+  report?: RunReport;
   timeSeries?: unknown;
   splitAnomalies?: SplitAnomaliesResponse;
   splitAnomaliesStatus?: number;
@@ -89,6 +115,8 @@ function stubFetch(opts: {
         body = [];
       } else if (url.includes("/sections")) {
         body = opts.sections;
+      } else if (url.includes("/report")) {
+        body = opts.report ?? BASE_REPORT;
       } else if (url.includes("/split-anomalies")) {
         body = opts.splitAnomalies ?? NO_SPLIT_ANOMALIES;
         status = opts.splitAnomaliesStatus ?? 200;
@@ -126,28 +154,73 @@ afterEach(() => {
 });
 
 describe("ActivityDetail in-page nav", () => {
-  it("omits コース from nav when track is absent", async () => {
+  it("test_nav_follows_the_rendered_blocks", async () => {
     stubFetch({ detail: BASE_DETAIL, sections: {}, track: [] });
     renderDetail();
 
+    // The nav is the page's own order of questions, and it lists only what
+    // actually rendered: this run has no plan and no judged signal.
     const nav = await screen.findByRole("navigation", {
       name: "セクション目次",
     });
-    expect(within(nav).queryByText("コース")).not.toBeInTheDocument();
+    expect(
+      within(nav)
+        .getAllByRole("link")
+        .map((link) => link.textContent),
+    ).toEqual(["コーチの総評", "ランの流れ", "記録"]);
+    expect(document.getElementById("section-record")).not.toBeNull();
   });
 
-  it("includes スプリット in nav when splits exist", async () => {
-    stubFetch({ detail: BASE_DETAIL, sections: {}, track: [] });
+  it("test_nav_lists_plan_and_signals_when_served", async () => {
+    stubFetch({
+      detail: BASE_DETAIL,
+      sections: {},
+      track: [],
+      report: {
+        ...BASE_REPORT,
+        plan: {
+          verdict: "✅",
+          title: "イージー 6km",
+          checks: [
+            {
+              axis: "intensity",
+              target: "easy",
+              actual: "easy",
+              status: "on_plan",
+              on_plan: true,
+            },
+          ],
+          hr_ceiling: null,
+        },
+        signals: [
+          {
+            family: "form",
+            metric: "gct",
+            label_ja: "接地時間",
+            unit: "ms",
+            today: 260,
+            expected: 256,
+            normal_low: 248,
+            normal_high: 262,
+            z: 0.4,
+            status: "within",
+            adverse: false,
+            streak: 0,
+            reason: null,
+          },
+        ],
+      },
+    });
     renderDetail();
 
     const nav = await screen.findByRole("navigation", {
       name: "セクション目次",
     });
-    const link = within(nav).getByRole("link", { name: "スプリット" });
-    expect(link).toHaveAttribute("href", "#section-splits");
-
-    // The corresponding splits section carries the matching anchor id.
-    expect(document.getElementById("section-splits")).not.toBeNull();
+    const link = within(nav).getByRole("link", { name: "計画との照合" });
+    expect(link).toHaveAttribute("href", "#section-plan");
+    expect(
+      within(nav).getByRole("link", { name: "いつもと比べて" }),
+    ).toHaveAttribute("href", "#section-signals");
   });
 });
 
@@ -172,6 +245,8 @@ function stubFetchWithErrors(opts: {
       body = [];
     } else if (url.includes("/sections")) {
       body = {};
+    } else if (url.includes("/report")) {
+      body = BASE_REPORT;
     } else if (url.includes("/time-series")) {
       if (timeSeriesFailures > 0) {
         timeSeriesFailures -= 1;
@@ -245,7 +320,7 @@ describe("ActivityDetail panel errors", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Failed to fetch track: 500");
-    // The alert renders inside the course section, replacing the map.
+    // The alert renders inside the course block, replacing the map.
     const course = document.getElementById("section-course");
     expect(course).not.toBeNull();
     expect(within(course as HTMLElement).getByRole("alert")).toBe(alert);
@@ -277,12 +352,12 @@ describe("ActivityDetail panel errors", () => {
 
     await screen.findByRole("navigation", { name: "セクション目次" });
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    // Empty track (successful fetch) keeps the course section omitted.
+    // Empty track (successful fetch) keeps the course block omitted.
     expect(document.getElementById("section-course")).toBeNull();
   });
 });
 
-// --- Header (Morning Brief, #1118) ---
+// --- Header (#1252) ---
 
 const LONG_RUN_DETAIL: ActivityDetailResponse = {
   ...BASE_DETAIL,
@@ -317,27 +392,47 @@ const LONG_RUN_DETAIL: ActivityDetailResponse = {
   },
 };
 
+const LONG_RUN_REPORT: RunReport = {
+  ...BASE_REPORT,
+  headline: { plan_label: "処方どおり", flag_count: 0, flag_labels: [] },
+  plan: {
+    verdict: "✅",
+    title: "ロング 22km",
+    checks: [
+      {
+        axis: "intensity",
+        target: "long_run",
+        actual: "long_run",
+        status: "on_plan",
+        on_plan: true,
+      },
+      {
+        axis: "hr_ceiling",
+        target: "≦150bpm",
+        actual: "148bpm",
+        status: "on_plan",
+        on_plan: true,
+      },
+    ],
+    hr_ceiling: { bpm: 150, seconds_over: 321, pct_over: 12.4 },
+  },
+  vs_previous: {
+    pace_s_per_km: { current: 348, previous: 358, delta: -10 },
+    avg_hr: { current: 148, previous: 151, delta: -3 },
+    gct_ms: { current: 262, previous: 258, delta: 4 },
+    cadence_spm: { current: 172, previous: 174, delta: -2 },
+    days_ago: 7,
+  },
+};
+
+/** A legacy summary section whose prose never states the ceiling. */
 const SUMMARY_SECTIONS: SectionsResponse = {
   summary: {
     data: {
       star_rating: "★★★★☆ 4.3/5.0",
       summary:
         "処方どおりの22kmを走り切れた一本でした。後半も心拍は上限内に収まっています。",
-      key_strengths: ["心拍の安定", "ケイデンス維持", "後半の粘り"],
-      improvement_areas: ["序盤の突っ込み", "給水の遅れ"],
       next_action: "次回は最初の3kmを7:00/kmより遅く入りましょう。",
-      prescription_verdict: {
-        verdict: "✅",
-        prescription_title: "ロング 22km",
-        reasons: ["処方「ロング 22km」どおりに実施できています（平均HR 148bpm ≦ 上限 150bpm）。"],
-      },
-      vs_previous: {
-        pace_s_per_km: { current: 348, previous: 358, delta: -10 },
-        avg_hr: { current: 148, previous: 151, delta: -3 },
-        gct_ms: { current: 262, previous: 258, delta: 4 },
-        cadence_spm: { current: 172, previous: 174, delta: -2 },
-        days_ago: 7,
-      },
     },
     parse_error: false,
     raw: null,
@@ -345,37 +440,32 @@ const SUMMARY_SECTIONS: SectionsResponse = {
 };
 
 describe("ActivityDetail header", () => {
-  it("test_activity_detail_header_order", async () => {
+  it("test_header_shows_verdict_line_without_stars", async () => {
     stubFetch({
       detail: LONG_RUN_DETAIL,
       sections: SUMMARY_SECTIONS,
       track: [],
+      report: LONG_RUN_REPORT,
     });
     renderDetail();
 
-    // The run names the page, and its rating sits in the same line.
+    // The run names the page; how the day's plan went is the line under it.
     const heading = await screen.findByRole("heading", {
       level: 1,
       name: /Morning Run/,
     });
-    const rating = screen.getByLabelText("評価 4.3 / 5.0");
-    expect(heading).toContainElement(rating);
-    expect(rating.querySelector(".text-star")).not.toBeNull();
+    expect(heading).toBeInTheDocument();
+    expect(screen.getByText("処方どおり")).toBeInTheDocument();
+    expect(screen.getByText(/特記なし/)).toBeInTheDocument();
 
-    // The conclusion sentence reads directly under the headline...
-    const lead = screen.getByText("処方どおりの22kmを走り切れた一本でした。");
-    expect(
-      heading.compareDocumentPosition(lead) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    // A run is not a score: no stars anywhere on the default page (#1247).
+    expect(screen.queryByLabelText(/^評価/)).not.toBeInTheDocument();
 
-    // ...and the four numbers behind it follow as one row.
+    // The four numbers the page is opened for follow as one row.
     const kpis = screen.getByRole("region", { name: "このランの数値" });
     for (const value of ["22.14", "2:08:25", "5:48", "148"]) {
       expect(within(kpis).getByText(value)).toBeInTheDocument();
     }
-    expect(
-      heading.compareDocumentPosition(kpis) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
 
     // The deltas against the last comparable run are one mono line, not chips.
     expect(
@@ -383,6 +473,49 @@ describe("ActivityDetail header", () => {
         "前回比（7日前）: ペース -10秒/km · HR -3bpm · GCT +4ms · ケイデンス -2spm",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("test_header_flag_is_warn_toned", async () => {
+    stubFetch({
+      detail: LONG_RUN_DETAIL,
+      sections: {},
+      track: [],
+      report: {
+        ...LONG_RUN_REPORT,
+        headline: {
+          plan_label: "処方どおり",
+          flag_count: 1,
+          flag_labels: ["接地時間が長め"],
+        },
+      },
+    });
+    renderDetail();
+
+    // The plan label stays ink; only the exception takes colour.
+    const flags = await screen.findByText("注意 1件: 接地時間が長め");
+    expect(flags).toHaveClass("text-status-warn");
+    expect(screen.queryByText(/特記なし/)).not.toBeInTheDocument();
+  });
+
+  it("test_hr_note_comes_from_report", async () => {
+    stubFetch({
+      detail: LONG_RUN_DETAIL,
+      sections: SUMMARY_SECTIONS,
+      track: [],
+      report: LONG_RUN_REPORT,
+      timeSeries: {
+        timestamps: [0, 1, 2, 3],
+        metrics: { heart_rate: [140, 151, 152, 149] },
+      },
+    });
+    renderDetail();
+
+    // The cap and the time above it are served by the report, which reads the
+    // seconds off the HR zones — no regex over the analyst's prose (which
+    // never mentions 150 here) and no scan of the time series (#1252).
+    expect(await screen.findByText("上限 150 · 超過 5:21")).toBeInTheDocument();
+    const summaryProse = SUMMARY_SECTIONS.summary.data?.summary as string;
+    expect(summaryProse).not.toContain("150");
   });
 
   it("test_activity_kpi_row_uses_large_values", async () => {
@@ -393,6 +526,7 @@ describe("ActivityDetail header", () => {
       },
       sections: SUMMARY_SECTIONS,
       track: [],
+      report: LONG_RUN_REPORT,
     });
     renderDetail();
 
@@ -406,6 +540,7 @@ describe("ActivityDetail header", () => {
       detail: LONG_RUN_DETAIL,
       sections: SUMMARY_SECTIONS,
       track: [],
+      report: LONG_RUN_REPORT,
     });
     renderDetail();
 
@@ -428,7 +563,12 @@ describe("ActivityDetail header", () => {
         start_time_local: "2026-09-13 13:45:19",
       },
     };
-    stubFetch({ detail: dated, sections: SUMMARY_SECTIONS, track: [] });
+    stubFetch({
+      detail: dated,
+      sections: SUMMARY_SECTIONS,
+      track: [],
+      report: LONG_RUN_REPORT,
+    });
     const { unmount } = renderDetail();
 
     // A 13:45 start and a 06:00 start are different runs in the same day's
@@ -445,6 +585,7 @@ describe("ActivityDetail header", () => {
       },
       sections: SUMMARY_SECTIONS,
       track: [],
+      report: LONG_RUN_REPORT,
     });
     renderDetail();
 
@@ -454,18 +595,12 @@ describe("ActivityDetail header", () => {
   });
 
   it("test_vs_previous_line_with_distance", async () => {
-    const summary = SUMMARY_SECTIONS.summary;
-    const sections: SectionsResponse = {
-      summary: {
-        ...summary,
-        data: {
-          ...summary.data,
-          vs_previous: {
-            pace_s_per_km: { current: 423, previous: 348, delta: 75.1 },
-            days_ago: 5,
-            previous_activity_id: 456,
-          },
-        },
+    const report: RunReport = {
+      ...LONG_RUN_REPORT,
+      vs_previous: {
+        pace_s_per_km: { current: 423, previous: 348, delta: 75.1 },
+        days_ago: 5,
+        previous_activity_id: 456,
       },
     };
     const previous: ActivitySummary = {
@@ -481,8 +616,9 @@ describe("ActivityDetail header", () => {
     };
     stubFetch({
       detail: LONG_RUN_DETAIL,
-      sections,
+      sections: {},
       track: [],
+      report,
       activities: [previous],
     });
     const { unmount } = renderDetail();
@@ -495,7 +631,13 @@ describe("ActivityDetail header", () => {
     unmount();
 
     // A comparison run outside the list keeps the line, minus the distance.
-    stubFetch({ detail: LONG_RUN_DETAIL, sections, track: [], activities: [] });
+    stubFetch({
+      detail: LONG_RUN_DETAIL,
+      sections: {},
+      track: [],
+      report,
+      activities: [],
+    });
     renderDetail();
 
     expect(
@@ -508,11 +650,12 @@ describe("ActivityDetail header", () => {
       detail: LONG_RUN_DETAIL,
       sections: SUMMARY_SECTIONS,
       track: [],
+      report: LONG_RUN_REPORT,
     });
     renderDetail();
 
     // The meta line carries the date, the prescription and the physiology
-    // numbers the run is read against (migrated from HeroHeader).
+    // numbers the run is read against.
     const meta = await screen.findByText(/2025-10-09 THU/);
     expect(meta).toHaveTextContent("処方「ロング 22km」");
     expect(meta).toHaveTextContent("VO2max 50.1");
@@ -542,50 +685,11 @@ describe("ActivityDetail header", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/乳酸閾値/)).not.toBeInTheDocument();
     expect(screen.queryByText(/VO2max/)).not.toBeInTheDocument();
-    // Without a summary there is no rating and no conclusion line.
-    expect(screen.queryByLabelText(/評価/)).not.toBeInTheDocument();
-  });
-
-  it("test_hr_ceiling_note", () => {
-    // Two of the four samples sit above the prescribed cap, one second each.
+    // Without an analysis there is no review to show, and the page says so
+    // instead of leaving a hole.
     expect(
-      secondsOverCeiling(
-        {
-          timestamps: [0, 1, 2, 3],
-          metrics: { heart_rate: [140, 151, 152, 149] },
-        },
-        150,
-      ),
-    ).toBe(2);
-
-    // No prescription, no series, or no heart rate in it -> nothing to state.
-    expect(
-      secondsOverCeiling(
-        { timestamps: [0, 1], metrics: { heart_rate: [160, 160] } },
-        null,
-      ),
-    ).toBeNull();
-    expect(secondsOverCeiling(null, 150)).toBeNull();
-    expect(
-      secondsOverCeiling({ timestamps: [0, 1], metrics: { speed: [3, 3] } }, 150),
-    ).toBeNull();
-  });
-
-  it("test_hr_ceiling_note_rendered_from_the_prescription", async () => {
-    stubFetch({
-      detail: LONG_RUN_DETAIL,
-      sections: SUMMARY_SECTIONS,
-      track: [],
-      timeSeries: {
-        timestamps: [0, 1, 2, 3],
-        metrics: { heart_rate: [140, 151, 152, 149] },
-      },
-    });
-    renderDetail();
-
-    // The cap comes from the verdict's own sentence ("上限 150bpm"), so the
-    // header and the prose quote one number.
-    expect(await screen.findByText("上限 150 · 超過 00:02")).toBeInTheDocument();
+      screen.getByText("このランの総評はまだありません"),
+    ).toBeInTheDocument();
   });
 });
 
@@ -596,7 +700,7 @@ describe("ActivityDetail metric toggles", () => {
 
     await screen.findByRole("navigation", { name: "セクション目次" });
     // The splits table names columns after the same metrics, so the toggles
-    // are read inside their own section.
+    // are read inside their own block.
     const chart = within(
       document.getElementById("section-timeseries") as HTMLElement,
     );
@@ -657,11 +761,13 @@ async function renderSplits(
   splits: ReturnType<typeof splitRow>[],
   sections: SectionsResponse = {},
   anomalies?: { response?: SplitAnomaliesResponse; status?: number },
+  report: RunReport = BASE_REPORT,
 ) {
   stubFetch({
     detail: { ...BASE_DETAIL, splits },
     sections,
     track: [],
+    report,
     splitAnomalies: anomalies?.response,
     splitAnomaliesStatus: anomalies?.status,
   });
@@ -857,14 +963,17 @@ describe("ActivityDetail splits table reading aids", () => {
     expect(rows.length).toBeGreaterThan(0);
   });
 
-  it("test_splits_disclosure_over_ten", async () => {
-    await renderSplits(LONG_SPLITS);
+  it("test_splits_disclosure_label_counts_the_rest", async () => {
+    const splits = Array.from({ length: 25 }, (_, index) =>
+      splitRow(index + 1, 380 + (index % 5), 140 + (index % 6)),
+    );
+    await renderSplits(splits);
 
-    // The first ten kilometres are visible; the rest (and the per-split
-    // narrative) sit behind one text link.
+    // The first ten kilometres are visible; the label of the fold says what
+    // is behind it rather than restating the whole table.
     const preview = screen.getAllByRole("table")[0];
     expect(within(preview).getAllByRole("row").slice(1)).toHaveLength(10);
-    const trigger = screen.getByText("全 23 スプリットと解説を表示");
+    const trigger = screen.getByText("残り 15 スプリット（11〜25 km）を表示");
     expect(trigger.closest("details")?.hasAttribute("open")).toBe(false);
   });
 
@@ -872,7 +981,128 @@ describe("ActivityDetail splits table reading aids", () => {
     await renderSplits(LONG_SPLITS.slice(0, 8));
 
     expect(screen.getAllByRole("table")).toHaveLength(1);
-    expect(screen.queryByText(/スプリットと解説を表示/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/スプリット（/)).not.toBeInTheDocument();
+  });
+
+  it("test_splits_scene_column_only_with_two_scenes", async () => {
+    const splits = LONG_SPLITS.slice(0, 5);
+    const oneScene: RunReport = {
+      ...BASE_REPORT,
+      moments: [
+        { id: "m1", kind: "steady", km_from: 1, km_to: 5, facts: {} },
+      ],
+    };
+    await renderSplits(splits, {}, undefined, oneScene);
+    // A column repeating the same marker on every row costs width and says
+    // nothing, so a one-scene run has none.
+    expect(
+      within(screen.getAllByRole("table")[0]).queryByRole("columnheader", {
+        name: "場面",
+      }),
+    ).not.toBeInTheDocument();
+
+    cleanup();
+    vi.unstubAllGlobals();
+    const rows = await renderSplits(splits, {}, undefined, {
+      ...BASE_REPORT,
+      moments: [
+        { id: "m1", kind: "start", km_from: 1, km_to: 1, facts: {} },
+        { id: "m2", kind: "climb", km_from: 2, km_to: 2, facts: {} },
+        { id: "m3", kind: "surge", km_from: 4, km_to: 4, facts: {} },
+        { id: "m4", kind: "strong_finish", km_from: 5, km_to: 5, facts: {} },
+      ],
+    });
+
+    const table = screen.getAllByRole("table")[0];
+    expect(
+      within(table).getByRole("columnheader", { name: "場面" }),
+    ).toBeInTheDocument();
+    // The marker on a kilometre is the number the flow list gave its scene.
+    expect(within(rows[1]).getAllByRole("cell")[6]).toHaveTextContent("②");
+    expect(within(rows[2]).getAllByRole("cell")[6]).toHaveTextContent("");
+  });
+});
+
+describe("sceneMarkers", () => {
+  it("test_scene_markers_cover_every_kilometre_of_a_scene", () => {
+    const markers = sceneMarkers([
+      { id: "m1", kind: "climb", km_from: 2, km_to: 4, facts: {} },
+      { id: "m2", kind: "fade", km_from: 7, km_to: 7, facts: {} },
+    ]);
+
+    expect([...markers.entries()]).toEqual([
+      [2, "①"],
+      [3, "①"],
+      [4, "①"],
+      [7, "②"],
+    ]);
+  });
+});
+
+describe("ActivityDetail legacy analysis", () => {
+  it("test_legacy_sections_behind_disclosure", async () => {
+    stubFetch({
+      detail: LONG_RUN_DETAIL,
+      sections: {
+        ...SUMMARY_SECTIONS,
+        efficiency: {
+          data: { evaluation: "接地時間は安定していました。" },
+          parse_error: false,
+          raw: null,
+        },
+        phase: {
+          data: { warmup: "入りは丁寧でした。" },
+          parse_error: false,
+          raw: null,
+        },
+      },
+      track: [],
+      report: LONG_RUN_REPORT,
+    });
+    renderDetail();
+
+    // The five graded sections are kept and readable, but they are no longer
+    // what the page says: they sit folded away under one line (#1247).
+    const trigger = await screen.findByText("以前の分析（旧形式）");
+    const details = trigger.closest("details");
+    expect(details?.hasAttribute("open")).toBe(false);
+    expect(
+      within(details as HTMLElement).getAllByText("接地時間は安定していました。")
+        .length,
+    ).toBeGreaterThan(0);
+    expect(
+      within(details as HTMLElement).getByText("入りは丁寧でした。"),
+    ).toBeInTheDocument();
+  });
+
+  it("omits the disclosure when nothing legacy was saved", async () => {
+    stubFetch({
+      detail: LONG_RUN_DETAIL,
+      sections: {
+        run_note: {
+          data: {
+            story: "ロング前日の一本でした。狙いどおりに収まっています。",
+            good_points: [
+              { text: "心拍が終始ゾーン2でした。", evidence: "signals.hr_drift" },
+            ],
+            growth_points: [],
+            next_challenge: "次回も150bpmを超えないように入りましょう。",
+            timeline: [{ moment_id: "m1", text: "抑えて入れました。" }],
+            notes: [],
+          },
+          parse_error: false,
+          raw: null,
+        },
+      },
+      track: [],
+      report: LONG_RUN_REPORT,
+    });
+    renderDetail();
+
+    expect(
+      await screen.findByText("ロング前日の一本でした。狙いどおりに収まっています。"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("以前の分析（旧形式）")).not.toBeInTheDocument();
   });
 });
 
@@ -887,7 +1117,7 @@ describe("ActivityDetail version selector", () => {
       let body: unknown;
       if (url.includes("/sections/versions")) {
         body = [
-          { run_id: 2, created_at: NEW_STAMP, section_types: ["summary"] },
+          { run_id: 2, created_at: NEW_STAMP, section_types: ["run_note"] },
           {
             run_id: 1,
             created_at: OLD_STAMP,
@@ -897,14 +1127,23 @@ describe("ActivityDetail version selector", () => {
       } else if (url.includes("/sections")) {
         const pinned = url.includes("run_id=");
         body = {
-          summary: {
+          run_note: {
             data: {
-              star_rating: pinned ? "★★★☆☆ 3.0/5.0" : "★★★★☆ 4.2/5.0",
+              story: pinned ? "旧版の総評です。" : "最新版の総評です。",
+              good_points: [
+                { text: "心拍が安定していました。", evidence: "signals.hr_drift" },
+              ],
+              growth_points: [],
+              next_challenge: "次回も同じ入りで。",
+              timeline: [],
+              notes: [],
             },
             parse_error: false,
             raw: null,
           },
         };
+      } else if (url.includes("/report")) {
+        body = BASE_REPORT;
       } else if (url.includes("/time-series")) {
         body = { timestamps: [], metrics: {} };
       } else if (url.includes("/track")) {

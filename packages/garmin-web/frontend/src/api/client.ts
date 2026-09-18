@@ -5,6 +5,7 @@ import type {
   MonthPlan,
   RacePredictionHistory,
   RaceReadiness,
+  RunReport,
   SectionsResponse,
   SectionVersion,
   SplitAnomaliesResponse,
@@ -108,6 +109,24 @@ export async function fetchActivityDetail(
     throw new Error(`Failed to fetch activity detail: ${response.status}`);
   }
   return (await response.json()) as ActivityDetailResponse;
+}
+
+/**
+ * The deterministic run report for one activity (#1250).
+ *
+ * One request carries the plan verdict, every metric against the athlete's own
+ * normal range, the run's scenes, the HR zones and the conditions — the page
+ * never stitches those together itself, and every past run gets them without
+ * having been re-analysed by an LLM.
+ */
+export async function fetchRunReport(
+  activityId: string | number,
+): Promise<RunReport> {
+  const response = await fetch(`/api/activities/${activityId}/report`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch run report: ${response.status}`);
+  }
+  return (await response.json()) as RunReport;
 }
 
 export async function fetchTimeSeries(

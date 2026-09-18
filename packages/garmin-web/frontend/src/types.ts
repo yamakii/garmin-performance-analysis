@@ -482,6 +482,142 @@ export interface SectionVersion {
   section_types: string[];
 }
 
+// --- Deterministic run report (`GET /api/activities/{id}/report`, #1250) ---
+
+/** One axis of the plan card: what was asked, what happened, on plan or not. */
+export interface PlanCheckRow {
+  /** "intensity" | "volume" | "hr_ceiling" | "rest". */
+  axis: string;
+  target: string;
+  actual: string;
+  status: "on_plan" | "off_plan";
+  on_plan: boolean;
+}
+
+/** The prescribed HR cap and the time actually spent above it. */
+export interface HrCeiling {
+  bpm: number;
+  seconds_over: number;
+  pct_over: number;
+}
+
+export interface RunPlan {
+  /** ✅ / 🟡 / 🔴, as `compute_prescription_verdict` decided it. */
+  verdict: string;
+  title: string;
+  checks: PlanCheckRow[];
+  hr_ceiling: HrCeiling | null;
+}
+
+/**
+ * One metric judged against the athlete's own normal range.
+ *
+ * `z > 0` is always the *unfavourable* side, whichever way the metric itself
+ * reads — which is why `higher_is_worse` (cadence and power efficiency are
+ * worse when *low*) is what names the side in prose, not the sign of `z`.
+ */
+export interface RunSignal {
+  family: "form" | "cardio";
+  metric: string;
+  label_ja: string;
+  unit: string;
+  today: number | null;
+  expected: number | null;
+  normal_low: number | null;
+  normal_high: number | null;
+  z: number | null;
+  status: "within" | "edge" | "outside" | "insufficient";
+  adverse: boolean;
+  streak: number;
+  reason: string | null;
+  /** Served only by newer reports; derived from `metric` when absent. */
+  higher_is_worse?: boolean;
+  direction?: string | null;
+  n?: number;
+}
+
+/** Share of the run spent in one Garmin native HR zone. */
+export interface RunZoneShare {
+  zone: number;
+  pct: number;
+}
+
+/** A turning point of the run: where it happened and what moved (#1249). */
+export interface RunMoment {
+  id: string;
+  kind: string;
+  km_from: number;
+  km_to: number;
+  facts: Record<string, unknown>;
+}
+
+/** A scene that keeps coming back at the same point of the run. */
+export interface RunRecurrence {
+  kind: string;
+  km: number;
+  count: number;
+  of: number;
+  dates: string[];
+}
+
+export interface RunPhaseRow {
+  phase: string;
+  pace_s_per_km: number | null;
+  avg_hr: number | null;
+}
+
+export interface RunConditions {
+  temp_c: number | null;
+  humidity_pct: number | null;
+  wind_mps: number | null;
+  terrain: string | null;
+  elevation_gain_m: number | null;
+}
+
+export interface RunReport {
+  activity_id: number;
+  activity_date: string;
+  intensity_category: string;
+  headline: { plan_label: string; flag_count: number; flag_labels: string[] };
+  plan: RunPlan | null;
+  signals: RunSignal[];
+  zones: RunZoneShare[];
+  moments: RunMoment[];
+  recurrence: RunRecurrence[];
+  phases: RunPhaseRow[];
+  conditions: RunConditions;
+  vs_previous: Record<string, unknown> | null;
+  next_run_target: Record<string, unknown> | null;
+}
+
+// --- The coach's note: the one LLM-written section (#1251) ---
+
+/** A sentence and the report key it is allowed to lean on. */
+export interface GroundedPoint {
+  text: string;
+  evidence: string;
+}
+
+export interface RunNoteTimelineItem {
+  moment_id: string;
+  text: string;
+}
+
+export interface RunNoteSignalNote {
+  signal: string;
+  text: string;
+}
+
+export interface RunNote {
+  story: string;
+  good_points: GroundedPoint[];
+  growth_points: GroundedPoint[];
+  next_challenge: string;
+  timeline: RunNoteTimelineItem[];
+  notes: RunNoteSignalNote[];
+  question?: string | null;
+}
+
 // --- Section analysis data types (from Spike #198) ---
 
 export interface SectionMetadata {

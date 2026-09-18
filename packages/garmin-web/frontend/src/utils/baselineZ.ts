@@ -40,32 +40,56 @@ const HALF_TRACK = 50;
 /** z of this magnitude fills the half track; anything beyond is clamped. */
 const Z_FULL_SCALE = 3;
 
+/** Which way a deviation points once the metric's polarity is applied. */
+export type ZDirection = "favorable" | "unfavorable" | "neutral";
+
+/**
+ * The minimum a row needs to be drawn as a bar: how far out it is and which
+ * way that is. The wellness panel and the single run's normal-range rows both
+ * hang bars off the same centre line, so they share this arithmetic rather
+ * than each growing a z-bar of their own (#1252).
+ */
+export interface ZBarRow {
+  z: number | null;
+  direction: ZDirection;
+}
+
 /** One metric's deviation, ready to draw. */
-export interface ZRow {
+export interface ZRow extends ZBarRow {
   key: MetricBaseline["metric"];
   label: string;
-  z: number | null;
   /** The reader's own adverse flag, as served. */
   adverse: boolean;
   /** |z| > 1.5 — far enough out to be called 基準外. */
   outside: boolean;
-  /** Which way the deviation points, once the metric's polarity is applied. */
-  direction: "favorable" | "unfavorable" | "neutral";
 }
 
 /** Fixed row order: the two readings the morning turns on, then readiness. */
 const ROW_ORDER: MetricBaseline["metric"][] = ["hrv", "rhr", "readiness"];
 
+/**
+ * Direction of a deviation given which side of the baseline is the bad one.
+ *
+ * `higherIsWorse` is the metric's polarity, not the sign of the reading: a
+ * resting heart rate and a ground contact time are worse when high, a cadence
+ * is worse when low, and both must end up on the same side of the track.
+ */
+export function zDirection(
+  z: number | null,
+  higherIsWorse: boolean,
+): ZDirection {
+  if (z == null || z === 0) {
+    return "neutral";
+  }
+  return z > 0 === higherIsWorse ? "unfavorable" : "favorable";
+}
+
 /** Direction of one metric's deviation, or neutral when it has none. */
 function directionOf(
   metric: MetricBaseline["metric"],
   z: number | null,
-): ZRow["direction"] {
-  if (z == null || z === 0) {
-    return "neutral";
-  }
-  const above = z > 0;
-  return above === HIGHER_IS_BETTER[metric] ? "favorable" : "unfavorable";
+): ZDirection {
+  return zDirection(z, !HIGHER_IS_BETTER[metric]);
 }
 
 /** The three metrics as bar rows, in display order. */
@@ -92,7 +116,7 @@ export function baselineZRows(data: WellnessBaselineDeviation): ZRow[] {
  * "everything on the right is what to worry about" regardless of which
  * direction each metric's good side happens to be.
  */
-export function zBarStyle(row: ZRow): { left: string; width: string } {
+export function zBarStyle(row: ZBarRow): { left: string; width: string } {
   const magnitude = row.z == null ? 0 : Math.abs(row.z);
   const width = Math.min((magnitude / Z_FULL_SCALE) * HALF_TRACK, HALF_TRACK);
   const left = row.direction === "unfavorable" ? HALF_TRACK : HALF_TRACK - width;
