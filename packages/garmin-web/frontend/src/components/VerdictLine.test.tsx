@@ -26,6 +26,21 @@ describe("VerdictLine", () => {
     expect(screen.getByText("質練OK。").className).not.toMatch(/text-status-/);
   });
 
+  it("test_verdict_line_sub_size_is_not_a_heading", () => {
+    render(
+      <VerdictLine size="sub" verdict="処方どおり" rest=" · 特記なし" />,
+    );
+
+    // A page that already has a title keeps it as the `h1`; the verdict about
+    // it is a paragraph one step down the scale (#1270).
+    expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
+    const line = screen.getByText("処方どおり").parentElement as HTMLElement;
+    expect(line.tagName).toBe("P");
+    expect(line.className).toContain("text-xl");
+    expect(line.className).not.toContain("text-[36px]");
+    expect(line.className).not.toContain("text-[40px]");
+  });
+
   it("renders the lead and actions only when given", () => {
     const { container, rerender } = render(<VerdictLine verdict="質練OK。" />);
     expect(container.querySelectorAll("p")).toHaveLength(0);
