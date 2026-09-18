@@ -21,6 +21,7 @@ from garmin_mcp.validation.section_schemas import validate_section_data
 from garmin_mcp.validation.validators import (
     check_form_trend_consistency,
     check_narration_numeric_consistency,
+    check_run_note_grounding,
     check_star_weighting_consistency,
 )
 
@@ -72,6 +73,26 @@ def merge_section_analyses(temp_dir: Path, *, keep: bool = False) -> dict:
                     f"{section_type}: schema validation failed: {schema_errors}"
                 )
                 continue  # Do not insert a schema-invalid section.
+
+            if section_type == "run_note":
+                # The coach review is the only LLM-written part of the redesigned
+                # single-run page (Epic #1247), so every claim in it is checked
+                # against the same deterministic report the page renders. An
+                # ungrounded section is never inserted: the page would then show
+                # prose that contradicts the figures beside it.
+                report = GarminDBReader().get_run_report(activity_id)
+                if not report:
+                    failed.append(section_type)
+                    errors.append(
+                        f"{section_type}: no run report for activity "
+                        f"{activity_id}; cannot verify the claims"
+                    )
+                    continue  # Do not insert an unverifiable coach review.
+                ok, reason = check_run_note_grounding(analysis_data, report)
+                if not ok:
+                    failed.append(section_type)
+                    errors.append(f"{section_type}: {reason}")
+                    continue  # Do not insert an ungrounded coach review.
 
             if section_type == "efficiency":
                 trend = GarminDBReader().physiology.get_form_baseline_trend(

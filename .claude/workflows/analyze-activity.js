@@ -1,11 +1,11 @@
 export const meta = {
   name: 'analyze-activity',
   description:
-    'Ingest one activity, prefetch context once, analyze 5 sections in parallel (CONTEXT passed inline), proofread, then merge into DuckDB',
+    'Ingest one activity, prefetch the CONTEXT bundle + the deterministic run report, write the single coach-review section (run_note), proofread it, then merge into DuckDB',
   phases: [
-    { title: 'Fetch', detail: 'catch-up ingest + ingest activity + prefetch CONTEXT (returned inline)' },
-    { title: 'Analyze', detail: 'efficiency/phase/environment/split in parallel, then summary (siblings inline)' },
-    { title: 'Finalize', detail: 'proofread JSON, merge into DuckDB' },
+    { title: 'Fetch', detail: 'catch-up ingest + ingest activity + prefetch CONTEXT and run report (returned inline)' },
+    { title: 'Analyze', detail: 'run-note-analyst writes the one run_note section' },
+    { title: 'Finalize', detail: 'proofread run_note.json, merge into DuckDB' },
   ],
 }
 
@@ -13,10 +13,11 @@ export const meta = {
 // "YYYY-MM-DD" (bare string) | { date: "YYYY-MM-DD" } | undefined (=> today)
 //
 // CONTEXT handoff: workflow agentTypes only reliably receive their declared MCP
-// tools + Write (built-in Read/Bash are NOT granted to the unified analyst), so
-// CONTEXT is fetched ONCE by the Fetch agent and passed INLINE into each section
-// prompt. The section agents never read files; the merge dir (built here by
-// buildTempDir, not supplied by the agent) holds only {section}.json outputs.
+// tools + Write (built-in Read/Bash are NOT granted to the run-note analyst), so
+// both inputs — the prefetch CONTEXT bundle and the deterministic run report —
+// are fetched ONCE by the Fetch agent and passed INLINE into the analysis
+// prompt. The analyst never reads files; the merge dir (built here by
+// buildTempDir, not supplied by the agent) holds only run_note.json.
 //
 // ── pure logic (side-effect-free; extracted & unit-tested in CI) ─────────
 // The block between the markers below is evaluated by
@@ -66,11 +67,11 @@ function shouldAnalyze(fetch) {
   return !!(fetch && fetch.has_run)
 }
 
-// The 5 section JSONs must all land in ONE directory or the merge sees an empty
-// dir and drops the whole analysis. The fetch agent has returned an unexpanded
-// shell expression (`/tmp/analysis_<id>_$(cat ... || true)`) and a literal
-// "placeholder" for that path before (#871): Bash-using agents expanded it and
-// Write-using agents did not, scattering the outputs across three directories.
+// The section JSON must land in the SAME directory the merge reads, or the merge
+// sees an empty dir and drops the whole analysis. The fetch agent has returned an
+// unexpanded shell expression (`/tmp/analysis_<id>_$(cat ... || true)`) and a
+// literal "placeholder" for that path before (#871): Bash-using agents expanded
+// it and Write-using agents did not, scattering the outputs across directories.
 // So the workflow — not the agent — builds the path; the agent only supplies a
 // plain epoch suffix, and anything else fails fast BEFORE the expensive analysis.
 const TEMP_SUFFIX_PATTERN = '^[0-9]{6,}$'
@@ -90,68 +91,42 @@ function buildTempDir(activityId, tempSuffix) {
   return `/tmp/analysis_${id}_${suffix}`
 }
 
-// All four unified sections (efficiency/phase/environment/summary) plus `split`
-// run in ONE parallel barrier. summary derives cross-section consistency from the
-// shared CONTEXT (not from sibling outputs), so it does not wait for the other
-// sections — nothing here is serial.
+// One analysis task (Epic #1247): everything a number can decide is rendered
+// deterministically by the run report, so the only LLM-written section left is
+// the coach review. The plan stays a list so the Analyze phase keeps its shape.
 function sectionPlan() {
-  return {
-    unified: ['efficiency', 'phase', 'environment', 'summary'],
-    extra: 'split',
-  }
+  return ['run_note']
 }
 
 function fetchPrompt(date) {
   const d = date ? `"${date}"` : 'today（実行日の YYYY-MM-DD）'
   return (
     `あなたは分析パイプラインの fetch ステージです。対象日 ${date ?? 'today'} のランニング activity を取り込み、` +
-    `分析用 CONTEXT を取得して**返却値 context_json に格納**します。\n\n` +
+    `分析用 CONTEXT と決定論的ランレポートを取得して**返却値に格納**します。\n\n` +
     `1. mcp__garmin-db__catch_up_ingest(end_date=${date ? `"${date}"` : '省略（内部既定 today）'}) で ` +
     `ランニング・体重・補強の差分を取り込む。短い要約を catch_up_summary に（例「ラン1/体重0/補強0」「差分なし」）。\n` +
     `2. mcp__garmin-db__ingest_activity(date=${d}) で当日ランを取り込み、activity_id と activity_date を取得。\n` +
     `   - ランニング activity が無い（activity_id が返らない）→ has_run=false で即返す。\n` +
-    `3. ランがある場合のみ has_run=true。Bash で次の2コマンドを実行し、それぞれの出力を取得する:\n` +
+    `3. ランがある場合のみ has_run=true。Bash で次の3コマンドを実行し、それぞれの出力を取得する:\n` +
     `   date +%s   # 10桁の epoch。出力された数字をそのまま temp_suffix に入れる\n` +
     `   uv run --directory packages/garmin-mcp-server python -m garmin_mcp.scripts.prefetch_activity_context <activity_id>\n` +
-    `   - prefetch 出力が非空かつ "error" を含まないことを確認（含む/空なら fail として報告）。\n` +
-    `4. schema で {activity_id, activity_date, has_run, temp_suffix, context_json, catch_up_summary} を返す。\n` +
-    `   **context_json には手順3の prefetch 出力（1行 JSON 文字列）を「一字一句そのまま」格納すること**` +
-    `（要約・整形・キー削除をしない。後段のセクション分析がこの実データのみを使う）。\n` +
+    `   uv run --directory packages/garmin-mcp-server python -m garmin_mcp.scripts.prefetch_run_report <activity_id>\n` +
+    `   - 2つの prefetch 出力がいずれも非空かつ "error" を含まないことを確認（含む/空なら fail として報告）。\n` +
+    `4. schema で {activity_id, activity_date, has_run, temp_suffix, context_json, report_json, catch_up_summary} を返す。\n` +
+    `   **context_json / report_json には手順3の各出力（1行 JSON 文字列）を「一字一句そのまま」格納すること**` +
+    `（要約・整形・キー削除をしない。後段の分析がこの実データのみを使う）。\n` +
     `   **temp_suffix には実際に実行した \`date +%s\` の出力（数字のみ）を格納すること**。` +
     `\`$(...)\` のような未展開シェル式や "placeholder" 等の仮値は禁止（数字以外はワークフローが拒否して中断する）。` +
     `出力先ディレクトリはワークフローが組み立てるため、mkdir は不要。`
   )
 }
 
-function buildSectionPrompt(section, ctx) {
-  return (
-    `Activity ID ${ctx.activityId} (${ctx.activityDate}) の **${section}** セクションのみを分析してください。\n` +
-    `CONTEXT（prefetch バンドル, JSON）は以下です。この実データのみに基づき、推定値・fixture 値で代替しないこと:\n` +
-    `<CONTEXT>\n${ctx.contextJson}\n</CONTEXT>\n` +
-    `ONLY ${section}: ${section}.json だけを生成・validate・保存し、他セクションは一切生成しないこと。\n` +
-    `保存先: ${ctx.tempDir}/${section}.json`
-  )
-}
-
-function buildSummaryPrompt(ctx) {
-  return (
-    `Activity ID ${ctx.activityId} (${ctx.activityDate}) の **summary** セクションのみを分析してください。\n` +
-    `CONTEXT（prefetch バンドル, JSON）は以下です。この実データのみに基づき、推定値・fixture 値で代替しないこと:\n` +
-    `<CONTEXT>\n${ctx.contextJson}\n</CONTEXT>\n` +
-    `summary は他セクションと並列生成されるため兄弟JSONは渡されません。整合は CONTEXT から取ること:` +
-    `HR/ゾーン評価は CONTEXT の zone_distribution_rating / form_evaluation を権威的ソースとし、` +
-    `それと矛盾する評価（強度不足・過負荷等）を独自に作らないこと。\n` +
-    `ONLY summary: summary.json だけを生成・validate・保存すること。\n` +
-    `保存先: ${ctx.tempDir}/summary.json`
-  )
-}
-
-// The split agent holds no prescription / HR-zone tool, so without this subset
-// it can neither judge a split against the step prescribed for it nor source a
-// zone label -- it wrote "HR164bpm(Zone4)" from inference (#1093). Only the
-// keys it needs are forwarded: the full bundle is what "split needs no CONTEXT"
-// was avoiding, and per-split form data it already fetches itself.
-function buildSplitContext(contextJson) {
+// The run report carries the run itself (plan verdict, signals, scenes,
+// conditions); what it does NOT carry is why the day was prescribed, how the
+// athlete woke up and what the previous same-type run looked like. Only those
+// keys are forwarded — the full bundle would double the prompt with numbers the
+// page already renders (form baselines, zone percentages, star scores).
+function buildRunNoteContext(contextJson) {
   let bundle
   try {
     bundle = JSON.parse(contextJson)
@@ -161,14 +136,10 @@ function buildSplitContext(contextJson) {
   if (bundle == null || typeof bundle !== 'object') return ''
 
   const p = bundle.prescription_for_run
-  const v = bundle.prescription_verdict
-  const zones = bundle.hr_zones_detail && bundle.hr_zones_detail.zones
+  const similar = bundle.similar_workouts && bundle.similar_workouts.similar_activities
   return JSON.stringify({
-    activity_id: bundle.activity_id ?? null,
-    activity_date: bundle.activity_date ?? null,
     training_type: bundle.training_type ?? null,
-    phase_category: bundle.phase_category ?? null,
-    progression_session: bundle.progression_session ?? null,
+    week_position: bundle.week_position ?? null,
     prescription_for_run: p
       ? {
           title: p.title ?? null,
@@ -180,40 +151,40 @@ function buildSplitContext(contextJson) {
           rationale: p.rationale ?? null,
         }
       : null,
-    prescription_verdict: v
-      ? { verdict: v.verdict ?? null, reasons: v.reasons ?? [], on_plan: v.on_plan ?? [] }
-      : null,
-    hr_zones_detail: Array.isArray(zones)
-      ? {
-          zones: zones.map((z) => ({
-            zone_number: z.zone_number,
-            low_boundary: z.low_boundary,
-            high_boundary: z.high_boundary,
-          })),
-        }
-      : null,
+    prescription_verdict: bundle.prescription_verdict ?? null,
+    morning_wellness: bundle.morning_wellness ?? null,
+    vs_previous: bundle.vs_previous ?? null,
+    previous_same_type: bundle.previous_same_type ?? null,
+    // Top 3 only: the comparison is context for one sentence, not a table.
+    similar_workouts: Array.isArray(similar) ? similar.slice(0, 3) : null,
+    gear: bundle.gear ?? null,
+    long_run_gate: bundle.long_run_gate ?? null,
   })
 }
 
-function buildSplitPrompt(ctx) {
-  const splitContext = buildSplitContext(ctx.contextJson)
-  const contextBlock = splitContext
-    ? `処方とHRゾーン境界（CONTEXT のサブセット, JSON）は以下です。この実データのみに基づき、` +
-      `ゾーン名は hr_zones_detail の境界からのみラベルし、処方があるスプリットはその段階に対する` +
-      `達成度で評価してください（推測でゾーン名・LTHR を書かない）:\n` +
-      `<CONTEXT>\n${splitContext}\n</CONTEXT>\n`
+function buildRunNotePrompt(ctx) {
+  const contextSubset = buildRunNoteContext(ctx.contextJson)
+  const contextBlock = contextSubset
+    ? `補助 CONTEXT（処方・週内の位置・当日朝の回復・前回同種ラン・シューズ, JSON）:\n` +
+      `<CONTEXT>\n${contextSubset}\n</CONTEXT>\n`
     : ''
   return (
-    `Activity ID ${ctx.activityId} (${ctx.activityDate}) の全スプリットを詳細分析してください。\n` +
+    `Activity ID ${ctx.activityId} (${ctx.activityDate}) の **run_note**（コーチレビュー）セクションを作成してください。\n` +
+    `決定論的ランレポート（REPORT, JSON）は以下です。数値・判定・シーンはすべてここから転記し、計算し直さないこと:\n` +
+    `<REPORT>\n${ctx.reportJson}\n</REPORT>\n` +
     contextBlock +
-    `結果は ${ctx.tempDir}/split.json に保存してください。`
+    `evidence キー・moment_id・signal 名は REPORT に実在するものだけを使うこと` +
+    `（merge 時の grounding ゲートが解決できないキーを拒否します）。\n` +
+    `ONLY run_note: run_note.json だけを生成・validate・保存し、他セクションは一切生成しないこと。\n` +
+    `保存先: ${ctx.tempDir}/run_note.json`
   )
 }
 
 function proofreadPrompt(ctx) {
   return (
-    `${ctx.tempDir} 配下の *.json の日本語散文フィールドを校正してください。` +
-    `崩れ（誤字・誤変換・活用崩れ）のみを Edit で最小修正し、数値・★・キー・構造・意味は変えないでください。`
+    `${ctx.tempDir}/run_note.json の日本語散文フィールドを校正してください。` +
+    `崩れ（誤字・誤変換・活用崩れ）のみを Edit で最小修正し、数値・キー・構造・意味、` +
+    `および evidence / moment_id / signal の値は変えないでください。`
   )
 }
 
@@ -222,10 +193,22 @@ function mergePrompt(ctx) {
     `分析結果を DuckDB に登録します。Bash で次を順に実行し、merge の JSON 出力をそのまま schema で返してください:\n` +
     `ls -1 ${ctx.tempDir}\n` +
     `uv run --directory packages/garmin-mcp-server python -m garmin_mcp.scripts.merge_section_analyses ${ctx.tempDir}\n` +
-    `ls -1 の一覧に efficiency/phase/environment/summary/split の .json が揃っているか確認し、` +
-    `欠けているセクション名（およびディレクトリ自体が無い場合はその旨）を errors に列挙してください。\n` +
+    `ls -1 の一覧に run_note.json があるか確認し、無い場合（およびディレクトリ自体が無い場合）はその旨を errors に列挙してください。\n` +
     `出力は {succeeded:[...], failed:[...], errors:[...]} 形式。failed が空なら temp は自動削除されます。`
   )
+}
+
+// Fold the merge output into the workflow's return value. run_note either lands
+// or it does not: there is no partial-success mode left to report (#1253).
+function summarizeRun(fetched, merge) {
+  return {
+    status: 'done',
+    activity_id: fetched?.activity_id ?? null,
+    activity_date: fetched?.activity_date ?? null,
+    succeeded: merge?.succeeded ?? [],
+    failed: merge?.failed ?? [],
+    errors: merge?.errors ?? [],
+  }
 }
 
 // <<< testable
@@ -243,6 +226,7 @@ const FETCH_SCHEMA = {
     // digits only — the workflow builds the path from this (see buildTempDir).
     temp_suffix: { type: ['string', 'null'], pattern: TEMP_SUFFIX_PATTERN },
     context_json: { type: ['string', 'null'] },
+    report_json: { type: ['string', 'null'] },
     catch_up_summary: { type: 'string' },
   },
 }
@@ -261,15 +245,16 @@ const MERGE_SCHEMA = {
 // pipeline whether invoked once (single-date mode) or per day in a serial
 // backfill loop. DuckDB is single-writer, so days must not overlap the merge.
 async function runOneDay(date) {
-  // ── Phase Fetch: ingest + prefetch CONTEXT once (returned inline) ──
+  // ── Phase Fetch: ingest + prefetch CONTEXT and run report (inline) ──
   phase('Fetch')
   const fetched = await agent(fetchPrompt(date), {
     label: 'fetch',
     phase: 'Fetch',
     effort: 'low',
-    // orchestration (MCP/bash calls + JSON echo), but context_json must be copied
-    // verbatim ("一字一句そのまま") — haiku is unreliable at transcribing the large
-    // prefetch JSON, so pin sonnet. Pins the model instead of inheriting the session's.
+    // orchestration (MCP/bash calls + JSON echo), but context_json / report_json
+    // must be copied verbatim ("一字一句そのまま") — haiku is unreliable at
+    // transcribing the large prefetch JSON, so pin sonnet. Pins the model
+    // instead of inheriting the session's.
     model: 'sonnet',
     schema: FETCH_SCHEMA,
   })
@@ -279,40 +264,34 @@ async function runOneDay(date) {
     return { status: 'no_run', activity_date: fetched?.activity_date ?? date ?? null, catch_up_summary: fetched?.catch_up_summary ?? null }
   }
 
-  // Path is derived here (not taken from the agent) so every section, the
+  // Path is derived here (not taken from the agent) so the analyst, the
   // proofreader and the merge all address the exact same directory (#871).
   const ctx = {
     tempDir: buildTempDir(fetched.activity_id, fetched.temp_suffix),
     contextJson: fetched.context_json,
+    reportJson: fetched.report_json,
     activityId: fetched.activity_id,
     activityDate: fetched.activity_date,
   }
+  if (!ctx.reportJson || !String(ctx.reportJson).trim()) {
+    // Without the report there is nothing to ground the review against, and the
+    // merge gate would reject it after the expensive analysis. Stop here.
+    throw new Error('fetch returned no report_json (prefetch_run_report failed)')
+  }
   const plan = sectionPlan()
 
-  // ── Phase Analyze: all 4 unified sections + split in ONE parallel barrier ──
-  // summary uses CONTEXT-only consistency (no sibling JSONs), so it no longer
-  // runs serially after the others — wall-clock collapses to the slowest section.
+  // ── Phase Analyze: the one coach-review section ──
   phase('Analyze')
-  await parallel([
-    ...plan.unified.map((s) => () =>
-      agent(s === 'summary' ? buildSummaryPrompt(ctx) : buildSectionPrompt(s, ctx), {
-        label: s,
-        phase: 'Analyze',
-        // summary uses a focused, leaner agent (just summary rules) instead of
-        // loading the full unified def; efficiency/phase/environment stay on unified.
-        agentType: s === 'summary' ? 'summary-section-analyst' : 'unified-section-analyst',
-        // summary's cost is reasoning depth (4-axis eval, recs synthesis), not output
-        // volume (~2KB). Cap its effort to cut that reasoning time (output/UX unchanged).
-        ...(s === 'summary' ? { effort: 'medium' } : {}),
-      })
-    ),
-    () => agent(buildSplitPrompt(ctx), { label: plan.extra, phase: 'Analyze', agentType: 'split-section-analyst' }),
-  ])
+  await agent(buildRunNotePrompt(ctx), {
+    label: plan[0],
+    phase: 'Analyze',
+    agentType: 'run-note-analyst',
+  })
 
   // ── Phase Finalize: proofread Japanese prose, then merge into DuckDB ──
   phase('Finalize')
   await agent(proofreadPrompt(ctx), { label: 'proofread', phase: 'Finalize', agentType: 'proofreader' })
-  // pure orchestration (reads section JSONs, calls merge tool) — haiku suffices.
+  // pure orchestration (runs the merge script, echoes its JSON) — haiku suffices.
   const merge = await agent(mergePrompt(ctx), {
     label: 'merge',
     phase: 'Finalize',
@@ -320,18 +299,9 @@ async function runOneDay(date) {
     schema: MERGE_SCHEMA,
   })
 
-  const succeeded = merge?.succeeded ?? []
-  const failed = merge?.failed ?? []
-  log(`merge 完了（${fetched.activity_date}）: ${succeeded.length} 登録 / ${failed.length} 失敗`)
-
-  return {
-    status: 'done',
-    activity_id: fetched.activity_id,
-    activity_date: fetched.activity_date,
-    succeeded,
-    failed,
-    errors: merge?.errors ?? [],
-  }
+  const result = summarizeRun(fetched, merge)
+  log(`merge 完了（${result.activity_date}）: ${result.succeeded.length} 登録 / ${result.failed.length} 失敗`)
+  return result
 }
 
 // ── Backfill mode: analyze a capped list of days serially (single writer) ──

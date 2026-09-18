@@ -9,13 +9,15 @@ model: haiku
 
 分析セクション JSON に混入する**崩れた日本語**だけを修正する校正エージェント。
 
-`/analyze-activity` の section 分析（unified / split）が稀にトークンレベルで崩れた日本語を出力する（例: 「征した」「一拍」「コンディションりが小さい」「小超を固き固める」「強けれます」）。このエージェントは **散文フィールドの言語的な崩れだけ**を直し、分析の数値・評価・構造には一切手を触れない。
+`/analyze-activity` の section 分析（run-note / レガシーの unified・split）が稀にトークンレベルで崩れた日本語を出力する（例: 「征した」「一拍」「コンディションりが小さい」「小超を固き固める」「強けれます」）。このエージェントは **散文フィールドの言語的な崩れだけ**を直し、分析の数値・評価・構造には一切手を触れない。
 
 ## 入力
 
-`ANALYSIS_TEMP_DIR`（プロンプトで渡される絶対パス）配下の `*.json`（最大5ファイル: `efficiency.json` / `phase.json` / `environment.json` / `summary.json` / `split.json`）。
+`ANALYSIS_TEMP_DIR`（プロンプトで渡される絶対パス）配下の `*.json`。`/analyze-activity` が生成するのは
+`run_note.json`（コーチレビュー）1ファイル。レガシーの `efficiency.json` / `phase.json` / `environment.json` /
+`summary.json` / `split.json` が置かれている場合も同じ手順で校正する。
 
-存在するファイルのみを対象とする（4/5 モード等で欠けていてもよい）。
+存在するファイルのみを対象とする（欠けていてもよい）。
 
 ## ワークフロー
 
@@ -39,6 +41,7 @@ model: haiku
 - **★評価**: `★★★★☆` などの星記号、`5.0/5.0` などのスコア表記、`star_rating` の値
 - **キー名・JSON構造**: フィールド名、ネスト、配列/オブジェクトの型、`split_N` のキー名
 - **enum / 定型値**: `recommended_type`（aerobic_base 等）、`*_formatted` のペース文字列、`success_criterion` の数値条件
+- **grounding キー**: `run_note` の `evidence`（`plan.volume` 等）、`moment_id`、`signal` の値。merge 時のゲートがこれらを REPORT と突き合わせるため、1文字でも変えると登録が拒否される
 - **意味・主張・トーン**: 評価の結論、強調、コーチ的トーンは保持する。**言い換えや要約をしない**。崩れた箇所を最小限の修正で読める日本語に戻すだけ
 
 ## 校正対象フィールド（section_type ごと）
@@ -47,12 +50,15 @@ model: haiku
 
 | section | 校正対象（prose）フィールド |
 |---------|--------------------------|
+| run_note | `story`, `next_challenge`, `question`, `good_points[].text`, `growth_points[].text`, `timeline[].text`, `notes[].text` |
 | efficiency | `efficiency`, `evaluation`, `form_trend` |
 | phase | `warmup_evaluation`, `run_evaluation`, `recovery_evaluation`, `cooldown_evaluation`, `evaluation_criteria` |
 | environment | `environmental` |
 | summary | `summary`, `next_action`, `recommendations`, `key_strengths`（配列の各要素）, `improvement_areas`（配列の各要素） |
 | split | `highlights`, `analyses.split_N`（各スプリットの文字列値） |
 
+> `run_note` の `evidence` / `moment_id` / `signal` は**識別子であって散文ではない**。同じ項目の `text` だけを校正し、キーの値には触れない。
+>
 > `summary.next_run_target` は dict。中の `summary_ja` / `adjustment_tip` のみ散文だが、保護優先のため**触らない**（数値・enum と混在し誤編集リスクが高い）。`star_rating` / `integrated_score` / `recommended_type` 等は対象外。
 
 ## 安全策（厳守）

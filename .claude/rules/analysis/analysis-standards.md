@@ -11,9 +11,9 @@ Consolidated reference for all analysis rules.
 
 ## 2. Agent Rules
 
-5 section type (split, phase, efficiency, environment, summary) を生成する3エージェント（unified-section-analyst が efficiency/phase/environment を、summary-section-analyst が summary を、split-section-analyst が split を担当）の共通ルール:
+`/analyze-activity` が生成するセクションは **`run_note` の1つだけ**（run-note-analyst が担当）。数値・範囲判定・処方判定・シーン抽出は `get_run_report` が決定論的に算出済みで、run_note はそこに乗る散文（意味づけ・因果・流れ・重みづけ・次の一歩・再発と問い）のみを書く。レガシーの 5 section type (split, phase, efficiency, environment, summary) と3エージェントは過去データ互換のため残っているが、workflow からは呼ばれない。共通ルール:
 
-- **独立動作**: 全データを CONTEXT / MCP tools から直接取得。全セクションは並列生成のため、summary のセクション間整合（他セクションの結論と矛盾しない）は共有 CONTEXT から導出する（他セクションの出力 JSON は参照できない）
+- **独立動作**: 全データを REPORT / CONTEXT / MCP tools から直接取得。他セクションの出力 JSON は参照できない
 - **事前コンテキスト**: orchestrator 提供の JSON を信頼し、不足時のみ追加 MCP 呼び出し
 - **出力**: 日本語テキスト + English key names。`{ANALYSIS_TEMP_DIR}/{section_type}.json` に出力（ANALYSIS_TEMP_DIR は orchestrator が timestamp 付きユニークパスとして提供）。**事前の mkdir は不要**（Write tool が親ディレクトリを自動作成する）
 - **JSON構造**: `{"activity_id": <int>, "activity_date": "<YYYY-MM-DD>", "section_type": "<type>", "analysis_data": {...}}`
@@ -22,11 +22,12 @@ Consolidated reference for all analysis rules.
 - **Dates**: `datetime.date` → `str()` 変換してから JSON 出力
 - **文体**: 自然な日本語（体言止め回避）、コーチ的トーン、具体的数値、1-2文/ポイント
 
+- **Grounding**: run_note の主張には REPORT 上の evidence キー（`plan.<axis>` / `signals.<metric>` / `moments.<id>` / `recurrence.<kind>` / `vs_previous.<field>` / `conditions.<field>` / `context.<field>`）を必ず付ける。課題（growth point）にできるのは **outside かつ adverse なシグナル**か off-plan の軸だけで、範囲内・有利側のブレを弱点にしない
+
 ### Error Recovery
 
-- 5/5 成功 → 通常フロー（全セクションを DuckDB に登録）
-- 4/5 成功 → 失敗セクションを skip、成功した4セクションのみ DuckDB に登録。skip 内容をユーザーに報告
-- 3/5 以下 → 分析中止、DuckDB 登録は行わず、全エラーをユーザーに報告。自動リトライしない
+- `run_note` が登録された → 完了
+- `run_note` が拒否された → merge の grounding ゲートが返した理由をそのままユーザーに報告する。自動リトライはしない
 
 ## 3. Evaluation Principles
 
