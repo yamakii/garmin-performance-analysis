@@ -6,6 +6,7 @@ import {
   fetchMonthPlan,
   fetchRacePredictionHistory,
   fetchRaceReadiness,
+  fetchRunReport,
   fetchSections,
   fetchSectionVersions,
   fetchSplitAnomalies,
@@ -58,6 +59,7 @@ import type {
   RaceReadiness,
   RecoveryStatus,
   RecoveryTrend,
+  RunReport,
   SectionsResponse,
   SectionVersion,
   SplitAnomaliesResponse,
@@ -86,6 +88,23 @@ export function useActivityDetail(
   return useQuery({
     queryKey: ["activity", id],
     queryFn: () => fetchActivityDetail(id as string),
+    enabled: id != null,
+  });
+}
+
+/**
+ * The deterministic run report for one activity (#1250).
+ *
+ * It is the page's backbone: the verdict line, the plan card, the normal-range
+ * rows, the scenes of the run and the conditions all read from this one
+ * payload, so nothing on the page can disagree with anything else on it.
+ */
+export function useRunReport(
+  id: string | number | undefined,
+): UseQueryResult<RunReport, Error> {
+  return useQuery({
+    queryKey: ["runReport", id],
+    queryFn: () => fetchRunReport(id as string | number),
     enabled: id != null,
   });
 }

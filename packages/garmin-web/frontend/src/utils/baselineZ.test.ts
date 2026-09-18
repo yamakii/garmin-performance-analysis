@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MetricBaseline, WellnessBaselineDeviation } from "../types";
-import { baselineZRows, zBarStyle, type ZRow } from "./baselineZ";
+import { baselineZRows, zBarStyle, zDirection, type ZRow } from "./baselineZ";
 
 function metric(
   name: MetricBaseline["metric"],
@@ -81,7 +81,35 @@ describe("baselineZRows", () => {
   });
 });
 
+describe("zDirection", () => {
+  it("test_z_direction_follows_the_metric_polarity", () => {
+    // Ground contact time is worse when high: a positive z points the bad way.
+    expect(zDirection(1.2, true)).toBe("unfavorable");
+    expect(zDirection(-1.2, true)).toBe("favorable");
+    // Cadence is worse when low, so the same signs read the other way round.
+    expect(zDirection(1.2, false)).toBe("favorable");
+    expect(zDirection(-1.2, false)).toBe("unfavorable");
+    // No reading, no direction.
+    expect(zDirection(null, true)).toBe("neutral");
+    expect(zDirection(0, true)).toBe("neutral");
+  });
+});
+
 describe("zBarStyle", () => {
+  it("test_z_bar_style_takes_any_oriented_row", () => {
+    // Any row that knows how far out it is and which way that is can be drawn
+    // by the same helper — the wellness panel is not a special case (#1252).
+    expect(zBarStyle({ z: 1.5, direction: "unfavorable" })).toEqual({
+      left: "50%",
+      width: "25%",
+    });
+    expect(zBarStyle({ z: 1.5, direction: "favorable" })).toEqual({
+      left: "25%",
+      width: "25%",
+    });
+  });
+
+
   it("test_z_bar_style_clamps", () => {
     const rows = baselineZRows(
       deviation({
@@ -96,27 +124,25 @@ describe("zBarStyle", () => {
     });
 
     // Favourable and off the scale: clamped to the full left half.
-    expect(
-      zBarStyle({
-        key: "rhr",
-        label: "安静時心拍",
-        z: -4,
-        adverse: false,
-        outside: true,
-        direction: "favorable",
-      }),
-    ).toEqual({ left: "0%", width: "50%" });
+    const offScale: ZRow = {
+      key: "rhr",
+      label: "安静時心拍",
+      z: -4,
+      adverse: false,
+      outside: true,
+      direction: "favorable",
+    };
+    expect(zBarStyle(offScale)).toEqual({ left: "0%", width: "50%" });
 
     // No reading draws no bar.
-    expect(
-      zBarStyle({
-        key: "hrv",
-        label: "HRV",
-        z: null,
-        adverse: false,
-        outside: false,
-        direction: "neutral",
-      }).width,
-    ).toBe("0%");
+    const unread: ZRow = {
+      key: "hrv",
+      label: "HRV",
+      z: null,
+      adverse: false,
+      outside: false,
+      direction: "neutral",
+    };
+    expect(zBarStyle(unread).width).toBe("0%");
   });
 });
