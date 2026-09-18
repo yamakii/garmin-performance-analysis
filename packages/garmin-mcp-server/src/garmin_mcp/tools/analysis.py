@@ -17,7 +17,9 @@ from pydantic import BaseModel, Field
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.tools.registry import ToolDef
 
-_SECTION_TYPES = Literal["split", "phase", "efficiency", "environment", "summary"]
+_SECTION_TYPES = Literal[
+    "split", "phase", "efficiency", "environment", "summary", "run_note"
+]
 
 # ----------------------------------------------------------------------------
 # Params models

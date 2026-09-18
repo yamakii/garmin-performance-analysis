@@ -159,7 +159,7 @@ Validate section analysis data against Pydantic schema. Returns {valid: bool, er
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `section_type` | enum: `split`, `phase`, `efficiency`, `environment`, `summary` | **required** |  |
+| `section_type` | enum: `split`, `phase`, `efficiency`, `environment`, `summary`, `run_note` | **required** |  |
 | `analysis_data` | object | **required** |  |
 
 ### `get_analysis_contract`
@@ -170,7 +170,7 @@ Get analysis contract for a section type (output schema, evaluation thresholds, 
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `section_type` | enum: `split`, `phase`, `efficiency`, `environment`, `summary` | **required** | Section type |
+| `section_type` | enum: `split`, `phase`, `efficiency`, `environment`, `summary`, `run_note` | **required** | Section type |
 
 ### `find_unanalyzed_activities`
 

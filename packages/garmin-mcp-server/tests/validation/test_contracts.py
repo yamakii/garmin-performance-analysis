@@ -542,3 +542,34 @@ def test_contract_has_required_keys():
         assert required_keys.issubset(
             contract.keys()
         ), f"{section_type} missing keys: {required_keys - contract.keys()}"
+
+
+@pytest.mark.unit
+def test_contract_run_note_lists_prose_roles():
+    """The prose criterion travels with the contract (Epic #1247, #1251)."""
+    contract = get_contract("run_note")
+
+    assert contract["section_type"] == "run_note"
+    assert len(contract["prose_roles"]) == 6
+    assert len(contract["never_write"]) >= 5
+    # The six roles are the whole job of the section.
+    assert set(contract["prose_roles"]) == {
+        "meaning",
+        "causality",
+        "flow",
+        "weighting",
+        "next_action",
+        "recurrence_and_questions",
+    }
+    # Tone rules are referenced, not duplicated.
+    assert "analysis-standards.md" in contract["evaluation_policy"]["tone"]
+    # Every evidence prefix the grounding guard resolves is documented.
+    assert set(contract["evidence_keys"]) == {
+        "plan.<axis>",
+        "signals.<metric>",
+        "moments.<id>",
+        "recurrence.<kind>",
+        "vs_previous.<field>",
+        "conditions.<field>",
+        "context.<field>",
+    }
