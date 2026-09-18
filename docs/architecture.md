@@ -171,30 +171,118 @@ missing.
   the agents add Japanese narrative, not new numbers. HR zones always come from
   Garmin-native zones, never a `220−age` formula.
 
-### Continuous scores in the CONTEXT
+### Continuous scores in the CONTEXT (legacy star axes)
 
-Two ratings the agents used to derive from a *band table* are pre-computed as
-continuous numbers, because an LLM applying a step function made near-identical
-runs jump a whole star at a band edge (#1236). Both are computed on read in
-`prefetch_activity_context`, so the whole history is covered without a
-re-ingest, and the agents anchor on them (adjusting by at most ±0.5) instead of
-re-deriving:
+`prefetch_activity_context` computes two ratings as continuous numbers rather
+than letting an LLM apply a band table, because a step function made
+near-identical runs jump a whole star at a band edge (#1236):
+`zone_distribution_score` (the continuous form of `zone_distribution_rating`,
+interpolated over the same `ZONE_BAND_CUTS` the label uses, `null` for the
+"unknown" intensity category) and `form_scores.integrated_star_score` (the
+100-point `integrated_score` on the star scale,
+`clamp(5.0 − (100 − score) / 20, 1.0, 5.0)`, #1233). Both are additive and
+`null` when their source row is missing.
 
-- `zone_distribution_score` — the continuous form of
-  `zone_distribution_rating`. The run's intensity category (easy / moderate /
-  tempo / threshold / vo2max) selects the HR-zone band it is judged on;
-  `zone_band_pct` is the share of the run spent in that band, and the score
-  interpolates linearly over the *same* `ZONE_BAND_CUTS` the label uses —
-  excellent cut → 5.0, good → 4.0, fair → 3.0, continuing on that slope down to
-  a floor of 1.0. `null` for the "unknown" category, which has no intended band.
-  It feeds the summary's `hr_management` axis and the phase section's
-  `hr_control` axis.
-- `form_scores.integrated_star_score` — the 100-point `integrated_score` on the
-  star scale: `clamp(5.0 − (100 − score) / 20, 1.0, 5.0)`, i.e. 20 points per
-  star, the same mapping `scorer.compute_star_rating` uses (#1233).
+These exist for the **star axes of the five legacy analysis sections** only. The
+redesigned single-run page and the run note do not grade a run at all (see
+below) — a star is never the answer to "how was this run".
 
-Both keys are additive and `null` when their source row is missing, so an agent
-whose CONTEXT lacks them falls back to the categorical judgement.
+## Run report and the run note
+
+One activity is read as **one deterministic report** — `get_run_report(activity_id)`
+(`database/readers/run_report.py`), also served as web
+`GET /api/activities/{id}/report`. The page, the run-note agent, `/run-debrief`
+and `/daily-checkin` all read that same dict, so they cannot disagree about what
+happened, and every past run gets the current page without being re-analysed by
+an LLM (Epic #1247).
+
+**Structured by the reader's questions**, not by the analyst's data families:
+*did I do the plan* (`plan`), *was anything unusual* (`signals`, `moments`,
+`recurrence`), *what next* (`next_run_target`). Everything else — `phases`,
+`zones`, `conditions`, `vs_previous` — is the record.
+
+**Only two judgements exist on a single run**, and neither is a grade:
+
+1. **Plan vs actual** — `compute_prescription_verdict` scores the day's
+   prescription axis by axis (`target` / `actual` / `on_plan`, plus the HR
+   ceiling's `seconds_over` / `pct_over`) into ✅ / 🟡 / 🔴. `plan` is `null`
+   when the day carried no prescription.
+2. **Today vs the athlete's own normal range** — per metric, not against a
+   population or a fixed band.
+
+### Run-level normal range
+
+`analysis/normal_range.py` owns the run-level thresholds, and
+`analysis/run_signals.py` applies them to seven oriented signals (`gct`, `vo`,
+`vr`, `cadence`, `power`, `hr_vs_expected`, `hr_drift`; `z > 0` is always the
+unfavourable side, so `adverse` is simply "outside on the bad side"):
+
+- **Window** — the athlete's own prior runs over the trailing `WINDOW_DAYS`
+  (60).
+- **Robust centre and spread** — median and `1.4826 × MAD`, not mean ± SD. A
+  mean/SD band over mixed families put the drift band at −13 %…+22 %, wide
+  enough that nothing was ever outside it; the same runs judged robustly within
+  one family give −1 %…+10 %.
+- **Status** — `outside` at `|z| ≥ 2.0`, `edge` at `≥ 1.5` (text only, no
+  colour), otherwise `within`. A `streak` counts consecutive judged runs at
+  `|z| ≥ 1.0` — repetition of a mild lean, which is why the streak threshold is
+  deliberately lower than the edge.
+- **Not judged** (`insufficient` + a `reason`) — fewer than 3 valid running
+  splits, fewer than 10 comparable prior runs, a missing value, a pace outside
+  the form model's trained speed range, or — for HR drift — a run hot enough
+  that the drift is thermal rather than durability. Silence beats a confident
+  number built on three runs.
+- **Same-family baselines for the HR signals** — the four form metrics are
+  already pace-corrected, so every prior run is comparable; `hr_vs_expected`
+  (expected HR from the `HeatAdjustmentModel`) and `hr_drift` are not comparable
+  across sessions, so their baseline is restricted to the same intensity family.
+
+`normal_low` / `normal_high` come back in the metric's display unit (ms, cm, %,
+spm, bpm), so a page prints "260 ms, usual 252–262" without knowing how the band
+was built. This replaces grading a run mean against a *split-level* sigma: over
+63 runs that score was uncorrelated with HR or rest and clustered low on short
+runs, because a run mean is naturally far less variable than one split.
+
+### Scene candidates
+
+`analysis/run_moments.py` detects the turning points deterministically (2–5 per
+run) so the LLM selects and explains, but cannot invent one: `ceiling_touch`,
+`self_correction`, `fade`, `walk_break`, `strong_finish`, `surge`, `climb`,
+`start` (plus `steady` for an uneventful run), in that priority order — a
+kilometre matching several rules gets the single highest-priority kind, and the
+same order decides which scenes survive the cap. Fragments below the shared
+`MIN_SPLIT_KM` are dropped before anything is measured, and the median every
+rule is measured against is taken over running splits only, so walk breaks do
+not raise the bar that would expose them. `detect_recurrence` then reports the
+kinds that keep happening at the same kilometre across the previous same-family
+runs.
+
+### What earns prose
+
+`run_note` is the one LLM-written section. A sentence stays only if deleting it
+loses something a figure or table cannot give — **six roles**: *meaning* (what
+the run was for and whether it served that), *causality* (a signal tied to its
+likely cause in the order intensity → terrain → weather + start time → recovery
+→ form, saying so when the cause is uncertain), *flow* (scene by scene, not
+kilometre by kilometre), *weighting* (what matters and what to ignore today),
+*next action* (one step, numbers transcribed from `next_run_target`, an HR
+ceiling written as a guard), *recurrence and questions* (what keeps recurring;
+at most one question about what the sensors cannot see).
+
+Never written: numeric readouts already in the figures, restated deterministic
+verdicts ("接地時間は理想範囲内です" — the range badge already says it), generic
+textbook criteria, a within-range deviation dressed up as a strength or a
+weakness, the same point in two places, a pass/fail judgement of the athlete, or
+a scene or cause no evidence key supports. Every claim carries the key of the
+datum behind it (`signals.<metric>`, `moments.<id>`, `plan.<axis>`, …) and
+merge-time guards in `validation/validators.py` reject unknown keys, a growth
+point resting on a within-range signal or an on-plan axis, and a timeline item
+pointing at a scene that does not exist.
+
+The canonical text of all of the above is the contract itself —
+`get_analysis_contract("run_note")` (`validation/contracts.py`), which the agent
+reads at run time. This section summarises it; the contract is what changes
+behaviour.
 
 ## Related references
 

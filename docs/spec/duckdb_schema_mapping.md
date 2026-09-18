@@ -414,7 +414,7 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 - **vr_evaluation** (by `vr_average`): Excellent <7% · Good 7–8% · Fair 8–10% · Poor >10%
 - **vo_trend**: Increasing = VO worsens >5% start→end · Stable = ≤5% · Decreasing = improves >5%
 
-> These fixed-threshold ratings are the simple aggregate view. The pace-corrected (speed-aware) evaluation lives in `form_evaluations`, which is the authoritative source for star ratings and needs-improvement flags.
+> These fixed-threshold ratings are the simple aggregate view, and they have no pace term at all. The pace-corrected (speed-aware) expected/actual values live in `form_evaluations`; the verdict on a single run comes from `get_run_report(activity_id)` (see §7).
 
 ---
 
@@ -481,11 +481,11 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 **Units & notes**: `eval_id` is the surrogate PK; one row per `activity_id`. Per form metric (`gct`/`vo`/`vr`) the table carries `*_expected` and `*_actual` values (gct ms, vo cm, vr %), a deviation (`gct_delta_pct` / `vo_delta_cm` / `vr_delta_pct`), a `*_penalty`, `*_star_rating`, `*_score` (0–5.0), `*_needs_improvement` flag, and `*_evaluation_text` (Japanese). Cadence columns: `cadence_actual` / `cadence_minimum` / `cadence_achieved`, plus the migration-v6 set `cadence_expected` / `cadence_delta_pct` / `cadence_star_rating` / `cadence_score` / `cadence_needs_improvement` / `cadence_evaluation_text`. Power columns: `power_avg_w` (W), `power_wkg` (W/kg), `speed_actual_mps` / `speed_expected_mps` (m/s), `power_efficiency_score` / `power_efficiency_rating` / `power_efficiency_needs_improvement`. `overall_score` / `overall_star_rating` summarize form; `integrated_score` / `training_mode` are migration v3; `evaluated_at` is the evaluation timestamp.
 
 ### Evaluation Logic
-- **Score**: start at perfect (100), apply penalty by deviation from the pace-expected value, then map to 0–5.0. Roughly: ±2% → ★★★★★ 5.0; 2–5% → ~★★★★☆ 4.0; 5–10% → ~★★★☆☆ 3.0; >10% → ★★☆☆☆ / ★☆☆☆☆.
+- **Score**: start at perfect (100), apply penalty by deviation from the pace-expected value, then map to 0–5.0.
 - **needs_improvement**: true when deviation > ~5% from expected.
 - **overall_score**: combines GCT/VO/VR (GCT weighted highest); `integrated_score` further folds in power efficiency.
 
-> **Authoritative source**: when an agent reports a star rating or "needs improvement", `form_evaluations` is the source of truth — it is pace-corrected, unlike the fixed-threshold `form_efficiency` ratings.
+> **The stars are legacy display values.** `*_star_rating` / `overall_star_rating` / `*_needs_improvement` map the deviation from the pace-expected value onto fixed bands, so they cannot say whether one run was good: the same ±5% means something different for a runner whose own spread is 2% and one whose spread is 8%. **A single run is judged by `get_run_report(activity_id)`** — plan vs actual, and today against the athlete's own normal range (trailing 60 days, robust band, `within` / `edge` / `outside` / `insufficient`; see [Run report and the run note](../architecture.md)). Read the `*_expected` / `*_actual` / deviation columns here as the inputs to that read, not the stars as a verdict.
 
 > **Population ceiling**: ~340/520 runs. The remainder lack recorded GCT/VO/VR or have no preceding baseline period and are permanently un-fixable; repeated backfill does not raise coverage.
 
