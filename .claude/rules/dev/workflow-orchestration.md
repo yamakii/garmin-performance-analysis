@@ -18,7 +18,7 @@ paths:
 
 ## Implementation
 - プラン承認後は `implementation-workflow.md` Phase 1 のチェックリスト（そのセッションが worktree で実装 → PR → マージ）に従う
-- `/implement` は依存ティアが 2 段以上の Epic 専用
+- 複数 Issue で `implementation-workflow.md` の起動条件（依存ティア 2 段以上、または依存の無い 4 件以上でファイル非共有）を満たすときは `/implement <epic>` を使う
 - 変更ファイルの多い Issue（概ね 15 以上・ページ丸ごとの書き換え）は実装を `developer` サブエージェント（worktree 隔離）へ委譲し、メインセッションは照合・レビュー・Ship だけを行う（`implementation-workflow.md` Phase 1）。調査は Explore エージェントへ
 - **全変更で Worktree → PR が必須**。Validation Level: skip は検証方法の指定であり、Worktree/PR 省略の許可ではない。skip レベルの docs/rules 変更で省略できるのは Issue だけ（`dev-reference.md` §1）
 - 検証レベルと auto-merge ゲートは `worktree-validation-protocol.md` のみに書く。他所に再掲しない
