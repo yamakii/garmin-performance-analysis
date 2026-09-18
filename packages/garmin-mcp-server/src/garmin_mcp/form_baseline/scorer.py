@@ -40,9 +40,10 @@ DEGRADATION_FACTOR: dict[str, float] = {
     "cadence": 1.0,
 }
 
-# One sigma of model error costs this much penalty. Combined with the existing
-# 10/20/40/60 star cuts (see compute_star_rating) the degradation side becomes
-# 5* < 0.5 sigma, 4* < 1 sigma, 3* < 2 sigma, 2* < 3 sigma.
+# One sigma of model error costs this much penalty. It is also the penalty that
+# costs exactly one star in ``compute_star_rating`` (score = 5 - penalty / 20),
+# so on the degradation side (factor 1.0) the star score drops linearly by one
+# star per sigma: 0 sigma -> 5.0, 1 sigma -> 4.0, 2 sigma -> 3.0, 4 sigma -> 1.0.
 PENALTY_PER_SIGMA = 20.0
 
 # Legacy fallback: penalty per percentage point when no usable model error is
@@ -381,18 +382,28 @@ def compute_star_rating(
     """Compute star rating from penalty score.
 
     With asymmetric penalties, the direction information is already encoded
-    in the penalty value, so only penalty thresholds are used for rating.
-    The delta_pct parameter is kept for interface compatibility but is not
-    used in the rating logic.
+    in the penalty value, so only the penalty drives the rating. The delta_pct
+    parameter is kept for interface compatibility but is not used.
 
-    Star rating logic (sigma equivalents are for the degradation side, where the
-    factor is 1.0, given PENALTY_PER_SIGMA = 20). Bounds are inclusive, so a
-    penalty landing exactly on a boundary takes the better band (#1213):
-    - 5 stars (5.0): Excellent - penalty <= 10 (<= 0.5 sigma)
-    - 4 stars (4.0): Good - penalty <= 20 (<= 1 sigma)
-    - 3 stars (3.0): Average - penalty <= 40 (<= 2 sigma)
-    - 2 stars (2.0): Below Average - penalty <= 60 (<= 3 sigma)
-    - 1 star (1.0): Poor - penalty > 60 (> 3 sigma)
+    The score is **continuous in the penalty** (#1233)::
+
+        score = round(clamp(5.0 - penalty / PENALTY_PER_SIGMA, 1.0, 5.0), 1)
+
+    so a small difference in penalty produces a small difference in score. The
+    previous 10/20/40/60 bands quantised the score into whole stars, which put
+    the 5-star/4-star cut at 0.5 sigma: two near-identical jogs (GCT +0.9% vs
+    +0.2%, both inside the ideal range) scored 4.0 vs 5.0 on every metric. The
+    linear mapping is the inverse of the one ``evaluator`` uses to re-encode the
+    overall score (``penalty = (5.0 - overall_score) * 20.0``) and it agrees with
+    the old bands at their upper edges (penalty 20 -> 4.0, 40 -> 3.0, 60 -> 2.0).
+
+    Sigma equivalents (degradation side, where the factor is 1.0): one sigma of
+    model error costs exactly one star, and beyond 4 sigma the score floors at
+    1.0.
+
+    The glyph string still shows whole stars: ``filled = int(score + 0.5)``
+    (round half up), so 4.4 renders 4 filled stars and 4.5 renders 5. The
+    category names that rounded star count.
 
     Args:
         penalty: Penalty score (0-100, already asymmetric)
@@ -401,44 +412,34 @@ def compute_star_rating(
     Returns:
         Dictionary containing:
             - star_rating: String representation (5 filled + empty stars)
-            - score: Numeric score (1.0-5.0)
+            - score: Numeric score (1.0-5.0, one decimal)
             - category: Category name (excellent/good/average/below_average/poor)
 
     Example:
         >>> rating = compute_star_rating(penalty=8.5, delta_pct=4.2)
         >>> print(rating['score'])
-        5.0
+        4.6
     """
     # Unicode stars: U+2605 (filled) U+2606 (empty)
     filled_star = "\u2605"  # ★
     empty_star = "\u2606"  # ☆
 
-    # Determine rating based on penalty only (direction is encoded in penalty).
-    # Bounds are inclusive so an exact-boundary penalty takes the better band.
-    # ``overall_star_rating`` re-encodes an average of star scores as
-    # ``(5.0 - overall_score) * 20.0``; that value is quantised and lands on
-    # 20.0 / 40.0 / 60.0 exactly whenever the three metrics agree, so with
-    # exclusive bounds three 4-star metrics rendered a 3-star overall (#1213).
-    if penalty <= 10.0:
-        star_rating = filled_star * 5
-        score = 5.0
-        category = "excellent"
-    elif penalty <= 20.0:
-        star_rating = filled_star * 4 + empty_star
-        score = 4.0
-        category = "good"
-    elif penalty <= 40.0:
-        star_rating = filled_star * 3 + empty_star * 2
-        score = 3.0
-        category = "average"
-    elif penalty <= 60.0:
-        star_rating = filled_star * 2 + empty_star * 3
-        score = 2.0
-        category = "below_average"
-    else:
-        star_rating = filled_star + empty_star * 4
-        score = 1.0
-        category = "poor"
+    # Score is linear in the penalty (direction is already encoded there).
+    score = round(max(1.0, min(5.0, 5.0 - penalty / PENALTY_PER_SIGMA)), 1)
+
+    # Glyphs and category quantise that score by rounding half up. Because the
+    # mapping is the exact inverse of the re-encoding ``overall_star_rating``
+    # uses (``penalty = (5.0 - overall_score) * 20.0``), three metrics that agree
+    # round-trip to the same glyph count (#1213).
+    filled = int(score + 0.5)
+    star_rating = filled_star * filled + empty_star * (5 - filled)
+    category = {
+        5: "excellent",
+        4: "good",
+        3: "average",
+        2: "below_average",
+        1: "poor",
+    }[filled]
 
     return {
         "star_rating": star_rating,

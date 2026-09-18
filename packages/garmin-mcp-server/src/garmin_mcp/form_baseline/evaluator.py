@@ -143,10 +143,12 @@ def evaluate_and_store(
         extrapolated=score_result.get("vr_extrapolated", False),
     )
 
-    # Compute overall score (average of 3 metrics)
-    overall_score = (
-        gct_rating["score"] + vo_rating["score"] + vr_rating["score"]
-    ) / 3.0
+    # Compute overall score (average of 3 metrics). Metric scores are continuous
+    # with one decimal (#1233), so the average is rounded back to one decimal to
+    # keep the stored value and its re-encoding into a penalty exact.
+    overall_score = round(
+        (gct_rating["score"] + vo_rating["score"] + vr_rating["score"]) / 3.0, 1
+    )
 
     # Cadence evaluation (pace-dependent when a cadence baseline is available).
     # Falls back to the legacy fixed-180 flag when no cadence model exists

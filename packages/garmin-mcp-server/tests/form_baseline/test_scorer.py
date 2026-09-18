@@ -238,7 +238,9 @@ class TestScoreCadence:
             penalty=result["cadence_penalty"],
             delta_pct=result["cadence_delta_pct"],
         )
-        assert rating["score"] == 5.0
+        # Penalty ~6.5 -> score ~4.7, which still renders 5 filled stars
+        assert rating["score"] > 4.5
+        assert rating["star_rating"] == "★" * 5
 
     def test_score_cadence_not_in_overall(self, models_with_cadence: dict) -> None:
         """Cadence must not change overall score vs no-cadence models."""
@@ -265,69 +267,54 @@ class TestScoreCadence:
 class TestComputeStarRating:
     """Tests for compute_star_rating function."""
 
-    def test_five_star_excellent(self) -> None:
-        """Test 5-star rating for excellent performance."""
-        rating = compute_star_rating(penalty=8.0, delta_pct=4.0)
+    def test_star_score_is_linear_in_penalty(self) -> None:
+        """The score falls one star per PENALTY_PER_SIGMA, clamped to 1.0-5.0."""
+        expected = [
+            (0.0, 5.0),
+            (4.0, 4.8),
+            (10.0, 4.5),
+            (18.6, 4.1),
+            (20.0, 4.0),
+            (30.0, 3.5),
+            (40.0, 3.0),
+            (60.0, 2.0),
+            (80.0, 1.0),
+            (95.0, 1.0),
+        ]
+        for penalty, score in expected:
+            rating = compute_star_rating(penalty=penalty, delta_pct=0.0)
+            assert rating["score"] == pytest.approx(score), f"penalty={penalty}"
 
+    def test_star_score_small_penalty_gap_gives_small_score_gap(self) -> None:
+        """Near-identical penalties must not differ by a whole star (#1233).
+
+        The old 10/20/40/60 bands turned a 0.2 penalty gap at the 5/4 cut into
+        a full star, which is what flipped two near-identical jogs from 5.0 to
+        4.0 on every metric.
+        """
+        score_a = compute_star_rating(penalty=9.9, delta_pct=4.9)["score"]
+        score_b = compute_star_rating(penalty=10.1, delta_pct=4.0)["score"]
+
+        assert abs(score_a - score_b) <= 0.1
+
+    def test_star_glyphs_round_to_nearest(self) -> None:
+        """Glyph count and category round the score half up."""
         # Use Unicode escapes to avoid encoding issues
-        assert rating["star_rating"] == "\u2605\u2605\u2605\u2605\u2605"
-        assert rating["score"] == 5.0
-        assert rating["category"] == "excellent"
+        four = compute_star_rating(penalty=12.0, delta_pct=0.0)
+        assert four["score"] == pytest.approx(4.4)
+        assert four["star_rating"] == "\u2605\u2605\u2605\u2605\u2606"
+        assert four["category"] == "good"
 
-    def test_four_star_good(self) -> None:
-        """Test 4-star rating for good performance."""
-        rating = compute_star_rating(penalty=15.0, delta_pct=8.0)
-
-        assert rating["star_rating"] == "\u2605\u2605\u2605\u2605\u2606"
-        assert rating["score"] == 4.0
-        assert rating["category"] == "good"
-
-    def test_three_star_average(self) -> None:
-        """Test 3-star rating for average performance."""
-        rating = compute_star_rating(penalty=30.0, delta_pct=15.0)
-
-        assert rating["star_rating"] == "\u2605\u2605\u2605\u2606\u2606"
-        assert rating["score"] == 3.0
-        assert rating["category"] == "average"
-
-    def test_two_star_below_average(self) -> None:
-        """Test 2-star rating for below average performance."""
-        rating = compute_star_rating(penalty=50.0, delta_pct=25.0)
-
-        assert rating["star_rating"] == "\u2605\u2605\u2606\u2606\u2606"
-        assert rating["score"] == 2.0
-        assert rating["category"] == "below_average"
-
-    def test_one_star_poor(self) -> None:
-        """Test 1-star rating for poor performance."""
-        rating = compute_star_rating(penalty=70.0, delta_pct=35.0)
-
-        assert rating["star_rating"] == "\u2605\u2606\u2606\u2606\u2606"
-        assert rating["score"] == 1.0
-        assert rating["category"] == "poor"
-
-    def test_boundary_case_five_to_four(self) -> None:
-        """Test boundary between 5-star and 4-star (penalty-only)."""
-        # Just below threshold
-        rating1 = compute_star_rating(penalty=9.9, delta_pct=4.9)
-        assert rating1["score"] == 5.0
-
-        # Just above threshold (penalty only matters now)
-        rating2 = compute_star_rating(penalty=10.1, delta_pct=4.0)
-        assert rating2["score"] == 4.0
-
-    def test_boundary_penalty_10_is_five_star(self) -> None:
-        """A penalty exactly on the 5/4 boundary keeps the better band."""
-        rating = compute_star_rating(penalty=10.0, delta_pct=0.0)
-
-        assert rating["score"] == 5.0
-        assert rating["star_rating"] == "★" * 5
+        five = compute_star_rating(penalty=10.0, delta_pct=0.0)
+        assert five["score"] == pytest.approx(4.5)
+        assert five["star_rating"] == "\u2605\u2605\u2605\u2605\u2605"
+        assert five["category"] == "excellent"
 
     def test_boundary_penalty_20_is_four_star(self) -> None:
-        """A penalty exactly on the 4/3 boundary keeps the better band.
+        """The old 4/3 band edge still scores exactly 4.0.
 
-        This is the boundary ``overall_star_rating`` lands on whenever GCT, VO
-        and VR all rate 4 stars: ``(5.0 - 4.0) * 20.0 == 20.0`` (#1213).
+        This is the value ``overall_star_rating`` re-encodes whenever GCT, VO
+        and VR all rate 4.0: ``(5.0 - 4.0) * 20.0 == 20.0`` (#1213).
         """
         rating = compute_star_rating(penalty=20.0, delta_pct=0.0)
 
@@ -335,18 +322,49 @@ class TestComputeStarRating:
         assert rating["star_rating"] == "★" * 4 + "☆"
 
     def test_boundary_penalty_40_is_three_star(self) -> None:
-        """A penalty exactly on the 3/2 boundary keeps the better band."""
+        """The old 3/2 band edge still scores exactly 3.0."""
         rating = compute_star_rating(penalty=40.0, delta_pct=0.0)
 
         assert rating["score"] == 3.0
         assert rating["star_rating"] == "★" * 3 + "☆" * 2
 
     def test_boundary_penalty_60_is_two_star(self) -> None:
-        """A penalty exactly on the 2/1 boundary keeps the better band."""
+        """The old 2/1 band edge still scores exactly 2.0."""
         rating = compute_star_rating(penalty=60.0, delta_pct=0.0)
 
         assert rating["score"] == 2.0
         assert rating["star_rating"] == "★" * 2 + "☆" * 3
+
+    def test_needs_improvement_boundary_unchanged(self, sample_models: dict) -> None:
+        """The needs-improvement flag still flips at a penalty of 20 (1 sigma).
+
+        The continuous score (#1233) does not move this cut: a deviation of one
+        model error stays acceptable, anything beyond it is flagged.
+        """
+        pace_s_per_km = 240.0
+        speed_mps = 1000.0 / pace_s_per_km
+        vr_exp = sample_models["vr"].predict(speed_mps)
+        rmse = sample_models["vr"].rmse
+
+        base_obs = {
+            "pace_s_per_km": pace_s_per_km,
+            "gct_ms": sample_models["gct"].predict_inverse(speed_mps),
+            "vo_cm": sample_models["vo"].predict(speed_mps),
+        }
+
+        # Just inside one sigma -> penalty just under 20 -> not flagged
+        inside = score_observation(
+            sample_models, {**base_obs, "vr_pct": vr_exp + 0.99 * rmse}
+        )
+        assert inside["vr_penalty"] <= 20.0
+        assert inside["vr_needs_improvement"] is False
+
+        # Just beyond one sigma -> penalty just over 20 -> flagged
+        outside = score_observation(
+            sample_models, {**base_obs, "vr_pct": vr_exp + 1.01 * rmse}
+        )
+        assert outside["vr_penalty"] > 20.0
+        assert outside["vr_needs_improvement"] is True
 
     def test_delta_pct_does_not_affect_rating(self) -> None:
         """Test that delta_pct is ignored in rating calculation.
@@ -356,7 +374,8 @@ class TestComputeStarRating:
         """
         # Large delta but low penalty should still get high stars
         rating = compute_star_rating(penalty=5.0, delta_pct=-20.0)
-        assert rating["score"] == 5.0
+        assert rating["score"] == pytest.approx(4.8)
+        assert rating["star_rating"] == "★" * 5
 
         # Same penalty regardless of delta sign
         rating_pos = compute_star_rating(penalty=15.0, delta_pct=8.0)
@@ -506,10 +525,15 @@ class TestScoreObservationSigmaRanking:
             for metric in ("gct", "vo", "vr", "cadence")
         }
 
-        assert stars["gct"] == 4.0
-        assert stars["vo"] == 3.0
-        assert stars["vr"] == 3.0
-        assert stars["cadence"] == 4.0
+        assert stars["gct"] == pytest.approx(4.4)
+        assert stars["vo"] == pytest.approx(3.7)
+        assert stars["vr"] == pytest.approx(3.7)
+        assert stars["cadence"] == pytest.approx(4.1)
+
+        # vo and vr sit at the same statistical distance, so they rate together
+        # and both below the two more ordinary readings.
+        assert stars["vo"] == stars["vr"]
+        assert stars["cadence"] > stars["vo"]
 
         # vr sits further from its model than vo, so it can no longer outrank it
         assert abs(result["vr_delta_pct"] / result["vr_sigma_pct"]) > abs(
