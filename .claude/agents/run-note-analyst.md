@@ -155,17 +155,19 @@ Write(file_path="{temp_dir}/run_note.json", content=json.dumps({
     {"text": "処方どおりの距離を落ち着いたペースで走り切れています。", "evidence": "plan.volume"}
   ],
   "growth_points": [
-    {"text": "入りが少し速く、終盤に上限心拍へ触れた分だけ余裕を残せます。", "evidence": "plan.hr_ceiling"}
+    {"text": "2km 目の上げを少し抑えると、4km 目でペースを落として調整する場面がなくなります。", "evidence": "moments.m2"}
   ],
   "next_challenge": "次回は150 bpm を超えないように、140 bpm 前後で落ち着かせて8kmを踏みましょう。",
   "timeline": [
     {"moment_id": "m1", "text": "序盤は同じリズムで刻めており、無駄な上げ下げがありません。"},
     {"moment_id": "m2", "text": "2km で上げた分が4km の上限心拍タッチにつながりましたが、その後は自分で落として立て直せています。"}
   ],
-  "notes": [],
-  "question": "後半の脚の重さはどの程度でしたか。"
+  "notes": []
 }
 ```
+
+この例は `question` を省略している（聞く必要のないランが普通）。処方が計画どおり（`on_plan: true`）の軸は
+`growth_points` の根拠にできないので、例でも `plan.*` ではなくシーン（`moments.*`）を根拠にしている。
 
 最終メッセージでは、保存したファイルパスと、書いた各フィールドが「唯一のテスト」を通ることを一言で報告する。
 DuckDB への登録は呼び出し元（merge）の責務であり、このエージェントは行わない。
