@@ -113,6 +113,32 @@ _RETROSPECTIVE_KEYS = {
     "key_learnings",
 }
 
+# RunReport top-level keys (#1250). The single-run page reads every one of
+# them, so a backend rename or drop has to fail here.
+_RUN_REPORT_KEYS = {
+    "activity_id",
+    "activity_date",
+    "intensity_category",
+    "headline",
+    "plan",
+    "signals",
+    "zones",
+    "moments",
+    "recurrence",
+    "phases",
+    "conditions",
+    "vs_previous",
+    "next_run_target",
+}
+_HEADLINE_KEYS = {"plan_label", "flag_count", "flag_labels"}
+_CONDITIONS_KEYS = {
+    "temp_c",
+    "humidity_pct",
+    "wind_mps",
+    "terrain",
+    "elevation_gain_m",
+}
+
 
 def _assert_keys_present(obj: dict, keys: set[str], where: str) -> None:
     """Every key in ``keys`` must be present in ``obj`` (superset check)."""
@@ -289,6 +315,27 @@ def test_goal_response_contract(goal_db_path: Any) -> None:
     for retro in payload["retrospectives"]:
         _assert_keys_present(retro, _RETROSPECTIVE_KEYS, "SeasonRetrospective")
         assert isinstance(retro["retro_id"], int)
+
+
+@pytest.mark.integration
+def test_run_report_response_contract(detail_db_path: Any) -> None:
+    """GET /api/activities/{id}/report -> the RunReport top-level key set.
+
+    Pinned as an exact set rather than a superset: the page renders one block
+    per key, so a silently added key is as much a contract change as a dropped
+    one.
+    """
+    client = TestClient(create_app(db_path=detail_db_path))
+    response = client.get(f"/api/activities/{FULL_ACTIVITY_ID}/report")
+
+    assert response.status_code == 200
+    report = response.json()
+
+    assert set(report) == _RUN_REPORT_KEYS
+    _assert_keys_present(report["headline"], _HEADLINE_KEYS, "RunReport.headline")
+    _assert_keys_present(report["conditions"], _CONDITIONS_KEYS, "RunReport.conditions")
+    for block in ("signals", "zones", "moments", "recurrence", "phases"):
+        assert isinstance(report[block], list), f"RunReport.{block} must be a list"
 
 
 @pytest.mark.integration

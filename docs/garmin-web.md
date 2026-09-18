@@ -122,6 +122,7 @@ parameters are documented in each handler's docstring.
 |----------|-------------|
 | `/api/activities` | Return activities sorted by date descending. |
 | `/api/activities/{activity_id}` | Return aggregated detail for one activity, or 404 if unknown. |
+| `/api/activities/{activity_id}/report` | Return the deterministic run report for one activity, or 404 if unknown. |
 | `/api/activities/{activity_id}/sections` | Return section analyses keyed by section_type. |
 | `/api/activities/{activity_id}/sections/versions` | Return saved analysis runs for an activity (newest first). |
 | `/api/activities/{activity_id}/split-anomalies` | Return per-split form-anomaly counts for an activity (empty when no raw details). |

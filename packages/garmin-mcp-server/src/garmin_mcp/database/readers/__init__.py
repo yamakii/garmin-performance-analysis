@@ -9,6 +9,7 @@ This package provides specialized reader classes for accessing DuckDB data:
 - PhysiologyReader: HR efficiency, VO2 max, lactate threshold
 - PerformanceReader: Performance trends, weather, section analyses
 - RaceReader: Race readiness (current VDOT + goal gap)
+- RunReportReader: One run's deterministic report (plan, signals, moments)
 - TrainingLoadReader: Distance-based training load (ACWR)
 - DurabilityReader: Long-run cardiac decoupling / pace fade trend
 - FitnessCurveReader: Objective fitness curve + Garmin VO2max optimism gap
@@ -29,6 +30,7 @@ from garmin_mcp.database.readers.metadata import MetadataReader
 from garmin_mcp.database.readers.performance import PerformanceReader
 from garmin_mcp.database.readers.physiology import PhysiologyReader
 from garmin_mcp.database.readers.race import RaceReader
+from garmin_mcp.database.readers.run_report import RunReportReader
 from garmin_mcp.database.readers.splits import SplitsReader
 from garmin_mcp.database.readers.strength_sessions import StrengthSessionsReader
 from garmin_mcp.database.readers.time_series import TimeSeriesReader
@@ -44,6 +46,7 @@ __all__ = [
     "PhysiologyReader",
     "PerformanceReader",
     "RaceReader",
+    "RunReportReader",
     "TrainingLoadReader",
     "DurabilityReader",
     "FitnessCurveReader",

@@ -1656,6 +1656,22 @@
     }
   },
   {
+    "name": "get_run_report",
+    "description": "Get the deterministic report for one run: everything the single-run page and the run note are built from, in one call. Returns activity_id, activity_date, intensity_category, headline (plan_label, flag_count, flag_labels -- adverse signals only), plan (verdict ✅/🟡/🔴 against the day's prescription, its title, per-axis checks with target/actual/on_plan, and hr_ceiling {bpm, seconds_over, pct_over}; null when the day had no prescription), signals (per metric: today, expected, the athlete's own normal_low/normal_high, z, status within/edge/outside/insufficient, adverse, streak, n, reason), zones (HR zone percentages), moments (2-5 deterministic turning points with km_from/km_to and facts), recurrence (moment kinds that keep happening at the same km), phases (warmup/run/recovery/cooldown pace and HR), conditions (temp_c, humidity_pct, wind_mps, terrain, elevation_gain_m), vs_previous (delta chips against the previous same-family run) and next_run_target. Returns null when the activity does not exist.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "activity_id": {
+          "type": "integer",
+          "description": "Activity ID to build the deterministic run report for."
+        }
+      },
+      "required": [
+        "activity_id"
+      ]
+    }
+  },
+  {
     "name": "get_server_info",
     "description": "Get diagnostic info about the running MCP server (server_dir). Use to verify which directory the server is running from.",
     "inputSchema": {
