@@ -7,7 +7,16 @@ a weakness among absolute strengths, power efficiency is presented as a
 3-level descriptor ("上回る"/"同等"/"下回る", above/at/below the runner's own
 baseline) rather than a star rating, and is excluded from the composite
 ``integrated_score`` (Epic #833).
+
+The activity-side average is taken over *running* splits only, using the same
+walk/GPS-fragment predicate GCT/VO/VR already share
+(:mod:`garmin_mcp.form_baseline.split_filter`). An unweighted mean cannot absorb
+a 10-14 m manual-lap fragment whose power is a measurement artifact: on activity
+24394775433 two such laps (364 W / 377 W) lifted the average from 269.8 W to
+298.57 W and flipped the label to "下回る" (#1231).
 """
+
+from .split_filter import running_split_params, running_split_sql
 
 
 def calculate_power_efficiency_label(
@@ -68,7 +77,9 @@ def calculate_power_efficiency_internal(
         form_penalties: Optional dict with gct/vo/vr penalties for integrated score
 
     Returns:
-        Dict with power efficiency evaluation or None if no power data
+        Dict with power efficiency evaluation, or None if no power data is
+        usable -- including the case where every split is dropped as a walk
+        break or GPS fragment
     """
     from .integrated_score import calculate_integrated_score
 
@@ -111,16 +122,19 @@ def calculate_power_efficiency_internal(
         power_a, power_b, power_rmse, baseline_period_end = baseline
 
         # Get average power and speed from splits
+        # Running splits only: walk breaks and GPS fragments would otherwise
+        # enter the unweighted mean with the same weight as a full km (#1231).
         splits_data = conn.execute(
-            """
+            f"""
             SELECT AVG(power) as power_avg, AVG(grade_adjusted_speed) as speed_avg
             FROM splits
             WHERE activity_id = ?
               AND power IS NOT NULL
               AND grade_adjusted_speed IS NOT NULL
               AND role_phase = 'run'
+              AND {running_split_sql()}
             """,
-            [activity_id],
+            [activity_id, *running_split_params()],
         ).fetchone()
 
         if not splits_data or splits_data[0] is None:

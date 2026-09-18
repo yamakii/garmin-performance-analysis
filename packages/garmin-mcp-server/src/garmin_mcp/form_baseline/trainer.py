@@ -373,8 +373,10 @@ def train_power_efficiency_baseline(
 
     try:
         with get_write_connection(db_path) as conn:
-            # Query data
-            query = """
+            # Query data. The shared running-split predicate keeps walk breaks
+            # and GPS fragments out of the fitted population, matching the
+            # evaluation side (#1231).
+            query = f"""
                 SELECT
                     s.grade_adjusted_speed AS speed_mps,
                     s.power AS power_w,
@@ -389,9 +391,12 @@ def train_power_efficiency_baseline(
                   AND s.role_phase = 'run'
                   AND s.grade_adjusted_speed > 1.5
                   AND s.grade_adjusted_speed < 7.0
+                  AND {running_split_sql("s")}
             """
 
-            result = conn.execute(query, [period_start, period_end]).fetchall()
+            result = conn.execute(
+                query, [period_start, period_end, *running_split_params()]
+            ).fetchall()
 
             if len(result) < 10:
                 # Insufficient data
