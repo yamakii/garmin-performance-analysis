@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **76 tools** (74 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **77 tools** (75 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -16,7 +16,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Export](#export) (1)
 - [Metadata](#metadata) (3)
 - [Splits](#splits) (5)
-- [Analysis](#analysis) (8)
+- [Analysis](#analysis) (9)
 - [Physiology](#physiology) (13)
 - [Performance](#performance) (4)
 - [Time Series](#time-series) (4)
@@ -242,6 +242,16 @@ Find and compare similar past workouts based on pace and distance (Phase 4.5)
 | `activity_type_filter` | string | optional | Optional activity type keyword filter |
 | `date_range` | array[string] | optional | Optional [start_date, end_date] in YYYY-MM-DD format |
 | `limit` | integer | optional | Maximum number of results (default 10) |
+
+### `get_run_report`
+
+CLI: `garmin-db analysis run-report`
+
+Get the deterministic report for one run: everything the single-run page and the run note are built from, in one call. Returns activity_id, activity_date, intensity_category, headline (plan_label, flag_count, flag_labels -- adverse signals only), plan (verdict ✅/🟡/🔴 against the day's prescription, its title, per-axis checks with target/actual/on_plan, and hr_ceiling {bpm, seconds_over, pct_over}; null when the day had no prescription), signals (per metric: today, expected, the athlete's own normal_low/normal_high, z, status within/edge/outside/insufficient, adverse, streak, n, reason), zones (HR zone percentages), moments (2-5 deterministic turning points with km_from/km_to and facts), recurrence (moment kinds that keep happening at the same km), phases (warmup/run/recovery/cooldown pace and HR), conditions (temp_c, humidity_pct, wind_mps, terrain, elevation_gain_m), vs_previous (delta chips against the previous same-family run) and next_run_target. Returns null when the activity does not exist.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `activity_id` | integer | **required** | Activity ID to build the deterministic run report for. |
 
 ## Physiology
 

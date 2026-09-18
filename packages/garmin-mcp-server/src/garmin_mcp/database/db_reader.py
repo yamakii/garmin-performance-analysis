@@ -22,6 +22,7 @@ from garmin_mcp.database.readers import (
     PerformanceReader,
     PhysiologyReader,
     RaceReader,
+    RunReportReader,
     SplitsReader,
     StrengthSessionsReader,
     TimeSeriesReader,
@@ -111,6 +112,7 @@ class GarminDBReader:
         self.race = RaceReader(db_path)
         self.training_load = TrainingLoadReader(db_path)
         self.durability = DurabilityReader(db_path)
+        self.run_report = RunReportReader(db_path)
         self.fitness_curve = FitnessCurveReader(db_path)
         self.strength_sessions = StrengthSessionsReader(db_path)
         self.hiking_sessions = HikingSessionsReader(db_path)
@@ -1243,6 +1245,26 @@ class GarminDBReader:
         return self.durability.get_durability_trend(
             start_date, end_date, min_distance_km
         )
+
+    # ========== Run Report Methods ==========
+
+    def get_run_report(self, activity_id: int) -> dict[str, Any] | None:
+        """Get the deterministic run report for one activity (#1250).
+
+        One payload for the single-run page, the run-note agent,
+        ``/run-debrief`` and ``/daily-checkin``, so they cannot disagree about
+        what happened on the run.
+
+        Args:
+            activity_id: The run to report on.
+
+        Returns:
+            ``None`` when the activity does not exist. Otherwise the report
+            dict (``headline``, ``plan``, ``signals``, ``zones``, ``moments``,
+            ``recurrence``, ``phases``, ``conditions``, ``vs_previous``,
+            ``next_run_target``); JSON-serialisable without a custom encoder.
+        """
+        return self.run_report.get_run_report(activity_id)
 
     # ========== Injury Risk Methods ==========
 

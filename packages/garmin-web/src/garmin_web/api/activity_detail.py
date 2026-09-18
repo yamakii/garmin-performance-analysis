@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from garmin_mcp.database.connection import get_connection
 
 from garmin_web.queries.detail import get_activity_detail
+from garmin_web.queries.run_report import get_run_report
 from garmin_web.queries.sections import get_sections, list_section_versions
 from garmin_web.queries.split_anomalies import get_split_form_anomalies
 from garmin_web.queries.time_series import get_time_series
@@ -23,6 +24,22 @@ def get_detail(request: Request, activity_id: int) -> dict:
     if detail is None:
         raise HTTPException(status_code=404, detail="Activity not found")
     return detail
+
+
+@router.get("/activities/{activity_id}/report")
+def get_activity_report(request: Request, activity_id: int) -> dict:
+    """Return the deterministic run report for one activity, or 404 if unknown.
+
+    One payload carries the plan verdict, every metric against the athlete's
+    own normal range, the run's turning points and the conditions it was run
+    in, so the page never has to stitch several endpoints together (#1250).
+    """
+    db_path = getattr(request.app.state, "db_path", None)
+    with get_connection(db_path) as conn:
+        report = get_run_report(conn, activity_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    return report
 
 
 @router.get("/activities/{activity_id}/time-series")
