@@ -25,7 +25,11 @@ implementation-workflow.md` Phase 2
 単発だから手動
 単発 Issue でも既定で
 単発 Issue / Epic を問わず
-Issue なし実装は禁止'
+Issue なし実装は禁止
+依存ティアが 2 段以上の Epic のみ
+依存ティアが 2 段以上の Epic 専用
+依存ティアが 2 段以上ある Epic のときだけ
+依存ティアが 2 段以上ある Epic だけ'
 
 targets=()
 for p in .claude/rules .claude/skills .claude/agents CLAUDE.md; do

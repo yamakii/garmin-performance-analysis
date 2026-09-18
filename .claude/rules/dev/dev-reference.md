@@ -40,7 +40,7 @@ paths:
   - [ ] test_method_edge_case [unit] -- x=-1 → raises ValueError
   ```
 - **Garmin API 依存機能の Risks は実応答で確認**: 取り込み・判定が Garmin API の値（`typeKey`、フィールド名、単位）に依存する設計は、プラン作成前に対象アクティビティの実データを取得して確認し、観測値を Risks に `[検証済]` として記載する。確認できないときは `[未検証]` のまま実装せず、実データ確認を先行させる（hiking を `typeKey=="hiking"` 前提で設計し実際は `"mountaineering"` で 0 件になった #921 の再発防止）
-- **Plan承認後**: Issue作成(TBD時) → Issue sync（`design-approved` 付与）→ 既定はそのセッションが worktree で実装して PR（`implementation-workflow.md` Phase 1）。依存ティアが 2 段以上の Epic のみ `/implement <epic>`。再確認不要
+- **Plan承認後**: Issue作成(TBD時) → Issue sync（`design-approved` 付与）→ 既定はそのセッションが worktree で実装して PR（`implementation-workflow.md` Phase 1）。`/implement <epic>` は `implementation-workflow.md` の起動条件（依存ティア 2 段以上、または依存の無い 4 件以上でファイル非共有）を満たすときに使う。再確認不要
 - **Review Gates**: Design → Test Plan → Code(CI) → Validation → Merge。検証レベル・auto-merge の条件・例外は `worktree-validation-protocol.md` が唯一の正本（経路が単一セッションでも Workflow でも同じゲート）
 
 ### Issue Sync
