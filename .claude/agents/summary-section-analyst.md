@@ -100,6 +100,8 @@ Write(file_path="{temp_dir}/summary.json", content=json.dumps({
 | 用途 | CONTEXT キー |
 |------|-------------|
 | training_type 判定 / ゾーン評価 | `training_type`, `zone_percentages`, `primary_zone`, `zone_distribution_rating`, `hr_stability`, `aerobic_efficiency`, `training_quality` |
+| hr_management 軸の起点（連続スコア・決定論化済み） | `zone_distribution_score`（1.0-5.0）、根拠帯は `zone_band_pct`（当該 training_type の対象ゾーン帯の占有%） |
+| form_efficiency 軸の起点 / 統合スコアの★ | `form_scores.overall_score`（1.0-5.0）、`form_scores.integrated_star_score`（統合スコアの連続★） |
 | improvement_areas / key_strengths のフィルタ | `form_evaluation`（各指標の `needs_improvement` フラグ） |
 | フォームスコア統合 | `form_scores` |
 | フェーズ統計 | `phase_structure` |
@@ -162,8 +164,8 @@ LLM の暗算に頼らず、以下を厳守する:
 1. **重み**: `get_analysis_contract("summary").evaluation_policy.star_rating.weights`（`form_efficiency` /
    `pace_consistency` / `hr_management` / `execution_quality`）を**そのまま**使う（改変・独自重み禁止）。
 2. **軸スコア** `axis_scores`: 4軸を各 1.0〜5.0（小数1桁）で採点する。キーは `weights` のキーと**完全一致**させる
-   （`form_efficiency` は `form_scores` / `form_evaluation`、`hr_management` は `zone_distribution_rating` /
-   `hr_stability`、`pace_consistency` は phase/ペース安定性、`execution_quality` は training_type の目的合致度から採点）。
+   （`pace_consistency` は phase/ペース安定性、`execution_quality` は training_type の目的合致度から採点）。
+   **`hr_management` と `form_efficiency` は CONTEXT の連続スコアを起点にする**（後述「連続スコアへのアンカー」）。
 3. **加重式**（手計算で厳密に適用）:
    `rating = Σ(axis_scores[k] × weights[k]) / Σ weights[k]` を [0.0, 5.0] にクランプし、**小数第1位に四捨五入**。
 4. 表示用 `star_rating` 文字列（`★★★★☆ N.N/5.0`）の N.N は **3 の計算結果と同一値**にする（別々に決めない）。
@@ -176,6 +178,22 @@ LLM の暗算に頼らず、以下を厳守する:
    }
    ```
    `axis_scores` と `weights` は**キー集合が一致**していなければならない（不一致・空・重み合計0は malformed として登録拒否）。
+
+#### 連続スコアへのアンカー（`hr_management` / `form_efficiency`・Issue #1236）
+
+カテゴリラベル（`zone_distribution_rating` = Excellent/Good/…）から採点すると、ほぼ同じ内容の2本が
+帯の境目で 3.5 と 4.5 に割れる。CONTEXT には**同じ閾値から連続値として算出済みのスコア**が入っているので、
+それを起点にする（自分で帯マッピングをやり直さない）:
+
+- **`hr_management`**: `CONTEXT.zone_distribution_score`（1.0-5.0）を**起点**とし、`hr_stability` と
+  処方の HR 上限順守（`prescription_for_run` / `prescription_verdict`）を踏まえて**最大 ±0.5 まで**の
+  調整のみ許す（例: 4.6 → 上限超過があれば 4.1、HR が終始安定していれば 5.0 を上限にクランプ）。
+  それ以上動かさない。散文でゾーン配分に触れるときは `zone_band_pct`（対象帯の占有%）を根拠として引用できる。
+- **`form_efficiency`**: `CONTEXT.form_scores.overall_score` を**起点**とし、同じく最大 ±0.5 の調整に留める
+  （`form_evaluation` の `needs_improvement` が複数 true 等の明確な根拠があるときのみ下げる）。
+- **null フォールバック**: `zone_distribution_score` が null（`hr_efficiency` 行なし／強度カテゴリ unknown）の
+  ときのみ、従来どおり `zone_distribution_rating` / `hr_stability` のラベルから採点する。
+  `form_scores` が null のときも同様に `form_evaluation` から採点する。
 
 ### key_strengths / improvement_areas フィルタ（`form_evaluation` の `needs_improvement` を使用）
 
@@ -226,6 +244,7 @@ LLM の暗算に頼らず、以下を厳守する:
 ### integrated_score
 
 - `form_scores.integrated_score` を summary テキストに「統合フォームスコア: XX.X/100」として自然に組み込み、`integrated_score` フィールドに **float** で格納
+- 統合スコアを★で言い換えるときは `form_scores.integrated_star_score`（算出済みの連続★）をそのまま使う。帯表から自分でマッピングしない（Issue #1236）
 - `integrated_score` が null → **フィールドごと省略**（null を入れない）
 
 ### HR Zone 評価ルール（矛盾防止）

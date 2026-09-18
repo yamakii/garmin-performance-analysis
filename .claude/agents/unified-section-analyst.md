@@ -143,8 +143,9 @@ Write(file_path="{ANALYSIS_TEMP_DIR}/{section}.json", content=json.dumps({
 | 用途 | CONTEXT キー |
 |------|-------------|
 | GCT/VO/VR + power + cadence 評価 | `form_evaluation`（各指標の `actual`/`expected`/`delta_pct`/`star_rating`/`score`/`needs_improvement`/`evaluation_text`） |
-| 統合スコア | `form_evaluation.integrated_score` ／ `form_scores`（`integrated_score`, `overall_score`, `overall_star_rating`） |
+| 統合スコア | `form_evaluation.integrated_score` ／ `form_scores`（`integrated_score`, **`integrated_star_score`**, `overall_score`, `overall_star_rating`） |
 | 心拍ゾーン分布評価 | `zone_percentages` + `hr_zones_detail`（ゾーン境界・時間分布）+ `training_type` + `zone_distribution_rating` + `primary_zone` + `hr_stability` + `aerobic_efficiency` + `training_quality` |
+| ゾーン配分の連続スコア（決定論化済み・Issue #1236） | `zone_distribution_score`（1.0-5.0）、`zone_band_pct`（当該 training_type の対象ゾーン帯の占有%。null なら従来のラベル判断） |
 | 1ヶ月フォームトレンド | `form_baseline_trend`（GCT/VO/VR/cadence は `metrics.{metric}.delta_d`/`delta_b`；**power は `metrics.power.{power_a, power_b}` と `delta_power_a`/`delta_power_b`**、`current`/`previous` 係数） |
 
 `form_evaluation` のネスト: 各指標は `form_evaluation.gct.{actual, expected, delta_pct, star_rating, score, needs_improvement, evaluation_text}` 等。`cadence` は pace 依存フィールドが null なら評価対象外。`power` は `{avg_w, wkg, speed_actual_mps, speed_expected_mps, efficiency_score, label, needs_improvement}`（パワーデータがある場合のみ）。**`label` は自己ベースライン比の相対記述子（`同等`/`上回る`/`下回る`）。power は★指標ではないため、パワー効率の記述にはこの `label` を使い、★評価はしない**。
@@ -156,8 +157,8 @@ Write(file_path="{ANALYSIS_TEMP_DIR}/{section}.json", content=json.dumps({
 1. `form_ranges` で GCT/VO/VR の絶対値評価（値は `form_evaluation` から、**star_rating は手動計算せず `form_evaluation.{metric}.star_rating` を使用**）
 2. **ケイデンス評価はペース依存**（`form_evaluation.cadence`、null なら対象外）。**star_rating は手動計算せず `form_evaluation.cadence.star_rating` を使用し、絶対180spm目標で「未達」と評価しない**。文言は `form_evaluation.cadence.evaluation_text`（ペース依存の期待値ベース）を参照
 3. **パワー効率は自己ベースライン比の相対記述**（`form_evaluation.power` がある場合のみ）。**必ず `form_evaluation.power.label`（`同等`/`上回る`/`下回る`）の語を主語にして書く**（例:「パワー効率は自己ベースライン比で『同等』」）。ラベルは次のように**前向きに解釈**する: **`同等`＝自分の平均どおりで問題なし（良好）／`上回る`＝平均より良い／`下回る`＝平均よりやや低め（ただし断定しない）**。**`efficiency_score` の生値（例 -2.5%）や「◯%下回り／上回り」を主表現・見出しにしない**（触れる場合は補足の括弧内に留め、優劣・良し悪しの断定に使わない）。**★評価はしない（power は★指標ではない）**。`label` が `下回る` でも安易に非効率と断定せず、疲労/環境/路面の影響の可能性に留める
-4. `integrated_score_stars` で統合スコアの星評価（`form_evaluation.integrated_score` または `form_scores`）
-5. `zone_targets[training_type_category]` で HR ゾーン配分評価（`zone_percentages` + `hr_zones_detail`）。training_type 基準でゾーン配分を評価する
+4. 統合スコアの★は **`form_scores.integrated_star_score`（算出済みの連続★）をそのまま転記**する。`integrated_score_stars` の帯表を自分でマッピングし直さない（帯の境目で★が1つ飛ぶのを防ぐ・Issue #1236）。`integrated_star_score` が null のときだけ契約の `integrated_score_stars` にフォールバックする
+5. `zone_targets[training_type_category]` で HR ゾーン配分評価（`zone_percentages` + `hr_zones_detail`）。**目標%は契約の `zone_targets[...].target_pct` をそのまま引用**する（一般論の数値を自作しない。契約値は実際に判定に使われた閾値と同一）。`zone_band_pct`（対象帯の占有%）があれば達成度の根拠として引用してよい
 6. `baseline_comparison` でトレンド評価（GCT/VO/VR/cadence は `form_baseline_trend.metrics` の delta_d/delta_b の正常/改善/要注意判定）。**パワー効率のトレンドは `delta_power_a`（切片）と `delta_power_b`（傾き）の concordance で判定する**（power モデルは `speed = power_a + power_b·W/kg`。切片と傾きは回帰で逆相関するため、どちらか単独の delta では方向を断定しない）: **両方が同符号で正 → 上向き（同じ出力あたりで速い方向）／両方が同符号で負 → やや低下方向／符号が食い違う or どちらもほぼゼロ → 横ばい（明確な方向性なし）**。低下方向でも疲労/暑熱/路面の影響の可能性に留め断定しない。`form_baseline_trend.success=false` の場合**のみ**、データ不足として簡潔に記述してよい
 7. **skip 文言は `success=false` のときだけ許される**。`form_baseline_trend.success=true`（1ヶ月比較あり）の場合、form_trend に次の skip 文言を**一切含めない**（文全体だけでなく**個別指標の説明でも禁止**）: 「省略」「含まれていない」「含まれておらず」「データ不足」「ベースラインがない」「ベースラインが存在しない」「比較できません」「蓄積されれば」。merge の `check_form_trend_consistency` ゲートが success=true 時にこれらを**文字列一致**で検出し、**efficiency セクション全体を却下**する（1指標の記述に混ぜても全体が落ちる）。
    - **パワー効率**は `delta_power_a`/`delta_power_b` があるとき上記ルール6の concordance で方向（上向き/やや低下/横ばい）を述べる（**数値%・★は付けない**。当該回の経済性判定は `form_evaluation.power.label` が担い、ここは月次ベースラインの方向のみ）。**power の `previous` が無く `delta_power_*` が得られないとき**は、上記 skip 文言を使わず「**パワー係数は前月の比較対象が算出されておらず今回は評価対象外**」のように係数の不在を明示して評価から外す（禁止語を含めない）。GCT/VO/VR/cadence でも `current`/`previous` 係数が両方 null の個別指標は同様に「**係数が算出されておらず今回は対象外**」と表現する。
@@ -190,6 +191,7 @@ analysis_data = {
 | HR ドリフト | `phase_structure.hr_drift_percentage` |
 | ケイデンス安定性・疲労兆候 | `phase_structure.cadence_consistency`, `phase_structure.fatigue_pattern` |
 | ゾーン分布の補助評価 | `zone_percentages` |
+| `hr_control` 軸の起点（決定論化済み・Issue #1236） | `zone_distribution_score`（1.0-5.0）、根拠帯は `zone_band_pct`。null なら従来どおり `zone_distribution_rating` / HR ドリフトから採点 |
 | フェーズ構造判定（3 or 4） | `phase_structure` に `recovery` キーが存在するか |
 
 ### category 判定
@@ -204,6 +206,7 @@ analysis_data = {
 3. `warmup_criteria[category]` / `cooldown_criteria[category]` で各フェーズ評価（`phase_structure` の avg_pace/avg_hr を使用）
 4. `hr_drift_by_type[category]` で `phase_structure.hr_drift_percentage` を評価（interval は N/A）
 5. `evaluation_criteria[category].weights` の各軸を 1.0〜5.0 で採点し、**加重平均でセッション総合星を算出 → `star_rating_breakdown`**（上記「加重スター評価（決定的検証 — phase / environment 共通）」を厳守。決定的に再検証され不一致は登録拒否）
+6. **`hr_control` 軸は `CONTEXT.zone_distribution_score` を起点**にする（Issue #1236）。ラベル（`zone_distribution_rating`）から自分で帯マッピングし直すと、ほぼ同内容の2本が境目で★1つ分割れるため。HR ドリフト（`hr_drift_percentage`）と処方の HR 上限順守を踏まえた調整は**最大 ±0.5 まで**とし、[1.0, 5.0] にクランプする。`zone_distribution_score` が null（`hr_efficiency` 行なし／強度カテゴリ unknown）のときのみ、従来どおりラベルと HR ドリフトから採点する
 
 ### トレーニングタイプ別トーン（WU/CD 欠如時の star 分岐）
 

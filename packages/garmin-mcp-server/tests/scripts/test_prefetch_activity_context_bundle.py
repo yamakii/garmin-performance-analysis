@@ -30,7 +30,7 @@ def _patch_db_path(monkeypatch: pytest.MonkeyPatch, verification_db_path: Path) 
     )
 
 
-def _insert_form_evaluation(db_path: Path) -> None:
+def _insert_form_evaluation(db_path: Path, integrated_score: float = 90.0) -> None:
     """Insert a minimal form_evaluations row for the fixture activity.
 
     The verification fixture has no form_evaluations row; this seeds one with a
@@ -61,10 +61,48 @@ def _insert_form_evaluation(db_path: Path) -> None:
             '★★★★☆', 4.0, false,
             178.0, 170, true,
             4.0, '★★★★☆',
-            90.0, 'aerobic'
+            ?, 'aerobic'
         )
         """,
-        [FIXTURE_ACTIVITY_ID],
+        [FIXTURE_ACTIVITY_ID, integrated_score],
+    )
+    conn.close()
+
+
+def _set_hr_efficiency(
+    db_path: Path,
+    training_type: str,
+    zone1: float,
+    zone2: float,
+    zone3: float,
+    zone4: float,
+    zone5: float,
+    primary_zone: str,
+) -> None:
+    """Overwrite the fixture's hr_efficiency row with a known distribution."""
+    conn = duckdb.connect(str(db_path))
+    conn.execute(
+        """
+        UPDATE hr_efficiency
+        SET training_type = ?,
+            zone1_percentage = ?,
+            zone2_percentage = ?,
+            zone3_percentage = ?,
+            zone4_percentage = ?,
+            zone5_percentage = ?,
+            primary_zone = ?
+        WHERE activity_id = ?
+        """,
+        [
+            training_type,
+            zone1,
+            zone2,
+            zone3,
+            zone4,
+            zone5,
+            primary_zone,
+            FIXTURE_ACTIVITY_ID,
+        ],
     )
     conn.close()
 
@@ -335,3 +373,84 @@ class TestPrefetchBundleExpansion:
         assert gear["gear_type"] == "Running Shoes"
         assert gear["gear_nickname"] is None
         assert gear["gear_label"] == "Nike Vaporfly 3"
+
+    def test_prefetch_emits_zone_distribution_score(
+        self, verification_db_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The continuous zone score is recomputed on read (Issue #1236).
+
+        An easy run judged on its Zone1-2 band: 14.87 + 69.73 = 84.6% sits
+        between the "Good" (75%) and "Excellent" (90%) cuts, so the score
+        interpolates to 4.6 instead of collapsing to the "Good" label.
+        """
+        _set_hr_efficiency(
+            verification_db_path,
+            training_type="aerobic_base",
+            zone1=14.87,
+            zone2=69.73,
+            zone3=15.40,
+            zone4=0.0,
+            zone5=0.0,
+            primary_zone="Zone 2",
+        )
+        _patch_db_path(monkeypatch, verification_db_path)
+
+        result = prefetch_activity_context(FIXTURE_ACTIVITY_ID)
+
+        assert result["zone_band_pct"] == pytest.approx(84.6)
+        assert result["zone_distribution_score"] == 4.6
+
+    def test_prefetch_emits_integrated_star_score(
+        self, verification_db_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """form_scores carries the continuous star form of integrated_score."""
+        _insert_form_evaluation(verification_db_path, integrated_score=94.3)
+        _patch_db_path(monkeypatch, verification_db_path)
+
+        result = prefetch_activity_context(FIXTURE_ACTIVITY_ID)
+
+        assert result["form_scores"]["integrated_score"] == pytest.approx(94.3)
+        assert result["form_scores"]["integrated_star_score"] == 4.7
+
+    def test_prefetch_scores_none_without_hr_efficiency(
+        self, verification_db_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No hr_efficiency row: both continuous zone keys are null, no crash."""
+        conn = duckdb.connect(str(verification_db_path))
+        conn.execute(
+            "DELETE FROM hr_efficiency WHERE activity_id = ?", [FIXTURE_ACTIVITY_ID]
+        )
+        conn.close()
+
+        _patch_db_path(monkeypatch, verification_db_path)
+
+        result = prefetch_activity_context(FIXTURE_ACTIVITY_ID)
+
+        assert result["zone_band_pct"] is None
+        assert result["zone_distribution_score"] is None
+        assert result["zone_distribution_rating"] is None
+        assert "error" not in result
+
+    def test_prefetch_context_is_json_serialisable_with_new_keys(
+        self, verification_db_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The bundle carrying the new continuous keys stays JSON-safe."""
+        _set_hr_efficiency(
+            verification_db_path,
+            training_type="aerobic_base",
+            zone1=14.87,
+            zone2=69.73,
+            zone3=15.40,
+            zone4=0.0,
+            zone5=0.0,
+            primary_zone="Zone 2",
+        )
+        _insert_form_evaluation(verification_db_path, integrated_score=94.3)
+        _patch_db_path(monkeypatch, verification_db_path)
+
+        result = prefetch_activity_context(FIXTURE_ACTIVITY_ID)
+
+        assert {"zone_band_pct", "zone_distribution_score"}.issubset(result.keys())
+        assert "integrated_star_score" in result["form_scores"]
+        # No default= encoder: a raw date anywhere in the bundle would raise.
+        json.dumps(result, ensure_ascii=False)
