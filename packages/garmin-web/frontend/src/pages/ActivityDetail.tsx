@@ -861,9 +861,12 @@ export default function ActivityDetail() {
           {detail.activity.activity_name ?? "アクティビティ"}
         </h1>
         {/* The verdict line: how the day's plan went, and what — if anything —
-            is worth a second look. No stars: a run is not a score (#1247). */}
+            is worth a second look. No stars: a run is not a score (#1247). It
+            reads at `sub` size because the run's name above it is the page's
+            heading — a verdict set larger than the title inverted that (#1270). */}
         {report != null && (
           <VerdictLine
+            size="sub"
             verdict={report.headline.plan_label}
             rest={
               flagLabels.length === 0 ? (

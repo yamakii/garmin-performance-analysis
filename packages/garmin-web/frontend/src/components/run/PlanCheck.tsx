@@ -14,9 +14,22 @@ const AXIS_LABELS: Record<string, string> = {
 /** Column order at `md` and up; below it each check stacks (see below). */
 const COLUMNS = ["項目", "目標", "実績", "状態"];
 
-/** Four columns at `md`+, the status one only as wide as its tag. */
+/**
+ * The four tracks at `md`+, fixed rather than content-sized.
+ *
+ * Header and rows are one grid — each row is `display: contents` inside it —
+ * because a grid per row sizes its own columns off its own text, and the
+ * result was 計画どおり sitting under 目標 and nothing at all under 状態
+ * (#1270).
+ */
 const GRID_COLUMNS =
-  "md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1.4fr)_auto]";
+  "md:grid-cols-[96px_minmax(0,1fr)_minmax(0,1.5fr)_72px]";
+
+/**
+ * Cell chrome at `md`+: the row's own box is gone there, so the hairline and
+ * the vertical rhythm belong to each cell.
+ */
+const CELL = "md:border-b md:border-hairline md:py-3 md:pr-3";
 
 /**
  * "5:21" / "1:04:09" — how long the run spent above the cap.
@@ -97,24 +110,32 @@ function CheckRow({
     <div
       role="group"
       aria-label={label}
-      className={`grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 gap-y-1 border-b border-hairline py-3 ${GRID_COLUMNS} md:gap-y-0`}
+      className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 gap-y-1 border-b border-hairline py-3 md:contents"
     >
-      <div className="order-1 font-bold text-ink md:order-none">{label}</div>
-      {/* Stacked, the tag sits on the name's line at the right edge; at `md`
-          it falls back into the 状態 column. Ordering it here (rather than
-          placing it last in the DOM) is what keeps it on screen at 400px — a
-          table pushed it off the side entirely. */}
-      <div className="order-2 justify-self-end md:order-none">
-        <StatusTag onPlan={check.on_plan} />
+      <div className={`order-1 font-bold text-ink md:order-none ${CELL}`}>
+        {label}
       </div>
-      <div className="order-3 col-span-2 font-mono text-[13px] text-ink-soft md:order-none md:col-span-1">
+      <div
+        className={`order-3 col-span-2 font-mono text-[13px] text-ink-soft md:order-none md:col-span-1 ${CELL}`}
+      >
         <StackedLabel>目標</StackedLabel>
         <span>{check.target}</span>
       </div>
-      <div className="order-4 col-span-2 font-mono text-[13px] text-ink md:order-none md:col-span-1">
+      <div
+        className={`order-4 col-span-2 font-mono text-[13px] text-ink md:order-none md:col-span-1 ${CELL}`}
+      >
         <StackedLabel>実績</StackedLabel>
         <span>{check.actual}</span>
         {ceiling != null && <OverCeilingBar ceiling={ceiling} />}
+      </div>
+      {/* Stacked, the tag sits on the name's line at the right edge, which is
+          what keeps it on screen at 400px — a table pushed it off the side
+          entirely. `order` does that without moving it out of the 状態 column
+          at `md`, where the shared grid places cells in DOM order. */}
+      <div
+        className={`order-2 justify-self-end md:order-none md:justify-self-stretch ${CELL}`}
+      >
+        <StatusTag onPlan={check.on_plan} />
       </div>
     </div>
   );
@@ -149,13 +170,15 @@ export default function PlanCheck({
       note={plan.title !== "" ? `処方「${plan.title}」` : undefined}
       noteMono
     >
-      <div>
-        <div
-          aria-hidden="true"
-          className={`hidden border-b border-ink pb-2 font-mono text-[11px] tracking-[0.04em] text-ink-muted md:grid md:gap-x-3 ${GRID_COLUMNS}`}
-        >
+      <div className={`md:grid ${GRID_COLUMNS}`}>
+        <div aria-hidden="true" className="hidden md:contents">
           {COLUMNS.map((column) => (
-            <span key={column}>{column}</span>
+            <span
+              key={column}
+              className="border-b border-ink pb-2 pr-3 font-mono text-[11px] tracking-[0.04em] text-ink-muted"
+            >
+              {column}
+            </span>
           ))}
         </div>
         {plan.checks.map((check) => (

@@ -174,6 +174,84 @@ describe("NormalRangeRows", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("test_normal_range_row_has_band_and_dot", () => {
+    renderRows([
+      signal({ metric: "gct", label_ja: "接地時間", status: "within", z: 0.58 }),
+    ]);
+
+    const row = rowOf("接地時間");
+    // The usual range is drawn, not just described: the track spans ±3σ and
+    // the band is the ±2σ inside it, so the dot lands somewhere meaningful.
+    const band = row.querySelector<HTMLElement>('[data-part="band"]');
+    expect(band).not.toBeNull();
+    expect(band?.style.left).toBe("16.67%");
+    expect(band?.style.width).toBe("66.67%");
+
+    // One mark at the reading, not a bar growing from the centre (#1270).
+    const dot = row.querySelector<HTMLElement>('[data-part="dot"]');
+    expect(dot).not.toBeNull();
+    expect(parseFloat(dot?.style.left ?? "")).toBeCloseTo(59.7, 1);
+    expect(dot?.className).toContain("h-2.5");
+    expect(dot?.className).toContain("w-2.5");
+    expect(dot?.className).toContain("bg-ink");
+  });
+
+  it("test_normal_range_adverse_dot_is_warn", () => {
+    renderRows([
+      signal({
+        metric: "vr",
+        label_ja: "上下動比",
+        status: "outside",
+        adverse: true,
+        z: 2.4,
+      }),
+      signal({
+        family: "cardio",
+        metric: "hr_vs_expected",
+        label_ja: "心拍（想定比）",
+        unit: "bpm",
+        status: "outside",
+        adverse: false,
+        z: -2.1,
+      }),
+    ]);
+
+    const adverse = rowOf("上下動比").querySelector<HTMLElement>(
+      '[data-part="dot"]',
+    );
+    expect(adverse?.className).toContain("bg-status-warn");
+
+    // A favourable outlier sits on the good side and takes no colour: tinting
+    // it would teach the reader to ignore the tint.
+    const favourable = rowOf("心拍（想定比）").querySelector<HTMLElement>(
+      '[data-part="dot"]',
+    );
+    expect(favourable?.className).toContain("bg-ink");
+    expect(favourable?.className).not.toContain("bg-status-warn");
+    expect(parseFloat(favourable?.style.left ?? "")).toBeCloseTo(15, 1);
+  });
+
+  it("test_normal_range_axis_caption_present", () => {
+    renderRows(SIGNALS);
+
+    // Named once, above the first track — the figure has to say which side is
+    // the unfavourable one on its own.
+    for (const caption of ["← 良い側", "いつもの範囲", "悪い側 →"]) {
+      expect(screen.getAllByText(caption)).toHaveLength(1);
+    }
+  });
+
+  it("test_normal_range_insufficient_has_no_dot", () => {
+    renderRows(SIGNALS);
+
+    // Nothing to place and no range to place it in: the track keeps its centre
+    // line and the row says why in words.
+    const row = rowOf("心拍ドリフト");
+    expect(row.querySelector('[data-part="dot"]')).toBeNull();
+    expect(row.querySelector('[data-part="band"]')).toBeNull();
+    expect(row.querySelector('[data-part="track"]')).not.toBeNull();
+  });
+
   it("shows the zone split and the way to the long view", () => {
     renderRows(SIGNALS);
 

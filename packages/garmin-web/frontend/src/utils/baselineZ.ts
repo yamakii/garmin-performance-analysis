@@ -40,6 +40,15 @@ const HALF_TRACK = 50;
 /** z of this magnitude fills the half track; anything beyond is clamped. */
 const Z_FULL_SCALE = 3;
 
+/**
+ * |z| at the edge of the "usual range" band drawn on a track.
+ *
+ * The track spans ±3σ, and the shaded band is the ±2σ the athlete's own
+ * readings normally fall inside — without it the dot has a position but no
+ * scale, and the reader cannot see where "unusual" starts (#1270).
+ */
+export const Z_BAND_EDGE = 2;
+
 /** Which way a deviation points once the metric's polarity is applied. */
 export type ZDirection = "favorable" | "unfavorable" | "neutral";
 
@@ -123,9 +132,42 @@ export function zBarStyle(row: ZBarRow): { left: string; width: string } {
   return { left: `${percent(left)}%`, width: `${percent(width)}%` };
 }
 
-/** One decimal at most, and never the float noise of 1.8 / 3 * 50. */
+/**
+ * Where the usual-range band sits on the track, as CSS percentages.
+ *
+ * Fixed geometry: the track is ±3σ wide, so the ±2σ band always covers the
+ * middle two thirds. It is returned rather than hard-coded in the markup so
+ * the band and the dot can never be drawn to two different scales.
+ */
+export function zBandStyle(): { left: string; width: string } {
+  const half = (Z_BAND_EDGE / Z_FULL_SCALE) * HALF_TRACK;
+  return { left: `${percent(HALF_TRACK - half)}%`, width: `${percent(2 * half)}%` };
+}
+
+/**
+ * Where one reading's marker sits on the track, as a CSS percentage.
+ *
+ * A bar growing from the centre says "how far out" twice — with its width and
+ * with its end — and reads as a quantity the metric does not have. A single
+ * mark at the reading's position says it once, and lands on the band drawn by
+ * `zBandStyle` so the reader can see which side of the range it fell on.
+ * Returns null for a row with no z: an unmeasured metric gets no marker.
+ */
+export function zDotStyle(row: ZBarRow): { left: string } | null {
+  if (row.z == null) {
+    return null;
+  }
+  const magnitude = Math.min(Math.abs(row.z), Z_FULL_SCALE);
+  const offset =
+    row.direction === "neutral" ? 0 : (magnitude / Z_FULL_SCALE) * HALF_TRACK;
+  const left =
+    row.direction === "favorable" ? HALF_TRACK - offset : HALF_TRACK + offset;
+  return { left: `${percent(left)}%` };
+}
+
+/** Two decimals at most, and never the float noise of 1.8 / 3 * 50. */
 function percent(value: number): string {
-  return String(Number(value.toFixed(1)));
+  return String(Number(value.toFixed(2)));
 }
 
 /**
