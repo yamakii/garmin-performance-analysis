@@ -78,6 +78,8 @@ type Tile = {
   unit: string;
   digits: number;
   rating: string | null;
+  /** Numeric form score behind the glyphs, e.g. 4.1 (#1234). */
+  score: number | null;
   note: ReactNode | null;
 };
 
@@ -151,6 +153,7 @@ export default function EfficiencyReport({
           unit: "ms",
           digits: 0,
           rating: asString(fe.gct_star_rating),
+          score: asNumber(fe.gct_score),
           note: joinNotes(
             expectedNote(asNumber(fe.gct_ms_expected), "ms", 0),
             deltaNote(asNumber(fe.gct_delta_pct), "%", 1),
@@ -163,6 +166,7 @@ export default function EfficiencyReport({
           unit: "cm",
           digits: 1,
           rating: asString(fe.vo_star_rating),
+          score: asNumber(fe.vo_score),
           // VO stores an absolute cm delta (vo_delta_cm), not a percentage.
           note: joinNotes(
             expectedNote(asNumber(fe.vo_cm_expected), "cm", 1),
@@ -176,6 +180,7 @@ export default function EfficiencyReport({
           unit: "%",
           digits: 1,
           rating: asString(fe.vr_star_rating),
+          score: asNumber(fe.vr_score),
           note: joinNotes(
             expectedNote(asNumber(fe.vr_pct_expected), "%", 1),
             deltaNote(asNumber(fe.vr_delta_pct), "%", 1),
@@ -191,11 +196,18 @@ export default function EfficiencyReport({
       value: tile.value!.toFixed(tile.digits),
       unit: tile.unit,
       // The per-metric stars keep their own colour inside the note so a warn
-      // expectation does not recolour the rating it sits next to.
+      // expectation does not recolour the rating it sits next to. The score
+      // rides beside them as real text: form scores are continuous, and five
+      // glyphs cannot separate a 4.1 from a 4.4 (#1234).
       note: (
         <>
           {tile.rating != null && (
             <span className="mr-1.5 text-star">{tile.rating}</span>
+          )}
+          {tile.score != null && (
+            <span className="mr-1.5 font-mono whitespace-nowrap text-ink-soft">
+              {tile.score.toFixed(1)}
+            </span>
           )}
           {tile.note}
         </>
