@@ -39,7 +39,9 @@ def tmp_db_with_baseline(tmp_path):
             average_speed FLOAT,
             grade_adjusted_speed FLOAT,
             power FLOAT,
-            role_phase VARCHAR
+            role_phase VARCHAR,
+            distance FLOAT,
+            pace_seconds_per_km FLOAT
         )
     """)
 
@@ -112,12 +114,15 @@ def tmp_db_with_baseline(tmp_path):
     # Insert run splits with power. grade_adjusted_speed is the GAP input used
     # for evaluation; average_speed is set to a different value to ensure GAP
     # (not average_speed) drives speed_actual.
-    # split_id, activity_id, average_speed, grade_adjusted_speed, power, role_phase
+    # distance / pace_seconds_per_km are full 1 km laps at a running pace so the
+    # shared running-split filter (#1231) keeps them.
+    # split_id, activity_id, average_speed, grade_adjusted_speed, power,
+    # role_phase, distance, pace_seconds_per_km
     conn.execute(
-        "INSERT INTO splits VALUES (10001, 1001, 9.0, 3.5, 250.0, 'run')"
+        "INSERT INTO splits VALUES (10001, 1001, 9.0, 3.5, 250.0, 'run', 1.0, 300.0)"
     )  # 3.33 W/kg
     conn.execute(
-        "INSERT INTO splits VALUES (10002, 1001, 9.0, 3.6, 260.0, 'run')"
+        "INSERT INTO splits VALUES (10002, 1001, 9.0, 3.6, 260.0, 'run', 1.0, 295.0)"
     )  # 3.47 W/kg
 
     conn.close()
@@ -167,7 +172,9 @@ def test_evaluate_power_efficiency_no_power(tmp_db_with_baseline):
     conn.execute(
         "INSERT INTO activities VALUES (1002, ?, 75.0)", [today - timedelta(days=3)]
     )
-    conn.execute("INSERT INTO splits VALUES (10003, 1002, 9.0, 3.5, NULL, 'run')")
+    conn.execute(
+        "INSERT INTO splits VALUES (10003, 1002, 9.0, 3.5, NULL, 'run', 1.0, 300.0)"
+    )
 
     result = calculate_power_efficiency_internal(
         conn,
@@ -194,10 +201,17 @@ def test_power_eval_uses_gap_and_run_only(tmp_db_with_baseline):
     """
     conn = duckdb.connect(tmp_db_with_baseline)
     # Non-run splits with off-model GAP that must be ignored.
-    conn.execute("INSERT INTO splits VALUES (10004, 1001, 9.0, 6.0, 300.0, 'cooldown')")
-    conn.execute("INSERT INTO splits VALUES (10005, 1001, 9.0, 6.0, 300.0, 'warmup')")
+    conn.execute(
+        "INSERT INTO splits VALUES (10004, 1001, 9.0, 6.0, 300.0, 'cooldown', "
+        "1.0, 280.0)"
+    )
+    conn.execute(
+        "INSERT INTO splits VALUES (10005, 1001, 9.0, 6.0, 300.0, 'warmup', 1.0, 280.0)"
+    )
     # Run split with GAP=NULL must be ignored (power present).
-    conn.execute("INSERT INTO splits VALUES (10006, 1001, 9.0, NULL, 300.0, 'run')")
+    conn.execute(
+        "INSERT INTO splits VALUES (10006, 1001, 9.0, NULL, 300.0, 'run', 1.0, 280.0)"
+    )
 
     today = datetime.now().date()
     result = calculate_power_efficiency_internal(
@@ -248,7 +262,7 @@ def _build_gate_db(tmp_path, speed_actual: float, power_rmse: float) -> str:
     conn.execute(
         "CREATE TABLE splits (split_id INTEGER PRIMARY KEY, activity_id INTEGER, "
         "average_speed FLOAT, grade_adjusted_speed FLOAT, power FLOAT, "
-        "role_phase VARCHAR)"
+        "role_phase VARCHAR, distance FLOAT, pace_seconds_per_km FLOAT)"
     )
     conn.execute(
         "CREATE TABLE form_baseline_history ("
@@ -274,7 +288,7 @@ def _build_gate_db(tmp_path, speed_actual: float, power_rmse: float) -> str:
     )
     conn.execute("INSERT INTO hr_efficiency VALUES (2001, 'low_moderate')")
     conn.execute(
-        "INSERT INTO splits VALUES (20001, 2001, 9.0, ?, 250.0, 'run')",
+        "INSERT INTO splits VALUES (20001, 2001, 9.0, ?, 250.0, 'run', 1.0, 300.0)",
         [speed_actual],
     )
     conn.close()

@@ -38,7 +38,9 @@ def _base_tmp_db(tmp_path_factory: pytest.TempPathFactory) -> str:
             average_speed FLOAT,
             grade_adjusted_speed FLOAT,
             power FLOAT,
-            role_phase VARCHAR
+            role_phase VARCHAR,
+            distance FLOAT,
+            pace_seconds_per_km FLOAT
         )
     """)
 
@@ -89,12 +91,23 @@ def _base_tmp_db(tmp_path_factory: pytest.TempPathFactory) -> str:
             # average_speed is set to a different value to prove GAP is the input.
             gap_speed = 1.0 + 0.7 * power_wkg
             avg_speed = gap_speed + 0.5
+            # Full 1 km laps at a running pace: they pass the shared
+            # running-split filter (distance >= 0.4 km, pace < 600 s/km).
             split_rows.append(
-                (split_id, activity_id, avg_speed, gap_speed, power, "run")
+                (
+                    split_id,
+                    activity_id,
+                    avg_speed,
+                    gap_speed,
+                    power,
+                    "run",
+                    1.0,
+                    1000.0 / avg_speed,
+                )
             )
 
     conn.executemany("INSERT INTO activities VALUES (?, ?, ?)", activity_rows)
-    conn.executemany("INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?)", split_rows)
+    conn.executemany("INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?, ?, ?)", split_rows)
     conn.close()
     return db_path
 
@@ -220,12 +233,21 @@ def test_power_baseline_excludes_non_run_splits(tmp_db_path):
         # Use deliberately off-model speeds/power for the non-run splits so that
         # if they leaked in, both n_samples and the fit would change.
         extra_rows.append(
-            (activity_id * 100 + 1, activity_id, 9.0, 9.0, 400.0, "warmup")
+            (activity_id * 100 + 1, activity_id, 9.0, 9.0, 400.0, "warmup", 1.0, 111.0)
         )
         extra_rows.append(
-            (activity_id * 100 + 2, activity_id, 0.5, 0.5, 100.0, "cooldown")
+            (
+                activity_id * 100 + 2,
+                activity_id,
+                0.5,
+                0.5,
+                100.0,
+                "cooldown",
+                1.0,
+                2000.0,
+            )
         )
-    conn.executemany("INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?)", extra_rows)
+    conn.executemany("INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?, ?, ?)", extra_rows)
     conn.close()
 
     result = train_power_efficiency_baseline(
@@ -280,3 +302,63 @@ def test_power_baseline_uses_grade_adjusted_speed(tmp_db_path):
         0.5 < result["power_b"] < 1.0
     ), f"power_b should track GAP (~0.7), got {result['power_b']}"
     assert result["power_rmse"] < 0.5
+
+
+@pytest.mark.integration
+def test_power_baseline_training_excludes_fragments(tmp_db_path):
+    """GPS フラグメント (10 m ラップ) は学習サンプルに入らない (#1231).
+
+    base fixture の 100 件の 1 km run スプリットで学習した係数と、そこへ
+    distance 0.01 km / 370 W のフラグメント行を足して学習した係数が一致する
+    ことを確認する（評価側と同じ running-split フィルタが効いている）。
+    """
+    from garmin_mcp.form_baseline.trainer import train_power_efficiency_baseline
+
+    end_date = datetime.now().strftime("%Y-%m-%d")
+    baseline = train_power_efficiency_baseline(
+        user_id="default",
+        condition_group="flat_road",
+        end_date=end_date,
+        window_months=2,
+        db_path=tmp_db_path,
+    )
+    assert baseline is not None
+    assert baseline["n_samples"] == 100
+
+    conn = duckdb.connect(tmp_db_path)
+    # 2 fragments per activity: off-model power at an artifact pace.
+    fragment_rows = []
+    for i in range(20):
+        activity_id = 1000 + i
+        for k in (1, 2):
+            fragment_rows.append(
+                (
+                    activity_id * 100 + k,
+                    activity_id,
+                    4.0,
+                    4.0,
+                    370.0,
+                    "run",
+                    0.01,
+                    244.0,
+                )
+            )
+    conn.executemany(
+        "INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?, ?, ?)", fragment_rows
+    )
+    conn.close()
+
+    polluted = train_power_efficiency_baseline(
+        user_id="default",
+        condition_group="flat_road",
+        end_date=end_date,
+        window_months=2,
+        db_path=tmp_db_path,
+    )
+
+    assert polluted is not None
+    assert (
+        polluted["n_samples"] == baseline["n_samples"]
+    ), f"Fragments leaked into training: {polluted['n_samples']} samples"
+    assert polluted["power_a"] == pytest.approx(baseline["power_a"])
+    assert polluted["power_b"] == pytest.approx(baseline["power_b"])
