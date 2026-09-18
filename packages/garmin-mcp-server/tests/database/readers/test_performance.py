@@ -351,3 +351,61 @@ class TestFindUnanalyzedActivities:
         result = reader.find_unanalyzed_activities("2025-06-01", "2025-06-30")
 
         assert [r["activity_id"] for r in result] == [70000020]
+
+
+def _seed_run_note(
+    conn: duckdb.DuckDBPyConnection, activity_id: int, date: str
+) -> None:
+    """Insert a single ``run_note`` section for an activity."""
+    conn.execute(
+        """INSERT INTO section_analyses
+           (analysis_id, activity_id, activity_date, section_type, analysis_data)
+           VALUES (?, ?, ?, ?, ?)""",
+        [
+            activity_id * 10 + 9,
+            activity_id,
+            date,
+            "run_note",
+            json.dumps({"story": "コーチレビュー"}),
+        ],
+    )
+
+
+@pytest.mark.integration
+class TestFindUnanalyzedActivitiesRunNote:
+    """A run_note makes a run analysed on its own (Epic #1247, Issue #1251)."""
+
+    def test_run_note_counts_as_analysed(self, reader_db_path: Path):
+        """A single run_note row replaces the five legacy sections."""
+        conn = duckdb.connect(str(reader_db_path))
+        _seed_activity(conn, 70000030, "2025-06-01", 0)
+        _seed_run_note(conn, 70000030, "2025-06-01")
+        conn.close()
+
+        reader = PerformanceReader(db_path=str(reader_db_path))
+        result = reader.find_unanalyzed_activities("2025-06-01", "2025-06-30")
+
+        assert result == []
+
+    def test_legacy_five_sections_still_count(self, reader_db_path: Path):
+        """The legacy completeness rule keeps working for older analyses."""
+        conn = duckdb.connect(str(reader_db_path))
+        _seed_activity(conn, 70000031, "2025-06-02", 5)
+        conn.close()
+
+        reader = PerformanceReader(db_path=str(reader_db_path))
+        result = reader.find_unanalyzed_activities("2025-06-01", "2025-06-30")
+
+        assert result == []
+
+    def test_partial_legacy_without_run_note_is_unanalysed(self, reader_db_path: Path):
+        """4 legacy sections and no run_note -> still returned, count 4."""
+        conn = duckdb.connect(str(reader_db_path))
+        _seed_activity(conn, 70000032, "2025-06-03", 4)
+        conn.close()
+
+        reader = PerformanceReader(db_path=str(reader_db_path))
+        result = reader.find_unanalyzed_activities("2025-06-01", "2025-06-30")
+
+        assert [r["activity_id"] for r in result] == [70000032]
+        assert result[0]["section_count"] == 4

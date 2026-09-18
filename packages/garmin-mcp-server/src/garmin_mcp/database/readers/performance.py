@@ -143,21 +143,25 @@ class PerformanceReader(BaseDBReader):
         """Find running activities missing a complete set of section analyses.
 
         ``activities`` LEFT JOIN ``section_analyses`` aggregated by
-        ``activity_id``; returns activities whose DISTINCT ``section_type`` count
-        is below ``required_sections`` within ``[start_date, end_date]``. All
-        ingested activities are runs (non-running types are filtered at ingest),
-        so no activity_type filter is needed. DISTINCT is used because
-        append-only storage (#720) keeps multiple versions of the same section.
+        ``activity_id`` within ``[start_date, end_date]``. An activity counts as
+        analysed when it has **a ``run_note`` row** (the single coach review that
+        replaces the five legacy sections, Epic #1247) **or** at least
+        ``required_sections`` distinct legacy section types. All ingested
+        activities are runs (non-running types are filtered at ingest), so no
+        activity_type filter is needed. DISTINCT is used because append-only
+        storage (#720) keeps multiple versions of the same section.
 
         Args:
             start_date: Inclusive lower bound (YYYY-MM-DD).
             end_date: Inclusive upper bound (YYYY-MM-DD).
-            required_sections: Section count considered complete (default 5).
+            required_sections: Legacy section count considered complete
+                (default 5). ``run_note`` rows never count toward it.
 
         Returns:
             ``[{"activity_id": int, "date": "YYYY-MM-DD", "section_count": int}]``
+            where ``section_count`` is the distinct *legacy* section count,
             ordered by date ascending (activity_id as tiebreaker). Empty list on
-            error or when every activity is complete.
+            error or when every activity is analysed.
         """
         try:
             with self._get_connection() as conn:
@@ -166,13 +170,17 @@ class PerformanceReader(BaseDBReader):
                     SELECT
                         a.activity_id,
                         a.activity_date,
-                        COUNT(DISTINCT s.section_type) AS section_count
+                        COUNT(DISTINCT s.section_type)
+                            FILTER (WHERE s.section_type <> 'run_note')
+                            AS section_count
                     FROM activities a
                     LEFT JOIN section_analyses s
                         ON a.activity_id = s.activity_id
                     WHERE a.activity_date BETWEEN ? AND ?
                     GROUP BY a.activity_id, a.activity_date
-                    HAVING COUNT(DISTINCT s.section_type) < ?
+                    HAVING COUNT(DISTINCT s.section_type)
+                               FILTER (WHERE s.section_type <> 'run_note') < ?
+                       AND COUNT(*) FILTER (WHERE s.section_type = 'run_note') = 0
                     ORDER BY a.activity_date ASC, a.activity_id ASC
                     """,
                     [start_date, end_date, required_sections],

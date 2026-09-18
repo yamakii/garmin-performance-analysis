@@ -216,7 +216,8 @@
             "phase",
             "efficiency",
             "environment",
-            "summary"
+            "summary",
+            "run_note"
           ]
         },
         "analysis_data": {
@@ -243,7 +244,8 @@
             "phase",
             "efficiency",
             "environment",
-            "summary"
+            "summary",
+            "run_note"
           ]
         }
       },
