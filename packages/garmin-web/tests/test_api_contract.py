@@ -45,16 +45,18 @@ _ACTIVITY_CORE_TYPES: dict[str, type | tuple[type, ...]] = {
     "avg_pace_seconds_per_km": (int, float),
     "avg_heart_rate": int,
 }
-# ActivitySummary = ActivityCore + the latest summary section's rating and lead
-# sentence (#1131). Both are derived by the list query only, so the detail
-# response (SELECT * of activities) is checked against ActivityCore.
+# ActivitySummary = ActivityCore + the run report's headline (plan label and
+# adverse-signal flags) and the coach review's opening sentence (#1254). All
+# three are derived by the list query only, so the detail response (SELECT * of
+# activities) is checked against ActivityCore.
 _ACTIVITY_SUMMARY_TYPES: dict[str, type | tuple[type, ...]] = {
     **_ACTIVITY_CORE_TYPES,
-    "star_rating": str,
-    "summary_lead": str,
+    "plan_label": str,
+    "flag_labels": list,
+    "story_lead": str,
 }
-# Non-nullable in ActivitySummary.
-_ACTIVITY_SUMMARY_NON_NULL = {"activity_id", "activity_date"}
+# Non-nullable in ActivitySummary (``flag_labels`` is an empty list, never null).
+_ACTIVITY_SUMMARY_NON_NULL = {"activity_id", "activity_date", "flag_labels"}
 
 # ActivityDetailResponse top-level keys (types.ts L146-155): all required.
 _DETAIL_TOP_LEVEL_KEYS = {

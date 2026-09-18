@@ -10,17 +10,24 @@ export interface ActivityCore {
 }
 
 /**
- * A list row: the core columns plus the verdict of the latest summary section
- * analysis, joined in by the list query so the home page can show 「評価 ★ —
- * 要約」 without a second request (#1131). Both are null for a run that was
- * never analysed. The detail response uses `ActivityCore` — it reads the
- * activities table only and does not derive these.
+ * A list row: the core columns plus the run report's headline and the opening
+ * sentence of the coach review, joined in by the list query so the home page
+ * can say what the run was without a second request (#1254). A single run is
+ * no longer graded (#1247), so there is no star rating here. The detail
+ * response uses `ActivityCore` — it reads the activities table only and does
+ * not derive these.
  */
 export interface ActivitySummary extends ActivityCore {
-  /** e.g. "★★★★☆ 4.2/5.0". */
-  star_rating: string | null;
-  /** First sentence of the summary paragraph. */
-  summary_lead: string | null;
+  /**
+   * The plan verdict of the run report headline, e.g. "処方どおり" / "処方なし".
+   * Only the newest rows carry it (computing a report per row is too heavy);
+   * older rows are null.
+   */
+  plan_label: string | null;
+  /** Adverse signals of the headline, e.g. ["接地時間が長め"]; empty when none. */
+  flag_labels: string[];
+  /** First sentence of the coach review (the legacy summary as fallback). */
+  story_lead: string | null;
 }
 
 // --- Goal page (Issue #282) ---

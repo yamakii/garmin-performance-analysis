@@ -11,6 +11,8 @@ from garmin_web.queries.activities import lead_sentence, list_activities
 
 SUMMARY_ACTIVITY_ID = 9000000301
 
+# The two weather columns are read by RunReportReader, which the list query
+# calls for the newest rows' headline (#1254).
 _CREATE_ACTIVITIES = """
     CREATE TABLE activities (
         activity_id BIGINT PRIMARY KEY,
@@ -19,7 +21,10 @@ _CREATE_ACTIVITIES = """
         total_distance_km DOUBLE,
         total_time_seconds INTEGER,
         avg_pace_seconds_per_km DOUBLE,
-        avg_heart_rate INTEGER
+        avg_heart_rate INTEGER,
+        temp_celsius DOUBLE,
+        relative_humidity_percent DOUBLE,
+        wind_speed_kmh DOUBLE
     )
 """
 
@@ -92,6 +97,21 @@ def summary_versions_db_path(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def run_note_db_path(tmp_path: Path) -> Path:
+    """A legacy summary plus a newer coach review for the same activity."""
+    summary = json.dumps(
+        {"star_rating": "★★★★☆ 4.2/5.0", "summary": "旧の一文。続き。"},
+        ensure_ascii=False,
+    )
+    run_note = json.dumps({"story": "新の一文。続き。"}, ensure_ascii=False)
+    return _summary_db(
+        tmp_path,
+        "test_garmin_web_run_note.duckdb",
+        [(1, "summary", summary, 1), (2, "run_note", run_note, 2)],
+    )
+
+
+@pytest.fixture
 def broken_summary_db_path(tmp_path: Path) -> Path:
     """The latest summary section stored unparseable JSON."""
     return _summary_db(
@@ -140,18 +160,41 @@ def test_lead_sentence():
 
 
 @pytest.mark.unit
-def test_list_activities_latest_summary_rating(summary_versions_db_path):
+def test_list_activities_story_lead_prefers_run_note(run_note_db_path):
+    """The coach review wins over the legacy summary paragraph (#1254)."""
+    with get_connection(run_note_db_path) as conn:
+        activities = list_activities(conn)
+
+    assert len(activities) == 1
+    assert activities[0]["story_lead"] == "新の一文。"
+    # The star rating is gone: single runs are no longer graded (#1247).
+    assert "star_rating" not in activities[0]
+    assert "summary_lead" not in activities[0]
+
+
+@pytest.mark.unit
+def test_list_activities_story_lead_falls_back_to_summary(summary_versions_db_path):
+    """Without a run_note, the newest summary's opening sentence is used."""
     with get_connection(summary_versions_db_path) as conn:
         activities = list_activities(conn)
 
     assert len(activities) == 1
-    activity = activities[0]
-    assert activity["star_rating"] == "★★★★☆ 4.2/5.0"
-    assert activity["summary_lead"] == "新しい要約。"
+    assert activities[0]["story_lead"] == "新しい要約。"
 
 
 @pytest.mark.unit
-def test_list_activities_without_summary_is_null(fixture_db_path):
+def test_list_activities_headline_from_run_report(summary_versions_db_path):
+    """The headline is the run report's, not a second verdict of our own."""
+    with get_connection(summary_versions_db_path) as conn:
+        activities = list_activities(conn)
+
+    # No weekly_prescriptions table in this fixture: the run was unprescribed.
+    assert activities[0]["plan_label"] == "処方なし"
+    assert activities[0]["flag_labels"] == []
+
+
+@pytest.mark.unit
+def test_list_activities_without_analysis_is_null(fixture_db_path):
     with get_connection(fixture_db_path) as conn:
         activities = list_activities(conn)
 
@@ -161,8 +204,7 @@ def test_list_activities_without_summary_is_null(fixture_db_path):
     assert activities[0]["total_distance_km"] == 5.66
     assert activities[0]["avg_heart_rate"] == 144
     for activity in activities:
-        assert activity["star_rating"] is None
-        assert activity["summary_lead"] is None
+        assert activity["story_lead"] is None
 
 
 @pytest.mark.unit
@@ -171,5 +213,4 @@ def test_list_activities_broken_summary_json(broken_summary_db_path):
         activities = list_activities(conn)
 
     assert len(activities) == 1
-    assert activities[0]["star_rating"] is None
-    assert activities[0]["summary_lead"] is None
+    assert activities[0]["story_lead"] is None

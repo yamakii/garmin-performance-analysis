@@ -1,14 +1,28 @@
 """Read-only queries for the activities table."""
 
 import json
+import logging
+from typing import Any
 
 import duckdb
 
-# Each activity carries the star rating and the opening sentence of its latest
-# summary section, so the list can show a verdict without a second request
-# (#1131). The LEFT JOIN keeps activities that were never analysed; QUALIFY
-# picks the newest run per activity the same way sections.py does (run_id, then
-# analysis_id as a deterministic tiebreaker).
+from garmin_web.queries.run_report import get_run_report
+
+logger = logging.getLogger(__name__)
+
+# How many of the newest activities get their run-report headline attached.
+# The report is assembled on read over a 90-day window, so computing one per
+# list row would turn a single request into hundreds of queries. Home shows the
+# newest run and the list's first screen shows roughly this many, so older rows
+# return ``None`` / ``[]`` instead (#1254).
+RECENT_REPORT_ROWS = 10
+
+# Each activity carries the opening sentence of its coach review, so the list
+# can show what the run was without a second request. The LEFT JOINs keep
+# activities that were never analysed; QUALIFY picks the newest run per
+# activity the same way sections.py does (run_id, then analysis_id as a
+# deterministic tiebreaker). The legacy ``summary`` section is still joined as
+# the fallback for runs analysed before ``run_note`` existed (#1247).
 _SELECT_ACTIVITIES = """
     SELECT
         activity_id,
@@ -18,7 +32,8 @@ _SELECT_ACTIVITIES = """
         total_time_seconds,
         avg_pace_seconds_per_km,
         avg_heart_rate,
-        latest_summary.analysis_data AS summary_json
+        latest_summary.analysis_data AS summary_json,
+        latest_run_note.analysis_data AS run_note_json
     FROM activities
     LEFT JOIN (
         SELECT activity_id, analysis_data
@@ -28,6 +43,14 @@ _SELECT_ACTIVITIES = """
             PARTITION BY activity_id ORDER BY run_id DESC, analysis_id DESC
         ) = 1
     ) AS latest_summary USING (activity_id)
+    LEFT JOIN (
+        SELECT activity_id, analysis_data
+        FROM section_analyses
+        WHERE section_type = 'run_note'
+        QUALIFY ROW_NUMBER() OVER (
+            PARTITION BY activity_id ORDER BY run_id DESC, analysis_id DESC
+        ) = 1
+    ) AS latest_run_note USING (activity_id)
 """
 
 
@@ -48,26 +71,64 @@ def lead_sentence(text: str | None) -> str | None:
     return stripped[: end + 1]
 
 
-def _summary_fields(raw: str | None) -> tuple[str | None, str | None]:
-    """Parse (star_rating, summary_lead) out of a summary section's JSON.
+def _section_payload(raw: str | None) -> dict[str, Any]:
+    """Parse a section's stored JSON into a dict.
 
-    Missing, malformed or unexpectedly shaped payloads degrade to (None, None):
-    a broken analysis must not take the activity list down.
+    Missing, malformed or unexpectedly shaped payloads degrade to ``{}``: a
+    broken analysis must not take the activity list down.
     """
     if not raw:
-        return None, None
+        return {}
     try:
         payload = json.loads(raw)
     except (ValueError, TypeError):
-        return None, None
-    if not isinstance(payload, dict):
-        return None, None
-    star_rating = payload.get("star_rating")
-    if not isinstance(star_rating, str):
-        star_rating = None
-    summary = payload.get("summary")
-    summary_lead = lead_sentence(summary) if isinstance(summary, str) else None
-    return star_rating, summary_lead
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _story_lead(run_note_raw: str | None, summary_raw: str | None) -> str | None:
+    """The first sentence of the coach review, or of the legacy summary.
+
+    ``run_note.story`` is the single review a run gets since #1251; runs
+    analysed before it fall back to the old ``summary`` paragraph, and a run
+    with neither returns ``None``.
+    """
+    story = _section_payload(run_note_raw).get("story")
+    if isinstance(story, str):
+        lead = lead_sentence(story)
+        if lead is not None:
+            return lead
+    summary = _section_payload(summary_raw).get("summary")
+    return lead_sentence(summary) if isinstance(summary, str) else None
+
+
+def _headline_fields(
+    conn: duckdb.DuckDBPyConnection, activity_id: int
+) -> tuple[str | None, list[str]]:
+    """The run report's ``(plan_label, flag_labels)`` for one activity.
+
+    Only the headline is read -- the plan verdict and the adverse signals are
+    computed by the reader, so the list can never disagree with the single-run
+    page about either. A database the report cannot be built from (an unknown
+    activity, a fixture without the weather columns) degrades to
+    ``(None, [])``.
+    """
+    try:
+        report = get_run_report(conn, activity_id)
+    except Exception as exc:  # pragma: no cover - degraded DB only
+        logger.debug("no run report for activity %s: %s", activity_id, exc)
+        return None, []
+    headline = (report or {}).get("headline")
+    if not isinstance(headline, dict):
+        return None, []
+    plan_label = headline.get("plan_label")
+    flag_labels = headline.get("flag_labels")
+    return (
+        plan_label if isinstance(plan_label, str) else None,
+        [label for label in flag_labels if isinstance(label, str)]
+        if isinstance(flag_labels, list)
+        else [],
+    )
 
 
 def list_activities(
@@ -85,9 +146,11 @@ def list_activities(
     Returns:
         List of dicts with keys: activity_id, activity_date (str),
         activity_name, total_distance_km, total_time_seconds,
-        avg_pace_seconds_per_km, avg_heart_rate, star_rating (str | None,
-        e.g. "★★★★☆ 4.2/5.0") and summary_lead (str | None) from the latest
-        summary section analysis.
+        avg_pace_seconds_per_km, avg_heart_rate, plan_label (str | None, e.g.
+        "処方どおり"), flag_labels (list[str], the adverse signals) and
+        story_lead (str | None, the first sentence of the coach review).
+        ``plan_label`` / ``flag_labels`` are only filled in for the newest
+        ``RECENT_REPORT_ROWS`` activities (#1254).
     """
     sql = _SELECT_ACTIVITIES
     conditions: list[str] = []
@@ -107,12 +170,20 @@ def list_activities(
     rows = result.fetchall()
 
     activities = []
-    for row in rows:
+    for index, row in enumerate(rows):
         record = dict(zip(columns, row, strict=True))
         # DuckDB returns datetime.date; convert for JSON serialization
         record["activity_date"] = str(record["activity_date"])
-        star_rating, summary_lead = _summary_fields(record.pop("summary_json"))
-        record["star_rating"] = star_rating
-        record["summary_lead"] = summary_lead
+        record["story_lead"] = _story_lead(
+            record.pop("run_note_json"), record.pop("summary_json")
+        )
+        plan_label: str | None = None
+        flag_labels: list[str] = []
+        if index < RECENT_REPORT_ROWS:
+            plan_label, flag_labels = _headline_fields(
+                conn, int(record["activity_id"])
+            )
+        record["plan_label"] = plan_label
+        record["flag_labels"] = flag_labels
         activities.append(record)
     return activities
