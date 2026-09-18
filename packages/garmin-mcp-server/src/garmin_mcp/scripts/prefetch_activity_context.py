@@ -24,6 +24,8 @@ Output (JSON to stdout):
       "zone_percentages": {"zone1": 5.2, "zone2": 36.8, "zone3": 60.5, ...},
       "primary_zone": "Zone 3",
       "zone_distribution_rating": "appropriate",
+      "zone_band_pct": 84.6,
+      "zone_distribution_score": 4.6,
       "hr_stability": "stable",
       "aerobic_efficiency": "good",
       "training_quality": "effective",
@@ -34,6 +36,7 @@ Output (JSON to stdout):
         "vo": {"star_rating": "★★★★☆", "score": 4.0},
         "vr": {"star_rating": "★★★★☆", "score": 4.0},
         "integrated_score": 92.5,
+        "integrated_star_score": 4.6,
         "overall_score": 4.3,
         "overall_star_rating": "★★★★☆"
       },
@@ -78,6 +81,15 @@ and ``vs_previous`` are derived deterministically
 (``analysis.derivations``) so the summary agent transcribes a judgement rather
 than inventing one. Every key is null-on-error (``[]`` for ``prescription``).
 
+``zone_band_pct`` / ``zone_distribution_score`` and
+``form_scores.integrated_star_score`` are the continuous companions of the
+categorical ``zone_distribution_rating`` and of the 100-point
+``integrated_score`` (Issue #1236). They are computed on read -- so the whole
+history is covered without a re-ingest -- and the agents anchor their axis
+scores on them instead of applying a step function by hand. Both zone values
+are null when the activity has no ``hr_efficiency`` row; the score alone is
+null for the "unknown" intensity category, which has no intended zone band.
+
 Bundle keys form_evaluation..lactate_threshold are additive (Issue #235);
 existing keys above are never modified. vo2_max / lactate_threshold are
 training-type conditional (tempo/threshold -> LT only; vo2max/interval/speed
@@ -105,7 +117,13 @@ from garmin_mcp.analysis.derivations import (
     select_prescription_for_run,
 )
 from garmin_mcp.database.connection import get_connection, get_db_path
+from garmin_mcp.database.inserters.hr_efficiency import (
+    resolve_intensity_category,
+    zone_band_pct,
+    zone_distribution_score,
+)
 from garmin_mcp.database.readers.metadata import collect_activity_gear
+from garmin_mcp.form_baseline.integrated_score import integrated_star_score
 
 logger = logging.getLogger(__name__)
 
@@ -562,6 +580,8 @@ def prefetch_activity_context(activity_id: int) -> dict:
         training_quality = None
         zone2_focus = None
         zone4_threshold_work = None
+        band_pct: float | None = None
+        zone_score: float | None = None
 
         if hr_row:
             zone_percentages = {
@@ -578,6 +598,37 @@ def prefetch_activity_context(activity_id: int) -> dict:
             training_quality = hr_row[5]
             zone2_focus = hr_row[6]
             zone4_threshold_work = hr_row[7]
+
+            # Continuous zone-distribution score (Issue #1236), recomputed on
+            # read from the stored percentages with the inserter's own
+            # resolver / cuts, so history gets it without a re-ingest and the
+            # number can never drift from the categorical rating.
+            zone1_pct = float(hr_row[8] or 0.0)
+            zone2_pct = float(hr_row[9] or 0.0)
+            zone3_pct = float(hr_row[10] or 0.0)
+            zone4_pct = float(hr_row[11] or 0.0)
+            zone5_pct = float(hr_row[12] or 0.0)
+            intensity_category = resolve_intensity_category(
+                training_type,
+                zone1_pct,
+                zone2_pct,
+                zone3_pct,
+                zone4_pct,
+                zone5_pct,
+                primary_zone,
+            )
+            band_pct = round(
+                zone_band_pct(
+                    intensity_category,
+                    zone1_pct,
+                    zone2_pct,
+                    zone3_pct,
+                    zone4_pct,
+                    zone5_pct,
+                ),
+                1,
+            )
+            zone_score = zone_distribution_score(intensity_category, band_pct)
 
         # 3. Elevation statistics (from splits table)
         elev_row = conn.execute(
@@ -663,6 +714,10 @@ def prefetch_activity_context(activity_id: int) -> dict:
                         "score": form_row[5],
                     },
                     "integrated_score": form_row[6],
+                    # Continuous star form of the 100-point integrated score
+                    # (Issue #1236): the agent transcribes this instead of
+                    # mapping the score through a band table by hand.
+                    "integrated_star_score": integrated_star_score(form_row[6]),
                     "overall_score": form_row[7],
                     "overall_star_rating": form_row[8],
                 }
@@ -848,6 +903,11 @@ def prefetch_activity_context(activity_id: int) -> dict:
         "zone_percentages": zone_percentages,
         "primary_zone": primary_zone,
         "zone_distribution_rating": zone_distribution_rating,
+        # Continuous companions of zone_distribution_rating (Issue #1236).
+        # null when the activity has no hr_efficiency row, or (score only) when
+        # the intensity category is "unknown" and carries no intended band.
+        "zone_band_pct": band_pct,
+        "zone_distribution_score": zone_score,
         "hr_stability": hr_stability,
         "aerobic_efficiency": aerobic_efficiency,
         "training_quality": training_quality,

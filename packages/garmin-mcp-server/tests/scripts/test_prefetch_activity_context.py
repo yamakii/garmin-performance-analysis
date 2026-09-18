@@ -313,6 +313,12 @@ class TestPrefetchActivityContext:
         assert result["form_scores"]["vo"]["score"] == 4.0
         assert result["form_scores"]["vr"]["score"] == 4.0
         assert result["form_scores"]["integrated_score"] == 92.5
+        # Continuous companions of the categorical rating / 100-point score
+        # (Issue #1236). Zone3-dominant easy run -> "moderate" category, judged
+        # on its Zone2-3 band (36.8 + 50.5 = 87.3% >= the 80% excellent cut).
+        assert result["zone_band_pct"] == pytest.approx(87.3)
+        assert result["zone_distribution_score"] == 5.0
+        assert result["form_scores"]["integrated_star_score"] == 4.6
         assert result["form_scores"]["overall_score"] == 4.3
         assert result["form_scores"]["overall_star_rating"] == "★★★★☆"
 
@@ -394,6 +400,9 @@ class TestPrefetchActivityContext:
         assert result["primary_zone"] is None
         assert result["form_scores"] is None
         assert result["phase_structure"] is None
+        # Continuous zone scores are null-on-missing-row (Issue #1236).
+        assert result["zone_band_pct"] is None
+        assert result["zone_distribution_score"] is None
 
     @patch("garmin_mcp.scripts.prefetch_activity_context.get_db_path")
     @patch("garmin_mcp.scripts.prefetch_activity_context.get_connection")

@@ -171,6 +171,31 @@ missing.
   the agents add Japanese narrative, not new numbers. HR zones always come from
   Garmin-native zones, never a `220−age` formula.
 
+### Continuous scores in the CONTEXT
+
+Two ratings the agents used to derive from a *band table* are pre-computed as
+continuous numbers, because an LLM applying a step function made near-identical
+runs jump a whole star at a band edge (#1236). Both are computed on read in
+`prefetch_activity_context`, so the whole history is covered without a
+re-ingest, and the agents anchor on them (adjusting by at most ±0.5) instead of
+re-deriving:
+
+- `zone_distribution_score` — the continuous form of
+  `zone_distribution_rating`. The run's intensity category (easy / moderate /
+  tempo / threshold / vo2max) selects the HR-zone band it is judged on;
+  `zone_band_pct` is the share of the run spent in that band, and the score
+  interpolates linearly over the *same* `ZONE_BAND_CUTS` the label uses —
+  excellent cut → 5.0, good → 4.0, fair → 3.0, continuing on that slope down to
+  a floor of 1.0. `null` for the "unknown" category, which has no intended band.
+  It feeds the summary's `hr_management` axis and the phase section's
+  `hr_control` axis.
+- `form_scores.integrated_star_score` — the 100-point `integrated_score` on the
+  star scale: `clamp(5.0 − (100 − score) / 20, 1.0, 5.0)`, i.e. 20 points per
+  star, the same mapping `scorer.compute_star_rating` uses (#1233).
+
+Both keys are additive and `null` when their source row is missing, so an agent
+whose CONTEXT lacks them falls back to the categorical judgement.
+
 ## Related references
 
 - Development workflow, validation tiers, testing → `CLAUDE.md` + `.claude/rules/`
