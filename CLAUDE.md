@@ -31,11 +31,15 @@ All MCP tools have docstrings describing their parameters. Use `mcp__garmin-db__
 **1. Single Activity Analysis**
 ```
 1. Get activity ID: mcp__garmin-db__get_activity_by_date(date="2025-10-15")
-2. Get performance: mcp__garmin-db__get_performance_trends(activity_id)
-3. Get splits: mcp__garmin-db__get_splits_pace_hr(activity_id, statistics_only=True)
-4. Get form: mcp__garmin-db__get_form_evaluations(activity_id)
-5. Get HR zones: mcp__garmin-db__get_hr_efficiency_analysis(activity_id)
+2. Get the run report: mcp__garmin-db__get_run_report(activity_id)
+   → plan vs actual, signals vs the athlete's own normal range, scenes, conditions
+3. Then only what the report does not carry:
+   - Splits: mcp__garmin-db__get_splits_pace_hr(activity_id, statistics_only=True)
+   - Form inputs: mcp__garmin-db__get_form_evaluations(activity_id)
+   - HR zones: mcp__garmin-db__get_hr_efficiency_analysis(activity_id)
+   - Trends: mcp__garmin-db__get_performance_trends(activity_id)
 ```
+> A single run is judged by the run report's two questions (plan vs actual, today vs the athlete's own normal range) — `signals[].status` of `within` / `edge` is not a finding, and form stars are legacy display values.
 
 **2. Multi-Activity Trends**
 ```

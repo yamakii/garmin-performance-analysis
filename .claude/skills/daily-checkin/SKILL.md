@@ -14,7 +14,7 @@ argument-hint: [YYYY-MM-DD]
 ## Step 0: 準備（1 回の ToolSearch でまとめてロード）
 
 ```
-ToolSearch(query="select:mcp__garmin-db__catch_up_ingest,mcp__garmin-db__get_recovery_status,mcp__garmin-db__get_wellness_baseline_deviation,mcp__garmin-db__get_acwr,mcp__garmin-db__get_recovery_trend,mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_garmin_scheduled_workouts,mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db__get_weekly_review,mcp__garmin-db__get_load_trend,mcp__garmin-db__save_symptom,mcp__garmin-db__get_symptom_status")
+ToolSearch(query="select:mcp__garmin-db__catch_up_ingest,mcp__garmin-db__get_recovery_status,mcp__garmin-db__get_wellness_baseline_deviation,mcp__garmin-db__get_acwr,mcp__garmin-db__get_recovery_trend,mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_run_report,mcp__garmin-db__get_garmin_scheduled_workouts,mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db__get_weekly_review,mcp__garmin-db__get_load_trend,mcp__garmin-db__save_symptom,mcp__garmin-db__get_symptom_status")
 ```
 
 ## Step 1: 今朝の wellness を取り込む（必須・単独ステップ）
@@ -55,10 +55,15 @@ wellness 取り込みの直後に、**質問を 1 つだけ**します（増や�
 | `get_acwr` | `end_date=<対象日>` | acute/chronic、acwr、status |
 | `get_recovery_trend` | `weeks=2` | RHR 7d/30d 中央値、HRV 連続割れ、under_recovery |
 | `get_activity_by_date` | `date=<前日>` と `date=<対象日>` | 直近ラン（距離・時間・ペース・HR）、今日すでに走ったか |
+| `get_run_report` | `activity_id=<前日のラン>` | 前日のランの `headline`（処方ラベル + adverse フラグ）と、`signals` のうち `status="outside"` かつ `adverse=true` のものだけ。保存分析の要約や星評価は読まない（前日のランが無ければ省略） |
 | `get_garmin_scheduled_workouts` | `start_date=<対象日>`, `end_date=<対象日+6>` | 今日〜1 週間の予定（[MCP] 登録分を含む） |
 | `get_weekly_prescriptions` | `date=<対象日>` | **今日の処方**（session_type / target_km / target_minutes / hr_high / rating / rationale / status / review_id）。これが判定の背骨 |
 | `get_weekly_review` | 引数なし | 今週の文脈（カットバック判定・回復ゲート・recommendations の言い回し）。処方の**背景**として読む |
 | `get_symptom_status` | `date=<対象日>` | 症状ルールの判定（`flag` / `flagged_regions` / `asked_today` / `clear_today` / `reason_ja`）。Step 1b の記録が反映された状態で読む |
+
+**前日のランは `get_run_report` の `headline` で一言に要約する**（例:「昨日は処方どおり、指摘なし」「昨日は一部ずれ、心拍が想定より高め」）。
+通常の範囲の内側（`within` / `edge`）の指標は今日の判断材料にしません。星評価・保存分析の散文は使わず、
+`streak`（数ラン続く傾き）が立っているときだけ今日の強度に反映します。
 
 `get_load_trend(lookback_weeks=6)` は「今週何 km」「ロングを伸ばしていいか」など**週単位の量**を聞かれたときだけ追加します。
 週全体の並び（今日以外の日）が論点なら `get_weekly_prescriptions(week_start_date=<今週の開始日>)` に切り替えます。

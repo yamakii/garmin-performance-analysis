@@ -14,21 +14,42 @@ argument-hint: [YYYY-MM-DD]
 ## Step 0: 準備
 
 ```
-ToolSearch(query="select:mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_splits_comprehensive,mcp__garmin-db__get_splits_elevation,mcp__garmin-db__get_weather_data,mcp__garmin-db__get_form_evaluations,mcp__garmin-db__get_form_baseline_trend,mcp__garmin-db__get_split_time_series_detail,mcp__garmin-db__get_time_range_detail,mcp__garmin-db__get_recovery_status,mcp__garmin-db__get_wellness_baseline_deviation,mcp__garmin-db__get_performance_trends")
+ToolSearch(query="select:mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_run_report,mcp__garmin-db__get_splits_comprehensive,mcp__garmin-db__get_splits_elevation,mcp__garmin-db__get_weather_data,mcp__garmin-db__get_form_evaluations,mcp__garmin-db__get_form_baseline_trend,mcp__garmin-db__get_split_time_series_detail,mcp__garmin-db__get_time_range_detail,mcp__garmin-db__get_recovery_status,mcp__garmin-db__get_wellness_baseline_deviation,mcp__garmin-db__get_performance_trends")
 ```
 
 `get_activity_by_date(date=<対象日>)` で activity_id を取り、同日に複数アクティビティ（ラン＋補強）があればランを選びます。
 
-## Step 1: 質問タイプ別の基本セット（1 ターンで並列）
+## Step 1: まず run report を 1 本読む（必須・ここから始める）
 
-| 質問タイプ | 必ず取る | 追加で取る |
+```
+mcp__garmin-db__get_run_report(activity_id=<対象ラン>)
+```
+
+「このランで何が起きたか」の決定的なソースはこの 1 本です。Web のラン詳細ページも run note も
+同じ dict を読むので、ここを起点にすれば会話とページが食い違いません。読むブロック:
+
+| ブロック | 読むもの |
+|---|---|
+| `headline` | 処方ラベル（処方どおり / 一部ずれ / ずれあり / 処方なし）と adverse フラグの本数・ラベル |
+| `plan` | その日の処方に対する verdict（✅/🟡/🔴）、軸ごとの target / actual / on_plan、`hr_ceiling`（上限 bpm・超過秒数・超過率）。処方が無い日は `null` |
+| `signals` | 指標ごとの today / expected / `normal_low`〜`normal_high`（本人の通常の範囲）/ `z` / `status`（within・edge・outside・insufficient）/ `adverse` / `streak` / `n` / `reason` |
+| `moments` + `recurrence` | ランの転換点（2〜5 場面、`km_from`〜`km_to` と根拠）と、同種ランで同じ km に繰り返し出ている場面 |
+| `phases` / `zones` / `conditions` | warmup・run・recovery・cooldown のペースと HR、HR ゾーン配分、気温・湿度・風・地形・獲得標高 |
+| `vs_previous` / `next_run_target` | 直近の同種ランとの差分、次回の目標値 |
+
+判定の起点は 2 つだけです: **処方と実際のずれ**（`plan`）と、**本人の通常の範囲から外れているか**（`signals`）。
+`status` が `within` / `edge` のものは所見ではありません。`insufficient` は `reason` をそのまま伝えて判定を保留します。
+
+## Step 2: 質問タイプ別の追加取得（report で足りないときだけ・1 ターンで並列）
+
+| 質問タイプ | report の次に取る | さらに必要なら |
 |---|---|---|
 | 「心拍以上に疲れた」「ペースが速すぎた？」 | `get_performance_trends`（pace/HR/drift）、`get_splits_comprehensive(statistics_only=True)`、`get_weather_data`、`get_recovery_status(date=<対象日>)`、`get_wellness_baseline_deviation(date=<対象日>)` | 比較対象ラン（直近の同種ラン）の `get_activity_by_date` + `get_weather_data` |
 | 「フォームが崩れた」「GCT/ケイデンス/上下動が悪い」 | `get_form_evaluations`、`get_splits_comprehensive`、`get_splits_elevation`、`get_weather_data` | 区間指定で `get_time_range_detail(metrics=[ground_contact_time, cadence, heart_rate], statistics_only=True)` |
 | 「split N で悪くなる」「このコースのこの区間」 | `get_splits_elevation`、`get_split_time_series_detail(split_number=N, statistics_only=True)`、比較用に良い split も 1 つ | `get_weather_data`（風向・気温） |
 | 「今日の◯◯は他の日と比べてどう？」 | 当日と比較日の `get_form_evaluations` | `get_form_baseline_trend(activity_id, activity_date)` |
 
-## Step 2: 帰属の順序（この順に潰す。飛ばさない）
+## Step 3: 帰属の順序（この順に潰す。飛ばさない）
 
 過去の誤帰属（暑熱に帰したが地形が主因、暑さの比較で気象を見ていなかった、等）を防ぐため、原因候補は **必ずこの順**で確認し、上位で説明できるなら下位に帰属しない:
 
@@ -38,14 +59,16 @@ ToolSearch(query="select:mcp__garmin-db__get_activity_by_date,mcp__garmin-db__ge
 4. **回復**: `get_recovery_status` / `get_wellness_baseline_deviation` の当日朝の値。睡眠不足・HRV 割れがあれば GCT・ケイデンスの鈍化と結び付けて説明できる
 5. **フォーム固有**: 上記で説明が付かない残差のみをフォームの問題として扱う
 
-## Step 3: フォーム指標の読み方（星に釣られない）
+## Step 4: 指標の読み方（星ではなく本人の通常の範囲で見る）
 
-- 星評価の % 帯は指標ごとの回帰モデル σ（1.3〜3 %）を考慮していないため、**★3 でも誤差範囲**のことがある。`get_form_evaluations` の期待値と実測の差を **σ 換算**（何 σ か）してから「弱点」と呼ぶ
-- 1 本の星より **符号の連続**（数ラン続けて同方向にずれているか）を信頼する
+- 判定は `get_run_report` の `signals[].status` で行う。**`within` / `edge` は所見ではない**（本人の通常の範囲の内側なので、強みとも弱点とも呼ばない）。所見として扱うのは `status="outside"` かつ `adverse=true` のものだけ
+- **1 本のランより `streak` と `recurrence` を信頼する**。`streak`（同じ指標が数ラン続けて同方向にずれている）と `recurrence`（同じ km に同じ場面が繰り返し出る）のほうが、単発の外れ値より意味がある
+- `status="insufficient"` は「判定していない」であって「問題なし」ではない。`reason`（スプリット数不足・モデルの速度域外・比較できる過去ラン不足・高温で drift が熱由来 など）をそのまま伝えて保留する
+- `form_evaluations` の星（★）は表示用のレガシー値で、**単一ランの良し悪しの判定には使わない**。`get_form_evaluations` は期待値と実測値を見るために読む
 - 手動ラップの GPS 断片（距離 0.4 km 未満）はペース・ケイデンスの外れ値になるので、per-split の比較・回帰から除外する。サブ km の低ケイデンス lap は意図的な歩行/回復であり、エラーではない
 - 上下動を意識して走った日など、ユーザーが介入を申告した日は、当日を「異常」ではなく「介入の効果検証」として他日と比較する
 
-## Step 4: 回答
+## Step 5: 回答
 
 - 冒頭で結論を 1〜2 文（主因は何か、ユーザーの体感と一致するか）
 - 根拠は小さな表（区間 / 標高 / ペース / HR / GCT など、論点に必要な列だけ）
