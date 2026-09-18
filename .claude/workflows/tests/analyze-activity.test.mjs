@@ -17,14 +17,13 @@ const {
   planBackfill,
   shouldAnalyze,
   sectionPlan,
-  buildSectionPrompt,
-  buildSummaryPrompt,
-  buildSplitContext,
-  buildSplitPrompt,
+  buildRunNoteContext,
+  buildRunNotePrompt,
+  summarizeRun,
   buildTempDir,
   TEMP_SUFFIX_PATTERN,
 } = new Function(
-  `${m[1]}\nreturn { normalizeArgs, planBackfill, shouldAnalyze, sectionPlan, buildSectionPrompt, buildSummaryPrompt, buildSplitContext, buildSplitPrompt, buildTempDir, TEMP_SUFFIX_PATTERN }`,
+  `${m[1]}\nreturn { normalizeArgs, planBackfill, shouldAnalyze, sectionPlan, buildRunNoteContext, buildRunNotePrompt, summarizeRun, buildTempDir, TEMP_SUFFIX_PATTERN }`,
 )()
 
 test('normalizeArgs accepts a bare date string', () => {
@@ -70,26 +69,10 @@ test('shouldAnalyze gates on has_run', () => {
   assert.equal(shouldAnalyze(undefined), false)
 })
 
-test('sectionPlan puts all 4 unified sections (incl. summary) in one barrier', () => {
-  const p = sectionPlan()
-  assert.deepEqual(p.unified, ['efficiency', 'phase', 'environment', 'summary'])
-  assert.equal(p.extra, 'split')
-})
-
-const CTX = {
-  tempDir: '/tmp/analysis_1_2',
-  contextJson: '{"training_type":"aerobic_base","temperature_c":7.8}',
-  activityId: 1,
-  activityDate: '2025-10-09',
-}
-
-test('buildSectionPrompt inlines CONTEXT and targets only the named section', () => {
-  const out = buildSectionPrompt('efficiency', CTX)
-  assert.match(out, /<CONTEXT>/)
-  assert.match(out, /"training_type":"aerobic_base"/) // real data inlined
-  assert.match(out, /ONLY efficiency/)
-  assert.match(out, /\/tmp\/analysis_1_2\/efficiency\.json/)
-  assert.doesNotMatch(out, /Read\(/) // no file-read dependency
+test('builds one analysis task named run_note', () => {
+  const plan = sectionPlan()
+  assert.equal(plan.length, 1)
+  assert.deepEqual(plan, ['run_note'])
 })
 
 test('test_build_temp_dir_deterministic_path: workflow builds the path from id + suffix', () => {
@@ -125,96 +108,126 @@ test('test_temp_suffix_pattern_matches_digits_only: schema pattern mirrors build
   assert.ok(!re.test('123')) // shorter than 6 digits => not an epoch
 })
 
-// The 2026-09-09 build-up bundle, trimmed to the keys the subset cares about
-// plus two large keys that must NOT reach the split agent (#1093).
-const SPLIT_BUNDLE = JSON.stringify({
-  activity_id: 24294972923,
-  activity_date: '2026-09-09',
-  training_type: 'tempo',
-  phase_category: 'progression',
-  progression_session: true,
+// The 2026-09-18 bundle, trimmed to the keys the subset cares about plus two
+// large keys that must NOT reach the run-note agent (the page already renders
+// the baselines and zone tables).
+const BUNDLE = JSON.stringify({
+  activity_id: 24407019887,
+  activity_date: '2026-09-18',
+  training_type: 'easy',
+  week_position: { is_long_run_day: false, days_to_long_run: 3, cutback_week: false },
   prescription_for_run: {
-    prescription_id: 58,
-    session_type: 'tempo',
-    title: '単独 5kmビルドアップ（Z2→Z3→低Z4→Z4）',
+    prescription_id: 61,
+    session_type: 'easy',
+    title: 'イージー 8km',
     target_km: 8.0,
-    target_minutes: 55,
-    hr_low: 162,
-    hr_high: 169,
-    rationale: 'km1-2=Z2 136-150 / km3=Z3 151-161',
+    target_minutes: 50,
+    hr_low: 130,
+    hr_high: 150,
+    rationale: '週末のロングに向けて脚を回復させる',
     garmin_workout_id: 1691891896,
   },
-  prescription_verdict: {
-    verdict: '✅',
-    reasons: ['処方どおりに実施できています'],
-    on_plan: ['intensity_class', 'volume', 'hr_ceiling'],
+  prescription_verdict: { verdict: '✅', reasons: ['処方どおりに実施できています'] },
+  morning_wellness: { readiness: 72, rhr_z: -0.4 },
+  vs_previous: { pace_delta_s_per_km: -6.0 },
+  previous_same_type: { activity_id: 24300000001, activity_date: '2026-09-15' },
+  similar_workouts: {
+    similar_activities: [{ activity_id: 1 }, { activity_id: 2 }, { activity_id: 3 }, { activity_id: 4 }],
   },
-  hr_zones_detail: {
-    zones: [
-      { zone_number: 4, low_boundary: 162, high_boundary: 169, time_in_zone_seconds: 617.9 },
-    ],
-  },
-  similar_workouts: { similar_activities: [{ activity_id: 1 }] },
+  gear: { gear_uuid: 'abc', gear_nickname: 'v15', total_km: 412.0 },
+  long_run_gate: null,
   form_baseline_trend: { metrics: { gct: { current: { coef_d: -2.26 } } } },
+  hr_zones_detail: { zones: [{ zone_number: 2, low_boundary: 130, high_boundary: 150 }] },
 })
 
-test('test_buildSplitContext_keeps_only_the_prescription_and_zone_subset', () => {
-  const out = JSON.parse(buildSplitContext(SPLIT_BUNDLE))
-  assert.equal(out.prescription_for_run.hr_high, 169)
-  assert.equal(out.prescription_for_run.title, '単独 5kmビルドアップ（Z2→Z3→低Z4→Z4）')
-  assert.deepEqual(out.hr_zones_detail.zones, [
-    { zone_number: 4, low_boundary: 162, high_boundary: 169 },
-  ])
-  assert.equal(out.progression_session, true)
-  assert.deepEqual(out.prescription_verdict.on_plan, [
-    'intensity_class',
-    'volume',
-    'hr_ceiling',
-  ])
-  // Bulk keys stay out: the subset exists to keep the split prompt small.
-  assert.equal(out.similar_workouts, undefined)
-  assert.equal(out.form_baseline_trend, undefined)
-  // Row bookkeeping is not evaluation input either.
-  assert.equal(out.prescription_for_run.garmin_workout_id, undefined)
-  assert.equal(out.hr_zones_detail.zones[0].time_in_zone_seconds, undefined)
+const REPORT = JSON.stringify({
+  activity_id: 24407019887,
+  activity_date: '2026-09-18',
+  headline: { label: '処方どおり' },
+  signals: [{ metric: 'gct', status: 'within', adverse: false }],
+  moments: [{ id: 'm1', kind: 'steady', split_index: 1 }],
+  conditions: { temp_c: 24.1 },
 })
 
-test('test_buildSplitContext_returns_empty_string_for_unparsable_json', () => {
-  assert.equal(buildSplitContext('{'), '')
-  assert.equal(buildSplitContext(undefined), '')
-  assert.equal(buildSplitContext('null'), '')
+const CTX = {
+  tempDir: '/tmp/analysis_1_2',
+  contextJson: BUNDLE,
+  reportJson: REPORT,
+  activityId: 1,
+  activityDate: '2026-09-18',
+}
+
+test('run-note prompt inlines the report and the context subset', () => {
+  const out = buildRunNotePrompt(CTX)
+  assert.match(out, /<REPORT>/)
+  assert.match(out, /"moments"/) // the scenes the timeline must key on
+  assert.match(out, /<CONTEXT>/)
+  assert.match(out, /"week_position"/) // why the day was prescribed
+  assert.match(out, /"rationale":"週末のロングに向けて脚を回復させる"/)
+  assert.match(out, /ONLY run_note/)
+  assert.match(out, /\/tmp\/analysis_1_2\/run_note\.json/)
+  // Bulk keys the figures already render stay out of the prompt.
+  assert.doesNotMatch(out, /form_baseline_trend/)
+  assert.doesNotMatch(out, /hr_zones_detail/)
+  assert.doesNotMatch(out, /Read\(/) // no file-read dependency
 })
 
-test('test_buildSplitContext_omits_missing_prescription', () => {
-  const out = JSON.parse(
-    buildSplitContext('{"activity_id":1,"activity_date":"2025-10-09","training_type":"easy"}'),
-  )
-  assert.equal(out.prescription_for_run, null)
-  assert.equal(out.prescription_verdict, null)
-  assert.equal(out.hr_zones_detail, null)
+test('test_buildRunNoteContext_keeps_only_the_coach_subset', () => {
+  const out = JSON.parse(buildRunNoteContext(BUNDLE))
   assert.equal(out.training_type, 'easy')
+  assert.equal(out.week_position.days_to_long_run, 3)
+  assert.equal(out.prescription_for_run.hr_high, 150)
+  assert.equal(out.prescription_verdict.verdict, '✅')
+  assert.equal(out.morning_wellness.readiness, 72)
+  assert.equal(out.previous_same_type.activity_date, '2026-09-15')
+  assert.equal(out.gear.gear_nickname, 'v15')
+  // Top 3 similar workouts only — this is context for one sentence, not a table.
+  assert.equal(out.similar_workouts.length, 3)
+  // Row bookkeeping and page-rendered bulk stay out.
+  assert.equal(out.prescription_for_run.garmin_workout_id, undefined)
+  assert.equal(out.form_baseline_trend, undefined)
+  assert.equal(out.hr_zones_detail, undefined)
 })
 
-test('test_buildSplitPrompt_includes_context_block_when_present', () => {
-  const out = buildSplitPrompt({ ...CTX, contextJson: SPLIT_BUNDLE })
-  assert.match(out, /<CONTEXT>/)
-  assert.match(out, /"hr_high":169/)
-  assert.match(out, /hr_zones_detail/) // zone labels must have a source
-  assert.match(out, /\/tmp\/analysis_1_2\/split\.json/)
+test('test_buildRunNoteContext_returns_empty_string_for_unparsable_json', () => {
+  assert.equal(buildRunNoteContext('{'), '')
+  assert.equal(buildRunNoteContext(undefined), '')
+  assert.equal(buildRunNoteContext('null'), '')
 })
 
-test('test_buildSplitPrompt_falls_back_without_context', () => {
-  const out = buildSplitPrompt({ ...CTX, contextJson: '{' })
+test('test_buildRunNotePrompt_falls_back_without_context', () => {
+  const out = buildRunNotePrompt({ ...CTX, contextJson: '{' })
   assert.doesNotMatch(out, /<CONTEXT>/)
-  assert.match(out, /\/tmp\/analysis_1_2\/split\.json/)
+  assert.match(out, /<REPORT>/) // the report alone still grounds the review
+  assert.match(out, /\/tmp\/analysis_1_2\/run_note\.json/)
 })
 
-test('buildSummaryPrompt inlines CONTEXT and derives consistency from it (no siblings)', () => {
-  const out = buildSummaryPrompt(CTX)
-  assert.match(out, /<CONTEXT>/)
-  assert.match(out, /"training_type":"aerobic_base"/) // real data inlined
-  assert.match(out, /zone_distribution_rating|form_evaluation/) // CONTEXT-based consistency
-  assert.match(out, /ONLY summary/)
-  assert.match(out, /\/tmp\/analysis_1_2\/summary\.json/)
-  assert.doesNotMatch(out, /<SIBLINGS>/) // no sibling JSONs in parallel mode
+test('summarises result with run_note only', () => {
+  const out = summarizeRun(
+    { activity_id: 24407019887, activity_date: '2026-09-18' },
+    { succeeded: ['run_note'], failed: [], errors: [] },
+  )
+  assert.equal(out.status, 'done')
+  assert.equal(out.activity_id, 24407019887)
+  assert.equal(out.activity_date, '2026-09-18')
+  assert.deepEqual(out.succeeded, ['run_note'])
+  assert.deepEqual(out.failed, [])
+  assert.deepEqual(out.errors, [])
+})
+
+test('test_summarizeRun_reports_a_rejected_run_note', () => {
+  const out = summarizeRun(
+    { activity_id: 1, activity_date: '2026-09-18' },
+    { succeeded: [], failed: ['run_note'], errors: ['run_note: timeline moment_id ...'] },
+  )
+  assert.deepEqual(out.succeeded, [])
+  assert.deepEqual(out.failed, ['run_note'])
+  assert.equal(out.errors.length, 1)
+})
+
+test('test_summarizeRun_tolerates_a_missing_merge_payload', () => {
+  const out = summarizeRun({ activity_id: 1, activity_date: '2026-09-18' }, undefined)
+  assert.deepEqual(out.succeeded, [])
+  assert.deepEqual(out.failed, [])
+  assert.deepEqual(out.errors, [])
 })

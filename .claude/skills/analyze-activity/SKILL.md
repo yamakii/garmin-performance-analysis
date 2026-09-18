@@ -1,6 +1,6 @@
 ---
 name: analyze-activity
-description: Analyze a single running activity end-to-end — ingest the data, prefetch context, run the section-analysis agents in parallel, and store results in DuckDB for the Web app; or catch up every activity in a range that is still missing analyses. Use when the user asks to analyze a run / activity for a date, or to analyze the runs that were missed (例:「ランを分析」「10/15のアクティビティを分析」「今月の分析漏れを分析して」「直近1週間で分析できていないactivityを分析して」). Argument is the target date YYYY-MM-DD (defaults to today), or `missing [N days | YYYY-MM-DD..YYYY-MM-DD]` for catch-up mode.
+description: Analyze a single running activity end-to-end — ingest the data, prefetch the context bundle and the deterministic run report, write the one coach-review section, and store it in DuckDB for the Web app; or catch up every activity in a range that is still missing analyses. Use when the user asks to analyze a run / activity for a date, or to analyze the runs that were missed (例:「ランを分析」「10/15のアクティビティを分析」「今月の分析漏れを分析して」「直近1週間で分析できていないactivityを分析して」). Argument is the target date YYYY-MM-DD (defaults to today), or `missing [N days | YYYY-MM-DD..YYYY-MM-DD]` for catch-up mode.
 argument-hint: [YYYY-MM-DD | missing [N | start..end]]
 ---
 
@@ -12,10 +12,11 @@ argument-hint: [YYYY-MM-DD | missing [N | start..end]]
 
 ## なぜ workflow か
 
-分析は `fetch → temp file → セクション並列分析 → proofread → DuckDB 登録` の決定論的パイプライン。
-これを単一エージェントで直列に回すと遅く（特に efficiency/phase/environment/summary の4節を1コンテキストで
-直列生成するのがボトルネック）、トークンも肥大する。`analyze-activity` workflow は **5セクションを並列**で分析し、
-**CONTEXT をファイルに退避**して各エージェントのコンテキストを「自節分のみ」に抑える。
+分析は `fetch → コーチレビュー生成 → proofread → DuckDB 登録` の決定論的パイプライン。
+数値・範囲判定・処方判定・シーン抽出は `get_run_report` がすべて決定論的に算出するため、
+LLM が書くのは **`run_note` の1セクション（コーチレビュー）だけ**。workflow は取り込みと
+prefetch を1回にまとめ、REPORT と CONTEXT サブセットをプロンプトにインライン渡しして、
+エージェントのコンテキストを「そのランのぶんだけ」に抑える。
 
 ## 実行手順
 
@@ -28,16 +29,17 @@ Workflow(name="analyze-activity", args={"date": "$ARGUMENTS"})
 - `$ARGUMENTS` が空のときは `args` を省略（workflow 内で today を解決）するか `{"date": "<today YYYY-MM-DD>"}` を渡す。
 - workflow は背景で次を実行する:
   1. **Fetch**: `catch_up_ingest`（ラン・体重・補強の差分取込）＋ `ingest_activity`（当日ラン）＋
-     `prefetch_activity_context` を **stdout→file** で `context.json` に退避（CONTEXT は会話に載らない）
-  2. **Analyze**: efficiency / phase / environment / split を**並列**、その後 summary（兄弟 JSON を読んで整合）
-  3. **Finalize**: proofreader で日本語校正 → `merge_section_analyses` で DuckDB 一括登録（成功時 temp 自動削除）
+     `prefetch_activity_context`（CONTEXT バンドル）＋ `prefetch_run_report`（決定論的ランレポート）
+  2. **Analyze**: `run-note-analyst` が REPORT ＋ CONTEXT サブセットから `run_note.json` を1つ生成
+  3. **Finalize**: proofreader で日本語校正 → `merge_section_analyses` で DuckDB 登録
+     （grounding ゲート通過時のみ。成功時 temp 自動削除）
 
 ## 戻り値の扱い
 
 workflow の戻り値に応じてユーザーへ報告:
 
-- `status: "done"` → `succeeded` / `failed` セクションを報告。`failed` が空なら「全5セクション登録完了」。
-  一部 `failed` があれば該当セクション名と `errors` を伝える。
+- `status: "done"` → `succeeded` に `run_note` があれば「コーチレビュー登録完了」と報告。
+  `failed` に入っていれば grounding ゲートの拒否理由（`errors`）をそのまま伝える。自動リトライはしない。
 - `status: "no_run"` → その日にランニング activity が無かった。`catch_up_summary`（差分取込の有無）を一言報告して正常終了。
 
 ## キャッチアップモード（`missing`）
@@ -54,7 +56,7 @@ workflow の戻り値に応じてユーザーへ報告:
    返り値 `[{activity_id, date, section_count}]` を日付昇順の表でユーザーに先に提示する（件数 0 なら「未分析なし」で終了）
 3. **直列に Workflow を起動**: DuckDB は single writer なので **同時に 2 本起動しない**。1 件の完了通知（`status: "done"` / `"no_run"`）を受けてから次の日付を起動する。
    起動時に `find_unanalyzed_activities` が返した `date` をそのまま `args.date` に渡す
-4. **各件の報告は 1 行**（日付 / activity_id / 登録セクション数）。個別の分析内容は語らない（Web で読む）
+4. **各件の報告は 1 行**（日付 / activity_id / 登録可否）。個別の分析内容は語らない（Web で読む）
 5. **最後に再確認**: 同じ範囲で `find_unanalyzed_activities` を再実行し、残件 0 を確認して表で締める。残件があれば該当日と `errors` を報告し、自動リトライはしない
 
 ## 重要事項
@@ -67,6 +69,8 @@ workflow の戻り値に応じてユーザーへ報告:
 ## 関連ファイル（保守用）
 
 - workflow 本体: `.claude/workflows/analyze-activity.js`（純粋ロジックは `// >>> testable` ブロック、テストは `.claude/workflows/tests/analyze-activity.test.mjs`）
-- セクションエージェント: `.claude/agents/unified-section-analyst.md`（efficiency/phase/environment 節別）, `.claude/agents/summary-section-analyst.md`（summary 専用）, `.claude/agents/split-section-analyst.md`（split 専用）
+- 分析エージェント: `.claude/agents/run-note-analyst.md`（`run_note` 専用・workflow が呼ぶ唯一の分析エージェント）。
+  レガシーの `unified-section-analyst.md` / `summary-section-analyst.md` / `split-section-analyst.md` は
+  過去データ互換のため残っているが、workflow からは呼ばれない
 - 校正: `.claude/agents/proofreader.md`
-- スクリプト: `garmin_mcp.scripts.prefetch_activity_context`, `garmin_mcp.scripts.merge_section_analyses`
+- スクリプト: `garmin_mcp.scripts.prefetch_activity_context`, `garmin_mcp.scripts.prefetch_run_report`, `garmin_mcp.scripts.merge_section_analyses`
