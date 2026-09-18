@@ -13,7 +13,7 @@
 - **Issue 番号なし**: → `Issue: TBD` でプラン作成 → 承認後に Issue 作成
 - **分解が必要** (複数の独立した作業単位): → プラン内で `/decompose` を推奨
 
-**プラン承認後の実装は既定で「そのセッションが worktree で実装 → PR → マージ」**（`implementation-workflow.md` Phase 1 のチェックリスト）。承認時に Issue へ `design-approved` を付与する。`/implement <epic>` は **依存ティアが 2 段以上ある Epic のときだけ**使う。
+**プラン承認後の実装は既定で「そのセッションが worktree で実装 → PR → マージ」**（`implementation-workflow.md` Phase 1 のチェックリスト）。承認時に Issue へ `design-approved` を付与する。`/implement <epic>` は **`implementation-workflow.md` の起動条件（依存ティア 2 段以上、または依存の無い 4 件以上でファイル非共有）を満たすとき**に使う。
 
 詳細は `.claude/rules/dev/dev-reference.md` を参照。
 
