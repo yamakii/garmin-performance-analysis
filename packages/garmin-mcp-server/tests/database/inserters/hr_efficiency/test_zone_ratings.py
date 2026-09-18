@@ -6,9 +6,13 @@ import duckdb
 import pytest
 
 from garmin_mcp.database.inserters.hr_efficiency import (
+    ZONE_BAND_CUTS,
     _combine_training_quality,
     _extract_hr_efficiency_from_raw,
     insert_hr_efficiency,
+    zone_band_pct,
+    zone_distribution_rating,
+    zone_distribution_score,
 )
 from tests.database.inserters.hr_efficiency._helpers import _write_raw_files
 
@@ -434,3 +438,105 @@ class TestZoneRatings:
         # Zone 4-5 have 675.8s + 0s = 675.8s out of ~2715s total = ~25% → True
         assert threshold_work is True
         conn.close()
+
+
+class TestZoneDistributionScore:
+    """Continuous zone-distribution score over the same cuts as the label (#1235)."""
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "band_pct,expected",
+        [
+            (95.0, 5.0),  # above the excellent cut stays at the ceiling
+            (90.0, 5.0),  # excellent cut
+            (84.6, 4.6),
+            (75.0, 4.0),  # good cut
+            (68.97, 3.6),
+            (60.0, 3.0),  # fair cut
+            (45.0, 2.0),  # same slope continues below the fair cut
+            (20.0, 1.0),  # floor
+        ],
+    )
+    def test_zone_score_easy_anchors(self, band_pct, expected):
+        """Easy (90/75/60) interpolates linearly between its own cuts."""
+        assert zone_distribution_score("easy", band_pct) == expected
+
+    @pytest.mark.unit
+    def test_zone_score_no_cliff_at_good_cut(self):
+        """Two runs either side of a cut differ by data, not by a whole step."""
+        below = zone_distribution_score("easy", 74.9)
+        above = zone_distribution_score("easy", 75.1)
+        assert below is not None and above is not None
+        assert abs(above - below) <= 0.1
+
+    @pytest.mark.unit
+    def test_zone_score_unknown_is_none(self):
+        """An unknown category has no intended band and is never penalised."""
+        assert zone_distribution_score("unknown", 80.0) is None
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "category,expected",
+        [
+            ("easy", 60.0),  # Zone1-2
+            ("moderate", 80.0),  # Zone2-3
+            ("tempo", 38.0),  # Zone3-4
+            ("threshold", 38.0),  # Zone3-4
+            ("vo2max", 10.0),  # Zone4-5
+            ("unknown", 90.0),  # Zone1-3
+        ],
+    )
+    def test_zone_band_pct_per_category(self, category, expected):
+        """Each category is measured on the band it is judged on."""
+        assert zone_band_pct(category, 10.0, 50.0, 30.0, 8.0, 2.0) == expected
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "category,band_pct,expected",
+        [
+            # easy 90 / 75 / 60
+            ("easy", 90.0, "Excellent"),
+            ("easy", 89.9, "Good"),
+            ("easy", 75.0, "Good"),
+            ("easy", 74.9, "Fair"),
+            ("easy", 60.0, "Fair"),
+            ("easy", 59.9, "Poor"),
+            # moderate 80 / 60 / 40
+            ("moderate", 80.0, "Excellent"),
+            ("moderate", 79.9, "Good"),
+            ("moderate", 60.0, "Good"),
+            ("moderate", 59.9, "Fair"),
+            ("moderate", 40.0, "Fair"),
+            ("moderate", 39.9, "Poor"),
+            # tempo / threshold 60 / 40 / 20
+            ("tempo", 60.0, "Excellent"),
+            ("tempo", 40.0, "Good"),
+            ("tempo", 20.0, "Fair"),
+            ("tempo", 19.9, "Poor"),
+            ("threshold", 60.0, "Excellent"),
+            ("threshold", 19.9, "Poor"),
+            # vo2max 50 / 30 / 15
+            ("vo2max", 50.0, "Excellent"),
+            ("vo2max", 30.0, "Good"),
+            ("vo2max", 15.0, "Fair"),
+            ("vo2max", 14.9, "Poor"),
+            # unknown: 70, never worse than Fair
+            ("unknown", 70.0, "Good"),
+            ("unknown", 69.9, "Fair"),
+            ("unknown", 0.0, "Fair"),
+        ],
+    )
+    def test_zone_rating_labels_unchanged_by_constants(
+        self, category, band_pct, expected
+    ):
+        """Moving the cuts into ZONE_BAND_CUTS must not move any label."""
+        assert zone_distribution_rating(category, band_pct) == expected
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("category", sorted(ZONE_BAND_CUTS))
+    def test_zone_score_matches_label_boundaries(self, category):
+        """The score and the label read the same three cuts."""
+        excellent_cut, good_cut, fair_cut = ZONE_BAND_CUTS[category]
+        assert zone_distribution_score(category, excellent_cut) == 5.0
+        assert zone_distribution_score(category, good_cut) == 4.0
+        assert zone_distribution_score(category, fair_cut) == 3.0

@@ -4,6 +4,7 @@ import re
 
 import pytest
 
+from garmin_mcp.database.inserters.hr_efficiency import ZONE_BAND_CUTS
 from garmin_mcp.validation.contracts import (
     CV_THRESHOLDS,
     VALID_SECTION_TYPES,
@@ -340,8 +341,25 @@ def test_cadence_contract_is_pace_dependent():
 def test_efficiency_contract_has_integrated_score():
     contract = get_contract("efficiency")
     score = contract["evaluation_policy"]["integrated_score_stars"]
-    assert "5_stars" in score
-    assert "1_star" in score
+    assert "formula" in score
+    assert "source" in score
+
+
+@pytest.mark.unit
+def test_contract_integrated_stars_reference_formula():
+    """The contract points at the pre-computed star score, not a band table.
+
+    Band tables made the LLM map a score to a star itself, so two runs a point
+    apart could land a whole star apart (#1235). The continuous value is
+    computed upstream (#1233); the contract only says where to read it.
+    """
+    score = get_contract("efficiency")["evaluation_policy"]["integrated_score_stars"]
+
+    assert set(score) == {"formula", "source"}
+    assert "5_stars" not in score
+    assert "95-100" not in " ".join(score.values())
+    assert "integrated_star_score" in score["source"]
+    assert "do not recompute" in score["source"]
 
 
 @pytest.mark.unit
@@ -351,6 +369,40 @@ def test_efficiency_contract_has_zone_targets():
     assert len(zones) == 3
     for category in ["base_easy_recovery", "tempo_threshold", "interval_sprint"]:
         assert category in zones
+
+
+@pytest.mark.unit
+def test_contract_zone_targets_match_inserter_cuts():
+    """Both contracts state the cut the inserter actually rates against.
+
+    The easy-run target used to exist three times with three values (inserter
+    75, efficiency contract 70, summary contract 80), so an analysis quoted a
+    "70% guideline" for a rating decided at 75 (#1235).
+    """
+    efficiency = get_contract("efficiency")["evaluation_policy"]["zone_targets"]
+    summary = get_contract("summary")["evaluation_policy"]["training_type_criteria"]
+
+    easy_good_cut = ZONE_BAND_CUTS["easy"][1]
+    expected_easy = f">={easy_good_cut:.0f}%"
+    assert expected_easy == ">=75%"
+
+    assert efficiency["base_easy_recovery"]["target_pct"] == expected_easy
+    assert summary["base"]["hr_zone_1_2"] == expected_easy
+
+    # tempo / interval read the same "Good" cut of their own category.
+    assert (
+        efficiency["tempo_threshold"]["target_pct"]
+        == f">={ZONE_BAND_CUTS['tempo'][1]:.0f}%"
+    )
+    assert (
+        efficiency["interval_sprint"]["target_pct"]
+        == f">={ZONE_BAND_CUTS['vo2max'][1]:.0f}%"
+    )
+    assert summary["tempo"]["hr_zone_3_4"] == f">={ZONE_BAND_CUTS['tempo'][1]:.0f}%"
+
+    # Recovery keeps the stricter "Excellent" easy cut.
+    assert summary["recovery"]["hr_zone_1_2"] == f">={ZONE_BAND_CUTS['easy'][0]:.0f}%"
+    assert summary["recovery"]["hr_zone_1_2"] == ">=90%"
 
 
 @pytest.mark.unit

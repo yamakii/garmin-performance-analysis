@@ -5,7 +5,7 @@ import pytest
 from garmin_mcp.database.inserters.hr_efficiency import (
     _canonical_training_category,
     _extract_hr_efficiency_from_raw,
-    _resolve_intensity_category,
+    resolve_intensity_category,
 )
 from tests.database.inserters.hr_efficiency._helpers import _write_raw_files
 
@@ -108,7 +108,7 @@ class TestCanonicalTrainingCategory:
     def test_resolve_moderate_from_controlled_zone3(self):
         """Zone3-dominant aerobic_base with negligible Zone4-5 → 'moderate'."""
         assert (
-            _resolve_intensity_category(
+            resolve_intensity_category(
                 "aerobic_base",
                 zone1_pct=5.0,
                 zone2_pct=19.0,
@@ -138,7 +138,7 @@ class TestCanonicalTrainingCategory:
         """A mild drift into Zone3 (zone3=45 < 50, not dominant) stays 'easy' and is
         NOT promoted to 'moderate' — preserves test_easy_drift_to_zone3_downgraded."""
         assert (
-            _resolve_intensity_category(
+            resolve_intensity_category(
                 "aerobic_base",
                 zone1_pct=30.0,
                 zone2_pct=25.0,
@@ -155,7 +155,7 @@ class TestCanonicalTrainingCategory:
         """Zone3-dominant but with real Zone4-5 work (>=15%) is NOT 'moderate' — it
         keeps its label path so genuine threshold/VO2 sessions are not masked."""
         assert (
-            _resolve_intensity_category(
+            resolve_intensity_category(
                 "aerobic_base",
                 zone1_pct=15.0,
                 zone2_pct=0.0,
