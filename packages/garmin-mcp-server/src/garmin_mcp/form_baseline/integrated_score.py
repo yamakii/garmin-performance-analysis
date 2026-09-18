@@ -112,3 +112,27 @@ def integrated_star_score(integrated_score: float | None) -> float | None:
         return None
 
     return round(max(1.0, min(5.0, 5.0 - (100.0 - integrated_score) / 20.0)), 1)
+
+
+def round_star_score(score: float | None) -> float | None:
+    """Round a star score read back from DuckDB to its one-decimal scale.
+
+    The per-metric and overall star scores live in ``FLOAT`` (float32) columns,
+    so a stored 4.1 is read back as 4.099999904632568. The scale is defined as
+    one decimal (#1233), so rounding on read is lossless and keeps the value
+    handed to tools and agents clean (#1245).
+
+    Args:
+        score: Star score as read from ``form_evaluations``, or None.
+
+    Returns:
+        The score rounded to one decimal, or None when the input is None.
+
+    Example:
+        >>> round_star_score(4.099999904632568)
+        4.1
+    """
+    if score is None:
+        return None
+
+    return round(float(score), 1)

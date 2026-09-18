@@ -142,7 +142,7 @@ def test_get_form_evaluations_includes_power_data(tmp_db_path: str):
             '★★★★★', 1.0, FALSE,
             'VR is excellent',
             185.0, 180, TRUE,
-            0.95, '★★★★★',
+            4.8, '★★★★★',
             280.0, 4.3, 3.5, 3.6,
             -0.027, '同等', FALSE
         )
@@ -170,7 +170,8 @@ def test_get_form_evaluations_includes_power_data(tmp_db_path: str):
 
     # Verify existing fields are not broken
     assert result["gct"]["actual"] == pytest.approx(248.5, rel=1e-3)
-    assert result["overall_score"] == pytest.approx(0.95, rel=1e-3)
+    # overall_score is a 1.0-5.0 one-decimal star score, rounded on read (#1245).
+    assert result["overall_score"] == 4.8
 
 
 @pytest.mark.integration
@@ -215,7 +216,7 @@ def test_get_form_evaluations_no_power_data(tmp_db_path: str):
             '★★★★★', 1.0, FALSE,
             'VR is good',
             182.0, 180, TRUE,
-            0.92, '★★★★★',
+            4.6, '★★★★★',
             NULL, NULL, NULL, NULL,
             NULL, NULL, NULL
         )
@@ -242,4 +243,4 @@ def test_get_form_evaluations_no_power_data(tmp_db_path: str):
 
     # Verify existing fields are not broken
     assert result["gct"]["actual"] == pytest.approx(255.0, rel=1e-3)
-    assert result["overall_score"] == pytest.approx(0.92, rel=1e-3)
+    assert result["overall_score"] == 4.6
