@@ -120,14 +120,16 @@ class TestEvaluateAndStore:
         assert result["cadence"]["actual"] == 183.0
         assert result["cadence"]["needs_improvement"] is False
 
-    def test_uniform_four_star_metrics_yield_four_star_overall(self, mocker):
-        """Three 4-star metrics must render a 4-star overall, not 3 (#1213).
+    def test_overall_star_roundtrip_is_stable(self, mocker):
+        """Three equal metric scores must render the same overall (#1213).
 
-        ``overall_score`` averages the GCT/VO/VR scores, so equal metrics give
-        an integer that maps to a penalty sitting exactly on a band boundary
-        (``(5.0 - 4.0) * 20.0 == 20.0``). ``compute_star_rating`` is
+        ``overall_score`` averages the GCT/VO/VR scores and
+        ``overall_star_rating`` re-encodes that average as a penalty
+        (``(5.0 - overall_score) * 20.0``). With the continuous score (#1233)
+        the two mappings are exact inverses, so equal metrics must round-trip
+        to the same value and glyph count. ``compute_star_rating`` is
         deliberately left unmocked here -- every other evaluator test stubs it
-        out, which is why the regression went unnoticed.
+        out, which is why the original regression went unnoticed.
         """
         mock_load_models = mocker.patch(
             "garmin_mcp.form_baseline.evaluator.load_models_from_file"
@@ -149,8 +151,8 @@ class TestEvaluateAndStore:
             "cadence": 179.2,
         }
 
-        # Penalty 15.0 is inside the 4-star band for each metric, so the
-        # average lands on exactly 4.0.
+        # Penalty 18.0 scores 4.1 on each metric, so the average lands on
+        # exactly 4.1 and re-encodes to a penalty of 18.0 again.
         mock_score = mocker.patch(
             "garmin_mcp.form_baseline.evaluator.score_observation"
         )
@@ -165,14 +167,14 @@ class TestEvaluateAndStore:
             "vr_pct_actual": 9.22,
             "gct_delta_pct": 0.93,
             "gct_sigma_pct": 1.0,
-            "gct_penalty": 15.0,
+            "gct_penalty": 18.0,
             "vo_delta_cm": 0.15,
             "vo_delta_pct": 2.06,
             "vo_sigma_pct": 2.3,
-            "vo_penalty": 15.0,
+            "vo_penalty": 18.0,
             "vr_delta_pct": 1.23,
             "vr_sigma_pct": 1.3,
-            "vr_penalty": 15.0,
+            "vr_penalty": 18.0,
             "score": 81.5,
             "gct_needs_improvement": False,
             "vo_needs_improvement": False,
@@ -187,7 +189,7 @@ class TestEvaluateAndStore:
         mock_overall = mocker.patch(
             "garmin_mcp.form_baseline.evaluator.generate_overall_text"
         )
-        mock_overall.return_value = "(総合評価: ★★★★☆ 4.0/5.0)"
+        mock_overall.return_value = "(総合評価: ★★★★☆ 4.1/5.0)"
 
         mock_conn = mocker.MagicMock()
         mocker.patch("duckdb.connect", return_value=mock_conn)
@@ -199,13 +201,13 @@ class TestEvaluateAndStore:
             model_file=Path("/tmp/test_models.json"),
         )
 
-        # Each metric earned 4 stars ...
-        assert result["gct"]["score"] == 4.0
-        assert result["vo"]["score"] == 4.0
-        assert result["vr"]["score"] == 4.0
+        # Each metric scored 4.1 ...
+        assert result["gct"]["score"] == pytest.approx(4.1)
+        assert result["vo"]["score"] == pytest.approx(4.1)
+        assert result["vr"]["score"] == pytest.approx(4.1)
 
-        # ... so the overall must not be demoted to 3.
-        assert result["overall_score"] == 4.0
+        # ... so the overall keeps that value and is not demoted to 3 stars.
+        assert result["overall_score"] == pytest.approx(4.1)
         assert result["overall_star_rating"] == "★" * 4 + "☆"
 
     def test_evaluate_missing_splits(self, mocker):
@@ -710,36 +712,36 @@ class TestComputeStarRating:
     """Test cases for compute_star_rating function."""
 
     def test_star_rating_excellent(self):
-        """Test 5-star rating for score >= 95."""
+        """A tiny penalty stays in the 5-star glyph band."""
         rating = compute_star_rating(penalty=2.0, delta_pct=-1.3)
         assert rating["star_rating"] == "★★★★★"
-        assert rating["score"] == 5.0
+        assert rating["score"] == pytest.approx(4.9)
         assert rating["category"] == "excellent"
 
     def test_star_rating_good(self):
-        """Test 4-star rating for score 85-95."""
+        """A penalty of 12 scores 4.4 and renders 4 stars."""
         rating = compute_star_rating(penalty=12.0, delta_pct=-3.5)
         assert rating["star_rating"] == "★★★★☆"
-        assert rating["score"] == 4.0
+        assert rating["score"] == pytest.approx(4.4)
         assert rating["category"] == "good"
 
     def test_star_rating_average(self):
-        """Test 3-star rating for score 75-85."""
-        rating = compute_star_rating(penalty=25.0, delta_pct=15.0)
+        """A penalty of 32 scores 3.4 and renders 3 stars."""
+        rating = compute_star_rating(penalty=32.0, delta_pct=15.0)
         assert rating["star_rating"] == "★★★☆☆"
-        assert rating["score"] == 3.0
+        assert rating["score"] == pytest.approx(3.4)
         assert rating["category"] == "average"
 
     def test_star_rating_below_average(self):
-        """Test 2-star rating for score 65-75."""
-        rating = compute_star_rating(penalty=45.0, delta_pct=25.0)
+        """A penalty of 52 scores 2.4 and renders 2 stars."""
+        rating = compute_star_rating(penalty=52.0, delta_pct=25.0)
         assert rating["star_rating"] == "★★☆☆☆"
-        assert rating["score"] == 2.0
+        assert rating["score"] == pytest.approx(2.4)
         assert rating["category"] == "below_average"
 
     def test_star_rating_poor(self):
-        """Test 1-star rating for score < 65."""
-        rating = compute_star_rating(penalty=70.0, delta_pct=35.0)
+        """A penalty of 74 scores 1.3 and renders 1 star."""
+        rating = compute_star_rating(penalty=74.0, delta_pct=35.0)
         assert rating["star_rating"] == "★☆☆☆☆"
-        assert rating["score"] == 1.0
+        assert rating["score"] == pytest.approx(1.3)
         assert rating["category"] == "poor"
