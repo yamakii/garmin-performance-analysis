@@ -111,6 +111,51 @@ def test_climate_neutral_hr_no_change_below_ref():
 
 
 # --------------------------------------------------------------------------- #
+# HeatAdjustmentModel.expected_hr()
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.unit
+def test_expected_hr_matches_fit():
+    """The whole regression, not just the heat term: 100 + 42 + 10 + 0."""
+    coeffs = HeatModelCoefficients(
+        intercept=100.0,
+        beta_pace=0.1,
+        beta_heat=1.0,
+        beta_days=0.0,
+        ref_temp_c=15.0,
+        n=30,
+        r_squared=0.5,
+    )
+
+    predicted = HeatAdjustmentModel.expected_hr(
+        420.0, 25.0, date(2026, 9, 19), coeffs, date(2026, 8, 1)
+    )
+
+    assert predicted == pytest.approx(152.0, abs=1e-6)
+
+
+@pytest.mark.unit
+def test_expected_hr_carries_the_time_trend():
+    """A negative beta_days is a fitness gain: the same run predicts a lower HR."""
+    coeffs = HeatModelCoefficients(
+        intercept=100.0,
+        beta_pace=0.1,
+        beta_heat=1.0,
+        beta_days=-0.05,
+        ref_temp_c=15.0,
+        n=30,
+        r_squared=0.5,
+    )
+
+    predicted = HeatAdjustmentModel.expected_hr(
+        420.0, 25.0, date(2026, 8, 31), coeffs, date(2026, 8, 1)
+    )
+
+    assert predicted == pytest.approx(152.0 - 1.5, abs=1e-6)
+
+
+# --------------------------------------------------------------------------- #
 # HeatAdjustmentModel.fit()
 # --------------------------------------------------------------------------- #
 

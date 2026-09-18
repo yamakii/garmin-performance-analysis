@@ -101,6 +101,45 @@ class HeatAdjustmentModel:
         """
         return coeffs.beta_heat * heat_hinge(temp_c, coeffs.ref_temp_c)
 
+    @staticmethod
+    def expected_hr(
+        pace_s_per_km: float,
+        temp_c: float,
+        obs_date: date,
+        coeffs: HeatModelCoefficients,
+        base_date: date,
+    ) -> float:
+        """Return the HR the fitted model predicts for one run.
+
+        The inverse read of :meth:`climate_neutral_hr`: instead of removing the
+        heat cost from a measured HR, this evaluates the whole regression --
+        ``intercept + beta_pace * pace + beta_heat * heat_hinge(temp) +
+        beta_days * days`` -- so a caller can compare the *measured* HR against
+        what the pace, the temperature and the date alone would explain
+        (#1248). The residual ``avg_hr - expected_hr`` is what the run-level
+        normal range judges.
+
+        Args:
+            pace_s_per_km: The run's average pace in seconds per km.
+            temp_c: The run's temperature in °C (weather station, not device).
+            obs_date: The run's date.
+            coeffs: Coefficients from :meth:`fit`.
+            base_date: Date the fit's ``days_since_start`` axis starts from --
+                the earliest run in the fitted window. Passing a different base
+                shifts every prediction by the same ``beta_days`` offset, so a
+                caller comparing residuals within one window stays consistent.
+
+        Returns:
+            Predicted heart rate in bpm.
+        """
+        days = float(obs_date.toordinal() - base_date.toordinal())
+        return (
+            coeffs.intercept
+            + coeffs.beta_pace * pace_s_per_km
+            + coeffs.beta_heat * heat_hinge(temp_c, coeffs.ref_temp_c)
+            + coeffs.beta_days * days
+        )
+
     @classmethod
     def climate_neutral_hr(
         cls,
