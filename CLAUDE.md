@@ -100,7 +100,7 @@ Key rules (path-scoped, under `.claude/rules/dev/`):
 ### Worktree 検証
 
 検証レベル（L1/L2/L3/skip）、Ship 手順、auto-merge ゲートの正本は
-`.claude/rules/dev/worktree-validation-protocol.md`。承認済み Issue はそのセッションが worktree で実装して PR を作りマージする（`implementation-workflow.md` Phase 1）。`/implement <epic>` は依存ティアが 2 段以上の Epic のみ。
+`.claude/rules/dev/worktree-validation-protocol.md`。承認済み Issue はそのセッションが worktree で実装して PR を作りマージする（`implementation-workflow.md` Phase 1）。`/implement <epic>` は `implementation-workflow.md` の起動条件（依存ティア 2 段以上、または依存の無い 4 件以上でファイル非共有）を満たすときに使う。
 
 ### Quick Commands
 | Command | Purpose |
