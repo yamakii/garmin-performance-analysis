@@ -95,6 +95,35 @@ def _resolve_intensity_category(
     return base
 
 
+# Quality ladder, lowest to highest. A rating step is worth one quality step and
+# being misaligned with the intended primary zone costs exactly one more step.
+_QUALITY_LADDER = ("Poor", "Fair", "Good", "Excellent")
+
+
+def _combine_training_quality(rating: str, aligned: bool) -> str:
+    """Combine zone_distribution_rating with primary-zone alignment.
+
+    Excellent + aligned            -> "Excellent"
+    Excellent (misaligned)         -> "Good"
+    Good + aligned                 -> "Good"
+    Good (misaligned)              -> "Fair"
+    Fair + aligned                 -> "Fair"
+    Fair (misaligned), Poor        -> "Poor"
+
+    A "Fair" rating used to collapse to "Poor" whatever the alignment, so an
+    aligned easy run one step below Good lost two quality steps at once
+    (Issue #1232). Demoting by a single step keeps the ladder proportional.
+    """
+    if rating not in _QUALITY_LADDER:
+        # Unknown rating: stay neutral instead of punishing the session.
+        return "Fair"
+
+    index = _QUALITY_LADDER.index(rating)
+    if not aligned:
+        index -= 1
+    return _QUALITY_LADDER[max(index, 0)]
+
+
 def _extract_hr_efficiency_from_raw(
     hr_zones_file: str | None, activity_file: str | None
 ) -> dict:
@@ -277,8 +306,6 @@ def _extract_hr_efficiency_from_raw(
         aerobic_efficiency = "Limited aerobic stimulus"
 
     # 4. Calculate training_quality (combine zone_distribution_rating + primary_zone alignment)
-    training_quality = "Fair"  # default
-
     # Check if primary zone aligns with the canonical intensity category.
     # easy → Zone1/Zone2, tempo/threshold → Zone3/Zone4, vo2max → Zone4/Zone5,
     # unknown → always aligned (neutral).
@@ -306,16 +333,9 @@ def _extract_hr_efficiency_from_raw(
             primary_zone_aligned = "Zone 4" in primary_zone or "Zone 5" in primary_zone
 
     # Combine rating with alignment
-    if zone_distribution_rating == "Excellent" and primary_zone_aligned:
-        training_quality = "Excellent"
-    elif zone_distribution_rating == "Excellent" or (
-        zone_distribution_rating == "Good" and primary_zone_aligned
-    ):
-        training_quality = "Good"
-    elif zone_distribution_rating == "Good":
-        training_quality = "Fair"
-    else:
-        training_quality = "Poor"
+    training_quality = _combine_training_quality(
+        zone_distribution_rating, primary_zone_aligned
+    )
 
     # 5. Calculate zone2_focus (Zone 2 time > 60%)
     zone2_focus = zone2_pct > 60

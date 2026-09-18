@@ -6,8 +6,11 @@ import duckdb
 import pytest
 
 from garmin_mcp.database.inserters.hr_efficiency import (
+    _combine_training_quality,
+    _extract_hr_efficiency_from_raw,
     insert_hr_efficiency,
 )
+from tests.database.inserters.hr_efficiency._helpers import _write_raw_files
 
 
 class TestZoneRatings:
@@ -210,6 +213,57 @@ class TestZoneRatings:
         # Should have a quality rating
         assert quality in ["Excellent", "Good", "Fair", "Poor"]
         conn.close()
+
+    @pytest.mark.unit
+    def test_training_quality_fair_rating_aligned_is_fair(self, tmp_path):
+        """Issue #1232 (activity 24394775433): an aligned easy run rated Fair.
+
+        Zone1+2 = 68.97% is one step below Good, and the modal zone is Zone 2 as
+        an easy run intends, so the quality is Fair — not the two-step drop to
+        Poor the old ladder produced.
+        """
+        hr_zones_file, activity_file = _write_raw_files(
+            tmp_path, {1: 13.53, 2: 55.44, 3: 31.03}, "AEROBIC_BASE"
+        )
+        result = _extract_hr_efficiency_from_raw(hr_zones_file, activity_file)
+
+        assert result["primary_zone"] == "Zone 2"
+        assert result["zone_distribution_rating"] == "Fair"
+        assert result["training_quality"] == "Fair"
+
+    @pytest.mark.unit
+    def test_training_quality_fair_rating_misaligned_is_poor(self, tmp_path):
+        """A Fair easy run whose modal zone is Zone 3 keeps its demotion to Poor.
+
+        Zone3 = 35% stays below the 50% moderate refinement, so the run is still
+        judged as easy and the misalignment costs the remaining step.
+        """
+        hr_zones_file, activity_file = _write_raw_files(
+            tmp_path, {1: 32.0, 2: 33.0, 3: 35.0}, "AEROBIC_BASE"
+        )
+        result = _extract_hr_efficiency_from_raw(hr_zones_file, activity_file)
+
+        assert result["primary_zone"] == "Zone 3"
+        assert result["zone_distribution_rating"] == "Fair"
+        assert result["training_quality"] == "Poor"
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        ("rating", "aligned", "expected"),
+        [
+            ("Excellent", True, "Excellent"),
+            ("Excellent", False, "Good"),
+            ("Good", True, "Good"),
+            ("Good", False, "Fair"),
+            ("Poor", True, "Poor"),
+            ("Poor", False, "Poor"),
+        ],
+    )
+    def test_training_quality_existing_ladder_unchanged(
+        self, rating, aligned, expected
+    ):
+        """Every rung other than Fair keeps the quality it had before #1232."""
+        assert _combine_training_quality(rating, aligned) == expected
 
     @pytest.mark.unit
     def test_zone2_focus_true(self, tmp_path, initialized_db_path):
