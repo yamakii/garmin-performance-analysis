@@ -30,12 +30,15 @@ def _patch_db_path(monkeypatch: pytest.MonkeyPatch, verification_db_path: Path) 
     )
 
 
-def _insert_form_evaluation(db_path: Path, integrated_score: float = 90.0) -> None:
+def _insert_form_evaluation(
+    db_path: Path, integrated_score: float = 90.0, star_score: float = 4.0
+) -> None:
     """Insert a minimal form_evaluations row for the fixture activity.
 
     The verification fixture has no form_evaluations row; this seeds one with a
     known gct_needs_improvement flag so the bundle's form_evaluation key is
-    populated by FormReader.get_form_evaluations.
+    populated by FormReader.get_form_evaluations. ``star_score`` fills the
+    gct / vo / vr / overall score columns (float32 in the real schema).
     """
     conn = duckdb.connect(str(db_path))
     conn.execute(
@@ -56,15 +59,22 @@ def _insert_form_evaluation(db_path: Path, integrated_score: float = 90.0) -> No
             245.0, 8.0, 7.0,
             250.0, 8.5, 7.2,
             2.0, 0.5, 2.8,
-            '★★★★☆', 4.0, false,
-            '★★★★☆', 4.0, false,
-            '★★★★☆', 4.0, false,
+            '★★★★☆', ?, false,
+            '★★★★☆', ?, false,
+            '★★★★☆', ?, false,
             178.0, 170, true,
-            4.0, '★★★★☆',
+            ?, '★★★★☆',
             ?, 'aerobic'
         )
         """,
-        [FIXTURE_ACTIVITY_ID, integrated_score],
+        [
+            FIXTURE_ACTIVITY_ID,
+            star_score,
+            star_score,
+            star_score,
+            star_score,
+            integrated_score,
+        ],
     )
     conn.close()
 
@@ -411,6 +421,23 @@ class TestPrefetchBundleExpansion:
 
         assert result["form_scores"]["integrated_score"] == pytest.approx(94.3)
         assert result["form_scores"]["integrated_star_score"] == 4.7
+
+    def test_prefetch_form_scores_rounded_to_one_decimal(
+        self, verification_db_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """float32 star scores reach the agents as 4.1, not 4.0999999 (#1245)."""
+        _insert_form_evaluation(verification_db_path, star_score=4.1)
+        _patch_db_path(monkeypatch, verification_db_path)
+
+        result = prefetch_activity_context(FIXTURE_ACTIVITY_ID)
+
+        # Exact equality on purpose: approx() would hide 4.099999904632568.
+        assert result["form_scores"]["gct"]["score"] == 4.1
+        assert result["form_scores"]["vo"]["score"] == 4.1
+        assert result["form_scores"]["vr"]["score"] == 4.1
+        assert result["form_scores"]["overall_score"] == 4.1
+        assert result["form_evaluation"]["gct"]["score"] == 4.1
+        assert result["form_evaluation"]["overall_score"] == 4.1
 
     def test_prefetch_scores_none_without_hr_efficiency(
         self, verification_db_path: Path, monkeypatch: pytest.MonkeyPatch

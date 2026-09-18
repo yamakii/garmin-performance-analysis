@@ -123,7 +123,10 @@ from garmin_mcp.database.inserters.hr_efficiency import (
     zone_distribution_score,
 )
 from garmin_mcp.database.readers.metadata import collect_activity_gear
-from garmin_mcp.form_baseline.integrated_score import integrated_star_score
+from garmin_mcp.form_baseline.integrated_score import (
+    integrated_star_score,
+    round_star_score,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -700,25 +703,27 @@ def prefetch_activity_context(activity_id: int) -> dict:
             ).fetchone()
 
             if form_row:
+                # Star scores live in float32 columns: round on read so 4.1 is
+                # not handed to the agents as 4.0999999 (#1245).
                 form_scores = {
                     "gct": {
                         "star_rating": form_row[0],
-                        "score": form_row[1],
+                        "score": round_star_score(form_row[1]),
                     },
                     "vo": {
                         "star_rating": form_row[2],
-                        "score": form_row[3],
+                        "score": round_star_score(form_row[3]),
                     },
                     "vr": {
                         "star_rating": form_row[4],
-                        "score": form_row[5],
+                        "score": round_star_score(form_row[5]),
                     },
                     "integrated_score": form_row[6],
                     # Continuous star form of the 100-point integrated score
                     # (Issue #1236): the agent transcribes this instead of
                     # mapping the score through a band table by hand.
                     "integrated_star_score": integrated_star_score(form_row[6]),
-                    "overall_score": form_row[7],
+                    "overall_score": round_star_score(form_row[7]),
                     "overall_star_rating": form_row[8],
                 }
         except duckdb.CatalogException:

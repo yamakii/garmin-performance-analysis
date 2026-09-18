@@ -8,6 +8,7 @@ import logging
 from typing import Any
 
 from garmin_mcp.database.readers.base import BaseDBReader
+from garmin_mcp.form_baseline.integrated_score import round_star_score
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +157,9 @@ class FormReader(BaseDBReader):
                         "expected": result[0],
                         "delta_pct": result[2],
                         "star_rating": result[3],
-                        "score": result[4],
+                        # Star scores live in float32 columns: round on
+                        # read so 4.1 is not surfaced as 4.0999999 (#1245).
+                        "score": round_star_score(result[4]),
                         "needs_improvement": result[5],
                         "evaluation_text": result[6],
                     },
@@ -166,7 +169,7 @@ class FormReader(BaseDBReader):
                         "delta_cm": result[9],
                         "delta_pct": vo_delta_pct,
                         "star_rating": result[10],
-                        "score": result[11],
+                        "score": round_star_score(result[11]),
                         "needs_improvement": result[12],
                         "evaluation_text": result[13],
                     },
@@ -175,7 +178,7 @@ class FormReader(BaseDBReader):
                         "expected": result[14],
                         "delta_pct": result[16],
                         "star_rating": result[17],
-                        "score": result[18],
+                        "score": round_star_score(result[18]),
                         "needs_improvement": result[19],
                         "evaluation_text": result[20],
                     },
@@ -187,7 +190,9 @@ class FormReader(BaseDBReader):
                         "expected": result[35] if has_cadence_cols else None,
                         "delta_pct": result[36] if has_cadence_cols else None,
                         "star_rating": result[37] if has_cadence_cols else None,
-                        "score": result[38] if has_cadence_cols else None,
+                        "score": (
+                            round_star_score(result[38]) if has_cadence_cols else None
+                        ),
                         "needs_improvement": (result[39] if has_cadence_cols else None),
                         "evaluation_text": (result[40] if has_cadence_cols else None),
                     },
@@ -205,7 +210,7 @@ class FormReader(BaseDBReader):
                     },
                     "integrated_score": result[33],
                     "training_mode": result[34],
-                    "overall_score": result[24],
+                    "overall_score": round_star_score(result[24]),
                     "overall_star_rating": result[25],
                 }
 
