@@ -15,20 +15,27 @@ const formEvaluations = {
   gct_ms_expected: 273.0294189453125,
   gct_delta_pct: -1.3995118141174316,
   gct_star_rating: "★★★★★",
+  gct_score: 4.9,
   vo_cm_actual: 6.93916654586792,
   vo_cm_expected: 6.979050159454346,
   vo_delta_cm: -0.03988350182771683,
   vo_star_rating: "★★★★★",
+  vo_score: 4.8,
   vr_pct_actual: 10.066666603088379,
   vr_pct_expected: 10.049034118652344,
   vr_delta_pct: 0.175467386841774,
   vr_star_rating: "★★★★★",
+  vr_score: 4.7,
   power_avg_w: null,
   power_wkg: null,
   power_efficiency_rating: null,
   speed_actual_mps: null,
   speed_expected_mps: null,
 };
+
+/** The note line under a tile's value: stars, score, then the expectation. */
+const noteOf = (label: string) =>
+  screen.getByText(label).parentElement?.querySelector("p:last-child");
 
 describe("EfficiencyReport", () => {
   it("test_tiles_use_form_evaluations_star_rating", () => {
@@ -72,9 +79,6 @@ describe("EfficiencyReport", () => {
         }}
       />,
     );
-
-    const noteOf = (label: string) =>
-      screen.getByText(label).parentElement?.querySelector("p:last-child");
 
     const gct = noteOf("接地時間");
     expect(gct?.textContent).toContain("期待244ms");
@@ -228,5 +232,56 @@ describe("EfficiencyReport", () => {
 
     // The separator stays outside the spans, i.e. it is the one break point.
     expect(expected.parentElement).toHaveTextContent("期待276ms / 偏差-1.8%");
+  });
+
+  it("renders numeric score next to star glyphs", () => {
+    render(
+      <EfficiencyReport
+        section={section}
+        formEvaluations={{
+          ...formEvaluations,
+          gct_star_rating: "★★★★☆",
+          gct_score: 4.1,
+        }}
+      />,
+    );
+
+    // Five glyphs cannot separate a 4.1 from a 4.4, so the score reads as
+    // text beside them (#1234).
+    const gct = noteOf("接地時間");
+    expect(gct?.textContent).toContain("★★★★☆");
+    expect(gct?.textContent).toContain("4.1");
+
+    // Ink, not the decorative star colour: this is a figure, not a glyph.
+    const score = screen.getByText("4.1");
+    expect(score).toHaveClass("text-ink-soft");
+    expect(score).not.toHaveClass("text-star");
+  });
+
+  it("omits numeric score when null", () => {
+    render(
+      <EfficiencyReport
+        section={section}
+        formEvaluations={{ ...formEvaluations, gct_score: null }}
+      />,
+    );
+
+    // Glyphs still lead the note; no empty slot is left where the score was.
+    const gct = noteOf("接地時間");
+    expect(gct?.textContent).toContain("★★★★★");
+    expect(gct?.textContent).not.toMatch(/★\s*\d\.\d/);
+    expect(gct?.textContent).toContain("期待273ms");
+  });
+
+  it("formats integer scores with one decimal", () => {
+    render(
+      <EfficiencyReport
+        section={section}
+        formEvaluations={{ ...formEvaluations, vo_score: 5 }}
+      />,
+    );
+
+    // Integer scores render on the same one-decimal scale as continuous ones.
+    expect(noteOf("上下動")?.textContent).toContain("5.0");
   });
 });
