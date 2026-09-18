@@ -755,6 +755,180 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "wellness mentions and form-delta noise",
         ],
     },
+    # The single LLM-written section of the redesigned single-run page
+    # (Epic #1247). Everything a number can decide -- ranges, verdicts, star
+    # scores -- is already computed and rendered as figures, so this section
+    # writes only what a coach adds on top of them: meaning, causality and the
+    # next step. The prose criterion is carried here verbatim so the agent
+    # definition and this contract cannot drift apart.
+    "run_note": {
+        "schema_version": "1.0",
+        "section_type": "run_note",
+        "required_fields": {
+            "story": {
+                "type": "string",
+                "description": (
+                    "2-3 sentences, 20-400 chars: what the run was for (week / "
+                    "block / goal) and whether it served that. May tell the "
+                    "athlete what NOT to worry about"
+                ),
+            },
+            "good_points": {
+                "type": "array",
+                "description": (
+                    "1-3 items of {text, evidence}: one sentence each with the "
+                    "evidence key of the number that supports it"
+                ),
+            },
+            "growth_points": {
+                "type": "array",
+                "description": (
+                    "0-2 items of {text, evidence}, framed as room to grow or a "
+                    "maintenance target, never pass/fail"
+                ),
+            },
+            "next_challenge": {
+                "type": "string",
+                "description": (
+                    "1-2 sentences; numbers transcribed from next_run_target. An "
+                    "HR ceiling is written as a guard "
+                    "('150 bpm を超えないように') together with where HR should settle"
+                ),
+            },
+            "timeline": {
+                "type": "array",
+                "description": (
+                    "1-5 items of {moment_id, text}, 1-2 sentences each. An "
+                    "uneventful run has exactly one item on the 'steady' scene"
+                ),
+            },
+            "notes": {
+                "type": "array",
+                "description": (
+                    "Only for adverse out-of-range signals, <= 2 sentences each: "
+                    "{signal, text}"
+                ),
+            },
+            "question": {
+                "type": "string",
+                "description": (
+                    "Optional, at most one question, about something the sensors "
+                    "cannot see (omit it when there is nothing to ask)"
+                ),
+            },
+        },
+        # The six roles the prose must play. Anything outside them is already
+        # in the figures.
+        "prose_roles": {
+            "meaning": (
+                "Say what the run was for in this week / block / goal and "
+                "whether it served that purpose"
+            ),
+            "causality": (
+                "Connect a signal to its most likely cause in the attribution "
+                "order intensity -> terrain -> weather + start time -> recovery "
+                "-> form, and say when the cause is uncertain"
+            ),
+            "flow": (
+                "Narrate how the run unfolded scene by scene (the moments), "
+                "not kilometre by kilometre"
+            ),
+            "weighting": (
+                "Say which of the findings actually matters and which the "
+                "athlete can ignore today"
+            ),
+            "next_action": (
+                "One concrete next step, with the numbers transcribed from "
+                "next_run_target and an HR ceiling written as a guard"
+            ),
+            "recurrence_and_questions": (
+                "Point out what keeps recurring across runs, and ask at most "
+                "one question about what the sensors cannot see"
+            ),
+        },
+        # Deterministic output already covers these, so writing them again is
+        # noise at best and a contradiction at worst.
+        "never_write": [
+            "Numeric readouts already shown in the figures (pace / HR / GCT "
+            "tables repeated as prose)",
+            "Restated deterministic verdicts such as '接地時間は理想範囲内です' "
+            "-- the range badge already says it",
+            "Generic criteria or textbook thresholds with no bearing on this run",
+            "A within-range deviation dressed up as a strength or a weakness",
+            "The same point in two places (a good point that is also a growth "
+            "point, or a note that repeats the timeline)",
+            "A pass/fail judgement of the athlete -- growth points are room to "
+            "grow or a maintenance target",
+            "A scene, cause or comparison that no evidence key supports",
+        ],
+        # How an ``evidence`` / ``moment_id`` / ``signal`` key is resolved by
+        # ``validators.check_run_note_grounding`` at merge time.
+        "evidence_keys": {
+            "plan.<axis>": "an axis of report.plan.checks (rejected when plan is null)",
+            "signals.<metric>": "a metric of report.signals",
+            "moments.<id>": "an id of report.moments",
+            "recurrence.<kind>": "a kind of report.recurrence",
+            "vs_previous.<field>": (
+                "a field of report.vs_previous (rejected when vs_previous is null)"
+            ),
+            "conditions.<field>": "a field of report.conditions",
+            "context.<field>": (
+                "one of week_position / ladder_step / prescription / "
+                "morning_wellness / gear / similar_workouts"
+            ),
+        },
+        "evaluation_policy": {
+            "grounding": (
+                "Every good point, growth point, timeline item and note carries "
+                "the key of the datum behind it; a claim with no key is not "
+                "written at all"
+            ),
+            "growth_points": (
+                "A growth point may only rest on a signal that is BOTH outside "
+                "its normal range AND adverse, or on a plan axis that came out "
+                "off plan. A within-range or favourable signal is never a "
+                "weakness, and an on_plan axis is never an improvement area"
+            ),
+            "notes": (
+                "Write one note for every adverse out-of-range signal and for no "
+                "other signal. Attribute the cause in the order intensity -> "
+                "terrain -> weather + start time -> recovery -> form"
+            ),
+            "timeline": (
+                "One item per scene in report.moments, in order; an uneventful "
+                "run gets exactly one item on the 'steady' scene. Never invent a "
+                "scene the moments do not contain"
+            ),
+            "next_challenge": (
+                "Transcribe the numbers from next_run_target. An HR ceiling is a "
+                "guard ('150 bpm を超えないように') plus where HR should settle, "
+                "never a pass/fail target"
+            ),
+            "question": (
+                "At most one, and only about something the sensors cannot see "
+                "(sleep, stress, how the legs felt, fuelling)"
+            ),
+            "tone": (
+                "Japanese coaching tone per "
+                ".claude/rules/analysis/analysis-standards.md (natural sentences, "
+                "no 体言止め, 1-2 sentences per point) -- not duplicated here"
+            ),
+        },
+        "instructions": [
+            "Play the six prose_roles and nothing else -- the figures already "
+            "carry the numbers",
+            "Never write anything listed in never_write",
+            "Attach an evidence key from evidence_keys to every good point and "
+            "growth point; timeline items carry a moment_id and notes carry a "
+            "signal name",
+            "Only an outside + adverse signal (or an off-plan axis) may become a "
+            "growth point",
+            "Write a note for every adverse out-of-range signal and for no other",
+            "Transcribe next_challenge numbers from next_run_target and write an "
+            "HR ceiling as a guard with its settling range",
+            "Ask at most one question, about something the sensors cannot see",
+        ],
+    },
 }
 
 VALID_SECTION_TYPES = set(_CONTRACTS.keys())
