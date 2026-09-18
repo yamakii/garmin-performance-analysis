@@ -10,6 +10,23 @@ from __future__ import annotations
 
 from typing import Any
 
+from garmin_mcp.database.inserters.hr_efficiency import ZONE_BAND_CUTS
+
+# Index into a ZONE_BAND_CUTS tuple: (excellent_cut, good_cut, fair_cut).
+_ZONE_CUT_INDEX = {"excellent": 0, "good": 1, "fair": 2}
+
+
+def _zone_target(category: str, grade: str = "good") -> str:
+    """Return one HR-zone target string from the inserter's ZONE_BAND_CUTS.
+
+    The easy-run target used to be written out three times with three different
+    numbers (the inserter cut at 75, this contract at 70, the summary contract
+    at 80), so an analysis could quote a guideline the rating was never judged
+    against (#1235). Both contracts now read the cut that decides the rating.
+    """
+    return f">={ZONE_BAND_CUTS[category][_ZONE_CUT_INDEX[grade]]:.0f}%"
+
+
 # Pace coefficient-of-variation bands, shared by the phase and summary
 # contracts (#973). Easy / long / LSD runs are HR-governed and run on 1 km
 # auto-laps, so hills, signals and walk breaks make their CV structurally
@@ -375,12 +392,17 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                     "do not derive needs_improvement from an absolute spm cutoff."
                 ),
             },
+            # Band tables make the star jump a whole step at an edge, and the
+            # LLM mapped the bands itself. The continuous value is computed
+            # upstream (#1233), so point at it instead (#1235).
             "integrated_score_stars": {
-                "5_stars": "95-100",
-                "4_stars": "85-94",
-                "3_stars": "70-84",
-                "2_stars": "50-69",
-                "1_star": "<50",
+                "formula": (
+                    "stars = 5.0 - (100 - integrated_score) / 20, clamped to 1.0-5.0"
+                ),
+                "source": (
+                    "form_scores.integrated_star_score "
+                    "(pre-computed; transcribe, do not recompute)"
+                ),
             },
             "power_efficiency_stars": {
                 "5_stars": "+5% or more (highly efficient)",
@@ -395,18 +417,21 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "baseline_normal": "±10%",
                 "baseline_attention": "<-10%",
             },
+            # target_pct is the cut at which the data layer rates the
+            # distribution "Good", read from ZONE_BAND_CUTS so the guideline
+            # quoted to the athlete is the one the rating used (#1235).
             "zone_targets": {
                 "base_easy_recovery": {
                     "primary_zones": "Zone 1-2",
-                    "target_pct": ">=70%",
+                    "target_pct": _zone_target("easy"),
                 },
                 "tempo_threshold": {
                     "primary_zones": "Zone 3-4",
-                    "target_pct": ">=60%",
+                    "target_pct": _zone_target("tempo"),
                 },
                 "interval_sprint": {
                     "primary_zones": "Zone 4-5",
-                    "target_pct": ">=50%",
+                    "target_pct": _zone_target("vo2max"),
                 },
             },
         },
@@ -674,11 +699,11 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             },
             "training_type_criteria": {
                 "base": {
-                    "hr_zone_1_2": ">=80%",
+                    "hr_zone_1_2": _zone_target("easy"),
                     "pace_cv": _cv_band("low_moderate", "good"),
                 },
                 "tempo": {
-                    "hr_zone_3_4": ">=60%",
+                    "hr_zone_3_4": _zone_target("tempo"),
                     "pace_cv": _cv_band("tempo_threshold", "good"),
                     "hr_drift": "10-15% allowed",
                 },
@@ -699,8 +724,10 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                     "work_recovery_contrast": "clear HR amplitude",
                     "hr_drift": "N/A",
                 },
+                # Recovery asks for the "Excellent" easy cut, not the "Good"
+                # one a base run is judged on.
                 "recovery": {
-                    "hr_zone_1_2": ">=90%",
+                    "hr_zone_1_2": _zone_target("easy", "excellent"),
                     "form_eval": "not required",
                 },
                 "race": {

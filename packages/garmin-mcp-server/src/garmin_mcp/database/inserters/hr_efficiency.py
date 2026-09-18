@@ -65,7 +65,7 @@ _MODERATE_ZONE45_MAX = 15.0  # Zone4+5 % below which it is not threshold/VO2 wor
 _THRESHOLD_WORK_MIN_PCT = 20.0
 
 
-def _resolve_intensity_category(
+def resolve_intensity_category(
     training_type: str | None,
     zone1_pct: float,
     zone2_pct: float,
@@ -93,6 +93,107 @@ def _resolve_intensity_category(
         ):
             return "moderate"
     return base
+
+
+# (excellent_cut, good_cut, fair_cut) per canonical intensity category, as a
+# percentage of the run spent in the band that category is judged on (see
+# ``zone_band_pct``). Single source of truth: the categorical label, the
+# continuous ``zone_distribution_score`` and the analysis contracts' zone
+# targets all read these numbers, so a target stated to the agent can never
+# drift away from the cut that actually decides the rating (#1235).
+ZONE_BAND_CUTS: dict[str, tuple[float, float, float]] = {
+    "easy": (90.0, 75.0, 60.0),
+    "moderate": (80.0, 60.0, 40.0),
+    "tempo": (60.0, 40.0, 20.0),
+    "threshold": (60.0, 40.0, 20.0),
+    "vo2max": (50.0, 30.0, 15.0),
+}
+
+# "unknown" has no intended band, so it is judged loosely on the whole aerobic
+# range and never drops below "Fair".
+_UNKNOWN_GOOD_CUT = 70.0
+
+_SCORE_FLOOR = 1.0
+_SCORE_CEILING = 5.0
+
+
+def zone_band_pct(
+    category: str,
+    zone1_pct: float,
+    zone2_pct: float,
+    zone3_pct: float,
+    zone4_pct: float,
+    zone5_pct: float,
+) -> float:
+    """The % of the run in the HR-zone band the category is judged on.
+
+    easy -> Zone1-2, moderate -> Zone2-3, tempo/threshold -> Zone3-4,
+    vo2max -> Zone4-5, unknown -> Zone1-3 (loose aerobic range).
+    """
+    if category == "easy":
+        return zone1_pct + zone2_pct
+    if category == "moderate":
+        return zone2_pct + zone3_pct
+    if category in ("tempo", "threshold"):
+        return zone3_pct + zone4_pct
+    if category == "vo2max":
+        return zone4_pct + zone5_pct
+    return zone1_pct + zone2_pct + zone3_pct
+
+
+def zone_distribution_rating(category: str, band_pct: float) -> str:
+    """Categorical zone-distribution label, read from ``ZONE_BAND_CUTS``.
+
+    returns: "Excellent" | "Good" | "Fair" | "Poor"
+    """
+    cuts = ZONE_BAND_CUTS.get(category)
+    if cuts is None:
+        # unknown: neutral, never penalised down to Poor.
+        return "Good" if band_pct >= _UNKNOWN_GOOD_CUT else "Fair"
+
+    excellent_cut, good_cut, fair_cut = cuts
+    if band_pct >= excellent_cut:
+        return "Excellent"
+    if band_pct >= good_cut:
+        return "Good"
+    if band_pct >= fair_cut:
+        return "Fair"
+    return "Poor"
+
+
+def zone_distribution_score(category: str, band_pct: float) -> float | None:
+    """Continuous 1.0-5.0 zone-distribution score over ``ZONE_BAND_CUTS``.
+
+    The label is categorical, so a run one point below a cut lost a whole
+    quality step and the LLM-scored hr_management axis jumped about a full star
+    at the edge (#1235). This interpolates linearly between the same cuts:
+    excellent cut -> 5.0, good cut -> 4.0, fair cut -> 3.0, and below the fair
+    cut it keeps the good->fair slope down to a floor of 1.0. At or above the
+    excellent cut the score is 5.0.
+
+    Args:
+        category: canonical intensity category (``resolve_intensity_category``).
+        band_pct: % of the run in that category's band (``zone_band_pct``).
+
+    Returns:
+        Score in 1.0-5.0 with one decimal, or None for "unknown", which carries
+        no intended band and is never penalised today.
+    """
+    cuts = ZONE_BAND_CUTS.get(category)
+    if cuts is None:
+        return None
+
+    excellent_cut, good_cut, fair_cut = cuts
+    if band_pct >= excellent_cut:
+        score = _SCORE_CEILING
+    elif band_pct >= good_cut:
+        score = 4.0 + (band_pct - good_cut) / (excellent_cut - good_cut)
+    else:
+        # The same good->fair slope continues below the fair cut, so the curve
+        # stays straight through "Fair" into "Poor" instead of stepping again.
+        score = 3.0 + (band_pct - fair_cut) / (good_cut - fair_cut)
+
+    return round(max(_SCORE_FLOOR, min(_SCORE_CEILING, score)), 1)
 
 
 # Quality ladder, lowest to highest. A rating step is worth one quality step and
@@ -230,7 +331,7 @@ def _extract_hr_efficiency_from_raw(
 
     # Resolve the intensity category from the label refined by the actual zone
     # distribution (Zone3-dominant controlled runs become "moderate").
-    category = _resolve_intensity_category(
+    category = resolve_intensity_category(
         training_type,
         zone1_pct,
         zone2_pct,
@@ -240,56 +341,12 @@ def _extract_hr_efficiency_from_raw(
         primary_zone,
     )
 
-    if category == "easy":
-        # Easy/recovery: judged on Zone1-2 (staying low = success).
-        band_pct = zone1_pct + zone2_pct
-        if band_pct >= 90:
-            zone_distribution_rating = "Excellent"
-        elif band_pct >= 75:
-            zone_distribution_rating = "Good"
-        elif band_pct >= 60:
-            zone_distribution_rating = "Fair"
-        else:
-            zone_distribution_rating = "Poor"
-    elif category == "moderate":
-        # Moderate/steady: controlled Zone3 effort judged on the aerobic
-        # Zone2-3 band (same band as aerobic_efficiency), so a well-run
-        # Zone3-dominant session is credited instead of failing the Zone1-2 test.
-        band_pct = zone2_pct + zone3_pct
-        if band_pct >= 80:
-            zone_distribution_rating = "Excellent"
-        elif band_pct >= 60:
-            zone_distribution_rating = "Good"
-        elif band_pct >= 40:
-            zone_distribution_rating = "Fair"
-        else:
-            zone_distribution_rating = "Poor"
-    elif category in ("tempo", "threshold"):
-        # Tempo/threshold: judged on Zone3-4.
-        band_pct = zone3_pct + zone4_pct
-        if band_pct >= 60:
-            zone_distribution_rating = "Excellent"
-        elif band_pct >= 40:
-            zone_distribution_rating = "Good"
-        elif band_pct >= 20:
-            zone_distribution_rating = "Fair"
-        else:
-            zone_distribution_rating = "Poor"
-    elif category == "vo2max":
-        # VO2max/anaerobic: judged on Zone4-5.
-        band_pct = zone4_pct + zone5_pct
-        if band_pct >= 50:
-            zone_distribution_rating = "Excellent"
-        elif band_pct >= 30:
-            zone_distribution_rating = "Good"
-        elif band_pct >= 15:
-            zone_distribution_rating = "Fair"
-        else:
-            zone_distribution_rating = "Poor"
-    else:
-        # unknown: neutral, never penalised down to Poor.
-        band_pct = zone1_pct + zone2_pct + zone3_pct
-        zone_distribution_rating = "Good" if band_pct >= 70 else "Fair"
+    # Each category is judged on its own band (easy Zone1-2, moderate Zone2-3,
+    # tempo/threshold Zone3-4, vo2max Zone4-5) against ZONE_BAND_CUTS.
+    band_pct = zone_band_pct(
+        category, zone1_pct, zone2_pct, zone3_pct, zone4_pct, zone5_pct
+    )
+    rating = zone_distribution_rating(category, band_pct)
 
     # 3. Calculate aerobic_efficiency (Zone 2-3 percentage)
     zone2_pct = zone_percentages.get("zone2_percentage", 0)
@@ -333,9 +390,7 @@ def _extract_hr_efficiency_from_raw(
             primary_zone_aligned = "Zone 4" in primary_zone or "Zone 5" in primary_zone
 
     # Combine rating with alignment
-    training_quality = _combine_training_quality(
-        zone_distribution_rating, primary_zone_aligned
-    )
+    training_quality = _combine_training_quality(rating, primary_zone_aligned)
 
     # 5. Calculate zone2_focus (Zone 2 time > 60%)
     zone2_focus = zone2_pct > 60
@@ -359,7 +414,7 @@ def _extract_hr_efficiency_from_raw(
         "hr_stability": hr_stability,
         "training_type": training_type,
         "primary_zone": primary_zone,
-        "zone_distribution_rating": zone_distribution_rating,
+        "zone_distribution_rating": rating,
         "aerobic_efficiency": aerobic_efficiency,
         "training_quality": training_quality,
         "zone2_focus": zone2_focus,
