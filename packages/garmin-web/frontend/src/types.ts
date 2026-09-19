@@ -549,13 +549,97 @@ export interface RunZoneShare {
   pct: number;
 }
 
-/** A turning point of the run: where it happened and what moved (#1249). */
+/**
+ * The numbers a scene is allowed to quote.
+ *
+ * A walk break carries the laps it happened on (`split_list`) and where they
+ * were (`km_list`): the break is several short stops, not one slab of road,
+ * and the chart draws one band per stop (#1269).
+ */
+export interface RunMomentFacts {
+  split_list?: number[];
+  km_list?: number[];
+  [key: string]: unknown;
+}
+
+/**
+ * A turning point of the run: where it happened and what moved (#1249).
+ *
+ * Where it is drawn and what it is called are two different things (#1268):
+ * the positions (`km_from`/`km_to`, `t_from_s`/`t_to_s`) are real cumulative
+ * quantities that count every split including fragments, while `label_ja` and
+ * `unit` name the scene in the unit the athlete thinks in — kilometres on a
+ * steady run, steps ("1本目", "レスト1") on a rep session. `split_from` /
+ * `split_to` are the lap numbers behind it, which is how the splits table
+ * matches a row to a scene.
+ */
 export interface RunMoment {
   id: string;
   kind: string;
+  unit: "km" | "step";
+  label_ja: string;
+  step_id: string;
+  rep_no: number | null;
   km_from: number;
   km_to: number;
-  facts: Record<string, unknown>;
+  t_from_s: number;
+  t_to_s: number;
+  split_from: number;
+  split_to: number;
+  facts: RunMomentFacts;
+}
+
+/**
+ * One drawn step of the flow chart: a split of a long step, or a whole short
+ * one. The report decides which splits are drawn, so the chart cannot apply a
+ * different fragment rule to pace than to heart rate (#1269).
+ */
+export interface RunFlowSegment {
+  split_from: number;
+  split_to: number;
+  step_id: string;
+  start_km: number;
+  end_km: number;
+  start_s: number;
+  end_s: number;
+  pace_s_per_km: number | null;
+  avg_hr: number | null;
+  max_hr: number | null;
+}
+
+/** A step of the session: warmup, a rep, a rest, the main set, the cooldown. */
+export interface RunFlowStep {
+  id: string;
+  role: string;
+  label_ja: string;
+  short_ja: string;
+  rep_no: number | null;
+  split_from: number;
+  split_to: number;
+  start_km: number;
+  end_km: number;
+  start_s: number;
+  end_s: number;
+  distance_km: number;
+  duration_s: number;
+  pace_s_per_km: number | null;
+  avg_hr: number | null;
+  max_hr: number | null;
+  is_long: boolean;
+}
+
+/**
+ * What the flow chart draws, and the axis it is drawn on: kilometres for a
+ * steady run, elapsed minutes for a rep session (where a 120 s rest covers
+ * 0.18 km and would be invisible on a distance axis).
+ */
+export interface RunFlowData {
+  axis: "distance" | "time";
+  total_km: number;
+  total_s: number;
+  segments: RunFlowSegment[];
+  steps: RunFlowStep[];
+  fragments: { count: number; distance_km: number };
 }
 
 /** A scene that keeps coming back at the same point of the run. */
@@ -590,6 +674,8 @@ export interface RunReport {
   signals: RunSignal[];
   zones: RunZoneShare[];
   moments: RunMoment[];
+  /** Null only when the report was served by a build older than #1268. */
+  flow: RunFlowData | null;
   recurrence: RunRecurrence[];
   phases: RunPhaseRow[];
   conditions: RunConditions;

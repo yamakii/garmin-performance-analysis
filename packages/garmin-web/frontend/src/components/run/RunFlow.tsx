@@ -10,7 +10,12 @@ import {
   METRIC_COLORS,
   THRESHOLD_LINE,
 } from "../chartTheme";
-import type { RunMoment, RunNoteTimelineItem, SplitRow } from "../../types";
+import type {
+  RunFlowData,
+  RunFlowSegment,
+  RunMoment,
+  RunNoteTimelineItem,
+} from "../../types";
 import { formatPaceLabel } from "../TimeSeriesChart";
 
 /** Scene numbers, matching the list under the chart. */
@@ -29,89 +34,292 @@ export const SCENE_TINTS = ["rgba(28,27,24,0.04)", "rgba(28,27,24,0.09)"];
 /** Japanese name per scene kind, for a scene the coach wrote nothing about. */
 const KIND_LABELS: Record<string, string> = {
   start: "入り",
+  fast_start: "速い入り",
   climb: "登り",
   fade: "ペース低下",
   surge: "ペースアップ",
+  progression: "ビルドアップ",
   strong_finish: "終盤の粘り",
   walk_break: "歩き",
   ceiling_touch: "上限到達",
   self_correction: "立て直し",
   steady: "一定ペース",
+  warmup: "ウォームアップ",
+  rep: "レップ",
+  rest: "レスト",
+  work_set: "本編",
+  main: "本編",
+  cooldown: "クールダウン",
 };
 
-const PACE_GRID = { left: 56, right: 16, top: 24, height: 88 } as const;
-const HR_GRID = { left: 56, right: 16, top: 152, height: 88 } as const;
-/** Room under the lower panel for its km labels. */
-const CHART_HEIGHT = 276;
+const GRID_SIDES = { left: 56, right: 16 } as const;
+/** A row above the plot area: scene captions cannot collide with y labels. */
+const CAPTION_GRID = { ...GRID_SIDES, top: 4, height: 16 } as const;
+const PACE_GRID = { ...GRID_SIDES, top: 32, height: 88 } as const;
+const HR_GRID = { ...GRID_SIDES, top: 158, height: 88 } as const;
 
-/** Splits shorter than this are lap-press fragments, not kilometres (#873). */
-const MIN_SPLIT_KM = 0.4;
+/** ECharts' default distance between an axis and its tick labels. */
+const AXIS_LABEL_MARGIN = 8;
+/** Bottom of the tick-label row, in chart pixels. */
+const TICK_ROW_BOTTOM =
+  HR_GRID.top + HR_GRID.height + AXIS_LABEL_MARGIN + CHART_FONT_SIZE;
+/**
+ * Top of the axis-unit line, a row of its own *below* the tick labels.
+ *
+ * ECharts' `nameLocation: "end"` puts the unit at the end of the tick row,
+ * where it reads as part of the last tick: "25" + "km" was read as "2km" on
+ * the shipped page, and at 400 px "35" and "分" overlapped outright (#1269).
+ */
+export const AXIS_UNIT_TOP = TICK_ROW_BOTTOM + 4;
+const CHART_HEIGHT = AXIS_UNIT_TOP + CHART_FONT_SIZE + 2;
 
-function asNumber(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+/**
+ * Chart width the caption widths are judged against.
+ *
+ * A band's width in pixels depends on the container, which the option builder
+ * cannot measure. The reference is the page's content column on a laptop; a
+ * band that carries its step's name here still carries it at 400 px, only
+ * tighter — and a band too narrow for a name at this width would be unreadable
+ * at any width.
+ */
+export const REFERENCE_CHART_WIDTH_PX = 720;
+/** A band narrower than this shows its scene number alone. */
+export const CAPTION_MIN_PX = 64;
+
+/** Above this distance an integer tick per kilometre crowds the axis. */
+const DENSE_AXIS_MAX_KM = 12;
+/** Ticks every 5 minutes on a time axis, every 5 km on a long distance one. */
+const COARSE_AXIS_INTERVAL = 5;
+
+function round3(value: number): number {
+  return Math.round(value * 1000) / 1000;
 }
 
-/** "3 km" for a one-kilometre scene, "3–5 km" for a longer one. */
-export function kmRangeLabel(moment: RunMoment): string {
-  return moment.km_from === moment.km_to
-    ? `${moment.km_from} km`
-    : `${moment.km_from}–${moment.km_to} km`;
+/** The axis a run is drawn on: its unit, its extent and its tick spacing. */
+export function flowAxis(flow: RunFlowData): {
+  unit: string;
+  max: number;
+  interval: number;
+} {
+  if (flow.axis === "time") {
+    return {
+      unit: "分",
+      max: round3(flow.total_s / 60),
+      interval: COARSE_AXIS_INTERVAL,
+    };
+  }
+  return {
+    unit: "km",
+    max: round3(flow.total_km),
+    interval: flow.total_km <= DENSE_AXIS_MAX_KM ? 1 : COARSE_AXIS_INTERVAL,
+  };
 }
 
-/** The kilometres of the run, as the category axis labels them. */
-function kmLabels(splits: SplitRow[]): string[] {
-  return splits.map((split) => String(split.split_index));
+/** Where one drawn segment starts and ends, in the axis' own unit. */
+function segmentSpan(
+  flow: RunFlowData,
+  segment: RunFlowSegment,
+): [number, number] {
+  return flow.axis === "time"
+    ? [round3(segment.start_s / 60), round3(segment.end_s / 60)]
+    : [round3(segment.start_km), round3(segment.end_km)];
+}
+
+/** The lap numbers a scene happened on, or null when it is a stretch. */
+export function momentLaps(moment: RunMoment): number[] | null {
+  const laps = moment.facts.split_list;
+  if (!Array.isArray(laps) || laps.length === 0) {
+    return null;
+  }
+  const numbers = laps.filter(
+    (lap): lap is number => typeof lap === "number" && Number.isFinite(lap),
+  );
+  return numbers.length > 0 ? numbers : null;
+}
+
+/** The span the laps `from..to` cover, or null when none of them is drawn. */
+function lapsSpan(
+  flow: RunFlowData,
+  from: number,
+  to: number,
+): [number, number] | null {
+  const spans = flow.segments
+    .filter(
+      (segment) => segment.split_to >= from && segment.split_from <= to,
+    )
+    .map((segment) => segmentSpan(flow, segment));
+  if (spans.length === 0) {
+    return null;
+  }
+  return [spans[0][0], spans[spans.length - 1][1]];
+}
+
+/** One drawn band: where it sits on the axis and what is written above it. */
+export interface SceneBand {
+  /** Index of the scene in `moments` — its number and its tint. */
+  index: number;
+  from: number;
+  to: number;
+  caption: string;
+}
+
+/**
+ * The step name a scene may be captioned with, or null for a number alone.
+ *
+ * A scene that *is* a step is named after it (アップ / 1本目 / R / ダウン). So
+ * is a kilometre-unit scene that happens to cover a whole step of a structured
+ * run: on the tempo session the widest band read "②" while its neighbours read
+ * "① アップ" and "③ ダウン", which made the main set look like the nameless
+ * one (#1269).
+ */
+function stepName(flow: RunFlowData, moment: RunMoment): string | null {
+  if (moment.unit === "step") {
+    const step = flow.steps.find((entry) => entry.id === moment.step_id);
+    return step?.short_ja ?? (moment.label_ja || null);
+  }
+  if (flow.steps.length > 1) {
+    const step = flow.steps.find(
+      (entry) =>
+        entry.split_from === moment.split_from &&
+        entry.split_to === moment.split_to,
+    );
+    if (step != null) {
+      return step.short_ja;
+    }
+  }
+  return null;
+}
+
+/**
+ * The bands the chart tints, one entry per drawn area.
+ *
+ * Every scene gets a band, a one-split scene included — a scene drawn as a
+ * zero-width line is invisible. A walk break gets one band per walk lap
+ * instead of a single slab from the first stop to the last: the 9/13 run
+ * walked at km 14, 20 and 22, and one band over km 13-22 both overstated the
+ * break and swallowed the scene that happened at km 17 (#1269).
+ */
+export function sceneBands(
+  flow: RunFlowData,
+  moments: RunMoment[],
+): SceneBand[] {
+  const axis = flowAxis(flow);
+  const plotWidth =
+    REFERENCE_CHART_WIDTH_PX - GRID_SIDES.left - GRID_SIDES.right;
+
+  return moments.flatMap((moment, index) => {
+    const name = stepName(flow, moment);
+    const marker = SCENE_MARKERS[index] ?? String(index + 1);
+    const laps = momentLaps(moment);
+    const spans: [number, number][] =
+      laps != null
+        ? laps
+            .map((lap) => lapsSpan(flow, lap, lap))
+            .filter((span): span is [number, number] => span != null)
+        : [momentSpan(flow, moment)];
+
+    return spans
+      .filter(([from, to]) => to > from)
+      .map(([from, to]) => {
+        const widthPx =
+          axis.max > 0 ? ((to - from) / axis.max) * plotWidth : 0;
+        const wide = name != null && widthPx >= CAPTION_MIN_PX;
+        return {
+          index,
+          from,
+          to,
+          caption: wide ? `${marker} ${name}` : marker,
+        };
+      });
+  });
+}
+
+/** Where a scene sits on the axis, falling back to the laps behind it. */
+function momentSpan(flow: RunFlowData, moment: RunMoment): [number, number] {
+  const span: [number, number] =
+    flow.axis === "time"
+      ? [round3(moment.t_from_s / 60), round3(moment.t_to_s / 60)]
+      : [round3(moment.km_from), round3(moment.km_to)];
+  if (span[1] > span[0]) {
+    return span;
+  }
+  return lapsSpan(flow, moment.split_from, moment.split_to) ?? span;
 }
 
 /**
  * The chart the run's shape is read off: pace above, heart rate below.
  *
- * The two are stacked on a shared kilometre axis rather than overlaid on dual
- * axes: a pace line and an HR line share no unit and no scale, so a crossing
- * of the two means nothing and the reader spends their attention deciding
- * which axis each line belongs to. Stacked, each panel is read on its own and
- * the kilometre they share does the comparing.
+ * The two are stacked on a shared axis rather than overlaid on dual axes: a
+ * pace line and an HR line share no unit and no scale, so a crossing of the
+ * two means nothing and the reader spends their attention deciding which axis
+ * each line belongs to. Stacked, each panel is read on its own and the
+ * position they share does the comparing.
+ *
+ * That shared axis is a *real quantity* — kilometres run, or minutes elapsed —
+ * never a category axis of split numbers. On the shipped page a 5 km run with
+ * two lap presses drew an axis running to 7, leaving the right third empty,
+ * and a 0.6 km manual lap was as wide as a kilometre (#1269). Each segment is
+ * therefore drawn as a step over the span it actually covered, and the report
+ * decides which segments exist, so pace, average HR and max HR always describe
+ * the same splits.
  */
 export function runFlowOption(
-  splits: SplitRow[],
+  flow: RunFlowData,
   moments: RunMoment[],
   hrCeiling: number | null,
 ): EChartsOption {
-  const labels = kmLabels(splits);
-  const paceValues = splits.map((split) =>
-    (split.distance ?? 0) >= MIN_SPLIT_KM
-      ? asNumber(split.pace_seconds_per_km)
-      : null,
-  );
-  const hrValues = splits.map((split) => asNumber(split.heart_rate));
-  const maxHrValues = splits.map((split) => asNumber(split.max_heart_rate));
+  const axis = flowAxis(flow);
+  const paceData: [number, number | null][] = [];
+  const hrData: [number, number | null][] = [];
+  const maxHrData: [number, number | null][] = [];
+  for (const segment of flow.segments) {
+    const [from, to] = segmentSpan(flow, segment);
+    paceData.push([from, segment.pace_s_per_km], [to, segment.pace_s_per_km]);
+    hrData.push([from, segment.avg_hr], [to, segment.avg_hr]);
+    maxHrData.push([round3((from + to) / 2), segment.max_hr]);
+  }
 
-  // One band per scene, alternating washes so neighbours stay countable.
+  const bands = sceneBands(flow, moments);
+  // The wash only: the number lives in the caption row above the plot, where
+  // it cannot land on a y-axis label or on the ceiling's own label.
   const markArea = {
     silent: true,
-    data: moments.map((moment, index) => [
+    data: bands.map((band) => [
       {
-        xAxis: String(moment.km_from),
-        itemStyle: { color: SCENE_TINTS[index % SCENE_TINTS.length] },
-        label: {
-          show: true,
-          position: "insideTop" as const,
-          formatter: SCENE_MARKERS[index] ?? String(index + 1),
-          color: AXIS_LABEL_COLOR,
-          fontSize: CHART_FONT_SIZE,
-          fontFamily: CHART_FONT_FAMILY,
-        },
+        xAxis: band.from,
+        itemStyle: { color: SCENE_TINTS[band.index % SCENE_TINTS.length] },
       },
-      { xAxis: String(moment.km_to) },
+      { xAxis: band.to },
     ]),
   };
 
   // A hairline where each band starts: without it two adjacent washes read as
   // one band with a slight gradient.
-  const boundaries = moments.map((moment) => ({
-    xAxis: String(moment.km_from),
+  const boundaries = bands.map((band) => ({
+    xAxis: band.from,
     lineStyle: { color: GRID_LINE_COLOR, type: "solid" as const, width: 1 },
     label: { show: false },
+  }));
+
+  const xAxis = [CAPTION_GRID, PACE_GRID, HR_GRID].map((_, index) => ({
+    type: "value" as const,
+    gridIndex: index,
+    min: 0,
+    max: axis.max,
+    interval: axis.interval,
+    axisLabel: {
+      // Only the lower panel carries the tick row; the unit sits below it.
+      show: index === 2,
+      color: AXIS_LABEL_COLOR,
+      fontSize: CHART_FONT_SIZE,
+      fontFamily: CHART_FONT_FAMILY,
+      margin: AXIS_LABEL_MARGIN,
+      hideOverlap: true,
+      showMaxLabel: false,
+    },
+    axisLine: { show: false },
+    axisTick: { show: false },
+    splitLine: { show: false },
   }));
 
   return {
@@ -123,26 +331,20 @@ export function runFlowOption(
     },
     axisPointer: { link: [{ xAxisIndex: "all" }] },
     tooltip: { trigger: "axis" },
-    grid: [PACE_GRID, HR_GRID],
-    xAxis: [0, 1].map((index) => ({
-      type: "category" as const,
-      gridIndex: index,
-      data: labels,
-      axisLabel: {
-        show: index === 1,
-        color: AXIS_LABEL_COLOR,
-        fontSize: CHART_FONT_SIZE,
-        fontFamily: CHART_FONT_FAMILY,
-        hideOverlap: true,
-      },
-      axisLine: { show: false },
-      axisTick: { show: false },
-      splitLine: { show: false },
-    })),
+    grid: [CAPTION_GRID, PACE_GRID, HR_GRID],
+    xAxis,
     yAxis: [
+      // The caption row: no scale of its own, it only holds the band labels.
       {
         type: "value" as const,
         gridIndex: 0,
+        min: 0,
+        max: 1,
+        show: false,
+      },
+      {
+        type: "value" as const,
+        gridIndex: 1,
         name: "ペース",
         nameTextStyle: { color: AXIS_LABEL_COLOR, fontSize: CHART_FONT_SIZE },
         nameLocation: "start" as const,
@@ -162,7 +364,7 @@ export function runFlowOption(
       },
       {
         type: "value" as const,
-        gridIndex: 1,
+        gridIndex: 2,
         name: "心拍",
         nameTextStyle: { color: AXIS_LABEL_COLOR, fontSize: CHART_FONT_SIZE },
         scale: true,
@@ -177,13 +379,60 @@ export function runFlowOption(
         splitLine: { lineStyle: { color: GRID_LINE_COLOR } },
       },
     ],
+    // The unit on a line of its own under the tick labels, at the right end
+    // where the axis finishes — never appended to the last tick (#1269).
+    graphic: [
+      {
+        type: "text" as const,
+        right: GRID_SIDES.right,
+        top: AXIS_UNIT_TOP,
+        silent: true,
+        style: {
+          text: axis.unit,
+          fill: AXIS_LABEL_COLOR,
+          fontSize: CHART_FONT_SIZE,
+          fontFamily: CHART_FONT_FAMILY,
+          align: "right" as const,
+        },
+      },
+    ],
     series: [
       {
-        name: "ペース",
+        name: "場面",
         type: "line" as const,
         xAxisIndex: 0,
         yAxisIndex: 0,
-        data: paceValues,
+        // One invisible point: a series with no data draws no mark area.
+        data: [[0, 0]],
+        symbol: "none" as const,
+        lineStyle: { opacity: 0 },
+        silent: true,
+        tooltip: { show: false },
+        markArea: {
+          silent: true,
+          data: bands.map((band) => [
+            {
+              xAxis: band.from,
+              itemStyle: { color: "transparent" },
+              label: {
+                show: true,
+                position: "inside" as const,
+                formatter: band.caption,
+                color: AXIS_LABEL_COLOR,
+                fontSize: CHART_FONT_SIZE,
+                fontFamily: CHART_FONT_FAMILY,
+              },
+            },
+            { xAxis: band.to },
+          ]),
+        },
+      },
+      {
+        name: "ペース",
+        type: "line" as const,
+        xAxisIndex: 1,
+        yAxisIndex: 1,
+        data: paceData,
         itemStyle: { color: METRIC_COLORS.speed },
         lineStyle: { color: METRIC_COLORS.speed },
         showSymbol: false,
@@ -198,9 +447,9 @@ export function runFlowOption(
       {
         name: "心拍",
         type: "line" as const,
-        xAxisIndex: 1,
-        yAxisIndex: 1,
-        data: hrValues,
+        xAxisIndex: 2,
+        yAxisIndex: 2,
+        data: hrData,
         itemStyle: { color: METRIC_COLORS.heart_rate },
         lineStyle: { color: METRIC_COLORS.heart_rate },
         showSymbol: false,
@@ -213,6 +462,8 @@ export function runFlowOption(
             ...boundaries,
             // The prescribed cap, dotted in the 注意 hue: a stretch spent above
             // it is then visible in the shape of the line, not only in prose.
+            // Its label sits at the start of the line, outside the plot: at
+            // the end it landed on the last scene's number (#1269).
             ...(hrCeiling != null
               ? [
                   {
@@ -224,7 +475,7 @@ export function runFlowOption(
                     label: {
                       show: true,
                       formatter: `上限 ${Math.round(hrCeiling)}`,
-                      position: "insideEndTop" as const,
+                      position: "start" as const,
                       color: THRESHOLD_LINE.warn,
                       fontSize: CHART_FONT_SIZE,
                       fontFamily: CHART_FONT_FAMILY,
@@ -236,14 +487,15 @@ export function runFlowOption(
         },
       },
       {
-        // The peak of each kilometre as a hollow ring: the average line says
-        // how hard the kilometre was, the ring says how hard its hardest
-        // moment was, and a ring far above its line is what a surge looks like.
+        // The peak of each segment as a hollow ring, drawn at its midpoint:
+        // the average line says how hard the segment was, the ring says how
+        // hard its hardest moment was, and a ring far above its line is what a
+        // surge looks like.
         name: "最大心拍",
         type: "scatter" as const,
-        xAxisIndex: 1,
-        yAxisIndex: 1,
-        data: maxHrValues,
+        xAxisIndex: 2,
+        yAxisIndex: 2,
+        data: maxHrData,
         symbolSize: 5,
         itemStyle: {
           color: "transparent",
@@ -255,56 +507,77 @@ export function runFlowOption(
   } as EChartsOption;
 }
 
+/** What the x axis is, and what the width of a step means. */
+export function flowLegend(flow: RunFlowData): string {
+  return flow.axis === "time"
+    ? "横軸は経過時間（分） · 段の幅 = そのスプリット（区間）が覆った時間"
+    : "横軸は実際の距離（km） · 段の幅 = そのスプリット（区間）が覆った距離";
+}
+
 /**
- * ランの流れ (#1252): the shape of the run, its scenes numbered on the chart
- * and told in one line each underneath.
+ * ランの流れ (#1252, #1269): the shape of the run, its scenes numbered on the
+ * chart and told in one line each underneath.
  *
- * The scenes are deterministic (`report.moments`); the sentences are the
- * coach's (`run_note.timeline`), joined on the moment id. A scene the coach
- * did not write about keeps its band and its kilometres — the run happened
- * whether or not there was anything to say about it.
+ * The scenes are deterministic (`report.moments`) and so is what the chart
+ * draws (`report.flow`); the sentences are the coach's (`run_note.timeline`),
+ * joined on the moment id. A scene the coach did not write about keeps its
+ * band and its label — the run happened whether or not there was anything to
+ * say about it.
+ *
+ * The component holds no rule about which splits are real: the report decided
+ * that once, for every series and for the table below, so a fragment cannot be
+ * dropped from the pace line while still moving the heart-rate line.
  */
 export default function RunFlow({
   id,
-  splits,
+  flow,
   moments,
   timeline,
   hrCeiling,
 }: {
   id?: string;
-  splits: SplitRow[];
+  flow: RunFlowData | null;
   moments: RunMoment[];
   timeline: RunNoteTimelineItem[];
   hrCeiling: number | null;
 }): JSX.Element | null {
-  if (splits.length === 0 && moments.length === 0) {
+  const drawable = flow != null && flow.segments.length > 0;
+  if (!drawable && moments.length === 0) {
     return null;
   }
   const textOf = new Map(timeline.map((item) => [item.moment_id, item.text]));
 
   return (
     <SectionBlock id={id} title="ランの流れ">
-      {splits.length > 0 && (
-        <EChart
-          option={runFlowOption(splits, moments, hrCeiling)}
-          ariaLabel="ペースと心拍の推移"
-          height={CHART_HEIGHT}
-        />
+      {drawable && flow != null && (
+        <>
+          <EChart
+            option={runFlowOption(flow, moments, hrCeiling)}
+            ariaLabel="ペースと心拍の推移"
+            height={CHART_HEIGHT}
+          />
+          <p className="mt-1 font-mono text-xs text-ink-muted">
+            {flowLegend(flow)}
+          </p>
+        </>
       )}
       {moments.length > 0 && (
         <ol className="mt-4 flex flex-col gap-2">
           {moments.map((moment, index) => (
             <li
               key={moment.id}
-              className="grid grid-cols-[1.5rem_5.5rem_minmax(0,1fr)] items-baseline gap-x-2 gap-y-1"
+              className="grid grid-cols-[1.5rem_minmax(0,1fr)] items-baseline gap-x-2 gap-y-1 md:grid-cols-[1.5rem_8rem_minmax(0,1fr)]"
             >
               <span aria-hidden="true" className="font-mono text-ink-muted">
                 {SCENE_MARKERS[index] ?? index + 1}
               </span>
-              <span className="font-mono text-[13px] whitespace-nowrap text-ink-muted">
-                {kmRangeLabel(moment)}
+              {/* The label the report wrote: "3–5 km", "13・19・21 km 付近",
+                  "本編 0.9–5.9 km", "1本目". The page does not re-derive it —
+                  a lap number is not a kilometre (#1268). */}
+              <span className="font-mono text-[13px] text-ink-muted md:whitespace-nowrap">
+                {moment.label_ja || KIND_LABELS[moment.kind] || moment.kind}
               </span>
-              <span className="min-w-0 text-[15px] leading-[1.7] text-ink-soft">
+              <span className="col-start-2 min-w-0 text-[15px] leading-[1.7] text-ink-soft md:col-start-3">
                 {textOf.get(moment.id) ??
                   KIND_LABELS[moment.kind] ??
                   moment.kind}

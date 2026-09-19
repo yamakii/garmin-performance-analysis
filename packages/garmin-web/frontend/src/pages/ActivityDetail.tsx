@@ -21,7 +21,8 @@ import CoachReview, { parseRunNote } from "../components/run/CoachReview";
 import ConditionsStrip from "../components/run/ConditionsStrip";
 import NormalRangeRows from "../components/run/NormalRangeRows";
 import PlanCheck, { formatOverTime } from "../components/run/PlanCheck";
-import RunFlow, { SCENE_MARKERS } from "../components/run/RunFlow";
+import RunFlow, { momentLaps, SCENE_MARKERS } from "../components/run/RunFlow";
+import StepsTable from "../components/run/StepsTable";
 import EfficiencyReport from "../components/report/EfficiencyReport";
 import EnvironmentReport from "../components/report/EnvironmentReport";
 import FallbackFields from "../components/report/FallbackFields";
@@ -36,6 +37,7 @@ import { usePageTitle } from "../hooks/usePageTitle";
 import type {
   ActivityDetailResponse,
   ActivitySummary,
+  RunFlowData,
   RunMoment,
   RunPhaseRow,
   RunReport,
@@ -229,21 +231,73 @@ export function barWidthPct(
 }
 
 /**
- * The scene marker (①..⑤) each kilometre belongs to, keyed by split index.
+ * The scene marker (①..⑤) each split belongs to, keyed by lap number.
  *
- * The splits table is the same run the flow chart just drew, so a kilometre
- * that sits inside a numbered scene carries that number — the reader can go
- * from "what happened at ③" to the kilometres behind it without counting rows.
+ * The splits table is the same run the flow chart just drew, so a lap that
+ * sits inside a numbered scene carries that number — the reader can go from
+ * "what happened at ③" to the rows behind it without counting.
+ *
+ * The match is on lap numbers (`split_from`..`split_to`, or the laps a walk
+ * break happened on), never on kilometres: a run with a manual lap press has
+ * more laps than kilometres, and matching on km put the marker on the wrong
+ * rows (#1268).
  */
 export function sceneMarkers(moments: RunMoment[]): Map<number, string> {
   const markers = new Map<number, string>();
   moments.forEach((moment, index) => {
     const marker = SCENE_MARKERS[index] ?? String(index + 1);
-    for (let km = moment.km_from; km <= moment.km_to; km += 1) {
-      markers.set(km, marker);
+    const laps = momentLaps(moment);
+    if (laps != null) {
+      for (const lap of laps) {
+        markers.set(lap, marker);
+      }
+      return;
+    }
+    for (let lap = moment.split_from; lap <= moment.split_to; lap += 1) {
+      markers.set(lap, marker);
     }
   });
   return markers;
+}
+
+/** The lap numbers the report drew a segment for, in run order. */
+export function drawnSplitIndices(flow: RunFlowData | null): Set<number> {
+  const drawn = new Set<number>();
+  for (const segment of flow?.segments ?? []) {
+    for (let lap = segment.split_from; lap <= segment.split_to; lap += 1) {
+      drawn.add(lap);
+    }
+  }
+  return drawn;
+}
+
+/** Step short name per lap number, for the 区間 column of the raw table. */
+export function stepLabels(flow: RunFlowData | null): Map<number, string> {
+  const labels = new Map<number, string>();
+  for (const step of flow?.steps ?? []) {
+    for (let lap = step.split_from; lap <= step.split_to; lap += 1) {
+      labels.set(lap, step.short_ja);
+    }
+  }
+  return labels;
+}
+
+/**
+ * "端数スプリット 2 本（計 0.06 km）は、図と表から除いています。距離の位置には数えています。"
+ *
+ * A lap press leaves a 5-11 m "split" whose pace is a measurement artifact, so
+ * it is neither drawn nor listed — but it is part of the run, and the scenes
+ * are positioned with it counted. Saying so is cheaper than letting the reader
+ * find a missing lap number (#1269).
+ */
+export function fragmentNote(flow: RunFlowData | null): string | null {
+  const fragments = flow?.fragments;
+  if (fragments == null || fragments.count === 0) {
+    return null;
+  }
+  return `端数スプリット ${fragments.count} 本（計 ${formatDistanceKmValue(
+    fragments.distance_km,
+  )} km）は、図と表から除いています。距離の位置には数えています。`;
 }
 
 /** Metrics compared against the last run of the same type, in reading order. */
@@ -482,6 +536,7 @@ function SplitsTable({
   hrScale,
   flagged,
   scenes,
+  steps,
   caption,
 }: {
   splits: SplitRow[];
@@ -489,10 +544,17 @@ function SplitsTable({
   hrScale: BarScale | null;
   flagged: Map<number, string[]>;
   scenes: Map<number, string>;
+  /** Step name per lap, on a session whose record is its steps (#1269). */
+  steps?: Map<number, string>;
   caption: string;
 }) {
-  const columns =
-    scenes.size > 0 ? [...SPLIT_COLUMNS, "場面"] : SPLIT_COLUMNS;
+  const withSteps = steps != null && steps.size > 0;
+  const columns = [
+    ...(withSteps
+      ? [SPLIT_COLUMNS[0], "区間", ...SPLIT_COLUMNS.slice(1)]
+      : SPLIT_COLUMNS),
+    ...(scenes.size > 0 ? ["場面"] : []),
+  ];
   return (
     // Six numeric columns overflow a ~360px screen: the wrapper scrolls the
     // table instead of letting the page scroll sideways (#912). The minimum
@@ -540,6 +602,11 @@ function SplitsTable({
                 <td className="px-2 py-2 text-left text-ink-muted">
                   {split.split_index}
                 </td>
+                {withSteps && (
+                  <td className="px-2 py-2 text-right text-ink-muted">
+                    {steps?.get(split.split_index) ?? ""}
+                  </td>
+                )}
                 <td className="px-2 py-2 text-right">
                   {formatDistanceKmValue(split.distance)}
                 </td>
@@ -792,6 +859,8 @@ export default function ActivityDetail() {
 
   const runNote = parseRunNote(sections?.run_note);
   const moments = report?.moments ?? [];
+  // What the chart draws and which laps back it: decided once, in the report.
+  const flow = report?.flow ?? null;
   const hrCeiling = report?.plan?.hr_ceiling?.bpm ?? null;
   const vsPrevious = vsPreviousLine(
     report?.vs_previous ?? null,
@@ -814,7 +883,7 @@ export default function ActivityDetail() {
   // failed, so the nav anchor stays valid in that state too.
   const showCourse = hasTrack || trackError !== null;
   const hasSignals = (report?.signals.length ?? 0) > 0;
-  const showFlow = splits.length > 0 || moments.length > 0;
+  const showFlow = (flow?.segments.length ?? 0) > 0 || moments.length > 0;
   const navItems: NavItem[] = [
     { id: "section-review", label: "コーチの総評" },
     showFlow ? { id: "section-flow", label: "ランの流れ" } : null,
@@ -826,8 +895,21 @@ export default function ActivityDetail() {
   const visibleMetrics = showAllMetrics
     ? AVAILABLE_METRICS
     : AVAILABLE_METRICS.filter(({ key }) => PRIMARY_METRICS.includes(key));
-  const previewSplits = splits.slice(0, SPLIT_PREVIEW_ROWS);
-  const foldedSplits = splits.slice(SPLIT_PREVIEW_ROWS);
+  // A session with more than one step is recorded as its steps; the raw laps
+  // stay, folded away, because one rep is routinely two laps (#1269).
+  const steps = flow?.steps ?? [];
+  const multiStep = steps.length > 1;
+  // On a single-step run the table lists exactly what the chart drew: a
+  // fragment has no bar, no line and no row, and the note below says so.
+  const drawn = drawnSplitIndices(flow);
+  const listedSplits =
+    !multiStep && drawn.size > 0
+      ? splits.filter((split) => drawn.has(split.split_index))
+      : splits;
+  const previewSplits = listedSplits.slice(0, SPLIT_PREVIEW_ROWS);
+  const foldedSplits = listedSplits.slice(SPLIT_PREVIEW_ROWS);
+  const splitsNote = multiStep ? null : fragmentNote(flow);
+  const stepOf = multiStep ? stepLabels(flow) : undefined;
   // A single scene is the whole run: a column repeating one marker on every
   // row costs width and says nothing.
   const scenes =
@@ -907,7 +989,7 @@ export default function ActivityDetail() {
       {showFlow && (
         <RunFlow
           id="section-flow"
-          splits={splits}
+          flow={flow}
           moments={moments}
           timeline={runNote?.timeline ?? []}
           hrCeiling={hrCeiling}
@@ -1027,34 +1109,61 @@ export default function ActivityDetail() {
                   : undefined
               }
             >
-              <SplitsTable
-                splits={previewSplits}
-                paceScale={paceScale}
-                hrScale={hrScale}
-                flagged={flaggedSplits}
-                scenes={scenes}
-                caption={
-                  foldedSplits.length > 0
-                    ? `スプリット 1–${previewSplits.length}`
-                    : "スプリット"
-                }
-              />
-              {foldedSplits.length > 0 && (
-                <Disclosure
-                  className="mt-3"
-                  title={`残り ${foldedSplits.length} スプリット（${
-                    SPLIT_PREVIEW_ROWS + 1
-                  }〜${splits.length} km）を表示`}
-                >
+              {multiStep ? (
+                <>
+                  <StepsTable steps={steps} />
+                  <Disclosure
+                    className="mt-3"
+                    title={`記録されたスプリット ${splits.length} 本を表示`}
+                  >
+                    <SplitsTable
+                      splits={splits}
+                      paceScale={paceScale}
+                      hrScale={hrScale}
+                      flagged={flaggedSplits}
+                      scenes={scenes}
+                      steps={stepOf}
+                      caption="記録されたスプリット"
+                    />
+                  </Disclosure>
+                </>
+              ) : (
+                <>
                   <SplitsTable
-                    splits={foldedSplits}
+                    splits={previewSplits}
                     paceScale={paceScale}
                     hrScale={hrScale}
                     flagged={flaggedSplits}
                     scenes={scenes}
-                    caption={`スプリット ${SPLIT_PREVIEW_ROWS + 1}–${splits.length}`}
+                    caption={
+                      foldedSplits.length > 0
+                        ? `スプリット 1–${previewSplits.length}`
+                        : "スプリット"
+                    }
                   />
-                </Disclosure>
+                  {foldedSplits.length > 0 && (
+                    <Disclosure
+                      className="mt-3"
+                      title={`残り ${foldedSplits.length} スプリット（${
+                        SPLIT_PREVIEW_ROWS + 1
+                      }〜${listedSplits.length} 本目）を表示`}
+                    >
+                      <SplitsTable
+                        splits={foldedSplits}
+                        paceScale={paceScale}
+                        hrScale={hrScale}
+                        flagged={flaggedSplits}
+                        scenes={scenes}
+                        caption={`スプリット ${SPLIT_PREVIEW_ROWS + 1}–${listedSplits.length}`}
+                      />
+                    </Disclosure>
+                  )}
+                  {splitsNote != null && (
+                    <p className="mt-3 font-mono text-xs text-ink-muted">
+                      {splitsNote}
+                    </p>
+                  )}
+                </>
               )}
             </RecordBlock>
           )}

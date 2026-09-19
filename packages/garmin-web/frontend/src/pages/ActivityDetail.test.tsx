@@ -12,11 +12,130 @@ import ActivityDetail, { BarCell, sceneMarkers } from "./ActivityDetail";
 import type {
   ActivityDetailResponse,
   ActivitySummary,
+  RunFlowData,
+  RunFlowSegment,
+  RunFlowStep,
+  RunMoment,
   RunReport,
   SectionsResponse,
   SplitAnomaliesResponse,
+  SplitRow,
   TrackPoint,
 } from "../types";
+
+/** Splits shorter than this are lap-press fragments (the report's rule). */
+const FRAGMENT_KM = 0.4;
+
+function round3(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
+/**
+ * The `flow` block the report ships for a plain run: one segment per real
+ * split, the lap presses counted as fragments, all of it one step.
+ */
+function flowFor(
+  splits: SplitRow[],
+  overrides: Partial<RunFlowData> = {},
+): RunFlowData {
+  const segments: RunFlowSegment[] = [];
+  let km = 0;
+  let seconds = 0;
+  let fragmentCount = 0;
+  let fragmentKm = 0;
+  for (const split of splits) {
+    const distance = split.distance ?? 0;
+    const duration = split.duration_seconds ?? 0;
+    const startKm = round3(km);
+    const startS = seconds;
+    km += distance;
+    seconds += duration;
+    if (distance >= FRAGMENT_KM) {
+      segments.push({
+        split_from: split.split_index,
+        split_to: split.split_index,
+        step_id: "s1",
+        start_km: startKm,
+        end_km: round3(km),
+        start_s: startS,
+        end_s: seconds,
+        pace_s_per_km: split.pace_seconds_per_km,
+        avg_hr: split.heart_rate,
+        max_hr: split.heart_rate,
+      });
+    } else {
+      fragmentCount += 1;
+      fragmentKm += distance;
+    }
+  }
+  return {
+    axis: "distance",
+    total_km: round3(km),
+    total_s: seconds,
+    segments,
+    steps: [
+      flowStep("s1", ["本編", "本編"], [1, splits.length], {
+        distance_km: round3(km),
+        duration_s: seconds,
+      }),
+    ],
+    fragments: { count: fragmentCount, distance_km: round3(fragmentKm) },
+    ...overrides,
+  };
+}
+
+function flowStep(
+  id: string,
+  labels: [string, string],
+  laps: [number, number],
+  overrides: Partial<RunFlowStep> = {},
+): RunFlowStep {
+  return {
+    id,
+    role: "run",
+    label_ja: labels[0],
+    short_ja: labels[1],
+    rep_no: null,
+    split_from: laps[0],
+    split_to: laps[1],
+    start_km: 0,
+    end_km: 0,
+    start_s: 0,
+    end_s: 0,
+    distance_km: 0,
+    duration_s: 0,
+    pace_s_per_km: null,
+    avg_hr: null,
+    max_hr: null,
+    is_long: true,
+    ...overrides,
+  };
+}
+
+/** A scene: the laps behind it, and where they were on the road. */
+function momentOf(
+  id: string,
+  kind: string,
+  laps: [number, number],
+  overrides: Partial<RunMoment> = {},
+): RunMoment {
+  return {
+    id,
+    kind,
+    unit: "km",
+    label_ja: `${laps[0]}–${laps[1]} km`,
+    step_id: "s1",
+    rep_no: null,
+    km_from: laps[0] - 1,
+    km_to: laps[1],
+    t_from_s: (laps[0] - 1) * 380,
+    t_to_s: laps[1] * 380,
+    split_from: laps[0],
+    split_to: laps[1],
+    facts: {},
+    ...overrides,
+  };
+}
 
 // echarts requires a real canvas; mock the modular wrapper out for jsdom.
 vi.mock("../lib/echarts", () => ({
@@ -71,6 +190,7 @@ const BASE_REPORT: RunReport = {
   signals: [],
   zones: [],
   moments: [],
+  flow: flowFor(BASE_DETAIL.splits),
   recurrence: [],
   phases: [],
   conditions: {
@@ -799,12 +919,15 @@ async function renderSplits(
   sections: SectionsResponse = {},
   anomalies?: { response?: SplitAnomaliesResponse; status?: number },
   report: RunReport = BASE_REPORT,
+  // The record block lists what the report drew, so the flow has to describe
+  // the splits under test unless a case deliberately overrides it (#1269).
+  flow: RunFlowData | null = flowFor(splits),
 ) {
   stubFetch({
     detail: { ...BASE_DETAIL, splits },
     sections,
     track: [],
-    report,
+    report: { ...report, flow },
     splitAnomalies: anomalies?.response,
     splitAnomaliesStatus: anomalies?.status,
   });
@@ -869,15 +992,23 @@ describe("ActivityDetail splits table bars", () => {
 
   it("test_split_table_fragment_no_bar", async () => {
     // A 10 m manual-lap fragment at an artifact pace (4:04/km) is mixed into
-    // the same 5:30-6:30 field as above.
-    const rows = await renderSplits([
-      splitRow(1, 390, 138),
-      splitRow(2, 360, 142),
-      splitRow(3, 345, 146),
-      splitRow(4, 330, 150),
-      splitRow(5, 375, 144),
-      splitRow(6, 244, 120, 0.01),
-    ]);
+    // the same 5:30-6:30 field as above. Without a report to say which splits
+    // were drawn (an old or failed report), every row is listed — and the
+    // fragment still draws no bar.
+    const rows = await renderSplits(
+      [
+        splitRow(1, 390, 138),
+        splitRow(2, 360, 142),
+        splitRow(3, 345, 146),
+        splitRow(4, 330, 150),
+        splitRow(5, 375, 144),
+        splitRow(6, 244, 120, 0.01),
+      ],
+      {},
+      undefined,
+      BASE_REPORT,
+      null,
+    );
     expect(rows).toHaveLength(6);
 
     // The fragment row shows its numbers but draws no bar at all.
@@ -1000,34 +1131,134 @@ describe("ActivityDetail splits table reading aids", () => {
     expect(rows.length).toBeGreaterThan(0);
   });
 
-  it("test_splits_disclosure_label_counts_the_rest", async () => {
-    const splits = Array.from({ length: 25 }, (_, index) =>
-      splitRow(index + 1, 380 + (index % 5), 140 + (index % 6)),
-    );
+  it("test_record_block_disclosure_counts_listed_rows", async () => {
+    const splits = [
+      ...Array.from({ length: 25 }, (_, index) =>
+        splitRow(index + 1, 380 + (index % 5), 140 + (index % 6)),
+      ),
+      splitRow(26, 244, 120, 0.03),
+    ];
     await renderSplits(splits);
 
-    // The first ten kilometres are visible; the label of the fold says what
-    // is behind it rather than restating the whole table.
+    // The first ten kilometres are visible; the label of the fold counts the
+    // rows it actually holds, in listed rows — the 26th lap is a fragment and
+    // is not one of them, and "26 km" would be wrong twice over (#1269).
     const preview = screen.getAllByRole("table")[0];
     expect(within(preview).getAllByRole("row").slice(1)).toHaveLength(10);
-    const trigger = screen.getByText("残り 15 スプリット（11〜25 km）を表示");
+    const trigger = screen.getByText("残り 15 スプリット（11〜25 本目）を表示");
     expect(trigger.closest("details")?.hasAttribute("open")).toBe(false);
+  });
+
+  it("test_record_block_lists_only_drawn_splits_for_steady_runs", async () => {
+    const rows = await renderSplits([
+      splitRow(1, 390, 138),
+      splitRow(2, 360, 142),
+      splitRow(3, 345, 146),
+      splitRow(4, 330, 150),
+      splitRow(5, 375, 144),
+      splitRow(6, 244, 120, 0.03),
+      splitRow(7, 250, 118, 0.03),
+    ]);
+
+    // The table is the chart's own list of splits: a lap press whose pace is
+    // a measurement artifact gets no row, and one mono line says so rather
+    // than leaving the reader to find the missing lap numbers.
+    expect(rows).toHaveLength(5);
+    expect(
+      screen.getByText(
+        "端数スプリット 2 本（計 0.06 km）は、図と表から除いています。距離の位置には数えています。",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("test_record_block_shows_steps_table_for_multi_step_runs", async () => {
+    // 4/20: two threshold reps, the first recorded as 1.0 + 0.11 km.
+    const splits = [
+      splitRow(1, 420, 120),
+      splitRow(2, 420, 128),
+      splitRow(3, 324, 168),
+      splitRow(4, 324, 172, 0.11),
+      splitRow(5, 667, 150, 0.18),
+      splitRow(6, 324, 170),
+      splitRow(7, 324, 173, 0.11),
+      splitRow(8, 420, 135),
+      splitRow(9, 420, 128),
+    ];
+    const steps: RunFlowStep[] = [
+      flowStep("s1", ["ウォームアップ", "アップ"], [1, 2], {
+        distance_km: 2,
+        duration_s: 840,
+        pace_s_per_km: 420,
+        avg_hr: 124,
+        max_hr: 132,
+      }),
+      flowStep("s2", ["1本目", "1本目"], [3, 4], {
+        distance_km: 1.11,
+        duration_s: 360,
+        pace_s_per_km: 324,
+        avg_hr: 170,
+        max_hr: 175,
+      }),
+      flowStep("s3", ["レスト1", "R"], [5, 5], {
+        distance_km: 0.18,
+        duration_s: 120,
+        pace_s_per_km: 667,
+        avg_hr: 150,
+        max_hr: 168,
+      }),
+      flowStep("s4", ["2本目", "2本目"], [6, 7], {
+        distance_km: 1.11,
+        duration_s: 360,
+        pace_s_per_km: 324,
+        avg_hr: 171,
+        max_hr: 176,
+      }),
+      flowStep("s5", ["クールダウン", "ダウン"], [8, 9], {
+        distance_km: 2,
+        duration_s: 840,
+        pace_s_per_km: 420,
+        avg_hr: 131,
+        max_hr: 140,
+      }),
+    ];
+    await renderSplits(splits, {}, undefined, BASE_REPORT, {
+      ...flowFor(splits),
+      axis: "time",
+      steps,
+    });
+
+    // The reader asks "how did the reps go", not "what did lap 6 do": the
+    // steps are the record, and the raw laps sit behind a disclosure (#1269).
+    const table = screen.getAllByRole("table")[0];
+    const stepRows = within(table).getAllByRole("row").slice(1);
+    expect(
+      stepRows.map((row) => within(row).getAllByRole("cell")[0].textContent),
+    ).toEqual(["ウォームアップ", "1本目", "レスト1", "2本目", "クールダウン"]);
+    const repCells = within(stepRows[1]).getAllByRole("cell");
+    expect(repCells[1]).toHaveTextContent("1.11");
+    expect(repCells[2]).toHaveTextContent("6:00");
+
+    const trigger = screen.getByText("記録されたスプリット 9 本を表示");
+    expect(trigger.closest("details")?.hasAttribute("open")).toBe(false);
+    const raw = screen.getAllByRole("table")[1];
+    expect(
+      within(raw).getByRole("columnheader", { name: "区間" }),
+    ).toBeInTheDocument();
+    expect(within(raw).getAllByRole("row").slice(1)).toHaveLength(9);
   });
 
   it("keeps a short run in one table", async () => {
     await renderSplits(LONG_SPLITS.slice(0, 8));
 
     expect(screen.getAllByRole("table")).toHaveLength(1);
-    expect(screen.queryByText(/スプリット（/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/残り .+ スプリット/)).not.toBeInTheDocument();
   });
 
   it("test_splits_scene_column_only_with_two_scenes", async () => {
     const splits = LONG_SPLITS.slice(0, 5);
     const oneScene: RunReport = {
       ...BASE_REPORT,
-      moments: [
-        { id: "m1", kind: "steady", km_from: 1, km_to: 5, facts: {} },
-      ],
+      moments: [momentOf("m1", "steady", [1, 5])],
     };
     await renderSplits(splits, {}, undefined, oneScene);
     // A column repeating the same marker on every row costs width and says
@@ -1043,10 +1274,10 @@ describe("ActivityDetail splits table reading aids", () => {
     const rows = await renderSplits(splits, {}, undefined, {
       ...BASE_REPORT,
       moments: [
-        { id: "m1", kind: "start", km_from: 1, km_to: 1, facts: {} },
-        { id: "m2", kind: "climb", km_from: 2, km_to: 2, facts: {} },
-        { id: "m3", kind: "surge", km_from: 4, km_to: 4, facts: {} },
-        { id: "m4", kind: "strong_finish", km_from: 5, km_to: 5, facts: {} },
+        momentOf("m1", "start", [1, 1]),
+        momentOf("m2", "climb", [2, 2]),
+        momentOf("m3", "surge", [4, 4]),
+        momentOf("m4", "strong_finish", [5, 5]),
       ],
     });
 
@@ -1054,17 +1285,34 @@ describe("ActivityDetail splits table reading aids", () => {
     expect(
       within(table).getByRole("columnheader", { name: "場面" }),
     ).toBeInTheDocument();
-    // The marker on a kilometre is the number the flow list gave its scene.
+    // The marker on a row is the number the flow list gave its scene.
     expect(within(rows[1]).getAllByRole("cell")[6]).toHaveTextContent("②");
     expect(within(rows[2]).getAllByRole("cell")[6]).toHaveTextContent("");
+  });
+
+  it("test_splits_scene_column_matches_lap_numbers", async () => {
+    const splits = LONG_SPLITS.slice(0, 6);
+    const rows = await renderSplits(splits, {}, undefined, {
+      ...BASE_REPORT,
+      moments: [
+        momentOf("m1", "start", [1, 1]),
+        // Laps 4 and 5 — not "kilometre 4 to 5", which is lap 5 alone on a
+        // run with a manual lap press (#1268).
+        momentOf("m2", "surge", [4, 5]),
+      ],
+    });
+
+    const marker = (row: HTMLElement) =>
+      within(row).getAllByRole("cell")[6].textContent;
+    expect(rows.map(marker)).toEqual(["①", "", "", "②", "②", ""]);
   });
 });
 
 describe("sceneMarkers", () => {
-  it("test_scene_markers_cover_every_kilometre_of_a_scene", () => {
+  it("test_scene_markers_cover_the_laps_of_a_scene", () => {
     const markers = sceneMarkers([
-      { id: "m1", kind: "climb", km_from: 2, km_to: 4, facts: {} },
-      { id: "m2", kind: "fade", km_from: 7, km_to: 7, facts: {} },
+      momentOf("m1", "climb", [2, 4]),
+      momentOf("m2", "fade", [7, 7]),
     ]);
 
     expect([...markers.entries()]).toEqual([
@@ -1073,6 +1321,17 @@ describe("sceneMarkers", () => {
       [4, "①"],
       [7, "②"],
     ]);
+  });
+
+  it("gives a walk break the laps it actually walked", () => {
+    // Three stops, not one slab from the first to the last (#1269).
+    const markers = sceneMarkers([
+      momentOf("m1", "walk_break", [14, 22], {
+        facts: { split_list: [14, 20, 22] },
+      }),
+    ]);
+
+    expect([...markers.keys()]).toEqual([14, 20, 22]);
   });
 });
 
