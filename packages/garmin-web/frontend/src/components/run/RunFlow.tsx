@@ -125,6 +125,128 @@ function segmentSpan(
     : [round3(segment.start_km), round3(segment.end_km)];
 }
 
+/**
+ * The invisible series that answers the tooltip (#1285).
+ *
+ * A step is drawn as two points, and ECharts' axis tooltip reports the nearest
+ * *point*: both ends of a boundary (pace twice), only the closest series per
+ * axis (the ring beat the average line, so 心拍 vanished), one header per axis
+ * at the snapped value ("1.00" and "1.50"). It cannot describe step-shaped
+ * data, so the drawn series opt out and this one stands in for the segment.
+ */
+export const CARRIER_SERIES_NAME = "区間";
+
+/** How far inside its segment a carrier point sits, as a share of the axis. */
+const CARRIER_INSET_SHARE = 1 / 2000;
+
+/**
+ * Two points per segment, just inside each end. For a pointer anywhere in a
+ * segment the nearest of these is in the same segment — its own edge point is
+ * `d − ε` away and the neighbour's `d + ε` — whatever the widths. A midpoint
+ * would hand the last 400 m of a kilometre to the 0.18 km rest beside it.
+ */
+function carrierPoints(flow: RunFlowData, axisMax: number): [number, number][] {
+  const inset = axisMax * CARRIER_INSET_SHARE;
+  return flow.segments.flatMap((segment): [number, number][] => {
+    const [from, to] = segmentSpan(flow, segment);
+    const reach = Math.min(inset, (to - from) / 4);
+    return [
+      [from + reach, 0],
+      [to - reach, 0],
+    ];
+  });
+}
+
+/** The segment drawn at `x`; a boundary belongs to the one that starts there. */
+export function segmentAt(flow: RunFlowData, x: number): RunFlowSegment | null {
+  if (!Number.isFinite(x)) {
+    return null;
+  }
+  let found: RunFlowSegment | null = null;
+  for (const segment of flow.segments) {
+    const [from, to] = segmentSpan(flow, segment);
+    if (x >= from && x <= to) {
+      found = segment;
+    }
+  }
+  return found;
+}
+
+function clock(seconds: number): string {
+  const whole = Math.round(seconds);
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
+}
+
+/** "1.0–2.0 km" on a distance axis, "10:00–13:00" on a time axis. */
+function segmentSpanLabel(flow: RunFlowData, segment: RunFlowSegment): string {
+  if (flow.axis === "time") {
+    return `${clock(segment.start_s)}–${clock(segment.end_s)}`;
+  }
+  const digits = segment.end_km - segment.start_km < 0.1 ? 2 : 1;
+  return `${segment.start_km.toFixed(digits)}–${segment.end_km.toFixed(digits)} km`;
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
+ * What hovering a segment says: where it was, then one row per series.
+ *
+ * The step's name leads when the run has steps to tell apart — on a threshold
+ * session "1本目" is how the athlete thinks of it, the clock span is where to
+ * find it on the axis.
+ */
+export function segmentTooltipHtml(
+  flow: RunFlowData,
+  segment: RunFlowSegment,
+): string {
+  const step =
+    flow.steps.length > 1
+      ? flow.steps.find((candidate) => candidate.id === segment.step_id)
+      : undefined;
+  const span = segmentSpanLabel(flow, segment);
+  const header = step ? `${escapeHtml(step.label_ja)} · ${span}` : span;
+
+  const line = `display:inline-block;width:12px;height:2px;margin-right:6px;vertical-align:middle;`;
+  const ring = `display:inline-block;width:6px;height:6px;margin:0 9px 0 3px;vertical-align:middle;box-sizing:border-box;border:1px solid ${METRIC_COLORS.heart_rate};border-radius:50%;`;
+  const rows: [string, string, string][] = [
+    [
+      `${line}background:${METRIC_COLORS.speed};`,
+      "ペース",
+      segment.pace_s_per_km != null
+        ? `${formatPaceLabel(segment.pace_s_per_km)}/km`
+        : "-",
+    ],
+    [
+      `${line}background:${METRIC_COLORS.heart_rate};`,
+      "平均心拍",
+      segment.avg_hr != null ? `${Math.round(segment.avg_hr)} bpm` : "-",
+    ],
+    [
+      ring,
+      "最大心拍",
+      segment.max_hr != null ? `${Math.round(segment.max_hr)} bpm` : "-",
+    ],
+  ];
+  const body = rows
+    .map(
+      ([marker, name, value]) =>
+        `<div style="display:flex;justify-content:space-between;gap:16px;">` +
+        `<span><span style="${marker}"></span>${name}</span>` +
+        `<span style="font-variant-numeric:tabular-nums;">${value}</span></div>`,
+    )
+    .join("");
+  return (
+    `<div style="font-family:${CHART_FONT_FAMILY};font-size:${CHART_FONT_SIZE}px;line-height:1.6;">` +
+    `<div style="margin-bottom:2px;">${header}</div>${body}</div>`
+  );
+}
+
 /** The lap numbers a scene happened on, or null when it is a stretch. */
 export function momentLaps(moment: RunMoment): number[] | null {
   const laps = moment.facts.split_list;
@@ -330,7 +452,20 @@ export function runFlowOption(
       color: AXIS_LABEL_COLOR,
     },
     axisPointer: { link: [{ xAxisIndex: "all" }] },
-    tooltip: { trigger: "axis" },
+    // Built per segment, from the carrier series alone (#1285).
+    tooltip: {
+      trigger: "axis",
+      formatter: (params: unknown) => {
+        const first = (Array.isArray(params) ? params[0] : params) as
+          | { axisValue?: unknown; value?: unknown }
+          | undefined;
+        const raw =
+          first?.axisValue ??
+          (Array.isArray(first?.value) ? first.value[0] : undefined);
+        const segment = segmentAt(flow, Number(raw));
+        return segment ? segmentTooltipHtml(flow, segment) : "";
+      },
+    },
     grid: [CAPTION_GRID, PACE_GRID, HR_GRID],
     xAxis,
     yAxis: [
@@ -429,6 +564,20 @@ export function runFlowOption(
         },
       },
       {
+        // Draws nothing: it only gives the tooltip one point to find, inside
+        // the segment under the pointer. It lives on the caption axis so the
+        // pointer line in the two panels follows the mouse instead of
+        // snapping to a segment's edge.
+        name: CARRIER_SERIES_NAME,
+        type: "line" as const,
+        xAxisIndex: 0,
+        yAxisIndex: 0,
+        data: carrierPoints(flow, axis.max),
+        symbol: "none" as const,
+        lineStyle: { opacity: 0 },
+        silent: true,
+      },
+      {
         name: "ペース",
         type: "line" as const,
         xAxisIndex: 1,
@@ -440,10 +589,7 @@ export function runFlowOption(
         connectNulls: false,
         markArea,
         markLine: { silent: true, symbol: "none" as const, data: boundaries },
-        tooltip: {
-          valueFormatter: (value: unknown) =>
-            typeof value === "number" ? `${formatPaceLabel(value)}/km` : "-",
-        },
+        tooltip: { show: false },
       },
       {
         name: "心拍",
@@ -455,6 +601,7 @@ export function runFlowOption(
         lineStyle: { color: METRIC_COLORS.heart_rate },
         showSymbol: false,
         connectNulls: false,
+        tooltip: { show: false },
         markArea,
         markLine: {
           silent: true,
@@ -463,11 +610,13 @@ export function runFlowOption(
             ...boundaries,
             // The prescribed cap, dotted in the 注意 hue: a stretch spent above
             // it is then visible in the shape of the line, not only in prose.
-            // Its label sits inside the plot, above the right end of the
-            // line: at the start it shared a row with the y axis' top tick
-            // whenever the ceiling equalled a tick value — "上限 150" beside
-            // "150" (#1277) — and outside at the end it landed on the last
-            // scene's number (#1269). Inside, it can meet neither.
+            // The line carries no label. Every place on the canvas was
+            // someone else's: at the start it met the y axis' top tick —
+            // "上限 150" beside "150" (#1277) — outside the end it landed on
+            // the last scene's number (#1269), and inside the end it sat under
+            // the max-HR rings of a long run that finished at its ceiling
+            // (#1285). Where the data goes is not ours to choose, so the
+            // legend under the chart names the line instead.
             ...(hrCeiling != null
               ? [
                   {
@@ -476,14 +625,7 @@ export function runFlowOption(
                       type: "dotted" as const,
                       color: THRESHOLD_LINE.warn,
                     },
-                    label: {
-                      show: true,
-                      formatter: `上限 ${Math.round(hrCeiling)}`,
-                      position: "insideEndTop" as const,
-                      color: THRESHOLD_LINE.warn,
-                      fontSize: CHART_FONT_SIZE,
-                      fontFamily: CHART_FONT_FAMILY,
-                    },
+                    label: { show: false },
                   },
                 ]
               : []),
@@ -500,6 +642,7 @@ export function runFlowOption(
         xAxisIndex: 2,
         yAxisIndex: 2,
         data: maxHrData,
+        tooltip: { show: false },
         symbolSize: 5,
         itemStyle: {
           color: "transparent",
@@ -517,9 +660,14 @@ export function runFlowOption(
  * The y-axis titles were removed because they collided with the band captions
  * (#1277), so this row is the only place that names the series. It is DOM, not
  * canvas, so it stays readable at 400px, and its swatches read the same
- * constants the series do — the legend cannot drift from the chart.
+ * constants the series do — the legend cannot drift from the chart. The
+ * prescribed HR ceiling is named here too, for the same reason (#1285).
  */
-export function SeriesLegend(): JSX.Element {
+export function SeriesLegend({
+  hrCeiling,
+}: {
+  hrCeiling: number | null;
+}): JSX.Element {
   const swatch = "mr-1.5 inline-block h-0.5 w-3.5 align-middle";
   return (
     <p className="mt-1 flex flex-wrap gap-x-4 gap-y-1 font-mono text-xs text-ink-muted">
@@ -550,6 +698,19 @@ export function SeriesLegend(): JSX.Element {
         />
         最大心拍
       </span>
+      {hrCeiling != null && (
+        // The dotted line's name and value live here, not on the canvas,
+        // where every position ended up on top of something (#1285).
+        <span>
+          <span
+            aria-hidden="true"
+            data-series="hr_ceiling"
+            className="mr-1.5 inline-block h-0 w-3.5 border-t-2 border-dotted align-middle"
+            style={{ borderColor: THRESHOLD_LINE.warn }}
+          />
+          上限 {Math.round(hrCeiling)}
+        </span>
+      )}
     </p>
   );
 }
@@ -603,7 +764,7 @@ export default function RunFlow({
             ariaLabel="ペースと心拍の推移"
             height={CHART_HEIGHT}
           />
-          <SeriesLegend />
+          <SeriesLegend hrCeiling={hrCeiling} />
           <p className="mt-1 font-mono text-xs text-ink-muted">
             {flowLegend(flow)}
           </p>

@@ -3,7 +3,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import RunFlow, { SCENE_TINTS } from "./RunFlow";
+import RunFlow, {
+  CARRIER_SERIES_NAME,
+  SCENE_TINTS,
+  segmentAt,
+  segmentTooltipHtml,
+} from "./RunFlow";
 import { CHART_FONT_SIZE, METRIC_COLORS, THRESHOLD_LINE } from "../chartTheme";
 import { REGISTERED_SERIES_TYPES } from "../../lib/echarts";
 import type {
@@ -29,11 +34,12 @@ type MarkItem = {
   yAxis?: number;
   itemStyle?: { color?: string };
   lineStyle?: { color?: string; type?: string };
-  label?: { formatter?: string; position?: string };
+  label?: { show?: boolean; formatter?: string; position?: string };
 };
 type Series = {
   name?: string;
   type?: string;
+  tooltip?: { show?: boolean };
   data?: [number, number | null][];
   markArea?: { data?: MarkItem[][] };
   markLine?: { data?: MarkItem[] };
@@ -332,6 +338,39 @@ describe("RunFlow series legend", () => {
     expect(heartRate?.style.backgroundColor).toBe(probe.style.backgroundColor);
   });
 
+  it("test_ceiling_is_named_in_the_legend_not_on_the_canvas", () => {
+    const { container } = render(
+      <RunFlow flow={STEADY_FLOW} moments={MOMENTS} timeline={TIMELINE} hrCeiling={150} />,
+    );
+    const option = captured.options[captured.options.length - 1];
+
+    // The line stays; its label left the canvas. At the start it met the y
+    // axis' tick (#1277), outside the end the scene number (#1269), inside the
+    // end the max-HR rings of a run that finished at its ceiling (#1285).
+    const ceiling = seriesNamed(option, "心拍")?.markLine?.data?.find(
+      (item) => item.yAxis === 150,
+    );
+    expect(ceiling?.lineStyle?.type).toBe("dotted");
+    expect(ceiling?.label?.show).toBe(false);
+
+    const swatch = container.querySelector<HTMLElement>(
+      '[data-series="hr_ceiling"]',
+    );
+    const probe = document.createElement("span");
+    probe.style.borderColor = THRESHOLD_LINE.warn;
+    expect(swatch?.style.borderColor).toBe(probe.style.borderColor);
+    expect(swatch?.parentElement?.textContent).toBe("上限 150");
+  });
+
+  it("test_legend_has_no_ceiling_entry_without_a_prescription", () => {
+    const { container } = render(
+      <RunFlow flow={STEADY_FLOW} moments={MOMENTS} timeline={TIMELINE} hrCeiling={null} />,
+    );
+
+    expect(container.querySelector('[data-series="hr_ceiling"]')).toBeNull();
+    expect(screen.queryByText(/上限/)).not.toBeInTheDocument();
+  });
+
   it("draws no legend when there is nothing to draw", () => {
     render(<RunFlow flow={null} moments={MOMENTS} timeline={TIMELINE} hrCeiling={null} />);
 
@@ -348,10 +387,12 @@ describe("RunFlow series", () => {
     expect(seriesNamed(option, "ペース")?.data).toHaveLength(10);
     expect(seriesNamed(option, "心拍")?.data).toHaveLength(10);
     expect(seriesNamed(option, "最大心拍")?.data).toHaveLength(5);
-    // Nothing else is plotted: the fourth series is the caption row, which
-    // carries one invisible point so its labels have somewhere to hang.
+    // Nothing else is plotted: 場面 is the caption row, which carries one
+    // invisible point so its labels have somewhere to hang, and 区間 is the
+    // invisible series the tooltip reads (#1285).
     expect(option.series?.map((series) => series.name)).toEqual([
       "場面",
+      "区間",
       "ペース",
       "心拍",
       "最大心拍",
@@ -404,18 +445,6 @@ describe("RunFlow series", () => {
     expect(ceiling?.lineStyle?.color).toBe(THRESHOLD_LINE.warn);
   });
 
-  it("test_ceiling_label_is_inside_the_plot_at_the_line_end", () => {
-    const option = renderFlow();
-
-    const ceiling = seriesNamed(option, "心拍")?.markLine?.data?.find(
-      (item) => item.yAxis === 150,
-    );
-    // Inside the plot, above the right end of the line: on the left it sat at
-    // the height of the y axis' top tick and read "上限 150" beside "150"
-    // (#1277), and outside at the end it landed on scene ⑤ (#1269).
-    expect(ceiling?.label?.position).toBe("insideEndTop");
-  });
-
   it("draws no ceiling on a day without a prescription", () => {
     const option = renderFlow(STEADY_FLOW, MOMENTS, TIMELINE, null);
 
@@ -424,6 +453,103 @@ describe("RunFlow series", () => {
         (item) => item.yAxis != null,
       ),
     ).toBe(false);
+  });
+});
+
+describe("RunFlow tooltip", () => {
+  // A kilometre, a 0.1 km lap, another kilometre: the short lap is what a
+  // nearest-midpoint lookup gets wrong.
+  const UNEVEN_FLOW = flowOf([
+    segment(1, [0, 1], [0, 400], { pace: 400, hr: 140, max: 146 }),
+    segment(2, [1, 1.1], [400, 440], { pace: 395, hr: 141, max: 147 }),
+    segment(3, [1.1, 2.1], [440, 840], { pace: 390, hr: 142, max: 148 }),
+  ]);
+
+  it("test_only_the_carrier_series_answers_the_tooltip", () => {
+    const option = renderFlow();
+
+    // ECharts reports the nearest *point*, and a step has two: left to the
+    // drawn series the tooltip showed pace twice and lost 心拍 (#1285).
+    for (const name of ["場面", "ペース", "心拍", "最大心拍"]) {
+      expect(seriesNamed(option, name)?.tooltip?.show).toBe(false);
+    }
+    expect(seriesNamed(option, CARRIER_SERIES_NAME)?.tooltip?.show).not.toBe(
+      false,
+    );
+  });
+
+  it("test_carrier_points_sit_inside_their_segment", () => {
+    const option = renderFlow();
+
+    const points = seriesNamed(option, CARRIER_SERIES_NAME)?.data ?? [];
+    expect(points).toHaveLength(STEADY_SEGMENTS.length * 2);
+    STEADY_SEGMENTS.forEach((drawn, index) => {
+      for (const [x] of [points[index * 2], points[index * 2 + 1]]) {
+        expect(x).toBeGreaterThan(drawn.start_km);
+        expect(x).toBeLessThan(drawn.end_km);
+      }
+    });
+  });
+
+  it("test_segment_at_picks_the_containing_segment_next_to_a_short_one", () => {
+    const [first, second] = UNEVEN_FLOW.segments;
+
+    expect(segmentAt(UNEVEN_FLOW, 0.95)).toBe(first);
+    expect(segmentAt(UNEVEN_FLOW, 1.05)).toBe(second);
+    expect(segmentAt(UNEVEN_FLOW, 1.0005)).toBe(second);
+    expect(segmentAt(UNEVEN_FLOW, -1)).toBeNull();
+    expect(segmentAt(UNEVEN_FLOW, Number.NaN)).toBeNull();
+  });
+
+  it("test_segment_tooltip_has_one_row_per_series", () => {
+    const flow = flowOf([
+      segment(1, [0, 1], [0, 400], { pace: 400, hr: 140, max: 146 }),
+      segment(2, [1, 2], [400, 807], { pace: 407, hr: 145, max: 149 }),
+    ]);
+
+    const html = segmentTooltipHtml(flow, flow.segments[1]);
+
+    expect(html).toContain("1.0–2.0 km");
+    expect(html.match(/ペース/g)).toHaveLength(1);
+    expect(html.match(/平均心拍/g)).toHaveLength(1);
+    expect(html.match(/最大心拍/g)).toHaveLength(1);
+    expect(html).toContain("6:47/km");
+    expect(html).toContain("145 bpm");
+    expect(html).toContain("149 bpm");
+    // One step only: its name would say nothing the header does not.
+    expect(html).not.toContain("本編");
+  });
+
+  it("test_segment_tooltip_names_the_step_on_a_time_axis", () => {
+    const flow = flowOf(
+      [
+        segment(1, [0, 1.5], [0, 600], { pace: 400, hr: 130, max: 140 }, "wu"),
+        segment(2, [1.5, 2.1], [600, 780], { pace: 300, hr: 170, max: 176 }, "r1"),
+      ],
+      {
+        axis: "time",
+        steps: [
+          step("wu", ["ウォームアップ", "アップ"], [1, 1]),
+          step("r1", ["1本目", "1"], [2, 2]),
+        ],
+      },
+    );
+
+    const html = segmentTooltipHtml(flow, flow.segments[1]);
+
+    expect(html).toContain("1本目 · 10:00–13:00");
+    expect(html).not.toContain(" km<");
+  });
+
+  it("test_segment_tooltip_prints_a_dash_for_a_missing_value", () => {
+    const flow = flowOf([
+      segment(1, [0, 1], [0, 400], { pace: 400, hr: 140, max: null }),
+    ]);
+
+    const html = segmentTooltipHtml(flow, flow.segments[0]);
+
+    expect(html).toMatch(/最大心拍<\/span><span[^>]*>-<\/span>/);
+    expect(html).not.toContain("null");
   });
 });
 
