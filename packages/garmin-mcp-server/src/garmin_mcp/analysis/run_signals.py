@@ -45,13 +45,16 @@ cm, %, spm, bpm) rather than in z or deviation-%, so a page can print
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
 from garmin_mcp.analysis.normal_range import (
     MIN_VALID_SPLITS,
     OUTSIDE_Z,
+    REASON_NO_SPREAD,
+    REASON_THIN_BASELINE,
+    REASON_TODAY_MISSING,
     STREAK_Z,
     WINDOW_DAYS,
     Band,
@@ -72,20 +75,65 @@ _HR_KEYS = ("avg_hr", "avg_heart_rate")
 _PACE_KEYS = ("pace", "pace_s_per_km", "avg_pace_seconds_per_km")
 _TEMP_KEYS = ("temp", "temp_c", "temp_celsius")
 
-#: Reasons a signal is not judged.
-REASON_SHORT_RUN = "only {n} running splits (need {required})"
-REASON_NO_SPLIT_COUNT = "the run's valid-split count is unknown"
-# Written in Japanese because the page prints ``reason`` verbatim under the
-# metric, and this is the one reason an ordinary quality session triggers: a
-# tempo run judged by an easy-run model is a reference value, not a finding
-# (#1273).
-REASON_EXTRAPOLATED = "学習した速度の範囲から大きく外れているため参考値"
-REASON_NO_HR_MODEL = "no fitted heat-adjustment model"
-REASON_NO_HR_INPUTS = "pace, temperature or HR missing for the expected-HR read"
-REASON_HOT = (
-    "temperature {temp} °C: the drift is thermal, not a durability read "
-    "(>= {limit} °C)"
-)
+#: Reasons a signal is not judged, as stable codes. A signal carries the code in
+#: ``reason_code`` (what tests and the run-note agent match on) and the Japanese
+#: sentence below in ``reason`` (what the page prints under the metric).
+REASON_SHORT_RUN = "short_run"
+REASON_NO_SPLIT_COUNT = "no_split_count"
+REASON_EXTRAPOLATED = "extrapolated"
+REASON_NO_HR_MODEL = "no_hr_model"
+REASON_NO_HR_INPUTS = "no_hr_inputs"
+REASON_HOT = "drift_in_heat"
+
+#: Every reason a signal can carry, worded for the reader. This mapping is the
+#: single place a "not judged" is put into words -- including the codes
+#: ``normal_range`` raises -- because ``reason`` is user-facing text on the run
+#: page and in the run note, where an internal English phrase like
+#: "baseline size 0 < 10 prior runs" reads as a leak rather than an
+#: explanation (#1278). ``tests/analysis/test_run_signals.py`` fails if a
+#: ``REASON_*`` constant is missing from here, so a new reason cannot ship
+#: without its Japanese wording.
+REASON_MESSAGES_JA: dict[str, str] = {
+    REASON_SHORT_RUN: "有効なスプリットが {n} 本で、判定には {required} 本以上が必要",
+    REASON_NO_SPLIT_COUNT: "このランの有効なスプリット数が分からないため判定できない",
+    REASON_EXTRAPOLATED: "学習した速度の範囲から大きく外れているため参考値",
+    REASON_NO_HR_MODEL: "同じ種類のランが少なく、想定心拍を計算できない",
+    REASON_NO_HR_INPUTS: "ペース・気温・心拍のいずれかが記録されておらず想定心拍を出せない",
+    REASON_HOT: "気温 {temp}℃ では心拍ドリフトが暑さの影響を受けるため判定しない",
+    REASON_TODAY_MISSING: "このランにはこの値の記録がない",
+    REASON_THIN_BASELINE: "比べられる直近のランが {n} 本で、判定には {required} 本以上が必要",
+    REASON_NO_SPREAD: "直近のランの値がほぼ同じで、比べられる幅が作れない",
+}
+
+
+@dataclass(frozen=True)
+class _Reason:
+    """A reason code plus whatever its wording interpolates."""
+
+    code: str
+    params: Mapping[str, Any] = field(default_factory=dict)
+
+
+def describe_reason(
+    code: str | None, params: Mapping[str, Any] | None = None
+) -> str | None:
+    """Render a reason code as the Japanese sentence the reader sees.
+
+    Args:
+        code: A ``REASON_*`` constant, or ``None`` when the signal was judged.
+        params: Values the wording interpolates (counts, temperature).
+
+    Returns:
+        The wording for ``code``, or ``None`` when there is no reason. An
+        unmapped code falls back to itself rather than to English prose -- the
+        registry test above keeps that branch unreachable in practice.
+    """
+    if code is None:
+        return None
+    message = REASON_MESSAGES_JA.get(code)
+    if message is None:
+        return code
+    return message.format(**(params or {}))
 
 
 @dataclass(frozen=True)
@@ -172,7 +220,12 @@ def build_signals(
         One dict per signal, in the order of the table in the module docstring::
 
             {family, metric, label_ja, unit, today, expected, normal_low,
-             normal_high, z, status, adverse, direction, streak, n, reason}
+             normal_high, z, status, adverse, direction, streak, n, reason,
+             reason_code}
+
+        ``reason`` is the Japanese sentence a reader sees (``None`` when the
+        metric was judged); ``reason_code`` is the matching ``REASON_*``
+        constant, so callers match on a stable value and never on the prose.
 
         All values are JSON-serialisable plain types (no numpy scalars, no
         ``date`` objects). ``today`` / ``expected`` / ``normal_*`` are in the
@@ -214,7 +267,8 @@ def _form_signal(
             unit=spec.unit,
             today=today_display,
             expected=expected,
-            reason=blocker,
+            reason=blocker.code,
+            reason_params=blocker.params,
         )
 
     eligible = [row for row in prior if _eligibility_reason(row, spec.metric) is None]
@@ -263,7 +317,8 @@ def _power_signal(
             unit="%",
             today=value,
             expected=None,
-            reason=blocker,
+            reason=blocker.code,
+            reason_params=blocker.params,
         )
 
     eligible = [row for row in prior if _eligibility_reason(row, "power") is None]
@@ -371,9 +426,8 @@ def _hr_drift_signal(
             unit="%",
             today=value,
             expected=None,
-            reason=REASON_HOT.format(
-                temp=round(temp, 1), limit=DECOUPLING_CONTAMINATION_TEMP_C
-            ),
+            reason=REASON_HOT,
+            reason_params={"temp": round(temp, 1)},
         )
 
     family = [
@@ -461,7 +515,8 @@ def _assemble(
         "direction": _direction(band.z, higher_is_worse=higher_is_worse),
         "streak": streak,
         "n": band.n,
-        "reason": band.reason,
+        "reason": describe_reason(band.reason, band.reason_params),
+        "reason_code": band.reason,
     }
 
 
@@ -474,6 +529,7 @@ def _unjudged(
     today: float | None,
     expected: float | None,
     reason: str,
+    reason_params: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """A signal the run itself disqualifies, before any baseline is built."""
     return {
@@ -491,7 +547,8 @@ def _unjudged(
         "direction": None,
         "streak": 0,
         "n": 0,
-        "reason": reason,
+        "reason": describe_reason(reason, reason_params),
+        "reason_code": reason,
     }
 
 
@@ -567,15 +624,17 @@ def _power_pct(row: Mapping[str, Any]) -> float | None:
     return None if score is None else score * 100.0
 
 
-def _eligibility_reason(row: Mapping[str, Any], metric: str) -> str | None:
+def _eligibility_reason(row: Mapping[str, Any], metric: str) -> _Reason | None:
     """Why the row's form metrics cannot be trusted, or ``None`` when they can."""
     splits = as_float(row.get("n_valid_splits"))
     if splits is None:
-        return REASON_NO_SPLIT_COUNT
+        return _Reason(REASON_NO_SPLIT_COUNT)
     if splits < MIN_VALID_SPLITS:
-        return REASON_SHORT_RUN.format(n=int(splits), required=MIN_VALID_SPLITS)
+        return _Reason(
+            REASON_SHORT_RUN, {"n": int(splits), "required": MIN_VALID_SPLITS}
+        )
     if row.get(f"{metric}_extrapolated") or row.get("extrapolated"):
-        return REASON_EXTRAPOLATED
+        return _Reason(REASON_EXTRAPOLATED)
     return None
 
 

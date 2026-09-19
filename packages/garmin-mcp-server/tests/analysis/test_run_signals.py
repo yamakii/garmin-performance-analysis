@@ -14,8 +14,16 @@ from typing import Any
 import numpy as np
 import pytest
 
+from garmin_mcp.analysis import run_signals
 from garmin_mcp.analysis.normal_range import MAD_SCALE, compute_band
-from garmin_mcp.analysis.run_signals import build_signals
+from garmin_mcp.analysis.run_signals import (
+    REASON_EXTRAPOLATED,
+    REASON_HOT,
+    REASON_NO_HR_MODEL,
+    REASON_SHORT_RUN,
+    REASON_THIN_BASELINE,
+    build_signals,
+)
 from garmin_mcp.rag.queries.heat_adjustment import HeatModelCoefficients
 
 _TODAY = date(2026, 9, 19)
@@ -34,6 +42,16 @@ _COEFFS = HeatModelCoefficients(
     n=30,
     r_squared=0.5,
 )
+
+
+# What each parameterised reason interpolates, for the registry test below. A
+# reason that grows a placeholder without an entry here raises rather than
+# silently printing a brace to the reader.
+_REASON_PARAMS: dict[str, dict[str, Any]] = {
+    REASON_SHORT_RUN: {"n": 2, "required": 3},
+    REASON_THIN_BASELINE: {"n": 0, "required": 10},
+    REASON_HOT: {"temp": 31.0},
+}
 
 
 def _shaped(index: int, spread: float) -> float:
@@ -134,7 +152,8 @@ def test_short_run_signals_are_insufficient():
         assert signal["z"] is None
         assert signal["adverse"] is False
         assert signal["streak"] == 0
-        assert "splits" in signal["reason"]
+        assert signal["reason_code"] == REASON_SHORT_RUN
+        assert signal["reason"] == "有効なスプリットが 2 本で、判定には 3 本以上が必要"
 
 
 @pytest.mark.unit
@@ -145,7 +164,8 @@ def test_extrapolated_form_is_not_judged():
 
     gct = _signal(signals, "gct")
     assert gct["status"] == "insufficient"
-    assert "速度の範囲" in gct["reason"]
+    assert gct["reason"] == "学習した速度の範囲から大きく外れているため参考値"
+    assert gct["reason_code"] == REASON_EXTRAPOLATED
     # Only the extrapolated metric is withheld.
     assert _signal(signals, "cadence")["status"] != "insufficient"
 
@@ -220,7 +240,8 @@ def test_thin_history_is_not_judged():
     gct = _signal(signals, "gct")
     assert gct["status"] == "insufficient"
     assert gct["n"] == 6
-    assert "baseline size 6" in gct["reason"]
+    assert gct["reason_code"] == REASON_THIN_BASELINE
+    assert gct["reason"] == "比べられる直近のランが 6 本で、判定には 10 本以上が必要"
 
 
 # --------------------------------------------------------------------------- #
@@ -258,7 +279,8 @@ def test_hr_vs_expected_needs_a_model():
 
     hr = _signal(signals, "hr_vs_expected")
     assert hr["status"] == "insufficient"
-    assert "model" in hr["reason"]
+    assert hr["reason_code"] == REASON_NO_HR_MODEL
+    assert hr["reason"] == "同じ種類のランが少なく、想定心拍を計算できない"
 
 
 @pytest.mark.unit
@@ -307,8 +329,49 @@ def test_drift_not_judged_in_heat():
 
     drift = _signal(signals, "hr_drift")
     assert drift["status"] == "insufficient"
-    assert "temperature" in drift["reason"]
+    assert drift["reason_code"] == REASON_HOT
     assert drift["today"] == pytest.approx(4.0)
+
+
+# --------------------------------------------------------------------------- #
+# Reasons (#1278): the page prints ``reason`` verbatim, so every one is Japanese
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.unit
+def test_every_reason_code_has_a_japanese_message():
+    """A new REASON_* constant cannot ship without wording a reader can use."""
+    codes = {
+        value
+        for name, value in vars(run_signals).items()
+        if name.startswith("REASON_") and isinstance(value, str)
+    }
+    assert len(codes) == 9
+
+    for code in codes:
+        message = run_signals.describe_reason(code, _REASON_PARAMS.get(code))
+        assert message, code
+        assert message != code, f"{code} has no Japanese message"
+        assert any(ord(char) > 127 for char in message), f"{code} reads as English"
+
+
+@pytest.mark.unit
+def test_thin_baseline_reason_is_japanese_with_counts():
+    """The one a fresh history triggers: "baseline size 0 < 10" in Japanese."""
+    signals = build_signals(_run(0), [], hr_model=_COEFFS)
+
+    gct = _signal(signals, "gct")
+    assert gct["reason"] == "比べられる直近のランが 0 本で、判定には 10 本以上が必要"
+    assert gct["reason_code"] == "thin_baseline"
+
+
+@pytest.mark.unit
+def test_drift_in_heat_reason_mentions_temperature():
+    signals = build_signals(_run(0, temp=31.0), _history(), hr_model=_COEFFS)
+
+    drift = _signal(signals, "hr_drift")
+    assert "31" in drift["reason"]
+    assert "℃" in drift["reason"]
 
 
 # --------------------------------------------------------------------------- #
