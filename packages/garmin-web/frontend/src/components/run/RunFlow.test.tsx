@@ -5,6 +5,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import RunFlow, { SCENE_TINTS } from "./RunFlow";
 import { CHART_FONT_SIZE, METRIC_COLORS, THRESHOLD_LINE } from "../chartTheme";
+import { REGISTERED_SERIES_TYPES } from "../../lib/echarts";
 import type {
   RunFlowData,
   RunFlowSegment,
@@ -32,6 +33,7 @@ type MarkItem = {
 };
 type Series = {
   name?: string;
+  type?: string;
   data?: [number, number | null][];
   markArea?: { data?: MarkItem[][] };
   markLine?: { data?: MarkItem[] };
@@ -355,6 +357,24 @@ describe("RunFlow series", () => {
       "最大心拍",
     ]);
     expect(seriesNamed(option, "場面")?.data).toEqual([[0, 0]]);
+  });
+
+  it("test_run_flow_only_uses_registered_series_types", () => {
+    const option = renderFlow();
+
+    // ECharts is tree-shaken: a series whose chart module is not registered in
+    // lib/echarts.ts is accepted, drawn nowhere and reported nowhere. The max
+    // heart-rate markers were exactly that until ScatterChart was registered
+    // (#1283), while every assertion on the option object kept passing.
+    const types = option.series?.map((series) => series.type) ?? [];
+    expect(types.length).toBeGreaterThan(0);
+    for (const type of types) {
+      expect(REGISTERED_SERIES_TYPES).toContain(type);
+    }
+
+    const maxHr = seriesNamed(option, "最大心拍");
+    expect(maxHr?.type).toBe("scatter");
+    expect(maxHr?.data).toHaveLength(STEADY_SEGMENTS.length);
   });
 
   it("test_run_flow_component_has_no_fragment_rule", () => {
