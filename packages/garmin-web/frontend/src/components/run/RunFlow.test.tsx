@@ -42,6 +42,7 @@ type Axis = {
   max?: number;
   interval?: number;
   name?: string;
+  nameLocation?: string;
 };
 type Grid = { top?: number; height?: number; right?: number };
 type Graphic = {
@@ -52,6 +53,7 @@ type Graphic = {
 type ChartOption = {
   grid?: Grid[];
   xAxis?: Axis[];
+  yAxis?: Axis[];
   series?: Series[];
   graphic?: Graphic[];
 };
@@ -275,6 +277,19 @@ describe("RunFlow chart axis", () => {
     expect(unit?.top ?? 0).toBeGreaterThan(tickRowBottom);
   });
 
+  it("test_run_flow_has_no_axis_titles_in_the_caption_row", () => {
+    const option = renderFlow();
+
+    // The caption row belongs to the band captions: an axis title placed
+    // there met the first caption whenever a scene started at the axis —
+    // "ペース①" over "アップ" (#1277). The legend under the chart and the
+    // series names carry what the titles said.
+    for (const axis of option.yAxis ?? []) {
+      expect(axis.name).toBeUndefined();
+      expect(axis.nameLocation).toBeUndefined();
+    }
+  });
+
   it("states the axis and what a step's width means", () => {
     renderFlow();
     expect(
@@ -331,8 +346,18 @@ describe("RunFlow series", () => {
     );
     expect(ceiling?.lineStyle?.type).toBe("dotted");
     expect(ceiling?.lineStyle?.color).toBe(THRESHOLD_LINE.warn);
-    // On the left, outside the plot: at the end it landed on scene ⑤ (#1269).
-    expect(ceiling?.label?.position).toBe("start");
+  });
+
+  it("test_ceiling_label_is_inside_the_plot_at_the_line_end", () => {
+    const option = renderFlow();
+
+    const ceiling = seriesNamed(option, "心拍")?.markLine?.data?.find(
+      (item) => item.yAxis === 150,
+    );
+    // Inside the plot, above the right end of the line: on the left it sat at
+    // the height of the y axis' top tick and read "上限 150" beside "150"
+    // (#1277), and outside at the end it landed on scene ⑤ (#1269).
+    expect(ceiling?.label?.position).toBe("insideEndTop");
   });
 
   it("draws no ceiling on a day without a prescription", () => {
@@ -513,10 +538,28 @@ describe("RunFlow scene list", () => {
     renderFlow(STEADY_FLOW, MOMENTS, [TIMELINE[0]]);
 
     // The run happened whether or not there was anything to say about it: the
-    // scene keeps its band and its label, named by what the detector saw.
+    // scene keeps its band and its label, with nothing beside it.
     const rows = screen.getAllByRole("listitem");
     expect(rows).toHaveLength(4);
     expect(rows[1]).toHaveTextContent("2 km");
-    expect(rows[1]).toHaveTextContent("登り");
+    expect(rows[1]).not.toHaveTextContent("登り");
+  });
+
+  it("test_scene_without_timeline_text_has_empty_text", () => {
+    // Five scenes, four sentences: the coach may write fewer timeline items
+    // than the report found scenes.
+    const cooldown = moment("m5", "cooldown", [5, 5], {
+      label_ja: "クールダウン",
+    });
+    renderFlow(STEADY_FLOW, [...MOMENTS, cooldown], TIMELINE);
+
+    const rows = screen.getAllByRole("listitem");
+    expect(rows).toHaveLength(5);
+    const last = rows[4];
+    // The label once, in its own column; the text cell empty — repeating the
+    // label as the sentence read as a note that said nothing (#1277).
+    expect(last.textContent?.match(/クールダウン/g)).toHaveLength(1);
+    const cells = Array.from(last.querySelectorAll("span"));
+    expect(cells[cells.length - 1].textContent).toBe("");
   });
 });

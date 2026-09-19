@@ -64,6 +64,38 @@ describe("NextRunTarget", () => {
     expect(screen.queryByText("調整ヒント")).not.toBeInTheDocument();
   });
 
+  it("test_reference_pace_has_one_unit", () => {
+    // The agent writes the bounds already formatted, unit and all; the card
+    // appended a second one and the chip read "5:40/km–5:43/km/km" (#1277).
+    render(
+      <NextRunTarget
+        data={{
+          reference_pace_low_formatted: "5:40/km",
+          reference_pace_high_formatted: "5:43/km",
+        }}
+      />,
+    );
+
+    expect(screen.getByText("5:40–5:43/km")).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("/km/km");
+  });
+
+  it("test_reference_pace_without_unit_in_source", () => {
+    // Bare bounds are the other shape the agent writes: the unit is added
+    // once either way.
+    render(
+      <NextRunTarget
+        data={{
+          reference_pace_low_formatted: "5:40",
+          reference_pace_high_formatted: "5:43",
+        }}
+      />,
+    );
+
+    expect(screen.getByText("5:40–5:43/km")).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("/km/km");
+  });
+
   it("shows unknown training types verbatim without crashing", () => {
     render(<NextRunTarget data={{ recommended_type: "fartlek" }} />);
     expect(screen.getByText("fartlek")).toBeInTheDocument();
