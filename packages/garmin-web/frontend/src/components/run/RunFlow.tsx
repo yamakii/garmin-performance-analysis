@@ -345,9 +345,11 @@ export function runFlowOption(
       {
         type: "value" as const,
         gridIndex: 1,
-        name: "ペース",
-        nameTextStyle: { color: AXIS_LABEL_COLOR, fontSize: CHART_FONT_SIZE },
-        nameLocation: "start" as const,
+        // No axis title: the legend under the chart already names both series,
+        // and a title has nowhere to sit that is not someone else's row. As
+        // the y axis' `name` it landed in the caption row, where "ペース" met
+        // the first band's caption whenever a scene started at the axis —
+        // "ペース①" over "アップ" on the shipped page (#1277).
         // Faster at the top: the run reads as it felt.
         inverse: true,
         scale: true,
@@ -365,8 +367,7 @@ export function runFlowOption(
       {
         type: "value" as const,
         gridIndex: 2,
-        name: "心拍",
-        nameTextStyle: { color: AXIS_LABEL_COLOR, fontSize: CHART_FONT_SIZE },
+        // No axis title here either, for the same reason (#1277).
         scale: true,
         axisLabel: {
           color: AXIS_LABEL_COLOR,
@@ -462,8 +463,11 @@ export function runFlowOption(
             ...boundaries,
             // The prescribed cap, dotted in the 注意 hue: a stretch spent above
             // it is then visible in the shape of the line, not only in prose.
-            // Its label sits at the start of the line, outside the plot: at
-            // the end it landed on the last scene's number (#1269).
+            // Its label sits inside the plot, above the right end of the
+            // line: at the start it shared a row with the y axis' top tick
+            // whenever the ceiling equalled a tick value — "上限 150" beside
+            // "150" (#1277) — and outside at the end it landed on the last
+            // scene's number (#1269). Inside, it can meet neither.
             ...(hrCeiling != null
               ? [
                   {
@@ -475,7 +479,7 @@ export function runFlowOption(
                     label: {
                       show: true,
                       formatter: `上限 ${Math.round(hrCeiling)}`,
-                      position: "start" as const,
+                      position: "insideEndTop" as const,
                       color: THRESHOLD_LINE.warn,
                       fontSize: CHART_FONT_SIZE,
                       fontFamily: CHART_FONT_FAMILY,
@@ -521,8 +525,8 @@ export function flowLegend(flow: RunFlowData): string {
  * The scenes are deterministic (`report.moments`) and so is what the chart
  * draws (`report.flow`); the sentences are the coach's (`run_note.timeline`),
  * joined on the moment id. A scene the coach did not write about keeps its
- * band and its label — the run happened whether or not there was anything to
- * say about it.
+ * band and its label, with nothing beside it — the run happened whether or not
+ * there was anything to say about it.
  *
  * The component holds no rule about which splits are real: the report decided
  * that once, for every series and for the table below, so a fragment cannot be
@@ -577,10 +581,13 @@ export default function RunFlow({
               <span className="font-mono text-[13px] text-ink-muted md:whitespace-nowrap">
                 {moment.label_ja || KIND_LABELS[moment.kind] || moment.kind}
               </span>
+              {/* Empty when the coach wrote nothing about this scene: the
+                  label beside it already names the scene, and repeating that
+                  name as the sentence read as a note that said nothing — ⑤
+                  showed "クールダウン" twice on the threshold session
+                  (#1277). */}
               <span className="col-start-2 min-w-0 text-[15px] leading-[1.7] text-ink-soft md:col-start-3">
-                {textOf.get(moment.id) ??
-                  KIND_LABELS[moment.kind] ??
-                  moment.kind}
+                {textOf.get(moment.id) ?? ""}
               </span>
             </li>
           ))}
