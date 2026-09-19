@@ -20,6 +20,8 @@ delta chips, next target   ``analysis.derivations`` (``compute_vs_previous`` …
 intensity family           ``database.inserters.hr_efficiency``
 expected HR                ``rag.queries.heat_adjustment.HeatAdjustmentModel``
 which splits count          ``form_baseline.split_filter``
+how far outside the        ``form_baseline.scorer.extrapolation_factor``
+form model's speed range
 =========================  =================================================
 
 Loading rules that are easy to break when editing:
@@ -42,11 +44,14 @@ from datetime import date, timedelta
 from typing import Any
 
 from garmin_mcp.analysis.derivations import (
+    REST_INTENSITY_CLASS,
     compute_next_run_target,
     compute_prescription_verdict,
     compute_vs_previous,
+    intensity_class,
     select_prescription_for_run,
 )
+from garmin_mcp.analysis.normal_range import EXTRAPOLATION_NOT_JUDGED
 from garmin_mcp.analysis.run_moments import (
     RECURRENCE_LOOKBACK,
     build_flow,
@@ -55,6 +60,7 @@ from garmin_mcp.analysis.run_moments import (
 )
 from garmin_mcp.database.inserters.hr_efficiency import resolve_intensity_category
 from garmin_mcp.database.readers.base import BaseDBReader
+from garmin_mcp.form_baseline.scorer import extrapolation_factor
 from garmin_mcp.form_baseline.split_filter import (
     running_split_params,
     running_split_sql,
@@ -95,14 +101,14 @@ _ADVERSE_FLAG_LABELS: dict[str, str] = {
 _PHASES: tuple[str, ...] = ("warmup", "run", "recovery", "cooldown")
 
 # One vocabulary for the plan card's intensity axis (#1268). Raw labels that
-# name a distinction the intensity family drops (long / recovery are both
-# "easy") are matched first; everything else goes through the family.
+# name a distinction the intensity family drops (a recovery run is "easy" too)
+# are matched first; everything else goes through the family.
 _RAW_INTENSITY_LABELS: dict[str, str] = {
-    "long": "ロング",
-    "long_run": "ロング",
     "recovery": "リカバリー",
     "recovery_run": "リカバリー",
     "rest": "休養",
+    "rest_day": "休養",
+    "off": "休養",
     "moderate": "ミドル",
     "unknown": "-",
 }
@@ -113,6 +119,51 @@ _FAMILY_INTENSITY_LABELS: dict[str, str] = {
     "threshold": "閾値",
     "vo2max": "インターバル",
 }
+
+# Plan words the activity vocabulary cannot resolve: a prescription names the
+# *session*, ``resolve_intensity_category`` only knows Garmin training types.
+# Mapped to the same family labels so both sides of the intensity row speak one
+# language (#1273).
+_PLAN_INTENSITY_LABELS: dict[str, str] = {
+    "easy": "イージー",
+    "easy_run": "イージー",
+    "jog": "イージー",
+    "base": "イージー",
+    "endurance": "イージー",
+    "long": "イージー",
+    "long_run": "イージー",
+    "progression": "テンポ",
+    "tempo_run": "テンポ",
+    "marathon_pace": "テンポ",
+    "lactate_threshold": "閾値",
+    "threshold_work": "閾値",
+    "interval": "インターバル",
+    "intervals": "インターバル",
+    "repetition": "インターバル",
+    "speed": "インターバル",
+    "race": "レース",
+}
+
+# What a session type says *beyond* its intensity family. The row compares
+# intensity, so the extra word is appended to the target only -- a long run is
+# prescribed as easy running and answered by an easy run (#1273).
+_SESSION_TYPE_SUFFIX_JA: dict[str, str] = {
+    "long": "ロング走",
+    "long_run": "ロング走",
+    "progression": "ビルドアップ",
+}
+
+# The form metrics the run report judges. ``power`` is deliberately absent: its
+# model carries no speed range, so no speed can extrapolate it.
+_FORM_METRICS: tuple[str, ...] = ("gct", "vo", "vr", "cadence")
+
+# The baseline family the form models are trained and read per (#1088).
+_BASELINE_USER_ID = "default"
+_BASELINE_CONDITION_GROUP = "flat_road"
+
+# How far ahead a scheduled session is still "what is next" (#1273). Two weeks
+# covers the current week plus the next one the plan has been written for.
+_NEXT_SESSION_HORIZON_DAYS = 14
 
 # Terrain bands in metres of gain per km, matching the table the analysis
 # contract states to the agents (flat <10 / undulating 10-30 / hilly 30-50 /
@@ -140,9 +191,9 @@ class RunReportReader(BaseDBReader):
             ``activity_id``, ``activity_date``, ``intensity_category``,
             ``headline``, ``plan``, ``signals``, ``zones``, ``moments``,
             ``flow``, ``recurrence``, ``phases``, ``conditions``,
-            ``vs_previous`` and ``next_run_target`` (see the module docstring
-            for who computes what). Every value is JSON-serialisable without a
-            custom encoder.
+            ``vs_previous``, ``next_run_target`` and ``next_session`` (see the
+            module docstring for who computes what). Every value is
+            JSON-serialisable without a custom encoder.
         """
         with self._get_connection() as conn:
             tables = _existing_tables(conn)
@@ -157,6 +208,7 @@ class RunReportReader(BaseDBReader):
             window_start = _shift_days(activity_date, -HISTORY_DAYS)
 
             runs = _fetch_window(conn, tables, window_start, activity_date)
+            _mark_extrapolated(conn, tables, runs, window_start, activity_date)
             today = runs.get(activity_id) or today_core
             history = _history_before(runs, activity_id, activity_date)
 
@@ -206,6 +258,10 @@ class RunReportReader(BaseDBReader):
             ],
         )
 
+        next_run_target = self._next_run_target(
+            activity_id, today, zone_rows, prescription
+        )
+
         return {
             "activity_id": int(activity_id),
             "activity_date": activity_date,
@@ -220,9 +276,8 @@ class RunReportReader(BaseDBReader):
             "phases": _phases(today),
             "conditions": _conditions(today, elevation),
             "vs_previous": _vs_previous(today, history),
-            "next_run_target": self._next_run_target(
-                activity_id, today, zone_rows, prescription
-            ),
+            "next_run_target": next_run_target,
+            "next_session": self._next_session(activity_date, next_run_target),
         }
 
     # ------------------------------------------------------------------ #
@@ -335,6 +390,43 @@ class RunReportReader(BaseDBReader):
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("next_run_target unavailable: %s", exc)
             return None
+
+    def _next_session(
+        self, activity_date: str, next_run_target: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
+        """What the athlete actually does next, or ``None`` when unknown.
+
+        ``next_run_target`` answers "what should the *next run of this kind*
+        look like", which is not the same question: on 2026-09-18 it described
+        the next easy run while the next scheduled session was a 16 km long run
+        two days later (#1267). The answer is looked up in order of how much is
+        known about the session:
+
+        1. the next prescribed **run** after the activity date (strength rows
+           and rows already marked ``skipped`` cannot be the next run),
+        2. the block's next long-run ladder step, whose day is the week's last
+           one by the same convention ``compute_week_position`` uses,
+        3. failing both, today's family projected forward -- a dateless target
+           that at least carries the right HR band.
+
+        The import is function-local because this module is imported *while*
+        the ``readers`` package is still initialising.
+        """
+        from garmin_mcp.database.readers.plan import PlanReader
+
+        try:
+            plan = PlanReader(str(self.db_path))
+        except Exception as exc:  # pragma: no cover - degraded DB only
+            logger.debug("no plan reader for next_session: %s", exc)
+            return _projected_session(next_run_target)
+
+        scheduled = _scheduled_session(plan, activity_date)
+        if scheduled is not None:
+            return scheduled
+        ladder = _ladder_session(plan, activity_date)
+        if ladder is not None:
+            return ladder
+        return _projected_session(next_run_target)
 
 
 # --------------------------------------------------------------------------- #
@@ -490,6 +582,163 @@ def _fetch_window(
                 target["n_valid_splits"] = int(row[1])
 
     return runs
+
+
+def _mark_extrapolated(
+    conn: Any,
+    tables: set[str],
+    runs: dict[int, dict[str, Any]],
+    window_start: str,
+    activity_date: str,
+) -> None:
+    """Flag the runs whose form expectations are extrapolations, in place.
+
+    A form baseline only knows the speeds it was trained on. The model covering
+    2026-09-09 was fitted on 1.97-2.38 m/s easy running, so the 2.70 m/s tempo
+    run of that day was handed an expectation the curve had never been asked
+    for -- and its "high vertical ratio" was reported as a form problem
+    (#1273). ``form_evaluations`` does not persist the flag, so it is recomputed
+    here from the run's evaluation speed and the covering baseline's range.
+
+    Every run of the window is judged, not just today: an extrapolated history
+    row is dropped from that metric's baseline by
+    ``run_signals._eligibility_reason``, so a tempo run can neither widen nor
+    shift the band an easy run is judged against.
+    """
+    speeds = _fetch_evaluation_speeds(conn, tables, window_start, activity_date)
+    if not speeds:
+        return
+    ranges = _fetch_baseline_ranges(conn, tables, activity_date)
+    if not ranges:
+        return
+
+    periods = sorted({period for period, _metric in ranges})
+    for activity_id, run in runs.items():
+        speed = speeds.get(activity_id)
+        if not speed:
+            continue
+        period = _select_baseline_period(periods, str(run["activity_date"]))
+        if period is None:
+            continue
+        for metric in _FORM_METRICS:
+            speed_range = ranges.get((period, metric))
+            if speed_range is None:
+                continue
+            if extrapolation_factor(speed_range, speed) >= EXTRAPOLATION_NOT_JUDGED:
+                run[f"{metric}_extrapolated"] = True
+
+
+def _fetch_evaluation_speeds(
+    conn: Any, tables: set[str], window_start: str, activity_date: str
+) -> dict[int, float]:
+    """``{activity_id: m/s}`` each run's form metrics were evaluated at.
+
+    The same population ``form_baseline.data_fetcher.get_splits_data`` averages:
+    the run-phase splits of ``performance_trends.run_splits`` carrying form
+    metrics, with walk breaks and GPS fragments filtered out, falling back to
+    the unfiltered average when the filter matches nothing (a walk-dominated
+    session). One query for the whole window -- a per-run loop here would turn
+    one page view into hundreds of queries.
+    """
+    if "splits" not in tables:
+        return {}
+
+    join = phase_clause = ""
+    if "performance_trends" in tables:
+        join = "LEFT JOIN performance_trends p ON p.activity_id = s.activity_id"
+        # ``run_splits`` is the persisted "3,4,6,7" list of split indices.
+        phase_clause = (
+            "AND (p.run_splits IS NULL OR TRIM(p.run_splits) = '' "
+            "OR list_contains("
+            "list_transform(str_split(p.run_splits, ','), "
+            "x -> TRY_CAST(TRIM(x) AS INTEGER)), s.split_index))"
+        )
+
+    rows = conn.execute(
+        f"""
+        SELECT s.activity_id,
+               AVG(CASE WHEN {running_split_sql("s")}
+                        THEN s.pace_seconds_per_km END),
+               AVG(s.pace_seconds_per_km)
+        FROM splits s {join}
+        WHERE s.activity_id IN (
+                  SELECT activity_id FROM activities
+                  WHERE activity_date
+                        BETWEEN CAST(? AS DATE) AND CAST(? AS DATE))
+          AND s.ground_contact_time IS NOT NULL
+          AND s.vertical_oscillation IS NOT NULL
+          AND s.vertical_ratio IS NOT NULL
+          {phase_clause}
+        GROUP BY s.activity_id
+        """,
+        [*running_split_params(), window_start, activity_date],
+    ).fetchall()
+
+    speeds: dict[int, float] = {}
+    for row in rows:
+        pace = _as_float(row[1]) or _as_float(row[2])
+        if pace and pace > 0:
+            speeds[int(row[0])] = 1000.0 / pace
+    return speeds
+
+
+def _fetch_baseline_ranges(
+    conn: Any, tables: set[str], activity_date: str
+) -> dict[tuple[tuple[str, str], str], tuple[float | None, float | None]]:
+    """``{((period_start, period_end), metric): (min, max)}`` speed ranges."""
+    if "form_baseline_history" not in tables:
+        return {}
+
+    placeholders = ", ".join("?" for _ in _FORM_METRICS)
+    rows = conn.execute(
+        f"""
+        SELECT metric, CAST(period_start AS VARCHAR), CAST(period_end AS VARCHAR),
+               speed_range_min, speed_range_max
+        FROM form_baseline_history
+        WHERE user_id = ? AND condition_group = ?
+          AND metric IN ({placeholders})
+          AND period_start <= CAST(? AS DATE)
+        """,
+        [
+            _BASELINE_USER_ID,
+            _BASELINE_CONDITION_GROUP,
+            *_FORM_METRICS,
+            activity_date,
+        ],
+    ).fetchall()
+
+    return {
+        ((str(row[1]), str(row[2])), str(row[0])): (
+            _as_float(row[3]),
+            _as_float(row[4]),
+        )
+        for row in rows
+    }
+
+
+def _select_baseline_period(
+    periods: list[tuple[str, str]], run_date: str
+) -> tuple[str, str] | None:
+    """The baseline window a run's date is read against, or ``None``.
+
+    The same rule as ``form_baseline.model_loader.load_models_from_db``: a
+    period that *covers* the date wins over one that has already ended (a
+    baseline's ``period_end`` is the nominal end of its training window, not the
+    cut-off of the data behind it), and ties break on the most recent window.
+    """
+    candidates = [period for period in periods if period[0] <= run_date]
+    if not candidates:
+        return None
+    ordered = sorted(
+        candidates,
+        key=lambda period: (
+            period[0] if period[1] >= run_date else period[1],
+            period[1],
+            period[0],
+        ),
+        reverse=True,
+    )
+    return min(ordered, key=lambda period: 0 if period[1] >= run_date else 1)
 
 
 def _fetch_zone_rows(conn: Any, activity_id: int) -> list[tuple[Any, ...]]:
@@ -656,7 +905,7 @@ def _plan_block(
         checks.append(
             _check(
                 "intensity",
-                _intensity_label(prescription.get("session_type")),
+                _target_intensity_label(prescription.get("session_type")),
                 _intensity_label(
                     today.get("training_type") or today.get("intensity_category")
                 ),
@@ -692,18 +941,34 @@ def _intensity_label(raw: Any) -> str:
     The plan card used to print the prescription's ``session_type`` against the
     activity's ``training_type`` -- ``easy`` vs ``aerobic_base`` -- so a run
     that answered its plan exactly still read as a mismatch. Both sides are
-    resolved through the same intensity family (``resolve_intensity_category``)
-    and printed in one label set; the distinctions that family drops (a long
-    run and a recovery run are both "easy") are kept by matching the raw label
-    first.
+    resolved through the same intensity family (``resolve_intensity_category``,
+    with the plan's own session words mapped onto it) and printed in one label
+    set; the one distinction kept is recovery, which the athlete runs as its own
+    session rather than as an easy run.
     """
     label = str(raw or "").strip().lower()
     if not label:
         return "-"
     if label in _RAW_INTENSITY_LABELS:
         return _RAW_INTENSITY_LABELS[label]
+    if label in _PLAN_INTENSITY_LABELS:
+        return _PLAN_INTENSITY_LABELS[label]
     family = resolve_intensity_category(label, 0.0, 0.0, 0.0, 0.0, 0.0, None)
     return _FAMILY_INTENSITY_LABELS.get(family, label)
+
+
+def _target_intensity_label(session_type: Any) -> str:
+    """The prescribed intensity, plus what the session type says beyond it.
+
+    The row compares intensity, so both sides must be the intensity family:
+    printing the session type (``ロング``) against the run's family
+    (``イージー``) made an on-plan long run read as a mismatch (#1273). The
+    session word is kept as a parenthesis on the target -- ``イージー（ロング走）``
+    -- where it explains the target without pretending to be a second axis.
+    """
+    label = _intensity_label(session_type)
+    suffix = _SESSION_TYPE_SUFFIX_JA.get(str(session_type or "").strip().lower())
+    return f"{label}（{suffix}）" if suffix and label != "-" else label
 
 
 def _check(axis: str, target: str, actual: str, on_plan: bool) -> dict[str, Any]:
@@ -855,6 +1120,123 @@ def _comparable(run: dict[str, Any]) -> dict[str, Any]:
         "cadence_spm": _as_float(run.get("cadence_actual")),
         "decoupling_pct": None,
     }
+
+
+def _scheduled_session(plan: Any, activity_date: str) -> dict[str, Any] | None:
+    """The next prescribed run after ``activity_date``, or ``None``.
+
+    Rows the athlete cannot answer with a run (strength, cross-training, a rest
+    day) and rows already marked ``skipped`` are passed over, so "what is next"
+    is the next time they actually go running.
+    """
+    try:
+        rows = plan.list_prescriptions(
+            _shift_days(activity_date, 1),
+            _shift_days(activity_date, _NEXT_SESSION_HORIZON_DAYS),
+        )
+    except Exception as exc:  # pragma: no cover - degraded DB only
+        logger.debug("no prescriptions after %s: %s", activity_date, exc)
+        return None
+
+    for row in rows:
+        if str(row.get("status") or "").strip().lower() == "skipped":
+            continue
+        session_type = row.get("session_type")
+        if not _is_run_session(session_type):
+            continue
+        on_date = str(row.get("date") or "")[:10]
+        if not on_date:
+            continue
+        return {
+            "date": on_date,
+            "days_ahead": _days_between(activity_date, on_date),
+            "session_type": str(session_type),
+            "session_label_ja": _target_intensity_label(session_type),
+            "title": row.get("title"),
+            "target_km": _as_float(row.get("target_km")),
+            "target_minutes": _as_int(row.get("target_minutes")),
+            "hr_low": _as_int(row.get("hr_low")),
+            "hr_high": _as_int(row.get("hr_high")),
+            "source": "prescription",
+        }
+    return None
+
+
+def _ladder_session(plan: Any, activity_date: str) -> dict[str, Any] | None:
+    """The block's next long-run ladder step, or ``None`` when there is none.
+
+    The long run is the week's last day by the same convention
+    ``compute_week_position`` uses, so the step's ``week_start`` fixes its date
+    without the plan having been written out day by day yet.
+    """
+    try:
+        week_start = plan.resolve_week_start(activity_date)
+        ladder_step = plan.get_ladder_step_for_week(week_start)
+    except Exception as exc:  # pragma: no cover - degraded DB only
+        logger.debug("no ladder step for %s: %s", activity_date, exc)
+        return None
+
+    step = (ladder_step or {}).get("next")
+    if not isinstance(step, dict) or not step.get("week_start"):
+        return None
+
+    on_date = _shift_days(str(step["week_start"]), 6)
+    days_ahead = _days_between(activity_date, on_date)
+    if days_ahead is None or days_ahead <= 0:
+        return None
+    return {
+        "date": on_date,
+        "days_ahead": days_ahead,
+        "session_type": "long",
+        "session_label_ja": _target_intensity_label("long"),
+        "title": step.get("title"),
+        "target_km": _as_float(step.get("target_km")),
+        "target_minutes": _as_int(step.get("target_minutes")),
+        "hr_low": None,
+        "hr_high": None,
+        "source": "ladder",
+    }
+
+
+def _projected_session(next_run_target: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Today's family projected forward when the plan says nothing.
+
+    Dateless on purpose: nothing here knows *when* the next run happens, only
+    what kind of run it would be and the HR band it should be run at.
+    """
+    if not next_run_target or next_run_target.get("insufficient_data"):
+        return None
+    session_type = next_run_target.get("recommended_type")
+    if not session_type:
+        return None
+    return {
+        "date": None,
+        "days_ahead": None,
+        "session_type": str(session_type),
+        "session_label_ja": _target_intensity_label(session_type),
+        "title": None,
+        "target_km": None,
+        "target_minutes": None,
+        "hr_low": _as_int(next_run_target.get("target_hr_low")),
+        "hr_high": _as_int(next_run_target.get("target_hr_high")),
+        "source": "same_type",
+    }
+
+
+def _is_run_session(session_type: Any) -> bool:
+    """Whether a prescribed session is one the athlete answers by running."""
+    session_class = intensity_class(session_type)
+    return session_class is not None and session_class != REST_INTENSITY_CLASS
+
+
+def _days_between(from_date: str, to_date: str) -> int | None:
+    """Whole days from ``from_date`` to ``to_date`` (``None`` when unparseable)."""
+    try:
+        start = date.fromisoformat(from_date[:10])
+        end = date.fromisoformat(to_date[:10])
+    except ValueError:  # pragma: no cover - defensive
+        return None
+    return (end - start).days
 
 
 def _actual(today: dict[str, Any]) -> dict[str, Any]:

@@ -30,8 +30,9 @@ is restricted to the **same intensity family**, which is what turned a useless
 What is *not* judged is as important as what is. A metric comes back
 ``insufficient`` with a ``reason`` when the run has fewer than
 ``MIN_VALID_SPLITS`` running splits (its averages describe a warmup), when the
-form model was extrapolated beyond its trained speed range, when the value is
-missing, when fewer than ``MIN_BASELINE_RUNS`` comparable prior runs exist, or
+form model was extrapolated far beyond its trained speed range (the caller sets
+``{metric}_extrapolated``, see ``normal_range.EXTRAPOLATION_NOT_JUDGED``), when
+the value is missing, when fewer than ``MIN_BASELINE_RUNS`` prior runs exist, or
 -- for HR drift -- when the run was hot enough
 (``DECOUPLING_CONTAMINATION_TEMP_C``) that the drift is thermal, not durability.
 Silence beats a confident number built on three runs.
@@ -74,7 +75,11 @@ _TEMP_KEYS = ("temp", "temp_c", "temp_celsius")
 #: Reasons a signal is not judged.
 REASON_SHORT_RUN = "only {n} running splits (need {required})"
 REASON_NO_SPLIT_COUNT = "the run's valid-split count is unknown"
-REASON_EXTRAPOLATED = "pace lies outside the form model's trained speed range"
+# Written in Japanese because the page prints ``reason`` verbatim under the
+# metric, and this is the one reason an ordinary quality session triggers: a
+# tempo run judged by an easy-run model is a reference value, not a finding
+# (#1273).
+REASON_EXTRAPOLATED = "学習した速度の範囲から大きく外れているため参考値"
 REASON_NO_HR_MODEL = "no fitted heat-adjustment model"
 REASON_NO_HR_INPUTS = "pace, temperature or HR missing for the expected-HR read"
 REASON_HOT = (

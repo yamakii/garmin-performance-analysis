@@ -33,6 +33,7 @@ _REPORT_KEYS = {
     "conditions",
     "vs_previous",
     "next_run_target",
+    "next_session",
 }
 
 

@@ -6,9 +6,9 @@ from garmin_mcp.form_baseline.scorer import (
     IMPROVEMENT_FACTOR,
     _compute_consistency_adjustment,
     _compute_penalty,
-    _extrapolation_factor,
     _sigma_pct,
     compute_star_rating,
+    extrapolation_factor,
     score_observation,
 )
 from garmin_mcp.form_baseline.trainer import GCTPowerModel, LinearModel
@@ -592,13 +592,27 @@ class TestConsistencyAdjustment:
 class TestExtrapolationGuard:
     """Predicting outside a baseline's trained speed range (#1088)."""
 
+    def test_extrapolation_factor_is_public_and_graded(self) -> None:
+        """The run report grades a speed with the same public function (#1273).
+
+        Trained on 1.97-2.38 m/s (the model covering 2026-09-09): the everyday
+        easy run just outside it is barely inflated, the tempo run far outside
+        it more than doubles sigma -- which is why one is still judged and the
+        other is not.
+        """
+        speed_range = (1.97, 2.38)
+
+        assert extrapolation_factor(speed_range, 2.20) == 1.0
+        assert extrapolation_factor(speed_range, 2.40) == pytest.approx(1.09, abs=0.02)
+        assert extrapolation_factor(speed_range, 2.70) == pytest.approx(2.33, abs=0.05)
+
     def test_extrapolation_factor_inside_range_is_one(self) -> None:
         """A speed within the trained range gets no sigma inflation."""
         model = LinearModel(
             a=10.0, b=-1.0, rmse=0.2, n_samples=100, speed_range=(2.0, 2.5)
         )
 
-        assert _extrapolation_factor(model, 2.2) == 1.0
+        assert extrapolation_factor(model.speed_range, 2.2) == 1.0
 
     def test_extrapolation_factor_above_range_scales_with_distance(self) -> None:
         """The real 2026-09-09 case inflates sigma by ~1.42x.
@@ -614,7 +628,7 @@ class TestExtrapolationGuard:
             speed_range=(1.9248, 2.5476),
         )
 
-        assert abs(_extrapolation_factor(model, 2.7025) - 1.42) < 0.03
+        assert abs(extrapolation_factor(model.speed_range, 2.7025) - 1.42) < 0.03
 
     def test_extrapolation_factor_below_range(self) -> None:
         """Slower than anything trained on also inflates sigma."""
@@ -622,7 +636,7 @@ class TestExtrapolationGuard:
             a=10.0, b=-1.0, rmse=0.2, n_samples=100, speed_range=(2.0, 2.5)
         )
 
-        assert _extrapolation_factor(model, 1.8) > 1.0
+        assert extrapolation_factor(model.speed_range, 1.8) > 1.0
 
     def test_extrapolation_factor_degenerate_range_returns_one(self) -> None:
         """A zero-width speed range cannot normalize a distance -> no inflation."""
@@ -630,7 +644,7 @@ class TestExtrapolationGuard:
             a=10.0, b=-1.0, rmse=0.2, n_samples=100, speed_range=(2.5, 2.5)
         )
 
-        assert _extrapolation_factor(model, 3.0) == 1.0
+        assert extrapolation_factor(model.speed_range, 3.0) == 1.0
 
     @staticmethod
     def _narrowed(models: dict) -> dict:
