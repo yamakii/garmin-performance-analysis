@@ -126,6 +126,7 @@ _RUN_REPORT_KEYS = {
     "signals",
     "zones",
     "moments",
+    "flow",
     "recurrence",
     "phases",
     "conditions",
@@ -139,6 +140,16 @@ _CONDITIONS_KEYS = {
     "wind_mps",
     "terrain",
     "elevation_gain_m",
+}
+# The series the run-flow chart draws, plus the axis it is drawn on (#1268).
+# The frontend must not re-filter the splits, so it reads these keys directly.
+_FLOW_KEYS = {
+    "axis",
+    "total_km",
+    "total_s",
+    "segments",
+    "steps",
+    "fragments",
 }
 
 
@@ -336,6 +347,7 @@ def test_run_report_response_contract(detail_db_path: Any) -> None:
     assert set(report) == _RUN_REPORT_KEYS
     _assert_keys_present(report["headline"], _HEADLINE_KEYS, "RunReport.headline")
     _assert_keys_present(report["conditions"], _CONDITIONS_KEYS, "RunReport.conditions")
+    _assert_keys_present(report["flow"], _FLOW_KEYS, "RunReport.flow")
     for block in ("signals", "zones", "moments", "recurrence", "phases"):
         assert isinstance(report[block], list), f"RunReport.{block} must be a list"
 

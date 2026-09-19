@@ -831,7 +831,10 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             ),
             "flow": (
                 "Narrate how the run unfolded scene by scene (the moments), "
-                "not kilometre by kilometre"
+                "not kilometre by kilometre. Place each scene by its own "
+                "label_ja: a unit='km' scene is a stretch of road ('3–5 km'), "
+                "a unit='step' scene is a step of the session ('1本目', "
+                "'レスト1') -- never a lap or split number"
             ),
             "weighting": (
                 "Say which of the findings actually matters and which the "
@@ -860,6 +863,9 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "A pass/fail judgement of the athlete -- growth points are room to "
             "grow or a maintenance target",
             "A scene, cause or comparison that no evidence key supports",
+            "A lap / split number as a place in the run -- a scene is placed "
+            "by distance ('3–5 km') or by step ('2本目'), which is what its "
+            "label_ja already says",
         ],
         # How an ``evidence`` / ``moment_id`` / ``signal`` key is resolved by
         # ``validators.check_run_note_grounding`` at merge time.
@@ -896,7 +902,13 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             ),
             "timeline": (
                 "One item per scene in report.moments, in order; an uneventful "
-                "run gets exactly one item on the 'steady' scene. Never invent a "
+                "run gets exactly one item on the 'steady' scene. A scene is "
+                "placed by its label_ja and its km_from / km_to / t_from_s "
+                "(distances and times into the run), never by a lap number. "
+                "kind is start / fast_start / surge / ceiling_touch / "
+                "walk_break / climb / fade / strong_finish / progression / "
+                "steady for unit='km' scenes, and warmup / rep / rest / main / "
+                "cooldown / work_set for unit='step' scenes. Never invent a "
                 "scene the moments do not contain"
             ),
             "next_challenge": (

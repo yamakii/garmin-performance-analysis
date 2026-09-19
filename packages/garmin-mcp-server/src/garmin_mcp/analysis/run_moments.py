@@ -1,4 +1,5 @@
-"""Deterministic *scene* detection for a single run (pure, no I/O) -- #1249, #1261.
+"""Deterministic *scene* detection for a single run (pure, no I/O) -- #1249,
+#1261, #1268.
 
 The split section used to narrate every kilometre ("全スプリット例外なく"), which
 is a numeric readout the table already shows. The redesign keeps prose only for
@@ -7,16 +8,36 @@ points *deterministically* from the split rows, so the LLM's job shrinks to
 selecting and explaining them -- it cannot invent a scene, because a merge guard
 checks the ``moment_id``s it cites against :func:`detect_moments` output.
 
-Two functions, both pure and JSON-serialisable:
+Four functions, all pure and JSON-serialisable:
 
+- :func:`build_steps` -- one run's split rows -> its steps (warmup / reps /
+  rests / main set / cooldown), fragments absorbed.
+- :func:`build_flow` -- the series the chart draws, plus the axis it is drawn
+  on. One fragment rule for pace and heart rate alike.
 - :func:`detect_moments` -- one run's split rows -> at most ``MAX_MOMENTS``
-  scenes, ordered by ``km_from``.
+  scenes, ordered by position in the run.
 - :func:`detect_recurrence` -- today's scenes plus the previous same-family runs
   -> the kinds that keep happening at the same place in the run.
 
-Design notes that are easy to get wrong when editing. Every one of them is a
-correction the first cut needed once it met real activities (#1261):
+**Where a scene is drawn and what it is called are two different things**
+(#1268). The first cut returned ``split_index`` as ``km_from``, so a run with a
+0.11 km fragment or a manual lap drew its scenes at the wrong place and named
+them after lap numbers. Now:
 
+* **Position** is a real continuous quantity, cumulative over *every* split:
+  ``km_from`` / ``km_to`` (distance) and ``t_from_s`` / ``t_to_s`` (elapsed
+  time). Fragments count for positions -- they are part of the run.
+* **Name** (``label_ja``, ``unit``) is the unit the athlete thinks in. A steady
+  run is narrated in kilometres ("3–5 km"); a rep session is narrated by its
+  steps ("1本目", "レスト1"), because one rep can be recorded as two splits and
+  a 120 s rest covers 0.18 km -- invisible on a distance axis.
+
+Design notes that are easy to get wrong when editing. Every one of them is a
+correction the earlier cuts needed once they met real activities (#1261, #1268):
+
+* **``role_phase`` is primary, ``intensity_type`` only a fallback.** 72 plain
+  runs carry ``intensity_type = INTERVAL`` on every split; reading that as rep
+  structure would put an interval story on an easy run.
 * **A momentary peak is not a ceiling touch.** Every kilometre has an HR spike;
   the 9/17 run peaked at 155 bpm inside a kilometre averaging 131 against a 150
   ceiling. Contact has to be *sustained* (:func:`_is_ceiling_touch`), or the
@@ -26,17 +47,18 @@ correction the first cut needed once it met real activities (#1261):
   several rules at once (a ceiling touch on a climb). Each kind gets its own
   qualifying splits -- same-kind stretches separated by at most
   ``MERGE_GAP_SPLITS`` merge into one scene -- and afterwards
-  :func:`_resolve_overlaps` hands every kilometre to the highest-priority scene
+  :func:`_resolve_overlaps` hands every split to the highest-priority scene
   claiming it, trimming the losers. One event never draws two bands.
 * **The end of the run must survive the cap.** A 25 km run that spends its
   middle on the ceiling would otherwise fill all five slots there and drop the
   story of the day (the closing 3 km). ``MAX_PER_KIND`` bounds a single kind
   before the global ``MAX_MOMENTS`` cut.
-* **Fragments are dropped before anything is measured.** Manual lap presses
-  leave 5-11 m laps whose pace is a measurement artifact (as fast as 4:04/km),
-  which would otherwise fake a surge or a ceiling touch. The threshold is
-  ``MIN_SPLIT_KM`` from ``form_baseline.split_filter`` so this module and the
-  form baseline cannot drift apart.
+* **Fragments are dropped before anything is measured** *inside a long step*.
+  Manual lap presses leave 5-11 m laps whose pace is a measurement artifact (as
+  fast as 4:04/km), which would otherwise fake a surge or a ceiling touch. The
+  threshold is ``MIN_SPLIT_KM`` from ``form_baseline.split_filter`` so this
+  module and the form baseline cannot drift apart. Inside a *short* step a
+  fragment is absorbed instead: the 1.0 + 0.11 km rep is one 1.11 km rep.
 * **Walk laps do not move the run median.** The median pace every rule is
   measured against is taken over *running* splits only
   (``MAX_RUNNING_PACE_S_PER_KM``); a run with several walk breaks would
@@ -52,10 +74,43 @@ from collections.abc import Mapping, Sequence
 from statistics import median
 from typing import Any
 
+from garmin_mcp.analysis.derivations import detect_progression_session
 from garmin_mcp.form_baseline.split_filter import (
     MAX_RUNNING_PACE_S_PER_KM,
     MIN_SPLIT_KM,
 )
+
+# --- Steps ------------------------------------------------------------------
+
+# The roles a split can carry, in the order a run executes them.
+ROLES: tuple[str, ...] = ("warmup", "run", "recovery", "cooldown")
+
+# A step long enough to be narrated kilometre by kilometre instead of as one
+# block: three splits that are not fragments.
+LONG_STEP_MIN_SPLITS = 3
+
+# A rep session needs at least this many ``run`` steps alternating with at
+# least this many ``recovery`` steps. Below that the run is a plain run with
+# bookends, narrated on a distance axis.
+REP_MIN_RUN_STEPS = 2
+REP_MIN_RECOVERY_STEPS = 1
+
+# Garmin ``intensity_type`` -> role, used only when ``role_phase`` is null.
+_INTENSITY_ROLES: dict[str, str] = {
+    "WARMUP": "warmup",
+    "INTERVAL": "run",
+    "ACTIVE": "run",
+    "RECOVERY": "recovery",
+    "REST": "recovery",
+    "COOLDOWN": "cooldown",
+}
+
+# role -> (long label, chart label) for the steps that are not numbered reps.
+_ROLE_LABELS: dict[str, tuple[str, str]] = {
+    "warmup": ("ウォームアップ", "アップ"),
+    "run": ("本編", "本編"),
+    "cooldown": ("クールダウン", "ダウン"),
+}
 
 # --- Scene thresholds -------------------------------------------------------
 
@@ -128,11 +183,14 @@ RECURRENCE_MIN_COUNT = 2
 
 # Most-to-least newsworthy, in tiers: kinds inside a tier rank equally (a fade
 # and a strong finish are both "how it ended"). Decides which scene keeps a
-# contested kilometre and which scenes survive the ``MAX_MOMENTS`` cap.
+# contested split and which scenes survive the ``MAX_MOMENTS`` cap.
 _PRIORITY: tuple[tuple[str, ...], ...] = (
     ("ceiling_touch",),
-    ("fade", "strong_finish"),
+    ("fade", "strong_finish", "progression"),
+    ("work_set", "rep"),
     ("walk_break",),
+    ("steady", "main"),
+    ("rest", "warmup", "cooldown"),
     ("fast_start",),
     ("surge",),
     ("climb",),
@@ -148,63 +206,133 @@ _RANK: dict[str, int] = {
 _Candidate = tuple[str, list[int]]
 
 
+def build_steps(splits: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Group a run's splits into the steps the athlete ran.
+
+    A step is a maximal run of consecutive splits sharing a ``role_phase``
+    (``intensity_type`` is consulted only when ``role_phase`` is null). A
+    fragment is *absorbed* into its step, so the 1.0 + 0.11 km rep of the 4/20
+    threshold session is one 1.11 km / 360 s step.
+
+    Args:
+        splits: The run's split rows, in order (see :func:`detect_moments` for
+            the fields read).
+
+    Returns:
+        ``[{"id": "s1", "role", "label_ja", "short_ja", "rep_no", "split_from",
+        "split_to", "start_km", "end_km", "start_s", "end_s", "distance_km",
+        "duration_s", "pace_s_per_km", "avg_hr", "max_hr", "is_long"}]`` in run
+        order. ``avg_hr`` is time-weighted; ``rep_no`` is ``None`` outside a rep
+        session.
+    """
+    return [_public_step(step) for step in _steps(_positioned_splits(splits))]
+
+
+def build_flow(splits: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """The series the chart draws, and the axis it is drawn on.
+
+    The report ships what the chart draws so pace and heart rate cannot apply
+    different fragment rules -- the shipped page dropped the sub-0.4 km splits
+    from the pace line while still plotting them on the HR line (#1268).
+
+    Args:
+        splits: The run's split rows, in order.
+
+    Returns:
+        ``{"axis": "distance" | "time", "total_km", "total_s", "segments",
+        "steps", "fragments"}``. ``segments`` is one entry per drawn split
+        inside a long step (and inside a single-step run) and one entry per
+        *whole* short step; ``fragments`` counts the splits that are neither
+        drawn nor absorbed.
+    """
+    positioned = _positioned_splits(splits)
+    steps = _steps(positioned)
+    single = len(steps) == 1
+
+    segments: list[dict[str, Any]] = []
+    fragment_rows: list[dict[str, Any]] = []
+    for step in steps:
+        rows = step["rows"]
+        if not (single or step["is_long"]):
+            segments.append(_segment(step, rows))
+            continue
+        for row in rows:
+            if _is_drawable(row):
+                segments.append(_segment(step, [row]))
+            else:
+                fragment_rows.append(row)
+
+    return {
+        "axis": "time" if _has_rep_structure(steps) else "distance",
+        "total_km": _round3(sum(row["distance_km"] for row in positioned)),
+        "total_s": _round1(sum(row["duration_s"] for row in positioned)),
+        "segments": segments,
+        "steps": [_public_step(step) for step in steps],
+        "fragments": {
+            "count": len(fragment_rows),
+            "distance_km": _round3(sum(row["distance_km"] for row in fragment_rows)),
+        },
+    }
+
+
 def detect_moments(
-    splits: Sequence[Mapping[str, Any]], *, hr_ceiling: int | None
+    splits: Sequence[Mapping[str, Any]],
+    *,
+    hr_ceiling: int | None,
+    prescription: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Detect the turning points of one run.
 
     Args:
         splits: The run's split rows, in order. Each row is read for
             ``split_index``, ``distance_km``, ``pace_s_per_km``, ``avg_hr``,
-            ``max_hr``, ``cadence`` and ``elevation_gain_m``; missing or ``None``
-            fields simply disable the rules that need them.
+            ``max_hr``, ``cadence``, ``elevation_gain_m``, ``role_phase``,
+            ``intensity_type`` and the timing fields ``start_s`` / ``end_s`` /
+            ``duration_s``; missing or ``None`` fields simply disable the rules
+            that need them.
         hr_ceiling: The prescription's heart-rate ceiling, or ``None`` when the
             run was not prescribed one. Without it no ``ceiling_touch`` scene
             can exist.
+        prescription: The day's prescription row, consulted only to let a
+            prescribed build-up count as a ``progression`` on its heart-rate
+            ramp alone.
 
     Returns:
-        ``[{"id": "m1", "kind": ..., "km_from": int, "km_to": int,
-        "facts": {...}}]`` ordered by ``km_from``, ids renumbered ``m1..mN``
-        with ``N <= MAX_MOMENTS``. Scenes never share a kilometre. ``kind`` is
-        one of ``start``, ``fast_start``, ``surge``, ``ceiling_touch``,
-        ``walk_break``, ``climb``, ``fade``, ``strong_finish``, ``steady``.
-        JSON-serialisable throughout. An uneventful run returns a single
-        ``steady`` scene; no valid split returns ``[]``.
+        ``[{"id": "m1", "kind", "unit", "label_ja", "km_from", "km_to",
+        "t_from_s", "t_to_s", "split_from", "split_to", "step_id", "facts"}]``
+        in run order, ids renumbered ``m1..mN`` with ``N <= MAX_MOMENTS``.
+        Scenes never share a split. ``unit`` is ``"km"`` for a scene drawn
+        inside a long step (``kind`` one of ``start``, ``fast_start``,
+        ``surge``, ``ceiling_touch``, ``walk_break``, ``climb``, ``fade``,
+        ``strong_finish``, ``progression``, ``steady``) and ``"step"`` for a
+        scene that *is* a step (``kind`` one of ``warmup``, ``rep``, ``rest``,
+        ``main``, ``cooldown``, ``work_set``). JSON-serialisable throughout; no
+        valid split returns ``[]``.
     """
-    valid = _valid_splits(splits)
-    if not valid:
+    positioned = _positioned_splits(splits)
+    if not positioned:
         return []
+    steps = _steps(positioned)
+    single = len(steps) == 1
 
-    run_median = _run_median_pace(valid)
-    first_third_median = _first_third_median_pace(valid)
+    scenes: list[dict[str, Any]] = []
+    for step in steps:
+        if single or step["is_long"]:
+            scenes.extend(
+                _km_scenes(
+                    step,
+                    hr_ceiling=hr_ceiling,
+                    prescription=prescription,
+                    named=not single,
+                )
+            )
+        else:
+            scenes.append(_step_scene(step, steps))
 
-    candidates = _candidate_scenes(
-        valid,
-        hr_ceiling=hr_ceiling,
-        run_median=run_median,
-        first_third_median=first_third_median,
-    )
-    candidates = _resolve_overlaps(valid, candidates)
-    if not any(kind != "start" for kind, _ in candidates):
-        return _number([_steady_scene(valid, run_median)])
-
-    candidates = _cap_per_kind(candidates, valid)
-    candidates = _cap_total(candidates, valid)
-
-    corrections = _corrections(valid)
-    scenes = [
-        _scene(
-            kind,
-            valid,
-            members,
-            hr_ceiling=hr_ceiling,
-            run_median=run_median,
-            first_third_median=first_third_median,
-            corrections=corrections,
-        )
-        for kind, members in candidates
-    ]
-    scenes.sort(key=lambda scene: (scene["km_from"], scene["km_to"]))
+    scenes = _collapse_work_set(scenes, steps)
+    scenes.sort(key=lambda scene: (scene["split_from"], scene["split_to"]))
+    if len(scenes) > MAX_MOMENTS:
+        scenes = _cap_scenes(scenes)
     return _number(scenes)
 
 
@@ -216,7 +344,8 @@ def detect_recurrence(
 
     A scene becomes a coaching observation only once it is a habit: "the HR
     ceiling gets touched around km 4 again" is worth saying, a single touch is
-    not.
+    not. A kilometre scene matches on its real distance into the run; a step
+    scene matches on ``(kind, rep_no)`` -- "the 3rd rep is where it goes".
 
     Args:
         today: Today's scenes, as returned by :func:`detect_moments`.
@@ -233,21 +362,22 @@ def detect_recurrence(
     """
     lookback = list(previous_runs[:RECURRENCE_LOOKBACK])
     results: list[dict[str, Any]] = []
-    seen: set[tuple[str, int]] = set()
+    seen: set[tuple[str, Any]] = set()
 
     for moment in today:
         kind = str(moment.get("kind") or "")
         if not kind or kind in {"start", "steady"}:
             continue
-        km = int(_as_float(moment.get("km_from")) or 0)
-        if (kind, km) in seen:
+        km = _round(_as_float(moment.get("km_from")) or 0.0)
+        key = (kind, moment.get("rep_no") if _is_step_scene(moment) else km)
+        if key in seen:
             continue
-        seen.add((kind, km))
+        seen.add(key)
 
         dates = [
             str(run.get("activity_date"))
             for run in lookback
-            if _run_has_moment_near(run, kind, km)
+            if _run_has_moment_near(run, moment)
         ]
         count = 1 + len(dates)
         if count < RECURRENCE_MIN_COUNT:
@@ -269,18 +399,394 @@ def detect_recurrence(
 # --- Split preparation ------------------------------------------------------
 
 
-def _valid_splits(splits: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """Drop GPS fragments and rows without a usable pace, keeping input order."""
-    valid: list[dict[str, Any]] = []
+def _positioned_splits(
+    splits: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Every split with its real position in the run, fragments included.
+
+    Positions are cumulative over *all* splits -- a 0.05 km fragment still
+    moves the athlete 50 m down the road, so dropping it here would shift every
+    later scene. Elapsed time is accumulated from each split's own duration
+    (``end_s - start_s`` when the device recorded them, else
+    ``duration_s``, else ``distance * pace``), which keeps the time axis
+    contiguous across a paused lap.
+    """
+    rows: list[dict[str, Any]] = []
+    cumulative_km = 0.0
+    cumulative_s = 0.0
     for split in splits:
-        distance = _as_float(split.get("distance_km"))
-        pace = _as_float(split.get("pace_s_per_km"))
-        if distance is None or distance < MIN_SPLIT_KM:
-            continue
-        if pace is None or pace <= 0:
-            continue
-        valid.append(dict(split))
-    return valid
+        distance = _as_float(split.get("distance_km")) or 0.0
+        duration = _split_duration(split, distance)
+        row = dict(split)
+        row["distance_km"] = distance
+        row["duration_s"] = duration
+        row["role"] = _role(split)
+        row["start_km"] = _round3(cumulative_km)
+        row["end_km"] = _round3(cumulative_km + distance)
+        row["start_s"] = _round1(cumulative_s)
+        row["end_s"] = _round1(cumulative_s + duration)
+        rows.append(row)
+        cumulative_km += distance
+        cumulative_s += duration
+    return rows
+
+
+def _split_duration(split: Mapping[str, Any], distance: float) -> float:
+    """How long one split took, from whichever timing the row carries."""
+    start = _as_float(split.get("start_s"))
+    end = _as_float(split.get("end_s"))
+    if start is not None and end is not None and end > start:
+        return end - start
+    duration = _as_float(split.get("duration_s"))
+    if duration is not None and duration > 0:
+        return duration
+    pace = _as_float(split.get("pace_s_per_km"))
+    return distance * pace if pace and pace > 0 else 0.0
+
+
+def _role(split: Mapping[str, Any]) -> str:
+    """The split's role: ``role_phase`` first, ``intensity_type`` as fallback.
+
+    72 plain runs carry ``intensity_type = INTERVAL`` on every split, so the
+    intensity type alone would read an easy run as a rep session (#1268).
+    """
+    role_phase = str(split.get("role_phase") or "").strip().lower()
+    if role_phase in ROLES:
+        return role_phase
+    intensity = str(split.get("intensity_type") or "").strip().upper()
+    return _INTENSITY_ROLES.get(intensity, "run")
+
+
+def _is_drawable(row: Mapping[str, Any]) -> bool:
+    """Whether a split is a measurement, not a manual-lap artifact."""
+    pace = _as_float(row.get("pace_s_per_km"))
+    return (row["distance_km"] or 0.0) >= MIN_SPLIT_KM and pace is not None and pace > 0
+
+
+# --- Steps ------------------------------------------------------------------
+
+
+def _steps(positioned: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Consecutive same-role splits as steps, labelled in the run's own unit."""
+    groups: list[list[dict[str, Any]]] = []
+    for row in positioned:
+        if groups and groups[-1][-1]["role"] == row["role"]:
+            groups[-1].append(dict(row))
+        else:
+            groups.append([dict(row)])
+
+    steps = [_step(rows, number) for number, rows in enumerate(groups, start=1)]
+    _label_steps(steps)
+    return steps
+
+
+def _step(rows: list[dict[str, Any]], number: int) -> dict[str, Any]:
+    """One step and its aggregates (fragments absorbed, HR time-weighted)."""
+    distance = sum(row["distance_km"] for row in rows)
+    duration = sum(row["duration_s"] for row in rows)
+    return {
+        "id": f"s{number}",
+        "role": rows[0]["role"],
+        "label_ja": "",
+        "short_ja": "",
+        "rep_no": None,
+        "split_from": _split_index(rows[0]),
+        "split_to": _split_index(rows[-1]),
+        "start_km": rows[0]["start_km"],
+        "end_km": rows[-1]["end_km"],
+        "start_s": rows[0]["start_s"],
+        "end_s": rows[-1]["end_s"],
+        "distance_km": _round3(distance),
+        "duration_s": _round1(duration),
+        "pace_s_per_km": _round(duration / distance) if distance > 0 else None,
+        "avg_hr": _weighted_hr(rows),
+        "max_hr": _max_hr(rows),
+        "is_long": sum(1 for row in rows if row["distance_km"] >= MIN_SPLIT_KM)
+        >= LONG_STEP_MIN_SPLITS,
+        "rows": rows,
+    }
+
+
+def _label_steps(steps: list[dict[str, Any]]) -> None:
+    """Name every step in the unit the athlete thinks in."""
+    reps = _has_rep_structure(steps)
+    rep_no = 0
+    rest_no = 0
+    for step in steps:
+        role = step["role"]
+        if role == "run" and reps:
+            rep_no += 1
+            step["rep_no"] = rep_no
+            step["label_ja"] = f"{rep_no}本目"
+            step["short_ja"] = f"{rep_no}本目"
+        elif role == "recovery":
+            rest_no += 1
+            step["label_ja"] = f"レスト{rest_no}" if reps else "リカバリー"
+            step["short_ja"] = "R"
+        else:
+            label, short = _ROLE_LABELS.get(role, ("本編", "本編"))
+            step["label_ja"] = label
+            step["short_ja"] = short
+
+
+def _has_rep_structure(steps: Sequence[Mapping[str, Any]]) -> bool:
+    """Whether ``run`` and ``recovery`` steps alternate -- a rep session.
+
+    Two run steps around a rest is the smallest thing worth narrating rep by
+    rep; anything less is a plain run whose natural unit is the kilometre.
+    """
+    runs = sum(1 for step in steps if step["role"] == "run")
+    rests = sum(1 for step in steps if step["role"] == "recovery")
+    return runs >= REP_MIN_RUN_STEPS and rests >= REP_MIN_RECOVERY_STEPS
+
+
+def _public_step(step: Mapping[str, Any]) -> dict[str, Any]:
+    """The step without its rows -- what the payload carries."""
+    return {key: value for key, value in step.items() if key != "rows"}
+
+
+def _segment(
+    step: Mapping[str, Any], rows: Sequence[Mapping[str, Any]]
+) -> dict[str, Any]:
+    """One drawn segment: a split of a long step, or a whole short step."""
+    distance = sum(row["distance_km"] for row in rows)
+    duration = sum(row["duration_s"] for row in rows)
+    return {
+        "split_from": _split_index(rows[0]),
+        "split_to": _split_index(rows[-1]),
+        "step_id": step["id"],
+        "start_km": rows[0]["start_km"],
+        "end_km": rows[-1]["end_km"],
+        "start_s": rows[0]["start_s"],
+        "end_s": rows[-1]["end_s"],
+        "pace_s_per_km": _round(duration / distance) if distance > 0 else None,
+        "avg_hr": _weighted_hr(rows),
+        "max_hr": _max_hr(rows),
+    }
+
+
+def _weighted_hr(rows: Sequence[Mapping[str, Any]]) -> float | int | None:
+    """Time-weighted average heart rate over the rows that recorded one."""
+    pairs = [
+        (hr, row["duration_s"])
+        for row in rows
+        if (hr := _as_float(row.get("avg_hr"))) is not None
+    ]
+    weight = sum(duration for _, duration in pairs)
+    if not pairs:
+        return None
+    if weight <= 0:
+        return _round(sum(hr for hr, _ in pairs) / len(pairs))
+    return _round(sum(hr * duration for hr, duration in pairs) / weight)
+
+
+def _max_hr(rows: Sequence[Mapping[str, Any]]) -> float | int | None:
+    """Peak heart rate over the rows that recorded one."""
+    values = [h for h in (_as_float(row.get("max_hr")) for row in rows) if h]
+    return _round(max(values)) if values else None
+
+
+def _split_index(row: Mapping[str, Any]) -> int:
+    """The lap number a split was recorded under."""
+    return int(_as_float(row.get("split_index")) or 0)
+
+
+# --- Step scenes ------------------------------------------------------------
+
+
+def _step_scene(
+    step: Mapping[str, Any], steps: Sequence[Mapping[str, Any]]
+) -> dict[str, Any]:
+    """A short step told as one scene: it *is* the unit the athlete ran."""
+    kind = _step_kind(step, steps)
+    facts: dict[str, Any] = {
+        "distance_km": step["distance_km"],
+        "duration_s": step["duration_s"],
+    }
+    for key in ("pace_s_per_km", "avg_hr", "max_hr"):
+        if step[key] is not None:
+            facts[key] = step[key]
+
+    if kind == "rest":
+        drop = _hr_drop(step, steps)
+        if drop is not None:
+            facts["hr_drop_bpm"] = drop
+    elif kind == "rep":
+        facts.update(_rep_facts(step, steps))
+
+    return _assemble_scene(
+        kind,
+        unit="step",
+        label_ja=str(step["label_ja"]),
+        step_id=str(step["id"]),
+        rep_no=step["rep_no"],
+        km_from=step["start_km"],
+        km_to=step["end_km"],
+        t_from_s=step["start_s"],
+        t_to_s=step["end_s"],
+        split_from=step["split_from"],
+        split_to=step["split_to"],
+        facts=facts,
+    )
+
+
+def _step_kind(step: Mapping[str, Any], steps: Sequence[Mapping[str, Any]]) -> str:
+    """``warmup`` / ``rep`` / ``rest`` / ``main`` / ``cooldown`` for a step."""
+    role = step["role"]
+    if role == "recovery":
+        return "rest"
+    if role == "run":
+        return "rep" if _has_rep_structure(steps) else "main"
+    return str(role)
+
+
+def _hr_drop(
+    step: Mapping[str, Any], steps: Sequence[Mapping[str, Any]]
+) -> float | int | None:
+    """How far heart rate came down during a rest, from the rep before it."""
+    previous = None
+    for candidate in steps:
+        if candidate["id"] == step["id"]:
+            break
+        if candidate["role"] == "run":
+            previous = candidate
+    if previous is None or previous["max_hr"] is None or step["avg_hr"] is None:
+        return None
+    return _round(float(previous["max_hr"]) - float(step["avg_hr"]))
+
+
+def _rep_facts(
+    step: Mapping[str, Any], steps: Sequence[Mapping[str, Any]]
+) -> dict[str, Any]:
+    """Every rep against the first one -- the only comparison a rep needs."""
+    first = next((s for s in steps if s["role"] == "run"), None)
+    facts: dict[str, Any] = {}
+    if first is None:
+        return facts
+    if step["pace_s_per_km"] is not None and first["pace_s_per_km"] is not None:
+        facts["pace_vs_first_s"] = _round(
+            float(step["pace_s_per_km"]) - float(first["pace_s_per_km"])
+        )
+    if step["max_hr"] is not None and first["max_hr"] is not None:
+        facts["max_hr_vs_first"] = _round(
+            float(step["max_hr"]) - float(first["max_hr"])
+        )
+    return facts
+
+
+def _collapse_work_set(
+    scenes: list[dict[str, Any]], steps: Sequence[Mapping[str, Any]]
+) -> list[dict[str, Any]]:
+    """Merge the reps and rests of a long rep session into one scene.
+
+    Eight reps would otherwise push the warmup and the cooldown out of the
+    five-scene cap, and "8本目まで維持" is the story anyway -- the per-rep
+    numbers ride along as facts.
+    """
+    if not _has_rep_structure(steps):
+        return scenes
+    work = [scene for scene in scenes if scene["kind"] in {"rep", "rest"}]
+    if len(scenes) <= MAX_MOMENTS or len(work) < 2:
+        return scenes
+
+    reps = [scene for scene in work if scene["kind"] == "rep"]
+    paces = [
+        pace
+        for scene in reps
+        if (pace := _as_float(scene["facts"].get("pace_s_per_km"))) is not None
+    ]
+    facts: dict[str, Any] = {
+        "reps": [_work_entry(scene) for scene in reps],
+        "rests": [_work_entry(scene) for scene in work if scene["kind"] == "rest"],
+    }
+    if len(paces) >= 2:
+        facts["first_vs_last_s"] = _round(paces[-1] - paces[0])
+        facts["pace_spread_s"] = _round(max(paces) - min(paces))
+
+    merged = _assemble_scene(
+        "work_set",
+        unit="step",
+        label_ja=f"本編（1〜{len(reps)}本目）",
+        step_id=str(work[0]["step_id"]),
+        rep_no=None,
+        km_from=work[0]["km_from"],
+        km_to=work[-1]["km_to"],
+        t_from_s=work[0]["t_from_s"],
+        t_to_s=work[-1]["t_to_s"],
+        split_from=work[0]["split_from"],
+        split_to=work[-1]["split_to"],
+        facts=facts,
+    )
+    kept = [scene for scene in scenes if scene["kind"] not in {"rep", "rest"}]
+    return [*kept, merged]
+
+
+def _work_entry(scene: Mapping[str, Any]) -> dict[str, Any]:
+    """One rep (or rest) as it appears inside a merged ``work_set``."""
+    entry: dict[str, Any] = {"label_ja": scene["label_ja"]}
+    if scene.get("rep_no") is not None:
+        entry["rep_no"] = scene["rep_no"]
+    for key in ("distance_km", "duration_s", "pace_s_per_km", "avg_hr", "max_hr"):
+        if key in scene["facts"]:
+            entry[key] = scene["facts"][key]
+    return entry
+
+
+# --- Kilometre scenes -------------------------------------------------------
+
+
+def _km_scenes(
+    step: Mapping[str, Any],
+    *,
+    hr_ceiling: int | None,
+    prescription: Mapping[str, Any] | None,
+    named: bool,
+) -> list[dict[str, Any]]:
+    """The turning points *inside* one long step, narrated in kilometres."""
+    valid = _valid_splits(step["rows"])
+    if not valid:
+        return []
+
+    prefix = f"{step['label_ja']} " if named else ""
+    if step["role"] == "run" and _is_progression(prescription, valid):
+        return [_progression_scene(step, valid, prefix)]
+
+    run_median = _run_median_pace(valid)
+    first_third_median = _first_third_median_pace(valid)
+
+    candidates = _candidate_scenes(
+        valid,
+        hr_ceiling=hr_ceiling,
+        run_median=run_median,
+        first_third_median=first_third_median,
+    )
+    candidates = _resolve_overlaps(valid, candidates)
+    if not any(kind != "start" for kind, _ in candidates):
+        return [_steady_scene(step, valid, run_median, prefix)]
+
+    candidates = _cap_per_kind(candidates, valid)
+    candidates = _cap_total(candidates, valid)
+
+    corrections = _corrections(valid)
+    return [
+        _km_scene(
+            kind,
+            step,
+            valid,
+            members,
+            prefix=prefix,
+            hr_ceiling=hr_ceiling,
+            run_median=run_median,
+            first_third_median=first_third_median,
+            corrections=corrections,
+        )
+        for kind, members in candidates
+    ]
+
+
+def _valid_splits(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Drop GPS fragments and rows without a usable pace, keeping input order."""
+    return [dict(row) for row in rows if _is_drawable(row)]
 
 
 def _run_median_pace(valid: Sequence[Mapping[str, Any]]) -> float:
@@ -302,6 +808,22 @@ def _first_third_median_pace(valid: Sequence[Mapping[str, Any]]) -> float:
 def _third_size(count: int) -> int:
     """Number of splits in a third of the run (at least one)."""
     return max(1, math.ceil(count / 3))
+
+
+def _is_progression(
+    prescription: Mapping[str, Any] | None, valid: Sequence[Mapping[str, Any]]
+) -> bool:
+    """Whether this step is the prescribed build-up, per ``derivations``."""
+    return detect_progression_session(
+        dict(prescription) if prescription is not None else None,
+        [
+            {
+                "avg_heart_rate": _as_float(row.get("avg_hr")),
+                "avg_pace_seconds_per_km": _as_float(row.get("pace_s_per_km")),
+            }
+            for row in valid
+        ],
+    )
 
 
 # --- Candidate scenes -------------------------------------------------------
@@ -360,7 +882,7 @@ def _merge_runs(indices: Sequence[int]) -> list[list[int]]:
     """Group indices into scenes, bridging gaps of ``MERGE_GAP_SPLITS`` splits.
 
     The bridged splits join the scene: a scene occupies its whole
-    ``km_from..km_to`` span, so its members and its kilometres must agree.
+    ``km_from..km_to`` span, so its members and its distance must agree.
     """
     groups: list[list[int]] = []
     for index in indices:
@@ -534,11 +1056,11 @@ def _strong_finish_members(
 def _resolve_overlaps(
     valid: Sequence[Mapping[str, Any]], candidates: Sequence[_Candidate]
 ) -> list[_Candidate]:
-    """Give every kilometre to the highest-priority scene claiming it.
+    """Give every split to the highest-priority scene claiming it.
 
     One event used to produce two adjacent bands -- a ceiling touch and the
     correction answering it -- which reads as two things happening. Now the
-    loser keeps only the kilometres nobody above it wants, and a scene trimmed
+    loser keeps only the splits nobody above it wants, and a scene trimmed
     to nothing is dropped.
     """
     ordered = sorted(
@@ -553,12 +1075,12 @@ def _resolve_overlaps(
     taken: set[int] = set()
     kept: list[_Candidate] = []
     for kind, members in ordered:
-        remaining = [i for i in members if _km(valid[i]) not in taken]
+        remaining = [i for i in members if i not in taken]
         if kind != "walk_break":
             remaining = _longest_block(remaining)
         if not remaining:
             continue
-        taken.update(_km(valid[i]) for i in remaining)
+        taken.update(remaining)
         kept.append((kind, remaining))
     return kept
 
@@ -588,9 +1110,7 @@ def _cap_per_kind(
     """
     counts: dict[str, int] = {}
     kept: list[_Candidate] = []
-    for kind, members in sorted(
-        candidates, key=lambda c: _kind_length_km_key(c, valid)
-    ):
+    for kind, members in sorted(candidates, key=lambda c: _kind_length_key(c, valid)):
         if counts.get(kind, 0) >= MAX_PER_KIND:
             continue
         counts[kind] = counts.get(kind, 0) + 1
@@ -601,24 +1121,39 @@ def _cap_per_kind(
 def _cap_total(
     candidates: Sequence[_Candidate], valid: Sequence[Mapping[str, Any]]
 ) -> list[_Candidate]:
-    """Keep the ``MAX_MOMENTS`` most newsworthy scenes."""
+    """Keep the ``MAX_MOMENTS`` most newsworthy scenes of one step."""
     ranked = sorted(
         candidates,
         key=lambda candidate: (
             _priority_rank(candidate[0]),
             -len(candidate[1]),
-            _km(valid[candidate[1][0]]),
+            candidate[1][0],
         ),
     )
     return ranked[:MAX_MOMENTS]
 
 
-def _kind_length_km_key(
+def _cap_scenes(scenes: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Keep the ``MAX_MOMENTS`` most newsworthy scenes of the whole run."""
+    ranked = sorted(
+        scenes,
+        key=lambda scene: (
+            _priority_rank(str(scene["kind"])),
+            -(int(scene["split_to"]) - int(scene["split_from"]) + 1),
+            int(scene["split_from"]),
+        ),
+    )
+    kept = [dict(scene) for scene in ranked[:MAX_MOMENTS]]
+    kept.sort(key=lambda scene: (scene["split_from"], scene["split_to"]))
+    return kept
+
+
+def _kind_length_key(
     candidate: _Candidate, valid: Sequence[Mapping[str, Any]]
 ) -> tuple[str, int, int]:
     """Sort key grouping scenes by kind, longest first, then earliest."""
     kind, members = candidate
-    return (kind, -len(members), _km(valid[members[0]]))
+    return (kind, -len(members), members[0])
 
 
 def _priority_rank(kind: str) -> int:
@@ -629,18 +1164,53 @@ def _priority_rank(kind: str) -> int:
 # --- Scene assembly ---------------------------------------------------------
 
 
-def _scene(
+def _assemble_scene(
     kind: str,
+    *,
+    unit: str,
+    label_ja: str,
+    step_id: str,
+    rep_no: int | None,
+    km_from: float,
+    km_to: float,
+    t_from_s: float,
+    t_to_s: float,
+    split_from: int,
+    split_to: int,
+    facts: dict[str, Any],
+) -> dict[str, Any]:
+    """One scene dict (``id`` is assigned later, once they are ordered)."""
+    return {
+        "id": "",
+        "kind": kind,
+        "unit": unit,
+        "label_ja": label_ja,
+        "step_id": step_id,
+        "rep_no": rep_no,
+        "km_from": km_from,
+        "km_to": km_to,
+        "t_from_s": t_from_s,
+        "t_to_s": t_to_s,
+        "split_from": split_from,
+        "split_to": split_to,
+        "facts": facts,
+    }
+
+
+def _km_scene(
+    kind: str,
+    step: Mapping[str, Any],
     valid: Sequence[Mapping[str, Any]],
     members: Sequence[int],
     *,
+    prefix: str,
     hr_ceiling: int | None,
     run_median: float,
     first_third_median: float,
     corrections: Mapping[int, float],
 ) -> dict[str, Any]:
-    """Build one scene dict (``id`` is assigned later, once they are ordered)."""
-    kms = [_km(valid[i]) for i in members]
+    """One scene inside a long step, positioned and named in kilometres."""
+    rows = [valid[i] for i in members]
     facts = _facts(
         kind,
         valid,
@@ -650,13 +1220,25 @@ def _scene(
         first_third_median=first_third_median,
         corrections=corrections,
     )
-    return {
-        "id": "",
-        "kind": kind,
-        "km_from": min(kms),
-        "km_to": max(kms),
-        "facts": facts,
-    }
+    label = (
+        _walk_label(facts["km_list"])
+        if kind == "walk_break"
+        else _span_label(rows[0]["start_km"], rows[-1]["end_km"])
+    )
+    return _assemble_scene(
+        kind,
+        unit="km",
+        label_ja=f"{prefix}{label}",
+        step_id=str(step["id"]),
+        rep_no=None,
+        km_from=rows[0]["start_km"],
+        km_to=rows[-1]["end_km"],
+        t_from_s=rows[0]["start_s"],
+        t_to_s=rows[-1]["end_s"],
+        split_from=_split_index(rows[0]),
+        split_to=_split_index(rows[-1]),
+        facts=facts,
+    )
 
 
 def _facts(
@@ -690,7 +1272,8 @@ def _facts(
             facts["hr_ceiling"] = int(hr_ceiling)
         _add_correction_facts(facts, valid, members, corrections)
     elif kind == "walk_break":
-        facts["km_list"] = [_km(row) for row in rows]
+        facts["km_list"] = [row["start_km"] for row in rows]
+        facts["split_list"] = [_split_index(row) for row in rows]
         cadences = [
             c for c in (_as_float(r.get("cadence")) for r in rows) if c is not None
         ]
@@ -737,26 +1320,75 @@ def _add_correction_facts(
     index = next((i for i in window if i in corrections), None)
     if index is None:
         return
-    facts["corrected_at_km"] = _km(valid[index])
+    facts["corrected_at_km"] = valid[index]["start_km"]
+    facts["corrected_at_split"] = _split_index(valid[index])
     facts["pace_drop_s_per_km"] = _round(corrections[index])
 
 
 def _steady_scene(
-    valid: Sequence[Mapping[str, Any]], run_median: float
+    step: Mapping[str, Any],
+    valid: Sequence[Mapping[str, Any]],
+    run_median: float,
+    prefix: str,
 ) -> dict[str, Any]:
-    """The whole run as one scene: nothing turned, and that is the story."""
+    """The whole step as one scene: nothing turned, and that is the story."""
     hrs = [h for h in (_as_float(s.get("avg_hr")) for s in valid) if h is not None]
     facts: dict[str, Any] = {"pace_s_per_km": _round(run_median)}
     if hrs:
         facts["avg_hr"] = _round(median(hrs))
         facts["hr_range"] = [_round(min(hrs)), _round(max(hrs))]
-    return {
-        "id": "",
-        "kind": "steady",
-        "km_from": _km(valid[0]),
-        "km_to": _km(valid[-1]),
-        "facts": facts,
+    return _assemble_scene(
+        "steady",
+        unit="km",
+        label_ja=f"{prefix}{_span_label(valid[0]['start_km'], valid[-1]['end_km'])}",
+        step_id=str(step["id"]),
+        rep_no=None,
+        km_from=valid[0]["start_km"],
+        km_to=valid[-1]["end_km"],
+        t_from_s=valid[0]["start_s"],
+        t_to_s=valid[-1]["end_s"],
+        split_from=_split_index(valid[0]),
+        split_to=_split_index(valid[-1]),
+        facts=facts,
+    )
+
+
+def _progression_scene(
+    step: Mapping[str, Any], valid: Sequence[Mapping[str, Any]], prefix: str
+) -> dict[str, Any]:
+    """A prescribed build-up: the ramp itself is the scene, km by km."""
+    facts: dict[str, Any] = {
+        "per_km": [
+            {
+                "km": row["start_km"],
+                "pace_s_per_km": _round(_as_float(row.get("pace_s_per_km")) or 0.0),
+                "avg_hr": _round(_as_float(row.get("avg_hr")) or 0.0),
+            }
+            for row in valid
+        ]
     }
+    first_pace = _as_float(valid[0].get("pace_s_per_km"))
+    last_pace = _as_float(valid[-1].get("pace_s_per_km"))
+    if first_pace is not None and last_pace is not None:
+        facts["pace_gain_s_per_km"] = _round(first_pace - last_pace)
+    first_hr = _as_float(valid[0].get("avg_hr"))
+    last_hr = _as_float(valid[-1].get("avg_hr"))
+    if first_hr is not None and last_hr is not None:
+        facts["hr_gain_bpm"] = _round(last_hr - first_hr)
+    return _assemble_scene(
+        "progression",
+        unit="km",
+        label_ja=f"{prefix}{_span_label(valid[0]['start_km'], valid[-1]['end_km'])}",
+        step_id=str(step["id"]),
+        rep_no=None,
+        km_from=valid[0]["start_km"],
+        km_to=valid[-1]["end_km"],
+        t_from_s=valid[0]["start_s"],
+        t_to_s=valid[-1]["end_s"],
+        split_from=_split_index(valid[0]),
+        split_to=_split_index(valid[-1]),
+        facts=facts,
+    )
 
 
 def _number(scenes: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -766,16 +1398,53 @@ def _number(scenes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return scenes
 
 
+# --- Labels -----------------------------------------------------------------
+
+
+def _span_label(km_from: float, km_to: float) -> str:
+    """``"3–5 km"`` / ``"2.6–4.6 km"`` -- the stretch of road a scene covers."""
+    return f"{_km_text(km_from)}–{_km_text(km_to)} km"
+
+
+def _walk_label(km_list: Sequence[float]) -> str:
+    """``"13・19・21 km 付近"`` -- where the athlete stopped running."""
+    return "・".join(_km_text(km) for km in km_list) + " km 付近"
+
+
+def _km_text(value: float) -> str:
+    """One decimal, but only when the distance actually needs it."""
+    rounded = round(float(value), 1)
+    if rounded == int(rounded):
+        return str(int(rounded))
+    return f"{rounded:.1f}"
+
+
 # --- Recurrence helpers -----------------------------------------------------
 
 
-def _run_has_moment_near(run: Mapping[str, Any], kind: str, km: int) -> bool:
-    """Whether a previous run has this kind of scene at (about) the same km."""
-    for moment in run.get("moments") or []:
-        if str(moment.get("kind")) != kind:
+def _is_step_scene(moment: Mapping[str, Any]) -> bool:
+    """Whether a scene is named after a step rather than a stretch of road."""
+    return str(moment.get("unit") or "km") == "step"
+
+
+def _run_has_moment_near(run: Mapping[str, Any], moment: Mapping[str, Any]) -> bool:
+    """Whether a previous run has this scene at (about) the same point.
+
+    A kilometre scene is "the same place" within ``RECURRENCE_KM_TOLERANCE``; a
+    step scene is the same rep of the session, because "the 3rd rep is where it
+    goes" is the pattern a rep session repeats -- not a distance.
+    """
+    kind = str(moment.get("kind"))
+    km = _as_float(moment.get("km_from"))
+    for other in run.get("moments") or []:
+        if str(other.get("kind")) != kind:
             continue
-        other_km = _as_float(moment.get("km_from"))
-        if other_km is None:
+        if _is_step_scene(moment):
+            if other.get("rep_no") == moment.get("rep_no"):
+                return True
+            continue
+        other_km = _as_float(other.get("km_from"))
+        if km is None or other_km is None:
             continue
         if abs(other_km - km) <= RECURRENCE_KM_TOLERANCE:
             return True
@@ -783,11 +1452,6 @@ def _run_has_moment_near(run: Mapping[str, Any], kind: str, km: int) -> bool:
 
 
 # --- Small helpers ----------------------------------------------------------
-
-
-def _km(split: Mapping[str, Any]) -> int:
-    """The kilometre marker a split is reported under."""
-    return int(_as_float(split.get("split_index")) or 0)
 
 
 def _percentile(values: Sequence[float], percentile: float) -> float:
@@ -817,4 +1481,15 @@ def _as_float(value: Any) -> float | None:
 def _round(value: float) -> float | int:
     """One decimal, but keep whole numbers integral so JSON stays readable."""
     rounded = round(float(value), 1)
+    return int(rounded) if rounded == int(rounded) else rounded
+
+
+def _round1(value: float) -> float | int:
+    """Seconds at the resolution the device records them."""
+    return _round(value)
+
+
+def _round3(value: float) -> float | int:
+    """Distances to the metre -- the resolution positions are accumulated at."""
+    rounded = round(float(value), 3)
     return int(rounded) if rounded == int(rounded) else rounded

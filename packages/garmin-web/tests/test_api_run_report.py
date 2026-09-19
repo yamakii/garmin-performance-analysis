@@ -27,6 +27,7 @@ _REPORT_KEYS = {
     "signals",
     "zones",
     "moments",
+    "flow",
     "recurrence",
     "phases",
     "conditions",
@@ -49,6 +50,8 @@ def test_api_run_report_ok(detail_db_path: Path) -> None:
     assert payload["headline"]["plan_label"] == "処方なし"
     assert [zone["zone"] for zone in payload["zones"]] == [1, 2, 3, 4, 5]
     assert payload["moments"], "five splits always yield at least one scene"
+    assert payload["flow"]["axis"] in {"distance", "time"}
+    assert payload["flow"]["segments"], "the page draws the shipped series"
     assert len(payload["signals"]) == 7
     assert set(payload["conditions"]) == {
         "temp_c",

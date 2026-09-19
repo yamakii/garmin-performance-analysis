@@ -1,12 +1,8 @@
-"""Tests for deterministic run scene detection (#1249, calibrated in #1261).
+"""Turning points inside a step: the steady detectors and their recurrence.
 
-The scenes are what the split section is allowed to narrate, so the rules are
-pinned against **real split data** from the runs that exposed the first cut's
-over-sensitivity: a 5 km run whose km 1 spikes to 155 bpm while averaging 131
-(9/17), a short run whose sustained ceiling contact spans two kilometres with a
-correction inside it (9/18), a 25 km long run that must not spend all five slots
-on the ceiling (9/13), and a 4 km recovery run whose single slow kilometre is
-not a fade (7/31).
+Calibrated in #1261 against the runs that broke the first cut, re-pinned in
+#1268 on real distances (a scene's ``km_from`` is where the athlete was, not
+which lap it was recorded under).
 """
 
 from __future__ import annotations
@@ -19,167 +15,20 @@ import pytest
 from garmin_mcp.analysis import run_moments
 from garmin_mcp.analysis.run_moments import detect_moments, detect_recurrence
 
-
-def _split(
-    split_index: int,
-    pace: float,
-    avg_hr: float,
-    max_hr: float,
-    *,
-    cadence: float = 178.0,
-    elevation_gain_m: float = 2.0,
-    distance_km: float = 1.0,
-) -> dict[str, Any]:
-    """One split row in the shape the reader hands to the detector."""
-    return {
-        "split_index": split_index,
-        "distance_km": distance_km,
-        "pace_s_per_km": pace,
-        "avg_hr": avg_hr,
-        "max_hr": max_hr,
-        "cadence": cadence,
-        "elevation_gain_m": elevation_gain_m,
-    }
-
-
-def _rows(rows: list[tuple[float, float, float, float, float]]) -> list[dict[str, Any]]:
-    """``(pace, avg_hr, max_hr, cadence, gain)`` tuples -> split rows from km 1."""
-    return [
-        _split(i, pace, avg_hr, max_hr, cadence=cadence, elevation_gain_m=gain)
-        for i, (pace, avg_hr, max_hr, cadence, gain) in enumerate(rows, start=1)
-    ]
-
-
-def _momentary_peak_run() -> list[dict[str, Any]]:
-    """The 9/17 run: km 1 peaks at 155 bpm while averaging 131 (ceiling 150)."""
-    return _rows(
-        [
-            (423, 131, 155, 176, 2),
-            (411, 144, 149, 181, 2),
-            (416, 149, 155, 180, 2),
-            (424, 150, 154, 181, 2),
-            (421, 148, 156, 178, 2),
-        ]
-    )
-
-
-def _ceiling_touch_run() -> list[dict[str, Any]]:
-    """The 9/18 run: sustained contact at km 4-5, eased off at km 4."""
-    return _rows(
-        [
-            (413, 129, 140, 177, 2),
-            (407, 145, 149, 183, 2),
-            (419, 147, 151, 184, 2),
-            (432, 148, 156, 183, 2),
-            (413, 148, 155, 178, 2),
-        ]
-    )
-
-
-def _recovery_run() -> list[dict[str, Any]]:
-    """The 7/31 recovery run: one slow km 3, then the fastest kilometre."""
-    return _rows(
-        [
-            (485, 116, 126, 172, 2),
-            (479, 128, 134, 174, 2),
-            (497, 132, 137, 172, 2),
-            (476, 135, 145, 170, 2),
-        ]
-    )
-
-
-def _long_run_with_walk_breaks() -> list[dict[str, Any]]:
-    """The 9/13 long run: 25 km, walk breaks at km 14 / 20 / 22, median 510."""
-    paces = [
-        446, 466, 514, 521, 540, 539, 528, 513, 517, 510, 486, 491, 485,
-        530, 532, 505, 482, 508, 509, 563, 516, 538, 486, 473, 461,
-    ]  # fmt: skip
-    avg_hrs = [
-        136, 148, 150, 150, 153, 149, 148, 149, 148, 142, 145, 146, 148,
-        142, 140, 143, 148, 143, 144, 142, 143, 141, 147, 148, 148,
-    ]  # fmt: skip
-    max_hrs = [
-        152, 152, 156, 154, 158, 154, 152, 155, 160, 152, 149, 156, 152,
-        159, 151, 153, 156, 154, 149, 149, 147, 150, 152, 151, 152,
-    ]  # fmt: skip
-    cadences = [
-        179, 181, 181, 178, 181, 180, 180, 183, 172, 179, 178, 176, 176,
-        165, 172, 176, 177, 176, 177, 159, 177, 166, 179, 181, 181,
-    ]  # fmt: skip
-    return _rows(
-        [
-            (pace, avg_hr, max_hr, cadence, 3.0)
-            for pace, avg_hr, max_hr, cadence in zip(
-                paces, avg_hrs, max_hrs, cadences, strict=True
-            )
-        ]
-    )
-
-
-def _every_kind_run() -> list[dict[str, Any]]:
-    """12 splits deliberately firing six scenes (median pace 425 s/km).
-
-    km 1-2 fast start, km 4-5 climb, km 5-6 ceiling touch, km 8 walk break,
-    km 9 surge, km 10-12 fade.
-    """
-    return _rows(
-        [
-            (400, 130, 140, 176, 2),
-            (402, 138, 145, 176, 3),
-            (425, 143, 147, 178, 2),
-            (425, 143, 147, 176, 18),
-            (428, 150, 156, 175, 20),
-            (445, 149, 154, 174, 5),
-            (420, 143, 147, 176, 2),
-            (550, 138, 145, 160, 2),
-            (412, 144, 148, 176, 3),
-            (445, 146, 148, 175, 3),
-            (450, 147, 149, 175, 3),
-            (455, 147, 149, 174, 3),
-        ]
-    )
-
-
-def _four_ceiling_contacts_run() -> list[dict[str, Any]]:
-    """20 flat kilometres with four separate sustained contacts (ceiling 150).
-
-    km 2 (1 split), km 5-7 (3), km 11-12 (2), km 15-18 (4); every gap is wide
-    enough that ``MERGE_GAP_SPLITS`` cannot bridge it.
-    """
-    contacts = {2, 5, 6, 7, 11, 12, 15, 16, 17, 18}
-    return _rows(
-        [
-            (500.0, 151.0 if km in contacts else 140.0, 156.0, 178.0, 2.0)
-            for km in range(1, 21)
-        ]
-    )
-
-
-def _fading_run(final_pace: float) -> list[dict[str, Any]]:
-    """Nine kilometres at 7:00/km, then a closing stretch that lets go."""
-    paces = [420.0] * 9 + [450.0, 455.0, final_pace]
-    return _rows(
-        [(pace, 140.0 + km, 150.0, 178.0, 2.0) for km, pace in enumerate(paces)]
-    )
-
-
-def _kinds_by_km(moments: list[dict[str, Any]]) -> dict[str, tuple[int, int]]:
-    """``{kind: (km_from, km_to)}`` for readable assertions on unique kinds."""
-    return {m["kind"]: (m["km_from"], m["km_to"]) for m in moments}
-
-
-def _spans(moments: list[dict[str, Any]], kind: str) -> list[tuple[int, int]]:
-    """Every ``(km_from, km_to)`` of one kind, in run order."""
-    return [(m["km_from"], m["km_to"]) for m in moments if m["kind"] == kind]
-
-
-def _occupied_km(moment: dict[str, Any]) -> list[int]:
-    """The kilometres a scene owns (``km_list`` for walk breaks, else its span)."""
-    km_list = moment["facts"].get("km_list")
-    if km_list:
-        return [int(km) for km in km_list]
-    return list(range(moment["km_from"], moment["km_to"] + 1))
-
+from .splits import (
+    _ceiling_touch_run,
+    _every_kind_run,
+    _fading_run,
+    _four_ceiling_contacts_run,
+    _kinds_by_km,
+    _long_run_with_walk_breaks,
+    _momentary_peak_run,
+    _occupied_splits,
+    _recovery_run,
+    _rows,
+    _spans,
+    _split,
+)
 
 # --- detect_moments ---------------------------------------------------------
 
@@ -195,12 +44,13 @@ def test_momentary_peak_is_not_a_ceiling_touch() -> None:
     moments = detect_moments(_momentary_peak_run(), hr_ceiling=150)
 
     assert 1 not in [
-        km
+        index
         for moment in moments
         if moment["kind"] == "ceiling_touch"
-        for km in _occupied_km(moment)
+        for index in _occupied_splits(moment)
     ]
-    assert _spans(moments, "ceiling_touch") == [(3, 5)]
+    # Laps 3-5 of a 1 km-per-lap run: km 2 to km 5.
+    assert _spans(moments, "ceiling_touch") == [(2, 5)]
 
 
 @pytest.mark.unit
@@ -213,13 +63,18 @@ def test_sustained_contact_with_correction_is_one_scene() -> None:
     """
     moments = detect_moments(_ceiling_touch_run(), hr_ceiling=150)
 
-    assert _spans(moments, "ceiling_touch") == [(4, 5)]
+    # Laps 4-5 of a 1 km-per-lap run: km 3 to km 5, named after the road.
+    assert _spans(moments, "ceiling_touch") == [(3, 5)]
     touch = next(m for m in moments if m["kind"] == "ceiling_touch")
-    assert touch["facts"]["corrected_at_km"] == 4
+    assert touch["unit"] == "km"
+    assert touch["label_ja"] == "3–5 km"
+    assert (touch["split_from"], touch["split_to"]) == (4, 5)
+    assert touch["facts"]["corrected_at_km"] == 3
+    assert touch["facts"]["corrected_at_split"] == 4
     assert touch["facts"]["pace_drop_s_per_km"] == pytest.approx(12.5, abs=0.6)
     assert touch["facts"]["max_hr"] == 156
     assert "self_correction" not in {m["kind"] for m in moments}
-    assert 3 not in _occupied_km(touch)
+    assert 3 not in _occupied_splits(touch)
 
 
 @pytest.mark.unit
@@ -232,14 +87,15 @@ def test_long_run_keeps_strong_finish() -> None:
     moments = detect_moments(_long_run_with_walk_breaks(), hr_ceiling=150)
 
     assert [(m["kind"], m["km_from"], m["km_to"]) for m in moments] == [
-        ("fast_start", 1, 2),
-        ("ceiling_touch", 3, 9),
-        ("walk_break", 14, 22),
-        ("ceiling_touch", 17, 17),
-        ("strong_finish", 23, 25),
+        ("fast_start", 0, 2),
+        ("ceiling_touch", 2, 9),
+        ("walk_break", 13, 22),
+        ("ceiling_touch", 16, 17),
+        ("strong_finish", 22, 25),
     ]
-    assert moments[1]["facts"]["corrected_at_km"] == 3
-    assert moments[2]["facts"]["km_list"] == [14, 20, 22]
+    assert moments[1]["facts"]["corrected_at_km"] == 2
+    assert moments[2]["facts"]["km_list"] == [13, 19, 21]
+    assert moments[2]["facts"]["split_list"] == [14, 20, 22]
 
 
 @pytest.mark.unit
@@ -249,14 +105,14 @@ def test_single_slow_km_is_not_a_fade() -> None:
 
     assert len(moments) == 1
     assert moments[0]["kind"] == "steady"
-    assert (moments[0]["km_from"], moments[0]["km_to"]) == (1, 4)
+    assert (moments[0]["km_from"], moments[0]["km_to"]) == (0, 4)
 
 
 @pytest.mark.unit
 def test_fade_requires_the_final_split() -> None:
     """A fade has to reach the finish line, not just dip in the last third."""
     fading = detect_moments(_fading_run(460.0), hr_ceiling=None)
-    assert _kinds_by_km(fading)["fade"] == (10, 12)
+    assert _kinds_by_km(fading)["fade"] == (9, 12)
 
     recovered = detect_moments(_fading_run(420.0), hr_ceiling=None)
     assert "fade" not in {m["kind"] for m in recovered}
@@ -274,7 +130,7 @@ def test_scenes_do_not_overlap() -> None:
         (_four_ceiling_contacts_run(), 150),
     ):
         moments = detect_moments(splits, hr_ceiling=ceiling)
-        claimed = [km for moment in moments for km in _occupied_km(moment)]
+        claimed = [index for moment in moments for index in _occupied_splits(moment)]
         assert len(claimed) == len(set(claimed)), moments
 
 
@@ -283,7 +139,7 @@ def test_max_two_scenes_per_kind() -> None:
     """Four sustained contacts keep the two longest, so other kinds still fit."""
     moments = detect_moments(_four_ceiling_contacts_run(), hr_ceiling=150)
 
-    assert _spans(moments, "ceiling_touch") == [(5, 7), (15, 18)]
+    assert _spans(moments, "ceiling_touch") == [(4, 7), (14, 18)]
 
 
 @pytest.mark.unit
@@ -303,7 +159,7 @@ def test_fast_start_replaces_start() -> None:
     moments = detect_moments(splits, hr_ceiling=None)
 
     assert moments[0]["kind"] == "fast_start"
-    assert (moments[0]["km_from"], moments[0]["km_to"]) == (1, 2)
+    assert (moments[0]["km_from"], moments[0]["km_to"]) == (0, 2)
     assert "start" not in {m["kind"] for m in moments}
 
 
@@ -322,7 +178,7 @@ def test_uneventful_run_yields_single_steady_moment() -> None:
 
     assert len(moments) == 1
     assert moments[0]["kind"] == "steady"
-    assert (moments[0]["km_from"], moments[0]["km_to"]) == (1, 5)
+    assert (moments[0]["km_from"], moments[0]["km_to"]) == (0, 5)
     assert moments[0]["facts"]["hr_range"] == [138, 142]
 
 
@@ -349,8 +205,8 @@ def test_walk_breaks_grouped_with_km_list() -> None:
     moments = detect_moments(_long_run_with_walk_breaks(), hr_ceiling=150)
 
     walk = next(m for m in moments if m["kind"] == "walk_break")
-    assert walk["facts"]["km_list"] == [14, 20, 22]
-    assert (walk["km_from"], walk["km_to"]) == (14, 22)
+    assert walk["facts"]["km_list"] == [13, 19, 21]
+    assert (walk["km_from"], walk["km_to"]) == (13, 22)
     assert walk["facts"]["cadence"] == 159
     assert sum(1 for m in moments if m["kind"] == "walk_break") == 1
 
@@ -361,7 +217,7 @@ def test_strong_finish_detected_on_long_run() -> None:
     moments = detect_moments(_long_run_with_walk_breaks(), hr_ceiling=150)
 
     finish = next(m for m in moments if m["kind"] == "strong_finish")
-    assert (finish["km_from"], finish["km_to"]) == (23, 25)
+    assert (finish["km_from"], finish["km_to"]) == (22, 25)
     assert finish["facts"]["median_pace_s_per_km"] == 510
     assert finish["facts"]["pace_delta_s_per_km"] == 37
 

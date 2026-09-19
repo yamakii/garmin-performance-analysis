@@ -14,6 +14,7 @@ what                       who decides it
 =========================  =================================================
 normal range per metric    ``analysis.run_signals`` / ``analysis.normal_range``
 turning points, recurrence ``analysis.run_moments``
+steps, flow series, axis   ``analysis.run_moments`` (``build_flow``)
 plan verdict               ``analysis.derivations.compute_prescription_verdict``
 delta chips, next target   ``analysis.derivations`` (``compute_vs_previous`` …)
 intensity family           ``database.inserters.hr_efficiency``
@@ -48,6 +49,7 @@ from garmin_mcp.analysis.derivations import (
 )
 from garmin_mcp.analysis.run_moments import (
     RECURRENCE_LOOKBACK,
+    build_flow,
     detect_moments,
     detect_recurrence,
 )
@@ -92,6 +94,26 @@ _ADVERSE_FLAG_LABELS: dict[str, str] = {
 # The phases ``performance_trends`` carries, in the order a run executes them.
 _PHASES: tuple[str, ...] = ("warmup", "run", "recovery", "cooldown")
 
+# One vocabulary for the plan card's intensity axis (#1268). Raw labels that
+# name a distinction the intensity family drops (long / recovery are both
+# "easy") are matched first; everything else goes through the family.
+_RAW_INTENSITY_LABELS: dict[str, str] = {
+    "long": "ロング",
+    "long_run": "ロング",
+    "recovery": "リカバリー",
+    "recovery_run": "リカバリー",
+    "rest": "休養",
+    "moderate": "ミドル",
+    "unknown": "-",
+}
+_FAMILY_INTENSITY_LABELS: dict[str, str] = {
+    "easy": "イージー",
+    "moderate": "ミドル",
+    "tempo": "テンポ",
+    "threshold": "閾値",
+    "vo2max": "インターバル",
+}
+
 # Terrain bands in metres of gain per km, matching the table the analysis
 # contract states to the agents (flat <10 / undulating 10-30 / hilly 30-50 /
 # mountainous >50). A single big up-and-down promotes an otherwise "flat"
@@ -117,9 +139,10 @@ class RunReportReader(BaseDBReader):
             ``None`` when the activity does not exist. Otherwise a dict with
             ``activity_id``, ``activity_date``, ``intensity_category``,
             ``headline``, ``plan``, ``signals``, ``zones``, ``moments``,
-            ``recurrence``, ``phases``, ``conditions``, ``vs_previous`` and
-            ``next_run_target`` (see the module docstring for who computes
-            what). Every value is JSON-serialisable without a custom encoder.
+            ``flow``, ``recurrence``, ``phases``, ``conditions``,
+            ``vs_previous`` and ``next_run_target`` (see the module docstring
+            for who computes what). Every value is JSON-serialisable without a
+            custom encoder.
         """
         with self._get_connection() as conn:
             tables = _existing_tables(conn)
@@ -162,8 +185,9 @@ class RunReportReader(BaseDBReader):
 
         verdict = compute_prescription_verdict(prescription, _actual(today))
         signals = self._signals(today, history)
+        today_splits = splits_by_id.get(activity_id, [])
         moments = detect_moments(
-            splits_by_id.get(activity_id, []), hr_ceiling=hr_ceiling_bpm
+            today_splits, hr_ceiling=hr_ceiling_bpm, prescription=prescription
         )
         recurrence = detect_recurrence(
             moments,
@@ -191,6 +215,7 @@ class RunReportReader(BaseDBReader):
             "signals": signals,
             "zones": _zones(zone_rows),
             "moments": moments,
+            "flow": build_flow(today_splits),
             "recurrence": recurrence,
             "phases": _phases(today),
             "conditions": _conditions(today, elevation),
@@ -506,7 +531,10 @@ def _fetch_splits(
     """Split rows for today plus the recurrence lookback, in one query.
 
     Column names are translated to the ones
-    :func:`~garmin_mcp.analysis.run_moments.detect_moments` reads.
+    :func:`~garmin_mcp.analysis.run_moments.detect_moments` reads. Every split
+    is loaded -- fragments included -- because the scene positions are
+    cumulative over the whole run; which splits are *drawn* or *measured* is
+    the detector's decision, not this query's (#1268).
     """
     if not activity_ids:
         return {}
@@ -514,7 +542,9 @@ def _fetch_splits(
     rows = conn.execute(
         f"""
         SELECT activity_id, split_index, distance, pace_seconds_per_km,
-               heart_rate, max_heart_rate, cadence, elevation_gain
+               heart_rate, max_heart_rate, cadence, elevation_gain,
+               role_phase, intensity_type, start_time_s, end_time_s,
+               duration_seconds
         FROM splits WHERE activity_id IN ({placeholders})
         ORDER BY activity_id, split_index
         """,
@@ -532,6 +562,11 @@ def _fetch_splits(
                 "max_hr": _as_float(row[5]),
                 "cadence": _as_float(row[6]),
                 "elevation_gain_m": _as_float(row[7]),
+                "role_phase": row[8],
+                "intensity_type": row[9],
+                "start_s": _as_float(row[10]),
+                "end_s": _as_float(row[11]),
+                "duration_s": _as_float(row[12]),
             }
         )
     return splits
@@ -621,8 +656,10 @@ def _plan_block(
         checks.append(
             _check(
                 "intensity",
-                str(prescription.get("session_type") or "-"),
-                str(today.get("training_type") or "-"),
+                _intensity_label(prescription.get("session_type")),
+                _intensity_label(
+                    today.get("training_type") or today.get("intensity_category")
+                ),
                 "intensity_class" in on_plan,
             )
         )
@@ -635,8 +672,8 @@ def _plan_block(
             checks.append(
                 _check(
                     "hr_ceiling",
-                    f"≦{hr_high:.0f}bpm",
-                    "-" if avg_hr is None else f"{avg_hr:.0f}bpm",
+                    f"{hr_high:.0f} bpm 以下",
+                    "-" if avg_hr is None else f"{avg_hr:.0f} bpm",
                     "hr_ceiling" in on_plan,
                 )
             )
@@ -647,6 +684,26 @@ def _plan_block(
         "checks": checks,
         "hr_ceiling": _hr_ceiling(prescription, zone_rows),
     }
+
+
+def _intensity_label(raw: Any) -> str:
+    """One Japanese name for an intensity, whichever vocabulary named it.
+
+    The plan card used to print the prescription's ``session_type`` against the
+    activity's ``training_type`` -- ``easy`` vs ``aerobic_base`` -- so a run
+    that answered its plan exactly still read as a mismatch. Both sides are
+    resolved through the same intensity family (``resolve_intensity_category``)
+    and printed in one label set; the distinctions that family drops (a long
+    run and a recovery run are both "easy") are kept by matching the raw label
+    first.
+    """
+    label = str(raw or "").strip().lower()
+    if not label:
+        return "-"
+    if label in _RAW_INTENSITY_LABELS:
+        return _RAW_INTENSITY_LABELS[label]
+    family = resolve_intensity_category(label, 0.0, 0.0, 0.0, 0.0, 0.0, None)
+    return _FAMILY_INTENSITY_LABELS.get(family, label)
 
 
 def _check(axis: str, target: str, actual: str, on_plan: bool) -> dict[str, Any]:

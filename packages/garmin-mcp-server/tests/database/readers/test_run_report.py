@@ -155,6 +155,48 @@ def _seed_run(
         conn.close()
 
 
+def _seed_splits(
+    db_path: Path,
+    activity_id: int,
+    rows: list[tuple[float, float, str | None]],
+) -> None:
+    """Replace one run's splits with ``(distance_km, duration_s, role_phase)``.
+
+    Timing is written the way the device records it (``start_time_s`` /
+    ``end_time_s``), so the reader's flow positions are exercised on the same
+    columns production reads.
+    """
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute("DELETE FROM splits WHERE activity_id = ?", [activity_id])
+        elapsed = 0.0
+        for index, (distance, duration, role_phase) in enumerate(rows, start=1):
+            conn.execute(
+                """
+                INSERT INTO splits (
+                    activity_id, split_index, distance, duration_seconds,
+                    start_time_s, end_time_s, intensity_type, role_phase,
+                    pace_seconds_per_km, heart_rate, max_heart_rate, cadence,
+                    elevation_gain, elevation_loss
+                ) VALUES (?, ?, ?, ?, ?, ?, 'INTERVAL', ?, ?, 140, 148, 176.0,
+                          3.0, 3.0)
+                """,
+                [
+                    activity_id,
+                    index,
+                    distance,
+                    duration,
+                    elapsed,
+                    elapsed + duration,
+                    role_phase,
+                    duration / distance,
+                ],
+            )
+            elapsed += duration
+    finally:
+        conn.close()
+
+
 def _seed_zones(
     db_path: Path,
     activity_id: int,
@@ -278,6 +320,7 @@ def test_run_report_shape_and_json(reader_db_path: Path) -> None:
         "signals",
         "zones",
         "moments",
+        "flow",
         "recurrence",
         "phases",
         "conditions",
@@ -437,3 +480,166 @@ def test_run_report_thin_history_is_insufficient_not_error(
 def test_run_report_unknown_activity_returns_none(reader_db_path: Path) -> None:
     """An activity the database has never seen has no report."""
     assert _report(reader_db_path, activity_id=1) is None
+
+
+# --- flow (#1268) ----------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_flow_series_share_one_fragment_rule(reader_db_path: Path) -> None:
+    """Pace and heart rate are drawn from one series, so one fragment rule.
+
+    The shipped page dropped the sub-0.4 km splits from the pace line while
+    still plotting them on the HR line; now the report ships what is drawn.
+    """
+    _seed_run(reader_db_path, activity_id=ACTIVITY_ID, activity_date=TODAY)
+    _seed_splits(
+        reader_db_path,
+        ACTIVITY_ID,
+        [
+            *[(1.0, 360.0, "run") for _ in range(5)],
+            (0.014, 5.0, "run"),
+            (0.010, 4.0, "run"),
+        ],
+    )
+
+    report = _report(reader_db_path)
+
+    assert report is not None
+    flow = report["flow"]
+    assert flow["axis"] == "distance"
+    assert len(flow["segments"]) == 5
+    assert flow["segments"][-1]["end_km"] == 5.0
+    assert flow["fragments"]["count"] == 2
+    assert flow["fragments"]["distance_km"] == pytest.approx(0.02, abs=0.01)
+
+
+@pytest.mark.integration
+def test_flow_short_steps_are_one_segment(reader_db_path: Path) -> None:
+    """4/20: a rep recorded as two splits is drawn as one segment."""
+    _seed_run(reader_db_path, activity_id=ACTIVITY_ID, activity_date=TODAY)
+    _seed_splits(
+        reader_db_path,
+        ACTIVITY_ID,
+        [
+            (1.0, 393.0, "warmup"),
+            (0.51, 207.0, "warmup"),
+            (1.0, 324.0, "run"),
+            (0.11, 36.0, "run"),
+            (0.18, 120.0, "recovery"),
+            (1.0, 320.0, "run"),
+            (0.13, 40.0, "run"),
+            (0.91, 600.0, "cooldown"),
+            (0.16, 75.0, "cooldown"),
+        ],
+    )
+
+    report = _report(reader_db_path)
+
+    assert report is not None
+    flow = report["flow"]
+    assert flow["axis"] == "time"
+    assert len(flow["segments"]) == 5
+    first_rep = flow["segments"][1]
+    assert (first_rep["split_from"], first_rep["split_to"]) == (3, 4)
+    assert (first_rep["start_s"], first_rep["end_s"]) == (600, 960)
+
+
+@pytest.mark.integration
+def test_flow_long_step_draws_inner_splits(reader_db_path: Path) -> None:
+    """9/9: the 5 km main set is drawn split by split, the bookends whole."""
+    _seed_run(reader_db_path, activity_id=ACTIVITY_ID, activity_date=TODAY)
+    _seed_splits(
+        reader_db_path,
+        ACTIVITY_ID,
+        [
+            (0.93, 400.0, "warmup"),
+            *[(1.0, 300.0, "run") for _ in range(5)],
+            (0.13, 60.0, "cooldown"),
+            (1.0, 420.0, "cooldown"),
+            (0.05, 20.0, "cooldown"),
+            (0.03, 12.0, "cooldown"),
+        ],
+    )
+
+    report = _report(reader_db_path)
+
+    assert report is not None
+    assert len(report["flow"]["segments"]) == 7
+    assert [step["label_ja"] for step in report["flow"]["steps"]] == [
+        "ウォームアップ",
+        "本編",
+        "クールダウン",
+    ]
+
+
+@pytest.mark.integration
+def test_run_report_json_serialisable_with_flow(reader_db_path: Path) -> None:
+    """The flow block goes over the MCP boundary with no custom encoder."""
+    _seed_run(reader_db_path, activity_id=ACTIVITY_ID, activity_date=TODAY)
+    _seed_splits(
+        reader_db_path,
+        ACTIVITY_ID,
+        [
+            (1.2, 480.0, "warmup"),
+            (1.0, 300.0, "run"),
+            (0.4, 180.0, "recovery"),
+            (1.0, 298.0, "run"),
+            (1.0, 420.0, "cooldown"),
+        ],
+    )
+
+    report = _report(reader_db_path)
+
+    assert report is not None
+    assert json.loads(json.dumps(report))["flow"] == report["flow"]
+
+
+# --- plan-check vocabulary (#1268) -----------------------------------------
+
+
+@pytest.mark.integration
+def test_plan_check_intensity_uses_one_vocabulary(reader_db_path: Path) -> None:
+    """``easy`` vs ``aerobic_base`` is one intensity, so it reads as one.
+
+    Two vocabularies made an on-plan row look like a mismatch.
+    """
+    _seed_history(reader_db_path)
+    _seed_run(
+        reader_db_path,
+        activity_id=ACTIVITY_ID,
+        activity_date=TODAY,
+        avg_hr=144,
+        distance_km=8.08,
+        training_type="aerobic_base",
+    )
+    _seed_prescription(reader_db_path, on_date=TODAY, session_type="easy")
+
+    report = _report(reader_db_path)
+
+    assert report is not None
+    intensity = next(c for c in report["plan"]["checks"] if c["axis"] == "intensity")
+    assert intensity["target"] == "イージー"
+    assert intensity["actual"] == "イージー"
+    assert intensity["on_plan"] is True
+
+
+@pytest.mark.integration
+def test_plan_check_hr_ceiling_wording(reader_db_path: Path) -> None:
+    """The ceiling is written the way a coach says it, not as a formula."""
+    _seed_history(reader_db_path)
+    _seed_run(
+        reader_db_path,
+        activity_id=ACTIVITY_ID,
+        activity_date=TODAY,
+        avg_hr=144,
+        distance_km=8.08,
+    )
+    _seed_prescription(reader_db_path, on_date=TODAY, hr_high=150)
+
+    report = _report(reader_db_path)
+
+    assert report is not None
+    ceiling = next(c for c in report["plan"]["checks"] if c["axis"] == "hr_ceiling")
+    assert ceiling["target"] == "150 bpm 以下"
+    assert ceiling["actual"] == "144 bpm"
