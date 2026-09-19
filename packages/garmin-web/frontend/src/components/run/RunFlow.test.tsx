@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import RunFlow, { SCENE_TINTS } from "./RunFlow";
-import { CHART_FONT_SIZE, THRESHOLD_LINE } from "../chartTheme";
+import { CHART_FONT_SIZE, METRIC_COLORS, THRESHOLD_LINE } from "../chartTheme";
 import type {
   RunFlowData,
   RunFlowSegment,
@@ -298,6 +298,42 @@ describe("RunFlow chart axis", () => {
 
     renderFlow(flowOf(STEADY_SEGMENTS, { axis: "time", total_s: 2000 }), []);
     expect(screen.getByText(/横軸は経過時間（分）/)).toBeInTheDocument();
+  });
+});
+
+describe("RunFlow series legend", () => {
+  it("test_run_flow_legend_names_the_series", () => {
+    renderFlow();
+
+    // The y-axis titles are gone (#1277), so this row is the only thing that
+    // says which line is which.
+    expect(screen.getByText("ペース /km（上が速い）")).toBeInTheDocument();
+    expect(screen.getByText("平均心拍")).toBeInTheDocument();
+    expect(screen.getByText("最大心拍")).toBeInTheDocument();
+  });
+
+  it("test_run_flow_legend_swatches_use_series_colours", () => {
+    const { container } = render(
+      <RunFlow flow={STEADY_FLOW} moments={MOMENTS} timeline={TIMELINE} hrCeiling={150} />,
+    );
+
+    const pace = container.querySelector<HTMLElement>('[data-series="pace"]');
+    const heartRate = container.querySelector<HTMLElement>(
+      '[data-series="heart_rate"]',
+    );
+    // jsdom normalises the inline colour to rgb(); compare through a probe so
+    // the test follows METRIC_COLORS instead of pinning a literal.
+    const probe = document.createElement("span");
+    probe.style.backgroundColor = METRIC_COLORS.speed;
+    expect(pace?.style.backgroundColor).toBe(probe.style.backgroundColor);
+    probe.style.backgroundColor = METRIC_COLORS.heart_rate;
+    expect(heartRate?.style.backgroundColor).toBe(probe.style.backgroundColor);
+  });
+
+  it("draws no legend when there is nothing to draw", () => {
+    render(<RunFlow flow={null} moments={MOMENTS} timeline={TIMELINE} hrCeiling={null} />);
+
+    expect(screen.queryByText("平均心拍")).not.toBeInTheDocument();
   });
 });
 
