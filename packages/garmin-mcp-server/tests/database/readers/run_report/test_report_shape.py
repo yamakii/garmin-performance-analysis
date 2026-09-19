@@ -207,6 +207,39 @@ def test_run_report_thin_history_is_insufficient_not_error(
 
 
 @pytest.mark.integration
+def test_no_heat_model_reason_is_japanese(reader_db_path: Path) -> None:
+    """Three prior runs fit no heat model, and the page says so in Japanese."""
+    _seed_history(reader_db_path, count=3)
+    _seed_run(reader_db_path, activity_id=ACTIVITY_ID, activity_date=TODAY)
+
+    report = _report(reader_db_path)
+
+    assert report is not None
+    hr = _signal(report, "hr_vs_expected")
+    assert hr["status"] == "insufficient"
+    assert hr["reason"] == "同じ種類のランが少なく、想定心拍を計算できない"
+    assert hr["reason_code"] == "no_hr_model"
+
+
+@pytest.mark.integration
+def test_no_signal_reason_is_ascii_only(reader_db_path: Path) -> None:
+    """No unjudged row may leak an internal English phrase to the reader (#1278)."""
+    _seed_history(reader_db_path, count=3)
+    _seed_run(reader_db_path, activity_id=ACTIVITY_ID, activity_date=TODAY)
+
+    report = _report(reader_db_path)
+
+    assert report is not None
+    unjudged = [s for s in report["signals"] if s["status"] == "insufficient"]
+    assert len(unjudged) == 7
+    for signal in unjudged:
+        reason = signal["reason"]
+        assert reason, signal["metric"]
+        assert not reason.isascii(), f"{signal['metric']}: {reason}"
+        assert signal["reason_code"].isascii()
+
+
+@pytest.mark.integration
 def test_run_report_unknown_activity_returns_none(reader_db_path: Path) -> None:
     """An activity the database has never seen has no report."""
     assert _report(reader_db_path, activity_id=1) is None

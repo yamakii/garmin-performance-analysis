@@ -14,6 +14,9 @@ from garmin_mcp.analysis.normal_range import (
     MAD_SCALE,
     MIN_BASELINE_RUNS,
     OUTSIDE_Z,
+    REASON_NO_SPREAD,
+    REASON_THIN_BASELINE,
+    REASON_TODAY_MISSING,
     Band,
     compute_band,
     oriented_z,
@@ -95,9 +98,10 @@ def test_band_thin_baseline_is_insufficient():
     assert band.z is None
     assert band.adverse is False
     assert band.n == 9
-    assert band.reason is not None
-    assert "baseline size 9" in band.reason
-    assert str(MIN_BASELINE_RUNS) in band.reason
+    # The band carries the code and the counts its wording needs; the wording
+    # itself is ``run_signals.describe_reason``'s job (#1278).
+    assert band.reason == REASON_THIN_BASELINE
+    assert band.reason_params == {"n": 9, "required": MIN_BASELINE_RUNS}
 
 
 @pytest.mark.unit
@@ -105,7 +109,8 @@ def test_band_missing_today_is_insufficient():
     band = compute_band(_series(), None, higher_is_worse=True)
 
     assert band.status == "insufficient"
-    assert band.reason == "today's value is missing"
+    assert band.reason == REASON_TODAY_MISSING
+    assert band.reason_params == {}
 
 
 @pytest.mark.unit
@@ -143,7 +148,7 @@ def test_band_without_any_spread_is_insufficient():
     band = compute_band([4.0] * 12, 9.0, higher_is_worse=True)
 
     assert band.status == "insufficient"
-    assert band.reason == "baseline has no spread"
+    assert band.reason == REASON_NO_SPREAD
 
 
 @pytest.mark.unit

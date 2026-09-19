@@ -36,8 +36,8 @@ from __future__ import annotations
 
 import math
 import statistics
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import Any
 
 #: Trailing window (days) of the athlete's own prior runs used to build a band.
@@ -77,10 +77,14 @@ MAD_SCALE = 1.4826
 #: an extrapolation and says nothing about the athlete's form.
 EXTRAPOLATION_NOT_JUDGED = 1.5
 
-#: Reasons a metric is not judged (stable strings; the prose is what is shown).
-REASON_TODAY_MISSING = "today's value is missing"
-REASON_THIN_BASELINE = "baseline size {n} < {required} prior runs"
-REASON_NO_SPREAD = "baseline has no spread"
+#: Reasons a metric is not judged. These are stable *codes*, never prose: the
+#: text a reader sees is looked up per code in ``run_signals.REASON_MESSAGES_JA``
+#: (#1278), so this module can say why it withheld a judgement without deciding
+#: how to word it. Values the wording needs (counts) travel alongside the code
+#: in :attr:`Band.reason_params`.
+REASON_TODAY_MISSING = "value_missing"
+REASON_THIN_BASELINE = "thin_baseline"
+REASON_NO_SPREAD = "no_spread"
 
 
 @dataclass(frozen=True)
@@ -99,7 +103,8 @@ class Band:
     status: str  # "within" | "edge" | "outside" | "insufficient"
     adverse: bool  # status == "outside" and z > 0
     n: int
-    reason: str | None  # why insufficient
+    reason: str | None  # why insufficient: a ``REASON_*`` code, not prose
+    reason_params: Mapping[str, Any] = field(default_factory=dict)
 
     @property
     def judged(self) -> bool:
@@ -156,7 +161,9 @@ def compute_band(
     if today_value is None:
         return _insufficient(n, REASON_TODAY_MISSING)
     if n < min_samples:
-        return _insufficient(n, REASON_THIN_BASELINE.format(n=n, required=min_samples))
+        return _insufficient(
+            n, REASON_THIN_BASELINE, params={"n": n, "required": min_samples}
+        )
 
     centre = statistics.median(present)
     spread = robust_spread(present, centre)
@@ -204,8 +211,14 @@ def oriented_z(
     return round(raw_z if higher_is_worse else -raw_z, 2)
 
 
-def _insufficient(n: int, reason: str, *, centre: float | None = None) -> Band:
-    """Build an unjudged band carrying ``reason``."""
+def _insufficient(
+    n: int,
+    reason: str,
+    *,
+    params: Mapping[str, Any] | None = None,
+    centre: float | None = None,
+) -> Band:
+    """Build an unjudged band carrying the ``reason`` code and its parameters."""
     return Band(
         centre=None if centre is None else round(centre, 4),
         spread=None,
@@ -214,6 +227,7 @@ def _insufficient(n: int, reason: str, *, centre: float | None = None) -> Band:
         adverse=False,
         n=n,
         reason=reason,
+        reason_params=dict(params or {}),
     )
 
 
