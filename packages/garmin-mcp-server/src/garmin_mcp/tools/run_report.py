@@ -56,7 +56,11 @@ RUN_REPORT_TOOLS: list[ToolDef] = [
             "(warmup/run/recovery/cooldown pace and HR), conditions "
             "(temp_c, humidity_pct, "
             "wind_mps, terrain, elevation_gain_m), vs_previous (delta chips "
-            "against the previous same-family run) and next_run_target. "
+            "against the previous same-family run), next_run_target (what the "
+            "next run of this kind should look like) and next_session (what "
+            "the athlete actually does next: date, days_ahead, session_type, "
+            "title, target_km/target_minutes, hr_low/hr_high and whether it "
+            "came from the plan, the long-run ladder or a projection). "
             "Returns null when the activity does not exist."
         ),
         params=GetRunReportParams,

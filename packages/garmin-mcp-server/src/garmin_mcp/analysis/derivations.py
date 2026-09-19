@@ -1119,7 +1119,7 @@ _INTENSITY_CLASS_LABEL_JA: dict[int, str] = {
 }
 
 #: The ordinal that marks a rest prescription (running it at all is a deviation).
-_REST_INTENSITY_CLASS = 0
+REST_INTENSITY_CLASS = 0
 
 #: Volume ratio (actual / target) bands. Inside [low, high] the session hit its
 #: prescribed volume; outside the yellow floor / red ceiling it is a deviation.
@@ -1151,7 +1151,7 @@ def _as_float(value: Any) -> float | None:
         return None
 
 
-def _intensity_class(name: str | None) -> int | None:
+def intensity_class(name: str | None) -> int | None:
     """Intensity ordinal for a session_type / training_type (``None`` if unknown)."""
     if not name:
         return None
@@ -1170,7 +1170,7 @@ def select_prescription_for_run(rows: list[dict] | None) -> dict | None:
     if not rows:
         return None
     for row in rows:
-        if _intensity_class(row.get("session_type")) is not None:
+        if intensity_class(row.get("session_type")) is not None:
             return row
     return rows[0]
 
@@ -1326,8 +1326,8 @@ def compute_prescription_verdict(
 
     session_type = prescription.get("session_type")
     title = str(prescription.get("title") or session_type or "処方")
-    prescribed_class = _intensity_class(session_type)
-    actual_class = _intensity_class(actual.get("training_type"))
+    prescribed_class = intensity_class(session_type)
+    actual_class = intensity_class(actual.get("training_type"))
     distance_km = _as_float(actual.get("distance_km"))
     duration_min = _as_float(actual.get("duration_min"))
     avg_hr = _as_float(actual.get("avg_hr"))
@@ -1337,7 +1337,7 @@ def compute_prescription_verdict(
 
     # 1. A rest prescription: running at all is the deviation, and nothing else
     #    (volume / HR against a rest target) is meaningful.
-    if prescribed_class == _REST_INTENSITY_CLASS:
+    if prescribed_class == REST_INTENSITY_CLASS:
         ran = (distance_km or 0) > 0 or (duration_min or 0) > 0
         if ran:
             done = (

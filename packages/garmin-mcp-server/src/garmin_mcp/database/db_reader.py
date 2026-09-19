@@ -1262,7 +1262,8 @@ class GarminDBReader:
             ``None`` when the activity does not exist. Otherwise the report
             dict (``headline``, ``plan``, ``signals``, ``zones``, ``moments``,
             ``recurrence``, ``phases``, ``conditions``, ``vs_previous``,
-            ``next_run_target``); JSON-serialisable without a custom encoder.
+            ``next_run_target``, ``next_session``); JSON-serialisable without a
+            custom encoder.
         """
         return self.run_report.get_run_report(activity_id)
 

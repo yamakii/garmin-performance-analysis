@@ -145,7 +145,7 @@ def test_extrapolated_form_is_not_judged():
 
     gct = _signal(signals, "gct")
     assert gct["status"] == "insufficient"
-    assert "speed range" in gct["reason"]
+    assert "速度の範囲" in gct["reason"]
     # Only the extrapolated metric is withheld.
     assert _signal(signals, "cadence")["status"] != "insufficient"
 

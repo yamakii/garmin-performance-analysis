@@ -6,8 +6,8 @@ import pytest
 
 from garmin_mcp.form_baseline.scorer import (
     _compute_penalty,
-    _extrapolation_factor,
     compute_star_rating,
+    extrapolation_factor,
 )
 from garmin_mcp.form_baseline.trainer import (
     GCTPowerModel,
@@ -431,7 +431,7 @@ class TestEffectiveSpeedRange:
         df = _self_included_window()
         model = fit_linear(df[["vr_value", "speed_mps"]], metric="vr")
 
-        factor = _extrapolation_factor(model, 2.719)
+        factor = extrapolation_factor(model.speed_range, 2.719)
         assert factor > 2.0
 
         raw_range_model = LinearModel(
@@ -444,7 +444,7 @@ class TestEffectiveSpeedRange:
                 float(df["speed_mps"].max()),
             ),
         )
-        assert _extrapolation_factor(raw_range_model, 2.719) == 1.0
+        assert extrapolation_factor(raw_range_model.speed_range, 2.719) == 1.0
 
         delta_pct = 3.2
         sigma_pct = 1.47

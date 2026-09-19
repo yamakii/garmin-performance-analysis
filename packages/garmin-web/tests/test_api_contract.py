@@ -132,6 +132,7 @@ _RUN_REPORT_KEYS = {
     "conditions",
     "vs_previous",
     "next_run_target",
+    "next_session",
 }
 _HEADLINE_KEYS = {"plan_label", "flag_count", "flag_labels"}
 _CONDITIONS_KEYS = {

@@ -87,11 +87,11 @@ def _sigma_pct(
     return 100.0 * rmse / abs(expected)
 
 
-def _extrapolation_factor(
-    model: GCTPowerModel | LinearModel,
+def extrapolation_factor(
+    speed_range: tuple[float | None, float | None],
     speed_mps: float,
 ) -> float:
-    """Sigma inflation factor for predicting outside the model's speed range.
+    """Sigma inflation factor for predicting outside a trained speed range.
 
     A baseline only knows the speed band it was trained on; ``rmse`` is the
     in-sample fit error and says nothing about how the curve behaves beyond the
@@ -105,14 +105,18 @@ def _extrapolation_factor(
     range, so that going half a training range beyond the edge doubles sigma
     (and therefore halves the deviation in sigma units).
 
+    The range is passed rather than the model, so a caller holding only the
+    persisted ``form_baseline_history`` bounds -- the run report's
+    extrapolation guard (#1273) -- grades a speed exactly as the scorer does.
+
     Args:
-        model: Trained model carrying ``speed_range``
+        speed_range: ``(min, max)`` speed (m/s) the model was trained on
         speed_mps: Speed the prediction is being made at
 
     Returns:
         Factor >= 1.0. Always 1.0 for a degenerate or unusable speed range.
     """
-    lo, hi = model.speed_range
+    lo, hi = speed_range
     if not lo or not hi or hi <= lo or speed_mps <= 0.0:
         return 1.0
 
@@ -288,9 +292,9 @@ def score_observation(
     # a model's trained speed range the in-sample rmse understates the real
     # uncertainty, so sigma is inflated and the rating stays conservative.
     speed_mps = expectations["speed_mps"]
-    gct_factor = _extrapolation_factor(models["gct"], speed_mps)
-    vo_factor = _extrapolation_factor(models["vo"], speed_mps)
-    vr_factor = _extrapolation_factor(models["vr"], speed_mps)
+    gct_factor = extrapolation_factor(models["gct"].speed_range, speed_mps)
+    vo_factor = extrapolation_factor(models["vo"].speed_range, speed_mps)
+    vr_factor = extrapolation_factor(models["vr"].speed_range, speed_mps)
 
     gct_sigma_pct = _inflate(
         _sigma_pct("gct", models["gct"], expectations["gct_ms_exp"]), gct_factor
@@ -356,7 +360,7 @@ def score_observation(
     if cadence_exp is not None and obs.get("cadence") is not None:
         cadence_actual = obs["cadence"]
         cadence_delta_pct = ((cadence_actual - cadence_exp) / cadence_exp) * 100.0
-        cadence_factor = _extrapolation_factor(models["cadence"], speed_mps)
+        cadence_factor = extrapolation_factor(models["cadence"].speed_range, speed_mps)
         cadence_sigma_pct = _inflate(
             _sigma_pct("cadence", models["cadence"], cadence_exp), cadence_factor
         )

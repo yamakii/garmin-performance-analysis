@@ -69,6 +69,14 @@ STREAK_RUNS = 3
 #: normally distributed data (``1 / Phi^-1(0.75)``).
 MAD_SCALE = 1.4826
 
+#: ``form_baseline.scorer.extrapolation_factor`` at or above which a form metric
+#: is no longer judged at all (#1273). The factor is 1.0 inside the trained
+#: speed range and 2.0 half a trained range beyond its edge, so 1.5 is a quarter
+#: of the range past the edge: an easy run 0.02 m/s outside the band (factor
+#: 1.09) is still judged, while a tempo run 0.3 m/s outside it (factor 2.33) is
+#: an extrapolation and says nothing about the athlete's form.
+EXTRAPOLATION_NOT_JUDGED = 1.5
+
 #: Reasons a metric is not judged (stable strings; the prose is what is shown).
 REASON_TODAY_MISSING = "today's value is missing"
 REASON_THIN_BASELINE = "baseline size {n} < {required} prior runs"
