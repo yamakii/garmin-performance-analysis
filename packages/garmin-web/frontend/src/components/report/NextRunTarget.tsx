@@ -37,6 +37,24 @@ function formatRange(
   return unit === PACE_UNIT ? `${span}${unit}` : `${span} ${unit}`;
 }
 
+/**
+ * A pace bound without its unit, so the range carries `/km` exactly once.
+ *
+ * `reference_pace_*_formatted` is written by the agent and sometimes already
+ * carries the unit ("5:40/km"), which the range then appended a second one to:
+ * the same-type fallback card read "5:40/km–5:43/km/km" (#1277). Both shapes
+ * are accepted and the unit is added once, by `formatRange`.
+ */
+function stripPaceUnit(value: string | null): string | null {
+  if (value == null) {
+    return null;
+  }
+  const bare = value.endsWith(PACE_UNIT)
+    ? value.slice(0, -PACE_UNIT.length).trimEnd()
+    : value;
+  return bare !== "" ? bare : null;
+}
+
 function Chip({ label, value }: { label: string; value: string }) {
   return (
     <span className="inline-flex items-center gap-1.5 font-mono text-xs text-ink">
@@ -83,8 +101,8 @@ export default function NextRunTarget({
     "bpm",
   );
   const paceRange = formatRange(
-    asString(data.reference_pace_low_formatted),
-    asString(data.reference_pace_high_formatted),
+    stripPaceUnit(asString(data.reference_pace_low_formatted)),
+    stripPaceUnit(asString(data.reference_pace_high_formatted)),
     PACE_UNIT,
   );
 
