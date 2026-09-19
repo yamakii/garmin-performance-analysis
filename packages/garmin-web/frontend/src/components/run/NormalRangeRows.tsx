@@ -4,13 +4,20 @@ import SectionBlock from "../SectionBlock";
 import { ZONE_COLORS } from "../chartTheme";
 import type { RunNoteSignalNote, RunSignal, RunZoneShare } from "../../types";
 import { formatNumber } from "../../utils/formatNumber";
-import { zBarStyle, zDirection } from "../../utils/baselineZ";
+import { zBandStyle, zDirection, zDotStyle } from "../../utils/baselineZ";
 
 /** Heading per signal family, in reading order. */
 const FAMILIES: { key: RunSignal["family"]; title: string }[] = [
   { key: "form", title: "フォーム" },
   { key: "cardio", title: "心肺" },
 ];
+
+/**
+ * Label / track / reading, shared by every signal row and by the axis caption
+ * that names the track's two sides — they have to be one set of columns or the
+ * caption would point at the wrong part of the bar.
+ */
+const ROW_COLUMNS = "md:grid-cols-[110px_minmax(0,1fr)_270px]";
 
 /**
  * Metrics whose *low* side is the unfavourable one.
@@ -85,26 +92,45 @@ function SignalRow({
   // The report already orients `z` so that positive is the unfavourable side,
   // whatever the metric's own polarity is — hence `higherIsWorse = true` here,
   // where the wellness panel has to apply each metric's polarity itself.
-  const bar = zBarStyle({
+  const dot = zDotStyle({
     z: signal.status === "insufficient" ? null : signal.z,
     direction: zDirection(signal.z, true),
   });
   const toneClass = adverse ? "text-status-warn" : "";
   return (
     <li className="flex flex-col gap-1.5 py-2">
-      <div className="grid grid-cols-[minmax(0,1fr)] items-center gap-x-4 gap-y-1 md:grid-cols-[110px_minmax(0,1fr)_270px]">
+      <div
+        className={`grid grid-cols-[minmax(0,1fr)] items-center gap-x-4 gap-y-1 ${ROW_COLUMNS}`}
+      >
         <span className={`text-[13px] text-ink-soft ${toneClass}`}>
           {signal.label_ja}
         </span>
-        {/* The track: the centre is the athlete's own normal, and the right
-            half is always the unfavourable side, whichever way this metric
-            happens to read. */}
-        <span aria-hidden="true" className="relative block h-2.5 bg-well">
+        {/* The track: ±3σ wide, the centre is the athlete's own normal, the
+            shaded band is the ±2σ they usually fall inside, and the right half
+            is always the unfavourable side whichever way this metric happens
+            to read. A row with no reading keeps the centre line only. */}
+        <span
+          aria-hidden="true"
+          data-part="track"
+          className="relative block h-2.5 bg-well"
+        >
+          {dot != null && (
+            <span
+              data-part="band"
+              className="absolute inset-y-0 bg-hairline"
+              style={zBandStyle()}
+            />
+          )}
           <span className="absolute inset-y-0 left-1/2 w-px bg-ink" />
-          <span
-            className={`absolute inset-y-0 ${adverse ? "bg-status-warn" : "bg-ink"}`}
-            style={bar}
-          />
+          {dot != null && (
+            <span
+              data-part="dot"
+              className={`absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-sm ${
+                adverse ? "bg-status-warn" : "bg-ink"
+              }`}
+              style={dot}
+            />
+          )}
         </span>
         <span
           className={`font-mono text-xs whitespace-nowrap md:text-right ${
@@ -161,6 +187,27 @@ function ZoneBar({ zones }: { zones: RunZoneShare[] }): JSX.Element | null {
 }
 
 /**
+ * What the track's two sides mean, written out once above the first one.
+ *
+ * It sits in the track's own column so each caption lands over the part of the
+ * bar it names, and it is dropped below `md` along with the columns — stacked,
+ * the rows are read one at a time and the words in each reading already say
+ * which side it fell on.
+ */
+function AxisCaption(): JSX.Element {
+  return (
+    <span
+      aria-hidden="true"
+      className="hidden justify-between font-mono text-[11px] text-ink-muted md:flex"
+    >
+      <span>← 良い側</span>
+      <span>いつもの範囲</span>
+      <span>悪い側 →</span>
+    </span>
+  );
+}
+
+/**
  * いつもと比べて (#1252): every metric of the run against the athlete's own
  * normal range, grouped into form and cardio.
  *
@@ -185,18 +232,27 @@ export default function NormalRangeRows({
     return null;
   }
   const noteOf = new Map(notes.map((note) => [note.signal, note.text]));
+  const groups = FAMILIES.map(({ key, title }) => ({
+    key,
+    title,
+    rows: signals.filter((signal) => signal.family === key),
+  })).filter((group) => group.rows.length > 0);
 
   return (
     <SectionBlock id={id} title="いつもと比べて">
       <div className="flex flex-col gap-6">
-        {FAMILIES.map(({ key, title }) => {
-          const rows = signals.filter((signal) => signal.family === key);
-          if (rows.length === 0) {
-            return null;
-          }
+        {groups.map(({ key, title, rows }, index) => {
           return (
             <div key={key}>
-              <h3 className="font-mono text-xs text-ink-muted">{title}</h3>
+              <div
+                className={`grid grid-cols-[minmax(0,1fr)] items-baseline gap-x-4 ${ROW_COLUMNS}`}
+              >
+                <h3 className="font-mono text-xs text-ink-muted">{title}</h3>
+                {/* Named once, over the first track: without it the dot has a
+                    position but no meaning — which side is the bad one, and
+                    where the athlete's usual range ends (#1270). */}
+                {index === 0 && <AxisCaption />}
+              </div>
               <ul className="mt-1 divide-y divide-hairline">
                 {rows.map((signal) => (
                   <SignalRow

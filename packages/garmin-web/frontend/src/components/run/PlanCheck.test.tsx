@@ -69,6 +69,56 @@ describe("PlanCheck", () => {
     expect(within(actualCell).getByText(/超過 5:21/)).toBeInTheDocument();
   });
 
+  it("test_plan_check_header_and_rows_share_one_grid", () => {
+    render(<PlanCheck plan={PLAN} />);
+
+    const rows = screen.getAllByRole("group");
+    const header = screen.getByText("状態").parentElement as HTMLElement;
+    const grid = header.parentElement as HTMLElement;
+
+    // One grid for the whole block: the header cells and every row's cells are
+    // `display: contents` inside it, so the four tracks are measured once. Per
+    // row grids sized their own columns and put 計画どおり under 目標 (#1270).
+    expect(rows.every((row) => row.parentElement === grid)).toBe(true);
+    expect(grid.className).toContain(
+      "md:grid-cols-[96px_minmax(0,1fr)_minmax(0,1.5fr)_72px]",
+    );
+    expect(header.className).toContain("md:contents");
+    for (const row of rows) {
+      expect(row.className).toContain("md:contents");
+      // No row may re-declare tracks of its own at `md`+.
+      expect(row.className).not.toMatch(/md:grid-cols-/);
+    }
+
+    // The status cell is last in the DOM, so the shared grid drops it into the
+    // 状態 column without an explicit column start.
+    const cells = Array.from(rows[0].children);
+    expect(cells).toHaveLength(4);
+    expect(cells[3]).toHaveTextContent("計画どおり");
+  });
+
+  it("test_plan_check_stacked_layout_unchanged_below_md", () => {
+    render(<PlanCheck plan={PLAN} />);
+
+    const rows = screen.getAllByRole("group");
+    // Below `md` the row is its own two-column grid and the tag is ordered up
+    // onto the name's line — that is what keeps it on a 400px screen.
+    for (const row of rows) {
+      expect(row.className).toContain("grid-cols-[minmax(0,1fr)_auto]");
+    }
+    const tagCell = within(rows[2]).getByText("ずれ").parentElement as HTMLElement;
+    expect(tagCell.className).toContain("order-2");
+    expect(tagCell.className).toContain("justify-self-end");
+    // The name keeps the first slot, the two readings follow it.
+    expect(
+      (within(rows[2]).getByText("心拍上限") as HTMLElement).className,
+    ).toContain("order-1");
+    expect(
+      (within(rows[2]).getByText("≦150bpm").parentElement as HTMLElement)
+        .className,
+    ).toContain("order-3");
+  });
+
   it("states a run that never touched the cap", () => {
     render(
       <PlanCheck

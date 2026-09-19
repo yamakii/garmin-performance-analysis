@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { MetricBaseline, WellnessBaselineDeviation } from "../types";
-import { baselineZRows, zBarStyle, zDirection, type ZRow } from "./baselineZ";
+import {
+  baselineZRows,
+  zBandStyle,
+  zBarStyle,
+  zDirection,
+  zDotStyle,
+  type ZRow,
+} from "./baselineZ";
 
 function metric(
   name: MetricBaseline["metric"],
@@ -144,5 +151,31 @@ describe("zBarStyle", () => {
       direction: "neutral",
     };
     expect(zBarStyle(unread).width).toBe("0%");
+  });
+});
+
+describe("zBandStyle / zDotStyle", () => {
+  it("test_z_band_is_the_middle_two_thirds", () => {
+    // The track is ±3σ and the band is ±2σ, so the band is fixed geometry the
+    // dot can be read against (#1270).
+    expect(zBandStyle()).toEqual({ left: "16.67%", width: "66.67%" });
+  });
+
+  it("test_z_dot_sits_at_the_reading", () => {
+    // 0.58σ on the unfavourable side: just right of centre, inside the band.
+    expect(zDotStyle({ z: 0.58, direction: "unfavorable" })).toEqual({
+      left: "59.67%",
+    });
+    expect(zDotStyle({ z: 2.1, direction: "favorable" })).toEqual({
+      left: "15%",
+    });
+    // Beyond the track it stops at the end rather than leaving it.
+    expect(zDotStyle({ z: 4, direction: "unfavorable" })).toEqual({
+      left: "100%",
+    });
+    // A reading exactly on the baseline sits on the centre line.
+    expect(zDotStyle({ z: 0, direction: "neutral" })).toEqual({ left: "50%" });
+    // No reading, no mark.
+    expect(zDotStyle({ z: null, direction: "neutral" })).toBeNull();
   });
 });

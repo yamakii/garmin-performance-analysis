@@ -554,6 +554,42 @@ describe("ActivityDetail header", () => {
     expect(heading.className).not.toContain("md:text-[40px]");
   });
 
+  it("test_verdict_line_is_smaller_than_title", async () => {
+    stubFetch({
+      detail: LONG_RUN_DETAIL,
+      sections: SUMMARY_SECTIONS,
+      track: [],
+      report: LONG_RUN_REPORT,
+    });
+    renderDetail();
+
+    // The run names the page and stays its largest text; the verdict reads at
+    // 20px under it. Shipped the other way round, the verdict (40px) shouted
+    // over the title (36px) it was judging (#1270).
+    const heading = await screen.findByRole("heading", {
+      level: 1,
+      name: /Morning Run/,
+    });
+    const verdict = screen.getByText("処方どおり").parentElement as HTMLElement;
+    expect(heading.className).toContain("text-[36px]");
+    expect(verdict.className).toContain("text-xl");
+    expect(verdict.className).not.toMatch(/text-\[(36|40)px\]/);
+  });
+
+  it("test_verdict_remainder_is_regular_weight", async () => {
+    stubFetch({
+      detail: LONG_RUN_DETAIL,
+      sections: SUMMARY_SECTIONS,
+      track: [],
+      report: LONG_RUN_REPORT,
+    });
+    renderDetail();
+
+    // Only the judgement is bold; what it amounts to is said in plain weight.
+    const rest = await screen.findByText(/特記なし/);
+    expect(rest).toHaveClass("font-normal", "text-ink-soft");
+  });
+
   it("test_meta_line_includes_start_time", async () => {
     const dated = {
       ...LONG_RUN_DETAIL,
