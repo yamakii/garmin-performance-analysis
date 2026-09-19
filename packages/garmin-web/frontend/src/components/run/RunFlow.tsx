@@ -511,6 +511,49 @@ export function runFlowOption(
   } as EChartsOption;
 }
 
+/**
+ * Which line is which (#1281).
+ *
+ * The y-axis titles were removed because they collided with the band captions
+ * (#1277), so this row is the only place that names the series. It is DOM, not
+ * canvas, so it stays readable at 400px, and its swatches read the same
+ * constants the series do — the legend cannot drift from the chart.
+ */
+export function SeriesLegend(): JSX.Element {
+  const swatch = "mr-1.5 inline-block h-0.5 w-3.5 align-middle";
+  return (
+    <p className="mt-1 flex flex-wrap gap-x-4 gap-y-1 font-mono text-xs text-ink-muted">
+      <span>
+        <span
+          aria-hidden="true"
+          data-series="pace"
+          className={swatch}
+          style={{ backgroundColor: METRIC_COLORS.speed }}
+        />
+        ペース /km（上が速い）
+      </span>
+      <span>
+        <span
+          aria-hidden="true"
+          data-series="heart_rate"
+          className={swatch}
+          style={{ backgroundColor: METRIC_COLORS.heart_rate }}
+        />
+        平均心拍
+      </span>
+      <span>
+        <span
+          aria-hidden="true"
+          data-series="max_heart_rate"
+          className="mr-1.5 inline-block h-1.5 w-1.5 rounded-sm border align-middle"
+          style={{ borderColor: METRIC_COLORS.heart_rate }}
+        />
+        最大心拍
+      </span>
+    </p>
+  );
+}
+
 /** What the x axis is, and what the width of a step means. */
 export function flowLegend(flow: RunFlowData): string {
   return flow.axis === "time"
@@ -560,6 +603,7 @@ export default function RunFlow({
             ariaLabel="ペースと心拍の推移"
             height={CHART_HEIGHT}
           />
+          <SeriesLegend />
           <p className="mt-1 font-mono text-xs text-ink-muted">
             {flowLegend(flow)}
           </p>
