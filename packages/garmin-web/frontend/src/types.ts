@@ -665,6 +665,27 @@ export interface RunConditions {
   elevation_gain_m: number | null;
 }
 
+/**
+ * What the athlete actually does next (#1273).
+ *
+ * `next_run_target` answers "what should the next run *of this kind* look
+ * like"; this answers the calendar's question instead. `source` says how much
+ * is known: a written prescription, the block's long-run ladder, or — with no
+ * date at all — today's family projected forward (`same_type`).
+ */
+export interface NextSession {
+  date: string | null;
+  days_ahead: number | null;
+  session_type: string;
+  session_label_ja: string;
+  title: string | null;
+  target_km: number | null;
+  target_minutes: number | null;
+  hr_low: number | null;
+  hr_high: number | null;
+  source: "prescription" | "ladder" | "same_type";
+}
+
 export interface RunReport {
   activity_id: number;
   activity_date: string;
@@ -681,6 +702,8 @@ export interface RunReport {
   conditions: RunConditions;
   vs_previous: Record<string, unknown> | null;
   next_run_target: Record<string, unknown> | null;
+  /** Null only when the report was served by a build older than #1273. */
+  next_session: NextSession | null;
 }
 
 // --- The coach's note: the one LLM-written section (#1251) ---

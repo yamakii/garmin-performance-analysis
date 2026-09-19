@@ -2,7 +2,21 @@ import { MemoryRouter } from "react-router-dom";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import CoachReview, { parseRunNote } from "./CoachReview";
-import type { RunNote, SectionResult } from "../../types";
+import type { NextSession, RunNote, SectionResult } from "../../types";
+
+/** The 9/20 long run the 2026-09-18 easy run actually led into (#1267). */
+const NEXT_SESSION: NextSession = {
+  date: "2026-09-20",
+  days_ahead: 2,
+  session_type: "long",
+  session_label_ja: "ロング走",
+  title: "ロング 16km",
+  target_km: 16,
+  target_minutes: null,
+  hr_low: null,
+  hr_high: 150,
+  source: "prescription",
+};
 
 const NOTE: RunNote = {
   story:
@@ -75,6 +89,67 @@ describe("CoachReview", () => {
     // standing empty and inviting an invented weakness.
     expect(screen.queryByText("伸ばせる点")).not.toBeInTheDocument();
     expect(screen.getByText("良かった点")).toBeInTheDocument();
+  });
+
+  it("renders the next scheduled session card", () => {
+    renderReview(
+      <CoachReview
+        note={NOTE}
+        legacySummary={undefined}
+        nextRunTarget={{ recommended_type: "aerobic_base", target_hr_low: 140 }}
+        nextSession={NEXT_SESSION}
+      />,
+    );
+
+    // What comes next is the scheduled long run, not the next easy run.
+    expect(screen.getByText("次のセッション")).toBeInTheDocument();
+    expect(screen.getByText("9/20（2日後）")).toBeInTheDocument();
+    expect(screen.getByText("ロング走")).toBeInTheDocument();
+    expect(screen.getByText("16 km")).toBeInTheDocument();
+    expect(screen.getByText("150 bpm 以下")).toBeInTheDocument();
+    // The same-type prescription would answer a different question.
+    expect(screen.queryByText("次回への処方")).not.toBeInTheDocument();
+  });
+
+  it("falls back to the same-type target card", () => {
+    renderReview(
+      <CoachReview
+        note={NOTE}
+        legacySummary={undefined}
+        nextRunTarget={{ recommended_type: "aerobic_base", target_hr_low: 140 }}
+        nextSession={{
+          ...NEXT_SESSION,
+          date: null,
+          days_ahead: null,
+          session_type: "aerobic_base",
+          session_label_ja: "ベース走",
+          title: null,
+          target_km: null,
+          source: "same_type",
+        }}
+      />,
+    );
+
+    // A dateless projection says no more than next_run_target already does.
+    expect(screen.getByText("次回への処方")).toBeInTheDocument();
+    expect(screen.queryByText("次のセッション")).not.toBeInTheDocument();
+  });
+
+  it("renders no card when nothing is known", () => {
+    renderReview(
+      <CoachReview
+        note={NOTE}
+        legacySummary={undefined}
+        nextRunTarget={null}
+        nextSession={null}
+      />,
+    );
+
+    expect(screen.queryByText("次のセッション")).not.toBeInTheDocument();
+    expect(screen.queryByText("次回への処方")).not.toBeInTheDocument();
+    // The challenge sentence stands on its own.
+    expect(screen.getByText("次回のチャレンジ")).toBeInTheDocument();
+    expect(screen.getByText(NOTE.next_challenge)).toBeInTheDocument();
   });
 
   it("lifts a recurrence point out of its list", () => {

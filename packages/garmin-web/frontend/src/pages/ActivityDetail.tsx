@@ -983,6 +983,7 @@ export default function ActivityDetail() {
         note={runNote}
         legacySummary={sections?.summary}
         nextRunTarget={report?.next_run_target ?? null}
+        nextSession={report?.next_session ?? null}
       />
 
       {/* How the run unfolded: the shape, its scenes, and what they were */}

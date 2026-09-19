@@ -5,7 +5,13 @@ import SectionBlock from "../SectionBlock";
 import MarkdownText from "../report/MarkdownText";
 import NextRunTarget from "../report/NextRunTarget";
 import { isRecord } from "../report/ReportCard";
-import type { GroundedPoint, RunNote, SectionResult } from "../../types";
+import NextSessionCard from "./NextSessionCard";
+import type {
+  GroundedPoint,
+  NextSession,
+  RunNote,
+  SectionResult,
+} from "../../types";
 import { splitLead } from "../../utils/leadSentence";
 
 /** Evidence prefix marking a point about what keeps coming back (#1251). */
@@ -153,18 +159,26 @@ function LegacyReview({
  * A point grounded in `recurrence.*` is lifted out of its list into a line of
  * its own: "this keeps happening" is a different statement from "this went
  * well today", and it is the one the reader acts on across runs.
+ *
+ * Under the challenge sentence sits the session the athlete actually does next
+ * (#1267). `next_run_target` only describes the next run *of today's kind*, so
+ * it stays as the card only when that is genuinely all that is known
+ * (`source === "same_type"`, or no scheduled session at all).
  */
 export default function CoachReview({
   id,
   note,
   legacySummary,
   nextRunTarget,
+  nextSession = null,
 }: {
   id?: string;
   note: RunNote | null;
   /** The old `summary` section, used only when there is no `run_note`. */
   legacySummary: SectionResult | undefined;
   nextRunTarget: Record<string, unknown> | null;
+  /** Null on a report older than #1273, or when the plan says nothing. */
+  nextSession?: NextSession | null;
 }): JSX.Element {
   if (note == null) {
     return (
@@ -180,6 +194,10 @@ export default function CoachReview({
     note.growth_points.find(isRecurrence) ?? note.good_points.find(isRecurrence);
   const good = note.good_points.filter((point) => point !== recurrence);
   const growth = note.growth_points.filter((point) => point !== recurrence);
+  const scheduled =
+    nextSession != null && nextSession.source !== "same_type"
+      ? nextSession
+      : null;
 
   return (
     <SectionBlock id={id} title="コーチの総評">
@@ -203,7 +221,11 @@ export default function CoachReview({
               次回のチャレンジ
             </h3>
             <CoachNote strong>{note.next_challenge}</CoachNote>
-            {nextRunTarget != null && <NextRunTarget data={nextRunTarget} />}
+            {scheduled != null ? (
+              <NextSessionCard session={scheduled} />
+            ) : (
+              nextRunTarget != null && <NextRunTarget data={nextRunTarget} />
+            )}
           </div>
         )}
         {note.question != null && note.question !== "" && (

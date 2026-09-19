@@ -790,9 +790,12 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "next_challenge": {
                 "type": "string",
                 "description": (
-                    "1-2 sentences; numbers transcribed from next_run_target. An "
-                    "HR ceiling is written as a guard "
-                    "('150 bpm を超えないように') together with where HR should settle"
+                    "1-2 sentences about the session in next_session -- name it "
+                    "and date it ('9/20 の 16 km ロング走'). Its numbers come from "
+                    "next_session; next_run_target's pace / HR bands may be "
+                    "quoted only when it is the same kind of run. An HR ceiling "
+                    "is written as a guard ('150 bpm を超えないように') together "
+                    "with where HR should settle"
                 ),
             },
             "timeline": {
@@ -841,8 +844,9 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "athlete can ignore today"
             ),
             "next_action": (
-                "One concrete next step, with the numbers transcribed from "
-                "next_run_target and an HR ceiling written as a guard"
+                "One concrete next step for the session in next_session -- the "
+                "run the athlete actually does next, named and dated -- with an "
+                "HR ceiling written as a guard"
             ),
             "recurrence_and_questions": (
                 "Point out what keeps recurring across runs, and ask at most "
@@ -859,13 +863,19 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "Generic criteria or textbook thresholds with no bearing on this run",
             "A within-range deviation dressed up as a strength or a weakness",
             "The same point in two places (a good point that is also a growth "
-            "point, or a note that repeats the timeline)",
+            "point, a note that repeats the timeline, or a low-readiness "
+            "morning stated in story and again in good_points)",
             "A pass/fail judgement of the athlete -- growth points are room to "
             "grow or a maintenance target",
             "A scene, cause or comparison that no evidence key supports",
             "A lap / split number as a place in the run -- a scene is placed "
             "by distance ('3–5 km') or by step ('2本目'), which is what its "
             "label_ja already says",
+            "A bare English context key in Japanese prose -- readiness is "
+            "「朝のレディネス（回復スコア）」 on first use and 「レディネス」 "
+            "afterwards, HRV is 「心拍変動」 and RHR is 「安静時心拍」",
+            "Every rep's pace and heart rate one by one -- the steps table "
+            "shows them; a rep session is narrated as a set",
         ],
         # How an ``evidence`` / ``moment_id`` / ``signal`` key is resolved by
         # ``validators.check_run_note_grounding`` at merge time.
@@ -902,19 +912,39 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             ),
             "timeline": (
                 "One item per scene in report.moments, in order; an uneventful "
-                "run gets exactly one item on the 'steady' scene. A scene is "
-                "placed by its label_ja and its km_from / km_to / t_from_s "
-                "(distances and times into the run), never by a lap number. "
-                "kind is start / fast_start / surge / ceiling_touch / "
-                "walk_break / climb / fade / strong_finish / progression / "
-                "steady for unit='km' scenes, and warmup / rep / rest / main / "
-                "cooldown / work_set for unit='step' scenes. Never invent a "
-                "scene the moments do not contain"
+                "run gets exactly one item on the 'steady' scene. Refer to a "
+                "scene by its label_ja and by nothing else -- never by "
+                "split_from / split_to, and never by an 'N km 目' worked out "
+                "from a lap number. A unit='km' label is a stretch of road "
+                "('3–5 km', '本編 0.9–5.9 km'), a unit='step' label is the name "
+                "of the step ('ウォームアップ', '1本目', 'レスト1'). kind is "
+                "start / fast_start / surge / ceiling_touch / walk_break / "
+                "climb / fade / strong_finish / progression / steady for "
+                "unit='km' scenes, and warmup / rep / rest / main / cooldown / "
+                "work_set for unit='step' scenes. On a rep session "
+                "(flow.axis == 'time') narrate the reps as a set -- how "
+                "consistent they were (pace_vs_first_s, pace_spread_s), how the "
+                "last compares with the first (first_vs_last_s, max_hr_vs_first) "
+                "and whether the rests brought heart rate down (hr_drop_bpm) -- "
+                "instead of listing each rep; warm-up and cool-down items are "
+                "one sentence and say only what a table cannot. A progression "
+                "scene describes the shape of the build (which step broke the "
+                "order, where the biggest jump was) from its per_km facts "
+                "without listing every kilometre. Never invent a scene the "
+                "moments do not contain"
             ),
             "next_challenge": (
-                "Transcribe the numbers from next_run_target. An HR ceiling is a "
-                "guard ('150 bpm を超えないように') plus where HR should settle, "
-                "never a pass/fail target"
+                "Write it for report.next_session -- the session the athlete "
+                "actually does next -- saying which session it is and when "
+                "('9/20 の 16 km ロング走'), with its target_km / "
+                "target_minutes / hr_high. next_run_target describes the next "
+                "run *of today's kind*, so its pace and HR bands may be quoted "
+                "only when next_session.source == 'same_type' or its "
+                "session_type is the same kind as today's run. With "
+                "next_session == null, carry today's main finding over without "
+                "naming a type or quoting numbers ('次のランでも…'). An HR "
+                "ceiling is a guard ('150 bpm を超えないように') plus where HR "
+                "should settle, never a pass/fail target"
             ),
             "question": (
                 "At most one, and only about something the sensors cannot see "
@@ -936,8 +966,11 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "Only an outside + adverse signal (or an off-plan axis) may become a "
             "growth point",
             "Write a note for every adverse out-of-range signal and for no other",
-            "Transcribe next_challenge numbers from next_run_target and write an "
-            "HR ceiling as a guard with its settling range",
+            "Write next_challenge for next_session (named and dated); quote "
+            "next_run_target's bands only when it is the same kind of run, and "
+            "write an HR ceiling as a guard with its settling range",
+            "Refer to a scene by its label_ja -- a distance range for unit='km' "
+            "and the step's name for unit='step' -- never by a lap number",
             "Ask at most one question, about something the sensors cannot see",
         ],
     },
