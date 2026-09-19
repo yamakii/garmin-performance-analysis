@@ -202,6 +202,7 @@ const BASE_REPORT: RunReport = {
   },
   vs_previous: null,
   next_run_target: null,
+  next_session: null,
 };
 
 const NO_SPLIT_ANOMALIES: SplitAnomaliesResponse = {

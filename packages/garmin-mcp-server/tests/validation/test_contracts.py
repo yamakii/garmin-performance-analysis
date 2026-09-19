@@ -573,3 +573,50 @@ def test_contract_run_note_lists_prose_roles():
         "conditions.<field>",
         "context.<field>",
     }
+
+
+@pytest.mark.unit
+def test_contract_run_note_next_challenge_uses_next_session():
+    """The next step is the next *session*, not the next run of today's kind.
+
+    On 2026-09-18 the note coached an easy run while the athlete's next
+    session was a 16 km long run two days later, because the agent transcribed
+    ``next_run_target`` (#1267). The contract now names ``next_session`` as the
+    source and fences ``next_run_target`` behind the same-type condition.
+    """
+    contract = get_contract("run_note")
+
+    policy = contract["evaluation_policy"]["next_challenge"]
+    assert "next_session" in policy
+    # next_run_target is still quotable, but only for the same kind of run.
+    assert "same_type" in policy
+    assert "next_session == null" in policy
+    # The field description and the instructions say the same thing.
+    assert (
+        "next_session" in contract["required_fields"]["next_challenge"]["description"]
+    )
+    assert any("next_session" in line for line in contract["instructions"])
+    # The HR ceiling stays a guard with its settling range.
+    assert "150 bpm を超えないように" in policy
+
+
+@pytest.mark.unit
+def test_contract_run_note_scenes_referenced_by_label():
+    """A scene is named by its label, never by the lap it was recorded under.
+
+    Since #1268 every scene carries ``label_ja`` + ``unit``; step scenes
+    (``rep`` / ``rest`` / ``work_set``) have no kilometre to be numbered by at
+    all, so a lap-derived 「N km 目」 is simply wrong (#1267).
+    """
+    contract = get_contract("run_note")
+
+    timeline = contract["evaluation_policy"]["timeline"]
+    assert "label_ja" in timeline
+    for kind in ("rep", "rest", "work_set", "progression"):
+        assert kind in timeline
+    # The facts a rep session is narrated from, rather than rep-by-rep numbers.
+    for fact in ("pace_spread_s", "first_vs_last_s", "hr_drop_bpm"):
+        assert fact in timeline
+    # Placing a scene by a lap number is called out as forbidden.
+    assert any("lap" in rule and "label_ja" in rule for rule in contract["never_write"])
+    assert any("label_ja" in line for line in contract["instructions"])
