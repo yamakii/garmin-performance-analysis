@@ -3,10 +3,9 @@ const MAX_SCORE = 5;
 /**
  * Compact `★ 4.0` marker for a rating lifted out of prose (`extractStarSuffix`).
  *
- * Unlike `StarRating` — the five-star display of the summary section — this
- * is a one-glance marker for a section heading or a phase row, where the
- * score has to sit next to a label without dominating it. Mono, star-colored
- * glyph, ink score: no pill, no tint (#1116).
+ * A one-glance marker for a section heading or a phase row, where the score
+ * has to sit next to a label without dominating it. Mono, star-colored glyph,
+ * ink score: no pill, no tint (#1116).
  */
 export default function StarBadge({ score }: { score: number }) {
   return (
