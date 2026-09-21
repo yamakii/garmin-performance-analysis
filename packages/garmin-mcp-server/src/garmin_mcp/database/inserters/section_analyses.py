@@ -37,10 +37,12 @@ def insert_section_analysis(
     Args:
         activity_id: Activity ID
         activity_date: Activity date (YYYY-MM-DD)
-        section_type: Section type (efficiency/environment/phase/split/summary)
+        section_type: Section type (``run_note``; a legacy type only when
+            repairing a historical row)
         analysis_file: Optional path to section analysis JSON file
         analysis_data: Optional dict containing analysis data
-        agent_name: Optional agent name (defaults to {section_type}-section-analyst)
+        agent_name: Optional agent name (defaults to run-note-analyst for
+            ``run_note``, else {section_type}-section-analyst)
         agent_version: Agent version (defaults to "1.0")
         db_path: Optional DuckDB path (default: data/database/garmin_performance.duckdb)
 

@@ -7,57 +7,11 @@ from garmin_mcp.analysis.derivations import (
     compute_prescription_verdict,
     compute_vs_previous,
     compute_week_position,
-    compute_weighted_star_rating,
     detect_garmin_conflicts,
     map_environment_category,
     map_phase_category,
     summarize_adherence,
-    weighted_star_rating_raw,
 )
-
-
-@pytest.mark.unit
-def test_compute_weighted_star_rating_basic() -> None:
-    rating = compute_weighted_star_rating(
-        {"effort": 4.0, "performance": 3.0, "efficiency": 5.0, "execution": 2.0},
-        {"effort": 0.4, "performance": 0.3, "efficiency": 0.2, "execution": 0.1},
-    )
-
-    assert rating == 3.7
-
-
-@pytest.mark.unit
-def test_weighted_star_rating_raw_no_rounding() -> None:
-    # Issue #859: the raw weighted mean must NOT be rounded. This breakdown
-    # lands exactly on the 3.15 (X.X5) boundary where compute_weighted_star_rating
-    # would round to 3.1 (half-to-even) but the true mean is 3.15.
-    raw = weighted_star_rating_raw(
-        {"temperature": 2.5, "humidity": 3.0, "terrain": 4.0, "wind": 4.0},
-        {"temperature": 0.4, "humidity": 0.25, "terrain": 0.2, "wind": 0.15},
-    )
-
-    assert raw == pytest.approx(3.15)
-    assert raw != 3.1
-
-
-@pytest.mark.unit
-def test_compute_weighted_star_rating_clamps_to_5() -> None:
-    rating = compute_weighted_star_rating(
-        {"effort": 5.5, "performance": 5.5, "efficiency": 5.5, "execution": 5.5},
-        {"effort": 0.4, "performance": 0.3, "efficiency": 0.2, "execution": 0.1},
-    )
-
-    assert rating == 5.0
-
-
-@pytest.mark.unit
-def test_compute_weighted_star_rating_key_mismatch_raises() -> None:
-    with pytest.raises(ValueError, match="weights keys must match"):
-        compute_weighted_star_rating(
-            {"effort": 4.0, "performance": 3.0, "efficiency": 5.0, "execution": 2.0},
-            {"effort": 0.4, "performance": 0.3, "efficiency": 0.3},
-        )
-
 
 # --- compute_next_run_target (Issue #672) ---
 
@@ -618,3 +572,12 @@ def test_vs_previous_deltas() -> None:
 def test_vs_previous_none() -> None:
     """Without a comparable previous run there is nothing to compare."""
     assert compute_vs_previous({"pace_s_per_km": 430}, None) is None
+
+
+@pytest.mark.unit
+def test_weighted_star_helpers_are_gone() -> None:
+    """A single run is never graded, so nothing computes a star rating (#1256)."""
+    from garmin_mcp.analysis import derivations
+
+    assert not hasattr(derivations, "weighted_star_rating_raw")
+    assert not hasattr(derivations, "compute_weighted_star_rating")

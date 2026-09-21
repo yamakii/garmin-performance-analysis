@@ -3,8 +3,8 @@
 ``merge_section_analyses`` is the last place a coach review can be stopped
 before it reaches the page, so these tests drive the script end-to-end with a
 stubbed reader / writer: a grounded review is inserted, an ungrounded one is
-rejected with the offending key named and the temp dir kept, and the legacy
-gates keep guarding the legacy sections while both live side by side.
+rejected with the offending key named and the temp dir kept, and a stray file
+of a legacy section type is turned away by the schema guard.
 """
 
 import copy
@@ -71,8 +71,9 @@ _VALID_RUN_NOTE: dict = {
     "question": None,
 }
 
-# A legacy summary that the existing weighted-star gate must still reject.
-_LEGACY_SUMMARY_NO_BREAKDOWN: dict = {
+# A legacy summary payload: schema-valid when the five legacy sections existed,
+# unknown to Guard 0 now that run_note is the only section type.
+_LEGACY_SUMMARY: dict = {
     "star_rating": "★★★★☆ 4.0/5.0",
     "summary": "全体的に良好なランに仕上がりました。",
     "key_strengths": ["安定したペース"],
@@ -131,7 +132,7 @@ class TestMergeRunNoteGroundingGate:
 
     @patch("garmin_mcp.scripts.merge_section_analyses.GarminDBReader")
     @patch("garmin_mcp.scripts.merge_section_analyses.GarminDBWriter")
-    def test_merge_rejects_ungrounded_run_note(
+    def test_merge_run_note_grounding_gate_still_applies(
         self, mock_writer_cls, mock_reader_cls, tmp_path
     ):
         # A growth point on a signal that never left its normal range.
@@ -216,24 +217,34 @@ class TestMergeRunNoteGroundingGate:
 
 
 @pytest.mark.integration
-class TestMergeLegacySectionsStillGated:
-    """The legacy gates keep running while the legacy sections exist."""
+class TestMergeRejectsLegacySections:
+    """A legacy section type is an unknown type to Guard 0 (Issue #1256)."""
 
     @patch("garmin_mcp.scripts.merge_section_analyses.GarminDBReader")
     @patch("garmin_mcp.scripts.merge_section_analyses.GarminDBWriter")
-    def test_merge_legacy_sections_still_gated(
+    def test_merge_rejects_a_legacy_section_file(
         self, mock_writer_cls, mock_reader_cls, tmp_path
     ):
+        mock_reader_cls.return_value.get_run_report.return_value = copy.deepcopy(
+            _REPORT
+        )
         mock_writer = MagicMock()
         mock_writer.insert_section_analysis.return_value = True
         mock_writer_cls.return_value = mock_writer
 
-        _write_section(tmp_path, "summary", copy.deepcopy(_LEGACY_SUMMARY_NO_BREAKDOWN))
+        _write_section(tmp_path, "run_note", _run_note())
+        _write_section(tmp_path, "summary", copy.deepcopy(_LEGACY_SUMMARY))
 
         result = merge_section_analyses(tmp_path, keep=True)
 
+        assert result["succeeded"] == ["run_note"]
         assert result["failed"] == ["summary"]
-        assert result["succeeded"] == []
-        mock_writer.insert_section_analysis.assert_not_called()
-        # The run_note gate never asked for a report: this is a legacy section.
-        mock_reader_cls.return_value.get_run_report.assert_not_called()
+        assert any(
+            "summary" in error and "schema validation failed" in error
+            for error in result["errors"]
+        )
+        inserted = {
+            call.kwargs["section_type"]
+            for call in mock_writer.insert_section_analysis.call_args_list
+        }
+        assert inserted == {"run_note"}

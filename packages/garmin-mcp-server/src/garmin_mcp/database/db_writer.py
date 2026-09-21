@@ -782,16 +782,18 @@ class GarminDBWriter:
         Versioning (issue #776): every row carries a ``run_id`` identifying the
         analysis run it belongs to. Pass a shared ``run_id`` (from
         :meth:`next_run_id`) to group several sections written together into one
-        version — this is what the full-activity analysis does for its 5
-        sections. When ``run_id`` is omitted, a fresh run_id is allocated, so a
-        standalone single-section re-analysis becomes its own version.
+        version — this is what one merge of an analysis run does. When ``run_id``
+        is omitted, a fresh run_id is allocated, so a standalone single-section
+        re-analysis becomes its own version.
 
         Args:
             activity_id: Activity ID
             activity_date: Activity date (YYYY-MM-DD)
-            section_type: Section type (efficiency, environment, phase, split, summary)
+            section_type: Section type (``run_note``; a legacy type only when
+                repairing a historical row)
             analysis_data: Analysis data dict (metadata will be auto-added if not present)
-            agent_name: Optional agent name (defaults to {section_type}-section-analyst)
+            agent_name: Optional agent name (defaults to run-note-analyst for
+                ``run_note``, else {section_type}-section-analyst)
             agent_version: Agent version (defaults to "1.0")
             run_id: Optional shared run identifier. Omit to allocate a new one
                 (single-section write = its own version).
@@ -819,9 +821,16 @@ class GarminDBWriter:
 
                     # Auto-generate metadata if not present
                     if "metadata" not in analysis_data:
-                        # Determine agent name from section_type
+                        # Determine agent name from section_type. run_note is
+                        # written by run-note-analyst; a legacy section type
+                        # keeps the old default so a hand-repaired historical
+                        # row still labels itself the way its peers are labelled.
                         if agent_name is None:
-                            agent_name = f"{section_type}-section-analyst"
+                            agent_name = (
+                                "run-note-analyst"
+                                if section_type == "run_note"
+                                else f"{section_type}-section-analyst"
+                            )
 
                         # Generate metadata
                         metadata = {

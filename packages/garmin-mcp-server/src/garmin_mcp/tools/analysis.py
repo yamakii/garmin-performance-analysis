@@ -17,9 +17,7 @@ from pydantic import BaseModel, Field
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.tools.registry import ToolDef
 
-_SECTION_TYPES = Literal[
-    "split", "phase", "efficiency", "environment", "summary", "run_note"
-]
+_SECTION_TYPES = Literal["run_note"]
 
 # ----------------------------------------------------------------------------
 # Params models
@@ -55,7 +53,7 @@ class FindUnanalyzedActivitiesParams(BaseModel):
     end_date: str = Field(description="End date (inclusive) in YYYY-MM-DD format")
     required_sections: int = Field(
         default=5,
-        description="Section count considered complete (default 5)",
+        description="Legacy section count considered complete (default 5)",
     )
 
 
@@ -332,8 +330,8 @@ ANALYSIS_TOOLS: list[ToolDef] = [
     ToolDef(
         name="validate_section_json",
         description=(
-            "Validate section analysis data against Pydantic schema. Returns "
-            "{valid: bool, errors: list[str]}."
+            "Validate a run_note coach review against its Pydantic schema. "
+            "Returns {valid: bool, errors: list[str]}."
         ),
         params=ValidateSectionJsonParams,
         handler=_validate_section_json,
@@ -343,9 +341,9 @@ ANALYSIS_TOOLS: list[ToolDef] = [
     ToolDef(
         name="get_analysis_contract",
         description=(
-            "Get analysis contract for a section type (output schema, evaluation "
-            "thresholds, instructions). Agents call this for up-to-date evaluation "
-            "criteria."
+            "Get the analysis contract for the run_note coach review (output "
+            "schema, evidence keys, writing criterion). The analyst calls this "
+            "for the up-to-date criterion."
         ),
         params=GetAnalysisContractParams,
         handler=_get_analysis_contract,
@@ -355,11 +353,12 @@ ANALYSIS_TOOLS: list[ToolDef] = [
     ToolDef(
         name="find_unanalyzed_activities",
         description=(
-            "Find running activities missing a complete set of section analyses "
-            "in a date range. Returns [{activity_id, date, section_count}] for "
-            "activities whose distinct section_analyses count is below "
-            "required_sections (default 5), ordered by date ascending. Used to "
-            "backfill analysis history for catch-up-ingested days."
+            "Find running activities without an analysis in a date range. An "
+            "activity counts as analysed when it has a run_note row or the "
+            "complete legacy section set. Returns [{activity_id, date, "
+            "section_count}] for the rest, where section_count is the distinct "
+            "legacy section count, ordered by date ascending. Used to backfill "
+            "analysis history for catch-up-ingested days."
         ),
         params=FindUnanalyzedActivitiesParams,
         handler=_find_unanalyzed_activities,

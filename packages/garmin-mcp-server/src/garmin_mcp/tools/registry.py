@@ -130,8 +130,12 @@ def _normalize_property(prop_schema: dict[str, Any]) -> dict[str, Any]:
         normalized["description"] = prop_schema["description"]
 
     # Literal[...] -> enum (inlined by Pydantic; also handled inside anyOf).
+    # A single-valued Literal is emitted as ``const`` instead, which MCP clients
+    # do not read as a choice list, so it is surfaced as a one-item enum.
     if "enum" in shape:
         normalized["enum"] = list(shape["enum"])
+    elif "const" in shape:
+        normalized["enum"] = [shape["const"]]
 
     # list[T] -> items; Annotated[list[T], Field(min/max_length)] -> minItems/maxItems.
     if "items" in shape:

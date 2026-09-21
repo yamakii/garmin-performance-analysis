@@ -6,7 +6,7 @@ efficiency to the first-half HR/speed efficiency. ``>5%`` is a common rule of
 thumb for insufficient aerobic durability.
 
 This is the *longitudinal* counterpart to the per-activity second-half form
-decay analysis (#61, split-section-analyst). Alongside cardiac decoupling and
+decay analysis (#61). Alongside cardiac decoupling and
 pace fade, the reader now also tracks second-half **form** decay (#368): how
 ground-contact time, vertical oscillation and vertical ratio worsen from the
 first to the second half of a long run, and whether that degradation trends
