@@ -123,9 +123,10 @@ function fetchPrompt(date) {
 
 // The run report carries the run itself (plan verdict, signals, scenes,
 // conditions); what it does NOT carry is why the day was prescribed, how the
-// athlete woke up and what the previous same-type run looked like. Only those
-// keys are forwarded — the full bundle would double the prompt with numbers the
-// page already renders (form baselines, zone percentages, star scores).
+// athlete woke up and what the previous same-type run looked like. The bundle
+// carries exactly that (#1287); what is left out here is only its bulk — the
+// raw prescription rows, unused prescription fields, similar workouts past the
+// third. A Python test keeps the keys read below in step with the bundle.
 function buildRunNoteContext(contextJson) {
   let bundle
   try {

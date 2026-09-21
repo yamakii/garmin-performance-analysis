@@ -170,21 +170,22 @@ missing.
   not resolve against the report. HR zones always come from Garmin-native
   zones, never a `220−age` formula.
 
-### Continuous scores in the CONTEXT
+### What the CONTEXT carries
 
-`prefetch_activity_context` computes two ratings as continuous numbers rather
-than letting an LLM apply a band table, because a step function made
-near-identical runs jump a whole star at a band edge (#1236):
-`zone_distribution_score` (the continuous form of `zone_distribution_rating`,
-interpolated over the same `ZONE_BAND_CUTS` the label uses, `null` for the
-"unknown" intensity category) and `form_scores.integrated_star_score` (the
-100-point `integrated_score` on the star scale,
-`clamp(5.0 − (100 − score) / 20, 1.0, 5.0)`, #1233). Both are additive and
-`null` when their source row is missing.
+The run itself — plan vs actual, signals, scenes, conditions — is the report's.
+`prefetch_activity_context` carries only what the report cannot say: why the day
+was prescribed and how it was answered (`prescription`, `prescription_for_run`,
+`prescription_verdict`), where the day sits in the week (`week_position`), how
+the athlete woke up (`morning_wellness`), the previous run of the same kind
+(`previous_same_type`, `vs_previous`), `similar_workouts`, the `long_run_gate`
+verdict for runs of 10 km and more, and the shoe (`gear`). Every key has a
+reader — `buildRunNoteContext` in `.claude/workflows/analyze-activity.js` — and
+a test keeps the two in step (#1287). Weather, HR zones and form are read
+through the report or their own tools.
 
-They are **scores, not grades**: the single-run page and the run note do not
-grade a run at all (see below) — a star is never the answer to "how was this
-run" — so nothing on the analysis path reads them today.
+As a side effect the call trains the form baseline of the activity's month (and
+the month before) when it is missing; nothing else does, and ingest grades form
+against that baseline (#266, #1088).
 
 ## Run report and the run note
 

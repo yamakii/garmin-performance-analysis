@@ -1,7 +1,12 @@
-"""Pre-fetch shared activity context for analysis agents.
+"""Pre-fetch the context a run report does not carry.
 
-Queries DuckDB once for data that multiple agents would otherwise fetch independently,
-reducing ~9 redundant MCP calls per activity to 0.
+The run itself -- plan vs actual, signals against the athlete's own normal
+range, scenes, conditions -- is computed deterministically by
+``get_run_report``. What that report cannot say is why the day was prescribed,
+how the athlete woke up, what the previous run of the same kind looked like and
+which shoe was worn. This bundle carries exactly that, for the
+``analyze-activity`` workflow (which forwards it to ``run-note-analyst``) and
+for the MCP tool of the same name.
 
 Usage:
     uv run python -m garmin_mcp.scripts.prefetch_activity_context 21884133706
@@ -11,54 +16,11 @@ Output (JSON to stdout):
       "activity_id": 21884133706,
       "activity_date": "2026-02-16",
       "training_type": "aerobic_base",
-      "temperature_c": 7.8,
-      "humidity_pct": 84,
-      "wind_mps": 1.1,
-      "wind_direction": "NW",
-      "terrain_category": "flat",
-      "avg_elevation_gain_per_km": 1.6,
-      "total_elevation_gain": 12.8,
-      "total_elevation_loss": 11.2,
-      "max_split_elevation_gain": 4.5,
-      "max_split_elevation_loss": 3.9,
-      "zone_percentages": {"zone1": 5.2, "zone2": 36.8, "zone3": 60.5, ...},
-      "primary_zone": "Zone 3",
-      "zone_distribution_rating": "appropriate",
-      "zone_band_pct": 84.6,
-      "zone_distribution_score": 4.6,
-      "hr_stability": "stable",
-      "aerobic_efficiency": "good",
-      "training_quality": "effective",
-      "zone2_focus": false,
-      "zone4_threshold_work": false,
-      "form_scores": {
-        "gct": {"star_rating": "★★★★★", "score": 4.8},
-        "vo": {"star_rating": "★★★★☆", "score": 4.0},
-        "vr": {"star_rating": "★★★★☆", "score": 4.0},
-        "integrated_score": 92.5,
-        "integrated_star_score": 4.6,
-        "overall_score": 4.3,
-        "overall_star_rating": "★★★★☆"
-      },
-      "phase_structure": {
-        "pace_consistency": 0.017,
-        "hr_drift_percentage": 2.5,
-        "cadence_consistency": "stable",
-        "fatigue_pattern": "none",
-        "warmup": {"avg_pace": "6:33/km", "avg_hr": 134.0},
-        "run": {"avg_pace": "5:45/km", "avg_hr": 155.0},
-        "cooldown": {"avg_pace": "7:12/km", "avg_hr": 140.0}
-      },
-      "form_evaluation": {...},      # FormReader.get_form_evaluations (or null)
-      "hr_zones_detail": {"zones": [...]},  # PhysiologyReader (or null)
-      "form_baseline_trend": {"success": true, "metrics": {...}},
+      "gear": {...}|null,            # shoe worn + its cumulative mileage
       "similar_workouts": {"target_activity": {...}, "similar_activities": [...]},
-      "vo2_max": null,               # training-type conditional (or data dict)
-      "lactate_threshold": null,     # training-type conditional (or data dict)
       "long_run_gate": null,         # long runs only (>= 10 km); see below
       "prescription": [],            # that day's weekly_prescriptions rows
       "prescription_for_run": {...}|null,  # the row the run is judged against
-      "progression_session": false,  # run-phase splits show a prescribed build-up
       "week_position": {...}|null,   # where the day sits in the training week
       "previous_same_type": {...}|null,  # last same-type run within 21 days
       "vs_previous": {...}|null,     # deterministic deltas against it
@@ -66,11 +28,18 @@ Output (JSON to stdout):
       "prescription_verdict": {...}|null  # ✅ / 🟡 / 🔴 + Japanese reasons
     }
 
+Every key has a reader (``buildRunNoteContext`` in
+``.claude/workflows/analyze-activity.js``); a test keeps the two in step. The
+numbers the five retired section analysts used to receive here -- weather,
+terrain, zone percentages, form scores, phase structure, VO2max, LT -- live in
+``get_run_report`` and in their own tools (``get_weather_data``,
+``get_hr_efficiency_analysis``, ``get_form_evaluations``, ...) (#1287).
+
 ``long_run_gate`` carries the deterministic long-run progression verdict
 (extend / repeat / shorten) for runs of at least
 ``_LONG_RUN_GATE_MIN_KM``; it is ``null`` for shorter runs and on any error, so
-the summary transcribes the same judgement the weekly review sees (#982). Its
-``recovery_cost`` block prices the two mornings after the run, and a fired
+the coach review transcribes the same judgement the weekly review sees (#982).
+Its ``recovery_cost`` block prices the two mornings after the run, and a fired
 ``cost_flag`` holds the distance even when the in-run fades are clean (#1221).
 
 The prescription layer (Issue #984) gives the analysis the four things a coach
@@ -78,22 +47,13 @@ knows before reading the numbers: what was *prescribed* for that day, where the
 day sits in the week (long-run day / days to the long run / cutback), how the
 last same-type run went, and how the athlete woke up. ``prescription_verdict``
 and ``vs_previous`` are derived deterministically
-(``analysis.derivations``) so the summary agent transcribes a judgement rather
-than inventing one. Every key is null-on-error (``[]`` for ``prescription``).
+(``analysis.derivations``) so the agent transcribes a judgement rather than
+inventing one. Every key is null-on-error (``[]`` for ``prescription``).
 
-``zone_band_pct`` / ``zone_distribution_score`` and
-``form_scores.integrated_star_score`` are the continuous companions of the
-categorical ``zone_distribution_rating`` and of the 100-point
-``integrated_score`` (Issue #1236). They are computed on read -- so the whole
-history is covered without a re-ingest -- and the agents anchor their axis
-scores on them instead of applying a step function by hand. Both zone values
-are null when the activity has no ``hr_efficiency`` row; the score alone is
-null for the "unknown" intensity category, which has no intended zone band.
-
-Bundle keys form_evaluation..lactate_threshold are additive (Issue #235);
-existing keys above are never modified. vo2_max / lactate_threshold are
-training-type conditional (tempo/threshold -> LT only; vo2max/interval/speed
--> vo2_max only; others -> both null; unknown type -> both included).
+Side effect: the form baseline of the activity's month (and the month before)
+is trained here when it is missing (Issue #266). Nothing else in the system
+does that, and ingest grades form against that baseline (#1088), so the call
+stays even though its outcome is no longer part of the bundle.
 """
 
 import argparse
@@ -104,42 +64,16 @@ from collections.abc import Callable
 from datetime import date, timedelta
 from typing import Any
 
-import duckdb
-
 from garmin_mcp.analysis.derivations import (
-    compute_next_run_target,
     compute_prescription_verdict,
     compute_vs_previous,
     compute_week_position,
-    detect_progression_session,
-    map_environment_category,
-    map_phase_category,
     select_prescription_for_run,
 )
 from garmin_mcp.database.connection import get_connection, get_db_path
-from garmin_mcp.database.inserters.hr_efficiency import (
-    resolve_intensity_category,
-    zone_band_pct,
-    zone_distribution_score,
-)
 from garmin_mcp.database.readers.metadata import collect_activity_gear
-from garmin_mcp.form_baseline.integrated_score import (
-    integrated_star_score,
-    round_star_score,
-)
 
 logger = logging.getLogger(__name__)
-
-# Training types for which lactate threshold is the relevant aerobic ceiling.
-_LT_TRAINING_TYPES = {"tempo", "threshold", "lactate_threshold"}
-# Training types for which VO2 max is the relevant aerobic ceiling.
-_VO2_TRAINING_TYPES = {"vo2max", "vo2_max", "interval", "speed"}
-
-# Single-split (gain+loss) threshold above which a locally hilly split promotes
-# an otherwise "flat" (average-driven) classification to "undulating".
-# Sourced from TerrainClassifier's 丘陵 (hilly) cutoff so the local-bump
-# sensitivity stays in sync with per-split terrain labeling (see Issue #473).
-_SPLIT_UNDULATION_THRESHOLD = 15.0  # m, == TerrainClassifier 丘陵 cutoff
 
 # Minimum distance for the long-run progression gate to apply. Matches the
 # long-run definition used by the durability reader / get_durability_trend.
@@ -406,124 +340,27 @@ def _collect_prescription_layer(
     return layer
 
 
-def _should_include_vo2_max(training_type: str | None) -> bool:
-    """Decide whether vo2_max is relevant for the given training type.
-
-    Rules (see Issue #235):
-    - None training_type -> include (safe side)
-    - vo2max / interval / speed -> include
-    - everything else -> exclude
-    """
-    if training_type is None:
-        return True
-    return training_type.lower() in _VO2_TRAINING_TYPES
-
-
-def _should_include_lactate_threshold(training_type: str | None) -> bool:
-    """Decide whether lactate_threshold is relevant for the given training type.
-
-    Rules (see Issue #235):
-    - None training_type -> include (safe side)
-    - tempo / threshold -> include
-    - everything else -> exclude
-    """
-    if training_type is None:
-        return True
-    return training_type.lower() in _LT_TRAINING_TYPES
-
-
-def _classify_terrain(
-    avg_gain_per_km: float | None,
-    max_split_change: float | None = None,  # 単一区間の最大 (gain+loss)
-) -> str:
-    """Classify terrain based on average elevation gain per km.
-
-    Average gain drives the primary classification (sustained gradient).
-    When the primary result is "flat" but a single split has a large
-    (gain+loss) change (>= _SPLIT_UNDULATION_THRESHOLD, sourced from
-    TerrainClassifier's 丘陵 cutoff), promote to "undulating" so local
-    bumps averaged out across the run are not lost (see Issue #473).
-    hilly/mountainous remain average-driven (sustained climbs).
-    """
-    if avg_gain_per_km is None:
-        return "unknown"
-    if avg_gain_per_km < 10:
-        if (
-            max_split_change is not None
-            and max_split_change >= _SPLIT_UNDULATION_THRESHOLD
-        ):
-            return "undulating"
-        return "flat"
-    if avg_gain_per_km < 30:
-        return "undulating"
-    if avg_gain_per_km < 50:
-        return "hilly"
-    return "mountainous"
-
-
-def _build_phase_dict(row: tuple, has_recovery: bool) -> dict:
-    """Build phase_structure dict from performance_trends query row.
-
-    Column order matches Query 6 SELECT:
-    0: pace_consistency, 1: hr_drift_percentage, 2: cadence_consistency,
-    3: fatigue_pattern, 4-6: warmup (pace_str, hr, splits),
-    7-9: run (pace_str, hr, splits), 10-12: recovery (pace_str, hr, splits),
-    13-15: cooldown (pace_str, hr, splits)
-    """
-    result: dict = {
-        "pace_consistency": row[0],
-        "hr_drift_percentage": row[1],
-        "cadence_consistency": row[2],
-        "fatigue_pattern": row[3],
-    }
-
-    # Warmup phase
-    if row[5]:  # warmup_splits not null
-        result["warmup"] = {"avg_pace": row[4], "avg_hr": row[5] and round(row[5], 1)}
-
-    # Run phase
-    if row[8]:  # run_splits not null
-        result["run"] = {"avg_pace": row[7], "avg_hr": row[8] and round(row[8], 1)}
-
-    # Recovery phase (only for interval training)
-    if has_recovery and row[11]:  # recovery_splits not null
-        result["recovery"] = {
-            "avg_pace": row[10],
-            "avg_hr": row[11] and round(row[11], 1),
-        }
-
-    # Cooldown phase
-    if row[14]:  # cooldown_splits not null
-        result["cooldown"] = {
-            "avg_pace": row[13],
-            "avg_hr": row[14] and round(row[14], 1),
-        }
-
-    return result
-
-
 def prefetch_activity_context(activity_id: int) -> dict:
-    """Fetch shared context for all analysis agents in a single DB read.
+    """Context the run report does not carry.
+
+    Why the day was prescribed, where it sits in the week, how the athlete woke
+    up, what the previous same-type run looked like, similar past workouts, the
+    long-run gate and the shoe. The run itself is ``get_run_report``'s.
 
     Args:
         activity_id: Garmin activity ID.
 
     Returns:
-        Dict with training_type, weather, terrain, HR efficiency,
-        form scores, and phase structure data.
+        The bundle described in the module docstring, or ``{"error": ...}`` when
+        the activity does not exist.
     """
     db_path = get_db_path()
 
     with get_connection(db_path) as conn:
-        # 1. Activity metadata + weather (from activities table)
         activity_row = conn.execute(
             """
             SELECT
                 start_time_local::DATE AS activity_date,
-                temp_celsius,
-                relative_humidity_percent,
-                wind_speed_kmh,
-                wind_direction,
                 avg_heart_rate,
                 avg_pace_seconds_per_km,
                 total_distance_km,
@@ -538,288 +375,39 @@ def prefetch_activity_context(activity_id: int) -> dict:
             return {"error": f"Activity {activity_id} not found"}
 
         activity_date = str(activity_row[0])
-        temp_c = activity_row[1]
-        humidity = activity_row[2]
-        wind_kmh = activity_row[3]
-        wind_direction = activity_row[4]
-        avg_heart_rate = activity_row[5]
-        avg_pace_s_per_km = activity_row[6]
-        total_distance_km = activity_row[7]
-        total_time_seconds = activity_row[8]
-        wind_mps = round(wind_kmh / 3.6, 1) if wind_kmh else None
+        avg_heart_rate = activity_row[1]
+        avg_pace_s_per_km = activity_row[2]
+        total_distance_km = activity_row[3]
+        total_time_seconds = activity_row[4]
 
         # Which shoe, and how far into its life this run sits (Issue #1207).
         gear = collect_activity_gear(conn, activity_id)
 
-        # 2. HR efficiency (C1: expanded from training_type only)
         hr_row = conn.execute(
-            """
-            SELECT
-                training_type,
-                primary_zone,
-                zone_distribution_rating,
-                hr_stability,
-                aerobic_efficiency,
-                training_quality,
-                zone2_focus,
-                zone4_threshold_work,
-                zone1_percentage,
-                zone2_percentage,
-                zone3_percentage,
-                zone4_percentage,
-                zone5_percentage
-            FROM hr_efficiency
-            WHERE activity_id = ?
-            """,
+            "SELECT training_type FROM hr_efficiency WHERE activity_id = ?",
             [activity_id],
         ).fetchone()
-
         training_type = hr_row[0] if hr_row else None
-        zone_percentages = None
-        primary_zone = None
-        zone_distribution_rating = None
-        hr_stability = None
-        aerobic_efficiency = None
-        training_quality = None
-        zone2_focus = None
-        zone4_threshold_work = None
-        band_pct: float | None = None
-        zone_score: float | None = None
 
-        if hr_row:
-            zone_percentages = {
-                "zone1": hr_row[8],
-                "zone2": hr_row[9],
-                "zone3": hr_row[10],
-                "zone4": hr_row[11],
-                "zone5": hr_row[12],
-            }
-            primary_zone = hr_row[1]
-            zone_distribution_rating = hr_row[2]
-            hr_stability = hr_row[3]
-            aerobic_efficiency = hr_row[4]
-            training_quality = hr_row[5]
-            zone2_focus = hr_row[6]
-            zone4_threshold_work = hr_row[7]
-
-            # Continuous zone-distribution score (Issue #1236), recomputed on
-            # read from the stored percentages with the inserter's own
-            # resolver / cuts, so history gets it without a re-ingest and the
-            # number can never drift from the categorical rating.
-            zone1_pct = float(hr_row[8] or 0.0)
-            zone2_pct = float(hr_row[9] or 0.0)
-            zone3_pct = float(hr_row[10] or 0.0)
-            zone4_pct = float(hr_row[11] or 0.0)
-            zone5_pct = float(hr_row[12] or 0.0)
-            intensity_category = resolve_intensity_category(
-                training_type,
-                zone1_pct,
-                zone2_pct,
-                zone3_pct,
-                zone4_pct,
-                zone5_pct,
-                primary_zone,
-            )
-            band_pct = round(
-                zone_band_pct(
-                    intensity_category,
-                    zone1_pct,
-                    zone2_pct,
-                    zone3_pct,
-                    zone4_pct,
-                    zone5_pct,
-                ),
-                1,
-            )
-            zone_score = zone_distribution_score(intensity_category, band_pct)
-
-        # 3. Elevation statistics (from splits table)
-        elev_row = conn.execute(
-            """
-            SELECT
-                SUM(elevation_gain) AS total_gain,
-                SUM(elevation_loss) AS total_loss,
-                COUNT(*) AS split_count,
-                MAX(elevation_gain + elevation_loss) AS max_split_change,
-                MAX(elevation_gain) AS max_split_gain,
-                MAX(elevation_loss) AS max_split_loss
-            FROM splits
-            WHERE activity_id = ?
-            """,
-            [activity_id],
-        ).fetchone()
-
-        # 3b. Run-phase splits, for the deterministic build-up detection
-        #     (Issue #1086). Sub-400m fragments left by manual lap presses have
-        #     artifact paces, so they never take part in the ramp test.
-        run_splits: list[dict[str, Any]] = []
-        try:
-            run_split_rows = conn.execute(
-                """
-                SELECT heart_rate AS avg_heart_rate,
-                       pace_seconds_per_km AS avg_pace_seconds_per_km
-                FROM splits
-                WHERE activity_id = ?
-                  AND role_phase = 'run'
-                  AND distance >= 0.4
-                ORDER BY split_index
-                """,
-                [activity_id],
-            ).fetchall()
-            run_splits = [
-                {"avg_heart_rate": row[0], "avg_pace_seconds_per_km": row[1]}
-                for row in run_split_rows
-            ]
-        except duckdb.CatalogException:
-            logger.debug("splits table not found; skipping progression detection")
-
-        total_gain = elev_row[0] if elev_row and elev_row[0] else 0.0
-        total_loss = elev_row[1] if elev_row and elev_row[1] else 0.0
-        split_count = elev_row[2] if elev_row else 0
-        max_split_change = elev_row[3] if elev_row and elev_row[3] else 0.0
-        max_split_gain = elev_row[4] if elev_row and elev_row[4] else 0.0
-        max_split_loss = elev_row[5] if elev_row and elev_row[5] else 0.0
-        avg_gain_per_km = round(total_gain / split_count, 1) if split_count > 0 else 0.0
-
-        # 4. Form evaluation scores (C2)
-        form_scores = None
-        try:
-            form_row = conn.execute(
-                """
-                SELECT
-                    gct_star_rating,
-                    gct_score,
-                    vo_star_rating,
-                    vo_score,
-                    vr_star_rating,
-                    vr_score,
-                    integrated_score,
-                    overall_score,
-                    overall_star_rating
-                FROM form_evaluations
-                WHERE activity_id = ?
-                """,
-                [activity_id],
-            ).fetchone()
-
-            if form_row:
-                # Star scores live in float32 columns: round on read so 4.1 is
-                # not handed to the agents as 4.0999999 (#1245).
-                form_scores = {
-                    "gct": {
-                        "star_rating": form_row[0],
-                        "score": round_star_score(form_row[1]),
-                    },
-                    "vo": {
-                        "star_rating": form_row[2],
-                        "score": round_star_score(form_row[3]),
-                    },
-                    "vr": {
-                        "star_rating": form_row[4],
-                        "score": round_star_score(form_row[5]),
-                    },
-                    "integrated_score": form_row[6],
-                    # Continuous star form of the 100-point integrated score
-                    # (Issue #1236): the agent transcribes this instead of
-                    # mapping the score through a band table by hand.
-                    "integrated_star_score": integrated_star_score(form_row[6]),
-                    "overall_score": round_star_score(form_row[7]),
-                    "overall_star_rating": form_row[8],
-                }
-        except duckdb.CatalogException:
-            # Table may not exist.
-            logger.debug("table not found; leaving form_scores as None")
-
-        # 5. Phase structure (C3)
-        phase_structure = None
-        try:
-            phase_row = conn.execute(
-                """
-                SELECT
-                    pace_consistency,
-                    hr_drift_percentage,
-                    cadence_consistency,
-                    fatigue_pattern,
-                    warmup_avg_pace_str,
-                    warmup_avg_hr,
-                    warmup_splits,
-                    run_avg_pace_str,
-                    run_avg_hr,
-                    run_splits,
-                    recovery_avg_pace_str,
-                    recovery_avg_hr,
-                    recovery_splits,
-                    cooldown_avg_pace_str,
-                    cooldown_avg_hr,
-                    cooldown_splits
-                FROM performance_trends
-                WHERE activity_id = ?
-                """,
-                [activity_id],
-            ).fetchone()
-
-            if phase_row:
-                has_recovery = phase_row[12] is not None  # recovery_splits
-                phase_structure = _build_phase_dict(phase_row, has_recovery)
-        except duckdb.CatalogException:
-            # Table may not exist.
-            logger.debug("table not found; leaving phase_structure as None")
-
-    # ------------------------------------------------------------------
-    # Bundle expansion (S1, Issue #235): reuse existing readers/comparators
-    # so each section agent receives a complete analysis bundle without
-    # issuing redundant MCP calls. All keys below are additive — existing
-    # keys above are never modified (backward compatible).
-    # ------------------------------------------------------------------
     from garmin_mcp.database.readers.form import FormReader
-    from garmin_mcp.database.readers.physiology import PhysiologyReader
 
     db_path_str = str(db_path)
-    form_reader = FormReader(db_path_str)
-    physiology_reader = PhysiologyReader(db_path_str)
 
-    # Full pace-corrected form evaluation (needs_improvement flags, deltas, etc.)
-    form_evaluation = form_reader.get_form_evaluations(activity_id)
+    # Not emitted: only its GCT / cadence feed the vs_previous deltas below.
+    form_evaluation = FormReader(db_path_str).get_form_evaluations(activity_id)
 
-    # Heart rate zone boundaries + time distribution
-    hr_zones_detail = physiology_reader.get_heart_rate_zones_detail(activity_id)
-
-    # Self-healing (Issue #266): ensure the form baseline exists for the
-    # activity's month (+ prior month) so the trend comparison below is
-    # available even if the monthly baseline script was not run. Best-effort:
-    # never blocks prefetch on failure.
+    # Self-healing (Issue #266): train the form baseline of the activity's
+    # month (+ prior month) when it is missing. This is the only caller, and
+    # ingest grades form against that baseline (#1088), so it runs here even
+    # though nothing in the bundle reports it. Best-effort: never blocks.
     from garmin_mcp.form_baseline.trainer import ensure_form_baselines_for_date
 
-    form_baseline_autogen: dict
     try:
-        form_baseline_autogen = ensure_form_baselines_for_date(
-            activity_date, db_path_str
-        )
-    except Exception as e:
-        form_baseline_autogen = {
-            "generated": [],
-            "skipped": [],
-            "insufficient": [],
-            "error": str(e),
-        }
-
-    # Form baseline trend (current vs 1-month-prior coefficients). Uses the
-    # reader extracted from physiology_handler so logic is shared, not duplicated.
-    form_baseline_trend = physiology_reader.get_form_baseline_trend(
-        activity_id, activity_date
-    )
-
-    # VO2 max / lactate threshold are training-type conditional.
-    vo2_max = (
-        physiology_reader.get_vo2_max_data(activity_id)
-        if _should_include_vo2_max(training_type)
-        else None
-    )
-    lactate_threshold = (
-        physiology_reader.get_lactate_threshold_data(activity_id)
-        if _should_include_lactate_threshold(training_type)
-        else None
-    )
+        autogen = ensure_form_baselines_for_date(activity_date, db_path_str)
+        if autogen.get("generated"):
+            logger.info("form baselines generated: %s", autogen["generated"])
+    except Exception:
+        logger.debug("form baseline self-heal failed; continuing without it")
 
     # Long-run progression gate (Issue #982): may the next long run be
     # extended? Only meaningful for long runs, so shorter runs keep the key at
@@ -883,85 +471,25 @@ def prefetch_activity_context(activity_id: int) -> dict:
         },
     )
 
-    # Build-up detection needs the prescription, so it runs after the layer.
-    progression_session = detect_progression_session(
-        prescription_layer.get("prescription_for_run"), run_splits
-    )
-
     return {
         "activity_id": activity_id,
         "activity_date": activity_date,
         "training_type": training_type,
-        "temperature_c": round(temp_c, 1) if temp_c is not None else None,
-        "humidity_pct": humidity,
-        "wind_mps": wind_mps,
-        "wind_direction": wind_direction,
         # Shoe worn on this run plus its cumulative mileage (Issue #1207); null
         # when no gear was registered in Garmin for the activity.
         "gear": gear,
-        "terrain_category": _classify_terrain(avg_gain_per_km, max_split_change),
-        "avg_elevation_gain_per_km": avg_gain_per_km,
-        "total_elevation_gain": round(total_gain, 1),
-        "total_elevation_loss": round(total_loss, 1),
-        "max_split_elevation_gain": round(max_split_gain, 1),
-        "max_split_elevation_loss": round(max_split_loss, 1),
-        "zone_percentages": zone_percentages,
-        "primary_zone": primary_zone,
-        "zone_distribution_rating": zone_distribution_rating,
-        # Continuous companions of zone_distribution_rating (Issue #1236).
-        # null when the activity has no hr_efficiency row, or (score only) when
-        # the intensity category is "unknown" and carries no intended band.
-        "zone_band_pct": band_pct,
-        "zone_distribution_score": zone_score,
-        "hr_stability": hr_stability,
-        "aerobic_efficiency": aerobic_efficiency,
-        "training_quality": training_quality,
-        "zone2_focus": zone2_focus,
-        "zone4_threshold_work": zone4_threshold_work,
-        "form_scores": form_scores,
-        "phase_structure": phase_structure,
-        # Deterministic training_type -> category mapping (Issue #673). Moves
-        # the phase / environment classification tables out of the agent prose
-        # so both sections select evaluation criteria without re-deriving.
-        "phase_category": map_phase_category(
-            training_type, None, is_progression=progression_session
-        ),
-        "environment_category": map_environment_category(training_type),
-        # Whether the run-phase splits show the prescribed build-up (Issue
-        # #1086). Drives phase_category and tells the agents that a large pace
-        # CV / a Zone2-dominant distribution is the design, not a defect.
-        "progression_session": progression_session,
-        # Deterministic next_run_target numeric core (Issue #672). The agent
-        # transcribes these values and adds only prose (summary_ja / tip).
-        "next_run_target": compute_next_run_target(
-            training_type,
-            None,
-            vo2_max,
-            lactate_threshold,
-            avg_heart_rate,
-            avg_pace_s_per_km,
-            hr_zones_detail,
-            prescription_layer.get("prescription_for_run"),
-        ),
-        # --- S1 bundle expansion (Issue #235, additive) ---
-        "form_evaluation": form_evaluation,
-        "hr_zones_detail": hr_zones_detail,
-        "form_baseline_trend": form_baseline_trend,
-        "form_baseline_autogen": form_baseline_autogen,
         "similar_workouts": similar_workouts,
-        "vo2_max": vo2_max,
-        "lactate_threshold": lactate_threshold,
         # Deterministic long-run progression verdict (Issue #982); null for
         # runs below _LONG_RUN_GATE_MIN_KM.
         "long_run_gate": long_run_gate,
-        # --- Prescription vs actual layer (Issue #984, additive) ---
+        # --- Prescription vs actual layer (Issue #984) ---
         **prescription_layer,
     }
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Pre-fetch shared activity context for analysis agents"
+        description="Pre-fetch the context a run report does not carry"
     )
     parser.add_argument("activity_id", type=int, help="Garmin activity ID")
     args = parser.parse_args()
