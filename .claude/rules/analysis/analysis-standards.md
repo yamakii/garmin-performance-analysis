@@ -11,13 +11,12 @@ Consolidated reference for all analysis rules.
 
 ## 2. Agent Rules
 
-`/analyze-activity` が生成するセクションは **`run_note` の1つだけ**（run-note-analyst が担当）。数値・範囲判定・処方判定・シーン抽出は `get_run_report` が決定論的に算出済みで、run_note はそこに乗る散文（意味づけ・因果・流れ・重みづけ・次の一歩・再発と問い）のみを書く。レガシーの 5 section type (split, phase, efficiency, environment, summary) と3エージェントは過去データ互換のため残っているが、workflow からは呼ばれない。共通ルール:
+`/analyze-activity` が生成するセクションは **`run_note` の1つだけ**（run-note-analyst が担当）。数値・範囲判定・処方判定・シーン抽出は `get_run_report` が決定論的に算出済みで、run_note はそこに乗る散文（意味づけ・因果・流れ・重みづけ・次の一歩・再発と問い）のみを書く。共通ルール:
 
-- **独立動作**: 全データを REPORT / CONTEXT / MCP tools から直接取得。他セクションの出力 JSON は参照できない
+- **独立動作**: 全データを REPORT / CONTEXT / MCP tools から直接取得
 - **事前コンテキスト**: orchestrator 提供の JSON を信頼し、不足時のみ追加 MCP 呼び出し
 - **出力**: 日本語テキスト + English key names。`{ANALYSIS_TEMP_DIR}/{section_type}.json` に出力（ANALYSIS_TEMP_DIR は orchestrator が timestamp 付きユニークパスとして提供）。**事前の mkdir は不要**（Write tool が親ディレクトリを自動作成する）
 - **JSON構造**: `{"activity_id": <int>, "activity_date": "<YYYY-MM-DD>", "section_type": "<type>", "analysis_data": {...}}`
-- **星評価**: `(★★★★☆ N.N/5.0)`
 - **HR zones**: Garmin native zones のみ (計算式禁止)
 - **Dates**: `datetime.date` → `str()` 変換してから JSON 出力
 - **文体**: 自然な日本語（体言止め回避）、コーチ的トーン、具体的数値、1-2文/ポイント
@@ -31,25 +30,15 @@ Consolidated reference for all analysis rules.
 
 ## 3. Evaluation Principles
 
-### 4軸評価
-
-1. **Effort**: HR / power / LT比
-2. **Performance**: pace / distance
-3. **Efficiency**: pace/HR, GCT/VR統合
-4. **Execution**: training_type の目的合致度
+**単一のランに成績はつけない**（星・点数・総合評価のいずれも出さない）。1本のランは REPORT の2つの問い（処方どおりだったか / いつもの自分と比べてどうか）で読む。
 
 ### 改善提案
 
-- `recommendations` 最大2件。次回アクションは1つに絞る（数値+成功判定条件付き）
-- Easy run の提案 → HR 範囲で提示（ペースではなく）。例外条件を1つ添える
+- 次回の課題は `next_challenge` の1つだけ。`REPORT.next_session`（実際に次に走るセッション）に根拠を置き、名前・日付・数値を添える
+- Easy 系の提案 → HR 範囲で提示（ペースではなく）。例外条件を1つ添える
 - 一般的助言禁止（「もっと練習しましょう」→ 具体数値必須）
-- **`success_criterion` は次回の refinement 目安であり今回の合否ではない**。目的を達したランには「成功条件」「失敗」の表現を使わず、「維持目標」「改善余地」として提示する（agent の prose・会話での引用の双方）
+- **次回の数値は維持目標であり今回の合否ではない**。目的を達したランには「成功条件」「失敗」の表現を使わず、「維持目標」「改善余地」として提示する（agent の prose・会話での引用の双方）
 - **過敏な評価は閾値緩和ではなくカテゴリ分離で解く**: 「厳しすぎる」フィードバックの最初の一手は「一律に測っているものを training_type / 文脈で分けられないか」を問う（例: ペース CV はテンポ走はシビアに、LSD / 時間重視ロングは緩く）。既存の category 分離を確認し、閾値変更ではなく category 別の評価方針で分岐させる
-
-### エージェント間の一貫性
-
-- HR zone 評価 → unified-section-analyst の efficiency セクションの `evaluation` が権威的ソース
-- 各セクションの評価は training_type を基準に判定する
 
 ## 4. Training Plans
 

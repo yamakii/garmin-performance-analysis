@@ -409,3 +409,25 @@ class TestFindUnanalyzedActivitiesRunNote:
 
         assert [r["activity_id"] for r in result] == [70000032]
         assert result[0]["section_count"] == 4
+
+    def test_find_unanalyzed_treats_run_note_or_full_legacy_set_as_analysed(
+        self, reader_db_path: Path
+    ):
+        """Retiring the legacy analysts must not un-analyse a historical run.
+
+        A: run_note only, B: the five legacy sections, C: two legacy sections,
+        D: nothing -> only C and D are still waiting for an analysis (#1256).
+        """
+        conn = duckdb.connect(str(reader_db_path))
+        _seed_activity(conn, 70000040, "2025-06-01", 0)  # A
+        _seed_run_note(conn, 70000040, "2025-06-01")
+        _seed_activity(conn, 70000041, "2025-06-02", 5)  # B
+        _seed_activity(conn, 70000042, "2025-06-03", 2)  # C
+        _seed_activity(conn, 70000043, "2025-06-04", 0)  # D
+        conn.close()
+
+        reader = PerformanceReader(db_path=str(reader_db_path))
+        result = reader.find_unanalyzed_activities("2025-06-01", "2025-06-30")
+
+        assert [r["activity_id"] for r in result] == [70000042, 70000043]
+        assert [r["section_count"] for r in result] == [2, 0]

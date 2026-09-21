@@ -155,34 +155,34 @@ Insert section analysis dict directly into DuckDB (no file creation)
 
 CLI: `garmin-db analysis validate-section`
 
-Validate section analysis data against Pydantic schema. Returns {valid: bool, errors: list[str]}.
+Validate a run_note coach review against its Pydantic schema. Returns {valid: bool, errors: list[str]}.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `section_type` | enum: `split`, `phase`, `efficiency`, `environment`, `summary`, `run_note` | **required** |  |
+| `section_type` | enum: `run_note` | **required** |  |
 | `analysis_data` | object | **required** |  |
 
 ### `get_analysis_contract`
 
 CLI: `garmin-db analysis contract`
 
-Get analysis contract for a section type (output schema, evaluation thresholds, instructions). Agents call this for up-to-date evaluation criteria.
+Get the analysis contract for the run_note coach review (output schema, evidence keys, writing criterion). The analyst calls this for the up-to-date criterion.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `section_type` | enum: `split`, `phase`, `efficiency`, `environment`, `summary`, `run_note` | **required** | Section type |
+| `section_type` | enum: `run_note` | **required** | Section type |
 
 ### `find_unanalyzed_activities`
 
 CLI: `garmin-db analysis find-unanalyzed`
 
-Find running activities missing a complete set of section analyses in a date range. Returns [{activity_id, date, section_count}] for activities whose distinct section_analyses count is below required_sections (default 5), ordered by date ascending. Used to backfill analysis history for catch-up-ingested days.
+Find running activities without an analysis in a date range. An activity counts as analysed when it has a run_note row or the complete legacy section set. Returns [{activity_id, date, section_count}] for the rest, where section_count is the distinct legacy section count, ordered by date ascending. Used to backfill analysis history for catch-up-ingested days.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `start_date` | string | **required** | Start date (inclusive) in YYYY-MM-DD format |
 | `end_date` | string | **required** | End date (inclusive) in YYYY-MM-DD format |
-| `required_sections` | integer | optional (default `5`) | Section count considered complete (default 5) |
+| `required_sections` | integer | optional (default `5`) | Legacy section count considered complete (default 5) |
 
 ### `analyze_performance_trends`
 

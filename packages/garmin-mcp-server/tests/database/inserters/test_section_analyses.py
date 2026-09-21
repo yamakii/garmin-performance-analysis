@@ -256,6 +256,48 @@ class TestSectionAnalysisInserter:
 
         conn.close()
 
+    @pytest.mark.integration
+    def test_default_agent_name_for_run_note(self, initialized_db_path):
+        """run_note is written by run-note-analyst (Issue #1256).
+
+        A legacy section type keeps the ``{type}-section-analyst`` default so a
+        hand-repaired historical row still labels itself like its peers.
+        """
+        db_path = initialized_db_path
+        conn = duckdb.connect(str(db_path))
+        insert_activities(activity_id=20464005433, date="2025-09-22", conn=conn)
+        conn.close()
+
+        assert insert_section_analysis(
+            analysis_data={"story": "狙いどおりのつなぎのランでした。"},
+            activity_id=20464005433,
+            activity_date="2025-09-22",
+            section_type="run_note",
+            db_path=str(db_path),
+        )
+        assert insert_section_analysis(
+            analysis_data={"summary": "Overall performance evaluation"},
+            activity_id=20464005433,
+            activity_date="2025-09-22",
+            section_type="summary",
+            db_path=str(db_path),
+        )
+
+        conn = duckdb.connect(str(db_path))
+        rows = conn.execute("""
+            SELECT section_type, agent_name, analysis_data
+            FROM section_analyses
+            WHERE activity_id = 20464005433
+            ORDER BY section_type
+            """).fetchall()
+        conn.close()
+
+        assert [(r[0], r[1]) for r in rows] == [
+            ("run_note", "run-note-analyst"),
+            ("summary", "summary-section-analyst"),
+        ]
+        assert json.loads(rows[0][2])["metadata"]["analyst"] == "run-note-analyst"
+
     @pytest.mark.unit
     def test_insert_section_analysis_custom_agent_name(self, initialized_db_path):
         """Test insert_section_analysis with custom agent_name."""

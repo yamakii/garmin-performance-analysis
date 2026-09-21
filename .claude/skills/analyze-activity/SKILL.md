@@ -69,8 +69,6 @@ workflow の戻り値に応じてユーザーへ報告:
 ## 関連ファイル（保守用）
 
 - workflow 本体: `.claude/workflows/analyze-activity.js`（純粋ロジックは `// >>> testable` ブロック、テストは `.claude/workflows/tests/analyze-activity.test.mjs`）
-- 分析エージェント: `.claude/agents/run-note-analyst.md`（`run_note` 専用・workflow が呼ぶ唯一の分析エージェント）。
-  レガシーの `unified-section-analyst.md` / `summary-section-analyst.md` / `split-section-analyst.md` は
-  過去データ互換のため残っているが、workflow からは呼ばれない
+- 分析エージェント: `.claude/agents/run-note-analyst.md`（`run_note` 専用・唯一の分析エージェント）
 - 校正: `.claude/agents/proofreader.md`
 - スクリプト: `garmin_mcp.scripts.prefetch_activity_context`, `garmin_mcp.scripts.prefetch_run_report`, `garmin_mcp.scripts.merge_section_analyses`

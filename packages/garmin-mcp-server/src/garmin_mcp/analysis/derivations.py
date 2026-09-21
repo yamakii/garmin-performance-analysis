@@ -275,64 +275,15 @@ def _easy_target(
     return result
 
 
-def weighted_star_rating_raw(
-    axis_scores: dict[str, float], weights: dict[str, float]
-) -> float:
-    """Weighted star rating as the unrounded, clamped weighted mean (Issue #859).
-
-    ``rating = sum(axis_scores[k] * weights[k]) / sum(weights.values())``,
-    clamped to [0.0, 5.0] with **no rounding**. This is the true weighted mean
-    the merge guard compares against, so a ``X.X5`` boundary (where the LLM's
-    half-up rounding and Python's round-half-to-even can legitimately disagree
-    by one display notch) does not false-fail the consistency check.
-
-    Raises:
-        ValueError: When ``weights`` keys do not exactly match ``axis_scores``
-            keys, when either dict is empty, or when the weights sum to <= 0.
-    """
-    if not axis_scores or not weights:
-        raise ValueError("axis_scores and weights must be non-empty")
-    if set(axis_scores) != set(weights):
-        raise ValueError(
-            "weights keys must match axis_scores keys: "
-            f"axis_scores={sorted(axis_scores)}, weights={sorted(weights)}"
-        )
-    total_weight = sum(weights.values())
-    if total_weight <= 0:
-        raise ValueError(f"weights must sum to a positive value, got {total_weight}")
-
-    rating = sum(axis_scores[key] * weights[key] for key in axis_scores) / total_weight
-    return min(5.0, max(0.0, rating))
-
-
-def compute_weighted_star_rating(
-    axis_scores: dict[str, float], weights: dict[str, float]
-) -> float:
-    """Recompute a weighted star rating from per-axis scores (Issue #706).
-
-    ``round(weighted_star_rating_raw(axis_scores, weights), 1)``: the clamped
-    weighted mean displayed to 1 decimal. This is the deterministic core behind
-    the summary 4-axis rating and the phase / environment weighted ratings, so
-    the merge guard can verify the LLM's stated ``star_rating`` instead of
-    trusting its arithmetic.
-
-    Raises:
-        ValueError: When ``weights`` keys do not exactly match ``axis_scores``
-            keys, when either dict is empty, or when the weights sum to <= 0.
-    """
-    return round(weighted_star_rating_raw(axis_scores, weights), 1)
-
-
 # --- training_type -> category mapping for phase / environment (Issue #673) ---
-# These move the classification tables out of the agent prose
-# (unified-section-analyst.md) so the phase / environment sections select
-# evaluation criteria deterministically. Category keys mirror the validation
-# contracts (validation/contracts.py):
-#   phase:       low_moderate | tempo_threshold | interval_sprint
+# These classify a run deterministically, so the phase / environment category
+# of the prefetch CONTEXT is decided by code rather than by an LLM reading a
+# table. Category keys:
+#   phase:       low_moderate | tempo_threshold | progression | interval_sprint
 #   environment: recovery | base_moderate | tempo_threshold | interval_sprint
 
 # planned_workout.workout_type -> phase category (takes precedence over the
-# activity's own training_type). Ports unified-section-analyst.md L179-184.
+# activity's own training_type).
 _PHASE_WORKOUT_TYPE_CATEGORY: dict[str, str] = {
     "easy_run": "low_moderate",
     "recovery_run": "low_moderate",
@@ -345,7 +296,6 @@ _PHASE_WORKOUT_TYPE_CATEGORY: dict[str, str] = {
 }
 
 # activity training_type -> phase category (fallback when no planned_workout).
-# Ports unified-section-analyst.md L186-189.
 _PHASE_TRAINING_TYPE_CATEGORY: dict[str, str] = {
     "recovery": "low_moderate",
     "aerobic_base": "low_moderate",
@@ -357,9 +307,8 @@ _PHASE_TRAINING_TYPE_CATEGORY: dict[str, str] = {
     "interval_training": "interval_sprint",
 }
 
-# A planned long_run whose target_hr_high reaches tempo intensity is evaluated
-# as tempo_threshold (unified-section-analyst.md L185). The agent spec gives no
-# explicit number; 160bpm marks the lower edge of tempo/threshold HR.
+# A planned long_run whose target_hr_high reaches tempo intensity is classified
+# as tempo_threshold: 160bpm marks the lower edge of tempo/threshold HR.
 _LONG_RUN_TEMPO_HR_THRESHOLD = 160
 
 # --- Progression (build-up) detection (Issue #1086) -------------------------
@@ -471,9 +420,8 @@ def map_phase_category(
 ) -> str:
     """Map training_type / planned_workout to a phase evaluation category.
 
-    Ports the unified-section-analyst.md L179-191 decision table so the phase
-    section selects evaluation criteria deterministically instead of relying on
-    the LLM. ``planned_workout.workout_type`` takes precedence over the
+    Classifies the session deterministically instead of leaving the decision
+    to an LLM. ``planned_workout.workout_type`` takes precedence over the
     activity's own ``training_type``.
 
     Returns one of ``'low_moderate'`` | ``'tempo_threshold'`` |
@@ -523,8 +471,8 @@ def _resolve_phase_category(
 def map_environment_category(training_type: str | None) -> str:
     """Map training_type to an environment evaluation category.
 
-    Ports unified-section-analyst.md L246-250 so the environment section selects
-    ``temperature_by_training_type`` criteria deterministically. Returns one of
+    Decides the temperature-sensitivity class of the session deterministically.
+    Returns one of
     ``'recovery'`` | ``'base_moderate'`` | ``'tempo_threshold'`` |
     ``'interval_sprint'`` (default ``'base_moderate'`` when ``training_type`` is
     null or unrecognized).

@@ -18,12 +18,7 @@ from pathlib import Path
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.database.db_writer import GarminDBWriter
 from garmin_mcp.validation.section_schemas import validate_section_data
-from garmin_mcp.validation.validators import (
-    check_form_trend_consistency,
-    check_narration_numeric_consistency,
-    check_run_note_grounding,
-    check_star_weighting_consistency,
-)
+from garmin_mcp.validation.validators import check_run_note_grounding
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +58,7 @@ def merge_section_analyses(temp_dir: Path, *, keep: bool = False) -> dict:
 
             # Guard 0: re-validate against the section schema. proofreader (haiku)
             # may have edited the temp JSON after the analyst wrote it, and the
-            # semantic guards below only cover a few fields. Reject schema-invalid
+            # grounding gate below only covers the claims. Reject schema-invalid
             # payloads (missing required fields, unknown section_type from a stray
             # filename) before they slip into DuckDB.
             valid, schema_errors = validate_section_data(section_type, analysis_data)
@@ -93,32 +88,6 @@ def merge_section_analyses(temp_dir: Path, *, keep: bool = False) -> dict:
                     failed.append(section_type)
                     errors.append(f"{section_type}: {reason}")
                     continue  # Do not insert an ungrounded coach review.
-
-            if section_type == "efficiency":
-                trend = GarminDBReader().physiology.get_form_baseline_trend(
-                    activity_id, activity_date
-                )
-                ok, errs = check_form_trend_consistency(
-                    analysis_data.get("form_trend", ""),
-                    bool(trend.get("success")),
-                )
-                if not ok:
-                    failed.append(section_type)
-                    errors.extend(errs)
-                    continue  # Do not insert inconsistent efficiency analysis.
-
-            if section_type == "summary":
-                ok, errs = check_narration_numeric_consistency(analysis_data)
-                if not ok:
-                    failed.append(section_type)
-                    errors.extend(errs)
-                    continue  # Do not insert out-of-range summary narration.
-
-            ok, reason = check_star_weighting_consistency(section_type, analysis_data)
-            if not ok and reason is not None:
-                failed.append(section_type)
-                errors.append(f"{section_type}: {reason}")
-                continue  # Do not insert a miscomputed weighted star rating.
 
             success = writer.insert_section_analysis(
                 activity_id=activity_id,

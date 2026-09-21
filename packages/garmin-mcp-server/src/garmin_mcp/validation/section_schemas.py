@@ -2,97 +2,9 @@
 
 from __future__ import annotations
 
-import re
-from typing import Any, Literal
+from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
-
-
-class SplitAnalysisData(BaseModel):
-    """Schema for split section analysis data."""
-
-    highlights: str = Field(min_length=10, max_length=500)
-    analyses: dict[str, str]
-
-    @field_validator("analyses")
-    @classmethod
-    def validate_analyses_keys(cls, v: dict[str, str]) -> dict[str, str]:
-        """Keys must be split_N format."""
-        if not v:
-            raise ValueError("analyses must not be empty")
-        for key in v:
-            if not re.match(r"^split_\d+$", key):
-                raise ValueError(f"Invalid key format: '{key}'. Must be 'split_N'")
-        return v
-
-
-class PhaseAnalysisData(BaseModel):
-    """Schema for phase section analysis data."""
-
-    warmup_evaluation: str = Field(min_length=10)
-    run_evaluation: str = Field(min_length=10)
-    cooldown_evaluation: str = Field(min_length=10)
-    recovery_evaluation: str | None = None
-    evaluation_criteria: str = Field(min_length=5)
-
-
-class EfficiencyAnalysisData(BaseModel):
-    """Schema for efficiency section analysis data."""
-
-    efficiency: str = Field(min_length=20)
-    evaluation: str = Field(min_length=20)
-    form_trend: str = Field(min_length=10)
-
-
-class EnvironmentAnalysisData(BaseModel):
-    """Schema for environment section analysis data."""
-
-    environmental: str = Field(min_length=20)
-
-
-class NextRunTarget(BaseModel):
-    """Flexible model - fields vary by training type."""
-
-    model_config = {"extra": "allow"}
-
-    recommended_type: str | None = None
-    summary_ja: str | None = None
-    insufficient_data: bool | None = None
-
-
-class PrescriptionVerdict(BaseModel):
-    """How the run answered the session prescribed for that day (Issue #984).
-
-    Computed by ``analysis.derivations.compute_prescription_verdict`` and
-    transcribed verbatim by the summary agent, so the verdict symbol is typed
-    to the three allowed values rather than left as free text.
-    """
-
-    verdict: Literal["✅", "🟡", "🔴"]
-    prescription_title: str
-    reasons: list[str]
-    # Axes the run answered as prescribed -- "intensity_class" | "volume" |
-    # "hr_ceiling" | "rest" (Issue #1086). The summary agent must not recycle an
-    # on-plan axis as an improvement area.
-    on_plan: list[str] = Field(default_factory=list)
-
-
-class SummaryAnalysisData(BaseModel):
-    """Schema for summary section analysis data."""
-
-    star_rating: str
-    integrated_score: float | None = Field(default=None, ge=0, le=100)
-    summary: str = Field(min_length=10)
-    key_strengths: list[str] = Field(min_length=1)
-    improvement_areas: list[str]
-    next_action: str = Field(min_length=10)
-    next_run_target: NextRunTarget | dict[str, Any]
-    recommendations: str = Field(min_length=5)
-    # Prescription vs actual (Issue #984). Transcribed from the prefetch
-    # CONTEXT, so both stay absent on unprescribed days, when no comparable
-    # same-type run exists, and in every summary stored before this layer.
-    prescription_verdict: PrescriptionVerdict | None = None
-    vs_previous: dict[str, Any] | None = None
+from pydantic import BaseModel, Field
 
 
 class GroundedPoint(BaseModel):
@@ -143,11 +55,6 @@ class RunNoteAnalysisData(BaseModel):
 
 
 SECTION_SCHEMAS: dict[str, type[BaseModel]] = {
-    "split": SplitAnalysisData,
-    "phase": PhaseAnalysisData,
-    "efficiency": EfficiencyAnalysisData,
-    "environment": EnvironmentAnalysisData,
-    "summary": SummaryAnalysisData,
     "run_note": RunNoteAnalysisData,
 }
 

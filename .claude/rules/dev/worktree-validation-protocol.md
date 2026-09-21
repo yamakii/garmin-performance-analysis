@@ -99,8 +99,8 @@ agent 定義は本文ごとセッション開始時に登録され、セッシ�
 E2E の結果を信用する前に、返り値の `promptPreview` でどちらの版が走ったかを必ず確認する。
 
 L3 検証基準:
-- **構造（FAIL）**: 全 5 セクションの `analysis_data` 非 null、必須フィールド存在、`merge_section_analyses` → DuckDB `section_analyses` 登録成功
-- **内容（WARNING）**: ペース 6:00-6:45/km（360-405 sec/km）、HR 120-160 bpm、セクション間の矛盾なし
+- **構造（FAIL）**: `run_note.analysis_data` 非 null、必須フィールド存在、merge の grounding ゲート通過、`merge_section_analyses` → DuckDB `section_analyses` 登録成功
+- **内容（WARNING）**: `story` / `timeline` の数値が REPORT と一致、課題（growth point）が outside かつ adverse なシグナルか off-plan の軸に乗っている
 - **Fixture**: Activity `20636804823`（2025-10-09, aerobic_base 5.66 km, 約 6:26/km, HR 平均 144 bpm）
 
 ## 5. 変更カテゴリ別の pre-merge 検証

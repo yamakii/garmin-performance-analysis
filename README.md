@@ -8,7 +8,7 @@ A comprehensive running performance analysis system that integrates with Garmin 
 
 - **Garmin MCP Integration**: token-optimized MCP tools for data retrieval and analysis, declared from a single-source `tools/` registry ([tool reference](docs/mcp-tools-reference.md) lists the full set)
 - **DuckDB Backend**: Normalized storage (28 tables, 100+ activities) for efficient querying
-- **Multi-agent Analysis**: 2 section-analysis agents (`unified-section-analyst` + `split-section-analyst`) that run in parallel
+- **Coach Review**: one analysis agent (`run-note-analyst`) writing the prose on top of the deterministic run report
 - **Japanese Analysis**: All analysis stored in DuckDB and viewed via the web app (`packages/garmin-web`)
 - **Environmental Integration**: Weather, terrain, and body condition analysis
 - **Performance Tracking**: Historical trend analysis, race readiness, ACWR load, and workout comparison
@@ -31,7 +31,7 @@ The project is a uv workspace with two packages:
   - `src/garmin_mcp/tools/`: `ToolDef` registry — single source for all MCP tools ([reference](docs/mcp-tools-reference.md))
   - `src/garmin_mcp/scripts/`: ingestion, regeneration, and backfill utilities
 - **`packages/garmin-web`**: FastAPI backend + Vite/React SPA that renders analysis stored in DuckDB
-- **Analysis Agents & Skills** (`.claude/`): section-analysis agents and user-invocable skills (`/analyze-activity`, `/weekly-review`, etc.)
+- **Analysis Agent & Skills** (`.claude/`): the coach-review agent and user-invocable skills (`/analyze-activity`, `/weekly-review`, etc.)
 
 See [`docs/architecture.md`](docs/architecture.md) for the design rationale
 (the "why"), and `CLAUDE.md` for the full module map and DuckDB schema reference.
@@ -70,7 +70,7 @@ can trigger a temporary block.
 
 ### Individual Activity Analysis
 
-Run inside Claude Code — ingests the data, runs the section-analysis agents in parallel, and stores results in DuckDB:
+Run inside Claude Code — ingests the data, writes the coach review, and stores it in DuckDB:
 
 ```
 /analyze-activity <date>      # e.g. /analyze-activity 2025-10-15 (defaults to today)

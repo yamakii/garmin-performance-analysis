@@ -88,8 +88,7 @@ uv run python -m garmin_mcp.scripts.regenerate_duckdb --start-date 2025-10-01 --
 ## 5. Run your first analysis
 
 Inside Claude Code, analyze a single activity by date. This ingests (if needed),
-runs the section-analysis agents in parallel, and stores 5 section results in
-DuckDB:
+writes the coach review (`run_note`) and stores it in DuckDB:
 
 ```
 /analyze-activity 2025-10-15
