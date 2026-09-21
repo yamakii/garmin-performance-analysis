@@ -19,7 +19,7 @@ DuckDB  (garmin_performance.duckdb, 19 domain tables)
    ▼
 MCP Tools  (46 tools, token-optimized; ToolDef registry)
    │
-   ├──▶ Analysis agents (unified + split section analysts) → section_analyses
+   ├──▶ Analysis agent (run-note-analyst) → section_analyses
    └──▶ Web app (FastAPI + React, read-only viewer)
 ```
 
@@ -140,38 +140,37 @@ re-imports the latest on-disk code rather than being pointed at a directory.
   `options: dict` so their `inputSchema` stays fixed; such edits then count as
   logic changes and keep the zero-touch path.
 
-## Section-analysis agents & prefetch context
+## The analysis agent & prefetch context
 
-A single activity is analyzed by two agents run in parallel via the Task tool:
+A single activity is analyzed by one agent via the Task tool:
 
-- **`unified-section-analyst`** — emits `efficiency`, `phase`, `environment`,
-  `summary` sections.
-- **`split-section-analyst`** — emits the per-kilometer `split` section.
+- **`run-note-analyst`** — emits the `run_note` coach review, the only
+  LLM-written section.
 
-Each section is written as a separate `{section}.json`, validated, then merged
-into the `section_analyses` table (one row per `(activity_id, section_type)`).
+The section is written as `run_note.json`, validated against its schema and the
+grounding gate, then merged into the `section_analyses` table (append-only, one
+row per analysis run).
 
-**Prefetch-context pattern:** the orchestrator calls
-`prefetch_activity_context` once and passes the bundled CONTEXT to the unified
-agent, so the agent does not issue many small MCP round-trips. The agent trusts
+**Prefetch-context pattern:** the orchestrator calls `prefetch_run_report` and
+`prefetch_activity_context` once and passes the REPORT and the bundled CONTEXT
+inline, so the agent does not issue many small MCP round-trips. The agent trusts
 the prefetched data and only makes additional MCP calls when something is
 missing.
 
 **Why this shape:**
 
-- **Parallelism + isolation** — sections are independent, so running them
-  concurrently cuts wall-clock; writing separate JSON files means a single
-  section failure degrades gracefully (4/5 success still stores 4 sections)
-  instead of failing the whole analysis.
+- **Determinism first** — everything a number can decide (range verdicts,
+  prescription verdicts, scenes, the next target) is computed in the pipeline,
+  so every past run gets the current page without being re-analysed by an LLM.
 - **Token economy** — prefetching one context bundle beats dozens of
-  per-metric tool calls, and the agents narrate pre-computed numbers rather than
-  recomputing them (form scores, HR zones come from the DB, not the LLM).
-- **Authority boundaries** — derived values (form `★` ratings, HR-zone
-  distribution) are computed in the pipeline and treated as the source of truth;
-  the agents add Japanese narrative, not new numbers. HR zones always come from
-  Garmin-native zones, never a `220−age` formula.
+  per-metric tool calls, and the agent narrates pre-computed numbers rather than
+  recomputing them (HR zones come from the DB, not the LLM).
+- **Authority boundaries** — the agent adds Japanese prose, not new numbers,
+  and the merge-time grounding gate rejects any claim whose evidence key does
+  not resolve against the report. HR zones always come from Garmin-native
+  zones, never a `220−age` formula.
 
-### Continuous scores in the CONTEXT (legacy star axes)
+### Continuous scores in the CONTEXT
 
 `prefetch_activity_context` computes two ratings as continuous numbers rather
 than letting an LLM apply a band table, because a step function made
@@ -183,9 +182,9 @@ interpolated over the same `ZONE_BAND_CUTS` the label uses, `null` for the
 `clamp(5.0 − (100 − score) / 20, 1.0, 5.0)`, #1233). Both are additive and
 `null` when their source row is missing.
 
-These exist for the **star axes of the five legacy analysis sections** only. The
-redesigned single-run page and the run note do not grade a run at all (see
-below) — a star is never the answer to "how was this run".
+They are **scores, not grades**: the single-run page and the run note do not
+grade a run at all (see below) — a star is never the answer to "how was this
+run" — so nothing on the analysis path reads them today.
 
 ## Run report and the run note
 

@@ -28,7 +28,7 @@ test('test_passes_explicit_model', () => {
 })
 
 test('test_passes_agenttype_with_model_def', () => {
-  const v = findViolations("agent(p, { agentType:'unified-section-analyst' })", defOpus)
+  const v = findViolations("agent(p, { agentType:'run-note-analyst' })", defOpus)
   assert.equal(v.length, 0)
 })
 

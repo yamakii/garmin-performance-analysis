@@ -11,7 +11,7 @@ Garmin running performance analysis system with **DuckDB-first architecture** an
 **Key Features:**
 - DuckDB normalized storage (28 tables, 100+ activities)
 - Token-optimized MCP tools (70-98.8% reduction), declared via a single-source `tools/` registry (see `docs/mcp-tools-reference.md` for the full set)
-- 3 analysis agents (unified-section-analyst + split-section-analyst + summary-section-analyst)
+- 1 analysis agent (run-note-analyst) writing the coach review on top of the deterministic run report
 - Japanese analysis stored in DuckDB, viewed via the Web app (code/docs in English)
 
 **Two Use Cases:**
@@ -127,23 +127,18 @@ Key rules (path-scoped, under `.claude/rules/dev/`):
 
 ### Agent System
 
-**3 Section Analysis Agents (run in parallel by the `analyze-activity` workflow):**
-1. **unified-section-analyst** (sonnet): produces efficiency / phase / environment; the
-   `analyze-activity` workflow calls it once per section (per-section mode).
-   - **efficiency**: Form (GCT/VO/VR) + power + cadence + HR efficiency
-   - **phase**: Phase evaluation (warmup/run/cooldown[/recovery], training-type-aware)
-   - **environment**: Environmental impact (temperature, humidity, wind, terrain)
-2. **summary-section-analyst** (sonnet): focused, leaner agent for `summary.json` only —
-   Activity type + 4-axis overall assessment + recommendations. Split out of unified so the
-   summary call does not load the full unified def (perf).
-3. **split-section-analyst**: 1km split analysis (pace, HR, form)
+**1 Analysis Agent (called by the `analyze-activity` workflow):**
+1. **run-note-analyst** (sonnet): writes the `run_note` coach review — the only section an
+   LLM writes. Every number, range verdict, prescription verdict and scene is already
+   computed by `get_run_report`, so the agent adds only the prose on top of it: meaning,
+   causality, how the run unfolded, weighting, the next step, recurrence and at most one
+   question.
+2. **proofreader** (haiku): checks the Japanese of `run_note.json` before the merge.
 
-> Section agents receive prefetched CONTEXT inline in the prompt (no file reads); split receives
-> only a subset of it (処方 / HR ゾーン境界 / progression フラグ) because it fetches its own split
-> data but has no tool that can reach the prescription or the zone boundaries (#1093). Each
-> section is written as a separate `{section}.json` consumed by
-> `merge_section_analyses`. summary derives cross-section consistency from the shared CONTEXT
-> (it runs in parallel with the others, not after them).
+> The agent receives the deterministic REPORT and the prefetched CONTEXT inline in the prompt
+> (no file reads) and writes `run_note.json`, which `merge_section_analyses` validates against
+> the section schema and the grounding gate (every claim carries an evidence key that resolves
+> against the report) before inserting it into `section_analyses`.
 
 ### Critical Data Sources
 

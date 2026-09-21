@@ -658,9 +658,9 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 
 ## 15. section_analyses
 
-**Purpose**: Agent-generated analysis results (5 section types per analyzed activity)
+**Purpose**: Agent-generated analysis results (the `run_note` coach review per analyzed activity)
 **Primary Key**: `analysis_id` — with a **UNIQUE index on `(activity_id, section_type)`** (`idx_activity_section`), so re-analysis replaces rather than duplicates a section.
-**Source**: Section-analysis agents (`unified-section-analyst`, `split-section-analyst`).
+**Source**: `run-note-analyst`, merged by `garmin_mcp.scripts.merge_section_analyses`.
 
 ### Schema
 
@@ -678,14 +678,12 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 | run_id | BIGINT |
 <!-- END GENERATED: schema:section_analyses -->
 
-**Units & notes**: `analysis_id` is the surrogate PK with a UNIQUE index on `(activity_id, section_type)`; `section_type` is split/phase/summary/efficiency/environment; `analysis_data` is the JSON payload (Japanese narrative + English keys); `agent_name` / `agent_version` identify the producing agent.
+**Units & notes**: `analysis_id` is the surrogate PK with a UNIQUE index on `(activity_id, section_type)`; `section_type` is `run_note` for every new row; `analysis_data` is the JSON payload (Japanese narrative + English keys); `agent_name` / `agent_version` identify the producing agent.
 
 ### Section Types
-1. **split** — 1km split analysis (pace/HR/form), from `split-section-analyst`.
-2. **phase** — warmup/run/cooldown[/recovery] evaluation, training-type-aware.
-3. **summary** — activity-type classification + 4-axis overall assessment.
-4. **efficiency** — form (GCT/VO/VR) + power + cadence + HR efficiency.
-5. **environment** — environmental impact (temperature, humidity, wind, terrain).
+1. **run_note** — the coach review (story / good points / growth points / next challenge / timeline / notes / question), written on top of `get_run_report`.
+
+Rows of the five section types written before the run note — `split`, `phase`, `summary`, `efficiency`, `environment` — are kept as **historical rows** and still render in the web app's 以前の分析（旧形式）disclosure. Nothing writes them any more.
 
 ---
 
@@ -1130,8 +1128,8 @@ Form Baseline System
     ↓
 MCP Tools (46 tools, token-optimized)
     ↓
-Analysis Agents (unified-section-analyst + split-section-analyst)
-    → section_analyses (5 sections/activity)
+Analysis Agent (run-note-analyst)
+    → section_analyses (1 run_note/analysis run)
     ↓
 Web App (read-only viewer; goals/plans/reviews stored via skills)
 ```

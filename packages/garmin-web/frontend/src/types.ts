@@ -739,7 +739,7 @@ export interface RunNote {
 export interface SectionMetadata {
   activity_id: string; // NOTE: string inside JSON (DB column is BIGINT)
   date: string; // "YYYY-MM-DD"
-  analyst: string; // e.g. "summary-section-analyst"
+  analyst: string; // e.g. "run-note-analyst"
   version: string; // currently always "1.0"
   timestamp: string; // ISO 8601
 }

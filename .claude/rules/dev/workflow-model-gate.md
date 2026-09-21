@@ -40,8 +40,8 @@ model 未宣言 or def 不在 or 許可リスト外 or inherit）→ **違反**�
 
 例:
 ```js
-// OK: 静的に unified-section-analyst / summary-section-analyst のいずれか
-agentType: s === 'summary' ? 'summary-section-analyst' : 'unified-section-analyst'
+// OK: 静的に run-note-analyst / proofreader のいずれか
+agentType: phase === 'write' ? 'run-note-analyst' : 'proofreader'
 ```
 どちらの def も**許可モデルの** `model:` を宣言していれば実質安全。gate は静的解決不能として素通しする。
 
