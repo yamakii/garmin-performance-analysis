@@ -137,24 +137,3 @@ def test_calculate_integrated_score_weights_sum_to_one():
         assert (
             abs(total - 1.0) < 0.01
         ), f"Mode {mode} weights sum to {total}, expected 1.0"
-
-
-@pytest.mark.unit
-def test_integrated_star_score_linear():
-    """100点スコアが20点ごとに星1つ、1.0-5.0でクランプされる (#1233)."""
-    from garmin_mcp.form_baseline.integrated_score import integrated_star_score
-
-    assert integrated_star_score(100.0) == pytest.approx(5.0)
-    assert integrated_star_score(94.3) == pytest.approx(4.7)
-    assert integrated_star_score(81.5) == pytest.approx(4.1)
-    assert integrated_star_score(60.0) == pytest.approx(3.0)
-    assert integrated_star_score(10.0) == pytest.approx(1.0)
-    assert integrated_star_score(None) is None
-
-
-@pytest.mark.unit
-def test_integrated_star_score_clamps_above_five():
-    """全指標が期待を上回り100点を超えても星は5.0で頭打ち."""
-    from garmin_mcp.form_baseline.integrated_score import integrated_star_score
-
-    assert integrated_star_score(112.0) == pytest.approx(5.0)

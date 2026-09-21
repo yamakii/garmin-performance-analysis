@@ -1,5 +1,7 @@
-"""Tests for prefetch_activity_context module."""
+"""Tests for prefetch_activity_context script."""
 
+import datetime
+import re
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -7,174 +9,13 @@ import duckdb
 import pytest
 
 from garmin_mcp.database.db_reader import GarminDBReader
-from garmin_mcp.scripts.prefetch_activity_context import (
-    _build_phase_dict,
-    _classify_terrain,
-    prefetch_activity_context,
-)
+from garmin_mcp.scripts.prefetch_activity_context import prefetch_activity_context
 
+REPO_ROOT = Path(__file__).resolve().parents[4]
 
-@pytest.mark.unit
-class TestClassifyTerrain:
-    """Test terrain classification logic."""
-
-    def test_flat(self) -> None:
-        assert _classify_terrain(5.0) == "flat"
-
-    def test_undulating(self) -> None:
-        assert _classify_terrain(15.0) == "undulating"
-
-    def test_mountainous(self) -> None:
-        assert _classify_terrain(55.0) == "mountainous"
-
-    def test_boundary_flat_undulating(self) -> None:
-        assert _classify_terrain(10.0) == "undulating"
-
-    def test_boundary_undulating_hilly(self) -> None:
-        assert _classify_terrain(30.0) == "hilly"
-
-    def test_boundary_hilly_mountainous(self) -> None:
-        assert _classify_terrain(50.0) == "mountainous"
-
-    def test_classify_terrain_flat_no_undulation(self) -> None:
-        # avg in flat band, no significant single-split bump -> stays flat
-        assert _classify_terrain(4.0, max_split_change=3.0) == "flat"
-
-    def test_classify_terrain_promoted_to_undulating_by_split(self) -> None:
-        # avg in flat band but a single split has gain+loss=19 (>=15)
-        # -> promoted to undulating (2026-06-22 regression, Issue #473)
-        assert _classify_terrain(4.0, max_split_change=19.0) == "undulating"
-
-    def test_classify_terrain_undulating_by_avg(self) -> None:
-        # average-driven undulating; no split data provided
-        assert _classify_terrain(15.0, max_split_change=None) == "undulating"
-
-    def test_classify_terrain_hilly_unchanged(self) -> None:
-        # hilly stays average-driven regardless of single-split bumps
-        assert _classify_terrain(35.0) == "hilly"
-
-    def test_classify_terrain_none(self) -> None:
-        assert _classify_terrain(None) == "unknown"
-
-
-@pytest.mark.unit
-class TestBuildPhaseDict:
-    """Test phase structure building from query row."""
-
-    def test_3_phase_structure(self) -> None:
-        """Standard 3-phase run: warmup, run, cooldown."""
-        row = (
-            0.017,  # pace_consistency
-            2.5,  # hr_drift_percentage
-            "stable",  # cadence_consistency
-            "none",  # fatigue_pattern
-            "6:33/km",  # warmup_avg_pace_str
-            134.0,  # warmup_avg_hr
-            "1,2",  # warmup_splits
-            "5:45/km",  # run_avg_pace_str
-            155.0,  # run_avg_hr
-            "3,4,5",  # run_splits
-            None,  # recovery_avg_pace_str
-            None,  # recovery_avg_hr
-            None,  # recovery_splits
-            "7:12/km",  # cooldown_avg_pace_str
-            140.0,  # cooldown_avg_hr
-            "6,7",  # cooldown_splits
-        )
-        result = _build_phase_dict(row, has_recovery=False)
-
-        assert result["pace_consistency"] == 0.017
-        assert result["hr_drift_percentage"] == 2.5
-        assert result["cadence_consistency"] == "stable"
-        assert result["fatigue_pattern"] == "none"
-        assert result["warmup"] == {"avg_pace": "6:33/km", "avg_hr": 134.0}
-        assert result["run"] == {"avg_pace": "5:45/km", "avg_hr": 155.0}
-        assert "recovery" not in result
-        assert result["cooldown"] == {"avg_pace": "7:12/km", "avg_hr": 140.0}
-
-    def test_4_phase_structure_with_recovery(self) -> None:
-        """4-phase interval: warmup, run, recovery, cooldown."""
-        row = (
-            0.016,  # pace_consistency
-            5.0,  # hr_drift_percentage
-            "variable",  # cadence_consistency
-            "mild",  # fatigue_pattern
-            "6:33/km",  # warmup
-            134.0,
-            "1,2",
-            "4:43/km",  # run
-            153.0,
-            "3,4,5",
-            "11:07/km",  # recovery
-            150.0,
-            "r1,r2",
-            "9:27/km",  # cooldown
-            135.0,
-            "6,7,8",
-        )
-        result = _build_phase_dict(row, has_recovery=True)
-
-        assert "recovery" in result
-        assert result["recovery"] == {"avg_pace": "11:07/km", "avg_hr": 150.0}
-
-    def test_no_warmup_phase(self) -> None:
-        """Run without warmup (warmup_splits is None)."""
-        row = (
-            0.02,
-            3.0,
-            "stable",
-            "none",
-            None,  # warmup_avg_pace_str
-            None,  # warmup_avg_hr
-            None,  # warmup_splits (null)
-            "5:45/km",
-            155.0,
-            "1,2,3",
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        result = _build_phase_dict(row, has_recovery=False)
-
-        assert "warmup" not in result
-        assert "run" in result
-        assert "cooldown" not in result
-
-    def test_build_phase_dict_omits_full(self) -> None:
-        """The fragment-inclusive raw CV key is gone from the bundle (#972)."""
-        row = (
-            0.017,  # pace_consistency
-            2.5,  # hr_drift_percentage
-            "stable",  # cadence_consistency
-            "none",  # fatigue_pattern
-            "6:33/km",  # warmup_avg_pace_str
-            134.0,  # warmup_avg_hr
-            "1,2",  # warmup_splits
-            "5:45/km",  # run_avg_pace_str
-            155.0,  # run_avg_hr
-            "3,4,5",  # run_splits
-            None,  # recovery_avg_pace_str
-            None,  # recovery_avg_hr
-            None,  # recovery_splits
-            "7:12/km",  # cooldown_avg_pace_str
-            140.0,  # cooldown_avg_hr
-            "6,7",  # cooldown_splits
-        )
-        result = _build_phase_dict(row, has_recovery=False)
-
-        assert set(result) == {
-            "pace_consistency",
-            "hr_drift_percentage",
-            "cadence_consistency",
-            "fatigue_pattern",
-            "warmup",
-            "run",
-            "cooldown",
-        }
-        assert "pace_consistency_full" not in result
+# Activity row: (date, avg_hr, avg_pace_s_per_km, total_distance_km,
+# total_time_seconds).
+ACTIVITY_ROW = (datetime.date(2026, 2, 16), 148, 330.0, 8.2, 2706)
 
 
 @pytest.mark.unit
@@ -189,24 +30,10 @@ class TestPrefetchActivityContext:
     def _setup_basic_queries(
         self, mock_conn: MagicMock, distance_km: float = 8.2
     ) -> None:
-        """Set up mock return values for all 5 queries."""
-        import datetime
-
+        """Set up mock return values for the three queries of the read block."""
         mock_conn.execute.return_value.fetchone.side_effect = [
             # Query 1: activity metadata
-            # (date, temp, humidity, wind, direction, avg_hr,
-            #  avg_pace_s_per_km, total_distance_km, total_time_seconds)
-            (
-                datetime.date(2026, 2, 16),
-                7.8,
-                84,
-                4.0,
-                "NW",
-                148,
-                330.0,
-                distance_km,
-                2706,
-            ),
+            (*ACTIVITY_ROW[:3], distance_km, ACTIVITY_ROW[4]),
             # Query 2: gear (type, model, nickname, first_use, runs, km,
             #  as_of, max_km, status, since, retired)
             (
@@ -222,65 +49,16 @@ class TestPrefetchActivityContext:
                 datetime.date(2026, 2, 1),
                 None,
             ),
-            # Query 3: hr_efficiency (C1 expanded)
-            (
-                "aerobic_base",  # training_type
-                "Zone 3",  # primary_zone
-                "appropriate",  # zone_distribution_rating
-                "stable",  # hr_stability
-                "good",  # aerobic_efficiency
-                "effective",  # training_quality
-                False,  # zone2_focus
-                False,  # zone4_threshold_work
-                5.2,  # zone1_percentage
-                36.8,  # zone2_percentage
-                50.5,  # zone3_percentage
-                5.0,  # zone4_percentage
-                2.5,  # zone5_percentage
-            ),
-            # Query 3: elevation
-            # (total_gain, total_loss, split_count,
-            #  max_split_change, max_split_gain, max_split_loss)
-            (12.8, 11.2, 8, 4.5, 2.5, 2.0),
-            # Query 4: form_evaluations (C2)
-            (
-                "★★★★★",  # gct_star_rating
-                4.8,  # gct_score
-                "★★★★☆",  # vo_star_rating
-                4.0,  # vo_score
-                "★★★★☆",  # vr_star_rating
-                4.0,  # vr_score
-                92.5,  # integrated_score
-                4.3,  # overall_score
-                "★★★★☆",  # overall_star_rating
-            ),
-            # Query 5: performance_trends (C3)
-            (
-                0.017,
-                2.5,
-                "stable",
-                "none",
-                "6:33/km",
-                134.0,
-                "1,2",
-                "5:45/km",
-                155.0,
-                "3,4,5,6",
-                None,
-                None,
-                None,
-                "7:12/km",
-                140.0,
-                "7,8",
-            ),
+            # Query 3: hr_efficiency (training_type only)
+            ("aerobic_base",),
         ]
 
     @patch("garmin_mcp.scripts.prefetch_activity_context.get_db_path")
     @patch("garmin_mcp.scripts.prefetch_activity_context.get_connection")
-    def test_full_context_returned(
+    def test_context_returned(
         self, mock_get_conn: MagicMock, mock_get_db: MagicMock, mock_conn: MagicMock
     ) -> None:
-        """Test that all C1-C3 fields are returned."""
+        """The envelope, the shoe and the always-present keys come back."""
         mock_get_db.return_value = "/fake/db.duckdb"
         mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
         mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
@@ -291,71 +69,27 @@ class TestPrefetchActivityContext:
         assert result["activity_id"] == 12345
         assert result["activity_date"] == "2026-02-16"
         assert result["training_type"] == "aerobic_base"
-        assert result["temperature_c"] == 7.8
-        assert result["terrain_category"] == "flat"
-        assert result["max_split_elevation_gain"] == 2.5
-        assert result["max_split_elevation_loss"] == 2.0
-
-        # C1: zone_percentages and HR efficiency fields
-        assert result["zone_percentages"]["zone1"] == 5.2
-        assert result["zone_percentages"]["zone3"] == 50.5
-        assert result["primary_zone"] == "Zone 3"
-        assert result["zone_distribution_rating"] == "appropriate"
-        assert result["hr_stability"] == "stable"
-        assert result["aerobic_efficiency"] == "good"
-        assert result["training_quality"] == "effective"
-        assert result["zone2_focus"] is False
-        assert result["zone4_threshold_work"] is False
-
-        # C2: form_scores
-        assert result["form_scores"]["gct"]["star_rating"] == "★★★★★"
-        assert result["form_scores"]["gct"]["score"] == 4.8
-        assert result["form_scores"]["vo"]["score"] == 4.0
-        assert result["form_scores"]["vr"]["score"] == 4.0
-        assert result["form_scores"]["integrated_score"] == 92.5
-        # Continuous companions of the categorical rating / 100-point score
-        # (Issue #1236). Zone3-dominant easy run -> "moderate" category, judged
-        # on its Zone2-3 band (36.8 + 50.5 = 87.3% >= the 80% excellent cut).
-        assert result["zone_band_pct"] == pytest.approx(87.3)
-        assert result["zone_distribution_score"] == 5.0
-        assert result["form_scores"]["integrated_star_score"] == 4.6
-        assert result["form_scores"]["overall_score"] == 4.3
-        assert result["form_scores"]["overall_star_rating"] == "★★★★☆"
-
-        # Plan vs actual removed (Issue #785): no plan keys in the bundle.
-        assert "plan_achievement" not in result
-        assert "planned_workout" not in result
-
-        # C3: phase_structure
-        assert result["phase_structure"]["pace_consistency"] == 0.017
-        assert result["phase_structure"]["hr_drift_percentage"] == 2.5
-        assert result["phase_structure"]["warmup"]["avg_pace"] == "6:33/km"
-        assert result["phase_structure"]["run"]["avg_hr"] == 155.0
-        assert "recovery" not in result["phase_structure"]
-        assert result["phase_structure"]["cooldown"]["avg_pace"] == "7:12/km"
-
-    @patch("garmin_mcp.scripts.prefetch_activity_context.get_db_path")
-    @patch("garmin_mcp.scripts.prefetch_activity_context.get_connection")
-    def test_prefetch_bundle_has_no_plan_keys(
-        self, mock_get_conn: MagicMock, mock_get_db: MagicMock, mock_conn: MagicMock
-    ) -> None:
-        """Plan vs actual removed (Issue #785): bundle has no plan_* keys.
-
-        phase_category / next_run_target still resolve from training_type with
-        planned_workout implicitly None.
-        """
-        mock_get_db.return_value = "/fake/db.duckdb"
-        mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
-        mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
-        self._setup_basic_queries(mock_conn)
-
-        result = prefetch_activity_context(12345)
-
-        assert "planned_workout" not in result
-        assert "plan_achievement" not in result
-        # Generic derivations still work with no plan.
-        assert result["phase_category"] == "low_moderate"
-        assert result["next_run_target"]["recommended_type"] == "easy"
+        assert result["gear"]["gear_model"] == "Nike Vaporfly"
+        assert "similar_workouts" in result
+        assert result["long_run_gate"] is None
+        # The run itself is get_run_report's: none of the numbers the retired
+        # section analysts read here are emitted any more (#1287).
+        for gone in (
+            "temperature_c",
+            "terrain_category",
+            "zone_percentages",
+            "zone_distribution_score",
+            "form_scores",
+            "phase_structure",
+            "phase_category",
+            "next_run_target",
+            "form_evaluation",
+            "hr_zones_detail",
+            "form_baseline_trend",
+            "vo2_max",
+            "lactate_threshold",
+        ):
+            assert gone not in result, gone
 
     @patch("garmin_mcp.scripts.prefetch_activity_context.get_db_path")
     @patch("garmin_mcp.scripts.prefetch_activity_context.get_connection")
@@ -378,94 +112,27 @@ class TestPrefetchActivityContext:
         self, mock_get_conn: MagicMock, mock_get_db: MagicMock, mock_conn: MagicMock
     ) -> None:
         """Test graceful handling when hr_efficiency row is missing."""
-        import datetime
-
         mock_get_db.return_value = "/fake/db.duckdb"
         mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
         mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
         mock_conn.execute.return_value.fetchone.side_effect = [
-            # activity
-            (datetime.date(2026, 2, 16), 7.8, 84, 4.0, "NW", 148, 330.0, 8.2, 2706),
+            ACTIVITY_ROW,
             None,  # gear missing
             None,  # hr_efficiency missing
-            (None, None, 0, None, None, None),  # elevation (no splits)
-            None,  # form_evaluations missing
-            None,  # performance_trends missing
         ]
 
         result = prefetch_activity_context(12345)
 
-        assert result["training_type"] is None
-        assert result["zone_percentages"] is None
-        assert result["primary_zone"] is None
-        assert result["form_scores"] is None
-        assert result["phase_structure"] is None
-        # Continuous zone scores are null-on-missing-row (Issue #1236).
-        assert result["zone_band_pct"] is None
-        assert result["zone_distribution_score"] is None
-
-    @patch("garmin_mcp.scripts.prefetch_activity_context.get_db_path")
-    @patch("garmin_mcp.scripts.prefetch_activity_context.get_connection")
-    def test_form_evaluations_table_missing(
-        self, mock_get_conn: MagicMock, mock_get_db: MagicMock, mock_conn: MagicMock
-    ) -> None:
-        """Test graceful handling when form_evaluations table doesn't exist."""
-        import datetime
-
-        mock_get_db.return_value = "/fake/db.duckdb"
-        mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
-        mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
-
-        call_count = 0
-
-        def side_effect(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            mock_result = MagicMock()
-            if call_count == 1:  # activity metadata
-                mock_result.fetchone.return_value = (
-                    datetime.date(2026, 2, 16),
-                    7.8,
-                    84,
-                    4.0,
-                    "NW",
-                    148,
-                    330.0,
-                    8.2,
-                    2706,
-                )
-            elif call_count == 2 or call_count == 3:  # gear missing
-                mock_result.fetchone.return_value = None
-            elif call_count == 4:  # elevation
-                mock_result.fetchone.return_value = (None, None, 0, None, None, None)
-            elif call_count == 5:  # run-phase splits (progression detection)
-                mock_result.fetchall.return_value = []
-            elif call_count == 6:  # form_evaluations table missing
-                raise duckdb.CatalogException(
-                    "Table with name form_evaluations does not exist"
-                )
-            elif call_count == 7:  # performance_trends table missing
-                raise duckdb.CatalogException(
-                    "Table with name performance_trends does not exist"
-                )
-            return mock_result
-
-        mock_conn.execute.side_effect = side_effect
-
-        result = prefetch_activity_context(12345)
-
-        assert result["form_scores"] is None
-        assert result["phase_structure"] is None
         assert "error" not in result
+        assert result["training_type"] is None
+        assert result["gear"] is None
 
     @patch("garmin_mcp.scripts.prefetch_activity_context.get_db_path")
     @patch("garmin_mcp.scripts.prefetch_activity_context.get_connection")
     def test_prefetch_query_error_propagates(
         self, mock_get_conn: MagicMock, mock_get_db: MagicMock, mock_conn: MagicMock
     ) -> None:
-        """Non-catalog errors (e.g. BinderException) propagate to the caller."""
-        import datetime
-
+        """A broken query in the read block propagates to the caller."""
         mock_get_db.return_value = "/fake/db.duckdb"
         mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
         mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
@@ -477,24 +144,10 @@ class TestPrefetchActivityContext:
             call_count += 1
             mock_result = MagicMock()
             if call_count == 1:  # activity metadata
-                mock_result.fetchone.return_value = (
-                    datetime.date(2026, 2, 16),
-                    7.8,
-                    84,
-                    4.0,
-                    "NW",
-                    148,
-                    330.0,
-                    8.2,
-                    2706,
-                )
-            elif call_count == 4:  # elevation
-                mock_result.fetchone.return_value = (None, None, 0, None, None, None)
-            elif call_count == 5:  # run-phase splits (progression detection)
-                mock_result.fetchall.return_value = []
-            elif call_count == 6:  # form_evaluations query is broken
+                mock_result.fetchone.return_value = ACTIVITY_ROW
+            elif call_count == 3:  # hr_efficiency query is broken
                 raise duckdb.BinderException(
-                    'Referenced column "gct_star_rating" not found'
+                    'Referenced column "training_type" not found'
                 )
             else:
                 mock_result.fetchone.return_value = None
@@ -507,89 +160,72 @@ class TestPrefetchActivityContext:
 
     @patch("garmin_mcp.scripts.prefetch_activity_context.get_db_path")
     @patch("garmin_mcp.scripts.prefetch_activity_context.get_connection")
-    def test_prefetch_full_context_regression(
+    def test_form_baseline_self_heal_still_runs(
         self, mock_get_conn: MagicMock, mock_get_db: MagicMock, mock_conn: MagicMock
     ) -> None:
-        """All tables present -> every key stays filled (no plan keys)."""
-        import datetime
+        """The month's form baseline is still trained here when missing.
 
+        This is the only caller of the self-heal (Issue #266) and ingest grades
+        form against that baseline (#1088): trimming the bundle must not drop
+        the side effect along with the key that used to report it (#1287).
+        """
         mock_get_db.return_value = "/fake/db.duckdb"
         mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
         mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
-        mock_conn.execute.return_value.fetchone.side_effect = [
-            # Query 1: activity metadata
-            (datetime.date(2026, 2, 16), 7.8, 84, 4.0, "NW", 148, 330.0, 8.2, 2706),
-            # Query 2: gear (type, model, nickname, first_use, runs, km,
-            #  as_of, max_km, status, since, retired)
-            (
-                "Shoes",
-                "Nike Vaporfly",
-                None,
-                datetime.date(2026, 2, 1),
-                3,
-                24.0,
-                datetime.date(2026, 2, 16),
-                643.7,
-                "active",
-                datetime.date(2026, 2, 1),
-                None,
-            ),
-            # Query 3: hr_efficiency
-            (
-                "aerobic_base",
-                "Zone 3",
-                "appropriate",
-                "stable",
-                "good",
-                "effective",
-                False,
-                False,
-                5.2,
-                36.8,
-                50.5,
-                5.0,
-                2.5,
-            ),
-            # Query 3: elevation
-            (12.8, 11.2, 8, 4.5, 2.5, 2.0),
-            # Query 4: form_evaluations
-            ("★★★★★", 4.8, "★★★★☆", 4.0, "★★★★☆", 4.0, 92.5, 4.3, "★★★★☆"),
-            # Query 5: performance_trends
-            (
-                0.017,
-                2.5,
-                "stable",
-                "none",
-                "6:33/km",
-                134.0,
-                "1,2",
-                "5:45/km",
-                155.0,
-                "3,4,5,6",
-                None,
-                None,
-                None,
-                "7:12/km",
-                140.0,
-                "7,8",
-            ),
-        ]
+        self._setup_basic_queries(mock_conn)
 
-        result = prefetch_activity_context(12345)
+        with patch(
+            "garmin_mcp.form_baseline.trainer.ensure_form_baselines_for_date",
+            return_value={"generated": [], "skipped": [], "insufficient": []},
+        ) as ensure:
+            result = prefetch_activity_context(12345)
 
+        ensure.assert_called_once_with("2026-02-16", "/fake/db.duckdb")
+        assert "form_baseline_autogen" not in result
+
+        # A failing self-heal never takes the bundle down with it.
+        self._setup_basic_queries(mock_conn)
+        with patch(
+            "garmin_mcp.form_baseline.trainer.ensure_form_baselines_for_date",
+            side_effect=RuntimeError("locked"),
+        ):
+            result = prefetch_activity_context(12345)
         assert "error" not in result
-        # Plan vs actual removed (Issue #785): no plan keys in the bundle.
-        assert "planned_workout" not in result
-        assert "plan_achievement" not in result
-        # form_scores and phase_structure stay filled as before
-        assert result["form_scores"]["gct"]["score"] == 4.8
-        assert result["form_scores"]["overall_star_rating"] == "★★★★☆"
-        assert result["phase_structure"]["pace_consistency"] == 0.017
-        assert result["phase_structure"]["run"]["avg_hr"] == 155.0
-        # existing scalar keys unaffected
-        assert result["activity_date"] == "2026-02-16"
-        assert result["training_type"] == "aerobic_base"
-        assert result["terrain_category"] == "flat"
+
+    @patch("garmin_mcp.scripts.prefetch_activity_context.get_db_path")
+    @patch("garmin_mcp.scripts.prefetch_activity_context.get_connection")
+    def test_workflow_context_keys_are_all_in_the_bundle(
+        self, mock_get_conn: MagicMock, mock_get_db: MagicMock, mock_conn: MagicMock
+    ) -> None:
+        """Every key the analyze-activity workflow forwards exists in the bundle.
+
+        buildRunNoteContext reads ``bundle.<key>``; a key renamed or dropped on
+        this side would silently reach the agent as null.
+        """
+        mock_get_db.return_value = "/fake/db.duckdb"
+        mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
+        self._setup_basic_queries(mock_conn)
+
+        script = (REPO_ROOT / ".claude/workflows/analyze-activity.js").read_text()
+        start = script.index("function buildRunNoteContext")
+        end = script.index("\nfunction ", start + 1)
+        read_keys = set(re.findall(r"\bbundle\.([a-z_0-9]+)", script[start:end]))
+
+        assert read_keys == {
+            "training_type",
+            "week_position",
+            "prescription_for_run",
+            "prescription_verdict",
+            "morning_wellness",
+            "vs_previous",
+            "previous_same_type",
+            "similar_workouts",
+            "gear",
+            "long_run_gate",
+        }
+        result = prefetch_activity_context(12345)
+        assert read_keys <= set(result)
 
     @patch("garmin_mcp.scripts.prefetch_activity_context.get_db_path")
     @patch("garmin_mcp.scripts.prefetch_activity_context.get_connection")

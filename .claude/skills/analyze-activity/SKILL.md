@@ -29,7 +29,8 @@ Workflow(name="analyze-activity", args={"date": "$ARGUMENTS"})
 - `$ARGUMENTS` が空のときは `args` を省略（workflow 内で today を解決）するか `{"date": "<today YYYY-MM-DD>"}` を渡す。
 - workflow は背景で次を実行する:
   1. **Fetch**: `catch_up_ingest`（ラン・体重・補強の差分取込）＋ `ingest_activity`（当日ラン）＋
-     `prefetch_activity_context`（CONTEXT バンドル）＋ `prefetch_run_report`（決定論的ランレポート）
+     `prefetch_activity_context`（補助 CONTEXT: 処方・週内の位置・当日朝の回復・前回同種ラン・シューズ）＋
+     `prefetch_run_report`（決定論的ランレポート。ランそのものはこちらが持つ）
   2. **Analyze**: `run-note-analyst` が REPORT ＋ CONTEXT サブセットから `run_note.json` を1つ生成
   3. **Finalize**: proofreader で日本語校正 → `merge_section_analyses` で DuckDB 登録
      （grounding ゲート通過時のみ。成功時 temp 自動削除）

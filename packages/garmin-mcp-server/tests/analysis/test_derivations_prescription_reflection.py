@@ -12,7 +12,6 @@ from garmin_mcp.analysis.derivations import (
     compute_next_run_target,
     compute_prescription_verdict,
     detect_progression_session,
-    map_phase_category,
     select_prescription_for_run,
 )
 
@@ -196,21 +195,6 @@ def test_detect_progression_session_true_for_marked_prescription() -> None:
 def test_detect_progression_session_false_for_two_splits() -> None:
     """Two splits cannot evidence a ramp."""
     assert detect_progression_session(TEMPO_PRESCRIPTION, BUILD_UP_SPLITS[:2]) is False
-
-
-@pytest.mark.unit
-def test_map_phase_category_returns_progression_when_detected() -> None:
-    """A detected build-up replaces the steady-tempo criteria."""
-    assert map_phase_category("tempo", None, is_progression=True) == "progression"
-
-
-@pytest.mark.unit
-def test_map_phase_category_ignores_progression_for_interval() -> None:
-    """Interval structure is work/recovery, never a ramp."""
-    assert (
-        map_phase_category("interval_training", None, is_progression=True)
-        == "interval_sprint"
-    )
 
 
 @pytest.mark.unit
