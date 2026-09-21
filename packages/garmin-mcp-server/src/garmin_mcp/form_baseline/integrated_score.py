@@ -87,33 +87,6 @@ def calculate_integrated_score(
     return score
 
 
-def integrated_star_score(integrated_score: float | None) -> float | None:
-    """Convert a 100-point integrated score into a continuous star score.
-
-    Uses the same linear mapping as ``scorer.compute_star_rating`` (#1233): every
-    20 points of the 100-point score cost one star, so a small difference in the
-    integrated score gives a small difference in stars instead of jumping a whole
-    star at a band edge::
-
-        star = round(clamp(5.0 - (100.0 - integrated_score) / 20.0, 1.0, 5.0), 1)
-
-    Args:
-        integrated_score: 100-point integrated score (can exceed 100 when every
-            metric beats its expectation), or None when unavailable.
-
-    Returns:
-        Star score in 1.0-5.0 with one decimal, or None when the input is None.
-
-    Example:
-        >>> integrated_star_score(94.3)
-        4.7
-    """
-    if integrated_score is None:
-        return None
-
-    return round(max(1.0, min(5.0, 5.0 - (100.0 - integrated_score) / 20.0)), 1)
-
-
 def round_star_score(score: float | None) -> float | None:
     """Round a star score read back from DuckDB to its one-decimal scale.
 

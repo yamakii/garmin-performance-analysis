@@ -275,42 +275,6 @@ def _easy_target(
     return result
 
 
-# --- training_type -> category mapping for phase / environment (Issue #673) ---
-# These classify a run deterministically, so the phase / environment category
-# of the prefetch CONTEXT is decided by code rather than by an LLM reading a
-# table. Category keys:
-#   phase:       low_moderate | tempo_threshold | progression | interval_sprint
-#   environment: recovery | base_moderate | tempo_threshold | interval_sprint
-
-# planned_workout.workout_type -> phase category (takes precedence over the
-# activity's own training_type).
-_PHASE_WORKOUT_TYPE_CATEGORY: dict[str, str] = {
-    "easy_run": "low_moderate",
-    "recovery_run": "low_moderate",
-    "tempo_run": "tempo_threshold",
-    "threshold_run": "tempo_threshold",
-    "interval": "interval_sprint",
-    "speed_work": "interval_sprint",
-    "vo2max_intervals": "interval_sprint",
-    "long_run": "low_moderate",  # may be reclassified when target_hr_high is high
-}
-
-# activity training_type -> phase category (fallback when no planned_workout).
-_PHASE_TRAINING_TYPE_CATEGORY: dict[str, str] = {
-    "recovery": "low_moderate",
-    "aerobic_base": "low_moderate",
-    "tempo": "tempo_threshold",
-    "lactate_threshold": "tempo_threshold",
-    "vo2max": "interval_sprint",
-    "anaerobic_capacity": "interval_sprint",
-    "speed": "interval_sprint",
-    "interval_training": "interval_sprint",
-}
-
-# A planned long_run whose target_hr_high reaches tempo intensity is classified
-# as tempo_threshold: 160bpm marks the lower edge of tempo/threshold HR.
-_LONG_RUN_TEMPO_HR_THRESHOLD = 160
-
 # --- Progression (build-up) detection (Issue #1086) -------------------------
 # A prescribed build-up ramps HR and pace on purpose, so the steady-tempo
 # criteria (pace CV, whole-run Zone3-4 share) punish it for being executed
@@ -411,89 +375,6 @@ def detect_progression_session(
     if len(paces) < _PROGRESSION_MIN_SPLITS:
         return False
     return (paces[0] or 0) - (paces[-1] or 0) >= _PROGRESSION_PACE_GAIN_S
-
-
-def map_phase_category(
-    training_type: str | None,
-    planned_workout: dict | None,
-    is_progression: bool = False,
-) -> str:
-    """Map training_type / planned_workout to a phase evaluation category.
-
-    Classifies the session deterministically instead of leaving the decision
-    to an LLM. ``planned_workout.workout_type`` takes precedence over the
-    activity's own ``training_type``.
-
-    Returns one of ``'low_moderate'`` | ``'tempo_threshold'`` |
-    ``'interval_sprint'`` | ``'progression'`` (default ``'tempo_threshold'``
-    when neither source resolves a category).
-
-    ``is_progression`` (from :func:`detect_progression_session`) overrides a
-    continuous-effort category with ``'progression'`` so a prescribed build-up
-    is judged on its ramp instead of on steady-tempo pace stability (Issue
-    #1086). Interval sessions keep their own category: their structure is
-    work/recovery, not a ramp.
-    """
-    category = _resolve_phase_category(training_type, planned_workout)
-    if is_progression and category in ("tempo_threshold", "low_moderate"):
-        return "progression"
-    return category
-
-
-def _resolve_phase_category(
-    training_type: str | None, planned_workout: dict | None
-) -> str:
-    """The training_type / planned_workout half of :func:`map_phase_category`."""
-    if planned_workout is not None:
-        workout_type = planned_workout.get("workout_type")
-        if workout_type == "long_run":
-            target_hr_high = planned_workout.get("target_hr_high")
-            if (
-                target_hr_high is not None
-                and target_hr_high >= _LONG_RUN_TEMPO_HR_THRESHOLD
-            ):
-                return "tempo_threshold"
-            return "low_moderate"
-        category = (
-            _PHASE_WORKOUT_TYPE_CATEGORY.get(workout_type) if workout_type else None
-        )
-        if category is not None:
-            return category
-
-    category = (
-        _PHASE_TRAINING_TYPE_CATEGORY.get(training_type) if training_type else None
-    )
-    if category is not None:
-        return category
-    return "tempo_threshold"
-
-
-def map_environment_category(training_type: str | None) -> str:
-    """Map training_type to an environment evaluation category.
-
-    Decides the temperature-sensitivity class of the session deterministically.
-    Returns one of
-    ``'recovery'`` | ``'base_moderate'`` | ``'tempo_threshold'`` |
-    ``'interval_sprint'`` (default ``'base_moderate'`` when ``training_type`` is
-    null or unrecognized).
-    """
-    if training_type is None:
-        return "base_moderate"
-    t = training_type.lower()
-    if "recovery" in t:
-        return "recovery"
-    if "tempo" in t or "threshold" in t:
-        return "tempo_threshold"
-    if (
-        "interval" in t
-        or "sprint" in t
-        or "vo2" in t
-        or "speed" in t
-        or "anaerobic" in t
-    ):
-        return "interval_sprint"
-    # easy / base / moderate and any other aerobic type.
-    return "base_moderate"
 
 
 # A shoe is treated as "just out of the box" for its first few runs (Issue

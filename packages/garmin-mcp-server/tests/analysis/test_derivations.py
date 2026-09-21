@@ -8,8 +8,6 @@ from garmin_mcp.analysis.derivations import (
     compute_vs_previous,
     compute_week_position,
     detect_garmin_conflicts,
-    map_environment_category,
-    map_phase_category,
     summarize_adherence,
 )
 
@@ -210,76 +208,6 @@ def test_easy_target_reference_pace_preserved() -> None:
     assert result["reference_pace_formatted"] == "7:21/km"
     assert result["reference_pace_fast_formatted"] == "7:16/km"
     assert result["reference_pace_slow_formatted"] == "7:26/km"
-
-
-# --- map_phase_category (Issue #673) ---
-
-
-@pytest.mark.unit
-def test_phase_category_from_planned_workout() -> None:
-    # planned_workout.workout_type takes precedence over training_type.
-    result = map_phase_category(
-        training_type="aerobic_base",
-        planned_workout={"workout_type": "tempo_run"},
-    )
-    assert result == "tempo_threshold"
-
-
-@pytest.mark.unit
-def test_phase_category_fallback_training_type() -> None:
-    result = map_phase_category(training_type="aerobic_base", planned_workout=None)
-    assert result == "low_moderate"
-
-
-@pytest.mark.unit
-def test_phase_category_interval() -> None:
-    result = map_phase_category(training_type="vo2max", planned_workout=None)
-    assert result == "interval_sprint"
-
-
-@pytest.mark.unit
-def test_phase_category_null_default() -> None:
-    result = map_phase_category(training_type=None, planned_workout=None)
-    assert result == "tempo_threshold"
-
-
-@pytest.mark.unit
-def test_phase_category_works_without_plan() -> None:
-    """Plan vs actual removed (Issue #785): planned_workout is always None.
-
-    map_phase_category must still classify from training_type alone.
-    """
-    assert (
-        map_phase_category(training_type="tempo", planned_workout=None)
-        == "tempo_threshold"
-    )
-    assert (
-        map_phase_category(training_type="recovery", planned_workout=None)
-        == "low_moderate"
-    )
-
-
-# --- map_environment_category (Issue #673) ---
-
-
-@pytest.mark.unit
-def test_env_category_recovery() -> None:
-    assert map_environment_category("recovery") == "recovery"
-
-
-@pytest.mark.unit
-def test_env_category_base() -> None:
-    assert map_environment_category("aerobic_base") == "base_moderate"
-
-
-@pytest.mark.unit
-def test_env_category_tempo() -> None:
-    assert map_environment_category("tempo") == "tempo_threshold"
-
-
-@pytest.mark.unit
-def test_env_category_interval() -> None:
-    assert map_environment_category("interval") == "interval_sprint"
 
 
 # --- detect_garmin_conflicts / summarize_adherence (Issue #980) ---
