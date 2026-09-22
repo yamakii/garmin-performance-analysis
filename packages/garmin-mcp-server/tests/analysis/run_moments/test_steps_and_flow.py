@@ -52,6 +52,81 @@ def test_steps_absorb_fragments_in_structured_run() -> None:
     assert rep_one["is_long"] is False
 
 
+def _indexed(
+    split: dict, index: int | None, role: str = "run", duration_s: float | None = None
+) -> dict:
+    """``split`` with a workout step index, a role and (optionally) a duration."""
+    row = {**split, "workout_step_index": index, "role_phase": role}
+    if duration_s is not None:
+        row["duration_s"] = duration_s
+    return row
+
+
+@pytest.mark.unit
+def test_trailing_lap_without_step_index_continues_step() -> None:
+    """A 36 s tail after the watch workout's last step is not a step (#1324).
+
+    Five 1 km laps of step 0, then the lap before the stop button, which the
+    watch records with no step index: one step, no 本編 step scene, and km
+    scenes named without a step prefix.
+    """
+    splits = [
+        *(_indexed(split, 0) for split in _rows([(420, 140, 150, 178, 2)] * 5)),
+        _indexed(_split(6, 507, 146, 150, distance_km=0.071), None, duration_s=36.0),
+    ]
+
+    steps = build_steps(splits)
+
+    assert len(steps) == 1
+    assert (steps[0]["split_from"], steps[0]["split_to"]) == (1, 6)
+    moments = detect_moments(splits, hr_ceiling=150)
+    assert all(m["kind"] != "main" for m in moments)
+    assert all(not m["label_ja"].startswith("本編") for m in moments)
+
+
+@pytest.mark.unit
+def test_long_free_run_after_workout_stays_separate() -> None:
+    """Three unindexed km after the cool-down are running of their own.
+
+    Only a short edge joins the step next to it; a jog home after the workout
+    must not pad the cool-down (or a last rep).
+    """
+    splits = [
+        *(_indexed(split, 0) for split in _rows([(420, 140, 150, 178, 2)] * 3)),
+        _indexed(_split(4, 450, 135, 140), 1, role="cooldown"),
+        *(
+            _indexed(_split(i, 440, 138, 145), None, role="cooldown", duration_s=440.0)
+            for i in (5, 6, 7)
+        ),
+    ]
+
+    steps = build_steps(splits)
+
+    assert [(s["split_from"], s["split_to"]) for s in steps] == [(1, 3), (4, 4), (5, 7)]
+
+
+@pytest.mark.unit
+def test_step_index_change_still_breaks_step() -> None:
+    """Two present, different indices still start a new step (#1297)."""
+    splits = [
+        _indexed(_split(1, 420, 140, 150), 0),
+        _indexed(_split(2, 420, 140, 150), 1),
+    ]
+
+    assert len(build_steps(splits)) == 2
+
+
+@pytest.mark.unit
+def test_role_change_breaks_step_without_index() -> None:
+    """Without indices the role still separates the steps."""
+    splits = [
+        _indexed(_split(1, 420, 140, 150), None),
+        _indexed(_split(2, 520, 130, 140), None, role="recovery"),
+    ]
+
+    assert len(build_steps(splits)) == 2
+
+
 @pytest.mark.unit
 def test_single_step_run_has_one_step() -> None:
     """A run whose splits are all ``run`` is one step called 本編."""
