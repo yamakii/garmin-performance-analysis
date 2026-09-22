@@ -76,3 +76,21 @@ def test_apply_policy_returns_copies() -> None:
     assert judged[0]["policy"]["verdict"] == "concern"
     assert judged[1]["policy"]["verdict"] == "neutral"
     assert set(judged[0]["policy"]) == {"verdict", "reason"}
+
+
+def test_policy_breakdown_is_concern_on_long_easy() -> None:
+    """A run that stopped delivering its purpose is a deviation (#1340)."""
+    verdict, _reason = policy_for("breakdown", "long_easy", None)
+    assert verdict == "concern"
+
+
+def test_policy_breakdown_survives_a_walk_allowance() -> None:
+    """Allowing walk breaks does not make the collapse acceptable."""
+    verdict, _reason = policy_for("breakdown", "long_easy", {"walk": True})
+    assert verdict == "concern"
+
+
+def test_policy_breakdown_neutral_on_intervals() -> None:
+    """Intervals are judged on their reps, not on holding one pace."""
+    verdict, _reason = policy_for("breakdown", "intervals", None)
+    assert verdict == "neutral"

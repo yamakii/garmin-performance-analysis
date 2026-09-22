@@ -319,3 +319,46 @@ def test_recurrence_ignores_single_occurrence() -> None:
     ]
 
     assert detect_recurrence(today, previous) == []
+
+
+# --- breakdown (#1340) ------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_breakdown_moment_covers_run_end() -> None:
+    """The stretch the run never came back from is told as one scene."""
+    splits = _rows(
+        [(420.0, 140.0, 148.0, 178.0, 2.0)] * 6
+        + [(700.0, 110.0, 120.0, 120.0, 2.0)] * 4
+    )
+
+    moments = detect_moments(splits, hr_ceiling=None, breakdown_from_km=6.0)
+
+    breakdown = [m for m in moments if m["kind"] == "breakdown"]
+    assert len(breakdown) == 1
+    assert (breakdown[0]["km_from"], breakdown[0]["km_to"]) == (6.0, 10.0)
+
+
+@pytest.mark.unit
+def test_breakdown_outranks_walk_break() -> None:
+    """Walking inside the collapse belongs to that story, not to its own scene."""
+    splits = _rows(
+        [(420.0, 140.0, 148.0, 178.0, 2.0)] * 6
+        + [(900.0, 105.0, 115.0, 100.0, 2.0)] * 4
+    )
+
+    moments = detect_moments(splits, hr_ceiling=None, breakdown_from_km=6.0)
+
+    assert "breakdown" in {m["kind"] for m in moments}
+    walks = [m for m in moments if m["kind"] == "walk_break"]
+    assert all(m["km_from"] < 6.0 for m in walks)
+
+
+@pytest.mark.unit
+def test_no_breakdown_without_a_breakdown_point() -> None:
+    """A run that held together is read exactly as before."""
+    moments = detect_moments(
+        _rows([(420.0, 140.0, 148.0, 178.0, 2.0)] * 10), hr_ceiling=None
+    )
+
+    assert all(m["kind"] != "breakdown" for m in moments)

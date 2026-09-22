@@ -68,6 +68,8 @@ from garmin_mcp.analysis.hr_windows import (
     steady_mask,
 )
 from garmin_mcp.analysis.normal_range import EXTRAPOLATION_NOT_JUDGED
+from garmin_mcp.analysis.purpose_outcome import Outcome
+from garmin_mcp.analysis.purpose_outcome import evaluate as evaluate_outcome
 from garmin_mcp.analysis.run_moments import (
     RECURRENCE_LOOKBACK,
     build_flow,
@@ -296,8 +298,9 @@ class RunReportReader(BaseDBReader):
         signals = self._signals(today, history)
         # Scenes read each kilometre's HR over its steady seconds only (#1320):
         # a stride and its recovery inside a kilometre are not a ceiling touch.
+        steady_splits = _steady_splits(today_splits, hr_samples, steady)
         moments = detect_moments(
-            _steady_splits(today_splits, hr_samples, steady),
+            steady_splits,
             hr_ceiling=hr_ceiling_bpm,
             prescription=prescription,
         )
@@ -305,9 +308,24 @@ class RunReportReader(BaseDBReader):
             prescription,
             _purpose_facts(today, today_splits, moments, identity, prescription),
         )
+        # Did the run deliver what its purpose asked for (#1340)? The scenes
+        # above are purpose-blind, so the outcome is read once the purpose is
+        # known, and a run that came apart is told again with that stretch as
+        # one breakdown scene.
+        outcome = evaluate_outcome(purpose.id, steady_splits)
+        told_moments = moments
+        if outcome is not None and outcome.breakdown_from_km is not None:
+            told_moments = detect_moments(
+                steady_splits,
+                hr_ceiling=hr_ceiling_bpm,
+                prescription=prescription,
+                breakdown_from_km=outcome.breakdown_from_km,
+            )
         # The verdicts are added on top of detection; recurrence (below) still
         # reads the purpose-blind scenes, so a habit is found whatever it means.
-        judged_moments = apply_policy(moments, purpose.id, _allowances(prescription))
+        judged_moments = apply_policy(
+            told_moments, purpose.id, _allowances(prescription)
+        )
         recurrence = detect_recurrence(
             moments,
             [
@@ -340,6 +358,7 @@ class RunReportReader(BaseDBReader):
                 "id": purpose.id,
                 "label_ja": purpose.label_ja,
                 "source": purpose.source,
+                "outcome": _outcome_block(outcome),
             },
             "headline": _headline(verdict, signals, judged_moments),
             "plan": _plan_block(
@@ -1081,18 +1100,42 @@ def _headline(
     if verdict is not None:
         label = _VERDICT_LABELS.get(str(verdict.get("verdict")), NO_PLAN_LABEL)
 
-    flags = [
-        _ADVERSE_FLAG_LABELS[signal["metric"]]
-        for signal in signals
-        if signal.get("adverse") and signal["metric"] in _ADVERSE_FLAG_LABELS
-    ]
-    flags.extend(
-        str(moment["label_ja"])
+    concerns = [
+        moment
         for moment in moments
         if (moment.get("policy") or {}).get("verdict") == "concern"
         and moment.get("label_ja")
+    ]
+    # A run that stopped delivering its purpose leads the line: every other
+    # flag is a detail of that (#1340).
+    flags = [
+        str(moment["label_ja"])
+        for moment in concerns
+        if moment.get("kind") == "breakdown"
+    ]
+    flags.extend(
+        _ADVERSE_FLAG_LABELS[signal["metric"]]
+        for signal in signals
+        if signal.get("adverse") and signal["metric"] in _ADVERSE_FLAG_LABELS
+    )
+    flags.extend(
+        str(moment["label_ja"])
+        for moment in concerns
+        if moment.get("kind") != "breakdown"
     )
     return {"plan_label": label, "flag_count": len(flags), "flag_labels": flags}
+
+
+def _outcome_block(outcome: Outcome | None) -> dict[str, Any] | None:
+    """The purpose outcome as the report ships it, or ``None`` (#1340)."""
+    if outcome is None:
+        return None
+    return {
+        "met": outcome.met,
+        "sustained_share": outcome.sustained_share,
+        "breakdown_from_km": outcome.breakdown_from_km,
+        "reason": outcome.reason,
+    }
 
 
 def _allowances(prescription: Mapping[str, Any] | None) -> dict[str, Any] | None:

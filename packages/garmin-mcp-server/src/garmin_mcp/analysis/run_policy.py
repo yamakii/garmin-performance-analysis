@@ -46,6 +46,7 @@ ALWAYS_NEUTRAL_KINDS: frozenset[str] = frozenset(
 # The judged kinds, in the column order of the table below.
 _KINDS: tuple[str, ...] = (
     "ceiling_touch",
+    "breakdown",
     "fade",
     "walk_break",
     "fast_start",
@@ -60,20 +61,20 @@ _LETTER: dict[str, Verdict] = {"C": "concern", "A": "acceptable", "N": "neutral"
 # purpose -> one letter per ``_KINDS`` column (C = concern, A = acceptable,
 # N = neutral). Kept as a compact grid so it can be read against Issue #1314.
 _GRID: dict[str, str] = {
-    "easy": "CNACNNNN",
+    "easy": "CCNACNNNN",
     # A surge is neutral on a recovery run (#1322): what the run guards is HR,
     # which ceiling_touch already judges; a quicker km that left HR alone is
     # not a concern.
-    "recovery": "CNACNCCN",
-    "long_easy": "CNACNNNN",
-    "long_goal_pace": "NCCCNANN",
-    "long_fast_finish": "CCCCNAAN",
-    "progression": "NCCCNAAN",
-    "tempo": "NCCCNNNN",
-    "intervals": "NNNNNNNN",
-    "fartlek": "NNNNANNN",
-    "race": "NCCCNANN",
-    "unknown": "CNNNNNNN",
+    "recovery": "CNNACNCCN",
+    "long_easy": "CCNACNNNN",
+    "long_goal_pace": "NCCCCNANN",
+    "long_fast_finish": "CCCCCNAAN",
+    "progression": "NCCCCNAAN",
+    "tempo": "NCCCCNNNN",
+    "intervals": "NNNNNNNNN",
+    "fartlek": "NNNNNANNN",
+    "race": "NCCCCNANN",
+    "unknown": "CNNNNNNNN",
 }
 
 #: purpose id -> moment kind -> verdict.

@@ -97,11 +97,11 @@ def test_report_exposes_purpose_and_policy(reader_db_path: Path) -> None:
     report = _report(reader_db_path)
 
     assert report is not None
-    assert report["purpose"] == {
-        "id": "long_goal_pace",
-        "label_ja": "ロング（目標ペース）",
-        "source": "prescription",
-    }
+    assert report["purpose"]["id"] == "long_goal_pace"
+    assert report["purpose"]["label_ja"] == "ロング（目標ペース）"
+    assert report["purpose"]["source"] == "prescription"
+    # The run held its pace to the end, so it delivered what it was for.
+    assert report["purpose"]["outcome"]["met"] is True
     walk = _walk_moment(report)
     assert walk["policy"]["verdict"] == "concern"
     assert walk["label_ja"] in report["headline"]["flag_labels"]
@@ -145,3 +145,71 @@ def test_report_purpose_inferred_without_prescription(reader_db_path: Path) -> N
     assert report["plan"] is None
     assert report["purpose"]["source"] == "inferred"
     assert report["purpose"]["id"] == "long_easy"
+
+
+def _seed_collapsing_splits(db_path: Path, activity_id: int) -> None:
+    """Eight kilometres at 6:00/km, then six the athlete could not hold."""
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute("DELETE FROM splits WHERE activity_id = ?", [activity_id])
+        for index in range(1, _LONG_SPLITS + 1):
+            collapsed = index > 8
+            pace = 700.0 if collapsed else 360.0
+            conn.execute(
+                """
+                INSERT INTO splits (
+                    activity_id, split_index, distance, duration_seconds,
+                    pace_seconds_per_km, heart_rate, max_heart_rate, cadence,
+                    elevation_gain, elevation_loss
+                ) VALUES (?, ?, 1.0, ?, ?, ?, ?, ?, 2.0, 2.0)
+                """,
+                [
+                    activity_id,
+                    index,
+                    pace,
+                    pace,
+                    108.0 if collapsed else 140.0,
+                    115.0 if collapsed else 145.0,
+                    120.0 if collapsed else 176.0,
+                ],
+            )
+    finally:
+        conn.close()
+
+
+@pytest.mark.integration
+def test_report_marks_a_run_that_missed_its_purpose(reader_db_path: Path) -> None:
+    """A long run that came apart is a deviation, and it leads the headline.
+
+    The heart rate falls with the pace here, which is exactly the run the old
+    report read as "on plan, nicely aerobic": no scene was a concern, so the
+    low zone share looked like the intended easy effort (#1340).
+    """
+    _seed_history(reader_db_path)
+    _seed_run(
+        reader_db_path,
+        activity_id=ACTIVITY_ID,
+        activity_date=TODAY,
+        distance_km=float(_LONG_SPLITS),
+        duration_s=7200,
+    )
+    _seed_collapsing_splits(reader_db_path, ACTIVITY_ID)
+    _seed_prescription(
+        reader_db_path,
+        on_date=TODAY,
+        session_type="long",
+        title="ロング 14km",
+        target_km=14.0,
+    )
+    _set_purpose(reader_db_path, "long_easy", {"walk": True})
+
+    report = _report(reader_db_path)
+
+    assert report is not None
+    outcome = report["purpose"]["outcome"]
+    assert outcome["met"] is False
+    assert outcome["breakdown_from_km"] == 8.0
+    breakdown = next(m for m in report["moments"] if m["kind"] == "breakdown")
+    assert breakdown["policy"]["verdict"] == "concern"
+    assert report["headline"]["flag_labels"][0] == breakdown["label_ja"]
+    json.dumps(report)
