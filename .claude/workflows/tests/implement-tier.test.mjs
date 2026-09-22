@@ -153,6 +153,6 @@ test('pushCmd embeds a credential.helper feeding GITHUB_TOKEN', () => {
   const cmd = pushCmd('/wt/path', 'feature/xyz')
   assert.ok(cmd.includes('credential.helper'), 'push command must inject a credential helper')
   assert.ok(cmd.includes('GITHUB_TOKEN'), 'helper must feed GITHUB_TOKEN')
-  assert.ok(cmd.includes('push -u origin feature/xyz'), 'push must target the branch')
+  assert.ok(cmd.includes('push -q -u origin feature/xyz'), 'push must be quiet and target the branch')
   assert.ok(!cmd.includes('${'), 'no unresolved template placeholders')
 })

@@ -84,11 +84,7 @@ fast-forward only で同期する。`implement-tier.js` は git fetch もベー�
 「前ティアのマージ済み土台を含まないベース」から分岐 → 土台を再実装 → 巨大 add/add コンフリクト**
 という事故が起きる（Epic #526 系で実際に発生）。
 
-```
-git fetch origin
-# behind なら:
-git merge --ff-only origin/main
-```
+ローカル main を `.claude/rules/dev/git.md` §2「ローカル main を origin に同期」の手順で同期する（`fetch -q` + `merge -q --no-stat --ff-only`）。
 
 - **初回ティア（Tier 0）起動前**にも実行する（プラン承認から時間が経ち origin が進んでいる場合に備える）。
 - **各ティア（Tier 1 以降）起動前**にも毎回実行する。前ティアの auto-merge が origin/main を進めるため、
@@ -151,7 +147,7 @@ Workflow の返り値:
   - `内容チェック WARNING` → ユーザーに報告し判断を仰ぐ（マージするなら `/ship --pr N --validated`）
   - `ci-guard が failure` → CI ログを確認して修正
   - `L3` → メインセッションが worktree の `.md` 差分を diff レビューし、`ci-guard` green ならマージ。E2E はマージ後の新規セッションで実行（`worktree-validation-protocol.md` §4）
-  - `コンフリクト` → メインセッションが `git -C <worktree> merge --no-edit origin/main` で解消（rebase は使わない: ask ルールで止まる）→ push → CI 待ち → マージ。同一ティアの Issue が同じファイル（`utils/verdict.ts` のような集約ファイルや docs の同一表）を共有すると兄弟マージ後に必ずここに来るので、次回は Issue 分割の時点で共有ファイルを持たせないか直列化する
+  - `コンフリクト` → メインセッションが `git.md` §2「コンフリクト解消」の手順で merge 取り込み → push → CI 待ち → マージ。同一ティアの Issue が同じファイル（`utils/verdict.ts` のような集約ファイルや docs の同一表）を共有すると兄弟マージ後に必ずここに来るので、次回は Issue 分割の時点で共有ファイルを持たせないか直列化する
 - **dropped**: agent 死亡 or skip。エラーを報告
 
 ### Step 6: 次のティアへ進行
@@ -173,7 +169,7 @@ Workflow の返り値:
 auto-merge は PR を **origin/main にのみ**反映する。ローカル作業ツリーは自動更新されず
 origin より遅れて drift するため、**MCP サーバ・各種ツールはローカルから起動する以上、
 マージ済みでもローカルでは旧コードが走る**。最終報告の前に、メインセッションが **Step 3.5 と
-同一手順**（`git fetch origin` → behind なら `git merge --ff-only origin/main`）でローカル main を
+同一手順**（`git.md` §2）でローカル main を
 origin へ同期する。これはティアごとの同期の**最終回**にあたる。
 
 - `--ff-only` なので、ローカルに未コミット変更や独自コミットがある場合は**安全に失敗**

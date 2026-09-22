@@ -87,23 +87,23 @@ PR 作成・CI 待ち・マージ・後片付け（下記 5〜11）だけを行�
 調査は Explore エージェントに出す。委譲しても経路は同じ「1 セッション = 1 worktree = 1 PR」。
 複数 Issue をまとめて流すかどうかは下の「`/implement` の起動条件」で決める。
 
-1. **origin 同期**: `git fetch origin` → behind なら `git merge --ff-only origin/main`。失敗したら報告して止まる（stash / reset はしない）
-2. **worktree**: 背景ジョブは `EnterWorktree`、対話セッションは `git worktree add -b <type>/<issue>-<slug> .claude/worktrees/<slug> origin/main`。ブランチ名は `feat|fix|docs|chore/<issue>-<slug>`
+1. **origin 同期**: ローカル main を `git.md` §2 の手順で同期。失敗したら報告して止まる（stash / reset はしない）
+2. **worktree**: 背景ジョブは `EnterWorktree`、対話セッションは `git.md` §2 の `git worktree add`（パス・ブランチ名もそこ）
 3. **実装 + テスト**: Issue の Design / Test Plan どおりに実装。`worktree-commands.md` の `--directory` / `-C` 形式でコマンドを打つ
 4. **完了ゲート**: `packages/` を変えたら `uv run --directory <worktree> bash scripts/ci-check.sh` exit 0。`.claude/` `scripts/` `docker/` を変えたら `bash scripts/check-claude-scripts.sh` exit 0
 5. **commit**: Conventional Commits、本文に `Closes #<issue>`、ハーネス指定の attribution trailer
-6. **push**: `git -C <worktree> -c credential.helper='!f(){ echo username=x-access-token; echo password=$GITHUB_TOKEN; };f' push -u origin <branch>`
+6. **push**: `git.md` §2 の正典形。origin/main の事前取り込みはしない
 7. **PR**: `mcp__github__create_pull_request`（body: `Closes #<issue>` + `## Verification` に実行した検証コマンドと結果）
 8. **CI 待ち**: `bash scripts/wait-for-ci.sh <PR> --timeout 900`（メインセッションは `run_in_background` 可。サブエージェント内ならフォアグラウンド 1 回）
-9. **マージ**: `worktree-validation-protocol.md` §6 のゲートを満たせば `mcp__github__merge_pull_request(merge_method="merge")`。例外（検証 FAIL / WARNING / CI 失敗 / コンフリクト）は PR URL と理由を報告して止まる
-10. **後片付け**: `git fetch origin && git merge --ff-only origin/main`（ローカル main）→ `bash scripts/cleanup-merged-worktrees.sh`。MCP サーバコードを変えたら `mcp__garmin-db__reload_server()`。
+9. **マージ**: `worktree-validation-protocol.md` §6 のゲートを満たせば `mcp__github__merge_pull_request(merge_method="merge")`。コンフリクトは `git.md` §2 で解消して 8 から。その他の例外（検証 FAIL / WARNING / CI 失敗）は PR URL と理由を報告して止まる
+10. **後片付け**: ローカル main 同期（`git.md` §2）→ `bash scripts/cleanup-merged-worktrees.sh`。MCP サーバコードを変えたら `mcp__garmin-db__reload_server()`。
     **背景ジョブ（`EnterWorktree` 中）でも必ず実行する**: worktree セッションの Bash guard は他 checkout への git 操作を拒むので、
     最後の PR をマージしたら `ExitWorktree(action="remove")`（未マージの変更が無いことが条件）で `/workspace` に戻り、
     そこで上の 2 コマンドを実行する。「worktree からは同期できない」と報告して人に回すのは禁止（オーナー指摘 2026-09-08）
 11. **報告**: PR 番号、マージ SHA、実行した検証、未了の追跡義務（L3 の post-merge E2E など）
 
 複数 Issue を続けて扱うときは Issue ごとに 2〜11 を繰り返す。同じ worktree で次のブランチを切るなら
-`git fetch origin && git checkout -b <branch> origin/main`（前の PR がマージ済みの場合）。
+`git.md` §2「同じ worktree で 2 本目」（前の PR がマージ済みの場合）。
 
 ### `/implement` の起動条件
 
