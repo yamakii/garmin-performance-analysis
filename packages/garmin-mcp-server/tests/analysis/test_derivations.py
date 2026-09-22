@@ -331,24 +331,74 @@ def test_summarize_adherence_counts_statuses() -> None:
 
 @pytest.mark.unit
 def test_week_position_long_run_day() -> None:
-    """The week's last day is the long-run day (Monday-start week)."""
+    """The week's last day is the long-run slot (Monday-start week)."""
     position = compute_week_position("2026-09-13", 0, None, None)
 
     assert position["week_start"] == "2026-09-07"
     assert position["day_index"] == 6
-    assert position["is_long_run_day"] is True
-    assert position["days_to_long_run"] == 0
+    assert position["is_long_run_slot_day"] is True
+    assert position["days_to_long_run_slot"] == 0
 
 
 @pytest.mark.unit
 def test_week_position_two_days_before_long() -> None:
-    """Friday sits two days before the Sunday long run."""
+    """Friday sits two days before the Sunday long-run slot."""
     position = compute_week_position("2026-09-11", 0, None, None)
 
     assert position["day_index"] == 4
-    assert position["days_to_long_run"] == 2
-    assert position["is_long_run_day"] is False
+    assert position["days_to_long_run_slot"] == 2
+    assert position["is_long_run_slot_day"] is False
     assert position["is_day_after_long_run"] is False
+
+
+@pytest.mark.unit
+def test_week_position_day_after_long_run_uses_previous_run() -> None:
+    """The first day of the week is 'after the long run' only if one was run.
+
+    2025-12-29 followed a 2.77 km jog, and the note called it the morning
+    after a long run from the weekday alone (#1333).
+    """
+    jog = compute_week_position(
+        "2025-12-29", 0, None, None, {"distance_km": 2.77, "duration_min": 20.0}
+    )
+    long_run = compute_week_position(
+        "2025-12-29", 0, None, None, {"distance_km": 25.0, "duration_min": 212.0}
+    )
+
+    assert jog["day_index"] == 0
+    assert jog["is_day_after_long_run"] is False
+    assert long_run["is_day_after_long_run"] is True
+    assert long_run["previous_day_run"] == {"distance_km": 25.0, "duration_min": 212.0}
+
+
+@pytest.mark.unit
+def test_week_position_day_after_long_run_mid_week() -> None:
+    """A Wednesday after a 120-minute Tuesday run is the day after a long run."""
+    position = compute_week_position(
+        "2026-09-09", 0, None, None, {"distance_km": 16.0, "duration_min": 120.0}
+    )
+
+    assert position["day_index"] == 2
+    assert position["is_day_after_long_run"] is True
+
+
+@pytest.mark.unit
+def test_week_position_no_previous_run() -> None:
+    """No run the day before: not the day after a long run."""
+    position = compute_week_position("2026-09-07", 0, None, None, None)
+
+    assert position["is_day_after_long_run"] is False
+    assert position["previous_day_run"] is None
+
+
+@pytest.mark.unit
+def test_week_position_slot_fields_renamed() -> None:
+    """The calendar-only fields say they are slots, not runs (#1333)."""
+    position = compute_week_position("2026-09-10", 0, None, None)
+
+    assert {"is_long_run_slot_day", "days_to_long_run_slot"} <= position.keys()
+    assert "is_long_run_day" not in position
+    assert "days_to_long_run" not in position
 
 
 @pytest.mark.unit

@@ -338,10 +338,18 @@ class TestPrefetchActivityContext:
                 "garmin_mcp.scripts.prefetch_activity_context._fetch_morning_wellness",
                 return_value=wellness,
             ),
+            patch(
+                "garmin_mcp.scripts.prefetch_activity_context._fetch_previous_day_run",
+                return_value={"distance_km": 2.77, "duration_min": 20.0},
+            ),
         ):
             result = prefetch_activity_context(12345)
 
         assert "error" not in result
+        # Yesterday was a 2.77 km jog, so this is not the morning after a long
+        # run, whatever the weekday (#1333).
+        assert result["week_position"]["previous_day_run"]["distance_km"] == 2.77
+        assert result["week_position"]["is_day_after_long_run"] is False
         # 8.2 km against an 8.0 km easy prescription at 148 bpm under a 150 bpm
         # ceiling: the run answered the plan.
         assert result["prescription_verdict"]["verdict"] == "✅"

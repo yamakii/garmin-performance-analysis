@@ -111,6 +111,38 @@ def _empty_prescription_layer() -> dict[str, Any]:
     }
 
 
+def _fetch_previous_day_run(
+    db_path_str: str, activity_date: str
+) -> dict[str, Any] | None:
+    """The previous calendar day's longest run, or ``None`` when there was none.
+
+    ``week_position.is_day_after_long_run`` is read from this (#1333): whether
+    yesterday was a long run is what the athlete ran yesterday, not which day
+    of the week today is.
+
+    Returns:
+        ``{"distance_km", "duration_min"}`` of the longest (by time) run.
+    """
+    previous_day = (date.fromisoformat(activity_date) - timedelta(days=1)).isoformat()
+    with get_connection(db_path_str) as conn:
+        row = conn.execute(
+            """
+            SELECT total_distance_km, total_time_seconds
+            FROM activities
+            WHERE activity_date = ?
+            ORDER BY total_time_seconds DESC NULLS LAST
+            LIMIT 1
+            """,
+            [previous_day],
+        ).fetchone()
+    if row is None or row[1] is None:
+        return None
+    return {
+        "distance_km": round(float(row[0]), 2) if row[0] is not None else None,
+        "duration_min": round(float(row[1]) / 60.0, 1),
+    }
+
+
 def _fetch_previous_same_type(
     db_path_str: str,
     activity_id: int,
@@ -314,9 +346,16 @@ def _collect_prescription_layer(
             # The configured week start day is implied by the resolved week
             # start, so no second profile read is needed.
             week_start_day = date.fromisoformat(week_start).weekday()
+            previous_day_run = _safe(
+                lambda: _fetch_previous_day_run(db_path_str, activity_date)
+            )
             layer["week_position"] = _safe(
                 lambda: compute_week_position(
-                    activity_date, week_start_day, ladder_step, block
+                    activity_date,
+                    week_start_day,
+                    ladder_step,
+                    block,
+                    previous_day_run,
                 )
             )
 
