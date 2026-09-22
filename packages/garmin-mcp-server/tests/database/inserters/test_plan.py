@@ -611,3 +611,68 @@ def test_session_type_strides_rejected(initialized_db_path: Path) -> None:
             [_prescription("2026-09-09", "strides", target_minutes=None)],
             db_path=str(initialized_db_path),
         )
+
+
+# ----------------------------------------------------------------------------
+# purpose + allowances (Issue #1312)
+# ----------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_insert_prescription_purpose_roundtrip(initialized_db_path: Path) -> None:
+    """An easy row's purpose and allowances read back unchanged."""
+    db_path = str(initialized_db_path)
+    insert_weekly_prescriptions(
+        "2026-09-07",
+        [
+            _prescription("2026-09-09", purpose="easy", allowances={"walk": True}),
+            _prescription("2026-09-10"),
+        ],
+        db_path=db_path,
+    )
+
+    rows = _read_week(db_path)
+    assert rows[0]["purpose"] == "easy"
+    assert rows[0]["allowances"] == {"walk": True}
+    # A row without either stays NULL.
+    assert rows[1]["purpose"] is None
+    assert rows[1]["allowances"] is None
+
+
+@pytest.mark.integration
+def test_insert_prescription_rejects_incompatible_purpose(
+    initialized_db_path: Path,
+) -> None:
+    """A goal-pace long run cannot be declared on an easy row."""
+    with pytest.raises(ValueError, match="does not fit session_type 'easy'"):
+        insert_weekly_prescriptions(
+            "2026-09-07",
+            [_prescription("2026-09-09", purpose="long_goal_pace")],
+            db_path=str(initialized_db_path),
+        )
+
+
+@pytest.mark.integration
+def test_insert_prescription_rejects_unknown_purpose(
+    initialized_db_path: Path,
+) -> None:
+    """A purpose outside the vocabulary is rejected."""
+    with pytest.raises(ValueError, match="purpose must be one of"):
+        insert_weekly_prescriptions(
+            "2026-09-07",
+            [_prescription("2026-09-13", "long", purpose="marathon")],
+            db_path=str(initialized_db_path),
+        )
+
+
+@pytest.mark.integration
+def test_insert_prescription_rejects_unknown_allowance_key(
+    initialized_db_path: Path,
+) -> None:
+    """Only the known allowance keys are accepted."""
+    with pytest.raises(ValueError, match=r"unknown allowances keys \['stop'\]"):
+        insert_weekly_prescriptions(
+            "2026-09-07",
+            [_prescription("2026-09-09", allowances={"stop": True})],
+            db_path=str(initialized_db_path),
+        )

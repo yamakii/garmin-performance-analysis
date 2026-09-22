@@ -247,6 +247,87 @@ def _validate_strides(row: Mapping[str, Any]) -> dict[str, int] | None:
     return resolved
 
 
+def _validate_purpose(row: Mapping[str, Any]) -> str | None:
+    """Validate a row's ``purpose`` against the purpose vocabulary (Issue #1312).
+
+    The purpose is the run's intent, finer than ``session_type`` (a ``long``
+    row may be ``long_easy`` or ``long_goal_pace``), so it must be one of
+    :data:`~garmin_mcp.analysis.run_purpose.PURPOSES` and compatible with the
+    row's ``session_type``. ``unknown`` is never prescribed.
+
+    Args:
+        row: A prescription row; only ``purpose``, ``session_type`` and
+            ``title`` are read.
+
+    Returns:
+        The purpose id, or ``None`` when the row declares none.
+
+    Raises:
+        ValueError: On an unknown purpose or one that does not fit the
+            row's ``session_type``.
+    """
+    from garmin_mcp.analysis.run_purpose import PURPOSES
+
+    purpose = row.get("purpose")
+    if purpose is None:
+        return None
+    title = str(row.get("title") or "")
+    known = sorted(p for p in PURPOSES if p != "unknown")
+    if purpose not in known:
+        raise ValueError(
+            f"prescription {title!r}: purpose must be one of {known} or null, "
+            f"got {purpose!r}"
+        )
+    session_type = row.get("session_type")
+    compatible = PURPOSES[purpose].session_types
+    if session_type not in compatible:
+        raise ValueError(
+            f"prescription {title!r}: purpose {purpose!r} does not fit "
+            f"session_type {session_type!r} (allowed session types: "
+            f"{sorted(compatible)})"
+        )
+    return str(purpose)
+
+
+def _validate_allowances(row: Mapping[str, Any]) -> dict[str, bool] | None:
+    """Validate a row's ``allowances`` object (``{"walk": bool}``, Issue #1312).
+
+    Args:
+        row: A prescription row; only ``allowances`` and ``title`` are read.
+
+    Returns:
+        The allowances dict, or ``None`` when the row declares none.
+
+    Raises:
+        ValueError: When ``allowances`` is not an object, carries an unknown
+            key or a non-boolean value.
+    """
+    from garmin_mcp.analysis.run_purpose import ALLOWANCE_KEYS
+
+    allowances = row.get("allowances")
+    if allowances is None:
+        return None
+    title = str(row.get("title") or "")
+    if not isinstance(allowances, Mapping):
+        raise ValueError(
+            f"prescription {title!r}: allowances must be an object like "
+            '{"walk": true}'
+        )
+    unknown = sorted(set(allowances) - ALLOWANCE_KEYS)
+    if unknown:
+        raise ValueError(
+            f"prescription {title!r}: unknown allowances keys {unknown} "
+            f"(allowed: {sorted(ALLOWANCE_KEYS)})"
+        )
+    for key, value in allowances.items():
+        if not isinstance(value, bool):
+            raise ValueError(
+                f"prescription {title!r}: allowances.{key} must be true or "
+                f"false, got {value!r}"
+            )
+    return {str(key): bool(value) for key, value in allowances.items()}
+
+
 def _validate_ladder(ladder: Any, block_title: str) -> list[dict[str, Any]]:
     """Validate the long-run ladder of a block and return it as a list.
 
@@ -487,7 +568,9 @@ def insert_weekly_prescriptions(
             ``pace_high_s_per_km``, ``rationale``, ``rating`` (``✅`` / ``🟡``
             / ``🔴``), ``status`` and — on ``easy`` rows only — ``strides``
             (``{reps, run_seconds=20, recovery_seconds=90}``, see
-            :func:`_validate_strides`), stored as JSON with the defaults filled.
+            :func:`_validate_strides`), stored as JSON with the defaults filled,
+            plus optional ``purpose`` (see :func:`_validate_purpose`) and
+            ``allowances`` (``{"walk": bool}``, stored as JSON).
         review_id: ``weekly_reviews.review_id`` when saved by a weekly review.
         user_id: Ledger owner identifier (defaults to ``"default"``).
         db_path: Path to DuckDB database. If None, uses the default path.
@@ -500,7 +583,8 @@ def insert_weekly_prescriptions(
             ``status`` or ``rating``, ``hr_low`` above ``hr_high``, a
             ``threshold`` / ``tempo`` row whose ``target_minutes`` reads as the
             session total rather than the body (:func:`
-            _validate_bookended_targets`), an invalid ``strides`` add-on, or a
+            _validate_bookended_targets`), an invalid ``strides`` add-on, an
+            unknown or incompatible ``purpose``, invalid ``allowances``, or a
             revision that skips the review (see the revision guard above).
     """
     if db_path is None:
@@ -511,7 +595,15 @@ def insert_weekly_prescriptions(
     week_start = _parse_date(week_start_date, "week_start_date")
     week_end = week_start + timedelta(days=6)
 
-    validated: list[tuple[dict[str, Any], date, dict[str, int] | None]] = []
+    validated: list[
+        tuple[
+            dict[str, Any],
+            date,
+            dict[str, int] | None,
+            str | None,
+            dict[str, bool] | None,
+        ]
+    ] = []
     for row in prescriptions:
         title = str(row.get("title") or "")
         if not title:
@@ -550,7 +642,9 @@ def insert_weekly_prescriptions(
             title, str(session_type), row.get("target_minutes"), row.get("target_km")
         )
         strides = _validate_strides(row)
-        validated.append((row, row_date, strides))
+        purpose = _validate_purpose(row)
+        allowances = _validate_allowances(row)
+        validated.append((row, row_date, strides, purpose, allowances))
 
     prescription_ids: list[int] = []
     with get_write_connection(db_path) as conn:
@@ -561,7 +655,7 @@ def insert_weekly_prescriptions(
         ).fetchone()
         batch_id = int(batch_row[0]) if batch_row is not None else 0
 
-        for row, row_date, strides in validated:
+        for row, row_date, strides, purpose, allowances in validated:
             id_row = conn.execute(
                 "SELECT nextval('seq_weekly_prescriptions_id')"
             ).fetchone()
@@ -572,9 +666,10 @@ def insert_weekly_prescriptions(
                     prescription_id, batch_id, user_id, review_id,
                     week_start_date, date, session_type, title, target_minutes,
                     target_km, hr_low, hr_high, pace_low_s_per_km,
-                    pace_high_s_per_km, rationale, rating, status, strides
+                    pace_high_s_per_km, rationale, rating, status, strides,
+                    purpose, allowances
                 ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 [
@@ -596,6 +691,8 @@ def insert_weekly_prescriptions(
                     row.get("rating"),
                     row.get("status") or "prescribed",
                     _json_or_none(strides),
+                    purpose,
+                    _json_or_none(allowances),
                 ],
             )
             prescription_ids.append(prescription_id)

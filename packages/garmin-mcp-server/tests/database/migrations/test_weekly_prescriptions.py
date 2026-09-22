@@ -208,3 +208,46 @@ def test_registry_has_version_30() -> None:
         (29, "add_athlete_symptoms"),
         (30, "add_prescription_strides"),
     ]
+
+
+@pytest.mark.unit
+def test_add_prescription_purpose_idempotent(tmp_path: Path) -> None:
+    """v32 adds purpose + allowances (nullable VARCHAR) idempotently (#1312)."""
+    from garmin_mcp.database.migrations.add_prescription_purpose import (
+        add_prescription_purpose,
+    )
+
+    conn = duckdb.connect(str(tmp_path / "purpose.duckdb"))
+    try:
+        add_weekly_prescriptions_table(conn)
+        add_prescription_purpose(conn)
+        # Idempotent: a second application must not raise.
+        add_prescription_purpose(conn)
+
+        columns = conn.execute(
+            "SELECT column_name, data_type FROM information_schema.columns "
+            "WHERE table_name = 'weekly_prescriptions' "
+            "AND column_name IN ('purpose', 'allowances') ORDER BY column_name"
+        ).fetchall()
+        assert columns == [("allowances", "VARCHAR"), ("purpose", "VARCHAR")]
+
+        # Missing table: nothing to alter, no crash.
+        other = duckdb.connect(str(tmp_path / "no_table_purpose.duckdb"))
+        try:
+            add_prescription_purpose(other)
+            assert "weekly_prescriptions" not in _table_names(other)
+        finally:
+            other.close()
+    finally:
+        conn.close()
+
+
+@pytest.mark.unit
+def test_registry_has_version_32() -> None:
+    """Purpose + allowances are registered as migration 32 (#1312)."""
+    from garmin_mcp.database.migrations.registry import MIGRATIONS
+
+    assert [(version, name) for version, name, _ in MIGRATIONS if version >= 31] == [
+        (31, "add_splits_workout_step_index"),
+        (32, "add_prescription_purpose"),
+    ]

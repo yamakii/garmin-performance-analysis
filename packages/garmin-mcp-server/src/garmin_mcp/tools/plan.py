@@ -89,7 +89,17 @@ class SaveWeeklyPrescriptionsParams(BaseModel):
             "neuromuscular stimulus, not an interval, placed after at least "
             "5min of easy running and followed by a final 5min easy; "
             "target_minutes stays the run total and must fit 10min plus "
-            "reps x (run + recovery). Revising a week means saving a new "
+            "reps x (run + recovery). Every run row should also set purpose — "
+            "what the run is for, finer than session_type: easy | recovery "
+            "(easy/recovery rows), long_easy | long_goal_pace | "
+            "long_fast_finish (long rows), progression (easy/long/tempo), "
+            "tempo (tempo/threshold), intervals (threshold/tempo), fartlek "
+            "(easy/tempo/threshold), race (long/tempo/threshold); a purpose "
+            "that does not fit the session_type is rejected, and a row "
+            "without one falls back to the session_type default (long -> "
+            'long_easy). Optional allowances {"walk": true|false} states '
+            "what the run permits (walk breaks); other keys are rejected. "
+            "Revising a week means saving a new "
             "review version first and passing its review_id: a second batch "
             "for the same review is rejected."
         )
@@ -354,7 +364,8 @@ PLAN_TOOLS: list[ToolDef] = [
             "a single day. Give exactly one of week_start_date / date — date "
             "resolves its week with the athlete's week_start_day. Rows are "
             "ordered by date and carry targets (target_km / target_minutes), HR "
-            "and pace bounds, status (prescribed|registered|done|replaced|"
+            "and pace bounds, purpose and allowances (null when not set), "
+            "status (prescribed|registered|done|replaced|"
             "skipped), the Garmin workout/schedule ids and actual_activity_id. "
             "Returns an empty list when nothing is prescribed."
         ),

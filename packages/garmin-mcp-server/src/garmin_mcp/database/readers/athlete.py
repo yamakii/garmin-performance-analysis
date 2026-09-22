@@ -25,7 +25,8 @@ logger = logging.getLogger(__name__)
 #: Prescription columns needed to render a review's per-day verdict rows.
 _VERDICT_PRESCRIPTION_COLUMNS = (
     "prescription_id, batch_id, date, session_type, title, target_minutes, "
-    "target_km, hr_low, hr_high, strides, rationale, rating, status"
+    "target_km, hr_low, hr_high, strides, purpose, allowances, rationale, rating, "
+    "status"
 )
 
 

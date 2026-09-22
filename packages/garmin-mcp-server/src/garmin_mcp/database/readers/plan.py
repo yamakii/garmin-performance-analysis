@@ -6,7 +6,7 @@ and the structured weekly prescriptions (``weekly_prescriptions``).
 Two conventions apply throughout:
 
 - JSON columns (``quality_types``, ``long_run_ladder``, ``cutback_rule`` and the
-  prescriptions' ``strides``) are decoded back into lists/dicts, and every ``date`` / ``TIMESTAMP`` value is
+  prescriptions' ``strides`` / ``allowances``) are decoded back into lists/dicts, and every ``date`` / ``TIMESTAMP`` value is
   converted to ``str`` so results are directly ``json.dumps``-able by MCP tools.
 - ``weekly_prescriptions`` is append-only per ``batch_id``: the highest
   ``batch_id`` for a week is canonical and superseded batches are never
@@ -60,12 +60,14 @@ _PRESCRIPTION_COLUMN_NAMES = (
     "actual_activity_id",
     "registered_bookend_minutes",
     "strides",
+    "purpose",
+    "allowances",
     "created_at",
     "updated_at",
 )
 
 #: JSON-encoded prescription columns, decoded back into dicts on read.
-_PRESCRIPTION_JSON_COLUMNS = ("strides",)
+_PRESCRIPTION_JSON_COLUMNS = ("strides", "allowances")
 
 _PRESCRIPTION_COLUMNS = ", ".join(_PRESCRIPTION_COLUMN_NAMES)
 
@@ -367,6 +369,8 @@ def verdict_from_prescriptions(rows: list[dict[str, Any]]) -> list[dict[str, Any
             "hr_low": row.get("hr_low"),
             "hr_high": row.get("hr_high"),
             "strides": row.get("strides"),
+            "purpose": row.get("purpose"),
+            "allowances": row.get("allowances"),
             "status": row.get("status"),
             "prescription_id": row.get("prescription_id"),
         }

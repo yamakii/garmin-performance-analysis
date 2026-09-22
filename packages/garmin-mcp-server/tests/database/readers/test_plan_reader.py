@@ -250,6 +250,8 @@ def test_verdict_from_prescriptions_shape() -> None:
             "hr_low": None,
             "hr_high": 150,
             "strides": None,
+            "purpose": None,
+            "allowances": None,
             "status": "prescribed",
             "prescription_id": 7,
         }

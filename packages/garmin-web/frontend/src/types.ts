@@ -872,6 +872,10 @@ export interface Prescription {
   hr_high: number | null;
   /** Strides riding on an easy row (#1294); null / absent when there are none. */
   strides?: PrescriptionStrides | null;
+  /** What the run is for, finer than session_type (#1312); null when not set. */
+  purpose?: string | null;
+  /** What the run permits, e.g. walk breaks (#1312); null when not set. */
+  allowances?: { walk?: boolean } | null;
   /** Coach verdict of the prescribed session (✅ / 🟡 / 🔴), the canonical one. */
   rating?: string | null;
   /** The coach's one-line comment on the session. */

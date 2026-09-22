@@ -50,6 +50,8 @@ ToolSearch(query="select:mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db
 - HR 上限値は処方の `hr_high` or Garmin native zone の上限（計算式禁止）。処方に数値が無ければ `get_heart_rate_zones_detail` の Zone 2 上限を使う
 
 > 週モードではこの変換をツール側がコードで行います（同じ規約: ロング/イージー/リカバリーは本体 1 ステップ、`strides` 付きイージーは冒頭 easy → 流し → 最後の easy 5 分で合計が総量、質練のみ 10 分 warmup → 本体 → 5 分 cooldown、`hr_high` は上限のみ）。記録する `registered_bookend_minutes` もツールが決めます（流し付きイージーは 0）。手で steps を書き直さないでください。
+>
+> 処方行の `purpose`（`long_easy` / `long_goal_pace` などランの目的）と `allowances`（`{"walk": true}` 等）は**ワークアウトの構成を変えません**。同じ `session_type` なら時計に届くステップは同一で、purpose はランの評価（処方どおりだったか）のためだけに使われます。
 
 ## Step 3: ゲート確認と登録（単日モード）
 
