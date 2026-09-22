@@ -3,7 +3,8 @@
 An easy run with strides answers two things: the easy jog (its HR ceiling) and
 the strides themselves (how many were run). A stride is meant to clear the
 easy ceiling, so the ceiling's ``seconds_over`` is read off the heart-rate time
-series over the jog windows only; without stride laps the zone totals stand.
+series with the stride laps (and the HR recovery after them) masked out --
+the steady-running mask of #1313, see ``test_ceiling_windows.py``.
 """
 
 from __future__ import annotations
@@ -208,25 +209,3 @@ def test_hr_ceiling_seconds_over_excludes_stride_windows(
     # Jog laps only: (3 x 420 s at 145 + 300 s at 138) / 1560 s = 143.7 bpm.
     assert row["actual"] == "144 bpm"
     assert row["on_plan"] is True
-
-
-@pytest.mark.integration
-def test_hr_ceiling_zone_based_without_strides(reader_db_path: Path) -> None:
-    """No stride laps: the zone totals stand, even with a time series present."""
-    laps = [*_JOG, _COOLDOWN]
-    _seed_today(reader_db_path, laps, strides=False)
-    _seed_hr_series(reader_db_path, ACTIVITY_ID, laps)
-    _seed_zones(
-        reader_db_path,
-        ACTIVITY_ID,
-        [(1, 100, 130, 300.0), (2, 130, 150, 1260.0), (3, 150, 170, 240.0)],
-    )
-
-    report = _report(reader_db_path)
-
-    assert report is not None
-    ceiling = report["plan"]["hr_ceiling"]
-    assert ceiling["seconds_over"] == 240.0
-    assert ceiling["pct_over"] == round(240.0 / 1800.0 * 100.0, 1)
-    row = next(c for c in report["plan"]["checks"] if c["axis"] == "hr_ceiling")
-    assert row["actual"] == "146 bpm"

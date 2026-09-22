@@ -19,6 +19,7 @@ from garmin_mcp.analysis.normal_range import MAD_SCALE, compute_band
 from garmin_mcp.analysis.run_signals import (
     REASON_EXTRAPOLATED,
     REASON_HOT,
+    REASON_LOW_JUDGED_SHARE,
     REASON_NO_HR_MODEL,
     REASON_SHORT_RUN,
     REASON_THIN_BASELINE,
@@ -51,6 +52,7 @@ _REASON_PARAMS: dict[str, dict[str, Any]] = {
     REASON_SHORT_RUN: {"n": 2, "required": 3},
     REASON_THIN_BASELINE: {"n": 0, "required": 10},
     REASON_HOT: {"temp": 31.0},
+    REASON_LOW_JUDGED_SHARE: {"pct": 40, "required": 50},
 }
 
 
@@ -346,7 +348,7 @@ def test_every_reason_code_has_a_japanese_message():
         for name, value in vars(run_signals).items()
         if name.startswith("REASON_") and isinstance(value, str)
     }
-    assert len(codes) == 9
+    assert len(codes) == 10
 
     for code in codes:
         message = run_signals.describe_reason(code, _REASON_PARAMS.get(code))
