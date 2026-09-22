@@ -442,3 +442,39 @@ def test_minimal_run_note_passes_without_good_points():
     data = _note_data(good_points=[])
 
     assert check_run_note_grounding(data, report) == (True, None)
+
+
+def _ceiling_report(pct_over: float | None) -> dict[str, Any]:
+    """A report whose hr_ceiling axis is on plan (by average HR)."""
+    plan: dict[str, Any] = {"checks": [{"axis": "hr_ceiling", "on_plan": True}]}
+    if pct_over is not None:
+        plan["hr_ceiling"] = {"bpm": 150, "seconds_over": 0.0, "pct_over": pct_over}
+    return _report(plan=plan)
+
+
+@pytest.mark.unit
+def test_good_point_rejects_hr_ceiling_when_much_over():
+    """30 minutes above the ceiling is not kept, whatever the average (#1332)."""
+    ok, reason = check_run_note_grounding(
+        _good_on("plan.hr_ceiling"), _ceiling_report(14.9)
+    )
+
+    assert ok is False
+    assert reason is not None
+    assert "14.9%" in reason
+
+
+@pytest.mark.unit
+def test_good_point_accepts_hr_ceiling_when_briefly_over():
+    """A 21 s overshoot (1.2%) still lets the note credit the ceiling."""
+    assert check_run_note_grounding(
+        _good_on("plan.hr_ceiling"), _ceiling_report(1.2)
+    ) == (True, None)
+
+
+@pytest.mark.unit
+def test_good_point_accepts_hr_ceiling_without_share():
+    """Without a judged share (no ceiling block) the on-plan axis stands."""
+    assert check_run_note_grounding(
+        _good_on("plan.hr_ceiling"), _ceiling_report(None)
+    ) == (True, None)
