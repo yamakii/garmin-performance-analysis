@@ -211,18 +211,23 @@ export default function PlanCheck({
   purpose?: RunPurpose | null;
   judgedShare?: RunJudgedShare | null;
 }): JSX.Element | null {
-  if (plan == null || plan.checks.length === 0) {
-    return null;
-  }
   const purposeLabel = purposeText(purpose);
   const shareLabel = judgedShareText(judgedShare);
+  const hasChecks = plan != null && plan.checks.length > 0;
+  // A run with no prescription still has a purpose -- inferred from the run
+  // itself -- and a judged share (#1326). Those runs are where "（推定）"
+  // matters most, so the section stays with just that line.
+  if (!hasChecks && purposeLabel == null && shareLabel == null) {
+    return null;
+  }
+  const note =
+    plan == null
+      ? "処方なし"
+      : plan.title !== ""
+        ? `処方「${plan.title}」`
+        : undefined;
   return (
-    <SectionBlock
-      id={id}
-      title="計画との照合"
-      note={plan.title !== "" ? `処方「${plan.title}」` : undefined}
-      noteMono
-    >
+    <SectionBlock id={id} title="計画との照合" note={note} noteMono>
       {(purposeLabel != null || shareLabel != null) && (
         <dl className="mb-3 flex flex-wrap gap-x-6 gap-y-1 font-mono text-[13px]">
           {purposeLabel != null && (
@@ -239,25 +244,27 @@ export default function PlanCheck({
           )}
         </dl>
       )}
-      <div className={`md:grid ${GRID_COLUMNS}`}>
-        <div aria-hidden="true" className="hidden md:contents">
-          {COLUMNS.map((column) => (
-            <span
-              key={column}
-              className="border-b border-ink pb-2 pr-3 font-mono text-[11px] tracking-[0.04em] text-ink-muted"
-            >
-              {column}
-            </span>
+      {hasChecks && plan != null && (
+        <div className={`md:grid ${GRID_COLUMNS}`}>
+          <div aria-hidden="true" className="hidden md:contents">
+            {COLUMNS.map((column) => (
+              <span
+                key={column}
+                className="border-b border-ink pb-2 pr-3 font-mono text-[11px] tracking-[0.04em] text-ink-muted"
+              >
+                {column}
+              </span>
+            ))}
+          </div>
+          {plan.checks.map((check) => (
+            <CheckRow
+              key={check.axis}
+              check={check}
+              ceiling={check.axis === "hr_ceiling" ? plan.hr_ceiling : null}
+            />
           ))}
         </div>
-        {plan.checks.map((check) => (
-          <CheckRow
-            key={check.axis}
-            check={check}
-            ceiling={check.axis === "hr_ceiling" ? plan.hr_ceiling : null}
-          />
-        ))}
-      </div>
+      )}
     </SectionBlock>
   );
 }

@@ -778,14 +778,72 @@ describe("RunFlow scene list", () => {
     const concern = screen.getByText("懸念");
     expect(rows[0]).toContainElement(concern);
     expect(concern.dataset.tone).toBe("warn");
-    expect(concern.parentElement?.title).toBe(
-      "ceiling_touch is concern on a easy run",
-    );
+    // Without a purpose the tooltip names the scene and the verdict (#1326).
+    expect(concern.parentElement?.title).toBe("上限到達：懸念");
     expect(rows[1]).toHaveTextContent("許容");
     expect(screen.getByText("許容").dataset.tone).toBe("info");
     expect(rows[2]).toHaveTextContent("参考");
     // A report older than #1314 carries no policy, and no badge is invented.
     expect(rows[3]).not.toHaveTextContent(/懸念|許容|参考/);
+  });
+
+  it("policy tooltip is Japanese", () => {
+    // The report's reason is an English key sentence; the page names the
+    // scene, the purpose and the verdict in Japanese instead (#1326).
+    render(
+      <RunFlow
+        flow={STEADY_FLOW}
+        moments={[
+          moment("m1", "walk_break", [3, 3], {
+            label_ja: "3 km 付近",
+            policy: {
+              verdict: "acceptable",
+              reason: "walk_break is acceptable on a long_easy run",
+            },
+          }),
+          moment("m2", "start", [1, 1], {
+            label_ja: "1 km",
+            policy: {
+              verdict: "neutral",
+              reason: "start is part of the session structure",
+            },
+          }),
+        ]}
+        timeline={[]}
+        hrCeiling={150}
+        purpose={{
+          id: "long_easy",
+          label_ja: "ロング（有酸素）",
+          source: "session_default",
+        }}
+      />,
+    );
+
+    expect(screen.getByText("許容").parentElement?.title).toBe(
+      "歩き：ロング（有酸素）では許容",
+    );
+    expect(screen.getByText("参考").parentElement?.title).toBe(
+      "入り：参考（判定の対象外）",
+    );
+    expect(document.body.innerHTML).not.toContain("is acceptable on");
+  });
+
+  it("long scene label wraps", () => {
+    // A long label wraps inside its column instead of running over the badge
+    // and the prose (#1326).
+    renderFlow(
+      STEADY_FLOW,
+      [
+        moment("m1", "walk_break", [3, 3], {
+          label_ja: "10・18・19・20・21・22・23・24・25・26・27・28 km 付近",
+        }),
+      ],
+      [],
+    );
+
+    const label = screen.getByTestId("scene-label");
+    expect(label.className).not.toContain("whitespace-nowrap");
+    expect(label.className).toContain("[overflow-wrap:anywhere]");
   });
 
   it("test_scene_without_timeline_text_has_empty_text", () => {

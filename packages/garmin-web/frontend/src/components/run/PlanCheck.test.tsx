@@ -42,6 +42,25 @@ describe("PlanCheck", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it("shows purpose without a plan", () => {
+    // An unprescribed run still has an inferred purpose and a judged share,
+    // and that is where "（推定）" matters most (#1326).
+    render(
+      <PlanCheck
+        plan={null}
+        purpose={{ id: "easy", label_ja: "イージー", source: "inferred" }}
+        judgedShare={{ hr: 0.9, form: 0.95 }}
+      />,
+    );
+
+    expect(screen.getByText("計画との照合")).toBeInTheDocument();
+    expect(screen.getByText("処方なし")).toBeInTheDocument();
+    expect(screen.getByTestId("plan-purpose")).toHaveTextContent("イージー（推定）");
+    expect(screen.getByTestId("plan-judged-share")).toHaveTextContent("心拍 90%");
+    // No check grid without a plan.
+    expect(screen.queryByText("強度")).not.toBeInTheDocument();
+  });
+
   it("test_plan_check_is_a_grid_with_status_in_each_row", () => {
     const { container } = render(<PlanCheck plan={PLAN} />);
 
