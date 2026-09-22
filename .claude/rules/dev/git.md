@@ -23,7 +23,7 @@ paths:
 | PR は merge commit でマージ（`merge_method="merge"`） | `cleanup-merged-worktrees.sh` / `prune-merged-branches.sh` が ancestry（`--merged` / `merge-base --is-ancestor`）でマージ済みを判定する。squash だと全ブランチが「未マージ」で残る | Dependabot workflow も `--merge` |
 | feature ブランチへの origin/main 取り込みは**コンフリクト時だけ** | branch protection は up-to-date を要求せず、CI は PR の merge ref を検証する。遅れているだけの PR はそのままマージできる | — |
 | stash を使わない（一時退避は WIP commit） | stash スタックは全 worktree・並行セッションで共有され、他人の退避を pop しうる | — |
-| **出力は必要な分だけ取る**（§3） | git 出力はそのままコンテキストに載る。無制限の `log` / `diff` / `show` と、diffstat を吐く `merge` が主な浪費源だった（#1304 の計測: 同期系 431 回で約 19.5 万字） | — |
+| **出力は必要な分だけ取る**（§3） | git 出力はそのままコンテキストに載る。無制限の `log` / `diff` / `show` と、diffstat を吐く `merge` が主な浪費源だった（#1304 の計測: 同期系 431 回で約 19.5 万字） | リポジトリ設定 `merge.stat=false`（SessionStart hook `git-quiet-config.sh` が毎回設定、#1307）。フラグを忘れても、開始時に旧ルールを掴んだセッションでも merge / pull は diffstat を出さない。`--no-stat` は念のための二重化 |
 
 ## 2. 正典コマンド
 
