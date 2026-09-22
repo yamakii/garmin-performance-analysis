@@ -36,6 +36,82 @@ class TestWorkoutStructureClassification:
         lap_dtos = [{"lapIndex": i + 1} for i in range(6)]
         assert _classify_workout_structure(lap_dtos) == "steady"
 
+    @pytest.mark.unit
+    def test_workout_structure_steady_with_strides(self):
+        """Jog + 4x (stride / recovery) + cooldown -> 'steady' (#1296)."""
+        lap_dtos = _jog_with_strides_laps()
+        assert _classify_workout_structure(lap_dtos) == "steady"
+
+
+def _jog_with_strides_laps() -> list[dict]:
+    """Easy jog (3 laps, step 0) + 4x (20 s stride, 90 s recovery) + cooldown.
+
+    [MCP] run steps record ``ACTIVE``; the stride recoveries record
+    ``RECOVERY``. Only the repeating ``wktStepIndex`` identifies the strides.
+    """
+    laps: list[dict] = []
+
+    def add(step: int, distance: float, duration: float, intensity: str, hr: int):
+        laps.append(
+            {
+                "lapIndex": len(laps) + 1,
+                "wktStepIndex": step,
+                "distance": distance,
+                "duration": duration,
+                "intensityType": intensity,
+                "averageHR": hr,
+                "averageRunCadence": 178.0,
+            }
+        )
+
+    for hr in (138, 140, 142):
+        add(0, 1000.0, 410.0, "ACTIVE", hr)
+    for _ in range(4):
+        add(1, 90.0, 20.0, "ACTIVE", 150)
+        add(2, 200.0, 90.0, "RECOVERY", 135)
+    add(3, 700.0, 300.0, "ACTIVE", 139)
+    return laps
+
+
+class TestStrideLapsExcludedFromRunPhase:
+    """Integration: stride and stride-recovery laps are not run-phase laps."""
+
+    @pytest.mark.integration
+    def test_run_splits_exclude_strides(self, tmp_path, initialized_db_path):
+        """4 strides + 4 recoveries -> run_splits holds only the jog laps."""
+        activity_id = 91296003
+        raw_splits_file = tmp_path / "strides_splits.json"
+        raw_splits_file.write_text(
+            json.dumps(
+                {"activityId": activity_id, "lapDTOs": _jog_with_strides_laps()}
+            ),
+            encoding="utf-8",
+        )
+
+        conn = duckdb.connect(str(initialized_db_path))
+        try:
+            assert (
+                insert_performance_trends(
+                    activity_id=activity_id,
+                    conn=conn,
+                    raw_splits_file=str(raw_splits_file),
+                )
+                is True
+            )
+            row = conn.execute(
+                "SELECT run_splits, recovery_splits FROM performance_trends "
+                "WHERE activity_id = ?",
+                [activity_id],
+            ).fetchone()
+        finally:
+            conn.close()
+
+        assert row is not None
+        run_splits, recovery_splits = row
+        # Jog laps 1-3 and the final easy lap 12; strides 4,6,8,10 are nowhere.
+        assert run_splits == "1,2,3,12"
+        assert recovery_splits == "5,7,9,11"
+
 
 class TestWorkoutStructureBranchIntegration:
     """Integration: hr_drift_percentage routes through the correct branch."""

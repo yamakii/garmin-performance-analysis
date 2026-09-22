@@ -20,6 +20,9 @@ from pydantic import ValidationError
 
 from garmin_mcp.database.inserters.splits_helpers.extractor import SplitsExtractor
 from garmin_mcp.database.inserters.splits_helpers.phase_mapping import PhaseMapper
+from garmin_mcp.database.inserters.splits_helpers.stride_roles import (
+    assign_stride_roles,
+)
 from garmin_mcp.validation.validators import validate_split
 
 logger = logging.getLogger(__name__)
@@ -99,6 +102,10 @@ def _insert_splits_with_connection(
             f"Applied intensity_type estimation for activity {activity_id}: {estimated_types}"
         )
 
+    # Strides and their recoveries are marked from the repeating workout step
+    # index, not intensityType: [MCP] run steps record ACTIVE (#1296).
+    split_metrics = assign_stride_roles(split_metrics)
+
     # Validate and insert each split
     for split in split_metrics:
         split_number = split.get("split_number")
@@ -153,8 +160,9 @@ def _insert_splits_with_connection(
                 vertical_oscillation, vertical_ratio, elevation_gain,
                 elevation_loss, terrain_type,
                 stride_length, max_heart_rate, max_cadence, max_power,
-                normalized_power, average_speed, grade_adjusted_speed
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                normalized_power, average_speed, grade_adjusted_speed,
+                workout_step_index
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 activity_id,
@@ -186,5 +194,6 @@ def _insert_splits_with_connection(
                 split.get("normalized_power"),
                 split.get("average_speed_mps"),
                 split.get("grade_adjusted_speed_mps"),
+                split.get("workout_step_index"),
             ],
         )

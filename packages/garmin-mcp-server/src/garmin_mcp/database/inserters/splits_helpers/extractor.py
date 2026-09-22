@@ -79,6 +79,9 @@ class SplitsExtractor:
             intensity_type = lap.get("intensityType")
             role_phase = PhaseMapper.map_intensity_to_phase(intensity_type)
 
+            # Workout step index: repeat iterations reuse it (stride roles, #1296)
+            workout_step_index = lap.get("wktStepIndex")
+
             # HR
             avg_hr = lap.get("averageHR")
 
@@ -118,6 +121,7 @@ class SplitsExtractor:
                 "end_time_s": end_time_s,
                 "intensity_type": intensity_type,
                 "role_phase": role_phase,
+                "workout_step_index": workout_step_index,
                 "pace_str": pace_str,
                 "pace_seconds_per_km": pace_seconds_per_km,
                 "avg_heart_rate": avg_hr,
