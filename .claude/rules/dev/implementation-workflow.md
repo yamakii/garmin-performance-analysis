@@ -11,9 +11,47 @@ paths:
 
 # Implementation Workflow
 
-プラン承認後のフロー。各ステップの完了条件を満たさないと次に進めない。
+プラン確定後のフロー（フルは承認後、軽量と設計済み Issue は提示後に進む。Phase 0）。各ステップの完了条件を満たさないと次に進めない。
 
-## Phase 0: Plan Completeness Check
+## Phase 0: Plan Tier & Completeness Check
+
+**本節がプランの要否と粒度の唯一の正本**。他のルール・skill は本節へリンクするだけにする。
+
+### 0-1. 設計済み Issue はそれ自体がプラン
+
+着手する Issue に `design-approved` が付いている（`/decompose` 由来を含む）なら、plan mode もプランの
+書き直しもしない。`issue_read` で Design / Test Plan を読み、コードと突き合わせて前提が崩れていなければ
+そのまま Phase 1 に進む。前提が崩れている（対象ファイル・シグネチャが消えた、Design と違う方針が要る）
+ときだけ、下の Tier 判定に戻ってプランを作り直し、Issue を更新する。
+
+### 0-2. Tier 判定
+
+変更内容を以下と照合し、**1 つでも当たればフル、どれも当たらなければ軽量**。手順数やファイル数だけでは
+フルにしない（3 ステップ以上はほぼ全変更に当たり、基準として機能しない）。
+
+フル（plan mode でユーザー承認を取る）:
+- 公開 Interface の追加・変更（MCP ToolDef の追加や引数変更、モジュールをまたいで呼ばれるクラス・関数のシグネチャ）
+- DuckDB スキーマ変更・migration・ingest 時の導出変更（backfill を伴うもの）
+- analyst agent 定義（L3）・`.claude/workflows/` ・`.claude/hooks/` の挙動変更
+- 新しいパターン・依存ライブラリの導入、または `garmin-mcp-server` と `garmin-web` の両方にまたがる設計
+- 方針の候補が複数あり選択がユーザーの判断に属する、または `[未検証]` の前提（Garmin API の値など）に依存する
+
+軽量（plan mode 不要。プランを会話に示してそのまま Issue 作成 → Phase 1）:
+- 上のどれにも当たらない変更。例: 根本原因が特定できたバグ修正、既存パターンに沿った reader / UI の修正、
+  テスト追加、docs / rules / skills の改訂
+
+判定に迷ったらフル。実装中にフルの条件に当たると分かったら、そこで止めて plan mode でプランを出し直す。
+
+### 0-3. 軽量プランの必須項目
+
+- [ ] Issue: #{number} | TBD + Validation Level: L1|L2|L3|skip
+- [ ] 目的（1〜2 行: 何を・なぜ）
+- [ ] Files to Create/Modify — パスと new/modify
+- [ ] Test Plan — test_{name} 形式と [unit|integration] マーカー、期待値を 1 行で（skip レベルは Verification の手順で代える）
+
+Interface と Risks は書かない（書く必要が出たらフルの条件に当たっている）。Issue 本文もこの粒度でよい。
+
+### 0-4. フルプランの必須項目
 
 Phase 1 に進む前に、プランが以下を満たすことを確認。不足 → 補完してユーザーに再提示。
 
