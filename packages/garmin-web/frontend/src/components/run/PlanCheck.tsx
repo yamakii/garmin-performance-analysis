@@ -9,6 +9,7 @@ const AXIS_LABELS: Record<string, string> = {
   volume: "量",
   hr_ceiling: "心拍上限",
   rest: "休養",
+  strides: "流し",
 };
 
 /** Column order at `md` and up; below it each check stacks (see below). */

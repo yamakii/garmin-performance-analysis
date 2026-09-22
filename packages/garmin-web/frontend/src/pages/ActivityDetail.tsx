@@ -144,6 +144,7 @@ export function sectionTitle(type: string): string {
 const PHASE_LABELS: Record<string, string> = {
   warmup: "ウォームアップ",
   run: "ラン",
+  stride: "流し",
   recovery: "リカバリー",
   cooldown: "クールダウン",
 };

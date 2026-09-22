@@ -1,6 +1,12 @@
 import type { JSX } from "react";
 import type { StatusTone } from "../StatusBadge";
-import type { LadderStep, PlanActivity, PlanDay, Prescription } from "../../types";
+import type {
+  LadderStep,
+  PlanActivity,
+  PlanDay,
+  Prescription,
+  PrescriptionStrides,
+} from "../../types";
 import {
   formatBpmValue,
   formatDistanceKmValue,
@@ -54,12 +60,27 @@ export function statusLabel(status: string): string {
   return STATUS_LABEL[status] ?? status;
 }
 
-/** "22km ≤150" — the target of a prescription (or a ladder step) in one line. */
+/**
+ * "＋流し4本" — the strides add-on of an easy prescription, or "" when the row
+ * carries none. Shared by the day cell and the home verdict sentence so the
+ * two can never word it differently.
+ */
+export function stridesSummary(
+  strides: PrescriptionStrides | null | undefined,
+): string {
+  return strides != null && strides.reps > 0 ? `＋流し${strides.reps}本` : "";
+}
+
+/**
+ * "22km ≤150" / "35分 ≤145 ＋流し4本" — the target of a prescription (or a
+ * ladder step) in one line.
+ */
 export function targetSummary(target: {
   target_km?: number | null;
   target_minutes?: number | null;
   hr_high?: number | null;
   hr_ceiling?: number | null;
+  strides?: PrescriptionStrides | null;
 }): string {
   const parts: string[] = [];
   if (target.target_km != null) {
@@ -71,6 +92,10 @@ export function targetSummary(target: {
   const hr = target.hr_high ?? target.hr_ceiling;
   if (hr != null) {
     parts.push(`≤${hr}`);
+  }
+  const strides = stridesSummary(target.strides);
+  if (strides !== "") {
+    parts.push(strides);
   }
   return parts.join(" ");
 }

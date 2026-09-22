@@ -137,6 +137,11 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
         # ``validators.check_run_note_grounding`` at merge time.
         "evidence_keys": {
             "plan.<axis>": "an axis of report.plan.checks (rejected when plan is null)",
+            "plan.strides": (
+                "the strides row of report.plan.checks -- strides run against the "
+                "prescribed reps ('4本'); present only when the prescription "
+                "carries strides"
+            ),
             "signals.<metric>": "a metric of report.signals",
             "moments.<id>": "an id of report.moments",
             "recurrence.<kind>": "a kind of report.recurrence",
@@ -177,7 +182,10 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "start / fast_start / surge / ceiling_touch / walk_break / "
                 "climb / fade / strong_finish / progression / steady for "
                 "unit='km' scenes, and warmup / rep / rest / main / cooldown / "
-                "work_set for unit='step' scenes. On a rep session "
+                "work_set / strides for unit='step' scenes. A strides scene "
+                "('流し（4本）') is the whole set of strides and their jogs -- "
+                "narrate it as one item (see evaluation_policy.strides). On a "
+                "rep session "
                 "(flow.axis == 'time') narrate the reps as a set -- how "
                 "consistent they were (pace_vs_first_s, pace_spread_s), how the "
                 "last compares with the first (first_vs_last_s, max_hr_vs_first) "
@@ -189,6 +197,26 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "without listing every kilometre. Never invent a scene the "
                 "moments do not contain"
             ),
+            # Strides are a few seconds of relaxed fast running inside an easy
+            # run (#1294). Their HR peaks are the set doing its job, so they
+            # are judged by reps, relaxed speed and recovery -- never by HR.
+            "strides": {
+                "kind": "strides",
+                "evidence": "moments.<id>",
+                "judge_by": ["reps", "relaxed_speed", "recovered_before_next"],
+                "never": "ceiling_excursion",
+                "description": (
+                    "Strides are a neuromuscular set: a stride's HR peak "
+                    "(peak_hr) and the jog HR after it are not a ceiling "
+                    "excursion and never a note or growth point. Judge the set "
+                    "by reps done (plan.strides), relaxed speed "
+                    "(fastest_pace_s_per_km / median_pace_s_per_km, "
+                    "median_cadence_spm) and whether HR came back before the "
+                    "next rep (hr_at_next_start). Only the easy running outside "
+                    "the set is read against the HR ceiling. A strides axis "
+                    "that is short / missing is off plan like any other axis"
+                ),
+            },
             "next_challenge": (
                 "Write it for report.next_session -- the session the athlete "
                 "actually does next -- saying which session it is and when "
@@ -227,6 +255,9 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "write an HR ceiling as a guard with its settling range",
             "Refer to a scene by its label_ja -- a distance range for unit='km' "
             "and the step's name for unit='step' -- never by a lap number",
+            "Strides are a neuromuscular set; do not read stride or recovery HR "
+            "as a ceiling excursion; judge a set by reps done, relaxed speed and "
+            "whether HR came back before the next rep",
             "Ask at most one question, about something the sensors cannot see",
         ],
     },
