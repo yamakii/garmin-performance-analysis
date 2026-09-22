@@ -82,8 +82,20 @@ from garmin_mcp.form_baseline.split_filter import (
 
 # --- Steps ------------------------------------------------------------------
 
-# The roles a split can carry, in the order a run executes them.
-ROLES: tuple[str, ...] = ("warmup", "run", "recovery", "cooldown")
+# The roles a split can carry, in the order a run executes them. ``stride``
+# comes only from ``role_phase`` (#1296): Garmin records a stride as ``ACTIVE``
+# like the jog around it, so no intensity type maps to it.
+ROLES: tuple[str, ...] = ("warmup", "run", "stride", "recovery", "cooldown")
+
+# The steps an easy-run rule (the HR ceiling above all) is judged on (#1297).
+# Strides are short and fast by design, and the jog after one is where heart
+# rate comes back down -- neither is the easy running the ceiling guards.
+_JOG_ROLES: frozenset[str] = frozenset({"warmup", "run", "cooldown"})
+
+# Scene kinds that never make a recurrence: they describe the run's shape, not
+# something that keeps happening to the athlete. Strides are *prescribed*, so
+# "strides again at km 5" is the plan being followed, not a habit (#1297).
+_NON_RECURRING_KINDS: frozenset[str] = frozenset({"start", "steady", "strides"})
 
 # A step long enough to be narrated kilometre by kilometre instead of as one
 # block: three splits that are not fragments.
@@ -187,7 +199,7 @@ RECURRENCE_MIN_COUNT = 2
 _PRIORITY: tuple[tuple[str, ...], ...] = (
     ("ceiling_touch",),
     ("fade", "strong_finish", "progression"),
-    ("work_set", "rep"),
+    ("work_set", "rep", "strides"),
     ("walk_break",),
     ("steady", "main"),
     ("rest", "warmup", "cooldown"),
@@ -306,22 +318,34 @@ def detect_moments(
         ``surge``, ``ceiling_touch``, ``walk_break``, ``climb``, ``fade``,
         ``strong_finish``, ``progression``, ``steady``) and ``"step"`` for a
         scene that *is* a step (``kind`` one of ``warmup``, ``rep``, ``rest``,
-        ``main``, ``cooldown``, ``work_set``). JSON-serialisable throughout; no
-        valid split returns ``[]``.
+        ``main``, ``cooldown``, ``work_set``, ``strides``). A block of strides
+        and the jogs between them is one ``strides`` scene (#1297), and a
+        ``ceiling_touch`` is only ever looked for on the jog (``warmup`` /
+        ``run`` / ``cooldown`` steps). JSON-serialisable throughout; no valid
+        split returns ``[]``.
     """
     positioned = _positioned_splits(splits)
     if not positioned:
         return []
     steps = _steps(positioned)
     single = len(steps) == 1
+    blocks = {block[0]["id"]: block for block in _strides_blocks(steps)}
+    in_block = {step["id"] for block in blocks.values() for step in block}
 
     scenes: list[dict[str, Any]] = []
     for step in steps:
+        if step["id"] in blocks:
+            strides = _strides_scene(blocks[step["id"]])
+            if strides is not None:
+                scenes.append(strides)
+            continue
+        if step["id"] in in_block:
+            continue
         if single or step["is_long"]:
             scenes.extend(
                 _km_scenes(
                     step,
-                    hr_ceiling=hr_ceiling,
+                    hr_ceiling=hr_ceiling if step["role"] in _JOG_ROLES else None,
                     prescription=prescription,
                     named=not single,
                 )
@@ -366,7 +390,7 @@ def detect_recurrence(
 
     for moment in today:
         kind = str(moment.get("kind") or "")
-        if not kind or kind in {"start", "steady"}:
+        if not kind or kind in _NON_RECURRING_KINDS:
             continue
         km = _round(_as_float(moment.get("km_from")) or 0.0)
         key = (kind, moment.get("rep_no") if _is_step_scene(moment) else km)
@@ -467,10 +491,16 @@ def _is_drawable(row: Mapping[str, Any]) -> bool:
 
 
 def _steps(positioned: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """Consecutive same-role splits as steps, labelled in the run's own unit."""
+    """Consecutive same-role splits as steps, labelled in the run's own unit.
+
+    A change of ``workout_step_index`` also starts a new step (#1297): runs
+    recorded before the stride roles existed carry ``run`` on the jog *and* on
+    the first stride, and only the watch's step index tells them apart. Runs
+    without a structured workout carry no index, so nothing changes for them.
+    """
     groups: list[list[dict[str, Any]]] = []
     for row in positioned:
-        if groups and groups[-1][-1]["role"] == row["role"]:
+        if groups and _same_step(groups[-1][-1], row):
             groups[-1].append(dict(row))
         else:
             groups.append([dict(row)])
@@ -478,6 +508,13 @@ def _steps(positioned: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     steps = [_step(rows, number) for number, rows in enumerate(groups, start=1)]
     _label_steps(steps)
     return steps
+
+
+def _same_step(previous: Mapping[str, Any], row: Mapping[str, Any]) -> bool:
+    """Whether ``row`` continues the step ``previous`` belongs to."""
+    if previous["role"] != row["role"]:
+        return False
+    return previous.get("workout_step_index") == row.get("workout_step_index")
 
 
 def _step(rows: list[dict[str, Any]], number: int) -> dict[str, Any]:
@@ -510,11 +547,20 @@ def _step(rows: list[dict[str, Any]], number: int) -> dict[str, Any]:
 def _label_steps(steps: list[dict[str, Any]]) -> None:
     """Name every step in the unit the athlete thinks in."""
     reps = _has_rep_structure(steps)
+    in_block = _strides_block_ids(steps)
     rep_no = 0
     rest_no = 0
+    stride_no = 0
     for step in steps:
         role = step["role"]
-        if role == "run" and reps:
+        if role == "stride":
+            stride_no += 1
+            step["label_ja"] = f"流し{stride_no}本目"
+            step["short_ja"] = "流し"
+        elif role == "recovery" and step["id"] in in_block:
+            step["label_ja"] = f"流し{stride_no}本目のつなぎ"
+            step["short_ja"] = "R"
+        elif role == "run" and reps:
             rep_no += 1
             step["rep_no"] = rep_no
             step["label_ja"] = f"{rep_no}本目"
@@ -534,10 +580,46 @@ def _has_rep_structure(steps: Sequence[Mapping[str, Any]]) -> bool:
 
     Two run steps around a rest is the smallest thing worth narrating rep by
     rep; anything less is a plain run whose natural unit is the kilometre.
+
+    Strides and the jogs between them do not count (#1297): an easy run with
+    strides is a jog read in kilometres, not an interval session -- and the
+    jog either side of the strides block would otherwise pass for two reps.
     """
-    runs = sum(1 for step in steps if step["role"] == "run")
-    rests = sum(1 for step in steps if step["role"] == "recovery")
+    in_block = _strides_block_ids(steps)
+    counted = [step for step in steps if step["id"] not in in_block]
+    runs = sum(1 for step in counted if step["role"] == "run")
+    rests = sum(1 for step in counted if step["role"] == "recovery")
     return runs >= REP_MIN_RUN_STEPS and rests >= REP_MIN_RECOVERY_STEPS
+
+
+def _strides_blocks(
+    steps: Sequence[Mapping[str, Any]],
+) -> list[list[Mapping[str, Any]]]:
+    """Each block of strides: a stride step plus every stride / jog after it.
+
+    A block opens on a ``stride`` step and runs over the consecutive
+    ``stride`` and ``recovery`` steps that follow, so the jog after the last
+    stride (its recovery) belongs to the block too. A recovery *before* the
+    first stride is an ordinary rest, not part of the strides.
+    """
+    blocks: list[list[Mapping[str, Any]]] = []
+    current: list[Mapping[str, Any]] = []
+    for step in steps:
+        role = step["role"]
+        if role == "stride" or (current and role == "recovery"):
+            current.append(step)
+            continue
+        if current:
+            blocks.append(current)
+            current = []
+    if current:
+        blocks.append(current)
+    return blocks
+
+
+def _strides_block_ids(steps: Sequence[Mapping[str, Any]]) -> set[str]:
+    """Ids of every step inside a strides block."""
+    return {str(step["id"]) for block in _strides_blocks(steps) for step in block}
 
 
 def _public_step(step: Mapping[str, Any]) -> dict[str, Any]:
@@ -730,6 +812,100 @@ def _work_entry(scene: Mapping[str, Any]) -> dict[str, Any]:
         if key in scene["facts"]:
             entry[key] = scene["facts"][key]
     return entry
+
+
+def _strides_scene(steps: Sequence[Mapping[str, Any]]) -> dict[str, Any] | None:
+    """One block of strides and their jogs, told as a single scene (#1297).
+
+    Strides are a few seconds of fast running inside an easy run: the story is
+    how quick and how relaxed they were, not four ``rep`` scenes and four
+    ``rest`` scenes that would push the jog out of the five-scene cap.
+
+    Args:
+        steps: The block's consecutive ``stride`` and ``recovery`` steps, in
+            run order (see :func:`_strides_blocks`).
+
+    Returns:
+        A ``kind='strides'``, ``unit='step'`` scene whose facts are ``reps``,
+        ``fastest_pace_s_per_km``, ``median_pace_s_per_km``,
+        ``median_cadence_spm``, ``peak_hr`` and ``hr_at_next_start`` -- per
+        stride, the average HR of the jog after it, i.e. the heart rate the
+        next stride (or the rest of the run) starts from; ``None`` for a stride
+        with no recorded jog after it. ``None`` when the block has no stride.
+    """
+    strides = [step for step in steps if step["role"] == "stride"]
+    if not strides:
+        return None
+
+    paces = [
+        pace
+        for step in strides
+        if (pace := _as_float(step.get("pace_s_per_km"))) is not None
+    ]
+    cadences = [
+        cadence
+        for step in strides
+        if (cadence := _weighted_cadence(step.get("rows") or [])) is not None
+    ]
+    peaks = [
+        peak for step in steps if (peak := _as_float(step.get("max_hr"))) is not None
+    ]
+
+    facts: dict[str, Any] = {"reps": len(strides)}
+    if paces:
+        facts["fastest_pace_s_per_km"] = _round(min(paces))
+        facts["median_pace_s_per_km"] = _round(median(paces))
+    if cadences:
+        facts["median_cadence_spm"] = _round(median(cadences))
+    if peaks:
+        facts["peak_hr"] = _round(max(peaks))
+    facts["hr_at_next_start"] = [_jog_hr_after(stride, steps) for stride in strides]
+
+    first, last = steps[0], steps[-1]
+    return _assemble_scene(
+        "strides",
+        unit="step",
+        label_ja=f"流し（{len(strides)}本）",
+        step_id=str(first["id"]),
+        rep_no=None,
+        km_from=first["start_km"],
+        km_to=last["end_km"],
+        t_from_s=first["start_s"],
+        t_to_s=last["end_s"],
+        split_from=first["split_from"],
+        split_to=last["split_to"],
+        facts=facts,
+    )
+
+
+def _jog_hr_after(
+    stride: Mapping[str, Any], steps: Sequence[Mapping[str, Any]]
+) -> float | int | None:
+    """Average HR of the jog right after ``stride`` inside its block."""
+    ids = [step["id"] for step in steps]
+    position = ids.index(stride["id"])
+    if position + 1 >= len(steps):
+        return None
+    following = steps[position + 1]
+    if following["role"] != "recovery":
+        return None
+    hr = _as_float(following.get("avg_hr"))
+    return None if hr is None else _round(hr)
+
+
+def _weighted_cadence(rows: Sequence[Mapping[str, Any]]) -> float | None:
+    """Time-weighted cadence over the rows that recorded one."""
+    pairs = [
+        (cadence, float(row.get("duration_s") or 0.0))
+        for row in rows
+        if (cadence := _as_float(row.get("cadence"))) is not None
+    ]
+    if not pairs:
+        return None
+    weight = sum(duration for _, duration in pairs)
+    if weight <= 0:
+        return sum(cadence for cadence, _ in pairs) / len(pairs)
+    return sum(cadence * duration for cadence, duration in pairs) / weight
 
 
 # --- Kilometre scenes -------------------------------------------------------
@@ -1435,6 +1611,8 @@ def _run_has_moment_near(run: Mapping[str, Any], moment: Mapping[str, Any]) -> b
     goes" is the pattern a rep session repeats -- not a distance.
     """
     kind = str(moment.get("kind"))
+    if kind in _NON_RECURRING_KINDS:
+        return False
     km = _as_float(moment.get("km_from"))
     for other in run.get("moments") or []:
         if str(other.get("kind")) != kind:
