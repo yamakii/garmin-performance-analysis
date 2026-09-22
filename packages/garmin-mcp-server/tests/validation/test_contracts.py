@@ -142,6 +142,52 @@ def test_contract_describes_strides_scene():
 
 
 @pytest.mark.unit
+def test_contract_growth_points_allow_concern_moments():
+    """A scene may carry a growth point only when its purpose calls it a concern.
+
+    The merge gate accepts ``moments.<id>`` as growth-point evidence only for a
+    moment whose ``policy.verdict`` is ``concern`` (#1314); the contract has to
+    say the same thing or the agent writes notes the gate then rejects.
+    """
+    contract = get_contract("run_note")
+
+    policy = contract["evaluation_policy"]["growth_points"]
+    assert "policy.verdict == 'concern'" in policy
+    # Acceptable / neutral scenes are context, and background sources explain a
+    # growth point without being one.
+    assert "'acceptable'" in policy
+    assert "'neutral'" in policy
+    for background in ("recurrence", "vs_previous", "conditions", "context"):
+        assert background in policy
+    assert any(
+        "policy.verdict == 'concern'" in line and "growth point" in line
+        for line in contract["instructions"]
+    )
+    # The timeline narrates acceptable / neutral scenes as context.
+    timeline = contract["evaluation_policy"]["timeline"]
+    assert "policy.verdict" in timeline
+    assert "context" in timeline
+
+
+@pytest.mark.unit
+def test_contract_describes_purpose():
+    """The run is read against report.purpose, and an inferred one is hedged."""
+    contract = get_contract("run_note")
+
+    purpose = contract["evaluation_policy"]["purpose"]
+    assert purpose["source"] == "report.purpose"
+    assert purpose["inferred"] == "hedge -- say the purpose was inferred"
+    assert purpose["deviations"] == "acceptable/neutral are context, never a flaw"
+    for fact in ("label_ja", "source == 'inferred'", "policy", "judged_share"):
+        assert fact in purpose["description"]
+
+    rule = next(line for line in contract["instructions"] if "purpose" in line)
+    assert "inferred" in rule
+    assert "hedge" in rule
+    assert any("judged_share" in line for line in contract["instructions"])
+
+
+@pytest.mark.unit
 def test_contract_strides_not_ceiling_excursion():
     """Stride HR peaks are the set doing its job, not an HR-ceiling breach."""
     contract = get_contract("run_note")

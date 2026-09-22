@@ -1,7 +1,48 @@
 import type { JSX, ReactNode } from "react";
 import SectionBlock from "../SectionBlock";
-import type { HrCeiling, PlanCheckRow, RunPlan } from "../../types";
+import type {
+  HrCeiling,
+  PlanCheckRow,
+  RunJudgedShare,
+  RunPlan,
+  RunPurpose,
+} from "../../types";
 import { formatNumber } from "../../utils/formatNumber";
+
+/**
+ * "ロング（目標ペース）" / "イージー（推定）" — what the run was for, or null
+ * when the report does not know (#1315). An inferred purpose says so: it was
+ * read from the run, not prescribed, and the page must not pass it off as the
+ * plan.
+ */
+export function purposeText(purpose: RunPurpose | null | undefined): string | null {
+  if (purpose == null || purpose.id === "unknown" || purpose.label_ja === "") {
+    return null;
+  }
+  return purpose.source === "inferred"
+    ? `${purpose.label_ja}（推定）`
+    : purpose.label_ja;
+}
+
+/**
+ * "心拍 72% · フォーム 80%" — the share of the run the HR ceiling and the form
+ * signals were judged on (#1313), or null when there is no time series.
+ */
+export function judgedShareText(
+  share: RunJudgedShare | null | undefined,
+): string | null {
+  if (share == null) {
+    return null;
+  }
+  const parts: string[] = [];
+  if (share.hr != null) {
+    parts.push(`心拍 ${Math.round(share.hr * 100)}%`);
+  }
+  if (share.form != null) {
+    parts.push(`フォーム ${Math.round(share.form * 100)}%`);
+  }
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
 
 /** Japanese name per plan axis; an unknown axis keeps its own key. */
 const AXIS_LABELS: Record<string, string> = {
@@ -153,17 +194,28 @@ function CheckRow({
  * table push the 状態 column off a 400px screen, and the answer the reader
  * came for is precisely that column. Stacked, each check becomes four lines
  * with the status on the first one.
+ *
+ * Above the grid sits what the run was *for* (#1315) — the purpose every scene
+ * of the run was judged against — and how much of the run the HR ceiling and
+ * the form signals were judged on, so a verdict read off 60% of the run is not
+ * mistaken for one about all of it.
  */
 export default function PlanCheck({
   id,
   plan,
+  purpose = null,
+  judgedShare = null,
 }: {
   id?: string;
   plan: RunPlan | null;
+  purpose?: RunPurpose | null;
+  judgedShare?: RunJudgedShare | null;
 }): JSX.Element | null {
   if (plan == null || plan.checks.length === 0) {
     return null;
   }
+  const purposeLabel = purposeText(purpose);
+  const shareLabel = judgedShareText(judgedShare);
   return (
     <SectionBlock
       id={id}
@@ -171,6 +223,22 @@ export default function PlanCheck({
       note={plan.title !== "" ? `処方「${plan.title}」` : undefined}
       noteMono
     >
+      {(purposeLabel != null || shareLabel != null) && (
+        <dl className="mb-3 flex flex-wrap gap-x-6 gap-y-1 font-mono text-[13px]">
+          {purposeLabel != null && (
+            <div className="flex gap-2" data-testid="plan-purpose">
+              <dt className="text-ink-muted">目的</dt>
+              <dd className="text-ink">{purposeLabel}</dd>
+            </div>
+          )}
+          {shareLabel != null && (
+            <div className="flex gap-2" data-testid="plan-judged-share">
+              <dt className="text-ink-muted">判定した範囲</dt>
+              <dd className="text-ink-soft">{shareLabel}</dd>
+            </div>
+          )}
+        </dl>
+      )}
       <div className={`md:grid ${GRID_COLUMNS}`}>
         <div aria-hidden="true" className="hidden md:contents">
           {COLUMNS.map((column) => (

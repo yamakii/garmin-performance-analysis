@@ -742,6 +742,52 @@ describe("RunFlow scene list", () => {
     expect(rows[1]).not.toHaveTextContent("登り");
   });
 
+  it("shows policy badge", () => {
+    // Each scene says what it means for this run's purpose (#1315): only a
+    // concern takes the 注意 tint, the others stay quiet context.
+    renderFlow(
+      STEADY_FLOW,
+      [
+        moment("m1", "ceiling_touch", [2, 2], {
+          label_ja: "2 km",
+          policy: {
+            verdict: "concern",
+            reason: "ceiling_touch is concern on a easy run",
+          },
+        }),
+        moment("m2", "walk_break", [3, 3], {
+          label_ja: "3 km 付近",
+          policy: {
+            verdict: "acceptable",
+            reason: "walk_break is acceptable on a long_easy run",
+          },
+        }),
+        moment("m3", "start", [1, 1], {
+          label_ja: "1 km",
+          policy: {
+            verdict: "neutral",
+            reason: "start is part of the session structure",
+          },
+        }),
+        moment("m4", "steady", [4, 5], { label_ja: "4–5 km" }),
+      ],
+      [],
+    );
+
+    const rows = screen.getAllByRole("listitem");
+    const concern = screen.getByText("懸念");
+    expect(rows[0]).toContainElement(concern);
+    expect(concern.dataset.tone).toBe("warn");
+    expect(concern.parentElement?.title).toBe(
+      "ceiling_touch is concern on a easy run",
+    );
+    expect(rows[1]).toHaveTextContent("許容");
+    expect(screen.getByText("許容").dataset.tone).toBe("info");
+    expect(rows[2]).toHaveTextContent("参考");
+    // A report older than #1314 carries no policy, and no badge is invented.
+    expect(rows[3]).not.toHaveTextContent(/懸念|許容|参考/);
+  });
+
   it("test_scene_without_timeline_text_has_empty_text", () => {
     // Five scenes, four sentences: the coach may write fewer timeline items
     // than the report found scenes.

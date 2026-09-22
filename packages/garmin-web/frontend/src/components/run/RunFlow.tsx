@@ -1,6 +1,7 @@
 import type { JSX } from "react";
 import EChart from "../EChart";
 import SectionBlock from "../SectionBlock";
+import StatusBadge, { type StatusTone } from "../StatusBadge";
 import type { EChartsOption } from "../../lib/echarts";
 import {
   AXIS_LABEL_COLOR,
@@ -14,6 +15,7 @@ import type {
   RunFlowData,
   RunFlowSegment,
   RunMoment,
+  RunMomentVerdict,
   RunNoteTimelineItem,
 } from "../../types";
 import { formatPaceLabel } from "../TimeSeriesChart";
@@ -51,6 +53,20 @@ const KIND_LABELS: Record<string, string> = {
   main: "本編",
   cooldown: "クールダウン",
   strides: "流し",
+};
+
+/**
+ * The badge a scene's purpose verdict is shown with (#1315). Only a concern
+ * takes colour: an acceptable or neutral scene is context for this run's
+ * purpose, and tinting it would read as a finding.
+ */
+export const POLICY_BADGES: Record<
+  RunMomentVerdict,
+  { label: string; tone: StatusTone }
+> = {
+  concern: { label: "懸念", tone: "warn" },
+  acceptable: { label: "許容", tone: "info" },
+  neutral: { label: "参考", tone: "info" },
 };
 
 const GRID_SIDES = { left: 56, right: 16 } as const;
@@ -716,6 +732,29 @@ export function SeriesLegend({
   );
 }
 
+/**
+ * What a scene means for this run's purpose (#1315): the same walk break is
+ * 許容 on an aerobic long run and 懸念 on a goal-pace rehearsal. The report's
+ * reason is the tooltip. Nothing is shown for a report older than #1314 — a
+ * verdict is never invented on the page.
+ */
+function PolicyBadge({ moment }: { moment: RunMoment }): JSX.Element | null {
+  const policy = moment.policy;
+  const badge = policy != null ? POLICY_BADGES[policy.verdict] : undefined;
+  if (policy == null || badge == null) {
+    return null;
+  }
+  return (
+    <span
+      className="mr-2 align-[1px]"
+      title={policy.reason}
+      data-verdict={policy.verdict}
+    >
+      <StatusBadge tone={badge.tone}>{badge.label}</StatusBadge>
+    </span>
+  );
+}
+
 /** What the x axis is, and what the width of a step means. */
 export function flowLegend(flow: RunFlowData): string {
   return flow.axis === "time"
@@ -793,6 +832,7 @@ export default function RunFlow({
                   showed "クールダウン" twice on the threshold session
                   (#1277). */}
               <span className="col-start-2 min-w-0 text-[15px] leading-[1.7] text-ink-soft md:col-start-3">
+                <PolicyBadge moment={moment} />
                 {textOf.get(moment.id) ?? ""}
               </span>
             </li>

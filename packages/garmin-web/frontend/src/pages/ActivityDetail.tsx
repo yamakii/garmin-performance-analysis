@@ -999,7 +999,12 @@ export default function ActivityDetail() {
       )}
 
       {/* What the day asked for, against what the run did */}
-      <PlanCheck id="section-plan" plan={report?.plan ?? null} />
+      <PlanCheck
+        id="section-plan"
+        plan={report?.plan ?? null}
+        purpose={report?.purpose ?? null}
+        judgedShare={report?.judged_share ?? null}
+      />
 
       {/* Every metric against this athlete's own normal range */}
       <NormalRangeRows

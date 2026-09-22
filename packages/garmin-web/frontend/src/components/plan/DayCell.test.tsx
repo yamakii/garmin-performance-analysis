@@ -135,6 +135,33 @@ describe("DayCell", () => {
     expect(screen.getByText("35分 ≤145 ＋流し4本")).toBeInTheDocument();
   });
 
+  it("shows purpose label", () => {
+    // A long run rehearsing goal pace is named for its purpose (#1315); a long
+    // run without one keeps the plain session label.
+    const { rerender } = render(
+      <DayCell
+        day={day({
+          prescriptions: [
+            prescription({ session_type: "long", purpose: "long_goal_pace" }),
+          ],
+        })}
+      />,
+    );
+    expect(screen.getByText("MPロング").className).toContain("font-bold");
+    expect(screen.queryByText("ロング")).toBeNull();
+
+    rerender(
+      <DayCell
+        day={day({
+          prescriptions: [
+            prescription({ session_type: "long", purpose: "long_easy" }),
+          ],
+        })}
+      />,
+    );
+    expect(screen.getByText("ロング")).toBeInTheDocument();
+  });
+
   it("marks today with an accent tint and a TODAY tag", () => {
     render(<DayCell day={day()} isToday />);
 
