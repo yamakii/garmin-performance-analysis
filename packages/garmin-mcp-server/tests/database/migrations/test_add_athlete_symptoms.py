@@ -53,7 +53,9 @@ def test_migration_creates_table_and_is_idempotent() -> None:
 @pytest.mark.unit
 def test_registry_has_version_29() -> None:
     """The symptom log is registered as migration 29, after the gear columns."""
-    assert [(version, name) for version, name, _ in MIGRATIONS[-2:]] == [
+    assert [
+        (version, name) for version, name, _ in MIGRATIONS if 28 <= version <= 29
+    ] == [
         (28, "add_gear_lifecycle_columns"),
         (29, "add_athlete_symptoms"),
     ]

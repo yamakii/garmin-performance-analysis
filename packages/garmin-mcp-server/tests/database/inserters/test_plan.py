@@ -509,3 +509,105 @@ def test_update_prescription_status_records_registered_bookend_minutes(
         prescription_id, "done", actual_activity_id=999, db_path=db_path
     )
     assert _stored() == 20
+
+
+# ----------------------------------------------------------------------------
+# strides add-on on easy rows (Issue #1295)
+# ----------------------------------------------------------------------------
+
+
+def _read_week(db_path: str) -> list[dict[str, Any]]:
+    """Read the canonical rows of the 2026-09-07 week through the reader."""
+    from garmin_mcp.database.readers.plan import PlanReader
+
+    return PlanReader(db_path=db_path).get_weekly_prescriptions("2026-09-07")
+
+
+@pytest.mark.integration
+def test_insert_prescription_strides_json_roundtrip(
+    initialized_db_path: Path,
+) -> None:
+    """A full strides object comes back from the reader as the identical dict."""
+    db_path = str(initialized_db_path)
+    strides = {"reps": 4, "run_seconds": 20, "recovery_seconds": 90}
+    insert_weekly_prescriptions(
+        "2026-09-07",
+        [_prescription("2026-09-09", target_minutes=35, strides=strides)],
+        db_path=db_path,
+    )
+
+    rows = _read_week(db_path)
+    assert len(rows) == 1
+    assert rows[0]["strides"] == strides
+
+
+@pytest.mark.integration
+def test_insert_prescription_strides_defaults(initialized_db_path: Path) -> None:
+    """Omitted run/recovery seconds are stored with their defaults (20 / 90)."""
+    db_path = str(initialized_db_path)
+    insert_weekly_prescriptions(
+        "2026-09-07",
+        [_prescription("2026-09-09", target_minutes=35, strides={"reps": 4})],
+        db_path=db_path,
+    )
+
+    rows = _read_week(db_path)
+    assert rows[0]["strides"] == {
+        "reps": 4,
+        "run_seconds": 20,
+        "recovery_seconds": 90,
+    }
+
+
+@pytest.mark.integration
+def test_insert_prescription_rejects_strides_on_long(
+    initialized_db_path: Path,
+) -> None:
+    """Strides belong to an easy run only; a long row carrying them is rejected."""
+    with pytest.raises(ValueError, match="only be added to an easy session"):
+        insert_weekly_prescriptions(
+            "2026-09-07",
+            [
+                _prescription(
+                    "2026-09-13", "long", target_minutes=120, strides={"reps": 4}
+                )
+            ],
+            db_path=str(initialized_db_path),
+        )
+
+
+@pytest.mark.integration
+def test_insert_prescription_rejects_strides_without_room(
+    initialized_db_path: Path,
+) -> None:
+    """15 min cannot hold 5 + 5 min of easy running around a 440 s block."""
+    with pytest.raises(ValueError, match="at least 17.3333"):
+        insert_weekly_prescriptions(
+            "2026-09-07",
+            [_prescription("2026-09-09", target_minutes=15, strides={"reps": 4})],
+            db_path=str(initialized_db_path),
+        )
+
+
+@pytest.mark.integration
+def test_insert_prescription_rejects_strides_out_of_range(
+    initialized_db_path: Path,
+) -> None:
+    """reps above 8 is rejected."""
+    with pytest.raises(ValueError, match=r"strides.reps must be in 2..8, got 10"):
+        insert_weekly_prescriptions(
+            "2026-09-07",
+            [_prescription("2026-09-09", target_minutes=60, strides={"reps": 10})],
+            db_path=str(initialized_db_path),
+        )
+
+
+@pytest.mark.integration
+def test_session_type_strides_rejected(initialized_db_path: Path) -> None:
+    """``strides`` is no longer a session type of its own."""
+    with pytest.raises(ValueError, match="session_type must be one of"):
+        insert_weekly_prescriptions(
+            "2026-09-07",
+            [_prescription("2026-09-09", "strides", target_minutes=None)],
+            db_path=str(initialized_db_path),
+        )

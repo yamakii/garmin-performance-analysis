@@ -249,6 +249,7 @@ def test_verdict_from_prescriptions_shape() -> None:
             "target_minutes": None,
             "hr_low": None,
             "hr_high": 150,
+            "strides": None,
             "status": "prescribed",
             "prescription_id": 7,
         }

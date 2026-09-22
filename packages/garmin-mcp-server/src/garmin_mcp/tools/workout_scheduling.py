@@ -45,8 +45,12 @@ from pydantic import BaseModel, Field
 from garmin_mcp.analysis.prescription_shape import (
     BOOKENDED_TYPES,
     COOLDOWN_MINUTES,
+    FINAL_EASY_MINUTES,
+    STRIDES_DEFAULT_RECOVERY_SECONDS,
+    STRIDES_DEFAULT_RUN_SECONDS,
     WARMUP_MINUTES,
     bookend_minutes_from_steps,
+    strides_block_seconds,
 )
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.tools.registry import ToolDef
@@ -82,18 +86,10 @@ _STREET_SUB_SPORT = 2
 # Ledger owner used when the caller does not name one.
 _DEFAULT_USER_ID = "default"
 
-# Strides are prescribed as a shape, not as a target: 5 x 20s pickups with 90s
-# easy recovery, none of which carries an HR target (they are too short for HR
-# to settle).
-_STRIDES_REPEAT_COUNT = 5
-_STRIDES_RUN_SECONDS = 20
-_STRIDES_RECOVERY_SECONDS = 90
-
 # Prescription session types that map onto a Garmin running workout. rest /
-# strength / cross are prescribed but never registered as a run.
-_REGISTRABLE_TYPES = frozenset(
-    {"long", "easy", "recovery", "threshold", "tempo", "strides"}
-)
+# strength / cross are prescribed but never registered as a run. Strides are
+# not a session type: they ride on an easy row as its ``strides`` add-on.
+_REGISTRABLE_TYPES = frozenset({"long", "easy", "recovery", "threshold", "tempo"})
 
 # Running sport type (the only sport this tool schedules).
 _RUNNING_SPORT_TYPE: dict[str, Any] = {
@@ -325,23 +321,26 @@ def build_steps_from_prescription(p: dict[str, Any]) -> list[dict[str, Any]]:
       warmup intensity, so a separate warmup step would only inflate the
       session. ``hr_low`` is written only when the row actually prescribes a
       floor, so ceiling-only easy/long runs never get a low-HR alert (#979).
+    - ``easy`` with a ``strides`` add-on: an opening easy step, a repeat group
+      of ``reps`` x (``run_seconds`` stride / ``recovery_seconds`` jog) and a
+      final 5-minute easy ``cooldown``, summing to exactly ``target_minutes``
+      (still the total of the run). Only the two easy segments carry the HR
+      target; strides and their jogs are too short for HR to settle.
     - ``threshold`` / ``tempo``: a 10-minute warmup and a 5-minute cooldown
       around the body step; these rows carry both bounds, so the body step
       becomes a real HR range.
-    - ``strides``: the same bookends around a 5x(20s run / 90s recovery) repeat
-      group instead of a body step (no distance/duration target needed).
 
     Args:
         p: A prescription row (``session_type``, ``target_minutes`` /
-            ``target_km``, ``hr_low`` / ``hr_high``).
+            ``target_km``, ``hr_low`` / ``hr_high``, optional ``strides``).
 
     Returns:
         Steps ready for ``build_workout_json`` / ``schedule_custom_workout``.
 
     Raises:
-        ValueError: When ``session_type`` is not registrable as a run, or when a
-            non-strides session prescribes neither ``target_minutes`` nor
-            ``target_km``.
+        ValueError: When ``session_type`` is not registrable as a run, when a
+            session prescribes neither ``target_minutes`` nor ``target_km``, or
+            when an easy row's strides do not fit inside ``target_minutes``.
     """
     session_type = str(p.get("session_type") or "")
     if session_type not in _REGISTRABLE_TYPES:
@@ -350,24 +349,18 @@ def build_steps_from_prescription(p: dict[str, Any]) -> list[dict[str, Any]]:
             f"(registrable: {sorted(_REGISTRABLE_TYPES)})"
         )
 
+    hr_target: dict[str, Any] = {}
+    if p.get("hr_low") is not None:
+        hr_target["hr_low"] = p["hr_low"]
+    if p.get("hr_high") is not None:
+        hr_target["hr_high"] = p["hr_high"]
+
+    strides = p.get("strides")
+    if session_type == "easy" and strides:
+        return _easy_with_strides_steps(p, strides, hr_target)
+
     warmup = {"step_type": "warmup", "duration_minutes": WARMUP_MINUTES}
     cooldown = {"step_type": "cooldown", "duration_minutes": COOLDOWN_MINUTES}
-
-    if session_type == "strides":
-        return [
-            warmup,
-            {
-                "repeat_count": _STRIDES_REPEAT_COUNT,
-                "steps": [
-                    {"step_type": "run", "duration_seconds": _STRIDES_RUN_SECONDS},
-                    {
-                        "step_type": "recovery",
-                        "duration_seconds": _STRIDES_RECOVERY_SECONDS,
-                    },
-                ],
-            },
-            cooldown,
-        ]
 
     body: dict[str, Any] = {"step_type": "run"}
     target_minutes = p.get("target_minutes")
@@ -382,16 +375,78 @@ def build_steps_from_prescription(p: dict[str, Any]) -> list[dict[str, Any]]:
             "to build a workout"
         )
 
-    hr_low = p.get("hr_low")
-    hr_high = p.get("hr_high")
-    if hr_low is not None:
-        body["hr_low"] = hr_low
-    if hr_high is not None:
-        body["hr_high"] = hr_high
+    body.update(hr_target)
 
     if session_type in BOOKENDED_TYPES:
         return [warmup, body, cooldown]
     return [body]
+
+
+def _easy_with_strides_steps(
+    p: dict[str, Any], strides: dict[str, Any], hr_target: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Build an easy run with strides: opening easy, strides, final easy.
+
+    ``target_minutes`` stays the total of the run, so the opening segment is
+    whatever the strides block and the final :data:`~garmin_mcp.analysis.
+    prescription_shape.FINAL_EASY_MINUTES` leave over.
+
+    Args:
+        p: The easy prescription row.
+        strides: Its ``strides`` add-on (``reps`` plus optional
+            ``run_seconds`` / ``recovery_seconds``).
+        hr_target: ``hr_low`` / ``hr_high`` of the row, applied to the two easy
+            segments only.
+
+    Raises:
+        ValueError: When the row has no ``target_minutes`` or the strides leave
+            no room for an opening easy segment.
+    """
+    target_minutes = p.get("target_minutes")
+    if target_minutes is None:
+        raise ValueError(
+            "an easy session with strides needs target_minutes (the run total) "
+            "to build a workout"
+        )
+    block = strides_block_seconds(strides)
+    final_seconds = FINAL_EASY_MINUTES * 60
+    opening_seconds = round(float(target_minutes) * 60) - block - final_seconds
+    if opening_seconds <= 0:
+        raise ValueError(
+            f"strides take {block}s and the final easy segment "
+            f"{FINAL_EASY_MINUTES}min, leaving no opening easy running inside "
+            f"target_minutes {target_minutes}"
+        )
+    run_seconds = strides.get("run_seconds") or STRIDES_DEFAULT_RUN_SECONDS
+    recovery_seconds = (
+        strides.get("recovery_seconds") or STRIDES_DEFAULT_RECOVERY_SECONDS
+    )
+    return [
+        {"step_type": "run", "duration_seconds": opening_seconds, **hr_target},
+        {
+            "repeat_count": int(strides["reps"]),
+            "steps": [
+                {"step_type": "run", "duration_seconds": int(run_seconds)},
+                {"step_type": "recovery", "duration_seconds": int(recovery_seconds)},
+            ],
+        },
+        {"step_type": "cooldown", "duration_minutes": FINAL_EASY_MINUTES, **hr_target},
+    ]
+
+
+def _registered_bookend_minutes(
+    row: dict[str, Any], steps: list[dict[str, Any]]
+) -> int | None:
+    """Return the bookend minutes to record for a row registered from ``steps``.
+
+    Only bookended session types (threshold / tempo) add minutes on top of
+    ``target_minutes``. An easy run with strides ends on a 5-minute easy
+    ``cooldown`` step, but that step is part of the prescribed total, so it
+    must not widen the reconciliation band: non-bookended rows record ``0``.
+    """
+    if str(row.get("session_type") or "") not in BOOKENDED_TYPES:
+        return 0
+    return bookend_minutes_from_steps(steps)
 
 
 # ----------------------------------------------------------------------------
@@ -733,7 +788,9 @@ def _plan_week_registrations(
 
     Returns:
         ``(items, skipped)`` where each item is ``{prescription_id, date, title,
-        steps, already_registered, replace_workout_id}`` and each skip is
+        steps, bookend_minutes, already_registered, replace_workout_id}``
+        (``bookend_minutes`` is what the registration records, see
+        :func:`_registered_bookend_minutes`) and each skip is
         ``{prescription_id, reason}``. ``replace_workout_id`` carries the
         workout recorded on an explicitly re-registered row so the old item
         leaves the calendar even when the revised title differs (#1042); it is
@@ -780,6 +837,7 @@ def _plan_week_registrations(
                 "date": str(row.get("date")),
                 "title": str(row.get("title") or session_type),
                 "steps": steps,
+                "bookend_minutes": _registered_bookend_minutes(row, steps),
                 "already_registered": already_registered,
                 "replace_workout_id": recorded_workout_id,
             }
@@ -997,7 +1055,7 @@ def _schedule_weekly_prescriptions(
                 status="registered",
                 garmin_workout_id=outcome["workout_id"],
                 garmin_schedule_id=outcome["schedule_id"],
-                registered_bookend_minutes=bookend_minutes_from_steps(item["steps"]),
+                registered_bookend_minutes=item["bookend_minutes"],
                 db_path=str(reader.db_path),
             )
             registered.append(
@@ -1074,14 +1132,17 @@ WORKOUT_SCHEDULING_TOOLS: list[ToolDef] = [
             "calendar in one batch. Steps are derived in code from each row: "
             "long/easy/recovery become a single body step on target_minutes or "
             "target_km (hr_high as a ceiling, hr_low only when prescribed) so "
-            "the watch asks for exactly what was prescribed, while quality "
-            "sessions (threshold/tempo/strides) keep a 10min warmup and a 5min "
-            "cooldown around the body (strides become 5x20s pickups); "
+            "the watch asks for exactly what was prescribed; an easy row with "
+            "a strides add-on becomes an opening easy step, a repeat group of "
+            "reps x (run_seconds stride / recovery_seconds jog, no HR target) "
+            "and a final 5min easy step, together exactly target_minutes (the "
+            "run total). Quality sessions (threshold/tempo) keep a 10min "
+            "warmup and a 5min cooldown around the body; "
             "rest/strength/cross rows and rows already "
             "registered are skipped, and naming an id in prescription_ids "
             "re-registers it. dry_run=True (default) returns {dry_run, "
             "week_start_date, items ({prescription_id, date, title, steps, "
-            "existing_same_day, already_registered, "
+            "bookend_minutes, existing_same_day, already_registered, "
             "would_replace_workout_id}), would_cleanup, skipped} so the plan "
             "can be confirmed first. dry_run=False runs the [MCP] cleanup "
             "first (unschedule past-dated [MCP] assignments, delete [MCP] "

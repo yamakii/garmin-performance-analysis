@@ -64,7 +64,9 @@ def test_add_training_blocks_tables_creates_tables_and_sequences(
 @pytest.mark.unit
 def test_registry_has_versions_23_and_24_in_order() -> None:
     """The two plan-storage migrations stay in order, 23 then 24."""
-    assert [(version, name) for version, name, _ in MIGRATIONS[-7:]] == [
+    assert [
+        (version, name) for version, name, _ in MIGRATIONS if 23 <= version <= 29
+    ] == [
         (23, "add_training_blocks_tables"),
         (24, "add_weekly_prescriptions_table"),
         (25, "add_prescription_rating"),

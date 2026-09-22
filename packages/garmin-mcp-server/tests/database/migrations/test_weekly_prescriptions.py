@@ -163,3 +163,48 @@ def test_add_registered_bookend_minutes_without_table_is_noop(tmp_path: Path) ->
         assert "weekly_prescriptions" not in _table_names(conn)
     finally:
         conn.close()
+
+
+@pytest.mark.unit
+def test_add_prescription_strides_idempotent(tmp_path: Path) -> None:
+    """v30 adds one nullable JSON column and re-applying is a no-op (#1295)."""
+    from garmin_mcp.database.migrations.add_prescription_strides import (
+        add_prescription_strides,
+    )
+
+    conn = duckdb.connect(str(tmp_path / "strides.duckdb"))
+    try:
+        add_weekly_prescriptions_table(conn)
+        add_prescription_strides(conn)
+        # Idempotent: a second application must not raise.
+        add_prescription_strides(conn)
+
+        columns = conn.execute(
+            "SELECT column_name, data_type FROM information_schema.columns "
+            "WHERE table_name = 'weekly_prescriptions' "
+            "AND column_name = 'strides'"
+        ).fetchall()
+        assert columns == [("strides", "VARCHAR")]
+
+        # Missing table: nothing to alter, no crash.
+        other = duckdb.connect(str(tmp_path / "no_table_strides.duckdb"))
+        try:
+            add_prescription_strides(other)
+            assert "weekly_prescriptions" not in _table_names(other)
+        finally:
+            other.close()
+    finally:
+        conn.close()
+
+
+@pytest.mark.unit
+def test_registry_has_version_30() -> None:
+    """The strides add-on is registered as migration 30, after the symptom log."""
+    from garmin_mcp.database.migrations.registry import MIGRATIONS
+
+    assert [
+        (version, name) for version, name, _ in MIGRATIONS if 29 <= version <= 30
+    ] == [
+        (29, "add_athlete_symptoms"),
+        (30, "add_prescription_strides"),
+    ]

@@ -135,16 +135,89 @@ def test_build_steps_threshold_both_bounds() -> None:
 
 
 @pytest.mark.unit
-def test_build_steps_strides_repeat_group() -> None:
-    """Strides need no target: they become a 5x(20s / 90s) repeat group."""
-    steps = build_steps_from_prescription({"session_type": "strides"})
+def test_build_steps_easy_with_strides() -> None:
+    """Easy 35 min + 4x20s strides: opening easy, strides, final 5 min easy.
 
-    group = steps[1]
-    assert group["repeat_count"] == 5
-    assert group["steps"] == [
-        {"step_type": "run", "duration_seconds": 20},
-        {"step_type": "recovery", "duration_seconds": 90},
+    The three parts add up to the prescribed total (2100 s), and only the two
+    easy segments carry the HR ceiling (Issue #1295).
+    """
+    steps = build_steps_from_prescription(
+        {
+            "session_type": "easy",
+            "target_minutes": 35,
+            "hr_high": 150,
+            "strides": {"reps": 4, "run_seconds": 20, "recovery_seconds": 90},
+        }
+    )
+
+    assert steps == [
+        {"step_type": "run", "duration_seconds": 1360, "hr_high": 150},
+        {
+            "repeat_count": 4,
+            "steps": [
+                {"step_type": "run", "duration_seconds": 20},
+                {"step_type": "recovery", "duration_seconds": 90},
+            ],
+        },
+        {"step_type": "cooldown", "duration_minutes": 5, "hr_high": 150},
     ]
+    assert 1360 + 4 * (20 + 90) + 5 * 60 == 2100
+    assert build_workout_json("easy", steps)["estimatedDurationInSecs"] == 2100
+
+
+@pytest.mark.unit
+def test_build_steps_easy_without_strides_unchanged() -> None:
+    """An easy row without strides is still a single body step."""
+    steps = build_steps_from_prescription(
+        {"session_type": "easy", "target_minutes": 35, "hr_high": 150, "strides": None}
+    )
+
+    assert steps == [{"step_type": "run", "duration_minutes": 35, "hr_high": 150}]
+
+
+@pytest.mark.unit
+def test_build_steps_strides_session_type_rejected() -> None:
+    """``strides`` is no longer a registrable session type."""
+    with pytest.raises(ValueError, match="not registrable"):
+        build_steps_from_prescription({"session_type": "strides"})
+
+
+@pytest.mark.unit
+def test_plan_week_registrations_easy_with_strides_records_no_bookends() -> None:
+    """The final 5 min easy step is part of the total, so no bookend is recorded.
+
+    ``reconcile_prescriptions`` widens the band by ``registered_bookend_minutes``;
+    recording the cooldown's 5 min would centre an easy+strides run 5 min long.
+    """
+    from garmin_mcp.tools.workout_scheduling import _plan_week_registrations
+
+    rows = [
+        {
+            "prescription_id": 1,
+            "date": "2026-09-09",
+            "session_type": "easy",
+            "title": "Easy 35 + strides",
+            "target_minutes": 35,
+            "hr_high": 150,
+            "strides": {"reps": 4, "run_seconds": 20, "recovery_seconds": 90},
+            "status": "prescribed",
+        },
+        {
+            "prescription_id": 2,
+            "date": "2026-09-10",
+            "session_type": "tempo",
+            "title": "Tempo 20",
+            "target_minutes": 20,
+            "hr_low": 160,
+            "hr_high": 169,
+            "status": "prescribed",
+        },
+    ]
+
+    items, skipped = _plan_week_registrations(rows, set())
+
+    assert skipped == []
+    assert [item["bookend_minutes"] for item in items] == [0, 15]
 
 
 @pytest.mark.unit

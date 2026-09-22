@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Mapping
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -41,7 +42,6 @@ ALLOWED_SESSION_TYPES = frozenset(
         "recovery",
         "threshold",
         "tempo",
-        "strides",
         "rest",
         "strength",
         "cross",
@@ -150,6 +150,101 @@ def _validate_bookended_targets(
         f"{session_type} rows target_minutes is the BODY only, while target_km "
         f"is the WHOLE session — a total written into both is the usual cause"
     )
+
+
+#: Inclusive bounds of each ``strides`` field (reps / seconds).
+_STRIDES_BOUNDS: dict[str, tuple[int, int]] = {
+    "reps": (2, 8),
+    "run_seconds": (10, 30),
+    "recovery_seconds": (60, 180),
+}
+
+
+def _validate_strides(row: Mapping[str, Any]) -> dict[str, int] | None:
+    """Validate an easy row's ``strides`` add-on and return it with defaults.
+
+    Strides are a neuromuscular stimulus placed inside an easy run, not a
+    session of their own (Issue #1295). The watch workout puts them between an
+    opening easy segment of at least ``MIN_OPENING_EASY_MINUTES`` and a final
+    ``FINAL_EASY_MINUTES``, with ``target_minutes`` staying the **total** of the
+    run, so the row must leave room for both segments around the block.
+
+    Args:
+        row: A prescription row; only its ``strides``, ``session_type``,
+            ``target_minutes`` and ``title`` are read.
+
+    Returns:
+        ``{"reps", "run_seconds", "recovery_seconds"}`` with the defaults filled
+        in, or ``None`` when the row carries no ``strides``.
+
+    Raises:
+        ValueError: When ``strides`` is set on a non-easy row, is not an object,
+            carries an unknown key, a non-integer or out-of-range value, or does
+            not fit inside ``target_minutes``.
+    """
+    from garmin_mcp.analysis.prescription_shape import (
+        FINAL_EASY_MINUTES,
+        MIN_OPENING_EASY_MINUTES,
+        STRIDES_DEFAULT_RECOVERY_SECONDS,
+        STRIDES_DEFAULT_RUN_SECONDS,
+        strides_block_seconds,
+    )
+
+    strides = row.get("strides")
+    if strides is None:
+        return None
+    title = str(row.get("title") or "")
+    if row.get("session_type") != "easy":
+        raise ValueError(
+            f"prescription {title!r}: strides can only be added to an easy "
+            f"session, got session_type {row.get('session_type')!r}"
+        )
+    if not isinstance(strides, Mapping):
+        raise ValueError(
+            f"prescription {title!r}: strides must be an object "
+            "{reps, run_seconds, recovery_seconds}"
+        )
+    unknown = sorted(set(strides) - set(_STRIDES_BOUNDS))
+    if unknown:
+        raise ValueError(
+            f"prescription {title!r}: unknown strides keys {unknown} "
+            f"(allowed: {sorted(_STRIDES_BOUNDS)})"
+        )
+
+    candidate: dict[str, Any] = {
+        "reps": strides.get("reps"),
+        "run_seconds": strides.get("run_seconds", STRIDES_DEFAULT_RUN_SECONDS),
+        "recovery_seconds": strides.get(
+            "recovery_seconds", STRIDES_DEFAULT_RECOVERY_SECONDS
+        ),
+    }
+    for key, (low, high) in _STRIDES_BOUNDS.items():
+        value = candidate[key]
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(
+                f"prescription {title!r}: strides.{key} must be an integer "
+                f"in {low}..{high}, got {value!r}"
+            )
+        if not low <= value <= high:
+            raise ValueError(
+                f"prescription {title!r}: strides.{key} must be in "
+                f"{low}..{high}, got {value}"
+            )
+    resolved: dict[str, int] = {key: int(value) for key, value in candidate.items()}
+
+    block = strides_block_seconds(resolved)
+    needed = (MIN_OPENING_EASY_MINUTES + FINAL_EASY_MINUTES) * 60 + block
+    target_minutes = row.get("target_minutes")
+    if target_minutes is None or float(target_minutes) * 60 < needed:
+        raise ValueError(
+            f"prescription {title!r}: strides {resolved['reps']}x"
+            f"{resolved['run_seconds']}s/{resolved['recovery_seconds']}s take "
+            f"{block}s, and with at least {MIN_OPENING_EASY_MINUTES}min of easy "
+            f"running before and {FINAL_EASY_MINUTES}min after they need "
+            f"target_minutes (the run total) of at least {needed / 60:g}, got "
+            f"{target_minutes!r}"
+        )
+    return resolved
 
 
 def _validate_ladder(ladder: Any, block_title: str) -> list[dict[str, Any]]:
@@ -390,7 +485,9 @@ def insert_weekly_prescriptions(
             (required) plus optional ``target_minutes``, ``target_km``,
             ``hr_low``, ``hr_high``, ``pace_low_s_per_km``,
             ``pace_high_s_per_km``, ``rationale``, ``rating`` (``✅`` / ``🟡``
-            / ``🔴``) and ``status``.
+            / ``🔴``), ``status`` and — on ``easy`` rows only — ``strides``
+            (``{reps, run_seconds=20, recovery_seconds=90}``, see
+            :func:`_validate_strides`), stored as JSON with the defaults filled.
         review_id: ``weekly_reviews.review_id`` when saved by a weekly review.
         user_id: Ledger owner identifier (defaults to ``"default"``).
         db_path: Path to DuckDB database. If None, uses the default path.
@@ -403,8 +500,8 @@ def insert_weekly_prescriptions(
             ``status`` or ``rating``, ``hr_low`` above ``hr_high``, a
             ``threshold`` / ``tempo`` row whose ``target_minutes`` reads as the
             session total rather than the body (:func:`
-            _validate_bookended_targets`), or a revision that skips the review
-            (see the revision guard above).
+            _validate_bookended_targets`), an invalid ``strides`` add-on, or a
+            revision that skips the review (see the revision guard above).
     """
     if db_path is None:
         db_path = _default_db_path()
@@ -414,7 +511,7 @@ def insert_weekly_prescriptions(
     week_start = _parse_date(week_start_date, "week_start_date")
     week_end = week_start + timedelta(days=6)
 
-    validated: list[tuple[dict[str, Any], date]] = []
+    validated: list[tuple[dict[str, Any], date, dict[str, int] | None]] = []
     for row in prescriptions:
         title = str(row.get("title") or "")
         if not title:
@@ -452,7 +549,8 @@ def insert_weekly_prescriptions(
         _validate_bookended_targets(
             title, str(session_type), row.get("target_minutes"), row.get("target_km")
         )
-        validated.append((row, row_date))
+        strides = _validate_strides(row)
+        validated.append((row, row_date, strides))
 
     prescription_ids: list[int] = []
     with get_write_connection(db_path) as conn:
@@ -463,7 +561,7 @@ def insert_weekly_prescriptions(
         ).fetchone()
         batch_id = int(batch_row[0]) if batch_row is not None else 0
 
-        for row, row_date in validated:
+        for row, row_date, strides in validated:
             id_row = conn.execute(
                 "SELECT nextval('seq_weekly_prescriptions_id')"
             ).fetchone()
@@ -474,9 +572,9 @@ def insert_weekly_prescriptions(
                     prescription_id, batch_id, user_id, review_id,
                     week_start_date, date, session_type, title, target_minutes,
                     target_km, hr_low, hr_high, pace_low_s_per_km,
-                    pace_high_s_per_km, rationale, rating, status
+                    pace_high_s_per_km, rationale, rating, status, strides
                 ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 [
@@ -497,6 +595,7 @@ def insert_weekly_prescriptions(
                     row.get("rationale"),
                     row.get("rating"),
                     row.get("status") or "prescribed",
+                    _json_or_none(strides),
                 ],
             )
             prescription_ids.append(prescription_id)

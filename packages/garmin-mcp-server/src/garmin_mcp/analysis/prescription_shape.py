@@ -10,12 +10,20 @@ registered as a 60-min workout and then graded ``replaced`` at 1.33x).
 Z2 / easy / recovery / long runs are warmup intensity end to end and their HR
 target is ceiling-only (#979), so a separate untargeted warmup step is
 redundant: the body step already allows an easy start. Quality sessions
-(threshold / tempo / strides) genuinely need bookends, so they keep them — and
-their reconciliation band is widened by exactly those minutes.
+(threshold / tempo) genuinely need bookends, so they keep them — and their
+reconciliation band is widened by exactly those minutes.
+
+Strides are not a session of their own but an optional add-on of an easy run
+(Issue #1295): a neuromuscular stimulus, not an interval. The easy row keeps
+``target_minutes`` as the **total**, and the strides block sits between an
+opening easy segment of at least :data:`MIN_OPENING_EASY_MINUTES` and a final
+:data:`FINAL_EASY_MINUTES` of easy running, so the watch workout adds nothing
+on top of the prescribed minutes.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 #: Minutes of untargeted warmup prepended to a bookended session.
@@ -26,7 +34,38 @@ COOLDOWN_MINUTES: int = 5
 
 #: Session types whose Garmin workout is bookended by an untargeted
 #: warmup/cooldown. Everything else is registered as a single body step.
-BOOKENDED_TYPES: frozenset[str] = frozenset({"threshold", "tempo", "strides"})
+BOOKENDED_TYPES: frozenset[str] = frozenset({"threshold", "tempo"})
+
+#: Minutes of easy running after the strides block of an easy run.
+FINAL_EASY_MINUTES: int = 5
+
+#: Minimum minutes of easy running before the strides block of an easy run.
+MIN_OPENING_EASY_MINUTES: int = 5
+
+#: Defaults of an easy row's ``strides`` add-on (seconds per stride / per jog).
+STRIDES_DEFAULT_RUN_SECONDS: int = 20
+STRIDES_DEFAULT_RECOVERY_SECONDS: int = 90
+
+
+def strides_block_seconds(strides: Mapping[str, Any]) -> int:
+    """Return the length of a strides block: ``reps * (run + recovery)``.
+
+    Missing ``run_seconds`` / ``recovery_seconds`` fall back to the defaults
+    (:data:`STRIDES_DEFAULT_RUN_SECONDS` / :data:`STRIDES_DEFAULT_RECOVERY_SECONDS`).
+
+    Args:
+        strides: The ``strides`` object of an easy prescription row.
+
+    Returns:
+        Seconds the whole repeat group takes.
+    """
+    run = strides.get("run_seconds")
+    recovery = strides.get("recovery_seconds")
+    run_seconds = int(run) if run is not None else STRIDES_DEFAULT_RUN_SECONDS
+    recovery_seconds = (
+        int(recovery) if recovery is not None else STRIDES_DEFAULT_RECOVERY_SECONDS
+    )
+    return int(strides["reps"]) * (run_seconds + recovery_seconds)
 
 
 def bookend_minutes(session_type: str | None) -> int:

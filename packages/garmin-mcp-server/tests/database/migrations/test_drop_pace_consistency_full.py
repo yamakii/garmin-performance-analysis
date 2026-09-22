@@ -83,5 +83,5 @@ def test_drop_pace_consistency_full_registered_as_v22() -> None:
         "drop_pace_consistency_full",
         _wrap_drop_pace_consistency_full,
     ) in MIGRATIONS
-    # Head moved to 29 when the athlete symptom log landed (#1220).
-    assert max(version for version, _, _ in MIGRATIONS) == 29
+    # Head moved to 30 when easy prescriptions gained a strides add-on (#1295).
+    assert max(version for version, _, _ in MIGRATIONS) == 30

@@ -15,14 +15,17 @@ from typing import Any
 import duckdb
 
 from garmin_mcp.database.readers.base import BaseDBReader
-from garmin_mcp.database.readers.plan import verdict_from_prescriptions
+from garmin_mcp.database.readers.plan import (
+    prescription_row_to_dict,
+    verdict_from_prescriptions,
+)
 
 logger = logging.getLogger(__name__)
 
 #: Prescription columns needed to render a review's per-day verdict rows.
 _VERDICT_PRESCRIPTION_COLUMNS = (
     "prescription_id, batch_id, date, session_type, title, target_minutes, "
-    "target_km, hr_low, hr_high, rationale, rating, status"
+    "target_km, hr_low, hr_high, strides, rationale, rating, status"
 )
 
 
@@ -343,7 +346,7 @@ class AthleteReader(BaseDBReader):
             logger.debug("weekly_prescriptions unavailable; verdict stays stored")
             return []
         columns = [desc[0] for desc in result.description]
-        return [self._row_to_dict(columns, row) for row in rows]
+        return [prescription_row_to_dict(columns, row) for row in rows]
 
     def _attach_verdict(self, conn: Any, record: dict[str, Any]) -> dict[str, Any]:
         """Derive ``review_data.verdict`` from the week's prescriptions.

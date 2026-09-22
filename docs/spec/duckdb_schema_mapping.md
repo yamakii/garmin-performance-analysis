@@ -1,7 +1,7 @@
 # DuckDB Schema Mapping Specification
 
-**Version**: 2.11
-**Last Updated**: 2026-09-18
+**Version**: 2.12
+**Last Updated**: 2026-09-22
 **Database**: `garmin_performance.duckdb`
 **Total Tables**: 28 domain tables (+ `schema_version` migration bookkeeping)
 
@@ -23,6 +23,9 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 > **Schema bookkeeping**: a 29th table, `schema_version` (`version INTEGER PK`, `name`, `applied_at`), tracks applied migrations and is **not** a domain table. The migration runner (`database/migrations/registry.py`) applies numbered migrations after `_ensure_tables()` and records them there.
 
 ## Change History
+
+### Version 2.12 (2026-09-22)
+- **`weekly_prescriptions.strides` added** (migration `add_prescription_strides`, version 30). Strides used to be a `session_type` of their own: no jog body, no intensity class, matched against any run of the day, and never used. They are a neuromuscular stimulus inside an easy run, so they now ride on the easy row as a structured add-on (`{reps, run_seconds, recovery_seconds}`, JSON in `VARCHAR`), `strides` is no longer an accepted `session_type`, and `schedule_weekly_prescriptions` registers the row as an opening easy step, a repeat group of strides and a final 5 min easy step that together equal `target_minutes` (issue #1295, Epic #1294).
 
 ### Version 2.11 (2026-09-18)
 - **`athlete_symptoms` table added** (migration `add_athlete_symptoms`, version 29; also created in `_ensure_tables()`). The athlete's pain / tightness reports had no home, so the profile's rule that pain governs long-run progression could not be checked against anything and a stall (the March-2021 collapse 43 → 20 → 9.6 → 5.7 km/week) stayed unclassifiable after the fact. Rows are append-only, one per (date, `body_region`), written by `save_symptom` and read by `get_symptoms`. A `severity` of 0 is kept deliberately: it records "asked and clear", which is what separates "no pain" from "not asked" (issue #1220, Epic #1217).
@@ -1060,9 +1063,10 @@ Rows of the five section types written before the run note — `split`, `phase`,
 | updated_at | TIMESTAMP |
 | rating | VARCHAR |
 | registered_bookend_minutes | INTEGER |
+| strides | VARCHAR |
 <!-- END GENERATED: schema:weekly_prescriptions -->
 
-**Units & notes**: rows are **append-only per `batch_id`** (one save = one batch from `seq_weekly_prescription_batches`); the highest `batch_id` for a week is canonical and superseded batches are never returned by the readers. `session_type` ∈ `long | easy | recovery | threshold | tempo | strides | rest | strength | cross`; `status` ∈ `prescribed | registered | done | replaced | skipped`. `hr_high` is a **ceiling** and is the only HR bound for easy/long sessions (a restrictive `hr_low` nags on hot long runs); `target_minutes` (min) and `target_km` (km) are alternatives, `pace_low_s_per_km` / `pace_high_s_per_km` are sec/km. `rating` is the coach verdict of the prescribed session (`✅` / `🟡` / `🔴`, NULL = ungraded) and `rationale` its one-line comment: together with the session/target columns this table is the **single source of the per-day plan** (migration `add_prescription_rating`, version 25, issue #1021), and `weekly_reviews.review_data.verdict` is derived from it at read time. `review_id` links the batch to `weekly_reviews` when a review produced it; once a week has a review, `save_weekly_prescriptions` requires that week's **latest** `review_id` and allows only one batch per review version, so revising the plan re-issues the review prose with it. `reconcile_prescriptions` fills `actual_activity_id` and moves `status` to done / replaced / skipped using a ±15% / +30% tolerance band around the targets; `updated_at` is NULL until a row is first mutated.
+**Units & notes**: rows are **append-only per `batch_id`** (one save = one batch from `seq_weekly_prescription_batches`); the highest `batch_id` for a week is canonical and superseded batches are never returned by the readers. `session_type` ∈ `long | easy | recovery | threshold | tempo | rest | strength | cross`; `strides` is an optional JSON add-on allowed on `easy` rows only, `{"reps": 2–8, "run_seconds": 10–30 (default 20), "recovery_seconds": 60–180 (default 90)}`, stored with the defaults filled and decoded back into a dict by the readers. On an easy row `target_minutes` stays the run total, which must hold at least 5 min of easy running before the strides block, the block itself (`reps × (run + recovery)` s) and a final 5 min of easy running (migration `add_prescription_strides`, version 30, issue #1295); `status` ∈ `prescribed | registered | done | replaced | skipped`. `hr_high` is a **ceiling** and is the only HR bound for easy/long sessions (a restrictive `hr_low` nags on hot long runs); `target_minutes` (min) and `target_km` (km) are alternatives, `pace_low_s_per_km` / `pace_high_s_per_km` are sec/km. `rating` is the coach verdict of the prescribed session (`✅` / `🟡` / `🔴`, NULL = ungraded) and `rationale` its one-line comment: together with the session/target columns this table is the **single source of the per-day plan** (migration `add_prescription_rating`, version 25, issue #1021), and `weekly_reviews.review_data.verdict` is derived from it at read time. `review_id` links the batch to `weekly_reviews` when a review produced it; once a week has a review, `save_weekly_prescriptions` requires that week's **latest** `review_id` and allows only one batch per review version, so revising the plan re-issues the review prose with it. `reconcile_prescriptions` fills `actual_activity_id` and moves `status` to done / replaced / skipped using a ±15% / +30% tolerance band around the targets; `updated_at` is NULL until a row is first mutated.
 
 ---
 
