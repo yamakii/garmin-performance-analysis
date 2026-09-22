@@ -765,6 +765,12 @@ export interface RunNote {
   timeline: RunNoteTimelineItem[];
   notes: RunNoteSignalNote[];
   question?: string | null;
+  /**
+   * The report scenes the note was written against, stored with it at merge
+   * (#1328). The timeline's moment ids point into these, so the page renders
+   * them instead of the live report's; absent on notes saved before #1328.
+   */
+  report_moments?: RunMoment[];
 }
 
 // --- Section analysis data types (from Spike #198) ---

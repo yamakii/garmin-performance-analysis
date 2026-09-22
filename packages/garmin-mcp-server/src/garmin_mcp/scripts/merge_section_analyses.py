@@ -22,6 +22,11 @@ from garmin_mcp.validation.validators import check_run_note_grounding
 
 logger = logging.getLogger(__name__)
 
+#: ``analysis_data`` key under which a run_note keeps the report scenes it was
+#: written against (#1328). Only merge writes it; the web page renders these
+#: scenes when present and falls back to the live report's otherwise.
+REPORT_MOMENTS_KEY = "report_moments"
+
 
 def merge_section_analyses(temp_dir: Path, *, keep: bool = False) -> dict:
     """Merge all section analysis JSON files from temp_dir into DuckDB.
@@ -88,6 +93,16 @@ def merge_section_analyses(temp_dir: Path, *, keep: bool = False) -> dict:
                     failed.append(section_type)
                     errors.append(f"{section_type}: {reason}")
                     continue  # Do not insert an ungrounded coach review.
+                # The note names its scenes by number (m1..m5) and the report
+                # recomputes them on every read, so a later change to scene
+                # detection would move the prose onto other scenes (#1328).
+                # Store the scenes the note was checked against with it; the
+                # page renders those. Merge's value always wins over anything
+                # the agent put under the same key.
+                analysis_data = {
+                    **analysis_data,
+                    REPORT_MOMENTS_KEY: report.get("moments") or [],
+                }
 
             success = writer.insert_section_analysis(
                 activity_id=activity_id,

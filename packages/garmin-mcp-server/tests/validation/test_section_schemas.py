@@ -94,3 +94,12 @@ def test_section_schemas_reject_legacy_types():
     assert any("Unknown section_type: summary" in e for e in errors)
 
     assert validate_section_data("run_note", _run_note_payload()) == (True, [])
+
+
+@pytest.mark.unit
+def test_run_note_schema_ignores_report_moments():
+    """A note stored with its scene snapshot (#1328) still validates."""
+    data = _run_note_payload(report_moments=[{"id": "m3", "kind": "steady"}])
+    valid, errors = validate_section_data("run_note", data)
+    assert valid is True
+    assert errors == []

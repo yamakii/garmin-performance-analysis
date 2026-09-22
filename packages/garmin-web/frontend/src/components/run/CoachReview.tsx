@@ -9,6 +9,7 @@ import NextSessionCard from "./NextSessionCard";
 import type {
   GroundedPoint,
   NextSession,
+  RunMoment,
   RunNote,
   SectionResult,
 } from "../../types";
@@ -75,7 +76,28 @@ export function parseRunNote(section: SectionResult | undefined): RunNote | null
         })
       : [],
     question: isRecord(data) ? asString(data.question) : null,
+    ...(reportMoments(data.report_moments) ?? {}),
   };
+}
+
+/**
+ * `{report_moments}` when the note carries a usable scene snapshot (#1328),
+ * or null so the page keeps the live report's scenes. Usable means a
+ * non-empty array whose every scene has a string `id` and `kind`: anything
+ * less could not be matched against the timeline, and a half-broken snapshot
+ * is worse than the live scenes the page showed before #1328.
+ */
+function reportMoments(value: unknown): { report_moments: RunMoment[] } | null {
+  if (!Array.isArray(value) || value.length === 0) {
+    return null;
+  }
+  const usable = value.every(
+    (item) =>
+      isRecord(item) &&
+      asString(item.id) != null &&
+      asString(item.kind) != null,
+  );
+  return usable ? { report_moments: value as RunMoment[] } : null;
 }
 
 /** One bullet of the review: its marker, then the sentence. */
