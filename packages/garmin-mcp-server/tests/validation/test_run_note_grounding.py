@@ -166,19 +166,64 @@ def test_growth_point_on_plan_axis_is_rejected():
     assert "plan.hr_ceiling" in reason
 
 
-@pytest.mark.unit
-def test_growth_point_on_moment_is_accepted():
-    """A growth point may rest on a scene of the run."""
-    data = _note_data(
+def _report_with_m2(verdict: str) -> dict[str, Any]:
+    """The default report with ``m2`` judged ``verdict`` by the purpose policy."""
+    return _report(
+        moments=[
+            {"id": "m1", "label": "start"},
+            {
+                "id": "m2",
+                "kind": "walk_break",
+                "policy": {"verdict": verdict, "reason": "test"},
+            },
+            {"id": "m3", "label": "steady"},
+        ]
+    )
+
+
+def _growth_on(evidence: str) -> dict[str, Any]:
+    """A run_note whose one growth point rests on ``evidence``."""
+    return _note_data(
         growth_points=[
             {
-                "text": "上りに入った直後のペース調整に伸びしろがあります。",
-                "evidence": "moments.m2",
+                "text": "途中の歩きを減らせると目標ペースの確認になります。",
+                "evidence": evidence,
             }
         ]
     )
 
-    assert check_run_note_grounding(data, _report()) == (True, None)
+
+@pytest.mark.unit
+def test_growth_point_rejects_non_concern_moment():
+    """A scene the purpose accepts (a walk on an aerobic long run) is no weakness."""
+    ok, reason = check_run_note_grounding(
+        _growth_on("moments.m2"), _report_with_m2("acceptable")
+    )
+
+    assert ok is False
+    assert reason is not None
+    assert "moments.m2" in reason
+    assert "acceptable" in reason
+
+
+@pytest.mark.unit
+def test_growth_point_accepts_concern_moment():
+    """A scene the purpose judges a concern may carry a growth point."""
+    assert check_run_note_grounding(
+        _growth_on("moments.m2"), _report_with_m2("concern")
+    ) == (True, None)
+
+
+@pytest.mark.unit
+def test_growth_point_rejects_recurrence_evidence():
+    """A recurrence is background for a weakness, never the weakness itself."""
+    report = _report(recurrence=[{"kind": "fade"}])
+
+    ok, reason = check_run_note_grounding(_growth_on("recurrence.fade"), report)
+
+    assert ok is False
+    assert reason is not None
+    assert "recurrence.fade" in reason
 
 
 @pytest.mark.unit
