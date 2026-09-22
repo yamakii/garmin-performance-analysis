@@ -147,13 +147,20 @@ def test_report_purpose_inferred_without_prescription(reader_db_path: Path) -> N
     assert report["purpose"]["id"] == "long_easy"
 
 
-def _seed_collapsing_splits(db_path: Path, activity_id: int) -> None:
-    """Eight kilometres at 6:00/km, then six the athlete could not hold."""
+def _seed_mostly_collapsed_splits(db_path: Path, activity_id: int) -> None:
+    """Only four kilometres held; the other ten came apart."""
+    _seed_collapsing_splits(db_path, activity_id, held_until=4)
+
+
+def _seed_collapsing_splits(
+    db_path: Path, activity_id: int, *, held_until: int = 8
+) -> None:
+    """``held_until`` kilometres at 6:00/km, then the rest at 11:40/km."""
     conn = duckdb.connect(str(db_path))
     try:
         conn.execute("DELETE FROM splits WHERE activity_id = ?", [activity_id])
         for index in range(1, _LONG_SPLITS + 1):
-            collapsed = index > 8
+            collapsed = index > held_until
             pace = 700.0 if collapsed else 360.0
             conn.execute(
                 """
@@ -213,3 +220,51 @@ def test_report_marks_a_run_that_missed_its_purpose(reader_db_path: Path) -> Non
     assert breakdown["policy"]["verdict"] == "concern"
     assert report["headline"]["flag_labels"][0] == breakdown["label_ja"]
     json.dumps(report)
+
+
+@pytest.mark.integration
+def test_next_run_target_uses_the_pace_the_run_held(reader_db_path: Path) -> None:
+    """The next run's reference pace comes from the part that held (#1341).
+
+    The whole-run average here is 6:25/km because six kilometres were spent
+    at 11:40/km; the athlete's easy pace is the 6:00/km they ran for eight.
+    """
+    _seed_history(reader_db_path)
+    _seed_run(
+        reader_db_path,
+        activity_id=ACTIVITY_ID,
+        activity_date=TODAY,
+        distance_km=float(_LONG_SPLITS),
+        duration_s=7200,
+    )
+    _seed_collapsing_splits(reader_db_path, ACTIVITY_ID)
+
+    report = _report(reader_db_path)
+
+    assert report is not None
+    target = report["next_run_target"]
+    assert target["reference_pace_low_formatted"] == "5:55/km"
+    assert target["reference_pace_high_formatted"] == "6:05/km"
+
+
+@pytest.mark.integration
+def test_next_run_target_drops_pace_when_purpose_missed(reader_db_path: Path) -> None:
+    """Under half the run held: there is no pace to repeat, only a HR range."""
+    _seed_history(reader_db_path)
+    _seed_run(
+        reader_db_path,
+        activity_id=ACTIVITY_ID,
+        activity_date=TODAY,
+        distance_km=float(_LONG_SPLITS),
+        duration_s=7200,
+    )
+    _seed_mostly_collapsed_splits(reader_db_path, ACTIVITY_ID)
+
+    report = _report(reader_db_path)
+
+    assert report is not None
+    target = report["next_run_target"]
+    assert report["purpose"]["outcome"]["sustained_share"] < 0.5
+    assert not [key for key in target if key.startswith("reference_pace")]
+    assert target["target_hr_low"] > 0
+    assert target["target_hr_high"] > 0
