@@ -716,6 +716,21 @@ describe("RunFlow scene list", () => {
     expect(rows[2]).toHaveTextContent("1本目");
   });
 
+  it("labels strides scene", () => {
+    // A strides scene without a label of its own falls back to its kind's
+    // Japanese name, never the bare "strides" key (#1298).
+    renderFlow(
+      STEADY_FLOW,
+      [moment("m1", "strides", [3, 4], { unit: "step", label_ja: "" })],
+      [],
+    );
+
+    const rows = screen.getAllByRole("listitem");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent("流し");
+    expect(rows[0]).not.toHaveTextContent("strides");
+  });
+
   it("keeps a scene the coach did not write about", () => {
     renderFlow(STEADY_FLOW, MOMENTS, [TIMELINE[0]]);
 

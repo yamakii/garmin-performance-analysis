@@ -115,6 +115,26 @@ describe("DayCell", () => {
     expect(screen.getByText("HRV が2夜連続で基準割れ。")).toBeInTheDocument();
   });
 
+  it("shows strides add-on", () => {
+    // An easy run with strides states the add-on after its target (#1298).
+    render(
+      <DayCell
+        day={day({
+          prescriptions: [
+            prescription({
+              target_km: null,
+              target_minutes: 35,
+              strides: { reps: 4, run_seconds: 20, recovery_seconds: 60 },
+            }),
+          ],
+        })}
+      />,
+    );
+
+    expect(cell()).toHaveTextContent("流し4本");
+    expect(screen.getByText("35分 ≤145 ＋流し4本")).toBeInTheDocument();
+  });
+
   it("marks today with an accent tint and a TODAY tag", () => {
     render(<DayCell day={day()} isToday />);
 

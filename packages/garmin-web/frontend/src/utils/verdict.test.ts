@@ -84,6 +84,19 @@ describe("homeVerdict", () => {
     ).toBe("今日はイージー 10km。");
   });
 
+  it("states the strides add-on of an easy run", () => {
+    expect(
+      homeVerdict(
+        status("quality"),
+        prescription({
+          target_km: null,
+          target_minutes: 35,
+          strides: { reps: 4 },
+        }),
+      ).rest,
+    ).toBe("今日はイージー 35分＋流し4本、心拍 145 以下。");
+  });
+
   it("says 休養日 for a prescribed rest day", () => {
     expect(
       homeVerdict(

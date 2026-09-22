@@ -132,6 +132,33 @@ describe("PlanCheck", () => {
     expect(screen.getByText("超過なし")).toBeInTheDocument();
   });
 
+  it("renders strides axis label", () => {
+    render(
+      <PlanCheck
+        plan={{
+          ...PLAN,
+          checks: [
+            ...PLAN.checks,
+            {
+              axis: "strides",
+              target: "4本",
+              actual: "4本",
+              status: "on_plan",
+              on_plan: true,
+            },
+          ],
+        }}
+      />,
+    );
+
+    const row = screen.getByRole("group", { name: "流し" });
+    expect(within(row).getByText("流し")).toBeInTheDocument();
+    expect(within(row).getAllByText("4本")).toHaveLength(2);
+    // Only the ceiling row carries the over-ceiling bar: stride HR peaks are
+    // not an excursion.
+    expect(within(row).queryByText(/超過/)).toBeNull();
+  });
+
   it("test_format_over_time_reads_as_a_length", () => {
     // A length of time, not a clock reading: "00:02" looks like a timestamp.
     expect(formatOverTime(321)).toBe("5:21");

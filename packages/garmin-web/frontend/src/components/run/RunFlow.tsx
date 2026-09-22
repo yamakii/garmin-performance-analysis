@@ -50,6 +50,7 @@ const KIND_LABELS: Record<string, string> = {
   work_set: "本編",
   main: "本編",
   cooldown: "クールダウン",
+  strides: "流し",
 };
 
 const GRID_SIDES = { left: 56, right: 16 } as const;

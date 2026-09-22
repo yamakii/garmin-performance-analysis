@@ -71,6 +71,7 @@ model: sonnet
 | evidence | 解決先 |
 |----------|--------|
 | `plan.<axis>` | `REPORT.plan.checks[].axis`（処方が無いランでは使用不可） |
+| `plan.strides` | `REPORT.plan.checks` の流しの行（処方に流しがあるときだけ存在。`target` / `actual` は「4本」） |
 | `signals.<metric>` | `REPORT.signals[].metric` |
 | `moments.<id>` | `REPORT.moments[].id` |
 | `recurrence.<kind>` | `REPORT.recurrence[].kind` |
@@ -118,6 +119,7 @@ model: sonnet
 | `step` | `rep` | 上記 + `pace_vs_first_s`（1本目との差）, `max_hr_vs_first` |
 | `step` | `rest` | 上記 + `hr_drop_bpm`（直前のレップ最大心拍からの下がり幅） |
 | `step` | `work_set` | `reps[]` / `rests[]`（各 `label_ja` と数値）, `first_vs_last_s`, `pace_spread_s` |
+| `step` | `strides` | `reps`, `fastest_pace_s_per_km`, `median_pace_s_per_km`, `median_cadence_spm`, `peak_hr`, `hr_at_next_start[]`（各流しの後のジョグ平均心拍＝次の1本の入りの心拍） |
 
 ### 5.3 レップ練（`REPORT.flow.axis == "time"`）
 
@@ -130,6 +132,20 @@ model: sonnet
 
 - 書くのは**ビルドの形**: どのステップが順番から外れたか、どこで一番大きく上げたか。
 - `per_km` を頭から並べない。全 km の列挙は表の再掲であり「唯一のテスト」を通らない。
+
+### 5.5 `strides` シーン（イージー走の中の流し）
+
+流しは数十秒の「力まずに速く」走る神経筋の刺激で、流しとその間のジョグ全体が**1つの `strides` シーン**
+（`label_ja` は「流し（4本）」）になっている。契約の `evaluation_policy.strides` に従う。
+
+- **timeline は1件**で、セット全体として語る: 本数どおりか（`plan.strides`）、力まずにスピードが出たか
+  （`fastest_pace_s_per_km` / `median_pace_s_per_km` / `median_cadence_spm`）、次の1本の前に心拍が
+  戻ったか（`hr_at_next_start`）。1本ずつペースと心拍を並べない。
+- **流しとその直後のジョグの心拍（`peak_hr` など）は上限超えではない**。心拍上限の逸脱として notes /
+  growth_points / timeline に書かず、「心拍が上がった」こと自体を課題にもしない。心拍上限で読むのは
+  流しの外のイージー部分だけである。
+- 課題（growth point）の条件は変わらない: **範囲外かつ不利なシグナル**か、**off-plan の軸**だけ。
+  流しを途中で省いた（`plan.strides` が `short` / `missing`）ときは、その軸を根拠にしてよい。
 
 ## 6. Next challenge（次に走るセッションに向けて書く）
 

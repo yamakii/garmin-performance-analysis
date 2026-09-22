@@ -1,5 +1,5 @@
 import type { TrendNarration } from "../api/trends";
-import { sessionLabel } from "../components/plan/DayCell";
+import { sessionLabel, stridesSummary } from "../components/plan/DayCell";
 import {
   RECOMMENDATION_LABELS,
   RECOVERY_STATE_LABELS,
@@ -46,7 +46,10 @@ function kmText(km: number): string {
   return `${Number.isInteger(km) ? String(km) : km.toFixed(1)}km`;
 }
 
-/** "イージー 10km、心拍 145 以下。" — what the prescription asks for. */
+/**
+ * "イージー 10km、心拍 145 以下。" / "イージー 35分＋流し4本、心拍 145 以下。" —
+ * what the prescription asks for.
+ */
 function prescriptionText(prescription: Prescription): string {
   if (prescription.session_type === "rest") {
     return "今日は休養日。";
@@ -57,7 +60,7 @@ function prescriptionText(prescription: Prescription): string {
   } else if (prescription.target_minutes != null) {
     parts.push(`${Math.round(prescription.target_minutes)}分`);
   }
-  const session = parts.join(" ");
+  const session = parts.join(" ") + stridesSummary(prescription.strides);
   return prescription.hr_high != null
     ? `今日は${session}、心拍 ${prescription.hr_high} 以下。`
     : `今日は${session}。`;

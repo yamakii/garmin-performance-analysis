@@ -856,6 +856,13 @@ export type PrescriptionStatus =
   | "replaced"
   | "skipped";
 
+/** The strides add-on of an easy prescription (`weekly_prescriptions.strides`). */
+export interface PrescriptionStrides {
+  reps: number;
+  run_seconds?: number | null;
+  recovery_seconds?: number | null;
+}
+
 export interface Prescription {
   prescription_id: number;
   session_type: string;
@@ -863,6 +870,8 @@ export interface Prescription {
   target_km: number | null;
   target_minutes: number | null;
   hr_high: number | null;
+  /** Strides riding on an easy row (#1294); null / absent when there are none. */
+  strides?: PrescriptionStrides | null;
   /** Coach verdict of the prescribed session (✅ / 🟡 / 🔴), the canonical one. */
   rating?: string | null;
   /** The coach's one-line comment on the session. */

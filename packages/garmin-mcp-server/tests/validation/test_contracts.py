@@ -66,6 +66,7 @@ def test_contract_run_note_lists_prose_roles():
     # Every evidence prefix the grounding guard resolves is documented.
     assert set(contract["evidence_keys"]) == {
         "plan.<axis>",
+        "plan.strides",
         "signals.<metric>",
         "moments.<id>",
         "recurrence.<kind>",
@@ -120,3 +121,36 @@ def test_contract_run_note_scenes_referenced_by_label():
     # Placing a scene by a lap number is called out as forbidden.
     assert any("lap" in rule and "label_ja" in rule for rule in contract["never_write"])
     assert any("label_ja" in line for line in contract["instructions"])
+
+
+@pytest.mark.unit
+def test_contract_describes_strides_scene():
+    """The strides scene and the strides plan axis are documented (#1298)."""
+    contract = get_contract("run_note")
+
+    timeline = contract["evaluation_policy"]["timeline"]
+    assert "strides" in timeline
+    assert "plan.strides" in contract["evidence_keys"]
+
+    policy = contract["evaluation_policy"]["strides"]
+    assert policy["kind"] == "strides"
+    assert policy["evidence"] == "moments.<id>"
+    assert policy["judge_by"] == ["reps", "relaxed_speed", "recovered_before_next"]
+    # The facts the set is judged from are the ones the strides scene carries.
+    for fact in ("fastest_pace_s_per_km", "hr_at_next_start", "peak_hr"):
+        assert fact in policy["description"]
+
+
+@pytest.mark.unit
+def test_contract_strides_not_ceiling_excursion():
+    """Stride HR peaks are the set doing its job, not an HR-ceiling breach."""
+    contract = get_contract("run_note")
+
+    assert contract["evaluation_policy"]["strides"]["never"] == "ceiling_excursion"
+    rule = next(
+        line for line in contract["instructions"] if "neuromuscular" in line.lower()
+    )
+    assert "ceiling excursion" in rule
+    assert "stride or recovery HR" in rule
+    assert "relaxed speed" in rule
+    assert "HR came back before the next rep" in rule
