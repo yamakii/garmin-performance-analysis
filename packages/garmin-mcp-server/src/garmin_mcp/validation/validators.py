@@ -45,6 +45,17 @@ _RUN_NOTE_LIST_CAPS: dict[str, tuple[int, int]] = {
 # but favourable signal is a strength, never a growth point.
 _SIGNAL_OUTSIDE_STATUS = "outside"
 
+# The moment policy verdict that may carry a growth point (#1314): a scene that
+# deviates from what the run was *for*. ``acceptable`` / ``neutral`` scenes are
+# description, not weaknesses.
+_MOMENT_CONCERN = "concern"
+
+# Evidence sources that give a growth point its background but can never be
+# the weakness itself.
+_GROWTH_POINT_BACKGROUND_PREFIXES: frozenset[str] = frozenset(
+    {"recurrence", "vs_previous", "conditions", "context"}
+)
+
 
 def _is_adverse_outlier(signal: Mapping[str, Any]) -> bool:
     """True when a signal is both outside its normal range and adverse."""
@@ -132,16 +143,35 @@ def _evidence_error(
 def _growth_point_error(
     evidence: str,
     signals: Mapping[str, Mapping[str, Any]],
+    moments: Mapping[str, Mapping[str, Any]],
     checks: Mapping[str, Mapping[str, Any]] | None,
 ) -> str | None:
-    """Reject a growth point built on a normal signal or an on-plan axis.
+    """Reject a growth point that does not rest on a real deviation.
+
+    A growth point may rest only on an outside-and-adverse signal, an off-plan
+    axis or a moment the purpose policy judged a ``concern`` (#1314).
+    Background sources -- recurrence, the previous run, conditions, context --
+    explain a weakness but never are one.
 
     ``evidence`` has already been resolved by :func:`_evidence_error`, so the
-    referenced signal / check is known to exist.
+    referenced signal / moment / check is known to exist.
     """
     prefix, key = evidence.split(".", 1)
 
-    if prefix == "signals":
+    if prefix in _GROWTH_POINT_BACKGROUND_PREFIXES:
+        return (
+            f"growth point evidence '{evidence}' is background ({prefix}.*); a "
+            "growth point must rest on signals.*, plan.* or a concern moment"
+        )
+    if prefix == "moments":
+        verdict = (moments[key].get("policy") or {}).get("verdict")
+        if verdict != _MOMENT_CONCERN:
+            return (
+                f"growth point evidence '{evidence}' rests on a moment with "
+                f"policy.verdict={verdict!r}; only a moment the run's purpose "
+                "judges a 'concern' can be a growth point"
+            )
+    elif prefix == "signals":
         signal = signals[key]
         if not _is_adverse_outlier(signal):
             return (
@@ -174,7 +204,10 @@ def check_run_note_grounding(
        ``context.<field>`` against :data:`CONTEXT_EVIDENCE_KEYS`);
     2. a growth point rests on a signal that is not both ``outside`` and
        ``adverse`` (a within-range or favourable value is not a weakness);
-    3. a growth point names a plan axis that came out ``on_plan``;
+    3. a growth point names a plan axis that came out ``on_plan``, a moment
+       whose purpose ``policy.verdict`` is not ``concern``, or a background
+       source (``recurrence`` / ``vs_previous`` / ``conditions`` /
+       ``context``) -- #1314;
     4. a ``timeline`` item names an unknown moment, or there are more timeline
        items than the report has moments (an invented scene);
     5. a note explains a signal that is not an adverse outlier, or an adverse
@@ -212,7 +245,7 @@ def check_run_note_grounding(
             if error:
                 return False, f"{field}: {error}"
             if field == "growth_points":
-                error = _growth_point_error(str(evidence), signals, checks)
+                error = _growth_point_error(str(evidence), signals, moments, checks)
                 if error:
                     return False, error
 

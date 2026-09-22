@@ -18,6 +18,8 @@ steps, flow series, axis   ``analysis.run_moments`` (``build_flow``)
 plan verdict               ``analysis.derivations.compute_prescription_verdict``
 steady seconds, ceiling    ``analysis.hr_windows``
 time, judged share
+run purpose                ``analysis.run_purpose`` (``resolve_purpose``)
+scene verdict per purpose  ``analysis.run_policy`` (``apply_policy``)
 delta chips, next target   ``analysis.derivations`` (``compute_vs_previous`` …)
 intensity family           ``database.inserters.hr_efficiency``
 expected HR                ``rag.queries.heat_adjustment.HeatAdjustmentModel``
@@ -52,6 +54,7 @@ from garmin_mcp.analysis.derivations import (
     compute_next_run_target,
     compute_prescription_verdict,
     compute_vs_previous,
+    detect_progression_session,
     intensity_class,
     select_prescription_for_run,
 )
@@ -69,10 +72,13 @@ from garmin_mcp.analysis.run_moments import (
     detect_moments,
     detect_recurrence,
 )
+from garmin_mcp.analysis.run_policy import apply_policy
+from garmin_mcp.analysis.run_purpose import resolve_purpose
 from garmin_mcp.database.inserters.hr_efficiency import resolve_intensity_category
 from garmin_mcp.database.readers.base import BaseDBReader
 from garmin_mcp.form_baseline.scorer import extrapolation_factor
 from garmin_mcp.form_baseline.split_filter import (
+    MIN_SPLIT_KM,
     running_split_params,
     running_split_sql,
 )
@@ -172,6 +178,9 @@ _FORM_METRICS: tuple[str, ...] = ("gct", "vo", "vr", "cadence")
 _BASELINE_USER_ID = "default"
 _BASELINE_CONDITION_GROUP = "flat_road"
 
+# Whose ``athlete_goals`` decide whether the run was on a goal race day.
+_GOAL_USER_ID = "default"
+
 # How far ahead a scheduled session is still "what is next" (#1273). Two weeks
 # covers the current week plus the next one the plan has been written for.
 _NEXT_SESSION_HORIZON_DAYS = 14
@@ -200,10 +209,12 @@ class RunReportReader(BaseDBReader):
         Returns:
             ``None`` when the activity does not exist. Otherwise a dict with
             ``activity_id``, ``activity_date``, ``intensity_category``,
+            ``purpose`` (``{"id", "label_ja", "source"}``, #1314),
             ``headline``, ``plan``, ``judged_share`` (``{"hr", "form"}``: the
             share of the run's time the HR ceiling / the form signals were
             judged on, ``None`` without a time series), ``signals``, ``zones``,
-            ``moments``,
+            ``moments`` (each with ``policy = {"verdict", "reason"}`` judged
+            against the purpose),
             ``flow``, ``recurrence``, ``phases``, ``conditions``,
             ``vs_previous``, ``next_run_target`` and ``next_session`` (see the
             module docstring for who computes what). Every value is
@@ -251,6 +262,7 @@ class RunReportReader(BaseDBReader):
                 if "time_series_metrics" in tables
                 else []
             )
+            identity = _fetch_run_identity(conn, tables, activity_id, activity_date)
 
         prescription = self._load_prescription(activity_date)
         hr_ceiling_bpm = _as_int(prescription.get("hr_high")) if prescription else None
@@ -276,6 +288,12 @@ class RunReportReader(BaseDBReader):
         moments = detect_moments(
             today_splits, hr_ceiling=hr_ceiling_bpm, prescription=prescription
         )
+        purpose = resolve_purpose(
+            prescription, _purpose_facts(today, today_splits, moments, identity)
+        )
+        # The verdicts are added on top of detection; recurrence (below) still
+        # reads the purpose-blind scenes, so a habit is found whatever it means.
+        judged_moments = apply_policy(moments, purpose.id, _allowances(prescription))
         recurrence = detect_recurrence(
             moments,
             [
@@ -301,7 +319,12 @@ class RunReportReader(BaseDBReader):
             "activity_id": int(activity_id),
             "activity_date": activity_date,
             "intensity_category": str(today.get("intensity_category") or "unknown"),
-            "headline": _headline(verdict, signals),
+            "purpose": {
+                "id": purpose.id,
+                "label_ja": purpose.label_ja,
+                "source": purpose.source,
+            },
+            "headline": _headline(verdict, signals, judged_moments),
             "plan": _plan_block(
                 prescription,
                 verdict,
@@ -315,7 +338,7 @@ class RunReportReader(BaseDBReader):
             "judged_share": shares,
             "signals": signals,
             "zones": _zones(zone_rows),
-            "moments": moments,
+            "moments": judged_moments,
             "flow": build_flow(today_splits),
             "recurrence": recurrence,
             "phases": _phases(today),
@@ -500,6 +523,32 @@ def _fetch_activity(conn: Any, activity_id: int) -> dict[str, Any] | None:
         [activity_id],
     ).fetchone()
     return None if row is None else _activity_row(row)
+
+
+def _fetch_run_identity(
+    conn: Any, tables: set[str], activity_id: int, activity_date: str
+) -> dict[str, Any]:
+    """The two facts the purpose inference needs beyond the window rows.
+
+    ``activity_name`` (a race is often only named as one) and whether the day
+    is a goal race day in ``athlete_goals``. Either degrades to "unknown" on a
+    database without the column / table.
+    """
+    identity: dict[str, Any] = {"activity_name": None, "is_goal_race_day": False}
+    if _has_column(conn, "activities", "activity_name"):
+        row = conn.execute(
+            "SELECT activity_name FROM activities WHERE activity_id = ?",
+            [activity_id],
+        ).fetchone()
+        identity["activity_name"] = None if row is None else row[0]
+    if "athlete_goals" in tables:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM athlete_goals "
+            "WHERE user_id = ? AND race_date = CAST(? AS DATE)",
+            [_GOAL_USER_ID, activity_date],
+        ).fetchone()
+        identity["is_goal_race_day"] = bool(row and row[0])
+    return identity
 
 
 def _fetch_window(
@@ -984,9 +1033,16 @@ def _history_before(
 
 
 def _headline(
-    verdict: dict[str, Any] | None, signals: list[dict[str, Any]]
+    verdict: dict[str, Any] | None,
+    signals: list[dict[str, Any]],
+    moments: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
-    """The one line above the fold: plan label plus the adverse signals."""
+    """The one line above the fold: plan label, adverse signals, concern scenes.
+
+    A scene is flagged only when the purpose policy (#1314) calls it a
+    ``concern``: a walk break on an aerobic long run is not news, the same
+    break on a goal-pace rehearsal is.
+    """
     label = NO_PLAN_LABEL
     if verdict is not None:
         label = _VERDICT_LABELS.get(str(verdict.get("verdict")), NO_PLAN_LABEL)
@@ -996,7 +1052,66 @@ def _headline(
         for signal in signals
         if signal.get("adverse") and signal["metric"] in _ADVERSE_FLAG_LABELS
     ]
+    flags.extend(
+        str(moment["label_ja"])
+        for moment in moments
+        if (moment.get("policy") or {}).get("verdict") == "concern"
+        and moment.get("label_ja")
+    )
     return {"plan_label": label, "flag_count": len(flags), "flag_labels": flags}
+
+
+def _allowances(prescription: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """The prescription's ``allowances`` object, decoded when stored as JSON."""
+    if prescription is None:
+        return None
+    allowances = prescription.get("allowances")
+    if isinstance(allowances, str):
+        try:
+            allowances = json.loads(allowances)
+        except ValueError:
+            return None
+    return dict(allowances) if isinstance(allowances, Mapping) else None
+
+
+# Scene kinds that only a rep session produces.
+_REP_SCENE_KINDS: frozenset[str] = frozenset({"rep", "work_set"})
+
+
+def _purpose_facts(
+    today: Mapping[str, Any],
+    splits: Sequence[Mapping[str, Any]],
+    moments: Sequence[Mapping[str, Any]],
+    identity: Mapping[str, Any],
+) -> dict[str, Any]:
+    """The facts ``resolve_purpose`` infers an unprescribed run's purpose from.
+
+    Every value comes from rows already loaded for the report; nothing here
+    queries the database.
+    """
+    category = today.get("intensity_category")
+    run_splits = [
+        {
+            "avg_heart_rate": split.get("avg_hr"),
+            "avg_pace_seconds_per_km": split.get("pace_s_per_km"),
+        }
+        for split in splits
+        if str(split.get("role_phase") or "run").strip().lower() == "run"
+        # Fragments are lap-button / GPS slivers, not a kilometre of a build-up.
+        and (_as_float(split.get("distance_km")) or 0.0) >= MIN_SPLIT_KM
+    ]
+    return {
+        "activity_name": identity.get("activity_name"),
+        "moving_minutes": _as_float(today.get("duration_min")),
+        "intensity_class": intensity_class(today.get("training_type"))
+        or intensity_class(category if category != "unknown" else None),
+        "intensity_category": category if category != "unknown" else None,
+        "has_rep_structure": any(
+            moment.get("kind") in _REP_SCENE_KINDS for moment in moments
+        ),
+        "is_progression": detect_progression_session(None, run_splits),
+        "is_goal_race_day": bool(identity.get("is_goal_race_day")),
+    }
 
 
 def _plan_block(

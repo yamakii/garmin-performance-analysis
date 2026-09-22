@@ -44,6 +44,7 @@ def test_run_report_shape_and_json(reader_db_path: Path) -> None:
         "activity_id",
         "activity_date",
         "intensity_category",
+        "purpose",
         "headline",
         "plan",
         "judged_share",

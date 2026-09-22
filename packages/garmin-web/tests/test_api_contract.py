@@ -121,6 +121,7 @@ _RUN_REPORT_KEYS = {
     "activity_id",
     "activity_date",
     "intensity_category",
+    "purpose",
     "headline",
     "plan",
     "judged_share",
@@ -136,6 +137,8 @@ _RUN_REPORT_KEYS = {
     "next_session",
 }
 _HEADLINE_KEYS = {"plan_label", "flag_count", "flag_labels"}
+# What the run was for and where that came from (#1314).
+_PURPOSE_KEYS = {"id", "label_ja", "source"}
 _CONDITIONS_KEYS = {
     "temp_c",
     "humidity_pct",
@@ -348,6 +351,7 @@ def test_run_report_response_contract(detail_db_path: Any) -> None:
 
     assert set(report) == _RUN_REPORT_KEYS
     _assert_keys_present(report["headline"], _HEADLINE_KEYS, "RunReport.headline")
+    _assert_keys_present(report["purpose"], _PURPOSE_KEYS, "RunReport.purpose")
     _assert_keys_present(report["conditions"], _CONDITIONS_KEYS, "RunReport.conditions")
     _assert_keys_present(report["flow"], _FLOW_KEYS, "RunReport.flow")
     for block in ("signals", "zones", "moments", "recurrence", "phases"):
