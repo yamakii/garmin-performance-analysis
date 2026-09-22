@@ -189,6 +189,11 @@ _GOAL_USER_ID = "default"
 # covers the current week plus the next one the plan has been written for.
 _NEXT_SESSION_HORIZON_DAYS = 14
 
+# Share of a run that has to have delivered its purpose before its pace may be
+# quoted back as the next run's reference (#1341). Under half, the run has no
+# pace worth repeating and the target is written in heart rate alone.
+SUSTAINED_SHARE_MIN = 0.5
+
 # Terrain bands in metres of gain per km, matching the table the analysis
 # contract states to the agents (flat <10 / undulating 10-30 / hilly 30-50 /
 # mountainous >50). A single big up-and-down promotes an otherwise "flat"
@@ -347,7 +352,7 @@ class RunReportReader(BaseDBReader):
         )
 
         next_run_target = self._next_run_target(
-            activity_id, today, zone_rows, prescription
+            activity_id, today, zone_rows, prescription, outcome
         )
 
         return {
@@ -463,12 +468,21 @@ class RunReportReader(BaseDBReader):
         today: dict[str, Any],
         zone_rows: list[tuple[Any, ...]],
         prescription: dict[str, Any] | None,
+        outcome: Outcome | None = None,
     ) -> dict[str, Any] | None:
         """The deterministic numeric core of the next run's target, or ``None``.
 
         Reuses ``compute_next_run_target`` with the physiology the target's
         family needs (vVO2max for intervals, LT speed for tempo, the Garmin
         native zones for easy runs).
+
+        The easy family's reference pace is built from a pace this run ran, so
+        it has to be the pace of the part that was **doing what the run was
+        for** (#1341). The whole-run average includes the walking and the
+        stretch the run came apart in, and told the athlete to start their
+        next easy run minutes per kilometre slower than they actually run it.
+        Below :data:`SUSTAINED_SHARE_MIN` there is no such pace to quote, and
+        the target stands on its heart-rate range alone.
         """
         from garmin_mcp.database.readers.physiology import PhysiologyReader
 
@@ -487,7 +501,7 @@ class RunReportReader(BaseDBReader):
                 vo2_max,
                 lactate_threshold,
                 _as_int(today.get("avg_hr")),
-                _as_float(today.get("avg_pace_seconds_per_km")),
+                _reference_pace(today, outcome),
                 _zones_detail(zone_rows),
                 prescription,
             )
@@ -1124,6 +1138,21 @@ def _headline(
         if moment.get("kind") != "breakdown"
     )
     return {"plan_label": label, "flag_count": len(flags), "flag_labels": flags}
+
+
+def _reference_pace(today: Mapping[str, Any], outcome: Outcome | None) -> float | None:
+    """The pace the next run's target may be built from (#1341).
+
+    The stretch that delivered the purpose when there is one, the whole-run
+    average when the purpose is not one this measure applies to (intervals, a
+    recovery jog) or the run has no splits, and nothing at all when too little
+    of the run was run as intended to quote a pace from.
+    """
+    if outcome is None:
+        return _as_float(today.get("avg_pace_seconds_per_km"))
+    if outcome.sustained_share < SUSTAINED_SHARE_MIN:
+        return None
+    return outcome.sustained_pace_s_per_km
 
 
 def _outcome_block(outcome: Outcome | None) -> dict[str, Any] | None:
