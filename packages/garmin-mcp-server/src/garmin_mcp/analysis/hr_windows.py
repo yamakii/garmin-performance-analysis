@@ -27,9 +27,16 @@ event                     detected from
 
 The recovery ends at the first of: HR back within ``HR_RECOVERY_TOL_BPM`` of
 the pre-event baseline for ``HR_RECOVERY_HOLD_S``; a plateau of
-``HR_PLATEAU_S`` within ``HR_PLATEAU_BAND_BPM`` away from the baseline (a new
-operating point HR will not leave); ``HR_RECOVERY_CAP_S`` after the event; the
-next event's start.
+``HR_PLATEAU_S`` within ``HR_PLATEAU_BAND_BPM`` away from the baseline, when
+speed moved the same way as HR (a new operating point HR will not leave);
+``HR_RECOVERY_CAP_S`` after the event; the next event's start.
+
+A plateau alone is not a new operating point. After a stride the athlete jogs
+*slower* than before while HR sits above the baseline for a while on its way
+down; that is the recovery itself, and ending it there would hand the
+ceiling every post-stride second (#1320). Only a plateau held at a speed
+``PLATEAU_SPEED_SHIFT`` beyond the pre-event speed in the same direction as
+HR -- faster and higher, or slower and lower -- is running at a new level.
 
 Samples are plain mappings with ``timestamp_s`` and optionally
 ``heart_rate``, ``speed`` (m/s), ``cadence`` (spm, both feet),
@@ -55,6 +62,9 @@ HR_RECOVERY_HOLD_S = 10
 HR_PLATEAU_S = 20
 HR_PLATEAU_BAND_BPM = 2
 HR_RECOVERY_CAP_S = 180
+# A plateau ends the recovery only at a speed this far (as a fraction of the
+# pre-event speed) from where the athlete ran before, in HR's direction.
+PLATEAU_SPEED_SHIFT = 0.05
 
 # The pre-event baseline: median HR from 60 s to 5 s before the event starts
 # (the last 5 s are already part of the change).
@@ -239,6 +249,8 @@ def recovery_end(
     samples: Sequence[Mapping[str, Any]],
     event: Event,
     next_event_start: float | None,
+    *,
+    baselines: tuple[float | None, float | None] | None = None,
 ) -> float:
     """When heart rate has absorbed ``event``, read off the HR trace.
 
@@ -247,6 +259,9 @@ def recovery_end(
         event: The load change to recover from.
         next_event_start: Where the next event starts (its own window takes
             over there), or ``None`` for the last event.
+        baselines: ``(hr, speed)`` to recover to, when the caller knows them
+            better than the 60 s before this event -- see
+            :func:`event_baselines`. ``None`` reads them before the event.
 
     Returns:
         The first of: the start of a ``HR_RECOVERY_HOLD_S`` hold within
@@ -262,7 +277,12 @@ def recovery_end(
         return event.end_s
 
     series = _hr_series(samples)
-    baseline = _baseline(series, event.start_s)
+    speeds = _speed_series(samples)
+    if baselines is None:
+        baseline = _baseline(series, event.start_s)
+        baseline_speed = _baseline(speeds, event.start_s)
+    else:
+        baseline, baseline_speed = baselines
     after = [(t, hr) for t, hr in series if t >= event.end_s]
 
     for index, (t, _hr) in enumerate(after):
@@ -272,7 +292,7 @@ def recovery_end(
             after, index, baseline, HR_RECOVERY_TOL_BPM, HR_RECOVERY_HOLD_S
         ):
             return t
-        if _is_plateau(after, index, baseline):
+        if _is_new_level(after, index, baseline, speeds, baseline_speed):
             return t
     return limit
 
@@ -280,7 +300,8 @@ def recovery_end(
 def _baseline(
     series: Sequence[tuple[float, float]], event_start: float
 ) -> float | None:
-    """Median HR from ``BASELINE_FROM_S`` to ``BASELINE_TO_S`` before the event."""
+    """Median value (HR or speed) from ``BASELINE_FROM_S`` to ``BASELINE_TO_S``
+    before the event."""
     values = [
         hr
         for t, hr in series
@@ -323,22 +344,40 @@ def _holds_near(
     return all(abs(hr - centre) <= tolerance for hr in values)
 
 
-def _is_plateau(
-    series: Sequence[tuple[float, float]], index: int, baseline: float | None
+def _is_new_level(
+    series: Sequence[tuple[float, float]],
+    index: int,
+    baseline: float | None,
+    speeds: Sequence[tuple[float, float]],
+    baseline_speed: float | None,
 ) -> bool:
-    """A new operating point: ``HR_PLATEAU_S`` flat, away from the baseline.
+    """A new operating point: HR flat away from the baseline, speed moved too.
 
-    A flat stretch *at* the baseline is the return itself and is left to the
-    hold rule, so the plateau only ever ends a recovery that will not return.
+    ``HR_PLATEAU_S`` of HR within ``HR_PLATEAU_BAND_BPM``, away from the
+    baseline, is only half of it: HR also sits flat and high on a slow jog
+    while it is still coming down from a stride. The plateau counts only when
+    the speed over the same window moved ``PLATEAU_SPEED_SHIFT`` from the
+    pre-event speed in HR's direction. Without a baseline or speed to compare
+    against the plateau cannot be told from a recovery, so it does not count --
+    the hold rule, the cap or the next event ends the recovery instead.
+    A flat stretch *at* the baseline is the return itself (the hold rule).
     """
+    if baseline is None or baseline_speed is None or baseline_speed <= 0:
+        return False
     values = _window(series, index, HR_PLATEAU_S)
-    if not values:
+    if not values or max(values) - min(values) > 2 * HR_PLATEAU_BAND_BPM:
         return False
-    if max(values) - min(values) > 2 * HR_PLATEAU_BAND_BPM:
+    shift = float(median(values)) - baseline
+    if abs(shift) <= HR_RECOVERY_TOL_BPM:
         return False
-    if baseline is None:
-        return True
-    return abs(float(median(values)) - baseline) > HR_RECOVERY_TOL_BPM
+    start = series[index][0]
+    window_speeds = [speed for t, speed in speeds if start <= t < start + HR_PLATEAU_S]
+    if not window_speeds:
+        return False
+    ratio = float(median(window_speeds)) / baseline_speed
+    if shift > 0:
+        return ratio >= 1.0 + PLATEAU_SPEED_SHIFT
+    return ratio <= 1.0 - PLATEAU_SPEED_SHIFT
 
 
 # --------------------------------------------------------------------------- #
@@ -355,18 +394,44 @@ def steady_mask(
     recovery lap is one excursion with one recovery.
     """
     spans = _merge(detect_events(samples, splits))
-    intervals = [
-        (
-            span.start_s,
-            recovery_end(
-                samples,
-                span,
-                spans[index + 1].start_s if index + 1 < len(spans) else None,
-            ),
-        )
-        for index, span in enumerate(spans)
-    ]
+    intervals: list[tuple[float, float]] = []
+    for span, baselines in zip(spans, event_baselines(samples, spans), strict=True):
+        index = len(intervals)
+        next_start = spans[index + 1].start_s if index + 1 < len(spans) else None
+        end = recovery_end(samples, span, next_start, baselines=baselines)
+        intervals.append((span.start_s, end))
     return _outside(samples, intervals)
+
+
+def event_baselines(
+    samples: Sequence[Mapping[str, Any]], spans: Sequence[Event]
+) -> list[tuple[float | None, float | None]]:
+    """The ``(hr, speed)`` each merged event has to recover to.
+
+    Normally the 60 s before the event. But when an event starts before the
+    previous one's recovery has ended -- the second of a set of strides, a
+    stop in the middle of the jog back -- those 60 s are that recovery, not
+    steady running: HR still 153 after a stride would make 156 after the next
+    one look "recovered" at once (#1320). Such an event inherits the previous
+    event's baseline, so a chain of events recovers to the steady running
+    before its first one.
+    """
+    series = _hr_series(samples)
+    speeds = _speed_series(samples)
+    result: list[tuple[float | None, float | None]] = []
+    for index, span in enumerate(spans):
+        own = (_baseline(series, span.start_s), _baseline(speeds, span.start_s))
+        if index == 0:
+            result.append(own)
+            continue
+        previous = spans[index - 1]
+        inherited = result[-1]
+        # Recovery of the previous event, cut by this one if it had not ended.
+        previous_end = recovery_end(
+            samples, previous, span.start_s, baselines=inherited
+        )
+        result.append(inherited if previous_end >= span.start_s else own)
+    return result
 
 
 def event_mask(
@@ -439,6 +504,51 @@ def masked_mean_hr(
     return round(weighted / total, 1)
 
 
+def masked_split_hr(
+    samples: Sequence[Mapping[str, Any]],
+    mask: Sequence[bool],
+    splits: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Copies of ``splits`` whose ``avg_hr`` / ``max_hr`` read steady seconds only.
+
+    A kilometre's average HR mixes whatever happened in it: a stride and the
+    jog HR still coming down from it lift a 144 bpm kilometre to 151, and a
+    ceiling touch detected on that average would be the stride again (#1320).
+    Each split is re-read over the samples the mask keeps inside its
+    ``[start_s, end_s)``: ``avg_hr`` time-weighted, ``max_hr`` the peak. A split
+    with no kept sample gets ``None`` for both (nothing steady to judge); a
+    split without timing is copied unchanged.
+    """
+    weights = _weights(samples)
+    kept = [
+        (_time(sample), hr, weight)
+        for sample, weight, keep in zip(samples, weights, mask, strict=False)
+        if keep and (hr := _num(sample.get("heart_rate"))) is not None
+    ]
+    times = [t for t, _hr, _w in kept]
+
+    result: list[dict[str, Any]] = []
+    for split in splits:
+        start = _num(split.get("start_s"))
+        end = _num(split.get("end_s"))
+        copy = dict(split)
+        if start is None or end is None:
+            result.append(copy)
+            continue
+        inside = kept[bisect.bisect_left(times, start) : bisect.bisect_left(times, end)]
+        total = sum(weight for _t, _hr, weight in inside)
+        if total <= 0:
+            copy["avg_hr"] = None
+            copy["max_hr"] = None
+        else:
+            copy["avg_hr"] = round(
+                sum(hr * weight for _t, hr, weight in inside) / total, 1
+            )
+            copy["max_hr"] = max(hr for _t, hr, _w in inside)
+        result.append(copy)
+    return result
+
+
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
@@ -500,6 +610,17 @@ def _hr_series(samples: Sequence[Mapping[str, Any]]) -> list[tuple[float, float]
         (_time(sample), hr)
         for sample in samples
         if (hr := _num(sample.get("heart_rate"))) is not None
+    ]
+
+
+def _speed_series(
+    samples: Sequence[Mapping[str, Any]],
+) -> list[tuple[float, float]]:
+    """``(t, speed)`` of every moving sample (a stop says nothing of pace)."""
+    return [
+        (_time(sample), speed)
+        for sample in samples
+        if (speed := _num(sample.get("speed"))) is not None and speed > STOP_SPEED_MPS
     ]
 
 

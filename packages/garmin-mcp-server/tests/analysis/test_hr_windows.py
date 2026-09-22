@@ -15,6 +15,7 @@ from garmin_mcp.analysis.hr_windows import (
     HR_RECOVERY_CAP_S,
     Event,
     judged_share,
+    masked_split_hr,
     recovery_end,
     seconds_over,
     steady_mask,
@@ -74,7 +75,8 @@ def test_recovery_end_returns_to_baseline() -> None:
 
 @pytest.mark.unit
 def test_recovery_end_plateau_new_level() -> None:
-    """HR settles at 155 +-1 after a burst: the plateau start ends it."""
+    """A surge that becomes the new pace: HR settles at 155 +-1 while speed
+    holds at 2.8 m/s (from 2.4) -- the plateau start ends the recovery."""
     end = 200
 
     def hr(t: int) -> float:
@@ -84,9 +86,85 @@ def test_recovery_end_plateau_new_level() -> None:
             return 170.0
         return 154.0 if t % 2 else 156.0
 
-    samples = _trace(400, hr)
+    samples = _trace(400, hr, speed=lambda t: 2.4 if t < 180 else 2.8)
 
     assert recovery_end(samples, Event("burst", 180.0, float(end)), None) == end + 10
+
+
+@pytest.mark.unit
+def test_recovery_end_plateau_ignored_when_speed_drops() -> None:
+    """After a stride HR sits at 157 +-1 for 30 s on a slower jog (1.9 m/s
+    from 2.4) and is back at 146 by +70 s: that plateau is the recovery
+    coming down, not a new level, so the recovery ends at +70 s (#1320)."""
+    end = 200
+
+    def hr(t: int) -> float:
+        if t < 180:
+            return BASELINE
+        if t < end:
+            return 165.0
+        if t < end + 30:
+            return 156.0 if t % 2 else 158.0
+        if t < end + 70:
+            # Coming down slowly: still above baseline + 3 at +69 s.
+            return 157.0 - 0.175 * (t - end - 30)
+        return 146.0
+
+    def speed(t: int) -> float:
+        if t < 180:
+            return 2.4
+        if t < end:
+            return 4.8
+        return 1.9 if t < end + 70 else 2.4
+
+    samples = _trace(400, hr, speed=speed)
+
+    assert recovery_end(samples, Event("burst", 180.0, float(end)), None) == end + 70
+
+
+@pytest.mark.unit
+def test_steady_mask_chained_strides_keep_first_baseline() -> None:
+    """Two strides 35 s apart: the second starts while HR is still ~158 from
+    the first. It recovers to the steady 145 before the first stride, not to
+    that 158, so the mask runs from the first stride to HR's return at 230
+    instead of stopping as soon as the second stride ends (#1320)."""
+
+    def hr(t: int) -> float:
+        if 100 <= t < 115 or 150 <= t < 165:
+            return 165.0
+        if 115 <= t < 150:
+            return 157.0 if t % 2 else 159.0
+        if 165 <= t < 230:
+            # Coming down from 158 to 150, still above baseline + 3.
+            return 158.0 - 0.125 * (t - 165)
+        return BASELINE if t < 100 else 146.0
+
+    def speed(t: int) -> float:
+        if 100 <= t < 115 or 150 <= t < 165:
+            return 4.8
+        return 1.9 if 115 <= t < 230 else 2.4
+
+    samples = _trace(400, hr, speed=speed)
+
+    mask = steady_mask(samples, [])
+
+    assert [t for t, keep in enumerate(mask) if not keep] == list(range(100, 230))
+
+
+@pytest.mark.unit
+def test_masked_split_hr_excludes_masked_samples() -> None:
+    """A split whose steady seconds sit at 145 and whose masked seconds sit at
+    162 reads 145 -- the masked stride never reaches the kilometre's HR."""
+    samples = _trace(100, lambda t: 162.0 if 40 <= t < 70 else BASELINE)
+    mask = [not 40 <= t < 70 for t in range(100)]
+    splits = [{"split_index": 1, "start_s": 0.0, "end_s": 100.0, "avg_hr": 150.0}]
+
+    (split,) = masked_split_hr(samples, mask, splits)
+
+    assert split["avg_hr"] == BASELINE
+    assert split["max_hr"] == BASELINE
+    # The input is left as it was.
+    assert splits[0]["avg_hr"] == 150.0
 
 
 @pytest.mark.unit

@@ -23,6 +23,7 @@ from tests.database.readers.run_report._helpers import (
     _seed_history,
     _seed_prescription,
     _seed_run,
+    _seed_splits,
     _seed_zones,
 )
 
@@ -147,3 +148,48 @@ def test_judged_share_low_marks_form_insufficient(reader_db_path: Path) -> None:
         assert "40%" in signal["reason"]
     cardio = [s for s in report["signals"] if s["family"] == "cardio"]
     assert all(s["reason_code"] != REASON_LOW_JUDGED_SHARE for s in cardio)
+
+
+@pytest.mark.integration
+def test_ceiling_touch_uses_masked_split_hr(reader_db_path: Path) -> None:
+    """A stride and its recovery lift a kilometre to 151 bpm; steady, it is 144.
+
+    Three 1 km laps at easy pace. In lap 2 a 20 s stride (500-519 s, 165 bpm)
+    is followed by 60 s of slow jog with HR flat at 158 on its way down, then
+    144. The lap table says 151 / 164 -- a ceiling touch on the averages --
+    but read over its steady seconds the kilometre is 144, and no ceiling
+    touch is a stride again (#1320).
+    """
+    _seed_easy_day(reader_db_path)
+    _seed_splits(reader_db_path, ACTIVITY_ID, [(1.0, 400.0, "run")] * 3)
+    conn = duckdb.connect(str(reader_db_path))
+    try:
+        conn.execute(
+            "UPDATE splits SET heart_rate = 151, max_heart_rate = 164 "
+            "WHERE activity_id = ? AND split_index = 2",
+            [ACTIVITY_ID],
+        )
+    finally:
+        conn.close()
+
+    def hr(t: int) -> float:
+        if 500 <= t < 520:
+            return 165.0
+        if 520 <= t < 580:
+            return 157.0 if t % 2 else 159.0
+        return 145.0 if t < 500 else 144.0
+
+    def speed(t: int) -> float:
+        if 500 <= t < 520:
+            return 4.5
+        return 1.9 if 520 <= t < 580 else 2.5
+
+    _seed_series(reader_db_path, 1200, hr, speed)
+
+    report = _report(reader_db_path)
+
+    assert report is not None
+    kinds = [moment["kind"] for moment in report["moments"]]
+    assert "ceiling_touch" not in kinds
+    # The stride and its 60 s recovery are what the ceiling does not judge.
+    assert report["judged_share"]["hr"] == pytest.approx(1120 / 1200, abs=1e-3)

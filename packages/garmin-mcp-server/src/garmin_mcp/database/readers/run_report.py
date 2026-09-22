@@ -62,6 +62,7 @@ from garmin_mcp.analysis.hr_windows import (
     event_mask,
     judged_share,
     masked_mean_hr,
+    masked_split_hr,
     seconds_over,
     steady_mask,
 )
@@ -257,11 +258,18 @@ class RunReportReader(BaseDBReader):
             ]
             splits_by_id = _fetch_splits(conn, split_ids) if "splits" in tables else {}
             today_splits = splits_by_id.get(activity_id, [])
-            hr_samples = (
-                _fetch_hr_samples(conn, activity_id)
-                if "time_series_metrics" in tables
-                else []
-            )
+            has_series = "time_series_metrics" in tables
+            hr_samples = _fetch_hr_samples(conn, activity_id) if has_series else []
+            # The recurrence look-back reads each run through its own steady
+            # mask, so today and the runs it is compared with are judged alike.
+            previous_samples = {
+                int(run["activity_id"]): (
+                    _fetch_hr_samples(conn, int(run["activity_id"]))
+                    if has_series
+                    else []
+                )
+                for run in family_previous
+            }
             identity = _fetch_run_identity(conn, tables, activity_id, activity_date)
 
         prescription = self._load_prescription(activity_date)
@@ -285,8 +293,12 @@ class RunReportReader(BaseDBReader):
             prescription, _actual(today), jog_avg_hr=jog_avg_hr
         )
         signals = self._signals(today, history)
+        # Scenes read each kilometre's HR over its steady seconds only (#1320):
+        # a stride and its recovery inside a kilometre are not a ceiling touch.
         moments = detect_moments(
-            today_splits, hr_ceiling=hr_ceiling_bpm, prescription=prescription
+            _steady_splits(today_splits, hr_samples, steady),
+            hr_ceiling=hr_ceiling_bpm,
+            prescription=prescription,
         )
         purpose = resolve_purpose(
             prescription, _purpose_facts(today, today_splits, moments, identity)
@@ -303,7 +315,10 @@ class RunReportReader(BaseDBReader):
                     # family's prescribed ceiling is stable, and loading each
                     # run's own prescription would reintroduce a per-run loop.
                     "moments": detect_moments(
-                        splits_by_id.get(int(run["activity_id"]), []),
+                        _steady_splits(
+                            splits_by_id.get(int(run["activity_id"]), []),
+                            previous_samples.get(int(run["activity_id"]), []),
+                        ),
                         hr_ceiling=hr_ceiling_bpm,
                     ),
                 }
@@ -921,6 +936,23 @@ def _fetch_splits(
             }
         )
     return splits
+
+
+def _steady_splits(
+    splits: Sequence[Mapping[str, Any]],
+    samples: Sequence[Mapping[str, Any]],
+    steady: Sequence[bool] | None = None,
+) -> list[dict[str, Any]]:
+    """``splits`` with each kilometre's HR read over its steady seconds (#1320).
+
+    Without a time series the lap averages are all there is, and they are
+    returned as they are. ``steady`` is today's mask when the caller already
+    built it; a look-back run builds its own.
+    """
+    if not samples:
+        return [dict(split) for split in splits]
+    mask = steady if steady is not None else steady_mask(samples, splits)
+    return masked_split_hr(samples, mask, splits)
 
 
 def _has_column(conn: Any, table: str, column: str) -> bool:
