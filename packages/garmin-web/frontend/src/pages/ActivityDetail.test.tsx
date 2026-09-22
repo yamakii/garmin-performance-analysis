@@ -345,6 +345,85 @@ describe("ActivityDetail in-page nav", () => {
   });
 });
 
+describe("ActivityDetail plan card", () => {
+  const PLANNED_REPORT: RunReport = {
+    ...BASE_REPORT,
+    plan: {
+      verdict: "✅",
+      title: "ロング 24km MP",
+      checks: [
+        {
+          axis: "volume",
+          target: "24.0 km",
+          actual: "24.1 km",
+          status: "on_plan",
+          on_plan: true,
+        },
+      ],
+      hr_ceiling: null,
+    },
+  };
+
+  it("shows purpose in plan card", async () => {
+    // What the run was for, which every scene was judged against (#1315), and
+    // how much of the run the ceiling / form verdicts were read off.
+    stubFetch({
+      detail: BASE_DETAIL,
+      sections: {},
+      track: [],
+      report: {
+        ...PLANNED_REPORT,
+        purpose: {
+          id: "long_goal_pace",
+          label_ja: "ロング（目標ペース）",
+          source: "prescription",
+        },
+        judged_share: { hr: 0.724, form: 0.8 },
+      },
+    });
+    renderDetail();
+
+    const purpose = await screen.findByTestId("plan-purpose");
+    expect(purpose).toHaveTextContent("目的ロング（目標ペース）");
+    expect(document.getElementById("section-plan")).toContainElement(purpose);
+    expect(screen.getByTestId("plan-judged-share")).toHaveTextContent(
+      "心拍 72% · フォーム 80%",
+    );
+  });
+
+  it("marks an inferred purpose and omits an unknown one", async () => {
+    stubFetch({
+      detail: BASE_DETAIL,
+      sections: {},
+      track: [],
+      report: {
+        ...PLANNED_REPORT,
+        purpose: { id: "easy", label_ja: "イージー", source: "inferred" },
+        judged_share: null,
+      },
+    });
+    const { unmount } = renderDetail();
+    expect(await screen.findByTestId("plan-purpose")).toHaveTextContent(
+      "イージー（推定）",
+    );
+    expect(screen.queryByTestId("plan-judged-share")).toBeNull();
+    unmount();
+
+    stubFetch({
+      detail: BASE_DETAIL,
+      sections: {},
+      track: [],
+      report: {
+        ...PLANNED_REPORT,
+        purpose: { id: "unknown", label_ja: "不明", source: "default" },
+      },
+    });
+    renderDetail();
+    await screen.findByRole("heading", { name: "計画との照合" });
+    expect(screen.queryByTestId("plan-purpose")).toBeNull();
+  });
+});
+
 /**
  * Fetch stub with per-endpoint failure injection. `failTimeSeries` /
  * `failTrack` give the number of leading requests to that endpoint that

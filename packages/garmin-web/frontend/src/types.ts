@@ -587,6 +587,35 @@ export interface RunMoment {
   split_from: number;
   split_to: number;
   facts: RunMomentFacts;
+  /**
+   * The scene judged against the run's purpose (#1314): `concern` is a
+   * deviation from what the run was for, `acceptable` is expected or allowed,
+   * `neutral` is description. Absent on a report older than #1314.
+   */
+  policy?: RunMomentPolicy;
+}
+
+export type RunMomentVerdict = "concern" | "acceptable" | "neutral";
+
+export interface RunMomentPolicy {
+  verdict: RunMomentVerdict;
+  reason: string;
+}
+
+/** What the run was for (#1312) and where that came from. */
+export interface RunPurpose {
+  id: string;
+  label_ja: string;
+  source: "prescription" | "session_default" | "inferred" | "default";
+}
+
+/**
+ * The share of the run's time (0–1) the HR ceiling and the form signals were
+ * judged on (#1313). Null without a time series.
+ */
+export interface RunJudgedShare {
+  hr: number | null;
+  form: number | null;
 }
 
 /**
@@ -690,8 +719,12 @@ export interface RunReport {
   activity_id: number;
   activity_date: string;
   intensity_category: string;
+  /** Absent only when the report was served by a build older than #1314. */
+  purpose?: RunPurpose | null;
   headline: { plan_label: string; flag_count: number; flag_labels: string[] };
   plan: RunPlan | null;
+  /** Absent only when the report was served by a build older than #1313. */
+  judged_share?: RunJudgedShare | null;
   signals: RunSignal[];
   zones: RunZoneShare[];
   moments: RunMoment[];

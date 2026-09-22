@@ -52,6 +52,38 @@ export function sessionLabel(sessionType: string): string {
   return SESSION_TYPE_LABEL[sessionType] ?? sessionType;
 }
 
+/**
+ * Short calendar label per run purpose (#1312). A purpose that only restates
+ * its session type (an aerobic long run is just "ロング") is absent, so the row
+ * keeps the session label; only a purpose that changes how the run is judged
+ * gets a name of its own.
+ */
+const PURPOSE_LABEL: Record<string, string> = {
+  long_goal_pace: "MPロング",
+  long_fast_finish: "後半上げロング",
+  progression: "ビルドアップ",
+  fartlek: "ファルトレク",
+  race: "レース",
+  intervals: "インターバル",
+  recovery: "リカバリー",
+};
+
+/**
+ * "MPロング" for a long run whose purpose is a goal-pace rehearsal, the session
+ * label otherwise — the purpose is what the run is judged against, so a
+ * calendar that only said "ロング" would hide the one thing that matters.
+ */
+export function purposeLabel(prescription: {
+  session_type: string;
+  purpose?: string | null;
+}): string {
+  const purpose = prescription.purpose;
+  if (purpose != null && PURPOSE_LABEL[purpose] != null) {
+    return PURPOSE_LABEL[purpose];
+  }
+  return sessionLabel(prescription.session_type);
+}
+
 export function statusTone(status: string): StatusTone {
   return STATUS_TONE[status] ?? "info";
 }
@@ -125,7 +157,7 @@ function PrescriptionRow({
   prescription: Prescription;
   activity: PlanActivity | null;
 }) {
-  const name = sessionLabel(prescription.session_type);
+  const name = purposeLabel(prescription);
   const target = targetSummary(prescription);
   const status = prescription.status;
 

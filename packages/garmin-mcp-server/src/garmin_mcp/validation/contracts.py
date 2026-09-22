@@ -162,10 +162,43 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             ),
             "growth_points": (
                 "A growth point may only rest on a signal that is BOTH outside "
-                "its normal range AND adverse, or on a plan axis that came out "
-                "off plan. A within-range or favourable signal is never a "
-                "weakness, and an on_plan axis is never an improvement area"
+                "its normal range AND adverse, on a plan axis that came out "
+                "off plan, or on a moment whose policy.verdict == 'concern' "
+                "(a deviation from what the run was for, see "
+                "evaluation_policy.purpose). A within-range or favourable "
+                "signal is never a weakness, an on_plan axis is never an "
+                "improvement area, and a moment judged 'acceptable' or "
+                "'neutral' is never a flaw. recurrence / vs_previous / "
+                "conditions / context explain a growth point but never are one"
             ),
+            # What the run was *for* (#1312, #1314). The report resolves the
+            # purpose and judges every scene against it, so the same walk break
+            # is context on an aerobic long run and a real miss on a goal-pace
+            # rehearsal.
+            "purpose": {
+                "source": "report.purpose",
+                "inferred": "hedge -- say the purpose was inferred",
+                "deviations": "acceptable/neutral are context, never a flaw",
+                "description": (
+                    "report.purpose = {id, label_ja, source} names what the run "
+                    "was for; story and meaning read the run against it. source "
+                    "is 'prescription' / 'session_default' (the plan said so), "
+                    "'inferred' (read from the run's own data) or 'default' "
+                    "(unknown). When source == 'inferred', hedge it -- say the "
+                    "purpose was read from the run ('データからは有酸素のロングと"
+                    "見られます') rather than stating it as the plan. Every "
+                    "moment carries policy = {verdict, reason} judged against "
+                    "the purpose: 'concern' is a deviation from what the run "
+                    "asks for and may become a growth point; 'acceptable' "
+                    "(expected or allowed, e.g. a walk break on an aerobic long "
+                    "run) and 'neutral' (descriptive) are narrated as context in "
+                    "the timeline, never as a flaw or a note. report.judged_share "
+                    "= {hr, form} is the share of the run's time (0-1) the HR "
+                    "ceiling and the form signals were judged on; when it is "
+                    "well below 1 (stops, walk breaks, strides excluded), say "
+                    "the verdict covers only that part of the run"
+                ),
+            },
             "notes": (
                 "Write one note for every adverse out-of-range signal and for no "
                 "other signal. Attribute the cause in the order intensity -> "
@@ -194,8 +227,11 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "one sentence and say only what a table cannot. A progression "
                 "scene describes the shape of the build (which step broke the "
                 "order, where the biggest jump was) from its per_km facts "
-                "without listing every kilometre. Never invent a scene the "
-                "moments do not contain"
+                "without listing every kilometre. A scene whose policy.verdict "
+                "is 'acceptable' or 'neutral' is context -- say what it was "
+                "and why it fits the purpose, never frame it as a flaw; only a "
+                "'concern' scene is told as a deviation. Never invent a scene "
+                "the moments do not contain"
             ),
             # Strides are a few seconds of relaxed fast running inside an easy
             # run (#1294). Their HR peaks are the set doing its job, so they
@@ -247,8 +283,15 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "Attach an evidence key from evidence_keys to every good point and "
             "growth point; timeline items carry a moment_id and notes carry a "
             "signal name",
-            "Only an outside + adverse signal (or an off-plan axis) may become a "
-            "growth point",
+            "Only an outside + adverse signal, an off-plan axis or a moment with "
+            "policy.verdict == 'concern' may become a growth point; an "
+            "'acceptable' or 'neutral' moment is context, never a flaw",
+            "Read the run against report.purpose; when purpose.source == "
+            "'inferred', hedge it -- say the purpose was inferred from the run, "
+            "not prescribed",
+            "Acknowledge judged_share: when the HR ceiling or the form signals "
+            "were judged on only part of the run, say the verdict covers that "
+            "part",
             "Write a note for every adverse out-of-range signal and for no other",
             "Write next_challenge for next_session (named and dated); quote "
             "next_run_target's bands only when it is the same kind of run, and "
