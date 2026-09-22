@@ -204,7 +204,7 @@ RECURRENCE_MIN_COUNT = 2
 # contested split and which scenes survive the ``MAX_MOMENTS`` cap.
 _PRIORITY: tuple[tuple[str, ...], ...] = (
     ("ceiling_touch",),
-    ("fade", "strong_finish", "progression"),
+    ("breakdown", "fade", "strong_finish", "progression"),
     ("work_set", "rep", "strides"),
     ("walk_break",),
     ("steady", "main"),
@@ -298,6 +298,7 @@ def detect_moments(
     *,
     hr_ceiling: int | None,
     prescription: Mapping[str, Any] | None = None,
+    breakdown_from_km: float | None = None,
 ) -> list[dict[str, Any]]:
     """Detect the turning points of one run.
 
@@ -314,6 +315,11 @@ def detect_moments(
         prescription: The day's prescription row, consulted only to let a
             prescribed build-up count as a ``progression`` on its heart-rate
             ramp alone.
+        breakdown_from_km: Where ``analysis.purpose_outcome`` found the run
+            stopped delivering its purpose, or ``None``. The kilometres from
+            there to the finish become one ``breakdown`` scene, which outranks
+            the walk breaks and slow kilometres inside it: the story is the run
+            coming apart, not each symptom (#1340).
 
     Returns:
         ``[{"id": "m1", "kind", "unit", "label_ja", "km_from", "km_to",
@@ -322,7 +328,8 @@ def detect_moments(
         Scenes never share a split. ``unit`` is ``"km"`` for a scene drawn
         inside a long step (``kind`` one of ``start``, ``fast_start``,
         ``surge``, ``ceiling_touch``, ``walk_break``, ``climb``, ``fade``,
-        ``strong_finish``, ``progression``, ``steady``) and ``"step"`` for a
+        ``breakdown``, ``strong_finish``, ``progression``, ``steady``) and
+        ``"step"`` for a
         scene that *is* a step (``kind`` one of ``warmup``, ``rep``, ``rest``,
         ``main``, ``cooldown``, ``work_set``, ``strides``). A block of strides
         and the jogs between them is one ``strides`` scene (#1297), and a
@@ -354,6 +361,7 @@ def detect_moments(
                     hr_ceiling=hr_ceiling if step["role"] in _JOG_ROLES else None,
                     prescription=prescription,
                     named=not single,
+                    breakdown_from_km=breakdown_from_km,
                 )
             )
         else:
@@ -952,6 +960,7 @@ def _km_scenes(
     hr_ceiling: int | None,
     prescription: Mapping[str, Any] | None,
     named: bool,
+    breakdown_from_km: float | None = None,
 ) -> list[dict[str, Any]]:
     """The turning points *inside* one long step, narrated in kilometres."""
     valid = _valid_splits(step["rows"])
@@ -970,6 +979,7 @@ def _km_scenes(
         hr_ceiling=hr_ceiling,
         run_median=run_median,
         first_third_median=first_third_median,
+        breakdown_from_km=breakdown_from_km,
     )
     candidates = _resolve_overlaps(valid, candidates)
     if not any(kind != "start" for kind, _ in candidates):
@@ -1046,10 +1056,15 @@ def _candidate_scenes(
     hr_ceiling: int | None,
     run_median: float,
     first_third_median: float,
+    breakdown_from_km: float | None = None,
 ) -> list[_Candidate]:
     """Every scene each rule wants, before overlaps and caps are settled."""
     count = len(valid)
     candidates: list[_Candidate] = []
+
+    breakdown = _breakdown_members(valid, breakdown_from_km)
+    if breakdown:
+        candidates.append(("breakdown", breakdown))
 
     for members in _merge_runs(
         [i for i in range(count) if _is_ceiling_touch(valid, i, hr_ceiling)]
@@ -1087,6 +1102,19 @@ def _candidate_scenes(
         candidates.append(("start", [0]))
 
     return candidates
+
+
+def _breakdown_members(
+    valid: Sequence[Mapping[str, Any]], breakdown_from_km: float | None
+) -> list[int]:
+    """The splits from where the run came apart to the finish (#1340)."""
+    if breakdown_from_km is None:
+        return []
+    return [
+        i
+        for i, row in enumerate(valid)
+        if (_as_float(row.get("start_km")) or 0.0) >= breakdown_from_km - 1e-6
+    ]
 
 
 def _merge_runs(indices: Sequence[int]) -> list[list[int]]:
@@ -1500,7 +1528,7 @@ def _facts(
         ]
         if gains:
             facts["elevation_gain_m"] = _round(sum(gains))
-    elif kind == "fade":
+    elif kind in {"fade", "breakdown"}:
         if paces:
             facts["pace_delta_s_per_km"] = _round(median(paces) - first_third_median)
             facts["first_third_pace_s_per_km"] = _round(first_third_median)
