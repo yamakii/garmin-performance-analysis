@@ -101,6 +101,12 @@ _NON_RECURRING_KINDS: frozenset[str] = frozenset({"start", "steady", "strides"})
 # block: three splits that are not fragments.
 LONG_STEP_MIN_SPLITS = 3
 
+# A lap without a workout step index this short is the edge of a watch
+# workout -- the seconds before the stop button after its last step -- and
+# joins the step next to it; a longer one is running of its own (#1324).
+# Observed tails: 43 s / 0.118 km, 36 s / 0.071 km, 2 s / 0.006 km.
+UNINDEXED_EDGE_MAX_S = 60.0
+
 # A rep session needs at least this many ``run`` steps alternating with at
 # least this many ``recovery`` steps. Below that the run is a plain run with
 # bookends, narrated on a distance axis.
@@ -511,10 +517,39 @@ def _steps(positioned: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _same_step(previous: Mapping[str, Any], row: Mapping[str, Any]) -> bool:
-    """Whether ``row`` continues the step ``previous`` belongs to."""
+    """Whether ``row`` continues the step ``previous`` belongs to.
+
+    Two different step indices start a new step. A *short* lap without an
+    index is not a step of its own: the lap between a watch workout's end and
+    the stop button carries none, and splitting on it turned a one-step run
+    into 本編 + 本編 over a 2-43 s tail (#1324). A long one is running the
+    workout did not cover (a jog home after the cool-down), so it stays
+    separate rather than padding the last step.
+    """
     if previous["role"] != row["role"]:
         return False
-    return previous.get("workout_step_index") == row.get("workout_step_index")
+    before = previous.get("workout_step_index")
+    after = row.get("workout_step_index")
+    if before is None and after is None:
+        return True
+    if before is None:
+        return _is_short_unindexed(previous)
+    if after is None:
+        return _is_short_unindexed(row)
+    return bool(before == after)
+
+
+def _is_short_unindexed(row: Mapping[str, Any]) -> bool:
+    """A lap without a step index short enough to be a workout's edge.
+
+    Timed laps are judged by ``UNINDEXED_EDGE_MAX_S``; a lap without a
+    duration falls back to ``MIN_SPLIT_KM`` (a fragment).
+    """
+    duration = _as_float(row.get("duration_s"))
+    if duration is not None:
+        return duration <= UNINDEXED_EDGE_MAX_S
+    distance = _as_float(row.get("distance_km"))
+    return distance is not None and distance < MIN_SPLIT_KM
 
 
 def _step(rows: list[dict[str, Any]], number: int) -> dict[str, Any]:
