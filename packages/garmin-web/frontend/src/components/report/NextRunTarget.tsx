@@ -3,6 +3,8 @@ import { PACE_UNIT } from "../../utils/format";
 
 /** Japanese labels for known training types; unknown types fall through to raw. */
 const TYPE_LABELS: Record<string, string> = {
+  // compute_next_run_target recommends "easy" for easy runs (#1334).
+  easy: "イージー",
   aerobic_base: "ベース走",
   recovery: "リカバリー",
   tempo: "テンポ走",
