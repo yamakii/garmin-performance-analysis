@@ -1112,6 +1112,7 @@ def compute_prescription_verdict(
     actual: dict[str, Any],
     *,
     hr_tolerance_bpm: int = 3,
+    jog_avg_hr: float | None = None,
 ) -> dict[str, Any] | None:
     """Judge a run against the session prescribed for that day.
 
@@ -1140,6 +1141,10 @@ def compute_prescription_verdict(
         actual: ``{"distance_km", "duration_min", "avg_hr", "training_type"}``
             of the run being judged (all optional / null-safe).
         hr_tolerance_bpm: Overshoot above ``hr_high`` still counted as on-plan.
+        jog_avg_hr: The jog's own average HR on a run with strides (#1297).
+            When given, it replaces ``actual["avg_hr"]`` for the HR-ceiling
+            axis only: strides are meant to clear an easy ceiling, so the
+            ceiling is judged on the easy running around them.
 
     Returns:
         ``{"verdict", "prescription_title", "reasons": [str, ...], "on_plan":
@@ -1159,7 +1164,9 @@ def compute_prescription_verdict(
     actual_class = intensity_class(actual.get("training_type"))
     distance_km = _as_float(actual.get("distance_km"))
     duration_min = _as_float(actual.get("duration_min"))
-    avg_hr = _as_float(actual.get("avg_hr"))
+    avg_hr = _as_float(jog_avg_hr)
+    if avg_hr is None:
+        avg_hr = _as_float(actual.get("avg_hr"))
 
     severity = 0
     reasons: list[str] = []

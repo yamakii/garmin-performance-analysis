@@ -39,7 +39,9 @@ Loading rules that are easy to break when editing:
 
 from __future__ import annotations
 
+import json
 import logging
+from collections.abc import Mapping, Sequence
 from datetime import date, timedelta
 from typing import Any
 
@@ -231,13 +233,21 @@ class RunReportReader(BaseDBReader):
                 *(int(run["activity_id"]) for run in family_previous),
             ]
             splits_by_id = _fetch_splits(conn, split_ids) if "splits" in tables else {}
+            today_splits = splits_by_id.get(activity_id, [])
+            hr_samples = (
+                _fetch_hr_samples(conn, activity_id)
+                if _has_stride_laps(today_splits) and "time_series_metrics" in tables
+                else []
+            )
 
         prescription = self._load_prescription(activity_date)
         hr_ceiling_bpm = _as_int(prescription.get("hr_high")) if prescription else None
 
-        verdict = compute_prescription_verdict(prescription, _actual(today))
+        jog_avg_hr = _jog_avg_hr(today_splits)
+        verdict = compute_prescription_verdict(
+            prescription, _actual(today), jog_avg_hr=jog_avg_hr
+        )
         signals = self._signals(today, history)
-        today_splits = splits_by_id.get(activity_id, [])
         moments = detect_moments(
             today_splits, hr_ceiling=hr_ceiling_bpm, prescription=prescription
         )
@@ -267,7 +277,14 @@ class RunReportReader(BaseDBReader):
             "activity_date": activity_date,
             "intensity_category": str(today.get("intensity_category") or "unknown"),
             "headline": _headline(verdict, signals),
-            "plan": _plan_block(prescription, verdict, today, zone_rows),
+            "plan": _plan_block(
+                prescription,
+                verdict,
+                today,
+                zone_rows,
+                splits=today_splits,
+                hr_samples=hr_samples,
+            ),
             "signals": signals,
             "zones": _zones(zone_rows),
             "moments": moments,
@@ -788,12 +805,19 @@ def _fetch_splits(
     if not activity_ids:
         return {}
     placeholders = ", ".join("?" for _ in activity_ids)
+    # ``workout_step_index`` arrived with #1296; an older database without the
+    # column still gets a report, just without the step-index break.
+    step_index = (
+        "workout_step_index"
+        if _has_column(conn, "splits", "workout_step_index")
+        else "NULL"
+    )
     rows = conn.execute(
         f"""
         SELECT activity_id, split_index, distance, pace_seconds_per_km,
                heart_rate, max_heart_rate, cadence, elevation_gain,
                role_phase, intensity_type, start_time_s, end_time_s,
-               duration_seconds
+               duration_seconds, {step_index}
         FROM splits WHERE activity_id IN ({placeholders})
         ORDER BY activity_id, split_index
         """,
@@ -816,9 +840,38 @@ def _fetch_splits(
                 "start_s": _as_float(row[10]),
                 "end_s": _as_float(row[11]),
                 "duration_s": _as_float(row[12]),
+                "workout_step_index": _as_int(row[13]),
             }
         )
     return splits
+
+
+def _has_column(conn: Any, table: str, column: str) -> bool:
+    """Whether ``table`` in the attached database carries ``column``."""
+    row = conn.execute(
+        "SELECT COUNT(*) FROM information_schema.columns "
+        "WHERE table_schema = 'main' AND table_name = ? AND column_name = ?",
+        [table, column],
+    ).fetchone()
+    return bool(row and row[0])
+
+
+def _fetch_hr_samples(conn: Any, activity_id: int) -> list[tuple[float, float]]:
+    """``(timestamp_s, heart_rate)`` of one run's time series, in order.
+
+    Only loaded for a run with stride laps: the HR ceiling of such a run is
+    judged on the jog alone, and the zone totals cannot tell a jog second from
+    a stride second (#1297).
+    """
+    rows = conn.execute(
+        """
+        SELECT timestamp_s, heart_rate FROM time_series_metrics
+        WHERE activity_id = ? AND heart_rate IS NOT NULL
+        ORDER BY timestamp_s
+        """,
+        [activity_id],
+    ).fetchall()
+    return [(float(row[0]), float(row[1])) for row in rows]
 
 
 def _activity_row(row: tuple[Any, ...]) -> dict[str, Any]:
@@ -879,15 +932,25 @@ def _plan_block(
     verdict: dict[str, Any] | None,
     today: dict[str, Any],
     zone_rows: list[tuple[Any, ...]],
+    *,
+    splits: list[dict[str, Any]] | None = None,
+    hr_samples: list[tuple[float, float]] | None = None,
 ) -> dict[str, Any] | None:
     """The plan card: the verdict, its per-axis checks and the HR ceiling.
 
     The checks do not re-judge anything -- each axis reports on / off plan
     exactly as ``compute_prescription_verdict`` decided it, so a tolerance band
-    can never drift between the verdict and the card that explains it.
+    can never drift between the verdict and the card that explains it. The one
+    axis that verdict does not know is ``strides`` (#1297): a count of the
+    stride laps against the prescribed reps, added when the prescription
+    carries strides.
+
+    On a run with stride laps the ceiling row reads the jog's time-weighted
+    average HR, the same number the verdict judged the ceiling on.
     """
     if prescription is None or verdict is None:
         return None
+    splits = splits or []
 
     on_plan = set(verdict.get("on_plan") or [])
     checks: list[dict[str, Any]] = []
@@ -916,7 +979,8 @@ def _plan_block(
         if target is not None:
             checks.append(_check("volume", target, actual, "volume" in on_plan))
         hr_high = _as_float(prescription.get("hr_high"))
-        avg_hr = _as_float(today.get("avg_hr"))
+        jog_hr = _jog_avg_hr(splits)
+        avg_hr = jog_hr if jog_hr is not None else _as_float(today.get("avg_hr"))
         if hr_high is not None:
             checks.append(
                 _check(
@@ -926,13 +990,138 @@ def _plan_block(
                     "hr_ceiling" in on_plan,
                 )
             )
+        if _prescribed_strides(prescription) is not None:
+            checks.append(_strides_check(prescription, splits))
 
     return {
         "verdict": str(verdict.get("verdict")),
         "title": str(verdict.get("prescription_title") or ""),
         "checks": checks,
-        "hr_ceiling": _hr_ceiling(prescription, zone_rows),
+        "hr_ceiling": _hr_ceiling(prescription, zone_rows, splits, hr_samples or ()),
     }
+
+
+# The strides row's status -> the verdict symbol the card draws for it.
+_STRIDES_VERDICTS: dict[str, str] = {
+    "on_plan": "✅",
+    "short": "🟡",
+    "missing": "🔴",
+}
+
+
+def _prescribed_strides(prescription: dict[str, Any]) -> dict[str, Any] | None:
+    """The prescription's ``strides`` add-on, or ``None`` when it has none."""
+    strides = prescription.get("strides")
+    if isinstance(strides, str):
+        try:
+            strides = json.loads(strides)
+        except ValueError:
+            return None
+    if not isinstance(strides, dict) or not _as_int(strides.get("reps")):
+        return None
+    return strides
+
+
+def _strides_check(
+    prescription: Mapping[str, Any], splits: Sequence[Mapping[str, Any]]
+) -> dict[str, Any]:
+    """The ``strides`` row of the plan card: stride laps run against the reps.
+
+    ``target`` / ``actual`` read ``"4本"``; ``on_plan`` is ``done >= reps``.
+    The status is ``short`` (🟡) when some but not all strides were run and
+    ``missing`` (🔴) when none were -- an easy run that skipped its strides
+    answered only half of the prescription.
+    """
+    strides = _prescribed_strides(dict(prescription)) or {}
+    reps = _as_int(strides.get("reps")) or 0
+    done = _count_strides(splits)
+    status = "on_plan" if done >= reps else "short" if done > 0 else "missing"
+    return {
+        "axis": "strides",
+        "target": f"{reps}本",
+        "actual": f"{done}本",
+        "status": status,
+        "on_plan": status == "on_plan",
+        "verdict": _STRIDES_VERDICTS[status],
+    }
+
+
+def _count_strides(splits: Sequence[Mapping[str, Any]]) -> int:
+    """How many strides were run: each maximal run of stride laps is one."""
+    count = 0
+    previous_stride = False
+    for split in splits:
+        is_stride = _is_stride_lap(split)
+        if is_stride and not previous_stride:
+            count += 1
+        previous_stride = is_stride
+    return count
+
+
+def _is_stride_lap(split: Mapping[str, Any]) -> bool:
+    """Whether a split was classified as a stride at ingest (#1296)."""
+    return str(split.get("role_phase") or "").strip().lower() == "stride"
+
+
+def _has_stride_laps(splits: Sequence[Mapping[str, Any]]) -> bool:
+    """Whether a run carries any stride lap."""
+    return any(_is_stride_lap(split) for split in splits)
+
+
+def _is_jog_lap(split: Mapping[str, Any]) -> bool:
+    """A lap that is neither a stride nor the jog-recovery of one."""
+    role = str(split.get("role_phase") or "").strip().lower()
+    return role not in {"stride", "recovery"}
+
+
+def _jog_windows(splits: Sequence[Mapping[str, Any]]) -> list[tuple[int, int]]:
+    """``(start_s, end_s)`` of every non-stride, non-recovery lap.
+
+    The windows are in the time domain of ``time_series_metrics.timestamp_s``
+    (the splits' ``start_time_s`` / ``end_time_s``). Laps without recorded
+    timing are skipped rather than guessed.
+    """
+    windows: list[tuple[int, int]] = []
+    for split in splits:
+        if not _is_jog_lap(split):
+            continue
+        start = _as_float(split.get("start_s"))
+        end = _as_float(split.get("end_s"))
+        if start is None or end is None or end <= start:
+            continue
+        windows.append((int(round(start)), int(round(end))))
+    return windows
+
+
+def _jog_avg_hr(splits: Sequence[Mapping[str, Any]]) -> float | None:
+    """Time-weighted average HR of the jog laps of a run with strides.
+
+    ``None`` when the run has no stride lap -- then the whole run *is* the
+    jog and the activity's own average HR stands.
+    """
+    if not _has_stride_laps(splits):
+        return None
+    pairs = [
+        (hr, _lap_seconds(split))
+        for split in splits
+        if _is_jog_lap(split) and (hr := _as_float(split.get("avg_hr"))) is not None
+    ]
+    weight = sum(duration for _, duration in pairs)
+    if not pairs or weight <= 0:
+        return None
+    return round(sum(hr * duration for hr, duration in pairs) / weight, 1)
+
+
+def _lap_seconds(split: Mapping[str, Any]) -> float:
+    """How long a lap took: its recorded duration, else ``end - start``."""
+    duration = _as_float(split.get("duration_s"))
+    if duration and duration > 0:
+        return duration
+    start = _as_float(split.get("start_s"))
+    end = _as_float(split.get("end_s"))
+    if start is not None and end is not None and end > start:
+        return end - start
+    return 0.0
 
 
 def _intensity_label(raw: Any) -> str:
@@ -983,16 +1172,31 @@ def _check(axis: str, target: str, actual: str, on_plan: bool) -> dict[str, Any]
 
 
 def _hr_ceiling(
-    prescription: dict[str, Any], zone_rows: list[tuple[Any, ...]]
+    prescription: dict[str, Any],
+    zone_rows: list[tuple[Any, ...]],
+    splits: Sequence[Mapping[str, Any]] = (),
+    hr_samples: Sequence[tuple[float, float]] = (),
 ) -> dict[str, Any] | None:
-    """Time spent above the prescribed ceiling, read off the HR zones.
+    """Time spent above the prescribed ceiling.
 
     The zones already carry the seconds per band, so "how long was the athlete
     above 150?" is the sum of every zone whose *low* boundary is at or above
     the ceiling -- no time-series scan and no per-second work.
+
+    A run with stride laps is the exception (#1297): a stride is *meant* to
+    clear an easy ceiling, and the zones cannot tell its seconds from the
+    jog's. There the heart-rate time series is read over the jog windows only
+    (:func:`_jog_windows`); the zones remain the fallback when the run has no
+    time series.
     """
     bpm = _as_int(prescription.get("hr_high"))
-    if bpm is None or not zone_rows:
+    if bpm is None:
+        return None
+    if _has_stride_laps(splits) and hr_samples:
+        jog = _jog_seconds_over(bpm, _jog_windows(splits), hr_samples)
+        if jog is not None:
+            return jog
+    if not zone_rows:
         return None
 
     total = sum(_as_float(row[3]) or 0.0 for row in zone_rows)
@@ -1005,6 +1209,47 @@ def _hr_ceiling(
         "bpm": bpm,
         "seconds_over": round(over, 1),
         "pct_over": round(over / total * 100.0, 1) if total else 0.0,
+    }
+
+
+# Longest gap between two HR samples still counted as time at the earlier
+# sample's value. The watch records roughly every second; a longer gap is a
+# pause, and a paused minute must not count as a minute above the ceiling.
+_MAX_SAMPLE_GAP_S = 10.0
+
+
+def _jog_seconds_over(
+    bpm: int,
+    windows: Sequence[tuple[int, int]],
+    hr_samples: Sequence[tuple[float, float]],
+) -> dict[str, Any] | None:
+    """Seconds (and share of jog time) above ``bpm``, jog windows only.
+
+    Each sample stands for the time until the next one (capped at
+    ``_MAX_SAMPLE_GAP_S``). ``None`` when no sample falls inside a jog window,
+    so the caller can fall back to the zone totals.
+    """
+    if not windows:
+        return None
+    total = 0.0
+    over = 0.0
+    for index, (timestamp, hr) in enumerate(hr_samples):
+        if not any(start <= timestamp < end for start, end in windows):
+            continue
+        if index + 1 < len(hr_samples):
+            gap = hr_samples[index + 1][0] - timestamp
+            weight = min(max(gap, 0.0), _MAX_SAMPLE_GAP_S)
+        else:
+            weight = 1.0
+        total += weight
+        if hr > bpm:
+            over += weight
+    if total <= 0:
+        return None
+    return {
+        "bpm": bpm,
+        "seconds_over": round(over, 1),
+        "pct_over": round(over / total * 100.0, 1),
     }
 
 
