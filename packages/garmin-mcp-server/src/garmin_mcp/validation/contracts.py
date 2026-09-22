@@ -299,7 +299,8 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "background source; write none rather than praise a within-range "
             "value or an allowed scene",
             "When plan.hr_ceiling.seconds_over > 0, never say the HR ceiling "
-            "was not exceeded",
+            "was not exceeded; when plan.hr_ceiling.pct_over > 5, plan.hr_ceiling "
+            "is not a good point either (the axis is judged on the average HR)",
             "Read the run against report.purpose; when purpose.source == "
             "'inferred', hedge it -- say the purpose was inferred from the run, "
             "not prescribed",

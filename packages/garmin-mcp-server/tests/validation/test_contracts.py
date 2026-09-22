@@ -215,3 +215,5 @@ def test_contract_good_points_rules():
         "drink" in line and "traffic light" in line for line in contract["never_write"]
     )
     assert any("seconds_over > 0" in line for line in contract["instructions"])
+    # A run far over its ceiling cannot praise keeping it (#1332).
+    assert any("pct_over > 5" in line for line in contract["instructions"])

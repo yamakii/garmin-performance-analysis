@@ -56,6 +56,12 @@ _MOMENT_CONCERN = "concern"
 # scene is allowed, not good, and a ``concern`` is the opposite of good.
 _GOOD_POINT_REJECTED_VERDICTS: frozenset[str] = frozenset({"acceptable", "concern"})
 
+# The HR-ceiling plan axis (judged on the average HR), and the largest share of
+# the judged time above the ceiling at which keeping it can still be a good
+# point (#1332): a few seconds of pickup yes, half an hour no.
+_HR_CEILING_AXIS = "hr_ceiling"
+HR_CEILING_GOOD_POINT_MAX_PCT = 5.0
+
 # Evidence sources that give a growth point its background but can never be
 # the weakness itself.
 _GROWTH_POINT_BACKGROUND_PREFIXES: frozenset[str] = frozenset(
@@ -201,6 +207,7 @@ def _good_point_error(
     moments: Mapping[str, Mapping[str, Any]],
     checks: Mapping[str, Mapping[str, Any]] | None,
     timeline_ids: frozenset[str],
+    ceiling_pct_over: float | None = None,
 ) -> str | None:
     """Reject a good point that does not rest on a real strength (#1329).
 
@@ -240,6 +247,20 @@ def _good_point_error(
             return (
                 f"good point evidence '{evidence}' names a plan axis that came "
                 "out off plan; an off-plan axis is not a strength"
+            )
+        # The ceiling axis is on plan on the *average* HR, so a run can pass it
+        # with half an hour above the ceiling (#1332). Past a small share of
+        # the judged time, keeping the ceiling is not something to praise.
+        if (
+            key == _HR_CEILING_AXIS
+            and ceiling_pct_over is not None
+            and ceiling_pct_over > HR_CEILING_GOOD_POINT_MAX_PCT
+        ):
+            return (
+                f"good point evidence '{evidence}' names the HR ceiling, but "
+                f"{ceiling_pct_over:g}% of the run was above it (more than "
+                f"{HR_CEILING_GOOD_POINT_MAX_PCT:g}%); keeping the ceiling is "
+                "not a strength of this run"
             )
     return None
 
@@ -290,6 +311,12 @@ def check_run_note_grounding(
     signals = _index_by(report.get("signals"), "metric")
     moments = _index_by(report.get("moments"), "id")
     checks = _plan_checks(report)
+    ceiling = (report.get("plan") or {}).get("hr_ceiling") or {}
+    ceiling_pct_over = (
+        float(ceiling["pct_over"])
+        if isinstance(ceiling, Mapping) and ceiling.get("pct_over") is not None
+        else None
+    )
     timeline_ids = frozenset(
         str(item.get("moment_id"))
         for item in analysis_data.get("timeline") or []
@@ -308,7 +335,12 @@ def check_run_note_grounding(
                 error = _growth_point_error(str(evidence), signals, moments, checks)
             else:
                 error = _good_point_error(
-                    str(evidence), signals, moments, checks, timeline_ids
+                    str(evidence),
+                    signals,
+                    moments,
+                    checks,
+                    timeline_ids,
+                    ceiling_pct_over,
                 )
             if error:
                 return False, error
