@@ -16,6 +16,15 @@ const fullData = {
 };
 
 describe("NextRunTarget", () => {
+  it("labels an easy target in Japanese", () => {
+    // compute_next_run_target recommends "easy" for easy runs; the badge
+    // showed the raw key (#1334).
+    render(<NextRunTarget data={{ ...fullData, recommended_type: "easy" }} />);
+
+    expect(screen.getByText("イージー")).toBeInTheDocument();
+    expect(screen.queryByText("easy")).not.toBeInTheDocument();
+  });
+
   it("renders prescription fields with labels", () => {
     render(<NextRunTarget data={fullData} />);
 
