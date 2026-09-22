@@ -83,5 +83,5 @@ def test_drop_pace_consistency_full_registered_as_v22() -> None:
         "drop_pace_consistency_full",
         _wrap_drop_pace_consistency_full,
     ) in MIGRATIONS
-    # Head moved to 30 when easy prescriptions gained a strides add-on (#1295).
-    assert max(version for version, _, _ in MIGRATIONS) == 30
+    # Head moved to 31 when splits gained the workout step index (#1296).
+    assert max(version for version, _, _ in MIGRATIONS) == 31

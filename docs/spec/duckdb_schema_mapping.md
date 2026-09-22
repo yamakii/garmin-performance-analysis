@@ -1,6 +1,6 @@
 # DuckDB Schema Mapping Specification
 
-**Version**: 2.12
+**Version**: 2.13
 **Last Updated**: 2026-09-22
 **Database**: `garmin_performance.duckdb`
 **Total Tables**: 28 domain tables (+ `schema_version` migration bookkeeping)
@@ -23,6 +23,9 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 > **Schema bookkeeping**: a 29th table, `schema_version` (`version INTEGER PK`, `name`, `applied_at`), tracks applied migrations and is **not** a domain table. The migration runner (`database/migrations/registry.py`) applies numbered migrations after `_ensure_tables()` and records them there.
 
 ## Change History
+
+### Version 2.13 (2026-09-22)
+- **`splits.workout_step_index` added** (migration `add_splits_workout_step_index`, version 31; also created in `_ensure_tables()`), from the raw lap field `wktStepIndex`. [MCP] run steps record `intensityType = ACTIVE`, so a 20 s stride looked like the jog around it and an easy run with strides was classified as `interval`. Repeat iterations reuse the same step index, so short laps of a recurring step are now `role_phase = 'stride'` and the longer laps of the repeat are `recovery`; `performance_trends` keeps both out of the run phase. No backfill: past runs had no stride steps (issue #1296, Epic #1294).
 
 ### Version 2.12 (2026-09-22)
 - **`weekly_prescriptions.strides` added** (migration `add_prescription_strides`, version 30). Strides used to be a `session_type` of their own: no jog body, no intensity class, matched against any run of the day, and never used. They are a neuromuscular stimulus inside an easy run, so they now ride on the easy row as a structured add-on (`{reps, run_seconds, recovery_seconds}`, JSON in `VARCHAR`), `strides` is no longer an accepted `session_type`, and `schedule_weekly_prescriptions` registers the row as an opening easy step, a repeat group of strides and a final 5 min easy step that together equal `target_minutes` (issue #1295, Epic #1294).
@@ -226,9 +229,12 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 | normalized_power | DOUBLE |
 | average_speed | DOUBLE |
 | grade_adjusted_speed | DOUBLE |
+| workout_step_index | INTEGER |
 <!-- END GENERATED: schema:splits -->
 
-**Sources** (raw lapDTO field → column): `activityId`→`activity_id`, `lapIndex`→`split_index`, `distance`→`distance` (m), `duration`→`duration_seconds` (s), `startTimeGMT`→`start_time_gmt`, `intensityType`→`intensity_type` (WARMUP/INTERVAL/RECOVERY/COOLDOWN/REST), `averageSpeed`→`pace_str`/`pace_seconds_per_km`/`average_speed`, `averageHR`→`heart_rate`, `averageRunCadence`→`cadence` (spm, both feet), `avgPower`→`power` (W), `strideLength`→`stride_length` (cm), `groundContactTime`→`ground_contact_time` (ms), `verticalOscillation`→`vertical_oscillation` (cm), `verticalRatio`→`vertical_ratio` (%), `elevationGain`/`elevationLoss`→`elevation_gain`/`elevation_loss` (m), `maxHR`→`max_heart_rate`, `maxRunCadence`→`max_cadence`, `maxPower`→`max_power`, `normPower`→`normalized_power`, `gradeAdjustedSpeed`→`grade_adjusted_speed` (m/s). `start_time_s` / `end_time_s` are computed offsets; `role_phase` is derived from split position.
+**Sources** (raw lapDTO field → column): `activityId`→`activity_id`, `lapIndex`→`split_index`, `distance`→`distance` (m), `duration`→`duration_seconds` (s), `startTimeGMT`→`start_time_gmt`, `intensityType`→`intensity_type` (WARMUP/INTERVAL/RECOVERY/COOLDOWN/REST), `averageSpeed`→`pace_str`/`pace_seconds_per_km`/`average_speed`, `averageHR`→`heart_rate`, `averageRunCadence`→`cadence` (spm, both feet), `avgPower`→`power` (W), `strideLength`→`stride_length` (cm), `groundContactTime`→`ground_contact_time` (ms), `verticalOscillation`→`vertical_oscillation` (cm), `verticalRatio`→`vertical_ratio` (%), `elevationGain`/`elevationLoss`→`elevation_gain`/`elevation_loss` (m), `maxHR`→`max_heart_rate`, `maxRunCadence`→`max_cadence`, `maxPower`→`max_power`, `normPower`→`normalized_power`, `gradeAdjustedSpeed`→`grade_adjusted_speed` (m/s), `wktStepIndex`→`workout_step_index` (NULL for laps recorded without a structured workout). `start_time_s` / `end_time_s` are computed offsets.
+
+**`role_phase`** is derived from `intensityType` (WARMUP→`warmup`, INTERVAL/ACTIVE→`run`, RECOVERY→`recovery`, COOLDOWN→`cooldown`), then rewritten for strides from `workout_step_index` (`splits_helpers/stride_roles.py`, issue #1296): a lap whose step index recurs in two or more separate lap groups (a repeat iteration) and whose `duration_seconds` ≤ 45 s is `stride`; the longer laps of the repeat steps in the same span are `recovery`. [MCP] run steps record `ACTIVE`, so the step index, not `intensityType`, is what separates strides from the easy jog. A short lap whose index appears once (a manual lap, the tail of an auto-lapped step) keeps its `intensityType` role. Queries that filter `role_phase = 'run'` (form baseline training, power efficiency) therefore see only the jog.
 
 **Calculated columns** (see Calculation Logic below): `hr_zone`, `cadence_rating`, `power_efficiency`, `terrain_type`, `environmental_conditions`, `wind_impact`, `temp_impact`, `environmental_impact`.
 
@@ -365,7 +371,7 @@ Combines wind + temperature bands: Negligible (both ideal) → Low → Moderate 
 ### Calculation Logic
 
 #### Phase detection (from `splits.intensity_type`)
-Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVERY` · Cooldown = `COOLDOWN`. Per-phase pace/HR/cadence/power are averages of the splits in that phase (power NULL if no power data).
+Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVERY` · Cooldown = `COOLDOWN`. Per-phase pace/HR/cadence/power are averages of the splits in that phase (power NULL if no power data). Stride laps (the same step-index rule as `splits.role_phase`, #1296) join no phase and their recoveries join the recovery phase, so `run_splits`, `pace_consistency` and `hr_drift_percentage` cover the jog only. The workout-structure check that picks the drift method counts stride laps as neither work nor rest, so an easy run with strides stays `steady` rather than `interval`.
 
 #### Phase evaluations
 - **warmup**: Excellent = gradual pace increase + steady HR rise; Good = ≥5 min; Needs Improvement = <3 min or missing.

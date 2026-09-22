@@ -274,6 +274,7 @@ class GarminDBWriter:
                     normalized_power DOUBLE,
                     average_speed DOUBLE,
                     grade_adjusted_speed DOUBLE,
+                    workout_step_index INTEGER,
                     PRIMARY KEY (activity_id, split_index)
                     -- FK constraint removed (2025-11-01): Single data source + bulk writes only
                 )

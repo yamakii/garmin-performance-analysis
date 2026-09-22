@@ -265,6 +265,13 @@ def _wrap_add_prescription_strides(conn: duckdb.DuckDBPyConnection) -> None:
     add_prescription_strides(conn)
 
 
+def _wrap_add_splits_workout_step_index(conn: duckdb.DuckDBPyConnection) -> None:
+    """Wrap the splits workout_step_index column migration."""
+    from .add_splits_workout_step_index import add_splits_workout_step_index
+
+    add_splits_workout_step_index(conn)
+
+
 def _wrap_plan_versioning(conn: duckdb.DuckDBPyConnection) -> None:
     """Wrap plan versioning migration to run on an existing connection."""
     from .add_plan_versioning import _column_exists, _table_exists
@@ -341,4 +348,5 @@ MIGRATIONS: list[tuple[int, str, Callable[[duckdb.DuckDBPyConnection], None]]] =
     (28, "add_gear_lifecycle_columns", _wrap_add_gear_lifecycle_columns),
     (29, "add_athlete_symptoms", _wrap_add_athlete_symptoms),
     (30, "add_prescription_strides", _wrap_add_prescription_strides),
+    (31, "add_splits_workout_step_index", _wrap_add_splits_workout_step_index),
 ]

@@ -12,6 +12,10 @@ from pathlib import Path
 import duckdb
 
 from garmin_mcp.database.inserters.splits_helpers.phase_mapping import PhaseMapper
+from garmin_mcp.database.inserters.splits_helpers.stride_roles import (
+    STRIDE_ROLE,
+    assign_stride_roles,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -109,15 +113,44 @@ _WORK_INTENSITIES = {"ACTIVE", "INTERVAL"}
 _REST_INTENSITIES = {"REST", "RECOVERY"}
 
 
+def _stride_roles_by_lap_index(lap_dtos: list[dict]) -> dict[int, str]:
+    """lapIndex -> 'stride' | 'recovery' for laps of a repeat-group stride set.
+
+    Applies the same step-index rule as the splits inserter (#1296) to the raw
+    lapDTOs. Laps outside a stride set are absent from the mapping.
+    """
+    laps = [
+        {
+            "lap_index": lap.get("lapIndex"),
+            "duration_seconds": lap.get("duration"),
+            "workout_step_index": lap.get("wktStepIndex"),
+            "role_phase": None,
+        }
+        for lap in lap_dtos
+        if lap.get("lapIndex") is not None
+    ]
+    return {
+        lap["lap_index"]: lap["role_phase"]
+        for lap in assign_stride_roles(laps)
+        if lap["role_phase"] is not None
+    }
+
+
 def _classify_workout_structure(lap_dtos: list[dict]) -> str:
     """'steady' | 'interval' を返す。
 
     REST/RECOVERY と ACTIVE が交互に十分な回数現れれば 'interval'、
     それ以外（単一強度の連続走）は 'steady'。判定不能は 'steady' に
     フォールバック。WARMUP/COOLDOWN や intensityType 欠損 lap は無視する。
+    イージー走に差し込んだ流し（stride ラップ）は work にも rest にも数えない
+    ので、ジョグ + 流しは 'steady' のまま（#1296）。
     """
+    stride_roles = _stride_roles_by_lap_index(lap_dtos)
     sequence: list[str] = []
     for lap in lap_dtos:
+        lap_index = lap.get("lapIndex")
+        if lap_index is not None and stride_roles.get(lap_index) == STRIDE_ROLE:
+            continue
         intensity_type = lap.get("intensityType")
         if not intensity_type:
             continue
@@ -219,13 +252,20 @@ def _extract_performance_trends_from_raw(raw_splits_file: str) -> dict | None:
     recovery_splits = []
     cooldown_splits = []
 
+    # Strides and their recoveries come from the repeating workout step index
+    # (#1296): strides join no phase, their recoveries join the recovery phase,
+    # so the run phase (and pace consistency / drift over it) is the jog only.
+    stride_roles = _stride_roles_by_lap_index(lap_dtos)
+
     for lap in lap_dtos:
         lap_index = lap.get("lapIndex")
         if lap_index is None:
             continue
 
         intensity_type = lap.get("intensityType")
-        phase = PhaseMapper.map_intensity_to_phase(intensity_type)
+        phase = stride_roles.get(lap_index) or PhaseMapper.map_intensity_to_phase(
+            intensity_type
+        )
 
         distance_m = lap.get("distance", 0)
         distance_km = distance_m / 1000.0 if distance_m else None
