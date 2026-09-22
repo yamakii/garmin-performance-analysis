@@ -56,6 +56,7 @@ from garmin_mcp.analysis.derivations import (
     compute_vs_previous,
     detect_progression_session,
     intensity_class,
+    prescription_marks_progression,
     select_prescription_for_run,
 )
 from garmin_mcp.analysis.hr_windows import (
@@ -301,7 +302,8 @@ class RunReportReader(BaseDBReader):
             prescription=prescription,
         )
         purpose = resolve_purpose(
-            prescription, _purpose_facts(today, today_splits, moments, identity)
+            prescription,
+            _purpose_facts(today, today_splits, moments, identity, prescription),
         )
         # The verdicts are added on top of detection; recurrence (below) still
         # reads the purpose-blind scenes, so a habit is found whatever it means.
@@ -1115,6 +1117,7 @@ def _purpose_facts(
     splits: Sequence[Mapping[str, Any]],
     moments: Sequence[Mapping[str, Any]],
     identity: Mapping[str, Any],
+    prescription: dict[str, Any] | None,
 ) -> dict[str, Any]:
     """The facts ``resolve_purpose`` infers an unprescribed run's purpose from.
 
@@ -1142,7 +1145,11 @@ def _purpose_facts(
             moment.get("kind") in _REP_SCENE_KINDS for moment in moments
         ),
         "is_progression": detect_progression_session(None, run_splits),
+        # The prescription names a build-up and the run shows one (#1322).
+        "is_marked_progression": prescription_marks_progression(prescription)
+        and detect_progression_session(prescription, run_splits),
         "is_goal_race_day": bool(identity.get("is_goal_race_day")),
+        "training_type": today.get("training_type"),
     }
 
 

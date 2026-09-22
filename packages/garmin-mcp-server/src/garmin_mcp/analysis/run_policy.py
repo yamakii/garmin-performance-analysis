@@ -61,7 +61,10 @@ _LETTER: dict[str, Verdict] = {"C": "concern", "A": "acceptable", "N": "neutral"
 # N = neutral). Kept as a compact grid so it can be read against Issue #1314.
 _GRID: dict[str, str] = {
     "easy": "CNACNNNN",
-    "recovery": "CNACCCCN",
+    # A surge is neutral on a recovery run (#1322): what the run guards is HR,
+    # which ceiling_touch already judges; a quicker km that left HR alone is
+    # not a concern.
+    "recovery": "CNACNCCN",
     "long_easy": "CNACNNNN",
     "long_goal_pace": "NCCCNANN",
     "long_fast_finish": "CCCCNAAN",

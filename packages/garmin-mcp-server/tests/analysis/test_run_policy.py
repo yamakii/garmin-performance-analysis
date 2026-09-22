@@ -38,6 +38,13 @@ def test_policy_allowance_overrides_walk() -> None:
     assert policy_for("fade", "long_goal_pace", {"walk": True})[0] == "concern"
 
 
+def test_policy_recovery_surge_neutral() -> None:
+    """A quicker km on a recovery run is not a concern; HR is (#1322)."""
+    assert policy_for("surge", "recovery", None)[0] == "neutral"
+    # What a recovery run guards is still judged.
+    assert policy_for("ceiling_touch", "recovery", None)[0] == "concern"
+
+
 def test_policy_unknown_keeps_ceiling_concern() -> None:
     """``unknown`` keeps the pre-purpose behaviour: only a ceiling touch counts."""
     assert policy_for("ceiling_touch", "unknown", None)[0] == "concern"

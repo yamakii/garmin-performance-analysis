@@ -69,9 +69,76 @@ def test_resolve_purpose_unknown_default() -> None:
     assert resolved.source == "default"
 
 
-def test_resolve_purpose_infers_race_by_name() -> None:
-    """A race-marked activity name reads as a race."""
-    assert resolve_purpose(None, {"activity_name": "新潟シティマラソン"}).id == "race"
+def test_resolve_purpose_race_name_needs_race_effort() -> None:
+    """A race-like name is a race only at a race effort (#1322).
+
+    Garmin's coached pre-race tune-up and a fun run beside a child carry the
+    fragments at an easy effort; a marathon run hard is the race.
+    """
+    for name in ("レース前ワークアウト", "親子マラソン"):
+        resolved = resolve_purpose(
+            None,
+            {"activity_name": name, "moving_minutes": 30, "intensity_class": 1},
+        )
+        assert resolved.id == "easy", name
+    resolved = resolve_purpose(
+        None,
+        {"activity_name": "東京マラソン", "moving_minutes": 200, "intensity_class": 2},
+    )
+    assert resolved.id == "race"
+    assert resolved.source == "inferred"
+
+
+def test_resolve_purpose_infers_recovery_from_training_type() -> None:
+    """Garmin's raw ``recovery`` label reads as a recovery run (#1322).
+
+    The canonical intensity category folds recovery into easy, so only the
+    raw training type tells them apart.
+    """
+    resolved = resolve_purpose(
+        None,
+        {
+            "moving_minutes": 30,
+            "intensity_class": 1,
+            "intensity_category": "easy",
+            "training_type": "recovery",
+        },
+    )
+    assert resolved.id == "recovery"
+    assert resolved.source == "inferred"
+
+
+def test_resolve_purpose_goal_race_day_overrides_session_default() -> None:
+    """A prescription row without a purpose on the goal race day is the race."""
+    resolved = resolve_purpose(
+        {"session_type": "long", "purpose": None},
+        {"is_goal_race_day": True, "moving_minutes": 240},
+    )
+    assert resolved.id == "race"
+
+
+def test_resolve_purpose_marked_progression_overrides_session_default() -> None:
+    """A build-up the prescription names and the run shows is a progression."""
+    resolved = resolve_purpose(
+        {"session_type": "tempo", "purpose": None},
+        {"is_marked_progression": True, "is_progression": True},
+    )
+    assert resolved.id == "progression"
+    assert resolved.source == "prescription"
+
+
+def test_resolve_purpose_unmarked_progression_keeps_session_default() -> None:
+    """A progression read off the data alone never overrides the plan.
+
+    HR drift with a quick last km on an easy long run looks like a build-up;
+    turning it into one would make the run's walk breaks concerns.
+    """
+    resolved = resolve_purpose(
+        {"session_type": "long", "purpose": None},
+        {"is_progression": True, "is_marked_progression": False},
+    )
+    assert resolved.id == "long_easy"
+    assert resolved.source == "session_default"
 
 
 def test_resolve_purpose_rest_row_falls_back_to_inference() -> None:
