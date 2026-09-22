@@ -10,6 +10,7 @@ the LLM risks hallucinated "achieved" verdicts (Issue #671).
 from datetime import date, datetime
 from typing import Any
 
+from garmin_mcp.analysis.run_purpose import LONG_RUN_MIN_MINUTES
 from garmin_mcp.utils.week import week_bounds
 
 # Fallback Japanese labels by workout_type when planned_workouts.description_ja
@@ -1033,13 +1034,19 @@ def compute_week_position(
     week_start_day: int,
     ladder_step: dict[str, Any] | None,
     block: dict[str, Any] | None,
+    previous_day_run: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Locate a run inside its training week (long-run relative day + plan phase).
+    """Locate a run inside its training week (long-run slot + plan phase).
 
-    The long run is the week's last day by convention (the week is defined by
-    the athlete's ``week_start_day``), so "two days before the long run" and
-    "the day after the long run" are derived from the day index rather than
-    guessed from the calendar.
+    The long run's *slot* is the week's last day by convention (the week is
+    defined by the athlete's ``week_start_day``), so ``is_long_run_slot_day``
+    and ``days_to_long_run_slot`` are calendar positions, named as such: they
+    say where the plan puts the long run, not that one was run (#1333).
+
+    Whether this is the day *after* a long run is a fact about the previous
+    day, so it is read from the run actually recorded then: its longest run
+    lasting ``LONG_RUN_MIN_MINUTES`` or more. The first day of the week after
+    a 2.77 km jog is not "the morning after the long run".
 
     Args:
         activity_date: The run's date (``YYYY-MM-DD``).
@@ -1048,11 +1055,14 @@ def compute_week_position(
             ``PlanReader.get_ladder_step_for_week`` (a bare step dict is also
             accepted), or ``None``.
         block: The training block covering the week, or ``None``.
+        previous_day_run: The previous calendar day's longest run as
+            ``{"distance_km", "duration_min"}``, or ``None`` when there was none.
 
     Returns:
-        ``{"week_start", "day_index" (0-6), "is_long_run_day",
-        "days_to_long_run" (0-6), "is_day_after_long_run", "block_phase",
-        "cutback_week", "ladder_step": {"current", "next"}}``.
+        ``{"week_start", "day_index" (0-6), "is_long_run_slot_day",
+        "days_to_long_run_slot" (0-6), "is_day_after_long_run",
+        "previous_day_run", "block_phase", "cutback_week",
+        "ladder_step": {"current", "next"}}``.
 
     Raises:
         ValueError: If ``activity_date`` is not a ``YYYY-MM-DD`` date.
@@ -1065,13 +1075,15 @@ def compute_week_position(
     current_step = steps["current"] if isinstance(steps["current"], dict) else None
     cutback_week = str((current_step or {}).get("kind") or "").lower() == "cutback"
 
+    previous_minutes = (previous_day_run or {}).get("duration_min")
     return {
         "week_start": start.isoformat(),
         "day_index": day_index,
-        "is_long_run_day": day_index == 6,
-        "days_to_long_run": 6 - day_index,
-        # The day after the long run is the first day of the following week.
-        "is_day_after_long_run": day_index == 0,
+        "is_long_run_slot_day": day_index == 6,
+        "days_to_long_run_slot": 6 - day_index,
+        "is_day_after_long_run": previous_minutes is not None
+        and float(previous_minutes) >= LONG_RUN_MIN_MINUTES,
+        "previous_day_run": previous_day_run,
         "block_phase": (block or {}).get("phase"),
         "cutback_week": cutback_week,
         "ladder_step": steps,
