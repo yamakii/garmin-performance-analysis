@@ -17,7 +17,7 @@ decisions (majors, upper-bound pins, runtime versions).
 
 ## Step 1 — Sync and audit (read-only)
 
-1. `git fetch origin && git rev-list --count HEAD..origin/main`; if behind, `git merge --ff-only origin/main`.
+1. Sync local main per `.claude/rules/dev/git.md` §2 (quiet fetch + ff-only).
 2. Open automation state (GitHub MCP):
    - `list_issues(state="OPEN", labels=["security-audit"])` — open audit issue?
    - `list_pull_requests(state="open")` — Dependabot PRs waiting (majors need a decision; minors stuck = check `ci-guard`).
@@ -45,7 +45,7 @@ section, not in the plan.
 
 ## Step 3 — Apply in a worktree
 
-`git worktree add .worktrees/deps-update-<YYYY-MM> -b chore/deps-update-<YYYY-MM> origin/main`, then:
+`git worktree add -q -b chore/deps-update-<YYYY-MM> .claude/worktrees/deps-update-<YYYY-MM> origin/main` (path and naming per `git.md` §2), then:
 
 1. **Security first.** If a fix requires crossing a major, still apply it and flag it explicitly.
 2. Python: `uv lock --upgrade` (respects pyproject bounds). If the dry-run showed an unwanted major
@@ -74,8 +74,8 @@ keeping the lockfile commit single-purpose.
 Commits (Conventional Commits, single concern each, Co-Authored-By trailer): e.g.
 `chore(deps): upgrade Python lockfile (security: cryptography, mcp)`, `chore(deps): npm audit fix + minor updates`,
 `chore(pre-commit): sync ruff/black revs`.
-Push (`git -C <worktree> push -u origin <branch>`; if HTTPS auth fails and `GITHUB_TOKEN` is set, use the
-inline credential helper), `create_pull_request` with `Closes #<issue>` and a `## Verification` section
+Push with the canonical form in `git.md` §2 (inline `GITHUB_TOKEN` credential helper; no pre-push merge of
+origin/main), `create_pull_request` with `Closes #<issue>` and a `## Verification` section
 (ci-check exit 0, pip-audit 0, npm audit 0). Poll `pull_request_read(method="get_check_runs")` until
 `ci-guard` completes. Merge via `merge_pull_request(merge_method="merge")` when ci-guard = success and
 mergeable (permanent approval #886 — L2 PASS + ci-guard green). Any other state → report, do not merge.

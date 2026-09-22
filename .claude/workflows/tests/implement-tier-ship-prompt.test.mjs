@@ -26,13 +26,20 @@ test('ship prompt forbids background/process-watcher workarounds', () => {
   assert.match(prompt, /使わない/)
 })
 
-// Regression guard for #1130: catching up with origin/main must be a merge.
-// `git rebase` (and the `--abort` after a conflicting one) trips the
-// `Bash(git rebase:*)` ask rule in a worktree session, so a tier whose sibling
-// PRs merged first stalled on permission prompts (Epic #1115 Tier 2).
+// Regression guard for #1130 / #1304: pushed history is never rewritten, so a
+// conflicting sibling merge is resolved by a merge commit (never rebase + force
+// push, which stalled Epic #1115 Tier 2 on permission prompts). The merge runs
+// only on conflict and quietly: a pre-push catch-up merge printed a full
+// diffstat into the agent context on every ship (#1304).
 test('test_ship_prompt_merges_instead_of_rebasing', () => {
-  assert.match(prompt, /merge --no-edit origin\/main/)
+  assert.match(prompt, /merge -q --no-stat --no-edit origin\/main/)
   assert.match(prompt, /merge --abort/)
   assert.doesNotMatch(prompt, /rebase してから/)
   assert.doesNotMatch(prompt, /git rebase origin/)
+})
+
+test('test_ship_prompt_merges_only_on_conflict', () => {
+  assert.match(prompt, /事前取り込みはしない/)
+  assert.match(prompt, /false（コンフリクト）のときだけ/)
+  assert.doesNotMatch(prompt, /遅れていれば先に/)
 })
