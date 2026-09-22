@@ -5,8 +5,8 @@ and the structured weekly prescriptions (``weekly_prescriptions``).
 
 Two conventions apply throughout:
 
-- JSON columns (``quality_types``, ``long_run_ladder``, ``cutback_rule``) are
-  decoded back into lists/dicts, and every ``date`` / ``TIMESTAMP`` value is
+- JSON columns (``quality_types``, ``long_run_ladder``, ``cutback_rule`` and the
+  prescriptions' ``strides``) are decoded back into lists/dicts, and every ``date`` / ``TIMESTAMP`` value is
   converted to ``str`` so results are directly ``json.dumps``-able by MCP tools.
 - ``weekly_prescriptions`` is append-only per ``batch_id``: the highest
   ``batch_id`` for a week is canonical and superseded batches are never
@@ -59,9 +59,13 @@ _PRESCRIPTION_COLUMN_NAMES = (
     "garmin_schedule_id",
     "actual_activity_id",
     "registered_bookend_minutes",
+    "strides",
     "created_at",
     "updated_at",
 )
+
+#: JSON-encoded prescription columns, decoded back into dicts on read.
+_PRESCRIPTION_JSON_COLUMNS = ("strides",)
 
 _PRESCRIPTION_COLUMNS = ", ".join(_PRESCRIPTION_COLUMN_NAMES)
 
@@ -242,7 +246,7 @@ class PlanReader(BaseDBReader):
                 [user_id, week_start_date, user_id, week_start_date],
             ).fetchall()
             columns = [desc[0] for desc in conn.description]
-            return [_row_to_dict(columns, row) for row in rows]
+            return [prescription_row_to_dict(columns, row) for row in rows]
 
     def get_prescriptions_for_date(
         self, on_date: str, user_id: str = "default"
@@ -296,7 +300,7 @@ class PlanReader(BaseDBReader):
                 [user_id, review_id, user_id, review_id],
             ).fetchall()
             columns = [desc[0] for desc in conn.description]
-            return [_row_to_dict(columns, row) for row in rows]
+            return [prescription_row_to_dict(columns, row) for row in rows]
 
     def list_prescriptions(
         self, start_date: str, end_date: str, user_id: str = "default"
@@ -333,7 +337,7 @@ class PlanReader(BaseDBReader):
                 [user_id, user_id, start_date, end_date],
             ).fetchall()
             columns = [desc[0] for desc in conn.description]
-            return [_row_to_dict(columns, row) for row in rows]
+            return [prescription_row_to_dict(columns, row) for row in rows]
 
 
 def verdict_from_prescriptions(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -362,6 +366,7 @@ def verdict_from_prescriptions(rows: list[dict[str, Any]]) -> list[dict[str, Any
             "target_minutes": row.get("target_minutes"),
             "hr_low": row.get("hr_low"),
             "hr_high": row.get("hr_high"),
+            "strides": row.get("strides"),
             "status": row.get("status"),
             "prescription_id": row.get("prescription_id"),
         }
@@ -377,6 +382,21 @@ def _row_to_dict(columns: list[str], row: tuple) -> dict[str, Any]:
             record[col] = str(value)
         else:
             record[col] = value
+    return record
+
+
+def prescription_row_to_dict(columns: list[str], row: tuple) -> dict[str, Any]:
+    """Convert a weekly_prescriptions row, JSON-decoding its structured columns.
+
+    Columns absent from the SELECT are left out rather than set to ``None``, so
+    a reader selecting a subset of the columns gets exactly that subset back.
+    """
+    record = _row_to_dict(columns, row)
+    for col in _PRESCRIPTION_JSON_COLUMNS:
+        if col not in record:
+            continue
+        raw = record[col]
+        record[col] = json.loads(raw) if isinstance(raw, str) else None
     return record
 
 

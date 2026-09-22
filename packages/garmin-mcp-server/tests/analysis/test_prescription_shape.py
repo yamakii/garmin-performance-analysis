@@ -14,23 +14,35 @@ from garmin_mcp.analysis.prescription_shape import (
     WARMUP_MINUTES,
     bookend_minutes,
     bookend_minutes_from_steps,
+    strides_block_seconds,
 )
 
 
 @pytest.mark.unit
 def test_bookend_minutes_quality_types() -> None:
     """Quality sessions are registered with a 10min warmup + 5min cooldown."""
-    assert set(BOOKENDED_TYPES) == {"threshold", "tempo", "strides"}
+    assert set(BOOKENDED_TYPES) == {"threshold", "tempo"}
     assert WARMUP_MINUTES + COOLDOWN_MINUTES == 15
-    for session_type in ("threshold", "tempo", "strides"):
+    for session_type in ("threshold", "tempo"):
         assert bookend_minutes(session_type) == 15
 
 
 @pytest.mark.unit
 def test_bookend_minutes_easy_types_and_none() -> None:
     """Easy-effort sessions (and unknown/None types) carry no bookends."""
-    for session_type in ("easy", "long", "recovery", "rest", None):
+    for session_type in ("easy", "long", "recovery", "rest", "strides", None):
         assert bookend_minutes(session_type) == 0
+
+
+@pytest.mark.unit
+def test_strides_block_seconds() -> None:
+    """A strides block lasts reps x (run + recovery): 4 x (20 + 90) = 440 s."""
+    assert (
+        strides_block_seconds({"reps": 4, "run_seconds": 20, "recovery_seconds": 90})
+        == 440
+    )
+    # Omitted fields fall back to the 20 s / 90 s defaults.
+    assert strides_block_seconds({"reps": 4}) == 440
 
 
 @pytest.mark.unit
@@ -58,13 +70,11 @@ def test_bookend_minutes_from_steps_matches_constant_for_standard_shape() -> Non
     tempo = build_steps_from_prescription(
         {"session_type": "tempo", "target_minutes": 31, "hr_low": 162, "hr_high": 169}
     )
-    strides = build_steps_from_prescription({"session_type": "strides"})
     easy = build_steps_from_prescription(
         {"session_type": "easy", "target_minutes": 45, "hr_high": 150}
     )
 
     assert bookend_minutes_from_steps(tempo) == 15
-    assert bookend_minutes_from_steps(strides) == 15
     assert bookend_minutes_from_steps(easy) == 0
 
 

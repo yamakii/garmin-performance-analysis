@@ -79,11 +79,17 @@ class SaveWeeklyPrescriptionsParams(BaseModel):
         description=(
             "Prescribed sessions for the week — the single source of the "
             "per-day plan, verdict included. Each row: date (YYYY-MM-DD), "
-            "session_type (long|easy|recovery|threshold|tempo|strides|rest|"
-            "strength|cross), title, and optionally target_minutes, target_km, "
+            "session_type (long|easy|recovery|threshold|tempo|rest|strength|"
+            "cross), title, and optionally target_minutes, target_km, "
             "hr_low, hr_high (ceiling — the only bound for easy/long), "
-            "pace_low_s_per_km, pace_high_s_per_km, rationale (the comment) "
-            "and rating (✅ | 🟡 | 🔴). Revising a week means saving a new "
+            "pace_low_s_per_km, pace_high_s_per_km, rationale (the comment), "
+            "rating (✅ | 🟡 | 🔴) and, on easy rows only, strides "
+            '{"reps": 2-8, "run_seconds": 10-30 (default 20), '
+            '"recovery_seconds": 60-180 (default 90)} — short pickups as a '
+            "neuromuscular stimulus, not an interval, placed after at least "
+            "5min of easy running and followed by a final 5min easy; "
+            "target_minutes stays the run total and must fit 10min plus "
+            "reps x (run + recovery). Revising a week means saving a new "
             "review version first and passing its review_id: a second batch "
             "for the same review is rejected."
         )
@@ -380,7 +386,7 @@ PLAN_TOOLS: list[ToolDef] = [
             "each open (prescribed / registered) latest-batch row with a past "
             "date: an activity on that date within tolerance (0.85x-1.30x of "
             "target_km / target_minutes, with quality sessions "
-            "(threshold/tempo/strides) allowed the warmup/cooldown their "
+            "(threshold/tempo) allowed the warmup/cooldown their "
             "registered workout adds — the row's registered_bookend_minutes "
             "when recorded, else the standard 15min) marks it done, any other "
             "activity "

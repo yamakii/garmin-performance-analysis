@@ -604,6 +604,7 @@ def test_get_weekly_review_derives_verdict_from_linked_batch(
             "target_minutes": None,
             "hr_low": None,
             "hr_high": 150,
+            "strides": None,
             "status": "prescribed",
             "prescription_id": review_data["verdict"][0]["prescription_id"],
         }

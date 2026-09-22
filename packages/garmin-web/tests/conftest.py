@@ -1745,6 +1745,7 @@ _CREATE_WEEKLY_PRESCRIPTIONS = """
         garmin_workout_id BIGINT,
         garmin_schedule_id BIGINT,
         actual_activity_id BIGINT,
+        strides VARCHAR,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP
     )

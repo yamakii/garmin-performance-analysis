@@ -64,6 +64,7 @@ _PRESCRIPTION_KEYS = (
     "target_km",
     "target_minutes",
     "hr_high",
+    "strides",
     "rating",
     "rationale",
     "status",
@@ -86,7 +87,8 @@ _SELECT_PRESCRIPTIONS = """
         GROUP BY week_start_date
     )
     SELECT p.prescription_id, p.date, p.session_type, p.title, p.target_km,
-           p.target_minutes, p.hr_high, p.rating, p.rationale, p.status
+           p.target_minutes, p.hr_high, p.strides, p.rating, p.rationale,
+           p.status
     FROM weekly_prescriptions p
     JOIN latest l ON p.week_start_date = l.week_start_date
                  AND p.batch_id = l.batch_id
@@ -150,6 +152,13 @@ def _rows(
             )
         records.append(record)
     return records
+
+
+def _decode_prescription(record: dict[str, Any]) -> dict[str, Any]:
+    """JSON-decode a weekly_prescriptions row's ``strides`` add-on in place."""
+    raw = record.get("strides")
+    record["strides"] = json.loads(raw) if isinstance(raw, str) else None
+    return record
 
 
 def _decode_block(record: dict[str, Any]) -> dict[str, Any]:
@@ -247,11 +256,14 @@ def get_month_plan(
     grid_end = week_start(last_day, start_day) + _dt.timedelta(days=6)
     grid_start_iso, grid_end_iso = grid_start.isoformat(), grid_end.isoformat()
 
-    prescriptions = _rows(
-        conn,
-        _SELECT_PRESCRIPTIONS,
-        [user_id, user_id, grid_start_iso, grid_end_iso],
-    )
+    prescriptions = [
+        _decode_prescription(record)
+        for record in _rows(
+            conn,
+            _SELECT_PRESCRIPTIONS,
+            [user_id, user_id, grid_start_iso, grid_end_iso],
+        )
+    ]
     activities = _rows(conn, _SELECT_ACTIVITIES, [grid_start_iso, grid_end_iso])
     blocks = [
         _decode_block(record)

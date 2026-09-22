@@ -258,6 +258,13 @@ def _wrap_add_athlete_symptoms(conn: duckdb.DuckDBPyConnection) -> None:
     add_athlete_symptoms(conn)
 
 
+def _wrap_add_prescription_strides(conn: duckdb.DuckDBPyConnection) -> None:
+    """Wrap the weekly_prescriptions strides column migration."""
+    from .add_prescription_strides import add_prescription_strides
+
+    add_prescription_strides(conn)
+
+
 def _wrap_plan_versioning(conn: duckdb.DuckDBPyConnection) -> None:
     """Wrap plan versioning migration to run on an existing connection."""
     from .add_plan_versioning import _column_exists, _table_exists
@@ -333,4 +340,5 @@ MIGRATIONS: list[tuple[int, str, Callable[[duckdb.DuckDBPyConnection], None]]] =
     (27, "add_gear_identity_columns", _wrap_add_gear_identity_columns),
     (28, "add_gear_lifecycle_columns", _wrap_add_gear_lifecycle_columns),
     (29, "add_athlete_symptoms", _wrap_add_athlete_symptoms),
+    (30, "add_prescription_strides", _wrap_add_prescription_strides),
 ]

@@ -222,7 +222,7 @@ Step 3 の `training_block`（`block.phase` / `block.purpose` / `ladder_step` / 
   - **処方の具体例**（W の各セッション種別に応じて、実際の bpm はその時の `hr_zones` から差し込む）:
     - 「ロング走: Z2(例 141-152bpm)で 60-75 分(≈9-11km)、暑熱なら時間優先でペースは見ない」
     - 「Base: 40-50 分 Z2」
-    - 「流し: 100m×4-6 本（疾走 20-25 秒 / 休 60 秒 jog）」
+    - 「Easy 35 分＋流し 4 本（20 秒 / つなぎ 90 秒 jog）」— 流しは**単独のセッションではなく easy 行の `strides` 付属**として処方する（保存形式は Step 7 の `strides` の項）。流しは神経筋への刺激であってインターバルではないので、20 秒前後の軽快な加速にとどめ、心拍目標は付けない
     - 「テンポ: 閾値心拍域で 15-20 分（暑熱時はペース固定せず心拍上限で）」
 - **ロング走を最重要チェック**: ロング走はマラソン筋持久力の核。**`ladder_step.current` の目標（km または分）を W の処方に必ず1本入れる**（カットバック週なら短縮した形で）。ラダー段が未定義の週は、直近ロングと進行ゲートから具体値（時間/距離/HR 上限）を決めて処方し、その旨を `overall` で触れる。
 - **伸長可否はトレンドで判定（W-1 単独で決めない）**: ロング・週量を「来週も伸ばすか」は、進行ゲート（脚崩れ）だけでなく **Step 5-A-4 のカットバック周期** も必ず照合する。`cutback_due = true`（**ロング連続伸長3週以上**／**レース後の保護期間中に上限超過**／週総量3週連続 build／ACWR caution+・新ピーク直後）なら、進行ゲートが GREEN でも、回復指標が全て緑でも **deload を優先**して処方する（[[long-run-progression-two-gates]]）。
@@ -390,16 +390,22 @@ mcp__garmin-db__save_weekly_prescriptions(
  "target_minutes":null,"hr_high":150,"hr_low":null,"rating":"✅","rationale":"ラダー3段目。進行ゲート緑。"}
 {"date":"2026-09-08","session_type":"easy","title":"Z2ジョグ 35分","target_km":null,
  "target_minutes":35,"hr_high":141,"hr_low":null,"rating":"✅","rationale":"ロング翌日の回復促進。35分は当日の総量。"}
+{"date":"2026-09-10","session_type":"easy","title":"Z2ジョグ 35分＋流し4本","target_km":null,
+ "target_minutes":35,"hr_high":141,"hr_low":null,"strides":{"reps":4,"run_seconds":20,"recovery_seconds":90},
+ "rating":"✅","rationale":"脚の回転を保つ神経筋刺激。35分は流しを含む当日の総量。"}
 ```
 
-- `date` は **W 内の日付**（週外の日付は保存時に拒否される）。`session_type` は `long|easy|recovery|threshold|tempo|strides|rest|strength|cross` のいずれか。
+- `date` は **W 内の日付**（週外の日付は保存時に拒否される）。`session_type` は `long|easy|recovery|threshold|tempo|rest|strength|cross` のいずれか（`strides` は session_type ではない。下の `strides` 付属を使う）。
 - `rating` は Step 6 の表の **判定**（`✅` / `🟡` / `🔴`。判定を付けないなら null）。`rationale` は同じ行の **コメント**。この2つがレビュー表示の判定・コメントの正本になる（レビュー JSON 側には保存しない）。
 - `target_km` / `target_minutes` は **時間優先のロングなら分、距離指定なら km**（両方あれば両方入れてよい。無ければ null）。
 - **`target_minutes` の定義（規約・必ず守る）**:
   - `long` / `easy` / `recovery` は **その日走る全体（総量）**を入れる。Garmin にはこの値が**1ステップ**として登録され、`reconcile_prescriptions` も**この値と実績の総量**を突き合わせる（前後の追加分を足し引きしない）。したがって「W/U ＋ 本体 ＋ C/D」に分けた**本体だけの分数を入れてはいけない**。入りをイージーにする等の走り方は `rationale` の散文にだけ書く。
   - `threshold` / `tempo` は **本体のみの分数**（ツールが前後にウォームアップ 10 分・クールダウン 5 分を足し、判定でもその 15 分を許容する）。ここに総量を書くと `reconcile_prescriptions` が 15 分多い期待値で判定して、処方どおり走っても `replaced` に落ちる。**保存時に検出して拒否する**（`target_minutes + 15 分` を `target_km` で割った全体平均ペースが 3:00-8:00/km を外れる行は `save_weekly_prescriptions` が `ValueError`。総量を書くとイージージョグより遅い値になるため引っかかる。#1084）。
   - `target_km` は**どのセッションでも全体の距離**（本体だけの距離を入れない）。
-  - `strides` は目標を入れない（`target_km` / `target_minutes` とも null）。
+- **流し（`strides`）は easy 行の付属オブジェクト**: `{"reps": 2-8, "run_seconds": 10-30（省略時 20）, "recovery_seconds": 60-180（省略時 90）}`。**`session_type="easy"` の行にだけ**付けられる（long や質練に付けると保存時に拒否）。流しは神経筋への刺激でありインターバルではないので、本数・秒数を増やして負荷を稼ぐ使い方はしない。
+  - **配置規則**: 時計のワークアウトは「冒頭 easy（5 分以上）→ 流し `reps` ×（`run_seconds` 疾走 / `recovery_seconds` jog）→ 最後の easy 5 分」になり、3 つの合計が `target_minutes` と一致する。`target_minutes` は流しを含む**総量**のまま（流しの分を足さない）。
+  - 保存時に `target_minutes × 60 ≥ (5 + 5) × 60 + reps × (run_seconds + recovery_seconds)` を満たさない行は拒否される（例: 4 本 × (20 + 90) 秒 = 440 秒なら `target_minutes` は 18 分以上）。
+  - 心拍目標は冒頭と最後の easy 区間だけに付き、流しとつなぎの jog には付かない。
 - **タイトル・コメントは `target_minutes` と別の総量を名乗らない**: `target_minutes=20` で「Z2ジョグ 計35分」のようなタイトル／`rationale` は禁止。総量 35 分で走らせたいなら `target_minutes=35` と書く（表示・時計・判定の3者が同じ数字を指すこと）。
 - **easy / long は HR 上限のみを入れる**（`hr_high` に上限、`hr_low` は null）。下限を入れると走行中に下限アラートで追い込むことになるため、下限は質練（閾値・テンポ）でのみ使う。
 - `rationale` はその処方の根拠を1文（ラダー段・カットバック判定・回復ゲートのどれに従ったか）。
