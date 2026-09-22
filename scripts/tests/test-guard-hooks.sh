@@ -121,6 +121,27 @@ for hook in block-commit-on-main guard-no-verify guard-data-deletion guard-push 
   fi
 done
 
+# test_git_quiet_config_sets_merge_stat (#1307) — SessionStart hook silences merge diffstats
+CLAUDE_PROJECT_DIR="$tmp/onfeat" bash "$HOOKS/git-quiet-config.sh"
+rc=$?
+got="$(git -C "$tmp/onfeat" config --get merge.stat || true)"
+if [ "$rc" -eq 0 ] && [ "$got" = "false" ]; then
+  echo "  ok: test_git_quiet_config_sets_merge_stat"
+else
+  fail "test_git_quiet_config_sets_merge_stat: exit $rc, merge.stat='$got'"
+fi
+mkdir -p "$tmp/norepo"
+if CLAUDE_PROJECT_DIR="$tmp/norepo" GIT_CEILING_DIRECTORIES="$tmp" bash "$HOOKS/git-quiet-config.sh"; then
+  echo "  ok: test_git_quiet_config_noop_outside_repo"
+else
+  fail "test_git_quiet_config_noop_outside_repo: non-zero exit"
+fi
+if grep -q '"SessionStart"' "$ROOT/.claude/settings.json" && grep -q 'hooks/git-quiet-config.sh' "$ROOT/.claude/settings.json"; then
+  echo "  ok: test_settings_wires_git_quiet_config"
+else
+  fail "test_settings_wires_git_quiet_config: SessionStart hook not in settings.json"
+fi
+
 if [ "$failures" -ne 0 ]; then
   echo "test-guard-hooks: $failures failure(s)" >&2
   exit 1
