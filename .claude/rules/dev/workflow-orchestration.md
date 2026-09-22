@@ -12,12 +12,12 @@ paths:
 # Workflow Orchestration
 
 ## Plan-First
-- Non-trivial tasks (3+ steps or architectural decisions): plan mode
+- プランの要否と粒度は `implementation-workflow.md` Phase 0 の Tier 判定で決める: `design-approved` の Issue はそれ自体がプラン、リスク条件に当たる変更はフル（plan mode で承認）、それ以外は軽量プランを示して進む。手順数では判定しない
 - If execution goes sideways: STOP and re-plan. Don't push through with workarounds.
-- Use plan mode for verification steps, not just building
+- フルプランには検証手順（どう確かめるか）も含める
 
 ## Implementation
-- プラン承認後は `implementation-workflow.md` Phase 1 のチェックリスト（そのセッションが worktree で実装 → PR → マージ）に従う
+- プラン確定後は `implementation-workflow.md` Phase 1 のチェックリスト（そのセッションが worktree で実装 → PR → マージ）に従う
 - 複数 Issue で `implementation-workflow.md` の起動条件（依存ティア 2 段以上、または依存の無い 4 件以上でファイル非共有）を満たすときは `/implement <epic>` を使う
 - 変更ファイルの多い Issue（概ね 15 以上・ページ丸ごとの書き換え）は実装を `developer` サブエージェント（worktree 隔離）へ委譲し、メインセッションは照合・レビュー・Ship だけを行う（`implementation-workflow.md` Phase 1）。調査は Explore エージェントへ
 - **全変更で Worktree → PR が必須**。Validation Level: skip は検証方法の指定であり、Worktree/PR 省略の許可ではない。skip レベルの docs/rules 変更で省略できるのは Issue だけ（`dev-reference.md` §1）

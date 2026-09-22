@@ -86,11 +86,11 @@ See `.claude/rules/analysis/analysis-standards.md` for workflow details and `doc
 
 **When:** Modifying code, adding features, fixing bugs, running tests.
 
-**Workflow:** Plan mode → Issue → Worktree → Implement → Ship
+**Workflow:** Plan (tiered) → Issue → Worktree → Implement → Ship
 
 Three things hold before any file is opened (the detailed rules below load once you touch
 `packages/`, `.claude/`, `scripts/`, `docker/`, `.github/` or `docs/`):
-- Every code change needs an Issue with Design + Test Plan, a plan-mode plan for anything non-trivial, and a worktree + PR (never commit on `main`).
+- Every code change needs an Issue with Design + Test Plan, a plan sized by the Phase 0 tier in `implementation-workflow.md` (a `design-approved` Issue is the plan; plan-mode approval only for risky changes; a light plan otherwise), and a worktree + PR (never commit on `main`).
 - GitHub is operated only through `mcp__github__*` tools; `gh` is denied.
 - Code investigation starts with `mcp__serena__activate_project()`.
 
