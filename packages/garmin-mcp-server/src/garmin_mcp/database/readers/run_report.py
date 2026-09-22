@@ -16,6 +16,8 @@ normal range per metric    ``analysis.run_signals`` / ``analysis.normal_range``
 turning points, recurrence ``analysis.run_moments``
 steps, flow series, axis   ``analysis.run_moments`` (``build_flow``)
 plan verdict               ``analysis.derivations.compute_prescription_verdict``
+steady seconds, ceiling    ``analysis.hr_windows``
+time, judged share
 delta chips, next target   ``analysis.derivations`` (``compute_vs_previous`` …)
 intensity family           ``database.inserters.hr_efficiency``
 expected HR                ``rag.queries.heat_adjustment.HeatAdjustmentModel``
@@ -52,6 +54,13 @@ from garmin_mcp.analysis.derivations import (
     compute_vs_previous,
     intensity_class,
     select_prescription_for_run,
+)
+from garmin_mcp.analysis.hr_windows import (
+    event_mask,
+    judged_share,
+    masked_mean_hr,
+    seconds_over,
+    steady_mask,
 )
 from garmin_mcp.analysis.normal_range import EXTRAPOLATION_NOT_JUDGED
 from garmin_mcp.analysis.run_moments import (
@@ -191,7 +200,10 @@ class RunReportReader(BaseDBReader):
         Returns:
             ``None`` when the activity does not exist. Otherwise a dict with
             ``activity_id``, ``activity_date``, ``intensity_category``,
-            ``headline``, ``plan``, ``signals``, ``zones``, ``moments``,
+            ``headline``, ``plan``, ``judged_share`` (``{"hr", "form"}``: the
+            share of the run's time the HR ceiling / the form signals were
+            judged on, ``None`` without a time series), ``signals``, ``zones``,
+            ``moments``,
             ``flow``, ``recurrence``, ``phases``, ``conditions``,
             ``vs_previous``, ``next_run_target`` and ``next_session`` (see the
             module docstring for who computes what). Every value is
@@ -236,14 +248,27 @@ class RunReportReader(BaseDBReader):
             today_splits = splits_by_id.get(activity_id, [])
             hr_samples = (
                 _fetch_hr_samples(conn, activity_id)
-                if _has_stride_laps(today_splits) and "time_series_metrics" in tables
+                if "time_series_metrics" in tables
                 else []
             )
 
         prescription = self._load_prescription(activity_date)
         hr_ceiling_bpm = _as_int(prescription.get("hr_high")) if prescription else None
 
-        jog_avg_hr = _jog_avg_hr(today_splits)
+        # Which seconds are steady running (#1313): the ceiling is judged on
+        # them, and the form signals are not judged when too few are left.
+        steady = steady_mask(hr_samples, today_splits) if hr_samples else []
+        shares = {
+            "hr": judged_share(hr_samples, steady) if hr_samples else None,
+            "form": (
+                judged_share(hr_samples, event_mask(hr_samples, today_splits))
+                if hr_samples
+                else None
+            ),
+        }
+        today = {**today, "form_judged_share": shares["form"]}
+
+        jog_avg_hr = _ceiling_avg_hr(today_splits, hr_samples, steady)
         verdict = compute_prescription_verdict(
             prescription, _actual(today), jog_avg_hr=jog_avg_hr
         )
@@ -284,7 +309,10 @@ class RunReportReader(BaseDBReader):
                 zone_rows,
                 splits=today_splits,
                 hr_samples=hr_samples,
+                steady=steady,
+                ceiling_avg_hr=jog_avg_hr,
             ),
+            "judged_share": shares,
             "signals": signals,
             "zones": _zones(zone_rows),
             "moments": moments,
@@ -856,22 +884,66 @@ def _has_column(conn: Any, table: str, column: str) -> bool:
     return bool(row and row[0])
 
 
-def _fetch_hr_samples(conn: Any, activity_id: int) -> list[tuple[float, float]]:
-    """``(timestamp_s, heart_rate)`` of one run's time series, in order.
+def _fetch_hr_samples(conn: Any, activity_id: int) -> list[dict[str, Any]]:
+    """One run's time series in the shape ``analysis.hr_windows`` reads.
 
-    Only loaded for a run with stride laps: the HR ceiling of such a run is
-    judged on the jog alone, and the zone totals cannot tell a jog second from
-    a stride second (#1297).
+    Heart rate for the ceiling, speed / cadence / the three duration clocks
+    for the stops, pauses and bursts whose HR recovery is kept out of it
+    (#1313). The zone totals cannot tell a steady second from one spent
+    recovering from a surge, so every run with a time series is read here.
+
+    A column an older database (or a Web fixture) does not carry is read as
+    ``NULL``: the affected event kind is then simply not detected.
     """
+    present = _table_columns(conn, "time_series_metrics")
+    if "timestamp_s" not in present:
+        return []
+    selected = ", ".join(
+        column if column in present else f"NULL AS {column}"
+        for column in _SAMPLE_COLUMNS
+    )
     rows = conn.execute(
-        """
-        SELECT timestamp_s, heart_rate FROM time_series_metrics
-        WHERE activity_id = ? AND heart_rate IS NOT NULL
+        f"""
+        SELECT timestamp_s, {selected}
+        FROM time_series_metrics
+        WHERE activity_id = ?
         ORDER BY timestamp_s
         """,
         [activity_id],
     ).fetchall()
-    return [(float(row[0]), float(row[1])) for row in rows]
+    return [
+        {
+            "timestamp_s": float(row[0]),
+            **{
+                column: _as_float(value)
+                for column, value in zip(_SAMPLE_COLUMNS, row[1:], strict=True)
+            },
+        }
+        for row in rows
+        if row[0] is not None
+    ]
+
+
+# The ``time_series_metrics`` columns ``analysis.hr_windows`` reads besides
+# ``timestamp_s``.
+_SAMPLE_COLUMNS: tuple[str, ...] = (
+    "heart_rate",
+    "speed",
+    "cadence",
+    "sum_moving_duration",
+    "sum_elapsed_duration",
+    "sum_duration",
+)
+
+
+def _table_columns(conn: Any, table: str) -> set[str]:
+    """Column names of ``table`` in the attached database."""
+    rows = conn.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema = 'main' AND table_name = ?",
+        [table],
+    ).fetchall()
+    return {str(row[0]) for row in rows}
 
 
 def _activity_row(row: tuple[Any, ...]) -> dict[str, Any]:
@@ -934,7 +1006,9 @@ def _plan_block(
     zone_rows: list[tuple[Any, ...]],
     *,
     splits: list[dict[str, Any]] | None = None,
-    hr_samples: list[tuple[float, float]] | None = None,
+    hr_samples: Sequence[Mapping[str, Any]] = (),
+    steady: Sequence[bool] = (),
+    ceiling_avg_hr: float | None = None,
 ) -> dict[str, Any] | None:
     """The plan card: the verdict, its per-axis checks and the HR ceiling.
 
@@ -945,8 +1019,9 @@ def _plan_block(
     stride laps against the prescribed reps, added when the prescription
     carries strides.
 
-    On a run with stride laps the ceiling row reads the jog's time-weighted
-    average HR, the same number the verdict judged the ceiling on.
+    The ceiling row reads ``ceiling_avg_hr`` -- the steady-running average HR
+    (#1313), the same number the verdict judged the ceiling on -- and the
+    activity's own average HR when there is none.
     """
     if prescription is None or verdict is None:
         return None
@@ -979,8 +1054,11 @@ def _plan_block(
         if target is not None:
             checks.append(_check("volume", target, actual, "volume" in on_plan))
         hr_high = _as_float(prescription.get("hr_high"))
-        jog_hr = _jog_avg_hr(splits)
-        avg_hr = jog_hr if jog_hr is not None else _as_float(today.get("avg_hr"))
+        avg_hr = (
+            ceiling_avg_hr
+            if ceiling_avg_hr is not None
+            else _as_float(today.get("avg_hr"))
+        )
         if hr_high is not None:
             checks.append(
                 _check(
@@ -997,7 +1075,7 @@ def _plan_block(
         "verdict": str(verdict.get("verdict")),
         "title": str(verdict.get("prescription_title") or ""),
         "checks": checks,
-        "hr_ceiling": _hr_ceiling(prescription, zone_rows, splits, hr_samples or ()),
+        "hr_ceiling": _hr_ceiling(prescription, zone_rows, hr_samples, steady),
     }
 
 
@@ -1074,30 +1152,31 @@ def _is_jog_lap(split: Mapping[str, Any]) -> bool:
     return role not in {"stride", "recovery"}
 
 
-def _jog_windows(splits: Sequence[Mapping[str, Any]]) -> list[tuple[int, int]]:
-    """``(start_s, end_s)`` of every non-stride, non-recovery lap.
+def _ceiling_avg_hr(
+    splits: Sequence[Mapping[str, Any]],
+    hr_samples: Sequence[Mapping[str, Any]],
+    steady: Sequence[bool],
+) -> float | None:
+    """The average HR the ceiling is judged on, or ``None`` for the activity's.
 
-    The windows are in the time domain of ``time_series_metrics.timestamp_s``
-    (the splits' ``start_time_s`` / ``end_time_s``). Laps without recorded
-    timing are skipped rather than guessed.
+    With a time series it is the steady-running average (#1313): stops,
+    pauses, bursts and effort laps are left out together with the heart
+    rate's recovery from each. Without one, a run with strides falls back to
+    its jog laps (#1297) and any other run to the activity's own average.
     """
-    windows: list[tuple[int, int]] = []
-    for split in splits:
-        if not _is_jog_lap(split):
-            continue
-        start = _as_float(split.get("start_s"))
-        end = _as_float(split.get("end_s"))
-        if start is None or end is None or end <= start:
-            continue
-        windows.append((int(round(start)), int(round(end))))
-    return windows
+    if hr_samples:
+        steady_hr = masked_mean_hr(hr_samples, steady)
+        if steady_hr is not None:
+            return steady_hr
+    return _jog_avg_hr(splits)
 
 
 def _jog_avg_hr(splits: Sequence[Mapping[str, Any]]) -> float | None:
     """Time-weighted average HR of the jog laps of a run with strides.
 
-    ``None`` when the run has no stride lap -- then the whole run *is* the
-    jog and the activity's own average HR stands.
+    The fallback when the run has no time series. ``None`` when the run has
+    no stride lap -- then the whole run *is* the jog and the activity's own
+    average HR stands.
     """
     if not _has_stride_laps(splits):
         return None
@@ -1174,28 +1253,28 @@ def _check(axis: str, target: str, actual: str, on_plan: bool) -> dict[str, Any]
 def _hr_ceiling(
     prescription: dict[str, Any],
     zone_rows: list[tuple[Any, ...]],
-    splits: Sequence[Mapping[str, Any]] = (),
-    hr_samples: Sequence[tuple[float, float]] = (),
+    hr_samples: Sequence[Mapping[str, Any]] = (),
+    steady: Sequence[bool] = (),
 ) -> dict[str, Any] | None:
-    """Time spent above the prescribed ceiling.
+    """Time spent above the prescribed ceiling, steady running only.
 
-    The zones already carry the seconds per band, so "how long was the athlete
-    above 150?" is the sum of every zone whose *low* boundary is at or above
-    the ceiling -- no time-series scan and no per-second work.
+    The heart-rate time series is read through the steady mask
+    (``analysis.hr_windows.steady_mask``, #1313): a stride is *meant* to clear
+    an easy ceiling (#1297), and after a surge, a stop or an auto-pause the
+    heart rate needs a while to settle -- none of those seconds are the steady
+    running the ceiling guards, and the zones cannot tell them apart.
 
-    A run with stride laps is the exception (#1297): a stride is *meant* to
-    clear an easy ceiling, and the zones cannot tell its seconds from the
-    jog's. There the heart-rate time series is read over the jog windows only
-    (:func:`_jog_windows`); the zones remain the fallback when the run has no
-    time series.
+    Without a time series the zones are the fallback: "how long was the
+    athlete above 150?" is the sum of every zone whose *low* boundary is at or
+    above the ceiling.
     """
     bpm = _as_int(prescription.get("hr_high"))
     if bpm is None:
         return None
-    if _has_stride_laps(splits) and hr_samples:
-        jog = _jog_seconds_over(bpm, _jog_windows(splits), hr_samples)
-        if jog is not None:
-            return jog
+    if hr_samples:
+        steady_over = seconds_over(hr_samples, steady, bpm)
+        if steady_over is not None:
+            return {"bpm": bpm, **steady_over}
     if not zone_rows:
         return None
 
@@ -1209,47 +1288,6 @@ def _hr_ceiling(
         "bpm": bpm,
         "seconds_over": round(over, 1),
         "pct_over": round(over / total * 100.0, 1) if total else 0.0,
-    }
-
-
-# Longest gap between two HR samples still counted as time at the earlier
-# sample's value. The watch records roughly every second; a longer gap is a
-# pause, and a paused minute must not count as a minute above the ceiling.
-_MAX_SAMPLE_GAP_S = 10.0
-
-
-def _jog_seconds_over(
-    bpm: int,
-    windows: Sequence[tuple[int, int]],
-    hr_samples: Sequence[tuple[float, float]],
-) -> dict[str, Any] | None:
-    """Seconds (and share of jog time) above ``bpm``, jog windows only.
-
-    Each sample stands for the time until the next one (capped at
-    ``_MAX_SAMPLE_GAP_S``). ``None`` when no sample falls inside a jog window,
-    so the caller can fall back to the zone totals.
-    """
-    if not windows:
-        return None
-    total = 0.0
-    over = 0.0
-    for index, (timestamp, hr) in enumerate(hr_samples):
-        if not any(start <= timestamp < end for start, end in windows):
-            continue
-        if index + 1 < len(hr_samples):
-            gap = hr_samples[index + 1][0] - timestamp
-            weight = min(max(gap, 0.0), _MAX_SAMPLE_GAP_S)
-        else:
-            weight = 1.0
-        total += weight
-        if hr > bpm:
-            over += weight
-    if total <= 0:
-        return None
-    return {
-        "bpm": bpm,
-        "seconds_over": round(over, 1),
-        "pct_over": round(over / total * 100.0, 1),
     }
 
 

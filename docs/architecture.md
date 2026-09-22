@@ -206,7 +206,11 @@ an LLM (Epic #1247).
 1. **Plan vs actual** — `compute_prescription_verdict` scores the day's
    prescription axis by axis (`target` / `actual` / `on_plan`, plus the HR
    ceiling's `seconds_over` / `pct_over`) into ✅ / 🟡 / 🔴. `plan` is `null`
-   when the day carried no prescription.
+   when the day carried no prescription. The ceiling is judged on steady
+   running only (`analysis/hr_windows.py`): stops, auto-pause resumes, bursts
+   and stride / recovery laps are masked together with the HR recovery after
+   each, read off the HR trace; `judged_share` reports how much of the run was
+   left, and form signals are not judged below half.
 2. **Today vs the athlete's own normal range** — per metric, not against a
    population or a fixed band.
 

@@ -46,6 +46,7 @@ def test_run_report_shape_and_json(reader_db_path: Path) -> None:
         "intensity_category",
         "headline",
         "plan",
+        "judged_share",
         "signals",
         "zones",
         "moments",

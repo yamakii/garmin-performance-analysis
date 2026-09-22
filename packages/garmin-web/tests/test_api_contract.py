@@ -123,6 +123,7 @@ _RUN_REPORT_KEYS = {
     "intensity_category",
     "headline",
     "plan",
+    "judged_share",
     "signals",
     "zones",
     "moments",

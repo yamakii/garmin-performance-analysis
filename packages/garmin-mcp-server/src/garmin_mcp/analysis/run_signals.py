@@ -29,8 +29,9 @@ is restricted to the **same intensity family**, which is what turned a useless
 
 What is *not* judged is as important as what is. A metric comes back
 ``insufficient`` with a ``reason`` when the run has fewer than
-``MIN_VALID_SPLITS`` running splits (its averages describe a warmup), when the
-form model was extrapolated far beyond its trained speed range (the caller sets
+``MIN_VALID_SPLITS`` running splits (its averages describe a warmup), when
+less than ``MIN_JUDGED_SHARE`` of it was steady running (form only, see
+``analysis.hr_windows``), when the form model was extrapolated far beyond its trained speed range (the caller sets
 ``{metric}_extrapolated``, see ``normal_range.EXTRAPOLATION_NOT_JUDGED``), when
 the value is missing, when fewer than ``MIN_BASELINE_RUNS`` prior runs exist, or
 -- for HR drift -- when the run was hot enough
@@ -84,6 +85,13 @@ REASON_EXTRAPOLATED = "extrapolated"
 REASON_NO_HR_MODEL = "no_hr_model"
 REASON_NO_HR_INPUTS = "no_hr_inputs"
 REASON_HOT = "drift_in_heat"
+REASON_LOW_JUDGED_SHARE = "low_judged_share"
+
+#: Below this share of steady running (outside stops, pauses, bursts and
+#: effort laps) a run's form averages describe its interruptions rather than
+#: its running, so the form signals are not judged (#1313). The caller puts
+#: the share on the row as ``form_judged_share``; a row without it is judged.
+MIN_JUDGED_SHARE = 0.5
 
 #: Every reason a signal can carry, worded for the reader. This mapping is the
 #: single place a "not judged" is put into words -- including the codes
@@ -100,6 +108,10 @@ REASON_MESSAGES_JA: dict[str, str] = {
     REASON_NO_HR_MODEL: "同じ種類のランが少なく、想定心拍を計算できない",
     REASON_NO_HR_INPUTS: "ペース・気温・心拍のいずれかが記録されておらず想定心拍を出せない",
     REASON_HOT: "気温 {temp}℃ では心拍ドリフトが暑さの影響を受けるため判定しない",
+    REASON_LOW_JUDGED_SHARE: (
+        "停止や加速・流しの区間が多く、安定して走れていた時間が {pct}% で、"
+        "判定には {required}% 以上が必要"
+    ),
     REASON_TODAY_MISSING: "このランにはこの値の記録がない",
     REASON_THIN_BASELINE: "比べられる直近のランが {n} 本で、判定には {required} 本以上が必要",
     REASON_NO_SPREAD: "直近のランの値がほぼ同じで、比べられる幅が作れない",
@@ -632,6 +644,12 @@ def _eligibility_reason(row: Mapping[str, Any], metric: str) -> _Reason | None:
     if splits < MIN_VALID_SPLITS:
         return _Reason(
             REASON_SHORT_RUN, {"n": int(splits), "required": MIN_VALID_SPLITS}
+        )
+    share = as_float(row.get("form_judged_share"))
+    if share is not None and share < MIN_JUDGED_SHARE:
+        return _Reason(
+            REASON_LOW_JUDGED_SHARE,
+            {"pct": round(share * 100), "required": round(MIN_JUDGED_SHARE * 100)},
         )
     if row.get(f"{metric}_extrapolated") or row.get("extrapolated"):
         return _Reason(REASON_EXTRAPOLATED)
