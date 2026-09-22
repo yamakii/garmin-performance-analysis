@@ -45,6 +45,14 @@ def test_run_note_minimal_valid():
 
 
 @pytest.mark.unit
+def test_run_note_schema_allows_zero_good_points():
+    """A run with nothing legitimately strong leaves good_points empty (#1329)."""
+    valid, errors = validate_section_data("run_note", _run_note_payload(good_points=[]))
+    assert valid is True
+    assert errors == []
+
+
+@pytest.mark.unit
 def test_run_note_rejects_four_good_points():
     point = {
         "text": "ペースが最後まで安定していました。",

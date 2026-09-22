@@ -200,3 +200,18 @@ def test_contract_strides_not_ceiling_excursion():
     assert "stride or recovery HR" in rule
     assert "relaxed speed" in rule
     assert "HR came back before the next rep" in rule
+
+
+@pytest.mark.unit
+def test_contract_good_points_rules():
+    """good_points is 0-3 with gated evidence, and invented causes are banned (#1329)."""
+    contract = get_contract("run_note")
+
+    good = contract["required_fields"]["good_points"]["description"]
+    assert good.startswith("0-3 items")
+    for rule in ("within-range", "acceptable", "timeline", "Leave it empty"):
+        assert rule in good
+    assert any(
+        "drink" in line and "traffic light" in line for line in contract["never_write"]
+    )
+    assert any("seconds_over > 0" in line for line in contract["instructions"])
