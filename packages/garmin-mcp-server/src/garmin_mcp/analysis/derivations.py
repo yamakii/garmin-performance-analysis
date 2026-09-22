@@ -306,7 +306,7 @@ _PROGRESSION_PACE_GAIN_S = 10
 _PROGRESSION_MIN_SPLITS = 3
 
 
-def _prescription_marks_progression(prescription: dict | None) -> bool:
+def prescription_marks_progression(prescription: dict | None) -> bool:
     """True when the prescription's title / rationale names a build-up."""
     if not prescription:
         return False
@@ -370,7 +370,7 @@ def detect_progression_session(
     hr_ramp = _hr_ramps([hr for hr in hrs if hr is not None])
     if not hr_ramp:
         return False
-    if _prescription_marks_progression(prescription):
+    if prescription_marks_progression(prescription):
         return True
     if len(paces) < _PROGRESSION_MIN_SPLITS:
         return False
