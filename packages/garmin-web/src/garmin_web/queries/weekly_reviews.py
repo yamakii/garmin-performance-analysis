@@ -56,7 +56,8 @@ _SELECT_VERSIONS = f"""
 
 _PRESCRIPTION_COLUMNS = (
     "prescription_id, batch_id, date, session_type, title, target_minutes, "
-    "target_km, hr_low, hr_high, strides, rationale, rating, status"
+    "target_km, hr_low, hr_high, strides, purpose, allowances, rationale, rating, "
+    "status"
 )
 
 # Highest batch matching the predicate; the params are (user_id, value) twice.
@@ -112,7 +113,7 @@ def _prescription_rows(
 
 
 def _decode_json(raw: object) -> object:
-    """Decode a JSON-in-VARCHAR column (the easy row's ``strides``), else None."""
+    """Decode a JSON-in-VARCHAR column (``strides`` / ``allowances``), else None."""
     return json.loads(raw) if isinstance(raw, str) else None
 
 
@@ -130,6 +131,8 @@ def _verdict_from_prescriptions(rows: list[dict]) -> list[dict]:
             "hr_low": row.get("hr_low"),
             "hr_high": row.get("hr_high"),
             "strides": _decode_json(row.get("strides")),
+            "purpose": row.get("purpose"),
+            "allowances": _decode_json(row.get("allowances")),
             "status": row.get("status"),
             "prescription_id": row.get("prescription_id"),
         }

@@ -386,15 +386,27 @@ mcp__garmin-db__save_weekly_prescriptions(
 `prescriptions[]` の1行 = Step 6 の表の1行:
 
 ```json
-{"date":"2026-09-13","session_type":"long","title":"ロング25km 新潟ラダー3段目","target_km":25.0,
- "target_minutes":null,"hr_high":150,"hr_low":null,"rating":"✅","rationale":"ラダー3段目。進行ゲート緑。"}
-{"date":"2026-09-08","session_type":"easy","title":"Z2ジョグ 35分","target_km":null,
+{"date":"2026-09-13","session_type":"long","purpose":"long_easy","allowances":{"walk":true},
+ "title":"ロング25km 新潟ラダー3段目","target_km":25.0,
+ "target_minutes":null,"hr_high":150,"hr_low":null,"rating":"✅","rationale":"ラダー3段目。進行ゲート緑。補給の歩きは可。"}
+{"date":"2026-09-20","session_type":"long","purpose":"long_goal_pace","title":"ロング20km うち後半10kmをレースペース",
+ "target_km":20.0,"target_minutes":null,"hr_high":null,"hr_low":null,"rating":"✅","rationale":"本番ペースのリハーサル。"}
+{"date":"2026-09-08","session_type":"easy","purpose":"recovery","title":"Z2ジョグ 35分","target_km":null,
  "target_minutes":35,"hr_high":141,"hr_low":null,"rating":"✅","rationale":"ロング翌日の回復促進。35分は当日の総量。"}
-{"date":"2026-09-10","session_type":"easy","title":"Z2ジョグ 35分＋流し4本","target_km":null,
+{"date":"2026-09-10","session_type":"easy","purpose":"easy","title":"Z2ジョグ 35分＋流し4本","target_km":null,
  "target_minutes":35,"hr_high":141,"hr_low":null,"strides":{"reps":4,"run_seconds":20,"recovery_seconds":90},
  "rating":"✅","rationale":"脚の回転を保つ神経筋刺激。35分は流しを含む当日の総量。"}
 ```
 
+（例は形式を示すため別の週の long 行を並べている。実際の保存は W 内の日付だけ。）
+
+- **`purpose`（ランの目的）はラン行すべてに入れる**（rest / strength / cross 行は null）。`session_type` より細かい「何のためのランか」で、同じ `long` でも有酸素のロング（`long_easy`）と本番ペースのリハーサル（`long_goal_pace`）では評価の仕方が変わる。値と置ける `session_type`:
+  - `easy` / `recovery` → easy・recovery 行
+  - `long_easy` / `long_goal_pace` / `long_fast_finish`（後半上げ）→ long 行
+  - `progression` → easy・long・tempo 行、`tempo` → tempo・threshold 行、`intervals` → threshold・tempo 行、`fartlek` → easy・tempo・threshold 行、`race` → long・tempo・threshold 行
+  - 合わない組み合わせ（例: easy 行に `long_goal_pace`）や語彙外の値は保存時に拒否される。省略すると `session_type` の既定（long → `long_easy`、threshold → `intervals` など）で扱われる。
+  - purpose はこの選手固有の分類ではなく**一般的なコーチングのカテゴリ**。選手ごとの事情（ラダー段・レース名）は `title` / `rationale` に書き、purpose 自体は増やさない。
+- **`allowances`（許容事項）**: 歩きを許すランには `{"walk": true}` を入れる（補給の歩き・レースの給水など）。キーは `walk` だけで、ほかのキーは保存時に拒否される。許容しないなら省略（null）。
 - `date` は **W 内の日付**（週外の日付は保存時に拒否される）。`session_type` は `long|easy|recovery|threshold|tempo|rest|strength|cross` のいずれか（`strides` は session_type ではない。下の `strides` 付属を使う）。
 - `rating` は Step 6 の表の **判定**（`✅` / `🟡` / `🔴`。判定を付けないなら null）。`rationale` は同じ行の **コメント**。この2つがレビュー表示の判定・コメントの正本になる（レビュー JSON 側には保存しない）。
 - `target_km` / `target_minutes` は **時間優先のロングなら分、距離指定なら km**（両方あれば両方入れてよい。無ければ null）。
