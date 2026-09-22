@@ -828,6 +828,37 @@ describe("RunFlow scene list", () => {
     expect(document.body.innerHTML).not.toContain("is acceptable on");
   });
 
+  it("names the breakdown scene in Japanese", () => {
+    // The scene #1340 added reached the page without a Japanese name, so its
+    // tooltip read the raw "breakdown" while every other kind was named.
+    render(
+      <RunFlow
+        flow={STEADY_FLOW}
+        moments={[
+          moment("m1", "breakdown", [3, 5], {
+            label_ja: "3–5 km",
+            policy: {
+              verdict: "concern",
+              reason: "breakdown is concern on a long_easy run",
+            },
+          }),
+        ]}
+        timeline={[]}
+        hrCeiling={150}
+        purpose={{
+          id: "long_easy",
+          label_ja: "ロング（有酸素）",
+          source: "session_default",
+        }}
+      />,
+    );
+
+    expect(screen.getByText("懸念").parentElement?.title).toBe(
+      "崩れ：ロング（有酸素）では懸念",
+    );
+    expect(document.body.innerHTML).not.toContain("breakdown");
+  });
+
   it("long scene label wraps", () => {
     // A long label wraps inside its column instead of running over the badge
     // and the prose (#1326).

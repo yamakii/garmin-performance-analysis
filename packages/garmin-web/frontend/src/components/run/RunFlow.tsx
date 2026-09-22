@@ -40,6 +40,9 @@ const KIND_LABELS: Record<string, string> = {
   fast_start: "速い入り",
   climb: "登り",
   fade: "ペース低下",
+  // The run stopped delivering its purpose (#1340) -- a harder break than the
+  // gentle pace loss `fade` names above.
+  breakdown: "崩れ",
   surge: "ペースアップ",
   progression: "ビルドアップ",
   strong_finish: "終盤の粘り",
