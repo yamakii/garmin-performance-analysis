@@ -17,6 +17,7 @@ import type {
   RunMoment,
   RunMomentVerdict,
   RunNoteTimelineItem,
+  RunPurpose,
 } from "../../types";
 import { formatPaceLabel } from "../TimeSeriesChart";
 
@@ -738,7 +739,13 @@ export function SeriesLegend({
  * reason is the tooltip. Nothing is shown for a report older than #1314 — a
  * verdict is never invented on the page.
  */
-function PolicyBadge({ moment }: { moment: RunMoment }): JSX.Element | null {
+function PolicyBadge({
+  moment,
+  purpose,
+}: {
+  moment: RunMoment;
+  purpose: RunPurpose | null;
+}): JSX.Element | null {
   const policy = moment.policy;
   const badge = policy != null ? POLICY_BADGES[policy.verdict] : undefined;
   if (policy == null || badge == null) {
@@ -747,12 +754,43 @@ function PolicyBadge({ moment }: { moment: RunMoment }): JSX.Element | null {
   return (
     <span
       className="mr-2 align-[1px]"
-      title={policy.reason}
+      title={policyTitle(moment, purpose) ?? undefined}
       data-verdict={policy.verdict}
     >
       <StatusBadge tone={badge.tone}>{badge.label}</StatusBadge>
     </span>
   );
+}
+
+/** How each verdict reads in the badge's tooltip. */
+const VERDICT_WORDS: Record<RunMomentVerdict, string> = {
+  concern: "懸念",
+  acceptable: "許容",
+  neutral: "参考（判定の対象外）",
+};
+
+/**
+ * "歩き：ロング（有酸素）では許容" -- the badge's tooltip, in the page's
+ * language (#1326). The report's `reason` is an English key sentence for
+ * tools; the reader needs the scene, the purpose it was judged against and
+ * the verdict. A neutral scene is not judged, so it names no purpose.
+ */
+export function policyTitle(
+  moment: RunMoment,
+  purpose: RunPurpose | null,
+): string | null {
+  const policy = moment.policy;
+  if (policy == null) {
+    return null;
+  }
+  const kind = KIND_LABELS[moment.kind] ?? moment.kind;
+  const verdict = VERDICT_WORDS[policy.verdict];
+  const purposeName =
+    purpose != null && purpose.id !== "unknown" ? purpose.label_ja : "";
+  if (policy.verdict === "neutral" || purposeName === "") {
+    return `${kind}：${verdict}`;
+  }
+  return `${kind}：${purposeName}では${verdict}`;
 }
 
 /** What the x axis is, and what the width of a step means. */
@@ -782,12 +820,15 @@ export default function RunFlow({
   moments,
   timeline,
   hrCeiling,
+  purpose = null,
 }: {
   id?: string;
   flow: RunFlowData | null;
   moments: RunMoment[];
   timeline: RunNoteTimelineItem[];
   hrCeiling: number | null;
+  /** What the run was for: names the purpose in each badge's tooltip. */
+  purpose?: RunPurpose | null;
 }): JSX.Element | null {
   const drawable = flow != null && flow.segments.length > 0;
   if (!drawable && moments.length === 0) {
@@ -823,7 +864,13 @@ export default function RunFlow({
               {/* The label the report wrote: "3–5 km", "13・19・21 km 付近",
                   "本編 0.9–5.9 km", "1本目". The page does not re-derive it —
                   a lap number is not a kilometre (#1268). */}
-              <span className="font-mono text-[13px] text-ink-muted md:whitespace-nowrap">
+              {/* Wraps inside its column: "10・18・19・20・21…28 km 付近" ran
+                  over the badge and the prose while it was kept on one line
+                  (#1326). */}
+              <span
+                className="min-w-0 font-mono text-[13px] text-ink-muted [overflow-wrap:anywhere]"
+                data-testid="scene-label"
+              >
                 {moment.label_ja || KIND_LABELS[moment.kind] || moment.kind}
               </span>
               {/* Empty when the coach wrote nothing about this scene: the
@@ -832,7 +879,7 @@ export default function RunFlow({
                   showed "クールダウン" twice on the threshold session
                   (#1277). */}
               <span className="col-start-2 min-w-0 text-[15px] leading-[1.7] text-ink-soft md:col-start-3">
-                <PolicyBadge moment={moment} />
+                <PolicyBadge moment={moment} purpose={purpose} />
                 {textOf.get(moment.id) ?? ""}
               </span>
             </li>

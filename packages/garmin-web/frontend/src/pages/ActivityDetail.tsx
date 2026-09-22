@@ -995,6 +995,7 @@ export default function ActivityDetail() {
           moments={moments}
           timeline={runNote?.timeline ?? []}
           hrCeiling={hrCeiling}
+          purpose={report?.purpose ?? null}
         />
       )}
 
