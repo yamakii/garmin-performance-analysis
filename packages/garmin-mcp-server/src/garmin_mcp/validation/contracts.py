@@ -32,8 +32,14 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "good_points": {
                 "type": "array",
                 "description": (
-                    "1-3 items of {text, evidence}: one sentence each with the "
-                    "evidence key of the number that supports it"
+                    "0-3 items of {text, evidence}: one sentence each with the "
+                    "evidence key of the number that supports it. A strength "
+                    "rests on a signal outside its normal range on the "
+                    "favourable side, an on-plan axis, a neutral moment the "
+                    "timeline does not narrate, or vs_previous / recurrence / "
+                    "conditions / context. Never a within-range signal, an "
+                    "'acceptable' or 'concern' moment, or a scene the timeline "
+                    "already tells. Leave it empty rather than invent one"
                 ),
             },
             "growth_points": {
@@ -124,6 +130,8 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "A pass/fail judgement of the athlete -- growth points are room to "
             "grow or a maintenance target",
             "A scene, cause or comparison that no evidence key supports",
+            "A cause the report does not carry -- a drink, a traffic light, how "
+            "the legs felt -- filled in to explain a scene",
             "A lap / split number as a place in the run -- a scene is placed "
             "by distance ('3–5 km') or by step ('2本目'), which is what its "
             "label_ja already says",
@@ -286,6 +294,12 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "Only an outside + adverse signal, an off-plan axis or a moment with "
             "policy.verdict == 'concern' may become a growth point; an "
             "'acceptable' or 'neutral' moment is context, never a flaw",
+            "A good point rests on a favourable out-of-range signal, an on-plan "
+            "axis, a neutral moment the timeline does not narrate, or a "
+            "background source; write none rather than praise a within-range "
+            "value or an allowed scene",
+            "When plan.hr_ceiling.seconds_over > 0, never say the HR ceiling "
+            "was not exceeded",
             "Read the run against report.purpose; when purpose.source == "
             "'inferred', hedge it -- say the purpose was inferred from the run, "
             "not prescribed",

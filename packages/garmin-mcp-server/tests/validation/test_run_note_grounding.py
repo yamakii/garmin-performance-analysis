@@ -334,3 +334,111 @@ def test_note_on_within_signal_is_rejected():
 def test_empty_growth_points_is_valid():
     """A clean run needs no growth point at all."""
     assert check_run_note_grounding(_note_data(), _report()) == (True, None)
+
+
+# --- good points (#1329) ---------------------------------------------------
+
+
+def _good_on(evidence: str, **overrides: Any) -> dict[str, Any]:
+    """A run_note whose one good point rests on ``evidence``."""
+    return _note_data(
+        good_points=[{"text": "よく走れています。", "evidence": evidence}], **overrides
+    )
+
+
+@pytest.mark.unit
+def test_good_point_rejects_within_signal():
+    """A within-range value is not a strength (never_write #4)."""
+    ok, reason = check_run_note_grounding(_good_on("signals.gct"), _report())
+
+    assert ok is False
+    assert reason is not None
+    assert "signals.gct" in reason
+
+
+@pytest.mark.unit
+def test_good_point_accepts_favorable_outlier():
+    """A signal outside its range on the favourable side is a strength."""
+    report = _report(
+        signals=[{"metric": "hr_drift", "status": "outside", "adverse": False}]
+    )
+
+    assert check_run_note_grounding(_good_on("signals.hr_drift"), report) == (
+        True,
+        None,
+    )
+
+
+@pytest.mark.unit
+def test_good_point_rejects_acceptable_moment():
+    """A walk the purpose allows is not something to praise."""
+    data = _good_on(
+        "moments.m2", timeline=[{"moment_id": "m3", "text": "落ち着いて進みました。"}]
+    )
+
+    ok, reason = check_run_note_grounding(data, _report_with_m2("acceptable"))
+
+    assert ok is False
+    assert reason is not None
+    assert "acceptable" in reason
+
+
+@pytest.mark.unit
+def test_good_point_rejects_moment_narrated_in_timeline():
+    """A scene the timeline tells is said once, in the timeline (never_write #5)."""
+    data = _good_on(
+        "moments.m2", timeline=[{"moment_id": "m2", "text": "終盤に上げました。"}]
+    )
+
+    ok, reason = check_run_note_grounding(data, _report_with_m2("neutral"))
+
+    assert ok is False
+    assert reason is not None
+    assert "timeline" in reason
+
+
+@pytest.mark.unit
+def test_good_point_accepts_neutral_moment_not_in_timeline():
+    """A neutral scene the timeline leaves out may carry a strength."""
+    data = _good_on(
+        "moments.m2", timeline=[{"moment_id": "m3", "text": "落ち着いて進みました。"}]
+    )
+
+    assert check_run_note_grounding(data, _report_with_m2("neutral")) == (True, None)
+
+
+@pytest.mark.unit
+def test_good_point_rejects_off_plan_axis():
+    """An axis that came out off plan is not a strength."""
+    ok, reason = check_run_note_grounding(_good_on("plan.volume"), _report())
+
+    assert ok is False
+    assert reason is not None
+    assert "plan.volume" in reason
+
+
+@pytest.mark.unit
+def test_good_points_may_be_empty():
+    """With nothing legitimately strong, good_points is left empty."""
+    assert check_run_note_grounding(_note_data(good_points=[]), _report()) == (
+        True,
+        None,
+    )
+
+
+@pytest.mark.unit
+def test_minimal_run_note_passes_without_good_points():
+    """No plan, every signal within range, no previous run: an empty list passes.
+
+    The E2E review asked whether such a run can still produce a valid note once
+    scenes and within-range values stop counting as strengths (#1329).
+    """
+    report = _report(
+        plan=None,
+        signals=[{"metric": "gct", "status": "within", "adverse": False}],
+        vs_previous=None,
+        recurrence=[],
+    )
+    data = _note_data(good_points=[])
+
+    assert check_run_note_grounding(data, report) == (True, None)

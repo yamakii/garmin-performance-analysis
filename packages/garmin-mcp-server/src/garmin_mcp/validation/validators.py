@@ -34,7 +34,9 @@ CONTEXT_EVIDENCE_KEYS: frozenset[str] = frozenset(
 # the merge-time guard rejects an over-long list even when the payload reaches
 # it without passing through the Pydantic model.
 _RUN_NOTE_LIST_CAPS: dict[str, tuple[int, int]] = {
-    "good_points": (1, 3),
+    # 0 allowed (#1329): a run with nothing legitimately strong must not
+    # dress a within-range value or an allowed scene up as one.
+    "good_points": (0, 3),
     "growth_points": (0, 2),
     "timeline": (1, 5),
     "notes": (0, 3),
@@ -49,6 +51,10 @@ _SIGNAL_OUTSIDE_STATUS = "outside"
 # deviates from what the run was *for*. ``acceptable`` / ``neutral`` scenes are
 # description, not weaknesses.
 _MOMENT_CONCERN = "concern"
+
+# Moment verdicts that never carry a good point (#1329): an ``acceptable``
+# scene is allowed, not good, and a ``concern`` is the opposite of good.
+_GOOD_POINT_REJECTED_VERDICTS: frozenset[str] = frozenset({"acceptable", "concern"})
 
 # Evidence sources that give a growth point its background but can never be
 # the weakness itself.
@@ -189,6 +195,55 @@ def _growth_point_error(
     return None
 
 
+def _good_point_error(
+    evidence: str,
+    signals: Mapping[str, Mapping[str, Any]],
+    moments: Mapping[str, Mapping[str, Any]],
+    checks: Mapping[str, Mapping[str, Any]] | None,
+    timeline_ids: frozenset[str],
+) -> str | None:
+    """Reject a good point that does not rest on a real strength (#1329).
+
+    The mirror of :func:`_growth_point_error`. A within-range signal is not a
+    strength (never_write #4); an ``acceptable`` scene is *allowed*, not good,
+    and a ``concern`` is the opposite of good; a scene the timeline already
+    tells would be the same point twice (never_write #5); an off-plan axis is
+    not something to praise. Background sources -- the previous run,
+    recurrence, conditions, context -- may support a strength.
+    """
+    prefix, key = evidence.split(".", 1)
+
+    if prefix == "signals":
+        signal = signals[key]
+        if signal.get("status") != _SIGNAL_OUTSIDE_STATUS or signal.get("adverse"):
+            return (
+                f"good point evidence '{evidence}' rests on a signal with "
+                f"status={signal.get('status')!r} adverse={signal.get('adverse')!r}; "
+                "only a signal outside its normal range on the favourable side "
+                "is a strength -- a within-range value is not"
+            )
+    elif prefix == "moments":
+        verdict = (moments[key].get("policy") or {}).get("verdict")
+        if verdict in _GOOD_POINT_REJECTED_VERDICTS:
+            return (
+                f"good point evidence '{evidence}' rests on a moment with "
+                f"policy.verdict={verdict!r}; an allowed or concerning scene is "
+                "not a strength"
+            )
+        if key in timeline_ids:
+            return (
+                f"good point evidence '{evidence}' is a scene the timeline "
+                "already narrates; say it once, in the timeline"
+            )
+    elif prefix == "plan" and checks is not None:
+        if checks[key].get("on_plan") is not True:
+            return (
+                f"good point evidence '{evidence}' names a plan axis that came "
+                "out off plan; an off-plan axis is not a strength"
+            )
+    return None
+
+
 def check_run_note_grounding(
     analysis_data: Mapping[str, Any], report: Mapping[str, Any]
 ) -> tuple[bool, str | None]:
@@ -235,6 +290,11 @@ def check_run_note_grounding(
     signals = _index_by(report.get("signals"), "metric")
     moments = _index_by(report.get("moments"), "id")
     checks = _plan_checks(report)
+    timeline_ids = frozenset(
+        str(item.get("moment_id"))
+        for item in analysis_data.get("timeline") or []
+        if isinstance(item, Mapping)
+    )
 
     for field in ("good_points", "growth_points"):
         for item in analysis_data.get(field) or []:
@@ -246,8 +306,12 @@ def check_run_note_grounding(
                 return False, f"{field}: {error}"
             if field == "growth_points":
                 error = _growth_point_error(str(evidence), signals, moments, checks)
-                if error:
-                    return False, error
+            else:
+                error = _good_point_error(
+                    str(evidence), signals, moments, checks, timeline_ids
+                )
+            if error:
+                return False, error
 
     timeline = analysis_data.get("timeline") or []
     if len(timeline) > len(moments):

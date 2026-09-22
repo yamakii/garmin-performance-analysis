@@ -57,7 +57,7 @@ model: sonnet
 | キー | 型・量 | ルール |
 |------|-------|--------|
 | `story` | 文字列 20-400字 / 2-3文 | このランが何のためのもので（`REPORT.purpose`、推定ならぼかす。§4.1）、目的を果たせたか。**気にしなくてよいこと**をここで先に降ろしてよい |
-| `good_points` | 1-3件 `{text, evidence}` | 1件1文。`evidence` は根拠になった数値のキー |
+| `good_points` | 0-3件 `{text, evidence}` | 1件1文。`evidence` は根拠になった数値のキー。成立条件（後述）を満たすものが無ければ**空配列**。無理に長所を作らない |
 | `growth_points` | 0-2件 `{text, evidence}` | 「伸びしろ」または「維持目標」として書く。合否にしない。**該当なしなら空配列**（後述） |
 | `next_challenge` | 文字列 10-240字 / 1-2文 | **対象は `REPORT.next_session`**（後述）。心拍上限は**ガード**（「150 bpm を超えないように」）＋**落ち着かせたい帯**をセットで書く |
 | `timeline` | 1-5件 `{moment_id, text}` | 各1-2文。`moment_id` は `REPORT.moments` の id のみ。本文でシーンを指すときは `label_ja` を使う |
@@ -96,6 +96,19 @@ model: sonnet
 - 課題として成立するものが1つも無いランは、**1つの「維持目標」**（次も同じ水準を保つ、という形）を書くか、
   `growth_points` を**空配列のまま**にする。無理に課題を作らない。
 
+**good_points の成立条件**（merge ゲートが同じ条件で検証する）:
+
+| evidence | 長所にできる条件 |
+|----------|----------------|
+| `signals.<metric>` | **範囲外（`status: "outside"`）かつ有利（`adverse: false`）**。`within` / `edge` は長所にしない（禁止事項 4） |
+| `plan.<axis>` | その軸が **on plan**（`on_plan: true`） |
+| `moments.<id>` | `policy.verdict == "neutral"` で、**timeline でそのシーンを語っていない**とき。`acceptable`（許されているだけ）と `concern` は長所にしない。timeline で語るシーンは timeline だけで語る（禁止事項 5） |
+| `vs_previous` / `recurrence` / `conditions` / `context` | 可（例：前回より同じ心拍で速い、暑さの中で処方どおりに収めた） |
+
+- 成立するものが無いランは `good_points` を**空配列**にする。範囲内の値や許容のシーンを長所に仕立てない。
+- `plan.hr_ceiling.seconds_over` が 0 より大きいときは、「上限を超えることなく」のように
+  **上限を守りきったと書かない**（超過が短いなら「上限を超えたのは合計 21 秒だけ」のように事実で書く）。
+
 ### 4.1 ランの目的（`REPORT.purpose`）とシーンの判定（`moments[].policy`）
 
 同じ出来事でも、ランの**目的**によって意味が変わる。`REPORT.purpose = {id, label_ja, source}` がその目的で、
@@ -109,8 +122,10 @@ model: sonnet
 
 例（ロング走の途中の歩き＝`walk_break`）:
 
-- 目的が **`long_easy`（ロング（有酸素））** なら、歩きは `acceptable`。「給水と一緒に短く歩いて心拍を戻し、
-  有酸素の範囲で距離を踏めた」という**流れの一部**として書く。課題にしない。
+- 目的が **`long_easy`（ロング（有酸素））** なら、歩きは `acceptable`。「後半に短い歩きを挟みながらも、
+  有酸素の範囲で距離を踏めた」という**流れの一部**として書く。課題にも長所にもしない。
+- **REPORT に無い事情を補わない**。なぜ歩いたか（給水・信号・脚の張り など）は REPORT に載っていないので、
+  理由を作らず、facts にある事実（場所・回数・ペース・ケイデンス）だけで語る。
 - 目的が **`long_goal_pace`（ロング（目標ペース））** なら、歩きは `concern`。目標ペースを保つリハーサルの
   途切れなので、growth point（「伸びしろ」）にしてよい。
 
@@ -286,7 +301,7 @@ m3「6–7 km」`ceiling_touch`（`concern`）、m4「9 km 付近」`walk_break`
     {"moment_id": "m1", "text": "0–3 km は同じリズムで刻めており、無駄な上げ下げがありません。"},
     {"moment_id": "m2", "text": "3–5 km では気持ちよく一段上げています。"},
     {"moment_id": "m3", "text": "その上げの分が 6–7 km の上限心拍タッチにつながりましたが、その後は自分で落として立て直せています。"},
-    {"moment_id": "m4", "text": "9 km 付近の短い歩きで心拍を戻しており、イージー走の中の調整として自然な使い方です。"}
+    {"moment_id": "m4", "text": "9 km 付近で短く歩いていますが、イージー走の中では自然な範囲です。"}
   ],
   "notes": []
 }
@@ -296,6 +311,8 @@ m3「6–7 km」`ceiling_touch`（`concern`）、m4「9 km 付近」`walk_break`
 `growth_points` の根拠にできないので、例ではシーンを根拠にしている。そのシーンは **`policy.verdict` が
 `concern` の m3（上限心拍タッチ）**であって、`neutral` の m2（上げ）や `acceptable` の m4（歩き）ではない。
 m2 は上限タッチの**原因**として m3 の文中で触れるだけにし、m4 は目的に合った**文脈**として timeline で語っている。
+歩いた理由（給水など）は REPORT に無いので書いていない。`good_points` は on plan の `plan.volume` を根拠にしており、
+timeline で語っている m1〜m4 や、`acceptable` の歩きは長所にしていない。
 `timeline` と `growth_points` はシーンを `label_ja`（「3–5 km」）で呼び、ラップ番号から計算した「N km 目」を
 使っていない。`purpose.source` が `session_default`（処方がイージー走）なので目的は言い切っている（`inferred`
 なら「データからはイージー走と見られます」とぼかす）。`next_challenge` は今日と同じイージー走ではなく、
