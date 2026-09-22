@@ -859,7 +859,11 @@ export default function ActivityDetail() {
   };
 
   const runNote = parseRunNote(sections?.run_note);
-  const moments = report?.moments ?? [];
+  // One scene list for the whole page (#1328): the scenes the coach's note
+  // was written against when it carries them, so its timeline stays on the
+  // scenes it describes after scene detection changes; the live report's for
+  // a note saved before #1328 or a run without a note.
+  const moments = runNote?.report_moments ?? report?.moments ?? [];
   // What the chart draws and which laps back it: decided once, in the report.
   const flow = report?.flow ?? null;
   const hrCeiling = report?.plan?.hr_ceiling?.bpm ?? null;

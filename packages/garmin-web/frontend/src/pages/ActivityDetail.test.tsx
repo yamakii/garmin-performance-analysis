@@ -1575,3 +1575,100 @@ describe("ActivityDetail version selector", () => {
     });
   });
 });
+
+/** A scene as the report (or a note's snapshot) carries it. */
+function scene(id: string, kind: string, label: string, km: number): RunMoment {
+  return {
+    id,
+    kind,
+    unit: "km",
+    label_ja: label,
+    step_id: "s1",
+    rep_no: null,
+    km_from: km,
+    km_to: km + 1,
+    t_from_s: km * 400,
+    t_to_s: (km + 1) * 400,
+    split_from: 1,
+    split_to: 1,
+    facts: {},
+  };
+}
+
+/** Live scenes after detection changed: m2 is now a surge at 10–13 km. */
+const LIVE_SCENES = [
+  scene("m1", "start", "0–1 km", 0),
+  scene("m2", "surge", "10–13 km", 1),
+];
+/** The scenes the note was written against: m2 was the walk break. */
+const SAVED_SCENES = [
+  scene("m1", "start", "0–1 km", 0),
+  scene("m2", "walk_break", "13 km 付近", 1),
+];
+
+function noteSections(extra: Record<string, unknown> = {}): SectionsResponse {
+  return {
+    run_note: {
+      data: {
+        story: "有酸素のロング走でした。",
+        next_challenge: "次回も落ち着いて入りましょう。",
+        good_points: [],
+        growth_points: [],
+        timeline: [{ moment_id: "m2", text: "歩きの文です。" }],
+        notes: [],
+        ...extra,
+      },
+      parse_error: false,
+      raw: null,
+    },
+  };
+}
+
+async function sceneLabels(): Promise<string[]> {
+  const labels = await screen.findAllByTestId("scene-label");
+  return labels.map((label) => label.textContent ?? "");
+}
+
+describe("ActivityDetail scene snapshot (#1328)", () => {
+  it("uses the note's saved scenes over the live report", async () => {
+    stubFetch({
+      detail: BASE_DETAIL,
+      sections: noteSections({ report_moments: SAVED_SCENES }),
+      track: [],
+      report: { ...BASE_REPORT, moments: LIVE_SCENES },
+    });
+    renderDetail();
+
+    expect(await sceneLabels()).toEqual(["0–1 km", "13 km 付近"]);
+    // The walk sentence stays on the walk scene it was written about.
+    const row = screen.getByText("13 km 付近").closest("li");
+    expect(row).toHaveTextContent("歩きの文です。");
+    expect(screen.queryByText("10–13 km")).not.toBeInTheDocument();
+  });
+
+  it("falls back to live scenes without a snapshot", async () => {
+    // A note saved before #1328 carries no report_moments: the page renders
+    // the live scenes exactly as it did before.
+    stubFetch({
+      detail: BASE_DETAIL,
+      sections: noteSections(),
+      track: [],
+      report: { ...BASE_REPORT, moments: LIVE_SCENES },
+    });
+    renderDetail();
+
+    expect(await sceneLabels()).toEqual(["0–1 km", "10–13 km"]);
+  });
+
+  it("falls back to live scenes without a note", async () => {
+    stubFetch({
+      detail: BASE_DETAIL,
+      sections: {},
+      track: [],
+      report: { ...BASE_REPORT, moments: LIVE_SCENES },
+    });
+    renderDetail();
+
+    expect(await sceneLabels()).toEqual(["0–1 km", "10–13 km"]);
+  });
+});

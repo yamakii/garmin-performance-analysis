@@ -248,3 +248,44 @@ class TestMergeRejectsLegacySections:
             for call in mock_writer.insert_section_analysis.call_args_list
         }
         assert inserted == {"run_note"}
+
+
+@pytest.mark.integration
+@patch("garmin_mcp.scripts.merge_section_analyses.GarminDBReader")
+@patch("garmin_mcp.scripts.merge_section_analyses.GarminDBWriter")
+def test_merge_saves_report_moments_snapshot(
+    mock_writer_cls, mock_reader_cls, tmp_path
+):
+    """The scenes the note was checked against are stored with it (#1328)."""
+    mock_reader_cls.return_value.get_run_report.return_value = copy.deepcopy(_REPORT)
+    mock_writer = MagicMock()
+    mock_writer.insert_section_analysis.return_value = True
+    mock_writer_cls.return_value = mock_writer
+    _write_section(tmp_path, "run_note", _run_note())
+
+    merge_section_analyses(tmp_path, keep=True)
+
+    saved = mock_writer.insert_section_analysis.call_args.kwargs["analysis_data"]
+    assert saved["report_moments"] == _REPORT["moments"]
+    # The note itself is stored unchanged beside the snapshot.
+    assert saved["timeline"] == _VALID_RUN_NOTE["timeline"]
+
+
+@pytest.mark.integration
+@patch("garmin_mcp.scripts.merge_section_analyses.GarminDBReader")
+@patch("garmin_mcp.scripts.merge_section_analyses.GarminDBWriter")
+def test_merge_overwrites_agent_report_moments(
+    mock_writer_cls, mock_reader_cls, tmp_path
+):
+    """An agent-written report_moments never survives: merge writes the key."""
+    mock_reader_cls.return_value.get_run_report.return_value = copy.deepcopy(_REPORT)
+    mock_writer = MagicMock()
+    mock_writer.insert_section_analysis.return_value = True
+    mock_writer_cls.return_value = mock_writer
+    forged = [{"id": "m1", "kind": "fade"}]
+    _write_section(tmp_path, "run_note", _run_note(report_moments=forged))
+
+    merge_section_analyses(tmp_path, keep=True)
+
+    saved = mock_writer.insert_section_analysis.call_args.kwargs["analysis_data"]
+    assert saved["report_moments"] == _REPORT["moments"]

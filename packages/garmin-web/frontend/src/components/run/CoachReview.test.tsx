@@ -227,3 +227,33 @@ describe("parseRunNote", () => {
     expect(parseRunNote(undefined)).toBeNull();
   });
 });
+
+describe("parseRunNote report_moments (#1328)", () => {
+  const section = (reportMoments: unknown): SectionResult => ({
+    data: {
+      story: "有酸素のロング走でした。",
+      next_challenge: "次回も落ち着いて入りましょう。",
+      report_moments: reportMoments,
+    },
+    parse_error: false,
+    raw: null,
+  });
+
+  it("parses report_moments when present", () => {
+    const scenes = [{ id: "m1", kind: "steady", label_ja: "0–5 km" }];
+    expect(parseRunNote(section(scenes))?.report_moments).toEqual(scenes);
+  });
+
+  it("drops a malformed or empty snapshot", () => {
+    // Unusable snapshots leave the page on the live scenes.
+    for (const value of [
+      "m1",
+      [],
+      [{ kind: "steady" }],
+      [{ id: "m1" }],
+      [null],
+    ]) {
+      expect(parseRunNote(section(value))?.report_moments).toBeUndefined();
+    }
+  });
+});
