@@ -62,6 +62,19 @@ cases=(
   "guard-push.sh|onfeat|0|git -C $tmp/onfeat push -u origin feat/x"
   "guard-push.sh|onfeat|0|ALLOW_PUSH=1 git push --force"
   "guard-push.sh|onfeat|0|git fetch origin main"
+  # test_guard_bare_python (#1302)
+  "guard-bare-python.sh|onfeat|2|python3 x.py"
+  "guard-bare-python.sh|onfeat|2|python -c 1"
+  "guard-bare-python.sh|onfeat|2|python3.12 x.py"
+  "guard-bare-python.sh|onfeat|2|cd /x && python3 y.py"
+  "guard-bare-python.sh|onfeat|2|FOO=1 python3 y.py"
+  "guard-bare-python.sh|onfeat|2|echo a | python3 -c z"
+  "guard-bare-python.sh|onfeat|2|.venv/bin/python x.py"
+  "guard-bare-python.sh|onfeat|0|uv run python x.py"
+  "guard-bare-python.sh|onfeat|0|uv run --directory /w python -m m"
+  "guard-bare-python.sh|onfeat|0|grep python3 f"
+  "guard-bare-python.sh|onfeat|0|git commit -m python3-fix"
+  "guard-bare-python.sh|onfeat|0|ls pythonic"
 )
 
 for c in "${cases[@]}"; do
@@ -84,7 +97,7 @@ else
 fi
 
 # test_settings_wires_every_guard_hook — each guard tested above is actually installed
-for hook in block-commit-on-main guard-no-verify guard-data-deletion guard-push; do
+for hook in block-commit-on-main guard-no-verify guard-data-deletion guard-push guard-bare-python; do
   if grep -q "hooks/$hook.sh" "$ROOT/.claude/settings.json"; then
     echo "  ok: test_settings_wires_every_guard_hook: $hook"
   else
