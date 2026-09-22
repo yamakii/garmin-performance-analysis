@@ -1,5 +1,7 @@
 #!/bin/bash
 # mainブランチでのgit commitをブロック
+# クォート内（commit メッセージ等）は判定前に潰し、git のグローバルオプション
+# -C <path> / -c <k=v> を挟んだ形も検知する（#1304）。
 
 set -euo pipefail
 input=$(cat)
@@ -10,12 +12,14 @@ print(json.load(sys.stdin).get('tool_input',{}).get('command',''))
 
 [ -z "$command" ] && exit 0
 
-# git commit以外は通す（git -C <path> commit 形式も検知）
-echo "$command" | grep -Eq 'git( +-C +[^ ]+)? +commit' || exit 0
+stripped=$(echo "$command" | sed -E "s/'[^']*'/Q/g; s/\"[^\"]*\"/Q/g")
 
-# command から -C <path> を抽出（あればターゲットの worktree を見る）
-# grep が非マッチ時に exit 1 を返しても set -e で落ちないよう || true で吸収
-cpath=$(echo "$command" | grep -oE 'git +-C +[^ ]+' | head -1 | sed -E 's/.*-C +//' || true)
+# git commit以外は通す（git -C <path> / -c k=v commit 形式も検知）
+segment=$(echo "$stripped" | grep -oE 'git( +-[Cc] +[^ ]+)* +commit' | head -1 || true)
+[ -z "$segment" ] && exit 0
+
+# セグメントから -C <path> を抽出（あればターゲットの worktree を見る）
+cpath=$(echo "$segment" | grep -oE -- '-C +[^ ]+' | head -1 | sed -E 's/-C +//' || true)
 
 # ターゲットブランチを解決（-C があればそのパス、なければ CWD）
 if [ -n "$cpath" ]; then
@@ -27,5 +31,5 @@ fi
 
 # mainブランチでのcommit → ブロック（branch protection により全変更がPR必須）
 echo "BLOCKED: mainブランチへの直接コミットは禁止です" >&2
-echo "worktreeを作成してください: git worktree add -b feature/name ../garmin-name main" >&2
+echo "worktree を作成してください（.claude/rules/dev/git.md §2）: 背景ジョブは EnterWorktree、対話は git worktree add -q -b <type>/<issue>-<slug> .claude/worktrees/<slug> origin/main" >&2
 exit 2

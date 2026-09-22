@@ -109,7 +109,7 @@ function pushCmd(worktreePath, branch) {
   return (
     `git -C ${worktreePath} ` +
     `-c credential.helper='!f(){ echo username=x-access-token; echo password=$GITHUB_TOKEN; };f' ` +
-    `push -u origin ${branch}`
+    `push -q -u origin ${branch}`
   )
 }
 
@@ -235,16 +235,17 @@ const results = await pipeline(
     return agent(
       `次の worktree ブランチを ship してください（merge はまだしない）。\n` +
         `worktree_path=${m.worktree_path}, branch=${m.branch}, issue=#${issue.number}。\n\n` +
-        `1. origin/main より遅れていれば先に \`git -C ${m.worktree_path} fetch origin\` → \`git -C ${m.worktree_path} merge --no-edit origin/main\`` +
-        `（rebase は使わない: \`git rebase\` は ask ルールに当たり Workflow が止まる）。merge がコンフリクトしたら ` +
-        `\`git -C ${m.worktree_path} merge --abort\` して mergeable=false で報告。それから ${pushCmd(m.worktree_path, m.branch)}。\n` +
+        `1. ${pushCmd(m.worktree_path, m.branch)}。origin/main の事前取り込みはしない（遅れているだけの PR はそのままマージできる。.claude/rules/dev/git.md）。\n` +
         `2. mcp__github__create_pull_request(${repoCtx()}, head="${m.branch}", base="main", title=コミット要約, body="Closes #${issue.number}\\nPart of the tier")。\n` +
         `3. リポジトリルートで bash scripts/wait-for-ci.sh PR番号 --timeout 900 を **フォアグラウンドで 1 回** 実行して ci-guard の完了を待つ` +
         `（Bash tool の timeout を 960000 ms 以上にする。run_in_background・Monitor・pgrep・kill・sleep ループは使わない: ` +
         `kill/pkill は ask ルールで権限プロンプトになり Workflow が止まる。exit 0=success / 1=failure / 2=timeout）。` +
         `exit 3（GITHUB_TOKEN 無し等）のときだけ mcp__github__pull_request_read(method="get_check_runs", ${repoCtx()}, pullNumber=PR番号) を間隔を空けて数回ポーリングする。\n` +
         `4. ci-guard の conclusion を ci_conclusion に（success/failure/pending）。web-backend/web-frontend/lint-and-test の skipped は無視。\n` +
-        `5. PR が main に対して mergeable か（コンフリクトなし）を mergeable に。\n` +
+        `5. mcp__github__pull_request_read(method="get") の mergeable を見る。false（コンフリクト）のときだけ 1 回: ` +
+        `\`git -C ${m.worktree_path} fetch -q origin main\` → \`git -C ${m.worktree_path} merge -q --no-stat --no-edit origin/main\`` +
+        `（push 済み履歴は書き換えないので rebase・force push はしない）。衝突したら \`git -C ${m.worktree_path} merge --abort\` して mergeable=false で返す。` +
+        `衝突なく merge できたら 1 の push をやり直して 3〜4 を再実行。最終状態を mergeable に。\n` +
         `schema で {pr_number, pr_url, ci_conclusion, mergeable, head_sha} を返す。`,
       { label: `ship:#${issue.number}`, phase: 'Ship', model: 'sonnet', schema: SHIP_SCHEMA }
     ).then((ship) => ({ ...acc, ship }))

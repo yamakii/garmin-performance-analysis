@@ -62,6 +62,22 @@ cases=(
   "guard-push.sh|onfeat|0|git -C $tmp/onfeat push -u origin feat/x"
   "guard-push.sh|onfeat|0|ALLOW_PUSH=1 git push --force"
   "guard-push.sh|onfeat|0|git fetch origin main"
+  # test_guard_push_global_options (#1304): the canonical -c credential.helper form
+  "guard-push.sh|onfeat|2|git -C $tmp/onfeat -c credential.helper='!f(){ echo x; };f' push -q -u origin main"
+  "guard-push.sh|onfeat|2|git -C $tmp/onfeat -c credential.helper='!f(){ echo x; };f' push --force origin feat/x"
+  "guard-push.sh|onfeat|2|git push origin +feat/x"
+  "guard-push.sh|onfeat|0|git -C $tmp/onfeat -c credential.helper='!f(){ echo x; };f' push -q -u origin feat/x"
+  # test_guard_push_ignores_quoted_text (#1304): sed / commit text mentioning git push main
+  "guard-push.sh|onfeat|0|sed -i 's#git push origin main#x#' f.md"
+  "guard-push.sh|onfeat|0|git commit -m 'never git push --force to main'"
+  # test_block_commit_global_options (#1304)
+  "block-commit-on-main.sh|onfeat|2|git -C $tmp/onmain -c user.name=x commit -m x"
+  "block-commit-on-main.sh|onmain|0|echo 'git commit' > notes.txt"
+  # test_guard_no_verify_short_flag (#1304)
+  "guard-no-verify.sh|onfeat|2|git commit -n -m x"
+  "guard-no-verify.sh|onfeat|2|git commit -nm x"
+  "guard-no-verify.sh|onfeat|0|git commit -m 'add -n option'"
+  "guard-no-verify.sh|onfeat|0|git commit -am x"
   # test_guard_bare_python (#1302)
   "guard-bare-python.sh|onfeat|2|python3 x.py"
   "guard-bare-python.sh|onfeat|2|python -c 1"

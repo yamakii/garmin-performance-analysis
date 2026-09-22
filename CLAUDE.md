@@ -99,7 +99,8 @@ Four things hold before any file is opened (the detailed rules below load once y
 Key rules (path-scoped, under `.claude/rules/dev/`):
 - `workflow-orchestration.md` — plan-first, elegance check, autonomy boundaries, core principles
 - `implementation-workflow.md` — the default single-session worktree → PR checklist
-- `dev-reference.md` — git, testing, code quality, architecture (参照辞書)
+- `git.md` — git principles with their reasons, canonical commands, output budget for git reads
+- `dev-reference.md` — testing, code quality, architecture (参照辞書)
 - `worktree-validation-protocol.md` — validation levels, ship steps, auto-merge gate
 - `github-mcp-only.md` — gh → MCP tool mapping, CI log access
 

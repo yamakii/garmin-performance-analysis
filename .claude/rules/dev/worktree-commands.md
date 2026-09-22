@@ -18,12 +18,12 @@ paths:
 | `cmd 2>&1 \| tail; echo "EXIT=${PIPESTATUS[0]}"` | ✗ |
 | `mkdir -p X && cat > X/f <<EOF` | ✗ |
 | `bash scripts/foo.sh` | ✓ |
-| `git add … && git commit -m … && git push` | ✓ |
+| `git fetch … && git checkout …`（git を 2 回以上） | ✗（「names git more than once」で拒否されることがある。1 コマンド 1 git にする） |
 
 **ファイルの作成・編集は Write/Edit tool で行う**（auto mode の「Bash を優先」はここでは譲る）。Bash は
-単一コマンドか heredoc を含まない単純な `&&` 連結に留める。`cd` は不要（セッションの cwd が既に worktree）。
+単一コマンドか heredoc を含まない単純な `&&` 連結（git は 1 回まで）に留める。`cd` は不要（セッションの cwd が既に worktree）。
 同じ worktree から 2 本目の PR を出すときは、1 本目を push 後に
-`git fetch origin && git checkout -b <branch> origin/main`（`EnterWorktree` は二度呼べない）。
+`git.md` §2「同じ worktree で 2 本目」（`EnterWorktree` は二度呼べない）。
 
 ## `cd <path> && ...` を使わない
 
@@ -35,13 +35,14 @@ worktree 内でコマンドを実行する際、`cd <path> && <cmd>` は compoun
 |------|---------|
 | ステージ | `git -C <path> add file1 file2` |
 | コミット | `git -C <path> commit -m "msg"` |
-| 状態確認 | `git -C <path> status` |
-| 差分 | `git -C <path> diff` |
+| 状態確認 | `git -C <path> status --short` |
+| 差分 | `git -C <path> diff --stat` → `git -C <path> diff -- <file>` |
 | ログ | `git -C <path> log --oneline -5` |
-| プッシュ | `git -C <path> push -u origin branch` |
+| プッシュ | `git.md` §2 の正典形 |
 | ブランチ作成 | `git -C <path> checkout -b branch` |
-| stash | `git -C <path> stash` |
-| fetch | `git -C <path> fetch origin` |
+| fetch | `git -C <path> fetch -q origin main` |
+
+操作の選び方・出力の絞り方（`-q` / `--no-stat` / `-n N`）は `git.md` が正本。
 
 ### uv / pytest / ruff / pre-commit — `--directory`
 

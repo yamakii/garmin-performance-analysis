@@ -76,9 +76,9 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 - **Stale recovery**: Serena → activate、garmin-db → `reload_server()`、それでもダメなら `/mcp`
 - **全変更**: Issue → Plan → Worktree → PR（branch protection により Worktree + PR は必須。Issue は skip レベルの docs/rules 変更のみ省略可, §1）
 - **Planning**: main branch (read-only)
-- **PR**: merge commit --no-ff、1 PR = 1 Sub-issue、title は Conventional Commits、body に `Closes #{issue}`
+- **PR**: 1 PR = 1 Sub-issue、title は Conventional Commits、body に `Closes #{issue}`。git の原則・正典コマンド・マージ方式は `git.md` が正本
 - **Commit**: Conventional Commits + Co-Authored-By。単一の関心事のみ（"and" が必要なら分割）
-- **Parallel**: 各 worktree = 1 branch = 1 PR。依存関係 → 先の PR マージ後に `git merge origin/main`（rebase は使わない）
+- **Parallel**: 各 worktree = 1 branch = 1 PR。兄弟 PR マージ後のコンフリクト解消は `git.md` §2
 
 ## 3. Validation
 
@@ -114,7 +114,7 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 
 ## 7. Prohibited
 
-- main ブランチでの実装 / main への直接 push / force push
+- main ブランチでの実装 / main への直接 push / push 済み履歴の書き換え（`git.md` §1）
 - Serena なしのコード編集
 - `git worktree remove --force` (status 未確認)
 - DB 削除をユーザー確認なしで実行

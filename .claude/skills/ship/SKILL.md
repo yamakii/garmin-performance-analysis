@@ -17,15 +17,15 @@ Run the full ship workflow for the current changes.
 
    a. **Open PR on current branch**: Use `mcp__github__list_pull_requests(owner="yamakii", repo="garmin-performance-analysis", head="yamakii:{branch}", state="open")`. If a PR exists and is open → go to Step 1-PR (PR flow).
 
-   b. **Uncommitted changes**: Run `git status`. If there are staged or unstaged changes → go to Step 1 (normal flow).
+   b. **Uncommitted changes**: Run `git status --short`. If there are staged or unstaged changes → go to Step 1 (normal flow).
 
-   c. **Unpushed commits**: Run `git log origin/$(git branch --show-current)..HEAD --oneline`. If there are commits → go to Step 3 (Push).
+   c. **Unpushed commits**: Run `git log --oneline @{u}..HEAD` (an error means no upstream, i.e. unpushed). If there are commits → go to Step 3 (Push).
 
    d. **Pushed feature branch without a PR**: If the current branch is not `main` and has no open PR → create the PR (Step 3 note) and go to Step 1-PR.
 
    e. **Unclosed Issue**: Extract issue numbers from recent commits:
       ```bash
-      git log --oneline -5 | grep -oP '\(#\K[0-9]+(?=\))'
+      git log -n 5 --format='%s %b' | grep -oE '#[0-9]+'
       ```
       For each extracted number, check if the issue is still open using `mcp__github__issue_read(method="get", owner="yamakii", repo="garmin-performance-analysis", issue_number=N)`. If any issue state is "open" → execute Step 4 (Close Issue) with that number.
 
@@ -63,7 +63,7 @@ mcp__github__pull_request_read(method="get", owner="yamakii", repo="garmin-perfo
 - CI checks が全て pass していなければマージしない
 - checks が failing → report to user and stop (do not merge)
 
-### Step 2-PR: Merge (merge commit, TDD 履歴保持)
+### Step 2-PR: Merge (merge commit — reason in `.claude/rules/dev/git.md` §1)
 
 ```
 mcp__github__merge_pull_request(owner="yamakii", repo="garmin-performance-analysis", pullNumber={PR_NUMBER}, merge_method="merge")
@@ -73,22 +73,13 @@ Note: Branch deletion is handled by GitHub's auto-delete setting.
 
 ### Step 3-PR: ローカル同期 + クリーンアップ
 
-`{branch}` は Step 1-PR の `pull_request_read(method="get")` が返す `head.ref`（PR head ブランチ）。`git pull` 後はマージ済みなので `git branch -d` で安全に削除できる（未マージなら `-d` が拒否する）。
-
-```bash
-git checkout main
-git pull
-
-# Remove worktree and delete the now-merged local branch + prune stale tracking refs
-git worktree remove ../garmin-{name} 2>/dev/null || true
-git branch -d {branch} 2>/dev/null || true
-git remote prune origin 2>/dev/null || true
-```
+`/workspace`（main の checkout）で `.claude/rules/dev/git.md` §2「マージ後」を実行する: ローカル main を
+quiet fetch + ff-only で同期（`checkout main` / `git pull` は使わない）→ `bash scripts/cleanup-merged-worktrees.sh`。
 
 > `worktree-agent-*`（`Agent(isolation: "worktree")` 由来）など ship 経由でない残留ブランチは
 > `bash scripts/prune-merged-branches.sh` で一括掃除できる（`git branch -d` ベースで安全）。
 
-マージ成功後、`bash scripts/cleanup-merged-worktrees.sh` を実行して残留を一括掃除し、結果
+cleanup の結果
 （removed worktrees / deleted branches / skipped(理由付き)）をユーザーに報告する。**origin/main に
 マージ済み かつ clean なものだけ**を削除し（`git worktree remove` は `--force` なし、`git branch -d`
 で `-D` 禁止）、dirty・未マージは git が拒否＝残す。消せなかったものは warn のみでフローは止めない。
@@ -106,7 +97,7 @@ there is nothing to close: report the merge and stop.
 
 ## Normal Flow (no PR)
 
-1. **Review changes**: Run `git status` and `git diff --staged` to understand what will be committed. If nothing is staged, show unstaged changes and ask what to stage.
+1. **Review changes**: Run `git status --short` and `git diff --staged --stat`, then `git diff --staged -- <file>` only for the files you need to read, to understand what will be committed. If nothing is staged, show unstaged changes and ask what to stage.
 
 2. **Commit**: Create a commit using Conventional Commits format. If the user provided a commit message as argument (before `--close`/`--pr`), use it. Otherwise, auto-generate from the diff.
 
@@ -114,17 +105,17 @@ there is nothing to close: report the merge and stop.
    ```
    <type>: <description>
 
-   Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+   <harness attribution trailer>
    ```
 
    If `--close` is used with an issue number, include it in the commit message:
    ```
    <type>: <description> (#issue-number)
 
-   Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+   <harness attribution trailer>
    ```
 
-3. **Push**: Run `git push` to push to remote. If no upstream is set, use `git push -u origin <branch>`.
+3. **Push**: the canonical push form in `.claude/rules/dev/git.md` §2 (no pre-push merge of origin/main).
    Pushing to `main` directly is blocked (branch protection + guard-push): a feature branch is merged only
    through a PR (PR Flow above). If no PR exists yet, create one with `mcp__github__create_pull_request`
    (body: `Closes #N` + `## Verification`) and continue with Step 1-PR.

@@ -119,14 +119,14 @@ L3 検証基準:
 
 ## 6. Ship と auto-merge ゲート
 
-1. `git fetch origin` し、遅れていれば `git merge --no-edit origin/main` で追いつく（rebase は使わない: worktree セッションの ask ルールで止まる。force push は禁止）。
-2. push（worktree では `GITHUB_TOKEN` の inline credential helper を使う。`implement-tier.js` の `pushCmd` が正典）。
+1. push は `git.md` §2 の正典形（`GITHUB_TOKEN` の inline credential helper）。**origin/main の事前取り込みはしない**（遅れているだけの PR はそのままマージできる）。
+2. PR が `mergeable=false`（コンフリクト）のときだけ `git.md` §2 の手順で merge 取り込み → push し直す。
 3. `mcp__github__create_pull_request`（body に `Closes #{issue}` と `## Verification`）。
 4. `bash scripts/wait-for-ci.sh <PR> --timeout 900` を**フォアグラウンドで 1 回**（Bash timeout 960000 ms 以上）。`run_in_background` / Monitor / `pgrep` / `kill` / `sleep` ループは使わない（ask ルールで止まる, #993）。exit 3 のときだけ `pull_request_read(method="get_check_runs")` で数回ポーリング。
 5. **auto-merge ゲート**: 検証 PASS（L1/L2、または skip のレビュー、または L3 の diff レビュー）+ `ci-guard` success + mergeable。満たせば `mcp__github__merge_pull_request(merge_method="merge")`。
    **恒久承認（2026-08-09, #886）**: このゲートを満たす PR は PR ごとの確認なしにマージしてよい。背景ジョブ・非対話セッションにも適用。承認は PR のマージのみで、main への直接 push・force push・下記例外は対象外。
 6. **例外は人間ゲート**: 検証 FAIL / 内容チェック WARNING / CI 失敗 / コンフリクト。auto-merge せず PR URL と理由を報告する。`.claude/workflows` `.claude/hooks` は `meta-checks` がゲートするので green なら auto-merge。
-7. マージ後: `git fetch origin && git merge --ff-only origin/main` でローカル main を同期し、`bash scripts/cleanup-merged-worktrees.sh` で残留を掃除する。MCP サーバコードを変えたときは `mcp__garmin-db__reload_server()`（スキーマ形変更のみ `/mcp` 再接続）。
+7. マージ後: ローカル main を同期し（`git.md` §2）、`bash scripts/cleanup-merged-worktrees.sh` で残留を掃除する。MCP サーバコードを変えたときは `mcp__garmin-db__reload_server()`（スキーマ形変更のみ `/mcp` 再接続）。
 
 ## 7. live MCP サーバの確認（メインセッション限定・稀）
 
