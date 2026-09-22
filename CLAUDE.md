@@ -88,11 +88,13 @@ See `.claude/rules/analysis/analysis-standards.md` for workflow details and `doc
 
 **Workflow:** Plan (tiered) → Issue → Worktree → Implement → Ship
 
-Three things hold before any file is opened (the detailed rules below load once you touch
+Four things hold before any file is opened (the detailed rules below load once you touch
 `packages/`, `.claude/`, `scripts/`, `docker/`, `.github/` or `docs/`):
 - Every code change needs an Issue with Design + Test Plan, a plan sized by the Phase 0 tier in `implementation-workflow.md` (a `design-approved` Issue is the plan; plan-mode approval only for risky changes; a light plan otherwise), and a worktree + PR (never commit on `main`).
 - GitHub is operated only through `mcp__github__*` tools; `gh` is denied.
 - Code investigation starts with `mcp__serena__activate_project()`.
+- Python always runs through uv — `uv run --directory <checkout> python <script>` — including throwaway
+  scripts on transcripts or temp files; bare `python` / `python3` is blocked by `guard-bare-python.sh`.
 
 Key rules (path-scoped, under `.claude/rules/dev/`):
 - `workflow-orchestration.md` — plan-first, elegance check, autonomy boundaries, core principles
