@@ -197,8 +197,8 @@ Issues created:
     #{番号} {タイトル} [S/M/L]
     ...
 
-Next: Plan mode で #{最初のsub-issue番号} から着手できます。
-  mcp__github__issue_read (method="get") で設計を確認してください。
+Next: #{最初のsub-issue番号} から着手できます（design-approved の Issue はそれ自体がプランなので plan mode 不要）。
+  mcp__github__issue_read (method="get") で設計を確認し、前提が崩れていなければそのまま実装に入ってください。
 ```
 
 ## Small Task Flow
