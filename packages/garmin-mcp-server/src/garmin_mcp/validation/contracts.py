@@ -144,7 +144,14 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
         # How an ``evidence`` / ``moment_id`` / ``signal`` key is resolved by
         # ``validators.check_run_note_grounding`` at merge time.
         "evidence_keys": {
-            "plan.<axis>": "an axis of report.plan.checks (rejected when plan is null)",
+            "plan.<axis>": (
+                "an axis of report.plan.checks (rejected when plan is null). "
+                "hr_ceiling is judged on the steady time above the ceiling "
+                "(plan.hr_ceiling.seconds_over / pct_over), not the average: "
+                "off plan when more than 5% of it AND at least 5 minutes sat "
+                "above (#1357), so an average under the ceiling does not mean "
+                "the ceiling was kept"
+            ),
             "plan.strides": (
                 "the strides row of report.plan.checks -- strides run against the "
                 "prescribed reps ('4本'); present only when the prescription "

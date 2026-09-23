@@ -325,8 +325,19 @@ class RunReportReader(BaseDBReader):
             )
         # With a prescription, delivering its purpose is an axis of the plan
         # (#1353), so the verdict is judged once the outcome is known.
+        # The ceiling is judged on the steady time above it (#1357); the card
+        # shows the same figure, so it is computed once for both.
+        hr_ceiling = (
+            _hr_ceiling(prescription, zone_rows, hr_samples, steady)
+            if prescription is not None
+            else None
+        )
         verdict = compute_prescription_verdict(
-            prescription, _actual(today), jog_avg_hr=jog_avg_hr, outcome=outcome
+            prescription,
+            _actual(today),
+            jog_avg_hr=jog_avg_hr,
+            outcome=outcome,
+            ceiling_over=hr_ceiling,
         )
         # The verdicts are added on top of detection; recurrence (below) still
         # reads the purpose-blind scenes, so a habit is found whatever it means.
@@ -372,10 +383,8 @@ class RunReportReader(BaseDBReader):
                 prescription,
                 verdict,
                 today,
-                zone_rows,
                 splits=today_splits,
-                hr_samples=hr_samples,
-                steady=steady,
+                hr_ceiling=hr_ceiling,
                 ceiling_avg_hr=jog_avg_hr,
                 outcome=outcome,
             ),
@@ -1232,11 +1241,9 @@ def _plan_block(
     prescription: dict[str, Any] | None,
     verdict: dict[str, Any] | None,
     today: dict[str, Any],
-    zone_rows: list[tuple[Any, ...]],
     *,
     splits: list[dict[str, Any]] | None = None,
-    hr_samples: Sequence[Mapping[str, Any]] = (),
-    steady: Sequence[bool] = (),
+    hr_ceiling: dict[str, Any] | None = None,
     ceiling_avg_hr: float | None = None,
     outcome: Outcome | None = None,
 ) -> dict[str, Any] | None:
@@ -1254,8 +1261,9 @@ def _plan_block(
     ``None``), on plan when the run held it to the end.
 
     The ceiling row reads ``ceiling_avg_hr`` -- the steady-running average HR
-    (#1313), the same number the verdict judged the ceiling on -- and the
-    activity's own average HR when there is none.
+    (#1313) -- and the activity's own average HR when there is none; its
+    status and the bar come from ``hr_ceiling``, the steady time above the
+    ceiling the verdict judged it on (#1357).
     """
     if prescription is None or verdict is None:
         return None
@@ -1322,7 +1330,7 @@ def _plan_block(
         "verdict": str(verdict.get("verdict")),
         "title": str(verdict.get("prescription_title") or ""),
         "checks": checks,
-        "hr_ceiling": _hr_ceiling(prescription, zone_rows, hr_samples, steady),
+        "hr_ceiling": hr_ceiling,
     }
 
 

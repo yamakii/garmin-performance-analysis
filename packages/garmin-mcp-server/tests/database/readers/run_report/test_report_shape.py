@@ -89,10 +89,12 @@ def test_run_report_headline_no_flags(reader_db_path: Path) -> None:
         distance_km=8.08,  # 101 % of the 8.0 km target
         gct_delta_pct=_BASELINE_CENTRE,
     )
+    # 90 s at or above the 150 bpm ceiling (under 5%): the ceiling is kept.
+    # It is judged on the time above it, not the average (#1357).
     _seed_zones(
         reader_db_path,
         ACTIVITY_ID,
-        [(1, 100, 129, 400.0), (2, 130, 149, 1386.0), (3, 150, 159, 321.0)],
+        [(1, 100, 129, 400.0), (2, 130, 149, 1386.0), (3, 150, 159, 90.0)],
     )
     _seed_prescription(reader_db_path, on_date=TODAY)
 

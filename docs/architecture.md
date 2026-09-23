@@ -211,8 +211,11 @@ an LLM (Epic #1247).
    axis too: `continuity` is on plan when the run held its effort to the end
    and 🟡 when it came apart (#1353, from `analysis/purpose_outcome.py`).
    `plan` is `null` when the day carried no prescription; `purpose.outcome`
-   then answers the same question against the inferred purpose. The ceiling is judged on steady
-   running only (`analysis/hr_windows.py`): stops, auto-pause resumes, bursts
+   then answers the same question against the inferred purpose. The ceiling
+   is a guard, so it is judged on the time spent above it, not the average
+   (#1357): off plan when more than 5% of the steady time and at least 5
+   minutes sat above it; an average more than 10 bpm over stays 🔴. Only
+   steady running counts (`analysis/hr_windows.py`): stops, auto-pause resumes, bursts
    and stride / recovery laps are masked together with the HR recovery after
    each, read off the HR trace; `judged_share` reports how much of the run was
    left, and form signals are not judged below half.
