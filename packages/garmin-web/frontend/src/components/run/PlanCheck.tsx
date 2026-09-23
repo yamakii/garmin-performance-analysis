@@ -70,6 +70,7 @@ const AXIS_LABELS: Record<string, string> = {
   hr_ceiling: "心拍上限",
   rest: "休養",
   strides: "流し",
+  continuity: "継続",
 };
 
 /** Column order at `md` and up; below it each check stacks (see below). */
@@ -215,7 +216,8 @@ function CheckRow({
  * with the status on the first one.
  *
  * Above the grid sits what the run was *for* (#1315) — the purpose every scene
- * of the run was judged against — whether the run delivered it (#1348), and
+ * of the run was judged against — whether an unprescribed run delivered it
+ * (#1348; with a prescription that is the table's 継続 row, #1354), and
  * how much of the run the HR ceiling and
  * the form signals were judged on, so a verdict read off 60% of the run is not
  * mistaken for one about all of it.
@@ -232,9 +234,14 @@ export default function PlanCheck({
   judgedShare?: RunJudgedShare | null;
 }): JSX.Element | null {
   const purposeLabel = purposeText(purpose);
-  const outcomeLabel = purposeLabel == null ? null : outcomeText(purpose);
   const shareLabel = judgedShareText(judgedShare);
   const hasChecks = plan != null && plan.checks.length > 0;
+  // With a prescription the purpose is the prescription's, and whether the
+  // run delivered it is the table's 継続 row (#1354); a separate line would
+  // answer the same question twice. Only an unprescribed run -- inferred
+  // purpose, no table -- shows the outcome here.
+  const outcomeLabel =
+    purposeLabel == null || hasChecks ? null : outcomeText(purpose);
   // A run with no prescription still has a purpose -- inferred from the run
   // itself -- and a judged share (#1326). Those runs are where "（推定）"
   // matters most, so the section stays with just that line.

@@ -10,6 +10,7 @@ the LLM risks hallucinated "achieved" verdicts (Issue #671).
 from datetime import date, datetime
 from typing import Any
 
+from garmin_mcp.analysis.purpose_outcome import Outcome
 from garmin_mcp.analysis.run_purpose import LONG_RUN_MIN_MINUTES
 from garmin_mcp.utils.week import week_bounds
 
@@ -1125,12 +1126,14 @@ def compute_prescription_verdict(
     *,
     hr_tolerance_bpm: int = 3,
     jog_avg_hr: float | None = None,
+    outcome: Outcome | None = None,
 ) -> dict[str, Any] | None:
     """Judge a run against the session prescribed for that day.
 
-    The verdict is the worst of three deterministic checks -- intensity class,
-    volume and the HR ceiling -- so the summary agent never has to decide
-    whether a run "followed the plan":
+    The verdict is the worst of the deterministic checks -- intensity class,
+    volume, the HR ceiling and, when the purpose is one of holding an effort,
+    continuity -- so the summary agent never has to decide whether a run
+    "followed the plan":
 
     - ``✅`` the run answers the prescription: same intensity class, volume in
       ``[0.85, 1.30]`` of target, and ``avg_hr <= hr_high + hr_tolerance_bpm``.
@@ -1157,13 +1160,22 @@ def compute_prescription_verdict(
             When given, it replaces ``actual["avg_hr"]`` for the HR-ceiling
             axis only: strides are meant to clear an easy ceiling, so the
             ceiling is judged on the easy running around them.
+        outcome: Whether the run delivered its purpose
+            (``purpose_outcome.evaluate``, #1340), or ``None`` for a purpose
+            that measure does not cover. With a prescription the purpose is
+            the prescription's, so delivering it is an axis of the plan
+            (#1353): ``continuity`` is on plan when the run held its effort,
+            and a breakdown is a 🟡 deviation -- the run fell short of what it
+            was for, which is not a risk-side overreach. The outcome is taken
+            as judged; nothing is re-measured here.
 
     Returns:
         ``{"verdict", "prescription_title", "reasons": [str, ...], "on_plan":
         [str, ...]}`` with Japanese, numeric reasons, or ``None`` when
         ``prescription`` is ``None``. ``on_plan`` names the axes the run
         answered as prescribed (``intensity_class`` / ``volume`` /
-        ``hr_ceiling``, or ``rest`` for a rest day taken), so the narration
+        ``hr_ceiling`` / ``continuity``, or ``rest`` for a rest day taken), so
+        the narration
         layer can tell "89% of target" inside the tolerance band from a real
         shortfall (Issue #1086).
     """
@@ -1271,7 +1283,15 @@ def compute_prescription_verdict(
                 f"{over:.0f}bpm 上回りました。"
             )
 
-    # 5. Which axes came out on plan. The narration layer needs this
+    # 5. Continuity (#1353): did the run deliver the prescription's purpose?
+    if outcome is not None and not outcome.met:
+        severity = max(severity, 1)
+        reasons.append(
+            f"{outcome.breakdown_from_km:g} km から最後までペースを保てず、"
+            "処方の目的を果たせませんでした。"
+        )
+
+    # 6. Which axes came out on plan. The narration layer needs this
     #    explicitly: reading "量 89%" without its tolerance band, the summary
     #    agent turned a ✅ volume into an improvement area and invented a cause
     #    for it (Issue #1086).
@@ -1289,6 +1309,8 @@ def compute_prescription_verdict(
         and (avg_hr - hr_high) <= hr_tolerance_bpm
     ):
         on_plan.append("hr_ceiling")
+    if outcome is not None and outcome.met:
+        on_plan.append("continuity")
 
     if severity == 0:
         details: list[str] = []

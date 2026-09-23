@@ -478,3 +478,63 @@ def test_good_point_accepts_hr_ceiling_without_share():
     assert check_run_note_grounding(
         _good_on("plan.hr_ceiling"), _ceiling_report(None)
     ) == (True, None)
+
+
+def _breakdown_report() -> dict[str, Any]:
+    """A prescribed run that came apart: continuity off plan + a breakdown scene."""
+    return _report(
+        plan={
+            "checks": [
+                {"axis": "hr_ceiling", "on_plan": True},
+                {"axis": "continuity", "on_plan": False},
+            ]
+        },
+        moments=[
+            {"id": "m1", "label": "start"},
+            {
+                "id": "m2",
+                "kind": "breakdown",
+                "policy": {"verdict": "concern", "reason": "test"},
+            },
+            {"id": "m3", "label": "steady"},
+        ],
+    )
+
+
+@pytest.mark.unit
+def test_growth_points_reject_continuity_and_breakdown_together():
+    """One collapse is one growth point, not two (#1353)."""
+    data = _note_data(
+        growth_points=[
+            {
+                "text": "最後まで走り続けることが、次のロングの課題です。",
+                "evidence": "plan.continuity",
+            },
+            {
+                "text": "18 km からの崩れを防ぎたいところです。",
+                "evidence": "moments.m2",
+            },
+        ]
+    )
+
+    ok, reason = check_run_note_grounding(data, _breakdown_report())
+
+    assert ok is False
+    assert reason is not None
+    assert "same collapse" in reason
+    assert "plan.continuity" in reason
+
+
+@pytest.mark.unit
+def test_growth_point_on_continuity_alone_passes():
+    """The off-plan continuity axis alone carries the collapse (#1353)."""
+    data = _note_data(
+        growth_points=[
+            {
+                "text": "最後まで走り続けることが、次のロングの課題です。",
+                "evidence": "plan.continuity",
+            }
+        ]
+    )
+
+    assert check_run_note_grounding(data, _breakdown_report()) == (True, None)

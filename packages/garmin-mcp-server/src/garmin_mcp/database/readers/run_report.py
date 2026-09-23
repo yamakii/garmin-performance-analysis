@@ -297,9 +297,6 @@ class RunReportReader(BaseDBReader):
         today = {**today, "form_judged_share": shares["form"]}
 
         jog_avg_hr = _ceiling_avg_hr(today_splits, hr_samples, steady)
-        verdict = compute_prescription_verdict(
-            prescription, _actual(today), jog_avg_hr=jog_avg_hr
-        )
         signals = self._signals(today, history)
         # Scenes read each kilometre's HR over its steady seconds only (#1320):
         # a stride and its recovery inside a kilometre are not a ceiling touch.
@@ -326,6 +323,11 @@ class RunReportReader(BaseDBReader):
                 prescription=prescription,
                 breakdown_from_km=outcome.breakdown_from_km,
             )
+        # With a prescription, delivering its purpose is an axis of the plan
+        # (#1353), so the verdict is judged once the outcome is known.
+        verdict = compute_prescription_verdict(
+            prescription, _actual(today), jog_avg_hr=jog_avg_hr, outcome=outcome
+        )
         # The verdicts are added on top of detection; recurrence (below) still
         # reads the purpose-blind scenes, so a habit is found whatever it means.
         judged_moments = apply_policy(
@@ -375,6 +377,7 @@ class RunReportReader(BaseDBReader):
                 hr_samples=hr_samples,
                 steady=steady,
                 ceiling_avg_hr=jog_avg_hr,
+                outcome=outcome,
             ),
             "judged_share": shares,
             "signals": signals,
@@ -1235,6 +1238,7 @@ def _plan_block(
     hr_samples: Sequence[Mapping[str, Any]] = (),
     steady: Sequence[bool] = (),
     ceiling_avg_hr: float | None = None,
+    outcome: Outcome | None = None,
 ) -> dict[str, Any] | None:
     """The plan card: the verdict, its per-axis checks and the HR ceiling.
 
@@ -1244,6 +1248,10 @@ def _plan_block(
     axis that verdict does not know is ``strides`` (#1297): a count of the
     stride laps against the prescribed reps, added when the prescription
     carries strides.
+
+    ``continuity`` (#1353) is the prescription's purpose as an axis: present
+    when the purpose is one of holding an effort (``outcome`` is not
+    ``None``), on plan when the run held it to the end.
 
     The ceiling row reads ``ceiling_avg_hr`` -- the steady-running average HR
     (#1313), the same number the verdict judged the ceiling on -- and the
@@ -1292,6 +1300,19 @@ def _plan_block(
                     f"{hr_high:.0f} bpm 以下",
                     "-" if avg_hr is None else f"{avg_hr:.0f} bpm",
                     "hr_ceiling" in on_plan,
+                )
+            )
+        if outcome is not None:
+            checks.append(
+                _check(
+                    "continuity",
+                    "最後まで走り続ける",
+                    (
+                        "保てた"
+                        if outcome.met
+                        else f"{outcome.breakdown_from_km:g} km から崩れ"
+                    ),
+                    "continuity" in on_plan,
                 )
             )
         if _prescribed_strides(prescription) is not None:

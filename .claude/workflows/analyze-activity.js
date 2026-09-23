@@ -152,7 +152,7 @@ function buildRunNoteContext(contextJson) {
           rationale: p.rationale ?? null,
         }
       : null,
-    prescription_verdict: bundle.prescription_verdict ?? null,
+    // No plan verdict here: REPORT.plan is the only one (#1353).
     morning_wellness: bundle.morning_wellness ?? null,
     vs_previous: bundle.vs_previous ?? null,
     previous_same_type: bundle.previous_same_type ?? null,

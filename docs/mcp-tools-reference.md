@@ -416,7 +416,7 @@ Get weather data (temperature, humidity, wind) from activity
 
 CLI: `garmin-db performance prefetch-context`
 
-Pre-fetch the context a run report does not carry, in a single call: training_type, the shoe worn (gear), similar_workouts, the long_run_gate verdict (runs >= 10 km) and the prescription vs actual layer (that day's prescription, week_position, previous_same_type + vs_previous, morning_wellness and the deterministic prescription_verdict). The run itself (plan vs actual, signals, scenes, conditions) is get_run_report; weather, HR zones and form have their own tools. Auto-generates the form baseline for the activity's month (and prior month) if missing.
+Pre-fetch the context a run report does not carry, in a single call: training_type, the shoe worn (gear), similar_workouts, the long_run_gate verdict (runs >= 10 km) and the prescription vs actual layer (that day's prescription, week_position, previous_same_type + vs_previous and morning_wellness). The run itself (plan vs actual and its verdict, signals, scenes, conditions) is get_run_report; weather, HR zones and form have their own tools. Auto-generates the form baseline for the activity's month (and prior month) if missing.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

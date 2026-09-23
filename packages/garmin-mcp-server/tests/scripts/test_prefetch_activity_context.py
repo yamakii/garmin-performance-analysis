@@ -216,7 +216,6 @@ class TestPrefetchActivityContext:
             "training_type",
             "week_position",
             "prescription_for_run",
-            "prescription_verdict",
             "morning_wellness",
             "vs_previous",
             "previous_same_type",
@@ -350,10 +349,10 @@ class TestPrefetchActivityContext:
         # run, whatever the weekday (#1333).
         assert result["week_position"]["previous_day_run"]["distance_km"] == 2.77
         assert result["week_position"]["is_day_after_long_run"] is False
-        # 8.2 km against an 8.0 km easy prescription at 148 bpm under a 150 bpm
-        # ceiling: the run answered the plan.
-        assert result["prescription_verdict"]["verdict"] == "✅"
-        assert result["prescription_verdict"]["prescription_title"] == "イージー 8km"
+        # The plan verdict is the run report's alone (#1353): the bundle
+        # carries what was prescribed, never a second judgement of it.
+        assert "prescription_verdict" not in result
+        assert result["prescription_for_run"]["title"] == "イージー 8km"
         assert result["prescription"][0]["session_type"] == "easy"
         assert result["week_position"]["week_start"] == "2026-02-16"
         assert result["week_position"]["ladder_step"]["next"]["target_km"] == 22.0
@@ -389,6 +388,5 @@ class TestPrefetchActivityContext:
             "previous_same_type",
             "vs_previous",
             "morning_wellness",
-            "prescription_verdict",
         ):
             assert result[key] is None, key
