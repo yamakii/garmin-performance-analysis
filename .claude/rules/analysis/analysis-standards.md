@@ -21,7 +21,7 @@ Consolidated reference for all analysis rules.
 - **Dates**: `datetime.date` → `str()` 変換してから JSON 出力
 - **文体**: 自然な日本語（体言止め回避）、コーチ的トーン、具体的数値、1-2文/ポイント
 
-- **Grounding**: run_note の主張には REPORT 上の evidence キー（`plan.<axis>` / `signals.<metric>` / `moments.<id>` / `recurrence.<kind>` / `vs_previous.<field>` / `conditions.<field>` / `context.<field>`）を必ず付ける。課題（growth point）にできるのは **outside かつ adverse なシグナル**か off-plan の軸だけで、範囲内・有利側のブレを弱点にしない
+- **Grounding**: run_note の主張には REPORT 上の evidence キー（`plan.<axis>` / `signals.<metric>` / `moments.<id>` / `recurrence.<kind>` / `vs_previous.<field>` / `conditions.<field>` / `context.<field>`）を必ず付ける。課題（growth point）にできるのは **outside かつ adverse なシグナル**、off-plan の軸、`policy.verdict == "concern"` のシーン（ランの目的から外れた逸脱）の3つだけで、範囲内・有利側のブレを弱点にしない
 
 ### Error Recovery
 
