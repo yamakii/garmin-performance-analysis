@@ -267,4 +267,34 @@ describe("outcomeText (#1348)", () => {
     render(<PlanCheck plan={PLAN} purpose={LONG} />);
     expect(screen.queryByTestId("plan-outcome")).toBeNull();
   });
+
+  it("test_plan_check_meta_values_share_one_column", () => {
+    // The labels differ in length, so each row sized off its own label
+    // started its value at a different x (#1350). One shared grid aligns them.
+    render(
+      <PlanCheck
+        plan={PLAN}
+        purpose={{
+          ...LONG,
+          outcome: {
+            met: true,
+            sustained_share: 0.97,
+            breakdown_from_km: null,
+            reason: "held",
+          },
+        }}
+        judgedShare={{ hr: 0.92, form: 0.96 }}
+      />,
+    );
+    const items = ["plan-purpose", "plan-outcome", "plan-judged-share"].map(
+      (id) => screen.getByTestId(id),
+    );
+    const list = items[0].parentElement;
+    expect(list?.tagName).toBe("DL");
+    expect(list).toHaveClass("grid", "grid-cols-[auto_minmax(0,1fr)]");
+    for (const item of items) {
+      expect(item.parentElement).toBe(list);
+      expect(item).toHaveClass("contents");
+    }
+  });
 });
