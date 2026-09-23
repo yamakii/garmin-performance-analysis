@@ -41,14 +41,19 @@ class RunNoteAnalysisData(BaseModel):
 
     ``run_note`` replaces the five legacy sections: everything a number can
     decide is rendered deterministically, so this section carries only the
-    prose a coach adds on top -- meaning, causality, flow, weighting, the next
-    step, recurrence and at most one question.
+    prose a coach adds on top -- meaning, causality, flow, weighting, the one
+    point carried over from today, recurrence and at most one question.
+
+    ``next_challenge`` (持ち越す 1 点, #1358) is one of today's good / growth
+    points turned into one behaviour cue; ``next_challenge_evidence`` names
+    which, by that point's evidence key, so the merge gate can check it.
     """
 
     story: str = Field(min_length=20, max_length=400)
     good_points: list[GroundedPoint] = Field(min_length=0, max_length=3)
     growth_points: list[GroundedPoint] = Field(default_factory=list, max_length=2)
-    next_challenge: str = Field(min_length=10, max_length=240)
+    next_challenge: str = Field(min_length=10, max_length=120)
+    next_challenge_evidence: str = Field(min_length=3, max_length=80)
     timeline: list[TimelineItem] = Field(min_length=1, max_length=5)
     notes: list[SignalNote] = Field(default_factory=list, max_length=3)
     question: str | None = Field(default=None, max_length=160)

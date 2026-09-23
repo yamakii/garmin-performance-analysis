@@ -29,7 +29,8 @@ const NOTE: RunNote = {
     { text: "入りの1kmが少し速すぎました。", evidence: "moments.m1" },
   ],
   next_challenge:
-    "次回は150bpmを超えないように、最初の1kmを7:00/kmより遅く入りましょう。",
+    "入りは上限の150に近づく前に、意識してペースを抑えて走りましょう。",
+  next_challenge_evidence: "moments.m1",
   timeline: [{ moment_id: "m1", text: "序盤から入りました。" }],
   notes: [],
   question: "前日の睡眠はどうでしたか？",
@@ -46,11 +47,7 @@ function section(data: Record<string, unknown>): SectionResult {
 describe("CoachReview", () => {
   it("test_coach_review_renders_all_parts", () => {
     renderReview(
-      <CoachReview
-        note={NOTE}
-        legacySummary={undefined}
-        nextRunTarget={{ recommended_type: "aerobic_base", target_hr_low: 140 }}
-      />,
+      <CoachReview note={NOTE} legacySummary={undefined} />,
     );
 
     expect(screen.getByText(NOTE.story)).toBeInTheDocument();
@@ -64,10 +61,8 @@ describe("CoachReview", () => {
     const growth = screen.getByText(NOTE.growth_points[0].text);
     expect(growth.closest("li")).toHaveTextContent("→");
 
-    expect(screen.getByText("次回のチャレンジ")).toBeInTheDocument();
+    expect(screen.getByText("持ち越す 1 点")).toBeInTheDocument();
     expect(screen.getByText(NOTE.next_challenge)).toBeInTheDocument();
-    // The deterministic numbers sit under the sentence that quotes them.
-    expect(screen.getByText("次回への処方")).toBeInTheDocument();
 
     expect(screen.getByText("確認したいこと")).toBeInTheDocument();
     expect(screen.getByText(NOTE.question as string)).toBeInTheDocument();
@@ -81,7 +76,6 @@ describe("CoachReview", () => {
       <CoachReview
         note={{ ...NOTE, growth_points: [] }}
         legacySummary={undefined}
-        nextRunTarget={null}
       />,
     );
 
@@ -91,32 +85,38 @@ describe("CoachReview", () => {
     expect(screen.getByText("良かった点")).toBeInTheDocument();
   });
 
-  it("renders the next scheduled session card", () => {
-    renderReview(
+  it("test_coach_review_heading_is_carry_over", () => {
+    renderReview(<CoachReview note={NOTE} legacySummary={undefined} />);
+
+    // One point carried over from today, not a target for the next session
+    // (#1358): the old heading is gone and no card hangs under the sentence.
+    expect(screen.getByText("持ち越す 1 点")).toBeInTheDocument();
+    expect(screen.queryByText("次回のチャレンジ")).not.toBeInTheDocument();
+    expect(screen.queryByText("次回への処方")).not.toBeInTheDocument();
+  });
+
+  it("test_next_session_block_only_for_planned_session", () => {
+    const { unmount } = renderReview(
       <CoachReview
         note={NOTE}
         legacySummary={undefined}
-        nextRunTarget={{ recommended_type: "aerobic_base", target_hr_low: 140 }}
         nextSession={NEXT_SESSION}
       />,
     );
 
-    // What comes next is the scheduled long run, not the next easy run.
-    expect(screen.getByText("次のセッション")).toBeInTheDocument();
-    expect(screen.getByText("9/20（2日後）")).toBeInTheDocument();
-    expect(screen.getByText("ロング走")).toBeInTheDocument();
-    expect(screen.getByText("16 km")).toBeInTheDocument();
-    expect(screen.getByText("150 bpm 以下")).toBeInTheDocument();
-    // The same-type prescription would answer a different question.
-    expect(screen.queryByText("次回への処方")).not.toBeInTheDocument();
-  });
+    // The plan's next session stands in its own block.
+    const block = screen.getByTestId("next-session-block");
+    expect(block).toHaveTextContent("次のセッション");
+    expect(block).toHaveTextContent("9/20（2日後）");
+    expect(block).toHaveTextContent("16 km");
+    expect(block).toHaveTextContent("150 bpm 以下");
+    unmount();
 
-  it("falls back to the same-type target card", () => {
+    // A same-type projection of today's run is not a plan: nothing shows.
     renderReview(
       <CoachReview
         note={NOTE}
         legacySummary={undefined}
-        nextRunTarget={{ recommended_type: "aerobic_base", target_hr_low: 140 }}
         nextSession={{
           ...NEXT_SESSION,
           date: null,
@@ -129,27 +129,21 @@ describe("CoachReview", () => {
         }}
       />,
     );
-
-    // A dateless projection says no more than next_run_target already does.
-    expect(screen.getByText("次回への処方")).toBeInTheDocument();
-    expect(screen.queryByText("次のセッション")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("next-session-block")).toBeNull();
+    expect(screen.queryByText("次回への処方")).not.toBeInTheDocument();
   });
 
-  it("renders no card when nothing is known", () => {
+  it("shows the next session even without a carried-over point", () => {
     renderReview(
       <CoachReview
-        note={NOTE}
+        note={{ ...NOTE, next_challenge: "" }}
         legacySummary={undefined}
-        nextRunTarget={null}
-        nextSession={null}
+        nextSession={NEXT_SESSION}
       />,
     );
 
-    expect(screen.queryByText("次のセッション")).not.toBeInTheDocument();
-    expect(screen.queryByText("次回への処方")).not.toBeInTheDocument();
-    // The challenge sentence stands on its own.
-    expect(screen.getByText("次回のチャレンジ")).toBeInTheDocument();
-    expect(screen.getByText(NOTE.next_challenge)).toBeInTheDocument();
+    expect(screen.queryByText("持ち越す 1 点")).not.toBeInTheDocument();
+    expect(screen.getByTestId("next-session-block")).toBeInTheDocument();
   });
 
   it("lifts a recurrence point out of its list", () => {
@@ -162,7 +156,6 @@ describe("CoachReview", () => {
           ],
         }}
         legacySummary={undefined}
-        nextRunTarget={null}
       />,
     );
 
@@ -182,7 +175,6 @@ describe("CoachReview", () => {
             "処方どおりの22kmを走り切れた一本でした。後半も心拍は上限内に収まっています。",
           next_action: "次回は最初の3kmを7:00/kmより遅く入りましょう。",
         })}
-        nextRunTarget={null}
       />,
     );
 
@@ -197,7 +189,7 @@ describe("CoachReview", () => {
 
   it("says so when there is no review at all", () => {
     renderReview(
-      <CoachReview note={null} legacySummary={undefined} nextRunTarget={null} />,
+      <CoachReview note={null} legacySummary={undefined} />,
     );
 
     expect(

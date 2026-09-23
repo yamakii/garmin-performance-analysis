@@ -987,7 +987,6 @@ export default function ActivityDetail() {
         id="section-review"
         note={runNote}
         legacySummary={sections?.summary}
-        nextRunTarget={report?.next_run_target ?? null}
         nextSession={report?.next_session ?? null}
       />
 

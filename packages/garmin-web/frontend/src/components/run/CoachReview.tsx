@@ -3,7 +3,6 @@ import CoachNote from "../CoachNote";
 import EmptyState from "../EmptyState";
 import SectionBlock from "../SectionBlock";
 import MarkdownText from "../report/MarkdownText";
-import NextRunTarget from "../report/NextRunTarget";
 import { isRecord } from "../report/ReportCard";
 import NextSessionCard from "./NextSessionCard";
 import type {
@@ -174,31 +173,29 @@ function LegacyReview({
  *
  * The five graded sections it replaces each restated the same run in their own
  * voice; what a reader wants first is what the run was for, what it did well,
- * what there is to grow, and what to do next. Those come from the single
- * `run_note` section, with the deterministic numbers of the next run's target
- * underneath so the challenge is stated once in words and once in figures.
+ * what there is to grow, and the one point to carry over. Those come from the
+ * single `run_note` section.
  *
  * A point grounded in `recurrence.*` is lifted out of its list into a line of
  * its own: "this keeps happening" is a different statement from "this went
  * well today", and it is the one the reader acts on across runs.
  *
- * Under the challenge sentence sits the session the athlete actually does next
- * (#1267). `next_run_target` only describes the next run *of today's kind*, so
- * it stays as the card only when that is genuinely all that is known
- * (`source === "same_type"`, or no scheduled session at all).
+ * 持ち越す 1 点 (#1358) is a cue from today, not a target for the next
+ * session -- a single run cannot set that; the plan does. So the session the
+ * athlete does next stands in its own block, and only when the plan names it
+ * (`source` prescription / ladder). A same-type projection of today's run
+ * (`next_run_target`) is not a plan and is not shown here.
  */
 export default function CoachReview({
   id,
   note,
   legacySummary,
-  nextRunTarget,
   nextSession = null,
 }: {
   id?: string;
   note: RunNote | null;
   /** The old `summary` section, used only when there is no `run_note`. */
   legacySummary: SectionResult | undefined;
-  nextRunTarget: Record<string, unknown> | null;
   /** Null on a report older than #1273, or when the plan says nothing. */
   nextSession?: NextSession | null;
 }): JSX.Element {
@@ -239,15 +236,13 @@ export default function CoachReview({
         )}
         {note.next_challenge !== "" && (
           <div className="flex flex-col gap-3">
-            <h3 className="font-mono text-xs text-ink-muted">
-              次回のチャレンジ
-            </h3>
+            <h3 className="font-mono text-xs text-ink-muted">持ち越す 1 点</h3>
             <CoachNote strong>{note.next_challenge}</CoachNote>
-            {scheduled != null ? (
-              <NextSessionCard session={scheduled} />
-            ) : (
-              nextRunTarget != null && <NextRunTarget data={nextRunTarget} />
-            )}
+          </div>
+        )}
+        {scheduled != null && (
+          <div data-testid="next-session-block">
+            <NextSessionCard session={scheduled} />
           </div>
         )}
         {note.question != null && note.question !== "" && (

@@ -777,7 +777,10 @@ export interface RunNote {
   story: string;
   good_points: GroundedPoint[];
   growth_points: GroundedPoint[];
+  /** 持ち越す 1 点 (#1358): one of today's points as one behaviour cue. */
   next_challenge: string;
+  /** Evidence key of the point carried over; absent on notes before #1358. */
+  next_challenge_evidence?: string;
   timeline: RunNoteTimelineItem[];
   notes: RunNoteSignalNote[];
   question?: string | null;

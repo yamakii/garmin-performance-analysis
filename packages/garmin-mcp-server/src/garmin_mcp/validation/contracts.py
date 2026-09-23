@@ -15,7 +15,7 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
     # (Epic #1247). Everything a number can decide -- ranges, verdicts, star
     # scores -- is already computed and rendered as figures, so this section
     # writes only what a coach adds on top of them: meaning, causality and the
-    # next step. The prose criterion is carried here verbatim so the agent
+    # one point carried over from today. The prose criterion is carried here verbatim so the agent
     # definition and this contract cannot drift apart.
     "run_note": {
         "schema_version": "1.0",
@@ -52,12 +52,21 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "next_challenge": {
                 "type": "string",
                 "description": (
-                    "1-2 sentences about the session in next_session -- name it "
-                    "and date it ('9/20 の 16 km ロング走'). Its numbers come from "
-                    "next_session; next_run_target's pace / HR bands may be "
-                    "quoted only when it is the same kind of run. An HR ceiling "
-                    "is written as a guard ('150 bpm を超えないように') together "
-                    "with where HR should settle"
+                    "持ち越す 1 点 (#1358): ONE sentence, 10-120 chars -- one of "
+                    "today's growth_points (or, with none, a good point to keep) "
+                    "turned into one behaviour cue for the runs ahead "
+                    "('最初の 2 km は上限の 150 に近づく前に抑える'). Not a "
+                    "restatement of the point, not a target for a named or "
+                    "dated session, and no numbers except the prescription's "
+                    "own values quoted as a guard"
+                ),
+            },
+            "next_challenge_evidence": {
+                "type": "string",
+                "description": (
+                    "The evidence key of the good point or growth point the "
+                    "next_challenge carries over -- it must equal the evidence "
+                    "of one of today's good_points / growth_points"
                 ),
             },
             "timeline": {
@@ -106,9 +115,10 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "athlete can ignore today"
             ),
             "next_action": (
-                "One concrete next step for the session in next_session -- the "
-                "run the athlete actually does next, named and dated -- with an "
-                "HR ceiling written as a guard"
+                "Carry ONE point over from today: pick one growth point (or a "
+                "good point to keep) and turn it into one behaviour cue. The "
+                "next session itself is the prescription's and the morning "
+                "check-in's to set -- never target it from a single run"
             ),
             "recurrence_and_questions": (
                 "Point out what keeps recurring across runs, and ask at most "
@@ -279,17 +289,18 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 ),
             },
             "next_challenge": (
-                "Write it for report.next_session -- the session the athlete "
-                "actually does next -- saying which session it is and when "
-                "('9/20 の 16 km ロング走'), with its target_km / "
-                "target_minutes / hr_high. next_run_target describes the next "
-                "run *of today's kind*, so its pace and HR bands may be quoted "
-                "only when next_session.source == 'same_type' or its "
-                "session_type is the same kind as today's run. With "
-                "next_session == null, carry today's main finding over without "
-                "naming a type or quoting numbers ('次のランでも…'). An HR "
-                "ceiling is a guard ('150 bpm を超えないように') plus where HR "
-                "should settle, never a pass/fail target"
+                "持ち越す 1 点 (#1358). A single run cannot set the next "
+                "session -- the prescription and the morning check-in do -- so "
+                "carry ONE point over from today instead: choose one of "
+                "good_points / growth_points (a growth point when there is "
+                "one, otherwise a good point to keep, as a maintenance target) "
+                "and turn it into one behaviour cue that holds whatever the "
+                "next run is. Put that point's evidence key in "
+                "next_challenge_evidence. Do not restate the point's facts, do "
+                "not name or date a session, and quote no numbers but the "
+                "prescription's own values as a guard ('150 bpm を超えないよう"
+                "に'). report.next_session / next_run_target are not its "
+                "source. Never a pass/fail target"
             ),
             "question": (
                 "At most one, and only about something the sensors cannot see "
@@ -317,7 +328,9 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "value or an allowed scene",
             "When plan.hr_ceiling.seconds_over > 0, never say the HR ceiling "
             "was not exceeded; when plan.hr_ceiling.pct_over > 5, plan.hr_ceiling "
-            "is not a good point either (the axis is judged on the average HR)",
+            "is not a good point either (a few minutes over a short run can "
+            "leave the axis on plan -- it is judged on > 5% AND >= 5 min -- "
+            "and still not be a strength)",
             "Read the run against report.purpose; when purpose.source == "
             "'inferred', hedge it -- say the purpose was inferred from the run, "
             "not prescribed",
@@ -325,9 +338,10 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "were judged on only part of the run, say the verdict covers that "
             "part",
             "Write a note for every adverse out-of-range signal and for no other",
-            "Write next_challenge for next_session (named and dated); quote "
-            "next_run_target's bands only when it is the same kind of run, and "
-            "write an HR ceiling as a guard with its settling range",
+            "Write next_challenge as ONE point carried over from today: one of "
+            "good_points / growth_points turned into one behaviour cue, with "
+            "that point's evidence key in next_challenge_evidence; no named "
+            "session and no numbers but the prescription's",
             "Refer to a scene by its label_ja -- a distance range for unit='km' "
             "and the step's name for unit='step' -- never by a lap number",
             "Strides are a neuromuscular set; do not read stride or recovery HR "
