@@ -100,7 +100,7 @@ E2E の結果を信用する前に、返り値の `promptPreview` でどちら�
 
 L3 検証基準:
 - **構造（FAIL）**: `run_note.analysis_data` 非 null、必須フィールド存在、merge の grounding ゲート通過、`merge_section_analyses` → DuckDB `section_analyses` 登録成功
-- **内容（WARNING）**: `story` / `timeline` の数値が REPORT と一致、課題（growth point）が outside かつ adverse なシグナルか off-plan の軸に乗っている
+- **内容（WARNING）**: `story` / `timeline` の数値が REPORT と一致、課題（growth point）が outside かつ adverse なシグナル、off-plan の軸、`policy.verdict == "concern"` のシーンのいずれかに乗っている（条件の正本は `run-note-analyst.md` §4 と merge ゲート）
 - **Fixture**: Activity `20636804823`（2025-10-09, aerobic_base 5.66 km, 約 6:26/km, HR 平均 144 bpm）
 
 ## 5. 変更カテゴリ別の pre-merge 検証
