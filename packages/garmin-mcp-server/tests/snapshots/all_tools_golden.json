@@ -1662,6 +1662,22 @@
     }
   },
   {
+    "name": "get_run_note_inputs",
+    "description": "Get everything the run-note (coach review) agent writes from, in one call: report (exactly get_run_report) and context (the coach subset of prefetch_activity_context: training_type, week_position, prescription_for_run {title, session_type, target_km, target_minutes, hr_low, hr_high, rationale}, morning_wellness, vs_previous, previous_same_type, the top 3 similar_workouts, gear and long_run_gate; null when the bundle failed). Returns {error, activity_id} when the activity has no run report.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "activity_id": {
+          "type": "integer",
+          "description": "Activity ID to build the deterministic run report for."
+        }
+      },
+      "required": [
+        "activity_id"
+      ]
+    }
+  },
+  {
     "name": "get_server_info",
     "description": "Get diagnostic info about the running MCP server (server_dir). Use to verify which directory the server is running from.",
     "inputSchema": {

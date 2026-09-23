@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **77 tools** (75 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **78 tools** (76 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -16,7 +16,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Export](#export) (1)
 - [Metadata](#metadata) (3)
 - [Splits](#splits) (5)
-- [Analysis](#analysis) (9)
+- [Analysis](#analysis) (10)
 - [Physiology](#physiology) (13)
 - [Performance](#performance) (4)
 - [Time Series](#time-series) (4)
@@ -248,6 +248,16 @@ Find and compare similar past workouts based on pace and distance (Phase 4.5)
 CLI: `garmin-db analysis run-report`
 
 Get the deterministic report for one run: everything the single-run page and the run note are built from, in one call. Returns activity_id, activity_date, intensity_category, purpose ({id, label_ja, source}: what the run was for -- declared on the prescription, the session_type default, inferred from the run's own data, or unknown; hedge an inferred one), headline (plan_label, flag_count, flag_labels -- adverse signals plus the label_ja of concern moments), plan (verdict ✅/🟡/🔴 against the day's prescription, its title, per-axis checks with target/actual/on_plan -- plus a strides axis (target/actual as reps, status on_plan/short/missing, verdict ✅/🟡/🔴) when the prescription carries strides -- and hr_ceiling {bpm, seconds_over, pct_over}; with a time series the ceiling row, seconds_over and pct_over cover steady running only -- stops, auto-pause resumes, bursts and stride/recovery laps are left out together with the HR recovery after each, detected from the HR trace (back to the pre-event baseline, a new plateau, or 180 s at most); without one the zone totals stand; null when the day had no prescription), judged_share ({hr, form}: the share of the run's time the ceiling and the form signals were judged on, null without a time series), signals (per metric: today, expected, the athlete's own normal_low/normal_high, z, status within/edge/outside/insufficient, adverse, streak, n, reason; form signals are insufficient with reason low_judged_share when less than half of the run was steady running), zones (HR zone percentages), moments (2-5 deterministic turning points, each with a label_ja and a unit of km or step, real positions km_from/km_to + t_from_s/t_to_s, facts, and policy {verdict, reason} judging the scene against the purpose: concern (a deviation from what the run was for -- the only moments a growth point may rest on), acceptable (expected or allowed, e.g. a walk break on an aerobic long run) or neutral (descriptive; step scenes are always neutral); a block of strides and their jogs is one strides moment with facts reps, fastest_pace_s_per_km, median_pace_s_per_km, median_cadence_spm, peak_hr and hr_at_next_start per rep), flow (the series the chart draws: axis distance/time, total_km, total_s, segments, steps and the fragment count), recurrence (moment kinds that keep happening at the same point of the run), phases (warmup/run/recovery/cooldown pace and HR), conditions (temp_c, humidity_pct, wind_mps, terrain, elevation_gain_m), vs_previous (delta chips against the previous same-family run), next_run_target (what the next run of this kind should look like) and next_session (what the athlete actually does next: date, days_ahead, session_type, title, target_km/target_minutes, hr_low/hr_high and whether it came from the plan, the long-run ladder or a projection). Returns null when the activity does not exist.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `activity_id` | integer | **required** | Activity ID to build the deterministic run report for. |
+
+### `get_run_note_inputs`
+
+CLI: `garmin-db analysis run-note-inputs`
+
+Get everything the run-note (coach review) agent writes from, in one call: report (exactly get_run_report) and context (the coach subset of prefetch_activity_context: training_type, week_position, prescription_for_run {title, session_type, target_km, target_minutes, hr_low, hr_high, rationale}, morning_wellness, vs_previous, previous_same_type, the top 3 similar_workouts, gear and long_run_gate; null when the bundle failed). Returns {error, activity_id} when the activity has no run report.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

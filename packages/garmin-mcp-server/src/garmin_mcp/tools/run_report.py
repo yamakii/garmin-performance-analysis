@@ -33,6 +33,28 @@ def _get_run_report(reader: GarminDBReader, p: GetRunReportParams) -> Any:
     return reader.get_run_report(p.activity_id)
 
 
+def _get_run_note_inputs(reader: GarminDBReader, p: GetRunReportParams) -> Any:
+    # The run-note agent fetches its two inputs itself in one call instead of
+    # the workflow's fetch stage re-typing both JSON payloads into its prompt
+    # (#1362): that transcription was ~40 s of every analysis.
+    from garmin_mcp.scripts.prefetch_activity_context import (
+        build_run_note_context,
+        prefetch_activity_context,
+    )
+
+    report = reader.get_run_report(p.activity_id)
+    if report is None:
+        return {
+            "error": f"activity {p.activity_id} has no run report",
+            "activity_id": p.activity_id,
+        }
+    return {
+        "activity_id": p.activity_id,
+        "report": report,
+        "context": build_run_note_context(prefetch_activity_context(p.activity_id)),
+    }
+
+
 RUN_REPORT_TOOLS: list[ToolDef] = [
     ToolDef(
         name="get_run_report",
@@ -90,6 +112,24 @@ RUN_REPORT_TOOLS: list[ToolDef] = [
         handler=_get_run_report,
         cli_group="analysis",
         cli_name="run-report",
+    ),
+    ToolDef(
+        name="get_run_note_inputs",
+        description=(
+            "Get everything the run-note (coach review) agent writes from, in "
+            "one call: report (exactly get_run_report) and context (the coach "
+            "subset of prefetch_activity_context: training_type, "
+            "week_position, prescription_for_run {title, session_type, "
+            "target_km, target_minutes, hr_low, hr_high, rationale}, "
+            "morning_wellness, vs_previous, previous_same_type, the top 3 "
+            "similar_workouts, gear and long_run_gate; null when the bundle "
+            "failed). Returns {error, activity_id} when the activity has no "
+            "run report."
+        ),
+        params=GetRunReportParams,
+        handler=_get_run_note_inputs,
+        cli_group="analysis",
+        cli_name="run-note-inputs",
     ),
 ]
 

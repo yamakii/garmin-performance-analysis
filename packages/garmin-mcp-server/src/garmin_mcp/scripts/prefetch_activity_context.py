@@ -4,9 +4,8 @@ The run itself -- plan vs actual, signals against the athlete's own normal
 range, scenes, conditions -- is computed deterministically by
 ``get_run_report``. What that report cannot say is why the day was prescribed,
 how the athlete woke up, what the previous run of the same kind looked like and
-which shoe was worn. This bundle carries exactly that, for the
-``analyze-activity`` workflow (which forwards it to ``run-note-analyst``) and
-for the MCP tool of the same name.
+which shoe was worn. This bundle carries exactly that, for the run-note agent
+(through ``get_run_note_inputs``) and for the MCP tool of the same name.
 
 Usage:
     uv run python -m garmin_mcp.scripts.prefetch_activity_context 21884133706
@@ -27,11 +26,11 @@ Output (JSON to stdout):
       "morning_wellness": {...}|null     # readiness / RHR / HRV / sleep + z
     }
 
-Every key has a reader (``buildRunNoteContext`` in
-``.claude/workflows/analyze-activity.js``); a test keeps the two in step. The
-numbers the five retired section analysts used to receive here -- weather,
-terrain, zone percentages, form scores, phase structure, VO2max, LT -- live in
-``get_run_report`` and in their own tools (``get_weather_data``,
+Every key has a reader (``build_run_note_context`` below, which the
+``get_run_note_inputs`` tool hands to the run-note agent); a test keeps the two
+in step. The numbers the five retired section analysts used to receive here --
+weather, terrain, zone percentages, form scores, phase structure, VO2max, LT --
+live in ``get_run_report`` and in their own tools (``get_weather_data``,
 ``get_hr_efficiency_analysis``, ``get_form_evaluations``, ...) (#1287).
 
 ``long_run_gate`` carries the deterministic long-run progression verdict
@@ -506,6 +505,59 @@ def prefetch_activity_context(activity_id: int) -> dict:
         "long_run_gate": long_run_gate,
         # --- Prescription vs actual layer (Issue #984) ---
         **prescription_layer,
+    }
+
+
+# The prescription fields the run note reads; row bookkeeping (ids, status,
+# Garmin workout ids) stays out.
+_RUN_NOTE_PRESCRIPTION_FIELDS = (
+    "title",
+    "session_type",
+    "target_km",
+    "target_minutes",
+    "hr_low",
+    "hr_high",
+    "rationale",
+)
+
+# Similar workouts are context for one sentence, not a table.
+_RUN_NOTE_SIMILAR_LIMIT = 3
+
+
+def build_run_note_context(bundle: dict | None) -> dict | None:
+    """The coach subset of the bundle that the run-note agent reads.
+
+    What is left out is only bulk: the raw prescription rows, unused
+    prescription fields and similar workouts past the third. There is no plan
+    verdict here -- the run report's ``plan`` is the only one (#1353).
+
+    Args:
+        bundle: ``prefetch_activity_context`` output.
+
+    Returns:
+        The subset, or None when the bundle is missing or an error.
+    """
+    if not isinstance(bundle, dict) or "error" in bundle:
+        return None
+
+    p = bundle.get("prescription_for_run")
+    similar = (bundle.get("similar_workouts") or {}).get("similar_activities")
+    return {
+        "training_type": bundle.get("training_type"),
+        "week_position": bundle.get("week_position"),
+        "prescription_for_run": (
+            {k: p.get(k) for k in _RUN_NOTE_PRESCRIPTION_FIELDS}
+            if isinstance(p, dict)
+            else None
+        ),
+        "morning_wellness": bundle.get("morning_wellness"),
+        "vs_previous": bundle.get("vs_previous"),
+        "previous_same_type": bundle.get("previous_same_type"),
+        "similar_workouts": (
+            similar[:_RUN_NOTE_SIMILAR_LIMIT] if isinstance(similar, list) else None
+        ),
+        "gear": bundle.get("gear"),
+        "long_run_gate": bundle.get("long_run_gate"),
     }
 
 

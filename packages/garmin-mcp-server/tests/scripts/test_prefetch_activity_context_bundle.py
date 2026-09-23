@@ -17,8 +17,8 @@ from garmin_mcp.scripts.prefetch_activity_context import prefetch_activity_conte
 FIXTURE_ACTIVITY_ID = 12345678901
 FIXTURE_ACTIVITY_DATE = "2025-01-15"
 
-# Every key of the bundle. Each one is read by buildRunNoteContext in
-# .claude/workflows/analyze-activity.js (or is the envelope / the raw
+# Every key of the bundle. Each one is read by build_run_note_context in
+# garmin_mcp.scripts.prefetch_activity_context (or is the envelope / the raw
 # prescription rows behind prescription_for_run); the run itself is carried by
 # get_run_report, not by this bundle (#1287).
 BUNDLE_KEYS = {

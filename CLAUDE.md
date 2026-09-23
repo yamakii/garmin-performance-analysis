@@ -138,8 +138,8 @@ Key rules (path-scoped, under `.claude/rules/dev/`):
    question.
 2. **proofreader** (haiku): checks the Japanese of `run_note.json` before the merge.
 
-> The agent receives the deterministic REPORT and the prefetched CONTEXT inline in the prompt
-> (no file reads) and writes `run_note.json`, which `merge_section_analyses` validates against
+> The agent fetches the deterministic REPORT and the CONTEXT subset in one `get_run_note_inputs`
+> call (no file reads) and writes `run_note.json`, which `merge_section_analyses` validates against
 > the section schema and the grounding gate (every claim carries an evidence key that resolves
 > against the report) before inserting it into `section_analyses`.
 

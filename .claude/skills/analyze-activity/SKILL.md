@@ -14,9 +14,9 @@ argument-hint: [YYYY-MM-DD | missing [N | start..end]]
 
 分析は `fetch → コーチレビュー生成 → proofread → DuckDB 登録` の決定論的パイプライン。
 数値・範囲判定・処方判定・シーン抽出は `get_run_report` がすべて決定論的に算出するため、
-LLM が書くのは **`run_note` の1セクション（コーチレビュー）だけ**。workflow は取り込みと
-prefetch を1回にまとめ、REPORT と CONTEXT サブセットをプロンプトにインライン渡しして、
-エージェントのコンテキストを「そのランのぶんだけ」に抑える。
+LLM が書くのは **`run_note` の1セクション（コーチレビュー）だけ**。分析エージェントは
+`get_run_note_inputs` の1回の呼び出しで REPORT と CONTEXT サブセットを受け取り、
+コンテキストを「そのランのぶんだけ」に抑える。
 
 ## 実行手順
 
@@ -28,10 +28,9 @@ Workflow(name="analyze-activity", args={"date": "$ARGUMENTS"})
 
 - `$ARGUMENTS` が空のときは `args` を省略（workflow 内で today を解決）するか `{"date": "<today YYYY-MM-DD>"}` を渡す。
 - workflow は背景で次を実行する:
-  1. **Fetch**: `catch_up_ingest`（ラン・体重・補強の差分取込）＋ `ingest_activity`（当日ラン）＋
-     `prefetch_activity_context`（補助 CONTEXT: 処方・週内の位置・当日朝の回復・前回同種ラン・シューズ）＋
-     `prefetch_run_report`（決定論的ランレポート。ランそのものはこちらが持つ）
-  2. **Analyze**: `run-note-analyst` が REPORT ＋ CONTEXT サブセットから `run_note.json` を1つ生成
+  1. **Fetch**: `catch_up_ingest`（ラン・体重・補強の差分取込）＋ `ingest_activity`（当日ラン）だけ
+  2. **Analyze**: `run-note-analyst` が `get_run_note_inputs` で REPORT（決定論的ランレポート。ランそのもの）と
+     CONTEXT サブセット（処方・週内の位置・当日朝の回復・前回同種ラン・シューズ）を受け取り、`run_note.json` を1つ生成
   3. **Finalize**: proofreader で日本語校正 → `merge_section_analyses` で DuckDB 登録
      （grounding ゲート通過時のみ。成功時 temp 自動削除）
 
@@ -72,4 +71,5 @@ workflow の戻り値に応じてユーザーへ報告:
 - workflow 本体: `.claude/workflows/analyze-activity.js`（純粋ロジックは `// >>> testable` ブロック、テストは `.claude/workflows/tests/analyze-activity.test.mjs`）
 - 分析エージェント: `.claude/agents/run-note-analyst.md`（`run_note` 専用・唯一の分析エージェント）
 - 校正: `.claude/agents/proofreader.md`
-- スクリプト: `garmin_mcp.scripts.prefetch_activity_context`, `garmin_mcp.scripts.prefetch_run_report`, `garmin_mcp.scripts.merge_section_analyses`
+- 入力ツール: `get_run_note_inputs`（`garmin_mcp.tools.run_report`。CONTEXT の絞り込みは `garmin_mcp.scripts.prefetch_activity_context.build_run_note_context`）
+- スクリプト: `garmin_mcp.scripts.merge_section_analyses`

@@ -151,11 +151,10 @@ The section is written as `run_note.json`, validated against its schema and the
 grounding gate, then merged into the `section_analyses` table (append-only, one
 row per analysis run).
 
-**Prefetch-context pattern:** the orchestrator calls `prefetch_run_report` and
-`prefetch_activity_context` once and passes the REPORT and the bundled CONTEXT
-inline, so the agent does not issue many small MCP round-trips. The agent trusts
-the prefetched data and only makes additional MCP calls when something is
-missing.
+**One-call inputs pattern:** the agent gets the REPORT and the CONTEXT subset
+from a single `get_run_note_inputs` call, so it does not issue many small MCP
+round-trips. The orchestrator's fetch stage only ingests: having it prefetch both
+payloads and re-type them into the agent's prompt cost ~40 s per run (#1362).
 
 **Why this shape:**
 
@@ -179,8 +178,8 @@ the week (`week_position`), how
 the athlete woke up (`morning_wellness`), the previous run of the same kind
 (`previous_same_type`, `vs_previous`), `similar_workouts`, the `long_run_gate`
 verdict for runs of 10 km and more, and the shoe (`gear`). Every key has a
-reader — `buildRunNoteContext` in `.claude/workflows/analyze-activity.js` — and
-a test keeps the two in step (#1287). Weather, HR zones and form are read
+reader — `build_run_note_context`, which `get_run_note_inputs` hands to the
+run-note agent — and a test keeps the two in step (#1287, #1362). Weather, HR zones and form are read
 through the report or their own tools. How the run answered the prescription is
 the report's `plan` alone (#1353); the bundle carries no second verdict.
 

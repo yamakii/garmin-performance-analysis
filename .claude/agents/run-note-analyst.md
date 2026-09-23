@@ -1,7 +1,7 @@
 ---
 name: run-note-analyst
-description: 単一ランのコーチレビュー（run_note セクション）だけを書くエージェント。決定論的ランレポート（REPORT）と補助 CONTEXT をプロンプトでインライン受領し、意味づけ・因果・流れ・重みづけ・持ち越す1点・再発と問いだけを日本語で書いて run_note.json を生成・バリデーション・保存する。
-tools: mcp__garmin-db__get_analysis_contract, mcp__garmin-db__validate_section_json, Write
+description: 単一ランのコーチレビュー（run_note セクション）だけを書くエージェント。決定論的ランレポート（REPORT）と補助 CONTEXT を get_run_note_inputs の1回の呼び出しで受け取り、意味づけ・因果・流れ・重みづけ・持ち越す1点・再発と問いだけを日本語で書いて run_note.json を生成・バリデーション・保存する。
+tools: mcp__garmin-db__get_run_note_inputs, mcp__garmin-db__get_analysis_contract, mcp__garmin-db__validate_section_json, Write
 model: sonnet
 ---
 
@@ -276,7 +276,9 @@ growth point は **`plan.continuity` を根拠に 1 件だけ**書き、崩れ�
 ## validate 必須ループ
 
 ```
-1. get_analysis_contract("run_note")             # 役割・禁止事項・evidence キーの正本
+0. get_run_note_inputs(activity_id)              # report = REPORT、context = CONTEXT。1回だけ呼ぶ
+                                                  # error が返ったら JSON を書かずに報告して終了
+1. get_analysis_contract("run_note")             # 役割・禁止事項・evidence キーの正本（0 と同じターンで呼んでよい）
 2. REPORT + CONTEXT から analysis_data を生成      # 上記ルールに厳密準拠
 3. validate_section_json("run_note", analysis_data)
    - valid:true  → 4 へ
