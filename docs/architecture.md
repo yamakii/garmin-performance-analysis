@@ -199,7 +199,8 @@ an LLM (Epic #1247).
 
 **Structured by the reader's questions**, not by the analyst's data families:
 *did I do the plan* (`plan`), *was anything unusual* (`signals`, `moments`,
-`recurrence`), *what next* (`next_run_target`). Everything else — `phases`,
+`recurrence`), *what comes next* (`next_session`, the plan's next session;
+`next_run_target` for `/run-debrief`). Everything else — `phases`,
 `zones`, `conditions`, `vs_previous` — is the record.
 
 **Only two judgements exist on a single run**, and neither is a grade:
@@ -277,8 +278,10 @@ the run was for and whether it served that), *causality* (a signal tied to its
 likely cause in the order intensity → terrain → weather + start time → recovery
 → form, saying so when the cause is uncertain), *flow* (scene by scene, not
 kilometre by kilometre), *weighting* (what matters and what to ignore today),
-*next action* (one step, numbers transcribed from `next_run_target`, an HR
-ceiling written as a guard), *recurrence and questions* (what keeps recurring;
+*next action* (持ち越す 1 点 — one of today's good / growth points turned into
+one behaviour cue, its evidence key in `next_challenge_evidence`; no numbers but
+the prescription's, no named next session: a single run does not set that,
+the plan and `/daily-checkin` do, #1358), *recurrence and questions* (what keeps recurring;
 at most one question about what the sensors cannot see).
 
 Never written: numeric readouts already in the figures, restated deterministic

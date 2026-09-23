@@ -30,16 +30,14 @@ function Chip({ label, value }: { label: string; value: string }) {
 }
 
 /**
- * The session the athlete actually does next, under the challenge sentence.
+ * The session the athlete actually does next, as the plan names it.
  *
- * The card that used to sit here described the next run *of today's kind*
- * (`next_run_target`), which is a different question: on 2026-09-18 the note
- * coached the next easy run while what came next was a 16 km long run two days
- * later (#1267). This card states the scheduled session — when it is, what it
- * is, how far or how long, and the heart-rate ceiling as a guard.
- *
- * A dateless `same_type` session carries no more than `next_run_target`
- * already does, so the caller keeps showing that card instead.
+ * It states the scheduled session — when it is, what it is, how far or how
+ * long, and the heart-rate ceiling as a guard. It stands in its own block,
+ * not under the coach's carried-over point (#1358): the session is the plan's
+ * to set, and a single run's review does not target it. A dateless
+ * `same_type` projection of today's run is not a plan, so the caller shows
+ * nothing for it.
  */
 export default function NextSessionCard({
   session,

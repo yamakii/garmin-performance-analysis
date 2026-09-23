@@ -58,11 +58,18 @@ def _note_data(**overrides: Any) -> dict[str, Any]:
             }
         ],
         "growth_points": [],
-        "next_challenge": "次回も150bpmを超えないように、140bpm前後で落ち着かせましょう。",
+        "next_challenge": "心拍を先に見て、上限の150を超えないペースで走り続けましょう。",
         "timeline": [{"moment_id": "m3", "text": "終始落ち着いたペースで進みました。"}],
         "notes": [],
     }
     data.update(overrides)
+    # The carried-over point is one of the note's own points (#1358): unless a
+    # test sets it, it follows whichever point the test put in.
+    if "next_challenge_evidence" not in overrides:
+        points = [*data["good_points"], *data["growth_points"]]
+        data["next_challenge_evidence"] = (
+            points[0]["evidence"] if points else "plan.hr_ceiling"
+        )
     return data
 
 
@@ -439,7 +446,9 @@ def test_minimal_run_note_passes_without_good_points():
         vs_previous=None,
         recurrence=[],
     )
-    data = _note_data(good_points=[])
+    # With no point to carry, the cue rests on a key the report carries -- here
+    # the steady scene the timeline tells (#1358).
+    data = _note_data(good_points=[], next_challenge_evidence="moments.m3")
 
     assert check_run_note_grounding(data, report) == (True, None)
 
@@ -538,3 +547,44 @@ def test_growth_point_on_continuity_alone_passes():
     )
 
     assert check_run_note_grounding(data, _breakdown_report()) == (True, None)
+
+
+@pytest.mark.unit
+def test_next_challenge_evidence_must_match_a_point():
+    """A carried-over cue with no point of today's behind it is rejected (#1358)."""
+    data = _note_data(next_challenge_evidence="signals.gct")
+
+    ok, reason = check_run_note_grounding(data, _report())
+
+    assert ok is False
+    assert reason is not None
+    assert "next_challenge_evidence" in reason
+    assert "signals.gct" in reason
+
+
+@pytest.mark.unit
+def test_next_challenge_evidence_matching_growth_point_passes():
+    """Carrying over the growth point is the normal case (#1358)."""
+    data = _note_data(
+        growth_points=[
+            {
+                "text": "距離が処方に届かず、量の目標に少し足りませんでした。",
+                "evidence": "plan.volume",
+            }
+        ],
+        next_challenge_evidence="plan.volume",
+    )
+
+    assert check_run_note_grounding(data, _report()) == (True, None)
+
+
+@pytest.mark.unit
+def test_next_challenge_evidence_without_points_must_resolve():
+    """With no point at all, the carried key must still exist in the report."""
+    data = _note_data(good_points=[], next_challenge_evidence="signals.nope")
+
+    ok, reason = check_run_note_grounding(data, _report())
+
+    assert ok is False
+    assert reason is not None
+    assert "next_challenge_evidence" in reason

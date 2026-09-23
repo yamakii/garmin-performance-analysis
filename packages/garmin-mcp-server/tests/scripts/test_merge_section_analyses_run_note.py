@@ -56,7 +56,8 @@ _VALID_RUN_NOTE: dict = {
             "evidence": "plan.hr_ceiling",
         }
     ],
-    "next_challenge": "次回は150bpmを超えないように、140bpm前後で落ち着かせて走りましょう。",
+    "next_challenge": "入りの数kmは、上限の150に近づく前に意識してペースを抑えましょう。",
+    "next_challenge_evidence": "plan.hr_ceiling",
     "timeline": [
         {
             "moment_id": "m1",

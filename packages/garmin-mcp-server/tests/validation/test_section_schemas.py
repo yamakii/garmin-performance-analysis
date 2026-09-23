@@ -29,7 +29,8 @@ def _run_note_payload(**overrides: object) -> dict:
             }
         ],
         "growth_points": [],
-        "next_challenge": "次回も150bpmを超えないように、140bpm前後で落ち着かせましょう。",
+        "next_challenge": "心拍を先に見て、上限の150を超えないペースで走り続けましょう。",
+        "next_challenge_evidence": "plan.hr_ceiling",
         "timeline": [{"moment_id": "m3", "text": "終始落ち着いたペースで進みました。"}],
         "notes": [],
     }
@@ -42,6 +43,33 @@ def test_run_note_minimal_valid():
     valid, errors = validate_section_data("run_note", _run_note_payload())
     assert valid is True
     assert errors == []
+
+
+@pytest.mark.unit
+def test_next_challenge_max_length():
+    """持ち越す 1 点 is one sentence: 120 chars, not the old 240 (#1358)."""
+    valid, _ = validate_section_data(
+        "run_note", _run_note_payload(next_challenge="あ" * 120)
+    )
+    assert valid is True
+
+    valid, errors = validate_section_data(
+        "run_note", _run_note_payload(next_challenge="あ" * 121)
+    )
+    assert valid is False
+    assert any("next_challenge" in error for error in errors)
+
+
+@pytest.mark.unit
+def test_next_challenge_evidence_is_required():
+    """The carried-over point must say which point it carries (#1358)."""
+    payload = _run_note_payload()
+    del payload["next_challenge_evidence"]
+
+    valid, errors = validate_section_data("run_note", payload)
+
+    assert valid is False
+    assert any("next_challenge_evidence" in error for error in errors)
 
 
 @pytest.mark.unit

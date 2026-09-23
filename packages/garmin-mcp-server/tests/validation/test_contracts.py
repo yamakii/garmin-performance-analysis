@@ -89,27 +89,28 @@ def test_contract_describes_continuity_axis():
 
 
 @pytest.mark.unit
-def test_contract_run_note_next_challenge_uses_next_session():
-    """The next step is the next *session*, not the next run of today's kind.
+def test_contract_run_note_next_challenge_carries_one_point():
+    """持ち越す 1 点: one of today's points as a cue, not a next-session target.
 
-    On 2026-09-18 the note coached an easy run while the athlete's next
-    session was a 16 km long run two days later, because the agent transcribed
-    ``next_run_target`` (#1267). The contract now names ``next_session`` as the
-    source and fences ``next_run_target`` behind the same-type condition.
+    #1267 pointed the challenge at report.next_session, which made a single
+    run prescribe the next session and put a long run's HR band on a Z2 jog
+    (2026-09-13). The session is the prescription's to set (#1358); the note
+    carries one of today's points over instead.
     """
     contract = get_contract("run_note")
 
     policy = contract["evaluation_policy"]["next_challenge"]
-    assert "next_session" in policy
-    # next_run_target is still quotable, but only for the same kind of run.
-    assert "same_type" in policy
-    assert "next_session == null" in policy
-    # The field description and the instructions say the same thing.
-    assert (
-        "next_session" in contract["required_fields"]["next_challenge"]["description"]
-    )
-    assert any("next_session" in line for line in contract["instructions"])
-    # The HR ceiling stays a guard with its settling range.
+    assert "good_points / growth_points" in policy
+    assert "no numbers but the prescription's" in policy
+    assert "next_challenge_evidence" in policy
+    # next_session is named only to say it is not the source.
+    assert "are not its source" in policy
+    assert "same_type" not in policy
+    required = contract["required_fields"]
+    assert "next_challenge_evidence" in required
+    assert "next_session" not in required["next_challenge"]["description"]
+    assert any("next_challenge_evidence" in line for line in contract["instructions"])
+    # The ceiling is still quoted as a guard.
     assert "150 bpm を超えないように" in policy
 
 

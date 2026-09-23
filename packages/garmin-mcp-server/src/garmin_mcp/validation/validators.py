@@ -234,6 +234,41 @@ def _double_breakdown_error(
     return None
 
 
+def _carry_over_error(
+    analysis_data: Mapping[str, Any],
+    report: Mapping[str, Any],
+    signals: Mapping[str, Mapping[str, Any]],
+    moments: Mapping[str, Mapping[str, Any]],
+    checks: Mapping[str, Mapping[str, Any]] | None,
+) -> str | None:
+    """Reject a carried-over point that is none of today's points (#1358).
+
+    ``next_challenge`` turns one of today's good / growth points into one
+    behaviour cue; ``next_challenge_evidence`` names which, so the claim is
+    grounded like every other one -- a cue with no point behind it is advice
+    the run never gave. A note with no point at all (nothing strong, nothing
+    off) still carries one thing over, so there the key only has to resolve
+    against the report.
+    """
+    carried = analysis_data.get("next_challenge_evidence")
+    points = {
+        str(item.get("evidence"))
+        for field in ("good_points", "growth_points")
+        for item in analysis_data.get(field) or []
+        if isinstance(item, Mapping)
+    }
+    if not points:
+        error = _evidence_error(carried, report, signals, moments, checks)
+        return f"next_challenge_evidence: {error}" if error else None
+    if carried not in points:
+        return (
+            f"next_challenge_evidence {carried!r} is not the evidence of any "
+            "good point or growth point; next_challenge must carry over one of "
+            f"today's points {sorted(points)}"
+        )
+    return None
+
+
 def _good_point_error(
     evidence: str,
     signals: Mapping[str, Mapping[str, Any]],
@@ -317,7 +352,9 @@ def check_run_note_grounding(
        whose purpose ``policy.verdict`` is not ``concern``, or a background
        source (``recurrence`` / ``vs_previous`` / ``conditions`` /
        ``context``) -- #1314; or two growth points count one collapse twice,
-       on ``plan.continuity`` and on its breakdown scene (#1353);
+       on ``plan.continuity`` and on its breakdown scene (#1353); or
+       ``next_challenge_evidence`` is not the evidence of any good / growth
+       point (#1358);
     4. a ``timeline`` item names an unknown moment, or there are more timeline
        items than the report has moments (an invented scene);
     5. a note explains a signal that is not an adverse outlier, or an adverse
@@ -380,6 +417,10 @@ def check_run_note_grounding(
                 return False, error
 
     error = _double_breakdown_error(analysis_data.get("growth_points") or [], moments)
+    if error:
+        return False, error
+
+    error = _carry_over_error(analysis_data, report, signals, moments, checks)
     if error:
         return False, error
 
