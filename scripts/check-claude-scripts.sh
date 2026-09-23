@@ -180,6 +180,19 @@ if [ -e scripts/tests/test-sandbox-allowlist.sh ]; then
   fi
 fi
 
+# Behavioral self-test for the Claude Code version resolver (#1346): `latest` must
+# resolve to a concrete version on the host, or the Dockerfile's `npm install -g`
+# layer stays cached and a rebuild never updates the CLI. PATH-shimmed npm/curl,
+# so no network.
+if [ -e scripts/tests/test-claude-version.sh ]; then
+  if bash scripts/tests/test-claude-version.sh; then
+    echo "ok (script test): claude-version"
+  else
+    echo "FAIL (script test): claude-version" >&2
+    status=1
+  fi
+fi
+
 # Skip-level docs/rules changes may ship without an Issue; the rules must say so (#1051).
 if [ -e scripts/tests/test-skip-level-issue-exception.sh ]; then
   if bash scripts/tests/test-skip-level-issue-exception.sh; then

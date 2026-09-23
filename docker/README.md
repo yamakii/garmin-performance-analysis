@@ -155,17 +155,27 @@ then rebuild.
 
 Claude Code's in-container auto-updater is **disabled** (`DISABLE_AUTOUPDATER=1`):
 it's npm-global-installed as root but runs as the non-root `claude` user, so it
-can't write the global npm dir and would just fail on startup. Update by
-rebuilding the image with the target version:
+can't write the global npm dir and would just fail on startup. Updating is a
+rebuild — and a plain rebuild is enough:
 
 ```bash
-CLAUDE_CODE_VERSION=2.1.193 docker/run.sh   # reinstalls that version
+docker/run.sh                               # installs the newest published version
+CLAUDE_CODE_VERSION=2.1.193 docker/run.sh   # or pin one
 ```
 
-`run.sh` passes `CLAUDE_CODE_VERSION` (default `latest`) as a build-arg. Changing
-the value busts the cached `npm install -g …@<version>` layer; a plain rebuild
-reuses it and won't pick up a newer release. To force the newest without pinning,
-rebuild that layer fresh with `docker build --no-cache` (or bump the version).
+`run.sh` resolves `latest` to a concrete version **before** the build
+(`docker/lib/claude-version.sh`: `npm view`, falling back to the registry over
+`curl`) and passes that as the `CLAUDE_CODE_VERSION` build-arg, printing it as
+`▶ Claude Code version: …`. This matters because the Dockerfile installs the CLI
+in one `npm install -g …@<version>` layer: while the build-arg stayed the literal
+`latest` its value never changed, so docker reused the cached layer and the image
+kept the version that layer first resolved — a rebuild silently did nothing
+(#1346). With a concrete value the cache key changes exactly when a new release
+exists, so a rebuild updates and an already-current rebuild still hits the cache.
+
+An explicit `CLAUDE_CODE_VERSION` is passed through untouched. If the registry is
+unreachable, `run.sh` warns and builds with `latest` (the old behaviour: it builds,
+but may reuse the cached layer).
 
 To launch Claude directly instead of a shell:
 
