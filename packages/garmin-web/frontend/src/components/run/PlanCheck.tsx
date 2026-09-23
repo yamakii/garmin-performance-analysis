@@ -250,15 +250,18 @@ export default function PlanCheck({
   return (
     <SectionBlock id={id} title="計画との照合" note={note} noteMono>
       {(purposeLabel != null || shareLabel != null) && (
-        <dl className="mb-3 flex flex-wrap gap-x-6 gap-y-1 font-mono text-[13px]">
+        // One label column shared by every row, so the values start at the
+        // same x however long each label is (#1350). Each item is
+        // `display: contents` so its dt / dd sit in the shared tracks.
+        <dl className="mb-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 font-mono text-[13px]">
           {purposeLabel != null && (
-            <div className="flex gap-2" data-testid="plan-purpose">
+            <div className="contents" data-testid="plan-purpose">
               <dt className="text-ink-muted">目的</dt>
               <dd className="text-ink">{purposeLabel}</dd>
             </div>
           )}
           {outcomeLabel != null && (
-            <div className="flex gap-2" data-testid="plan-outcome">
+            <div className="contents" data-testid="plan-outcome">
               <dt className="text-ink-muted">目的の達成</dt>
               <dd
                 className={
@@ -272,7 +275,7 @@ export default function PlanCheck({
             </div>
           )}
           {shareLabel != null && (
-            <div className="flex gap-2" data-testid="plan-judged-share">
+            <div className="contents" data-testid="plan-judged-share">
               <dt className="text-ink-muted">判定した範囲</dt>
               <dd className="text-ink-soft">{shareLabel}</dd>
             </div>
