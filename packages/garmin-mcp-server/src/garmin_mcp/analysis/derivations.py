@@ -7,6 +7,7 @@ adds the prose ``evaluation`` field. Leaving range comparison or label lookup to
 the LLM risks hallucinated "achieved" verdicts (Issue #671).
 """
 
+from collections.abc import Mapping
 from datetime import date, datetime
 from typing import Any
 
@@ -963,6 +964,14 @@ _VOLUME_RED_HIGH = 1.50
 #: red rather than yellow.
 _HR_RED_OVER_BPM = 10
 
+#: The HR ceiling is a guard, so it is judged on the steady time spent above
+#: it, not on the average (#1357): an early overshoot is otherwise cancelled
+#: by a slower finish. Off plan takes both -- more than this share of the
+#: judged time AND at least this many seconds -- so a short jog's couple of
+#: minutes over does not read like half an hour over on a long run.
+HR_CEILING_OFF_PCT = 5.0
+HR_CEILING_OFF_SECONDS = 300
+
 #: Verdict symbols, ordered by severity (index == severity).
 _VERDICT_BY_SEVERITY = ("✅", "🟡", "🔴")
 
@@ -1115,6 +1124,16 @@ def _volume_comparison(
     return None
 
 
+def _format_over_time(seconds: float) -> str:
+    """``"30:22"`` / ``"1:04:09"`` -- a length of time, as the plan card shows it."""
+    total = max(0, round(seconds))
+    hours, rest = divmod(total, 3600)
+    minutes, secs = divmod(rest, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes}:{secs:02d}"
+
+
 def _format_volume(value: float, unit: str) -> str:
     """Format a volume for prose: ``22.0km`` / ``45分``."""
     return f"{value:.1f}{unit}" if unit == "km" else f"{value:.0f}{unit}"
@@ -1127,6 +1146,7 @@ def compute_prescription_verdict(
     hr_tolerance_bpm: int = 3,
     jog_avg_hr: float | None = None,
     outcome: Outcome | None = None,
+    ceiling_over: Mapping[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Judge a run against the session prescribed for that day.
 
@@ -1136,10 +1156,10 @@ def compute_prescription_verdict(
     "followed the plan":
 
     - ``✅`` the run answers the prescription: same intensity class, volume in
-      ``[0.85, 1.30]`` of target, and ``avg_hr <= hr_high + hr_tolerance_bpm``.
+      ``[0.85, 1.30]`` of target, and the HR ceiling kept (below).
     - ``🟡`` one deviation: volume ``0.70-0.85`` or ``1.30-1.50`` of target (or
-      below 0.70), HR over the ceiling by ``hr_tolerance_bpm+1 … 10`` bpm, or a
-      *lower* intensity class than prescribed (easy instead of threshold).
+      below 0.70), the ceiling not kept, or a *lower* intensity class than
+      prescribed (easy instead of threshold).
     - ``🔴`` a risk-side deviation: a higher intensity class than prescribed, a
       run on a rest day, ``avg_hr > hr_high + 10``, or volume above
       ``1.50 x`` target.
@@ -1168,6 +1188,14 @@ def compute_prescription_verdict(
             and a breakdown is a 🟡 deviation -- the run fell short of what it
             was for, which is not a risk-side overreach. The outcome is taken
             as judged; nothing is re-measured here.
+        ceiling_over: ``{"seconds_over", "pct_over"}`` -- the steady time
+            above ``hr_high`` (``hr_windows.seconds_over``, the figure the
+            plan card shows). With it the ceiling is kept unless more than
+            :data:`HR_CEILING_OFF_PCT` of the judged time AND at least
+            :data:`HR_CEILING_OFF_SECONDS` sat above it (#1357). Without it
+            (no time series, no zones) the average decides:
+            ``avg_hr <= hr_high + hr_tolerance_bpm``. Either way an average
+            more than 10 bpm over the ceiling is 🔴.
 
     Returns:
         ``{"verdict", "prescription_title", "reasons": [str, ...], "on_plan":
@@ -1266,21 +1294,41 @@ def compute_prescription_verdict(
                 f"処方 {target_s} に対し実施 {done_s}（{pct}%）で不足しています。"
             )
 
-    # 4. HR ceiling.
+    # 4. HR ceiling: a guard, judged on the time spent above it (#1357); the
+    #    average only decides the risk-side 🔴 and, without a time series,
+    #    the whole axis.
     hr_high = _as_float(prescription.get("hr_high"))
-    if hr_high is not None and avg_hr is not None:
-        over = avg_hr - hr_high
-        if over > _HR_RED_OVER_BPM:
-            severity = 2
+    over_seconds = _as_float((ceiling_over or {}).get("seconds_over"))
+    over_pct = _as_float((ceiling_over or {}).get("pct_over"))
+    hr_ceiling_kept: bool | None = None
+    if (
+        hr_high is not None
+        and avg_hr is not None
+        and (avg_hr - hr_high > _HR_RED_OVER_BPM)
+    ):
+        hr_ceiling_kept = False
+        severity = 2
+        reasons.append(
+            f"平均HR {avg_hr:.0f}bpm が処方上限 {hr_high:.0f}bpm を "
+            f"{avg_hr - hr_high:.0f}bpm 超えました。"
+        )
+    elif hr_high is not None and over_seconds is not None and over_pct is not None:
+        hr_ceiling_kept = not (
+            over_pct > HR_CEILING_OFF_PCT and over_seconds >= HR_CEILING_OFF_SECONDS
+        )
+        if not hr_ceiling_kept:
+            severity = max(severity, 1)
             reasons.append(
-                f"平均HR {avg_hr:.0f}bpm が処方上限 {hr_high:.0f}bpm を "
-                f"{over:.0f}bpm 超えました。"
+                f"上限 {hr_high:.0f}bpm を超えた時間が "
+                f"{_format_over_time(over_seconds)}（{over_pct:g}%）ありました。"
             )
-        elif over > hr_tolerance_bpm:
+    elif hr_high is not None and avg_hr is not None:
+        hr_ceiling_kept = avg_hr - hr_high <= hr_tolerance_bpm
+        if not hr_ceiling_kept:
             severity = max(severity, 1)
             reasons.append(
                 f"平均HR {avg_hr:.0f}bpm が処方上限 {hr_high:.0f}bpm を "
-                f"{over:.0f}bpm 上回りました。"
+                f"{avg_hr - hr_high:.0f}bpm 上回りました。"
             )
 
     # 5. Continuity (#1353): did the run deliver the prescription's purpose?
@@ -1303,11 +1351,7 @@ def compute_prescription_verdict(
     )
     if volume_on_plan:
         on_plan.append("volume")
-    if (
-        hr_high is not None
-        and avg_hr is not None
-        and (avg_hr - hr_high) <= hr_tolerance_bpm
-    ):
+    if hr_ceiling_kept:
         on_plan.append("hr_ceiling")
     if outcome is not None and outcome.met:
         on_plan.append("continuity")
@@ -1319,7 +1363,12 @@ def compute_prescription_verdict(
                 f"量 {round(volume[0] * 100)}%"
                 f"（許容 {round(_VOLUME_OK_LOW * 100)}-{round(_VOLUME_OK_HIGH * 100)}%）"
             )
-        if hr_high is not None and avg_hr is not None:
+        if hr_high is not None and over_seconds is not None and over_pct is not None:
+            details.append(
+                f"上限 {hr_high:.0f}bpm 超え {_format_over_time(over_seconds)}"
+                f"（{over_pct:g}%）"
+            )
+        elif hr_high is not None and avg_hr is not None:
             details.append(f"平均HR {avg_hr:.0f}bpm ≦ 上限 {hr_high:.0f}bpm")
         suffix = f"（{'、'.join(details)}）" if details else ""
         reasons.append(f"処方「{title}」どおりに実施できています{suffix}。")

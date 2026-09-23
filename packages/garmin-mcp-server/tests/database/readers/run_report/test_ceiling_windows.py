@@ -193,3 +193,31 @@ def test_ceiling_touch_uses_masked_split_hr(reader_db_path: Path) -> None:
     assert "ceiling_touch" not in kinds
     # The stride and its 60 s recovery are what the ceiling does not judge.
     assert report["judged_share"]["hr"] == pytest.approx(1120 / 1200, abs=1e-3)
+
+
+@pytest.mark.integration
+def test_plan_block_hr_ceiling_off_by_time_over(reader_db_path: Path) -> None:
+    """Six minutes and more above the ceiling is off plan under a low average.
+
+    400 s at 155 in a 20-minute easy run averages 148 -- under the 150
+    ceiling, and on plan by the old average rule. The ceiling is a guard, so
+    the time above it decides (#1357).
+    """
+    _seed_easy_day(reader_db_path)
+    _seed_series(
+        reader_db_path,
+        1200,
+        lambda t: 155.0 if 300 <= t < 700 else 145.0,
+        lambda t: _EASY_SPEED,
+    )
+
+    report = _report(reader_db_path)
+
+    assert report is not None
+    ceiling = report["plan"]["hr_ceiling"]
+    assert ceiling["seconds_over"] >= 360
+    assert ceiling["pct_over"] > 6.0
+    row = _ceiling_row(report)
+    assert row["on_plan"] is False
+    assert row["status"] == "off_plan"
+    assert report["plan"]["verdict"] == "🟡"
