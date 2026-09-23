@@ -108,13 +108,38 @@ def test_resolve_purpose_infers_recovery_from_training_type() -> None:
     assert resolved.source == "inferred"
 
 
-def test_resolve_purpose_goal_race_day_overrides_session_default() -> None:
-    """A prescription row without a purpose on the goal race day is the race."""
+def test_resolve_purpose_prescribed_race_day_uses_session_default() -> None:
+    """With a prescription the calendar does not override it (#1352).
+
+    The race is declared on the row; a row that does not declare it is read
+    as its session type, not inferred into a race.
+    """
     resolved = resolve_purpose(
         {"session_type": "long", "purpose": None},
         {"is_goal_race_day": True, "moving_minutes": 240},
     )
+    assert resolved.id == "long_easy"
+    assert resolved.source == "session_default"
+
+
+def test_resolve_purpose_prescribed_race_declared() -> None:
+    """A race day declared on the prescription is the race, from the plan."""
+    resolved = resolve_purpose(
+        {"session_type": "long", "purpose": "race"},
+        {"is_goal_race_day": True, "moving_minutes": 240},
+    )
     assert resolved.id == "race"
+    assert resolved.source == "prescription"
+
+
+def test_resolve_purpose_unprescribed_race_day_inferred() -> None:
+    """Without a prescription the goal race's day is still inferred as race."""
+    resolved = resolve_purpose(
+        None,
+        {"is_goal_race_day": True, "moving_minutes": 240},
+    )
+    assert resolved.id == "race"
+    assert resolved.source == "inferred"
 
 
 def test_resolve_purpose_marked_progression_overrides_session_default() -> None:
