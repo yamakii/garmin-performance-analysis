@@ -150,6 +150,12 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "prescribed reps ('4本'); present only when the prescription "
                 "carries strides"
             ),
+            "plan.continuity": (
+                "the continuity row of report.plan.checks -- whether the run "
+                "delivered the prescription's purpose by holding its effort to "
+                "the end ('保てた' / '18 km から崩れ'); present only with a "
+                "prescription whose purpose is one of holding an effort (#1353)"
+            ),
             "signals.<metric>": "a metric of report.signals",
             "moments.<id>": "an id of report.moments",
             "recurrence.<kind>": "a kind of report.recurrence",
@@ -177,7 +183,11 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "signal is never a weakness, an on_plan axis is never an "
                 "improvement area, and a moment judged 'acceptable' or "
                 "'neutral' is never a flaw. recurrence / vs_previous / "
-                "conditions / context explain a growth point but never are one"
+                "conditions / context explain a growth point but never are one. "
+                "A run that came apart on a prescribed day is off plan on "
+                "plan.continuity AND carries a breakdown scene: that is one "
+                "collapse, so it is ONE growth point on plan.continuity, and "
+                "the breakdown scene is told in the timeline (#1353)"
             ),
             # What the run was *for* (#1312, #1314). The report resolves the
             # purpose and judges every scene against it, so the same walk break

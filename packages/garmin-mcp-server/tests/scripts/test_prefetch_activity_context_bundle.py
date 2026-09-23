@@ -34,7 +34,6 @@ BUNDLE_KEYS = {
     "previous_same_type",
     "vs_previous",
     "morning_wellness",
-    "prescription_verdict",
 }
 
 
@@ -70,7 +69,6 @@ class TestPrefetchBundle:
         # No plan ledger in the fixture: the layer is present and empty.
         assert result["prescription"] == []
         assert result["prescription_for_run"] is None
-        assert result["prescription_verdict"] is None
 
     def test_prefetch_similar_workouts_key_always_present(
         self, verification_db_path: Path, monkeypatch: pytest.MonkeyPatch

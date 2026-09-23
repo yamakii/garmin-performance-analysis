@@ -24,8 +24,7 @@ Output (JSON to stdout):
       "week_position": {...}|null,   # where the day sits in the training week
       "previous_same_type": {...}|null,  # last same-type run within 21 days
       "vs_previous": {...}|null,     # deterministic deltas against it
-      "morning_wellness": {...}|null,    # readiness / RHR / HRV / sleep + z
-      "prescription_verdict": {...}|null  # ✅ / 🟡 / 🔴 + Japanese reasons
+      "morning_wellness": {...}|null     # readiness / RHR / HRV / sleep + z
     }
 
 Every key has a reader (``buildRunNoteContext`` in
@@ -45,10 +44,12 @@ Its ``recovery_cost`` block prices the two mornings after the run, and a fired
 The prescription layer (Issue #984) gives the analysis the four things a coach
 knows before reading the numbers: what was *prescribed* for that day, where the
 day sits in the week (long-run day / days to the long run / cutback), how the
-last same-type run went, and how the athlete woke up. ``prescription_verdict``
-and ``vs_previous`` are derived deterministically
-(``analysis.derivations``) so the agent transcribes a judgement rather than
-inventing one. Every key is null-on-error (``[]`` for ``prescription``).
+last same-type run went, and how the athlete woke up. ``vs_previous`` is
+derived deterministically (``analysis.derivations``) so the agent transcribes a
+judgement rather than inventing one. Every key is null-on-error (``[]`` for
+``prescription``). The plan verdict itself is not here: it lives in
+``get_run_report``'s ``plan`` only (#1353), which judges it on the steady HR
+and the purpose outcome this bundle does not have.
 
 Side effect: the form baseline of the activity's month (and the month before)
 is trained here when it is missing (Issue #266). Nothing else in the system
@@ -65,7 +66,6 @@ from datetime import date, timedelta
 from typing import Any
 
 from garmin_mcp.analysis.derivations import (
-    compute_prescription_verdict,
     compute_vs_previous,
     compute_week_position,
     select_prescription_for_run,
@@ -107,7 +107,6 @@ def _empty_prescription_layer() -> dict[str, Any]:
         "previous_same_type": None,
         "vs_previous": None,
         "morning_wellness": None,
-        "prescription_verdict": None,
     }
 
 
@@ -281,15 +280,14 @@ def _collect_prescription_layer(
     activity_id: int,
     activity_date: str,
     training_type: str | None,
-    actual: dict[str, Any],
     current_metrics: dict[str, Any],
     user_id: str = "default",
 ) -> dict[str, Any]:
     """Build the "prescription vs actual" layer of the bundle (Issue #984).
 
     Reads the day's prescription, the week's block / ladder step, the previous
-    same-type run and the morning's wellness, then derives the verdict and the
-    delta chips deterministically. Each collector is individually ``_safe``, so
+    same-type run and the morning's wellness, then derives the delta chips
+    deterministically. Each collector is individually ``_safe``, so
     a DB without the plan tables degrades to the empty layer instead of failing
     the whole prefetch.
 
@@ -298,8 +296,6 @@ def _collect_prescription_layer(
         activity_id: The activity being analysed.
         activity_date: Its date (``YYYY-MM-DD``).
         training_type: Its training type (used for the same-type lookup).
-        actual: ``{"distance_km", "duration_min", "avg_hr", "training_type"}``
-            for :func:`compute_prescription_verdict`.
         current_metrics: The run's comparison metrics for
             :func:`compute_vs_previous`.
         user_id: Ledger owner identifier.
@@ -327,9 +323,6 @@ def _collect_prescription_layer(
         # against (Issue #1086).
         run_row = select_prescription_for_run(rows)
         layer["prescription_for_run"] = run_row
-        layer["prescription_verdict"] = _safe(
-            lambda: compute_prescription_verdict(run_row, actual)
-        )
 
         week_start = _safe(
             lambda: plan_reader.resolve_week_start(activity_date, user_id=user_id)
@@ -402,8 +395,7 @@ def prefetch_activity_context(activity_id: int) -> dict:
                 start_time_local::DATE AS activity_date,
                 avg_heart_rate,
                 avg_pace_seconds_per_km,
-                total_distance_km,
-                total_time_seconds
+                total_distance_km
             FROM activities
             WHERE activity_id = ?
             """,
@@ -417,7 +409,6 @@ def prefetch_activity_context(activity_id: int) -> dict:
         avg_heart_rate = activity_row[1]
         avg_pace_s_per_km = activity_row[2]
         total_distance_km = activity_row[3]
-        total_time_seconds = activity_row[4]
 
         # Which shoe, and how far into its life this run sits (Issue #1207).
         gear = collect_activity_gear(conn, activity_id)
@@ -483,20 +474,12 @@ def prefetch_activity_context(activity_id: int) -> dict:
 
     # Prescription vs actual layer (Issue #984): what was prescribed for the
     # day, where the day sits in the week, how the same session went last time,
-    # and how the athlete woke up -- plus the deterministic verdict / deltas.
+    # and how the athlete woke up -- plus the deterministic deltas.
     prescription_layer = _collect_prescription_layer(
         db_path_str,
         activity_id,
         activity_date,
         training_type,
-        {
-            "distance_km": total_distance_km,
-            "duration_min": (
-                total_time_seconds / 60.0 if total_time_seconds is not None else None
-            ),
-            "avg_hr": avg_heart_rate,
-            "training_type": training_type,
-        },
         {
             "activity_id": activity_id,
             "activity_date": activity_date,

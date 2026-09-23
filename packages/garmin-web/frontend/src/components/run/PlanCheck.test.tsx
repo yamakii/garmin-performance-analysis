@@ -243,11 +243,13 @@ describe("outcomeText (#1348)", () => {
   });
 
   it("test_plan_check_renders_outcome", () => {
+    // Unprescribed: the outcome line is the only place the answer lives.
     const { unmount } = render(
       <PlanCheck
-        plan={PLAN}
+        plan={null}
         purpose={{
           ...LONG,
+          source: "inferred",
           outcome: {
             met: false,
             sustained_share: 0.62,
@@ -264,7 +266,7 @@ describe("outcomeText (#1348)", () => {
     unmount();
 
     // No outcome, no item.
-    render(<PlanCheck plan={PLAN} purpose={LONG} />);
+    render(<PlanCheck plan={null} purpose={{ ...LONG, source: "inferred" }} />);
     expect(screen.queryByTestId("plan-outcome")).toBeNull();
   });
 
@@ -273,9 +275,10 @@ describe("outcomeText (#1348)", () => {
     // started its value at a different x (#1350). One shared grid aligns them.
     render(
       <PlanCheck
-        plan={PLAN}
+        plan={null}
         purpose={{
           ...LONG,
+          source: "inferred",
           outcome: {
             met: true,
             sustained_share: 0.97,
@@ -296,5 +299,76 @@ describe("outcomeText (#1348)", () => {
       expect(item.parentElement).toBe(list);
       expect(item).toHaveClass("contents");
     }
+  });
+});
+
+/** PLAN with the purpose axis (#1353): the long run came apart at 18 km. */
+const PLAN_WITH_CONTINUITY: RunPlan = {
+  ...PLAN,
+  checks: [
+    ...PLAN.checks,
+    {
+      axis: "continuity",
+      target: "最後まで走り続ける",
+      actual: "18 km から崩れ",
+      status: "off_plan",
+      on_plan: false,
+    },
+  ],
+};
+
+describe("purpose display by prescribed / unprescribed (#1354)", () => {
+  it("test_plan_check_prescribed_hides_outcome_line", () => {
+    render(
+      <PlanCheck
+        plan={PLAN_WITH_CONTINUITY}
+        purpose={{
+          ...LONG,
+          outcome: {
+            met: false,
+            sustained_share: 0.62,
+            breakdown_from_km: 18,
+            reason: "came apart",
+          },
+        }}
+      />,
+    );
+
+    // The table's 継続 row answers it; no second line above the table.
+    expect(screen.queryByTestId("plan-outcome")).toBeNull();
+    expect(screen.getByTestId("plan-purpose")).toHaveTextContent(
+      "ロング（有酸素）",
+    );
+    const row = screen.getByRole("group", { name: "継続" });
+    expect(within(row).getByText("18 km から崩れ")).toBeInTheDocument();
+    expect(within(row).getByText("ずれ")).toBeInTheDocument();
+  });
+
+  it("test_plan_check_unprescribed_keeps_outcome_line", () => {
+    render(
+      <PlanCheck
+        plan={null}
+        purpose={{
+          ...LONG,
+          source: "inferred",
+          outcome: {
+            met: true,
+            sustained_share: 0.97,
+            breakdown_from_km: null,
+            reason: "held",
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("plan-outcome")).toHaveTextContent("達成");
+  });
+
+  it("test_plan_check_continuity_axis_label", () => {
+    render(<PlanCheck plan={PLAN_WITH_CONTINUITY} />);
+
+    const row = screen.getByRole("group", { name: "継続" });
+    expect(within(row).getByText("継続")).toBeInTheDocument();
+    expect(within(row).getByText("最後まで走り続ける")).toBeInTheDocument();
   });
 });

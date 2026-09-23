@@ -67,6 +67,7 @@ def test_contract_run_note_lists_prose_roles():
     assert set(contract["evidence_keys"]) == {
         "plan.<axis>",
         "plan.strides",
+        "plan.continuity",
         "signals.<metric>",
         "moments.<id>",
         "recurrence.<kind>",
@@ -74,6 +75,17 @@ def test_contract_run_note_lists_prose_roles():
         "conditions.<field>",
         "context.<field>",
     }
+
+
+@pytest.mark.unit
+def test_contract_describes_continuity_axis():
+    """The purpose axis and the one-collapse-one-growth-point rule (#1353)."""
+    contract = get_contract("run_note")
+
+    assert "plan.continuity" in contract["evidence_keys"]
+    policy = contract["evaluation_policy"]["growth_points"]
+    assert "plan.continuity" in policy
+    assert "ONE growth point" in policy
 
 
 @pytest.mark.unit

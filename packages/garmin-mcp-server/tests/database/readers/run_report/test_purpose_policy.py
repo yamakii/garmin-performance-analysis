@@ -268,3 +268,63 @@ def test_next_run_target_drops_pace_when_purpose_missed(reader_db_path: Path) ->
     assert not [key for key in target if key.startswith("reference_pace")]
     assert target["target_hr_low"] > 0
     assert target["target_hr_high"] > 0
+
+
+@pytest.mark.integration
+def test_plan_block_has_continuity_row_when_prescribed(reader_db_path: Path) -> None:
+    """With a prescription, the collapse is an off-plan axis of the plan (#1353).
+
+    Volume and intensity answer the prescription here; the run still did not
+    deliver what it was for, so the verdict is no longer 処方どおり.
+    """
+    _seed_history(reader_db_path)
+    _seed_run(
+        reader_db_path,
+        activity_id=ACTIVITY_ID,
+        activity_date=TODAY,
+        distance_km=float(_LONG_SPLITS),
+        duration_s=7200,
+    )
+    _seed_collapsing_splits(reader_db_path, ACTIVITY_ID)
+    _seed_prescription(
+        reader_db_path,
+        on_date=TODAY,
+        session_type="long",
+        title="ロング 14km",
+        target_km=14.0,
+    )
+    _set_purpose(reader_db_path, "long_easy", {"walk": True})
+
+    report = _report(reader_db_path)
+
+    assert report is not None
+    plan = report["plan"]
+    continuity = next(c for c in plan["checks"] if c["axis"] == "continuity")
+    assert continuity["on_plan"] is False
+    assert continuity["target"] == "最後まで走り続ける"
+    assert continuity["actual"] == "8 km から崩れ"
+    assert plan["verdict"] == "🟡"
+    assert report["headline"]["plan_label"] == "一部ずれ"
+    breakdown = next(m for m in report["moments"] if m["kind"] == "breakdown")
+    assert report["headline"]["flag_labels"][0] == breakdown["label_ja"]
+    json.dumps(report)
+
+
+@pytest.mark.integration
+def test_plan_block_no_continuity_when_unprescribed(reader_db_path: Path) -> None:
+    """Without a prescription there is no plan; the outcome still answers."""
+    _seed_history(reader_db_path)
+    _seed_run(
+        reader_db_path,
+        activity_id=ACTIVITY_ID,
+        activity_date=TODAY,
+        distance_km=float(_LONG_SPLITS),
+        duration_s=7200,
+    )
+    _seed_collapsing_splits(reader_db_path, ACTIVITY_ID)
+
+    report = _report(reader_db_path)
+
+    assert report is not None
+    assert report["plan"] is None
+    assert report["purpose"]["outcome"]["met"] is False

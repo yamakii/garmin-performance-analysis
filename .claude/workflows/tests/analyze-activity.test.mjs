@@ -177,7 +177,9 @@ test('test_buildRunNoteContext_keeps_only_the_coach_subset', () => {
   assert.equal(out.training_type, 'easy')
   assert.equal(out.week_position.days_to_long_run, 3)
   assert.equal(out.prescription_for_run.hr_high, 150)
-  assert.equal(out.prescription_verdict.verdict, '✅')
+  // A bundle's own verdict never reaches the analyst: REPORT.plan is the one
+  // plan verdict (#1353), and an older bundle that still carries one is ignored.
+  assert.equal(out.prescription_verdict, undefined)
   assert.equal(out.morning_wellness.readiness, 72)
   assert.equal(out.previous_same_type.activity_date, '2026-09-15')
   assert.equal(out.gear.gear_nickname, 'v15')

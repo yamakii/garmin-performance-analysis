@@ -62,6 +62,11 @@ _GOOD_POINT_REJECTED_VERDICTS: frozenset[str] = frozenset({"acceptable", "concer
 _HR_CEILING_AXIS = "hr_ceiling"
 HR_CEILING_GOOD_POINT_MAX_PCT = 5.0
 
+# The prescription's purpose as a plan axis (#1353) and the scene that tells
+# the same collapse: one breakdown is one growth point, not two.
+_CONTINUITY_EVIDENCE = "plan.continuity"
+_BREAKDOWN_KIND = "breakdown"
+
 # Evidence sources that give a growth point its background but can never be
 # the weakness itself.
 _GROWTH_POINT_BACKGROUND_PREFIXES: frozenset[str] = frozenset(
@@ -201,6 +206,34 @@ def _growth_point_error(
     return None
 
 
+def _double_breakdown_error(
+    growth_points: Any,
+    moments: Mapping[str, Mapping[str, Any]],
+) -> str | None:
+    """Reject one collapse counted as two growth points (#1353).
+
+    With a prescription, a run that came apart is off plan on ``continuity``
+    *and* carries a breakdown scene the purpose judges a concern. Both are
+    valid grounds, but they are the same collapse: the growth point rests on
+    ``plan.continuity`` and the timeline tells the scene.
+    """
+    evidences = {
+        str(item.get("evidence")) for item in growth_points if isinstance(item, Mapping)
+    }
+    if _CONTINUITY_EVIDENCE not in evidences:
+        return None
+    for evidence in evidences:
+        prefix, _, key = evidence.partition(".")
+        if prefix == "moments" and moments.get(key, {}).get("kind") == _BREAKDOWN_KIND:
+            return (
+                f"growth points rest on both '{_CONTINUITY_EVIDENCE}' and the "
+                f"breakdown scene '{evidence}'; they are the same collapse -- keep "
+                f"one growth point on '{_CONTINUITY_EVIDENCE}' and tell the scene "
+                "in the timeline"
+            )
+    return None
+
+
 def _good_point_error(
     evidence: str,
     signals: Mapping[str, Mapping[str, Any]],
@@ -283,7 +316,8 @@ def check_run_note_grounding(
     3. a growth point names a plan axis that came out ``on_plan``, a moment
        whose purpose ``policy.verdict`` is not ``concern``, or a background
        source (``recurrence`` / ``vs_previous`` / ``conditions`` /
-       ``context``) -- #1314;
+       ``context``) -- #1314; or two growth points count one collapse twice,
+       on ``plan.continuity`` and on its breakdown scene (#1353);
     4. a ``timeline`` item names an unknown moment, or there are more timeline
        items than the report has moments (an invented scene);
     5. a note explains a signal that is not an adverse outlier, or an adverse
@@ -344,6 +378,10 @@ def check_run_note_grounding(
                 )
             if error:
                 return False, error
+
+    error = _double_breakdown_error(analysis_data.get("growth_points") or [], moments)
+    if error:
+        return False, error
 
     timeline = analysis_data.get("timeline") or []
     if len(timeline) > len(moments):

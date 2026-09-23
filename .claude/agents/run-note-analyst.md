@@ -72,6 +72,7 @@ model: sonnet
 |----------|--------|
 | `plan.<axis>` | `REPORT.plan.checks[].axis`（処方が無いランでは使用不可） |
 | `plan.strides` | `REPORT.plan.checks` の流しの行（処方に流しがあるときだけ存在。`target` / `actual` は「4本」） |
+| `plan.continuity` | `REPORT.plan.checks` の継続の行＝処方の目的を果たせたか（目標「最後まで走り続ける」、実績「保てた」／「18 km から崩れ」）。処方があり、目的が走り続けるタイプのときだけ存在 |
 | `signals.<metric>` | `REPORT.signals[].metric` |
 | `moments.<id>` | `REPORT.moments[].id` |
 | `recurrence.<kind>` | `REPORT.recurrence[].kind` |
@@ -128,6 +129,12 @@ model: sonnet
   理由を作らず、facts にある事実（場所・回数・ペース・ケイデンス）だけで語る。
 - 目的が **`long_goal_pace`（ロング（目標ペース））** なら、歩きは `concern`。目標ペースを保つリハーサルの
   途切れなので、growth point（「伸びしろ」）にしてよい。
+
+**崩れ（`kind: "breakdown"`）は 1 つの課題**: 処方があるランが途中から崩れると、`plan.continuity` が
+off plan になり、同じ区間が崩れのシーン（`concern`）にもなる。これは**同じ 1 つの崩れ**なので、
+growth point は **`plan.continuity` を根拠に 1 件だけ**書き、崩れの経過は timeline の崩れのシーンで語る。
+両方を根拠に 2 件の課題にすると merge ゲートが拒否する。処方が無いランには `plan.continuity` が無いので、
+崩れのシーン（`moments.<id>`）を根拠にする。
 
 目的の出どころ（`purpose.source`）:
 

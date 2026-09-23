@@ -174,14 +174,15 @@ missing.
 
 The run itself — plan vs actual, signals, scenes, conditions — is the report's.
 `prefetch_activity_context` carries only what the report cannot say: why the day
-was prescribed and how it was answered (`prescription`, `prescription_for_run`,
-`prescription_verdict`), where the day sits in the week (`week_position`), how
+was prescribed (`prescription`, `prescription_for_run`), where the day sits in
+the week (`week_position`), how
 the athlete woke up (`morning_wellness`), the previous run of the same kind
 (`previous_same_type`, `vs_previous`), `similar_workouts`, the `long_run_gate`
 verdict for runs of 10 km and more, and the shoe (`gear`). Every key has a
 reader — `buildRunNoteContext` in `.claude/workflows/analyze-activity.js` — and
 a test keeps the two in step (#1287). Weather, HR zones and form are read
-through the report or their own tools.
+through the report or their own tools. How the run answered the prescription is
+the report's `plan` alone (#1353); the bundle carries no second verdict.
 
 As a side effect the call trains the form baseline of the activity's month (and
 the month before) when it is missing; nothing else does, and ingest grades form
@@ -205,8 +206,12 @@ an LLM (Epic #1247).
 
 1. **Plan vs actual** — `compute_prescription_verdict` scores the day's
    prescription axis by axis (`target` / `actual` / `on_plan`, plus the HR
-   ceiling's `seconds_over` / `pct_over`) into ✅ / 🟡 / 🔴. `plan` is `null`
-   when the day carried no prescription. The ceiling is judged on steady
+   ceiling's `seconds_over` / `pct_over`) into ✅ / 🟡 / 🔴. With a
+   prescription the purpose is the prescription's, so delivering it is an
+   axis too: `continuity` is on plan when the run held its effort to the end
+   and 🟡 when it came apart (#1353, from `analysis/purpose_outcome.py`).
+   `plan` is `null` when the day carried no prescription; `purpose.outcome`
+   then answers the same question against the inferred purpose. The ceiling is judged on steady
    running only (`analysis/hr_windows.py`): stops, auto-pause resumes, bursts
    and stride / recovery laps are masked together with the HR recovery after
    each, read off the HR trace; `judged_share` reports how much of the run was
