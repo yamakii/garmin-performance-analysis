@@ -173,6 +173,13 @@ minute apart (DuckDB checkpoint + fsync on the overlay `/tmp`; the high I/O-pres
 Follow-up #1082: the mount needs an explicit `exec` (docker defaults `--tmpfs` to
 `noexec`), or the script self-tests cannot run their PATH shims from `mktemp -d`.
 
+Exception (1), second use: #1346 — the container ran Claude Code 2.1.273 while
+2.1.280 was published, and rebuilding did not change that. The build-arg value
+stayed the literal `latest`, so docker reused the cached `npm install -g` layer and
+the only update path (the rebuild, since `DISABLE_AUTOUPDATER=1`) did nothing.
+`run.sh` now resolves `latest` to a concrete version before the build
+(`docker/lib/claude-version.sh`, self-tested by `scripts/tests/test-claude-version.sh`).
+
 ## Ignoring an advisory
 
 Only when the vulnerable code path is provably unused. Add

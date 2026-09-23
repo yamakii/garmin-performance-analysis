@@ -20,6 +20,9 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 command -v docker >/dev/null 2>&1 || { echo "ERROR: docker not found on PATH" >&2; exit 1; }
 
+# shellcheck source=lib/claude-version.sh
+. "$SCRIPT_DIR/lib/claude-version.sh"
+
 ENV_FILE="$REPO_ROOT/.env"
 if [ ! -f "$ENV_FILE" ]; then
     echo "INFO: $ENV_FILE not found — relying on host OS env vars for credentials." >&2
@@ -27,15 +30,25 @@ if [ ! -f "$ENV_FILE" ]; then
 fi
 
 # ---- build ----
-# To update Claude Code, set CLAUDE_CODE_VERSION to the target version and rebuild:
-# `CLAUDE_CODE_VERSION=2.1.193 docker/run.sh`. Changing the value busts the cached
-# `npm install -g ...@<version>` layer; a plain rebuild reuses it and won't update.
+# `latest` is resolved to a concrete version BEFORE the build (docker/lib/claude-version.sh):
+# the Dockerfile installs the CLI in one `npm install -g ...@<version>` layer, so as long as
+# the build-arg value stayed the literal `latest` docker reused that cached layer and the
+# image never picked up a new release (#1346). The resolved value changes exactly when a new
+# version is published, so a plain rebuild updates and an up-to-date rebuild still hits the
+# cache. Pin instead with `CLAUDE_CODE_VERSION=2.1.193 docker/run.sh` (passed through as-is).
 if [ "${NO_BUILD:-0}" != "1" ]; then
+    if claude_version="$(claude_version_resolve "${CLAUDE_CODE_VERSION:-latest}")"; then
+        echo "▶ Claude Code version: $claude_version"
+    else
+        echo "WARN: could not reach the npm registry — building with '$claude_version', which" >&2
+        echo "      reuses the cached install layer, so Claude Code may stay at the version" >&2
+        echo "      already in the image. Retry with network, or pin CLAUDE_CODE_VERSION." >&2
+    fi
     echo "▶ Building $IMAGE (context: $SCRIPT_DIR) ..."
     docker build \
         --build-arg "USER_UID=$(id -u)" \
         --build-arg "USER_GID=$(id -g)" \
-        --build-arg "CLAUDE_CODE_VERSION=${CLAUDE_CODE_VERSION:-latest}" \
+        --build-arg "CLAUDE_CODE_VERSION=$claude_version" \
         -t "$IMAGE" \
         "$SCRIPT_DIR"
 fi

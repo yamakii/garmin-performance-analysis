@@ -58,6 +58,11 @@ jobs:
             meta:
               - '.claude/workflows/**'
               - '.claude/hooks/**'
+              # check-claude-scripts.sh also parses docker/*.sh and runs the
+              # scripts/tests/*.sh self-tests, so those paths need the same gate
+              # — without them a new self-test (#1346) never ran in CI.
+              - 'scripts/**'
+              - 'docker/**'
               - '.claude/agents/**'
               - '.claude/settings.json'
               - 'scripts/**'
