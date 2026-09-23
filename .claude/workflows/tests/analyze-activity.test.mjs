@@ -17,13 +17,13 @@ const {
   planBackfill,
   shouldAnalyze,
   sectionPlan,
-  buildRunNoteContext,
+  fetchPrompt,
   buildRunNotePrompt,
   summarizeRun,
   buildTempDir,
   TEMP_SUFFIX_PATTERN,
 } = new Function(
-  `${m[1]}\nreturn { normalizeArgs, planBackfill, shouldAnalyze, sectionPlan, buildRunNoteContext, buildRunNotePrompt, summarizeRun, buildTempDir, TEMP_SUFFIX_PATTERN }`,
+  `${m[1]}\nreturn { normalizeArgs, planBackfill, shouldAnalyze, sectionPlan, fetchPrompt, buildRunNotePrompt, summarizeRun, buildTempDir, TEMP_SUFFIX_PATTERN }`,
 )()
 
 test('normalizeArgs accepts a bare date string', () => {
@@ -108,100 +108,34 @@ test('test_temp_suffix_pattern_matches_digits_only: schema pattern mirrors build
   assert.ok(!re.test('123')) // shorter than 6 digits => not an epoch
 })
 
-// The 2026-09-18 bundle, trimmed to the keys the subset cares about plus two
-// large keys that must NOT reach the run-note agent (the page already renders
-// the baselines and zone tables).
-const BUNDLE = JSON.stringify({
-  activity_id: 24407019887,
-  activity_date: '2026-09-18',
-  training_type: 'easy',
-  week_position: { is_long_run_day: false, days_to_long_run: 3, cutback_week: false },
-  prescription_for_run: {
-    prescription_id: 61,
-    session_type: 'easy',
-    title: 'イージー 8km',
-    target_km: 8.0,
-    target_minutes: 50,
-    hr_low: 130,
-    hr_high: 150,
-    rationale: '週末のロングに向けて脚を回復させる',
-    garmin_workout_id: 1691891896,
-  },
-  prescription_verdict: { verdict: '✅', reasons: ['処方どおりに実施できています'] },
-  morning_wellness: { readiness: 72, rhr_z: -0.4 },
-  vs_previous: { pace_delta_s_per_km: -6.0 },
-  previous_same_type: { activity_id: 24300000001, activity_date: '2026-09-15' },
-  similar_workouts: {
-    similar_activities: [{ activity_id: 1 }, { activity_id: 2 }, { activity_id: 3 }, { activity_id: 4 }],
-  },
-  gear: { gear_uuid: 'abc', gear_nickname: 'v15', total_km: 412.0 },
-  long_run_gate: null,
-  form_baseline_trend: { metrics: { gct: { current: { coef_d: -2.26 } } } },
-  hr_zones_detail: { zones: [{ zone_number: 2, low_boundary: 130, high_boundary: 150 }] },
-})
-
-const REPORT = JSON.stringify({
-  activity_id: 24407019887,
-  activity_date: '2026-09-18',
-  headline: { label: '処方どおり' },
-  signals: [{ metric: 'gct', status: 'within', adverse: false }],
-  moments: [{ id: 'm1', kind: 'steady', split_index: 1 }],
-  conditions: { temp_c: 24.1 },
-})
-
 const CTX = {
   tempDir: '/tmp/analysis_1_2',
-  contextJson: BUNDLE,
-  reportJson: REPORT,
-  activityId: 1,
+  activityId: 24407019887,
   activityDate: '2026-09-18',
 }
 
-test('run-note prompt inlines the report and the context subset', () => {
+test('test_buildRunNotePrompt_has_the_analyst_fetch_its_own_inputs', () => {
   const out = buildRunNotePrompt(CTX)
-  assert.match(out, /<REPORT>/)
-  assert.match(out, /"moments"/) // the scenes the timeline must key on
-  assert.match(out, /<CONTEXT>/)
-  assert.match(out, /"week_position"/) // why the day was prescribed
-  assert.match(out, /"rationale":"週末のロングに向けて脚を回復させる"/)
+  // One MCP call for both inputs, addressed to this activity (#1362).
+  assert.match(out, /mcp__garmin-db__get_run_note_inputs\(activity_id=24407019887\)/)
+  assert.match(out, /report を REPORT、context を CONTEXT/)
+  // Nothing is inlined any more: the fetch stage no longer re-types the JSON.
+  assert.doesNotMatch(out, /<REPORT>/)
+  assert.doesNotMatch(out, /<CONTEXT>/)
   assert.match(out, /ONLY run_note/)
   assert.match(out, /\/tmp\/analysis_1_2\/run_note\.json/)
-  // Bulk keys the figures already render stay out of the prompt.
-  assert.doesNotMatch(out, /form_baseline_trend/)
-  assert.doesNotMatch(out, /hr_zones_detail/)
   assert.doesNotMatch(out, /Read\(/) // no file-read dependency
 })
 
-test('test_buildRunNoteContext_keeps_only_the_coach_subset', () => {
-  const out = JSON.parse(buildRunNoteContext(BUNDLE))
-  assert.equal(out.training_type, 'easy')
-  assert.equal(out.week_position.days_to_long_run, 3)
-  assert.equal(out.prescription_for_run.hr_high, 150)
-  // A bundle's own verdict never reaches the analyst: REPORT.plan is the one
-  // plan verdict (#1353), and an older bundle that still carries one is ignored.
-  assert.equal(out.prescription_verdict, undefined)
-  assert.equal(out.morning_wellness.readiness, 72)
-  assert.equal(out.previous_same_type.activity_date, '2026-09-15')
-  assert.equal(out.gear.gear_nickname, 'v15')
-  // Top 3 similar workouts only — this is context for one sentence, not a table.
-  assert.equal(out.similar_workouts.length, 3)
-  // Row bookkeeping and page-rendered bulk stay out.
-  assert.equal(out.prescription_for_run.garmin_workout_id, undefined)
-  assert.equal(out.form_baseline_trend, undefined)
-  assert.equal(out.hr_zones_detail, undefined)
-})
-
-test('test_buildRunNoteContext_returns_empty_string_for_unparsable_json', () => {
-  assert.equal(buildRunNoteContext('{'), '')
-  assert.equal(buildRunNoteContext(undefined), '')
-  assert.equal(buildRunNoteContext('null'), '')
-})
-
-test('test_buildRunNotePrompt_falls_back_without_context', () => {
-  const out = buildRunNotePrompt({ ...CTX, contextJson: '{' })
-  assert.doesNotMatch(out, /<CONTEXT>/)
-  assert.match(out, /<REPORT>/) // the report alone still grounds the review
-  assert.match(out, /\/tmp\/analysis_1_2\/run_note\.json/)
+test('test_fetchPrompt_only_ingests', () => {
+  const out = fetchPrompt('2026-09-18')
+  assert.match(out, /catch_up_ingest\(end_date="2026-09-18"\)/)
+  assert.match(out, /ingest_activity\(date="2026-09-18"\)/)
+  assert.match(out, /date \+%s/)
+  // The prefetch payloads are the analyst's to fetch, not this stage's.
+  assert.doesNotMatch(out, /prefetch_activity_context/)
+  assert.doesNotMatch(out, /prefetch_run_report/)
+  assert.doesNotMatch(out, /context_json|report_json/)
 })
 
 test('summarises result with run_note only', () => {

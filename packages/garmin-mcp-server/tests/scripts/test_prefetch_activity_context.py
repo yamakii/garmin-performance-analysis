@@ -1,6 +1,7 @@
 """Tests for prefetch_activity_context script."""
 
 import datetime
+import inspect
 import re
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -9,9 +10,10 @@ import duckdb
 import pytest
 
 from garmin_mcp.database.db_reader import GarminDBReader
-from garmin_mcp.scripts.prefetch_activity_context import prefetch_activity_context
-
-REPO_ROOT = Path(__file__).resolve().parents[4]
+from garmin_mcp.scripts.prefetch_activity_context import (
+    build_run_note_context,
+    prefetch_activity_context,
+)
 
 # Activity row: (date, avg_hr, avg_pace_s_per_km, total_distance_km,
 # total_time_seconds).
@@ -197,20 +199,18 @@ class TestPrefetchActivityContext:
     def test_workflow_context_keys_are_all_in_the_bundle(
         self, mock_get_conn: MagicMock, mock_get_db: MagicMock, mock_conn: MagicMock
     ) -> None:
-        """Every key the analyze-activity workflow forwards exists in the bundle.
+        """Every key the run-note subset forwards exists in the bundle.
 
-        buildRunNoteContext reads ``bundle.<key>``; a key renamed or dropped on
-        this side would silently reach the agent as null.
+        build_run_note_context reads ``bundle.get(<key>)``; a key renamed or
+        dropped on this side would silently reach the agent as null.
         """
         mock_get_db.return_value = "/fake/db.duckdb"
         mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
         mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
         self._setup_basic_queries(mock_conn)
 
-        script = (REPO_ROOT / ".claude/workflows/analyze-activity.js").read_text()
-        start = script.index("function buildRunNoteContext")
-        end = script.index("\nfunction ", start + 1)
-        read_keys = set(re.findall(r"\bbundle\.([a-z_0-9]+)", script[start:end]))
+        source = inspect.getsource(build_run_note_context)
+        read_keys = set(re.findall(r'\bbundle\.get\("([a-z_0-9]+)"\)', source))
 
         assert read_keys == {
             "training_type",
@@ -390,3 +390,84 @@ class TestPrefetchActivityContext:
             "morning_wellness",
         ):
             assert result[key] is None, key
+
+
+# The 2026-09-18 bundle, trimmed to the keys the subset cares about plus bulk
+# that must NOT reach the run-note agent.
+_BUNDLE = {
+    "activity_id": 24407019887,
+    "activity_date": "2026-09-18",
+    "training_type": "easy",
+    "week_position": {"days_to_long_run": 3, "cutback_week": False},
+    "prescription": [{"prescription_id": 61}],
+    "prescription_for_run": {
+        "prescription_id": 61,
+        "session_type": "easy",
+        "title": "イージー 8km",
+        "target_km": 8.0,
+        "target_minutes": 50,
+        "hr_low": 130,
+        "hr_high": 150,
+        "rationale": "週末のロングに向けて脚を回復させる",
+        "garmin_workout_id": 1691891896,
+    },
+    "prescription_verdict": {"verdict": "✅"},
+    "morning_wellness": {"readiness": 72},
+    "vs_previous": {"pace_delta_s_per_km": -6.0},
+    "previous_same_type": {"activity_date": "2026-09-15"},
+    "similar_workouts": {
+        "target_activity": {"activity_id": 24407019887},
+        "similar_activities": [{"activity_id": i} for i in range(1, 6)],
+    },
+    "gear": {"gear_nickname": "v15"},
+    "long_run_gate": None,
+}
+
+
+@pytest.mark.unit
+class TestBuildRunNoteContext:
+    """The coach subset handed to the run-note agent (#1362)."""
+
+    def test_build_run_note_context_keeps_only_the_coach_subset(self) -> None:
+        out = build_run_note_context(_BUNDLE)
+
+        assert out is not None
+        assert set(out) == {
+            "training_type",
+            "week_position",
+            "prescription_for_run",
+            "morning_wellness",
+            "vs_previous",
+            "previous_same_type",
+            "similar_workouts",
+            "gear",
+            "long_run_gate",
+        }
+        # Row bookkeeping stays out; the coaching fields stay in.
+        assert out["prescription_for_run"] == {
+            "title": "イージー 8km",
+            "session_type": "easy",
+            "target_km": 8.0,
+            "target_minutes": 50,
+            "hr_low": 130,
+            "hr_high": 150,
+            "rationale": "週末のロングに向けて脚を回復させる",
+        }
+        # Top 3 similar workouts only -- context for one sentence, not a table.
+        assert [s["activity_id"] for s in out["similar_workouts"]] == [1, 2, 3]
+        assert out["gear"] == {"gear_nickname": "v15"}
+
+    def test_build_run_note_context_handles_missing_prescription_and_similar(
+        self,
+    ) -> None:
+        bundle = {**_BUNDLE, "prescription_for_run": None, "similar_workouts": None}
+
+        out = build_run_note_context(bundle)
+
+        assert out is not None
+        assert out["prescription_for_run"] is None
+        assert out["similar_workouts"] is None
+
+    def test_build_run_note_context_returns_none_for_an_error_bundle(self) -> None:
+        assert build_run_note_context({"error": "Activity 1 not found"}) is None
+        assert build_run_note_context(None) is None

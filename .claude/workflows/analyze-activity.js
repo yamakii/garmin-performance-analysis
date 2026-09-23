@@ -1,10 +1,10 @@
 export const meta = {
   name: 'analyze-activity',
   description:
-    'Ingest one activity, prefetch the CONTEXT bundle + the deterministic run report, write the single coach-review section (run_note), proofread it, then merge into DuckDB',
+    'Ingest one activity, write the single coach-review section (run_note) from the deterministic run report + CONTEXT, proofread it, then merge into DuckDB',
   phases: [
-    { title: 'Fetch', detail: 'catch-up ingest + ingest activity + prefetch CONTEXT and run report (returned inline)' },
-    { title: 'Analyze', detail: 'run-note-analyst writes the one run_note section' },
+    { title: 'Fetch', detail: 'catch-up ingest + ingest activity' },
+    { title: 'Analyze', detail: 'run-note-analyst reads get_run_note_inputs and writes the one run_note section' },
     { title: 'Finalize', detail: 'proofread run_note.json, merge into DuckDB' },
   ],
 }
@@ -12,12 +12,15 @@ export const meta = {
 // ── args ──────────────────────────────────────────────────────────────
 // "YYYY-MM-DD" (bare string) | { date: "YYYY-MM-DD" } | undefined (=> today)
 //
-// CONTEXT handoff: workflow agentTypes only reliably receive their declared MCP
+// Input handoff: workflow agentTypes only reliably receive their declared MCP
 // tools + Write (built-in Read/Bash are NOT granted to the run-note analyst), so
-// both inputs — the prefetch CONTEXT bundle and the deterministic run report —
-// are fetched ONCE by the Fetch agent and passed INLINE into the analysis
-// prompt. The analyst never reads files; the merge dir (built here by
-// buildTempDir, not supplied by the agent) holds only run_note.json.
+// the analyst fetches both inputs — the deterministic run report and the coach
+// subset of the CONTEXT bundle — itself, in ONE declared MCP call
+// (get_run_note_inputs). The Fetch agent used to prefetch them and re-type both
+// JSON payloads into its structured output, which was ~40 s of every run
+// (#1362); now it only ingests. The analyst never reads files; the merge dir
+// (built here by buildTempDir, not supplied by the agent) holds only
+// run_note.json.
 //
 // ── pure logic (side-effect-free; extracted & unit-tested in CI) ─────────
 // The block between the markers below is evaluated by
@@ -102,78 +105,30 @@ function fetchPrompt(date) {
   const d = date ? `"${date}"` : 'today（実行日の YYYY-MM-DD）'
   return (
     `あなたは分析パイプラインの fetch ステージです。対象日 ${date ?? 'today'} のランニング activity を取り込み、` +
-    `分析用 CONTEXT と決定論的ランレポートを取得して**返却値に格納**します。\n\n` +
+    `その activity_id を返します（ランレポートと CONTEXT は後段の分析エージェントが自分で取得するので、ここでは取得しない）。\n\n` +
     `1. mcp__garmin-db__catch_up_ingest(end_date=${date ? `"${date}"` : '省略（内部既定 today）'}) で ` +
     `ランニング・体重・補強の差分を取り込む。短い要約を catch_up_summary に（例「ラン1/体重0/補強0」「差分なし」）。\n` +
     `2. mcp__garmin-db__ingest_activity(date=${d}) で当日ランを取り込み、activity_id と activity_date を取得。\n` +
     `   - ランニング activity が無い（activity_id が返らない）→ has_run=false で即返す。\n` +
-    `3. ランがある場合のみ has_run=true。Bash で次の3コマンドを実行し、それぞれの出力を取得する:\n` +
-    `   date +%s   # 10桁の epoch。出力された数字をそのまま temp_suffix に入れる\n` +
-    `   uv run --directory packages/garmin-mcp-server python -m garmin_mcp.scripts.prefetch_activity_context <activity_id>\n` +
-    `   uv run --directory packages/garmin-mcp-server python -m garmin_mcp.scripts.prefetch_run_report <activity_id>\n` +
-    `   - 2つの prefetch 出力がいずれも非空かつ "error" を含まないことを確認（含む/空なら fail として報告）。\n` +
-    `4. schema で {activity_id, activity_date, has_run, temp_suffix, context_json, report_json, catch_up_summary} を返す。\n` +
-    `   **context_json / report_json には手順3の各出力（1行 JSON 文字列）を「一字一句そのまま」格納すること**` +
-    `（要約・整形・キー削除をしない。後段の分析がこの実データのみを使う）。\n` +
+    `3. ランがある場合のみ has_run=true。Bash で \`date +%s\` を実行する（10桁の epoch）。\n` +
+    `4. schema で {activity_id, activity_date, has_run, temp_suffix, catch_up_summary} を返す。\n` +
     `   **temp_suffix には実際に実行した \`date +%s\` の出力（数字のみ）を格納すること**。` +
     `\`$(...)\` のような未展開シェル式や "placeholder" 等の仮値は禁止（数字以外はワークフローが拒否して中断する）。` +
     `出力先ディレクトリはワークフローが組み立てるため、mkdir は不要。`
   )
 }
 
-// The run report carries the run itself (plan verdict, signals, scenes,
-// conditions); what it does NOT carry is why the day was prescribed, how the
-// athlete woke up and what the previous same-type run looked like. The bundle
-// carries exactly that (#1287); what is left out here is only its bulk — the
-// raw prescription rows, unused prescription fields, similar workouts past the
-// third. A Python test keeps the keys read below in step with the bundle.
-function buildRunNoteContext(contextJson) {
-  let bundle
-  try {
-    bundle = JSON.parse(contextJson)
-  } catch {
-    return ''
-  }
-  if (bundle == null || typeof bundle !== 'object') return ''
-
-  const p = bundle.prescription_for_run
-  const similar = bundle.similar_workouts && bundle.similar_workouts.similar_activities
-  return JSON.stringify({
-    training_type: bundle.training_type ?? null,
-    week_position: bundle.week_position ?? null,
-    prescription_for_run: p
-      ? {
-          title: p.title ?? null,
-          session_type: p.session_type ?? null,
-          target_km: p.target_km ?? null,
-          target_minutes: p.target_minutes ?? null,
-          hr_low: p.hr_low ?? null,
-          hr_high: p.hr_high ?? null,
-          rationale: p.rationale ?? null,
-        }
-      : null,
-    // No plan verdict here: REPORT.plan is the only one (#1353).
-    morning_wellness: bundle.morning_wellness ?? null,
-    vs_previous: bundle.vs_previous ?? null,
-    previous_same_type: bundle.previous_same_type ?? null,
-    // Top 3 only: the comparison is context for one sentence, not a table.
-    similar_workouts: Array.isArray(similar) ? similar.slice(0, 3) : null,
-    gear: bundle.gear ?? null,
-    long_run_gate: bundle.long_run_gate ?? null,
-  })
-}
-
+// The analyst's inputs come from one MCP call it makes itself: the report
+// carries the run (plan verdict, signals, scenes, conditions) and the context
+// carries why the day was prescribed, how the athlete woke up and the previous
+// same-type run. The coach subset is cut in Python (build_run_note_context).
 function buildRunNotePrompt(ctx) {
-  const contextSubset = buildRunNoteContext(ctx.contextJson)
-  const contextBlock = contextSubset
-    ? `補助 CONTEXT（処方・週内の位置・当日朝の回復・前回同種ラン・シューズ, JSON）:\n` +
-      `<CONTEXT>\n${contextSubset}\n</CONTEXT>\n`
-    : ''
   return (
     `Activity ID ${ctx.activityId} (${ctx.activityDate}) の **run_note**（コーチレビュー）セクションを作成してください。\n` +
-    `決定論的ランレポート（REPORT, JSON）は以下です。数値・判定・シーンはすべてここから転記し、計算し直さないこと:\n` +
-    `<REPORT>\n${ctx.reportJson}\n</REPORT>\n` +
-    contextBlock +
+    `最初に mcp__garmin-db__get_run_note_inputs(activity_id=${ctx.activityId}) を1回だけ呼び、` +
+    `返り値の report を REPORT、context を CONTEXT（処方・週内の位置・当日朝の回復・前回同種ラン・シューズ）として使うこと。` +
+    `数値・判定・シーンはすべて REPORT から転記し、計算し直さないこと。` +
+    `返り値に error があるときは JSON を書かずにその error を報告して終了すること。\n` +
     `evidence キー・moment_id・signal 名は REPORT に実在するものだけを使うこと` +
     `（merge 時の grounding ゲートが解決できないキーを拒否します）。\n` +
     `ONLY run_note: run_note.json だけを生成・validate・保存し、他セクションは一切生成しないこと。\n` +
@@ -226,8 +181,6 @@ const FETCH_SCHEMA = {
     has_run: { type: 'boolean' },
     // digits only — the workflow builds the path from this (see buildTempDir).
     temp_suffix: { type: ['string', 'null'], pattern: TEMP_SUFFIX_PATTERN },
-    context_json: { type: ['string', 'null'] },
-    report_json: { type: ['string', 'null'] },
     catch_up_summary: { type: 'string' },
   },
 }
@@ -246,17 +199,15 @@ const MERGE_SCHEMA = {
 // pipeline whether invoked once (single-date mode) or per day in a serial
 // backfill loop. DuckDB is single-writer, so days must not overlap the merge.
 async function runOneDay(date) {
-  // ── Phase Fetch: ingest + prefetch CONTEXT and run report (inline) ──
+  // ── Phase Fetch: ingest only; the analyst fetches its own inputs ──
   phase('Fetch')
   const fetched = await agent(fetchPrompt(date), {
     label: 'fetch',
     phase: 'Fetch',
     effort: 'low',
-    // orchestration (MCP/bash calls + JSON echo), but context_json / report_json
-    // must be copied verbatim ("一字一句そのまま") — haiku is unreliable at
-    // transcribing the large prefetch JSON, so pin sonnet. Pins the model
-    // instead of inheriting the session's.
-    model: 'sonnet',
+    // pure orchestration (two MCP calls + `date +%s`, a few short fields back):
+    // nothing large is transcribed any more (#1362), so haiku suffices.
+    model: 'haiku',
     schema: FETCH_SCHEMA,
   })
 
@@ -269,15 +220,8 @@ async function runOneDay(date) {
   // proofreader and the merge all address the exact same directory (#871).
   const ctx = {
     tempDir: buildTempDir(fetched.activity_id, fetched.temp_suffix),
-    contextJson: fetched.context_json,
-    reportJson: fetched.report_json,
     activityId: fetched.activity_id,
     activityDate: fetched.activity_date,
-  }
-  if (!ctx.reportJson || !String(ctx.reportJson).trim()) {
-    // Without the report there is nothing to ground the review against, and the
-    // merge gate would reject it after the expensive analysis. Stop here.
-    throw new Error('fetch returned no report_json (prefetch_run_report failed)')
   }
   const plan = sectionPlan()
 
