@@ -111,9 +111,13 @@ function fetchPrompt(date) {
   const d = date ? `"${date}"` : 'today（実行日の YYYY-MM-DD）'
   return (
     `あなたは分析パイプラインの fetch ステージです。対象日 ${date ?? 'today'} のランニング activity を取り込み、` +
-    `その activity_id を返します（ランレポートと CONTEXT は後段の分析エージェントが自分で取得するので、ここでは取得しない）。\n\n` +
+    `その activity_id を返します（ランレポートと CONTEXT は後段の分析エージェントが自分で取得するので、ここでは取得しない）。\n` +
+    `**手順1・2は MCP ツールの呼び出しそのもの**。ToolSearch で読み込んだら直接呼ぶこと。` +
+    `Bash・python・スクリプト・CLI で代替したり、ソースを読んで呼び方を調べたりしない。\n\n` +
     `1. mcp__garmin-db__catch_up_ingest(end_date=${date ? `"${date}"` : '省略（内部既定 today）'}) で ` +
     `ランニング・体重・補強の差分を取り込む。短い要約を catch_up_summary に（例「ラン1/体重0/補強0」「差分なし」）。\n` +
+    `   - 返り値のどれかのドメインに error があれば、**そのドメインとエラー名を catch_up_summary に必ず書く**` +
+    `（例「running: エラー（GarminConnectConnectionError）/ 体重0」）。エラーを「差分なし」と書かない。\n` +
     `2. mcp__garmin-db__ingest_activity(date=${d}) で当日ランを取り込み、activity_id と activity_date を取得。\n` +
     `   - ランニング activity が無い（activity_id が返らない）→ has_run=false で即返す。\n` +
     `3. ランがある場合のみ has_run=true。Bash で \`date +%s\` を実行する（10桁の epoch）。\n` +
@@ -211,9 +215,12 @@ async function runOneDay(date) {
     label: 'fetch',
     phase: 'Fetch',
     effort: 'low',
-    // pure orchestration (two MCP calls + `date +%s`, a few short fields back):
-    // nothing large is transcribed any more (#1362), so haiku suffices.
-    model: 'haiku',
+    // Two MCP calls + `date +%s`, a few short fields back. Not haiku: on its
+    // first run (#1366) haiku loaded the deferred MCP tools but never called
+    // them, routing around through Bash/python for 87 s and dropping the
+    // catch-up errors; every sonnet run on record called them directly (~20 s
+    // now that nothing large is transcribed, #1362).
+    model: 'sonnet',
     schema: FETCH_SCHEMA,
   })
 

@@ -137,6 +137,25 @@ test('test_run_note_agent_runs_at_medium_effort', () => {
   assert.match(def, /^model: opus$/m)
 })
 
+test('test_fetchPrompt_calls_the_mcp_tools_directly', () => {
+  // #1366: haiku routed around the deferred MCP tools via Bash/python.
+  const out = fetchPrompt('2026-09-18')
+  assert.match(out, /MCP ツールの呼び出しそのもの/)
+  assert.match(out, /Bash・python・スクリプト・CLI で代替/)
+})
+
+test('test_fetchPrompt_surfaces_catch_up_errors', () => {
+  // #1366: a failed catch-up must never read as "no new data".
+  const out = fetchPrompt('2026-09-18')
+  assert.match(out, /そのドメインとエラー名を catch_up_summary に必ず書く/)
+  assert.match(out, /エラーを「差分なし」と書かない/)
+})
+
+test('test_fetch_agent_runs_on_sonnet', () => {
+  const call = src.slice(src.indexOf("label: 'fetch',"), src.indexOf('schema: FETCH_SCHEMA'))
+  assert.match(call, /\n\s*model: 'sonnet',/)
+})
+
 test('test_fetchPrompt_only_ingests', () => {
   const out = fetchPrompt('2026-09-18')
   assert.match(out, /catch_up_ingest\(end_date="2026-09-18"\)/)
