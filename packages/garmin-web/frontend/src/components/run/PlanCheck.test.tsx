@@ -1,7 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import PlanCheck, { formatOverTime } from "./PlanCheck";
-import type { RunPlan } from "../../types";
+import PlanCheck, { formatOverTime, outcomeText } from "./PlanCheck";
+import type { RunPlan, RunPurpose } from "../../types";
 
 const PLAN: RunPlan = {
   verdict: "🟡",
@@ -183,5 +183,88 @@ describe("PlanCheck", () => {
     expect(formatOverTime(321)).toBe("5:21");
     expect(formatOverTime(2)).toBe("0:02");
     expect(formatOverTime(3849)).toBe("1:04:09");
+  });
+});
+
+const LONG: RunPurpose = {
+  id: "long_easy",
+  label_ja: "ロング（有酸素）",
+  source: "prescription",
+};
+
+describe("outcomeText (#1348)", () => {
+  it("test_outcome_text_met", () => {
+    expect(
+      outcomeText({
+        ...LONG,
+        outcome: {
+          met: true,
+          sustained_share: 0.97,
+          breakdown_from_km: null,
+          reason: "held",
+        },
+      }),
+    ).toBe("達成");
+  });
+
+  it("test_outcome_text_breakdown", () => {
+    const missed = (km: number) => ({
+      ...LONG,
+      outcome: {
+        met: false,
+        sustained_share: 0.62,
+        breakdown_from_km: km,
+        reason: "came apart",
+      },
+    });
+    expect(outcomeText(missed(18))).toBe("達成できず（18 km から崩れ）");
+    expect(outcomeText(missed(18.5))).toBe("達成できず（18.5 km から崩れ）");
+  });
+
+  it("test_outcome_text_absent", () => {
+    // Not judged -- intervals, recovery, a build older than #1340 -- says
+    // nothing rather than implying the run was fine.
+    expect(outcomeText({ ...LONG, outcome: null })).toBeNull();
+    expect(outcomeText(LONG)).toBeNull();
+    expect(outcomeText(null)).toBeNull();
+    expect(
+      outcomeText({
+        id: "unknown",
+        label_ja: "",
+        source: "default",
+        outcome: {
+          met: true,
+          sustained_share: 1,
+          breakdown_from_km: null,
+          reason: "held",
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it("test_plan_check_renders_outcome", () => {
+    const { unmount } = render(
+      <PlanCheck
+        plan={PLAN}
+        purpose={{
+          ...LONG,
+          outcome: {
+            met: false,
+            sustained_share: 0.62,
+            breakdown_from_km: 18,
+            reason: "came apart",
+          },
+        }}
+      />,
+    );
+    const item = screen.getByTestId("plan-outcome");
+    expect(item).toHaveTextContent("目的の達成");
+    const value = within(item).getByText("達成できず（18 km から崩れ）");
+    expect(value).toHaveClass("text-status-warn");
+    unmount();
+
+    // No outcome, no item.
+    render(<PlanCheck plan={PLAN} purpose={LONG} />);
+    expect(screen.queryByTestId("plan-outcome")).toBeNull();
   });
 });

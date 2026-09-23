@@ -25,6 +25,25 @@ export function purposeText(purpose: RunPurpose | null | undefined): string | nu
 }
 
 /**
+ * "達成" / "達成できず（18 km から崩れ）" — whether the run delivered its
+ * purpose (#1348), or null when the report did not judge it (intervals,
+ * fartlek, recovery, too little to judge). The verdict is the report's
+ * (#1340); nothing is re-judged here.
+ */
+export function outcomeText(purpose: RunPurpose | null | undefined): string | null {
+  const outcome = purpose?.outcome;
+  if (purpose == null || purpose.id === "unknown" || outcome == null) {
+    return null;
+  }
+  if (outcome.met) {
+    return "達成";
+  }
+  return outcome.breakdown_from_km == null
+    ? "達成できず"
+    : `達成できず（${formatNumber(outcome.breakdown_from_km, 1)} km から崩れ）`;
+}
+
+/**
  * "心拍 72% · フォーム 80%" — the share of the run the HR ceiling and the form
  * signals were judged on (#1313), or null when there is no time series.
  */
@@ -196,7 +215,8 @@ function CheckRow({
  * with the status on the first one.
  *
  * Above the grid sits what the run was *for* (#1315) — the purpose every scene
- * of the run was judged against — and how much of the run the HR ceiling and
+ * of the run was judged against — whether the run delivered it (#1348), and
+ * how much of the run the HR ceiling and
  * the form signals were judged on, so a verdict read off 60% of the run is not
  * mistaken for one about all of it.
  */
@@ -212,6 +232,7 @@ export default function PlanCheck({
   judgedShare?: RunJudgedShare | null;
 }): JSX.Element | null {
   const purposeLabel = purposeText(purpose);
+  const outcomeLabel = purposeLabel == null ? null : outcomeText(purpose);
   const shareLabel = judgedShareText(judgedShare);
   const hasChecks = plan != null && plan.checks.length > 0;
   // A run with no prescription still has a purpose -- inferred from the run
@@ -234,6 +255,20 @@ export default function PlanCheck({
             <div className="flex gap-2" data-testid="plan-purpose">
               <dt className="text-ink-muted">目的</dt>
               <dd className="text-ink">{purposeLabel}</dd>
+            </div>
+          )}
+          {outcomeLabel != null && (
+            <div className="flex gap-2" data-testid="plan-outcome">
+              <dt className="text-ink-muted">目的の達成</dt>
+              <dd
+                className={
+                  purpose?.outcome?.met === true
+                    ? "text-ink"
+                    : "font-bold text-status-warn"
+                }
+              >
+                {outcomeLabel}
+              </dd>
             </div>
           )}
           {shareLabel != null && (

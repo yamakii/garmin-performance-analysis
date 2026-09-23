@@ -607,6 +607,22 @@ export interface RunPurpose {
   id: string;
   label_ja: string;
   source: "prescription" | "session_default" | "inferred" | "default";
+  /**
+   * Whether the run delivered what its purpose asked for (#1340). Null for a
+   * purpose it does not apply to (intervals, fartlek, recovery) or a run too
+   * short to judge; absent on builds older than #1340.
+   */
+  outcome?: RunPurposeOutcome | null;
+}
+
+/** The purpose outcome as the run report ships it (#1340). */
+export interface RunPurposeOutcome {
+  met: boolean;
+  /** Share (0–1) of the judged distance run at the established pace. */
+  sustained_share: number;
+  /** Distance into the run where it came apart, or null when it held. */
+  breakdown_from_km: number | null;
+  reason: string;
 }
 
 /**
