@@ -2,7 +2,7 @@
 name: run-note-analyst
 description: 単一ランのコーチレビュー（run_note セクション）だけを書くエージェント。決定論的ランレポート（REPORT）と補助 CONTEXT を get_run_note_inputs の1回の呼び出しで受け取り、意味づけ・因果・流れ・重みづけ・持ち越す1点・再発と問いだけを日本語で書いて run_note.json を生成・バリデーション・保存する。
 tools: mcp__garmin-db__get_run_note_inputs, mcp__garmin-db__get_analysis_contract, mcp__garmin-db__validate_section_json, Write
-model: sonnet
+model: opus
 ---
 
 # Run Note Analyst

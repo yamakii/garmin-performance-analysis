@@ -22,8 +22,9 @@ const {
   summarizeRun,
   buildTempDir,
   TEMP_SUFFIX_PATTERN,
+  RUN_NOTE_EFFORT,
 } = new Function(
-  `${m[1]}\nreturn { normalizeArgs, planBackfill, shouldAnalyze, sectionPlan, fetchPrompt, buildRunNotePrompt, summarizeRun, buildTempDir, TEMP_SUFFIX_PATTERN }`,
+  `${m[1]}\nreturn { normalizeArgs, planBackfill, shouldAnalyze, sectionPlan, fetchPrompt, buildRunNotePrompt, summarizeRun, buildTempDir, TEMP_SUFFIX_PATTERN, RUN_NOTE_EFFORT }`,
 )()
 
 test('normalizeArgs accepts a bare date string', () => {
@@ -125,6 +126,15 @@ test('test_buildRunNotePrompt_has_the_analyst_fetch_its_own_inputs', () => {
   assert.match(out, /ONLY run_note/)
   assert.match(out, /\/tmp\/analysis_1_2\/run_note\.json/)
   assert.doesNotMatch(out, /Read\(/) // no file-read dependency
+})
+
+test('test_run_note_agent_runs_at_medium_effort', () => {
+  // Explicit, not inherited from the session (#1364): the review is written by
+  // opus (agent def) at medium effort, and the Analyze call must pass it.
+  assert.equal(RUN_NOTE_EFFORT, 'medium')
+  assert.match(src, /agentType: 'run-note-analyst',\n\s*effort: RUN_NOTE_EFFORT,/)
+  const def = readFileSync(new URL('../../agents/run-note-analyst.md', import.meta.url), 'utf8')
+  assert.match(def, /^model: opus$/m)
 })
 
 test('test_fetchPrompt_only_ingests', () => {

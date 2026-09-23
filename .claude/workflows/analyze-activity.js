@@ -101,6 +101,12 @@ function sectionPlan() {
   return ['run_note']
 }
 
+// The coach review runs on opus (the agent def) at medium effort, explicit
+// rather than inherited from the session (#1364). Measured on 3 runs with the
+// same prompt: sonnet/high 119-197 s, sonnet/medium 76-110 s with 3 factual
+// slips against the report, opus/medium 35-45 s with none.
+const RUN_NOTE_EFFORT = 'medium'
+
 function fetchPrompt(date) {
   const d = date ? `"${date}"` : 'today（実行日の YYYY-MM-DD）'
   return (
@@ -231,6 +237,7 @@ async function runOneDay(date) {
     label: plan[0],
     phase: 'Analyze',
     agentType: 'run-note-analyst',
+    effort: RUN_NOTE_EFFORT,
   })
 
   // ── Phase Finalize: proofread Japanese prose, then merge into DuckDB ──

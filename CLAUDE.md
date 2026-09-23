@@ -131,7 +131,7 @@ Key rules (path-scoped, under `.claude/rules/dev/`):
 ### Agent System
 
 **1 Analysis Agent (called by the `analyze-activity` workflow):**
-1. **run-note-analyst** (sonnet): writes the `run_note` coach review — the only section an
+1. **run-note-analyst** (opus, medium effort): writes the `run_note` coach review — the only section an
    LLM writes. Every number, range verdict, prescription verdict and scene is already
    computed by `get_run_report`, so the agent adds only the prose on top of it: meaning,
    causality, how the run unfolded, weighting, the next step, recurrence and at most one
