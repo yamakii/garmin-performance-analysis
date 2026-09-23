@@ -405,6 +405,7 @@ mcp__garmin-db__save_weekly_prescriptions(
   - `long_easy` / `long_goal_pace` / `long_fast_finish`（後半上げ）→ long 行
   - `progression` → easy・long・tempo 行、`tempo` → tempo・threshold 行、`intervals` → threshold・tempo 行、`fartlek` → easy・tempo・threshold 行、`race` → long・tempo・threshold 行
   - 合わない組み合わせ（例: easy 行に `long_goal_pace`）や語彙外の値は保存時に拒否される。省略すると `session_type` の既定（long → `long_easy`、threshold → `intervals` など）で扱われる。
+  - **登録済みレース（`athlete_goals` の `race_date`）の当日は、その行に必ず `purpose="race"` を入れる**（long／tempo／threshold 行。給水の歩きを許すなら `allowances {"walk": true}` も）。処方がある日の目的は処方だけで決まり、レース日でも推定では補わない（#1352）。書き忘れると、その日は `session_type` の既定（long → `long_easy`）で評価される。
   - purpose はこの選手固有の分類ではなく**一般的なコーチングのカテゴリ**。選手ごとの事情（ラダー段・レース名）は `title` / `rationale` に書き、purpose 自体は増やさない。
 - **`allowances`（許容事項）**: 歩きを許すランには `{"walk": true}` を入れる（補給の歩き・レースの給水など）。キーは `walk` だけで、ほかのキーは保存時に拒否される。許容しないなら省略（null）。
 - `date` は **W 内の日付**（週外の日付は保存時に拒否される）。`session_type` は `long|easy|recovery|threshold|tempo|rest|strength|cross` のいずれか（`strides` は session_type ではない。下の `strides` 付属を使う）。

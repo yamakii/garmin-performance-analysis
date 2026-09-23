@@ -187,14 +187,13 @@ def resolve_purpose(
         declared = prescription.get("purpose")
         if declared in PURPOSES and declared != "unknown":
             return _resolved(str(declared), "prescription")
-        # Evidence stronger than the session type alone (#1322). A row written
-        # before ``purpose`` existed only says ``long`` or ``tempo``; the goal
-        # race's own day, or a build-up the prescription names *and* the run
-        # shows, is what the run was for. A progression read off the data
-        # alone never overrides the plan: HR drift with a quick last km on an
-        # easy long run would otherwise turn its walk breaks into concerns.
-        if run.get("is_goal_race_day"):
-            return _resolved("race", "inferred")
+        # With a prescription, the purpose is the prescription's (#1352):
+        # nothing read off the run or the calendar overrides it. A race day is
+        # declared on its row (``purpose="race"``); only a build-up the
+        # prescription itself names *and* the run shows refines the session
+        # default. A progression read off the data alone never overrides the
+        # plan: HR drift with a quick last km on an easy long run would
+        # otherwise turn its walk breaks into concerns.
         if run.get("is_marked_progression"):
             return _resolved("progression", "prescription")
         default = DEFAULT_PURPOSE_BY_SESSION.get(
