@@ -48,7 +48,8 @@ agentType: phase === 'write' ? 'run-note-analyst' : 'proofreader'
 ## model 選択の目安
 
 - **純オーケストレーション**（MCP/bash 実行 + JSON echo。分析的推論なし）→ `model: 'haiku'`。
-  例: `analyze-activity.js` の fetch / merge。
+  例: `analyze-activity.js` の merge。ただし **deferred MCP ツールを呼ぶ段は sonnet**: haiku は ToolSearch で
+  読み込んだ MCP ツールを呼ばず Bash / python で迂回した（`analyze-activity.js` の fetch、#1366）。
 - **分析・生成**（推論が価値の中心）→ agentType の def で `sonnet` 等を宣言、または `model:` で明示。
 
 ## チェッカー
