@@ -11,7 +11,29 @@ from garmin_mcp.analysis.derivations import (
     compute_period_delta_pct,
     compute_trend_headline_metrics,
     count_consecutive_build_weeks,
+    weeks_since_last_cutback,
 )
+
+
+@pytest.mark.unit
+class TestWeeksSinceLastCutback:
+    def test_weeks_since_last_cutback_latest_week(self) -> None:
+        assert weeks_since_last_cutback([40, 42, 28]) == 1
+
+    def test_weeks_since_last_cutback_older_week(self) -> None:
+        assert weeks_since_last_cutback([40, 26, 30, 35]) == 3
+
+    def test_weeks_since_last_cutback_none_without_drop(self) -> None:
+        assert weeks_since_last_cutback([30, 32, 35]) is None
+        assert weeks_since_last_cutback([]) is None
+
+    def test_weeks_since_last_cutback_threshold_is_20_pct(self) -> None:
+        # 40 -> 32.4 is a 19% drop (not a cutback); 40 -> 32 is exactly 20%.
+        assert weeks_since_last_cutback([40, 32.4]) is None
+        assert weeks_since_last_cutback([40, 32]) == 1
+
+    def test_weeks_since_last_cutback_no_run_week(self) -> None:
+        assert weeks_since_last_cutback([35, 0, 20]) == 2
 
 
 @pytest.mark.unit

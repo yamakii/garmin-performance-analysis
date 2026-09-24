@@ -571,6 +571,32 @@ def count_consecutive_build_weeks(weekly_loads: list[float]) -> int:
     return count
 
 
+# A week counts as a cutback when its load fell at least this much below the
+# week before -- the lower edge of the deload's -20 to -30% weekly volume.
+CUTBACK_DROP_PCT = 20.0
+
+
+def weeks_since_last_cutback(weekly_loads: list[float]) -> int | None:
+    """Weeks elapsed since the most recent cutback week.
+
+    ``weekly_loads`` runs oldest -> newest over completed weeks. A week is a
+    cutback when its load is at least :data:`CUTBACK_DROP_PCT` percent below the
+    previous week's (a no-run week after a loaded one qualifies). The newest
+    week being the cutback returns ``1``; ``None`` means no cutback within the
+    series.
+
+    Examples:
+        ``[40, 42, 28]``     -> ``1`` (the last week dropped 33%)
+        ``[40, 26, 30, 35]`` -> ``3``
+        ``[30, 32, 35]``     -> ``None``
+    """
+    for i in range(len(weekly_loads) - 1, 0, -1):
+        prior = weekly_loads[i - 1]
+        if prior > 0 and (prior - weekly_loads[i]) / prior * 100 >= CUTBACK_DROP_PCT:
+            return len(weekly_loads) - i
+    return None
+
+
 # --- Long-run extension streak (Issue #927) --------------------------------
 # The cutback cycle's primary gate is the *long run* (the week's longest on-feet
 # time), not weekly volume. The athlete extends the long run even in light

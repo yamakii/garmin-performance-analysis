@@ -224,3 +224,32 @@ def test_prefetch_invalid_target_returns_error() -> None:
 
     assert "error" in result
     assert "garbage" in result["error"]
+
+
+@pytest.mark.unit
+def test_prefetch_bundle_volume_gate_over_completed_weeks() -> None:
+    """load_trend.volume carries the weekly-volume secondary gate, W excluded.
+
+    W (2026-07-06) is in progress with 5 km so far; counting it would read the
+    35 -> 5 dip as a fresh cutback and reset the build streak.
+    """
+    loads = [
+        ("2026-06-08", 40.0),
+        ("2026-06-15", 26.0),
+        ("2026-06-22", 30.0),
+        ("2026-06-29", 35.0),
+        ("2026-07-06", 5.0),
+    ]
+    with _mock_prefetch() as reader:
+        reader.get_load_trend.return_value = {
+            "weeks": [
+                {"week_start": ws, "load_km": km, "longest_run_sec": None}
+                for ws, km in loads
+            ]
+        }
+        result = prefetch_weekly_review_context("this", today="2026-07-10")
+
+    assert result["load_trend"]["volume"] == {
+        "consecutive_build_weeks": 3,
+        "last_cutback_weeks_ago": 3,
+    }
