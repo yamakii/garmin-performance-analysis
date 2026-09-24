@@ -71,8 +71,9 @@
     "cost_usd",
     "latency_s"
   ],
+  "production": "v1 (opus / medium) since #1395; before that, baseline",
   "variants": {
-    "baseline": "sonnet, effort from settings (production: workflow agent() passes none; user settings effortLevel=xhigh)",
+    "baseline": "sonnet, effort from settings (production until #1395: workflow agent() passed none; user settings effortLevel=xhigh)",
     "v1": "opus / medium",
     "v2": "sonnet / high",
     "v3": "sonnet / medium",
