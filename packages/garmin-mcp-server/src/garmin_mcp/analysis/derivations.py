@@ -7,6 +7,7 @@ adds the prose ``evaluation`` field. Leaving range comparison or label lookup to
 the LLM risks hallucinated "achieved" verdicts (Issue #671).
 """
 
+import copy
 from collections.abc import Mapping
 from datetime import date, datetime
 from typing import Any
@@ -586,6 +587,15 @@ _LONG_RUN_RESET_RATIO = 0.75
 # gate; the weekly-volume / ACWR gates stay as secondary OR conditions).
 LONG_RUN_CUTBACK_TRIGGER_WEEKS = 3
 
+# The deload a due cutback prescribes: the long run cut 30-40% from its recent
+# peak, the week's volume cut 20-30%, and no quality sessions. Narration cites
+# these numbers from the CONTEXT instead of carrying its own copy.
+DELOAD_PRESCRIPTION: dict[str, Any] = {
+    "long_run_reduction_pct": [30, 40],
+    "weekly_volume_reduction_pct": [20, 30],
+    "quality_sessions": 0,
+}
+
 
 def count_long_run_build_weeks(weekly_longest_sec: list[float | None]) -> int:
     """Trailing streak of >=+3% weekly longest-run extensions.
@@ -678,6 +688,9 @@ def compute_trend_headline_metrics(context: dict[str, Any]) -> dict[str, Any]:
           :data:`LONG_RUN_CUTBACK_TRIGGER_WEEKS` (always a ``bool``). The
           narration cannot be expected to know the trigger threshold, so the
           gate is decided here and only transcribed downstream (Issue #1110).
+        - ``deload_prescription``: a copy of :data:`DELOAD_PRESCRIPTION` when
+          ``cutback_due_long_run`` is true, else ``None`` -- the numbers the
+          narration cites for next week's deload.
         - ``fusion_flags``: :func:`compute_fusion_flags` output (always a dict).
 
     Note:
@@ -712,12 +725,16 @@ def compute_trend_headline_metrics(context: dict[str, Any]) -> dict[str, Any]:
     form_delta_pct = context.get("form_delta_pct")
 
     long_run_build_weeks = count_long_run_build_weeks(weekly_longest_sec)
+    cutback_due = long_run_build_weeks >= LONG_RUN_CUTBACK_TRIGGER_WEEKS
 
     return {
         "load_delta_pct": load_delta_pct,
         "build_weeks": build_weeks,
         "long_run_build_weeks": long_run_build_weeks,
-        "cutback_due_long_run": long_run_build_weeks >= LONG_RUN_CUTBACK_TRIGGER_WEEKS,
+        "cutback_due_long_run": cutback_due,
+        "deload_prescription": (
+            copy.deepcopy(DELOAD_PRESCRIPTION) if cutback_due else None
+        ),
         "fusion_flags": compute_fusion_flags(acwr_status, hrv_state, form_delta_pct),
     }
 

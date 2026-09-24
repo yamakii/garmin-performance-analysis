@@ -12,8 +12,8 @@ const src = readFileSync(new URL('../trend-narration.js', import.meta.url), 'utf
 const m = src.match(/\/\/ >>> testable\n([\s\S]*?)\n\s*\/\/ <<< testable/)
 assert.ok(m, 'testable block markers not found in trend-narration.js')
 // eslint-disable-next-line no-new-func
-const { normalizeTrendArgs, fetchTrendPrompt, narrationPrompt, mergeTrendPrompt } = new Function(
-  `${m[1]}\nreturn { normalizeTrendArgs, fetchTrendPrompt, narrationPrompt, mergeTrendPrompt }`,
+const { normalizeTrendArgs, buildTrendTempDir, narrationPrompt, mergeTrendPrompt } = new Function(
+  `${m[1]}\nreturn { normalizeTrendArgs, buildTrendTempDir, narrationPrompt, mergeTrendPrompt }`,
 )()
 
 test('test_normalize_defaults_granularity_week', () => {
@@ -108,25 +108,53 @@ test('test_merge_prompt_references_save_script', () => {
   assert.match(out, /\/tmp\/trend_week_x/)
 })
 
-test('test_fetch_prompt_invokes_prefetch_trend_context', () => {
-  const out = fetchTrendPrompt({ period_start: '2026-06-15', period_end: '2026-06-21', granularity: 'week' })
+test('test_build_trend_temp_dir_is_deterministic', () => {
+  const a = { period_start: '2026-09-14', period_end: '2026-09-20', granularity: 'week' }
+  assert.equal(buildTrendTempDir(a), '/tmp/trend_week_2026-09-14')
+  assert.equal(buildTrendTempDir({ ...a, granularity: 'month' }), '/tmp/trend_month_2026-09-14')
+})
+
+test('test_build_trend_temp_dir_rejects_bad_period', () => {
+  const ok = { period_start: '2026-09-14', period_end: '2026-09-20', granularity: 'week' }
+  for (const bad of [null, '2026/09/14', '$(date)', '']) {
+    assert.throws(() => buildTrendTempDir({ ...ok, period_start: bad }), /period_start/)
+  }
+  assert.throws(() => buildTrendTempDir({ ...ok, period_end: '$(rm -rf x)' }), /period_end/)
+  assert.throws(() => buildTrendTempDir({ ...ok, granularity: 'day' }), /granularity/)
+})
+
+test('test_narration_prompt_runs_prefetch_into_temp_dir', () => {
+  const out = narrationPrompt({
+    tempDir: '/tmp/trend_week_2026-06-15',
+    periodStart: '2026-06-15',
+    periodEnd: '2026-06-21',
+    granularity: 'week',
+  })
+  // The ~60KB bundle is redirected to a file by one Bash command and Read back;
+  // it is never transcribed through a model's output (#1023).
   assert.match(out, /prefetch_trend_context/)
   assert.match(out, /--period-start 2026-06-15 --period-end 2026-06-21 --granularity week/)
-})
-
-test('test_fetch_prompt_writes_context_to_file', () => {
-  const out = fetchTrendPrompt({ period_start: '2026-06-15', period_end: '2026-06-21', granularity: 'week' })
-  // stdout is redirected into the temp dir; the model must never transcribe the
-  // ~60KB bundle into its return value (#1023 — that stalled the Fetch stage).
   assert.match(out, /> "\$TD\/context\.json"/)
-  assert.doesNotMatch(out, /一字一句そのまま/)
-  assert.doesNotMatch(out, /context_json/)
+  assert.match(out, /TD=\/tmp\/trend_week_2026-06-15/)
+  // A failed prefetch must not leave a stale trend.json for the save step.
+  assert.match(out, /rm -f "\$TD\/trend\.json"/)
 })
 
-test('test_fetch_schema_drops_context_json', () => {
-  // The schema lives outside the testable block, so assert on the source text.
-  const schema = src.match(/const FETCH_SCHEMA = \{[\s\S]*?\n\}/)
-  assert.ok(schema, 'FETCH_SCHEMA not found in trend-narration.js')
-  assert.doesNotMatch(schema[0], /context_json/)
-  assert.match(schema[0], /required: \['temp_dir'\]/)
+test('test_narration_prompt_cites_deload_prescription', () => {
+  const out = narrationPrompt({
+    tempDir: '/tmp/trend_week_2026-06-15',
+    periodStart: '2026-06-15',
+    periodEnd: '2026-06-21',
+    granularity: 'week',
+  })
+  // The deload numbers come from the CONTEXT, not a copy in the prompt.
+  assert.match(out, /deload_prescription/)
+  assert.doesNotMatch(out, /−30〜40%/)
+  assert.doesNotMatch(out, /−20〜30%/)
+})
+
+test('test_workflow_has_no_fetch_agent', () => {
+  // The temp dir is built in JS; no agent exists just to create it.
+  assert.doesNotMatch(src, /FETCH_SCHEMA/)
+  assert.doesNotMatch(src, /phase\('Fetch'\)/)
 })

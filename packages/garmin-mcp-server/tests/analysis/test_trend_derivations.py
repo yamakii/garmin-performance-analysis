@@ -92,3 +92,35 @@ class TestComputeTrendHeadlineMetrics:
         assert result["build_weeks"] is None
         assert "fusion_flags" in result
         assert all(value is False for value in result["fusion_flags"].values())
+
+    @staticmethod
+    def _longest_run_context(longest_run_sec: list[int]) -> dict:
+        return {
+            "load_trend": {
+                "weeks": [
+                    {"load_km": 40.0, "longest_run_sec": s} for s in longest_run_sec
+                ]
+            }
+        }
+
+    def test_headline_deload_prescription_when_cutback_due(self) -> None:
+        # Three straight >=+3% long-run extensions -> cutback due.
+        result = compute_trend_headline_metrics(
+            self._longest_run_context([3250, 7819, 8125, 8562])
+        )
+
+        assert result["cutback_due_long_run"] is True
+        assert result["deload_prescription"] == {
+            "long_run_reduction_pct": [30, 40],
+            "weekly_volume_reduction_pct": [20, 30],
+            "quality_sessions": 0,
+        }
+
+    def test_headline_deload_prescription_none_when_not_due(self) -> None:
+        # 7480 is a hold, so the streak is 2 -> no cutback yet.
+        result = compute_trend_headline_metrics(
+            self._longest_run_context([7200, 7500, 7480, 7800])
+        )
+
+        assert result["cutback_due_long_run"] is False
+        assert result["deload_prescription"] is None
