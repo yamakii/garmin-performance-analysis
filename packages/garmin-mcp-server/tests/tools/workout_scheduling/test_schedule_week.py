@@ -188,7 +188,7 @@ def test_schedule_week_reregister_passes_recorded_workout_id(
             ),
         )
 
-    assert planned["items"][0]["would_replace_workout_id"] == 333
+    assert planned["items"][0]["would_replace_workout_ids"] == [333]
 
     client = _garmin_client()
     register = MagicMock(
@@ -215,7 +215,7 @@ def test_schedule_week_reregister_passes_recorded_workout_id(
             ),
         )
 
-    assert register.call_args.kwargs["replace_workout_id"] == 333
+    assert register.call_args.kwargs["replace_workout_ids"] == [333]
     assert live["registered"][0]["replaced_workout_ids"] == [333]
 
 
@@ -239,3 +239,106 @@ def test_schedule_week_default_path_never_replaces_by_id(
     assert len(result["registered"]) == 2
     client.delete_workout.assert_not_called()
     assert all(r["skipped_replace_ids"] == [] for r in result["registered"])
+
+
+def _register(reader: MagicMock, prescription_id: int, workout_id: int) -> None:
+    from garmin_mcp.database.inserters.plan import update_prescription_status
+
+    update_prescription_status(
+        prescription_id=prescription_id,
+        status="registered",
+        garmin_workout_id=workout_id,
+        garmin_schedule_id=workout_id + 1,
+        db_path=str(reader.db_path),
+    )
+
+
+@pytest.mark.unit
+def test_get_superseded_workout_ids_older_batches_only(
+    week_reader: MagicMock,
+) -> None:
+    """Only rows of batches below the latest one, with a recorded workout."""
+    from garmin_mcp.database.readers.plan import PlanReader
+
+    long_id, easy_id = _seed(week_reader, [_long_row(), _easy_row()])
+    _register(week_reader, easy_id, 11)
+    _register(week_reader, long_id, 12)
+    # The revision: a new batch without Garmin ids.
+    _seed(week_reader, [_easy_row()])
+
+    assert PlanReader(db_path=str(week_reader.db_path)).get_superseded_workout_ids(
+        WEEK_START
+    ) == {"2026-09-09": [11], "2026-09-13": [12]}
+
+
+@pytest.mark.unit
+def test_plan_week_superseded_ids_go_to_first_item_of_date() -> None:
+    """Two new sessions on one day: only the first carries the superseded ids,
+    so no workout is deleted twice."""
+    from garmin_mcp.tools.workout_scheduling import _plan_week_registrations
+
+    first = {**_easy_row(), "prescription_id": 1, "status": "prescribed"}
+    second = {**_easy_row(), "prescription_id": 2, "status": "prescribed"}
+
+    items, _ = _plan_week_registrations([first, second], set(), {"2026-09-09": [11]})
+
+    assert [item["replace_workout_ids"] for item in items] == [[11], []]
+
+
+@pytest.mark.unit
+def test_plan_week_skips_reconciled_rows_unless_explicit() -> None:
+    """A row already matched against the day's run is not registered again on
+    the default path, so a mid-week re-registration leaves past days alone."""
+    from garmin_mcp.tools.workout_scheduling import _plan_week_registrations
+
+    done = {**_easy_row(), "prescription_id": 1, "status": "done"}
+
+    items, skipped = _plan_week_registrations([done], set(), {"2026-09-09": [11]})
+    explicit, _ = _plan_week_registrations([done], {1}, {"2026-09-09": [11]})
+
+    assert items == []
+    assert skipped == [
+        {"prescription_id": 1, "reason": "already reconciled with the day's run (done)"}
+    ]
+    assert [item["prescription_id"] for item in explicit] == [1]
+
+
+@pytest.mark.unit
+def test_plan_week_reports_stale_superseded_dates() -> None:
+    """A superseded day the new batch no longer runs is reported, not planned."""
+    from garmin_mcp.tools.workout_scheduling import (
+        _plan_week_registrations,
+        _stale_superseded,
+    )
+
+    rows = [{**_long_row(), "prescription_id": 1, "status": "prescribed"}]
+    superseded = {"2026-09-10": [12], "2026-09-13": [13]}
+
+    items, _ = _plan_week_registrations(rows, set(), superseded)
+
+    assert items[0]["replace_workout_ids"] == [13]
+    assert _stale_superseded(rows, items, superseded) == [
+        {"date": "2026-09-10", "workout_ids": [12]}
+    ]
+
+
+@pytest.mark.unit
+def test_schedule_week_revised_batch_replaces_renamed_session(
+    week_reader: MagicMock,
+) -> None:
+    """A revised batch replaces the day's old [MCP] workout even under a new
+    title, and reports the superseded day it dropped."""
+    long_id, easy_id = _seed(week_reader, [_long_row(), _easy_row()])
+    _register(week_reader, long_id, 333)
+    _register(week_reader, easy_id, 555)
+    _seed(week_reader, [{**_long_row(), "title": "ロング 18km (カットバック)"}])
+
+    calendar = MagicMock()
+    calendar.return_value.get_scheduled_workouts.return_value = []
+    with patch(_CALENDAR, calendar), _offline_garmin():
+        planned = _schedule_weekly_prescriptions(
+            week_reader, ScheduleWeeklyPrescriptionsParams(week_start_date=WEEK_START)
+        )
+
+    assert planned["items"][0]["would_replace_workout_ids"] == [333]
+    assert planned["stale_superseded"] == [{"date": "2026-09-09", "workout_ids": [555]}]

@@ -79,7 +79,7 @@ def test_schedule_one_replaces_recorded_workout_id_with_new_title() -> None:
         title="new",
         steps=[{"step_type": "run", "duration_minutes": 25}],
         templates=[{"workoutName": "[MCP] old", "workoutId": 111}],
-        replace_workout_id=111,
+        replace_workout_ids=[111],
     )
 
     client.delete_workout.assert_called_once_with(111)
@@ -103,7 +103,7 @@ def test_schedule_one_does_not_double_delete_same_title_and_id() -> None:
         title="same",
         steps=[{"step_type": "run", "duration_minutes": 25}],
         templates=[{"workoutName": "[MCP] same", "workoutId": 111}],
-        replace_workout_id=111,
+        replace_workout_ids=[111],
     )
 
     client.delete_workout.assert_called_once_with(111)
@@ -123,12 +123,70 @@ def test_schedule_one_skips_non_mcp_replace_id() -> None:
         title="new",
         steps=[{"step_type": "run", "duration_minutes": 25}],
         templates=[{"workoutName": "Coach Tempo", "workoutId": 222}],
-        replace_workout_id=222,
+        replace_workout_ids=[222],
     )
 
     client.delete_workout.assert_not_called()
     assert result["replaced_workout_ids"] == []
     assert result["skipped_replace_ids"] == [222]
+
+
+@pytest.mark.unit
+def test_custom_bookend_minutes_strides_easy_is_zero() -> None:
+    """The final easy step of an easy run with strides is part of its total."""
+    from garmin_mcp.tools.workout_scheduling import _custom_bookend_minutes
+
+    steps = [
+        {"step_type": "run", "duration_seconds": 1800},
+        {
+            "repeat_count": 4,
+            "steps": [
+                {"step_type": "run", "duration_seconds": 20},
+                {"step_type": "recovery", "duration_seconds": 90},
+            ],
+        },
+        {"step_type": "cooldown", "duration_minutes": 5},
+    ]
+
+    assert _custom_bookend_minutes(steps) == 0
+
+
+@pytest.mark.unit
+def test_custom_bookend_minutes_tempo_counts_both() -> None:
+    """A hand-built tempo with a 10-minute cooldown records 20 minutes."""
+    from garmin_mcp.tools.workout_scheduling import _custom_bookend_minutes
+
+    steps = [
+        {"step_type": "warmup", "duration_minutes": 10},
+        {"step_type": "run", "duration_minutes": 20},
+        {"step_type": "cooldown", "duration_minutes": 10},
+    ]
+
+    assert _custom_bookend_minutes(steps) == 20
+
+
+@pytest.mark.unit
+def test_register_workout_replaces_each_mcp_id_skips_foreign() -> None:
+    """Each recorded id gets the same rule: [MCP] ones go, others are reported."""
+    client = MagicMock()
+    client.upload_workout.return_value = {"workoutId": 999}
+    client.schedule_workout.return_value = {"workoutScheduleId": 555}
+
+    result = _register_workout(
+        client,
+        on_date="2026-09-10",
+        title="new",
+        steps=[{"step_type": "run", "duration_minutes": 25}],
+        templates=[
+            {"workoutName": "[MCP] Old A", "workoutId": 21},
+            {"workoutName": "Manual", "workoutId": 22},
+        ],
+        replace_workout_ids=[21, 22, 99],
+    )
+
+    client.delete_workout.assert_called_once_with(21)
+    assert result["replaced_workout_ids"] == [21]
+    assert result["skipped_replace_ids"] == [22, 99]
 
 
 @pytest.mark.unit

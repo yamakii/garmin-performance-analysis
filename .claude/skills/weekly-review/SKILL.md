@@ -412,7 +412,7 @@ mcp__garmin-db__save_weekly_prescriptions(
 
 1. **新しいレビュー版を保存**: 改訂後の方針を反映した `recommendations` / `overall`（必要なら `periodization` / `recovery` も）で `save_weekly_review(review)` を呼び、`review_data.revision_note` に改訂理由を1文入れる（例: `"9/6 皮膚トラブルで木曜を練習会ビルドアップに差し替え"`）。同じ W なので**新しい版として追記**され、返却された新しい `review_id` を控える。
 2. **改訂後の処方を全行保存**: `save_weekly_prescriptions(week_start_date=<W の開始日>, prescriptions=[...改訂後の全日分...], review_id=<新しい review_id>)`。差分だけでなく**その週の全行**を入れる（最新バッチがそのまま週のプランになるため）。`review_id` を省略したり古い版の id を渡すと拒否されます。
-3. **Garmin に登録済みなら再登録**: 既に `schedule_weekly_prescriptions` でカレンダーに載せている週なら、新バッチは `status="prescribed"` に戻り Garmin の id も引き継がれないので、`schedule_weekly_prescriptions(week_start_date=<W>, dry_run=False)` を実行してカレンダーを新バッチに揃える。置き換わるのは同じタイトルの `[MCP]` 項目だけで、タイトルを変えた行の旧項目は予定に残る。先に `dry_run` の結果でそうした日を挙げ、Garmin Connect での削除をユーザーに頼む（またはタイトルを変えない）。
+3. **Garmin に登録済みなら再登録**: 既に `schedule_weekly_prescriptions` でカレンダーに載せている週なら、新バッチは `status="prescribed"` に戻り Garmin の id も引き継がれないので、`schedule_weekly_prescriptions(week_start_date=<W>, dry_run=False)` を実行してカレンダーを新バッチに揃える。同じ日に旧バッチが登録した `[MCP]` 項目は、タイトルが変わっていても置き換わる（dry run の `would_replace_workout_ids`）。新バッチにランが無くなった日の旧項目は削除されず `stale_superseded` に挙がるので、その日を示して Garmin Connect での削除をユーザーに頼む。
 
 改訂後は「どの行をどう変えたか」と改訂理由をユーザーに一言で報告してください。
 

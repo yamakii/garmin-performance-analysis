@@ -250,6 +250,41 @@ class PlanReader(BaseDBReader):
             columns = [desc[0] for desc in conn.description]
             return [prescription_row_to_dict(columns, row) for row in rows]
 
+    def get_superseded_workout_ids(
+        self, week_start_date: str, user_id: str = "default"
+    ) -> dict[str, list[int]]:
+        """Garmin workouts recorded on the week's superseded batches, by date.
+
+        A revised week is saved as a new batch whose rows carry no Garmin ids,
+        so the workouts registered from older batches are only known here.
+
+        Args:
+            week_start_date: Week start (``YYYY-MM-DD``).
+            user_id: Ledger owner identifier (defaults to ``"default"``).
+
+        Returns:
+            ``{date: [garmin_workout_id, ...]}`` over every batch below the
+            week's highest ``batch_id``, newest batch first within a date and
+            without duplicates. Empty when nothing older was registered.
+        """
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT date, garmin_workout_id FROM weekly_prescriptions "
+                "WHERE user_id = ? AND week_start_date = CAST(? AS DATE) "
+                "AND garmin_workout_id IS NOT NULL "
+                "AND batch_id < ("
+                "  SELECT MAX(batch_id) FROM weekly_prescriptions "
+                "  WHERE user_id = ? AND week_start_date = CAST(? AS DATE)"
+                ") ORDER BY date, batch_id DESC, prescription_id",
+                [user_id, week_start_date, user_id, week_start_date],
+            ).fetchall()
+        by_date: dict[str, list[int]] = {}
+        for on_date, workout_id in rows:
+            ids = by_date.setdefault(str(on_date), [])
+            if int(workout_id) not in ids:
+                ids.append(int(workout_id))
+        return by_date
+
     def get_prescriptions_for_date(
         self, on_date: str, user_id: str = "default"
     ) -> list[dict[str, Any]]:
