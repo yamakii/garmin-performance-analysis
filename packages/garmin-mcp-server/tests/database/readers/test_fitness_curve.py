@@ -182,6 +182,68 @@ def test_get_objective_fitness_curve_empty_db(reader_db_path: Path) -> None:
     assert result["optimism_gap"] is None
 
 
+def _seed_two_runs_two_vo2max(db_path: Path) -> None:
+    """A slower run before 2025-09-30 and a faster one after, each with a VO2max."""
+    _insert_run(db_path, activity_id=1, activity_date="2025-09-01", split_seconds=340.0)
+    _insert_run(db_path, activity_id=2, activity_date="2025-10-20", split_seconds=300.0)
+    _insert_vo2max(db_path, activity_id=1, value=44.6, date="2025-09-01")
+    _insert_vo2max(db_path, activity_id=2, value=50.0, date="2025-10-20")
+
+
+@pytest.mark.integration
+def test_get_objective_fitness_curve_end_date_excludes_later_runs(
+    reader_db_path: Path,
+) -> None:
+    """end_date drops later runs; the points up to it equal the unbounded curve's."""
+    _seed_two_runs_two_vo2max(reader_db_path)
+    reader = FitnessCurveReader(str(reader_db_path))
+
+    unbounded = reader.get_objective_fitness_curve(window_days=90)["objective_curve"]
+    bounded = reader.get_objective_fitness_curve(window_days=90, end_date="2025-09-30")[
+        "objective_curve"
+    ]
+
+    assert bounded, "bounded curve must keep the run before end_date"
+    assert all(p["date"] <= "2025-09-30" for p in bounded)
+    # A trailing-window max: later runs cannot change the earlier points.
+    assert bounded == [p for p in unbounded if p["date"] <= "2025-09-30"]
+    assert bounded[-1]["vdot"] < unbounded[-1]["vdot"]
+
+
+@pytest.mark.integration
+def test_get_objective_fitness_curve_end_date_bounds_optimism_gap(
+    reader_db_path: Path,
+) -> None:
+    """optimism_gap compares the latest points on or before end_date."""
+    _seed_two_runs_two_vo2max(reader_db_path)
+    reader = FitnessCurveReader(str(reader_db_path))
+
+    result = reader.get_objective_fitness_curve(window_days=90, end_date="2025-09-30")
+    unbounded = reader.get_objective_fitness_curve(window_days=90)
+
+    assert result["garmin_vo2max"] == [{"date": "2025-09-01", "value": 44.6}]
+    gap = result["optimism_gap"]
+    assert gap is not None
+    assert gap["objective_vdot"] == result["objective_curve"][-1]["vdot"]
+    # 44.6 (the 2025-09-01 reading) sits below the unbounded 50.0 reading.
+    assert gap["garmin_vdot"] < unbounded["optimism_gap"]["garmin_vdot"]
+
+
+@pytest.mark.integration
+def test_get_objective_fitness_curve_end_date_none_unchanged(
+    reader_db_path: Path,
+) -> None:
+    """end_date=None reads up to the latest data, same as omitting it."""
+    _seed_two_runs_two_vo2max(reader_db_path)
+    reader = FitnessCurveReader(str(reader_db_path))
+
+    explicit_none = reader.get_objective_fitness_curve(window_days=90, end_date=None)
+    omitted = reader.get_objective_fitness_curve(window_days=90)
+
+    assert explicit_none == omitted
+    assert omitted["objective_curve"][-1]["date"] == "2025-10-20"
+
+
 @pytest.mark.integration
 def test_e2e_objective_fitness_dispatch(reader_db_path: Path) -> None:
     """dispatch(...) at the MCP boundary returns a json.dumps-able dict."""

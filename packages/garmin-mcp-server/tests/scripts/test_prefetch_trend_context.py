@@ -272,7 +272,7 @@ def test_long_period_keeps_derived_lookback() -> None:
 
 @pytest.mark.unit
 def test_fitness_curve_window_fixed_90d() -> None:
-    """Fitness curve is pinned to 90d for both week and month granularities."""
+    """Fitness curve is pinned to 90d and ends at period_end for both granularities."""
     for granularity, start, end in (
         ("week", "2026-06-15", "2026-06-21"),
         ("month", "2026-06-01", "2026-06-30"),
@@ -280,7 +280,7 @@ def test_fitness_curve_window_fixed_90d() -> None:
         with _mock_prefetch({(start, end): [1, 2, 3]}) as (reader, _analyzer):
             prefetch_trend_context(start, end, granularity)
         reader.fitness_curve.get_objective_fitness_curve.assert_called_once_with(
-            window_days=90
+            window_days=90, end_date=end
         )
 
 
