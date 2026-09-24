@@ -36,10 +36,10 @@ function normalizeArgs(raw) {
 }
 
 // Deterministic Validation Level from changed file paths. Mirrors the
-// judgment table in .claude/rules/dev/dev-reference.md §3 (that rule file is
+// judgment table in .claude/rules/dev/worktree-validation-protocol.md §1 (that rule file is
 // the SOURCE OF TRUTH; keep this in sync — the table changes rarely). Ranked
 // skip < L1 < L2 < L3; empty/no files → 'skip'; unknown paths → 'L2'
-// (dev-reference §3: 迷ったら L2).
+// (worktree-validation-protocol §1: 迷ったら L2).
 const LEVEL_RANK = { skip: 0, L1: 1, L2: 2, L3: 3 }
 
 function levelForFile(f) {
@@ -199,7 +199,7 @@ const results = await pipeline(
         `1. mcp__github__issue_read(method="get", ${repoCtx()}, issue_number=${issue.number}) で設計を読む。\n` +
         `2. .claude/agents/developer.md のフローに従い、worktree 内で実装 + unit/integration テスト + ruff + (変更ファイルへ) get_diagnostics_for_file。\n` +
         `3. Conventional Commits で commit（"Closes #${issue.number}" を含む）。**push はしない**。\n` +
-        `4. Validation Level を dev-reference.md §3 判定表で決定。\n\n` +
+        `4. Validation Level を worktree-validation-protocol.md §1 の判定表で決定。\n\n` +
         `重要: manifest を /tmp に書かず、**この呼び出しの構造化出力として返す**こと（schema 準拠）。` +
         `worktree_path はこの worktree の絶対パス、branch は作成したブランチ名、commit_hash は HEAD の短縮 SHA。` +
         `実装・commit まで完了したら implemented=true。`,

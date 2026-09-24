@@ -14,7 +14,7 @@ Worktree で実装されたコード変更を検証するエージェント。
 > worktree コードの検証は **インプロセス import（subprocess 経由）** と **subprocess pytest** で行う。これにより live MCP サーバの状態に一切依存せず、disconnect も発生しない。
 > live MCP サーバ自体を検証する必要がある稀なケースは、サブエージェントではなく**メインセッション（オーケストレーター）**が担当する（後述「例外: live MCP サーバコードの検証」参照）。
 
-> **並列起動可:** L1/L2 は subprocess でプロセス分離されているため、複数 worktree の検証を**並列に起動してよい**。FIFO で1つずつ foreground 起動して待つ必要はない（旧 FIFO 直列前提は reload 依存時代の遺物）。直列が必須なのは L3（メインセッション担当）のみ。
+> **並列起動可:** L1/L2 は subprocess でプロセス分離されているため、複数 worktree の検証を**並列に起動してよい**。FIFO で1つずつ foreground 起動して待つ必要はない。直列が必須なのは L3（メインセッション担当）のみ。
 
 ## Step 0: Manifest 受領
 
@@ -101,14 +101,6 @@ L2 は L1（in-process import check）に加え、**CI と対称な品質ゲー�
 **L3 はこのサブエージェントでは実行しない。** L3（agent 定義 = `*-analyst.md` の変更）は pre-merge の diff レビューをメインセッションが行い、E2E はマージ後の新規セッションで実行する（`worktree-validation-protocol.md` §4）。
 
 このエージェントが L3 manifest を受け取った場合は、検証を実行せず「L3 はメインセッションが担当する」旨を報告して終了する。
-
-## L3 Fixture（参考）
-
-- Activity: `20636804823` (2025-10-09, aerobic_base 5.66km, ~6:26/km, HR avg 144bpm)
-- Content check ranges:
-  - Pace: 6:00-6:45/km (360-405 sec/km)
-  - HR: 120-160 bpm
-- 詳細は `worktree-validation-protocol.md` §4 を参照
 
 ## 判定基準
 

@@ -12,8 +12,7 @@ Issue の設計に基づいてコードを実装するエージェント。
 ## コマンドの打ち方
 
 全ステップに適用する。このリポジトリでは `cd X && ...` の複合コマンドや中身が不透明なコマンドは
-**1 回ごとにオーナーへ許可確認が飛ぶ**（`worktree-commands.md`）。87 回の Bash 呼び出しのうち 67 回が
-`cd <worktree> && sed ...` だった実装では、ほぼ全ステップで人間の承認が必要になった（#1292）。
+**1 回ごとにオーナーへ許可確認が飛ぶ**（`worktree-commands.md`）。
 
 - **ファイルの読み書きは専用ツールで行う**: 読むのは `Read`、探すのは `Grep` / `Glob`（シンボルは Serena）、
   直すのは `Edit`、作るのは `Write`。ソースを読むために `sed -n` / `cat` / `head` / `tail` を使わない。
@@ -46,13 +45,6 @@ Issue body の Design セクションから以下を把握:
 - Interface（クラス・関数シグネチャ）
 - Test Plan（テスト関数名・入力値・期待値）
 
-### Step 1: 実装前確認
-
-コードを書く前に以下を出力:
-1. 変更対象ファイル一覧
-2. Test Plan のテスト関数名一覧
-3. Validation Level 確認
-
 ### Step 2: Serena activate & コード調査
 
 ```
@@ -71,7 +63,7 @@ mcp__serena__activate_project(<リポジトリルートの絶対パス>)  # chec
 ### Step 3.5: 新 tool / table 追加時の doc-sync チェックリスト
 
 新しい MCP tool / DuckDB テーブル・migration を追加したら、**同じ commit で**以下を更新する。
-これを怠ると ci-guard の doc-guard / count テストで落ちる（Epic #497 の #498・#500 で2回連続発生）。
+これを怠ると ci-guard の doc-guard / count テストで落ちる。
 
 **新 MCP tool を追加した場合:**
 - [ ] `README.md` + `CLAUDE.md` の tool 数（「N token-optimized MCP tools」「N domain + 2 server」）を更新
@@ -94,7 +86,7 @@ TypeScript 双方に有効。診断が出たら修正してから次へ。
 
 **新規 worktree の dev 依存 bootstrap（個別テスト/lint の前に1度）:** fresh worktree は
 `.venv` を共有せず、`uv run` は optional-dependencies の `dev` extra（pytest/black/mypy 本体）を
-自動同期しない。下記の個別コマンドを回す前に1度だけ同期する（Issue #534 Item 2。詳細は
+自動同期しない。下記の個別コマンドを回す前に1度だけ同期する（詳細は
 `worktree-commands.md` の Worktree Environment Bootstrap）:
 
 ```bash
@@ -132,10 +124,8 @@ git -C {worktree_path} commit -m "{conventional commit message}
 
 Closes #{issue_number}
 
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+{ハーネスが指定する attribution 行をそのまま}"
 ```
-
-（attribution trailer はセッション開始時にハーネスが指定する文言をそのまま使う）
 
 ### Step 5.5: Validation Manifest 返却
 

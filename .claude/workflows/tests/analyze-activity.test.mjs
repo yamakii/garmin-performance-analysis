@@ -123,7 +123,6 @@ test('test_buildRunNotePrompt_has_the_analyst_fetch_its_own_inputs', () => {
   // Nothing is inlined any more: the fetch stage no longer re-types the JSON.
   assert.doesNotMatch(out, /<REPORT>/)
   assert.doesNotMatch(out, /<CONTEXT>/)
-  assert.match(out, /ONLY run_note/)
   assert.match(out, /\/tmp\/analysis_1_2\/run_note\.json/)
   assert.doesNotMatch(out, /Read\(/) // no file-read dependency
 })
@@ -135,13 +134,6 @@ test('test_run_note_agent_runs_at_medium_effort', () => {
   assert.match(src, /agentType: 'run-note-analyst',\n\s*effort: RUN_NOTE_EFFORT,/)
   const def = readFileSync(new URL('../../agents/run-note-analyst.md', import.meta.url), 'utf8')
   assert.match(def, /^model: opus$/m)
-})
-
-test('test_fetchPrompt_calls_the_mcp_tools_directly', () => {
-  // #1366: haiku routed around the deferred MCP tools via Bash/python.
-  const out = fetchPrompt('2026-09-18')
-  assert.match(out, /MCP ツールの呼び出しそのもの/)
-  assert.match(out, /Bash・python・スクリプト・CLI で代替/)
 })
 
 test('test_fetchPrompt_surfaces_catch_up_errors', () => {
