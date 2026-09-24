@@ -86,6 +86,10 @@ _STREET_SUB_SPORT = 2
 # Ledger owner used when the caller does not name one.
 _DEFAULT_USER_ID = "default"
 
+# Statuses the reconciler sets once a row has been matched against the day's
+# run: the day is over, so the row is never registered again by default.
+_RECONCILED_STATUSES = frozenset({"done", "replaced", "skipped"})
+
 # Prescription session types that map onto a Garmin running workout. rest /
 # strength / cross are prescribed but never registered as a run. Strides are
 # not a session type: they ride on an easy row as its ``strides`` add-on.
@@ -449,6 +453,23 @@ def _registered_bookend_minutes(
     return bookend_minutes_from_steps(steps)
 
 
+def _custom_bookend_minutes(steps: list[dict[str, Any]]) -> int | None:
+    """Return the bookend minutes to record for a hand-built registration.
+
+    A hand-built workout has no ``session_type``, so the shape stands in for it:
+    only a workout that opens with a ``warmup`` is bookended (the threshold /
+    tempo shape). An easy run with strides ends on a 5-minute easy ``cooldown``
+    step that is part of the prescribed total, so it records ``0`` like the
+    weekly path does. ``None`` for empty steps, as
+    :func:`bookend_minutes_from_steps`.
+    """
+    if not steps:
+        return None
+    if not any(s.get("step_type") == "warmup" for s in steps):
+        return 0
+    return bookend_minutes_from_steps(steps)
+
+
 # ----------------------------------------------------------------------------
 # Calendar assignment collection + cleanup planning
 # ----------------------------------------------------------------------------
@@ -695,7 +716,7 @@ def _register_workout(
     title: str,
     steps: list[dict[str, Any]],
     templates: list[dict[str, Any]] | None = None,
-    replace_workout_id: int | None = None,
+    replace_workout_ids: list[int] | None = None,
 ) -> dict[str, Any]:
     """Replace the superseded ``[MCP]`` workouts, upload and schedule a new one.
 
@@ -704,9 +725,10 @@ def _register_workout(
 
     1. any ``[MCP]`` template whose title equals the new one — keeps the
        self-authored library at one template per title;
-    2. ``replace_workout_id`` — the workout a caller previously recorded for
-       this slot. Re-registering a revised row under a *new* title would
-       otherwise leave the old template scheduled on the same day (#1042).
+    2. ``replace_workout_ids`` — workouts previously recorded for this slot
+       (a re-registered row, or the same day in a superseded batch).
+       Re-registering a revised row under a *new* title would otherwise leave
+       the old template scheduled on the same day (#1042).
 
     Only ``[MCP]``-prefixed workouts are ever deleted: an id that is unknown to
     the library or carries a manual title is skipped and reported instead.
@@ -719,8 +741,8 @@ def _register_workout(
         templates: Pre-fetched library (:func:`_fetch_library`). The weekly
             batch fetches the library once and reuses it across items; passing
             ``None`` fetches (and pages) it here.
-        replace_workout_id: Workout id recorded for this slot, deleted before
-            the upload when it names an ``[MCP]`` template.
+        replace_workout_ids: Workout ids recorded for this slot, each deleted
+            before the upload when it names an ``[MCP]`` template.
 
     Returns:
         ``{workout_id, schedule_id, date, title, replaced_workout_ids,
@@ -736,17 +758,15 @@ def _register_workout(
     ]
     skipped_replace_ids: list[Any] = []
 
-    if replace_workout_id is not None:
-        recorded = next(
-            (w for w in library if w.get("workoutId") == replace_workout_id), None
-        )
+    for replace_id in replace_workout_ids or []:
+        recorded = next((w for w in library if w.get("workoutId") == replace_id), None)
         recorded_name = str((recorded or {}).get("workoutName") or "")
         if recorded is not None and recorded_name.startswith(MCP_PREFIX):
-            if replace_workout_id not in to_delete:
-                to_delete.append(replace_workout_id)
+            if replace_id not in to_delete:
+                to_delete.append(replace_id)
         else:
             # Foreign or already-gone id: never delete a workout we did not author.
-            skipped_replace_ids.append(replace_workout_id)
+            skipped_replace_ids.append(replace_id)
 
     replaced: list[Any] = []
     for workout_id in to_delete:
@@ -772,7 +792,9 @@ def _register_workout(
 
 
 def _plan_week_registrations(
-    rows: list[dict[str, Any]], explicit_ids: set[int]
+    rows: list[dict[str, Any]],
+    explicit_ids: set[int],
+    superseded_by_date: dict[str, list[int]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Split a week's prescriptions into registrable items and skipped rows.
 
@@ -785,19 +807,23 @@ def _plan_week_registrations(
         rows: Canonical prescriptions for the week (reader order).
         explicit_ids: ``prescription_ids`` the caller asked for. When non-empty,
             rows outside the set are not considered at all.
+        superseded_by_date: Workouts registered from the week's older batches
+            (:meth:`PlanReader.get_superseded_workout_ids`).
 
     Returns:
         ``(items, skipped)`` where each item is ``{prescription_id, date, title,
-        steps, bookend_minutes, already_registered, replace_workout_id}``
+        steps, bookend_minutes, already_registered, replace_workout_ids}``
         (``bookend_minutes`` is what the registration records, see
         :func:`_registered_bookend_minutes`) and each skip is
-        ``{prescription_id, reason}``. ``replace_workout_id`` carries the
-        workout recorded on an explicitly re-registered row so the old item
-        leaves the calendar even when the revised title differs (#1042); it is
-        ``None`` on the default (all rows) path, which never re-registers.
+        ``{prescription_id, reason}``. ``replace_workout_ids`` carries the
+        workout recorded on an explicitly re-registered row plus, on the first
+        item of a date, the workouts superseded batches registered that day, so
+        the old items leave the calendar even when the revised title differs
+        (#1042).
     """
     items: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
+    superseded = dict(superseded_by_date or {})
 
     for row in rows:
         prescription_id = row.get("prescription_id")
@@ -820,6 +846,15 @@ def _plan_week_registrations(
                 }
             )
             continue
+        status = str(row.get("status") or "")
+        if status in _RECONCILED_STATUSES and prescription_id not in explicit_ids:
+            skipped.append(
+                {
+                    "prescription_id": prescription_id,
+                    "reason": f"already reconciled with the day's run ({status})",
+                }
+            )
+            continue
 
         try:
             steps = build_steps_from_prescription(row)
@@ -827,23 +862,59 @@ def _plan_week_registrations(
             skipped.append({"prescription_id": prescription_id, "reason": str(e)})
             continue
 
-        recorded_workout_id = (
-            row.get("garmin_workout_id") if prescription_id in explicit_ids else None
-        )
+        on_date = str(row.get("date"))
+        replace_ids: list[int] = []
+        recorded = row.get("garmin_workout_id")
+        if prescription_id in explicit_ids and recorded is not None:
+            replace_ids.append(int(recorded))
+        # Popped, so a second item on the same day never deletes the same id.
+        for workout_id in superseded.pop(on_date, []):
+            if workout_id not in replace_ids:
+                replace_ids.append(workout_id)
 
         items.append(
             {
                 "prescription_id": prescription_id,
-                "date": str(row.get("date")),
+                "date": on_date,
                 "title": str(row.get("title") or session_type),
                 "steps": steps,
                 "bookend_minutes": _registered_bookend_minutes(row, steps),
                 "already_registered": already_registered,
-                "replace_workout_id": recorded_workout_id,
+                "replace_workout_ids": replace_ids,
             }
         )
 
     return items, skipped
+
+
+def _stale_superseded(
+    rows: list[dict[str, Any]],
+    items: list[dict[str, Any]],
+    superseded_by_date: dict[str, list[int]],
+) -> list[dict[str, Any]]:
+    """Superseded workouts on days the new batch no longer runs.
+
+    A day is covered when an item registers on it now or a row of the new
+    batch is already registered or reconciled on it. Workouts on uncovered
+    days are never
+    deleted by a registration (nothing replaces them), so they are reported
+    for the caller to raise with the athlete. Some may already be gone from
+    Garmin (deleted by hand or by the cleanup).
+
+    Returns:
+        ``[{date, workout_ids}]`` ascending by date.
+    """
+    covered = {item["date"] for item in items} | {
+        str(row.get("date"))
+        for row in rows
+        if (row.get("status") == "registered" and row.get("garmin_schedule_id"))
+        or row.get("status") in _RECONCILED_STATUSES
+    }
+    return [
+        {"date": on_date, "workout_ids": ids}
+        for on_date, ids in sorted(superseded_by_date.items())
+        if on_date not in covered
+    ]
 
 
 def _existing_titles_by_date(week_start_date: str) -> dict[str, list[str]]:
@@ -965,7 +1036,7 @@ def _schedule_custom_workout(
         result["cleanup"] = cleanup
         # Hand-built steps are exactly the case the constant cannot describe, so
         # hand the caller the real figure to record on the row (Issue #1087).
-        result["bookend_minutes"] = bookend_minutes_from_steps(p.steps)
+        result["bookend_minutes"] = _custom_bookend_minutes(p.steps)
         return result
     except Exception as e:  # noqa: BLE001
         logger.error(f"schedule_custom_workout failed: {e}")
@@ -983,14 +1054,20 @@ def _schedule_weekly_prescriptions(
     user_id = p.user_id if p.user_id is not None else _DEFAULT_USER_ID
 
     try:
-        rows = PlanReader(db_path=str(reader.db_path)).get_weekly_prescriptions(
+        plan_reader = PlanReader(db_path=str(reader.db_path))
+        rows = plan_reader.get_weekly_prescriptions(p.week_start_date, user_id=user_id)
+        superseded = plan_reader.get_superseded_workout_ids(
             p.week_start_date, user_id=user_id
         )
     except Exception as e:  # noqa: BLE001
         logger.error(f"schedule_weekly_prescriptions failed to read the week: {e}")
         return {"error": str(e)}
 
-    items, skipped = _plan_week_registrations(rows, set(p.prescription_ids or []))
+    explicit_ids = set(p.prescription_ids or [])
+    items, skipped = _plan_week_registrations(rows, explicit_ids, superseded)
+    # A partial re-registration leaves the other days alone on purpose, so only
+    # a whole-week run can tell which superseded days the new batch dropped.
+    stale = [] if explicit_ids else _stale_superseded(rows, items, superseded)
 
     if dry_run:
         result: dict[str, Any] = {
@@ -998,6 +1075,7 @@ def _schedule_weekly_prescriptions(
             "week_start_date": p.week_start_date,
             "items": items,
             "skipped": skipped,
+            "stale_superseded": stale,
         }
         try:
             existing = _existing_titles_by_date(p.week_start_date)
@@ -1018,8 +1096,8 @@ def _schedule_weekly_prescriptions(
             result["would_cleanup"] = {"error": str(e)}
         for item in items:
             item["existing_same_day"] = existing.get(item["date"], [])
-            # A dry run replaces nothing: report the id instead of promising it.
-            item["would_replace_workout_id"] = item.pop("replace_workout_id", None)
+            # A dry run replaces nothing: report the ids instead of promising it.
+            item["would_replace_workout_ids"] = item.pop("replace_workout_ids", [])
         return result
 
     try:
@@ -1048,7 +1126,7 @@ def _schedule_weekly_prescriptions(
                 title=item["title"],
                 steps=item["steps"],
                 templates=templates,
-                replace_workout_id=item.get("replace_workout_id"),
+                replace_workout_ids=item.get("replace_workout_ids"),
             )
             update_prescription_status(
                 prescription_id=prescription_id,
@@ -1083,6 +1161,7 @@ def _schedule_weekly_prescriptions(
         "registered": registered,
         "failed": failed,
         "skipped": skipped,
+        "stale_superseded": stale,
     }
 
 
@@ -1118,7 +1197,11 @@ WORKOUT_SCHEDULING_TOOLS: list[ToolDef] = [
             "distance_m; optional hr_low/hr_high for a custom heart-rate-range "
             "target) or a repeat group (repeat_count + nested steps). Returns "
             "{workout_id, schedule_id, date, title, replaced_workout_ids, "
-            "skipped_replace_ids, cleanup}."
+            "skipped_replace_ids, cleanup, bookend_minutes}. bookend_minutes is "
+            "the value to record on the prescription row: the warmup + cooldown "
+            "minutes when the steps open with a warmup (a threshold / tempo "
+            "shape), else 0 (an easy run with strides ends on a 5min easy step "
+            "that is part of its total)."
         ),
         params=ScheduleCustomWorkoutParams,
         handler=_schedule_custom_workout,
@@ -1138,22 +1221,29 @@ WORKOUT_SCHEDULING_TOOLS: list[ToolDef] = [
             "and a final 5min easy step, together exactly target_minutes (the "
             "run total). Quality sessions (threshold/tempo) keep a 10min "
             "warmup and a 5min cooldown around the body; "
-            "rest/strength/cross rows and rows already "
-            "registered are skipped, and naming an id in prescription_ids "
-            "re-registers it. dry_run=True (default) returns {dry_run, "
+            "rest/strength/cross rows, rows already "
+            "registered and rows already reconciled with a run (done / "
+            "replaced / skipped) are skipped, and naming an id in "
+            "prescription_ids re-registers it. dry_run=True (default) returns {dry_run, "
             "week_start_date, items ({prescription_id, date, title, steps, "
             "bookend_minutes, existing_same_day, already_registered, "
-            "would_replace_workout_id}), would_cleanup, skipped} so the plan "
-            "can be confirmed first. dry_run=False runs the [MCP] cleanup "
+            "would_replace_workout_ids}), would_cleanup, skipped, "
+            "stale_superseded} so the plan can be confirmed first. "
+            "dry_run=False runs the [MCP] cleanup "
             "first (unschedule past-dated [MCP] assignments, delete [MCP] "
             "templates with no future schedule; a cleanup failure never aborts "
             "the batch), then registers each item (delete the "
-            "same-title [MCP] template AND the [MCP] workout already recorded "
-            "on a re-registered row, so a revised title never leaves the old "
-            "item on the calendar -> upload -> schedule), records the "
+            "same-title [MCP] template, the [MCP] workout already recorded "
+            "on a re-registered row AND the [MCP] workouts the week's "
+            "superseded batches registered on that day, so a revised title "
+            "never leaves the old item on the calendar -> upload -> schedule), "
+            "records the "
             "workout/schedule ids with status=registered on the row, isolates "
             "per-item failures and returns {dry_run, week_start_date, cleanup, "
-            "registered, failed, skipped}."
+            "registered, failed, skipped, stale_superseded}. stale_superseded "
+            "[{date, workout_ids}] lists superseded workouts on days the new "
+            "batch no longer runs: they are never deleted, only reported (empty "
+            "when prescription_ids narrows the run)."
         ),
         params=ScheduleWeeklyPrescriptionsParams,
         handler=_schedule_weekly_prescriptions,

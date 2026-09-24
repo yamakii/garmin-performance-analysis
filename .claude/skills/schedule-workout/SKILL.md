@@ -44,7 +44,7 @@ ToolSearch(query="select:mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db
 - **タイトル**: 内容と根拠が一目で分かる短い日本語（例: `ロング19km 新潟ラダー1段目 (Z2上限150)`）。処方行の `title` をそのまま使ってよい。`[MCP] ` 接頭辞はツールが自動付与するので書かない。同名の既存 [MCP] は delete→recreate される
 - **構成**: ロング/イージー/リカバリーは **`run` 1 ステップだけ**（前後のウォームアップ/クールダウンを付けない）。全体がウォームアップ強度で上限統治なので、別ステップを足すと時計が処方より多く要求し、ロングランのラダー（19→22→25km は当日総量の定義）が崩れる。本体は処方が「時間」なら `duration_minutes`、「距離」なら `distance_m`
 - **前後を付けるのは質練だけ**（閾値・テンポ）: `warmup` 10 分 → `run`（本体）→ `cooldown` 5 分。この 15 分は `reconcile_prescriptions` の判定でも許容される（`target_minutes` は本体のみの分数で処方する）
-- **流し付きイージー**（処方行に `strides` があるとき）: 流しは独立したセッションではなく easy 行の付属。`run`（冒頭 easy、`duration_seconds` = `target_minutes`×60 − 流しブロック − 300）→ repeat group（`repeat_count` = `reps`、中身は `run` `run_seconds` 秒 / `recovery` `recovery_seconds` 秒、**どちらも HR なし**）→ `cooldown` 5 分（最後の easy）の 3 段で、合計が `target_minutes`（総量）と一致する。HR 上限は冒頭と最後の easy 区間だけに付ける。最後の 5 分は総量の一部なので、Step 3-5 では `registered_bookend_minutes=0` を渡す（返り値の `bookend_minutes` は cooldown を 5 と数えるため、そのまま渡すと判定帯が 5 分ずれる）
+- **流し付きイージー**（処方行に `strides` があるとき）: 流しは独立したセッションではなく easy 行の付属。`run`（冒頭 easy、`duration_seconds` = `target_minutes`×60 − 流しブロック − 300）→ repeat group（`repeat_count` = `reps`、中身は `run` `run_seconds` 秒 / `recovery` `recovery_seconds` 秒、**どちらも HR なし**）→ `cooldown` 5 分（最後の easy）の 3 段で、合計が `target_minutes`（総量）と一致する。HR 上限は冒頭と最後の easy 区間だけに付ける。最後の 5 分は総量の一部で、warmup の無い形なので返り値の `bookend_minutes` は 0 になる
 - **HR ターゲット（最重要）**: Z2 / イージー / ロングは **`hr_high` のみ**（上限で統治）。`hr_low` は**書かない** — 走行中に下回りようのない床 80bpm がツール側で自動補完され、上限だけが時計に届く（下限アラートは鳴らない）。自分で低い下限値を置く必要はない。下限アラートが鳴るとユーザーがペースを上げてしまい、暑熱・登坂で緩める意図が壊れる
 - **`hr_low` を置くのは質練だけ**（マラソンペース走・テンポ・閾値）。下限を維持すること自体が目的のときのみ
 - HR 上限値は処方の `hr_high` or Garmin native zone の上限（計算式禁止）。処方に数値が無ければ `get_heart_rate_zones_detail` の Zone 2 上限を使う
@@ -59,7 +59,7 @@ ToolSearch(query="select:mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db
 2. `recovery_status.recommendation` が `rest` / `easy`、または週次レビューの回復ゲートを満たさない場合は **登録前に一言確認**する（処方どおり登録 / 短縮版に変更 / 見送り）
 3. 問題なければ `schedule_custom_workout(date, title, steps)` を 1 回呼ぶ
 4. 返り値の `workout_id` / `schedule_id` / `replaced_workout_ids` / `cleanup` / `bookend_minutes` を確認する（`cleanup` は登録前に自動実行された掃除の結果。`error` や `failed_delete` が空でなければ報告に添える）
-5. 処方行がある場合は `update_prescription_status(prescription_id, status="registered", garmin_workout_id=<workout_id>, garmin_schedule_id=<schedule_id>, registered_bookend_minutes=<bookend_minutes>)` を呼び、台帳を Garmin と一致させる（これを飛ばすと `/daily-checkin` や月次ビューが「未登録」と表示し続ける）。**`registered_bookend_minutes` は返り値の `bookend_minutes` をそのまま渡す**（例外: 流し付きイージーは 0。Step 2 参照）: 手組みの質練は前後の長さが標準形（W/U 10分＋C/D 5分＝15分）と違うことがあり、渡さないと `reconcile_prescriptions` が定数 15 分で判定して処方どおり走っても `replaced` に倒れる余地が残る
+5. 処方行がある場合は `update_prescription_status(prescription_id, status="registered", garmin_workout_id=<workout_id>, garmin_schedule_id=<schedule_id>, registered_bookend_minutes=<bookend_minutes>)` を呼び、台帳を Garmin と一致させる（これを飛ばすと `/daily-checkin` や月次ビューが「未登録」と表示し続ける）。**`registered_bookend_minutes` は返り値の `bookend_minutes` をそのまま渡す**（warmup で始まる質練の形だけが前後の分数を持ち、それ以外は 0）: 手組みの質練は前後の長さが標準形（W/U 10分＋C/D 5分＝15分）と違うことがあり、渡さないと `reconcile_prescriptions` が定数 15 分で判定して処方どおり走っても `replaced` に倒れる余地が残る
 6. ユーザーに「日付・タイトル・本体の量・HR 上限・回復ゲートの結果」を短く報告する。`cleanup` で解除・削除された項目があれば 1 行添える
 
 ## Step W: 週まとめ登録（`week [YYYY-MM-DD]`）
