@@ -136,8 +136,8 @@ manifest は**この呼び出しの構造化出力（schema 準拠）として�
 そのまま validation-agent へインラインで渡す。ファイルには書き出さない。構造化出力の schema が
 使えない環境でのみ、メッセージ末尾に同じ JSON をコードブロックで添える。
 
-1. Validation Level 判定（`worktree-validation-protocol.md` §1 の判定表で changed_files の最高レベルを採用）
-2. 以下の manifest を構造化出力として返す（親ディレクトリ作成・Write は不要）:
+以下の manifest を構造化出力として返す（親ディレクトリ作成・Write は不要）。Validation Level は
+Workflow が `changed_files` から決めるので、manifest には入れない:
    ```json
    {
      "branch": "feature/xxx",
@@ -145,7 +145,6 @@ manifest は**この呼び出しの構造化出力（schema 準拠）として�
      "server_dir": "/absolute/path/to/worktree/packages/garmin-mcp-server",
      "pr_number": null,
      "issue_number": 72,
-     "validation_level": "L1|L2|L3|skip",
      "change_category": "handler|reader|agent|reporting|ingest|schema|other",
      "changed_files": ["src/garmin_mcp/handlers/foo.py"],
      "test_results": {"unit": "pass", "integration": "pass"},
