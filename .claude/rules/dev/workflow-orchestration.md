@@ -13,13 +13,12 @@ paths:
 
 ## Plan-First
 - プランの要否と粒度は `implementation-workflow.md` Phase 0 の Tier 判定で決める: `design-approved` の Issue はそれ自体がプラン、リスク条件に当たる変更はフル（plan mode で承認）、それ以外は軽量プランを示して進む。手順数では判定しない
-- If execution goes sideways: STOP and re-plan. Don't push through with workarounds.
 - フルプランには検証手順（どう確かめるか）も含める
 
 ## Implementation
 - プラン確定後は `implementation-workflow.md` Phase 1 のチェックリスト（そのセッションが worktree で実装 → PR → マージ）に従う
 - 複数 Issue で `implementation-workflow.md` の起動条件（依存ティア 2 段以上、または依存の無い 4 件以上でファイル非共有）を満たすときは `/implement <epic>` を使う
-- 変更ファイルの多い Issue（概ね 15 以上・ページ丸ごとの書き換え）は実装を `developer` サブエージェント（worktree 隔離）へ委譲し、メインセッションは照合・レビュー・Ship だけを行う（`implementation-workflow.md` Phase 1）。調査は Explore エージェントへ
+- 変更ファイルの多い Issue（概ね 15 以上・ページ丸ごとの書き換え）は実装を `developer` サブエージェント（worktree 隔離）へ委譲し、メインセッションは照合・レビュー・Ship だけを行う（`implementation-workflow.md` Phase 1）。
 - **全変更で Worktree → PR が必須**。Validation Level: skip は検証方法の指定であり、Worktree/PR 省略の許可ではない。skip レベルの docs/rules 変更で省略できるのは Issue だけ（`dev-reference.md` §1）
 - 検証レベルと auto-merge ゲートは `worktree-validation-protocol.md` のみに書く。他所に再掲しない
 
@@ -32,11 +31,7 @@ paths:
 - lessons.md / settings.local.json は **git 管理外**。背景ジョブでは bg-isolation guard が shared checkout への
   Edit/Write を拒否するため、これらの追記・削除は **Bash 経由の `uv run python`** で行う（python 直叩き・Edit は不可）
 - Write rules in `.claude/rules/` that prevent the same mistake from recurring
-- セッション開始時: lessons.md を確認し、関連する過去の教訓を意識する
-
-## Elegance Check
-- If a fix feels hacky: step back and implement the elegant solution with full context.
-- Simple fixes (typos, single-line, config): skip.
+- 開発作業に入るとき（このルールが読み込まれたとき）: lessons.md の関連項目を確認する
 
 ## Bug Fix Autonomy
 - バグ報告と CI 失敗は確認を待たずに根本原因を調べ、修正・検証まで進めてよい（外部副作用は下の Autonomy Boundaries に従う）
@@ -52,6 +47,4 @@ paths:
 - 根拠: 2026-09-02 の保守セッションでユーザーが「定期ルーチン化以外は進めて」と明示的に切り分けた（cloud routine 作成は恒久承認の範囲外）
 
 ## Core Principles
-1. Simplicity First: smallest change that solves the problem.
-2. Root causes: 根本原因を直す。後回しにする `TODO` には Issue を切る。
-3. Minimal Impact: unrelated cleanup goes in separate commit.
+- 後回しにする `TODO` には Issue を切る。

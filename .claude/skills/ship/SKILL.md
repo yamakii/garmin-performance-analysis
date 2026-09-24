@@ -2,7 +2,7 @@
 name: ship
 description: Run the full ship workflow — commit, push, create or merge the PR, and close issues. Use when the user asks to ship / commit / push the current changes or to merge a specific PR. Optional argument is a commit message, or flags like --pr N / --close M.
 argument-hint: [commit message | --pr N --close M]
-allowed-tools: Bash, Read, Glob, Grep, mcp__github__list_pull_requests, mcp__github__pull_request_read, mcp__github__merge_pull_request, mcp__github__issue_read, mcp__github__issue_write
+allowed-tools: Bash, Read, Glob, Grep, mcp__github__list_pull_requests, mcp__github__pull_request_read, mcp__github__merge_pull_request, mcp__github__create_pull_request, mcp__github__issue_read, mcp__github__issue_write
 ---
 
 # /ship — Commit & Push Workflow
@@ -56,11 +56,10 @@ mcp__github__pull_request_read(method="get", owner="yamakii", repo="garmin-perfo
 `get_check_runs` は head commit の CI チェック（check-runs）を返す。required check `ci-guard` が `conclusion: "success"` ならマージ可。`web-backend` / `web-frontend` は `packages/garmin-web/**` 変更時のみ走り、それ以外は `conclusion: "skipped"`（正常）。
 
 **`--validated` フラグあり**（Validation Agent PASS 済み）:
-- CI ステータスを確認するが、pending/running でもマージ可能
-- CI failing の場合のみ WARNING を表示（ブロックしない）
+- 検証はやり直さない。マージ条件は `worktree-validation-protocol.md` §6 のゲート（`ci-guard` success + mergeable）のままで、pending なら完了を待ち、failure ならマージせずに報告する
 
 **`--validated` フラグなし**:
-- CI checks が全て pass していなければマージしない
+- `ci-guard` の conclusion が success でなければマージしない（`web-*` の `skipped` は正常）
 - checks が failing → report to user and stop (do not merge)
 
 ### Step 2-PR: Merge (merge commit — reason in `.claude/rules/dev/git.md` §1)
@@ -108,9 +107,11 @@ there is nothing to close: report the merge and stop.
    <harness attribution trailer>
    ```
 
-   If `--close` is used with an issue number, include it in the commit message:
+   If an issue number is known (`--close` or the branch name), put `Closes #<issue>` in the body:
    ```
-   <type>: <description> (#issue-number)
+   <type>: <description>
+
+   Closes #<issue>
 
    <harness attribution trailer>
    ```
@@ -120,7 +121,7 @@ there is nothing to close: report the merge and stop.
    through a PR (PR Flow above). If no PR exists yet, create one with `mcp__github__create_pull_request`
    (body: `Closes #N` + `## Verification`) and continue with Step 1-PR.
 
-4. **Close Issue** (if `--close` specified): After successful push:
+4. **Close Issue** (if `--close` specified): After the PR is merged (the body's `Closes #` closes it; this step only covers the Change Log guard and an Issue that stayed open):
 
    a. **Change Log guard**: Check if the Issue body has a `## Change Log` section using `mcp__github__issue_read(method="get", owner="yamakii", repo="garmin-performance-analysis", issue_number={number})`.
       - If Change Log exists → proceed to close
@@ -145,9 +146,9 @@ $ARGUMENTS — Optional commit message and/or `--close <issue-number>` and/or `-
 Examples:
 - `/ship` — auto-diagnose state and execute appropriate step
 - `/ship fix: correct form evaluation` — use provided message, push
-- `/ship --close 51` — auto-generate message, push, close #51
+- `/ship --close 51` — auto-generate message, push → PR → CI → merge, close #51
 - `/ship feat: extract ApiClient --close 51` — use message, push, close #51
 - `/ship --pr 42` — merge PR #42 via merge commit, sync local, cleanup worktree
 - `/ship --pr 42 --close 51` — merge PR #42 + close Issue #51
-- `/ship --pr 42 --validated` — merge PR #42 (Validation Agent PASS 済み、CI pending でも可)
+- `/ship --pr 42 --validated` — merge PR #42 (Validation Agent PASS 済み。ci-guard success を待ってマージ)
 - `/ship --pr 42 --validated --close 51` — merge + close (validated)

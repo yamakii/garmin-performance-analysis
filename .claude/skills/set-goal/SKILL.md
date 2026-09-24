@@ -13,6 +13,7 @@ description: Interactively register or update the athlete's race goals, current-
 
 - **日本語で対話・出力**する
 - **洗い替え方式**: goals / retrospectives は user_id 単位で**全件まるごと置き換え**られる。更新時は「変更しない項目も含めて全件」を profile に詰めて保存すること（既存の goals/retrospectives を取りこぼすと消える）
+- **profile 行も上書き**: `current_focus` / `focus_notes` / `week_start_day` は渡した値で置き換わり、省略すると NULL / 0 になる。Step 1 で読んだ値を必ず詰め直す（`focus_notes` は長い正本の方針なので、短いメモで置き換えず編集する）
 - **target_time_seconds は秒の整数**。`4:30:00` のような入力は秒に変換する（4:30:00 → 16200、3:30:00 → 12600、1:45:00 → 6300）
 - **race_date は `YYYY-MM-DD`** 形式
 - **priority**: `A`=本命, `B`=中間, `C`=その他
@@ -164,4 +165,4 @@ profile 行は `user_id` で upsert され、goals / retrospectives は `user_id
 本データは週次レビューや分析で参照されます。
 ```
 
-`goal_count` は `goals` の件数、`retrospective_count` は `retrospectives` の件数。保存内容と一致することを念のため確認する。
+`goal_count` は `goals` の件数、`retrospective_count` は `retrospectives` の件数。

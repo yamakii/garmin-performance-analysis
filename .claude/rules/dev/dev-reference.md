@@ -72,7 +72,7 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 
 ## 2. Git & Branching
 
-- **Serena activate**: コード調査前に必ず `mcp__serena__activate_project()` 実行
+- **Serena**: シンボルの定義・参照・構造を追う調査は `mcp__serena__activate_project()` から始める（ファイル名・テキスト検索は Glob/Grep で足りる。`explore-agent-serena.md`）
 - **Stale recovery**: Serena → activate、garmin-db → `reload_server()`、それでもダメなら `/mcp`
 - **全変更**: Issue → Plan → Worktree → PR（branch protection により Worktree + PR は必須。Issue は skip レベルの docs/rules 変更のみ省略可, §1）
 - **Planning**: main branch (read-only)
@@ -88,7 +88,7 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 
 - **本番データ依存禁止**。全テストに pytest marker 必須 (`unit`/`integration`/`performance`/`garmin_api`)
 - **Markers**: unit = mock+no I/O+<100ms、integration = mock DuckDB、performance = real data OK (skip if unavailable)
-- **Budget**: unit <200ms。Read-only fixture は `scope="class"`/`scope="module"`
+- **Budget**: Read-only fixture は `scope="class"`/`scope="module"`
 - **DB fixture（#1062）**: スキーマ付きファイル DB は root conftest の `initialized_db_path`（= `tests.support.schema.init_schema(path)` のテンプレートコピー、fixture を使えない helper 関数からは `init_schema(path)` を直接呼ぶ）。スキーマ検証だけのテストは `memory_db_path`（名前付き in-memory DuckDB、ファイルを作らない）。`GarminDBWriter()` を直接呼んでよいのは旧スキーマからの migration 挙動を検証するテストと `memory_db_path` 上の DDL 検証だけ（テストごとに ~3.5 MB のファイルと 1-2 s の DDL を作り、687 ファイル / 2.2 GB per run で I/O 停止の原因になった）
 - **並列安全**: 実行順序非依存、テストごとに unique `activity_id`
 - **Test名**: Issue Test Plan の `test_xxx` をそのまま使用
@@ -114,7 +114,6 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 ## 7. Prohibited
 
 - main ブランチでの実装 / main への直接 push / push 済み履歴の書き換え（`git.md` §1）
-- Serena なしのコード編集
 - `git worktree remove --force` (status 未確認)
 - DB 削除をユーザー確認なしで実行
 - ルールを CLAUDE.md に直接記述 (`.claude/rules/` を使う)
@@ -123,13 +122,7 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 - Validation Level: skip を理由に Worktree/PR をスキップ（skip レベルで省略できるのは Issue だけ, §1）
 - コード変更（`packages/` `scripts/` `docker/` `.github/` `.claude/agents|hooks|workflows/`）を Issue なしで実装
 
-## 8. LLM Round-Trip Optimization
-
-- 同じツール 3回以上のループ → Python スクリプト1コマンドに集約
-- Read→Parse→Call の連鎖 → バッチスクリプト化
-- スクリプト出力は JSON 1行で完結させる
-
-## 9. Real Data Validation
+## 8. Real Data Validation
 
 - worktree コードの検証は subprocess（`uv run --directory <worktree> ...`）で行い、`reload_server` は使わない。reload モデルと live 確認の手順は `worktree-validation-protocol.md` §7
 - MCP tool 変更 → 実 activity_id で `statistics_only=True/False` 両方テスト

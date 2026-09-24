@@ -40,7 +40,7 @@ paths:
 - 上のどれにも当たらない変更。例: 根本原因が特定できたバグ修正、既存パターンに沿った reader / UI の修正、
   テスト追加、docs / rules / skills の改訂
 
-判定に迷ったらフル。実装中にフルの条件に当たると分かったら、そこで止めて plan mode でプランを出し直す。
+実装中にフルの条件に当たると分かったら、そこで止めて plan mode でプランを出し直す。
 
 ### 0-3. 軽量プランの必須項目
 
@@ -83,7 +83,7 @@ Risks セクション（任意）:
 そのセッションが `Agent(subagent_type="developer", isolation="worktree")` に**実装（下記 3〜4）を委譲**する。
 メインセッションは Issue の Design / Test Plan との照合・diff レビュー・push（developer は push しない）・
 PR 作成・CI 待ち・マージ・後片付け（下記 5〜11）だけを行い、実装や全ソース読み込みでコンテキストを消費しない。
-調査は Explore エージェントに出す。委譲しても経路は同じ「1 セッション = 1 worktree = 1 PR」。
+委譲しても経路は同じ「1 セッション = 1 worktree = 1 PR」。
 複数 Issue をまとめて流すかどうかは下の「`/implement` の起動条件」で決める。
 
 1. **origin 同期**: ローカル main を `git.md` §2 の手順で同期。失敗したら報告して止まる（stash / reset はしない）
@@ -127,11 +127,11 @@ PR 作成・CI 待ち・マージ・後片付け（下記 5〜11）だけを行�
 
 ## Phase 2: Verify
 
-自分で実装した場合も、サブエージェントに委任した場合も、マージ前に:
+マージ前に:
 
-- 変更ファイルを Read で読み直し、Issue の Files / Interface / Test Plan と照合する（テスト名が全て存在するか）
+- サブエージェントに委任した場合は、diff を Issue の Files / Interface / Test Plan と照合する（テスト名が全て存在するか）
 - Validation Level ごとの手順・完了条件は `worktree-validation-protocol.md` §1〜§5
-- **CRITICAL**: テスト結果とマージ状態は自分のターンで確認する。サブエージェントや Workflow の報告を信じない（GitHub の `pull_request_read` が ground truth）
+- マージ判定の根拠は報告文ではなく `pull_request_read` の check-runs と mergeable
 
 ## Phase 3: Ship
 

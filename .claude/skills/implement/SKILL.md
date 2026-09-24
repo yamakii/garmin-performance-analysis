@@ -2,7 +2,7 @@
 name: implement
 description: Parallel implementation orchestrator for an Epic whose design-approved sub-issues form two or more dependency tiers, or four or more independent issues with no shared files. Use only when the user wants the issues under an Epic auto-implemented in dependency order with worktree-isolated agents; a single issue or a few independent issues go through the single-session worktree→PR flow instead. Argument is the Epic number or a list of issue numbers with Blocked-by dependencies.
 argument-hint: <epic-number | issue-numbers>
-allowed-tools: Bash, Read, Glob, Grep, Task, Workflow, AskUserQuestion, mcp__github__issue_read
+allowed-tools: Bash, Read, Glob, Grep, Task, Workflow, AskUserQuestion, mcp__github__issue_read, mcp__github__issue_write
 ---
 
 # /implement — Parallel Implementation Orchestrator
@@ -81,7 +81,7 @@ fast-forward only で同期する。`implement-tier.js` は git fetch もベー�
 作成はハーネスの `isolation: 'worktree'` に委譲する。ローカルの remote-tracking ref は fetch
 しない限り古いままなので、**前ティアの auto-merge 完了後に fetch しないと、次ティアの developer が
 「前ティアのマージ済み土台を含まないベース」から分岐 → 土台を再実装 → 巨大 add/add コンフリクト**
-という事故が起きる（Epic #526 系で実際に発生）。
+という事故が起きる。
 
 ローカル main を `.claude/rules/dev/git.md` §2「ローカル main を origin に同期」の手順で同期する（`fetch -q` + `merge -q --no-stat --ff-only`）。
 
@@ -124,7 +124,7 @@ Workflow 内部の流れ（`implement-tier.js`）:
    `L3` は escalate（メインセッション担当のため Workflow では検証しない）
 3. **Ship**: push → PR 作成（`Closes #{issue}`）→ `bash scripts/wait-for-ci.sh` を**フォアグラウンドで 1 回**実行して
    `ci-guard` の完了を待つ（`run_in_background` / Monitor / `pgrep` / `kill` は使わない — ask ルールで権限プロンプトが出て
-   ティアが止まる, #993）
+   ティアが止まる）
 4. **Merge**（auto-merge ゲート）: **L1/L2 PASS かつ `ci-guard` success かつ mergeable** の PR のみ
    `merge_pull_request` で自動マージ。条件を満たさないものは merge せず escalate
 

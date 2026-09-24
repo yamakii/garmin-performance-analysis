@@ -40,7 +40,7 @@ paths:
 - required check は **`ci-guard`** — `conclusion: "success"` ならマージ可。
 - `web-backend` / `web-frontend` は `packages/garmin-web/**` 変更時のみ走り、それ以外は `conclusion: "skipped"`（正常）。
 - **完了待ちは `bash scripts/wait-for-ci.sh <PR>` を使う**（非 MCP の例外）。read-only の REST 取得を `GITHUB_TOKEN` で行い、
-  `ci-guard` が completed になるまで 1 コマンドでブロックする（`sleep` → `get_check_runs` の LLM ループ禁止、dev-reference §8）。
+  `ci-guard` が completed になるまで 1 コマンドでブロックする（`sleep` → `get_check_runs` の LLM ループは往復が嵩むため使わない）。
   書き込み（merge / comment / issue）は引き続き MCP のみ。exit 3（token 無し等）のときだけ `get_check_runs` で手動ポーリングする。
   **例外の理由は「MCP では check-runs が取れない」ではない**（`pull_request_read(get_check_runs)` で普通に取れる）。
   MCP に**ブロッキング待機がない**ため、LLM から `sleep` → 再取得を回すと 1 PR あたり 3-6 往復かかる、という
@@ -100,13 +100,7 @@ check-run から辿る。
 
 **ツールが見つからない ≠ MCP で不可能。** 既定では 44 tool しか露出しておらず、未有効の toolset の
 ツールは名前ごと存在しないように見える。これを能力の欠如と誤読して `curl` / `gh` の回避策を
-書くのが定番の失敗で、実際に 2 回起きている:
-
-1. **GHA ログ**（#330 以降）: 「sandbox の egress で blob が取れない」は事実だが、`actions` を
-   有効化すればサーバ側がログ本文を返して構造的に解決する。
-2. **code scanning alert**（2026-09-05）: `X-MCP-Toolsets` が `default,actions` だったため
-   `list_code_scanning_alerts` が生えておらず、REST への fallback を書きかけた。`code_security` を
-   足して解決（#996）。
+書くのが定番の失敗。
 
 手順: ツールが無い → 上表と上流 README（`github/github-mcp-server`）で toolset を確認 →
 `.mcp.json` に追記 → `/mcp` 再接続。**それでも無い場合に限り**非 MCP 経路を検討する。
@@ -120,8 +114,7 @@ check-run から辿る。
 
 `GET /repos/{o}/{r}/actions/jobs/{id}/logs` は **302 で Azure Blob**
 （`productionresultssa*.blob.core.windows.net`）にリダイレクトする。sandbox の egress allowlist
-（`docker/allowed-domains.txt`）に blob ホストは無く、名前解決の段階で拒否される（#1027 以前は DNS は
-引けても TCP 443 が `No route to host` だった）。
+（`docker/allowed-domains.txt`）に blob ホストは無く、名前解決の段階で拒否される。
 
 - run / job の **metadata は取れるがログ本文だけ取れない**
 - `gh` は sandbox に未インストールで、入れても同じ blob を取りに行くため解決しない（deny `Bash(gh:*)` を緩める意味は無い）
@@ -129,7 +122,7 @@ check-run から辿る。
 
 ### 引数の注意
 
-- PR 系ツールの引数は **`pullNumber`**（旧 `pull_number` から変更）。issue 系は従来どおり `issue_number`。
+- PR 系ツールの引数は **`pullNumber`**、issue 系は `issue_number`。
 - `issue_read` / `issue_write` / `pull_request_read` は `method` 必須。
 
 ## リポジトリ情報

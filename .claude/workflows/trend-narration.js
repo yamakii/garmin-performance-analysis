@@ -82,7 +82,7 @@ function narrationPrompt(ctx) {
     `trend.json を書かずにそのエラーを報告して終了する。\n` +
     `これが CONTEXT（prefetch バンドル, JSON）で、` +
     `トレンド値・回帰・融合フラグ・headline_metrics は全て決定的に計算済みです。` +
-    `この実データのみに基づき、値の再計算・捏造をしないこと。CONTEXT の全文を出力へ書き写す必要はありません:\n` +
+    `CONTEXT の全文を出力へ書き写す必要はありません:\n` +
     `散文フィールドのみを書く: narrative（なぜトレンドが動いているか・シグナル相互関係）, ` +
     `key_learnings（配列）, recommendations（最大2件、具体的な次アクション）。\n` +
     `CONTEXT はすべての判定（direction、best/worst_run、band、caveat、cutback フラグ、insufficient_data）を決定的に持つ。` +
@@ -111,8 +111,7 @@ function narrationPrompt(ctx) {
     `headline_metrics.deload_prescription の値（ロング走の削減率 long_run_reduction_pct・週間量の削減率 ` +
     `weekly_volume_reduction_pct・質セッション数 quality_sessions）を引用して具体的な数値で明記すること。` +
     `「距離を据え置く」「増加を +10% 以内に抑える」といった、より弱い代替で置き換えないこと。` +
-    `false のときはディロードを推奨しない。long_run_build_weeks / cutback_due_long_run は CONTEXT の値を転記し、` +
-    `自分で数え直さないこと。\n` +
+    `false のときはディロードを推奨しない。long_run_build_weeks / cutback_due_long_run は CONTEXT の値を転記する。\n` +
     `fitness_curve は 90 日窓の指標で、今週はその曲線上の現在位置として扱うこと（1週で崩壊/急伸したと解釈しない）。\n` +
     `headline_metrics / fusion_flags は CONTEXT の値をそのまま analysis_data に転記し、それと矛盾する主張をしないこと。\n` +
     `出力 JSON 構造:\n` +

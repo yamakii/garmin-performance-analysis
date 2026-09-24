@@ -66,10 +66,9 @@ mcp__serena__activate_project(<リポジトリルートの絶対パス>)  # chec
 これを怠ると ci-guard の doc-guard / count テストで落ちる。
 
 **新 MCP tool を追加した場合:**
-- [ ] `README.md` + `CLAUDE.md` の tool 数（「N token-optimized MCP tools」「N domain + 2 server」）を更新
 - [ ] `generate_tool_reference` を実行して `docs/mcp-tools-reference.md` を再生成
 - [ ] golden snapshot `tests/snapshots/all_tools_golden.json` を再生成
-- [ ] `test_all_tools_registry.py` / `test_generate_tool_reference.py` のハードコードされた tool count を更新
+- [ ] `test_all_tools_registry.py` / `test_generate_tool_reference.py` / `tests/docs/test_doc_magic_numbers.py` のハードコードされた tool count を更新
 
 **新 DuckDB テーブル / migration を追加した場合:**
 - [ ] `README.md` + `CLAUDE.md` のテーブル数（「N tables」「N domain tables」）を更新
@@ -80,9 +79,8 @@ mcp__serena__activate_project(<リポジトリルートの絶対パス>)  # chec
 
 ### Step 4: 診断 → テスト & Lint → ci-check.sh
 
-commit 前に、変更した各ファイルへ `mcp__serena__get_diagnostics_for_file` を実行し、
-型・import エラーが無いことを前倒しで確認する（pre-commit を待たずに検出）。Python /
-TypeScript 双方に有効。診断が出たら修正してから次へ。
+途中の確認（`mcp__serena__get_diagnostics_for_file`・個別 pytest / ruff）は必要なときに使う。
+完了ゲートは下記の `ci-check.sh` exit 0。
 
 **新規 worktree の dev 依存 bootstrap（個別テスト/lint の前に1度）:** fresh worktree は
 `.venv` を共有せず、`uv run` は optional-dependencies の `dev` extra（pytest/black/mypy 本体）を
@@ -98,7 +96,6 @@ uv run --directory {worktree_path} pytest {test_path} -m unit -v
 uv run --directory {worktree_path} ruff check {changed_files}
 ```
 
-失敗があれば修正して再実行。
 
 **完了ゲート（commit / manifest 返却の前提）:** `uv run pytest -m unit` だけでは
 doc-sync 漏れ・他モジュール破壊・型エラーを見逃す（per-file の pre-commit でも捕まらない）。
@@ -140,15 +137,17 @@ manifest は**この呼び出しの構造化出力（schema 準拠）として�
 Workflow が `changed_files` から決めるので、manifest には入れない:
    ```json
    {
-     "branch": "feature/xxx",
+     "issue_number": 72,
+     "branch": "feat/72-xxx",
      "worktree_path": "/absolute/path/to/worktree",
      "server_dir": "/absolute/path/to/worktree/packages/garmin-mcp-server",
-     "pr_number": null,
-     "issue_number": 72,
-     "change_category": "handler|reader|agent|reporting|ingest|schema|other",
-     "changed_files": ["src/garmin_mcp/handlers/foo.py"],
+     "commit_hash": "a1b2c3d",
+     "implemented": true,
+     "change_category": "tool|handler|reader|agent|reporting|ingest|schema|other",
+     "changed_files": ["src/garmin_mcp/tools/performance.py"],
      "test_results": {"unit": "pass", "integration": "pass"},
-     "verification_activity_id": 20636804823
+     "verification_activity_id": 20636804823,
+     "notes": ""
    }
    ```
 

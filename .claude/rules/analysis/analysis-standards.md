@@ -13,12 +13,9 @@ Consolidated reference for all analysis rules.
 
 `/analyze-activity` が生成するセクションは **`run_note` の1つだけ**（run-note-analyst が担当）。数値・範囲判定・処方判定・シーン抽出は `get_run_report` が決定論的に算出済みで、run_note はそこに乗る散文（意味づけ・因果・流れ・重みづけ・次の一歩・再発と問い）のみを書く。共通ルール:
 
-- **独立動作**: 全データを REPORT / CONTEXT / MCP tools から直接取得
-- **事前コンテキスト**: orchestrator 提供の JSON を信頼し、不足時のみ追加 MCP 呼び出し
 - **出力**: 日本語テキスト + English key names。`{ANALYSIS_TEMP_DIR}/{section_type}.json` に出力（ANALYSIS_TEMP_DIR は orchestrator が timestamp 付きユニークパスとして提供）。**事前の mkdir は不要**（Write tool が親ディレクトリを自動作成する）
 - **JSON構造**: `{"activity_id": <int>, "activity_date": "<YYYY-MM-DD>", "section_type": "<type>", "analysis_data": {...}}`
 - **HR zones**: Garmin native zones のみ (計算式禁止)
-- **Dates**: `datetime.date` → `str()` 変換してから JSON 出力
 - **文体**: 自然な日本語（体言止め回避）、コーチ的トーン、具体的数値。ポイントごとに所見と根拠だけを簡潔に書く
 
 - **Grounding**: run_note の主張には REPORT 上の evidence キー（`plan.<axis>` / `signals.<metric>` / `moments.<id>` / `recurrence.<kind>` / `vs_previous.<field>` / `conditions.<field>` / `context.<field>`）を必ず付ける。課題（growth point）にできるのは **outside かつ adverse なシグナル**、off-plan の軸、`policy.verdict == "concern"` のシーン（ランの目的から外れた逸脱）の3つだけで、範囲内・有利側のブレを弱点にしない
