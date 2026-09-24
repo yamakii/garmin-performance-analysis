@@ -37,12 +37,18 @@ class FitnessCurveReader(BaseDBReader):
         self,
         window_days: int = 90,
         buckets_km: tuple[float, ...] = (2.0, 5.0, 10.0),
+        end_date: str | None = None,
     ) -> dict[str, Any]:
         """Derive the objective fitness curve and the Garmin optimism gap.
 
         Args:
             window_days: Trailing window (days) for the rolling-max curve.
             buckets_km: Nominal best-effort distance buckets to extract per run.
+            end_date: Inclusive ``YYYY-MM-DD`` upper bound for both series, so the
+                curve and ``optimism_gap`` describe that date rather than today
+                (a period CONTEXT, #1393). Each curve point is a trailing-window
+                max, so dropping later runs leaves the earlier points unchanged.
+                ``None`` reads up to the latest data.
 
         Returns:
             Dict with keys:
@@ -55,7 +61,8 @@ class FitnessCurveReader(BaseDBReader):
         """
         try:
             with self._get_connection() as conn:
-                split_rows = conn.execute("""
+                split_rows = conn.execute(
+                    """
                     SELECT a.activity_id, a.activity_date, s.split_index,
                            s.distance, s.duration_seconds
                     FROM splits s
@@ -63,15 +70,23 @@ class FitnessCurveReader(BaseDBReader):
                     WHERE s.distance IS NOT NULL
                       AND s.duration_seconds IS NOT NULL
                       AND s.duration_seconds > 0
+                      AND (CAST(? AS DATE) IS NULL
+                           OR a.activity_date <= CAST(? AS DATE))
                     ORDER BY a.activity_id, s.split_index
-                    """).fetchall()
+                    """,
+                    [end_date, end_date],
+                ).fetchall()
 
-                garmin_rows = conn.execute("""
+                garmin_rows = conn.execute(
+                    """
                     SELECT date, value
                     FROM vo2_max
                     WHERE value IS NOT NULL AND date IS NOT NULL
+                      AND (CAST(? AS DATE) IS NULL OR date <= CAST(? AS DATE))
                     ORDER BY date
-                    """).fetchall()
+                    """,
+                    [end_date, end_date],
+                ).fetchall()
         except Exception as e:
             logger.error(f"Error reading objective fitness curve: {e}")
             return {

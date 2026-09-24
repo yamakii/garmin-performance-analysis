@@ -46,7 +46,9 @@ cannot support in-week regressions, so at ``granularity == "week"``:
 - ``durability_trend`` / ``heat_adjusted_trend`` are fit over fixed trailing
   windows (8 / 12 weeks) and carry ``in_period_activity_ids`` so the narration
   can position this week's values on the trailing trend.
-- ``fitness_curve`` is pinned to a 90-day window (for both granularities).
+- ``fitness_curve`` is pinned to a 90-day window (for both granularities) and
+  bounded at ``period_end``, so the curve tail and ``optimism_gap`` describe the
+  period rather than today (#1393).
 
 The ``month`` path keeps the original in-period regression behavior.
 """
@@ -208,10 +210,11 @@ def prefetch_trend_context(
     acwr = _safe(lambda: reader.get_acwr(end_date=period_end))
 
     # Fitness curve is a 90-day rolling-max metric by design; pin the window so a
-    # single easy week does not read as a fitness collapse (Issue #813).
+    # single easy week does not read as a fitness collapse (Issue #813), and end it
+    # at period_end like every other block so a past period sees no later runs.
     fitness_curve = _safe(
         lambda: reader.fitness_curve.get_objective_fitness_curve(
-            window_days=_FITNESS_CURVE_WINDOW_DAYS
+            window_days=_FITNESS_CURVE_WINDOW_DAYS, end_date=period_end
         )
     )
 
