@@ -50,7 +50,8 @@ Issue / Plan / Worktree / PR を省く許可ではない。
 ### Manifest
 
 developer agent は commit 後に manifest を**構造化出力**で返す（`/tmp` へのファイル書き出しはしない）。
-Workflow はこれを validation-agent にインラインで渡す。
+`validation_level` は developer が申告せず、Workflow が `changed_files` から §1 の表で決めて書き込んでから
+validation-agent にインラインで渡す。
 
 ```json
 {

@@ -13,8 +13,8 @@ const src = readFileSync(new URL('../implement-tier.js', import.meta.url), 'utf8
 const m = src.match(/\/\/ >>> testable\n([\s\S]*?)\n\s*\/\/ <<< testable/)
 assert.ok(m, 'testable block markers not found in implement-tier.js')
 // eslint-disable-next-line no-new-func
-const { normalizeArgs, mergeDecision, pushCmd, mergeResult, levelFromChangedFiles } = new Function(
-  `${m[1]}\nreturn { normalizeArgs, mergeDecision, pushCmd, mergeResult, levelFromChangedFiles }`,
+const { normalizeArgs, mergeDecision, pushCmd, mergeResult, levelFromChangedFiles, withComputedLevel } = new Function(
+  `${m[1]}\nreturn { normalizeArgs, mergeDecision, pushCmd, mergeResult, levelFromChangedFiles, withComputedLevel }`,
 )()
 
 test('normalizeArgs parses a JSON string (the #441 regression)', () => {
@@ -31,8 +31,8 @@ test('normalizeArgs passes objects through and defaults safely', () => {
 
 const GREEN_SHIP = { ci_conclusion: 'success', mergeable: true, pr_number: 1 }
 
-// Build a fully-green acc whose declared level matches the changed_files verdict
-// (so the under-declaration guard passes) unless `level` is overridden.
+// Build a fully-green acc whose level is the changed_files verdict unless
+// `level` is overridden.
 function greenAcc(changed_files, level = levelFromChangedFiles(changed_files)) {
   return {
     manifest: { changed_files, validation_level: level },
@@ -65,18 +65,24 @@ test('test_matching_level_merges: 申告 L2 + web change + all-green → ok', ()
   assert.equal(d.ok, true, 'matching declared level with green gates should merge')
 })
 
-test('test_undeclared_higher_level_escalates: 申告 L1 + ingest change → escalate', () => {
-  const d = mergeDecision({
-    manifest: {
-      changed_files: ['packages/garmin-mcp-server/src/garmin_mcp/ingest/worker.py'],
-      validation_level: 'L1',
-    },
-    validation: { status: 'pass', level: 'L1' },
-    ship: { ...GREEN_SHIP },
+test('test_with_computed_level_overrides_declared_level', () => {
+  const out = withComputedLevel({
+    changed_files: ['packages/garmin-mcp-server/src/garmin_mcp/ingest/worker.py'],
+    validation_level: 'L1',
   })
-  assert.equal(d.ok, false, 'under-declared L1 (computed L2) must escalate')
-  assert.match(d.reason, /過小申告/)
-  assert.match(d.reason, /申告 L1 \/ 判定 L2/)
+  assert.equal(out.validation_level, 'L2', 'a declared L1 is replaced by the computed L2')
+})
+
+test('test_with_computed_level_sets_level_when_absent', () => {
+  assert.equal(withComputedLevel({ changed_files: ['.claude/agents/run-note-analyst.md'] }).validation_level, 'L3')
+  assert.equal(withComputedLevel({ changed_files: [] }).validation_level, 'skip')
+})
+
+test('test_with_computed_level_keeps_other_fields', () => {
+  const out = withComputedLevel({ changed_files: ['docs/x.md'], branch: 'feat/1-x', worktree_path: '/w/x' })
+  assert.equal(out.branch, 'feat/1-x')
+  assert.equal(out.worktree_path, '/w/x')
+  assert.deepEqual(out.changed_files, ['docs/x.md'])
 })
 
 test('mergeDecision auto-merges .claude/workflows and hooks when green', () => {

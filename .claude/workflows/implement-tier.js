@@ -71,27 +71,23 @@ function levelFromChangedFiles(files) {
   return best
 }
 
+// The Validation Level is decided here from changed_files, never taken from the
+// developer: the path table fully determines it, so any declared value is
+// overwritten. Stage 2 branches on the result and carries it to Ship / Merge.
+function withComputedLevel(manifest) {
+  return { ...manifest, validation_level: levelFromChangedFiles(manifest?.changed_files) }
+}
+
 // Decide auto-merge purely (deterministic). Returns { ok, reason }.
 function mergeDecision(acc) {
   const v = acc.validation ?? {}
   const s = acc.ship ?? {}
-  const m = acc.manifest ?? {}
   // L3 is auto-mergeable in principle (#888), but its required pre-merge gate is
   // a diff review of the prompt text, which this Workflow cannot perform (Stage 2
   // short-circuits L3). Hand it to the main session, which does the review and
   // then merges without a further human round-trip.
   if (v.level === 'L3')
     return { ok: false, reason: 'L3 (agent 定義変更): Workflow は diff レビュー不能。メインセッションがレビューしてマージする (#888)' }
-  // Guard against an under-declared Validation Level: re-derive the level from
-  // changed_files (developer self-report is untrusted — mirrors Phase 2b's
-  // "サブエージェントの報告を信じない"). If the machine verdict is HIGHER than
-  // the declared level, the change was validated too weakly → escalate.
-  const declared = m.validation_level ?? v.level
-  if (declared && LEVEL_RANK[declared] != null) {
-    const computed = levelFromChangedFiles(m.changed_files)
-    if (LEVEL_RANK[computed] > LEVEL_RANK[declared])
-      return { ok: false, reason: `validation_level 過小申告の疑い: 申告 ${declared} / 判定 ${computed}` }
-  }
   if (v.status === 'fail') return { ok: false, reason: `検証 FAIL: ${v.details ?? ''}` }
   if (v.status === 'warning') return { ok: false, reason: `内容チェック WARNING: ${v.details ?? ''} — 人間判断へ` }
   if (s.ci_conclusion !== 'success') return { ok: false, reason: `ci-guard が ${s.ci_conclusion}` }
@@ -132,13 +128,12 @@ const ISSUES = ARGS.issues ?? []
 // ── schemas ───────────────────────────────────────────────────────────
 const MANIFEST_SCHEMA = {
   type: 'object',
-  required: ['issue_number', 'branch', 'worktree_path', 'validation_level', 'changed_files', 'commit_hash'],
+  required: ['issue_number', 'branch', 'worktree_path', 'changed_files', 'commit_hash'],
   properties: {
     issue_number: { type: 'integer' },
     branch: { type: 'string' },
     worktree_path: { type: 'string' },
     server_dir: { type: 'string' },
-    validation_level: { enum: ['L1', 'L2', 'L3', 'skip'] },
     change_category: { type: 'string' },
     changed_files: { type: 'array', items: { type: 'string' } },
     test_results: {
@@ -198,8 +193,7 @@ const results = await pipeline(
       `あなたは developer エージェントです。Issue #${issue.number}（${issue.title}）を実装してください。\n\n` +
         `1. mcp__github__issue_read(method="get", ${repoCtx()}, issue_number=${issue.number}) で設計を読む。\n` +
         `2. .claude/agents/developer.md のフローに従い、worktree 内で実装 + unit/integration テスト + ruff + (変更ファイルへ) get_diagnostics_for_file。\n` +
-        `3. Conventional Commits で commit（"Closes #${issue.number}" を含む）。**push はしない**。\n` +
-        `4. Validation Level を worktree-validation-protocol.md §1 の判定表で決定。\n\n` +
+        `3. Conventional Commits で commit（"Closes #${issue.number}" を含む）。**push はしない**。\n\n` +
         `重要: manifest を /tmp に書かず、**この呼び出しの構造化出力として返す**こと（schema 準拠）。` +
         `worktree_path はこの worktree の絶対パス、branch は作成したブランチ名、commit_hash は HEAD の短縮 SHA。` +
         `実装・commit まで完了したら implemented=true。`,
@@ -207,8 +201,10 @@ const results = await pipeline(
     ),
 
   // Stage 2 — Validate (L1/L2 via subprocess; skip/L3 short-circuit in JS).
-  (manifest, issue) => {
-    if (!manifest || !manifest.implemented) return null
+  // The level comes from changed_files (withComputedLevel), not the developer.
+  (implemented, issue) => {
+    if (!implemented || !implemented.implemented) return null
+    const manifest = withComputedLevel(implemented)
     if (manifest.validation_level === 'skip')
       return { manifest, validation: { status: 'pass', level: 'skip', details: 'skip: コードレビューのみ（CI が品質ゲート）' } }
     if (manifest.validation_level === 'L3')
