@@ -45,6 +45,29 @@ def test_contract_has_required_keys():
 
 
 @pytest.mark.unit
+def test_run_note_never_write_covers_insufficient_signals():
+    """An unjudged signal must not be folded into "all within range" (#1389)."""
+    never_write = get_contract("run_note")["never_write"]
+
+    assert any("insufficient" in item for item in never_write)
+
+
+@pytest.mark.unit
+def test_run_note_never_write_matches_agent_copy_count():
+    """run-note-analyst.md §2 restates never_write as a numbered list; the copy
+    must stay the same length as the contract (it drifted to 9 of 11 once)."""
+    import re
+    from pathlib import Path
+
+    agent = Path(__file__).resolve().parents[4] / ".claude/agents/run-note-analyst.md"
+    section = agent.read_text(encoding="utf-8").split("## 2.", 1)[1]
+    section = section.split("## 3.", 1)[0]
+    numbered = re.findall(r"^(\d+)\. ", section, flags=re.MULTILINE)
+
+    assert len(numbered) == len(get_contract("run_note")["never_write"])
+
+
+@pytest.mark.unit
 def test_contract_run_note_lists_prose_roles():
     """The prose criterion travels with the contract (Epic #1247, #1251)."""
     contract = get_contract("run_note")
