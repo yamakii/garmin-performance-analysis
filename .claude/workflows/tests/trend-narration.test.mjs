@@ -16,6 +16,14 @@ const { normalizeTrendArgs, buildTrendTempDir, narrationPrompt, mergeTrendPrompt
   `${m[1]}\nreturn { normalizeTrendArgs, buildTrendTempDir, narrationPrompt, mergeTrendPrompt }`,
 )()
 
+test('test_narration_agent_uses_opus_medium', () => {
+  // The Analyze-phase agent() options live outside the testable block; read them from source.
+  const call = src.match(/await agent\(narrationPrompt\(ctx\), \{([\s\S]*?)\n\}\)/)
+  assert.ok(call, 'narration agent() call not found')
+  assert.match(call[1], /model: 'opus'/)
+  assert.match(call[1], /effort: 'medium'/)
+})
+
 test('test_normalize_defaults_granularity_week', () => {
   assert.deepEqual(
     normalizeTrendArgs({ period_start: '2026-06-15', period_end: '2026-06-21' }),

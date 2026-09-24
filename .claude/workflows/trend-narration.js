@@ -1,9 +1,9 @@
 export const meta = {
   name: 'trend-narration',
   description:
-    'Prefetch a period-keyed longitudinal trend CONTEXT, generate coach narration (inline sonnet), proofread, and save into trend_analyses',
+    'Prefetch a period-keyed longitudinal trend CONTEXT, generate coach narration (inline opus, medium effort), proofread, and save into trend_analyses',
   phases: [
-    { title: 'Analyze', detail: 'inline sonnet: prefetch CONTEXT to a file, narrate → trend.json' },
+    { title: 'Analyze', detail: 'inline opus/medium: prefetch CONTEXT to a file, narrate → trend.json' },
     { title: 'Finalize', detail: 'proofread prose, save into trend_analyses' },
   ],
 }
@@ -159,14 +159,18 @@ const ctx = {
   granularity: A.granularity,
 }
 
-// ── Phase Analyze: inline sonnet — prefetch CONTEXT to a file, narrate → trend.json ──
+// ── Phase Analyze: inline opus/medium — prefetch CONTEXT to a file, narrate → trend.json ──
 phase('Analyze')
 await agent(narrationPrompt(ctx), {
   label: 'trend-narration',
   phase: 'Analyze',
-  // narration is the analytical core (why the trend moves, signal interplay) —
-  // sonnet, per the #792 decision to keep this inline (L2) rather than a new agent def.
-  model: 'sonnet',
+  // narration is the analytical core (why the trend moves, signal interplay),
+  // kept inline (L2) rather than a new agent def (#792). opus at medium effort,
+  // explicit rather than inherited from the session / user setting (#1395):
+  // on the trend-narration eval (26 periods) it met every rule check the
+  // sonnet-at-settings baseline did, in ~1/3 of the time (#1392).
+  model: 'opus',
+  effort: 'medium',
 })
 
 // ── Phase Finalize: proofread prose, then save into trend_analyses ──
