@@ -225,6 +225,10 @@ class GarminDBReader:
         """
         return self.metadata.get_activity_dates(activity_ids)
 
+    def get_activity_ids_between(self, start_date: str, end_date: str) -> list[int]:
+        """List activity IDs dated within an inclusive window, ascending by date."""
+        return self.metadata.get_activity_ids_between(start_date, end_date)
+
     def get_bulk_activity_fields(
         self, activity_ids: list[int], fields: list[str]
     ) -> dict[int, dict[str, Any]]:

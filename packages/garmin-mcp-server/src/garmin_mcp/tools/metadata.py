@@ -30,10 +30,6 @@ class IngestActivityParams(BaseModel):
     """Arguments for ``ingest_activity``."""
 
     date: str = Field(description="Activity date in YYYY-MM-DD format")
-    force_regenerate: bool = Field(
-        default=False,
-        description="Force regeneration of all data (default: false)",
-    )
 
 
 def _get_activity_by_date(
@@ -123,9 +119,7 @@ def _ingest_activity(reader: GarminDBReader, p: IngestActivityParams) -> dict[st
 
     try:
         planner = WorkflowPlanner(db_path=str(reader.db_path))
-        workflow_result = planner.execute_full_workflow(
-            date=p.date, force_regenerate=p.force_regenerate
-        )
+        workflow_result = planner.execute_full_workflow(date=p.date)
         result: dict[str, Any] = {
             "success": True,
             "activity_id": workflow_result["activity_id"],
@@ -133,8 +127,6 @@ def _ingest_activity(reader: GarminDBReader, p: IngestActivityParams) -> dict[st
             "form_evaluation_status": workflow_result.get(
                 "form_evaluation_status", "unknown"
             ),
-            "validation_status": workflow_result.get("validation_status"),
-            "quality_score": workflow_result.get("quality_score"),
         }
     except Exception as e:  # noqa: BLE001
         logger.error(f"Ingest activity failed for {p.date}: {e}", exc_info=True)
@@ -176,8 +168,14 @@ METADATA_TOOLS: list[ToolDef] = [
     ToolDef(
         name="ingest_activity",
         description=(
-            "Ingest activity data from Garmin Connect into DuckDB. Fetches raw "
-            "data, stores in DuckDB, and runs form evaluation."
+            "Ingest the one run on date from Garmin Connect (raw files are "
+            "cache-first), write it to DuckDB and run the pace-corrected form "
+            "evaluation. Returns {success: true, activity_id, date, "
+            "form_evaluation_status} where form_evaluation_status is success, "
+            "model_not_found, failed or error; returns {success: false, error} "
+            "when the day has no run or several. Use catch_up_ingest for a date "
+            "range and get_activity_by_date to read a run that is already "
+            "ingested."
         ),
         params=IngestActivityParams,
         handler=_ingest_activity,

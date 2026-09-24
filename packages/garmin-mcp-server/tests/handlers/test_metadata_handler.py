@@ -289,15 +289,15 @@ class TestIngestActivity:
     """Test _ingest_activity via handle()."""
 
     @pytest.mark.asyncio
-    async def test_success(self, mock_db_reader: MagicMock) -> None:
+    async def test_ingest_activity_result_has_no_constant_fields(
+        self, mock_db_reader: MagicMock
+    ) -> None:
         mock_db_reader.db_path = "/fake/path.duckdb"
 
         mock_planner = MagicMock()
         mock_planner.execute_full_workflow.return_value = {
             "activity_id": 12345,
             "date": "2025-10-15",
-            "validation_status": "passed",
-            "quality_score": 1.0,
             "form_evaluation_status": "success",
             "files": ["activity.json"],
             "timestamp": "2025-10-15T12:00:00",
@@ -312,46 +312,18 @@ class TestIngestActivity:
             )
 
         data = json.loads(result[0].text)
-        assert data["success"] is True
-        assert data["activity_id"] == 12345
-        assert data["date"] == "2025-10-15"
-        assert data["form_evaluation_status"] == "success"
-        assert data["validation_status"] == "passed"
-        assert data["quality_score"] == 1.0
-        mock_planner.execute_full_workflow.assert_called_once_with(
-            date="2025-10-15", force_regenerate=False
-        )
-
-    @pytest.mark.asyncio
-    async def test_with_force_regenerate(self, mock_db_reader: MagicMock) -> None:
-        mock_db_reader.db_path = "/fake/path.duckdb"
-
-        mock_planner = MagicMock()
-        mock_planner.execute_full_workflow.return_value = {
+        assert data == {
+            "success": True,
             "activity_id": 12345,
             "date": "2025-10-15",
-            "validation_status": "passed",
-            "quality_score": 1.0,
             "form_evaluation_status": "success",
-            "files": [],
-            "timestamp": "2025-10-15T12:00:00",
         }
+        mock_planner.execute_full_workflow.assert_called_once_with(date="2025-10-15")
 
-        with patch(
-            "garmin_mcp.planner.workflow_planner.WorkflowPlanner",
-            return_value=mock_planner,
-        ):
-            result = dispatch_tool(
-                mock_db_reader,
-                "ingest_activity",
-                {"date": "2025-10-15", "force_regenerate": True},
-            )
+    def test_ingest_activity_params_reject_force_regenerate_absent(self) -> None:
+        from garmin_mcp.tools.metadata import IngestActivityParams
 
-        data = json.loads(result[0].text)
-        assert data["success"] is True
-        mock_planner.execute_full_workflow.assert_called_once_with(
-            date="2025-10-15", force_regenerate=True
-        )
+        assert "force_regenerate" not in IngestActivityParams.model_fields
 
     @pytest.mark.asyncio
     async def test_workflow_error(self, mock_db_reader: MagicMock) -> None:
@@ -385,8 +357,6 @@ class TestIngestActivity:
         mock_planner.execute_full_workflow.return_value = {
             "activity_id": 12345,
             "date": date(2025, 10, 15),
-            "validation_status": "passed",
-            "quality_score": 1.0,
             "form_evaluation_status": "success",
             "files": [],
             "timestamp": "2025-10-15T12:00:00",

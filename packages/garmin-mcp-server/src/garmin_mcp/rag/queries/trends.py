@@ -65,7 +65,7 @@ class PerformanceTrendAnalyzer:
         metric: str,
         start_date: str,
         end_date: str,
-        activity_ids: list[int],
+        activity_ids: list[int] | None = None,
         temperature_range: tuple[float, float] | None = None,
         distance_range: tuple[float, float] | None = None,
     ) -> dict[str, Any]:
@@ -77,7 +77,8 @@ class PerformanceTrendAnalyzer:
                 dated earlier are dropped
             end_date: Inclusive end date in YYYY-MM-DD format; activities dated
                 later are dropped
-            activity_ids: List of activity IDs to analyze
+            activity_ids: Activities to analyze; None uses every activity dated
+                in the window
             temperature_range: Optional (min_temp, max_temp) filter in Celsius
             distance_range: Optional (min_km, max_km) filter
 
@@ -110,6 +111,9 @@ class PerformanceTrendAnalyzer:
         self._check_metric(metric)
         window_start = date.fromisoformat(start_date)
         window_end = date.fromisoformat(end_date)
+
+        if activity_ids is None:
+            activity_ids = self.db_reader.get_activity_ids_between(start_date, end_date)
 
         # Apply filters
         filtered_ids = self._apply_filters(

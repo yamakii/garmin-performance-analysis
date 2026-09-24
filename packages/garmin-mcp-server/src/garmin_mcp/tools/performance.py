@@ -101,7 +101,13 @@ PERFORMANCE_TOOLS: list[ToolDef] = [
         description=(
             "Objective (non-optimistic) fitness curve: rolling 90-day max "
             "best-effort performance VDOT from splits, side-by-side with Garmin "
-            "VO2max and the optimism gap."
+            "VO2max and the optimism gap. Returns objective_curve "
+            "[{date, vdot, source_distance_km}] ascending by run day (best "
+            "contiguous 2 / 5 / 10 km efforts), garmin_vo2max [{date, value}] "
+            "ascending, and optimism_gap {garmin_vdot, objective_vdot, gap_vdot, "
+            "gap_speed_mps, gap_pace_sec_per_km}, or null when either series is "
+            "empty. get_race_readiness reads the latest objective VDOT per "
+            "distance bucket from this curve."
         ),
         params=ObjectiveFitnessParams,
         handler=_get_objective_fitness_curve,

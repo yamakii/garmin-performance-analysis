@@ -69,8 +69,12 @@ class AnalyzePerformanceTrendsParams(BaseModel):
     end_date: str = Field(
         description="Inclusive end (YYYY-MM-DD); activities dated later are dropped"
     )
-    activity_ids: list[int] = Field(
-        description="Activities to consider; only those dated in the window are used"
+    activity_ids: list[int] | None = Field(
+        default=None,
+        description=(
+            "Activities to consider; only those dated in the window are used. "
+            "Omit to use every run dated in the window"
+        ),
     )
     temperature_range: (
         Annotated[list[float], Field(min_length=2, max_length=2)] | None
@@ -285,7 +289,10 @@ ANALYSIS_TOOLS: list[ToolDef] = [
         name="validate_section_json",
         description=(
             "Validate a run_note coach review against its Pydantic schema. "
-            "Returns {valid: bool, errors: list[str]}."
+            "Returns {valid: bool, errors: list[str]}. Only section_type "
+            "run_note is accepted. This checks the schema only: the grounding "
+            "gate (every evidence key must resolve against the run report) runs "
+            "at merge, so valid: true does not mean the merge will accept it."
         ),
         params=ValidateSectionJsonParams,
         handler=_validate_section_json,
@@ -323,7 +330,8 @@ ANALYSIS_TOOLS: list[ToolDef] = [
         name="analyze_performance_trends",
         description=(
             "Linear trend of one metric across the activity_ids dated within "
-            "start_date..end_date: each activity contributes the unweighted mean "
+            "start_date..end_date (omit activity_ids to use every run in the "
+            "window): each activity contributes the unweighted mean "
             "of the metric over its laps, regressed on elapsed days. Returns "
             "metric, trend, slope (metric units per day), correlation, p_value, "
             "data_points, start_date, end_date. trend is stable when p>0.05 and "

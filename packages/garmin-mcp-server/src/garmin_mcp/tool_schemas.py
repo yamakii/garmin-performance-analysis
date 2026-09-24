@@ -13,28 +13,16 @@ the registry rollout.
 
 from mcp.types import Tool
 
+from garmin_mcp.server_tools import SERVER_TOOLS
 from garmin_mcp.tools import ALL_DEFS
 from garmin_mcp.tools.registry import build_mcp_tools
 
 # Server-level tools are dispatched directly in server.py (not via a domain
-# handler), so they remain hand-declared here and are appended last.
+# handler). Their single definition is ``server_tools.SERVER_TOOLS``; this dict
+# form feeds the reference generator and is appended last.
 _SERVER_TOOLS: list[dict] = [
-    {
-        "name": "get_server_info",
-        "description": "Get diagnostic info about the running MCP server (server_dir). Use to verify which directory the server is running from.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-        },
-    },
-    {
-        "name": "reload_server",
-        "description": "Restart the worker to pick up the latest code. The launcher process stays alive, so the MCP connection is preserved (no reconnect needed).",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-        },
-    },
+    {"name": t.name, "description": t.description, "inputSchema": t.input_schema}
+    for t in SERVER_TOOLS
 ]
 
 

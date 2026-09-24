@@ -686,3 +686,25 @@ class TestPerformanceTrendAnalyzer:
         )
         # No per-activity weather lookups (the old N+1 path).
         analyzer.db_reader.get_weather_data.assert_not_called()
+
+    @pytest.mark.unit
+    def test_analyze_metric_trend_without_ids_uses_window(self, analyzer):
+        """Omitting activity_ids analyzes every activity dated in the window."""
+        analyzer.db_reader.get_activity_ids_between.return_value = [1, 2, 3]
+        analyzer.db_reader.get_bulk_metric_averages.return_value = {
+            1: 310.0,
+            2: 305.0,
+            3: 300.0,
+        }
+        analyzer.db_reader.get_activity_dates.return_value = _dates_for([1, 2, 3])
+
+        result = analyzer.analyze_metric_trend(
+            metric="pace", start_date="2025-01-01", end_date="2025-01-31"
+        )
+
+        analyzer.db_reader.get_activity_ids_between.assert_called_once_with(
+            "2025-01-01", "2025-01-31"
+        )
+        analyzer.db_reader.get_bulk_metric_averages.assert_called_once()
+        assert result["data_points"] == 3
+        assert result["trend"] == "improving"
